@@ -39,7 +39,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { Atom } from "./claim.mts";
 import type { DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
-import { bigintText, CLASS_ACCESS, optionalTerm, restPositions, REST_CONTRACT, signature, typeTerm, type TermScope } from "./type-term.mts";
+import { bigintText, CLASS_ACCESS, computedForm, numericKey, optionalTerm, restPositions, REST_CONTRACT, signature, typeTerm,
+  type TermScope } from "./type-term.mts";
 import type {
   Ast,
   BindingAst,
@@ -59,7 +60,8 @@ import type {
 import { CHAIN } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { messageOf } from "./thrown.mts";
-import { collectDeclarations, DeclarationError, libraryTerm, tsconfigOf, type LibraryType, type SeenDiagnostic }
+import { collectDeclarations, DeclarationError, libraryArguments, libraryTerm, tsconfigOf, type LibraryType,
+  type SeenDiagnostic }
   from "./declaration-graph.mts";
 import { asyncCompleteName, asyncReturnName, awaitName, forInName } from "./intrinsics.mts";
 
@@ -233,6 +235,18 @@ class Gate {
   /** `e[k]` keys TypeScript binds to a `unique symbol` constant, by span:
    * the symbol, as the declaration document lists it. */
   symbolKeys = new Map<string, number>();
+  /** The computed types of the file's annotations (`computedForm`), by span:
+   * the term TypeScript's evaluation denotes, or the reason it has none
+   * (`computed-types.mts`). */
+  readonly computedTypes = new Map<string, TypeTerm | { refused: string }>();
+  /** The computed keys of the file's annotations' type literals, by span of
+   * the key expression: the `unique symbol` each names, as the declaration
+   * document lists it, or the reason it names none. */
+  readonly symbolNames = new Map<string, number | { refused: string }>();
+  /** Mapped types' keys and library mapped types' arguments in the file's
+   * annotations, by span: the union of literals and primitives TypeScript
+   * computes for each, or null. */
+  readonly keyTypes = new Map<string, TypeTerm | null>();
   /** `C.x` member names TypeScript binds to a static member of the file's
    * class `C`, by span: the class. */
   staticReads = new Map<string, string>();
@@ -686,6 +700,20 @@ class Gate {
         }
         return null;
       },
+      symbol: (name) => {
+        const [start, end] = this.span(name);
+        const result = this.symbolNames.get(`${start}:${end}`);
+        if (result === undefined) return this.fail(name, "a computed key names a symbol constant");
+        if (typeof result !== "number") return this.fail(name, result.refused);
+        return result;
+      },
+      keys: (node) => this.keyTypes.get(this.span(node).join(":")) ?? null,
+      computed: (node, span) => {
+        const result = this.computedTypes.get(`${span[0]}:${span[1]}`);
+        if (!result) return this.fail(node, `type outside the fragment (${ts.SyntaxKind[node.kind]})`);
+        if ("refused" in result) return this.fail(node, result.refused);
+        return result;
+      },
       named: (node, span, read) => {
         const name = (node.typeName as Identifier).text;
         if (this.enums.has(name) && !this.hasTypeParam(name)) {
@@ -694,7 +722,8 @@ class Gate {
         }
         const library = this.libraryTypes.get(name);
         if (library !== undefined && !this.hasTypeParam(name))
-          return libraryTerm(library, (node.typeArguments ?? []).map(read), span,
+          return libraryTerm(library, libraryArguments(library, node.typeArguments ?? [], read,
+            part => this.keyTypes.get(this.span(part).join(":")) ?? null), span,
             message => this.fail(node, message));
         const declared = this.declaredTypes.get(name);
         if (declared !== undefined && !this.hasTypeParam(name)) {
@@ -1258,7 +1287,7 @@ class Gate {
   private objectFields(node: ts.ObjectLiteralExpression, seen: Set<string>): { name: string; e: Expr }[] {
     const key = (f: Node, name: Node): string => {
       const text = ts.isIdentifier(name) || ts.isStringLiteral(name) ? name.text
-        : ts.isNumericLiteral(name) ? String(Number(name.text.replace(/_/g, "")))
+        : ts.isNumericLiteral(name) ? numericKey(name.text)
         : ts.isComputedPropertyName(name) ? this.fail(f, "a computed key in an object literal is outside the fragment")
         : this.fail(f, "expected a plain property name");
       if (seen.has(text)) this.fail(f, "duplicate field name in a record");
@@ -3074,11 +3103,40 @@ export function parseFile(file: string, carriesContext = false,
     node.forEachChild(findConstEnumReads);
   };
   if (inlined.size) findConstEnumReads(source);
+  // A type TypeScript computes from others, `typeof x`, `keyof T`, `T[K]` or
+  // a template literal type, is the type its evaluation denotes: each
+  // outermost one in an annotation is evaluated where it is written. Those
+  // in type declarations are the declaration graph's own.
+  // A computed key of a type literal, `{ [k]: T }`, names a symbol:
+  // TypeScript decides which.
+  const computedNodes: Node[] = [];
+  const symbolNameNodes: Node[] = [];
+  const keyTypeNodes: Node[] = [];
+  const findComputed = (node: Node): void => {
+    if (ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node)) return;
+    if (ts.isTypeNode(node) && computedForm(node) !== null) {
+      computedNodes.push(node);
+      return;
+    }
+    if (ts.isComputedPropertyName(node) && node.parent &&
+        (ts.isPropertySignatureDeclaration(node.parent) || ts.isMethodSignatureDeclaration(node.parent)))
+      symbolNameNodes.push(node.expression);
+    // A mapped type's keys, and a global generic's arguments, which may be
+    // a library mapped type's keys, `Record<K, V>`: TypeScript computes them.
+    if (ts.isMappedTypeNode(node) && node.typeParameter.constraint) keyTypeNodes.push(node.typeParameter.constraint);
+    if (ts.isIndexSignatureDeclaration(node) && node.parameters[0]?.type) keyTypeNodes.push(node.parameters[0].type);
+    if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) && !rooted.has(node.typeName.text))
+      keyTypeNodes.push(...(node.typeArguments ?? []));
+    node.forEachChild(findComputed);
+  };
+  if (!carriesContext) findComputed(source);
   if (importNodes.length || localNodes.length || globalNodes.length || globalValueNodes.length ||
       firstArray || firstAsync || keyNodes.length || ambientNames.length || staticNodes.length ||
-      receiverNodes.length || enumNodes.length) {
+      receiverNodes.length || enumNodes.length || computedNodes.length || symbolNameNodes.length ||
+      keyTypeNodes.length) {
     const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
-      firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? receiverNodes[0] ?? enumNodes[0];
+      firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? receiverNodes[0] ?? enumNodes[0] ??
+      computedNodes[0] ?? symbolNameNodes[0] ?? keyTypeNodes[0];
     if (!first) throw Error("missing declaration root");
     // Named imports only. A type import joins the declaration graph; a value
     // import is an assumption at the type its declaration states.
@@ -3103,6 +3161,12 @@ export function parseFile(file: string, carriesContext = false,
         staticReads: staticNodes.map(node => gate.span(node)),
         staticMember: ([start, end], cls) => gate.staticReads.set(`${start}:${end}`, cls),
         memberReceivers: receiverNodes.map(node => gate.span(node)),
+        computed: computedNodes.map(node => gate.span(node)),
+        computedType: ([start, end], result) => gate.computedTypes.set(`${start}:${end}`, result),
+        symbolNames: symbolNameNodes.map(node => gate.span(node)),
+        keyTypes: keyTypeNodes.map(node => gate.span(node)),
+        keyType: ([start, end], keys) => gate.keyTypes.set(`${start}:${end}`, keys),
+        symbolName: ([start, end], result) => gate.symbolNames.set(`${start}:${end}`, result),
         globalTest: ([start, end]) => gate.globalTests.add(`${start}:${end}`),
         globalIntrinsic: ([start, end], name) => gate.globalIntrinsics.set(`${start}:${end}`, name),
         enums: enumNodes.map(node => gate.span(node)),
@@ -3121,7 +3185,8 @@ export function parseFile(file: string, carriesContext = false,
       const at = error instanceof DeclarationError
         ? [...importNodes, ...localNodes, ...globalNodes, ...globalValueNodes, ...(firstArray ? [firstArray] : []),
             ...(firstAsync ? [firstAsync] : []), ...keyNodes, ...ambientNames.map(topStatement), ...staticNodes,
-            ...receiverNodes, ...enumNodes, ...constEnumNodes].find(node =>
+            ...receiverNodes, ...enumNodes, ...constEnumNodes, ...computedNodes, ...symbolNameNodes,
+            ...keyTypeNodes].find(node =>
             node.getStart(source) === error.at[0]) ?? first
         : first;
       gate.fail(at, messageOf(error));

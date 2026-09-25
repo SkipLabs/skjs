@@ -10,7 +10,15 @@ let items k j = list (field k j)
 type type_context = { bindings: (string * type_argument) list;
                       owner: string option; positional: rigid list;
                       arity: (string * (int * int)) list;
-                      symbolic: (string * (rigid * ty)) list }
+                      symbolic: (string * (rigid * ty)) list;
+                      (* The term read here is the declaration's own body:
+                         a record there is the one its methods' receiver,
+                         `self`, names. *)
+                      own: bool;
+                      (* `self` names the declaration: a method of its own
+                         body. A nested type literal's method is received by
+                         that literal, which the producer does not name. *)
+                      self_owner: bool }
 let identity declaration =
   let span = list (field "span" declaration) in
   match span with
@@ -58,19 +66,20 @@ and binder_uses name terms = List.fold_left (fun (values,packs) term ->
   let value,pack=binder_use name term in values || value,packs || pack) (false,false) terms
 
 let rec source_type ctx j =
-  let recur = source_type ctx in
+  let recur = source_type {ctx with own=false} in
   match text "k" j with
   | "atom" -> (match text "name" j with
     | "null" -> Atoms [Nul] | "undefined" -> Atoms [Undef]
     | "boolean" -> bool | "number" -> Atoms [Num]
     | "string" -> Atoms [Str] | "bigint" -> Atoms [Bigint] | "symbol" -> Atoms [Symbol]
     | "unknown" | "void" -> top
+    (* `object`, every object: an ordinary one, constraining no key, or one
+       with call or construct code. *)
+    | "object" -> Atoms [Shape {fields=[];string_index=None;calls=[];elements=None};Callable;Ctors []]
     | "never" -> Atoms [] | name -> unsupported ("atom " ^ name))
   (* The standard library's `Function`: callable or constructible, with no
-     signature. The producer knows nothing it may do with such a value, which
-     is what `unknown` says; Lean lowers the term itself, to exactly the
-     callable and constructible values. *)
-  | "callable" -> top
+     signature, as Lean lowers it. *)
+  | "callable" -> Atoms [Callable;Ctors []]
   | "literal" -> (match text "name" j with
     | "true" -> Atoms [True] | "false" -> Atoms [False]
     | "number" -> number_literal_type (text "text" j)
@@ -152,16 +161,34 @@ let rec source_type ctx j =
       result=recur (field "result" j)} in
     Atoms [Shape {fields=[];string_index=None;calls=[signature];elements=None}]
   | "self" -> (match ctx.owner with
+    | _ when not ctx.self_owner -> top
     | None -> fail "a method receiver outside a declaration"
     | Some owner ->
       (* A generic declaration's receiver is its application to its own
          parameters, which instantiation makes the instance. *)
       Atoms [Named (owner,List.map (fun r -> Rigid r) ctx.positional)])
   | "object" ->
+    let recur = source_type {ctx with own=false;self_owner=ctx.own} in
+    (* Method syntax: one signature or several, each received by the object,
+       on a required member (as Lean's `methodForms`). *)
+    let received f = match f with
+      | Object fs -> List.assoc_opt "k" fs = Some (String "function") &&
+        (match List.assoc_opt "receiver" fs with
+         | Some (Object r) -> List.assoc_opt "k" r = Some (String "self")
+         | _ -> false)
+      | _ -> false in
+    let method_syntax t = received t || (match t with
+      | Object fs when List.assoc_opt "k" fs = Some (String "intersection") ->
+        (match List.assoc_opt "parts" fs with
+         | Some (Array (_::_ as parts)) -> List.for_all received parts
+         | _ -> false)
+      | _ -> false) in
     let fields = List.map (fun f ->
       let t = recur (field "type" f) in
-      {name=property_key (field "name" f);optional=boolean (field "optional" f);
-       read=t;write=(if boolean (field "readonly" f) then None else Some t)})
+      let optional = boolean (field "optional" f) in
+      {name=property_key (field "name" f);optional;
+       read=t;write=(if boolean (field "readonly" f) then None else Some t);
+       host=not optional && method_syntax (field "type" f)})
       (items "fields" j) in
     let string_index = match field "stringIndex" j with
       | Null -> None
@@ -603,7 +630,8 @@ let decode ast =
     let id = identity (field "declaration" definition) in
     let parameters = List.mapi (fun i p -> {scope= -1-index;index=i;spelling=text "name" p})
       (items "parameters" definition) in
-    let body = source_type {bindings=[];owner=Some id;positional=parameters;arity;symbolic=[]} in
+    let body = source_type {bindings=[];owner=Some id;positional=parameters;arity;symbolic=[];
+      own=true;self_owner=true} in
     {id;parameters;
      defaults=List.map (fun p -> match field "default" p with
        | Null -> None | j -> Some (body j)) (items "parameters" definition);
@@ -624,12 +652,12 @@ let decode ast =
     | [parameter],[None],[],(Atoms [Shape shape] as body) ->
       (match shape.fields,shape.string_index,shape.calls,shape.elements with
       | [{name=Name "value";optional=false;read=Rigid identity;
-          write=Some (Rigid written)}],None,[],None
+          write=Some (Rigid written);host=false}],None,[],None
           when identity=parameter && written=parameter ->
         Some (d.id,(parameter,body))
       | _ -> None)
     | _ -> None) definitions in
-  let top={bindings=[];owner=None;positional=[];arity;symbolic} in
+  let top={bindings=[];owner=None;positional=[];arity;symbolic;own=false;self_owner=false} in
   { file=field "file" ast;digest=field "sourceSha256" ast;
     declarations=definitions;
     init=List.map (stmt top) (items "init" ast);
@@ -646,7 +674,7 @@ let decode ast =
       (items "values" document);
     functions=List.mapi (fun scope f ->
       let parameters = items "typeParams" f in
-      let initial={bindings=[];owner=None;positional=[];arity;symbolic} in
+      let initial={bindings=[];owner=None;positional=[];arity;symbolic;own=false;self_owner=false} in
       let binders,quantified = quantify initial scope parameters in
       {quantified;name=text "name" f; name_pos=field "namePos" f;
       params=List.map (fun p -> text "name" p,source_type binders (field "type" p)) (items "params" f);

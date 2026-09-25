@@ -258,6 +258,24 @@ $$
 Every function and every class is covered by it, since
 [coverage](#function-and-class-coverage) has no target signature to derive.
 
+TypeScript's `object` adds the objects with no invocation code, the record
+constraining no key, $\mathsf{Ref}(\varepsilon;\varepsilon;\varepsilon;\varepsilon;\varepsilon)$,
+whose meaning is $v=\ell$ for some $\mathit{flds}$ (arrays and instances
+included, their store and prototype being own keys it does not constrain);
+and `{}` adds every primitive but `null` and `undefined`
+([DESIGN, "Library types"](DESIGN.md#library-types)):
+
+$$
+\llbracket\mathtt{object}\rrbracket_k(W,v)\iff
+\exists\mathit{flds}.\;v=\mathsf{obj}(\mathit{flds},\mathsf{absent})\lor\llbracket\mathtt{Function}\rrbracket_k(W,v),
+\qquad
+\llbracket\{\}\rrbracket=\mathtt{boolean}\cup\mathtt{number}\cup\mathtt{string}\cup\mathtt{bigint}\cup\mathtt{symbol}\cup\llbracket\mathtt{object}\rrbracket.
+$$
+
+A record, an array, a function or a class is covered by `object` by the
+existing rules: a record by width, an array's `refs` shape by width, a
+callable by an empty `arrs`, a class by an empty `ctors`.
+
 Lean: `callsT`, `restsT` (`Semantics/Safety.lean`), `objectsT`
 (`Types/CallableConjunctions.lean`), `ctorsT`, `ctorRestsT`, `ConstructsTo`.
 

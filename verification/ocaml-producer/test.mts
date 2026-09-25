@@ -322,7 +322,7 @@ for (const [file, expected] of [
     "export type OptionalPair = [boolean, number?];\n" +
     "export type RestPair = [boolean, ...number[]];\n" +
     "export type NamedPair = [flag: boolean, count: number];\n" +
-    "export type NestedMethod = { inner: { read(): boolean } };\n" +
+    "export type NestedMethod = { inner: { read?(): boolean } };\n" +
     "export interface GenericMethod { read<T>(value: T): T; }\n" +
     "export interface OptionalMethod { read(value?: boolean): boolean; }\n" +
     "export interface Derived extends Box { readonly label: string; }\n" +
@@ -617,7 +617,7 @@ for (const [file, expected] of [
   // Forms the fragment cannot state are refused where the graph reaches them.
   for (const [name, refusal] of [
     ["NamedPair", /named tuple members are outside the fragment in box.ts#NamedPair/],
-    ["NestedMethod", /unsupported method signature in box.ts#NestedMethod/],
+    ["NestedMethod", /an optional method of a nested type literal has no declaration as its receiver in box.ts#NestedMethod/],
     ["GenericCall", /generic or incomplete call signature in box.ts#GenericCall/],
   ] as const)
     assert.throws(() => graphOf(`import type { ${name} } from "@fixture/box";`), refusal);

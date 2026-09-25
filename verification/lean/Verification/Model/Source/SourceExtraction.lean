@@ -298,6 +298,16 @@ private inductive KeyKind where
   | dynamic
   | element
 
+/-- Whether an expression is claimed only at records: no array store, no
+primitive, nothing else. Such an object's property named by a number is the
+field its `ToString` spells; an array's is its store's element. -/
+private def recordReceiver (fc : SourceClaims.Function) (e : Fragment.Expr) : Compiler Bool := do
+  let G := SourceTypes.graph (← table)
+  let R ← exprType fc e
+  let cs := PositiveRules.expand G R
+  return !cs.isEmpty && (storeOf G R).isNone && cs.all fun
+    | .refs .. => true | _ => false
+
 private def keyField (fc : SourceClaims.Function) (key : Fragment.Expr)
     (string : Bool := false) (record : Bool := false) : Compiler KeyKind := do
   let K ← exprType fc key
@@ -389,14 +399,8 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
   | .index p _ e key =>
     let key ← comparisonsExpr fc key
     let e ← comparisonsExpr fc e
-    let G := SourceTypes.graph (← table)
-    let R ← exprType fc e
-    let string := decide (Answers G R .isStr true)
-    -- Only records: no array store, no primitive, nothing else.
-    let cs := PositiveRules.expand G R
-    let record := !cs.isEmpty && (storeOf G R).isNone && cs.all fun
-      | .refs .. => true | _ => false
-    match ← keyField fc key string record with
+    let string := decide (Answers (SourceTypes.graph (← table)) (← exprType fc e) .isStr true)
+    match ← keyField fc key string (← recordReceiver fc e) with
     | .field s => return .index p (some s) e key
     | .dynamic => return .index p none e key
     | .element => return .elemAt p e key
@@ -418,7 +422,7 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
     let key ← comparisonsExpr fc key
     let r ← comparisonsExpr fc r
     let rhs ← comparisonsExpr fc rhs
-    match ← keyField fc key with
+    match ← keyField fc key (record := ← recordReceiver fc r) with
     | .field s => return .indexWrite p (some s) r key rhs
     | .dynamic => throw "a dynamic string index write is outside the readonly dictionary fragment"
     | .element => return .elemWrite p r key rhs

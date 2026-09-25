@@ -10,12 +10,13 @@ import { API, DiagnosticCategory, SymbolFlags, TypeFlags, isUnionType, type Chec
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, SourceFile, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
-import { classInstance, expandMapped, mapped, members, oneTerm, optionalTerm, signature, signatures, substitute, typeTerm,
-  type Mapped, type TermScope } from "./type-term.mts";
+import { classInstance, computedForm, expandMapped, mapped, members, oneTerm, optionalTerm, signature, signatures, substitute,
+  typeTerm, type Mapped, type TermScope } from "./type-term.mts";
 import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePrototype, primitivePrototypeName, type OverlayEntry,
   type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule } from "./intrinsics.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
+import { computedType, enclosingBinders, literalUnion, type ComputedContext } from "./computed-types.mts";
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
 export type { DeclarationIdentity, DeclarationDocument, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
 
@@ -69,6 +70,21 @@ export function libraryTerm(library: LibraryType, args: readonly TypeTerm[], spa
 }
 
 type FunctionTerm = Extract<TypeTerm, { k: "function" }>;
+
+/** The arguments of a reference to `library`: at a mapped type's key
+ * parameter, the keys `keys` computes where it can (an alias of literals is
+ * its literals), otherwise each argument as `read` reads it. */
+export function libraryArguments(library: LibraryType, nodes: readonly TypeNode[], read: (node: TypeNode) => TypeTerm,
+    keys?: (node: TypeNode) => TypeTerm | null): TypeTerm[] {
+  const named: number[] = [];
+  const mentions = (t: TypeTerm): void => {
+    if (t.k === "parameter") named.push(t.index);
+    else if (t.k === "union") t.parts.forEach(mentions);
+  };
+  if (library.k === "mapped") mentions(library.template.key);
+  return nodes.map((node, i) => (named.includes(i) ? keys?.(node) : null) ?? read(node));
+}
+
 const isLibraryModule = (module: string): boolean => module.startsWith("typescript/lib/");
 
 /** The configured project named on a command line: a tsconfig file, or the
@@ -192,6 +208,27 @@ function identifierAt(file: SourceFile, span: Span): Identifier | null {
   return visit(file);
 }
 
+/** The outermost type node at exactly `span`. */
+function typeNodeAt(file: SourceFile, span: Span): TypeNode | null {
+  const visit = (node: Node): TypeNode | null => {
+    if (node.end < span[1] || node.pos > span[0]) return null;
+    if (ts.isTypeNode(node) && node.getStart(file) === span[0] && node.end === span[1]) return node;
+    return node.forEachChild(visit) ?? null;
+  };
+  return visit(file);
+}
+
+/** The computed type (`computedForm`) at exactly `span`. */
+function computedAt(file: SourceFile, span: Span): TypeNode | null {
+  const visit = (node: Node): TypeNode | null => {
+    if (node.end < span[1] || node.pos > span[0]) return null;
+    if (ts.isTypeNode(node) && computedForm(node) !== null && node.getStart(file) === span[0] &&
+        node.end === span[1]) return node;
+    return node.forEachChild(visit) ?? null;
+  };
+  return visit(file);
+}
+
 /** The client's named imports: each must name exactly one declaration. */
 function importBindings(client: SourceFile): { local: Identifier; imported: string;
   specifier: string; span: Span; typeOnly: boolean }[] {
@@ -285,6 +322,23 @@ export function collectDeclarations(file: string, options: {
    * and whose realm value joins the values, located at the first such
    * receiver. */
   memberReceivers?: readonly Span[];
+  /** The client's computed types (`computedForm`) outside its type
+  * declarations, each outermost one: each is evaluated
+  * (`computed-types.mts`) and reported to `computedType` with its term, or
+  * with the reason it has none. */
+  computed?: readonly Span[];
+  computedType?: (span: Span, result: TypeTerm | { refused: string }) => void;
+  /** Type nodes of the client's annotations that may be a mapped type's keys:
+   * each is reported to `keyType` with the union of literals and primitives
+   * TypeScript computes for it, or null. */
+  keyTypes?: readonly Span[];
+  keyType?: (span: Span, keys: TypeTerm | null) => void;
+  /** The computed keys `[k]` and `[S.k]` of the client's annotations' type
+   * literals: each that names a `unique symbol` constant or readonly property
+   * joins the symbols and is reported to `symbolName` with its index, any
+   * other with the reason it names none. */
+  symbolNames?: readonly Span[];
+  symbolName?: (span: Span, result: number | { refused: string }) => void;
   /** Told each TypeScript error the gate reads while deciding whether a
    * declaration is clean, whether or not it refuses the source: every error
    * TypeScript reports in each file it examines, each once. */
@@ -415,6 +469,17 @@ export function collectDeclarations(file: string, options: {
     };
     // A computed key names a `unique symbol` constant. Each such declaration
     // is listed once, and its position in the list is the symbol's identity.
+    // A mapped type's keys as TypeScript computes them, where they are a
+    // union of literals and primitives.
+    const keyTypeOf = (node: TypeNode): TypeTerm | null => {
+      const type = checker.getTypeFromTypeNode(node);
+      return type ? literalUnion(type, [node.getStart(node.getSourceFile()), node.end]) : null;
+    };
+    // Whether a name denotes a standard library value, such as `Symbol`.
+    const isLibraryValue = (name: Identifier): boolean => {
+      const nodes = (targetOf(checker, name)?.declarations ?? []).map(d => d.resolve());
+      return nodes.length > 0 && nodes.every(n => !!n && isLibraryModule(idOf(n.getSourceFile())));
+    };
     const symbols: DeclarationIdentity[] = [];
     const symbolIndex = new Map<string, number>();
     // A well-known symbol such as `Symbol.iterator` is a readonly property
@@ -437,7 +502,29 @@ export function collectDeclarations(file: string, options: {
       clean(node, `${idOf(source)}#${node.name.text}`);
       const identity: DeclarationIdentity = { module: idOf(source), name: node.name.text,
         span: [node.getStart(source), node.end] };
-      const key = `${identity.module}#${identity.span[0]}:${identity.span[1]}`;
+      // Which symbol a constant holds is what made it. `Symbol()` makes a
+      // fresh one, its declaration's own; `Symbol.for("k")` the registry's
+      // for "k", which every constant made so holds, so that string is its
+      // identity. TypeScript also types a constant made otherwise, by any
+      // value asserted to be one, a unique symbol, whose symbol may be any
+      // other's. A declared constant (`declare const`) or property holds
+      // its own, as its type states: an assumption.
+      const initializer = ts.isVariableDeclaration(node) ? node.initializer : undefined;
+      const library = (callee: Node, name: string): boolean => ts.isIdentifier(callee)
+        ? callee.text === name && isLibraryValue(callee)
+        : ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression) &&
+          ts.isIdentifier(callee.name) && `${callee.expression.text}.${callee.name.text}` === name &&
+          isLibraryValue(callee.expression);
+      const [registry, ...more] = initializer && ts.isCallExpression(initializer) &&
+        library(initializer.expression, "Symbol.for") ? initializer.arguments : [];
+      const key = registry && !more.length && (ts.isStringLiteral(registry) ||
+          ts.isNoSubstitutionTemplateLiteral(registry)) ? `Symbol.for ${JSON.stringify(registry.text)}`
+        : !initializer || (ts.isCallExpression(initializer) && library(initializer.expression, "Symbol"))
+          ? `${identity.module}#${identity.span[0]}:${identity.span[1]}`
+          : null;
+      if (key === null)
+        throw Error(`the computed key ${what} names a constant made neither by \`Symbol()\` nor by ` +
+          "`Symbol.for` of a string literal: which symbol it holds is not known");
       let index = symbolIndex.get(key);
       if (index === undefined) {
         index = symbols.length;
@@ -455,6 +542,8 @@ export function collectDeclarations(file: string, options: {
         source,
         annotation: false,
         symbol: symbolOf,
+        computed: (part, pos, read) => computedType(computedContext, part, pos, read),
+        keys: keyTypeOf,
         fail: (_node, message) => { throw Error(`${message} in ${what}`); },
         named: (part, pos, read) => {
           const name = part.typeName as Identifier;
@@ -463,7 +552,7 @@ export function collectDeclarations(file: string, options: {
             return { k: "binder", name: name.text, span: pos };
           }
           const known = library(name, `${idOf(source)}#${name.text}`);
-          if (known) return libraryTerm(known, (part.typeArguments ?? []).map(read), pos,
+          if (known) return libraryTerm(known, libraryArguments(known, part.typeArguments ?? [], read, keyTypeOf), pos,
             message => { throw Error(`${message} in ${what}`); });
           const targetNode = lookup(name, `${idOf(source)}#${name.text}`);
           const parameters = targetNode.typeParameters ?? [];
@@ -559,6 +648,17 @@ export function collectDeclarations(file: string, options: {
             args: names.map(name => ({ k: "binder", name, span: nameSpan })), span: nameSpan }, span } };
       }
       throw Error(`${what} is not an annotated constant, function or class`);
+    };
+    // Computed types (`computed-types.mts`): an annotation they reach is read
+    // where it is declared, as an imported value's is, and must be clean.
+    const computedContext: ComputedContext = {
+      checker,
+      annotation: (type, at, binders) => {
+        const what = `${idOf(at.getSourceFile())}#${type.getText(at.getSourceFile())}`;
+        clean(type, what);
+        return typeTerm(valueScope(at, what, binders), type, at);
+      },
+      value: (nodes, what) => valueOf(nodes, what),
     };
     const roots: { root: TypeRoot; node: TypeDeclaration }[] = [];
     const values: ValueRoot[] = [];
@@ -839,12 +939,44 @@ export function collectDeclarations(file: string, options: {
           owner.modifiers?.some(m => m.kind === ts.SyntaxKind.ConstKeyword) && value !== undefined)
         options.constEnumRead?.(span, value);
     }
+    for (const span of options.keyTypes ?? []) {
+      const node = typeNodeAt(client, span);
+      options.keyType?.(span, node ? keyTypeOf(node) : null);
+    }
+    for (const span of options.symbolNames ?? []) {
+      const node = expressionAt(client, span);
+      if (!node || !(ts.isIdentifier(node) || ts.isPropertyAccessExpression(node))) {
+        options.symbolName?.(span, { refused: "a computed key names a symbol constant" });
+        continue;
+      }
+      try {
+        options.symbolName?.(span, symbolOf(node));
+      } catch (error) {
+        if (error instanceof DeclarationError) throw error;
+        options.symbolName?.(span, { refused: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    // The client's computed types: each evaluated where it is written, with
+    // the binders of the functions around it, or refused with the reason.
+    for (const span of options.computed ?? []) {
+      const node = computedAt(client, span);
+      if (!node) throw new DeclarationError(span, "TypeScript computed type missing");
+      const what = `${idOf(client)}#${node.getText(client)}`;
+      const scope = valueScope(node, what, enclosingBinders(node));
+      try {
+        options.computedType?.(span, computedType(computedContext, node, span, part => typeTerm(scope, part)));
+      } catch (error) {
+        if (error instanceof DeclarationError) throw error;
+        options.computedType?.(span, { refused: error instanceof Error ? error.message : String(error) });
+      }
+    }
     const seen = new Set<string>();
     const definitions: TypeDefinition[] = [];
     for (const { root, node: start } of roots) {
       try {
         collect(start, seen, definitions, { lookup, identityOf, symbol: symbolOf, partners, library, equation,
-          libraryInterface });
+          libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
+          keys: keyTypeOf });
       } catch (error) {
         throw new DeclarationError(root.binding.span,
           error instanceof Error ? error.message : String(error));
@@ -853,7 +985,8 @@ export function collectDeclarations(file: string, options: {
     for (const [index, start] of valueStarts.entries()) {
       try {
         collect(start, seen, definitions, { lookup, identityOf, symbol: symbolOf, partners, library, equation,
-          libraryInterface });
+          libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
+          keys: keyTypeOf });
       } catch (error) {
         throw new DeclarationError(values[Math.min(index, values.length - 1)]?.binding.span ?? [0, 0],
           error instanceof Error ? error.message : String(error));
@@ -1223,6 +1356,8 @@ export function importTargets(file: string, tsconfigPath?: string):
  * the whole. */
 function mergeMembers(parts: TypeTerm[], fail: (at: Node, message: string) => never, at: Node): TypeTerm {
   const [first, ...rest] = parts;
+  // One declaration of construct signatures only is its constructor type.
+  if (first && !rest.length && (first.k === "constructor" || first.k === "intersection")) return first;
   if (!first || first.k !== "object") return fail(at, "an interface body is a record");
   if (!rest.length) return first;
   const fields = [...first.fields];
@@ -1322,6 +1457,10 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
   equation: (node: TypeDeclaration) => TypeTerm | null;
   /** The standard library interface of this name, such as `Iterator`. */
   libraryInterface: (name: string) => TypeDeclaration;
+  /** A computed type's term (`computed-types.mts`). */
+  computed: NonNullable<TermScope["computed"]>;
+  /** A mapped type's keys as TypeScript computes them. */
+  keys: NonNullable<TermScope["keys"]>;
 }): void {
   const { lookup, identityOf, symbol, partners, library, equation } = context;
   const queue: TypeDeclaration[] = [start];
@@ -1350,7 +1489,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       // read at its meaning has none here.
       if (known && base)
         throw Error(`extending the standard library's ${identifier.text} is outside the fragment`);
-      if (known) return libraryTerm(known, arguments_.map(read), pos,
+      if (known) return libraryTerm(known, libraryArguments(known, arguments_, read, context.keys), pos,
         message => { throw Error(`${message} in ${identity.module}#${identity.name}`); });
       const targetNode = lookup(identifier, what);
       const target = identityOf(targetNode);
@@ -1364,10 +1503,25 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       return { k: "reference", reference: edge, args: arguments_.map(read), span: pos };
     };
     // Each declaration part is read in its own file, which its spans index.
+    let body: TypeNode | undefined;
+    if (ts.isTypeAliasDeclaration(node)) {
+      body = node.type;
+      while (ts.isParenthesizedTypeNode(body)) body = body.type;
+    }
     const scopeOf = (source: SourceFile): TermScope => ({
       source,
       annotation: false,
+      ...(body ? { body } : {}),
       symbol,
+      keys: context.keys,
+      // A declaration's own parameters are positional: a computed type that
+      // reaches a function's binder has no reading in its equation.
+      computed: (part, pos, read) => {
+        const term = context.computed(part, pos, read);
+        if (JSON.stringify(term).includes('"k":"binder"'))
+          throw Error(`${computedForm(part)} reaches a function's type parameter in ${identity.module}#${identity.name}`);
+        return term;
+      },
       fail: (_node, message) => { throw Error(`${message} in ${identity.module}#${identity.name}`); },
       named: (part, pos, read) => {
         const name = part.typeName as Identifier;

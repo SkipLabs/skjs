@@ -45,6 +45,10 @@ let definition declarations id args =
   let merge base own = match meet_objects base own with
     | Some t -> t
     | None -> (match base,own with
+      (* A base that holds every record, `{}` or `object`, adds nothing to
+         the interface's own record: their meet is that record. *)
+      | Atoms atoms,Atoms [Shape _] when List.mem Top atoms ||
+          List.mem (Shape {fields=[];string_index=None;calls=[];elements=None}) atoms -> own
       | Atoms [Shape inherited],Atoms [Shape local]
         when inherited.calls=[] && local.calls=[] && inherited.elements=None && local.elements=None
              && (inherited.string_index=None || local.string_index=None) ->
@@ -224,6 +228,8 @@ let rec index_type declarations seen receiver key = match receiver with
           | _ -> unsupported "record index requires a string key")
       | Exact _ as atom -> (match key with
           | Atoms [StrLit name] -> field_type declarations seen (Atoms [atom]) (Name name)
+          | Atoms [NumLit bits] when number_key bits <> None ->
+            field_type declarations seen (Atoms [atom]) (Name (Option.get (number_key bits)))
           | _ -> unsupported "record index requires a string key")
       | Named (id,args) ->
         if List.mem id seen then unsupported "unguarded index cycle";
@@ -351,7 +357,7 @@ let typeof_slice shape holds = function
       | Shape s -> Some (shape="function" && s.calls<>[])
       | Exact _ -> Some false
       (* A class is a function to `typeof`. *)
-      | Ctors _ -> Some (shape="function")
+      | Ctors _ | Callable -> Some (shape="function")
       | Nul -> Some false
       (* A declaration's shape is not known here: it stays on both arms. No
          value is an argument pack. *)
@@ -619,7 +625,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let fields = List.map (fun (name,e) -> name,const_type env e) fs in
       if List.exists (fun (_,t) -> t = None) fields then None
       else Some (record (List.map (fun (name,t) ->
-        {name=Name name;optional=false;read=Option.get t;write=None}) fields))
+        {name=Name name;optional=false;read=Option.get t;write=None;host=false}) fields))
     | _ -> None
   and expr ?expected env e =
     let t = match e.node with
@@ -721,7 +727,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         let fresh = match e.node with Id _ | Read _ -> false | _ -> true in
         let t=if widened || (expected = None && not fresh) then inferred
           else Option.value expected ~default:(widen inferred) in
-        {name=Name name;optional=false;read=t;write=Some t}) fs in
+        {name=Name name;optional=false;read=t;write=Some t;host=false}) fs in
       (* Where the contract is a dictionary, or has optional fields, the
          literal is claimed with its exact keys: that own-key bound is what
          lets it meet an index, or an optional field it leaves out. *)

@@ -418,6 +418,14 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     | "symbol" => return [← use .symbol]
     | "unknown" | "void" => return [← use .top]
     | "never" => return []
+    -- `object`: every object. One with no call code is an ordinary record
+    -- constraining no key (`recT []`, arrays and instances included), and one
+    -- with call or construct code meets no signature, as `callable`'s.
+    | "object" =>
+      let plain ← use (.refs [] [] [])
+      let calls ← use (.arrs [] [])
+      let ctors ← use (.ctors [])
+      return [plain, calls, ctors].eraseDups.mergeSort (· ≤ ·)
     | _ => throw "unsupported declaration primitive"
   -- A generic method's scheme comes from its source terms. Unsupported
   -- binder roles or bounds remain opaque instead of accepting producer rows.
@@ -1018,6 +1026,8 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
     match ← str term "name" with
     | "unknown" => return topClaim
     | "never" => return claimType []
+    -- Several clauses no claim atom spells: its graph rows.
+    | "object" => return graphClaim (← lowerType ds ds.size #[] {} term)
     | name =>
       if ["null", "undefined", "boolean", "number", "string", "void", "bigint", "symbol"].contains name then
         return claimType [Json.mkObj [("a", toJson name)]]
@@ -1092,6 +1102,12 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
     CellClaims.fieldsExactly term ["k", "fields", "stringIndex", "calls", "span"]
     if !(← arr term "calls").isEmpty then
       throw "a call signature in a source annotation is outside the fragment"
+    -- A method is a host-relative member, which no claim atom spells: the
+    -- record is its graph rows, lowered as a declaration's body is.
+    if (← arr term "fields").any (fun f => mentionsSelf ((f.getObjVal? "type").toOption.getD .null)) then
+      if mentionsKind "binder" term then
+        throw "a method of an annotation's type literal over a type parameter is outside the fragment"
+      return graphClaim (← lowerType ds ds.size #[] {} term)
     let fields ← (← arr term "fields").mapM fun f => do
       CellClaims.fieldsExactly f ["name", "optional", "readonly", "type", "span"]
       let optional ← bool f "optional"

@@ -37,7 +37,9 @@ export type Reference = {
 /** A source type before translation to the positive graph: a declaration's
  * equation or a function annotation, read by type-term.mts. */
 export type TypeTerm =
-  | { k: "atom"; name: "null" | "undefined" | "boolean" | "number" | "string" | "bigint" | "symbol" | "unknown" | "never" | "void"; span: Span }
+  /** `object` is every object: an ordinary one, an array, or one with call or
+   * construct code. */
+  | { k: "atom"; name: "null" | "undefined" | "boolean" | "number" | "string" | "bigint" | "symbol" | "unknown" | "never" | "void" | "object"; span: Span }
   /* A number's `text` is its decimal spelling, a bigint's its canonical
      decimal integer; either may be negative. */
   | { k: "literal"; name: "true" | "false" | "string" | "number" | "bigint"; text: string; span: Span }

@@ -927,6 +927,11 @@ modeling choices; they do not replace proof.
   (`getConstantValue`), which is the value its emit writes; a `const enum`
   read is the one TypeScript binds to the member and replaces by it
   ([Enums](#enums)).
+- A computed type (`typeof x`, `keyof T`, `T[K]`, a template literal type, an
+  intersection of primitives, a mapped type's keys) means the type
+  TypeScript's checker computes for it, which the reader states exactly or
+  refuses ([Computed types](#computed-types)): TypeScript's evaluation is
+  trusted as its resolution is.
 - Source and claim translation preserve intended control flow, lexical binding,
   annotations and type meaning. Scope association cannot be recovered merely
   by checking that two slots have compatible types.
@@ -1903,6 +1908,25 @@ constant. Any other element key is an index, as before. The constant may be
 imported, or declared by the client, `declare const k: unique symbol`: it
 runs nothing, and names a symbol rather than binding a value. A symbol-keyed write is
 not in the fragment.
+
+A client's own constant `const k: unique symbol = e` is a binding like any
+other, whose value is a symbol (the annotation `unique symbol` reads as
+`symbol`: which symbol it is, is the key's identity, not a type of the
+value), and it names a key. Distinct declarations are distinct symbols only
+where each makes its own: TypeScript also types `Symbol.for("k")`, the
+registry's symbol for "k", which every constant made so holds, and any value
+asserted to be one, a unique symbol. So the key's identity is what made it:
+`Symbol()`, a fresh symbol, is its declaration's own; `Symbol.for` of a string
+literal is that string's, shared by every constant made from it; any other
+initializer is refused, since which symbol it holds is not known
+(`symbolOf`; `unique-symbol-constants.ts`, `unique-symbol-registry.ts`;
+`unique-symbol-shared-refused.ts`: two constants from one string are one key,
+so a type naming both names it twice). A declared constant or property is
+assumed to hold its own, as before. The model's value of `k` is the symbol
+its initializer made, and `o[k]` reads the key; no dynamic symbol-keyed access
+exists that could relate the two differently. A computed key in an
+annotation's type literal, `{ [k]: T }`, is read like a declaration's
+(`symbolNames` of `collectDeclarations`).
 
 **Imported values.** A value import joins the module's scope at the type its
 declaration states: a function's annotated signature, an annotated
@@ -3331,19 +3355,29 @@ arrays and bring `ArrayProto` in. A declaration that extends `Array`, such as
 here and is refused.
 
 A mapped type whose value does not name its key is expanded where its key is
-known, as TypeScript expands it: string-literal keys are fields, `string` a
-string index, and $m$ its `readonly` and `?` modifiers (a `-` modifier over a
-key union copies nothing, so it states nothing):
+known, as TypeScript expands it: string- and number-literal keys are fields,
+each named by the property its literal names ($\mathsf{key}(\texttt{"}s\texttt{"})=s$,
+$\mathsf{key}(n)=\mathsf{ToString}(n)$), `string` a string index, and $m$ its
+`readonly` and `?` modifiers (a `-` modifier over a key union copies nothing,
+so it states nothing):
 
 $$
-\frac{P\notin\mathrm{fv}(V)\quad\llbracket K\rrbracket=\texttt{"}s_1\texttt{"}\mid\cdots\mid\texttt{"}s_n\texttt{"}\quad(n\ge0)}
-     {\llbracket\{[P\ \mathtt{in}\ K]^m\colon V\}\rrbracket=\{s_1^m\colon\llbracket V\rrbracket;\ \ldots;\ s_n^m\colon\llbracket V\rrbracket\}}
+\frac{P\notin\mathrm{fv}(V)\quad\llbracket K\rrbracket=\lambda_1\mid\cdots\mid\lambda_n\ \text{literals}\quad(n\ge0)}
+     {\llbracket\{[P\ \mathtt{in}\ K]^m\colon V\}\rrbracket=\{\mathsf{key}(\lambda_1)^m\colon\llbracket V\rrbracket;\ \ldots;\ \mathsf{key}(\lambda_n)^m\colon\llbracket V\rrbracket\}}
 \qquad
-\frac{P\notin\mathrm{fv}(V)\quad\llbracket K\rrbracket=\mathtt{string}\quad\mathtt{?}\notin m}
+\frac{P\notin\mathrm{fv}(V)\quad\mathtt{string}\in\llbracket K\rrbracket\subseteq\mathtt{string}\cup\mathtt{number}\cup\text{literals}\quad\mathtt{?}\notin m}
      {\llbracket\{[P\ \mathtt{in}\ K]^m\colon V\}\rrbracket=\{[k\colon\mathtt{string}]^m\colon\llbracket V\rrbracket\}}
 $$
 
-Any other key, a number, a symbol, a type parameter or a mix, is refused
+`string` absorbs every string and number key, as every numeric key is a
+string key. The keys $\llbracket K\rrbracket$ are the union of literals and
+primitives TypeScript computes for $K$ where it has one (`TermScope.keys`,
+[Computed types](#computed-types)), so an alias of literals or a `keyof` is
+its literals, in a declaration and in an annotation alike
+(`record-alias-keys.ts`, `invalid-record-alias-keys.ts`). `number` alone is a
+number index signature and `symbol` a symbol index signature, which the model
+does not have ([Index signatures](#index-signatures)); both are refused with
+that reason, as is a type parameter or any other key
 (`record-numeric-key-refused.ts`). A library alias whose equation is a mapped
 type is that mapped type at the reference's arguments, which is how
 `Record<K, V> = { [P in K]: V }` reads:
@@ -3355,7 +3389,8 @@ $$
 $$
 
 Its parameters' bounds (`K extends keyof any`) are TypeScript's to check at
-each reference; only string keys expand. So `Record<"a" | "b", V>` is a record
+each reference; only the keys above expand, and an argument at the key
+parameter is the keys TypeScript computes for it (`libraryArguments`). So `Record<"a" | "b", V>` is a record
 with both fields required (`record-library.ts`, `invalid-record-missing-key.ts`),
 and `Record<string, V>` is the writable string index `{ [k: string]: V }`,
 whose read at a key the object may not own is `V | undefined`, where
@@ -3381,10 +3416,196 @@ value meet it (`function-library.ts`), by the coverage rules of
 [POSITIVE-TYPES](POSITIVE-TYPES.md#function-and-class-coverage) with no
 target signature; a record does not, though TypeScript admits an object
 with `Function`'s members (`invalid-function-from-object.ts`). The OCaml
-producer proposes `unknown` for it, which states nothing it may use; Lean
-lowers the term itself (`DeclarationGraph.lowerType`). An interface that
-extends `Function` meets `callable` with its own record operand, which has no
-representable clause, and is refused.
+producer proposes the same two clauses (its `Callable` atom, a value with
+call code meeting no signature, and `Ctors []`); Lean lowers the term itself
+(`DeclarationGraph.lowerType`). An interface that extends `Function` meets
+`callable` with its own record operand, which has no representable clause,
+and is refused.
+
+**`object` and `{}`.** The keyword `object` is every object: an ordinary one,
+an array or an instance, which is a record constraining no key, or one with
+call or construct code. `{}`, a type literal with no member, constrains no
+key either, and is every value but `null` and `undefined`, a primitive
+included; it is not an empty record:
+
+$$
+\llbracket\mathtt{object}\rrbracket=\llbracket\mathsf{refs}\,[\,]\,[\,]\,[\,]\rrbracket\cup\llbracket\mathsf{callable}\rrbracket
+\qquad
+\llbracket\{\}\rrbracket=\mathtt{boolean}\cup\mathtt{number}\cup\mathtt{string}\cup\mathtt{bigint}\cup\mathtt{symbol}\cup\llbracket\mathtt{object}\rrbracket
+$$
+
+`refs [] [] []` is `recT []`: an object with no call code, whatever its own
+keys, arrays and class instances included (their store and `[[proto]]` are
+own keys it does not constrain). The source term is the atom `object`, which
+Lean lowers to those three clauses; an annotation's claim is those rows
+(`object-types.ts`; `invalid-object-type.ts`: `{}` holds primitives, which
+are not objects; `invalid-empty-object-type.ts`). Before this, a
+declaration's `{}` was read as `refs [] [] []` alone, which as a result type
+claimed an object where the library may return a number; and an interface
+that extends `{}` meets its own members with those clauses, which is its own
+members.
+
+### Computed types
+
+**Principle.** `typeof x`, `keyof T`, `T[K]`, template literal types and
+intersections of primitives and literals (`computedForm`) are types
+TypeScript computes from other types, and they mean the type it computes. The declaration reader evaluates each where it is written
+([`computed-types.mts`](tools/computed-types.mts)), in a declaration and in
+an annotation alike (the parser sends the file's outermost ones outside type
+declarations to `collectDeclarations`, `computed`), to a term the fragment
+already has, exactly, or refuses it with the reason no such term exists. It is
+one reading, `typeTerm`'s: an evaluation that names a declared type reads
+that declaration's own syntax where it is declared.
+
+**Evaluation.** Write $\mathit{ts}(\tau)$ for the type TypeScript's checker
+gives the type node $\tau$ (`getTypeFromTypeNode`), and $\mathsf{lits}(t)$
+for $t$ as a union of literals (string, number, bigint, Boolean) and
+primitive families (`string`, `number`, `bigint`, `symbol`, `null`,
+`undefined`, `void`, `unknown`, `never`) when it is exactly one
+(`literalUnion`). For a computed form $\tau$:
+
+$$
+\frac{\mathsf{lits}(\mathit{ts}(\tau))=U}{\llbracket\tau\rrbracket=U}\ \textsc{computed}
+$$
+
+This is how `keyof {a: T; b: U}` is `"a" | "b"`, `keyof {[k: string]: T}` is
+`string | number`, `` `a${"b" | "c"}` `` is `"ab" | "ac"`, `` `${boolean}` `` is
+`"false" | "true"`, `typeof undefined` is `undefined` and `typeof n` for a
+`const n: number` is `number`. `typeof x` of a narrowed binding is its
+narrowed type, as TypeScript reads it. Where the result is not such a union,
+a form reads the syntax that states it:
+
+$$
+\frac{x\ \text{declares}\ x\colon\sigma\quad\mathit{ts}(\sigma)=\mathit{ts}(\mathtt{typeof}\ x)}
+     {\llbracket\mathtt{typeof}\ x\rrbracket=\llbracket\sigma\rrbracket_{x}}
+\qquad
+\frac{x\ \text{a function or class value, not generic, no statics}}
+     {\llbracket\mathtt{typeof}\ x\rrbracket=\mathsf{type}(x)}
+$$
+
+where $\llbracket\sigma\rrbracket_x$ reads $\sigma$ where $x$ is declared
+(its enclosing functions' binders in scope), and $\mathsf{type}(x)$ is what an
+import of $x$ reads (**Imported values**): a function's signature, a class's
+construct signature. `typeof x.y` is its member's declared annotation, with
+`| undefined` for an optional one. The checker's identity of the two types is
+the premise: an annotation that is not what TypeScript computes, a narrowed
+binding's or a generic member's at an instance, is refused. For an indexed
+access, $\llbracket T\rrbracket$ is projected at each key of
+$\mathsf{lits}(\mathit{ts}(K))$: a record's field (with `| undefined` where
+optional), an array's element at `number`, a tuple's position (all of them at
+`number`), a union's parts each, an alias without parameters through its
+equation, and a named type's member through its declared annotation under the
+same identity premise.
+
+**Refusals.** Each with its reason: a template literal type with a
+`${string}` or `${number}` hole is a string pattern, infinitely many strings
+the fragment has no type for (`computed-template-pattern-refused.ts`); a form
+over a type parameter, `keyof T` or `T[number]` in a generic alias, is
+computed only at an instance (`computed-keyof-binder-refused.ts`); `keyof` of
+an array, a string or a class with well-known symbol members has a unique
+symbol key, which no type names; `typeof` of a binding without an annotation
+is the type TypeScript infers for it, which no declaration states
+(`computed-typeof-inferred-refused.ts`); `typeof C` of a class with static
+members is refused, since the statics are bindings of their own, not members
+of the class value (`computed-typeof-statics-refused.ts`); a generic function
+or class value has no annotation type. `computed-types.ts` verifies each
+evaluated form; `invalid-computed-keyof.ts`, `invalid-computed-typeof.ts` and
+`invalid-computed-index.ts` show that each is the computed type and no wider.
+
+**Trust.** TypeScript's evaluation is part of the trusted front end, as its
+name resolution already is: the type a computed form denotes is the one the
+checker computes, and the reader states it exactly or refuses it.
+
+### Method signatures in type literals
+
+A method signature in a type literal, `{ m(x: number): number }`, is what it
+is in an interface ([Method members are host-relative](#method-members-are-host-relative)):
+a member read off its object and invoked on it, not a field holding a function
+another call may run detached. The declaration reader reads it in a type
+alias's own body, as an interface's, and in a type literal nested in a
+declaration or written in an annotation, where its receiver is the literal's
+own object (`type-literal-methods.ts`; `invalid-type-literal-method.ts`:
+read off its object it is no function value). An annotation's record with a
+method is its graph rows, which Lean lowers as a declaration's body; the
+producer marks such a member host-relative (`host`) and states it among the
+clause's methods. An optional method is an optional field whose function
+takes its declaration as its receiver, so one in a nested literal, which is
+no declaration, is refused (`type-literal-optional-method-refused.ts`), as is
+a generic method outside a declaration.
+
+A type literal of construct signatures only is its constructor type
+([Object literals](#object-literals)); an interface of construct signatures
+only is read the same way (`constructorForms`, the one reading of a
+construct signature). One with other members as well describes a class
+value's statics, which are bindings of their own here, not members of a
+class value's type, and is refused (`construct-signature-members-refused.ts`),
+as `typeof C` of a class with statics is.
+
+### Numeric property names
+
+A numeric property name is the key its value's `ToString` spells, as
+JavaScript's `ToPropertyKey` converts a number ([Object literals](#object-literals),
+"Keys": `{ 0x10: T }`, `{ 16: T }` and `{ 1_6: T }` state the one key
+"16"). One function spells it wherever a name is written, `numericKey`
+(`type-term.mts`): a type literal's and an object literal's names, and a
+mapped type's number-literal keys. A read or write with a number key of a
+receiver claimed only at records is the named access of that key, as for an
+enum's reverse mapping (`keyField` and `recordReceiver` in
+`SourceExtraction.lean`, the producer's `number_key`):
+
+$$
+\frac{\Gamma\vdash e:R\quad R\ \text{only records, none owning the array store}\quad
+      \Gamma\vdash k:n\ \text{(one number)}}
+     {e[k]\ \text{is the access of}\ \mathsf{ToString}(n)\ \text{on}\ e,\ \text{after}\ e\ \text{and}\ k}
+$$
+
+where $\mathsf{ToString}$ is the calculus's `numberToString`,
+`Number::toString` exactly. An array's number key stays its store's element.
+`numeric-field-names.ts` verifies; `invalid-numeric-field-names.ts` and
+`invalid-numeric-key-read.ts` show `0x10` is "16", not "10". An array may
+carry own keys of its own ([Arrays may carry other own keys](#arrays-may-carry-other-own-keys)),
+a numeric one included, which no JavaScript array has apart from its
+elements: such a model value is no JavaScript value, so a record type naming
+a numeric key holds of no JavaScript array, and nothing is claimed for one.
+
+### Index signatures
+
+An index signature's key is `string`, `number` or `symbol`, or a union of
+them. The model's index constrains every string key alike
+([Writable string index signatures](#writable-string-index-signatures)). Every
+numeric key is a string key, so a number index with the string index's
+contract adds nothing, and one over `string | number` is the string index
+(`index-signature-kinds.ts`):
+
+$$
+\frac{}{\llbracket\{[k\colon\mathtt{string}\mid\mathtt{number}]^m\colon V\}\rrbracket=\llbracket\{[k\colon\mathtt{string}]^m\colon V\}\rrbracket}
+\qquad
+\frac{}{\llbracket\{[k\colon\mathtt{string}]^m\colon V;\ [k\colon\mathtt{number}]^m\colon V\}\rrbracket=\llbracket\{[k\colon\mathtt{string}]^m\colon V\}\rrbracket}
+$$
+
+Refused, each with its reason: a number index with a contract of its own, or
+alone (`number-index-refused.ts`), constrains the canonical numeric keys
+("0", "1.5", "-1", "NaN", …) apart from the other string keys, which the
+model's index cannot state; reading it as the string index would claim what
+TypeScript's type does not, and dropping it would let a write break what
+another holder reads. A symbol index (`symbol-index-refused.ts`) constrains
+every symbol key, and the model's index constrains string keys only. Both
+need an index over a set of keys: a view and a writable contract restricted
+to the keys a predicate admits, which the calculus does not have yet.
+
+### Annotation intersections
+
+An annotation's intersection is the meet of its operands, as a declaration's
+is ([Compositional unions at the source boundary](#compositional-unions-at-the-source-boundary)):
+record and function operands, named or written, are one location under
+several contracts or one function with several signatures, and other ground
+operands the graph's meet of their rows (`meetRow`), an array's with records
+included. An intersection of primitives and literals is the type TypeScript
+reduces it to, `string & "fixed"` to `"fixed"` and `number & string` to
+`never` (a computed form, [Computed types](#computed-types)). One with a type
+parameter is known only at an instance, and is refused
+(`intersection-binder-refused.ts`); a meet Lean cannot represent is refused
+there (`annotation-intersections.ts`, `invalid-annotation-intersections.ts`).
 
 ### Library globals
 
@@ -4358,8 +4579,9 @@ folded constant expression or an earlier member):
   declaration need not state every value. An enum TypeScript reports an
   error in. An enum without members allocates an object with no field,
   outside the fragment. A type `E` inside another declaration's body (the
-  declaration reader does not read enums) and `keyof typeof E` (`keyof` is
-  a type form outside the fragment).
+  declaration reader does not read enums; `typeof E` there is refused with
+  that reason). `keyof typeof E` is the union of the member names, as
+  TypeScript computes it ([Computed types](#computed-types)).
 
 ### Object literals
 

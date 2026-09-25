@@ -2151,6 +2151,21 @@ or the wrong slot. Passing this one refined value is established; translating
 arbitrary supplied entry environments into continuation parameters is not yet
 implemented.
 
+A keyed access `a[k]` whose key is claimed at one string $s$ is the named
+access of $\mathsf{str}(s)$, evaluated after `a` and `k`, and the read rules
+above apply. A key claimed at one number $n$ names the property
+$\mathsf{ToString}(n)$ (`numberToString`), as JavaScript's `ToPropertyKey`
+converts it, where `a` is claimed only at records owning no array store
+(`recordReceiver`); an array's number key is its store's element (`elemAt`):
+
+$$
+\frac{\Gamma\vdash_G a:R\quad R\equiv_G c_1\cup\cdots\cup c_m\ \text{records without a store}\quad
+      \Gamma\vdash_G k:\mathsf{Num}(n)}
+     {a[k]\ \leadsto\ \mathsf{let}\ x=a\ \mathsf{in}\ \mathsf{let}\ \_=k\ \mathsf{in}\ x.\mathsf{str}(\mathsf{ToString}(n))}
+$$
+
+([DESIGN, "Numeric property names"](DESIGN.md#numeric-property-names)).
+
 ### Patterns
 
 A pattern binds names from one value, in pattern order, and has no rule of its

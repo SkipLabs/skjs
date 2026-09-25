@@ -19,6 +19,20 @@ export function bigintText(literal: string, negative: boolean): string {
   return String(negative ? -value : value);
 }
 
+/** `{}`, an object type with no member: it constrains no key, and is every
+ * value but `null` and `undefined`, a primitive included, not an empty
+ * record. */
+export function emptyObject(span: Span): TypeTerm {
+  return { k: "union", span, parts: (["boolean", "number", "string", "bigint", "symbol", "object"] as const)
+    .map(name => ({ k: "atom", name, span })) };
+}
+
+/** The property key a numeric literal names: `ToString` of its value, as
+ * JavaScript converts it. */
+export function numericKey(literal: string): string {
+  return String(Number(literal.replace(/_/g, "")));
+}
+
 export const REST_CONTRACT =
   "a rest parameter needs a tuple of required positions or an array";
 
@@ -31,6 +45,9 @@ export type TermScope = {
    * required fields and at most one readonly string index. A declaration body
    * states what its equation says, and Lean decides what lowers. */
   annotation: boolean;
+  /** A declaration's own equation, when it is a type literal: its methods'
+   * receiver is the declaration, as an interface's are. */
+  body?: TypeNode;
   /** A computed key `[x]` or `[o.x]`: the index of the `unique symbol`
    * constant or readonly property it denotes. A scope without it reads no
    * symbol key. */
@@ -39,7 +56,49 @@ export type TermScope = {
    * type and the enum's object type (DESIGN.md, "Enums"); null for any other
    * such node. A scope without it reads neither. */
   enumerated?(node: TypeNode, span: Span): TypeTerm | null;
+  /** A type TypeScript computes from other types (`COMPUTED`): `typeof x`,
+   * `keyof T`, `T[K]`, a template literal type. The scope evaluates it to the
+   * equivalent type the fragment states, or refuses it with the reason; `read`
+   * reads an operand in this scope. A scope without it reads none. */
+  computed?(node: TypeNode, span: Span, read: (node: TypeNode) => TypeTerm): TypeTerm;
+  /** A mapped type's keys, or a library mapped type's key argument
+   * (`Record<K, V>`), as the union of literals and primitives TypeScript
+   * computes for it, `"a" | "b"` for an alias of those, or null. A scope
+   * without it reads the keys as written. */
+  keys?(node: TypeNode): TypeTerm | null;
 };
+
+/** The type forms TypeScript computes from other types, as the syntax kind a
+ * refusal names. Their meaning is the type TypeScript computes, which the
+ * declaration reader evaluates (DESIGN.md, "Computed types"). */
+export function computedForm(node: TypeNode): string | null {
+  if (ts.isTypeQueryNode(node)) return "typeof";
+  if (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.KeyOfKeyword) return "keyof";
+  if (ts.isIndexedAccessTypeNode(node)) return "an indexed access type";
+  if (ts.isTemplateLiteralTypeNode(node)) return "a template literal type";
+  // `number & string` is `never`, `string & "a"` is `"a"`: TypeScript
+  // reduces an intersection of primitives and literals.
+  if (ts.isIntersectionTypeNode(node) && intersectionOperands(node).every(t =>
+      ts.isLiteralTypeNode(t) || PRIMITIVE_KEYWORDS.includes(t.kind)))
+    return "an intersection of primitives";
+  return null;
+}
+
+const PRIMITIVE_KEYWORDS: ts.SyntaxKind[] = [ts.SyntaxKind.NullKeyword, ts.SyntaxKind.UndefinedKeyword,
+  ts.SyntaxKind.BooleanKeyword, ts.SyntaxKind.NumberKeyword, ts.SyntaxKind.StringKeyword,
+  ts.SyntaxKind.BigIntKeyword, ts.SyntaxKind.SymbolKeyword, ts.SyntaxKind.VoidKeyword];
+
+/** An intersection's operands, nested intersections and parentheses flattened. */
+function intersectionOperands(node: ts.IntersectionTypeNode): TypeNode[] {
+  const operands: TypeNode[] = [];
+  const flatten = (t: TypeNode): void => {
+    t = unwrap(t);
+    if (ts.isIntersectionTypeNode(t)) t.types.forEach(flatten);
+    else operands.push(t);
+  };
+  flatten(node);
+  return operands;
+}
 
 type FunctionTerm = Extract<TypeTerm, { k: "function" }>;
 
@@ -92,7 +151,9 @@ export function typeTerm(scope: TermScope, node: TypeNode | undefined, at: Node 
       break;
     case ts.SyntaxKind.NeverKeyword: return atom("never");
     case ts.SyntaxKind.VoidKeyword: return atom("void");
+    case ts.SyntaxKind.ObjectKeyword: return atom("object");
   }
+  if (ts.isTypeLiteralNode(node) && !node.members.length) return emptyObject(span);
   if (ts.isParenthesizedTypeNode(node)) return typeTerm(scope, node.type);
   if (ts.isUnionTypeNode(node))
     return { k: "union", parts: node.types.map(t => typeTerm(scope, t)), span };
@@ -108,6 +169,13 @@ export function typeTerm(scope: TermScope, node: TypeNode | undefined, at: Node 
     if (ts.isTupleTypeNode(inner)) return tuple(scope, inner, true, span);
     return scope.fail(node, "readonly applies to an array or tuple type");
   }
+  // `unique symbol`, which TypeScript admits only on a constant or a readonly
+  // static, is the type of that one symbol: the value is a symbol. Which
+  // symbol it is, a key types name, is the declaration's identity
+  // (`symbols` of the declaration document), not a type of the value.
+  if (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.UniqueKeyword &&
+      unwrap(node.type).kind === ts.SyntaxKind.SymbolKeyword)
+    return atom("symbol");
   if (ts.isLiteralTypeNode(node)) {
     // `literal` is declared as a bare Node, so it too is read by predicate.
     const literal = node.literal;
@@ -117,7 +185,10 @@ export function typeTerm(scope: TermScope, node: TypeNode | undefined, at: Node 
         text: literal.kind === ts.SyntaxKind.TrueKeyword ? "true" : "false", span };
     // The literal's value: a string without its quotes, a number as its
     // decimal spelling.
-    if (ts.isStringLiteral(literal)) return { k: "literal", name: "string", text: literal.text, span };
+    // A template without holes, `\`a\rb\``, is its cooked string, as a
+    // template expression's is.
+    if (ts.isStringLiteral(literal) || ts.isNoSubstitutionTemplateLiteral(literal))
+      return { k: "literal", name: "string", text: literal.text, span };
     // A numeric literal type, possibly negated (`-1`, `-5n`).
     const negated = ts.isPrefixUnaryExpression(literal) &&
       literal.operator === ts.SyntaxKind.MinusToken ? literal.operand : null;
@@ -139,7 +210,8 @@ export function typeTerm(scope: TermScope, node: TypeNode | undefined, at: Node 
     const [only] = forms;
     return forms.length === 1 && only ? only : { k: "intersection", parts: forms, span };
   }
-  if (ts.isTypeLiteralNode(node)) return members(scope, node.members, node, span, false);
+  if (ts.isTypeLiteralNode(node))
+    return members(scope, node.members, node, span, node === scope.body ? true : "nested");
   if (ts.isMappedTypeNode(node)) return expandMapped(mapped(scope, node), span, message => scope.fail(node, message));
   if (ts.isFunctionTypeNode(node)) {
     if (node.typeParameters?.length) scope.fail(node, "generic function types are outside the fragment");
@@ -161,6 +233,8 @@ export function typeTerm(scope: TermScope, node: TypeNode | undefined, at: Node 
       return scope.fail(node, "type reference outside the fragment");
     return scope.named(node, span, part => typeTerm(scope, part));
   }
+  if (computedForm(node) !== null && scope.computed)
+    return scope.computed(node, span, part => typeTerm(scope, part));
   return scope.fail(node, `type outside the fragment (${ts.SyntaxKind[node.kind]})`);
 }
 
@@ -194,16 +268,17 @@ export function mapped(scope: TermScope, node: ts.MappedTypeNode): Mapped {
   if (!node.type || names(node.type)) scope.fail(node, "a mapped type's value names its key");
   const plus = (token: Node | undefined, keyword: ts.SyntaxKind) =>
     !!token && (token.kind === keyword || token.kind === ts.SyntaxKind.PlusToken);
-  return { key: typeTerm(scope, parameter.constraint, parameter), value: typeTerm(scope, node.type),
+  const key = parameter.constraint && scope.keys?.(parameter.constraint);
+  return { key: key ?? typeTerm(scope, parameter.constraint, parameter), value: typeTerm(scope, node.type),
     optional: plus(node.questionToken, ts.SyntaxKind.QuestionToken),
     readonly: plus(node.readonlyToken, ts.SyntaxKind.ReadonlyKeyword) };
 }
 
-/** A mapped type at a known key, as TypeScript expands it: over string
- * literals, one field per literal; over `string`, a string index. Its value
- * does not name the key, so every field and the index have the one value
- * type. Any other key (numbers, symbols, a type parameter, a mix) is outside
- * the fragment. */
+/** A mapped type at a known key, as TypeScript expands it: over string and
+ * number literals, one field per property they name; over `string`, a string
+ * index, which `number` adds nothing to. Its value does not name the key, so
+ * every field and the index have the one value type. `number` alone, `symbol`
+ * and a type parameter are refused. */
 export function expandMapped(m: Mapped, span: Span, fail: (message: string) => never): TypeTerm {
   const keys: TypeTerm[] = [];
   const flatten = (t: TypeTerm): void => {
@@ -211,18 +286,32 @@ export function expandMapped(m: Mapped, span: Span, fail: (message: string) => n
     else if (!(t.k === "atom" && t.name === "never")) keys.push(t);
   };
   flatten(m.key);
-  const [only] = keys;
-  if (keys.length === 1 && only?.k === "atom" && only.name === "string") {
+  const atom = (name: string) => keys.some(k => k.k === "atom" && k.name === name);
+  if (atom("symbol"))
+    fail("a mapped type over symbol is a symbol index signature, which constrains every symbol key, and the " +
+      "model's index constrains string keys only");
+  if (atom("string")) {
+    // `string` absorbs every string and number key.
+    if (keys.some(k => !(k.k === "atom" && (k.name === "string" || k.name === "number")) &&
+        !(k.k === "literal" && (k.name === "string" || k.name === "number"))))
+      fail("a mapped type's keys must be strings, numbers or their literals");
     if (m.optional) fail("an optional mapped type over string is outside the fragment");
     return { k: "object", fields: [], stringIndex: { readonly: m.readonly, value: m.value, span }, calls: [],
       span };
   }
+  if (atom("number"))
+    fail("a mapped type over number is a number index signature, which constrains the canonical numeric keys " +
+      "apart from the other string keys, and the model's index constrains every string key alike");
   const names: string[] = [];
   for (const key of keys) {
-    if (key.k !== "literal" || key.name !== "string")
-      return fail("a mapped type's keys must be string or string literals");
-    if (!names.includes(key.text)) names.push(key.text);
+    // A number literal key is the property its value names.
+    const name = key.k === "literal" && key.name === "string" ? key.text
+      : key.k === "literal" && key.name === "number" ? numericKey(key.text) : null;
+    if (name === null) return fail("a mapped type's keys must be string or string literals");
+    if (!names.includes(name)) names.push(name);
   }
+  // No key: an object type with no member, which is `{}`.
+  if (!names.length) return emptyObject(span);
   return { k: "object", fields: names.map(name => ({ name, optional: m.optional, readonly: m.readonly,
     type: m.value, span })), stringIndex: null, calls: [], span };
 }
@@ -278,45 +367,28 @@ function tuple(scope: TermScope, node: ts.TupleTypeNode, readonly: boolean, span
   return { k: "tuple", readonly, required, optional, rest, span };
 }
 
-/** Union is a list of parts; conjunction is written only where the clause
- * language has one: a location under several contracts, a function with
- * several signatures. An annotation says so in its syntax. A declaration's
- * operands are met in Lean, which refuses a meet it cannot represent. */
+/** Union is a list of parts; an intersection's operands are met in Lean,
+ * which refuses a meet it cannot represent: record and function operands are
+ * one location under several contracts or one function with several
+ * signatures, any other ground operands the graph's meet of their rows. An
+ * annotation's operand over a type parameter is known only at an instance,
+ * and is refused. */
 function intersection(scope: TermScope, node: ts.IntersectionTypeNode, span: Span): TypeTerm {
-  const operands: TypeNode[] = [];
-  const flatten = (t: TypeNode): void => {
-    t = unwrap(t);
-    if (ts.isIntersectionTypeNode(t)) t.types.forEach(flatten);
-    else operands.push(t);
-  };
-  flatten(node);
+  if (computedForm(node) !== null && scope.computed)
+    return scope.computed(node, span, part => typeTerm(scope, part));
+  const operands = intersectionOperands(node);
   const parts = operands.map(operand => typeTerm(scope, operand));
   if (scope.annotation) {
-    const shape = (part: TypeTerm, operand: TypeNode): string => {
-      switch (part.k) {
-        case "object": return "record";
-        case "function": return "function";
-        case "reference": return "alias";
-        case "binder": return "param";
-        case "array": case "tuple": return "array";
-        case "literal": return part.name === "true" || part.name === "false" ? "booleanlit"
-          : part.name === "number" ? "numberlit" : part.name === "bigint" ? "bigintlit" : "stringlit";
-        case "atom":
-          if (part.name !== "unknown" && part.name !== "never") return part.name;
-      }
-      return scope.fail(operand, "an intersection operand must be a single type");
-    };
-    const shapes = parts.map((part, i) => shape(part, operands[i] ?? node));
-    const head = shapes[0];
-    // An array may carry further own keys, so one array operand meets
-    // records: an array that also has the records' members, met in Lean.
-    const markedArray = shapes.filter(s => s === "array").length === 1 &&
-      shapes.every(s => s === "array" || s === "record" || s === "alias");
-    if (!markedArray) {
-      if (shapes.some(s => s !== head)) scope.fail(node, "intersection operands must have the same shape");
-      if (head !== "record" && head !== "function")
-        scope.fail(node, `intersection of ${head} types is outside the fragment`);
-    }
+    // A union operand distributes, `(A | B) & C`; `unknown` and `never` are
+    // not written as operands.
+    const binder = (part: TypeTerm): boolean => part.k === "binder" || (part.k === "union" && part.parts.some(binder));
+    parts.forEach((part, i) => {
+      if (part.k === "atom" && (part.name === "unknown" || part.name === "never"))
+        scope.fail(operands[i] ?? node, "an intersection operand must be a single type");
+    });
+    if (parts.some(binder))
+      scope.fail(node, "an intersection with a type parameter is known only at an instance: its meet has no " +
+        "representation");
   }
   return { k: "intersection", parts, span };
 }
@@ -409,9 +481,9 @@ export function oneTerm(terms: FunctionTerm[], span: Span): TypeTerm {
 function propertyKey(scope: TermScope, name: Node | undefined): PropertyKey | null {
   if (!name) return null;
   if (ts.isIdentifier(name) || (!scope.annotation && ts.isStringLiteral(name))) return name.text;
-  // A numeric name is the property its number's `ToString` spells, as
-  // `ToPropertyKey` has it: `0` is `"0"`, `1e3` is `"1000"`.
-  if (ts.isNumericLiteral(name)) return String(Number(name.text.replace(/_/g, "")));
+  // A numeric name is the property its value names, `ToString` of it:
+  // `0x10`, `16` and `1_6` are the key "16".
+  if (ts.isNumericLiteral(name)) return numericKey(name.text);
   if (ts.isComputedPropertyName(name) && scope.symbol &&
       (ts.isIdentifier(name.expression) || ts.isPropertyAccessExpression(name.expression)))
     return { symbol: scope.symbol(name.expression) };
@@ -419,13 +491,20 @@ function propertyKey(scope: TermScope, name: Node | undefined): PropertyKey | nu
 }
 
 /** A record, or an interface body when `methods` is set: its method
- * signatures read the containing declaration as their receiver. */
+ * signatures read the containing declaration as their receiver. A type
+ * literal nested in a declaration (`methods` is "nested") may state plain
+ * methods, host-relative members as an interface's are; one optional or
+ * generic has no declaration to be read in. */
 export function members(scope: TermScope, list: readonly TypeElement[], at: Node, span: Span,
-    methods: boolean): TypeTerm {
+    methods: boolean | "nested"): TypeTerm {
   const fields: Extract<TypeTerm, { k: "object" }>["fields"] = [];
   let stringIndex: Extract<TypeTerm, { k: "object" }>["stringIndex"] = null;
   const calls: FunctionTerm[] = [];
   const names = new Set<string>();
+  // Number index signatures, each subsumed by a string index of the same
+  // contract or refused once every member is read.
+  const numberIndexes: { member: Node; index: NonNullable<Extract<TypeTerm, { k: "object" }>["stringIndex"]> }[] = [];
+  const constructs: TypeTerm[] = [];
   const readonlyOnly = (modifiers: readonly Node[] | undefined) =>
     !modifiers?.some(m => m.kind !== ts.SyntaxKind.ReadonlyKeyword);
   const isReadonly = (modifiers: readonly Node[] | undefined) =>
@@ -444,8 +523,6 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
     ? [...list.filter(ts.isIndexSignatureDeclaration), ...list.filter(ts.isPropertySignatureDeclaration),
        ...list.filter(m => !ts.isIndexSignatureDeclaration(m) && !ts.isPropertySignatureDeclaration(m))]
     : list;
-  if (scope.annotation && list.filter(ts.isIndexSignatureDeclaration).length > 1)
-    scope.fail(at, "multiple string index signatures are outside the fragment");
   for (const member of ordered) {
     const memberSpan = spanOf(scope, member);
     if (ts.isPropertySignatureDeclaration(member)) {
@@ -464,16 +541,27 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
       const parameter = member.parameters[0];
       // A mutable index is a writable one at its read contract; Lean keeps
       // it invariant, as a mutable field is.
-      const message = scope.annotation ? "expected a string index signature" : "unsupported index signature";
-      if (stringIndex) scope.fail(member, message);
-      if (member.parameters.length !== 1 || parameter?.type?.kind !== ts.SyntaxKind.StringKeyword ||
-          !member.type || !readonlyOnly(member.modifiers))
-        scope.fail(member, message);
-      stringIndex = { readonly: isReadonly(member.modifiers),
-        value: typeTerm(scope, member.type, member), span: memberSpan };
-    } else if (scope.annotation) {
+      if (member.parameters.length !== 1 || !parameter?.type || !member.type || !readonlyOnly(member.modifiers))
+        scope.fail(member, "unsupported index signature");
+      const kinds = indexKinds(scope, parameter.type);
+      const index = { readonly: isReadonly(member.modifiers), value: typeTerm(scope, member.type, member),
+        span: memberSpan };
+      if (kinds.includes("string")) {
+        if (stringIndex && !sameIndex(stringIndex, index))
+          scope.fail(member, "two string index signatures with different contracts");
+        stringIndex = index;
+      }
+      if (kinds.includes("number")) numberIndexes.push({ member, index });
+      if (kinds.includes("symbol"))
+        scope.fail(member, "a symbol index signature constrains every symbol key, and the model's index " +
+          "constrains string keys only");
+    } else if (ts.isConstructSignatureDeclaration(member)) {
+      // A construct signature, read as a type literal's are
+      // (`constructorForms`): the object is a class value.
+      constructs.push(...constructorForms(scope, member, memberSpan));
+    } else if (scope.annotation && !ts.isMethodSignatureDeclaration(member)) {
       scope.fail(at, "unsupported member in a record type");
-    } else if (ts.isMethodSignatureDeclaration(member) && methods && member.typeParameters?.length &&
+    } else if (ts.isMethodSignatureDeclaration(member) && methods === true && member.typeParameters?.length &&
         !member.postfixToken && !member.modifiers?.length) {
       // A generic method is a readonly member whose type is a scheme: its own
       // type parameters are binders, named by spelling, which shadow the
@@ -514,6 +602,8 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
     } else if (ts.isMethodSignatureDeclaration(member)) {
       if (!methods || !member.type || member.typeParameters?.length || member.modifiers?.length)
         scope.fail(member, "unsupported method signature");
+      if (methods === "nested" && member.postfixToken)
+        scope.fail(member, "an optional method of a nested type literal has no declaration as its receiver");
       const name = named(member, "unsupported method signature");
       const forms = signatures(scope, member.parameters, member.type, member, memberSpan);
       if (forms.some(m => m.receiver)) scope.fail(member, "unsupported method signature");
@@ -527,7 +617,44 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
       calls.push(...signatures(scope, member.parameters, member.type, member, memberSpan));
     } else scope.fail(member, "unsupported object member");
   }
+  // Every numeric key is a string key: a number index with the string
+  // index's contract adds nothing. One with another contract constrains the
+  // canonical numeric keys apart from the others, which the model's index,
+  // constraining every string key alike, does not state.
+  for (const { member, index } of numberIndexes)
+    if (!stringIndex || !sameIndex(stringIndex, index))
+      scope.fail(member, "a number index signature constrains the canonical numeric keys apart from the other " +
+        "string keys, which the model's index, constraining every string key alike, does not state");
+  // An interface of construct signatures alone is a class value meeting
+  // each, as such a type literal is. A class value's other members,
+  // statics, are not members of its type here.
+  if (constructs.length) {
+    if (fields.length || stringIndex || calls.length)
+      scope.fail(at, "an object type with construct signatures and other members: a class value's statics " +
+        "are not members of its type");
+    const [only] = constructs;
+    return constructs.length === 1 && only ? only : { k: "intersection", parts: constructs, span };
+  }
   return { k: "object", fields, stringIndex, calls, span };
+}
+
+/** Whether two index signatures state the same contract. */
+function sameIndex(a: { readonly: boolean; value: TypeTerm }, b: { readonly: boolean; value: TypeTerm }): boolean {
+  const spanless = (t: TypeTerm): string => JSON.stringify(t, (key, value: unknown) => key === "span" ? undefined : value);
+  return a.readonly === b.readonly && spanless(a.value) === spanless(b.value);
+}
+
+/** The key kinds an index signature's parameter type names: `string`,
+ * `number`, `symbol`, or a union of them. */
+function indexKinds(scope: TermScope, node: TypeNode): ("string" | "number" | "symbol")[] {
+  const kinds: ("string" | "number" | "symbol")[] = [];
+  const add = (t: TypeTerm): void => {
+    if (t.k === "union") t.parts.forEach(add);
+    else if (t.k === "atom" && (t.name === "string" || t.name === "number" || t.name === "symbol")) kinds.push(t.name);
+    else scope.fail(node, "an index signature's key is string, number or symbol");
+  };
+  add(scope.keys?.(node) ?? typeTerm(scope, node));
+  return kinds;
 }
 
 /** `public`, `private` and `protected` are TypeScript's alone: at run time

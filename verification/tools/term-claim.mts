@@ -12,6 +12,9 @@ export function claimOfTerm(term: TypeTerm): ClaimType {
     case "atom":
       if (term.name === "unknown") return { top: true, atoms: [] };
       if (term.name === "never") return never;
+      // Every object is several graph clauses (DeclarationGraph.lean), as
+      // `callable` is.
+      if (term.name === "object") throw Error("the object type has no claim form");
       return one({ a: term.name });
     case "literal":
       return one(term.name === "true" || term.name === "false"

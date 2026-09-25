@@ -58,6 +58,7 @@ let encode (proposal : Proposal.t) =
     | StrLit value -> [intern (Array [Object ["strLit",Object ["value",String value]]])]
     | BigintLit value -> [intern (Array [Object ["bigintLit",Object ["value",Number value]]])]
     | Top -> [intern (Array [String "top"])]
+    | Callable -> [intern (Array [Object ["arrs",Object ["arrows",Array []]]])]
     | Ctors signatures ->
       List.iter (fun (s:Semantic.signature) ->
         if s.quantified <> [] then unsupported "quantified construct signature claim encoding") signatures;
@@ -83,8 +84,32 @@ let encode (proposal : Proposal.t) =
       (* An optional field constrains its key only where the object has it:
          a writable one under one invariant contract, a readonly one as a
          view there. *)
-      let optional,present = List.partition (fun (f:Semantic.field) -> f.optional) shape.fields in
+      let hosted,plain = List.partition (fun (f:Semantic.field) -> f.host) shape.fields in
+      let optional,present = List.partition (fun (f:Semantic.field) -> f.optional) plain in
       let writes,reads = List.partition (fun (f:Semantic.field) -> f.write <> None) present in
+      (* A method is a host-relative member: its signatures, received by the
+         object, as Lean lowers method syntax (`methods`). *)
+      let methods = match hosted with
+        | [] -> []
+        | fs -> ["methods",Array (List.map (fun (f:Semantic.field) ->
+            let signatures = match f.read with
+              | Atoms [Shape {fields=[];string_index=None;calls=(_::_ as calls);elements=None}] -> calls
+              | _ -> unsupported "a method is one or more signatures" in
+            List.iter (fun (s:Semantic.signature) ->
+              if s.quantified <> [] then unsupported "quantified method claim encoding") signatures;
+            let calls = List.filter_map (fun (s:Semantic.signature) ->
+              if s.variadic = None && s.rest_pack = None then
+                Some (Array [Array (List.map labels s.params);labels s.result]) else None) signatures in
+            let rests = List.filter_map (fun (s:Semantic.signature) ->
+              let rest = match s.variadic,s.rest_pack with
+                | Some element,None -> Some (pack_labels (Pack {
+                    required=[];optional_elements=[];rest=Some element;readonly=false}))
+                | None,Some r -> Some (pack_labels r)
+                | Some _,Some _ -> unsupported "signature has both element and pack rests"
+                | None,None -> None in
+              Option.map (fun rest -> Array [Array (List.map labels s.params);
+                Array [rest;labels s.result]]) rest) signatures in
+            Object ["key",key_json f.name;"calls",Array calls;"rests",Array rests]) fs)] in
       let fields writable fs = Array (List.map (fun (f:Semantic.field) ->
         if writable && f.write <> Some f.read then unsupported "asymmetric read/write capability export";
         Array [key_json f.name;labels f.read]) fs) in
@@ -143,9 +168,10 @@ let encode (proposal : Proposal.t) =
             | Some w when w = index.value -> ["cells",Array [labels index.value]]
             | Some _ -> unsupported "asymmetric string index signature" in
           Object ["dict",Object (["first",fields;"rest",Array [];"views",views;
-            "indexes",Array [labels index.value]] @ optional_list @ cells)]
+            "indexes",Array [labels index.value]] @ optional_list @ methods @ cells)]
         | _,Some _,_ -> unsupported "callable with string index needs a combined clause"
-        | _,None,[] -> Object ["refs",Object (["first",fields;"rest",Array [];"views",views] @ optional_list)]
+        | _,None,[] -> Object ["refs",Object (["first",fields;"rest",Array [];"views",views] @ optional_list @ methods)]
+        | _ when methods <> [] -> unsupported "a callable object with methods needs a combined clause"
         | [],None,_ -> Object ["arrs",Object calls]
         | _,_,_ ->
           if optional <> [] then unsupported "callable with optional fields";
@@ -203,7 +229,7 @@ let encode (proposal : Proposal.t) =
         | Exact fs -> List.exists (fun (f:Semantic.field) -> contains_symbolic f.read) fs
         | Ctors signatures -> List.exists signature_contains_symbolic signatures
         | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Top
-        | Bigint | Symbol | BigintLit _ -> false) atoms
+        | Bigint | Symbol | BigintLit _ | Callable -> false) atoms
   and pack_contains_symbolic = function
     | PackParameter _ -> true
     | Pack s -> sequence_contains_symbolic s

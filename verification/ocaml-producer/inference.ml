@@ -33,7 +33,7 @@ and substitute_atom ?meet solution = function
   | Named (id,args) -> Named (id,List.map (substitute ?meet solution) args)
   | Ctors signatures -> Ctors (List.map (substitute_signature ?meet solution) signatures)
   | (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Top
-    | Bigint | Symbol | BigintLit _) as atom -> atom
+    | Bigint | Symbol | BigintLit _ | Callable) as atom -> atom
 and substitute_pack ?meet solution = function
   | PackParameter identity as original ->
     (match List.assoc_opt identity solution with
@@ -87,7 +87,7 @@ let meet_atom a b =
   | Bigint,BigintLit _ -> Some [b] | BigintLit _,Bigint -> Some [a]
   | Ctors a,Ctors b -> Some [Ctors (a @ b)]
   | Shape _,_ | _,Shape _ | Exact _,_ | _,Exact _ | Named _,_ | _,Named _
-  | Ctors _,_ | _,Ctors _ -> None
+  | Ctors _,_ | _,Ctors _ | Callable,_ | _,Callable -> None
   | Bigint,Bigint -> Some [Bigint] | Symbol,Symbol -> Some [Symbol]
   | (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | Symbol | BigintLit _),
     (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | Symbol | BigintLit _) -> Some []

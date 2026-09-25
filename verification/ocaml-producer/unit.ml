@@ -52,7 +52,7 @@ let () =
   (* One pack instance must reach both the constructor and the call rest.
      It may contain objects: packs are not a primitive-only inference mode. *)
   let p={scope=3;index=0;spelling="Params"} in
-  let object_type=record [{name=Name "value";optional=false;read=num;write=None}] in
+  let object_type=record [{name=Name "value";optional=false;read=num;write=None;host=false}] in
   let pack=Pack {required=[object_type];optional_elements=[];rest=None;readonly=false} in
   let constructor={signature with quantified=[];params=[];
     rest_pack=Some (PackParameter p);result=t} in

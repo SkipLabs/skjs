@@ -20,6 +20,10 @@ and atom = Nul | Undef | True | False | Num | Str | NumLit of int64 | StrLit of 
          (* A class value: construct signatures, which `new` meets and no call
             does. A signature's receiver is unused: `new` passes none. *)
          | Ctors of signature list
+         (* A value with call code of which no signature is known: nothing
+            calls it. `Function` is it or a class value meeting no construct
+            signature, `Ctors []`; `object` is those or an empty `Shape`. *)
+         | Callable
          | Shape of shape
          (* A record whose own keys are exactly its fields' keys, as a fresh
             object literal's are: no other key, so no prototype. The bound is
@@ -33,7 +37,10 @@ and atom = Nul | Undef | True | False | Num | Str | NumLit of int64 | StrLit of 
 (* A property key: a string, or the symbol the declaration document lists at
    this index. The two spaces never meet. *)
 and key = Name of string | Key of int
-and field = { name: key; optional: bool; read: ty; write: ty option }
+(* A host-relative method (`host`) is read off its object and invoked on it:
+   a member, not a field holding a function value, as Lean reads method
+   syntax. *)
+and field = { name: key; optional: bool; read: ty; write: ty option; host: bool }
 and index_signature = { value: ty; writable: ty option }
 (* Argument lists are not value types. A pack parameter and its instances
    travel through their own substitution projection, never through [ty]. *)
@@ -71,7 +78,7 @@ let rec mentions_rigid = function
       | Exact fs -> List.exists (fun (f:field) -> mentions_rigid f.read) fs
       | Ctors signatures -> List.exists signature_mentions_rigid signatures
       | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Top
-      | Bigint | Symbol | BigintLit _ -> false) atoms
+      | Bigint | Symbol | BigintLit _ | Callable -> false) atoms
 and sequence_mentions_rigid s = List.exists mentions_rigid
     (s.required @ s.optional_elements @ Option.to_list s.rest)
 and signature_mentions_rigid (s:signature) =
@@ -144,7 +151,7 @@ it: null, undefined, `false`, the two zeros, NaN, `""` and `0n` are falsy,
 every object, function, class and symbol truthy. *)
 let truthiness = function
   | Nul | Undef | False -> Some false
-  | True | Symbol | Shape _ | Exact _ | Ctors _ -> Some true
+  | True | Symbol | Shape _ | Exact _ | Ctors _ | Callable -> Some true
   | NumLit bits -> let x = Int64.float_of_bits bits in Some (not (x = 0. || Float.is_nan x))
   | StrLit s -> Some (s <> "")
   | BigintLit i -> Some (i <> "0")

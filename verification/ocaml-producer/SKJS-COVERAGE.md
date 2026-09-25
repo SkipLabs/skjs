@@ -141,7 +141,7 @@ Ordered by value for cost (units per effort, files as a tiebreak):
 | 6 | ~~`switch`~~ done (task F; case narrowing task I) | 0 (was 46) | | | | | |
 | 7 | Unary `-`/`+`/`~` | 39 | 21 | 18 | 7 | S | P L |
 | 8 | `void e` — done (task E) | 0 (was 27) | | | | S | P L |
-| 9 | Template literal expressions and string `+` — done (task E); template literal *types* remain (22) | 17 (types) | | | | M | P L |
+| 9 | Template literal expressions and string `+` — done (task E); template literal *types* done (task O): finite ones evaluate, string patterns refused | 0 (was 17) | | | | M | P L |
 | 10 | Mutable bindings: unannotated `let`, `let x: T;`, parameter assignment, unannotated module constants read by functions | 52 | 42 | 0 | 22 | M | O L |
 | 11 | Compound / update assignment (`x++`, `+=`, `||=`, `??=`) — done (task E); array destructuring assignment done (task H) | 5 | 5 | 0 | 4 | S | O L |
 | 12 | ~~Destructuring, rest/default parameters~~ done (task H); left: slices, object rests, `let` patterns, generic alias rests | 15 (was 111) | 10 | 5 | 9 | M | P O L |
@@ -154,7 +154,7 @@ Ordered by value for cost (units per effort, files as a tiebreak):
 | 19 | Classes: member modifiers, optional/definite fields, parameter properties, inheritance, constructor statements, receivers | 104 | 65 | 39 | 31 | L | P O L |
 | 20 | Generic classes (records over a binder, below) | 47 | | | 21 | L | P O L |
 | 21 | Generics: ~~constraint forms, explicit type arguments on calls, unions with rigid types, `as const`, tuple bounds, `T & D`~~ done (task N); left: records, tuples and field reads over a binder | 58 | | | 21 | L | P O L |
-| 22 | Type forms: index-signature forms, numeric field names, literal types, `keyof`, indexed access, mapped, `object`, `{}`, method signatures, intersections | 168 | 99 | 69 | 41 | L | P D L |
+| 22 | Type forms: ~~literal types, `keyof`, indexed access, `typeof`, template literal types, mapped keys, `object`, `{}`, method and construct signatures, numeric field names, `unique symbol`, intersections~~ done (task O); left: number and symbol index signatures, forms over a type parameter, TypeScript errors in declarations | 87 (was 187) | 45 | 41 | 27 | L | P D L |
 | 23 | Loops: ~~`for(;;)`, `for-in`~~ done (task F); `for-of` with `let` | 1 (was 24) | 1 | 0 | 1 | S | P L |
 | 24 | Exceptions: ~~`try`/`catch`/`finally`, `throw`~~ done (throw outcome) | 0 (was 11) | 0 | 0 | 0 | M | P L |
 | 25 | Calls: ~~`.call`/`.apply`/`.bind` on module functions, `this` parameters~~ done (task R); left: overloads, union callees, spreads not last or into `new`, `.call` on a method read, `Object.assign` | 15 | 7 | 1 | 8 | M | P O |
@@ -165,7 +165,7 @@ Ordered by value for cost (units per effort, files as a tiebreak):
 | 30 | Sloppy (non-strict) code reading `this` | 8 | 6 | 2 | 5 | S | P |
 | 31 | Other forms (type assertions `<T>e`, empty statement, shadowing, body forms) | 12 | 9 | 0 | 9 | S | P L |
 | 32 | bigint (literals, `BigInt`, bigint literal types) | 232 | 100 | 132 | 12 | L | P L |
-| 33 | ~~Enums~~ done (task R); refused: computed members, an ambient and an empty enum; left: `keyof typeof E`, a union key, equality narrowing | 7 (was 56) | 0 | 7 | 1 | | |
+| 33 | ~~Enums~~ done (task R); refused: computed members, an ambient and an empty enum; left: `keyof typeof E` done (task O, but a reverse key, which TypeScript excludes), a union key, equality narrowing | 7 (was 56) | 0 | 7 | 1 | | |
 | — | ~~Policy: no function to verify~~ done (task Q): a module with no function is checked through its initialization | 0 (was 453) | | | | | |
 | — | ~~Environment: SKJS stub imports, `__SKJS_show`, `process`, `Closed<T>`, `StringRecord`~~ done (task Q) | 1 (was 38 + 18 related + 5) | | | | | |
 
@@ -350,7 +350,7 @@ dropped), examples, what the extension needs.
     and `instanceof Array` (`Array is read only through its members`, 15),
     well-known symbols as values (`Symbol.iterator`, 8; `unique symbol` is
     read as a key, not yet as a value), `const s: unique symbol = Symbol()`
-    (11, TypeOperator), a global both called and read through a method (1),
+    (11, TypeOperator; done, task O), a global both called and read through a method (1),
     and unlisted statics: `Promise.resolve`/`reject`/`all` (generic;
     `resolve` adopts thenables), `JSON.stringify` (returns `undefined`,
     throws on bigints), `Object.keys`.
@@ -441,9 +441,8 @@ dropped), examples, what the extension needs.
     on a union, the overlay's narrowing.)
 17. **`in`/`instanceof`/`typeof`.** `binary operator outside the fragment
     (in)` (25), `(instanceof)` (18), `proposal: expression typeof` (24),
-    `type outside the fragment (TypeQuery)` (21, `typeof x` in types). Guards
-    and their narrowing; `typeof` in type position is a separate, declaration-
-    reader-sized piece.
+    `type outside the fragment (TypeQuery)` (21, `typeof x` in types; done,
+    task O, 22). Guards and their narrowing.
 18. **Search found no derivation** — the pipeline reaches Lean and fails to
     prove an obligation (`source expression obligation … evidence search
     failed` 88, `closure expression claim` 9, `incoming edge obligation` 4).
@@ -520,13 +519,50 @@ dropped), examples, what the extension needs.
     the others read were sound instantiations the producer does not propose
     (a fresh literal at `T extends Json`, spreads into a generic) or forms
     of other groups.
-22. **Type forms.** Index signatures (`unsupported index signature` 28,
-    multiple string indexes 6, expected string index 2), literal types (26:
-    negative numbers, bigint), numeric/hex field names (`expected a required
-    mutable field` 12), `keyof` (21), mapped types (11), indexed access (9),
-    empty record `{}` (8), method signatures in type literals (14),
-    intersections of aliases/params/arrays or of different shapes (23),
-    `object` (4), template literal types (17, counted in 9).
+22. **Type forms.** *Done (task O): a computed type, `typeof x`, `keyof T`,
+    `T[K]`, a template literal type, an intersection of primitives and a
+    mapped type's keys, is the type TypeScript's checker computes, evaluated
+    by the declaration reader where it is written (`computed-types.mts`,
+    DESIGN.md "Computed types") to a union of literals and primitives, or to
+    the declared annotation or value type it names under the checker's type
+    identity; `object` is every object and `{}` every value but `null` and
+    `undefined`; method signatures in type literals are host-relative members
+    (the producer's `host` fields); a type literal of construct signatures is
+    a class value; a numeric property name is its `ToString` key, in types,
+    mapped types, object literals and number-keyed reads of non-arrays; a
+    `unique symbol` constant holds a symbol and names a key, by what made it
+    (`Symbol()` its own, `Symbol.for("k")` the registry's "k");
+    annotation intersections are Lean's meet; an index over `string | number`,
+    or a number index of the string index's contract, is the string index;
+    `Record<K, V>` and mapped types take the keys TypeScript computes (an
+    alias of literals); `keyof typeof E` of an enum. Construct-signature type
+    literals and numeric keys build on task R's readings. 1,791 → 1,897 units
+    verified on the marker corpus (+106, none lost), 1,261 → 1,350 functions,
+    180 → 193 files fully verified.* `enums.ts#keyOfIncludesReverseKeys`
+    returns `0` at `keyof typeof E`, which SKJS admits (the enum object owns
+    the reverse key "0") and TypeScript does not (`"A" | "B"`): the pipeline
+    follows TypeScript, which is sound, so this is incompleteness, not an SKJS
+    unsoundness. Left, each refused with its reason: a number index signature
+    with its own contract (25 + 3 mapped over `number`: it constrains the
+    canonical numeric keys apart from the other string keys, which the
+    model's index, constraining every string key alike, does not state) and a
+    symbol index signature (12 + 4 mapped over `symbol`: the model's index
+    constrains string keys only), both needing an index over a key predicate
+    in the calculus; TypeScript errors in declarations and duplicate
+    declarations (13 + 6: `Duplicate identifier`, implicit `any` members,
+    properties not assignable to an index, which SKJS accepts and TypeScript
+    rejects); forms over a type parameter (`T[number]`, `keyof T`,
+    intersections with a binder, 8 + 7 + 1: computed only at an instance) and
+    the producer's `a type parameter's intersection in a claim` (4);
+    intersections Lean has no representable meet for (6); `keyof` with a
+    unique symbol key (6: `keyof [number]`, `keyof string`,
+    `keyof Promise<T>`); `typeof` of a binding without an annotation (2),
+    of a class with statics (1) and of `true` (1, not valid TypeScript); a
+    method with a `this` parameter or over a binder in an annotation (4). None
+    of the new search refusals is an SKJS unsoundness; SKJS reads
+    `keyof (A | B)` as the union of the members' keys where TypeScript takes
+    their intersection (`type-operator-precedence.ts#testNestedKeyofBuggy`),
+    and refuses indexing with it, so no witness was found.
 23. **Loops — done (task F), but `for (let … of …)`.** Were `for-in` (13),
     `for(;;)` (8). `for` is a `while` whose body's end and `continue` run the
     update, in a block scoping its `let`; `for-in` iterates the trusted
@@ -794,7 +830,7 @@ split by function.
 | L. Primitive and union reads (done) | Truthiness as a tag test, value-level `&&`/`||`, `!`; string `length` and code units; primitive members through their wrapper prototypes' contracts (the overlay generalized); not done: method calls on primitive unions, dynamic string index writes (objects cannot grow) | 68 / 30 reached, 61 / 7 (files fully) verified | `Calculus.lean`, `ProgramTyping.lean`, `ProgramCertificates.lean`, `CertificateProducer.lean`, `SourceExtraction.lean`, `array-prototype.mts`, `declaration-graph.mts`, `fragment-parse.mts`, `proposal.ml` | B (string lib) | I |
 | M. Class members | Modifiers, optional/definite fields, parameter properties, constructor statements, receivers; then inheritance | 104 / 31 | `fragment-parse.mts` (classes), `proposal.ml`, class model in Lean | — | N |
 | N. Generics (done, first part) | Bounds of any ground type, unions mentioning a binder, rigid bodies ending without a return or with expression statements, unannotated nested closure results, explicit type arguments on plain calls and `new`, `as const`, tuple bounds as contextual types, `T & D` at ground instances; left: records, tuples and field reads over a binder, and generic classes, which need them | 71 / 7 (files fully) verified (911 → 982 units, 860 → 930 functions, none lost) | `fragment-parse.mts`, `proposal.ml`, `DirectObligation.lean`, `RigidJudgments.lean`, `GenericSource.lean`, `SourceJudgments.lean`, `SourceClaimJson.lean`, `DeclarationGraph.lean` | M for generic classes | M |
-| O. Type forms | Index-signature forms, numeric field names, negative-literal types, `{}`, `object`, method signatures, `keyof`, indexed access, mapped types, intersections | 168 / 41 | `fragment-parse.mts` (types), `declaration-types.mts`, `Types/*` | — | N |
+| O. Type forms (done) | Computed types (`typeof`, `keyof`, `T[K]`, template literal types, intersections of primitives, mapped keys) evaluated by the declaration reader through TypeScript's checker; `object`, `{}`; method and construct signatures in type literals; numeric property names and number-keyed reads of non-arrays; `unique symbol` constants; annotation intersections as Lean's meet; `string \| number` and equal number indexes as the string index; refused with reasons: number and symbol index signatures, forms over a type parameter, `keyof` with unique symbol keys | 106 units / 13 files (fully) verified (1,791 → 1,897 units, 1,261 → 1,350 functions, 180 → 193 whole files, none lost, marker corpus) | `computed-types.mts`, `type-term.mts`, `declaration-graph.mts`, `fragment-parse.mts`, `DeclarationGraph.lean`, `SourceExtraction.lean`, `source.ml`, `claims.ml`, `semantic.ml` | — | N |
 | P. Search narrowing and async | Flow narrowing after assignment and refinement snapshots, `Promise`/async results and `await`, contextual literals into unions, function values into intersections | ~80 / 30 | `CertificateProducer.lean`, `ProgramTyping.lean`, `proposal.ml` | I | I, J |
 | Q. Module initialization and run setup (done) | A module with no function checked through its initialization unit; verdicts attributed only to units whose own code was checked; SKJS's test environment (stub imports through a per-unit `--project`, `__SKJS_show`, `process`, `StringRecord`, `Closed<T>` as `T`) | 450 / 98 verified (911 → 1,361 units, 860 → 880 functions, 96 → 136 whole files, none lost) | `SourceClaimJson.lean`, `check.mts`, `skjs-coverage.mts`, `skjs-environment/` | — | — |
 | K2. Library globals, second part (done) | `JSON.parse`/`stringify`, `Promise.reject`, `new Promise`, `Set`/`Map`/`Date` contracts and constructors, `Date.now`, `instanceof Array`, generic `Object.values`/`entries` at dictionaries, throwing string members and string-pattern `split`/`replace` | 5 units / 1 file newly verified (1,420 → 1,425 units, 917 → 922 functions, 141 → 142 whole files, none lost); the corpus reaches these globals in 16 units | `library-globals.mts`, `array-prototype.mts`, `intrinsics.mts`, `declaration-graph.mts`, `fragment-parse.mts`, `source.ml`, `proposal.ml`, `DeclarationGraph.lean` | K, S | K |
