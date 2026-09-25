@@ -629,7 +629,9 @@ subtyping rules read a meet row's clauses, is the next step.
 states located obligations for; a failed obligation stands. A body outside its
 forms, a refusal, goes to the graph checker. The direct checker is kept only
 because it still covers bounded binders; once meets carry bounds it is
-retired. Nested generic closures (a closure with binders of its own inside a
+retired. Its types have no parameter rows: a claim or annotation over a
+binder's row (`SourceTypes.reachesParameter`) is refused there, so the unit
+goes to the graph checker rather than having the row read as a ground type. Nested generic closures (a closure with binders of its own inside a
 generic body) are refused on the graph path: their binders need scheme
 introduction in the program typing, which the graph does not yet have.
 
@@ -2165,9 +2167,17 @@ row reaching its arguments rather than its equation, a declaration's,
 primitive's or binder's row nothing further (`reach`): a function of the
 arguments. Arguments that keep growing (`Pair<T>`'s `m<U>(): Pair<[T, U]>`)
 pass the bound, and the application is refused; the method that named it
-stays opaque. A declaration without methods is expanded inline, and a
-recursion through such declarations is refused after three expansions within
-one application's equation (`applicationDepth`).
+stays opaque. A declaration without methods is expanded inline, unless it
+reaches itself through references (`recursiveDeclaration`,
+`type List<T> = null | { head: T; tail: List<T> }`): then its application is a
+row of its own, given before its equation is lowered, as an application with
+methods is, so `List<number>` and `List<T>` are finite. A recursion through
+declarations is otherwise refused after three expansions within one
+application's equation (`applicationDepth`). A source annotation applying a
+recursive declaration to a generic unit's binder has no finite claim-form
+expansion; it is the application row at the binder's parameter row
+(`SourceTypes.binderRow`), which only the graph checker reads
+([generic bodies](#generic-bodies-are-graph-requests-over-parameter-rows)).
 
 A declaration's row is a name, not a representative for its clauses: the row
 for a type is the first row with exactly its clauses that is not a

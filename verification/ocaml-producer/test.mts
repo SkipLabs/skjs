@@ -391,14 +391,15 @@ for (const [file, expected] of [
   // again: a finite graph.
   const recursiveGeneric = check(genericClient, pairConfig);
   assert.equal(recursiveGeneric.status, "verified", JSON.stringify(recursiveGeneric));
-  // One expanded inline at arguments that grow at each unfolding is refused.
+  // One at arguments that grow at each unfolding is refused: a recursive
+  // declaration's applications are rows, and these would be infinitely many.
   writeFileSync(genericClient,
     'import type { Grow } from "@fixture/a";\n' +
     'export function keepGrow(value: Grow<boolean>): Grow<boolean> { return value; }\n');
   const growing = check(genericClient, pairConfig);
   assert.equal(growing.status, "unverified", JSON.stringify(growing));
   assert.equal(growing.phase, "search");
-  assert.match(growing.detail, /recursive generic application needs memoized rows/);
+  assert.match(growing.detail, /recursive generic application whose arguments keep growing/);
   // A name imported through a barrel is the declaration the barrel reexports.
   writeFileSync(genericClient,
     'import type { A } from "@fixture/barrel";\n' +

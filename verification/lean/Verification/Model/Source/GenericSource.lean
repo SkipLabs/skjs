@@ -83,6 +83,8 @@ partial def annotationTy (names : List String) (j : Json) :
   -- A ground type holding `unknown`, as `void` does, is top, as its claim is.
   let A ← Fragment.translate j
   let T ← get
+  if SourceTypes.reachesParameter T A then
+    throw "a type over a binder's parameter row is the graph checker's"
   return if A.any (fun l => T[l]? == some (.clauses [.top])) then .top else .ground A
 
 /-- A receiver contract as a direct type, by the one annotation converter. -/

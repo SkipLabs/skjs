@@ -140,6 +140,67 @@ abbrev Lowering := StateT Table (Except String)
 def use (c : Clause (List Nat)) : Lowering Nat :=
   modifyGet fun T => let T' := intern T c; (label T' c, T')
 
+/-- The value parameter row that stands for a generic unit's binder `name`:
+the table's one value parameter row of that name that no scheme binds, or a
+new one. The row carries no meaning of its own: a unit over it is certified at
+every assignment of it (`Parametricity.accepted_at`). -/
+def binderRow (name : String) : Lowering Nat := do
+  let T ← get
+  let schemeBinders := T.flatMap fun
+    | .scheme bs .. => bs
+    | _ => []
+  let named := (List.range T.length).filter fun i => match (T[i]? : Option Row) with
+    | some (.param l n .value) => l == i && n == name && !schemeBinders.contains i
+    | _ => false
+  match named with
+  | [l] => return l
+  | [] =>
+    set (T ++ [Row.param T.length name .value])
+    return T.length
+  | _ => throw s!"two parameter rows stand for the binder '{name}'"
+
+/-- Whether a type reaches a parameter row no scheme binds: a generic unit's
+binder, read as its row. Only the graph checker reads such a type; the direct
+rigid checker's ground types have none. -/
+def reachesParameter (T : Table) (A : List Nat) : Bool := Id.run do
+  let schemeBinders := T.flatMap fun
+    | .scheme bs .. => bs
+    | _ => []
+  let mut known := A.eraseDups
+  for _ in List.range (T.length + 1) do
+    let next := (known ++ known.flatMap fun i =>
+      ((T[i]?.map RequestJson.rowTypes).getD []).flatten).eraseDups
+    if next.length == known.length then break
+    known := next
+  return known.any fun i => match (T[i]? : Option Row) with
+    | some (.param _ _ .value) => !schemeBinders.contains i
+    | _ => false
+
+/-- A source annotation in claim form with the named binders read as their
+parameter rows: each binder atom becomes the graph atom of its row. -/
+partial def annotationAtRows (rows : List (String × Nat)) : Lean.Json → Lean.Json
+  | .arr xs => .arr (xs.map (annotationAtRows rows))
+  | .obj kvs =>
+    let j := Lean.Json.obj kvs
+    match (j.getObjValAs? String "a").toOption, (j.getObjValAs? String "name").toOption with
+    | some "param", some name =>
+      match rows.lookup name with
+      | some l => if j == Lean.Json.mkObj [("a", Lean.toJson "param"), ("name", Lean.toJson name)] then
+          Lean.Json.mkObj [("a", Lean.toJson "graph"), ("label", Lean.toJson l)] else j
+      | none => j
+    | _, _ => Lean.Json.mkObj (kvs.toList.map fun (k, v) => (k, annotationAtRows rows v))
+  | j => j
+
+/-- The binder names a claim-form annotation mentions. -/
+partial def binderNames : Lean.Json → List String
+  | .arr xs => (xs.toList.flatMap binderNames).eraseDups
+  | .obj kvs =>
+    let j := Lean.Json.obj kvs
+    match (j.getObjValAs? String "a").toOption, (j.getObjValAs? String "name").toOption with
+    | some "param", some name => [name]
+    | _, _ => (kvs.toList.flatMap fun (_, v) => binderNames v).eraseDups
+  | _ => []
+
 /-- A type with each label replaced by the first row of the same content.
 Rows with identical clauses denote the same type: a declaration's row and an
 annotation's row can coincide without being the same label, for instance when

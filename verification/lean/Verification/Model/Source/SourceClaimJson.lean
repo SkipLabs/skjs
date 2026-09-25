@@ -263,7 +263,10 @@ private partial def ofClaim (T : SourceTypes.Table) (role : String) :
   | .union ts => do return .mkUnion (← ts.mapM (ofClaim T role))
   -- A union holding `unknown` is `unknown`: the direct checker's top, as an
   -- annotation of it is.
-  | .labels A => pure (if A.any (fun l => T[l]? == some (.clauses [.top])) then .top else .ground A)
+  | .labels A =>
+    if SourceTypes.reachesParameter T A then
+      throw "a type over a binder's parameter row is the graph checker's"
+    else pure (if A.any (fun l => T[l]? == some (.clauses [.top])) then .top else .ground A)
   | .scheme [] rc ps rest r => do
     let receiver ← ofClaim T role rc
     let params ← ps.mapM (ofClaim T role)
@@ -1021,43 +1024,15 @@ private def checkInitializationOrder (T : SourceTypes.Table)
         s!"a module function this step reaches reads '{c}' before its declaration runs")
     if let .constants _ bs := s then ready := ready ++ bs.map (·.name)
 
-/-- The parameter row that stands for each of a generic unit's binders: the one
-value parameter row of the table the producer named after it, or a new one.
-A scheme's binder is its scheme's, never a unit's. The row carries no meaning
-of its own: the unit is certified at every assignment of it. -/
+/-- The parameter row that stands for each of a generic unit's binders
+(`SourceTypes.binderRow`). -/
 private def binderRows (T : SourceTypes.Table) (tps : List Fragment.TypeParam) :
     Except String (SourceTypes.Table × List (String × Nat)) := do
-  let schemeBinders := T.flatMap fun
-    | .scheme bs .. => bs
-    | _ => []
-  let mut T := T
-  let mut rows : List (String × Nat) := []
-  for tp in tps do
-    let named := (List.range T.length).filter fun i => match (T[i]? : Option RequestJson.Row) with
-      | some (.param l n .value) => l == i && n == tp.name && !schemeBinders.contains i
-      | _ => false
-    match named with
-    | [l] => rows := rows ++ [(tp.name, l)]
-    | [] =>
-      rows := rows ++ [(tp.name, T.length)]
-      T := T ++ [.param T.length tp.name .value]
-    | _ => throw s!"two parameter rows stand for the binder '{tp.name}'"
+  let (rows, T) ← (tps.mapM fun (tp : Fragment.TypeParam) => do
+    return (tp.name, ← SourceTypes.binderRow tp.name)).run T
   return (T, rows)
 
-/-- A source annotation in claim form with a unit's binders read as their
-parameter rows: each binder atom becomes the graph atom of its row. -/
-private partial def annotationAtRows (rows : List (String × Nat)) : Json → Json
-  | .arr xs => .arr (xs.map (annotationAtRows rows))
-  | .obj kvs =>
-    let j := Json.obj kvs
-    match (j.getObjValAs? String "a").toOption, (j.getObjValAs? String "name").toOption with
-    | some "param", some name =>
-      match rows.lookup name with
-      | some l => if kvs.size == 2 then
-          Json.mkObj [("a", toJson "graph"), ("label", toJson l)] else j
-      | none => j
-    | _, _ => Json.mkObj (kvs.toList.map fun (k, v) => (k, annotationAtRows rows v))
-  | j => j
+private def annotationAtRows := SourceTypes.annotationAtRows
 
 /-- Whether a source function's tree declares type parameters below its own:
 a generic closure, whose binders the unit's rows do not stand for. -/

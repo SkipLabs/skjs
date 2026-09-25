@@ -177,6 +177,30 @@ private partial def mentionsKind (k : String) : Json → Bool
 declaration itself. -/
 private def mentionsSelf : Json → Bool := mentionsKind "self"
 
+/-- The declarations a term references. -/
+private partial def references (ds : Array Definition) : Json → List Nat
+  | .obj kvs =>
+    let here := if (kvs.toList.lookup "k") == some (.str "reference") then
+      (referenceIndex ds (.obj kvs)).toOption.toList else []
+    (here ++ kvs.toList.flatMap fun (_, v) => references ds v).eraseDups
+  | .arr xs => (xs.toList.flatMap (references ds)).eraseDups
+  | _ => []
+
+/-- A generic declaration whose equation reaches itself through references,
+`type List<T> = null | { head: T; tail: List<T> }`: its application is a row
+of its own, as an application with methods is, so the equation is lowered
+once, not unrolled without end. -/
+private def recursiveDeclaration (ds : Array Definition) (i : Nat) : Bool := Id.run do
+  let mut known := references ds ds[i]!.expression
+  for _ in List.range (ds.size + 1) do
+    let next := (known ++ known.flatMap fun j =>
+      match ds[j]? with
+      | some d => references ds d.expression ++ d.bases.toList.flatMap (references ds)
+      | none => []).eraseDups
+    if next.length == known.length then break
+    known := next
+  return known.contains i
+
 /-- A term that names no type parameter, method binder or receiver: it lowers
 to the same labels wherever it is lowered. -/
 private def groundTerm (t : Json) : Bool :=
@@ -546,7 +570,7 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     -- An application with methods is its row (`groundApplication`). Any
     -- other is expanded inline, which a recursive declaration would do
     -- without end: the depth bound refuses it.
-    if !mentionsSelf ds[i]!.expression &&
+    if !mentionsSelf ds[i]!.expression && !recursiveDeclaration ds i &&
         (seen.declarations.filter (· == i)).length ≥ applicationDepth then
       throw "recursive generic application needs memoized rows"
     groundApplication ds i values seen
@@ -733,7 +757,7 @@ private partial def groundApplication (ds : Array Definition) (i : Nat)
     (values : Array (List Nat)) (seen : Visit) : Lowering (List Nat) := do
   let T ← getThe SourceTypes.Table
   if let some row := (← get).row T i values then return [row]
-  if mentionsSelf ds[i]!.expression then
+  if mentionsSelf ds[i]!.expression || (!ds[i]!.parameters.isEmpty && recursiveDeclaration ds i) then
     if (reach (← get) T (4 + nullaryCount ds) argumentBudget values.toList.flatten).length > argumentBudget then
       throw "a recursive generic application whose arguments keep growing"
     let row ← modifyGetThe SourceTypes.Table fun T => (T.length, T ++ RequestJson.rows [[]])
@@ -1141,7 +1165,20 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
     -- An application over a rigid binder is its expanded equation; a ground
     -- one is its graph labels, so `Id<boolean>` is exactly `[1, 2]`, the
     -- type a producer claims, not a new row with the same meaning.
-    if args.any hasRigidParameter then return ← expandApplication ds index args []
+    if args.any hasRigidParameter then
+      return ← tryCatch (expandApplication ds index args []) fun e => do
+        unless e.startsWith "recursive generic application" do throw e
+        -- A recursive declaration applied to a binder has no finite
+        -- expansion; it is its application row at the binder's parameter
+        -- row, which the graph checker reads (`SourceTypes.binderRow`).
+        let names := (args.toList.flatMap SourceTypes.binderNames).eraseDups
+        let rows ← names.mapM fun n => do return (n, ← (SourceTypes.binderRow n : SourceTypes.Lowering Nat))
+        let values ← args.mapM fun a =>
+          (Fragment.translate (SourceTypes.annotationAtRows rows a) : SourceTypes.Lowering _)
+        let values ← lowerApplication ds index values {}
+        let labels ← groundApplication ds index values {}
+        if labels.isEmpty then throw "generic application has no inhabited graph clause"
+        return graphClaim labels
     if ds[index]!.parameters.isEmpty then
       if !args.isEmpty then throw "type application has wrong arity"
       return graphClaim [rowIndex ds index]

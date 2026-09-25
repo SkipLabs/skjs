@@ -341,6 +341,8 @@ export const cases: Case[] = [
   positive("generic-graph-bodies", "generic bodies as graph requests, each binder a parameter row: records, tuples and arrays over a binder, field reads and writes, literals, `??`, `if`, `let`, `typeof`, a generic call at a binder"),
   negative("invalid-generic-graph-write", "a number written into a `Box<T>` is wrong at `T := string`"),
   negative("invalid-generic-graph-concrete", "a body reading its binder as `boolean`: the parameter row is below no ground type"),
+  positive("generic-recursive-list", "a recursive generic alias applied to a binder, and to itself, is its application row at the binder's parameter row"),
+  negative("invalid-generic-recursive-list", "a number is no `T`: a `List<T>` cannot hold one"),
   negative("invalid-generic-union-bound", "a binder bounded by a union is below the union, not one member",
     /cannot establish T ≤ string under \[T ≤ string \| number\]/),
   positive("explicit-type-arguments", "explicit type arguments on plain calls state each call's instance: module, declared and local generic callees, dependent bounds"),
