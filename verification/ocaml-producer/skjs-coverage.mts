@@ -75,7 +75,9 @@ const option = (name: string, fallback: string) => {
 };
 const outDir = path.resolve(option("--out", path.join(os.tmpdir(), "skjs-coverage")));
 const resultPath = path.resolve(option("--result", path.join(here, "skjs-coverage.json")));
-const width = Number(option("--width", String(Math.max(2, os.availableParallelism() - 2))));
+// A quarter of the cores by default: several runs, and Lean builds, often
+// share the machine. `--width` raises it for a machine to itself.
+const width = Number(option("--width", String(Math.max(2, Math.floor(os.availableParallelism() / 4)))));
 const only = option("--only", "");
 
 /* --------------------------------------------------------------- corpus -- */
