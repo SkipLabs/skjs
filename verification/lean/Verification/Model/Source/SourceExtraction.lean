@@ -437,7 +437,7 @@ private def distinctLinks (G : Verification.Model.PositiveGraphs.NormalGraph Nat
       Γ.zipIdx.flatMap fun (A,j) =>
         if i == j then [] else
         match PositiveRules.expand G A with
-        | [.refs fs _ _] => fs.map fun p => (⟨i,j,false,valueField,true,p.1⟩ : HeapLinks.Link)
+        | [.refs fs _ _ [] _] => fs.map fun p => (⟨i,j,false,valueField,true,p.1⟩ : HeapLinks.Link)
         | _ => []
     | .value => []
 
@@ -800,12 +800,20 @@ private def allocationChildren : DirectProof.Plan → Option (List DirectProof.P
   | .rule _ .alloc ps => some ps
   | _ => none
 
+/-- A method call's head: a host-relative member is read from the object in a
+slot and bound to that same object (`bindMember`), before any actual runs; any
+other member is read as a field. -/
+def memberHead (G : PositiveGraphs.NormalGraph Nat) (O : Ty Nat) (fld : PropKey) (obj : Tm) : Tm :=
+  match obj, (ProgramTyping.memberOf G O fld).isSome with
+  | .var i, true => .letE (.readAt fld (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])
+  | _, _ => .readAt fld obj
+
 /-- Read a field from a cell plan under context `Γ`: one contract, a callable
 bag, or an explicit union of cell contracts each naming the field. -/
 private def readCell (G : PositiveGraphs.NormalGraph Nat) (Γ : List (Ty Nat)) (fld : PropKey)
     (a : DirectProof.Plan) : Compiler DirectProof.Plan := do
   match PositiveRules.expand G a.type with
-  | [.refs fs [] vs] =>
+  | [.refs fs [] vs [] _] =>
     -- An invariant field reads at its contract; a readonly view at its bound.
     match fs.lookup fld, vs.lookup fld with
     | some B, _ => pure (DirectProof.node Γ (.readAt fld a.term) B .read [a])
@@ -820,7 +828,7 @@ private def readCell (G : PositiveGraphs.NormalGraph Nat) (Γ : List (Ty Nat)) (
   | _ =>
     if a.type.length ≤ 1 then throw "read receiver must name a cell contract"
     let alternatives ← a.type.mapM fun label => do
-      let [.refs fs [] []] := PositiveRules.expand G [label]
+      let [.refs fs [] [] [] _] := PositiveRules.expand G [label]
         | throw "every read alternative must name a cell contract"
       let some B := fs.lookup fld
         | throw s!"read of a field '{fld}' an alternative does not name"
@@ -839,7 +847,7 @@ private def writeCell (G : PositiveGraphs.NormalGraph Nat) (H : List (Ty Nat)) (
     (B C : Ty Nat) (ri : Nat) : Compiler DirectProof.Plan := do
   let term := Tm.writeAt fld (.var ri) (.var 0)
   match PositiveRules.expand G B with
-  | [.refs fs [] vs] =>
+  | [.refs fs [] vs [] _] =>
     let some D := fs.lookup fld
       | throw (if (vs.lookup fld).isSome then s!"write to a readonly field '{fld}'"
           else s!"write to a field '{fld}' the contract does not name")
@@ -848,7 +856,7 @@ private def writeCell (G : PositiveGraphs.NormalGraph Nat) (H : List (Ty Nat)) (
   | _ =>
     if B.length ≤ 1 then throw "write receiver must name a cell contract"
     let alternatives ← B.mapM fun label => do
-      let [.refs fs [] []] := PositiveRules.expand G [label]
+      let [.refs fs [] [] [] _] := PositiveRules.expand G [label]
         | throw "every write alternative must name a cell contract"
       let some D := fs.lookup fld
         | throw s!"write to a field '{fld}' an alternative does not name"
@@ -1159,8 +1167,9 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
         pure ([r,k], k.type :: K₀, held ⟨"",some key.span⟩ :: ds₀)
     let ri := saved.length - 1
     let M ← exprType fc callee
-    let read ← readCell G K fld (DirectProof.var K ri r.type)
-    let method := DirectProof.cast K M read
+    let method ← if (ProgramTyping.memberOf G r.type fld).isSome then
+        pure (DirectProof.node K (memberHead G r.type fld (.var ri)) M .bindMember [])
+      else DirectProof.cast K M <$> readCell G K fld (DirectProof.var K ri r.type)
     obligation callee.span method.goal (some method) "expression-claim" ds
     let H := M :: K
     let dsH := held ⟨"",some callee.span⟩ :: ds
@@ -2068,8 +2077,14 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     -- from it; the method is the callee and the object the receiver. The
     -- saved slots sit where a plain call's one callee slot does.
     let method : Option (Fragment.Expr × Option Fragment.Expr × (Tm → Tm)) ← match e with
-      | .invoke _ (.read _ fld o) _ _ => pure (some (o, none, fun obj => .readAt fld obj))
-      | .invoke _ (.index _ (some fld) o key) _ _ => pure (some (o, some key, fun obj => .readAt fld obj))
+      | .invoke _ (.read _ fld o) _ _ => do
+        let O ← exprType fc o
+        let G := SourceTypes.graph (← table)
+        pure (some (o, none, memberHead G O fld))
+      | .invoke _ (.index _ (some fld) o key) _ _ => do
+        let O ← exprType fc o
+        let G := SourceTypes.graph (← table)
+        pure (some (o, some key, memberHead G O fld))
       | .invoke _ (.elemAt _ o key) _ _ => do
         let K ← exprType fc key
         let index ← arrayKeyTerm K

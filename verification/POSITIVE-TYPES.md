@@ -472,7 +472,23 @@ $$
 {\Delta\vdash\mathsf{Ref}(\Phi;\psi;\omega)\sqsubseteq\mathsf{Ref}(\varphi'_0\cdots\varphi'_k;\psi';\omega')}
 $$
 
-(`CoversFields`, `CoversViews`, `CoversOptional`), and a `dict` target also
+(`CoversFields`, `CoversViews`, `CoversOptional`). Methods are
+host-relative members ([DESIGN.md](DESIGN.md#method-members-are-host-relative)):
+a target method $m:(\vec Q\to D)$ is covered by a source method of the same
+key, or by a function $F$ the source holds under that key whose receiver the
+source type $S$ is within,
+
+$$
+\frac{m'\in\mu\quad m'.\mathsf{key}=m.\mathsf{key}\quad
+      \forall(\vec Q,D)\in m.\;\exists(\vec P,B)\in m'.\;\Delta(\vec Q,\vec P)\land\Delta(B,D)}
+     {\Delta;S\vdash\mu\sqsubseteq_{\mathsf{meth}}m}
+\qquad
+\frac{(m.\mathsf{key}{:}F)\in\Phi\,\psi\quad F\equiv\mathsf{arrs}(L;\ldots)\quad
+      \forall(\vec Q,D)\in m.\;\exists(Rt,\vec P,B)\in L.\;\Delta(S,Rt)\land\Delta(\vec Q,\vec P)\land\Delta(B,D)}
+     {\Delta;S\vdash\Phi\,\psi\sqsubseteq_{\mathsf{meth}}m}
+$$
+
+(`CoversSig`, `CoversByFunction`), variadic signatures likewise. A `dict` target also
 needs every index operand covered by a source index operand at a subtype. An
 optional target field is met by a required or optional source field of the same
 key; a required target field only by a required one, since neither a view nor

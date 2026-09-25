@@ -618,10 +618,27 @@ def CoversSig (elem : List ι → Option (List ι)) (R : List ι → List ι →
   (∀ t ∈ q.rests, ∃ s ∈ p.rests, Domains R (t.1.take s.1.length) s.1 ∧
     IntoRest elem R (t.1.drop s.1.length) s.2.1 ∧ R t.2.1 s.2.1 ∧ R s.2.2 t.2.2)
 
-/-- Every target method is covered by a source method of the same key. -/
-abbrev CoversMethods (elem : List ι → Option (List ι)) (R : List ι → List ι → Prop)
-    (source target : List (MethodMembers.Sig (List ι))) : Prop :=
-  ∀ q ∈ target, ∃ p ∈ source, p.key = q.key ∧ CoversSig elem R p q
+/-- A method signature is covered by a function the source object holds in a
+field or view: each target signature by one of the function's taking at least
+as wide parameters and giving an at most as wide result, whose receiver the
+object's own type `self` is within. Invoked on the object, such a function
+behaves as typed, so it meets the host-relative member. -/
+def CoversByFunction (G : NormalGraph ι) (R : List ι → List ι → Prop) (self : List ι)
+    (F : List ι) (q : MethodMembers.Sig (List ι)) : Prop :=
+  match expand G F with
+  | [.arrs L S] =>
+    (∀ t ∈ q.calls, ∃ s ∈ L, R self s.1 ∧ Domains R t.1 s.2.1 ∧ R s.2.2 t.2) ∧
+    (∀ t ∈ q.rests, ∃ s ∈ S, R self s.1 ∧ Domains R (t.1.take s.2.1.length) s.2.1 ∧
+      IntoRest (restElem G) R (t.1.drop s.2.1.length) s.2.2.1 ∧ R t.2.1 s.2.2.1 ∧ R s.2.2.2 t.2.2)
+  | _ => False
+
+/-- Every target method is covered by a source method of the same key, or by a
+function the source holds under that key whose receiver the source's own type
+is within. -/
+abbrev CoversMethods (G : NormalGraph ι) (R : List ι → List ι → Prop) (self : List ι)
+    (fields : List (PropKey × List ι)) (source target : List (MethodMembers.Sig (List ι))) : Prop :=
+  ∀ q ∈ target, (∃ p ∈ source, p.key = q.key ∧ CoversSig (restElem G) R p q) ∨
+    ∃ f ∈ fields, f.1 = q.key ∧ CoversByFunction G R self f.2 q
 
 /-- Two rest contracts agree: both absent, or both present and equivalent. -/
 def CoversRest (R : List ι → List ι → Prop) (readonly : Bool) : Option (List ι) → Option (List ι) → Prop
@@ -740,8 +757,8 @@ def CoversPack (R : List ι → List ι → Prop) (p q : Tuple (List ι)) : Prop
 Only fixed-arrow coverage needs evidence; the remaining conditions are finite
 checks over the supplied subtype relation. -/
 def CoversWith (G : NormalGraph ι) (R : List ι → List ι → Prop)
-    (arrows : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop) :
-    Clause (List ι) → Clause (List ι) → Prop
+    (arrows : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop)
+    (self : List ι) : Clause (List ι) → Clause (List ι) → Prop
   | _, .top => True
   | .list a bs, .list c ds => ∀ q ∈ c :: ds, ∃ p ∈ a :: bs, CoversTuple R p q
   | .nul, .nul => True
@@ -757,11 +774,11 @@ def CoversWith (G : NormalGraph ι) (R : List ι → List ι → Prop)
   | .strLit a, .strLit b => a = b
   | .refs a bs vs os ms, .refs c ds ws ps ns => CoversFields R (a :: bs) (c :: ds) ∧
       CoversViews R (a :: bs) vs ws ∧ CoversOptional R (a :: bs) os ps ∧
-      CoversMethods (restElem G) R ms ns
+      CoversMethods G R self ((a :: bs).flatten ++ vs) ms ns
   | .dict a bs vs ix os ms, .dict c ds ws iy ps ns =>
       CoversFields R (a :: bs) (c :: ds) ∧ CoversViews R (a :: bs) vs ws ∧
       (∀ y ∈ iy, ∃ x ∈ ix, R x y) ∧ CoversOptional R (a :: bs) os ps ∧
-      CoversMethods (restElem G) R ms ns
+      CoversMethods G R self ((a :: bs).flatten ++ vs) ms ns
   | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T =>
       arrows L S M ∧
       ∀ t ∈ T, (∃ s ∈ S, RestCovers (restElem G) R s t) ∨ ∃ p ∈ L, FixedCallsPack G R p t
@@ -789,8 +806,8 @@ abbrev Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :=
 /-- Replacing the arrow interpreter preserves all the shared coverage conditions. -/
 theorem CoversWith.mono {G : NormalGraph ι} {R : List ι → List ι → Prop}
     {arrows arrows' : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop}
-    (ha : ∀ L S M, arrows L S M → arrows' L S M) {a b}
-    (h : CoversWith G R arrows a b) : CoversWith G R arrows' a b := by
+    (ha : ∀ L S M, arrows L S M → arrows' L S M) {self a b}
+    (h : CoversWith G R arrows self a b) : CoversWith G R arrows' self a b := by
   cases a <;> cases b <;> simp only [CoversWith] at *
   all_goals first
     | exact h
@@ -932,23 +949,87 @@ theorem covers_sig_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : Lis
 
 /-- Covered methods: each target member is read from the location a source
 member of its key names, whose contract implies the target's signatures on the
-same host. -/
+same host; or from a field or view holding a function whose receiver the host
+is in, below the level, in every extending world. -/
 theorem covers_methods_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
-    {ms ns : List (MethodMembers.Sig (List ι))} (hc : CoversMethods (restElem G) R ms ns) (n : Nat)
+    {self : List ι} {fields : List (PropKey × List ι)}
+    {ms ns : List (MethodMembers.Sig (List ι))} (hc : CoversMethods G R self fields ms ns) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
     (W : WorldT n) (v : Val)
+    (hself : ∀ j (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
+      mixedValues G η self j U v)
+    (hfields : ∀ f ∈ fields, ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr n),
+      v = .objAt flds .absent ∧ flds.lookup f.1 = some l ∧ lookup W l = some c ∧
+      ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u → mixedValues G η f.2 j U u)
     (hv : MethodMembers.methodT (ms.map (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η))) n W v) :
     MethodMembers.methodT (ns.map (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η))) n W v := by
-  show viewT _ n W v
-  intro f T hm
-  simp only [MethodMembers.hostViews, List.map_map, List.mem_map] at hm
-  obtain ⟨q, hq, he⟩ := hm
-  cases he
-  obtain ⟨p, hp, hkey, hpq⟩ := hc q hq
-  obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ := MethodMembers.methodT_at (List.mem_map_of_mem hp) hv
-  refine ⟨flds, l, c, rfl, by simpa [MethodMembers.Member.of, hkey] using hf, hl,
-    fun j hj W' u hu => covers_sig_sound hpq j (fun i hi => hr i (by omega))
-      (fun i hi => hpa i (by omega)) W' _ u (hag j hj W' u hu)⟩
+  intro mq hmq
+  obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hmq
+  rcases hc q hq with ⟨p, hp, hkey, hpq⟩ | ⟨f, hf, hkey, hby⟩
+  · obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ := MethodMembers.methodT_at (List.mem_map_of_mem hp) hv
+    exact ⟨flds, l, c, rfl, by simpa [MethodMembers.Member.of, hkey] using hf, hl,
+      fun j hj U hU u hu => covers_sig_sound hpq j (fun i hi => hr i (by omega))
+        (fun i hi => hpa i (by omega)) U _ u (hag j hj U hU u hu)⟩
+  · obtain ⟨flds, l, c, hρ, hfl, hl, hag⟩ := hfields f hf
+    unfold CoversByFunction at hby
+    split at hby
+    · rename_i L S hE
+      obtain ⟨hcalls, hrests⟩ := hby
+      refine ⟨flds, l, c, hρ, by simpa [MethodMembers.Member.of, ← hkey] using hfl, hl, ?_⟩
+      intro j hj U hU u hu
+      have hplain := plain_of_mem_expand (G := G) (S := f.2) (c := .arrs L S) (by simp [hE])
+      obtain ⟨c', hc', hsem⟩ := (mixed_expand η hplain j U u).mp (hag j hj U u hu)
+      rw [hE, List.mem_singleton] at hc'
+      subst hc'
+      -- The host is in `self`, hence in the function's receiver, below `j`.
+      have host : ∀ (s : List ι), R self s → ∀ j' (hj' : j' < j) (U' : WorldT j'),
+          WExt (trunc j' (Nat.le_of_lt hj') U) U' → ∀ r, MethodMembers.hostT v j' U' r →
+          mixedValues G η s j' U' r := by
+        intro s hs j' hj' U' hU' r hr'
+        cases hr'
+        have hx : WExt (trunc j' (Nat.le_of_lt (Nat.lt_trans hj' hj)) W) U' := by
+          have := WExt_trunc (Nat.le_of_lt hj') hU
+          rw [trunc_trunc] at this
+          exact WExt_trans this hU'
+        exact hr j' (by omega) _ _ hs U' _ (hself j' (by omega) U' hx)
+      refine ⟨⟨hsem.1.1, fun x hx => ?_⟩, ⟨hsem.1.1, fun x hx => ?_⟩⟩
+      · obtain ⟨t', ht', rfl⟩ := List.mem_map.mp hx
+        obtain ⟨t, ht, rfl⟩ := List.mem_map.mp ht'
+        obtain ⟨s, hs, hsr, hd, hres⟩ := hcalls t ht
+        exact ((hsem.1.2 _ (List.mem_map_of_mem hs)).weaken (fun _ _ _ r h => h)
+          (fun j' hj' U' args ha => by simpa using Domains.short (hr j' (by omega)) hd (by simpa using ha))
+          (fun m hm U' w hw => hr m (by omega) _ _ hres U' w hw)).weaken_recv
+          (fun j' hj' U' hU' r hr' => host s.1 hsr j' hj' U' hU' r hr')
+      · obtain ⟨t', ht', rfl⟩ := List.mem_map.mp hx
+        obtain ⟨t, ht, rfl⟩ := List.mem_map.mp ht'
+        obtain ⟨s, hs, hsr, hd, hin, he, hres⟩ := hrests t ht
+        exact ((hsem.2.2 _ (List.mem_map_of_mem hs)).weaken (fun _ _ _ r h => h)
+          (fun j' hj' U' args ha => by
+            simpa using rest_rest (hr j' (by omega)) (hpa j' (by omega) _ _ he) (by simpa using hd)
+              (by simpa using hin) (by simpa using ha))
+          (fun m hm U' w hw => hr m (by omega) _ _ hres U' w hw)).weaken_recv
+          (fun j' hj' U' hU' r hr' => host s.1 hsr j' hj' U' hU' r hr')
+    · exact hby.elim
+
+/-- A record's invariant fields and views are at its locations, whose contracts
+imply their operands' families. -/
+theorem fields_at {G : NormalGraph ι} {η : MixedAssignment ι} {a : List (PropKey × List ι)}
+    {bs : List (List (PropKey × List ι))} {vs : List (PropKey × List ι)} {n : Nat} {W : WorldT n} {v : Val}
+    (hr : refsT (famsOf (mixedValues G η) a) (bs.map (famsOf (mixedValues G η))) n W v)
+    (hw : viewT (famsOf (mixedValues G η) vs) n W v) :
+    ∀ f ∈ (a :: bs).flatten ++ vs, ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr n),
+      v = .objAt flds .absent ∧ flds.lookup f.1 = some l ∧ lookup W l = some c ∧
+      ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u → mixedValues G η f.2 j U u := by
+  intro f hf
+  rcases List.mem_append.mp hf with hf | hf
+  · obtain ⟨L, hL, hfL⟩ := List.mem_flatten.mp hf
+    have hrec : recT (famsOf (mixedValues G η) L) n W v := by
+      rcases List.mem_cons.mp hL with rfl | hL
+      · exact hr.1
+      · exact hr.2 _ (List.mem_map_of_mem hL)
+    obtain ⟨flds, l, c, he, hfl, hl, hag⟩ := recT_at (mem_famsOf.mpr ⟨f.2, hfL, rfl⟩) hrec
+    exact ⟨flds, l, c, he, hfl, hl, fun j hj U u hu => (hag j hj U u).mp hu⟩
+  · exact viewT_at (mem_famsOf.mpr ⟨f.2, hf, rfl⟩) hw
 
 /-- The same argument for a callable object's property bag, which forgets the
 call slot but names the same locations. -/
@@ -1091,9 +1172,12 @@ theorem covers_arguments_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R
   covers_arguments hc (mixedValues G η) (fun A v => A n W v)
     (fun S T h v => hr S T h W v) vs hv
 
-theorem Covers.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R a b} (hc : Covers G R a b) (n : Nat)
+theorem Covers.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R self a b}
+    (hc : Covers G R self a b) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
-    (W : WorldT n) (v : Val) :
+    (W : WorldT n) (v : Val)
+    (hself : ∀ j (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
+      mixedValues G η self j U v) :
     mixedSem G η a n W v → mixedSem G η b n W v := by
   by_cases hb : b = .top
   · subst hb; exact fun hv => semWithArgs_value hv
@@ -1147,13 +1231,13 @@ theorem Covers.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R a b} (hc 
     intro hv
     exact ⟨covers_fields_sound hc.1 n hr W v hv.1, covers_views_sound hc.2.1 n hr W v ⟨hv.1, hv.2.1⟩,
       covers_optional_sound hc.2.2.1 n hr W v ⟨hv.1, hv.2.2.1⟩,
-      covers_methods_sound hc.2.2.2 n hr hpa W v hv.2.2.2⟩
+      covers_methods_sound hc.2.2.2 n hr hpa W v hself (fields_at hv.1 hv.2.1) hv.2.2.2⟩
   · rename_i a bs vs ix os ms c ds ws iy ps ns
     intro hv
     refine ⟨covers_fields_sound hc.1 n hr W v hv.1,
       covers_views_sound hc.2.1 n hr W v ⟨hv.1, hv.2.1⟩, ?_,
       covers_optional_sound hc.2.2.2.1 n hr W v ⟨hv.1, hv.2.2.2.1⟩,
-      covers_methods_sound hc.2.2.2.2 n hr hpa W v hv.2.2.2.2⟩
+      covers_methods_sound hc.2.2.2.2 n hr hpa W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2⟩
     intro y hy
     obtain ⟨x, hx, hxy⟩ := hc.2.2.1 y hy
     obtain ⟨flds, he, hfs⟩ := hv.2.2.1 x hx
@@ -1246,7 +1330,7 @@ clause. A `bool` source is therefore discharged by the pair of Boolean singleton
 clauses, or by a single `bool` clause, or by any target containing both. -/
 def Valid (G : NormalGraph ι) (table : Table ι) : Prop :=
   ∀ p ∈ table, SameKind G p.1 p.2 = true ∧ Opaque G p.1 p.2 ∧
-    ∀ a ∈ sourceClauses G p.1, ∃ b ∈ clausesOf G p.2, Covers G (Rel table) a b
+    ∀ a ∈ sourceClauses G p.1, ∃ b ∈ clausesOf G p.2, Covers G (Rel table) p.1 a b
 
 def Core (G : NormalGraph ι) (S T : List ι) : Prop :=
   ∃ table, (S, T) ∈ table ∧ Valid G table
@@ -1333,11 +1417,15 @@ theorem Core.mixed_sound {G : NormalGraph ι} {S T} (hc : Core G S T) (η : Mixe
     | ind n ih =>
       have hv : ∀ a b, Rel table a b → FamLeAt G η a b n := by
         intro A B hab W v hv
+        have hself : ∀ j (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
+            mixedValues G η A j U v := fun j hj U hU =>
+          (setSem_adm (fun i => qDenoteWithArgs_adm G (mixedParameters G) (η, i)) A).transfer
+            hv j (Nat.le_of_lt hj) U hU
         rcases mixed_cases hv with ⟨c, hcm, hv⟩ | ⟨i, hi, hp, hv⟩
         · obtain ⟨a, ha, hv⟩ := (splitClause_sem _ _ c n W v).mpr hv
           obtain ⟨b, hb, hcover⟩ := (hc (A, B) hab).2.2 a (List.mem_flatMap.mpr ⟨c, hcm, ha⟩)
           exact mixed_expand_mpr ⟨b, hb, Covers.sound hcover n (fun j hj => (ih j hj).1)
-            (fun j hj S T h W vs hvs => (ih j hj).2 S T h W vs hvs) W v hv⟩
+            (fun j hj S T h W vs hvs => (ih j hj).2 S T h W vs hvs) W v hself hv⟩
         · rcases ((hc (A, B) hab).2.1 i hi).resolve_left (by simp [hp]) with hB | htop
           · exact ⟨i, hB, hv⟩
           · exact mixed_expand_mpr ⟨.top, htop, mixedDenote_value G η i hv⟩

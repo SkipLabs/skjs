@@ -172,21 +172,26 @@ instance {R : List ι → List ι → Prop} [DecidableRel R]
     Decidable (CoversSig elem R p q) := by
   unfold CoversSig; infer_instance
 
+instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R]
+    (self F : List ι) (q) : Decidable (CoversByFunction G R self F q) := by
+  unfold CoversByFunction; split <;> infer_instance
+
 set_option synthInstance.maxSize 1024 in
 instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R]
     {arrows : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop}
-    [∀ L S M, Decidable (arrows L S M)] (a b) : Decidable (CoversWith G R arrows a b) := by
+    [∀ L S M, Decidable (arrows L S M)] (self a b) :
+    Decidable (CoversWith G R arrows self a b) := by
   cases a <;> cases b <;> unfold CoversWith <;> infer_instance
 
 set_option synthInstance.maxSize 1024 in
 /-- The executable checker is the shared coverage rule interpreted with checked
 arrow evidence. Adding a coverage condition changes the checker automatically. -/
 def checkClause [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (proofs : Evidence ι)
-    (a b : Clause (List ι)) : Bool :=
-  decide (CoversWith G (Rel table) (ArrowsChecked G table proofs) a b)
+    (self : List ι) (a b : Clause (List ι)) : Bool :=
+  decide (CoversWith G (Rel table) (ArrowsChecked G table proofs) self a b)
 
-theorem checkClause_sound [DecidableEq ι] {G : NormalGraph ι} {table proofs a b}
-    (h : checkClause G table proofs a b = true) : Covers G (Rel table) a b := by
+theorem checkClause_sound [DecidableEq ι] {G : NormalGraph ι} {table proofs self a b}
+    (h : checkClause G table proofs self a b = true) : Covers G (Rel table) self a b := by
   apply CoversWith.mono (h := of_decide_eq_true h)
   intro L S M hs p hp
   obtain ⟨e, _, _, _, he⟩ := hs p hp
@@ -208,9 +213,9 @@ private theorem collect {α β : Type} (xs : List α) (P : α → List β → Pr
     · subst a; exact mono x es _ (fun e he => List.mem_append_left rest he) he
     · exact mono a rest _ (fun e he => List.mem_append_right es he) (hr a hm)
 
-theorem checkClause_mono [DecidableEq ι] {G : NormalGraph ι} {table a b es es'}
-    (hm : ∀ e ∈ es, e ∈ es') (h : checkClause G table es a b = true) :
-    checkClause G table es' a b = true := by
+theorem checkClause_mono [DecidableEq ι] {G : NormalGraph ι} {table self a b es es'}
+    (hm : ∀ e ∈ es, e ∈ es') (h : checkClause G table es self a b = true) :
+    checkClause G table es' self a b = true := by
   have h := of_decide_eq_true h
   apply decide_eq_true
   apply CoversWith.mono (h := h)
@@ -233,8 +238,8 @@ private theorem arrow_evidence_complete [DecidableEq ι] {G : NormalGraph ι} {t
   exact ⟨es,he⟩
 
 set_option synthInstance.maxSize 1024 in
-theorem checkClause_complete [DecidableEq ι] {G : NormalGraph ι} {table a b}
-    (h : Covers G (Rel table) a b) : ∃ es, checkClause G table es a b = true := by
+theorem checkClause_complete [DecidableEq ι] {G : NormalGraph ι} {table self a b}
+    (h : Covers G (Rel table) self a b) : ∃ es, checkClause G table es self a b = true := by
   simp only [checkClause, decide_eq_true_eq]
   cases a <;> cases b <;> simp only [Covers, CoversWith] at *
   all_goals try contradiction
@@ -254,7 +259,7 @@ set_option synthInstance.maxSize 1024 in
 def checkCore [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) (cert : Certificate ι) : Bool :=
   decide ((S, T) ∈ cert.table ∧ ∀ p ∈ cert.table, SameKind G p.1 p.2 = true ∧ Opaque G p.1 p.2 ∧
     ∀ a ∈ sourceClauses G p.1, ∃ b ∈ clausesOf G p.2,
-      checkClause G cert.table cert.arrows a b = true)
+      checkClause G cert.table cert.arrows p.1 a b = true)
 
 
 theorem checkCore_sound [DecidableEq ι] {G : NormalGraph ι} {S T cert}
@@ -271,10 +276,10 @@ theorem checkCore_complete [DecidableEq ι] {G : NormalGraph ι} {S T}
   obtain ⟨table, hm, hv⟩ := h
   have rows : ∀ p ∈ table, ∃ es : Evidence ι,
       ∀ a ∈ sourceClauses G p.1, ∃ b ∈ clausesOf G p.2,
-        checkClause G table es a b = true := by
+        checkClause G table es p.1 a b = true := by
     intro p hp
     apply collect (sourceClauses G p.1)
-      (fun a es => ∃ b ∈ clausesOf G p.2, checkClause G table es a b = true)
+      (fun a es => ∃ b ∈ clausesOf G p.2, checkClause G table es p.1 a b = true)
     · intro a es es' hm ⟨b, hb, hc⟩
       exact ⟨b, hb, checkClause_mono hm hc⟩
     · intro a ha

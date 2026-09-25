@@ -9,11 +9,11 @@ receiver. This is self-application, as in Abadi and Cardelli's object
 calculus, and exactly the shape method-call syntax lowers to: read the member
 from the saved object, then invoke it with that object.
 
-A member is a view whose family depends on the host: the location's contract
-implies, below the level, the member's signatures with the host as the one
-receiver. The host is fixed when the member is read; every field keeps its
-location contract, so the pair (value read, host) keeps its contract as the
-world grows. -/
+A member is at a location of its host whose contract implies, below the
+level and in every world extending the current one, the member's signatures
+with the host as the one receiver. The host is fixed when the member is read;
+every field keeps its location contract, so the pair (value read, host) keeps
+its contract as the world grows. -/
 namespace Verification.Model.MethodMembers
 
 /-- One member: its key, its fixed signatures `(parameters, result)` and its
@@ -38,35 +38,46 @@ def onHost (v : Val) (m : Member) : Fam :=
 theorem onHost_adm (v : Val) (m : Member) : Adm (onHost v m) :=
   interT_adm _ _ (callsT_adm _) (restsT_adm _)
 
-/-- The views a host's members are, each at its host-relative family. -/
-def hostViews (v : Val) (ms : List Member) : Fields :=
-  ms.map fun m => (m.key, onHost v m)
+/-- **Host-relative members.** Each member is at the object's location for
+its key, whose contract implies, in every world extending the current one,
+the member's signatures invoked on the object. The implication is not claimed
+in unrelated worlds: there the object's own locations need not hold their
+contracts, and a method reading them could not be safe. -/
+def methodT (ms : List Member) : Fam := fun k W v =>
+  ∀ m ∈ ms, ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr k),
+    v = .objAt flds .absent ∧ flds.lookup m.key = some l ∧ lookup W l = some c ∧
+    ∀ (j : Nat) (hj : j < k) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
+      ∀ (u : Val), c j hj U u → onHost v m j U u
 
-/-- **Host-relative members.** Each member is a view of the object whose
-reads, invoked on the object, meet the member's signatures. -/
-def methodT (ms : List Member) : Fam := fun k W v => viewT (hostViews v ms) k W v
-
-theorem methodT_adm (ms : List Member) : Adm (methodT ms) :=
-  ⟨fun n W v h => (viewT_adm (hostViews v ms)).down n W v h,
-   fun n W U hx v h => (viewT_adm (hostViews v ms)).mono n W U hx v h⟩
+theorem methodT_adm (ms : List Member) : Adm (methodT ms) := by
+  refine ⟨?_, ?_⟩
+  · intro n W v h m hm
+    obtain ⟨flds, l, c, hv, hf, hl, hag⟩ := h m hm
+    refine ⟨flds, l, _, hv, hf, lookup_trunc (Nat.le_succ n) W l c hl, ?_⟩
+    intro j hj U hx u hu
+    exact hag j (by omega) U (by rwa [trunc_trunc] at hx) u hu
+  · intro n W W' hx v h m hm
+    obtain ⟨flds, l, c, hv, hf, hl, hag⟩ := h m hm
+    exact ⟨flds, l, c, hv, hf, WExt_lookup hx hl, fun j hj U hU u hu =>
+      hag j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hU) u hu⟩
 
 theorem methodT_nil (k : Nat) (W : WorldT k) (v : Val) : methodT [] k W v := by
-  intro f T hm
-  simp [hostViews] at hm
+  intro m hm
+  simp at hm
 
 theorem methodT_append (ms ns : List Member) (k : Nat) (W : WorldT k) (v : Val) :
     methodT (ms ++ ns) k W v ↔ methodT ms k W v ∧ methodT ns k W v := by
-  simp only [methodT, hostViews, List.map_append]
-  exact viewT_append _ _ k W v
+  simp only [methodT, List.mem_append, or_imp, forall_and]
 
 /-- A member of the object, read from it: the host-relative family its
-location implies. -/
+location implies in extending worlds. -/
 theorem methodT_at {ms : List Member} {m : Member} (hm : m ∈ ms) {k} {W : WorldT k} {v}
     (h : methodT ms k W v) :
     ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr k),
       v = .objAt flds .absent ∧ flds.lookup m.key = some l ∧ lookup W l = some c ∧
-      ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u → onHost v m j W' u :=
-  viewT_at (fs := hostViews v ms) (List.mem_map_of_mem (f := fun m => (m.key, onHost v m)) hm) h
+      ∀ (j : Nat) (hj : j < k) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
+        ∀ (u : Val), c j hj U u → onHost v m j U u :=
+  h m hm
 
 /-- A member's syntax: its key, fixed signatures `(parameters, result)` and
 variadic ones `(parameters, rest, result)`, operands of any sort. -/
@@ -108,20 +119,17 @@ theorem methodT_congr {α : Type} (X Y : α → Fam) (P Q : α → ArgFam) (n : 
     (h : ∀ a, Agree (X a) (Y a) n) (hP : ∀ a, Agree (P a) (Q a) n) (ms : List (Sig α))
     (W : WorldT n) (v : Val) :
     methodT (ms.map (Member.of X P)) n W v ↔ methodT (ms.map (Member.of Y Q)) n W v := by
-  simp only [methodT, hostViews, List.map_map]
   constructor
-  · intro hv f T hmem
-    obtain ⟨m, hm', he⟩ := List.mem_map.mp hmem
-    cases he
-    obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ := hv _ _ (List.mem_map.mpr ⟨m, hm', rfl⟩)
-    exact ⟨flds, l, c, rfl, hf, hl, fun j hj W' u hu =>
-      (onHost_congr X Y P Q n h hP m _ j hj W' u).mp (hag j hj W' u hu)⟩
-  · intro hv f T hmem
-    obtain ⟨m, hm', he⟩ := List.mem_map.mp hmem
-    cases he
-    obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ := hv _ _ (List.mem_map.mpr ⟨m, hm', rfl⟩)
-    exact ⟨flds, l, c, rfl, hf, hl, fun j hj W' u hu =>
-      (onHost_congr X Y P Q n h hP m _ j hj W' u).mpr (hag j hj W' u hu)⟩
+  · intro hv m hmem
+    obtain ⟨s, hs, rfl⟩ := List.mem_map.mp hmem
+    obtain ⟨flds, l, c, hρ, hf, hl, hag⟩ := hv _ (List.mem_map_of_mem hs)
+    exact ⟨flds, l, c, hρ, hf, hl, fun j hj U hU u hu =>
+      (onHost_congr X Y P Q n h hP s v j hj U u).mp (hag j hj U hU u hu)⟩
+  · intro hv m hmem
+    obtain ⟨s, hs, rfl⟩ := List.mem_map.mp hmem
+    obtain ⟨flds, l, c, hρ, hf, hl, hag⟩ := hv _ (List.mem_map_of_mem hs)
+    exact ⟨flds, l, c, hρ, hf, hl, fun j hj U hU u hu =>
+      (onHost_congr X Y P Q n h hP s v j hj U u).mpr (hag j hj U hU u hu)⟩
 
 /-- Rename a member signature's operands. -/
 def Sig.map {α β : Type} (f : α → β) (m : Sig α) : Sig β :=

@@ -730,6 +730,17 @@ theorem Promise.weaken {Acc Acc' : (j : Nat) → WorldT j → List Tm → Prop} 
     h j hj U hx hu heap hh r hrv (hrecv j hj U r hr) args hv (hacc j hj U args ha)
   exact ⟨result, hi, Safe_mono j (fun m hm V u hu => hres m (by omega) V u hu) U heap _ hs⟩
 
+/-- A promise holds for the receivers of a narrower family, which need only be
+within the wider one in worlds extending the current one: a promise is only
+ever used in those. -/
+theorem Promise.weaken_recv {Acc : (j : Nat) → WorldT j → List Tm → Prop} {Rc Rc' R : Fam}
+    {k W v}
+    (hrecv : ∀ j (hj : j < k) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
+      ∀ r, Rc' j U r → Rc j U r)
+    (h : Promise Acc Rc R k W v) : Promise Acc Rc' R k W v := by
+  intro j hj U hx hu heap hh r hrv hr args hv ha
+  exact h j hj U hx hu heap hh r hrv (hrecv j hj U hx r hr) args hv ha
+
 /-- Agreement of the receivers, the admitted lists and the result below the
 budget. -/
 theorem Promise.congr {Acc Acc' : (j : Nat) → WorldT j → List Tm → Prop} {Rc Rc' R T : Fam}

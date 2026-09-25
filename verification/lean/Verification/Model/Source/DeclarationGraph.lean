@@ -418,18 +418,46 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
   | "pack" => throw "a pack parameter outside a signature's rest"
   | "object" =>
     CellClaims.fieldsExactly term ["k", "fields", "stringIndex", "calls", "span"]
+    -- A method, one signature or several with the declaration as receiver, is
+    -- a host-relative member: its contract holds when it is invoked on the
+    -- object it is read from, so it is neither a field nor a view. An
+    -- optional method stays an optional field; a generic one, whose type is a
+    -- scheme, stays a readonly member.
+    let methodForms (t : Json) : Option (Array Json) :=
+      let forms := if (t.getObjValAs? String "k").toOption == some "intersection"
+        then (t.getObjValAs? (Array Json) "parts").toOption.getD #[] else #[t]
+      if !forms.isEmpty && forms.all (fun f => (f.getObjValAs? String "k").toOption == some "function" &&
+          ((f.getObjVal? "receiver").toOption.bind fun r => (r.getObjValAs? String "k").toOption) ==
+            some "self")
+      then some forms else none
+    let mut methods : List (MethodMembers.Sig (List Nat)) := []
+    let mut all : Array (PropKey × List Nat × Bool × Bool) := #[]
     -- An optional field constrains its key only where the object has it; a
     -- readonly one would need a view form of presence, which is not stated.
-    let all ← (← arr term "fields").mapM fun f => do
+    for f in ← arr term "fields" do
       let name ← PropKey.decode (← field f "name")
-      let value ← lowerType ds owner params seen (← field f "type")
+      let ty ← field f "type"
       let optional ← bool f "optional"
-      if optional && (← bool f "readonly") then
-        throw "a readonly optional field needs a view presence form"
-      return (name, value, ← bool f "readonly", optional)
+      match (if optional then none else methodForms ty) with
+      | some forms =>
+        let mut calls : List (List (List Nat) × List Nat) := []
+        let mut rests : List (List (List Nat) × List Nat × List Nat) := []
+        for form in forms do
+          CellClaims.fieldsExactly form ["k", "receiver", "params", "rest", "result", "span"]
+          let domains ← (← arr form "params").mapM (lowerType ds owner params seen)
+          let rest ← field form "rest"
+          let result ← lowerType ds owner params seen (← field form "result")
+          if rest == .null then calls := calls ++ [(domains.toList, result)]
+          else rests := rests ++ [(domains.toList, ← lowerRest ds owner params seen rest, result)]
+        methods := methods ++ [⟨name, calls, rests⟩]
+      | none =>
+        let value ← lowerType ds owner params seen ty
+        if optional && (← bool f "readonly") then
+          throw "a readonly optional field needs a view presence form"
+        all := all.push (name, value, ← bool f "readonly", optional)
     let fs := all.filterMap fun (n, v, r, o) => if o then none else some (n, v, r)
     let optional := all.toList.filterMap fun (n, v, _, o) => if o then some (n, v) else none
-    let names := fs.toList.map (·.1)
+    let names := fs.toList.map (·.1) ++ optional.map (·.1) ++ methods.map (·.key)
     if names.eraseDups.length != names.length then throw "duplicate declaration field"
     let index ← field term "stringIndex"
     let indexes ← if index == .null then pure ([] : List (List Nat)) else do
@@ -456,8 +484,10 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
         variadic := variadic ++ [(receiver, domains.toList,
           ← lowerRest ds owner params seen rest, result)]
     let row ← if fixed.isEmpty && variadic.isEmpty then
-        if indexes.isEmpty then use (.refs writes [] views optional)
-        else use (.dict writes [] views indexes optional)
+        if indexes.isEmpty then use (.refs writes [] views optional methods)
+        else use (.dict writes [] views indexes optional methods)
+      else if !methods.isEmpty then
+        throw "a callable object with methods needs a combined clause"
       else if !optional.isEmpty then
         throw "a callable object with an optional field needs a combined clause"
       else if !indexes.isEmpty || !views.isEmpty then

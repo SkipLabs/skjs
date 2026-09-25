@@ -410,8 +410,9 @@ theorem memberOf_at {G : NormalGraph ι} {O : Ty ι} {k : PropKey} {m : MethodMe
     (hm : memberOf G O k = some m) {n W v} (hv : meaning G O n W v) :
     ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr n),
       v = .objAt flds .absent ∧ flds.lookup k = some l ∧ lookup W l = some c ∧
-      ∀ (j : Nat) (hj : j < n) (W' : WorldT j) (u : Val), c j hj W' u →
-        MethodMembers.onHost v (MethodMembers.Member.of (meaning G) (argMeaning G) m) j W' u := by
+      ∀ (j : Nat) (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
+        ∀ (u : Val), c j hj U u →
+        MethodMembers.onHost v (MethodMembers.Member.of (meaning G) (argMeaning G) m) j U u := by
   unfold memberOf at hm
   split at hm
   all_goals try contradiction
@@ -2028,7 +2029,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     rw [hterm]
     have hread : Safe (MethodMembers.onHost (ρ i) (MethodMembers.Member.of (meaning G) (argMeaning G) m))
         n W h (.readAt k (ρ i)) := by
-      have := read_view_rule (A := MethodMembers.onHost (ρ i)
+      have := read_view_rule_ext (A := MethodMembers.onHost (ρ i)
           (MethodMembers.Member.of (meaning G) (argMeaning G) m)) (code := .absent) (flds := flds)
         (fun _ _ _ hv => hv.1.1.val) n W h l hw hh hf hl hag
       rwa [← hρ] at this

@@ -1863,14 +1863,19 @@ Formally, with `M = (f, L, S)` a member named `f` with fixed signatures
 carries a receiver:
 
 ```text
-methodT(M)(k, W, v) ⇔ every value u a read of f on v yields satisfies, below k,
-    callsT [({v}, Ps, R) | (Ps, R) ∈ L](u) ∧ restsT [({v}, Ps, P, R) | (Ps, P, R) ∈ S](u)
+methodT(M)(k, W, v) ⇔ v's location ℓ for f has contract c, and for every j < k and
+    every world U extending W|j, every u with c(j, U, u) satisfies
+    callsT [({v}, Ps, R) | (Ps, R) ∈ L](j, U, u) ∧ restsT [({v}, Ps, P, R) | (Ps, P, R) ∈ S](j, U, u)
 ```
 
 The receiver family is the singleton `{v}`: the host, fixed when the member is
-read. Arguments may mutate the host before the invoke, but every field keeps
-its location contract, so the pair (value read, host) keeps its contract under
-world extension. An own member is read from the object's location, so its
+read. The implication is required only in worlds extending the current one. A
+method body reads its host's fields, which an unrelated world need not hold with
+their contracts, so no real method would meet the unrestricted form; a member
+is read in the current world and invoked in a later one, so nothing more is
+used (`MethodMembers.methodT`, `read_view_rule_ext`). Arguments may mutate the
+host before the invoke, but every field keeps its location contract, so the
+pair (value read, host) keeps its contract under world extension. An own member is read from the object's location, so its
 location contract implies the host-relative family. A library member (the
 array prototype) is read from an ambient, immutable library object.
 
@@ -1935,13 +1940,28 @@ a choice.
 - *Only a member named by a known key is a member call.* `o[k]()` with a
   dynamic `k` determines no member, so no member contract applies.
 
-**Representation.** The object clauses (`refs`, `dict`, `callable`) gain a
-method component: members with receiver-free signatures, whose operands are
-rows as in `arrs`. Conjunction concatenates methods. A target method is
-covered by a source method of the same name (parameters contravariant, results
-covariant), or by a source function-valued property whose signatures admit
-every receiver. A method call `o.m(args)` is typed by the member read from `o`
-and invoked with `o`.
+**Representation and rules.** The `refs` and `dict` clauses have a method
+component (`MethodMembers.Sig`): members with receiver-free fixed and variadic
+signatures, whose operands are rows as in `arrs`. Conjunction concatenates
+methods. The declaration reader turns a non-optional method signature of an
+interface or class, one or several with receiver `self`, into a member; an
+optional method (`return?`) and a generic one (a scheme) stay fields for now.
+
+A target method is covered (`CoversMethods`) by a source method of the same
+key, parameters contravariant and results covariant (`CoversSig`), or by a
+function the source holds in a field or view whose signatures take a receiver
+the source's own type is within (`CoversByFunction`). The second form is how a
+class instance, allocated with its methods as function-typed fields whose
+receiver is the instance type, meets that type: coverage takes the source type
+of the pair as `self`, and `Core`'s induction on the level supplies that the
+host is in it below the level.
+
+A method call `o.m(args)` reads the member and binds it to its host in one
+term, `bindMember`, before the actuals run; the bound value is then called as
+any function. Nothing types a member read on its own, so extraction has no
+rule. The controls `method-members.ts`, `invalid-method-extraction.ts`,
+`invalid-method-as-property.ts`, `invalid-method-bivariance.ts` and
+`invalid-method-result.ts` exercise each consequence.
 
 ### Next object milestone
 

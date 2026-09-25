@@ -90,7 +90,7 @@ def prune [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) :
     let next := table.filter fun p => PositiveRules.SameKind G p.1 p.2 &&
       decide (PositiveRules.Opaque G p.1 p.2) &&
       (sourceClauses G p.1).all fun a =>
-      (clausesOf G p.2).any fun b => PositiveCertificates.checkClause G table es a b
+      (clausesOf G p.2).any fun b => PositiveCertificates.checkClause G table es p.1 a b
     if next = table then table else prune G pool fuel next
 
 def subtypeBase [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
@@ -408,6 +408,11 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         if checkTree G (leaf F .bindE) then coerce G pool (leaf F .bindE) A
         else if checkTree G (leaf F .bindRestE) then coerce G pool (leaf F .bindRestE) A
         else none
+    -- A member bound to its host: a leaf whose checker reads the object's type
+    -- from the context; the claimed type, or a pool type, is its result.
+    | .letE (.readAt _ (.var _)) (.makeAt (.bound (.var 0) (.var _) []) [] []) =>
+      return (A :: pool).findSome? fun F =>
+        if checkTree G (leaf F .bindMember) then coerce G pool (leaf F .bindMember) A else none
     | .letE a b =>
       let exactTypes := suggestions.reverse.filterMap fun j =>
         if j.context == Γ && j.term == a then some j.type else none
@@ -500,7 +505,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         -- An invariant field reads at its contract; a view field at its bound;
         -- an optional field at its contract or `undefined`.
         let (B,r) ← match expand G R with
-          | [.refs fs [] vs os] =>
+          | [.refs fs [] vs os _] =>
             (fs.lookup f).map (·,Rule.read) <|> (vs.lookup f).map (·,Rule.readView) <|>
               (os.lookup f).bind fun E => pool.findSome? fun U =>
                 if expand G U == [.undef] then some (E ++ U, Rule.readOptional E U) else none
@@ -517,7 +522,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     | .writeAt f a b =>
       let direct := pool.findSome? fun R => do
         let (fs,r) ← match expand G R with
-          | [.refs fs [] _ _] => some (fs,Rule.write)
+          | [.refs fs [] _ _ _] => some (fs,Rule.write)
           | [.callable fs _ _ _] => some (fs,Rule.writeCallable)
           | _ => none
         let B ← fs.lookup f
@@ -662,7 +667,8 @@ def vocabulary [DecidableEq ι] (G : NormalGraph ι) (labels : List ι)
   ([] :: (labels.map fun i => [i]) ++ hints ++
     claims.flatMap (fun c => c.type :: c.context) ++
     labels.flatMap (fun i => (G i).flatMap fun c => match c with
-      | .refs A bs vs => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd
+      | .refs A bs vs _ ms => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd ++
+          ms.flatMap MethodMembers.Sig.operands
       | .list a bs => (a :: bs).flatMap fun t => t.required ++ t.optional ++ t.rest.toList
       | .arrs L S => L.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2]) ++
           S.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2.1, p.2.2.2])

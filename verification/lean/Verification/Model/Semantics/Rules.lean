@@ -156,6 +156,27 @@ theorem read_view_rule {code : CallCode} {flds : List (PropKey × Nat)} {f : Pro
     | zero => trivial
     | succ q => exact Or.inl ⟨hA _ _ _ hAv, hAv⟩
 
+/-- A read whose location's contract implies `A` only in worlds extending the
+current one: the read happens in the current world, so that is all it needs. -/
+theorem read_view_rule_ext {code : CallCode} {flds : List (PropKey × Nat)} {f : PropKey} {A : Fam}
+    (hA : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap) (l : Nat)
+    (hadm : WorldAdm W) (hok : HeapOk n W h) (hf : flds.lookup f = some l)
+    {c : Ctr n} (hl : lookup W l = some c)
+    (hag : ∀ (j : Nat) (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
+      ∀ (u : Val), c j hj U u → A j U u) :
+    Safe A n W h (.readAt f (.objAt flds code)) := by
+  cases n with
+  | zero => trivial
+  | succ p =>
+    obtain ⟨v, hv, hmem⟩ := hok.2 l c hl
+    have hAv : A p (trunc p (Nat.le_succ p) W) v :=
+      hag p (by omega) _ (WExt_refl _) v (hmem p (by omega))
+    refine Or.inr ⟨trunc p (Nat.le_succ p) W, h, v, WExt_refl _,
+      WorldAdm_trunc _ hadm, .readField hf hv, HeapOk_trunc p W h hok, ?_⟩
+    cases p with
+    | zero => trivial
+    | succ q => exact Or.inl ⟨hA _ _ _ hAv, hAv⟩
+
 /-- A string dictionary covers every present field, while a missing name
 reads `undefined`. A lookup cannot discard that alternative. -/
 theorem read_dict_rule {flds : List (PropKey × Nat)} {f : String} {A : Fam}
