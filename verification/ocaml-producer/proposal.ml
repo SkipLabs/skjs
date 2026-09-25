@@ -632,7 +632,8 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | LetBody (_,_,_,rest) | SequenceBody (_,rest) | IfBody (_,_,rest,_) -> allocated rest
     | _ -> None in
   let named_closure n written (init:expr) = match written,init.node with
-    | None,Lambda (_,[],ps,_,false,_,_) -> closures := (n,(init.pos,List.map snd ps)) :: !closures
+    | (None | Some (Atoms [Shape {calls=[_];fields=[];string_index=None;elements=None}])),Lambda (_,[],ps,_,false,_,_) ->
+      closures := (n,(init.pos,List.map snd ps)) :: !closures
     | Some _,Ctor {node=Lambda (None,[],ps,[],false,Some instance,body);_} when allocated body <> None ->
       let fs = Option.get (allocated body) in
       let methods = List.filter_map (fun (key,(e:expr)) -> match e.node with
@@ -765,6 +766,14 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | Id n ->
       Option.iter (fun expected -> Option.iter (fun c -> offer_class c expected)
         (List.assoc_opt n !classes)) expected;
+      (* A named closure expected at a signature binding more parameters
+         than it does is offered it, wherever it flows: an argument (as
+         below), an annotated binding, a return, a field. *)
+      (match expected with
+       | Some (Atoms [Shape {calls=[o];fields=[];string_index=None;elements=None}])
+         when List.mem_assoc n !closures && List.mem_assoc n env ->
+         Option.iter (fun state -> state ()) (closure_offer n o)
+       | _ -> ());
       resolve env n
     | Literal l -> literal_type l
     | Not e -> ignore (expr env e); bool
@@ -1039,7 +1048,24 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       (* A named closure passed where more parameters are offered is claimed
          at those signatures too, beside its own: calls through it discard
          the actuals past its parameters, and Lean checks its body at each. *)
-      let own = match List.assoc_opt e.pos offered, own with
+      (* A closure literal expected at one signature binding more parameters
+         than it does, whose leading positions its own take, is offered it
+         where it is created, as a named one is offered by its uses. *)
+      let from_context = match expected with
+        | Some t -> (match (try declared_head declarations [] t with Json.Error _ -> t) with
+          | Atoms [Shape {calls=[s];fields=[];string_index=None;elements=None}]
+            when s.quantified=[] && s.rest_pack=None
+                 && (match s.variadic with
+                     | None -> List.length s.params > List.length ps
+                     | Some _ -> List.length s.params >= List.length ps)
+                 && List.for_all2 plausible_subtype
+                      (List.filteri (fun i _ -> i < List.length ps) s.params) (List.map snd ps) -> [s]
+          | _ -> [])
+        | None -> [] in
+      let offered_here = match List.assoc_opt e.pos offered, from_context with
+        | None,[] -> None
+        | extra,context -> Some (Option.value extra ~default:[] @ context) in
+      let own = match offered_here, own with
         | Some extra, Atoms [Shape ({calls=[call];_} as shape)] when quantified=[] && element=None ->
           Atoms [Shape {shape with calls=call :: List.filter (fun s -> s <> call)
             (List.sort_uniq compare extra)}]
@@ -1569,6 +1595,10 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         (* A class's annotation is its own construct signature, which the
            parser writes; the class value's claim may offer more. *)
         | false,Some _ when (match init.node with Ctor _ -> true | _ -> false) -> Value initial
+        (* A closure offered further signatures holds them beside its
+           annotation's: the binding is the closure, claimed at all of them,
+           which Lean checks against the annotation. *)
+        | false,Some _ when List.mem_assoc init.pos offered -> Value initial
         | false,Some contract -> Value (arms declarations contract)
         | false,None -> Value initial in
       extend (after init env) n binding) env bs

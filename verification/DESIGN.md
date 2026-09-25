@@ -3117,7 +3117,17 @@ a choice.
   it allocates holds the method as a field whose signatures cover the
   interface's member (`CoversByFunction`). This is the offer mechanism a named
   closure passed where more parameters are offered uses, reached from a class
-  value instead of a call; there is no arrow-widening subtyping. The
+  value instead of a call; there is no arrow-widening subtyping. A named
+  closure, annotated or not, is offered such a signature wherever it flows
+  at one (an annotated binding, a return, a field), not only as an argument,
+  and an annotated binding of it is then the closure at all its signatures,
+  which Lean checks against the annotation; a closure literal expected at one
+  is offered it where it is created (`closure-offer-flows.ts`). A closure
+  whose code binds the extra position is offered nothing, so TypeScript's
+  unsound `(a, b?: string) => …` held at `(a) => …` and used at
+  `(a, b: number) => …` stays refused (`invalid-closure-offer-flows.ts`). A
+  module function is not offered: its slot is its annotated signature,
+  checked by its own unit, and offering it would make that slot a claim. The
   constructor is offered alike: a class value expected at a construct
   signature passing more actuals than its constructor binds is claimed there
   too, beside its own, and `ctorE` checks the body at the signature's first
