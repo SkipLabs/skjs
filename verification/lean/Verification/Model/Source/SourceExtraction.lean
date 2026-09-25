@@ -2458,9 +2458,12 @@ private def leave (pos : Span) (R : Ty Nat) (scope : List ScopeBinding)
     let exit ← emitAt pos .undef .ret [] R "completion"
     return ⟨exit.label, some []⟩
   | some (target, outer) =>
-    let slots ← outer.mapM fun b => match (names scope).idxOf? b.source.name with
-      | some i => pure i
-      | none => throw s!"internal extraction error: lost outer binding '{b.source.name}'"
+    -- A binding is found by its descriptor first: a parameter may hide a
+    -- module constant of its name, and the constant's slot is its own.
+    let slots ← outer.mapM fun b =>
+      match (sources scope).idxOf? b.source, (names scope).idxOf? b.source.name with
+      | some i, _ | none, some i => pure i
+      | none, none => throw s!"internal extraction error: lost outer binding '{b.source.name}'"
     return ⟨target.label, some slots⟩
 
 /-- Branch binding pushes the actual tested value. For a source variable test,

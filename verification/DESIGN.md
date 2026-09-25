@@ -1832,7 +1832,12 @@ cross a closure boundary. Both are ordinary null/effect graph nodes: their
 supplied statement environments are checked on entry, and their mapped outgoing
 edges must justify the destination's supplied environment. The slot map drops
 locals introduced inside the loop or branch; it does not assume destination
-claims or retain an obsolete mutable-field refinement.
+claims or retain an obsolete mutable-field refinement. It finds each binding the
+destination keeps by its descriptor (name and span), and by name only where no
+descriptor matches: a parameter may hide a module constant of its name, and
+finding the constant by name gave it the parameter's slot, which a test had
+just narrowed (`shadowed-module-constant.ts`). The map is a proposal the edge
+check validates either way; this makes the right one.
 
 Already-known immutable Boolean singleton facts are preserved when forming a
 branch map, rather than overwritten with an opposite-branch witness. This avoids

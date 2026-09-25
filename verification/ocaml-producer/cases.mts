@@ -854,6 +854,8 @@ export const cases: Case[] = [
   negative("invalid-generic-bound-literal", "a literal holding a function is no Json value", /source expression obligation at \[281,309\)/),
   positive("unary-plus-literal", "`+1` is the number 1, typed as the literal, as `-1` is"),
   negative("invalid-unary-plus-literal", "`+42` is 42, not 43", /source expression obligation at \[61,64\)/),
+  positive("shadowed-module-constant", "a parameter hiding a module constant of its name: a jump carries each binding by its identity, so narrowing the parameter leaves the constant's slot"),
+  negative("invalid-shadowed-module-constant", "past the test the parameter is `false`", /source expression obligation at \[194,195\)/),
   gap("object-growth-refused", "a write adding a key to a record allocated without it: an object's keys are fixed at its allocation",
     "unsupported", "proposal", /a write adds the property 'x' to an object allocated without it/),
   gap("optional-write-refused", "a write to a writable optional field may add its key",
