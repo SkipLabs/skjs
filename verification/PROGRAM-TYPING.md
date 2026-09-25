@@ -1187,8 +1187,9 @@ Every atom names a field: `HeapFacts.Fact` and `HeapLinks.Link` each carry one,
 and `HeapExpressionRules` reads it off the term rather than taking it from
 evidence, so a certificate cannot assert a fact about a field the program never
 touched. The `allocated` rule establishes one primitive-content atom per named
-field when every initializer slot has a known supported predicate; an ordinary
-allocation alone makes no such assertion. The rules below are
+field whose initializer slot has a known supported predicate, and none for a
+field whose initializer has none; an ordinary allocation alone makes no such
+assertion. The rules below are
 written in the one-field spelling, $x\mapsto R$, which is the general rule at
 whichever field its term names; nothing in them is specific to a field name.
 
@@ -1281,7 +1282,17 @@ $$
       \qquad(\Gamma;\Pi)(x)=R}
 {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow\operatorname{alloc}(x):\operatorname{Ref}A
   \dashv \Pi\;;\;\Sigma,\;r\mapsto R}
+\qquad
+\frac{\Gamma\vdash_G\operatorname{alloc}(x):\operatorname{Ref}A
+      \qquad(\Gamma;\Pi)(x)\ \text{undefined}\qquad x\in\operatorname{dom}\Gamma}
+{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow\operatorname{alloc}(x):\operatorname{Ref}A
+  \dashv \Pi\;;\;\Sigma}
 $$
+
+Either way the fresh cell's field is a location distinct from every contract
+field of every record-typed slot (the distinct links of `allocOutput`), whether
+or not its contents are known: a cell holding an object keeps what is known of
+the others, and a later write to either keeps what is known of the other.
 
 **Reading** has two rules for the same term, and neither subsumes the other.
 
@@ -1427,7 +1438,7 @@ It computes a guaranteed output, not an assumed postcondition:
 | Ordinary typed read                  | Preserve facts and record read links to the receiver and witnessed aliases, retaining its plain or callable descriptor; no prior current-content fact is needed. Its result has the supplied type.                                       |
 | Observed read                        | Preserve facts and links; record the result's primitive predicate and its current read relationship. That set must fit the requested ordinary result type.                                                                               |
 | Known immutable value                | Check the requested primitive type against a proved slot fact or the slot's ordinary primitive type.                                                                                                                                     |
-| Allocation                           | Check ordinary creation evidence and scope for either descriptor, preserve old facts, and add the fresh bag's initial contents from a checked value slot. Closure code is not executed.                                                  |
+| Allocation                           | Check ordinary creation evidence and scope for either descriptor, preserve old facts, add the fresh bag's initial contents where a checked value slot's are known, and its fields' distinctness from every record slot's. Closure code is not executed. |
 | Write                                | Check ordinary write evidence (no old-content premise), discard all old cell facts, record new contents for the receiver and its witnessed aliases, and preserve immutable facts and slot equalities. Read links are discarded.          |
 | Ordinary expression, including calls | Check ordinary evidence, discard cell facts and read links, preserving immutable facts and slot equalities.                                                                                                                              |
 
@@ -1813,6 +1824,66 @@ $\Delta$. `passed_refinement_paths` checks two surviving paths into one
 or the wrong slot. Passing this one refined value is established; translating
 arbitrary supplied entry environments into continuation parameters is not yet
 implemented.
+
+### Mutable bindings and module constants
+
+A `let` binding and an assigned parameter lower to a private cell
+([DESIGN.md](DESIGN.md#next-fragment-extension-mutable-locals-aimed-at-a-known-loop-failure)). Its
+contract $C$ is fixed where it is declared; the initializer and every write
+are checked against it (`storage-contract`), and a point claim for the name
+describes the cell's current contents, which the
+[current-content rules](#current-content-rules-semantic-layer) justify on every
+incoming edge. The contract is:
+
+$$
+\operatorname{contract}(\mathtt{let}\ x{:}T=e)=T
+\qquad
+\operatorname{contract}(\mathtt{let}\ x=e)=
+\begin{cases}
+Q_{\mathit{next}}(x) & \text{the claim for } x \text{ at the entry of the next statement}\\
+Q(e) & \text{no statement follows in its block}
+\end{cases}
+$$
+
+with $Q(e)$ the claimed type of the initializer. A declaration ending its block
+has no statement after it to read the binding, and the initializer meets its
+own claim, so any choice every write is checked against is sound. The producer
+proposes TypeScript's declared type, the initializer's type widened
+(`let x = 1` stores $\mathsf{Num}$); `null`, `undefined` and `[]`
+initializers have no declared type in TypeScript (an evolving `any`) and are
+refused. A parameter $x{:}D$ that the body assigns (`assignsStmt`) has
+contract $D$, the caller's value its initial contents.
+
+A `let` without an initializer binds `undefined` where its declaration runs,
+which is the derived form
+
+$$
+\mathtt{let}\ x{:}T;\quad\equiv\quad\mathtt{let}\ x{:}T\cup\mathsf{Undefined}=\mathtt{undefined}.
+$$
+
+Definite assignment is not an extra rule: a read at $T$ types only where the
+cell's current contents are known to be in $T$, a fact a write of a $T$ value
+establishes and a join keeps only when every incoming edge proves it. A
+closure reads a captured cell at its contract, $T\cup\mathsf{Undefined}$,
+since it may run before the write. Current contents are primitive predicates,
+so a `let x: T;` of an object type `T` is read at $T\cup\mathsf{Undefined}$
+after its assignments. Without an annotation there is no contract and the
+parser refuses it.
+
+A module constant $c$ bound to $e_c$ by the initialization unit is read by
+the module's functions at
+
+$$
+\operatorname{type}(\mathtt{const}\ c{:}T=e_c)=T
+\qquad
+\operatorname{type}(\mathtt{const}\ c=e_c)=Q_{\mathit{init}}(e_c),
+$$
+
+the initialization unit's claim for its initializer. That unit checks
+$\Gamma\vdash e_c:Q_{\mathit{init}}(e_c)$ where it binds $c$, exactly as it
+checks an annotation, and a constant never changes, so the functions'
+assumption is what the unit establishes (the composition argument is
+[DESIGN.md](DESIGN.md#modules-and-code-units)'s, unchanged).
 
 ### Source closures and their annotations
 

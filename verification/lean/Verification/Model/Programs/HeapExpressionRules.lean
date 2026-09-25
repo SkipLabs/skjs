@@ -253,14 +253,16 @@ theorem contractFields_mem [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty 
     exact ⟨A,B,p.2,hidx,hB,hp⟩
   · simp at hsel
 
-/-- Allocation retains facts about old cells and records the fresh object, one
-assertion per named field it was given. Its locations are fresh, so each of its
-fields is distinct from every contract field of every record-typed slot. -/
+/-- Allocation retains facts about old cells and records the fresh object: one
+assertion per field whose initializer is known to hold a supported primitive
+predicate (`Rs`). Its locations are fresh, so each of its fields (`fields`, by
+default those of `Rs`) is distinct from every contract field of every
+record-typed slot, whatever it holds. -/
 def allocOutput (k : Knowledge) (Rs : List (PropKey × List Atom))
-    (others : List (Nat × PropKey) := []) : Knowledge :=
+    (others : List (Nat × PropKey) := []) (fields : List PropKey := Rs.map Prod.fst) : Knowledge :=
   ⟨(Rs.map fun p => (⟨0,p.2,p.1⟩ : Fact)) ++ HeapFacts.shift k.cells, HeapFacts.shift k.values,
-    (Rs.flatMap fun p => others.map fun q =>
-      (⟨0,q.1+1,false,p.1,true,q.2⟩ : HeapLinks.Link)) ++ (HeapKnowledge.shift k).links⟩
+    (fields.flatMap fun p => others.map fun q =>
+      (⟨0,q.1+1,false,p,true,q.2⟩ : HeapLinks.Link)) ++ (HeapKnowledge.shift k).links⟩
 
 /-- The slots a fresh allocation's initializers stand in, with the field each
 one fills. Nothing else can frame facts: every initializer must already be a
@@ -274,38 +276,11 @@ def allocationSlots : Tm → Option (List (PropKey × Nat))
   | .makeAt _ ns inits => allocationParts ns inits
   | _ => none
 
-/-- What each initializer slot is known to hold. An allocation frames facts only
-when every one of its fields has a known supported primitive predicate. -/
-def allocationFacts [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) :
-    List (PropKey × Nat) → Option (List (PropKey × Nat × List Atom))
-  | [] => some []
-  | (f, i) :: rest =>
-    match valuesAt G Γ k i, allocationFacts G Γ k rest with
-    | some R, some ps => some ((f, i, R) :: ps)
-    | _, _ => none
-
-theorem allocationFacts_eq [DecidableEq ι] {G : NormalGraph ι} {Γ k} :
-    ∀ {slots parts}, allocationFacts G Γ k slots = some parts →
-      slots = parts.map (fun p => (p.1, p.2.1)) ∧
-      ∀ p ∈ parts, valuesAt G Γ k p.2.1 = some p.2.2 := by
-  intro slots
-  induction slots with
-  | nil => intro parts h; simp only [allocationFacts, Option.some.injEq] at h; subst h; simp
-  | cons q qs ih =>
-    intro parts h
-    obtain ⟨f, i⟩ := q
-    simp only [allocationFacts] at h
-    split at h
-    · rename_i R ps hR hps
-      simp only [Option.some.injEq] at h
-      subst h
-      obtain ⟨h1, h2⟩ := ih hps
-      refine ⟨by rw [List.map_cons, ← h1], ?_⟩
-      intro p hp
-      rcases List.mem_cons.mp hp with rfl | hp
-      · exact hR
-      · exact h2 p hp
-    · contradiction
+/-- What the initializers are known to hold, field by field, where that is a
+supported primitive predicate; a field whose initializer is not has no fact. -/
+def allocationFacts (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge)
+    (slots : List (PropKey × Nat)) : List (PropKey × List Atom) :=
+  slots.filterMap fun p => (valuesAt G Γ k p.2).map (p.1, ·)
 
 theorem allocationParts_eq : ∀ {ns inits parts}, allocationParts ns inits = some parts →
     ns = parts.map Prod.fst ∧ inits = parts.map fun p => Tm.var p.2 := by
@@ -342,38 +317,36 @@ theorem allocationSlots_eq {t : Tm} {parts : List (PropKey × Nat)}
   · simp at h
 
 theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {code : CallCode}
-    {parts : List (PropKey × Nat × List Atom)}
+    {parts : List (PropKey × Nat)}
     (hnd : (parts.map Prod.fst).Nodup)
-    (hv : ∀ p ∈ parts, valuesAt G Γ k p.2.1 = some p.2.2)
+    (hin : ∀ p ∈ parts, p.2 < Γ.length)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hh : HeapOk n W h)
     (hs : Safe (meaning G A) n W h
-      (.makeAt code (parts.map Prod.fst) (parts.map fun p => ρ p.2.1))) :
+      (.makeAt code (parts.map Prod.fst) (parts.map fun p => ρ p.2))) :
     SafePost (meaning G A)
       (fun h' v => HeapKnowledge.Holds
-        (allocOutput k (parts.map fun p => (p.1, p.2.2)) (contractFields G Γ)) (push v ρ) h')
-      n W h (.makeAt code (parts.map Prod.fst) (parts.map fun p => ρ p.2.1)) := by
-  have hval : ∀ p ∈ parts, isVal (ρ p.2.1) = true := by
-    intro p hp
-    obtain ⟨a,_,hq⟩ := valuesAt_sound (hv p hp) he hk
-    exact Atom.isValue hq
-  have hvals : ∀ v ∈ parts.map (fun p => ρ p.2.1), isVal v = true := by
+        (allocOutput k (allocationFacts G Γ k parts) (contractFields G Γ) (parts.map Prod.fst))
+        (push v ρ) h')
+      n W h (.makeAt code (parts.map Prod.fst) (parts.map fun p => ρ p.2)) := by
+  have hval : ∀ p ∈ parts, isVal (ρ p.2) = true := fun p hp =>
+    (meaning_value (he.2 p.2 _ (List.getElem?_eq_getElem (hin p hp)))).1
+  have hvals : ∀ v ∈ parts.map (fun p => ρ p.2), isVal v = true := by
     intro v hm
     obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hm
     exact hval p hp
   apply one_step rfl rfl (.makeFields hvals (by simp)) _ hs
   have hshift := HeapKnowledge.shift_holds
     (v := Tm.objAt (slots h.length (parts.map Prod.fst)) code) hk
-  have hmap : ((parts.map fun p => (p.1, p.2.2)).map fun q => (⟨0,q.2,q.1⟩ : HeapFacts.Fact))
-      = parts.map fun p => (⟨0,p.2.2,p.1⟩ : HeapFacts.Fact) := by
-    simp [List.map_map, Function.comp_def]
   refine ⟨?_, hshift.2.1, ?_⟩
   · intro f hf
-    simp only [allocOutput, hmap] at hf
+    simp only [allocOutput] at hf
     rcases List.mem_append.mp hf with hf | hf
-    · obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hf
+    · obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hf
+      obtain ⟨p,hp,hpq⟩ := List.mem_filterMap.mp hq
+      obtain ⟨R,hR,rfl⟩ := Option.map_eq_some_iff.mp hpq
       obtain ⟨i,hi,hpi⟩ := List.mem_iff_getElem.mp hp
-      obtain ⟨a,ha,hq⟩ := valuesAt_sound (hv p hp) he hk
-      refine ⟨slots h.length (parts.map Prod.fst), code, h.length + i, ρ p.2.1, rfl, ?_, ?_,
+      obtain ⟨a,ha,hq⟩ := valuesAt_sound hR he hk
+      refine ⟨slots h.length (parts.map Prod.fst), code, h.length + i, ρ p.2, rfl, ?_, ?_,
         a, ha, hq⟩
       · have hname : (parts.map Prod.fst)[i]'(by simpa using hi) = p.1 := by simp [hpi]
         rw [← hname]
@@ -390,11 +363,9 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
     rcases List.mem_append.mp hg with hg | hg
     · -- A fresh field sits at or beyond the old heap's end; a contract field of
       -- an existing object holds a heap value, so it sits below it.
-      obtain ⟨p,hp,hg⟩ := List.mem_flatMap.mp hg
+      obtain ⟨fld,hfld,hg⟩ := List.mem_flatMap.mp hg
       obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hg
-      obtain ⟨pp,hpp,hpq⟩ := List.mem_map.mp hp
-      cases hpq
-      obtain ⟨i,hi,hpi⟩ := List.mem_iff_getElem.mp hpp
+      obtain ⟨i,hi,hpi⟩ := List.mem_iff_getElem.mp hfld
       obtain ⟨Ref,B,El,hidx,hbag,hmem⟩ := contractFields_mem hq
       obtain ⟨flds0,code0,hl0,_,hrec⟩ := bagOperand_sound hbag (he.2 q.1 Ref hidx)
       obtain ⟨flds1,l1,c1,hproj,hfd1,hlookup,_⟩ :=
@@ -405,16 +376,15 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
       intro flds c l flds' c' l' h0 hfl hs' hfl'
       simp only [push] at h0 hs'
       cases h0
-      have hname : (parts.map Prod.fst)[i]'(by simpa using hi) = pp.1 := by simp [hpi]
-      have hsl : (slots h.length (parts.map Prod.fst)).lookup pp.1 = some (h.length + i) := by
-        rw [← hname]; exact lookup_slots hnd (by simpa using hi)
+      have hsl : (slots h.length (parts.map Prod.fst)).lookup fld = some (h.length + i) := by
+        rw [← hpi]; exact lookup_slots hnd hi
       have hleq : l = h.length + i := Option.some.inj (hfl.symm.trans hsl)
       rw [hl0] at hs'
       cases hs'
       cases hproj
       have hl'eq : l' = l1 := Option.some.inj (hfl'.symm.trans hfd1)
       omega
-    · exact HeapLinks.alloc_frames (parts.map fun p => ρ p.2.1) hshift.2.2 g hg
+    · exact HeapLinks.alloc_frames (parts.map fun p => ρ p.2) hshift.2.2 g hg
 
 /-- A write forgets old cell observations, except those about locations known
 to be distinct from the written one, establishes its new contents, and retains
@@ -646,12 +616,10 @@ def checkStep [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι)
   | .allocated e =>
     match allocationSlots j.term with
     | some slots =>
-      match allocationFacts G j.context k slots with
-      | some parts =>
-        if claim e = j ∧ checkScope j.context.length j.term = true ∧ checkTree G e = true ∧
-            (parts.map Prod.fst).Nodup
-        then some (allocOutput k (parts.map fun p => (p.1, p.2.2)) (contractFields G j.context)) else none
-      | none => none
+      if claim e = j ∧ checkScope j.context.length j.term = true ∧ checkTree G e = true ∧
+          (slots.map Prod.fst).Nodup ∧ ∀ p ∈ slots, p.2 < j.context.length
+      then some (allocOutput k (allocationFacts G j.context k slots) (contractFields G j.context)
+        (slots.map Prod.fst)) else none
     | none => none
   | .written i v R e =>
     match writeSlots j.term with
@@ -753,29 +721,19 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
     split at hc
     · rename_i slots hslots
       split at hc
-      · rename_i parts hparts
-        split at hc
-        · rename_i hp
-          obtain ⟨hj,_,ht,hnd⟩ := hp
-          have typed := checkTree_sound e ht
-          rw [hj] at typed
-          obtain ⟨code, term⟩ := allocationSlots_eq hslots
-          obtain ⟨hslot, hvals⟩ := allocationFacts_eq hparts
-          have hterm : j.term = .makeAt code (parts.map Prod.fst)
-              (parts.map fun p => Tm.var p.2.1) := by
-            rw [term, hslot]
-            simp [List.map_map, Function.comp_def]
-          cases hc
-          rw [hterm] at typed ⊢
-          have hs := typed.sound n W h ρ he hw hh
-          cases code
-          all_goals
-            simp only [instantiate, instantiateArgs_eq_map, List.map_map,
-              Function.comp_def] at hs ⊢
-          all_goals
-            exact alloc_sound (parts := parts)
-              (by simpa [List.map_map, Function.comp_def] using hnd) hvals he hk hh hs
-        · contradiction
+      · rename_i hp
+        obtain ⟨hj,_,ht,hnd,hin⟩ := hp
+        have typed := checkTree_sound e ht
+        rw [hj] at typed
+        obtain ⟨code, term⟩ := allocationSlots_eq hslots
+        cases hc
+        rw [term] at typed ⊢
+        have hs := typed.sound n W h ρ he hw hh
+        cases code
+        all_goals
+          simp only [instantiate, instantiateArgs_eq_map, List.map_map,
+            Function.comp_def] at hs ⊢
+        all_goals exact alloc_sound hnd hin he hk hh hs
       · contradiction
     · contradiction
   | written i v R e =>

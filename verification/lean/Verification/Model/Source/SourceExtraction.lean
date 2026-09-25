@@ -2838,8 +2838,10 @@ private def mutables (fc : SourceClaims.Function) (pos : Span) (next : Option Na
         -- immediately after initialization. Searching all environments by
         -- name can pick a different declaration in a sibling block, or a
         -- later narrowing when the producer reorders its entries.
-        let some start := next
-          | throw s!"no claimed storage contract for '{b.name}' at {pos.1}"
+        -- A declaration that ends its block has no statement after it to
+        -- read the binding: any contract every write is checked against
+        -- serves, and the initializer's claimed type is the one it meets.
+        let some start := next | pure A
         let some candidate := (fc.envs.lookup start).bind (·.lookup b.name)
           | throw s!"no claimed storage contract for '{b.name}' at {start}"
         (SourceClaims.resolve (← table).length candidate).mapError fun msg =>
@@ -3043,10 +3045,17 @@ def SourceRequest.searchLabels (r : SourceRequest) : List Nat :=
     (known ++ known.flatMap (fun i => ((r.types[i]?.map RequestJson.Row.union).getD []).flatMap
       (fun c => (RequestJson.clauseTypes c).flatten))).eraseDups) roots
 
+/-- The type a code unit reads a module value at: a source type (a function's
+signature, a constant's annotation), or, for an unannotated constant, the
+initialization unit's claim for its initializer, a type that unit checks the
+initializer's value against where the constant is bound. -/
+inductive ModuleType where
+  | written (ty : Json)
+  | claimed (A : SourceClaims.Candidate)
+
 /-- A value of the module a code unit reaches: its name, its declaration's
-position, and its source type (a function's signature, a constant's
-annotation), or why it has none. -/
-abbrev ModuleValue := String × Span × Except String Json
+position, and its type, or why it has none. -/
+abbrev ModuleValue := String × Span × Except String ModuleType
 
 /-- The table is the one the claims were lowered into; annotations the claims
 did not mention grow it, and the request carries the result. -/
@@ -3071,10 +3080,11 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceCl
     let bindings ← f.params.mapM (fun (p : Fragment.Param) => lower (Fragment.translate p.ty))
     let siblingTypes ← siblings.mapM fun (value : ModuleValue) => do
       let (_, pos, ty) := value
-      let ty ← match ty with
-        | Except.ok ty => pure ty
+      match ty with
+        | Except.ok (.written ty) => lower (Fragment.translate ty)
+        | Except.ok (.claimed A) => (SourceClaims.resolve (← table).length A).mapError fun msg =>
+            s!"module constant '{value.1}': {msg}"
         | Except.error reason => throw (locatedRefusal (← table) pos .bindingAnnotation reason)
-      lower (Fragment.translate ty)
     let siblingScope : List ScopeBinding :=
       (siblings.zip siblingTypes).map fun (pair : ModuleValue × Ty Nat) =>
         { source := ⟨pair.1.1, some pair.1.2.1⟩, fixed := some pair.2 }

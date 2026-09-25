@@ -444,7 +444,7 @@ const GROUPS: [string, RegExp][] = [
   ["relational operators (< <= > >=) and **", /binary operator outside the fragment \((<|<=|>|>=|\*\*|\*\*=)\)/],
   ["unary operators (- + ~ on numbers)", /unary operator outside the fragment/],
   ["in / instanceof / typeof tests", /\((in|instanceof)\)|expression typeof|TypeQuery/],
-  ["mutable bindings: unannotated let, uninitialized let, parameter assignment, module constants", /mutable binding requires an explicit fixed storage contract|a `let` needs an initializer|module constant _ is read|assignment to immutable binding/],
+  ["mutable bindings: evolving let (null, undefined, []), let with neither initializer nor annotation, closure parameter assignment", /has no storage contract|a `let` needs an initializer|module constant _ has no claimed initializer|assignment to immutable binding/],
   ["control-flow forms (else-if, bare return, early return in closures, dead code)", /closure block must return|`else if` and non-block|a bare `return`|statements after (an unconditional )?return|closure returning from a branch/],
   ["loops (for, for-in, for-of forms)", /(ForStatement|ForInStatement)\)|for\.\.\.of/],
   ["exceptions (try/catch/throw)", /TryStatement|ThrowStatement/],

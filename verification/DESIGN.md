@@ -120,6 +120,19 @@ annotation remains the storage contract; no producer claim chooses whether a
 parameter is a location. A closure captures that location and a const captures
 a snapshot, as for `let`. The function's public input contract is unchanged.
 
+An unannotated `let` has the contract TypeScript declares for it, the
+initializer's type widened (`let x = 1` stores `number`, not `1`): the
+producer states it as the binding's claim at the next statement's entry, and
+Lean checks the initializer and every write against it, as for a written one.
+A declaration ending its block, which nothing reads afterwards, takes its
+initializer's claim. `let x: T;` is `let x: T | undefined = undefined`, what
+JavaScript binds there; TypeScript's definite-assignment verdict is not
+consulted, since reading the cell at `T` needs the current-content fact that a
+write of a `T` value establishes on every path to the read. A closure reads
+the cell at its contract: it may run before the write, which TypeScript does
+not check (`invalid-captured-unassigned-let.ts`). The rules are in
+[Program typing](PROGRAM-TYPING.md#mutable-bindings-and-module-constants).
+
 Nullish assignment to a local (`x ??= rhs`) uses the same private storage.
 The parser records the operator; Lean reads once and dispatches on the saved
 value's nullish tag. Only the nullish arm evaluates and writes `rhs`; the other
@@ -205,9 +218,10 @@ that storage decision, port the whole-local variants and
 Test both a captured writer invalidating the caller and a captured reader whose
 creation-time narrowing expires. Start with explicitly annotated primitive
 bindings. An evolving `let x = null` needs a supplied storage contract covering
-later writes; its initial value claim alone is not that contract. Add such producer
-information or make its absence explicit, rather than inferring a lifetime union
-or treating the initializer as a permanent invariant.
+later writes; its initial value claim alone is not that contract. Its absence
+is explicit: the producer refuses an unannotated `let` initialized with `null`,
+`undefined` or `[]` rather than inferring a lifetime union or treating the
+initializer as a permanent invariant.
 
 ### Valuable later targets and the traps they introduce
 
@@ -1637,7 +1651,9 @@ where it is written, not hoisted).
 place: each function, the module initialization, and later each constructor
 and method. A unit is checked against its signature in the module's scope: a
 module function at its annotated signature (a source-fixed slot no producer
-claims and no assignment reaches), a module constant at its annotation. Claims
+claims and no assignment reaches), a module constant at its annotation or,
+without one, at the initialization unit's claim for its initializer, which
+that unit checks where it binds the constant. Claims
 are per unit, keyed by source identity.
 
 **Generic module values.** A generic module function is certified for every
@@ -2170,7 +2186,8 @@ either.
 declaration runs. The initialization unit refuses a call, direct or through
 other module functions, that can read a constant not yet initialized. Module
 functions are therefore only ever run where every constant they read holds a
-value of its annotated type, which is what their units assume.
+value of its annotated type (or its initializer's checked claim), which is
+what their units assume.
 
 **The module result.** A module verifies when every unit's certificate checks
 and the units compose: initialization is safe, and afterwards every module

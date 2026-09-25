@@ -95,9 +95,17 @@ language. The boundaries are:
    contracts are implemented. Optional field presence remains separate from
    present-undefined, and is blocked by the shared source/proof interface.
 3. `environment.ml` distinguishes immutable value snapshots from mutable
-   storage contracts. In this implementation, mutable reads always propose
-   the fixed storage type, including inside closures. No point-specific
-   refinement or inference operation can replace that contract.
+   storage contracts. A cell carries its fixed contract and what it is
+   proposed to hold at a point: the contract, or a narrower primitive type
+   after an assignment statement, a guard, or where two arms meet, which Lean
+   checks as a fact about the cell's current contents on every edge into the
+   point. A call or write it cannot see, a loop head the body assigns, and a
+   closure body (which runs later) know a cell by its contract. No refinement
+   replaces the contract itself: every write is checked against it. A `let`
+   without an annotation has TypeScript's declared type as its contract, the
+   initializer's widened type (`null`, `undefined` and `[]` initializers,
+   TypeScript's evolving `any`, are refused); a parameter the body assigns is
+   a cell at its annotation.
 4. `proposal.ml` infers immutable candidate claims. It neither validates nor
    publishes acceptance. For a call to a quantified callable, `inference.ml`
    accumulates directional lower/upper constraints through callable shapes,
@@ -137,8 +145,8 @@ language. The boundaries are:
    arguments fix a call's leading binders before the rest are inferred; an
    actual at a parameter mentioning none of them is built at that parameter.
    Expected types guide fresh object/array construction, while the actual
-   initializer claims remain separate obligations. Immutable branch refinements
-   cannot refine a mutable binding's storage contract. Loops use the incoming
+   initializer claims remain separate obligations. Branch refinements never
+   refine a mutable binding's storage contract, only its proposed contents. Loops use the incoming
    fixed contracts as candidate invariants; `break` and `continue` edges are
    validated by the existing control-flow checker. Declared types are candidates to prove, not proof that their bodies satisfy
    them. There is no second, approximate subtype relation used for acceptance.
@@ -278,7 +286,6 @@ for the maintained witnesses.
 | Optional object-field presence      | blocked at shared source/proof boundary | `optional-field.ts`                  | Model absence separately from a present `undefined` value                     |
 | Bare return and implicit completion | blocked at shared parser                | `bare-return.ts`, `empty-closure.ts` | Represent completion and discarded results explicitly                         |
 | Arbitrary numeric array indexing    | blocked in lowering                     | `dynamic-index.ts`                   | Prove a general index obligation rather than inventing a singleton key        |
-| Inferred mutable lifetime contract  | deferred flow milestone                 | `unsupported.ts`                     | Solve one invariant against initialization and every write before publication |
 
 Take the first open row whose prerequisite representation already exists. For
 every quantified row, rewriting a closure to the finite overloads observed in
@@ -360,8 +367,8 @@ unchecked concrete specialization would not close that gap.
 ### Subsequent flow work
 
 Then extend flow analysis with location identity, alias/effect tracking and
-invariant proposals. For inferred storage, solve one lifetime contract against
-initialization and **all** writes before publication. For heap flow facts, keep
+invariant proposals. An inferred storage contract is TypeScript's declared
+type, checked against initialization and **all** writes. For heap flow facts, keep
 refinements separate from persistent field capabilities, invalidate them across
 unknown calls/writes, and preserve immutable snapshots. Cache validated decisions
 only with their complete assumptions/dependencies, separately from inference
@@ -382,7 +389,7 @@ controls hold; the numbers live in its output, not here.
 
 | Architectural pressure                      | Small examples with full certificates                                                                                                         |
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Stable storage vs value snapshots           | `values.ts`, captured storage in `callbacks.ts`                                                                                               |
+| Stable storage vs value snapshots           | `values.ts`, captured storage in `callbacks.ts`, `mutable-bindings.ts` (inferred contracts, assigned parameters, definite assignment)          |
 | Field identity and aliasing                 | `objects.ts`                                                                                                                                  |
 | Bidirectional construction hints            | `contextual.ts` (fresh object and tuple), `array-iterable.ts` (literal as `Iterable`)                                                                                                      |
 | Read permission vs write permission         | `readonly.ts` (alias view, array covariance)                                                                                                  |
@@ -407,8 +414,6 @@ reverses its binder's bound, bad contextual initializers and stale heap refineme
 
 The named gaps are:
 
-- `unsupported.ts`: OCaml refuses an unannotated mutable binding rather than
-  guessing a lifetime contract. Constraint-based contract inference is pending.
 - `dynamic-index.ts`: the existing lowering needs a proved array-index singleton;
   it does not model arbitrary numeric properties.
 - `optional-field.ts`: the shared parser cannot yet represent optional presence.

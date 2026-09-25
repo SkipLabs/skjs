@@ -965,15 +965,22 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String Ã
   -- annotations; each of those is established by its own unit.
   -- Imported values join them at the types their declarations state.
   let moduleFunctions : List SourceExtraction.ModuleValue :=
-    (all.filterMap fun (g, tps) => if tps.isEmpty then some (g.name, g.namePos, moduleArrow g) else none) ++
-    (imported.map fun (name, span, ty) => (name, span, .ok ty)) ++
+    (all.filterMap fun (g, tps) => if tps.isEmpty then
+      some (g.name, g.namePos, (moduleArrow g).map .written) else none) ++
+    (imported.map fun (name, span, ty) => (name, span, .ok (.written ty))) ++
     (if arrays then [(SourceExtraction.arrayPrototypeName, (0, 0),
-      Except.ok (Json.mkObj [("top", toJson false), ("atoms", toJson [Json.mkObj
-        [("a", toJson "graph"), ("label", toJson SourceTypes.arrayProtoLabel)]])]))] else [])
+      Except.ok (.written (Json.mkObj [("top", toJson false), ("atoms", toJson [Json.mkObj
+        [("a", toJson "graph"), ("label", toJson SourceTypes.arrayProtoLabel)]])])))] else [])
+  -- A constant is read at its annotation or, without one, at the type the
+  -- initialization unit claims for its initializer: the type that unit's
+  -- binding checks the initializer's value against (TypeScript's declared
+  -- type for an unannotated `const`, a literal kept as its literal type).
   let moduleConstants : List SourceExtraction.ModuleValue := init.flatMap fun
     | .constants _ bs => bs.map fun b => (b.name, b.namePos, match b.annot with
-        | some ty => .ok ty
-        | none => .error s!"module constant '{b.name}' is read by a function, so it needs an annotation")
+        | some ty => .ok (.written ty)
+        | none => match (d.init.map (Â·.expressions)).getD [] |>.find? (Â·.pos == b.init.span) with
+          | some e => .ok (.claimed e.type.ground)
+          | none => .error s!"module constant '{b.name}' has neither an annotation nor a claimed initializer")
     | _ => []
   -- The initialization unit: the top-level code, as a body with no
   -- parameters that completes with `undefined`.
@@ -1023,7 +1030,7 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String Ã
               | .ok r => pure r
               | .error reason => throw (sourceRefusal d.types g.pos .schemeElimination reason)
             d := { d with types := T }
-            module := module ++ [(g.name, g.pos, .ok slot)]
+            module := module ++ [(g.name, g.pos, .ok (.written slot))]
             c := { c with expressions := c.expressions.map fun e =>
               if reads.contains e.pos then { e with type := .labels A }
               else if calls.contains e.pos then { e with instantiate := none } else e }

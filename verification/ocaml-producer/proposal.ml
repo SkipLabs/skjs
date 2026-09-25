@@ -281,7 +281,10 @@ let module_type (g:Source.fn) =
    the further signatures its uses offer it; the pass reports them as
    [requests], and [infer_function] runs a second pass with them. *)
 let infer_pass offered declarations module_functions (f:Source.fn) =
-  let env0 = List.map (fun (n,t) -> n,Value t) f.params in
+  (* A parameter the body assigns is a cell holding its argument, at its
+     annotation. *)
+  let env0 = List.map (fun (n,t) ->
+    n,if List.exists (assigns n) f.body then cell t else Value t) f.params in
   (* Unannotated immutable locals bound to a closure without binders or a rest
      parameter: where the closure is created, and its parameters' types. *)
   let closures = ref [] and requests = ref [] in
@@ -442,12 +445,14 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       if not (List.mem_assoc n env) && List.mem_assoc n module_functions then
         unsupported ("assignment to module function " ^ n);
       (match lookup env n with
-      | Storage contract -> expr ~expected:contract env rhs
+      | Storage (contract,_) -> expr ~expected:contract env rhs
       | Value _ -> unsupported "assignment to immutable binding")
     | Ctor {node=Lambda (None,[],ps,[],false,Some result,body);_} ->
       (* The constructor's body under its parameters; `new` passes it no
-         receiver it reads. The class value's type is its construct signature. *)
-      let inner = List.fold_left (fun env (n,t) -> extend env n (Value t)) env ps in
+         receiver it reads, and runs it later, when a cell it captures holds
+         what its contract admits. The class value's type is its construct
+         signature. *)
+      let inner = List.fold_left (fun env (n,t) -> extend env n (Value t)) (forget env) ps in
       ignore (expr ~expected:result inner body);
       (* A class offered construct signatures giving other instances is
          claimed at them too, beside its own; Lean checks the body at each. *)
@@ -498,6 +503,9 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | Lambda (receiver,quantified,ps,defaults,rest,written,body) ->
       (* An ordinary function binds its own `this`, replacing an enclosing
          one; an arrow keeps the enclosing binding, as a capture. *)
+      (* The body runs later, when any cell it captures holds whatever its
+         contract admits. *)
+      let env = forget env in
       let env = match receiver with
         | Some t -> List.remove_assoc "this" env @ ["this",Value t]
         | None -> env in
@@ -883,31 +891,78 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | {statement=Return _;_}::_ -> true
     | {statement=If (_,a,b);_}::_ -> returns a && returns b
     | _ -> false in
+  (* A step that may write a cell it does not name: a call, or a write. The
+     cells are then known only by their contracts. Creating a closure runs
+     nothing. *)
+  let rec stirs (e:expr) = match e.node with
+    | Call _ | Invoke _ | New _ | Apply _ | Bind _ | Write _ | IndexWrite _ | Assign _ -> true
+    | Lambda _ -> false
+    | _ -> List.exists stirs (Source.children e) in
+  let after e env = if stirs e then forget env else env in
+  (* An assignment statement writes only the cell it names. *)
+  let rec stirs_statement s = match s.statement with
+    | Declare (_,bs) -> List.exists (fun (_,_,e) -> stirs e) bs
+    | Effect {node=Assign (_,rhs);_} -> stirs rhs
+    | Return e | Effect e -> stirs e
+    | If (c,a,b) -> stirs c || List.exists stirs_statement (a @ b)
+    | While (c,body) -> stirs c || List.exists stirs_statement body
+    (* Each step of the loop calls `%Iterate%`. *)
+    | ForOf _ -> true
+    | Break | Continue -> false in
+  (* A loop's head is reached again from its body: a cell the body assigns,
+     or any cell where the body may write one unseen, is known there by its
+     contract. *)
+  let loop_head env c body =
+    if stirs c || List.exists stirs_statement body then forget env
+    else forget ~only:(fun n -> List.exists (assigns n) body) env in
+  (* Where two arms meet, a cell holds what either left in it. *)
+  let join before left right = List.map (fun (n,b) -> match b,List.assoc_opt n left,List.assoc_opt n right with
+    | Storage (contract,_),Some (Storage (_,l)),Some (Storage (_,r)) -> n,holding contract (union l r)
+    | _ -> n,b) before in
   let rec statements env ss = List.fold_left (fun env s ->
+    let env = match s.statement with
+      | While (c,body) -> loop_head env c body
+      | ForOf _ -> forget env
+      | _ -> env in
     entry env s.span;
     match s.statement with
     | Declare (mutable_,bs) -> List.fold_left (fun env (n,written,init) ->
       let initial = expr ?expected:written env init in
       if not mutable_ then named_closure n written init;
       let binding = match mutable_,written with
-        | true,None -> unsupported "mutable binding requires an explicit fixed storage contract"
-        | true,Some contract -> Storage contract
+        (* TypeScript's declared type for an unannotated `let`: its
+           initializer's type, widened. Lean checks the initializer and every
+           assignment against it. `null`, `undefined` and `[]` give an
+           evolving type (implicit `any`) there, which is no contract. *)
+        | true,None ->
+          (match init.node with
+           | Literal (LNull | LUndefined) | ArrayLiteral [] ->
+             unsupported "an unannotated `let` initialized with null, undefined or [] has no storage contract"
+           | _ -> cell (widen initial))
+        | true,Some contract -> cell contract
         (* A class's annotation is its own construct signature, which the
            parser writes; the class value's claim may offer more. *)
         | false,Some _ when (match init.node with Ctor _ -> true | _ -> false) -> Value initial
         | false,Some contract -> Value contract
         | false,None -> Value initial in
-      extend env n binding) env bs
+      extend (after init env) n binding) env bs
     | Return e -> ignore (expr ~expected:f.result env e); env
-    | Effect e -> ignore (expr env e); env
+    (* An assignment statement leaves the cell holding the value written. *)
+    | Effect ({node=Assign (n,rhs);_} as e) ->
+      let t = expr env e in
+      (match lookup env n with
+       | Storage _ -> assign (after rhs env) n t
+       | Value _ -> env)
+    | Effect e -> ignore (expr env e); after e env
     | If (c,a,b) -> ignore (expr env c);
-      ignore (statements (branch env c true) a); ignore (statements (branch env c false) b);
+      let env = after c env in
+      let left = statements (branch env c true) a and right = statements (branch env c false) b in
       (* The rest of the block runs only where an arm that always returns was
-         not taken. *)
+         not taken; where both may complete, a cell holds what either left. *)
       (match returns a,returns b with
-       | true,false -> branch env c false
-       | false,true -> branch env c true
-       | _ -> env)
+       | true,false -> List.filter (fun (n,_) -> List.mem_assoc n env) right
+       | false,true -> List.filter (fun (n,_) -> List.mem_assoc n env) left
+       | _ -> join env left right)
     | While (c,body) -> ignore (expr env c);
       ignore (statements (branch env c true) body); env
     | ForOf (name,name_pos,iterable,body) ->
@@ -946,19 +1001,23 @@ let infer program =
   let module_functions = List.map (fun (g:Source.fn) -> g.name,lazy (module_type g))
     program.Source.functions
     @ List.map (fun (name,t) -> name,lazy t) program.Source.values in
-  (* A function reads a module constant at its annotation; the initialization
-     unit is what establishes it. *)
-  let module_constants = List.concat_map (fun (s:Source.stmt) -> match s.statement with
-    | Declare (false,bindings) -> List.map (fun (n,written,_) -> n,lazy (match written with
-        | Some t -> t
-        | None -> unsupported ("module constant " ^ n ^ " is read by a function, so it needs an annotation")))
-      bindings
-    | _ -> []) program.Source.init in
   let infer_with = infer_function program.Source.declarations in
   let init = match program.Source.init with
     | [] -> None
     | body -> Some (infer_with module_functions
         {quantified=[];name="";name_pos=Json.Null;params=[];rest=false;
          result=Atoms [Undef];body}) in
+  (* A function reads a module constant at its annotation or, without one, at
+     the initialization unit's claim for its initializer; that unit is what
+     establishes it. *)
+  let module_constants = List.concat_map (fun (s:Source.stmt) -> match s.statement with
+    | Declare (false,bindings) -> List.map (fun (n,written,(e:expr)) -> n,lazy (match written with
+        | Some t -> t
+        | None ->
+          match Option.bind init (fun c -> List.find_opt (fun (x:expression) -> x.pos = e.pos) c.expressions) with
+          | Some x -> x.type_
+          | None -> unsupported ("module constant " ^ n ^ " has no claimed initializer")))
+      bindings
+    | _ -> []) program.Source.init in
   {program;init;functions=List.map (infer_with (module_functions @ module_constants))
     program.Source.functions}

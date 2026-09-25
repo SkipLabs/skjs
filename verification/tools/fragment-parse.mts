@@ -1693,8 +1693,22 @@ class Gate {
           this.fail(d, "destructuring is outside the fragment");
         if (d.name.text === "undefined")
           this.fail(d, "shadowing undefined is outside the fragment");
-        if (!d.initializer)
-          this.fail(d, `a \`${kindWord}\` needs an initializer`);
+        // `let x: T;` binds `undefined` where it is declared: it is
+        // `let x: T | undefined = undefined`, the cell's contract admitting
+        // the value it starts with. A read of it before an assignment is
+        // `undefined`, and a read after one is at `T` only where Lean proves
+        // the cell's current contents are, as for any other cell. Without an
+        // annotation there is no contract (TypeScript's evolving `any`).
+        if (!d.initializer) {
+          if (!mutable || !d.type)
+            this.fail(d, `a \`${kindWord}\` needs an initializer`);
+          return {
+            name: d.name.text,
+            namePos: this.span(d.name),
+            annot: this.optionalTypeOf(d.type, d),
+            init: { k: "lit", pos: this.span(d), lit: { a: "undefined" } },
+          };
+        }
         // For `let`, the storage contract is what every later assignment is
         // checked against. Written, it is the annotation; unwritten, the
         // producer states one for the binding and the adapter checks that,

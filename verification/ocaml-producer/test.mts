@@ -1480,7 +1480,7 @@ process.stdout.write(
 // words that boundary uses: the reader shows the source under the pipeline's
 // own outcome, and nothing claimed.
 for (const [file, phase, says] of [
-  ["unsupported", "proposal", /^unsupported:/],
+  ["module-function-assignment", "proposal", /^unsupported:/],
 ] as const) {
   const shown = await analyse(repositoryPath(file), "ocaml");
   const outcome = shown.outcome;

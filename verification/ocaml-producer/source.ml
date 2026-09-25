@@ -325,6 +325,33 @@ type declaration = { id: string; parameters: rigid list;
 type program = { file: Json.t; digest: Json.t; declarations: declaration list;
                  functions: fn list; init: stmt list; values: (string * ty) list }
 
+(* The immediate subexpressions and nested statements of a form. *)
+let children e = match e.node with
+  | Id _ | Literal _ | DoneBody -> []
+  | Not e | TypeofTest (_,_,e) | Read (e,_) | Ctor e | Cast (_,_,e) | ReturnBody e -> [e]
+  | Assign (_,e) -> [e]
+  | Arith (_,a,b) | Equality (_,a,b) | Write (a,_,b) | Coalesce (a,b) | Index (a,b)
+  | WithFields (a,b,_,_) | SequenceBody (a,b) | LetBody (_,_,a,b) -> [a;b]
+  | Conditional (a,b,c) | IndexWrite (a,b,c) | IfBody (_,a,b,c) -> [a;b;c]
+  | Alloc fs -> List.map snd fs
+  | ArrayLiteral es -> es
+  | Lambda (_,_,_,defaults,_,_,body) -> List.map snd defaults @ [body]
+  | Call (f,r,args,_) -> f :: Option.to_list r @ args
+  | Invoke (f,args,_,_) | New (f,_,args) -> f :: args
+  | Apply (f,r,l) -> f :: r :: Option.to_list l
+  | Bind (f,r,args) -> f :: r :: args
+(* Whether a name is assigned anywhere in a form, nested closures included:
+   such a binding is a cell. Lean decides storage the same way, from the
+   source (`assignsStmt`); this only proposes consistently with it. *)
+let rec assigns_expr name e = match e.node with
+  | Assign (n,_) when n = name -> true
+  | _ -> List.exists (assigns_expr name) (children e)
+let rec assigns name s = match s.statement with
+  | Declare (_,bs) -> List.exists (fun (_,_,e) -> assigns_expr name e) bs
+  | Return e | Effect e -> assigns_expr name e
+  | If (c,a,b) -> assigns_expr name c || List.exists (assigns name) (a @ b)
+  | While (c,body) | ForOf (_,_,c,body) -> assigns_expr name c || List.exists (assigns name) body
+  | Break | Continue -> false
 let rec expr binders j =
   let sub k = expr binders (field k j) in
   let node = match text "k" j with

@@ -196,8 +196,9 @@ has one more code unit, its module initialization, whose claims are an
 present exactly when the source has that code. The unit has no parameters and
 completes with `undefined`; its sites are the top-level statements. A function
 reads the module's functions and annotated constants at their source types,
-which no claim states. See [Modules and code
-units](DESIGN.md#modules-and-code-units).
+which no claim states, and an unannotated constant at the `"init"` claim for
+its initializer's expression, which the initialization unit checks. See
+[Modules and code units](DESIGN.md#modules-and-code-units).
 
 A document whose types use a generic declaration's application has one more
 field, `"applications"`: `[{"row": r, "declaration": d, "args": [[...], ...]}]`,
