@@ -297,6 +297,8 @@ export const cases: Case[] = [
   positive("object-literal-keys", "numeric keys in literals and types (a number's property is its ToString), a numeric key read on a record, a spread of an object literal"),
   gap("object-spread-refused", "a spread copies its operand's own enumerable properties, which the heap model does not tell from a class instance's prototype methods",
     "unsupported", "source", /a spread copies its operand's own enumerable properties/),
+  positive("construct-signature-literal", "a type literal of construct signatures only is the constructor type they state: `new` on an ambient one, a class meeting it"),
+  negative("invalid-construct-signature-literal", "a class meets a construct signature only at its own instance type"),
   positive("optional-chaining", "`?.` on a field, an element, a call and a method: the receiver once, `undefined` where it is nullish, the rest of the chain skipped with it; a second `?.` in a chain; `null?.` is `undefined`"),
   negative("invalid-optional-chain", "a chain is `undefined` where its receiver is nullish, so it is not the skipped link's type"),
   gap("optional-method-call-refused", "`o.m?.()` tests the method but calls it with `o`, which the chain does not save apart from the tested value",

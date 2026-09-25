@@ -4193,6 +4193,11 @@ evaluated in order. What the parser admits, and why the rest is refused:
 - **Accessors are refused.** `get x() {…}` runs code on every read of `x`
   and `set` on every write; the heap model's properties are data only.
 
+A type literal of construct signatures only, `{ new (x: number): T }`, is the
+constructor type it states, `new (x: number) => T`; several are overloads of
+the one value, as a constructor type's forms are. A literal mixing construct
+signatures with other members is still refused.
+
 ### Optional chaining
 
 `r?.b`, `r?.[k]`, `r?.(a)` and `r?.m(a)` are one derived form, `optional`,

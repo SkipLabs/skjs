@@ -130,6 +130,15 @@ export function typeTerm(scope: TermScope, node: TypeNode | undefined, at: Node 
       return { k: "literal", name: "bigint", text: bigintText(numeric.text, negated !== null), span };
     return scope.fail(literal, "literal type outside the fragment");
   }
+  // A type literal of construct signatures only, `{ new (): T }`, is the
+  // constructor type they state, as `new () => T` is; several are overloads,
+  // each a construct signature of the one value.
+  if (ts.isTypeLiteralNode(node) && node.members.length &&
+      node.members.every(ts.isConstructSignatureDeclaration)) {
+    const forms = node.members.flatMap(m => ts.isConstructSignatureDeclaration(m) ? constructorForms(scope, m, span) : []);
+    const [only] = forms;
+    return forms.length === 1 && only ? only : { k: "intersection", parts: forms, span };
+  }
   if (ts.isTypeLiteralNode(node)) return members(scope, node.members, node, span, false);
   if (ts.isMappedTypeNode(node)) return expandMapped(mapped(scope, node), span, message => scope.fail(node, message));
   if (ts.isFunctionTypeNode(node)) {
@@ -139,12 +148,7 @@ export function typeTerm(scope: TermScope, node: TypeNode | undefined, at: Node 
   // `new (params) => R`: a construct signature per accepted argument list. It
   // has no receiver; its rest, if any, is a function's.
   if (ts.isConstructorTypeNode(node)) {
-    if (node.typeParameters?.length) scope.fail(node, "generic constructor types are outside the fragment");
-    if (node.modifiers?.length) scope.fail(node, "an abstract constructor type is outside the fragment");
-    const forms = signatures(scope, node.parameters, node.type, node, span).map((f): TypeTerm => {
-      if (f.receiver) scope.fail(node, "a constructor type has no receiver");
-      return { k: "constructor", params: f.params, rest: f.rest, result: f.result, span };
-    });
+    const forms = constructorForms(scope, node, span);
     const [only] = forms;
     return forms.length === 1 && only ? only : { k: "intersection", parts: forms, span };
   }
@@ -158,6 +162,19 @@ export function typeTerm(scope: TermScope, node: TypeNode | undefined, at: Node 
     return scope.named(node, span, part => typeTerm(scope, part));
   }
   return scope.fail(node, `type outside the fragment (${ts.SyntaxKind[node.kind]})`);
+}
+
+/** A construct signature's forms, one per accepted argument list: it has no
+ * receiver, and its rest, if any, is a function's. */
+function constructorForms(scope: TermScope, node: ts.ConstructorTypeNode | ts.ConstructSignatureDeclaration,
+    span: Span): TypeTerm[] {
+  if (node.typeParameters?.length) scope.fail(node, "generic constructor types are outside the fragment");
+  if (ts.isConstructorTypeNode(node) && node.modifiers?.length)
+    scope.fail(node, "an abstract constructor type is outside the fragment");
+  return signatures(scope, node.parameters, node.type, node, span).map((f): TypeTerm => {
+    if (f.receiver) scope.fail(node, "a constructor type has no receiver");
+    return { k: "constructor", params: f.params, rest: f.rest, result: f.result, span };
+  });
 }
 
 /** A mapped type `{ [P in K]: V }` whose value does not name its key `P`:
