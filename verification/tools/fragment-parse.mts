@@ -1742,6 +1742,8 @@ class Gate {
     const ops: Record<number, string> = {
       [ts.SyntaxKind.EqualsEqualsEqualsToken]: "===",
       [ts.SyntaxKind.ExclamationEqualsEqualsToken]: "!==",
+      [ts.SyntaxKind.EqualsEqualsToken]: "==",
+      [ts.SyntaxKind.ExclamationEqualsToken]: "!=",
       [ts.SyntaxKind.AmpersandAmpersandToken]: "&&",
       [ts.SyntaxKind.BarBarToken]: "||",
     };
@@ -1751,6 +1753,17 @@ class Gate {
         node,
         `binary operator outside the fragment (${this.text(node.operatorToken)})`,
       );
+    // Loose equality with `null` or `undefined` holds exactly of the two
+    // (`IsLooseEquallyEqual` converts nothing there); against anything else
+    // it converts its operands (`ToNumber`, `ToPrimitive`, which may run code).
+    if (op === "==" || op === "!=") {
+      const nullish = (e: Expression): boolean => {
+        const u = ts.isParenthesizedExpression(e) ? e.expression : e;
+        return u.kind === ts.SyntaxKind.NullKeyword || (ts.isIdentifier(u) && u.text === "undefined");
+      };
+      if (!nullish(node.left) && !nullish(node.right))
+        this.fail(node, `loose equality converts its operands; only \`${op} null\` and \`${op} undefined\` are exact`);
+    }
     if (op === "===" || op === "!==") {
       const unwrap = (e: Expression): Expression =>
         ts.isParenthesizedExpression(e) ? unwrap(e.expression) : e;
@@ -2356,10 +2369,12 @@ class Gate {
    * Each clause's statements follow its block's end, inside the next clause's
    * block, so a clause that completes runs on into the next one's statements,
    * as JavaScript falls through; a `break` leaves the switch's block. A
-   * discriminant that is a name is read again at each test, at the `case`
-   * keyword, when every label is a literal or a name, since then nothing
-   * between the tests writes; any other is evaluated first and bound to a
-   * name no source can spell. Every span is a node or a token: a test's `if`
+   * discriminant that is a name, or a field of a name, is read again at each
+   * test, at the `case` keyword (the name of a field's object at its first
+   * character), when every label is a literal or a name, since then nothing
+   * between the tests writes and a field is a plain location; each test then
+   * narrows the name, or the object's arms, as an `if` does. Any other is
+   * evaluated first and bound to a name no source can spell. Every span is a node or a token: a test's `if`
    * begins at `case`, its read of the discriminant is at `case`, its `===`
    * at the clause's `:`, and its jump at the label; the jump to `default` is
    * at the keyword, the one to the switch's end at the clauses' `{`. The clauses
@@ -2397,8 +2412,13 @@ class Gate {
     const discriminant = unwrap(node.expression);
     const bound: Stmt[] = [];
     let name: string;
-    if (ts.isIdentifier(discriminant) && clauses.every((c) => !ts.isCaseClause(c) || plain(c.expression)))
-      name = discriminant.text;
+    const fieldOf = ts.isPropertyAccessExpression(discriminant) && !discriminant.questionDotToken &&
+      ts.isIdentifier(discriminant.expression) &&
+      !this.staticReads.has(this.span(discriminant.name).join(":"))
+      ? { object: discriminant.expression.text, field: discriminant.name.text } : null;
+    const reread = clauses.every((c) => !ts.isCaseClause(c) || plain(c.expression));
+    if (ts.isIdentifier(discriminant) && reread) name = discriminant.text;
+    else if (fieldOf && reread) name = fieldOf.object;
     else {
       name = `%switch@${node.getStart(this.file)}%`;
       const at = this.span(node.expression);
@@ -2417,7 +2437,11 @@ class Gate {
       const colon = this.token(c.expression.end, ":", c);
       dispatch.push({ k: "if", pos: [start, c.expression.end],
         cond: { k: "bin", pos: [colon, colon + 1], op: "===",
-          l: { k: "id", pos: [start, start + "case".length], name }, r: this.expr(c.expression) },
+          l: fieldOf && reread
+            ? { k: "read", pos: [start, start + "case".length], field: fieldOf.field,
+                e: { k: "id", pos: [start, start + 1], name } }
+            : { k: "id", pos: [start, start + "case".length], name },
+          r: this.expr(c.expression) },
         then: [{ k: "break", pos: this.span(c.expression), label: label(c) }], else_: null });
     }
     const open = node.caseBlock.getStart(this.file);

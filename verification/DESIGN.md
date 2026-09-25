@@ -3786,15 +3786,16 @@ $$
   completes runs on into the next one's statements: fall-through is the
   graph's ordinary sequencing. A `break` in a clause leaves the switch's
   block. The discriminant is evaluated once, bound to a name no source can
-  spell, unless it is a name and every label is a literal or a name, when it
-  is read again at each test (nothing between the tests writes). Labels are
+  spell, unless it is a name or a field of a name and every label is a
+  literal or a name, when it is read again at each test (nothing between the
+  tests writes, and a field is a plain location). Labels are
   evaluated in order, each only if every earlier one failed, as JavaScript
   does. The clauses share one scope in JavaScript but not in the lowering, so
   a name declared directly in one clause and read in another, or in a label,
   is refused. Blocks carry a label and no entry of their own
   (`Stmt.block`); a `break` carries the label of the block it leaves, or none
-  for a loop (`Stmt.brk`). No case narrowing is added here: each test is an
-  ordinary `===`, with Lean's equality rules.
+  for a loop (`Stmt.brk`). Case narrowing is the narrowing of these `===`
+  tests ([Strict equality and tag narrowing](#strict-equality-and-tag-narrowing)).
 
 $$
 \frac{\Gamma\vdash_R S\ \text{with}\ \mathsf{break}\ \ell\mapsto\Gamma_{\mathit{after}}\quad
@@ -4354,6 +4355,110 @@ No typing rule is added.
 no type here names $\{0,-0,\mathrm{NaN}\}$; TypeScript's `0` for it forgets
 NaN and is not followed. SKJS's default truthiness mode refuses a number or
 string condition or left operand; the pipeline accepts it at that exact type.
+
+### Strict equality and tag narrowing
+
+**Principle.** `===` is exactly defined on every JavaScript value
+(`IsStrictlyEqual`: `Number::equal` on numbers, content on the other
+primitives, identity on objects) and converts nothing, so it is followed
+exactly, with one mechanism for each of its two uses: a comparison with a
+singleton is a tag test, which narrows; any other is one more binary operator,
+which computes a Boolean and narrows nothing.
+
+- **Singletons of every primitive kind.** A claimed singleton operand selects a
+  tag test on the other operand (`comparisonsExpr`): `null`, `undefined`, one
+  number (`numEq`, both zeros one), one string (`strEq`), and now one Boolean
+  (`boolEq`) and one bigint (`bigintEq`). Each is false on every other kind,
+  so a union loses exactly the labels the test excludes (`tagSlice`), on both
+  edges, as for null. The singleton operand stays in the program with its own
+  obligation; it may be a literal, a name or a field read holding one.
+- **Strict equality without a singleton** is the operator
+  $\equiv$ (`Arith.eq`, the `arith` rule; [semantics](SEMANTICS.md#operational-language),
+  [rule](PROGRAM-TYPING.md#judgments-and-constructor-views)), `!==` its
+  negation. It answers wherever one operand is a primitive, and on two objects
+  where one has a field: an object value is its field locations, which only its
+  allocation creates, fresh, so two such objects are one exactly when their
+  locations are. That correspondence (distinct JavaScript objects have
+  disjoint field locations) is a modelling assumption of the lowering, like
+  plain-data fields; it holds because `makeV` is the only step that creates
+  an object value. Two operands that may both be objects without a field (a
+  function, a record of optional fields only, any value of `unknown`) carry no
+  identity here and are refused with that reason: two closures with no field
+  would be the same value though JavaScript tells them apart.
+- **Two unions of singletons narrow as their tag tests.** A condition
+  `x === y`, with `x` an immutable name all of whose labels are singletons
+  and `y` a name or a field of a name, both read without effect, is the
+  disjunction over `x`'s singletons $c$ of $x\equiv c\land y\equiv c$: the
+  graph runs the comparison as the source has it (its Boolean dropped, its
+  obligations kept), then dispatches by those tag tests, re-reading the
+  operands, which nothing between has written. Each edge refines by the one
+  mechanism of tag observations, so both operands (and `y`'s object's arms,
+  for a field) narrow where they are equal. The dispatch is exact: `x` holds
+  one of its claimed singletons (its entry claim guarantees it), strict
+  equality is transitive where it holds, and a NaN, equal to nothing, fails
+  every test and takes the unequal edge. `!==` between two such unions
+  narrows neither (either may still be anything it was), and an operand that
+  is a call, or a field compared with a field, keeps the plain operator
+  (what a field held after a test against several singletons is not observed
+  as one read).
+- **An observation the tested type rules out** (a Boolean `x: true` found
+  false, a tag no label answers) makes its edge never taken: the edge
+  constrains nothing (`impossible`), so the `else` of `if (x)` may claim
+  `x: never`.
+- **Discriminated unions.** A test of a field of an immutable binding's object
+  against a singleton (`s.kind === "circle"`) keeps the arms whose field
+  admits the outcome. The saved read's current read link names the object and
+  the field, and the branch edge may then refine the object's slot to its field
+  slice ([rule](PROGRAM-TYPING.md#refinement-under-an-observed-outcome)): a heap meeting the
+  world holds, at the field's location, a value of the field's contract, so an
+  arm whose field answers the other way is not the object's. The arm is fixed
+  at allocation, so the refinement is timeless: a write or a call after the
+  test does not undo it, and a readonly or a mutable field serves alike. The
+  producer holds an immutable binding declared at a named union at its arms
+  (the same values), so a read splits on them and a guard keeps or drops each.
+  A read of a field that every arm has, at different types, records its link
+  (`typedRead` over `fieldOperand`).
+- **What a field holds after a guard** is a current-content fact
+  (`obj.val !== null`, then `return obj.val`): the producer claims it at the
+  entries that follow, as the field's `current` assertion, until a step may
+  write it (a write or a call forgets it), and Lean checks it on every edge
+  ([current-content assertions](#current-content-assertions)). Only a plain
+  record's invariant field or view carries one: an optional field has no
+  location to assert about.
+- **`switch` case narrowing** falls out: each case is a `===` test of the
+  discriminant, a `break` leaves with what its path knew, and the producer
+  joins every `break` of a label (and the completion of the block's body) at
+  the block's end. A discriminant that is a name, or a field of a name, is read
+  again at each test (nothing between the tests writes, and a field is a plain
+  location), so a case narrows the name or the object's arms as an `if` does;
+  any other is bound once to a temporary, whose narrowing reaches nothing
+  else. A switch whose cases cover the discriminant's type leaves its last
+  dispatch with the discriminant at the empty type: a jump whose entry claims
+  a binding of the empty type is unreachable, and completes the function
+  instead, so an exhaustive switch never falls off the end.
+- **Loose equality** is admitted only as `x == null` / `x == undefined` (and
+  `!=`), which hold exactly of `null` and `undefined` (the nullish test).
+  Against anything else `==` converts its operands (`ToNumber`,
+  `ToPrimitive`, which may run code), and the parser refuses it with that
+  reason.
+
+$$
+\frac{\Gamma\vdash a:A\quad \Gamma\vdash k:\{c\}\quad
+      \Gamma[x:T_{\mathsf{eq}(c)}(\Gamma(x))]\vdash_R S_1\quad
+      \Gamma[x:T_{\lnot\mathsf{eq}(c)}(\Gamma(x))]\vdash_R S_2}
+     {\Gamma\vdash_R\ \mathsf{if}\ (x\equiv k)\ S_1\ \mathsf{else}\ S_2}\ \textsc{if-singleton}
+\qquad
+\frac{\Gamma\vdash k:\{c\}\quad
+      \Gamma[o:F^{f}_{\mathsf{eq}(c)}(\Gamma(o))]\vdash_R S_1\quad
+      \Gamma[o:F^{f}_{\lnot\mathsf{eq}(c)}(\Gamma(o))]\vdash_R S_2}
+     {\Gamma\vdash_R\ \mathsf{if}\ (o.f\equiv k)\ S_1\ \mathsf{else}\ S_2}\ \textsc{if-field}
+$$
+
+where $T$ is the tag slice and $F^f$ the field slice of a type, and $x$, $o$
+immutable bindings. The producer follows TypeScript in one related inference:
+a fresh object literal's field widens a literal's type (`{ v: 0 }` is
+`{ v: number }`) but keeps a name's or a read's declared one (`{ v: seed }`
+with `seed: 0 | 1` is `{ v: 0 | 1 }`).
 
 ### Compositional unions at the source boundary
 

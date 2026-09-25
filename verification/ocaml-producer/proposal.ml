@@ -283,38 +283,61 @@ let operation_result declarations op left right =
   if op = Add && (string_like declarations left || string_like declarations right) then Atoms [Str]
   else numeric_family declarations left
 
-(* Branch restrictions only affect immutable values. Unknown/rigid predicates
-   conservatively retain their type; proof checking validates each narrower cut. *)
-let restrict literal equal t = match t with
+(* The atoms of `t` that may be (`equal`) or may not be strictly equal to a
+   singleton value. Unknown/rigid predicates conservatively retain their type;
+   proof checking validates each narrower cut. *)
+let restrict singleton equal t = match t with
   | Atoms xs -> ground (List.filter (fun atom ->
-      let known = match atom,literal with
-        | Nul,LNull | Undef,LUndefined | True,LBool true | False,LBool false -> Some true
-        | NumLit a,LNumber b -> Some (Int64.float_of_bits a = float_of_string b)
-        | StrLit a,LString b -> Some (a=b)
-        | BigintLit a,LBigint b -> Some (a=b)
-        | Bigint,LBigint _ -> None
-        | (Top | Num | Str | Shape _ | Exact _ | Named _),_ -> None
+      let known = match atom,singleton with
+        | Nul,Nul | Undef,Undef | True,True | False,False -> Some true
+        (* Number::equal: NaN equals nothing, and the zeros each other. *)
+        | NumLit a,NumLit b -> Some (Int64.float_of_bits a = Int64.float_of_bits b)
+        | StrLit a,StrLit b -> Some (a=b)
+        | BigintLit a,BigintLit b -> Some (a=b)
+        | Num,NumLit _ | Str,StrLit _ | Bigint,BigintLit _ -> None
+        (* A declaration's atoms are not known here; any other atom is of
+           another kind than the singleton, or an object, never equal to it. *)
+        | (Top | Named _),_ -> None
         | _,_ -> Some false in
       match known with Some result -> result=equal | None -> true) xs)
   | Rigid _ | Union _ | Meet _ -> t
-let rec branch env cond truth = match cond.node with
-  | Not e -> branch env e (not truth)
-  (* A name as a condition is tested for truthiness; a Boolean's slice is
-     its literal. *)
-  | Id name -> refine_value env name (truthy_slice truth)
-  (* A true `&&` (a false `||`) established both operands so; the other
-     answer came from either operand, the right one after the left answered
-     the first way, and holds what either established. *)
-  | Logical (conjunction,a,b) when truth = conjunction -> branch (branch env a truth) b truth
-  | Logical (_,a,b) ->
-    let either = branch env a truth and later = branch (branch env a (not truth)) b truth in
-    List.map2 (fun (n,x) (_,y) -> n,match x,y with
-      | Value l,Value r -> Value (union l r)
-      | Storage (contract,l),Storage (_,r) -> holding contract (union l r)
-      | _ -> x) either later
-  | TypeofTest (shape,equal,{node=Id name;_}) ->
-    (* Keep the atoms of the tested shape on the arm where the test holds,
-       and the others where it fails. *)
+(* The one value every member of a type is, as Lean selects a singleton
+   operand: null, undefined, a Boolean, a string, a bigint, or one number
+   (both zeros are one). *)
+let singleton_atom = function
+  | Atoms [(Nul | Undef | True | False | StrLit _ | BigintLit _ | NumLit _) as a] -> Some a
+  | Atoms (NumLit b :: rest) when List.for_all (function
+      | NumLit c -> Int64.float_of_bits c = Int64.float_of_bits b | _ -> false) rest -> Some (NumLit b)
+  | _ -> None
+(* The arms of an object's union that may remain once its field `key` was
+   found (not) equal to something: an arm whose field, sliced by that outcome,
+   holds nothing is dropped. The arm stays dropped whatever the field holds
+   later: an object's arm is fixed where it is allocated. Lean checks the
+   slice. *)
+let discriminate declarations t key slice =
+  match declared_head declarations [] t with
+  | Atoms atoms ->
+    let admits atom =
+      match (try Some (field_type declarations [] (Atoms [atom]) key) with Json.Error _ -> None) with
+      | Some field -> slice field <> Atoms []
+      | None -> true in
+    let kept = List.filter admits atoms in
+    if List.length kept = List.length atoms then t else Atoms kept
+  | Rigid _ | Union _ | Meet _ -> t
+(* An immutable binding declared at a named union is held at the union's
+   arms, the same values: a guard then keeps or drops each arm, and a read
+   splits on them. Lean checks the declared type below the arms on the edge
+   from the declaration. *)
+let arms declarations t = match t with
+  | Atoms [Named _] ->
+    (match (try Some (declared_head declarations [] t) with Json.Error _ -> None) with
+     | Some (Atoms (_::_::_ as atoms)) -> Atoms atoms
+     | _ -> t)
+  | _ -> t
+(* Keep the atoms of a `typeof` test's shape where it holds, and the others
+   where it fails. *)
+let typeof_slice shape holds = function
+  | Atoms xs when not (List.mem Top xs) ->
     let has = function
       (* `Array.isArray`: an array owns its store; an open record may be an
          array carrying other keys, and stays on both arms. *)
@@ -333,21 +356,100 @@ let rec branch env cond truth = match cond.node with
       (* A declaration's shape is not known here: it stays on both arms. No
          value is an argument pack. *)
       | Top | Named _ -> None in
-    refine_value env name (function
-      | Atoms xs when not (List.mem Top xs) ->
-        Atoms (List.filter (fun a -> match has a with
-          | Some holds -> holds = (truth = equal) | None -> true) xs)
-      (* `unknown`, where a test naming one primitive family holds: that
-         family, whatever the value was (a caught value, say). *)
-      | Atoms _ when truth = equal ->
-        (match shape with
-         | "string" -> Atoms [Str] | "number" -> Atoms [Num] | "bigint" -> Atoms [Bigint]
-         | "symbol" -> Atoms [Symbol] | "undefined" -> Atoms [Undef] | "boolean" -> bool
-         | _ -> Atoms [Top])
-      | t -> t)
-  | Equality ((StrictEqual | StrictUnequal as op),{node=Id name;_},{node=Literal lit;_})
-  | Equality ((StrictEqual | StrictUnequal as op),{node=Literal lit;_},{node=Id name;_}) ->
-    refine_value env name (restrict lit (truth=(op=StrictEqual)))
+    Atoms (List.filter (fun a -> match has a with
+      | Some result -> result = holds | None -> true) xs)
+  (* `unknown`, where a test naming one primitive family holds: that
+     family, whatever the value was (a caught value, say). *)
+  | Atoms _ when holds ->
+    (match shape with
+     | "string" -> Atoms [Str] | "number" -> Atoms [Num] | "bigint" -> Atoms [Bigint]
+     | "symbol" -> Atoms [Symbol] | "undefined" -> Atoms [Undef] | "boolean" -> bool
+     | _ -> Atoms [Top])
+  | t -> t
+(* Whether a field's contents can be asserted of an object of this type: a
+   plain record that has the field, not optionally. *)
+let single_record declarations t field =
+  match (try Some (declared_head declarations [] t) with Json.Error _ -> None) with
+  | Some (Atoms [Shape {fields;calls=[];elements=None;string_index=None}])
+  | Some (Atoms [Exact fields]) ->
+    List.exists (fun (f:Semantic.field) -> f.name = Name field && not f.optional) fields
+  | _ -> false
+(* A guard on a field of an immutable binding's object: what the field holds
+   is known until a step may write it. *)
+let refine_field declarations env name field refine =
+  match List.assoc_opt name env with
+  | Some (Value t) when single_record declarations t field ->
+    let key = field_key name field in
+    let current = match List.assoc_opt key env with
+      | Some (Value c) -> Some c
+      | _ -> (try Some (field_type declarations [] t (Name field)) with Json.Error _ -> None) in
+    (match current with Some c -> fact env key (refine c) | None -> env)
+  | _ -> env
+let rec branch_with declarations env cond truth =
+  let branch = branch_with declarations in
+  let refine_field = refine_field declarations in
+  match cond.node with
+  | Not e -> branch env e (not truth)
+  (* A name as a condition is tested for truthiness; a Boolean's slice is
+     its literal. *)
+  | Id name -> refine_value env name (truthy_slice truth)
+  | Read ({node=Id name;_},Name field) -> refine_field env name field (truthy_slice truth)
+  (* A true `&&` (a false `||`) established both operands so; the other
+     answer came from either operand, the right one after the left answered
+     the first way, and holds what either established. *)
+  | Logical (conjunction,a,b) when truth = conjunction -> branch (branch env a truth) b truth
+  | Logical (_,a,b) ->
+    let either = branch env a truth and later = branch (branch env a (not truth)) b truth in
+    (* A field's contents are known where both paths know them. *)
+    List.filter_map (fun (n,x) -> match x,List.assoc_opt n later with
+      | Value l,Some (Value r) -> Some (n,Value (union l r))
+      | Storage (contract,l),Some (Storage (_,r)) -> Some (n,holding contract (union l r))
+      | _ when is_field n -> None
+      | _ -> Some (n,x)) either
+  | TypeofTest (shape,equal,{node=Id name;_}) ->
+    refine_value env name (typeof_slice shape (truth = equal))
+  | TypeofTest (shape,equal,{node=Read ({node=Id name;_},Name field);_}) ->
+    refine_field env name field (typeof_slice shape (truth = equal))
+  (* `x == null` holds of null and undefined alike. *)
+  | Equality ((LooseEqual | LooseUnequal as op),{node=Id name;_},{node=Literal (LNull | LUndefined);_})
+  | Equality ((LooseEqual | LooseUnequal as op),{node=Literal (LNull | LUndefined);_},{node=Id name;_}) ->
+    let equal = truth=(op=LooseEqual) in
+    refine_value env name (fun t ->
+      if equal then union (restrict Nul true t) (restrict Undef true t)
+      else restrict Undef false (restrict Nul false t))
+  (* A comparison with a singleton, a literal or a name or field holding one,
+     narrows the other operand where it is a name, or a field of a name's
+     object, and that object's arms, on both outcomes. Where it holds, one
+     with a name or field holding one of several singletons narrows the
+     other to the values that may equal one of them. *)
+  | Equality ((StrictEqual | StrictUnequal as op),l,r) ->
+    let equal = truth=(op=StrictEqual) in
+    let values (e:expr) = Option.bind (match e.node with
+      | Literal lit -> Some (literal_type lit)
+      | Id n -> Option.map binding_type (List.assoc_opt n env)
+      | Read ({node=Id n;_},Name f) ->
+        (match List.assoc_opt (field_key n f) env,List.assoc_opt n env with
+         | Some b,_ -> Some (binding_type b)
+         | None,Some b -> (try Some (field_type declarations [] (binding_type b) (Name f)) with Json.Error _ -> None)
+         | None,None -> None)
+      | _ -> None) (fun t -> match singleton_atom t,t with
+        | Some a,_ -> Some ((fun t -> restrict a equal t),true)
+        | None,Atoms (_::_ as atoms) when equal
+            && List.for_all (fun a -> singleton_atom (Atoms [a]) <> None) atoms ->
+          Some ((fun t -> combine (List.map (fun a -> restrict a true t) atoms)),false)
+        | _ -> None) in
+    (* What a field holds is known from a test against one singleton, whose
+       saved read Lean observes; several are tested one read at a time. *)
+    let narrow env (operand:expr) other = match values other,operand.node with
+      | None,_ -> env
+      | Some (slice,_),Id name -> refine_value env name slice
+      | Some (slice,single),Read ({node=Id name;_},key) ->
+        let env = refine_value env name (fun t -> discriminate declarations t key slice) in
+        (match key with
+         | Name field when single -> refine_field env name field slice
+         | _ -> env)
+      | Some _,_ -> env in
+    narrow (narrow env l r) r l
   | _ -> env
 
 (* Expected types guide fresh construction only. They are never a shortcut
@@ -373,10 +475,11 @@ let module_type (g:Source.fn) =
    the further signatures its uses offer it; the pass reports them as
    [requests], and [infer_function] runs a second pass with them. *)
 let infer_pass offered declarations module_functions (f:Source.fn) =
+  let branch = branch_with declarations in
   (* A parameter the body assigns is a cell holding its argument, at its
      annotation. *)
   let env0 = List.map (fun (n,t) ->
-    n,if List.exists (assigns n) f.body then cell t else Value t) f.params in
+    n,if List.exists (assigns n) f.body then cell t else Value (arms declarations t)) f.params in
   (* Unannotated immutable locals bound to a closure without binders or a rest
      parameter: where the closure is created, and its parameters' types. *)
   let closures = ref [] and requests = ref [] in
@@ -482,7 +585,13 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | Read _ | Index _ -> true | _ -> false in
   let arrows = ref [] in
   let entry env span = match Json.list span with
-    | start::_ -> entries := {start;bindings=env} :: !entries
+    | start::_ ->
+      (* A field's contents are claimed where its object is still one record. *)
+      let bindings = List.filter (fun (n,_) -> not (is_field n) ||
+        (match List.assoc_opt (owner n) env with
+         | Some (Value t) -> single_record declarations t (field_of n)
+         | _ -> false)) env in
+      entries := {start;bindings} :: !entries
     | [] -> Json.fail "empty source span" in
   (* The contract an assignment target is read and written at: a local's
      storage contract, or the type of the field or named index, whose read is
@@ -607,7 +716,11 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
           | Id m -> (match List.assoc_opt m !closures with
             | Some (pos,_) -> List.mem_assoc pos offered | None -> false)
           | _ -> false in
-        let t=if widened then inferred else Option.value expected ~default:(widen inferred) in
+        (* A literal's type widens in a mutable field, as TypeScript's fresh
+           literal types do; a name's or a read's declared type does not. *)
+        let fresh = match e.node with Id _ | Read _ -> false | _ -> true in
+        let t=if widened || (expected = None && not fresh) then inferred
+          else Option.value expected ~default:(widen inferred) in
         {name=Name name;optional=false;read=t;write=Some t}) fs in
       (* Where the contract is a dictionary, or has optional fields, the
          literal is claimed with its exact keys: that own-key bound is what
@@ -630,6 +743,9 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       (match contract with
         | Some s -> array s
         | None -> array {required=[];optional_elements=[];rest=Some (widen (combine types));readonly=false})
+    (* A field a guard found holding less than its type is read at that. *)
+    | Read (({node=Id name;_} as o),Name field) when List.mem_assoc (field_key name field) env ->
+      ignore (expr env o); binding_type (List.assoc (field_key name field) env)
     | Read (e,n) -> field_type declarations [] (expr env e) n
     | Index (e,key) -> let receiver=expr env e in let key=expr env key in index_type declarations [] receiver key
     | IndexWrite (receiver,key,rhs) -> ignore (expr env receiver); ignore (expr env key); expr env rhs
@@ -1131,7 +1247,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       | Union ts -> combine (List.map present ts)
       | Atoms xs -> combine (List.map (fun a -> match a,expand_named declarations (Atoms [a]) with
           | Named _,Some e when e <> Atoms [a] -> present e
-          | _ -> restrict LUndefined false (Atoms [a])) xs)
+          | _ -> restrict Undef false (Atoms [a])) xs)
       | t -> t in
     let t = match default with
       | None -> t
@@ -1157,17 +1273,28 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
          expressions := {pos=span;type_=rest_t;instantiation=None} :: !expressions;
          bind env target rest_t None)
   in
-  (* Whether a list never completes normally: it ends in a jump, or in an
-     `if` whose arms both do. *)
+  (* Whether a list never completes normally: it ends in a jump, in an `if`
+     whose arms both do, or in a block that does and, labeled, that no
+     `break` leaves. *)
   let rec returns ss = match List.rev ss with
-    | {statement=Return _ | Throw _ | Break | Continue;_}::_ -> true
+    | {statement=Return _ | Throw _ | Break _ | Continue;_}::_ -> true
     | {statement=If (_,a,b);_}::_ -> returns a && returns b
     (* A `try` completes only through a body or handler that does, and only
        if its `finally` does. *)
     | {statement=Try (body,handler,finalizer);_}::_ ->
       returns (Option.value finalizer ~default:[]) ||
       (returns body && (match handler with Some (_,h) -> returns h | None -> true))
-    | _ -> false in
+    | {statement=Block (label,body);_}::_ ->
+      returns body && (match label with Some l -> not (List.exists (leaves l) body) | None -> true)
+    | _ -> false
+  and leaves l s = match s.statement with
+    | Break (Some l') -> l = l'
+    | If (_,a,b) -> List.exists (leaves l) (a @ b)
+    | While (_,body,update) -> List.exists (leaves l) (body @ update)
+    | ForOf (_,_,_,body) | Block (_,body) -> List.exists (leaves l) body
+    | Try (body,handler,finalizer) -> List.exists (leaves l)
+      (body @ (match handler with Some (_,h) -> h | None -> []) @ Option.value finalizer ~default:[])
+    | Declare _ | Destructure _ | Return _ | Effect _ | Throw _ | Break _ | Continue -> false in
   (* A step that may write a cell it does not name: a call, or a write. The
      cells are then known only by their contracts. Creating a closure runs
      nothing. *)
@@ -1191,7 +1318,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | Throw e -> stirs e
     | Try (body,handler,finalizer) -> List.exists stirs_statement
       (body @ (match handler with Some (_,h) -> h | None -> []) @ Option.value finalizer ~default:[])
-    | Break | Continue -> false in
+    | Break _ | Continue -> false in
   (* A point reached after any part of these statements ran: a cell they
      assign, or any cell where they may write one unseen, is known there by
      its contract. *)
@@ -1201,9 +1328,44 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
   (* A loop's head is reached again from its body. *)
   let loop_head env c body = if stirs c then forget env else havoc env body in
   (* Where two arms meet, a cell holds what either left in it. *)
-  let join before left right = List.map (fun (n,b) -> match b,List.assoc_opt n left,List.assoc_opt n right with
-    | Storage (contract,_),Some (Storage (_,l)),Some (Storage (_,r)) -> n,holding contract (union l r)
-    | _ -> n,b) before in
+  let join before left right =
+    List.filter_map (fun (n,b) -> match b,List.assoc_opt n left,List.assoc_opt n right with
+      | Storage (contract,_),Some (Storage (_,l)),Some (Storage (_,r)) -> Some (n,holding contract (union l r))
+      | _ when is_field n -> None
+      | _ -> Some (n,b)) before
+    (* A field's contents are known after both arms where each knows them. *)
+    @ List.filter_map (fun (n,b) -> match b,List.assoc_opt n right with
+      | Value l,Some (Value r) when is_field n && List.mem_assoc (owner n) before ->
+        Some (n,Value (union l r))
+      | _ -> None) left in
+  (* What continues past a point from an arm: the bindings in scope before
+     it, and the fields of their objects the arm knows. *)
+  let continuing before env = List.filter (fun (n,_) ->
+    List.mem_assoc n before || (is_field n && List.mem_assoc (owner n) before)) env in
+  (* The environments a `break` of each label leaves with, gathered until the
+     labeled block it leaves ends. *)
+  let exits = Hashtbl.create 8 in
+  (* Where several paths arrive, a value or a cell holds what it holds on
+     one of them. With no arrival the point is unreachable, and [fallback]
+     describes it. *)
+  let merge before fallback arrivals =
+    (* A path that knows a value of the empty type is never taken. *)
+    let reachable = List.filter (fun env ->
+      not (List.exists (fun (_,b) -> binding_type b = Atoms []) env)) arrivals in
+    match reachable with
+    | [] -> fallback
+    | first::_ ->
+      (* A field's contents are known where every path knows them; the
+         first path names the candidates. *)
+      let fields = List.filter (fun (n,_) -> is_field n && List.mem_assoc (owner n) before) first in
+      List.filter_map (fun (n,b) ->
+        let arriving = List.filter_map (List.assoc_opt n) reachable in
+        match b,arriving with
+        | _,_ when is_field n && List.length arriving < List.length reachable -> None
+        | _,[] -> Some (n,b)
+        | Value _,_ -> Some (n,Value (combine (List.map binding_type arriving)))
+        | Storage (contract,_),_ -> Some (n,holding contract (combine (List.map binding_type arriving))))
+        (List.filter (fun (n,_) -> not (is_field n)) before @ fields) in
   let rec statements env ss = List.fold_left (fun env s ->
     let env = match s.statement with
       | While (c,body,update) -> loop_head env c (body @ update)
@@ -1229,7 +1391,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         (* A class's annotation is its own construct signature, which the
            parser writes; the class value's claim may offer more. *)
         | false,Some _ when (match init.node with Ctor _ -> true | _ -> false) -> Value initial
-        | false,Some contract -> Value contract
+        | false,Some contract -> Value (arms declarations contract)
         | false,None -> Value initial in
       extend (after init env) n binding) env bs
     (* The initializer, then each binding in pattern order: a property at its
@@ -1254,19 +1416,24 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       (* The rest of the block runs only where an arm that always returns was
          not taken; where both may complete, a cell holds what either left. *)
       (match returns a,returns b with
-       | true,false -> List.filter (fun (n,_) -> List.mem_assoc n env) right
-       | false,true -> List.filter (fun (n,_) -> List.mem_assoc n env) left
+       | true,false -> continuing env right
+       | false,true -> continuing env left
        | _ -> join env left right)
     (* The update runs where the body ends or continues: from the head's
        knowledge, which already forgets what the body assigns. *)
     | While (c,body,update) -> ignore (expr env c);
       ignore (statements (branch env c true) body); ignore (statements env update); env
     (* A block's bindings end with it. A labeled one is also left by each
-       `break` of its label, after any part of it ran. *)
-    | Block (labeled,body) ->
+       `break` of its label, with what that path knew. *)
+    | Block (label,body) ->
       let inner = statements env body in
-      if labeled then havoc env body
-      else List.filter (fun (n,_) -> List.mem_assoc n env) inner
+      let completes = if returns body then [] else [inner] in
+      (match label with
+       | Some l ->
+         let breaks = Hashtbl.find_all exits l in
+         List.iter (fun _ -> Hashtbl.remove exits l) breaks;
+         merge env (havoc env body) (completes @ breaks)
+       | None -> merge env env completes)
     | ForOf (name,name_pos,iterable,body) ->
       (* The loop is the call of `%Iterate%` on the iterable, claimed at the
          statement with its instance; the element, at the name it binds. *)
@@ -1307,7 +1474,8 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
        (* The `finally` block runs after a completion, a `return` or a throw,
           from any point: it knows each cell by its contract. *)
        | Some finalizer -> local (statements (forget env) finalizer))
-    | Break | Continue -> env) env ss in
+    | Break (Some l) -> Hashtbl.add exits l env; env
+    | Break None | Continue -> env) env ss in
   ignore (statements env0 f.body);
   (* An expression the lowering reaches on two paths (the fields the arms of a
      constructor's last `if` share) is claimed once when both claims agree;

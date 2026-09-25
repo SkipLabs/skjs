@@ -251,7 +251,8 @@ reserved key `[[proto]]`, at the prototype's field or view for the key; it
 names the prototype's type, `{"readProto": {"proto": P}}`.
 `arith` applies a binary operator to two operands whose types it answers for
 pair by pair, arithmetic on two numbers or two bigints, a comparison on two
-numeric operands or two strings, into the family of its result kind; `test` types a tag test whose answer the operand's type does not settle
+numeric operands or two strings, strict equality (`eq`) where either operand is
+a primitive or an object with a field, into the family of its result kind; `test` types a tag test whose answer the operand's type does not settle
 as a Boolean holding both literals, for `ifBool` to branch on. `ifTrue` and `ifFalse` are the two answers of the single
 shape-test rule `ifTag`, split so that the evidence records which answer it
 relies on; `truLit` and `flsLit` are the Boolean singleton introductions, and
@@ -312,10 +313,10 @@ All type labels in nested effect proofs are bounds checked. `allocated` retains 
 (`slot`, `contents`, and ordinary `proof`) for either descriptor: it requires
 `make code (var slot)` and checks the entire term's scope and creation proof.
 The code descriptor is part of the requested term, so changing it invalidates
-the evidence. `typedRead` accepts a first invariant operand shared by every
-clause in a nonempty expansion of plain or callable bags. Empty expansions,
-non-bag alternatives, and differing operands are rejected; its stored read
-links retain the receiver descriptor. Within a source
+the evidence. `typedRead` (`slot`, ordinary `proof`) accepts a nonempty
+expansion of plain or callable bags whose first invariant operand each has the
+field read, at any type. Empty expansions and non-bag alternatives are
+rejected; its stored read links retain the receiver descriptor. Within a source
 statement, the producer derives checked facts along administrative paths. The
 source consumer additionally enforces the exact entry interfaces described below.
 See the [assertion rules](PROGRAM-TYPING.md#checked-expression-postconditions).
@@ -1025,13 +1026,19 @@ capture lowering and assignment temporaries are described in
 
 ### Singleton comparisons
 
-Source binary forms with `op` equal to `===` or `!==` are accepted when either
-operand has a checked singleton null, undefined or numeric type. Lean resolves the latter case using the common source claims;
+Source binary forms with `op` equal to `===` or `!==` whose operand has a
+checked singleton null, undefined, numeric, string, Boolean or bigint type are
+tag tests; without one they are the strict-equality operator (`arith` with op
+`eq`, negated for `!==`), refused when both operands may be objects without a
+field. `==` and `!=` are admitted only against a `null` or `undefined` literal,
+as the nullish test. Lean resolves the latter case using the common source claims;
 the operand obligation must prove that singleton, so a forged claim cannot
 justify replacing equality by a tag test. Both operands are evaluated in source order and both
 retain their expression obligations. The comparison lowers to the corresponding primitive
 test and Boolean conditional over the saved operand. Numeric tests use
-`{"numEq":{"bits":"…"}}` as the shared `Tag` representation. They implement
+`{"numEq":{"bits":"…"}}` as the shared `Tag` representation; strings, Booleans
+and bigints `{"strEq":{"value":"…"}}`, `{"boolEq":{"value":true}}` and
+`{"bigintEq":{"value":…}}`. They implement
 [Number::equal](https://tc39.es/ecma262/multipage/ecmascript-data-types-and-values.html#sec-numeric-types-number-equal):
 the two signs of zero compare equal, and NaN never compares equal. `unionVar`
 evidence handles finite unions with known outcomes; a broad `number` operand

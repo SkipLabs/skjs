@@ -488,7 +488,7 @@ const GROUPS: [string, RegExp][] = [
   ["compound and update assignments (x++, ||=, ??=, a[i] op=)", /expression (update|logicalAssign|nullishAssign|arrayAssign)|only field and local assignments/],
   ["reads on unions/primitives (field/index read on non-object, string keys)", /(field|indexed) read on non-object|record index requires a string key|numeric array key|dynamic string index write/],
   ["value-level && / || (non-boolean operands)", /operator (&&|\|\|)/],
-  ["equality against string/boolean literals", /equality requires a null, undefined or numeric singleton/],
+  ["equality: objects without a field (no identity), loose equality", /strict equality of two operands that may both be objects without a field|loose equality converts its operands/],
   ["await of non-promises and unions (the await bound)", /quantified call does not satisfy the closure's bound: cannot establish/],
   ["calls: overloads, .call, spread arguments, Object.assign, arrow callee", /overloaded call|\.(call|apply|bind) requires|spread (argument|into)|array literal spreads|Object\.assign|single arrow the arguments can call/],
   ["sloppy (non-strict) code", /sloppy code|must be strict code/],

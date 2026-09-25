@@ -835,10 +835,16 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     let op ← jStr (← jField j "op")
     if op == "&&" || op == "||" then
       return .logical p (op == "&&") (← decodeExpr (← jField j "l")) (← decodeExpr (← jField j "r"))
-    if op != "===" && op != "!==" then
-      throw s!"unsupported source expression at [{p.1},{p.2}): only strict equality with a null or undefined literal or Boolean &&/|| is supported"
     let left ← decodeExpr (← jField j "l")
     let right ← decodeExpr (← jField j "r")
+    -- `x == null` and `x == undefined` hold exactly when `x` is either.
+    if op == "==" || op == "!=" then
+      match left, right with
+      | _, .lit _ .vnull | _, .lit _ .vundef => return .singletonTest p .isNullish (op == "==") true left right
+      | .lit _ .vnull, _ | .lit _ .vundef, _ => return .singletonTest p .isNullish (op == "==") false left right
+      | _, _ => throw s!"unsupported source expression at [{p.1},{p.2}): loose equality converts its operands; only == null and == undefined are exact"
+    if op != "===" && op != "!==" then
+      throw s!"unsupported source expression at [{p.1},{p.2}): binary operator outside the fragment ({op})"
     match left, right with
     | _, .lit _ .vnull => return .singletonTest p .isNul (op == "===") true left right
     | .lit _ .vnull, _ => return .singletonTest p .isNul (op == "===") false left right

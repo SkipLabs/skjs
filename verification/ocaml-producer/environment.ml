@@ -36,8 +36,23 @@ let refine_value env name refine = List.map (fun (n,b) ->
 let assign env name t = List.map (fun (n,b) ->
   if n=name then n,(match b with Storage (contract,_) -> holding contract t | Value _ -> b)
   else n,b) env
+(* What a field of an immutable binding's object currently holds, where a
+   guard found it: an entry named by the object's name and the field joined
+   by a NUL, which no name contains, holding a union of primitive atoms. Lean
+   checks it on every edge into a point claiming it, as a current-content
+   fact about the field. *)
+let field_key name field = name ^ "\000" ^ field
+let is_field n = String.contains n '\000'
+let owner n = String.sub n 0 (String.index n '\000')
+let field_of n = let i = String.index n '\000' in String.sub n (i+1) (String.length n - i - 1)
+let fact env key t =
+  let rest = List.remove_assoc key env in
+  if knowable t && t <> Atoms [] then rest @ [key,Value t] else rest
 (* Where a step may write cells unseen (a call, a closure run later, a loop's
-   other iterations), a cell is known only by its contract. *)
-let forget ?(only=fun _ -> true) env = List.map (fun (n,b) -> match b with
-  | Storage (contract,_) when only n -> n,cell contract
-  | _ -> n,b) env
+   other iterations), a cell is known only by its contract, and no field's
+   contents are known. A step that assigns only locals keeps the fields. *)
+let forget ?only env = List.filter_map (fun (n,b) -> match b,only with
+  | _,None when is_field n -> None
+  | Storage (contract,_),None -> Some (n,cell contract)
+  | Storage (contract,_),Some only when only n -> Some (n,cell contract)
+  | _ -> Some (n,b)) env

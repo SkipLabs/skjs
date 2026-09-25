@@ -361,6 +361,8 @@ def tagShape (tag : Tag) (s : Nat) : Option Bool :=
   | .numEq _ => if s == 5 then none else some false
   | .isStr => some (s == 6)
   | .strEq _ => if s == 6 then none else some false
+  | .boolEq _ => if s == 1 then none else some false
+  | .bigintEq _ => if s == 9 then none else some false
   | .isBigint => some (s == 9)
   | .isSymbol => some (s == 10)
   -- Null and undefined are falsy; every object, function, class, symbol and
@@ -383,6 +385,8 @@ def tagClause (tag : Tag) (c : Clause α) : Option Bool :=
   | _, .top => none
   | .numEq bits, .numLit value => some (numberEqual value bits)
   | .strEq s, .strLit t => some (s == t)
+  | .boolEq b, .boolLit c => some (b == c)
+  | .bigintEq i, .bigintLit j => some (i == j)
   | .truthy, .boolLit b => some b
   | .truthy, .numLit value => some (numberTruthy value)
   | .truthy, .strLit t => some (t != "")
@@ -450,6 +454,26 @@ theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
       change v = .str t at hv
       subst v
       rfl
+    all_goals
+      have hs := semWithArgs_shape (by simp) hv
+      cases v <;> simp_all [ht,valueShape,tagHolds,shape]
+  | boolEq b =>
+    cases c <;> simp [ht, tagClause, tagShape, shape] at hq
+    all_goals subst q
+    case boolLit c =>
+      change v = (if c then .tru else .fls) at hv
+      subst v
+      cases b <;> cases c <;> rfl
+    all_goals
+      have hs := semWithArgs_shape (by simp) hv
+      cases v <;> simp_all [ht,valueShape,tagHolds,shape]
+  | bigintEq i =>
+    cases c <;> simp [ht, tagClause, tagShape, shape] at hq
+    all_goals subst q
+    case bigintLit j =>
+      change v = .bigint j at hv
+      subst v
+      simp [tagHolds, eq_comm]
     all_goals
       have hs := semWithArgs_shape (by simp) hv
       cases v <;> simp_all [ht,valueShape,tagHolds,shape]
@@ -528,13 +552,29 @@ def printableClause : Clause α → Bool
   | .bool | .boolLit _ | .nul | .undef => true
   | _ => false
 
+/-- A clause of primitives only, which strict equality compares by content. -/
+def primitiveClause : Clause α → Bool
+  | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .str | .strLit _
+  | .bigint | .bigintLit _ | .symbol => true
+  | _ => false
+
+/-- A record clause with an invariant field: its members are objects with a
+field location, which strict equality compares by identity. -/
+def identityClause : Clause α → Bool
+  | .refs (_ :: _) _ _ _ _ _ | .dict (_ :: _) _ _ _ _ _ _ _ => true
+  | _ => false
+
 /-- What an operator yields on members of two clauses, when it answers or
-throws for every pair of them. Two bigints give a bigint for every arithmetic
+throws for every pair of them. Strict equality answers where either clause
+is of primitives or of objects with a field. Two bigints give a bigint for every arithmetic
 operator: a division or remainder by zero or a negative exponent throws a `RangeError`
 (`binopThrows`), which is an outcome, not a wrong value, so no divisor or
 exponent condition is needed. -/
 def opResult (op : Arith) (c d : Clause α) : Option OpResult :=
-  if op.relational then
+  if op = .eq then
+    (if primitiveClause c || primitiveClause d || identityClause c || identityClause d
+     then some .bool else none)
+  else if op.relational then
     if (numberClause c || bigintClause c) && (numberClause d || bigintClause d)
       || stringClause c && stringClause d then some .bool else none
   else if op == .add && (stringClause c && printableClause d || printableClause c && stringClause d)
@@ -578,6 +618,56 @@ theorem printableClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause 
     | (subst hv; exact ⟨_, rfl⟩)
     | (split at hv <;> subst hv <;> exact ⟨_, rfl⟩)
 
+theorem primitiveClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
+    (hc : primitiveClause c = true) (hv : semWithArgs X P c n W v) : isPrim v = true := by
+  cases c <;> simp [primitiveClause] at hc <;> simp only [semWithArgs] at hv
+  all_goals first
+    | (rcases hv with rfl | rfl <;> rfl)
+    | (obtain ⟨_, rfl⟩ := hv; rfl)
+    | (subst hv; rfl)
+    | (split at hv <;> subst hv <;> rfl)
+    | (simp only [nulT, undefT, boolT, numT, strT, bigintT, symbolT] at hv;
+       first | (subst hv; rfl) | (rcases hv with rfl | rfl <;> rfl) | (obtain ⟨_, rfl⟩ := hv; rfl))
+
+theorem identityClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
+    (hc : identityClause c = true) (hv : semWithArgs X P c n W v) :
+    ∃ fs code, v = .objAt fs code ∧ fs ≠ [] := by
+  have field : ∀ {p : PropKey × α} {ps : List (PropKey × α)},
+      recT (ReferenceConjunctions.famsOf X (p :: ps)) n W v → ∃ fs code, v = .objAt fs code ∧ fs ≠ [] := by
+    intro p ps hr
+    obtain ⟨flds, rfl, hall⟩ := hr
+    obtain ⟨l, _, hl, _⟩ := hall p.1 (X p.2) (by simp [ReferenceConjunctions.famsOf])
+    refine ⟨flds, .absent, rfl, ?_⟩
+    rintro rfl
+    simp at hl
+  cases c with
+  | refs a bs vs os ms ks =>
+    cases a with
+    | nil => simp [identityClause] at hc
+    | cons p ps => exact field hv.1.1
+  | dict a bs vs ds os ms ks cs =>
+    cases a with
+    | nil => simp [identityClause] at hc
+    | cons p ps => exact field hv.1.1
+  | _ => simp [identityClause] at hc
+
+/-- Strict equality answers when one operand is a primitive or an object
+with a field. -/
+theorem strictEquals_some {v w : Tm} (hv : isVal v = true) (hw : isVal w = true)
+    (h : (isPrim v || isPrim w) = true ∨ (∃ fs code, v = .objAt fs code ∧ fs ≠ []) ∨
+      (∃ fs code, w = .objAt fs code ∧ fs ≠ [])) :
+    ∃ q, strictEquals v w = some q := by
+  unfold strictEquals
+  simp only [hv, hw, Bool.and_self, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+  by_cases hp : (isPrim v || isPrim w) = true
+  · exact ⟨sameValue v w, by simp [hp]⟩
+  simp only [hp, Bool.false_eq_true, ↓reduceIte]
+  have hp' : isPrim v = false ∧ isPrim w = false := by simpa using hp
+  rcases h with h | ⟨fs, code, rfl, hfs⟩ | ⟨fs, code, rfl, hfs⟩
+  · exact absurd h hp
+  · cases w <;> simp_all [isPrim, isVal]
+  · cases v <;> simp_all [isPrim, isVal]
+
 /-- `+` of a string and a printable value, in either order, is a string. -/
 theorem add_string {s : String} {w : Tm} {t : String} (ht : primString w = some t) :
     binop .add (.str s) w = some (.str (s ++ t)) ∧ binop .add w (.str s) = some (.str (t ++ s)) := by
@@ -600,6 +690,24 @@ theorem opResult_sound {X : α → Fam} {P : α → ArgFam} {op : Arith} {c d : 
     · exact .inl (numberClause_member he hu)
     · exact .inr (bigintClause_member he hu)
   unfold opResult at h
+  by_cases heq : op = .eq
+  · subst heq
+    simp only [↓reduceIte] at h
+    split at h
+    · rename_i hp
+      cases h
+      have hval := (semWithArgs_value hv).1
+      have wval := (semWithArgs_value hw).1
+      simp only [Bool.or_eq_true] at hp
+      obtain ⟨q, hq⟩ := strictEquals_some hval wval (by
+        rcases hp with ((hp | hp) | hp) | hp
+        · exact .inl (by simp [primitiveClause_member hp hv])
+        · exact .inl (by simp [primitiveClause_member hp hw])
+        · exact .inr (.inl (identityClause_member hp hv))
+        · exact .inr (.inr (identityClause_member hp hw)))
+      exact .inl ⟨boolVal q, by simp [binop, hq], boolVal_holds _⟩
+    · cases h
+  simp only [heq, ↓reduceIte] at h
   by_cases hrel : op.relational = true
   · simp only [hrel, ↓reduceIte] at h
     split at h
@@ -609,16 +717,16 @@ theorem opResult_sound {X : α → Fam} {P : α → ArgFam} {op : Arith} {c d : 
       · rcases Bool.and_eq_true_iff.mp hops with ⟨hc, hd⟩
         rcases numeric hc hv with ⟨x, rfl⟩ | ⟨x, rfl⟩ <;>
           rcases numeric hd hw with ⟨y, rfl⟩ | ⟨y, rfl⟩
-        · exact .inl ⟨boolVal (relationHolds op (doubleOrder x y)), by simp [binop, hrel], boolVal_holds _⟩
-        · exact .inl ⟨boolVal (relationHolds op (doubleIntOrder x y)), by simp [binop, hrel], boolVal_holds _⟩
+        · exact .inl ⟨boolVal (relationHolds op (doubleOrder x y)), by simp [binop, hrel, heq], boolVal_holds _⟩
+        · exact .inl ⟨boolVal (relationHolds op (doubleIntOrder x y)), by simp [binop, hrel, heq], boolVal_holds _⟩
         · exact .inl ⟨boolVal (relationHolds op ((doubleIntOrder y x).map Ordering.swap)),
-            by simp [binop, hrel], boolVal_holds _⟩
-        · exact .inl ⟨boolVal (relationHolds op (some (compare x y))), by simp [binop, hrel], boolVal_holds _⟩
+            by simp [binop, hrel, heq], boolVal_holds _⟩
+        · exact .inl ⟨boolVal (relationHolds op (some (compare x y))), by simp [binop, hrel, heq], boolVal_holds _⟩
       · rcases Bool.and_eq_true_iff.mp hops with ⟨hc, hd⟩
         obtain ⟨x, rfl⟩ := stringClause_member hc hv
         obtain ⟨y, rfl⟩ := stringClause_member hd hw
         exact .inl ⟨boolVal (relationHolds op (some (unitsOrder (utf16Units x) (utf16Units y)))),
-          by simp [binop, hrel], boolVal_holds _⟩
+          by simp [binop, hrel, heq], boolVal_holds _⟩
     · cases h
   · simp only [hrel, Bool.false_eq_true, ↓reduceIte] at h
     split at h
@@ -639,7 +747,7 @@ theorem opResult_sound {X : α → Fam} {P : α → ArgFam} {op : Arith} {c d : 
       rcases Bool.and_eq_true_iff.mp hops with ⟨hc, hd⟩
       obtain ⟨x, rfl⟩ := numberClause_member hc hv
       obtain ⟨y, rfl⟩ := numberClause_member hd hw
-      exact .inl ⟨.num (arithBits op x y), by simp [binop, hrel], _, rfl⟩
+      exact .inl ⟨.num (arithBits op x y), by simp [binop, hrel, heq], _, rfl⟩
     · split at h
       · rename_i _ hops
         cases h
@@ -648,10 +756,10 @@ theorem opResult_sound {X : α → Fam} {P : α → ArgFam} {op : Arith} {c d : 
         obtain ⟨x, rfl⟩ := bigintClause_member hc hv
         obtain ⟨y, rfl⟩ := bigintClause_member hd hw
         cases hz : bigintArith op x y with
-        | some z => exact .inl ⟨.bigint z, by simp [binop, hrel, hz], z, rfl⟩
+        | some z => exact .inl ⟨.bigint z, by simp [binop, hrel, heq, hz], z, rfl⟩
         | none =>
           refine .inr ?_
-          cases op <;> simp [Arith.relational] at hrel <;> simp [bigintArith] at hz <;>
+          cases op <;> simp [Arith.relational] at hrel heq <;> simp [bigintArith] at hz <;>
             simp [binopThrows, hz]
       · cases h
 
@@ -2560,5 +2668,6 @@ theorem HasTy.closed_safe {G : NormalGraph ι} {t A} (ht : HasTy G [] t A)
 #print axioms HasTy.sound
 #print axioms HasTy.closed_safe
 #print axioms tagClause_sound
+#print axioms opResult_sound
 
 end Verification.Model.ProgramTyping

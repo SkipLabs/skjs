@@ -251,7 +251,7 @@ private def arrayKeyTerm (K : Ty Nat) : Compiler Tm := do
 expression's claim: both Booleans for a comparison, strings for `+` with a
 string operand, else the numeric family of its operands. -/
 private def operatorResult (op : Arith) (A B : Ty Nat) : Compiler (Ty Nat) := do
-  if op.relational then return [1, 2]
+  if op.relational || op == .eq then return [1, 2]
   let G := SourceTypes.graph (← table)
   let strings := fun (T : Ty Nat) =>
     let cs := PositiveRules.expand G T
@@ -323,9 +323,27 @@ private def keyField (fc : SourceClaims.Function) (key : Fragment.Expr)
     let _ ← arrayIndex G K
     pure .element
 
-/-- A claimed null/undefined/numeric singleton selects a tag-test implementation, never
-an assumption: both operands remain in the program, in source order, and their
-expression obligations must establish the singleton used by this translation. -/
+/-- The tag testing equality with the one value every member of `A` is:
+null, undefined, a number (both zeros are one), a string, a Boolean or a
+bigint. -/
+private def singletonTag (G : PositiveGraphs.NormalGraph Nat) (A : Ty Nat) : Option Tag :=
+  if A == [0] then some Tag.isNul else if A == [3] then some Tag.isUndef else
+    match PositiveRules.expand G A with
+    | .numLit bits :: cs =>
+      if cs.all (fun c => match c with | .numLit b => numberEqual bits b | _ => false)
+      then some (.numEq bits) else none
+    | [.strLit s] => some (.strEq s)
+    | [.boolLit b] => some (.boolEq b)
+    | [.bigintLit i] => some (.bigintEq i)
+    | _ => none
+
+/-- A claimed singleton operand (null, undefined, a number, a string, a Boolean
+or a bigint) selects a tag-test implementation, never an assumption: both
+operands remain in the program, in source order, and their expression
+obligations must establish the singleton used by this translation. Without
+one, the comparison is the strict-equality operator (`Arith.eq`), which the
+operator rule admits where either operand is a primitive; `!==` is its
+negation. -/
 private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.Expr) :
     Compiler Fragment.Expr := do
   match e with
@@ -336,18 +354,23 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
     let L ← exprType fc l
     let R ← exprType fc r
     let G := SourceTypes.graph (← table)
-    let select := fun (A : Ty Nat) =>
-      if A == [0] then some Tag.isNul else if A == [3] then some Tag.isUndef else
-        match PositiveRules.expand G A with
-        | .numLit bits :: cs =>
-          if cs.all (fun c => match c with | .numLit b => numberEqual bits b | _ => false)
-          then some (.numEq bits) else none
-        | [.strLit s] => some (.strEq s)
-        | _ => none
+    let select := singletonTag G
     match select R, select L with
     | some tag, _ => pure (.singletonTest p tag eq true l r)
     | _, some tag => pure (.singletonTest p tag eq false l r)
-    | _, _ => throw s!"unsupported source expression at [{p.1},{p.2}): equality requires a null, undefined or numeric singleton operand"
+    | _, _ =>
+      -- Two objects are strictly equal when they are one object. An object
+      -- value here is its field locations, so an object without a field
+      -- (a function, a record of optional fields only, any value of
+      -- `unknown`) carries no identity of its own: two operands that may
+      -- both be such objects are refused.
+      let identified := fun (c : PositiveNormalization.Clause (Ty Nat)) =>
+        ProgramTyping.primitiveClause c || ProgramTyping.identityClause c
+      if (PositiveRules.expand G L).any (fun c => !identified c) &&
+          (PositiveRules.expand G R).any (fun c => !identified c) then
+        throw s!"unsupported source expression at [{p.1},{p.2}): strict equality of two operands that may both be objects without a field compares identities, which such objects do not carry in the model"
+      let same := Fragment.Expr.arith p .eq l r
+      pure (if eq then same else .not p same)
   | .logical p a l r => return .logical p a (← comparisonsExpr fc l) (← comparisonsExpr fc r)
   | .coalesce p l r => return .coalesce p (← comparisonsExpr fc l) (← comparisonsExpr fc r)
   | .optional p m r b => return .optional p m (← comparisonsExpr fc r) (← comparisonsExpr fc b)
@@ -2413,6 +2436,29 @@ private def positionRead (G : PositiveGraphs.NormalGraph Nat) (A : Ty Nat) (i : 
       | none, none => throw s!"position {i} is outside the array's contract"
   pure alts.flatten.flatten.eraseDups
 
+/-- A strict comparison of two operands neither of which is a singleton, one
+an immutable name whose every label is one singleton and the other a name or
+a field of a name, both read without effect, dispatches as the tag tests it
+amounts to: the split operand's slot and singletons, and the other operand
+(a slot, and the field read from it) with its source expression. -/
+private def equalitySplit (scope : List ScopeBinding) (Γ : List (Ty Nat))
+    (l r : Fragment.Expr) :
+    Compiler (Option ((Nat × Option PropKey) × (Nat × Option PropKey) × Fragment.Expr × List Tag)) := do
+  let G := SourceTypes.graph (← table)
+  let operand : Fragment.Expr → Option (Nat × Option PropKey)
+    | .var _ name => (valueSlot scope name).map (·, none)
+    | .read _ f (.var _ name) => (valueSlot scope name).map (·, some f)
+    | _ => none
+  let singletons := fun (k : Nat) => do
+    let C ← Γ[k]?
+    if C.isEmpty then none else C.mapM fun a => singletonTag G [a]
+  let attempt := fun (s o : Fragment.Expr) => do
+    let (k, none) ← operand s | none
+    let other ← operand o
+    let tags ← singletons k
+    some ((k, none), other, o, tags)
+  return (attempt r l).orElse fun _ => attempt l r
+
 mutual
 /-- Each expression leaves its result in slot zero and preserves the original
 slots after it. Anonymous temporary slots cannot be named by source identifiers.
@@ -3154,6 +3200,53 @@ private partial def compileCondition (fc : SourceClaims.Function) (scope : List 
       let node ← emitBranch scope Γ cond A yes no
       compileExpr fc scope Γ cond node
   match cond with
+  | .arith p .eq l r =>
+    match ← equalitySplit scope Γ l r with
+    | none => simple
+    | some (split, other, otherExpr, tags) =>
+      let G := SourceTypes.graph (← table)
+      let width := scope.length
+      -- Test one operand against one singleton, dispatching to `yes` or
+      -- `no`; a read also records its link, which lets the edge refine the
+      -- object's arms (`fieldSlice`).
+      let test := fun (Δ : List (Ty Nat)) (op : Nat × Option PropKey) (tag : Tag) (y n : Target) =>
+        match op with
+        | (k, none) =>
+          emitAt p (.var k) (.tagBind tag (branchMapping width (some k) y) (branchMapping width (some k) n))
+            Δ (Δ[k]?.getD []) "tag-dispatch" (scope := scope)
+        | (k, some f) => do
+          let R ← exprType fc otherExpr
+          emitAt p (.readAt f (.var k)) (.tagBind tag (branchMapping width none y) (branchMapping width none n))
+            Δ R "tag-dispatch" (scope := scope)
+      let refine := fun (Δ : List (Ty Nat)) (op : Nat × Option PropKey) (tag : Tag) (q : Bool) =>
+        match op with
+        | (k, none) => Δ.set k (BranchRefinement.tagSlice G (Δ[k]?.getD []) tag q)
+        | (k, some f) => Δ.set k (BranchRefinement.fieldSlice G (Δ[k]?.getD []) f tag q)
+      -- For each singleton the split operand may be, in order: it is that
+      -- one, and the other operand is too (strict equality is transitive
+      -- where it holds). After every one failed, the split operand equals
+      -- none of them (NaN, which equals nothing), so the operands differ.
+      let rec chain : List Tag → List (Ty Nat) → Compiler Target
+        | [], _ => pure no
+        | tag :: more, Δ => do
+          -- Where the other operand cannot be this singleton, its test's true
+          -- edge is never taken; it goes where the false one does, so that
+          -- no target claims what the split operand holds on that path.
+          let possible ← match other with
+            | (k, none) => pure !(BranchRefinement.tagSlice G ((refine Δ split tag true)[k]?.getD []) tag true).isEmpty
+            | (_, some _) => do
+              pure !(BranchRefinement.tagSlice G (← exprType fc otherExpr) tag true).isEmpty
+          let inner ← test (refine Δ split tag true) other tag (if possible then yes else no) no
+          let next ← chain more (refine Δ split tag false)
+          test Δ split tag inner next
+      let start ← chain tags Γ
+      -- The comparison itself runs first, as the source has it, with its
+      -- obligations; its Boolean is dropped, and the dispatch re-reads the
+      -- operands, which nothing between has written.
+      let A ← exprType fc cond
+      let skip : Target := ⟨start.label, some ((start.mapping.getD (List.range width)).map (·+1))⟩
+      let discard ← emitAt p (.var 0) (.effect skip) (A::Γ) A (scope := held ⟨"",some p⟩ :: scope)
+      compileExpr fc scope Γ cond discard
   | .logical _ andOp left right =>
     let _ ← closureExpr fc scope Γ cond
     let H := conditionContext (SourceTypes.graph (← table)) scope Γ left andOp
@@ -3485,6 +3578,12 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
       if depth != loopTargets.finalizers.length then
         throw (locatedRefusal (← table) pos .bindingAnnotation
           "a jump out of a `try` with a `finally` is outside the fragment")
+      -- A jump whose entry claims a binding of the empty type is never
+      -- reached (every incoming edge proves that claim): it completes the
+      -- function instead, which it may claim at any result.
+      if Γ.any (·.isEmpty) then
+        emitAt pos .undef .ret Γ R "unreachable" (scope := scope)
+      else
       let next ← leave fc.namePos R scope destination
       emitAt pos .nul (.effect next) Γ [0] (scope := scope)
     | .ret pos e :: rest =>

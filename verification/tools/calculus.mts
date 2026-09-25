@@ -10,7 +10,10 @@ export type Tag =
   | "isNum"
   | "isStr"
   | { numEq: { bits: string } }
-  | { strEq: { value: string } };
+  | { strEq: { value: string } }
+  | { boolEq: { value: boolean } }
+  /** A bigint singleton, as its integer: a JSON number of any length. */
+  | { bigintEq: { value: number } };
 /** An object's invocation code: none, a closure, variadic code collecting
  * further actuals, or `.bind`'s forwarding descriptor, which keeps the target,
  * the receiver and the argument prefix it was given. */
@@ -62,7 +65,7 @@ export type Term =
   /** Evaluate `a`, then throw its value. */
   | { throw: { a: Term } };
 /** Every binary operator, as `Arith` in Calculus.lean names them. */
-const OPERATORS = ["add", "sub", "mul", "div", "pow", "xor", "rem", "lt", "le", "gt", "ge"] as const;
+const OPERATORS = ["add", "sub", "mul", "div", "pow", "xor", "rem", "lt", "le", "gt", "ge", "eq"] as const;
 /** Every tag, checked against `Tag`: adding one there and not here is a type
  * error rather than an "unknown tag" at run time. */
 const TAGS: Record<Extract<Tag, string>, true> = {
@@ -84,6 +87,14 @@ export function isTag(v: unknown): v is Tag {
   if (isRecord(v.strEq))
     return (
       Object.keys(v.strEq).length === 1 && typeof v.strEq.value === "string"
+    );
+  if (isRecord(v.boolEq))
+    return (
+      Object.keys(v.boolEq).length === 1 && typeof v.boolEq.value === "boolean"
+    );
+  if (isRecord(v.bigintEq))
+    return (
+      Object.keys(v.bigintEq).length === 1 && typeof v.bigintEq.value === "number"
     );
   if (!isRecord(v.numEq)) return false;
   const n = v.numEq;

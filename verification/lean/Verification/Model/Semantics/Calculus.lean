@@ -80,6 +80,10 @@ inductive Tag where
   /-- `Array.isArray`: a plain object owning the store key, which only an
   array does. Keys are fixed at allocation, so the answer never changes. -/
   | isArray
+  /-- One Boolean, and one bigint: equality with a singleton of the last two
+  primitive kinds that carry a value. -/
+  | boolEq (value : Bool)
+  | bigintEq (value : Int)
   deriving Repr, DecidableEq
 
 /-- The binary operators on primitive operands, JavaScript's own (`binop`
@@ -87,13 +91,17 @@ gives their meaning). Arithmetic combines two numbers as the IEEE-754 double
 operation, or two bigints as the integer one: `pow` is `**`, `xor` is `^`,
 which `~x` is written with (`x ^ -1`). The relational operators compare two
 numeric operands, number and bigint alike, or two strings, and answer a
-Boolean. A combination JavaScript throws on, or converts through anything
+Boolean. Strict equality answers a Boolean where one operand is a
+primitive. A combination JavaScript throws on, or converts through anything
 else, is stuck. `rem` is `%`: on doubles the exact remainder of truncating
 division, with the dividend's sign; on bigints the truncating remainder. -/
 inductive Arith where
   | add | sub | mul | div
   | pow | xor | rem
   | lt | le | gt | ge
+  /-- Strict equality, `===`: a Boolean, where one operand is a primitive
+  (`strictEquals`). -/
+  | eq
   deriving Repr, DecidableEq, BEq
 
 /-- Whether an operator compares rather than computes. -/
@@ -326,7 +334,7 @@ def arithBits (op : Arith) (x y : UInt64) : UInt64 :=
     | .pow => (jsPow a b).toBits
     | .xor => int32Bits (intXor (toInt32 x) (toInt32 y))
     | .rem => remBits x y
-    | .lt | .le | .gt | .ge => (0.0 / 0.0 : Float).toBits
+    | .lt | .le | .gt | .ge | .eq => (0.0 / 0.0 : Float).toBits
 
 /-- Arithmetic on two bigints: JavaScript's integer operations. Division
 truncates toward zero, and the remainder is the one it leaves, with the
@@ -340,7 +348,7 @@ def bigintArith : Arith → Int → Int → Option Int
   | .pow, x, y => if y < 0 then none else some (x ^ y.toNat)
   | .xor, x, y => some (intXor x y)
   | .rem, x, y => if y = 0 then none else some (x.tmod y)
-  | .lt, _, _ | .le, _, _ | .gt, _, _ | .ge, _, _ => none
+  | .lt, _, _ | .le, _, _ | .gt, _, _ | .ge, _, _ | .eq, _, _ => none
 
 /-- The order of two doubles: none when either is NaN, and the two zeros
 equal, as IEEE comparison has them. -/
@@ -477,6 +485,55 @@ def primString : Tm → Option String
   | .undef => some "undefined"
   | _ => none
 
+def isVal : Tm → Bool
+  | .nul | .undef | .tru | .fls | .num _ | .str _ | .bigint _ | .sym _ | .objAt .. | .arr _ => true
+  | _ => false
+
+/-- ECMAScript Number::equal on IEEE-754 bits: NaN never equals, and the
+sign of zero is ignored. All other equal Numbers have the same encoding. -/
+def numberEqual (a b : UInt64) : Bool :=
+  let nan := fun (x : UInt64) =>
+    (x &&& 0x7ff0000000000000) == 0x7ff0000000000000 &&
+      (x &&& 0x000fffffffffffff) != 0
+  !nan a && !nan b &&
+    (a == b || ((a &&& 0x7fffffffffffffff) == 0 && (b &&& 0x7fffffffffffffff) == 0))
+
+def isSym : Tm → Bool
+  | .sym _ => true
+  | _ => false
+
+/-- A primitive value: one no conversion runs code on. -/
+def isPrim : Tm → Bool
+  | .nul | .undef | .tru | .fls | .num _ | .str _ | .bigint _ | .sym _ => true
+  | _ => false
+
+/-- `IsStrictlyEqual` where one operand is a primitive: operands of different
+types differ; two numbers are equal by `Number::equal` (NaN differs from
+itself, the zeros are equal); strings, bigints, Booleans and symbols by their
+content; `null` and `undefined` each only to itself. -/
+def sameValue : Tm → Tm → Bool
+  | .nul, .nul | .undef, .undef | .tru, .tru | .fls, .fls => true
+  | .num x, .num y => numberEqual x y
+  | .str s, .str t => s == t
+  | .bigint i, .bigint j => i == j
+  | .sym i, .sym j => i == j
+  | _, _ => false
+
+/-- Strict equality (`===`) of two values, as JavaScript's `IsStrictlyEqual`.
+A primitive compares by content (`sameValue`), and differs from every
+object. Two objects are equal when they are one object: an object value is the
+locations of its fields, which only its allocation creates, fresh, so two
+objects with a field are one exactly when their locations are. Two objects
+without fields carry no identity here, and have no answer; nor do two stores,
+which no source compares. -/
+def strictEquals (a b : Tm) : Option Bool :=
+  if !(isVal a && isVal b) then none
+  else if isPrim a || isPrim b then some (sameValue a b)
+  else match a, b with
+    | .objAt fs _, .objAt gs _ => if fs.isEmpty && gs.isEmpty then none else some (decide (fs = gs))
+    | .objAt fs _, .arr _ | .arr _, .objAt fs _ => if fs.isEmpty then none else some false
+    | _, _ => none
+
 /-- **What a binary operator does on two values**, as JavaScript's does on
 them, where that is a value. Arithmetic combines two numbers or two bigints,
 never one of each (JavaScript throws a `TypeError`: `binopThrows`), and not a
@@ -485,9 +542,12 @@ bigint division or remainder by zero or a negative bigint exponent (a
 compares two numeric values of either kind, exactly, or two strings by their
 UTF-16 code units. `+` with a string operand concatenates: the other operand,
 a primitive other than a symbol, converts by `ToString` (`primString`), which
-runs no code. Every other pair converts its operands through code or
+runs no code. Strict equality compares where one operand is a primitive
+(`strictEquals`). Every other pair converts its operands through code or
 coercions not modelled here, and has no answer: the term is stuck. -/
-def binop (op : Arith) : Tm → Tm → Option Tm
+def binop (op : Arith) (a b : Tm) : Option Tm :=
+  if op = .eq then (strictEquals a b).map boolVal else
+  match a, b with
   | .num x, .num y =>
     some (if op.relational then boolVal (relationHolds op (doubleOrder x y)) else .num (arithBits op x y))
   | .bigint x, .bigint y =>
@@ -505,30 +565,23 @@ def binop (op : Arith) : Tm → Tm → Option Tm
   | a, .str t => if op == .add then (primString a).map fun s => .str (s ++ t) else none
   | _, _ => none
 
-def isSym : Tm → Bool
-  | .sym _ => true
-  | _ => false
-
-/-- A primitive value: one no conversion runs code on. -/
-def isPrim : Tm → Bool
-  | .nul | .undef | .tru | .fls | .num _ | .str _ | .bigint _ | .sym _ => true
-  | _ => false
-
 /-- **Where a binary operator throws** on two values, as JavaScript's does,
 with no code of the program's run first: a bigint division or remainder by
 zero and a negative bigint exponent (`RangeError`); arithmetic combining a number and a
 bigint (`TypeError`); and any operator with a symbol operand and a primitive
 other one, which converts the symbol by `ToString` or `ToNumeric`
-(`TypeError`). An object operand converts through its own code first, which is
-not modelled: that combination stays stuck. Disjoint from `binop`
+(`TypeError`). Strict equality converts nothing and never throws. An object
+operand converts through its own code first, which is not modelled: that
+combination stays stuck. Disjoint from `binop`
 (`binop_not_throws`). -/
-def binopThrows (op : Arith) : Tm → Tm → Bool
-  | .bigint _, .bigint y => match op with
+def binopThrows : Arith → Tm → Tm → Bool
+  | .eq, _, _ => false
+  | op, .bigint _, .bigint y => match op with
     | .div | .rem => y == 0
     | .pow => decide (y < 0)
     | _ => false
-  | .num _, .bigint _ | .bigint _, .num _ => !op.relational
-  | a, b => isSym a && isPrim b || isPrim a && isSym b
+  | op, .num _, .bigint _ | op, .bigint _, .num _ => !op.relational
+  | _, a, b => isSym a && isPrim b || isPrim a && isSym b
 
 /-- The object a primitive operation throws: an object with no field, which
 takes no location, as `{}` allocates. It stands for the `TypeError` or
@@ -876,9 +929,6 @@ abbrev Val := Tm
 /-! ## Values and substitution -/
 
 
-def isVal : Tm → Bool
-  | .nul | .undef | .tru | .fls | .num _ | .str _ | .bigint _ | .sym _ | .objAt .. | .arr _ => true
-  | _ => false
 
 /-- An operator answers only for two values, and answers a Boolean, a
 number, a bigint or a string. -/
@@ -890,6 +940,14 @@ theorem binop_result {op : Arith} {a b v : Tm} (h : binop op a b = some v) :
       (v = .tru ∨ v = .fls ∨ (∃ x, v = .num x) ∨ (∃ i, v = .bigint i) ∨ ∃ s, v = .str s) := by
   have hb : ∀ q, boolVal q = .tru ∨ boolVal q = .fls := fun q => by cases q <;> simp [boolVal]
   unfold binop at h
+  split at h
+  · obtain ⟨q, hq, rfl⟩ := Option.map_eq_some_iff.mp h
+    unfold strictEquals at hq
+    split at hq
+    · cases hq
+    · rename_i hv
+      simp only [Bool.not_eq_true', Bool.and_eq_false_iff, not_or, Bool.not_eq_false] at hv
+      exact ⟨hv.1, hv.2, by rcases hb q with h | h <;> rw [h] <;> simp⟩
   repeat' split at h
   all_goals first
     | (simp at h; done)
@@ -916,6 +974,7 @@ theorem binopThrows_values {op : Arith} {a b : Tm} (h : binopThrows op a b = tru
     isVal a = true ∧ isVal b = true := by
   unfold binopThrows at h
   split at h
+  · cases h
   · exact ⟨rfl, rfl⟩
   · exact ⟨rfl, rfl⟩
   · exact ⟨rfl, rfl⟩
@@ -932,15 +991,6 @@ theorem binop_not_throws {op : Arith} {a b v : Tm} (h : binop op a b = some v) :
     cases op <;> simp_all [binop, binopThrows, bigintArith, isPrim, isSym, Arith.relational, primString] <;>
     (obtain ⟨_, ⟨h1, _⟩, _⟩ := h; exact h1)
 
-/-- ECMAScript Number::equal on IEEE-754 bits: NaN never equals, and the
-sign of zero is ignored. All other equal Numbers have the same encoding. -/
-def numberEqual (a b : UInt64) : Bool :=
-  let nan := fun (x : UInt64) =>
-    (x &&& 0x7ff0000000000000) == 0x7ff0000000000000 &&
-      (x &&& 0x000fffffffffffff) != 0
-  !nan a && !nan b &&
-    (a == b || ((a &&& 0x7fffffffffffffff) == 0 && (b &&& 0x7fffffffffffffff) == 0))
-
 /-- `ToBoolean` of a number: false for the two zeros and NaN, which is the one
 double not equal to itself. -/
 def numberTruthy (b : UInt64) : Bool := !numberEqual b 0 && numberEqual b b
@@ -956,6 +1006,9 @@ def tagHolds : Tag → Val → Bool
   | .numEq bits, .num value => numberEqual value bits
   | .isStr, .str _ => true
   | .strEq s, .str t => s == t
+  | .boolEq b, .tru => b
+  | .boolEq b, .fls => !b
+  | .bigintEq i, .bigint j => i == j
   | .isBigint, .bigint _ => true
   | .isSymbol, .sym _ => true
   | .isRef, .objAt _ .absent => true

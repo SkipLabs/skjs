@@ -43,12 +43,11 @@ private def afterEdge := HeapKnowledge.project afterWrite (some [1]) 1
 private def readClaim : Sequent Nat := ⟨[refBool],.read (.var 0),boolTy⟩
 private def readProof : Evidence Nat := .node readClaim .read
   [.node ⟨readClaim.context,.var 0,refBool⟩ .var []]
-#guard checkStep G readClaim ⟨[],[],[]⟩ (.typedRead 0 [(valueField,boolTy)] readProof) ==
+#guard checkStep G readClaim ⟨[],[],[]⟩ (.typedRead 0 readProof) ==
   some (readFrame ⟨[],[],[]⟩ 0 valueField)
 #guard (readFrame ⟨[],[],[]⟩ 0 valueField).links == [⟨1,0,false,valueField,false,valueField⟩]
--- Neither a false storage contract nor a changed read claim can use that proof.
-#guard checkStep G readClaim ⟨[],[],[]⟩ (.typedRead 0 [(valueField, [1])] readProof) == none
-#guard checkStep G {readClaim with type := [1]} ⟨[],[],[]⟩ (.typedRead 0 [(valueField,boolTy)] readProof) == none
+-- A changed read claim cannot use that proof.
+#guard checkStep G {readClaim with type := [1]} ⟨[],[],[]⟩ (.typedRead 0 readProof) == none
 private def afterRead := readOutput afterEdge 0 valueField [.tru]
 #guard checkStep G readClaim afterEdge (.observedRead 0 [.tru]) == some afterRead
 #guard checkStep G {readClaim with type := [2]} afterEdge (.observedRead 0 [.tru]) == none

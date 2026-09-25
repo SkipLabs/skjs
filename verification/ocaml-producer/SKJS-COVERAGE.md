@@ -138,7 +138,7 @@ Ordered by value for cost (units per effort, files as a tiebreak):
 | 3 | Producer claim differs from annotation (literal-union parameters, cells) — done | 0 (was 17) | | | | S | O L |
 | 4 | Ambient declarations (`declare function/const/class`) — done (task C) | 0 (was 94) | | | | M | P D |
 | 5 | ~~Control-flow forms (`else if`, non-block branches, bare `return`, block closures that fall off the end, dead code)~~ done (task F) | 0 (was 100) | | | | | |
-| 6 | ~~`switch`~~ done (task F; case narrowing is I) | 0 (was 46) | | | | | |
+| 6 | ~~`switch`~~ done (task F; case narrowing task I) | 0 (was 46) | | | | | |
 | 7 | Unary `-`/`+`/`~` | 39 | 21 | 18 | 7 | S | P L |
 | 8 | `void e` — done (task E) | 0 (was 27) | | | | S | P L |
 | 9 | Template literal expressions and string `+` — done (task E); template literal *types* remain (22) | 17 (types) | | | | M | P L |
@@ -147,8 +147,8 @@ Ordered by value for cost (units per effort, files as a tiebreak):
 | 12 | ~~Destructuring, rest/default parameters~~ done (task H); left: slices, object rests, `let` patterns, generic alias rests | 15 (was 111) | 10 | 5 | 9 | M | P O L |
 | 13 | Library globals as values — calls and the reviewed overlay done (task K); left: `Array.isArray` (23), `new X(…)` (`Error` 23, `Array`, `Set`, `Map`, `Date`, `Promise`), well-known symbols (8), `Promise`/`JSON`/`Object` statics | 86 | | | 25 | M | D L |
 | 14 | ~~Reads on primitives and unions, value-level `&&`/`||`~~ done (task L); left: dynamic string index writes, numeric keys on string indexes | 4 (was 48 + 20) | | | | M | O L |
-| 15 | Equality against string/boolean literal singletons (Lean refuses the source form) | 37 | 37 | 0 | 5 | M | L |
-| 16 | Discriminated-union narrowing (producer: "missing field" after a tag test) | 14 | 13 | 0 | 4 | M | O L |
+| 15 | ~~Equality against string/boolean literal singletons~~ done (task I); left: two objects without a field (no identity in the model) | 6 (was 46) | 6 | 0 | 2 | M | L |
+| 16 | ~~Discriminated-union narrowing~~ done (task I); left: a `let` holding a union object | 3 (was 28) | 3 | 0 | 1 | M | O L |
 | 17 | `in` / `instanceof` / `typeof` (expression and type query) | 88 | 81 | 5 | 16 | L | P O L |
 | 18 | Search: no derivation found (mostly flow narrowing; see below) | 104 | 101 | 3 | 44 | L | L O |
 | 19 | Classes: member modifiers, optional/definite fields, parameter properties, inheritance, constructor statements, receivers | 104 | 65 | 39 | 31 | L | P O L |
@@ -253,7 +253,11 @@ dropped), examples, what the extension needs.
    dispatch of `===` tests: fall-through is exact, `break` leaves the switch.
    No case narrowing: 22 of the 46 units verify; the other 24 stop at a test
    against a string or Boolean label (15) or need the scrutinee narrowed by
-   its case (`switch.ts#caseNarrowsTheScrutinee`, exhaustiveness), task I.
+   its case (`switch.ts#caseNarrowsTheScrutinee`, exhaustiveness). *Case
+   narrowing done (task I): every accepted unit of the `switch*.ts` files
+   verifies but the "no function" policy (`switch-scope-merge.ts#switchSeed`
+   and its dependant) and one missing environment declaration
+   (`switch-clause-termination.ts#terminalLastClauseLeavesNoPath`).*
 7. **Unary operators.** `unary operator outside the fragment` (39; 18 of them
    negative bigint constants). `precedence-types.ts#testUnaryBinaryTypePositive`.
 8. **`void e`.** *Done (task E): `void e` is the comma form `e, undefined`,
@@ -374,18 +378,45 @@ dropped), examples, what the extension needs.
     string index writes (3: `x[k] = v` may add a key, and the calculus's
     objects have their keys fixed at allocation). None of the new search
     refusals is an SKJS unsoundness.
-15. **Equality with string/boolean literals.** `search: unsupported source
-    expression: equality requires a null, undefined or numeric singleton
-    operand` (37; 9 of them literal-union operands, `x === y` with `x: 0 | 1`,
-    after 3). `equality.ts#classDisjoint`,
-    `local-vs-local-refinement.ts#testBothOverlapNarrowsLhs`,
-    `unsound-refinement.ts#stableMemberScalar`. A Lean source-form restriction;
-    lifting it is the base of 6 (case narrowing), 16 and 17.
-16. **Discriminated-union narrowing.** `proposal: missing field _` (14): a
-    field read after `if (s.kind === "circle")` on a union
-    (`field-refinement.ts#testKindRefinement`, `unit.ts#check`,
-    `algebraic-data-types-comprehensive.ts#getProgress`). Producer narrowing
-    of unions by a literal tag, after 15.
+15. **Equality.** *Done (task I): a singleton operand of every primitive kind
+    selects a tag test (Boolean `boolEq` and bigint `bigintEq` added beside
+    null, undefined, number and string), which narrows the other operand on
+    both edges; any other `===` is the strict-equality operator (`Arith.eq`,
+    the `arith` rule), exact where one operand is a primitive or an object
+    with a field (an object value is its field locations, fresh at
+    allocation); two unions of singletons, and a field against one, dispatch
+    as their tag tests and narrow where equal; `x == null` is the nullish
+    test and other `==` is refused at the gate (it converts); an observation
+    the tested type rules out makes its edge never taken
+    ([DESIGN.md](../DESIGN.md#strict-equality-and-tag-narrowing)). Was
+    `equality requires a null, undefined or numeric singleton operand` (46).*
+    Left (6): two operands that may both be objects without a field
+    (`equality.ts#weakObjects`, `#funDisjoint`, `#funCounterExample`,
+    `#promiseDisjoint`, `#promiseCounterExample`, `void.ts#x7` comparing two
+    `void` results):
+    closures and all-optional records have no field location, so two of them
+    would be one value in the model though JavaScript tells them apart; refused
+    with that reason. Narrowing by object identity (`x.child === narrow` in
+    `unsound-refinement.ts#stableMemberScalar`), by a call operand
+    (`local-vs-local-refinement.ts#testVarVsCall`) or a field against a field
+    (`#testFieldVsFieldNarrowsBoth`, `field-refinement.ts#testFieldNarrowedToIntersection`)
+    stays an incompleteness in search.
+16. **Discriminated-union narrowing.** *Done (task I): a test of a field of an
+    immutable binding's object against a singleton keeps the arms whose field
+    admits the outcome, checked by a field slice on the branch edge (a heap
+    meeting the world holds the field's contract at its location, so the arm
+    is fixed at allocation and survives later writes); what the field holds is
+    a current-content fact until a step may write it; `switch (s.kind)`
+    re-reads the field at each case. Was `proposal: missing field _` (28).*
+    Left (3, `algebraic-data-types-comprehensive.ts#processMessage`,
+    `#testNestedADTs`, `#testOptionADT`): the object is held by a `let`, a cell,
+    whose current contents Lean knows only as primitive atoms, so a guard
+    cannot narrow the object it holds. (`local-objects.ts#testReassignGrownField`
+    and `unsound-refinement.ts#grownAliasField` match the same "missing field"
+    reason but are object growth, not narrowing;
+    `array-isarray-refinement.ts#testArrayMethodsAfterRefinement` and
+    `#testEarlyReturnWithLength` are a read of `length` after `Array.isArray`
+    on a union, the overlay's narrowing.)
 17. **`in`/`instanceof`/`typeof`.** `binary operator outside the fragment
     (in)` (25), `(instanceof)` (18), `proposal: expression typeof` (24),
     `type outside the fragment (TypeQuery)` (21, `typeof x` in types). Guards
@@ -735,7 +766,7 @@ split by function.
 | F. Statement forms (done) | `else if`/unbraced arms, nested blocks, `;`, bare `return`, block closures falling off the end, dead code after a jump, `switch` as labeled blocks (exact fall-through, no case narrowing), `for(;;)` as a `while` with an update, `for-in` over the trusted `%ForIn%`; `try`/`catch`/`finally`/`throw` moved to the calculus's throw outcome | 181 / 56 reached, 63 / 29 verified (+65 units, +60 functions, +11 files entirely; 703 → 768 on the marker corpus) | `fragment-parse.mts`, `fragment.mts`, `intrinsics.mts`, `annotate-source.mts`, `Fragment.lean`, `SourceExtraction.lean`, `SourceClaimJson.lean`, `source.ml`, `proposal.ml` | D (for `<` in loops) | D, E, H |
 | G. Mutable bindings | Storage contract from a widened initializer, parameters as cells, `let x: T;` with definite assignment, module constants | 52 / 22 | `proposal.ml`, `environment.ml`, `ProgramTyping.lean` | — | I |
 | H. Destructuring and parameters (done) | Object/array patterns (nested, holes, defaults, a tuple's rest) on `const`, in closure bodies and as parameters of functions and closures; function defaults; array assignment with a rest; readonly and alias rest parameters; refused with reasons: array rests of unknown length (slices), object rests, `let` patterns | 111 / 28 reached, 96 left the group; 82 units verified (911 → 993 units, 860 → 942 functions, 96 → 101 whole files, none lost, marker corpus) | `fragment-parse.mts`, `fragment.mts`, `type-term.mts`, `tsc-claims.mts`, `annotate-source.mts`, `Fragment.lean`, `SourceExtraction.lean`, `SourceClaimJson.lean`, `source.ml`, `proposal.ml`, `semantic.ml` | — | F |
-| I. Literal equality and tag narrowing | Lean equality with string/boolean singletons; discriminated-union narrowing; `switch` case narrowing | 42+ / 10 (plus much of the 42 narrowing failures) | `SourceExtraction.lean`, `ProgramTyping.lean`, `CertificateProducer.lean`, `proposal.ml` | F for `switch` | G, J |
+| I. Literal equality and tag narrowing (done) | Singleton tags of every primitive kind; strict equality as the `arith` operator (primitives, objects with a field); two unions of singletons dispatched as their tags; discriminated unions by a field slice on the branch edge; field contents after a guard; `switch` case narrowing (break joins, field discriminants re-read, exhaustive switches unreachable at their end); `== null`; impossible edges | 1578 → 1699 units (+121, none lost), 1070 → 1176 functions, 157 → 171 whole files (marker corpus, on top of tasks H, N, Q, the overlay and throws) | `Calculus.lean`, `ProgramTyping.lean`, `BranchRefinement.lean`, `ControlFlow.lean`, `HeapExpressionRules.lean`, `CertificateProducer.lean`, `SourceExtraction.lean`, `Fragment.lean`, `fragment-parse.mts`, `proposal.ml`, `environment.ml`, `claims.ml`, `source.ml` | F for `switch` | G, J |
 | J. Guards | `typeof`, `in`, `instanceof`, `Array.isArray`; `typeof` in type position | 88 / 16 | `fragment-parse.mts`, `proposal.ml`, Lean narrowing rules | I, K (`Array`) | I |
 | K. Library globals (done, first part) | Global values read at the call signatures a module calls (`BigInt(v)`, `Symbol()`, `String(v)`) as well as members; a standard library global only through a reviewed overlay (`library-globals.mts`) that states a parameter at what the host accepts without throwing | all 102 `BigInt` units and the `Symbol()`/`String()` calls pass the reader; 6 units / 2 files newly verified (703 → 709 units, 61 → 62 whole files); `Array.isArray`, `new X(…)`, well-known symbols, `Promise`/`JSON`/`Object` statics left | `declaration-graph.mts`, `library-globals.mts` | B, C | B, C |
 | L. Primitive and union reads (done) | Truthiness as a tag test, value-level `&&`/`||`, `!`; string `length` and code units; primitive members through their wrapper prototypes' contracts (the overlay generalized); not done: method calls on primitive unions, dynamic string index writes (objects cannot grow) | 68 / 30 reached, 61 / 7 (files fully) verified | `Calculus.lean`, `ProgramTyping.lean`, `ProgramCertificates.lean`, `CertificateProducer.lean`, `SourceExtraction.lean`, `array-prototype.mts`, `declaration-graph.mts`, `fragment-parse.mts`, `proposal.ml` | B (string lib) | I |

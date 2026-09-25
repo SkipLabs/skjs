@@ -105,7 +105,13 @@ language. The boundaries are:
    without an annotation has TypeScript's declared type as its contract, the
    initializer's widened type (`null`, `undefined` and `[]` initializers,
    TypeScript's evolving `any`, are refused); a parameter the body assigns is
-   a cell at its annotation.
+   a cell at its annotation. It also records what a field of an immutable
+   binding's object holds after a guard, until a step may write it, which the
+   claims state as that binding's `current` field assertion; and an
+   immutable binding declared at a named union is held at its arms, which a
+   field test against a singleton keeps or drops (discriminated unions). A
+   labeled block (a lowered `switch`) is left with what each `break` of its
+   label knew, joined at its end.
 4. `proposal.ml` infers immutable candidate claims. It neither validates nor
    publishes acceptance. For a call to a quantified callable, `inference.ml`
    accumulates directional lower/upper constraints through callable shapes,

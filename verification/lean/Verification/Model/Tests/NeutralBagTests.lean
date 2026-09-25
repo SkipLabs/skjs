@@ -38,12 +38,12 @@ private def writeProof : Evidence Nat := .node writeClaim (.unionVar 0)
 #guard !(expression G pool 8 [[2,3]] (.app (.var 0) .tru) [1]).isSome
 #guard !(expression G pool 8 [[2,3]] (.write (.var 0) .nul) [0]).isSome
 
--- Every branch has the same invariant, so typedRead retains facts and links.
+-- Every branch's invariant has the field, so typedRead retains facts and links.
 #guard bagOperand (expand G [2,3]) == some [(valueField,[1])]
-#guard checkStep G readClaim ⟨[],[],[]⟩ (.typedRead 0 [(valueField, [1])] readProof) ==
+#guard checkStep G readClaim ⟨[],[],[]⟩ (.typedRead 0 readProof) ==
   some (readFrame ⟨[],[],[]⟩ 0 valueField)
 #guard match expressionEffect G pool 8 readClaim ⟨[],[],[]⟩ [] [] with
-  | some (_, .typedRead 0 [(valueField, [1])] _, out) => out == readFrame ⟨[],[],[]⟩ 0 valueField
+  | some (_, .typedRead 0 _, out) => out == readFrame ⟨[],[],[]⟩ 0 valueField
   | _ => false
 
 -- Nullable and mismatched alternatives cannot borrow the first branch's
@@ -54,7 +54,7 @@ private def writeProof : Evidence Nat := .node writeClaim (.unionVar 0)
 #guard bagOperand ([.callable [(valueField, [0])] [] [] [],.refs [(valueField, [1])] [] []] : List (Clause (List Nat))) == none
 -- A nullable alternative and a mismatched requested invariant must fail.
 #guard bagOperand (expand G [0,2]) == none
-#guard checkStep G readClaim ⟨[],[],[]⟩ (.typedRead 0 [(valueField, [0])] readProof) == none
+#guard !HeapExpressionRules.fieldOperand (expand G [0,2]) valueField
 
 -- A bad alternative cannot be hidden by the successful branch.
 #guard !(expression G pool 8 [[0,2]] (.read (.var 0)) [1]).isSome

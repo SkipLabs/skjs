@@ -273,6 +273,17 @@ let encode (proposal : Proposal.t) =
   let point t extra = Object (extra @ ["type",claim_type t; "current",Null])
   in
   let named (n,b) = point (binding_type b) ["name",String n]
+  in
+  (* A statement entry's bindings; a field's known contents are its object's
+     `current` assertion, one `[field, type]` pair per field. *)
+  let bindings bs = Array (List.filter_map (fun (n,b) ->
+    if Environment.is_field n then None else
+    let fields = List.filter_map (fun (m,f) ->
+      if Environment.is_field m && Environment.owner m = n then
+        Some (Array [String (Environment.field_of m); claim_type (binding_type f)])
+      else None) bs in
+    Some (Object ["name",String n; "type",claim_type (binding_type b);
+                  "current",(if fields = [] then Null else Array fields)])) bs)
 
   in
   let interior (f : Proposal.function_claim) =
@@ -280,7 +291,7 @@ let encode (proposal : Proposal.t) =
       Object (["pos",e.pos; "type",claim_type e.type_; "current",Null]
         @ instantiate e.instantiation)) row) in
     let entries es = Array (List.map (fun (e : Proposal.entry) ->
-      Object ["start",e.start;"bindings",Array (List.map named e.bindings)]) es) in
+      Object ["start",e.start;"bindings",bindings e.bindings]) es) in
     let arrows = if f.arrows = [] then [] else
       ["arrows",Array (List.map (fun (pos,rows) ->
         Object ["pos",pos;"rows",Array (List.map (fun (o : Proposal.overlay) ->
@@ -295,7 +306,7 @@ let encode (proposal : Proposal.t) =
     (* One set of interior claims per advertised signature, in signature order,
        stated only by a closure that advertises more than one. *)
     let entries es = Array (List.map (fun (e : Proposal.entry) ->
-      Object ["start",e.start;"bindings",Array (List.map named e.bindings)]) es) in
+      Object ["start",e.start;"bindings",bindings e.bindings]) es) in
     let arrows = if f.arrows = [] then [] else
       ["arrows",Array (List.map (fun (pos,rows) ->
         Object ["pos",pos;"rows",Array (List.map (fun (o : Proposal.overlay) ->

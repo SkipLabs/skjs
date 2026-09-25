@@ -45,11 +45,10 @@ private def escapedProof : Evidence Nat := .node escaped .makeCallable
 #guard checkStep emptyG escaped k (.allocated escapedProof) == none
 
 -- A typed read needs no transient contents fact. Its link records the same
--- callable value; neither a plain-reference view nor an invented operand works.
+-- callable value; a plain-reference view has no bag operand.
 private def readClaim : Sequent Nat := ⟨[[2]],.read (.var 0),[1]⟩
-#guard checkStep G readClaim ⟨[],[],[]⟩ (.typedRead 0 [(valueField, [1])] (proof readClaim)) ==
+#guard checkStep G readClaim ⟨[],[],[]⟩ (.typedRead 0 (proof readClaim)) ==
   some (readFrame ⟨[],[],[]⟩ 0 valueField)
-#guard checkStep G readClaim ⟨[],[],[]⟩ (.typedRead 0 [(valueField, [0])] (proof readClaim)) == none
 #guard bagOperand (expand G [3]) == none
 
 -- Producer selection uses the maintained allocation/read evidence constructors.
@@ -57,7 +56,7 @@ private def readClaim : Sequent Nat := ⟨[[2]],.read (.var 0),[1]⟩
   | some (_, .allocated _, out) => out == allocOutput k [(valueField, [.tru])] (contractFields G creation.context)
   | _ => false
 #guard match expressionEffect G pool 8 readClaim ⟨[],[],[]⟩ [] [] with
-  | some (_, .typedRead 0 [(valueField, [1])] _, out) => out == readFrame ⟨[],[],[]⟩ 0 valueField
+  | some (_, .typedRead 0 _, out) => out == readFrame ⟨[],[],[]⟩ 0 valueField
   | _ => false
 
 /-- The graph requires a precise false return even though the bag and its read

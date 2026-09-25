@@ -640,16 +640,21 @@ and owning no other key, and `readProto` reads the member there. A method call
 the member's signature names (`this: string`).
 
 Every binary operator has one rule, `arith`, for arithmetic on numbers and on
-bigints, for string concatenation and for relational comparison alike ([its
+bigints, for string concatenation, relational comparison and strict equality alike ([its
 meaning](SEMANTICS.md#operational-language), `binop`). A clause pair
 classifies the operation, $\operatorname{op}(op,c,d)$ (`opResult`), where
 $\mathsf{N}$ is `num` or `numLit`, $\mathsf{Z}$ is `bigint` or `bigintLit`,
 $\mathsf{S}$ is `str` or `strLit`, and $\mathsf{P}$, the printable clauses
 (`printableClause`), is $\mathsf N\cup\mathsf Z\cup\mathsf S$ with `bool`,
-`boolLit`, `nul` and `undef`: every primitive but a symbol:
+`boolLit`, `nul` and `undef`: every primitive but a symbol. $\mathsf{Pr}$
+(`primitiveClause`) is $\mathsf P$ with `symbol`, and $\mathsf{O}$
+(`identityClause`) the record clauses, `refs` or `dict`, with an invariant
+field: their members are objects with a field location, whose identity
+strict equality compares:
 
 $$
 \operatorname{op}(op,c,d)=\begin{cases}
+\mathsf{bool} & op={\equiv},\ c\in\mathsf{Pr}\cup\mathsf O\ \text{or}\ d\in\mathsf{Pr}\cup\mathsf O\\
 \mathsf{bool} & op\ \text{relational},\ c,d\in\mathsf N\cup\mathsf Z\ \text{or}\ c,d\in\mathsf S\\
 \mathsf{str} & op={+},\ c\in\mathsf S,\ d\in\mathsf P\ \text{or}\ c\in\mathsf P,\ d\in\mathsf S\\
 \mathsf{num} & op\ \text{arithmetic},\ c,d\in\mathsf N\\
@@ -685,6 +690,10 @@ object. An operand whose clauses classify differently, a `string | number`
 added to a number, has none either: its result is a string or a number by the
 value. The certificate premise
 (`OperatorTypes`) reads $r$ off the first clause pair and checks the rest.
+Strict equality answers for any pair but two objects that may lack a field (a
+function, a record of optional fields only, `unknown`): those carry no identity
+in the model ([its meaning](SEMANTICS.md#operational-language)), and the source
+lowering refuses the comparison with that reason.
 
 The unary numeric operators are derived: the operand's claimed type fixes its
 family, all numbers or all bigints, and the operator is the binary one with a
@@ -1187,18 +1196,37 @@ checks, not a semantic oracle. No completeness of these checks is claimed.
 
 `ObservedCovers` checks each destination slot selected by a map $m$. For the
 tested slot $i$, it requires $\Gamma(i)\preceq_o\Delta(j)$; other selected slots
-require ordinary subtyping. The common environment theorem is:
+require ordinary subtyping, or, for a slot $k$ holding an object the tested
+value was read from through field $f$ (a current read link at the dispatch,
+`readFields`), subtyping from its field slice $F^{f}_{t,q}(\Gamma(k))$
+(`fieldSlice`): the labels of $\Gamma(k)$ but those every clause of which is a
+record fixing $f$, as an invariant field or a readonly view, at a type that
+answers the tag $t$ with $\lnot q$. The common environment theorem is:
 
 $$
 \frac{
- \operatorname{EnvOk}_G(\Gamma,\rho,n,W)
+ \operatorname{EnvOk}_G(\Gamma,\rho,n{+}1,W)
+ \quad \operatorname{HeapOk}(n{+}1,W,h)
  \quad o(\rho(i))
- \quad \operatorname{ObservedCovers}_G(\Gamma,\Delta,i,o,m)
+ \quad \forall (k,f)\in\mathit{fs}.\ h(\rho(k).f)=\rho(i)
+ \quad \operatorname{ObservedCovers}_G(\Gamma,\Delta,i,o,m,\mathit{fs})
 }{
- \operatorname{EnvOk}_G(\Delta,\operatorname{mapEnv}(m,\rho),n,W)
+ \operatorname{EnvOk}_G(\Delta,\operatorname{mapEnv}(m,\rho),n{+}1,W)
 }.
 $$
 
+The field slice is sound one level up (`fieldSlice_sound`): the field's
+location holds the read value, and a heap meeting the world holds at that
+location a value of the field's type one level down (`field_value`), whose tag
+answer is budget-independent. What it establishes is the object's label,
+which its allocation fixes; it is not a claim about what the field holds
+later, so writes and calls after the test do not undo it. A discriminated
+union is this: `s.kind === "circle"` keeps the arms whose `kind` admits
+`"circle"`.
+
+An observation the tested slot's type rules out (`impossible`: a tag answer
+every label of it contradicts, or a Boolean it does not hold) covers any
+destination: no environment meets both, so the edge is never taken.
 `checkObserved` checks slot existence, map and evidence lengths, and each of
 these obligations. `checkObserved_sound` and `ObservedCovers.env` prove the
 common path. The observation is established by execution, never accepted as a
@@ -1238,6 +1266,12 @@ A regression also proves a semantic refinement of a mixed label that the current
 filtering checker cannot establish. This records the precision boundary explicitly.
 A Boolean shape test does not establish equality to `true`; these observations
 have separate tests to prevent conflation.
+
+A graph point whose entry claims a binding of the empty type is unreachable:
+every incoming edge establishes that claim, which no value meets. Proof search
+derives any sequent there by `unionVar` on the empty slot, which has no
+premise, and a jump whose entry is so claimed completes the function rather
+than continuing (the exhaustive `switch` below falls off no end).
 
 The existing `branchBind` dispatch now uses this common checker and environment
 theorem with a Boolean observation of the actual pushed value. Its all-budget
@@ -1673,11 +1707,15 @@ survives.
 The `allocated` and `typedRead` evidence constructors serve both plain and
 callable bags. `allocationSlot` selects a `make` whose initializer is an
 existing value slot; it never treats an effectful initializer as a value.
-`bagOperand` requires a nonempty expansion whose clauses are all `refs` or
-`callable` with the same first invariant operand. It therefore accepts a neutral
-bag view as well as a single shape, while rejecting a nullable or mismatched
-alternative. Operand comparison is syntactic; it does not search for an
-equivalent invariant.
+`bagOperand` (for allocation) requires a nonempty expansion whose clauses are
+all `refs` or `callable` with the same first invariant operand. It therefore
+accepts a neutral bag view as well as a single shape, while rejecting a
+nullable or mismatched alternative. Operand comparison is syntactic; it does
+not search for an equivalent invariant. A typed read needs less
+(`fieldOperand`): every clause of the receiver's nonempty expansion is a `refs`
+or `callable` whose first invariant operand has the field read, at any type,
+so the read is of a location of the object whichever arm it has, and its link
+names that location.
 The same allocation proof frames old facts and records the fresh bag, and the
 read proof records links with the object's actual descriptor.
 [CallableEffectTests.lean](lean/Verification/Model/Tests/CallableEffectTests.lean)

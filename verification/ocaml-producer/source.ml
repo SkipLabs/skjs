@@ -364,11 +364,11 @@ and stmt_node =
   | Return of expr | Effect of expr | If of expr * stmt list * stmt list
   (* The condition, the body, and the update the body's end and every
      `continue` run: a `for`'s, none for a `while`. *)
-  | While of expr * stmt list * stmt list | Break | Continue
+  (* A `break` carries the label of the block it leaves, or none for a loop. *)
+  | While of expr * stmt list * stmt list | Break of string option | Continue
   (* A block, labeled (a `break` may leave it) when it is part of a lowered
-     `switch`. A `break`'s label is not needed here: where it goes, the
-     proposal already forgets what the jump could change. *)
-  | Block of bool * stmt list
+     `switch`. *)
+  | Block of string option * stmt list
   (* `for (const name of iterable) body`: the name's position, the iterable
      and the body. *)
   | ForOf of string * Json.t * expr * stmt list
@@ -440,7 +440,7 @@ let rec assigns name s = match s.statement with
   | Throw e -> assigns_expr name e
   | Try (body,handler,finalizer) -> List.exists (assigns name)
     (body @ (match handler with Some (_,h) -> h | None -> []) @ Option.value finalizer ~default:[])
-  | Break | Continue -> false
+  | Break _ | Continue -> false
 let arithmetic = function
   | "add" -> Add | "sub" -> Sub | "mul" -> Mul | "div" -> Div | "pow" -> Pow | "rem" -> Rem
   | "lt" -> Lt | "le" -> Le | "gt" -> Gt | "ge" -> Ge
@@ -563,10 +563,11 @@ let rec stmt binders j =
   | "return" -> Return (expr binders (field "e" j)) | "effect" -> Effect (expr binders (field "e" j))
   | "while" -> While (expr binders (field "cond" j),List.map (stmt binders) (items "body" j),
       List.map (stmt binders) (items "update" j))
-  | "block" -> Block (field "label" j <> Null,List.map (stmt binders) (items "body" j))
+  | "block" -> Block ((match field "label" j with Null -> None | l -> Some (Json.str l)),List.map (stmt binders) (items "body" j))
   | "forOf" -> ForOf (text "name" j,field "namePos" j,expr binders (field "iterable" j),
       List.map (stmt binders) (items "body" j))
-  | "break" -> Break | "continue" -> Continue
+  | "break" -> Break (match field "label" j with Null -> None | l -> Some (Json.str l))
+  | "continue" -> Continue
   | "throw" -> Throw (expr binders (field "e" j))
   | "try" ->
     let block k = List.map (stmt binders) (items k j) in

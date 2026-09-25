@@ -438,6 +438,10 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
   | fuel+1, Γ, t, A => Id.run do
     let leaf := fun B r => ProgramCertificates.Evidence.node ⟨Γ,t,B⟩ r []
     let recur := expressionWith G pool suggestions fuel
+    -- A slot of the empty type holds no value: the point is unreachable, and
+    -- eliminating that union leaves no premise.
+    if let some i := Γ.findIdx? (·.isEmpty) then
+      return some (.node ⟨Γ,t,A⟩ (.unionVar i) [])
     -- Union elimination refines an immutable receiver slot in each premise;
     -- it neither evaluates the operation twice nor inserts a runtime tag test.
     let splitReceiver := fun receiver => do
@@ -693,13 +697,13 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
       return splitReceiver a
     | .arith op a b =>
       -- Each operand at a pool type of the operand clauses the operator
-      -- takes (numbers and bigints; strings too for a comparison, and every
-      -- printable primitive for `+`), the right one only where the pair
+      -- takes (numbers and bigints; strings too for a comparison, every
+      -- printable primitive for `+`, and any for `===`), the right one only where the pair
       -- classifies; the rule then checks every pair and the result, at the
       -- requested type when it holds the result's kind, else coerced.
       let operands := pool.filter fun R => G.plainTy R && !(expand G R).isEmpty &&
         (expand G R).all fun c => numberClause c || bigintClause c || (op.relational && stringClause c)
-          || (op == .add && printableClause c)
+          || (op == .add && printableClause c) || op == .eq
       return operands.findSome? fun R => do
         let ea ← recur Γ a R
         (operands.filter fun S => (operandsResult G op R S).isSome).findSome? fun S => do
@@ -867,11 +871,15 @@ inductive Failure where
 observation comes from graph dispatch, never from supplied point annotations. -/
 def edge [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     (claims : List (PointClaim ι)) (Γ : List (Ty ι)) (target : Target)
-    (observed : Option (Nat × BranchRefinement.Observation) := none) :
+    (observed : Option (Nat × BranchRefinement.Observation) := none)
+    (fields : List (Nat × PropKey) := []) :
     Option (EdgeEvidence ι) := do
   let c ← claims[target.label]?
-  if let some (tested, _) := observed then
+  if let some (tested, o) := observed then
     if Γ[tested]?.isNone then failure
+    -- An observation the tested type rules out: the edge is never taken.
+    if (Γ[tested]?).any (BranchRefinement.impossible G · o) then
+      return List.replicate c.context.length .subset
   if let some slots := target.mapping then
     if slots.length != c.context.length then failure
   (List.range c.context.length).mapM fun i => do
@@ -886,7 +894,13 @@ def edge [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         | .tag t q =>
           if BranchRefinement.tagMember G B t q then pure .subset
           else subtype G pool (BranchRefinement.tagSlice G A t q) B
-      else subtype G pool A B
+      else (subtype G pool A B).orElse fun _ => match o with
+        -- An object the tested value was read from keeps the labels whose
+        -- field admits the observation.
+        | .tag t q => fields.findSome? fun (k, f) =>
+            if k == slot target.mapping i then subtype G pool (BranchRefinement.fieldSlice G A f t q) B
+            else none
+        | .boolean _ => none
     | none => subtype G pool A B
 
 
@@ -909,10 +923,10 @@ def expressionEffect [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
   | _ => pure ()
   if let some e := ordinary then
     match j.term with
-    | .readAt _ (.var i) =>
+    | .readAt fld (.var i) =>
       if let some Ref := j.context[i]? then
-        if let some B := HeapExpressionRules.bagOperand (expand G Ref) then
-          choices := choices ++ [.typedRead i B e]
+        if HeapExpressionRules.fieldOperand (expand G Ref) fld then
+          choices := choices ++ [.typedRead i e]
     | .makeAt .. =>
       choices := choices ++ [.allocated e]
     | .writeAt _ (.var i) (.var v) =>
@@ -951,7 +965,7 @@ private def produceNode [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty �
   let target := fun Γ t index => match edge G pool claims Γ t with
     | some p => Except.ok p
     | none => Except.error (Failure.edge l t.label index)
-  let branchTarget := fun Γ o t index => match edge G pool claims Γ t (some (0, o)) with
+  let branchTarget := fun Γ o t index => match edge G pool claims Γ t (some (0, o)) (readFields out 0) with
     | some p => Except.ok p
     | none => Except.error (Failure.edge l t.label index)
   let ps ← (match node.continuation with

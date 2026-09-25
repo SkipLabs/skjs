@@ -50,7 +50,9 @@ its integer, as a number is its double) and symbols $\mathsf{sym}(i)$ (a symbol
 is its identity: distinct declarations are distinct symbols); an object's fields are keyed by property
 keys $\kappa::=\mathsf{str}(s)\mid\mathsf{sym}(i)$; and the tests include
 $\mathsf{isNum}$, $\mathsf{isStr}$, $\mathsf{isBigint}$, $\mathsf{isSymbol}$,
-$\mathsf{isArray}$, the singleton equalities and $\mathsf{truthy}$, JavaScript's `ToBoolean`:
+$\mathsf{isArray}$, the singleton equalities of every primitive kind that carries a value
+($\mathsf{numEq}(b)$ by `Number::equal`, $\mathsf{strEq}(s)$, $\mathsf{boolEq}(q)$,
+$\mathsf{bigintEq}(i)$, each false on every other kind) and $\mathsf{truthy}$, JavaScript's `ToBoolean`:
 
 $$
 \mathsf{truthy}(v)=\mathsf{false}\iff v\in\{\mathsf{null},\mathsf{undefined},\mathsf{false},
@@ -100,7 +102,7 @@ $$
 \frac{\mathsf{binop}(op,v_1,v_2)=v}{h,\ v_1\mathbin{op}v_2\to h,\ v}\ (\texttt{arithV})
 \qquad
 \frac{\mathsf{binopThrows}(op,v_1,v_2)}{h,\ v_1\mathbin{op}v_2\to h,\ \mathsf{throw}\ \mathit{err}}\ (\texttt{arithThrow})
-\qquad op\in\{+,-,*,/,\%,{*}{*},\mathbin{\hat{}},<,\le,>,\ge\}.
+\qquad op\in\{+,-,*,/,\%,{*}{*},\mathbin{\hat{}},<,\le,>,\ge,\equiv\}.
 $$
 
 $\mathsf{binop}$ is JavaScript's operation on the operand kinds it models;
@@ -119,6 +121,27 @@ coercions the calculus does not have:
 | a string and a number, bigint, Boolean, `null` or `undefined`, either order | $+$ concatenates the string with $\mathsf{str}$ of the other, in operand order; others none | none |
 | a symbol and a primitive, either order | throws (a `TypeError`: `ToString` or `ToNumeric` of a symbol) | throws |
 | anything else | none | none |
+
+Strict equality $\equiv$ (`===`, `Arith.eq`; `strictEquals`) answers a Boolean
+where JavaScript's `IsStrictlyEqual` needs no identity the model lacks:
+
+$$
+v_1\equiv v_2=\begin{cases}
+\mathsf{sameValue}(v_1,v_2) & v_1\ \text{or}\ v_2\ \text{a primitive}\\
+\mathit{fs}_1=\mathit{fs}_2 & v_i=\mathsf{objAt}(\mathit{fs}_i,c_i),\ \mathit{fs}_1\neq[\,]\ \text{or}\ \mathit{fs}_2\neq[\,]\\
+\text{none} & \text{two objects without fields, two stores}
+\end{cases}
+$$
+
+$\mathsf{sameValue}$ is false across kinds, `Number::equal` on two numbers
+(NaN equals nothing, the zeros each other), and equality of the string, the
+bigint, the Boolean or the symbol, `null` and `undefined` each only to itself.
+An object value is the locations of its fields, which only its allocation
+creates, fresh (`makeV`): two objects with a field are one object exactly when
+their locations are. Two objects without a field (two closures, two empty
+records) would be the same value here though JavaScript tells them apart, so
+they have no answer, and the typing rule refuses them. Strict equality converts nothing, so it never
+throws ($\mathsf{binopThrows}$ is false for $\equiv$).
 
 $\mathsf{str}(v)$ (`primString`) is JavaScript's `ToString` of a primitive
 other than a symbol, which runs no code: a string is itself, `true`, `false`,
@@ -283,8 +306,9 @@ the same location, and no assertion can say they do not.
 Two of these forms are deliberately outside the typing judgment. A location
 arises only at run time and takes its contract from the world, never from a
 typing rule. A shape test is typed only in the guard of a conditional, by
-`ifTag`; it has no standalone rule. The source fragment uses null and undefined tests for strict comparisons, and
-the nullish test for `??`. Every test is total on values.
+`ifTag`; it has no standalone rule. The source fragment uses a singleton test
+for a strict comparison with a singleton operand, the nullish test for `??` and
+for `== null`, and strict equality $\equiv$ for any other strict comparison. Every test is total on values.
 
 Substitution operates on closed substituted values. `Bindings.lean` supplies
 scope and simultaneous closing substitution, including its beta law. The program

@@ -180,9 +180,36 @@ theorem bagOperand_sound [DecidableEq ι] {G : NormalGraph ι} {Ref B n W v}
   · cases hb; exact recT_bag hc.1.1
   · cases hb; exact hc.1.1.1
 
-theorem typedRead_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i fld Ref B El A ρ n W h}
+/-- Whether every alternative is a record whose first invariant operand has
+the field `fld`, whatever its type in each: a read of it is then of a
+location of the object. -/
+def fieldOperand (cs : List (PositiveNormalization.Clause α)) (fld : PropKey) : Bool :=
+  !cs.isEmpty && cs.all fun c => match clauseBagOperand c with
+    | some B => B.any fun p => decide (p.1 = fld)
+    | none => false
+
+theorem fieldOperand_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
+    (hr : fieldOperand (expand G Ref) fld = true) (hv : meaning G Ref n W v) :
+    ∃ B El, (fld, El) ∈ B ∧ bagT (ReferenceConjunctions.famsOf (meaning G) B) n W v := by
+  simp only [fieldOperand, Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
+    List.all_eq_true] at hr
+  have hp : G.plainTy Ref = true := by
+    obtain ⟨c, hc⟩ := List.exists_mem_of_ne_nil _ hr.1
+    exact plain_of_mem_expand (c := c) hc
+  obtain ⟨c,hm,hc⟩ := (expand_sem G Ref hp n W v).mp hv
+  have hb := hr.2 c hm
+  cases c <;> simp only [clauseBagOperand] at hb
+  all_goals try contradiction
+  all_goals
+    obtain ⟨⟨g, El⟩, hmem, hg⟩ := List.any_eq_true.mp hb
+    simp only [decide_eq_true_eq] at hg
+    subst hg
+  · exact ⟨_, El, hmem, recT_bag hc.1.1⟩
+  · exact ⟨_, El, hmem, hc.1.1.1⟩
+
+theorem typedRead_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i fld Ref A ρ n W h}
     (ht : HasTy G Γ (.readAt fld (.var i)) A) (hi : Γ[i]? = some Ref)
-    (hr : bagOperand (expand G Ref) = some B) (hmem : (fld, El) ∈ B)
+    (hr : fieldOperand (expand G Ref) fld = true)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (meaning G A)
@@ -191,7 +218,8 @@ theorem typedRead_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i fld Ref B 
   cases n with
   | zero => trivial
   | succ n =>
-    obtain ⟨flds,code,hl,_,hrec⟩ := bagOperand_sound hr (he.2 i Ref hi)
+    obtain ⟨B,El,hmem,hbag⟩ := fieldOperand_sound hr (he.2 i Ref hi)
+    obtain ⟨flds,code,hl,_,hrec⟩ := hbag
     obtain ⟨flds',l,c,hproj,hfd,hlookup,hagree⟩ :=
       recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩) hrec
     cases hproj
@@ -552,7 +580,7 @@ inductive StepEvidence (ι : Type) where
   | ordinary (proof : ProgramCertificates.Evidence ι)
   | pure (proof : ProgramCertificates.Evidence ι)
   | created (proof : ProgramCertificates.Evidence ι)
-  | typedRead (slot : Nat) (element : List (PropKey × Ty ι)) (proof : ProgramCertificates.Evidence ι)
+  | typedRead (slot : Nat) (proof : ProgramCertificates.Evidence ι)
   | observedRead (slot : Nat) (contents : List Atom)
   | knownValue (slot : Nat) (contents : List Atom)
   /-- The fields, their slots and their contents are read off the term and the
@@ -604,12 +632,11 @@ def checkStep [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι)
       | .make (.closure _ _ .call) .nul => some (HeapKnowledge.shift k)
       | _ => none
     else none
-  | .typedRead i B e =>
+  | .typedRead i e =>
     match readSlot j.term with
     | some (fld, i') =>
       if claim e = j ∧ checkTree G e = true ∧ i' = i ∧
-          (j.context[i]?).any (fun Ref => decide (bagOperand (expand G Ref) = some B)) ∧
-          B.any (fun p => p.1 == fld)
+          (j.context[i]?).any (fun Ref => fieldOperand (expand G Ref) fld)
       then some (readFrame k i fld) else none
     | none => none
   | .observedRead i R =>
@@ -682,26 +709,23 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
         exact creation_sound typed he hk hw hh
       · contradiction
     · contradiction
-  | typedRead i B e =>
+  | typedRead i e =>
     simp only [checkStep] at hc
     split at hc
     · rename_i fld i' hslot
       split at hc
       · rename_i hp
-        obtain ⟨hj,ht,rfl,hr,hfld⟩ := hp
+        obtain ⟨hj,ht,rfl,hr⟩ := hp
         have term := readSlot_eq hslot
         cases hi : j.context[i']? with
         | none => simp [hi] at hr
         | some Ref =>
-          have hrep : bagOperand (expand G Ref) = some B := by simpa [hi] using hr
-          obtain ⟨q,hq,hq1⟩ := List.any_eq_true.mp hfld
-          have hqeq : q.1 = fld := by simpa using hq1
+          have hrep : fieldOperand (expand G Ref) fld = true := by simpa [hi] using hr
           have typed := checkTree_sound e ht
           rw [hj,term] at typed
           cases hc
           rw [term]
-          simpa [instantiate] using
-            typedRead_sound (El := q.2) typed hi hrep (by rw [← hqeq]; simpa using hq) he hk hw hh
+          simpa [instantiate] using typedRead_sound typed hi hrep he hk hw hh
       · contradiction
     · contradiction
   | observedRead i R =>
@@ -768,6 +792,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
 #print axioms alloc_sound
 #print axioms creation_sound
 #print axioms checkStep_sound
+#print axioms fieldOperand_sound
 #print axioms typedRead_sound
 #print axioms write_sound
 #print axioms read_sound
