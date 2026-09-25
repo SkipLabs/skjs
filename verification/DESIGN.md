@@ -771,6 +771,31 @@ first, variadic then fixed, before the pool's types, in the same order as
 before; and the evidence is written with `Json.compress` (9.5 MB). The
 search takes about 13 s; the check, about 4 s.
 
+Profiled again, nearly all of both went to checking instance tables
+(`TableOk`): `EagerCollection.map`'s instances carry tables of 1,200 entries,
+checked 66 times in the check and some 200 times in the search, about 60 ms
+each, because `entryImg` looks each image up in the whole table, so a table's
+check is quadratic in its size. Three changes, none to a rule or to what is
+checked:
+
+- The compiled table check groups the entries by context once and looks each
+  image up among its context's entries only (an entry's lookups are all under
+  its own context or the one it enters), checks each context's rows against
+  the domain once rather than once per entry, and looks a row's free rows up
+  once per row (`TableOkFast`, `FreeOkFast`). `@[csimp]` theorems
+  (`TableOk_eq_fast`, `FreeOk_eq_fast`) prove each equal to the definition the
+  proofs use, and the compiler runs it in its place.
+- Rendering a closure's direct proofs keeps the subtype searches already done,
+  by source and target type, for the obligations after it
+  (`DirectProof.SubtypeCache`): nested obligations coerce the same types
+  again. The graph and the pool are fixed for the cache's life; search only.
+- The search hints' closure over the type table (`searchLabels`) stops at its
+  fixpoint instead of taking one step per type.
+
+The evidence is byte-for-byte what it was. The search takes about 4 s of
+CPU; the check, about 2 s. On `reactive-sum-sound` the search went from about
+6 s to 2 s, and over all the `sum` cases the verifier's CPU from 34 s to 14 s.
+
 Each external step of a case (parser, producer, search, check) keeps a
 wall-clock limit (`stepTimeoutMs` in `check.mts`); a step that exceeds it is
 reported as `timeout: <step> did not finish within <limit>`, an error, never a

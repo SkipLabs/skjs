@@ -1977,6 +1977,20 @@ def FreeOk [DecidableEq ι] (G : NormalGraph ι) (D : List ι) (V : FreeMap ι) 
         (match G.schemes i with | some s => s.binders.contains p | none => false)) &&
     (boundReads G i).all fun l => (fv V l).all fun p => (fv V i).contains p
 
+/-- `FreeOk` with each row's free rows looked up once, not once per read: what
+the compiler runs. -/
+def FreeOkFast [DecidableEq ι] (G : NormalGraph ι) (D : List ι) (V : FreeMap ι) : Bool :=
+  D.all fun i =>
+    let fi := fv V i
+    (!G.params i || fi.contains i) &&
+    (match G.meets i with | some (p, _) => fi.contains p | none => true) &&
+    (reads G i).all (fun l => D.contains l &&
+      (fv V l).all fun p => fi.contains p ||
+        (match G.schemes i with | some s => s.binders.contains p | none => false)) &&
+    (boundReads G i).all fun l => (fv V l).all fun p => fi.contains p
+
+@[csimp] theorem FreeOk_eq_fast : @FreeOk = @FreeOkFast := rfl
+
 theorem freeOk_row [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
     (hF : FreeOk G D V = true) {i : ι} (hi : i ∈ D) :
     (G.params i = true → i ∈ fv V i) ∧ (∀ l ∈ reads G i, l ∈ D ∧ ∀ p ∈ fv V l,
@@ -2518,6 +2532,153 @@ certificate, and every entry is one of `entryOk`'s. -/
 def TableOk [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (D : List ι)
     (V : FreeMap ι) : Bool :=
   FreeOk G D V && (tableRows tbl).all (D.contains ·) && tbl.all (entryOk G tbl V)
+
+/-! ### The compiled table check
+
+`TableOk` looks every image up in the whole table, so checking a table's
+entries is quadratic in its size, and the tables of a recursive generic
+interface run to a thousand entries and more. An entry's lookups are all under
+one context, or under the one context it enters, so the compiled check groups
+the entries by context once and looks each image up among its context's
+entries only. `TableOk_eq_fast` proves the two equal; `csimp` makes the
+compiler run the grouped one. What is checked is unchanged. -/
+
+/-- The entries under context `κ`. -/
+def ctxEntries [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι) : InstTable ι :=
+  tbl.filter (·.2.1 == κ)
+
+theorem entryImg_ctxEntries [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι) :
+    entryImg (ctxEntries tbl κ) κ = entryImg tbl κ := by
+  funext l
+  unfold entryImg ctxEntries
+  rw [List.find?_filter]
+  congr 2
+  funext e
+  cases e.1 == l <;> cases e.2.1 == κ <;> rfl
+
+/-- The contexts the table uses. -/
+def ctxsOf [DecidableEq ι] (tbl : InstTable ι) : List (Ctx ι) := (tbl.map (·.2.1)).eraseDups
+
+/-- The entries of each context the table uses, grouped once. -/
+def ctxGroups [DecidableEq ι] (tbl : InstTable ι) : List (Ctx ι × InstTable ι) :=
+  (ctxsOf tbl).map fun κ => (κ, ctxEntries tbl κ)
+
+/-- A table's rows lie in `D`: each entry's row and image, and the rows of each
+context once, not once per entry under it. -/
+theorem tableRows_all [DecidableEq ι] (tbl : InstTable ι) (D : List ι) :
+    (tableRows tbl).all (D.contains ·) =
+      (tbl.all (fun e => (e.1 :: e.2.2).all (D.contains ·)) &&
+        (ctxsOf tbl).all fun κ => (κ.flatMap (·.2)).all (D.contains ·)) := by
+  apply Bool.eq_iff_iff.mpr
+  simp only [tableRows, ctxsOf, Bool.and_eq_true, List.all_eq_true, List.mem_flatMap,
+    List.mem_cons, List.mem_append, List.mem_eraseDups, List.mem_map, List.contains_iff_mem]
+  constructor
+  · intro h
+    exact ⟨fun e he x hx => h x ⟨e, he, Or.inl hx⟩,
+      fun κ ⟨e, he, hκ⟩ x ⟨b, hb, hx⟩ => h x ⟨e, he, Or.inr ⟨b, hκ ▸ hb, hx⟩⟩⟩
+  · rintro ⟨h1, h2⟩ x ⟨e, he, hx | ⟨b, hb, hx⟩⟩
+    · exact h1 e he x hx
+    · exact h2 e.2.1 ⟨e, he, rfl⟩ x ⟨b, hb, hx⟩
+
+/-- The entries to look an image under `κ` up in: its group, or the whole table. -/
+def ctxTable [DecidableEq ι] (groups : List (Ctx ι × InstTable ι)) (tbl : InstTable ι)
+    (κ : Ctx ι) : InstTable ι :=
+  match groups.find? (·.1 == κ) with
+  | some g => g.2
+  | none => tbl
+
+theorem entryImg_ctxTable [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι) :
+    entryImg (ctxTable (ctxGroups tbl) tbl κ) κ = entryImg tbl κ := by
+  unfold ctxTable
+  split
+  · rename_i g hg
+    have hm := List.mem_of_find?_eq_some hg
+    have hk := List.find?_some hg
+    simp only [beq_iff_eq] at hk
+    simp only [ctxGroups, List.mem_map] at hm
+    obtain ⟨κ', _, rfl⟩ := hm
+    simp only at hk ⊢
+    subst hk
+    exact entryImg_ctxEntries tbl _
+  · rfl
+
+section
+variable [DecidableEq ι] {t u : InstTable ι} {κ : Ctx ι}
+
+theorem tyImg_congr (h : entryImg t κ = entryImg u κ) : tyImg t κ = tyImg u κ := by
+  funext S; simp only [tyImg, h]
+
+theorem sigImg_congr (h : entryImg t κ = entryImg u κ) : sigImg t κ = sigImg u κ := by
+  funext p; simp only [sigImg, tyImg_congr h]
+
+theorem restImg_congr (h : entryImg t κ = entryImg u κ) : restImg t κ = restImg u κ := by
+  funext p; simp only [restImg, tyImg_congr h]
+
+theorem clauseImg_congr (h : entryImg t κ = entryImg u κ) : clauseImg t κ = clauseImg u κ := by
+  funext c; simp only [clauseImg, tyImg_congr h]
+
+theorem boundImg_congr (h : entryImg t κ = entryImg u κ) : boundImg t κ = boundImg u κ := by
+  funext src tgt b; simp only [boundImg, tyImg_congr h]
+
+theorem meetOk_congr (G : NormalGraph ι) (h : entryImg t κ = entryImg u κ) :
+    meetOk G t κ = meetOk G u κ := by
+  funext p cs j; simp only [meetOk, tyImg_congr h, clauseImg_congr h]
+end
+
+/-- `entryOk`, each lookup under context `κ` made in `look κ`. -/
+def entryOkIn [DecidableEq ι] (G : NormalGraph ι) (look : Ctx ι → InstTable ι) (V : FreeMap ι)
+    (e : ι × Ctx ι × List ι) : Bool :=
+  if G.params e.1 then
+    e.2.2 == (e.2.1.lookup e.1).getD [e.1] && substitutionKind G e.1 e.2.2
+  else if e.2.2 == [e.1] && fixedBy G e.2.1 V e.1 then true
+  else match G.schemes e.1, e.2.2 with
+    | some s, [j] =>
+      match G.schemes j with
+      | some s2 =>
+        !G.params j && decide s2.binders.Nodup && s2.binders.length == s.binders.length &&
+          s2.binders.all G.params &&
+          (s.binders.zip s2.binders).all (fun (a,b) => G.parameterKinds a == G.parameterKinds b) &&
+          (fv V e.1).all (fun p => match e.2.1.lookup p with
+            | some U => U.all fun l => (fv V l).all fun q => !s2.binders.contains q
+            | none => !s2.binders.contains p) &&
+          s.signatures.mapM (sigImg (look (enter V e.1 e.2.1 s.binders s2.binders))
+            (enter V e.1 e.2.1 s.binders s2.binders)) == some s2.signatures &&
+          s.bounds.mapM (boundImg (look e.2.1) e.2.1 s.binders s2.binders) == some s2.bounds &&
+          s.variadic.mapM (restImg (look (enter V e.1 e.2.1 s.binders s2.binders))
+            (enter V e.1 e.2.1 s.binders s2.binders)) == some s2.variadic
+      | none => false
+    | none, [j] =>
+      match G.meets e.1 with
+      | some (p, cs) => meetOk G (look e.2.1) e.2.1 p cs j
+      | none =>
+        G.plain e.1 && G.plain j &&
+          (G e.1).all (fun c => c.operands.all fun S => (tyImg (look e.2.1) e.2.1 S).isSome) &&
+          sameClauses (G j) ((G e.1).map (clauseImg (look e.2.1) e.2.1))
+    | _, _ => false
+
+theorem entryOkIn_eq [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι)
+    (look : Ctx ι → InstTable ι) (V : FreeMap ι)
+    (h : ∀ κ, entryImg (look κ) κ = entryImg tbl κ) (e : ι × Ctx ι × List ι) :
+    entryOkIn G look V e = entryOk G tbl V e := by
+  simp only [entryOkIn, entryOk, sigImg_congr (h _), restImg_congr (h _), boundImg_congr (h _),
+    meetOk_congr G (h _), tyImg_congr (h _), clauseImg_congr (h _)]
+
+/-- `TableOk`, grouped by context: what the compiler runs. -/
+def TableOkFast [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (D : List ι)
+    (V : FreeMap ι) : Bool :=
+  let ctxs := ctxsOf tbl
+  let groups := ctxs.map fun κ => (κ, ctxEntries tbl κ)
+  FreeOk G D V &&
+    (tbl.all (fun e => (e.1 :: e.2.2).all (D.contains ·)) &&
+      ctxs.all fun κ => (κ.flatMap (·.2)).all (D.contains ·)) &&
+    tbl.all (entryOkIn G (ctxTable groups tbl) V)
+
+@[csimp] theorem TableOk_eq_fast : @TableOk = @TableOkFast := by
+  funext ι _ G tbl D V
+  simp only [TableOk, TableOkFast, ← tableRows_all,
+    show entryOkIn G (ctxTable ((ctxsOf tbl).map fun κ => (κ, ctxEntries tbl κ)) tbl) V =
+      entryOk G tbl V from
+      funext (entryOkIn_eq G tbl _ V (entryImg_ctxTable tbl))]
 
 /-- A context relates the component a binder actually observes to its image.
 The two-component image retains list bounds; the selected parameter side does

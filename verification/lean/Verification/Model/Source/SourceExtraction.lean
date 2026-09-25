@@ -3100,10 +3100,17 @@ def SourceRequest.searchLabels (r : SourceRequest) : List Nat :=
     r.claims.flatMap (fun (c : PointClaim Nat) => c.type ++ c.context.flatten) ++
     r.obligations.flatMap (fun (o : ExpressionClaims.Required) => o.sequent.type ++ o.sequent.context.flatten)).eraseDups
   -- Readonly array coercions depend on the store's element unions two levels
-  -- below the object. Close the vocabulary over the finite reachable graph.
-  (List.range r.types.length).foldl (fun known _ =>
-    (known ++ known.flatMap (fun i => ((r.types[i]?.map RequestJson.Row.union).getD []).flatMap
-      (fun c => (RequestJson.clauseTypes c).flatten))).eraseDups) roots
+  -- below the object. Close the vocabulary over the finite reachable graph,
+  -- stopping at the fixpoint: a step that adds no label changes nothing.
+  Id.run do
+    let mut known := roots
+    for _ in List.range r.types.length do
+      let next := (known ++ known.flatMap (fun i =>
+        ((r.types[i]?.map RequestJson.Row.union).getD []).flatMap
+          (fun c => (RequestJson.clauseTypes c).flatten))).eraseDups
+      if next.length == known.length then break
+      known := next
+    return known
 
 /-- The type a code unit reads a module value at: a source type (a function's
 signature, a constant's annotation), or, for an unannotated constant, the

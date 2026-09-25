@@ -39,11 +39,18 @@ def produce (G : NormalGraph Nat) (labels : List Nat) (bound fuel : Nat)
     (rs : List Required) : Except String (List (Evidence Nat)) := do
   let pool := CertificateProducer.vocabulary G labels []
     (rs.flatMap (fun r => r.sequent.type :: r.sequent.context))
-  let es ← rs.zipIdx.mapM fun (r,index) => do
+  -- Nested obligations render the same coercions again: one search cache
+  -- serves them all, the graph and the pool being fixed here.
+  let mut cache : DirectProof.SubtypeCache := {}
+  let mut es := #[]
+  for (r,index) in rs.zipIdx do
     let j := r.sequent
-    let candidate : Option (Evidence Nat) := match r.plan with
-      | some plan => DirectProof.render G pool j.context plan
-      | none => CertificateProducer.expressionWith G pool (rs.map Required.sequent) fuel j.context j.term j.type
+    let candidate : Option (Evidence Nat) ← match r.plan with
+      | some plan => do
+        let (e, next) := DirectProof.renderWith G pool j.context plan cache
+        cache := next
+        pure e
+      | none => pure (CertificateProducer.expressionWith G pool (rs.map Required.sequent) fuel j.context j.term j.type)
     -- Attribute an invalid suggested proof to its own obligation, rather than
     -- losing the source location in the final aggregate check.
     let some e := candidate.filter (check G bound j)
@@ -53,11 +60,11 @@ def produce (G : NormalGraph Nat) (labels : List Nat) (bound fuel : Nat)
            ("sourceMap",toJson (SourceMapEntry.mk r.pos r.role none r.context)),
            ("sequent",toJson j),("fuel",toJson fuel),
            ("types",toJson ((List.range bound).map G))])
-    return e
+    es := es.push e
   -- Each item passed `check` against its own obligation above, so no final
   -- aggregate check is repeated here; acceptance (`checkRequests`) checks
   -- the evidence independently.
-  return es
+  return es.toList
 
 #print axioms checkAll_sound
 end Verification.Model.ExpressionClaims
