@@ -11,6 +11,7 @@ import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, SourceFile, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
 import { classInstance, members, optionalTerm, signature, typeTerm, type TermScope } from "./type-term.mts";
+import { arrayPrototype, overlay, type OverlayEntry } from "./array-prototype.mts";
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
 export type { DeclarationIdentity, DeclarationDocument, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
 
@@ -159,6 +160,11 @@ export function collectDeclarations(file: string, options: {
    * declarations: each that TypeScript binds to a global declaration becomes
    * a root. A type parameter is not one. */
   globals?: readonly Span[];
+  /** The client uses arrays: `Array.prototype`'s contract joins the graph
+   * (`array-prototype.mts`), at `arrays`, the first array the client writes. */
+  arrays?: Span;
+  /** The overlay `Array.prototype` is read through; tests vary it. */
+  arrayOverlay?: readonly OverlayEntry[];
 } = {}): DeclarationDocument {
   const clientFile = resolve(file);
   return withProject(clientFile, options.tsconfigPath, (checker, client, root, program) => {
@@ -412,6 +418,13 @@ export function collectDeclarations(file: string, options: {
       } catch (error) {
         throw new DeclarationError(values[Math.min(index, values.length - 1)]?.binding.span ?? [0, 0],
           error instanceof Error ? error.message : String(error));
+      }
+    }
+    if (options.arrays) {
+      try {
+        definitions.push(arrayPrototype(checker, client, options.arrayOverlay ?? overlay));
+      } catch (error) {
+        throw new DeclarationError(options.arrays, error instanceof Error ? error.message : String(error));
       }
     }
     return { roots: roots.map(r => r.root), definitions, values, symbols };

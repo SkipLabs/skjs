@@ -211,7 +211,10 @@ export function signature(scope: TermScope, parameters: readonly ts.ParameterDec
  * body, so the pattern binds nothing the fragment reads. Any other signature
  * is exactly one. */
 export function signatures(scope: TermScope, parameters: readonly ts.ParameterDeclaration[],
-    result: TypeNode | undefined, at: Node, span: Span, declared = false): FunctionTerm[] {
+    result: TypeNode | undefined, at: Node, span: Span, declared = false,
+    // A result the caller states instead of reading `result`, such as the
+    // receiver a library overlay puts for a `this` result.
+    given?: TypeTerm): FunctionTerm[] {
   const head = parameters[0];
   const stated = !!head && ts.isIdentifier(head.name) && head.name.text === "this";
   if (stated && (!head.type || head.questionToken || head.dotDotDotToken || head.initializer))
@@ -260,7 +263,7 @@ export function signatures(scope: TermScope, parameters: readonly ts.ParameterDe
       params.push(optional(p) ? optionalTerm(type, spanOf(scope, p)) : type);
     }
   }
-  const resultTerm = typeTerm(scope, result, at);
+  const resultTerm = given ?? typeTerm(scope, result, at);
   return (alternatives ?? [[]]).map(positions =>
     ({ k: "function", receiver, params: [...params, ...positions], rest, result: resultTerm, span }));
 }

@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { parseFile, definedClassCallables, close as closeParser } from "../tools/fragment-parse.mts";
 import { collectDeclarations, importTargets, tsconfigOf } from "../tools/declaration-graph.mts";
+import { overlay as arrayOverlay } from "../tools/array-prototype.mts";
 import type { DeclarationDocument, Reference, TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
 import type { Ast } from "../tools/fragment.mts";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
@@ -683,6 +684,32 @@ let bounded = "";
 let returned = "";
 let captured = "";
 let callback = "";
+// `Array.prototype`'s contract is TypeScript's declarations through the
+// overlay: every listed member is read, each quantified over the element and
+// taking the array as its receiver, readonly unless it mutates. A declaration
+// that differs from the reviewed text is refused.
+{
+  const arrays = join(here, "examples", "values.ts");
+  const doc = collectDeclarations(arrays, { arrays: [0, 0] });
+  const proto = doc.definitions.find(d => d.declaration.module === "skjs/array-prototype");
+  assert(proto && proto.expression.k === "object");
+  assert.deepEqual(proto.expression.fields.map(f => f.name), arrayOverlay.map(e => e.name));
+  for (const field of proto.expression.fields) {
+    assert(field.readonly && field.type.k === "scheme" && field.type.binders[0]?.name === "T");
+    const receiver = field.type.signatures[0]?.receiver;
+    assert(receiver?.k === "array" && receiver.element.k === "binder");
+    assert.equal(receiver.readonly, field.name !== "sort", `${String(field.name)} receiver`);
+  }
+  const changed = arrayOverlay.map(e => e.name === "reduce"
+    ? { ...e, signature: e.signature.replace("initialValue: U", "initialValue?: U") } : e);
+  assert.throws(() => collectDeclarations(arrays, { arrays: [0, 0], arrayOverlay: changed }),
+    /is not declared as reviewed/);
+  const unsound = [{ name: "reduce", from: "ReadonlyArray" as const,
+    signature: "reduce(callbackfn: (previousValue: T, currentValue: T, currentIndex: number, array: readonly T[]) => T): T;" }];
+  assert.doesNotThrow(() => collectDeclarations(arrays, { arrays: [0, 0], arrayOverlay: unsound }),
+    "the overlay, not the reader, decides which overloads are trusted");
+  process.stdout.write("array prototype: overlay members read from TypeScript's declarations\n");
+}
 let inference = "";
 let indexed = "";
 let moduleFunctions = "";
