@@ -591,7 +591,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
              substitution,instance.result
            end else
              let missing = List.length signature.params - List.length args in
-             let inferred = Inference.infer ~expand:(expand_named declarations) ~receiver:Semantic.top signature
+             let inferred = Inference.infer ~expand:(expand_named declarations) ~receiver:Semantic.top ?expected signature
                (List.map (expr env) args @ List.init missing (fun _ -> Atoms [Undef])) in
              inferred.substitution,inferred.result in
          instance_of callee substitution;

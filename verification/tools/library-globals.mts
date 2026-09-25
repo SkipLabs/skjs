@@ -12,7 +12,10 @@
  *   parameter the reader states instead: the part of the declared type at
  *   which the host cannot throw, and each literal argument the client passes
  *   that the host accepts (`admit`). A throw is a stuck term in the calculus,
- *   so a signature promising a result there would be false.
+ *   so a signature promising a result there would be false;
+ * - where the declaration states less than the host does (`any`) or more (a
+ *   parameter at which it misbehaves), the signature the host meets, stated
+ *   instead (`stated`).
  *
  * A global declared outside the standard library, such as Node's `process`,
  * is read as its declaration states, member by member (`selectGlobal`). */
@@ -36,7 +39,14 @@ export type GlobalEntry = {
    * parser writes `Array.isArray(e)` as the test `isArray` of `e`, whose
    * narrowing Lean proves, and the member joins no value. */
   test?: "isArray";
+  /** The signature read instead of the declared one: its own binders, its
+   * parameters, which a call may not exceed, and its result. What the host
+   * does at these arguments, stated as a type. */
+  stated?: { binders: string[]; params: TypeTerm[]; result: TypeTerm };
 };
+
+const at: [number, number] = [0, 0];
+const binder = (name: string): TypeTerm => ({ k: "binder", name, span: at });
 
 /** `BigInt(v)` throws a RangeError for a number that is not an integer and a
  * SyntaxError for a string that is not an integer's spelling. A bigint or a
@@ -86,6 +96,23 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // are not listed.
   { global: "Object", member: "values", signature: "values(o: {}): any[];" },
   { global: "Object", member: "entries", signature: "entries(o: {}): [string, any][];" },
+  // `new Array()` and `new Array<T>()` are a fresh empty array, which is a
+  // `T[]` at every `T`: the non-generic declaration's `any[]` states less
+  // than that. An argument is refused: a single number is a length, and the
+  // array it makes has holes, which an array type here promises it has not.
+  { global: "Array", signature: "new (arrayLength?: number): any[];",
+    stated: { binders: ["T"], params: [], result: { k: "array", readonly: false, element: binder("T"), span: at } } },
+  { global: "Array", signature: "new <T>(...items: T[]): T[];",
+    stated: { binders: ["T"], params: [], result: { k: "array", readonly: false, element: binder("T"), span: at } } },
+  // `new Error(m)` with a string owns `message`, that string; its `name`
+  // and a missing message are `Error.prototype`'s, which the model does not
+  // hold, so only the own field is stated, and the message is required.
+  // `stack` is the engine's and is not stated. ES2022 adds `options`.
+  ...["new (message?: string): Error;", "new (message?: string, options?: ErrorOptions): Error;"].map(
+    (signature): GlobalEntry => ({ global: "Error", signature,
+      stated: { binders: [], params: [{ k: "atom", name: "string", span: at }],
+        result: { k: "object", fields: [{ name: "message", optional: false, readonly: true,
+          type: { k: "atom", name: "string", span: at }, span: at }], stringIndex: null, calls: [], span: at } } })),
   { global: "Array", member: "isArray", signature: "isArray(arg: any): arg is any[];", test: "isArray" },
   { global: "String", signature: "(value?: any): string;",
     admit: { parameter: "value", safe: ["null", "undefined", "boolean", "number", "string", "bigint", "symbol"],

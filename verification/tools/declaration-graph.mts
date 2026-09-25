@@ -715,11 +715,18 @@ export function collectDeclarations(file: string, options: {
         const selection = selectGlobal(checker, uses, { lookup, identityOf: idOf, clean, valueScope, partners,
           overlay: globalsOverlay, test: (span, test) => options.globalTest?.(span, test) });
         if (!selection) continue;
-        selections.push(selection);
-        values.push({ binding: { local: first.text, imported: first.text, specifier: globalSpecifier, span: at },
-          declaration: selection.declaration, construct: false, typeParams: [],
+        const binding = { local: first.text, imported: first.text, specifier: globalSpecifier, span: at };
+        // A global only constructed is its construct signatures, as a class
+        // value is; any other is its selection.
+        if ("construct" in selection) {
+          values.push({ binding, construct: true, ...selection.construct });
+          continue;
+        }
+        const definition = selection.definition;
+        selections.push(definition);
+        values.push({ binding, declaration: definition.declaration, construct: false, typeParams: [],
           type: { k: "reference", reference: { name: first.text, span: at, arguments: [],
-            target: selection.declaration }, args: [], span: at } });
+            target: definition.declaration }, args: [], span: at } });
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
         throw new DeclarationError(at, error instanceof Error ? error.message : String(error));
@@ -827,9 +834,16 @@ type SelectionContext = {
  * A global the standard library declares is read only through the reviewed
  * overlay (`library-globals.mts`): each signature read must be listed, and a
  * parameter at which the host may throw is stated at what it accepts.
+ *
+ * A global the client only constructs, `new Array<T>()`, is instead its
+ * construct signatures, as a class value is: each the overlay's statement of
+ * it, or, outside the standard library, as declared. A global read only
+ * through tests, `Array.isArray(e)`, is no value at all (null).
  */
 function selectGlobal(checker: Checker, uses: readonly Identifier[], context: SelectionContext):
-    TypeDefinition | null {
+    { definition: TypeDefinition } |
+    { construct: { declaration: DeclarationIdentity; typeParams: ValueRoot["typeParams"]; type: TypeTerm } } |
+    null {
   const [first] = uses;
   if (!first) throw Error("a global value without a reference");
   const name = first.text;
@@ -871,7 +885,8 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
     return context.valueScope(member, what);
   };
   // The declaration among `candidates` TypeScript resolves `call` to.
-  const resolvedAmong = <T extends Node>(call: ts.CallExpression, candidates: readonly T[]): T | undefined => {
+  const resolvedAmong = <T extends Node>(call: ts.CallExpression | ts.NewExpression, candidates: readonly T[]):
+      T | undefined => {
     const resolved = checker.getResolvedSignature(call)?.declaration?.resolve();
     return candidates.find(m => resolved && m.pos === resolved.pos && m.end === resolved.end &&
       m.getSourceFile().fileName === resolved.getSourceFile().fileName);
@@ -923,6 +938,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   if (!type) throw Error(`TypeScript gives ${name} no type`);
   const keys = new Map<string, ts.PropertyAccessExpression[]>();
   const calls: ts.CallExpression[] = [];
+  const constructs: ts.NewExpression[] = [];
   for (const use of uses) {
     const parent = use.parent;
     if (ts.isPropertyAccessExpression(parent) && parent.expression === use && !parent.questionDotToken &&
@@ -931,8 +947,8 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
     else if (ts.isCallExpression(parent) && parent.expression === use && !parent.questionDotToken)
       calls.push(parent);
     else if (ts.isNewExpression(parent) && parent.expression === use)
-      throw Error(`${name} is constructed, and a global's construct signatures are not read`);
-    else throw Error(`${name} is read only through its members, each by name, or called`);
+      constructs.push(parent);
+    else throw Error(`${name} is read only through its members, each by name, called or constructed`);
   }
   const fields: Extract<TypeTerm, { k: "object" }>["fields"] = [];
   for (const [key, accesses] of keys) {
@@ -998,12 +1014,62 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
       if (form.receiver) throw Error(`${what} states its receiver`);
       return form;
     }));
+  // The construct signatures the client's `new` expressions resolve to, each
+  // read as the overlay states it (`stated`), or, outside the standard
+  // library, as declared. A stated signature's parameters bound the
+  // arguments: the host is stated only at those.
+  const declaredNew = parts.filter(ts.isInterfaceDeclaration)
+    .flatMap(part => part.members.filter(ts.isConstructSignatureDeclaration));
+  const built = new Map<ts.ConstructSignatureDeclaration, ts.NewExpression[]>();
+  for (const expression of constructs) {
+    const signature = resolvedAmong(expression, declaredNew);
+    if (!signature) throw Error(`TypeScript resolves \`new ${name}\` to no construct signature it declares`);
+    built.set(signature, [...built.get(signature) ?? [], expression]);
+  }
+  const whatNew = `new ${name}(…)`;
+  const constructForms = [...built].flatMap(([signature, expressions]) => {
+    const entry = reviewed(undefined, signature, whatNew);
+    const span = spanOf(signature);
+    if (entry?.stated) {
+      const stated = entry.stated;
+      for (const expression of expressions)
+        if ((expression.arguments?.length ?? 0) > stated.params.length ||
+            expression.arguments?.some(ts.isSpreadElement))
+          throw Error(`${whatNew} is read with at most ${stated.params.length} argument(s)`);
+      return [{ binders: stated.binders,
+        type: { k: "constructor", params: stated.params, rest: null, result: stated.result, span } satisfies TypeTerm }];
+    }
+    if (signature.typeParameters?.length) throw Error(`${whatNew} is generic`);
+    context.clean(signature, where(signature, name));
+    return signatures(scopeOf(signature, whatNew), signature.parameters, signature.type, signature, span, false)
+      .map(form => {
+        if (form.receiver) throw Error(`${whatNew} states its receiver`);
+        return { binders: [] as string[],
+          type: { k: "constructor", params: form.params, rest: form.rest, result: form.result, span } satisfies TypeTerm };
+      });
+  });
+  const source = declaration.getSourceFile();
+  const identity: DeclarationIdentity = { module: context.identityOf(source), name,
+    span: [declaration.getStart(source), declaration.end] };
+  if (constructForms.length) {
+    if (fields.length || callForms.length)
+      throw Error(`${name} is both constructed and read through its members or calls`);
+    // Overloads the overlay states alike are one signature.
+    const distinct = [...new Map(constructForms.map(f =>
+      [JSON.stringify({ ...f, type: { ...f.type, span: null } }), f])).values()];
+    const [only] = distinct;
+    if (distinct.length === 1 && only)
+      return { construct: { declaration: identity, typeParams: only.binders.map(name => ({ name, bound: null })),
+        type: only.type } };
+    if (distinct.some(f => f.binders.length)) throw Error(`${whatNew} selects several generic signatures`);
+    const span = spanOf(first);
+    return { construct: { declaration: identity, typeParams: [],
+      type: { k: "intersection", parts: distinct.map(f => f.type), span } } };
+  }
   // A global read only through tests is not a value.
   if (!fields.length && !callForms.length) return null;
-  const source = declaration.getSourceFile();
-  return { declaration: { module: context.identityOf(source), name,
-    span: [declaration.getStart(source), declaration.end] }, parameters: [], bases: [],
-    expression: { k: "object", fields, stringIndex: null, calls: callForms, span: spanOf(first) } };
+  return { definition: { declaration: identity, parameters: [], bases: [],
+    expression: { k: "object", fields, stringIndex: null, calls: callForms, span: spanOf(first) } } };
 }
 
 /** Where each named import of `file` resolves, whatever kind of declaration

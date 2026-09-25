@@ -973,6 +973,8 @@ modeling choices; they do not replace proof.
   writes none, and a host object's is assumed to return. Nothing
   checks the native code; the selection enters every result as a premise, the
   global's input slot, as for an imported value's declared type.
+  `new Array()` returns a fresh empty array and `new Error(m)`, with a string
+  `m`, an object owning `message` at it, as their stated signatures say.
   `Array.isArray` is no premise but the calculus's test $\mathsf{isArray}$:
   what is assumed is that the global `Array`'s `isArray` is the native one,
   and that the objects owning the array store key are JavaScript's arrays,
@@ -3291,6 +3293,34 @@ weaker signature, which is what is actually true.
 | `Array.isArray` | `isArray(arg: any): arg is any[]` | the test $\mathsf{isArray}$, below; the declared guard is not read |
 | `Object.keys` | `keys(o: object): string[]` (ES5), `keys(o: {}): string[]` (ES2015) | as declared: a fresh array of the own enumerable string keys, true of every object; no getter runs |
 | `Object.values`, `Object.entries` | `values(o: {}): any[]`, `entries(o: {}): [string, any][]` | as declared, `any` as `unknown`: nothing is known of an open record's other keys' values (`invalid-object-values.ts`) |
+| `new Array` | `new (arrayLength?: number): any[]`, `new <T>(...items: T[]): T[]` | stated as $\forall T.\ \mathsf{new}()\Rightarrow T[\,]$: a fresh empty array is at every element type, which `any[]` states less precisely; no argument |
+| `new Error` | `new (message?: string): Error` (ES5), `new (message?: string, options?: ErrorOptions): Error` (ES2022) | stated as $\mathsf{new}(\mathit{message}:\mathsf{string})\Rightarrow\{\mathsf{readonly}\ \mathit{message}:\mathsf{string}\}$: the message is own; `name`, and a message not given, are `Error.prototype`'s, which the model does not hold, so an `Error`, a record owning both, is not claimed (`invalid-error-name.ts`, `invalid-error-no-message.ts`) |
+
+**Stated signatures and constructs.** Where the declaration states less
+than the host does (`any`) or more (a parameter at which the host
+misbehaves), an entry states the signature the host meets (`stated`): its
+binders, its parameters, which a call may not exceed, and its result. It is
+read for construct signatures: a global the module only constructs is, as a
+class value is, its selected construct signatures, each read as its entry
+states it, or as declared outside the standard library. With $s$ selected
+by the module's `new x(…)` expressions and $\omega$ its entry:
+
+$$
+\frac{\mathit{lib}(x)\quad \omega\in\Omega\quad \omega.\mathit{global}=x\quad
+      \omega.\mathit{text}=\mathsf{text}(s)\quad
+      \omega.\mathit{stated}=\forall\vec X.\ \mathsf{new}(\vec P)\Rightarrow R\quad
+      |\vec a|\le|\vec P|\ \text{for each}\ \mathsf{new}\ x(\vec a)\ \text{selecting}\ s}
+     {\llbracket s\rrbracket_\Omega=\forall\vec X.\ \mathsf{new}(\vec P)\Rightarrow R}\ \textsc{library-construct}
+$$
+
+Overloads stated alike are one signature, instantiated at each `new` by its
+explicit type arguments or, as a generic call is, from the actuals and the
+expected type. A global both constructed and read through members or calls
+is refused: that value would be a class with members, which has no clause.
+A stated signature is an assumption like any entry: that the host, called
+with at most those arguments, each in its parameter, returns a member of the
+result. Replacing a parameter by a subset of what the host accepts and the
+result by what the host is known to return keeps it true of the host.
 
 **Tests.** An entry may read a member as a test of the calculus instead of a
 value (`test`): its calls are lowered to the test, and the member joins no
@@ -3339,9 +3369,16 @@ throws on text that is not JSON; the generic
 twin, which TypeScript selects for a record type written as a literal,
 promise `T` of keys the record type does not bound (their dictionary
 parameter is sound, but a reader of generic global methods and of a
-parameter restated without `ArrayLike` is not built); `Promise.resolve` adopts thenables. None is listed. A construct signature
-(`new Array<T>()`, `new Set(xs)`, `new Error(m)`) is not read yet: the
-selection has calls and members, not constructs.
+parameter restated without `ArrayLike` is not built); `Promise.resolve`
+adopts thenables. None is listed. `new Set(xs)` and `new Map(es)` are not
+listed: their results, `Set<T>` and `Map<K, V>`, are library interfaces the
+declaration reader does not read (`add` returns `this`), and would need an
+overlay of their own, as `Array.prototype` has. `new Array(n)` and
+`new Array<T>(n)` make an array of length `n` with holes, which an array type
+here promises it has not ([The array prototype](#the-array-prototype), dense
+arrays), and `new Array(x)` with one argument is that whenever `x` is a
+number, so `new Array` is read without arguments only
+(`array-length-refused.ts`).
 
 **Trust.** Each entry is an assumption on the host's implementation, as
 `ArrayProto` is ([What remains assumed](#what-remains-assumed)): the
