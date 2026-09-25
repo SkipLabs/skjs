@@ -233,6 +233,17 @@ theorem bindParameters_pad (arity : Nat) (args pad : List Tm) (recv body : Tm)
     bindParameters arity (args ++ pad) recv body = bindParameters arity args recv body := by
   simp only [bindParameters, parameters_pad arity args pad hp]
 
+/-- Binding reads only the first `n` actuals: later ones were evaluated for
+their effects and are discarded. -/
+theorem parameters_take : ∀ (n : Nat) (args : List Tm), parameters n (args.take n) = parameters n args
+  | 0, _ => rfl
+  | _ + 1, [] => rfl
+  | n + 1, a :: args => by simp [parameters, parameters_take n args]
+
+theorem bindParameters_take (arity : Nat) (args : List Tm) (recv body : Tm) :
+    bindParameters arity (args.take arity) recv body = bindParameters arity args recv body := by
+  simp only [bindParameters, parameters_take]
+
 /-- Position i receives actual i if present, otherwise undefined. -/
 theorem parameter_at (hi : i < n) :
     (parameters n args)[i]? = some (args[i]?.getD .undef) := by

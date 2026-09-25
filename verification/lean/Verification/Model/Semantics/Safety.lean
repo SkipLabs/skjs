@@ -1107,6 +1107,23 @@ theorem callsT_of_invocationSpec {arity L k W b} (fs : List (PropKey × Nat))
     (fun a hm => List.eq_of_mem_replicate hm)] at hsafe
   exact ⟨_, .closure hrv hvals, hsafe⟩
 
+/-- **Code offered more actuals than it takes.** Closure code of arity `n`
+meeting the first `n` parameters of each signature meets the signatures:
+binding discards the actuals past the parameters, as JavaScript does. This
+holds of the code, not of every value at an `n`-parameter signature. -/
+theorem callsT_of_invocationSpec_wide {arity : Nat} {L : List (Fam × List Fam × Fam)} {k W b}
+    (fs : List (PropKey × Nat)) (hlen : ∀ p ∈ L, arity ≤ p.2.1.length)
+    (hs : InvocationSpec arity (L.map fun p => (p.1, p.2.1.take arity, p.2.2)) k W b) :
+    callsT L k W (.objAt fs (.closure arity b)) := by
+  refine ⟨⟨fs, _, rfl, rfl, by simpa [Scoped, Nat.add_comm] using hs.1⟩, ?_⟩
+  intro p hp j hj U hx hu heap hh r hrv hr args hvals ha
+  have hpad := ArgsShort_pad ha
+  have htake := (ArgsT_take_drop arity hpad).1
+  have hsafe := hs.2 _ (List.mem_map_of_mem hp) j hj U hx hu heap hh r hr _ htake
+  rw [CallArguments.bindParameters_take, CallArguments.bindParameters_pad arity args _ r b
+    (fun a hm => List.eq_of_mem_replicate hm)] at hsafe
+  exact ⟨_, .closure hrv hvals, hsafe⟩
+
 /-- A callable signature is contravariant in its receiver and ordered
 arguments and covariant in its result. -/
 theorem callsT_single_mono {Rc Qc : Fam} {Ps Qs : List Fam} {R T : Fam}

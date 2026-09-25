@@ -86,14 +86,19 @@ $$
 Functions take ordered parameter lists and a receiver. Write $\vec A$ for a
 signature's parameter types, $|\vec A|$ for its length and $R$ for its
 receiver: the `this` a call passes, which is not a parameter. In the
-ordinary-closure creation rule below, every signature has the descriptor's
-arity, and its body is typed under that signature's receiver, then all of its
-parameters, then the captured bindings. A call passes its receiver $r$ and types
+ordinary-closure creation rule below, every signature offers at least the
+descriptor's arity, and its body is typed under that signature's receiver,
+then its first $\mathit{arity}$ parameters, then the captured bindings. A
+signature may offer more: the call binds the first $\mathit{arity}$ actuals
+and discards the rest, as JavaScript does (`callsT_of_invocationSpec_wide`).
+This holds of the code, not of any value at a shorter signature: a variadic
+function collects extra actuals and a bound one forwards them, so no subtyping
+rule widens an arrow's parameters. A call passes its receiver $r$ and types
 it at the selected signature's receiver:
 
 $$
-\frac{\forall(R,\vec A,B)\in L.\;|\vec A|=\mathit{arity}
-      \quad\forall(R,\vec A,B)\in L.\;\Gamma,\mathit{this}{:}R,\vec x{:}\vec A\vdash_G t:B}
+\frac{\forall(R,\vec A,B)\in L.\;\mathit{arity}\le|\vec A|
+      \quad\forall(R,\vec A,B)\in L.\;\Gamma,\mathit{this}{:}R,\vec x{:}\vec A_{<\mathit{arity}}\vdash_G t:B}
      {\Gamma\vdash_G \lambda\vec x.t:\bigwedge_{(R,\vec A,B)\in L}(R;\vec A\to B)}
 \qquad
 \frac{\Gamma\vdash_G f:\bigwedge_{(Q,\vec C,D)\in L}(Q;\vec C\to D)

@@ -807,7 +807,7 @@ theorem id_hasTy : HasTy idG [] (.make (.closure 1 (.var 1)) .nul) [0] :=
   HasTy.funE id_represents
     (fun p hp => by
       have : p = idSig := List.mem_singleton.mp hp
-      subst this; rfl)
+      subst this; decide)
     (fun p hp => by
       have : p = idSig := List.mem_singleton.mp hp
       subst this

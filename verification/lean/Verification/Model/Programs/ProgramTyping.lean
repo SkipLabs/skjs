@@ -835,10 +835,13 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   | strLit : Represents G A (.strLit s) → HasTy G Γ (.str s) A
   | str : Represents G A .str → HasTy G Γ (.str s) A
   /-- **A function.** Each signature `(receiver, parameters, result)` checks the
-  body with its receiver, then its parameters, before the captures. -/
+  body with its receiver, then its parameters, before the captures. A signature
+  may offer more parameters than the code takes: the body is checked at the
+  first `arity`, and actuals past them are discarded at binding, as JavaScript
+  discards them. -/
   | funE {Γ : List (Ty ι)} {F : Ty ι} {L : List (Ty ι × List (Ty ι) × Ty ι)} {arity : Nat}
-      {b : Tm} : Represents G F (.arrs L []) → (∀ p ∈ L, p.2.1.length = arity) →
-      (∀ p ∈ L, HasTy G (p.1 :: p.2.1 ++ Γ) b p.2.2) →
+      {b : Tm} : Represents G F (.arrs L []) → (∀ p ∈ L, arity ≤ p.2.1.length) →
+      (∀ p ∈ L, HasTy G (p.1 :: p.2.1.take arity ++ Γ) b p.2.2) →
       HasTy G Γ (.make (.closure arity b) .nul) F
   /-- A class value: construct-only code, its body typed at each construct
   signature with `undefined` for the receiver `new` passes. -/
@@ -1103,8 +1106,22 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
   | @funE Γ F L arity b hr hlen hb ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, Nat.zero_add]
-    have hcode := invocation_of_body he hlen (fun p hp => ih p hp)
-    have hs := make_callable_rule nulT_adm arity n W h _ .nul hcode rfl hw hh rfl
+    have hcode := invocation_of_body (arity := arity) (L := L.map fun p => (p.1, p.2.1.take arity, p.2.2)) he
+      (by
+        intro p hp
+        obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
+        simp [Nat.min_eq_left (hlen q hq)])
+      (by
+        intro p hp
+        obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
+        exact ih q hq)
+    have hs := make_callable_rule_wide nulT_adm arity n W h _ .nul
+      (L := L.map fun p => (meaning G p.1, p.2.1.map (meaning G), meaning G p.2.2))
+      (by
+        intro p hp
+        obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
+        simpa using hlen q hq)
+      (by simpa [List.map_map, Function.comp_def, List.map_take] using hcode) rfl hw hh rfl
     exact Safe_mono n (fun k _ U v hv => (represents_sem hr k U v).mpr
       ⟨hv.2, hv.2.1, by simp⟩) W h _ hs
   | @ctorE Γ F U L arity b hr hu hlen hb ih =>

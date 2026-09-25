@@ -161,7 +161,16 @@ let infer ?receiver (signature:signature) actuals =
         lower.upper <- highs) !edges
     done in
   saturate ();
-  let join = function [] -> None | first::rest -> Some (List.fold_left union first rest) in
+  (* A literal joined with its primitive is the primitive: `0 | number` is
+     `number`, the type a callback annotated with `number` states. *)
+  let absorb = function
+    | Atoms atoms ->
+      Atoms (List.filter (function
+        | NumLit _ -> not (List.mem Num atoms)
+        | StrLit _ -> not (List.mem Str atoms)
+        | _ -> true) atoms)
+    | t -> t in
+  let join = function [] -> None | first::rest -> Some (absorb (List.fold_left union first rest)) in
   (* If U has a chosen lower-bound join, an upper-only T <= U must also fit
      that choice. Propagating only U's declared uppers would miss this case. *)
   List.iter (fun (lower,upper) ->

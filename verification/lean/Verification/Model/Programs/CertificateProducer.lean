@@ -343,8 +343,8 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
       return (A :: pool).findSome? fun F => do
         match expand G F with
         | [.arrs L []] =>
-          if !L.all (fun p => p.2.1.length == arity) then none else do
-          let ps ← L.mapM fun p => recur (p.1 :: p.2.1 ++ Γ) b p.2.2
+          if !L.all (fun p => arity ≤ p.2.1.length) then none else do
+          let ps ← L.mapM fun p => recur (p.1 :: p.2.1.take arity ++ Γ) b p.2.2
           coerce G pool (.node ⟨Γ,t,F⟩ .funE ps) A
         | [.callable P [] L []] =>
           if !L.all (fun p => p.2.1.length == arity) then none else do

@@ -519,6 +519,18 @@ let infer_function declarations module_functions (f:Source.fn) =
           List.init (max 0 (List.length signature.params - List.length args)) (fun _ -> Atoms [Undef]) in
         let inferred=Inference.infer ~receiver:receiver_type signature actuals in
         instance_of ~declared:callee target inferred.substitution;
+        (* A function literal taking fewer parameters than it is offered is
+           claimed at the offered signature: the extra actuals are discarded
+           when it is called, and Lean checks its body at its own. *)
+        List.iteri (fun i (arg:expr) -> match arg.node,List.nth_opt signature.params i with
+          | Lambda (_,[],ps,_,false,_,_),Some param ->
+            (match Inference.substitute inferred.substitution param with
+             | Atoms [Shape {calls=[offered];fields=[];string_index=None;elements=None}] as t
+                 when offered.quantified=[] && offered.variadic=None
+                   && List.length offered.params > List.length ps ->
+               instances := (arg.pos,t) :: !instances
+             | _ -> ())
+          | _ -> ()) args;
         if not (method_read target) then
         instantiations := (e.pos,List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
           inferred.substitution) :: !instantiations;

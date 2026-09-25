@@ -1682,7 +1682,10 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
       -- there. The body still reads the declared type.
       let Ds := Ds.zipIdx.map fun (D,i) =>
         if defaulted.contains i then ((D ++ [3]).mergeSort (· ≤ ·)).eraseDups else D
-      if L.isEmpty || !L.all (fun (_,Di,_) => Di.length == Ds.length && (Di.zip Ds).all (fun (D,A) => D.all A.contains)) then
+      -- A claim may offer more parameters than the closure takes: calls
+      -- discard the actuals past them. The ones it takes are the source's.
+      if L.isEmpty || !L.all (fun (_,Di,_) => Ds.length ≤ Di.length &&
+          ((Di.take Ds.length).zip Ds).all (fun (D,A) => D.all A.contains)) then
         throw "closure signature claim is outside the source annotation"
       -- An ordinary function may be claimed at fewer receivers than it
       -- states, never at more: its body reads the one it is given.
@@ -1712,13 +1715,14 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
           -- Each signature's derivation is about the same body at that
           -- signature's result, which a block body cannot read from its one
           -- enclosing annotation.
-          let plan ← compileBody row (if overlays.isEmpty then none else some Ri) (Rt :: Di ++ Γ)
+          let plan ← compileBody row (if overlays.isEmpty then none else some Ri)
+            (Rt :: Di.take Ds.length ++ Γ)
           -- One body, one lowered term: every signature's derivation is about
           -- the same closure. A claim that changes the lowering is refused
           -- here rather than failing as an unexplained search.
           if plan.goal.term != b.goal.term then
             throw "an overloaded closure's body lowers differently under one of its signatures"
-          return DirectProof.cast (Rt :: Di ++ Γ) Ri plan
+          return DirectProof.cast (Rt :: Di.take Ds.length ++ Γ) Ri plan
       pure (DirectProof.node Γ (.make (.closure Ds.length b.term) .nul) A .funE bodies)
   let plan := DirectProof.cast Γ A p
   obligation e.span plan.goal (some plan) "expression-claim" scope

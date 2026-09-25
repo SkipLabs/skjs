@@ -75,8 +75,8 @@ signature, in the order the checker expects. -/
 abbrev funEPremises [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (A : Ty ι)
     (arity : Nat) (b : Tm) (ps : List (Sequent ι)) : Prop :=
   match expand G A with
-  | [.arrs L []] => (∀ p ∈ L, p.2.1.length = arity) ∧
-      ps = L.map (fun p => ⟨p.1 :: p.2.1 ++ Γ, b, p.2.2⟩)
+  | [.arrs L []] => (∀ p ∈ L, arity ≤ p.2.1.length) ∧
+      ps = L.map (fun p => ⟨p.1 :: p.2.1.take arity ++ Γ, b, p.2.2⟩)
   | _ => False
 
 /-- The premises a class-value node owes: one checked body per construct
@@ -475,7 +475,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
     · rename_i L hL
       apply HasTy.funE hL hl.1
       intro p hmem
-      apply hp ⟨p.1 :: p.2.1 ++ Γ, b, p.2.2⟩
+      apply hp ⟨p.1 :: p.2.1.take arity ++ Γ, b, p.2.2⟩
       rw [hl.2]
       exact List.mem_map.mpr ⟨p, hmem, rfl⟩
     · contradiction
@@ -1111,7 +1111,7 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
   | strLit hr => exact node_complete (r := .strLit) (js := []) hr (by simp)
   | str hr => exact node_complete (r := .str) (js := []) hr (by simp)
   | @funE Γ F L arity b hr hlen hb ih =>
-    apply node_complete (r := .funE) (js := L.map (fun p => ⟨p.1 :: p.2.1 ++ Γ, b, p.2.2⟩))
+    apply node_complete (r := .funE) (js := L.map (fun p => ⟨p.1 :: p.2.1.take arity ++ Γ, b, p.2.2⟩))
     · refine ⟨rfl, rfl, ?_⟩
       show funEPremises G Γ F arity b _
       simpa only [funEPremises, show expand G F = [.arrs L []] from hr, and_true] using hlen
