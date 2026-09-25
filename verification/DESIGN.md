@@ -2031,6 +2031,29 @@ source property or declared member may use them.
 like an imported value's declared type, and each member's specification
 includes the receiver it admits.
 
+**Where `ArrayProto` comes from.** TypeScript's own declarations are the
+source: `ReadonlyArray<T>` and `Array<T>` from the standard library files the
+project uses, read by the declaration reader like any library. Nothing is
+vendored. A checked-in overlay holds only what those declarations do not say
+and soundness needs, one entry per member:
+
+- *An allowlist.* Only members the overlay lists are part of `ArrayProto`; any
+  other member is refused, not trusted by default.
+- *The receiver.* TypeScript leaves `this` implicit. A member declared on
+  `ReadonlyArray` takes `this: readonly T[]`; one declared only on `Array`, a
+  mutator such as `sort`, takes `this: T[]`, since mutable arrays are
+  invariant. Each member is quantified over `T` and its own binders.
+- *Dropped parameters.* `thisArg?: any` is dropped: only calls that omit it
+  are admitted, which the real function accepts.
+- *Dropped overloads.* An overload whose declared result the library does not
+  deliver is removed. `reduce(cb): T` throws on an empty array, so only
+  `reduce(cb, init)` is kept.
+
+Each entry records the text of the TypeScript signature it was reviewed
+against; a test compares it with the signature TypeScript reads, so a changed
+library fails the check and is re-reviewed rather than silently trusted. The
+overlay is the whole trusted surface for arrays.
+
 **Increments.** (1) Rest store binding. (2) The reserved key, the
 delegation steps and the guards. (3) The own-key bound and the prototype view,
 with the read rule. (4) Literals and rest arrays allocated with the prototype;
