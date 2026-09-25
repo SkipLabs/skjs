@@ -599,6 +599,43 @@ $$
 Writes at a greater index, or at one no contract names, and reads by a
 non-literal index into a tuple, have no rule; a program appends with `push`.
 
+A string owns its `length` and its code units ([semantics](SEMANTICS.md#operational-language),
+"Strings"). `lenStr` reads the length of an operand whose every clause is a
+string, and `elemStr` a code unit at any numeric index, a string or, past the
+end or at a key that is not an index, `undefined`, whatever the literal:
+
+$$
+\frac{\Gamma\vdash_G a:S\quad\operatorname{Answers}_G(S,\mathsf{isStr},\mathsf{true})\quad N\equiv_G\mathsf{num}}
+     {\Gamma\vdash_G\mathsf{lenOf}\;a:N}\ \textsc{lenStr}
+\qquad
+\frac{\Gamma\vdash_G a:S\quad\operatorname{Answers}_G(S,\mathsf{isStr},\mathsf{true})\quad
+      \Gamma\vdash_G i:I\quad\operatorname{Answers}_G(I,\mathsf{isNum},\mathsf{true})}
+     {\Gamma\vdash_G\mathsf{elemAt}\;a\;i:\mathsf{str}\cup\mathsf{undefined}}\ \textsc{elemStr}
+$$
+
+Any other member of a primitive is read through its wrapper's prototype. The
+source read `x.k`, with `x` saved in a slot, lowers to a test of each
+primitive shape its type holds, selecting that shape's read, and the object
+read last (`dispatchTerm`):
+
+$$
+\mathsf{if}\ \mathsf{isStr}(x)\ \mathsf{then}\ r_{\mathsf{str}}\ \mathsf{else}\
+\mathsf{if}\ \mathsf{isNum}(x)\ \mathsf{then}\ r_{\mathsf{num}}\ \mathsf{else}\ \cdots\ \mathsf{readAt}\;k\;x,
+\qquad
+r_s=\mathsf{readAt}\;k\;(\mathsf{makeAt}\;\mathsf{absent}\;[\mathsf{proto}]\;[P_s])
+$$
+
+with $P_s$ the slot holding the realm's prototype for shape $s$, and a
+string's `length` read by `lenStr`. Every arm is JavaScript's read for values
+of its shape, and a value of a shape no arm names reaches the object read,
+where a primitive is stuck: the lowering is faithful for every value,
+whatever the claim. It is typed by existing rules only: `unionVar` splits
+$x$'s labels, `ifTag` selects the arm each label's shape answers, `alloc`
+types the wrapper at a record holding `[[proto]]` at the prototype's contract
+and owning no other key, and `readProto` reads the member there. A method call
+`s.m(a)` reads the member so and invokes it with `s` as its receiver, which
+the member's signature names (`this: string`).
+
 Every binary operator has one rule, `arith`, for arithmetic on numbers and on
 bigints, for string concatenation and for relational comparison alike ([its
 meaning](SEMANTICS.md#operational-language), `binop`). A clause pair

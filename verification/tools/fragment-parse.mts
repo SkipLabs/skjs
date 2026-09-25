@@ -2291,6 +2291,15 @@ export function parseFile(file: string, carriesContext = false,
     node.forEachChild(findKeys);
   };
   if (!carriesContext) findKeys(source);
+  // A member read of a primitive, `s.length` or `n.toString()`, reads through
+  // its wrapper's prototype: TypeScript's type of the receiver decides.
+  const receiverNodes: Node[] = [];
+  const findReceivers = (node: Node): void => {
+    if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node))
+      receiverNodes.push(node.expression);
+    node.forEachChild(findReceivers);
+  };
+  if (!carriesContext) findReceivers(source);
   // A read `C.x` of a class with static members may be one of them:
   // TypeScript decides.
   const withStatics = new Set(classNodes.filter(c => c.members.some(m =>
@@ -2305,9 +2314,10 @@ export function parseFile(file: string, carriesContext = false,
   };
   if (!carriesContext && withStatics.size) findStatics(source);
   if (importNodes.length || localNodes.length || globalNodes.length || globalValueNodes.length ||
-      firstArray || firstAsync || keyNodes.length || ambientNames.length || staticNodes.length) {
+      firstArray || firstAsync || keyNodes.length || ambientNames.length || staticNodes.length ||
+      receiverNodes.length) {
     const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
-      firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0];
+      firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? receiverNodes[0];
     if (!first) throw Error("missing declaration root");
     // Named imports only. A type import joins the declaration graph; a value
     // import is an assumption at the type its declaration states.
@@ -2331,6 +2341,7 @@ export function parseFile(file: string, carriesContext = false,
         symbolKey: ([start, end], symbol) => gate.symbolKeys.set(`${start}:${end}`, symbol),
         staticReads: staticNodes.map(node => gate.span(node)),
         staticMember: ([start, end], cls) => gate.staticReads.set(`${start}:${end}`, cls),
+        memberReceivers: receiverNodes.map(node => gate.span(node)),
         library: ([start, end], library) => {
           const node = globalNodes.find(n => n.getStart(source) === start && n.end === end);
           if (node) gate.libraryTypes.set(node.text, library);
@@ -2339,7 +2350,8 @@ export function parseFile(file: string, carriesContext = false,
     } catch (error) {
       const at = error instanceof DeclarationError
         ? [...importNodes, ...localNodes, ...globalNodes, ...globalValueNodes, ...(firstArray ? [firstArray] : []),
-            ...(firstAsync ? [firstAsync] : []), ...keyNodes, ...ambientNames.map(topStatement), ...staticNodes].find(node =>
+            ...(firstAsync ? [firstAsync] : []), ...keyNodes, ...ambientNames.map(topStatement), ...staticNodes,
+            ...receiverNodes].find(node =>
             node.getStart(source) === error.at[0]) ?? first
         : first;
       gate.fail(at, messageOf(error));

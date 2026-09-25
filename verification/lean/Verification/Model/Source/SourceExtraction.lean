@@ -270,15 +270,20 @@ private inductive KeyKind where
   | dynamic
   | element
 
-private def keyField (fc : SourceClaims.Function) (key : Fragment.Expr) : Compiler KeyKind := do
+private def keyField (fc : SourceClaims.Function) (key : Fragment.Expr)
+    (string : Bool := false) : Compiler KeyKind := do
   let K ← exprType fc key
-  match PositiveRules.expand (SourceTypes.graph (← table)) K with
+  let G := SourceTypes.graph (← table)
+  match PositiveRules.expand G K with
   | [.strLit s] =>
     if SourceTypes.reservedKey s then throw s!"'{s}' is internal to the model, not a source property"
     else pure (.field s)
   | [.str] => pure .dynamic
   | _ =>
-    let _ ← arrayIndex (SourceTypes.graph (← table)) K
+    -- A string's index properties are its code units: any number names one
+    -- or none (`elemStr`); an array's needs one proved index.
+    if string && decide (Answers G K .isNum true) then return .element
+    let _ ← arrayIndex G K
     pure .element
 
 /-- A claimed null/undefined/numeric singleton selects a tag-test implementation, never
@@ -323,7 +328,8 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
   | .index p _ e key =>
     let key ← comparisonsExpr fc key
     let e ← comparisonsExpr fc e
-    match ← keyField fc key with
+    let string := decide (Answers (SourceTypes.graph (← table)) (← exprType fc e) .isStr true)
+    match ← keyField fc key string with
     | .field s => return .index p (some s) e key
     | .dynamic => return .index p none e key
     | .element => return .elemAt p e key
@@ -828,7 +834,9 @@ private def conditionalPlan (scope : List ScopeBinding) (H : List (Ty Nat)) (A :
     let no := if equal then e else t
     pure (DirectProof.letE H c (← selectPlan G K tested A tag yes no))
   else
-    match conditionVariable scope cond with
+    -- A variable already known `true` or `false` keeps its singleton: the
+    -- condition's type selects the reachable arm (`ifKnown`).
+    match (conditionVariable scope cond).filter fun (i, _) => H[i]? != some [1] && H[i]? != some [2] with
     | some (i, reversed) =>
       let T := H.set i [1]
       let F := H.set i [2]
@@ -1024,6 +1032,81 @@ private def readCell (G : PositiveGraphs.NormalGraph Nat) (Γ : List (Ty Nat)) (
     pure (DirectProof.letE Γ a (DirectProof.node (a.type::Γ)
       (.readAt fld (.var 0)) R (.unionVar 0) children))
 
+/-- How a member read reaches a primitive of one shape: a string's own
+`length`, or the member of its wrapper's prototype, held in slot `proto` at
+`P`, through a fresh wrapper of type `R` owning only its `[[proto]]` key. -/
+private inductive PrimitiveArm where
+  | length
+  | proto (proto : Nat) (P R : Ty Nat)
+
+/-- The shapes a member read of `O` dispatches on: each primitive shape among
+`O`'s clauses, with the arm that reads it (`ToObject`'s wrapper, whose
+prototype is the realm's). An object shape needs none. -/
+private def primitiveArms (scope : List ScopeBinding) (K : List (Ty Nat)) (O : Ty Nat)
+    (fld : PropKey) : Compiler (List (Tag × PrimitiveArm)) := do
+  let G := SourceTypes.graph (← table)
+  let shapeOf (c : PositiveNormalization.Clause (Ty Nat)) : Option Tag := match c with
+    | .str | .strLit _ => some .isStr
+    | .num | .numLit _ => some .isNum
+    | .bigint | .bigintLit _ => some .isBigint
+    | .bool | .boolLit _ => some .isBool
+    | _ => none
+  let shapes := SourceTypes.primitivePrototypes.filter fun (tag, _) =>
+    (PositiveRules.expand G O).any (shapeOf · == some tag)
+  shapes.mapM fun (tag, name) => do
+    if tag == .isStr && fld == "length" then return (tag, .length)
+    let some (p, .value) := resolve scope name
+      | throw s!"a member of a primitive is read from {name}, which this unit does not see"
+    let some P := K[p]? | throw "internal prototype slot mismatch"
+    let R ← lower (SourceTypes.use (.refs [(SourceTypes.protoField, P)] [] [] [] []
+      [⟨true, [SourceTypes.protoField]⟩]))
+    modify fun s => {s with hints := R :: s.hints}
+    return (tag, .proto p P [R])
+
+/-- One arm's read of slot `o`. -/
+private def PrimitiveArm.term (fld : PropKey) (o : Nat) : PrimitiveArm → Tm
+  | .length => .lenOf (.var o)
+  | .proto p _ _ => .readAt fld (.makeAt .absent [SourceTypes.protoField] [.var p])
+
+/-- `x.k` with `x` in slot `o` of a type with primitive shapes: a test of each
+shape selecting its arm, then the object read. Each arm is JavaScript's read
+for values of its shape, and the object read is its read for an object; a
+value of a shape no arm names reaches the object read, where a primitive is
+stuck, never misread. -/
+private def dispatchTerm (arms : List (Tag × PrimitiveArm)) (fld : PropKey) (o : Nat) (object : Tm) : Tm :=
+  arms.foldr (fun (tag, arm) rest => .ite (.test tag (.var o)) (arm.term fld o) rest) object
+
+/-- The member read of slot `o` of `K` at `A`, planned per label of the slot:
+a primitive's label selects its arm by its known shape answers, and any other
+is read as an object (`readCell`). -/
+private def memberReadPlan (G : PositiveGraphs.NormalGraph Nat) (K : List (Ty Nat)) (o : Nat)
+    (fld : PropKey) (A : Ty Nat) (arms : List (Tag × PrimitiveArm)) : Compiler DirectProof.Plan := do
+  let some O := K[o]? | throw "internal member receiver slot mismatch"
+  let N : Ty Nat := [← lower (SourceTypes.use .num)]
+  let armPlan (L : List (Ty Nat)) (label : Nat) : PrimitiveArm → Except String DirectProof.Plan
+    | .length => pure (DirectProof.node L (.lenOf (.var o)) N .lenStr [DirectProof.var L o [label]])
+    | .proto p P R => do
+      let [.refs gs [] ws _ _ _] := PositiveRules.expand G P
+        | throw "a primitive's prototype contract must be a record"
+      let some B := (gs ++ ws).lookup fld
+        | throw s!"read of a member '{fld}' the primitive's prototype contract does not name"
+      let wrapper := DirectProof.node L (.makeAt .absent [SourceTypes.protoField] [.var p]) R .alloc
+        [DirectProof.var L p P]
+      pure (DirectProof.node L (.readAt fld wrapper.term) B (.readProto P) [wrapper])
+  let object := Tm.readAt fld (.var o)
+  let rec chain (L : List (Ty Nat)) (label : Nat) :
+      List (Tag × PrimitiveArm) → Compiler DirectProof.Plan
+    | [] => do return DirectProof.cast L A (← readCell G L fld (DirectProof.var L o [label]))
+    | (tag, arm) :: rest => do
+      let term := dispatchTerm ((tag, arm) :: rest) fld o object
+      if decide (Answers G [label] tag true) then
+        return DirectProof.node L term A .ifTrue [DirectProof.cast L A (← armPlan L label arm)]
+      else if decide (Answers G [label] tag false) then
+        return DirectProof.node L term A .ifFalse [← chain L label rest]
+      else throw "a member read's receiver needs labels of one shape each"
+  let children ← O.mapM fun label => chain (K.set o [label]) label arms
+  return DirectProof.node K (dispatchTerm arms fld o object) A (.unionVar o) children
+
 /-- The write node under context `H`, with the value in slot 0 and the
 receiver, claimed at `B`, in slot `ri`. -/
 private def writeCell (G : PositiveGraphs.NormalGraph Nat) (H : List (Ty Nat)) (fld : PropKey)
@@ -1190,14 +1273,20 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     if let some i := snapshot then
       let some R := Γ[i]? | throw "internal saved-read slot mismatch"
       pure (DirectProof.var Γ i R)
-    else readCell G Γ fld a
+    else
+      let K := a.type :: Γ
+      let arms ← primitiveArms (held ⟨"",some receiver.span⟩ :: scope) K a.type fld
+      if arms.isEmpty then readCell G Γ fld a
+      else pure (DirectProof.letE Γ a (← memberReadPlan G K 0 fld A arms))
   | .index _ (some fld) receiver key => do
     -- The receiver, then the key, then the read: the key's own claim was
     -- resolved to the field, and is checked here like any operand's.
     let r ← closureExpr fc scope Γ receiver
     let k ← closureExpr fc (held ⟨"",some receiver.span⟩ :: scope) (r.type::Γ) key
     let H := k.type::r.type::Γ
-    let read ← readCell G H fld (DirectProof.var H 1 r.type)
+    let arms ← primitiveArms (held ⟨"",some key.span⟩ :: held ⟨"",some receiver.span⟩ :: scope) H r.type fld
+    let read ← if arms.isEmpty then readCell G H fld (DirectProof.var H 1 r.type)
+      else memberReadPlan G H 1 fld A arms
     pure (DirectProof.letE Γ r (DirectProof.letE (r.type::Γ) k read))
   | .index _ none receiver key => do
     let r ← closureExpr fc scope Γ receiver
@@ -1263,10 +1352,16 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     pure (DirectProof.cast Γ A object)
   | .elemAt _ receiver key => do
     -- The receiver, then the key, both saved; the element is read from the
-    -- receiver's store at the key's one index.
+    -- receiver's store at the key's one index, or a string's code unit at
+    -- the key's number.
     let r ← closureExpr fc scope Γ receiver
     let k ← closureExpr fc (held ⟨"",some receiver.span⟩ :: scope) (r.type::Γ) key
     let H := k.type::r.type::Γ
+    if decide (Answers G r.type .isStr true) then
+      let T : Ty Nat := [← lower (SourceTypes.use .str)]
+      let read := DirectProof.node H (.elemAt (.var 1) (.var 0)) (T ++ [3]) (.elemStr T [3])
+        [DirectProof.var H 1 r.type, DirectProof.var H 0 k.type]
+      return DirectProof.letE Γ r (DirectProof.letE (r.type::Γ) k (DirectProof.cast H A read))
     let index ← arrayKeyTerm k.type
     let .num b := index | throw "internal array index term"
     let I : Ty Nat := [← lower (SourceTypes.use (.numLit b))]
@@ -1408,8 +1503,10 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let ri := saved.length - 1
     let M ← exprType fc callee
     explicitInstance e.span r.type M fld typeArgs
+    let arms ← primitiveArms ds K r.type fld
     let method ← if (ProgramTyping.memberOf G r.type fld).isSome then
         pure (DirectProof.node K (memberHead G r.type fld (.var ri)) M (.bindMember []) [])
+      else if !arms.isEmpty then memberReadPlan G K ri fld M arms
       else DirectProof.cast K M <$> readCell G K fld (DirectProof.var K ri r.type)
     obligation callee.span method.goal (some method) "expression-claim" ds
     let H := M :: K
@@ -2180,10 +2277,12 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let B ← exprType fc a
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+1))⟩
-    -- An array's `length` is its store's, read as a number.
-    let term := if fld == "length" && (storeOf (SourceTypes.graph (← table)) B).isSome
+    -- An array's `length` is its store's, read as a number; a primitive's
+    -- member is read by its shape (`dispatchTerm`).
+    let object := if fld == "length" && (storeOf (SourceTypes.graph (← table)) B).isSome
       then Tm.lenOf (.readAt SourceTypes.storeField (.var 0)) else .readAt fld (.var 0)
-    let node ← emitAt e.span term (.bind drop) (B::Γ) A
+    let arms ← primitiveArms (held ⟨"",some a.span⟩ :: scope) (B::Γ) B fld
+    let node ← emitAt e.span (dispatchTerm arms fld 0 object) (.bind drop) (B::Γ) A
       (scope := held ⟨"",some a.span⟩ :: scope)
     compileExpr fc scope Γ a node
   | .not _ a =>
@@ -2534,9 +2633,17 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     match method with
     | none => compileExpr fc scope Γ callee right
     | some (o, key, readTerm) =>
-      -- The method is read from the saved object, below any saved key.
+      -- The method is read from the saved object, below any saved key; a
+      -- primitive's, by its shape (`dispatchTerm`).
       let saved := headTys.drop 1
-      let read ← emitAt callee.span (readTerm (.var (saved.length - 1))) (.bind ⟨right.label, none⟩)
+      let objSlot := saved.length - 1
+      let arms ← match callee, headTys.getLast? with
+        | .read _ fld _, some O | .index _ (some fld) _ _, some O =>
+          do pure (fld, ← primitiveArms (headScope.drop 1 ++ scope) (saved ++ Γ) O fld)
+        | _, _ => pure ("", [])
+      let term := if arms.2.isEmpty then readTerm (.var objSlot)
+        else dispatchTerm arms.2 arms.1 objSlot (.readAt arms.1 (.var objSlot))
+      let read ← emitAt callee.span term (.bind ⟨right.label, none⟩)
         (saved ++ Γ) B (scope := headScope.drop 1 ++ scope)
       let afterObject ← match key with
         | none => pure read
@@ -2568,12 +2675,15 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
   | .elemAt _ receiver key =>
     let B ← exprType fc receiver
     let K ← exprType fc key
-    let index ← arrayKeyTerm K
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+2))⟩
     let temporaries := held ⟨"",some key.span⟩::held ⟨"",some receiver.span⟩ :: scope
-    let node ← emitAt e.span (.elemAt (.readAt SourceTypes.storeField (.var 1)) index) (.bind drop)
-      (K::B::Γ) A (scope := temporaries)
+    -- A string's code unit at the key's number; an array's element at its
+    -- one index, from its store.
+    let term ← if decide (Answers (SourceTypes.graph (← table)) B .isStr true) then
+        pure (Tm.elemAt (.var 1) (.var 0))
+      else do pure (.elemAt (.readAt SourceTypes.storeField (.var 1)) (← arrayKeyTerm K))
+    let node ← emitAt e.span term (.bind drop) (K::B::Γ) A (scope := temporaries)
     let right ← compileExpr fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) key node
     compileExpr fc scope Γ receiver right
   | .elemWrite _ receiver key rhs =>
@@ -2599,7 +2709,9 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+2))⟩
     let temporaries := held ⟨"",some key.span⟩::held ⟨"",some receiver.span⟩ :: scope
-    let node ← emitAt e.span (.readAt fld (.var 1)) (.bind drop) (K::B::Γ) A (scope := temporaries)
+    let arms ← primitiveArms temporaries (K::B::Γ) B fld
+    let node ← emitAt e.span (dispatchTerm arms fld 1 (.readAt fld (.var 1))) (.bind drop) (K::B::Γ) A
+      (scope := temporaries)
     let right ← compileExpr fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) key node
     compileExpr fc scope Γ receiver right
   | .index _ none receiver key =>
@@ -3207,7 +3319,7 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceCl
   -- The module functions this body mentions, outermost: a parameter or local
   -- of the same name shadows one, as in JavaScript.
   let mentioned := f.body.flatMap stmtNames
-  let siblings := module.filter fun g => mentioned.contains g.1 || g.1 == arrayPrototypeName
+  let siblings := module.filter fun g => mentioned.contains g.1 || SourceTypes.prototypeNames.contains g.1
   if f.name == "undefined" || (names scope).contains "undefined" then
     throw "shadowing undefined is outside the fragment"
   if !distinct (names scope) then throw "duplicate source parameter name"

@@ -329,6 +329,7 @@ def validEvidence (bound : Nat) : ProgramCertificates.Evidence Nat → Bool
       | .arrCopy E => validTy bound E
       | .readProto P => validTy bound P
       | .elemOpt U | .elemAny U => validTy bound U
+      | .elemStr T U => validTy bound T && validTy bound U
       | _ => true) &&
     ps.attach.all (fun p => validEvidence bound p.val)
 termination_by e => sizeOf e

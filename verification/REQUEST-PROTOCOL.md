@@ -223,7 +223,7 @@ one subtype-evidence list per outgoing edge. A derivation node names the
 `strLit`, `str`, `bigintLit`, `bigint`, `funE`, `app`, `letE`, `alloc`,
 `read`, `readOptional`, `readDict`, `indexDict`, `write`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
 `unionVar`, `makeCallable`, `callCallable`, `readCallable`, `writeCallable`, `readView`, `readProto`, `arith`, `test`,
-`arrLit`, `elem`, `elemOpt`, `elemAny`, `setElem`, `len`, `funRest`, `makeCallableRest`,
+`arrLit`, `elem`, `elemOpt`, `elemAny`, `setElem`, `len`, `lenStr`, `elemStr`, `funRest`, `makeCallableRest`,
 `callRest`, `arrCopy`, `bindE`, `bindRestE`, `bindMember`, `ctorE`, `construct`, or `sub`.
 The array rules act on a store, the value an array object holds in its store
 field: `arrLit` allocates one location per element under the positions of a
@@ -232,6 +232,9 @@ its contract, `elemOpt` an optional or rest position at its contract or
 `undefined`, and `elemAny` any numeric index into a homogeneous array at the
 element contract or `undefined`; `setElem` writes a named position, into its
 location or a fresh one the store records; `len` reads the length as a number.
+`lenStr` reads a string's length, and `elemStr` a string's code unit at any
+numeric index or `undefined`, naming the result's string and `undefined`
+types, `{"elemStr": {"str": T, "undef": U}}`.
 `readView` reads a field named among a record's or a dictionary's views, at
 the bound the view states, as `read` reads either's invariant fields; no rule writes through a view. `readProto` reads a key one of
 a record's own-key bounds does not admit from the prototype the record holds under the

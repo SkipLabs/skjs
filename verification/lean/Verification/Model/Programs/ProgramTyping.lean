@@ -1314,6 +1314,14 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
       T.readonly = false → HasTy G Γ v A → HasTy G Γ (.setElem a i v) L
   | len {Γ : List (Ty ι)} {a : Tm} {L N : Ty ι} {T : Tuple (Ty ι)} :
       HasTy G Γ a L → Represents G L (.list T []) → Represents G N .num → HasTy G Γ (.lenOf a) N
+  /-- A string's own `length` is a number. -/
+  | lenStr {Γ : List (Ty ι)} {a : Tm} {S N : Ty ι} :
+      HasTy G Γ a S → Answers G S .isStr true → Represents G N .num → HasTy G Γ (.lenOf a) N
+  /-- A string read at any numeric index is a string, or `undefined` past its
+  end or at a key that is not an index. -/
+  | elemStr {Γ : List (Ty ι)} {a i : Tm} {S I T U : Ty ι} :
+      HasTy G Γ a S → Answers G S .isStr true → HasTy G Γ i I → Answers G I .isNum true →
+      Represents G T .str → Represents G U .undef → HasTy G Γ (.elemAt a i) (T ++ U)
   /-- A tag test whose answer the operand's type does not settle is still a
   Boolean: its type holds both literals. -/
   | test : HasTy G Γ a A → (.boolLit true) ∈ expand G B → (.boolLit false) ∈ expand G B →
@@ -1976,6 +1984,31 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     intro j hj U hx hu heap av hok hav ha'
     obtain ⟨ls, rfl, -⟩ := ((represents_sem hr j U av).mp ha').1
     exact len_rule j U heap hu hok (fun m U' => (represents_sem hn m U' _).mpr ⟨_, rfl⟩)
+  | @lenStr Γ a S N ha hs hn ih =>
+    intro n W h ρ he hw hh
+    apply bind Tm.lenOf Step.lenC n W h _ hw hh (ih n W h ρ he hw hh)
+    intro j hj U hx hu heap av hok hav ha'
+    have hstr := answers_sound hs ha'
+    obtain ⟨s, rfl⟩ : ∃ s, av = .str s := by
+      cases av <;> simp [tagHolds] at hstr; exact ⟨_, rfl⟩
+    exact len_str_rule j U heap hu hok (fun m U' => (represents_sem hn m U' _).mpr ⟨_, rfl⟩)
+  | @elemStr Γ a i S I T U ha hs hi hq hT hU iha ihi =>
+    intro n W h ρ he hw hh
+    apply bind (fun a => .elemAt a (instantiate 0 ρ i)) Step.elemC1 n W h _ hw hh (iha n W h ρ he hw hh)
+    intro j hj U' hx hu heap av hok hav ha'
+    apply bind (.elemAt av) (Step.elemC2 hav) j U' heap _ hu hok
+      (ihi j U' heap ρ (he.transfer j hj U' hx) hu hok)
+    intro m hm V hy hv heap' iv hok' hival hi'
+    have ha'' := (meaning_adm G S).mono m _ V hy av ((meaning_adm G S).down_le j m hm U' av ha')
+    have hstr := answers_sound hs ha''
+    obtain ⟨s, rfl⟩ : ∃ s, av = .str s := by
+      cases av <;> simp [tagHolds] at hstr; exact ⟨_, rfl⟩
+    have hnum := answers_sound hq hi'
+    obtain ⟨b, rfl⟩ : ∃ b, iv = .num b := by
+      cases iv <;> simp [tagHolds] at hnum; exact ⟨_, rfl⟩
+    exact elem_str_rule m V heap' hv hok'
+      (fun m' U'' t => (meaning_append G T U m' U'' _).mpr (Or.inl ((represents_sem hT m' U'' _).mpr ⟨t, rfl⟩)))
+      (fun m' U'' => (meaning_append G T U m' U'' _).mpr (Or.inr ((represents_sem hU m' U'' _).mpr rfl)))
   | @test Γ a A B k ha ht hf ih =>
     intro n W h ρ he hw hh
     apply bind (.test k) Step.testC n W h _ hw hh (ih n W h ρ he hw hh)

@@ -446,6 +446,11 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
       if B.length ≤ 1 then none else do
         let ps ← B.mapM fun b => recur (Γ.set i [b]) t A
         pure (ProgramCertificates.Evidence.node ⟨Γ,t,A⟩ (.unionVar i) ps)
+    -- The types an operand may be read at as a string: a slot's own, then
+    -- the pool's, each all strings.
+    let stringOperands := fun (a : Tm) =>
+      ((match a with | .var i => (Γ[i]?).toList | _ => []) ++ pool).filter fun S =>
+        decide (Answers G S .isStr true)
     match t with
     | .var i => return (Γ[i]?).bind fun B => coerce G pool (leaf B .var) A
     | .nul | .undef | .tru | .fls =>
@@ -748,6 +753,18 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
                 if checkTree G e then coerce G pool e A else none
             | _ => none
       if let some e := direct then return some e
+      -- A string's code unit at a numeric key: a string or `undefined`.
+      let string := (stringOperands a).findSome? fun S => do
+        let ea ← recur Γ a S
+        pool.findSome? fun I => do
+          if !decide (Answers G I .isNum true) then none else do
+          let ei ← recur Γ i I
+          (A :: pool).findSome? fun T => do
+            if expand G T != [.str] then none else do
+            (A :: pool).findSome? fun U =>
+              if expand G U != [.undef] then none else
+              coerce G pool (.node ⟨Γ,t,T ++ U⟩ (.elemStr T U) [ea,ei]) A
+      if let some e := string then return some e
       let .readAt _ receiver := a | return none
       return splitReceiver receiver
     | .setElem a i v =>
@@ -763,11 +780,17 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,L⟩ .setElem [ea,ei,ev]
           if checkTree G e then coerce G pool e A else none
     | .lenOf a =>
-      return pool.findSome? fun L => do
+      let store := pool.findSome? fun L => do
         let [.list _ []] := expand G L | none
         let ea ← recur Γ a L
         (A :: pool).findSome? fun N =>
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ .len [ea]
+          if checkTree G e then coerce G pool e A else none
+      -- A string's own `length`.
+      return store <|> (stringOperands a).findSome? fun S => do
+        let ea ← recur Γ a S
+        (A :: pool).findSome? fun N =>
+          let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ .lenStr [ea]
           if checkTree G e then coerce G pool e A else none
     | .ite (.test tag (.var i)) u e =>
       let some B := Γ[i]? | return none

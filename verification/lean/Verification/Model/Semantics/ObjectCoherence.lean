@@ -518,9 +518,13 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
   | lenC step ih =>
     intro D hh ht
     exact ih D hh ht
-  | lenV =>
+  | lenV | lenStr =>
     intro D hh ht
     exact ⟨D,.refl D,hh,trivial,trivial⟩
+  | elemStr =>
+    intro D hh ht
+    unfold codeUnitAt
+    split <;> exact ⟨D,.refl D,hh,trivial,trivial⟩
   | spreadC step ih =>
     intro D hh ht
     exact ih D hh ht

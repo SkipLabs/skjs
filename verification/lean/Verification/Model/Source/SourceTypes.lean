@@ -29,6 +29,17 @@ spells, at `ArrayProto`. Every array a unit allocates takes its prototype from
 it, as JavaScript takes the realm's. -/
 def arrayPrototypeName : String := "[[Array.prototype]]"
 
+/-- The module values holding the primitive wrappers' prototypes, each at its
+contract (`StringProto`, `NumberProto`, `BigIntProto`, `BooleanProto`), named
+as `[[Array.prototype]]` is: a member of a primitive of the tag's shape is read
+from it, as JavaScript's `ToObject` reads it from the realm's. -/
+def primitivePrototypes : List (Tag × String) :=
+  [(.isStr, "[[String.prototype]]"), (.isNum, "[[Number.prototype]]"),
+   (.isBigint, "[[BigInt.prototype]]"), (.isBool, "[[Boolean.prototype]]")]
+
+/-- Every realm prototype a unit may read through, whether or not it names it. -/
+def prototypeNames : List String := arrayPrototypeName :: primitivePrototypes.map (·.2)
+
 /-- The row of `ArrayProto`, `Array.prototype`'s contract: the declaration
 document of a source with arrays lists it first, so its row follows the four
 fixed ones (`DeclarationGraph.prepare` checks this). -/

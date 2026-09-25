@@ -130,7 +130,7 @@ Ordered by value for cost (units per effort, files as a tiebreak):
 | 11 | Compound / update assignment (`x++`, `+=`, `||=`, `??=`) — done (task E); array destructuring assignment remains (12) | 5 | 5 | 0 | 4 | S | O L |
 | 12 | Destructuring, rest/default parameters | 96 | 90 | 5 | 22 | M | P O L |
 | 13 | Library globals as values — calls and the reviewed overlay done (task K); left: `Array.isArray` (23), `new X(…)` (`Error` 23, `Array`, `Set`, `Map`, `Date`, `Promise`), well-known symbols (8), `Promise`/`JSON`/`Object` statics | 86 | | | 25 | M | D L |
-| 14 | Reads on unions/primitives (field/index read on non-object, string keys) and value-level `&&`/`||` | 48 + 20 | 63 | 0 | 30 | M | O L |
+| 14 | ~~Reads on primitives and unions, value-level `&&`/`||`~~ done (task L); left: dynamic string index writes, numeric keys on string indexes | 4 (was 48 + 20) | | | | M | O L |
 | 15 | Equality against string/boolean literal singletons (Lean refuses the source form) | 37 | 37 | 0 | 5 | M | L |
 | 16 | Discriminated-union narrowing (producer: "missing field" after a tag test) | 14 | 13 | 0 | 4 | M | O L |
 | 17 | `in` / `instanceof` / `typeof` (expression and type query) | 88 | 81 | 5 | 16 | L | P O L |
@@ -310,13 +310,29 @@ dropped), examples, what the extension needs.
     `resolve` adopts thenables), `JSON.stringify` (returns `undefined`,
     throws on bigints), `Object.keys`.
 
-14. **Reads on unions/primitives; value-level `&&`/`||`.** `proposal: indexed
-    read on non-object` (24), `field read on non-object` (19), `record index
-    requires a string key` (1), `search: a dynamic string index write is
-    outside the readonly dictionary fragment` (3), numeric array key (1);
-    `proposal: operator &&` (15), `operator ||` (5). `and-or.ts#f`,
-    `field-refinement.ts#testAndChain`. Needs member reads on primitive
-    wrappers (`s.length`) and on unions, and `&&`/`||` returning an operand.
+14. **Reads on primitives and unions; value-level `&&`/`||`.** *Done (task
+    L): truthiness is a tag test (`ToBoolean`), so a condition that is not a
+    Boolean, `!x` and `&&`/`||` returning an operand are the existing tag
+    machinery (DESIGN.md, "Truthiness"); a string's `length` and code units
+    are calculus reads (`lenStr`, `elemStr`: `s[i]` is `string | undefined`
+    for any number), and every other member of a primitive is read through a
+    wrapper of its realm prototype, whose contract (`StringProto`,
+    `NumberProto`, `BigIntProto`, `BooleanProto`) the array overlay reads
+    from TypeScript's library, narrowing `toString(radix)` to 2..36 and
+    `toFixed` digits to 0..100 (DESIGN.md, "Primitive members"). 703 → 764
+    units verified (+61), 672 → 728 functions, 61 → 68 files fully verified,
+    none lost (marker corpus, before the `--skjs` rerun).* Of the 115 units
+    stopped at a bigint or other primitive member read, 88 are top-level
+    constants that now stop at the "no function to verify" policy (Q); the
+    others stop at string `+` (E), `Promise` members (P), field narrowing
+    after a guard (18), discriminated unions (16) or literal equality (15).
+    Left here: a method call on a union of primitives
+    (`this-parameter-union-receiver.ts#primitiveUnion`: each shape's member
+    takes its own receiver; the call would need to dispatch by shape), `x[42]`
+    on a string index signature (a numeric key's property name), and dynamic
+    string index writes (3: `x[k] = v` may add a key, and the calculus's
+    objects have their keys fixed at allocation). None of the new search
+    refusals is an SKJS unsoundness.
 15. **Equality with string/boolean literals.** `search: unsupported source
     expression: equality requires a null, undefined or numeric singleton
     operand` (37; 9 of them literal-union operands, `x === y` with `x: 0 | 1`,
@@ -547,7 +563,7 @@ split by function.
 | I. Literal equality and tag narrowing | Lean equality with string/boolean singletons; discriminated-union narrowing; `switch` case narrowing | 42+ / 10 (plus much of the 42 narrowing failures) | `SourceExtraction.lean`, `ProgramTyping.lean`, `CertificateProducer.lean`, `proposal.ml` | F for `switch` | G, J |
 | J. Guards | `typeof`, `in`, `instanceof`, `Array.isArray`; `typeof` in type position | 88 / 16 | `fragment-parse.mts`, `proposal.ml`, Lean narrowing rules | I, K (`Array`) | I |
 | K. Library globals (done, first part) | Global values read at the call signatures a module calls (`BigInt(v)`, `Symbol()`, `String(v)`) as well as members; a standard library global only through a reviewed overlay (`library-globals.mts`) that states a parameter at what the host accepts without throwing | all 102 `BigInt` units and the `Symbol()`/`String()` calls pass the reader; 6 units / 2 files newly verified (703 → 709 units, 61 → 62 whole files); `Array.isArray`, `new X(…)`, well-known symbols, `Promise`/`JSON`/`Object` statics left | `declaration-graph.mts`, `library-globals.mts` | B, C | B, C |
-| L. Primitive and union reads | `s.length` and other primitive members, member/index reads on unions, value-level `&&`/`||`, dynamic string index writes | 68 / 30 | `proposal.ml`, `Calculus.lean`, `CertificateProducer.lean` | B (string lib) | I |
+| L. Primitive and union reads (done) | Truthiness as a tag test, value-level `&&`/`||`, `!`; string `length` and code units; primitive members through their wrapper prototypes' contracts (the overlay generalized); not done: method calls on primitive unions, dynamic string index writes (objects cannot grow) | 68 / 30 reached, 61 / 7 (files fully) verified | `Calculus.lean`, `ProgramTyping.lean`, `ProgramCertificates.lean`, `CertificateProducer.lean`, `SourceExtraction.lean`, `array-prototype.mts`, `declaration-graph.mts`, `fragment-parse.mts`, `proposal.ml` | B (string lib) | I |
 | M. Class members | Modifiers, optional/definite fields, parameter properties, constructor statements, receivers; then inheritance | 104 / 31 | `fragment-parse.mts` (classes), `proposal.ml`, class model in Lean | — | N |
 | N. Generics | Constraint forms, explicit type arguments on calls, unions with rigid types in claims, rigid types in graph types, `as const`; then generic classes | 175 / 50 | `fragment-parse.mts`, `inference.ml`, `GenericSource.lean`, `TypeParams.lean` | M for generic classes | M |
 | O. Type forms | Index-signature forms, numeric field names, negative-literal types, `{}`, `object`, method signatures, `keyof`, indexed access, mapped types, intersections | 168 / 41 | `fragment-parse.mts` (types), `declaration-types.mts`, `Types/*` | — | N |

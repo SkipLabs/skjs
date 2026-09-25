@@ -37,6 +37,11 @@ inductive Rule (ι : Type) where
   /-- A read through the prototype: the prototype's type. -/
   | readProto (proto : Ty ι)
   | arrLit | elem | setElem | len
+  /-- A string's `length`. -/
+  | lenStr
+  /-- A string's code unit at a numeric index: the string and `undefined`
+  types of the result. -/
+  | elemStr (str undef : Ty ι)
   | elemOpt (undef : Ty ι)
   | elemAny (undef : Ty ι)
   | ifBool | ifTrue | ifFalse
@@ -304,6 +309,13 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     (match expand G ja.type with
      | [.list _ []] => True
      | _ => False)
+  | .lenStr, .lenOf a, [ja] =>
+    ja.context = j.context ∧ ja.term = a ∧ Represents G j.type .num ∧
+    Answers G ja.type .isStr true
+  | .elemStr T U, .elemAt a i, [ja, ji] =>
+    ja.context = j.context ∧ ja.term = a ∧ ji.context = j.context ∧ ji.term = i ∧
+    Answers G ja.type .isStr true ∧ Answers G ji.type .isNum true ∧
+    Represents G T .str ∧ Represents G U .undef ∧ j.type = T ++ U
   | .ifBool, .ite c t e, [jc,jt,je] =>
     jc.context = j.context ∧ jc.term = c ∧ Answers G jc.type .isBool true ∧
     jt = ⟨j.context,t,j.type⟩ ∧ je = ⟨j.context,e,j.type⟩
@@ -785,6 +797,19 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
     · rename_i T hT
       exact .len ha hT hn
     · contradiction
+  · rename_i a ja
+    rcases hl with ⟨hΓ, hta, hn, hs⟩
+    have ha := hp ja (by simp)
+    rw [hΓ, hta] at ha
+    exact .lenStr ha hs hn
+  · rename_i T U a i ja ji
+    rcases hl with ⟨hΓa, hta, hΓi, hti, hs, hq, hT, hU, hty⟩
+    have ha := hp ja (by simp)
+    have hi := hp ji (by simp)
+    rw [hΓa, hta] at ha
+    rw [hΓi, hti] at hi
+    rw [hty]
+    exact .elemStr ha hs hi hq hT hU
   · rename_i c t e jc jt je
     rcases hl with ⟨hΓ, hc, hb, rfl, rfl⟩
     have hcond := hp jc (by simp)
@@ -1467,6 +1492,18 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     apply node_complete (G := G) (j := ⟨Γ, .lenOf a, N⟩) (r := .len) (js := [⟨Γ,a,L⟩])
       ⟨rfl,rfl,hn,by simp only [show expand G L = [.list T []] from hr]⟩
     simpa using ih
+  | @lenStr Γ a S N ha hs hn ih =>
+    apply node_complete (G := G) (j := ⟨Γ, .lenOf a, N⟩) (r := .lenStr) (js := [⟨Γ,a,S⟩])
+      ⟨rfl,rfl,hn,hs⟩
+    simpa using ih
+  | @elemStr Γ a i S I T U ha hs hi hq hT hU iha ihi =>
+    apply node_complete (G := G) (j := ⟨Γ, .elemAt a i, T ++ U⟩) (r := .elemStr T U)
+      (js := [⟨Γ,a,S⟩, ⟨Γ,i,I⟩]) ⟨rfl,rfl,rfl,rfl,hs,hq,hT,hU,rfl⟩
+    intro j hj
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hj
+    rcases hj with rfl | rfl
+    · exact iha
+    · exact ihi
   | @test Γ a A B k ha ht hf ih =>
     apply node_complete (G := G) (j := ⟨Γ, .test k a, B⟩) (r := .test) (js := [⟨Γ,a,A⟩])
       ⟨rfl,rfl,ht,hf⟩

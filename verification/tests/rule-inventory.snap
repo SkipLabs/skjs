@@ -36,6 +36,8 @@ HasTy  (Programs/ProgramTyping.lean)
   elemAny {Γ : List (Ty ι)} {a i : Tm} {L I E U : Ty ι} : HasTy G Γ a L → Represents G L (.list ⟨[], [], some E, false⟩ []) → HasTy G Γ i I → Answers G I .isNum true → Represents G U .undef → HasTy G Γ (.elemAt a i) (E ++ U)
   setElem {Γ : List (Ty ι)} {a i v : Tm} {L I A : Ty ι} {T : Tuple (Ty ι)} {b : UInt64} {k : Nat} : HasTy G Γ a L → Represents G L (.list T []) → HasTy G Γ i I → Represents G I (.numLit b) → indexOfBits b = some k → positionTy T k = some A → k ≤ T.required.length → T.readonly = false → HasTy G Γ v A → HasTy G Γ (.setElem a i v) L
   len {Γ : List (Ty ι)} {a : Tm} {L N : Ty ι} {T : Tuple (Ty ι)} : HasTy G Γ a L → Represents G L (.list T []) → Represents G N .num → HasTy G Γ (.lenOf a) N
+  lenStr {Γ : List (Ty ι)} {a : Tm} {S N : Ty ι} : HasTy G Γ a S → Answers G S .isStr true → Represents G N .num → HasTy G Γ (.lenOf a) N
+  elemStr {Γ : List (Ty ι)} {a i : Tm} {S I T U : Ty ι} : HasTy G Γ a S → Answers G S .isStr true → HasTy G Γ i I → Answers G I .isNum true → Represents G T .str → Represents G U .undef → HasTy G Γ (.elemAt a i) (T ++ U)
   test : HasTy G Γ a A → (.boolLit true) ∈ expand G B → (.boolLit false) ∈ expand G B → HasTy G Γ (.test k a) B
   ifBool : HasTy G Γ c C → Answers G C .isBool true → HasTy G Γ t A → HasTy G Γ e A → HasTy G Γ (.ite c t e) A
   ifKnown : HasTy G Γ c C → Represents G C (.boolLit q) → HasTy G Γ (if q then t else e) A → HasTy G Γ (.ite c t e) A
@@ -82,6 +84,8 @@ Rule  (Programs/ProgramCertificates.lean)
   elem
   setElem
   len
+  lenStr
+  elemStr (str undef : Ty ι)
   elemOpt (undef : Ty ι)
   elemAny (undef : Ty ι)
   ifBool

@@ -115,6 +115,14 @@ let first_part read parts =
 (* `ArrayProto`, the declaration of `Array.prototype`'s members, by identity. *)
 let array_prototype = "skjs/array-prototype#0:0"
 let key_text = function Name n -> n | Key i -> "[symbol " ^ string_of_int i ^ "]"
+(* The contract of the prototype a primitive's members are read through:
+   `StringProto` for a string, and so on. *)
+let primitive_prototype = function
+  | Str | StrLit _ -> Some "skjs/string-prototype#0:0"
+  | Num | NumLit _ -> Some "skjs/number-prototype#0:0"
+  | Bigint | BigintLit _ -> Some "skjs/bigint-prototype#0:0"
+  | True | False -> Some "skjs/boolean-prototype#0:0"
+  | _ -> None
 let rec field_type declarations seen t name = match t with
   | Atoms atoms -> combine (List.map (function
       | Shape {elements=Some _;_} when name=Name "length" -> Atoms [Num]
@@ -132,6 +140,11 @@ let rec field_type declarations seen t name = match t with
       | Named (id,args) ->
         if List.mem id seen then unsupported "unguarded field cycle";
         field_type declarations (id::seen) (definition declarations id args) name
+      (* A string owns its `length`; any other member of a primitive is its
+         wrapper prototype's. *)
+      | Str | StrLit _ when name=Name "length" -> Atoms [Num]
+      | atom when primitive_prototype atom <> None ->
+        field_type declarations seen (Atoms [Named (Option.get (primitive_prototype atom),[])]) name
       | _ -> unsupported "field read on non-object") atoms)
   | Union ts -> combine (List.map (fun t -> field_type declarations seen t name) ts)
   (* A value of an intersection is one of each operand: read as the first
@@ -198,6 +211,18 @@ let rec index_type declarations seen receiver key = match receiver with
       | Named (id,args) ->
         if List.mem id seen then unsupported "unguarded index cycle";
         index_type declarations (id::seen) (definition declarations id args) key
+      (* A string's index properties are its code units: a numeric key reads
+         one, or `undefined` past the end. A string literal key is a named
+         member's. *)
+      | (Str | StrLit _) as atom -> (match key with
+          | Atoms [StrLit name] -> field_type declarations seen (Atoms [atom]) (Name name)
+          | Atoms ks when ks <> [] && List.for_all (function Num | NumLit _ -> true | _ -> false) ks ->
+            Atoms [Str;Undef]
+          | _ -> unsupported "a string's index needs a numeric key")
+      (* Another primitive's named member is its wrapper prototype's. *)
+      | atom when primitive_prototype atom <> None -> (match key with
+          | Atoms [StrLit name] -> field_type declarations seen (Atoms [atom]) (Name name)
+          | _ -> unsupported "a primitive's member needs a string literal key")
       | _ -> unsupported "indexed read on non-object") atoms)
   | Union ts -> combine (List.map (fun t -> index_type declarations seen t key) ts)
   | Meet (t,ts) -> first_part (fun t -> index_type declarations seen t key) (t::ts)

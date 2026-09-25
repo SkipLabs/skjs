@@ -569,6 +569,33 @@ theorem len_rule {ls : List (Option Nat)} {Q : Fam}
       .lenV, HeapOk_trunc p W h hok, ?_⟩
     exact value_safe _ _ _ _ _ rfl (hq _ _)
 
+/-- **A string's length** is a number. -/
+theorem len_str_rule {s : String} {Q : Fam}
+    (n : Nat) (W : WorldT n) (h : Heap) (hadm : WorldAdm W) (hok : HeapOk n W h)
+    (hq : ∀ m (U : WorldT m), Q m U (.num (bitsOfNat (utf16Units s).length))) :
+    Safe Q n W h (.lenOf (.str s)) := by
+  cases n with
+  | zero => trivial
+  | succ p =>
+    refine Or.inr ⟨trunc p (Nat.le_succ p) W, h, _, WExt_refl _, WorldAdm_trunc _ hadm,
+      .lenStr, HeapOk_trunc p W h hok, ?_⟩
+    exact value_safe _ _ _ _ _ rfl (hq _ _)
+
+/-- **A string's index property** is a one-code-unit string or `undefined`. -/
+theorem elem_str_rule {s : String} {b : UInt64} {Q : Fam}
+    (n : Nat) (W : WorldT n) (h : Heap) (hadm : WorldAdm W) (hok : HeapOk n W h)
+    (hstr : ∀ m (U : WorldT m) (t : String), Q m U (.str t)) (hundef : ∀ m (U : WorldT m), Q m U .undef) :
+    Safe Q n W h (.elemAt (.str s) (.num b)) := by
+  cases n with
+  | zero => trivial
+  | succ p =>
+    refine Or.inr ⟨trunc p (Nat.le_succ p) W, h, _, WExt_refl _, WorldAdm_trunc _ hadm,
+      .elemStr, HeapOk_trunc p W h hok, ?_⟩
+    unfold codeUnitAt
+    split
+    · exact value_safe _ _ _ _ _ rfl (hstr _ _ _)
+    · exact value_safe _ _ _ _ _ rfl (hundef _ _)
+
 /-- Plain references specialize the common allocation rule to an absent descriptor. -/
 theorem alloc_rule {A : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (v : Tm)
     (hval : isVal v = true) (hadm : WorldAdm W) (hok : HeapOk n W h) (hv : A n W v) :

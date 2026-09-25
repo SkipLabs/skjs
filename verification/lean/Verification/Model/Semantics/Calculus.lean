@@ -158,11 +158,13 @@ inductive Tm where
   /-- Allocate one location per initializer, in order, as a store. -/
   | arrLit (inits : List Tm)
   /-- The element a numeric index names in a store: `undefined` at a hole or
-  past the end, as property lookup answers. -/
+  past the end, as property lookup answers. In a string it is the code unit
+  there, as the string's own index property answers. -/
   | elemAt (a i : Tm)
   /-- Store a value at a numeric index: into the element's location, or, at a
   hole or past the end, into a fresh location the returned store records. -/
   | setElem (a i v : Tm)
+  /-- A store's length, or a string's own `length`: its UTF-16 code units. -/
   | lenOf (a : Tm)
   /-- An actual that stands for the elements of the store `a` evaluates to,
   read in order when every earlier actual is a value. Only an argument list
@@ -456,6 +458,21 @@ def indexOfBits (b : UInt64) : Option Nat :=
   then some f.toUInt64.toNat else none
 
 def bitsOfNat (n : Nat) : UInt64 := n.toFloat.toBits
+
+/-- A one-code-unit string. A model string is a sequence of Unicode scalar
+values, so half of a surrogate pair has no string of its own: it reads as
+U+FFFD, the one place the model's strings differ from JavaScript's
+(SEMANTICS.md, "Strings"). -/
+def unitString (u : Nat) : String :=
+  if 0xD800 ≤ u ∧ u ≤ 0xDFFF then "\uFFFD" else String.singleton (Char.ofNat u)
+
+/-- What a string's index property holds at a numeric key: the code unit at an
+array index below its length, else nothing (a JavaScript string owns no other
+numeric key, and its prototype none). -/
+def codeUnitAt (s : String) (b : UInt64) : Tm :=
+  match (indexOfBits b).bind fun k => (utf16Units s)[k]? with
+  | some u => .str (unitString u)
+  | none => .undef
 
 /-- The location an index names in a store: none at a hole or past the end. -/
 def elemLoc (ls : List (Option Nat)) (b : UInt64) : Option Nat :=
@@ -1053,6 +1070,13 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
       Step h (.setElem (.arr ls) (.num b) v) (h ++ [v]) (.arr (placeAt ls k h.length))
   | lenC : Step h a h' a' → Step h (.lenOf a) h' (.lenOf a')
   | lenV {ls : List (Option Nat)} {h : Heap} : Step h (.lenOf (.arr ls)) h (.num (bitsOfNat ls.length))
+  /-- A string's length is its count of UTF-16 code units. -/
+  | lenStr {s : String} {h : Heap} :
+      Step h (.lenOf (.str s)) h (.num (bitsOfNat (utf16Units s).length))
+  /-- A string's own index property: the code unit at an index below its
+  length, `undefined` at any other number. -/
+  | elemStr {s : String} {b : UInt64} {h : Heap} :
+      Step h (.elemAt (.str s) (.num b)) h (codeUnitAt s b)
 
 /-! ### The one-field rules
 
@@ -1496,12 +1520,14 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     | elemC2 hv _ => exact absurd s (by intro hs; exact value_no_step hv hs)
     | elemRead _ _ => exact absurd s (by intro hs; exact value_no_step rfl hs)
     | elemAbsent _ => exact absurd s (by intro hs; exact value_no_step rfl hs)
+    | elemStr => exact absurd s (by intro hs; exact value_no_step rfl hs)
   | elemC2 hv s ih =>
     cases s2 with
     | elemC1 s' => exact absurd s' (by intro hs; exact value_no_step hv hs)
     | elemC2 _ s' => exact (ih s').imp id (congrArg (Tm.elemAt _ ·))
     | elemRead _ _ => exact absurd s (by intro hs; exact value_no_step rfl hs)
     | elemAbsent _ => exact absurd s (by intro hs; exact value_no_step rfl hs)
+    | elemStr => exact absurd s (by intro hs; exact value_no_step rfl hs)
   | elemRead hl hv =>
     cases s2 with
     | elemC1 s' => exact absurd s' (by intro hs; exact value_no_step rfl hs)
@@ -1560,10 +1586,20 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     cases s2 with
     | lenC s' => exact (ih s').imp id (congrArg Tm.lenOf)
     | lenV => exact absurd s (by intro hs; exact value_no_step rfl hs)
+    | lenStr => exact absurd s (by intro hs; exact value_no_step rfl hs)
   | lenV =>
     cases s2 with
     | lenC s' => exact absurd s' (by intro hs; exact value_no_step rfl hs)
     | lenV => exact ⟨rfl, rfl⟩
+  | lenStr =>
+    cases s2 with
+    | lenC s' => exact absurd s' (by intro hs; exact value_no_step rfl hs)
+    | lenStr => exact ⟨rfl, rfl⟩
+  | elemStr =>
+    cases s2 with
+    | elemC1 s' => exact absurd s' (by intro hs; exact value_no_step rfl hs)
+    | elemC2 _ s' => exact absurd s' (by intro hs; exact value_no_step rfl hs)
+    | elemStr => exact ⟨rfl, rfl⟩
 
 theorem make_step_inv {c : CallCode} {v : Val} (hv : isVal v = true) {h h' t}
     (hs : Step h (.make c v) h' t) : h' = h ++ [v] ∧ t = .obj h.length c := by

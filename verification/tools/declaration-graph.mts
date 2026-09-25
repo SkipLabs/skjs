@@ -6,13 +6,14 @@
  * cannot state; a refusal never drops a declaration. */
 import { realpathSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
-import { API, DiagnosticCategory, SymbolFlags, type Checker, type Program } from "typescript/unstable/sync";
+import { API, DiagnosticCategory, SymbolFlags, TypeFlags, isUnionType, type Checker, type Program, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, SourceFile, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
 import { classInstance, expandMapped, mapped, members, oneTerm, optionalTerm, signature, signatures, substitute, typeTerm,
   type Mapped, type TermScope } from "./type-term.mts";
-import { arrayPrototype, overlay, type OverlayEntry } from "./array-prototype.mts";
+import { arrayPrototype, overlay, primitiveKinds, primitivePrototype, primitivePrototypeName, type OverlayEntry,
+  type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule } from "./intrinsics.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry } from "./library-globals.mts";
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
@@ -161,6 +162,25 @@ function statementsOnPath(checker: Checker, identifier: Identifier):
   return out;
 }
 
+/** The expression at exactly `span`, the outermost one there. */
+function expressionAt(file: SourceFile, span: Span): Node | null {
+  const visit = (node: Node): Node | null => {
+    if (node.end < span[1] || node.pos > span[0]) return null;
+    if (node.getStart(file) === span[0] && node.end === span[1] && !ts.isSourceFile(node)) return node;
+    return node.forEachChild(visit) ?? null;
+  };
+  return visit(file);
+}
+
+/** The primitives among a type's values whose members a read reaches through
+ * a wrapper's prototype. */
+function primitivesOf(type: Type): PrimitiveKind[] {
+  const parts = isUnionType(type) ? type.getTypes() : [type];
+  const flags: Record<PrimitiveKind, number> = { string: TypeFlags.StringLike, number: TypeFlags.NumberLike,
+    bigint: TypeFlags.BigIntLike, boolean: TypeFlags.BooleanLike };
+  return primitiveKinds.filter(kind => parts.some(part => part.flags & flags[kind]));
+}
+
 /** The identifier at exactly `span`, in TypeScript's tree of the client. */
 function identifierAt(file: SourceFile, span: Span): Identifier | null {
   const visit = (node: Node): Identifier | null => {
@@ -238,6 +258,13 @@ export function collectDeclarations(file: string, options: {
    * with the class's name. */
   staticReads?: readonly Span[];
   staticMember?: (span: Span, cls: string) => void;
+  /** The receivers of the client's member reads, `e.k` and `e[k]`: each
+   * that TypeScript types as a string, number, bigint or boolean, or a union
+   * holding one, reads that primitive's members through its wrapper's
+   * prototype, whose contract (`array-prototype.mts`) then joins the graph
+   * and whose realm value joins the values, located at the first such
+   * receiver. */
+  memberReceivers?: readonly Span[];
   /** Told each TypeScript error the gate reads while deciding whether a
    * declaration is clean, whether or not it refuses the source: every error
    * TypeScript reports in each file it examines, each once. */
@@ -588,22 +615,49 @@ export function collectDeclarations(file: string, options: {
         throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
       }
     }
-    // `Array.prototype`'s contract, read before the graph is collected so
-    // that the library interfaces it names join it.
+    // The prototypes' contracts, `Array.prototype`'s and the primitive
+    // wrappers', read before the graph is collected so that the library
+    // interfaces they name join it.
+    const overlayLibrary: OverlayLibrary = {
+      symbol: symbolOf,
+      reference: (node, args, span) => {
+        valueStarts.push(node);
+        const target = identityOf(node);
+        return { k: "reference", reference: { name: target.name, span, arguments: args.map(() => span),
+          target }, args, span };
+      },
+    };
     let arrayProto: TypeDefinition | null = null;
     if (options.arrays) {
       try {
-        arrayProto = arrayPrototype(checker, client, {
-          symbol: symbolOf,
-          reference: (node, args, span) => {
-            valueStarts.push(node);
-            const target = identityOf(node);
-            return { k: "reference", reference: { name: target.name, span, arguments: args.map(() => span),
-              target }, args, span };
-          },
-        }, options.arrayOverlay ?? overlay);
+        arrayProto = arrayPrototype(checker, client, overlayLibrary, options.arrayOverlay ?? overlay);
       } catch (error) {
         throw new DeclarationError(options.arrays, error instanceof Error ? error.message : String(error));
+      }
+    }
+    // A primitive's members are read through its wrapper's prototype: its
+    // contract joins the definitions, and the realm's prototype the values,
+    // an assumption at that contract as an import is at its type.
+    const primitiveProtos: TypeDefinition[] = [];
+    const primitives = new Map<PrimitiveKind, Span>();
+    for (const span of options.memberReceivers ?? []) {
+      const receiver = expressionAt(client, span);
+      if (!receiver) throw new DeclarationError(span, "TypeScript member receiver missing");
+      const type = checker.getTypeAtLocation(receiver);
+      for (const kind of type ? primitivesOf(type) : [])
+        if (!primitives.has(kind)) primitives.set(kind, span);
+    }
+    for (const [kind, at] of primitives) {
+      try {
+        const definition = primitivePrototype(checker, client, overlayLibrary, kind);
+        primitiveProtos.push(definition);
+        const name = primitivePrototypeName(kind);
+        values.push({ binding: { local: name, imported: name, specifier: prototypeSpecifier, span: at },
+          declaration: definition.declaration, construct: false, typeParams: [],
+          type: { k: "reference", reference: { name: definition.declaration.name, span: at, arguments: [],
+            target: definition.declaration }, args: [], span: at } });
+      } catch (error) {
+        throw new DeclarationError(at, error instanceof Error ? error.message : String(error));
       }
     }
     // `async`, `await` and `for...of`, as the intrinsics that stand for them
@@ -715,13 +769,16 @@ export function collectDeclarations(file: string, options: {
           error instanceof Error ? error.message : String(error));
       }
     }
-    definitions.push(...selections);
+    definitions.push(...selections, ...primitiveProtos);
     // First, so its row follows the four fixed ones in every table.
     if (arrayProto) definitions.unshift(arrayProto);
     return { roots: roots.map(r => r.root), definitions, values, symbols };
   });
 }
 
+/** The specifier of a primitive wrapper's prototype: the realm's, which no
+ * import names. */
+export const prototypeSpecifier = "prototype";
 /** The specifier of a global value's binding: no import names it. */
 export const globalSpecifier = "global";
 /** The specifier of an ambient declaration's binding, `declare function f`:

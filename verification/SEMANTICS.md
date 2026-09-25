@@ -135,6 +135,35 @@ and $\sim x=x\mathbin{\hat{}}(-1)$, exact on doubles (a sign flip, the identity,
 the edge cases, and `numberToString` for 300 pseudo-random doubles and short
 decimals besides, in `Tests/SourceExtractionTests.lean`.
 
+**Strings.** A string owns its `length` and its index properties, and
+`lenOf` and `elemAt` read them as they read a store's:
+
+$$
+\frac{}{h,\ \mathsf{lenOf}\;\mathsf{str}(s)\ \to\ h,\ \mathsf{num}(|\mathit{units}(s)|)}\ (\texttt{lenStr})
+\qquad
+\frac{}{h,\ \mathsf{elemAt}\;\mathsf{str}(s)\;\mathsf{num}(b)\ \to\ h,\ \mathit{codeUnitAt}(s,b)}\ (\texttt{elemStr})
+$$
+
+where $\mathit{units}(s)$ is $s$'s UTF-16 code units (`utf16Units`) and
+$\mathit{codeUnitAt}(s,b)$ is the one-unit string at the array index $b$
+denotes (`indexOfBits`, so `-0` is index 0) below the length, and
+`undefined` at any other number: past the end, negative, fractional, NaN or
+infinite, JavaScript finds no own property and the realm's `String.prototype`
+and `Object.prototype` own no numeric key. A model string is a sequence of
+Unicode scalar values, as Lean's `String` is, so half of a surrogate pair has
+no string of its own: it reads as U+FFFD (`unitString`), where JavaScript
+yields the lone half. This is the one place the model's strings differ from
+JavaScript's; the fragment computes on a string only by equality, order,
+length and these reads, and both are strings of one code unit.
+
+Every other member of a primitive is its wrapper prototype's: JavaScript's
+`ToObject` makes a wrapper whose `[[Prototype]]` is the realm's
+`String.prototype` (`Number.prototype`, `BigInt.prototype`,
+`Boolean.prototype`), and the read continues there. The calculus writes that
+wrapper as it is: a fresh object owning only `[[proto]]`,
+$\mathsf{makeAt}\;\mathsf{absent}\;[\mathsf{proto}]\;[P]$ with $P$ the realm's
+prototype, from which `readProto` reads the member. No step is added.
+
 `make_rule` proves heap and world extension once, with a result obligation for
 the fresh object's descriptor. `alloc_rule` and `attach_rule` specialize that
 proof to plain reference and callable contracts.

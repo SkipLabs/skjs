@@ -938,6 +938,17 @@ modeling choices; they do not replace proof.
   that allocates arrays has an input slot `[[Array.prototype]]` at `ArrayProto`,
   and the safety theorem holds for every environment meeting its inputs, as
   for an imported value's declared type.
+- `String.prototype`, `Number.prototype`, `BigInt.prototype` and
+  `Boolean.prototype` meet `StringProto`, `NumberProto`, `BigIntProto` and
+  `BooleanProto`, each read from TypeScript's `String`, `Number`, `BigInt`
+  and `Boolean` through the same overlay: only the listed members, each an
+  own property of that prototype, at the primitive as receiver, without the
+  dropped parameters and with the narrowed ones. A unit reading a primitive's
+  member has the input slot `[[String.prototype]]` (and so on) at that
+  contract, a premise as `[[Array.prototype]]` is. The realm's
+  `String.prototype` and `Object.prototype` own no numeric key, so a
+  string's index that is not an array index reads `undefined`
+  ([Primitive members](#primitive-members)).
 - An ambient declaration the module writes, `declare function f(...): R`,
   `declare const x: T` or `declare class C`, holds of the value the running
   environment supplies under that name (**Ambient declarations** in
@@ -2988,6 +2999,58 @@ it: its own keys are its store and its prototype.
 at its type (`array-marked.ts`; not as a number,
 `invalid-array-marked-read.ts`), by the symbol-keyed read of
 "Bigints and symbols" in [Modules and code units](#modules-and-code-units).
+
+### Primitive members
+
+**Principle.** A member read on a primitive is JavaScript's: `ToObject`
+wraps the value in an object whose `[[Prototype]]` is the realm's
+`String.prototype` (`Number.prototype`, `BigInt.prototype`,
+`Boolean.prototype`), and the read continues there, except for what a string
+owns: its `length` and its indices. The array design is reused, not copied:
+each prototype's members come from its contract, read from TypeScript's
+library through the one overlay mechanism
+([`array-prototype.mts`](tools/array-prototype.mts)), and are invoked with the
+primitive as receiver.
+
+**Calculus.** `lenOf` and `elemAt` read a string's own properties as they
+read a store's (`lenStr`, `elemStr`; [semantics](SEMANTICS.md#operational-language),
+"Strings"). Any other member is read through the wrapper as JavaScript makes
+it, a fresh object owning only `[[proto]]` at the realm's prototype, so the
+existing `alloc` and `readProto` rules type it. The source read dispatches on
+the receiver's shape, one arm per primitive shape its type holds, the object
+read last ([typing](PROGRAM-TYPING.md#judgments-and-constructor-views)): the
+lowering is JavaScript's read for every value, and is stuck, never wrong,
+where a value has a shape no arm names.
+
+**Exact types.** `s.length` is a `number`. `s[i]` is `string | undefined`
+for every number `i`, a literal index in bounds included (the fragment does
+not track a string's length); TypeScript says `string`, which is false past
+the end. Its own `length` is never read from the prototype: the overlay
+refuses to list it.
+
+**Contracts.** `StringProto`, `NumberProto`, `BigIntProto` and
+`BooleanProto` are the members the overlay lists, each an own property of its
+prototype (`String.prototype.toLocaleString` is `Object.prototype`'s and is
+not listed; `Boolean.prototype.toString` is its own, though TypeScript reads
+it from `Object`). A signature TypeScript admits calls on that throw is
+narrowed or dropped: `toString(radix)` of a number or bigint takes 2 to 36,
+`toFixed` and `toExponential` 0 to 100 digits, `toPrecision` 1 to 100, as a
+union of literals; `locales` and `options` of `toLocaleString` are dropped,
+so a call must omit them. Members that throw on arguments no simple narrowing
+states (`repeat`, `normalize(form?: string)`), or that name `RegExp` or an
+`any` callback (`replace`, `match`, `search`, `split`), are not listed. The
+parser asks TypeScript which receivers of member reads are primitives, and
+each primitive so read brings its contract into the declaration document and
+its realm prototype into the module's values, at the name
+`[[String.prototype]]` and so on, which no source identifier spells.
+
+**Trust.** The contracts are assumed, as `ArrayProto` is
+([What remains assumed](#what-remains-assumed)).
+
+**Open.** A method call on a union of primitives (`(x: string | number).toString()`)
+reads a union of members whose receivers differ; the call rule needs one
+callee contract its receiver meets, so such a call is refused. `split`, whose
+result is an array, needs `ArrayProto` beside `StringProto`.
 
 ### Library types
 
