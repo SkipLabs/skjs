@@ -13,7 +13,7 @@ open ProgramTyping ProgramCertificates CertificateProducer PositiveNormalization
 12 unknown, 13 the rest `...(number | undefined)[]`, 14 the rest `...number[]`,
 15 the rest `...[number, number]`, 16 `(...r: [number, number]) => number`, 17 the
 store of a `[number, number]` tuple, 18 its array, 19 `(...r: [number, number])`
-returning its rest array, 20 `(...r: number[])` returning its rest array, 21 the
+returning its rest as an array, 20 `(...r: number[])` returning its rest as an array, 21 the
 rest `...[number]`, 22 `(a: number, ...r: [number]) => number`. Every
 signature takes any
 receiver; a signature's rest is an argument pack. -/
@@ -45,7 +45,7 @@ def G : PositiveGraphs.NormalGraph Nat := .ofRows fun
 
 def pool : List (Ty Nat) := vocabulary G (List.range 23) [] [[0,1]]
 
-/-- Slot 0 is the collected array, slot 1 the receiver, slot 2 the fixed
+/-- Slot 0 is the collected store, slot 1 the receiver, slot 2 the fixed
 parameter. -/
 def restFn : Tm := .make (.variadic 1 (.var 2)) .nul
 
@@ -129,10 +129,11 @@ private def restCallEvidence (flags : List Bool) (E : Ty Nat) : Evidence Nat :=
 #guard !checkTree G (restCallEvidence [false] [14])
 #guard !checkTree G (restCallEvidence [] [13])
 
-/-- Variadic code returning its rest array. -/
-def tupleFn : Tm := .make (.variadic 0 (.var 0)) .nul
+/-- Variadic code wrapping its rest store into an array and returning it. -/
+def tupleFn : Tm :=
+  .make (.variadic 0 (.letE (.makeAt .absent [CallArguments.arrayStoreField] [.var 0]) (.var 0))) .nul
 
--- The rest array holds a tuple rest's positions; an element rest's array holds
+-- The rest store holds a tuple rest's positions; an element rest's store holds
 -- any number of actuals, so it is no pair.
 #guard accepted tupleFn [19]
 #guard !accepted tupleFn [20]

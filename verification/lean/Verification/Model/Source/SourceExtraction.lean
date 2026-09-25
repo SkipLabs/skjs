@@ -1440,26 +1440,31 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     if !distinct paramNames || paramNames.any (fun name => name == "" || name == "undefined" || (names scope).contains name) then
       throw "shadowing or duplicate closure parameter is outside the fragment"
     -- A rest parameter whose contract is a mutable `T[]` collects any number
-    -- of actuals: the closure has variadic code, and its body finds the array
-    -- the call collected in slot 0, above the fixed parameters.
+    -- of actuals: the closure has variadic code, and its body finds the store
+    -- the call collected in slot 0, above the fixed parameters. The body's
+    -- first step wraps the store into the array the parameter names.
     if let some (restName, restJson) := (if rest then params.getLast? else none) then
       if let some elementJson := Fragment.arrayElement restJson then
         let fixedParams := params.dropLast
         let compileRestBody (claims : SourceClaims.Function) (Rt : Ty Nat) (fixed : List (Ty Nat))
-            (restTy R : Ty Nat) (initialized : List (Ty Nat)) : Compiler DirectProof.Plan := do
-          -- The frame: the collected array, the receiver, which an arrow
+            (restTy S R : Ty Nat) (initialized : List (Ty Nat)) : Compiler DirectProof.Plan := do
+          -- The frame: the collected store, the receiver, which an arrow
           -- never reads, then the fixed parameters.
+          let frame := S :: Rt :: fixed ++ Γ
+          let wrap := DirectProof.node frame
+            (.makeAt .absent [SourceTypes.storeField] [.var 0]) restTy .alloc
+            [DirectProof.var frame 0 S]
           let mut ds := held ⟨if defaults.isEmpty then restName else "", some pos⟩ ::
-            held ⟨receiverName, some pos⟩ ::
+            held ⟨"", some pos⟩ :: held ⟨receiverName, some pos⟩ ::
             (fixedParams.map fun (name,_) => held ⟨if defaults.isEmpty then name else "", some pos⟩) ++ scope
-          let mut H := restTy :: Rt :: fixed ++ Γ
-          let mut prologue : List (List (Ty Nat) × DirectProof.Plan) := []
+          let mut H := restTy :: frame
+          let mut prologue : List (List (Ty Nat) × DirectProof.Plan) := [(frame, wrap)]
           let order ← match Fragment.parameterOrder params defaults with
             | .ok order => pure order
             | .error reason => throw (locatedRefusal (← table) pos .bindingAnnotation reason)
           for i in order do
             if i == fixedParams.length then
-              ds := ds.set prologue.length (held ⟨restName, some pos⟩)
+              ds := ds.set (prologue.length - 1) (held ⟨restName, some pos⟩)
             else
               let some (name, _) := fixedParams[i]? | throw "invalid parameter schedule"
               match defaults.lookup i with
@@ -1497,12 +1502,14 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
               | throw "missing instantiated parameter annotations"
             let some restTy := initialized.getLast? | throw "missing instantiated rest annotation"
             if initialized.length != params.length then throw "instantiated rest parameter count differs from source"
-            let b ← compileRestBody (fc.withOverlay overlay) Rt Ds restTy R initialized
+            let some S := storeOf (SourceTypes.graph (← table)) restTy
+              | throw "a rest parameter needs an array contract"
+            let b ← compileRestBody (fc.withOverlay overlay) Rt Ds restTy S R initialized
             if let some existing := term then
               if existing != b.term then throw "a rest body lowers differently under one of its instantiations"
             else term := some b.term
             bodies := bodies ++ [b]
-            arrays := arrays ++ [restTy]
+            arrays := arrays ++ [S]
           let some t := term | throw "quantified rest has no instantiation"
           return DirectProof.node Γ (.make (.variadic fixedParams.length t) .nul) A
             (.funRest arrays) bodies
@@ -1514,10 +1521,12 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
         let R ← lower (Fragment.callableType ret)
         let rest ← lower (SourceTypes.use (.pack ⟨[], [], some E, false⟩ []))
         let own ← lower (SourceTypes.use (.arrs [] [(Rsource, fixed, [rest], R)]))
-        modify fun st => {st with hints := own :: restTy ++ st.hints}
-        let b ← compileRestBody fc Rsource fixed restTy R initialized
+        let some S := storeOf (SourceTypes.graph (← table)) restTy
+          | throw "a rest parameter needs an array contract"
+        modify fun st => {st with hints := own :: restTy ++ S ++ st.hints}
+        let b ← compileRestBody fc Rsource fixed restTy S R initialized
         return DirectProof.node Γ (.make (.variadic fixed.length b.term) .nul) [own]
-          (.funRest [restTy]) [b]
+          (.funRest [S]) [b]
     -- A rest parameter stands for the required positions of its tuple
     -- contract: the signature has one position per element, and the body sees
     -- the array this closure allocates from them, as the call allocates one at

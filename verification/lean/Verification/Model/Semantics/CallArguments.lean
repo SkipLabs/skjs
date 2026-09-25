@@ -364,7 +364,7 @@ theorem invoke_closed (hi : Invoke frame result) (hf : Scoped 0 frame.callee)
   | closure _ _ => exact bound_body_closed (by simpa [Scoped] using hf) hr ha
   | @variadic r args fs fixed body _ _ =>
     refine ⟨?_, ?_⟩
-    · simp only [restArray, Scoped, scopedArgs_iff, List.mem_singleton, forall_eq]
+    · simp only [Scoped, scopedArgs_iff]
       intro a hm
       exact ha a (List.mem_of_mem_drop hm)
     · apply bindArgs_scoped

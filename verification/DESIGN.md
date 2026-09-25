@@ -1545,7 +1545,7 @@ within the length bounds (`CoversPack`). A variadic signature's fixed
 parameters admit the first actuals and its rest the remaining list
 (`ArgsRest`), so `...xs: E[]` admits any list of values at `E` and
 `...xs: [A, B]` exactly those positions, one mechanism for both. Allocating the
-rest array is a step, so it consumes the approximation level the contract
+rest store is a step, so it consumes the approximation level the contract
 itself does not (`RestCalls.argument_alloc_safe`). A spread into a rest, a rest
 compared with fixed positions, and binding a variadic target read an element
 rest (`restElem`). [Same-level argument contracts](#same-level-argument-contracts)
@@ -1721,8 +1721,8 @@ The common [behavioral equation](SEMANTICS.md#one-meaning-for-callable-contracts
 defines these call contracts independently of the binding descriptor, and the
 [callable milestone status](tests/callables/README.md#closure-status-for-milestones-14)
 records Part 4's closure, including quantified rest. The universal certificate
-checks its body over arbitrary element families and proves fresh rest-array
-allocation; independently checked substitutions supply the surrounding graph's
+checks its body over arbitrary element families and proves fresh rest-store
+allocation and its wrap; independently checked substitutions supply the surrounding graph's
 variadic signatures. Observed call specializations cannot replace that proof.
 Direct generic declarations now consume the same invocation certificates as
 local schemes, including argument collection, and validate every operand claim.
@@ -1814,8 +1814,8 @@ connects the wire's kinds to the selected components
 inclusion of mixed meanings, so a pack bound constrains lists.
 
 **Programs.** Variadic calls and constructors consume `ArgFam`, a predicate on
-lists (`restsT`, `ctorRestsT`), from `argMeaning`. A rest array is allocated
-from same-level actuals (`restArray_safe`), and a variadic call's plain parts
+lists (`restsT`, `ctorRestsT`), from `argMeaning`. A rest store is allocated
+from same-level actuals (`restStore_safe`), and a variadic call's plain parts
 at the positions of an exact tuple form a list its rest admits
 (`restParts_pack`). The source-to-safety theorem `checkJson_safe` keeps its
 statement; `meaning` in it is the mixed value meaning.

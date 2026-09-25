@@ -194,7 +194,7 @@ call-only code, an arrow's or a method's, leaves the kind out),
 absent descriptor; function creation uses a code descriptor and ordered field
 initializers. A fixed body has the receiver's binder in slot zero, then
 `arity` parameter binders in declaration order, before captures. A variadic
-body has its fresh rest array in slot zero, the receiver in slot one, then
+body has its fresh rest store in slot zero, the receiver in slot one, then
 `fixed` parameters, then captures. A `bound` descriptor is what `.bind` creates: it holds the target,
 the receiver and the argument prefix as values and allocates no field; its
 invocation drops the receiver it is called with and invokes the target with the
@@ -320,7 +320,7 @@ same object. The object's type must have one object clause with a method of
 key `k`; each fixed signature of the result must be one of the method's, at
 any receiver, and each variadic one likewise.
 `funRest` creates variadic code: one body premise per variadic signature of
-its type, each with that signature's rest-array type, named by the rule, in
+its type, each with that signature's rest-store type, named by the rule, in
 slot 0, above the receiver and the fixed parameters; `makeCallableRest` adds a field bag's
 initializer premises first, as `makeCallable` does. `callRest` carries the
 callee premise, one premise per fixed actual, one `undefined` premise per fixed
@@ -756,7 +756,7 @@ literal `{"arrLit": {"inits": [{"spread": ...}]}}`, and the call spreads the
 copy. Evidence names these calls `{"callRest": {"fixed": k, "omitted": u,
 "spreads": [flags], "rest": P}}`, with `P` the signature's rest type, copies `{"arrCopy": {"elem": E}}`, variadic
 creation `{"funRest": {"arrays": [A, ...]}}` and variadic callable objects
-`{"makeCallableRest": {"arrays": [A, ...]}}`, one rest-array type per
+`{"makeCallableRest": {"arrays": [A, ...]}}`, one rest-store type per
 signature; the request validation range-checks every type they carry.
 Quantified rest uses the same source flag and graph rules after its universal
 certificate is checked; its compositional claim forms are defined in

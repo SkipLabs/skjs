@@ -653,13 +653,14 @@ def closureCertificate (c : Ctx) (env : List (String × DirectObligation.Ty))
     if (defaults.lookup i).isNone then GenericCertificate.Input.value A else .defaulted A
   let mut slots := ((inner.map Prod.fst).zip inputs).map fun (name, input) =>
     (if defaults.isEmpty then name else "", input.slot)
-  -- The receiver slot precedes the parameters, after a rest array; an arrow
-  -- never reads it.
+  -- The receiver slot precedes the parameters, after a rest array and the
+  -- rest store it was wrapped from; an arrow never reads it.
   slots := (match restBinding with
     | none => []
-    | some (name, E) => [(if defaults.isEmpty then name else "", .value (.array E))]) ++
+    | some (name, E) => [(if defaults.isEmpty then name else "", .value (.array E)),
+        ("", .value .top)]) ++
     (receiverName, .value R) :: slots ++ captures
-  let offset := if restBinding.isSome then 2 else 1
+  let offset := if restBinding.isSome then 3 else 1
   let mut initializers : List GenericCertificate.Proof := []
   let order ← refuse pos .schemeIntroduction (Fragment.parameterOrder ps defaults)
   for i in order do
@@ -706,12 +707,13 @@ def check (f : Fragment.Fn) (typeParams : List Fragment.TypeParam) (claims : Cla
   -- pass has exposed any failed inclusion.
   lower f.namePos .genericValidation (checkScheme f typeParams claims)
   let result ← lower f.namePos .genericValidation (annotationTy names f.ret)
-  -- The body sees the rest array, then the receiver slot, which a declaration
-  -- checked here never reads, then the fixed parameters.
+  -- The body sees the rest array, then the rest store it was wrapped from and
+  -- the receiver slot, which a declaration checked here never reads, then the
+  -- fixed parameters.
   let (bodyEnv, fixed, rest) ← if f.params.any (·.rest) then
     match env.reverse with
     | (name, .array E) :: earlier =>
-      pure ((name, .array E) :: ("", .top) :: earlier.reverse, earlier.reverse, some E)
+      pure ((name, .array E) :: ("", .top) :: ("", .top) :: earlier.reverse, earlier.reverse, some E)
     | _ => throw (.refusal f.namePos .genericValidation "a quantified rest requires a mutable array contract")
     else pure (("", .top) :: env, env, none)
   let proof ← proofBody c bodyEnv result f.namePos f.body

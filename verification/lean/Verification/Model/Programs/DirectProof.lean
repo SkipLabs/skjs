@@ -68,7 +68,7 @@ def renderAt (G : NormalGraph Nat) (pool : List (Ty Nat)) :
           renderAt G pool depth (U :: q.val.1.1 ++ Γ) q.val.2
         pure (.node ⟨Γ,j.term,j.type⟩ (.ctorE U) es)
     | .funRest As, .make (.variadic arity _) .nul, bs =>
-      -- One body plan per signature, with that signature's rest array in slot 0.
+      -- One body plan per signature, with that signature's rest store in slot 0.
       let [.arrs [] L] := expand G j.type | none
       if L.length != bs.length || As.length != L.length ||
           !L.all (fun p => p.2.1.length == arity) then none else do

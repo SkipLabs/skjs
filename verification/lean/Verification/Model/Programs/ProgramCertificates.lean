@@ -41,9 +41,9 @@ inductive Rule (ι : Type) where
   | ifBoolVar (trueType falseType : Ty ι)
   | unionVar (slot : Nat)
   | makeCallable | callCallable | readCallable | writeCallable
-  /-- The rest-array type of each signature, in the signatures' order. -/
+  /-- The rest-store type of each signature, in the signatures' order. -/
   | funRest (arrays : List (Ty ι))
-  /-- A callable object with variadic code: the rest-array type of each signature. -/
+  /-- A callable object with variadic code: the rest-store type of each signature. -/
   | makeCallableRest (arrays : List (Ty ι))
   /-- A copy of a spread, at the element type its store holds. -/
   | arrCopy (elem : Ty ι)
@@ -289,17 +289,17 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     match expand G ja.type with
     | [.callable P _ _ _] => (f, jb.type) ∈ P
     | _ => False
-  -- One body premise per signature, with the rest array in slot 0, then the
+  -- One body premise per signature, with the rest store in slot 0, then the
   -- fixed parameters and the receiver.
   | .funRest As, .makeAt (.variadic n b) ns inits, ps =>
     ns = [valueField] ∧ inits = [Tm.nul] ∧
     match expand G j.type with
     | [.arrs [] L] => L.length = As.length ∧
-      (∀ p ∈ L.zip As, p.1.2.1.length = n ∧ RestArray G p.2 p.1.2.2.1) ∧
+      (∀ p ∈ L.zip As, p.1.2.1.length = n ∧ RestStore G p.2 p.1.2.2.1) ∧
       ps = (L.zip As).map (fun p => ⟨p.2 :: p.1.1 :: p.1.2.1 ++ j.context, b, p.1.2.2.2⟩)
     | _ => False
   -- The bag's premises come first, one per named field, then one body premise
-  -- per signature with its rest array in slot 0.
+  -- per signature with its rest store in slot 0.
   | .makeCallableRest As, .makeAt (.variadic n b) ns inits, ps =>
     match expand G j.type with
     | [.callable P [] [] L] =>
@@ -308,7 +308,7 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
       (∀ p ∈ ps.take ns.length, p.context = j.context) ∧
       P = ns.zip ((ps.take ns.length).map Sequent.type) ∧
       L.length = As.length ∧
-      (∀ p ∈ L.zip As, p.1.2.1.length = n ∧ RestArray G p.2 p.1.2.2.1) ∧
+      (∀ p ∈ L.zip As, p.1.2.1.length = n ∧ RestStore G p.2 p.1.2.2.1) ∧
       ps.drop ns.length =
         (L.zip As).map (fun p => ⟨p.2 :: p.1.1 :: p.1.2.1 ++ j.context, b, p.1.2.2.2⟩)
     | _ => False

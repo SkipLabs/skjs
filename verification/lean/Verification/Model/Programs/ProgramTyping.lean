@@ -456,18 +456,11 @@ theorem ArgsT_slots {G : NormalGraph ι} {Γ ρ n W} (he : EnvOk G Γ ρ n W) :
   | [], _ :: _, h => by simp at h
   | _ :: _, [], h => by simp at h
 
-/-- The store type a rest array holds for a rest type: the rest's one tuple
-contract, as a writable store, since the array is fresh. -/
+/-- The type of the store a variadic body receives for a rest type: the rest's
+one tuple contract, as a writable store, since the store is fresh. -/
 def RestStore (G : NormalGraph ι) (S P : Ty ι) : Prop :=
   match expand G P with
   | [.pack T []] => Represents G S (.list { T with readonly := false } [])
-  | _ => False
-
-/-- The type of the array a variadic body receives: a record whose store field
-holds the actuals past the fixed ones under the rest's tuple contract. -/
-def RestArray (G : NormalGraph ι) (A P : Ty ι) : Prop :=
-  match expand G A with
-  | [.refs [(f, S)] [] []] => f = CallArguments.arrayStoreField ∧ RestStore G S P
   | _ => False
 
 /-- A store type whose elements a spread passes at `E`. -/
@@ -479,9 +472,6 @@ def SpreadsInto (G : NormalGraph ι) (S E : Ty ι) : Prop :=
 
 instance [DecidableEq ι] (G : NormalGraph ι) (S P : Ty ι) : Decidable (RestStore G S P) := by
   unfold RestStore; split <;> (try dsimp only [Represents]) <;> infer_instance
-
-instance [DecidableEq ι] (G : NormalGraph ι) (A P : Ty ι) : Decidable (RestArray G A P) := by
-  unfold RestArray; split <;> infer_instance
 
 instance [DecidableEq ι] (G : NormalGraph ι) (S E : Ty ι) : Decidable (SpreadsInto G S E) := by
   unfold SpreadsInto; split <;> (try dsimp only [Represents]) <;> infer_instance
@@ -566,51 +556,25 @@ theorem prefix_take_drop {α : Type} (Ps : List α) (k : Nat) (E : α) :
   · rw [List.take_of_length_le (show Ps.length ≤ k by omega)]
     simp
 
-/-- **Allocating the rest array.** A store of the actuals past the fixed ones,
-then the object holding it, meets a rest-array type when the actuals as one
-pack meet the rest type. -/
-theorem restArray_safe {G : NormalGraph ι} {A P : Ty ι} (hr : RestArray G A P)
+/-- **Allocating the rest store.** A store of the actuals past the fixed ones
+meets a rest-store type when the actuals as one pack meet the rest type. -/
+theorem restStore_safe {G : NormalGraph ι} {S P : Ty ι} (hS : RestStore G S P)
     {n : Nat} {W : WorldT n} {h : Heap} {extra : List Tm} (hw : WorldAdm W) (hh : HeapOk n W h)
     (he : argMeaning G P n W extra) (hvals : CallArguments.Values extra) :
-    Safe (meaning G A) n W h (CallArguments.restArray extra) := by
-  unfold RestArray at hr
-  split at hr
-  · rename_i f S hA
-    obtain ⟨rfl, hS⟩ := hr
-    unfold RestStore at hS
-    split at hS
-    · rename_i T hP
-      have hpos : ∀ i B, positionFam (tupleFams (meaning G) T) i = some B → Adm B := by
-        intro i B hB
-        rw [PositiveNormalization.positionFam_tupleFams] at hB
-        obtain ⟨b, -, rfl⟩ := Option.map_eq_some_iff.mp hB
-        exact meaning_adm G b
-      have hfits : ∀ j (hj : j ≤ n) (U : WorldT j), WExt (trunc j hj W) U →
-          ArgumentContracts.Fits (tupleFams (meaning G) T) j U extra := fun j hj U hx =>
-        (ArgumentContracts.fits_adm hpos).transfer ((mixed_pack_args hP).mp he) j hj U hx
-      apply bind_list [(meaning G S, .arrLit extra)] (by simp [meaning_adm])
-        (fun args => .makeAt .absent [CallArguments.arrayStoreField] args)
-        (fun hs => CallArguments.Step.makeArgs hs) hw hh
-      · intro p hp j hj U hx hu heap hok
-        simp only [List.mem_singleton] at hp
-        subst hp
-        have := RestCalls.argument_alloc_safe hpos hu hok (hfits j hj U hx) hvals
-        apply Safe_mono j _ U heap _ this
-        intro k _ V v hv
-        exact (represents_sem hS k V v).mpr ⟨by simpa [tupleFams] using hv, by simp⟩
-      · intro j hj U hx hu heap args hok hargs
-        have hlen := ArgsT_length hargs
-        apply make_fields_rule (As := [meaning G S]) (by simp [meaning_adm]) j U heap .absent
-          [CallArguments.arrayStoreField] args (by simp) (by simpa using hlen.symm)
-          (by simpa using hlen.symm)
-          (ArgsT_values (by simp [meaning_valOnly]) hargs) hu hok (ArgsT_zip hargs)
-        intro k hk V hy hrec
-        refine (represents_sem hA k V _).mpr ⟨⟨?_, by simp⟩,
-          fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm,
-          ⟨by simpa [ReferenceConjunctions.famsOf] using optT_nil, MethodMembers.methodT_nil _ _ _⟩⟩
-        simpa [ReferenceConjunctions.famsOf] using hrec
-    · exact hS.elim
-  · exact hr.elim
+    Safe (meaning G S) n W h (.arrLit extra) := by
+  unfold RestStore at hS
+  split at hS
+  · rename_i T hP
+    have hpos : ∀ i B, positionFam (tupleFams (meaning G) T) i = some B → Adm B := by
+      intro i B hB
+      rw [PositiveNormalization.positionFam_tupleFams] at hB
+      obtain ⟨b, -, rfl⟩ := Option.map_eq_some_iff.mp hB
+      exact meaning_adm G b
+    have := RestCalls.argument_alloc_safe hpos hw hh ((mixed_pack_args hP).mp he) hvals
+    apply Safe_mono n _ W h _ this
+    intro k _ V v hv
+    exact (represents_sem hS k V v).mpr ⟨by simpa [tupleFams] using hv, by simp⟩
+  · exact hS.elim
 
 /-- The parts a variadic call writes past its fixed actuals fit its rest. With
 a spread among them, the rest is an element rest, each plain part at its
@@ -820,12 +784,12 @@ theorem copy_safe {S E : Fam} (hS : RestCalls.Spreads S E) (hE : Adm E) (hEv : V
       hl
     simpa using this
 
-/-- Variadic code built from a body checked with the rest array in slot 0,
+/-- Variadic code built from a body checked with the rest store in slot 0,
 then the receiver and the fixed parameters, meets its code contract at any
 later world and budget. -/
 theorem restSpec_of_premise {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ : Env} {n : Nat}
     {W : WorldT n} {k : Nat} {b : Tm} {s : Ty ι × List (Ty ι) × Ty ι × Ty ι} {A : Ty ι}
-    (he : EnvOk G Γ ρ n W) (hk : s.2.1.length = k) (harr : RestArray G A s.2.2.1)
+    (he : EnvOk G Γ ρ n W) (hk : s.2.1.length = k) (harr : RestStore G A s.2.2.1)
     (ih : ∀ j U heap env, EnvOk G (A :: s.1 :: s.2.1 ++ Γ) env j U → WorldAdm U →
       HeapOk j U heap → Safe (meaning G s.2.2.2) j U heap (instantiate 0 env b))
     {j : Nat} (hj : j ≤ n) {U : WorldT j} (hx : WExt (trunc j hj W) U) :
@@ -834,7 +798,7 @@ theorem restSpec_of_premise {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ : Env} 
   apply RestCalls.restSpec_of_body (instantiate_scoped ρ he.1 b (k + 2)) (by simpa using hk)
     (meaning_adm G s.1)
     (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q)
-    (meaning_adm G A) (fun j' U' heap extra hu' hh' hext => restArray_safe harr hu' hh' hext)
+    (meaning_adm G A) (fun j' U' heap extra hu' hh' hext => restStore_safe harr hu' hh' hext)
   intro j' hj' U' hx' hu' heap hh' r hr args a hargs harr' _
   have hall : ArgsT ((s.1 :: s.2.1).map (meaning G)) j' U' (r :: args) := ⟨hr, hargs⟩
   have hsc := ArgsT_scoped hall
@@ -847,7 +811,7 @@ theorem restSpec_of_premise {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ : Env} 
   have henv := ((he.transfer j' (by omega) U' hWU).prepend hall).push harr'
   exact ih j' U' heap _ (by simpa [List.append_assoc] using henv) hu' hh'
 
-/-- The pair of a signature and its rest-array type, by index. -/
+/-- The pair of a signature and its rest-store type, by index. -/
 theorem zip_getElem_mem {α β : Type} {L : List α} {As : List β} {i : Nat} (hi : i < L.length)
     (hiA : i < As.length) : (L[i], As[i]) ∈ L.zip As :=
   List.mem_of_getElem? (List.getElem?_zip_eq_some.mpr
@@ -1013,12 +977,13 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   | unionVar : Γ[i]? = some C →
       (∀ a ∈ C, HasTy G (Γ.set i [a]) t A) → HasTy G Γ t A
   /-- **A variadic function.** Each signature `(receiver, fixed, element,
-result)` checks the body with, in slot 0, an array whose type holds any number
-of elements at the element type, then the fixed parameters and the receiver. -/
+result)` checks the body with, in slot 0, a fresh store holding the actuals
+past the fixed ones at the rest's tuple contract, then the fixed parameters
+and the receiver. -/
   | funRest {Γ : List (Ty ι)} {F : Ty ι} {L : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)}
       {As : List (Ty ι)} {n : Nat} {b : Tm} :
       Represents G F (.arrs [] L) → L.length = As.length →
-      (∀ p ∈ L.zip As, p.1.2.1.length = n ∧ RestArray G p.2 p.1.2.2.1) →
+      (∀ p ∈ L.zip As, p.1.2.1.length = n ∧ RestStore G p.2 p.1.2.2.1) →
       (∀ p ∈ L.zip As, HasTy G (p.2 :: p.1.1 :: p.1.2.1 ++ Γ) b p.1.2.2.2) →
       HasTy G Γ (.make (.variadic n b) .nul) F
   /-- **A variadic callable object.** The bag is allocated as a record's is,
@@ -1029,7 +994,7 @@ of elements at the element type, then the fixed parameters and the receiver. -/
       Represents G F (.callable (parts.map fun p => (p.1, p.2.1)) [] [] L) →
       (parts.map Prod.fst).Nodup → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) →
       L.length = As.length →
-      (∀ p ∈ L.zip As, p.1.2.1.length = n ∧ RestArray G p.2 p.1.2.2.1) →
+      (∀ p ∈ L.zip As, p.1.2.1.length = n ∧ RestStore G p.2 p.1.2.2.1) →
       (∀ p ∈ L.zip As, HasTy G (p.2 :: p.1.1 :: p.1.2.1 ++ Γ) b p.1.2.2.2) →
       HasTy G Γ (.makeAt (.variadic n b) (parts.map Prod.fst) (parts.map fun p => p.2.2)) F
   /-- **A copy of a spread.** `[...s]` allocates a fresh store holding the

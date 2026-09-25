@@ -649,16 +649,13 @@ def bindParameters (arity : Nat) (args : List Tm) (recv : Tm) (body : Tm) : Tm :
 /-- The field an array object keeps its store in: `SourceTypes.storeField`. -/
 def arrayStoreField : PropKey := "[]"
 
-/-- A fresh array holding `vs`: a store, then the object holding it. These are
-the same two allocations an array literal takes, performed by ordinary steps. -/
-def restArray (vs : List Tm) : Tm := .makeAt .absent [arrayStoreField] [.arrLit vs]
-
 /-- Variadic dispatch binds the receiver and then the fixed parameters as
-`parameters` does, and the actuals after the fixed ones become the array the
+`parameters` does, and the actuals after the fixed ones become the store the
 body finds in slot 0. Invocation itself still allocates nothing: the yielded
-term does, when it runs. -/
+term does, when it runs. The body wraps the store into an array with the
+prototype it captured, as an array literal is allocated. -/
 def bindRest (fixed : Nat) (args : List Tm) (recv : Tm) (body : Tm) : Tm :=
-  .letE (restArray (args.drop fixed)) (bindArgs 1 (recv :: parameters fixed args) body)
+  .letE (.arrLit (args.drop fixed)) (bindArgs 1 (recv :: parameters fixed args) body)
 
 end CallArguments
 

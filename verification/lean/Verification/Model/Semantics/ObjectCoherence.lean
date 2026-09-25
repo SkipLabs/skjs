@@ -299,7 +299,7 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
     refine ⟨D,.refl D,hh,?_,?_⟩
     · exact CallArguments.invoke_closed (CallArguments.Invoke.variadic (fs := fs) hr hv)
         (by simpa [Scoped] using ht.1.1) ht.1.2.1 ht.1.2.2
-    · simp only [CallArguments.bindRest, CallArguments.restArray, Names, namesArgs_iff,
+    · simp only [CallArguments.bindRest, Names, namesArgs_iff,
         List.mem_singleton, forall_eq]
       exact ⟨fun a hm => ht.2.2.2 a (List.mem_of_mem_drop hm),
         ht.2.1.2.2.bindArgs (fun a hm => (List.mem_cons.mp hm).elim (fun h => h ▸ ht.2.2.1)

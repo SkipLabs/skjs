@@ -4,14 +4,14 @@ import Verification.Model.Semantics.Rules
 # Variadic calls
 
 Variadic code takes a fixed number of parameters and collects every further
-actual into one fresh array. What it promises is `RestSpec`, a code contract;
+actual into one fresh store. What it promises is `RestSpec`, a code contract;
 its signatures are `restsT`, which says only which actual lists a caller may
 write, so the same value may also meet fixed signatures (`Safety`, call
 contracts).
 
-The array is not built by invocation. `CallArguments.bindRest` yields a term
-that allocates it with the ordinary store and allocation steps, so the heap
-changes only as those steps run.
+The store is not built by invocation. `CallArguments.bindRest` yields a term
+that allocates it with the ordinary store step, so the heap changes only as
+that step runs; the body wraps it into an array.
 -/
 namespace Verification.Model.RestCalls
 
@@ -28,7 +28,7 @@ def RestSpec (n : Nat) (Rc : Fam) (Ps : List Fam) (E : ArgFam) (R : Fam) (k : Na
         Safe R j W' h (CallArguments.bindRest n (args ++ extra) r b)
 
 /-- Fixed actuals exactly as many as the parameters bind as themselves; the
-rest are left to the array. -/
+rest are left to the store. -/
 theorem parameters_prefix (args extra : List Tm) :
     CallArguments.parameters args.length (args ++ extra) = args := by
   induction args with
@@ -129,16 +129,16 @@ theorem ctx_bind {A B : Fam} (C : Tm → Tm)
       simpa only [trunc_trunc] using WExt_trunc hj hx
 
 /-- **Creating a variadic value.** Code whose body is safe with any receiver
-in `Rc` (slot 1), any fixed actuals in `Ps` (from slot 2) and any array in `Arr` in slot 0 meets the
+in `Rc` (slot 1), any fixed actuals in `Ps` (from slot 2) and any store in `Arr` in slot 0 meets the
 variadic signature, provided collecting further actuals whose pack is in `E`
-allocates such an array. -/
+allocates such a store. -/
 theorem restSpec_of_body {n : Nat} {Rc : Fam} {Ps : List Fam} {E : ArgFam} {Arr R : Fam} {k : Nat}
     {W : WorldT k} {b : Tm}
     (hscope : Scoped (n + 2) b) (hlen : Ps.length = n) (hRc : Adm Rc)
     (hP : ∀ A ∈ Ps, Adm A) (hArr : Adm Arr)
     (halloc : ∀ j (U : WorldT j) h extra, WorldAdm U → HeapOk j U h →
       E j U extra → CallArguments.Values extra →
-      Safe Arr j U h (CallArguments.restArray extra))
+      Safe Arr j U h (.arrLit extra))
     (hbody : ∀ (j : Nat) (hj : j < k) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
       WorldAdm U → ∀ h, HeapOk j U h → ∀ r, Rc j U r → ∀ args a, ArgsT Ps j U args →
         Arr j U a → isVal a = true → Safe R j U h (subst 0 a (bindArgs 1 (r :: args) b))) :
@@ -163,7 +163,7 @@ theorem restSpec_of_body {n : Nat} {Rc : Fam} {Ps : List Fam} {E : ArgFam} {Arr 
       (hRc.mono p _ _ hUV r (hRc.down_le j p (by omega) U r hr)) args a
       (ArgsT_transfer hP ha p (by omega) _ hUV) (hArr.down p V a harr) hval
 
-/-- **Allocating a rest array.** Actuals meeting a tuple contract at the
+/-- **Allocating a rest store.** Actuals meeting a tuple contract at the
 current level, as a fresh store, meet it as a writable store. The allocation
 step, rather than tuple membership, consumes an approximation level. -/
 theorem argument_alloc_safe {T : TupleF} (hT : ∀ i A, positionFam T i = some A → Adm A)

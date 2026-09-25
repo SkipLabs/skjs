@@ -374,23 +374,23 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           let eas ← (args.zip p.1).mapM fun (a,D) => recur Γ a D
           coerce G pool (.node ⟨Γ,t,p.2⟩ .construct (ef :: eas)) A
     -- A variadic closure: one body premise per signature, the body's slot 0
-    -- at a pool type that is that signature's rest array.
+    -- at a pool type that is that signature's rest store.
     | .make (.variadic arity b) .nul =>
       return (A :: pool).findSome? fun F => do
         let [.arrs [] L] := expand G F | none
         if !L.all (fun p => p.2.1.length == arity) then none else do
-        let arrays ← L.mapM fun p => pool.find? fun R => decide (RestArray G R p.2.2.1)
+        let arrays ← L.mapM fun p => pool.find? fun R => decide (RestStore G R p.2.2.1)
         let ps ← (L.zip arrays).mapM fun (p, R) => recur (R :: p.1 :: p.2.1 ++ Γ) b p.2.2.2
         coerce G pool (.node ⟨Γ,t,F⟩ (.funRest arrays) ps) A
     -- A variadic callable object: the bag's initializers, then one body per
-    -- signature with its rest array in slot 0.
+    -- signature with its rest store in slot 0.
     | .makeAt (.variadic arity b) ns inits =>
       return (A :: pool).findSome? fun F => do
         let [.callable P [] [] L] := expand G F | none
         if !L.all (fun p => p.2.1.length == arity) then none else do
         if P.map Prod.fst != ns || inits.length != ns.length then none else do
         let eas ← (inits.zip (P.map Prod.snd)).mapM fun (a,D) => recur Γ a D
-        let arrays ← L.mapM fun p => pool.find? fun R => decide (RestArray G R p.2.2.1)
+        let arrays ← L.mapM fun p => pool.find? fun R => decide (RestStore G R p.2.2.1)
         let ps ← (L.zip arrays).mapM fun (p, R) => recur (R :: p.1 :: p.2.1 ++ Γ) b p.2.2.2
         coerce G pool (.node ⟨Γ,t,F⟩ (.makeCallableRest arrays) (eas ++ ps)) A
     | .makeAt (.closure arity b) ns inits =>

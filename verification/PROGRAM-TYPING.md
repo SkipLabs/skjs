@@ -176,18 +176,19 @@ fresh store's contracts need (`arr_alloc_rule_below`, `pack_alloc_safe`).
 
 So one value may meet fixed and variadic signatures at once, and a graph call
 clause carries both: `arrs L S`, `callable P Ps L S`. Write
-$\operatorname{Array}_G(R,P)$ when $R$ is an object whose store field holds the
-store $P$'s one tuple contract describes, writable since the array is fresh
-(`RestArray`, `RestStore`), and $\operatorname{Spreads}_G(S,E)$ when $S$ is a
+$\operatorname{Store}_G(Q,P)$ when $Q$ is the store $P$'s one tuple contract
+describes, writable since the store is fresh (`RestStore`), and $\operatorname{Spreads}_G(S,E)$ when $S$ is a
 store contract every position of which is within $E$, with $\mathsf{undefined}$
 in $E$ if the store may have a hole — at an optional position or among its rest
 (`SpreadsInto`). Creation checks the body once per variadic signature, with the
-rest array in slot 0, the receiver in slot 1, then the fixed parameters
-(`funRest`; `makeCallableRest` adds a field bag as `makeCallable` does):
+rest store in slot 0, the receiver in slot 1, then the fixed parameters
+(`funRest`; `makeCallableRest` adds a field bag as `makeCallable` does). The
+body's first step wraps the store into the array the rest parameter names, an
+ordinary allocation the extractor emits:
 
 $$
-\frac{\forall(\vec A,P,B)\in S.\;|\vec A|=k\quad\operatorname{Array}_G(R_{\vec A,P,B},P)
-      \quad\Gamma,\vec x{:}\vec A,r{:}R_{\vec A,P,B}\vdash_G t:B}
+\frac{\forall(\vec A,P,B)\in S.\;|\vec A|=k\quad\operatorname{Store}_G(Q_{\vec A,P,B},P)
+      \quad\Gamma,\vec x{:}\vec A,r{:}Q_{\vec A,P,B}\vdash_G t:B}
      {\Gamma\vdash_G \lambda\vec x,\ldots r.\,t:\textstyle\bigwedge_{(\vec A,P,B)\in S}(\vec A,\ldots P\to B)}
 $$
 
@@ -217,8 +218,8 @@ $$
 The first case is `rest_call_safe`: the actuals collected at $E$ form a list
 the element rest admits (`restElem_args`). The second is `pack_call_safe`: the
 actuals at the positions form a list $\tau$ admits (`restParts_pack`). The
-rest array is allocated from those actuals at the current level; the
-allocation step consumes the level (`restArray_safe`,
+rest store is allocated from those actuals at the current level; the
+allocation step consumes the level (`restStore_safe`,
 `RestCalls.argument_alloc_safe`).
 
 A spread is read by the call once every earlier actual is a value, the store's
@@ -2353,15 +2354,20 @@ inference variable. The world's store contract is invariant. The direct
 comparison currently requires identical element types; it never derives array
 covariance from an upper bound on `E`.
 
-The allocation premise of rest introduction is proved for arbitrary admissible
-value families, not just ground graph labels:
+The allocation premises of rest introduction are proved for arbitrary
+admissible value families, not just ground graph labels: invocation collects
+the store, and the body's first step wraps it (`wrapStore`):
 
 $$
 \frac{\forall a\in\bar a.\;a:\llbracket E\rrbracket_\eta}
- {\mathsf{restArray}(\bar a):\mathsf{Array}(\llbracket E\rrbracket_\eta)}.
+ {[\bar a]:\mathsf{Store}(\llbracket E\rrbracket_\eta)}
+\qquad
+\frac{s:\mathsf{Store}(\llbracket E\rrbracket_\eta)}
+ {\mathsf{makeAt}\;[\mathsf{store}]\;[s]:\mathsf{Array}(\llbracket E\rrbracket_\eta)}.
 $$
 
-`GenericCertificate.array_collect_safe` supplies the indexed, heap-safe form.
+`GenericCertificate.store_collect_safe` and `array_wrap_safe` supply the
+indexed, heap-safe forms.
 Together with a universal body derivation it yields:
 
 $$
@@ -2370,14 +2376,16 @@ $$
   \vdash b:R_\eta}
  {\forall\eta\models\Delta.\quad
   \mathsf{RestSpec}(|\bar P|,\bar P_\eta,E_\eta,R_\eta,n,W,
-    \mathsf{instantiate}(|\bar P|+1,\rho,b))}.
+    \mathsf{instantiate}(|\bar P|+2,\rho,\mathsf{wrapStore}(b)))}.
 $$
 
 The same captured environment and world occur at every assignment.
 `rest_invocation_of_inputs` proves this step; `ClosureCertificate.check_safe`
 uses it for both generic declarations and local quantified closures.
 `restsT_of_restSpec` then supplies the common behavioral promise. Rest binding
-uses slot zero and the receiver slot one; fixed inputs and captures follow. Parameter defaults retain
+puts the store in slot zero and the receiver in slot one; fixed inputs and
+captures follow. After the wrap, the checked body sees the array in slot zero
+and the store, which it never reads, in slot one. Parameter defaults retain
 their universal initialization obligations.
 
 A direct call through a variadic callback uses a finite-arity consequence:

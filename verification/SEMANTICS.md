@@ -29,8 +29,9 @@ $$v ::= \mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}\m
 where $c ::= \mathsf{absent}\mid\mathsf{closure}(m,t)\mid\mathsf{variadic}(m,t)\mid\mathsf{bound}(f,r,\vec p)$ is a separate invocation
 descriptor, the first two with a declared parameter count `m`. A closure body is
 under `m + 1` binders: the receiver of the call in slot 0, then its parameters.
-A variadic body has its rest array in slot 0, the receiver in slot 1, then `m`
-parameters. `bound` is the forwarding descriptor `.bind` creates: the target, the
+A variadic body has its rest store in slot 0, the receiver in slot 1, then `m`
+parameters; its first step wraps the store into the array its rest parameter
+names. `bound` is the forwarding descriptor `.bind` creates: the target, the
 receiver and the argument prefix it saved, values that no field holds and no
 write can reach. An argument list is not a value: which lists a rest
 parameter's type admits is a separate contract on lists of values
@@ -252,7 +253,7 @@ All the callable uses build on this equation:
   its shape condition is `Invocable`, even when no assignment satisfies the
   bounds. The executable universal certificate covers both fixed and rest
   descriptors. `T[]` denotes invariant array storage under the same assignment,
-  and each invocation allocates its rest array with that contract.
+  and each invocation allocates its rest store with that contract.
 - Contract weakening follows `Promise.weaken`: admit fewer argument lists
   and weaken the result. Fixed-to-variadic coverage is not generally valid
   from a fixed contract alone, since it promises nothing about longer lists.
@@ -291,9 +292,10 @@ Ordinary code uses `parameters n args` to pad missing positions with
 `bindParameters` substitutes the receiver in slot 0 and these values after it,
 without allocating. Variadic code uses
 `bindRest`: fixed positions are padded in the same way, while `args.drop n`
-becomes a fresh rest array. Padding never enters the rest array. Dispatch
-itself leaves the heap unchanged; the yielded term allocates the array using
-ordinary store and object allocation steps. These operational distinctions
+becomes a fresh rest store. Padding never enters the rest store. Dispatch
+itself leaves the heap unchanged; the yielded term allocates the store with
+the ordinary store step, and the body wraps it into an array with the
+prototype it captured, as an array literal is allocated. These operational distinctions
 are independent of the contracts callers use.
 
 A `bound` descriptor dispatches without binding anything: `Step.callBound`
