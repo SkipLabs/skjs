@@ -1,9 +1,7 @@
-tsc: Version 7.0.2
---- tsc --strict framework-binding-unsound.ts
-exit 0
---- tsc --strict framework-binding-sound.ts
-exit 0
 --- pipeline framework-binding-unsound.ts
 status: verified | phase: check | functions: ["main"]
+--- pipeline crashing-service-sound-binding.ts
+status: unsupported | phase: source | functions: null
+detail: gate: TypeScript reports an error in #Crashing: Property 'input2' does not exist on type 'OneDef'. Did you mean 'input1'? (line 28, col 1)
 --- pipeline framework-binding-sound.ts
 status: verified | phase: check | functions: ["main"]

@@ -1,36 +1,43 @@
 # Evidence: Skip's service binding, unsound and sound
 
-Two one-file programs, each a framework binding and its use:
+One crashing service, on two bindings, checked by the pipeline (parser →
+OCaml → Lean). Each file declares the framework binding and uses it, so the
+binding is part of what is checked.
 
-- [`framework-binding-unsound.ts`](../../examples/framework-binding-unsound.ts):
-  today's binding. `createGraph`'s input type is a type parameter of its own,
-  not tied to the declared inputs. At run time the runtime passes one
-  collection per declared input. The service declares `input1` and reads
-  `input2`, so it crashes at run time (`inputs.input2` is undefined), yet it
-  type-checks.
-- [`framework-binding-sound.ts`](../../examples/framework-binding-sound.ts):
-  the binding made sound. `createGraph` obtains each collection through the
+The crashing service declares `input1` and reads `input2`. At run time the
+runtime passes `createGraph` one collection per declared input, so the read
+finds nothing.
+
+- **Today's binding:**
+  [`framework-binding-unsound.ts`](../../examples/framework-binding-unsound.ts).
+  `createGraph`'s input type is a type parameter of its own, not tied to the
+  declared inputs.
+- **The sound binding:**
+  [`crashing-service-sound-binding.ts`](crashing-service-sound-binding.ts)
+  holds the crashing service, and
+  [`framework-binding-sound.ts`](../../examples/framework-binding-sound.ts)
+  the correct one. `createGraph` obtains each collection through the
   definition that declared it (`inputs.get(definition)`), at that
-  definition's types, so a collection exists only for a declared input.
-
-Both files declare the runtime's interface in the file, so every checker reads
-the same binding.
+  definition's types.
 
 ## Results
 
-`reproduce.sh`, run at the commit that adds this directory, printed
-[`results.txt`](results.txt):
+`reproduce.sh` printed [`results.txt`](results.txt):
 
-| File | `tsc --strict` | pipeline (parser → OCaml → Lean) |
-| ---- | -------------- | -------------------------------- |
-| `framework-binding-unsound.ts` | accepts | verified (`main`) |
-| `framework-binding-sound.ts` | accepts | verified (`main`) |
+| Service | Binding | Pipeline |
+| --- | --- | --- |
+| crashing | today's | **verified** |
+| crashing | sound | **refused** |
+| correct | sound | **verified** |
 
-Under today's binding the crashing service passes both tools. The unsoundness
-is in the binding, which describes the runtime wrongly, not in either
-checker. Under the sound binding the service is verified. Its only way to a
-collection is through a declared definition, so the crashing read cannot be
-written: `tsc` itself refuses it.
+- **Crashing service, today's binding: verified.** The binding describes the
+  runtime wrongly, and relative to that description the service is well
+  typed. The fault is the binding's, not the checker's.
+- **Crashing service, sound binding: refused.** The read names an input the
+  service does not declare ("Property 'input2' does not exist on type
+  'OneDef'"). The refusal comes from the pipeline's front end, before Lean,
+  because the program is ill-typed.
+- **Correct service, sound binding: verified.**
 
 "Verified" means Lean checked the certificate against the calculus, which is
 proved safe. The theorems `verifyJson_safe`, `verifyJson_checked` and
