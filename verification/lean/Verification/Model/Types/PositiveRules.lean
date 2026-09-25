@@ -602,13 +602,29 @@ abbrev CoversViews (R : List ι → List ι → Prop)
     (source : List (List (PropKey × List ι))) (views target : List (PropKey × List ι)) : Prop :=
   ∀ q ∈ target, ∃ p ∈ source.flatten ++ views, p.1 = q.1 ∧ R p.2 q.2
 
-/-- An optional field is covered by a source field of the same key, required
-or optional, whose contract is equivalent to it: where the object has the key,
-its location has that contract. Neither a view nor an optional source field
-covers a required target field, since neither says the key is present. -/
+/-- The source slots that can cover an optional field: invariant fields,
+views, which are readonly, and optional fields with their own flag. -/
+def optionalSources (source : List (List (PropKey × List ι))) (views : List (PropKey × List ι))
+    (optional : List (OptionalField (List ι))) : List (OptionalField (List ι)) :=
+  source.flatten.map (fun p => ⟨p.1, false, p.2⟩) ++ views.map (fun p => ⟨p.1, true, p.2⟩) ++ optional
+
+/-- An optional field is covered by a source slot of the same key: an
+invariant field, a view or an optional field. Its type is within the target's;
+a writable target also needs an equivalent type and a writable slot, so no
+location is retyped. Where the object lacks the key, only an optional source
+field allows it, and that field says the object has no prototype. A key bound
+of the source excluding both the key and the prototype key covers it too: the
+object lacks the key and has no prototype, so every read of it is
+`undefined`. Neither a view nor an optional source field covers a required
+target field, since neither says the key is present. -/
 abbrev CoversOptional (R : List ι → List ι → Prop)
-    (source : List (List (PropKey × List ι))) (optional target : List (PropKey × List ι)) : Prop :=
-  ∀ q ∈ target, ∃ p ∈ source.flatten ++ optional, p.1 = q.1 ∧ R p.2 q.2 ∧ R q.2 p.2
+    (source : List (List (PropKey × List ι))) (views : List (PropKey × List ι))
+    (optional : List (OptionalField (List ι))) (bounds : List (List PropKey))
+    (target : List (OptionalField (List ι))) : Prop :=
+  ∀ q ∈ target, (∃ p ∈ optionalSources source views optional, p.key = q.key ∧
+    (q.readonly = false → p.readonly = false) ∧ R p.type q.type ∧
+    (q.readonly = false → R q.type p.type)) ∨
+    ∃ K ∈ bounds, q.key ∉ K ∧ CallArguments.protoField ∉ K
 
 /-- A method signature covers another of the same key: each fixed target
 signature is covered by a fixed source one taking as many parameters, each at
@@ -815,7 +831,7 @@ def CoversWith (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : 
   | .strLit _, .str => True
   | .strLit a, .strLit b => a = b
   | .refs a bs vs os ms ks, .refs c ds ws ps ns ls => CoversFields R (a :: bs) (c :: ds) ∧
-      CoversViews R (a :: bs) vs ws ∧ CoversOptional R (a :: bs) os ps ∧
+      CoversViews R (a :: bs) vs ws ∧ CoversOptional R (a :: bs) vs os ks ps ∧
       CoversMethods G R known self ((a :: bs).flatten ++ vs) ks ms ns ∧ CoversBounds ks ls
   -- A target index view is within some source index view; a writable
   -- target index needs a writable source index of an equivalent contract, as
@@ -823,7 +839,7 @@ def CoversWith (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : 
   | .dict a bs vs ix os ms ks cx, .dict c ds ws iy ps ns ls cy =>
       CoversFields R (a :: bs) (c :: ds) ∧ CoversViews R (a :: bs) vs ws ∧
       ((∀ y ∈ iy, ∃ x ∈ ix, R x y) ∧ ∀ y ∈ cy, ∃ x ∈ cx, R x y ∧ R y x) ∧
-      CoversOptional R (a :: bs) os ps ∧
+      CoversOptional R (a :: bs) vs os ks ps ∧
       CoversMethods G R known self ((a :: bs).flatten ++ vs) ks ms ns ∧ CoversBounds ks ls
   | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T =>
       arrows L S M ∧
@@ -932,60 +948,71 @@ theorem covers_views_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : L
   · obtain ⟨flds, l, c0, he, hf, hl, hag⟩ := viewT_at (mem_famsOf.mpr ⟨pl, hp, rfl⟩) hv.2
     exact ⟨flds, l, c0, he, hf, hl, fun j hj W' u hu => hr j hj pl y hpy W' u (hag j hj W' u hu)⟩
 
-/-- A covered optional field: where the key is present, the location is the
-one a source field of that key names, whose contract both relations identify
-with the target's. -/
+/-- A covered optional field. Where the key is present, the location is the
+one the source slot names, whose contract is within the target's type, and
+equivalent to it for a writable target; where it is absent, the source slot is
+optional, so the object has no prototype. -/
 theorem covers_optional_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
     {a : List (PropKey × List ι)} {bs : List (List (PropKey × List ι))}
-    {os ps : List (PropKey × List ι)}
-    (hc : CoversOptional R (a :: bs) os ps) (n : Nat)
+    {vs : List (PropKey × List ι)} {os ps : List (OptionalField (List ι))}
+    {ks : List (List PropKey)}
+    (hc : CoversOptional R (a :: bs) vs os ks ps) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j)
     (W : WorldT n) (v : Val)
     (hv : refsT (famsOf (mixedValues G η) a) (bs.map (famsOf (mixedValues G η))) n W v ∧
-      optT (famsOf (mixedValues G η) os) n W v) :
-    optT (famsOf (mixedValues G η) ps) n W v := by
+      viewT (famsOf (mixedValues G η) vs) n W v ∧
+      optT (os.map (·.map (mixedValues G η))) n W v)
+    (hks : ∀ K ∈ ks, ownKeysT K n W v) :
+    optT (ps.map (·.map (mixedValues G η))) n W v := by
   obtain ⟨flds, he, -⟩ := hv.1.1
   subst he
-  refine ⟨flds, rfl, ?_, ?_⟩
-  · -- A target key the object lacks is covered by an optional source key, since
-    -- a required one is present: the source then has no prototype.
-    intro f T hm hl
-    obtain ⟨y, hy, rfl⟩ := mem_famsOf.mp hm
-    obtain ⟨⟨pf, pl⟩, hp, hpf, -, -⟩ := hc (f, y) hy
-    simp only at hpf
-    subst hpf
+  have hsrc : ∀ L ∈ a :: bs, recT (famsOf (mixedValues G η) L) n W (.objAt flds .absent) := by
+    intro L hL
+    rcases List.mem_cons.mp hL with rfl | hL
+    · exact hv.1.1
+    · exact hv.1.2 _ (List.mem_map_of_mem hL)
+  -- What each source slot says of its key: present, with a contract within its
+  -- type (equivalent when writable), or, for an optional slot, possibly absent
+  -- with no prototype.
+  have slot : ∀ p ∈ optionalSources (a :: bs) vs os,
+      (flds.lookup p.key = none → flds.lookup CallArguments.protoField = none) ∧
+      ∀ l, flds.lookup p.key = some l → ∃ c : Ctr n, lookup W l = some c ∧
+        ∀ (j : Nat) (hj : j < n) (W' : WorldT j) (u : Val),
+          SlotContract p.readonly (c j hj W' u) (mixedValues G η p.type j W' u) := by
+    intro p hp
     rcases List.mem_append.mp hp with hp | hp
-    · obtain ⟨L, hL, hpL⟩ := List.mem_flatten.mp hp
-      have hsrc : recT (famsOf (mixedValues G η) L) n W (.objAt flds .absent) := by
-        rcases List.mem_cons.mp hL with rfl | hL
-        · exact hv.1.1
-        · exact hv.1.2 _ (List.mem_map_of_mem hL)
-      obtain ⟨flds', l', c0, he', hf, -, -⟩ := recT_at (mem_famsOf.mpr ⟨pl, hpL, rfl⟩) hsrc
+    rcases List.mem_append.mp hp with hp | hp
+    all_goals try obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
+    · obtain ⟨L, hL, hqL⟩ := List.mem_flatten.mp hq
+      obtain ⟨flds', l, c, he', hf, hw, hag⟩ := recT_at (mem_famsOf.mpr ⟨q.2, hqL, rfl⟩) (hsrc L hL)
       cases he'
-      rw [hl] at hf
+      refine ⟨(fun hl => by simp [hl] at hf), fun l' hl' => ?_⟩
+      rw [hl'] at hf
       cases hf
-    · exact optT_no_proto (mem_famsOf.mpr ⟨pl, hp, rfl⟩) hv.2 hl
-  intro f T hm l hl
-  obtain ⟨y, hy, rfl⟩ := mem_famsOf.mp hm
-  obtain ⟨⟨pf, pl⟩, hp, hpf, hpy, hyp⟩ := hc (f, y) hy
-  simp only at hpf
-  subst hpf
-  have both : ∀ (c0 : Ctr n), (∀ j (hj : j < n) (W' : WorldT j) u, c0 j hj W' u ↔ mixedValues G η pl j W' u) →
-      ∀ j (hj : j < n) (W' : WorldT j) u, c0 j hj W' u ↔ mixedValues G η y j W' u :=
-    fun c0 hag j hj W' u => (hag j hj W' u).trans ⟨hr j hj pl y hpy W' u, hr j hj y pl hyp W' u⟩
-  rcases List.mem_append.mp hp with hp | hp
-  · obtain ⟨L, hL, hpL⟩ := List.mem_flatten.mp hp
-    have hsrc : recT (famsOf (mixedValues G η) L) n W (.objAt flds .absent) := by
-      rcases List.mem_cons.mp hL with rfl | hL
-      · exact hv.1.1
-      · exact hv.1.2 _ (List.mem_map_of_mem hL)
-    obtain ⟨flds', l', c0, he', hf, hw, hag⟩ := recT_at (mem_famsOf.mpr ⟨pl, hpL, rfl⟩) hsrc
-    cases he'
-    rw [hl] at hf
-    cases hf
-    exact ⟨c0, hw, both c0 hag⟩
-  · obtain ⟨c0, hw, hag⟩ := optT_present (mem_famsOf.mpr ⟨pl, hp, rfl⟩) hv.2 hl
-    exact ⟨c0, hw, both c0 hag⟩
+      exact ⟨c, hw, fun j hj W' u => ⟨(hag j hj W' u).mp, fun _ => (hag j hj W' u).mpr⟩⟩
+    · obtain ⟨flds', l, c, he', hf, hw, hag⟩ := viewT_at (mem_famsOf.mpr ⟨q.2, hq, rfl⟩) hv.2.1
+      cases he'
+      refine ⟨(fun hl => by simp [hl] at hf), fun l' hl' => ?_⟩
+      rw [hl'] at hf
+      cases hf
+      exact ⟨c, hw, fun j hj W' u => ⟨hag j hj W' u, fun h => nomatch h⟩⟩
+    · have hm : p.map (mixedValues G η) ∈ os.map (·.map (mixedValues G η)) := List.mem_map_of_mem hp
+      exact ⟨fun hl => optT_no_proto hm hv.2.2 hl, fun l hl => optT_present hm hv.2.2 hl⟩
+  refine ⟨flds, rfl, fun o hm hl => ?_, fun o hm l hl => ?_⟩
+  · obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
+    rcases hc q hq with ⟨p, hp, hk, -, -, -⟩ | ⟨K, hK, -, hpK⟩
+    · exact (slot p hp).1 (by rw [hk]; exact hl)
+    · exact ownKeysT_lookup (hks K hK) hpK
+  · obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
+    rcases hc q hq with ⟨p, hp, hk, hmode, hpq, hqp⟩ | ⟨K, hK, hqK, -⟩
+    · obtain ⟨c, hw, hag⟩ := (slot p hp).2 l (by rw [hk]; exact hl)
+      exact ⟨c, hw, fun j hj W' u => (hag j hj W' u).weaken hmode (hr j hj _ _ hpq W' u)
+        (fun hq' => hr j hj _ _ (hqp hq') W' u)⟩
+    · have := ownKeysT_lookup (hks K hK) hqK
+      simp only [OptionalField.map] at hl
+      rw [this] at hl
+      cases hl
+
 
 /-- A covered method signature holds of the same value read from the same
 host: parameters contravariant, results covariant, the host on both sides. -/
@@ -1367,7 +1394,7 @@ theorem Covers.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R known sel
   · rename_i a bs vs os ms ks c ds ws ps ns ls
     intro hv
     exact ⟨covers_fields_sound hc.1 n hr W v hv.1, covers_views_sound hc.2.1 n hr W v ⟨hv.1, hv.2.1⟩,
-      covers_optional_sound hc.2.2.1 n hr W v ⟨hv.1, hv.2.2.1⟩,
+      covers_optional_sound hc.2.2.1 n hr W v ⟨hv.1, hv.2.1, hv.2.2.1⟩ hv.2.2.2.2,
       covers_methods_sound hc.2.2.2.1 hknown n hr hpa W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2
         hv.2.2.2.1,
       covers_bounds_sound hc.2.2.2.2 hv.2.2.2.2⟩
@@ -1375,7 +1402,9 @@ theorem Covers.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R known sel
     intro hv
     refine ⟨covers_fields_sound hc.1 n hr W v hv.1,
       covers_views_sound hc.2.1 n hr W v ⟨hv.1, hv.2.1⟩, ⟨?_, ?_⟩,
-      covers_optional_sound hc.2.2.2.1 n hr W v ⟨hv.1, hv.2.2.2.1⟩,
+      covers_optional_sound hc.2.2.2.1 n hr W v ⟨hv.1, hv.2.1, hv.2.2.2.1⟩ hv.2.2.2.2.2,
+
+
       covers_methods_sound hc.2.2.2.2.1 hknown n hr hpa W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2.2
         hv.2.2.2.2.1,
       covers_bounds_sound hc.2.2.2.2.2 hv.2.2.2.2.2⟩

@@ -80,9 +80,14 @@ $$
 A `refs` clause
 $\mathsf{Ref}(\varphi_0\land\cdots\land\varphi_m;\,\psi;\,\omega;\,\mu;\,\beta)$ carries
 invariant operands $\varphi_i$, readonly views $\psi$, optional fields
-$\omega$, methods $\mu$ and own-key bounds $\beta$. Write $\ell$ for the object
-$\mathsf{obj}(\mathit{flds},\mathsf{absent})$ and $c_j\equiv T_j$ for "the
-location's contract and $T$ agree below the level". Then
+$\omega$, methods $\mu$ and own-key bounds $\beta$. An optional field
+$\kappa{:}^{r}T$ carries a mode $r\in\{\mathsf{w},\mathsf{ro}\}$: writable or
+readonly. Write $\ell$ for the object
+$\mathsf{obj}(\mathit{flds},\mathsf{absent})$, $c_j\equiv T_j$ for "the
+location's contract and $T$ agree below the level", $c_j\subseteq T_j$ for
+"the contract implies $T$ below the level", and $c_j\sqsubseteq^{r}T_j$ for
+$c_j\equiv T_j$ when $r=\mathsf{w}$ and $c_j\subseteq T_j$ when $r=\mathsf{ro}$
+(`SlotContract`, as a tuple position's mode). Then
 
 $$
 \begin{aligned}
@@ -97,10 +102,10 @@ $$
 \mathsf{view}(\overline{\kappa{:}T})_n(W,v)
 &\iff v=\ell\land\forall(\kappa{:}T).\;\exists l,c.\;
       \mathit{flds}(\kappa)=l\land W(l)=c\land c_j\subseteq T_j,\\
-\mathsf{opt}(\overline{\kappa{:}T})_n(W,v)
-&\iff v=\ell\land\forall(\kappa{:}T).\;
+\mathsf{opt}(\overline{\kappa{:}^{r}T})_n(W,v)
+&\iff v=\ell\land\forall(\kappa{:}^{r}T).\;
       (\mathit{flds}(\kappa)=\varnothing\Rightarrow\mathit{flds}(\mathsf{proto})=\varnothing)\\
-&\qquad\land\forall l.\;\mathit{flds}(\kappa)=l\Rightarrow\exists c.\;W(l)=c\land c_j\equiv T_j.
+&\qquad\land\forall l.\;\mathit{flds}(\kappa)=l\Rightarrow\exists c.\;W(l)=c\land c_j\sqsubseteq^{r}T_j.
 \end{aligned}
 $$
 
@@ -111,8 +116,10 @@ $$
   $\mathsf{Ref}\,\{\mathsf{value}{:}A\}$.
 - **Views** only read: the location's contract implies the view's type, so a
   view grants no write.
-- **Optional fields** constrain a key only where the object has it. A read
-  gives $T$ or undefined, so an object lacking an optional key has no
+- **Optional fields** constrain a key only where the object has it: a
+  writable one as an invariant field does, a readonly one (`readonly k?: T`)
+  as a view does, so a readonly optional field is a view that may be absent.
+  A read gives $T$ or undefined, so an object lacking an optional key has no
   prototype, whose members the read would otherwise reach. No rule writes one,
   since an object's keys are fixed at allocation.
 - **Methods** are host-relative members: read from the object and invoked on
@@ -174,7 +181,7 @@ holding a mutable dictionary add keys at $C$ is a trust assumption
 ([DESIGN.md](DESIGN.md#writable-string-index-signatures)). Index contracts are guarded through the world, so a
 recursive graph can contain `JsonObject = { readonly [key: string]: Json | null }`.
 
-Lean: `refsT`, `viewT`, `optT`, `dictViewT`, `dictCellT`, `ownKeysT` (`Types/Types.lean`), `methodT`,
+Lean: `refsT`, `viewT`, `OptionalField`, `optT`, `SlotContract`, `dictViewT`, `dictCellT`, `ownKeysT` (`Types/Types.lean`), `methodT`,
 `memberT`, `holdsAt`, `onHost` (`Types/MethodMembers.lean`). The heap facts behind invariant
 operands (`adm`, `congr_below`, `operands_agree`, `read_all`, `write_first`,
 `cyclic_inhabited`) are in `Types/ReferenceConjunctions.lean`: a read meets
@@ -408,7 +415,7 @@ $$
 \frac{\begin{array}{c}
 \forall j,\,(\kappa{:}B)\in\varphi'_j.\;\exists(\kappa{:}A)\in\Phi.\;\Delta^{\pm}(A,B)\qquad
 \forall(\kappa{:}B)\in\psi'.\;\exists(\kappa{:}A)\in\Phi\,\psi.\;\Delta(A,B)\\
-\forall(\kappa{:}B)\in\omega'.\;\exists(\kappa{:}A)\in\Phi\,\omega.\;\Delta^{\pm}(A,B)\qquad
+\forall(\kappa{:}^{r'}B)\in\omega'.\;\mathsf{opt}_\Delta(\Phi;\psi;\omega;\beta)(\kappa{:}^{r'}B)\qquad
 \Delta;S\vdash(\Phi\,\psi;\mu)\sqsubseteq_{\mathsf{meth}}\mu'\qquad
 \forall K'\in\beta'.\;\exists K\in\beta.\;K\subseteq K'
 \end{array}}
@@ -416,10 +423,27 @@ $$
 $$
 
 An invariant field needs an equivalent invariant field. A view is met by any
-field whose type is within it. An optional field is met by a required or
-optional field of the same key with an equivalent type; a required field is
-never met by a view or an optional field, since neither says the key is
-present. Fields the target does not name are not compared: records are open.
+field whose type is within it. An optional field is met by a **slot** of the
+source of the same key, an invariant field (mode $\mathsf{w}$), a view (mode
+$\mathsf{ro}$) or an optional field (its own mode), whose type is within the
+target's; a writable target also needs a writable slot of an equivalent type,
+so no location is retyped. Or it is met by an own-key bound excluding both its
+key and the prototype key: the object lacks the key and has no prototype, so a
+read is `undefined`. With $\mathsf{slots}(\Phi;\psi;\omega)$ the source's
+fields at $\mathsf{w}$, views at $\mathsf{ro}$ and optional fields,
+
+$$
+\mathsf{opt}_\Delta(\Phi;\psi;\omega;\beta)(\kappa{:}^{r'}B)\iff
+\bigl(\exists(\kappa{:}^{r}A)\in\mathsf{slots}(\Phi;\psi;\omega).\;
+  (r'=\mathsf{w}\Rightarrow r=\mathsf{w}\land\Delta(B,A))\land\Delta(A,B)\bigr)\lor
+\exists K\in\beta.\;\kappa\notin K\land\mathsf{proto}\notin K.
+$$
+
+Where the object lacks the key, only an optional slot or a bound allows it, and
+each says the object has no prototype. A required field is never met by a view
+or an optional field, since neither says the key is present. Fields the target
+does not name are not compared: records are open, so a record that does not
+name an optional field's key may hold it at any type and does not cover it.
 A bounded target needs a source bound within it (`CoversBounds`). A `dict` target also needs each readonly index contract within some source one, and each writable index contract equivalent to a writable source one, so a mutable dictionary is invariant and a readonly one is never mutable:
 
 $$
@@ -499,7 +523,7 @@ $$
 So `[number, string]` is within `(number | string)[]` and `[number]` within
 `[number, string?]`, while `number[]` is within no bounded tuple.
 
-Lean: `CoversFields`, `CoversViews`, `CoversOptional`, `CoversMethods`, `CoversBounds`,
+Lean: `CoversFields`, `CoversViews`, `optionalSources`, `CoversOptional`, `CoversMethods`, `CoversBounds`,
 `CoversSig`, `CoversByFunction`, `CoversTuple`, `CoversPack`,
 `covers_arguments_sound`.
 

@@ -243,7 +243,7 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
   | .readOptional A U, .readAt f a, [ja] =>
     ja.context = j.context ∧ ja.term = a ∧ Represents G U .undef ∧ j.type = A ++ U ∧
     (match expand G ja.type with
-     | [.refs _ [] _ os _ _] => (f, A) ∈ os
+     | [.refs _ [] _ os _ _] => ∃ o ∈ os, o.key = f ∧ o.type = A
      | _ => False)
   | .readDict A U, .readAt (.str _) a, [ja] =>
     ja.context = j.context ∧ ja.term = a ∧ Represents G U .undef ∧ j.type = A ++ U ∧
@@ -684,7 +684,10 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
     split at hr
     · rename_i fs vs os he
       subst eq
-      exact .readOptional ha he hr hUnd
+      obtain ⟨⟨f', r, A'⟩, ho, hf, hA⟩ := hr
+      simp only at hf hA
+      subst hf hA
+      exact .readOptional ha he ho hUnd
     · contradiction
   · rename_i A U f a ja
     rcases hl with ⟨hΓ, ht, hUnd, eq, hr⟩
@@ -1425,10 +1428,12 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
           show expand G P = [.refs gs [] ws os' ms' ks'] from hP]
         exact ⟨⟨K, hK, hf⟩, hpr, hm⟩⟩
     simpa using ih
-  | @readOptional Γ a Ref fs vs os ms ks f A U ha hr hm hUnd ih =>
+  | @readOptional Γ a Ref fs vs os ms ks f r A U ha hr hm hUnd ih =>
     apply node_complete (G := G) (j := ⟨Γ, .readAt f a, A ++ U⟩)
       (r := .readOptional A U) (js := [⟨Γ,a,Ref⟩])
-      ⟨rfl,rfl,hUnd,rfl,by simp only [show expand G Ref = [.refs fs [] vs os ms ks] from hr]; exact hm⟩
+      ⟨rfl,rfl,hUnd,rfl,by
+        simp only [show expand G Ref = [.refs fs [] vs os ms ks] from hr]; exact ⟨_, hm, rfl, rfl⟩⟩
+
     simpa using ih
   | @readDict Γ a Ref fs vs ix os ms ks cs A U f ha hr hm hUnd ih =>
     apply node_complete (G := G) (j := ⟨Γ, .readAt f a, A ++ U⟩)

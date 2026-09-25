@@ -1004,16 +1004,20 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   bounds is not its own, so the read continues at the prototype, which the
   object holds under the reserved key at `P`; the prototype's field or view
   for the key gives the type. -/
-  | readProto {a : Tm} {Ref P : Ty ι} {fs vs os : List (PropKey × Ty ι)}
+  | readProto {a : Tm} {Ref P : Ty ι} {fs vs : List (PropKey × Ty ι)} {os : List (OptionalField (Ty ι))}
       {ms : List (MethodMembers.Sig (Ty ι))} {ks : List (List PropKey)} {K : List PropKey}
-      {gs ws os' : List (PropKey × Ty ι)} {ms' : List (MethodMembers.Sig (Ty ι))}
+      {gs ws : List (PropKey × Ty ι)} {os' : List (OptionalField (Ty ι))}
+      {ms' : List (MethodMembers.Sig (Ty ι))}
       {ks' : List (List PropKey)} {f : PropKey} {A : Ty ι} :
       HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → K ∈ ks → f ∉ K →
       (CallArguments.protoField, P) ∈ fs ++ vs → Represents G P (.refs gs [] ws os' ms' ks') →
       (f, A) ∈ gs ++ ws → HasTy G Γ (.readAt f a) A
-  /-- An optional field reads at its contract or, where the object lacks the
-  key, as `undefined`. -/
-  | readOptional : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → (f, A) ∈ os →
+  /-- An optional field, writable or readonly, reads at its type or, where the
+  object lacks the key, as `undefined`. -/
+  | readOptional {a : Tm} {Ref : Ty ι} {fs vs : List (PropKey × Ty ι)} {os : List (OptionalField (Ty ι))}
+      {ms : List (MethodMembers.Sig (Ty ι))} {ks : List (List PropKey)} {f : PropKey} {r : Bool}
+      {A U : Ty ι} :
+      HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → ⟨f, r, A⟩ ∈ os →
       Represents G U .undef → HasTy G Γ (.readAt f a) (A ++ U)
   /-- A dictionary read may miss even when every present value has type `A`.
   A string index signature says nothing of a symbol-keyed field, so only a
@@ -1497,7 +1501,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     · obtain ⟨flds', l', c', rfl, hf', hl', hag'⟩ :=
         viewT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) hp.2.1
       exact read_view_rule (meaning_valOnly G A) i V h' l' hV hh' hf' hl' hag'
-  | @readOptional Γ a Ref fs vs os ms ks f A U ha hr hm hUnd ih =>
+  | @readOptional Γ a Ref fs vs os ms ks f r A U ha hr hm hUnd ih =>
     intro n W h ρ he hw hh
     apply bind (Tm.readAt f) Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj V hx hv heap v hok hval ha'
@@ -1506,8 +1510,11 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     apply Safe_mono j (fun k _ X u hu => (meaning_append G A U k X u).mpr
       (hu.elim Or.inl (fun h => Or.inr ((represents_sem hUnd k X u).mpr h)))) V heap _
       (read_optional_rule (meaning_valOnly G A) j V heap hv hok
-        (optT_no_proto (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) hs.2.2.1)
-        (fun l hl => optT_present (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) hs.2.2.1 hl))
+        (optT_no_proto (List.mem_map_of_mem hm) hs.2.2.1)
+        (fun l hl => by
+          obtain ⟨c, hc, hag⟩ := optT_present (List.mem_map_of_mem hm) hs.2.2.1 hl
+          exact ⟨c, hc, fun i hi U u hu => (hag i hi U u).1 hu⟩))
+
   | @readDict Γ a Ref fs vs ix os ms ks cs A U f ha hr hm hUnd ih =>
     intro n W h ρ he hw hh
     apply bind (Tm.readAt (.str f)) Step.readC n W h _ hw hh (ih n W h ρ he hw hh)

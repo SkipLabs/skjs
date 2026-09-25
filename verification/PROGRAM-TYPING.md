@@ -439,17 +439,18 @@ $$
 
 The separate `readDict` rule covers a fixed string field name with the same
 result contract; a symbol key is never read through a dictionary. The `readOptional` rule reads an optional
-field of a record at its contract or `undefined`: where the object has the
-key, its location holds exactly that contract (`optT`), and where it does
-not, the read is `undefined`. With $\mathsf{Ref}(\varphi;\psi;\omega)$ a record's
-invariant fields, readonly views and optional fields, and $\kappa$ a
-[property key](POSITIVE-TYPES.md#records):
+field of a record, writable or readonly, at its type or `undefined`: where the
+object has the key, its location's contract is that type, or implies it for a
+readonly field (`optT`), and where it does not, the read is `undefined`
+(`read_optional_rule`). With $\mathsf{Ref}(\varphi;\psi;\omega)$ a record's
+invariant fields, readonly views and optional fields $\kappa{:}^{r}A$ of mode
+$r$, and $\kappa$ a [property key](POSITIVE-TYPES.md#records):
 
 $$
 \frac{\Gamma\vdash_G a:R\quad R\equiv_G c\quad\mathsf{named}(c)=(\varphi;\psi)\quad(\kappa{:}A)\in\psi}
      {\Gamma\vdash_G a.\kappa:A}
 \qquad
-\frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Ref}(\varphi;\psi;\omega)\quad(\kappa{:}A)\in\omega
+\frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Ref}(\varphi;\psi;\omega)\quad(\kappa{:}^{r}A)\in\omega
       \quad U\equiv_G\mathsf{Undefined}}
      {\Gamma\vdash_G a.\kappa:A\cup U}
 $$
@@ -484,8 +485,10 @@ the named members' `recT` and `viewT` (`namedMembers_sem`); only a key it does
 not name is read through the index, with `undefined`. An optional named field
 ($\omega$ above) holds beside the index as a named field does, so a key the
 dictionary does not name is still read through the index: `process.env` is a
-writable index beside the optional `TZ`. A write to an optional field is not typed, since
-the object's keys are fixed at allocation. `allocDict` establishes a dictionary view for a fresh literal only
+writable index beside the optional `TZ`. A write to an optional field,
+writable or readonly, is not typed, since the object's keys are fixed at
+allocation; a readonly one grants no write in any case. `allocDict`
+establishes a dictionary view for a fresh literal only
 after checking every initializer at $A$ and that the literal names no
 prototype key; each location it allocates holds exactly $A$, so it establishes
 a writable index at $A$ too. The literal may be empty, `{}`:

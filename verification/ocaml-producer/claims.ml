@@ -57,17 +57,21 @@ let encode (proposal : Proposal.t) =
         (if rests = [] then [] else ["variadic",Array rests]))]])]
     | Named (id,args) -> declaration_labels id args
     | Shape shape ->
-      (* An optional field constrains its key only where the object has it,
-         under one invariant contract; a readonly one has no encoding. *)
+      (* An optional field constrains its key only where the object has it:
+         a writable one under one invariant contract, a readonly one as a
+         view there. *)
       let optional,present = List.partition (fun (f:Semantic.field) -> f.optional) shape.fields in
       let writes,reads = List.partition (fun (f:Semantic.field) -> f.write <> None) present in
       let fields writable fs = Array (List.map (fun (f:Semantic.field) ->
         if writable && f.write <> Some f.read then unsupported "asymmetric read/write capability export";
         Array [key_json f.name;labels f.read]) fs) in
-      if List.exists (fun (f:Semantic.field) -> f.write = None) optional then
-        unsupported "a readonly optional field needs a view presence form";
       let optional_list = match optional with
-        | [] -> [] | fs -> ["optional",fields true fs] in
+        | [] -> []
+        | fs -> ["optional",Array (List.map (fun (f:Semantic.field) ->
+            if f.write <> None && f.write <> Some f.read then
+              unsupported "asymmetric read/write capability export";
+            Object ["key",key_json f.name;"readonly",Bool (f.write = None);"type",labels f.read]) fs)] in
+
       let fields,views = fields true writes,fields false reads in
       List.iter (fun (a:Semantic.signature) ->
         if a.quantified <> [] then unsupported "quantified callable claim encoding") shape.calls;

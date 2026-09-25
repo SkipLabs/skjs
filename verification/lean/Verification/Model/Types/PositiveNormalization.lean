@@ -41,7 +41,7 @@ inductive Clause (α : Type) where
   (`methodT`): read from the object and invoked on it. Each key bound lists
   keys the object's own keys are among (`ownKeysT`). -/
   | refs (first : List (PropKey × α)) (rest : List (List (PropKey × α)))
-      (views : List (PropKey × α)) (optional : List (PropKey × α) := [])
+      (views : List (PropKey × α)) (optional : List (OptionalField α) := [])
       (methods : List (MethodMembers.Sig α) := []) (bounds : List (List PropKey) := [])
   /-- A plain object with invariant named fields, readonly named views,
   readonly string-index views (`dictViewT`) and writable string-index
@@ -50,7 +50,7 @@ inductive Clause (α : Type) where
   views, which is what reads use. A first record operand fixes the object
   shape; it may be empty for a pure dictionary. -/
   | dict (first : List (PropKey × α)) (rest : List (List (PropKey × α)))
-      (views : List (PropKey × α)) (indexes : List α) (optional : List (PropKey × α) := [])
+      (views : List (PropKey × α)) (indexes : List α) (optional : List (OptionalField α) := [])
       (methods : List (MethodMembers.Sig α) := []) (bounds : List (List PropKey) := [])
       (cells : List α := [])
   /-- A callable value meeting every fixed signature, `(receiver, parameters,
@@ -111,13 +111,13 @@ def semWithArgs (X : α → Fam) (P : α → ArgFam) : Clause α → Fam
   | .symbol => symbolT
   | .refs a bs vs os ms ks => fun n W v =>
       refsT (famsOf X a) (bs.map (famsOf X)) n W v ∧ viewT (famsOf X vs) n W v ∧
-        optT (famsOf X os) n W v ∧ methodT (ms.map (Member.of X P)) n W v ∧
+        optT (os.map (·.map X)) n W v ∧ methodT (ms.map (Member.of X P)) n W v ∧
         ∀ K ∈ ks, ownKeysT K n W v
   | .dict a bs vs ds os ms ks cs => fun n W v =>
       refsT (famsOf X a) (bs.map (famsOf X)) n W v ∧
       viewT (famsOf X vs) n W v ∧
         ((∀ d ∈ ds, dictViewT (X d) n W v) ∧ ∀ d ∈ cs, dictCellT (X d) n W v) ∧
-        optT (famsOf X os) n W v ∧ methodT (ms.map (Member.of X P)) n W v ∧
+        optT (os.map (·.map X)) n W v ∧ methodT (ms.map (Member.of X P)) n W v ∧
         ∀ K ∈ ks, ownKeysT K n W v
   | .arrs L S => interT (callsT (L.map fun p => (X p.1, p.2.1.map X, X p.2.2)))
       (restsT (S.map fun s => (X s.1, s.2.1.map X, P s.2.2.1, X s.2.2.2)))
@@ -640,9 +640,9 @@ def Clause.map (f : α → β) : Clause α → Clause β
   | .symbol => .symbol
   | .list a bs => .list (a.map f) (bs.map (·.map f))
   | .refs a bs vs os ms ks => .refs (mapFields f a) (bs.map (mapFields f)) (mapFields f vs)
-      (mapFields f os) (ms.map (Sig.map f)) ks
+      (os.map (·.map f)) (ms.map (Sig.map f)) ks
   | .dict a bs vs ds os ms ks cs => .dict (mapFields f a) (bs.map (mapFields f)) (mapFields f vs)
-      (ds.map f) (mapFields f os) (ms.map (Sig.map f)) ks (cs.map f)
+      (ds.map f) (os.map (·.map f)) (ms.map (Sig.map f)) ks (cs.map f)
   | .arrs L S => .arrs (L.map fun q => (f q.1, q.2.1.map f, f q.2.2))
       (S.map fun q => (f q.1, q.2.1.map f, f q.2.2.1, f q.2.2.2))
   | .callable a bs L S => .callable (mapFields f a) (bs.map (mapFields f))
@@ -655,8 +655,9 @@ def Clause.map (f : α → β) : Clause α → Clause β
 /-- Every operand of a clause. -/
 def Clause.operands : Clause α → List α
   | .list a bs => a.operands ++ bs.flatMap Tuple.operands
-  | .refs a bs vs os ms _ => (a ++ bs.flatten ++ vs ++ os).map (·.2) ++ ms.flatMap Sig.operands
-  | .dict a bs vs ds os ms _ cs => (a ++ bs.flatten ++ vs ++ os).map (·.2) ++ ds ++
+  | .refs a bs vs os ms _ => (a ++ bs.flatten ++ vs).map (·.2) ++ os.map (·.type) ++
+      ms.flatMap Sig.operands
+  | .dict a bs vs ds os ms _ cs => (a ++ bs.flatten ++ vs).map (·.2) ++ os.map (·.type) ++ ds ++
       ms.flatMap Sig.operands ++ cs
   | .arrs L S => L.flatMap (fun q => q.1 :: q.2.1 ++ [q.2.2]) ++
       S.flatMap (fun q => q.1 :: q.2.1 ++ [q.2.2.1, q.2.2.2])
@@ -680,7 +681,7 @@ theorem semWithArgs_map (Y : β → Fam) (P : β → ArgFam) (f : α → β) (c 
     semWithArgs Y P (c.map f) = semWithArgs (fun a => Y (f a)) (fun a => P (f a)) c := by
   cases c
   all_goals simp [semWithArgs, Clause.map, mapFields, famsOf_fun, tupleFams, Tuple.map, Function.comp_def,
-    Member.of_map]
+    Member.of_map, OptionalField.map]
 
 
 /-- The same syntactic operand substitution preserves the argument component,
@@ -705,6 +706,12 @@ private theorem mapFields_self {fs : List (PropKey × α)} {f : α → α}
   map_self fun q hq => by
     have := h q.2 (List.mem_map_of_mem hq)
     simp [this]
+
+private theorem opt_self {os : List (OptionalField α)} {f : α → α}
+    (h : ∀ a ∈ os.map (·.type), f a = a) : os.map (·.map f) = os :=
+  map_self fun q hq => by
+    have := h q.type (List.mem_map_of_mem hq)
+    simp [OptionalField.map, this]
 
 private theorem tuple_self {t : Tuple α} {f : α → α} (h : ∀ a ∈ t.operands, f a = a) :
     t.map f = t := by
@@ -748,7 +755,7 @@ theorem map_of_operands {c : Clause α} {f : α → α} (h : ∀ a ∈ c.operand
     refine ⟨mapFields_self fun x hx => h x (.inl (.inl (.inl (.inl hx)))),
       map_self fun fs hfs => mapFields_self fun x hx => h x (.inl (.inl (.inl (.inr ?_)))),
       mapFields_self fun x hx => h x (.inl (.inl (.inr hx))),
-      mapFields_self fun x hx => h x (.inl (.inr hx)),
+      opt_self fun x hx => h x (.inl (.inr hx)),
       map_self fun m hm => sig_self fun x hx => h x (.inr (List.mem_flatMap.mpr ⟨m, hm, hx⟩))⟩
     simp only [List.mem_map, List.mem_flatten] at hx ⊢
     obtain ⟨q, hq, rfl⟩ := hx
@@ -760,7 +767,8 @@ theorem map_of_operands {c : Clause α} {f : α → α} (h : ∀ a ∈ c.operand
       map_self fun fs hfs => mapFields_self fun x hx => h x (.inl (.inl (.inl (.inl (.inl (.inr ?_)))))),
       mapFields_self fun x hx => h x (.inl (.inl (.inl (.inl (.inr hx))))),
       map_self fun x hx => h x (.inl (.inl (.inr hx))),
-      mapFields_self fun x hx => h x (.inl (.inl (.inl (.inr hx)))),
+      opt_self fun x hx => h x (.inl (.inl (.inl (.inr hx)))),
+
       map_self fun m hm => sig_self fun x hx => h x (.inl (.inr (List.mem_flatMap.mpr ⟨m, hm, hx⟩))),
       trivial, map_self fun x hx => h x (.inr hx)⟩
     simp only [List.mem_map, List.mem_flatten] at hx ⊢

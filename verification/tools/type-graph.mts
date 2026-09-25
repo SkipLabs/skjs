@@ -11,6 +11,9 @@ export type Arrow = [receiver: Labels, [domains: Labels[], result: Labels]];
 /** An object contract: one label list per named field, in the order the
  * producer wrote them. Fields a contract does not name are unconstrained. */
 export type Fields = [name: PropertyKey, labels: Labels][];
+/** An optional field: constrains its key only where the object has it; a
+ * readonly one is a view there. */
+export type OptionalField = { key: PropertyKey; readonly: boolean; type: Labels };
 /** A host-relative method member: its key, its fixed signatures
  * `[params, result]` and its variadic ones `[params, [rest, result]]`. */
 export type MethodSig = {
@@ -42,10 +45,11 @@ export type Clause =
   | "symbol"
   /** `views` are read capabilities: a field read at a sound upper bound on
    * its contents, with no write permission through this contract. `optional`
-   * fields constrain their key only where the object has it; `methods` are
+   * fields constrain their key only where the object has it, as a view there
+   * when readonly; `methods` are
    * host-relative members; each of `bounds` lists keys the object's own keys
    * are among. Each is left out when there are none. */
-  | { refs: { first: Fields; rest: Fields[]; views: Fields; optional?: Fields;
+  | { refs: { first: Fields; rest: Fields[]; views: Fields; optional?: OptionalField[];
       methods?: MethodSig[]; bounds?: string[][] } }
   /** Readonly string index views apply to every present own field; each of
    * `cells`, a mutable index signature's, is also one every present own field
@@ -56,7 +60,7 @@ export type Clause =
         rest: Fields[];
         views: Fields;
         indexes: Labels[];
-        optional?: Fields;
+        optional?: OptionalField[];
         methods?: MethodSig[];
         bounds?: string[][];
         cells?: Labels[];
@@ -233,6 +237,17 @@ export function decodeGraph(value: unknown): TypeGraph {
       labels(pair[1]);
     });
   };
+  const optionalFields = (v: unknown) => {
+    const names = new Set<string>();
+    array(v).forEach((f) => {
+      const r = obj(f, ["key", "readonly", "type"]);
+      const name = keyText(key(r.key, "an optional field's key"));
+      if (names.has(name)) throw Error("duplicate optional field in an object contract");
+      names.add(name);
+      if (typeof r.readonly !== "boolean") throw Error("expected an optional field's readonly flag");
+      labels(r.type);
+    });
+  };
   const methods = (v: unknown) =>
     array(v).forEach((m) => {
       const r = obj(m, ["key", "calls", "rests"]);
@@ -296,7 +311,7 @@ export function decodeGraph(value: unknown): TypeGraph {
       fields(r.first);
       array(r.rest).forEach(fields);
       fields(r.views);
-      if ("optional" in r) fields(r.optional);
+      if ("optional" in r) optionalFields(r.optional);
       if ("methods" in r) methods(r.methods);
       if ("bounds" in r) bounds(r.bounds);
     },
@@ -307,7 +322,7 @@ export function decodeGraph(value: unknown): TypeGraph {
       fields(r.views);
       array(r.indexes).forEach(labels);
       if ("cells" in r) array(r.cells).forEach(labels);
-      if ("optional" in r) fields(r.optional);
+      if ("optional" in r) optionalFields(r.optional);
       if ("methods" in r) methods(r.methods);
       if ("bounds" in r) bounds(r.bounds);
     },
@@ -422,6 +437,8 @@ export const keyText = (name: PropertyKey): string =>
   typeof name === "string" ? name : `[symbol ${name.symbol}]`;
 const printFields = (fs: Fields) =>
   `ref{${fs.map(([name, ls]) => `${keyText(name)}: ${printLabels(ls)}`).join(", ")}}`;
+const printOptional = (fs: OptionalField[]) =>
+  `{${fs.map((f) => `${f.readonly ? "readonly " : ""}${keyText(f.key)}?: ${printLabels(f.type)}`).join(", ")}}`;
 function clauseText(c: Clause): string {
   if (typeof c === "string") return STRING_CLAUSE_TEXT[c];
   if ("boolLit" in c) return String(c.boolLit.value);
@@ -436,7 +453,7 @@ function clauseText(c: Clause): string {
     return [
       [c.refs.first, ...c.refs.rest].map(printFields).join(" & "),
       ...(c.refs.views.length ? [`readonly ${printFields(c.refs.views)}`] : []),
-      ...(c.refs.optional?.length ? [`optional ${printFields(c.refs.optional)}`] : []),
+      ...(c.refs.optional?.length ? [`optional ${printOptional(c.refs.optional)}`] : []),
       ...(c.refs.methods?.length ? [`methods ${c.refs.methods.map((m) => keyText(m.key)).join(", ")}`] : []),
       ...(c.refs.bounds ?? []).map((b) => `own keys ${b.map((k) => JSON.stringify(k)).join(" | ")}`),
     ].join(" & ");
@@ -448,7 +465,8 @@ function clauseText(c: Clause): string {
         (index) => `readonly {[key: string]: ${printLabels(index)}}`,
       ),
       ...(c.dict.cells ?? []).map((index) => `{[key: string]: ${printLabels(index)}}`),
-      ...(c.dict.optional?.length ? [`optional ${printFields(c.dict.optional)}`] : []),
+      ...(c.dict.optional?.length ? [`optional ${printOptional(c.dict.optional)}`] : []),
+
       ...(c.dict.methods?.length ? [`methods ${c.dict.methods.map((m) => keyText(m.key)).join(", ")}`] : []),
       ...(c.dict.bounds ?? []).map((b) => `own keys ${b.map((k) => JSON.stringify(k)).join(" | ")}`),
     ].join(" & ");

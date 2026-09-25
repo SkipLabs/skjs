@@ -92,7 +92,7 @@ private structure ObjectParts where
   fields : List (PropKey × List Nat)
   views : List (PropKey × List Nat)
   indexes : List (List Nat)
-  optional : List (PropKey × List Nat)
+  optional : List (OptionalField (List Nat))
   methods : List (MethodMembers.Sig (List Nat))
   bounds : List (List PropKey)
   cells : List (List Nat)
@@ -103,7 +103,7 @@ private def objectParts : Clause (List Nat) → Option ObjectParts
   | _ => none
 
 private def ObjectParts.keys (o : ObjectParts) : List PropKey :=
-  (o.fields ++ o.views ++ o.optional).map Prod.fst ++ o.methods.map (·.key)
+  (o.fields ++ o.views).map Prod.fst ++ o.optional.map (·.key) ++ o.methods.map (·.key)
 
 /-- A source heritage intersection of objects naming disjoint keys has the same
 contract as one record operand with all their members, and the index views of
@@ -457,7 +457,7 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     let mut methods : List (MethodMembers.Sig (List Nat)) := []
     let mut all : Array (PropKey × List Nat × Bool × Bool) := #[]
     -- An optional field constrains its key only where the object has it; a
-    -- readonly one would need a view form of presence, which is not stated.
+    -- readonly one is a view there.
     for f in ← arr term "fields" do
       let name ← PropKey.decode (← field f "name")
       if SourceTypes.reservedKey name then
@@ -478,12 +478,12 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
         methods := methods ++ [⟨name, calls, rests⟩]
       | none =>
         let value ← lowerType ds owner params seen ty
-        if optional && (← bool f "readonly") then
-          throw "a readonly optional field needs a view presence form"
         all := all.push (name, value, ← bool f "readonly", optional)
     let fs := all.filterMap fun (n, v, r, o) => if o then none else some (n, v, r)
-    let optional := all.toList.filterMap fun (n, v, _, o) => if o then some (n, v) else none
-    let names := fs.toList.map (·.1) ++ optional.map (·.1) ++ methods.map (·.key)
+    let optional := all.toList.filterMap fun (n, v, r, o) =>
+      if o then some (⟨n, r, v⟩ : OptionalField (List Nat)) else none
+    let names := fs.toList.map (·.1) ++ optional.map (·.key) ++ methods.map (·.key)
+
     if names.eraseDups.length != names.length then throw "duplicate declaration field"
     -- A string index is a view; a mutable one is also a writable index at
     -- the same contract, as a mutable field is an invariant one.
@@ -746,8 +746,6 @@ private partial def rigidClaim (ds : Array Definition) (owner : Nat) (env : Arra
       throw "a declaration with call or index signatures applied to a type parameter is outside the fragment"
     let fields ← (← arr term "fields").mapM fun f => do
       let optional ← bool f "optional"
-      if optional && (← bool f "readonly") then
-        throw "a readonly optional field needs a view presence form"
       let value ← rigidClaim ds owner env seen (← field f "type")
       let write := if ← bool f "readonly" then claimType [] else value
       return Json.mkObj [("name", ← field f "name"), ("optional", toJson optional),
@@ -872,9 +870,8 @@ private partial def annotationClaim (ds : Array Definition) (known : Visit) (ter
     let fields ← (← arr term "fields").mapM fun f => do
       CellClaims.fieldsExactly f ["name", "optional", "readonly", "type", "span"]
       let optional ← bool f "optional"
-      if optional && (← bool f "readonly") then
-        throw "a readonly optional field needs a view presence form"
       let value ← recur (← field f "type")
+
       let write := if ← bool f "readonly" then claimType [] else value
       return Json.mkObj [("name", ← field f "name"), ("optional", toJson optional),
         ("read", value), ("write", write)]

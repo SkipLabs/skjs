@@ -360,21 +360,49 @@ theorem dictCellT_view {A : Fam} {k : Nat} {W : WorldT k} {v : Val}
   refine ⟨flds, rfl, hp, fun f l hl => ?_⟩
   obtain ⟨c, hc, hag⟩ := hf f l hl
   exact ⟨c, hc, fun j hj W' u hu => (hag j hj W' u).mp hu⟩
+/-- A readable slot provides an upper bound. A writable slot additionally
+accepts every member of that bound, without changing the backing invariant. -/
+def SlotContract (readonly : Bool) (P Q : Prop) : Prop :=
+  (P → Q) ∧ (readonly = false → Q → P)
+
+theorem SlotContract.refl (r : Bool) (P : Prop) : SlotContract r P P :=
+  ⟨id, fun _ => id⟩
+
+theorem SlotContract.congr {r : Bool} {P Q R : Prop}
+    (h : SlotContract r P Q) (e : Q ↔ R) : SlotContract r P R :=
+  ⟨fun p => e.mp (h.1 p), fun hr r => h.2 hr (e.mpr r)⟩
+
+theorem SlotContract.weaken {r s : Bool} {P Q R : Prop}
+    (h : SlotContract r P Q) (mode : s = false → r = false)
+    (read : Q → R) (write : s = false → R → Q) : SlotContract s P R :=
+  ⟨fun p => read (h.1 p), fun hs r => h.2 (mode hs) (write hs r)⟩
+
+/-- **An optional field**: its key, whether it is readonly, and its type. A
+readonly one is a view that may be absent. -/
+structure OptionalField (α : Type) where
+  key : PropKey
+  readonly : Bool
+  type : α
+  deriving Repr, DecidableEq
+
+def OptionalField.map {α β : Type} (f : α → β) (o : OptionalField α) : OptionalField β :=
+  ⟨o.key, o.readonly, f o.type⟩
 
 /-- **Optional fields.** Each named key, when the object has it, stands for a
-location under exactly the stated contract, as a required field's does; an
-absent key is not constrained, and `Step.readMissing` reads it as `undefined`,
-which needs the object to have no prototype: an object lacking one of its
-optional keys has none. Presence is fixed: an object's map of locations is fixed at
-allocation, so whether a key is present never changes. The plain-object
-restriction is the one `recT` uses. -/
-def optT (fs : Fields) : Fam := fun k W v =>
+location whose contract is the stated type, as a required field's is, or, for
+a readonly one, implies it, as a view's does (`SlotContract`); an absent key is
+not constrained, and `Step.readMissing` reads it as `undefined`, which needs
+the object to have no prototype: an object lacking one of its optional keys has
+none. Presence is fixed: an object's map of locations is fixed at allocation,
+so whether a key is present never changes. The plain-object restriction is the
+one `recT` uses. -/
+def optT (fs : List (OptionalField Fam)) : Fam := fun k W v =>
   ∃ flds : List (PropKey × Nat), v = .objAt flds .absent ∧
-    (∀ (f : PropKey) (T : Fam), (f, T) ∈ fs → flds.lookup f = none →
-      flds.lookup CallArguments.protoField = none) ∧
-    ∀ (f : PropKey) (T : Fam), (f, T) ∈ fs → ∀ l, flds.lookup f = some l →
+    (∀ o ∈ fs, flds.lookup o.key = none → flds.lookup CallArguments.protoField = none) ∧
+    ∀ o ∈ fs, ∀ l, flds.lookup o.key = some l →
       ∃ c : Ctr k, lookup W l = some c ∧
-        ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ T j W' u
+        ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val),
+          SlotContract o.readonly (c j hj W' u) (o.type j W' u)
 
 /-- **An own-key bound.** The object's own keys are among `K`. Record types
 are open, so only a bound says a key is absent, and so that a read of it
@@ -411,7 +439,7 @@ theorem ownKeysT_lookup {K : List PropKey} {k : Nat} {W : WorldT k}
 /-- No optional field constrains a plain object. -/
 theorem optT_nil {k} {W : WorldT k} {flds : List (PropKey × Nat)} :
     optT [] k W (.objAt flds .absent) :=
-  ⟨flds, rfl, fun _ _ hm => by simp at hm, fun _ _ hm => by simp at hm⟩
+  ⟨flds, rfl, fun _ hm => by simp at hm, fun _ hm => by simp at hm⟩
 
 /-- A record's object is plain, so no optional field constrains it. -/
 theorem recT_optT_nil {fs : Fields} {k} {W : WorldT k} {v : Val} (h : recT fs k W v) :
@@ -419,43 +447,46 @@ theorem recT_optT_nil {fs : Fields} {k} {W : WorldT k} {v : Val} (h : recT fs k 
   obtain ⟨flds, rfl, -⟩ := h
   exact optT_nil
 
-/-- What optional fields say of one present key. -/
-theorem optT_present {fs : Fields} {f : PropKey} {T : Fam} (hm : (f, T) ∈ fs)
+/-- What optional fields say of one present key: its location's contract is
+the field's type, or implies it for a readonly field. -/
+theorem optT_present {fs : List (OptionalField Fam)} {o : OptionalField Fam} (hm : o ∈ fs)
     {k} {W : WorldT k} {flds : List (PropKey × Nat)} (h : optT fs k W (.objAt flds .absent))
-    {l : Nat} (hl : flds.lookup f = some l) :
+    {l : Nat} (hl : flds.lookup o.key = some l) :
     ∃ c : Ctr k, lookup W l = some c ∧
-      ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ T j W' u := by
+      ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val),
+        SlotContract o.readonly (c j hj W' u) (o.type j W' u) := by
   obtain ⟨flds', heq, -, hf⟩ := h
   cases heq
-  exact hf f T hm l hl
+  exact hf o hm l hl
 
 /-- An object lacking one of its optional keys has no prototype, so the
 key reads `undefined`. -/
-theorem optT_no_proto {fs : Fields} {f : PropKey} {T : Fam} (hm : (f, T) ∈ fs) {k} {W : WorldT k}
+theorem optT_no_proto {fs : List (OptionalField Fam)} {o : OptionalField Fam} (hm : o ∈ fs)
+    {k} {W : WorldT k}
     {flds : List (PropKey × Nat)} (h : optT fs k W (.objAt flds .absent))
-    (hl : flds.lookup f = none) :
+    (hl : flds.lookup o.key = none) :
     flds.lookup CallArguments.protoField = none := by
   obtain ⟨flds', heq, hp, -⟩ := h
   cases heq
-  exact hp f T hm hl
+  exact hp o hm hl
 
-theorem optT_append (A B : Fields) (k : Nat) (W : WorldT k) (v : Val) :
+theorem optT_append (A B : List (OptionalField Fam)) (k : Nat) (W : WorldT k) (v : Val) :
     optT (A ++ B) k W v ↔ optT A k W v ∧ optT B k W v := by
   constructor
   · rintro ⟨flds, rfl, hp, h⟩
-    exact ⟨⟨flds, rfl, fun f T hm => hp f T (List.mem_append_left _ hm),
-        fun f T hm => h f T (List.mem_append_left _ hm)⟩,
-      ⟨flds, rfl, fun f T hm => hp f T (List.mem_append_right _ hm),
-        fun f T hm => h f T (List.mem_append_right _ hm)⟩⟩
+    exact ⟨⟨flds, rfl, fun o hm => hp o (List.mem_append_left _ hm),
+        fun o hm => h o (List.mem_append_left _ hm)⟩,
+      ⟨flds, rfl, fun o hm => hp o (List.mem_append_right _ hm),
+        fun o hm => h o (List.mem_append_right _ hm)⟩⟩
   · rintro ⟨⟨flds, rfl, hpa, ha⟩, ⟨flds', he, hpb, hb⟩⟩
     cases he
-    refine ⟨flds, rfl, fun f T hm => ?_, fun f T hm => ?_⟩
+    refine ⟨flds, rfl, fun o hm => ?_, fun o hm => ?_⟩
     · rcases List.mem_append.mp hm with hm | hm
-      · exact hpa f T hm
-      · exact hpb f T hm
+      · exact hpa o hm
+      · exact hpb o hm
     rcases List.mem_append.mp hm with hm | hm
-    · exact ha f T hm
-    · exact hb f T hm
+    · exact ha o hm
+    · exact hb o hm
 
 /-- A dictionary's read guarantee is guarded by the world level, including
 when its element type is a recursive graph label. -/
@@ -627,23 +658,6 @@ theorem viewT_at {fs : Fields} {f : PropKey} {A : Fam} (hm : (f, A) ∈ fs)
 theorem viewT_append (A B : Fields) (k : Nat) (W : WorldT k) (v : Val) :
     viewT (A ++ B) k W v ↔ viewT A k W v ∧ viewT B k W v := by
   simp only [viewT, List.mem_append, or_imp, forall_and]
-
-/-- A readable slot provides an upper bound. A writable slot additionally
-accepts every member of that bound, without changing the backing invariant. -/
-def SlotContract (readonly : Bool) (P Q : Prop) : Prop :=
-  (P → Q) ∧ (readonly = false → Q → P)
-
-theorem SlotContract.refl (r : Bool) (P : Prop) : SlotContract r P P :=
-  ⟨id, fun _ => id⟩
-
-theorem SlotContract.congr {r : Bool} {P Q R : Prop}
-    (h : SlotContract r P Q) (e : Q ↔ R) : SlotContract r P R :=
-  ⟨fun p => e.mp (h.1 p), fun hr r => h.2 hr (e.mpr r)⟩
-
-theorem SlotContract.weaken {r s : Bool} {P Q R : Prop}
-    (h : SlotContract r P Q) (mode : s = false → r = false)
-    (read : Q → R) (write : s = false → R → Q) : SlotContract s P R :=
-  ⟨fun p => read (h.1 p), fun hs r => h.2 (mode hs) (write hs r)⟩
 
 /-- A tuple contract on an array store: the required positions' families, the
 optional positions', and what any further position must hold, if any may. -/
@@ -871,20 +885,20 @@ theorem viewT_adm (fs : Fields) : Adm (viewT fs) := by
     obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ := h f T hm
     exact ⟨flds, l, c, rfl, hf, WExt_lookup hx hl, hag⟩
 
-theorem optT_adm (fs : Fields) : Adm (optT fs) := by
+theorem optT_adm (fs : List (OptionalField Fam)) : Adm (optT fs) := by
   refine ⟨?_, ?_⟩
   · intro n W v h
     obtain ⟨flds, rfl, hp, hf⟩ := h
     refine ⟨flds, rfl, hp, ?_⟩
-    intro f T hm l hl
-    obtain ⟨c, hc, hag⟩ := hf f T hm l hl
+    intro o hm l hl
+    obtain ⟨c, hc, hag⟩ := hf o hm l hl
     exact ⟨_, lookup_trunc (Nat.le_succ n) W l c hc,
       fun j hj W' u => hag j (by omega) W' u⟩
   · intro n W W' hx v h
     obtain ⟨flds, rfl, hp, hf⟩ := h
     refine ⟨flds, rfl, hp, ?_⟩
-    intro f T hm l hl
-    obtain ⟨c, hc, hag⟩ := hf f T hm l hl
+    intro o hm l hl
+    obtain ⟨c, hc, hag⟩ := hf o hm l hl
     exact ⟨c, WExt_lookup hx hc, hag⟩
 
 theorem dictViewT_adm (A : Fam) : Adm (dictViewT A) := by

@@ -523,7 +523,8 @@ at a time, the blockers behind it are:
 
 | Client part | First refusal when isolated | Later requirement |
 | --- | --- | --- |
-| whole file | `async function main` | `async`/`await`; then `runService`'s readonly optional `externalServices?` |
+| whole file | `async function main` | `async`/`await`, `runService`'s readonly optional `externalServices?` (`sum-run-service.ts`); then a type argument at `EagerCollection`'s `V extends Json` bound, and the options literal leaving out the optional `no_cors`, which needs the literal's exact keys as an own-key bound |
+
 | import graph | `InputDefinition` is a value import (a class) | classes as declarations and values |
 | `Plus`, `Minus`, `AddIndex`, `Add`, `Sub`, `Service` | class declaration | classes, `this`, parameter properties, field initializers, `new` |
 | `AddIndex.mapEntry` reading `Values` | `bigint` in `DepSafe` | `Values` contract, `getUnique` and its exception |
@@ -972,9 +973,12 @@ first milestone, in order of how much each gates:
    Remaining: arrays as iterables (every `mapEntry` returns an array literal as
    `Iterable`), and `Array.prototype.reduce` and `sort` with their callback
    effects and mutation.
-6. **Optional field presence** (done for mutable optional fields: see
-   DESIGN.md's object milestone; `optional-field.ts` verifies). Remaining: a
-   readonly optional field, `in` tests and presence narrowing.
+6. **Optional field presence** (done for mutable and readonly optional
+   fields: see DESIGN.md's object milestone; `optional-field.ts` and
+   `optional-view.ts` verify). Remaining: `in` tests and presence narrowing,
+   and a fresh literal leaving out an optional field, which needs the
+   literal's exact keys as an own-key bound.
+
    `getUnique(_default?: { ifMany?: T })` needs only the done part.
 7. **Exceptions.** `getUnique` throws when a key has several values.
 

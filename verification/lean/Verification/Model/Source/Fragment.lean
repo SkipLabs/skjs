@@ -183,22 +183,23 @@ partial def arrayType (atom : Json) : SourceTypes.Lowering Nat := do
   if (← jStr (← jField atom "a")) == "store" then pure store
   else SourceTypes.use (SourceTypes.arrayClause store readonly)
 
-/-- A record with optional fields: each field, required or optional, under
-the one contract its read and write agree on. An optional field constrains its
-key only where the object has it. Absorption does not apply to these records. -/
+/-- A record with optional fields. A field whose read and write agree is
+writable under that one contract; any other is readonly, read at its read
+type, as in a plain record. A required field is an invariant field or a view;
+an optional one constrains its key only where the object has it, writable or
+readonly. Absorption does not apply to these records. -/
 partial def optionalRecord (atom : Json) : SourceTypes.Lowering Nat := do
   let fields ← CellClaims.decodeFields
     (Json.mkObj [("top",toJson false),("atoms",toJson [atom])])
   let lowered ← fields.mapM fun (name, read, write, optional) => do
     let r ← callableType read
-    let w ← callableType write
-    if r != w then
-      throw (if optional then "a readonly optional field needs a view presence form"
-        else "cell read and write types do not describe the same invariant")
-    return (name, r, optional)
-  let required := lowered.filterMap fun (n, t, o) => if o then none else some (n, t)
-  let optional := lowered.filterMap fun (n, t, o) => if o then some (n, t) else none
-  SourceTypes.use (.refs required [] [] optional)
+    return (name, r, r != (← callableType write), optional)
+  let invariant := lowered.filterMap fun (n, t, ro, o) => if o || ro then none else some (n, t)
+  let views := lowered.filterMap fun (n, t, ro, o) => if !o && ro then some (n, t) else none
+  let optional := lowered.filterMap fun (n, t, ro, o) =>
+    if o then some (⟨n, ro, t⟩ : OptionalField (Ty Nat)) else none
+  SourceTypes.use (.refs invariant [] views optional)
+
 end
 
 /-- Required record fields recursively admit value contracts. Decode both

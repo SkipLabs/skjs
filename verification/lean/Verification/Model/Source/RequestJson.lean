@@ -57,6 +57,7 @@ instance (priority := high) : ToJson Tm := ⟨fun t => closureKinds false (deriv
 instance (priority := high) : FromJson Tm := ⟨fun j => derivedTmFromJson (closureKinds true j)⟩
 deriving instance ToJson, FromJson for PositiveNormalization.Tuple
 deriving instance ToJson, FromJson for MethodMembers.Sig
+deriving instance ToJson, FromJson for OptionalField
 deriving instance ToJson, FromJson for Clause
 
 /-- The clause fields that are left out of JSON when empty: a call clause's
@@ -224,9 +225,10 @@ def clauseTypes : Clause (Ty Nat) → List (Ty Nat)
   | .list a bs => (a :: bs).flatMap fun t => t.required ++ t.optional ++ t.rest.toList
   | .pack a bs => (a :: bs).flatMap fun t => t.required ++ t.optional ++ t.rest.toList
   | .refs A bs vs os ms _ => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd ++
-      os.map Prod.snd ++ ms.flatMap MethodMembers.Sig.operands
+      os.map (·.type) ++ ms.flatMap MethodMembers.Sig.operands
   | .dict A bs vs ds os ms _ cs => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd ++ ds ++
-      os.map Prod.snd ++ ms.flatMap MethodMembers.Sig.operands ++ cs
+      os.map (·.type) ++ ms.flatMap MethodMembers.Sig.operands ++ cs
+
   | .arrs L S => L.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2]) ++
       S.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2.1, p.2.2.2])
   | .callable A bs L S =>

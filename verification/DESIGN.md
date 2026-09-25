@@ -2296,11 +2296,12 @@ already admits.
 
 **Consequence.** Optional fields and index views read an absent key as
 `undefined`, which is true only without a prototype. So `optT` requires no
-prototype field of an object lacking one of its optional keys, and `dictViewT`
-of every object. A required field covering an optional one owes nothing,
-since its key is present. No array is below an index signature, or below an
-optional field its keys lack. The store and prototype keys are reserved: no
-source property or declared member may use them.
+prototype field of an object lacking one of its optional keys, writable or
+readonly, and `dictViewT` of every object. A required field or a view covering
+an optional one owes nothing, since its key is present. No array is below an
+index signature, or below an optional field its keys lack. The store and
+prototype keys are reserved: no source property or declared member may use
+them.
 
 **Trust.** `ArrayProto` states what the library's members do. It is assumed,
 like an imported value's declared type, and each member's specification
@@ -2516,13 +2517,36 @@ presence is separate from the value's type: an absent key and a present key
 holding `undefined` are different objects, both of which the type admits when
 `undefined` is in the contract. `readOptional` reads the field at its contract
 or `undefined`. No rule writes it, since an object's keys are fixed at
-allocation and the model has no key addition. An optional field is covered by
-a source field of the same key, required or optional, with an equivalent
-contract; a record that does not name the key does not cover it, since it may
-hold the key at any type (SKJS agrees; TypeScript does not check this). An
-optional method, `return?(...)`, is an optional field. A readonly optional
-field would need the view form of presence and is refused; an `in` test and
-presence narrowing are not yet in the fragment.
+allocation and the model has no key addition. A record that does not name the
+key does not cover an optional field, since it may hold the key at any type
+(SKJS agrees; TypeScript does not check this). An optional method,
+`return?(...)`, is an optional field. An `in` test and presence narrowing are
+not yet in the fragment.
+
+**Readonly optional fields.** `readonly k?: T` is a view that may be absent
+(`SkipService.externalServices`). It is not a second mechanism: an optional
+field carries a mode, writable or readonly (`OptionalField`), and `optT`
+relates a present key's contract to the type by the mode, as a tuple position
+does (`SlotContract`): equal for a writable one, implying it for a readonly
+one. The no-prototype condition is the same for both, since both read an
+absent key as `undefined`. Hence one read rule (`readOptional`, whose semantic
+premise `read_optional_rule` now asks only that the contract imply the type)
+and one coverage rule: an optional field is met by a source slot of its key,
+an invariant field, a view or an optional field, each with its mode, whose
+type is within the target's, and, for a writable target, by a writable slot of
+an equivalent type, so no location is retyped. A readonly optional field is
+thus covariant and never covers a writable one, as a view is and does not;
+TypeScript agrees, except that it lets a readonly field meet a mutable one,
+which here would let a write through the target retype what the source's
+readers rely on. It is also met by an own-key bound excluding both its key and
+the prototype key, which says the object lacks the key and has no prototype:
+the bound is how a fresh literal that leaves out an optional field, such as
+`runService`'s options without `no_cors`, would establish it, once literal
+types carry their exact keys. A class instance lacking the key does not cover
+it: it has a prototype, where the read would continue (TypeScript accepts
+this). The claim wire needs no new form: a readonly field's write capability
+is empty, and the lowering reads any field whose read and write differ as
+readonly, optional or not, as the plain record lowering does.
 
 The callable forms still to be taken, and their order, are the
 [callable surface](tests/callables/README.md#the-callable-surface). Each should

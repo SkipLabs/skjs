@@ -587,12 +587,12 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     | .readAt f a =>
       let direct := pool.findSome? fun R => do
         -- An invariant field reads at its contract; a view field at its bound;
-        -- an optional field at its contract or `undefined`; a key outside a
+        -- an optional field, writable or readonly, at its type or `undefined`; a key outside a
         -- bound at the prototype's field or view.
         let (B,r) ← match expand G R with
           | [.refs fs [] vs os _ ks] =>
             (fs.lookup f).map (·,Rule.read) <|> (vs.lookup f).map (·,Rule.readView) <|>
-              ((os.lookup f).bind fun E => pool.findSome? fun U =>
+              (((os.find? (·.key == f)).map (·.type)).bind fun E => pool.findSome? fun U =>
                 if expand G U == [.undef] then some (E ++ U, Rule.readOptional E U) else none) <|>
               (if ks.any (fun K => !K.contains f) then
                 ((fs ++ vs).lookup CallArguments.protoField).bind fun P =>

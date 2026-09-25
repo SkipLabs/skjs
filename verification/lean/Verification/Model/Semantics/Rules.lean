@@ -224,21 +224,22 @@ theorem read_dict_rule {flds : List (PropKey × Nat)} {f : String} {A : Fam}
       | succ q => exact Or.inl ⟨rfl, Or.inr rfl⟩
 
 /-- **Read an optional field.** Where the object has the key, its location's
-contract is `A`; where it does not, the read is `undefined`. A lookup cannot
-discard that alternative. The object has no prototype, so a missing key is
-not read elsewhere. -/
+contract implies `A`, as an optional field's (equal to it) or a readonly
+optional field's does; where it does not, the read is `undefined`. A lookup
+cannot discard that alternative. The object has no prototype, so a missing key
+is not read elsewhere. -/
 theorem read_optional_rule {flds : List (PropKey × Nat)} {f : PropKey} {A : Fam}
     (hA : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap)
     (hadm : WorldAdm W) (hok : HeapOk n W h)
     (hp : flds.lookup f = none → flds.lookup CallArguments.protoField = none)
     (ho : ∀ l, flds.lookup f = some l → ∃ c : Ctr n, lookup W l = some c ∧
-      ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u ↔ A j U u) :
+      ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u → A j U u) :
     Safe (unionT A undefT) n W h (.readAt f (.objAt flds .absent)) := by
   cases hlook : flds.lookup f with
   | some l =>
     obtain ⟨c, hc, hag⟩ := ho l hlook
     apply Safe_mono n (fun _ _ _ _ ha => Or.inl ha) W h _
-      (read_rule hA n W h l hadm hok hlook hc hag)
+      (read_view_rule hA n W h l hadm hok hlook hc hag)
   | none =>
     cases n with
     | zero => trivial
