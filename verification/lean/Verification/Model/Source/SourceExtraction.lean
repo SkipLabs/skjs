@@ -942,14 +942,16 @@ bag, or an explicit union of cell contracts each naming the field. -/
 private def readCell (G : PositiveGraphs.NormalGraph Nat) (Γ : List (Ty Nat)) (fld : PropKey)
     (a : DirectProof.Plan) : Compiler DirectProof.Plan := do
   match PositiveRules.expand G a.type with
-  | [.refs fs [] vs [] _ ks] =>
+  | [.refs fs [] vs os _ ks] =>
     -- An invariant field reads at its contract; a readonly view at its bound;
-    -- a key a bound of the object does not admit at its prototype's field or view
+    -- an optional field at its type or `undefined` (`readOptional`); a key a
+    -- bound of the object does not admit at its prototype's field or view
     -- (`readProto`), as at the top level.
-    match fs.lookup fld, vs.lookup fld with
-    | some B, _ => pure (DirectProof.node Γ (.readAt fld a.term) B .read [a])
-    | none, some B => pure (DirectProof.node Γ (.readAt fld a.term) B .readView [a])
-    | none, none =>
+    match fs.lookup fld, vs.lookup fld, (os.find? (·.key == fld)).map (·.type) with
+    | some B, _, _ => pure (DirectProof.node Γ (.readAt fld a.term) B .read [a])
+    | none, some B, _ => pure (DirectProof.node Γ (.readAt fld a.term) B .readView [a])
+    | none, none, some E => pure (DirectProof.node Γ (.readAt fld a.term) (E ++ [3]) (.readOptional E [3]) [a])
+    | none, none, none =>
       let inherited : Option (Ty Nat × Ty Nat) := do
         if !ks.any (fun K => !K.admits fld) then none
         let P ← (fs ++ vs).lookup SourceTypes.protoField

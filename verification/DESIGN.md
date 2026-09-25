@@ -2188,6 +2188,61 @@ A class is a value like any other, at its construct signature: `new C(args)`
 nothing distinguishes a prototype member from an own one, and no write reaches
 either.
 
+**Class members.** The instance type (`classInstance`) states each member as
+what it is at run time. `public`, `private` and `protected` are TypeScript's
+alone: the member is an ordinary property, so the type states it as any other
+(a `#x` member is a private slot, not a property, and stays outside). A field
+`f: T`, `f!: T` or `readonly f: T` is a required field or view; `f?: T` an
+optional field, of the exact meaning optional fields have
+([Optional fields](#next-object-milestone)); a parameter property
+`p: T` a field and `p?: T` the optional field `p?: T | undefined`, which is
+what TypeScript declares. Construction then has to make the instance meet
+that type, and Lean checks it does: fields are JavaScript class fields, so a
+field without an initializer holds `undefined` from the instance's creation
+until the constructor assigns it. `f!: T` is TypeScript's unchecked promise
+that the constructor does; here the allocation is checked like any other, so
+the promise holds exactly when the constructor assigns `f` on every path
+(`invalid-class-definite-field.ts`), and `f?: string` left unassigned is
+refused, since it is present at `undefined` (`invalid-class-optional-field.ts`;
+SKJS's own tests write `f?: string | undefined` for this reason). That the key
+is always present does not change the type: TypeScript lets any value with
+the class's shape have it, a literal lacking the key included.
+
+The constructor is lowered as follows. With $\varphi_0$ the entries, in
+member order, of the initialized fields ($f \mapsto e_f$), the methods
+($m \mapsto C.m$), then the parameter properties ($p \mapsto p$), $U$ the fields
+without an initializer and $T_f$ each field's annotation, the constructor
+`constructor(x̄) { s̄ }` is $\mathsf{class}(\vec x).\,\mathcal{C}(\vec s,\varphi_0,\varnothing)$
+where
+
+$$
+\begin{aligned}
+\mathcal{C}(\varepsilon,\varphi,A) &= \mathsf{alloc}(\varphi,\ \overline{f\mapsto\mathsf{undefined}}^{\,f\in U\setminus A})\\
+\mathcal{C}(\texttt{this.}f\texttt{ = }e;\ \vec s,\varphi,A) &= \mathcal{C}(\vec s,\ \varphi,f\mapsto e,\ A\cup\{f\})
+  && f\in U\setminus A\\
+\mathcal{C}(\texttt{if (}c\texttt{) }\{\vec t\}\texttt{ else }\{\vec u\},\varphi,A) &=
+  \beta(\varphi)\,;\ \mathsf{if}\ c\ \mathsf{then}\ \mathcal{C}(\vec t,\varphi',A)\ \mathsf{else}\ \mathcal{C}(\vec u,\varphi',A)
+  && \text{last, assigns a field}\\
+\mathcal{C}(s;\ \vec s,\varphi,A) &= \beta(\varphi)\,;\ s\,;\ \mathcal{C}(\vec s,\varphi',A)
+  && \text{otherwise}
+\end{aligned}
+$$
+
+and `this` occurs in no $e$, $c$ or $s$ (a statement reading `this` could
+observe the instance before it is complete, `class-constructor-reads-this.ts`,
+and a field assignment elsewhere reads it). $\beta(\varphi)$ binds each entry
+$f\mapsto e$ that is not a literal or already bound as
+`const this.f: T_f = e`, in order, a name no source binding can spell, and
+$\varphi'$ reads `this.f` there: every value is evaluated where JavaScript
+evaluates it, initializers first, and a statement between two assignments runs
+between them. Without statements $\mathcal{C}$ is the one allocation of all the
+entries. An arm without `else` is empty. Each arm of the last `if` allocates
+its own instance, so the fields they share are the same expressions reached
+on two paths; the producer claims such an expression once when both paths
+agree on its claim. A constructor's parameters are required or optional (a
+closure's `x?: T`, which binds `T | undefined`); defaults and rests are not yet
+read.
+
 **Initialization order.** A module constant has no value until its
 declaration runs. The initialization unit refuses a call, direct or through
 other module functions, that can read a constant not yet initialized. Module
@@ -2726,7 +2781,9 @@ prototype member's scheme, and the call's claim at the instance is below it
 instance with the saved object as receiver, so a chain such as
 `xs.sort().reduce(f, 0)` is two such calls. No rule is added: the closure
 extraction only proposes the `readProto` node that the graph's local check
-already admits.
+already admits. An optional field read there, `this.tag` in a method of a
+class with `tag?: string`, is likewise the top level's `readOptional`, at the
+field's type or `undefined`.
 
 **Consequence.** Optional fields and index views read an absent key as
 `undefined`, which is true only without a prototype. So `optT` requires no

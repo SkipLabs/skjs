@@ -499,6 +499,12 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
   return { k: "object", fields, stringIndex, calls, span };
 }
 
+/** `public`, `private` and `protected` are TypeScript's alone: at run time
+ * the member is an ordinary property, so a class states it as any other
+ * member. (`#x` names a private slot, not a property: it has no plain name.) */
+export const CLASS_ACCESS: ts.SyntaxKind[] = [ts.SyntaxKind.PublicKeyword, ts.SyntaxKind.PrivateKeyword,
+  ts.SyntaxKind.ProtectedKeyword];
+
 /** A class declaration's instance type: its fields at their annotations and
  * its methods as readonly fields whose receiver is the instance. An instance
  * reaches a method through the prototype; within the fragment nothing tells a
@@ -519,17 +525,18 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
   };
   const only = (member: ts.ClassElement, allowed: ts.SyntaxKind[]) => {
     const modifiers = (member as { modifiers?: readonly Node[] }).modifiers;
-    if (modifiers?.some(m => !allowed.includes(m.kind)))
+    if (modifiers?.some(m => !allowed.includes(m.kind) && !CLASS_ACCESS.includes(m.kind)))
       scope.fail(member, "a class member modifier outside the fragment");
   };
   for (const member of node.members) {
     const memberSpan = spanOf(scope, member);
     if (ts.isPropertyDeclaration(member)) {
       only(member, [ts.SyntaxKind.ReadonlyKeyword]);
-      if (member.postfixToken)
-        scope.fail(member, "an optional or definitely-assigned class field is outside the fragment");
+      // `x?: T` is an optional field. `x!: T` is a required one, whatever
+      // TypeScript was promised: the class value's construction decides
+      // whether every instance holds a `T` there.
       const name = named(member);
-      fields.push({ name, optional: false,
+      fields.push({ name, optional: member.postfixToken?.kind === ts.SyntaxKind.QuestionToken,
         readonly: member.modifiers?.some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword) === true,
         type: typeTerm(scope, member.type, member), span: memberSpan });
     } else if (ts.isMethodDeclaration(member)) {
@@ -544,17 +551,20 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
     } else if (ts.isConstructorDeclaration(member)) {
       // A parameter property is a field the constructor assigns from its
       // parameter. Its visibility is TypeScript's alone; `readonly` is the
-      // field's.
+      // field's. An optional one, `x?: T`, is the optional field
+      // `x?: T | undefined` TypeScript declares: the constructor assigns it on
+      // every call, with the `undefined` an omitted argument binds.
       for (const p of member.parameters) {
         if (!p.modifiers?.length) continue;
-        if (!ts.isIdentifier(p.name) || p.questionToken || p.dotDotDotToken || p.initializer)
-          scope.fail(p, "a parameter property needs a plain required parameter");
+        if (!ts.isIdentifier(p.name) || p.dotDotDotToken || p.initializer)
+          scope.fail(p, "a parameter property needs a plain parameter");
         const name = p.name.text;
         if (names.has(name)) scope.fail(p, "duplicate class member");
         names.add(name);
-        fields.push({ name, optional: false,
+        const type = typeTerm(scope, p.type, p);
+        fields.push({ name, optional: !!p.questionToken,
           readonly: p.modifiers.some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword),
-          type: typeTerm(scope, p.type, p), span: spanOf(scope, p) });
+          type: p.questionToken ? optionalTerm(type, spanOf(scope, p)) : type, span: spanOf(scope, p) });
       }
     } else if (!ts.isSemicolonClassElement(member)) {
       scope.fail(member, "a class member outside the fragment");

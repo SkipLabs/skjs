@@ -39,7 +39,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { Atom } from "./claim.mts";
 import type { DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
-import { bigintText, optionalTerm, restPositions, REST_CONTRACT, typeTerm, type TermScope } from "./type-term.mts";
+import { bigintText, CLASS_ACCESS, optionalTerm, restPositions, REST_CONTRACT, typeTerm, type TermScope } from "./type-term.mts";
 import type {
   Ast,
   BindingAst,
@@ -289,67 +289,136 @@ class Gate {
     this.strict = true;
     try {
       const methods: BindingAst[] = [];
-      const fields: { name: string; e: Expr }[] = [];
+      // The instance's own values, in the order JavaScript evaluates them:
+      // field initializers and methods, parameter properties, then the
+      // constructor's assignments. `bind` is where an evaluated value is
+      // bound before a later constructor statement runs, at its field's type.
+      type Field = { name: string; e: Expr; bind: { pos: Span; type: TypeTerm } | null };
+      const fields: Field[] = [];
       const constructors = node.members.filter(ts.isConstructorDeclaration);
       const constructor = constructors[0];
       if (constructors.length > 1) this.fail(node, "a class has one constructor");
-      // Fields a constructor assigns: the uninitialized ones, each once, as
-      // `this.f = e` statements whose values do not read `this`. The instance
-      // is then complete before anything can observe it.
-      const uninitialized = new Set(node.members.filter(ts.isPropertyDeclaration)
-        .filter((m) => !m.initializer && ts.isIdentifier(m.name))
-        .map((m) => (m.name as Identifier).text));
+      // Fields without an initializer hold `undefined` when the instance is
+      // created (JavaScript's class fields); a constructor may assign each
+      // once, as a `this.f = e` statement of its own block whose value does
+      // not read `this`. Nothing else in the constructor reads `this`, so the
+      // instance is complete before anything can observe it, and it is
+      // allocated with its final values. Whether a field left `undefined`
+      // meets its type (`x!: T` promises TypeScript it does) is Lean's check
+      // of that allocation.
+      const uninitialized = new Map<string, { type: TypeTerm; pos: Span }>();
       const readsThis = (n: Node): boolean =>
         n.kind === ts.SyntaxKind.ThisKeyword ||
         (!ts.isFunctionExpression(n) && !ts.isFunctionDeclaration(n) && !!n.forEachChild((c) => readsThis(c) || undefined));
-      const params = constructor ? constructor.parameters.map((p) => {
-        if (!ts.isIdentifier(p.name) || p.questionToken || p.dotDotDotToken || p.initializer)
-          this.fail(p, "a constructor parameter must be plain and required");
+      // An optional parameter, `x?: T`, binds `T | undefined`, as a closure's.
+      const params = constructor ? constructor.parameters.map((p, i, all) => {
+        if (!ts.isIdentifier(p.name) || p.dotDotDotToken || p.initializer)
+          this.fail(p, "a constructor parameter must be plain, required or optional");
+        if (!p.questionToken && i > firstOptional(all))
+          this.fail(p, "a required parameter cannot follow an optional one");
         if (p.name.text === "undefined") this.fail(p, "shadowing undefined is outside the fragment");
-        return { name: p.name.text, type: this.typeOf(p.type, p), pos: this.span(p.name),
-          property: !!p.modifiers?.length };
+        return { name: p.name.text, pos: this.span(p.name), property: !!p.modifiers?.length, at: this.span(p),
+          type: p.questionToken ? this.optionalTypeOf(p.type, p) : this.typeOf(p.type, p) };
       }) : [];
       for (const member of node.members) {
         if (ts.isSemicolonClassElement(member) || ts.isConstructorDeclaration(member)) continue;
+        if ((member as { modifiers?: readonly Node[] }).modifiers?.some((m) => m.kind !== ts.SyntaxKind.ReadonlyKeyword &&
+            m.kind !== ts.SyntaxKind.AsyncKeyword &&
+            !CLASS_ACCESS.includes(m.kind)))
+          this.fail(member, "a class member modifier outside the fragment");
         if (ts.isPropertyDeclaration(member)) {
           if (!ts.isIdentifier(member.name)) this.fail(member, "a class member needs a plain name");
+          const type = this.typeOf(member.type, member);
           if (member.initializer) {
             if (readsThis(member.initializer)) this.fail(member, "a field initializer that reads `this` is outside the fragment");
-            fields.push({ name: member.name.text, e: this.expr(member.initializer) });
-          }
+            fields.push({ name: member.name.text, e: this.expr(member.initializer),
+              bind: { pos: this.span(member), type } });
+          } else uninitialized.set(member.name.text, { type, pos: this.span(member.name) });
         } else if (ts.isMethodDeclaration(member)) {
           if (!ts.isIdentifier(member.name)) this.fail(member, "a class member needs a plain name");
           methods.push({ name: `${name.text}.${member.name.text}`, namePos: this.span(member.name),
             annot: null, init: this.lambda(member, instance) });
-          fields.push({ name: member.name.text,
+          fields.push({ name: member.name.text, bind: null,
             e: { k: "id", pos: this.span(member.name), name: `${name.text}.${member.name.text}` } });
         } else this.fail(member, "a class member outside the fragment");
       }
-      // Parameter properties, then the constructor's assignments, in order:
-      // after the field initializers, as JavaScript runs them.
       for (const p of params)
-        if (p.property) fields.push({ name: p.name, e: { k: "id", pos: p.pos, name: p.name } });
-      const assigned = new Set<string>();
-      for (const statement of constructor?.body?.statements ?? []) {
+        if (p.property) fields.push({ name: p.name, e: { k: "id", pos: p.pos, name: p.name }, bind: { pos: p.at, type: p.type } });
+      const assignment = (statement: Statement) => {
         const e = ts.isExpressionStatement(statement) ? statement.expression : undefined;
-        const target = e && ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+        return e && ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
           ts.isPropertyAccessExpression(e.left) && e.left.expression.kind === ts.SyntaxKind.ThisKeyword &&
-          ts.isIdentifier(e.left.name) ? e.left.name.text : undefined;
-        if (!e || !ts.isBinaryExpression(e) || target === undefined)
-          this.fail(statement, "a constructor statement other than `this.f = e` is outside the fragment");
-        if (!uninitialized.has(target) || assigned.has(target))
-          this.fail(statement, "a constructor assigns each uninitialized field once");
-        if (readsThis(e.right)) this.fail(statement, "a constructor assignment that reads `this` is outside the fragment");
-        assigned.add(target);
-        fields.push({ name: target, e: this.expr(e.right) });
-      }
-      for (const f of uninitialized)
-        if (!assigned.has(f)) this.fail(node, `field ${f} is never initialized`);
+          ts.isIdentifier(e.left.name) ? { field: e.left.name.text, value: e.right } : undefined;
+      };
+      const assigns = (statement: Statement): boolean => !!assignment(statement) ||
+        (ts.isBlock(statement) && statement.statements.some(assigns)) ||
+        (ts.isIfStatement(statement) && (assigns(statement.thenStatement) ||
+          (!!statement.elseStatement && assigns(statement.elseStatement))));
+      // The constructor's statements from `body` on, then its allocation.
+      // Statements other than field assignments run before the allocation:
+      // the values evaluated before one are bound first, in order, to names
+      // no source binding can spell, so evaluation order is the source's. A
+      // last `if` that assigns fields ends each arm with its own allocation.
+      const construct = (body: readonly Statement[], before: Field[], done: Set<string>): Expr => {
+        const fields = before.map((f) => ({ ...f }));
+        const assigned = new Set(done);
+        const statements: Stmt[] = [];
+        let tail: Expr | null = null;
+        const flush = () => {
+          for (const f of fields) {
+            if (!f.bind || f.e.k === "lit") continue;
+            const hidden = `this.${f.name}`;
+            statements.push({ k: "const", pos: f.bind.pos,
+              bindings: [{ name: hidden, namePos: f.bind.pos, annot: f.bind.type, init: f.e }] });
+            f.e = { k: "id", pos: f.bind.pos, name: hidden };
+            f.bind = null;
+          }
+        };
+        for (const [i, statement] of body.entries()) {
+          const assigning = assignment(statement);
+          if (assigning) {
+            const field = uninitialized.get(assigning.field);
+            if (!field || assigned.has(assigning.field))
+              this.fail(statement, "a constructor assigns each uninitialized field once");
+            if (readsThis(assigning.value))
+              this.fail(statement, "a constructor assignment that reads `this` is outside the fragment");
+            assigned.add(assigning.field);
+            fields.push({ name: assigning.field, e: this.expr(assigning.value),
+              bind: { pos: this.span(statement), type: field.type } });
+            continue;
+          }
+          if (ts.isIfStatement(statement) && assigns(statement) && i === body.length - 1) {
+            if (readsThis(statement.expression))
+              this.fail(statement, "a constructor statement that reads `this` is outside the fragment");
+            const arm = (s: Statement | undefined): Expr => {
+              if (s && !ts.isBlock(s)) this.fail(s, "`else if` and non-block branches are outside the fragment");
+              return construct(s ? s.statements : [], fields, assigned);
+            };
+            flush();
+            tail = { k: "ifBody", pos: this.span(statement), result: instance, cond: this.expr(statement.expression),
+              then: arm(statement.thenStatement), else_: arm(statement.elseStatement) };
+            break;
+          }
+          if (readsThis(statement))
+            this.fail(statement, assigns(statement)
+              ? "a constructor assigns fields in its own block, or in the arms of its last `if`"
+              : "a constructor statement that reads `this` is outside the fragment");
+          flush();
+          statements.push(this.stmt(statement));
+        }
+        if (!tail) {
+          for (const [f, { pos }] of uninitialized)
+            if (!assigned.has(f)) fields.push({ name: f, e: { k: "lit", pos, lit: { a: "undefined" } }, bind: null });
+          tail = { k: "alloc", pos: this.span(name), fields: fields.map(({ name, e }) => ({ name, e })) };
+        }
+        return statements.length === 0 ? tail : this.closureBlock(constructor!, statements,
+          () => this.fail(constructor!, "a constructor does not return"), tail);
+      };
       // The class value is its constructor as construct-only code, which only
       // `new` runs.
       const lambda: Expr = { k: "ctor", pos: this.span(node), lambda: { k: "lambda", pos: this.span(node),
         typeParams: [], receiver: null, params: params.map((p) => ({ name: p.name, type: p.type })),
-        result: instance, body: { k: "alloc", pos: this.span(name), fields } } };
+        result: instance, body: construct(constructor?.body?.statements ?? [], fields, new Set()) } };
       const type: TypeTerm = { k: "constructor", params: params.map((p) => p.type), rest: null, result: instance,
         span: this.span(name) };
       return { k: "const", pos: this.span(node),
@@ -1311,9 +1380,10 @@ class Gate {
     node: ArrowFunction | FunctionExpression | MethodDeclaration,
     instance?: TypeTerm,
   ): Expr {
-    const isAsync = node.modifiers?.length === 1 &&
-      node.modifiers[0]?.kind === ts.SyntaxKind.AsyncKeyword;
-    if (node.modifiers?.length && !isAsync)
+    // A method's accessibility is TypeScript's alone (`CLASS_ACCESS`).
+    const modifiers = (node.modifiers ?? []).filter((m) => !(instance && CLASS_ACCESS.includes(m.kind)));
+    const isAsync = modifiers.length === 1 && modifiers[0]?.kind === ts.SyntaxKind.AsyncKeyword;
+    if (modifiers.length && !isAsync)
       this.fail(node, "expected a closure without modifiers other than `async`");
     const ordinary = !ts.isArrowFunction(node);
     if (!ts.isArrowFunction(node)) {
@@ -1441,7 +1511,7 @@ class Gate {
         return isAsync ? this.asyncCompletion(block, stmts) : stmts;
       };
       const arrow = ts.isArrowFunction(node) ? this.span(node.equalsGreaterThanToken) : null;
-      const keyword = node.modifiers?.[0];
+      const keyword = modifiers[0];
       const lowered = ts.isBlock(body)
         ? this.closureBlock(body, statements(body), result)
         : isAsync && arrow && keyword
@@ -1474,10 +1544,14 @@ class Gate {
     }
   }
 
+  /** A block returning on its terminal arms, or, with `fallThrough`, one
+   * that returns nowhere and continues into that expression: a constructor's
+   * statements before its instance is allocated. */
   private closureBlock(
     at: Node,
     statements: Stmt[],
     result: () => TypeTerm,
+    fallThrough?: Expr,
   ): Expr {
     const hasReturn = (xs: Stmt[]): boolean =>
       xs.some(
@@ -1583,7 +1657,7 @@ class Gate {
       return prefix(stmts.slice(0, -1), tail, true);
     };
 
-    return block(statements);
+    return fallThrough ? prefix(statements, fallThrough) : block(statements);
   }
 
   /* -------------------------------------------------------- statements -- */

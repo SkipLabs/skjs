@@ -302,9 +302,15 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
      constructor's parameters, its instance type, and its methods, each a key
      and the named closure the instance holds under it. *)
   let classes = ref [] in
+  (* A constructor's statements run before its instance is allocated. *)
+  let rec allocated (body:expr) = match body.node with
+    | Alloc fs -> Some fs
+    | LetBody (_,_,_,rest) | SequenceBody (_,rest) | IfBody (_,_,rest,_) -> allocated rest
+    | _ -> None in
   let named_closure n written (init:expr) = match written,init.node with
     | None,Lambda (_,[],ps,_,false,_,_) -> closures := (n,(init.pos,List.map snd ps)) :: !closures
-    | Some _,Ctor {node=Lambda (None,[],ps,[],false,Some instance,{node=Alloc fs;_});_} ->
+    | Some _,Ctor {node=Lambda (None,[],ps,[],false,Some instance,body);_} when allocated body <> None ->
+      let fs = Option.get (allocated body) in
       let methods = List.filter_map (fun (key,(e:expr)) -> match e.node with
         | Id m when List.mem_assoc m !closures -> Some (key,m)
         | _ -> None) fs in
@@ -999,9 +1005,15 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       ignore (statements (extend env name (Value element)) body); env
     | Break | Continue -> env) env ss in
   ignore (statements env0 f.body);
+  (* An expression the lowering reaches on two paths (the fields the arms of a
+     constructor's last `if` share) is claimed once when both claims agree;
+     two different claims at one span stay, and Lean refuses them. *)
+  let seen = Hashtbl.create 64 in
+  let expressions = List.filter (fun x ->
+    not (Hashtbl.mem seen x) && (Hashtbl.add seen x (); true)) (List.rev !expressions) in
   let expressions = List.map (fun (x:expression) -> match List.assoc_opt x.pos !instances with
     | Some instance -> {x with type_=instance}
-    | None -> x) (List.rev !expressions) in
+    | None -> x) expressions in
   {source=f;entries=List.rev !entries;expressions;arrows=List.rev !arrows},!requests
 (* A named closure's claim is fixed where it is created, before the calls that
    offer it more parameters are reached: a first pass finds those offers, and
