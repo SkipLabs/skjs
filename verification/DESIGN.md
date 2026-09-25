@@ -3072,6 +3072,35 @@ readonly fields grant views. This removes the former difference between an
 object used as a receiver and the same object used as an ordinary argument.
 Optional and indexed fields retain their explicit restrictions.
 
+An intersection of such records is lowered by the one meet a declaration's
+intersection gets (`meetLists`, the [`meet` rule](#one-row-per-application)),
+not by a separate conjunction of cells. With $\varphi_i$ the invariant fields
+and $\psi_i$ the readonly fields of the record $R_i$ (read and write equal, or
+write empty; any other field is refused, and so are optional and indexed
+ones),
+
+$$
+\frac{\forall i.\ \llbracket R_i\rrbracket=\mathsf{Ref}(\varphi_i;\psi_i)}
+     {\llbracket R_1\mathbin{\&}\cdots\mathbin{\&}R_n\rrbracket=
+      \mathsf{Ref}(\varphi_1\cdots\varphi_n;\,\psi_1\cdots\psi_n)}\ \textsc{record-meet}
+$$
+
+with each field list sorted and deduplicated, since conjunction is
+commutative and idempotent (`Fragment.cellConjunction`). It is exact:
+$\mathsf{rec}(\varphi\varphi')=\mathsf{rec}\,\varphi\cap\mathsf{rec}\,\varphi'$
+(`recT_append`), and a list of views holds when each view does. So
+`{ readonly value: number } & { readonly tag: "ok" }` is one object read at
+both views (`readonly-intersection.ts`); before, a readonly conjunct was
+refused. A view still grants no write, though TypeScript lets the
+intersection meet a writable record (`invalid-readonly-intersection.ts`).
+
+The literal type `0` denotes both runtime zeros (`SourceTypes.numberLabels`;
+TypeScript types `-0` as `0`). The OCaml producer reads an annotation's `0`
+the same way (`Semantic.number_literal_type`), while a literal *value* keeps
+its own bit pattern; before, it claimed only `+0` and every parameter or
+result annotated with `0` was refused as differing from its annotation
+(`zero-literal-type.ts`, `invalid-zero-literal-type.ts`).
+
 Locally allocated nullable cells and optional checked-closure results exercise
 the extension. External object and callable parameters are assumptions under
 the semantic contracts described above; their annotations do not themselves

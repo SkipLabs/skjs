@@ -134,10 +134,11 @@ them where TypeScript merges them.
   equal to it: `readT A` says the stored contract `I` satisfies `I ≤ A`. Then
   `readT A ∧ readT B = readT (A ∧ B)`, exactly TypeScript's merge, and it is
   right because no write can go through the view. Write-only views are the
-  contravariant mirror. The claim boundary already carries this split, as the
-  read and write types of a cell contract in `CellUnion`; giving it a
-  semantics needs the stored contract to be quantified over, which the world
-  makes available.
+  contravariant mirror. The `refs` clause's views give it that semantics, and
+  a source intersection of records lowers its readonly fields to views of the
+  one object (`record-meet` in
+  [DESIGN.md](DESIGN.md#compositional-unions-at-the-source-boundary)): each
+  view is kept, not merged, which is sound and reads at the first one.
 
 `Object.assign(a, b)` is typed `A & B` and is the everyday producer of
 overlapping keys. The value it builds has `b`'s contract on every shared field,

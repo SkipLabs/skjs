@@ -135,3 +135,10 @@ let rec without_nullish = function
   | Rigid _ as t -> t | Union ts -> List.fold_left union (Atoms []) (List.map without_nullish ts)
   | Meet (t,ts) -> Meet (without_nullish t,ts)
 let number_literal spelling = Atoms [NumLit (Int64.bits_of_float (float_of_string spelling))]
+(* The literal *type* `0` (or `-0`) admits both runtime zeros: TypeScript
+   gives `-0` the type `0`, and strict equality equates them. A literal value
+   keeps its own bit pattern (`number_literal`); only the type names both, as
+   Lean's annotation lowering does (`SourceTypes.numberLabels`). *)
+let number_literal_type spelling =
+  if float_of_string spelling = 0. then ground [NumLit 0L; NumLit (Int64.bits_of_float (-0.))]
+  else number_literal spelling

@@ -4,8 +4,8 @@ How much of what SKJS accepts in its own test suite the pipeline
 (`check.mts`: parser → OCaml producer → Lean search and check) verifies, what
 stops the rest, and where the two disagree because SKJS is wrong.
 
-**571 of 2,676 SKJS-accepted units verify (21.3%); 551 of 2,026 accepted
-functions (27.2%).** 45 of the 377 files with an accepted unit verify entirely.
+**576 of 2,676 SKJS-accepted units verify (21.5%); 556 of 2,026 accepted
+functions (27.4%).** 45 of the 377 files with an accepted unit verify entirely.
 Two families of SKJS-accepted functions that the pipeline reaches and refuses
 are real SKJS unsoundnesses, each with a runtime witness that SKJS accepts and
 node crashes on ([below](#suspected-skjs-unsoundnesses)).
@@ -30,14 +30,14 @@ is not part of `verification/run.sh`.
 
 | Suite | Harness verdict | Files | Units | Accepted | Verified | Accepted functions | Verified functions |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,885 | 2,458 | 469 | 1,863 | 460 |
+| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,885 | 2,458 | 474 | 1,863 | 465 |
 | `tests/callgraph` | no error allowed | 25 | 59 | 59 | 38 | 51 | 37 |
 | `tests/constprop` | no error allowed | 14 | 66 | 66 | 37 | 49 | 30 |
 | `tests/deadcode` | no error allowed | 7 | 27 | 27 | 9 | 16 | 6 |
 | `tests/cfg` | no error allowed | 7 | 22 | 22 | 7 | 21 | 7 |
 | `tests/projects` | expect-error markers, under the project's tsconfig | 24 of 68 | 44 | 34 | 9 | 23 | 9 |
 | `tests/ts-conformance/cases` | lines listed in `reference/*.errors.txt` | 4 | 11 | 10 | 2 | 3 | 2 |
-| **total** | | **480** | **4,114** | **2,676** | **571** | **2,026** | **551** |
+| **total** | | **480** | **4,114** | **2,676** | **576** | **2,026** | **556** |
 
 Excluded (79 files, listed in the JSON with reasons): `ts-conformance/not-supported`
 (31) and `callgraph-unsupported` (4) assert only that SKJS reports errors;
@@ -73,10 +73,10 @@ reason, its feature group, and where it lies: in the unit's own statement
 
 | Phase of first blocker | Units |
 | --- | ---: |
-| verified | 571 |
+| verified | 576 |
 | source (gate) | 1,521 |
 | proposal (producer) | 240 |
-| search (Lean) | 342 (130 of them: "no source functions to verify") |
+| search (Lean) | 337 (130 of them: "no source functions to verify") |
 | error (producer: unbound `__SKJS_show`, `process`) | 2 |
 
 **Caveats on the method.**
@@ -119,7 +119,7 @@ Ordered by value for cost (units per effort, files as a tiebreak):
 | ---: | --- | ---: | ---: | ---: | ---: | --- | --- |
 | 1 | `Array<T>` / `ReadonlyArray<T>` read from `lib.es5.d.ts` | 59 | 34 | 25 | 17 | S | D |
 | 2 | Relational operators `< <= > >=`, `**` | 53 | 37 | 16 | 21 | S | P L |
-| 3 | Producer claim differs from annotation (literal-union parameters, cells) | 17 | 17 | 0 | 6 | S | O |
+| 3 | Producer claim differs from annotation (literal-union parameters, cells) — done | 0 (was 17) | | | | S | O L |
 | 4 | Ambient declarations (`declare function/const/class`) | 89 | 0 | 89 | 34 | M | P D L |
 | 5 | Control-flow forms (`else if`, non-block branches, bare `return`, block closures that fall off the end, dead code) | 72 | 62 | 9 | 21 | M | P L |
 | 6 | `switch` | 44 | 42 | 2 | 14 | M | P L |
@@ -131,10 +131,10 @@ Ordered by value for cost (units per effort, files as a tiebreak):
 | 12 | Destructuring, rest/default parameters | 96 | 90 | 5 | 22 | M | P O L |
 | 13 | Library globals as values (`Array.isArray`, `new Array`, `Symbol()`, `new Error`, `Promise`, `Set`, `Map`, `Date`, `JSON`) | 108 | 94 | 14 | 29 | M | D L |
 | 14 | Reads on unions/primitives (field/index read on non-object, string keys) and value-level `&&`/`||` | 48 + 20 | 63 | 0 | 30 | M | O L |
-| 15 | Equality against string/boolean literal singletons (Lean refuses the source form) | 28 | 28 | 0 | 4 | M | L |
+| 15 | Equality against string/boolean literal singletons (Lean refuses the source form) | 37 | 37 | 0 | 5 | M | L |
 | 16 | Discriminated-union narrowing (producer: "missing field" after a tag test) | 14 | 13 | 0 | 4 | M | O L |
 | 17 | `in` / `instanceof` / `typeof` (expression and type query) | 88 | 81 | 5 | 16 | L | P O L |
-| 18 | Search: no derivation found (mostly flow narrowing; see below) | 101 | 98 | 3 | 44 | L | L O |
+| 18 | Search: no derivation found (mostly flow narrowing; see below) | 104 | 101 | 3 | 44 | L | L O |
 | 19 | Classes: member modifiers, optional/definite fields, parameter properties, inheritance, constructor statements, receivers | 104 | 65 | 39 | 31 | L | P O L |
 | 20 | Generic classes | 45 | 31 | 14 | 21 | L | P O L |
 | 21 | Generics: constraints, explicit type arguments on calls, unions with rigid types, rigid types in graph types, `as const` (6 of 9 "unknown type parameter") | 130 | 109 | 21 | 35 | L | P O L |
@@ -175,13 +175,21 @@ dropped), examples, what the extension needs.
    `constprop/loops.ts#counted`, `complex-expressions.ts#testTernaryWithBinaryOps`.
    Needs: number (and string) comparison typed to `boolean`; `**` as number
    arithmetic. No narrowing involved.
-3. **Claim differs from annotation.** `search: reject: claimed parameter type
-   differs from the source annotation for '_'` (15), `claimed return type
-   differs` (1), `cell read and write types do not describe the same
-   invariant` (1). Literal-union parameters (`x: 0 | 1`) compared with `===`
-   (`equality.ts#litDisjoint`, `local-vs-local-refinement.ts#testVarVsLiteral`,
-   `truthiness-safe/src/conditions.ts#acceptLiteralUnion`). A producer defect:
-   its parameter claim is not the annotation Lean reads. Cheapest group.
+3. **Claim differs from annotation.** Done: all 17 units pass the claim
+   check, 5 verify (`equality.ts#strictInequalityDisjoint`,
+   `#alwaysTrueNumber`, `local-vs-local-refinement.ts#testVarVsLiteral`,
+   `unit.ts#check8`, `type-query-memo-stability.ts#queryCompoundIntersection`).
+   Two causes. The literal type `0` denotes both runtime zeros in Lean's
+   annotation lowering, and the producer claimed only `+0`; it now reads an
+   annotation's `0` as both (every literal-union unit here had a `0`). And
+   Lean's source lowering of a record intersection refused readonly fields
+   (`cell read and write types do not describe the same invariant`); it now
+   lowers them by the declaration meet, as views
+   ([DESIGN.md](../DESIGN.md#compositional-unions-at-the-source-boundary)).
+   The other 12 now stop at their next blocker: 9 at equality between two
+   literal unions (15), 2 at truthiness of a number
+   (`conditions.ts#acceptLiteralUnion`, `#acceptOctalZero`), 1 at narrowing a
+   field by `x === o.v` (`local-vs-local-refinement.ts#testVarVsLocalFieldNarrowsField`, 18).
 4. **Ambient declarations.** `source: only the export and async modifiers are
    admitted on a source function` (48: `declare function`), `an ambient
    declaration other than 'declare const k: unique symbol' is outside the
@@ -249,7 +257,8 @@ dropped), examples, what the extension needs.
     wrappers (`s.length`) and on unions, and `&&`/`||` returning an operand.
 15. **Equality with string/boolean literals.** `search: unsupported source
     expression: equality requires a null, undefined or numeric singleton
-    operand` (28). `equality.ts#classDisjoint`,
+    operand` (37; 9 of them literal-union operands, `x === y` with `x: 0 | 1`,
+    after 3). `equality.ts#classDisjoint`,
     `local-vs-local-refinement.ts#testBothOverlapNarrowsLhs`,
     `unsound-refinement.ts#stableMemberScalar`. A Lean source-form restriction;
     lifting it is the base of 6 (case narrowing), 16 and 17.
@@ -327,7 +336,7 @@ string concatenation (in 18); 15 → 16, 6's case narrowing, 17; 19 + 21 → 20;
 ## Suspected SKJS unsoundnesses
 
 Divergences: SKJS-accepted units the pipeline parses and proposes, and Lean
-then refuses (342 units in `search`). 130 are the "no function" policy, 29
+then refuses (337 units in `search`). 130 are the "no function" policy, 29
 "unions with rigid types", 28 "equality with string literals" and the other
 source-form refusals Lean states explicitly; those are fragment boundaries. The
 rest were read obligation by obligation (group 18 above): all are pipeline
@@ -437,7 +446,7 @@ split by function.
 
 | Task | Scope | Unlocks (units / files) | Likely files | Depends on | Conflicts with |
 | --- | --- | --- | --- | --- | --- |
-| A. Producer claim fix | Literal-union parameter claims under `===` match the annotation; the cell invariant case | 17 / 6 | `proposal.ml`, `claims.ml` | — | — |
+| A. Producer claim fix (done) | Literal type `0` as both zeros in the producer; readonly record intersections lowered as views | 17 / 6 reached, 5 / 4 verified | `semantic.ml`, `source.ml`, `Fragment.lean` | — | — |
 | B. `Array<T>` and lib interfaces | `Array<T>`/`ReadonlyArray<T>` to array types; overloaded lib methods; `Function`, `Record<K,V>` | 78 / 19 | `declaration-graph.mts`, `declaration-types.mts`, `DeclarationGraph.lean` | — | C, K |
 | C. Ambient declarations | `declare function` (with overloads), `declare const/let/class` as typed module assumptions | 89 / 34 (as dependency) | `fragment-parse.mts`, `fragment.mts`, `declaration-graph.mts`, `Source/Fragment.lean`, `SourceExtraction.lean` | — | B, K |
 | D. Numeric operators | `< <= > >=` (number, string), unary `-`/`+`/`~`, `**`, `**=` | 74 / 25 | `fragment-parse.mts`, `Fragment.lean`, `Calculus.lean`, `proposal.ml` | — | E, F (gate and expression lowering) |

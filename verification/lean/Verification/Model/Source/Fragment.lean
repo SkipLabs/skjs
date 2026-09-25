@@ -210,15 +210,30 @@ private def cellContract (atom : Json) : SourceTypes.Lowering CellUnion.Contract
   fields.mapM fun (name, read, write) => do
     return ⟨name, ← callableType read, ← callableType write⟩
 
+/-- Fields in canonical order, each once: conjunction is commutative and
+idempotent, so two spellings of one contract intern as one label. -/
+private def canonicalFields (fs : List (PropKey × Ty Nat)) : List (PropKey × Ty Nat) :=
+  (fs.mergeSort fun a b => CellClaims.beforeFields [a] [b]).eraseDups
+
+/-- One object under every conjunct. Each conjunct is a record with views, as
+a plain record arm is (`CellUnion.lower`): its invariant fields and its
+readonly fields as views. The conjunction is their meet, the one a
+declaration's intersection gets (`PositiveNormalization.meetLists`, DESIGN.md
+`meet`): one record operand holding every conjunct's invariant fields, and
+every conjunct's views. -/
 private def cellConjunction (atom : Json) : SourceTypes.Lowering Nat := do
-  let types ← (← CellClaims.conjuncts atom).mapM fun part => do
+  let clauses ← (← CellClaims.conjuncts atom).mapM fun part => do
     let c ← cellContract part
-    if !CellUnion.invariant c then
+    if !CellUnion.viewed c then
       throw "cell read and write types do not describe the same invariant"
-    return c.map fun f => (f.name, f.read)
-  let first :: rest := (types.mergeSort CellClaims.beforeFields).eraseDups
-    | throw "an empty conjunction is not a contract"
-  SourceTypes.use (.refs first rest [])
+    let fields := (c.filter fun f => !CellUnion.readonly f).map fun f => (f.name, f.read)
+    let views := (c.filter CellUnion.readonly).map fun f => (f.name, f.read)
+    return [(.refs fields [] views : PositiveNormalization.Clause (Ty Nat))]
+  let some last := clauses.getLast? | throw "an empty conjunction is not a contract"
+  match clauses.dropLast.foldr PositiveNormalization.meetLists last with
+  | [.refs fields [] views [] [] []] =>
+    SourceTypes.use (.refs (canonicalFields fields) [] (canonicalFields views))
+  | _ => throw "a record conjunction meets as one record"
 
 /-- A callable bag is one value satisfying both contracts, never a union. -/
 private def callableObject (atom : Json) : SourceTypes.Lowering Nat := do

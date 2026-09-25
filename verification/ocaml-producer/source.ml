@@ -68,7 +68,7 @@ let rec source_type ctx j =
     | "never" -> Atoms [] | name -> unsupported ("atom " ^ name))
   | "literal" -> (match text "name" j with
     | "true" -> Atoms [True] | "false" -> Atoms [False]
-    | "number" -> number_literal (text "text" j)
+    | "number" -> number_literal_type (text "text" j)
     | "string" -> Atoms [StrLit (text "text" j)]
     | name -> unsupported ("literal type " ^ name))
   | "union" ->

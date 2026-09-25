@@ -664,9 +664,10 @@ private def repairedLocal := (extractNormalizedFn SourceTypes.initial localFn
 #guard ok (RequestJson.produceJson (toJson repairedLocal.toRequest) 8 [] []
   repairedLocal.sourceMap (some repairedLocal.searchLabels) repairedLocal.assertions repairedLocal.cuts)
 
--- Conjunction is one row whatever its arity. Reference operands are sorted and
--- deduplicated, so a repeated contract is the plain cell; overload order is
--- kept, so the two spellings of an arrow pair are two rows.
+-- Conjunction is one row whatever its arity. Record conjuncts meet as one
+-- record whose fields are sorted and deduplicated, so a repeated contract is
+-- the plain cell; overload order is kept, so the two spellings of an arrow
+-- pair are two rows.
 private def conjoined (j : Json) (others : List Json) : Json :=
   let atom := ((jArr j "atoms").toOption.getD []).headD .null
   let more := others.map fun o => ((jArr o "atoms").toOption.getD []).headD .null
@@ -684,9 +685,9 @@ private def rowOf (j : Json) : Option (List (Clause (List Nat))) :=
   ((Fragment.translate j).run SourceTypes.initial).toOption.bind fun (A,T) => A.head?.bind fun i => (T[i]?).map RequestJson.Row.union
 #guard rowOf (conjoined cellWire [cellWire,cellWire]) == some [.refs [("value", [1,2])] [] []]
 #guard rowOf (conjoined (cellOf ⟨false,[.boolLit true]⟩) [cellOf ⟨false,[.null]⟩,cellOf ⟨false,[.bool]⟩])
-  == some [.refs [("value", [0])] [[("value",[1])],[("value",[1,2])]] []]
+  == some [.refs [("value", [0]),("value",[1]),("value",[1,2])] [] []]
 #guard rowOf (conjoined (cellOf ⟨false,[.bool]⟩) [cellOf ⟨false,[.null]⟩,cellOf ⟨false,[.boolLit true]⟩])
-  == some [.refs [("value", [0])] [[("value",[1])],[("value",[1,2])]] []]
+  == some [.refs [("value", [0]),("value",[1]),("value",[1,2])] [] []]
 private def trueToNull := arrowOf ⟨false,[.boolLit true]⟩ ⟨false,[.null]⟩
 private def falseToNull := arrowOf ⟨false,[.boolLit false]⟩ ⟨false,[.null]⟩
 #guard rowOf (conjoined trueToNull [falseToNull]) == some [.arrs [([4],[[1]],[0]),([4],[[2]],[0])] []]
