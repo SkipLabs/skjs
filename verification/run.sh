@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Build and exercise the current source adapter, certificate consumer and reports.
-# Usage: verification/run.sh [--build] [--verbose] [--skjs BIN] [--suite stateful-source|all]
+# Usage: verification/run.sh [--build] [--verbose] [--skjs BIN] [--suite ocaml|stateful-source|all]
+#
+# `ocaml` (the default) runs the parser -> OCaml producer -> Lean pipeline and
+# the checks that need no SKJS: the SKJS producer and the suites built on its
+# fixtures are frozen at the tag `skjs-frozen` (DESIGN.md, "SKJS is frozen")
+# and run only with `--suite all` or `stateful-source`.
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -9,7 +14,7 @@ cd "$REPO" || exit 1
 SKJS_BIN="${SKJS_BIN:-target/host/dev/skjs}"
 BUILD=0
 VERBOSE=0
-SUITE=all
+SUITE=ocaml
 while [ $# -gt 0 ]; do
   case "$1" in
     --build) BUILD=1; shift ;;
@@ -20,8 +25,8 @@ while [ $# -gt 0 ]; do
   esac
 done
 case "$SUITE" in
-  stateful-source|all) ;;
-  *) echo "Unknown suite '$SUITE': use stateful-source or all"; exit 2 ;;
+  ocaml|stateful-source|all) ;;
+  *) echo "Unknown suite '$SUITE': use ocaml, stateful-source or all"; exit 2 ;;
 esac
 
 VERIFIER="$REPO/verification/lean/.lake/build/bin/verifier"
@@ -113,8 +118,11 @@ if [ "$BUILD" -eq 1 ]; then
 fi
 
 source "$REPO/verification/skjs.sh"
-# One container for the whole run, started before anything forks.
-skjs_start || echo "warning: no shared container; each check will start its own"
+# One container for the whole run, started before anything forks; the OCaml
+# pipeline needs none.
+if [ "$SUITE" != ocaml ]; then
+  skjs_start || echo "warning: no shared container; each check will start its own"
+fi
 
 # A fixture is a parsed source and the producer's claims for it, under one name.
 # Building one is a precondition rather than a test: with no fixture there is
@@ -161,12 +169,13 @@ typecheck() {
    npx tsc -p ../report-viewer/tsconfig.json)
 }
 
+run_test "Front-end types" typecheck
+run_test "JSON field names agree (TS, Lean, OCaml)" node verification/tests/json-field-names.mts
+run_test "OCaml producer" bash -c 'dune build --root verification/ocaml-producer && dune runtest --root verification/ocaml-producer && node verification/ocaml-producer/test.mts'
+run_test "Rule inventory" node verification/tests/rule-inventory.mts
+run_test "Source boundaries" node verification/tests/unsupported.mts "$VERIFIER"
+
 if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
-  run_test "Front-end types" typecheck
-  run_test "JSON field names agree (TS, Lean, OCaml)" node verification/tests/json-field-names.mts
-  run_test "OCaml producer" bash -c 'dune build --root verification/ocaml-producer && dune runtest --root verification/ocaml-producer && node verification/ocaml-producer/test.mts'
-  run_test "Rule inventory" node verification/tests/rule-inventory.mts
-  run_test "Source boundaries" node verification/tests/unsupported.mts "$VERIFIER"
 
   BASE=verification/tests/stateful-source/basic.ts
   CELL_SOURCE=verification/tests/stateful-source/cells.ts
@@ -492,8 +501,8 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   # verifying. A stale one is ignored by the reader and would go unnoticed here.
   run_test "Kept drafts" node verification/tests/kept-drafts.mts
   run_test "Cell contract export" "$REPO/verification/lean/.lake/build/bin/cell_claim_tests"        "$WORK/cell.claims" "$CELLS"
-  report_tests
 fi
+report_tests
 
 completed=1
 [ "$failed" -eq 0 ]

@@ -1388,6 +1388,16 @@ applies to every measurement made with the producer: a `reject:` means _no
 derivation was found_, not _no derivation exists_, so a rejection is evidence
 about the rules only once the shape needed has been ruled out by hand.
 
+## SKJS is frozen
+
+Past the tag `skjs-frozen`, the parser → OCaml producer → Lean pipeline is the
+one that moves. The SKJS producer, the claims converted from it, the
+TypeScript-checker claims and the suites built on their fixtures stay as they
+were at the tag and are revisited later; `verification/run.sh` runs them only
+with `--suite all`. What changes first is arrays: past the tag an array holds
+`Array.prototype`, and a producer that still builds the old array type is
+refused, since its table reserves no row for `ArrayProto`.
+
 ## Modules and code units
 
 A source file is a module, and the module is the unit of verification. A file
