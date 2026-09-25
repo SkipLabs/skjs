@@ -213,6 +213,8 @@ def translate (names : List String) : Fragment.Expr → M Body
         throw (.refusal pos .schemeIntroduction "a rest closure parameter is outside the rigid checker")
       let inner ← ps.mapM fun (q : String × Json) => do
         return (q.1, ← lower pos .schemeIntroduction (annotationTy names q.2))
+      let some ret := ret
+        | throw (.refusal pos .schemeIntroduction "a closure under a binder needs its result annotation")
       let declared ← lower pos .schemeIntroduction (annotationTy names ret)
       return .lambda pos inner declared (← translate names body)
   | e => throw (.refusal e.span .genericValidation
@@ -545,6 +547,7 @@ private partial def closureProof (c : Ctx) (env : List (String × GenericCertifi
       | none => throw (.refusal pos .schemeIntroduction s!"unbound capture '{name}'")
   | .lambda pos receiver tps ps defaults rest ret body => do
       if receiver.isSome || !tps.isEmpty || !defaults.isEmpty || rest then return none
+      let some ret := ret | return none
       let names := c.parameters.map (·.name)
       let inner ← ps.mapM fun q => do
         return (q.1, ← lower pos .schemeIntroduction (annotationTy names q.2))

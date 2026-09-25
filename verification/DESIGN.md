@@ -171,6 +171,20 @@ not that this translation preserves TypeScript execution. Regression tests pair
 source executions with forged claims and independent certificate consumption to
 exercise that boundary; they are not a semantic-preservation theorem.
 
+A closure's result annotation may likewise be omitted, as TypeScript lets an
+arrow's result be inferred. The closure's type is then only the producer's
+claim at the closure: every arrow it claims has its own body derivation at that
+arrow's parameters and result, which is what the creation rule already
+requires ([source closures](PROGRAM-TYPING.md#source-closures-and-their-annotations)).
+An annotation adds a requirement, the body at the annotated signature, and
+bounds the claimed parameters; omitting it removes that requirement and never
+a check, so the trusted surface is unchanged. The Fragment says which: its
+`result` is the annotation or `null`. A closure whose result the source leaves
+out still needs the annotation where a path takes its result type from the
+source: a block returning from a branch (refused by the parser), a closure
+collecting a rest array, a quantified one and one inside a generic body
+(refused by Lean).
+
 The annotation may be omitted. The candidate contract is then the producer's
 claim at the next statement entry in the same lexical block. That entry belongs
 to this declaration, independently of the order of exported entries or names
@@ -1560,6 +1574,34 @@ instance is the tuple of its further actuals. Two lowerings of one type that dif
 binder rows their schemes use are one type up to renaming (`Sub.table`), which
 is how a producer's claimed type is compared with the annotation's.
 
+**Explicit type arguments.** A method call may state its instance,
+`o.m<A₁,…,Aₖ>(…)`. The arguments are an annotation, so a requirement: the
+call is typed at that instance, even where inference would find another that
+fits. They instantiate the member's binders in order, its own leading, as its
+declaration lists them; binders past them (for a member of `ArrayProto`, the
+element binder `T`, listed last) are fixed by the receiver and actuals as at
+any call. The producer proposes the read's claim at that instance; Lean reads
+the member's scheme row $S$ from the receiver's contract (its own field or
+view, or its prototype's), finds the instance map $\theta$ relating $S$ to
+the read's claimed arrows $M$, checks it (`checkInstArrs`, whose soundness is
+`Inst.mixed_sound`), and requires each explicit argument to mean what
+$\theta$ gives its binder:
+
+$$
+\frac{o:O\quad \mathsf{field}_G(O,m)=S=[\forall\vec p.\Sigma]\quad
+      \mathsf{checkInstArrs}(G,S,M,\theta)=\mathsf{true}\quad
+      \forall i\le k.\;\theta(p_i)\simeq_G A_i}
+     {o.m\langle A_1,\ldots,A_k\rangle(\vec a)\ \text{is called at its stated instance }M}.
+$$
+
+The rule only refuses. Acceptance rests on the read's own `Sub.inst` proof
+and the call's typing, as without type arguments, so safety does not depend on
+it; what it adds is that a stated instance is honoured. A declaration's
+defaults for method binders are not read: binders a shorter list leaves are
+inferred and checked like any call's, where TypeScript would fix them at their
+defaults. Type arguments on a plain call, and on an element call, remain
+outside the fragment.
+
 **Constructors in the calculus.** A function's code says which of
 JavaScript's internal methods it has (`Invoke`: `call` or `construct`), and
 `new` is a term of its own (`construct`). So a class value, construct-only
@@ -2122,7 +2164,8 @@ and soundness needs, one entry per member:
 - *The receiver.* TypeScript leaves `this` implicit. A member declared on
   `ReadonlyArray` takes `this: readonly T[]`; one declared only on `Array`, a
   mutator such as `sort`, takes `this: T[]`, since mutable arrays are
-  invariant. Each member is quantified over `T` and its own binders.
+  invariant. Each member is quantified over its own binders, then `T`, so an
+  explicit type argument list names its own binders first.
 - *Dropped parameters.* `thisArg?: any` is dropped: only calls that omit it
   are admitted, which the real function accepts.
 - *Weakened results.* A result may be stated as a supertype of the declared

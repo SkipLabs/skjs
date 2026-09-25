@@ -260,13 +260,16 @@ and expr_node =
      signature has one position per required element of that tuple. The
      receiver is the `this` annotation of an ordinary function, none for an
      arrow, whose `this` is the enclosing one. *)
-  | Lambda of ty option * quantifier list * (string * ty) list * (int * expr) list * bool * ty * expr
+  (* The result is none where the source states no result annotation: the
+     producer proposes it, and Lean checks the body against that claim. *)
+  | Lambda of ty option * quantifier list * (string * ty) list * (int * expr) list * bool * ty option * expr
   (* The positions of the arguments written with `...`: each stands for the
      elements of its operand, read where it is written. *)
   | Call of expr * expr option * expr list * int list
   (* A call through a property reference: the callee is the read of the
-     method, and the object it is read from is the receiver. *)
-  | Invoke of expr * expr list * int list
+     method, and the object it is read from is the receiver. The types are the
+     explicit type arguments written on the call, if any. *)
+  | Invoke of expr * expr list * int list * ty list
   (* `f.apply(r, list)`: the list's elements, read by index, are the actuals. *)
   | Apply of expr * expr * expr option
   (* A class value: its constructor lambda as construct-only code. *)
@@ -334,7 +337,7 @@ let rec expr binders j =
           | Some d -> Some (i, expr inner d))
           (List.mapi (fun i p -> i,p) parameters),
         rest,
-        source_type inner (field "result" j),
+        optional_type inner (field "result" j),
         expr inner (field "body" j))
   | "ctor" -> Ctor (sub "lambda")
   | "new" -> New (sub "callee",List.map (expr binders) (items "args" j))
@@ -347,7 +350,9 @@ let rec expr binders j =
     let spreads = match List.assoc_opt "spreads" (obj j) with
       | None -> [] | Some s -> List.map (fun n -> int_of_string (match n with
           | Json.Number n -> n | _ -> Json.fail "a spread position is a number")) (list s) in
-    Invoke (sub "callee",List.map (expr binders) (items "args" j),spreads)
+    let type_args = match List.assoc_opt "typeArgs" (obj j) with
+      | None -> [] | Some ts -> List.map (source_type binders) (list ts) in
+    Invoke (sub "callee",List.map (expr binders) (items "args" j),spreads,type_args)
   | "applyWithReceiver" ->
     Apply (sub "callee",sub "receiver",(match field "list" j with Null -> None | l -> Some (expr binders l)))
   | "callWithReceiver" ->

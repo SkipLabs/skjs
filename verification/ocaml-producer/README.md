@@ -100,6 +100,11 @@ language. The boundaries are:
    upper-only candidates intersect primitive bounds when representable. Every
    argument and substituted bound is still validated by Lean. It conservatively joins branches and infers local
    values, object shapes, callback results and calls from explicit signatures.
+   A closure without a result annotation is proposed at its body's widened
+   type. A named closure passed where more parameters are offered is claimed,
+   where it is created, at that signature beside its own; a first pass over
+   the function finds the offers and a second states them. Explicit type
+   arguments fix a call's leading binders before the rest are inferred.
    Expected types guide fresh object/array construction, while the actual
    initializer claims remain separate obligations. Immutable branch refinements
    cannot refine a mutable binding's storage contract. Loops use the incoming

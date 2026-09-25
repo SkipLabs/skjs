@@ -95,7 +95,8 @@ export type Expr =
      around the reference included: the object is saved, the method read from
      it and saved, the arguments evaluated, and the saved method invoked with
      the saved object as its receiver. `callee` is the `read` or `index`. */
-  | { k: "invoke"; pos: Span; callee: Expr; args: Expr[]; spreads?: number[] }
+  /* `typeArgs`, when written, instantiate the method's leading binders. */
+  | { k: "invoke"; pos: Span; callee: Expr; args: Expr[]; spreads?: number[]; typeArgs?: TypeTerm[] }
   /* `f.apply(r, list)`: the target, the receiver and the list are evaluated
      and saved, then the list's length and each indexed element are read in
      order, then the target is invoked with the receiver and those actuals. A
@@ -132,7 +133,9 @@ export type Expr =
          (a module or a "use strict" directive), which the receiver rule
          assumes. */
       receiver: { type: TypeTerm; strict: boolean } | null;
-      result: TypeTerm;
+      /* The result annotation; null where the source states none, and the
+         producer's claim at the closure proposes the result instead. */
+      result: TypeTerm | null;
       body: Expr;
     }
   /* A block-bodied closure, lowered to nested expressions: the calculus has no

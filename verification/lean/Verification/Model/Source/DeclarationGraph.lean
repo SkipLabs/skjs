@@ -890,6 +890,10 @@ private partial def rewrite (ds : Array Definition) (j : Json) : Lowering Json :
     let pairs ← fields.toArray.mapM fun (name, value) => do
       if annotationFields.contains name && value != .null then
         return (name, ← annotationClaim ds value)
+      -- A method call's explicit type arguments: a list of annotations.
+      if name == "typeArgs" then
+        let .arr values := value | throw "type arguments are a list"
+        return (name, .arr (← values.mapM (annotationClaim ds)))
       return (name, ← rewrite ds value)
     return Json.mkObj pairs.toList
   | _ => return j

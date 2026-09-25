@@ -384,7 +384,7 @@ inductive Expr where
   annotation given here. -/
   | lambda (pos : Span) (receiver : Option Json) (typeParams : List TypeParam)
       (params : List (String × Json)) (defaults : List (Nat × Expr)) (rest : Bool)
-      (result : Json) (body : Expr)
+      (result : Option Json) (body : Expr)
   /-- A class value: its constructor `lambda` as construct-only code. -/
   | ctor (pos : Span) (lam : Expr)
   /-- `new callee(args)`: the callee, then the actuals, then its construct code. -/
@@ -402,8 +402,11 @@ inductive Expr where
   /-- A call through a property reference, `o.m(a)`: `callee` is the `read`
   (or `index`) of the method; its object is the receiver. The object is saved,
   the method read and saved, the actuals evaluated, then the saved method is
-  invoked with the saved object. -/
+  invoked with the saved object. `typeArgs` are the explicit type arguments
+  written on the call, empty where none are: they instantiate the method's
+  leading binders, and the call's claimed instance must agree with them. -/
   | invoke (pos : Span) (callee : Expr) (args : List Expr) (spreads : List Nat)
+      (typeArgs : List Json)
   /-- The return statement's entry environment; the expression retains its own span. -/
   | atEnv (pos : Span) (body : Expr)
   /-- Administrative completion and sequencing; neither invents a source expression claim. -/
@@ -439,7 +442,7 @@ partial def Expr.freeNames : Expr → List String
   | .bindWithReceiver _ f r args | .callWithReceiver _ f r args =>
     f.freeNames ++ r.freeNames ++ args.flatMap Expr.freeNames
   | .applyWithReceiver _ f r list => f.freeNames ++ r.freeNames ++ (list.map Expr.freeNames).getD []
-  | .call _ f args _ | .invoke _ f args _ => f.freeNames ++ args.flatMap Expr.freeNames
+  | .call _ f args _ | .invoke _ f args _ _ => f.freeNames ++ args.flatMap Expr.freeNames
   | .letBody _ n _ a b => a.freeNames ++ b.freeNames.filter (· != n)
 
 /-- Every direct call of a named function: the call's span, the callee read's
@@ -468,7 +471,7 @@ partial def Expr.callees : Expr → List (Span × Span × String)
   | .applyWithReceiver _ f r list => f.callees ++ r.callees ++ (list.map Expr.callees).getD []
   | .call p f args _ =>
     (match f with | .var q n => [(p, q, n)] | _ => []) ++ f.callees ++ args.flatMap Expr.callees
-  | .invoke _ f args _ => f.callees ++ args.flatMap Expr.callees
+  | .invoke _ f args _ _ => f.callees ++ args.flatMap Expr.callees
   | .letBody _ n _ a b => a.callees ++ b.callees.filter (·.2.2 != n)
 
 /-- Closure conversion for acyclic forward captures. Only a literal closure's
@@ -513,7 +516,7 @@ def Expr.span : Expr → Span
   | .ifBody p _ _ _ _ | .done p | .equality p _ _ _ | .singletonTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
   | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
   | .arrayLit p _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ => p
-  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .cast p _ _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ _ _ _ _ | .call p _ _ _ | .invoke p _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ | .construct p _ _ => p
+  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .cast p _ _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ _ _ _ _ | .call p _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ | .construct p _ _ => p
 
 /-- One declarator of a `const` or `let`. -/
 structure Binding where
@@ -755,8 +758,11 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     if let some (_, false) := receiver then
       if (body :: defaults.map Prod.snd).any (·.freeNames.contains "this") then
         throw s!"unsupported source expression at [{p.1},{p.2}): a function that reads `this` must be strict code"
+    -- A result the source does not annotate is null: the producer's claim
+    -- at the closure proposes it, and every claimed arrow's body is checked.
+    let result ← jField j "result"
     return .lambda p (receiver.map Prod.fst) typeParams params defaults (!restAt.isEmpty)
-      (← jField j "result") body
+      (if result == .null then none else some result) body
   | "doneBody" => return .done p
   | "seqBody" => return .seqBody p (← decodeExpr (← jField j "init")) (← decodeExpr (← jField j "body"))
   | "ifBody" =>
@@ -790,12 +796,20 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     return .call p (← decodeExpr (← jField j "callee")) args spreads
   | "invoke" => do
     let args ← (← jArr j "args").mapM decodeExpr
+    -- Explicit type arguments are written only where the source has them.
+    let typeArgs ← match (j.getObjVal? "typeArgs").toOption with
+      | none => pure []
+      | some written => do
+        let ts := (← written.getArr?).toList
+        if ts.isEmpty then throw "an empty type argument list is written by omitting it"
+        pure ts
+    let optional := if typeArgs.isEmpty then [] else ["typeArgs"]
     let spreads ← match (j.getObjVal? "spreads").toOption with
       | none => do
-        CellClaims.fieldsExactly j ["k","pos","callee","args"]
+        CellClaims.fieldsExactly j (["k","pos","callee","args"] ++ optional)
         pure []
       | some marked => do
-        CellClaims.fieldsExactly j ["k","pos","callee","args","spreads"]
+        CellClaims.fieldsExactly j (["k","pos","callee","args","spreads"] ++ optional)
         let spreads ← (← marked.getArr?).toList.mapM fun i => do
           let i ← i.getNat?
           if i ≥ args.length then throw "a spread position names no argument"
@@ -808,7 +822,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     match callee with
     | .read .. | .index .. => pure ()
     | _ => throw "a method call's target is a property reference"
-    return .invoke p callee args spreads
+    return .invoke p callee args spreads typeArgs
   | "write" =>
     return .write p (← jStr (← jField j "field")) (← decodeExpr (← jField j "receiver"))
       (← decodeExpr (← jField j "rhs"))

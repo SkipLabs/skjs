@@ -471,6 +471,9 @@ private def find (f : Fragment.Fn) : SourceTypes.Lowering (Option Closure) := do
               | .array e :: fixed => pure (fixed.reverse, some e)
               | _ => throw "a quantified rest requires a mutable array contract"
               else pure (params, none)
+            -- A quantified closure is checked universally against the
+            -- signature it states, so it states its result.
+            let some ret := ret | throw "a quantified closure needs its result annotation"
             let r ← claimOfType names ret
             let receiver ← match receiverAnnot with
               | some annot => claimOfType names annot
@@ -764,7 +767,7 @@ private partial def exprSites : Fragment.Expr → Sites
   | .atEnv p e => joinSites ([p.1],[],[]) (exprSites e)
   | .bindWithReceiver p f receiver args | .callWithReceiver p f receiver args => args.foldl (fun acc a => joinSites acc (exprSites a))
       (joinSites ([],[p],[]) (joinSites (exprSites f) (exprSites receiver)))
-  | .call p f args _ | .invoke p f args _ => args.foldl (fun acc a => joinSites acc (exprSites a)) (joinSites ([],[p],[]) (exprSites f))
+  | .call p f args _ | .invoke p f args _ _ => args.foldl (fun acc a => joinSites acc (exprSites a)) (joinSites ([],[p],[]) (exprSites f))
   -- A class value is one expression; its constructor's body has its own sites.
   | .ctor p (.lambda _ _ _ _ _ _ _ e) => joinSites ([],[p],[]) (exprSites e)
   | .ctor p _ => ([],[p],[])

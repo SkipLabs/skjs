@@ -236,8 +236,17 @@ let module_type (g:Source.fn) =
      | _ -> unsupported "rest parameter contract of a module function")
   | _ -> quantified_arrow g.quantified tys g.result
 
-let infer_function declarations module_functions (f:Source.fn) =
+(* One pass over a function. [offered] gives, for a named closure's creation,
+   the further signatures its uses offer it; the pass reports them as
+   [requests], and [infer_function] runs a second pass with them. *)
+let infer_pass offered declarations module_functions (f:Source.fn) =
   let env0 = List.map (fun (n,t) -> n,Value t) f.params in
+  (* Unannotated immutable locals bound to a closure without binders or a rest
+     parameter: where the closure is created, and its parameters' types. *)
+  let closures = ref [] and requests = ref [] in
+  let named_closure n written (init:expr) = match written,init.node with
+    | None,Lambda (_,[],ps,_,false,_,_) -> closures := (n,(init.pos,List.map snd ps)) :: !closures
+    | _ -> () in
   (* A name no parameter or local binds is one of the file's functions. *)
   let resolve env n = match List.assoc_opt n env with
     | Some b -> binding_type b
@@ -326,7 +335,7 @@ let infer_function declarations module_functions (f:Source.fn) =
       (match lookup env n with
       | Storage contract -> expr ~expected:contract env rhs
       | Value _ -> unsupported "assignment to immutable binding")
-    | Ctor {node=Lambda (None,[],ps,[],false,result,body);_} ->
+    | Ctor {node=Lambda (None,[],ps,[],false,Some result,body);_} ->
       (* The constructor's body under its parameters; `new` passes it no
          receiver it reads. The class value's type is its construct signature. *)
       let inner = List.fold_left (fun env (n,t) -> extend env n (Value t)) env ps in
@@ -353,7 +362,7 @@ let infer_function declarations module_functions (f:Source.fn) =
             s.result
           | None -> unsupported "no construct signature takes this many arguments")
        | _ -> unsupported "`new` needs a value with construct signatures")
-    | Lambda (receiver,quantified,ps,defaults,rest,result,body) ->
+    | Lambda (receiver,quantified,ps,defaults,rest,written,body) ->
       (* An ordinary function binds its own `this`, replacing an enclosing
          one; an arrow keeps the enclosing binding, as a capture. *)
       let env = match receiver with
@@ -375,7 +384,14 @@ let infer_function declarations module_functions (f:Source.fn) =
             unsupported ("parameter default may only read initialized earlier parameters and captures: " ^ message))
           (List.assoc_opt i defaults);
         extend env n (Value t)) env (List.mapi (fun i p -> i,p) ps) in
-      ignore (expr ~expected:result inner body);
+      let body_type = expr ?expected:written inner body in
+      (* Without a result annotation the result is the body's, widened as
+         TypeScript widens an inferred return type. It is a claim: Lean checks
+         the body against it. *)
+      let result = match written with
+        | Some result -> result
+        | None when quantified <> [] -> unsupported "a quantified closure needs its result annotation"
+        | None -> widen body_type in
       let params = List.mapi (fun i (_,t) ->
         if List.mem_assoc i defaults then union t (Atoms [Undef]) else t) ps in
       (* A tuple rest is one binding and several positions: the signature
@@ -392,6 +408,14 @@ let infer_function declarations module_functions (f:Source.fn) =
       let own = match element with
         | Some element -> variadic_arrow ~quantified ~receiver params element result
         | None -> quantified_arrow ~receiver quantified params result in
+      (* A named closure passed where more parameters are offered is claimed
+         at those signatures too, beside its own: calls through it discard
+         the actuals past its parameters, and Lean checks its body at each. *)
+      let own = match List.assoc_opt e.pos offered, own with
+        | Some extra, Atoms [Shape ({calls=[call];_} as shape)] when quantified=[] && element=None ->
+          Atoms [Shape {shape with calls=call :: List.filter (fun s -> s <> call)
+            (List.sort_uniq compare extra)}]
+        | _ -> own in
       (* A contract advertising several signatures is implemented by this one
          closure. Propose that contract and state what the body claims under
          each signature; Lean checks every one of them. *)
@@ -420,10 +444,27 @@ let infer_function declarations module_functions (f:Source.fn) =
     | Call _ | Invoke _ ->
       (* A method call types its callee, the read of the method, and so its
          object; the receiver Lean checks is that object. *)
-      let callee,receiver,args,spreads = match e.node with
-        | Call (c,r,a,s) -> c,r,a,s
-        | Invoke (c,a,s) -> c,None,a,s
+      let callee,receiver,args,spreads,type_args = match e.node with
+        | Call (c,r,a,s) -> c,r,a,s,[]
+        | Invoke (c,a,s,t) -> c,None,a,s,t
         | _ -> assert false in
+      (* Explicit type arguments fix the callee's leading binders; the others
+         are inferred from the receiver and the actuals. Lean checks that the
+         claimed instance agrees with them. *)
+      let infer_explicit ~receiver (signature:Semantic.signature) actuals =
+        if List.length type_args > List.length signature.quantified then
+          unsupported "more explicit type arguments than the callee has binders";
+        let fixed = List.mapi (fun i t ->
+          (List.nth signature.quantified i).identity,ValueArgument t) type_args in
+        let partial = Inference.substitute_signature fixed
+          {signature with quantified=List.filteri (fun i _ -> i >= List.length type_args)
+             signature.quantified} in
+        if partial.quantified = [] then fixed,partial.result
+        else
+          let inferred = Inference.infer ~receiver partial actuals in
+          fixed @ inferred.substitution,inferred.result in
+      let no_type_arguments () = if type_args <> [] then
+        unsupported "explicit type arguments on a callee without binders" in
       let target = callee in
       let callee = declared_head declarations [] (expr env callee) in
       (* The receiver the call passes: the `.call` operand, the object a
@@ -437,6 +478,7 @@ let infer_function declarations module_functions (f:Source.fn) =
         | None, _ -> Atoms [Undef] in
       (match callee with
        | Atoms [Shape {calls=[{quantified=[];variadic=Some element;params;result;_}];_}] ->
+         no_type_arguments ();
          (* A variadic callee: the fixed actuals at its parameters, every
             further actual at its element type, and a spread at its own array
             contract, whose elements Lean checks against the element type. *)
@@ -459,6 +501,7 @@ let infer_function declarations module_functions (f:Source.fn) =
             other binders are inferred from the fixed actuals. Lean checks the
             instance against the bound, position by position. *)
          if spreads <> [] then unsupported "a spread into a pack parameter";
+         if type_args <> [] then unsupported "explicit type arguments beside a pack parameter";
          let fixed = List.length signature.params in
          if List.length args < fixed then
            unsupported "a call omits a fixed parameter before a pack parameter";
@@ -498,13 +541,13 @@ let infer_function declarations module_functions (f:Source.fn) =
              | None,Some element -> [union element (Atoms [Undef])]
              | _ -> unsupported "generic spread requires a mutable array or required tuple") args) in
          let missing = max 0 (List.length signature.params - List.length actuals) in
-         let inferred = Inference.infer ~receiver:receiver_type signature
+         let substitution,result = infer_explicit ~receiver:receiver_type signature
            (actuals @ List.init missing (fun _ -> Atoms [Undef])) in
-         instance_of ~declared:callee target inferred.substitution;
+         instance_of ~declared:callee target substitution;
          if not (method_read target) then
          instantiations := (e.pos,List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
-           inferred.substitution) :: !instantiations;
-         inferred.result
+           substitution) :: !instantiations;
+         result
        | _ ->
       let spread = spreads <> [] in
       if spread && spreads <> [List.length args - 1] then
@@ -536,8 +579,19 @@ let infer_function declarations module_functions (f:Source.fn) =
         || (written <= declared
             && List.for_all Semantic.admits_undefined
                  (List.filteri (fun i _ -> i >= written) signature.params)) in
+      (* Of several advertised signatures, the only one taking this many
+         arguments is the one the call uses: its parameters guide the
+         actuals' construction, as a single signature's do. *)
+      let callee = match callee with
+        | Atoms [Shape ({calls=(_::_::_ as calls);_} as shape)]
+            when List.for_all (fun (s:Semantic.signature) -> s.quantified=[]) calls ->
+          (match List.filter callable calls with
+           | [s] -> Atoms [Shape {shape with calls=[s]}]
+           | _ -> callee)
+        | _ -> callee in
       (match callee with Atoms [Shape {calls=[signature];_}]
           when signature.quantified=[] && callable signature ->
+        no_type_arguments ();
         (* A spread operand is checked at its own tuple contract; Lean reads
            the positions from that contract and checks each of them. *)
         List.iteri (fun i e ->
@@ -556,30 +610,44 @@ let infer_function declarations module_functions (f:Source.fn) =
            claim is inserted into the source's argument list. *)
         let actuals=List.map (expr env) args @
           List.init (max 0 (List.length signature.params - List.length args)) (fun _ -> Atoms [Undef]) in
-        let inferred=Inference.infer ~receiver:receiver_type signature actuals in
-        instance_of ~declared:callee target inferred.substitution;
+        let substitution,result = infer_explicit ~receiver:receiver_type signature actuals in
+        instance_of ~declared:callee target substitution;
         (* A function literal taking fewer parameters than it is offered is
            claimed at the offered signature: the extra actuals are discarded
-           when it is called, and Lean checks its body at its own. *)
+           when it is called, and Lean checks its body at its own. A named
+           closure is claimed, where it is created, at the offered signature
+           beside its own. *)
+        let offered_to arity param =
+          match Inference.substitute substitution param with
+          | Atoms [Shape {calls=[offered];fields=[];string_index=None;elements=None}] as t
+              when offered.quantified=[] && offered.variadic=None
+                && List.length offered.params > arity -> Some (t,offered)
+          | _ -> None in
         List.iteri (fun i (arg:expr) -> match arg.node,List.nth_opt signature.params i with
           | Lambda (_,[],ps,_,false,_,_),Some param ->
-            (match Inference.substitute inferred.substitution param with
-             | Atoms [Shape {calls=[offered];fields=[];string_index=None;elements=None}] as t
-                 when offered.quantified=[] && offered.variadic=None
-                   && List.length offered.params > List.length ps ->
-               instances := (arg.pos,t) :: !instances
-             | _ -> ())
+            Option.iter (fun (t,_) -> instances := (arg.pos,t) :: !instances)
+              (offered_to (List.length ps) param)
+          | Id n,Some param when List.mem_assoc n !closures ->
+            (* Only a signature whose positions the closure's parameters take:
+               another is not one its body could be checked at. *)
+            let pos,own = List.assoc n !closures in
+            Option.iter (fun (_,(offered:Semantic.signature)) ->
+              if List.for_all2 plausible_subtype
+                  (List.filteri (fun i _ -> i < List.length own) offered.params) own
+              then requests := (pos,offered) :: !requests)
+              (offered_to (List.length own) param)
           | _ -> ()) args;
         if not (method_read target) then
         instantiations := (e.pos,List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
-          inferred.substitution) :: !instantiations;
-        inferred.result
+          substitution) :: !instantiations;
+        result
       (* Several advertised signatures on one value. The actuals are typed on
          their own — contextual construction inside such a call is not guided —
          and the signature whose domains they match is proposed. Lean selects
          the row it checks and re-checks every argument obligation. *)
       | Atoms [Shape {calls=(_::_::_ as calls);_}]
           when List.for_all (fun (s:Semantic.signature) -> s.quantified=[]) calls ->
+        no_type_arguments ();
         let actuals = List.map (expr env) args in
         let usable = List.filter callable calls in
         let matching = List.filter (fun (s:Semantic.signature) ->
@@ -646,6 +714,7 @@ let infer_function declarations module_functions (f:Source.fn) =
     | SequenceBody (init,body) -> entry env e.pos; ignore (expr env init); expr ?expected env body
     | LetBody (name,written,init,body) -> entry env e.pos;
       let initial=expr ?expected:written env init in
+      named_closure name written init;
       (* An unnamed slot holds a discarded statement value; no claim names it. *)
       if name = "" then expr ?expected env body
       else expr ?expected (extend env name (Value (Option.value written ~default:initial))) body
@@ -667,6 +736,7 @@ let infer_function declarations module_functions (f:Source.fn) =
     match s.statement with
     | Declare (mutable_,bs) -> List.fold_left (fun env (n,written,init) ->
       let initial = expr ?expected:written env init in
+      if not mutable_ then named_closure n written init;
       let binding = match mutable_,written with
         | true,None -> unsupported "mutable binding requires an explicit fixed storage contract"
         | true,Some contract -> Storage contract
@@ -690,7 +760,17 @@ let infer_function declarations module_functions (f:Source.fn) =
   let expressions = List.map (fun (x:expression) -> match List.assoc_opt x.pos !instances with
     | Some instance -> {x with type_=instance}
     | None -> x) (List.rev !expressions) in
-  {source=f;entries=List.rev !entries;expressions;arrows=List.rev !arrows}
+  {source=f;entries=List.rev !entries;expressions;arrows=List.rev !arrows},!requests
+(* A named closure's claim is fixed where it is created, before the calls that
+   offer it more parameters are reached: a first pass finds those offers, and
+   the second states them at the creation. *)
+let infer_function declarations module_functions f =
+  let claim,requests = infer_pass [] declarations module_functions f in
+  if requests = [] then claim else
+  let offered = List.map (fun pos -> pos,List.filter_map (fun (p,s) ->
+    if p = pos then Some s else None) requests)
+    (List.sort_uniq compare (List.map fst requests)) in
+  fst (infer_pass offered declarations module_functions f)
 let infer program =
   let module_functions = List.map (fun (g:Source.fn) -> g.name,lazy (module_type g))
     program.Source.functions

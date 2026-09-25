@@ -775,11 +775,8 @@ class Gate {
           args: node.arguments.slice(1).map((arg) => this.expr(arg)),
         };
       }
-      if (node.questionDotToken || node.typeArguments?.length)
-        this.fail(
-          node,
-          "expected ordinary call arguments without type arguments",
-        );
+      if (node.questionDotToken)
+        this.fail(node, "expected an ordinary call, not an optional one");
       // A property reference, parenthesized or not, is a call target that
       // keeps its object as the receiver (EvaluateCall). A copied method is a
       // value, and takes the `apply` form below.
@@ -795,12 +792,16 @@ class Gate {
           spreads.push(i);
           return this.expr(arg.expression);
         });
+        // Explicit type arguments instantiate the method's leading binders;
+        // Lean checks the claimed instance against them.
+        const typeArgs = node.typeArguments?.map((t) => this.typeOf(t, node));
         return {
           k: "invoke",
           pos: this.span(node),
           callee: this.expr(node.expression),
           args,
           ...(spreads.length ? { spreads } : {}),
+          ...(typeArgs?.length ? { typeArgs } : {}),
         };
       }
       // A spread writes the elements of one array in place of several
@@ -808,6 +809,8 @@ class Gate {
       // and before every one after it. What it stands for — a tuple's
       // required positions, or elements a variadic callee collects — the
       // checker reads from the claims.
+      if (node.typeArguments?.length)
+        this.fail(node, "explicit type arguments are admitted on a method call only");
       const spreads: number[] = [];
       const args = node.arguments.map((arg, i) => {
         if (!ts.isSpreadElement(arg)) return this.expr(arg);
@@ -1312,7 +1315,14 @@ class Gate {
         return p.name.text;
       });
 
-      const result = () => this.typeOf(node.type);
+      // A closure without a result annotation leaves its result to the
+      // producer: the claim at the closure states it, and the body is checked
+      // against that claim. A class method's result is its instance type's
+      // member, which states it, so a method still needs the annotation.
+      const declaredResult: TypeTerm | null =
+        node.type || instance ? this.typeOf(node.type, node) : null;
+      const result = (): TypeTerm => declaredResult ??
+        this.fail(node, "a closure returning from a branch needs a result annotation");
       const lowered = ts.isBlock(body)
         ? this.closureBlock(
             body,
@@ -1338,7 +1348,7 @@ class Gate {
           ...(p.initializer ? { default: this.expr(p.initializer) } : {}),
           ...(p.dotDotDotToken ? { rest: true as const } : {}),
         })),
-        result: this.typeOf(node.type),
+        result: declaredResult,
         body: lowered,
       };
     } finally {

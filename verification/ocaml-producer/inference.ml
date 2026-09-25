@@ -120,12 +120,15 @@ let infer ?receiver (signature:signature) actuals =
     | None,Some y -> y.lower <- add y.lower left
     | Some x,None -> x.upper <- add x.upper right
     | None,None -> (match left,right with
-      | Atoms [Shape {calls=[a];fields=[];string_index=None;elements=None}],
+      | Atoms [Shape {calls=(_::_ as calls);fields=[];string_index=None;elements=None}],
       Atoms [Shape {calls=[e];fields=[];string_index=None;elements=None}]
-        when a.quantified=[] && e.quantified=[]
-          && List.length a.params<=List.length e.params ->
+        when e.quantified=[] && List.exists (fun (a:signature) -> a.quantified=[]
+          && List.length a.params<=List.length e.params) calls ->
       (* A callback may take fewer parameters than it is offered: the
-         positions it has are compared, the rest it ignores. *)
+         positions it has are compared, the rest it ignores. Of several
+         signatures, the first that fits is compared. *)
+      let a = List.find (fun (a:signature) -> a.quantified=[]
+        && List.length a.params<=List.length e.params) calls in
       constrain e.receiver a.receiver;
       List.iteri (fun i p -> constrain (List.nth e.params i) p) a.params;
       constrain a.result e.result

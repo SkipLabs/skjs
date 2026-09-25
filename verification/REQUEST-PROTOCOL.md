@@ -846,7 +846,11 @@ reads it as a callable quantifying its binders; at a call it infers the
 instance from the receiver and the actuals, and claims the method's read at
 that instance's ground arrow, which Lean relates to the method's scheme row by
 `Sub.inst`. A method call carries no `instantiate` list: its instance is its
-callee's claim.
+callee's claim. Explicit type arguments, `o.m<A>(…)`, are the invoke node's
+`"typeArgs":[terms]`, written only where the source has them; they instantiate
+the member's leading binders, and Lean requires the callee's claimed instance
+to give each of them a type of the same meaning (see
+[DESIGN.md](DESIGN.md#modules-and-code-units), explicit type arguments).
 
 A strict `typeof e === "<shape>"` or `!==` comparison, for `"number"`,
 `"string"`, `"boolean"`, `"undefined"`, `"function"`, `"bigint"` or
@@ -859,7 +863,11 @@ claims and lowers through the shape's test (`isNum`, `isStr`, `isBool`,
 operand can refine a binding. `typeof e === "object"` (which includes null)
 and general string expressions remain outside the source fragment.
 
-Source arrows require explicit parameter and result annotations. Bodies compose
+Source arrows require parameter annotations. The result annotation may be
+left out: the lambda's `result` is then `null`, and the claim at the closure
+proposes its arrows, each checked against the body
+([source closures](PROGRAM-TYPING.md#source-closures-and-their-annotations)).
+Bodies compose
 literals, variables, cell allocation, reads, assignments and calls, including
 nested expression arrows with required parameter lists. Each expression's
 claim is checked as a separate exact sequent in its lexical context. The body

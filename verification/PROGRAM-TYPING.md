@@ -1755,6 +1755,33 @@ or the wrong slot. Passing this one refined value is established; translating
 arbitrary supplied entry environments into continuation parameters is not yet
 implemented.
 
+### Source closures and their annotations
+
+A source closure `(x₁: D₁, …, xₙ: Dₙ): Rₛ => t` is checked at the arrows its
+claim names, by the creation rule of [Callables](#typing-rules): each claimed
+arrow $(R,\vec A,B)$ types the body at its own receiver, its first $n$
+parameters and its result. The source adds two requirements. Each claimed
+parameter is within the annotation's, $A_j\sqsubseteq_G D_j$ for $j\le n$
+(`within`), and, where the source states a result, the body meets it at the
+annotated signature (the `closure-result` obligation):
+
+$$
+\frac{\forall(R,\vec A,B)\in L.\;\bigl(\forall j\le n.\;A_j\sqsubseteq_G D_j\bigr)
+        \land\;\Gamma,\mathit{this}{:}R,\vec x{:}\vec A_{\le n}\vdash_G t:B
+      \qquad
+      R_s\neq\bot\;\Rightarrow\;\Gamma,\mathit{this}{:}Q_s,\vec x{:}\vec D\vdash_G t:R_s}
+     {\Gamma\vdash_G \bigl(\vec x{:}\vec D\bigr)\colon R_s\Rightarrow t\;:\;\bigwedge L}
+$$
+
+with $R_s=\bot$ for a closure whose result the source leaves out (the
+Fragment's `result` is `null`) and $Q_s$ the receiver the source states (`top`
+for an arrow). The premise over $L$ is the creation rule's, so leaving the
+result out drops a requirement and no check: the result is the claim's, like
+any expression's. A named closure passed where a callback is offered more
+parameters, `xs.reduce(acc, null)`, is claimed where it is created at that
+signature beside its own; its body is checked at each (`offersArity`). No
+subtyping widens an arrow's parameters.
+
 ### Universal parameter initialization
 
 The direct generic certificate distinguishes value slots, cell identities, and

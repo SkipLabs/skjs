@@ -707,7 +707,8 @@ let callback = "";
     typeof name === "string" ? name : `[Symbol.${doc.symbols[name.symbol]?.name}]`;
   assert.deepEqual(proto.expression.fields.map(f => keyText(f.name)), arrayOverlay.map(e => e.name));
   for (const field of proto.expression.fields) {
-    assert(field.readonly && field.type.k === "scheme" && field.type.binders[0]?.name === "T");
+    // The member's own binders lead; the element binder `T` is last.
+    assert(field.readonly && field.type.k === "scheme" && field.type.binders.at(-1)?.name === "T");
     const receiver = field.type.signatures[0]?.receiver;
     assert(receiver?.k === "array" && receiver.element.k === "binder");
     const entry = arrayOverlay.find(e => e.name === keyText(field.name));
@@ -735,6 +736,7 @@ let moduleInit = "";
 let genericModule = "";
 let sumMapper = "";
 let sumConstructor = "";
+let localClosure = "";
 let verifiedFunctions = 0;
 const outcomes = await pooled(cases, runCase);
 for (const [i, test] of cases.entries()) {
@@ -766,6 +768,7 @@ for (const [i, test] of cases.entries()) {
   if (test.file === "index-signature") indexed = result.artifacts;
   if (test.file === "sum-mapper-signature") sumMapper = result.artifacts;
   if (test.file === "sum-constructor-field") sumConstructor = result.artifacts;
+  if (test.file === "sum-local-closure") localClosure = result.artifacts;
 }
 process.stdout.write(
   `${verifiedFunctions} functions verified; ${cases.filter((c) => c.kind === "negative").length} negative controls; ${cases.filter((c) => c.kind === "gap").length} named gaps\n`,
@@ -937,6 +940,52 @@ for (const [artifacts, arity, refusal] of [
   writeFileSync(forged, JSON.stringify(claims));
   assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), refusal);
   process.stdout.write(`a signature claim wider than its annotation (arity ${arity}): refused\n`);
+}
+
+// `reduce<number | null>(acc, null)`: the claimed instance is checked against
+// the explicit type argument, and an unannotated closure's claimed result
+// against its body. Neither is taken from the producer on trust.
+{
+  const claims: SourceClaims = JSON.parse(readFileSync(join(localClosure, "claims.json"), "utf8"));
+  const evidence = join(localClosure, "evidence.json");
+  // The type argument written as `number | null | string`, the claim unchanged:
+  // the instance the call is claimed at fits its actuals, but is not the one
+  // the call states.
+  const ast: { k?: string; typeArgs?: { k: string; parts: unknown[]; span: unknown }[] } =
+    JSON.parse(readFileSync(join(localClosure, "fragment.json"), "utf8"));
+  const calls: typeof ast[] = [];
+  const visit = (j: unknown): void => {
+    if (Array.isArray(j)) j.forEach(visit);
+    else if (j && typeof j === "object") {
+      if ((j as typeof ast).k === "invoke" && (j as typeof ast).typeArgs) calls.push(j as typeof ast);
+      Object.values(j).forEach(visit);
+    }
+  };
+  visit(ast);
+  const [typeArg] = must(calls[0]?.typeArgs, "the call's type arguments");
+  must(typeArg, "the type argument").parts.push({ k: "atom", name: "string", span: typeArg.span });
+  const forgedAst = join(localClosure, "forged-type-argument.json");
+  writeFileSync(forgedAst, JSON.stringify(ast));
+  assert.match(invoke(join(localClosure, "claims.json"), evidence, localClosure, forgedAst),
+    /the call's instance is not the one its explicit type arguments state/);
+  process.stdout.write("an instance other than the explicit type argument: refused\n");
+  // The closure's own arrow, two parameters to a number, claimed to return null.
+  const own = must(claims.types.flatMap((row) => row.flatMap((clause) =>
+    typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []))
+    .find(([, [params]]) => params.length === 2), "the closure's own arrow");
+  own[1][1] = [0];
+  const forged = join(localClosure, "forged-closure-result.json");
+  writeFileSync(forged, JSON.stringify(claims));
+  const searched = spawnSync(verifier, ["--produce-source-claims", join(localClosure, "fragment.json"),
+    forged, join(localClosure, "source.ts"), join(localClosure, "forged-evidence.json"), "12"],
+    { encoding: "utf8", timeout: 30_000 });
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  // The body, `p !== null ? p - c[1] : c[1]`, is a number, not the null claimed.
+  const body = readFileSync(join(localClosure, "source.ts"), "utf8").indexOf("p !== null");
+  assert.ok((searched.stdout + searched.stderr).includes(
+    `closure expression claim at [${body},`), searched.stdout + searched.stderr);
+  assert.match(invoke(forged, evidence, localClosure), /does not justify/);
+  process.stdout.write("an unannotated closure's result claim its body does not meet: refused\n");
 }
 
 // A graph certificate for the checked Boolean instance cannot validate a

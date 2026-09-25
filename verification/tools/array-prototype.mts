@@ -140,7 +140,10 @@ export function arrayPrototype(checker: Checker, at: Node, library: OverlayLibra
     const { member, source } = only;
     const span: [number, number] = [0, 0];
     const own = (member.typeParameters ?? []).map(p => p.name.text);
-    const binders = ["T", ...own];
+    // The member's own binders lead, as its declaration lists them, so an
+    // explicit type argument list instantiates them in order; the array's
+    // element binder follows, fixed by the receiver.
+    const binders = [...own, "T"];
     const scope: TermScope = {
       source: source as SourceFile,
       annotation: false,

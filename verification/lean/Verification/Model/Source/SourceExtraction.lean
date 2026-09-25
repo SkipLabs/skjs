@@ -326,10 +326,10 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
   | .applyWithReceiver p c r list => return .applyWithReceiver p (← comparisonsExpr fc c) (← comparisonsExpr fc r) (← list.mapM (comparisonsExpr fc))
   | .call p c args spread =>
     return .call p (← comparisonsExpr fc c) (← args.mapM (comparisonsExpr fc)) spread
-  | .invoke p c args spreads =>
+  | .invoke p c args spreads typeArgs =>
     -- A field, by name or by a string key, or an array element by a numeric
     -- key: `comparisonsExpr` resolves the key from its claim.
-    return .invoke p (← comparisonsExpr fc c) (← args.mapM (comparisonsExpr fc)) spreads
+    return .invoke p (← comparisonsExpr fc c) (← args.mapM (comparisonsExpr fc)) spreads typeArgs
   | .atEnv p e => return .atEnv p (← comparisonsExpr fc e)
   | .seqBody p i b => return .seqBody p (← comparisonsExpr fc i) (← comparisonsExpr fc b)
   | .ifBody p result c t e => return .ifBody p result (← comparisonsExpr fc c) (← comparisonsExpr fc t) (← comparisonsExpr fc e)
@@ -385,7 +385,7 @@ private partial def assignsExpr (name : String) : Fragment.Expr → Bool
     (match target with | .var _ n => n == name | _ => false) ||
       assignsExpr name target || (rhs.map (assignsExpr name)).getD false
   | .alloc _ _ es => es.any (assignsExpr name)
-  | .call _ f args _ | .invoke _ f args _ => assignsExpr name f || args.any (assignsExpr name)
+  | .call _ f args _ | .invoke _ f args _ _ => assignsExpr name f || args.any (assignsExpr name)
   | .callWithReceiver _ f r args | .bindWithReceiver _ f r args =>
     assignsExpr name f || assignsExpr name r || args.any (assignsExpr name)
   | .ctor _ lam => assignsExpr name lam
@@ -855,6 +855,51 @@ def memberHead (G : PositiveGraphs.NormalGraph Nat) (O : Ty Nat) (fld : PropKey)
   | .var i, true => .letE (.readAt fld (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])
   | _, _ => .readAt fld obj
 
+/-- The row a field read gives before any claim replaces it: the object's own
+field or view, or, for a key outside its own-key bound, its prototype's, as
+`readCell` and the top level's search read it. -/
+private def fieldRow (G : PositiveGraphs.NormalGraph Nat) (O : Ty Nat) (fld : PropKey) :
+    Option (Ty Nat) :=
+  match PositiveRules.expand G O with
+  | [.refs fs [] vs _ _ ks] => fs.lookup fld <|> vs.lookup fld <|> do
+      if !ks.any (fun K => !K.contains fld) then none
+      let P ← (fs ++ vs).lookup SourceTypes.protoField
+      let [.refs gs [] ws _ _ _] := PositiveRules.expand G P | none
+      (gs ++ ws).lookup fld
+  | [.callable fs _ _ _] => fs.lookup fld
+  | _ => none
+
+/-- A method call's explicit type arguments, `o.m<A₁,…,Aₖ>(…)`, are a
+requirement on the instance the call uses: the member read from `O` is a scheme
+row, the claimed method type `M` is an instance of it by a checked instance map
+(`checkInstArrs`), and that map sends the scheme's first `k` binders to types
+of the same meaning as `A₁,…,Aₖ`. The binders past them are the ones the
+call's receiver and actuals fix, as for a call without type arguments. The
+check only refuses: acceptance still rests on the read's own `inst` proof and
+the call's typing. -/
+private def explicitInstance (pos : Span) (O M : Ty Nat) (fld : PropKey) (typeArgs : List Json) :
+    Compiler Unit := do
+  if typeArgs.isEmpty then return
+  let args ← typeArgs.mapM fun t => lower (Fragment.translate t)
+  let T ← table
+  let G := SourceTypes.graph T
+  let refuse (reason : String) := locatedRefusal T pos .schemeElimination reason
+  let some S := fieldRow G O fld
+    | throw (refuse s!"explicit type arguments name no member '{fld}' of the receiver")
+  let [i] := S | throw (refuse "explicit type arguments need a generic member")
+  let some s := G.schemes i | throw (refuse "explicit type arguments need a generic member")
+  if args.length > s.binders.length then
+    throw (refuse "more explicit type arguments than the member has binders")
+  let [.arrs L Ms] := PositiveRules.expand G M
+    | throw (refuse "the call's claimed method is not an instance of its member")
+  let some c := CertificateProducer.instanceFor G 64 s L Ms
+    | throw (refuse "the call's claimed method is not an instance of its member")
+  if !PositiveCertificates.checkInstArrs G S L Ms c then
+    throw (refuse "the call's claimed method is not an instance of its member")
+  for (A, θ) in args.zip c.instances do
+    if !sameMeaning T A θ then
+      throw (refuse "the call's instance is not the one its explicit type arguments state")
+
 /-- Read a field from a cell plan under context `Γ`: one contract, a callable
 bag, or an explicit union of cell contracts each naming the field. -/
 private def readCell (G : PositiveGraphs.NormalGraph Nat) (Γ : List (Ty Nat)) (fld : PropKey)
@@ -1239,7 +1284,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
         :: ((actuals.zip Ds).map fun (a,D) => DirectProof.cast H D a)
           ++ omittedPremises H Ds actuals.length)
     pure (DirectProof.letE Γ callee (DirectProof.letE K receiverPlan call))
-  | .invoke _ callee args spreads => do
+  | .invoke _ callee args spreads typeArgs => do
     -- The object, then a computed key, then the method read from the object,
     -- each saved; the actuals; the saved method invoked with the saved object.
     -- A method the object does not hold, such as an array's, is read from its
@@ -1261,6 +1306,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
         pure ([r,k], k.type :: K₀, held ⟨"",some key.span⟩ :: ds₀)
     let ri := saved.length - 1
     let M ← exprType fc callee
+    explicitInstance e.span r.type M fld typeArgs
     let method ← if (ProgramTyping.memberOf G r.type fld).isSome then
         pure (DirectProof.node K (memberHead G r.type fld (.var ri)) M (.bindMember []) [])
       else DirectProof.cast K M <$> readCell G K fld (DirectProof.var K ri r.type)
@@ -1485,7 +1531,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
   | .ctor pos lam => do
     -- A class value: its constructor's body once per construct signature, with
     -- `undefined` in the receiver slot `new` passes, then the parameters.
-    let .lambda _ none [] params [] false ret body := lam
+    let .lambda _ none [] params [] false (some ret) body := lam
       | throw "a class value is a constructor lambda with plain parameters"
     let paramNames := params.map Prod.fst
     if !distinct paramNames || paramNames.any (fun name => name == "" || name == "undefined" || (names scope).contains name) then
@@ -1581,7 +1627,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
           obligation pos annotation.goal (some annotation) "closure-result" ds
           return prologue.foldr (fun (K, value) acc => DirectProof.letE K value acc) annotation
         let polymorphic := !typeParams.isEmpty ||
-          (params.map Prod.snd ++ [ret]).any GenericSource.mentionsParam
+          (params.map Prod.snd ++ ret.toList).any GenericSource.mentionsParam
         if polymorphic then
           let some overlays := fc.arrowClaims.lookup pos
             | throw "quantified rest checking requires the scheme evidence path"
@@ -1614,6 +1660,9 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
           if (defaults.lookup i).isSome then (B ++ [3]).eraseDups.mergeSort (· ≤ ·) else B
         let E ← lower (Fragment.callableType elementJson)
         let restTy ← lower (Fragment.translate restJson)
+        let some ret := ret
+          | throw (locatedRefusal (← table) pos .bindingAnnotation
+              "a closure collecting a rest array needs its result annotation")
         let R ← lower (Fragment.callableType ret)
         let rest ← lower (SourceTypes.use (.pack ⟨[], [], some E, false⟩ []))
         let own ← lower (SourceTypes.use (.arrs [] [(Rsource, fixed, [rest], R)]))
@@ -1714,7 +1763,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
       modify fun st => { st with resultOverride := previousResult }
       pure (prologue.foldr (fun (K,value) acc => DirectProof.letE K value acc) b)
     let polymorphic := !typeParams.isEmpty ||
-      (params.map Prod.snd ++ [ret]).any GenericSource.mentionsParam
+      (params.map Prod.snd ++ ret.toList).any GenericSource.mentionsParam
     if let some overlays := (if polymorphic then fc.arrowClaims.lookup pos else none) then
       let [.arrs L []] := PositiveRules.expand G A | throw "per-arrow claims must name source arrows"
       if L.isEmpty then throw "per-arrow claims name no arrow"
@@ -1735,21 +1784,23 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     else do
       if !typeParams.isEmpty then
         throw "quantified closure checking requires the scheme evidence path"
-      if !defaults.isEmpty && (params.map Prod.snd ++ [ret]).any GenericSource.mentionsParam then
+      if !defaults.isEmpty && (params.map Prod.snd ++ ret.toList).any GenericSource.mentionsParam then
         throw "a defaulted parameter under a scheme binder is outside the fragment"
       let [.arrs L []] := PositiveRules.expand G A | throw "closure claim must name a source arrow"
       -- A closure annotated with an enclosing scheme's binder has no ground
       -- annotation to lower. Scheme introduction required its claim to be
       -- exactly that annotation, and the compiled overlay is the claim under
       -- the checked substitution, so the one compiled arrow supplies its types.
-      let (Ds, R) ← if (params.map Prod.snd ++ [ret]).any GenericSource.mentionsParam then
+      -- A closure without a result annotation has none to lower (`R` is
+      -- none): its claimed arrows propose the result, and each is checked.
+      let (Ds, R) ← if (params.map Prod.snd ++ ret.toList).any GenericSource.mentionsParam then
           match L with
-          | [(_, Di, Ri)] => pure (Di, Ri)
+          | [(_, Di, Ri)] => pure (Di, some Ri)
           | _ => throw "a closure annotated with a scheme binder must carry one substituted arrow"
         else do
           pure (← fixedParams.mapM (fun p => lower (Fragment.callableType p.2)) >>= fun fixed => do
               return fixed ++ (← restElements.mapM fun ty => lower (Fragment.callableType ty)),
-            ← lower (Fragment.callableType ret))
+            ← ret.mapM fun ret => lower (Fragment.callableType ret))
       -- The advertised domain at a defaulted position also admits `undefined`:
       -- a call may omit it, and the default is what replaces the value bound
       -- there. The body still reads the declared type.
@@ -1776,28 +1827,37 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
       if !overlays.isEmpty && overlays.length != L.length then
         throw "per-arrow interior claims do not match the claimed arrows"
       -- The annotation's own derivation is at the receiver the source
-      -- states: top for an arrow, which never reads it.
-      let b ← compileBody fc none (Rsource :: Ds ++ Γ)
-      let annotation := DirectProof.cast (Rsource :: Ds ++ Γ) R b
-      obligation pos annotation.goal (some annotation) "closure-result" inner
+      -- states: top for an arrow, which never reads it. Without an
+      -- annotation there is no such derivation: the claimed arrows are all
+      -- the closure promises, and each has its own below.
+      let annotation ← R.mapM fun R => do
+        let b ← compileBody fc none (Rsource :: Ds ++ Γ)
+        let annotation := DirectProof.cast (Rsource :: Ds ++ Γ) R b
+        obligation pos annotation.goal (some annotation) "closure-result" inner
+        pure annotation
       let bodies ← L.zipIdx.mapM fun ((Rt,Di,Ri),i) => do
         let row := match overlays[i]? with
           | some o => fc.withOverlay o
           | none => fc
-        if (Rt,Di,Ri) == (Rsource,Ds,R) && overlays.isEmpty then pure annotation
-        else do
-          -- Each signature's derivation is about the same body at that
-          -- signature's result, which a block body cannot read from its one
-          -- enclosing annotation.
-          let plan ← compileBody row (if overlays.isEmpty then none else some Ri)
-            (Rt :: Di.take Ds.length ++ Γ)
-          -- One body, one lowered term: every signature's derivation is about
-          -- the same closure. A claim that changes the lowering is refused
-          -- here rather than failing as an unexplained search.
-          if plan.goal.term != b.goal.term then
-            throw "an overloaded closure's body lowers differently under one of its signatures"
-          return DirectProof.cast (Rt :: Di.take Ds.length ++ Γ) Ri plan
-      pure (DirectProof.node Γ (.make (.closure Ds.length b.term) .nul) A .funE bodies)
+        match annotation with
+        | some annotation =>
+          if some (Rt,Di,Ri) == R.map (Rsource,Ds,·) && overlays.isEmpty then return annotation
+        | none => pure ()
+        -- Each signature's derivation is about the same body at that
+        -- signature's result, which a block body cannot read from its one
+        -- enclosing annotation. Without an annotation the block's result is
+        -- the arrow's.
+        let plan ← compileBody row (if overlays.isEmpty && R.isSome then none else some Ri)
+          (Rt :: Di.take Ds.length ++ Γ)
+        return DirectProof.cast (Rt :: Di.take Ds.length ++ Γ) Ri plan
+      -- One body, one lowered term: every signature's derivation is about
+      -- the same closure. A claim that changes the lowering is refused here
+      -- rather than failing as an unexplained search.
+      let terms := (annotation.toList ++ bodies).map (·.goal.term)
+      let some t := terms.head? | throw "closure claim must name a source arrow"
+      if terms.any (· != t) then
+        throw "an overloaded closure's body lowers differently under one of its signatures"
+      pure (DirectProof.node Γ (.make (.closure Ds.length t) .nul) A .funE bodies)
   let plan := DirectProof.cast Γ A p
   obligation e.span plan.goal (some plan) "expression-claim" scope
   -- Validate the supplied claim, but do not discard a stronger saved-read
@@ -2172,26 +2232,31 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
       | some xs => compileExpr fc (operandScope.drop 1 ++ scope) (saved.drop 1 ++ Γ) xs prepare
     let afterReceiver ← compileExpr fc (held ⟨"",some callee.span⟩ :: scope) (B::Γ) receiver afterList
     compileExpr fc scope Γ callee afterReceiver
-  | .call _ callee args _ | .callWithReceiver _ callee _ args | .invoke _ callee args _ =>
+  | .call _ callee args _ | .callWithReceiver _ callee _ args | .invoke _ callee args _ _ =>
     let operands := match e with
       | .callWithReceiver _ _ receiver _ => receiver :: args
       | _ => args
     let spreads := match e with
-      | .call _ _ _ s | .invoke _ _ _ s => s
+      | .call _ _ _ s | .invoke _ _ _ s _ => s
       | _ => []
     -- A method call saves the object, a computed key, then the method read
     -- from it; the method is the callee and the object the receiver. The
     -- saved slots sit where a plain call's one callee slot does.
     let method : Option (Fragment.Expr × Option Fragment.Expr × (Tm → Tm)) ← match e with
-      | .invoke _ (.read _ fld o) _ _ => do
+      | .invoke _ (.read _ fld o) _ _ typeArgs => do
         let O ← exprType fc o
+        explicitInstance e.span O (← exprType fc callee) fld typeArgs
         let G := SourceTypes.graph (← table)
         pure (some (o, none, memberHead G O fld))
-      | .invoke _ (.index _ (some fld) o key) _ _ => do
+      | .invoke _ (.index _ (some fld) o key) _ _ typeArgs => do
         let O ← exprType fc o
+        explicitInstance e.span O (← exprType fc callee) fld typeArgs
         let G := SourceTypes.graph (← table)
         pure (some (o, some key, memberHead G O fld))
-      | .invoke _ (.elemAt _ o key) _ _ => do
+      | .invoke _ (.elemAt _ o key) _ _ typeArgs => do
+        if !typeArgs.isEmpty then
+          throw (locatedRefusal (← table) e.span .schemeElimination
+            "explicit type arguments on an element call are outside the fragment")
         let K ← exprType fc key
         let index ← arrayKeyTerm K
         pure (some (o, some key, fun obj => .elemAt (.readAt SourceTypes.storeField obj) index))
