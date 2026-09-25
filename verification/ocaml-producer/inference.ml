@@ -150,9 +150,14 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
           | Atoms [Named _] -> (match expand t with Some e -> opened (depth-1) e | None -> t)
           | Union ts -> List.fold_left union (Atoms []) (List.map (opened (depth-1)) ts)
           | t -> t in
+        (* Opened only where that tells some atom apart: a declaration none
+           of whose atoms the union names is the binder's whole. *)
         let rest = match opened 4 left with
-          | Atoms xs -> Atoms (List.filter (fun x -> not (List.mem x covered)) xs)
-          | t -> t in
+          | Atoms xs when List.exists (fun x -> List.mem x covered) xs ->
+            Atoms (List.filter (fun x -> not (List.mem x covered)) xs)
+          | _ -> (match left with
+            | Atoms xs -> Atoms (List.filter (fun x -> not (List.mem x covered)) xs)
+            | t -> t) in
         if rest <> Atoms [] then constrain rest (List.hd binder)
       (* One declaration's applications: their arguments, both ways, as no
          variance is known here. *)
