@@ -51,7 +51,7 @@ try {
     assert.notEqual(run("--produce-stateful-source",a,claims).status,0);});
   test("consumer rejects a transfer outside any loop",()=>{
     const a=structuredClone(ast),body=sf(a,"stopAfterWrite").body;
-    body[0]={k:"break",pos:at(body,0).pos};
+    body[0]={k:"break",pos:at(body,0).pos,label:null};
     assert.notEqual(run("--produce-stateful-source",a,claims).status,0);});
   test("sidecars preserve transfer environments and checks",()=>{
     const out=path.join(tmp,"sidecar.json"),r=exec(process.execPath,[path.resolve(__dirname,"../tools/export-source-claims.mts"),file,"--claims",claimsPath,"--out",out,"--verifier",verifier]);assert.equal(r.status,0,r.stderr);

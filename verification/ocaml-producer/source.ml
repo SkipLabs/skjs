@@ -336,7 +336,13 @@ and stmt = { span: Json.t; statement: stmt_node }
 and stmt_node =
   | Declare of bool * (string * ty option * expr) list
   | Return of expr | Effect of expr | If of expr * stmt list * stmt list
-  | While of expr * stmt list | Break | Continue
+  (* The condition, the body, and the update the body's end and every
+     `continue` run: a `for`'s, none for a `while`. *)
+  | While of expr * stmt list * stmt list | Break | Continue
+  (* A block, labeled (a `break` may leave it) when it is part of a lowered
+     `switch`. A `break`'s label is not needed here: where it goes, the
+     proposal already forgets what the jump could change. *)
+  | Block of bool * stmt list
   (* `for (const name of iterable) body`: the name's position, the iterable
      and the body. *)
   | ForOf of string * Json.t * expr * stmt list
@@ -379,7 +385,9 @@ let rec assigns name s = match s.statement with
   | Declare (_,bs) -> List.exists (fun (_,_,e) -> assigns_expr name e) bs
   | Return e | Effect e -> assigns_expr name e
   | If (c,a,b) -> assigns_expr name c || List.exists (assigns name) (a @ b)
-  | While (c,body) | ForOf (_,_,c,body) -> assigns_expr name c || List.exists (assigns name) body
+  | While (c,body,update) -> assigns_expr name c || List.exists (assigns name) (body @ update)
+  | ForOf (_,_,c,body) -> assigns_expr name c || List.exists (assigns name) body
+  | Block (_,body) -> List.exists (assigns name) body
   | Break | Continue -> false
 let arithmetic = function
   | "add" -> Add | "sub" -> Sub | "mul" -> Mul | "div" -> Div | "pow" -> Pow
@@ -473,7 +481,9 @@ let rec stmt binders j =
   | "const" | "let" -> Declare (text "k" j="let",List.map (fun b ->
       text "name" b,optional_type binders (field "annot" b),expr binders (field "init" b)) (items "bindings" j))
   | "return" -> Return (expr binders (field "e" j)) | "effect" -> Effect (expr binders (field "e" j))
-  | "while" -> While (expr binders (field "cond" j),List.map (stmt binders) (items "body" j))
+  | "while" -> While (expr binders (field "cond" j),List.map (stmt binders) (items "body" j),
+      List.map (stmt binders) (items "update" j))
+  | "block" -> Block (field "label" j <> Null,List.map (stmt binders) (items "body" j))
   | "forOf" -> ForOf (text "name" j,field "namePos" j,expr binders (field "iterable" j),
       List.map (stmt binders) (items "body" j))
   | "break" -> Break | "continue" -> Continue

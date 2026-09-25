@@ -427,9 +427,29 @@ function fromSourceClaims(
   const sf=parse(source,file),entries=new Map<number, number>();
   // An entry is at a statement, or at the closing brace of a function body:
   // the point where the body completes, which an async body's completion
-  // (a `Promise<void>` settled with no value) is claimed at.
+  // (a `Promise<void>` settled with no value) is claimed at. A lowered
+  // `switch` or `for` has entries of its own (DESIGN.md, "Statement forms"):
+  // a label's test and jump, `default`'s and the clauses' `{` jumps, the
+  // bound discriminant; a `for`'s initializer, its loop at the `;` after the
+  // initializer, and its update.
+  const semicolons: number[]=[];
+  const scanner=createScanner(true,undefined,source);
+  for(let k=scanner.scan();k!==ts.SyntaxKind.EndOfFile;k=scanner.scan())
+    if(k===ts.SyntaxKind.SemicolonToken)semicolons.push(scanner.getTokenStart());
   const walk=(n: ts.Node)=>{
     if(ts.isStatement(n))entries.set(n.getStart(sf),n.end);
+    const at=(from: number,to: number)=>{if(!entries.has(from))entries.set(from,to);};
+    if(ts.isCaseClause(n)){at(n.getStart(sf),n.expression.end);at(n.expression.getStart(sf),n.expression.end);}
+    if(ts.isDefaultClause(n))at(n.getStart(sf),n.getStart(sf)+"default".length);
+    if(ts.isCaseBlock(n))at(n.getStart(sf),n.getStart(sf)+1);
+    if(ts.isSwitchStatement(n))at(n.expression.getStart(sf),n.expression.end);
+    const init=ts.isForStatement(n) ? n.initializer : undefined;
+    if(init){
+      at(init.getStart(sf),init.end);
+      const loop=semicolons.find(s=>s>=init.end);
+      if(loop!==undefined)at(loop,n.end);
+    }
+    if(ts.isForStatement(n)&&n.incrementor)at(n.incrementor.getStart(sf),n.incrementor.end);
     const p=n.parent;
     if(ts.isBlock(n)&&p&&(ts.isFunctionDeclaration(p)||ts.isFunctionExpression(p)||ts.isArrowFunction(p)||
         ts.isMethodDeclaration(p)||ts.isConstructorDeclaration(p)||ts.isGetAccessorDeclaration(p)||

@@ -284,7 +284,6 @@ for the maintained witnesses.
 | Open row                            | State                                   | Witness                              | Architectural pressure                                                        |
 | ----------------------------------- | --------------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------- |
 | Optional object-field presence      | blocked at shared source/proof boundary | `optional-field.ts`                  | Model absence separately from a present `undefined` value                     |
-| Bare return and implicit completion | blocked at shared parser                | `bare-return.ts`, `empty-closure.ts` | Represent completion and discarded results explicitly                         |
 | Arbitrary numeric array indexing    | blocked in lowering                     | `dynamic-index.ts`                   | Prove a general index obligation rather than inventing a singleton key        |
 
 Take the first open row whose prerequisite representation already exists. For
@@ -417,8 +416,6 @@ The named gaps are:
 - `dynamic-index.ts`: the existing lowering needs a proved array-index singleton;
   it does not model arbitrary numeric properties.
 - `optional-field.ts`: the shared parser cannot yet represent optional presence.
-- `bare-return.ts` and `empty-closure.ts`: the shared parser refuses these forms
-  of completion, although the explicit discarded-result callback verifies.
 
 The motivating sources are preserved. No gap is counted as a verification,
 rewritten into an easier witness, or allowed to disappear behind another error.

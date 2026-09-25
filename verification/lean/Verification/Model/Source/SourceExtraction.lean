@@ -397,8 +397,10 @@ private partial def comparisonsStmt (fc : SourceClaims.Function) (s : Fragment.S
   | .ite p c t e =>
     return .ite p (← comparisonsExpr fc c) (← t.mapM (comparisonsStmt fc))
       (← e.mapM (fun ss => ss.mapM (comparisonsStmt fc)))
-  | .loop p c b => return .loop p (← comparisonsExpr fc c) (← b.mapM (comparisonsStmt fc))
+  | .loop p c b u =>
+    return .loop p (← comparisonsExpr fc c) (← b.mapM (comparisonsStmt fc)) (← u.mapM (comparisonsStmt fc))
   | .forOf p n np i b => return .forOf p n np (← comparisonsExpr fc i) (← b.mapM (comparisonsStmt fc))
+  | .block p k b => return .block p k (← b.mapM (comparisonsStmt fc))
   | .brk .. | .cont .. => pure s
 
 /-- Storage is selected from source assignments, including writes in nested
@@ -445,8 +447,9 @@ private partial def assignsStmt (name : String) : Fragment.Stmt → Bool
     elems.any fun q => (q.default_.map (assignsExpr name)).getD false
   | .ite _ c t e => assignsExpr name c || t.any (assignsStmt name) ||
     (e.getD []).any (assignsStmt name)
-  | .loop _ c b => assignsExpr name c || b.any (assignsStmt name)
+  | .loop _ c b u => assignsExpr name c || b.any (assignsStmt name) || u.any (assignsStmt name)
   | .forOf _ _ _ i b => assignsExpr name i || b.any (assignsStmt name)
+  | .block _ _ b => b.any (assignsStmt name)
   | .brk .. | .cont .. => false
 
 /-- Every name a statement's expressions mention, bound or not: a superset of
@@ -459,8 +462,9 @@ partial def stmtNames : Fragment.Stmt → List String
   | .arrayPattern _ elems init => init.freeNames ++
     elems.flatMap fun q => (q.default_.map Fragment.Expr.freeNames).getD []
   | .ite _ c t e => c.freeNames ++ t.flatMap stmtNames ++ (e.getD []).flatMap stmtNames
-  | .loop _ c b => c.freeNames ++ b.flatMap stmtNames
+  | .loop _ c b u => c.freeNames ++ b.flatMap stmtNames ++ u.flatMap stmtNames
   | .forOf _ _ _ i b => Fragment.iterateName :: i.freeNames ++ b.flatMap stmtNames
+  | .block _ _ b => b.flatMap stmtNames
   | .brk .. | .cont .. => []
 
 /-- A module function's value as its callers see it: an ordinary function
@@ -2993,15 +2997,20 @@ private partial def arrayAssigns (fc : SourceClaims.Function) (pos : Span) (A : 
 
 end
 
-/-- The nearest enclosing loop, with the lexical scope at each destination. -/
+/-- Where `continue` and `break` go, with the lexical scope at each
+destination: the nearest enclosing loop's next iteration and its end, if there
+is a loop, and the end of each enclosing labeled block, innermost first. An
+end is `none` where it is the function's. -/
 private structure LoopTargets where
-  again : Target × List ScopeBinding
-  done : Option (Target × List ScopeBinding)
+  loop : Option ((Target × List ScopeBinding) × Option (Target × List ScopeBinding)) := none
+  labels : List (String × Option (Target × List ScopeBinding)) := []
 
-/-- Where a statement begins: the entry the producer states for it. -/
-private def stmtStart : Fragment.Stmt → Nat
-  | .brk p | .cont p | .ret p _ | .constants p _ | .mutables p _ | .pattern p _ _ | .arrayPattern p _ _
-  | .effect p _ | .loop p _ _ | .forOf p _ _ _ _ | .ite p _ _ _ => p.1
+/-- The entry of the first statement a list runs: a block has none of its
+own, so it is its first statement's, or, empty, the next one's. -/
+private partial def firstEntry : List Fragment.Stmt → Option Nat
+  | [] => none
+  | .block _ _ inner :: rest => (firstEntry inner).orElse fun _ => firstEntry rest
+  | s :: _ => some s.pos.1
 
 /-- The bindings an object pattern yields, left to right, over the object held
 at slot `obj`: each binds its read at the contract's field type. `after`
@@ -3111,18 +3120,21 @@ private def mutables (fc : SourceClaims.Function) (pos : Span) (next : Option Na
 is intentionally independent of source order; `start` records the real entry.
 Fuel bounds structural traversal, not execution or certificate search. -/
 private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBinding → List Fragment.Stmt →
-    Option (Target × List ScopeBinding) → Option LoopTargets → Compiler Target
+    Option (Target × List ScopeBinding) → LoopTargets → Compiler Target
   | 0, _, _, _, _, _, _ => throw "internal extraction error: exhausted structural traversal"
   | fuel+1, fc, R, scope, stmts, tail, loopTargets => do
     let target ← match stmts with
     | [] => leave fc.namePos R scope tail
-    | .brk pos :: rest | .cont pos :: rest =>
+    | .brk pos _ :: rest | .cont pos :: rest =>
       if !rest.isEmpty then throw "statements after break or continue are outside the fragment"
-      let some targets := loopTargets | throw "break or continue outside a source loop"
       let Γ ← env fc pos.1 scope
-      let destination := match stmts with
-        | .brk _ :: _ => targets.done
-        | _ => some targets.again
+      let destination ← match stmts, loopTargets.loop with
+        | .brk _ (some l) :: _, _ => match loopTargets.labels.lookup l with
+          | some done => pure done
+          | none => throw s!"break to '{l}' outside a block of that label"
+        | .brk _ none :: _, some (_, done) => pure done
+        | .cont _ :: _, some (again, _) => pure (some again)
+        | _, _ => throw "break or continue outside a source loop"
       let next ← leave fc.namePos R scope destination
       emitAt pos .nul (.effect next) Γ [0] (scope := scope)
     | .ret pos e :: rest =>
@@ -3143,7 +3155,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
       let yes ← body fuel fc R scope thn continuation loopTargets
       let no ← body fuel fc R scope (els.getD []) continuation loopTargets
       compileCondition fc scope Γ cond yes no
-    | .loop pos cond loopBody :: rest =>
+    | .loop pos cond loopBody update :: rest =>
       let Γ ← env fc pos.1 scope
       -- Reserve a stable label for incoming and back edges. Replace its stub
       -- before returning; the completed program is independently checked.
@@ -3151,7 +3163,12 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
       let continuation ← if rest.isEmpty then pure tail else do
         let next ← body fuel fc R scope rest tail loopTargets
         pure (some (next,scope))
-      let yes ← body fuel fc R scope loopBody (some (head,scope)) (some ⟨(head,scope),continuation⟩)
+      -- The end of the body and every `continue` run the update, which
+      -- returns to the head.
+      let again ← if update.isEmpty then pure head else
+        body fuel fc R scope update (some (head,scope)) loopTargets
+      let yes ← body fuel fc R scope loopBody (some (again,scope))
+        { loopTargets with loop := some ((again,scope), continuation) }
       let no ← leave fc.namePos R scope continuation
       let condition ← compileCondition fc scope Γ cond yes no
       modify fun s => { s with program := s.program.set head.label ⟨.nul,.effect condition⟩ }
@@ -3189,7 +3206,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
         pure (some (next,scope))
       let elemScope := held ⟨name, some namePos⟩ :: loopScope
       let first ← body fuel fc R elemScope loopBody (some (head,loopScope))
-        (some ⟨(head,loopScope),continuation⟩)
+        { loopTargets with loop := some ((head,loopScope), continuation) }
       let exit ← leave fc.namePos R loopScope continuation
       -- `name` takes the value read; the record it was read from is dropped.
       let bindElement := ⟨first.label, some ((first.mapping.getD (List.range elemScope.length)).map
@@ -3222,7 +3239,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
       compileExpr fc scope Γ iterable start
     | .mutables pos bindings :: rest =>
       let Γ ← env fc pos.1 scope
-      mutables fc pos (rest.head?.map stmtStart)
+      mutables fc pos (firstEntry rest)
         (fun scope => body fuel fc R scope rest tail loopTargets) scope Γ bindings
     | .pattern pos props init :: rest =>
       let Γ ← env fc pos.1 scope
@@ -3248,11 +3265,21 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
       let next ← body fuel fc R scope rest tail loopTargets
       let drop := ⟨next.label, some ((next.mapping.getD (List.range Γ.length)).map (·+1))⟩
       compileExpr fc scope Γ e drop
+    -- A block's statements run in a scope of their own and continue after it,
+    -- where its bindings are gone. A labeled one is where a `break` of its
+    -- label goes. It has no entry of its own: its first statement's is.
+    | .block _ label inner :: rest =>
+      let continuation ← if rest.isEmpty then pure tail else do
+        let next ← body fuel fc R scope rest tail loopTargets
+        pure (some (next,scope))
+      let targets := match label with
+        | some l => { loopTargets with labels := (l, continuation) :: loopTargets.labels }
+        | none => loopTargets
+      body fuel fc R scope inner continuation targets
     match stmts with
-    | [] | .loop .. :: _ => return target
+    | [] | .loop .. :: _ | .block .. :: _ => return target
     | st :: _ =>
-      let pos := match st with
-        | .brk p | .cont p | .ret p _ | .constants p _ | .mutables p _ | .pattern p _ _ | .arrayPattern p _ _ | .effect p _ | .loop p _ _ | .forOf p _ _ _ _ | .ite p _ _ _ => p
+      let pos := st.pos
       let facts ← entryFacts fc pos.1 scope
       let entry ← checkpoint pos (← env fc pos.1 scope) facts target (some pos.1) scope
       modify fun s => { s with cuts := entry.label :: s.cuts }
@@ -3261,8 +3288,10 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
 private def traversalBudget : List Fragment.Stmt → Nat
   | [] => 1
   | .brk .. :: rest | .cont .. :: rest | .ret .. :: rest | .constants .. :: rest | .mutables .. :: rest | .pattern .. :: rest | .arrayPattern .. :: rest | .effect .. :: rest => 1 + traversalBudget rest
-  | .loop _ _ loopBody :: rest | .forOf _ _ _ _ loopBody :: rest =>
-      1 + traversalBudget loopBody + traversalBudget rest
+  | .loop _ _ loopBody update :: rest =>
+      1 + traversalBudget loopBody + traversalBudget update + traversalBudget rest
+  | .forOf _ _ _ _ inner :: rest | .block _ _ inner :: rest =>
+      1 + traversalBudget inner + traversalBudget rest
   | .ite _ _ thn none :: rest => 2 + traversalBudget thn + traversalBudget rest
   | .ite _ _ thn (some els) :: rest =>
       1 + traversalBudget thn + traversalBudget els + traversalBudget rest
@@ -3392,7 +3421,7 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceCl
     let bodyScope := paramScope ++ siblingScope
     let slotTypes := bindings ++ siblingTypes
     let fullScope := scope ++ siblingScope
-    let mut first ← body (traversalBudget stmts) fc R bodyScope stmts none none
+    let mut first ← body (traversalBudget stmts) fc R bodyScope stmts none {}
     -- Each assigned parameter gets one fresh private cell at function entry.
     -- Replace its slot in place; the caller still supplies the original value
     -- and the function's public input contract does not mention these cells.

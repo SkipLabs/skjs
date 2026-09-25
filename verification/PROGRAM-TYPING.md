@@ -1202,6 +1202,20 @@ closure control-flow slice. It does not retain observations of mutable propertie
 The finite-label split is a source-profile strategy, not a new semantic rule for
 arbitrary mixed-shape type labels.
 
+#### Statement forms as graphs
+
+The statement forms of [DESIGN.md](DESIGN.md#statement-forms) add no node
+kind, continuation or rule; each is a shape of ordinary nodes and edges.
+
+- A loop with an update: the body's end and each `continue` edge go to the
+  update's first node, whose edge goes to the head. Every edge into the head is
+  checked against its cut as before; the update is checked once, from its own
+  statement claim.
+- A labeled block: `break ℓ` is an administrative null node whose mapped edge
+  goes to the statement after the block labeled $\ell$, dropping the slots
+  the block introduced, exactly as a loop's `break` goes to its exit. A block
+  adds no node of its own.
+
 ## State
 
 What is known about the heap and the environment as execution proceeds, layered
@@ -1947,6 +1961,12 @@ the justified false refinement; it does not have to discard this fact as a
 shared join would. `early_return_trace` checks both outcomes of an extracted
 closure: an early return skips the later write, while the other arm executes it.
 General partially returning nested arms remain gated.
+
+A block closure that does not return on every terminal arm completes, which in
+JavaScript returns `undefined`; its body ends with $\mathsf{return}\
+\mathsf{undefined}$ at the closing brace, so that the shapes above apply
+unchanged, and the result claim must admit $\mathsf{Undef}$ (`void` is top). A
+bare `return` is the same literal at its keyword.
 
 A local continuation shared by multiple paths is a derived construction:
 

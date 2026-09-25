@@ -85,8 +85,9 @@ SKJS itself; it is not required for changes confined to the verifier or reports.
 ## Current source fragment
 
 The source adapter supports **functions with primitive or bounded callable
-parameters, initialized `const` bindings, nested branches, `while` loops with `break`/`continue`, and
-returns**, where a `const` or `let` statement may declare several bindings,
+parameters, initialized `const` bindings, nested branches (`else if`, unbraced arms), `while`,
+`for`, `for...of` and `for...in` loops with `break`/`continue`, `switch`, nested
+blocks and returns** ([statement forms](DESIGN.md#statement-forms)), where a `const` or `let` statement may declare several bindings,
 bound left to right under the statement's one entry, and a `const` may bind an
 object pattern of identifier properties with optional defaults over a local
 record, over local cells and bounded expression closures and calls. Cell
@@ -96,7 +97,7 @@ function types with ordered required parameters. Creating and invoking closures
 preserves parameter order and requires an exact argument count, including zero. Immutable Boolean, null and undefined tests refine what
 follows them, including through `&&`, `||`, `??`, `?:` and negation.
 Strict `typeof e === "function"` and `!==` tests evaluate the operand once;
-tests on immutable variables retain only the corresponding callable alternatives. Every path must reach an explicit return.
+tests on immutable variables retain only the corresponding callable alternatives. A path that falls off the end of a body returns `undefined`, which the result must admit.
 
 A type assertion (`e as T`, `e satisfies T`, `e!`) is the operand's value: the
 claim at the assertion must follow from the operand, and `T` is one more type

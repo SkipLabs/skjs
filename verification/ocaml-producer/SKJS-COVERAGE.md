@@ -121,8 +121,8 @@ Ordered by value for cost (units per effort, files as a tiebreak):
 | 2 | Relational operators `< <= > >=`, `**` | 53 | 37 | 16 | 21 | S | P L |
 | 3 | Producer claim differs from annotation (literal-union parameters, cells) — done | 0 (was 17) | | | | S | O L |
 | 4 | Ambient declarations (`declare function/const/class`) — done (task C) | 0 (was 94) | | | | M | P D |
-| 5 | Control-flow forms (`else if`, non-block branches, bare `return`, block closures that fall off the end, dead code) | 72 | 62 | 9 | 21 | M | P L |
-| 6 | `switch` | 44 | 42 | 2 | 14 | M | P L |
+| 5 | ~~Control-flow forms (`else if`, non-block branches, bare `return`, block closures that fall off the end, dead code)~~ done (task F) | 0 (was 100) | | | | | |
+| 6 | ~~`switch`~~ done (task F; case narrowing is I) | 0 (was 46) | | | | | |
 | 7 | Unary `-`/`+`/`~` | 39 | 21 | 18 | 7 | S | P L |
 | 8 | `void e` — done (task E) | 0 (was 27) | | | | S | P L |
 | 9 | Template literal expressions and string `+` — done (task E); template literal *types* remain (22) | 17 (types) | | | | M | P L |
@@ -139,7 +139,7 @@ Ordered by value for cost (units per effort, files as a tiebreak):
 | 20 | Generic classes | 45 | 31 | 14 | 21 | L | P O L |
 | 21 | Generics: constraints, explicit type arguments on calls, unions with rigid types, rigid types in graph types, `as const` (6 of 9 "unknown type parameter") | 130 | 109 | 21 | 35 | L | P O L |
 | 22 | Type forms: index-signature forms, numeric field names, literal types, `keyof`, indexed access, mapped, `object`, `{}`, method signatures, intersections | 168 | 99 | 69 | 41 | L | P D L |
-| 23 | Loops: `for(;;)`, `for-in`, `for-of` with `let` | 22 | 22 | 0 | 12 | M | P L |
+| 23 | Loops: ~~`for(;;)`, `for-in`~~ done (task F); `for-of` with `let` | 1 (was 24) | 1 | 0 | 1 | S | P L |
 | 24 | Exceptions: `try`/`catch`/`finally`, `throw` | 11 | 10 | 1 | 6 | M | P L |
 | 25 | Calls: overloads, `.call`, spread arguments, `Object.assign`, arrow callee | 12 | 5 | 0 | 7 | M | P O |
 | 26 | `await` of non-promises and unions | 12 | 12 | 0 | 2 | M | L |
@@ -222,20 +222,22 @@ dropped), examples, what the extension needs.
    forms Lean does not yet derive. Four `declare class`
    units that the gate refused as generic classes also moved on (2 to
    search, 2 to the producer).
-5. **Control-flow forms.** `closure block must return on both terminal arms`
-   (31; mostly void block closures `() => { x = 1; }` and void methods),
-   ``else if` and non-block branches are outside the fragment`` (29), `a bare
-   'return'` (7), statements after return (4), closure returning from a branch
-   needs a result annotation (1). Examples:
-   `captured-local-write.ts#capturedWriteCorrectType`,
-   `algebraic-data-types-comprehensive.ts#processColor`,
-   `array_literal_examples.ts#takesArrayOrNull`. Needs: desugaring in the gate
-   or lowering (else-if to nested blocks, fall-through to `return undefined`
-   for void), plus the dead-code rule.
-6. **`switch`.** `statement outside the fragment (SwitchStatement)` (44).
-   `switch-boolean-exhaustive.ts`, `loop-jump-edge.ts#breakInSwitchBindsToTheSwitch`.
-   Lowering to if-chains with `break` edges (the control-flow checker already
-   validates `break`). Case narrowing on string tags depends on 15/16.
+5. **Control-flow forms — done (task F).** Were `closure block must return
+   on both terminal arms` (31; void block closures and void methods), ``else
+   if` and non-block branches`` (29), `a bare 'return'` (7), statements after
+   return (4). An unbraced arm is its block, `else if` a nested `if`, `return;`
+   is `return undefined`, a block closure falling off its end returns
+   `undefined`, and statements after one that always jumps are dropped unless
+   a name they declare is hoisted or read live
+   ([DESIGN.md](../DESIGN.md#statement-forms)). 30 of the 100 units verify;
+   the others now stop at discriminated-union and literal narrowing (15, 16),
+   `let` inside closure bodies, and flow narrowing in search (18).
+6. **`switch` — done (task F).** Were `statement outside the fragment
+   (SwitchStatement)` (44). Lowered to labeled blocks, one per clause, with a
+   dispatch of `===` tests: fall-through is exact, `break` leaves the switch.
+   No case narrowing: 22 of the 46 units verify; the other 24 stop at a test
+   against a string or Boolean label (15) or need the scrutinee narrowed by
+   its case (`switch.ts#caseNarrowsTheScrutinee`, exhaustiveness), task I.
 7. **Unary operators.** `unary operator outside the fragment` (39; 18 of them
    negative bigint constants). `precedence-types.ts#testUnaryBinaryTypePositive`.
 8. **`void e`.** *Done (task E): `void e` is the comma form `e, undefined`,
@@ -398,10 +400,16 @@ dropped), examples, what the extension needs.
     empty record `{}` (8), method signatures in type literals (14),
     intersections of aliases/params/arrays or of different shapes (23),
     `object` (4), template literal types (17, counted in 9).
-23. **Loops.** `for-in` (13), `for(;;)` (8), `for (let … of …)` (1). `for(;;)`
-    needs 2.
+23. **Loops — done (task F), but `for (let … of …)`.** Were `for-in` (13),
+    `for(;;)` (8). `for` is a `while` whose body's end and `continue` run the
+    update, in a block scoping its `let`; `for-in` iterates the trusted
+    `%ForIn%` (keys, each a string). 11 of the 24 units verify; `forin-exclamation.ts` (7) stops at reads
+    through a string key (14), `for` updates at a `continue` after a write
+    (`jump-edge-definite-assignment.ts#assignedBeforeTheJump`) at the
+    producer's head knowledge; `for (let … of …)` stays refused.
 24. **Exceptions.** `TryStatement` (10), `ThrowStatement` (1); `throw new
-    Error(…)` also needs 13.
+    Error(…)` also needs 13. Moved out of task F to the calculus's throw
+    outcome.
 25–31. See the table; each is a handful of gate or producer forms.
 32. **bigint.** `BigIntLiteral` (129), the `BigInt` global (102, read since task K), `non-decimal
     numeric literal type` (1). A new primitive in the calculus.
@@ -557,7 +565,7 @@ split by function.
 | C. Ambient declarations (done) | `declare function` (with overloads), `declare const/class` as typed module assumptions; `declare let`/`var` refused as module storage | 94 / 35 reached, 22 / 12 verified | `fragment-parse.mts`, `fragment.mts`, `declaration-graph.mts`, `Source/Fragment.lean`, `SourceExtraction.lean` | — | B, K |
 | D. Numeric operators | `< <= > >=` (number, string), unary `-`/`+`/`~`, `**`, `**=` | 74 / 25 | `fragment-parse.mts`, `Fragment.lean`, `Calculus.lean`, `proposal.ml` | — | E, F (gate and expression lowering) |
 | E. Small expression forms (done) | `void e` and the comma operator as one `comma` form; `+` with a string operand concatenating any primitive but a symbol by exact `ToString`; template literals as concatenations; the producer's `update`, `logicalAssign`, `nullishAssign` | 58 / 25 verified (703 -> 761 units, 672 -> 730 functions, 61 -> 72 whole files, none lost) | `fragment-parse.mts`, `annotate-source.mts`, `Fragment.lean`, `Calculus.lean`, `ProgramTyping.lean`, `SourceExtraction.lean`, `CertificateProducer.lean`, `source.ml`, `proposal.ml` | — | D, F |
-| F. Statement forms | `else if`/non-block branches, bare `return`, void block closures, dead code after `return`, `switch` (without literal narrowing), `for(;;)`, `for-in`, `try`/`catch`/`finally` | ~150 / 40 | `fragment-parse.mts`, `control-flow.mts`, `SourceExtraction.lean`, `ProgramTyping.lean` | D (for `<` in loops) | D, E, H |
+| F. Statement forms (done) | `else if`/unbraced arms, nested blocks, `;`, bare `return`, block closures falling off the end, dead code after a jump, `switch` as labeled blocks (exact fall-through, no case narrowing), `for(;;)` as a `while` with an update, `for-in` over the trusted `%ForIn%`; `try`/`catch`/`finally`/`throw` moved to the calculus's throw outcome | 181 / 56 reached, 63 / 29 verified (+65 units, +60 functions, +11 files entirely; 703 → 768 on the marker corpus) | `fragment-parse.mts`, `fragment.mts`, `intrinsics.mts`, `annotate-source.mts`, `Fragment.lean`, `SourceExtraction.lean`, `SourceClaimJson.lean`, `source.ml`, `proposal.ml` | D (for `<` in loops) | D, E, H |
 | G. Mutable bindings | Storage contract from a widened initializer, parameters as cells, `let x: T;` with definite assignment, module constants | 52 / 22 | `proposal.ml`, `environment.ml`, `ProgramTyping.lean` | — | I |
 | H. Destructuring and parameters | Object/array patterns, rest, holes, nested, parameter patterns, default and rest parameters | 96 / 22 | `fragment-parse.mts`, `proposal.ml`, `SourceExtraction.lean` | — | F |
 | I. Literal equality and tag narrowing | Lean equality with string/boolean singletons; discriminated-union narrowing; `switch` case narrowing | 42+ / 10 (plus much of the 42 narrowing failures) | `SourceExtraction.lean`, `ProgramTyping.lean`, `CertificateProducer.lean`, `proposal.ml` | F for `switch` | G, J |

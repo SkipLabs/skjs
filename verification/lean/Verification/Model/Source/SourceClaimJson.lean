@@ -794,7 +794,7 @@ private partial def exprSites : Fragment.Expr → Sites
   | .seqBody p a b | .letBody p _ _ a b => joinSites ([p.1],[],[]) (joinSites (exprSites a) (exprSites b))
   | .ifBody p result a b c => joinSites (if result.isSome then ([p.1],[],[]) else ([],[p],[])) (joinSites (exprSites a) (joinSites (exprSites b) (exprSites c)))
 private partial def stmtSites : Fragment.Stmt → Sites
-  | .brk p | .cont p => ([p.1],[],[])
+  | .brk p _ | .cont p => ([p.1],[],[])
   | .ret p e | .effect p e => joinSites ([p.1],[],[]) (exprSites e)
   -- One entry for the statement; every declarator's initializer is a site.
   | .constants p bs | .mutables p bs => bs.foldl (fun acc b => joinSites acc (exprSites b.init)) ([p.1],[],[])
@@ -803,8 +803,10 @@ private partial def stmtSites : Fragment.Stmt → Sites
       | some d => joinSites acc (exprSites d) | none => acc) (joinSites ([p.1],[],[]) (exprSites init))
   | .arrayPattern p elems init => elems.foldl (fun acc q => match q.default_ with
       | some d => joinSites acc (exprSites d) | none => acc) (joinSites ([p.1],[],[]) (exprSites init))
-  | .loop p c body => joinSites ([p.1],[],[]) (joinSites (exprSites c)
-      (body.foldl (fun s st => joinSites s (stmtSites st)) ([],[],[])))
+  | .loop p c body update => joinSites ([p.1],[],[]) (joinSites (exprSites c)
+      ((body ++ update).foldl (fun s st => joinSites s (stmtSites st)) ([],[],[])))
+  -- A block has no entry of its own.
+  | .block _ _ body => body.foldl (fun s st => joinSites s (stmtSites st)) ([],[],[])
   | .ite p c a b =>
     joinSites ([p.1],[],[]) (joinSites (exprSites c)
       ((a ++ b.getD []).foldl (fun s st => joinSites s (stmtSites st)) ([],[],[])))

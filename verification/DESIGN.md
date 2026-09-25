@@ -988,6 +988,9 @@ modeling choices; they do not replace proof.
   ([Loops over arrays](#loops-over-arrays)): `%Iterate%` at its declared
   signature is an input slot of every unit with such a loop, yielding each
   element below the array's current length in turn, then `null`.
+- A `for...in` loop visits keys, each a string, of any value
+  ([Statement forms](#statement-forms)): `%ForIn%` at its declared signature
+  is an input slot of every unit with such a loop.
 - Code outside a unit adds keys to a dictionary it holds at a mutable index
   signature only at that signature's contract; the calculus has no step that
   adds a key ([Writable string index signatures](#writable-string-index-signatures)).
@@ -1048,7 +1051,8 @@ plain `{ value: e }` allocation, `.value` reads and `.value = e` assignments,
 and the bounded local closures and calls described below. Every syntactic exit
 path must reach an explicit return; loops may diverge.
 It rejects active-name shadowing, calls to named top-level functions, statements after
-an explicit return, and unsupported types. This is a coverage gate for the fragment, not the intended final dead-code policy.
+an explicit return, and unsupported types. The parser drops dead code it can
+prove unreachable before Lean sees it ([Statement forms](#statement-forms)).
 The identity scheme `id<T>(x: T): T { return x }` is checked under a rigid
 parameter and omitted from the graph request; the same path admits variable-copy
 bodies with distinct parameters and directed dependent bounds. See [GenericSource.lean](lean/Verification/Model/Source/GenericSource.lean).
@@ -1539,9 +1543,10 @@ No invariant inference, type join, semantic rule or certificate format is added.
 
 Nested loops, empty bodies and early returns are supported in top-level function
 bodies. Unlabeled `break` and `continue` now have explicit checked transfers.
-Labels, other loop forms, non-block bodies and loops inside closures remain
-gated; `for...of` over an array reuses this head, its step a trusted intrinsic
-([Loops over arrays](#loops-over-arrays)). Even a syntactically always-true loop currently needs an
+Source labels, `do…while` and loops inside closures remain gated; `for...of`
+over an array reuses this head, its step a trusted intrinsic
+([Loops over arrays](#loops-over-arrays)), and `for` adds an update run on the
+way back to it ([Statement forms](#statement-forms)). Even a syntactically always-true loop currently needs an
 explicit continuation for its false edge. Acceptance is safety, not termination:
 a well-typed loop may run forever.
 
@@ -1569,8 +1574,10 @@ claims or retain an obsolete mutable-field refinement.
 Already-known immutable Boolean singleton facts are preserved when forming a
 branch map, rather than overwritten with an opposite-branch witness. This avoids
 unnecessary rejection on impossible edges and uses existing transfer rules.
-Unlabeled transfers are supported; labels, transfers outside a loop, and statements
-after an unconditional transfer remain gated in the fragment.
+Unlabeled transfers are supported, and a `break` carrying the label of an
+enclosing labeled block, which only a lowered `switch` makes; source labels and
+transfers outside a loop remain gated, and statements after an unconditional
+transfer are dropped as dead code ([Statement forms](#statement-forms)).
 
 The real `loop-transfers.ts` fixture checks writes before break/continue,
 conditional transfers, and the nearest target in nested loops. Negative tests
@@ -3343,6 +3350,111 @@ states that behavior; see [What remains assumed](#what-remains-assumed).
 **Refused.** A loop over anything but an array (a string, a `Map`, any other
 iterable), a destructuring, `let` or `var` binding, `for await`, a loop at the
 top level of a module (as for `while`) or inside a closure.
+
+### Statement forms
+
+**Decision.** The remaining statement forms of a function body are lowered to
+the ones the graph compiler has, where the lowering is exact, and refused
+where it is not. The parser owns the lowerings that are source rewriting; Lean
+owns the two graph shapes they need (a loop's update, a labeled block).
+Each is stated with the rule it derives; $\Gamma\vdash_R S$ reads "the
+statements $S$ are safe under $\Gamma$ in a function whose result is $R$".
+
+- **Unbraced arms and `else if`.** An arm that is one statement is the block
+  holding it; `else if (c) S` is `else { if (c) S }`. A declaration cannot be
+  an unbraced arm (a syntax error), so no scope depends on the braces. A
+  nested block `{ S }` is a scope of its own, `;` is nothing.
+- **Bare `return` and completion.** `return;` is `return undefined`, the
+  literal at the keyword (in an async body, `return %AsyncComplete%()`, as
+  completing is). A block closure that does not return on every terminal arm
+  ends with `return undefined` at its closing brace, as JavaScript's
+  completion does; a function body already completes so
+  ([Source integration](#source-integration)). Either is checked against the
+  result, which `void` (top) and `T | undefined` admit:
+
+$$
+\frac{\mathsf{undefined}\le R}{\Gamma\vdash_R\ \mathsf{return};}\ \textsc{return-bare}
+$$
+
+- **Dead code.** The statements after one that always jumps (`return`,
+  `break`, `continue`, `throw`, a block holding one, an `if` whose arms both
+  do) are never reached: nothing jumps into the middle of a list. They are
+  dropped unread when dropping them leaves every live name meaning what it
+  meant: a `var` or function declaration there is hoisted, and refused; a
+  `let`, `const` or `class` there binds its name in the whole block, so a
+  live statement naming it is refused (it would read that binding, forever
+  uninitialized); any other declaration is refused.
+
+$$
+\frac{\Gamma\vdash_R S_1\quad S_1\ \text{always jumps}\quad \mathit{names}(S_2)\ \text{free in no live statement, none hoisted}}
+     {\Gamma\vdash_R S_1;S_2}\ \textsc{dead}
+$$
+
+- **`for (init; cond; update) S`** is `{ init; loop }`, where the loop is a
+  `while (cond)` (`true` when absent) with an *update*: the end of the body
+  and every `continue` targeting the loop run `update`, then go to the head.
+  The `while` node carries the update (`Stmt.loop`, empty for a `while`), so
+  the update is compiled once and nothing is duplicated. A `let` declared in
+  `init` is one binding for the whole loop; JavaScript copies it into each
+  iteration, which differs only for a closure capturing it, so such a closure
+  is refused.
+
+$$
+\frac{\Gamma\vdash_R \mathit{init}:\Gamma'\quad \Gamma_h\ \text{the head's entry claims}\quad
+      \Gamma'\le\Gamma_h\quad \Gamma_h\vdash c:\mathsf{boolean}\quad
+      \Gamma_h\wedge c\vdash_R S\ \text{with}\ \mathsf{continue}\mapsto u\quad
+      \Gamma_u\vdash \mathit{update}\ \text{back to}\ \Gamma_h}
+     {\Gamma\vdash_R\ \mathsf{for}\ (\mathit{init};c;\mathit{update})\ S}\ \textsc{for}
+$$
+
+- **`switch (d) { … }`** is a labeled block per clause, nested in source order
+  inside a labeled block for the whole switch. The innermost holds the
+  dispatch: each case label in source order, `if (d === l) break` to the end
+  of that label's clause block; all failing, `break` to the end of the
+  `default` clause's block, or of the switch's. Each clause's statements
+  follow its block's end, inside the next clause's block, so a clause that
+  completes runs on into the next one's statements: fall-through is the
+  graph's ordinary sequencing. A `break` in a clause leaves the switch's
+  block. The discriminant is evaluated once, bound to a name no source can
+  spell, unless it is a name and every label is a literal or a name, when it
+  is read again at each test (nothing between the tests writes). Labels are
+  evaluated in order, each only if every earlier one failed, as JavaScript
+  does. The clauses share one scope in JavaScript but not in the lowering, so
+  a name declared directly in one clause and read in another, or in a label,
+  is refused. Blocks carry a label and no entry of their own
+  (`Stmt.block`); a `break` carries the label of the block it leaves, or none
+  for a loop (`Stmt.brk`). No case narrowing is added here: each test is an
+  ordinary `===`, with Lean's equality rules.
+
+$$
+\frac{\Gamma\vdash_R S\ \text{with}\ \mathsf{break}\ \ell\mapsto\Gamma_{\mathit{after}}\quad
+      \Gamma_{\mathit{after}}\vdash_R S'}
+     {\Gamma\vdash_R\ \ell:\{S\};S'}\ \textsc{labeled-block}
+$$
+
+- **`for (const k in o) S`** is `for (const k of %ForIn%(o)) S`, with the
+  trusted intrinsic
+
+$$
+\mathtt{\%ForIn\%}:(o:\mathsf{unknown})\Rightarrow\mathsf{readonly}\ \mathsf{string}[\,]
+$$
+
+  the keys the loop visits. JavaScript visits the enumerable string keys of
+  `o` and its prototypes, none for `null` or `undefined`, a string's indices
+  for a string: always strings, and for any value, so `o` is unrestricted and
+  the key is a `string`, never a literal of `o`'s type (an object may carry
+  keys its type does not state). A key deleted before it is visited is
+  skipped, one added may or may not be: the visited keys are still a finite
+  list of strings, which the intrinsic's result may be. Only a `const`
+  binding is admitted, as for `for...of`.
+
+**Refused.** A clause's fall-through is admitted; still refused are a name
+shared across switch clauses, a `for` closure capturing its `let`, a `var`, a
+labeled source statement, a `do…while`, and any of these forms inside a
+closure body (its lowering has no graph). `try`, `catch`, `finally` and
+`throw` are not these lowerings: they belong with the calculus's throw
+outcome ([Later feature gates](#later-feature-gates)). A statement after a
+`throw` is dead code all the same.
 
 ### Next object milestone
 

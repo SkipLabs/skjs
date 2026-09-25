@@ -58,13 +58,28 @@ import type { Span } from "./span.mts";
 import { messageOf } from "./thrown.mts";
 import { collectDeclarations, DeclarationError, libraryTerm, tsconfigOf, type LibraryType, type SeenDiagnostic }
   from "./declaration-graph.mts";
-import { asyncCompleteName, asyncReturnName, awaitName } from "./intrinsics.mts";
+import { asyncCompleteName, asyncReturnName, awaitName, forInName } from "./intrinsics.mts";
 
 /** A question-mark parameter requires an optional suffix. A default may
  * precede a required parameter: callers supply undefined in that position. */
 /** The binding a class's static member is: a name no source binding can
  * spell, apart from the instance methods' `C.m`. */
 const staticName = (cls: string, member: string): string => `static ${cls}.${member}`;
+
+/** The label of the block a `switch` is lowered to: a name no source can
+ * spell. */
+const switchLabel = (node: ts.SwitchStatement, file: SourceFile): string => `%switch@${node.getStart(file)}%`;
+
+/** The statement a `break` leaves or a `continue` repeats: the nearest
+ * enclosing loop, or for a `break` also `switch`, not crossing into another
+ * function. */
+function jumpTarget(node: ts.BreakStatement | ts.ContinueStatement): Node | undefined {
+  for (let parent = node.parent; parent && !ts.isFunctionLikeDeclaration(parent); parent = parent.parent)
+    if (ts.isWhileStatement(parent) || ts.isForStatement(parent) || ts.isForOfStatement(parent) ||
+        ts.isForInStatement(parent) || (ts.isBreakStatement(node) && ts.isSwitchStatement(parent)))
+      return parent;
+  return undefined;
+}
 
 function firstOptional(
   parameters: readonly { questionToken?: unknown; initializer?: unknown }[],
@@ -427,10 +442,10 @@ class Gate {
           if (ts.isIfStatement(statement) && assigns(statement) && i === body.length - 1) {
             if (readsThis(statement.expression))
               this.fail(statement, "a constructor statement that reads `this` is outside the fragment");
-            const arm = (s: Statement | undefined): Expr => {
-              if (s && !ts.isBlock(s)) this.fail(s, "`else if` and non-block branches are outside the fragment");
-              return construct(s ? s.statements : [], fields, assigned);
-            };
+            // An unbraced arm, `else if` included, is the one statement a
+            // block around it would hold.
+            const arm = (s: Statement | undefined): Expr =>
+              construct(!s ? [] : ts.isBlock(s) ? s.statements : [s], fields, assigned);
             flush();
             tail = { k: "ifBody", pos: this.span(statement), result: instance, cond: this.expr(statement.expression),
               then: arm(statement.thenStatement), else_: arm(statement.elseStatement) };
@@ -1597,9 +1612,7 @@ class Gate {
       // An async arrow's expression body is its return: `%AsyncReturn%(e)`,
       // the call at `=>`, the intrinsic read at `async`.
       const statements = (block: ts.Block): Stmt[] => {
-        const stmts = block.statements
-          .filter((s) => !prologue.skip.has(s))
-          .map((s) => this.stmt(s));
+        const stmts = this.statements(block.statements.filter((s) => !prologue.skip.has(s)));
         return isAsync ? this.asyncCompletion(block, stmts) : stmts;
       };
       const arrow = ts.isArrowFunction(node) ? this.span(node.equalsGreaterThanToken) : null;
@@ -1667,6 +1680,11 @@ class Gate {
             at,
             "loops inside closures require a graph-backed call/body interface",
           );
+        if (st.k === "block")
+          this.fail(
+            at,
+            "a block or switch inside a closure requires a graph-backed call/body interface",
+          );
         if (st.k === "if") {
           const yes = st.then,
             no = st.else_ ?? [];
@@ -1725,7 +1743,11 @@ class Gate {
         } else
           this.fail(
             at,
-            "statements after an unconditional return are outside the fragment",
+            st.k === "let"
+              ? "a mutable local in a closure body is outside the fragment"
+              : st.k === "arrayPattern"
+                ? "a pattern in a closure body is outside the fragment"
+                : "statements after an unconditional return are outside the fragment",
           );
       }
       return tail;
@@ -1749,15 +1771,20 @@ class Gate {
       return prefix(stmts.slice(0, -1), tail, true);
     };
 
-    return fallThrough ? prefix(statements, fallThrough) : block(statements);
+    if (fallThrough) return prefix(statements, fallThrough);
+    // A body that does not return on every terminal arm completes by falling
+    // off its end, which returns `undefined`: `return undefined` at the
+    // closing brace, the literal there too.
+    const brace: Span = [at.end - 1, at.end];
+    return block(returns(statements) ? statements
+      : [...statements, { k: "return", pos: brace, e: { k: "lit", pos: brace, lit: { a: "undefined" } } }]);
   }
 
   /* -------------------------------------------------------- statements -- */
 
   /* `const { field: name = default, … } = init;`. One declarator, identifier
      keys and names, no rest, no nesting: what the lowering states. */
-  private patternStmt(node: VariableStatement, mutable: boolean): Stmt {
-    const list = node.declarationList;
+  private patternStmt(list: ts.VariableDeclarationList, node: Node, mutable: boolean): Stmt {
     if (mutable) this.fail(node, "a `let` pattern is outside the fragment");
     if (list.declarations.length !== 1)
       this.fail(node, "a pattern declares alone in the fragment");
@@ -1841,9 +1868,229 @@ class Gate {
     if (!ts.isBlock(node)) {
       if (ts.isVariableStatement(node))
         this.fail(node, "a declaration requires a block body");
-      return [this.stmt(node)];
+      return this.statements([node]);
     }
-    return node.statements.map((s) => this.stmt(s));
+    return this.statements(node.statements);
+  }
+
+  /** A statement list, without its dead tail: the statements after one that
+   * always completes abruptly (`abrupt`) are never reached, since nothing can
+   * jump into the middle of a list. They are dropped unread when dropping them
+   * changes no binding the live statements see: a `var` or function
+   * declaration there is hoisted, and a `let`, `const` or `class` there binds
+   * its name in the whole block, so a live reference to it would be to that
+   * binding, forever uninitialized. */
+  statements(list: readonly Statement[]): Stmt[] {
+    const end = list.findIndex((s) => this.abrupt(s));
+    const live = end < 0 ? list : list.slice(0, end + 1);
+    const lexical = new Set<string>();
+    const hoisted = (n: Node): Node | undefined => {
+      if (ts.isFunctionDeclaration(n) ||
+          (ts.isVariableDeclarationList(n) && !(n.flags & (ts.NodeFlags.Let | ts.NodeFlags.Const))))
+        return n;
+      if (ts.isFunctionLikeDeclaration(n) || ts.isClassLikeDeclaration(n)) return undefined;
+      return n.forEachChild(hoisted);
+    };
+    const names = (n: Node): void => {
+      if (ts.isIdentifier(n)) lexical.add(n.text);
+      else n.forEachChild(names);
+    };
+    for (const s of list.slice(live.length)) {
+      const at = hoisted(s);
+      if (at) this.fail(at, "a hoisted declaration after a statement that always jumps is outside the fragment");
+      if (ts.isVariableStatement(s))
+        for (const d of s.declarationList.declarations) names(d.name);
+      else if (ts.isClassDeclaration(s) && s.name) lexical.add(s.name.text);
+      else if (ts.SyntaxKind[s.kind].endsWith("Declaration"))
+        this.fail(s, "a declaration after a statement that always jumps is outside the fragment");
+    }
+    const refers = (n: Node): Node | undefined =>
+      ts.isIdentifier(n) && lexical.has(n.text) ? n : n.forEachChild(refers);
+    for (const s of live) {
+      const at = lexical.size ? refers(s) : undefined;
+      if (at) this.fail(at, "a name declared only in dead code is outside the fragment");
+    }
+    // An empty statement, `;`, does nothing.
+    return live.filter((s) => !ts.isEmptyStatement(s)).map((s) => this.stmt(s));
+  }
+
+  /** The offset of `token` at or after `from`, past whitespace and comments:
+   * a punctuator or keyword of `at` the tree has no node for. */
+  private token(from: number, token: string, at: Node): number {
+    const text = this.file.text;
+    let i = from;
+    for (;;) {
+      if (/\s/.test(text[i] ?? "")) i++;
+      else if (text.startsWith("//", i)) {
+        const n = text.indexOf("\n", i);
+        i = n < 0 ? text.length : n;
+      } else if (text.startsWith("/*", i)) {
+        const n = text.indexOf("*/", i + 2);
+        i = n < 0 ? text.length : n + 2;
+      } else break;
+    }
+    if (!text.startsWith(token, i)) this.fail(at, `expected \`${token}\``);
+    return i;
+  }
+
+  /** `for (init; cond; update) body`: `init`, then the loop whose head tests
+   * `cond` (`true` where it is absent, at the second `;`) and whose body's
+   * end and every `continue` run `update`; with an `init`, in a block of its
+   * own, the loop's entry at the first `;` (a block has none, and the `init`
+   * statement's is at its start). A `let` declared there is one
+   * binding for the whole loop, where
+   * JavaScript copies it into each iteration: the two differ only for a
+   * closure capturing it, which is refused. */
+  private forStmt(node: ts.ForStatement): Stmt {
+    const open = this.token(node.getStart(this.file) + "for".length, "(", node);
+    const init = node.initializer;
+    const first = this.token(init ? init.end : open + 1, ";", node);
+    const second = this.token(node.condition ? node.condition.end : first + 1, ";", node);
+    let initial: Stmt | null = null;
+    if (init && ts.isVariableDeclarationList(init)) {
+      if (init.flags & ts.NodeFlags.Let) {
+        const names = new Set<string>();
+        const collect = (n: Node): void => {
+          if (ts.isIdentifier(n)) names.add(n.text);
+          else n.forEachChild(collect);
+        };
+        for (const d of init.declarations) collect(d.name);
+        const refers = (n: Node): Node | undefined =>
+          ts.isIdentifier(n) && names.has(n.text) ? n : n.forEachChild(refers);
+        const captures = (n: Node): Node | undefined =>
+          ts.isFunctionLikeDeclaration(n) || ts.isClassLikeDeclaration(n) ? refers(n) : n.forEachChild(captures);
+        for (const part of [node.condition, node.incrementor, node.statement]) {
+          const at = part && captures(part);
+          if (at) this.fail(at, "a closure capturing a `for` loop's `let` binding is outside the fragment");
+        }
+      }
+      initial = this.declarations(init, init);
+    } else if (init && ts.isExpression(init)) initial = { k: "effect", pos: this.span(init), e: this.expr(init) };
+    else if (init) this.fail(init, "a `for` initializer is a declaration or an expression");
+    const loop: Stmt = {
+      k: "while",
+      pos: init ? [first, node.end] : this.span(node),
+      cond: node.condition
+        ? this.expr(node.condition)
+        : { k: "lit", pos: [second, second + 1], lit: { a: "booleanlit", v: "true" } },
+      body: this.block(node.statement),
+      update: node.incrementor
+        ? [{ k: "effect", pos: this.span(node.incrementor), e: this.expr(node.incrementor) }]
+        : [],
+    };
+    return initial ? { k: "block", pos: this.span(node), label: null, body: [initial, loop] } : loop;
+  }
+
+  /** `for (const k in o) body` is `for (const k of %ForIn%(o)) body`: the
+   * keys the loop visits, a string each (`intrinsics.mts`), the call at the
+   * declaration, the intrinsic read at `in`. */
+  private forInStmt(node: ts.ForInStatement): Stmt {
+    const list = node.initializer;
+    if (!ts.isVariableDeclarationList(list) || !(list.flags & ts.NodeFlags.Const) ||
+        list.declarations.length !== 1)
+      this.fail(node, "a `for...in` loop declares one `const` binding");
+    const d = list.declarations[0];
+    if (!ts.isIdentifier(d.name)) this.fail(d, "destructuring is outside the fragment");
+    if (d.type || d.initializer) this.fail(d, "a `for...in` binding takes the key's type");
+    if (d.name.text === "undefined") this.fail(d, "shadowing undefined is outside the fragment");
+    const keyword = this.token(list.end, "in", node);
+    return {
+      k: "forOf",
+      pos: this.span(node),
+      name: d.name.text,
+      namePos: this.span(d.name),
+      iterable: this.intrinsic(forInName, this.span(list), [keyword, keyword + "in".length],
+        [this.expr(node.expression)]),
+      body: this.block(node.statement),
+    };
+  }
+
+  /** `switch (d) { clauses }`, as labeled blocks, one per clause, nested in
+   * source order inside one for the whole switch. The innermost holds the
+   * dispatch: it tests the discriminant with `===` against each case label
+   * in source order, a match leaving the block of that label's clause, and
+   * with every test failed leaves the block of `default`, or the switch's.
+   * Each clause's statements follow its block's end, inside the next clause's
+   * block, so a clause that completes runs on into the next one's statements,
+   * as JavaScript falls through; a `break` leaves the switch's block. A
+   * discriminant that is a name is read again at each test, at the `case`
+   * keyword, when every label is a literal or a name, since then nothing
+   * between the tests writes; any other is evaluated first and bound to a
+   * name no source can spell. Every span is a node or a token: a test's `if`
+   * begins at `case`, its read of the discriminant is at `case`, its `===`
+   * at the clause's `:`, and its jump at the label; the jump to `default` is
+   * at the keyword, the one to the switch's end at the clauses' `{`. The clauses
+   * share one scope in JavaScript, so a name one declares directly must not
+   * be read in another clause or in a label. */
+  private switchStmt(node: ts.SwitchStatement): Stmt {
+    const clauses = node.caseBlock.clauses;
+    for (const c of clauses) {
+      const declared = new Set<string>();
+      const collect = (n: Node): void => {
+        if (ts.isIdentifier(n)) declared.add(n.text);
+        else n.forEachChild(collect);
+      };
+      for (const s of c.statements) {
+        if (ts.isVariableStatement(s)) for (const d of s.declarationList.declarations) collect(d.name);
+        else if (ts.isClassDeclaration(s) && s.name) declared.add(s.name.text);
+      }
+      if (!declared.size) continue;
+      const refers = (n: Node): Node | undefined =>
+        ts.isIdentifier(n) && declared.has(n.text) ? n : n.forEachChild(refers);
+      for (const other of clauses) {
+        const at = (ts.isCaseClause(other) ? refers(other.expression) : undefined) ??
+          (other === c ? undefined : other.statements.map(refers).find((n) => n));
+        if (at) this.fail(at, "a name declared in one switch clause and read in another is outside the fragment");
+      }
+    }
+    const unwrap = (e: Expression): Expression => (ts.isParenthesizedExpression(e) ? unwrap(e.expression) : e);
+    const plain = (e: Expression): boolean => {
+      const u = unwrap(e);
+      return ts.isIdentifier(u) || ts.isStringLiteral(u) || ts.isNumericLiteral(u) ||
+        u.kind === ts.SyntaxKind.TrueKeyword || u.kind === ts.SyntaxKind.FalseKeyword ||
+        u.kind === ts.SyntaxKind.NullKeyword ||
+        (ts.isPrefixUnaryExpression(u) && u.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(u.operand));
+    };
+    const discriminant = unwrap(node.expression);
+    const bound: Stmt[] = [];
+    let name: string;
+    if (ts.isIdentifier(discriminant) && clauses.every((c) => !ts.isCaseClause(c) || plain(c.expression)))
+      name = discriminant.text;
+    else {
+      name = `%switch@${node.getStart(this.file)}%`;
+      const at = this.span(node.expression);
+      bound.push({ k: "const", pos: at, bindings: [{ name, namePos: at, annot: null, init: this.expr(node.expression) }] });
+    }
+    const end = switchLabel(node, this.file);
+    const label = (c: ts.CaseOrDefaultClause): string => `%case@${c.getStart(this.file)}%`;
+    const dispatch: Stmt[] = [];
+    let fallback: Stmt | null = null;
+    for (const c of clauses) {
+      const start = c.getStart(this.file);
+      if (!ts.isCaseClause(c)) {
+        fallback = { k: "break", pos: [start, start + "default".length], label: label(c) };
+        continue;
+      }
+      const colon = this.token(c.expression.end, ":", c);
+      dispatch.push({ k: "if", pos: [start, c.expression.end],
+        cond: { k: "bin", pos: [colon, colon + 1], op: "===",
+          l: { k: "id", pos: [start, start + "case".length], name }, r: this.expr(c.expression) },
+        then: [{ k: "break", pos: this.span(c.expression), label: label(c) }], else_: null });
+    }
+    const open = node.caseBlock.getStart(this.file);
+    dispatch.push(fallback ?? { k: "break", pos: [open, open + 1], label: end });
+    const body = clauses.reduce<Stmt[]>((inner, c) =>
+      [{ k: "block", pos: this.span(c), label: label(c), body: inner }, ...this.statements(c.statements)], dispatch);
+    return { k: "block", pos: this.span(node), label: end, body: [...bound, ...body] };
+  }
+
+  /** Whether a statement never completes normally: a jump, or a list or both
+   * arms of an `if` that reach one. A loop may complete. */
+  private abrupt(s: Statement): boolean {
+    return ts.isReturnStatement(s) || ts.isBreakStatement(s) || ts.isContinueStatement(s) ||
+      ts.isThrowStatement(s) ||
+      (ts.isBlock(s) && s.statements.some((t) => this.abrupt(t))) ||
+      (ts.isIfStatement(s) && !!s.elseStatement && this.abrupt(s.thenStatement) && this.abrupt(s.elseStatement));
   }
 
   stmt(node: Statement): Stmt {
@@ -1855,102 +2102,122 @@ class Gate {
       };
 
     if (ts.isReturnStatement(node)) {
+      const start = node.getStart(this.file);
+      const keyword: Span = [start, start + "return".length];
+      // A bare `return` returns `undefined`: the literal, at the keyword. In
+      // an async body it settles the call's promise as completing does:
+      // `return %AsyncComplete%()`.
       if (!node.expression)
-        this.fail(node, "a bare `return` is outside the fragment");
+        return {
+          k: "return",
+          pos: this.span(node),
+          e: this.asyncBody
+            ? this.intrinsic(asyncCompleteName, this.span(node), keyword, [])
+            : { k: "lit", pos: keyword, lit: { a: "undefined" } },
+        };
       const e = this.expr(node.expression);
       // In an async body, `return e` is `return %AsyncReturn%(e)`, the call
       // spanning the statement, the intrinsic read at the keyword.
-      const start = node.getStart(this.file);
       return {
         k: "return",
         pos: this.span(node),
         e: this.asyncBody
-          ? this.intrinsic(asyncReturnName, this.span(node), [start, start + "return".length], [e])
+          ? this.intrinsic(asyncReturnName, this.span(node), keyword, [e])
           : e,
       };
     }
 
-    if (ts.isVariableStatement(node)) {
-      const list = node.declarationList;
-      const mutable = !(list.flags & ts.NodeFlags.Const);
-      // `var` is function-scoped and hoisted, so it is not this binding form.
-      if (mutable && !(list.flags & ts.NodeFlags.Let))
-        this.fail(node, "`var` is outside the fragment");
-      const kindWord = mutable ? "let" : "const";
-      if (
-        list.declarations.some(
-          (d) =>
-            ts.isObjectBindingPattern(d.name) ||
-            ts.isArrayBindingPattern(d.name),
-        )
-      )
-        return this.patternStmt(node, mutable);
-      // A declaration list binds its declarators left to right, each
-      // initializer seeing the earlier bindings, under the statement's one
-      // entry. Each declarator is gated on its own terms.
-      const bindings: BindingAst[] = list.declarations.map((d) => {
-        if (d.name.kind !== ts.SyntaxKind.Identifier)
-          this.fail(d, "destructuring is outside the fragment");
-        if (d.name.text === "undefined")
-          this.fail(d, "shadowing undefined is outside the fragment");
-        // `let x: T;` binds `undefined` where it is declared: it is
-        // `let x: T | undefined = undefined`, the cell's contract admitting
-        // the value it starts with. A read of it before an assignment is
-        // `undefined`, and a read after one is at `T` only where Lean proves
-        // the cell's current contents are, as for any other cell. Without an
-        // annotation there is no contract (TypeScript's evolving `any`).
-        if (!d.initializer) {
-          if (!mutable || !d.type)
-            this.fail(d, `a \`${kindWord}\` needs an initializer`);
-          return {
-            name: d.name.text,
-            namePos: this.span(d.name),
-            annot: this.optionalTypeOf(d.type, d),
-            init: { k: "lit", pos: this.span(d), lit: { a: "undefined" } },
-          };
-        }
-        // For `let`, the storage contract is what every later assignment is
-        // checked against. Written, it is the annotation; unwritten, the
-        // producer states one for the binding and the adapter checks that,
-        // rather than this taking the initializer's type for the contract.
-        return {
-          name: d.name.text,
-          namePos: this.span(d.name),
-          annot: d.type ? this.typeOf(d.type) : null,
-          init: this.expr(d.initializer),
-        };
-      });
-      if (mutable) return { k: "let", pos: this.span(node), bindings };
-      return { k: "const", pos: this.span(node), bindings };
-    }
+    if (ts.isVariableStatement(node)) return this.declarations(node.declarationList, node);
 
     if (ts.isBreakStatement(node) || ts.isContinueStatement(node)) {
       if (node.label)
         this.fail(node, "only unlabeled loop transfers are supported");
-      // The nearest enclosing loop, not crossing into another function.
-      let parent = node.parent;
-      while (
-        parent &&
-        !ts.isFunctionLikeDeclaration(parent) &&
-        !ts.isWhileStatement(parent) &&
-        !ts.isForOfStatement(parent)
-      )
-        parent = parent.parent;
-      if (!parent || !(ts.isWhileStatement(parent) || ts.isForOfStatement(parent)))
+      const target = jumpTarget(node);
+      if (!target)
         this.fail(node, "break or continue outside a supported loop");
-      return {
-        k: ts.isBreakStatement(node) ? "break" : "continue",
-        pos: this.span(node),
-      };
+      // A `break` out of a `switch` goes to the end of the block it is
+      // lowered to (`switchStmt`).
+      if (ts.isBreakStatement(node))
+        return { k: "break", pos: this.span(node),
+          label: ts.isSwitchStatement(target) ? switchLabel(target, this.file) : null };
+      return { k: "continue", pos: this.span(node) };
     }
+    return this.controlStmt(node);
+  }
 
+  /** A `let` or `const` declaration list, the statement `at` spans: a
+   * variable statement, or a `for` loop's initializer. */
+  private declarations(list: ts.VariableDeclarationList, at: Node): Stmt {
+    const mutable = !(list.flags & ts.NodeFlags.Const);
+    // `var` is function-scoped and hoisted, so it is not this binding form.
+    if (mutable && !(list.flags & ts.NodeFlags.Let))
+      this.fail(at, "`var` is outside the fragment");
+    const kindWord = mutable ? "let" : "const";
+    if (
+      list.declarations.some(
+        (d) =>
+          ts.isObjectBindingPattern(d.name) ||
+          ts.isArrayBindingPattern(d.name),
+      )
+    )
+      return this.patternStmt(list, at, mutable);
+    // A declaration list binds its declarators left to right, each
+    // initializer seeing the earlier bindings, under the statement's one
+    // entry. Each declarator is gated on its own terms.
+    const bindings: BindingAst[] = list.declarations.map((d) => {
+      if (d.name.kind !== ts.SyntaxKind.Identifier)
+        this.fail(d, "destructuring is outside the fragment");
+      if (d.name.text === "undefined")
+        this.fail(d, "shadowing undefined is outside the fragment");
+      // `let x: T;` binds `undefined` where it is declared: it is
+      // `let x: T | undefined = undefined`, the cell's contract admitting
+      // the value it starts with. A read of it before an assignment is
+      // `undefined`, and a read after one is at `T` only where Lean proves
+      // the cell's current contents are, as for any other cell. Without an
+      // annotation there is no contract (TypeScript's evolving `any`).
+      if (!d.initializer) {
+        if (!mutable || !d.type)
+          this.fail(d, `a \`${kindWord}\` needs an initializer`);
+        return {
+          name: d.name.text,
+          namePos: this.span(d.name),
+          annot: this.optionalTypeOf(d.type, d),
+          init: { k: "lit", pos: this.span(d), lit: { a: "undefined" } },
+        };
+      }
+      // For `let`, the storage contract is what every later assignment is
+      // checked against. Written, it is the annotation; unwritten, the
+      // producer states one for the binding and the adapter checks that,
+      // rather than this taking the initializer's type for the contract.
+      return {
+        name: d.name.text,
+        namePos: this.span(d.name),
+        annot: d.type ? this.typeOf(d.type) : null,
+        init: this.expr(d.initializer),
+      };
+    });
+    if (mutable) return { k: "let", pos: this.span(at), bindings };
+    return { k: "const", pos: this.span(at), bindings };
+  }
+
+  /** Loops, branches, blocks, `switch`, `try` and `throw`. */
+  private controlStmt(node: Statement): Stmt {
     if (ts.isWhileStatement(node))
       return {
         k: "while",
         pos: this.span(node),
         cond: this.expr(node.expression),
         body: this.block(node.statement),
+        update: [],
       };
+
+    if (ts.isForStatement(node)) return this.forStmt(node);
+    if (ts.isForInStatement(node)) return this.forInStmt(node);
+    if (ts.isSwitchStatement(node)) return this.switchStmt(node);
+
+    // `{ … }`: its statements in a scope of their own.
+    if (ts.isBlock(node))
+      return { k: "block", pos: this.span(node), label: null, body: this.statements(node.statements) };
 
     // `for (const x of e) body`: one immutable binding per iteration. The
     // loop is over an array, which Lean checks: the iterable is the argument
@@ -1979,12 +2246,9 @@ class Gate {
       };
     }
 
+    // `else if (c) s` is `else { if (c) s }`: an unbraced arm is the one
+    // statement its block would hold (`block`).
     if (ts.isIfStatement(node)) {
-      if (node.elseStatement && node.elseStatement.kind !== ts.SyntaxKind.Block)
-        this.fail(
-          node.elseStatement,
-          "`else if` and non-block branches are outside the fragment",
-        );
       return {
         k: "if",
         pos: this.span(node),
@@ -2073,9 +2337,7 @@ class Gate {
           ...(p.dotDotDotToken ? { rest: true as const } : {}),
         };
       });
-      const body = node.body.statements
-        .filter((s) => !prologue.skip.has(s))
-        .map((s) => this.stmt(s));
+      const body = this.statements(node.body.statements.filter((s) => !prologue.skip.has(s)));
       return {
         name: node.name.text,
         namePos: this.span(node.name),
@@ -2269,12 +2531,14 @@ export function parseFile(file: string, carriesContext = false,
     node.forEachChild(findArray);
   };
   findArray(source);
-  // `async`, `await` and `for...of` are calls of intrinsics, which then join
-  // the declarations; the first such construct stands for them.
+  // `async`, `await`, `for...of` and `for...in` are calls of intrinsics,
+  // which then join the declarations; the first such construct stands for
+  // them.
   let firstAsync: Node | undefined;
   const findAsync = (node: Node): void => {
     if (firstAsync) return;
-    if (ts.isAwaitExpression(node) || ts.isForOfStatement(node) || (ts.isFunctionLikeDeclaration(node) &&
+    if (ts.isAwaitExpression(node) || ts.isForOfStatement(node) || ts.isForInStatement(node) ||
+        (ts.isFunctionLikeDeclaration(node) &&
         !!node.modifiers?.some(m => m.kind === ts.SyntaxKind.AsyncKeyword))) {
       firstAsync = node;
       return;

@@ -584,9 +584,18 @@ inductive Stmt where
   store, with a default when the read is undefined. -/
   | arrayPattern (pos : Span) (elems : List (ArrayElem Expr)) (init : Expr)
   | ite (pos : Span) (cond : Expr) (thn : List Stmt) (els : Option (List Stmt))
-  | brk (pos : Span)
+  /-- `break`: to the end of the nearest enclosing loop, or with a label, of
+  the enclosing block of that label. -/
+  | brk (pos : Span) (label : Option String)
   | cont (pos : Span)
-  | loop (pos : Span) (cond : Expr) (body : List Stmt)
+  /-- `while (cond) body`, and the loop of `for (…; cond; update) body`: the
+  end of the body and every `continue` targeting the loop run `update`, then
+  return to the head. A `while` has none. -/
+  | loop (pos : Span) (cond : Expr) (body : List Stmt) (update : List Stmt)
+  /-- `{ body }`: its statements in a lexical scope of their own, and no entry
+  of their own: the first statement's is the block's. A labeled block is where
+  a `break` of its label goes: a lowered `switch` is made of them. -/
+  | block (pos : Span) (label : Option String) (body : List Stmt)
   /-- `for (const name of iterable) body` over an array: the iterable once,
   then the intrinsic `%Iterate%` steps its iterator, binding each element to
   `name` for one run of the body. -/
@@ -596,6 +605,10 @@ inductive Stmt where
 /-- The intrinsic a `for...of` over an array steps (`intrinsics.mts`):
 `<T>(xs: readonly T[]) => () => { readonly value: T } | null`, trusted. -/
 def iterateName : String := "%Iterate%"
+
+/-- The intrinsic a `for...in` iterates (`intrinsics.mts`):
+`(o: unknown) => readonly string[]`, the keys it visits, trusted. -/
+def forInName : String := "%ForIn%"
 
 /-- One element of an array pattern, decoded with the given expression
 decoder, since the structure is shared by statements and expressions. -/
@@ -609,7 +622,8 @@ def decodeArrayElem (decodeExpr : Json → Except String Expr) (q : Json) :
 /-- A statement's own span. -/
 def Stmt.pos : Stmt → Span
   | .ret p _ | .constants p _ | .mutables p _ | .pattern p _ _ | .arrayPattern p _ _
-  | .ite p _ _ _ | .loop p _ _ | .forOf p _ _ _ _ | .brk p | .cont p | .effect p _ => p
+  | .ite p _ _ _ | .loop p _ _ _ | .forOf p _ _ _ _ | .brk p _ | .cont p | .effect p _
+  | .block p _ _ => p
 
 /-- Every direct call of a named function in a statement. -/
 partial def Stmt.callees : Stmt → List (Span × Span × String)
@@ -620,7 +634,8 @@ partial def Stmt.callees : Stmt → List (Span × Span × String)
   | .arrayPattern _ elems init => init.callees ++
     elems.flatMap fun q => (q.default_.map Expr.callees).getD []
   | .ite _ c t e => c.callees ++ t.flatMap Stmt.callees ++ (e.getD []).flatMap Stmt.callees
-  | .loop _ c b => c.callees ++ b.flatMap Stmt.callees
+  | .loop _ c b u => c.callees ++ b.flatMap Stmt.callees ++ u.flatMap Stmt.callees
+  | .block _ _ b => b.flatMap Stmt.callees
   -- The loop calls `%Iterate%` at its own span, reading it at the `for`
   -- keyword, which is no expression and has no claim.
   | .forOf p name _ i b => (p, (p.1, p.1 + "for".length), iterateName) :: i.callees ++
@@ -925,6 +940,12 @@ partial def decodeBindings (j : Json) : Except String (List Binding) := do
   if bindings.isEmpty then throw "a declaration needs a binding"
   return bindings
 
+/-- A jump's or block's label: a string, or null for none. -/
+def decodeLabel (j : Json) : Except String (Option String) := do
+  match ← jField j "label" with
+  | .null => pure none
+  | l => some <$> jStr l
+
 partial def decodeStmt (j : Json) : Except String Stmt := do
   let p ← jSpan j "pos"
   match ← jStr (← jField j "k") with
@@ -946,9 +967,17 @@ partial def decodeStmt (j : Json) : Except String Stmt := do
       return (⟨← jStr (← jField q "field"), ← jStr (← jField q "name"), ← jSpan q "namePos", dflt⟩ : PatternProp)
     if props.isEmpty then throw "an empty pattern binds nothing"
     return .pattern p props (← decodeExpr (← jField j "init"))
-  | "break" => return .brk p
+  | "break" =>
+    CellClaims.fieldsExactly j ["k","pos","label"]
+    return .brk p (← decodeLabel j)
   | "continue" => return .cont p
-  | "while" => return .loop p (← decodeExpr (← jField j "cond")) (← (← jArr j "body").mapM decodeStmt)
+  | "while" =>
+    CellClaims.fieldsExactly j ["k","pos","cond","body","update"]
+    return .loop p (← decodeExpr (← jField j "cond")) (← (← jArr j "body").mapM decodeStmt)
+      (← (← jArr j "update").mapM decodeStmt)
+  | "block" =>
+    CellClaims.fieldsExactly j ["k","pos","label","body"]
+    return .block p (← decodeLabel j) (← (← jArr j "body").mapM decodeStmt)
   | "forOf" =>
     CellClaims.fieldsExactly j ["k","pos","name","namePos","iterable","body"]
     return .forOf p (← jStr (← jField j "name")) (← jSpan j "namePos")

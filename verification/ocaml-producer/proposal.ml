@@ -995,8 +995,10 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       | _ -> expressions := {pos=e.pos;type_=t;
           instantiation=List.assoc_opt e.pos !instantiations} :: !expressions); t
   in
+  (* Whether a list never completes normally: it ends in a jump, or in an
+     `if` whose arms both do. *)
   let rec returns ss = match List.rev ss with
-    | {statement=Return _;_}::_ -> true
+    | {statement=Return _ | Break | Continue;_}::_ -> true
     | {statement=If (_,a,b);_}::_ -> returns a && returns b
     | _ -> false in
   (* A step that may write a cell it does not name: a call, or a write. The
@@ -1014,26 +1016,30 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | Effect {node=Assign (_,rhs) | NullishAssign (_,_,rhs);_} -> stirs rhs
     | Return e | Effect e -> stirs e
     | If (c,a,b) -> stirs c || List.exists stirs_statement (a @ b)
-    | While (c,body) -> stirs c || List.exists stirs_statement body
+    | While (c,body,update) -> stirs c || List.exists stirs_statement (body @ update)
     (* Each step of the loop calls `%Iterate%`. *)
     | ForOf _ -> true
+    | Block (_,body) -> List.exists stirs_statement body
     | Break | Continue -> false in
-  (* A loop's head is reached again from its body: a cell the body assigns,
-     or any cell where the body may write one unseen, is known there by its
-     contract. *)
-  let loop_head env c body =
-    if stirs c || List.exists stirs_statement body then forget env
+  (* A point reached after any part of these statements ran: a cell they
+     assign, or any cell where they may write one unseen, is known there by
+     its contract. *)
+  let havoc env body =
+    if List.exists stirs_statement body then forget env
     else forget ~only:(fun n -> List.exists (assigns n) body) env in
+  (* A loop's head is reached again from its body. *)
+  let loop_head env c body = if stirs c then forget env else havoc env body in
   (* Where two arms meet, a cell holds what either left in it. *)
   let join before left right = List.map (fun (n,b) -> match b,List.assoc_opt n left,List.assoc_opt n right with
     | Storage (contract,_),Some (Storage (_,l)),Some (Storage (_,r)) -> n,holding contract (union l r)
     | _ -> n,b) before in
   let rec statements env ss = List.fold_left (fun env s ->
     let env = match s.statement with
-      | While (c,body) -> loop_head env c body
+      | While (c,body,update) -> loop_head env c (body @ update)
       | ForOf _ -> forget env
       | _ -> env in
-    entry env s.span;
+    (* A block has no entry of its own: its first statement's is. *)
+    (match s.statement with Block _ -> () | _ -> entry env s.span);
     match s.statement with
     | Declare (mutable_,bs) -> List.fold_left (fun env (n,written,init) ->
       let initial = expr ?expected:written env init in
@@ -1073,8 +1079,16 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
        | true,false -> List.filter (fun (n,_) -> List.mem_assoc n env) right
        | false,true -> List.filter (fun (n,_) -> List.mem_assoc n env) left
        | _ -> join env left right)
-    | While (c,body) -> ignore (expr env c);
-      ignore (statements (branch env c true) body); env
+    (* The update runs where the body ends or continues: from the head's
+       knowledge, which already forgets what the body assigns. *)
+    | While (c,body,update) -> ignore (expr env c);
+      ignore (statements (branch env c true) body); ignore (statements env update); env
+    (* A block's bindings end with it. A labeled one is also left by each
+       `break` of its label, after any part of it ran. *)
+    | Block (labeled,body) ->
+      let inner = statements env body in
+      if labeled then havoc env body
+      else List.filter (fun (n,_) -> List.mem_assoc n env) inner
     | ForOf (name,name_pos,iterable,body) ->
       (* The loop is the call of `%Iterate%` on the iterable, claimed at the
          statement with its instance; the element, at the name it binds. *)

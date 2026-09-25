@@ -63,7 +63,6 @@ const expectSubset = (what: string, names: Set<string>, from: Set<string>, allow
     envs: "SKJS claims, decoded in Fragment.lean",
     exprs: "SKJS claims, decoded in Fragment.lean",
     vars: "SKJS claims, decoded in Fragment.lean",
-    label: "the internal graph atom, never on the source wire",
   });
   expectSubset("OCaml reads of the Fragment", ocamlReads("ocaml-producer/source.ml"), ts, {});
   expectSubset("Fragment fields Lean ignores", ts, leanNames, {

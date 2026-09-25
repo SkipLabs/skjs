@@ -184,8 +184,18 @@ export type Expr =
 export type Stmt =
   | { k: "effect"; pos: Span; e: Expr }
   | { k: "return"; pos: Span; e: Expr }
-  | { k: "break" | "continue"; pos: Span }
-  | { k: "while"; pos: Span; cond: Expr; body: Stmt[] }
+  /* A `break` leaves the nearest enclosing loop or, with a label, the
+     enclosing block of that label. */
+  | { k: "break"; pos: Span; label: string | null }
+  | { k: "continue"; pos: Span }
+  /* `while (cond) body`, and the loop of `for (…; cond; update) body`: the
+     head tests `cond`; the end of `body` and every `continue` targeting the
+     loop run `update` and return to the head. A `while` has no update. */
+  | { k: "while"; pos: Span; cond: Expr; body: Stmt[]; update: Stmt[] }
+  /* `{ body }`: its statements in a lexical scope of their own, and no entry
+     of their own (the first statement's is the block's). A labeled block is
+     where a `break` of its label goes; a lowered `switch` is made of them. */
+  | { k: "block"; pos: Span; label: string | null; body: Stmt[] }
   /* `for (const name of iterable) body`, over an array: the iterable once,
      then one run of the body per element, bound to `name`. */
   | { k: "forOf"; pos: Span; name: string; namePos: Span; iterable: Expr; body: Stmt[] }

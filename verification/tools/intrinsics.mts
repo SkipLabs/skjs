@@ -1,5 +1,6 @@
-/** `async`, `await` and `for...of` over an array as trusted steps
- * (DESIGN.md, "Async functions and await" and "Loops over arrays"). Each is a
+/** `async`, `await`, `for...of` over an array and `for...in` as trusted
+ * steps (DESIGN.md, "Async functions and await", "Loops over arrays" and
+ * "Statement forms"). Each is a
  * call of an intrinsic, a value no source name can denote: the parser writes
  * the async ones, and Lean compiles a `for...of` to its calls. The declaration
  * reader lists the intrinsics among the client's values at these signatures,
@@ -17,7 +18,9 @@
  *   settles to `undefined`, which `Promise<void>` admits.
  * - `for (const x of xs)` over an array steps `%Iterate%(xs)`: the array's
  *   iterator, which yields `{ value }` for each element in turn, reading the
- *   array's current length at each step, and then `null`. */
+ *   array's current length at each step, and then `null`.
+ * - `for (const k in o)` is `for (const k of %ForIn%(o))`: the keys the loop
+ *   visits, each a string, of any value (none for null or undefined). */
 import type { TypeTerm } from "./declaration-types.mts";
 
 export const intrinsicModule = "skjs/intrinsics";
@@ -25,6 +28,7 @@ export const awaitName = "%Await%";
 export const asyncReturnName = "%AsyncReturn%";
 export const asyncCompleteName = "%AsyncComplete%";
 export const iterateName = "%Iterate%";
+export const forInName = "%ForIn%";
 
 type Signature = Extract<TypeTerm, { k: "function" }>;
 type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
@@ -53,5 +57,7 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm):
     { name: asyncCompleteName, typeParams: [], type: fn([], promise(atom("void"))) },
     { name: iterateName, typeParams: [{ name: "T", bound: null }],
       type: fn([{ k: "array", readonly: true, element: binder, span }], step) },
+    { name: forInName, typeParams: [],
+      type: fn([atom("unknown")], { k: "array", readonly: true, element: atom("string"), span }) },
   ];
 }
