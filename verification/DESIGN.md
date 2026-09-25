@@ -705,6 +705,29 @@ its labels', so it is sound with no induction step (`Rel`, `mixed_subset`).
 The search tries a table over the types two operand steps from the pair
 (`nearPool`) before the whole pool. Neither adds trust.
 
+**Search cost.** Measured, not guessed: on `sum-main` most of the search went
+to walking the type table, a list, for every row read, then to core tables over
+the whole pool for pairs no table can relate. Three changes, none to a rule:
+
+- The graph of a type table reads its rows from an array built once with the
+  graph (`RequestJson.tableGraph`), not by walking the list per read.
+- The rows a type reaches are gathered once each: each step reads only the rows
+  the previous step added (`readsFrom`), not every row found so far.
+- A core table holds only rows that could be valid (`rowFeasible`): each source
+  clause covered by some target clause with every subtype and arrow premise
+  granted. Coverage is monotone in both, so a row failing this fails under
+  every table. Pruning would remove it in its first round, and what pruning
+  reaches, the largest table within the candidates whose rows are all valid
+  under it, is the same without it.
+  The same test on `(A, B)` itself refuses a pair before any table is built.
+  Search output is unchanged; on every case the evidence is byte-for-byte what
+  it was.
+
+Each external step of a case (parser, producer, search, check) keeps a
+wall-clock limit (`stepTimeoutMs` in `check.mts`); a step that exceeds it is
+reported as `timeout: <step> did not finish within <limit>`, an error, never a
+verdict.
+
 ## What is implemented and proved
 
 | Layer                      | Current status                                                                                                                                                                                                                     |

@@ -167,17 +167,21 @@ instance : FromJson Row := ⟨fun j =>
         (← fromJson? (← j.getObjVal? "kind"))
     | _, _ => .error "expected a clause array, a scheme row or a parameter row"⟩
 
-/-- The graph a table of rows denotes. -/
-def tableGraph (T : List Row) : NormalGraph Nat where
-  rows i := match T[i]? with
-    | some r => r.union
-    | none => []
-  schemes i := match T[i]? with
-    | some (.scheme bs sigs bounds rests) => some ⟨bs, sigs, bounds, rests⟩
-    | _ => none
-  parameterKinds i := match T[i]? with
-    | some (.param _ _ k) => some k
-    | _ => none
+/-- The graph a table of rows denotes. Its rows are read by index at every
+step of search and checking, so the table is copied into an array once, when
+the graph is built: a lookup is then constant time, not a walk down the list.
+-/
+def tableGraph (T : List Row) : NormalGraph Nat :=
+  let A := T.toArray
+  { rows i := match A[i]? with
+      | some r => r.union
+      | none => []
+    schemes i := match A[i]? with
+      | some (.scheme bs sigs bounds rests) => some ⟨bs, sigs, bounds, rests⟩
+      | _ => none
+    parameterKinds i := match A[i]? with
+      | some (.param _ _ k) => some k
+      | _ => none }
 
 @[simp] theorem tableGraph_clauses_row {T : List Row} {i : Nat} {cs : List (Clause (List Nat))}
     (h : T[i]? = some (.clauses cs)) : (tableGraph T).plain i = true ∧ tableGraph T i = cs := by

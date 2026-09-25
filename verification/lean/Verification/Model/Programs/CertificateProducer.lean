@@ -93,6 +93,19 @@ def prune [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) (known : P
       (clausesOf G p.2).any fun b => PositiveCertificates.checkClause G table known es p.1 a b
     if next = table then table else prune G pool known fuel next
 
+/-- Whether a core table could hold the row `(A, B)`: the conditions a row
+must meet that no relation or arrow evidence decides, each source clause
+covered by some target clause with every subtype and arrow premise granted.
+Coverage is monotone in both, so a row failing this fails under every table:
+it is left out of a table's candidates, which leaves the pruned table as it
+was, and a pair failing it is refused before any table is built. Untrusted:
+`checkCore` decides. -/
+def rowFeasible [DecidableEq ι] (G : NormalGraph ι) (known : PositiveRules.Known ι)
+    (A B : Ty ι) : Bool :=
+  PositiveRules.SameKind G A B && decide (PositiveRules.Opaque G A B) &&
+    (sourceClauses G A).all fun a => (clausesOf G B).any fun b =>
+      decide (CoversWith G (fun _ _ => True) known (fun _ _ _ => True) A a b)
+
 /-- Known rows with the instances proving them. -/
 abbrev KnownInstances (ι : Type) :=
   List (List ι × PositiveRules.Ops ι × List (List ι × List (List ι) × List ι × List ι) ×
@@ -105,9 +118,10 @@ def subtypeWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
   -- Value top covers value types: one row, no arrow evidence.
   let toTop := PositiveCertificates.Proof.core ⟨[(A, B)], []⟩
   if expand G B = [.top] && PositiveCertificates.check G A B toTop then some toTop else
-    let types := (A :: B :: pool).eraseDups
-    let initial := types.flatMap fun a => types.map (a, ·)
     let known := PositiveCertificates.knownOf ks
+    if !rowFeasible G known A B then none else
+    let types := (A :: B :: pool).eraseDups
+    let initial := (types.flatMap fun a => types.map (a, ·)).filter fun r => rowFeasible G known r.1 r.2
     let table := prune G types known initial.length initial
     let p := PositiveCertificates.Proof.core ⟨table, arrowEvidence G table types⟩ ks
     if PositiveCertificates.check G A B p then some p else none
@@ -209,14 +223,19 @@ def matchRest [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap 
   (p.1 :: p.2.2.1 :: p.2.2.2 :: p.2.1).zip (q.1 :: q.2.2.1 :: q.2.2.2 :: q.2.1) |>.foldlM
     (fun st xy => matchRow G bs V fuel st κ xy.1 xy.2) st
 
-/-- The rows `S` reads, transitively. -/
-def readsFrom [DecidableEq ι] (G : NormalGraph ι) : Nat → List ι → List ι
-  | 0, S => S
-  | fuel + 1, S =>
-    -- Compared without repeats: a repeated root must not pass for a new row.
-    let S := S.eraseDups
-    let next := (S ++ S.flatMap (reads G)).eraseDups
-    if next.length = S.length then S else readsFrom G fuel next
+/-- The rows `S` reads, transitively, without repeats, in the order they are
+first reached. Only the rows added by the last step are read again: the rows
+before them have had their reads added already, so each row is read once. -/
+def readsFrom [DecidableEq ι] (G : NormalGraph ι) (fuel : Nat) (S : List ι) : List ι :=
+  let S := S.eraseDups
+  go fuel S S
+where
+  go : Nat → List ι → List ι → List ι
+  | 0, seen, _ => seen
+  | fuel + 1, seen, frontier =>
+    let fresh := (frontier.flatMap (reads G)).foldl (fun acc l =>
+      if seen.contains l || acc.contains l then acc else l :: acc) []
+    if fresh.isEmpty then seen else go fuel (seen ++ fresh.reverse) fresh.reverse
 
 /-- The free parameter rows of the rows of `D`, by iteration to a fixed point:
 a parameter row is free in itself, and a row has the free rows of what it

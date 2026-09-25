@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { resolve, join } from "node:path";
+import { basename, resolve, join } from "node:path";
 import { createHash } from "node:crypto";
 import { parseFile } from "../tools/fragment-parse.mts";
 import { tsconfigOf } from "../tools/declaration-graph.mts";
@@ -25,16 +25,28 @@ export type Outcome =
       detail: string;
       phase: Phase;
     };
+/** Wall-clock limit on each external step (the parser, the producer, the
+ * search, the check). A step that exceeds it is killed and the case is an
+ * error naming the step and the limit, never a verdict. */
+export const stepTimeoutMs = 30_000;
 function run(command: string, args: string[]) {
   const p = spawnSync(command, args, {
     cwd: repo,
     encoding: "utf8",
-    timeout: 30_000,
+    timeout: stepTimeoutMs,
     maxBuffer: 16 * 1024 * 1024,
   });
+  const step = [
+    basename(command),
+    ...args.filter((a) => a.startsWith("--")),
+  ].join(" ");
+  if ((p.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT")
+    throw Error(
+      `timeout: ${step} did not finish within ${stepTimeoutMs / 1000} s`,
+    );
   if (p.error || p.signal || p.status === null)
     throw Error(
-      `${command}: ${p.error?.message ?? p.signal ?? "no exit status"}`,
+      `${step}: ${p.error?.message ?? p.signal ?? "no exit status"}`,
     );
   return {
     code: p.status,
