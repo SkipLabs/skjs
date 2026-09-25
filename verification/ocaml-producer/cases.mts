@@ -296,7 +296,7 @@ export const cases: Case[] = [
   negative("invalid-receiver-call", "`.call` passes its first argument as the receiver, which must meet the `this` parameter", /method-receiver|evidence search failed/),
   positive("object-literal-keys", "numeric keys in literals and types (a number's property is its ToString), a numeric key read on a record, a spread of an object literal"),
   gap("object-spread-refused", "a spread copies its operand's own enumerable properties, which the heap model does not tell from a class instance's prototype methods",
-    "unsupported", "source", /a spread copies its operand's own enumerable properties/),
+    "unsupported", "source", /a spread copies the own enumerable properties of its operand/),
   positive("construct-signature-literal", "a type literal of construct signatures only is the constructor type they state: `new` on an ambient one, a class meeting it"),
   negative("invalid-construct-signature-literal", "a class meets a construct signature only at its own instance type"),
   positive("optional-chaining", "`?.` on a field, an element, a call and a method: the receiver once, `undefined` where it is nullish, the rest of the chain skipped with it; a second `?.` in a chain; `null?.` is `undefined`"),

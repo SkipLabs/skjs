@@ -157,15 +157,15 @@ Ordered by value for cost (units per effort, files as a tiebreak):
 | 22 | Type forms: index-signature forms, numeric field names, literal types, `keyof`, indexed access, mapped, `object`, `{}`, method signatures, intersections | 168 | 99 | 69 | 41 | L | P D L |
 | 23 | Loops: ~~`for(;;)`, `for-in`~~ done (task F); `for-of` with `let` | 1 (was 24) | 1 | 0 | 1 | S | P L |
 | 24 | Exceptions: ~~`try`/`catch`/`finally`, `throw`~~ done (throw outcome) | 0 (was 11) | 0 | 0 | 0 | M | P L |
-| 25 | Calls: overloads, `.call`, spread arguments, `Object.assign`, arrow callee | 12 | 5 | 0 | 7 | M | P O |
+| 25 | Calls: ~~`.call`/`.apply`/`.bind` on module functions, `this` parameters~~ done (task R); left: overloads, union callees, spreads not last or into `new`, `.call` on a method read, `Object.assign` | 15 | 7 | 1 | 8 | M | P O |
 | 26 | `await` of non-promises and unions | 12 | 12 | 0 | 2 | M | L |
-| 27 | Object-literal methods, accessors, spreads | 33 | 31 | 2 | 13 | M | P O L |
+| 27 | Object literals: ~~numeric keys, spreads of literals, construct-signature type literals~~ done (task R); spreads of values refused (own-key provenance), computed keys, accessors | 32 | 31 | 1 | 12 | L | P O L |
 | 28 | ~~Lib `Function` methods, `Record`~~ done (task B) | 0 | | | | | |
-| 29 | Optional chaining | 8 | 8 | 0 | 3 | M | P L |
+| 29 | ~~Optional chaining~~ done (task R); 1 left at search (incompleteness) | 0 (was 8) | | | | | |
 | 30 | Sloppy (non-strict) code reading `this` | 8 | 6 | 2 | 5 | S | P |
 | 31 | Other forms (type assertions `<T>e`, empty statement, shadowing, body forms) | 12 | 9 | 0 | 9 | S | P L |
 | 32 | bigint (literals, `BigInt`, bigint literal types) | 232 | 100 | 132 | 12 | L | P L |
-| 33 | Enums | 56 | 0 | 56 | 4 | L | P D L |
+| 33 | ~~Enums~~ done (task R); refused: computed members, an ambient and an empty enum; left: `keyof typeof E`, a union key, equality narrowing | 7 (was 56) | 0 | 7 | 1 | | |
 | — | ~~Policy: no function to verify~~ done (task Q): a module with no function is checked through its initialization | 0 (was 453) | | | | | |
 | — | ~~Environment: SKJS stub imports, `__SKJS_show`, `process`, `Closed<T>`, `StringRecord`~~ done (task Q) | 1 (was 38 + 18 related + 5) | | | | | |
 
@@ -489,10 +489,40 @@ dropped), examples, what the extension needs.
     `#separateTryDoesNotLeak`, `jump-through-finally.ts#jumpBeforeTheTryIsUntouched`:
     the handler and the finalizer know each cell by its contract), and a
     `break`/`continue` through a `finally` (refused).
-25–31. See the table; each is a handful of gate or producer forms.
+25–31. See the table; each is a handful of gate or producer forms. Task R
+    (DESIGN.md, "Optional chaining", "Object literals", "Receivers and
+    methods"): of 25, `.call`, `.apply` and `.bind` on the file's function
+    declarations, a leading `this: T` parameter as the receiver, and `.apply`
+    with an array literal as the `.call` with its elements verify (8 units);
+    the rest are overloads and union callees (6), spreads not last or into
+    `new` or of a `let` (5, incompleteness), `.call` on a method read from a
+    parameter (1: its `call` property is not known to be the intrinsic), and
+    `Object.assign` (1, the library overlay's). Of 27, construct-signature
+    type literals (`{ new (): T }`, 6 units, 4 of them first blocked here),
+    numeric keys in literals and types (8, 6 of them in
+    `number-literal-normalization.ts`) and a spread of an object literal (1)
+    verify; a spread of any other value is refused (30):
+    it copies the operand's own enumerable properties, and the heap model
+    keeps a class instance's methods as fields of the instance, so the copy
+    would own properties JavaScript's does not; admitting it needs own-key
+    provenance, the same allocation-from-parts class inheritance needs. Two
+    computed keys stay outside. Of 29, 7 verify; `composedReceiverSnapshot`
+    stops at the fresh-literal snapshot its plain `snapshot.read()` also
+    stops at (incompleteness). `%` (6 units, unclassified before): 3 verified
+    before the throw outcome; the other 3, bigint remainders by a `bigint`
+    divisor, throw at a zero divisor, an outcome, as `/` does since task S.
 32. **bigint.** `BigIntLiteral` (129), the `BigInt` global (102, read since task K), `non-decimal
     numeric literal type` (1). A new primitive in the calculus.
-33. **Enums.** `top-level statement outside the fragment (EnumDeclaration)` (56).
+33. **Enums.** *Done (task R): an enum is the module constant bound to the
+    object TypeScript's emit makes, members and reverse mappings as readonly
+    fields at their literals; `E`, `E.A` and `typeof E` as types; a `const
+    enum`'s reads as its values; a number key on a record reads the field its
+    `ToString` spells (DESIGN.md, "Enums"). 45 of the 56 units verify.*
+    Refused with their reasons: a computed member (5: its reverse mapping is
+    keyed by its runtime value), an ambient `declare enum` (1), an empty enum
+    (1: an object with no property). Left for other groups: `keyof typeof E`
+    (2, type forms), `E[i]` with `i` a union of keys (1), equality narrowing
+    `x === E.A` (1, task I). None is an SKJS unsoundness.
 
 34. **Module initialization and the SKJS environment (task Q).** *Done.* A
     module whose only code is its initialization, constants, classes and
@@ -680,7 +710,14 @@ variant), `tparam_shadow.ts` (read-only fields, so covariance is sound),
 `unsound-refinement.ts` snapshots, `void.ts#unsafeInTypescript`. Units refused
 *before* Lean (source/proposal) were not examined for unsoundness; widening the
 fragment will expose more divergences, so each widening task should rerun this
-script and read new `search` refusals.
+script and read new `search` refusals. Task R's (an empty enum's allocation,
+now refused at the gate; enum equality narrowing; a number key on a string
+index; the bigint `%` by a `bigint` divisor before the throw outcome; generic
+inference through `Maybe<A>`; a fresh-literal snapshot read through `?.`)
+are incompleteness. Its refusals of object spreads were probed against SKJS:
+SKJS refuses accessors and tracks a method's declaration provenance through
+a spread, so the class-instance copy the heap model cannot express is not an
+SKJS unsoundness either.
 
 ## Proposed tasks
 
@@ -708,7 +745,7 @@ split by function.
 | P. Search narrowing and async | Flow narrowing after assignment and refinement snapshots, `Promise`/async results and `await`, contextual literals into unions, function values into intersections | ~80 / 30 | `CertificateProducer.lean`, `ProgramTyping.lean`, `proposal.ml` | I | I, J |
 | Q. Module initialization and run setup (done) | A module with no function checked through its initialization unit; verdicts attributed only to units whose own code was checked; SKJS's test environment (stub imports through a per-unit `--project`, `__SKJS_show`, `process`, `StringRecord`, `Closed<T>` as `T`) | 450 / 98 verified (911 → 1,361 units, 860 → 880 functions, 96 → 136 whole files, none lost) | `SourceClaimJson.lean`, `check.mts`, `skjs-coverage.mts`, `skjs-environment/` | — | — |
 | S. Throws (done) | A throw is an outcome: `throw`, `try`/`catch`/`finally` (handler edges, the `finally` compiled on each way out, returns included), `typeof` narrowing `unknown`; bigint division and exponent, `BigInt` of any number or string, and primitive radix/digit arguments read as declared | 59 units newly verified over the committed run (1,361 → 1,420, 880 → 917 functions, 136 → 141 whole files, none lost), of which about 38 in exception or bigint units and the rest from overlay work the committed run predated | `Calculus.lean`, `Safety.lean`, `ControlFlow.lean`, `ProgramTyping.lean`, `SourceExtraction.lean`, `fragment-parse.mts`, `library-globals.mts`, `array-prototype.mts`, `proposal.ml` | — | — |
-| R. Leftovers | Object-literal methods/accessors/spread, optional chaining, `.call`/spread calls/`Object.assign`, bigint, enums | 33 + 8 + 12 + 232 + 56 | various | D (bigint), O (enums) | — |
+| R. Remaining source forms (done) | Enums (runtime, `const`, types, reverse mappings, number keys on records); object literals (numeric keys, literal spreads, construct-signature type literals; value spreads and accessors refused with reasons); optional chaining as one derived form; `.call`/`.apply`/`.bind` on module functions and `this` parameters as receivers; `%` exact on numbers and bigints | 80 / 19 verified, measured on 414fc86a before task S (1,361 → 1,441 units, 880 → 956 functions, 136 → 142 whole files, none lost) | `fragment-parse.mts`, `type-term.mts`, `declaration-graph.mts`, `annotate-source.mts`, `Fragment.lean`, `SourceExtraction.lean`, `Calculus.lean`, `ProgramTyping.lean`, `source.ml`, `proposal.ml` | D (bigint) | I (enum narrowing) |
 
 Suggested order: A, B, D in parallel (disjoint files except D's gate
 entries); then C, E, G; then F, H; then I, K; then J, L, P; M, N, O last (the

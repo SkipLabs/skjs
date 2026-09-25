@@ -398,6 +398,8 @@ class Gate {
   enumStmt(node: ts.EnumDeclaration): Stmt {
     const name = node.name.text;
     const entries = this.enumEntries(name);
+    if (!entries.length)
+      this.fail(node, "an enum without members allocates an object with no property, which the heap model has no record for");
     const at: Span = [node.name.getStart(this.file), node.end];
     return {
       k: "const",
@@ -1265,7 +1267,7 @@ class Gate {
         let operand: Expression = f.expression;
         while (ts.isParenthesizedExpression(operand)) operand = operand.expression;
         if (ts.isObjectLiteralExpression(operand)) return this.objectFields(operand, seen);
-        return this.fail(f, "a spread copies its operand's own enumerable properties, which the heap model does not tell from its prototype members; only an object literal's are known");
+        return this.fail(f, "a spread copies the own enumerable properties of its operand, which the heap model does not tell from prototype members; only those of an object literal are known");
       }
       if (ts.isGetAccessorDeclaration(f) || ts.isSetAccessorDeclaration(f))
         return this.fail(f, "an accessor runs code where its property is read or written; the heap model has data properties only");

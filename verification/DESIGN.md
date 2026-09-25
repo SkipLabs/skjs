@@ -4180,16 +4180,19 @@ evaluated in order. What the parser admits, and why the rest is refused:
   refused, as in a literal.
 - **Any other spread is refused.** `{ ...o }` copies `o`'s own enumerable
   properties, which the heap model does not know: a class instance's methods
-  are fields of the instance here ([Modules and code units](#modules-and-code-units), "Classes"), where JavaScript
-  keeps them on the prototype and a spread skips them, and an array's
-  elements live in its store. Copying the model's fields would give the copy
-  properties JavaScript's does not have, so the lowering would not be
-  faithful. What admitting it needs is own-key provenance in the heap: an
-  allocation from parts, `alloc [field k e | copy e]`, whose `copy` takes
-  exactly the source's own enumerable keys. That is also the form class
-  inheritance needs (the base constructor's fresh instance copied into the
-  derived allocation), where the keys are the base class's, known
-  statically.
+  are fields of the instance here ([Modules and code units](#modules-and-code-units),
+  "Classes"), where JavaScript keeps them on the prototype and a spread skips
+  them, and an array's elements live in its store. Copying the model's fields
+  would give the copy properties JavaScript's does not have, so the lowering
+  would not be faithful. Admitting it needs own-key provenance in the heap:
+  each allocation records which of its fields are own enumerable properties
+  (a literal's all of them, a class instance's its fields but not its
+  methods), and an allocation from parts, `alloc [field k e | copy e]`, whose
+  `copy` takes exactly those of the source, at run time. That is a calculus
+  change (the object value, `makeAt`, and a copy step with its typing rule),
+  scheduled as its own task because class inheritance needs the same form:
+  the base constructor's fresh instance copied into the derived allocation,
+  where the keys are the base class's, known statically.
 - **Accessors are refused.** `get x() {…}` runs code on every read of `x`
   and `set` on every write; the heap model's properties are data only.
 
