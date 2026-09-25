@@ -2243,6 +2243,28 @@ agree on its claim. A constructor's parameters are required or optional (a
 closure's `x?: T`, which binds `T | undefined`); defaults and rests are not yet
 read.
 
+**Static members.** A static member is a property of the class value, which
+the fragment types by its construct signature alone. It is lowered as a
+module binding of its own, `static C.x`, a name no source binding can spell,
+after the class: the static methods, then the static fields in order, as
+JavaScript defines them once the class value exists (so an initializer may
+read the class and its methods, and a static field read before its
+initializer is refused as any constant is). A read `C.x` is that binding
+exactly where TypeScript binds it to the static member `x` of the file's
+top-level class `C` (`staticReads`, resolved by the checker as symbol keys
+are), so a parameter named `C` is not the class. The lowering is exact
+within the fragment: the class value's type names no member, so no other
+access reaches the property, and no write to it is expressible, which makes a
+binding the property's only value only because a static field is required
+to be `readonly` (a mutable one is module state, `class-static-mutable.ts`).
+A static method's receiver is whatever its call passes, `C` for `C.m()` and
+`undefined` detached (TypeScript types it as the class, and a detached call
+reading a member through it throws). One whose body does not read `this` is
+the same function under either, so it is an ordinary function and `C.m()` a
+plain call; one that reads `this` is outside the fragment
+(`class-static-this.ts`). Its annotation is its signature, which a function
+reading it uses. A static block is outside the fragment.
+
 **Initialization order.** A module constant has no value until its
 declaration runs. The initialization unit refuses a call, direct or through
 other module functions, that can read a constant not yet initialized. Module

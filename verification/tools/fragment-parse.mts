@@ -39,7 +39,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { Atom } from "./claim.mts";
 import type { DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
-import { bigintText, CLASS_ACCESS, optionalTerm, restPositions, REST_CONTRACT, typeTerm, type TermScope } from "./type-term.mts";
+import { bigintText, CLASS_ACCESS, optionalTerm, restPositions, REST_CONTRACT, signature, typeTerm, type TermScope } from "./type-term.mts";
 import type {
   Ast,
   BindingAst,
@@ -62,6 +62,10 @@ import { asyncCompleteName, asyncReturnName, awaitName } from "./intrinsics.mts"
 
 /** A question-mark parameter requires an optional suffix. A default may
  * precede a required parameter: callers supply undefined in that position. */
+/** The binding a class's static member is: a name no source binding can
+ * spell, apart from the instance methods' `C.m`. */
+const staticName = (cls: string, member: string): string => `static ${cls}.${member}`;
+
 function firstOptional(
   parameters: readonly { questionToken?: unknown; initializer?: unknown }[],
 ): number {
@@ -181,6 +185,9 @@ class Gate {
   /** `e[k]` keys TypeScript binds to a `unique symbol` constant, by span:
    * the symbol, as the declaration document lists it. */
   symbolKeys = new Map<string, number>();
+  /** `C.x` member names TypeScript binds to a static member of the file's
+   * class `C`, by span: the class. */
+  staticReads = new Map<string, string>();
   // Mode of the ordinary function that bound `this`, or no binding. A strict
   // arrow captures its creator's already-converted receiver; it cannot rebind it.
   private receiverMode: "strict" | "sloppy" | null = null;
@@ -320,12 +327,42 @@ class Gate {
         return { name: p.name.text, pos: this.span(p.name), property: !!p.modifiers?.length, at: this.span(p),
           type: p.questionToken ? this.optionalTypeOf(p.type, p) : this.typeOf(p.type, p) };
       }) : [];
+      // Static members are bindings of their own, which `C.x` reads
+      // (`staticReads`), after the class, as JavaScript defines them once the
+      // class value exists: the methods, then the fields, in order.
+      const staticMethods: BindingAst[] = [], statics: BindingAst[] = [];
       for (const member of node.members) {
         if (ts.isSemicolonClassElement(member) || ts.isConstructorDeclaration(member)) continue;
-        if ((member as { modifiers?: readonly Node[] }).modifiers?.some((m) => m.kind !== ts.SyntaxKind.ReadonlyKeyword &&
-            m.kind !== ts.SyntaxKind.AsyncKeyword &&
-            !CLASS_ACCESS.includes(m.kind)))
+        const modifiers = (member as { modifiers?: readonly Node[] }).modifiers ?? [];
+        if (modifiers.some((m) => m.kind !== ts.SyntaxKind.ReadonlyKeyword && m.kind !== ts.SyntaxKind.AsyncKeyword &&
+            m.kind !== ts.SyntaxKind.StaticKeyword && !CLASS_ACCESS.includes(m.kind)))
           this.fail(member, "a class member modifier outside the fragment");
+        if (modifiers.some((m) => m.kind === ts.SyntaxKind.StaticKeyword)) {
+          if (!(ts.isPropertyDeclaration(member) || ts.isMethodDeclaration(member)) || !ts.isIdentifier(member.name))
+            return this.fail(member, "a static member needs a plain name");
+          const binding = staticName(name.text, member.name.text);
+          if (ts.isMethodDeclaration(member)) {
+            // `C.m()` passes `C` as the receiver, a detached call `undefined`:
+            // a body that reads none is the same function either way, called
+            // plainly. Its signature is its annotation: functions read it there.
+            if (member.body && readsThis(member.body))
+              this.fail(member, "a static method that reads `this` is outside the fragment");
+            const annot = member.type && !member.typeParameters?.length
+              ? signature(this.scope, member.parameters, member.type, member, this.span(member), true) : null;
+            staticMethods.push({ name: binding, namePos: this.span(member.name), annot, init: this.lambda(member) });
+            continue;
+          }
+          // A static field's writes would be mutable module state.
+          if (!modifiers.some((m) => m.kind === ts.SyntaxKind.ReadonlyKeyword) || member.postfixToken)
+            this.fail(member, "a static field must be readonly and required");
+          if (member.initializer && readsThis(member.initializer))
+            this.fail(member, "a static initializer that reads `this` is outside the fragment");
+          statics.push({ name: binding, namePos: this.span(member.name),
+            annot: member.type ? this.typeOf(member.type, member) : null,
+            init: member.initializer ? this.expr(member.initializer)
+              : { k: "lit", pos: this.span(member.name), lit: { a: "undefined" } } });
+          continue;
+        }
         if (ts.isPropertyDeclaration(member)) {
           if (!ts.isIdentifier(member.name)) this.fail(member, "a class member needs a plain name");
           const type = this.typeOf(member.type, member);
@@ -422,7 +459,8 @@ class Gate {
       const type: TypeTerm = { k: "constructor", params: params.map((p) => p.type), rest: null, result: instance,
         span: this.span(name) };
       return { k: "const", pos: this.span(node),
-        bindings: [...methods, { name: name.text, namePos: this.span(name), annot: type, init: lambda }] };
+        bindings: [...methods, { name: name.text, namePos: this.span(name), annot: type, init: lambda },
+          ...staticMethods, ...statics] };
     } finally {
       this.strict = outerStrict;
     }
@@ -721,6 +759,11 @@ class Gate {
     if (ts.isPropertyAccessExpression(node)) {
       if (node.questionDotToken)
         this.fail(node, "optional property access is outside the fragment");
+      // `C.x` that TypeScript binds to a static member of class `C` reads the
+      // binding the class statement gives it (`classStmt`).
+      const cls = this.staticReads.get(this.span(node.name).join(":"));
+      if (cls !== undefined)
+        return { k: "id", pos: this.span(node), name: staticName(cls, node.name.text) };
       return {
         k: "read",
         pos: this.span(node),
@@ -949,8 +992,12 @@ class Gate {
       // value, and takes the `apply` form below.
       let target: Expression = node.expression;
       while (ts.isParenthesizedExpression(target)) target = target.expression;
+      // A static method is not read from its class but bound on its own, so
+      // its call is a plain call: its body reads no receiver it is given.
+      const isStatic = ts.isPropertyAccessExpression(target) &&
+        this.staticReads.has(this.span(target.name).join(":"));
       if (
-        ts.isPropertyAccessExpression(target) ||
+        (ts.isPropertyAccessExpression(target) && !isStatic) ||
         ts.isElementAccessExpression(target)
       ) {
         const spreads: number[] = [];
@@ -1380,8 +1427,10 @@ class Gate {
     node: ArrowFunction | FunctionExpression | MethodDeclaration,
     instance?: TypeTerm,
   ): Expr {
-    // A method's accessibility is TypeScript's alone (`CLASS_ACCESS`).
-    const modifiers = (node.modifiers ?? []).filter((m) => !(instance && CLASS_ACCESS.includes(m.kind)));
+    // A method's accessibility is TypeScript's alone (`CLASS_ACCESS`); a static
+    // one is bound on its own (`classStmt`).
+    const modifiers = (node.modifiers ?? []).filter((m) => !(ts.isMethodDeclaration(node) &&
+      (CLASS_ACCESS.includes(m.kind) || m.kind === ts.SyntaxKind.StaticKeyword)));
     const isAsync = modifiers.length === 1 && modifiers[0]?.kind === ts.SyntaxKind.AsyncKeyword;
     if (modifiers.length && !isAsync)
       this.fail(node, "expected a closure without modifiers other than `async`");
@@ -2198,10 +2247,23 @@ export function parseFile(file: string, carriesContext = false,
     node.forEachChild(findKeys);
   };
   if (!carriesContext) findKeys(source);
+  // A read `C.x` of a class with static members may be one of them:
+  // TypeScript decides.
+  const withStatics = new Set(classNodes.filter(c => c.members.some(m =>
+    (m as { modifiers?: readonly Node[] }).modifiers?.some(k => k.kind === ts.SyntaxKind.StaticKeyword)))
+    .flatMap(c => c.name ? [c.name.text] : []));
+  const staticNodes: Identifier[] = [];
+  const findStatics = (node: Node): void => {
+    if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression) &&
+        withStatics.has(node.expression.text) && ts.isIdentifier(node.name))
+      staticNodes.push(node.name);
+    node.forEachChild(findStatics);
+  };
+  if (!carriesContext && withStatics.size) findStatics(source);
   if (importNodes.length || localNodes.length || globalNodes.length || globalValueNodes.length ||
-      firstArray || firstAsync || keyNodes.length || ambientNames.length) {
+      firstArray || firstAsync || keyNodes.length || ambientNames.length || staticNodes.length) {
     const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
-      firstAsync ?? keyNodes[0] ?? ambientNames[0];
+      firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0];
     if (!first) throw Error("missing declaration root");
     // Named imports only. A type import joins the declaration graph; a value
     // import is an assumption at the type its declaration states.
@@ -2223,6 +2285,8 @@ export function parseFile(file: string, carriesContext = false,
         ...(firstAsync ? { intrinsics: gate.span(firstAsync) } : {}),
         symbolKeys: keyNodes.map(node => gate.span(node)),
         symbolKey: ([start, end], symbol) => gate.symbolKeys.set(`${start}:${end}`, symbol),
+        staticReads: staticNodes.map(node => gate.span(node)),
+        staticMember: ([start, end], cls) => gate.staticReads.set(`${start}:${end}`, cls),
         library: ([start, end], library) => {
           const node = globalNodes.find(n => n.getStart(source) === start && n.end === end);
           if (node) gate.libraryTypes.set(node.text, library);
@@ -2231,7 +2295,7 @@ export function parseFile(file: string, carriesContext = false,
     } catch (error) {
       const at = error instanceof DeclarationError
         ? [...importNodes, ...localNodes, ...globalNodes, ...globalValueNodes, ...(firstArray ? [firstArray] : []),
-            ...(firstAsync ? [firstAsync] : []), ...keyNodes, ...ambientNames.map(topStatement)].find(node =>
+            ...(firstAsync ? [firstAsync] : []), ...keyNodes, ...ambientNames.map(topStatement), ...staticNodes].find(node =>
             node.getStart(source) === error.at[0]) ?? first
         : first;
       gate.fail(at, messageOf(error));

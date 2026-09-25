@@ -530,6 +530,10 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
   };
   for (const member of node.members) {
     const memberSpan = spanOf(scope, member);
+    // A static member is the class value's, not an instance's.
+    if ((ts.isPropertyDeclaration(member) || ts.isMethodDeclaration(member)) &&
+        member.modifiers?.some(m => m.kind === ts.SyntaxKind.StaticKeyword))
+      continue;
     if (ts.isPropertyDeclaration(member)) {
       only(member, [ts.SyntaxKind.ReadonlyKeyword]);
       // `x?: T` is an optional field. `x!: T` is a required one, whatever

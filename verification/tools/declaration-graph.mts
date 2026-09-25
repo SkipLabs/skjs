@@ -230,6 +230,12 @@ export function collectDeclarations(file: string, options: {
    * reported to `symbolKey` with its index. */
   symbolKeys?: readonly Span[];
   symbolKey?: (span: Span, symbol: number) => void;
+  /** The client's member names of reads `X.y` with `X` an identifier: each
+   * that TypeScript binds to a static member of a class the client declares
+   * at its top level, `X` naming that class, is reported to `staticMember`
+   * with the class's name. */
+  staticReads?: readonly Span[];
+  staticMember?: (span: Span, cls: string) => void;
   /** Told each TypeScript error the gate reads while deciding whether a
    * declaration is clean, whether or not it refuses the source: every error
    * TypeScript reports in each file it examines, each once. */
@@ -673,6 +679,20 @@ export function collectDeclarations(file: string, options: {
       } catch (error) {
         throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
       }
+    }
+    for (const span of options.staticReads ?? []) {
+      const name = identifierAt(client, span);
+      const access = name?.parent;
+      if (!name || !access || !ts.isPropertyAccessExpression(access) || !ts.isIdentifier(access.expression))
+        throw new DeclarationError(span, "TypeScript member read missing");
+      const members = targetOf(checker, name)?.declarations.map(d => d.resolve()) ?? [];
+      const owners = targetOf(checker, access.expression)?.declarations.map(d => d.resolve()) ?? [];
+      const [member] = members, [owner] = owners;
+      if (members.length === 1 && owners.length === 1 && member && owner &&
+          ts.isClassDeclaration(owner) && owner.name && owner.parent === client && member.parent === owner &&
+          (ts.isPropertyDeclaration(member) || ts.isMethodDeclaration(member)) &&
+          member.modifiers?.some(m => m.kind === ts.SyntaxKind.StaticKeyword))
+        options.staticMember?.(span, owner.name.text);
     }
     const seen = new Set<string>();
     const definitions: TypeDefinition[] = [];
