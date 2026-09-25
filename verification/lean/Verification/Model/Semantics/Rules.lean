@@ -177,6 +177,30 @@ theorem read_view_rule_ext {code : CallCode} {flds : List (PropKey × Nat)} {f :
     | zero => trivial
     | succ q => exact Or.inl ⟨hA _ _ _ hAv, hAv⟩
 
+/-- **Read through the prototype.** A key the object lacks is read from its
+prototype, which the object's prototype location holds under a contract
+implying `P`; a read of the key from any member of `P` is safe at `A`. The
+delegation is a step, so the prototype is read one level down. -/
+theorem read_proto_rule {code : CallCode} {flds : List (PropKey × Nat)} {f : PropKey} {P A : Fam}
+    (n : Nat) (W : WorldT n) (h : Heap) (l : Nat)
+    (hadm : WorldAdm W) (hok : HeapOk n W h) (hmiss : flds.lookup f = none)
+    (hpf : flds.lookup CallArguments.protoField = some l)
+    {c : Ctr n} (hl : lookup W l = some c)
+    (hag : ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u → P j U u)
+    (hP : ∀ j (U : WorldT j) (h' : Heap), WorldAdm U → HeapOk j U h' →
+      ∀ u, P j U u → Safe A j U h' (.readAt f u)) :
+    Safe A n W h (.readAt f (.objAt flds code)) := by
+  cases n with
+  | zero => trivial
+  | succ p =>
+    obtain ⟨pv, hpv, hmem⟩ := hok.2 l c hl
+    exact Or.inr ⟨trunc p (Nat.le_succ p) W, h, .readAt f pv, WExt_refl _,
+      WorldAdm_trunc _ hadm, .readProto hmiss hpf hpv, HeapOk_trunc p W h hok,
+      hP p _ h (WorldAdm_trunc _ hadm) (HeapOk_trunc p W h hok) pv
+        (hag p (by omega) _ pv (hmem p (by omega)))⟩
+
+#print axioms read_proto_rule
+
 /-- A string dictionary covers every present field, while a missing name
 reads `undefined`. A lookup cannot discard that alternative. -/
 theorem read_dict_rule {flds : List (PropKey × Nat)} {f : String} {A : Fam}

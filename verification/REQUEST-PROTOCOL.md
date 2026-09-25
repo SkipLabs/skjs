@@ -75,6 +75,7 @@ Each type-graph node is a union of clauses:
 | Boolean singleton                                                                                                                                                          | `{"boolLit":{"value":true}}` (or `false`)                                                   |
 | Invariant reference with optional additional contract requirements, and readonly views: fields read at a sound upper bound, with no write permission through this contract | `{"refs":{"first":[["value",[1]]],"rest":[],"views":[["seen",[1]]]}}`                       |
 | Optional fields: a key constrained only where the object has it, where its location holds exactly the contract; left out when there are none (also on `dict`) | `{"refs":{"first":[],"rest":[],"views":[],"optional":[["field",[4]]]}}`                       |
+| Own-key bounds: each list bounds the object's own keys, so a key outside one is not the object's own and a read of it continues at the prototype; left out when there are none (also on `dict`) | `{"refs":{"first":[["[]",[2]]],"rest":[],"views":[["[[proto]]",[5]]],"bounds":[["[]","[[proto]]"]]}}` |
 | Plain object with named contracts and readonly string-index views; each index operand constrains every present own field | `{"dict":{"first":[],"rest":[],"views":[],"indexes":[[1,3]]}}` |
 | Intersection of arrows `[receiver, [params, result]]`, with variadic signatures `[receiver, [params, [rest, result]]]` when there are any, `rest` an argument-list type (`pack`)  | `{"arrs":{"arrows":[[[5],[[[0]],[1]]],[[5],[[[1]],[0]]]]}}`                                 |
 | Array store: simultaneous tuple contracts, each with required, optional and rest positions; readonly contracts give element read capabilities                              | `{"list":{"first":{"required":[[4]],"optional":[],"rest":[4],"readonly":false},"rest":[]}}` |
@@ -216,7 +217,7 @@ one subtype-evidence list per outgoing edge. A derivation node names the
 `var`, `nul`, `undef`, `tru`, `fls`, `truLit`, `flsLit`, `numLit`, `num`,
 `strLit`, `str`, `funE`, `app`, `letE`, `alloc`, `allocDict`,
 `read`, `readOptional`, `readDict`, `indexDict`, `write`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
-`unionVar`, `makeCallable`, `callCallable`, `readCallable`, `writeCallable`, `readView`, `arith`, `test`,
+`unionVar`, `makeCallable`, `callCallable`, `readCallable`, `writeCallable`, `readView`, `readProto`, `arith`, `test`,
 `arrLit`, `elem`, `elemOpt`, `elemAny`, `setElem`, `len`, `funRest`, `makeCallableRest`,
 `callRest`, `arrCopy`, `bindE`, `bindRestE`, `bindMember`, `ctorE`, `construct`, or `sub`.
 The array rules act on a store, the value an array object holds in its store
@@ -227,7 +228,10 @@ its contract, `elemOpt` an optional or rest position at its contract or
 element contract or `undefined`; `setElem` writes a named position, into its
 location or a fresh one the store records; `len` reads the length as a number.
 `readView` reads a field named among a record's views, at the bound the view
-states; no rule writes through a view.
+states; no rule writes through a view. `readProto` reads a key outside one of
+a record's own-key bounds from the prototype the record holds under the
+reserved key `[[proto]]`, at the prototype's field or view for the key; it
+names the prototype's type, `{"readProto": {"proto": P}}`.
 `arith` combines two operands the number test answers for into the number
 family; `test` types a tag test whose answer the operand's type does not settle
 as a Boolean holding both literals, for `ifBool` to branch on. `ifTrue` and `ifFalse` are the two answers of the single

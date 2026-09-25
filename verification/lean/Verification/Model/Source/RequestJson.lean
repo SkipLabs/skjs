@@ -60,13 +60,14 @@ deriving instance ToJson, FromJson for MethodMembers.Sig
 deriving instance ToJson, FromJson for Clause
 
 /-- The clause fields that are left out of JSON when empty: a call clause's
-variadic signatures and a record's optional fields and methods. Absence is the one
-spelling of none, so strict decoding, which re-encodes and compares, still
-refuses an explicit empty list, and a clause without them reads as it always
-has. -/
+variadic signatures and a record's optional fields, methods and key bounds.
+Absence is the one spelling of none, so strict decoding, which re-encodes and
+compares, still refuses an explicit empty list, and a clause without them reads
+as it always has. -/
 private def omittedWhenEmpty : List (String × String) :=
   [("arrs", "variadic"), ("callable", "variadic"), ("ctors", "variadic"), ("refs", "optional"),
-   ("dict", "optional"), ("refs", "methods"), ("dict", "methods")]
+   ("dict", "optional"), ("refs", "methods"), ("dict", "methods"), ("refs", "bounds"),
+   ("dict", "bounds")]
 
 private def withoutEmptyVariadic (j : Json) : Json :=
   omittedWhenEmpty.foldl (fun j (key, name) =>
@@ -220,9 +221,9 @@ def clauseTypes : Clause (Ty Nat) → List (Ty Nat)
   | .top => []
   | .list a bs => (a :: bs).flatMap fun t => t.required ++ t.optional ++ t.rest.toList
   | .pack a bs => (a :: bs).flatMap fun t => t.required ++ t.optional ++ t.rest.toList
-  | .refs A bs vs os ms => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd ++
+  | .refs A bs vs os ms _ => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd ++
       os.map Prod.snd ++ ms.flatMap MethodMembers.Sig.operands
-  | .dict A bs vs ds os ms => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd ++ ds ++
+  | .dict A bs vs ds os ms _ => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd ++ ds ++
       os.map Prod.snd ++ ms.flatMap MethodMembers.Sig.operands
   | .arrs L S => L.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2]) ++
       S.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2.1, p.2.2.2])
@@ -295,6 +296,7 @@ def validEvidence (bound : Nat) : ProgramCertificates.Evidence Nat → Bool
       | .funRest As | .makeCallableRest As => As.all (validTy bound)
       | .callRest _ _ _ E => validTy bound E
       | .arrCopy E => validTy bound E
+      | .readProto P => validTy bound P
       | .elemOpt U | .elemAny U => validTy bound U
       | _ => true) &&
     ps.attach.all (fun p => validEvidence bound p.val)

@@ -150,7 +150,7 @@ private def exprType (fc : SourceClaims.Function) (e : Fragment.Expr) : Compiler
 invariantly or as a view. -/
 private def storeOf (G : PositiveGraphs.NormalGraph Nat) (A : Ty Nat) : Option (Ty Nat) :=
   match PositiveRules.expand G A with
-  | [.refs fs [] vs] => fs.lookup SourceTypes.storeField <|> vs.lookup SourceTypes.storeField
+  | [.refs fs [] vs _ _ _] => fs.lookup SourceTypes.storeField <|> vs.lookup SourceTypes.storeField
   | _ => none
 
 /-- A source numeric key must denote one valid array index. The two runtime
@@ -437,7 +437,7 @@ private def distinctLinks (G : Verification.Model.PositiveGraphs.NormalGraph Nat
       Γ.zipIdx.flatMap fun (A,j) =>
         if i == j then [] else
         match PositiveRules.expand G A with
-        | [.refs fs _ _ [] _] => fs.map fun p => (⟨i,j,false,valueField,true,p.1⟩ : HeapLinks.Link)
+        | [.refs fs _ _ [] _ _] => fs.map fun p => (⟨i,j,false,valueField,true,p.1⟩ : HeapLinks.Link)
         | _ => []
     | .value => []
 
@@ -813,7 +813,7 @@ bag, or an explicit union of cell contracts each naming the field. -/
 private def readCell (G : PositiveGraphs.NormalGraph Nat) (Γ : List (Ty Nat)) (fld : PropKey)
     (a : DirectProof.Plan) : Compiler DirectProof.Plan := do
   match PositiveRules.expand G a.type with
-  | [.refs fs [] vs [] _] =>
+  | [.refs fs [] vs [] _ _] =>
     -- An invariant field reads at its contract; a readonly view at its bound.
     match fs.lookup fld, vs.lookup fld with
     | some B, _ => pure (DirectProof.node Γ (.readAt fld a.term) B .read [a])
@@ -828,7 +828,7 @@ private def readCell (G : PositiveGraphs.NormalGraph Nat) (Γ : List (Ty Nat)) (
   | _ =>
     if a.type.length ≤ 1 then throw "read receiver must name a cell contract"
     let alternatives ← a.type.mapM fun label => do
-      let [.refs fs [] [] [] _] := PositiveRules.expand G [label]
+      let [.refs fs [] [] [] _ _] := PositiveRules.expand G [label]
         | throw "every read alternative must name a cell contract"
       let some B := fs.lookup fld
         | throw s!"read of a field '{fld}' an alternative does not name"
@@ -847,7 +847,7 @@ private def writeCell (G : PositiveGraphs.NormalGraph Nat) (H : List (Ty Nat)) (
     (B C : Ty Nat) (ri : Nat) : Compiler DirectProof.Plan := do
   let term := Tm.writeAt fld (.var ri) (.var 0)
   match PositiveRules.expand G B with
-  | [.refs fs [] vs [] _] =>
+  | [.refs fs [] vs [] _ _] =>
     let some D := fs.lookup fld
       | throw (if (vs.lookup fld).isSome then s!"write to a readonly field '{fld}'"
           else s!"write to a field '{fld}' the contract does not name")
@@ -856,7 +856,7 @@ private def writeCell (G : PositiveGraphs.NormalGraph Nat) (H : List (Ty Nat)) (
   | _ =>
     if B.length ≤ 1 then throw "write receiver must name a cell contract"
     let alternatives ← B.mapM fun label => do
-      let [.refs fs [] [] [] _] := PositiveRules.expand G [label]
+      let [.refs fs [] [] [] _ _] := PositiveRules.expand G [label]
         | throw "every write alternative must name a cell contract"
       let some D := fs.lookup fld
         | throw s!"write to a field '{fld}' an alternative does not name"

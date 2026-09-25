@@ -503,12 +503,19 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     | .readAt f a =>
       let direct := pool.findSome? fun R => do
         -- An invariant field reads at its contract; a view field at its bound;
-        -- an optional field at its contract or `undefined`.
+        -- an optional field at its contract or `undefined`; a key outside a
+        -- bound at the prototype's field or view.
         let (B,r) ← match expand G R with
-          | [.refs fs [] vs os _] =>
+          | [.refs fs [] vs os _ ks] =>
             (fs.lookup f).map (·,Rule.read) <|> (vs.lookup f).map (·,Rule.readView) <|>
-              (os.lookup f).bind fun E => pool.findSome? fun U =>
-                if expand G U == [.undef] then some (E ++ U, Rule.readOptional E U) else none
+              ((os.lookup f).bind fun E => pool.findSome? fun U =>
+                if expand G U == [.undef] then some (E ++ U, Rule.readOptional E U) else none) <|>
+              (if ks.any (fun K => !K.contains f) then
+                ((fs ++ vs).lookup CallArguments.protoField).bind fun P =>
+                  match expand G P with
+                  | [.refs gs [] ws _ _ _] => ((gs ++ ws).lookup f).map (·, Rule.readProto P)
+                  | _ => none
+              else none)
           | [.callable fs _ _ _] => (fs.lookup f).map (·,Rule.readCallable)
           | [.dict _ [] _ (B :: _)] =>
             pool.findSome? fun U =>
@@ -522,7 +529,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     | .writeAt f a b =>
       let direct := pool.findSome? fun R => do
         let (fs,r) ← match expand G R with
-          | [.refs fs [] _ _ _] => some (fs,Rule.write)
+          | [.refs fs [] _ _ _ _] => some (fs,Rule.write)
           | [.callable fs _ _ _] => some (fs,Rule.writeCallable)
           | _ => none
         let B ← fs.lookup f

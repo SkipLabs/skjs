@@ -423,7 +423,21 @@ $$
      {\Gamma\vdash_G a.\mathsf{str}(s):A\cup U}
 $$
 
-These are `readView`, `readOptional` and `readDict`. The `read` and `write`
+A key outside one of the record's own-key bounds $K$ is not the object's own,
+so its read continues at the prototype, which the record holds under the
+reserved key at $P$ (`readProto`):
+
+$$
+\frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Ref}(\varphi;\psi;\omega;K)\quad\kappa\notin K\quad
+      (\mathsf{proto}{:}P)\in\varphi\,\psi\quad P\equiv_G\mathsf{Ref}(\varphi';\psi';\ldots)\quad
+      (\kappa{:}A)\in\varphi'\,\psi'}
+     {\Gamma\vdash_G a.\kappa:A}
+$$
+
+The delegation is one step (`Step.readProto`), and the prototype's field or
+view is read one level down (`read_proto_rule`).
+
+These are `readView`, `readOptional`, `readProto` and `readDict`. The `read` and `write`
 rules above take $(\kappa{:}A)\in\varphi$ from the invariant fields alone,
 whatever the views and optional fields. A write to an optional field is not typed, since
 the object's keys are fixed at allocation. `allocDict` establishes a dictionary view for a fresh literal only

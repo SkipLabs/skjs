@@ -134,7 +134,7 @@ theorem read_sound {G : NormalGraph ι} {Γ k i fld R A ρ n W h}
 
 /-- A clause's first invariant bag operand, independent of callability. -/
 def clauseBagOperand : PositiveNormalization.Clause α → Option (List (PropKey × α))
-  | .refs B _ _ _ _ | .callable B _ _ _ => some B
+  | .refs B _ _ _ _ _ | .callable B _ _ _ => some B
   | _ => none
 
 /-- Every alternative must promise the same invariant. This includes a neutral

@@ -354,6 +354,38 @@ def optT (fs : Fields) : Fam := fun k W v =>
       ∃ c : Ctr k, lookup W l = some c ∧
         ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ T j W' u
 
+/-- **An own-key bound.** The object's own keys are among `K`. Record types
+are open, so only a bound says a key is absent, and so that a read of it
+continues at the prototype. Keys are fixed at allocation, so the bound holds
+in every world. -/
+def ownKeysT (K : List PropKey) : Fam := fun _ _ v =>
+  ∃ flds : List (PropKey × Nat), v = .objAt flds .absent ∧ ∀ p ∈ flds, p.1 ∈ K
+
+theorem ownKeysT_adm (K : List PropKey) : Adm (ownKeysT K) :=
+  ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
+
+/-- A key outside the bound is not the object's own. -/
+theorem ownKeysT_lookup {K : List PropKey} {k : Nat} {W : WorldT k}
+    {flds : List (PropKey × Nat)} (h : ownKeysT K k W (.objAt flds .absent))
+    {f : PropKey} (hf : f ∉ K) : flds.lookup f = none := by
+  obtain ⟨flds', he, hk⟩ := h
+  cases he
+  cases hl : flds.lookup f with
+  | none => rfl
+  | some l =>
+    exfalso
+    induction flds with
+    | nil => simp [List.lookup] at hl
+    | cons p ps ih =>
+      obtain ⟨g, m⟩ := p
+      rw [List.lookup_cons] at hl
+      split at hl
+      · rename_i he
+        have : f = g := by simpa using he
+        subst this
+        exact hf (hk _ List.mem_cons_self)
+      · exact ih (fun q hq => hk q (List.mem_cons_of_mem _ hq)) hl
+
 /-- No optional field constrains a plain object. -/
 theorem optT_nil {k} {W : WorldT k} {flds : List (PropKey × Nat)} :
     optT [] k W (.objAt flds .absent) :=

@@ -78,17 +78,19 @@ $$
 $$
 
 A `refs` clause
-$\mathsf{Ref}(\varphi_0\land\cdots\land\varphi_m;\,\psi;\,\omega;\,\mu)$ carries
+$\mathsf{Ref}(\varphi_0\land\cdots\land\varphi_m;\,\psi;\,\omega;\,\mu;\,\beta)$ carries
 invariant operands $\varphi_i$, readonly views $\psi$, optional fields
-$\omega$ and methods $\mu$. Write $\ell$ for the object
+$\omega$, methods $\mu$ and own-key bounds $\beta$. Write $\ell$ for the object
 $\mathsf{obj}(\mathit{flds},\mathsf{absent})$ and $c_j\equiv T_j$ for "the
 location's contract and $T$ agree below the level". Then
 
 $$
 \begin{aligned}
-\llbracket\mathsf{Ref}(\vec\varphi;\psi;\omega;\mu)\rrbracket_n(W,v)
+\llbracket\mathsf{Ref}(\vec\varphi;\psi;\omega;\mu;\beta)\rrbracket_n(W,v)
 &\iff \textstyle\bigwedge_i\mathsf{rec}(\varphi_i)\land
-      \mathsf{view}(\psi)\land\mathsf{opt}(\omega)\land\mathsf{meth}(\mu),\\
+      \mathsf{view}(\psi)\land\mathsf{opt}(\omega)\land\mathsf{meth}(\mu)\land
+      \bigwedge_{K\in\beta}\mathsf{own}(K),\\
+\mathsf{own}(K)_n(W,v)&\iff v=\ell\land\forall\kappa\in\mathrm{dom}(\mathit{flds}).\;\kappa\in K,\\
 \mathsf{rec}(\overline{\kappa{:}T})_n(W,v)
 &\iff v=\ell\land\forall(\kappa{:}T).\;\exists l,c.\;
       \mathit{flds}(\kappa)=l\land W(l)=c\land c_j\equiv T_j,\\
@@ -130,13 +132,19 @@ $$
   unrelated world the object's locations need not hold their contracts, and no
   method reading them could be safe.
 
+- **Own-key bounds** say which keys the object may have. Records are open, so
+  only a bound says a key is absent, and so that a read of it continues at
+  the prototype. An array bounds its own keys to its store and its prototype,
+  which it holds as a readonly view under the reserved key. Keys are fixed at
+  allocation, so a bound holds in every world.
+
 A `dict` clause adds readonly **index contracts** $\overline{D}$: the object
 has no prototype, and every present field under a string key, named or not,
 has a contract implying each $D$. The object may lack a key, so an arbitrary
 indexed read has type $D\mid\mathsf{undefined}$. Index contracts are guarded through the world, so a
 recursive graph can contain `JsonObject = { readonly [key: string]: Json | null }`.
 
-Lean: `refsT`, `viewT`, `optT`, `dictViewT` (`Types/Types.lean`), `methodT`,
+Lean: `refsT`, `viewT`, `optT`, `dictViewT`, `ownKeysT` (`Types/Types.lean`), `methodT`,
 `onHost` (`Types/MethodMembers.lean`). The heap facts behind invariant
 operands (`adm`, `congr_below`, `operands_agree`, `read_all`, `write_first`,
 `cyclic_inhabited`) are in `Types/ReferenceConjunctions.lean`: a read meets
@@ -299,8 +307,8 @@ So everything reduces to the conjunction of two clauses:
 
 $$
 \begin{aligned}
-\mathsf{Ref}(\vec\varphi;\psi;\omega;\mu)\land\mathsf{Ref}(\vec\varphi';\psi';\omega';\mu')
- &=\mathsf{Ref}(\vec\varphi\,\vec\varphi';\psi\psi';\omega\omega';\mu\mu'),\\
+\mathsf{Ref}(\vec\varphi;\psi;\omega;\mu;\beta)\land\mathsf{Ref}(\vec\varphi';\psi';\omega';\mu';\beta')
+ &=\mathsf{Ref}(\vec\varphi\,\vec\varphi';\psi\psi';\omega\omega';\mu\mu';\beta\beta'),\\
 \mathsf{arrs}(L;S)\land\mathsf{arrs}(M;T)&=\mathsf{arrs}(LM;ST),\qquad
 \mathsf{Ctors}\,L\land\mathsf{Ctors}\,M=\mathsf{Ctors}\,(LM),\\
 \mathsf{List}\,\vec\tau\land\mathsf{List}\,\vec\tau'&=\mathsf{List}\,(\vec\tau\,\vec\tau'),\qquad
@@ -370,9 +378,10 @@ $$
 \forall j,\,(\kappa{:}B)\in\varphi'_j.\;\exists(\kappa{:}A)\in\Phi.\;\Delta^{\pm}(A,B)\qquad
 \forall(\kappa{:}B)\in\psi'.\;\exists(\kappa{:}A)\in\Phi\,\psi.\;\Delta(A,B)\\
 \forall(\kappa{:}B)\in\omega'.\;\exists(\kappa{:}A)\in\Phi\,\omega.\;\Delta^{\pm}(A,B)\qquad
-\Delta;S\vdash(\Phi\,\psi;\mu)\sqsubseteq_{\mathsf{meth}}\mu'
+\Delta;S\vdash(\Phi\,\psi;\mu)\sqsubseteq_{\mathsf{meth}}\mu'\qquad
+\forall K'\in\beta'.\;\exists K\in\beta.\;K\subseteq K'
 \end{array}}
-{\Delta;S\vdash\mathsf{Ref}(\Phi;\psi;\omega;\mu)\sqsubseteq\mathsf{Ref}(\varphi'_0\cdots\varphi'_k;\psi';\omega';\mu')}
+{\Delta;S\vdash\mathsf{Ref}(\Phi;\psi;\omega;\mu;\beta)\sqsubseteq\mathsf{Ref}(\varphi'_0\cdots\varphi'_k;\psi';\omega';\mu';\beta')}
 $$
 
 An invariant field needs an equivalent invariant field. A view is met by any
@@ -380,8 +389,8 @@ field whose type is within it. An optional field is met by a required or
 optional field of the same key with an equivalent type; a required field is
 never met by a view or an optional field, since neither says the key is
 present. Fields the target does not name are not compared: records are open.
-A `dict` target also needs each index contract within some source index
-contract.
+A bounded target needs a source bound within it (`CoversBounds`). A `dict`
+target also needs each index contract within some source index contract.
 
 **Methods.** A target method $m$ is covered by a source method of the same
 key, or by a function the source holds under that key whose receiver the
@@ -433,7 +442,7 @@ $$
 So `[number, string]` is within `(number | string)[]` and `[number]` within
 `[number, string?]`, while `number[]` is within no bounded tuple.
 
-Lean: `CoversFields`, `CoversViews`, `CoversOptional`, `CoversMethods`,
+Lean: `CoversFields`, `CoversViews`, `CoversOptional`, `CoversMethods`, `CoversBounds`,
 `CoversSig`, `CoversByFunction`, `CoversTuple`, `CoversPack`,
 `covers_arguments_sound`.
 

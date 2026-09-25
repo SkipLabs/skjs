@@ -640,6 +640,19 @@ abbrev CoversMethods (G : NormalGraph ι) (R : List ι → List ι → Prop) (se
   ∀ q ∈ target, (∃ p ∈ source, p.key = q.key ∧ CoversSig (restElem G) R p q) ∨
     ∃ f ∈ fields, f.1 = q.key ∧ CoversByFunction G R self f.2 q
 
+/-- Every target key bound has a source bound within it: the object's own
+keys are among the source's, hence among the target's. -/
+abbrev CoversBounds (source target : List (List PropKey)) : Prop :=
+  ∀ K' ∈ target, ∃ K ∈ source, ∀ k ∈ K, k ∈ K'
+
+theorem covers_bounds_sound {source target : List (List PropKey)} (hc : CoversBounds source target)
+    {n : Nat} {W : WorldT n} {v : Val} (hv : ∀ K ∈ source, ownKeysT K n W v) :
+    ∀ K ∈ target, ownKeysT K n W v := by
+  intro K' hK'
+  obtain ⟨K, hK, hsub⟩ := hc K' hK'
+  obtain ⟨flds, he, hk⟩ := hv K hK
+  exact ⟨flds, he, fun p hp => hsub _ (hk p hp)⟩
+
 /-- Two rest contracts agree: both absent, or both present and equivalent. -/
 def CoversRest (R : List ι → List ι → Prop) (readonly : Bool) : Option (List ι) → Option (List ι) → Prop
   | none, none => True
@@ -772,13 +785,13 @@ def CoversWith (G : NormalGraph ι) (R : List ι → List ι → Prop)
   | .str, .str => True
   | .strLit _, .str => True
   | .strLit a, .strLit b => a = b
-  | .refs a bs vs os ms, .refs c ds ws ps ns => CoversFields R (a :: bs) (c :: ds) ∧
+  | .refs a bs vs os ms ks, .refs c ds ws ps ns ls => CoversFields R (a :: bs) (c :: ds) ∧
       CoversViews R (a :: bs) vs ws ∧ CoversOptional R (a :: bs) os ps ∧
-      CoversMethods G R self ((a :: bs).flatten ++ vs) ms ns
-  | .dict a bs vs ix os ms, .dict c ds ws iy ps ns =>
+      CoversMethods G R self ((a :: bs).flatten ++ vs) ms ns ∧ CoversBounds ks ls
+  | .dict a bs vs ix os ms ks, .dict c ds ws iy ps ns ls =>
       CoversFields R (a :: bs) (c :: ds) ∧ CoversViews R (a :: bs) vs ws ∧
       (∀ y ∈ iy, ∃ x ∈ ix, R x y) ∧ CoversOptional R (a :: bs) os ps ∧
-      CoversMethods G R self ((a :: bs).flatten ++ vs) ms ns
+      CoversMethods G R self ((a :: bs).flatten ++ vs) ms ns ∧ CoversBounds ks ls
   | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T =>
       arrows L S M ∧
       ∀ t ∈ T, (∃ s ∈ S, RestCovers (restElem G) R s t) ∨ ∃ p ∈ L, FixedCallsPack G R p t
@@ -1245,17 +1258,19 @@ theorem Covers.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R self a b}
         · exact hfp.elim
   · exact id
   · exact id
-  · rename_i a bs vs os ms c ds ws ps ns
+  · rename_i a bs vs os ms ks c ds ws ps ns ls
     intro hv
     exact ⟨covers_fields_sound hc.1 n hr W v hv.1, covers_views_sound hc.2.1 n hr W v ⟨hv.1, hv.2.1⟩,
       covers_optional_sound hc.2.2.1 n hr W v ⟨hv.1, hv.2.2.1⟩,
-      covers_methods_sound hc.2.2.2 n hr hpa W v hself (fields_at hv.1 hv.2.1) hv.2.2.2⟩
-  · rename_i a bs vs ix os ms c ds ws iy ps ns
+      covers_methods_sound hc.2.2.2.1 n hr hpa W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.1,
+      covers_bounds_sound hc.2.2.2.2 hv.2.2.2.2⟩
+  · rename_i a bs vs ix os ms ks c ds ws iy ps ns ls
     intro hv
     refine ⟨covers_fields_sound hc.1 n hr W v hv.1,
       covers_views_sound hc.2.1 n hr W v ⟨hv.1, hv.2.1⟩, ?_,
       covers_optional_sound hc.2.2.2.1 n hr W v ⟨hv.1, hv.2.2.2.1⟩,
-      covers_methods_sound hc.2.2.2.2 n hr hpa W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2⟩
+      covers_methods_sound hc.2.2.2.2.1 n hr hpa W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2.1,
+      covers_bounds_sound hc.2.2.2.2.2 hv.2.2.2.2.2⟩
     intro y hy
     obtain ⟨x, hx, hxy⟩ := hc.2.2.1 y hy
     obtain ⟨flds, he, hp, hfs⟩ := hv.2.2.1 x hx
