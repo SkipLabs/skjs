@@ -355,8 +355,25 @@ function fromSkjs(
 /** The module's initialization code, as the parser reads it: top-level
  * expression statements, constants and class declarations. An ambient
  * `declare const` or `declare class` runs nothing. */
+// An enum runs where it is written unless it is ambient or a `const enum`,
+// whose reads are its values (DESIGN.md, "Enums").
 const isInitStatement=(n: ts.Statement)=>ts.isExpressionStatement(n)||
-  ((ts.isVariableStatement(n)||ts.isClassDeclaration(n))&&!n.modifiers?.some(m=>m.kind===ts.SyntaxKind.DeclareKeyword));
+  ((ts.isVariableStatement(n)||ts.isClassDeclaration(n))&&!n.modifiers?.some(m=>m.kind===ts.SyntaxKind.DeclareKeyword))||
+  (ts.isEnumDeclaration(n)&&!n.modifiers?.some(m=>m.kind===ts.SyntaxKind.DeclareKeyword||m.kind===ts.SyntaxKind.ConstKeyword));
+// The module's initialization code: its top-level code after the `"use strict"`
+// directives of its prologue, which the parser drops since they do nothing
+// else.
+const initStatements=(sf: ts.SourceFile)=>{
+  let i=0;
+  while(i<sf.statements.length){
+    const s=sf.statements[i]!;
+    if(!ts.isExpressionStatement(s)||!ts.isStringLiteral(s.expression))break;
+    const raw=s.expression.getText(sf);
+    if(raw!=='"use strict"'&&raw!=="'use strict'")break;
+    i++;
+  }
+  return sf.statements.slice(i).filter(isInitStatement);
+};
 
 function fromSourceClaims(
   source: string,
@@ -461,7 +478,7 @@ function fromSourceClaims(
     n.forEachChild(walk);};walk(sf);
   // The module initialization is a unit like a function: no name, the span of
   // the top-level code, no parameters, and `undefined` as its completion.
-  const initCode=sf.statements.filter(isInitStatement);
+  const initCode=initStatements(sf);
   const first=initCode[0], last=initCode[initCode.length-1];
   if(!!input.init!==!!first)throw Error("module initialization claims do not match the source");
   const units=[...input.functions,...(input.init&&first&&last?[{name:"",namePos:[first.getStart(sf),last.end] as Span,
@@ -550,6 +567,19 @@ function render(
     if(ts.isTemplateExpression(n))for(const p of n.templateSpans) {
       spans.add(`${n.getStart(sf)}:${p.expression.end}`);spans.add(`${n.getStart(sf)}:${p.literal.end}`);
     }
+    // An optional chain's body nodes span from a `?.` token to the end of
+    // their link (DESIGN.md, "Optional chaining").
+    if(n.flags&ts.NodeFlags.OptionalChain)
+      scanTokens(source.slice(0,n.end),(k,scanner)=>{
+        if(k===ts.SyntaxKind.QuestionDotToken&&scanner.getTokenStart()>=n.getStart(sf))
+          spans.add(`${scanner.getTokenStart()}:${n.end}`);
+      });
+    // An enum's object is allocated from its name to its end, and a member's
+    // reverse mapping is claimed from the member to the end (DESIGN.md, "Enums").
+    if(ts.isEnumDeclaration(n)){
+      spans.add(`${n.name.getStart(sf)}:${n.end}`);
+      for(const m of n.members)spans.add(`${m.getStart(sf)}:${n.end}`);
+    }
     n.forEachChild(walk);
   }
   walk(sf);
@@ -569,7 +599,7 @@ function render(
   };
   // The module initialization unit has no declaration of its own: it is the
   // file's top-level code, from its first statement to its last.
-  const initCode=sf.statements.filter(isInitStatement);
+  const initCode=initStatements(sf);
   const initSpan=initCode.length ? [initCode[0]!.getStart(sf),initCode[initCode.length-1]!.end] : null;
   for(const [index,f] of report.functions.entries()) {
     checkSpan(f.namePos);
