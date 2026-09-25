@@ -835,12 +835,22 @@ bag, or an explicit union of cell contracts each naming the field. -/
 private def readCell (G : PositiveGraphs.NormalGraph Nat) (Γ : List (Ty Nat)) (fld : PropKey)
     (a : DirectProof.Plan) : Compiler DirectProof.Plan := do
   match PositiveRules.expand G a.type with
-  | [.refs fs [] vs [] _ _] =>
-    -- An invariant field reads at its contract; a readonly view at its bound.
+  | [.refs fs [] vs [] _ ks] =>
+    -- An invariant field reads at its contract; a readonly view at its bound;
+    -- a key outside a bound of the object at its prototype's field or view
+    -- (`readProto`), as at the top level.
     match fs.lookup fld, vs.lookup fld with
     | some B, _ => pure (DirectProof.node Γ (.readAt fld a.term) B .read [a])
     | none, some B => pure (DirectProof.node Γ (.readAt fld a.term) B .readView [a])
-    | none, none => throw s!"read of a field '{fld}' the contract does not name"
+    | none, none =>
+      let inherited : Option (Ty Nat × Ty Nat) := do
+        if !ks.any (fun K => !K.contains fld) then none
+        let P ← (fs ++ vs).lookup SourceTypes.protoField
+        let [.refs gs [] ws _ _ _] := PositiveRules.expand G P | none
+        let B ← (gs ++ ws).lookup fld
+        pure (P, B)
+      let some (P, B) := inherited | throw s!"read of a field '{fld}' the contract does not name"
+      pure (DirectProof.node Γ (.readAt fld a.term) B (.readProto P) [a])
   | [.dict _ [] _ (B :: _)] =>
     pure (DirectProof.node Γ (.readAt fld a.term) (B ++ [3]) (.readDict B [3]) [a])
   | [.dict _ [] _ []] => throw "indexed object has no string index contract"
@@ -1207,8 +1217,10 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
   | .invoke _ callee args spreads => do
     -- The object, then a computed key, then the method read from the object,
     -- each saved; the actuals; the saved method invoked with the saved object.
-    -- Reading an element or a spread's store is an array operation, which a
-    -- closed expression does not have, as for any call here.
+    -- A method the object does not hold, such as an array's, is read from its
+    -- prototype (`readCell`, `readProto`) at the member's scheme, and the claim
+    -- at the call's instance is below it. An element as the method, or a
+    -- spread's store, stays outside a closed expression.
     if !spreads.isEmpty then throw "a spread argument inside a closed expression is outside the fragment"
     let (o, fld, key) ← match callee with
       | .read _ fld o => pure (o, fld, none)

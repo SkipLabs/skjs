@@ -2066,7 +2066,15 @@ literal needs none.
 Inside a closure body, extracted as a direct proof rather than a graph, an
 array literal and an element read use the same rules (`arrLit`, `alloc` with
 the captured prototype, `elem`, `elemOpt`). Element writes and destructuring
-there are not yet extracted.
+there are not yet extracted. A method call there, `xs.reduce(f, 0)` in a class
+method, reads the member as the top level does: a key the object's own fields
+and views do not name, outside its bound, is read by `readProto` at the
+prototype member's scheme, and the call's claim at the instance is below it
+(`inst`, POSITIVE-TYPES.md). The call is then the ordinary `app` on that
+instance with the saved object as receiver, so a chain such as
+`xs.sort().reduce(f, 0)` is two such calls. No rule is added: the closure
+extraction only proposes the `readProto` node that the graph's local check
+already admits.
 
 **Consequence.** Optional fields and index views read an absent key as
 `undefined`, which is true only without a prototype. So `optT` requires no
