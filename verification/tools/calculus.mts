@@ -9,6 +9,10 @@ export type Tag =
   | "isNullish"
   | "isNum"
   | "isStr"
+  | "isBigint"
+  | "isSymbol"
+  | "truthy"
+  | "isArray"
   | { numEq: { bits: string } }
   | { strEq: { value: string } }
   | { boolEq: { value: boolean } }
@@ -77,6 +81,10 @@ const TAGS: Record<Extract<Tag, string>, true> = {
   isNullish: true,
   isNum: true,
   isStr: true,
+  isBigint: true,
+  isSymbol: true,
+  truthy: true,
+  isArray: true,
 };
 const tags: readonly unknown[] = Object.keys(TAGS);
 /** Whether a decoded value is a tag, so the table above stays the one place a
