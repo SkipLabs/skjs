@@ -320,7 +320,9 @@ $$
 $$
 
 The member read from $v=\rho(i)$ meets $m$'s signatures with receiver $\{v\}$
-(`memberOf_at`, `MethodMembers.onHost`), and the bound descriptor, which has
+(`memberOf_at`, `MethodMembers.onHost`). The read finds the key on $v$, or, one
+step later, on the object $v$'s prototype holds (`Step.readProto`,
+`member_read_safe`), as the member's meaning says. The bound descriptor, which has
 no fields and allocates nothing, forwards any call to it with receiver $v$
 (`callsT_bound`, `restsT_bound`).
 

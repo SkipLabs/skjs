@@ -186,6 +186,7 @@ deriving instance ToJson, FromJson for Continuation
 deriving instance ToJson, FromJson for Node
 deriving instance ToJson, FromJson for PositiveCertificates.ArrowCert
 deriving instance ToJson, FromJson for PositiveCertificates.Certificate
+deriving instance ToJson, FromJson for PositiveCertificates.Instance
 deriving instance ToJson, FromJson for PositiveCertificates.Proof
 deriving instance ToJson, FromJson for Sequent
 deriving instance ToJson, FromJson for Rule
@@ -274,18 +275,23 @@ def certificateTypes (c : PositiveCertificates.Certificate Nat) : List (Ty Nat) 
     e.1.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2]) ++ e.2.1.1 :: e.2.1.2.1 ++ [e.2.1.2.2] ++
       arrowTypes e.2.2)
 
+def instanceTypes (c : PositiveCertificates.Instance Nat) : List (Ty Nat) :=
+  c.domain :: c.instances ++ c.free.flatMap (fun p => [[p.1], p.2]) ++
+    c.bounds.flatMap (fun c => match c with
+      | some cert => certificateTypes cert
+      | none => []) ++
+    c.table.flatMap (fun e => [e.1] :: e.2.2 :: e.2.1.flatMap (fun p => [[p.1], p.2]))
+
 def proofTypes : PositiveCertificates.Proof Nat → List (Ty Nat)
   | .subset => []
   | .trans middle l r => middle :: (proofTypes l ++ proofTypes r)
-  | .inst tbl θs certs D V => D :: θs ++ V.flatMap (fun p => [[p.1], p.2]) ++
-      certs.flatMap (fun c => match c with
-        | some cert => certificateTypes cert
-        | none => []) ++
-      tbl.flatMap (fun e => [e.1] :: e.2.2 :: e.2.1.flatMap (fun p => [[p.1], p.2]))
+  | .inst c => instanceTypes c
   | .gen D V U p => D :: U :: V.flatMap (fun p => [[p.1], p.2]) ++ proofTypes p
   | .table tbl D V => D :: V.flatMap (fun p => [[p.1], p.2]) ++
       tbl.flatMap (fun e => [e.1] :: e.2.2 :: e.2.1.flatMap (fun p => [[p.1], p.2]))
-  | .core c => certificateTypes c
+  | .core c ks => certificateTypes c ++ ks.flatMap (fun k => k.1 ::
+      k.2.1.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2]) ++
+      k.2.2.1.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2.1, p.2.2.2]) ++ instanceTypes k.2.2.2)
 
 def validEvidence (bound : Nat) : ProgramCertificates.Evidence Nat → Bool
   | .node j r ps =>

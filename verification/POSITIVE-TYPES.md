@@ -120,15 +120,28 @@ $$
   ([DESIGN.md](DESIGN.md#method-members-are-host-relative)). A member $m$ has
   fixed signatures $(\vec P\to B)$ and variadic ones $(\vec P,\ldots Q)\to B$,
   none with a receiver. With $\mathsf{on}_v(m)$ the member's signatures, each
-  with $v$ as the one receiver it admits,
+  with $v$ as the one receiver it admits, and $\mathsf{holds}_k(A)$ the
+  objects holding key $k$ at a location whose contract implies $A$ below the
+  level,
 
   $$
-  \mathsf{meth}(\mu)_n(W,v)\iff\forall m\in\mu.\;\exists l,c.\;
-    v=\ell\land\mathit{flds}(m.\mathsf{key})=l\land W(l)=c\land
-    \forall j<n,\ U\sqsupseteq W|_j,\ u.\;c_j(U,u)\Rightarrow u\in\mathsf{on}_v(m)_j(U).
+  \mathsf{holds}_k(A)_n(W,v)\iff\exists l,c.\;
+    v=\ell\land\mathit{flds}(k)=l\land W(l)=c\land
+    \forall j<n,\ U\sqsupseteq W|_j,\ u.\;c_j(U,u)\Rightarrow u\in A_j(U),
   $$
 
-  The implication is claimed only in worlds extending the current one: in an
+  a member is where JavaScript's lookup finds its key: on the object, or,
+  when the object lacks the key, on the object its prototype location holds:
+
+  $$
+  \mathsf{meth}(\mu)_n(W,v)\iff\forall m\in\mu.\;
+    \mathsf{holds}_{m.\mathsf{key}}(\mathsf{on}_v(m))_n(W,v)\lor
+    \bigl(m.\mathsf{key}\notin\mathit{flds}\land
+      \mathsf{holds}_{\mathsf{proto}}(\mathsf{holds}_{m.\mathsf{key}}(\mathsf{on}_v(m)))_n(W,v)\bigr).
+  $$
+
+  The prototype's member is invoked on $v$, the object the read began at. The
+  implication is claimed only in worlds extending the current one: in an
   unrelated world the object's locations need not hold their contracts, and no
   method reading them could be safe.
 
@@ -145,7 +158,7 @@ indexed read has type $D\mid\mathsf{undefined}$. Index contracts are guarded thr
 recursive graph can contain `JsonObject = { readonly [key: string]: Json | null }`.
 
 Lean: `refsT`, `viewT`, `optT`, `dictViewT`, `ownKeysT` (`Types/Types.lean`), `methodT`,
-`onHost` (`Types/MethodMembers.lean`). The heap facts behind invariant
+`memberT`, `holdsAt`, `onHost` (`Types/MethodMembers.lean`). The heap facts behind invariant
 operands (`adm`, `congr_below`, `operands_agree`, `read_all`, `write_first`,
 `cyclic_inhabited`) are in `Types/ReferenceConjunctions.lean`: a read meets
 every operand, and writing a value at the first operand preserves every
@@ -394,8 +407,9 @@ A bounded target needs a source bound within it (`CoversBounds`). A `dict`
 target also needs each index contract within some source index contract.
 
 **Methods.** A target method $m$ is covered by a source method of the same
-key, or by a function the source holds under that key whose receiver the
-source type $S$ is within:
+key, by a function the source holds under that key whose receiver the source
+type $S$ is within, or, when a key bound of the source excludes the key, by
+such a function its prototype holds:
 
 $$
 \frac{m'\in\mu\quad m'.\mathsf{key}=m.\mathsf{key}\quad
@@ -409,6 +423,24 @@ $$
       \Delta(S,Q_0)\land\Delta(\vec Q,\vec P)\land\Delta(B,D)}
      {\Delta;S\vdash(\Phi\,\psi;\mu)\sqsubseteq_{\mathsf{meth}}m}
 $$
+
+$$
+\frac{\begin{array}{c}
+K\in\beta\quad m.\mathsf{key}\notin K\quad(\mathsf{proto}{:}P)\in\Phi\,\psi\quad
+      (m.\mathsf{key}{:}F)\ \text{a field or view of}\ P\quad(F,L,M)\in\kappa\\
+      \forall(\vec Q\to D)\in m.\;\exists(Q_0;\vec P)\to B\in L.\;
+      \Delta(S,Q_0)\land\Delta(\vec Q,\vec P)\land\Delta(B,D)
+\end{array}}
+     {\Delta;\kappa;S\vdash(\Phi\,\psi;\mu;\beta)\sqsubseteq_{\mathsf{meth}}m}
+$$
+
+The third reads the member through the prototype, as the meaning does. Its
+function type is a **known row** $(F,L,M)$ of $\kappa$: a row $F$ whose values
+meet the arrows $L$, $M$, proved outside the table. For an array, $F$ is a
+generic member of `ArrayProto` and $L$ its instance at the array's element
+type, with the array as receiver: `Array.prototype[Symbol.iterator]` at
+`number` covers `Iterable<number>`'s member. Each premise that names $\kappa$
+passes it on unchanged.
 
 Here $\Delta(\vec Q,\vec P)$ pairs the lists position by position and needs
 equal lengths (`Domains`). Receivers of two members are not compared: both
@@ -542,8 +574,8 @@ $$
       \forall(A,B)\in\Delta.\;
       \mathsf{SameKind}(A,B)\land\mathsf{Opaque}(A,B)
       \land\forall a\in\mathsf{split}(\mathsf{cl}_G(A)).\;\exists b\in\mathsf{cl}_G(B).\;
-      \Delta;A\vdash a\sqsubseteq b}
-     {G\vdash_c S\le T}
+      \Delta;\kappa;A\vdash a\sqsubseteq b}
+     {G;\kappa\vdash_c S\le T}
 $$
 
 Here $\mathsf{cl}_G(A)$ lists the clauses of $A$'s clause rows.
@@ -559,20 +591,30 @@ Every cyclic premise occurs under an operand, so the table is sound by
 induction on the level; the induction also supplies the source-type premise a
 method covered by a function needs.
 
-Lean: `Core`, `Valid`, `SameKind`, `Opaque`, `splitClause`,
-`splitClause_sem`, `source_sem`, `Core.mixed_sound`.
+`Core.mixed_sound` holds wherever the known rows do: each $(F,L,M)\in\kappa$
+with $F$'s values within $\mathsf{arrs}(L;M)$ at every level.
+
+Lean: `Core`, `Valid`, `Known`, `SameKind`, `Opaque`, `splitClause`,
+`splitClause_sem`, `source_sem`, `CoversByProto`, `viewOf`, `covers_arrows_sound`,
+`Core.mixed_sound`.
 
 ### Structural rules
 
 `Sub` closes the core judgment under union inclusion and transitivity:
 
 $$
-\frac{G\vdash_c S\le T}{G\vdash S\le T}
+\frac{G;\kappa\vdash_c S\le T\qquad\forall(F,L,M)\in\kappa.\;G\vdash F\le_{\mathsf{inst}}\mathsf{arrs}(L;M)}
+     {G\vdash S\le T}
 \qquad
 \frac{\forall i\in S.\ i\in T}{G\vdash S\le T}
 \qquad
 \frac{G\vdash S\le U\quad G\vdash U\le T}{G\vdash S\le T}.
 $$
+
+The core rule's known rows are instances of scheme rows, each checked as
+`inst` checks one (below, $\le_{\mathsf{inst}}$), against its arrows given
+inline rather than as a type of the graph: an array's instance of a prototype
+member has no row of its own.
 
 Reflexivity and invariance under reordering or duplicating union labels
 follow (`Sub.refl`, `Sub.congr`). Transitivity composes completed proofs, not
@@ -607,7 +649,8 @@ $\kappa(A)$ for the image of a type, each entry is one of:
 - $i$ a parameter row and $T=\kappa(i)$, or $T=\{i\}$ when $\kappa$ does not
   name $i$, with $T$ of $i$'s declared kind;
 - **rigid**: $T=\{i\}$ and $\kappa$ names no row of $V(i)$;
-- $i$ a clause row, $T=\{j\}$, $j$ a clause row, and $G(j)=G(i)[\kappa]$;
+- $i$ a clause row, $T=\{j\}$, $j$ a clause row, and $G(j)\doteq G(i)[\kappa]$:
+  the same clauses, each operand with the same members as its image;
 - $i$ the scheme row $(\vec q;\Sigma';\beta';\Sigma'_\ldots)$, $T=\{j\}$, $j$
   the scheme row $(\vec r;\Sigma'[\kappa'];\beta'[\kappa];\Sigma'_\ldots[\kappa'])$
   with $|\vec r|=|\vec q|$, $\vec r$ distinct parameter rows of matching kinds
@@ -640,7 +683,9 @@ $$
 Here $\tau\doteq\sigma'$ when the two have the same arity and each type of
 $\tau$ has the same members as the corresponding type of $\sigma'$: a type
 means the union of its labels, so their order does not matter
-(`sameLabels`, `sigMatch`, `restMatch`).
+(`sameLabels`, `sigMatch`, `restMatch`, and for clauses `sameClauses`). The
+premises other than $T\equiv_G\mathsf{arrs}(L;M)$ are $G\vdash\{i\}\le_{\mathsf{inst}}\mathsf{arrs}(L;M)$
+(`InstArrs`).
 
 The same tables relate two lowerings of one type that differ only in which
 binder rows their schemes use, as a producer's copy of `Promise<number>` and
@@ -667,7 +712,7 @@ $$
 only on $\vec p$, and every rule of `Sub` holds at every assignment: the
 premise $G\vdash S\le U$, derived once, holds at each instantiation.
 
-Lean: `entryOk`, `TableOk`, `instKinds`, `substitutionKind`,
+Lean: `entryOk`, `TableOk`, `instKinds`, `substitutionKind`, `InstArrs`, `Inst`,
 `mixed_assignment_substitution`, `table_row_mixed`, `Sub.inst`, `Sub.table`,
 `Sub.gen`, `Sub.mixed_sound`, `Sub.sound`, `Sub.args_sound`.
 
@@ -678,10 +723,10 @@ unbounded search. It has six forms, one per `Sub` rule:
 
 | Form | Carries |
 | --- | --- |
-| `core` | the finite table and, for each fixed signature to derive, its derivation |
+| `core` | the finite table, for each fixed signature to derive its derivation, and its known rows, each with its instance |
 | `subset` | nothing: union inclusion is decided |
 | `trans` | an intermediate type and a proof on each side |
-| `inst` | the instance table, the instance types, the table's domain and free-variable certificate |
+| `inst` | the instance: its table, the instance types, a certificate per bound, the table's domain and free-variable certificate |
 | `table` | the table, its domain and free-variable certificate |
 | `gen` | a domain holding the type, its free-variable certificate, the type stating the scheme's signatures, and a proof of inclusion in it |
 

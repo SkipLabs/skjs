@@ -80,6 +80,8 @@ export const cases: Case[] = [
   positive("array-library", "filter, every, slice, join, includes, at, find, push and pop at TypeScript's declared types"),
   positive("array-dense-write", "an element write into a required position or at the required length keeps the array dense"),
   negative("invalid-array-hole", "a write past an index the array is known to reach would leave a hole"),
+  positive("array-iterable", "an array, and a literal expected as one, is an Iterable through Array.prototype[Symbol.iterator]"),
+  negative("invalid-array-iterable", "an array of numbers does not iterate strings"),
   positive("object-callable-operands", "Nested objects and optional receivers share one callable contract decoder"),
   negative("invalid-object-callable-operands", "A readonly object cannot supply a callback's write capability"),
   { ...positive("object-constructor-value-import", "An imported constructor takes an object and returns a nested object field"),

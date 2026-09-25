@@ -402,6 +402,24 @@ export function collectDeclarations(file: string, options: {
         throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
       }
     }
+    // `Array.prototype`'s contract, read before the graph is collected so
+    // that the library interfaces it names join it.
+    let arrayProto: TypeDefinition | null = null;
+    if (options.arrays) {
+      try {
+        arrayProto = arrayPrototype(checker, client, {
+          symbol: symbolOf,
+          reference: (node, args, span) => {
+            valueStarts.push(node);
+            const target = identityOf(node);
+            return { k: "reference", reference: { name: target.name, span, arguments: args.map(() => span),
+              target }, args, span };
+          },
+        }, options.arrayOverlay ?? overlay);
+      } catch (error) {
+        throw new DeclarationError(options.arrays, error instanceof Error ? error.message : String(error));
+      }
+    }
     const seen = new Set<string>();
     const definitions: TypeDefinition[] = [];
     for (const { root, node: start } of roots) {
@@ -420,14 +438,8 @@ export function collectDeclarations(file: string, options: {
           error instanceof Error ? error.message : String(error));
       }
     }
-    if (options.arrays) {
-      try {
-        // First, so its row follows the four fixed ones in every table.
-        definitions.unshift(arrayPrototype(checker, client, options.arrayOverlay ?? overlay));
-      } catch (error) {
-        throw new DeclarationError(options.arrays, error instanceof Error ? error.message : String(error));
-      }
-    }
+    // First, so its row follows the four fixed ones in every table.
+    if (arrayProto) definitions.unshift(arrayProto);
     return { roots: roots.map(r => r.root), definitions, values, symbols };
   });
 }

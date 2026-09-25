@@ -173,25 +173,35 @@ instance {R : List ι → List ι → Prop} [DecidableRel R]
   unfold CoversSig; infer_instance
 
 instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R]
+    (self : List ι) (L S q) : Decidable (CoversArrows G R self L S q) := by
+  unfold CoversArrows; infer_instance
+
+instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R]
     (self F : List ι) (q) : Decidable (CoversByFunction G R self F q) := by
   unfold CoversByFunction; split <;> infer_instance
 
+instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R]
+    (known : Known ι) (self : List ι) (fields bounds q) :
+    Decidable (CoversByProto G R known self fields bounds q) := by
+  unfold CoversByProto; infer_instance
+
 set_option synthInstance.maxSize 1024 in
 instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R]
+    {known : Known ι}
     {arrows : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop}
     [∀ L S M, Decidable (arrows L S M)] (self a b) :
-    Decidable (CoversWith G R arrows self a b) := by
+    Decidable (CoversWith G R known arrows self a b) := by
   cases a <;> cases b <;> unfold CoversWith <;> infer_instance
 
 set_option synthInstance.maxSize 1024 in
 /-- The executable checker is the shared coverage rule interpreted with checked
 arrow evidence. Adding a coverage condition changes the checker automatically. -/
-def checkClause [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (proofs : Evidence ι)
-    (self : List ι) (a b : Clause (List ι)) : Bool :=
-  decide (CoversWith G (Rel table) (ArrowsChecked G table proofs) self a b)
+def checkClause [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (known : Known ι)
+    (proofs : Evidence ι) (self : List ι) (a b : Clause (List ι)) : Bool :=
+  decide (CoversWith G (Rel table) known (ArrowsChecked G table proofs) self a b)
 
-theorem checkClause_sound [DecidableEq ι] {G : NormalGraph ι} {table proofs self a b}
-    (h : checkClause G table proofs self a b = true) : Covers G (Rel table) self a b := by
+theorem checkClause_sound [DecidableEq ι] {G : NormalGraph ι} {table known proofs self a b}
+    (h : checkClause G table known proofs self a b = true) : Covers G (Rel table) known self a b := by
   apply CoversWith.mono (h := of_decide_eq_true h)
   intro L S M hs p hp
   obtain ⟨e, _, _, _, he⟩ := hs p hp
@@ -213,9 +223,9 @@ private theorem collect {α β : Type} (xs : List α) (P : α → List β → Pr
     · subst a; exact mono x es _ (fun e he => List.mem_append_left rest he) he
     · exact mono a rest _ (fun e he => List.mem_append_right es he) (hr a hm)
 
-theorem checkClause_mono [DecidableEq ι] {G : NormalGraph ι} {table self a b es es'}
-    (hm : ∀ e ∈ es, e ∈ es') (h : checkClause G table es self a b = true) :
-    checkClause G table es' self a b = true := by
+theorem checkClause_mono [DecidableEq ι] {G : NormalGraph ι} {table known self a b es es'}
+    (hm : ∀ e ∈ es, e ∈ es') (h : checkClause G table known es self a b = true) :
+    checkClause G table known es' self a b = true := by
   have h := of_decide_eq_true h
   apply decide_eq_true
   apply CoversWith.mono (h := h)
@@ -238,8 +248,8 @@ private theorem arrow_evidence_complete [DecidableEq ι] {G : NormalGraph ι} {t
   exact ⟨es,he⟩
 
 set_option synthInstance.maxSize 1024 in
-theorem checkClause_complete [DecidableEq ι] {G : NormalGraph ι} {table self a b}
-    (h : Covers G (Rel table) self a b) : ∃ es, checkClause G table es self a b = true := by
+theorem checkClause_complete [DecidableEq ι] {G : NormalGraph ι} {table known self a b}
+    (h : Covers G (Rel table) known self a b) : ∃ es, checkClause G table known es self a b = true := by
   simp only [checkClause, decide_eq_true_eq]
   cases a <;> cases b <;> simp only [Covers, CoversWith] at *
   all_goals try contradiction
@@ -256,14 +266,15 @@ structure Certificate (ι : Type) where
   deriving Repr
 
 set_option synthInstance.maxSize 1024 in
-def checkCore [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) (cert : Certificate ι) : Bool :=
+def checkCore [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (S T : List ι)
+    (cert : Certificate ι) : Bool :=
   decide ((S, T) ∈ cert.table ∧ ∀ p ∈ cert.table, SameKind G p.1 p.2 = true ∧ Opaque G p.1 p.2 ∧
     ∀ a ∈ sourceClauses G p.1, ∃ b ∈ clausesOf G p.2,
-      checkClause G cert.table cert.arrows p.1 a b = true)
+      checkClause G cert.table known cert.arrows p.1 a b = true)
 
 
-theorem checkCore_sound [DecidableEq ι] {G : NormalGraph ι} {S T cert}
-    (h : checkCore G S T cert = true) : Core G S T := by
+theorem checkCore_sound [DecidableEq ι] {G : NormalGraph ι} {known S T cert}
+    (h : checkCore G known S T cert = true) : Core G known S T := by
   simp only [checkCore, decide_eq_true_eq] at h
   refine ⟨cert.table, h.1, ?_⟩
   intro p hp
@@ -271,15 +282,15 @@ theorem checkCore_sound [DecidableEq ι] {G : NormalGraph ι} {S T cert}
   obtain ⟨b, hb, hc⟩ := (h.2 p hp).2.2 a ha
   exact ⟨b, hb, checkClause_sound hc⟩
 
-theorem checkCore_complete [DecidableEq ι] {G : NormalGraph ι} {S T}
-    (h : Core G S T) : ∃ cert, checkCore G S T cert = true := by
+theorem checkCore_complete [DecidableEq ι] {G : NormalGraph ι} {known S T}
+    (h : Core G known S T) : ∃ cert, checkCore G known S T cert = true := by
   obtain ⟨table, hm, hv⟩ := h
   have rows : ∀ p ∈ table, ∃ es : Evidence ι,
       ∀ a ∈ sourceClauses G p.1, ∃ b ∈ clausesOf G p.2,
-        checkClause G table es p.1 a b = true := by
+        checkClause G table known es p.1 a b = true := by
     intro p hp
     apply collect (sourceClauses G p.1)
-      (fun a es => ∃ b ∈ clausesOf G p.2, checkClause G table es p.1 a b = true)
+      (fun a es => ∃ b ∈ clausesOf G p.2, checkClause G table known es p.1 a b = true)
     · intro a es es' hm ⟨b, hb, hc⟩
       exact ⟨b, hb, checkClause_mono hm hc⟩
     · intro a ha
@@ -293,15 +304,27 @@ theorem checkCore_complete [DecidableEq ι] {G : NormalGraph ι} {S T}
     simp only [checkCore, decide_eq_true_eq]
     exact ⟨hm, fun p hp => ⟨(hv p hp).1, (hv p hp).2.1, he p hp⟩⟩⟩
 
+/-- A checked instance of a scheme row's signatures: the instance table, the
+types the binders are instantiated at, a certificate per bound, the table's
+domain and the domain's free parameter rows. -/
+structure Instance (ι : Type) where
+  table : InstTable ι
+  instances : List (List ι)
+  bounds : List (Option (Certificate ι))
+  domain : List ι
+  free : FreeMap ι
+  deriving Repr
+
 inductive Proof (ι : Type) where
+  /-- A checked table, and the instances its coverage uses as known rows:
+  each a scheme row, the arrows it is below and the instance proving it. -/
   | core (certificate : Certificate ι)
+      (instances : List (List ι × Ops ι × List (List ι × List (List ι) × List ι × List ι) ×
+        Instance ι) := [])
   | subset
   | trans (middle : List ι) (left right : Proof ι)
-  /-- A scheme row below a checked instance of its signatures: the instance
-  table, the types the binders are instantiated at, the table's domain and the
-  domain's free parameter rows. -/
-  | inst (table : InstTable ι) (instances : List (List ι)) (bounds : List (Option (Certificate ι)))
-      (domain : List ι) (free : FreeMap ι)
+  /-- A scheme row below a checked instance of its signatures. -/
+  | inst (inst : Instance ι)
   /-- A type below one holding its rows' images under an instance table with
   the empty context: the table, its domain and its free-variable certificate. -/
   | table (table : InstTable ι) (domain : List ι) (free : FreeMap ι)
@@ -343,11 +366,11 @@ def boundOk [DecidableEq ι] (G : NormalGraph ι) (binders : List ι) (θs : Lis
   | none => true
   | some U => match c with
     | none => decide (∀ l ∈ U, l ∈ b.2)
-    | some cert => checkCore G U b.2 cert
+    | some cert => checkCore G [] U b.2 cert
 
 theorem boundOk_sound [DecidableEq ι] {G : NormalGraph ι} {binders θs b c}
     (h : boundOk G binders θs b c = true) :
-    ∀ U, (binders.zip θs).lookup b.1 = some U → Core G U b.2 ∨ ∀ l ∈ U, l ∈ b.2 := by
+    ∀ U, (binders.zip θs).lookup b.1 = some U → Core G [] U b.2 ∨ ∀ l ∈ U, l ∈ b.2 := by
   intro U hU
   unfold boundOk at h
   rw [hU] at h
@@ -371,7 +394,7 @@ theorem exists_mem_zip {xs : List α} {ys : List β} (hl : ys.length = xs.length
 
 theorem bound_certs [DecidableEq ι] {G : NormalGraph ι} {binders : List ι} {θs : List (List ι)} :
     ∀ bs : List (ι × List ι), (∀ b ∈ bs, ∀ U, (binders.zip θs).lookup b.1 = some U →
-      Core G U b.2 ∨ ∀ l ∈ U, l ∈ b.2) →
+      Core G [] U b.2 ∨ ∀ l ∈ U, l ∈ b.2) →
     ∃ certs : List (Option (Certificate ι)), certs.length = bs.length ∧
       (bs.zip certs).all (fun bc => boundOk G binders θs bc.1 bc.2) = true
   | [], _ => ⟨[], rfl, rfl⟩
@@ -388,46 +411,90 @@ theorem bound_certs [DecidableEq ι] {G : NormalGraph ι} {binders : List ι} {�
     obtain ⟨c, hc⟩ := this
     exact ⟨c :: certs, by simp [hl], by simp [hc, hall]⟩
 
-/-- `S` is one scheme row, and `T` one arrow clause whose every signature is an
+/-- `S` is one scheme row, and `L`, `M` arrows whose every signature is an
 image of one of the scheme's under the instance table, each instance within
 its binder's bounds. -/
-def checkInst [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) (tbl : InstTable ι)
-    (θs : List (List ι)) (certs : List (Option (Certificate ι))) (D : List ι) (V : FreeMap ι) :
-    Bool :=
-  match S, expand G T with
-  | [i], [.arrs L M] =>
+def checkInstArrs [DecidableEq ι] (G : NormalGraph ι) (S : List ι) (L : Ops ι)
+    (M : List (List ι × List (List ι) × List ι × List ι)) (c : Instance ι) : Bool :=
+  match S with
+  | [i] =>
     match G.schemes i with
-    | some s => !G.params i && θs.length == s.binders.length &&
-        instKinds G s.binders θs &&
-        certs.length == s.bounds.length &&
-        (s.bounds.zip certs).all (fun bc => boundOk G s.binders θs bc.1 bc.2) &&
-        TableOk G tbl D V &&
-        (L.all fun q => s.signatures.any fun p => sigMatch tbl (s.binders.zip θs) p q) &&
-        M.all fun q => s.variadic.any fun p => restMatch tbl (s.binders.zip θs) p q
+    | some s => !G.params i && c.instances.length == s.binders.length &&
+        instKinds G s.binders c.instances &&
+        c.bounds.length == s.bounds.length &&
+        (s.bounds.zip c.bounds).all (fun bc => boundOk G s.binders c.instances bc.1 bc.2) &&
+        TableOk G c.table c.domain c.free &&
+        (L.all fun q => s.signatures.any fun p => sigMatch c.table (s.binders.zip c.instances) p q) &&
+        M.all fun q => s.variadic.any fun p => restMatch c.table (s.binders.zip c.instances) p q
     | none => false
-  | _, _ => false
+  | _ => false
 
-theorem checkInst_sound [DecidableEq ι] {G : NormalGraph ι} {S T tbl θs certs D V}
-    (h : checkInst G S T tbl θs certs D V = true) : Sub G S T := by
-  unfold checkInst at h
+theorem checkInstArrs_sound [DecidableEq ι] {G : NormalGraph ι} {S L M c}
+    (h : checkInstArrs G S L M c = true) : InstArrs G S L M := by
+  obtain ⟨tbl, θs, certs, D, V⟩ := c
+  unfold checkInstArrs at h
   split at h
-  · rename_i i L M hT
+  · rename_i i
     split at h
     · rename_i s hs
       simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true, List.any_eq_true,
         beq_iff_eq] at h
       obtain ⟨⟨⟨⟨⟨⟨⟨hp, hlen⟩, hkinds⟩, hcl⟩, hbs⟩, hok⟩, hL⟩, hM⟩ := h
-      refine .inst hp hs hlen hkinds (fun b hb => ?_) hok hL hM hT
+      refine ⟨i, s, tbl, θs, D, V, rfl, hp, hs, hlen, hkinds, fun b hb => ?_, hok, hL, hM⟩
       obtain ⟨c, hc⟩ := exists_mem_zip hcl b hb
       exact boundOk_sound (hbs _ hc)
     · cases h
   · cases h
 
+theorem checkInstArrs_complete [DecidableEq ι] {G : NormalGraph ι} {S L M}
+    (h : InstArrs G S L M) : ∃ c, checkInstArrs G S L M c = true := by
+  obtain ⟨i, s, tbl, θs, D, V, rfl, hp, hq, hlen, hkinds, hbnd, hok, hL, hM⟩ := h
+  obtain ⟨certs, hcl, hcs⟩ := bound_certs s.bounds hbnd
+  refine ⟨⟨tbl, θs, certs, D, V⟩, ?_⟩
+  simp only [checkInstArrs, hq, hp, hok, hlen, hkinds, hcl, hcs, Bool.not_false, Bool.true_and,
+    beq_self_eq_true, List.all_eq_true, List.any_eq_true, Bool.and_eq_true]
+  exact ⟨fun q hq => hL q hq, fun q hq => hM q hq⟩
+
+/-- `T` is one arrow clause, an instance of the scheme row `S`. -/
+def checkInst [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) (c : Instance ι) : Bool :=
+  match expand G T with
+  | [.arrs L M] => checkInstArrs G S L M c
+  | _ => false
+
+theorem checkInst_sound [DecidableEq ι] {G : NormalGraph ι} {S T c}
+    (h : checkInst G S T c = true) : Inst G S T := by
+  unfold checkInst at h
+  split at h
+  · rename_i L M hT
+    exact ⟨L, M, checkInstArrs_sound h, hT⟩
+  · cases h
+
+theorem checkInst_complete [DecidableEq ι] {G : NormalGraph ι} {S T}
+    (h : Inst G S T) : ∃ c, checkInst G S T c = true := by
+  obtain ⟨L, M, hi, hT⟩ := h
+  obtain ⟨c, hc⟩ := checkInstArrs_complete hi
+  exact ⟨c, by simp only [checkInst, hT, hc]⟩
+
+/-- The rows a core certificate's instances prove. -/
+def knownOf (ks : List (List ι × Ops ι × List (List ι × List (List ι) × List ι × List ι) × Instance ι)) :
+    Known ι := ks.map fun k => (k.1, k.2.1, k.2.2.1)
+
+theorem instances_complete [DecidableEq ι] {G : NormalGraph ι} :
+    ∀ known : Known ι, (∀ k ∈ known, InstArrs G k.1 k.2.1 k.2.2) →
+      ∃ ks, knownOf ks = known ∧
+        ks.all (fun k => checkInstArrs G k.1 k.2.1 k.2.2.1 k.2.2.2) = true
+  | [], _ => ⟨[], rfl, rfl⟩
+  | k :: known, h => by
+    obtain ⟨ks, hr, ha⟩ := instances_complete known fun q hq => h q (List.mem_cons_of_mem _ hq)
+    obtain ⟨c, hc⟩ := checkInstArrs_complete (h k List.mem_cons_self)
+    exact ⟨(k.1, k.2.1, k.2.2, c) :: ks, by simp [knownOf] at hr ⊢; exact hr, by simp [hc, ha]⟩
+
 def check [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) : Proof ι → Bool
-  | .core cert => checkCore G S T cert
+  | .core cert ks => checkCore G (knownOf ks) S T cert &&
+      ks.all fun k => checkInstArrs G k.1 k.2.1 k.2.2.1 k.2.2.2
   | .subset => decide (∀ i ∈ S, i ∈ T)
   | .trans middle left right => check G S middle left && check G middle T right
-  | .inst tbl θs certs D V => checkInst G S T tbl θs certs D V
+  | .inst c => checkInst G S T c
   | .gen D V U p => genOk G S T D V U && check G S U p
   | .table tbl D V => TableOk G tbl D V &&
       S.all fun l => match entryImg tbl [] l with
@@ -437,12 +504,16 @@ def check [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) : Proof ι → B
 theorem check_sound [DecidableEq ι] {G : NormalGraph ι} {S T proof}
     (h : check G S T proof = true) : Sub G S T := by
   induction proof generalizing S T with
-  | core cert => exact .core (checkCore_sound h)
+  | core cert ks =>
+    simp only [check, Bool.and_eq_true, List.all_eq_true] at h
+    refine .core (fun p hp => ?_) (checkCore_sound h.1)
+    obtain ⟨k, hk, rfl⟩ := List.mem_map.mp hp
+    exact checkInstArrs_sound (h.2 k hk)
   | subset => exact .subset (of_decide_eq_true h)
   | trans middle left right ih ih' =>
     simp only [check, Bool.and_eq_true] at h
     exact .trans (ih h.1) (ih' h.2)
-  | inst tbl θs certs D V => exact checkInst_sound h
+  | inst c => exact .inst (checkInst_sound h)
   | gen D V U p ih =>
     simp only [check, Bool.and_eq_true] at h
     exact genOk_sound h.1 (ih h.2)
@@ -459,23 +530,23 @@ theorem check_sound [DecidableEq ι] {G : NormalGraph ι} {S T proof}
 theorem check_complete [dec : DecidableEq ι] {G : NormalGraph ι} {S T}
     (h : Sub G S T) : ∃ proof, check G S T proof = true := by
   induction h with
-  | core h =>
+  | @core S T inst known hk h =>
+    have he : inst = dec := Subsingleton.elim _ _
+    subst he
+    obtain ⟨ks, hr, ha⟩ := instances_complete known hk
     obtain ⟨cert, hc⟩ := checkCore_complete h
-    exact ⟨.core cert, hc⟩
+    exact ⟨.core cert ks, by simp only [check, hr, hc, ha, Bool.and_self]⟩
   | subset h => exact ⟨.subset, by simpa only [check, decide_eq_true_eq] using h⟩
   | trans h1 h2 ih ih' =>
     rename_i S U T
     obtain ⟨left, hl⟩ := ih
     obtain ⟨right, hr⟩ := ih'
     exact ⟨.trans U left right, by simp [check, hl, hr]⟩
-  | @inst T inst i s tbl θs D V L M hp hq hlen hkinds hbnd hok hL hM hT =>
+  | @inst S T inst h =>
     have he : inst = dec := Subsingleton.elim _ _
     subst he
-    obtain ⟨certs, hcl, hcs⟩ := bound_certs s.bounds hbnd
-    refine ⟨.inst tbl θs certs D V, ?_⟩
-    simp only [check, checkInst, hT, hq, hp, hok, hlen, hkinds, hcl, hcs, Bool.not_false, Bool.true_and,
-      beq_self_eq_true, List.all_eq_true, List.any_eq_true, Bool.and_eq_true, beq_iff_eq]
-    exact ⟨fun q hq => hL q hq, fun q hq => hM q hq⟩
+    obtain ⟨c, hc⟩ := checkInst_complete h
+    exact ⟨.inst c, hc⟩
   | @table S T inst tbl D V hok hS =>
     have he : inst = dec := Subsingleton.elim _ _
     subst he

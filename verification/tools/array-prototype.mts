@@ -21,7 +21,8 @@ import { signatures, typeTerm, type TermScope } from "./type-term.mts";
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 
 export type OverlayEntry = {
-  /** The member's key on `Array.prototype`. */
+  /** The member's key on `Array.prototype`, as declared: a name, or a
+   * computed key such as `[Symbol.iterator]`. */
   name: string;
   /** Where it is declared: `ReadonlyArray` for a member that only reads the
    * array, `Array` for a mutator. */
@@ -32,6 +33,9 @@ export type OverlayEntry = {
   drop?: string[];
   /** The declared `this` result is the receiver. */
   resultIsReceiver?: boolean;
+  /** The result stated as this standard library interface at `T`, which the
+   * declared result implies: a weaker contract than the declaration's. */
+  resultAs?: "Iterator";
 };
 
 export const overlay: readonly OverlayEntry[] = [
@@ -81,9 +85,22 @@ export const overlay: readonly OverlayEntry[] = [
   { name: "shift", from: "Array", signature: "shift(): T | undefined;" },
   { name: "unshift", from: "Array", signature: "unshift(...items: T[]): number;" },
   { name: "reverse", from: "Array", signature: "reverse(): T[];" },
+  // Iteration: `ArrayIterator<T>` extends `IteratorObject<T,
+  // BuiltinIteratorReturn, unknown>`, an `Iterator<T, BuiltinIteratorReturn,
+  // unknown>`, which meets `Iterator<T>`, the result `Iterable<T>` asks for.
+  { name: "[Symbol.iterator]", from: "ReadonlyArray",
+    signature: "[Symbol.iterator](): ArrayIterator<T>;", resultAs: "Iterator" },
   // Not listed: `concat` names `ConcatArray`, and `values`, `keys` and
-  // `entries` name `ArrayIterator`, which the overlay does not read yet.
+  // `entries` are not needed yet.
 ];
+
+/** What the overlay reads through the declaration graph: the symbol a
+ * computed key names, and a reference to a standard library interface, which
+ * then joins the graph. */
+export type OverlayLibrary = {
+  symbol: (written: ts.PropertyAccessExpression | ts.Identifier) => number;
+  reference: (node: ts.InterfaceDeclaration, args: TypeTerm[], span: [number, number]) => TypeTerm;
+};
 
 /** The synthetic declaration the array types' prototype view names. */
 export const arrayProtoIdentity: DeclarationIdentity =
@@ -92,9 +109,9 @@ export const arrayProtoIdentity: DeclarationIdentity =
 /** `ArrayProto` as a declaration: a record of readonly members, each a scheme
  * over the array's element binder `T` and the member's own binders, whose one
  * signature takes the array as its receiver. `at` locates a refusal. */
-export function arrayPrototype(checker: Checker, at: Node,
+export function arrayPrototype(checker: Checker, at: Node, library: OverlayLibrary,
     entries: readonly OverlayEntry[] = overlay): TypeDefinition {
-  const declared = (name: "ReadonlyArray" | "Array") => {
+  const declared = (name: "ReadonlyArray" | "Array" | "Iterator") => {
     const symbol = checker.resolveName(name, SymbolFlags.Interface, at, false);
     const parts = (symbol?.declarations ?? []).map(d => d.resolve())
       .filter((n): n is ts.InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
@@ -102,10 +119,15 @@ export function arrayPrototype(checker: Checker, at: Node,
     return parts;
   };
   const libraries = { ReadonlyArray: declared("ReadonlyArray"), Array: declared("Array") };
+  const interfaceOf = (name: "Iterator") => {
+    const [first] = declared(name);
+    if (!first) throw Error(`the standard library declares no ${name}`);
+    return first;
+  };
   const fields = entries.flatMap(entry => {
     const named = libraries[entry.from].flatMap(part => part.members
       .filter(ts.isMethodSignatureDeclaration)
-      .filter(m => ts.isIdentifier(m.name) && m.name.text === entry.name)
+      .filter(m => (ts.isIdentifier(m.name) ? m.name.text : m.name.getText(part.getSourceFile())) === entry.name)
       .map(m => ({ member: m, source: part.getSourceFile() })));
     // A member the project's standard library does not declare, as `at`
     // before ES2022, is not part of its `Array.prototype`.
@@ -134,14 +156,20 @@ export function arrayPrototype(checker: Checker, at: Node,
     const receiver: TypeTerm = { k: "array", readonly: entry.from === "ReadonlyArray", element, span };
     const parameters = member.parameters.filter(p =>
       !(ts.isIdentifier(p.name) && entry.drop?.includes(p.name.text)));
-    const forms = signatures(scope, parameters, member.type, member, span, false,
-      entry.resultIsReceiver ? receiver : undefined);
+    const stated = entry.resultAs
+      ? library.reference(interfaceOf(entry.resultAs), [element], span)
+      : entry.resultIsReceiver ? receiver : undefined;
+    const forms = signatures(scope, parameters, entry.resultAs ? undefined : member.type, member, span,
+      false, stated);
     if (forms.length !== 1 || forms.some(f => f.receiver))
       throw Error(`${entry.from}.${entry.name} is not one signature`);
     const type: TypeTerm = { k: "scheme",
       binders: binders.map(name => ({ name, bound: null, default: null, span })),
       signatures: forms.map(f => ({ ...f, receiver })), span };
-    return [{ name: entry.name, optional: false, readonly: true, type, span }];
+    const key = ts.isComputedPropertyName(member.name) &&
+        (ts.isPropertyAccessExpression(member.name.expression) || ts.isIdentifier(member.name.expression))
+      ? { symbol: library.symbol(member.name.expression) } : entry.name;
+    return [{ name: key, optional: false, readonly: true, type, span }];
   });
   return { declaration: arrayProtoIdentity, parameters: [], bases: [],
     expression: { k: "object", fields, stringIndex: null, calls: [], span: [0, 0] } };

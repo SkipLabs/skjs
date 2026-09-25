@@ -102,6 +102,40 @@ let rec field_type declarations seen t name = match t with
       | _ -> unsupported "field read on non-object") atoms)
   | Union ts -> combine (List.map (fun t -> field_type declarations seen t name) ts)
   | Rigid _ -> unsupported "field read on rigid parameter"
+(* What a fresh array literal expected at an iterable type holds, found as
+   TypeScript finds it: the expected type's member under the key
+   `Array.prototype` iterates by (its one symbol key, `[Symbol.iterator]`),
+   the `next` results of that member's result other than a finished one, and
+   their `value`. A construction hint only: Lean proves the literal, a
+   `readonly T[]`, below the expected type. *)
+let iterated_hint declarations expected =
+  let expand = function Atoms [Named (id,args)] -> definition declarations id args | t -> t in
+  let shape t = match expand t with Atoms [Shape s] -> Some s | _ -> None in
+  let member key t = Option.bind (shape t) (fun s ->
+    Option.map (fun (f:Semantic.field) -> f.read)
+      (List.find_opt (fun (f:Semantic.field) -> f.name=key) s.fields)) in
+  let result t = Option.bind (shape t) (fun s -> match s.calls with
+    | c :: _ -> Some c.result | [] -> None) in
+  (* A union's alternatives, through the aliases that name it. *)
+  let rec parts seen t = match t with
+    | Union ts -> List.concat_map (parts seen) ts
+    | Atoms [Named (id,args)] when not (List.mem id seen) ->
+      (match definition declarations id args with
+       | Atoms [Shape _] -> [t]
+       | body -> parts (id::seen) body)
+    | Atoms (_::_::_ as atoms) -> List.concat_map (fun a -> parts seen (Atoms [a])) atoms
+    | t -> [t] in
+  let ( let* ) = Option.bind in
+  let* key = Option.bind (shape (Atoms [Named (array_prototype,[])])) (fun s ->
+    List.find_map (fun (f:Semantic.field) -> match f.name with
+      | Key _ -> Some f.name | Name _ -> None) s.fields) in
+  let* iterator = Option.bind (member key expected) result in
+  let* results = Option.bind (member (Name "next") iterator) result in
+  match List.filter_map (fun r -> match member (Name "done") r with
+      | Some (Atoms [True]) -> None
+      | _ -> member (Name "value") r) (parts [] results) with
+  | [] -> None
+  | values -> Some (combine values)
 let rec index_type declarations seen receiver key = match receiver with
   | Atoms atoms -> combine (List.map (function
       | Shape {elements=Some sequence;_} ->
@@ -270,7 +304,12 @@ let infer_function declarations module_functions (f:Source.fn) =
          Atoms [Shape {fields=[];string_index=Some index;calls=[];elements=None}]
        | _ -> record fields)
     | ArrayLiteral es ->
-      let contract = match expected with Some (Atoms [Shape {elements=Some s;_}]) -> Some s | _ -> None in
+      let contract = match expected with
+        | Some (Atoms [Shape {elements=Some s;_}]) -> Some s
+        | Some expected ->
+          Option.map (fun t -> {required=[];optional_elements=[];rest=Some t;readonly=true})
+            (iterated_hint declarations expected)
+        | None -> None in
       let types = List.mapi (fun i e ->
         let expected = Option.bind contract (fun s -> match List.nth_opt (s.required @ s.optional_elements) i with
           | Some t -> Some t | None -> s.rest) in expr ?expected env e) es in

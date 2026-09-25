@@ -415,15 +415,11 @@ def memberOf (G : NormalGraph ι) (O : Ty ι) (k : PropKey) : Option (MethodMemb
   | [.refs _ _ _ _ ms _] | [.dict _ _ _ _ _ ms _] => ms.find? (·.key == k)
   | _ => none
 
-/-- A member of a host's type is at the host's location for its key, whose
+/-- A member of a host's type is found by the member's key on the host, whose
 contract implies the member's signatures invoked on that host. -/
 theorem memberOf_at {G : NormalGraph ι} {O : Ty ι} {k : PropKey} {m : MethodMembers.Sig (Ty ι)}
     (hm : memberOf G O k = some m) {n W v} (hv : meaning G O n W v) :
-    ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr n),
-      v = .objAt flds .absent ∧ flds.lookup k = some l ∧ lookup W l = some c ∧
-      ∀ (j : Nat) (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
-        ∀ (u : Val), c j hj U u →
-        MethodMembers.onHost v (MethodMembers.Member.of (meaning G) (argMeaning G) m) j U u := by
+    m.key = k ∧ MethodMembers.memberT (MethodMembers.Member.of (meaning G) (argMeaning G) m) n W v := by
   unfold memberOf at hm
   split at hm
   all_goals try contradiction
@@ -432,9 +428,30 @@ theorem memberOf_at {G : NormalGraph ι} {O : Ty ι} {k : PropKey} {m : MethodMe
     have hmem := List.mem_of_find?_eq_some hm
     have hkey : m.key = k := by simpa using List.find?_some hm
     have hs := (represents_sem (show Represents G O _ from hO) n W v).mp hv
-    obtain ⟨flds, l, c, hρ, hf, hl, hag⟩ := MethodMembers.methodT_at (List.mem_map_of_mem hmem)
-      (by first | exact hs.2.2.2.1 | exact hs.2.2.2.2.1)
-    exact ⟨flds, l, c, hρ, by simpa [MethodMembers.Member.of, hkey] using hf, hl, hag⟩
+    exact ⟨hkey, MethodMembers.methodT_at (List.mem_map_of_mem hmem)
+      (by first | exact hs.2.2.2.1 | exact hs.2.2.2.2.1)⟩
+
+/-- **Reading a member.** The read finds the key on the host, or, one step
+later, on the object the host's prototype location holds; either way the
+value read meets the member's signatures invoked on the host. -/
+theorem member_read_safe {m : MethodMembers.Member} {n : Nat} {W : WorldT n} {h : Heap} {v : Val}
+    (hw : WorldAdm W) (hh : HeapOk n W h) (hm : MethodMembers.memberT m n W v) :
+    Safe (MethodMembers.onHost v m) n W h (.readAt m.key v) := by
+  have hval : ValOnly (MethodMembers.onHost v m) := fun _ _ _ hv => hv.1.1.val
+  rcases hm with ⟨flds, l, c, rfl, hf, hl, hag⟩ | ⟨flds, rfl, hmiss, hp⟩
+  · exact read_view_rule_ext hval n W h l hw hh hf hl hag
+  · obtain ⟨pf, lp, cp, hρ, hpf, hlp, hpag⟩ := hp
+    cases hρ
+    cases n with
+    | zero => trivial
+    | succ q =>
+      obtain ⟨pv, hpv, hmem⟩ := hh.2 lp cp hlp
+      have hU := WorldAdm_trunc (Nat.le_succ q) hw
+      have hH := HeapOk_trunc q W h hh
+      obtain ⟨qf, l, c, rfl, hf, hl, hag⟩ :=
+        hpag q (by omega) _ (WExt_refl _) pv (hmem q (by omega))
+      exact Or.inr ⟨trunc q (Nat.le_succ q) W, h, .readAt m.key (.objAt qf .absent), WExt_refl _,
+        hU, .readProto hmiss hpf hpv, hH, read_view_rule_ext hval q _ h l hU hH hf hl hag⟩
 
 /-- The fixed signatures a callable type carries, fixed or callable object
 alike; none for any other type. -/
@@ -2038,9 +2055,9 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
         simpa [List.map_drop, hlen] using hdown
   | @bindMember Γ F O i k m L S hi hmo hF hL hS =>
     intro n W h ρ he hw hh
-    obtain ⟨flds, l, c, hρ, hf, hl, hag⟩ := memberOf_at hmo (he.2 i O hi)
+    obtain ⟨hkey, hmem⟩ := memberOf_at hmo (he.2 i O hi)
     have hscope : Scoped 0 (ρ i) := he.1 i
-    have hvalρ : isVal (ρ i) = true := by rw [hρ]; rfl
+    have hvalρ : isVal (ρ i) = true := (meaning_value (he.2 i O hi)).1
     have hterm : instantiate 0 ρ
         (.letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])) =
         .letE (.readAt k (ρ i)) (.makeAt (.bound (.var 0) (ρ i) []) [] []) := by
@@ -2048,10 +2065,8 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     rw [hterm]
     have hread : Safe (MethodMembers.onHost (ρ i) (MethodMembers.Member.of (meaning G) (argMeaning G) m))
         n W h (.readAt k (ρ i)) := by
-      have := read_view_rule_ext (A := MethodMembers.onHost (ρ i)
-          (MethodMembers.Member.of (meaning G) (argMeaning G) m)) (code := .absent) (flds := flds)
-        (fun _ _ _ hv => hv.1.1.val) n W h l hw hh hf hl hag
-      rwa [← hρ] at this
+      have := member_read_safe hw hh hmem
+      rwa [show (MethodMembers.Member.of (meaning G) (argMeaning G) m).key = k from hkey] at this
     apply bind (fun a => Tm.letE a (.makeAt (.bound (.var 0) (ρ i) []) [] [])) Step.letC
       n W h _ hw hh hread
     intro j hj U hx hu h' u hok hval hon

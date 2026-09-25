@@ -14,7 +14,7 @@ export type Fields = [name: PropertyKey, labels: Labels][];
 /** A host-relative method member: its key, its fixed signatures
  * `[params, result]` and its variadic ones `[params, [rest, result]]`. */
 export type MethodSig = {
-  key: string;
+  key: PropertyKey;
   calls: [params: Labels[], result: Labels][];
   rests: [params: Labels[], [rest: Labels, result: Labels]][];
 };
@@ -208,23 +208,32 @@ export function decodeGraph(value: unknown): TypeGraph {
       labels(tail[1]);
     });
   };
+  // A key: a string, or `{"symbol": i}` for the declaration document's i-th
+  // symbol.
+  const key = (v: unknown, what: string): PropertyKey => {
+    if (typeof v === "string") return v;
+    const r = obj(v, ["symbol"]);
+    if (typeof r.symbol !== "number" || !Number.isSafeInteger(r.symbol) || r.symbol < 0)
+      throw Error(`expected ${what}`);
+    return { symbol: r.symbol };
+  };
   const fields = (v: unknown) => {
     const names = new Set<string>();
     array(v).forEach((f) => {
       const pair = array(f);
       if (pair.length !== 2)
         throw Error("expected a field name and its labels");
-      if (typeof pair[0] !== "string") throw Error("expected a field name");
-      if (names.has(pair[0]))
+      const name = keyText(key(pair[0], "a field name"));
+      if (names.has(name))
         throw Error("duplicate field in an object contract");
-      names.add(pair[0]);
+      names.add(name);
       labels(pair[1]);
     });
   };
   const methods = (v: unknown) =>
     array(v).forEach((m) => {
       const r = obj(m, ["key", "calls", "rests"]);
-      if (typeof r.key !== "string") throw Error("expected a method key");
+      key(r.key, "a method key");
       array(r.calls).forEach((c) => {
         const pair = array(c);
         if (pair.length !== 2) throw Error("expected a method signature");
@@ -424,7 +433,7 @@ function clauseText(c: Clause): string {
       [c.refs.first, ...c.refs.rest].map(printFields).join(" & "),
       ...(c.refs.views.length ? [`readonly ${printFields(c.refs.views)}`] : []),
       ...(c.refs.optional?.length ? [`optional ${printFields(c.refs.optional)}`] : []),
-      ...(c.refs.methods?.length ? [`methods ${c.refs.methods.map((m) => m.key).join(", ")}`] : []),
+      ...(c.refs.methods?.length ? [`methods ${c.refs.methods.map((m) => keyText(m.key)).join(", ")}`] : []),
       ...(c.refs.bounds ?? []).map((b) => `own keys ${b.map((k) => JSON.stringify(k)).join(" | ")}`),
     ].join(" & ");
   if ("dict" in c)
@@ -435,7 +444,7 @@ function clauseText(c: Clause): string {
         (index) => `readonly {[key: string]: ${printLabels(index)}}`,
       ),
       ...(c.dict.optional?.length ? [`optional ${printFields(c.dict.optional)}`] : []),
-      ...(c.dict.methods?.length ? [`methods ${c.dict.methods.map((m) => m.key).join(", ")}`] : []),
+      ...(c.dict.methods?.length ? [`methods ${c.dict.methods.map((m) => keyText(m.key)).join(", ")}`] : []),
       ...(c.dict.bounds ?? []).map((b) => `own keys ${b.map((k) => JSON.stringify(k)).join(" | ")}`),
     ].join(" & ");
   const calls = (arrows: Arrow[], variadic: RestArrow[] = []) =>

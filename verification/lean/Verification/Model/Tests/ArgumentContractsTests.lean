@@ -134,7 +134,7 @@ The semantic control explains why this refusal is required. -/
 private def packTop : NormalGraph Nat := .ofRows fun
   | 0 => [.pack ⟨[], [], none, false⟩ []]
   | _ => [.top]
-example : ¬ PositiveRules.Core packTop [0] [1] := by
+example : ¬ PositiveRules.Core packTop [] [0] [1] := by
   rintro ⟨table, hm, hv⟩
   have h := (hv ([0],[1]) hm).1
   change false = true at h

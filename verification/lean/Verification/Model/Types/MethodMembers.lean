@@ -38,28 +38,71 @@ def onHost (v : Val) (m : Member) : Fam :=
 theorem onHost_adm (v : Val) (m : Member) : Adm (onHost v m) :=
   interT_adm _ _ (callsT_adm _) (restsT_adm _)
 
-/-- **Host-relative members.** Each member is at the object's location for
-its key, whose contract implies, in every world extending the current one,
-the member's signatures invoked on the object. The implication is not claimed
-in unrelated worlds: there the object's own locations need not hold their
-contracts, and a method reading them could not be safe. -/
-def methodT (ms : List Member) : Fam := fun k W v =>
-  ∀ m ∈ ms, ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr k),
-    v = .objAt flds .absent ∧ flds.lookup m.key = some l ∧ lookup W l = some c ∧
+/-- `v` holds `key` at a location whose contract implies `A` below the level,
+in every world extending the current one. -/
+def holdsAt (key : PropKey) (A : Fam) : Fam := fun k W v =>
+  ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr k),
+    v = .objAt flds .absent ∧ flds.lookup key = some l ∧ lookup W l = some c ∧
     ∀ (j : Nat) (hj : j < k) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
-      ∀ (u : Val), c j hj U u → onHost v m j U u
+      ∀ (u : Val), c j hj U u → A j U u
 
-theorem methodT_adm (ms : List Member) : Adm (methodT ms) := by
+theorem holdsAt_adm (key : PropKey) (A : Fam) : Adm (holdsAt key A) := by
   refine ⟨?_, ?_⟩
-  · intro n W v h m hm
-    obtain ⟨flds, l, c, hv, hf, hl, hag⟩ := h m hm
+  · intro n W v h
+    obtain ⟨flds, l, c, hv, hf, hl, hag⟩ := h
     refine ⟨flds, l, _, hv, hf, lookup_trunc (Nat.le_succ n) W l c hl, ?_⟩
     intro j hj U hx u hu
     exact hag j (by omega) U (by rwa [trunc_trunc] at hx) u hu
-  · intro n W W' hx v h m hm
-    obtain ⟨flds, l, c, hv, hf, hl, hag⟩ := h m hm
+  · intro n W W' hx v h
+    obtain ⟨flds, l, c, hv, hf, hl, hag⟩ := h
     exact ⟨flds, l, c, hv, hf, WExt_lookup hx hl, fun j hj U hU u hu =>
       hag j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hU) u hu⟩
+
+/-- A weaker family below the level is held wherever a stronger one is. -/
+theorem holdsAt_mono {key : PropKey} {A B : Fam} {k : Nat}
+    (h : ∀ j, j < k → ∀ (U : WorldT j) u, A j U u → B j U u) {W : WorldT k} {v : Val}
+    (hv : holdsAt key A k W v) : holdsAt key B k W v := by
+  obtain ⟨flds, l, c, hρ, hf, hl, hag⟩ := hv
+  exact ⟨flds, l, c, hρ, hf, hl, fun j hj U hU u hu => h j hj U u (hag j hj U hU u hu)⟩
+
+/-- **Host-relative members.** A member of `v` is where JavaScript's lookup
+finds its key: at `v`'s own location for it, or, when `v` lacks the key, at
+that key's location in the object `v`'s prototype location holds. Either
+contract implies, in every world extending the current one, the member's
+signatures invoked on `v`. The implication is not claimed in unrelated
+worlds: there the object's own locations need not hold their contracts, and a
+method reading them could not be safe. -/
+def memberT (m : Member) : Fam := fun k W v =>
+  holdsAt m.key (onHost v m) k W v ∨
+    ∃ flds : List (PropKey × Nat), v = .objAt flds .absent ∧ flds.lookup m.key = none ∧
+      holdsAt CallArguments.protoField (holdsAt m.key (onHost v m)) k W v
+
+theorem memberT_adm (m : Member) : Adm (memberT m) := by
+  refine ⟨?_, ?_⟩
+  · intro n W v h
+    rcases h with h | ⟨flds, hρ, hmiss, h⟩
+    · exact .inl ((holdsAt_adm _ _).down n W v h)
+    · exact .inr ⟨flds, hρ, hmiss, (holdsAt_adm _ _).down n W v h⟩
+  · intro n W W' hx v h
+    rcases h with h | ⟨flds, hρ, hmiss, h⟩
+    · exact .inl ((holdsAt_adm _ _).mono n W W' hx v h)
+    · exact .inr ⟨flds, hρ, hmiss, (holdsAt_adm _ _).mono n W W' hx v h⟩
+
+/-- A member whose signatures imply another's below the level, found by the
+same key, is that member. -/
+theorem memberT_mono {m m' : Member} (hkey : m.key = m'.key) {k : Nat}
+    (h : ∀ v, ∀ j, j < k → ∀ (U : WorldT j) u, onHost v m j U u → onHost v m' j U u)
+    {W : WorldT k} {v : Val} (hv : memberT m k W v) : memberT m' k W v := by
+  rcases hv with hv | ⟨flds, hρ, hmiss, hv⟩
+  · exact .inl (hkey ▸ holdsAt_mono (h v) hv)
+  · exact .inr ⟨flds, hρ, hkey ▸ hmiss, holdsAt_mono (fun j hj U u hu =>
+      hkey ▸ holdsAt_mono (fun i hi U' u' => h v i (by omega) U' u') hu) hv⟩
+
+def methodT (ms : List Member) : Fam := fun k W v => ∀ m ∈ ms, memberT m k W v
+
+theorem methodT_adm (ms : List Member) : Adm (methodT ms) :=
+  ⟨fun n W v h m hm => (memberT_adm m).down n W v (h m hm),
+    fun n W W' hx v h m hm => (memberT_adm m).mono n W W' hx v (h m hm)⟩
 
 theorem methodT_nil (k : Nat) (W : WorldT k) (v : Val) : methodT [] k W v := by
   intro m hm
@@ -69,14 +112,9 @@ theorem methodT_append (ms ns : List Member) (k : Nat) (W : WorldT k) (v : Val) 
     methodT (ms ++ ns) k W v ↔ methodT ms k W v ∧ methodT ns k W v := by
   simp only [methodT, List.mem_append, or_imp, forall_and]
 
-/-- A member of the object, read from it: the host-relative family its
-location implies in extending worlds. -/
+/-- A member of the object, read from it. -/
 theorem methodT_at {ms : List Member} {m : Member} (hm : m ∈ ms) {k} {W : WorldT k} {v}
-    (h : methodT ms k W v) :
-    ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr k),
-      v = .objAt flds .absent ∧ flds.lookup m.key = some l ∧ lookup W l = some c ∧
-      ∀ (j : Nat) (hj : j < k) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
-        ∀ (u : Val), c j hj U u → onHost v m j U u :=
+    (h : methodT ms k W v) : memberT m k W v :=
   h m hm
 
 /-- A member's syntax: its key, fixed signatures `(parameters, result)` and
@@ -122,14 +160,14 @@ theorem methodT_congr {α : Type} (X Y : α → Fam) (P Q : α → ArgFam) (n : 
   constructor
   · intro hv m hmem
     obtain ⟨s, hs, rfl⟩ := List.mem_map.mp hmem
-    obtain ⟨flds, l, c, hρ, hf, hl, hag⟩ := hv _ (List.mem_map_of_mem hs)
-    exact ⟨flds, l, c, hρ, hf, hl, fun j hj U hU u hu =>
-      (onHost_congr X Y P Q n h hP s v j hj U u).mp (hag j hj U hU u hu)⟩
+    exact memberT_mono (m := Member.of X P s) (m' := Member.of Y Q s) rfl
+      (fun v j hj U u => (onHost_congr X Y P Q n h hP s v j hj U u).mp)
+      (hv (Member.of X P s) (List.mem_map_of_mem hs))
   · intro hv m hmem
     obtain ⟨s, hs, rfl⟩ := List.mem_map.mp hmem
-    obtain ⟨flds, l, c, hρ, hf, hl, hag⟩ := hv _ (List.mem_map_of_mem hs)
-    exact ⟨flds, l, c, hρ, hf, hl, fun j hj U hU u hu =>
-      (onHost_congr X Y P Q n h hP s v j hj U u).mpr (hag j hj U hU u hu)⟩
+    exact memberT_mono (m := Member.of Y Q s) (m' := Member.of X P s) rfl
+      (fun v j hj U u => (onHost_congr X Y P Q n h hP s v j hj U u).mpr)
+      (hv (Member.of Y Q s) (List.mem_map_of_mem hs))
 
 /-- Rename a member signature's operands. -/
 def Sig.map {α β : Type} (f : α → β) (m : Sig α) : Sig β :=

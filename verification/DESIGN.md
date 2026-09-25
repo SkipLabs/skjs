@@ -1884,7 +1884,9 @@ carries a receiver:
 ```text
 methodT(M)(k, W, v) ⇔ v's location ℓ for f has contract c, and for every j < k and
     every world U extending W|j, every u with c(j, U, u) satisfies
-    callsT [({v}, Ps, R) | (Ps, R) ∈ L](j, U, u) ∧ restsT [({v}, Ps, P, R) | (Ps, P, R) ∈ S](j, U, u)
+    callsT [({v}, Ps, R) | (Ps, R) ∈ L](j, U, u) ∧ restsT [({v}, Ps, P, R) | (Ps, P, R) ∈ S](j, U, u);
+  or v lacks f, and v's prototype location holds, in the same sense, an object
+    whose location for f has such a contract, still with receiver {v}
 ```
 
 The receiver family is the singleton `{v}`: the host, fixed when the member is
@@ -1967,9 +1969,11 @@ interface or class, one or several with receiver `self`, into a member; an
 optional method (`return?`) and a generic one (a scheme) stay fields for now.
 
 A target method is covered (`CoversMethods`) by a source method of the same
-key, parameters contravariant and results covariant (`CoversSig`), or by a
+key, parameters contravariant and results covariant (`CoversSig`), by a
 function the source holds in a field or view whose signatures take a receiver
-the source's own type is within (`CoversByFunction`). The second form is how a
+the source's own type is within (`CoversByFunction`), or, when the source's
+own keys exclude the key, by such a function its prototype holds
+(`CoversByProto`, [The array prototype](#the-array-prototype)). The second form is how a
 class instance, allocated with its methods as function-typed fields whose
 receiver is the instance type, meets that type: coverage takes the source type
 of the pair as `self`, and `Core`'s induction on the level supplies that the
@@ -2042,9 +2046,22 @@ $$
 A method call `xs.map(f)` reads `map` through the prototype and invokes it
 with receiver `xs`. The member's receiver-quantified signature admits `xs`,
 so this needs no member contract of its own. Coverage of a host-relative
-target member by a prototype member (`T[] ≤ Iterable<T>`) instantiates the
-member's scheme at the source's element type. It is staged after the read
-rule.
+target member by a prototype member (`readonly T[] ≤ Iterable<T>`)
+instantiates the member's scheme at the source's element type with the array
+as receiver. The instance is a *known row* of the core table: proved by the
+instance check, and given as the scheme row with the arrows it is below, not
+as a type of the graph, since an instance has no row of its own
+(`CoversByProto`, `Sub.core`). A member's meaning reads it where JavaScript's
+lookup finds it, on the object or on its prototype, so a method call on an
+`Iterable` that is an array reads the member through the prototype
+(`MethodMembers.memberT`, `member_read_safe`).
+
+A fresh literal where an `Iterable<X>` is expected is claimed as
+`readonly X[]`, its elements at `X`: the producer finds `X` as TypeScript
+does, through `[Symbol.iterator]().next()`'s unfinished results, and Lean
+proves the literal below the expected type. A mutable array meets `Iterable`
+only through a `readonly` form of its type, which the graph must hold; a
+literal needs none.
 
 **Consequence.** Optional fields and index views read an absent key as
 `undefined`, which is true only without a prototype. So `optT` requires no
@@ -2076,6 +2093,11 @@ and soundness needs, one entry per member:
   invariant. Each member is quantified over `T` and its own binders.
 - *Dropped parameters.* `thisArg?: any` is dropped: only calls that omit it
   are admitted, which the real function accepts.
+- *Weakened results.* A result may be stated as a supertype of the declared
+  one: `[Symbol.iterator]` declares `ArrayIterator<T>`, which extends
+  `IteratorObject<T, BuiltinIteratorReturn, unknown>`, an `Iterator`; the
+  overlay states `Iterator<T>`, the result `Iterable<T>` asks for, and trusts
+  no more than that.
 - *Dropped overloads.* An overload whose declared result the library does not
   deliver is removed. `reduce(cb): T` throws on an empty array, so only
   `reduce(cb, init)` is kept.
@@ -2105,7 +2127,8 @@ signature's image, in any order: `find`'s declared `T | undefined` at
 delegation steps and the guards. (3) The own-key bound and the prototype view,
 with the read rule. (4) Literals and rest arrays allocated with the prototype;
 `ArrayProto` as a trusted import. (5) Coverage through the prototype.
-(6) Dense arrays.
+(6) Dense arrays. (7) Arrays as `Iterable<T>`: members found through the
+prototype, instance rows in coverage, `[Symbol.iterator]` in the overlay.
 
 ### Next object milestone
 

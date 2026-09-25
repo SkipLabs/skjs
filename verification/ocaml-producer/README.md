@@ -344,7 +344,7 @@ controls hold; the numbers live in its output, not here.
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | Stable storage vs value snapshots           | `values.ts`, captured storage in `callbacks.ts`                                                                                               |
 | Field identity and aliasing                 | `objects.ts`                                                                                                                                  |
-| Bidirectional construction hints            | `contextual.ts` (fresh object and tuple)                                                                                                      |
+| Bidirectional construction hints            | `contextual.ts` (fresh object and tuple), `array-iterable.ts` (literal as `Iterable`)                                                                                                      |
 | Read permission vs write permission         | `readonly.ts` (alias view, array covariance)                                                                                                  |
 | Indexed reads and absent keys                | `index-signature.ts` (readonly dictionary identity, mixed named views, fresh construction, and results including `undefined`)                |
 | Sequence shape and presence                 | `arrays.ts` (write, inferred literal, optional tuple position)                                                                                |

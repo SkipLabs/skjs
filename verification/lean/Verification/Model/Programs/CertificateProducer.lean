@@ -82,7 +82,7 @@ def arrowEvidence [DecidableEq ι] (G : NormalGraph ι) (table : Table ι)
 
 /-- Delete unsupported rows of a finite candidate relation. A surviving cyclic
 relation is only proposed evidence; checkCore validates every row. -/
-def prune [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) :
+def prune [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) (known : PositiveRules.Known ι) :
     Nat → Table ι → Table ι
   | 0, table => table
   | fuel+1, table =>
@@ -90,20 +90,31 @@ def prune [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) :
     let next := table.filter fun p => PositiveRules.SameKind G p.1 p.2 &&
       decide (PositiveRules.Opaque G p.1 p.2) &&
       (sourceClauses G p.1).all fun a =>
-      (clausesOf G p.2).any fun b => PositiveCertificates.checkClause G table es p.1 a b
-    if next = table then table else prune G pool fuel next
+      (clausesOf G p.2).any fun b => PositiveCertificates.checkClause G table known es p.1 a b
+    if next = table then table else prune G pool known fuel next
 
-def subtypeBase [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
-    (A B : Ty ι) : Option (PositiveCertificates.Proof ι) :=
+/-- Known rows with the instances proving them. -/
+abbrev KnownInstances (ι : Type) :=
+  List (List ι × PositiveRules.Ops ι × List (List ι × List (List ι) × List ι × List ι) ×
+    PositiveCertificates.Instance ι)
+
+/-- A core table over the pool, whose coverage may use the `known` rows. -/
+def subtypeWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
+    (ks : KnownInstances ι) (A B : Ty ι) : Option (PositiveCertificates.Proof ι) :=
   if PositiveCertificates.check G A B .subset then some .subset else
   -- Value top covers value types: one row, no arrow evidence.
   let toTop := PositiveCertificates.Proof.core ⟨[(A, B)], []⟩
   if expand G B = [.top] && PositiveCertificates.check G A B toTop then some toTop else
     let types := (A :: B :: pool).eraseDups
     let initial := types.flatMap fun a => types.map (a, ·)
-    let table := prune G types initial.length initial
-    let p := PositiveCertificates.Proof.core ⟨table, arrowEvidence G table types⟩
+    let known := PositiveCertificates.knownOf ks
+    let table := prune G types known initial.length initial
+    let p := PositiveCertificates.Proof.core ⟨table, arrowEvidence G table types⟩ ks
     if PositiveCertificates.check G A B p then some p else none
+
+def subtypeBase [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
+    (A B : Ty ι) : Option (PositiveCertificates.Proof ι) :=
+  subtypeWith G pool [] A B
 
 
 /-- The table built while matching, and the instances found for the
@@ -227,43 +238,74 @@ are, so a pool of the whole table adds nothing but search. -/
 def reachablePool [DecidableEq ι] (G : NormalGraph ι) (A B : Ty ι) : List (Ty ι) :=
   (A :: B :: (readsFrom G closureFuel (A ++ B)).map ([·])).eraseDups
 
-/-- A scheme row below an arrow type: find the binders' instances, then build
-the table under the context giving each binder its instance. -/
+/-- An instance of scheme row `s` whose signatures' images are the arrows
+`L`, `M`: find the binders' instances, then build the table under the context
+giving each binder its instance. Untrusted: `checkInstArrs` validates it. -/
+def instanceFor [DecidableEq ι] (G : NormalGraph ι) (fuel : Nat) (s : SchemeRow ι)
+    (L : PositiveRules.Ops ι) (M : List (List ι × List (List ι) × List ι × List ι)) :
+    Option (PositiveCertificates.Instance ι) := do
+  let roots := s.signatures.flatMap (fun p => p.1 ++ p.2.1.flatten ++ p.2.2) ++
+    s.variadic.flatMap (fun p => p.1 ++ p.2.1.flatten ++ p.2.2.1 ++ p.2.2.2) ++
+    L.flatMap (fun q => q.1 ++ q.2.1.flatten ++ q.2.2) ++
+    M.flatMap (fun q => q.1 ++ q.2.1.flatten ++ q.2.2.1 ++ q.2.2.2)
+  let D := readsFrom G closureFuel roots
+  let V := freeMapOf G D closureFuel []
+  -- Each target signature matched against one of the scheme's, fixed
+  -- against fixed and variadic against variadic.
+  let each (κ : Ctx ι) (st : InstState ι) : Option (InstState ι) := do
+    let st ← L.foldlM (fun st q =>
+      s.signatures.findSome? fun p => matchSig G s.binders V fuel st κ p q) st
+    M.foldlM (fun st q =>
+      s.variadic.findSome? fun p => matchRest G s.binders V fuel st κ p q) st
+  let first ← each [] {}
+  let θs := s.binders.map fun b => (first.found.lookup b).getD [b]
+  let κ₀ := s.binders.zip θs
+  let final ← each κ₀ {}
+  -- Each instance within its binder's bounds: inclusion, or a core table.
+  let certs ← s.bounds.mapM fun b =>
+    match κ₀.lookup b.1 with
+    | none => some none
+    | some U =>
+      if U.all (· ∈ b.2) then some none
+      else match subtypeBase G (reachablePool G U b.2) U b.2 with
+        | some (.core cert _) => some (some cert)
+        | _ => none
+  some ⟨final.table, θs, certs, D, V⟩
+
+/-- A scheme row below an arrow type. -/
 def instProof [DecidableEq ι] (G : NormalGraph ι) (fuel : Nat) (A B : Ty ι) :
     Option (PositiveCertificates.Proof ι) :=
   match A, expand G B with
   | [i], [.arrs L M] =>
     match G.schemes i with
-    | some s => do
-      let roots := s.signatures.flatMap (fun p => p.1 ++ p.2.1.flatten ++ p.2.2) ++
-        s.variadic.flatMap (fun p => p.1 ++ p.2.1.flatten ++ p.2.2.1 ++ p.2.2.2) ++
-        L.flatMap (fun q => q.1 ++ q.2.1.flatten ++ q.2.2) ++
-        M.flatMap (fun q => q.1 ++ q.2.1.flatten ++ q.2.2.1 ++ q.2.2.2)
-      let D := readsFrom G closureFuel roots
-      let V := freeMapOf G D closureFuel []
-      -- Each target signature matched against one of the scheme's, fixed
-      -- against fixed and variadic against variadic.
-      let each (κ : Ctx ι) (st : InstState ι) : Option (InstState ι) := do
-        let st ← L.foldlM (fun st q =>
-          s.signatures.findSome? fun p => matchSig G s.binders V fuel st κ p q) st
-        M.foldlM (fun st q =>
-          s.variadic.findSome? fun p => matchRest G s.binders V fuel st κ p q) st
-      let first ← each [] {}
-      let θs := s.binders.map fun b => (first.found.lookup b).getD [b]
-      let κ₀ := s.binders.zip θs
-      let final ← each κ₀ {}
-      -- Each instance within its binder's bounds: inclusion, or a core table.
-      let certs ← s.bounds.mapM fun b =>
-        match κ₀.lookup b.1 with
-        | none => some none
-        | some U =>
-          if U.all (· ∈ b.2) then some none
-          else match subtypeBase G (reachablePool G U b.2) U b.2 with
-            | some (.core cert) => some (some cert)
-            | _ => none
-      some (.inst final.table θs certs D V)
+    | some s => (instanceFor G fuel s L M).map .inst
     | none => none
   | _, _ => none
+
+/-- Instances of prototype members covering the method members of the pool's
+types: for a source `A` whose prototype `P` holds, under a method's key, a
+scheme row, the instance whose signatures are the method's with `A` as
+receiver. -/
+def protoInstances [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) (fuel : Nat) :
+    KnownInstances ι :=
+  let methods := pool.flatMap fun B => (expand G B).flatMap fun c => match c with
+    | .refs _ _ _ _ ns _ | .dict _ _ _ _ _ ns _ => ns
+    | _ => []
+  pool.flatMap fun A => (expand G A).flatMap fun c => match c with
+    | .refs a bs vs _ _ _ =>
+      match ((a :: bs).flatten ++ vs).lookup CallArguments.protoField with
+      | some P => methods.filterMap fun q =>
+          match PositiveRules.viewOf G P q.key with
+          | some [i] => match G.schemes i with
+            | some s =>
+              let L := q.calls.map fun t => (A, t.1, t.2)
+              let M := q.rests.map fun t => (A, t.1, t.2.1, t.2.2)
+              (instanceFor G fuel s L M).bind fun c =>
+                if PositiveCertificates.checkInstArrs G [i] L M c then some ([i], L, M, c) else none
+            | none => none
+          | _ => none
+      | none => []
+    | _ => []
 
 /-- A type below another holding its rows' copies: each row matched, under
 the empty context, against a row of the other. -/
@@ -296,7 +338,10 @@ def subtype [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     (A B : Ty ι) : Option (PositiveCertificates.Proof ι) :=
   let fuel := 64 + pool.length
   let ok p := PositiveCertificates.check G A B p
-  (subtypeBase G pool A B) <|> ((instProof G fuel A B).filter ok) <|>
+  (subtypeBase G pool A B) <|>
+    (match protoInstances G ((A :: B :: pool).eraseDups) fuel with
+      | [] => none
+      | ks => subtypeWith G pool ks A B) <|> ((instProof G fuel A B).filter ok) <|>
     ((genProof G pool fuel A B).filter ok) <|> ((tableProof G fuel A B).filter ok)
 def coerce [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     (e : ProgramCertificates.Evidence ι) (A : Ty ι) : Option (ProgramCertificates.Evidence ι) := do

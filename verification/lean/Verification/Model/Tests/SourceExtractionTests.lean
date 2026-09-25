@@ -52,9 +52,9 @@ private def request (t : Tm) (A : Ty Nat) : Request :=
 #guard !ok (produceSourceJson (toJson (request .tru [2])) 5)
 #guard !ok (produceSourceJson (toJson (request .fls [1])) 5)
 
-#guard PositiveCertificates.checkClause G0 [] [] [] (.boolLit true) .bool
-#guard !PositiveCertificates.checkClause G0 [] [] [] .bool (.boolLit true)
-#guard !PositiveCertificates.checkClause G0 [] [] [] (.boolLit true) (.boolLit false)
+#guard PositiveCertificates.checkClause G0 [] [] [] [] (.boolLit true) .bool
+#guard !PositiveCertificates.checkClause G0 [] [] [] [] .bool (.boolLit true)
+#guard !PositiveCertificates.checkClause G0 [] [] [] [] (.boolLit true) (.boolLit false)
 
 -- Primitive fixture types use the same JSON schema as real source claims.
 private def wireTy (t : Claim.Ty) : Json := Json.mkObj [("top", toJson t.top),

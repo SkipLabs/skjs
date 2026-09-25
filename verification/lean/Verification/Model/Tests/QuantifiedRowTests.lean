@@ -88,24 +88,24 @@ def cert (A B : List Nat) : PositiveCertificates.Proof Nat := (instProof G 64 A 
 -- The instances must be the ones the table uses: `T` at `null` does not give
 -- `(x: boolean) => boolean`.
 #guard match cert [5] [7] with
-  | .inst tbl _ certs D V => !PositiveCertificates.check G [5] [7] (.inst tbl [[0]] certs D V)
+  | .inst c => !PositiveCertificates.check G [5] [7] (.inst { c with instances := [[0]] })
   | _ => false
 -- An entry must map a row to its substituted copy: `Box<null>` is not `Box<T>`
 -- at `boolean`.
 #guard match cert [10] [12] with
-  | .inst tbl θs certs D V => PositiveCertificates.check G [10] [12] (.inst tbl θs certs D V) &&
+  | .inst c => PositiveCertificates.check G [10] [12] (.inst c) &&
       !PositiveCertificates.check G [10] [12]
-        (.inst (tbl.map fun e => if e.1 == 9 then (9, e.2.1, [13]) else e) θs certs D V)
+        (.inst { c with table := c.table.map fun e => if e.1 == 9 then (9, e.2.1, [13]) else e })
   | _ => false
 #guard !subtypes [10] [14]
 #guard !subtypes [5] [15]
 -- The domain must hold the table's rows and be closed under reads, and the
 -- free-parameter certificate must be sound.
 #guard match cert [10] [12] with
-  | .inst tbl θs certs D V =>
-      !PositiveCertificates.check G [10] [12] (.inst tbl θs certs (D.filter (· != 9)) V) &&
+  | .inst c =>
+      !PositiveCertificates.check G [10] [12] (.inst { c with domain := c.domain.filter (· != 9) }) &&
       !PositiveCertificates.check G [10] [12]
-        (.inst tbl θs certs D (V.map fun p => if p.1 == 9 then (9, []) else p))
+        (.inst { c with free := c.free.map fun p => if p.1 == 9 then (9, []) else p })
   | _ => false
 
 -- Generalization: `<T>(x: T) => T` is below `<U>(x: U) => U`, through the
@@ -132,7 +132,7 @@ def cert (A B : List Nat) : PositiveCertificates.Proof Nat := (instProof G 64 A 
 #guard !subtypes [20] [5]
 -- The bound must hold of the instance the table uses.
 #guard match cert [20] [21] with
-  | .inst tbl _ certs D V => !PositiveCertificates.check G [20] [21] (.inst tbl [[0]] certs D V)
+  | .inst c => !PositiveCertificates.check G [20] [21] (.inst { c with instances := [[0]] })
   | _ => false
 
 -- A value of the scheme is typed at an instance by subsumption.
