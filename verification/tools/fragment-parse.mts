@@ -291,25 +291,9 @@ class Gate {
         if (tp.name.kind !== ts.SyntaxKind.Identifier)
           this.fail(tp, "expected a type-parameter name");
         if (local.has(tp.name.text)) this.fail(tp, "duplicate type parameter");
-        let bound: TypeTerm | null = null;
-        if (tp.constraint) {
-          const earlier =
-            ts.isTypeReferenceNode(tp.constraint) &&
-            tp.constraint.typeName.kind === ts.SyntaxKind.Identifier &&
-            !tp.constraint.typeArguments?.length &&
-            this.hasTypeParam(tp.constraint.typeName.text);
-          const declared =
-            ts.isTypeReferenceNode(tp.constraint) &&
-            tp.constraint.typeName.kind === ts.SyntaxKind.Identifier &&
-            !tp.constraint.typeArguments?.length &&
-            this.declaredTypes.get(tp.constraint.typeName.text)?.total === 0;
-          if (tp.constraint.kind !== ts.SyntaxKind.BooleanKeyword && !earlier && !declared)
-            this.fail(
-              tp.constraint,
-              "only `extends boolean`, an earlier type parameter, or a non-generic named type is in the fragment",
-            );
-          bound = this.typeOf(tp.constraint);
-        }
+        // A bound is any type the fragment reads; which bounds a checker can
+        // use is Lean's to say.
+        const bound: TypeTerm | null = tp.constraint ? this.typeOf(tp.constraint) : null;
         result.push({ name: tp.name.text, bound });
         local.add(tp.name.text);
       }
@@ -899,7 +883,23 @@ class Gate {
       };
 
     // A type assertion is the operand's value; the runtime never sees it.
-    // What it asserts is an obligation on the operand, never a fact.
+    // What it asserts is an obligation on the operand, never a fact. `as
+    // const` asserts nothing: it asks for the operand's literal types, which
+    // the claims state and the checker establishes from the operand.
+    if (
+      ts.isAsExpression(node) &&
+      ts.isTypeReferenceNode(node.type) &&
+      ts.isIdentifier(node.type.typeName) &&
+      node.type.typeName.text === "const" &&
+      !node.type.typeArguments
+    )
+      return {
+        k: "cast",
+        pos: this.span(node),
+        cast: "const",
+        annot: null,
+        e: this.expr(node.expression),
+      };
     if (ts.isAsExpression(node) || ts.isSatisfiesExpression(node))
       return {
         k: "cast",
@@ -1113,20 +1113,22 @@ class Gate {
       // and before every one after it. What it stands for — a tuple's
       // required positions, or elements a variadic callee collects — the
       // checker reads from the claims.
-      if (node.typeArguments?.length)
-        this.fail(node, "explicit type arguments are admitted on a method call only");
       const spreads: number[] = [];
       const args = node.arguments.map((arg, i) => {
         if (!ts.isSpreadElement(arg)) return this.expr(arg);
         spreads.push(i);
         return this.expr(arg.expression);
       });
+      // Explicit type arguments state the callee's instance; Lean checks the
+      // claimed instance against them, as for a method call.
+      const typeArgs = node.typeArguments?.map((t) => this.typeOf(t, node));
       return {
         k: "apply",
         pos: this.span(node),
         callee: this.expr(node.expression),
         args,
         ...(spreads.length ? { spreads } : {}),
+        ...(typeArgs?.length ? { typeArgs } : {}),
       };
     }
 

@@ -473,6 +473,24 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
        | Storage (contract,_) -> contract
        | Value _ -> unsupported "assignment to immutable binding")
     | _ -> expr env target
+  (* The type `e as const` gives its operand: a literal its own type, an
+     array literal the readonly tuple of its elements', an object literal
+     readonly fields of theirs; a name keeps its type. None for any other
+     operand, which TypeScript refuses. *)
+  and const_type env (e:expr) = match e.node with
+    | Literal l -> Some (literal_type l)
+    | Id n -> Some (resolve env n)
+    | Cast ("const",None,e) -> const_type env e
+    | ArrayLiteral es ->
+      let elements = List.map (const_type env) es in
+      if List.mem None elements then None
+      else Some (array {required=List.filter_map Fun.id elements;optional_elements=[];rest=None;readonly=true})
+    | Alloc fs ->
+      let fields = List.map (fun (name,e) -> name,const_type env e) fs in
+      if List.exists (fun (_,t) -> t = None) fields then None
+      else Some (record (List.map (fun (name,t) ->
+        {name=Name name;optional=false;read=Option.get t;write=None}) fields))
+    | _ -> None
   and expr ?expected env e =
     let t = match e.node with
     | Id n ->
@@ -740,7 +758,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       (* A method call types its callee, the read of the method, and so its
          object; the receiver Lean checks is that object. *)
       let callee,receiver,args,spreads,type_args = match e.node with
-        | Call (c,r,a,s) -> c,r,a,s,[]
+        | Call (c,r,a,s,t) -> c,r,a,s,t
         | Invoke (c,a,s,t) -> c,None,a,s,t
         | _ -> assert false in
       (* Explicit type arguments fix the callee's leading binders; the others
@@ -946,9 +964,28 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
            parameter mentioning no type parameter is built at it, as at a
            call without binders: TypeScript types it contextually, and a
            fresh literal leaving out an optional field is claimed at its
-           exact keys there. *)
-        let actuals=List.mapi (fun i arg -> match param_at signature i with
-          | Some p when not (Semantic.mentions_rigid p) -> expr ~expected:p env arg
+           exact keys there. Explicit type arguments naming every binder give
+           every parameter its type, and each actual is built at it. *)
+        let stated = if List.length type_args <> List.length signature.quantified then None
+          else Some (List.map2 (fun (q:Semantic.quantifier) t -> q.identity,ValueArgument t)
+            signature.quantified type_args) in
+        (* An array literal at a parameter typed by a binder bounded by a
+           tuple is built at that tuple, as TypeScript types it by the
+           constraint: `exact<K extends [0, 1]>(x: K)` called with `[0, 1]`
+           instantiates `K` at the tuple, not at `number[]`. *)
+        let tuple_bound = function
+          | Rigid r -> (match List.find_opt (fun (q:Semantic.quantifier) -> q.identity = r)
+                          signature.quantified with
+            | Some {bound=Some (ValueArgument (Atoms [Shape {elements=Some {rest=None;_};fields=[];
+                calls=[];string_index=None}] as t));_} -> Some t
+            | _ -> None)
+          | _ -> None in
+        let actuals=List.mapi (fun i arg -> match param_at signature i,stated with
+          | Some p,_ when not (Semantic.mentions_rigid p) -> expr ~expected:p env arg
+          | Some p,Some solution -> expr ~expected:(Inference.substitute solution p) env arg
+          | Some p,None when (match arg.node with ArrayLiteral _ -> true | _ -> false)
+                              && tuple_bound p <> None ->
+            expr ?expected:(tuple_bound p) env arg
           | _ -> expr env arg) args @
           List.init (max 0 (List.length signature.params - List.length args)) (fun _ -> Atoms [Undef]) in
         let substitution,result = infer_explicit ~receiver:receiver_type ?expected signature actuals in
@@ -1022,6 +1059,11 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | Logical (conjunction,a,b) -> let left=expr env a in
       let right=expr ?expected (branch env a conjunction) b in
       union (truthy_slice (not conjunction) left) right
+    (* The operand is built at its const type, which is the cast's. *)
+    | Cast ("const",None,e) ->
+      (match const_type env e with
+       | Some t -> ignore (expr ~expected:t env e); t
+       | None -> unsupported "`as const` on an operand other than a literal, an array or object literal, or a name")
     | Cast (kind,annot,e) -> let actual=expr ?expected:annot env e in
       (match kind,annot with
         | "nonNull",None -> without_nullish actual

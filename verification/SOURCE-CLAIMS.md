@@ -108,7 +108,7 @@ never checked only at the observed Boolean or numeric instances.
 
 The executable source slice is narrower than the semantic scheme rules. A
 containing function may declare one immutable quantified closure. A binder may
-be bounded by an earlier binder or `boolean`; introduction checks the body under
+be bounded by an earlier binder or a ground type; introduction checks the body under
 those bounds, and every instantiation must satisfy each substituted bound at its
 call. Parameters and results may contain a binder, a mutable array over a
 binder, fixed or variadic function types over those, and ground types; a callable that mentions an enclosing binder, such as a

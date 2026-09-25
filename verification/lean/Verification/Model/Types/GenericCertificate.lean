@@ -484,7 +484,7 @@ theorem Proof.check_safe {G : NormalGraph Nat} {parameters} {Gamma : List Slot}
     | some pair =>
       obtain ⟨f, F⟩ := pair
       cases F with
-      | rigid name | array _ | variadic _ _ _ _ | top => simp [Proof.check, hf] at hc
+      | rigid name | array _ | variadic _ _ _ _ | top | union _ => simp [Proof.check, hf] at hc
       | ground labels => simp [Proof.check, hf] at hc
       | arrow rc inputs result =>
         cases ha : args.mapM (fun arg => arg.check parameters Gamma) with

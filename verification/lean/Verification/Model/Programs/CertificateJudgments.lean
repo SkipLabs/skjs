@@ -188,7 +188,7 @@ theorem Typed_of_check {ps : List Parameter} :
       | some pf =>
         obtain ⟨fn, F⟩ := pf
         cases F with
-        | rigid _ | array _ | variadic _ _ _ _ | top => simp [Proof.check, hf] at hc
+        | rigid _ | array _ | variadic _ _ _ _ | top | union _ => simp [Proof.check, hf] at hc
         | ground _ => simp [Proof.check, hf] at hc
         | arrow rc inputs result =>
           cases hm : args.mapM (fun arg => arg.check ps Γ) with

@@ -1040,17 +1040,24 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
       return graphClaim (← lowerType ds ds.size #[] {} term)
     -- Otherwise conjunction exists only inside a record or function atom.
     let parts ← terms.mapM recur
-    let atoms ← parts.toList.mapM fun part => do
+    let single : Json → Option Json := fun part =>
       match isTopClaim part, claimAtoms part with
-      | false, [atom] => pure atom
-      | _, _ => throw "an intersection operand must be a single type"
-    let some head := atoms.head? | throw "empty intersection"
-    let shape := (head.getObjVal? "a").toOption
-    if atoms.any (fun atom => (atom.getObjVal? "a").toOption != shape) then
-      throw "intersection operands must have the same shape"
-    if shape != some (.str "record") && shape != some (.str "function") then
-      throw "an intersection of anything but records or functions is outside the fragment"
-    return claimType [head.setObjVal! "and" (toJson atoms.tail)]
+      | false, [atom] => some atom
+      | _, _ => none
+    let atoms := parts.toList.filterMap single
+    let shape := atoms.head?.bind fun atom => (atom.getObjVal? "a").toOption
+    if atoms.length == parts.size && !atoms.isEmpty &&
+        atoms.all (fun atom => (atom.getObjVal? "a").toOption == shape) &&
+        (shape == some (.str "record") || shape == some (.str "function")) then
+      return claimType [atoms.head!.setObjVal! "and" (toJson atoms.tail)]
+    -- Operands that are ground once the binders an instantiation fixes are
+    -- read, `T & DepSafe` at `T := Todo`, meet as graph rows: the one
+    -- meaning every intersection has (`meetRow`).
+    if parts.isEmpty then throw "empty intersection"
+    if parts.any hasRigidParameter then
+      throw "an intersection of a type parameter with anything but records or functions is outside the fragment"
+    return graphClaim (← meetRow (← parts.toList.mapM fun part =>
+      (Fragment.translate part : SourceTypes.Lowering _)))
   | "array" =>
     CellClaims.fieldsExactly term ["k", "readonly", "element", "span"]
     return arrayClaim [] [] (← recur (← field term "element")) (← bool term "readonly")
@@ -1144,6 +1151,10 @@ private partial def rewrite (ds : Array Definition) (j : Json) : Lowering Json :
   | .obj fields =>
     sourceObject j
     let pairs ← fields.toArray.mapM fun (name, value) => do
+      -- A ground type-parameter bound is its graph rows, whatever its form:
+      -- the bound is only ever read as a type.
+      if name == "bound" && value != .null && groundTerm value then
+        return (name, graphClaim (← Fragment.translate (← annotationClaim ds value)))
       if annotationFields.contains name && value != .null then
         return (name, ← annotationClaim ds value)
       -- A method call's explicit type arguments: a list of annotations.

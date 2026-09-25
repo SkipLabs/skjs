@@ -3046,8 +3046,27 @@ statement the claimed environment has distinct names, exactly the scope's
 names, and each claim above the established type; each initializer and the
 return is claimed above its established type; a copy's binding type is its
 annotation or its initializer's claim; the return's claim is below the
-declared result. `exprTyB_iff_HasTy` and `bodyClaimsB_iff_Checked` prove that
-the pure checker decides both on well-formed binders, both directions.
+declared result; an expression statement's claim is checked and binds no
+name; and a body that ends without a return returns `undefined`:
+
+$$
+\frac{\bar P\vdash\{\texttt{undefined}\}\le R}{\bar P;\Gamma\vdash[\,]:R}\;\textsc{done}
+\qquad
+\frac{\bar P;\Gamma\vdash e:A\quad\bar P;\Gamma\vdash\bar s:R}{\bar P;\Gamma\vdash e;\,\bar s:R}\;\textsc{effect}
+\qquad
+\frac{\Gamma(\mathit{pos})=(\bar A)\Rightarrow R\quad \bar P;\Gamma,\bar x:\bar A\vdash b:B\quad \bar P\vdash B\le R}
+     {\bar P;\Gamma\vdash(\bar x:\bar A)\Rightarrow b:(\bar A)\Rightarrow R}\;\textsc{closure}
+$$
+
+where, for a closure the source leaves without a result annotation, $R$ is the
+result of the closure's own claimed arrow, whose parameters must be exactly the
+annotated ones (`GenericSource.lambdaResult`): the claim proposes the result
+and the body is checked against it, as an annotation would be. The
+certificate compiler emits `widen R` around such a body, an expression
+statement as a `let` of an unnamed slot no source name reads, and the end of a
+body as `lit undefined` widened to the declared result. `exprTyB_iff_HasTy` and
+`bodyClaimsB_iff_Checked` prove that the pure checker decides both on
+well-formed binders, both directions.
 
 `GenericSource.check` is annotation lowering, then that pure checker, then the
 signature check, then certificate generation. Lowering is the trusted

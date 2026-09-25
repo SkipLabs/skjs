@@ -20,6 +20,9 @@ inductive Ty where
   | variadic (receiver : Ty) (params : List Ty) (element result : Ty)
   /-- Every value: the receiver of a signature indifferent to its receiver. -/
   | top
+  /-- A union whose members mention rigid parameters, `string | T`: a value of
+  any member. A union of ground types alone is one `ground` list. -/
+  | union (members : List Ty)
   deriving BEq, Repr, Inhabited
 
 mutual
@@ -54,6 +57,14 @@ def Ty.decEq : (a b : Ty) → Decidable (a = b)
     isFalse nofun
   | .rigid _, .top | .ground _, .top | .arrow .., .top | .array _, .top | .variadic .., .top =>
     isFalse nofun
+  | .union as, .union bs =>
+    match Ty.decEqList as bs with
+    | isTrue h => isTrue (by rw [h])
+    | isFalse h => isFalse (fun e => h (Ty.union.inj e))
+  | .union _, .rigid _ | .union _, .ground _ | .union _, .arrow .. | .union _, .array _
+  | .union _, .variadic .. | .union _, .top => isFalse nofun
+  | .rigid _, .union _ | .ground _, .union _ | .arrow .., .union _ | .array _, .union _
+  | .variadic .., .union _ | .top, .union _ => isFalse nofun
   | .rigid _, .ground _ => isFalse nofun
   | .rigid _, .arrow _ _ _ => isFalse nofun
   | .ground _, .rigid _ => isFalse nofun
@@ -145,6 +156,7 @@ partial def Ty.render (T : SourceTypes.Table) : Ty → String
   | .ground labels => SourceTypes.render T labels
   | .arrow rc params result =>
       s!"({String.intercalate ", " (receiverText T rc ++ params.map (Ty.render T))}) => {result.render T}"
+  | .union members => String.intercalate " | " (members.map (Ty.render T))
 where
   /-- A signature indifferent to its receiver shows none; `this: R` otherwise. -/
   receiverText (T : SourceTypes.Table) (rc : Ty) : List String :=
@@ -170,6 +182,7 @@ mutual
     | .ground labels => meaning G labels
     | .arrow rc params result =>
         callsT [(rc.denote G η, Ty.denoteList G η params, Ty.denote G η result)]
+    | .union members => fun n W v => ∃ F ∈ Ty.denoteList G η members, F n W v
   def Ty.denoteList (G : NormalGraph Nat) (η : String → Fam) : List Ty → List Fam
     | [] => []
     | t :: ts => Ty.denote G η t :: Ty.denoteList G η ts
@@ -186,6 +199,16 @@ def ClosedAssign (eta : String -> Fam) : Prop :=
   forall name, Adm (eta name) /\ ValOnly (eta name) /\
     forall n W v, eta name n W v -> Scoped 0 v
 
+/-- A union's meaning is a value of one of its members' meanings. -/
+theorem Ty.denote_union {G : NormalGraph Nat} {eta} {members : List Ty} {n W v} :
+    (Ty.union members).denote G eta n W v ↔ ∃ m ∈ members, m.denote G eta n W v := by
+  simp only [Ty.denote, Ty.denoteList_eq_map, List.mem_map]
+  constructor
+  · rintro ⟨F, ⟨m, hm, rfl⟩, hv⟩
+    exact ⟨m, hm, hv⟩
+  · rintro ⟨m, hm, hv⟩
+    exact ⟨_, ⟨m, hm, rfl⟩, hv⟩
+
 theorem Ty.denote_adm {G : NormalGraph Nat} {eta} (hC : ClosedAssign eta) :
     forall A : Ty, Adm (A.denote G eta)
   | .rigid name => (hC name).1
@@ -194,19 +217,37 @@ theorem Ty.denote_adm {G : NormalGraph Nat} {eta} (hC : ClosedAssign eta) :
   | .arrow _ _ _ => callsT_adm _
   | .array _ => PositiveNormalization.semWithArgs_adm _ _ _
   | .variadic .. => restsT_adm _
+  | .union members =>
+    have ih : ∀ m ∈ members, Adm (m.denote G eta) := fun m _ => Ty.denote_adm hC m
+    ⟨fun n W v h => by
+        obtain ⟨m, hm, hv⟩ := Ty.denote_union.mp h
+        exact Ty.denote_union.mpr ⟨m, hm, (ih m hm).down n W v hv⟩,
+     fun n W W' hw v h => by
+        obtain ⟨m, hm, hv⟩ := Ty.denote_union.mp h
+        exact Ty.denote_union.mpr ⟨m, hm, (ih m hm).mono n W W' hw v hv⟩⟩
+termination_by A => sizeOf A
+decreasing_by
+  simp_wf
+  have := List.sizeOf_lt_of_mem ‹_ ∈ members›
+  omega
 
-theorem Ty.denote_value {G : NormalGraph Nat} {eta} (hC : ClosedAssign eta)
-    {A : Ty} {n W v} (h : A.denote G eta n W v) :
-    isVal v = true /\ Scoped 0 v := by
-  cases A with
-  | rigid name => exact ⟨(hC name).2.1 n W v h, (hC name).2.2 n W v h⟩
-  | ground labels => exact (meaning_valueFam G labels).2 n W v h
-  | top => exact h
-  | variadic _ _ _ _ | arrow _ params result =>
-    exact ⟨h.1.val, h.1.scoped⟩
-  | array element =>
+theorem Ty.denote_value {G : NormalGraph Nat} {eta} (hC : ClosedAssign eta) :
+    ∀ {A : Ty} {n W v}, A.denote G eta n W v → isVal v = true /\ Scoped 0 v
+  | .rigid name, n, W, v, h => ⟨(hC name).2.1 n W v h, (hC name).2.2 n W v h⟩
+  | .ground labels, n, W, v, h => (meaning_valueFam G labels).2 n W v h
+  | .top, _, _, _, h => h
+  | .variadic .., _, _, _, h | .arrow .., _, _, _, h => ⟨h.1.val, h.1.scoped⟩
+  | .array _, _, _, _, h => by
     obtain ⟨fields, rfl, _⟩ := h.1.1
     exact ⟨rfl, trivial⟩
+  | .union members, _, _, _, h => by
+    obtain ⟨m, hm, hv⟩ := Ty.denote_union.mp h
+    have := List.sizeOf_lt_of_mem hm
+    exact Ty.denote_value hC hv
+termination_by A => sizeOf A
+decreasing_by
+  simp_wf
+  omega
 
 /-- Every declared upper bound is true of the rigid family assigned to its
 parameter. Unbounded parameters impose no accidental top bound. -/
@@ -316,6 +357,13 @@ def Ty.leUnderFuel (fuel : Nat) (parameters : List Parameter) : Ty → Ty → Bo
   | a, b => match fuel with
     | 0 => false
     | n + 1 => match a, b with
+      -- A union is below itself and below a type each member is below; a type
+      -- is below a union when it is below one member, a ground union label by
+      -- label.
+      | .union as, b => decide (Ty.union as = b) || as.all fun a => Ty.leUnderFuel n parameters a b
+      | .ground A, .union bs =>
+          A.all fun l => bs.any fun b => Ty.leUnderFuel n parameters (.ground [l]) b
+      | a, .union bs => bs.any fun b => Ty.leUnderFuel n parameters a b
       | .rigid x, .rigid y => follows parameters parameters.length x y
       -- Every value is below top; a rigid name only through its bound.
       | .ground _, .top | .arrow .., .top | .array _, .top | .variadic .., .top | .top, .top => true
@@ -339,6 +387,7 @@ def Ty.depth : Ty → Nat
   | .array a => 1 + a.depth
   | .variadic rc ps e r => 1 + (ps.map Ty.depth).foldl max (max rc.depth (max e.depth r.depth))
   | .arrow rc ps r => 1 + (ps.map Ty.depth).foldl max (max rc.depth r.depth)
+  | .union ms => 1 + (ms.map Ty.depth).foldl max 0
 
 /-- The structure a walk may have to enter through declared bounds. -/
 def upperDepths (parameters : List Parameter) : Nat :=
@@ -384,11 +433,27 @@ theorem Ty.leUnderFuel_sound {G : NormalGraph Nat} {η parameters fuel a b}
     simp only [Ty.leUnderFuel] at h
     contradiction
   | succ n ih =>
+    -- A value below one member of a union is in the union.
+    have toMember : ∀ {a : Ty} {bs : List Ty},
+        (bs.any fun b => Ty.leUnderFuel n parameters a b) = true →
+        FamLe (a.denote G η) ((Ty.union bs).denote G η) := by
+      intro a bs hany k W v hv
+      obtain ⟨b, hb, hle⟩ := List.any_eq_true.mp hany
+      exact Ty.denote_union.mpr ⟨b, hb, ih hle k W v hv⟩
     cases a with
+    | union as =>
+      have h' : Ty.union as = b ∨ (as.all fun a => Ty.leUnderFuel n parameters a b) = true := by
+        simpa [Ty.leUnderFuel] using h
+      rcases h' with rfl | hall
+      · exact fun _ _ _ hv => hv
+      intro k W v hv
+      obtain ⟨m, hm, hv⟩ := Ty.denote_union.mp hv
+      exact ih (List.all_eq_true.mp hall m hm) k W v hv
     | rigid x =>
       cases b with
       | rigid y =>
         exact follows_sound hs h
+      | union bs => exact toMember (by simpa [Ty.leUnderFuel] using h)
       | ground B | arrow _ qs t | array e | variadic _ ps e r | top =>
         simp only [Ty.leUnderFuel] at h
         obtain ⟨q, hq, hstep⟩ := List.any_eq_true.mp h
@@ -396,13 +461,14 @@ theorem Ty.leUnderFuel_sound {G : NormalGraph Nat} {η parameters fuel a b}
         | none => simp [hu] at hstep
         | some upper => cases upper with
           | rigid name => simp [hu] at hstep
-          | ground A | arrow _ ps r | array e | variadic _ ps e r | top =>
+          | ground A | arrow _ ps r | array e | variadic _ ps e r | top | union _ =>
             simp only [hu, Bool.and_eq_true] at hstep
             exact fun k W v hv => (ih hstep.2) k W v
               ((hs q hq _ hu) k W v ((follows_sound hs hstep.1) k W v hv))
     | top =>
       cases b with
       | top => exact fun _ _ _ hv => hv
+      | union bs => exact toMember (by simpa [Ty.leUnderFuel] using h)
       | rigid _ | ground _ | array _ | variadic _ _ _ _ | arrow _ _ _ =>
         simp [Ty.leUnderFuel] at h
     | ground A =>
@@ -410,6 +476,14 @@ theorem Ty.leUnderFuel_sound {G : NormalGraph Nat} {η parameters fuel a b}
       | rigid y | array _ | variadic _ _ _ _ => simp [Ty.leUnderFuel] at h
       | top => exact fun _ _ _ hv => ProgramTyping.meaning_value hv
       | arrow _ qs t => simp [Ty.leUnderFuel] at h
+      | union bs =>
+        have hall : (A.all fun l => bs.any fun b =>
+            Ty.leUnderFuel n parameters (.ground [l]) b) = true := by
+          simpa [Ty.leUnderFuel] using h
+        intro k W v hv
+        obtain ⟨label, hlabel, hv⟩ := hv
+        obtain ⟨b, hb, hle⟩ := List.any_eq_true.mp (List.all_eq_true.mp hall label hlabel)
+        exact Ty.denote_union.mpr ⟨b, hb, ih hle k W v ⟨label, List.mem_singleton_self _, hv⟩⟩
       | ground B =>
         simp only [Ty.leUnderFuel] at h
         intro k W v hv
@@ -420,6 +494,7 @@ theorem Ty.leUnderFuel_sound {G : NormalGraph Nat} {η parameters fuel a b}
       | rigid y | array _ | variadic _ _ _ _ => simp [Ty.leUnderFuel] at h
       | top => exact fun _ _ _ hv => ⟨hv.1.val, hv.1.scoped⟩
       | ground B => simp [Ty.leUnderFuel] at h
+      | union bs => exact toMember (by simpa [Ty.leUnderFuel] using h)
       | arrow rd qs t =>
         simp only [Ty.leUnderFuel, Bool.and_eq_true] at h
         have hrecv := ih h.1.1.1
@@ -430,6 +505,7 @@ theorem Ty.leUnderFuel_sound {G : NormalGraph Nat} {η parameters fuel a b}
     | array e =>
       cases b with
       | rigid _ | ground _ | arrow _ _ _ | variadic _ _ _ _ => simp [Ty.leUnderFuel] at h
+      | union bs => exact toMember (by simpa [Ty.leUnderFuel] using h)
       | top =>
         intro _ _ _ hv
         obtain ⟨fields, rfl, _⟩ := hv.1.1
@@ -441,6 +517,7 @@ theorem Ty.leUnderFuel_sound {G : NormalGraph Nat} {η parameters fuel a b}
     | variadic rc ps e r =>
       cases b with
       | rigid _ | ground _ | array _ => simp [Ty.leUnderFuel] at h
+      | union bs => exact toMember (by simpa [Ty.leUnderFuel] using h)
       | top => exact fun _ _ _ hv => ⟨hv.1.val, hv.1.scoped⟩
       | arrow rd qs t =>
         have hh : rc = rd ∧ qs = ps ++ List.replicate (qs.length - ps.length) e ∧ r = t := by
@@ -462,9 +539,28 @@ theorem Ty.leUnder_sound {G : NormalGraph Nat} {η parameters a b}
     FamLe (a.denote G η) (b.denote G η) :=
   Ty.leUnderFuel_sound hC hs h
 
-/-- Inclusion with no parameters in scope: the same relation, with nothing to
-chain through. -/
-def Ty.le (a b : Ty) : Bool := Ty.leUnder [] a b
+/-- The one spelling of a union, whoever builds it: nested unions flattened,
+the rigid names sorted and listed once, then the other members in order, then
+every ground label in one sorted list. A member `top` makes the union top, and
+a single member is itself. An annotation and a claim of the same union thus
+compare equal. -/
+def Ty.mkUnion (ts : List Ty) : Ty :=
+  let flat := ts.flatMap fun
+    | .union ms => ms
+    | t => [t]
+  if flat.contains .top then .top else
+  let labels := (flat.flatMap fun
+    | .ground A => A
+    | _ => []).eraseDups.mergeSort (· ≤ ·)
+  let rigids := (flat.filterMap fun
+    | .rigid x => some x
+    | _ => none).eraseDups.mergeSort (fun a b => decide (a ≤ b))
+  let others := (flat.filter fun
+    | .rigid _ | .ground _ => false
+    | _ => true).eraseDups
+  match rigids.map Ty.rigid ++ others ++ (if labels.isEmpty then [] else [.ground labels]) with
+  | [m] => m
+  | ms => .union ms
 
 def Subject.pos : Subject → Span
   | .binding _ pos | .expression pos | .returned pos | .closureBody pos => pos
@@ -490,6 +586,8 @@ partial def Ty.toJson : Ty → Json
   | .arrow rc params result => Json.mkObj [("kind", Lean.toJson "arrow"),
       ("receiver", rc.toJson),
       ("params", Json.arr (params.map Ty.toJson).toArray), ("result", result.toJson)]
+  | .union members => Json.mkObj [("kind", Lean.toJson "union"),
+      ("members", Json.arr (members.map Ty.toJson).toArray)]
 
 def Parameter.toJson (p : Parameter) : Json := Json.mkObj
   [("name", Lean.toJson p.name),

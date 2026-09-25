@@ -786,6 +786,7 @@ let sumMapper = "";
 let sumConstructor = "";
 let localClosure = "";
 let variadicOffer = "";
+let explicitCalls = "";
 let verifiedFunctions = 0;
 const outcomes = await pooled(cases, runCase);
 for (const [i, test] of cases.entries()) {
@@ -819,6 +820,7 @@ for (const [i, test] of cases.entries()) {
   if (test.file === "sum-constructor-field") sumConstructor = result.artifacts;
   if (test.file === "sum-local-closure") localClosure = result.artifacts;
   if (test.file === "variadic-offer") variadicOffer = result.artifacts;
+  if (test.file === "explicit-type-arguments") explicitCalls = result.artifacts;
 }
 process.stdout.write(
   `${verifiedFunctions} functions verified; ${cases.filter((c) => c.kind === "negative").length} negative controls; ${cases.filter((c) => c.kind === "gap").length} named gaps\n`,
@@ -992,33 +994,41 @@ for (const [artifacts, arity, refusal] of [
   process.stdout.write(`a signature claim wider than its annotation (arity ${arity}): refused\n`);
 }
 
-// `reduce<number | null>(acc, null)`: the claimed instance is checked against
-// the explicit type argument, and an unannotated closure's claimed result
-// against its body. Neither is taken from the producer on trust.
-{
-  const claims: SourceClaims = JSON.parse(readFileSync(join(localClosure, "claims.json"), "utf8"));
-  const evidence = join(localClosure, "evidence.json");
-  // The type argument written as `number | null | string`, the claim unchanged:
-  // the instance the call is claimed at fits its actuals, but is not the one
-  // the call states.
+// Explicit type arguments, written as another type than the one the claimed
+// instance fits: on a method call, `reduce<number | null>` written as
+// `reduce<number | null | string>`, and on a plain call, `same<number |
+// boolean>` written as `same<number | boolean | string>`. The claims are
+// unchanged, so each call's instance fits its actuals but is not the one the
+// call states.
+const forgeTypeArgument = (artifacts: string, kind: "invoke" | "apply"): string => {
   const ast: { k?: string; typeArgs?: { k: string; parts: unknown[]; span: unknown }[] } =
-    JSON.parse(readFileSync(join(localClosure, "fragment.json"), "utf8"));
+    JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
   const calls: typeof ast[] = [];
   const visit = (j: unknown): void => {
     if (Array.isArray(j)) j.forEach(visit);
     else if (j && typeof j === "object") {
-      if ((j as typeof ast).k === "invoke" && (j as typeof ast).typeArgs) calls.push(j as typeof ast);
+      if ((j as typeof ast).k === kind && (j as typeof ast).typeArgs) calls.push(j as typeof ast);
       Object.values(j).forEach(visit);
     }
   };
   visit(ast);
   const [typeArg] = must(calls[0]?.typeArgs, "the call's type arguments");
   must(typeArg, "the type argument").parts.push({ k: "atom", name: "string", span: typeArg.span });
-  const forgedAst = join(localClosure, "forged-type-argument.json");
+  const forgedAst = join(artifacts, "forged-type-argument.json");
   writeFileSync(forgedAst, JSON.stringify(ast));
-  assert.match(invoke(join(localClosure, "claims.json"), evidence, localClosure, forgedAst),
+  return forgedAst;
+};
+for (const [artifacts, kind] of [[localClosure, "invoke"], [explicitCalls, "apply"]] as const)
+  assert.match(invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts,
+    forgeTypeArgument(artifacts, kind)),
     /the call's instance is not the one its explicit type arguments state/);
-  process.stdout.write("an instance other than the explicit type argument: refused\n");
+process.stdout.write("an instance other than the explicit type argument, method and plain calls: refused\n");
+
+// An unannotated closure's claimed result is checked against its body, not
+// taken from the producer on trust.
+{
+  const claims: SourceClaims = JSON.parse(readFileSync(join(localClosure, "claims.json"), "utf8"));
+  const evidence = join(localClosure, "evidence.json");
   // The closure's own arrow, two parameters to a number, claimed to return null.
   const own = must(claims.types.flatMap((row) => row.flatMap((clause) =>
     typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []))

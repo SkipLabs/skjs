@@ -6,7 +6,7 @@ stops the rest, and where the two disagree because SKJS is wrong.
 
 **1,420 of 2,676 SKJS-accepted units verify (53.1%); 917 of 2,026 accepted
 functions (45.3%).** 141 of the 377 files with an accepted unit verify entirely.
-Three families of SKJS-accepted functions that the pipeline reaches and refuses
+Four families of SKJS-accepted functions that the pipeline reaches and refuses
 are real SKJS unsoundnesses, each with a runtime witness that SKJS accepts and
 node crashes on ([below](#suspected-skjs-unsoundnesses)).
 
@@ -152,8 +152,8 @@ Ordered by value for cost (units per effort, files as a tiebreak):
 | 17 | `in` / `instanceof` / `typeof` (expression and type query) | 88 | 81 | 5 | 16 | L | P O L |
 | 18 | Search: no derivation found (mostly flow narrowing; see below) | 104 | 101 | 3 | 44 | L | L O |
 | 19 | Classes: member modifiers, optional/definite fields, parameter properties, inheritance, constructor statements, receivers | 104 | 65 | 39 | 31 | L | P O L |
-| 20 | Generic classes | 45 | 31 | 14 | 21 | L | P O L |
-| 21 | Generics: constraints, explicit type arguments on calls, unions with rigid types, rigid types in graph types, `as const` (6 of 9 "unknown type parameter") | 130 | 109 | 21 | 35 | L | P O L |
+| 20 | Generic classes (records over a binder, below) | 47 | | | 21 | L | P O L |
+| 21 | Generics: ~~constraint forms, explicit type arguments on calls, unions with rigid types, `as const`, tuple bounds, `T & D`~~ done (task N); left: records, tuples and field reads over a binder | 58 | | | 21 | L | P O L |
 | 22 | Type forms: index-signature forms, numeric field names, literal types, `keyof`, indexed access, mapped, `object`, `{}`, method signatures, intersections | 168 | 99 | 69 | 41 | L | P D L |
 | 23 | Loops: ~~`for(;;)`, `for-in`~~ done (task F); `for-of` with `let` | 1 (was 24) | 1 | 0 | 1 | S | P L |
 | 24 | Exceptions: ~~`try`/`catch`/`finally`, `throw`~~ done (throw outcome) | 0 (was 11) | 0 | 0 | 0 | M | P L |
@@ -422,16 +422,51 @@ dropped), examples, what the extension needs.
     definitely-assigned fields (17), parameter properties (9), inheritance
     (7 + 2 in the producer), constructor statements other than `this.f = e`
     (5), method receivers (4), optional/generator/generic methods (3).
-20. **Generic classes.** `a generic class is outside the fragment` (45),
-    after 19 and 21.
-21. **Generics.** `only 'extends boolean', an earlier type parameter, or a
-    non-generic named type is in the fragment` (38), `search: a union
-    containing rigid types is outside a rigid claim` (29), `proposal: rigid
-    type nested in a graph type` (24), `explicit type arguments are admitted
-    on a method call only` (19), `unknown type parameter` (9; 6 are `as
-    const`), `generic claim checking requires a checked variable-copy body`
-    (5), `a closure under a binder needs its result annotation` (3), generic
-    function types (2).
+20. **Generic classes.** `a generic class is outside the fragment` (47).
+    An instance of `class Box<T> { v: T }` is a record over its binder, which
+    no universal certificate reaches yet (21, left).
+21. **Generics.** *Done (task N): a bound may be any ground type (the parser
+    admits every constraint; `DeclarationGraph.prepare` lowers a ground bound
+    to graph rows; a local closure's substituted bound is checked by the
+    graph's certified subtyping, as a module value's); direct types have
+    unions mentioning a binder, `string | T` (`Ty.union`, one canonical
+    spelling `Ty.mkUnion`; `RigidJudgments.Sub` gains union reflexivity, a
+    union below what each member is below, a non-ground type below a union
+    through one member, a ground list label by label; `Sub.sound` and
+    `leUnder_iff_Sub` extended); a rigid body may end without a return
+    (`undefined`), contain expression statements, and nest a closure the
+    source leaves without a result annotation (its claimed arrow's result,
+    checked against the body); explicit type arguments on plain calls and
+    `new` are checked against the claimed instance (`Scheme.explicitInstance`,
+    module values and local quantified closures alike); `e as const`
+    (readonly tuples and fields of literal types, a cast kind with no
+    annotation); an array literal at a binder bounded by a tuple is built at
+    the tuple (`exact<K extends [0, 1]>([0, 1])`, `K := [0, 1]`); an
+    intersection ground once a call fixes the binders, `T & DepSafe` at
+    `T := Todo`, is the graph's meet (`sum-serializable-freeze` verifies).
+    911 → 982 units verified on the marker corpus (+71, none lost),
+    860 → 930 functions, 96 → 103 files fully verified; the generics group
+    161 → 58.* Left, by first blocker: `rigid type nested in a graph type`
+    (40: records, tuples and object literals over a binder, `Box<T>`,
+    `List<T>`, `[T1, T2]`), `field read on rigid parameter` (6: `x.length`
+    through the bound `T extends { length: number }`), `generic claim
+    checking requires a checked variable-copy body` (9: `if`, `let`, `typeof`
+    in a generic body), number and string literals, `??` and `===` in a
+    generic body (about 15, counted under other groups), generic function
+    types as annotations (3). Records over a binder are out for one reason:
+    the universal certificate (`GenericCertificate`, for every admissible
+    assignment) exists only for the direct checker, whose types have no
+    record; graph evidence certifies a body at the graph's own assignment of
+    its parameter rows (`meaning G = mixedValues G G.env`), and the evidence
+    checker is not proved independent of that assignment, so it cannot supply
+    the universal statement callers rely on. The two ways forward are
+    records in the direct checker (a proof constructor per heap operation) or
+    that independence theorem for `CertificateProducer.accept`. One new search
+    refusal is an SKJS unsoundness
+    ([below](#confirmed-a-body-falling-off-its-end-at-a-binder-bounded-by-void-testsexpect-errorvoidtsreturningconstrainedvoid));
+    the others read were sound instantiations the producer does not propose
+    (a fresh literal at `T extends Json`, spreads into a generic) or forms
+    of other groups.
 22. **Type forms.** Index signatures (`unsupported index signature` 28,
     multiple string indexes 6, expected string index 2), literal types (26:
     negative numbers, bigint), numeric/hex field names (`expected a required
@@ -499,7 +534,7 @@ since-lifted "no function" policy; 356 after it, see 34). 29
 source-form refusals Lean states explicitly; those are fragment boundaries. The
 rest were read obligation by obligation (group 18 above): all are pipeline
 incompleteness except two families. Reading ambient declarations (task C)
-reached a third.
+reached a third, and generic bodies ending without a return (task N) a fourth.
 
 ### Confirmed: aliased views of an empty object literal (`tests/expect-error/obj-literal-indexes.ts`)
 
@@ -613,6 +648,28 @@ export function idObj<T>(x: T): T {
 }
 ```
 
+### Confirmed: a body falling off its end at a binder bounded by `void` (`tests/expect-error/void.ts#returningConstrainedVoid`)
+
+Reached once generic bodies could end without a return (task N). SKJS accepts
+`function returningConstrainedVoid<T extends void>(): T {}`, whose body
+returns `undefined` at every `T`; TypeScript refuses it (TS2355: a function
+whose declared type is neither `undefined`, `void` nor `any` must return a
+value). `never` is below `void`, so a caller may instantiate `T := never`.
+The pipeline refuses the body (`generic return contract: cannot establish
+undefined ≤ T under [T ≤ unknown]`). Witness: SKJS reports no error for
+
+```ts
+function returningConstrainedVoid<T extends void>(): T {}
+
+export function witness(): string {
+  const n: never = returningConstrainedVoid<never>();
+  const s: string = n;
+  return s.toUpperCase();   // TypeError: Cannot read properties of undefined
+}
+```
+
+and `node` throws at the marked line.
+
 ### Undetermined
 
 None of the other search refusals looked like SKJS errors on reading their
@@ -646,7 +703,7 @@ split by function.
 | K. Library globals (done, first part) | Global values read at the call signatures a module calls (`BigInt(v)`, `Symbol()`, `String(v)`) as well as members; a standard library global only through a reviewed overlay (`library-globals.mts`) that states a parameter at what the host accepts without throwing | all 102 `BigInt` units and the `Symbol()`/`String()` calls pass the reader; 6 units / 2 files newly verified (703 → 709 units, 61 → 62 whole files); `Array.isArray`, `new X(…)`, well-known symbols, `Promise`/`JSON`/`Object` statics left | `declaration-graph.mts`, `library-globals.mts` | B, C | B, C |
 | L. Primitive and union reads (done) | Truthiness as a tag test, value-level `&&`/`||`, `!`; string `length` and code units; primitive members through their wrapper prototypes' contracts (the overlay generalized); not done: method calls on primitive unions, dynamic string index writes (objects cannot grow) | 68 / 30 reached, 61 / 7 (files fully) verified | `Calculus.lean`, `ProgramTyping.lean`, `ProgramCertificates.lean`, `CertificateProducer.lean`, `SourceExtraction.lean`, `array-prototype.mts`, `declaration-graph.mts`, `fragment-parse.mts`, `proposal.ml` | B (string lib) | I |
 | M. Class members | Modifiers, optional/definite fields, parameter properties, constructor statements, receivers; then inheritance | 104 / 31 | `fragment-parse.mts` (classes), `proposal.ml`, class model in Lean | — | N |
-| N. Generics | Constraint forms, explicit type arguments on calls, unions with rigid types in claims, rigid types in graph types, `as const`; then generic classes | 175 / 50 | `fragment-parse.mts`, `inference.ml`, `GenericSource.lean`, `TypeParams.lean` | M for generic classes | M |
+| N. Generics (done, first part) | Bounds of any ground type, unions mentioning a binder, rigid bodies ending without a return or with expression statements, unannotated nested closure results, explicit type arguments on plain calls and `new`, `as const`, tuple bounds as contextual types, `T & D` at ground instances; left: records, tuples and field reads over a binder, and generic classes, which need them | 71 / 7 (files fully) verified (911 → 982 units, 860 → 930 functions, none lost) | `fragment-parse.mts`, `proposal.ml`, `DirectObligation.lean`, `RigidJudgments.lean`, `GenericSource.lean`, `SourceJudgments.lean`, `SourceClaimJson.lean`, `DeclarationGraph.lean` | M for generic classes | M |
 | O. Type forms | Index-signature forms, numeric field names, negative-literal types, `{}`, `object`, method signatures, `keyof`, indexed access, mapped types, intersections | 168 / 41 | `fragment-parse.mts` (types), `declaration-types.mts`, `Types/*` | — | N |
 | P. Search narrowing and async | Flow narrowing after assignment and refinement snapshots, `Promise`/async results and `await`, contextual literals into unions, function values into intersections | ~80 / 30 | `CertificateProducer.lean`, `ProgramTyping.lean`, `proposal.ml` | I | I, J |
 | Q. Module initialization and run setup (done) | A module with no function checked through its initialization unit; verdicts attributed only to units whose own code was checked; SKJS's test environment (stub imports through a per-unit `--project`, `__SKJS_show`, `process`, `StringRecord`, `Closed<T>` as `T`) | 450 / 98 verified (911 → 1,361 units, 860 → 880 functions, 96 → 136 whole files, none lost) | `SourceClaimJson.lean`, `check.mts`, `skjs-coverage.mts`, `skjs-environment/` | — | — |

@@ -179,6 +179,7 @@ function directTypeText(types: unknown, type: DirectType): string {
     case "variadic":
       return `(${[...receiverText(types,type.receiver), ...type.params.map(p=>directTypeText(types,p)), `...Array<${directTypeText(types,type.element)}>`].join(", ")}) => ${directTypeText(types,type.result)}`;
     case "array": return `Array<${directTypeText(types,type.element)}>`;
+    case "union": return type.members.map((m) => directTypeText(types,m)).join(" | ");
     case "ground": return typeText(types,type.labels);
     case "arrow":
       return `(${[...receiverText(types,type.receiver), ...type.params.map((p) => directTypeText(types,p))].join(", ")}) => ${directTypeText(types,type.result)}`;

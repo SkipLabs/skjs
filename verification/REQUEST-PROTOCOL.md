@@ -875,7 +875,14 @@ callee's claim. Explicit type arguments, `o.m<A>(…)`, are the invoke node's
 `"typeArgs":[terms]`, written only where the source has them; they instantiate
 the member's leading binders, and Lean requires the callee's claimed instance
 to give each of them a type of the same meaning (see
-[DESIGN.md](DESIGN.md#modules-and-code-units), explicit type arguments).
+[DESIGN.md](DESIGN.md#modules-and-code-units), explicit type arguments). A
+plain call's `apply` node and a `new` node carry them the same way; there they
+are compared with the call's `instantiate` list, binder by binder in the
+callee's declaration order.
+
+`e as const` is the cast node `{"k":"cast","cast":"const","annot":null,"e":…}`:
+it asserts no type, and its claim, the operand's literal types, is proved
+from the operand's like any other cast's.
 
 A strict `typeof e === "<shape>"` or `!==` comparison, for `"number"`,
 `"string"`, `"boolean"`, `"undefined"`, `"function"`, `"bigint"` or

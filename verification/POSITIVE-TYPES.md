@@ -1076,14 +1076,42 @@ encoding.
 
 ### Rigid inclusion
 
-Direct types are a rigid name, ground graph labels, or a callable over direct
-types. Inclusion under declared bounds, `RigidJudgments.Sub ps a b`, has four
-rules: a rigid name is below itself; it is below whatever its declared bound
-is below; ground label lists are compared by inclusion; and a callable is
-below another when the other's parameters are each below its own and its
-result is below the other's. The chain rule carries transitivity.
-`Sub.refl` holds for every type, and `Sub.sound` proves the judgment
-semantically sound on its own.
+Direct types are a rigid name, ground graph labels, a callable over direct
+types, or a union of direct types mentioning a rigid name, `string | T`, whose
+meaning is a value of one of its members:
+
+$$
+\llbracket A_1\mid\cdots\mid A_k\rrbracket_\eta=
+\bigcup_i\llbracket A_i\rrbracket_\eta .
+$$
+
+A union has one spelling, whoever builds it (`Ty.mkUnion`): nested unions
+flattened, the rigid names sorted, then the other members, then every ground
+label in one list, a member `unknown` making the whole top, so an annotation
+and a claim of the same union are equal. Inclusion under declared bounds,
+`RigidJudgments.Sub ps a b`: a rigid name is below itself; it is below
+whatever its declared bound is below, a union excepted; ground label lists
+are compared by inclusion; a callable is below another when the other's
+parameters are each below its own and its result is below the other's; and
+for unions,
+
+$$
+\frac{}{\bar P\vdash U\le U}
+\qquad
+\frac{\forall i.\;\bar P\vdash A_i\le B}{\bar P\vdash A_1\mid\cdots\mid A_k\le B}
+\qquad
+\frac{\bar P\vdash A\le B_j\quad A\ \text{neither a union nor ground}}
+     {\bar P\vdash A\le B_1\mid\cdots\mid B_m}
+\qquad
+\frac{\forall \ell\in L.\;\exists j.\;\bar P\vdash\{\ell\}\le B_j}
+     {\bar P\vdash L\le B_1\mid\cdots\mid B_m}
+$$
+
+(the last for a ground label list $L$, label by label). A rigid name is below
+a union through one member: its bound, ground or an earlier name, is below the
+union exactly when it is below the union's one ground member or reaches one of
+its names. The chain rule carries transitivity. `Sub.refl` holds for every
+type, and `Sub.sound` proves the judgment semantically sound on its own.
 
 `Ty.leUnder` is the executable relation, a fuelled walk. For well-formed
 parameter lists (distinct names, every rigid bound naming an earlier

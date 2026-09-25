@@ -1188,7 +1188,7 @@ private def scheduledDefaults : List (Nat × Fragment.Expr) :=
 -- eventual function type is valid. Capture cycles cannot be scheduled either.
 #guard !ok (Fragment.parameterOrder scheduledParameters
   (scheduledDefaults.map fun (i,e) => (i, if i == 3 then
-    .call (7,8) (.var (7,8) "first") [] [] else e)))
+    .call (7,8) (.var (7,8) "first") [] [] [] else e)))
 #guard !ok (Fragment.parameterOrder scheduledParameters
   (scheduledDefaults.map fun (i,e) => (i, if i == 1 then
     .lambda (3,4) none [] [] [] false Json.null (.var (3,4) "first") else e)))

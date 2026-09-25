@@ -7,10 +7,11 @@ body and for a quantified closure's, whatever its nesting.
 
 A body is a variable, a primitive literal, or a closure whose annotation names
 the binders in scope; a declaration body is a sequence of immutable copies and
-a return. Everything is typed from the source under distinct rigid parameters
-and forward upper bounds, along `letE_safeP` and `var_safeP`; `T extends
-boolean` is the assumption `T ≤ boolean`, and a declared graph bound such as
-`T extends Json` is the assumption `T ≤ Json`. Both are walked by the direct relation whose
+expression statements, then a return or the body's end. Everything is typed
+from the source under distinct rigid parameters and forward upper bounds,
+along `letE_safeP` and `var_safeP`; `T extends boolean` is the assumption
+`T ≤ boolean`, and any ground bound, `T extends string | number` or a declared
+`T extends Json`, is the assumption `T ≤` it. Both are walked by the direct relation whose
 accepted comparisons imply semantic inclusion, and never justifies `true ≤ T`.
 A failed inclusion is an obligation at its span, never a sentence. Producer claims enter already
 decoded to direct types, so no claim representation is re-parsed here. Accepted
@@ -64,7 +65,12 @@ partial def annotationTy (names : List String) (j : Json) :
   if mentionsParam j then
     if let some element := Fragment.arrayElement j then
       return .array (← annotationTy names element)
-    let [atom] ← jArr j "atoms"
+    let atoms ← jArr j "atoms"
+    -- A union mentioning a binder, `string | T`: each alternative on its own.
+    if atoms.length > 1 then
+      return .mkUnion (← atoms.mapM fun atom =>
+        annotationTy names (Json.mkObj [("top", toJson false), ("atoms", toJson [atom])]))
+    let [atom] := atoms
       | throw "a rigid annotation is a binder, a function type over binders, or a ground type"
     if (← jStr (← jField atom "a")) != "function" then
       throw "a rigid annotation is a binder, a function type over binders, or a ground type"
@@ -74,7 +80,10 @@ partial def annotationTy (names : List String) (j : Json) :
     match (atom.getObjVal? "rest").toOption with
     | some e => return .variadic receiver params (← annotationTy names e) result
     | none => return .arrow receiver params result
-  return .ground (← Fragment.translate j)
+  -- A ground type holding `unknown`, as `void` does, is top, as its claim is.
+  let A ← Fragment.translate j
+  let T ← get
+  return if A.any (fun l => T[l]? == some (.clauses [.top])) then .top else .ground A
 
 /-- A receiver contract as a direct type, by the one annotation converter. -/
 partial def receiverTy (names : List String) (j : Json) :
@@ -82,20 +91,23 @@ partial def receiverTy (names : List String) (j : Json) :
   annotationTy names j
 end
 
-/-- A ground declared bound names a row installed from the source declaration
-document. Raw source cannot supply this internal atom. -/
-def declaredBound (T : SourceTypes.Table) (bound : Json) : Except String Nat := do
+/-- A ground bound names rows installed when the source declarations are
+prepared, whatever its source form. Raw source cannot supply this internal
+atom. -/
+def declaredBound (T : SourceTypes.Table) (bound : Json) : Except String (List Nat) := do
   CellClaims.fieldsExactly bound ["top", "atoms"]
   if ← (← jField bound "top").getBool? then throw "a bound cannot be unknown"
-  let [atom] ← jArr bound "atoms" | throw "expected one declared graph atom"
-  CellClaims.fieldsExactly atom ["a", "label"]
-  if (← jStr (← jField atom "a")) != "graph" then throw "expected a declared graph atom"
-  let label ← (← jField atom "label").getNat?
-  if label >= T.length then throw "declared bound graph label is absent"
-  return label
+  let atoms ← jArr bound "atoms"
+  if atoms.isEmpty then throw "expected declared graph atoms"
+  atoms.mapM fun atom => do
+    CellClaims.fieldsExactly atom ["a", "label"]
+    if (← jStr (← jField atom "a")) != "graph" then throw "expected a declared graph atom"
+    let label ← (← jField atom "label").getNat?
+    if label >= T.length then throw "declared bound graph label is absent"
+    return label
 
-/-- A binder's bound: `boolean`, an earlier binder, or a source-derived
-declared graph node. -/
+/-- A binder's bound: an earlier binder, or a ground type, which the prepared
+source states as graph rows (`boolean` also in its own spelling). -/
 def boundOf (T : SourceTypes.Table) (seen : List Parameter) :
     Option Json → Except String (Option DirectObligation.Ty)
   | none => .ok none
@@ -106,11 +118,11 @@ def boundOf (T : SourceTypes.Table) (seen : List Parameter) :
         if seen.any (·.name == u) then .ok (some (DirectObligation.Ty.rigid u))
         else .error "a type-parameter bound must name an earlier parameter"
       | .error _ => match declaredBound T bound with
-        | .ok label => .ok (some (.ground [label]))
-        | .error _ => .error "only `extends boolean`, an earlier type parameter, or a declared graph type is in the fragment"
+        | .ok labels => .ok (some (.ground labels))
+        | .error _ => .error "a type-parameter bound is a ground type or an earlier type parameter"
 
-/-- Rigid binders in declaration order. A bound is `boolean`, an earlier
-binder, or a source-derived declared graph node. Duplicate names, forward
+/-- Rigid binders in declaration order. A bound is an earlier binder or a
+ground type. Duplicate names, forward
 references and cycles are refused.
 `SourceJudgments.parametersOf_wellFormed` states what this establishes. -/
 def parametersOf (T : SourceTypes.Table) (typeParams : List Fragment.TypeParam) : Except String (List Parameter) :=
@@ -187,20 +199,35 @@ inductive Body where
 def Body.span : Body → Span
   | .var pos _ | .lit pos _ | .assign pos _ _ | .call pos _ _ | .lambda pos _ _ _ => pos
 
+/-- A closure's result: its annotation, or, where the source states none, the
+result of the closure's own claimed arrow, which must take exactly the
+annotated parameters. Either way the body is then checked against it, so the
+claim proposes the result and is never trusted for it. -/
+def lambdaResult (names : List String) (claimed : List (Span × DirectObligation.Ty))
+    (pos : Span) (inner : List (String × DirectObligation.Ty)) : Option Json → M DirectObligation.Ty
+  | some ret => lower pos .schemeIntroduction (annotationTy names ret)
+  | none => match claimed.lookup pos with
+    | some (.arrow .top ps result) =>
+      if ps == inner.map Prod.snd then pure result
+      else throw (.refusal pos .schemeIntroduction "nested closure claim differs from its source annotation")
+    | _ => throw (.refusal pos .schemeIntroduction "a closure under a binder without a result annotation needs its claimed arrow")
+
 /-- Lower a source expression's annotations. Forms the checker does not type
-are refused here, by name, at their span. -/
-def translate (names : List String) : Fragment.Expr → M Body
+are refused here, by name, at their span. `claimed` are the expression claims,
+which supply the result of a closure the source does not annotate. -/
+def translate (names : List String) (claimed : List (Span × DirectObligation.Ty)) :
+    Fragment.Expr → M Body
   | .var pos name => pure (.var pos name)
   | .lit pos v => pure (.lit pos v)
   -- A block body `{ return e; }` is its returned expression; the statement
   -- entry around it is a claim site of the stateful lowering, not a value.
-  | .atEnv _ e => translate names e
-  | .assign pos name _ rhs => do return .assign pos name (← translate names rhs)
-  | .call pos callee args spreads => do
+  | .atEnv _ e => translate names claimed e
+  | .assign pos name _ rhs => do return .assign pos name (← translate names claimed rhs)
+  | .call pos callee args spreads _ => do
       if !spreads.isEmpty then
         throw (.refusal pos .schemeIntroduction "a spread argument is outside the rigid checker")
-      let callee ← translate names callee
-      let args ← args.attach.mapM fun ⟨a, _⟩ => translate names a
+      let callee ← translate names claimed callee
+      let args ← args.attach.mapM fun ⟨a, _⟩ => translate names claimed a
       return .call pos callee args
   | .lambda pos receiver tps ps defaults rest ret body => do
       if receiver.isSome then
@@ -213,10 +240,8 @@ def translate (names : List String) : Fragment.Expr → M Body
         throw (.refusal pos .schemeIntroduction "a rest closure parameter is outside the rigid checker")
       let inner ← ps.mapM fun (q : String × Json) => do
         return (q.1, ← lower pos .schemeIntroduction (annotationTy names q.2))
-      let some ret := ret
-        | throw (.refusal pos .schemeIntroduction "a closure under a binder needs its result annotation")
-      let declared ← lower pos .schemeIntroduction (annotationTy names ret)
-      return .lambda pos inner declared (← translate names body)
+      let declared ← lambdaResult names claimed pos inner ret
+      return .lambda pos inner declared (← translate names claimed body)
   | e => throw (.refusal e.span .genericValidation
       "body requires a variable, a primitive literal, an assignment, a call or a closure")
 termination_by e => sizeOf e
@@ -321,7 +346,7 @@ end
 /-- Lowering, then typing. -/
 def exprTy (c : Ctx) (env : List (String × DirectObligation.Ty)) (e : Fragment.Expr) :
     M DirectObligation.Ty := do
-  liftE (exprTyB c env (← translate (c.parameters.map (·.name)) e))
+  liftE (exprTyB c env (← translate (c.parameters.map (·.name)) c.claims.exprs e))
 
 /-- A quantified closure's type. An ordinary function binds `this` at its
 receiver annotation, which may name the closure's binders; an arrow has none
@@ -333,10 +358,10 @@ def closureTy (c : Ctx) (env : List (String × DirectObligation.Ty))
   let inner ← ps.mapM fun q => do return (q.1, ← lower pos .schemeIntroduction (annotationTy names q.2))
   let declared ← lower pos .schemeIntroduction (annotationTy names ret)
   match receiver with
-  | none => liftE (closureTyB c env pos inner declared (← translate names body))
+  | none => liftE (closureTyB c env pos inner declared (← translate names c.claims.exprs body))
   | some annot =>
     let R ← lower pos .schemeIntroduction (receiverTy names annot)
-    match ← liftE (closureTyB c (("this", R) :: env) pos inner declared (← translate names body)) with
+    match ← liftE (closureTyB c (("this", R) :: env) pos inner declared (← translate names c.claims.exprs body)) with
     | .arrow _ ps r => pure (.arrow R ps r)
     | t => pure t
 
@@ -349,23 +374,29 @@ structure BindingT where
 
 inductive StmtT where
   | constants (pos : Span) (bindings : List BindingT)
+  /-- An expression evaluated for its effects, its value discarded. -/
+  | effect (pos : Span) (e : Body)
   | ret (pos : Span) (e : Body)
 
-/-- Lower a declaration body's annotations. Only immutable copies and a return
-are statements of this fragment. -/
-def translateStmts (names : List String) (origin : Span) : List Fragment.Stmt → M (List StmtT)
+/-- Lower a declaration body's annotations. Only immutable copies, expression
+statements and a return are statements of this fragment. -/
+def translateStmts (names : List String) (claimed : List (Span × DirectObligation.Ty))
+    (origin : Span) : List Fragment.Stmt → M (List StmtT)
   | [] => pure []
   | .ret pos e :: rest => do
-      let e ← translate names e
-      return .ret pos e :: (← translateStmts names origin rest)
+      let e ← translate names claimed e
+      return .ret pos e :: (← translateStmts names claimed origin rest)
+  | .effect pos e :: rest => do
+      let e ← translate names claimed e
+      return .effect pos e :: (← translateStmts names claimed origin rest)
   | .constants pos bindings :: rest => do
       let bindings ← bindings.mapM fun b => do
-        let init ← translate names b.init
+        let init ← translate names claimed b.init
         let annot ← match b.annot with
           | some annot => do pure (some (← lower pos .bindingAnnotation (annotationTy names annot)))
           | none => pure none
         pure (⟨b.name, annot, init⟩ : BindingT)
-      return .constants pos bindings :: (← translateStmts names origin rest)
+      return .constants pos bindings :: (← translateStmts names claimed origin rest)
   | _ :: _ => throw (.refusal origin .genericValidation "generic claim checking requires a checked variable-copy body")
 
 /-- Each binding's claimed type at an entry, in scope order, each an
@@ -419,7 +450,7 @@ decreasing_by
 
 private def claimSites : List StmtT → List Nat × List Span
   | [] => ([], [])
-  | .ret pos e :: rest =>
+  | .ret pos e :: rest | .effect pos e :: rest =>
     let (entries, expressions) := claimSites rest
     (pos.1 :: entries, e.sites ++ expressions)
   | .constants pos bs :: rest =>
@@ -442,10 +473,12 @@ def bindingsB (c : Ctx) (pos : Span) :
         | .ok () => bindingsB c pos (H ++ [(b.name, expected)]) rest
 
 /-- A declaration body: immutable copies, each seeing the earlier, then a
-return. One entry per statement; each declarator's claim is checked in the
-scope the earlier ones extend. -/
+return, or the end of the body, where the function returns `undefined`. One
+entry per statement; each declarator's claim is checked in the scope the
+earlier ones extend. -/
 def bodyClaimsB (c : Ctx) (env : List (String × DirectObligation.Ty))
     (result : DirectObligation.Ty) (origin : Span) : List StmtT → Except Failure Unit
+  | [] => requireLeE c env .returnContract (.returned origin) (.ground [3]) result
   | [.ret pos e] => match entryClaimsB c env pos with
       | .error err => .error err
       | .ok H => match expressionClaimB c H e with
@@ -456,6 +489,12 @@ def bodyClaimsB (c : Ctx) (env : List (String × DirectObligation.Ty))
       | .ok H => match bindingsB c pos H bindings with
         | .error err => .error err
         | .ok H => bodyClaimsB c H result origin rest
+  -- An expression statement's claim is checked; its value binds no name.
+  | .effect pos e :: rest => match entryClaimsB c env pos with
+      | .error err => .error err
+      | .ok H => match expressionClaimB c H e with
+        | .error err => .error err
+        | .ok _ => bodyClaimsB c H result origin rest
   | _ => .error (.refusal origin .genericValidation "generic claim checking requires a checked variable-copy body")
 
 /-- Claims on operands are obligations too. Checking a call's result must not
@@ -483,7 +522,7 @@ decreasing_by
 private def nestedStatementClaims (c : Ctx) (env : List (String × DirectObligation.Ty)) :
     List StmtT → Except Failure Unit
   | [] => pure ()
-  | .ret pos e :: rest => do
+  | .ret pos e :: rest | .effect pos e :: rest => do
       let H ← entryClaimsB c env pos
       nestedClaims c H e
       nestedStatementClaims c H rest
@@ -525,10 +564,16 @@ private def proofLookup (name : String) :
 
 private def proofShape (origin : Span) :
     List Fragment.Stmt → M (List Fragment.Binding × Fragment.Expr)
+  -- Falling off the end returns `undefined`.
+  | [] => pure ([], .lit origin .vundef)
   | [.ret _ e] => pure ([], e)
   | .constants _ bindings :: rest => do
       let (tail, e) ← proofShape origin rest
       return (bindings ++ tail, e)
+  -- An expression statement is an unnamed binding no source name reads.
+  | .effect pos e :: rest => do
+      let (tail, returned) ← proofShape origin rest
+      return (⟨"", pos, none, e⟩ :: tail, returned)
   | _ => throw (.refusal origin .genericValidation
       "generic body has no semantic certificate constructor")
 
@@ -547,17 +592,16 @@ private partial def closureProof (c : Ctx) (env : List (String × GenericCertifi
       | none => throw (.refusal pos .schemeIntroduction s!"unbound capture '{name}'")
   | .lambda pos receiver tps ps defaults rest ret body => do
       if receiver.isSome || !tps.isEmpty || !defaults.isEmpty || rest then return none
-      let some ret := ret | return none
       let names := c.parameters.map (·.name)
       let inner ← ps.mapM fun q => do
         return (q.1, ← lower pos .schemeIntroduction (annotationTy names q.2))
-      let result ← lower pos .schemeIntroduction (annotationTy names ret)
+      let result ← lambdaResult names c.claims.exprs pos inner ret
       -- An arrow's own receiver slot precedes its parameters; its source
       -- `this` would be a capture, never that slot.
       let slots := inner.map fun (name, A) => (name, GenericCertificate.Slot.value A)
       let some proof ← closureProof c (("", .value .top) :: slots ++ env) body | return none
       return some (.lambda .top (inner.map Prod.snd) (.widen result proof))
-  | .call _ callee args spreads => do
+  | .call _ callee args spreads _ => do
       if !spreads.isEmpty then return none
       let some fn ← closureProof c env callee | return none
       let proofs ← args.mapM (closureProof c env)
@@ -695,7 +739,7 @@ def check (f : Fragment.Fn) (typeParams : List Fragment.TypeParam) (claims : Cla
   let parameters ← refuse f.namePos .genericValidation (parametersOf (← get) typeParams)
   let names := parameters.map (·.name)
   let c : Ctx := ⟨parameters, claims, []⟩
-  let statements ← translateStmts names f.namePos f.body
+  let statements ← translateStmts names claims.exprs f.namePos f.body
   let (entries, expressions) := claimSites statements
   let suppliedEntries := claims.entries.map Prod.fst
   let suppliedExpressions := claims.exprs.map Prod.fst
@@ -759,11 +803,11 @@ private def refusedWith (text : String) (x : Except Failure α) : Bool :=
 
 #guard ok ((checkScheme idFn [tpT] idClaims).run' SourceTypes.initial)
 #guard ok (run (check idFn [tpT] idClaims))
--- A body that is not copies-then-return is refused as such, once its (absent)
--- claim sites agree with the source.
+-- A body that is not copies, expression statements and a return is refused
+-- as such, once its (absent) claim sites agree with the source.
 #guard refusedWith "generic claim checking requires"
-  (run (check {idFn with body := [.effect (10, 18) (.var (17, 18) "x")]} [tpT]
-    {idClaims with entries := [], exprs := []}))
+  (run (check {idFn with body := [.mutables (10, 18) [⟨"y", (10, 11), some paramT, .var (17, 18) "x"⟩]]}
+    [tpT] {idClaims with entries := [], exprs := []}))
 #guard (match (checkScheme idFn [tpT, tpT] idClaims).run' SourceTypes.initial with
   | .error e => "duplicate type parameter".isPrefixOf e
   | _ => false)

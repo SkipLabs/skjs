@@ -317,8 +317,9 @@ and expr_node =
      producer proposes it, and Lean checks the body against that claim. *)
   | Lambda of ty option * quantifier list * (string * ty) list * (int * expr) list * bool * ty option * expr
   (* The positions of the arguments written with `...`: each stands for the
-     elements of its operand, read where it is written. *)
-  | Call of expr * expr option * expr list * int list
+     elements of its operand, read where it is written. The types are the
+     explicit type arguments written on the call, if any. *)
+  | Call of expr * expr option * expr list * int list * ty list
   (* A call through a property reference: the callee is the read of the
      method, and the object it is read from is the receiver. The types are the
      explicit type arguments written on the call, if any. *)
@@ -406,7 +407,7 @@ let children e = match e.node with
   | Alloc fs -> List.map snd fs
   | ArrayLiteral es -> es
   | Lambda (_,_,_,defaults,_,_,body) -> List.map snd defaults @ [body]
-  | Call (f,r,args,_) -> f :: Option.to_list r @ args
+  | Call (f,r,args,_,_) -> f :: Option.to_list r @ args
   | Invoke (f,args,_,_) | New (f,_,args) -> f :: args
   | Apply (f,r,l) -> f :: r :: Option.to_list l
   | Bind (f,r,args) -> f :: r :: args
@@ -503,7 +504,9 @@ let rec expr binders j =
     let spreads = match List.assoc_opt "spreads" (obj j) with
       | None -> [] | Some s -> List.map (fun n -> int_of_string (match n with
           | Json.Number n -> n | _ -> Json.fail "a spread position is a number")) (list s) in
-    Call (sub "callee",None,List.map (expr binders) (items "args" j),spreads)
+    let type_args = match List.assoc_opt "typeArgs" (obj j) with
+      | None -> [] | Some ts -> List.map (source_type binders) (list ts) in
+    Call (sub "callee",None,List.map (expr binders) (items "args" j),spreads,type_args)
   | "invoke" ->
     let spreads = match List.assoc_opt "spreads" (obj j) with
       | None -> [] | Some s -> List.map (fun n -> int_of_string (match n with
@@ -514,7 +517,7 @@ let rec expr binders j =
   | "applyWithReceiver" ->
     Apply (sub "callee",sub "receiver",(match field "list" j with Null -> None | l -> Some (expr binders l)))
   | "callWithReceiver" ->
-    Call (sub "callee",Some (sub "receiver"),List.map (expr binders) (items "args" j),[])
+    Call (sub "callee",Some (sub "receiver"),List.map (expr binders) (items "args" j),[],[])
   | "coalesce" -> Coalesce (sub "left",sub "right")
   | "arrayLit" -> ArrayLiteral (List.map (expr binders) (items "elems" j))
   | "index" -> Index (sub "e",sub "key")

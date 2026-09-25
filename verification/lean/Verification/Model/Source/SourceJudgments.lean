@@ -78,8 +78,8 @@ private theorem boundOf_some (T : SourceTypes.Table) (seen : List Parameter) (bo
           if seen.any (·.name == u) then .ok (some (DirectObligation.Ty.rigid u))
           else .error "a type-parameter bound must name an earlier parameter"
         | .error _ => match declaredBound T bound with
-          | .ok label => .ok (some (.ground [label]))
-          | .error _ => .error "only `extends boolean`, an earlier type parameter, or a declared graph type is in the fragment") :=
+          | .ok labels => .ok (some (.ground labels))
+          | .error _ => .error "a type-parameter bound is a ground type or an earlier type parameter") :=
   rfl
 
 theorem boundOf_upper {T : SourceTypes.Table} {seen : List Parameter} {b : Option Lean.Json} {u : Ty}
@@ -470,6 +470,9 @@ inductive Bindings (c : Ctx) (pos : Span) :
       Bindings c pos H (b :: rest) H'
 
 inductive Checked (c : Ctx) : List (String × Ty) → Ty → List StmtT → Prop
+  /-- The end of the body returns `undefined`. -/
+  | done {env : List (String × Ty)} {result : Ty}
+      (hle : Sub c.parameters (.ground [3]) result) : Checked c env result []
   | ret {env H : List (String × Ty)} {result claimed : Ty} {pos : Span} {e : Body}
       (hentry : EntryOk c env pos H) (hexpr : ExprClaim c H e claimed)
       (hle : Sub c.parameters claimed result) : Checked c env result [.ret pos e]
@@ -477,6 +480,11 @@ inductive Checked (c : Ctx) : List (String × Ty) → Ty → List StmtT → Prop
       {bindings : List BindingT} {rest : List StmtT}
       (hentry : EntryOk c env pos H) (hbind : Bindings c pos H bindings H')
       (hrest : Checked c H' result rest) : Checked c env result (.constants pos bindings :: rest)
+  /-- An expression statement: its claim, then the rest in the same scope. -/
+  | effect {env H : List (String × Ty)} {result claimed : Ty} {pos : Span} {e : Body}
+      {rest : List StmtT}
+      (hentry : EntryOk c env pos H) (hexpr : ExprClaim c H e claimed)
+      (hrest : Checked c H result rest) : Checked c env result (.effect pos e :: rest)
 
 /-! ### Entries -/
 
@@ -595,7 +603,9 @@ theorem bindingsB_of_Bindings {c : Ctx} (hw : WellFormed c.parameters) {pos : Sp
 theorem Checked_of_bodyClaimsB {c : Ctx} {result : Ty} {origin : Span} :
     ∀ {stmts : List StmtT} {env : List (String × Ty)}, bodyClaimsB c env result origin stmts = .ok () →
       Checked c env result stmts
-  | [], env, h => by simp only [bodyClaimsB] at h; cases h
+  | [], env, h => by
+      simp only [bodyClaimsB] at h
+      exact .done (Sub_of_leUnder (requireLeE_ok.mp h))
   | [.ret pos e], env, h => by
       simp only [bodyClaimsB] at h
       split at h
@@ -607,6 +617,16 @@ theorem Checked_of_bodyClaimsB {c : Ctx} {result : Ty} {origin : Span} :
           exact .ret (EntryOk_of_entryClaimsB hH) (ExprClaim_of_expressionClaimB hc)
             (Sub_of_leUnder (requireLeE_ok.mp h))
   | .ret _ _ :: _ :: _, env, h => by simp only [bodyClaimsB] at h; cases h
+  | .effect pos e :: rest, env, h => by
+      simp only [bodyClaimsB] at h
+      split at h
+      · cases h
+      · next H hH =>
+        split at h
+        · cases h
+        · next claimed hc =>
+          exact .effect (EntryOk_of_entryClaimsB hH) (ExprClaim_of_expressionClaimB hc)
+            (Checked_of_bodyClaimsB h)
   | .constants pos bindings :: rest, env, h => by
       simp only [bodyClaimsB] at h
       split at h
@@ -622,11 +642,15 @@ theorem bodyClaimsB_of_Checked {c : Ctx} (hw : WellFormed c.parameters) {result 
     {origin : Span} {stmts : List StmtT} {env : List (String × Ty)}
     (h : Checked c env result stmts) : bodyClaimsB c env result origin stmts = .ok () := by
   induction h with
+  | @done env result hle =>
+    simp [bodyClaimsB, requireLeE_of_le c env .returnContract (.returned origin) (leUnder_of_Sub hw hle)]
   | @ret env H result claimed pos e hentry hexpr hle =>
     have hle' := requireLeE_of_le c H .returnContract (.returned pos) (leUnder_of_Sub hw hle)
     simp [bodyClaimsB, entryClaimsB_of_EntryOk hw hentry, expressionClaimB_of_ExprClaim hw hexpr, hle']
   | constants hentry hbind _ ih =>
     simp [bodyClaimsB, entryClaimsB_of_EntryOk hw hentry, bindingsB_of_Bindings hw hbind, ih]
+  | effect hentry hexpr _ ih =>
+    simp [bodyClaimsB, entryClaimsB_of_EntryOk hw hentry, expressionClaimB_of_ExprClaim hw hexpr, ih]
 
 /-- The pure checker decides the declaration-body judgment on well-formed
 binders; `parametersOf_wellFormed` supplies well-formedness for every list
@@ -666,7 +690,7 @@ private def run (x : M α) : Except Failure α := x.run' SourceTypes.initial
 -- proof language expresses, now certified.
 private def applyFn : Fragment.Fn :=
   ⟨"apply", (0, 2), [⟨"f", thunkT, false⟩], paramT,
-    [.ret (10, 18) (.call (12, 18) (.var (12, 13) "f") [] [])]⟩
+    [.ret (10, 18) (.call (12, 18) (.var (12, 13) "f") [] [] [])]⟩
 private def applyClaims : Claims :=
   ⟨"apply", (0, 2), [("f", .arrow .top [] T)], T, [(10, [("f", .arrow .top [] T)])],
     [((12, 18), T), ((12, 13), .arrow .top [] T)]⟩
@@ -679,7 +703,7 @@ private def literalFn : Fragment.Fn :=
 private def literalClaims : Claims :=
   ⟨"always", (0, 2), [("x", T)], .ground [1, 2], [(10, [("x", T)])], [((17, 18), .ground [1])]⟩
 private def literalCtx : Ctx := ⟨[⟨"T", .quantified, none⟩], literalClaims, []⟩
-#guard (match (translateStmts ["T"] (0, 2) literalFn.body).run' SourceTypes.initial with
+#guard (match (translateStmts ["T"] [] (0, 2) literalFn.body).run' SourceTypes.initial with
   | .ok stmts => (match bodyClaimsB literalCtx [("x", T)] (.ground [1, 2]) (0, 2) stmts with
     | .ok () => true
     | .error _ => false)

@@ -154,7 +154,9 @@ export type DirectType =
    * with the receiver a call passes it. */
   | { kind: "arrow"; receiver: DirectType; params: DirectType[]; result: DirectType }
   | { kind: "array"; element: DirectType }
-  | { kind: "variadic"; receiver: DirectType; params: DirectType[]; element: DirectType; result: DirectType };
+  | { kind: "variadic"; receiver: DirectType; params: DirectType[]; element: DirectType; result: DirectType }
+  /** A value of one of the members, which mention rigid parameters. */
+  | { kind: "union"; members: DirectType[] };
 export interface DirectParameter {
   name: string;
   scope: "ambient" | "quantified";
@@ -187,7 +189,7 @@ export type DirectJudgment =
 // These records are compile-time exhaustiveness guards. Adding a wire variant
 // to one of the unions requires naming it here and handling it in the total
 // renderer; unknown input strings are still refused at runtime below.
-const DIRECT_TYPE_KINDS = {rigid:true,ground:true,top:true,arrow:true,array:true,variadic:true} satisfies Record<DirectType["kind"],true>;
+const DIRECT_TYPE_KINDS = {rigid:true,ground:true,top:true,arrow:true,array:true,variadic:true,union:true} satisfies Record<DirectType["kind"],true>;
 const DIRECT_SUBJECT_KINDS = {
   binding:true,expression:true,"return-value":true,"closure-body":true,
 } satisfies Record<DirectSubject["kind"],true>;
@@ -270,9 +272,15 @@ function sourceMap(v: unknown): asserts v is SourceMapEntry | null {
 }
 
 function directType(v: unknown, size: number, scope: ReadonlySet<string>): DirectType {
-  const t = record(v,["kind"], ["name","labels","receiver","params","result","element"]);
+  const t = record(v,["kind"], ["name","labels","receiver","params","result","element","members"]);
   if (typeof t.kind !== "string" || !(t.kind in DIRECT_TYPE_KINDS))
     throw Error("unknown direct-obligation type");
+  if (t.kind === "union") {
+    record(v,["kind","members"]);
+    if (!Array.isArray(t.members)) throw Error("invalid direct-obligation union members");
+    return {kind:"union",members:t.members.map((m) => directType(m,size,scope))};
+  }
+  if (t.members !== undefined) throw Error("unexpected direct-obligation members");
   if (t.kind === "variadic") {
     record(v,["kind","receiver","params","element","result"]);
     if (!Array.isArray(t.params)) throw Error("invalid variadic parameters");

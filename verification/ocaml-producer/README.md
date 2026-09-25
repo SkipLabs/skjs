@@ -400,7 +400,8 @@ controls hold; the numbers live in its output, not here.
 | Closure-local scope and partial application | `blocks-bind.ts`                                                                                                                              |
 | One value with both fields and calls        | `function-fields.ts`                                                                                                                          |
 | No usable result guarantee                  | `top-void.ts` (unknown, discarded callback result)                                                                                            |
-| Rigid parameters and dependent bounds       | `generics.ts`, `aliases.ts`, `generic-inferred.ts`                                                                                            |
+| Rigid parameters and dependent bounds       | `generics.ts`, `aliases.ts`, `generic-inferred.ts`, `generic-bounds.ts` (ground bounds, unions over a binder, bodies without a return) |
+| Explicit type arguments and `as const`      | `explicit-type-arguments.ts`, `as-const.ts` (readonly literal tuples and fields, tuple bounds as contextual types)                  |
 | Quantified rest collection and callbacks | `generic-rest.ts` (declaration, fresh arrays, independent instances, prefixes, spreads, defaults, callback invocation) |
 | Quantified closures and their calls         | `generic-closure.ts`, `generic-two-calls.ts`, `generic-bounded.ts`, `generic-returned.ts`, `generic-captured-store.ts`, `generic-callback.ts` |
 

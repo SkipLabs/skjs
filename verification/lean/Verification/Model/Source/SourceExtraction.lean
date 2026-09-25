@@ -126,7 +126,7 @@ by a certificate the proved checker accepts. A generic application with
 methods is one row for the module, the producer's `Values<number>` and the one
 a method annotation names alike, so the first rule relates them; the proof is
 for a claim narrower than its annotation. -/
-private def within (T : SourceTypes.Table) (C A : List Nat) : Bool :=
+def within (T : SourceTypes.Table) (C A : List Nat) : Bool :=
   (SourceTypes.canonical T C).all (SourceTypes.canonical T A).contains ||
     (let G := SourceTypes.graph T
      let pool := CertificateProducer.vocabulary G
@@ -136,7 +136,7 @@ private def within (T : SourceTypes.Table) (C A : List Nat) : Bool :=
        | none => false)
 
 /-- Whether two label lists denote the same type: each within the other. -/
-private def sameMeaning (T : SourceTypes.Table) (A B : List Nat) : Bool :=
+def sameMeaning (T : SourceTypes.Table) (A B : List Nat) : Bool :=
   within T A B && within T B A
 
 private def envCore (bound : Nat) (fc : SourceClaims.Function) (pos : Nat) (scope : List ScopeBinding) :
@@ -347,7 +347,7 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
   | .unary p op e => return .unary p op (← comparisonsExpr fc e)
   | .cast p annot e => return .cast p annot (← comparisonsExpr fc e)
   | .ctor p lam => return .ctor p (← comparisonsExpr fc lam)
-  | .construct p f args => return .construct p (← comparisonsExpr fc f) (← args.mapM (comparisonsExpr fc))
+  | .construct p f args ts => return .construct p (← comparisonsExpr fc f) (← args.mapM (comparisonsExpr fc)) ts
   | .alloc p ns es => return .alloc p ns (← es.mapM (comparisonsExpr fc))
   | .read p f e => return .read p f (← comparisonsExpr fc e)
   | .write p f l r => return .write p f (← comparisonsExpr fc l) (← comparisonsExpr fc r)
@@ -388,8 +388,8 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
   | .bindWithReceiver p c r args => return .bindWithReceiver p (← comparisonsExpr fc c) (← comparisonsExpr fc r) (← args.mapM (comparisonsExpr fc))
   | .callWithReceiver p c r args => return .callWithReceiver p (← comparisonsExpr fc c) (← comparisonsExpr fc r) (← args.mapM (comparisonsExpr fc))
   | .applyWithReceiver p c r list => return .applyWithReceiver p (← comparisonsExpr fc c) (← comparisonsExpr fc r) (← list.mapM (comparisonsExpr fc))
-  | .call p c args spread =>
-    return .call p (← comparisonsExpr fc c) (← args.mapM (comparisonsExpr fc)) spread
+  | .call p c args spread ts =>
+    return .call p (← comparisonsExpr fc c) (← args.mapM (comparisonsExpr fc)) spread ts
   | .invoke p c args spreads typeArgs =>
     -- A field, by name or by a string key, or an array element by a numeric
     -- key: `comparisonsExpr` resolves the key from its claim.
@@ -455,11 +455,11 @@ private partial def assignsExpr (name : String) : Fragment.Expr → Bool
     (match target with | .var _ n => n == name | _ => false) ||
       assignsExpr name target || (rhs.map (assignsExpr name)).getD false
   | .alloc _ _ es => es.any (assignsExpr name)
-  | .call _ f args _ | .invoke _ f args _ _ => assignsExpr name f || args.any (assignsExpr name)
+  | .call _ f args _ _ | .invoke _ f args _ _ => assignsExpr name f || args.any (assignsExpr name)
   | .callWithReceiver _ f r args | .bindWithReceiver _ f r args =>
     assignsExpr name f || assignsExpr name r || args.any (assignsExpr name)
   | .ctor _ lam => assignsExpr name lam
-  | .construct _ f args => assignsExpr name f || args.any (assignsExpr name)
+  | .construct _ f args _ => assignsExpr name f || args.any (assignsExpr name)
   | .applyWithReceiver _ f r list =>
     assignsExpr name f || assignsExpr name r || (list.map (assignsExpr name)).getD false
   | .ifBody _ _ c t e => assignsExpr name c || assignsExpr name t || assignsExpr name e
@@ -1618,7 +1618,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
               ++ omittedPremises H Ds actuals.length))
       | _, _ => throw "a method call's target requires one callable contract"
     pure (saveOperands (saved ++ [method]) call)
-  | .call _ f args spreads => do
+  | .call _ f args spreads _ => do
     -- Reading a spread operand's elements is an array operation, which a
     -- closed expression does not have.
     if !spreads.isEmpty then throw "a spread argument inside a closed expression is outside the fragment"
@@ -1839,7 +1839,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
           throw "a class body lowers differently under one of its construct signatures"
         pure (DirectProof.cast ([3] :: Di ++ Γ) Ri plan)
     pure (DirectProof.node Γ (.make (.closure Ds.length b.term .construct) .nul) A (.ctorE [3]) bodies)
-  | .construct _ f args => do
+  | .construct _ f args _ => do
     let callee ← closureExpr fc scope Γ f
     let [.ctors L] := PositiveRules.expand G callee.type
       | throw "`new` needs a value with construct signatures"
@@ -2527,7 +2527,7 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
   | .bindWithReceiver .. | .withValue .. | .lambda .. | .ctor .. | .coalesce .. | .logical .. =>
     let t ← closureExpr fc scope Γ e
     emitAt e.span t.term (.bind next) Γ A (scope := scope)
-  | .construct _ callee args =>
+  | .construct _ callee args _ =>
     -- `new`: the callee, then each actual, saved in order; then the construct
     -- step on the saved slots, as an allocation does with its initializers.
     let operands := callee :: args
@@ -2643,12 +2643,12 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
       | some xs => compileExpr fc (operandScope.drop 1 ++ scope) (saved.drop 1 ++ Γ) xs prepare
     let afterReceiver ← compileExpr fc (held ⟨"",some callee.span⟩ :: scope) (B::Γ) receiver afterList
     compileExpr fc scope Γ callee afterReceiver
-  | .call _ callee args _ | .callWithReceiver _ callee _ args | .invoke _ callee args _ _ =>
+  | .call _ callee args _ _ | .callWithReceiver _ callee _ args | .invoke _ callee args _ _ =>
     let operands := match e with
       | .callWithReceiver _ _ receiver _ => receiver :: args
       | _ => args
     let spreads := match e with
-      | .call _ _ _ s | .invoke _ _ _ s _ => s
+      | .call _ _ _ s _ | .invoke _ _ _ s _ => s
       | _ => []
     -- A method call saves the object, a computed key, then the method read
     -- from it; the method is the callee and the object the receiver. The

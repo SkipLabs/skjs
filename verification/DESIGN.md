@@ -522,12 +522,14 @@ families, so semantic higher-order composition uses the existing type universe.
 
 The source interface now connects a deliberately narrow executable slice of
 these rules. One immutable local quantified closure is admitted per containing
-function. A binder may be bounded by an earlier binder or `boolean`; every
-parameter and the result name one of those binders or are function types over
-them; and the body is a variable, a primitive literal, an assignment to a captured
-cell, a call to a callback known over the binders, or a closure whose
-annotation names the binders, checked under them like
-the outer body and whose claim must be exactly that annotation. A captured cell
+function. A binder may be bounded by an earlier binder or any ground type; every
+parameter and the result name one of those binders, unions mentioning them, or
+function types over them; and the body is a variable, a primitive literal, an
+assignment to a captured cell, a call to a callback known over the binders, or
+a closure whose parameter annotations name the binders, checked under them like
+the outer body and whose claim must be exactly that annotation, its result
+annotation or, where the source leaves the result to inference, the result of
+the closure's own claimed arrow, which the body is then checked against. A captured cell
 keeps its declared contract at every instantiation; a write of `T` into it is
 refused as an obligation. Scheme
 introduction checks that body once under rigid binders, independently of which
@@ -539,8 +541,9 @@ ground types without rechecking the body at each type.
 The scheme itself is a source-claim form and semantic layer, not a new positive
 graph clause. No scheme certificate is serialized yet: introduction is checked
 directly during source request construction, while the compiled eliminations
-produce ordinary graph evidence. Bounds to `boolean`, an earlier binder, or a
-source-imported non-generic graph type such as `Json`,
+produce ordinary graph evidence. Bounds to an earlier binder or to any ground
+type, the source's `boolean`, `string | number` or `{ length: number }` as
+well as a source-imported graph type such as `Json`,
 callbacks over the binders, captured fixed-contract writes and returned closures
 that retain an outer binder are implemented. Nested quantified closures,
 general closure bodies, calls to generic declarations, recursive scheme nodes
@@ -1150,9 +1153,22 @@ Declaration location itself has no separate type meaning in the admitted
 fragment.
 `T extends boolean` is an assumption in `Δ`; returning `x` at `boolean` is
 transport along `SubP`. A generic body may copy `T` through annotated or inferred `const`
-bindings and extra parameters, with bounds to Boolean, an earlier parameter,
-or a source-imported non-generic graph type. This is a source-checker coverage
-limit, not a restriction of the rigid-bound semantics.
+bindings and extra parameters, with bounds to an earlier parameter or any
+ground type: `DeclarationGraph.prepare` lowers a ground bound, whatever its
+source form, to graph rows once, and the checker reads it as a ground direct
+type. Parameters and results may be unions mentioning a binder, `string | T`,
+and a body may fall off its end, returning `undefined`. Annotation and claim
+alike reach the checker through `Ty.mkUnion`, which only reorders, flattens,
+removes duplicates, merges the ground members' labels and absorbs a member
+`unknown`, each of which keeps the union's meaning; it is part of the trusted
+annotation lowering, not a judgment. Records, tuples and
+object literals over a binder stay outside. The direct type language has no
+record; and graph evidence certifies a body at the graph's own assignment of
+its parameter rows only (`meaning G S = mixedValues G G.env S`), while callers
+rely on every admissible assignment, which would need the evidence checker
+proved independent of that assignment (`accept {G with env := η}` is not
+definitionally `accept G`, and no theorem relates them yet). This is a
+source-checker coverage limit, not a restriction of the rigid-bound semantics.
 See [GenericSource.lean](lean/Verification/Model/Source/GenericSource.lean).
 
 [SourceTypes.lean](lean/Verification/Model/Source/SourceTypes.lean) translates
@@ -1369,6 +1385,27 @@ proves from the operand like any other claim. `T` is recorded as an
 obligation that the operand meets it. Nothing decides that the assertion is
 true: a downcast with nothing known of the operand is refused, so an
 assertion never establishes what a guard would.
+
+`e as const` is the same node with no annotation (cast kind `const`): it
+asserts nothing, and asks for the operand's literal types, which TypeScript
+gives it and the producer claims. The producer builds the operand at its
+*const type* and claims the cast there:
+
+$$
+\mathsf{const}(\ell)=\{\ell\},\qquad
+\mathsf{const}([e_1,\ldots,e_k])=\mathsf{readonly}\;[\mathsf{const}(e_1),\ldots,\mathsf{const}(e_k)],
+$$
+$$
+\mathsf{const}(\{f_1:e_1,\ldots\})=\{\mathsf{readonly}\;f_1:\mathsf{const}(e_1),\ldots\},\qquad
+\mathsf{const}(x)=\Gamma(x),\qquad
+\mathsf{const}(e\;\texttt{as const})=\mathsf{const}(e),
+$$
+
+for a literal $\ell$, and refuses any other operand, as TypeScript does. Lean
+checks the operand's allocation at that claim and the cast's claim from the
+operand's, so the const type is a proposal like any other: a readonly tuple
+is not the mutable tuple of its elements (`invalid-as-const-readonly`), and
+an element is its literal (`as-const`).
 
 A `const` object pattern (`const { field: name = default, … } = init`) is
 lowered under the same one entry. The initializer is evaluated once and held
@@ -1776,7 +1813,20 @@ calls name. Each call's type arguments must be ground and name exactly its
 binders; the signature and bounds are then read from the source terms with the
 binders fixed to those arguments, so a declaration applied to a binder is an
 ordinary ground application, and each bound must hold by the graph's certified
-subtyping. The slot holds the instances as one callable with several
+subtyping. An intersection in the signature whose operands are ground once
+the binders are fixed, `deepFreeze<T>(value: T): T & DepSafe` at `T := Todo`,
+is the graph's meet of those operands (`meetRow`, distributing over DepSafe's
+arms), the meaning every intersection has; one still over a binder at a
+non-record operand is refused. Explicit type arguments on the call fix its
+instance ("Explicit type arguments", below).
+
+An array literal passed where a binder bounded by a tuple is expected,
+`exact<K extends [0, 1]>(x: K)` called with `[0, 1]`, is built at that tuple,
+as TypeScript types it by the constraint, so the binder is instantiated at the
+tuple and not at `number[]`. The bound is only the literal's contextual type:
+the instance is checked against it like any other (`invalid-tuple-constraint`).
+Other actuals at a binder are typed on their own, as before, since typing them
+at the bound would change the instances the Skip runtime's calls infer. The slot holds the instances as one callable with several
 signatures. Each instance holds of the value, so their conjunction does. A
 `new` with explicit type arguments, `new InputDefinition<string, number>()`,
 names its instance: the parser records the arguments, the producer proposes
@@ -2318,8 +2368,32 @@ and the call's typing, as without type arguments, so safety does not depend on
 it; what it adds is that a stated instance is honoured. A declaration's
 defaults for method binders are not read: binders a shorter list leaves are
 inferred and checked like any call's, where TypeScript would fix them at their
-defaults. Type arguments on a plain call, and on an element call, remain
-outside the fragment.
+defaults. Type arguments on an element call remain outside the fragment.
+
+A plain call and a `new` state their instance the same way, `f<A₁,…,Aₖ>(…)`:
+the parser records the arguments on the `apply` (or `new`) node, the producer
+uses them instead of inference, building each actual at its instantiated
+parameter, and Lean compares them with the instance the call is claimed at.
+The callee is a generic module value, whose call names its instance
+$\sigma$ (below), or a local quantified closure, whose elimination does; in
+both, binder $p_i$ of the callee, in declaration order, must receive a type of
+the same meaning as $A_i$ (`Scheme.explicitInstance`):
+
+$$
+\frac{f\ \text{generic over}\ p_1,\ldots,p_n\quad
+      \text{the call's claimed instance}\ \sigma\quad
+      k\le n\quad
+      \forall i\le k.\;\sigma(p_i)\simeq_G\llbracket A_i\rrbracket}
+     {f\langle A_1,\ldots,A_k\rangle(\vec a)\ \text{is called at its stated instance}\ \sigma},
+$$
+
+where $\simeq_G$ is inclusion both ways by the graph's certified subtyping.
+The instance's bounds are then checked as for any call, so an explicit
+argument outside its bound is refused (`invalid-explicit-type-argument-bound`,
+TypeScript's TS2344), and an instance TypeScript accepts only by array
+covariance is refused where the actual meets the invariant parameter
+(`invalid-explicit-type-argument-covariance`). A local closure's substituted
+bounds are checked by the same certified subtyping as a module value's.
 
 **Constructors in the calculus.** A function's code says which of
 JavaScript's internal methods it has (`Invoke`: `call` or `construct`), and

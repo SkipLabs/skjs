@@ -260,7 +260,7 @@ private partial def ofClaim (T : SourceTypes.Table) (role : String) :
     ClaimType → Except String DirectObligation.Ty
   | .array e => return .array (← ofClaim T role e)
   | .param name => pure (.rigid name)
-  | .union _ => throw s!"a union containing rigid types is outside {role}"
+  | .union ts => do return .mkUnion (← ts.mapM (ofClaim T role))
   -- A union holding `unknown` is `unknown`: the direct checker's top, as an
   -- annotation of it is.
   | .labels A => pure (if A.any (fun l => T[l]? == some (.clauses [.top])) then .top else .ground A)
@@ -355,6 +355,7 @@ private partial def claimOfTy : DirectObligation.Ty → SourceTypes.Lowering Cla
   | .top => do return .labels [← SourceTypes.use .top]
   | .arrow rc ps r => do
     return .scheme [] (← claimOfTy rc) (← ps.mapM claimOfTy) none (← claimOfTy r)
+  | .union ms => do return .union (← ms.mapM claimOfTy)
 
 /-- A quantified closure's annotation, in the claim language, by the one
 converter every annotation takes. -/
@@ -522,6 +523,24 @@ private def introduce (T : SourceTypes.Table) (f : Fragment.Fn) (c : Closure) (c
     c.sourceParams c.sourceResult c.body c.defaults c.rest.isSome c.sourceReceiver).run T
   return (T, certificate)
 
+/-- Explicit type arguments are a requirement on a call's instance: the call
+is typed at the instance they state, binder by binder in declaration order,
+even where another would fit. `σ` is the claimed instance, ground. -/
+def explicitInstance (T : SourceTypes.Table) (pos : Span) (binders : List String)
+    (written : List Json) (σ : List (String × List Nat)) :
+    Except DirectObligation.Failure SourceTypes.Table := do
+  let refuse (reason : String) := DirectObligation.Failure.refusal pos .schemeElimination reason
+  if written.length > binders.length then
+    throw (refuse "more explicit type arguments than the callee has binders")
+  let mut T := T
+  for (binder, annotation) in binders.zip written do
+    let (stated, grown) ← ((Fragment.translate annotation).run T).mapError refuse
+    T := grown
+    let some claimed := σ.lookup binder | throw (refuse s!"no type argument for '{binder}'")
+    unless sameMeaning T stated claimed do
+      throw (refuse "the call's instance is not the one its explicit type arguments state")
+  return T
+
 /-- Elimination, then compilation. Each call validates its own substitution;
 the arrows are derived from the scheme signature by that substitution, so a
 forged instantiation can only name another genuine instance of a scheme that
@@ -562,12 +581,18 @@ private def compile (T : SourceTypes.Table) (f : Fragment.Fn) (claims : Function
         let some argument := σ.lookup name | throw (refuse pos s!"no type argument for '{name}'")
         let actual ← (groundOf s!"the type argument for '{name}'" argument).mapError (refuse pos)
         let required ← (groundOf s!"the bound of '{name}'" (subst σ upper)).mapError (refuse pos)
-        let actual := DirectObligation.Ty.ground actual
-        let required := DirectObligation.Ty.ground required
-        unless actual.le required do
+        -- By the graph's certified subtyping, as a module value's bound.
+        unless within T actual required do
           throw (.obligation ⟨pos, .schemeElimination,
-            .subtyping parameters [] (.expression pos) actual required⟩)
+            .subtyping parameters [] (.expression pos) (.ground actual) (.ground required)⟩)
     pure σ
+  -- Explicit type arguments on a call of the closure state its instance.
+  let calls := f.body.flatMap Fragment.Stmt.callees
+  let T ← (sites.zip subs).foldlM (fun T ((pos, _), σ) => do
+    let written := ((calls.find? (·.1 == pos)).map (·.2.2.2)).getD []
+    let ground ← σ.mapM fun (n, t) => do
+      return (n, ← (groundOf s!"the type argument for '{n}'" t).mapError (refuse pos))
+    explicitInstance T pos names written ground) T
   let σs := subs.foldl (fun acc σ => if acc.contains σ then acc else acc ++ [σ]) []
   let (T, arrows, variadic) ← σs.foldlM (fun (T, acc, rest) σ => do
     let (T, rc) ← (groundIn T (subst σ c.receiver)).mapError (refuse c.span)
@@ -643,10 +668,10 @@ def moduleInstances (T : SourceTypes.Table) (g : DeclarationGraph.Instantiable)
       (SourceTypes.Table × Json × List Span × List Span) := do
   let refuse (pos : Span) (reason : String) : DirectObligation.Failure × SourceTypes.Table :=
     (.refusal pos .schemeElimination reason, T)
-  let calls := (unit.flatMap Fragment.Stmt.callees).filter (·.2.2 == g.name)
+  let calls := (unit.flatMap Fragment.Stmt.callees).filter (·.2.2.1 == g.name)
   let graph (A : List Nat) : Json := Json.mkObj [("top", toJson false),
     ("atoms", toJson (A.map fun l => Json.mkObj [("a", toJson "graph"), ("label", toJson l)]))]
-  let sites ← calls.mapM fun (pos, _, _) => do
+  let sites ← calls.mapM fun (pos, _, _, written) => do
     let some inst := (claims.expressions.find? (·.pos == pos)).bind (·.instantiate)
       | throw (refuse pos s!"a call to the generic function '{g.name}' needs its type arguments")
     let given := inst.map (·.name)
@@ -656,11 +681,12 @@ def moduleInstances (T : SourceTypes.Table) (g : DeclarationGraph.Instantiable)
     let σ ← inst.mapM fun i => do
       let A ← (groundOf s!"the type argument for '{i.name}'" i.type).mapError (refuse pos)
       pure (i.name, A)
-    pure (pos, σ)
+    pure (pos, σ, written)
   let mut T := T
   let mut seen : List (List (String × List Nat)) := []
   let mut instances : List Json := []
-  for (pos, σ) in sites do
+  for (pos, σ, written) in sites do
+    T ← (explicitInstance T pos g.binders written σ).mapError (·, T)
     if seen.contains σ then continue
     seen := seen ++ [σ]
     let ((callable, bounds), grown) ← ((g.instantiate (σ.map fun (n, A) => (n, graph A))).run T).mapError (refuse pos)
@@ -794,11 +820,11 @@ private partial def exprSites : Fragment.Expr → Sites
   | .throwBody _ e => exprSites e
   | .bindWithReceiver p f receiver args | .callWithReceiver p f receiver args => args.foldl (fun acc a => joinSites acc (exprSites a))
       (joinSites ([],[p],[]) (joinSites (exprSites f) (exprSites receiver)))
-  | .call p f args _ | .invoke p f args _ _ => args.foldl (fun acc a => joinSites acc (exprSites a)) (joinSites ([],[p],[]) (exprSites f))
+  | .call p f args _ _ | .invoke p f args _ _ => args.foldl (fun acc a => joinSites acc (exprSites a)) (joinSites ([],[p],[]) (exprSites f))
   -- A class value is one expression; its constructor's body has its own sites.
   | .ctor p (.lambda _ _ _ _ _ _ _ e) => joinSites ([],[p],[]) (exprSites e)
   | .ctor p _ => ([],[p],[])
-  | .construct p f args => args.foldl (fun acc a => joinSites acc (exprSites a)) (joinSites ([],[p],[]) (exprSites f))
+  | .construct p f args _ => args.foldl (fun acc a => joinSites acc (exprSites a)) (joinSites ([],[p],[]) (exprSites f))
   | .applyWithReceiver p f receiver list =>
     joinSites ([],[p],[]) (joinSites (exprSites f) (joinSites (exprSites receiver)
       ((list.map exprSites).getD ([],[],[]))))
@@ -1042,7 +1068,7 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
     let mut d := d
     if tps.isEmpty then
       for g in generics do
-        if (f.body.flatMap Fragment.Stmt.callees).any (·.2.2 == g.name) then
+        if (f.body.flatMap Fragment.Stmt.callees).any (·.2.2.1 == g.name) then
           match Scheme.moduleInstances d.types g f.body c with
           | .ok (T, slot, reads, calls) =>
             d := { d with types := T }

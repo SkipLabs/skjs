@@ -23,12 +23,13 @@ export type Expr =
   | { k: "this"; pos: Span }
   | { k: "lit"; pos: Span; lit: Atom }
   | { k: "not" | "typeof"; pos: Span; e: Expr }
-  /* `e as T`, `e satisfies T` or `e!`: the operand's value, unchanged. The
-     annotation, when there is one, is what the operand must meet. */
+  /* `e as T`, `e satisfies T`, `e!` or `e as const`: the operand's value,
+     unchanged. The annotation, when there is one, is what the operand must
+     meet; `as const` has none, its claim being the operand's literal types. */
   | {
       k: "cast";
       pos: Span;
-      cast: "as" | "satisfies" | "nonNull";
+      cast: "as" | "satisfies" | "nonNull" | "const";
       annot: TypeTerm | null;
       e: Expr;
     }
@@ -107,8 +108,9 @@ export type Expr =
   /* `spreads` are the indices of the arguments written with `...`: each
      stands for the elements of its operand, read where it is written. `await
      e` and an async body's returns are written as calls of intrinsics
-     (`intrinsics.mts`), whose names no source identifier spells. */
-  | { k: "apply"; pos: Span; callee: Expr; args: Expr[]; spreads?: number[] }
+     (`intrinsics.mts`), whose names no source identifier spells. `typeArgs`,
+     when written, state the callee's instance. */
+  | { k: "apply"; pos: Span; callee: Expr; args: Expr[]; spreads?: number[]; typeArgs?: TypeTerm[] }
   /* `new callee(args)`: the callee, then the arguments left to right, then
      the callee's construct-only code runs. A plain function cannot be one.
      `typeArgs`, when written, are the explicit type arguments: the

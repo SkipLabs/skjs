@@ -4,9 +4,12 @@ import Verification.Model.Programs.DirectObligation
 
 `Sub ps a b` is the inclusion judgment of the rigid fragment, stated by rules
 and independent of any algorithm: a rigid name is below itself and below
-whatever its declared bound is below, ground unions are compared by inclusion,
-and callables are contravariant in their parameters and covariant in their
-result. `Ty.leUnder` is the executable relation. This module proves that every
+whatever its declared bound is below (a union excepted), ground unions are
+compared by inclusion, callables are contravariant in their parameters and
+covariant in their result, and a union over rigid names is below what each
+member is below, above a type below one of its members, and above a ground
+list each label of which is below a member. `Ty.leUnder` is the executable
+relation. This module proves that every
 accepted comparison is derivable, that the judgment is semantically sound on
 its own, and that on well-formed parameter lists the executable relation
 decides the judgment. A kernel-checked counterexample records what the earlier
@@ -20,8 +23,10 @@ inductive Sub (ps : List Parameter) : Ty → Ty → Prop
   | variadic_refl {rc ps' e r} : Sub ps (.variadic rc ps' e r) (.variadic rc ps' e r)
   | array_refl {e} : Sub ps (.array e) (.array e)
   | rigid_refl {x} : Sub ps (.rigid x) (.rigid x)
+  /-- A rigid name is below what its bound is below, a union excepted: a
+  name is below a union through one of its members. -/
   | bound {x u b} (p : Parameter) (hp : p ∈ ps) (hn : p.name = x) (hu : p.upper = some u)
-      (h : Sub ps u b) : Sub ps (.rigid x) b
+      (hb : ∀ ms, b ≠ .union ms) (h : Sub ps u b) : Sub ps (.rigid x) b
   | ground {A B : List Nat} (h : ∀ i, i ∈ A → i ∈ B) : Sub ps (.ground A) (.ground B)
   /-- A caller may pass less than the callable accepts: the callable's
   receiver and parameters `ps'` are above the caller's, pointwise. -/
@@ -29,13 +34,26 @@ inductive Sub (ps : List Parameter) : Ty → Ty → Prop
       (hlen : ps'.length = qs.length)
       (hargs : ∀ i (hq : i < qs.length) (hp : i < ps'.length), Sub ps qs[i] ps'[i])
       (hres : Sub ps r t) : Sub ps (.arrow rc ps' r) (.arrow rd qs t)
-  /-- Every value is below top; a rigid name only through its bound. -/
-  | top {a : Ty} (ha : ∀ x, a ≠ .rigid x) : Sub ps a .top
+  /-- Every value is below top; a rigid name only through its bound, a union
+  through its members. -/
+  | top {a : Ty} (ha : ∀ x, a ≠ .rigid x) (hu : ∀ ms, a ≠ .union ms) : Sub ps a .top
+  | union_refl {as} : Sub ps (.union as) (.union as)
+  /-- A union is below a type each of its members is below. -/
+  | union_left {as b} (h : ∀ a ∈ as, Sub ps a b) : Sub ps (.union as) b
+  /-- A type that is neither a union nor ground is below a union through one
+  member. -/
+  | union_right {a b bs} (hb : b ∈ bs) (ha : ∀ ms, a ≠ .union ms) (hg : ∀ A, a ≠ .ground A)
+      (h : Sub ps a b) : Sub ps a (.union bs)
+  /-- A ground type is below a union label by label: each label is below the
+  member `f` names for it. -/
+  | ground_split {A bs} (f : Nat → Ty) (hf : ∀ l ∈ A, f l ∈ bs)
+      (h : ∀ l ∈ A, Sub ps (.ground [l]) (f l)) : Sub ps (.ground A) (.union bs)
 
 /-! ## The judgment is reflexive -/
 
 theorem Sub.refl (ps : List Parameter) : ∀ a : Ty, Sub ps a a
-  | .top => .top (fun _ h => by cases h)
+  | .top => .top (fun _ h => by cases h) (fun _ h => by cases h)
+  | .union _ => .union_refl
   | .variadic .. => .variadic_refl
   | .array _ => .array_refl
   | .rigid _ => .rigid_refl
@@ -109,7 +127,7 @@ theorem Sub.sound {G : NormalGraph Nat} {η : String → Fam} {ps : List Paramet
     simpa [Ty.denote, Ty.denoteList_eq_map] using DirectObligation.variadic_fixed (rc.denote G η)
       (Ty.denoteList G η ps') (e.denote G η) (r.denote G η) extra
   | variadic_refl | array_refl | rigid_refl => exact fun _ _ _ hv => hv
-  | bound p hp hn hu _ ih =>
+  | bound p hp hn hu _ _ ih =>
     intro k W v hv
     subst hn
     exact ih k W v ((hs p hp _ hu) k W v hv)
@@ -119,10 +137,24 @@ theorem Sub.sound {G : NormalGraph Nat} {η : String → Fam} {ps : List Paramet
     exact ⟨label, h label hlabel, hv⟩
   | arrow _ hlen _ _ ihrecv ihargs ihres =>
     exact callsT_single_mono ihrecv (argsLe_of_index hlen ihargs) ihres
-  | @top a ha =>
+  | union_refl => exact fun _ _ _ hv => hv
+  | union_left _ ih =>
+    intro k W v hv
+    obtain ⟨m, hm, hv⟩ := Ty.denote_union.mp hv
+    exact ih m hm k W v hv
+  | union_right hb _ _ _ ih =>
+    intro k W v hv
+    exact Ty.denote_union.mpr ⟨_, hb, ih k W v hv⟩
+  | ground_split f hf _ ih =>
+    intro k W v hv
+    obtain ⟨label, hlabel, hv⟩ := hv
+    exact Ty.denote_union.mpr ⟨f label, hf label hlabel,
+      ih label hlabel k W v ⟨label, List.mem_singleton_self _, hv⟩⟩
+  | @top a ha hu =>
     intro k W v hv
     cases a with
     | rigid x => exact absurd rfl (ha x)
+    | union ms => exact absurd rfl (hu ms)
     | top => exact hv
     | ground _ => exact ProgramTyping.meaning_value hv
     | arrow _ _ _ | variadic _ _ _ _ => exact ⟨hv.1.val, hv.1.scoped⟩
@@ -151,55 +183,93 @@ theorem Sub_of_follows {ps : List Parameter} {x y : String} :
       have hname : p.name = x := beq_iff_eq.mp (Bool.and_eq_true_iff.mp hstep).1
       have htail := (Bool.and_eq_true_iff.mp hstep).2
       split at htail <;> try contradiction
-      next upper hu => exact .bound p hp hname hu (ih htail)
+      next upper hu => exact .bound p hp hname hu (fun _ h => by cases h) (ih htail)
 
-/-- Anything below a rigid name is below whatever that name is below. -/
+/-- Anything below a rigid name is below whatever that name is below, a union
+excepted: a name is below a union through its members. -/
 theorem Sub.trans_rigid {ps : List Parameter} {a b : Ty} {y : String}
-    (hay : Sub ps a (.rigid y)) (hyb : Sub ps (.rigid y) b) : Sub ps a b := by
+    (hay : Sub ps a (.rigid y)) (hyb : Sub ps (.rigid y) b) (hb : ∀ ms, b ≠ .union ms) :
+    Sub ps a b := by
   generalize hc : Ty.rigid y = c at hay
   induction hay with
   | rigid_refl => cases hc; exact hyb
-  | bound p hp hn hu _ ih => exact .bound p hp hn hu (ih hc)
+  | bound p hp hn hu _ _ ih => exact .bound p hp hn hu hb (ih hc)
+  | union_left _ ih => exact .union_left fun a ha => ih a ha hc
   | variadic_fixed _ => cases hc
-  | array_refl | variadic_refl => cases hc
+  | array_refl | variadic_refl | union_refl => cases hc
   | ground _ => cases hc
   | arrow _ _ _ _ _ _ _ => cases hc
-  | top _ => cases hc
+  | top _ _ => cases hc
+  | union_right _ _ _ _ _ => cases hc
+  | ground_split _ _ _ _ => cases hc
 
 theorem Sub_of_leUnderFuel {ps : List Parameter} (n : Nat) (a b : Ty)
     (h : Ty.leUnderFuel n ps a b = true) : Sub ps a b := by
   induction n generalizing a b with
   | zero => simp [Ty.leUnderFuel] at h
   | succ n ih =>
+    -- Below a union through one member.
+    have member : ∀ {a : Ty} {bs : List Ty}, (∀ ms, a ≠ .union ms) → (∀ A, a ≠ .ground A) →
+        (bs.any fun b => Ty.leUnderFuel n ps a b) = true → Sub ps a (.union bs) := by
+      intro a bs ha hg hany
+      obtain ⟨b, hb, hle⟩ := List.any_eq_true.mp hany
+      exact .union_right hb ha hg (ih _ _ hle)
     cases a with
+    | union as =>
+      have h' : Ty.union as = b ∨ (as.all fun a => Ty.leUnderFuel n ps a b) = true := by
+        simpa [Ty.leUnderFuel] using h
+      rcases h' with rfl | hall
+      · exact .union_refl
+      · exact .union_left fun a ha => ih _ _ (List.all_eq_true.mp hall a ha)
     | rigid x =>
       cases b with
       | rigid y =>
         simp only [Ty.leUnderFuel] at h
         exact Sub_of_follows h
-      | ground B => exact entered (fun h => ih _ _ h) h
-      | variadic _ ps e r => exact entered (fun h => ih _ _ h) h
-      | array e => exact entered (fun h => ih _ _ h) h
-      | arrow _ qs t => exact entered (fun h => ih _ _ h) h
-      | top => exact entered (fun h => ih _ _ h) h
+      | union bs => exact member (by intro _ h; cases h) (by intro _ h; cases h) (by simpa [Ty.leUnderFuel] using h)
+      | ground B => exact entered (fun h => ih _ _ h) (fun _ h => by cases h) h
+      | variadic _ ps e r => exact entered (fun h => ih _ _ h) (fun _ h => by cases h) h
+      | array e => exact entered (fun h => ih _ _ h) (fun _ h => by cases h) h
+      | arrow _ qs t => exact entered (fun h => ih _ _ h) (fun _ h => by cases h) h
+      | top => exact entered (fun h => ih _ _ h) (fun _ h => by cases h) h
     | top =>
       cases b with
-      | top => exact .top (fun _ h => by cases h)
+      | top => exact .top (fun _ h => by cases h) (fun _ h => by cases h)
+      | union bs => exact member (by intro _ h; cases h) (by intro _ h; cases h) (by simpa [Ty.leUnderFuel] using h)
       | rigid _ | ground _ | array _ | variadic _ _ _ _ | arrow _ _ _ =>
         simp [Ty.leUnderFuel] at h
     | ground A =>
       cases b with
       | rigid y | array _ | variadic _ _ _ _ => simp [Ty.leUnderFuel] at h
-      | top => exact .top (fun _ h => by cases h)
+      | top => exact .top (fun _ h => by cases h) (fun _ h => by cases h)
       | arrow _ qs t => simp [Ty.leUnderFuel] at h
+      | union bs =>
+        have hall : (A.all fun l => bs.any fun b =>
+            Ty.leUnderFuel n ps (.ground [l]) b) = true := by
+          simpa [Ty.leUnderFuel] using h
+        -- For each label, the first member it is below.
+        let f : Nat → Ty := fun l =>
+          (bs.find? fun b => Ty.leUnderFuel n ps (.ground [l]) b).getD .top
+        have hfound : ∀ l ∈ A, f l ∈ bs ∧ Ty.leUnderFuel n ps (.ground [l]) (f l) = true := by
+          intro l hl
+          have hany := List.all_eq_true.mp hall l hl
+          cases hfind : bs.find? (fun b => Ty.leUnderFuel n ps (.ground [l]) b) with
+          | none =>
+            obtain ⟨b, hb, hle⟩ := List.any_eq_true.mp hany
+            exact absurd hle (by simpa using List.find?_eq_none.mp hfind b hb)
+          | some b =>
+            simp only [f, hfind, Option.getD_some]
+            exact ⟨List.mem_of_find?_eq_some hfind, List.find?_some hfind⟩
+        exact .ground_split f (fun l hl => (hfound l hl).1) (fun l hl => ih _ _ (hfound l hl).2)
       | ground B =>
         simp only [Ty.leUnderFuel] at h
         exact .ground fun i hi => by simpa using (List.all_eq_true.mp h) i hi
     | arrow rc ps' r =>
       cases b with
       | rigid y | array _ | variadic _ _ _ _ => simp [Ty.leUnderFuel] at h
-      | top => exact .top (fun _ h => by cases h)
+      | top => exact .top (fun _ h => by cases h) (fun _ h => by cases h)
       | ground B => simp [Ty.leUnderFuel] at h
+      | union bs => exact member (by intro _ h; cases h) (by intro _ h; cases h) (by simpa [Ty.leUnderFuel] using h)
       | arrow rd qs t =>
         simp only [Ty.leUnderFuel, Bool.and_eq_true] at h
         have hlen := beq_iff_eq.mp h.1.1.2
@@ -208,7 +278,8 @@ theorem Sub_of_leUnderFuel {ps : List Parameter} (n : Nat) (a b : Ty)
     | array e =>
       cases b with
       | rigid _ | ground _ | arrow _ _ _ | variadic _ _ _ _ => simp [Ty.leUnderFuel] at h
-      | top => exact .top (fun _ h => by cases h)
+      | top => exact .top (fun _ h => by cases h) (fun _ h => by cases h)
+      | union bs => exact member (by intro _ h; cases h) (by intro _ h; cases h) (by simpa [Ty.leUnderFuel] using h)
       | array f =>
         have heq : e = f := by simpa [Ty.leUnderFuel] using h
         subst f
@@ -216,7 +287,8 @@ theorem Sub_of_leUnderFuel {ps : List Parameter} (n : Nat) (a b : Ty)
     | variadic rc ps' e r =>
       cases b with
       | rigid _ | ground _ | array _ => simp [Ty.leUnderFuel] at h
-      | top => exact .top (fun _ h => by cases h)
+      | top => exact .top (fun _ h => by cases h) (fun _ h => by cases h)
+      | union bs => exact member (by intro _ h; cases h) (by intro _ h; cases h) (by simpa [Ty.leUnderFuel] using h)
       | arrow rd qs t =>
         have hh : rc = rd ∧ qs = ps' ++ List.replicate (qs.length - ps'.length) e ∧ r = t := by
           simpa [Ty.leUnderFuel] using h
@@ -233,6 +305,7 @@ where
   followed by entering that bound: a chain of bound steps in the judgment. -/
   entered {n : Nat} {x : String} {b : Ty}
       (ih : ∀ {a b : Ty}, Ty.leUnderFuel n ps a b = true → Sub ps a b)
+      (hb : ∀ ms, b ≠ .union ms)
       (h : (ps.any fun q => match q.upper with
         | some (.rigid _) | none => false
         | some terminal => follows ps ps.length x q.name && Ty.leUnderFuel n ps terminal b) = true) :
@@ -243,12 +316,12 @@ where
     | some upper =>
       cases upper with
       | rigid _ => simp [hu] at hstep
-      | variadic _ ps e r | array A | ground A | top =>
+      | variadic _ ps e r | array A | ground A | top | union _ =>
         simp only [hu, Bool.and_eq_true] at hstep
-        exact (Sub_of_follows hstep.1).trans_rigid (.bound q hq rfl hu (ih hstep.2))
+        exact (Sub_of_follows hstep.1).trans_rigid (.bound q hq rfl hu hb (ih hstep.2)) hb
       | arrow _ ps'' r =>
         simp only [hu, Bool.and_eq_true] at hstep
-        exact (Sub_of_follows hstep.1).trans_rigid (.bound q hq rfl hu (ih hstep.2))
+        exact (Sub_of_follows hstep.1).trans_rigid (.bound q hq rfl hu hb (ih hstep.2)) hb
 
 theorem Sub_of_leUnder {ps : List Parameter} {a b : Ty} (h : Ty.leUnder ps a b = true) :
     Sub ps a b :=
@@ -306,18 +379,6 @@ theorem follows_mono_le {ps : List Parameter} {x y : String} {n m : Nat} (hle : 
   | refl => exact h
   | step _ ih => exact follows_mono ih
 
-theorem rigid_of_sub_rigid {ps : List Parameter} {u : Ty} {z : String}
-    (h : Sub ps u (.rigid z)) : ∃ y, u = .rigid y := by
-  generalize hc : Ty.rigid z = c at h
-  cases h with
-  | rigid_refl => exact ⟨_, rfl⟩
-  | bound p _ _ _ _ => exact ⟨_, rfl⟩
-  | variadic_fixed _ => cases hc
-  | array_refl | variadic_refl => cases hc
-  | ground _ => cases hc
-  | arrow _ _ _ _ => cases hc
-  | top _ => cases hc
-
 /-- Nothing ground or callable is below a rigid name, so a walk between rigid
 names on a well-formed list descends the declaration order and needs no more
 steps than there are parameters before its start. -/
@@ -333,13 +394,16 @@ theorem follows_of_walk {ps : List Parameter} (hw : WellFormed ps) :
     generalize hc : Ty.rigid z = c at h
     cases h with
     | rigid_refl => cases hc; exact follows_refl _ _ _
-    | top _ => cases hc
-    | bound p hp hn hu h' =>
+    | top _ _ => cases hc
+    | union_right _ _ _ _ => cases hc
+    | bound p hp hn hu _ h' =>
       cases hc
-      obtain ⟨y, rfl⟩ := rigid_of_sub_rigid h'
       obtain ⟨i', hi', hpi⟩ := List.getElem_of_mem hp
       have : i' = i := hw.injective i' i hi' hi (by rw [hpi, hn, hx])
       subst this
+      -- A bound is ground or a rigid name, and nothing ground is below a name.
+      rcases hw.grounded i' hi' _ (by rw [hpi]; exact hu) with ⟨A, rfl⟩ | ⟨y, rfl⟩
+      · cases h'
       obtain ⟨j, hji, hj, hjy⟩ := hw.descending i' hi' y (by rw [hpi]; exact hu)
       have hwalk := ih j (Nat.lt_of_lt_of_le hji (Nat.le_of_lt_succ hik)) hj z (by rw [hjy]; exact h')
       rw [hjy] at hwalk
@@ -361,8 +425,9 @@ theorem terminal_of_walk {ps : List Parameter} (hw : WellFormed ps) :
     generalize hc : Ty.ground B = c at h
     cases h with
     | rigid_refl => cases hc
-    | top _ => cases hc
-    | bound p hp hn hu h' =>
+    | top _ _ => cases hc
+    | union_right _ _ _ _ => cases hc
+    | bound p hp hn hu _ h' =>
       cases hc
       obtain ⟨i', hi', hpi⟩ := List.getElem_of_mem hp
       have : i' = i := hw.injective i' i hi' hi (by rw [hpi, hn, hx])
@@ -390,8 +455,9 @@ theorem terminal_of_walk_top {ps : List Parameter} (hw : WellFormed ps) :
     generalize hx : ps[i].name = x at h ⊢
     generalize hc : Ty.top = c at h
     cases h with
-    | top ha => exact absurd rfl (ha x)
-    | bound p hp hn hu h' =>
+    | top ha _ => exact absurd rfl (ha x)
+    | union_right _ _ _ _ => cases hc
+    | bound p hp hn hu _ h' =>
       cases hc
       obtain ⟨i', hi', hpi⟩ := List.getElem_of_mem hp
       have : i' = i := hw.injective i' i hi' hi (by rw [hpi, hn, hx])
@@ -419,8 +485,9 @@ theorem no_rigid_below_arrow {ps : List Parameter} (hw : WellFormed ps) :
     generalize hc : Ty.arrow rc qs t = c at h
     cases h with
     | rigid_refl => cases hc
-    | top _ => cases hc
-    | bound p hp hn hu h' =>
+    | top _ _ => cases hc
+    | union_right _ _ _ _ => cases hc
+    | bound p hp hn hu _ h' =>
       cases hc
       obtain ⟨i', hi', hpi⟩ := List.getElem_of_mem hp
       have : i' = i := hw.injective i' i hi' hi (by rw [hpi, hn, hx])
@@ -443,8 +510,9 @@ theorem no_rigid_below_array {ps : List Parameter} (hw : WellFormed ps) :
     generalize hc : Ty.array e = c at h
     cases h with
     | rigid_refl => cases hc
-    | top _ => cases hc
-    | bound p hp hn hu h' =>
+    | top _ _ => cases hc
+    | union_right _ _ _ _ => cases hc
+    | bound p hp hn hu _ h' =>
       cases hc
       obtain ⟨i', hi', hpi⟩ := List.getElem_of_mem hp
       have : i' = i := hw.injective i' i hi' hi (by rw [hpi, hn, hx])
@@ -467,8 +535,9 @@ theorem no_rigid_below_variadic {ps : List Parameter} (hw : WellFormed ps) :
     generalize hc : Ty.variadic rc qs e r = c at h
     cases h with
     | rigid_refl => cases hc
-    | top _ => cases hc
-    | bound p hp hn hu h' =>
+    | top _ _ => cases hc
+    | union_right _ _ _ _ => cases hc
+    | bound p hp hn hu _ h' =>
       cases hc
       obtain ⟨i', hi', hpi⟩ := List.getElem_of_mem hp
       have : i' = i := hw.injective i' i hi' hi (by rw [hpi, hn, hx])
@@ -495,9 +564,11 @@ theorem leUnderFuel_ground {ps : List Parameter} {A B : List Nat}
     | variadic_fixed _ => cases ha
     | array_refl | variadic_refl => cases ha
     | rigid_refl => cases ha
-    | bound _ _ _ _ _ => cases ha
+    | bound _ _ _ _ _ _ => cases ha
     | arrow _ _ _ _ => cases ha
-    | top _ => cases hb
+    | top _ _ => cases hb
+    | union_refl | union_left _ => cases ha
+    | union_right _ _ _ _ | ground_split _ _ _ => cases hb
 
 /-! ### Depth arithmetic -/
 
@@ -539,11 +610,18 @@ theorem depth_pos : ∀ a : Ty, 1 ≤ a.depth
   | .ground _ => by simp [Ty.depth]
   | .array _ | .variadic .. => by simp only [Ty.depth]; omega
   | .arrow _ _ _ => by simp only [Ty.depth]; omega
+  | .union _ => by simp only [Ty.depth]; omega
+
+theorem depth_member_lt {m : Ty} {ms : List Ty} (hm : m ∈ ms) : m.depth < (Ty.union ms).depth := by
+  simp only [Ty.depth]
+  have := le_foldl_max_of_mem (ms.map Ty.depth) 0 m.depth (List.mem_map.mpr ⟨m, hm, rfl⟩)
+  omega
 
 /-- The fuel a derivation needs: one step per structural level of either
-side, and one more to enter a bound from a rigid name. -/
+side, one more to enter a bound from a rigid name, and one more to leave a
+union for its members. -/
 def need (a b : Ty) : Nat :=
-  a.depth + b.depth + (match a with | .rigid _ => 1 | _ => 0)
+  a.depth + b.depth + (match a with | .rigid _ => 1 | .union _ => 1 | _ => 0)
 
 theorem need_le (a b : Ty) : need a b ≤ a.depth + b.depth + 1 := by
   unfold need; split <;> omega
@@ -566,15 +644,16 @@ theorem leUnderFuel_of_Sub {ps : List Parameter} (hw : WellFormed ps) {a b : Ty}
     cases n with
     | zero => simp [need, Ty.depth] at hn
     | succ m => simp [Ty.leUnderFuel, follows_refl]
-  | @bound x u b p hp hn hu h' _ =>
+  | @bound x u b p hp hn hu hb h' _ =>
     intro n hle
     cases n with
     | zero => simp [need, Ty.depth] at hle
     | succ m =>
-      have full : Sub ps (.rigid x) b := .bound p hp hn hu h'
+      have full : Sub ps (.rigid x) b := .bound p hp hn hu hb h'
       obtain ⟨i, hi, hpi⟩ := List.getElem_of_mem hp
       have hxi : ps[i].name = x := by rw [hpi, hn]
       cases b with
+      | union bs => exact absurd rfl (hb bs)
       | rigid z =>
         simp only [Ty.leUnderFuel]
         have := follows_of_walk hw ps.length i hi hi z (by rw [hxi]; exact full)
@@ -612,14 +691,59 @@ theorem leUnderFuel_of_Sub {ps : List Parameter} (hw : WellFormed ps) {a b : Ty}
   | ground hAB =>
     intro n hn
     exact leUnderFuel_ground (.ground hAB) n (by simp [need, Ty.depth] at hn; omega)
-  | @top a ha =>
+  | @top a ha hu =>
     intro n hn
     cases n with
     | zero => have := depth_pos a; simp [need] at hn; omega
     | succ m =>
       cases a with
       | rigid x => exact absurd rfl (ha x)
+      | union ms => exact absurd rfl (hu ms)
       | top | ground _ | arrow _ _ _ | array _ | variadic _ _ _ _ => simp [Ty.leUnderFuel]
+  | union_refl =>
+    intro n hn
+    cases n with
+    | zero => simp [need, Ty.depth] at hn
+    | succ m => simp [Ty.leUnderFuel]
+  | @union_left as b _ ih =>
+    intro n hn
+    cases n with
+    | zero => simp [need, Ty.depth] at hn
+    | succ m =>
+      have hall : (as.all fun a => Ty.leUnderFuel m ps a b) = true :=
+        List.all_eq_true.mpr fun a ha => ih a ha m (by
+          have := depth_member_lt ha
+          have := need_le a b
+          simp only [need] at hn
+          omega)
+      simp only [Ty.leUnderFuel, Bool.or_eq_true]
+      exact Or.inr hall
+  | @union_right a b bs hb ha hg _ ih =>
+    intro n hn
+    cases n with
+    | zero => have := depth_pos a; simp [need] at hn; omega
+    | succ m =>
+      have hle : Ty.leUnderFuel m ps a b = true := ih m (by
+        have := depth_member_lt hb
+        cases a <;> simp only [need] at hn ⊢ <;> omega)
+      cases a with
+      | union ms => exact absurd rfl (ha ms)
+      | ground A => exact absurd rfl (hg A)
+      | rigid _ | top | arrow _ _ _ | array _ | variadic _ _ _ _ =>
+        simp only [Ty.leUnderFuel]
+        exact List.any_eq_true.mpr ⟨b, hb, hle⟩
+  | @ground_split A bs f hf _ ih =>
+    intro n hn
+    cases n with
+    | zero => simp [need, Ty.depth] at hn
+    | succ m =>
+      simp only [Ty.leUnderFuel]
+      refine List.all_eq_true.mpr fun l hl => List.any_eq_true.mpr ⟨f l, hf l hl, ih l hl m ?_⟩
+      have := depth_member_lt (hf l hl)
+      have h1 : (Ty.ground [l]).depth = 1 := by simp [Ty.depth]
+      have h2 : (Ty.ground A).depth = 1 := by simp [Ty.depth]
+      simp only [need] at hn ⊢
+      omega
   | @arrow rc rd qs ps' r t _ hlen _ _ ihrecv ihargs ihres =>
     intro n hle
     cases n with
@@ -680,13 +804,14 @@ def counterexampleRight : Ty := .arrow anyReceiver [.rigid "y"] (.ground [1, 2])
 theorem counterexample_derivable :
     Sub counterexampleParameters counterexampleLeft counterexampleRight :=
   .bound ⟨"x", .quantified, some (.arrow anyReceiver [deep 9] (.ground [1, 2]))⟩
-    (by simp [counterexampleParameters]) rfl rfl
+    (by simp [counterexampleParameters]) rfl rfl (by intro _ h; cases h)
     (.arrow (Sub.refl _ _) rfl
       (fun i hq hp => by
         cases i with
         | zero =>
           exact .bound ⟨"y", .quantified, some (deep 9)⟩
-            (by simp [counterexampleParameters]) rfl rfl (Sub.refl _ _)
+            (by simp [counterexampleParameters]) rfl rfl (by intro _ h; simp [deep] at h)
+            (Sub.refl _ _)
         | succ i => simp at hq)
       (Sub.refl _ _))
 
