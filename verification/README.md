@@ -142,8 +142,12 @@ stands in scope, and that is checked like a written one rather than the
 initializer's type being taken for it. A `let` without an initializer is
 outside. Numbers can be bound, passed, returned, held in a union and shape-tested.
 Strict comparisons against numeric singletons also verify for finite unions
-with known comparison outcomes; arithmetic is outside the fragment. Strings
-are admitted on the same terms as numbers: opaque values with literal
+with known comparison outcomes. Arithmetic (`+ - * / **`) combines two
+numbers or two bigints, relational comparison (`< <= > >=`) two numeric values
+of either kind or two strings, and `-`, `+` and `~` are the binary operators
+with a constant; a bigint is its integer, with literal singletons below
+`bigint` ([Numeric operators and bigints](DESIGN.md#numeric-operators-and-bigints)).
+Strings are otherwise admitted on the same terms as numbers: values with literal
 singletons below the `string` family, compared for equality with a literal,
 never concatenated or indexed. A numeric
 literal is its own singleton and is below `number`; its identity is the double

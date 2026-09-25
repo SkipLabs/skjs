@@ -28,6 +28,8 @@ export type Term =
   | { num: { bits: string } }
   /** A string, as itself. */
   | { str: { value: string } }
+  /** A bigint, as its integer: a JSON number of any length. */
+  | { bigint: { value: number } }
   | { var: { i: number } }
   /** Invoke `f` with the receiver `r` and the actuals `args`. */
   | { invoke: { f: Term; r: Term; args: Term[] } }
@@ -39,8 +41,9 @@ export type Term =
   | { writeAt: { field: string; a: Term; b: Term } }
   | { test: { k: Tag; a: Term } }
   | { ite: { c: Term; t: Term; e: Term } }
-  /** Arithmetic on two numbers, as the double operation. */
-  | { arith: { op: "add" | "sub" | "mul" | "div"; a: Term; b: Term } }
+  /** A binary operator on primitive operands: arithmetic on two numbers or
+   * two bigints, or a relational comparison. */
+  | { arith: { op: (typeof OPERATORS)[number]; a: Term; b: Term } }
   /** An array store with these initial elements, in order: the value an
    * array object holds in its store field. */
   | { arrLit: { inits: Term[] } }
@@ -56,6 +59,8 @@ export type Term =
   | { arr: { elems: (number | null)[] } }
   /** An actual standing for the elements of a store, read where it is written. */
   | { spread: { a: Term } };
+/** Every binary operator, as `Arith` in Calculus.lean names them. */
+const OPERATORS = ["add", "sub", "mul", "div", "pow", "xor", "lt", "le", "gt", "ge"] as const;
 /** Every tag, checked against `Tag`: adding one there and not here is a type
  * error rather than an "unknown tag" at run time. */
 const TAGS: Record<Extract<Tag, string>, true> = {
@@ -149,6 +154,7 @@ export function decodeTerm(value: unknown): Term {
     Record<string, string[] | undefined> = {
     num: ["bits"],
     str: ["value"],
+    bigint: ["value"],
     var: ["i"],
     invoke: ["f", "r", "args"],
     letE: ["a", "b"],
@@ -179,6 +185,8 @@ export function decodeTerm(value: unknown): Term {
         BigInt(v) > 0xffffffffffffffffn
       )
         throw Error("invalid number");
+    } else if (k === "value" && key === "bigint") {
+      if (typeof v !== "number" || !Number.isInteger(v)) throw Error("invalid bigint");
     } else if (k === "value") {
       if (typeof v !== "string") throw Error("invalid string");
     } else if (k === "i" || k === "l") nat(v);
@@ -202,8 +210,8 @@ export function decodeTerm(value: unknown): Term {
         nat(pair[1]);
       }
     } else if (k === "op") {
-      if (!["add", "sub", "mul", "div"].includes(v as string))
-        throw Error("unknown arithmetic operator");
+      if (!OPERATORS.some((op) => op === v))
+        throw Error("unknown binary operator");
     } else if (k === "elems") {
       if (!Array.isArray(v)) throw Error("invalid store");
       for (const l of v) if (l !== null) nat(l);

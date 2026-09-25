@@ -75,6 +75,7 @@ let rec source_type ctx j =
     | "true" -> Atoms [True] | "false" -> Atoms [False]
     | "number" -> number_literal_type (text "text" j)
     | "string" -> Atoms [StrLit (text "text" j)]
+    | "bigint" -> Atoms [BigintLit (text "text" j)]
     | name -> unsupported ("literal type " ^ name))
   | "union" ->
     (* `unknown` absorbs the rest of its union: semantic top. *)
@@ -233,11 +234,13 @@ and source_pack ctx j =
   | None -> fail "unbound pack parameter"
 
 type literal = LNull | LUndefined | LBool of bool | LNumber of string | LString of string
+             | LBigint of string
 
 let literal j = match text "a" j with
   | "null" -> LNull | "undefined" -> LUndefined
   | "booleanlit" -> LBool (text "v" j = "true")
   | "numberlit" -> LNumber (text "v" j) | "stringlit" -> LString (text "v" j)
+  | "bigintlit" -> LBigint (text "v" j)
   | k -> unsupported ("literal " ^ k)
 let optional_type binders = function Null -> None | j -> Some (source_type binders j)
 let span_start j = match list j with
@@ -260,7 +263,11 @@ let quantify binders scope parameters =
       let binders={binders with bindings=(spelling,ValueArgument (Rigid identity))::binders.bindings} in
       loop (index+1) binders (quantified::accumulated) rest in
   loop 0 binders [] parameters
-type arithmetic = Add | Sub | Mul | Div
+(* A binary operator on primitive operands: arithmetic, or a comparison. *)
+type arithmetic = Add | Sub | Mul | Div | Pow | Lt | Le | Gt | Ge
+let relational = function Lt | Le | Gt | Ge -> true | Add | Sub | Mul | Div | Pow -> false
+(* `-e`, `+e` and `~e`. *)
+type unary = Neg | Plus | BitNot
 type equality = StrictEqual | StrictUnequal | LooseEqual | LooseUnequal
 
 (* This is a typed view of the shared Fragment, not a new source language.
@@ -268,6 +275,7 @@ type equality = StrictEqual | StrictUnequal | LooseEqual | LooseUnequal
 type expr = { pos: Json.t; node: expr_node }
 and expr_node =
   | Id of string | Literal of literal | Not of expr | Arith of arithmetic * expr * expr
+  | Unary of unary * expr
   (* `typeof e === "shape"` (equal) or `!==`: a test of the operand's shape. *)
   | TypeofTest of string * bool * expr
   | Equality of equality * expr * expr | Alloc of (string * expr) list
@@ -328,7 +336,7 @@ type program = { file: Json.t; digest: Json.t; declarations: declaration list;
 (* The immediate subexpressions and nested statements of a form. *)
 let children e = match e.node with
   | Id _ | Literal _ | DoneBody -> []
-  | Not e | TypeofTest (_,_,e) | Read (e,_) | Ctor e | Cast (_,_,e) | ReturnBody e -> [e]
+  | Not e | TypeofTest (_,_,e) | Read (e,_) | Ctor e | Cast (_,_,e) | ReturnBody e | Unary (_,e) -> [e]
   | Assign (_,e) -> [e]
   | Arith (_,a,b) | Equality (_,a,b) | Write (a,_,b) | Coalesce (a,b) | Index (a,b)
   | WithFields (a,b,_,_) | SequenceBody (a,b) | LetBody (_,_,a,b) -> [a;b]
@@ -358,9 +366,13 @@ let rec expr binders j =
   | "id" -> Id (text "name" j) | "lit" -> Literal (literal (field "lit" j))
   | "this" -> Id "this"
   | "not" -> Not (sub "e")
+  | "unary" -> Unary ((match text "op" j with
+      | "neg" -> Neg | "plus" -> Plus | "bitNot" -> BitNot
+      | k -> unsupported ("unary operator " ^ k)),sub "e")
   | "typeofTest" -> TypeofTest (text "shape" j,boolean (field "equal" j),sub "e")
   | "arith" -> let op = match text "op" j with
-      | "add" -> Add | "sub" -> Sub | "mul" -> Mul | "div" -> Div
+      | "add" -> Add | "sub" -> Sub | "mul" -> Mul | "div" -> Div | "pow" -> Pow
+      | "lt" -> Lt | "le" -> Le | "gt" -> Gt | "ge" -> Ge
       | k -> unsupported ("arithmetic " ^ k) in Arith (op,sub "l",sub "r")
   | "bin" -> let op = match text "op" j with
       | "===" -> StrictEqual | "!==" -> StrictUnequal

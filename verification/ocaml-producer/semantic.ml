@@ -13,8 +13,10 @@ type ty = Atoms of atom list | Rigid of rigid | Union of ty list
          | Meet of ty * ty list
 and rigid = { scope: int; index: int; spelling: string }
 and atom = Nul | Undef | True | False | Num | Str | NumLit of int64 | StrLit of string | Top
-         (* Opaque values: every bigint, every symbol. *)
+         (* Every bigint; every symbol, an opaque value. *)
          | Bigint | Symbol
+         (* One bigint: its canonical decimal integer. *)
+         | BigintLit of string
          (* A class value: construct signatures, which `new` meets and no call
             does. A signature's receiver is unused: `new` passes none. *)
          | Ctors of signature list
@@ -69,7 +71,7 @@ let rec mentions_rigid = function
       | Exact fs -> List.exists (fun (f:field) -> mentions_rigid f.read) fs
       | Ctors signatures -> List.exists signature_mentions_rigid signatures
       | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Top
-      | Bigint | Symbol -> false) atoms
+      | Bigint | Symbol | BigintLit _ -> false) atoms
 and sequence_mentions_rigid s = List.exists mentions_rigid
     (s.required @ s.optional_elements @ Option.to_list s.rest)
 and signature_mentions_rigid (s:signature) =
@@ -102,6 +104,7 @@ let union a b = match a,b with
 let rec widen = function
   | Atoms xs -> ground (List.concat_map (function
       | True | False -> [True;False] | NumLit _ -> [Num] | StrLit _ -> [Str]
+      | BigintLit _ -> [Bigint]
       | a -> [a]) xs)
   | Rigid _ as t -> t | Union ts -> List.fold_left union (Atoms []) (List.map widen ts)
   | Meet (t,ts) -> Meet (widen t,ts)

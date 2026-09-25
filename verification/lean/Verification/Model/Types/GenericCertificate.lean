@@ -380,6 +380,7 @@ theorem Proof.check_safe {G : NormalGraph Nat} {parameters} {Gamma : List Slot}
         exact value_safe _ _ _ _ _ rfl ((represents_sem hG.represents_fls n W _).mpr rfl)
     | vnum _ => simp [Proof.check] at hc
     | vstr _ => simp [Proof.check] at hc
+    | vbigint _ => simp [Proof.check] at hc
   | var index =>
     simp only [hproof] at hc
     cases hi : Gamma[index]? with

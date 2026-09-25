@@ -69,11 +69,23 @@ inductive Tag where
   | isBigint | isSymbol
   deriving Repr, DecidableEq
 
-/-- Binary arithmetic on two numbers: the IEEE-754 double operation JavaScript
-performs on two Numbers. The fragment applies one to nothing else. -/
+/-- The binary operators on primitive operands, JavaScript's own (`binop`
+gives their meaning). Arithmetic combines two numbers as the IEEE-754 double
+operation, or two bigints as the integer one: `pow` is `**`, `xor` is `^`,
+which `~x` is written with (`x ^ -1`). The relational operators compare two
+numeric operands, number and bigint alike, or two strings, and answer a
+Boolean. A combination JavaScript throws on, or converts through anything
+else, is stuck. -/
 inductive Arith where
   | add | sub | mul | div
+  | pow | xor
+  | lt | le | gt | ge
   deriving Repr, DecidableEq, BEq
+
+/-- Whether an operator compares rather than computes. -/
+def Arith.relational : Arith → Bool
+  | .lt | .le | .gt | .ge => true
+  | _ => false
 
 /-- Which of JavaScript's internal methods a function's code provides: `call`
 code runs when the function is called (`[[Call]]`), and `construct` code only
@@ -114,11 +126,11 @@ inductive Tm where
   /-- A string, carried as itself. Like a number it is opaque: bound, passed,
   stored, shape-tested and compared for equality, never computed with. -/
   | str (value : String)
-  /-- A bigint and a symbol, each carried as an identity. Nothing here computes
-  with them: they are bound, passed, stored and shape-tested. They enter only
-  through a caller or an external contract, so a type that admits them says
-  what such a value may be. -/
-  | bigint (id : Nat)
+  /-- A bigint, carried as the integer it is: its identity, as a number's bits
+  are. `arith` computes with it; equal integers are the same bigint. -/
+  | bigint (value : Int)
+  /-- A symbol, carried as an identity. Nothing here computes with it: it is
+  bound, passed, stored and shape-tested. -/
   | sym (id : Nat)
   /-- An object identity: the locations its named fields stand for, fixed at
   allocation, with an optional immutable invocation descriptor. -/
@@ -133,7 +145,8 @@ inductive Tm where
   | writeAt (field : PropKey) (a b : Tm)
   | test (k : Tag) (a : Tm)
   | ite (c t e : Tm)
-  /-- Arithmetic on the values of `a` and `b`, in that order, both numbers. -/
+  /-- A binary operator on the values of `a` and `b`, in that order: defined
+  where `binop` answers, stuck elsewhere. -/
   | arith (op : Arith) (a b : Tm)
   /-- An array's store: the location of each element, in order, or none at a
   hole. The array object holds this value in its store field and replaces it
@@ -206,18 +219,140 @@ def literalBits (lexeme : String) : Except String UInt64 := do
   return if Float.ofBits bits == 0.0 && lexeme.startsWith "-"
     then (9223372036854775808 : UInt64) else bits
 
-/-- The bits of an arithmetic result: the double operation on the operands'
-doubles. Signed zero is preserved: division observes its sign even though
-strict equality equates the two zeros. -/
+/-- JavaScript's `Number::exponentiate`, which is IEEE `pow` except that a NaN
+exponent always gives NaN and a base of magnitude one to an infinite power is
+NaN, where C's `pow` answers 1 for both. -/
+def jsPow (a b : Float) : Float :=
+  if b.isNaN then 0.0 / 0.0
+  else if (a == 1.0 || a == -1.0) && b.isInf then 0.0 / 0.0
+  else a ^ b
+
+/-- `ToInt32` on the bits of a double, exactly: NaN and the infinities are 0;
+otherwise the value truncated toward zero, modulo 2^32, read as signed. -/
+def toInt32 (x : UInt64) : Int :=
+  let e := ((x >>> 52) &&& 0x7ff).toNat
+  let m := (x &&& 0xfffffffffffff).toNat
+  if e == 0x7ff then 0 else
+  let mant := if e == 0 then m else m + 2 ^ 52
+  let shift : Int := (if e == 0 then 1 else (e : Int)) - 1075
+  -- Past 2^32 the low 32 bits of an integer multiple of 2^32 are zero.
+  let mag : Nat := if 32 ≤ shift then 0
+    else if 0 ≤ shift then mant * 2 ^ shift.toNat else mant / 2 ^ (-shift).toNat
+  let k : Nat := mag % 2 ^ 32
+  let u : Nat := if x >>> 63 == 1 then (2 ^ 32 - k) % 2 ^ 32 else k
+  if 2 ^ 31 ≤ u then (u : Int) - 2 ^ 32 else u
+
+/-- Two's-complement exclusive or of two integers: a negative integer is the
+complement of a natural, and complementing one operand complements the result. -/
+def intXor : Int → Int → Int
+  | .ofNat a, .ofNat b => .ofNat (a ^^^ b)
+  | .ofNat a, .negSucc b => .negSucc (a ^^^ b)
+  | .negSucc a, .ofNat b => .negSucc (a ^^^ b)
+  | .negSucc a, .negSucc b => .ofNat (a ^^^ b)
+
+/-- The double an integer in the 32-bit range denotes, exactly. -/
+def int32Bits (i : Int) : UInt64 :=
+  (if i < 0 then -((-i).toNat.toFloat) else i.toNat.toFloat).toBits
+
+/-- The bits of an arithmetic result on two numbers: the double operation on
+the operands' doubles. Signed zero is preserved: division observes its sign
+even though strict equality equates the two zeros. A relational operator
+yields a Boolean, not a number (`binop`); it has no bits here. -/
 def arithBits (op : Arith) (x y : UInt64) : UInt64 :=
   let a := Float.ofBits x
   let b := Float.ofBits y
-  let r := match op with
-    | .add => a + b
-    | .sub => a - b
-    | .mul => a * b
-    | .div => a / b
-  r.toBits
+  match op with
+    | .add => (a + b).toBits
+    | .sub => (a - b).toBits
+    | .mul => (a * b).toBits
+    | .div => (a / b).toBits
+    | .pow => (jsPow a b).toBits
+    | .xor => int32Bits (intXor (toInt32 x) (toInt32 y))
+    | .lt | .le | .gt | .ge => (0.0 / 0.0 : Float).toBits
+
+/-- Arithmetic on two bigints: JavaScript's integer operations. Division
+truncates toward zero; dividing by zero and a negative exponent throw a
+`RangeError`, so they have no result. -/
+def bigintArith : Arith → Int → Int → Option Int
+  | .add, x, y => some (x + y)
+  | .sub, x, y => some (x - y)
+  | .mul, x, y => some (x * y)
+  | .div, x, y => if y = 0 then none else some (x.tdiv y)
+  | .pow, x, y => if y < 0 then none else some (x ^ y.toNat)
+  | .xor, x, y => some (intXor x y)
+  | .lt, _, _ | .le, _, _ | .gt, _, _ | .ge, _, _ => none
+
+/-- The order of two doubles: none when either is NaN, and the two zeros
+equal, as IEEE comparison has them. -/
+def doubleOrder (x y : UInt64) : Option Ordering :=
+  let a := Float.ofBits x
+  let b := Float.ofBits y
+  if a < b then some .lt else if a == b then some .eq else if b < a then some .gt else none
+
+/-- The order of a double and an integer, exactly: none when the double is
+NaN; an infinity is beyond every integer; a finite double is compared as the
+rational it denotes, `mantissa * 2^shift`. -/
+def doubleIntOrder (x : UInt64) (n : Int) : Option Ordering :=
+  let e := ((x >>> 52) &&& 0x7ff).toNat
+  let m := (x &&& 0xfffffffffffff).toNat
+  let negative := x >>> 63 == 1
+  if e == 0x7ff then
+    if m != 0 then none else some (if negative then .lt else .gt)
+  else
+    let mant : Int := if e == 0 then m else m + 2 ^ 52
+    let signed := if negative then -mant else mant
+    let shift : Int := (if e == 0 then 1 else (e : Int)) - 1075
+    if 0 ≤ shift then some (compare (signed * 2 ^ shift.toNat) n)
+    else some (compare signed (n * 2 ^ (-shift).toNat))
+
+/-- A string as JavaScript sees it: its UTF-16 code units, in order. -/
+def utf16Units (s : String) : List Nat :=
+  s.toList.flatMap fun c =>
+    let v := c.val.toNat
+    if v < 0x10000 then [v]
+    else [0xD800 + (v - 0x10000) / 0x400, 0xDC00 + (v - 0x10000) % 0x400]
+
+/-- Lexicographic order of code-unit sequences: a proper prefix is less. -/
+def unitsOrder : List Nat → List Nat → Ordering
+  | [], [] => .eq
+  | [], _ :: _ => .lt
+  | _ :: _, [] => .gt
+  | a :: as, b :: bs => if a < b then .lt else if b < a then .gt else unitsOrder as bs
+
+/-- A relational operator's answer from the order of its operands, where
+`none` is JavaScript's undefined comparison (a NaN operand): every relational
+operator is then false. -/
+def relationHolds : Arith → Option Ordering → Bool
+  | .lt, some .lt => true
+  | .le, some .lt | .le, some .eq => true
+  | .gt, some .gt => true
+  | .ge, some .gt | .ge, some .eq => true
+  | _, _ => false
+
+def boolVal (b : Bool) : Tm := if b then .tru else .fls
+
+/-- **What a binary operator does on two values**, as JavaScript's does on
+them, where that is a value. Arithmetic combines two numbers or two bigints,
+never one of each (JavaScript throws a `TypeError`), and not a bigint division
+by zero or a negative bigint exponent (a `RangeError`). A relational operator
+compares two numeric values of either kind, exactly, or two strings by their
+UTF-16 code units. Every other pair converts its operands through code or
+coercions not modelled here, and has no answer: the term is stuck. -/
+def binop (op : Arith) : Tm → Tm → Option Tm
+  | .num x, .num y =>
+    some (if op.relational then boolVal (relationHolds op (doubleOrder x y)) else .num (arithBits op x y))
+  | .bigint x, .bigint y =>
+    if op.relational then some (boolVal (relationHolds op (some (compare x y))))
+    else (bigintArith op x y).map .bigint
+  | .num x, .bigint y =>
+    if op.relational then some (boolVal (relationHolds op (doubleIntOrder x y))) else none
+  | .bigint x, .num y =>
+    if op.relational then some (boolVal (relationHolds op ((doubleIntOrder y x).map Ordering.swap)))
+    else none
+  | .str s, .str t =>
+    if op.relational then some (boolVal (relationHolds op (some (unitsOrder (utf16Units s) (utf16Units t)))))
+    else none
+  | _, _ => none
 
 /-- The array index a number denotes, when it is one: a finite integer in the
 index range, the property name it would spell. Any other number names an
@@ -544,6 +679,27 @@ def isVal : Tm → Bool
   | .nul | .undef | .tru | .fls | .num _ | .str _ | .bigint _ | .sym _ | .objAt .. | .arr _ => true
   | _ => false
 
+/-- An operator answers only for two values, and answers a Boolean, a
+number or a bigint. -/
+theorem binop_result {op : Arith} {a b v : Tm} (h : binop op a b = some v) :
+    isVal a = true ∧ isVal b = true ∧
+      (v = .tru ∨ v = .fls ∨ (∃ x, v = .num x) ∨ ∃ i, v = .bigint i) := by
+  have hb : ∀ q, boolVal q = .tru ∨ boolVal q = .fls := fun q => by cases q <;> simp [boolVal]
+  cases a <;> cases b <;> simp only [binop, reduceCtorEq] at h
+  all_goals refine ⟨rfl, rfl, ?_⟩
+  all_goals split at h
+  all_goals first
+    | (obtain rfl := Option.some.inj h; rcases hb _ with h | h <;> rw [h] <;> simp)
+    | (obtain rfl := Option.some.inj h; simp)
+    | (obtain ⟨_, _, rfl⟩ := Option.map_eq_some_iff.mp h; simp)
+    | exact absurd h (by simp)
+
+theorem binop_values {op : Arith} {a b v : Tm} (h : binop op a b = some v) :
+    isVal a = true ∧ isVal b = true ∧ isVal v = true := by
+  obtain ⟨ha, hb, hv⟩ := binop_result h
+  refine ⟨ha, hb, ?_⟩
+  rcases hv with rfl | rfl | ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> rfl
+
 /-- ECMAScript Number::equal on IEEE-754 bits: NaN never equals, and the
 sign of zero is ignored. All other equal Numbers have the same encoding. -/
 def numberEqual (a b : UInt64) : Bool :=
@@ -753,8 +909,8 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   | iteF : Step h (.ite .fls t e) h e
   | arithC1 : Step h a h' a' → Step h (.arith op a b) h' (.arith op a' b)
   | arithC2 : isVal a = true → Step h b h' b' → Step h (.arith op a b) h' (.arith op a b')
-  /-- Two numbers combine in one step; nothing else is ever combined. -/
-  | arithV : Step h (.arith op (.num x) (.num y)) h (.num (arithBits op x y))
+  /-- Two values combine in one step where `binop` answers for them. -/
+  | arithV : binop op a b = some v → Step h (.arith op a b) h v
   /-- Store initializers are evaluated left to right, like fields. -/
   | arrArg {inits : List Tm} {i : Nat} {h h' : Heap} {a a' : Tm} : inits[i]? = some a →
       (∀ j, j < i → ∀ v, inits[j]? = some v → isVal v = true) →
@@ -1184,17 +1340,17 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     cases s2 with
     | arithC1 s' => exact (ih s').imp id (congrArg (Tm.arith _ · _))
     | arithC2 hv _ => exact absurd s (by intro hs; exact value_no_step hv hs)
-    | arithV => exact absurd s (by intro hs; exact value_no_step rfl hs)
+    | arithV hb => exact absurd s (by intro hs; exact value_no_step (binop_values hb).1 hs)
   | arithC2 hv s ih =>
     cases s2 with
     | arithC1 s' => exact absurd s' (by intro hs; exact value_no_step hv hs)
     | arithC2 _ s' => exact (ih s').imp id (congrArg (Tm.arith _ _ ·))
-    | arithV => exact absurd s (by intro hs; exact value_no_step rfl hs)
-  | arithV =>
+    | arithV hb => exact absurd s (by intro hs; exact value_no_step (binop_values hb).2.1 hs)
+  | arithV hb =>
     cases s2 with
-    | arithC1 s' => exact absurd s' (by intro hs; exact value_no_step rfl hs)
-    | arithC2 _ s' => exact absurd s' (by intro hs; exact value_no_step rfl hs)
-    | arithV => exact ⟨rfl, rfl⟩
+    | arithC1 s' => exact absurd s' (by intro hs; exact value_no_step (binop_values hb).1 hs)
+    | arithC2 _ s' => exact absurd s' (by intro hs; exact value_no_step (binop_values hb).2.1 hs)
+    | arithV hb' => exact ⟨rfl, Option.some.inj (hb.symm.trans hb')⟩
   | @arrArg inits i h h1 a a1 hg hb s ih =>
     cases s2 with
     | @arrArg _ j _ _ b b1 hg' hb' s' =>

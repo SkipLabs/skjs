@@ -221,6 +221,40 @@ private def arrayKeyTerm (K : Ty Nat) : Compiler Tm := do
   modify fun s => {s with hints := label :: s.hints}
   return .num b
 
+/-- The type a binary operator's value is claimed at before it meets the
+expression's claim: both Booleans for a comparison, else the numeric family
+of its operands. -/
+private def operatorResult (op : Arith) (A : Ty Nat) : Compiler (Ty Nat) := do
+  if op.relational then return [1, 2]
+  let cs := PositiveRules.expand (SourceTypes.graph (← table)) A
+  if !cs.isEmpty && cs.all ProgramTyping.bigintClause then return [← lower (SourceTypes.use .bigint)]
+  return [← lower (SourceTypes.use .num)]
+
+/-- A unary operator as the binary one it is on its operand's numeric family,
+with a constant right operand: `-x` is `x * -1`, `+x` is `x * 1` and `~x` is
+`x ^ -1`, exactly, on numbers and on bigints alike. The family is the
+operand's claimed one, which its own obligation establishes. `+` on a bigint
+throws a `TypeError`, and an operand of both families has no one constant, so
+each is refused. The constant's singleton is interned and offered to search. -/
+private def unaryOperation (p : Span) (op : Fragment.UnaryOp) (B : Ty Nat) :
+    Compiler (Arith × Tm × Ty Nat × ProgramCertificates.Rule Nat) := do
+  let cs := PositiveRules.expand (SourceTypes.graph (← table)) B
+  let located := s!"unsupported source expression at [{p.1},{p.2}): "
+  let bigint ← if !cs.isEmpty && cs.all ProgramTyping.numberClause then pure false
+    else if !cs.isEmpty && cs.all ProgramTyping.bigintClause then pure true
+    else throw (located ++ "a unary numeric operator needs an operand of one numeric family, number or bigint")
+  let (arith, factor) := match op with
+    | .neg => (Arith.mul, -1) | .plus => (.mul, 1) | .bitNot => (.xor, -1)
+  if bigint then
+    if op == .plus then throw (located ++ "unary + on a bigint throws a TypeError")
+    let label ← lower (SourceTypes.use (.bigintLit factor))
+    modify fun s => {s with hints := label :: s.hints}
+    return (arith, .bigint factor, [label], .bigintLit)
+  let b := (if factor < 0 then -1.0 else 1.0 : Float).toBits
+  let label ← lower (SourceTypes.use (.numLit b))
+  modify fun s => {s with hints := label :: s.hints}
+  return (arith, .num b, [label], .numLit)
+
 /-- What a computed key names, by its claimed type: a field for a string
 singleton, a dictionary lookup for a broad string, or an element of the
 array's store for a number. The key stays in
@@ -274,6 +308,7 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
   | .shapeTest p t eq e => return .shapeTest p t eq (← comparisonsExpr fc e)
   | .singletonTest p t eq tl l r => return .singletonTest p t eq tl (← comparisonsExpr fc l) (← comparisonsExpr fc r)
   | .not p e => return .not p (← comparisonsExpr fc e)
+  | .unary p op e => return .unary p op (← comparisonsExpr fc e)
   | .cast p annot e => return .cast p annot (← comparisonsExpr fc e)
   | .ctor p lam => return .ctor p (← comparisonsExpr fc lam)
   | .construct p f args => return .construct p (← comparisonsExpr fc f) (← args.mapM (comparisonsExpr fc))
@@ -363,7 +398,7 @@ private partial def assignsExpr (name : String) : Fragment.Expr → Bool
   | .assign _ target _ rhs | .nullishAssign _ target _ rhs => target == name || assignsExpr name rhs
   | .lambda _ _ _ _ defaults _ _ e =>
     defaults.attach.any (fun ⟨d,_⟩ => assignsExpr name d.2) || assignsExpr name e
-  | .not _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e =>
+  | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e =>
     assignsExpr name e
   | .equality _ _ a b | .logical _ _ a b | .coalesce _ a b
   | .singletonTest _ _ _ _ a b | .write _ _ a b | .withValue _ a b _ _ | .index _ _ a b
@@ -611,7 +646,7 @@ private def observed (scope : List ScopeBinding) (Γ : List (Ty Nat))
 escaping closure. Reads are plain modeled cells, never JavaScript accessors. -/
 private def readOnly : Fragment.Expr → Bool
   | .var .. | .lit .. | .done .. => true
-  | .not _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e => readOnly e
+  | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e => readOnly e
   | .equality _ _ a b | .singletonTest _ _ _ _ a b | .logical _ _ a b | .coalesce _ a b
   | .seqBody _ a b | .letBody _ _ _ a b | .index _ _ a b | .arith _ _ a b | .elemAt _ a b => readOnly a && readOnly b
   | .ifBody _ _ c t e => readOnly c && readOnly t && readOnly e
@@ -1142,14 +1177,22 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     pure (DirectProof.letE Γ r (DirectProof.letE (B::Γ) k (DirectProof.letE (k.type::B::Γ) a done)))
   | .indexWrite _ none .. => throw "internal unresolved computed key"
   | .arith _ op l r => do
-    -- Both operands are checked as numbers by the rule; the result is the
-    -- number family, whatever its bits.
+    -- The rule checks the operands pair by pair; the result is the family of
+    -- its kind, whatever its value.
     let a ← closureExpr fc scope Γ l
     let b ← closureExpr fc (held ⟨"",some l.span⟩ :: scope) (a.type::Γ) r
     let H := a.type::Γ
-    let N : Ty Nat := [← lower (SourceTypes.use .num)]
+    let N ← operatorResult op a.type
     pure (DirectProof.letE Γ a
       (DirectProof.node H (.arith op (.var 0) b.term) N .arith [DirectProof.var H 0 a.type, b]))
+  | .unary pos op a => do
+    let p ← closureExpr fc scope Γ a
+    let (arith, c, C, rule) ← unaryOperation pos op p.type
+    let H := p.type::Γ
+    let N ← operatorResult arith p.type
+    pure (DirectProof.letE Γ p
+      (DirectProof.node H (.arith arith (.var 0) c) N .arith
+        [DirectProof.var H 0 p.type, DirectProof.node H c C rule]))
   | .update .. => throw "compound assignment inside a closed expression is outside the fragment"
   | .arrayLit _ elems => do
     -- The elements, in order, fill a fresh store, and the array object holds
@@ -2533,12 +2576,21 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let node ← emitAt e.span (.arith op (.var 1) (.var 0)) (.bind drop) (C::B::Γ) A (scope := temporaries)
     let right ← compileExpr fc (held ⟨"",some l.span⟩ :: scope) (B::Γ) r node
     compileExpr fc scope Γ l right
+  | .unary pos op a =>
+    -- The operand, then the constant of its family, then the operator.
+    let B ← exprType fc a
+    let (arith, c, C, _) ← unaryOperation pos op B
+    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun i => if i == 0 then 0 else i+2))⟩
+    let temporaries := held ⟨"",some e.span⟩::held ⟨"",some a.span⟩ :: scope
+    let node ← emitAt e.span (.arith arith (.var 1) (.var 0)) (.bind drop) (C::B::Γ) A (scope := temporaries)
+    let constant ← emitAt e.span c (.bind node) (B::Γ) C (scope := held ⟨"",some a.span⟩ :: scope)
+    compileExpr fc scope Γ a constant
   | .update _ op target rhs post =>
     -- The target's parts are evaluated once and its value read at the
     -- storage contract, never at a claim; then the right side, the
     -- operation, the write back at the contract, and the old or new value.
     let G := SourceTypes.graph (← table)
-    let N : Ty Nat := [← lower (SourceTypes.use .num)]
     let fieldType := fun (B : Ty Nat) (fld : PropKey) => do
       match PositiveRules.expand G B with
       | [.refs fs [] []] =>
@@ -2562,10 +2614,16 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let types ← parts.mapM (exprType fc)
     let heldParts := (parts.map fun p => held ⟨"",some p.span⟩).reverse
     let K := types.reverse ++ Γ
-    let one := (1.0 : Float).toBits
+    -- The operation's value is of the target contract's numeric family, and
+    -- an increment adds that family's one.
+    let N ← operatorResult op T
+    let targetClauses := PositiveRules.expand (SourceTypes.graph (← table)) T
+    let (one, oneClause) : Tm × PositiveNormalization.Clause (List Nat) :=
+      if !targetClauses.isEmpty && targetClauses.all ProgramTyping.bigintClause
+      then (.bigint 1, .bigintLit 1) else (.num (1.0 : Float).toBits, .numLit (1.0 : Float).toBits)
     let C ← match rhs with
       | some r => exprType fc r
-      | none => do pure [← lower (SourceTypes.use (.numLit one))]
+      | none => do pure [← lower (SourceTypes.use oneClause)]
     let n := parts.length
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+n+3))⟩
@@ -2577,7 +2635,7 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
       (scope := after.drop 1)
     let delta ← match rhs with
       | some r => compileExpr fc (after.drop 2) (T::K) r combine
-      | none => emitAt e.span (.num one) (.bind combine) (T::K) C (scope := after.drop 2)
+      | none => emitAt e.span one (.bind combine) (T::K) C (scope := after.drop 2)
     let read ← emitAt e.span readTerm (.bind delta) K T (scope := heldParts ++ scope)
     parts.attach.zipIdx.reverse.foldlM (fun next (⟨part,_⟩,i) =>
       compileExpr fc ((parts.take i |>.map fun p => held ⟨"",some p.span⟩).reverse ++ scope)

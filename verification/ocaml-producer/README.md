@@ -1006,8 +1006,10 @@ first milestone, in order of how much each gates:
      values first class, `new` on any value with a construct signature) and
      generic tuple packs, `new (...params: Params) => T` with `Params extends
      readonly DepSafe[]` (remaining);
-   - `bigint` and `symbol` (done: opaque values in the calculus and types
-     in the graph, and `typeof` tests for every shape but `"object"`), and
+   - `bigint` and `symbol` (done: values in the calculus and types in the
+     graph, a bigint its integer with literal singletons, its arithmetic and
+     comparisons through the one operator rule, and `typeof` tests for every
+     shape but `"object"`), and
      symbol-keyed properties (done: the heap's keys are strings or symbols,
      and a declaration's `[x]: T` member, with `x` a `unique symbol`
      constant, is a field keyed by that symbol). Remaining for `Managed` and

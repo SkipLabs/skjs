@@ -900,6 +900,9 @@ def CoversWith (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : 
   | .str, .str => True
   | .strLit _, .str => True
   | .strLit a, .strLit b => a = b
+  | .bigint, .bigint => True
+  | .bigintLit _, .bigint => True
+  | .bigintLit a, .bigintLit b => a = b
   | .refs a bs vs os ms ks, .refs c ds ws ps ns ls => CoversFields R (a :: bs) (c :: ds) ∧
       CoversViews R (a :: bs) vs ws ∧ CoversOptional R (a :: bs) vs os ks ps ∧
       CoversMethods G R known self ((a :: bs).flatten ++ vs) ks ms ns ∧ CoversBounds ks ls
@@ -1724,6 +1727,13 @@ theorem Covers.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R known sel
   · rename_i a bs c ds
     intro hv
     exact covers_lists_sound hc n hr W v hv
+  · -- bigint ≤ bigint
+    exact id
+  · -- bigintLit ≤ bigint: the singleton inhabits the family
+    rename_i i
+    intro hv; cases hv; exact ⟨i, rfl⟩
+  · -- bigintLit ≤ bigintLit at equal integers
+    cases hc; exact id
 
 /-- A type's meaning is a family of closed values. -/
 theorem meaning_valueFam (G : NormalGraph ι) (S : List ι) : ValueFam (meaning G S) :=

@@ -409,6 +409,173 @@ theorem answers_sound {G : NormalGraph ι} {A tag q n W v}
   obtain ⟨c, hc, hv⟩ := (expand_sem G A hq.1 n W v).mp hv
   exact tagClause_sound (hq.2 c hc) hv
 
+/-! ## Binary operators
+
+One rule types every binary operator (`arith`): each pair of operand clauses
+must make the operator answer (`binop`) for every pair of their members, all
+with one kind of result. Arithmetic takes two numbers or two bigints, never one
+of each; a bigint divisor must exclude zero, and a bigint exponent be
+non-negative, since those throw. A relational operator takes two numeric
+operands, of either kind, or two strings. -/
+
+/-- The kind of value an operator yields. -/
+inductive OpResult where
+  | num | bigint | bool
+  deriving DecidableEq, Repr
+
+def numberClause : Clause α → Bool
+  | .num | .numLit _ => true
+  | _ => false
+
+def bigintClause : Clause α → Bool
+  | .bigint | .bigintLit _ => true
+  | _ => false
+
+def stringClause : Clause α → Bool
+  | .str | .strLit _ => true
+  | _ => false
+
+/-- Whether a bigint right operand of this clause keeps the operator from
+throwing: a divisor must be a nonzero singleton, an exponent a non-negative
+one. Other arithmetic never throws on two bigints. -/
+def bigintRight : Arith → Clause α → Bool
+  | .div, .bigintLit i => i != 0
+  | .pow, .bigintLit i => decide (0 ≤ i)
+  | .div, _ | .pow, _ => false
+  | _, _ => true
+
+/-- What an operator yields on members of two clauses, when it answers for
+every pair of them. -/
+def opResult (op : Arith) (c d : Clause α) : Option OpResult :=
+  if op.relational then
+    if (numberClause c || bigintClause c) && (numberClause d || bigintClause d)
+      || stringClause c && stringClause d then some .bool else none
+  else if numberClause c && numberClause d then some .num
+  else if bigintClause c && bigintClause d && bigintRight op d then some .bigint
+  else none
+
+/-- The values of a result kind. -/
+def OpResult.holds : OpResult → Val → Prop
+  | .num, v => ∃ x, v = .num x
+  | .bigint, v => ∃ i, v = .bigint i
+  | .bool, v => v = .tru ∨ v = .fls
+
+theorem numberClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
+    (hc : numberClause c = true) (hv : semWithArgs X P c n W v) : ∃ x, v = .num x := by
+  cases c <;> simp [numberClause] at hc
+  · exact hv
+  · exact ⟨_, hv⟩
+
+theorem bigintClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
+    (hc : bigintClause c = true) (hv : semWithArgs X P c n W v) : ∃ i, v = .bigint i := by
+  cases c <;> simp [bigintClause] at hc
+  · exact hv
+  · exact ⟨_, hv⟩
+
+theorem stringClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
+    (hc : stringClause c = true) (hv : semWithArgs X P c n W v) : ∃ s, v = .str s := by
+  cases c <;> simp [stringClause] at hc
+  · exact hv
+  · exact ⟨_, hv⟩
+
+theorem boolVal_holds (q : Bool) : OpResult.holds .bool (boolVal q) := by
+  cases q <;> simp [OpResult.holds, boolVal]
+
+/-- **The classification is sound**: on members of the two clauses the
+operator answers, with a value of the kind it names. -/
+theorem opResult_sound {X : α → Fam} {P : α → ArgFam} {op : Arith} {c d : Clause α} {r n W v w}
+    (h : opResult op c d = some r) (hv : semWithArgs X P c n W v) (hw : semWithArgs X P d n W w) :
+    ∃ z, binop op v w = some z ∧ r.holds z := by
+  -- A numeric member is a number or a bigint.
+  have numeric : ∀ {e : Clause α} {u}, (numberClause e || bigintClause e) = true →
+      semWithArgs X P e n W u → (∃ x, u = .num x) ∨ ∃ i, u = .bigint i := by
+    intro e u he hu
+    rcases Bool.or_eq_true_iff.mp he with he | he
+    · exact .inl (numberClause_member he hu)
+    · exact .inr (bigintClause_member he hu)
+  unfold opResult at h
+  by_cases hrel : op.relational = true
+  · simp only [hrel, ↓reduceIte] at h
+    split at h
+    · rename_i hops
+      cases h
+      rcases Bool.or_eq_true_iff.mp hops with hops | hops
+      · rcases Bool.and_eq_true_iff.mp hops with ⟨hc, hd⟩
+        rcases numeric hc hv with ⟨x, rfl⟩ | ⟨x, rfl⟩ <;>
+          rcases numeric hd hw with ⟨y, rfl⟩ | ⟨y, rfl⟩
+        · exact ⟨boolVal (relationHolds op (doubleOrder x y)), by simp [binop, hrel], boolVal_holds _⟩
+        · exact ⟨boolVal (relationHolds op (doubleIntOrder x y)), by simp [binop, hrel], boolVal_holds _⟩
+        · exact ⟨boolVal (relationHolds op ((doubleIntOrder y x).map Ordering.swap)),
+            by simp [binop, hrel], boolVal_holds _⟩
+        · exact ⟨boolVal (relationHolds op (some (compare x y))), by simp [binop, hrel], boolVal_holds _⟩
+      · rcases Bool.and_eq_true_iff.mp hops with ⟨hc, hd⟩
+        obtain ⟨x, rfl⟩ := stringClause_member hc hv
+        obtain ⟨y, rfl⟩ := stringClause_member hd hw
+        exact ⟨boolVal (relationHolds op (some (unitsOrder (utf16Units x) (utf16Units y)))),
+          by simp [binop, hrel], boolVal_holds _⟩
+    · cases h
+  · simp only [hrel, Bool.false_eq_true, ↓reduceIte] at h
+    split at h
+    · rename_i hops
+      cases h
+      rcases Bool.and_eq_true_iff.mp hops with ⟨hc, hd⟩
+      obtain ⟨x, rfl⟩ := numberClause_member hc hv
+      obtain ⟨y, rfl⟩ := numberClause_member hd hw
+      exact ⟨.num (arithBits op x y), by simp [binop, hrel], _, rfl⟩
+    · split at h
+      · rename_i _ hops
+        cases h
+        simp only [Bool.and_eq_true] at hops
+        obtain ⟨⟨hc, hd⟩, hr⟩ := hops
+        obtain ⟨x, rfl⟩ := bigintClause_member hc hv
+        obtain ⟨y, rfl⟩ := bigintClause_member hd hw
+        have hdef : ∃ z, bigintArith op x y = some z := by
+          cases op <;> simp [Arith.relational] at hrel <;> simp [bigintArith]
+          all_goals
+            cases d <;> simp [bigintRight] at hr
+            cases hw; omega
+        obtain ⟨z, hz⟩ := hdef
+        exact ⟨.bigint z, by simp [binop, hrel, hz], z, rfl⟩
+      · cases h
+
+/-- Two operand types an operator answers for, pair by pair, with one kind
+of result. -/
+def Operands (G : NormalGraph ι) (op : Arith) (A B : Ty ι) (r : OpResult) : Prop :=
+  G.plainTy A = true ∧ G.plainTy B = true ∧
+    ∀ c ∈ expand G A, ∀ d ∈ expand G B, opResult op c d = some r
+
+/-- A result type holding every value of the kind: the number or bigint
+family, or both Booleans. -/
+def OpResult.covers (G : NormalGraph ι) (N : Ty ι) : OpResult → Prop
+  | .num => Represents G N .num
+  | .bigint => Represents G N .bigint
+  | .bool => (.boolLit true) ∈ expand G N ∧ (.boolLit false) ∈ expand G N
+
+instance [DecidableEq ι] (G : NormalGraph ι) (op : Arith) (A B : Ty ι) (r : OpResult) :
+    Decidable (Operands G op A B r) := by unfold Operands; infer_instance
+
+instance [DecidableEq ι] (G : NormalGraph ι) (N : Ty ι) (r : OpResult) :
+    Decidable (r.covers G N) := by
+  cases r <;> unfold OpResult.covers <;> unfold Represents <;> infer_instance
+
+/-- The kind a pair of operand types gives, read from their first clauses;
+`Operands` then checks every pair. -/
+def operandsResult (G : NormalGraph ι) (op : Arith) (A B : Ty ι) : Option OpResult :=
+  match expand G A, expand G B with
+  | c :: _, d :: _ => opResult op c d
+  | _, _ => none
+
+/-- The operator rule's premise on the types: the operand types give one kind
+of result, pair by pair, and the result type holds every value of it. -/
+def OperatorTypes (G : NormalGraph ι) (op : Arith) (A B N : Ty ι) : Prop :=
+  match operandsResult G op A B with
+  | some r => Operands G op A B r ∧ r.covers G N
+  | none => False
+
+instance [DecidableEq ι] (G : NormalGraph ι) (op : Arith) (A B N : Ty ι) :
+    Decidable (OperatorTypes G op A B N) := by
+  unfold OperatorTypes; split <;> infer_instance
+
 /-! ## Variadic functions
 
 A variadic body finds the actuals past its fixed parameters in a fresh array in
@@ -923,6 +1090,9 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   /-- Every number is a number, as every Boolean is a Boolean. Without this a
   literal claimed at the family rather than at its own singleton has no rule. -/
   | num : Represents G A .num → HasTy G Γ (.num b) A
+  /-- A bigint, at its own singleton or at the family, as a number is. -/
+  | bigintLit : Represents G A (.bigintLit i) → HasTy G Γ (.bigint i) A
+  | bigint : Represents G A .bigint → HasTy G Γ (.bigint i) A
   | strLit : Represents G A (.strLit s) → HasTy G Γ (.str s) A
   | str : Represents G A .str → HasTy G Γ (.str s) A
   /-- **A function.** Each signature `(receiver, parameters, result)` checks the
@@ -1032,10 +1202,11 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
       HasTy G Γ (.indexAt a key) (A ++ U)
   | write : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → (f, A) ∈ fs →
       HasTy G Γ b A → Represents G N .nul → HasTy G Γ (.writeAt f a b) N
-  /-- Arithmetic needs two operands the number test answers for, and yields
-  the number family: no singleton, since the result's bits are not typed. -/
-  | arith : HasTy G Γ a A → Answers G A .isNum true → HasTy G Γ b B → Answers G B .isNum true →
-      Represents G N .num → HasTy G Γ (.arith op a b) N
+  /-- A binary operator needs operand types it answers for, pair by pair
+  (`Operands`), and yields the family of its result kind: no singleton, since
+  the result's value is not typed. -/
+  | arith : HasTy G Γ a A → HasTy G Γ b B → OperatorTypes G op A B N →
+      HasTy G Γ (.arith op a b) N
   /-- A literal allocates a store: one fresh location per element, each
   under the position's contract of the tuple the store is claimed at, whose
   bounds the element count respects. -/
@@ -1193,6 +1364,12 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
   | @num _ _ b hr =>
     intro n W h ρ he hw hh
     exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr ⟨b, rfl⟩)
+  | bigintLit hr =>
+    intro n W h ρ he hw hh
+    exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr rfl)
+  | @bigint _ _ i hr =>
+    intro n W h ρ he hw hh
+    exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr ⟨i, rfl⟩)
   | strLit hr =>
     intro n W h ρ he hw hh
     exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr rfl)
@@ -1736,7 +1913,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       rcases hv with rfl | rfl
       · exact expand_sem_mpr ⟨_, expand_sub ht, rfl⟩
       · exact expand_sem_mpr ⟨_, expand_sub hf, rfl⟩
-  | @arith Γ a A b B N op ha hqa hb hqb hn iha ihb =>
+  | @arith Γ a A b B op N ha hb hopt iha ihb =>
     intro n W h ρ he hw hh
     apply bind (fun a => .arith op a (instantiate 0 ρ b)) Step.arithC1 n W h _ hw hh
       (iha n W h ρ he hw hh)
@@ -1744,15 +1921,23 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     apply bind (.arith op av) (Step.arithC2 hav) j U heap _ hu hok
       (ihb j U heap ρ (he.transfer j hj U hx) hu hok)
     intro k hk V hy hv heap' bv hok' hbval hb'
+    unfold OperatorTypes at hopt
+    split at hopt
+    case h_2 => exact hopt.elim
+    rename_i r _
+    obtain ⟨hops, hn⟩ := hopt
     have ha'' := (meaning_adm G A).mono k _ V hy av ((meaning_adm G A).down_le j k hk U av ha')
-    have hna := answers_sound hqa ha''
-    have hnb := answers_sound hqb hb'
-    obtain ⟨x, rfl⟩ : ∃ x, av = .num x := by
-      cases av <;> simp [tagHolds] at hna; exact ⟨_, rfl⟩
-    obtain ⟨y, rfl⟩ : ∃ y, bv = .num y := by
-      cases bv <;> simp [tagHolds] at hnb; exact ⟨_, rfl⟩
-    exact arith_value_safe op x y k V heap' hv hok'
-      (fun m U => (represents_sem hn m U _).mpr ⟨_, rfl⟩)
+    obtain ⟨c, hc, hca⟩ := (expand_sem G A hops.1 k V av).mp ha''
+    obtain ⟨d, hd, hdb⟩ := (expand_sem G B hops.2.1 k V bv).mp hb'
+    obtain ⟨z, hz, hr⟩ := opResult_sound (hops.2.2 c hc d hd) hca hdb
+    refine arith_value_safe op av bv z hz k V heap' hv hok' (fun m U => ?_)
+    cases r with
+    | num => obtain ⟨x, rfl⟩ := hr; exact (represents_sem hn m U _).mpr ⟨x, rfl⟩
+    | bigint => obtain ⟨i, rfl⟩ := hr; exact (represents_sem hn m U _).mpr ⟨i, rfl⟩
+    | bool =>
+      rcases hr with rfl | rfl
+      · exact expand_sem_mpr ⟨_, expand_sub hn.1, rfl⟩
+      · exact expand_sem_mpr ⟨_, expand_sub hn.2, rfl⟩
   | @write Γ a Ref fs vs os ms ks f A b N ha hr hm hb hn iha ihb =>
     intro n W h ρ he hw hh
     apply bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 n W h _ hw hh

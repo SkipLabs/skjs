@@ -233,6 +233,7 @@ theorem HasTy_of_exprTyB {c : Ctx} : ∀ (b : Body) {env : List (String × Ty)} 
       | vbool b => cases b <;> (try simp only [exprTyB] at h) <;> cases h <;> constructor
       | vnum _ => simp only [exprTyB] at h; cases h
       | vstr _ => simp only [exprTyB] at h; cases h
+      | vbigint _ => simp only [exprTyB] at h; cases h
   | .assign pos name rhs, env, t, h => by
       simp only [exprTyB] at h
       split at h

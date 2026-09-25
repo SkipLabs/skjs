@@ -43,9 +43,12 @@ export type Clause =
   /** Strings, and one string, carried as itself. */
   | "str"
   | { strLit: { value: string } }
-  /** Every bigint, and every symbol: opaque values. */
+  /** Every bigint, and every symbol: an opaque value. */
   | "bigint"
   | "symbol"
+  /** One bigint, as its integer: a JSON number of any length, which a
+   * reader of this document shows and never computes with. */
+  | { bigintLit: { value: number } }
   /** `views` are read capabilities: a field read at a sound upper bound on
    * its contents, with no write permission through this contract. `optional`
    * fields constrain their key only where the object has it, as a view there
@@ -312,6 +315,11 @@ export function decodeGraph(value: unknown): TypeGraph {
       if (typeof obj(b, ["value"]).value !== "string")
         throw Error("invalid string literal");
     },
+    bigintLit: (b) => {
+      const value = obj(b, ["value"]).value;
+      if (typeof value !== "number" || !Number.isInteger(value))
+        throw Error("invalid bigint literal");
+    },
     refs: (b) => {
       const r = objOptional(b, ["first", "rest", "views"], ["optional", "methods", "bounds"]);
       fields(r.first);
@@ -461,6 +469,7 @@ function clauseText(c: Clause): string {
   // The reader shows the number, not the bit pattern that identifies it.
   if ("numLit" in c) return String(numberOfBits(c.numLit.bits));
   if ("strLit" in c) return JSON.stringify(c.strLit.value);
+  if ("bigintLit" in c) return `${c.bigintLit.value}n`;
   if ("list" in c)
     return [c.list.first, ...c.list.rest].map(printTuple).join(" & ");
   if ("pack" in c)

@@ -39,7 +39,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { Atom } from "./claim.mts";
 import type { DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
-import { optionalTerm, restPositions, REST_CONTRACT, typeTerm, type TermScope } from "./type-term.mts";
+import { bigintText, optionalTerm, restPositions, REST_CONTRACT, typeTerm, type TermScope } from "./type-term.mts";
 import type {
   Ast,
   BindingAst,
@@ -49,6 +49,8 @@ import type {
   Stmt,
   TypeParamAst,
   ArithOp,
+  BinaryOp,
+  UnaryOp,
   ArrayElemAst,
   TypeofShape,
 } from "./fragment.mts";
@@ -554,6 +556,24 @@ class Gate {
         lit: { a: "stringlit", v: node.text },
       };
 
+    // A bigint literal, negated or not, is its integer whatever its spelling.
+    if (ts.isBigIntLiteral(node))
+      return {
+        k: "lit",
+        pos: this.span(node),
+        lit: { a: "bigintlit", v: bigintText(node.text, false) },
+      };
+    if (
+      ts.isPrefixUnaryExpression(node) &&
+      node.operator === ts.SyntaxKind.MinusToken &&
+      ts.isBigIntLiteral(node.operand)
+    )
+      return {
+        k: "lit",
+        pos: this.span(node),
+        lit: { a: "bigintlit", v: bigintText(node.operand.text, true) },
+      };
+
     if (
       ts.isPrefixUnaryExpression(node) &&
       node.operator === ts.SyntaxKind.MinusToken &&
@@ -716,6 +736,13 @@ class Gate {
       return this.update(node, node.operand, node.operator, null, false);
 
     if (ts.isPrefixUnaryExpression(node)) {
+      const unary: Record<number, UnaryOp> = {
+        [ts.SyntaxKind.MinusToken]: "neg",
+        [ts.SyntaxKind.PlusToken]: "plus",
+        [ts.SyntaxKind.TildeToken]: "bitNot",
+      };
+      const op = unary[node.operator];
+      if (op) return { k: "unary", pos: this.span(node), op, e: this.expr(node.operand) };
       if (node.operator !== ts.SyntaxKind.ExclamationToken)
         this.fail(node, "unary operator outside the fragment");
       return { k: "not", pos: this.span(node), e: this.expr(node.operand) };
@@ -1043,6 +1070,7 @@ class Gate {
       [ts.SyntaxKind.MinusEqualsToken]: "sub",
       [ts.SyntaxKind.AsteriskEqualsToken]: "mul",
       [ts.SyntaxKind.SlashEqualsToken]: "div",
+      [ts.SyntaxKind.AsteriskAsteriskEqualsToken]: "pow",
       [ts.SyntaxKind.PlusPlusToken]: "add",
       [ts.SyntaxKind.MinusMinusToken]: "sub",
     };
@@ -1071,6 +1099,7 @@ class Gate {
       case ts.SyntaxKind.MinusEqualsToken:
       case ts.SyntaxKind.AsteriskEqualsToken:
       case ts.SyntaxKind.SlashEqualsToken:
+      case ts.SyntaxKind.AsteriskAsteriskEqualsToken:
         return this.update(
           node,
           node.left,
@@ -1079,11 +1108,16 @@ class Gate {
           false,
         );
     }
-    const arithmetic: Record<number, ArithOp> = {
+    const arithmetic: Record<number, BinaryOp> = {
       [ts.SyntaxKind.PlusToken]: "add",
       [ts.SyntaxKind.MinusToken]: "sub",
       [ts.SyntaxKind.AsteriskToken]: "mul",
       [ts.SyntaxKind.SlashToken]: "div",
+      [ts.SyntaxKind.AsteriskAsteriskToken]: "pow",
+      [ts.SyntaxKind.LessThanToken]: "lt",
+      [ts.SyntaxKind.LessThanEqualsToken]: "le",
+      [ts.SyntaxKind.GreaterThanToken]: "gt",
+      [ts.SyntaxKind.GreaterThanEqualsToken]: "ge",
     };
     const arith = arithmetic[node.operatorToken.kind];
     if (arith)

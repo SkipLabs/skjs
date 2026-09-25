@@ -536,7 +536,7 @@ private def proofShape (origin : Span) :
 The default refusal is intentional for future forms until a proof rule exists. -/
 private partial def closureProof (c : Ctx) (env : List (String × GenericCertificate.Slot)) :
     Fragment.Expr → M (Option GenericCertificate.Proof)
-  | .lit _ (.vnum _) | .lit _ (.vstr _) => pure none
+  | .lit _ (.vnum _) | .lit _ (.vstr _) | .lit _ (.vbigint _) => pure none
   | .lit _ v => pure (some (.lit v))
   | .atEnv _ e => closureProof c env e
   | .var pos name => match proofLookup name env with

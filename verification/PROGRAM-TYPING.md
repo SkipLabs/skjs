@@ -83,6 +83,14 @@ $$
 \frac{}{\Gamma\vdash_G n:\mathsf{Number}}.
 $$
 
+A bigint literal has the same pair, `bigintLit` and `bigint`:
+
+$$
+\frac{}{\Gamma\vdash_G i\mathtt{n}:\mathsf{bigintLit}(i)}
+\qquad
+\frac{}{\Gamma\vdash_G i\mathtt{n}:\mathsf{BigInt}}.
+$$
+
 Functions take ordered parameter lists and a receiver. Write $\vec A$ for a
 signature's parameter types, $|\vec A|$ for its length and $R$ for its
 receiver: the `this` a call passes, which is not a parameter. In the
@@ -591,9 +599,58 @@ $$
 Writes at a greater index, or at one no contract names, and reads by a
 non-literal index into a tuple, have no rule; a program appends with `push`.
 
-Arithmetic has one rule, `arith`: two operands whose types answer the number
-test, combined by the double operation into a type representing the number
-family, never a singleton, since the result's bits are not typed. A tag test
+Every binary operator has one rule, `arith`, for arithmetic on numbers and on
+bigints and for relational comparison alike ([its
+meaning](SEMANTICS.md#operational-language), `binop`). A clause pair
+classifies the operation, $\operatorname{op}(op,c,d)$ (`opResult`), where
+$\mathsf{N}$ is `num` or `numLit`, $\mathsf{Z}$ is `bigint` or `bigintLit` and
+$\mathsf{S}$ is `str` or `strLit`:
+
+$$
+\operatorname{op}(op,c,d)=\begin{cases}
+\mathsf{bool} & op\ \text{relational},\ c,d\in\mathsf N\cup\mathsf Z\ \text{or}\ c,d\in\mathsf S\\
+\mathsf{num} & op\ \text{arithmetic},\ c,d\in\mathsf N\\
+\mathsf{bigint} & op\ \text{arithmetic},\ c,d\in\mathsf Z,\ \operatorname{right}(op,d)\\
+\text{none} & \text{otherwise}
+\end{cases}
+$$
+
+where $\operatorname{right}(/,d)$ holds only of $d=\mathsf{bigintLit}(i)$ with
+$i\neq0$, $\operatorname{right}({*}{*},d)$ only of $d=\mathsf{bigintLit}(i)$
+with $i\ge0$, and every other arithmetic operator's (`bigintRight`): a bigint
+divisor that may be zero, or an exponent that may be negative, throws, and the
+calculus has no throw, so the rule refuses it. $\operatorname{Operands}_G(op,A,B,r)$
+requires both types of clause rows and every clause pair of $A$ and $B$ to
+classify as $r$, and the result type must hold every value of the kind
+($\operatorname{covers}$): the number or bigint family exactly, or both Boolean
+literals:
+
+$$
+\frac{\Gamma\vdash_G a:A\quad\Gamma\vdash_G b:B\quad
+      \operatorname{Operands}_G(op,A,B,r)\quad\operatorname{covers}_G(N,r)}
+     {\Gamma\vdash_G a\mathbin{op}b:N}\ \textsc{arith}
+$$
+
+The result is never a singleton, since its value is not typed. `opResult_sound`
+proves the classification: on members of the two clauses $\mathsf{binop}$
+answers, with a value of the kind. So a number never meets a bigint in
+arithmetic (a `TypeError`), a string is compared only with a string, and a
+Boolean or object operand, which JavaScript would convert, has no rule, though
+TypeScript admits comparing two Booleans. The certificate premise
+(`OperatorTypes`) reads $r$ off the first clause pair and checks the rest.
+
+The unary numeric operators are derived: the operand's claimed type fixes its
+family, all numbers or all bigints, and the operator is the binary one with a
+constant right operand of that family, $-a\equiv a*(-1)$, $+a\equiv a*1$ and
+$\sim a\equiv a\mathbin{\hat{}}(-1)$, each exact on both families
+([semantics](SEMANTICS.md#operational-language)). $+a$ on a bigint throws a
+`TypeError`, and an operand of both families has no one constant: both are
+refused. The constant is its own node, typed by its literal rule; the operand's
+obligation establishes the family the lowering read. A compound assignment
+`x op= e` and an increment use the same rule at the target contract's family,
+an increment adding that family's one.
+
+A tag test
 whose answer the operand's type does not settle is typed by `test` as a Boolean
 holding both literals, so `ifBool` can branch on it; a settled answer still
 uses `ifTag`.

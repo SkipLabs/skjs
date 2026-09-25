@@ -633,18 +633,18 @@ theorem test_value_safe (k : Tag) (v : Val) (hv : isVal v = true) (p : Nat)
   | succ q =>
     refine Or.inl ⟨?_, ?_⟩ <;> cases tagHolds k v <;> simp [boolT, isVal]
 
-/-- **Arithmetic on two numbers answers.** The result is a number of the
-family `S` names, whatever its bits. -/
-theorem arith_value_safe {S : Fam} (op : Arith) (x y : UInt64) (n : Nat) (W : WorldT n)
-    (h : Heap) (hadm : WorldAdm W) (hok : HeapOk n W h)
-    (hr : ∀ m (U : WorldT m), S m U (.num (arithBits op x y))) :
-    Safe S n W h (.arith op (.num x) (.num y)) := by
+/-- **An operator that answers is safe.** Where `binop` gives the operands'
+result, the term takes one step to it, a value of whatever family `S` names. -/
+theorem arith_value_safe {S : Fam} (op : Arith) (a b v : Tm) (hv : binop op a b = some v)
+    (n : Nat) (W : WorldT n) (h : Heap) (hadm : WorldAdm W) (hok : HeapOk n W h)
+    (hr : ∀ m (U : WorldT m), S m U v) :
+    Safe S n W h (.arith op a b) := by
   cases n with
   | zero => trivial
   | succ p =>
     refine Or.inr ⟨trunc p (Nat.le_succ p) W, h, _, WExt_refl _, WorldAdm_trunc _ hadm,
-      .arithV, HeapOk_trunc p W h hok, ?_⟩
-    exact value_safe _ _ _ _ _ rfl (hr _ _)
+      .arithV hv, HeapOk_trunc p W h hok, ?_⟩
+    exact value_safe _ _ _ _ _ (binop_values hv).2.2 (hr _ _)
 
 /-- **Branching on a shape test.** The two branches are checked under the answer
 they run in, which is what makes this narrowing rather than a plain conditional:

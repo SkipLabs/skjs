@@ -16,6 +16,7 @@ export function claimOfTerm(term: TypeTerm): ClaimType {
     case "literal":
       return one(term.name === "true" || term.name === "false"
         ? { a: "booleanlit", v: term.name }
+        : term.name === "bigint" ? { a: "bigintlit", v: term.text }
         : { a: term.name === "number" ? "numberlit" : "stringlit", v: term.text });
     case "union": {
       const parts = term.parts.map(claimOfTerm);

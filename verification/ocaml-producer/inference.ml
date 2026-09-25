@@ -33,7 +33,7 @@ and substitute_atom ?meet solution = function
   | Named (id,args) -> Named (id,List.map (substitute ?meet solution) args)
   | Ctors signatures -> Ctors (List.map (substitute_signature ?meet solution) signatures)
   | (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Top
-    | Bigint | Symbol) as atom -> atom
+    | Bigint | Symbol | BigintLit _) as atom -> atom
 and substitute_pack ?meet solution = function
   | PackParameter identity as original ->
     (match List.assoc_opt identity solution with
@@ -84,12 +84,13 @@ let meet_atom a b =
   | Top,x | x,Top -> Some [x]
   | Num,NumLit _ -> Some [b] | NumLit _,Num -> Some [a]
   | Str,StrLit _ -> Some [b] | StrLit _,Str -> Some [a]
+  | Bigint,BigintLit _ -> Some [b] | BigintLit _,Bigint -> Some [a]
   | Ctors a,Ctors b -> Some [Ctors (a @ b)]
   | Shape _,_ | _,Shape _ | Exact _,_ | _,Exact _ | Named _,_ | _,Named _
   | Ctors _,_ | _,Ctors _ -> None
   | Bigint,Bigint -> Some [Bigint] | Symbol,Symbol -> Some [Symbol]
-  | (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | Symbol),
-    (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | Symbol) -> Some []
+  | (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | Symbol | BigintLit _),
+    (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | Symbol | BigintLit _) -> Some []
 
 let meet a b =
   if a=b then Some a else match a,b with
@@ -212,6 +213,7 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
       Atoms (List.filter (function
         | NumLit _ -> not (List.mem Num atoms)
         | StrLit _ -> not (List.mem Str atoms)
+        | BigintLit _ -> not (List.mem Bigint atoms)
         | _ -> true) atoms)
     | t -> t in
   let join = function [] -> None | first::rest -> Some (absorb (List.fold_left union first rest)) in

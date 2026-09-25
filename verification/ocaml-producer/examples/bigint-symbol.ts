@@ -1,5 +1,5 @@
-// Bigints and symbols are opaque values: bound, passed, stored and returned
-// at their types, and members of unions like any other primitive.
+// Bigints and symbols are bound, passed, stored and returned at their types,
+// and members of unions like any other primitive.
 export function keepBig(x: bigint): bigint {
   return x;
 }

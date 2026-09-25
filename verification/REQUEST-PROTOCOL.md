@@ -220,7 +220,7 @@ The evidence file is an object with one field, `certificate`, a list of
 one subtype-evidence list per outgoing edge. A derivation node names the
 [typing rule](PROGRAM-TYPING.md#judgments-and-constructor-views) it applies:
 `var`, `nul`, `undef`, `tru`, `fls`, `truLit`, `flsLit`, `numLit`, `num`,
-`strLit`, `str`, `funE`, `app`, `letE`, `alloc`,
+`strLit`, `str`, `bigintLit`, `bigint`, `funE`, `app`, `letE`, `alloc`,
 `read`, `readOptional`, `readDict`, `indexDict`, `write`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
 `unionVar`, `makeCallable`, `callCallable`, `readCallable`, `writeCallable`, `readView`, `readProto`, `arith`, `test`,
 `arrLit`, `elem`, `elemOpt`, `elemAny`, `setElem`, `len`, `funRest`, `makeCallableRest`,
@@ -237,13 +237,16 @@ the bound the view states, as `read` reads either's invariant fields; no rule wr
 a record's own-key bounds does not admit from the prototype the record holds under the
 reserved key `[[proto]]`, at the prototype's field or view for the key; it
 names the prototype's type, `{"readProto": {"proto": P}}`.
-`arith` combines two operands the number test answers for into the number
-family; `test` types a tag test whose answer the operand's type does not settle
+`arith` applies a binary operator to two operands whose types it answers for
+pair by pair, arithmetic on two numbers or two bigints, a comparison on two
+numeric operands or two strings, into the family of its result kind; `test` types a tag test whose answer the operand's type does not settle
 as a Boolean holding both literals, for `ifBool` to branch on. `ifTrue` and `ifFalse` are the two answers of the single
 shape-test rule `ifTag`, split so that the evidence records which answer it
 relies on; `truLit` and `flsLit` are the Boolean singleton introductions, and
 `numLit` and `num` the numeric ones, a literal at its own singleton and at the
-family, and `strLit` and `str` the same for strings. These names are not written anywhere: `RequestJson.lean` derives
+family, `strLit` and `str` the same for strings, and `bigintLit` and `bigint`
+for bigints. A bigint term and clause carry the integer as a JSON number of any
+length, `{"bigint":{"value":-5}}` and `{"bigintLit":{"value":-5}}`. These names are not written anywhere: `RequestJson.lean` derives
 ToJson/FromJson for `Rule`, so this list is the inductive's constructors and a
 rule added there extends the protocol. `verification/tests/rule-inventory.mts`
 holds the two to the same set. Expression sequents repeat their

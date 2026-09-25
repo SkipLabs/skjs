@@ -38,7 +38,9 @@ export type Reference = {
  * equation or a function annotation, read by type-term.mts. */
 export type TypeTerm =
   | { k: "atom"; name: "null" | "undefined" | "boolean" | "number" | "string" | "bigint" | "symbol" | "unknown" | "never" | "void"; span: Span }
-  | { k: "literal"; name: "true" | "false" | "string" | "number"; text: string; span: Span }
+  /* A number's `text` is its decimal spelling, a bigint's its canonical
+     decimal integer; either may be negative. */
+  | { k: "literal"; name: "true" | "false" | "string" | "number" | "bigint"; text: string; span: Span }
   | { k: "union" | "intersection"; parts: TypeTerm[]; span: Span }
   | { k: "array"; readonly: boolean; element: TypeTerm; span: Span }
   | { k: "tuple"; readonly: boolean; required: TypeTerm[];

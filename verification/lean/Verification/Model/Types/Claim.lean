@@ -22,6 +22,8 @@ inductive Val where
   | vnum (bits : UInt64)
   | vstr (s : String)
   | vbool (b : Bool)
+  /-- A bigint, as the integer it is. -/
+  | vbigint (value : Int)
   deriving DecidableEq, Repr
 
 inductive Atom where
@@ -40,6 +42,8 @@ inductive Atom where
   /-- Every bigint, and every symbol. -/
   | bigint
   | symbol
+  /-- One bigint: a bigint literal type, `1n`. -/
+  | bigintLit (value : Int)
   deriving DecidableEq, Repr
 
 /-- A type: `unknown` (`top`), or the union of a finite list of atoms.
@@ -61,6 +65,8 @@ def inhabits : Val → Atom → Bool
   | .vnum b, .numLit c => b == c
   | .vstr s, .strLit t => s == t
   | .vbool b, .boolLit c => b == c
+  | .vbigint _, .bigint => true
+  | .vbigint i, .bigintLit j => i == j
   | _, .void => true
   | _, _ => false
 
@@ -79,6 +85,16 @@ def decodeBoolLiteral (j : Json) : Except String Bool := do
   | "false" => return false
   | _ => throw "boolean literal must be exactly true or false"
 
+/-- A bigint literal's value, written as its canonical decimal integer: an
+optional minus sign, then digits without a leading zero. The parser writes
+every spelling (`0x10n`, `1_000n`, `-5n`) this way, so one value has one
+spelling. -/
+def decodeBigint (text : String) : Except String Int :=
+  match text.toInt? with
+  | some i => if toString i == text then .ok i
+    else .error s!"not a canonical bigint literal: {text}"
+  | none => .error s!"not a bigint literal: {text}"
+
 def decodeAtom (j : Json) : Except String Atom := do
   let a ← jStr (← jField j "a")
   match a with
@@ -93,6 +109,7 @@ def decodeAtom (j : Json) : Except String Atom := do
   | "void" => return .void
   | "bigint" => return .bigint
   | "symbol" => return .symbol
+  | "bigintlit" => return .bigintLit (← decodeBigint (← jStr (← jField j "v")))
   | other => .error s!"unknown type atom '{other}'"
 
 /-- The literal forms. An `Expr.lit` node denotes one value, so a "literal"
@@ -107,6 +124,7 @@ def decodeVal (j : Json) : Except String Val := do
   | "numberlit" => return .vnum (← Model.literalBits (← jStr (← jField j "v")))
   | "stringlit" => return .vstr (← jStr (← jField j "v"))
   | "booleanlit" => return .vbool (← decodeBoolLiteral j)
+  | "bigintlit" => return .vbigint (← decodeBigint (← jStr (← jField j "v")))
   | other => .error s!"'{other}' is not a literal value"
 
 /-- A type SKJS could not express in the supported fragment decodes as `none`; the

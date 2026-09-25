@@ -8,7 +8,13 @@ import type { Atom } from "./claim.mts";
 import type { DeclarationDocument, PropertyKey, TypeTerm } from "./declaration-types.mts";
 import type { Span } from "./span.mts";
 
-export type ArithOp = "add" | "sub" | "mul" | "div";
+/** The arithmetic a compound assignment may perform. */
+export type ArithOp = "add" | "sub" | "mul" | "div" | "pow";
+/** Every binary operator on primitive operands: arithmetic, and the
+ * relational comparisons `<`, `<=`, `>`, `>=`. */
+export type BinaryOp = ArithOp | "lt" | "le" | "gt" | "ge";
+/** `-e`, `+e` and `~e`. */
+export type UnaryOp = "neg" | "plus" | "bitNot";
 export type TypeofShape = "number" | "string" | "boolean" | "undefined" | "function" | "bigint" | "symbol";
 export type Expr =
   | { k: "id"; pos: Span; name: string }
@@ -43,8 +49,12 @@ export type Expr =
   | { k: "arrayAssign"; pos: Span; targets: ArrayElemAst[]; rhs: Expr }
   | { k: "indexWrite"; pos: Span; receiver: Expr; key: Expr; rhs: Expr }
   | { k: "bin"; pos: Span; op: string; l: Expr; r: Expr }
-  /* Arithmetic on two numbers: `l`, then `r`, then the double operation. */
-  | { k: "arith"; pos: Span; op: ArithOp; l: Expr; r: Expr }
+  /* A binary operator on primitive operands: `l`, then `r`, then the
+     operation, as JavaScript performs it on two numbers, two bigints or, for
+     a comparison, two strings or a number and a bigint. */
+  | { k: "arith"; pos: Span; op: BinaryOp; l: Expr; r: Expr }
+  /* A unary numeric operator on the operand's value. */
+  | { k: "unary"; pos: Span; op: UnaryOp; e: Expr }
   /* `target op= rhs`, `target++` and the like: the target's parts are
      evaluated once, its current value read, the right side (1 for an
      increment) evaluated, the operation applied and the result written back.

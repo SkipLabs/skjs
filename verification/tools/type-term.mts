@@ -8,8 +8,16 @@ import type { Span } from "./span.mts";
 import type { PropertyKey, TypeTerm } from "./declaration-types.mts";
 
 // Numeric literals in the fragment are plain decimals; every other spelling
-// (hex, binary, octal, separators, bigint) is outside it.
+// (hex, binary, octal, separators) is outside it. A bigint literal is read as
+// its integer, whatever its spelling (`bigintText`).
 const DECIMAL = /^[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?$/;
+
+/** A bigint literal's value as its canonical decimal integer: `0x10n`, `1_0n`
+ * and `16n` are all `16`. */
+export function bigintText(literal: string, negative: boolean): string {
+  const value = BigInt(literal.slice(0, -1).replace(/_/g, ""));
+  return String(negative ? -value : value);
+}
 
 export const REST_CONTRACT =
   "a rest parameter needs a tuple of required positions or a mutable array";
@@ -103,10 +111,16 @@ export function typeTerm(scope: TermScope, node: TypeNode | undefined, at: Node 
     // The literal's value: a string without its quotes, a number as its
     // decimal spelling.
     if (ts.isStringLiteral(literal)) return { k: "literal", name: "string", text: literal.text, span };
-    if (ts.isNumericLiteral(literal)) {
-      if (!DECIMAL.test(literal.text)) scope.fail(literal, "non-decimal numeric literal type");
-      return { k: "literal", name: "number", text: literal.text, span };
+    // A numeric literal type, possibly negated (`-1`, `-5n`).
+    const negated = ts.isPrefixUnaryExpression(literal) &&
+      literal.operator === ts.SyntaxKind.MinusToken ? literal.operand : null;
+    const numeric = negated ?? literal;
+    if (ts.isNumericLiteral(numeric)) {
+      if (!DECIMAL.test(numeric.text)) scope.fail(literal, "non-decimal numeric literal type");
+      return { k: "literal", name: "number", text: (negated ? "-" : "") + numeric.text, span };
     }
+    if (ts.isBigIntLiteral(numeric))
+      return { k: "literal", name: "bigint", text: bigintText(numeric.text, negated !== null), span };
     return scope.fail(literal, "literal type outside the fragment");
   }
   if (ts.isTypeLiteralNode(node)) return members(scope, node.members, node, span, false);
@@ -258,7 +272,7 @@ function intersection(scope: TermScope, node: ts.IntersectionTypeNode, span: Spa
         case "binder": return "param";
         case "array": case "tuple": return "array";
         case "literal": return part.name === "true" || part.name === "false" ? "booleanlit"
-          : part.name === "number" ? "numberlit" : "stringlit";
+          : part.name === "number" ? "numberlit" : part.name === "bigint" ? "bigintlit" : "stringlit";
         case "atom":
           if (part.name !== "unknown" && part.name !== "never") return part.name;
       }

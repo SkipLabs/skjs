@@ -128,6 +128,7 @@ theorem Typed_of_check {ps : List Parameter} :
         | false => simp only [Proof.check, Option.some.injEq, Prod.mk.injEq] at hc; obtain ⟨rfl, rfl⟩ := hc; exact .fls
       | vnum _ => simp [Proof.check] at hc
       | vstr _ => simp [Proof.check] at hc
+      | vbigint _ => simp [Proof.check] at hc
   | .widen expected body, Γ, t, A, hc => by
       cases hb : body.check ps Γ with
       | none => simp [Proof.check, hb] at hc

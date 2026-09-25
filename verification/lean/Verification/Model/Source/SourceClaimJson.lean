@@ -764,7 +764,7 @@ private partial def exprSites : Fragment.Expr → Sites
   | .lambda p _ _ _ defaults _ _ e =>
     defaults.attach.foldl (fun acc ⟨d,_⟩ => joinSites acc (exprSites d.2))
       (joinSites ([],[p],[p]) (exprSites e))
-  | .shapeTest p _ _ e | .not p e | .cast p _ e | .read p _ e => joinSites ([],[p],[]) (exprSites e)
+  | .shapeTest p _ _ e | .not p e | .unary p _ e | .cast p _ e | .read p _ e => joinSites ([],[p],[]) (exprSites e)
   | .alloc p _ es => es.foldl (fun acc a => joinSites acc (exprSites a)) ([],[p],[])
   | .withValue p a b _ _ | .write p _ a b | .singletonTest p _ _ _ a b | .equality p _ a b | .coalesce p a b | .logical p _ a b => joinSites ([],[p],[]) (joinSites (exprSites a) (exprSites b))
   -- An assignment is an expression site, and the name it assigns is not one:

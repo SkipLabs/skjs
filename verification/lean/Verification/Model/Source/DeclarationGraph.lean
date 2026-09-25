@@ -142,6 +142,7 @@ private def literalAtom (term : Json) : Except String Json := do
   | "false" => return Json.mkObj [("a", toJson "booleanlit"), ("v", toJson "false")]
   | "number" => return Json.mkObj [("a", toJson "numberlit"), ("v", ← field term "text")]
   | "string" => return Json.mkObj [("a", toJson "stringlit"), ("v", ← field term "text")]
+  | "bigint" => return Json.mkObj [("a", toJson "bigintlit"), ("v", ← field term "text")]
   | _ => throw "unsupported source literal"
 
 /-- The row of a union of clauses: the first row with exactly those clauses

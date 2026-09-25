@@ -140,7 +140,8 @@ def numT : Fam := fun _ _ v => ∃ b, v = .num b
 
 /-- Every string. As with numbers, the family is the union of its singletons. -/
 def strT : Fam := fun _ _ v => ∃ s, v = .str s
-/-- Bigints and symbols: opaque values, each one an identity. -/
+/-- Every bigint, as the union of its singletons, as numbers are; and every
+symbol, an opaque identity. -/
 def bigintT : Fam := fun _ _ v => ∃ i, v = .bigint i
 def symbolT : Fam := fun _ _ v => ∃ i, v = .sym i
 

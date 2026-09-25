@@ -236,7 +236,7 @@ def graph (r : Request) : NormalGraph Nat := tableGraph r.types
 def validTy (bound : Nat) (A : Ty Nat) : Bool := A.all (fun i => i < bound)
 
 def clauseTypes : Clause (Ty Nat) → List (Ty Nat)
-  | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .str | .strLit _ | .bigint | .symbol
+  | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .str | .strLit _ | .bigint | .bigintLit _ | .symbol
   | .top => []
   | .list a bs => (a :: bs).flatMap fun t => t.required ++ t.optional ++ t.rest.toList
   | .pack a bs => (a :: bs).flatMap fun t => t.required ++ t.optional ++ t.rest.toList

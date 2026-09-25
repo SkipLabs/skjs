@@ -900,6 +900,10 @@ modeling choices; they do not replace proof.
   by checking that two slots have compatible types.
 - Decoding represents the submitted program, requirements and claims faithfully.
 - The calculus's execution model agrees with the supported JavaScript behavior.
+  For the operators this includes that Lean's compiled `Float` operations are
+  the IEEE-754 double ones and `Float.pow` is C's `pow`, which `binop` corrects
+  where JavaScript's `**` differs; node's values for the edge cases are
+  checked in `Tests/SourceExtractionTests.lean`.
 - `Array.prototype` meets `ArrayProto`: the engine's native array methods,
   invoked on an array, behave as TypeScript's declarations of `ReadonlyArray`
   and `Array` state them, as filtered by the overlay
@@ -1692,10 +1696,12 @@ name and the conjunction is one callable carrying every instance's signatures
 (`Scheme.moduleInstances`). The first rule is an assumption the result is
 relative to; the second is sound because each instance holds of the value.
 
-**Bigints and symbols.** The calculus has bigint and symbol values, each an
-opaque identity: bound, passed, stored and shape-tested, never computed with.
-The graph has their families, and `bigint` and `symbol` annotations lower to
-them. The heap's property keys are strings or symbols (`PropKey`), so a
+**Bigints and symbols.** The calculus has bigint and symbol values. A bigint
+is its integer, which the binary operators compute with
+([Numeric operators and bigints](#numeric-operators-and-bigints)); a symbol is
+an opaque identity: bound, passed, stored and shape-tested, never computed
+with. The graph has their families and the bigint singletons, and `bigint`,
+`symbol` and bigint literal-type annotations lower to them. The heap's property keys are strings or symbols (`PropKey`), so a
 symbol-keyed field is its own key: no string-keyed access reaches it and a
 string index signature does not constrain it. A declaration's member `[x]: T`, where `x`
 resolves to a `const x: unique symbol`, is a field keyed by that symbol. The
@@ -2216,7 +2222,7 @@ assumptions and historical coverage counts are not an implementation plan.
 | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Flow refinement across loops and calls | State which observations survive writes and calls, and prove branch/refinement transfer rules. Stable cell contracts alone do not supply these facts.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Mutable structural objects             | Specify field presence, width, aliasing and allowed mutation; extend beyond the current invariant cells and export their types.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| More primitives and operators          | Numbers are admitted as opaque values with singleton literal types, in closure signatures and as the storage contract of a mutable local; finite singleton comparisons are supported, and a comparison on the broad family branches both ways; arithmetic on numbers is the IEEE-754 double operation yielding the number family, with compound assignments, increments and logical assignments to fields and elements evaluating their target once, the Boolean logical forms needing a Boolean target; strings are admitted on the same terms, opaque with literal singletons and equality against a literal; concatenation, general equality and truthiness are not, and each needs its runtime behavior defined and agreement validated. Numeric current-content predicates now cover both singletons and the number family, with checked transfer across graph edges.                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| More primitives and operators          | Numbers are admitted as opaque values with singleton literal types, in closure signatures and as the storage contract of a mutable local; finite singleton comparisons are supported, and a comparison on the broad family branches both ways; arithmetic on numbers is the IEEE-754 double operation yielding the number family, and on bigints the integer operation yielding the bigint family (a bigint divisor or exponent only at a singleton that cannot throw), relational comparison of numbers, bigints and strings yields a Boolean, and `-`, `+` and `~` are the binary operators with a constant ([Numeric operators and bigints](#numeric-operators-and-bigints)), with compound assignments, increments and logical assignments to fields and elements evaluating their target once, the Boolean logical forms needing a Boolean target; strings are admitted on the same terms, opaque with literal singletons and equality against a literal; concatenation, general equality and truthiness are not, and each needs its runtime behavior defined and agreement validated. Numeric current-content predicates now cover both singletons and the number family, with checked transfer across graph edges.                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Graph-backed closure bodies            | Extend the call/body interface if source functions require graph control flow internally; surrounding graph loops are insufficient.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Generics and bounds                    | The rigid model slice is in [TypeParams.lean](lean/Verification/Model/Types/TypeParams.lean). Source extraction of identity, `T extends boolean`, annotated and inferred immutable copies, and extra `T` parameters is in [GenericSource.lean](lean/Verification/Model/Source/GenericSource.lean). Declaration applications over rigid binders are expanded from their source equations in [DeclarationGraph.lean](lean/Verification/Model/Source/DeclarationGraph.lean); [GenericAlias.lean](lean/Verification/Model/Source/GenericAlias.lean) now only expands alias atoms in SKJS's exported claims. Distinct parameters and dependent upper-bound chains in variable-copy bodies are checked using [GenericBounds.lean](lean/Verification/Model/Types/GenericBounds.lean). [TypeSchemes.lean](lean/Verification/Model/Types/TypeSchemes.lean) gives quantified callable semantics; source extraction connects the narrow unbounded local-closure slice described above, checks introduction universally, and compiles checked ground eliminations to graph arrows. Remaining: calls to generic declarations, generic callbacks, bounded or nested local schemes, general quantified closure bodies, conditional types, higher-rank polymorphism and parameter-changing recursion. Generic parameters, inference variables and hidden object type arguments are not interchangeable. Observing several calls is not universal certification; the separate introduction check is. |
 | Difference and negation                | Supply sound rules or approximations: pointwise complement need not preserve admissibility. They do not follow from positive normalization.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
@@ -3180,6 +3186,56 @@ The TypeScript producer follows the same explicit guard edges for fixed binding
 contracts and immutable captures. [guards.ts](tests/callables/guards.ts) checks
 mixed unions, a returning negative guard captured by a thunk, and a call operand.
 Forged polarity, variable identity and stronger result guarantees are rejected.
+
+### Numeric operators and bigints
+
+Every binary operator the fragment has on primitive operands is one term,
+`arith`, with one meaning (`binop`, [semantics](SEMANTICS.md#operational-language))
+and one typing rule ([`arith`](PROGRAM-TYPING.md#judgments-and-constructor-views)):
+`+ - * /` and `**` on two numbers or two bigints, and `< <= > >=` on two
+numeric operands of either kind or on two strings. `**=` is a compound
+assignment through the same rule, as `+=` is. The decisions, each from what
+JavaScript does:
+
+- **Where JavaScript throws, the rule refuses.** Arithmetic mixing a number and
+  a bigint throws a `TypeError`, as does `+` on a bigint; a bigint division by
+  zero and a negative bigint exponent throw a `RangeError`. The calculus has no
+  exceptions: a throw is a stuck term, which safety rules out, so a program
+  that may throw has no derivation. The divisor of a bigint `/` must therefore
+  be a nonzero singleton, and a bigint exponent a non-negative one; a divisor
+  typed `bigint` is refused though TypeScript accepts it (a `RangeError` is
+  not a type error to TypeScript). Modelling a throw as a stop would admit
+  these; it needs abrupt completion in the calculus, the same work as
+  `try`/`catch` ([Later feature gates](#later-feature-gates)).
+- **Where JavaScript converts, the rule refuses.** A relational operator on a
+  string and a number converts the string, on an object runs its `valueOf`, on
+  Booleans converts them to numbers. TypeScript refuses the first and admits
+  the others; the rule admits only the combinations whose comparison is the
+  primitive order of the operands as they are: two numeric values, compared
+  exactly across number and bigint (no rounding of the bigint to a double), or
+  two strings, by UTF-16 code units. Comparing two Booleans is well defined
+  and refused, an incompleteness (`boolean-comparison`).
+- **Types say what is true, and no more.** The result of arithmetic is the
+  family of its operands, never a singleton; a comparison is a Boolean holding
+  both literals. `1n + 2n` is a `bigint`, as `1 + 2` is a `number`.
+- **Unary operators are the binary one.** `-x` is `x * -1`, `+x` is `x * 1`
+  and `~x` is `x ^ -1`, exactly, on doubles (`^` is exclusive or after
+  `ToInt32`, as JavaScript's) and on integers. Lean lowers the source form by
+  the operand's claimed family, which the operand's own obligation
+  establishes, so no second mechanism types them. `^` itself is in the
+  calculus for `~`; the gate does not admit the binary bitwise operators, nor
+  `%`, whose double remainder the calculus does not define.
+- **A bigint is its integer.** Its identity is its value, as a number's is its
+  double, so `16n`, `0x10n` and `1_6n` are one singleton. The trusted parser
+  writes every bigint literal, and every bigint literal type, as its
+  canonical decimal integer (JavaScript's own `BigInt` of the spelling), and
+  folds a negated literal into a negative one, as it does for numbers; Lean
+  refuses a non-canonical spelling. `typeof x === "bigint"` is the existing
+  `isBigint` shape test, which a bigint singleton answers as the family does.
+- **The `BigInt` function is a library global.** `BigInt(v)` reads the global
+  `BigInt`, whose declaration merges an interface and a variable and is
+  called rather than read through a member, which the global reader does not
+  admit yet; it is library-globals work, not this rule's.
 
 ### Null predicates through union elimination
 

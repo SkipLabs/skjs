@@ -152,6 +152,7 @@ function walkExpr(e: Expr, out: Sites): void {
       return;
     case "typeofTest":
     case "not":
+    case "unary":
     case "read":
     case "cast":
       addExpr(out, e.pos, e.k);

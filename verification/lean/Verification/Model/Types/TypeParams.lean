@@ -45,6 +45,7 @@ def substClause [DecidableEq ι] (p : ι) (A : List ι) : Clause (List ι) → C
   | .str => .str
   | .strLit v => .strLit v
   | .bigint => .bigint
+  | .bigintLit v => .bigintLit v
   | .symbol => .symbol
   | .refs a bs vs os ms ks => .refs (substFields p A a) (bs.map (substFields p A)) (substFields p A vs)
       (os.map (·.map (substTy p A))) (ms.map (MethodMembers.Sig.map (substTy p A))) ks

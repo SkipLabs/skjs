@@ -49,7 +49,8 @@ The clauses, with what each denotes:
 | `bool`, `boolLit b` | true or false; exactly $b$ |
 | `num`, `numLit x` | any number; exactly the number with bit pattern $x$ |
 | `str`, `strLit s` | any string; exactly $s$ |
-| `bigint`, `symbol` | any bigint; any symbol (opaque identities) |
+| `bigint`, `bigintLit i` | any bigint; exactly the bigint $i\in\mathbb Z$ |
+| `symbol` | any symbol (an opaque identity) |
 | `refs` | a plain object under record contracts, readonly views, optional fields and methods ([Records](#records)) |
 | `dict` | a `refs` object whose present string keys also meet readonly and writable index contracts |
 | `list` | an array under one or more tuple contracts ([Arrays](#arrays)) |
@@ -64,7 +65,11 @@ number, string, array, bigint, symbol, class or argument list. A value has
 exactly one shape, and `top` has none.
 
 Singletons sit below their primitive: $\mathsf{boolLit}\,b\le\mathsf{bool}$,
-$\mathsf{numLit}\,x\le\mathsf{num}$, $\mathsf{strLit}\,s\le\mathsf{str}$.
+$\mathsf{numLit}\,x\le\mathsf{num}$, $\mathsf{strLit}\,s\le\mathsf{str}$,
+$\mathsf{bigintLit}\,i\le\mathsf{bigint}$; two singletons of one primitive
+meet only when equal, and a singleton meets its family at itself. A bigint's
+identity is its integer, so every spelling of one (`16n`, `0x10n`, `1_6n`)
+is one singleton.
 
 Lean: `Clause`, `semWithArgs`, `shape`, `valueShape`
 (`Types/PositiveNormalization.lean`).

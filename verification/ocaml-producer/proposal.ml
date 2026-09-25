@@ -23,7 +23,7 @@ let rec plausible_subtype actual expected =
   | Atoms _,Atoms [Top] -> true
   | Atoms xs,Atoms ys -> List.for_all (fun x -> List.exists (fun y ->
       x=y || match x,y with
-      | NumLit _,Num | StrLit _,Str -> true
+      | NumLit _,Num | StrLit _,Str | BigintLit _,Bigint -> true
       | _ -> false) ys) xs
   | Union parts,_ -> List.for_all (fun part -> plausible_subtype part expected) parts
   | _,Union parts -> List.exists (plausible_subtype actual) parts
@@ -34,6 +34,7 @@ let literal_type = function
   | LNull -> Atoms [Nul] | LUndefined -> Atoms [Undef]
   | LBool true -> Atoms [True] | LBool false -> Atoms [False]
   | LNumber s -> number_literal s | LString s -> Atoms [StrLit s]
+  | LBigint s -> Atoms [BigintLit s]
 
 (* Read permissions do not imply write permissions. All candidates still pass
    through reconstructed obligations, including readonly view conversion. *)
@@ -220,6 +221,13 @@ let rec object_hint declarations seen = function
     | [shape] -> Some shape | _ -> None)
   | Rigid _ | Meet _ -> None
 
+(* The numeric family of an operand: bigint where every atom is one. *)
+let numeric_family declarations t =
+  match declared_head declarations [] t with
+  | Atoms (_::_ as atoms) when List.for_all (function Bigint | BigintLit _ -> true | _ -> false) atoms ->
+    Atoms [Bigint]
+  | _ -> Atoms [Num]
+
 (* Branch restrictions only affect immutable values. Unknown/rigid predicates
    conservatively retain their type; proof checking validates each narrower cut. *)
 let restrict literal equal t = match t with
@@ -228,6 +236,8 @@ let restrict literal equal t = match t with
         | Nul,LNull | Undef,LUndefined | True,LBool true | False,LBool false -> Some true
         | NumLit a,LNumber b -> Some (Int64.float_of_bits a = float_of_string b)
         | StrLit a,LString b -> Some (a=b)
+        | BigintLit a,LBigint b -> Some (a=b)
+        | Bigint,LBigint _ -> None
         | (Top | Num | Str | Shape _ | Exact _ | Named _),_ -> None
         | _,_ -> Some false in
       match known with Some result -> result=equal | None -> true) xs)
@@ -243,7 +253,7 @@ let rec branch env cond truth = match cond.node with
     let has = function
       | Num | NumLit _ -> Some (shape="number") | Str | StrLit _ -> Some (shape="string")
       | True | False -> Some (shape="boolean") | Undef -> Some (shape="undefined")
-      | Bigint -> Some (shape="bigint") | Symbol -> Some (shape="symbol")
+      | Bigint | BigintLit _ -> Some (shape="bigint") | Symbol -> Some (shape="symbol")
       | Shape s -> Some (shape="function" && s.calls<>[])
       | Exact _ -> Some false
       (* A class is a function to `typeof`. *)
@@ -395,7 +405,13 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | Literal l -> literal_type l
     | Not e -> ignore (expr env e); bool
     | TypeofTest (_,_,e) -> ignore (expr env e); bool
-    | Arith (_,l,r) -> ignore (expr env l); ignore (expr env r); Atoms [Num]
+    (* A comparison is a Boolean; arithmetic is of its operands' numeric
+       family, bigint where the left one is all bigints, else number. Lean
+       checks the operands pair by pair. *)
+    | Arith (op,l,r) ->
+      let left = expr env l in ignore (expr env r);
+      if relational op then bool else numeric_family declarations left
+    | Unary (_,e) -> numeric_family declarations (expr env e)
     | Equality (_,l,r) -> ignore (expr env l); ignore (expr env r); bool
     | Alloc fs ->
       let contract = Option.bind expected (object_hint declarations []) in

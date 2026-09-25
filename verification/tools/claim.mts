@@ -59,6 +59,8 @@ export type Atom =
       readonly: boolean;
     }
   | { a: "stringlit" | "numberlit" | "booleanlit"; v: string }
+  /* One bigint, `v` its canonical decimal integer: `-5`, never `-05`. */
+  | { a: "bigintlit"; v: string }
   | { a: "param"; name: string }
   | { a: "alias"; name: string; args: ClaimType[] }
   | RecordAtom
@@ -118,8 +120,11 @@ function atom(v: unknown): void {
     case "booleanlit":
     case "numberlit":
     case "stringlit":
+    case "bigintlit":
       keys(o, ["a", "v"]);
       str(o.v);
+      if (o.a === "bigintlit" && !/^(0|-?[1-9][0-9]*)$/.test(o.v))
+        throw Error("invalid bigint literal");
       if (o.a === "booleanlit" && o.v !== "true" && o.v !== "false")
         throw Error("invalid boolean literal");
       if (o.a === "numberlit" && !Number.isFinite(Number(o.v)))

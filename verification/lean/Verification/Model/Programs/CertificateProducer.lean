@@ -469,6 +469,11 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         if checkTree G (leaf B .strLit) then coerce G pool (leaf B .strLit) A
         else if checkTree G (leaf B .str) then coerce G pool (leaf B .str) A
         else none
+    | .bigint _ =>
+      return (A :: pool).findSome? fun B =>
+        if checkTree G (leaf B .bigintLit) then coerce G pool (leaf B .bigintLit) A
+        else if checkTree G (leaf B .bigint) then coerce G pool (leaf B .bigint) A
+        else none
     | .make (.closure arity b) .nul =>
       return (A :: pool).findSome? fun F => do
         match expand G F with
@@ -681,13 +686,17 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           if checkTree G e then coerce G pool e A else none
       if let some e := direct then return some e
       return splitReceiver a
-    | .arith _ a b =>
-      -- Each operand at a pool type the number test answers for; the result
-      -- at the requested type when it is the number family, else coerced.
-      let numbers := pool.filter fun R => decide (Answers G R .isNum true)
-      return numbers.findSome? fun R => do
+    | .arith op a b =>
+      -- Each operand at a pool type of the operand clauses the operator
+      -- takes (numbers and bigints; strings too for a comparison), the right
+      -- one only where the pair classifies; the rule then checks every pair
+      -- and the result, at the requested type when it holds the result's
+      -- kind, else coerced.
+      let operands := pool.filter fun R => G.plainTy R && !(expand G R).isEmpty &&
+        (expand G R).all fun c => numberClause c || bigintClause c || (op.relational && stringClause c)
+      return operands.findSome? fun R => do
         let ea ← recur Γ a R
-        numbers.findSome? fun S => do
+        (operands.filter fun S => (operandsResult G op R S).isSome).findSome? fun S => do
           let eb ← recur Γ b S
           (A :: pool).findSome? fun N =>
             let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ .arith [ea,eb]

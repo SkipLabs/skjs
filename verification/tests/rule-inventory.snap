@@ -8,6 +8,8 @@ HasTy  (Programs/ProgramTyping.lean)
   flsLit : Represents G A (.boolLit false) → HasTy G Γ .fls A
   numLit : Represents G A (.numLit b) → HasTy G Γ (.num b) A
   num : Represents G A .num → HasTy G Γ (.num b) A
+  bigintLit : Represents G A (.bigintLit i) → HasTy G Γ (.bigint i) A
+  bigint : Represents G A .bigint → HasTy G Γ (.bigint i) A
   strLit : Represents G A (.strLit s) → HasTy G Γ (.str s) A
   str : Represents G A .str → HasTy G Γ (.str s) A
   funE {Γ : List (Ty ι)} {F : Ty ι} {L : List (Ty ι × List (Ty ι) × Ty ι)} {S : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)} {arity : Nat} {b : Tm} : Represents G F (.arrs L S) → (∀ p ∈ offerRows L S, arity ≤ p.2.1.length) → (∀ p ∈ offerRows L S, HasTy G (bodyFrame arity p Γ) b p.2.2) → HasTy G Γ (.make (.closure arity b) .nul) F
@@ -27,7 +29,7 @@ HasTy  (Programs/ProgramTyping.lean)
   readDict {f : String} : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix os ms ks cs) → A ∈ ix → Represents G U .undef → HasTy G Γ (.readAt (.str f) a) (A ++ U)
   indexDict : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix os ms ks cs) → HasTy G Γ key K → Represents G K .str → A ∈ ix → Represents G U .undef → HasTy G Γ (.indexAt a key) (A ++ U)
   write : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → (f, A) ∈ fs → HasTy G Γ b A → Represents G N .nul → HasTy G Γ (.writeAt f a b) N
-  arith : HasTy G Γ a A → Answers G A .isNum true → HasTy G Γ b B → Answers G B .isNum true → Represents G N .num → HasTy G Γ (.arith op a b) N
+  arith : HasTy G Γ a A → HasTy G Γ b B → OperatorTypes G op A B N → HasTy G Γ (.arith op a b) N
   arrLit {Γ : List (Ty ι)} {L : Ty ι} {T : Tuple (Ty ι)} {xs : List (Ty ι × Tm)} : Represents G L (.list T []) → T.required.length ≤ xs.length → (T.rest = none → xs.length ≤ T.required.length + T.optional.length) → (∀ p ∈ xs.zipIdx, positionTy T p.2 = some p.1.1) → (∀ p ∈ xs, HasTy G Γ p.2 p.1) → HasTy G Γ (.arrLit (xs.map Prod.snd)) L
   elem {Γ : List (Ty ι)} {a i : Tm} {L I A : Ty ι} {T : Tuple (Ty ι)} {b : UInt64} {k : Nat} : HasTy G Γ a L → Represents G L (.list T []) → HasTy G Γ i I → Represents G I (.numLit b) → indexOfBits b = some k → T.required[k]? = some A → HasTy G Γ (.elemAt a i) A
   elemOpt {Γ : List (Ty ι)} {a i : Tm} {L I A U : Ty ι} {T : Tuple (Ty ι)} {b : UInt64} {k : Nat} : HasTy G Γ a L → Represents G L (.list T []) → HasTy G Γ i I → Represents G I (.numLit b) → indexOfBits b = some k → T.required[k]? = none → positionTy T k = some A → Represents G U .undef → HasTy G Γ (.elemAt a i) (A ++ U)
@@ -61,6 +63,8 @@ Rule  (Programs/ProgramCertificates.lean)
   num
   strLit
   str
+  bigintLit
+  bigint
   funE
   app
   letE

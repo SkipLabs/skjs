@@ -56,6 +56,7 @@ const LITERAL: Record<string, number> = {
   stringlit: 1,
   numberlit: 1,
   numlit: 1,
+  bigintlit: 1,
 };
 
 /* ---------- printing ---------- */
@@ -128,6 +129,7 @@ function bareAtomText(atom: unknown, state: PrintState): string {
     Number.isFinite(Number(atom.v))
   )
     return String(atom.v);
+  if (atom.a === "bigintlit" && typeof atom.v === "string") return atom.v + "n";
   if (atom.a === "record" && isRecordList(atom.fields)) {
     const index = isObject(atom.indexSignature) ? atom.indexSignature : null;
     const never = (t: unknown) =>
@@ -459,6 +461,8 @@ function parseType(text: string): ClaimType {
             '"';
       return { a: "stringlit", v: JSON.parse(json) };
     }
+    if (/^-?\d+n$/.test(token))
+      return { a: "bigintlit", v: String(BigInt(take().slice(0, -1))) };
     if (/^-?\d/.test(token)) return { a: "numberlit", v: take() };
     if (token === "{") return record();
     if (token === "(") {
@@ -964,6 +968,7 @@ const _handled = {
   pack: 1,
   bigint: 1,
   symbol: 1,
+  bigintLit: 1,
 } satisfies Record<StringClause | ClauseKey, 1>;
 void _handled;
 
@@ -1002,6 +1007,12 @@ function liftClause(types: unknown, clause: unknown, depth: number): unknown {
       v: String(
         numberOfBits(String(isObject(numLit) ? numLit.bits : undefined)),
       ),
+    };
+  const bigintLit = body("bigintLit");
+  if (bigintLit)
+    return {
+      a: "bigintlit",
+      v: String(isObject(bigintLit) ? bigintLit.value : undefined),
     };
   const strLit = body("strLit");
   if (strLit)
@@ -1277,6 +1288,8 @@ function lowerAtom(types: unknown, atom: unknown): number[] {
   if (atom.a === "symbol") return [intern(types, ["symbol"])];
   if (atom.a === "stringlit" && typeof atom.v === "string")
     return [intern(types, [{ strLit: { value: atom.v } }])];
+  if (atom.a === "bigintlit" && typeof atom.v === "string")
+    return [intern(types, [{ bigintLit: { value: Number(atom.v) } }])];
   if (
     atom.a === "numberlit" &&
     typeof atom.v === "string" &&

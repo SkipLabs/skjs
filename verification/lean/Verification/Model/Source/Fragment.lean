@@ -291,7 +291,7 @@ def translate (j : Json) : SourceTypes.Lowering (Ty Nat) := do
     | "function" => callableType single
     -- A number or string arm is interned, so `1` and `number` are separate
     -- labels and the singleton is below the family by the ordinary clause rules.
-    | "number" | "numberlit" | "string" | "stringlit" | "void" | "bigint" | "symbol" =>
+    | "number" | "numberlit" | "string" | "stringlit" | "void" | "bigint" | "bigintlit" | "symbol" =>
       SourceTypes.numberLabels (← CellClaims.primitive single)
     | _ => SourceTypes.translate (← CellClaims.primitive single)
   return (records ++ optionals ++ dictionaries ++ conjunctions ++ arms).flatten.mergeSort (· ≤ ·) |>.eraseDups
@@ -319,6 +319,11 @@ def translatePoint (j : Json) : SourceTypes.Lowering PointType := do
     let current := (read.zip write).filterMap fun (r,w) => if r.2 == w.2 then none else some r
     if current.isEmpty then throw original
     return ⟨[← CellClaims.reference write],some current⟩
+
+/-- A unary numeric operator: `-e`, `+e` and `~e`. -/
+inductive UnaryOp where
+  | neg | plus | bitNot
+  deriving Repr, DecidableEq
 
 /-- The test a logical assignment makes on the target's current value. -/
 inductive LogicalOp where
@@ -381,8 +386,11 @@ inductive Expr where
   its assignment; resolved from `index` and `indexWrite` by the key's claim. -/
   | elemAt (pos : Span) (e key : Expr)
   | elemWrite (pos : Span) (receiver key rhs : Expr)
-  /-- Arithmetic on two numbers, left operand first. -/
+  /-- A binary operator on primitive operands, left operand first:
+  arithmetic, `**`, or a relational comparison. -/
   | arith (pos : Span) (op : Arith) (l r : Expr)
+  /-- A unary numeric operator on its operand's value. -/
+  | unary (pos : Span) (op : UnaryOp) (e : Expr)
   /-- `target op= rhs`, or an increment when `rhs` is absent: the target's
   parts once, its value read, the right side, the operation, the write back.
   `post` makes the old value the expression's value. -/
@@ -447,7 +455,7 @@ partial def Expr.freeNames : Expr → List String
     -- An ordinary function binds its own `this`; an arrow captures it.
     ((ds.flatMap fun d => d.2.freeNames) ++ b.freeNames).filter
       (fun n => !(ps.map Prod.fst).contains n && (receiver.isNone || n != "this"))
-  | .shapeTest _ _ _ e | .not _ e | .cast _ _ e | .read _ _ e | .atEnv _ e | .ctor _ e => e.freeNames
+  | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .atEnv _ e | .ctor _ e => e.freeNames
   | .construct _ f args => f.freeNames ++ args.flatMap Expr.freeNames
   | .alloc _ _ es | .arrayLit _ es => es.flatMap Expr.freeNames
   | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b
@@ -473,7 +481,7 @@ partial def Expr.callees : Expr → List (Span × Span × String)
   | .lambda _ _ _ ps ds _ _ b =>
     ((ds.flatMap fun d => d.2.callees) ++ b.callees).filter
       (fun c => !(ps.map Prod.fst).contains c.2.2)
-  | .shapeTest _ _ _ e | .not _ e | .cast _ _ e | .read _ _ e | .atEnv _ e | .ctor _ e => e.callees
+  | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .atEnv _ e | .ctor _ e => e.callees
   | .construct p f args =>
     (match f with | .var q n => [(p, q, n)] | _ => []) ++ f.callees ++ args.flatMap Expr.callees
   | .alloc _ _ es | .arrayLit _ es => es.flatMap Expr.callees
@@ -537,7 +545,7 @@ def Expr.span : Expr → Span
   | .ifBody p _ _ _ _ | .done p | .equality p _ _ _ | .singletonTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
   | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
   | .arrayLit p _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ => p
-  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .cast p _ _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ _ _ _ _ | .call p _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ | .construct p _ _ => p
+  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ _ _ _ _ | .call p _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ | .construct p _ _ => p
 
 /-- One declarator of a `const` or `let`. -/
 structure Binding where
@@ -645,7 +653,12 @@ private def decodeArith (j : Json) : Except String Arith := do
   | "sub" => pure .sub
   | "mul" => pure .mul
   | "div" => pure .div
-  | op => throw s!"unknown arithmetic operator '{op}'"
+  | "pow" => pure .pow
+  | "lt" => pure .lt
+  | "le" => pure .le
+  | "gt" => pure .gt
+  | "ge" => pure .ge
+  | op => throw s!"unknown binary operator '{op}'"
 
 partial def decodeExpr (j : Json) : Except String Expr := do
   let p ← jSpan j "pos"
@@ -681,6 +694,12 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     return .shapeTest p tag (← (← jField j "equal").getBool?) (← decodeExpr (← jField j "e"))
   | "coalesce" => return .coalesce p (← decodeExpr (← jField j "left")) (← decodeExpr (← jField j "right"))
   | "not" => return .not p (← decodeExpr (← jField j "e"))
+  | "unary" => do
+    CellClaims.fieldsExactly j ["k","pos","op","e"]
+    let op ← match ← jStr (← jField j "op") with
+      | "neg" => pure UnaryOp.neg | "plus" => pure .plus | "bitNot" => pure .bitNot
+      | other => throw s!"unknown unary operator '{other}'"
+    return .unary p op (← decodeExpr (← jField j "e"))
   | "cast" =>
     CellClaims.fieldsExactly j ["k","pos","cast","annot","e"]
     let kind ← jStr (← jField j "cast")
@@ -701,7 +720,9 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     CellClaims.fieldsExactly j ["k","pos","op","target","rhs","post"]
     let rhs ← jField j "rhs"
     let rhs ← if rhs == .null then pure none else do pure (some (← decodeExpr rhs))
-    return .update p (← decodeArith (← jField j "op")) (← decodeExpr (← jField j "target"))
+    let op ← decodeArith (← jField j "op")
+    if op.relational then throw "a compound assignment computes; it does not compare"
+    return .update p op (← decodeExpr (← jField j "target"))
       rhs (← (← jField j "post").getBool?)
   | "arrayLit" => do
     CellClaims.fieldsExactly j ["k","pos","elems"]

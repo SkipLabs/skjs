@@ -56,6 +56,7 @@ let encode (proposal : Proposal.t) =
     | Bigint -> [intern (Array [String "bigint"])] | Symbol -> [intern (Array [String "symbol"])]
     | NumLit bits -> [intern (Array [Object ["numLit",Object ["bits",String (Printf.sprintf "%Lu" bits)]]])]
     | StrLit value -> [intern (Array [Object ["strLit",Object ["value",String value]]])]
+    | BigintLit value -> [intern (Array [Object ["bigintLit",Object ["value",Number value]]])]
     | Top -> [intern (Array [String "top"])]
     | Ctors signatures ->
       List.iter (fun (s:Semantic.signature) ->
@@ -202,7 +203,7 @@ let encode (proposal : Proposal.t) =
         | Exact fs -> List.exists (fun (f:Semantic.field) -> contains_symbolic f.read) fs
         | Ctors signatures -> List.exists signature_contains_symbolic signatures
         | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Top
-        | Bigint | Symbol -> false) atoms
+        | Bigint | Symbol | BigintLit _ -> false) atoms
   and pack_contains_symbolic = function
     | PackParameter _ -> true
     | Pack s -> sequence_contains_symbolic s

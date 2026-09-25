@@ -104,6 +104,7 @@ private def clauseName : Clause (List Nat) → String
   | .list .. => "array"
   | .pack .. => "argument list"
   | .bigint => "bigint"
+  | .bigintLit _ => "bigint literal"
   | .symbol => "symbol"
   | .ctors .. => "constructor"
 
@@ -248,6 +249,7 @@ def value : Claim.Val → Except String Tm
   | .vbool false => .ok .fls
   | .vnum b => .ok (.num b)
   | .vstr s => .ok (.str s)
+  | .vbigint i => .ok (.bigint i)
 
 /-- Numbers are interned rather than given fixed rows, because the singletons
 are unbounded: the first four labels stay exactly the four primitive values,
@@ -266,6 +268,7 @@ def numberLabels (t : Claim.Ty) : Lowering (Ty Nat) := do
     | .str => out := out ++ [← use .str]
     | .strLit s => out := out ++ [← use (.strLit s)]
     | .bigint => out := out ++ [← use .bigint]
+    | .bigintLit i => out := out ++ [← use (.bigintLit i)]
     | .symbol => out := out ++ [← use .symbol]
     -- A void result forgets its guarantee: every value, like `unknown`.
     | .void => out := out ++ [← use .top]
@@ -274,7 +277,7 @@ def numberLabels (t : Claim.Ty) : Lowering (Ty Nat) := do
 
 /-- Numbers and strings are interned, as their singletons are unbounded. -/
 def isNumberAtom : Claim.Atom → Bool
-  | .num | .numLit _ | .str | .strLit _ | .void | .bigint | .symbol => true
+  | .num | .numLit _ | .str | .strLit _ | .void | .bigint | .bigintLit _ | .symbol => true
   | _ => false
 
 /-- One arm of a union, translated where the table can grow: its numbers are
@@ -326,6 +329,11 @@ theorem supported_not_str {a : Claim.Atom} (h : supportedAtom a = true) (s : Str
     Claim.inhabits (.vstr s) a = false := by
   cases a <;> simp_all [supportedAtom, Claim.inhabits]
 
+/-- Likewise no atom of the primitive fragment admits a bigint. -/
+theorem supported_not_bigint {a : Claim.Atom} (h : supportedAtom a = true) (i : Int) :
+    Claim.inhabits (.vbigint i) a = false := by
+  cases a <;> simp_all [supportedAtom, Claim.inhabits]
+
 /-- Supported claim-value membership is preserved in both directions. -/
 theorem translate_exact {T : Table} (hT : initial <+: T) {t : Claim.Ty} {A u v}
     (ht : translate t = .ok A) (hv : value u = .ok v) (n W) :
@@ -363,6 +371,15 @@ theorem translate_exact {T : Table} (hT : initial <+: T) {t : Claim.Ty} {A u v}
       simpa using hno
     · rename_i b
       cases b <;> cases hv <;> simp [Claim.mem, htop, admits, List.any_eq_true]
+    · -- A bigint: neither side holds, for the same reason.
+      rename_i i
+      cases hv
+      have hall := List.all_eq_true.mp h.2
+      have hno : ∀ a ∈ t.atoms, Claim.inhabits (.vbigint i) a = false :=
+        fun a ha => supported_not_bigint (hall a ha) i
+      simp only [Claim.mem, htop, admits, List.any_eq_true, Bool.false_eq_true,
+        false_or, encode, not_exists]
+      simpa using hno
   · contradiction
 
 /-- Exact arrow interpretation, including its contravariant receiver and

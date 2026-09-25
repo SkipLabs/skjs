@@ -44,9 +44,10 @@ before appending.
 All three use the same constructor and the same allocation step, `Step.makeV`.
 The closure body is not evaluated during creation. There is no bare lambda value.
 
-Since that kernel, the values also include numbers, strings,
-$\mathsf{bigint}(i)$ and $\mathsf{sym}(i)$ (a symbol is its identity: distinct
-declarations are distinct symbols); an object's fields are keyed by property
+Since that kernel, the values also include numbers (the bit pattern of the
+double), strings, bigints $\mathsf{bigint}(i)$ with $i\in\mathbb Z$ (a bigint is
+its integer, as a number is its double) and symbols $\mathsf{sym}(i)$ (a symbol
+is its identity: distinct declarations are distinct symbols); an object's fields are keyed by property
 keys $\kappa::=\mathsf{str}(s)\mid\mathsf{sym}(i)$; and the tests include
 $\mathsf{isNum}$, $\mathsf{isStr}$, $\mathsf{isBigint}$, $\mathsf{isSymbol}$ and
 the singleton equalities. A closure descriptor records which invocation its code
@@ -77,6 +78,38 @@ relation stays deterministic (`Step_det`). What a construct signature promises
 is in [the clause's meaning](POSITIVE-TYPES.md#functions-and-classes):
 the construct step's result is safe at the signature's result, one level below
 the budget, as a call's body is.
+
+**Binary operators.** $a\mathbin{op}b$ (`Tm.arith`) evaluates $a$, then $b$
+(`arithC1`, `arithC2`), then takes one step where the operator answers for the
+two values, and is stuck otherwise:
+
+$$
+\frac{\mathsf{binop}(op,v_1,v_2)=v}{h,\ v_1\mathbin{op}v_2\to h,\ v}\ (\texttt{arithV})
+\qquad op\in\{+,-,*,/,{*}{*},\mathbin{\hat{}},<,\le,>,\ge\}.
+$$
+
+$\mathsf{binop}$ is JavaScript's operation on the operand kinds it models, and
+answers nothing where JavaScript throws or converts through code or coercions
+the calculus does not have:
+
+| Operands | Arithmetic ($+,-,*,/,{*}{*},\hat{}$) | Relational ($<,\le,>,\ge$) |
+| --- | --- | --- |
+| two numbers | the IEEE-754 double operation; ${*}{*}$ is `Number::exponentiate` (C's `pow`, but NaN for a NaN exponent and for a base of magnitude 1 to an infinite power); $\hat{}$ is exclusive or after `ToInt32` on both | the IEEE order: false when either is NaN, the two zeros equal |
+| two bigints | the integer operation; $/$ truncates toward zero; none for $/$ by $0$ and ${*}{*}$ by a negative exponent (a `RangeError`) | the integer order |
+| a number and a bigint | none (a `TypeError`) | the exact order of the double's rational value and the integer; false when the number is NaN, an infinity beyond every integer |
+| two strings | none | lexicographic over UTF-16 code units, a proper prefix less |
+| anything else | none | none |
+
+So the operation never computes on a value it would convert: a string with a
+number, a Boolean, an object (whose `valueOf` is code) all leave the term
+stuck, which the typing rule rules out. The unary operators are this one with a
+constant right operand of the operand's family ([source
+forms](PROGRAM-TYPING.md#judgments-and-constructor-views)): $-x=x*(-1)$, $+x=x*1$
+and $\sim x=x\mathbin{\hat{}}(-1)$, exact on doubles (a sign flip, the identity,
+`ToInt32` complemented) and on integers alike. Lean: `binop`, `arithBits`,
+`bigintArith`, `doubleIntOrder`, `utf16Units` (`Semantics/Calculus.lean`); the
+values it gives are checked against node's for the edge cases in
+`Tests/SourceExtractionTests.lean`.
 
 `make_rule` proves heap and world extension once, with a result obligation for
 the fresh object's descriptor. `alloc_rule` and `attach_rule` specialize that

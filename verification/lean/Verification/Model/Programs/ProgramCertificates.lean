@@ -29,6 +29,7 @@ def namedAt (T : Tuple (Ty ι)) (b : UInt64) : Option (Ty ι) :=
 
 inductive Rule (ι : Type) where
   | var | nul | undef | tru | fls | truLit | flsLit | numLit | num | strLit | str
+  | bigintLit | bigint
   | funE | app | letE | alloc | read | readView | write | arith | test
   | readDict (element undef : Ty ι)
   | indexDict (element undef : Ty ι)
@@ -189,6 +190,8 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
   | .num, .num _, [] => Represents G j.type .num
   | .strLit, .str s, [] => Represents G j.type (.strLit s)
   | .str, .str _, [] => Represents G j.type .str
+  | .bigintLit, .bigint i, [] => Represents G j.type (.bigintLit i)
+  | .bigint, .bigint _, [] => Represents G j.type .bigint
   -- A source function has no properties of its own; the model still gives it a
   -- bag, so the shape of that allocation is fixed here rather than claimed.
   | .funE, .makeAt (.closure arity b) ns inits, ps =>
@@ -256,9 +259,9 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     (match expand G ja.type with
      | [.refs fs [] _ _ _ _] => (f, jb.type) ∈ fs
      | _ => False)
-  | .arith, .arith _ a b, [ja, jb] =>
+  | .arith, .arith op a b, [ja, jb] =>
     ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
-    Answers G ja.type .isNum true ∧ Answers G jb.type .isNum true ∧ Represents G j.type .num
+    OperatorTypes G op ja.type jb.type j.type
   | .test, .test _ a, [ja] =>
     ja.context = j.context ∧ ja.term = a ∧
     (.boolLit true) ∈ expand G j.type ∧ (.boolLit false) ∈ expand G j.type
@@ -517,6 +520,8 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
   · exact .num hl
   · exact .strLit hl
   · exact .str hl
+  · exact .bigintLit hl
+  · exact .bigint hl
   · rename_i ps arity b ns inits
     obtain ⟨rfl, rfl, hl⟩ := hl
     unfold funEPremises at hl
@@ -684,12 +689,12 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
       exact .write ha he hr hb hn
     · contradiction
   · rename_i op a b ja jb
-    rcases hl with ⟨hΓa, hta, hΓb, htb, hqa, hqb, hn⟩
+    rcases hl with ⟨hΓa, hta, hΓb, htb, hops⟩
     have ha := hp ja (by simp)
     have hb := hp jb (by simp)
     rw [hΓa, hta] at ha
     rw [hΓb, htb] at hb
-    exact .arith ha hqa hb hqb hn
+    exact .arith ha hb hops
   · rename_i k a ja
     rcases hl with ⟨hΓ, hta, ht, hf⟩
     have ha := hp ja (by simp)
@@ -1152,6 +1157,8 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
   | num hr => exact node_complete (r := .num) (js := []) hr (by simp)
   | strLit hr => exact node_complete (r := .strLit) (js := []) hr (by simp)
   | str hr => exact node_complete (r := .str) (js := []) hr (by simp)
+  | bigintLit hr => exact node_complete (r := .bigintLit) (js := []) hr (by simp)
+  | bigint hr => exact node_complete (r := .bigint) (js := []) hr (by simp)
   | @funE Γ F L S arity b hr hlen hb ih =>
     apply node_complete (r := .funE)
       (js := (offerRows L S).map (fun p => ⟨bodyFrame arity p Γ, b, p.2.2⟩))
@@ -1464,9 +1471,9 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     apply node_complete (G := G) (j := ⟨Γ, .test k a, B⟩) (r := .test) (js := [⟨Γ,a,A⟩])
       ⟨rfl,rfl,ht,hf⟩
     simpa using ih
-  | @arith Γ a A b B N op ha hqa hb hqb hn iha ihb =>
+  | @arith Γ a A b B op N ha hb hops iha ihb =>
     apply node_complete (G := G) (j := ⟨Γ, .arith op a b, N⟩) (r := .arith)
-      (js := [⟨Γ,a,A⟩, ⟨Γ,b,B⟩]) ⟨rfl,rfl,rfl,rfl,hqa,hqb,hn⟩
+      (js := [⟨Γ,a,A⟩, ⟨Γ,b,B⟩]) ⟨rfl,rfl,rfl,rfl,hops⟩
     intro j hj
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hj
     rcases hj with rfl | rfl

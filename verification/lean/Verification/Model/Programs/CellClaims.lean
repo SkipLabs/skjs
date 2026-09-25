@@ -20,7 +20,7 @@ def primitive (j : Json) : Except String Claim.Ty := do
   fieldsExactly j ["top","atoms"]
   for atom in ← jArr j "atoms" do
     let tag ← jStr (← jField atom "a")
-    if ["booleanlit","stringlit","numberlit"].contains tag then
+    if ["booleanlit","stringlit","numberlit","bigintlit"].contains tag then
       fieldsExactly atom ["a","v"]
     else fieldsExactly atom ["a"]
   decodeTy j

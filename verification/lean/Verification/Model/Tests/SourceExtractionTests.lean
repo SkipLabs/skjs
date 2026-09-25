@@ -32,6 +32,29 @@ private def signedZeroComparison : Bool :=
 #guard is (literalBits "-0.0") (9223372036854775808 : UInt64)
 #guard numberEqual (9223372036854775808 : UInt64) 0
 
+-- The binary operators on values, against what node computes for the same
+-- operands: `ToInt32` through `^` (and so `~`), JavaScript's corrections to
+-- `pow`, exact comparison across number and bigint, UTF-16 string order, and
+-- the combinations that throw, which have no value.
+private def dbl (f : Float) : Tm := .num f.toBits
+private def isNaNValue : Option Tm → Bool
+  | some (.num b) => (Float.ofBits b).isNaN
+  | _ => false
+#guard binop .xor (dbl 4294967296.5) (dbl (-1.0)) == some (dbl (-1.0))
+#guard binop .xor (dbl (-3000000000.7)) (dbl (-1.0)) == some (dbl (-1294967297.0))
+#guard isNaNValue (binop .pow (dbl 1.0) (dbl (0.0 / 0.0)))
+#guard isNaNValue (binop .pow (dbl (-1.0)) (dbl (1.0 / 0.0)))
+#guard binop .lt (dbl 9007199254740993.0) (.bigint 9007199254740993) == some .tru
+#guard binop .le (dbl (0.0 / 0.0)) (.bigint 2) == some .fls
+#guard binop .gt (.bigint (-1)) (dbl (-0.5)) == some .fls
+#guard binop .lt (.str (String.singleton (Char.ofNat 0x10000))) (.str (String.singleton (Char.ofNat 0xFFFF))) == some .tru
+#guard binop .div (.bigint 7) (.bigint (-2)) == some (.bigint (-3))
+#guard binop .xor (.bigint 5) (.bigint (-1)) == some (.bigint (-6))
+#guard binop .div (.bigint 7) (.bigint 0) == none
+#guard binop .pow (.bigint 2) (.bigint (-1)) == none
+#guard binop .add (.bigint 1) (dbl 1.0) == none
+#guard binop .lt (.str "1") (dbl 2.0) == none
+
 -- Exact finite-set translation, including normalization of unions.
 #guard is (SourceTypes.translate ⟨false,[.bool]⟩) ([1,2])
 #guard is (SourceTypes.translate ⟨false,[.boolLit true]⟩) ([1])

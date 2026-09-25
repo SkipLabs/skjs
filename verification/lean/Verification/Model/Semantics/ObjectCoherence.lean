@@ -447,9 +447,10 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
     intro D hh ht
     obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.2,ht.2.2⟩
     exact ⟨E,hx,hh',⟨ht.1.1,hs⟩,ht.2.1.mono hx,hn⟩
-  | arithV =>
+  | arithV hb =>
     intro D hh ht
-    exact ⟨D,.refl D,hh,trivial,trivial⟩
+    rcases (binop_result hb).2.2 with rfl | rfl | ⟨_, rfl⟩ | ⟨_, rfl⟩ <;>
+      exact ⟨D,.refl D,hh,trivial,trivial⟩
   | @arrArg inits i h h' a a' hg hb step ih =>
     intro D hh ht
     have hm := List.mem_of_getElem? hg
