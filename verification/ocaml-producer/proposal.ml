@@ -1545,8 +1545,6 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
   let havoc env body =
     if List.exists stirs_statement body then forget env
     else forget ~only:(fun n -> List.exists (assigns n) body) env in
-  (* A loop's head is reached again from its body. *)
-  let loop_head env c body = if stirs c then forget env else havoc env body in
   (* Where two arms meet, a cell holds what either left in it. *)
   let join before left right =
     List.filter_map (fun (n,b) -> match b,List.assoc_opt n left,List.assoc_opt n right with
@@ -1586,9 +1584,25 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         | Value _,_ -> Some (n,Value (combine (List.map binding_type arriving)))
         | Storage (contract,_),_ -> Some (n,holding contract (combine (List.map binding_type arriving))))
         (List.filter (fun (n,_) -> not (is_field n)) before @ fields) in
+  (* The unlabeled `break` and `continue` environments of each enclosing
+     loop, innermost first. *)
+  let loops = ref [] in
+  (* Run [f] for what it computes, leaving no claim, request or exit behind:
+     a loop head is found by running its body from candidate heads. *)
+  let trial f =
+    let saved = (!closures,!requests,!classes,!entries,!expressions,!instantiations,
+                 !instances,!arrows,!loops) in
+    let saved_exits = Hashtbl.fold (fun k v acc -> (k,v) :: acc) exits [] in
+    let result = try Some (f ()) with Json.Error _ -> None in
+    let (a,b,c,d,e,g,h,i,j) = saved in
+    closures := a; requests := b; classes := c; entries := d; expressions := e;
+    instantiations := g; instances := h; arrows := i; loops := j;
+    Hashtbl.reset exits;
+    List.iter (fun (k,v) -> Hashtbl.add exits k v) saved_exits;
+    result in
   let rec statements env ss = List.fold_left (fun env s ->
     let env = match s.statement with
-      | While (c,body,update) -> loop_head env c (body @ update)
+      | While (c,body,update) -> loop_fix env c body update
       | ForOf _ -> forget env
       | _ -> env in
     (* A block has no entry of its own: its first statement's is. *)
@@ -1646,7 +1660,9 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     (* The update runs where the body ends or continues: from the head's
        knowledge, which already forgets what the body assigns. *)
     | While (c,body,update) -> ignore (expr env c);
-      ignore (statements (branch env c true) body); ignore (statements env update); env
+      let _,breaks = loop_pass env c body update in
+      (* The loop is left from its head or by a `break`. *)
+      merge env env (env :: breaks)
     (* A block's bindings end with it. A labeled one is also left by each
        `break` of its label, with what that path knew. *)
     | Block (label,body) ->
@@ -1673,7 +1689,10 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         instantiation=Some (List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
           inferred.substitution)} :: !expressions;
       expressions := {pos=name_pos;type_=element;instantiation=None} :: !expressions;
-      ignore (statements (extend env name (Value element)) body); env
+      (* Its `break`s and `continue`s are its own. *)
+      loops := (ref [],ref []) :: !loops;
+      ignore (statements (extend env name (Value element)) body);
+      loops := List.tl !loops; env
     | Throw e -> ignore (expr env e); env
     | Try (body,handler,finalizer) ->
       let local after = List.filter (fun (n,_) -> List.mem_assoc n env) after in
@@ -1699,7 +1718,43 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
           from any point: it knows each cell by its contract. *)
        | Some finalizer -> local (statements (forget env) finalizer))
     | Break (Some l) -> Hashtbl.add exits l env; env
-    | Break None | Continue -> env) env ss in
+    | Break None -> (match !loops with (breaks,_) :: _ -> breaks := env :: !breaks | [] -> ()); env
+    | Continue -> (match !loops with (_,continues) :: _ -> continues := env :: !continues | [] -> ()); env)
+    env ss
+  (* One pass over a loop from the head [head]: the body where the
+     condition held, the update where the body ends or continues, and what
+     the update leaves for the head, with the environments its `break`s
+     leave with. *)
+  and loop_pass head c body update =
+    let breaks = ref [] and continues = ref [] in
+    loops := (breaks,continues) :: !loops;
+    let inner = statements (branch head c true) body in
+    loops := List.tl !loops;
+    let ends = (if returns body then [] else [inner]) @ !continues in
+    (* Where no end is reachable, neither is the update, nor the head again
+       from it: the update is then claimed from the head, as before. *)
+    let reachable = List.filter (fun env ->
+      not (List.exists (fun (_,b) -> binding_type b = Atoms []) env)) ends in
+    let at_update = if reachable = [] then head else merge head head reachable in
+    let back = statements at_update update in
+    (if reachable = [] then None else Some back),!breaks
+  (* A loop's head: what its cells hold on entry and on every return from
+     its body, found by running the body from the entry until the head is
+     stable. A condition or body that may write a cell unseen, or no stable
+     head within a few rounds, gives the head each assigned cell's contract,
+     as before. The head is a claim: Lean checks the entry and back edges. *)
+  and loop_fix env c body update =
+    if stirs c || List.exists stirs_statement (body @ update) then forget env else
+    let fallback = havoc env (body @ update) in
+    let rec go head rounds =
+      if rounds = 0 then fallback else
+      match Option.map fst (trial (fun () -> loop_pass head c body update)) with
+      | None -> fallback
+      | Some None -> env
+      | Some (Some back) ->
+        let next = merge env fallback [env; back] in
+        if next = head then head else go next (rounds - 1) in
+    go env 5 in
   ignore (statements env0 f.body);
   (* An expression the lowering reaches on two paths (the fields the arms of a
      constructor's last `if` share) is claimed once when both claims agree;

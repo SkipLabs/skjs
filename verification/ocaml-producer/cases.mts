@@ -856,6 +856,8 @@ export const cases: Case[] = [
   negative("invalid-unary-plus-literal", "`+42` is 42, not 43", /source expression obligation at \[61,64\)/),
   positive("shadowed-module-constant", "a parameter hiding a module constant of its name: a jump carries each binding by its identity, so narrowing the parameter leaves the constant's slot"),
   negative("invalid-shadowed-module-constant", "past the test the parameter is `false`", /source expression obligation at \[194,195\)/),
+  positive("loop-head-contents", "a loop head claims what its cells hold on entry and on every return from the body, found by running the body until stable; the update runs where the body ends or continues; the loop is left from its head or by a `break`"),
+  negative("invalid-loop-head-contents", "a `break` leaves the loop with the cell holding what it held there", /source expression obligation at \[220,221\)/),
   gap("object-growth-refused", "a write adding a key to a record allocated without it: an object's keys are fixed at its allocation",
     "unsupported", "proposal", /a write adds the property 'x' to an object allocated without it/),
   gap("optional-write-refused", "a write to a writable optional field may add its key",

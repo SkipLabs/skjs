@@ -1813,6 +1813,18 @@ way back to it ([Statement forms](#statement-forms)). Even a syntactically alway
 explicit continuation for its false edge. Acceptance is safety, not termination:
 a well-typed loop may run forever.
 
+The supplied head is the OCaml producer's proposal, and what it claims a cell
+holds there is found, not assumed: the producer runs the body (discarding what
+the run claims) from a candidate head, starting at the entry, and joins what
+the update leaves for the head with the entry, until the head is stable (a few
+rounds; otherwise, and wherever the condition or the body may write a cell
+unseen, each assigned cell is claimed at its contract, as before). The update
+runs from the join of the body's end and its `continue`s, and the loop is left
+from its head or by a `break`, with the join of those. So `y = b; y = a` in a
+body leaves `y` holding `"a"` at the head (`loop-head-contents.ts`). Lean checks
+the head against the entry and every back edge, so a wrong proposal is refused
+there (`invalid-loop-head-contents.ts`); no rule or trust is added.
+
 The real SKJS fixture `tests/stateful-source/loops.ts` covers zero iterations,
 nested early returns, and a finite loop whose condition calls a captured-cell
 reader and whose body writes through a local alias. `WhileSourceTests.lean`
