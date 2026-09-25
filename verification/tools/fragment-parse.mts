@@ -2178,7 +2178,8 @@ export function parseFile(file: string, carriesContext = false,
   if (!carriesContext) findGlobals(source);
   // A value name the file neither imports nor binds may be a global variable,
   // such as Node's `process`: TypeScript decides, and a global variable joins
-  // the values, read at the members its references select. Every reference
+  // the values, read at the members and call signatures its references
+  // select. Every reference
   // in a value position is listed. A computed key names a symbol, which the
   // declaration graph reads itself, and `Object` in `Object.assign` is the
   // intrinsic form above, not a read of the global. A name the file binds

@@ -440,7 +440,7 @@ const GROUPS: [string, RegExp][] = [
   ["ambient declarations (declare let/var, overloaded generic functions)", /`declare let` or `declare var`|overloaded generic function|an ambient constant needs/],
   ["switch statements", /SwitchStatement/],
   ["template literals (expressions and types)", /Template(Expression|LiteralType)|FirstTemplateToken/],
-  ["library globals as values (Array, Symbol, Error, Promise, Set, Map, Date, JSON, …)", /the global \w+ is not an annotated variable|unbound name/],
+  ["library globals as values (Array, Symbol, Error, Promise, Set, Map, Date, JSON, …)", /the global \w+ is not an annotated variable|unbound name|reviewed overlay of library globals|is read only through its members|construct signatures are not read|a callable object with methods needs a combined clause/],
   ["relational operators (< <= > >=) and **", /binary operator outside the fragment \((<|<=|>|>=|\*\*|\*\*=)\)/],
   ["unary operators (- + ~ on numbers)", /unary operator outside the fragment/],
   ["in / instanceof / typeof tests", /\((in|instanceof)\)|expression typeof|TypeQuery/],

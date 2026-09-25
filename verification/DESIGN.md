@@ -921,6 +921,18 @@ modeling choices; they do not replace proof.
   a premise, as an imported value's declared type does, and the declaration
   document lists it with the specifier `ambient`. A function declared with
   overloads, ambient or imported, is assumed to meet every overload.
+- A global value the module reads, such as Node's `process`, meets its
+  declaration at the members and call signatures the module selects
+  (**Global values** in [Modules and code units](#modules-and-code-units)),
+  and no code the module does not see reassigns it. A standard library global
+  meets its reviewed overlay entries
+  ([Library globals](#library-globals), [`library-globals.mts`](tools/library-globals.mts)):
+  `BigInt` converts a bigint, a Boolean, an integer and each string literal
+  the reader converted when it read the call; `Symbol`, `Symbol.for` and
+  `Symbol.keyFor` return what they declare; `String` converts a primitive;
+  `console.log` returns `undefined` without running client code. Nothing
+  checks the native code; the selection enters every result as a premise, the
+  global's input slot, as for an imported value's declared type.
 - A value whose trusted declaration types it `Function`, an imported one or a
   library member's, has call or construct code
   ([Library types](#library-types)). TypeScript also admits an object that
@@ -1911,8 +1923,15 @@ the fragment cannot state (`NodeJS.Process` has about a hundred members), so a
 global is read only at the members the module's references select
 (`selectGlobal` in `declaration-graph.mts`):
 
-- Every reference reads a member by name, `process.m`. Any other use, such as
-  `const p = process`, is refused at the source gate.
+- Every reference reads a member by name, `process.m`, or is called,
+  `BigInt(v)`. Any other use, such as `const p = process`, is refused.
+- An interface of the variable's name, `interface BigInt` beside
+  `declare var BigInt: BigIntConstructor`, is the name's type meaning, which
+  a value reference does not denote; any other declaration of the name is
+  refused.
+- A call of the global is the call signatures of the annotated interface
+  TypeScript resolves the module's calls to, read as a method's overloads
+  are, with no receiver. A generic one is refused.
 - TypeScript resolves each name on the interface the variable is annotated
   with, through its merged declarations and its heritage, a namespace-qualified
   annotation included.
@@ -1927,21 +1946,24 @@ global is read only at the members the module's references select
 
 The selection is a definition of its own, keyed by the variable's first
 declaration, and the global's type is a reference to it. With $I$ the
-annotated interface, $M$ the names the module's references read and $O_m$ the
-overloads TypeScript resolves the calls of method $m$ to:
+annotated interface, $M$ the names the module's references read, $O_m$ the
+overloads TypeScript resolves the calls of method $m$ to, and $C$ the call
+signatures it resolves the calls $x(\ldots)$ to:
 
 $$
 \frac{x\ \text{a global variable annotated}\ I\qquad
       M=\{m\mid x.m\ \text{occurs}\}\qquad
-      \text{every occurrence of}\ x\ \text{is some}\ x.m\qquad
-      O_m\subseteq\mathsf{overloads}_I(m)}
-     {\Gamma(x)=\llbracket\mathsf{sel}_{M,O}(I)\rrbracket}\ \textsc{global}
+      \text{every occurrence of}\ x\ \text{is some}\ x.m\ \text{or a callee}\qquad
+      O_m\subseteq\mathsf{overloads}_I(m)\qquad
+      C\subseteq\mathsf{calls}_I}
+     {\Gamma(x)=\llbracket\mathsf{sel}_{M,O,C}(I)\rrbracket}\ \textsc{global}
 \qquad
-\llbracket I\rrbracket\subseteq\llbracket\mathsf{sel}_{M,O}(I)\rrbracket .
+\llbracket I\rrbracket\subseteq\llbracket\mathsf{sel}_{M,O,C}(I)\rrbracket .
 $$
 
 The inclusion is why the rule assumes no more than the declaration does: a
-record says nothing of the keys it does not name; a method member meeting every
+record says nothing of the keys it does not name; a value meeting every call
+signature of $I$ meets those in $C$; a method member meeting every
 overload of $I$ meets the overloads in $O_m$; a method's receiver is its host
 ([Method members are host-relative](#method-members-are-host-relative)), so
 leaving members out narrows no receiver; and a `this` result is the host, which
@@ -1956,7 +1978,11 @@ literal event such as `"SIGHUP"` resolves to `on(event: Signals, listener:
 SignalsListener): this`, whose listener takes the signal's name
 (`sum-process.ts`). The project's type packages and TypeScript's member and
 overload resolution join the trusted front end; the selection itself adds no
-meaning Lean does not check.
+meaning Lean does not check. A global both called and read through a method
+in one module, `Symbol()` beside `Symbol.for(k)`, is a callable object with
+methods, which the graph has no clause for; Lean refuses it. A global the
+standard library declares is read through a reviewed overlay
+([Library globals](#library-globals)).
 
 **Generic methods.** A declaration's generic method `m<U>(...)` lowers to a
 scheme row whose binders are parameter rows. Its signatures mention the
@@ -3029,6 +3055,74 @@ lowers the term itself (`DeclarationGraph.lowerType`). An interface that
 extends `Function` meets `callable` with its own record operand, which has no
 representable clause, and is refused.
 
+### Library globals
+
+**Principle.** The standard library's global values (`BigInt`, `Symbol`,
+`String`, `console`, …) are global variables like Node's `process`, read by
+the one global rule of [Modules and code units](#modules-and-code-units)
+(**Global values**) at the members and call signatures a module uses. But
+TypeScript's declarations of them are not all true: `BigInt(value: bigint |
+boolean | number | string): bigint` throws a `RangeError` at `1.5` and a
+`SyntaxError` at `"x"`, and a throw is a stuck term here, so a signature
+promising a `bigint` there would be false. So, as for `Array.prototype`
+([The array prototype](#the-array-prototype)), a standard library global is
+read only through a checked-in overlay
+([`library-globals.mts`](tools/library-globals.mts)), one entry per signature,
+holding only what the declarations do not say and soundness needs:
+
+- *An allowlist.* A call, method or property signature of a global declared
+  in a standard library file is read only when an entry lists it, with exactly
+  the declaration text it was reviewed against; anything else is refused
+  (`… is not in the reviewed overlay of library globals`), so a changed
+  library is re-reviewed, never trusted silently. A global declared elsewhere,
+  such as `@types/node`'s `process`, is read as declared.
+- *Admitted arguments.* Where the host throws on some arguments the declared
+  parameter admits, the entry states the parameter at what the host accepts:
+  a safe part $S$, at which it never throws, and each literal argument type
+  $\ell$ of the module's calls of that signature that the host converts,
+  decided by converting it (`admit`).
+
+With $s$ a selected signature (in $C$ or some $O_m$ of the global rule),
+$\Omega$ the overlay, $\omega$ an entry and $L_s$ the literal types TypeScript
+gives the argument at $\omega$'s parameter in the calls that select $s$:
+
+$$
+\frac{\mathit{lib}(x)\quad \omega\in\Omega\quad
+      \omega.\mathit{global}=x\quad \omega.\mathit{text}=\mathsf{text}(s)\quad
+      \omega\ \text{admits}\ (i, S, \mathit{ok})}
+     {\llbracket s\rrbracket_\Omega=\llbracket s\rrbracket\bigl[\,p_i:=S\cup\{\ell\in L_s\mid \mathit{ok}(\ell)\}\,\bigr]}\ \textsc{library-global}
+$$
+
+and an entry without `admit` reads $s$ as declared. Replacing a parameter by
+a subset of it gives a supertype of the declared signature, so the entry
+assumes no more than the declaration; what it adds is that the host meets the
+weaker signature, which is what is actually true.
+
+**Entries.**
+
+| Global | Signature | Read as |
+| --- | --- | --- |
+| `BigInt` | `(value: bigint \| boolean \| number \| string): bigint` | `value` at `bigint \| boolean`, and each integer number literal and each string literal `BigInt` converts: `BigInt(42)`, `BigInt(-42)`, `BigInt("0xFF")`; not `BigInt(1.5)`, `BigInt("x")`, nor a `number` or `string` operand |
+| `Symbol` | `(description?: string \| number): symbol` | as declared: a fresh symbol, whose description converts without running code |
+| `Symbol.for`, `Symbol.keyFor` | `for(key: string): symbol`, `keyFor(sym: symbol): string \| undefined` | as declared |
+| `String` | `(value?: any): string` | `value` at the primitives, `symbol` included: converting an object runs its `toString` or `valueOf`, which may throw or return an object, and then `String` throws |
+| `console.log` | `log(...data: any[]): void` (the DOM library's) | as declared, `any` as `unknown`: output, which the model does not observe; the host formats its arguments without running code the fragment can write |
+
+**Refused, by decision.** `JSON.stringify` returns `undefined` for
+`undefined` and functions and throws on bigints and cycles; `JSON.parse`
+throws on text that is not JSON; `Array.isArray` is declared `arg is any[]`,
+a guard at `any`, and is a test of the array's exotic identity, which a
+shape test on a value cannot answer (the heap decides); `Object.keys` and
+`Object.values` enumerate own keys, which open record types do not bound;
+`Promise.resolve` adopts thenables. None is listed. A construct signature
+(`new Array<T>()`, `new Set(xs)`, `new Error(m)`) is not read yet: the
+selection has calls and members, not constructs.
+
+**Trust.** Each entry is an assumption on the host's implementation, as
+`ArrayProto` is ([What remains assumed](#what-remains-assumed)): the
+selection enters the module as a global value, an input the result is
+relative to.
+
 ### Async functions and await
 
 **Decision.** `await` is a trusted step: `await e` yields the value the
@@ -3311,10 +3405,10 @@ JavaScript does:
   folds a negated literal into a negative one, as it does for numbers; Lean
   refuses a non-canonical spelling. `typeof x === "bigint"` is the existing
   `isBigint` shape test, which a bigint singleton answers as the family does.
-- **The `BigInt` function is a library global.** `BigInt(v)` reads the global
-  `BigInt`, whose declaration merges an interface and a variable and is
-  called rather than read through a member, which the global reader does not
-  admit yet; it is library-globals work, not this rule's.
+- **The `BigInt` function is a library global.** `BigInt(v)` calls the global
+  `BigInt`, read through the reviewed overlay
+  ([Library globals](#library-globals)) at what it converts without throwing:
+  a bigint, a Boolean, an integer literal or a string literal it parses.
 
 ### Null predicates through union elimination
 

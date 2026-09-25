@@ -14,6 +14,7 @@ import { classInstance, expandMapped, mapped, members, oneTerm, optionalTerm, si
   type Mapped, type TermScope } from "./type-term.mts";
 import { arrayPrototype, overlay, type OverlayEntry } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule } from "./intrinsics.mts";
+import { globalEntry, globalsOverlay, type GlobalEntry } from "./library-globals.mts";
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
 export type { DeclarationIdentity, DeclarationDocument, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
 
@@ -218,8 +219,9 @@ export function collectDeclarations(file: string, options: {
   intrinsics?: Span;
   /** The client's value references to names it neither imports nor binds:
    * each that TypeScript binds to a global variable, such as Node's
-   * `process`, joins its values, read at the members those references
-   * select (`selectGlobal`). The first reference locates it. */
+   * `process` or the standard library's `BigInt`, joins its values, read at
+   * the members and call signatures those references select
+   * (`selectGlobal`). The first reference locates it. */
   globalValues?: readonly Span[];
   /** The names the client's ambient declarations bind, `declare function f`,
    * `declare const x: T`, `declare class C`, one span per name (overloads
@@ -633,7 +635,7 @@ export function collectDeclarations(file: string, options: {
     // Global variables the client reads, such as Node's `process` (DESIGN.md,
     // "Global values"): each joins the values like an import, at a definition
     // of its own, keyed by the variable's declaration, that holds only the
-    // members the client's references select.
+    // members and call signatures the client's references select.
     const selections: TypeDefinition[] = [];
     const groups = new Map<number, Identifier[]>();
     for (const span of options.globalValues ?? []) {
@@ -653,7 +655,8 @@ export function collectDeclarations(file: string, options: {
       if (!first) continue;
       const at: Span = [first.getStart(client), first.end];
       try {
-        const selection = selectGlobal(checker, uses, { lookup, identityOf: idOf, clean, valueScope, partners });
+        const selection = selectGlobal(checker, uses, { lookup, identityOf: idOf, clean, valueScope, partners,
+          overlay: globalsOverlay });
         selections.push(selection);
         values.push({ binding: { local: first.text, imported: first.text, specifier: globalSpecifier, span: at },
           declaration: selection.declaration, construct: false, typeParams: [],
@@ -731,25 +734,36 @@ type SelectionContext = {
   clean: (node: Node, what: string) => void;
   valueScope: (node: Node, what: string) => TermScope;
   partners: ReadonlyMap<TypeDeclaration, readonly TypeDeclaration[]>;
+  /** The reviewed overlay a standard library global is read through. */
+  overlay: readonly GlobalEntry[];
 };
 
 /**
- * A global variable, such as Node's `process`, read at the members the
- * client's references `uses` select (DESIGN.md, "Global values"). Every
- * reference must read a member by name, `process.m`; TypeScript resolves the
- * member on the interface the variable is annotated with, through its
- * heritage and merged declarations. The definition, keyed by the variable's
- * first declaration, is an object with one member per name read:
+ * A global variable, such as Node's `process` or the standard library's
+ * `BigInt`, read at the members and call signatures the client's references
+ * `uses` select (DESIGN.md, "Global values" and "Library globals"). Every
+ * reference must read a member by name, `process.m`, or be called,
+ * `BigInt(v)`. TypeScript resolves the member on the interface the variable
+ * is annotated with, through its heritage and merged declarations, and a
+ * call to one of that interface's call signatures. An interface of the same
+ * name, `interface BigInt` beside `declare var BigInt`, is the name's type
+ * meaning, which a value reference does not denote. The definition, keyed by
+ * the variable's first declaration, is an object with one member per name
+ * read, and the call signatures the client's calls resolve to:
  *
  * - a method is the overloads TypeScript resolves the client's calls to,
  *   each a host-relative member (so its reference must be called), and a
  *   `this` result is the definition itself, the host;
- * - a property is its signature as declared, read like any declaration's.
+ * - a property is its signature as declared, read like any declaration's;
+ * - a call signature is read as a method's is, with no receiver.
  *
- * Leaving the other members and overloads out gives a supertype of the
+ * Leaving the other members and signatures out gives a supertype of the
  * declared type, since methods are host-relative; nothing else about the
  * members read changes. A member inherited from a generic interface, and a
- * generic, optional or `this`-typed method, are refused.
+ * generic, optional or `this`-typed method or call signature, are refused.
+ * A global the standard library declares is read only through the reviewed
+ * overlay (`library-globals.mts`): each signature read must be listed, and a
+ * parameter at which the host may throw is stated at what it accepts.
  */
 function selectGlobal(checker: Checker, uses: readonly Identifier[], context: SelectionContext):
     TypeDefinition {
@@ -760,11 +774,22 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   const variables = declarations.filter((d): d is ts.VariableDeclaration =>
     !!d && ts.isVariableDeclaration(d) && !!d.type && ts.isIdentifier(d.name));
   const [declaration] = variables;
-  if (!declaration || variables.length !== declarations.length)
+  if (!declaration || declarations.some(d => !d ||
+      (!ts.isInterfaceDeclaration(d) && !variables.includes(d as ts.VariableDeclaration))))
     throw Error(`the global ${name} is not an annotated variable`);
   const where = (node: Node, key: string) => `${context.identityOf(node.getSourceFile())}#${key}`;
   for (const variable of variables) context.clean(variable, where(variable, name));
   const spanOf = (node: Node): Span => [node.getStart(node.getSourceFile()), node.end];
+  // A standard library global is read through the reviewed overlay: a
+  // signature it does not list, with exactly the text reviewed, is refused.
+  const library = variables.every(v => isLibraryModule(context.identityOf(v.getSourceFile())));
+  const reviewed = (member: string | undefined, node: Node, what: string): GlobalEntry | undefined => {
+    if (!library) return undefined;
+    const text = node.getText(node.getSourceFile()).trim();
+    const entry = globalEntry(context.overlay, name, member, text);
+    if (!entry) throw Error(`${what} is not in the reviewed overlay of library globals: ${text}`);
+    return entry;
+  };
   // The interface the variable is annotated with, a plain or qualified name.
   const annotation = declaration.type;
   const written = annotation && ts.isTypeReferenceNode(annotation)
@@ -782,15 +807,69 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
       throw Error(`${what} is inherited from a generic interface`);
     return context.valueScope(member, what);
   };
+  // The declaration among `candidates` TypeScript resolves `call` to.
+  const resolvedAmong = <T extends Node>(call: ts.CallExpression, candidates: readonly T[]): T | undefined => {
+    const resolved = checker.getResolvedSignature(call)?.declaration?.resolve();
+    return candidates.find(m => resolved && m.pos === resolved.pos && m.end === resolved.end &&
+      m.getSourceFile().fileName === resolved.getSourceFile().fileName);
+  };
+  // A method's or call signature's forms. A parameter the overlay restricts
+  // is stated at what the host accepts: its safe part, and each literal
+  // argument of `calls` the host converts.
+  const forms = (signature: ts.MethodSignatureDeclaration | ts.CallSignatureDeclaration, key: string,
+      what: string, entry: GlobalEntry | undefined, calls: readonly ts.CallExpression[]) => {
+    if (signature.typeParameters?.length || (ts.isMethodSignatureDeclaration(signature) &&
+        (signature.postfixToken || signature.modifiers?.length)))
+      throw Error(`${what} is generic, optional or modified`);
+    context.clean(signature, where(signature, key));
+    const at = spanOf(signature);
+    // `this` as the result is the host: the variable, at this definition.
+    const self: TypeTerm = { k: "self", span: at };
+    const given = signature.type?.kind === ts.SyntaxKind.ThisType ? self : undefined;
+    const read = signatures(scopeOf(signature, what), signature.parameters, signature.type, signature, at, false,
+      given);
+    const admit = entry?.admit;
+    if (!admit) return read;
+    const index = signature.parameters.findIndex(p => ts.isIdentifier(p.name) && p.name.text === admit.parameter);
+    const parameter = signature.parameters[index];
+    if (!parameter || parameter.dotDotDotToken) throw Error(`${what} has no parameter ${admit.parameter}`);
+    const stated: TypeTerm[] = admit.safe.map(atom => ({ k: "atom", name: atom, span: at }));
+    if (parameter.questionToken && !admit.safe.includes("undefined"))
+      stated.push({ k: "atom", name: "undefined", span: at });
+    const seen = new Set<string>();
+    for (const call of calls) {
+      const argument = call.arguments[index];
+      const type = argument ? checker.getTypeAtLocation(argument) : undefined;
+      for (const part of type ? type.isUnionType() ? type.getTypes() ?? [] : [type] : []) {
+        const literal: TypeTerm | null =
+          part.isStringLiteralType() && admit.literal(part.value)
+            ? { k: "literal", name: "string", text: part.value, span: at }
+          : part.isNumberLiteralType() && admit.literal(part.value) && /^-?\d+$/.test(String(part.value))
+            ? { k: "literal", name: "number", text: String(part.value), span: at }
+          : null;
+        if (!literal || seen.has(`${literal.name}:${literal.text}`)) continue;
+        seen.add(`${literal.name}:${literal.text}`);
+        stated.push(literal);
+      }
+    }
+    const [only] = stated;
+    const type: TypeTerm = stated.length === 1 && only ? only : { k: "union", parts: stated, span: at };
+    return read.map(form => ({ ...form, params: form.params.map((p, i) => i === index ? type : p) }));
+  };
   const type = checker.getTypeAtLocation(first);
   if (!type) throw Error(`TypeScript gives ${name} no type`);
   const keys = new Map<string, ts.PropertyAccessExpression[]>();
+  const calls: ts.CallExpression[] = [];
   for (const use of uses) {
-    const access = use.parent;
-    if (!ts.isPropertyAccessExpression(access) || access.expression !== use || access.questionDotToken ||
-        !ts.isIdentifier(access.name))
-      throw Error(`${name} is read only through its members, each by name`);
-    keys.set(access.name.text, [...keys.get(access.name.text) ?? [], access]);
+    const parent = use.parent;
+    if (ts.isPropertyAccessExpression(parent) && parent.expression === use && !parent.questionDotToken &&
+        ts.isIdentifier(parent.name))
+      keys.set(parent.name.text, [...keys.get(parent.name.text) ?? [], parent]);
+    else if (ts.isCallExpression(parent) && parent.expression === use && !parent.questionDotToken)
+      calls.push(parent);
+    else if (ts.isNewExpression(parent) && parent.expression === use)
+      throw Error(`${name} is constructed, and a global's construct signatures are not read`);
+    else throw Error(`${name} is read only through its members, each by name, or called`);
   }
   const fields: Extract<TypeTerm, { k: "object" }>["fields"] = [];
   for (const [key, accesses] of keys) {
@@ -799,47 +878,53 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
     const methods = nodes.filter((d): d is ts.MethodSignatureDeclaration => !!d && ts.isMethodSignatureDeclaration(d));
     const [property] = nodes;
     if (methods.length && methods.length === nodes.length) {
-      const chosen: ts.MethodSignatureDeclaration[] = [];
+      const chosen = new Map<ts.MethodSignatureDeclaration, ts.CallExpression[]>();
       for (const access of accesses) {
         const call = access.parent;
         if (!ts.isCallExpression(call) || call.expression !== access || call.questionDotToken)
           throw Error(`the method ${what} is only called, on its host`);
-        const resolved = checker.getResolvedSignature(call)?.declaration?.resolve();
-        const overload = methods.find(m => resolved && m.pos === resolved.pos && m.end === resolved.end &&
-          m.getSourceFile().fileName === resolved.getSourceFile().fileName);
+        const overload = resolvedAmong(call, methods);
         if (!overload) throw Error(`TypeScript resolves the call of ${what} to no overload it declares`);
-        if (!chosen.includes(overload)) chosen.push(overload);
+        chosen.set(overload, [...chosen.get(overload) ?? [], call]);
       }
-      const forms = chosen.flatMap(overload => {
-        if (overload.typeParameters?.length || overload.postfixToken || overload.modifiers?.length)
-          throw Error(`the method ${what} is generic, optional or modified`);
-        context.clean(overload, where(overload, key));
-        const at = spanOf(overload);
-        // `this` as the result is the host: the variable, at this definition.
-        const self: TypeTerm = { k: "self", span: at };
-        const given = overload.type?.kind === ts.SyntaxKind.ThisType ? self : undefined;
-        return signatures(scopeOf(overload, what), overload.parameters, overload.type, overload, at, false, given)
-          .map(form => {
-            if (form.receiver) throw Error(`the method ${what} states its receiver`);
-            return { ...form, receiver: self };
-          });
-      });
-      const [only] = forms;
+      const selected = [...chosen].flatMap(([overload, calls]) =>
+        forms(overload, key, what, reviewed(key, overload, what), calls).map(form => {
+          if (form.receiver) throw Error(`the method ${what} states its receiver`);
+          return { ...form, receiver: { k: "self", span: form.span } satisfies TypeTerm };
+        }));
+      const [only] = selected;
       const span = spanOf(accesses[0] ?? first);
       fields.push({ name: key, optional: false, readonly: false, span,
-        type: forms.length === 1 && only ? only : { k: "intersection", parts: forms, span } });
+        type: selected.length === 1 && only ? only : { k: "intersection", parts: selected, span } });
     } else if (nodes.length === 1 && property && ts.isPropertySignatureDeclaration(property) && property.type &&
         !property.modifiers?.some(m => m.kind !== ts.SyntaxKind.ReadonlyKeyword)) {
+      reviewed(key, property, what);
       context.clean(property, where(property, key));
       fields.push({ name: key, optional: property.postfixToken?.kind === ts.SyntaxKind.QuestionToken,
         readonly: property.modifiers?.some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword) === true,
         type: typeTerm(scopeOf(property, what), property.type, property), span: spanOf(property) });
     } else throw Error(`${what} is not one property signature or method signatures`);
   }
+  // The call signatures the client's calls of the global resolve to, each
+  // once, with the calls that chose it.
+  const declared = parts.filter(ts.isInterfaceDeclaration)
+    .flatMap(part => part.members.filter(ts.isCallSignatureDeclaration));
+  const chosen = new Map<ts.CallSignatureDeclaration, ts.CallExpression[]>();
+  for (const call of calls) {
+    const signature = resolvedAmong(call, declared);
+    if (!signature) throw Error(`TypeScript resolves the call of ${name} to no call signature it declares`);
+    chosen.set(signature, [...chosen.get(signature) ?? [], call]);
+  }
+  const what = `${name}(…)`;
+  const callForms = [...chosen].flatMap(([signature, calls]) =>
+    forms(signature, name, what, reviewed(undefined, signature, what), calls).map(form => {
+      if (form.receiver) throw Error(`${what} states its receiver`);
+      return form;
+    }));
   const source = declaration.getSourceFile();
   return { declaration: { module: context.identityOf(source), name,
     span: [declaration.getStart(source), declaration.end] }, parameters: [], bases: [],
-    expression: { k: "object", fields, stringIndex: null, calls: [], span: spanOf(first) } };
+    expression: { k: "object", fields, stringIndex: null, calls: callForms, span: spanOf(first) } };
 }
 
 /** Where each named import of `file` resolves, whatever kind of declaration

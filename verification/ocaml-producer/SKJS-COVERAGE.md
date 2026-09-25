@@ -129,7 +129,7 @@ Ordered by value for cost (units per effort, files as a tiebreak):
 | 10 | Mutable bindings: unannotated `let`, `let x: T;`, parameter assignment, unannotated module constants read by functions | 52 | 42 | 0 | 22 | M | O L |
 | 11 | Compound / update assignment (`x++`, `+=`, `||=`, `??=`, `a[i] op=`) | 24 | 24 | 0 | 15 | S | O L |
 | 12 | Destructuring, rest/default parameters | 96 | 90 | 5 | 22 | M | P O L |
-| 13 | Library globals as values (`Array.isArray`, `new Array`, `Symbol()`, `new Error`, `Promise`, `Set`, `Map`, `Date`, `JSON`) | 108 | 94 | 14 | 29 | M | D L |
+| 13 | Library globals as values — calls and the reviewed overlay done (task K); left: `Array.isArray` (23), `new X(…)` (`Error` 23, `Array`, `Set`, `Map`, `Date`, `Promise`), well-known symbols (8), `Promise`/`JSON`/`Object` statics | 86 | | | 25 | M | D L |
 | 14 | Reads on unions/primitives (field/index read on non-object, string keys) and value-level `&&`/`||` | 48 + 20 | 63 | 0 | 30 | M | O L |
 | 15 | Equality against string/boolean literal singletons (Lean refuses the source form) | 37 | 37 | 0 | 5 | M | L |
 | 16 | Discriminated-union narrowing (producer: "missing field" after a tag test) | 14 | 13 | 0 | 4 | M | O L |
@@ -266,12 +266,31 @@ dropped), examples, what the extension needs.
     pattern (1). `array-destructuring-rest.ts#restFromTuple`,
     `destructuring.ts#usefulDefault`. Desugar to reads (the Fragment already
     has field/index reads); defaults need the `undefined` test.
-13. **Library globals.** `the global X is not an annotated variable`: Array
-    (38, mostly `Array.isArray`), Symbol (30), Error (23, `throw new Error`),
-    Promise (4), Set (3), Date, Map, String (2 each), Object, JSON (1 each);
-    `proposal: unbound name` (2: `__SKJS_show`, `process`). Needs the lib's
-    `declare var X: XConstructor` read as values (after 4) with the lib
-    interfaces of 1 and 28. `Array.isArray` also needs a narrowing rule (17).
+13. **Library globals.** *Task K (first part): a global value may be called,
+    `BigInt(v)`, at the call signatures TypeScript resolves the calls to, and
+    an interface of the global's name (`interface BigInt` beside `declare var
+    BigInt`) is its type meaning, not a second value. A standard library
+    global is read only through a reviewed overlay
+    ([DESIGN.md](../DESIGN.md#library-globals), `tools/library-globals.mts`):
+    `BigInt` at a bigint, a Boolean, or an integer or string literal it
+    converts; `Symbol`, `Symbol.for`/`keyFor`; `String` of a primitive;
+    `console.log`. 703 → 709 units verify (`simple_bigint_test.ts` 2,
+    `symbols.ts` 4), no unit lost; the 102 `BigInt` units stop next at
+    reads on primitives (`x.toString()`, 39, task L), template literals (7)
+    or the init-only policy (52). Left, by first blocker:* `Array.isArray`
+    (23: `isArray(arg: any): arg is any[]` is a guard at `any`, and an array
+    test reads the heap, which a value shape test cannot; needs a new test and
+    narrowing rule, group 17), constructs `new Error` (23, behind `throw`;
+    an `Error`'s `name` is inherited, not own, so the declared interface
+    is not its own-field record), `new Array`/`Set`/`Map`/`Date`/`Promise`
+    and `instanceof Array` (`Array is read only through its members`, 15),
+    well-known symbols as values (`Symbol.iterator`, 8; `unique symbol` is
+    read as a key, not yet as a value), `const s: unique symbol = Symbol()`
+    (11, TypeOperator), a global both called and read through a method (1),
+    and unlisted statics: `Promise.resolve`/`reject`/`all` (generic;
+    `resolve` adopts thenables), `JSON.stringify` (returns `undefined`,
+    throws on bigints), `Object.keys`.
+
 14. **Reads on unions/primitives; value-level `&&`/`||`.** `proposal: indexed
     read on non-object` (24), `field read on non-object` (19), `record index
     requires a string key` (1), `search: a dynamic string index write is
@@ -349,7 +368,7 @@ dropped), examples, what the extension needs.
 24. **Exceptions.** `TryStatement` (10), `ThrowStatement` (1); `throw new
     Error(…)` also needs 13.
 25–31. See the table; each is a handful of gate or producer forms.
-32. **bigint.** `BigIntLiteral` (129), the `BigInt` global (102), `non-decimal
+32. **bigint.** `BigIntLiteral` (129), the `BigInt` global (102, read since task K), `non-decimal
     numeric literal type` (1). A new primitive in the calculus.
 33. **Enums.** `top-level statement outside the fragment (EnumDeclaration)` (56).
 
@@ -509,7 +528,7 @@ split by function.
 | H. Destructuring and parameters | Object/array patterns, rest, holes, nested, parameter patterns, default and rest parameters | 96 / 22 | `fragment-parse.mts`, `proposal.ml`, `SourceExtraction.lean` | — | F |
 | I. Literal equality and tag narrowing | Lean equality with string/boolean singletons; discriminated-union narrowing; `switch` case narrowing | 42+ / 10 (plus much of the 42 narrowing failures) | `SourceExtraction.lean`, `ProgramTyping.lean`, `CertificateProducer.lean`, `proposal.ml` | F for `switch` | G, J |
 | J. Guards | `typeof`, `in`, `instanceof`, `Array.isArray`; `typeof` in type position | 88 / 16 | `fragment-parse.mts`, `proposal.ml`, Lean narrowing rules | I, K (`Array`) | I |
-| K. Library globals | `Array`, `Symbol`, `Error`, `Promise`, `Set`, `Map`, `Date`, `JSON`, `String`, `Object` values from lib declarations | 108 / 29 | `declaration-graph.mts`, `fragment-parse.mts` (globals), `DeclarationGraph.lean` | B, C | B, C |
+| K. Library globals (done, first part) | Global values read at the call signatures a module calls (`BigInt(v)`, `Symbol()`, `String(v)`) as well as members; a standard library global only through a reviewed overlay (`library-globals.mts`) that states a parameter at what the host accepts without throwing | all 102 `BigInt` units and the `Symbol()`/`String()` calls pass the reader; 6 units / 2 files newly verified (703 → 709 units, 61 → 62 whole files); `Array.isArray`, `new X(…)`, well-known symbols, `Promise`/`JSON`/`Object` statics left | `declaration-graph.mts`, `library-globals.mts` | B, C | B, C |
 | L. Primitive and union reads | `s.length` and other primitive members, member/index reads on unions, value-level `&&`/`||`, dynamic string index writes | 68 / 30 | `proposal.ml`, `Calculus.lean`, `CertificateProducer.lean` | B (string lib) | I |
 | M. Class members | Modifiers, optional/definite fields, parameter properties, constructor statements, receivers; then inheritance | 104 / 31 | `fragment-parse.mts` (classes), `proposal.ml`, class model in Lean | — | N |
 | N. Generics | Constraint forms, explicit type arguments on calls, unions with rigid types in claims, rigid types in graph types, `as const`; then generic classes | 175 / 50 | `fragment-parse.mts`, `inference.ml`, `GenericSource.lean`, `TypeParams.lean` | M for generic classes | M |
