@@ -194,7 +194,7 @@ private def keyField (fc : SourceClaims.Function) (key : Fragment.Expr) : Compil
   let K ← exprType fc key
   match PositiveRules.expand (SourceTypes.graph (← table)) K with
   | [.strLit s] =>
-    if s == SourceTypes.storeField then throw "the array store is internal, not a source property"
+    if SourceTypes.reservedKey s then throw s!"'{s}' is internal to the model, not a source property"
     else pure (.field s)
   | [.str] => pure .dynamic
   | _ =>

@@ -18,6 +18,12 @@ abbrev Table := List RequestJson.Row
 /-- The field an array object holds its store in. No source name spells it. -/
 def storeField : PropKey := "[]"
 
+/-- The field an object holds its prototype in. No source name spells it. -/
+def protoField : PropKey := CallArguments.protoField
+
+/-- A key the model keeps for itself: the array store and the prototype. -/
+def reservedKey (k : PropKey) : Bool := k == storeField || k == protoField
+
 /-- Labels 0 to 3: null, true, false, undefined. -/
 def initial : Table := [.clauses [.nul], .clauses [.boolLit true], .clauses [.boolLit false],
   .clauses [.undef]]

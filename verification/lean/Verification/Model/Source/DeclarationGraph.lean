@@ -436,6 +436,8 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     -- readonly one would need a view form of presence, which is not stated.
     for f in ← arr term "fields" do
       let name ← PropKey.decode (← field f "name")
+      if SourceTypes.reservedKey name then
+        throw s!"a declared member cannot use the model's internal key {repr name}"
       let ty ← field f "type"
       let optional ← bool f "optional"
       match (if optional then none else methodForms ty) with

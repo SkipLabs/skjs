@@ -328,23 +328,28 @@ def viewT (fs : Fields) : Fam := fun k W v =>
 
 /-- A readonly string index signature constrains every *present* own field.
 The map of locations is finite, while the signature ranges over all strings.
-An absent key has no location and is read as `undefined` by `Step.readMissing`.
+An absent key has no location and is read as `undefined` by `Step.readMissing`,
+which needs the object to have no prototype: a dictionary has none.
 This is a read capability: the actual cell contract may be stricter than `A`.
 The plain-object restriction is the same one used by `recT` and `viewT`. -/
 def dictViewT (A : Fam) : Fam := fun k W v =>
   ∃ flds : List (PropKey × Nat), v = .objAt flds .absent ∧
+    flds.lookup CallArguments.protoField = none ∧
     ∀ (f : String) (l : Nat), flds.lookup (.str f) = some l →
       ∃ c : Ctr k, lookup W l = some c ∧
         ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u → A j W' u
 
 /-- **Optional fields.** Each named key, when the object has it, stands for a
 location under exactly the stated contract, as a required field's does; an
-absent key is not constrained, and `Step.readMissing` reads it as `undefined`.
-Presence is fixed: an object's map of locations is fixed at allocation, so
-whether a key is present never changes. The plain-object restriction is the
-one `recT` uses. -/
+absent key is not constrained, and `Step.readMissing` reads it as `undefined`,
+which needs the object to have no prototype: an object lacking one of its
+optional keys has none. Presence is fixed: an object's map of locations is fixed at
+allocation, so whether a key is present never changes. The plain-object
+restriction is the one `recT` uses. -/
 def optT (fs : Fields) : Fam := fun k W v =>
   ∃ flds : List (PropKey × Nat), v = .objAt flds .absent ∧
+    (∀ (f : PropKey) (T : Fam), (f, T) ∈ fs → flds.lookup f = none →
+      flds.lookup CallArguments.protoField = none) ∧
     ∀ (f : PropKey) (T : Fam), (f, T) ∈ fs → ∀ l, flds.lookup f = some l →
       ∃ c : Ctr k, lookup W l = some c ∧
         ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ T j W' u
@@ -352,7 +357,7 @@ def optT (fs : Fields) : Fam := fun k W v =>
 /-- No optional field constrains a plain object. -/
 theorem optT_nil {k} {W : WorldT k} {flds : List (PropKey × Nat)} :
     optT [] k W (.objAt flds .absent) :=
-  ⟨flds, rfl, fun _ _ hm => by simp at hm⟩
+  ⟨flds, rfl, fun _ _ hm => by simp at hm, fun _ _ hm => by simp at hm⟩
 
 /-- A record's object is plain, so no optional field constrains it. -/
 theorem recT_optT_nil {fs : Fields} {k} {W : WorldT k} {v : Val} (h : recT fs k W v) :
@@ -366,19 +371,34 @@ theorem optT_present {fs : Fields} {f : PropKey} {T : Fam} (hm : (f, T) ∈ fs)
     {l : Nat} (hl : flds.lookup f = some l) :
     ∃ c : Ctr k, lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ T j W' u := by
-  obtain ⟨flds', heq, hf⟩ := h
+  obtain ⟨flds', heq, -, hf⟩ := h
   cases heq
   exact hf f T hm l hl
+
+/-- An object lacking one of its optional keys has no prototype, so the
+key reads `undefined`. -/
+theorem optT_no_proto {fs : Fields} {f : PropKey} {T : Fam} (hm : (f, T) ∈ fs) {k} {W : WorldT k}
+    {flds : List (PropKey × Nat)} (h : optT fs k W (.objAt flds .absent))
+    (hl : flds.lookup f = none) :
+    flds.lookup CallArguments.protoField = none := by
+  obtain ⟨flds', heq, hp, -⟩ := h
+  cases heq
+  exact hp f T hm hl
 
 theorem optT_append (A B : Fields) (k : Nat) (W : WorldT k) (v : Val) :
     optT (A ++ B) k W v ↔ optT A k W v ∧ optT B k W v := by
   constructor
-  · rintro ⟨flds, rfl, h⟩
-    exact ⟨⟨flds, rfl, fun f T hm => h f T (List.mem_append_left _ hm)⟩,
-      ⟨flds, rfl, fun f T hm => h f T (List.mem_append_right _ hm)⟩⟩
-  · rintro ⟨⟨flds, rfl, ha⟩, ⟨flds', he, hb⟩⟩
+  · rintro ⟨flds, rfl, hp, h⟩
+    exact ⟨⟨flds, rfl, fun f T hm => hp f T (List.mem_append_left _ hm),
+        fun f T hm => h f T (List.mem_append_left _ hm)⟩,
+      ⟨flds, rfl, fun f T hm => hp f T (List.mem_append_right _ hm),
+        fun f T hm => h f T (List.mem_append_right _ hm)⟩⟩
+  · rintro ⟨⟨flds, rfl, hpa, ha⟩, ⟨flds', he, hpb, hb⟩⟩
     cases he
-    refine ⟨flds, rfl, fun f T hm => ?_⟩
+    refine ⟨flds, rfl, fun f T hm => ?_, fun f T hm => ?_⟩
+    · rcases List.mem_append.mp hm with hm | hm
+      · exact hpa f T hm
+      · exact hpb f T hm
     rcases List.mem_append.mp hm with hm | hm
     · exact ha f T hm
     · exact hb f T hm
@@ -387,7 +407,7 @@ theorem optT_append (A B : Fields) (k : Nat) (W : WorldT k) (v : Val) :
 when its element type is a recursive graph label. -/
 theorem dictViewT_congr {A B : Fam} {k : Nat} (h : Agree A B k)
     (W : WorldT k) (v : Val) : dictViewT A k W v ↔ dictViewT B k W v := by
-  constructor <;> rintro ⟨flds, rfl, hf⟩ <;> refine ⟨flds, rfl, ?_⟩
+  constructor <;> rintro ⟨flds, rfl, hp, hf⟩ <;> refine ⟨flds, rfl, hp, ?_⟩
   · intro f l hl
     obtain ⟨c, hc, hA⟩ := hf f l hl
     exact ⟨c, hc, fun j hj W' u hu => (h j hj W' u).mp (hA j hj W' u hu)⟩
@@ -402,9 +422,17 @@ theorem dictViewT_present {A : Fam} {k : Nat} {W : WorldT k}
     {f : String} {l : Nat} (hl : fs.lookup (.str f) = some l) :
     ∃ c : Ctr k, lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u → A j W' u := by
-  obtain ⟨fs', heq, hf⟩ := hd
+  obtain ⟨fs', heq, -, hf⟩ := hd
   cases heq
   exact hf f l hl
+
+/-- A dictionary has no prototype, so a key it lacks reads `undefined`. -/
+theorem dictViewT_no_proto {A : Fam} {k : Nat} {W : WorldT k}
+    {fs : List (PropKey × Nat)} (hd : dictViewT A k W (.objAt fs .absent)) :
+    fs.lookup CallArguments.protoField = none := by
+  obtain ⟨fs', heq, hp, -⟩ := hd
+  cases heq
+  exact hp
 
 private theorem lookup_pair_mem {fs : List (PropKey × Nat)} {f : PropKey} {l : Nat}
     (h : fs.lookup f = some l) : (f, l) ∈ fs := by
@@ -437,15 +465,22 @@ private theorem zip_replicate_fields (ns : List PropKey) (A : Fam) :
 
 /-- An exact fresh object whose every allocated location has contract `A`
 establishes a readonly dictionary view. The exact `slots` map matters:
-an open record with the same named fields may have additional fields. -/
+an open record with the same named fields may have additional fields. It
+names no prototype, so it has none. -/
 theorem recT_fresh_dict {A : Fam} {k : Nat} {W : WorldT k}
-    {base : Nat} {ns : List PropKey}
+    {base : Nat} {ns : List PropKey} (hp : CallArguments.protoField ∉ ns)
     (h : recT (ns.zip (List.replicate ns.length A)) k W
       (.objAt (slots base ns) .absent)) :
     dictViewT A k W (.objAt (slots base ns) .absent) := by
   obtain ⟨flds, heq, hf⟩ := h
   cases heq
-  refine ⟨slots base ns, rfl, ?_⟩
+  refine ⟨slots base ns, rfl, ?_, ?_⟩
+  · cases hl : (slots base ns).lookup CallArguments.protoField with
+    | none => rfl
+    | some l =>
+      have := List.mem_map_of_mem (f := Prod.fst) (lookup_pair_mem hl)
+      rw [slots_names] at this
+      exact absurd this hp
   intro f l hl
   have hp : ((f : PropKey), l) ∈ slots base ns := lookup_pair_mem hl
   have hn : (f : PropKey) ∈ ns := by
@@ -467,9 +502,22 @@ theorem empty_bool_dict_missing {k : Nat} {W : WorldT k} {h : Heap} {f : String}
     dictViewT boolT k W (.objAt [] .absent) ∧
     Step h (.readAt f (.objAt [] .absent)) h .undef ∧
     ¬ boolT k W .undef := by
-  refine ⟨⟨[], rfl, ?_⟩, .readMissing (by simp), ?_⟩
+  refine ⟨⟨[], rfl, rfl, ?_⟩, .readMissing (by simp) (by simp), ?_⟩
   · intro f' l hl; simp at hl
   · simp [boolT]
+
+/-- A key the object lacks is read from its prototype, one step per link. -/
+theorem proto_read_delegates {h : Heap} {p : Val} (hp : h[0]? = some p) :
+    Step h (.readAt "x" (.objAt [(CallArguments.protoField, 0)] .absent)) h (.readAt "x" p) :=
+  .readProto (by decide) (by decide) hp
+
+/-- An object with a prototype is no dictionary: a key it lacks is not
+`undefined` but whatever the prototype holds. -/
+theorem proto_object_not_dict {A : Fam} {k : Nat} {W : WorldT k} {l : Nat} :
+    ¬ dictViewT A k W (.objAt [(CallArguments.protoField, l)] .absent) := by
+  rintro ⟨flds, he, hp, -⟩
+  cases he
+  simp [List.lookup] at hp
 
 theorem viewT_at {fs : Fields} {f : PropKey} {A : Fam} (hm : (f, A) ∈ fs)
     {k} {W : WorldT k} {v} (h : viewT fs k W v) :
@@ -705,15 +753,15 @@ theorem viewT_adm (fs : Fields) : Adm (viewT fs) := by
 theorem optT_adm (fs : Fields) : Adm (optT fs) := by
   refine ⟨?_, ?_⟩
   · intro n W v h
-    obtain ⟨flds, rfl, hf⟩ := h
-    refine ⟨flds, rfl, ?_⟩
+    obtain ⟨flds, rfl, hp, hf⟩ := h
+    refine ⟨flds, rfl, hp, ?_⟩
     intro f T hm l hl
     obtain ⟨c, hc, hag⟩ := hf f T hm l hl
     exact ⟨_, lookup_trunc (Nat.le_succ n) W l c hc,
       fun j hj W' u => hag j (by omega) W' u⟩
   · intro n W W' hx v h
-    obtain ⟨flds, rfl, hf⟩ := h
-    refine ⟨flds, rfl, ?_⟩
+    obtain ⟨flds, rfl, hp, hf⟩ := h
+    refine ⟨flds, rfl, hp, ?_⟩
     intro f T hm l hl
     obtain ⟨c, hc, hag⟩ := hf f T hm l hl
     exact ⟨c, WExt_lookup hx hc, hag⟩
@@ -721,15 +769,15 @@ theorem optT_adm (fs : Fields) : Adm (optT fs) := by
 theorem dictViewT_adm (A : Fam) : Adm (dictViewT A) := by
   refine ⟨?_, ?_⟩
   · intro n W v h
-    obtain ⟨flds, rfl, hf⟩ := h
-    refine ⟨flds, rfl, ?_⟩
+    obtain ⟨flds, rfl, hp, hf⟩ := h
+    refine ⟨flds, rfl, hp, ?_⟩
     intro f l hl
     obtain ⟨c, hc, hag⟩ := hf f l hl
     exact ⟨_, lookup_trunc (Nat.le_succ n) W l c hc,
       fun j hj W' u hu => hag j (by omega) W' u hu⟩
   · intro n W W' hx v h
-    obtain ⟨flds, rfl, hf⟩ := h
-    refine ⟨flds, rfl, ?_⟩
+    obtain ⟨flds, rfl, hp, hf⟩ := h
+    refine ⟨flds, rfl, hp, ?_⟩
     intro f l hl
     obtain ⟨c, hc, hag⟩ := hf f l hl
     exact ⟨c, WExt_lookup hx hc, hag⟩

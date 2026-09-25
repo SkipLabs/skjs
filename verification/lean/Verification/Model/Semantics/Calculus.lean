@@ -649,6 +649,10 @@ def bindParameters (arity : Nat) (args : List Tm) (recv : Tm) (body : Tm) : Tm :
 /-- The field an array object keeps its store in: `SourceTypes.storeField`. -/
 def arrayStoreField : PropKey := "[]"
 
+/-- The field an object keeps its prototype in. No source property names it:
+a read of a key the object lacks continues there (`Step.readProto`). -/
+def protoField : PropKey := "[[proto]]"
+
 /-- Variadic dispatch binds the receiver and then the fixed parameters as
 `parameters` does, and the actuals after the fixed ones become the store the
 body finds in slot 0. Invocation itself still allocates nothing: the yielded
@@ -715,17 +719,27 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   | readField {f : PropKey} {fs : List (PropKey × Nat)} {c : CallCode} {l : Nat}
       {h : Heap} {v : Val} : fs.lookup f = some l → h[l]? = some v →
       Step h (.readAt f (.objAt fs c)) h v
-  /-- JavaScript property lookup produces undefined when the name is absent. -/
+  /-- A key the object lacks is read from its prototype, when it has one. -/
+  | readProto {f : PropKey} {fs : List (PropKey × Nat)} {c : CallCode} {l : Nat}
+      {h : Heap} {p : Val} : fs.lookup f = none → fs.lookup CallArguments.protoField = some l →
+      h[l]? = some p → Step h (.readAt f (.objAt fs c)) h (.readAt f p)
+  /-- JavaScript property lookup produces undefined when the name is absent
+  and there is no prototype to continue at. -/
   | readMissing {f : PropKey} {fs : List (PropKey × Nat)} {c : CallCode} {h : Heap} :
-      fs.lookup f = none → Step h (.readAt f (.objAt fs c)) h .undef
+      fs.lookup f = none → fs.lookup CallArguments.protoField = none →
+      Step h (.readAt f (.objAt fs c)) h .undef
   | indexC1 : Step h a h' a' → Step h (.indexAt a key) h' (.indexAt a' key)
   | indexC2 : isVal a = true → Step h key h' key' →
       Step h (.indexAt a key) h' (.indexAt a key')
   | indexField {f : String} {fs : List (PropKey × Nat)} {c : CallCode} {l : Nat}
       {h : Heap} {v : Val} : fs.lookup (.str f) = some l → h[l]? = some v →
       Step h (.indexAt (.objAt fs c) (.str f)) h v
+  | indexProto {f : String} {fs : List (PropKey × Nat)} {c : CallCode} {l : Nat}
+      {h : Heap} {p : Val} : fs.lookup (.str f) = none → fs.lookup CallArguments.protoField = some l →
+      h[l]? = some p → Step h (.indexAt (.objAt fs c) (.str f)) h (.indexAt p (.str f))
   | indexMissing {f : String} {fs : List (PropKey × Nat)} {c : CallCode} {h : Heap} :
-      fs.lookup (.str f) = none → Step h (.indexAt (.objAt fs c) (.str f)) h .undef
+      fs.lookup (.str f) = none → fs.lookup CallArguments.protoField = none →
+      Step h (.indexAt (.objAt fs c) (.str f)) h .undef
   | writeC1 : Step h a h' a' → Step h (.writeAt f a b) h' (.writeAt f a' b)
   | writeC2 : isVal a = true → Step h b h' b' → Step h (.writeAt f a b) h' (.writeAt f a b')
   | writeField {f : PropKey} {fs : List (PropKey × Nat)} {c : CallCode} {l : Nat}
@@ -1063,31 +1077,45 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     cases s2 with
     | readC s' => exact (ih s').imp id (congrArg (Tm.readAt _))
     | readField _ _ => exact absurd s obj_no_step
-    | readMissing _ => exact absurd s obj_no_step
+    | readProto _ _ _ => exact absurd s obj_no_step
+    | readMissing _ _ => exact absurd s obj_no_step
   | readField hl he =>
     cases s2 with
     | readC s' => exact absurd s' obj_no_step
     | readField hl' he' =>
       cases Option.some.inj (hl.symm.trans hl')
       exact ⟨rfl, Option.some.inj (he.symm.trans he')⟩
-    | readMissing hm => simp [hl] at hm
-  | readMissing hm =>
+    | readProto hm _ _ => simp [hl] at hm
+    | readMissing hm _ => simp [hl] at hm
+  | readProto hm hp he =>
     cases s2 with
     | readC s' => exact absurd s' obj_no_step
     | readField hl _ => simp [hm] at hl
-    | readMissing _ => exact ⟨rfl, rfl⟩
+    | readProto _ hp' he' =>
+      cases Option.some.inj (hp.symm.trans hp')
+      cases Option.some.inj (he.symm.trans he')
+      exact ⟨rfl, rfl⟩
+    | readMissing _ hn => simp [hp] at hn
+  | readMissing hm hn =>
+    cases s2 with
+    | readC s' => exact absurd s' obj_no_step
+    | readField hl _ => simp [hm] at hl
+    | readProto _ hp _ => simp [hn] at hp
+    | readMissing _ _ => exact ⟨rfl, rfl⟩
   | indexC1 s ih =>
     cases s2 with
     | indexC1 s' => exact (ih s').imp id (congrArg (Tm.indexAt · _))
     | indexC2 hv _ => exact False.elim (value_no_step hv s)
     | indexField _ _ => exact absurd s obj_no_step
-    | indexMissing _ => exact absurd s obj_no_step
+    | indexProto _ _ _ => exact absurd s obj_no_step
+    | indexMissing _ _ => exact absurd s obj_no_step
   | indexC2 hv s ih =>
     cases s2 with
     | indexC1 s' => exact False.elim (value_no_step hv s')
     | indexC2 _ s' => exact (ih s').imp id (congrArg (Tm.indexAt _ ·))
     | indexField _ _ => exact False.elim (value_no_step rfl s)
-    | indexMissing _ => exact False.elim (value_no_step rfl s)
+    | indexProto _ _ _ => exact False.elim (value_no_step rfl s)
+    | indexMissing _ _ => exact False.elim (value_no_step rfl s)
   | indexField hl he =>
     cases s2 with
     | indexC1 s' => exact absurd s' obj_no_step
@@ -1095,13 +1123,25 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     | indexField hl' he' =>
       cases Option.some.inj (hl.symm.trans hl')
       exact ⟨rfl, Option.some.inj (he.symm.trans he')⟩
-    | indexMissing hm => simp [hl] at hm
-  | indexMissing hm =>
+    | indexProto hm _ _ => simp [hl] at hm
+    | indexMissing hm _ => simp [hl] at hm
+  | indexProto hm hp he =>
     cases s2 with
     | indexC1 s' => exact absurd s' obj_no_step
     | indexC2 _ s' => exact False.elim (value_no_step rfl s')
     | indexField hl _ => simp [hm] at hl
-    | indexMissing _ => exact ⟨rfl, rfl⟩
+    | indexProto _ hp' he' =>
+      cases Option.some.inj (hp.symm.trans hp')
+      cases Option.some.inj (he.symm.trans he')
+      exact ⟨rfl, rfl⟩
+    | indexMissing _ hn => simp [hp] at hn
+  | indexMissing hm hn =>
+    cases s2 with
+    | indexC1 s' => exact absurd s' obj_no_step
+    | indexC2 _ s' => exact False.elim (value_no_step rfl s')
+    | indexField hl _ => simp [hm] at hl
+    | indexProto _ hp _ => simp [hn] at hp
+    | indexMissing _ _ => exact ⟨rfl, rfl⟩
   | writeC1 s ih =>
     cases s2 with
     | writeC1 s' => exact (ih s').imp id (congrArg (Tm.writeAt _ · _))
@@ -1296,6 +1336,7 @@ theorem read_step_inv {r : Nat} {c : CallCode} {h h' t} (hs : Step h (.read (.ob
     rw [lookup_value] at hl
     cases hl
     exact ⟨rfl, he⟩
+  | readProto hm => simp at hm
   | readMissing hm => simp at hm
 
 

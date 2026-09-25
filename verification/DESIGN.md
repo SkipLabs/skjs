@@ -2020,9 +2020,12 @@ member's scheme at the source's element type. It is staged after the read
 rule.
 
 **Consequence.** Optional fields and index views read an absent key as
-`undefined`, which is true only without a prototype. So `optT` (with at least
-one field) and `dictViewT` require no prototype field, and no array is below a
-type with optional fields or an index signature.
+`undefined`, which is true only without a prototype. So `optT` requires no
+prototype field of an object lacking one of its optional keys, and `dictViewT`
+of every object. A required field covering an optional one owes nothing,
+since its key is present. No array is below an index signature, or below an
+optional field its keys lack. The store and prototype keys are reserved: no
+source property or declared member may use them.
 
 **Trust.** `ArrayProto` states what the library's members do. It is assumed,
 like an imported value's declared type, and each member's specification

@@ -427,7 +427,8 @@ These are `readView`, `readOptional` and `readDict`. The `read` and `write`
 rules above take $(\kappa{:}A)\in\varphi$ from the invariant fields alone,
 whatever the views and optional fields. A write to an optional field is not typed, since
 the object's keys are fixed at allocation. `allocDict` establishes a dictionary view for a fresh literal only
-after checking every initializer at $A$. None of these rules grants a write
+after checking every initializer at $A$ and that the literal names no
+prototype key. None of these rules grants a write
 capability to a readonly dictionary.
 
 $$

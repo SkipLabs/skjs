@@ -898,7 +898,25 @@ theorem covers_optional_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R 
     optT (famsOf (mixedValues G η) ps) n W v := by
   obtain ⟨flds, he, -⟩ := hv.1.1
   subst he
-  refine ⟨flds, rfl, ?_⟩
+  refine ⟨flds, rfl, ?_, ?_⟩
+  · -- A target key the object lacks is covered by an optional source key, since
+    -- a required one is present: the source then has no prototype.
+    intro f T hm hl
+    obtain ⟨y, hy, rfl⟩ := mem_famsOf.mp hm
+    obtain ⟨⟨pf, pl⟩, hp, hpf, -, -⟩ := hc (f, y) hy
+    simp only at hpf
+    subst hpf
+    rcases List.mem_append.mp hp with hp | hp
+    · obtain ⟨L, hL, hpL⟩ := List.mem_flatten.mp hp
+      have hsrc : recT (famsOf (mixedValues G η) L) n W (.objAt flds .absent) := by
+        rcases List.mem_cons.mp hL with rfl | hL
+        · exact hv.1.1
+        · exact hv.1.2 _ (List.mem_map_of_mem hL)
+      obtain ⟨flds', l', c0, he', hf, -, -⟩ := recT_at (mem_famsOf.mpr ⟨pl, hpL, rfl⟩) hsrc
+      cases he'
+      rw [hl] at hf
+      cases hf
+    · exact optT_no_proto (mem_famsOf.mpr ⟨pl, hp, rfl⟩) hv.2 hl
   intro f T hm l hl
   obtain ⟨y, hy, rfl⟩ := mem_famsOf.mp hm
   obtain ⟨⟨pf, pl⟩, hp, hpf, hpy, hyp⟩ := hc (f, y) hy
@@ -1240,8 +1258,8 @@ theorem Covers.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R self a b}
       covers_methods_sound hc.2.2.2.2 n hr hpa W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2⟩
     intro y hy
     obtain ⟨x, hx, hxy⟩ := hc.2.2.1 y hy
-    obtain ⟨flds, he, hfs⟩ := hv.2.2.1 x hx
-    refine ⟨flds, he, ?_⟩
+    obtain ⟨flds, he, hp, hfs⟩ := hv.2.2.1 x hx
+    refine ⟨flds, he, hp, ?_⟩
     intro f l hl
     obtain ⟨c, hw, hag⟩ := hfs f l hl
     exact ⟨c, hw, fun j hj W' u hu => hr j hj x y hxy W' u (hag j hj W' u hu)⟩

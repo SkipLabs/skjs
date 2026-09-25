@@ -96,8 +96,9 @@ $$
 &\iff v=\ell\land\forall(\kappa{:}T).\;\exists l,c.\;
       \mathit{flds}(\kappa)=l\land W(l)=c\land c_j\subseteq T_j,\\
 \mathsf{opt}(\overline{\kappa{:}T})_n(W,v)
-&\iff v=\ell\land\forall(\kappa{:}T),l.\;
-      \mathit{flds}(\kappa)=l\Rightarrow\exists c.\;W(l)=c\land c_j\equiv T_j.
+&\iff v=\ell\land\forall(\kappa{:}T).\;
+      (\mathit{flds}(\kappa)=\varnothing\Rightarrow\mathit{flds}(\mathsf{proto})=\varnothing)\\
+&\qquad\land\forall l.\;\mathit{flds}(\kappa)=l\Rightarrow\exists c.\;W(l)=c\land c_j\equiv T_j.
 \end{aligned}
 $$
 
@@ -109,8 +110,9 @@ $$
 - **Views** only read: the location's contract implies the view's type, so a
   view grants no write.
 - **Optional fields** constrain a key only where the object has it. A read
-  gives $T$ or undefined. No rule writes one, since an object's keys are fixed
-  at allocation.
+  gives $T$ or undefined, so an object lacking an optional key has no
+  prototype, whose members the read would otherwise reach. No rule writes one,
+  since an object's keys are fixed at allocation.
 - **Methods** are host-relative members: read from the object and invoked on
   it, they behave as typed
   ([DESIGN.md](DESIGN.md#method-members-are-host-relative)). A member $m$ has
@@ -128,10 +130,10 @@ $$
   unrelated world the object's locations need not hold their contracts, and no
   method reading them could be safe.
 
-A `dict` clause adds readonly **index contracts** $\overline{D}$: every
-present field under a string key, named or not, has a contract implying each
-$D$. The object may lack a key, so an arbitrary indexed read has type
-$D\mid\mathsf{undefined}$. Index contracts are guarded through the world, so a
+A `dict` clause adds readonly **index contracts** $\overline{D}$: the object
+has no prototype, and every present field under a string key, named or not,
+has a contract implying each $D$. The object may lack a key, so an arbitrary
+indexed read has type $D\mid\mathsf{undefined}$. Index contracts are guarded through the world, so a
 recursive graph can contain `JsonObject = { readonly [key: string]: Json | null }`.
 
 Lean: `refsT`, `viewT`, `optT`, `dictViewT` (`Types/Types.lean`), `methodT`,

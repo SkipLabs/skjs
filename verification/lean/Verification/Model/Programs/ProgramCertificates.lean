@@ -157,8 +157,8 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
   | .allocDict, .makeAt .absent ns inits, ps =>
     match expand G j.type with
     | [.dict [] [] [] [E]] =>
-      ns.Nodup ∧ ns.length = ps.length ∧ ps.map Sequent.term = inits ∧
-      (∀ p ∈ ps, p.context = j.context ∧ p.type = E)
+      ns.Nodup ∧ CallArguments.protoField ∉ ns ∧ ns.length = ps.length ∧
+      ps.map Sequent.term = inits ∧ (∀ p ∈ ps, p.context = j.context ∧ p.type = E)
     | _ => False
   | .read, .readAt f a, [ja] =>
     ja.context = j.context ∧ ja.term = a ∧
@@ -534,7 +534,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
   · rename_i ps _ _ _ ns inits
     split at hl
     · rename_i E he
-      obtain ⟨hnd, hlen, hterms, hctx⟩ := hl
+      obtain ⟨hnd, hproto, hlen, hterms, hctx⟩ := hl
       have hfst : ((ns.zip ps).map fun r => (r.1, r.2.term)).map Prod.fst = ns := by
         simp only [List.map_map, Function.comp_def]
         exact List.map_fst_zip (by omega)
@@ -547,7 +547,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
           _ = ps.map Sequent.term := by rw [List.map_snd_zip (by omega)]
       have ht := HasTy.allocDict (G := G) (Γ := Γ) (Dict := A) (Elem := E)
         (parts := (ns.zip ps).map fun r => (r.1, r.2.term))
-        (by rw [hfst]; exact hnd)
+        (by rw [hfst]; exact hnd) (by rw [hfst]; exact hproto)
         (by
           intro q hq
           obtain ⟨r, hr, rfl⟩ := List.mem_map.mp hq
@@ -1256,12 +1256,12 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     · intro j hj
       obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
       exact ih p hp
-  | @allocDict Γ Elem Dict parts hnd hpart hr ih =>
+  | @allocDict Γ Elem Dict parts hnd hproto hpart hr ih =>
     apply node_complete (G := G)
       (j := ⟨Γ, .makeAt .absent (parts.map Prod.fst) (parts.map Prod.snd), Dict⟩)
       (r := .allocDict) (js := parts.map fun p => ⟨Γ, p.2, Elem⟩)
     · simp only [Local, show expand G Dict = [.dict [] [] [] [Elem]] from hr]
-      refine ⟨hnd, by simp, by simp [List.map_map, Function.comp_def], ?_⟩
+      refine ⟨hnd, hproto, by simp, by simp [List.map_map, Function.comp_def], ?_⟩
       intro q hq
       obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
       exact ⟨rfl, rfl⟩

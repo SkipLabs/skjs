@@ -388,7 +388,10 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
   | readField hl hv =>
     intro D hh ht
     exact ⟨D,.refl D,hh,(hh.lookup hv).2⟩
-  | readMissing _ =>
+  | readProto _ _ hv =>
+    intro D hh ht
+    exact ⟨D,.refl D,hh,by simpa [TermOk, Scoped, Names] using (hh.lookup hv).2⟩
+  | readMissing _ _ =>
     intro D hh ht
     exact ⟨D,.refl D,hh,by simp [TermOk, Scoped, Names]⟩
   | indexC1 step ih =>
@@ -402,7 +405,10 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
   | indexField hl hv =>
     intro D hh ht
     exact ⟨D,.refl D,hh,(hh.lookup hv).2⟩
-  | indexMissing _ =>
+  | indexProto _ _ hv =>
+    intro D hh ht
+    exact ⟨D,.refl D,hh,by simpa [TermOk, Scoped, Names] using (hh.lookup hv).2⟩
+  | indexMissing _ _ =>
     intro D hh ht
     exact ⟨D,.refl D,hh,by simp [TermOk, Scoped, Names]⟩
   | writeC1 step ih =>

@@ -108,10 +108,24 @@ heap. Only `b` is under the new binder. `HasTy.letE`, source lowering, and the
 certificate producer and consumer all use that constructor. `Step_det` proves
 that a term and heap have at most one successor.
 
-A read of a named property on an object with no such own field steps to
-`undefined` (`Step.readMissing`); a present field still reads its heap location.
-The semantic readonly string-dictionary view `dictViewT A` requires every
-*present* field's stored contract to imply `A` at lower budgets. This is guarded
+A read of a named property on an object with no such own field continues at
+the object's prototype, when it has one: the reserved key `protoField` holds
+it, no source name spells it, and one step turns the read into the same read
+of the prototype (`Step.readProto`, `Step.indexProto` for a computed string
+key). Without a prototype the read steps to `undefined` (`Step.readMissing`,
+`Step.indexMissing`); a present field still reads its heap location:
+
+$$
+\frac{\mathit{fs}(k)=\varnothing\quad\mathit{fs}(\mathsf{proto})=l\quad h(l)=p}
+     {h,\ \mathsf{readAt}\;k\;(\mathsf{obj}(\mathit{fs},c))\ \to\ h,\ \mathsf{readAt}\;k\;p}
+\qquad
+\frac{\mathit{fs}(k)=\varnothing\quad\mathit{fs}(\mathsf{proto})=\varnothing}
+     {h,\ \mathsf{readAt}\;k\;(\mathsf{obj}(\mathit{fs},c))\ \to\ h,\ \mathsf{undefined}}
+$$
+
+The semantic readonly string-dictionary view `dictViewT A` requires the object
+to have no prototype and every *present* field's stored contract to imply `A`
+at lower budgets. This is guarded
 and admissible even when `A` is recursive, and it grants no write permission.
 `empty_bool_dict_missing` witnesses the distinction: an empty object satisfies
 the Boolean dictionary view, while a read of any key yields `undefined`, which

@@ -895,8 +895,10 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
       HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
   /-- A fresh literal establishes a readonly index view when every value is
   checked at the index element contract. Its exact allocated fields are used;
-  this is not an open-record subtyping rule. -/
+  this is not an open-record subtyping rule. It names no prototype, so the
+  dictionary has none. -/
   | allocDict {parts : List (PropKey × Tm)} : (parts.map Prod.fst).Nodup →
+      CallArguments.protoField ∉ parts.map Prod.fst →
       (∀ p ∈ parts, HasTy G Γ p.2 Elem) →
       Represents G Dict (.dict [] [] [] [Elem]) →
       HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map Prod.snd)) Dict
@@ -1297,7 +1299,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       simp [ReferenceConjunctions.famsOf, List.map_map, Function.comp_def, List.zip_map']
     rw [hfam]
     exact hrec
-  | @allocDict Γ Elem Dict parts hnd hp hr ih =>
+  | @allocDict Γ Elem Dict parts hnd hproto hp hr ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
     have hmap : (parts.map fun p => (meaning G Elem, instantiate 0 ρ p.2)).map Prod.snd
@@ -1319,7 +1321,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
         (List.map_const' (l := parts) (b := meaning G Elem))
     rw [hAs] at hargs
     have hlen := ArgsT_length hargs
-    apply make_dict_rule (meaning_adm G Elem) j U heap _ args hnd
+    apply make_dict_rule (meaning_adm G Elem) j U heap _ args hnd hproto
       (by simpa using hlen.symm)
       (ArgsT_values (by intro A hA; simp at hA; simpa [hA.2] using meaning_valOnly G Elem) hargs)
       hu hok (by
@@ -1359,6 +1361,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     apply Safe_mono j (fun k _ X u hu => (meaning_append G A U k X u).mpr
       (hu.elim Or.inl (fun h => Or.inr ((represents_sem hUnd k X u).mpr h)))) V heap _
       (read_optional_rule (meaning_valOnly G A) j V heap hv hok
+        (optT_no_proto (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) hs.2.2.1)
         (fun l hl => optT_present (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) hs.2.2.1 hl))
   | @readDict Γ a Ref fs vs ix os ms A U f ha hr hm hUnd ih =>
     intro n W h ρ he hw hh

@@ -194,17 +194,19 @@ theorem read_dict_rule {flds : List (PropKey × Nat)} {f : String} {A : Fam}
     | zero => trivial
     | succ p =>
       refine Or.inr ⟨trunc p (Nat.le_succ p) W, h, .undef, WExt_refl _,
-        WorldAdm_trunc _ hadm, .readMissing hlook, HeapOk_trunc p W h hok, ?_⟩
+        WorldAdm_trunc _ hadm, .readMissing hlook (dictViewT_no_proto hd), HeapOk_trunc p W h hok, ?_⟩
       cases p with
       | zero => trivial
       | succ q => exact Or.inl ⟨rfl, Or.inr rfl⟩
 
 /-- **Read an optional field.** Where the object has the key, its location's
 contract is `A`; where it does not, the read is `undefined`. A lookup cannot
-discard that alternative. -/
+discard that alternative. The object has no prototype, so a missing key is
+not read elsewhere. -/
 theorem read_optional_rule {flds : List (PropKey × Nat)} {f : PropKey} {A : Fam}
     (hA : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap)
     (hadm : WorldAdm W) (hok : HeapOk n W h)
+    (hp : flds.lookup f = none → flds.lookup CallArguments.protoField = none)
     (ho : ∀ l, flds.lookup f = some l → ∃ c : Ctr n, lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u ↔ A j U u) :
     Safe (unionT A undefT) n W h (.readAt f (.objAt flds .absent)) := by
@@ -218,7 +220,7 @@ theorem read_optional_rule {flds : List (PropKey × Nat)} {f : PropKey} {A : Fam
     | zero => trivial
     | succ p =>
       refine Or.inr ⟨trunc p (Nat.le_succ p) W, h, .undef, WExt_refl _,
-        WorldAdm_trunc _ hadm, .readMissing hlook, HeapOk_trunc p W h hok, ?_⟩
+        WorldAdm_trunc _ hadm, .readMissing hlook (hp hlook), HeapOk_trunc p W h hok, ?_⟩
       cases p with
       | zero => trivial
       | succ q => exact Or.inl ⟨rfl, Or.inr rfl⟩
@@ -248,7 +250,7 @@ theorem index_dict_rule {flds : List (PropKey × Nat)} {f : String} {A : Fam}
     | zero => trivial
     | succ p =>
       refine Or.inr ⟨trunc p (Nat.le_succ p) W, h, .undef, WExt_refl _,
-        WorldAdm_trunc _ hadm, .indexMissing hlook, HeapOk_trunc p W h hok, ?_⟩
+        WorldAdm_trunc _ hadm, .indexMissing hlook (dictViewT_no_proto hd), HeapOk_trunc p W h hok, ?_⟩
       cases p with
       | zero => trivial
       | succ q => exact Or.inl ⟨rfl, Or.inr rfl⟩
@@ -373,7 +375,7 @@ every location it creates. The rule does not coerce an open record: its
 premises type *all* initializers at the index contract. -/
 theorem make_dict_rule {Q A : Fam} (hA : Adm A)
     (n : Nat) (W : WorldT n) (h : Heap) (ns : List PropKey) (vs : List Val)
-    (hnd : ns.Nodup) (hlen : ns.length = vs.length)
+    (hnd : ns.Nodup) (hproto : CallArguments.protoField ∉ ns) (hlen : ns.length = vs.length)
     (hvals : ∀ v ∈ vs, isVal v = true)
     (hadm : WorldAdm W) (hok : HeapOk n W h)
     (hv : ∀ p ∈ (List.replicate vs.length A).zip vs, p.1 n W p.2)
@@ -390,7 +392,7 @@ theorem make_dict_rule {Q A : Fam} (hA : Adm A)
     apply result j hj U he
     have hrec' : recT (ns.zip (List.replicate ns.length A)) j U
         (.objAt (slots h.length ns) .absent) := by simpa [hlen] using hrec
-    exact recT_fresh_dict hrec'
+    exact recT_fresh_dict hproto hrec'
 
 #print axioms make_dict_rule
 
