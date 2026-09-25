@@ -1321,12 +1321,28 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
                 calls=[];indexes=[]}] as t));_} -> Some t
             | _ -> None)
           | _ -> None in
+        let dictionary_bound = function
+          | Rigid r -> (match List.find_opt (fun (q:Semantic.quantifier) -> q.identity = r)
+                          signature.quantified with
+            | Some {bound=Some (ValueArgument t);_} ->
+              (match object_hint declarations [] t with
+               | Some {string_index=Some _;_} -> Some t
+               | _ -> None)
+            | _ -> None)
+          | _ -> None in
         let actuals=List.mapi (fun i arg -> match param_at signature i,stated with
           | Some p,_ when not (Semantic.mentions_rigid p) -> expr ~expected:p env arg
           | Some p,Some solution -> expr ~expected:(Inference.substitute solution p) env arg
           | Some p,None when (match arg.node with ArrayLiteral _ -> true | _ -> false)
                               && tuple_bound p <> None ->
             expr ?expected:(tuple_bound p) env arg
+          (* An object literal at a binder bounded by a union with one
+             dictionary arm, `T extends Json`, is built at that arm, with
+             its exact keys, as a record held in a variable could not be:
+             TypeScript checks the fresh literal against the constraint. *)
+          | Some p,None when (match arg.node with Alloc _ -> true | _ -> false)
+                              && dictionary_bound p <> None ->
+            expr ?expected:(dictionary_bound p) env arg
           | _ -> expr env arg) args @
           List.init (max 0 (List.length signature.params - List.length args)) (fun _ -> Atoms [Undef]) in
         let substitution,result = infer_explicit ~receiver:receiver_type ?expected signature actuals in

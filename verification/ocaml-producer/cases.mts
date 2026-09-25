@@ -850,6 +850,8 @@ export const cases: Case[] = [
   negative("invalid-closure-offer-flows", "a closure reading its optional second parameter is offered no longer signature, and its annotated binding is only the annotation", /source expression obligation at \[470,471\)/),
   positive("nullable-binder-inference", "a binder in a union with ground atoms, `A | null`, is inferred from what the actual holds beside them, inline, through an alias, and as a construct signature's instance"),
   negative("invalid-nullable-binder-inference", "`A := number` from `number | null` gives a number, not a string", /source expression obligation at \[205,221\)/),
+  positive("generic-bound-literals", "a fresh object literal at `T extends Json` is built at the bound's dictionary arm with its exact keys; primitives below a bound instantiate the binder, not the bound"),
+  negative("invalid-generic-bound-literal", "a literal holding a function is no Json value", /source expression obligation at \[281,309\)/),
   gap("object-growth-refused", "a write adding a key to a record allocated without it: an object's keys are fixed at its allocation",
     "unsupported", "proposal", /a write adds the property 'x' to an object allocated without it/),
   gap("optional-write-refused", "a write to a writable optional field may add its key",

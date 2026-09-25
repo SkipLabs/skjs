@@ -247,6 +247,12 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
       | Atoms [Named (_,[])] -> true | _ -> false) v.upper in
     let candidate = match join v.lower,declared_upper with
       | Some t,_ when List.mem t v.upper -> Some t
+      (* Primitives below a declared bound: the binder is what they are, as
+         TypeScript infers it, not the bound (`Y extends boolean | string`
+         at "hello" is "hello"). *)
+      | Some (Atoms atoms as t),Some _ when atoms <> [] && List.for_all (function
+          | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | BigintLit _ -> true
+          | _ -> false) atoms -> Some t
       | _,(Some _ as chosen) -> chosen
       | (Some _ as chosen),None -> chosen
       | None,None -> upper_candidate v.upper in

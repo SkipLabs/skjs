@@ -867,6 +867,14 @@ instance), the atoms the actual holds beside those, as TypeScript infers `A
 a proposal: Lean checks the actual against the substituted parameter and the
 result where it is used (`nullable-binder-inference.ts`,
 `invalid-nullable-binder-inference.ts`).
+Two more choices follow TypeScript's inference at a bounded binder. A fresh
+object literal at a binder whose bound has one dictionary arm, `T extends
+Json`, is built at that arm, so with its exact keys (TypeScript checks the
+fresh literal against the constraint; a record held in a variable stays open
+and does not meet it). And primitives below a declared bound instantiate the
+binder rather than the bound: `check<Y extends boolean | string>` at
+`"hello"` is `"hello"`, where the bound was proposed before
+(`generic-bound-literals.ts`, `invalid-generic-bound-literal.ts`).
 
 **Tables relate included labels.** Relating a record to an interface compares
 each field's contract with itself; a core table needed a row for each such
