@@ -21,3 +21,12 @@ export function primitive(): string {
   const b = check(a);
   return b;
 }
+
+// An array of primitives below a bound with an array arm is the binder too.
+function either<S extends number[] | string>(values: S): S {
+  return values;
+}
+export function array(): number | undefined {
+  const result = either([1, 2, 3]);
+  return result[0];
+}

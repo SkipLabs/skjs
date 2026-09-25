@@ -237,6 +237,25 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
   (* Each saturation only copies its finite seed sets, so it terminates
      even with cycles. Prefer joined lower bounds; upper-only candidates use a
      representable meet. Contradictions remain Lean obligations, not refusals. *)
+  let primitive = function
+    | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | BigintLit _ -> true
+    | _ -> false in
+  (* An array of any length whose elements are primitives. *)
+  let plain_array = function
+    | Shape {elements=Some {required=[];optional_elements=[];rest=Some (Atoms xs);_};
+             fields=[];calls=[];string_index=None} -> List.for_all primitive xs
+    | _ -> false in
+  (* Whether a declared bound has an arm that is an array of any length,
+     through its declarations. *)
+  let rec has_plain_array ?(depth=0) t = depth < 4 && match t with
+    | Atoms atoms -> List.exists (function
+        | Shape {elements=Some {rest=Some _;_};_} -> true
+        | Named _ as a -> (match expand (Atoms [a]) with
+          | Some e -> has_plain_array ~depth:(depth+1) e
+          | None -> false)
+        | _ -> false) atoms
+    | Union ts -> List.exists (has_plain_array ~depth:(depth+1)) ts
+    | _ -> false in
   let substitution = List.map (fun v ->
     (* A variable below and above one type, as an invariant position makes
        it, is that type. Otherwise a graph bound is a legal (possibly less
@@ -249,10 +268,10 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
       | Some t,_ when List.mem t v.upper -> Some t
       (* Primitives below a declared bound: the binder is what they are, as
          TypeScript infers it, not the bound (`Y extends boolean | string`
-         at "hello" is "hello"). *)
-      | Some (Atoms atoms as t),Some _ when atoms <> [] && List.for_all (function
-          | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | BigintLit _ -> true
-          | _ -> false) atoms -> Some t
+         at "hello" is "hello"), and so are arrays of primitives
+         (`S extends number[] | string` at `[1, 2, 3]` is `number[]`). *)
+      | Some (Atoms atoms as t),Some bound when atoms <> [] && List.for_all (fun a ->
+          primitive a || (plain_array a && has_plain_array bound)) atoms -> Some t
       | _,(Some _ as chosen) -> chosen
       | (Some _ as chosen),None -> chosen
       | None,None -> upper_candidate v.upper in

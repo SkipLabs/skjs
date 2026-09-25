@@ -872,7 +872,9 @@ object literal at a binder whose bound has one dictionary arm, `T extends
 Json`, is built at that arm, so with its exact keys (TypeScript checks the
 fresh literal against the constraint; a record held in a variable stays open
 and does not meet it). And primitives below a declared bound instantiate the
-binder rather than the bound: `check<Y extends boolean | string>` at
+binder rather than the bound, and so does an array of primitives below a
+bound with an array arm (`S extends number[] | string` at `[1, 2, 3]` is
+`number[]`): `check<Y extends boolean | string>` at
 `"hello"` is `"hello"`, where the bound was proposed before
 (`generic-bound-literals.ts`, `invalid-generic-bound-literal.ts`).
 
