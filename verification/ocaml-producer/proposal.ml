@@ -523,8 +523,8 @@ let refine_field declarations env name field refine =
       | _ -> (try Some (field_type declarations [] t (Name field)) with Json.Error _ -> None) in
     (match current with Some c -> fact env key (refine c) | None -> env)
   | _ -> env
-let rec branch_with declarations env cond truth =
-  let branch = branch_with declarations in
+let rec branch_with ?(modules = fun _ -> None) declarations env cond truth =
+  let branch = branch_with ~modules declarations in
   let refine_field = refine_field declarations in
   match cond.node with
   | Not e -> branch env e (not truth)
@@ -565,12 +565,14 @@ let rec branch_with declarations env cond truth =
     let equal = truth=(op=StrictEqual) in
     let values (e:expr) = Option.bind (match e.node with
       | Literal lit -> Some (literal_type lit)
-      | Id n -> Option.map binding_type (List.assoc_opt n env)
+      | Id n -> (match List.assoc_opt n env with Some b -> Some (binding_type b) | None -> modules n)
       | Read ({node=Id n;_},Name f) ->
         (match List.assoc_opt (field_key n f) env,List.assoc_opt n env with
          | Some b,_ -> Some (binding_type b)
          | None,Some b -> (try Some (field_type declarations [] (binding_type b) (Name f)) with Json.Error _ -> None)
-         | None,None -> None)
+         (* A module value's field, an enum member: its declared type. *)
+         | None,None -> Option.bind (modules n) (fun t ->
+             try Some (field_type declarations [] t (Name f)) with Json.Error _ -> None))
       | _ -> None) (fun t -> match singleton_atom t,t with
         | Some a,_ -> Some ((fun t -> restrict a equal t),true)
         | None,Atoms (_::_ as atoms) when equal
@@ -614,7 +616,8 @@ let module_type (g:Source.fn) =
    the further signatures its uses offer it; the pass reports them as
    [requests], and [infer_function] runs a second pass with them. *)
 let infer_pass offered declarations module_functions (f:Source.fn) =
-  let branch = branch_with declarations in
+  let branch = branch_with declarations ~modules:(fun n ->
+    try Option.map Lazy.force (List.assoc_opt n module_functions) with Json.Error _ -> None) in
   (* A parameter the body assigns is a cell holding its argument, at its
      annotation. *)
   let env0 = List.map (fun (n,t) ->

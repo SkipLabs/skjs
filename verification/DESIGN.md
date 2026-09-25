@@ -5231,7 +5231,10 @@ which computes a Boolean and narrows nothing.
   (`boolEq`) and one bigint (`bigintEq`). Each is false on every other kind,
   so a union loses exactly the labels the test excludes (`tagSlice`), on both
   edges, as for null. The singleton operand stays in the program with its own
-  obligation; it may be a literal, a name or a field read holding one.
+  obligation; it may be a literal, a name or a field read holding one. The
+  name may be a module value's, and the field one of a module value's (an
+  enum member `E.A`, an ambient constant's field), read at its declared type
+  as the producer proposes the narrowing (`module-value-equality.ts`).
 - **Strict equality without a singleton** is the operator
   $\equiv$ (`Arith.eq`, the `arith` rule; [semantics](SEMANTICS.md#operational-language),
   [rule](PROGRAM-TYPING.md#judgments-and-constructor-views)), `!==` its
