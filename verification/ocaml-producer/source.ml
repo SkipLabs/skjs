@@ -266,7 +266,9 @@ and expr_node =
   (* `typeof e === "shape"` (equal) or `!==`: a test of the operand's shape. *)
   | TypeofTest of string * bool * expr
   | Equality of equality * expr * expr | Alloc of (string * expr) list
-  | Read of expr * string | Write of expr * string * expr
+  (* A named read: a string key, or the symbol key of `e[k]` with `k` a
+     `unique symbol` constant. *)
+  | Read of expr * key | Write of expr * string * expr
   | Assign of string * expr
   (* A parameter's type is what the body reads. A defaulted one also admits
      `undefined` where the closure is called; the default replaces it. A rest
@@ -333,7 +335,7 @@ let rec expr binders j =
       | "==" -> LooseEqual | "!=" -> LooseUnequal
       | k -> unsupported ("operator " ^ k) in Equality (op,sub "l",sub "r")
   | "alloc" -> Alloc (List.map (fun f -> text "name" f,expr binders (field "e" f)) (items "fields" j))
-  | "read" -> Read (sub "e",text "field" j)
+  | "read" -> Read (sub "e",property_key (field "field" j))
   | "write" -> Write (sub "receiver",text "field" j,sub "rhs")
   | "assign" -> Assign (text "name" j,sub "rhs")
   | "lambda" ->

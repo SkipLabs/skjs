@@ -346,7 +346,9 @@ inductive Expr where
   | cast (pos : Span) (annot : Option Json) (e : Expr)
   /-- An object literal: one named field per initializer, in source order. -/
   | alloc (pos : Span) (names : List String) (es : List Expr)
-  | read (pos : Span) (field : String) (e : Expr)
+  /-- A named read: a string key, or, for `e[k]` with `k` a `unique symbol`
+  constant, that symbol's key. -/
+  | read (pos : Span) (field : PropKey) (e : Expr)
   | write (pos : Span) (field : String) (receiver rhs : Expr)
   /-- `e[key]`: the receiver, then the key, then the read of the field the
   key's claimed type names. The decoder leaves the field unresolved; the
@@ -676,7 +678,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     let parts ← fields.mapM fun f => do
       return (← jStr (← jField f "name"), ← decodeExpr (← jField f "e"))
     return .alloc p (parts.map Prod.fst) (parts.map Prod.snd)
-  | "read" => return .read p (← jStr (← jField j "field")) (← decodeExpr (← jField j "e"))
+  | "read" => return .read p (← PropKey.decode (← jField j "field")) (← decodeExpr (← jField j "e"))
   | "arith" => do
     CellClaims.fieldsExactly j ["k","pos","op","l","r"]
     return .arith p (← decodeArith (← jField j "op")) (← decodeExpr (← jField j "l")) (← decodeExpr (← jField j "r"))

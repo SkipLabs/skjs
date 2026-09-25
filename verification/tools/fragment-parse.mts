@@ -172,6 +172,9 @@ class Gate {
    * directive (ECMAScript's, not TypeScript's `strict` option). An ordinary
    * function records it: its receiver rule is the strict one. */
   strict = false;
+  /** `e[k]` keys TypeScript binds to a `unique symbol` constant, by span:
+   * the symbol, as the declaration document lists it. */
+  symbolKeys = new Map<string, number>();
   // Mode of the ordinary function that bound `this`, or no binding. A strict
   // arrow captures its creator's already-converted receiver; it cannot rebind it.
   private receiverMode: "strict" | "sloppy" | null = null;
@@ -649,6 +652,18 @@ class Gate {
     if (ts.isElementAccessExpression(node)) {
       if (node.questionDotToken)
         this.fail(node, "optional element access is outside the fragment");
+      // A `unique symbol` constant names one key: evaluating it has no
+      // effect, so the read is the named read of that symbol's key.
+      const [start, end] = this.span(node.argumentExpression);
+      const symbol = ts.isIdentifier(node.argumentExpression)
+        ? this.symbolKeys.get(`${start}:${end}`) : undefined;
+      if (symbol !== undefined)
+        return {
+          k: "read",
+          pos: this.span(node),
+          field: { symbol },
+          e: this.expr(node.expression),
+        };
       return {
         k: "index",
         pos: this.span(node),
@@ -2018,10 +2033,19 @@ export function parseFile(file: string, carriesContext = false,
     node.forEachChild(findAsync);
   };
   if (!carriesContext) findAsync(source);
+  // An identifier as an element key, `e[k]`, may name a `unique symbol`
+  // constant: TypeScript decides, and such a key joins the symbols.
+  const keyNodes: Identifier[] = [];
+  const findKeys = (node: Node): void => {
+    if (ts.isElementAccessExpression(node) && ts.isIdentifier(node.argumentExpression))
+      keyNodes.push(node.argumentExpression);
+    node.forEachChild(findKeys);
+  };
+  if (!carriesContext) findKeys(source);
   if (importNodes.length || localNodes.length || globalNodes.length || globalValueNodes.length ||
-      firstArray || firstAsync) {
+      firstArray || firstAsync || keyNodes.length) {
     const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
-      firstAsync;
+      firstAsync ?? keyNodes[0];
     if (!first) throw Error("missing declaration root");
     // Named imports only. A type import joins the declaration graph; a value
     // import is an assumption at the type its declaration states.
@@ -2039,11 +2063,13 @@ export function parseFile(file: string, carriesContext = false,
         globals: globalNodes.map(node => gate.span(node)),
         globalValues: globalValueNodes.map(node => gate.span(node)),
         ...(firstArray ? { arrays: gate.span(firstArray) } : {}),
-        ...(firstAsync ? { intrinsics: gate.span(firstAsync) } : {}) });
+        ...(firstAsync ? { intrinsics: gate.span(firstAsync) } : {}),
+        symbolKeys: keyNodes.map(node => gate.span(node)),
+        symbolKey: ([start, end], symbol) => gate.symbolKeys.set(`${start}:${end}`, symbol) });
     } catch (error) {
       const at = error instanceof DeclarationError
         ? [...importNodes, ...localNodes, ...globalNodes, ...globalValueNodes, ...(firstArray ? [firstArray] : []),
-            ...(firstAsync ? [firstAsync] : [])].find(node =>
+            ...(firstAsync ? [firstAsync] : []), ...keyNodes].find(node =>
             node.getStart(source) === error.at[0]) ?? first
         : first;
       gate.fail(at, messageOf(error));

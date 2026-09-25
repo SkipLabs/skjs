@@ -5,7 +5,7 @@
  * Every annotation is a source type term, the language of declaration bodies.
  */
 import type { Atom } from "./claim.mts";
-import type { DeclarationDocument, TypeTerm } from "./declaration-types.mts";
+import type { DeclarationDocument, PropertyKey, TypeTerm } from "./declaration-types.mts";
 import type { Span } from "./span.mts";
 
 export type ArithOp = "add" | "sub" | "mul" | "div";
@@ -29,7 +29,9 @@ export type Expr =
   /* An object literal: one named field per initializer, in source order. A
      shorthand `{ x }` is `{ x: x }`. */
   | { k: "alloc"; pos: Span; fields: { name: string; e: Expr }[] }
-  | { k: "read"; pos: Span; field: string; e: Expr }
+  /* A named read: `e.name`, or `e[k]` with `k` a `unique symbol` constant,
+     which reads that symbol's key as a type's computed key names it. */
+  | { k: "read"; pos: Span; field: PropertyKey; e: Expr }
   /* `e[key]`: evaluate the receiver, then the key. A string singleton names
      one field; a broad string reads through a dictionary view. */
   | { k: "index"; pos: Span; e: Expr; key: Expr }

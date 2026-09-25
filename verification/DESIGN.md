@@ -1642,6 +1642,14 @@ resolves to a `const x: unique symbol`, is a field keyed by that symbol. The
 declaration document lists each such constant once, in `symbols`, and a key
 `{"symbol": i}` is the i-th: distinct declarations are distinct symbols, as
 TypeScript assumes, and that is part of the declarations' contract.
+A program reads such a field as `e[k]`, where TypeScript binds `k` to a
+`unique symbol` constant: evaluating the constant has no effect and yields
+that symbol, so the parser writes the read as the named read of its key, a
+`read` whose field is `{"symbol": i}`, and the declaration document lists the
+constant. Any other element key is an index, as before. The constant may be
+imported, or declared by the client, `declare const k: unique symbol`, the
+one ambient form the gate admits: it runs nothing. A symbol-keyed write is
+not in the fragment.
 
 **Imported values.** A value import joins the module's scope at the type its
 declaration states: a function's annotated signature, an annotated
@@ -2689,11 +2697,11 @@ every array a program receives, as TypeScript assumes it in resolving
 `xs.map` to `Array.prototype.map`. An array the program allocates satisfies
 it: its own keys are its store and its prototype.
 
-**Ambient symbols.** A client may declare the symbol it keys by,
-`declare const marker: unique symbol`: the gate admits exactly that ambient
-form, which runs nothing and names the symbol computed keys in types read.
-Reading `xs[marker]` as a value needs a symbol-keyed read, which the
-fragment does not yet have.
+**Symbol keys.** A client may declare the symbol it marks with,
+`declare const marker: unique symbol`, and read the marker, `xs[marker]`,
+at its type (`array-marked.ts`; not as a number,
+`invalid-array-marked-read.ts`), by the symbol-keyed read of
+"Bigints and symbols" in [Modules and code units](#modules-and-code-units).
 
 ### Async functions and await
 

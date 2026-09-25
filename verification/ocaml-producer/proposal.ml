@@ -113,20 +113,21 @@ let first_part read parts =
   | None -> unsupported "read on an intersection none of whose operands has it"
 (* `ArrayProto`, the declaration of `Array.prototype`'s members, by identity. *)
 let array_prototype = "skjs/array-prototype#0:0"
+let key_text = function Name n -> n | Key i -> "[symbol " ^ string_of_int i ^ "]"
 let rec field_type declarations seen t name = match t with
   | Atoms atoms -> combine (List.map (function
-      | Shape {elements=Some _;_} when name="length" -> Atoms [Num]
+      | Shape {elements=Some _;_} when name=Name "length" -> Atoms [Num]
       (* Any other key of an array is read from its prototype. *)
       | Shape {elements=Some _;_} ->
         field_type declarations seen (Atoms [Named (array_prototype,[])]) name
-      | Shape shape -> (match List.find_opt (fun (f:Semantic.field) -> f.name=Name name) shape.fields with
+      | Shape shape -> (match List.find_opt (fun (f:Semantic.field) -> f.name=name) shape.fields with
           | Some f -> if f.optional then union f.read (Atoms [Undef]) else f.read
-          | None -> (match shape.string_index with
-            | Some index -> union index.value (Atoms [Undef])
-            | None -> unsupported ("missing field " ^ name)))
-      | Exact fields -> (match List.find_opt (fun (f:Semantic.field) -> f.name=Name name) fields with
+          | None -> (match shape.string_index,name with
+            | Some index,Name _ -> union index.value (Atoms [Undef])
+            | _ -> unsupported ("missing field " ^ key_text name)))
+      | Exact fields -> (match List.find_opt (fun (f:Semantic.field) -> f.name=name) fields with
           | Some f -> f.read
-          | None -> unsupported ("missing field " ^ name))
+          | None -> unsupported ("missing field " ^ key_text name))
       | Named (id,args) ->
         if List.mem id seen then unsupported "unguarded field cycle";
         field_type declarations (id::seen) (definition declarations id args) name
@@ -185,13 +186,13 @@ let rec index_type declarations seen receiver key = match receiver with
             else Atoms [Undef]
           | _ -> combine (Atoms [Undef] :: sequence.required @ sequence.optional_elements @ Option.to_list sequence.rest))
       | Shape shape -> (match key with
-          | Atoms [StrLit name] -> field_type declarations seen (Atoms [Shape shape]) name
+          | Atoms [StrLit name] -> field_type declarations seen (Atoms [Shape shape]) (Name name)
           | Atoms [Str] -> (match shape.string_index with
               | Some index -> union index.value (Atoms [Undef])
               | None -> unsupported "dynamic string index requires a dictionary")
           | _ -> unsupported "record index requires a string key")
       | Exact _ as atom -> (match key with
-          | Atoms [StrLit name] -> field_type declarations seen (Atoms [atom]) name
+          | Atoms [StrLit name] -> field_type declarations seen (Atoms [atom]) (Name name)
           | _ -> unsupported "record index requires a string key")
       | Named (id,args) ->
         if List.mem id seen then unsupported "unguarded index cycle";
@@ -322,7 +323,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | Atoms [Ctors signatures] ->
       List.iter (fun (s:Semantic.signature) ->
         let member key = match (try Some (declared_head declarations []
-            (field_type declarations [] s.result key)) with Json.Error _ -> None) with
+            (field_type declarations [] s.result (Name key))) with Json.Error _ -> None) with
           | Some (Atoms [Shape {calls=[m];fields=[];string_index=None;elements=None}]) -> Some m
           | _ -> None in
         let widened = List.filter (fun (key,m) -> match member key with

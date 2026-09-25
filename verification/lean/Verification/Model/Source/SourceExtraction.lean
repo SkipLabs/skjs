@@ -582,6 +582,11 @@ private def entryFacts (fc : SourceClaims.Function) (pos : Nat) (scope : List Sc
 /-- A dot cannot occur in a source binding identifier, so these names designate
 administrative read snapshots without colliding with source variables. -/
 private def snapshotName (name field : String) : String := name ++ "." ++ field
+/-- The snapshot a read of a named field may be saved in: a string field's.
+A symbol-keyed read (`xs[marker]`) is never saved; it is read where it is. -/
+private def readSnapshot (name : String) : PropKey → Option String
+  | .str field => some (snapshotName name field)
+  | .sym _ => none
 /-- A snapshot is named by a string field. Source syntax reads only string
 keys, so a symbol key asserted for a snapshot is refused, not encoded: no
 string spelling of it is distinct from every string key. -/
@@ -633,7 +638,7 @@ private def readGuard (scope : List ScopeBinding) :
     let snapshot ← match r with
       | .read _ fld (.var _ name) => do
         let _ ← resolve scope name
-        pure (snapshotName name fld)
+        readSnapshot name fld
       | .var _ name => match resolve scope name with
         | some (_, .cell ..) => some (localSnapshotName name)
         | _ => none
@@ -1100,7 +1105,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let receiver := a
     let a ← closureExpr fc scope Γ a
     let snapshot := match receiver with
-      | .var _ name => (names scope).idxOf? (snapshotName name fld)
+      | .var _ name => (readSnapshot name fld).bind (names scope).idxOf?
       | _ => none
     if let some i := snapshot then
       let some R := Γ[i]? | throw "internal saved-read slot mismatch"
@@ -1871,7 +1876,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
   -- derivation needed for the enclosing return contract. atEnv is a no-op.
   match e with
   | .read _ fld (.var _ name) =>
-    if (names scope).contains (snapshotName name fld) then return p else return plan
+    if (readSnapshot name fld).any (names scope).contains then return p else return plan
   | .var _ name =>
     if (names scope).contains (localSnapshotName name) then return p else return plan
   | .atEnv .. => return p

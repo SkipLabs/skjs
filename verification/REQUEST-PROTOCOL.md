@@ -439,7 +439,7 @@ local declaration, or `{"kind": "global", "local": name, "span": ...}`, a
 global the file names without importing (the span is its first reference).
 The document's `symbols`
 lists, once each, the `const x: unique symbol` declarations its members use as
-computed keys `[x]`. A field name, in a declaration's `object` term and in a
+computed keys `[x]` or its functions read as element keys `e[x]`. A field name, in a declaration's `object` term, in a Fragment `read` and in a
 claim's record fields, is a string key as a JSON string, or a symbol key
 `{"symbol": i}` naming the i-th of those declarations. A symbol key is never a
 string key: no string names it, and a string index signature does not

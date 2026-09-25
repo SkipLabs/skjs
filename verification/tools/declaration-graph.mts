@@ -179,6 +179,11 @@ export function collectDeclarations(file: string, options: {
    * `process`, joins its values, read at the members those references
    * select (`selectGlobal`). The first reference locates it. */
   globalValues?: readonly Span[];
+  /** The client's element keys that are identifiers, `e[k]`: each that
+   * TypeScript binds to a `unique symbol` constant joins the symbols and is
+   * reported to `symbolKey` with its index. */
+  symbolKeys?: readonly Span[];
+  symbolKey?: (span: Span, symbol: number) => void;
 } = {}): DeclarationDocument {
   const clientFile = resolve(file);
   return withProject(clientFile, options.tsconfigPath, (checker, client, root, program) => {
@@ -492,6 +497,22 @@ export function collectDeclarations(file: string, options: {
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
         throw new DeclarationError(at, error instanceof Error ? error.message : String(error));
+      }
+    }
+    // An element key naming a `unique symbol` constant reads that symbol's
+    // key; any other is an ordinary index, left to the expression.
+    for (const span of options.symbolKeys ?? []) {
+      const identifier = identifierAt(client, span);
+      if (!identifier) throw new DeclarationError(span, "TypeScript element key missing");
+      const nodes = targetOf(checker, identifier)?.declarations.map(d => d.resolve()) ?? [];
+      const [node] = nodes;
+      if (nodes.length !== 1 || !node || !ts.isVariableDeclaration(node) || !node.type ||
+          !ts.isTypeOperatorNode(node.type) || node.type.operator !== ts.SyntaxKind.UniqueKeyword)
+        continue;
+      try {
+        options.symbolKey?.(span, symbolOf(identifier));
+      } catch (error) {
+        throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
       }
     }
     const seen = new Set<string>();

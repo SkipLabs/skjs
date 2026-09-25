@@ -352,8 +352,10 @@ function fromSkjs(
 // Labels index the document's own type table; the first four rows are the
 // primitives null, true, false and undefined.
 /** The module's initialization code, as the parser reads it: top-level
- * expression statements, constants and class declarations. */
-const isInitStatement=(n: ts.Statement)=>ts.isExpressionStatement(n)||ts.isVariableStatement(n)||ts.isClassDeclaration(n);
+ * expression statements, constants and class declarations. An ambient
+ * `declare const` runs nothing. */
+const isInitStatement=(n: ts.Statement)=>ts.isExpressionStatement(n)||
+  (ts.isVariableStatement(n)&&!n.modifiers?.some(m=>m.kind===ts.SyntaxKind.DeclareKeyword))||ts.isClassDeclaration(n);
 
 function fromSourceClaims(
   source: string,
