@@ -225,16 +225,19 @@ let encode (proposal : Proposal.t) =
         if d.id=id then
           if d.parameters=[] && args=[] then [i+4]
           else if List.length args <= List.length d.parameters then begin
-            match List.assoc_opt (id,args) !applications with
+            (* Keyed by the argument rows: two binders of one spelling, a
+               class's and a function's, are one parameter row, so their
+               applications are one. *)
+            let arg_labels = List.map labels args in
+            match List.assoc_opt (id,arg_labels) !applications with
             | Some label -> [label]
             | None ->
               (* One lowering of every declaration: the row is reserved here,
                  after its arguments' rows, and Lean fills it from the
                  declaration's source terms. *)
-              let arg_labels = List.map labels args in
               let label = List.length !rows in
               rows := !rows @ [Array []];
-              applications := ((id,args),label) :: !applications;
+              applications := ((id,arg_labels),label) :: !applications;
               reserved := !reserved @ [Object ["row",int label;"declaration",int k;
                 "args",Array arg_labels]];
               [label]

@@ -643,7 +643,9 @@ the instance. The binders belong to the code unit that runs the declaration,
 the module's initialization unit: it is a generic unit like a function, its
 binders read as parameter rows (a bounded one as the meet of its row and its
 bound), one row per spelling for the whole top-level code, so two classes may
-share a binder's name only with the same bound. The unit is certified at every
+share a binder's name only with the same bound, and an application over a
+class's binder and one over a function's binder of the same spelling are one
+row (the producer keys its reserved applications by their argument rows). The unit is certified at every
 assignment of those rows: each constructor and method body at every
 instantiation of its class. The instance type `C<T>`, whose methods' receiver
 is the application itself, has no finite expansion in claim form; it is the
