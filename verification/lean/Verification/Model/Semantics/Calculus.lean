@@ -125,6 +125,30 @@ inductive Invoke where
   | call | construct
   deriving Repr, DecidableEq
 
+namespace ControlFlow
+/-- A control-flow destination: a node's label, and the slot map applied on
+the way (`PointClaims.mapEnv`; none keeps every slot). Executable program data,
+shared by the graph machine, graph code and the checker. -/
+structure Target where
+  label : Nat
+  mapping : Option (List Nat) := none
+  deriving DecidableEq, Repr
+
+instance (n : Nat) : OfNat Target n := ⟨⟨n, none⟩⟩
+
+/-- What a graph node does with its expression's value (`ControlFlow`). -/
+inductive Continuation where
+  | ret
+  | bind (next : Target)
+  | effect (next : Target)
+  | branch (yes no : Target)
+  /-- Dispatch and bind the tested Boolean before applying the destination map. -/
+  | branchBind (yes no : Target)
+  /-- Test the returned value itself, bind it, then apply the destination map. -/
+  | tagBind (test : Tag) (yes no : Target)
+  deriving DecidableEq, Repr
+end ControlFlow
+
 mutual
 /-- Terms. Values are terms too, so worlds and the operational semantics speak
 about the same objects. -/
@@ -208,6 +232,18 @@ inductive Tm where
   chain of these from a fresh accumulator: `{ ...x, k: e }` copies `x` into
   `{}`, then `{ k: e }` into that (DESIGN.md, "Object literals"). -/
   | merge (drop : List PropKey) (a b : Tm)
+  /-- A run of graph code (`CallCode.graph`) at a node, before it is entered:
+  the code's node expressions and continuations, the label, and the
+  environment, its slots in order and the value every slot past them holds.
+  A runtime form only: no source term has one. -/
+  | goto (exprs : List Tm) (conts : List (ControlFlow.Continuation × Option ControlFlow.Target))
+      (label : Nat) (env : List Tm) (dflt : Tm)
+  /-- A run of graph code evaluating a node's instantiated expression `t`, then
+  continuing by `k`; a throw out of `t` goes to `handler`, when it has one, and
+  otherwise leaves the run as a throw of the same value. A runtime form only. -/
+  | frame (exprs : List Tm) (conts : List (ControlFlow.Continuation × Option ControlFlow.Target))
+      (t : Tm) (env : List Tm) (dflt : Tm) (k : ControlFlow.Continuation)
+      (handler : Option ControlFlow.Target)
   deriving Repr
 
 /-- Invocation code is not a runtime value. A plain object has no call code. -/
@@ -231,6 +267,16 @@ inductive CallCode where
   No field holds this state, so no write can reach it, and a second `.bind`
   cannot replace the first receiver. -/
   | bound (target receiver : Tm) (pre : List Tm)
+  /-- Code whose body is a control-flow graph, as a function body is
+  (`ControlFlow`): the node expressions, each node's continuation and
+  handler, the entry label, and the values the code captured where it was
+  created. Invocation starts the graph at `start` in the environment
+  `[this, parameter_0, …, parameter_{arity-1}] ++ captures`. The node
+  expressions are scoped by that environment alone: substitution reaches the
+  captures, never the nodes. -/
+  | graph (arity : Nat) (exprs : List Tm)
+      (conts : List (ControlFlow.Continuation × Option ControlFlow.Target))
+      (start : Nat) (caps : List Tm)
   deriving Repr
 end
 
@@ -240,6 +286,13 @@ def CallCode.callable : CallCode → Bool
   | .absent => false
   | .closure _ _ .construct => false
   | _ => true
+
+/-- Graph code's node `l`: its expression, continuation and handler. -/
+def graphNode (exprs : List Tm) (conts : List (ControlFlow.Continuation × Option ControlFlow.Target))
+    (l : Nat) : Option (Tm × ControlFlow.Continuation × Option ControlFlow.Target) := do
+  let e ← exprs[l]?
+  let (k, x) ← conts[l]?
+  return (e, k, x)
 
 /-- A call without a receiver supplies `undefined` for it: an abbreviation of
 `invoke`, not a second form of call. -/
@@ -803,6 +856,19 @@ def tmDecEq (a b : Tm) : Decidable (a = b) := by
     haveI : Decidable (a1 = b1) := tmDecEq a1 b1
     haveI : Decidable (a2 = b2) := tmDecEq a2 b2
     exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2) (by simp only [Tm.merge.injEq])
+  case goto.goto a0 a1 a2 a3 a4 b0 b1 b2 b3 b4 =>
+    haveI : Decidable (a0 = b0) := argsDecEq a0 b0
+    haveI : Decidable (a3 = b3) := argsDecEq a3 b3
+    haveI : Decidable (a4 = b4) := tmDecEq a4 b4
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2 ∧ a3 = b3 ∧ a4 = b4)
+      (by simp only [Tm.goto.injEq])
+  case frame.frame a0 a1 a2 a3 a4 a5 a6 b0 b1 b2 b3 b4 b5 b6 =>
+    haveI : Decidable (a0 = b0) := argsDecEq a0 b0
+    haveI : Decidable (a2 = b2) := tmDecEq a2 b2
+    haveI : Decidable (a3 = b3) := argsDecEq a3 b3
+    haveI : Decidable (a4 = b4) := tmDecEq a4 b4
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2 ∧ a3 = b3 ∧ a4 = b4 ∧ a5 = b5 ∧ a6 = b6)
+      (by simp only [Tm.frame.injEq])
 termination_by sizeOf a
 
 def callCodeDecEq (a b : CallCode) : Decidable (a = b) := by
@@ -820,6 +886,11 @@ def callCodeDecEq (a b : CallCode) : Decidable (a = b) := by
     haveI : Decidable (a1 = b1) := tmDecEq a1 b1
     haveI : Decidable (a2 = b2) := argsDecEq a2 b2
     exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2) (by simp only [CallCode.bound.injEq])
+  case graph.graph a0 a1 a2 a3 a4 b0 b1 b2 b3 b4 =>
+    haveI : Decidable (a1 = b1) := argsDecEq a1 b1
+    haveI : Decidable (a4 = b4) := argsDecEq a4 b4
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2 ∧ a3 = b3 ∧ a4 = b4)
+      (by simp only [CallCode.graph.injEq])
 termination_by sizeOf a
 def argsDecEq (a b : List Tm) : Decidable (a = b) := by
   cases a <;> cases b <;> try (solve | apply isFalse; intro h; cases h)
@@ -935,14 +1006,26 @@ theorem lookup_slots {ns : List PropKey} (hnd : ns.Nodup) {base i : Nat}
     (lenOf : ∀ a, P a → P (.lenOf a))
     (spread : ∀ a, P a → P (.spread a))
     (throw : ∀ a, P a → P (.throw a))
-    (merge : ∀ d a b, P a → P b → P (.merge d a b)) (t : Tm) : P t := by
+    (merge : ∀ d a b, P a → P b → P (.merge d a b))
+    (objGraph : ∀ fs n E K s caps, (∀ e ∈ E, P e) → (∀ a ∈ caps, P a) →
+      P (.objAt fs (.graph n E K s caps)))
+    (makeGraph : ∀ n E K s caps ns args, (∀ e ∈ E, P e) → (∀ a ∈ caps, P a) →
+      (∀ a ∈ args, P a) → P (.makeAt (.graph n E K s caps) ns args))
+    (goto : ∀ E K l L d, (∀ e ∈ E, P e) → (∀ a ∈ L, P a) → P d → P (.goto E K l L d))
+    (frame : ∀ E K t L d k x, (∀ e ∈ E, P e) → P t → (∀ a ∈ L, P a) → P d →
+      P (.frame E K t L d k x))
+    (t : Tm) : P t := by
   apply Tm.rec (motive_1 := P)
     (motive_2 := fun c => match c with
       | .absent => True | .closure _ b _ => P b | .variadic _ b => P b
-      | .bound t r pre => P t ∧ P r ∧ ∀ a ∈ pre, P a)
+      | .bound t r pre => P t ∧ P r ∧ ∀ a ∈ pre, P a
+      | .graph _ E _ _ caps => (∀ e ∈ E, P e) ∧ ∀ a ∈ caps, P a)
     (motive_3 := fun args => ∀ a ∈ args, P a)
     var invoke construct letE nul undef tru fls num str bigint sym ?_ ?_ read index write test ite arith arr arrLit elemAt setElem lenOf spread throw merge
-    True.intro (fun _ _ _ h => h) (fun _ _ h => h) (fun _ _ _ ht hr hp => ⟨ht, hr, hp⟩) (by simp) (by
+    (fun E K l L d hE hL hd => goto E K l L d hE hL hd)
+    (fun E K t L d k x hE ht hL hd => frame E K t L d k x hE ht hL hd)
+    True.intro (fun _ _ _ h => h) (fun _ _ h => h) (fun _ _ _ ht hr hp => ⟨ht, hr, hp⟩)
+    (fun _ _ _ _ _ hE hc => ⟨hE, hc⟩) (by simp) (by
       intro a args ha ih v hv
       rcases List.mem_cons.mp hv with rfl | hv
       · exact ha
@@ -953,12 +1036,14 @@ theorem lookup_slots {ns : List PropKey} (hnd : ns.Nodup) {base i : Nat}
     | closure n b k => exact objClosure fs n b k ih
     | variadic n b => exact objVariadic fs n b ih
     | bound t r pre => exact objBound fs t r pre ih.1 ih.2.1 ih.2.2
+    | graph n E K s caps => exact objGraph fs n E K s caps ih.1 ih.2
   · intro c ns args ihc iha
     cases c with
     | absent => exact alloc ns args iha
     | closure n b k => exact attach n b k ns args ihc iha
     | variadic n b => exact makeVariadic n b ns args ihc iha
     | bound t r pre => exact makeBound t r pre ns args ihc.1 ihc.2.1 ihc.2.2 iha
+    | graph n E K s caps => exact makeGraph n E K s caps ns args ihc.1 ihc.2 iha
 
 
 
@@ -1053,6 +1138,7 @@ def tagHolds : Tag → Val → Bool
   | .isFun, .objAt _ (.closure _ _ _) => true
   | .isFun, .objAt _ (.variadic _ _) => true
   | .isFun, .objAt _ (.bound _ _ _) => true
+  | .isFun, .objAt _ (.graph ..) => true
   | .truthy, .tru => true
   | .truthy, .num b => numberTruthy b
   | .truthy, .str s => s != ""
@@ -1103,6 +1189,11 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
   | .spread x => .spread (subst j a x)
   | .throw x => .throw (subst j a x)
   | .merge d x y => .merge d (subst j a x) (subst j a y)
+  | .objAt fs (.graph n E K s caps) => .objAt fs (.graph n E K s (substArgs j a caps))
+  | .makeAt (.graph n E K s caps) ns xs =>
+      .makeAt (.graph n E K s (substArgs j a caps)) ns (substArgs j a xs)
+  | .goto E K l L d => .goto E K l (substArgs j a L) (subst j a d)
+  | .frame E K t L d k x => .frame E K (subst j a t) (substArgs j a L) (subst j a d) k x
 
 termination_by structural t => t
 
@@ -1376,8 +1467,135 @@ theorem mergeParts_vals {h : List Tm} {d : List PropKey} {a b : Tm} {ps : List (
   rcases mem_mergeData hp with hp | hp
   · exact hA p hp
   · exact hB p (List.mem_filter.mp hp).1
+abbrev Env := Nat → Tm
+
+def push (a : Tm) (ρ : Env) : Env
+  | 0 => a
+  | i + 1 => ρ i
+
+/-! Simultaneous closing substitution, leaving `d` enclosing binders intact. -/
+mutual
+def instantiate (d : Nat) (ρ : Env) : Tm → Tm
+  | .var i => if i < d then .var i else ρ (i - d)
+  | .letE a b => .letE (instantiate d ρ a) (instantiate (d + 1) ρ b)
+  | .objAt fs .absent => .objAt fs .absent
+  | .objAt fs (.closure n b k) => .objAt fs (.closure n (instantiate (d + n + 1) ρ b) k)
+  | .invoke f r args => .invoke (instantiate d ρ f) (instantiate d ρ r) (instantiateArgs d ρ args)
+  | .construct f args => .construct (instantiate d ρ f) (instantiateArgs d ρ args)
+  | .makeAt (.closure n b k) ns args =>
+      .makeAt (.closure n (instantiate (d + n + 1) ρ b) k) ns (instantiateArgs d ρ args)
+  | .objAt fs (.variadic n b) => .objAt fs (.variadic n (instantiate (d + n + 2) ρ b))
+  | .makeAt (.variadic n b) ns args =>
+      .makeAt (.variadic n (instantiate (d + n + 2) ρ b)) ns (instantiateArgs d ρ args)
+  | .objAt fs (.bound t r pre) =>
+      .objAt fs (.bound (instantiate d ρ t) (instantiate d ρ r) (instantiateArgs d ρ pre))
+  | .makeAt (.bound t r pre) ns args =>
+      .makeAt (.bound (instantiate d ρ t) (instantiate d ρ r) (instantiateArgs d ρ pre)) ns
+        (instantiateArgs d ρ args)
+  | .makeAt .absent ns args => .makeAt .absent ns (instantiateArgs d ρ args)
+  | .readAt f a => .readAt f (instantiate d ρ a)
+  | .indexAt a key => .indexAt (instantiate d ρ a) (instantiate d ρ key)
+  | .writeAt f a b => .writeAt f (instantiate d ρ a) (instantiate d ρ b)
+  | .test k a => .test k (instantiate d ρ a)
+  | .ite c a b => .ite (instantiate d ρ c) (instantiate d ρ a) (instantiate d ρ b)
+  | .arith op a b => .arith op (instantiate d ρ a) (instantiate d ρ b)
+  | .arrLit args => .arrLit (instantiateArgs d ρ args)
+  | .elemAt a b => .elemAt (instantiate d ρ a) (instantiate d ρ b)
+  | .setElem a b c => .setElem (instantiate d ρ a) (instantiate d ρ b) (instantiate d ρ c)
+  | .lenOf a => .lenOf (instantiate d ρ a)
+  | .spread a => .spread (instantiate d ρ a)
+  | .throw a => .throw (instantiate d ρ a)
+  | .merge dr a b => .merge dr (instantiate d ρ a) (instantiate d ρ b)
+  | .objAt fs (.graph n E K s caps) => .objAt fs (.graph n E K s (instantiateArgs d ρ caps))
+  | .makeAt (.graph n E K s caps) ns args =>
+      .makeAt (.graph n E K s (instantiateArgs d ρ caps)) ns (instantiateArgs d ρ args)
+  | .goto E K l L x => .goto E K l (instantiateArgs d ρ L) (instantiate d ρ x)
+  | .frame E K t L x k h => .frame E K (instantiate d ρ t) (instantiateArgs d ρ L) (instantiate d ρ x) k h
+  | t => t
+
+def instantiateArgs (d : Nat) (ρ : Env) : List Tm → List Tm
+  | [] => []
+  | a :: args => instantiate d ρ a :: instantiateArgs d ρ args
+end
+
+@[simp] theorem instantiateArgs_eq_map (d : Nat) (ρ : Env) (args : List Tm) :
+    instantiateArgs d ρ args = args.map (instantiate d ρ) := by
+  induction args <;> simp_all [instantiateArgs]
+
+/-- A graph run's environment: its slots, then the value of every slot past them. -/
+def envOf (L : List Tm) (d : Tm) : Env := fun i => L.getD i d
+
+/-- A target's slot map on a graph run's environment, as `PointClaims.mapEnv`
+applies it: slot `i` of the result is the source slot the map names, and
+every slot past the map is the source's slot 0. -/
+def envMap (m : Option (List Nat)) (L : List Tm) (d : Tm) : List Tm × Tm :=
+  match m with
+  | none => (L, d)
+  | some slots => (slots.map (L.getD · d), L.getD 0 d)
+
+theorem getD_mem_or (L : List Tm) (i : Nat) (d : Tm) : L.getD i d ∈ L ∨ L.getD i d = d := by
+  by_cases h : i < L.length
+  · left; simp [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem h]
+  · right; simp [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega : L.length ≤ i)]
+
+/-- A mapped environment holds only values of the one it maps. -/
+theorem envMap_mem {m : Option (List Nat)} {L : List Tm} {d x : Tm}
+    (hx : x ∈ (envMap m L d).1 ∨ x = (envMap m L d).2) : x ∈ L ∨ x = d := by
+  cases m with
+  | none => simpa [envMap] using hx
+  | some slots =>
+    simp only [envMap, List.mem_map] at hx
+    rcases hx with ⟨i, _, rfl⟩ | rfl
+    · exact getD_mem_or L i d
+    · exact getD_mem_or L 0 d
 
 abbrev Heap := List Val
+
+/-- **A term that throws.** `Raises t v`: `t` is `throw v` for a value `v`, in
+evaluation position: under exactly the contexts `Step` evaluates in, each
+constructor here the congruence rule of the same name with a throw in place of
+a step. Such a term does not step (`raises_no_step`); the thrown value leaves
+every context it is in, until a handler catches it. -/
+inductive Raises : Tm → Tm → Prop where
+  | throwV : isVal v = true → Raises (.throw v) v
+  | throwC : Raises a v → Raises (.throw a) v
+  | callL : Raises f v → Raises (.invoke f r args) v
+  | callRecv : isVal f = true → Raises r v → Raises (.invoke f r args) v
+  | callArg {f r a v : Tm} {args : List Tm} {i : Nat} :
+      isVal f = true → isVal r = true → args[i]? = some a →
+      (∀ j, j < i → ∀ w, args[j]? = some w → isVal w = true) →
+      Raises a v → Raises (.invoke f r args) v
+  | constructL : Raises f v → Raises (.construct f args) v
+  | constructArg {f a v : Tm} {args : List Tm} {i : Nat} :
+      isVal f = true → args[i]? = some a →
+      (∀ j, j < i → ∀ w, args[j]? = some w → isVal w = true) →
+      Raises a v → Raises (.construct f args) v
+  | letC : Raises a v → Raises (.letE a b) v
+  | spreadC : Raises a v → Raises (.spread a) v
+  | makeArg {c : CallCode} {ns : List PropKey} {inits : List Tm} {i : Nat} {a v : Tm} :
+      inits[i]? = some a →
+      (∀ j, j < i → ∀ w, inits[j]? = some w → isVal w = true) →
+      Raises a v → Raises (.makeAt c ns inits) v
+  | readC : Raises a v → Raises (.readAt f a) v
+  | indexC1 : Raises a v → Raises (.indexAt a key) v
+  | indexC2 : isVal a = true → Raises key v → Raises (.indexAt a key) v
+  | writeC1 : Raises a v → Raises (.writeAt f a b) v
+  | writeC2 : isVal a = true → Raises b v → Raises (.writeAt f a b) v
+  | testC : Raises a v → Raises (.test k a) v
+  | iteC : Raises c v → Raises (.ite c t e) v
+  | arithC1 : Raises a v → Raises (.arith op a b) v
+  | arithC2 : isVal a = true → Raises b v → Raises (.arith op a b) v
+  | arrArg {inits : List Tm} {i : Nat} {a v : Tm} : inits[i]? = some a →
+      (∀ j, j < i → ∀ w, inits[j]? = some w → isVal w = true) →
+      Raises a v → Raises (.arrLit inits) v
+  | elemC1 : Raises a v → Raises (.elemAt a i) v
+  | elemC2 : isVal a = true → Raises i v → Raises (.elemAt a i) v
+  | setC1 : Raises a v → Raises (.setElem a i x) v
+  | setC2 : isVal a = true → Raises i v → Raises (.setElem a i x) v
+  | setC3 : isVal a = true → isVal i = true → Raises x v → Raises (.setElem a i x) v
+  | lenC : Raises a v → Raises (.lenOf a) v
+  | mergeC1 : Raises a v → Raises (.merge d a b) v
+  | mergeC2 : isVal a = true → Raises b v → Raises (.merge d a b) v
 
 /-! ## One small step, threading the heap -/
 
@@ -1524,52 +1742,44 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   allocation this steps to, which runs no code. -/
   | mergeV {ps : List (PropKey × Tm)} : isVal a = true → isVal b = true → mergeParts h d a b = some ps →
       Step h (.merge d a b) h (.makeAt .absent (ps.map Prod.fst) (ps.map Prod.snd))
-
-/-- **A term that throws.** `Raises t v`: `t` is `throw v` for a value `v`, in
-evaluation position: under exactly the contexts `Step` evaluates in, each
-constructor here the congruence rule of the same name with a throw in place of
-a step. Such a term does not step (`raises_no_step`); the thrown value leaves
-every context it is in, until a handler catches it. -/
-inductive Raises : Tm → Tm → Prop where
-  | throwV : isVal v = true → Raises (.throw v) v
-  | throwC : Raises a v → Raises (.throw a) v
-  | callL : Raises f v → Raises (.invoke f r args) v
-  | callRecv : isVal f = true → Raises r v → Raises (.invoke f r args) v
-  | callArg {f r a v : Tm} {args : List Tm} {i : Nat} :
-      isVal f = true → isVal r = true → args[i]? = some a →
-      (∀ j, j < i → ∀ w, args[j]? = some w → isVal w = true) →
-      Raises a v → Raises (.invoke f r args) v
-  | constructL : Raises f v → Raises (.construct f args) v
-  | constructArg {f a v : Tm} {args : List Tm} {i : Nat} :
-      isVal f = true → args[i]? = some a →
-      (∀ j, j < i → ∀ w, args[j]? = some w → isVal w = true) →
-      Raises a v → Raises (.construct f args) v
-  | letC : Raises a v → Raises (.letE a b) v
-  | spreadC : Raises a v → Raises (.spread a) v
-  | makeArg {c : CallCode} {ns : List PropKey} {inits : List Tm} {i : Nat} {a v : Tm} :
-      inits[i]? = some a →
-      (∀ j, j < i → ∀ w, inits[j]? = some w → isVal w = true) →
-      Raises a v → Raises (.makeAt c ns inits) v
-  | readC : Raises a v → Raises (.readAt f a) v
-  | indexC1 : Raises a v → Raises (.indexAt a key) v
-  | indexC2 : isVal a = true → Raises key v → Raises (.indexAt a key) v
-  | writeC1 : Raises a v → Raises (.writeAt f a b) v
-  | writeC2 : isVal a = true → Raises b v → Raises (.writeAt f a b) v
-  | testC : Raises a v → Raises (.test k a) v
-  | iteC : Raises c v → Raises (.ite c t e) v
-  | arithC1 : Raises a v → Raises (.arith op a b) v
-  | arithC2 : isVal a = true → Raises b v → Raises (.arith op a b) v
-  | arrArg {inits : List Tm} {i : Nat} {a v : Tm} : inits[i]? = some a →
-      (∀ j, j < i → ∀ w, inits[j]? = some w → isVal w = true) →
-      Raises a v → Raises (.arrLit inits) v
-  | elemC1 : Raises a v → Raises (.elemAt a i) v
-  | elemC2 : isVal a = true → Raises i v → Raises (.elemAt a i) v
-  | setC1 : Raises a v → Raises (.setElem a i x) v
-  | setC2 : isVal a = true → Raises i v → Raises (.setElem a i x) v
-  | setC3 : isVal a = true → isVal i = true → Raises x v → Raises (.setElem a i x) v
-  | lenC : Raises a v → Raises (.lenOf a) v
-  | mergeC1 : Raises a v → Raises (.merge d a b) v
-  | mergeC2 : isVal a = true → Raises b v → Raises (.merge d a b) v
+  /-- Graph code is invoked in one step, changing no heap: its run starts at
+  the entry label, the receiver in slot 0, then the parameters, then the
+  captures. -/
+  | callGraph : isVal r = true → (∀ a ∈ args, isVal a = true) →
+      Step h (.invoke (.objAt fs (.graph n E K s caps)) r args) h
+        (.goto E K s (r :: CallArguments.parameters n args ++ caps) .nul)
+  /-- Entering a node instantiates its expression in the run's environment. -/
+  | gotoEnter : E[l]? = some e → K[l]? = some (k, x) →
+      Step h (.goto E K l L d) h (.frame E K (instantiate 0 (envOf L d) e) L d k x)
+  | frameC : Step h t h' t' → Step h (.frame E K t L d k x) h' (.frame E K t' L d k x)
+  /-- A returned value is the run's value. -/
+  | frameRet : isVal v = true → Step h (.frame E K v L d .ret x) h v
+  | frameBind : isVal v = true →
+      Step h (.frame E K v L d (.bind l) x) h
+        (.goto E K l.label (envMap l.mapping (v :: L) d).1 (envMap l.mapping (v :: L) d).2)
+  | frameEffect : isVal v = true →
+      Step h (.frame E K v L d (.effect l) x) h
+        (.goto E K l.label (envMap l.mapping L d).1 (envMap l.mapping L d).2)
+  | frameYes : Step h (.frame E K .tru L d (.branch y n) x) h
+      (.goto E K y.label (envMap y.mapping L d).1 (envMap y.mapping L d).2)
+  | frameNo : Step h (.frame E K .fls L d (.branch y n) x) h
+      (.goto E K n.label (envMap n.mapping L d).1 (envMap n.mapping L d).2)
+  | frameYesBind : Step h (.frame E K .tru L d (.branchBind y n) x) h
+      (.goto E K y.label (envMap y.mapping (.tru :: L) d).1 (envMap y.mapping (.tru :: L) d).2)
+  | frameNoBind : Step h (.frame E K .fls L d (.branchBind y n) x) h
+      (.goto E K n.label (envMap n.mapping (.fls :: L) d).1 (envMap n.mapping (.fls :: L) d).2)
+  | frameTag : isVal v = true →
+      Step h (.frame E K v L d (.tagBind tag y n) x) h
+        (.goto E K (if tagHoldsIn h tag v then y else n).label
+          (envMap (if tagHoldsIn h tag v then y else n).mapping (v :: L) d).1
+          (envMap (if tagHoldsIn h tag v then y else n).mapping (v :: L) d).2)
+  /-- A throw out of a node with a handler goes there, the thrown value bound. -/
+  | frameHandle : Raises t v →
+      Step h (.frame E K t L d k (some l)) h
+        (.goto E K l.label (envMap l.mapping (v :: L) d).1 (envMap l.mapping (v :: L) d).2)
+  /-- A throw out of a node without one leaves the run: a throw of the same
+  value, which the run's own evaluation context then carries on. -/
+  | frameRaise : Raises t v → Step h (.frame E K t L d k none) h (.throw v)
 
 /-! ### The one-field rules
 
@@ -1716,6 +1926,373 @@ theorem closed_omega : Closed omegaTm := by
   intro k a
   simp [omegaTm, delta, subst]
 
+/-! ### Throwing
+
+A throwing term is neither a value nor a term that steps, and the value it
+throws is determined. -/
+
+theorem raises_not_val {t v : Tm} (h : Raises t v) : isVal t = false := by
+  cases h <;> rfl
+
+theorem raises_val {t v : Tm} (h : Raises t v) : isVal v = true := by
+  induction h <;> assumption
+
+/-- In a list evaluated left to right, the first entry that is not a value is
+determined: two such positions with only values before each coincide. -/
+theorem first_nonval_unique {xs : List Tm} {i j : Nat} {a b : Tm}
+    (ha : xs[i]? = some a) (hb : xs[j]? = some b)
+    (hi : ∀ k, k < i → ∀ w, xs[k]? = some w → isVal w = true)
+    (hj : ∀ k, k < j → ∀ w, xs[k]? = some w → isVal w = true)
+    (na : isVal a = false) (nb : isVal b = false) : i = j ∧ a = b := by
+  have hij : i = j := by
+    rcases Nat.lt_trichotomy i j with h | h | h
+    · have := hj i h a ha; simp [na] at this
+    · exact h
+    · have := hi j h b hb; simp [nb] at this
+  subst hij
+  exact ⟨rfl, Option.some.inj (ha.symm.trans hb)⟩
+
+theorem not_val_of_step {h h' t t'} (s : Step h t h' t') : isVal t = false := by
+  cases ht : isVal t
+  · rfl
+  · exact False.elim (value_no_step ht s)
+
+/-- A spread whose store is ready never throws. -/
+theorem spread_arr_no_raise {ls : List (Option Nat)} {v : Tm} : ¬ Raises (.spread (.arr ls)) v := by
+  intro h; cases h with | spreadC h => cases h
+
+/-- A ready spread is the first actual still to run: nothing before it throws. -/
+theorem spread_blocks_raise {args pre post : List Tm} {ls : List (Option Nat)}
+    (he : args = pre ++ .spread (.arr ls) :: post) (hpre : ∀ w ∈ pre, isVal w = true)
+    {i : Nat} {a v : Tm} (hg : args[i]? = some a)
+    (hb : ∀ j, j < i → ∀ w, args[j]? = some w → isVal w = true)
+    (hr : Raises a v) : False := by
+  subst he
+  rcases Nat.lt_trichotomy i pre.length with hi | hi | hi
+  · rw [List.getElem?_append_left hi] at hg
+    have := hpre a (List.mem_of_getElem? hg)
+    rw [raises_not_val hr] at this; contradiction
+  · subst hi
+    rw [List.getElem?_append_right (Nat.le_refl _)] at hg
+    simp only [Nat.sub_self, List.getElem?_cons_zero, Option.some.injEq] at hg
+    subst hg
+    exact spread_arr_no_raise hr
+  · have := hb pre.length hi (.spread (.arr ls)) (by simp)
+    simp [isVal] at this
+
+/-- The entry after a prefix of values is the first one still to run. -/
+theorem prefix_position {pre rest : List Tm} {t : Tm} (hp : ∀ w ∈ pre, isVal w = true) :
+    (pre ++ t :: rest)[pre.length]? = some t ∧
+      ∀ j, j < pre.length → ∀ w, (pre ++ t :: rest)[j]? = some w → isVal w = true := by
+  refine ⟨by simp, ?_⟩
+  intro j hj w hw
+  rw [List.getElem?_append_left hj] at hw
+  exact hp w (List.mem_of_getElem? hw)
+
+/-- **A throwing term does not step.** -/
+theorem raises_no_step {t v : Tm} (hr : Raises t v) : ∀ {h h' t'}, ¬ Step h t h' t' := by
+  induction hr with
+  | throwV hv => intro _ _ _ s; cases s with | throwC s => exact value_no_step hv s
+  | throwC _ ih => intro _ _ _ s; cases s with | throwC s => exact ih s
+  | callL hf ih =>
+    intro _ _ _ s
+    cases s with
+    | callL s => exact ih s
+    | callRecv hv _ => rw [raises_not_val hf] at hv; contradiction
+    | callArg hv _ _ _ _ => rw [raises_not_val hf] at hv; contradiction
+    | callV => cases hf
+    | callRest => cases hf
+    | callBound => cases hf
+    | callGraph => cases hf
+    | callSpread hv _ _ _ _ => rw [raises_not_val hf] at hv; contradiction
+  | callRecv hfv hr ih =>
+    intro _ _ _ s
+    cases s with
+    | callL s => exact value_no_step hfv s
+    | callRecv _ s => exact ih s
+    | callArg _ hv _ _ _ => rw [raises_not_val hr] at hv; contradiction
+    | callV hv _ => rw [raises_not_val hr] at hv; contradiction
+    | callRest hv _ => rw [raises_not_val hr] at hv; contradiction
+    | callBound hv _ => rw [raises_not_val hr] at hv; contradiction
+    | callGraph hv _ => rw [raises_not_val hr] at hv; contradiction
+    | callSpread _ hv _ _ _ => rw [raises_not_val hr] at hv; contradiction
+  | callArg hfv hrv hg hb hr ih =>
+    intro _ _ _ s
+    cases s with
+    | callL s => exact value_no_step hfv s
+    | callRecv _ s => exact value_no_step hrv s
+    | callArg _ _ hg' hb' s =>
+      obtain ⟨rfl, rfl⟩ := first_nonval_unique hg hg' hb hb' (raises_not_val hr) (not_val_of_step s)
+      exact ih s
+    | callV _ hvs => have := hvs _ (List.mem_of_getElem? hg); rw [raises_not_val hr] at this; contradiction
+    | callRest _ hvs => have := hvs _ (List.mem_of_getElem? hg); rw [raises_not_val hr] at this; contradiction
+    | callBound _ hvs => have := hvs _ (List.mem_of_getElem? hg); rw [raises_not_val hr] at this; contradiction
+    | callGraph _ hvs => have := hvs _ (List.mem_of_getElem? hg); rw [raises_not_val hr] at this; contradiction
+    | callSpread _ _ he hpre _ => exact spread_blocks_raise he hpre hg hb hr
+  | constructL hf ih =>
+    intro _ _ _ s
+    cases s with
+    | constructL s => exact ih s
+    | constructArg hv _ _ _ => rw [raises_not_val hf] at hv; contradiction
+    | constructV => cases hf
+  | constructArg hfv hg hb hr ih =>
+    intro _ _ _ s
+    cases s with
+    | constructL s => exact value_no_step hfv s
+    | constructArg _ hg' hb' s =>
+      obtain ⟨rfl, rfl⟩ := first_nonval_unique hg hg' hb hb' (raises_not_val hr) (not_val_of_step s)
+      exact ih s
+    | constructV hvs => have := hvs _ (List.mem_of_getElem? hg); rw [raises_not_val hr] at this; contradiction
+  | letC hr ih =>
+    intro _ _ _ s
+    cases s with
+    | letC s => exact ih s
+    | letV hv => rw [raises_not_val hr] at hv; contradiction
+  | spreadC _ ih => intro _ _ _ s; cases s with | spreadC s => exact ih s
+  | makeArg hg hb hr ih =>
+    intro _ _ _ s
+    cases s with
+    | makeArg hg' hb' s =>
+      obtain ⟨rfl, rfl⟩ := first_nonval_unique hg hg' hb hb' (raises_not_val hr) (not_val_of_step s)
+      exact ih s
+    | makeFields hvs _ => have := hvs _ (List.mem_of_getElem? hg); rw [raises_not_val hr] at this; contradiction
+  | readC hr ih =>
+    intro _ _ _ s
+    cases s with
+    | readC s => exact ih s
+    | readField => cases hr
+    | readProto => cases hr
+    | readMissing => cases hr
+  | indexC1 hr ih =>
+    intro _ _ _ s
+    cases s with
+    | indexC1 s => exact ih s
+    | indexC2 hv _ => rw [raises_not_val hr] at hv; contradiction
+    | indexField => cases hr
+    | indexProto => cases hr
+    | indexMissing => cases hr
+  | indexC2 hv hr ih =>
+    intro _ _ _ s
+    cases s with
+    | indexC1 s => exact value_no_step hv s
+    | indexC2 _ s => exact ih s
+    | indexField hk => have := propertyKey_val hk; rw [raises_not_val hr] at this; contradiction
+    | indexProto hk => have := propertyKey_val hk; rw [raises_not_val hr] at this; contradiction
+    | indexMissing hk => have := propertyKey_val hk; rw [raises_not_val hr] at this; contradiction
+  | writeC1 hr ih =>
+    intro _ _ _ s
+    cases s with
+    | writeC1 s => exact ih s
+    | writeC2 hv _ => rw [raises_not_val hr] at hv; contradiction
+    | writeField => cases hr
+  | writeC2 hv hr ih =>
+    intro _ _ _ s
+    cases s with
+    | writeC1 s => exact value_no_step hv s
+    | writeC2 _ s => exact ih s
+    | writeField hw _ _ => rw [raises_not_val hr] at hw; contradiction
+  | testC hr ih =>
+    intro _ _ _ s
+    cases s with
+    | testC s => exact ih s
+    | testV hv => rw [raises_not_val hr] at hv; contradiction
+  | iteC hr ih =>
+    intro _ _ _ s
+    cases s with
+    | iteC s => exact ih s
+    | iteT => cases hr
+    | iteF => cases hr
+  | arithC1 hr ih =>
+    intro _ _ _ s
+    cases s with
+    | arithC1 s => exact ih s
+    | arithC2 hv _ => rw [raises_not_val hr] at hv; contradiction
+    | arithV hb => have := (binop_values hb).1; rw [raises_not_val hr] at this; contradiction
+    | arithThrow ht => have := (binopThrows_values ht).1; rw [raises_not_val hr] at this; contradiction
+  | arithC2 hv hr ih =>
+    intro _ _ _ s
+    cases s with
+    | arithC1 s => exact value_no_step hv s
+    | arithC2 _ s => exact ih s
+    | arithV hb => have := (binop_values hb).2.1; rw [raises_not_val hr] at this; contradiction
+    | arithThrow ht => have := (binopThrows_values ht).2; rw [raises_not_val hr] at this; contradiction
+  | arrArg hg hb hr ih =>
+    intro _ _ _ s
+    cases s with
+    | arrArg hg' hb' s =>
+      obtain ⟨rfl, rfl⟩ := first_nonval_unique hg hg' hb hb' (raises_not_val hr) (not_val_of_step s)
+      exact ih s
+    | arrSpread he hpre _ => exact spread_blocks_raise he hpre hg hb hr
+    | arrAlloc hvs => have := hvs _ (List.mem_of_getElem? hg); rw [raises_not_val hr] at this; contradiction
+  | elemC1 hr ih =>
+    intro _ _ _ s
+    cases s with
+    | elemC1 s => exact ih s
+    | elemC2 hv _ => rw [raises_not_val hr] at hv; contradiction
+    | elemRead => cases hr
+    | elemAbsent => cases hr
+    | elemStr => cases hr
+  | elemC2 hv hr ih =>
+    intro _ _ _ s
+    cases s with
+    | elemC1 s => exact value_no_step hv s
+    | elemC2 _ s => exact ih s
+    | elemRead => cases hr
+    | elemAbsent => cases hr
+    | elemStr => cases hr
+  | setC1 hr ih =>
+    intro _ _ _ s
+    cases s with
+    | setC1 s => exact ih s
+    | setC2 hv _ => rw [raises_not_val hr] at hv; contradiction
+    | setC3 hv _ _ => rw [raises_not_val hr] at hv; contradiction
+    | setPresent => cases hr
+    | setGrow => cases hr
+  | setC2 hv hr ih =>
+    intro _ _ _ s
+    cases s with
+    | setC1 s => exact value_no_step hv s
+    | setC2 _ s => exact ih s
+    | setC3 _ hi _ => rw [raises_not_val hr] at hi; contradiction
+    | setPresent => cases hr
+    | setGrow => cases hr
+  | setC3 hv hi hr ih =>
+    intro _ _ _ s
+    cases s with
+    | setC1 s => exact value_no_step hv s
+    | setC2 _ s => exact value_no_step hi s
+    | setC3 _ _ s => exact ih s
+    | setPresent hw _ _ => rw [raises_not_val hr] at hw; contradiction
+    | setGrow hw _ _ => rw [raises_not_val hr] at hw; contradiction
+  | lenC hr ih =>
+    intro _ _ _ s
+    cases s with
+    | lenC s => exact ih s
+    | lenV => cases hr
+    | lenStr => cases hr
+  | mergeC1 hr ih =>
+    intro _ _ _ s
+    cases s with
+    | mergeC1 s => exact ih s
+    | mergeC2 hv _ => rw [raises_not_val hr] at hv; contradiction
+    | mergeV hv _ _ => rw [raises_not_val hr] at hv; contradiction
+  | mergeC2 hv hr ih =>
+    intro _ _ _ s
+    cases s with
+    | mergeC1 s => exact value_no_step hv s
+    | mergeC2 _ s => exact ih s
+    | mergeV _ hw _ => rw [raises_not_val hr] at hw; contradiction
+
+/-- **The thrown value is determined.** -/
+theorem Raises_det {t v w : Tm} (h1 : Raises t v) (h2 : Raises t w) : v = w := by
+  induction h1 generalizing w with
+  | throwV hv =>
+    cases h2 with
+    | throwV => rfl
+    | throwC h => rw [raises_not_val h] at hv; contradiction
+  | throwC h ih =>
+    cases h2 with
+    | throwV hv => rw [raises_not_val h] at hv; contradiction
+    | throwC h' => exact ih h'
+  | callL h ih =>
+    cases h2 with
+    | callL h' => exact ih h'
+    | callRecv hv _ => rw [raises_not_val h] at hv; contradiction
+    | callArg hv _ _ _ _ => rw [raises_not_val h] at hv; contradiction
+  | callRecv hf h ih =>
+    cases h2 with
+    | callL h' => rw [raises_not_val h'] at hf; contradiction
+    | callRecv _ h' => exact ih h'
+    | callArg _ hv _ _ _ => rw [raises_not_val h] at hv; contradiction
+  | callArg hf hr hg hb h ih =>
+    cases h2 with
+    | callL h' => rw [raises_not_val h'] at hf; contradiction
+    | callRecv _ h' => rw [raises_not_val h'] at hr; contradiction
+    | callArg _ _ hg' hb' h' =>
+      obtain ⟨rfl, rfl⟩ := first_nonval_unique hg hg' hb hb' (raises_not_val h) (raises_not_val h')
+      exact ih h'
+  | constructL h ih =>
+    cases h2 with
+    | constructL h' => exact ih h'
+    | constructArg hv _ _ _ => rw [raises_not_val h] at hv; contradiction
+  | constructArg hf hg hb h ih =>
+    cases h2 with
+    | constructL h' => rw [raises_not_val h'] at hf; contradiction
+    | constructArg _ hg' hb' h' =>
+      obtain ⟨rfl, rfl⟩ := first_nonval_unique hg hg' hb hb' (raises_not_val h) (raises_not_val h')
+      exact ih h'
+  | letC h ih => cases h2 with | letC h' => exact ih h'
+  | spreadC h ih => cases h2 with | spreadC h' => exact ih h'
+  | makeArg hg hb h ih =>
+    cases h2 with
+    | makeArg hg' hb' h' =>
+      obtain ⟨rfl, rfl⟩ := first_nonval_unique hg hg' hb hb' (raises_not_val h) (raises_not_val h')
+      exact ih h'
+  | readC h ih => cases h2 with | readC h' => exact ih h'
+  | indexC1 h ih =>
+    cases h2 with
+    | indexC1 h' => exact ih h'
+    | indexC2 hv _ => rw [raises_not_val h] at hv; contradiction
+  | indexC2 hv h ih =>
+    cases h2 with
+    | indexC1 h' => rw [raises_not_val h'] at hv; contradiction
+    | indexC2 _ h' => exact ih h'
+  | writeC1 h ih =>
+    cases h2 with
+    | writeC1 h' => exact ih h'
+    | writeC2 hv _ => rw [raises_not_val h] at hv; contradiction
+  | writeC2 hv h ih =>
+    cases h2 with
+    | writeC1 h' => rw [raises_not_val h'] at hv; contradiction
+    | writeC2 _ h' => exact ih h'
+  | testC h ih => cases h2 with | testC h' => exact ih h'
+  | iteC h ih => cases h2 with | iteC h' => exact ih h'
+  | arithC1 h ih =>
+    cases h2 with
+    | arithC1 h' => exact ih h'
+    | arithC2 hv _ => rw [raises_not_val h] at hv; contradiction
+  | arithC2 hv h ih =>
+    cases h2 with
+    | arithC1 h' => rw [raises_not_val h'] at hv; contradiction
+    | arithC2 _ h' => exact ih h'
+  | arrArg hg hb h ih =>
+    cases h2 with
+    | arrArg hg' hb' h' =>
+      obtain ⟨rfl, rfl⟩ := first_nonval_unique hg hg' hb hb' (raises_not_val h) (raises_not_val h')
+      exact ih h'
+  | elemC1 h ih =>
+    cases h2 with
+    | elemC1 h' => exact ih h'
+    | elemC2 hv _ => rw [raises_not_val h] at hv; contradiction
+  | elemC2 hv h ih =>
+    cases h2 with
+    | elemC1 h' => rw [raises_not_val h'] at hv; contradiction
+    | elemC2 _ h' => exact ih h'
+  | setC1 h ih =>
+    cases h2 with
+    | setC1 h' => exact ih h'
+    | setC2 hv _ => rw [raises_not_val h] at hv; contradiction
+    | setC3 hv _ _ => rw [raises_not_val h] at hv; contradiction
+  | setC2 hv h ih =>
+    cases h2 with
+    | setC1 h' => rw [raises_not_val h'] at hv; contradiction
+    | setC2 _ h' => exact ih h'
+    | setC3 _ hi _ => rw [raises_not_val h] at hi; contradiction
+  | setC3 hv hi h ih =>
+    cases h2 with
+    | setC1 h' => rw [raises_not_val h'] at hv; contradiction
+    | setC2 _ h' => rw [raises_not_val h'] at hi; contradiction
+    | setC3 _ _ h' => exact ih h'
+  | lenC h ih => cases h2 with | lenC h' => exact ih h'
+  | mergeC1 h ih =>
+    cases h2 with
+    | mergeC1 h' => exact ih h'
+    | mergeC2 hv _ => rw [raises_not_val h] at hv; contradiction
+  | mergeC2 hv h ih =>
+    cases h2 with
+    | mergeC1 h' => rw [raises_not_val h'] at hv; contradiction
+    | mergeC2 _ h' => exact ih h'
+
 /-- **Evaluation is deterministic.** One term in one heap has at most one next
 state. Nothing in the safety definition says so — it quantifies existentially
 over the world a step lands in — so this has to be proved, and it is what lets
@@ -1758,6 +2335,7 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     | callV => exact False.elim (obj_no_step s)
     | callRest => exact False.elim (obj_no_step s)
     | callBound => exact False.elim (obj_no_step s)
+    | callGraph => exact False.elim (obj_no_step s)
     | callSpread hv _ _ _ _ => exact False.elim (value_no_step hv s)
   | callRecv hf s ih =>
     cases s2 with
@@ -1767,6 +2345,7 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     | callV hr _ => exact False.elim (value_no_step hr s)
     | callRest hr _ => exact False.elim (value_no_step hr s)
     | callBound hr _ => exact False.elim (value_no_step hr s)
+    | callGraph hr _ => exact False.elim (value_no_step hr s)
     | callSpread _ hr _ _ _ => exact False.elim (value_no_step hr s)
   | @callArg f r args i a h h1 a1 hv hrv hg hb s ih =>
     cases s2 with
@@ -1788,6 +2367,7 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     | callV _ hvs => exact False.elim (value_no_step (hvs _ (List.mem_of_getElem? hg)) s)
     | callRest _ hvs => exact False.elim (value_no_step (hvs _ (List.mem_of_getElem? hg)) s)
     | callBound _ hvs => exact False.elim (value_no_step (hvs _ (List.mem_of_getElem? hg)) s)
+    | callGraph _ hvs => exact False.elim (value_no_step (hvs _ (List.mem_of_getElem? hg)) s)
     | callSpread _ _ he hpre _ => exact False.elim (spread_blocks_arg he hpre hg hb s)
   | spreadC s ih =>
     cases s2 with
@@ -1800,6 +2380,7 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     | callV _ hvs => exact False.elim (spread_not_values he hvs)
     | callRest _ hvs => exact False.elim (spread_not_values he hvs)
     | callBound _ hvs => exact False.elim (spread_not_values he hvs)
+    | callGraph _ hvs => exact False.elim (spread_not_values he hvs)
     | callSpread _ _ he' hpre' hre' =>
       obtain ⟨rfl, hx, rfl⟩ := split_unique (he.symm.trans he') hpre hpre' rfl rfl
       cases hx
@@ -1834,6 +2415,104 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     | callArg _ _ hg _ hs => exact absurd hs (value_no_step (hv _ (List.mem_of_getElem? hg)))
     | callBound => exact ⟨rfl, rfl⟩
     | callSpread _ _ he _ _ => exact False.elim (spread_not_values he hv)
+  | callGraph hr hv =>
+    cases s2 with
+    | callL hs => exact absurd hs obj_no_step
+    | callRecv _ hs => exact absurd hs (value_no_step hr)
+    | callArg _ _ hg _ hs => exact absurd hs (value_no_step (hv _ (List.mem_of_getElem? hg)))
+    | callGraph => exact ⟨rfl, rfl⟩
+    | callSpread _ _ he _ _ => exact False.elim (spread_not_values he hv)
+  | gotoEnter he hk =>
+    cases s2 with
+    | gotoEnter he' hk' =>
+      cases Option.some.inj (he.symm.trans he')
+      cases Option.some.inj (hk.symm.trans hk')
+      exact ⟨rfl, rfl⟩
+  | frameC s ih =>
+    cases s2 with
+    | frameC s' => obtain ⟨rfl, rfl⟩ := ih s'; exact ⟨rfl, rfl⟩
+    | frameRet hv => exact False.elim (value_no_step hv s)
+    | frameBind hv => exact False.elim (value_no_step hv s)
+    | frameEffect hv => exact False.elim (value_no_step hv s)
+    | frameYes => exact False.elim (tru_no_step s)
+    | frameNo => exact False.elim (fls_no_step s)
+    | frameYesBind => exact False.elim (tru_no_step s)
+    | frameNoBind => exact False.elim (fls_no_step s)
+    | frameTag hv => exact False.elim (value_no_step hv s)
+    | frameHandle hr => exact False.elim (raises_no_step hr s)
+    | frameRaise hr => exact False.elim (raises_no_step hr s)
+  | frameRet hv =>
+    cases s2 with
+    | frameC s' => exact False.elim (value_no_step hv s')
+    | frameRet => exact ⟨rfl, rfl⟩
+    | frameHandle hr => rw [raises_not_val hr] at hv; contradiction
+    | frameRaise hr => rw [raises_not_val hr] at hv; contradiction
+  | frameBind hv =>
+    cases s2 with
+    | frameC s' => exact False.elim (value_no_step hv s')
+    | frameBind => exact ⟨rfl, rfl⟩
+    | frameHandle hr => rw [raises_not_val hr] at hv; contradiction
+    | frameRaise hr => rw [raises_not_val hr] at hv; contradiction
+  | frameEffect hv =>
+    cases s2 with
+    | frameC s' => exact False.elim (value_no_step hv s')
+    | frameEffect => exact ⟨rfl, rfl⟩
+    | frameHandle hr => rw [raises_not_val hr] at hv; contradiction
+    | frameRaise hr => rw [raises_not_val hr] at hv; contradiction
+  | frameYes =>
+    cases s2 with
+    | frameC s' => exact False.elim (tru_no_step s')
+    | frameYes => exact ⟨rfl, rfl⟩
+    | frameHandle hr => cases hr
+    | frameRaise hr => cases hr
+  | frameNo =>
+    cases s2 with
+    | frameC s' => exact False.elim (fls_no_step s')
+    | frameNo => exact ⟨rfl, rfl⟩
+    | frameHandle hr => cases hr
+    | frameRaise hr => cases hr
+  | frameYesBind =>
+    cases s2 with
+    | frameC s' => exact False.elim (tru_no_step s')
+    | frameYesBind => exact ⟨rfl, rfl⟩
+    | frameHandle hr => cases hr
+    | frameRaise hr => cases hr
+  | frameNoBind =>
+    cases s2 with
+    | frameC s' => exact False.elim (fls_no_step s')
+    | frameNoBind => exact ⟨rfl, rfl⟩
+    | frameHandle hr => cases hr
+    | frameRaise hr => cases hr
+  | frameTag hv =>
+    cases s2 with
+    | frameC s' => exact False.elim (value_no_step hv s')
+    | frameTag => exact ⟨rfl, rfl⟩
+    | frameHandle hr => rw [raises_not_val hr] at hv; contradiction
+    | frameRaise hr => rw [raises_not_val hr] at hv; contradiction
+  | frameHandle hr =>
+    cases s2 with
+    | frameC s' => exact False.elim (raises_no_step hr s')
+    | frameRet hv => rw [raises_not_val hr] at hv; contradiction
+    | frameBind hv => rw [raises_not_val hr] at hv; contradiction
+    | frameEffect hv => rw [raises_not_val hr] at hv; contradiction
+    | frameYes => cases hr
+    | frameNo => cases hr
+    | frameYesBind => cases hr
+    | frameNoBind => cases hr
+    | frameTag hv => rw [raises_not_val hr] at hv; contradiction
+    | frameHandle hr' => cases Raises_det hr hr'; exact ⟨rfl, rfl⟩
+  | frameRaise hr =>
+    cases s2 with
+    | frameC s' => exact False.elim (raises_no_step hr s')
+    | frameRet hv => rw [raises_not_val hr] at hv; contradiction
+    | frameBind hv => rw [raises_not_val hr] at hv; contradiction
+    | frameEffect hv => rw [raises_not_val hr] at hv; contradiction
+    | frameYes => cases hr
+    | frameNo => cases hr
+    | frameYesBind => cases hr
+    | frameNoBind => cases hr
+    | frameTag hv => rw [raises_not_val hr] at hv; contradiction
+    | frameRaise hr' => cases Raises_det hr hr'; exact ⟨rfl, rfl⟩
   | @makeArg c ns inits i h h1 a a1 hg hb s ih =>
     cases s2 with
     | @makeArg _ _ _ j _ _ b b1 hg' hb' s' =>
@@ -2131,370 +2810,6 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     | mergeV _ _ hp' =>
       cases Option.some.inj (hp.symm.trans hp')
       exact ⟨rfl, rfl⟩
-
-/-! ### Throwing
-
-A throwing term is neither a value nor a term that steps, and the value it
-throws is determined. -/
-
-theorem raises_not_val {t v : Tm} (h : Raises t v) : isVal t = false := by
-  cases h <;> rfl
-
-theorem raises_val {t v : Tm} (h : Raises t v) : isVal v = true := by
-  induction h <;> assumption
-
-/-- In a list evaluated left to right, the first entry that is not a value is
-determined: two such positions with only values before each coincide. -/
-theorem first_nonval_unique {xs : List Tm} {i j : Nat} {a b : Tm}
-    (ha : xs[i]? = some a) (hb : xs[j]? = some b)
-    (hi : ∀ k, k < i → ∀ w, xs[k]? = some w → isVal w = true)
-    (hj : ∀ k, k < j → ∀ w, xs[k]? = some w → isVal w = true)
-    (na : isVal a = false) (nb : isVal b = false) : i = j ∧ a = b := by
-  have hij : i = j := by
-    rcases Nat.lt_trichotomy i j with h | h | h
-    · have := hj i h a ha; simp [na] at this
-    · exact h
-    · have := hi j h b hb; simp [nb] at this
-  subst hij
-  exact ⟨rfl, Option.some.inj (ha.symm.trans hb)⟩
-
-theorem not_val_of_step {h h' t t'} (s : Step h t h' t') : isVal t = false := by
-  cases ht : isVal t
-  · rfl
-  · exact False.elim (value_no_step ht s)
-
-/-- A spread whose store is ready never throws. -/
-theorem spread_arr_no_raise {ls : List (Option Nat)} {v : Tm} : ¬ Raises (.spread (.arr ls)) v := by
-  intro h; cases h with | spreadC h => cases h
-
-/-- A ready spread is the first actual still to run: nothing before it throws. -/
-theorem spread_blocks_raise {args pre post : List Tm} {ls : List (Option Nat)}
-    (he : args = pre ++ .spread (.arr ls) :: post) (hpre : ∀ w ∈ pre, isVal w = true)
-    {i : Nat} {a v : Tm} (hg : args[i]? = some a)
-    (hb : ∀ j, j < i → ∀ w, args[j]? = some w → isVal w = true)
-    (hr : Raises a v) : False := by
-  subst he
-  rcases Nat.lt_trichotomy i pre.length with hi | hi | hi
-  · rw [List.getElem?_append_left hi] at hg
-    have := hpre a (List.mem_of_getElem? hg)
-    rw [raises_not_val hr] at this; contradiction
-  · subst hi
-    rw [List.getElem?_append_right (Nat.le_refl _)] at hg
-    simp only [Nat.sub_self, List.getElem?_cons_zero, Option.some.injEq] at hg
-    subst hg
-    exact spread_arr_no_raise hr
-  · have := hb pre.length hi (.spread (.arr ls)) (by simp)
-    simp [isVal] at this
-
-/-- The entry after a prefix of values is the first one still to run. -/
-theorem prefix_position {pre rest : List Tm} {t : Tm} (hp : ∀ w ∈ pre, isVal w = true) :
-    (pre ++ t :: rest)[pre.length]? = some t ∧
-      ∀ j, j < pre.length → ∀ w, (pre ++ t :: rest)[j]? = some w → isVal w = true := by
-  refine ⟨by simp, ?_⟩
-  intro j hj w hw
-  rw [List.getElem?_append_left hj] at hw
-  exact hp w (List.mem_of_getElem? hw)
-
-/-- **A throwing term does not step.** -/
-theorem raises_no_step {t v : Tm} (hr : Raises t v) : ∀ {h h' t'}, ¬ Step h t h' t' := by
-  induction hr with
-  | throwV hv => intro _ _ _ s; cases s with | throwC s => exact value_no_step hv s
-  | throwC _ ih => intro _ _ _ s; cases s with | throwC s => exact ih s
-  | callL hf ih =>
-    intro _ _ _ s
-    cases s with
-    | callL s => exact ih s
-    | callRecv hv _ => rw [raises_not_val hf] at hv; contradiction
-    | callArg hv _ _ _ _ => rw [raises_not_val hf] at hv; contradiction
-    | callV => cases hf
-    | callRest => cases hf
-    | callBound => cases hf
-    | callSpread hv _ _ _ _ => rw [raises_not_val hf] at hv; contradiction
-  | callRecv hfv hr ih =>
-    intro _ _ _ s
-    cases s with
-    | callL s => exact value_no_step hfv s
-    | callRecv _ s => exact ih s
-    | callArg _ hv _ _ _ => rw [raises_not_val hr] at hv; contradiction
-    | callV hv _ => rw [raises_not_val hr] at hv; contradiction
-    | callRest hv _ => rw [raises_not_val hr] at hv; contradiction
-    | callBound hv _ => rw [raises_not_val hr] at hv; contradiction
-    | callSpread _ hv _ _ _ => rw [raises_not_val hr] at hv; contradiction
-  | callArg hfv hrv hg hb hr ih =>
-    intro _ _ _ s
-    cases s with
-    | callL s => exact value_no_step hfv s
-    | callRecv _ s => exact value_no_step hrv s
-    | callArg _ _ hg' hb' s =>
-      obtain ⟨rfl, rfl⟩ := first_nonval_unique hg hg' hb hb' (raises_not_val hr) (not_val_of_step s)
-      exact ih s
-    | callV _ hvs => have := hvs _ (List.mem_of_getElem? hg); rw [raises_not_val hr] at this; contradiction
-    | callRest _ hvs => have := hvs _ (List.mem_of_getElem? hg); rw [raises_not_val hr] at this; contradiction
-    | callBound _ hvs => have := hvs _ (List.mem_of_getElem? hg); rw [raises_not_val hr] at this; contradiction
-    | callSpread _ _ he hpre _ => exact spread_blocks_raise he hpre hg hb hr
-  | constructL hf ih =>
-    intro _ _ _ s
-    cases s with
-    | constructL s => exact ih s
-    | constructArg hv _ _ _ => rw [raises_not_val hf] at hv; contradiction
-    | constructV => cases hf
-  | constructArg hfv hg hb hr ih =>
-    intro _ _ _ s
-    cases s with
-    | constructL s => exact value_no_step hfv s
-    | constructArg _ hg' hb' s =>
-      obtain ⟨rfl, rfl⟩ := first_nonval_unique hg hg' hb hb' (raises_not_val hr) (not_val_of_step s)
-      exact ih s
-    | constructV hvs => have := hvs _ (List.mem_of_getElem? hg); rw [raises_not_val hr] at this; contradiction
-  | letC hr ih =>
-    intro _ _ _ s
-    cases s with
-    | letC s => exact ih s
-    | letV hv => rw [raises_not_val hr] at hv; contradiction
-  | spreadC _ ih => intro _ _ _ s; cases s with | spreadC s => exact ih s
-  | makeArg hg hb hr ih =>
-    intro _ _ _ s
-    cases s with
-    | makeArg hg' hb' s =>
-      obtain ⟨rfl, rfl⟩ := first_nonval_unique hg hg' hb hb' (raises_not_val hr) (not_val_of_step s)
-      exact ih s
-    | makeFields hvs _ => have := hvs _ (List.mem_of_getElem? hg); rw [raises_not_val hr] at this; contradiction
-  | readC hr ih =>
-    intro _ _ _ s
-    cases s with
-    | readC s => exact ih s
-    | readField => cases hr
-    | readProto => cases hr
-    | readMissing => cases hr
-  | indexC1 hr ih =>
-    intro _ _ _ s
-    cases s with
-    | indexC1 s => exact ih s
-    | indexC2 hv _ => rw [raises_not_val hr] at hv; contradiction
-    | indexField => cases hr
-    | indexProto => cases hr
-    | indexMissing => cases hr
-  | indexC2 hv hr ih =>
-    intro _ _ _ s
-    cases s with
-    | indexC1 s => exact value_no_step hv s
-    | indexC2 _ s => exact ih s
-    | indexField hk => have := propertyKey_val hk; rw [raises_not_val hr] at this; contradiction
-    | indexProto hk => have := propertyKey_val hk; rw [raises_not_val hr] at this; contradiction
-    | indexMissing hk => have := propertyKey_val hk; rw [raises_not_val hr] at this; contradiction
-  | writeC1 hr ih =>
-    intro _ _ _ s
-    cases s with
-    | writeC1 s => exact ih s
-    | writeC2 hv _ => rw [raises_not_val hr] at hv; contradiction
-    | writeField => cases hr
-  | writeC2 hv hr ih =>
-    intro _ _ _ s
-    cases s with
-    | writeC1 s => exact value_no_step hv s
-    | writeC2 _ s => exact ih s
-    | writeField hw _ _ => rw [raises_not_val hr] at hw; contradiction
-  | testC hr ih =>
-    intro _ _ _ s
-    cases s with
-    | testC s => exact ih s
-    | testV hv => rw [raises_not_val hr] at hv; contradiction
-  | iteC hr ih =>
-    intro _ _ _ s
-    cases s with
-    | iteC s => exact ih s
-    | iteT => cases hr
-    | iteF => cases hr
-  | arithC1 hr ih =>
-    intro _ _ _ s
-    cases s with
-    | arithC1 s => exact ih s
-    | arithC2 hv _ => rw [raises_not_val hr] at hv; contradiction
-    | arithV hb => have := (binop_values hb).1; rw [raises_not_val hr] at this; contradiction
-    | arithThrow ht => have := (binopThrows_values ht).1; rw [raises_not_val hr] at this; contradiction
-  | arithC2 hv hr ih =>
-    intro _ _ _ s
-    cases s with
-    | arithC1 s => exact value_no_step hv s
-    | arithC2 _ s => exact ih s
-    | arithV hb => have := (binop_values hb).2.1; rw [raises_not_val hr] at this; contradiction
-    | arithThrow ht => have := (binopThrows_values ht).2; rw [raises_not_val hr] at this; contradiction
-  | arrArg hg hb hr ih =>
-    intro _ _ _ s
-    cases s with
-    | arrArg hg' hb' s =>
-      obtain ⟨rfl, rfl⟩ := first_nonval_unique hg hg' hb hb' (raises_not_val hr) (not_val_of_step s)
-      exact ih s
-    | arrSpread he hpre _ => exact spread_blocks_raise he hpre hg hb hr
-    | arrAlloc hvs => have := hvs _ (List.mem_of_getElem? hg); rw [raises_not_val hr] at this; contradiction
-  | elemC1 hr ih =>
-    intro _ _ _ s
-    cases s with
-    | elemC1 s => exact ih s
-    | elemC2 hv _ => rw [raises_not_val hr] at hv; contradiction
-    | elemRead => cases hr
-    | elemAbsent => cases hr
-    | elemStr => cases hr
-  | elemC2 hv hr ih =>
-    intro _ _ _ s
-    cases s with
-    | elemC1 s => exact value_no_step hv s
-    | elemC2 _ s => exact ih s
-    | elemRead => cases hr
-    | elemAbsent => cases hr
-    | elemStr => cases hr
-  | setC1 hr ih =>
-    intro _ _ _ s
-    cases s with
-    | setC1 s => exact ih s
-    | setC2 hv _ => rw [raises_not_val hr] at hv; contradiction
-    | setC3 hv _ _ => rw [raises_not_val hr] at hv; contradiction
-    | setPresent => cases hr
-    | setGrow => cases hr
-  | setC2 hv hr ih =>
-    intro _ _ _ s
-    cases s with
-    | setC1 s => exact value_no_step hv s
-    | setC2 _ s => exact ih s
-    | setC3 _ hi _ => rw [raises_not_val hr] at hi; contradiction
-    | setPresent => cases hr
-    | setGrow => cases hr
-  | setC3 hv hi hr ih =>
-    intro _ _ _ s
-    cases s with
-    | setC1 s => exact value_no_step hv s
-    | setC2 _ s => exact value_no_step hi s
-    | setC3 _ _ s => exact ih s
-    | setPresent hw _ _ => rw [raises_not_val hr] at hw; contradiction
-    | setGrow hw _ _ => rw [raises_not_val hr] at hw; contradiction
-  | lenC hr ih =>
-    intro _ _ _ s
-    cases s with
-    | lenC s => exact ih s
-    | lenV => cases hr
-    | lenStr => cases hr
-  | mergeC1 hr ih =>
-    intro _ _ _ s
-    cases s with
-    | mergeC1 s => exact ih s
-    | mergeC2 hv _ => rw [raises_not_val hr] at hv; contradiction
-    | mergeV hv _ _ => rw [raises_not_val hr] at hv; contradiction
-  | mergeC2 hv hr ih =>
-    intro _ _ _ s
-    cases s with
-    | mergeC1 s => exact value_no_step hv s
-    | mergeC2 _ s => exact ih s
-    | mergeV _ hw _ => rw [raises_not_val hr] at hw; contradiction
-
-/-- **The thrown value is determined.** -/
-theorem Raises_det {t v w : Tm} (h1 : Raises t v) (h2 : Raises t w) : v = w := by
-  induction h1 generalizing w with
-  | throwV hv =>
-    cases h2 with
-    | throwV => rfl
-    | throwC h => rw [raises_not_val h] at hv; contradiction
-  | throwC h ih =>
-    cases h2 with
-    | throwV hv => rw [raises_not_val h] at hv; contradiction
-    | throwC h' => exact ih h'
-  | callL h ih =>
-    cases h2 with
-    | callL h' => exact ih h'
-    | callRecv hv _ => rw [raises_not_val h] at hv; contradiction
-    | callArg hv _ _ _ _ => rw [raises_not_val h] at hv; contradiction
-  | callRecv hf h ih =>
-    cases h2 with
-    | callL h' => rw [raises_not_val h'] at hf; contradiction
-    | callRecv _ h' => exact ih h'
-    | callArg _ hv _ _ _ => rw [raises_not_val h] at hv; contradiction
-  | callArg hf hr hg hb h ih =>
-    cases h2 with
-    | callL h' => rw [raises_not_val h'] at hf; contradiction
-    | callRecv _ h' => rw [raises_not_val h'] at hr; contradiction
-    | callArg _ _ hg' hb' h' =>
-      obtain ⟨rfl, rfl⟩ := first_nonval_unique hg hg' hb hb' (raises_not_val h) (raises_not_val h')
-      exact ih h'
-  | constructL h ih =>
-    cases h2 with
-    | constructL h' => exact ih h'
-    | constructArg hv _ _ _ => rw [raises_not_val h] at hv; contradiction
-  | constructArg hf hg hb h ih =>
-    cases h2 with
-    | constructL h' => rw [raises_not_val h'] at hf; contradiction
-    | constructArg _ hg' hb' h' =>
-      obtain ⟨rfl, rfl⟩ := first_nonval_unique hg hg' hb hb' (raises_not_val h) (raises_not_val h')
-      exact ih h'
-  | letC h ih => cases h2 with | letC h' => exact ih h'
-  | spreadC h ih => cases h2 with | spreadC h' => exact ih h'
-  | makeArg hg hb h ih =>
-    cases h2 with
-    | makeArg hg' hb' h' =>
-      obtain ⟨rfl, rfl⟩ := first_nonval_unique hg hg' hb hb' (raises_not_val h) (raises_not_val h')
-      exact ih h'
-  | readC h ih => cases h2 with | readC h' => exact ih h'
-  | indexC1 h ih =>
-    cases h2 with
-    | indexC1 h' => exact ih h'
-    | indexC2 hv _ => rw [raises_not_val h] at hv; contradiction
-  | indexC2 hv h ih =>
-    cases h2 with
-    | indexC1 h' => rw [raises_not_val h'] at hv; contradiction
-    | indexC2 _ h' => exact ih h'
-  | writeC1 h ih =>
-    cases h2 with
-    | writeC1 h' => exact ih h'
-    | writeC2 hv _ => rw [raises_not_val h] at hv; contradiction
-  | writeC2 hv h ih =>
-    cases h2 with
-    | writeC1 h' => rw [raises_not_val h'] at hv; contradiction
-    | writeC2 _ h' => exact ih h'
-  | testC h ih => cases h2 with | testC h' => exact ih h'
-  | iteC h ih => cases h2 with | iteC h' => exact ih h'
-  | arithC1 h ih =>
-    cases h2 with
-    | arithC1 h' => exact ih h'
-    | arithC2 hv _ => rw [raises_not_val h] at hv; contradiction
-  | arithC2 hv h ih =>
-    cases h2 with
-    | arithC1 h' => rw [raises_not_val h'] at hv; contradiction
-    | arithC2 _ h' => exact ih h'
-  | arrArg hg hb h ih =>
-    cases h2 with
-    | arrArg hg' hb' h' =>
-      obtain ⟨rfl, rfl⟩ := first_nonval_unique hg hg' hb hb' (raises_not_val h) (raises_not_val h')
-      exact ih h'
-  | elemC1 h ih =>
-    cases h2 with
-    | elemC1 h' => exact ih h'
-    | elemC2 hv _ => rw [raises_not_val h] at hv; contradiction
-  | elemC2 hv h ih =>
-    cases h2 with
-    | elemC1 h' => rw [raises_not_val h'] at hv; contradiction
-    | elemC2 _ h' => exact ih h'
-  | setC1 h ih =>
-    cases h2 with
-    | setC1 h' => exact ih h'
-    | setC2 hv _ => rw [raises_not_val h] at hv; contradiction
-    | setC3 hv _ _ => rw [raises_not_val h] at hv; contradiction
-  | setC2 hv h ih =>
-    cases h2 with
-    | setC1 h' => rw [raises_not_val h'] at hv; contradiction
-    | setC2 _ h' => exact ih h'
-    | setC3 _ hi _ => rw [raises_not_val h] at hi; contradiction
-  | setC3 hv hi h ih =>
-    cases h2 with
-    | setC1 h' => rw [raises_not_val h'] at hv; contradiction
-    | setC2 _ h' => rw [raises_not_val h'] at hi; contradiction
-    | setC3 _ _ h' => exact ih h'
-  | lenC h ih => cases h2 with | lenC h' => exact ih h'
-  | mergeC1 h ih =>
-    cases h2 with
-    | mergeC1 h' => exact ih h'
-    | mergeC2 hv _ => rw [raises_not_val h] at hv; contradiction
-  | mergeC2 hv h ih =>
-    cases h2 with
-    | mergeC1 h' => rw [raises_not_val h'] at hv; contradiction
-    | mergeC2 _ h' => exact ih h'
 
 theorem Raises.makeC {c : CallCode} {a v : Tm} (h : Raises a v) : Raises (.make c a) v :=
   .makeArg (i := 0) rfl (by intro j hj; omega) h

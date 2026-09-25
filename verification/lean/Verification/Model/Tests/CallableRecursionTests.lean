@@ -20,7 +20,7 @@ private def program : Program :=
    ⟨.app (.var 0) .nul,.ret,none⟩]
 private def claims : List (PointClaim Nat) :=
   [⟨[],[2]⟩,⟨[[2]],[1]⟩,⟨[[1],[2]],[0]⟩,⟨[[1],[2]],[0]⟩]
-private def request : Request := ⟨types,program,claims,[0],0,[]⟩
+private def request : Request := ⟨types,program,claims,[0],0,[], []⟩
 -- Keep the small checked witness explicit: the kernel validates evidence,
 -- while the separate JSON regression exercises automatic proof search.
 private def node (Γ : List (Ty Nat)) (t : Tm) (A : Ty Nat) (r : Rule Nat)

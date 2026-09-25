@@ -23,13 +23,16 @@ export type Tag =
   /** A bigint singleton, as its integer: a JSON number of any length. */
   | { bigintEq: { value: number } };
 /** An object's invocation code: none, a closure, variadic code collecting
- * further actuals, or `.bind`'s forwarding descriptor, which keeps the target,
- * the receiver and the argument prefix it was given. */
+ * further actuals, `.bind`'s forwarding descriptor, which keeps the target,
+ * the receiver and the argument prefix it was given, or graph code: a
+ * control-flow graph's node expressions, each node's continuation and
+ * handler (as `control-flow.mts` reads them), its entry and its captures. */
 export type CallCode =
   | "absent"
   | { closure: { arity: number; body: Term } }
   | { variadic: { fixed: number; body: Term } }
-  | { bound: { target: Term; receiver: Term; pre: Term[] } };
+  | { bound: { target: Term; receiver: Term; pre: Term[] } }
+  | { graph: { arity: number; exprs: Term[]; conts: [unknown, unknown][]; start: number; caps: Term[] } };
 export type Term =
   | "nul"
   | "undef"
@@ -164,6 +167,15 @@ function code(v: unknown) {
     decodeTerm(c.receiver);
     if (!Array.isArray(c.pre)) throw Error("invalid bound prefix");
     c.pre.forEach(decodeTerm);
+  } else if (key === "graph") {
+    const c = fields(fields(v, ["graph"]).graph, ["arity", "exprs", "conts", "start", "caps"]);
+    nat(c.arity);
+    nat(c.start);
+    if (!Array.isArray(c.exprs) || !Array.isArray(c.conts) || !Array.isArray(c.caps) ||
+        c.exprs.length !== c.conts.length || !c.conts.every((k) => Array.isArray(k) && k.length === 2))
+      throw Error("invalid graph code");
+    c.exprs.forEach(decodeTerm);
+    c.caps.forEach(decodeTerm);
   } else throw Error("unknown call code");
 }
 /** The terms that are all tag and no fields, which is how they are written. */

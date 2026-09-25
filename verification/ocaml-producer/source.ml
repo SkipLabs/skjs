@@ -391,13 +391,11 @@ and expr_node =
   | Bind of expr * expr * expr list
   | WithFields of expr * expr * ty * ty
   | Cast of string * ty option * expr
-  | DoneBody | ReturnBody of expr | SequenceBody of expr * expr
-  (* A closure body's `throw e`: it ends the body, as a return does. *)
-  | ThrowBody of expr
-  | LetBody of string * ty option * expr * expr
-  (* A pattern in a closure body, one entry: `const target = init; body`. *)
-  | DestructBody of pattern * expr * expr
-  | IfBody of ty * expr * expr * expr
+  (* A closure's body written as statements, a function body: its
+     parameters written as patterns or with defaults are destructured by its
+     first statements, and a body that can complete returns `undefined` at
+     its closing brace. Only a lambda's body is one. *)
+  | BlockBody of stmt list
 and stmt = { span: Json.t; statement: stmt_node }
 (* What a pattern binds at one place: a name, at its span, or a nested
    pattern over the value found there. An object pattern's properties read
@@ -457,19 +455,19 @@ let rec pattern_defaults = function
    identifier is spelled so. *)
 let chain_name = "?."
 
-(* The immediate subexpressions and nested statements of a form. *)
-let children e = match e.node with
-  | Id _ | Literal _ | DoneBody -> []
-  | Not e | TypeofTest (_,_,e) | Read (e,_) | Ctor e | Cast (_,_,e) | ReturnBody e | Unary (_,e)
-  | ThrowBody e -> [e]
+(* The immediate subexpressions of a form, and those of a closure body's
+   statements. *)
+let rec children e = match e.node with
+  | Id _ | Literal _ -> []
+  | BlockBody ss -> List.concat_map statement_children ss
+  | Not e | TypeofTest (_,_,e) | Read (e,_) | Ctor e | Cast (_,_,e) | Unary (_,e) -> [e]
   | Assign (_,e) | NullishAssign (_,_,e) -> [e]
   | Update (_,t,r,_) -> t :: Option.to_list r
   | LogicalAssign (_,a,b) | Comma (a,b) | HasKey (a,b) | InstanceTest (_,a,b) -> [a;b]
   | ArrayAssign (targets,_,rhs) -> rhs :: List.filter_map (fun (_,_,d) -> d) targets
   | Arith (_,a,b) | Equality (_,a,b) | Write (a,_,b) | Coalesce (a,b) | Optional (a,b) | Index (a,b) | Logical (_,a,b)
-  | WithFields (a,b,_,_) | SequenceBody (a,b) | LetBody (_,_,a,b) -> [a;b]
-  | DestructBody (t,a,b) -> a :: pattern_defaults t @ [b]
-  | Conditional (a,b,c) | IndexWrite (a,b,c) | IfBody (_,a,b,c) -> [a;b;c]
+  | WithFields (a,b,_,_) -> [a;b]
+  | Conditional (a,b,c) | IndexWrite (a,b,c) -> [a;b;c]
   | Alloc fs -> List.map snd fs
   | Build parts -> List.map snd parts
   | ArrayLiteral es -> es
@@ -478,6 +476,17 @@ let children e = match e.node with
   | Invoke (f,args,_,_) | New (f,_,args) -> f :: args
   | Apply (f,r,l) -> f :: r :: Option.to_list l
   | Bind (f,r,args) -> f :: r :: args
+and statement_children s = match s.statement with
+  | Declare (_,bs) -> List.map (fun (_,_,e) -> e) bs
+  | Destructure (t,d,init) -> init :: Option.to_list d @ pattern_defaults t
+  | Return e | Effect e | Throw e -> [e]
+  | If (c,a,b) -> c :: List.concat_map statement_children (a @ b)
+  | While (c,b,u) -> c :: List.concat_map statement_children (b @ u)
+  | Block (_,b) -> List.concat_map statement_children b
+  | ForOf (_,_,i,b) -> i :: List.concat_map statement_children b
+  | Try (b,h,f) -> List.concat_map statement_children
+      (b @ (match h with Some (_,hs) -> hs | None -> []) @ Option.value f ~default:[])
+  | Break _ | Continue -> []
 (* Whether a name is assigned anywhere in a form, nested closures included:
    such a binding is a cell. Lean decides storage the same way, from the
    source (`assignsStmt`); this only proposes consistently with it. *)
@@ -608,12 +617,7 @@ let rec expr binders j =
   | "withValue" -> WithFields (sub "fn",sub "initial",source_type binders (field "functionType" j),source_type binders (field "bagType" j))
   | "bindWithReceiver" -> Bind (sub "callee",sub "receiver",List.map (expr binders) (items "args" j))
   | "cast" -> Cast (text "cast" j,(match field "annot" j with Null -> None | a -> Some (source_type binders a)),sub "e")
-  | "doneBody" -> DoneBody | "returnBody" -> ReturnBody (sub "e")
-  | "throwBody" -> ThrowBody (sub "e")
-  | "seqBody" -> SequenceBody (sub "init",sub "body")
-  | "destructBody" -> DestructBody (pattern binders (field "target" j),sub "init",sub "body")
-  | "letBody" -> LetBody (text "name" j,(match field "annot" j with Null -> None | a -> Some (source_type binders a)),sub "init",sub "body")
-  | "ifBody" -> IfBody (source_type binders (field "result" j),sub "cond",sub "then",sub "else_")
+  | "blockBody" -> BlockBody (List.map (stmt binders) (items "body" j))
   | "conditional" -> Conditional (sub "cond",sub "then",sub "else_")
   | k -> unsupported ("expression " ^ k) in {pos=field "pos" j;node}
 and pattern binders j =
@@ -628,7 +632,7 @@ and pattern binders j =
   | "array" -> PArray (List.map (fun q -> index q,target q,default q) (items "elems" j),
       match field "rest" j with Null -> None | r -> Some (index r,field "pos" r,target r))
   | k -> unsupported ("pattern " ^ k)
-let rec stmt binders j =
+and stmt binders j =
   let statement = match text "k" j with
   | "destructure" -> Destructure (pattern binders (field "target" j),
       (match field "default_" j with Null -> None | d -> Some (expr binders d)),

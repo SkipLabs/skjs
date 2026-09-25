@@ -15,25 +15,30 @@ structure Required where
   /-- This obligation's source map: one descriptor per context binding. -/
   context : List Descriptor := []
 
-def check (G : NormalGraph Nat) (bound : Nat) (j : Sequent Nat) (e : Evidence Nat) : Bool :=
+def check (G : NormalGraph Nat) (bound : Nat) (j : Sequent Nat) (e : Evidence Nat)
+    (codes : CodeEntry Nat → Bool := fun _ => false) : Bool :=
   validEvidence bound e && decide (claim e = j) &&
-    checkScope j.context.length j.term && checkTree G e
+    checkScope j.context.length j.term && checkTree G e codes
 
-theorem check_sound {G bound j e} (h : check G bound j e = true) :
+theorem check_sound {G bound j e} {codes : CodeEntry Nat → Bool} (h : check G bound j e codes = true)
+    (hcodes : CodesSound G codes := by exact Verification.Model.ProgramCertificates.codesSound_none _) :
     HasTy G j.context j.term j.type := by
   simp only [check, Bool.and_eq_true, decide_eq_true_eq] at h
-  have ht := checkTree_sound e h.2
+  have ht := checkTree_sound e h.2 hcodes
   rw [h.1.1.2] at ht
   exact ht
 
-def checkAll (G : NormalGraph Nat) (bound : Nat) (rs : List Required) (es : List (Evidence Nat)) : Bool :=
-  rs.length == es.length && (rs.zip es).all (fun (r,e) => check G bound r.sequent e)
+def checkAll (G : NormalGraph Nat) (bound : Nat) (rs : List Required) (es : List (Evidence Nat))
+    (codes : CodeEntry Nat → Bool := fun _ => false) : Bool :=
+  rs.length == es.length && (rs.zip es).all (fun (r,e) => check G bound r.sequent e codes)
 
-theorem checkAll_sound {G bound rs es} (h : checkAll G bound rs es = true)
+theorem checkAll_sound {G bound rs es} {codes : CodeEntry Nat → Bool}
+    (h : checkAll G bound rs es codes = true)
+    (hcodes : CodesSound G codes := by exact Verification.Model.ProgramCertificates.codesSound_none _)
     {r e} (hm : (r,e) ∈ rs.zip es) :
     HasTy G r.sequent.context r.sequent.term r.sequent.type := by
   simp only [checkAll, Bool.and_eq_true, List.all_eq_true] at h
-  exact check_sound (h.2 _ hm)
+  exact check_sound (h.2 _ hm) hcodes
 
 def produce (G : NormalGraph Nat) (labels : List Nat) (bound fuel : Nat)
     (rs : List Required) : Except String (List (Evidence Nat)) := do
@@ -53,7 +58,10 @@ def produce (G : NormalGraph Nat) (labels : List Nat) (bound fuel : Nat)
       | none => pure (CertificateProducer.expressionWith G pool (rs.map Required.sequent) fuel j.context j.term j.type)
     -- Attribute an invalid suggested proof to its own obligation, rather than
     -- losing the source location in the final aggregate check.
-    let some e := candidate.filter (check G bound j)
+    -- The graph code a unit creates is checked after its obligations are
+    -- rendered: here every code is admitted, and acceptance checks the
+    -- obligation again against the table its certificate checked.
+    let some e := candidate.filter (fun e => check G bound j e (fun _ => true))
       | throw (withDiagnostic s!"closure expression claim at [{r.pos.1},{r.pos.2}): evidence search failed"
           [("kind",toJson "expression-claim"),("phase",toJson "proof-search"),
            ("outcome",toJson "not-established"),("id",toJson s!"expression:{index}"),
@@ -64,6 +72,19 @@ def produce (G : NormalGraph Nat) (labels : List Nat) (bound fuel : Nat)
   -- Each item passed `check` against its own obligation above, so no final
   -- aggregate check is repeated here; acceptance (`checkRequests`) checks
   -- the evidence independently.
+  return es.toList
+
+/-- Node plans rendered where they can be: search hints, never obligations.
+A plan that does not render is dropped; its node is searched as any other. -/
+def renderKnown (G : NormalGraph Nat) (labels : List Nat) (bound : Nat)
+    (plans : List DirectProof.Plan) : List (Evidence Nat) := Id.run do
+  let pool := CertificateProducer.vocabulary G labels [] (plans.flatMap fun p => p.goal.type :: p.goal.context)
+  let mut cache : DirectProof.SubtypeCache := {}
+  let mut es := #[]
+  for plan in plans do
+    let (e, next) := DirectProof.renderWith G pool plan.goal.context plan cache
+    cache := next
+    if let some e := e.filter (fun e => check G bound plan.goal e (fun _ => true)) then es := es.push e
   return es.toList
 
 #print axioms checkAll_sound

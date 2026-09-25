@@ -21,7 +21,7 @@ private def program (callable : Bool) : Program :=
   [⟨if callable then .attach (.var 0) .fls else .alloc .fls,.bind 1,none⟩,
    ⟨.app callee argument,.ret,none⟩]
 private def claims : List (PointClaim Nat) := [⟨[],[2,3]⟩,⟨[[2,3]],[1]⟩]
-private def request (callable : Bool) : Request := ⟨types,program callable,claims,[1],0,[]⟩
+private def request (callable : Bool) : Request := ⟨types,program callable,claims,[1],0,[], []⟩
 #guard [false,true].all fun callable => match (do
     let r := Lean.toJson (request callable)
     let response ← produceJson r 12

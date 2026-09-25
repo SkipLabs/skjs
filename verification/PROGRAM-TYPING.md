@@ -138,6 +138,29 @@ contravariant under subsumption like each domain
 function indifferent to its receiver, typed at $\top$, meets any receiver
 requirement, and one that reads its receiver cannot be widened to arbitrary ones.
 
+A closure whose body is a graph ([graph code](SEMANTICS.md#graph-code)) is
+checked where its code is, not where it is created. Code $\kappa$ of arity
+$m$ with captures at $\vec C$ meets a signature, written
+$\vec C\vdash_G\kappa:(R;\vec A\to B)$ (`GraphCodeSpec`), when $m\le|\vec A|$
+and every run of it entered from an environment meeting
+$R,\vec A_{<m},\vec C$ is safe at $B$. The
+[graph checker](#checked-control-flow-graphs) establishes it from the code's
+own certificate at the entry $[R,\vec A_{<m},\vec C]$ and the result $B$
+(`GraphCode.codeChecked_sound`). Creation then reads the captures only:
+
+$$
+\frac{\forall(R,\vec A,B)\in L\cup S^\flat.\;\vec C\vdash_G\kappa:(R;\vec A\to B)
+      \quad\forall i.\;\Gamma\vdash_G x_i:C_i}
+     {\Gamma\vdash_G \mathsf{make}(\kappa[\vec x],\mathsf{null}):\bigwedge_{(R,\vec A,B)\in L}(R;\vec A\to B)
+       \land\bigwedge_{(R,\vec A,E,B)\in S}(R;\vec A,\ldots E\to B)}\ (\texttt{funGraph})
+$$
+
+where $\kappa[\vec x]$ is $\kappa$ capturing the slots $\vec x$. Its evidence
+(`Rule.funGraph`) names each signature as an entry of the unit's code table:
+the codes a request carries, each checked in order against the table of those
+before it (`GraphCode.checkCodes`), so that every entry meets its signature
+(`CodesSound`, `checkCodes_sound`); code created inside code is checked first.
+
 A call writes a prefix of the positions the selected signature declares:
 $|\vec a|=|\vec A|$, and $\vec U$ are the positions it omits. Omission is
 admissible exactly when each omitted contract admits `undefined`: that is part
@@ -1132,8 +1155,8 @@ and an optional handler (below):
 
 Conditionals therefore exist at two levels: `if` inside a single node's term, and
 these branch continuations between nodes. Source lowering uses the continuations
-for statement control flow and the term form inside closure bodies and direct
-proofs. It emits every continuation except plain `branch`, which remains
+for statement control flow, in function and closure bodies alike, and the term
+form inside direct proofs. It emits every continuation except plain `branch`, which remains
 available to graphs written against the protocol directly.
 
 A target contains its label and an optional slot map. These are executable
@@ -1235,9 +1258,9 @@ one supplied union claim. A nonterminating self-loop is also proved safe.
 Negative tests reject invalid destinations, missing branch evidence, unjustified
 merge narrowing, missing or extra node evidence, changed code and invalid starts.
 
-The graph layer does not change the type-family or expression semantics.
-Closures still contain expression-language bodies, not graph-backed function
-bodies. Boolean result refinement is proved as described below. A primitive fragment with parameters
+The graph layer does not change the type-family or expression semantics. A
+closure body is a graph as a function body is, run by its own steps
+([graph code](SEMANTICS.md#graph-code)) and typed by `funGraph`. Boolean result refinement is proved as described below. A primitive fragment with parameters
 is connected; broader source extraction remains integration work. The next section supplies
 an in-memory certificate producer; [REQUEST-PROTOCOL.md](REQUEST-PROTOCOL.md)
 describes its serialized consumer boundary. No graph-level completeness theorem is claimed here; the
@@ -1989,7 +2012,10 @@ _content predicate_ remains an impossible observation, not an absent one.
 **Expression claims are local obligations within a statement, not full-state
 interfaces.** Their supplied result type must be justified at the expression;
 a supplied current predicate is checked at a no-op result checkpoint, naming
-slot zero before projection. Within the statement, the checked effect rules may
+slot zero before projection, unless every contract of the read object already
+implies it: then it is the persistent-observation obligation below, which
+holds at any point, a closure's entry included, where nothing of the heap is
+known. Within the statement, the checked effect rules may
 retain its entry assumptions and derive postconditions. Calls and writes forget
 facts according to those rules. Administrative copies do not discard facts.
 Thus a Boolean read claim is compatible with locally proving a true result from
@@ -2400,6 +2426,21 @@ $$
 
 ([DESIGN, "Numeric property names"](DESIGN.md#numeric-property-names)).
 
+A statement `if` whose arm is one `return` of the read its singleton test
+tests returns that read's saved value, in a function body and in a closure's
+alike (`guardedReturn`). With $c$ a literal, a name or a field read, nothing
+runs between the two reads of $x.f$, so they read the same value:
+
+$$
+\mathsf{if}\;(x.f \bowtie c)\;\mathsf{return}\;x.f
+\;\leadsto\;
+\mathsf{let}\ s=x.f\ \mathsf{in}\ \mathsf{if}\;(s \bowtie c)\;\mathsf{return}\;s
+$$
+
+and the test's tag edge refines $s$ to the slice of its type the arm admits,
+which must lie within the returned read's claim. A call or a write in the arm
+leaves the shape, and the arm reads anew.
+
 ### Patterns
 
 A pattern binds names from one value, in pattern order, and has no rule of its
@@ -2483,7 +2524,7 @@ $$
 
 where $h_i$'s type admits $\mathsf{Undef}$ when there is a default, so a
 caller may omit it. A closure parameter's default stays the closure's own
-(`parameterOrder`), and its pattern is a `destructBody` first in the body.
+(`parameterOrder`), and its pattern is a `destructure` first in the body.
 
 ### Mutable bindings and module constants
 

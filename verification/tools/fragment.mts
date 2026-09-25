@@ -181,10 +181,11 @@ export type Expr =
       typeParams: TypeParamAst[];
       /* `type` is what the body reads. A parameter with a `default` also
          admits `undefined` where the closure is called: that is the value a
-         short call binds, and the default replaces it before the body runs. A
-         `rest` parameter's type is the array its arguments are collected into:
-         a tuple, whose required elements are positions of the signature, or a
-         `T[]`, which collects any number of them. */
+         short call binds, and the default replaces it before the body runs.
+         A block body has no defaults: its parameters are lowered as a
+         function's. A `rest` parameter's type is the array its arguments are
+         collected into: a tuple, whose required elements are positions of
+         the signature, or a `T[]`, which collects any number of them. */
       params: { name: string; type: TypeTerm; default?: Expr; rest?: true }[];
       /* An arrow has none. An ordinary function expression binds the
          receiver of each call: `type` is its `this` annotation, `unknown`
@@ -197,34 +198,14 @@ export type Expr =
       result: TypeTerm | null;
       body: Expr;
     }
-  /* A block-bodied closure, lowered to nested expressions: the calculus has no
-     statements inside a closure, so the parser does the lowering the verifier
-     would otherwise have to invent. */
-  | { k: "doneBody"; pos: Span }
-  | { k: "returnBody"; pos: Span; e: Expr }
-  /* A closure body's `throw e`: it ends the body, as a return does. */
-  | { k: "throwBody"; pos: Span; e: Expr }
-  /* A pattern in a closure body, `const target = init; body`, one entry: the
-     initializer once, then the target binds it. A closure parameter written
-     as a pattern is one over its hidden name, first in the body. */
-  | { k: "destructBody"; pos: Span; target: PatternAst; init: Expr; body: Expr }
-  | { k: "seqBody"; pos: Span; init: Expr; body: Expr }
-  | {
-      k: "letBody";
-      pos: Span;
-      name: string;
-      annot: TypeTerm | null;
-      init: Expr;
-      body: Expr;
-    }
-  | {
-      k: "ifBody";
-      pos: Span;
-      result: TypeTerm;
-      cond: Expr;
-      then: Expr;
-      else_: Expr;
-    };
+  /* A closure's body written as statements: a block, or an expression body
+     whose parameters are patterns. It is a function body, and lowered as
+     one: a parameter written as a pattern or with a default is a hidden
+     name the body's first statements destructure, and a body that can
+     complete returns `undefined` at its closing brace. A class value's
+     constructor is one too, ending in the `return` of its instance. Only a
+     lambda's body is one. */
+  | { k: "blockBody"; pos: Span; body: Stmt[] };
 
 export type Stmt =
   | { k: "effect"; pos: Span; e: Expr }

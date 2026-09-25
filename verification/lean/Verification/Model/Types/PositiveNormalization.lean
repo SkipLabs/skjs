@@ -267,7 +267,8 @@ def shape : Clause α → Nat
 
 def valueShape : Val → Nat
   | .nul => 0 | .tru | .fls => 1 | .objAt _ .absent => 2 | .undef => 4
-  | .objAt _ (.closure _ _ .call) | .objAt _ (.variadic _ _) | .objAt _ (.bound _ _ _) => 3
+  | .objAt _ (.closure _ _ .call) | .objAt _ (.variadic _ _) | .objAt _ (.bound _ _ _)
+  | .objAt _ (.graph ..) => 3
   | .objAt _ (.closure _ _ .construct) => 11
   | .num _ => 5
   | .str _ => 6
@@ -316,12 +317,14 @@ theorem semWithArgs_shape {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
   | dict a bs vs ds os ms ks cs => obtain ⟨flds, rfl, _⟩ := h.1.1; rfl
   | arrs L S =>
     obtain ⟨fs, code, rfl, hc, -⟩ := h.1.1
-    cases code <;> try (rename_i kind; cases kind)
+    cases code
+    case closure kind => cases kind <;> simp_all [valueShape, shape, CallCode.callable]
     all_goals simp_all [valueShape, shape, CallCode.callable]
   | undef => cases h; rfl
   | callable a bs L S =>
     obtain ⟨fs, code, rfl, hc, -⟩ := h.1.2.1
-    cases code <;> try (rename_i kind; cases kind)
+    cases code
+    case closure kind => cases kind <;> simp_all [valueShape, shape, CallCode.callable]
     all_goals simp_all [valueShape, shape, CallCode.callable]
   | str => obtain ⟨s, rfl⟩ := h; rfl
   | strLit s => cases h; rfl

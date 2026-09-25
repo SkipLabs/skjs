@@ -26,14 +26,17 @@ the subset
 
 $$v ::= \mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}\mid\mathsf{obj}(\ell,c),$$
 
-where $c ::= \mathsf{absent}\mid\mathsf{closure}(m,t)\mid\mathsf{variadic}(m,t)\mid\mathsf{bound}(f,r,\vec p)$ is a separate invocation
+where $c ::= \mathsf{absent}\mid\mathsf{closure}(m,t)\mid\mathsf{variadic}(m,t)\mid\mathsf{bound}(f,r,\vec p)\mid\mathsf{graph}(m,E,K,s,\vec c)$ is a separate invocation
 descriptor, the first two with a declared parameter count `m`. A closure body is
 under `m + 1` binders: the receiver of the call in slot 0, then its parameters.
 A variadic body has its rest store in slot 0, the receiver in slot 1, then `m`
 parameters; its first step wraps the store into the array its rest parameter
 names. `bound` is the forwarding descriptor `.bind` creates: the target, the
 receiver and the argument prefix it saved, values that no field holds and no
-write can reach. An argument list is not a value: which lists a rest
+write can reach. $\mathsf{graph}$ is code whose body is a control-flow graph,
+as a program's is: node expressions $E$, each node's continuation and handler
+$K$, an entry label $s$ and the captured values $\vec c$
+([graph code](#graph-code)). An argument list is not a value: which lists a rest
 parameter's type admits is a separate contract on lists of values
 ([argument packs](POSITIVE-TYPES.md#argument-packs)).
 `make c a` evaluates its initializer `a`, then appends that value
@@ -379,6 +382,52 @@ Substitution operates on closed substituted values. `Bindings.lean` supplies
 scope and simultaneous closing substitution, including its beta law. The program
 typing theorem uses semantic environments of closed values; its closed-program
 interface explicitly checks scope.
+
+### Graph code
+
+A run of graph code is a term of its own: $\mathsf{goto}(E,K,l,\rho)$, about to
+enter node $l$ in the environment $\rho$, and
+$\mathsf{frame}(E,K,t,\rho,k,x)$, evaluating node expression $t$, then
+continuing by $k$, a throw out of $t$ going to the handler $x$. Neither is
+source syntax (`sourceTerm` refuses both). An environment is a list of slots
+and the value every slot past it holds (`envOf`). Invocation enters the code
+with the receiver, the parameters padded as a closure's are, then the
+captures; entering a node instantiates its expression in the environment; the
+node's value then leaves the run or moves along an edge, whose slot map
+$\mu$ acts on the pushed environment as a program's does:
+
+$$
+\frac{r,\vec a\ \text{values}}{h,\mathsf{invoke}(\mathsf{obj}(\mathit{fs},\mathsf{graph}(m,E,K,s,\vec c)),r,\vec a)\to h,\mathsf{goto}(E,K,s,[r,\operatorname{pad}_m(\vec a),\vec c])}\ (\texttt{callGraph})
+$$
+
+$$
+\frac{E_l=e\quad K_l=(k,x)}{h,\mathsf{goto}(E,K,l,\rho)\to h,\mathsf{frame}(E,K,e[\rho],\rho,k,x)}\ (\texttt{gotoEnter})
+\qquad
+\frac{h,t\to h',t'}{h,\mathsf{frame}(E,K,t,\rho,k,x)\to h',\mathsf{frame}(E,K,t',\rho,k,x)}\ (\texttt{frameC})
+$$
+
+$$
+\frac{v\ \text{a value}}{h,\mathsf{frame}(E,K,v,\rho,\mathsf{ret},x)\to h,v}\ (\texttt{frameRet})
+\qquad
+\frac{v\ \text{a value}}{h,\mathsf{frame}(E,K,v,\rho,\mathsf{bind}(l,\mu),x)\to h,\mathsf{goto}(E,K,l,\mu(v::\rho))}\ (\texttt{frameBind})
+$$
+
+$$
+\frac{t\ \text{raises}\ v}{h,\mathsf{frame}(E,K,t,\rho,k,(l,\mu))\to h,\mathsf{goto}(E,K,l,\mu(v::\rho))}\ (\texttt{frameHandle})
+\qquad
+\frac{t\ \text{raises}\ v}{h,\mathsf{frame}(E,K,t,\rho,k,\mathsf{none})\to h,\mathsf{throw}\ v}\ (\texttt{frameRaise})
+$$
+
+and `effect`, `branch`, `branchBind` and `tagBind` move as their program
+continuations do (`frameEffect`, `frameYes`, `frameNo`, `frameYesBind`,
+`frameNoBind`, `frameTag`). A throw leaving the run is a throw of the call
+term, which the caller's context carries on. The steps stay deterministic
+(`Step_det`).
+
+A run steps as the code's program graph does from the same label and
+environment: `GraphCode.Sim` relates the two, and `GraphCode.safe_of_sim`
+carries the graph's safety to the run, so a checked graph code is safe at its
+signature (`GraphCode.goto_safe`).
 
 ## One meaning for callable contracts
 
@@ -804,8 +853,7 @@ require keeping separator searches or a second subtyping implementation.
 The bounded source adapter and graph consumer are connected; their guarantees
 are described in [Program typing](PROGRAM-TYPING.md) and the
 [request protocol](REQUEST-PROTOCOL.md). This does not prove source-to-graph
-correspondence. Source current-content claims are connected to graph checkpoints;
-graph-backed closure bodies remain integration work. Type parameters, bounded polymorphism, and general
+correspondence. Source current-content claims are connected to graph checkpoints. Type parameters, bounded polymorphism, and general
 difference/negation require further syntax and sound rules; definability of
 quantification over semantic families alone is not a generics result.
 Rigid parameters, substitution on the identity and `Ref T` aliases (source

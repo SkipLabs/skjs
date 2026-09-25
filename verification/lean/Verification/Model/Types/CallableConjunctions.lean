@@ -63,6 +63,9 @@ theorem neutral_iff (A : Fields) (Bs : List Fields) (n W v) :
     | bound t r pre =>
       right
       exact ⟨h,⟨flds,_,rfl,rfl,hs⟩,by simp⟩
+    | graph n E K st caps =>
+      right
+      exact ⟨h,⟨flds,_,rfl,rfl,hs⟩,by simp⟩
 
 theorem merge (A C : Fields) (Bs Ds : List Fields) (L M : List (Fam × List Fam × Fam)) (n W v) :
     objectsT A (Bs ++ C :: Ds) (L ++ M) n W v ↔

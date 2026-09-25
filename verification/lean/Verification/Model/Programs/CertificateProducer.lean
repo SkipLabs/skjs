@@ -17,11 +17,11 @@ def signature (c : NodeEvidence ι) : PointClaim ι := ⟨entry c, result c⟩
 /-- Claims are part of the request, not facts the producer may replace. -/
 def accept [DecidableEq ι] (G : NormalGraph ι) (R : Ty ι) (P : Program)
     (claims : List (PointClaim ι)) (C : ControlFlow.Certificate ι) (start : Nat)
-    (inputs : List (Ty ι) := []) : Bool :=
-  decide (C.map signature = claims) && checkEntry G R P C start inputs
+    (inputs : List (Ty ι) := []) (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
+  decide (C.map signature = claims) && checkEntry G R P C start inputs codes
 
-theorem accept_claims [DecidableEq ι] {G : NormalGraph ι} {R P claims C start inputs}
-    (hc : accept G R P claims C start inputs = true) : C.map signature = claims :=
+theorem accept_claims [DecidableEq ι] {G : NormalGraph ι} {R P claims C start inputs codes}
+    (hc : accept G R P claims C start inputs codes = true) : C.map signature = claims :=
   by
     simp only [accept, Bool.and_eq_true, decide_eq_true_eq] at hc
     exact hc.1
@@ -34,11 +34,12 @@ theorem accepted_safe [DecidableEq ι] {G : NormalGraph ι} {R P claims C start}
     exact accepted_closed_safe hc.2 n
 
 theorem accepted_from_inputs [DecidableEq ι] {G : NormalGraph ι} {R P claims C start inputs}
-    (hc : accept G R P claims C start inputs = true) (n W h ρ)
-    (he : EnvOk G inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    {codes : CodeEntry ι → Bool} (hc : accept G R P claims C start inputs codes = true) (n W h ρ)
+    (he : EnvOk G inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (hcodes : ProgramCertificates.CodesSound G codes := by exact Verification.Model.ProgramCertificates.codesSound_none _) :
     SafeGraph P (meaning G R) n W h (.at start ρ) := by
   simp only [accept, Bool.and_eq_true] at hc
-  exact ControlFlow.accepted_inputs_safe hc.2 n W h ρ he hw hh
+  exact ControlFlow.accepted_inputs_safe hc.2 n W h ρ he hw hh hcodes
 
 /-- Small arrow search: source, receiver and domain union, and pairwise
 compatible codomain combination. The checker, not this search strategy,
@@ -407,6 +408,8 @@ def subtype [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
   let proto (P : List (Ty ι)) := match protoInstances G ((A :: B :: P).eraseDups) fuel with
     | [] => none
     | ks => subtypeWith G P ks A B
+  -- Every label of `A` among `B`'s: the inclusion needs no search.
+  (if A.all (· ∈ B) then some .subset else none) <|>
   (subtypeBase G [] A B) <|> ((tableProof G fuel A B).filter ok) <|>
     (subtypeBase G (nearPool G A B) A B) <|> (subtypeBase G pool A B) <|>
     ((instProof G fuel A B).filter ok) <|> proto (nearPool G A B) <|> proto pool <|>
@@ -442,7 +445,13 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     Nat → List (Ty ι) → Tm → Ty ι → Option (ProgramCertificates.Evidence ι)
   | 0, _, _, _ => none
   | fuel+1, Γ, t, A => Id.run do
+    -- A slot no value meets makes the context unsatisfiable: splitting it
+    -- leaves no case, so the sequent holds whatever the term and its type.
+    -- This is a node a refinement proved unreachable (`unionVar`).
+    if let some i := Γ.findIdx? List.isEmpty then
+      return some (ProgramCertificates.Evidence.node ⟨Γ,t,A⟩ (.unionVar i) [])
     let leaf := fun B r => ProgramCertificates.Evidence.node ⟨Γ,t,B⟩ r []
+    let leaf' := fun (i : Nat) (C : Ty ι) => ProgramCertificates.Evidence.node ⟨Γ,.var i,C⟩ .var []
     let recur := expressionWith G pool suggestions fuel
     -- A slot of the empty type holds no value: the point is unreachable, and
     -- eliminating that union leaves no premise.
@@ -489,6 +498,14 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         if checkTree G (leaf B .bigintLit) then coerce G pool (leaf B .bigintLit) A
         else if checkTree G (leaf B .bigint) then coerce G pool (leaf B .bigint) A
         else none
+    -- Graph code: its captures at their slots' types, the code the unit's
+    -- table checked (`Rule.funGraph`); the claim or a pool arrow type.
+    | .make (.graph _ _ _ _ caps) .nul =>
+      let some slots := ProgramCertificates.varSlots caps | return none
+      let some ps := slots.mapM (fun i => (Γ[i]?).map fun C => leaf' i C) | return none
+      return (A :: pool).findSome? fun F => do
+        let [.arrs _ _] := expand G F | none
+        coerce G pool (.node ⟨Γ,t,F⟩ .funGraph ps) A
     | .make (.closure arity b) .nul =>
       return (A :: pool).findSome? fun F => do
         match expand G F with
@@ -942,10 +959,16 @@ def edge [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
 read/value rule may succeed when ordinary derivation search cannot. -/
 def expressionEffect [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     (fuel : Nat) (j : Sequent ι) (k : HeapKnowledge.Knowledge)
-    (suggestions : List (Sequent ι)) (known : List (Evidence ι)) :
+    (suggestions : List (Sequent ι)) (known : List (Evidence ι))
+    (codes : CodeEntry ι → Bool := fun _ => false) :
     Option (Evidence ι × HeapExpressionRules.StepEvidence ι × HeapKnowledge.Knowledge) := Id.run do
+  -- A node's derivation is first sought among its own types: its claim and
+  -- its context's, which are its operands' claims. The pool is consulted
+  -- only where those leave a choice open.
+  let own := (j.type :: j.context).eraseDups
   let ordinary := (known.find? fun e => claim e == j).orElse fun _ =>
-    expressionWith G pool suggestions fuel j.context j.term j.type
+    (expressionWith G own suggestions fuel j.context j.term j.type).orElse fun _ =>
+      expressionWith G pool suggestions fuel j.context j.term j.type
   let mut choices : List (HeapExpressionRules.StepEvidence ι) := []
   match j.term with
   | .var i =>
@@ -969,7 +992,7 @@ def expressionEffect [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     | _ => pure ()
     choices := choices ++ [.created e,.pure e,.ordinary e]
   for effect in choices do
-    if let some out := HeapExpressionRules.checkStep G j k effect then
+    if let some out := HeapExpressionRules.checkStep G j k effect codes then
       -- Effect evidence validates this header itself; an ordinary derivation
       -- is not required for the precise read/value alternatives.
       return some (ordinary.getD (.node j .var []),effect,out)
@@ -991,10 +1014,12 @@ def edgeKnowledge (k : HeapKnowledge.Knowledge) (cont : Continuation) (index : N
 
 private def produceNode [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     (fuel l : Nat) (node : Node) (claims : List (PointClaim ι))
-    (k : HeapKnowledge.Knowledge) (suggestions : List (Sequent ι)) (known : List (Evidence ι)) :
+    (k : HeapKnowledge.Knowledge) (suggestions : List (Sequent ι)) (known : List (Evidence ι))
+    (codes : CodeEntry ι → Bool := fun _ => false) :
     Except Failure (NodeEvidence ι) := do
   let some c := claims[l]? | throw .claimCount
-  let some (e,effect,out) := expressionEffect G pool fuel ⟨c.context,node.expression,c.type⟩ k suggestions known
+  let some (e,effect,out) :=
+    expressionEffect G pool fuel ⟨c.context,node.expression,c.type⟩ k suggestions known codes
     | throw (.expression l)
   let target := fun Γ t index => match edge G pool claims Γ t with
     | some p => Except.ok p
@@ -1036,7 +1061,8 @@ Every edge is still checked by the independent consumer. -/
 def produceRaw [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     (fuel : Nat) (P : Program) (claims : List (PointClaim ι))
     (suggestions : List (Sequent ι) := []) (known : List (Evidence ι) := []) (start : Nat := 0)
-    (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := []) :
+    (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := [])
+    (codes : CodeEntry ι → Bool := fun _ => false) :
     Except Failure (ControlFlow.Certificate ι) := do
   if P.length != claims.length then throw .claimCount
   let incoming := (List.range P.length).map fun target =>
@@ -1080,7 +1106,7 @@ def produceRaw [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         | none => pure ()
       k := ⟨(k.cells ++ required.cells).eraseDups,(k.values ++ required.values).eraseDups,
         (k.links ++ required.links).eraseDups⟩
-      let evidence ← produceNode G pool fuel l node claims k suggestions known
+      let evidence ← produceNode G pool fuel l node claims k suggestions known codes
       table := table.set l (some evidence)
       progress := true
     if !progress then
@@ -1107,15 +1133,16 @@ def produce [DecidableEq ι] (G : NormalGraph ι) (labels : List ι)
     (fuel : Nat) (R : Ty ι) (P : Program) (claims : List (PointClaim ι))
     (start : Nat) (hints : List (Ty ι) := []) (inputs : List (Ty ι) := [])
     (suggestions : List (Sequent ι) := []) (known : List (ProgramCertificates.Evidence ι) := [])
-    (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := []) : Except Failure (ControlFlow.Certificate ι) :=
-  match produceRaw G (vocabulary G labels claims (inputs ++ hints)) fuel P claims suggestions known start requirements cuts with
+    (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := [])
+    (codes : CodeEntry ι → Bool := fun _ => false) : Except Failure (ControlFlow.Certificate ι) :=
+  match produceRaw G (vocabulary G labels claims (inputs ++ hints)) fuel P claims suggestions known start requirements cuts codes with
   | .error e => .error e
-  | .ok C => if accept G R P claims C start inputs then .ok C
+  | .ok C => if accept G R P claims C start inputs codes then .ok C
     else .error ((failedEdge P C).getD .rejected)
 
-theorem produce_checked [DecidableEq ι] {G : NormalGraph ι} {labels fuel R P claims start hints inputs suggestions known requirements cuts C}
-    (h : produce G labels fuel R P claims start hints inputs suggestions known requirements cuts = .ok C) :
-    accept G R P claims C start inputs = true := by
+theorem produce_checked [DecidableEq ι] {G : NormalGraph ι} {labels fuel R P claims start hints inputs suggestions known requirements cuts codes C}
+    (h : produce G labels fuel R P claims start hints inputs suggestions known requirements cuts codes = .ok C) :
+    accept G R P claims C start inputs codes = true := by
   unfold produce at h
   split at h
   · contradiction

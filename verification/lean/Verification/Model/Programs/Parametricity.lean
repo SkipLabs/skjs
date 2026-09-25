@@ -114,14 +114,16 @@ theorem CallProofs_reassign (q : List ι × List (List ι) × List ι) (c : List
     CallProofs (reassign G η) q c ps = CallProofs G q c ps := by
   simp only [CallProofs, check_reassign]
 
-theorem Local_reassign (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι)) :
-    Local (reassign G η) j r ps = Local G j r ps := by
+theorem Local_reassign (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
+    (codes : CodeEntry ι → Bool := fun _ => false) :
+    Local (reassign G η) j r ps codes = Local G j r ps codes := by
   unfold Local
   simp only [check_fun_reassign, CallProofs_reassign]
   rfl
 
-theorem checkTree_reassign (e : ProgramCertificates.Evidence ι) :
-    checkTree (reassign G η) e = checkTree G e := by
+theorem checkTree_reassign (e : ProgramCertificates.Evidence ι)
+    (codes : CodeEntry ι → Bool := fun _ => false) :
+    checkTree (reassign G η) e codes = checkTree G e codes := by
   match e with
   | .node j r ps =>
     rw [checkTree, checkTree]
@@ -129,15 +131,16 @@ theorem checkTree_reassign (e : ProgramCertificates.Evidence ι) :
     congr 1
     congr 1
     funext x
-    exact checkTree_reassign x.val
+    exact checkTree_reassign x.val codes
 termination_by sizeOf e
 decreasing_by
   have := List.sizeOf_lt_of_mem x.property
   simp only [ProgramCertificates.Evidence.node.sizeOf_spec]
   omega
 
-theorem checkStep_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge) (e : StepEvidence ι) :
-    checkStep (reassign G η) j k e = checkStep G j k e := by
+theorem checkStep_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge) (e : StepEvidence ι)
+    (codes : CodeEntry ι → Bool := fun _ => false) :
+    checkStep (reassign G η) j k e codes = checkStep G j k e codes := by
   cases e <;> simp only [checkStep, checkTree_reassign] <;> rfl
 
 theorem checkTarget_reassign (P : Program) (C : ControlFlow.Certificate ι) (Γ : List (List ι)) (t : Target)
@@ -156,38 +159,42 @@ theorem checkHandler_reassign (P : Program) (C : ControlFlow.Certificate ι) (no
   rfl
 
 theorem checkNode_reassign (Rty : List ι) (P : Program) (C : ControlFlow.Certificate ι) (node : Node)
-    (c : NodeEvidence ι) :
-    checkNode (reassign G η) Rty P C node c = checkNode G Rty P C node c := by
+    (c : NodeEvidence ι) (codes : CodeEntry ι → Bool := fun _ => false) :
+    checkNode (reassign G η) Rty P C node c codes = checkNode G Rty P C node c codes := by
   simp only [checkNode, checkHandler_reassign, checkStep_reassign, checkTarget_reassign,
     checkBranchTarget_reassign]
   rfl
 
-theorem checkGraph_reassign (Rty : List ι) (P : Program) (C : ControlFlow.Certificate ι) :
-    checkGraph (reassign G η) Rty P C = checkGraph G Rty P C := by
+theorem checkGraph_reassign (Rty : List ι) (P : Program) (C : ControlFlow.Certificate ι)
+    (codes : CodeEntry ι → Bool := fun _ => false) :
+    checkGraph (reassign G η) Rty P C codes = checkGraph G Rty P C codes := by
   simp only [checkGraph, checkNode_reassign]
 
 theorem checkEntry_reassign (Rty : List ι) (P : Program) (C : ControlFlow.Certificate ι) (start : Nat)
-    (inputs : List (List ι)) :
-    checkEntry (reassign G η) Rty P C start inputs = checkEntry G Rty P C start inputs := by
+    (inputs : List (List ι)) (codes : CodeEntry ι → Bool := fun _ => false) :
+    checkEntry (reassign G η) Rty P C start inputs codes = checkEntry G Rty P C start inputs codes := by
   simp only [checkEntry, checkGraph_reassign]
 
 /-- **Acceptance reads no assignment.** A graph's evidence is accepted exactly
 when it is accepted for every reassignment of the graph's parameter rows. -/
 theorem accept_reassign (R : List ι) (P : Program) (claims : List (CertificateProducer.PointClaim ι))
-    (C : ControlFlow.Certificate ι) (start : Nat) (inputs : List (List ι)) :
-    CertificateProducer.accept (reassign G η) R P claims C start inputs =
-      CertificateProducer.accept G R P claims C start inputs := by
+    (C : ControlFlow.Certificate ι) (start : Nat) (inputs : List (List ι))
+    (codes : CodeEntry ι → Bool := fun _ => false) :
+    CertificateProducer.accept (reassign G η) R P claims C start inputs codes =
+      CertificateProducer.accept G R P claims C start inputs codes := by
   simp only [CertificateProducer.accept, checkEntry_reassign]
 
 /-- **Parametricity.** Accepted evidence is safe at every assignment of the
 graph's parameter rows: every input environment meeting the inputs read at
 `η` runs safely to a result of the result type read at `η`. -/
 theorem accepted_at {G : NormalGraph ι} {R P claims C start inputs}
-    (hc : CertificateProducer.accept G R P claims C start inputs = true)
+    {codes : CodeEntry ι → Bool}
+    (hc : CertificateProducer.accept G R P claims C start inputs codes = true)
     (η : MixedAssignment ι) (n W h ρ)
-    (he : EnvOk (reassign G η) inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk (reassign G η) inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (hcodes : CodesSound (reassign G η) codes := by exact Verification.Model.ProgramCertificates.codesSound_none _) :
     SafeGraph P (meaning (reassign G η) R) n W h (.at start ρ) :=
-  CertificateProducer.accepted_from_inputs ((accept_reassign G η ..).trans hc) n W h ρ he hw hh
+  CertificateProducer.accepted_from_inputs ((accept_reassign G η R P claims C start inputs codes).trans hc) n W h ρ he hw hh hcodes
 
 #print axioms accept_reassign
 #print axioms accepted_at

@@ -59,10 +59,13 @@ private def wrongArgument : Fragment.Fn := {source with body :=
 -- Saving both operands explicitly keeps source name lookup and evaluation
 -- order correct after adding the anonymous callee slot. Inside the closure,
 -- slot 0 is its receiver, slot 1 its parameter and the captured `f` slot 2.
+-- The closure's graph code: the captured `f` (slot 2), then the parameter,
+-- each bound, then the call of the saved callee on the saved actual.
 #guard match extractNormalizedFn table source claims with
   | .error _ => false
-  | .ok r => r.obligations.any fun q => q.pos == (7,12) &&
-      q.sequent.term == .letE (.var 2) (.letE (.var 2) (.app (.var 1) (.var 0)))
+  | .ok r => r.codes.any fun (q : RequestJson.CodeRequest) =>
+      q.entry.exprs == [.var 0, .invoke (.var 1) .undef [.var 0], .var 2, .var 2] &&
+        q.entry.captures == [[5,6]]
 
 -- One successful alternative does not excuse another incompatible domain.
 private def mixedDomain : Json := Json.mkObj [("top",toJson false),("atoms",toJson

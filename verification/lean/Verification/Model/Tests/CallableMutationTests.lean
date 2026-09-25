@@ -23,7 +23,7 @@ private def claims (R : List Nat) : List (PointClaim Nat) :=
    ⟨[[1],[2,3],[1]],[5]⟩,⟨[[5],[1],[2,3],[1]],[0]⟩,
    ⟨[[5],[1],[2,3],[1]],R⟩]
 private def request (callable fresh : Bool) (R : List Nat) : Request :=
-  ⟨types,program callable fresh,claims R,R,0,[]⟩
+  ⟨types,program callable fresh,claims R,R,0,[], []⟩
 private def certificate (callable fresh : Bool) (R : List Nat) : ControlFlow.Certificate Nat :=
   match produce G labels 10 R (program callable fresh) (claims R) 0 with
   | .ok c => c | .error _ => []

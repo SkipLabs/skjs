@@ -297,31 +297,9 @@ function walkExpr(e: Expr, out: Sites): void {
       walkExpr(e.then, out);
       walkExpr(e.else_, out);
       return;
-    case "ifBody":
-      // A lowered statement-conditional inside a closure body: an entry.
-      out.entries.add(e.pos[0]);
-      walkExpr(e.cond, out);
-      walkExpr(e.then, out);
-      walkExpr(e.else_, out);
-      return;
-    case "seqBody":
-    case "letBody":
-      out.entries.add(e.pos[0]);
-      walkExpr(e.init, out);
-      walkExpr(e.body, out);
-      return;
-    case "returnBody":
-      out.entries.add(e.pos[0]);
-      walkExpr(e.e, out);
-      return;
-    case "destructBody":
-      out.entries.add(e.pos[0]);
-      walkExpr(e.init, out);
-      walkPattern(e.target, out);
-      walkExpr(e.body, out);
-      return;
-    case "doneBody":
-      // Administrative completion; no source expression claim.
+    case "blockBody":
+      // A closure's statements: each an entry, as a function's are.
+      for (const st of e.body) walkStmt(st, out);
       return;
     default:
       // Every kind of the fragment is handled above, so this is reached only

@@ -203,8 +203,9 @@ The encoding follows mechanically from the
 A descriptor `c` is `"absent"`, `{"closure":{"arity":2,"body":t}}` (with
 `"kind":"construct"` for a class's construct-only code, which only `new` runs;
 call-only code, an arrow's or a method's, leaves the kind out),
-`{"variadic":{"fixed":2,"body":t}}` or
-`{"bound":{"target":t,"receiver":t,"pre":[t]}}`. Plain allocation uses the
+`{"variadic":{"fixed":2,"body":t}}`,
+`{"bound":{"target":t,"receiver":t,"pre":[t]}}` or
+`{"graph":{"arity":1,"exprs":[t],"conts":[[k,T]],"start":0,"caps":[t]}}`. Plain allocation uses the
 absent descriptor; function creation uses a code descriptor and ordered field
 initializers. A fixed body has the receiver's binder in slot zero, then
 `arity` parameter binders in declaration order, before captures. A variadic
@@ -212,7 +213,14 @@ body has its fresh rest store in slot zero, the receiver in slot one, then
 `fixed` parameters, then captures. A `bound` descriptor is what `.bind` creates: it holds the target,
 the receiver and the argument prefix as values and allocates no field; its
 invocation drops the receiver it is called with and invokes the target with the
-saved one and the prefix before the new actuals. Creation evidence requires each overload to have
+saved one and the prefix before the new actuals. A `graph` descriptor is code
+whose body is a control-flow graph, as a program is: its node expressions, each
+node's continuation and handler (`null` for none), the entry label and the
+captured values; invocation starts the graph at `start` with the receiver, the
+`arity` parameters, then the captures as its slots. The node expressions are
+scoped by those slots alone. `goto` and `frame`, the terms a running graph code
+steps through, are runtime forms and are rejected in supplied syntax as object
+terms are. Creation evidence requires each overload to have
 that many argument types. Application evidence carries every actual argument in order. Runtime object terms
 are rejected in supplied graph syntax, including inside unused branches and
 closure bodies.
@@ -223,12 +231,21 @@ in a supplied program: it arises only during execution. These are Lean's derived
 codecs, so the field names are the constructor's own; they live in
 [RequestJson.lean](lean/Verification/Model/Source/RequestJson.lean).
 
-The evidence file is an object with one field, `certificate`, a list of
-`NodeEvidence` objects. Each node supplies its expression derivation tree and
+A request may add `"codes"`: the graph code its program creates, one
+`{"entry": {"arity","exprs","conts","start","captures","row"}, "claims": [...]}`
+per code and signature, where `captures` are the captured values' types, `row`
+the signature `[receiver, parameters, result]` and `claims` one point claim per
+node of the code's graph, as `claims` is for the program. Absent means none.
+
+The evidence file is an object with the field `certificate`, a list of
+`NodeEvidence` objects, and, when the request has codes, `"codes"`: one such
+list per code request, in its order. The codes are checked first, in order,
+each at its entry `[receiver, parameters…, captures…]` and its row's result,
+each seeing the codes before it; the program is then checked seeing them all. Each node supplies its expression derivation tree and
 one subtype-evidence list per outgoing edge. A derivation node names the
 [typing rule](PROGRAM-TYPING.md#judgments-and-constructor-views) it applies:
 `var`, `nul`, `undef`, `tru`, `fls`, `truLit`, `flsLit`, `numLit`, `num`,
-`strLit`, `str`, `bigintLit`, `bigint`, `funE`, `app`, `letE`, `alloc`,
+`strLit`, `str`, `bigintLit`, `bigint`, `funE`, `funGraph`, `app`, `letE`, `alloc`,
 `read`, `readOptional`, `readDict`, `indexDict`, `write`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
 `unionVar`, `makeCallable`, `callCallable`, `readCallable`, `writeCallable`, `readView`, `readProto`, `arith`, `test`,
 `arrLit`, `elem`, `elemOpt`, `elemAny`, `setElem`, `len`, `lenStr`, `elemStr`, `funRest`, `makeCallableRest`,
@@ -329,6 +346,11 @@ See the [assertion rules](PROGRAM-TYPING.md#checked-expression-postconditions).
 `funE` has one body premise per row of its type's `offerRows`: each fixed
 signature, then each variadic signature's receiver, fixed parameters and
 result, in that order; each row offers at least the code's arity.
+
+`funGraph` creates graph code: its premises are the captures, each a slot of
+the node's context at the type the code was checked with, and every signature
+the created type offers must be an entry of the checked codes with those
+capture types. It checks no body: the code's own certificate did.
 
 The callable expression rules use the existing term syntax. `makeCallable`
 checks one initializer premise followed by one body premise per advertised
@@ -917,25 +939,19 @@ literals, variables, cell allocation, reads, assignments and calls, including
 nested expression arrows with required parameter lists. Each expression's
 claim is checked as a separate exact sequent in its lexical context. The body
 also has to satisfy the declared result. A narrower body claim with a wider
-result annotation is supported when both judgments are derivable. A block with
-exactly one `return e;` is supported too. The AST represents its body as
-`{"k":"returnBody","pos":[start,end],"e":...}`. The statement span selects its
-exported environment, whose bindings must each be justified by a variable typing
-proof under the captured context and parameter. The expression is checked using
-that supplied environment, including when it forgets precision. Missing entry
-claims and unjustified types on unused bindings are rejected. Straight-line
-blocks may precede that return with initialized consts or expression statements. These use `letBody` nodes with `pos`, `name`, `annot`, `init` and `body`;
-an empty name denotes a discarded effect result. The consumer reconstructs
-statement-entry and annotation obligations, retaining initializer precision in
-the bound slot. Anonymous effect slots retain their types independently of the
-export's named environment. A terminal `if/else` is represented by `ifBody`,
-with `pos`, `result` (the enclosing result annotation), `cond`, `then` and `else_`.
-Terminal arms recursively end in returns; prefixes may contain consts, effects
-and branches whose arms both fall through.
-Its position selects the checked entry environment, not an expression claim.
-Variable conditions (including negations, with swapped arms for odd parity) use
-`ifBoolVar`; other Boolean conditions use `ifBool`.
-Arm statement claims are checked against those justified contexts.
+result annotation is supported when both judgments are derivable. A block body is
+`{"k":"blockBody","pos":[start,end],"body":[statement, ...]}`, the statements
+of a function body, lowered and claimed as a function body's are
+([statement forms](DESIGN.md#statement-forms)): it is the closure's graph
+code, one request of the file's `codes` per signature. The parser ends a body
+that can complete with `return undefined` at its closing brace, and a
+parameter written as a pattern or with a default binds a hidden name that a
+`destructure` statement first in the body reads. An expression body `e` is
+compiled as the statement `return e`. A generic closure, one with a rest
+parameter or a parameter default, and a class constructor keep term code: the
+consumer reads their statements as one expression (`Expr.termBody`), which
+admits constants, effects, destructuring and branches ending in `return` or
+`throw`, and refuses the rest.
 
 Source ternaries use `{"k":"conditional","pos":[start,end],"cond":...,"then":...,"else_":...}`.
 Unlike the statement wrapper, this node selects its own expression claim, not a
@@ -988,24 +1004,7 @@ inside the fallback; its original slot becomes anonymous. This exposes the prove
 nullish refinement without claiming an alias for reads or calls. Both null and
 undefined select the fallback; false is preserved.
 
-For fall-through branches, `ifBody` has the administrative null result type and
-each arm ends in `{"k":"doneBody","pos":[start,end]}`. The sentinel is not a
-source expression or a claimed JavaScript result. A `seqBody` with `pos`, `init`
-and `body` evaluates this conditional, discards its result and runs one shared
-continuation. The continuation uses an anonymous result slot plus the outer
-context; arm-local slots cannot escape. No synthetic source expression claim
-is requested for either administrative node. Their generated typing obligations
-are nevertheless independently checked, as are every source expression and
-statement-entry environment.
-
-When one arm returns on every path and the other is return-free, the parser
-places the continuation only inside the surviving `ifBody` arm. A nonempty
-falling arm is first compiled to a `seqBody` initializer, keeping its local
-bindings out of the continuation. Empty falling arms resume directly. The
-existing branch rule justifies the surviving path's immutable Boolean
-refinement, including at the continuation's supplied entry environment. No new
-AST tag, type claim or calculus rule is needed. General partially returning
-nested arms, unreachable continuations and active-name shadowing remain gated. Standalone field-test claims with unequal read/write meanings remain outside
+Standalone field-test claims with unequal read/write meanings remain outside
 the invariant-cell slice; exact union absorption does not admit them on their own.
 
 Proof recipes are internal producer data, not wire fields. Their construction

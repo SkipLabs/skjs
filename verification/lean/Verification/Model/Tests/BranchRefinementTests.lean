@@ -77,7 +77,7 @@ private def request (v : Tm) : Request :=
     [⟨v,.bind 1,none⟩, ⟨.var 0,.branchBind ⟨2,some [0,1]⟩ ⟨3,some [0,1]⟩,none⟩,
      ⟨.var 0,.ret,none⟩, ⟨.var 0,.ret,none⟩],
     [⟨[],[1,2]⟩,⟨[[1,2]],[1,2]⟩,⟨[[1],[1,2]],[1,2]⟩,⟨[[2],[1,2]],[1,2]⟩],
-    [1,2],0,[]⟩
+    [1,2],0,[], []⟩
 
 private def roundtrip (r : Request) : Except String Unit := do
   let input ← Json.parse (toJson r).compress
@@ -103,14 +103,14 @@ private def roundtrip (r : Request) : Except String Unit := do
 -- Refining transfers also participate in cycles; checking requires no iteration.
 #guard ok (roundtrip ⟨T,
   [⟨.tru,.bind 1,none⟩,⟨.var 0,.branchBind ⟨1,some [0]⟩ ⟨2,some [0]⟩,none⟩,⟨.var 0,.ret,none⟩],
-  [⟨[],[1,2]⟩,⟨[[1,2]],[1,2]⟩,⟨[[2]],[1,2]⟩],[1,2],0,[]⟩)
+  [⟨[],[1,2]⟩,⟨[[1,2]],[1,2]⟩,⟨[[2]],[1,2]⟩],[1,2],0,[], []⟩)
 -- Tag dispatch uses the same observed edge checker and retains the value itself.
 private def tagRequest : Request :=
   ⟨T,
     [⟨.var 0,.tagBind .isNul ⟨1,some [0]⟩ ⟨2,some [0]⟩,none⟩,
      ⟨.fls,.ret,none⟩,⟨.var 0,.ret,none⟩],
     [⟨[[0,1,2]],[0,1,2]⟩,⟨[[0]],[1,2]⟩,⟨[[1,2]],[1,2]⟩],
-    [1,2],0,[[0,1,2]]⟩
+    [1,2],0,[[0,1,2]], []⟩
 #guard ok (roundtrip tagRequest)
 #guard !ok (roundtrip { tagRequest with program := (tagRequest.program.set 0
   ⟨.var 0,.tagBind .isBool ⟨1,some [0]⟩ ⟨2,some [0]⟩,none⟩) })

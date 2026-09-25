@@ -34,6 +34,12 @@ def Scoped (d : Nat) : Tm → Prop
   | .spread a => Scoped d a
   | .throw a => Scoped d a
   | .merge _ a b => Scoped d a ∧ Scoped d b
+  -- Graph code's node expressions are scoped by its own environment, which
+  -- invocation supplies whole; only the captures are scoped here.
+  | .objAt _ (.graph _ _ _ _ caps) => ScopedArgs d caps
+  | .makeAt (.graph _ _ _ _ caps) _ args => ScopedArgs d caps ∧ ScopedArgs d args
+  | .goto _ _ _ L x => ScopedArgs d L ∧ Scoped d x
+  | .frame _ _ t L x _ _ => Scoped d t ∧ ScopedArgs d L ∧ Scoped d x
   | _ => True
 
 def ScopedArgs (d : Nat) : List Tm → Prop
@@ -82,6 +88,12 @@ theorem Scoped.mono {t : Tm} {d e : Nat} (h : Scoped d t) (hde : d ≤ e) :
   case merge dr a b iha ihb => exact ⟨iha h.1 hde, ihb h.2 hde⟩
   case read f a ih => exact ih h hde
   case test k a ih => exact ih h hde
+  case objGraph fs n E K st caps _ ihc => exact fun a ha => ihc a ha (h a ha) hde
+  case makeGraph n E K st caps ns args _ ihc iha =>
+    exact ⟨fun a ha => ihc a ha (h.1 a ha) hde, fun a ha => iha a ha (h.2 a ha) hde⟩
+  case goto E K l L x _ ihL ihx => exact ⟨fun a ha => ihL a ha (h.1 a ha) hde, ihx h.2 hde⟩
+  case frame E K t L x k hd _ iht ihL ihx =>
+    exact ⟨iht h.1 hde, fun a ha => ihL a ha (h.2.1 a ha) hde, ihx h.2.2 hde⟩
   all_goals trivial
 
 theorem subst_above {t : Tm} {d j : Nat} (h : Scoped d t) (hj : d ≤ j) (a : Tm) :
@@ -137,6 +149,24 @@ theorem subst_above {t : Tm} {d j : Nat} (h : Scoped d t) (hj : d ≤ j) (a : Tm
   case read f b ih => rw [ih h hj]
   case index b key ihb ihkey => rw [ihb h.1 hj, ihkey h.2 hj]
   case test k b ih => rw [ih h hj]
+  case objGraph fs n E K st caps _ ihc =>
+    have hmap : caps.map (subst j a) = caps := by
+      simpa using (List.map_congr_left (g := id) (fun x hx => ihc x hx (h x hx) hj))
+    rw [hmap]
+  case makeGraph n E K st caps ns args _ ihc iha =>
+    have hc : caps.map (subst j a) = caps := by
+      simpa using (List.map_congr_left (g := id) (fun x hx => ihc x hx (h.1 x hx) hj))
+    have hmap : args.map (subst j a) = args := by
+      simpa using (List.map_congr_left (g := id) (fun x hx => iha x hx (h.2 x hx) hj))
+    rw [hc, hmap]
+  case goto E K l L x _ ihL ihx =>
+    have hL : L.map (subst j a) = L := by
+      simpa using (List.map_congr_left (g := id) (fun y hy => ihL y hy (h.1 y hy) hj))
+    rw [hL, ihx h.2 hj]
+  case frame E K t L x k hd _ iht ihL ihx =>
+    have hL : L.map (subst j a) = L := by
+      simpa using (List.map_congr_left (g := id) (fun y hy => ihL y hy (h.2.1 y hy) hj))
+    rw [iht h.1 hj, hL, ihx h.2.2 hj]
   all_goals rfl
 
 theorem Scoped.closed {t : Tm} (h : Scoped 0 t) : Closed t :=
@@ -210,57 +240,30 @@ theorem subst_scoped {t a : Tm} {d j : Nat} (ht : Scoped (d + 1) t)
   case merge dr b c ihb ihc => exact ⟨ihb ht.1 hj, ihc ht.2 hj⟩
   case read f b ih => exact ih ht hj
   case test k b ih => exact ih ht hj
+  case objGraph fs n E K st caps _ ihc =>
+    intro v hv
+    obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hv
+    exact ihc x hx (ht x hx) hj
+  case makeGraph n E K st caps ns args _ ihc iha =>
+    refine ⟨?_, ?_⟩
+    · intro v hv
+      obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hv
+      exact ihc x hx (ht.1 x hx) hj
+    · intro v hv
+      obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hv
+      exact iha x hx (ht.2 x hx) hj
+  case goto E K l L x _ ihL ihx =>
+    refine ⟨?_, ihx ht.2 hj⟩
+    intro v hv
+    obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hv
+    exact ihL y hy (ht.1 y hy) hj
+  case frame E K t L x k hd _ iht ihL ihx =>
+    refine ⟨iht ht.1 hj, ?_, ihx ht.2.2 hj⟩
+    intro v hv
+    obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hv
+    exact ihL y hy (ht.2.1 y hy) hj
   all_goals trivial
 
-abbrev Env := Nat → Tm
-
-def push (a : Tm) (ρ : Env) : Env
-  | 0 => a
-  | i + 1 => ρ i
-
-/-! Simultaneous closing substitution, leaving `d` enclosing binders intact. -/
-mutual
-def instantiate (d : Nat) (ρ : Env) : Tm → Tm
-  | .var i => if i < d then .var i else ρ (i - d)
-  | .letE a b => .letE (instantiate d ρ a) (instantiate (d + 1) ρ b)
-  | .objAt fs .absent => .objAt fs .absent
-  | .objAt fs (.closure n b k) => .objAt fs (.closure n (instantiate (d + n + 1) ρ b) k)
-  | .invoke f r args => .invoke (instantiate d ρ f) (instantiate d ρ r) (instantiateArgs d ρ args)
-  | .construct f args => .construct (instantiate d ρ f) (instantiateArgs d ρ args)
-  | .makeAt (.closure n b k) ns args =>
-      .makeAt (.closure n (instantiate (d + n + 1) ρ b) k) ns (instantiateArgs d ρ args)
-  | .objAt fs (.variadic n b) => .objAt fs (.variadic n (instantiate (d + n + 2) ρ b))
-  | .makeAt (.variadic n b) ns args =>
-      .makeAt (.variadic n (instantiate (d + n + 2) ρ b)) ns (instantiateArgs d ρ args)
-  | .objAt fs (.bound t r pre) =>
-      .objAt fs (.bound (instantiate d ρ t) (instantiate d ρ r) (instantiateArgs d ρ pre))
-  | .makeAt (.bound t r pre) ns args =>
-      .makeAt (.bound (instantiate d ρ t) (instantiate d ρ r) (instantiateArgs d ρ pre)) ns
-        (instantiateArgs d ρ args)
-  | .makeAt .absent ns args => .makeAt .absent ns (instantiateArgs d ρ args)
-  | .readAt f a => .readAt f (instantiate d ρ a)
-  | .indexAt a key => .indexAt (instantiate d ρ a) (instantiate d ρ key)
-  | .writeAt f a b => .writeAt f (instantiate d ρ a) (instantiate d ρ b)
-  | .test k a => .test k (instantiate d ρ a)
-  | .ite c a b => .ite (instantiate d ρ c) (instantiate d ρ a) (instantiate d ρ b)
-  | .arith op a b => .arith op (instantiate d ρ a) (instantiate d ρ b)
-  | .arrLit args => .arrLit (instantiateArgs d ρ args)
-  | .elemAt a b => .elemAt (instantiate d ρ a) (instantiate d ρ b)
-  | .setElem a b c => .setElem (instantiate d ρ a) (instantiate d ρ b) (instantiate d ρ c)
-  | .lenOf a => .lenOf (instantiate d ρ a)
-  | .spread a => .spread (instantiate d ρ a)
-  | .throw a => .throw (instantiate d ρ a)
-  | .merge dr a b => .merge dr (instantiate d ρ a) (instantiate d ρ b)
-  | t => t
-
-def instantiateArgs (d : Nat) (ρ : Env) : List Tm → List Tm
-  | [] => []
-  | a :: args => instantiate d ρ a :: instantiateArgs d ρ args
-end
-
-@[simp] theorem instantiateArgs_eq_map (d : Nat) (ρ : Env) (args : List Tm) :
-    instantiateArgs d ρ args = args.map (instantiate d ρ) := by
-  induction args <;> simp_all [instantiateArgs]
 
 theorem instantiate_scoped (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (t : Tm) (d : Nat) :
     Scoped d (instantiate d ρ t) := by
@@ -322,6 +325,28 @@ theorem instantiate_scoped (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (t : Tm) (d
   case merge dr a b iha ihb => exact ⟨iha _, ihb _⟩
   case read f a ih => exact ih d
   case test k a ih => exact ih d
+  case objGraph fs n E K st caps _ ihc =>
+    intro v hv
+    obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hv
+    exact ihc x hx d
+  case makeGraph n E K st caps ns args _ ihc iha =>
+    refine ⟨?_, ?_⟩
+    · intro v hv
+      obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hv
+      exact ihc x hx d
+    · intro v hv
+      obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hv
+      exact iha x hx d
+  case goto E K l L x _ ihL ihx =>
+    refine ⟨?_, ihx d⟩
+    intro v hv
+    obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hv
+    exact ihL y hy d
+  case frame E K t L x k hd _ iht ihL ihx =>
+    refine ⟨iht d, ?_, ihx d⟩
+    intro v hv
+    obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hv
+    exact ihL y hy d
   all_goals trivial
 
 /-- Closing a lambda and applying it agrees with extending its environment. -/
@@ -401,6 +426,26 @@ theorem instantiate_beta (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (a t : Tm) (d
   case read f b ih => rw [ih]
   case index b key ihb ihkey => rw [ihb, ihkey]
   case test k b ih => rw [ih]
+  case objGraph fs n E K st caps _ ihc =>
+    rw [List.map_map]
+    congr 2
+    exact List.map_congr_left (fun x hx => ihc x hx d)
+  case makeGraph n E K st caps ns args _ ihc iha =>
+    have hc : List.map (subst d a ∘ instantiate (d + 1) ρ) caps =
+        List.map (instantiate d (push a ρ)) caps :=
+      List.map_congr_left (fun x hx => ihc x hx d)
+    have hmap : List.map (subst d a ∘ instantiate (d + 1) ρ) args =
+        List.map (instantiate d (push a ρ)) args :=
+      List.map_congr_left (fun x hx => iha x hx d)
+    rw [List.map_map, List.map_map, hc, hmap]
+  case goto E K l L x _ ihL ihx =>
+    rw [List.map_map, ihx]
+    congr 1
+    exact List.map_congr_left (fun y hy => ihL y hy d)
+  case frame E K t L x k hd _ iht ihL ihx =>
+    rw [List.map_map, ihx, iht]
+    congr 1
+    exact List.map_congr_left (fun y hy => ihL y hy d)
   all_goals rfl
 
 /-- Put parameters in declaration order before the captured environment.
@@ -485,6 +530,24 @@ theorem instantiate_above {t : Tm} {d : Nat} (ht : Scoped d t) (ρ : Env) :
   case merge dr a b iha ihb => rw [iha ht.1, ihb ht.2]
   case read f a ih => rw [ih ht]
   case test k a ih => rw [ih ht]
+  case objGraph fs n E K st caps _ ihc =>
+    have hmap : caps.map (instantiate d ρ) = caps := by
+      simpa using (List.map_congr_left (g := id) (fun x hx => ihc x hx (ht x hx)))
+    rw [hmap]
+  case makeGraph n E K st caps ns args _ ihc iha =>
+    have hc : caps.map (instantiate d ρ) = caps := by
+      simpa using (List.map_congr_left (g := id) (fun x hx => ihc x hx (ht.1 x hx)))
+    have hmap : args.map (instantiate d ρ) = args := by
+      simpa using (List.map_congr_left (g := id) (fun x hx => iha x hx (ht.2 x hx)))
+    rw [hc, hmap]
+  case goto E K l L x _ ihL ihx =>
+    have hL : L.map (instantiate d ρ) = L := by
+      simpa using (List.map_congr_left (g := id) (fun y hy => ihL y hy (ht.1 y hy)))
+    rw [hL, ihx ht.2]
+  case frame E K t L x k hd _ iht ihL ihx =>
+    have hL : L.map (instantiate d ρ) = L := by
+      simpa using (List.map_congr_left (g := id) (fun y hy => ihL y hy (ht.2.1 y hy)))
+    rw [iht ht.1, hL, ihx ht.2.2]
   all_goals rfl
 
 /-- Binding closed arguments closes exactly their parameter slots, leaving the

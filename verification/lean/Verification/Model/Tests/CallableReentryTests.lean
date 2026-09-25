@@ -31,7 +31,7 @@ private def program (callable fresh : Bool) : Program :=
 private def claims : List (PointClaim Nat) :=
   [⟨[],[2,3]⟩,⟨[[2,3]],[5]⟩,⟨[[5],[2,3]],[4]⟩,⟨[[4],[5],[2,3]],[1]⟩]
 private def request (callable fresh : Bool) : Request :=
-  ⟨types,program callable fresh,claims,[1],0,[]⟩
+  ⟨types,program callable fresh,claims,[1],0,[], []⟩
 
 #guard [false,true].all fun callable => [false,true].all fun fresh => match (do
     let r := Lean.toJson (request callable fresh)

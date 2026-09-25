@@ -450,6 +450,7 @@ def decodeTypeParam (j : Json) : Except String TypeParam := do
   let b ← jField j "bound"
   return ⟨name, if b == Json.null then none else some b⟩
 
+mutual
 inductive Expr where
   | var (pos : Span) (name : String)
   | lit (pos : Span) (v : Claim.Val)
@@ -577,121 +578,11 @@ inductive Expr where
   also writes a closure parameter pattern as one, over the parameter's
   hidden name. -/
   | destructBody (pos : Span) (target : Pattern Expr) (init body : Expr)
-
-/-- The name an optional chain's body reads its saved receiver by: no source
-identifier is spelled so. -/
-def chainName : String := "?."
-
-/-- Lexical dependencies, including deferred bodies. Exhaustive so a new
-executable source form cannot bypass parameter-initialization checks. -/
-partial def Expr.freeNames : Expr → List String
-  | .var _ n => [n]
-  | .lit .. | .done .. => []
-  | .lambda _ receiver _ ps ds _ _ b =>
-    -- An ordinary function binds its own `this`; an arrow captures it.
-    ((ds.flatMap fun d => d.2.freeNames) ++ b.freeNames).filter
-      (fun n => !(ps.map Prod.fst).contains n && (receiver.isNone || n != "this"))
-  | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .atEnv _ e | .ctor _ e
-  | .throwBody _ e => e.freeNames
-  | .construct _ f args _ => f.freeNames ++ args.flatMap Expr.freeNames
-  | .alloc _ _ es | .build _ _ es | .arrayLit _ es => es.flatMap Expr.freeNames
-  | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b
-  | .singletonTest _ _ _ _ a b | .write _ _ a b | .index _ _ a b
-  | .elemAt _ a b | .arith _ _ a b | .logicalAssign _ _ a b | .comma _ a b | .inKeys _ a b
-  | .withValue _ a b _ _ | .seqBody _ a b => a.freeNames ++ b.freeNames
-  | .indexWrite _ _ a b c | .elemWrite _ a b c | .ifBody _ _ a b c =>
-    a.freeNames ++ b.freeNames ++ c.freeNames
-  | .update _ _ a b _ => a.freeNames ++ (b.map Expr.freeNames).getD []
-  | .assign _ n _ e | .nullishAssign _ n _ e => n :: e.freeNames
-  | .arrayAssign _ targets rest rhs => rhs.freeNames ++ targets.flatMap
-      (fun q => q.name :: (q.default_.map Expr.freeNames).getD []) ++ (rest.map (·.2.name)).toList
-  | .bindWithReceiver _ f r args | .callWithReceiver _ f r args =>
-    f.freeNames ++ r.freeNames ++ args.flatMap Expr.freeNames
-  | .applyWithReceiver _ f r list => f.freeNames ++ r.freeNames ++ (list.map Expr.freeNames).getD []
-  | .call _ f args _ _ | .invoke _ f args _ _ => f.freeNames ++ args.flatMap Expr.freeNames
-  | .letBody _ n _ a b => a.freeNames ++ b.freeNames.filter (· != n)
-  | .destructBody _ t a b => a.freeNames ++ t.defaults.flatMap Expr.freeNames ++
-      b.freeNames.filter (!t.names.contains ·)
-  | .optional _ _ r b => r.freeNames ++ b.freeNames.filter (· != chainName)
-
-/-- Every direct call of a named function: the call's span, the callee read's
-span, the name, as `freeNames` binds names, and the explicit type arguments
-written on the call. -/
-partial def Expr.callees : Expr → List (Span × Span × String × List Json)
-  | .var .. | .lit .. | .done .. => []
-  | .lambda _ _ _ ps ds _ _ b =>
-    ((ds.flatMap fun d => d.2.callees) ++ b.callees).filter
-      (fun c => !(ps.map Prod.fst).contains c.2.2.1)
-  | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .atEnv _ e | .ctor _ e
-  | .throwBody _ e => e.callees
-  | .construct p f args ts =>
-    (match f with | .var q n => [(p, q, n, ts)] | _ => []) ++ f.callees ++ args.flatMap Expr.callees
-  | .alloc _ _ es | .build _ _ es | .arrayLit _ es => es.flatMap Expr.callees
-  | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b
-  | .singletonTest _ _ _ _ a b | .write _ _ a b | .index _ _ a b
-  | .elemAt _ a b | .arith _ _ a b | .logicalAssign _ _ a b | .comma _ a b | .inKeys _ a b
-  | .withValue _ a b _ _ | .seqBody _ a b => a.callees ++ b.callees
-  | .indexWrite _ _ a b c | .elemWrite _ a b c | .ifBody _ _ a b c =>
-    a.callees ++ b.callees ++ c.callees
-  | .update _ _ a b _ => a.callees ++ (b.map Expr.callees).getD []
-  | .assign _ _ _ e | .nullishAssign _ _ _ e => e.callees
-  | .arrayAssign _ targets _ rhs => rhs.callees ++ targets.flatMap
-      (fun q => (q.default_.map Expr.callees).getD [])
-  | .bindWithReceiver _ f r args | .callWithReceiver _ f r args =>
-    f.callees ++ r.callees ++ args.flatMap Expr.callees
-  | .applyWithReceiver _ f r list => f.callees ++ r.callees ++ (list.map Expr.callees).getD []
-  | .call p f args _ ts =>
-    (match f with | .var q n => [(p, q, n, ts)] | _ => []) ++ f.callees ++ args.flatMap Expr.callees
-  | .invoke _ f args _ _ => f.callees ++ args.flatMap Expr.callees
-  | .letBody _ n _ a b => a.callees ++ b.callees.filter (·.2.2.1 != n)
-  | .destructBody _ t a b => a.callees ++ t.defaults.flatMap Expr.callees ++
-      b.callees.filter (!t.names.contains ·.2.2.1)
-  | .optional _ _ r b => r.callees ++ b.callees.filter (·.2.2.1 != chainName)
-
-/-- Closure conversion for acyclic forward captures. Only a literal closure's
-allocation can move; every potentially effectful initializer keeps source order.
-No pending binding may be read or exposed by another executing initializer.
-A deferred closure is allocated exactly once, after its captures exist. Source
-parameters are immutable in this fragment, and mutable outer captures retain
-cell identity. Thus delaying this unobservable allocation preserves captures,
-aliasing and effects (up to fresh-location renaming). Cyclic/escaping pending
-closures require an explicit initialization frame and are refused here. -/
-def parameterOrder (ps : List (String × Json)) (defaults : List (Nat × Expr)) :
-    Except String (List Nat) := do
-  let names := ps.map Prod.fst
-  let dependencies (i : Nat) := ((defaults.lookup i).map Expr.freeNames).getD []
-    |>.filter names.contains
-  let ready (done : List Nat) (i : Nat) :=
-    (dependencies i).all fun n => done.any fun j => names[j]? == some n
-  let mut done := []
-  let mut pending := []
-  for i in List.range ps.length do
-    if ready done i then done := done ++ [i]
-    else
-      match defaults.lookup i with
-      | some (.lambda ..) => pending := pending ++ [i]
-      | _ => throw "parameter default may only read initialized earlier parameters and captures; a pending closure cannot be invoked or exposed"
-    -- At most one new dependency is discharged per iteration; the bounded
-    -- fixpoint also handles chains of literal closures capturing one another.
-    for _ in List.range ps.length do
-      if let some j := pending.find? (ready done) then
-        done := done ++ [j]
-        pending := pending.filter (· != j)
-  if !pending.isEmpty then throw "cyclic parameter-default captures require an initialization frame"
-  return done
-
-/-- Singleton notation for small source-adapter fixtures. -/
-abbrev Expr.lam (p : Span) (name : String) (arg result : Json) (body : Expr) : Expr :=
-  .lambda p none [] [(name,arg)] [] false result body
-abbrev Expr.app (p : Span) (callee arg : Expr) : Expr := .call p callee [arg] [] []
-
-def Expr.span : Expr → Span
-  | .atEnv _ body | .letBody _ _ _ _ body | .seqBody _ _ body | .destructBody _ _ _ body => body.span
-  | .ifBody p _ _ _ _ | .done p | .throwBody p _ | .equality p _ _ _ | .singletonTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
-  | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
-  | .comma p _ _ | .inKeys p _ _ | .optional p _ _ _ => p
-  | .arrayLit p _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ _ => p
-  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .build p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ _ _ _ _ | .call p _ _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ | .construct p _ _ _ => p
+  /-- A closure body written as statements, the body of a function: its
+  parameters written as patterns or with defaults are destructured by its
+  first statements, and a body that can complete returns `undefined` at its
+  closing brace. Only a lambda's body is one. -/
+  | block (pos : Span) (body : List Stmt)
 
 /-- One declarator of a `const` or `let`. -/
 structure Binding where
@@ -743,10 +634,185 @@ inductive Stmt where
   that way out resumes, unless the finalizer itself leaves. -/
   | tryStmt (pos : Span) (body : List Stmt)
       (handler : Option (Option (String × Span) × List Stmt)) (finalizer : Option (List Stmt))
+end
 
 /-- The intrinsic a `for...of` over an array steps (`intrinsics.mts`):
 `<T>(xs: readonly T[]) => () => { readonly value: T } | null`, trusted. -/
 def iterateName : String := "%Iterate%"
+
+/-- The name an optional chain's body reads its saved receiver by: no source
+identifier is spelled so. -/
+def chainName : String := "?."
+
+mutual
+/-- Lexical dependencies, including deferred bodies. Exhaustive so a new
+executable source form cannot bypass parameter-initialization checks. -/
+partial def Expr.freeNames : Expr → List String
+  | .var _ n => [n]
+  | .lit .. | .done .. => []
+  | .lambda _ receiver _ ps ds _ _ b =>
+    -- An ordinary function binds its own `this`; an arrow captures it.
+    ((ds.flatMap fun d => d.2.freeNames) ++ b.freeNames).filter
+      (fun n => !(ps.map Prod.fst).contains n && (receiver.isNone || n != "this"))
+  | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .atEnv _ e | .ctor _ e
+  | .throwBody _ e => e.freeNames
+  | .construct _ f args _ => f.freeNames ++ args.flatMap Expr.freeNames
+  | .alloc _ _ es | .build _ _ es | .arrayLit _ es => es.flatMap Expr.freeNames
+  | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b
+  | .singletonTest _ _ _ _ a b | .write _ _ a b | .index _ _ a b
+  | .elemAt _ a b | .arith _ _ a b | .logicalAssign _ _ a b | .comma _ a b | .inKeys _ a b
+  | .withValue _ a b _ _ | .seqBody _ a b => a.freeNames ++ b.freeNames
+  | .indexWrite _ _ a b c | .elemWrite _ a b c | .ifBody _ _ a b c =>
+    a.freeNames ++ b.freeNames ++ c.freeNames
+  | .update _ _ a b _ => a.freeNames ++ (b.map Expr.freeNames).getD []
+  | .assign _ n _ e | .nullishAssign _ n _ e => n :: e.freeNames
+  | .arrayAssign _ targets rest rhs => rhs.freeNames ++ targets.flatMap
+      (fun q => q.name :: (q.default_.map Expr.freeNames).getD []) ++ (rest.map (·.2.name)).toList
+  | .bindWithReceiver _ f r args | .callWithReceiver _ f r args =>
+    f.freeNames ++ r.freeNames ++ args.flatMap Expr.freeNames
+  | .applyWithReceiver _ f r list => f.freeNames ++ r.freeNames ++ (list.map Expr.freeNames).getD []
+  | .call _ f args _ _ | .invoke _ f args _ _ => f.freeNames ++ args.flatMap Expr.freeNames
+  | .letBody _ n _ a b => a.freeNames ++ b.freeNames.filter (· != n)
+  | .destructBody _ t a b => a.freeNames ++ t.defaults.flatMap Expr.freeNames ++
+      b.freeNames.filter (!t.names.contains ·)
+  | .optional _ _ r b => r.freeNames ++ b.freeNames.filter (· != chainName)
+  | .block _ ss => stmtsFreeNames ss
+
+/-- Every direct call of a named function: the call's span, the callee read's
+span, the name, as `freeNames` binds names, and the explicit type arguments
+written on the call. -/
+partial def Expr.callees : Expr → List (Span × Span × String × List Json)
+  | .var .. | .lit .. | .done .. => []
+  | .lambda _ _ _ ps ds _ _ b =>
+    ((ds.flatMap fun d => d.2.callees) ++ b.callees).filter
+      (fun c => !(ps.map Prod.fst).contains c.2.2.1)
+  | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .atEnv _ e | .ctor _ e
+  | .throwBody _ e => e.callees
+  | .construct p f args ts =>
+    (match f with | .var q n => [(p, q, n, ts)] | _ => []) ++ f.callees ++ args.flatMap Expr.callees
+  | .alloc _ _ es | .build _ _ es | .arrayLit _ es => es.flatMap Expr.callees
+  | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b
+  | .singletonTest _ _ _ _ a b | .write _ _ a b | .index _ _ a b
+  | .elemAt _ a b | .arith _ _ a b | .logicalAssign _ _ a b | .comma _ a b | .inKeys _ a b
+  | .withValue _ a b _ _ | .seqBody _ a b => a.callees ++ b.callees
+  | .indexWrite _ _ a b c | .elemWrite _ a b c | .ifBody _ _ a b c =>
+    a.callees ++ b.callees ++ c.callees
+  | .update _ _ a b _ => a.callees ++ (b.map Expr.callees).getD []
+  | .assign _ _ _ e | .nullishAssign _ _ _ e => e.callees
+  | .arrayAssign _ targets _ rhs => rhs.callees ++ targets.flatMap
+      (fun q => (q.default_.map Expr.callees).getD [])
+  | .bindWithReceiver _ f r args | .callWithReceiver _ f r args =>
+    f.callees ++ r.callees ++ args.flatMap Expr.callees
+  | .applyWithReceiver _ f r list => f.callees ++ r.callees ++ (list.map Expr.callees).getD []
+  | .call p f args _ ts =>
+    (match f with | .var q n => [(p, q, n, ts)] | _ => []) ++ f.callees ++ args.flatMap Expr.callees
+  | .invoke _ f args _ _ => f.callees ++ args.flatMap Expr.callees
+  | .letBody _ n _ a b => a.callees ++ b.callees.filter (·.2.2.1 != n)
+  | .destructBody _ t a b => a.callees ++ t.defaults.flatMap Expr.callees ++
+      b.callees.filter (!t.names.contains ·.2.2.1)
+  | .optional _ _ r b => r.callees ++ b.callees.filter (·.2.2.1 != chainName)
+  | .block _ ss => stmtsCallees ss
+
+/-- The names a statement binds for the statements after it. -/
+partial def Stmt.bound : Stmt → List String
+  | .constants _ bs | .mutables _ bs => bs.map (·.name)
+  | .destructure _ t _ _ => t.names
+  | _ => []
+
+/-- A statement list's lexical dependencies: each statement's, less the names
+the statements before it bind. -/
+partial def stmtsFreeNames : List Stmt → List String
+  | [] => []
+  | s :: rest => s.freeNames ++ (stmtsFreeNames rest).filter (!s.bound.contains ·)
+
+partial def Stmt.freeNames : Stmt → List String
+  | .ret _ e | .effect _ e | .throw _ e => e.freeNames
+  | .constants _ bs | .mutables _ bs =>
+    -- Each initializer sees the earlier declarators.
+    (bs.zipIdx.flatMap fun (b, i) =>
+      b.init.freeNames.filter fun n => !((bs.take i).map (·.name)).contains n)
+  | .destructure _ t d init => init.freeNames ++ (d.toList ++ t.defaults).flatMap Expr.freeNames
+  | .ite _ c t e => c.freeNames ++ stmtsFreeNames t ++ stmtsFreeNames (e.getD [])
+  | .loop _ c b u => c.freeNames ++ stmtsFreeNames b ++ stmtsFreeNames u
+  | .block _ _ b => stmtsFreeNames b
+  -- The loop reads the `%Iterate%` intrinsic, which no expression names.
+  | .forOf _ name _ i b => iterateName :: i.freeNames ++ (stmtsFreeNames b).filter (· != name)
+  | .tryStmt _ b h f => stmtsFreeNames b ++
+    (match h with
+     | some (some (name, _), hs) => (stmtsFreeNames hs).filter (· != name)
+     | some (none, hs) => stmtsFreeNames hs
+     | none => []) ++ stmtsFreeNames (f.getD [])
+  | .brk .. | .cont .. => []
+
+/-- A statement list's direct calls of named functions, less those of names
+the statements before them bind. -/
+partial def stmtsCallees : List Stmt → List (Span × Span × String × List Json)
+  | [] => []
+  | s :: rest => s.callees ++ (stmtsCallees rest).filter (!s.bound.contains ·.2.2.1)
+
+/-- Every direct call of a named function in a statement. -/
+partial def Stmt.callees : Stmt → List (Span × Span × String × List Json)
+  | .ret _ e | .effect _ e | .throw _ e => e.callees
+  | .tryStmt _ b h f => b.flatMap Stmt.callees ++ ((h.map (·.2)).getD []).flatMap Stmt.callees ++
+    (f.getD []).flatMap Stmt.callees
+  | .constants _ bs | .mutables _ bs => bs.flatMap fun b => b.init.callees
+  | .destructure _ target d init => init.callees ++
+    (d.toList ++ target.defaults).flatMap Expr.callees
+  | .ite _ c t e => c.callees ++ t.flatMap Stmt.callees ++ (e.getD []).flatMap Stmt.callees
+  | .loop _ c b u => c.callees ++ b.flatMap Stmt.callees ++ u.flatMap Stmt.callees
+  | .block _ _ b => b.flatMap Stmt.callees
+  -- The loop calls `%Iterate%` at its own span, reading it at the `for`
+  -- keyword, which is no expression and has no claim.
+  | .forOf p name _ i b => (p, (p.1, p.1 + "for".length), iterateName, []) :: i.callees ++
+    (b.flatMap Stmt.callees).filter (·.2.2.1 != name)
+  | .brk .. | .cont .. => []
+end
+
+/-- Closure conversion for acyclic forward captures. Only a literal closure's
+allocation can move; every potentially effectful initializer keeps source order.
+No pending binding may be read or exposed by another executing initializer.
+A deferred closure is allocated exactly once, after its captures exist. Source
+parameters are immutable in this fragment, and mutable outer captures retain
+cell identity. Thus delaying this unobservable allocation preserves captures,
+aliasing and effects (up to fresh-location renaming). Cyclic/escaping pending
+closures require an explicit initialization frame and are refused here. -/
+def parameterOrder (ps : List (String × Json)) (defaults : List (Nat × Expr)) :
+    Except String (List Nat) := do
+  let names := ps.map Prod.fst
+  let dependencies (i : Nat) := ((defaults.lookup i).map Expr.freeNames).getD []
+    |>.filter names.contains
+  let ready (done : List Nat) (i : Nat) :=
+    (dependencies i).all fun n => done.any fun j => names[j]? == some n
+  let mut done := []
+  let mut pending := []
+  for i in List.range ps.length do
+    if ready done i then done := done ++ [i]
+    else
+      match defaults.lookup i with
+      | some (.lambda ..) => pending := pending ++ [i]
+      | _ => throw "parameter default may only read initialized earlier parameters and captures; a pending closure cannot be invoked or exposed"
+    -- At most one new dependency is discharged per iteration; the bounded
+    -- fixpoint also handles chains of literal closures capturing one another.
+    for _ in List.range ps.length do
+      if let some j := pending.find? (ready done) then
+        done := done ++ [j]
+        pending := pending.filter (· != j)
+  if !pending.isEmpty then throw "cyclic parameter-default captures require an initialization frame"
+  return done
+
+/-- Singleton notation for small source-adapter fixtures. -/
+abbrev Expr.lam (p : Span) (name : String) (arg result : Json) (body : Expr) : Expr :=
+  .lambda p none [] [(name,arg)] [] false result body
+abbrev Expr.app (p : Span) (callee arg : Expr) : Expr := .call p callee [arg] [] []
+
+def Expr.span : Expr → Span
+  | .atEnv _ body | .letBody _ _ _ _ body | .seqBody _ _ body | .destructBody _ _ _ body => body.span
+  | .ifBody p _ _ _ _ | .done p | .throwBody p _ | .equality p _ _ _ | .singletonTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
+  | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
+  | .comma p _ _ | .inKeys p _ _ | .optional p _ _ _ | .block p _ => p
+  | .arrayLit p _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ _ => p
+  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .build p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ _ _ _ _ | .call p _ _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ | .construct p _ _ _ => p
+
 
 /-- The intrinsic a `for...in` iterates (`intrinsics.mts`):
 `(o: unknown) => readonly string[]`, the keys it visits, trusted. -/
@@ -766,23 +832,6 @@ def Stmt.pos : Stmt → Span
   | .ret p _ | .constants p _ | .mutables p _ | .destructure p _ _ _
   | .ite p _ _ _ | .loop p _ _ _ | .forOf p _ _ _ _ | .brk p _ | .cont p | .effect p _
   | .block p _ _ | .throw p _ | .tryStmt p _ _ _ => p
-
-/-- Every direct call of a named function in a statement. -/
-partial def Stmt.callees : Stmt → List (Span × Span × String × List Json)
-  | .ret _ e | .effect _ e | .throw _ e => e.callees
-  | .tryStmt _ b h f => b.flatMap Stmt.callees ++ ((h.map (·.2)).getD []).flatMap Stmt.callees ++
-    (f.getD []).flatMap Stmt.callees
-  | .constants _ bs | .mutables _ bs => bs.flatMap fun b => b.init.callees
-  | .destructure _ target d init => init.callees ++
-    (d.toList ++ target.defaults).flatMap Expr.callees
-  | .ite _ c t e => c.callees ++ t.flatMap Stmt.callees ++ (e.getD []).flatMap Stmt.callees
-  | .loop _ c b u => c.callees ++ b.flatMap Stmt.callees ++ u.flatMap Stmt.callees
-  | .block _ _ b => b.flatMap Stmt.callees
-  -- The loop calls `%Iterate%` at its own span, reading it at the `for`
-  -- keyword, which is no expression and has no claim.
-  | .forOf p name _ i b => (p, (p.1, p.1 + "for".length), iterateName, []) :: i.callees ++
-    (b.flatMap Stmt.callees).filter (·.2.2.1 != name)
-  | .brk .. | .cont .. => []
 
 /-- Singleton notation for small source-adapter fixtures. -/
 abbrev Stmt.cst (p : Span) (name : String) (annot : Option Json) (init : Expr) : Stmt :=
@@ -898,6 +947,13 @@ private def decodeSpreads (j : Json) (arity : Nat) (optional : List String) :
       throw "spread positions are listed once each, in order"
     pure spreads
 
+/-- A jump's or block's label: a string, or null for none. -/
+def decodeLabel (j : Json) : Except String (Option String) := do
+  match ← jField j "label" with
+  | .null => pure none
+  | l => some <$> jStr l
+
+mutual
 partial def decodeExpr (j : Json) : Except String Expr := do
   let p ← jSpan j "pos"
   match ← jStr (← jField j "k") with
@@ -1148,27 +1204,12 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     let result ← jField j "result"
     return .lambda p (receiver.map Prod.fst) typeParams params defaults (!restAt.isEmpty)
       (if result == .null then none else some result) body
-  | "doneBody" => return .done p
-  | "seqBody" => return .seqBody p (← decodeExpr (← jField j "init")) (← decodeExpr (← jField j "body"))
-  | "ifBody" =>
-    return .ifBody p (some (← jField j "result")) (← decodeExpr (← jField j "cond"))
-      (← decodeExpr (← jField j "then")) (← decodeExpr (← jField j "else_"))
   | "conditional" =>
     return .ifBody p none (← decodeExpr (← jField j "cond"))
       (← decodeExpr (← jField j "then")) (← decodeExpr (← jField j "else_"))
-  | "letBody" =>
-    let annot ← jField j "annot"
-    return .letBody p (← jStr (← jField j "name"))
-      (if annot == .null then none else some annot)
-      (← decodeExpr (← jField j "init")) (← decodeExpr (← jField j "body"))
-  | "returnBody" => return .atEnv p (← decodeExpr (← jField j "e"))
-  | "throwBody" => do
-    CellClaims.fieldsExactly j ["k","pos","e"]
-    return .throwBody p (← decodeExpr (← jField j "e"))
-  | "destructBody" =>
-    CellClaims.fieldsExactly j ["k","pos","target","init","body"]
-    return .destructBody p (← decodePattern decodeExpr (← jField j "target"))
-      (← decodeExpr (← jField j "init")) (← decodeExpr (← jField j "body"))
+  | "blockBody" => do
+    CellClaims.fieldsExactly j ["k","pos","body"]
+    return .block p (← (← jArr j "body").mapM decodeStmt)
   | "apply" => do
     let args ← (← jArr j "args").mapM decodeExpr
     let typeArgs ← decodeTypeArgs j
@@ -1214,12 +1255,6 @@ partial def decodeBindings (j : Json) : Except String (List Binding) := do
       if a == .null then none else some a, ← decodeExpr (← jField b "init")⟩ : Binding)
   if bindings.isEmpty then throw "a declaration needs a binding"
   return bindings
-
-/-- A jump's or block's label: a string, or null for none. -/
-def decodeLabel (j : Json) : Except String (Option String) := do
-  match ← jField j "label" with
-  | .null => pure none
-  | l => some <$> jStr l
 
 partial def decodeStmt (j : Json) : Except String Stmt := do
   let p ← jSpan j "pos"
@@ -1278,6 +1313,96 @@ partial def decodeStmt (j : Json) : Except String Stmt := do
       | _ => throw "malformed else branch"
     return .ite p (← decodeExpr (← jField j "cond")) thn els
   | _ => throw "statement outside the stateful fragment"
+end
+
+/-! ### Statements as an expression
+
+A closure body is statements, as a function body is, and the graph a closure
+code runs is compiled from them (`SourceExtraction`). The closures whose code
+is a term — a generic closure, one collecting a rest array, a class value's
+construct code, a callable object's function — read the statements as one
+expression instead: bindings, effects, patterns and `if`s, ending in returns,
+which is what their calculus terms can say. A statement they cannot say is
+refused with its reason. -/
+
+/-- A type annotation's JSON, for the `null` a return-free statement
+conditional yields. -/
+private def nullType (p : Span) : Json :=
+  Json.mkObj [("k", "atom"), ("name", "null"), ("span", toJson [p.1, p.2])]
+
+/-- Whether a statement list holds a `return` or `throw`, arms included. -/
+private partial def hasReturn (ss : List Stmt) : Bool :=
+  ss.any fun s => match s with
+    | .ret .. | .throw .. => true
+    | .ite _ _ t e => hasReturn t || hasReturn (e.getD [])
+    | _ => false
+
+/-- Whether a statement list ends by returning or throwing on every arm. -/
+private partial def endsInReturn (ss : List Stmt) : Bool :=
+  match ss.getLast? with
+  | some (.ret ..) | some (.throw ..) => true
+  | some (.ite _ _ t (some e)) => endsInReturn t && endsInReturn e
+  | _ => false
+
+mutual
+/-- The statements `ss`, then `tail`. With `allowReturn`, an `if` may return on
+one arm and complete on the other. -/
+private partial def prefixExpr (why : String) (result : Option Json) (constructor : Bool)
+    (ss : List Stmt) (tail : Expr) (allowReturn : Bool) : Except String Expr := do
+  let mut tail := tail
+  for st in ss.reverse do
+    match st with
+    | .loop .. | .forOf .. | .brk .. | .cont .. =>
+      throw s!"a loop in {why} is outside the fragment: its code is a term, not a graph"
+    | .block .. | .tryStmt .. =>
+      throw s!"a block, switch or try in {why} is outside the fragment: its code is a term, not a graph"
+    | .mutables .. =>
+      throw s!"a mutable local in {why} is outside the fragment: its code is a term, not a graph"
+    | .ite p c yes no =>
+      let no := no.getD []
+      let arm := fun (xs : List Stmt) => prefixExpr why result constructor xs (.done p) false
+      if !hasReturn yes && !hasReturn no then
+        tail := .seqBody p (.ifBody p (some (nullType p)) c (← arm yes) (← arm no)) tail
+      else if allowReturn && ((endsInReturn yes && !hasReturn no) || (endsInReturn no && !hasReturn yes)) then
+        let some r := result | throw "a closure returning from a branch needs a result annotation"
+        -- The falling arm finishes in its own scope before the continuation.
+        let resume := fun (xs : List Stmt) => do
+          if xs.isEmpty then pure tail else pure (Expr.seqBody p (← arm xs) tail)
+        tail := .ifBody p (some r) c
+          (← if endsInReturn yes then blockExpr why result constructor yes else resume yes)
+          (← if endsInReturn no then blockExpr why result constructor no else resume no)
+      else throw "closure branch needs one returning arm and one return-free arm"
+    | .destructure p target none init => tail := .destructBody p target init tail
+    | .destructure .. =>
+      throw s!"a parameter default in {why} is outside the fragment: its code is a term, not a graph"
+    | .constants p [b] => tail := .letBody p b.name b.annot b.init tail
+    | .constants .. => throw "one binding per `const` in a closure body"
+    | .effect p e => tail := .letBody p "" none e tail
+    | .ret .. | .throw .. => throw "statements after an unconditional return are outside the fragment"
+  return tail
+
+/-- Statements that return on every terminal arm, as one expression. A class
+value's construct code falls through its `return`s into the instance. -/
+private partial def blockExpr (why : String) (result : Option Json) (constructor : Bool)
+    (ss : List Stmt) : Except String Expr := do
+  let tail ← match ss.getLast? with
+    | some (.ret p e) => pure (if constructor then e else .atEnv p e)
+    | some (.throw p e) => pure (.throwBody p e)
+    | some (.ite p c t (some e)) =>
+      let some r := result | throw "a closure returning from a branch needs a result annotation"
+      pure (.ifBody p (some r) c (← blockExpr why result constructor t) (← blockExpr why result constructor e))
+    | _ => throw "closure block must return on both terminal arms"
+  prefixExpr why result constructor ss.dropLast tail true
+end
+
+/-- A closure's statements read as one expression, for a closure whose code
+is a term. `why` names that closure in a refusal; `result` is its result
+annotation. The statements' leading destructuring of hidden parameters is
+kept as patterns; a default among them is refused. -/
+def Expr.termBody (why : String) (result : Option Json) (constructor : Bool := false) :
+    Expr → Except String Expr
+  | .block _ ss => blockExpr why result constructor ss
+  | e => pure e
 
 def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
   let typeParams ← (← jArr j "typeParams").mapM decodeTypeParam

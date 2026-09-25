@@ -371,12 +371,18 @@ inductive Invoke : Frame → Tm → Prop where
   place of this one, the saved prefix before these actuals. -/
   | bound : isVal r = true → Values args →
       Invoke ⟨.objAt fs (.bound target r₀ pre), r, args⟩ (.invoke target r₀ (pre ++ args))
+  /-- Graph code starts its run at its entry, the receiver, the parameters and
+  the captures in its environment. -/
+  | graph : isVal r = true → Values args →
+      Invoke ⟨.objAt fs (.graph arity E K start caps), r, args⟩
+        (.goto E K start (r :: parameters arity args ++ caps) .nul)
 
 /-- The term each kind of code yields for a ready receiver and argument list. -/
 def dispatch : CallCode → Tm → List Tm → Option Tm
   | .closure arity body, r, args => some (bindParameters arity args r body)
   | .variadic fixed body, r, args => some (bindRest fixed args r body)
   | .bound target r₀ pre, _, args => some (.invoke target r₀ (pre ++ args))
+  | .graph arity E K start caps, r, args => some (.goto E K start (r :: parameters arity args ++ caps) .nul)
   -- A class constructor's plain call throws: nothing runs.
   | .closure _ _ .construct, _, _ => none
   | .absent, _, _ => none
@@ -386,6 +392,7 @@ theorem invoke_ready (hi : Invoke frame body) : frame.ready := by
   | closure hr hv => exact ⟨rfl, hr, hv⟩
   | variadic hr hv => exact ⟨rfl, hr, hv⟩
   | bound hr hv => exact ⟨rfl, hr, hv⟩
+  | graph hr hv => exact ⟨rfl, hr, hv⟩
 
 theorem invoke_deterministic (hi : Invoke frame body) (hi' : Invoke frame body') :
     body = body' := by
@@ -405,6 +412,7 @@ theorem invoke_iff : Invoke frame result ↔
     | closure hr hv => exact ⟨_, _, rfl, hr, hv, rfl⟩
     | variadic hr hv => exact ⟨_, _, rfl, hr, hv, rfl⟩
     | bound hr hv => exact ⟨_, _, rfl, hr, hv, rfl⟩
+    | graph hr hv => exact ⟨_, _, rfl, hr, hv, rfl⟩
   · rcases frame with ⟨f, r, args⟩
     rintro ⟨fs, code, hf, hr, hv, hd⟩
     cases hf
@@ -413,6 +421,7 @@ theorem invoke_iff : Invoke frame result ↔
     | closure arity body kind => cases kind <;> cases hd; exact .closure hr hv
     | variadic fixed body => cases hd; exact .variadic hr hv
     | bound target r₀ pre => cases hd; exact .bound hr hv
+    | graph arity E K start caps => cases hd; exact .graph hr hv
 
 theorem invoke_closed (hi : Invoke frame result) (hf : Scoped 0 frame.callee)
     (hr : Scoped 0 frame.recv) (ha : ∀ a ∈ frame.args, Scoped 0 a) : Scoped 0 result := by
@@ -437,6 +446,14 @@ theorem invoke_closed (hi : Invoke frame result) (hf : Scoped 0 frame.callee)
     rcases List.mem_append.mp hm with hm | hm
     · exact hf.2.2 a hm
     · exact ha a hm
+  | graph _ _ =>
+    simp only [Scoped, scopedArgs_iff] at hf ⊢
+    refine ⟨fun a hm => ?_, trivial⟩
+    rcases List.mem_cons.mp hm with rfl | hm
+    · exact hr
+    rcases List.mem_append.mp hm with hm | hm
+    · exact parameters_property (by trivial) ha a hm
+    · exact hf a hm
 
 /-- Prepared list dispatch is a step of the maintained term machine. -/
 theorem Invoke.step (hi : Invoke frame body) (h : Heap) :
@@ -445,6 +462,7 @@ theorem Invoke.step (hi : Invoke frame body) (h : Heap) :
   | closure hr hv => exact .callV hr hv
   | variadic hr hv => exact .callRest hr hv
   | bound hr hv => exact .callBound hr hv
+  | graph hr hv => exact .callGraph hr hv
 
 /-- A ready native call can only dispatch its saved code, without a heap change. -/
 theorem ready_step_iff (hf : frame.ready) :
@@ -460,6 +478,7 @@ theorem ready_step_iff (hf : frame.ready) :
     | callV hr hv => exact ⟨rfl, .closure hr hv⟩
     | callRest hr hv => exact ⟨rfl, .variadic hr hv⟩
     | callBound hr hv => exact ⟨rfl, .bound hr hv⟩
+    | callGraph hr hv => exact ⟨rfl, .graph hr hv⟩
     | callSpread _ _ he _ _ => exact False.elim (spread_not_values he hf.2.2)
   · rintro ⟨rfl, hi⟩
     exact hi.step _
@@ -492,6 +511,7 @@ theorem call_step_iff : Step h (.invoke f r args) h' result ↔
     | callV hr hv => exact Or.inr ⟨rfl, .closure hr hv⟩
     | callRest hr hv => exact Or.inr ⟨rfl, .variadic hr hv⟩
     | callBound hr hv => exact Or.inr ⟨rfl, .bound hr hv⟩
+    | callGraph hr hv => exact Or.inr ⟨rfl, .graph hr hv⟩
     | callSpread hv hr he hp hre => exact Or.inl ⟨_, .splice hv hr he hp hre, rfl⟩
   · rintro (⟨frame, hp, rfl⟩ | ⟨rfl, hi⟩)
     · exact hp.step

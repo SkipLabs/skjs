@@ -97,10 +97,12 @@ private def wrongClaims : SourceClaims.Function := {claims with
   | .ok r => r.obligations.any fun q => q.pos == (12,20) &&
       q.sequent.term == .letE (.var 2) (.letE (.var 2)
         (.letE (.write (.var 1) (.var 0)) (.var 1)))
+-- The read's graph code: the captured cell (slot 2), bound, then its field
+-- read from the bound slot, then returned; the capture at the cell union.
 #guard match extractNormalizedFn table (source false) claims with
   | .error _ => false
-  | .ok r => r.obligations.any fun q => q.pos == (24,27) &&
-      q.sequent.term == .letE (.var 2) (.read (.var 0))
+  | .ok r => r.codes.any fun (q : RequestJson.CodeRequest) =>
+      q.entry.exprs == [.var 0, .readAt valueField (.var 0), .var 2] && q.entry.captures == [[4,5]]
 
 -- Statement-entry observations name the captured binding. Nested closures and
 -- preceding expression statements add parameter and anonymous evaluation slots;
@@ -124,13 +126,8 @@ private def entryClaims (nested : Bool) (R : Ty Nat) : SourceClaims.Function :=
 #guard [false,true].all fun mutate => [false,true].all fun nested =>
   (extractNormalizedFn table (entrySource mutate nested) (entryClaims nested [0])).toOption.isSome &&
   !ok (check (entrySource mutate nested) (entryClaims nested [0]))
-#guard match extractNormalizedFn table (entrySource true true) (entryClaims true [0,1,2]) with
-  | .error _ => false
-  | .ok r =>
-    (r.obligations.any fun q => q.pos == (23,24) && q.role == "heap-observation" &&
-      q.sequent.context == [[0,1,2]] && q.context == [⟨"cell",none⟩]) &&
-    (r.obligations.any fun q => q.pos == (24,27) &&
-      q.sequent.term == .letE (.var 5) (.read (.var 0)))
+-- The program this pins was the term-closure lowering's; closures are graph code now,
+-- and the pipeline cases check what the lowering produces.
 -- A false entry environment cannot erase the Boolean-capable alternative,
 -- even when its separate contents observation is valid for the narrowed type.
 private def narrowedEntry : SourceClaims.Function :=

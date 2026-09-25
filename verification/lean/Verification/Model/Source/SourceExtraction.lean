@@ -83,6 +83,13 @@ private def valueSlot (scope : List ScopeBinding) (name : String) : Option Nat :
   let (i,.value) ← resolve scope name | none
   return i
 
+/-- What the source says of one code request's graph, as of a unit's: its
+source map, its statement entries' knowledge and its cuts. -/
+structure CodeSource where
+  sourceMap : SourceMap := []
+  assertions : List (Nat × HeapKnowledge.Knowledge) := []
+  cuts : List Nat := []
+
 private structure Built where
   /-- The graph under construction: the claims' table, grown by annotations. -/
   types : SourceTypes.Table
@@ -107,6 +114,13 @@ private structure Built where
   the scope of the `try`), and the length of the `try`'s scope. Every node
   emitted meanwhile whose expression may throw names it. -/
   handler : Option (Target × Nat) := none
+  /-- The graph code the body creates, nested code first, each at each
+  signature it offers, and what the source says of each code's graph. -/
+  codes : List CodeRequest := []
+  codeSources : List CodeSource := []
+  /-- Plans for nodes whose derivation the lowering already knows: search
+  hints only, rendered where they can be and never obligations. -/
+  nodePlans : List DirectProof.Plan := []
 
 /-- Source-validation failures that already know their source site use the same
 structured channel as proof obligations. Keeping the diagnostic construction
@@ -426,6 +440,7 @@ private def singletonTag (G : PositiveGraphs.NormalGraph Nat) (A : Ty Nat) : Opt
     | [.bigintLit i] => some (.bigintEq i)
     | _ => none
 
+mutual
 /-- A claimed singleton operand (null, undefined, a number, a string, a Boolean
 or a bigint) selects a tag-test implementation, never an assumption: both
 operands remain in the program, in source order, and their expression
@@ -528,6 +543,7 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
   | .destructBody p t i b => do
     let t ← t.mapDefaultsM (comparisonsExpr fc)
     return .destructBody p t (← comparisonsExpr fc i) (← comparisonsExpr fc b)
+  | .block p ss => return .block p (← ss.mapM (comparisonsStmt fc))
 
 private partial def comparisonsStmt (fc : SourceClaims.Function) (s : Fragment.Stmt) :
     Compiler Fragment.Stmt := do
@@ -551,7 +567,9 @@ private partial def comparisonsStmt (fc : SourceClaims.Function) (s : Fragment.S
     let h ← h.mapM fun (param, c) => do return (param, ← c.mapM (comparisonsStmt fc))
     return .tryStmt p (← b.mapM (comparisonsStmt fc)) h (← f.mapM (·.mapM (comparisonsStmt fc)))
   | .brk .. | .cont .. => pure s
+end
 
+mutual
 /-- Storage is selected from source assignments, including writes in nested
 closures. Active-name shadowing is rejected by the lowering, so a matching
 name cannot silently designate a different binding. Producer claims cannot
@@ -589,6 +607,7 @@ private partial def assignsExpr (name : String) : Fragment.Expr → Bool
   | .applyWithReceiver _ f r list =>
     assignsExpr name f || assignsExpr name r || (list.map (assignsExpr name)).getD false
   | .ifBody _ _ c t e => assignsExpr name c || assignsExpr name t || assignsExpr name e
+  | .block _ ss => ss.any (assignsStmt name)
 
 private partial def assignsStmt (name : String) : Fragment.Stmt → Bool
   | .ret _ e | .effect _ e | .throw _ e => assignsExpr name e
@@ -603,6 +622,7 @@ private partial def assignsStmt (name : String) : Fragment.Stmt → Bool
   | .forOf _ _ _ i b => assignsExpr name i || b.any (assignsStmt name)
   | .block _ _ b => b.any (assignsStmt name)
   | .brk .. | .cont .. => false
+end
 
 /-- Every name a statement's expressions mention, bound or not: a superset of
 the module functions its body can reach. -/
@@ -716,6 +736,14 @@ private def commonFields (G : Verification.Model.PositiveGraphs.NormalGraph Nat)
   | .refs fs _ _ _ _ _ :: _ =>
     (fs.map Prod.fst).eraseDups.filter (HeapExpressionRules.fieldOperand (PositiveRules.expand G A))
   | _ => []
+
+/-- A node whose derivation the lowering knows: its plan, cast to the node's
+claim, joins the search's known evidence, so the node is not searched. -/
+private def emitPlanned (pos : Span) (plan : DirectProof.Plan) (k : Continuation)
+    (Γ : List (Ty Nat)) (A : Ty Nat) (role : String := "node-typing")
+    (scope : List ScopeBinding := []) : Compiler Target := do
+  modify fun s => { s with nodePlans := s.nodePlans ++ [DirectProof.cast Γ A plan] }
+  emitAt pos plan.term k Γ A role (scope := scope)
 
 /-- The cells this lowering allocated sit at locations no other object in
 scope has: a private cell's identity never becomes a source value, and every
@@ -926,7 +954,7 @@ private partial def readOnly : Fragment.Expr → Bool
   | .ifBody _ _ c t e => readOnly c && readOnly t && readOnly e
   | .destructBody _ t a b => readOnly a && t.defaults.all readOnly && readOnly b
   | .alloc .. | .build .. | .write .. | .indexWrite .. | .update .. | .logicalAssign .. | .assign .. | .arrayLit .. | .elemWrite .. | .arrayAssign .. | .nullishAssign .. | .lambda .. | .withValue .. | .bindWithReceiver ..
-  | .callWithReceiver .. | .applyWithReceiver .. | .call .. | .invoke .. | .ctor .. | .construct .. => false
+  | .callWithReceiver .. | .applyWithReceiver .. | .call .. | .invoke .. | .ctor .. | .construct .. | .block .. => false
 
 /-- The other operand of a singleton comparison, when saving the tested read
 before it changes nothing: a literal, a name, or one field read. Each is
@@ -1437,7 +1465,825 @@ private def elemReadPlan (G : PositiveGraphs.NormalGraph Nat) (H : List (Ty Nat)
     | none, none => throw "an element read at an index no contract names"
   pure (DirectProof.node H (.elemAt store.term (.num b)) E rule [store, DirectProof.node H (.num b) I .numLit])
 
+
+/-- Leaving a block drops its local slots simultaneously. Active-name shadowing
+is gated until the export can identify hidden bindings independently. With no
+continuation the body completes rather than returns, producing `undefined`; that
+is emitted as an exit claiming the declared result, attributed to the function
+because an empty body has no statement to point at. -/
+private def leave (pos : Span) (R : Ty Nat) (scope : List ScopeBinding)
+    (tail : Option (Target × List ScopeBinding)) : Compiler Target := do
+  match tail with
+  | none =>
+    let exit ← emitAt pos .undef .ret [] R "completion"
+    return ⟨exit.label, some []⟩
+  | some (target, outer) =>
+    -- A binding is found by its descriptor first: a parameter may hide a
+    -- module constant of its name, and the constant's slot is its own.
+    let slots ← outer.mapM fun b =>
+      match (sources scope).idxOf? b.source, (names scope).idxOf? b.source.name with
+      | some i, _ | none, some i => pure i
+      | none, none => throw s!"internal extraction error: lost outer binding '{b.source.name}'"
+    return ⟨target.label, some slots⟩
+
+/-- Branch binding pushes the actual tested value. For a source variable test,
+map that variable to the pushed value (the same immutable value), exposing its
+proved singleton refinement. Other slots retain their ordinary identities. -/
+private def branchMapping (width : Nat) (tested : Option Nat) (target : Target) : Target :=
+  ⟨target.label, some ((target.mapping.getD (List.range width)).map fun i =>
+    if tested == some i then 0 else i+1)⟩
+
+/-- Keep a pre-existing singleton fact rather than replacing it with the
+branch witness. In particular, an impossible opposite edge must not force a
+contradictory replacement of an otherwise valid immutable binding. -/
+private def testedSlot (scope : List ScopeBinding) (Γ : List (Ty Nat)) (cond : Fragment.Expr) : Option Nat :=
+  do
+    let (i, _) ← conditionVariable scope cond
+    if Γ[i]? == some [1] || Γ[i]? == some [2] then none else some i
+
+/-- Share polarity handling between conditionals and loop heads. The saved
+condition is in slot zero. Only a syntactically identified immutable variable
+may be replaced by the recovered Boolean witness. -/
+private def emitBranch (scope : List ScopeBinding) (Γ : List (Ty Nat)) (cond : Fragment.Expr)
+    (A : Ty Nat) (yes no : Target) : Compiler Target := do
+  let G := SourceTypes.graph (← table)
+  if let some (i, tag, equal) := conditionTag G scope Γ cond then
+    let some C := Γ[i]? | throw "internal tag-guard slot mismatch"
+    let adapt := fun t =>
+      let mapped := branchMapping scope.length (some i) t
+      ⟨mapped.label, some ((mapped.mapping.getD []).map
+        (fun j => if j == 0 then 0 else j+1))⟩
+    -- The source predicate has already run and all operand claims were checked.
+    -- Reading the same immutable variable observes its tag without repeating
+    -- any source expression or trusting the saved Boolean's annotation.
+    return ← emitAt cond.span (.var (i+1))
+      (.tagBind tag (adapt (if equal then yes else no)) (adapt (if equal then no else yes)))
+      (A::Γ) C "tag-dispatch" (scope := held ⟨"",some cond.span⟩ :: scope)
+  let tested := testedSlot scope Γ cond
+  -- Branch on the saved value; the edge maps discard its older copy and
+  -- retain the new refinement slot supplied by branchBind.
+  let adapt := fun t =>
+    let mapped := branchMapping scope.length tested t
+    ⟨mapped.label, some ((mapped.mapping.getD []).map
+      (fun i => if i == 0 then 0 else i+1))⟩
+  -- Negation is handled by swapping successors in compileCondition, so this
+  -- dispatch always observes the saved operand itself, retaining its read link.
+  -- A value that is not a Boolean is a condition by its truthiness.
+  let transfer := if BranchRefinement.onlyBoolean G A then Continuation.branchBind (adapt yes) (adapt no)
+    else .tagBind .truthy (adapt yes) (adapt no)
+  emitAt cond.span (.var 0) transfer (A::Γ) A
+    (scope := held ⟨"",some cond.span⟩ :: scope)
+
+/-- Facts justified on the path to a short-circuit operand. Only immutable
+source bindings are refined; every generated edge checks this candidate context.
+A true conjunction / false disjunction establishes both operand outcomes. The
+other outcomes deliberately retain the input context rather than compute a join. -/
+private def conditionContext (G : PositiveGraphs.NormalGraph Nat) (scope : List ScopeBinding) (Γ : List (Ty Nat))
+    (cond : Fragment.Expr) (answer : Bool) : List (Ty Nat) :=
+  match cond with
+  | .not _ e => conditionContext G scope Γ e (!answer)
+  | .logical _ andOp left right =>
+    if answer == andOp then
+      conditionContext G scope (conditionContext G scope Γ left answer) right answer
+    else Γ
+  | _ =>
+    if let some (i, tag, equal) := conditionTag G scope Γ cond then
+      Γ.set i (BranchRefinement.tagSlice G (Γ[i]?.getD []) tag (answer == equal))
+    else if let some i := testedSlot scope Γ cond then
+      Γ.set i (if answer then [1] else [2])
+    else Γ
+
+/-- The span of the first read of `name` an expression always evaluates,
+before any branch or closure: its claim is what the name holds on entry to
+the expression. -/
+private partial def firstUse (name : String) : Fragment.Expr → Option Span
+  | .var p n => if n == name then some p else none
+  | .lit .. | .done .. | .lambda .. | .ctor .. => none
+  | .ifBody _ _ c _ _ => firstUse name c
+  | .logical _ _ a _ | .coalesce _ a _ | .optional _ _ a _ => firstUse name a
+  | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .atEnv _ e
+  | .throwBody _ e => firstUse name e
+  | .construct _ f args _ | .call _ f args _ _ | .invoke _ f args _ _ =>
+    (f :: args).findSome? (firstUse name)
+  | .alloc _ _ es | .arrayLit _ es => es.findSome? (firstUse name)
+  | .equality _ _ a b | .singletonTest _ _ _ _ a b | .write _ _ a b | .index _ _ a b
+  | .elemAt _ a b | .arith _ _ a b | .comma _ a b | .inKeys _ a b =>
+    (firstUse name a).orElse fun _ => firstUse name b
+  | _ => none
+
+/-- A conditional's arm starts where the condition answered: each immutable
+source binding the arm reads before any branch of its own holds what the
+producer claims that read at, which the edge from the condition checks as it
+checks a statement entry's claims (a slice by the test, a field slice, a
+present key); the others, the condition's own refinement. -/
+private def armContext (fc : SourceClaims.Function) (scope : List ScopeBinding)
+    (Γ : List (Ty Nat)) (arm : Fragment.Expr) : Compiler (List (Ty Nat)) :=
+  scope.zipIdx.foldlM (fun Δ (b,i) => do
+    match b.storage, firstUse b.source.name arm with
+    | .value, some p =>
+      if b.source.name == "" || isSnapshot b.source.name then return Δ
+      match fc.exprs.lookup p with
+      | some _ => return Δ.set i (← claimAt fc p)
+      | none => return Δ
+    | _, _ => return Δ) Γ
+
+/-- The fresh array an array pattern's rest collects from the array at slot
+`obj` of `A`: the positions from `start` on, read into a store. They are a
+fixed list of reads where `A` is one tuple of required positions, whose
+length is exact (`listT`); an array of any other length has a slice of
+unknown length for its rest, which no list of reads is. The array is claimed
+at the rest's span, like an array literal. The store's term, the store's
+type and the array's claimed type. -/
+private def restArray (fc : SourceClaims.Function) (A : Ty Nat) (obj start : Nat) (restPos : Span) :
+    Compiler (Tm × Ty Nat × Ty Nat) := do
+  let G := SourceTypes.graph (← table)
+  let some S := storeOf G A | throw "an array rest requires an array contract"
+  let [.list T []] := PositiveRules.expand G S | throw restOfUnknownLength
+  if !T.optional.isEmpty || T.rest.isSome then throw restOfUnknownLength
+  let C ← claimAt fc restPos
+  let some Sr := storeOf (SourceTypes.graph (← table)) C | throw "an array rest needs an array claim"
+  let reads ← (List.range (T.required.length - start)).mapM fun j => do
+    return Tm.elemAt (.readAt SourceTypes.storeField (.var obj)) (← indexTerm (start + j))
+  let _ ← arrayObject Sr
+  return (.arrLit reads, Sr, C)
+
+/-- What a literal position of an array reads, by the array's contract: a
+required position reads at its type, an optional or rest position at its type
+or `undefined`, and a position no contract names is refused. A union of
+array contracts reads at the union of their positions. -/
+private def positionRead (G : PositiveGraphs.NormalGraph Nat) (A : Ty Nat) (i : Nat) :
+    Compiler (Ty Nat) := do
+  -- The index is a literal of the read, typed at its singleton; the producer
+  -- finds that singleton among the request's types.
+  let label ← lower (SourceTypes.use (.numLit (bitsOfNat i)))
+  modify fun s => { s with hints := label :: s.hints }
+  let alts ← (PositiveRules.expand G A).mapM fun c => do
+    let store ← match c with
+      | .refs fs [] vs _ _ _ => match fs.lookup SourceTypes.storeField <|> vs.lookup SourceTypes.storeField with
+        | some S => pure S
+        | none => throw "an array pattern requires an array contract"
+      | _ => throw "an array pattern requires an array contract"
+    (PositiveRules.expand G store).mapM fun c => do
+      let .list T [] := c | throw "an array pattern requires an array contract"
+      match T.required[i]?, ProgramTyping.positionTy T i with
+      | some E, _ => pure E
+      | none, some E => pure (E ++ [3])
+      | none, none => throw s!"position {i} is outside the array's contract"
+  pure alts.flatten.flatten.eraseDups
+
+/-- An operand of a split comparison: a slot, the field read from it, and
+the source expression. -/
+private abbrev SplitOperand := (Nat × Option PropKey) × Fragment.Expr
+
+/-- A strict comparison of two operands neither of which is a singleton, both
+read without effect (a name, or a field of a name), one of them claimed at a
+union of singletons, dispatches as the tag tests it amounts to: the split
+operand, the other operand, and the split operand's singletons. An immutable
+name is split first, as before; otherwise a field read. -/
+private def equalitySplit (fc : SourceClaims.Function) (scope : List ScopeBinding) (Γ : List (Ty Nat))
+    (l r : Fragment.Expr) :
+    Compiler (Option (SplitOperand × SplitOperand × List Tag)) := do
+  let G := SourceTypes.graph (← table)
+  let operand : Fragment.Expr → Option (Nat × Option PropKey)
+    | .var _ name => (valueSlot scope name).map (·, none)
+    | .read _ f (.var _ name) => (valueSlot scope name).map (·, some f)
+    | _ => none
+  let singletons := fun (C : Ty Nat) =>
+    if C.isEmpty then none else C.mapM fun a => singletonTag G [a]
+  let attempt := fun (s o : Fragment.Expr) (field : Bool) => do
+    let some sop := operand s | return none
+    let some oop := operand o | return none
+    let C ← match sop with
+      | (k, none) => if field then pure none else pure Γ[k]?
+      | (_, some _) => if field then (some <$> exprType fc s) else pure none
+    match C.bind singletons with
+    | some tags => return some ((sop, s), (oop, o), tags)
+    | none => return none
+  for (s, o, field) in [(r, l, false), (l, r, false), (r, l, true), (l, r, true)] do
+    if let some x ← attempt s o field then return some x
+  return none
+
+/-- A strict comparison of an immutable name with an operand that is not read
+without effect (a call, say) claimed at a union of singletons: the operand is
+evaluated once, into a slot of its own, and split there; the name, which no
+effect changes, is the other operand. -/
+private def savedSplit (fc : SourceClaims.Function) (scope : List ScopeBinding)
+    (l r : Fragment.Expr) : Compiler (Option (Nat × Fragment.Expr × Fragment.Expr × List Tag)) := do
+  let G := SourceTypes.graph (← table)
+  let attempt := fun (n e : Fragment.Expr) => do
+    let .var _ name := n | return none
+    let some k := valueSlot scope name | return none
+    match e with
+    | .var .. | .lit .. | .read _ _ (.var ..) => return none
+    | _ =>
+      let C ← exprType fc e
+      if C.isEmpty then return none
+      match C.mapM fun a => singletonTag G [a] with
+      | some tags => return some (k, n, e, tags)
+      | none => return none
+  if let some x ← attempt l r then return some x
+  attempt r l
+
+
+/-- Where `continue` and `break` go, with the lexical scope at each
+destination: the nearest enclosing loop's next iteration and its end, if there
+is a loop, and the end of each enclosing labeled block, innermost first. An
+end is `none` where it is the function's. -/
+private structure Finalizer where
+  /-- The `finally` block, and the `try` it belongs to. -/
+  stmts : List Fragment.Stmt
+  pos : Span
+  /-- The lexical context of the `try`, which the block runs in: its scope,
+  handler and jump targets. -/
+  scope : List ScopeBinding
+  handler : Option (Target × Nat)
+  loop : Option ((Target × List ScopeBinding) × Option (Target × List ScopeBinding))
+  labels : List (String × Option (Target × List ScopeBinding))
+  loopDepth : Nat
+  labelDepths : List (String × Nat)
+
+private structure LoopTargets where
+  loop : Option ((Target × List ScopeBinding) × Option (Target × List ScopeBinding)) := none
+  labels : List (String × Option (Target × List ScopeBinding)) := []
+  /-- The `finally` blocks of the `try` statements around this point,
+  innermost first: a `return` runs each of them before it returns. -/
+  finalizers : List Finalizer := []
+  /-- How many of those were around the nearest loop, and around each labeled
+  block: a jump to one of them past a `finally` is refused. -/
+  loopDepth : Nat := 0
+  labelDepths : List (String × Nat) := []
+
+/-- Whether a statement list never completes normally: it ends in a jump, a
+`return` or a `throw`, or in a statement all of whose ways on do. An
+unlabeled block is its statements; a labeled one may be left by a `break`. -/
+private partial def abrupt (ss : List Fragment.Stmt) : Bool :=
+  match ss.getLast? with
+  | some (.ret ..) | some (.throw ..) | some (.brk ..) | some (.cont ..) => true
+  | some (.ite _ _ t (some e)) => abrupt t && abrupt e
+  | some (.block _ none b) => abrupt b
+  | some (.tryStmt _ b h f) =>
+    (f.map abrupt).getD false || (abrupt b && (h.map (abrupt ·.2)).getD true)
+  | _ => false
+
+/-- Entering a loop: its targets, behind as many `finally` blocks as now. -/
+private def LoopTargets.enterLoop (t : LoopTargets)
+    (l : (Target × List ScopeBinding) × Option (Target × List ScopeBinding)) : LoopTargets :=
+  { t with loop := some l, loopDepth := t.finalizers.length }
+
+/-- Entering a labeled block, likewise. -/
+private def LoopTargets.enterLabel (t : LoopTargets) (label : String)
+    (done : Option (Target × List ScopeBinding)) : LoopTargets :=
+  { t with labels := (label, done) :: t.labels,
+           labelDepths := (label, t.finalizers.length) :: t.labelDepths }
+
+/-- Compile with `h` as the handler of every node emitted. -/
+private def withHandler (h : Option (Target × Nat)) (act : Compiler α) : Compiler α := do
+  let saved := (← get).handler
+  modify fun s => { s with handler := h }
+  let r ← act
+  modify fun s => { s with handler := saved }
+  return r
+
+/-- A jump from `scope` to a target over `targetScope`: the target's slots,
+read through its own mapping, found by name in `scope`. -/
+private def jumpTo (scope : List ScopeBinding) (target : Target) (targetScope : List ScopeBinding) :
+    Compiler Target := do
+  let slots ← targetScope.mapM fun b => match (names scope).idxOf? b.source.name with
+    | some i => pure i
+    | none => throw s!"internal extraction error: lost binding '{b.source.name}'"
+  return ⟨target.label, some ((target.mapping.getD (List.range targetScope.length)).map
+    fun i => slots[i]?.getD 0)⟩
+
+/-- The entry of the first statement a list runs: a block has none of its
+own, so it is its first statement's, or, empty, the next one's. -/
+private partial def firstEntry : List Fragment.Stmt → Option Nat
+  | [] => none
+  | .block _ _ inner :: rest => (firstEntry inner).orElse fun _ => firstEntry rest
+  | s :: _ => some s.pos.1
+
+/-- The same continuation with slot `k` of its scope and context removed:
+what follows a pattern no longer holds the value it destructured. -/
+private def dropSlot (k : Nat) (after : List ScopeBinding → List (Ty Nat) → Compiler Target)
+    (scope : List ScopeBinding) (Γ : List (Ty Nat)) : Compiler Target := do
+  let next ← after (scope.eraseIdx k) (Γ.eraseIdx k)
+  pure ⟨next.label, some ((next.mapping.getD (List.range (Γ.length-1))).map
+    (fun j => if j < k then j else j+1))⟩
+
+private def traversalBudget : List Fragment.Stmt → Nat
+  | [] => 1
+  | .brk .. :: rest | .cont .. :: rest | .ret .. :: rest | .constants .. :: rest | .mutables .. :: rest | .destructure .. :: rest | .effect .. :: rest => 1 + traversalBudget rest
+  | .loop _ _ loopBody update :: rest =>
+      1 + traversalBudget loopBody + traversalBudget update + traversalBudget rest
+  | .forOf _ _ _ _ inner :: rest | .block _ _ inner :: rest =>
+      1 + traversalBudget inner + traversalBudget rest
+  | .throw .. :: rest => 1 + traversalBudget rest
+  -- A `finally` block is compiled on each way out, at most as deep as the
+  -- body and handler around the `return` that runs it.
+  | .tryStmt _ b none none :: rest => 1 + traversalBudget b + traversalBudget rest
+  | .tryStmt _ b (some (_, c)) none :: rest =>
+      1 + traversalBudget b + traversalBudget c + traversalBudget rest
+  | .tryStmt _ b none (some f) :: rest =>
+      2 + traversalBudget b + 3 * traversalBudget f + traversalBudget rest
+  | .tryStmt _ b (some (_, c)) (some f) :: rest =>
+      2 + traversalBudget b + traversalBudget c + 3 * traversalBudget f + traversalBudget rest
+  | .ite _ _ thn none :: rest => 2 + traversalBudget thn + traversalBudget rest
+  | .ite _ _ thn (some els) :: rest =>
+      1 + traversalBudget thn + traversalBudget els + traversalBudget rest
+termination_by stmts => sizeOf stmts
+
+
+/-- A source-level refusal from a pure pass, in the compiler. -/
+private def liftSource (x : Except String α) : Compiler α :=
+  match x with
+  | .ok a => pure a
+  | .error e => throw e
+
+/-- A lambda whose body is statements, read as an expression for a closure
+whose code is a term (`Fragment.Expr.termBody`). `why` names that closure. -/
+private def termLambda (why : String) : Fragment.Expr → Compiler Fragment.Expr
+  | .lambda p receiver tps ps defaults rest ret b => do
+    return .lambda p receiver tps ps defaults rest ret (← liftSource (b.termBody why ret))
+  | e => pure e
+
+/-- `if (x.f !== c) return x.f;`, the arm one `return` of the tested read:
+the scope with the read saved, at the slice of its type the test's arm
+admits, its context, the read, the test over the saved value, the returned
+read and the `return`'s span. The saved read can stand for the returned one:
+between the two nothing runs (the other operand is a literal, a name or a
+field read), so both read the same value. Only a tag test, which refines the
+saved slot on its edge, and a slice within the returned read's own claim. -/
+private def guardedReturn (fc : SourceClaims.Function) (scope : List ScopeBinding)
+    (Γ : List (Ty Nat)) (cond : Fragment.Expr) (thn : List Fragment.Stmt) (loopTargets : LoopTargets) :
+    Compiler (Option (List ScopeBinding × List (Ty Nat) × Fragment.Expr × Fragment.Expr ×
+      Fragment.Expr × Span)) := do
+  let some (snapshot, read, tested) := readGuard scope cond | return none
+  let [.ret rp e@(.read _ fld (.var _ name))] := thn | return none
+  if !loopTargets.finalizers.isEmpty || readSnapshot name fld != some snapshot then return none
+  let B ← exprType fc read
+  let K := B :: Γ
+  let probe := held ⟨snapshot, some read.span⟩ :: scope
+  let G := SourceTypes.graph (← table)
+  let some (0, tag, equal) := conditionTag G probe K tested | return none
+  let slice := BranchRefinement.tagSlice G B tag equal
+  let T ← table
+  if sameMeaning T slice B || !within T slice (← exprType fc e) then return none
+  let ds := { held ⟨snapshot, some read.span⟩ with fixed := some slice } :: scope
+  return some (ds, K, read, tested, e, rp)
+
 mutual
+/-- One graph a closure's code runs, at one of its signatures: its statements
+compiled as a function body is (`body`), from an entry whose context is exactly
+the frame the signature describes — the receiver, the parameters, then the
+captures — into a program of its own. The unit's program and its state resume
+afterwards. A parameter the body assigns is a private cell, allocated at entry
+as a function's is. -/
+private partial def codeGraph (fc : SourceClaims.Function) (pos : Span) (receiver : ScopeBinding)
+    (params : List ScopeBinding) (paramTypes : List (Ty Nat)) (captures : List ScopeBinding)
+    (Cs : List (Ty Nat)) (Rt R : Ty Nat) (stmts : List Fragment.Stmt) :
+    Compiler (Program × Nat × List (PointClaim Nat) × CodeSource) := do
+  let saved ← get
+  set { saved with program := [], claims := [], sourceMap := [], assertions := [], cuts := [], handler := none }
+  let paramScope ← (params.zip paramTypes).mapM fun (b, contract) => do
+    if stmts.any (assignsStmt b.source.name) then
+      let reference ← lower (do return [← CellClaims.reference [(valueField, contract)]])
+      pure { b with storage := .cell contract reference }
+    else pure b
+  let bodyScope := receiver :: paramScope ++ captures
+  let inputs := Rt :: paramTypes ++ Cs
+  let fullScope := receiver :: params ++ captures
+  let mut first ← body (traversalBudget stmts) fc R bodyScope stmts none {}
+  -- Each assigned parameter gets one fresh private cell at entry, in place of
+  -- its slot; the caller still supplies the value.
+  for (b,i) in bodyScope.zipIdx.reverse do
+    if let .cell _ reference := b.storage then
+      if i == 0 || i > params.length then continue
+      let Γ := (bodyScope.zip inputs).zipIdx.map fun (entry : (ScopeBinding × Ty Nat) × Nat) =>
+        let ((binding,A),j) := entry
+        if j < i then match binding.storage with
+          | .cell _ ref => if j == 0 || j > params.length then A else ref | .value => A
+        else A
+      let mapping := (List.range fullScope.length).map fun j => if j == i then 0 else j+1
+      first ← emitAt pos (.makeAt .absent [valueField] [.var i])
+        (.bind ⟨first.label,some mapping⟩) Γ reference "parameter-allocation"
+        (scope := fullScope)
+  let entry ← emitAt pos .nul (.effect first) inputs [0] "closure-entry" (scope := fullScope)
+  let st ← get
+  let result := (st.program, entry.label, st.claims,
+    ({ sourceMap := st.sourceMap, assertions := st.assertions, cuts := st.cuts } : CodeSource))
+  set { st with program := saved.program, claims := saved.claims, sourceMap := saved.sourceMap, assertions := saved.assertions, cuts := saved.cuts, handler := saved.handler }
+  return result
+
+/-- A closure whose code is a term: a generic closure's, whose certificate is
+universal over its binders, one collecting a rest array or binding rest
+positions, one with a parameter default. Its body is checked once per
+signature it offers, as an expression. -/
+private partial def closureTerm (fc : SourceClaims.Function) (scope : List ScopeBinding)
+    (Γ : List (Ty Nat)) (e : Fragment.Expr) : Compiler DirectProof.Plan := do
+  let A ← closureType fc e
+  let G := SourceTypes.graph (← table)
+  match e with
+  | .lambda pos receiverAnnot typeParams params defaults rest ret body => do
+    let paramNames := params.map Prod.fst
+    -- An ordinary function names its receiver slot `this`: its body and any
+    -- arrow inside it resolve `this` to that slot, the arrow as a capture.
+    -- An arrow's slot is anonymous, so its `this` resolves outward.
+    let receiverName := if receiverAnnot.isSome then "this" else ""
+    -- The receiver the source states, `top` for an arrow, which never reads
+    -- its own, and for an ordinary function that states none.
+    -- A quantified closure takes each arrow's receiver from its checked
+    -- instantiation; only a ground annotation is lowered here.
+    let Rsource ← match receiverAnnot with
+      | some annot =>
+        if GenericSource.mentionsParam annot || !typeParams.isEmpty then
+          pure [← lower (SourceTypes.use .top)]
+        else lower (Fragment.callableType annot)
+      | none => pure [← lower (SourceTypes.use .top)]
+    if !distinct paramNames || paramNames.any (fun name => name == "" || name == "undefined" || (names scope).contains name) then
+      throw "shadowing or duplicate closure parameter is outside the fragment"
+    -- A rest parameter whose contract is a mutable `T[]` collects any number
+    -- of actuals: the closure has variadic code, and its body finds the store
+    -- the call collected in slot 0, above the fixed parameters. The body's
+    -- first step wraps the store into the array the parameter names.
+    if let some (restName, restJson) := (if rest then params.getLast? else none) then
+      if let some elementJson := Fragment.arrayElement restJson (readonly := true) then
+        let fixedParams := params.dropLast
+        let compileRestBody (claims : SourceClaims.Function) (Rt : Ty Nat) (fixed : List (Ty Nat))
+            (restTy S R : Ty Nat) (initialized : List (Ty Nat)) : Compiler DirectProof.Plan := do
+          -- The frame: the collected store, the receiver, which an arrow
+          -- never reads, then the fixed parameters.
+          let frame := S :: Rt :: fixed ++ Γ
+          let frameScope := held ⟨"", some pos⟩ :: held ⟨receiverName, some pos⟩ ::
+            (fixedParams.map fun (name,_) => held ⟨if defaults.isEmpty then name else "", some pos⟩) ++ scope
+          let proto ← prototypeSlot frameScope
+          let O ← arrayObject S
+          let wrap := DirectProof.cast frame restTy (DirectProof.node frame (arrayTerm proto) O .alloc
+            [DirectProof.var frame 0 S, DirectProof.var frame proto [SourceTypes.arrayProtoLabel]])
+          let mut ds := held ⟨if defaults.isEmpty then restName else "", some pos⟩ :: frameScope
+          let mut H := restTy :: frame
+          let mut prologue : List (List (Ty Nat) × DirectProof.Plan) := [(frame, wrap)]
+          let order ← match Fragment.parameterOrder params defaults with
+            | .ok order => pure order
+            | .error reason => throw (locatedRefusal (← table) pos .bindingAnnotation reason)
+          for i in order do
+            if i == fixedParams.length then
+              ds := ds.set (prologue.length - 1) (held ⟨restName, some pos⟩)
+            else
+              let some (name, _) := fixedParams[i]? | throw "invalid parameter schedule"
+              match defaults.lookup i with
+              | none => ds := ds.set (prologue.length + 2 + i) (held ⟨name, some pos⟩)
+              | some d =>
+                let some B := initialized[i]? | throw "missing initialized rest-prefix contract"
+                let dp ← closureExpr claims ds H d
+                let value ← defaultValuePlan (SourceTypes.graph (← table)) H (prologue.length + 2 + i)
+                  B (DirectProof.cast H B dp)
+                prologue := prologue ++ [(H, value)]
+                H := B :: H
+                ds := held ⟨name, some pos⟩ :: ds
+          let previous := (← get).resultOverride
+          modify fun st => {st with resultOverride := some (body.span, R)}
+          let b ← closureExpr claims ds H body
+          modify fun st => {st with resultOverride := previous}
+          let annotation := DirectProof.cast H R b
+          obligation pos annotation.goal (some annotation) "closure-result" ds
+          return prologue.foldr (fun (K, value) acc => DirectProof.letE K value acc) annotation
+        let polymorphic := !typeParams.isEmpty ||
+          (params.map Prod.snd ++ ret.toList).any GenericSource.mentionsParam
+        if polymorphic then
+          let some overlays := fc.arrowClaims.lookup pos
+            | throw "quantified rest checking requires the scheme evidence path"
+          let [.arrs [] signatures] := PositiveRules.expand G A
+            | throw "quantified rest claims must name variadic signatures"
+          if signatures.isEmpty || signatures.length != overlays.length then
+            throw "per-signature claims do not match the quantified rest signatures"
+          let mut bodies := []
+          let mut arrays := []
+          let mut term := none
+          for ((Rt, Ds, _, R), overlay) in signatures.zip overlays do
+            if Ds.length != fixedParams.length then throw "variadic fixed-prefix arity differs from source"
+            let some initialized := overlay.initializedParams
+              | throw "missing instantiated parameter annotations"
+            let some restTy := initialized.getLast? | throw "missing instantiated rest annotation"
+            if initialized.length != params.length then throw "instantiated rest parameter count differs from source"
+            let some S := storeOf (SourceTypes.graph (← table)) restTy
+              | throw "a rest parameter needs an array contract"
+            let b ← compileRestBody (fc.withOverlay overlay) Rt Ds restTy S R initialized
+            if let some existing := term then
+              if existing != b.term then throw "a rest body lowers differently under one of its instantiations"
+            else term := some b.term
+            bodies := bodies ++ [b]
+            arrays := arrays ++ [S]
+          let some t := term | throw "quantified rest has no instantiation"
+          return DirectProof.node Γ (.make (.variadic fixedParams.length t) .nul) A
+            (.funRest arrays) bodies
+        let initialized ← fixedParams.mapM fun p => lower (Fragment.callableType p.2)
+        let fixed := initialized.zipIdx.map fun (B, i) =>
+          if (defaults.lookup i).isSome then (B ++ [3]).eraseDups.mergeSort (· ≤ ·) else B
+        let E ← lower (Fragment.callableType elementJson)
+        let restTy ← lower (Fragment.translate restJson)
+        let some ret := ret
+          | throw (locatedRefusal (← table) pos .bindingAnnotation
+              "a closure collecting a rest array needs its result annotation")
+        let R ← lower (Fragment.callableType ret)
+        let rest ← lower (SourceTypes.use (.pack ⟨[], [], some E, false⟩ []))
+        let own ← lower (SourceTypes.use (.arrs [] [(Rsource, fixed, [rest], R)]))
+        let some S := storeOf (SourceTypes.graph (← table)) restTy
+          | throw "a rest parameter needs an array contract"
+        modify fun st => {st with hints := own :: restTy ++ S ++ st.hints}
+        let b ← compileRestBody fc Rsource fixed restTy S R initialized
+        return DirectProof.node Γ (.make (.variadic fixed.length b.term) .nul) [own]
+          (.funRest [S]) [b]
+    -- A rest parameter stands for the required positions of its tuple
+    -- contract: the signature has one position per element, and the body sees
+    -- the array this closure allocates from them, as the call allocates one at
+    -- run time. Its own slots are anonymous, like a defaulted parameter's.
+    let restElements : List Json ← if rest then
+        match params.getLast? with
+        | some (_, ty) => match Fragment.tupleRequired ty with
+          | .ok es => pure es
+          | .error reason => throw (locatedRefusal (← table) pos .bindingAnnotation reason)
+        | none => throw "a rest parameter needs a parameter"
+      else pure []
+    let fixedParams := if rest then params.dropLast else params
+    let restName := if rest then (params.getLast?.map Prod.fst).getD "" else ""
+    -- With defaults, no parameter name is initially available. Raw argument
+    -- slots are not initialized source bindings: names become visible only
+    -- after initialization. Literal forward-capturing closures use the checked
+    -- dependency schedule below; potentially effectful defaults keep order.
+    let defaulted := defaults.map Prod.fst
+    if rest && (defaulted.contains (params.length - 1) || !typeParams.isEmpty) then
+      throw "a rest parameter is neither defaulted nor quantified"
+    -- The frame: the receiver, which an arrow never reads (a source `this`
+    -- in an arrow is a capture), then the parameters, then the captures.
+    let inner := held ⟨receiverName, some pos⟩ :: ((fixedParams.map fun (name,_) =>
+      held ⟨if defaults.isEmpty then name else "", some pos⟩) ++
+      restElements.map (fun _ => held ⟨"", some pos⟩)) ++ scope
+    -- A closure with one set of interior claims per arrow: a compiled scheme
+    -- elimination, whose claims are already substituted for each checked
+    -- instantiation, or an overloaded closure, whose producer states what its
+    -- body claims under each advertised signature. The body is lowered at each
+    -- arrow's own types rather than re-cast from a single claim that no
+    -- polymorphic or overloaded body can carry. For a scheme the universal
+    -- introduction gate ran before this point, so these derivations are its
+    -- consequences, never its justification.
+    -- A compiled scheme has no ground annotation to lower: its arrows are the
+    -- checked instantiations, and each carries its own substituted claims. An
+    -- overloaded closure does have one, so it takes the ordinary path below
+    -- and uses its per-arrow claims there.
+    let compileBody (fc : SourceClaims.Function) (result : Option (Ty Nat))
+        (H : List (Ty Nat)) (initialized : Option (List (Ty Nat)) := none) : Compiler DirectProof.Plan := do
+      let previousResult := (← get).resultOverride
+      modify fun st => { st with resultOverride := result.map (body.span, ·) }
+      let mut ds := inner
+      let mut ctx := H
+      let mut prologue : List (List (Ty Nat) × DirectProof.Plan) := []
+      let order ← match Fragment.parameterOrder fixedParams defaults with
+        | .ok order => pure order
+        | .error reason => throw (locatedRefusal (← table) pos .bindingAnnotation reason)
+      for i in order do
+        let some (name, sourceType) := fixedParams[i]? | throw "invalid parameter schedule"
+        match defaults.lookup i with
+        | none =>
+          ds := ds.set (prologue.length + 1 + i) (held ⟨name,some pos⟩)
+        | some d =>
+          let B ← match initialized with
+            | some ps => match ps[i]? with
+              | some B => pure B
+              | none => throw "missing instantiated parameter annotation"
+            | none => lower (Fragment.callableType sourceType)
+          let dp ← closureExpr fc ds ctx d
+          let value ← defaultValuePlan G ctx (prologue.length + 1 + i) B (DirectProof.cast ctx B dp)
+          prologue := prologue ++ [(ctx,value)]
+          ctx := B :: ctx
+          ds := held ⟨name,some pos⟩ :: ds
+      -- The rest array is allocated last, after every earlier parameter is
+      -- initialized: one store holding the surplus arguments, then the object
+      -- that holds the store, which is what a fresh array is here.
+      if rest then
+        let restTy ← match params.getLast? with
+          | some (_, ty) => lower (Fragment.translate ty)
+          | none => throw "a rest parameter needs a parameter"
+        -- The annotation may have grown the table, so the graph is read again.
+        let some S := storeOf (SourceTypes.graph (← table)) restTy
+          | throw "a rest parameter needs an array contract"
+        let elements ← restElements.mapM fun ty => lower (Fragment.callableType ty)
+        let slots := elements.zipIdx.map fun (E,j) =>
+          DirectProof.var ctx (prologue.length + 1 + fixedParams.length + j) E
+        let store := DirectProof.node ctx (.arrLit (slots.map (·.term))) S .arrLit slots
+        prologue := prologue ++ [(ctx,store)]
+        ctx := S :: ctx
+        ds := held ⟨"",some pos⟩ :: ds
+        let proto ← prototypeSlot ds
+        let O ← arrayObject S
+        let object := DirectProof.cast ctx restTy (DirectProof.node ctx (arrayTerm proto) O .alloc
+          [DirectProof.var ctx 0 S, DirectProof.var ctx proto [SourceTypes.arrayProtoLabel]])
+        prologue := prologue ++ [(ctx,object)]
+        ctx := restTy :: ctx
+        ds := held ⟨restName,some pos⟩ :: ds
+      let b ← closureExpr fc ds ctx body
+      modify fun st => { st with resultOverride := previousResult }
+      pure (prologue.foldr (fun (K,value) acc => DirectProof.letE K value acc) b)
+    let polymorphic := !typeParams.isEmpty ||
+      (params.map Prod.snd ++ ret.toList).any GenericSource.mentionsParam
+    if let some overlays := (if polymorphic then fc.arrowClaims.lookup pos else none) then
+      let [.arrs L []] := PositiveRules.expand G A | throw "per-arrow claims must name source arrows"
+      if L.isEmpty then throw "per-arrow claims name no arrow"
+      if overlays.length != L.length then
+        throw "per-arrow interior claims do not match the claimed arrows"
+      let mut bodies := []
+      let mut term := none
+      for ((Rt,Di,Ri),overlay) in L.zip overlays do
+        if Di.length != paramNames.length then
+          throw "an arrow's arity differs from its closure"
+        let bi ← compileBody (fc.withOverlay overlay) none (Rt :: Di ++ Γ) overlay.initializedParams
+        if let some existing := term then
+          if existing != bi.term then throw "a scheme body lowers differently under one of its instantiations"
+        else term := some bi.term
+        bodies := bodies ++ [DirectProof.cast (Rt :: Di ++ Γ) Ri bi]
+      let some t := term | throw "per-arrow claims name no arrow"
+      pure (DirectProof.node Γ (.make (.closure paramNames.length t) .nul) A .funE bodies)
+    else do
+      if !typeParams.isEmpty then
+        throw "quantified closure checking requires the scheme evidence path"
+      if !defaults.isEmpty && (params.map Prod.snd ++ ret.toList).any GenericSource.mentionsParam then
+        throw "a defaulted parameter under a scheme binder is outside the fragment"
+      -- A variadic signature is checked at its fixed row: calls through it
+      -- pass further actuals, which the code discards (`offerRows`).
+      let [.arrs L S] := PositiveRules.expand G A | throw "closure claim must name a source arrow"
+      let L := ProgramTyping.offerRows L S
+      -- A closure annotated with an enclosing scheme's binder has no ground
+      -- annotation to lower. Scheme introduction required its claim to be
+      -- exactly that annotation, and the compiled overlay is the claim under
+      -- the checked substitution, so the one compiled arrow supplies its types.
+      -- A closure without a result annotation has none to lower (`R` is
+      -- none): its claimed arrows propose the result, and each is checked.
+      let (Ds, R) ← if (params.map Prod.snd ++ ret.toList).any GenericSource.mentionsParam then
+          match L with
+          | [(_, Di, Ri)] => pure (Di, some Ri)
+          | _ => throw "a closure annotated with a scheme binder must carry one substituted arrow"
+        else do
+          pure (← fixedParams.mapM (fun p => lower (Fragment.callableType p.2)) >>= fun fixed => do
+              return fixed ++ (← restElements.mapM fun ty => lower (Fragment.callableType ty)),
+            ← ret.mapM fun ret => lower (Fragment.callableType ret))
+      -- The advertised domain at a defaulted position also admits `undefined`:
+      -- a call may omit it, and the default is what replaces the value bound
+      -- there. The body still reads the declared type.
+      let Ds := Ds.zipIdx.map fun (D,i) =>
+        if defaulted.contains i then ((D ++ [3]).mergeSort (· ≤ ·)).eraseDups else D
+      -- A claim may offer more parameters than the closure takes: calls
+      -- discard the actuals past them. The ones it takes are the source's.
+      let T ← table
+      if L.isEmpty || !L.all (fun (_,Di,_) => Ds.length ≤ Di.length &&
+          ((Di.take Ds.length).zip Ds).all (fun (D,A) => within T D A)) then
+        throw "closure signature claim is outside the source annotation"
+      -- An ordinary function may be claimed at fewer receivers than it
+      -- states, never at more: its body reads the one it is given.
+      let anyReceiver := Rsource == [← lower (SourceTypes.use .top)]
+      if !anyReceiver && !L.all (fun (Rt,_,_) => Rt.all Rsource.contains) then
+        throw (locatedRefusal (← table) pos .bindingAnnotation
+          "closure receiver claim is outside the source annotation")
+      -- One prologue binding per defaulted parameter, in the checked schedule,
+      -- so reads use initialized values and effects retain source order.
+      -- An overloaded closure states what its body claims under each of its
+      -- signatures: one body, a separate obligation at each arrow, and the
+      -- same lowered term for all of them.
+      let overlays := (fc.arrowClaims.lookup pos).getD []
+      if !overlays.isEmpty && overlays.length != L.length then
+        throw "per-arrow interior claims do not match the claimed arrows"
+      -- The annotation's own derivation is at the receiver the source
+      -- states: top for an arrow, which never reads it. Without an
+      -- annotation there is no such derivation: the claimed arrows are all
+      -- the closure promises, and each has its own below.
+      let annotation ← R.mapM fun R => do
+        let b ← compileBody fc none (Rsource :: Ds ++ Γ)
+        let annotation := DirectProof.cast (Rsource :: Ds ++ Γ) R b
+        obligation pos annotation.goal (some annotation) "closure-result" inner
+        pure annotation
+      let bodies ← L.zipIdx.mapM fun ((Rt,Di,Ri),i) => do
+        let row := match overlays[i]? with
+          | some o => fc.withOverlay o
+          | none => fc
+        match annotation with
+        | some annotation =>
+          if some (Rt,Di,Ri) == R.map (Rsource,Ds,·) && overlays.isEmpty then return annotation
+        | none => pure ()
+        -- Each signature's derivation is about the same body at that
+        -- signature's result, which a block body cannot read from its one
+        -- enclosing annotation. Without an annotation the block's result is
+        -- the arrow's.
+        let plan ← compileBody row (if overlays.isEmpty && R.isSome then none else some Ri)
+          (Rt :: Di.take Ds.length ++ Γ)
+        return DirectProof.cast (Rt :: Di.take Ds.length ++ Γ) Ri plan
+      -- One body, one lowered term: every signature's derivation is about
+      -- the same closure. A claim that changes the lowering is refused here
+      -- rather than failing as an unexplained search.
+      let terms := (annotation.toList ++ bodies).map (·.goal.term)
+      let some t := terms.head? | throw "closure claim must name a source arrow"
+      if terms.any (· != t) then
+        throw "an overloaded closure's body lowers differently under one of its signatures"
+      pure (DirectProof.node Γ (.make (.closure Ds.length t) .nul) A .funE bodies)
+  | _ => throw "internal extraction error: a closure's code is a lambda's"
+
+/-- The graph of a closure whose body is an expression, `x => e`: the nodes
+of `return e`, compiled as that statement's are, entered from the frame the
+signature describes. -/
+private partial def exprCode (fc : SourceClaims.Function) (pos : Span) (receiver : ScopeBinding)
+    (params : List ScopeBinding) (paramTypes : List (Ty Nat)) (captures : List ScopeBinding)
+    (Cs : List (Ty Nat)) (Rt R : Ty Nat) (e : Fragment.Expr) :
+    Compiler (Program × Nat × List (PointClaim Nat) × CodeSource) := do
+  let saved ← get
+  set { saved with program := [], claims := [], sourceMap := [], assertions := [], cuts := [], handler := none }
+  let bodyScope := receiver :: params ++ captures
+  let inputs := Rt :: paramTypes ++ Cs
+  -- The expression's nodes, as a `return e` statement's, ending in the
+  -- return of its value.
+  let A ← exprType fc e
+  let done ← emitAt e.span (.var 0) .ret (A::inputs) R "return-contract"
+    (scope := held ⟨"",some e.span⟩ :: bodyScope)
+  let ret ← compileExpr fc bodyScope inputs e done
+  let st ← get
+  let result := (st.program, ret.label, st.claims,
+    ({ sourceMap := st.sourceMap, assertions := st.assertions, cuts := st.cuts } : CodeSource))
+  set { st with program := saved.program, claims := saved.claims, sourceMap := saved.sourceMap, assertions := saved.assertions, cuts := saved.cuts, handler := saved.handler }
+  return result
+
+/-- **A closure whose body is a graph.** Its code is the graph its statements
+compile to (`CallCode.graph`), checked at each signature the closure's claim
+offers from that signature's frame, the captures at their types here: one
+code request per signature, whose certificate the unit's code table records.
+The captures are the named bindings in scope; a closure reads nothing else.
+The closure's value is the allocation of that code with them
+(`Rule.funGraph`). -/
+private partial def graphClosure (fc : SourceClaims.Function) (scope : List ScopeBinding)
+    (Γ : List (Ty Nat)) (pos : Span) (receiverAnnot : Option Json) (params : List (String × Json))
+    (body : Fragment.Expr) (A : Ty Nat) : Compiler DirectProof.Plan := do
+  let G := SourceTypes.graph (← table)
+  let paramNames := params.map Prod.fst
+  if !distinct paramNames || paramNames.any (fun name => name == "" || name == "undefined" || (names scope).contains name) then
+    throw "shadowing or duplicate closure parameter is outside the fragment"
+  -- An ordinary function's receiver is `this` in its body; an arrow's is
+  -- anonymous, so its `this` is the one it captures.
+  let receiverName := if receiverAnnot.isSome then "this" else ""
+  let top ← lower (SourceTypes.use .top)
+  let Rsource ← match receiverAnnot with
+    | some annot => lower (Fragment.callableType annot)
+    | none => pure [top]
+  let [.arrs L S] := PositiveRules.expand G A | throw "closure claim must name a source arrow"
+  let rows := ProgramTyping.offerRows L S
+  let Ds ← params.mapM fun p => lower (Fragment.callableType p.2)
+  -- A claim may offer more parameters than the closure takes: calls discard
+  -- the actuals past them. The ones it takes are the source's.
+  let T ← table
+  if rows.isEmpty || !rows.all (fun (_,Di,_) => Ds.length ≤ Di.length &&
+      ((Di.take Ds.length).zip Ds).all (fun (D,B) => within T D B)) then
+    throw "closure signature claim is outside the source annotation"
+  -- An ordinary function may be claimed at fewer receivers than it states,
+  -- never at more: its body reads the one it is given.
+  if Rsource != [top] && !rows.all (fun (Rt,_,_) => Rt.all Rsource.contains) then
+    throw (locatedRefusal (← table) pos .bindingAnnotation
+      "closure receiver claim is outside the source annotation")
+  let overlays := (fc.arrowClaims.lookup pos).getD []
+  if !overlays.isEmpty && overlays.length != rows.length then
+    throw "per-arrow interior claims do not match the claimed arrows"
+  -- The captures: the named bindings in scope the body reads (a class's
+  -- method binding, `C.m`, which `super.m(...)` reads, included), and the
+  -- prototypes a literal or a primitive's member reads through. A read
+  -- snapshot is an observation of this point, not a binding the body reads:
+  -- no source read names one.
+  let reads := body.freeNames
+  let caps := scope.zipIdx.filter fun (b, _) =>
+    b.source.name != "" &&
+      (reads.contains b.source.name || SourceTypes.prototypeNames.contains b.source.name)
+  let Cs ← caps.mapM fun (_, i) => match Γ[i]? with
+    | some C => pure C
+    | none => throw "internal closure slot mismatch"
+  -- A captured receiver keeps its type here: no statement claim names `this`.
+  let captures : List ScopeBinding := (caps.zip Cs).map fun ((b, _), C) =>
+    if b.source.name == "this" then { b with fixed := some C } else b
+  let paramScope : List ScopeBinding := paramNames.map fun name => held ⟨name, some pos⟩
+  let arity := params.length
+  let mut code : Option (Program × Nat) := none
+  for ((Rt, Di, Ri), i) in rows.zipIdx do
+    let row := match overlays[i]? with
+      | some o => fc.withOverlay o
+      | none => fc
+    let receiver : ScopeBinding := { source := ⟨receiverName, some pos⟩, fixed := some Rt }
+    let (P, start, claims, source) ← match body with
+      | .block _ stmts => codeGraph row pos receiver paramScope (Di.take arity) captures Cs Rt Ri stmts
+      | e => exprCode row pos receiver paramScope (Di.take arity) captures Cs Rt Ri e
+    match code with
+    | some c =>
+      if c != (P, start) then
+        throw "a closure's body lowers differently under one of its signatures"
+    | none => code := some (P, start)
+    let entry : CodeEntry Nat := ⟨arity, P.map (·.expression), P.map fun n => (n.continuation, n.handler),
+      start, Cs, (Rt, Di, Ri)⟩
+    modify fun st => { st with codes := st.codes ++ [⟨entry, claims⟩], codeSources := st.codeSources ++ [source] }
+  let some (P, start) := code | throw "closure claim must name a source arrow"
+  let term := Tm.make (.graph arity (P.map (·.expression)) (P.map fun n => (n.continuation, n.handler))
+    start (caps.map fun (_, i) => .var i)) .nul
+  pure (DirectProof.node Γ term A .funGraph
+    ((caps.zip Cs).map fun ((_, i), C) => DirectProof.var Γ i C))
+
 /-- Build compositional proofs for lambda bodies and source ternaries without
 losing their individual claims. Requirements use the lexical context at the occurrence; synthetic let
 slots are introduced only after the operand supplying their type is checked. -/
@@ -1452,6 +2298,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
       | _ => persistentObservation ⟨"",some e.span⟩ e.span A fld R
   let p ← match e with
   | .equality .. => throw "internal unresolved equality"
+  | .block .. => throw "internal extraction error: statements outside a closure body"
   | .var _ name =>
     match resolve scope name with
     | some (i, .value) => pure (DirectProof.var Γ i A)
@@ -2059,7 +2906,11 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
       obligation pos ⟨Γ,.var i,B⟩ (some (DirectProof.var Γ i B)) "closure-entry" scope
     closureExpr fc scope H body
   | .withValue pos fn initial functionType bagType => do
-    let f ← closureExpr fc scope Γ fn
+    -- The function's code is a term: its allocation carries the bag.
+    let fn' ← termLambda "a function initializing a callable object" fn
+    let f ← closureTerm fc scope Γ fn'
+    let fplan := DirectProof.cast Γ (← closureType fc fn') f
+    obligation fn.span fplan.goal (some fplan) "expression-claim" scope
     let property ← closureExpr fc scope Γ initial
     let F ← lower (Fragment.translate functionType)
     let PRef ← lower (Fragment.translate bagType)
@@ -2116,6 +2967,9 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     -- `undefined` in the receiver slot `new` passes, then the parameters.
     let .lambda _ none [] params [] false (some ret) body := lam
       | throw "a class value is a constructor lambda with plain parameters"
+    -- Construct code is a term: the constructor's statements are read as one
+    -- expression, falling through into the instance.
+    let body ← liftSource (body.termBody "a class constructor" (some ret) true)
     let paramNames := params.map Prod.fst
     if !distinct paramNames || paramNames.any (fun name => name == "" || name == "undefined" || (names scope).contains name) then
       throw "shadowing or duplicate constructor parameter is outside the fragment"
@@ -2152,305 +3006,31 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     pure (DirectProof.node Γ (.construct callee.term (actuals.map (·.term))) R .construct
       (callee :: ((actuals.zip Ds).map fun (a,D) => DirectProof.cast Γ D a)
         ++ omittedPremises Γ Ds actuals.length))
-  | .lambda pos receiverAnnot typeParams params defaults rest ret body => do
-    let paramNames := params.map Prod.fst
-    -- An ordinary function names its receiver slot `this`: its body and any
-    -- arrow inside it resolve `this` to that slot, the arrow as a capture.
-    -- An arrow's slot is anonymous, so its `this` resolves outward.
-    let receiverName := if receiverAnnot.isSome then "this" else ""
-    -- The receiver the source states, `top` for an arrow, which never reads
-    -- its own, and for an ordinary function that states none.
-    -- A quantified closure takes each arrow's receiver from its checked
-    -- instantiation; only a ground annotation is lowered here.
-    let Rsource ← match receiverAnnot with
-      | some annot =>
-        if GenericSource.mentionsParam annot || !typeParams.isEmpty then
-          pure [← lower (SourceTypes.use .top)]
-        else lower (Fragment.callableType annot)
-      | none => pure [← lower (SourceTypes.use .top)]
-    if !distinct paramNames || paramNames.any (fun name => name == "" || name == "undefined" || (names scope).contains name) then
-      throw "shadowing or duplicate closure parameter is outside the fragment"
-    -- A rest parameter whose contract is a mutable `T[]` collects any number
-    -- of actuals: the closure has variadic code, and its body finds the store
-    -- the call collected in slot 0, above the fixed parameters. The body's
-    -- first step wraps the store into the array the parameter names.
-    if let some (restName, restJson) := (if rest then params.getLast? else none) then
-      if let some elementJson := Fragment.arrayElement restJson (readonly := true) then
-        let fixedParams := params.dropLast
-        let compileRestBody (claims : SourceClaims.Function) (Rt : Ty Nat) (fixed : List (Ty Nat))
-            (restTy S R : Ty Nat) (initialized : List (Ty Nat)) : Compiler DirectProof.Plan := do
-          -- The frame: the collected store, the receiver, which an arrow
-          -- never reads, then the fixed parameters.
-          let frame := S :: Rt :: fixed ++ Γ
-          let frameScope := held ⟨"", some pos⟩ :: held ⟨receiverName, some pos⟩ ::
-            (fixedParams.map fun (name,_) => held ⟨if defaults.isEmpty then name else "", some pos⟩) ++ scope
-          let proto ← prototypeSlot frameScope
-          let O ← arrayObject S
-          let wrap := DirectProof.cast frame restTy (DirectProof.node frame (arrayTerm proto) O .alloc
-            [DirectProof.var frame 0 S, DirectProof.var frame proto [SourceTypes.arrayProtoLabel]])
-          let mut ds := held ⟨if defaults.isEmpty then restName else "", some pos⟩ :: frameScope
-          let mut H := restTy :: frame
-          let mut prologue : List (List (Ty Nat) × DirectProof.Plan) := [(frame, wrap)]
-          let order ← match Fragment.parameterOrder params defaults with
-            | .ok order => pure order
-            | .error reason => throw (locatedRefusal (← table) pos .bindingAnnotation reason)
-          for i in order do
-            if i == fixedParams.length then
-              ds := ds.set (prologue.length - 1) (held ⟨restName, some pos⟩)
-            else
-              let some (name, _) := fixedParams[i]? | throw "invalid parameter schedule"
-              match defaults.lookup i with
-              | none => ds := ds.set (prologue.length + 2 + i) (held ⟨name, some pos⟩)
-              | some d =>
-                let some B := initialized[i]? | throw "missing initialized rest-prefix contract"
-                let dp ← closureExpr claims ds H d
-                let value ← defaultValuePlan (SourceTypes.graph (← table)) H (prologue.length + 2 + i)
-                  B (DirectProof.cast H B dp)
-                prologue := prologue ++ [(H, value)]
-                H := B :: H
-                ds := held ⟨name, some pos⟩ :: ds
-          let previous := (← get).resultOverride
-          modify fun st => {st with resultOverride := some (body.span, R)}
-          let b ← closureExpr claims ds H body
-          modify fun st => {st with resultOverride := previous}
-          let annotation := DirectProof.cast H R b
-          obligation pos annotation.goal (some annotation) "closure-result" ds
-          return prologue.foldr (fun (K, value) acc => DirectProof.letE K value acc) annotation
-        let polymorphic := !typeParams.isEmpty ||
-          (params.map Prod.snd ++ ret.toList).any GenericSource.mentionsParam
-        if polymorphic then
-          let some overlays := fc.arrowClaims.lookup pos
-            | throw "quantified rest checking requires the scheme evidence path"
-          let [.arrs [] signatures] := PositiveRules.expand G A
-            | throw "quantified rest claims must name variadic signatures"
-          if signatures.isEmpty || signatures.length != overlays.length then
-            throw "per-signature claims do not match the quantified rest signatures"
-          let mut bodies := []
-          let mut arrays := []
-          let mut term := none
-          for ((Rt, Ds, _, R), overlay) in signatures.zip overlays do
-            if Ds.length != fixedParams.length then throw "variadic fixed-prefix arity differs from source"
-            let some initialized := overlay.initializedParams
-              | throw "missing instantiated parameter annotations"
-            let some restTy := initialized.getLast? | throw "missing instantiated rest annotation"
-            if initialized.length != params.length then throw "instantiated rest parameter count differs from source"
-            let some S := storeOf (SourceTypes.graph (← table)) restTy
-              | throw "a rest parameter needs an array contract"
-            let b ← compileRestBody (fc.withOverlay overlay) Rt Ds restTy S R initialized
-            if let some existing := term then
-              if existing != b.term then throw "a rest body lowers differently under one of its instantiations"
-            else term := some b.term
-            bodies := bodies ++ [b]
-            arrays := arrays ++ [S]
-          let some t := term | throw "quantified rest has no instantiation"
-          return DirectProof.node Γ (.make (.variadic fixedParams.length t) .nul) A
-            (.funRest arrays) bodies
-        let initialized ← fixedParams.mapM fun p => lower (Fragment.callableType p.2)
-        let fixed := initialized.zipIdx.map fun (B, i) =>
-          if (defaults.lookup i).isSome then (B ++ [3]).eraseDups.mergeSort (· ≤ ·) else B
-        let E ← lower (Fragment.callableType elementJson)
-        let restTy ← lower (Fragment.translate restJson)
-        let some ret := ret
-          | throw (locatedRefusal (← table) pos .bindingAnnotation
-              "a closure collecting a rest array needs its result annotation")
-        let R ← lower (Fragment.callableType ret)
-        let rest ← lower (SourceTypes.use (.pack ⟨[], [], some E, false⟩ []))
-        let own ← lower (SourceTypes.use (.arrs [] [(Rsource, fixed, [rest], R)]))
-        let some S := storeOf (SourceTypes.graph (← table)) restTy
-          | throw "a rest parameter needs an array contract"
-        modify fun st => {st with hints := own :: restTy ++ S ++ st.hints}
-        let b ← compileRestBody fc Rsource fixed restTy S R initialized
-        return DirectProof.node Γ (.make (.variadic fixed.length b.term) .nul) [own]
-          (.funRest [S]) [b]
-    -- A rest parameter stands for the required positions of its tuple
-    -- contract: the signature has one position per element, and the body sees
-    -- the array this closure allocates from them, as the call allocates one at
-    -- run time. Its own slots are anonymous, like a defaulted parameter's.
-    let restElements : List Json ← if rest then
-        match params.getLast? with
-        | some (_, ty) => match Fragment.tupleRequired ty with
-          | .ok es => pure es
-          | .error reason => throw (locatedRefusal (← table) pos .bindingAnnotation reason)
-        | none => throw "a rest parameter needs a parameter"
-      else pure []
-    let fixedParams := if rest then params.dropLast else params
-    let restName := if rest then (params.getLast?.map Prod.fst).getD "" else ""
-    -- With defaults, no parameter name is initially available. Raw argument
-    -- slots are not initialized source bindings: names become visible only
-    -- after initialization. Literal forward-capturing closures use the checked
-    -- dependency schedule below; potentially effectful defaults keep order.
-    let defaulted := defaults.map Prod.fst
-    if rest && (defaulted.contains (params.length - 1) || !typeParams.isEmpty) then
-      throw "a rest parameter is neither defaulted nor quantified"
-    -- The frame: the receiver, which an arrow never reads (a source `this`
-    -- in an arrow is a capture), then the parameters, then the captures.
-    let inner := held ⟨receiverName, some pos⟩ :: ((fixedParams.map fun (name,_) =>
-      held ⟨if defaults.isEmpty then name else "", some pos⟩) ++
-      restElements.map (fun _ => held ⟨"", some pos⟩)) ++ scope
-    -- A closure with one set of interior claims per arrow: a compiled scheme
-    -- elimination, whose claims are already substituted for each checked
-    -- instantiation, or an overloaded closure, whose producer states what its
-    -- body claims under each advertised signature. The body is lowered at each
-    -- arrow's own types rather than re-cast from a single claim that no
-    -- polymorphic or overloaded body can carry. For a scheme the universal
-    -- introduction gate ran before this point, so these derivations are its
-    -- consequences, never its justification.
-    -- A compiled scheme has no ground annotation to lower: its arrows are the
-    -- checked instantiations, and each carries its own substituted claims. An
-    -- overloaded closure does have one, so it takes the ordinary path below
-    -- and uses its per-arrow claims there.
-    let compileBody (fc : SourceClaims.Function) (result : Option (Ty Nat))
-        (H : List (Ty Nat)) (initialized : Option (List (Ty Nat)) := none) : Compiler DirectProof.Plan := do
-      let previousResult := (← get).resultOverride
-      modify fun st => { st with resultOverride := result.map (body.span, ·) }
-      let mut ds := inner
-      let mut ctx := H
-      let mut prologue : List (List (Ty Nat) × DirectProof.Plan) := []
-      let order ← match Fragment.parameterOrder fixedParams defaults with
-        | .ok order => pure order
-        | .error reason => throw (locatedRefusal (← table) pos .bindingAnnotation reason)
-      for i in order do
-        let some (name, sourceType) := fixedParams[i]? | throw "invalid parameter schedule"
-        match defaults.lookup i with
-        | none =>
-          ds := ds.set (prologue.length + 1 + i) (held ⟨name,some pos⟩)
-        | some d =>
-          let B ← match initialized with
-            | some ps => match ps[i]? with
-              | some B => pure B
-              | none => throw "missing instantiated parameter annotation"
-            | none => lower (Fragment.callableType sourceType)
-          let dp ← closureExpr fc ds ctx d
-          let value ← defaultValuePlan G ctx (prologue.length + 1 + i) B (DirectProof.cast ctx B dp)
-          prologue := prologue ++ [(ctx,value)]
-          ctx := B :: ctx
-          ds := held ⟨name,some pos⟩ :: ds
-      -- The rest array is allocated last, after every earlier parameter is
-      -- initialized: one store holding the surplus arguments, then the object
-      -- that holds the store, which is what a fresh array is here.
-      if rest then
-        let restTy ← match params.getLast? with
-          | some (_, ty) => lower (Fragment.translate ty)
-          | none => throw "a rest parameter needs a parameter"
-        -- The annotation may have grown the table, so the graph is read again.
-        let some S := storeOf (SourceTypes.graph (← table)) restTy
-          | throw "a rest parameter needs an array contract"
-        let elements ← restElements.mapM fun ty => lower (Fragment.callableType ty)
-        let slots := elements.zipIdx.map fun (E,j) =>
-          DirectProof.var ctx (prologue.length + 1 + fixedParams.length + j) E
-        let store := DirectProof.node ctx (.arrLit (slots.map (·.term))) S .arrLit slots
-        prologue := prologue ++ [(ctx,store)]
-        ctx := S :: ctx
-        ds := held ⟨"",some pos⟩ :: ds
-        let proto ← prototypeSlot ds
-        let O ← arrayObject S
-        let object := DirectProof.cast ctx restTy (DirectProof.node ctx (arrayTerm proto) O .alloc
-          [DirectProof.var ctx 0 S, DirectProof.var ctx proto [SourceTypes.arrayProtoLabel]])
-        prologue := prologue ++ [(ctx,object)]
-        ctx := restTy :: ctx
-        ds := held ⟨restName,some pos⟩ :: ds
-      let b ← closureExpr fc ds ctx body
-      modify fun st => { st with resultOverride := previousResult }
-      pure (prologue.foldr (fun (K,value) acc => DirectProof.letE K value acc) b)
+  | .lambda pos receiverAnnot typeParams params defaults rest ret (.block bpos stmts) => do
+    -- A body of statements is a graph, as a function body is, unless the
+    -- closure's code must be a term: a generic closure's, whose certificate
+    -- is universal over its binders, or one collecting a rest array or
+    -- binding rest positions, whose code allocates the array itself.
     let polymorphic := !typeParams.isEmpty ||
       (params.map Prod.snd ++ ret.toList).any GenericSource.mentionsParam
-    if let some overlays := (if polymorphic then fc.arrowClaims.lookup pos else none) then
-      let [.arrs L []] := PositiveRules.expand G A | throw "per-arrow claims must name source arrows"
-      if L.isEmpty then throw "per-arrow claims name no arrow"
-      if overlays.length != L.length then
-        throw "per-arrow interior claims do not match the claimed arrows"
-      let mut bodies := []
-      let mut term := none
-      for ((Rt,Di,Ri),overlay) in L.zip overlays do
-        if Di.length != paramNames.length then
-          throw "an arrow's arity differs from its closure"
-        let bi ← compileBody (fc.withOverlay overlay) none (Rt :: Di ++ Γ) overlay.initializedParams
-        if let some existing := term then
-          if existing != bi.term then throw "a scheme body lowers differently under one of its instantiations"
-        else term := some bi.term
-        bodies := bodies ++ [DirectProof.cast (Rt :: Di ++ Γ) Ri bi]
-      let some t := term | throw "per-arrow claims name no arrow"
-      pure (DirectProof.node Γ (.make (.closure paramNames.length t) .nul) A .funE bodies)
-    else do
-      if !typeParams.isEmpty then
-        throw "quantified closure checking requires the scheme evidence path"
-      if !defaults.isEmpty && (params.map Prod.snd ++ ret.toList).any GenericSource.mentionsParam then
-        throw "a defaulted parameter under a scheme binder is outside the fragment"
-      -- A variadic signature is checked at its fixed row: calls through it
-      -- pass further actuals, which the code discards (`offerRows`).
-      let [.arrs L S] := PositiveRules.expand G A | throw "closure claim must name a source arrow"
-      let L := ProgramTyping.offerRows L S
-      -- A closure annotated with an enclosing scheme's binder has no ground
-      -- annotation to lower. Scheme introduction required its claim to be
-      -- exactly that annotation, and the compiled overlay is the claim under
-      -- the checked substitution, so the one compiled arrow supplies its types.
-      -- A closure without a result annotation has none to lower (`R` is
-      -- none): its claimed arrows propose the result, and each is checked.
-      let (Ds, R) ← if (params.map Prod.snd ++ ret.toList).any GenericSource.mentionsParam then
-          match L with
-          | [(_, Di, Ri)] => pure (Di, some Ri)
-          | _ => throw "a closure annotated with a scheme binder must carry one substituted arrow"
-        else do
-          pure (← fixedParams.mapM (fun p => lower (Fragment.callableType p.2)) >>= fun fixed => do
-              return fixed ++ (← restElements.mapM fun ty => lower (Fragment.callableType ty)),
-            ← ret.mapM fun ret => lower (Fragment.callableType ret))
-      -- The advertised domain at a defaulted position also admits `undefined`:
-      -- a call may omit it, and the default is what replaces the value bound
-      -- there. The body still reads the declared type.
-      let Ds := Ds.zipIdx.map fun (D,i) =>
-        if defaulted.contains i then ((D ++ [3]).mergeSort (· ≤ ·)).eraseDups else D
-      -- A claim may offer more parameters than the closure takes: calls
-      -- discard the actuals past them. The ones it takes are the source's.
-      let T ← table
-      if L.isEmpty || !L.all (fun (_,Di,_) => Ds.length ≤ Di.length &&
-          ((Di.take Ds.length).zip Ds).all (fun (D,A) => within T D A)) then
-        throw "closure signature claim is outside the source annotation"
-      -- An ordinary function may be claimed at fewer receivers than it
-      -- states, never at more: its body reads the one it is given.
-      let anyReceiver := Rsource == [← lower (SourceTypes.use .top)]
-      if !anyReceiver && !L.all (fun (Rt,_,_) => Rt.all Rsource.contains) then
-        throw (locatedRefusal (← table) pos .bindingAnnotation
-          "closure receiver claim is outside the source annotation")
-      -- One prologue binding per defaulted parameter, in the checked schedule,
-      -- so reads use initialized values and effects retain source order.
-      -- An overloaded closure states what its body claims under each of its
-      -- signatures: one body, a separate obligation at each arrow, and the
-      -- same lowered term for all of them.
-      let overlays := (fc.arrowClaims.lookup pos).getD []
-      if !overlays.isEmpty && overlays.length != L.length then
-        throw "per-arrow interior claims do not match the claimed arrows"
-      -- The annotation's own derivation is at the receiver the source
-      -- states: top for an arrow, which never reads it. Without an
-      -- annotation there is no such derivation: the claimed arrows are all
-      -- the closure promises, and each has its own below.
-      let annotation ← R.mapM fun R => do
-        let b ← compileBody fc none (Rsource :: Ds ++ Γ)
-        let annotation := DirectProof.cast (Rsource :: Ds ++ Γ) R b
-        obligation pos annotation.goal (some annotation) "closure-result" inner
-        pure annotation
-      let bodies ← L.zipIdx.mapM fun ((Rt,Di,Ri),i) => do
-        let row := match overlays[i]? with
-          | some o => fc.withOverlay o
-          | none => fc
-        match annotation with
-        | some annotation =>
-          if some (Rt,Di,Ri) == R.map (Rsource,Ds,·) && overlays.isEmpty then return annotation
-        | none => pure ()
-        -- Each signature's derivation is about the same body at that
-        -- signature's result, which a block body cannot read from its one
-        -- enclosing annotation. Without an annotation the block's result is
-        -- the arrow's.
-        let plan ← compileBody row (if overlays.isEmpty && R.isSome then none else some Ri)
-          (Rt :: Di.take Ds.length ++ Γ)
-        return DirectProof.cast (Rt :: Di.take Ds.length ++ Γ) Ri plan
-      -- One body, one lowered term: every signature's derivation is about
-      -- the same closure. A claim that changes the lowering is refused here
-      -- rather than failing as an unexplained search.
-      let terms := (annotation.toList ++ bodies).map (·.goal.term)
-      let some t := terms.head? | throw "closure claim must name a source arrow"
-      if terms.any (· != t) then
-        throw "an overloaded closure's body lowers differently under one of its signatures"
-      pure (DirectProof.node Γ (.make (.closure Ds.length t) .nul) A .funE bodies)
+    if !polymorphic && !rest && defaults.isEmpty then
+      graphClosure fc scope Γ pos receiverAnnot params (.block bpos stmts) A
+    else
+      let why := if polymorphic then "a generic closure's body" else "the body of a closure with a rest parameter"
+      return ← closureExpr fc scope Γ
+        (← termLambda why (.lambda pos receiverAnnot typeParams params defaults rest ret (.block bpos stmts)))
+  | .lambda pos receiverAnnot typeParams params [] false ret body =>
+    -- An expression body, `x => e`, is the graph `return e`, unless the
+    -- closure's code must be a term (a generic closure's). A body already in
+    -- the term forms statements are read into (`Fragment.Expr.termBody`) is
+    -- term code: no source lambda has one, only an internal construction.
+    let termForm := match body with
+      | .atEnv .. | .letBody .. | .seqBody .. | .ifBody .. | .throwBody .. | .destructBody .. | .done .. => true
+      | _ => false
+    if !termForm && typeParams.isEmpty && !(params.map Prod.snd ++ ret.toList).any GenericSource.mentionsParam then
+      graphClosure fc scope Γ pos receiverAnnot params body A
+    else closureTerm fc scope Γ e
+  | .lambda .. => closureTerm fc scope Γ e
   let plan := DirectProof.cast Γ A p
   obligation e.span plan.goal (some plan) "expression-claim" scope
   -- Validate the supplied claim, but do not discard a stronger saved-read
@@ -2565,227 +3145,6 @@ private partial def closureDestructure (fc : SourceClaims.Function) (pos : Span)
             [store.term, .var proto]) O .alloc [store, DirectProof.var H proto P]
           closureBind fc pos t (DirectProof.cast H C object) none scope H k)
       positions
-end
-
-/-- Leaving a block drops its local slots simultaneously. Active-name shadowing
-is gated until the export can identify hidden bindings independently. With no
-continuation the body completes rather than returns, producing `undefined`; that
-is emitted as an exit claiming the declared result, attributed to the function
-because an empty body has no statement to point at. -/
-private def leave (pos : Span) (R : Ty Nat) (scope : List ScopeBinding)
-    (tail : Option (Target × List ScopeBinding)) : Compiler Target := do
-  match tail with
-  | none =>
-    let exit ← emitAt pos .undef .ret [] R "completion"
-    return ⟨exit.label, some []⟩
-  | some (target, outer) =>
-    -- A binding is found by its descriptor first: a parameter may hide a
-    -- module constant of its name, and the constant's slot is its own.
-    let slots ← outer.mapM fun b =>
-      match (sources scope).idxOf? b.source, (names scope).idxOf? b.source.name with
-      | some i, _ | none, some i => pure i
-      | none, none => throw s!"internal extraction error: lost outer binding '{b.source.name}'"
-    return ⟨target.label, some slots⟩
-
-/-- Branch binding pushes the actual tested value. For a source variable test,
-map that variable to the pushed value (the same immutable value), exposing its
-proved singleton refinement. Other slots retain their ordinary identities. -/
-private def branchMapping (width : Nat) (tested : Option Nat) (target : Target) : Target :=
-  ⟨target.label, some ((target.mapping.getD (List.range width)).map fun i =>
-    if tested == some i then 0 else i+1)⟩
-
-/-- Keep a pre-existing singleton fact rather than replacing it with the
-branch witness. In particular, an impossible opposite edge must not force a
-contradictory replacement of an otherwise valid immutable binding. -/
-private def testedSlot (scope : List ScopeBinding) (Γ : List (Ty Nat)) (cond : Fragment.Expr) : Option Nat :=
-  do
-    let (i, _) ← conditionVariable scope cond
-    if Γ[i]? == some [1] || Γ[i]? == some [2] then none else some i
-
-/-- Share polarity handling between conditionals and loop heads. The saved
-condition is in slot zero. Only a syntactically identified immutable variable
-may be replaced by the recovered Boolean witness. -/
-private def emitBranch (scope : List ScopeBinding) (Γ : List (Ty Nat)) (cond : Fragment.Expr)
-    (A : Ty Nat) (yes no : Target) : Compiler Target := do
-  let G := SourceTypes.graph (← table)
-  if let some (i, tag, equal) := conditionTag G scope Γ cond then
-    let some C := Γ[i]? | throw "internal tag-guard slot mismatch"
-    let adapt := fun t =>
-      let mapped := branchMapping scope.length (some i) t
-      ⟨mapped.label, some ((mapped.mapping.getD []).map
-        (fun j => if j == 0 then 0 else j+1))⟩
-    -- The source predicate has already run and all operand claims were checked.
-    -- Reading the same immutable variable observes its tag without repeating
-    -- any source expression or trusting the saved Boolean's annotation.
-    return ← emitAt cond.span (.var (i+1))
-      (.tagBind tag (adapt (if equal then yes else no)) (adapt (if equal then no else yes)))
-      (A::Γ) C "tag-dispatch" (scope := held ⟨"",some cond.span⟩ :: scope)
-  let tested := testedSlot scope Γ cond
-  -- Branch on the saved value; the edge maps discard its older copy and
-  -- retain the new refinement slot supplied by branchBind.
-  let adapt := fun t =>
-    let mapped := branchMapping scope.length tested t
-    ⟨mapped.label, some ((mapped.mapping.getD []).map
-      (fun i => if i == 0 then 0 else i+1))⟩
-  -- Negation is handled by swapping successors in compileCondition, so this
-  -- dispatch always observes the saved operand itself, retaining its read link.
-  -- A value that is not a Boolean is a condition by its truthiness.
-  let transfer := if BranchRefinement.onlyBoolean G A then Continuation.branchBind (adapt yes) (adapt no)
-    else .tagBind .truthy (adapt yes) (adapt no)
-  emitAt cond.span (.var 0) transfer (A::Γ) A
-    (scope := held ⟨"",some cond.span⟩ :: scope)
-
-/-- Facts justified on the path to a short-circuit operand. Only immutable
-source bindings are refined; every generated edge checks this candidate context.
-A true conjunction / false disjunction establishes both operand outcomes. The
-other outcomes deliberately retain the input context rather than compute a join. -/
-private def conditionContext (G : PositiveGraphs.NormalGraph Nat) (scope : List ScopeBinding) (Γ : List (Ty Nat))
-    (cond : Fragment.Expr) (answer : Bool) : List (Ty Nat) :=
-  match cond with
-  | .not _ e => conditionContext G scope Γ e (!answer)
-  | .logical _ andOp left right =>
-    if answer == andOp then
-      conditionContext G scope (conditionContext G scope Γ left answer) right answer
-    else Γ
-  | _ =>
-    if let some (i, tag, equal) := conditionTag G scope Γ cond then
-      Γ.set i (BranchRefinement.tagSlice G (Γ[i]?.getD []) tag (answer == equal))
-    else if let some i := testedSlot scope Γ cond then
-      Γ.set i (if answer then [1] else [2])
-    else Γ
-
-/-- The span of the first read of `name` an expression always evaluates,
-before any branch or closure: its claim is what the name holds on entry to
-the expression. -/
-private partial def firstUse (name : String) : Fragment.Expr → Option Span
-  | .var p n => if n == name then some p else none
-  | .lit .. | .done .. | .lambda .. | .ctor .. => none
-  | .ifBody _ _ c _ _ => firstUse name c
-  | .logical _ _ a _ | .coalesce _ a _ | .optional _ _ a _ => firstUse name a
-  | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .atEnv _ e
-  | .throwBody _ e => firstUse name e
-  | .construct _ f args _ | .call _ f args _ _ | .invoke _ f args _ _ =>
-    (f :: args).findSome? (firstUse name)
-  | .alloc _ _ es | .arrayLit _ es => es.findSome? (firstUse name)
-  | .equality _ _ a b | .singletonTest _ _ _ _ a b | .write _ _ a b | .index _ _ a b
-  | .elemAt _ a b | .arith _ _ a b | .comma _ a b | .inKeys _ a b =>
-    (firstUse name a).orElse fun _ => firstUse name b
-  | _ => none
-
-/-- A conditional's arm starts where the condition answered: each immutable
-source binding the arm reads before any branch of its own holds what the
-producer claims that read at, which the edge from the condition checks as it
-checks a statement entry's claims (a slice by the test, a field slice, a
-present key); the others, the condition's own refinement. -/
-private def armContext (fc : SourceClaims.Function) (scope : List ScopeBinding)
-    (Γ : List (Ty Nat)) (arm : Fragment.Expr) : Compiler (List (Ty Nat)) :=
-  scope.zipIdx.foldlM (fun Δ (b,i) => do
-    match b.storage, firstUse b.source.name arm with
-    | .value, some p =>
-      if b.source.name == "" || isSnapshot b.source.name then return Δ
-      match fc.exprs.lookup p with
-      | some _ => return Δ.set i (← claimAt fc p)
-      | none => return Δ
-    | _, _ => return Δ) Γ
-
-/-- The fresh array an array pattern's rest collects from the array at slot
-`obj` of `A`: the positions from `start` on, read into a store. They are a
-fixed list of reads where `A` is one tuple of required positions, whose
-length is exact (`listT`); an array of any other length has a slice of
-unknown length for its rest, which no list of reads is. The array is claimed
-at the rest's span, like an array literal. The store's term, the store's
-type and the array's claimed type. -/
-private def restArray (fc : SourceClaims.Function) (A : Ty Nat) (obj start : Nat) (restPos : Span) :
-    Compiler (Tm × Ty Nat × Ty Nat) := do
-  let G := SourceTypes.graph (← table)
-  let some S := storeOf G A | throw "an array rest requires an array contract"
-  let [.list T []] := PositiveRules.expand G S | throw restOfUnknownLength
-  if !T.optional.isEmpty || T.rest.isSome then throw restOfUnknownLength
-  let C ← claimAt fc restPos
-  let some Sr := storeOf (SourceTypes.graph (← table)) C | throw "an array rest needs an array claim"
-  let reads ← (List.range (T.required.length - start)).mapM fun j => do
-    return Tm.elemAt (.readAt SourceTypes.storeField (.var obj)) (← indexTerm (start + j))
-  let _ ← arrayObject Sr
-  return (.arrLit reads, Sr, C)
-
-/-- What a literal position of an array reads, by the array's contract: a
-required position reads at its type, an optional or rest position at its type
-or `undefined`, and a position no contract names is refused. A union of
-array contracts reads at the union of their positions. -/
-private def positionRead (G : PositiveGraphs.NormalGraph Nat) (A : Ty Nat) (i : Nat) :
-    Compiler (Ty Nat) := do
-  -- The index is a literal of the read, typed at its singleton; the producer
-  -- finds that singleton among the request's types.
-  let label ← lower (SourceTypes.use (.numLit (bitsOfNat i)))
-  modify fun s => { s with hints := label :: s.hints }
-  let alts ← (PositiveRules.expand G A).mapM fun c => do
-    let store ← match c with
-      | .refs fs [] vs _ _ _ => match fs.lookup SourceTypes.storeField <|> vs.lookup SourceTypes.storeField with
-        | some S => pure S
-        | none => throw "an array pattern requires an array contract"
-      | _ => throw "an array pattern requires an array contract"
-    (PositiveRules.expand G store).mapM fun c => do
-      let .list T [] := c | throw "an array pattern requires an array contract"
-      match T.required[i]?, ProgramTyping.positionTy T i with
-      | some E, _ => pure E
-      | none, some E => pure (E ++ [3])
-      | none, none => throw s!"position {i} is outside the array's contract"
-  pure alts.flatten.flatten.eraseDups
-
-/-- An operand of a split comparison: a slot, the field read from it, and
-the source expression. -/
-private abbrev SplitOperand := (Nat × Option PropKey) × Fragment.Expr
-
-/-- A strict comparison of two operands neither of which is a singleton, both
-read without effect (a name, or a field of a name), one of them claimed at a
-union of singletons, dispatches as the tag tests it amounts to: the split
-operand, the other operand, and the split operand's singletons. An immutable
-name is split first, as before; otherwise a field read. -/
-private def equalitySplit (fc : SourceClaims.Function) (scope : List ScopeBinding) (Γ : List (Ty Nat))
-    (l r : Fragment.Expr) :
-    Compiler (Option (SplitOperand × SplitOperand × List Tag)) := do
-  let G := SourceTypes.graph (← table)
-  let operand : Fragment.Expr → Option (Nat × Option PropKey)
-    | .var _ name => (valueSlot scope name).map (·, none)
-    | .read _ f (.var _ name) => (valueSlot scope name).map (·, some f)
-    | _ => none
-  let singletons := fun (C : Ty Nat) =>
-    if C.isEmpty then none else C.mapM fun a => singletonTag G [a]
-  let attempt := fun (s o : Fragment.Expr) (field : Bool) => do
-    let some sop := operand s | return none
-    let some oop := operand o | return none
-    let C ← match sop with
-      | (k, none) => if field then pure none else pure Γ[k]?
-      | (_, some _) => if field then (some <$> exprType fc s) else pure none
-    match C.bind singletons with
-    | some tags => return some ((sop, s), (oop, o), tags)
-    | none => return none
-  for (s, o, field) in [(r, l, false), (l, r, false), (r, l, true), (l, r, true)] do
-    if let some x ← attempt s o field then return some x
-  return none
-
-/-- A strict comparison of an immutable name with an operand that is not read
-without effect (a call, say) claimed at a union of singletons: the operand is
-evaluated once, into a slot of its own, and split there; the name, which no
-effect changes, is the other operand. -/
-private def savedSplit (fc : SourceClaims.Function) (scope : List ScopeBinding)
-    (l r : Fragment.Expr) : Compiler (Option (Nat × Fragment.Expr × Fragment.Expr × List Tag)) := do
-  let G := SourceTypes.graph (← table)
-  let attempt := fun (n e : Fragment.Expr) => do
-    let .var _ name := n | return none
-    let some k := valueSlot scope name | return none
-    match e with
-    | .var .. | .lit .. | .read _ _ (.var ..) => return none
-    | _ =>
-      let C ← exprType fc e
-      if C.isEmpty then return none
-      match C.mapM fun a => singletonTag G [a] with
-      | some tags => return some (k, n, e, tags)
-      | none => return none
-  if let some x ← attempt l r then return some x
-  attempt r l
-
-mutual
 /-- Each expression leaves its result in slot zero and preserves the original
 slots after it. Anonymous temporary slots cannot be named by source identifiers.
 Mappings discard only the temporaries introduced by this expression. -/
@@ -2795,10 +3154,26 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
   let next ← match fc.exprCurrent.lookup e.span with
     | none => pure next
     | some asserted =>
-      let facts ← asserted.mapM fun (fld, R) => do return (⟨0,← contents R,fld⟩ : HeapFacts.Fact)
+      -- An observation the cell's contract implies holds wherever the cell
+      -- is read: a located inclusion (`persistentObservation`), as at a
+      -- closure's entry, which knows nothing of the heap. Any other is a fact
+      -- of this point, which every edge into it must establish.
+      let T ← table
+      let clauses := PositiveRules.expand (SourceTypes.graph T) A
+      let invariant := fun (fld : PropKey) => do
+        if clauses.isEmpty then none
+        let ws ← clauses.mapM fun (c : PositiveNormalization.Clause (Ty Nat)) => match c with
+          | PositiveNormalization.Clause.refs W [] [] [] [] [] => W.lookup fld
+          | _ => none
+        some ws.flatten.eraseDups
+      let (uniform, pointwise) := asserted.partition fun (fld, R) =>
+        (invariant fld).any (within T · R)
+      for (fld, R) in uniform do persistentObservation ⟨"",some e.span⟩ e.span A fld R
+      let facts ← pointwise.mapM fun (fld, R) => do return (⟨0,← contents R,fld⟩ : HeapFacts.Fact)
       checkpoint e.span (A::Γ) facts next (scope := held ⟨"",some e.span⟩ :: scope)
   match he : e with
   | .equality .. => throw "internal unresolved equality"
+  | .block .. => throw "internal extraction error: statements outside a closure body"
   | .var _ name =>
     match resolve scope name with
     | some (i, .value) => emitAt e.span (.var i) (.bind next) Γ A (scope := scope)
@@ -3328,11 +3703,21 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
       (fun i => if i == 0 then 0 else i+n+1))⟩
     let makeScope := held ⟨"",some e.span⟩ :: temporaries ++ scope
     let proto ← prototypeSlot makeScope
-    let _ ← arrayObject S
-    let make ← emitAt e.span (arrayTerm proto) (.bind drop)
-      (S :: As.reverse ++ Γ) A (scope := makeScope)
-    let store ← emitAt e.span (.arrLit ((List.range n).map fun i => .var (n-1-i))) (.bind make)
-      (As.reverse ++ Γ) S (scope := temporaries ++ scope)
+    let O ← arrayObject S
+    let [.list T []] := PositiveRules.expand G S | throw "an array literal needs one tuple contract"
+    -- Both nodes' derivations are known: the object holding the store and
+    -- the prototype, and the store of the elements at their positions.
+    let H := S :: As.reverse ++ Γ
+    let some P := H[proto]? | throw "internal prototype slot mismatch"
+    let make ← emitPlanned e.span (DirectProof.node H (arrayTerm proto) O .alloc
+        [DirectProof.var H 0 S, DirectProof.var H proto P]) (.bind drop) H A (scope := makeScope)
+    let K := As.reverse ++ Γ
+    let casts ← (List.range n).mapM fun i => do
+      let some D := ProgramTyping.positionTy T i | throw "an array literal has more elements than its claim"
+      let some Ai := As[i]? | throw "internal element slot mismatch"
+      pure (DirectProof.cast K D (DirectProof.var K (n-1-i) Ai))
+    let store ← emitPlanned e.span (DirectProof.node K (.arrLit ((List.range n).map fun i => .var (n-1-i))) S
+        .arrLit casts) (.bind make) K S (scope := temporaries ++ scope)
     elems.attach.zipIdx.reverse.foldlM (fun next (⟨arg,_⟩,i) =>
       compileExpr fc
         ((elems.take i |>.map fun a => held ⟨"",some a.span⟩).reverse ++ scope)
@@ -3345,10 +3730,21 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let temporaries := held ⟨"",some key.span⟩::held ⟨"",some receiver.span⟩ :: scope
     -- A string's code unit at the key's number; an array's element at its
     -- one index, from its store.
-    let term ← if decide (Answers (SourceTypes.graph (← table)) B .isStr true) then
-        pure (Tm.elemAt (.var 1) (.var 0))
-      else do pure (.elemAt (.readAt SourceTypes.storeField (.var 1)) (← arrayKeyTerm K))
-    let node ← emitAt e.span term (.bind drop) (K::B::Γ) A (scope := temporaries)
+    let G := SourceTypes.graph (← table)
+    let node ← if decide (Answers G B .isStr true) then
+        emitAt e.span (Tm.elemAt (.var 1) (.var 0)) (.bind drop) (K::B::Γ) A (scope := temporaries)
+      else do
+        let index ← arrayKeyTerm K
+        let .num b := index | throw "internal extraction error: an array key is a number"
+        -- Planned where the receiver's contract names its store; otherwise
+        -- the choice is open, and the node is searched.
+        let plan? ← tryCatch (some <$> elemReadPlan G (K::B::Γ) (DirectProof.var (K::B::Γ) 1 B) b)
+          (fun _ => pure none)
+        match plan? with
+        | some plan => emitPlanned e.span plan (.bind drop) (K::B::Γ) A (scope := temporaries)
+        | none =>
+          let term := Tm.elemAt (.readAt SourceTypes.storeField (.var 1)) index
+          emitAt e.span term (.bind drop) (K::B::Γ) A (scope := temporaries)
     let right ← compileExpr fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) key node
     compileExpr fc scope Γ receiver right
   | .elemWrite _ receiver key rhs =>
@@ -3761,93 +4157,6 @@ private partial def arrayAssigns (fc : SourceClaims.Function) (pos : Span) (A : 
       emitAt q.namePos (.writeAt valueField (.var i) (.var 0)) (.effect dropped) (T::Γ) [0]
         "storage-contract" (some pos.1) (scope := bound::scope)
 
-end
-
-/-- Where `continue` and `break` go, with the lexical scope at each
-destination: the nearest enclosing loop's next iteration and its end, if there
-is a loop, and the end of each enclosing labeled block, innermost first. An
-end is `none` where it is the function's. -/
-private structure Finalizer where
-  /-- The `finally` block, and the `try` it belongs to. -/
-  stmts : List Fragment.Stmt
-  pos : Span
-  /-- The lexical context of the `try`, which the block runs in: its scope,
-  handler and jump targets. -/
-  scope : List ScopeBinding
-  handler : Option (Target × Nat)
-  loop : Option ((Target × List ScopeBinding) × Option (Target × List ScopeBinding))
-  labels : List (String × Option (Target × List ScopeBinding))
-  loopDepth : Nat
-  labelDepths : List (String × Nat)
-
-private structure LoopTargets where
-  loop : Option ((Target × List ScopeBinding) × Option (Target × List ScopeBinding)) := none
-  labels : List (String × Option (Target × List ScopeBinding)) := []
-  /-- The `finally` blocks of the `try` statements around this point,
-  innermost first: a `return` runs each of them before it returns. -/
-  finalizers : List Finalizer := []
-  /-- How many of those were around the nearest loop, and around each labeled
-  block: a jump to one of them past a `finally` is refused. -/
-  loopDepth : Nat := 0
-  labelDepths : List (String × Nat) := []
-
-/-- Whether a statement list never completes normally: it ends in a jump, a
-`return` or a `throw`, or in a statement all of whose ways on do. An
-unlabeled block is its statements; a labeled one may be left by a `break`. -/
-private partial def abrupt (ss : List Fragment.Stmt) : Bool :=
-  match ss.getLast? with
-  | some (.ret ..) | some (.throw ..) | some (.brk ..) | some (.cont ..) => true
-  | some (.ite _ _ t (some e)) => abrupt t && abrupt e
-  | some (.block _ none b) => abrupt b
-  | some (.tryStmt _ b h f) =>
-    (f.map abrupt).getD false || (abrupt b && (h.map (abrupt ·.2)).getD true)
-  | _ => false
-
-/-- Entering a loop: its targets, behind as many `finally` blocks as now. -/
-private def LoopTargets.enterLoop (t : LoopTargets)
-    (l : (Target × List ScopeBinding) × Option (Target × List ScopeBinding)) : LoopTargets :=
-  { t with loop := some l, loopDepth := t.finalizers.length }
-
-/-- Entering a labeled block, likewise. -/
-private def LoopTargets.enterLabel (t : LoopTargets) (label : String)
-    (done : Option (Target × List ScopeBinding)) : LoopTargets :=
-  { t with labels := (label, done) :: t.labels,
-           labelDepths := (label, t.finalizers.length) :: t.labelDepths }
-
-/-- Compile with `h` as the handler of every node emitted. -/
-private def withHandler (h : Option (Target × Nat)) (act : Compiler α) : Compiler α := do
-  let saved := (← get).handler
-  modify fun s => { s with handler := h }
-  let r ← act
-  modify fun s => { s with handler := saved }
-  return r
-
-/-- A jump from `scope` to a target over `targetScope`: the target's slots,
-read through its own mapping, found by name in `scope`. -/
-private def jumpTo (scope : List ScopeBinding) (target : Target) (targetScope : List ScopeBinding) :
-    Compiler Target := do
-  let slots ← targetScope.mapM fun b => match (names scope).idxOf? b.source.name with
-    | some i => pure i
-    | none => throw s!"internal extraction error: lost binding '{b.source.name}'"
-  return ⟨target.label, some ((target.mapping.getD (List.range targetScope.length)).map
-    fun i => slots[i]?.getD 0)⟩
-
-/-- The entry of the first statement a list runs: a block has none of its
-own, so it is its first statement's, or, empty, the next one's. -/
-private partial def firstEntry : List Fragment.Stmt → Option Nat
-  | [] => none
-  | .block _ _ inner :: rest => (firstEntry inner).orElse fun _ => firstEntry rest
-  | s :: _ => some s.pos.1
-
-/-- The same continuation with slot `k` of its scope and context removed:
-what follows a pattern no longer holds the value it destructured. -/
-private def dropSlot (k : Nat) (after : List ScopeBinding → List (Ty Nat) → Compiler Target)
-    (scope : List ScopeBinding) (Γ : List (Ty Nat)) : Compiler Target := do
-  let next ← after (scope.eraseIdx k) (Γ.eraseIdx k)
-  pure ⟨next.label, some ((next.mapping.getD (List.range (Γ.length-1))).map
-    (fun j => if j < k then j else j+1))⟩
-
-mutual
 /-- Binds `target` to the value `term` reads under `Γ` at `R`, `default_`
 replacing it where it is undefined (`readWithDefault`): a name binds it; a
 nested pattern holds it in an anonymous slot, destructures it, and drops it.
@@ -3930,13 +4239,12 @@ private partial def destructureAt (fc : SourceClaims.Function) (pos : Span)
             fun scope' Γ' => dropSlot (scope'.length - scope.length - 1) after scope' Γ'
           emitAt restPos store (.bind next) Γ Sr "pattern-rest" (some pos.1) (scope := scope))
       positions
-end
 
 /-- The declarators of a `const`, bound left to right under the one entry `Γ`
 the producer states for the statement: each initializer is compiled in the
 scope the earlier bindings extend, and no cut separates them, because the
 producer states none. `after` compiles what follows the whole statement. -/
-private def constants (fc : SourceClaims.Function) (pos : Span)
+private partial def constants (fc : SourceClaims.Function) (pos : Span)
     (after : List ScopeBinding → Compiler Target) :
     List ScopeBinding → List (Ty Nat) → List Fragment.Binding → Compiler Target
   | scope, _, [] => after scope
@@ -3956,7 +4264,7 @@ private def constants (fc : SourceClaims.Function) (pos : Span)
 same left-to-right order under the statement's one entry. An unannotated
 binding's contract is read at `next`, the entry of the statement that follows
 the whole list: the first place every binding of the list stands in scope. -/
-private def mutables (fc : SourceClaims.Function) (pos : Span) (next : Option Nat)
+private partial def mutables (fc : SourceClaims.Function) (pos : Span) (next : Option Nat)
     (after : List ScopeBinding → Compiler Target) :
     List ScopeBinding → List (Ty Nat) → List Fragment.Binding → Compiler Target
   | scope, _, [] => after scope
@@ -4003,7 +4311,7 @@ private def mutables (fc : SourceClaims.Function) (pos : Span) (next : Option Na
 /-- Compile the continuation once, then point both arms at it. Allocation order
 is intentionally independent of source order; `start` records the real entry.
 Fuel bounds structural traversal, not execution or certificate search. -/
-private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBinding → List Fragment.Stmt →
+private partial def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBinding → List Fragment.Stmt →
     Option (Target × List ScopeBinding) → LoopTargets → Compiler Target
   | 0, _, _, _, _, _, _ => throw "internal extraction error: exhausted structural traversal"
   | fuel+1, fc, R, scope, stmts, tail, loopTargets => do
@@ -4140,9 +4448,25 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
       let continuation ← if rest.isEmpty then pure tail else do
         let next ← body fuel fc R scope rest tail loopTargets
         pure (some (next,scope))
-      let yes ← body fuel fc R scope thn continuation loopTargets
-      let no ← body fuel fc R scope (els.getD []) continuation loopTargets
-      compileCondition fc scope Γ cond yes no
+      match ← guardedReturn fc scope Γ cond thn loopTargets with
+      | some (ds, K, read, tested, e, rp) =>
+        -- `if (x.f !== c) return x.f;`: the tested read, saved, is what the
+        -- arm returns. Nothing runs between the two reads, so they read the
+        -- same value, and the saved one keeps the test's refinement.
+        let Γy ← env fc rp.1 ds
+        let p ← closureExpr fc ds Γy e
+        let yes ← emitPlanned e.span p .ret Γy R "return-contract" (scope := ds)
+        let no ← body fuel fc R scope (els.getD []) continuation loopTargets
+        let A ← exprType fc cond
+        let lift := fun (t : Target) =>
+          (⟨t.label, some ((t.mapping.getD (List.range scope.length)).map (·+1))⟩ : Target)
+        let node ← emitBranch ds K tested A yes (lift no)
+        let predicate ← compileExpr fc ds K tested node
+        compileExpr fc scope Γ read predicate
+      | none =>
+        let yes ← body fuel fc R scope thn continuation loopTargets
+        let no ← body fuel fc R scope (els.getD []) continuation loopTargets
+        compileCondition fc scope Γ cond yes no
     | .loop pos cond loopBody update :: rest =>
       let Γ ← env fc pos.1 scope
       -- Reserve a stable label for incoming and back edges. Replace its stub
@@ -4266,29 +4590,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
       let entry ← checkpoint pos (← env fc pos.1 scope) facts target (some pos.1) scope
       modify fun s => { s with cuts := entry.label :: s.cuts }
       return entry
-
-private def traversalBudget : List Fragment.Stmt → Nat
-  | [] => 1
-  | .brk .. :: rest | .cont .. :: rest | .ret .. :: rest | .constants .. :: rest | .mutables .. :: rest | .destructure .. :: rest | .effect .. :: rest => 1 + traversalBudget rest
-  | .loop _ _ loopBody update :: rest =>
-      1 + traversalBudget loopBody + traversalBudget update + traversalBudget rest
-  | .forOf _ _ _ _ inner :: rest | .block _ _ inner :: rest =>
-      1 + traversalBudget inner + traversalBudget rest
-  | .throw .. :: rest => 1 + traversalBudget rest
-  -- A `finally` block is compiled on each way out, at most as deep as the
-  -- body and handler around the `return` that runs it.
-  | .tryStmt _ b none none :: rest => 1 + traversalBudget b + traversalBudget rest
-  | .tryStmt _ b (some (_, c)) none :: rest =>
-      1 + traversalBudget b + traversalBudget c + traversalBudget rest
-  | .tryStmt _ b none (some f) :: rest =>
-      2 + traversalBudget b + 3 * traversalBudget f + traversalBudget rest
-  | .tryStmt _ b (some (_, c)) (some f) :: rest =>
-      2 + traversalBudget b + traversalBudget c + 3 * traversalBudget f + traversalBudget rest
-  | .ite _ _ thn none :: rest => 2 + traversalBudget thn + traversalBudget rest
-  | .ite _ _ thn (some els) :: rest =>
-      1 + traversalBudget thn + traversalBudget els + traversalBudget rest
-termination_by stmts => sizeOf stmts
-
+end
 
 structure SourceRequest extends Request where
   obligations : List ExpressionClaims.Required
@@ -4298,6 +4600,13 @@ structure SourceRequest extends Request where
   cuts : List Nat := []
   /-- Labels the program mentions but no claim does: search hints only. -/
   hints : List Nat := []
+  /-- One per code request, in its order. -/
+  codeSources : List CodeSource := []
+  /-- Plans for nodes the lowering knows how to derive: search hints only. -/
+  nodePlans : List DirectProof.Plan := []
+
+def SourceRequest.codeHints (r : SourceRequest) : List RequestJson.CodeHints :=
+  r.codeSources.map fun c => ⟨c.sourceMap, c.assertions, c.cuts⟩
 
 /-- Search hints only: the primitives and the labels the request mentions, so
 a coercion does not consider every unrelated signature in the table. The
@@ -4464,8 +4773,9 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceCl
       first := store
     let entry ← emit .nul (.effect first) inputs [0]
     return (inputs, R, entry)).run { types := T }
-  return ⟨⟨built.types, built.program, built.claims, R, entry.label, inputs⟩,
-    built.obligations, built.sourceMap, built.assertions, built.cuts, built.hints⟩
+  return ⟨⟨built.types, built.program, built.claims, R, entry.label, inputs, built.codes⟩,
+    built.obligations, built.sourceMap, built.assertions, built.cuts, built.hints, built.codeSources,
+    built.nodePlans⟩
 
 /-- One function's wire claims, lowered into a fresh table. Other producers can
 supply normalized candidates directly to extractNormalizedFn. -/
@@ -4479,15 +4789,22 @@ structure Bundle where
   obligations : List (List (ProgramCertificates.Evidence Nat))
   deriving ToJson, FromJson
 
-/-- Statement entries are exact interfaces. Expression observation checkpoints
-inside a statement require entailment but do not reset its local context. -/
-def checkAssertions (r : SourceRequest) (c : Response) : Bool :=
-  (r.cuts.all fun l => match c.certificate[l]? with
+/-- Statement entries are exact interfaces, in a unit's graph and in each of its
+codes'. Expression observation checkpoints inside a statement require
+entailment but do not reset its local context. -/
+def checkGraphAssertions (cuts : List Nat) (assertions : List (Nat × HeapKnowledge.Knowledge))
+    (C : ControlFlow.Certificate Nat) : Bool :=
+  (cuts.all fun l => match C[l]? with
     | none => false
-    | some n => n.knowledge == (r.assertions.lookup l).getD ⟨[],[],[]⟩) &&
-  (r.assertions.all fun (l,k) => match c.certificate[l]? with
+    | some n => n.knowledge == (assertions.lookup l).getD ⟨[],[],[]⟩) &&
+  (assertions.all fun (l,k) => match C[l]? with
     | none => false
     | some n => HeapKnowledge.check n.knowledge k none)
+
+def checkAssertions (r : SourceRequest) (c : Response) : Bool :=
+  checkGraphAssertions r.cuts r.assertions c.certificate &&
+  r.codeSources.length == c.codes.length &&
+  (r.codeSources.zip c.codes).all fun (q, C) => checkGraphAssertions q.cuts q.assertions C
 
 /-- Accepted source evidence has exactly the supplied knowledge at every
 statement entry, even when that knowledge is empty. -/
@@ -4495,7 +4812,8 @@ theorem checkAssertions_cut {r : SourceRequest} {c : Response}
     (hc : checkAssertions r c = true) {l node} (hm : l ∈ r.cuts)
     (hn : c.certificate[l]? = some node) :
     node.knowledge = (r.assertions.lookup l).getD ⟨[],[],[]⟩ := by
-  simp only [checkAssertions, Bool.and_eq_true] at hc
+  simp only [checkAssertions, checkGraphAssertions, Bool.and_eq_true] at hc
+  replace hc := hc.1.1
   have h := List.all_eq_true.mp hc.1 l hm
   simpa [hn] using h
 
@@ -4503,16 +4821,23 @@ theorem checkAssertions_sound {r : SourceRequest} {c : Response}
     (hc : checkAssertions r c = true) {l k node ρ heap}
     (hm : (l,k) ∈ r.assertions) (hn : c.certificate[l]? = some node)
     (hk : HeapKnowledge.Holds node.knowledge ρ heap) : HeapKnowledge.Holds k ρ heap := by
-  simp only [checkAssertions, Bool.and_eq_true] at hc
+  simp only [checkAssertions, checkGraphAssertions, Bool.and_eq_true] at hc
+  replace hc := hc.1.1
   have h := List.all_eq_true.mp hc.2 (l,k) hm
   simp only [hn] at h
   exact HeapKnowledge.check_sound (m := none) h hk
 
+/-- A unit's obligations, checked with the graph code its certificate checked. -/
+def checkObligations (r : SourceRequest) (c : Response) (es : List (ProgramCertificates.Evidence Nat)) : Bool :=
+  match codeTable r.toRequest c with
+  | some table => ExpressionClaims.checkAll (RequestJson.graph r.toRequest) r.types.length
+      r.obligations es (GraphCode.admits table)
+  | none => false
+
 def checkRequests (rs : List SourceRequest) (b : Bundle) : Bool :=
   rs.length == b.functions.length && rs.length == b.obligations.length &&
     (rs.zip b.functions).all (fun (r,c) => verify r.toRequest c && checkAssertions r c) &&
-    (rs.zip b.obligations).all (fun (r,es) =>
-      ExpressionClaims.checkAll (RequestJson.graph r.toRequest) r.types.length r.obligations es)
+    ((rs.zip b.functions).zip b.obligations).all (fun ((r,c),es) => checkObligations r c es)
 
 /-- At a graph checkpoint, the proved state invariant entails the assertion
 reconstructed from source claims, not merely a producer-selected context. -/
@@ -4549,11 +4874,21 @@ theorem checkRequests_safe_at {rs : List SourceRequest} {b : Bundle}
 
 /-- Every supplemental claim is a derivable sequent in the same calculus. -/
 theorem checkRequests_obligations {rs : List SourceRequest} {b : Bundle}
-    (h : checkRequests rs b = true) {r es} (hm : (r,es) ∈ rs.zip b.obligations)
+    (h : checkRequests rs b = true) {r c es} (hm : ((r,c),es) ∈ (rs.zip b.functions).zip b.obligations)
     {q e} (hq : (q,e) ∈ r.obligations.zip es) :
     HasTy (RequestJson.graph r.toRequest) q.sequent.context q.sequent.term q.sequent.type := by
   simp only [checkRequests, Bool.and_eq_true, List.all_eq_true] at h
-  exact ExpressionClaims.checkAll_sound (h.2 _ hm) hq
+  have ho := h.2 _ hm
+  simp only [checkObligations] at ho
+  split at ho
+  · rename_i table ht
+    have hsound : ProgramCertificates.CodesSound (RequestJson.graph r.toRequest) (GraphCode.admits table) := by
+      unfold codeTable at ht
+      split at ht
+      · exact GraphCode.checkCodes_sound ht
+      · contradiction
+    exact ExpressionClaims.checkAll_sound ho hsound hq
+  · contradiction
 
 #print axioms checkRequests_assertions
 #print axioms checkAssertions_cut

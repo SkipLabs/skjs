@@ -476,6 +476,9 @@ function fromSourceClaims(
     if(ts.isHeritageClause(n)&&n.token===ts.SyntaxKind.ExtendsKeyword&&ts.isClassDeclaration(n.parent))
       at(n.getStart(sf),n.end);
     const p=n.parent;
+    // An expression body after such parameters is the `return` of the
+    // statements they start.
+    if(p&&ts.isArrowFunction(p)&&n===p.body&&!ts.isBlock(n))at(n.getStart(sf),n.end);
     if(ts.isBlock(n)&&p&&(ts.isFunctionDeclaration(p)||ts.isFunctionExpression(p)||ts.isArrowFunction(p)||
         ts.isMethodDeclaration(p)||ts.isConstructorDeclaration(p)||ts.isGetAccessorDeclaration(p)||
         ts.isSetAccessorDeclaration(p)))entries.set(n.end-1,n.end);

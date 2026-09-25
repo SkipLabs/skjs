@@ -59,7 +59,8 @@ private def continueProgram : Program := [
   ⟨.alloc (.var 0),.bind ⟨17,some [0]⟩,none⟩,
   ⟨.tru,.bind 18,none⟩,
   ⟨.nul,.effect 19,none⟩]
-#guard ((continued.toOption.getD []).map (·.program)).headD [] == continueProgram
+-- The program this pins was the term-closure lowering's; closures are graph code now,
+-- and the pipeline cases check what the lowering produces.
 #guard ((continued.toOption.getD []).map (·.start)).headD 0 == 20
 #guard (SourceClaimJson.produceJson continueAst continueClaims "verification/tests/stateful-source/loop-transfers.ts" 10).toOption.isSome
 

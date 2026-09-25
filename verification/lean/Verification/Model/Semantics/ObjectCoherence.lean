@@ -81,6 +81,12 @@ def Names (D : Registry) : Tm → Prop
   | .arrLit args => NamesArgs D args
   | .arr ls => ∀ l ∈ ls.filterMap id, D[l]? = some .absent
   | .ite c a b => Names D c ∧ Names D a ∧ Names D b
+  | .objAt fs (.graph n E K st caps) =>
+      (∀ l ∈ locs fs, D[l]? = some (.graph n E K st caps)) ∧ ScopedArgs 0 caps ∧
+        NamesArgs D E ∧ NamesArgs D caps
+  | .makeAt (.graph _ E _ _ caps) _ args => NamesArgs D E ∧ NamesArgs D caps ∧ NamesArgs D args
+  | .goto E _ _ L x => NamesArgs D E ∧ NamesArgs D L ∧ Names D x
+  | .frame E _ t L x _ _ => NamesArgs D E ∧ Names D t ∧ NamesArgs D L ∧ Names D x
   | _ => True
 
 def NamesArgs (D : Registry) : List Tm → Prop
@@ -99,6 +105,7 @@ theorem Names.mono {D E t} (ht : Names D t) (hx : Extends D E) : Names E t := by
   case objClosure fs n b ih => exact fun l hl => hx _ _ (ht.1 l hl)
   case objVariadic fs n b ih => exact fun l hl => hx _ _ (ht.1 l hl)
   case objBound fs t r pre iht ihr ihp => exact fun l hl => hx _ _ (ht.1 l hl)
+  case objGraph fs n E K st caps ihE ihc => exact fun l hl => hx _ _ (ht.1 l hl)
 
 theorem Names.descriptor {D fs c} (ht : Names D (.objAt fs c)) :
     ∀ l ∈ locs fs, D[l]? = some c := by
@@ -107,6 +114,7 @@ theorem Names.descriptor {D fs c} (ht : Names D (.objAt fs c)) :
   | closure n b => exact ht.1
   | variadic n b => exact ht.1
   | bound t r pre => exact ht.1
+  | graph n E K st caps => exact ht.1
 
 /-- Same identity means exactly the same descriptor, including its body. An
 identity is its fields, so this needs one of them to name. -/
@@ -125,6 +133,12 @@ theorem Names.subst {D t a} (ht : Names D t) (ha : Names D a) (j : Nat) :
       simpa using (List.map_congr_left (g := id)
         (fun x hx => subst_above ((scopedArgs_iff _ _).mp ht.2.1.2.2 x hx) (Nat.zero_le j) a))
     rw [subst_above ht.2.1.1 (Nat.zero_le j), subst_above ht.2.1.2.1 (Nat.zero_le j), hpre]
+    exact ht
+  case objGraph fs n E K st caps ihE ihc =>
+    have hc : caps.map (Model.subst j a) = caps := by
+      simpa using (List.map_congr_left (g := id)
+        (fun x hx => subst_above ((scopedArgs_iff _ _).mp ht.2.1 x hx) (Nat.zero_le j) a))
+    rw [hc]
     exact ht
   all_goals simp_all
 
@@ -156,6 +170,13 @@ theorem Names.instantiate {D t} (ht : Names D t) (ρ : Env)
     rw [instantiate_above (ht.2.1.1.mono (Nat.zero_le d)),
       instantiate_above (ht.2.1.2.1.mono (Nat.zero_le d)), hpre]
     exact ht
+  case objGraph fs n E K st caps ihE ihc =>
+    have hc : caps.map (Model.instantiate d ρ) = caps := by
+      simpa using (List.map_congr_left (g := id)
+        (fun x hx => instantiate_above
+          (((scopedArgs_iff _ _).mp ht.2.1 x hx).mono (Nat.zero_le d)) ρ))
+    rw [hc]
+    exact ht
   all_goals simp_all
 
 /-! Program syntax cannot manufacture an already allocated identity, even in
@@ -177,6 +198,8 @@ def sourceTerm : Tm → Bool
   | .arrLit args => sourceArgs args
   | .arr .. => false
   | .ite c a b => sourceTerm c && sourceTerm a && sourceTerm b
+  | .makeAt (.graph _ E _ _ caps) _ args => sourceArgs E && sourceArgs caps && sourceArgs args
+  | .goto .. | .frame .. => false
   | _ => true
 
 def sourceArgs : List Tm → Bool
@@ -230,6 +253,7 @@ theorem termOk_make_arg {D c ns inits a} (ht : TermOk D (.makeAt c ns inits)) (h
   · exact ⟨ht.1.2 a hm, ht.2.2 a hm⟩
   · exact ⟨ht.1.2 a hm, ht.2.2 a hm⟩
   · exact ⟨ht.1.2.2.2 a hm, ht.2.2.2.2 a hm⟩
+  · exact ⟨ht.1.2 a hm, ht.2.2.2 a hm⟩
 
 /-- What a coherent term throws is coherent. -/
 theorem raises_termOk {t v} (hr : Raises t v) {D} (ht : TermOk D t) : TermOk D v := by
@@ -259,6 +283,25 @@ theorem raises_termOk {t v} (hr : Raises t v) {D} (ht : TermOk D t) : TermOk D v
   | setC2 _ _ ih => exact ih ⟨ht.1.2.1, ht.2.2.1⟩
   | setC3 _ _ _ ih => exact ih ⟨ht.1.2.2, ht.2.2.2⟩
   | throwC _ ih | spreadC _ ih | readC _ ih | testC _ ih | lenC _ ih => exact ih ht
+
+/-- A graph run's next node, in an environment mapped from coherent values. -/
+theorem termOk_goto {D : Registry} {E : List Tm} {K} {l : Nat} {m : Option (List Nat)}
+    {L : List Tm} {d : Tm} (hE : ∀ e ∈ E, Names D e) (hL : ∀ v ∈ L, TermOk D v)
+    (hd : TermOk D d) : TermOk D (.goto E K l (envMap m L d).1 (envMap m L d).2) := by
+  have hx : ∀ x, (x ∈ (envMap m L d).1 ∨ x = (envMap m L d).2) → TermOk D x := by
+    intro x hx
+    rcases envMap_mem hx with hx | rfl
+    · exact hL x hx
+    · exact hd
+  simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff]
+  exact ⟨⟨fun a ha => (hx a (Or.inl ha)).1, (hx _ (Or.inr rfl)).1⟩,
+    hE, fun a ha => (hx a (Or.inl ha)).2, (hx _ (Or.inr rfl)).2⟩
+
+theorem termOk_frame {D : Registry} {E K t L d k x} (ht : TermOk D (.frame E K t L d k x)) :
+    (∀ e ∈ E, Names D e) ∧ TermOk D t ∧ (∀ v ∈ L, TermOk D v) ∧ TermOk D d := by
+  simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht
+  exact ⟨ht.2.1, ⟨ht.1.1, ht.2.2.1⟩, fun v hv => ⟨ht.1.2.1 v hv, ht.2.2.2.1 v hv⟩,
+    ⟨ht.1.2.2, ht.2.2.2.2⟩⟩
 
 /-- Every actual expression step preserves coherence. Only allocation extends
 its registry; existing entries are never rewritten. -/
@@ -394,6 +437,19 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
         rcases List.mem_or_eq_of_mem_set hv with hv | rfl
         · exact (ht.2.2.2.2 v hv).mono hx
         · exact hn
+    | graph n E K st caps =>
+      simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
+      obtain ⟨E',hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.2 _ hm,ht.2.2.2 _ hm⟩
+      refine ⟨E',hx,hh',⟨ht.1.1,?_⟩,fun v hv => (ht.2.1 v hv).mono hx,
+        fun v hv => (ht.2.2.1 v hv).mono hx,?_⟩
+      · intro v hv
+        rcases List.mem_or_eq_of_mem_set hv with hv | rfl
+        · exact ht.1.2 v hv
+        · exact hs
+      · intro v hv
+        rcases List.mem_or_eq_of_mem_set hv with hv | rfl
+        · exact (ht.2.2.2 v hv).mono hx
+        · exact hn
   | @makeFields c ns vs h hv hlen =>
     intro D hh ht
     have hx := extends_append D (List.replicate vs.length c)
@@ -420,6 +476,11 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
       refine ⟨_,hx,hh.alloc (fun v hv' => ⟨hv v hv',ht.1.2.2.2 v hv',ht.2.2.2.2 v hv'⟩) _,
         ⟨ht.1.1,ht.1.2.1,ht.1.2.2.1⟩,hfield,⟨ht.1.1,ht.1.2.1,ht.1.2.2.1⟩,ht.2.1.mono hx,
         ht.2.2.1.mono hx,fun v hv => (ht.2.2.2.1 v hv).mono hx⟩
+    | graph n E K st caps =>
+      simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
+      refine ⟨_,hx,hh.alloc (fun v hv' => ⟨hv v hv',ht.1.2 v hv',ht.2.2.2 v hv'⟩) _,
+        ht.1.1,hfield,ht.1.1,fun v hv => (ht.2.1 v hv).mono hx,
+        fun v hv => (ht.2.2.1 v hv).mono hx⟩
   | readC step ih =>
     intro D hh ht
     exact ih D hh ht
@@ -584,6 +645,84 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
     · simp only [Names, namesArgs_iff, List.mem_map]
       rintro _ ⟨p, hp', rfl⟩
       exact (hvs p hp').2
+  | callGraph hr hv =>
+    intro D hh ht
+    simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
+    obtain ⟨⟨hsc, hsr, hsa⟩, ⟨_, _, hnE, hnc⟩, hnr, hna⟩ := ht
+    refine ⟨D, .refl D, hh, ⟨fun a hm => ?_, trivial⟩, hnE, fun a hm => ?_, trivial⟩
+    · rcases List.mem_cons.mp hm with rfl | hm
+      · exact hsr
+      rcases List.mem_append.mp hm with hm | hm
+      · exact CallArguments.parameters_property (by trivial) hsa a hm
+      · exact hsc a hm
+    · rcases List.mem_cons.mp hm with rfl | hm
+      · exact hnr
+      rcases List.mem_append.mp hm with hm | hm
+      · exact CallArguments.parameters_property (by trivial) hna a hm
+      · exact hnc a hm
+  | @gotoEnter E l e K k x h L d he hk =>
+    intro D hh ht
+    simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
+    obtain ⟨⟨hsL, hsd⟩, hnE, hnL, hnd⟩ := ht
+    have henv : ∀ i, Scoped 0 (envOf L d i) := fun i => by
+      show Scoped 0 (L.getD i d)
+      rcases getD_mem_or L i d with hm | hm
+      · exact hsL _ hm
+      · rw [hm]; exact hsd
+    have hnenv : ∀ i, Names D (envOf L d i) := fun i => by
+      show Names D (L.getD i d)
+      rcases getD_mem_or L i d with hm | hm
+      · exact hnL _ hm
+      · rw [hm]; exact hnd
+    exact ⟨D, .refl D, hh, ⟨instantiate_scoped _ henv e 0, hsL, hsd⟩,
+      hnE, (hnE e (List.mem_of_getElem? he)).instantiate _ hnenv 0, hnL, hnd⟩
+  | frameC step ih =>
+    intro D hh ht
+    obtain ⟨hE, htt, hL, hd⟩ := termOk_frame ht
+    obtain ⟨E', hx, hh', hs, hn⟩ := ih D hh htt
+    simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff]
+    exact ⟨E', hx, hh', ⟨hs, fun v hv => (hL v hv).1, hd.1⟩,
+      fun e he => (hE e he).mono hx, hn, fun v hv => (hL v hv).2.mono hx, hd.2.mono hx⟩
+  | frameRet hv =>
+    intro D hh ht
+    exact ⟨D, .refl D, hh, (termOk_frame ht).2.1⟩
+  | frameBind hv | frameTag hv =>
+    intro D hh ht
+    obtain ⟨hE, htt, hL, hd⟩ := termOk_frame ht
+    refine ⟨D, .refl D, hh, termOk_goto hE ?_ hd⟩
+    intro w hw
+    rcases List.mem_cons.mp hw with rfl | hw
+    · exact htt
+    · exact hL w hw
+  | frameEffect hv =>
+    intro D hh ht
+    obtain ⟨hE, htt, hL, hd⟩ := termOk_frame ht
+    exact ⟨D, .refl D, hh, termOk_goto hE hL hd⟩
+  | frameYes | frameNo =>
+    intro D hh ht
+    obtain ⟨hE, htt, hL, hd⟩ := termOk_frame ht
+    exact ⟨D, .refl D, hh, termOk_goto hE hL hd⟩
+  | frameYesBind | frameNoBind =>
+    intro D hh ht
+    obtain ⟨hE, htt, hL, hd⟩ := termOk_frame ht
+    refine ⟨D, .refl D, hh, termOk_goto hE ?_ hd⟩
+    intro w hw
+    rcases List.mem_cons.mp hw with rfl | hw
+    · exact ⟨trivial, trivial⟩
+    · exact hL w hw
+  | frameHandle hr =>
+    intro D hh ht
+    obtain ⟨hE, htt, hL, hd⟩ := termOk_frame ht
+    refine ⟨D, .refl D, hh, termOk_goto hE ?_ hd⟩
+    intro w hw
+    rcases List.mem_cons.mp hw with rfl | hw
+    · exact raises_termOk hr htt
+    · exact hL w hw
+  | frameRaise hr =>
+    intro D hh ht
+    obtain ⟨hE, htt, hL, hd⟩ := termOk_frame ht
+    have hv := raises_termOk hr htt
+    exact ⟨D, .refl D, hh, by simpa [TermOk, Scoped, Names] using hv⟩
   | lenV | lenStr =>
     intro D hh ht
     exact ⟨D,.refl D,hh,trivial,trivial⟩

@@ -726,6 +726,7 @@ theorem Invocable.invoke {v r : Tm} {args : List Tm} (h : Invocable v) (hr : isV
     · simp [CallCode.callable] at hc
   | variadic fixed body => exact ⟨_, .variadic hr ha⟩
   | bound target r₀ pre => exact ⟨_, .bound hr ha⟩
+  | graph arity E K start caps => exact ⟨_, .graph hr ha⟩
 
 theorem Invocable.scoped {v : Val} (h : Invocable v) : Scoped 0 v := by
   obtain ⟨fs, code, rfl, -, hs⟩ := h; exact hs

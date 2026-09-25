@@ -27,7 +27,7 @@ private def program : Program :=
    ⟨.ite (.test .isFun (.var 0)) (.app (.var 0) .fls) .tru,.ret,none⟩]
 private def claims : List (PointClaim Nat) :=
   [⟨[],[2]⟩,⟨[[2]],[0]⟩,⟨[[2]],[0,2]⟩,⟨[[0,2],[2]],[1]⟩]
-private def request : Request := ⟨types,program,claims,[1],0,[]⟩
+private def request : Request := ⟨types,program,claims,[1],0,[], []⟩
 private def certificate : ControlFlow.Certificate Nat :=
   match produce G labels 10 [1] program claims 0 with | .ok c => c | .error _ => []
 
@@ -77,7 +77,7 @@ private def capturedProgram : Program :=
 private def capturedClaims : List (PointClaim Nat) :=
   [⟨[],[2]⟩,⟨[[2]],[6]⟩,⟨[[6],[2]],[0]⟩,⟨[[6],[2]],[0,2]⟩,
    ⟨[[0,2],[6],[2]],[1]⟩]
-private def capturedRequest : Request := ⟨types,capturedProgram,capturedClaims,[1],0,[]⟩
+private def capturedRequest : Request := ⟨types,capturedProgram,capturedClaims,[1],0,[], []⟩
 #guard match (do
     let response ← produceJson (toJson capturedRequest) 10
     verifyJson (toJson capturedRequest) response) with

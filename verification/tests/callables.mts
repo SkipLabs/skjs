@@ -40,8 +40,9 @@ const about = (name: string) => {
 type Apply = Extract<Expr, { k: "apply" }>;
 type Bin = Extract<Expr, { k: "bin" }>;
 type Conditional = Extract<Expr, { k: "conditional" }>;
-type LetBody = Extract<Expr, { k: "letBody" }>;
-type IfBody = Extract<Expr, { k: "ifBody" }>;
+type If = Extract<Stmt, { k: "if" }>;
+/** The statements of a closure's block body. */
+const block = (e: Expr): Stmt[] => expr(e, "blockBody").body;
 type Write = Extract<Expr, { k: "write" }>;
 /** One actual of a call, which several alterations replace or re-claim. */
 const nthArg = (call: Apply, i: number): Expr =>
@@ -54,8 +55,8 @@ const closure = (f: FunctionAst, i: number) =>
 type Branch = Extract<Stmt, { k: "if" }>;
 const escaping = (branch: Branch) =>
   expr(stmt(nth(must(branch.else_, "an else arm"), 0), "return").e, "lambda");
-/** The binding a lowered `let` body introduces inside another. */
-const inner = (b: LetBody) => expr(b.body, "letBody");
+/** The declaration a closure body's i-th statement makes. */
+const declared = (ss: Stmt[], i: number) => sole(stmt(nth(ss, i), "const"));
 /** The arrows a claim states, where a fixture exports one alternative each. */
 const callableAlternatives = (claim: SkjsExpression): FunctionAtom[] => {
   const atoms = claimType(claim).atoms;
@@ -163,30 +164,29 @@ try {
     expect(`${name} (consumer)`, run("--check-stateful-source", a, c, evidence), false);
   }
 
-  for (const [name, edit] of rows<[string, (b: LetBody, at: At, fc: SkjsFunction) => void]>([
-    ["alias selection must respect the guard", (b, at, fc) => {
-      expr(expr(b.init, "conditional").cond, "bin").op = "!==";
+  for (const [name, edit] of rows<[string, (ss: Stmt[], at: At, fc: SkjsFunction) => void]>([
+    ["alias selection must respect the guard", (ss, at, fc) => {
+      expr(expr(declared(ss, 0).init, "conditional").cond, "bin").op = "!==";
     }],
-    ["selected alias cannot make the original callable", (b, at, fc) => {
-      expr(expr(inner(b).init, "lambda").body, "apply");
-      expr(expr(expr(inner(b).init, "lambda").body, "apply").callee, "id").name = "f";
+    ["selected alias cannot make the original callable", (ss, at, fc) => {
+      expr(expr(expr(declared(ss, 1).init, "lambda").body, "apply").callee, "id").name = "f";
     }],
-    ["alias initializer must retain the fallback", (b, at, fc) => {
-      const type = claimType(at(b.init));
+    ["alias initializer must retain the fallback", (ss, at, fc) => {
+      const type = claimType(at(declared(ss, 0).init));
       assertCallableAlternatives(type.atoms);
       type.atoms = [must(type.atoms[0], "an alternative")];
     }],
-    ["joined alias entry cannot discard an alternative", (b, at, fc) => {
-      const type = claimType(binding(fc, inner(b).pos[0], "selected"));
+    ["joined alias entry cannot discard an alternative", (ss, at, fc) => {
+      const type = claimType(binding(fc, nth(ss, 1).pos[0], "selected"));
       assertCallableAlternatives(type.atoms);
       type.atoms = [must(type.atoms[0], "an alternative")];
     }],
-    ["nested alias call result cannot narrow", (b, at, fc) => {
-      at(expr(inner(b).init, "lambda").body).type = lit("true");
+    ["nested alias call result cannot narrow", (ss, at, fc) => {
+      at(expr(declared(ss, 1).init, "lambda").body).type = lit("true");
     }],
   ])) {
     const {a, c, f, fc, at} = about("aliasedCallableSelection");
-    edit(expr(closure(f, 0), "letBody"), at, fc);
+    edit(block(closure(f, 0)), at, fc);
     expect(name, run("--produce-stateful-source", a, c), false);
     expect(`${name} (consumer)`, run("--check-stateful-source", a, c, evidence), false);
   }
@@ -215,7 +215,7 @@ try {
     }],
   ])) {
     const {a, c, f, at} = about("sharedCallableDomain");
-    edit(expr(expr(expr(closure(f, 0), "letBody").body, "returnBody").e, "apply"), at);
+    edit(expr(stmt(nth(block(closure(f, 0)), 1), "return").e, "apply"), at);
     expect(name, run("--produce-stateful-source", a, c), false);
     expect(`${name} (consumer)`, run("--check-stateful-source", a, c, evidence), false);
   }
@@ -326,17 +326,19 @@ try {
     expect("same-typed capture cannot replace argument parameter", run("--check-stateful-source", ast, claims, changed), false);
   }
 
-  for (const [name, edit] of rows<[string, (body: IfBody) => void]>([
+  const returned = (body: If) =>
+    expr(expr(stmt(nth(must(body.else_, "an else arm"), 0), "return").e, "lambda").body, "id");
+  for (const [name, edit] of rows<[string, (body: If) => void]>([
     ["returned capture requires the non-null factory branch", (body) => {
       expr(body.cond, "bin").op = "!==";
     }],
     ["factory argument refinement cannot transfer to the caller capture", (body) => {
-      expr(expr(expr(body.else_, "returnBody").e, "lambda").body, "id").name = "seed";
+      returned(body).name = "seed";
     }],
   ])) {
     const a = clone(ast);
-    const body = expr(closure(fn(a, "branchReturnedCapture"), 0), "ifBody");
-    assert.equal(expr(expr(expr(body.else_, "returnBody").e, "lambda").body, "id").name, "input");
+    const body = stmt(nth(block(closure(fn(a, "branchReturnedCapture"), 0)), 0), "if");
+    assert.equal(returned(body).name, "input");
     edit(body);
     expect(name, run("--produce-stateful-source", a, claims), false);
     expect(`${name} (consumer)`, run("--check-stateful-source", a, claims, evidence), false);

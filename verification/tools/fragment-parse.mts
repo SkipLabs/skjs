@@ -140,6 +140,22 @@ function jumpTarget(node: ts.BreakStatement | ts.ContinueStatement): Node | unde
   return undefined;
 }
 
+/** Whether a statement list can complete normally, rather than always
+ * ending in a jump, a `return` or a `throw` (Lean's `abrupt`, negated). */
+function completes(ss: Stmt[]): boolean {
+  const last = ss.at(-1);
+  if (!last) return true;
+  switch (last.k) {
+    case "return": case "throw": case "break": case "continue": return false;
+    case "if": return last.else_ === null || completes(last.then) || completes(last.else_);
+    case "block": return last.label !== null || completes(last.body);
+    case "try":
+      if (last.finalizer !== null && !completes(last.finalizer)) return false;
+      return completes(last.body) || (last.handler !== null && completes(last.handler.body));
+    default: return true;
+  }
+}
+
 function firstOptional(
   parameters: readonly { questionToken?: unknown; initializer?: unknown }[],
 ): number {
@@ -655,6 +671,12 @@ class Gate {
         if (keyword < 0 || keyword > name.getStart(this.file)) this.fail(node, "a class declaration without its keyword");
         proto = { k: "id", pos: [keyword, keyword + "class".length], name: protoBinding };
       }
+      // A `return` in a constructor's own code, outside any function nested
+      // in it: `new` would evaluate to the instance, not to what it returns.
+      const nested = (n: Node): boolean => ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n) ||
+        ts.isArrowFunction(n) || ts.isMethodDeclaration(n) || ts.isClassDeclaration(n) || ts.isClassExpression(n);
+      const returns = (n: Node): boolean => ts.isReturnStatement(n) ||
+        (!nested(n) && !!n.forEachChild((c) => returns(c) || undefined));
       const assignment = (statement: Statement) => {
         const e = ts.isExpressionStatement(statement) ? statement.expression : undefined;
         return e && ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
@@ -671,11 +693,11 @@ class Gate {
       // no source binding can spell, so evaluation order is the source's. A
       // last `if` that assigns fields ends each arm with its own allocation.
       const construct = (body: readonly Statement[], before: Field[], done: Set<string>,
-          prelude: Stmt[] = []): Expr => {
+          prelude: Stmt[] = []): Stmt[] => {
         const fields = before.map((f) => ({ ...f }));
         const assigned = new Set(done);
         const statements: Stmt[] = [...prelude];
-        let tail: Expr | null = null;
+        let branched = false;
         const flush = () => {
           for (const f of fields) {
             if (!f.bind || f.e.k === "lit") continue;
@@ -704,13 +726,16 @@ class Gate {
               this.fail(statement, "a constructor statement that reads `this` is outside the fragment");
             // An unbraced arm, `else if` included, is the one statement a
             // block around it would hold.
-            const arm = (s: Statement | undefined): Expr =>
+            const arm = (s: Statement | undefined): Stmt[] =>
               construct(!s ? [] : ts.isBlock(s) ? s.statements : [s], fields, assigned);
             flush();
-            tail = { k: "ifBody", pos: this.span(statement), result: instance, cond: this.expr(statement.expression),
-              then: arm(statement.thenStatement), else_: arm(statement.elseStatement) };
+            statements.push({ k: "if", pos: this.span(statement), cond: this.expr(statement.expression),
+              then: arm(statement.thenStatement), else_: arm(statement.elseStatement) });
+            branched = true;
             break;
           }
+          if (returns(statement))
+            this.fail(statement, "a constructor does not return");
           if (readsThis(statement))
             this.fail(statement, assigns(statement)
               ? "a constructor assigns fields in its own block, or in the arms of its last `if`"
@@ -718,20 +743,22 @@ class Gate {
           flush();
           statements.push(this.stmt(statement));
         }
-        if (!tail) {
+        if (!branched) {
           for (const [f, { pos }] of uninitialized)
             if (!assigned.has(f)) fields.push({ name: f, e: { k: "lit", pos, lit: { a: "undefined" } }, bind: null });
-          // A derived instance is its base's part, copied, then its own
-          // fields over it: the allocation from parts an object literal with
-          // a spread is.
-          tail = derivedBase
-            ? { k: "build", pos: this.span(name), parts: [{ spread: derivedBase },
+          // The allocation ends the constructor's block: the instance is what
+          // `new` evaluates to. A derived instance is its base's part, copied,
+          // then its own fields over it: the allocation from parts an object
+          // literal with a spread is.
+          const at = this.span(name);
+          const instanceValue: Expr = derivedBase
+            ? { k: "build", pos: at, parts: [{ spread: derivedBase },
                 ...fields.map(({ name, e }) => ({ name, e }))], ...(proto ? { proto } : {}) }
-            : { k: "alloc", pos: this.span(name), fields: fields.map(({ name, e }) => ({ name, e })),
+            : { k: "alloc", pos: at, fields: fields.map(({ name, e }) => ({ name, e })),
               ...(proto ? { proto } : {}) };
+          statements.push({ k: "return", pos: at, e: instanceValue });
         }
-        return statements.length === 0 ? tail : this.closureBlock(constructor ?? node, statements,
-          () => this.fail(constructor ?? node, "a constructor does not return"), tail);
+        return statements;
       };
       // A derived constructor: its statements before `super(...)`, which may
       // not touch `this`, then the base's constructor at the actuals, bound
@@ -775,7 +802,8 @@ class Gate {
       const lambda: Expr = { k: "ctor", pos: this.span(node), ...(typeParams.length ? { typeParams } : {}),
         lambda: { k: "lambda", pos: this.span(node),
         typeParams: [], receiver: null, params: params.map((p) => ({ name: p.name, type: p.type })),
-        result: instance, body: construct(body, fields, new Set(), prelude) } };
+        result: instance, body: { k: "blockBody", pos: this.span(constructor?.body ?? node),
+          body: construct(body, fields, new Set(), prelude) } } };
       const type: TypeTerm = { k: "constructor", params: params.map((p) => p.type), rest: null, result: instance,
         span: this.span(name) };
       // A class another extends is also bound, first, as its fresh
@@ -2208,18 +2236,14 @@ class Gate {
           };
       // Each name is taken where its parameter has just been checked: a
       // narrowing does not survive into the second pass over the same list.
-      // A parameter written as a pattern binds a hidden name; the body
-      // starts with a `destructBody` over it, in parameter order.
       const bound = new Set<string>();
       const patterns: (PatternAst | null)[] = parameters.map((p) =>
         ts.isIdentifier(p.name) ? null : this.pattern(p.name, bound));
-      const names = parameters.map((p, i) => {
+      for (const p of parameters) {
         if (ts.isIdentifier(p.name) && p.name.text === "this")
           this.fail(p, "expected an ordinary closure parameter");
-        if (!ts.isIdentifier(p.name)) {
-          if (p.dotDotDotToken) this.fail(p, "a rest parameter pattern is outside the fragment");
-          return parameterName(i);
-        }
+        if (!ts.isIdentifier(p.name) && p.dotDotDotToken)
+          this.fail(p, "a rest parameter pattern is outside the fragment");
         if (p.questionToken && p.initializer)
           this.fail(p, "a parameter cannot be both optional and defaulted");
         if (p.dotDotDotToken) {
@@ -2235,10 +2259,9 @@ class Gate {
           parameters.indexOf(p) > firstOptional(parameters)
         )
           this.fail(p, "a required parameter cannot follow an optional one");
-        if (p.name.text === "undefined")
+        if (ts.isIdentifier(p.name) && p.name.text === "undefined")
           this.fail(p, "shadowing undefined is outside the fragment");
-        return p.name.text;
-      });
+      }
 
       // A closure without a result annotation leaves its result to the
       // producer: the claim at the closure states it, and the body is checked
@@ -2246,39 +2269,87 @@ class Gate {
       // member, which states it, so a method still needs the annotation.
       const declaredResult: TypeTerm | null =
         node.type || instance ? this.typeOf(node.type, node) : null;
-      const result = (): TypeTerm => declaredResult ??
-        this.fail(node, "a closure returning from a branch needs a result annotation");
-      // An async arrow's expression body is its return: `%AsyncReturn%(e)`,
-      // the call at `=>`, the intrinsic read at `async`.
-      const statements = (block: ts.Block): Stmt[] => {
-        const stmts = this.statements(block.statements.filter((s) => !prologue.skip.has(s)));
-        return isAsync ? this.asyncCompletion(block, stmts) : stmts;
-      };
       const arrow = ts.isArrowFunction(node) ? this.span(node.equalsGreaterThanToken) : null;
       const keyword = modifiers[0];
-      const inner = ts.isBlock(body)
-        ? this.closureBlock(body, statements(body), result)
-        : isAsync && arrow && keyword
-          ? this.intrinsic(asyncReturnName, arrow, this.span(keyword), [this.expr(body)])
-          : this.expr(body);
+      const rest = (p: ts.ParameterDeclaration) => p.dotDotDotToken ? { rest: true as const } : {};
+      // A block body, or a parameter written as a pattern, makes the body
+      // statements, lowered as a function's are: a parameter written as a
+      // pattern or with a default binds a hidden name, which the caller's
+      // argument initializes, and a `destructure` over it, first in the body
+      // in parameter order, binds the source's names, the default replacing
+      // an undefined argument, as JavaScript initializes parameters.
+      if (ts.isBlock(body) || patterns.some((t) => t !== null)) {
+        const bindings: Stmt[] = [];
+        const params = parameters.map((p, i) => {
+          if (ts.isIdentifier(p.name) && !p.initializer)
+            return {
+              name: p.name.text,
+              type: p.dotDotDotToken ? this.restType(p) : p.questionToken
+                ? this.optionalTypeOf(p.type, p)
+                : this.typeOf(p.type, p),
+              ...rest(p),
+            };
+          const hidden = parameterName(i);
+          const at = this.span(p.name);
+          bindings.push({
+            k: "destructure",
+            pos: this.span(p),
+            target: patterns[i] ?? { k: "name", name: (p.name as ts.Identifier).text, pos: at },
+            default_: p.initializer ? this.expr(p.initializer) : null,
+            init: { k: "id", pos: at, name: hidden },
+          });
+          // A caller may pass `undefined` where there is a default.
+          return {
+            name: hidden,
+            type: p.questionToken || p.initializer ? this.optionalTypeOf(p.type, p) : this.typeOf(p.type, p),
+          };
+        });
+        this.initializedBefore(node, params.map((q): [PatternAst, Expr | null] => {
+          const b = bindings.find((st) => st.k === "destructure" && st.init.k === "id" && st.init.name === q.name);
+          return b?.k === "destructure" ? [b.target, b.default_] : [{ k: "name", name: q.name, pos: this.span(node) }, null];
+        }));
+        let statements: Stmt[];
+        if (ts.isBlock(body)) {
+          const stmts = this.statements(body.statements.filter((s) => !prologue.skip.has(s)));
+          // A body that can complete returns `undefined` at its closing
+          // brace, the literal there too; an async one, `%AsyncComplete%()`.
+          const brace: Span = [body.end - 1, body.end];
+          statements = isAsync ? this.asyncCompletion(body, stmts)
+            : completes(stmts) ? [...stmts, { k: "return", pos: brace,
+                e: { k: "lit", pos: brace, lit: { a: "undefined" } } }]
+            : stmts;
+        } else {
+          // An expression body is its return: `%AsyncReturn%(e)` when async,
+          // the call at `=>`, the intrinsic read at `async`.
+          const e = isAsync && arrow && keyword
+            ? this.intrinsic(asyncReturnName, arrow, this.span(keyword), [this.expr(body)])
+            : this.expr(body);
+          statements = [{ k: "return", pos: this.span(body), e }];
+        }
+        return {
+          k: "lambda",
+          pos: this.span(node),
+          typeParams,
+          receiver,
+          params,
+          result: declaredResult,
+          body: { k: "blockBody", pos: this.span(body), body: [...bindings, ...statements] },
+        };
+      }
+      const inner = isAsync && arrow && keyword
+        ? this.intrinsic(asyncReturnName, arrow, this.span(keyword), [this.expr(body)])
+        : this.expr(body);
       const defaults = parameters.map((p) => p.initializer ? this.expr(p.initializer) : null);
-      // A parameter default's own schedule is Lean's (`parameterOrder`); a
-      // pattern's defaults run where the pattern binds, after every
-      // parameter is initialized, so none may read a later pattern's name.
-      this.initializedBefore(node, parameters.map((p, i): [PatternAst, Expr | null] =>
-        [patterns[i] ?? { k: "name", name: names[i], pos: this.span(p.name) }, null]));
-      const lowered = parameters.reduceRight((body: Expr, p, i): Expr => {
-        const target = patterns[i];
-        return target ? { k: "destructBody", pos: this.span(p), target,
-          init: { k: "id", pos: this.span(p.name), name: names[i] }, body } : body;
-      }, inner);
+      // A parameter default's own schedule is Lean's (`parameterOrder`).
+      this.initializedBefore(node, parameters.map((p): [PatternAst, Expr | null] =>
+        [{ k: "name", name: (p.name as ts.Identifier).text, pos: this.span(p.name) }, null]));
       return {
         k: "lambda",
         pos: this.span(node),
         typeParams,
         receiver,
         params: parameters.map((p, i) => ({
-          name: names[i],
+          name: (p.name as ts.Identifier).text,
           // A defaulted parameter's type is what the body reads; the default
           // itself is the expression that replaces an omitted argument. A rest
           // parameter's type is the tuple its arguments are collected into.
@@ -2286,10 +2357,10 @@ class Gate {
             ? this.optionalTypeOf(p.type, p)
             : this.typeOf(p.type, p),
           ...(defaults[i] ? { default: defaults[i] } : {}),
-          ...(p.dotDotDotToken ? { rest: true as const } : {}),
+          ...rest(p),
         })),
         result: declaredResult,
-        body: lowered,
+        body: inner,
       };
     } finally {
       this.leaveTypeParams();
@@ -2297,139 +2368,6 @@ class Gate {
       this.receiverMode = outerReceiverMode;
       this.asyncBody = outerAsync;
     }
-  }
-
-  /** A block returning on its terminal arms, or, with `fallThrough`, one
-   * that returns nowhere and continues into that expression: a constructor's
-   * statements before its instance is allocated. */
-  private closureBlock(
-    at: Node,
-    statements: Stmt[],
-    result: () => TypeTerm,
-    fallThrough?: Expr,
-  ): Expr {
-    // A `throw` ends a body as a `return` does.
-    const hasReturn = (xs: Stmt[]): boolean =>
-      xs.some(
-        (st) =>
-          st.k === "return" || st.k === "throw" ||
-          (st.k === "if" && (hasReturn(st.then) || hasReturn(st.else_ ?? []))),
-      );
-    const returns = (xs: Stmt[]): boolean => {
-      const last = xs.at(-1);
-      return (
-        last?.k === "return" || last?.k === "throw" ||
-        (last?.k === "if" && returns(last.then) && returns(last.else_ ?? []))
-      );
-    };
-
-    const prefix = (stmts: Stmt[], tail: Expr, allowReturn = false): Expr => {
-      for (let i = stmts.length - 1; i >= 0; --i) {
-        const st = stmts[i];
-        if (st.k === "while" || st.k === "forOf" || st.k === "break" || st.k === "continue")
-          this.fail(
-            at,
-            "loops inside closures require a graph-backed call/body interface",
-          );
-        if (st.k === "block" || st.k === "try")
-          this.fail(
-            at,
-            "a block, switch or try inside a closure requires a graph-backed call/body interface",
-          );
-        if (st.k === "if") {
-          const yes = st.then,
-            no = st.else_ ?? [];
-          const arm = (xs: Stmt[]) =>
-            prefix(xs, { k: "doneBody", pos: st.pos });
-          if (!hasReturn(yes) && !hasReturn(no)) {
-            const init: Expr = {
-              k: "ifBody",
-              pos: st.pos,
-              result: { k: "atom", name: "null", span: st.pos },
-              cond: st.cond,
-              then: arm(yes),
-              else_: arm(no),
-            };
-            tail = { k: "seqBody", pos: st.pos, init, body: tail };
-          } else if (
-            allowReturn &&
-            ((returns(yes) && !hasReturn(no)) ||
-              (returns(no) && !hasReturn(yes)))
-          ) {
-            // Finish the falling arm in its own scope before the continuation.
-            const resume = (xs: Stmt[]): Expr =>
-              xs.length === 0
-                ? tail
-                : { k: "seqBody", pos: st.pos, init: arm(xs), body: tail };
-            tail = {
-              k: "ifBody",
-              pos: st.pos,
-              result: result(),
-              cond: st.cond,
-              then: returns(yes) ? block(yes) : resume(yes),
-              else_: returns(no) ? block(no) : resume(no),
-            };
-          } else
-            this.fail(
-              at,
-              "closure branch needs one returning arm and one return-free arm",
-            );
-        } else if (st.k === "destructure") {
-          // One entry, like a `const`: the initializer, then the bindings.
-          tail = { k: "destructBody", pos: st.pos, target: st.target, init: st.init, body: tail };
-        } else if (st.k === "const" || st.k === "effect") {
-          // A lowered binding is an entry of its own, and a producer states
-          // one entry per statement: a list of declarators has no entry for
-          // its later bindings inside a closure body.
-          if (st.k === "const" && st.bindings.length !== 1)
-            this.fail(at, "one binding per `const` in a closure body");
-          const bound = st.k === "const" ? st.bindings[0] : null;
-          tail = {
-            k: "letBody",
-            pos: st.pos,
-            name: bound ? bound.name : "",
-            annot: bound ? bound.annot : null,
-            init: st.k === "const" ? st.bindings[0].init : st.e,
-            body: tail,
-          };
-        } else
-          this.fail(
-            at,
-            st.k === "let"
-              ? "a mutable local in a closure body is outside the fragment"
-              : "statements after an unconditional return are outside the fragment",
-          );
-      }
-      return tail;
-    };
-
-    const block = (stmts: Stmt[]): Expr => {
-      const last = stmts.at(-1);
-      let tail: Expr;
-      if (last?.k === "return")
-        tail = { k: "returnBody", pos: last.pos, e: last.e };
-      else if (last?.k === "throw")
-        tail = { k: "throwBody", pos: last.pos, e: last.e };
-      else if (last?.k === "if" && last.else_ !== null)
-        tail = {
-          k: "ifBody",
-          pos: last.pos,
-          result: result(),
-          cond: last.cond,
-          then: block(last.then),
-          else_: block(last.else_),
-        };
-      else this.fail(at, "closure block must return on both terminal arms");
-      return prefix(stmts.slice(0, -1), tail, true);
-    };
-
-    if (fallThrough) return prefix(statements, fallThrough);
-    // A body that does not return on every terminal arm completes by falling
-    // off its end, which returns `undefined`: `return undefined` at the
-    // closing brace, the literal there too.
-    const brace: Span = [at.end - 1, at.end];
-    return block(returns(statements) ? statements
-      : [...statements, { k: "return", pos: brace, e: { k: "lit", pos: brace, lit: { a: "undefined" } } }]);
   }
 
   /* -------------------------------------------------------- statements -- */

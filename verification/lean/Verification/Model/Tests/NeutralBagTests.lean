@@ -69,7 +69,7 @@ private def program (callable : Bool) : Program :=
 private def claims : List (PointClaim Nat) :=
   [⟨[],[2,3]⟩,⟨[[2,3]],[0]⟩,⟨[[2,3]],[1]⟩]
 private def request (callable : Bool) : Request :=
-  ⟨types,program callable,claims,[1],0,[]⟩
+  ⟨types,program callable,claims,[1],0,[], []⟩
 #guard [false,true].all fun callable => match (do
     let response ← produceJson (Lean.toJson (request callable)) 8
     verifyJson (Lean.toJson (request callable)) response) with
@@ -100,7 +100,7 @@ private def framedClaims : List (PointClaim Nat) :=
   [⟨[],[2,3]⟩,⟨[[2,3]],[1]⟩,⟨[[1],[2,3]],[2]⟩,
    ⟨[[2],[1],[2,3]],[1]⟩,⟨[[1],[2],[1],[2,3]],[5]⟩]
 private def framedRequest (callable : Bool) : Request :=
-  ⟨types,framedProgram callable,framedClaims,[5],0,[]⟩
+  ⟨types,framedProgram callable,framedClaims,[5],0,[], []⟩
 #guard [false,true].all fun callable => match (do
     let response ← produceJson (Lean.toJson (framedRequest callable)) 8
     verifyJson (Lean.toJson (framedRequest callable)) response) with

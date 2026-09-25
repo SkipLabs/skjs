@@ -42,7 +42,7 @@ private def program (nullResult : Bool) : Program :=
    ⟨.app (.var 0) .tru,.ret,none⟩]
 private def claims : List (PointClaim Nat) := [⟨[],[2,3]⟩,⟨callClaim.context,callClaim.type⟩]
 private def request (nullResult : Bool) : Request :=
-  ⟨types,program nullResult,claims,[0,1],0,[]⟩
+  ⟨types,program nullResult,claims,[0,1],0,[], []⟩
 #guard [false,true].all fun nullResult => match (do
     let response ← produceJson (Lean.toJson (request nullResult)) 8
     verifyJson (Lean.toJson (request nullResult)) response) with

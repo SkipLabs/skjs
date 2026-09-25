@@ -30,7 +30,12 @@ def namedAt (T : Tuple (Ty ι)) (b : UInt64) : Option (Ty ι) :=
 inductive Rule (ι : Type) where
   | var | nul | undef | tru | fls | truLit | flsLit | numLit | num | strLit | str
   | bigintLit | bigint
-  | funE | app | letE | alloc | read | readView | write | arith | test
+  | funE
+  /-- Graph code: its captures, each a slot of the context at the type the
+  code was checked with, are the premises; the code itself is an entry of the
+  unit's checked code table. -/
+  | funGraph
+  | app | letE | alloc | read | readView | write | arith | test
   /-- A read through an index over `keys`. -/
   | readDict (keys : IndexKeys) (element undef : Ty ι)
   /-- A computed read through an index over `keys`, of a key of `keyKeys`'s
@@ -139,6 +144,21 @@ theorem filterMap_of_map {α β : Type} {f : α → Option β} :
   | [], _ :: _, h => by simp at h
   | _ :: _, [], h => by simp at h
 
+/-- The captures of graph code are slots below `n`. -/
+def capSlotsBelow (caps : List Tm) (n : Nat) : Bool :=
+  match varSlots caps with
+  | some slots => slots.all (· < n)
+  | none => false
+
+/-- Every signature the arrow type `A` offers is a checked entry of graph code
+with captures at `Cs`. -/
+def graphCodesChecked [DecidableEq ι] (G : NormalGraph ι) (A : Ty ι) (codes : CodeEntry ι → Bool)
+    (arity : Nat) (E : List Tm) (K : List (ControlFlow.Continuation × Option ControlFlow.Target))
+    (start : Nat) (Cs : List (Ty ι)) : Bool :=
+  match expand G A with
+  | [.arrs L S] => (offerRows L S).all fun p => codes ⟨arity, E, K, start, Cs, p⟩
+  | _ => false
+
 /-- The prototype type `P` has a field or view `f` at `A`. -/
 def ProtoMember (G : NormalGraph ι) (P : Ty ι) (f : PropKey) (A : Ty ι) : Prop :=
   match expand G P with
@@ -190,7 +210,8 @@ theorem CoveredCall.proofs [DecidableEq ι] {G : NormalGraph ι} {q c}
   exact ⟨(ps, pr), hl, by simpa [List.length_zip, hl] using hpl, hps, hr⟩
 
 /-- Only finite, syntactic premises of one rule. -/
-def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι)) : Prop :=
+def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
+    (codes : CodeEntry ι → Bool := fun _ => false) : Prop :=
   match r, j.term, ps with
   | .var, .var i, [] => j.context[i]? = some j.type
   | .nul, .nul, [] => Represents G j.type .nul
@@ -208,6 +229,13 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
   -- bag, so the shape of that allocation is fixed here rather than claimed.
   | .funE, .makeAt (.closure arity b) ns inits, ps =>
     ns = [valueField] ∧ inits = [Tm.nul] ∧ funEPremises G j.context j.type arity b ps
+  -- Graph code: one premise per capture, a slot of this context, at the type
+  -- the code's table entry states; every signature the type offers is an
+  -- entry of the unit's checked table.
+  | .funGraph, .makeAt (.graph arity E K start caps) ns inits, ps =>
+    ns = [valueField] ∧ inits = [Tm.nul] ∧ ps.map Sequent.term = caps ∧
+    (∀ q ∈ ps, q.context = j.context) ∧ capSlotsBelow caps j.context.length = true ∧
+    graphCodesChecked G j.type codes arity E K start (ps.map Sequent.type) = true
   -- The callee, then the receiver at the selected signature's receiver, then
   -- the actual premises in order, then one premise per position the signature
   -- declares and this call omits. Each of those proves `undefined` at its
@@ -473,16 +501,21 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     ObjectMerge.MergeOk G d ja.type jb.type j.type = true
   | _, _, _ => False
 
-instance [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (ps) :
-    Decidable (Local G j r ps) := by
+instance [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (ps)
+    (codes : CodeEntry ι → Bool) : Decidable (Local G j r ps codes) := by
   unfold Local
   split <;> try infer_instance
   all_goals try dsimp [Represents, Answers, funEPremises, ctorEPremises]
   all_goals first | infer_instance | (split <;> infer_instance)
 
-def checkTree [DecidableEq ι] (G : NormalGraph ι) : Evidence ι → Bool
-  | .node j r ps => decide (Local G j r (ps.map claim)) && ps.attach.all (fun e => checkTree G e.val)
-termination_by e => sizeOf e
+/-- Check evidence against the rules. `codes` answers which graph code the
+unit's certificate has checked (`Rule.funGraph`); by default, none. -/
+def checkTree [DecidableEq ι] (G : NormalGraph ι) (e : Evidence ι)
+    (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
+  match e with
+  | .node j r ps => decide (Local G j r (ps.map claim) codes) &&
+      ps.attach.all (fun e => checkTree G e.val codes)
+termination_by sizeOf e
 decreasing_by
   have := List.sizeOf_lt_of_mem e.property
   simp only [Evidence.node.sizeOf_spec]
@@ -509,6 +542,10 @@ def checkScope (d : Nat) : Tm → Bool
   | .setElem a b c => checkScope d a && checkScope d b && checkScope d c
   | .arrLit args => checkScopes d args
   | .ite c a b => checkScope d c && checkScope d a && checkScope d b
+  | .objAt _ (.graph _ _ _ _ caps) => checkScopes d caps
+  | .makeAt (.graph _ _ _ _ caps) _ args => checkScopes d caps && checkScopes d args
+  | .goto _ _ _ L x => checkScopes d L && checkScope d x
+  | .frame _ _ t L x _ _ => checkScope d t && checkScopes d L && checkScope d x
   | _ => true
 
 def checkScopes (d : Nat) : List Tm → Bool
@@ -525,11 +562,68 @@ theorem checkScope_iff (d : Nat) (t : Tm) : checkScope d t = true ↔ Scoped d t
 
 /-- Bind evidence to the actual requested program, type and empty context.
 Scope includes unselected branches and bodies of empty overloads. -/
-def check [DecidableEq ι] (G : NormalGraph ι) (t : Tm) (A : Ty ι) (e : Evidence ι) : Bool :=
-  decide (claim e = ⟨[], t, A⟩) && checkScope 0 t && checkTree G e
+def check [DecidableEq ι] (G : NormalGraph ι) (t : Tm) (A : Ty ι) (e : Evidence ι)
+    (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
+  decide (claim e = ⟨[], t, A⟩) && checkScope 0 t && checkTree G e codes
 
-theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
-    (hl : Local G j r ps)
+/-- A code table is sound when each entry's code meets its signature. -/
+def CodesSound (G : NormalGraph ι) (codes : CodeEntry ι → Bool) : Prop :=
+  ∀ c, codes c = true → c.Spec G
+
+theorem codesSound_none (G : NormalGraph ι) : CodesSound G (fun _ => false) := by
+  intro c h; cases h
+
+/-- A graph code creation whose captures are slots and whose signatures the
+table has checked is derivable. -/
+theorem funGraph_of_local [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {A : Ty ι}
+    {codes : CodeEntry ι → Bool} (hcodes : CodesSound G codes) {arity start : Nat}
+    {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
+    {ps : List (Sequent ι)} (hctx : ∀ q ∈ ps, q.context = Γ)
+    (hslots : capSlotsBelow (ps.map Sequent.term) Γ.length = true)
+    (hok : graphCodesChecked G A codes arity E K start (ps.map Sequent.type) = true)
+    (hp : ∀ p ∈ ps, HasTy G p.context p.term p.type) :
+    HasTy G Γ (.make (.graph arity E K start (ps.map Sequent.term)) .nul) A := by
+  unfold capSlotsBelow at hslots
+  split at hslots
+  · rename_i slots hvs
+    have hterms := varSlots_eq hvs
+    have hlen : (ps.map Sequent.type).length = slots.length := by
+      have := congrArg List.length hterms
+      simpa using this
+    let caps := (ps.map Sequent.type).zip slots
+    have hvar : caps.map (fun c => Tm.var c.2) = ps.map Sequent.term := by
+      rw [hterms]
+      have : caps.map Prod.snd = slots := List.map_snd_zip (by omega)
+      rw [← this, List.map_map]; rfl
+    have hfst : caps.map Prod.fst = ps.map Sequent.type := List.map_fst_zip (by omega)
+    unfold graphCodesChecked at hok
+    split at hok
+    · rename_i L S hL
+      have h := HasTy.funGraph (caps := caps) (E := E) (K := K) (start := start) (arity := arity) hL
+        (fun q hq => by rw [hfst]; exact hcodes _ (List.all_eq_true.mp hok q hq))
+        (fun c hc => by
+          have := List.of_mem_zip hc
+          exact of_decide_eq_true (List.all_eq_true.mp hslots c.2 this.2))
+        (fun c hc => by
+          obtain ⟨i, hi, hci⟩ := List.mem_iff_getElem.mp hc
+          have hi' : i < ps.length := by simp [caps] at hi; omega
+          have hsl : i < slots.length := by simp [caps] at hi; omega
+          rw [List.getElem_zip] at hci
+          subst hci
+          have hq := hp ps[i] (List.getElem_mem hi')
+          have ht : ps[i].term = .var slots[i] := by
+            have := congrArg (·[i]?) hterms
+            simp [List.getElem?_map, List.getElem?_eq_getElem hi', List.getElem?_eq_getElem hsl] at this
+            exact this
+          rw [hctx _ (List.getElem_mem hi'), ht] at hq
+          simpa using hq)
+      rw [hvar] at h
+      exact h
+    · contradiction
+  · contradiction
+
+theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : CodeEntry ι → Bool}
+    (hl : Local G j r ps codes) (hcodes : CodesSound G codes)
     (hp : ∀ p ∈ ps, HasTy G p.context p.term p.type) : HasTy G j.context j.term j.type := by
   rcases j with ⟨Γ, t, A⟩
   unfold Local at hl
@@ -558,6 +652,10 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
       rw [hl.2]
       exact List.mem_map.mpr ⟨p, hmem, rfl⟩
     · contradiction
+  · rename_i ps arity E K start caps ns inits
+    obtain ⟨rfl, rfl, hterms, hctx, hslots, hok⟩ := hl
+    subst caps
+    exact funGraph_of_local hcodes hctx hslots hok hp
   · rename_i f r args jf jr jas
     rcases hl with ⟨hΓf, htf, hΓr, htr, hargs, hundef, hcontexts, hL⟩
     have hf := hp jf (by simp)
@@ -1145,34 +1243,40 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
     exact .merge ha hb hm
 
 theorem checkTree_sound [DecidableEq ι] {G : NormalGraph ι} (e : Evidence ι)
-    (he : checkTree G e = true) : HasTy G (claim e).context (claim e).term (claim e).type := by
+    {codes : CodeEntry ι → Bool} (he : checkTree G e codes = true)
+    (hcodes : CodesSound G codes := by exact Verification.Model.ProgramCertificates.codesSound_none _) :
+    HasTy G (claim e).context (claim e).term (claim e).type := by
   cases e with
   | node j r ps =>
     simp only [checkTree, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at he
-    apply local_sound he.1
+    apply local_sound he.1 hcodes
     intro p hp
     obtain ⟨e, he', rfl⟩ := List.mem_map.mp hp
-    exact checkTree_sound e (he.2 ⟨e, he'⟩ (by simp))
+    exact checkTree_sound e (he.2 ⟨e, he'⟩ (by simp)) hcodes
 termination_by sizeOf e
 
-theorem check_sound [DecidableEq ι] {G : NormalGraph ι} {t A e}
-    (he : check G t A e = true) : Scoped 0 t ∧ HasTy G [] t A := by
+theorem check_sound [DecidableEq ι] {G : NormalGraph ι} {t A e} {codes : CodeEntry ι → Bool}
+    (he : check G t A e codes = true) (hcodes : CodesSound G codes := by exact Verification.Model.ProgramCertificates.codesSound_none _) :
+    Scoped 0 t ∧ HasTy G [] t A := by
   simp only [check, Bool.and_eq_true, decide_eq_true_eq] at he
   refine ⟨(checkScope_iff 0 t).mp he.1.2, ?_⟩
-  have ht := checkTree_sound e he.2
+  have ht := checkTree_sound e he.2 hcodes
   simpa only [he.1.1] using ht
 
-theorem accepted_safe [DecidableEq ι] {G : NormalGraph ι} {t A e}
-    (he : check G t A e = true) (n W h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+theorem accepted_safe [DecidableEq ι] {G : NormalGraph ι} {t A e} {codes : CodeEntry ι → Bool}
+    (he : check G t A e codes = true) (n W h) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (hcodes : CodesSound G codes := by exact Verification.Model.ProgramCertificates.codesSound_none _) :
     Safe (meaning G A) n W h t :=
-  (check_sound he).2.closed_safe (check_sound he).1 n W h hw hh
+  (check_sound he hcodes).2.closed_safe (check_sound he hcodes).1 n W h hw hh
 
+/-- Evidence for a sequent, with every graph code admitted: coverage of the
+rules, where which code a unit has checked is not the question. -/
 def Representable [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) : Prop :=
-  ∃ e, claim e = j ∧ checkTree G e = true
+  ∃ e, claim e = j ∧ checkTree G e (fun _ => true) = true
 
 private theorem gather [DecidableEq ι] {G : NormalGraph ι} (js : List (Sequent ι))
     (h : ∀ j ∈ js, Representable G j) :
-    ∃ es : List (Evidence ι), es.map claim = js ∧ ∀ e ∈ es, checkTree G e = true := by
+    ∃ es : List (Evidence ι), es.map claim = js ∧ ∀ e ∈ es, checkTree G e (fun _ => true) = true := by
   induction js with
   | nil => exact ⟨[], rfl, by simp⟩
   | cons j js ih =>
@@ -1185,7 +1289,8 @@ private theorem gather [DecidableEq ι] {G : NormalGraph ι} (js : List (Sequent
     · exact hcs e' hm
 
 private theorem node_complete [DecidableEq ι] {G : NormalGraph ι} {j r js}
-    (hl : Local G j r js) (h : ∀ p ∈ js, Representable G p) : Representable G j := by
+    (hl : Local G j r js (fun _ => true)) (h : ∀ p ∈ js, Representable G p) :
+    Representable G j := by
   obtain ⟨es, hes, hcs⟩ := gather js h
   refine ⟨.node j r es, rfl, ?_⟩
   simp only [checkTree, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true]
@@ -1219,6 +1324,24 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     · intro j hj
       obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
       exact ih p hp
+  | @funGraph Γ F L S arity start E K caps hr hspec hlt hcap ih =>
+    apply node_complete (r := .funGraph)
+      (j := ⟨Γ, .make (.graph arity E K start (caps.map fun c => .var c.2)) .nul, F⟩)
+      (js := caps.map fun c => ⟨Γ, .var c.2, c.1⟩)
+    · refine ⟨rfl, rfl, by simp, ?_, ?_, ?_⟩
+      · intro q hq
+        obtain ⟨c, _, rfl⟩ := List.mem_map.mp hq
+        rfl
+      · have hv : varSlots (caps.map fun c => Tm.var c.2) = some (caps.map Prod.snd) := by
+          have := varSlots_map (caps.map Prod.snd)
+          simpa [List.map_map, Function.comp_def] using this
+        simp only [capSlotsBelow, hv, List.all_eq_true, List.mem_map]
+        rintro _ ⟨c, hc, rfl⟩
+        exact decide_eq_true (hlt c hc)
+      · simp [graphCodesChecked, show expand G F = [.arrs L S] from hr]
+    · intro j hj
+      obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hj
+      exact ih c hc
   | @makeCallable Γ F L arity b parts hr hnd hpart hlen hb ih ihb =>
     apply node_complete (r := .makeCallable)
       (j := ⟨Γ, .makeAt (.closure arity b) (parts.map Prod.fst) (parts.map fun p => p.2.2), F⟩)
@@ -1720,13 +1843,17 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     · exact iha
     · exact ihb
 
+/-- A closed derivation has evidence, with every graph code admitted, and
+evidence under a sound code table is a derivation: the checker decides the
+rules, the table answering which graph code a unit checked. -/
 theorem derivable_iff_checked [DecidableEq ι] (G : NormalGraph ι) (t : Tm) (A : Ty ι) :
-    (Scoped 0 t ∧ HasTy G [] t A) ↔ ∃ e, check G t A e = true := by
+    ((Scoped 0 t ∧ HasTy G [] t A) → ∃ e, check G t A e (fun _ => true) = true) ∧
+    ∀ codes, CodesSound G codes → (∃ e, check G t A e codes = true) → Scoped 0 t ∧ HasTy G [] t A := by
   constructor
   · rintro ⟨hs, ht⟩
     obtain ⟨e, he, hc⟩ := checkTree_complete ht
     exact ⟨e, by simp [check, he, (checkScope_iff 0 t).mpr hs, hc]⟩
-  · rintro ⟨e, he⟩; exact check_sound he
+  · rintro codes hcodes ⟨e, he⟩; exact check_sound he hcodes
 
 #print axioms checkTree_sound
 #print axioms derivable_iff_checked

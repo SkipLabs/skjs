@@ -1,5 +1,6 @@
 import Lean.Data.Json
 import Verification.Model.Programs.Parametricity
+import Verification.Model.Programs.GraphCode
 
 /-! In-memory JSON boundary for the stateful consumer. A request and its
 evidence are separate inputs. This is a calculus protocol, not a decoder for
@@ -28,6 +29,8 @@ instance : FromJson PropKey where
 deriving instance ToJson, FromJson for Tag
 deriving instance ToJson, FromJson for Arith
 deriving instance ToJson, FromJson for Invoke
+deriving instance ToJson, FromJson for Target
+deriving instance ToJson, FromJson for Continuation
 deriving instance ToJson, FromJson for Tm, CallCode
 
 /-- A closure's kind is left out of its JSON when it is `call`, the kind of
@@ -200,8 +203,6 @@ def tableGraph (T : List Row) : NormalGraph Nat :=
     (h : T[i]? = some (.clauses cs)) : (tableGraph T).plain i = true ∧ tableGraph T i = cs := by
   simp [tableGraph, NormalGraph.params, NormalGraph.plain, NormalGraph.clauses, h, Row.union]
 
-deriving instance ToJson, FromJson for Target
-deriving instance ToJson, FromJson for Continuation
 deriving instance ToJson, FromJson for Node
 deriving instance ToJson, FromJson for PositiveCertificates.ArrowCert
 deriving instance ToJson, FromJson for PositiveCertificates.Certificate
@@ -217,6 +218,14 @@ deriving instance ToJson, FromJson for HeapKnowledge.Knowledge
 deriving instance ToJson, FromJson for HeapExpressionRules.StepEvidence
 deriving instance ToJson, FromJson for NodeEvidence
 deriving instance ToJson, FromJson for PointClaim
+deriving instance ToJson, FromJson for CodeEntry
+
+/-- Graph code a request creates, at one signature it offers, with the point
+claims of its graph. Nested code comes before the code creating it. -/
+structure CodeRequest where
+  entry : CodeEntry Nat
+  claims : List (PointClaim Nat)
+  deriving ToJson, FromJson
 
 structure Request where
   types : List Row
@@ -226,10 +235,14 @@ structure Request where
   start : Nat
   /-- External argument contract, in slot order; independent of point claims. -/
   inputs : List (Ty Nat)
+  /-- The graph code the program creates, each at each signature it offers. -/
+  codes : List CodeRequest := []
   deriving ToJson, FromJson
 
 structure Response where
   certificate : ControlFlow.Certificate Nat
+  /-- One certificate per code request, in its order. -/
+  codes : List (ControlFlow.Certificate Nat) := []
   deriving ToJson, FromJson
 
 def graph (r : Request) : NormalGraph Nat := tableGraph r.types
@@ -284,7 +297,10 @@ meaning for an invalid serialized type reference. -/
 def validRequest (r : Request) : Bool :=
   validRows r.types &&
   r.claims.all (validClaim r.types.length) && validTy r.types.length r.result &&
-  r.inputs.all (validTy r.types.length)
+  r.inputs.all (validTy r.types.length) &&
+  r.codes.all fun q => q.claims.all (validClaim r.types.length) &&
+    (q.entry.row.1 :: q.entry.row.2.2 :: q.entry.row.2.1 ++ q.entry.captures).all
+      (validTy r.types.length)
 
 def arrowTypes : PositiveCertificates.ArrowCert Nat → List (Ty Nat)
   | .empty | .emptyRecv => []
@@ -344,11 +360,14 @@ def validEffect (bound : Nat) : HeapExpressionRules.StepEvidence Nat → Bool
     validEvidence bound e
   | .observedRead _ _ | .knownValue _ _ => true
 
+def validCertificate (bound : Nat) (C : ControlFlow.Certificate Nat) : Bool :=
+  C.all (fun n =>
+    validEvidence bound n.expression &&
+    (n.effect.map (validEffect bound)).getD true &&
+    (n.edges.flatMap id |>.flatMap proofTypes).all (validTy bound))
+
 def validResponse (r : Request) (c : Response) : Bool :=
-  c.certificate.all (fun n =>
-    validEvidence r.types.length n.expression &&
-    (n.effect.map (validEffect r.types.length)).getD true &&
-    (n.edges.flatMap id |>.flatMap proofTypes).all (validTy r.types.length))
+  validCertificate r.types.length c.certificate && c.codes.all (validCertificate r.types.length)
 
 /-- Semantic JSON equality for strict field checking, independent of object
 field order. Re-encoding rejects unknown fields and defaulted omissions. -/
@@ -374,10 +393,21 @@ def decodeResponse (r : Request) (j : Json) : Except String Response := do
   if validResponse r c then return c
   throw "out-of-range type label in evidence"
 
+/-- The request's graph code, checked in order against its claims, as a table
+of what was checked (`GraphCode.checkCodes`). -/
+def codeTable (r : Request) (c : Response) : Option (List (CodeEntry Nat)) :=
+  if r.codes.length == c.codes.length &&
+      (r.codes.zip c.codes).all (fun (q, C) => C.map signature == q.claims) then
+    GraphCode.checkCodes (graph r) ((r.codes.map (·.entry)).zip c.codes)
+  else none
+
 /-- This check remains independent of the producer and its search settings. -/
 def verify (r : Request) (c : Response) : Bool :=
   validRequest r && validResponse r c &&
-    CertificateProducer.accept (graph r) r.result r.program r.claims c.certificate r.start r.inputs
+    match codeTable r c with
+    | some table => CertificateProducer.accept (graph r) r.result r.program r.claims c.certificate
+        r.start r.inputs (GraphCode.admits table)
+    | none => false
 
 def verifyJson (request evidence : Json) : Except String Unit :=
   match decodeRequest request with
@@ -481,6 +511,49 @@ def failureDiagnostic (r : Request) (fuel : Nat)
       ("transfer",toJson transfer)]
   | _ => return common ++ [("kind",toJson "production-failure"),("failure",toJson (reprStr e))]
 
+/-- A code request as a request of its own: its graph, from the frame its
+signature describes, at the signature's result. What it may create is the
+table checked before it, not part of this request. -/
+def CodeRequest.asRequest (r : Request) (q : CodeRequest) : Request :=
+  { types := r.types, program := GraphCode.program q.entry.exprs q.entry.conts, claims := q.claims,
+    result := q.entry.row.2.2, start := q.entry.start,
+    inputs := bodyFrame q.entry.arity q.entry.row q.entry.captures, codes := [] }
+
+/-- Search one graph's certificate, the codes of `table` admitted. -/
+def produceGraph (r : Request) (fuel : Nat) (labels : List Nat)
+    (suggestions : List (ProgramCertificates.Sequent Nat)) (known : List (ProgramCertificates.Evidence Nat))
+    (sourceMap : SourceMap) (requirements : List (Nat × HeapKnowledge.Knowledge)) (cuts : List Nat)
+    (table : List (CodeEntry Nat)) : Except String (ControlFlow.Certificate Nat) :=
+  match produce (graph r) labels fuel r.result r.program r.claims r.start [] r.inputs suggestions known
+      requirements cuts (GraphCode.admits table) with
+  | .ok c => pure c
+  | .error e =>
+    let location := match e with
+      | .expression label => match (sourceMap[label]?).bind id with
+        | some o => s!"source expression obligation at [{o.pos.1},{o.pos.2}): "
+        | none => ""
+      | .edge _ destination _ => match (sourceMap[destination]?).bind id with
+        | some o => s!"source incoming edge obligation at [{o.pos.1},{o.pos.2}): "
+        | none => ""
+      | _ => ""
+    -- Name what could not be established; the structured record below says
+    -- with which claims, and the reader phrases it in source terms.
+    let what := match e with
+      | .expression label => match (sourceMap[label]?).bind id with
+        | some o => s!"no derivation of its {o.role} claim"
+        | none => s!"no derivation of the claim of node {label}"
+      | .edge source _ _ => s!"the edge from node {source} does not establish the claims at this point"
+      | _ => reprStr e
+    throw (withDiagnostic s!"{location}evidence search failed: {what}"
+      (failureDiagnostic r fuel sourceMap e requirements))
+
+/-- What search knows of a code request beyond the request: its source map, its
+statement entries' required knowledge and its cuts, as for a unit. -/
+structure CodeHints where
+  sourceMap : SourceMap := []
+  requirements : List (Nat × HeapKnowledge.Knowledge) := []
+  cuts : List Nat := []
+
 /-- Produce and serialize, then pass through the same independent JSON consumer.
 Fuel bounds search only; it is not part of the certified request. -/
 def produceJson (request : Json) (fuel : Nat)
@@ -488,31 +561,21 @@ def produceJson (request : Json) (fuel : Nat)
     (known : List (ProgramCertificates.Evidence Nat) := [])
     (sourceMap : SourceMap := [])
     (searchLabels : Option (List Nat) := none)
-    (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := []) : Except String Json := do
+    (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := [])
+    (codeHints : List CodeHints := []) : Except String Json := do
   let r ← decodeRequest request
-  let C ← match produce (graph r) (searchLabels.getD (List.range r.types.length)) fuel
-      r.result r.program r.claims r.start [] r.inputs suggestions known requirements cuts with
-    | .ok c => pure c
-    | .error e =>
-      let location := match e with
-        | .expression label => match (sourceMap[label]?).bind id with
-          | some o => s!"source expression obligation at [{o.pos.1},{o.pos.2}): "
-          | none => ""
-        | .edge _ destination _ => match (sourceMap[destination]?).bind id with
-          | some o => s!"source incoming edge obligation at [{o.pos.1},{o.pos.2}): "
-          | none => ""
-        | _ => ""
-      -- Name what could not be established; the structured record below says
-      -- with which claims, and the reader phrases it in source terms.
-      let what := match e with
-        | .expression label => match (sourceMap[label]?).bind id with
-          | some o => s!"no derivation of its {o.role} claim"
-          | none => s!"no derivation of the claim of node {label}"
-        | .edge source _ _ => s!"the edge from node {source} does not establish the claims at this point"
-        | _ => reprStr e
-      throw (withDiagnostic s!"{location}evidence search failed: {what}"
-        (failureDiagnostic r fuel sourceMap e requirements))
-  let response := toJson (Response.mk C)
+  let labels := searchLabels.getD (List.range r.types.length)
+  -- Each code against the table of those before it, as `codeTable` checks.
+  let mut table : List (CodeEntry Nat) := []
+  let mut certificates : List (ControlFlow.Certificate Nat) := []
+  for (q, i) in r.codes.zipIdx do
+    let hints := (codeHints[i]?).getD {}
+    let C ← produceGraph (q.asRequest r) fuel labels suggestions known hints.sourceMap
+      hints.requirements hints.cuts table
+    certificates := certificates ++ [C]
+    table := table ++ [q.entry]
+  let C ← produceGraph r fuel labels suggestions known sourceMap requirements cuts table
+  let response := toJson (Response.mk C certificates)
   verifyJson request response
   return response
 
@@ -520,7 +583,16 @@ theorem verify_safe {r : Request} {c : Response} (hc : verify r c = true) (n W h
     (he : EnvOk (graph r) r.inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafeGraph r.program (meaning (graph r) r.result) n W h (.at r.start ρ) := by
   simp only [verify, Bool.and_eq_true] at hc
-  exact CertificateProducer.accepted_from_inputs hc.2 n W h ρ he hw hh
+  have hx := hc.2
+  split at hx
+  · rename_i table ht
+    have hsound : ProgramCertificates.CodesSound (graph r) (GraphCode.admits table) := by
+      unfold codeTable at ht
+      split at ht
+      · exact GraphCode.checkCodes_sound ht
+      · contradiction
+    exact CertificateProducer.accepted_from_inputs hx n W h ρ he hw hh hsound
+  · contradiction
 
 /-- Accepted evidence is safe at every assignment of the request graph's
 parameter rows (`Parametricity.accepted_at`): a request whose inputs and
@@ -532,7 +604,17 @@ theorem verify_safe_at {r : Request} {c : Response} (hc : verify r c = true)
     (he : EnvOk (reassign (graph r) η) r.inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafeGraph r.program (meaning (reassign (graph r) η) r.result) n W h (.at r.start ρ) := by
   simp only [verify, Bool.and_eq_true] at hc
-  exact Parametricity.accepted_at hc.2 η n W h ρ he hw hh
+  have hx := hc.2
+  split at hx
+  · rename_i table ht
+    have hsound : ProgramCertificates.CodesSound (reassign (graph r) η) (GraphCode.admits table) := by
+      unfold codeTable at ht
+      split at ht
+      · rw [← GraphCode.checkCodes_reassign (graph r) η] at ht
+        exact GraphCode.checkCodes_sound ht
+      · contradiction
+    exact Parametricity.accepted_at hx η n W h ρ he hw hh hsound
+  · contradiction
 
 /-- Empty input contracts retain the closed-invocation corollary. -/
 theorem verify_closed_safe {r : Request} {c : Response}
@@ -546,7 +628,10 @@ theorem verify_closed_safe {r : Request} {c : Response}
 theorem verify_claims {r : Request} {c : Response} (hc : verify r c = true) :
     c.certificate.map signature = r.claims := by
   simp only [verify, Bool.and_eq_true] at hc
-  exact accept_claims hc.2
+  have hx := hc.2
+  split at hx
+  · exact accept_claims hx
+  · contradiction
 
 /-- The JSON entry point certifies its decoded request at every budget, while
 retaining exact claim identity. Source meaning is a separate extraction obligation. -/

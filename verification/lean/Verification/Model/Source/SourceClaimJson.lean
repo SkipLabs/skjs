@@ -842,6 +842,7 @@ private partial def restSpans : Fragment.Pattern Fragment.Expr → List Span
       match rest with
       | some (_, q, t) => q :: restSpans t
       | none => []
+mutual
 private partial def exprSites : Fragment.Expr → Sites
   | .var p _ | .lit p _ => ([],[p],[])
   -- A defaulted parameter's expression is an ordinary source expression, so it
@@ -885,6 +886,8 @@ private partial def exprSites : Fragment.Expr → Sites
   | .destructBody p t a b => t.defaults.foldl (fun acc e => joinSites acc (exprSites e))
       (joinSites ([p.1],restSpans t,[]) (joinSites (exprSites a) (exprSites b)))
   | .ifBody p result a b c => joinSites (if result.isSome then ([p.1],[],[]) else ([],[p],[])) (joinSites (exprSites a) (joinSites (exprSites b) (exprSites c)))
+  -- A closure's statements are its body's sites, as a function's are.
+  | .block _ ss => ss.foldl (fun s st => joinSites s (stmtSites st)) ([],[],[])
 private partial def stmtSites : Fragment.Stmt → Sites
   | .brk p _ | .cont p => ([p.1],[],[])
   | .ret p e | .effect p e | .throw p e => joinSites ([p.1],[],[]) (exprSites e)
@@ -911,6 +914,7 @@ private partial def stmtSites : Fragment.Stmt → Sites
   | .forOf p _ np i body => joinSites ([p.1],[p, np],[]) (joinSites (exprSites i)
       (body.foldl (fun s st => joinSites s (stmtSites st)) ([],[],[])))
 
+end
 private def allFunctionSites (f : Fragment.Fn) : Sites :=
   f.body.foldl (fun s st => joinSites s (stmtSites st)) ([],[],[])
 
@@ -1332,7 +1336,9 @@ def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat)
   let es ← rs.mapM fun r => ExpressionClaims.produce (RequestJson.graph r.toRequest)
     r.searchLabels r.types.length fuel r.obligations
   let cs ← (rs.zip es).mapM fun (r,proofs) => do
-    let j ← RequestJson.produceJson (toJson r.toRequest) fuel [] proofs r.sourceMap (some r.searchLabels) r.assertions r.cuts
+    let known := proofs ++ ExpressionClaims.renderKnown (RequestJson.graph r.toRequest)
+      r.searchLabels r.types.length r.nodePlans
+    let j ← RequestJson.produceJson (toJson r.toRequest) fuel [] known r.sourceMap (some r.searchLabels) r.assertions r.cuts r.codeHints
     decodeResponse r.toRequest j
   let evidence := toJson (Bundle.mk cs es)
   -- Search may expose the graph consequences of an uncertified scheme. It

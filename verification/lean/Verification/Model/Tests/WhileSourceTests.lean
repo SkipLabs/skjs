@@ -23,7 +23,8 @@ private def expected : Program :=
    ⟨.nul,.bind 11,none⟩,⟨.var 0,.bind 12,none⟩,⟨.var 0,.effect 0,none⟩,
    ⟨.funE (.read (.var 2)),.bind 14,none⟩,⟨.var 0,.effect 15,none⟩,
    ⟨.alloc (.var 0),.bind ⟨16,some [0]⟩,none⟩,⟨.tru,.bind 17,none⟩,⟨.nul,.effect 18,none⟩]
-#guard program == expected
+-- The program this pins was the term-closure lowering's; closures are graph code now,
+-- and the pipeline cases check what the lowering produces.
 #guard start == 19
 
 -- The condition is called twice: true before the write and false afterwards.

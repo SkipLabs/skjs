@@ -75,7 +75,7 @@ private def claims : List (PointClaim Nat) :=
   [⟨[],[1]⟩,⟨[[1]],[2]⟩,⟨[[2],[1]],[1]⟩,⟨[[1],[2],[1]],[1]⟩,
    ⟨[[1],[1],[2],[1]],[0]⟩,⟨[[1],[1],[2],[1]],[1]⟩,
    ⟨[[1],[1],[1],[2],[1]],[0]⟩,⟨[[1],[1],[1],[2],[1]],[9]⟩]
-private def request : Request := ⟨types,program,claims,[9],0,[]⟩
+private def request : Request := ⟨types,program,claims,[9],0,[], []⟩
 private def certificate : ControlFlow.Certificate Nat :=
   match produce G labels 10 [9] program claims 0 with | .ok c => c | .error _ => []
 

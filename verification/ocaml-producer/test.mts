@@ -1044,10 +1044,11 @@ process.stdout.write("an instance other than the explicit type argument, method 
     forged, join(localClosure, "source.ts"), join(localClosure, "forged-evidence.json"), "12"],
     { encoding: "utf8", timeout: 30_000 });
   assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-  // The body, `p !== null ? p - c[1] : c[1]`, is a number, not the null claimed.
+  // The body, `p !== null ? p - c[1] : c[1]`, is a number, not the null
+  // claimed: the closure's one node returns it at that result.
   const body = readFileSync(join(localClosure, "source.ts"), "utf8").indexOf("p !== null");
   assert.ok((searched.stdout + searched.stderr).includes(
-    `closure expression claim at [${body},`), searched.stdout + searched.stderr);
+    `source expression obligation at [${body},`), searched.stdout + searched.stderr);
   assert.match(invoke(forged, evidence, localClosure), /does not justify/);
   process.stdout.write("an unannotated closure's result claim its body does not meet: refused\n");
 }

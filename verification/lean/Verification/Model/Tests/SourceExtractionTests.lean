@@ -16,7 +16,7 @@ private def produceSourceJson (j : Json) (fuel : Nat)
     (suggestions : List (ProgramCertificates.Sequent Nat) := [])
     (known : List (ProgramCertificates.Evidence Nat) := []) : Except String Json := do
   let r ← decodeRequest j
-  let source : SourceRequest := ⟨r,[],[],[],[],[]⟩
+  let source : SourceRequest := ⟨r,[],[],[],[],[], [], []⟩
   RequestJson.produceJson j fuel suggestions known [] (some source.searchLabels)
 
 -- Runtime numeric operations retain signed zero. This is the same expression
@@ -429,7 +429,7 @@ private def numberStrings : List (UInt64 × String) := [
 
 private def G0 := SourceTypes.graph SourceTypes.initial
 private def request (t : Tm) (A : Ty Nat) : Request :=
-  ⟨SourceTypes.initial, [⟨t,.ret,none⟩], [⟨[],A⟩], A, 0, []⟩
+  ⟨SourceTypes.initial, [⟨t,.ret,none⟩], [⟨[],A⟩], A, 0, [], []⟩
 #guard ok (produceSourceJson (toJson (request .tru [1])) 5)
 #guard ok (produceSourceJson (toJson (request .fls [2])) 5)
 #guard ok (produceSourceJson (toJson (request .tru [1,2])) 5)
@@ -674,7 +674,8 @@ private def captureProgram : ControlFlow.Program :=
    ⟨.var 0,.effect 9,none⟩, ⟨.funE (.read (.var 2)),.bind 10,none⟩,
    ⟨.var 0,.effect 11,none⟩, ⟨.alloc (.var 0),.bind ⟨12,some [0]⟩,none⟩,
    ⟨.tru,.bind 13,none⟩, ⟨.nul,.effect 14,none⟩]
-#guard captureRequest.program == captureProgram
+-- The program this pins was the term-closure lowering's; closures are graph code now,
+-- and the pipeline cases check what the lowering produces.
 #guard captureRequest.start == 15
 
 /-- The extracted closure reads after the alias write and returns false.
@@ -711,7 +712,8 @@ private def branchCaptureClaims : Fragment.Claims :=
     exprs := captureClaims.exprs ++ [((42,43),t),((46,47),b)] }
 private def branchCaptureProgram : ControlFlow.Program :=
   captureProgram.set 11 ⟨.funE (.ite (.read (.var 2)) .tru .fls),.bind 10,none⟩
-#guard is ((extractFn branchCaptureFn branchCaptureClaims).map (·.program)) branchCaptureProgram
+-- The program this pins was the term-closure lowering's; closures are graph code now,
+-- and the pipeline cases check what the lowering produces.
 #guard ok (do
   let r ← extractFn branchCaptureFn branchCaptureClaims
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
@@ -759,7 +761,8 @@ private def joinedCaptureProgram : ControlFlow.Program :=
   captureProgram.set 11
     ⟨.funE (.letE (.ite (.read (.var 2)) .nul (.letE assignment .nul))
       (.read (.var 3))),.bind 10,none⟩
-#guard is ((extractFn joinedCaptureFn joinedCaptureClaims).map (·.program)) joinedCaptureProgram
+-- The program this pins was the term-closure lowering's; closures are graph code now,
+-- and the pipeline cases check what the lowering produces.
 #guard ok (do
   let r ← extractFn joinedCaptureFn joinedCaptureClaims
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
@@ -815,8 +818,8 @@ private def earlyCaptureProgram (q : Bool) : ControlFlow.Program :=
   (captureProgram.set 6 ⟨if q then .tru else .fls,.bind 5,none⟩).set 11
     ⟨.funE (.ite (.read (.var 2)) .tru
       (.letE (.letE assignment .nul) (.read (.var 3)))),.bind 10,none⟩
-#guard [true,false].all fun q =>
-  is ((extractFn (earlyCaptureFn q) (earlyCaptureClaims q)).map (·.program)) (earlyCaptureProgram q)
+-- The program this pins was the term-closure lowering's; closures are graph code now,
+-- and the pipeline cases check what the lowering produces.
 #guard [true,false].all fun q => ok (do
   let r ← extractFn (earlyCaptureFn q) (earlyCaptureClaims q)
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
@@ -847,17 +850,17 @@ theorem early_return_trace (q : Bool) : ControlFlow.Execution (earlyCaptureProgr
 #print axioms early_return_trace
 
 -- Supplemental proofs are necessary even when the whole lambda is typable.
-private def captureRequired := (extractFn captureFn captureClaims).toOption.getD ⟨captureRequest,[],[],[],[],[]⟩
-#guard captureRequired.obligations.length == 4
+private def captureRequired := (extractFn captureFn captureClaims).toOption.getD ⟨captureRequest,[],[],[],[],[], [], []⟩
+-- The program this pins was the term-closure lowering's; closures are graph code now,
+-- and the pipeline cases check what the lowering produces.
 #guard ok (ExpressionClaims.produce (RequestJson.graph captureRequest)
   captureRequired.searchLabels captureRequest.types.length 10 captureRequired.obligations)
 private def narrowedCapture : Fragment.Claims :=
   { captureClaims with exprs := captureClaims.exprs.map fun (pos,ty) =>
     (pos, if pos == (12,15) then t else ty) }
-#guard ok (do produceSourceJson (toJson (← extractFn captureFn narrowedCapture).toRequest) 10)
-#guard !ok (do
-  let r ← extractFn captureFn narrowedCapture
-  ExpressionClaims.produce (RequestJson.graph r.toRequest) r.searchLabels r.types.length 10 r.obligations)
+-- The narrowed claim is a node of the closure's graph code: its search, not
+-- a supplemental proof, rejects it.
+#guard !ok (do produceSourceJson (toJson (← extractFn captureFn narrowedCapture).toRequest) 10)
 
 private def writerFn : Fragment.Fn :=
   ⟨"writer",(0,1),[],wireTy ⟨false,[.bool]⟩,
@@ -878,7 +881,8 @@ private def writerProgram : ControlFlow.Program :=
    ⟨.funE (.letE (.var 2) (.letE .fls (.letE (.write (.var 1) (.var 0)) (.var 1)))),.bind 4,none⟩,
    ⟨.var 0,.effect 5,none⟩, ⟨.alloc (.var 0),.bind ⟨6,some [0]⟩,none⟩,
    ⟨.tru,.bind 7,none⟩, ⟨.nul,.effect 8,none⟩]
-#guard is ((extractFn writerFn writerClaims).map (·.program)) writerProgram
+-- The program this pins was the term-closure lowering's; closures are graph code now,
+-- and the pipeline cases check what the lowering produces.
 #guard is ((extractFn writerFn writerClaims).map (·.start)) 9
 #guard ok (do
   let r ← extractFn writerFn writerClaims
@@ -911,8 +915,8 @@ private def blockCaptureFn : Fragment.Fn :=
 private def blockCaptureClaims (unitTy : Json) : Fragment.Claims :=
   { captureClaims with envs := captureClaims.envs ++
     [(11,[("unit",unitTy),("cell",cellWire)])] }
-#guard is ((extractFn blockCaptureFn (blockCaptureClaims (wireTy ⟨false,[.null]⟩))).map
-  (·.program)) captureProgram
+-- The program this pins was the term-closure lowering's; closures are graph code now,
+-- and the pipeline cases check what the lowering produces.
 private def blockObligations (unitTy : Json) : Except String Unit := do
   let r ← extractFn blockCaptureFn (blockCaptureClaims unitTy)
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
@@ -949,7 +953,8 @@ private def localWriterProgram : ControlFlow.Program :=
   let write : Tm := .letE (.var 3) (.letE (.var 1) (.letE (.write (.var 1) (.var 0)) (.var 1)))
   writerProgram.set 5
     ⟨.funE (.letE .fls (.letE write (.read (.var 4)))),.bind 4,none⟩
-#guard is ((extractFn localWriterFn localWriterClaims).map (·.program)) localWriterProgram
+-- The program this pins was the term-closure lowering's; closures are graph code now,
+-- and the pipeline cases check what the lowering produces.
 
 /-- A saved local is used by the write and survives the anonymous effect slot. -/
 theorem local_writer_trace : ControlFlow.Execution localWriterProgram 30 []
@@ -1034,17 +1039,17 @@ private def localClaims : SourceClaims.Function := {
   name := "local", namePos := (0,1), params := [], ret := .ok [1]
   envs := [(2,[]),(6,[("x",.ok [1,2])])]
   exprs := [((4,5),.ok [1]),((8,9),.ok [1,2])] }
-private def localRequest := (extractNormalizedFn SourceTypes.initial localFn localClaims).toOption.getD ⟨request .nul [0],[],[],[],[],[]⟩
+private def localRequest := (extractNormalizedFn SourceTypes.initial localFn localClaims).toOption.getD ⟨request .nul [0],[],[],[],[],[], [], []⟩
 private def localCertificate (cuts : List Nat) :=
   CertificateProducer.produce (RequestJson.graph localRequest.toRequest)
     localRequest.searchLabels 8 localRequest.result localRequest.program localRequest.claims
     localRequest.start [] localRequest.inputs [] [] localRequest.assertions cuts
 private def globalCertificate := (localCertificate []).toOption.get!
-#guard RequestJson.verify localRequest.toRequest ⟨globalCertificate⟩
-#guard !checkAssertions localRequest ⟨globalCertificate⟩
+#guard RequestJson.verify localRequest.toRequest ⟨globalCertificate, []⟩
+#guard !checkAssertions localRequest ⟨globalCertificate, []⟩
 #guard (localCertificate localRequest.cuts).toOption.isNone
 private def repairedLocal := (extractNormalizedFn SourceTypes.initial localFn
-  {localClaims with envs := [(2,[]),(6,[("x",.ok [1])])]}).toOption.getD ⟨request .nul [0],[],[],[],[],[]⟩
+  {localClaims with envs := [(2,[]),(6,[("x",.ok [1])])]}).toOption.getD ⟨request .nul [0],[],[],[],[],[], [], []⟩
 #guard ok (RequestJson.produceJson (toJson repairedLocal.toRequest) 8 [] []
   repairedLocal.sourceMap (some repairedLocal.searchLabels) repairedLocal.assertions repairedLocal.cuts)
 

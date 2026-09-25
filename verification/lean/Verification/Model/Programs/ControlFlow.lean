@@ -8,24 +8,8 @@ so cycles consume execution budget without requiring invariant inference. -/
 namespace Verification.Model.ControlFlow
 open ProgramTyping PositiveGraphs PositiveRules PointClaims ProgramCertificates BranchRefinement
 
-/-- The destination and its slot map are executable program data, not evidence. -/
-structure Target where
-  label : Nat
-  mapping : Mapping := none
-  deriving DecidableEq, Repr
-
-instance (n : Nat) : OfNat Target n := ⟨⟨n, none⟩⟩
-
-inductive Continuation where
-  | ret
-  | bind (next : Target)
-  | effect (next : Target)
-  | branch (yes no : Target)
-  /-- Dispatch and bind the tested Boolean before applying the destination map. -/
-  | branchBind (yes no : Target)
-  /-- Test the returned value itself, bind it, then apply the destination map. -/
-  | tagBind (test : Tag) (yes no : Target)
-  deriving DecidableEq, Repr
+/-! `Target` and `Continuation` are declared with the calculus
+(`Semantics/Calculus.lean`): graph code carries them. -/
 
 /-- A node's handler is where a throw out of its expression goes: the target
 receives the thrown value bound in a fresh slot, as a `bind` continuation
@@ -188,12 +172,13 @@ def checkHandler [DecidableEq ι] (G : NormalGraph ι) (P : Program) (C : Certif
   | _, _ => false
 
 def checkNode [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι)
-    (P : Program) (C : Certificate ι) (node : Node) (c : NodeEvidence ι) : Bool :=
+    (P : Program) (C : Certificate ι) (node : Node) (c : NodeEvidence ι)
+    (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
   decide ((claim c.expression).term = node.expression) &&
   checkHandler G P C node c &&
   checkScope (entry c).length node.expression &&
   decide (HeapExpressionRules.checkStep G (claim c.expression) c.knowledge
-    (c.effect.getD (.ordinary c.expression)) = some c.output) &&
+    (c.effect.getD (.ordinary c.expression)) codes = some c.output) &&
   match node.continuation, c.edges with
   | .ret, [] => decide (result c = Rty)
   | .bind l, [p] => checkTarget G P C (result c :: entry c) l p c.output
@@ -210,10 +195,10 @@ def checkNode [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι)
 
 /-- Enumeration comes from the program, not a certificate-supplied edge list. -/
 def checkGraph [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι)
-    (P : Program) (C : Certificate ι) : Bool :=
+    (P : Program) (C : Certificate ι) (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
   decide (P.length = C.length) && (List.range P.length).all (fun l =>
     match P[l]?, C[l]? with
-    | some node, some c => checkNode G Rty P C node c
+    | some node, some c => checkNode G Rty P C node c codes
     | _, _ => false) && P.all (fun node => ObjectCoherence.sourceTerm node.expression)
 
 def TargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι) (Γ : List (Ty ι)) (l : Target) (facts : HeapKnowledge.Knowledge) : Prop :=
@@ -280,14 +265,15 @@ theorem handler_sound [DecidableEq ι] {G : NormalGraph ι} {P C node c}
   · contradiction
 
 theorem node_sound [DecidableEq ι] {G : NormalGraph ι} {Rty P C node c}
-    (hc : checkNode G Rty P C node c = true) :
+    {codes : CodeEntry ι → Bool} (hc : checkNode G Rty P C node c codes = true)
+    (hcodes : CodesSound G codes := by exact Verification.Model.ProgramCertificates.codesSound_none _) :
     ExpressionOk G c node.expression ∧
     ContinuationOk G Rty C (entry c) (result c) c.output node.continuation ∧
     ∀ ρ h, HeapKnowledge.Holds c.knowledge ρ h → HandlerOk G C (entry c) ρ node.handler := by
   simp only [checkNode, Bool.and_eq_true, decide_eq_true_eq] at hc
   refine ⟨?_, ?_, fun ρ h hk => handler_sound hc.1.1.1.2 hk⟩
   · intro n W h ρ he hf hw hh
-    have ht := HeapExpressionRules.checkStep_sound hc.1.2 he hf hw hh
+    have ht := HeapExpressionRules.checkStep_sound hc.1.2 hcodes he hf hw hh
     simpa only [entry, result, hc.1.1.1.1] using ht
   · have hk := hc.2
     split at hk <;> (try (rename_i hcont hedges; rw [hcont]))
@@ -303,7 +289,8 @@ theorem node_sound [DecidableEq ι] {G : NormalGraph ι} {Rty P C node c}
     · contradiction
 
 theorem graph_node [DecidableEq ι] {G : NormalGraph ι} {Rty P C c} {l : Nat}
-    (hg : checkGraph G Rty P C = true) (hc : C[l]? = some c) :
+    {codes : CodeEntry ι → Bool} (hg : checkGraph G Rty P C codes = true)
+    (hcodes : CodesSound G codes) (hc : C[l]? = some c) :
     ∃ node : Node, P[l]? = some node ∧ ExpressionOk G c node.expression ∧
       ContinuationOk G Rty C (entry c) (result c) c.output node.continuation ∧
       ∀ ρ h, HeapKnowledge.Holds c.knowledge ρ h → HandlerOk G C (entry c) ρ node.handler := by
@@ -315,7 +302,7 @@ theorem graph_node [DecidableEq ι] {G : NormalGraph ι} {Rty P C c} {l : Nat}
   have hn : P[l]? = some (P[l]'hl) := by simp [hl]
   have h := hg.2 l (List.mem_range.mpr hl)
   rw [hn, hc] at h
-  exact ⟨_, hn, node_sound h⟩
+  exact ⟨_, hn, node_sound h hcodes⟩
 
 /-- A state assertion used only in the global safety proof. -/
 def StateOk [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι) (C : Certificate ι)
@@ -343,7 +330,8 @@ theorem branch_target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ q l 
 
 /-- Global safety is by execution budget, not by acyclicity or graph unfolding. -/
 theorem state_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C}
-    (hg : checkGraph G Rty P C = true) :
+    {codes : CodeEntry ι → Bool} (hg : checkGraph G Rty P C codes = true)
+    (hcodes : CodesSound G codes) :
     ∀ n W h s, WorldAdm W → HeapOk n W h → StateOk G Rty C n W h s →
       SafeGraph P (meaning G Rty) n W h s := by
   intro n
@@ -357,7 +345,7 @@ theorem state_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C}
     cases s with
     | «at» l ρ =>
       obtain ⟨c, hc, he, hf⟩ := hs
-      obtain ⟨node, hn, ht, hk, hx⟩ := graph_node hg hc
+      obtain ⟨node, hn, ht, hk, hx⟩ := graph_node hg hcodes hc
       have he' := he.transfer n (Nat.le_succ n) U (WExt_refl _)
       exact Or.inr ⟨U, h, _, WExt_refl _, hw', .enter hn, hh',
         ih U h _ hw' hh' ⟨entry c, result c, c.output, he', ht n U h ρ he' hf hw' hh', hk, hx ρ h hf⟩⟩
@@ -419,21 +407,24 @@ theorem state_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C}
 
 /-- Safety from any checked entry and concrete environment meeting its claim. -/
 theorem accepted_entry_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C l c}
-    (hg : checkGraph G Rty P C = true) (hc : C[l]? = some c)
+    {codes : CodeEntry ι → Bool} (hg : checkGraph G Rty P C codes = true)
+    (hcodes : CodesSound G codes) (hc : C[l]? = some c)
     (n W h ρ) (he : EnvOk G (entry c) ρ n W) (hf : HeapKnowledge.Holds c.knowledge ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafeGraph P (meaning G Rty) n W h (.at l ρ) :=
-  state_safe hg n W h _ hw hh ⟨c,hc,he,hf⟩
+  state_safe hg hcodes n W h _ hw hh ⟨c,hc,he,hf⟩
 
 /-- The external input contract is independent of the supplied point claims. -/
 def checkEntry [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι)
-    (P : Program) (C : Certificate ι) (start : Nat) (inputs : List (Ty ι)) : Bool :=
-  checkGraph G Rty P C && match C[start]? with
+    (P : Program) (C : Certificate ι) (start : Nat) (inputs : List (Ty ι))
+    (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
+  checkGraph G Rty P C codes && match C[start]? with
     | some c => decide (entry c = inputs ∧ c.knowledge = ⟨[],[],[]⟩)
     | none => false
 
 theorem accepted_inputs_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C start inputs}
-    (hc : checkEntry G Rty P C start inputs = true) (n W h ρ)
-    (he : EnvOk G inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    {codes : CodeEntry ι → Bool} (hc : checkEntry G Rty P C start inputs codes = true) (n W h ρ)
+    (he : EnvOk G inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (hcodes : CodesSound G codes := by exact Verification.Model.ProgramCertificates.codesSound_none _) :
     SafeGraph P (meaning G Rty) n W h (.at start ρ) := by
   simp only [checkEntry, Bool.and_eq_true] at hc
   have hg := hc.1
@@ -441,7 +432,7 @@ theorem accepted_inputs_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C star
   split at hx
   · rename_i c hc
     have hem : entry c = inputs ∧ c.knowledge = ⟨[],[],[]⟩ := of_decide_eq_true hx
-    apply accepted_entry_safe hg hc n W h ρ _ _ hw hh
+    apply accepted_entry_safe hg hcodes hc n W h ρ _ _ hw hh
     · simpa only [hem.1] using he
     · rw [hem.2]; exact HeapKnowledge.empty ρ h
   · contradiction

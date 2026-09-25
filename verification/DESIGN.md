@@ -748,9 +748,13 @@ on the incoming environment. Dispatch, expression evaluation and transfer take
 explicit operational steps. Global safety covers cycles without graph unrolling
 or a termination requirement.
 
-Closures currently contain expression-language bodies, not graph-backed bodies.
-A graph loop surrounding closure calls is supported; a loop inside a closure
-body is not thereby expressible. General branch-environment refinement is also
+A closure body is a graph, as a function body is: graph code
+([graph code](SEMANTICS.md#graph-code)) checked by its own certificate at each
+signature it offers, which creation names (`funGraph`,
+[PROGRAM-TYPING](PROGRAM-TYPING.md#judgments-and-constructor-views)). A loop,
+`switch` or `try` inside a closure is a graph shape like any other. A generic
+closure, one with a rest parameter or a parameter default, and a class
+constructor keep term code (`funE`, `funRest`, `ctorE`). General branch-environment refinement is also
 outside the current program rules. Graph dispatch currently supplies Boolean
 and tag observations to the common immutable-slot refinement rule. Expression
 typing also supports known shape answers per overload.
@@ -1448,9 +1452,10 @@ The exporter’s parameter signature is checked for matching names, order and ty
 A synthetic entry edge must justify the first supplied point claim from that
 contract. Lean proves safety for any typed input environment, admissible world
 and satisfying heap. Source parameter slots follow declaration order, with
-locals pushed ahead of them. This certifies the function body. Local expression
-closures use the existing lambda/application rules; graph-backed closure bodies
-and external callers remain separate integration work.
+locals pushed ahead of them. This certifies the function body. A local closure's
+body is graph code with its own request and certificate, entered with the
+receiver, the parameters and the captured slots; external callers remain
+separate integration work.
 
 The cell-contract boundary is implemented in
 [CellClaims.lean](lean/Verification/Model/Programs/CellClaims.lean). SKJS exports
@@ -1566,8 +1571,8 @@ This checks unused claimed bindings too, and permits justified weakening.
 The wrapper introduces no execution step; a graph-equality regression ties the
 block form to the existing captured-read execution trace.
 
-A closure null/undefined guard on a plain `cell.value` read may retain its
-observation within branches containing only reads, primitive operations and
+In a closure that keeps term code, a null/undefined guard on a plain
+`cell.value` read may retain its observation within branches containing only reads, primitive operations and
 local consts. Extraction saves the tested read in an administrative let, refines
 that immutable slot with existing tag rules, and reuses it for reads of the
 same named cell. Calls, writes, allocations and nested closures anywhere in
@@ -1805,8 +1810,9 @@ The three milestones are:
    to entries/results; the consumer enforces exact statement-entry interfaces and
    checks every incoming edge. Tests cover allocation, writes, guarded reads,
    merges, backedges, empty predicates and changed claims. Ordinary signatures
-   retain their existing meaning. Closure observations require uniform invariant
-   justification, pending graph-backed closure bodies.
+   retain their existing meaning. A closure's graph starts knowing nothing of the heap, so an
+   observation of a captured cell at its entry requires uniform invariant
+   justification.
 3. **Original-witness diagnosis — implemented; checker witnesses since repaired.**
    The original exports exposed stale heap observations after writes and calls.
    SKJS now rejects all three singleton returns, so their partial exports no
@@ -2890,10 +2896,10 @@ assumptions and historical coverage counts are not an implementation plan.
 | Flow refinement across loops and calls | State which observations survive writes and calls, and prove branch/refinement transfer rules. Stable cell contracts alone do not supply these facts.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Mutable structural objects             | Specify field presence, width, aliasing and allowed mutation; extend beyond the current invariant cells and export their types.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | More primitives and operators          | Numbers are admitted as opaque values with singleton literal types, in closure signatures and as the storage contract of a mutable local; finite singleton comparisons are supported, and a comparison on the broad family branches both ways; arithmetic on numbers is the IEEE-754 double operation yielding the number family, and on bigints the integer operation yielding the bigint family (a division by zero and a negative exponent throw), relational comparison of numbers, bigints and strings yields a Boolean, and `-`, `+` and `~` are the binary operators with a constant ([Numeric operators and bigints](#numeric-operators-and-bigints)), with compound assignments, increments and logical assignments to fields and elements evaluating their target once, the Boolean logical forms needing a Boolean target; strings are admitted on the same terms, with literal singletons and equality against a literal, and `+` concatenates a string with any primitive but a symbol, converting it by `ToString` exactly, template literals included ([String concatenation, templates and `void`](#string-concatenation-templates-and-void)); truthiness is JavaScript's `ToBoolean` ([Truthiness](#truthiness)); general equality is not, and needs its runtime behavior defined and agreement validated. Numeric current-content predicates now cover both singletons and the number family, with checked transfer across graph edges.                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| Graph-backed closure bodies            | Extend the call/body interface if source functions require graph control flow internally; surrounding graph loops are insufficient.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Closures still term code               | Closures that keep term code, each to become graph code so that `Expr.termBody` and the term closure rules go away: a rest parameter needs variadic graph code, invocation collecting the actuals past the fixed parameters into a fresh store in slot 0 as `variadic` does, and a `restsT` lemma for it where `restsT_of_graph` now discards those actuals; a parameter default needs entry nodes, a tag dispatch on `undefined` at the parameter's slot first in the graph, as a function's default already is, with `parameterOrder`'s deferred closures as statements; a generic closure needs its code checked universally, one code request at its binders' parameter rows (`checkCodes_reassign` already makes the table assignment-free); a class constructor needs construct-only graph code, a `ctorE` for graph code at construct signatures with `undefined` for the receiver; a `withValue` callable object needs `makeCallable` over graph code, one table entry per advertised overload.                                                                                                                                                                                                                                                                                                                                                  |
 | Generics and bounds                    | The rigid model slice is in [TypeParams.lean](lean/Verification/Model/Types/TypeParams.lean). Source extraction of identity, `T extends boolean`, annotated and inferred immutable copies, and extra `T` parameters is in [GenericSource.lean](lean/Verification/Model/Source/GenericSource.lean). Declaration applications over rigid binders are expanded from their source equations in [DeclarationGraph.lean](lean/Verification/Model/Source/DeclarationGraph.lean); [GenericAlias.lean](lean/Verification/Model/Source/GenericAlias.lean) now only expands alias atoms in SKJS's exported claims. Distinct parameters and dependent upper-bound chains in variable-copy bodies are checked using [GenericBounds.lean](lean/Verification/Model/Types/GenericBounds.lean). Every other generic body is a graph request over its binders' parameter rows, certified at every assignment of them ([Generic bodies are graph requests over parameter rows](#generic-bodies-are-graph-requests-over-parameter-rows)). [TypeSchemes.lean](lean/Verification/Model/Types/TypeSchemes.lean) gives quantified callable semantics; source extraction connects the narrow unbounded local-closure slice described above, checks introduction universally, and compiles checked ground eliminations to graph arrows. Remaining: calls to generic declarations, generic callbacks, bounded or nested local schemes, general quantified closure bodies, conditional types, higher-rank polymorphism and parameter-changing recursion. Generic parameters, inference variables and hidden object type arguments are not interchangeable. Observing several calls is not universal certification; the separate introduction check is. |
 | Difference and negation                | Supply sound rules or approximations: pointwise complement need not preserve admissibility. They do not follow from positive normalization.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| Exceptions                             | A throw is an outcome of the calculus and of graphs, with handler edges and `finally` compiled on each way out ([Throws](#throws)). Remaining: a `break`/`continue` through a `finally`, `try` inside a closure body, a generic closure that throws, `new Error(…)` and the `Error` hierarchy, `JSON`, `Promise.*` overlay entries.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Exceptions                             | A throw is an outcome of the calculus and of graphs, with handler edges and `finally` compiled on each way out ([Throws](#throws)). Remaining: a `break`/`continue` through a `finally`, `try` inside a closure that keeps term code, a generic closure that throws, `new Error(…)` and the `Error` hierarchy, `JSON`, `Promise.*` overlay entries.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 For example, `L-LOOP-CARRIED` remains a useful integration target: a write on a
 back edge must not preserve a stale narrowing at the loop head. A corrected
@@ -2946,6 +2952,10 @@ Exact executions of extracted Lean programs are deferred unless a concrete
 discrepancy warrants investigation; checked Boolean results and JavaScript
 witnesses do not establish TypeScript-to-calculus execution equivalence.
 
+A graph node whose expression the extractor built with known evidence (a
+closure creation, an array literal, an element read) carries that plan, and the producer renders it rather than
+searching; the search runs only where a choice is open, and tries a sequent's
+own types (its claim and its context's) before the vocabulary.
 Source-mode search uses labels in the function's request and required-expression
 sequents, plus primitive labels. Vocabulary construction includes their operand
 types. This is a search restriction, not a restriction on consumer checking or
@@ -3392,10 +3402,10 @@ proves the literal below the expected type. A mutable array meets `Iterable`
 only through a `readonly` form of its type, which the graph must hold; a
 literal needs none.
 
-Inside a closure body, extracted as a direct proof rather than a graph, an
-array literal and an element read use the same rules (`arrLit`, `alloc` with
-the captured prototype, `elem`, `elemOpt`). Element writes and destructuring
-there are not yet extracted. A method call there, `xs.reduce(f, 0)` in a class
+Inside a closure body, a graph as a function body is, an array literal, an
+element read, an element write and destructuring use the same rules
+(`arrLit`, `alloc` with the captured prototype, `elem`, `elemOpt`,
+`setElem`). A method call there, `xs.reduce(f, 0)` in a class
 method, reads the member as the top level does: a key the object's own fields
 and views do not name, outside its bound, is read by `readProto` at the
 prototype member's scheme, and the call's claim at the instance is below it
@@ -4473,8 +4483,8 @@ closure checker already have: the value once, held in an anonymous slot; each
 property or position read in pattern order by the ordinary read rules; a
 default only where that read is `undefined` (a tag dispatch, the default's
 claimed value on one arm and the defined slice on the other); a nested
-pattern over the read, held in its own slot. One Fragment form, `destructure`
-(a statement) and `destructBody` (a closure body), over one recursive
+pattern over the read, held in its own slot. One Fragment form, the `destructure`
+statement, in function and closure bodies alike, over one recursive
 `Pattern`, carries object and array patterns, nesting, holes and an array
 rest ([PROGRAM-TYPING.md](PROGRAM-TYPING.md#patterns) states the rules).
 
@@ -4510,7 +4520,7 @@ rest ([PROGRAM-TYPING.md](PROGRAM-TYPING.md#patterns) states the rules).
   caller may omit it; the body starts with a `destructure` over it, in
   parameter order, which is where JavaScript initializes it. A closure keeps
   its own default schedule (`parameterOrder`) and starts its body with a
-  `destructBody` for a pattern.
+  `destructure` for a pattern.
 - *A method* is not read by a pattern: read off its object it is no function
   value (`MethodMembers`), as for `c.m` as a value.
 - *Rest parameters* may be `readonly T[]`, a readonly tuple, or a declared
@@ -4623,7 +4633,8 @@ $$
 **Refused.** A clause's fall-through is admitted; still refused are a name
 shared across switch clauses, a `for` closure capturing its `let`, a `var`, a
 labeled source statement, a `do…while`, and any of these forms inside a
-closure body (its lowering has no graph). `try`, `catch`, `finally` and
+closure that keeps term code (a generic one, or one with a rest parameter or
+a parameter default). `try`, `catch`, `finally` and
 `throw` are not these lowerings: they use the calculus's throw outcome
 ([Throws](#throws)). A statement after a `throw` is dead code all the same.
 
@@ -4715,8 +4726,7 @@ $$
 
 **Source.** `throw e` is the node `throw x` after `e`'s value, whose
 continuation is the return and whose claim is the function's result, which a
-throw has: a body ending in a throw needs no return. In a closure body,
-`throw e` ends the body as a return does (`throwBody`). `try B catch (e) C
+throw has: a body ending in a throw needs no return. `try B catch (e) C
 finally F`:
 
 - The nodes of `B` that may throw name `C`'s entry as their handler, with the
@@ -4753,8 +4763,8 @@ $$
 
 **Refused.** A `break` or `continue` leaving a `try` with a `finally` (the
 lowering runs `F` for returns and throws, not for jumps:
-`try-finally-jump-refused`); `try` inside a closure body (its lowering has no
-graph); a destructured or annotated (other than `unknown`) catch binding; a
+`try-finally-jump-refused`); `try` inside a closure that keeps term code; a
+destructured or annotated (other than `unknown`) catch binding; a
 throw inside a generic closure, whose certificate language has no throw rule.
 
 **Flipped.** `invalid-bigint-division` and `invalid-bigint-exponent` became
@@ -5285,8 +5295,8 @@ JavaScript does:
 
 ### Null predicates through union elimination
 
-Inside a closure, a null/undefined guard on a captured mutable local may save
-its read into an immutable temporary. The branch proof narrows that temporary;
+Inside a closure that keeps term code, a null/undefined guard on a captured
+mutable local may save its read into an immutable temporary. The branch proof narrows that temporary;
 subsequent reads and statement-entry claims use its checked type. This lowering
 is restricted to branches for which `readOnly` excludes writes, calls,
 allocations and escaping closures. It establishes no persistent narrowing of
@@ -5294,7 +5304,9 @@ the cell's storage contract and carries no observation across a back edge.
 `captured-local-guards.ts` checks the supported shape; `mutable-guard-effects.ts`
 checks that a write or callback prevents reusing the saved value.
 
-For graph branches, the lowering retains the tested read through tag dispatch.
+For graph branches, the lowering retains the tested read through tag dispatch,
+and an arm that is one `return` of the tested read returns the saved value
+([derived source forms](PROGRAM-TYPING.md#derived-source-forms)).
 A finite null/undefined observation narrows the saved value and propagates to
 its live heap read links. This permits copying a guarded local to a const and
 capturing that snapshot. Writes and calls invalidate those links through the
@@ -5333,9 +5345,9 @@ Closure null guards now use existing union elimination and known-tag conditional
 rules. The original condition is evaluated and saved before splitting the tested
 immutable slot. Each primitive label checks the selected arm; supplied arm-entry
 and expression claims are still independently required. This adds a source-directed
-proof recipe, not another typing rule or graph-backed closure body. Parameters,
+proof recipe, not another typing rule. Parameters,
 captures, negation and effects in the selected arm are covered. Retained property
-refinements and closure loops remain outside this slice.
+refinements remain outside this slice.
 
 ### Truthiness
 

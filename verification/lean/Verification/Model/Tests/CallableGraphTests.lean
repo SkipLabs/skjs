@@ -26,7 +26,7 @@ def program : Program :=
    ⟨.app (.var 1) (.var 0),.ret,none⟩]
 def claims : List (PointClaim Nat) :=
   [⟨[],[2]⟩,⟨[[2]],[2]⟩,⟨[[2],[2]],[0]⟩,⟨[[2],[2]],[1]⟩,⟨[[1],[2],[2]],[1]⟩]
-def request : Request := ⟨types,program,claims,[1],0,[]⟩
+def request : Request := ⟨types,program,claims,[1],0,[], []⟩
 def certificate : ControlFlow.Certificate Nat :=
   match produce G labels 8 [1] program claims 0 with
   | .ok c => c
@@ -138,7 +138,7 @@ private def rows : List (List (Clause (List Nat))) := types ++
    [.arrs [([7],[[0],[0,1],[1]],[1])] []], [.arrs [([7],[],[0])] []]]
 private def graph : NormalGraph Nat := .ofRows fun i => rows[i]?.getD []
 private def body := Tm.make (.closure 3 (.var 3)) .nul
-private def req : Request := ⟨rows,[⟨body,.bind 1,none⟩,⟨.var 0,.ret,none⟩],[⟨[],[9]⟩,⟨[[9]],[10]⟩],[10],0,[]⟩
+private def req : Request := ⟨rows,[⟨body,.bind 1,none⟩,⟨.var 0,.ret,none⟩],[⟨[],[9]⟩,⟨[[9]],[10]⟩],[10],0,[], []⟩
 #guard ok (do
   let r ← Json.parse (toJson req).compress
   let c ← produceJson r 8
@@ -154,7 +154,7 @@ private def req : Request := ⟨rows,[⟨body,.bind 1,none⟩,⟨.var 0,.ret,non
   (.node ⟨[],body,[9]⟩ .funE
     [.node ⟨[[7],[0],[0],[1]],.var 3,[1]⟩ .var [],
      .node ⟨[[7],[0],[1],[1]],.var 3,[1]⟩ .var []])
-private def zeroReq : Request := ⟨rows,[⟨.make (.closure 0 .nul) .nul,.ret,none⟩],[⟨[],[11]⟩],[11],0,[]⟩
+private def zeroReq : Request := ⟨rows,[⟨.make (.closure 0 .nul) .nul,.ret,none⟩],[⟨[],[11]⟩],[11],0,[], []⟩
 #guard ok (do
   let r := toJson zeroReq
   verifyJson r (← produceJson r 8))
@@ -183,7 +183,7 @@ private def cellCallReq : Request :=
   ⟨cellRows,
    [⟨.make (.closure 2 (.var 2)) .tru,.bind 1,none⟩,
     ⟨.call (.var 0) [.write (.var 0) .fls,.read (.var 0)],.ret,none⟩],
-   [⟨[],[12]⟩,⟨[[12]],[1]⟩],[1],0,[]⟩
+   [⟨[],[12]⟩,⟨[[12]],[1]⟩],[1],0,[], []⟩
 #guard ok (do
   let r := toJson cellCallReq
   verifyJson r (← produceJson r 8))

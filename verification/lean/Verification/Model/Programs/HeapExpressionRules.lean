@@ -671,6 +671,27 @@ theorem creation_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k arity b A ρ 
       exact Or.inr ⟨U,_,_,hx,hu,step,hh',
         refine_value rfl (HeapKnowledge.shift_holds (HeapKnowledge.alloc_frame hk)) hs'⟩
 
+/-- Creating graph code likewise allocates a fresh bag and runs nothing: its
+captures are slots, already values. -/
+theorem graphCreation_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k arity E K start caps A ρ n W h}
+    (ht : HasTy G Γ (.make (.graph arity E K start caps) .nul) A) (he : EnvOk G Γ ρ n W)
+    (hk : HeapKnowledge.Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (meaning G A)
+      (fun h' v => HeapKnowledge.Holds (HeapKnowledge.shift k) (push v ρ) h')
+      n W h (instantiate 0 ρ (.make (.graph arity E K start caps) .nul)) := by
+  have hs := ht.sound n W h ρ he hw hh
+  cases n with
+  | zero => trivial
+  | succ n =>
+    rcases hs with (⟨hv, _⟩ | ⟨_,hr,_⟩) | ⟨U,h',t',hx,hu,step,hh',hs'⟩
+    · simp [instantiate,isVal] at hv
+    · simp only [instantiate, instantiateArgs_eq_map, List.map] at hr
+      cases hr with | makeArg hg _ hr => obtain ⟨rfl, rfl⟩ := singleton_get hg; cases hr
+    · simp only [instantiate, instantiateArgs_eq_map, List.map] at step hs' ⊢
+      obtain ⟨rfl,rfl⟩ := make_step_inv rfl step
+      exact Or.inr ⟨U,_,_,hx,hu,step,hh',
+        refine_value rfl (HeapKnowledge.shift_holds (HeapKnowledge.alloc_frame hk)) hs'⟩
+
 /-- Evidence names the particular observation used. The checker binds it to
 an actual source sequent, so neither the slot nor the requested result type can
 be changed by an untrusted producer. -/
@@ -716,24 +737,27 @@ theorem writeSlots_eq {t f i v} (h : writeSlots t = some (f, i, v)) :
 frame. Edge checking must entail the destination's facts from this output;
 checking a node alone does not establish its supplied input knowledge. -/
 def checkStep [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι)
-    (k : Knowledge) : StepEvidence ι → Option Knowledge
+    (k : Knowledge) (step : StepEvidence ι)
+    (codes : CodeEntry ι → Bool := fun _ => false) : Option Knowledge :=
+  match step with
   | .ordinary e =>
-    if claim e = j ∧ checkScope j.context.length j.term = true ∧ checkTree G e = true
+    if claim e = j ∧ checkScope j.context.length j.term = true ∧ checkTree G e codes = true
     then some (ordinaryOutput k) else none
   | .pure e =>
     if claim e = j ∧ checkScope j.context.length j.term = true ∧
-        checkTree G e = true ∧ pureTerm j.term = true
+        checkTree G e codes = true ∧ pureTerm j.term = true
     then some (pureOutput k j.term) else none
   | .created e =>
-    if claim e = j ∧ checkScope j.context.length j.term = true ∧ checkTree G e = true then
+    if claim e = j ∧ checkScope j.context.length j.term = true ∧ checkTree G e codes = true then
       match j.term with
       | .make (.closure _ _ .call) .nul => some (HeapKnowledge.shift k)
+      | .make (.graph ..) .nul => some (HeapKnowledge.shift k)
       | _ => none
     else none
   | .typedRead i e =>
     match readSlot j.term with
     | some (fld, i') =>
-      if claim e = j ∧ checkTree G e = true ∧ i' = i ∧
+      if claim e = j ∧ checkTree G e codes = true ∧ i' = i ∧
           (j.context[i]?).any (fun Ref => fieldOperand (expand G Ref) fld)
       then some (readFrame k i fld)
       else if claim e = j ∧ checkTree G e = true ∧ i' = i ∧
@@ -754,7 +778,7 @@ def checkStep [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι)
   | .allocated e =>
     match allocationSlots j.term with
     | some slots =>
-      if claim e = j ∧ checkScope j.context.length j.term = true ∧ checkTree G e = true ∧
+      if claim e = j ∧ checkScope j.context.length j.term = true ∧ checkTree G e codes = true ∧
           (slots.map Prod.fst).Nodup ∧ ∀ p ∈ slots, p.2 < j.context.length
       then some (allocOutput k (allocationFacts G j.context k slots) (contractFields G j.context)
         (slots.map Prod.fst)) else none
@@ -762,14 +786,16 @@ def checkStep [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι)
   | .written i v R e =>
     match writeSlots j.term with
     | some (fld, i', v') =>
-      if claim e = j ∧ checkTree G e = true ∧ i' = i ∧ v' = v ∧
+      if claim e = j ∧ checkTree G e codes = true ∧ i' = i ∧ v' = v ∧
           i < j.context.length ∧ v < j.context.length ∧
           valuesAt G j.context k v = R
       then some (writeOutput k i fld R) else none
     | none => none
 
 theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
-    (hc : checkStep G j k e = some out) {ρ n W h}
+    {codes : CodeEntry ι → Bool} (hc : checkStep G j k e codes = some out)
+    (hcodes : CodesSound G codes := by exact Verification.Model.ProgramCertificates.codesSound_none _)
+    {ρ n W h}
     (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (meaning G j.type)
@@ -781,7 +807,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
     split at hc
     · rename_i hp
       obtain ⟨hj,_,ht⟩ := hp
-      have typed := checkTree_sound e ht
+      have typed := checkTree_sound e ht hcodes
       rw [hj] at typed
       cases hc
       exact ordinary_sound typed he hk hw hh
@@ -791,7 +817,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
     split at hc
     · rename_i hp
       obtain ⟨hj,scope,ht,hpure⟩ := hp
-      have typed := checkTree_sound e ht
+      have typed := checkTree_sound e ht hcodes
       rw [hj] at typed
       cases hc
       exact pure_sound typed hpure scope he hk hw hh
@@ -801,13 +827,17 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
     split at hc
     · rename_i hp
       obtain ⟨hj,_,ht⟩ := hp
-      have typed := checkTree_sound e ht
+      have typed := checkTree_sound e ht hcodes
       rw [hj] at typed
       split at hc
       · rename_i arity b hb
         cases hc
         rw [hb] at typed ⊢
         exact creation_sound typed he hk hw hh
+      · rename_i arity E K start caps hb
+        cases hc
+        rw [hb] at typed ⊢
+        exact graphCreation_sound typed he hk hw hh
       · contradiction
     · contradiction
   | typedRead i e =>
@@ -822,7 +852,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
         | none => simp [hi] at hr
         | some Ref =>
           have hrep : fieldOperand (expand G Ref) fld = true := by simpa [hi] using hr
-          have typed := checkTree_sound e ht
+          have typed := checkTree_sound e ht hcodes
           rw [hj,term] at typed
           cases hc
           rw [term]
@@ -871,7 +901,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
       split at hc
       · rename_i hp
         obtain ⟨hj,_,ht,hnd,hin⟩ := hp
-        have typed := checkTree_sound e ht
+        have typed := checkTree_sound e ht hcodes
         rw [hj] at typed
         obtain ⟨code, term⟩ := allocationSlots_eq hslots
         cases hc
@@ -892,7 +922,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
       · rename_i hp
         obtain ⟨hj,ht,rfl,rfl,hi,hv,hr⟩ := hp
         have term := writeSlots_eq hslots
-        have typed := checkTree_sound e ht
+        have typed := checkTree_sound e ht hcodes
         rw [hj] at typed
         rw [term] at typed
         cases hc

@@ -809,13 +809,20 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
   (* A constructor's statements run before its instance is allocated. *)
   let rec allocated (body:expr) = match body.node with
     | Alloc fs -> Some fs
-    | LetBody (_,_,_,rest) | SequenceBody (_,rest) | IfBody (_,_,rest,_) -> allocated rest
+    | BlockBody ss -> allocated_in ss
+    | _ -> None
+  and allocated_in ss = match List.rev ss with
+    | {statement=Return e;_} :: _ -> allocated e
+    | {statement=If (_,a,_);_} :: _ -> allocated_in a
     | _ -> None in
   (* The allocations a constructor ends in, each arm's. *)
   let rec tails (body:expr) = match body.node with
     | Alloc _ | Build _ -> [body.pos]
-    | LetBody (_,_,_,rest) | SequenceBody (_,rest) -> tails rest
-    | IfBody (_,_,a,b) -> tails a @ tails b
+    | BlockBody ss -> tails_in ss
+    | _ -> []
+  and tails_in ss = match List.rev ss with
+    | {statement=Return e;_} :: _ -> tails e
+    | {statement=If (_,a,b);_} :: _ -> tails_in a @ tails_in b
     | _ -> [] in
   (* Whether the constructor being typed is a class's fresh one, which a
      class extending it constructs: claimed also at the instance it
@@ -970,7 +977,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
      a write, a short circuit), each cell by its contract. The claims of the
      expression's parts are already made. *)
   let rec effects env (e:expr) = match e.node with
-    | Lambda _ | Literal _ | Id _ | DoneBody -> env
+    | Lambda _ | Literal _ | Id _ -> env
     | Assign (n,rhs) ->
       let env = effects env rhs in
       let t = List.find_map (fun (x:expression) -> if x.pos = e.pos then Some x.type_ else None) !expressions in
@@ -988,6 +995,14 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
   (* The contract an assignment target is read and written at: a local's
      storage contract, or the type of the field or named index, whose read is
      also the target's claim. *)
+  (* A closure's statements are checked as a function body's are, by the
+     statement checker below: in a constructor or not, at a result where the
+     closure has one, collecting the types its `return`s give. *)
+  let block_statements = ref (fun (_:bool) (_:ty option) (_:ty list ref) env (_:stmt list) -> env) in
+  (* The body the statement checker is in: a constructor's or not, its
+     result, and where its `return`s' types are collected. *)
+  let block_constructor = ref false and block_result = ref (Some f.result)
+  and block_returned = ref (ref []) in
   let rec target_contract env (target:expr) = match target.node with
     | Id n ->
       ignore (expr env target);
@@ -1223,7 +1238,12 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let fresh = !fresh_constructor in
       fresh_constructor := false;
       if fresh then exact_allocs := tails body @ !exact_allocs;
-      let allocated_type = expr ~expected:result inner body in
+      let allocated_type = match body.node with
+        | BlockBody ss ->
+          let returned = ref [] in
+          ignore (!block_statements true (Some result) returned inner ss);
+          combine (List.rev !returned)
+        | _ -> expr ~expected:result inner body in
       (* A class offered construct signatures giving other instances is
          claimed at them too, beside its own; Lean checks the body at each. *)
       let own = {quantified=[];receiver=Semantic.top;params=List.map snd ps;variadic=None;rest_pack=None;result} in
@@ -1729,26 +1749,15 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         | "satisfies",Some _ -> actual
         | "as",Some target -> target
         | _ -> unsupported "cast form")
-    | DoneBody -> Atoms [Undef]
-    | ReturnBody body -> entry env e.pos; expr ?expected env body
-    (* A throw has every type: the empty union. *)
-    | ThrowBody body -> ignore (expr env body); Atoms []
-    | SequenceBody (init,body) -> entry env e.pos; ignore (expr env init); expr ?expected env body
-    | DestructBody (target,init,body) -> entry env e.pos;
-      let env = bind env target (expr env init) None in
-      expr ?expected env body
-    | LetBody (name,written,init,body) -> entry env e.pos;
-      let initial=expr ?expected:written env init in
-      named_closure name written init;
-      (* An unnamed slot holds a discarded statement value; no claim names it. *)
-      if name = "" then expr ?expected env body
-      else expr ?expected (extend env name (Value (Option.value written ~default:initial))) body
-    | IfBody (result,c,a,b) -> entry env e.pos; ignore (expr env c);
-      let left=expr ~expected:result (branch env c true) a in
-      let right=expr ~expected:result (branch env c false) b in union left right in
+    (* A closure's statements: the union of what its `return`s give, each
+       checked at the closure's result where it has one. *)
+    | BlockBody ss ->
+      let returned = ref [] in
+      ignore (!block_statements false expected returned env ss);
+      combine (List.rev !returned) in
     (* Block wrappers correspond to statement entries, not expression sites. *)
     (match e.node with
-      | DoneBody | ReturnBody _ | ThrowBody _ | SequenceBody _ | LetBody _ | IfBody _ | DestructBody _ -> ()
+      | BlockBody _ -> ()
       | _ -> expressions := {pos=e.pos;type_=t;
           instantiation=List.assoc_opt e.pos !instantiations} :: !expressions); t
   (* A pattern binding [target] to a value of [t], in pattern order: a
@@ -1921,7 +1930,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       | _ -> List.find_map (sink None) (Source.children e) in
     let at (s:stmt) = match s.statement with
       | Declare (_,bs) -> List.find_map (fun (_,written,e) -> sink written e) bs
-      | Return e -> sink (Some f.result) e
+      | Return e -> sink !block_result e
       | Effect e -> sink None e
       | _ -> if stmt_mentions n s then Some None else None in
     Option.join (List.find_map at rest) in
@@ -1934,7 +1943,12 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       | ForOf _ -> forget env
       | _ -> env in
     (* A block has no entry of its own: its first statement's is. *)
-    (match s.statement with Block _ -> () | _ -> entry env s.span);
+    (* In a class value's constructor, a `return` is the fall into the
+       allocation of the instance, which states no entry. *)
+    (match s.statement with
+     | Block _ -> ()
+     | Return _ when !block_constructor -> ()
+     | _ -> entry env s.span);
     match s.statement with
     | Declare (mutable_,bs) -> List.fold_left (fun env (n,written,init) ->
       if String.ends_with ~suffix:".[[class]]" n then fresh_constructor := true;
@@ -1982,7 +1996,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | Destructure (target,default,init) ->
       let env = bind env target (expr env init) default in
       if stirs_statement s then forget env else env
-    | Return e -> ignore (expr ~expected:f.result env e); env
+    | Return e -> !block_returned := expr ?expected:!block_result env e :: !(!block_returned); env
     (* An assignment statement leaves the cell holding the value written;
        `n ??= rhs`, the value it yields. *)
     | Effect ({node=Assign (n,rhs) | NullishAssign (n,_,rhs);_} as e) ->
@@ -2098,6 +2112,15 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         let next = merge env fallback [env; back] in
         if next = head then head else go next (rounds - 1) in
     go env 5 in
+  (* A closure's statements, in their own context, restored after. *)
+  block_statements := (fun constructor result returned env ss ->
+    let saved = (!block_constructor,!block_result,!block_returned) in
+    block_constructor := constructor; block_result := result; block_returned := returned;
+    let restore () =
+      let (c,r,t) = saved in block_constructor := c; block_result := r; block_returned := t in
+    match statements env ss with
+    | env -> restore (); env
+    | exception ex -> restore (); raise ex);
   ignore (statements env0 f.body);
   (* An expression the lowering reaches on two paths (the fields the arms of a
      constructor's last `if` share) is claimed once when both claims agree;

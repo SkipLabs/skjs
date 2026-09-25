@@ -497,8 +497,8 @@ arguments before it. Both producers verify all four functions.
 each call collects its own array, and a spread reads its elements after the
 arguments written before it — and forges the tuple contract those positions
 come from, dropping and retyping a position, which both verifier entry points
-must reject. The ordering witness stays a runtime one: the fragment has no
-array write inside a closure, so no certified example can observe it. A spread
+must reject. The ordering witness stays a runtime one: no certified example
+observes it yet. A spread
 relies on the array's positions being what it yields, which holds because this
 fragment cannot install an iterator of its own.
 

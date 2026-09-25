@@ -14,20 +14,20 @@ def natClaim (c : PointClaim (Fin 7)) : PointClaim Nat :=
   ⟨c.context.map (List.map Fin.val), c.type.map Fin.val⟩
 
 def mappedRequest : Request := ⟨types, CertificateProducerTests.mapped,
-  CertificateProducerTests.mappedClaims.map natClaim, [1], 0, []⟩
+  CertificateProducerTests.mappedClaims.map natClaim, [1], 0, [], []⟩
 
 def loopRequest : Request := ⟨types, ControlFlowTests.loop,
-  CertificateProducerTests.loopClaims.map natClaim, [1], 0, []⟩
+  CertificateProducerTests.loopClaims.map natClaim, [1], 0, [], []⟩
 
 def diamondRequest : Request := ⟨types, CertificateProducerTests.mappedDiamond,
-  CertificateProducerTests.mappedDiamondClaims.map natClaim, [0,1], 0, []⟩
+  CertificateProducerTests.mappedDiamondClaims.map natClaim, [0,1], 0, [], []⟩
 
 /-- This request forces a structural overload subsumption certificate, including
 its cyclic relation table and union-domain arrow evidence, through JSON. -/
 def overloadRequest : Request := ⟨types,
   [⟨.alloc .tru, .bind 1,none⟩, ⟨ProgramTypingTests.dispatch, .bind 2,none⟩,
    ⟨.var 0, .bind ⟨3,some [0,2]⟩,none⟩, ⟨.app (.var 0) .nul, .ret,none⟩],
-  [⟨[],[2]⟩, ⟨[[2]],[3]⟩, ⟨[[3],[2]],[4]⟩, ⟨[[4],[2]],[0,1]⟩], [0,1], 0, []⟩
+  [⟨[],[2]⟩, ⟨[[2]],[3]⟩, ⟨[[3],[2]],[4]⟩, ⟨[[4],[2]],[0,1]⟩], [0,1], 0, [], []⟩
 
 def ok (r : Except String α) : Bool := match r with
   | .ok _ => true
@@ -91,7 +91,7 @@ private def omitField (j : Json) (key : String) : Json :=
 #guard !(ok (verifyJson (toJson mappedRequest) (.str "accept")))
 
 -- Reject labels hidden in evidence, including transitivity intermediates.
-#guard !(validResponse mappedRequest ⟨[{expression := .node ⟨[],.nul,[0]⟩ (.sub (.trans [99] .subset .subset)) [], edges := []}]⟩)
+#guard !(validResponse mappedRequest ⟨[{expression := .node ⟨[],.nul,[0]⟩ (.sub (.trans [99] .subset .subset)) [], edges := []}], []⟩)
 
 -- Defaults and unsupported source refinements cannot silently enter the format.
 #guard !(ok (decodeStrict (α := Target) (Json.mkObj [("label",toJson (0 : Nat))])))
@@ -107,7 +107,7 @@ private def reverseFields : Json → Json
   (Json.mkObj [("x",toJson (0 : Nat)),("y",toJson (1 : Nat))]))
 
 -- External inputs are checked independently of the entry point claim.
-def inputRequest : Request := ⟨RequestJson.rows [[.bool]], [⟨.var 0,.ret,none⟩], [⟨[[0]],[0]⟩], [0],0,[[0]]⟩
+def inputRequest : Request := ⟨RequestJson.rows [[.bool]], [⟨.var 0,.ret,none⟩], [⟨[[0]],[0]⟩], [0],0,[[0]], []⟩
 #guard ok (roundtrip inputRequest)
 #guard !ok (roundtrip { inputRequest with inputs := [] })
 #guard !ok (roundtrip { inputRequest with inputs := [[0],[0]] })
@@ -116,7 +116,7 @@ def inputRequest : Request := ⟨RequestJson.rows [[.bool]], [⟨.var 0,.ret,non
 -- The generalized theorem also covers stateful arguments, not just primitive
 -- source parameters. The input reference may belong to any satisfying heap.
 def referenceInput : Request := ⟨RequestJson.rows [[.bool],[.refs [(valueField, [0])] [] []]],
-  [⟨.read (.var 0),.ret,none⟩], [⟨[[1]],[0]⟩], [0],0,[[1]]⟩
+  [⟨.read (.var 0),.ret,none⟩], [⟨[[1]],[0]⟩], [0],0,[[1]], []⟩
 #guard ok (roundtrip referenceInput)
 #guard !ok (roundtrip { referenceInput with inputs := [[0]] })
 
