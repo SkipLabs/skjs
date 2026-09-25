@@ -15,11 +15,14 @@
  *   so a signature promising a result there would be false;
  * - where the declaration states less than the host does (`any`) or more (a
  *   parameter at which it misbehaves), the signature the host meets, stated
- *   instead (`stated`).
+ *   instead (`stated`);
+ * - a member whose call is a primitive of the calculus: a test (`test`) or
+ *   a trusted step already stated as an intrinsic (`intrinsic`).
  *
  * A global declared outside the standard library, such as Node's `process`,
  * is read as its declaration states, member by member (`selectGlobal`). */
 import type { TypeTerm } from "./declaration-types.mts";
+import { asyncCompleteName, asyncReturnName, promiseAllName } from "./intrinsics.mts";
 
 type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
 
@@ -39,6 +42,10 @@ export type GlobalEntry = {
    * parser writes `Array.isArray(e)` as the test `isArray` of `e`, whose
    * narrowing Lean proves, and the member joins no value. */
   test?: "isArray";
+  /** The call is a call of this intrinsic (`intrinsics.mts`), which states
+   * the same step: the parser writes `Promise.resolve(v)` as
+   * `%AsyncReturn%(v)`, and the member joins no value. */
+  intrinsic?: string;
   /** The signature read instead of the declared one: its own binders, its
    * parameters, which a call may not exceed, and its result. What the host
    * does at these arguments, stated as a type. */
@@ -47,6 +54,7 @@ export type GlobalEntry = {
 
 const at: [number, number] = [0, 0];
 const binder = (name: string): TypeTerm => ({ k: "binder", name, span: at });
+const atom = (name: AtomName): TypeTerm => ({ k: "atom", name, span: at });
 
 /** `BigInt(v)` throws a RangeError for a number that is not an integer and a
  * SyntaxError for a string that is not an integer's spelling. A bigint or a
@@ -78,10 +86,9 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // `String(v)` converts a primitive, a symbol included, without running
   // client code; an object's conversion calls its `toString` or `valueOf`,
   // which may throw or return an object, and then `String` throws.
-  // A test of the array's identity, which the calculus makes itself
-  // (`Tag.isArray`): true of exactly the objects that own an array store,
-  // JavaScript's Array exotic objects. The declared guard, `arg is any[]`,
-  // is not read: Lean narrows by the clauses of the tested value's type.
+  { global: "String", signature: "(value?: any): string;",
+    admit: { parameter: "value", safe: ["null", "undefined", "boolean", "number", "string", "bigint", "symbol"],
+      literal: () => false } },
   // A fresh array of the object's own enumerable string keys: true of every
   // object, whatever its type says of its keys, and it runs no client code
   // (no getter is called). ES5 declares it at `object`, ES2015 at `{}`.
@@ -90,33 +97,46 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // The values of those keys, and the key-value pairs: nothing is known of
   // them, `any` read as `unknown`, and each pair is a fresh array. Reading a
   // value runs an accessor's getter: the fragment writes none, and a host
-  // object's is assumed to return. The
-  // generic overloads, `values<T>(o: { [s: string]: T } | ArrayLike<T>)`,
-  // which TypeScript selects for a record type whose keys it does not bound,
-  // are not listed.
+  // object's is assumed to return. The generic overloads,
+  // `values<T>(o: { [s: string]: T } | ArrayLike<T>)`, which TypeScript
+  // selects for a record type whose keys it does not bound, are not listed.
   { global: "Object", member: "values", signature: "values(o: {}): any[];" },
   { global: "Object", member: "entries", signature: "entries(o: {}): [string, any][];" },
+  // A test of the array's identity, which the calculus makes itself
+  // (`Tag.isArray`): true of exactly the objects that own an array store,
+  // JavaScript's Array exotic objects. The declared guard, `arg is any[]`,
+  // is not read: Lean narrows by the clauses of the tested value's type.
+  { global: "Array", member: "isArray", signature: "isArray(arg: any): arg is any[];", test: "isArray" },
   // `new Array()` and `new Array<T>()` are a fresh empty array, which is a
   // `T[]` at every `T`: the non-generic declaration's `any[]` states less
   // than that. An argument is refused: a single number is a length, and the
   // array it makes has holes, which an array type here promises it has not.
-  { global: "Array", signature: "new (arrayLength?: number): any[];",
-    stated: { binders: ["T"], params: [], result: { k: "array", readonly: false, element: binder("T"), span: at } } },
-  { global: "Array", signature: "new <T>(...items: T[]): T[];",
-    stated: { binders: ["T"], params: [], result: { k: "array", readonly: false, element: binder("T"), span: at } } },
+  ...["new (arrayLength?: number): any[];", "new <T>(...items: T[]): T[];"].map(
+    (signature): GlobalEntry => ({ global: "Array", signature,
+      stated: { binders: ["T"], params: [], result: { k: "array", readonly: false, element: binder("T"), span: at } } })),
   // `new Error(m)` with a string owns `message`, that string; its `name`
   // and a missing message are `Error.prototype`'s, which the model does not
   // hold, so only the own field is stated, and the message is required.
   // `stack` is the engine's and is not stated. ES2022 adds `options`.
   ...["new (message?: string): Error;", "new (message?: string, options?: ErrorOptions): Error;"].map(
     (signature): GlobalEntry => ({ global: "Error", signature,
-      stated: { binders: [], params: [{ k: "atom", name: "string", span: at }],
+      stated: { binders: [], params: [atom("string")],
         result: { k: "object", fields: [{ name: "message", optional: false, readonly: true,
-          type: { k: "atom", name: "string", span: at }, span: at }], stringIndex: null, calls: [], span: at } } })),
-  { global: "Array", member: "isArray", signature: "isArray(arg: any): arg is any[];", test: "isArray" },
-  { global: "String", signature: "(value?: any): string;",
-    admit: { parameter: "value", safe: ["null", "undefined", "boolean", "number", "string", "bigint", "symbol"],
-      literal: () => false } },
+          type: atom("string"), span: at }], stringIndex: null, calls: [], span: at } } })),
+  // A promise settled to the value, as an async function's return is: the
+  // intrinsic `%AsyncReturn%`, whose bound admits only a primitive, which
+  // is never a thenable JavaScript would adopt instead. Without a value, the
+  // promise settles to `undefined`, as an async function's completion.
+  { global: "Promise", member: "resolve", signature: "resolve<T>(value: T): Promise<Awaited<T>>;",
+    intrinsic: asyncReturnName },
+  { global: "Promise", member: "resolve", signature: "resolve(): Promise<void>;", intrinsic: asyncCompleteName },
+  // `%PromiseAll%`: an array of promises, each settling to its type
+  // argument as `%Await%` assumes, gives a promise of the array of their
+  // values. The declaration's parameter, values of any kind each adopted, is
+  // stated as an array of promises.
+  { global: "Promise", member: "all",
+    signature: "all<T extends readonly unknown[] | []>(values: T): Promise<{ -readonly [P in keyof T]: Awaited<T[P]>; }>;",
+    intrinsic: promiseAllName },
 ];
 
 /** The entry for `global`'s `member` (absent: its call) declared as `text`. */

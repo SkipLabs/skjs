@@ -20,7 +20,14 @@
  *   iterator, which yields `{ value }` for each element in turn, reading the
  *   array's current length at each step, and then `null`.
  * - `for (const k in o)` is `for (const k of %ForIn%(o))`: the keys the loop
- *   visits, each a string, of any value (none for null or undefined). */
+ *   visits, each a string, of any value (none for null or undefined).
+ *
+ * The reviewed overlay of library globals (`library-globals.mts`) reads some
+ * members as these: `Promise.resolve(v)` is `%AsyncReturn%(v)`, a promise
+ * settled to `v`, `Promise.resolve()` is `%AsyncComplete%()`, and
+ * `Promise.all(ps)` is `%PromiseAll%(ps)`: a promise of the array of what
+ * the promises settle to, in order, settling once each has. The array is
+ * fresh and owns no `then`, so it is not adopted. */
 import type { TypeTerm } from "./declaration-types.mts";
 
 export const intrinsicModule = "skjs/intrinsics";
@@ -29,6 +36,7 @@ export const asyncReturnName = "%AsyncReturn%";
 export const asyncCompleteName = "%AsyncComplete%";
 export const iterateName = "%Iterate%";
 export const forInName = "%ForIn%";
+export const promiseAllName = "%PromiseAll%";
 
 type Signature = Extract<TypeTerm, { k: "function" }>;
 type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
@@ -57,6 +65,9 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm):
     { name: asyncCompleteName, typeParams: [], type: fn([], promise(atom("void"))) },
     { name: iterateName, typeParams: [{ name: "T", bound: null }],
       type: fn([{ k: "array", readonly: true, element: binder, span }], step) },
+    { name: promiseAllName, typeParams: [{ name: "T", bound: null }],
+      type: fn([{ k: "array", readonly: true, element: promise(binder), span }],
+        promise({ k: "array", readonly: false, element: binder, span })) },
     { name: forInName, typeParams: [],
       type: fn([atom("unknown")], { k: "array", readonly: true, element: atom("string"), span }) },
   ];

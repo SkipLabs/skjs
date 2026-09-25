@@ -1000,7 +1000,10 @@ modeling choices; they do not replace proof.
   result as a premise: a unit that awaits or returns from an async body has
   input slots `%Await%`, `%AsyncReturn%` and `%AsyncComplete%` at their
   declared signatures, and the safety theorem holds for every environment
-  meeting them, as for an imported value's declared type.
+  meeting them, as for an imported value's declared type. `Promise.resolve`
+  meets the last two, and `Promise.all` meets `%PromiseAll%`: an array of
+  promises gives a promise settling to the array of their values
+  ([Library globals](#library-globals)).
 - A `for...of` loop over an array steps the array's iterator
   ([Loops over arrays](#loops-over-arrays)): `%Iterate%` at its declared
   signature is an input slot of every unit with such a loop, yielding each
@@ -3295,6 +3298,8 @@ weaker signature, which is what is actually true.
 | `Object.values`, `Object.entries` | `values(o: {}): any[]`, `entries(o: {}): [string, any][]` | as declared, `any` as `unknown`: nothing is known of an open record's other keys' values (`invalid-object-values.ts`) |
 | `new Array` | `new (arrayLength?: number): any[]`, `new <T>(...items: T[]): T[]` | stated as $\forall T.\ \mathsf{new}()\Rightarrow T[\,]$: a fresh empty array is at every element type, which `any[]` states less precisely; no argument |
 | `new Error` | `new (message?: string): Error` (ES5), `new (message?: string, options?: ErrorOptions): Error` (ES2022) | stated as $\mathsf{new}(\mathit{message}:\mathsf{string})\Rightarrow\{\mathsf{readonly}\ \mathit{message}:\mathsf{string}\}$: the message is own; `name`, and a message not given, are `Error.prototype`'s, which the model does not hold, so an `Error`, a record owning both, is not claimed (`invalid-error-name.ts`, `invalid-error-no-message.ts`) |
+| `Promise.resolve` | `resolve<T>(value: T): Promise<Awaited<T>>`, `resolve(): Promise<void>` | the intrinsics `%AsyncReturn%` and `%AsyncComplete%`, below: a promise settled to a primitive, or to `undefined` |
+| `Promise.all` | `all<T extends readonly unknown[] \| []>(values: T): Promise<{ -readonly [P in keyof T]: Awaited<T[P]>; }>` | the intrinsic `%PromiseAll%`, below: an array of promises gives a promise of the array of their values |
 
 **Stated signatures and constructs.** Where the declaration states less
 than the host does (`any`) or more (a parameter at which the host
@@ -3362,6 +3367,37 @@ unconstrained. That invariant is a change to the safety theorem's heap
 premise, left for later; until then, such a use is a located search failure,
 never a wrong verdict.
 
+**Intrinsics.** An entry may read a member as a call of an intrinsic
+([Async functions and await](#async-functions-and-await)) that states the
+same step (`intrinsic`): its calls are lowered to that call, with the
+arguments as written, and the member joins no value, the intrinsics joining
+the module's values instead. The intrinsic's scheme is instantiated at each
+call by the INSTANCES rule, as for `await`:
+
+$$
+\frac{\mathit{lib}(x)\quad \omega\in\Omega\quad
+      \omega=(x,\ m,\ \mathsf{text}(s),\ \mathsf{intrinsic}\ \iota)}
+     {\llbracket x.m(\vec e)\rrbracket=\iota(\llbracket\vec e\rrbracket)}\ \textsc{library-intrinsic}
+$$
+
+`Promise.resolve(v)` settles a fresh promise to `v`, unless `v` is a thenable,
+which it adopts: that is `return v` in an async function, `%AsyncReturn%`,
+whose bound admits only the primitives, which are never thenables
+(`invalid-promise-resolve-object.ts`), and what TypeScript's `Awaited<T>`
+then is. `Promise.resolve()` is `%AsyncComplete%()`, settled to `undefined`.
+`Promise.all(ps)` is a new intrinsic,
+
+$$
+\mathtt{\%PromiseAll\%}:\forall T.\ (\mathit{values}:\mathsf{readonly}\ \mathsf{Promise}\langle T\rangle[\,])\Rightarrow\mathsf{Promise}\langle T[\,]\rangle
+$$
+
+a promise of the array of what the promises settle to, in order: each settles
+to a member of its type argument, as `%Await%` assumes, and the array, fresh,
+owns no `then` and is not adopted. The declaration takes values of any kind,
+each adopted; stated, it takes promises (`invalid-promise-all-values.ts`).
+Reading these members as intrinsics, not as generic members of the global,
+also keeps to the one statement of adoption the async rules make.
+
 **Refused, by decision.** `JSON.stringify` returns `undefined` for
 `undefined` and functions and throws on bigints and cycles; `JSON.parse`
 throws on text that is not JSON; the generic
@@ -3369,8 +3405,11 @@ throws on text that is not JSON; the generic
 twin, which TypeScript selects for a record type written as a literal,
 promise `T` of keys the record type does not bound (their dictionary
 parameter is sound, but a reader of generic global methods and of a
-parameter restated without `ArrayLike` is not built); `Promise.resolve`
-adopts thenables. None is listed. `new Set(xs)` and `new Map(es)` are not
+parameter restated without `ArrayLike` is not built). None is listed.
+`Promise.reject(r)`, and `new Promise(executor)`, whose executor may call
+its `reject`, make a promise that rejects, and awaiting it throws: they wait
+for a throw to be an outcome of the calculus (`promise-reject-refused.ts`),
+as do `JSON.parse` and `JSON.stringify`. `new Set(xs)` and `new Map(es)` are not
 listed: their results, `Set<T>` and `Map<K, V>`, are library interfaces the
 declaration reader does not read (`add` returns `this`), and would need an
 overlay of their own, as `Array.prototype` has. `new Array(n)` and
@@ -3420,6 +3459,10 @@ $$
 \mathtt{\%AsyncComplete\%}&:()\Rightarrow\mathsf{Promise}\langle\mathsf{void}\rangle
 \end{aligned}
 $$
+
+The reviewed overlay reads `Promise.resolve` as the last two and
+`Promise.all` as a fourth, `%PromiseAll%`
+([Library globals](#library-globals), intrinsics).
 
 A generic intrinsic is instantiated at each call by the INSTANCES rule of
 [Modules and code units](#modules-and-code-units), so the rules below are

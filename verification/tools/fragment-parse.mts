@@ -206,6 +206,9 @@ class Gate {
   /** Calls the reviewed overlay of library globals reads as a test of the
    * calculus, `Array.isArray(e)`, by span. */
   readonly globalTests = new Set<string>();
+  /** Calls the reviewed overlay reads as a call of an intrinsic,
+   * `Promise.resolve(v)`, by span: the intrinsic's name. */
+  readonly globalIntrinsics = new Map<string, string>();
   // Mode of the ordinary function that bound `this`, or no binding. A strict
   // arrow captures its creator's already-converted receiver; it cannot rebind it.
   private receiverMode: "strict" | "sloppy" | null = null;
@@ -904,6 +907,12 @@ class Gate {
       const [tested] = node.arguments;
       if (this.globalTests.has(this.span(node).join(":")) && tested)
         return { k: "arrayTest", pos: this.span(node), e: this.expr(tested) };
+      // `Promise.resolve(v)` and the like, which the overlay reads as a call
+      // of the intrinsic stating the same step, read at the member's name.
+      const intrinsic = this.globalIntrinsics.get(this.span(node).join(":"));
+      if (intrinsic && ts.isPropertyAccessExpression(node.expression))
+        return this.intrinsic(intrinsic, this.span(node), this.span(node.expression.name),
+          node.arguments.map(a => this.expr(a)));
       if (
         ts.isPropertyAccessExpression(node.expression) &&
         ts.isIdentifier(node.expression.expression) &&
@@ -2615,6 +2624,7 @@ export function parseFile(file: string, carriesContext = false,
         staticMember: ([start, end], cls) => gate.staticReads.set(`${start}:${end}`, cls),
         memberReceivers: receiverNodes.map(node => gate.span(node)),
         globalTest: ([start, end]) => gate.globalTests.add(`${start}:${end}`),
+        globalIntrinsic: ([start, end], name) => gate.globalIntrinsics.set(`${start}:${end}`, name),
         library: ([start, end], library) => {
           const node = globalNodes.find(n => n.getStart(source) === start && n.end === end);
           if (node) gate.libraryTypes.set(node.text, library);

@@ -246,6 +246,10 @@ export function collectDeclarations(file: string, options: {
   /** Told each call of a global that the reviewed overlay reads as a test
    * of the calculus, such as `Array.isArray(e)`, by the call's span. */
   globalTest?: (span: Span, test: NonNullable<GlobalEntry["test"]>) => void;
+  /** Told each call of a global that the reviewed overlay reads as a call of
+   * an intrinsic, such as `Promise.resolve(v)`, by the call's span, with the
+   * intrinsic's name; the intrinsics then join the values. */
+  globalIntrinsic?: (span: Span, name: string) => void;
   /** The names the client's ambient declarations bind, `declare function f`,
    * `declare const x: T`, `declare class C`, one span per name (overloads
    * once): each joins its values at the type its declarations state. */
@@ -666,8 +670,12 @@ export function collectDeclarations(file: string, options: {
     // `async`, `await` and `for...of`, as the intrinsics that stand for them
     // (`intrinsics.mts`): trusted steps at their signatures, listed as values
     // like an import's.
-    if (options.intrinsics) {
-      const at = options.intrinsics;
+    // Listed once, located at the first construct or overlay entry that uses
+    // them.
+    let intrinsicsListed = false;
+    const listIntrinsics = (at: Span): void => {
+      if (intrinsicsListed) return;
+      intrinsicsListed = true;
       try {
         const symbol = checker.resolveName("Promise", SymbolFlags.Interface, client, false);
         const parts = (symbol?.declarations ?? []).map(d => d.resolve())
@@ -688,7 +696,8 @@ export function collectDeclarations(file: string, options: {
       } catch (error) {
         throw new DeclarationError(at, error instanceof Error ? error.message : String(error));
       }
-    }
+    };
+    if (options.intrinsics) listIntrinsics(options.intrinsics);
     // Global variables the client reads, such as Node's `process` (DESIGN.md,
     // "Global values"): each joins the values like an import, at a definition
     // of its own, keyed by the variable's declaration, that holds only the
@@ -713,7 +722,11 @@ export function collectDeclarations(file: string, options: {
       const at: Span = [first.getStart(client), first.end];
       try {
         const selection = selectGlobal(checker, uses, { lookup, identityOf: idOf, clean, valueScope, partners,
-          overlay: globalsOverlay, test: (span, test) => options.globalTest?.(span, test) });
+          overlay: globalsOverlay, test: (span, test) => options.globalTest?.(span, test),
+          intrinsic: (span, name) => {
+            listIntrinsics(span);
+            options.globalIntrinsic?.(span, name);
+          } });
         if (!selection) continue;
         const binding = { local: first.text, imported: first.text, specifier: globalSpecifier, span: at };
         // A global only constructed is its construct signatures, as a class
@@ -806,6 +819,8 @@ type SelectionContext = {
   overlay: readonly GlobalEntry[];
   /** Told each call the overlay reads as a test of the calculus. */
   test: (span: Span, test: NonNullable<GlobalEntry["test"]>) => void;
+  /** Told each call the overlay reads as a call of an intrinsic. */
+  intrinsic: (span: Span, name: string) => void;
 };
 
 /**
@@ -976,6 +991,17 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
             if (!argument || more.length || ts.isSpreadElement(argument) || call.typeArguments?.length)
               throw Error(`${what} is a test of one argument`);
             context.test(spanOf(call), entry.test);
+          }
+          return [];
+        }
+        // A call of an intrinsic stating the same step: each call is
+        // reported, with its arguments as written, and the member joins no
+        // value. Explicit type arguments are the intrinsic's to infer.
+        if (entry?.intrinsic) {
+          for (const call of calls) {
+            if (call.arguments.some(ts.isSpreadElement) || call.typeArguments?.length)
+              throw Error(`${what} is read as an intrinsic, called without spreads or type arguments`);
+            context.intrinsic(spanOf(call), entry.intrinsic);
           }
           return [];
         }
