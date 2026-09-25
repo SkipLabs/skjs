@@ -1040,7 +1040,10 @@ first milestone, in order of how much each gates:
    presence narrowing.
 
    `getUnique(_default?: { ifMany?: T })` needs only the done part.
-7. **Exceptions.** `getUnique` throws when a key has several values.
+7. **Exceptions** (done: a throw is an outcome, `throw` and
+   `try`/`catch`/`finally` are lowered, [DESIGN.md](../DESIGN.md#throws);
+   `throw.ts` and `try-catch.ts` verify). `getUnique` throws when a key has
+   several values, which its declared result then need not describe.
 
 Required for the second milestone in addition:
 

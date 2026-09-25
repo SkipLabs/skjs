@@ -320,6 +320,13 @@ let rec branch env cond truth = match cond.node with
       | Atoms xs when not (List.mem Top xs) ->
         Atoms (List.filter (fun a -> match has a with
           | Some holds -> holds = (truth = equal) | None -> true) xs)
+      (* `unknown`, where a test naming one primitive family holds: that
+         family, whatever the value was (a caught value, say). *)
+      | Atoms _ when truth = equal ->
+        (match shape with
+         | "string" -> Atoms [Str] | "number" -> Atoms [Num] | "bigint" -> Atoms [Bigint]
+         | "symbol" -> Atoms [Symbol] | "undefined" -> Atoms [Undef] | "boolean" -> bool
+         | _ -> Atoms [Top])
       | t -> t)
   | Equality ((StrictEqual | StrictUnequal as op),{node=Id name;_},{node=Literal lit;_})
   | Equality ((StrictEqual | StrictUnequal as op),{node=Literal lit;_},{node=Id name;_}) ->
@@ -985,6 +992,8 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         | _ -> unsupported "cast form")
     | DoneBody -> Atoms [Undef]
     | ReturnBody body -> entry env e.pos; expr ?expected env body
+    (* A throw has every type: the empty union. *)
+    | ThrowBody body -> ignore (expr env body); Atoms []
     | SequenceBody (init,body) -> entry env e.pos; ignore (expr env init); expr ?expected env body
     | LetBody (name,written,init,body) -> entry env e.pos;
       let initial=expr ?expected:written env init in
@@ -997,15 +1006,20 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let right=expr ~expected:result (branch env c false) b in union left right in
     (* Block wrappers correspond to statement entries, not expression sites. *)
     (match e.node with
-      | DoneBody | ReturnBody _ | SequenceBody _ | LetBody _ | IfBody _ -> ()
+      | DoneBody | ReturnBody _ | ThrowBody _ | SequenceBody _ | LetBody _ | IfBody _ -> ()
       | _ -> expressions := {pos=e.pos;type_=t;
           instantiation=List.assoc_opt e.pos !instantiations} :: !expressions); t
   in
   (* Whether a list never completes normally: it ends in a jump, or in an
      `if` whose arms both do. *)
   let rec returns ss = match List.rev ss with
-    | {statement=Return _ | Break | Continue;_}::_ -> true
+    | {statement=Return _ | Throw _ | Break | Continue;_}::_ -> true
     | {statement=If (_,a,b);_}::_ -> returns a && returns b
+    (* A `try` completes only through a body or handler that does, and only
+       if its `finally` does. *)
+    | {statement=Try (body,handler,finalizer);_}::_ ->
+      returns (Option.value finalizer ~default:[]) ||
+      (returns body && (match handler with Some (_,h) -> returns h | None -> true))
     | _ -> false in
   (* A step that may write a cell it does not name: a call, or a write. The
      cells are then known only by their contracts. Creating a closure runs
@@ -1026,6 +1040,9 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     (* Each step of the loop calls `%Iterate%`. *)
     | ForOf _ -> true
     | Block (_,body) -> List.exists stirs_statement body
+    | Throw e -> stirs e
+    | Try (body,handler,finalizer) -> List.exists stirs_statement
+      (body @ (match handler with Some (_,h) -> h | None -> []) @ Option.value finalizer ~default:[])
     | Break | Continue -> false in
   (* A point reached after any part of these statements ran: a cell they
      assign, or any cell where they may write one unseen, is known there by
@@ -1111,6 +1128,30 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
           inferred.substitution)} :: !expressions;
       expressions := {pos=name_pos;type_=element;instantiation=None} :: !expressions;
       ignore (statements (extend env name (Value element)) body); env
+    | Throw e -> ignore (expr env e); env
+    | Try (body,handler,finalizer) ->
+      let local after = List.filter (fun (n,_) -> List.mem_assoc n env) after in
+      let completed = statements env body in
+      (* A throw leaves the body from any point of it, after any part of it
+         ran: the handler knows each cell by its contract, and what was
+         thrown, which may be anything, at `unknown`. *)
+      let completed = match handler with
+        | None -> local completed
+        | Some (param,handled) ->
+          let caught = forget env in
+          let caught = match param with
+            | Some (name,_) -> extend caught name (Value Semantic.top)
+            | None -> caught in
+          let recovered = statements caught handled in
+          (match returns body,returns handled with
+           | true,false -> local recovered
+           | false,true -> local completed
+           | _ -> join env (local completed) (local recovered)) in
+      (match finalizer with
+       | None -> completed
+       (* The `finally` block runs after a completion, a `return` or a throw,
+          from any point: it knows each cell by its contract. *)
+       | Some finalizer -> local (statements (forget env) finalizer))
     | Break | Continue -> env) env ss in
   ignore (statements env0 f.body);
   (* An expression the lowering reaches on two paths (the fields the arms of a

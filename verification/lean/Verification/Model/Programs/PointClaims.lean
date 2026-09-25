@@ -137,7 +137,7 @@ theorem bind_claim [DecidableEq ι] {G : NormalGraph ι} {Γ a A Δ b B ps}
     (hb : HasTy G Δ b B) (n W h ρ) (he : EnvOk G Γ ρ n W)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
     Safe (meaning G B) n W h (.letE (instantiate 0 ρ a) (instantiate 1 ρ b)) := by
-  apply ProgramTyping.bind (fun a => .letE a (instantiate 1 ρ b)) Step.letC n W h _ hw hh
+  apply ProgramTyping.bind (fun a => .letE a (instantiate 1 ρ b)) Step.letC Raises.letC n W h _ hw hh
     (ha.sound n W h ρ he hw hh)
   intro j hj U hx hu heap v hok hv hav
   cases j with

@@ -14,10 +14,12 @@
  *   primitive itself for a primitive's member;
  * - parameters dropped (`thisArg?: any`, `locales`), which calls must then
  *   omit;
- * - parameters narrowed to the domain on which the member does not throw
- *   (`toString(radix)` takes 2 to 36, as a `RangeError` says elsewhere);
  * - which overload is kept: one whose declared result the library does not
- *   deliver, such as `reduce(cb): T` on an empty array, is not listed.
+ *   deliver is not listed.
+ *
+ * A member that throws on some argument its declaration admits
+ * (`toString(radix)` outside 2 to 36, a `RangeError`) is read as declared: a
+ * throw is an outcome, never a wrong value (DESIGN.md, "Throws").
  *
  * Each entry records the declaration text it was reviewed against. A member
  * is read only from a declaration with exactly that text, so a changed
@@ -41,9 +43,6 @@ export type OverlayEntry = {
   signature: string;
   /** Parameters dropped by name: calls must omit them. */
   drop?: string[];
-  /** Parameters narrowed, by name, to the values on which the member does
-   * not throw: a subtype of the declared type, which calls must meet. */
-  narrow?: Record<string, TypeTerm>;
   /** The declared `this` result is the receiver. */
   resultIsReceiver?: boolean;
   /** The result stated as this standard library interface at `T`, which the
@@ -107,12 +106,6 @@ export const overlay: readonly OverlayEntry[] = [
   // `entries` are not needed yet.
 ];
 
-/** The integers `from` to `to` as a union of literal types. */
-const integers = (from: number, to: number): TypeTerm => ({ k: "union", span: [0, 0],
-  parts: Array.from({ length: to - from + 1 }, (_, i) =>
-    ({ k: "literal", name: "number", text: String(from + i), span: [0, 0] })) });
-/** A radix `toString` accepts: `ToIntegerOrInfinity` of any other throws. */
-const radix = integers(2, 36);
 
 /** The members of the primitive wrappers' prototypes. Each is an own property
  * of that prototype (so `String.prototype.toLocaleString`, which is
@@ -150,21 +143,19 @@ export const primitiveOverlay: Readonly<Record<PrimitiveKind, readonly OverlayEn
     { name: "at", from: "String", signature: "at(index: number): string | undefined;" },
   ],
   number: [
-    { name: "toString", from: "Number", signature: "toString(radix?: number): string;", narrow: { radix } },
+    // Each throws a `RangeError` outside 2..36 radixes, 0..100 digits, 1..100
+    // precision: an outcome, not a wrong value.
+    { name: "toString", from: "Number", signature: "toString(radix?: number): string;" },
     { name: "valueOf", from: "Number", signature: "valueOf(): number;" },
-    // Each throws a `RangeError` outside these digit counts.
-    { name: "toFixed", from: "Number", signature: "toFixed(fractionDigits?: number): string;",
-      narrow: { fractionDigits: integers(0, 100) } },
-    { name: "toExponential", from: "Number", signature: "toExponential(fractionDigits?: number): string;",
-      narrow: { fractionDigits: integers(0, 100) } },
-    { name: "toPrecision", from: "Number", signature: "toPrecision(precision?: number): string;",
-      narrow: { precision: integers(1, 100) } },
+    { name: "toFixed", from: "Number", signature: "toFixed(fractionDigits?: number): string;" },
+    { name: "toExponential", from: "Number", signature: "toExponential(fractionDigits?: number): string;" },
+    { name: "toPrecision", from: "Number", signature: "toPrecision(precision?: number): string;" },
     { name: "toLocaleString", from: "Number",
       signature: "toLocaleString(locales?: string | string[], options?: Intl.NumberFormatOptions): string;",
       drop: ["locales", "options"] },
   ],
   bigint: [
-    { name: "toString", from: "BigInt", signature: "toString(radix?: number): string;", narrow: { radix } },
+    { name: "toString", from: "BigInt", signature: "toString(radix?: number): string;" },
     { name: "valueOf", from: "BigInt", signature: "valueOf(): bigint;" },
     { name: "toLocaleString", from: "BigInt",
       signature: "toLocaleString(locales?: Intl.LocalesArgument, options?: BigIntToLocaleStringOptions): string;",
@@ -289,30 +280,17 @@ function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: P
     const receiver = proto.receiver(entry.from);
     const nameOf = (p: ts.ParameterDeclaration) => ts.isIdentifier(p.name) ? p.name.text : "";
     const parameters = member.parameters.filter(p => !entry.drop?.includes(nameOf(p)));
-    // A narrowed parameter is not read from its declaration: it takes its
-    // place at the narrowed type, optional where declared so.
-    const narrowed = parameters.map(p => entry.narrow?.[nameOf(p)]);
     const stated = entry.resultAs
       ? library.reference(interfaceOf(entry.resultAs), [{ k: "binder", name: "T", span }], span)
       : entry.resultIsReceiver ? receiver : undefined;
-    const forms = signatures(scope, parameters.filter((_, i) => !narrowed[i]),
+    const forms = signatures(scope, parameters,
       entry.resultAs ? undefined : member.type, member, span, false, stated);
     if (forms.length !== 1 || forms.some(f => f.receiver))
       throw Error(`${entry.from}.${entry.name} is not one signature`);
-    const narrowedForms = forms.map(f => {
-      const params = [...f.params];
-      parameters.forEach((p, i) => {
-        const narrow = narrowed[i];
-        if (!narrow) return;
-        if (p.dotDotDotToken) throw Error(`${entry.from}.${entry.name} narrows a rest parameter`);
-        params.splice(i, 0, p.questionToken ? optionalTerm(narrow, span) : narrow);
-      });
-      return { ...f, params };
-    });
     const type: TypeTerm = binders.length
       ? { k: "scheme", binders: binders.map(name => ({ name, bound: null, default: null, span })),
-          signatures: narrowedForms.map(f => ({ ...f, receiver })), span }
-      : { ...narrowedForms[0]!, receiver };
+          signatures: forms.map(f => ({ ...f, receiver })), span }
+      : { ...forms[0]!, receiver };
     const key = ts.isComputedPropertyName(member.name) &&
         (ts.isPropertyAccessExpression(member.name.expression) || ts.isIdentifier(member.name.expression))
       ? { symbol: library.symbol(member.name.expression) } : entry.name;

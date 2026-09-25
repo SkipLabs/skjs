@@ -278,7 +278,7 @@ private theorem let_safe {G : NormalGraph Nat} {eta} {Gamma : List Slot} {A B : 
     (he : EnvOk G eta Gamma rho n W) (hw : WorldAdm W) (hh : HeapOk n W heap) :
     Safe (B.denote G eta) n W heap (instantiate 0 rho (.letE a b)) := by
   simp only [instantiate]
-  apply bind (fun a => .letE a (instantiate 1 rho b)) Step.letC n W heap _ hw hh
+  apply bind (fun a => .letE a (instantiate 1 rho b)) Step.letC Raises.letC n W heap _ hw hh
     (iha n W heap rho he hw hh)
   intro j hj U hx hu heap' av hok hav ha
   cases j with
@@ -720,7 +720,7 @@ theorem rest_invocation_of_inputs {G : NormalGraph Nat} {eta Gamma term n W rho}
     ite_false, Nat.sub_self, Nat.not_lt_zero, Nat.sub_zero]
   -- The prototype is the captured slot the certificate names.
   have hp : meaning G [SourceTypes.arrayProtoLabel] j U (env proto) := hstore.2 proto _ hproto
-  apply RestCalls.ctx_bind (.letE · _) .letC j U heap _ hu hh
+  apply RestCalls.ctx_bind (.letE · _) .letC .letC j U heap _ hu hh
     (array_wrap_safe element hu hh (by simpa [env, push] using harr) hp)
   intro i hi V hy hv h' o hh' hval harr'
   cases i with

@@ -38,8 +38,8 @@ theorem checked : checkTree G proof = true := by decide +kernel
 #guard !(expression G pool 8 [[2,3]] (.app (.var 0) .tru) [0]).isSome
 
 private def program (nullResult : Bool) : Program :=
-  [⟨if nullResult then .attach .nul .nul else .attach (.var 1) .tru,.bind 1⟩,
-   ⟨.app (.var 0) .tru,.ret⟩]
+  [⟨if nullResult then .attach .nul .nul else .attach (.var 1) .tru,.bind 1,none⟩,
+   ⟨.app (.var 0) .tru,.ret,none⟩]
 private def claims : List (PointClaim Nat) := [⟨[],[2,3]⟩,⟨callClaim.context,callClaim.type⟩]
 private def request (nullResult : Bool) : Request :=
   ⟨types,program nullResult,claims,[0,1],0,[]⟩

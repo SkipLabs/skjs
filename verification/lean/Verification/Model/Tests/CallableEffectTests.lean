@@ -64,14 +64,14 @@ private def readClaim : Sequent Nat := ⟨[[2]],.read (.var 0),[1]⟩
 have Boolean contracts. A call invalidates cell facts, but keeps the immutable
 snapshot of the preceding read. -/
 private def program : Program :=
-  [⟨.tru,.bind 1⟩,
-   ⟨.attach (.var 1) (.var 0),.bind 2⟩,
-   ⟨.read (.var 0),.bind 3⟩,
-   ⟨.fls,.bind 4⟩,
-   ⟨.write (.var 2) (.var 0),.effect 5⟩,
-   ⟨.read (.var 2),.bind 6⟩,
-   ⟨.app (.var 3) .nul,.effect 7⟩,
-   ⟨.var 0,.ret⟩]
+  [⟨.tru,.bind 1,none⟩,
+   ⟨.attach (.var 1) (.var 0),.bind 2,none⟩,
+   ⟨.read (.var 0),.bind 3,none⟩,
+   ⟨.fls,.bind 4,none⟩,
+   ⟨.write (.var 2) (.var 0),.effect 5,none⟩,
+   ⟨.read (.var 2),.bind 6,none⟩,
+   ⟨.app (.var 3) .nul,.effect 7,none⟩,
+   ⟨.var 0,.ret,none⟩]
 private def claims : List (PointClaim Nat) :=
   [⟨[],[1]⟩,⟨[[1]],[2]⟩,⟨[[2],[1]],[1]⟩,⟨[[1],[2],[1]],[1]⟩,
    ⟨[[1],[1],[2],[1]],[0]⟩,⟨[[1],[1],[2],[1]],[1]⟩,

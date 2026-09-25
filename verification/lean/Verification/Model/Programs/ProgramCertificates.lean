@@ -71,6 +71,8 @@ inductive Rule (ι : Type) where
   /-- `new`: the constructor, then the actuals in order. -/
   | construct
   | sub (proof : PositiveCertificates.Proof ι)
+  /-- `throw`: its operand at a type of its own. -/
+  | throw
 
 inductive Evidence (ι : Type) where
   | node (claim : Sequent ι) (rule : Rule ι) (premises : List (Evidence ι))
@@ -458,6 +460,7 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
   | .sub proof, _, [jt] =>
     jt.context = j.context ∧ jt.term = j.term ∧
     PositiveCertificates.check G jt.type j.type proof = true
+  | .throw, .throw a, [ja] => ja.context = j.context ∧ ja.term = a
   | _, _, _ => False
 
 instance [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (ps) :
@@ -492,7 +495,7 @@ def checkScope (d : Nat) : Tm → Bool
   | .construct f args => checkScope d f && checkScopes d args
   | .writeAt _ a b | .arith _ a b | .elemAt a b | .indexAt a b =>
       checkScope d a && checkScope d b
-  | .readAt _ a | .test _ a | .lenOf a | .spread a => checkScope d a
+  | .readAt _ a | .test _ a | .lenOf a | .spread a | .throw a => checkScope d a
   | .setElem a b c => checkScope d a && checkScope d b && checkScope d c
   | .arrLit args => checkScopes d args
   | .ite c a b => checkScope d c && checkScope d a && checkScope d b
@@ -1118,6 +1121,11 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
     have hj := hp jt (by simp)
     rw [hΓ, ht] at hj
     exact .sub hj hc
+  · rename_i a ja
+    rcases hl with ⟨hΓ, hta⟩
+    have ha := hp ja (by simp)
+    rw [hΓ, hta] at ha
+    exact .throw ha
 
 theorem checkTree_sound [DecidableEq ι] {G : NormalGraph ι} (e : Evidence ι)
     (he : checkTree G e = true) : HasTy G (claim e).context (claim e).term (claim e).type := by
@@ -1681,6 +1689,9 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     · simp
   | @sub Γ t A B cert ht hc ih =>
     apply node_complete (G := G) (j := ⟨Γ, t, B⟩) (r := .sub cert) (js := [⟨Γ,t,A⟩]) ⟨rfl,rfl,hc⟩
+    simpa using ih
+  | @throw Γ a A B ha ih =>
+    apply node_complete (G := G) (j := ⟨Γ, .throw a, B⟩) (r := .throw) (js := [⟨Γ,a,A⟩]) ⟨rfl,rfl⟩
     simpa using ih
 
 theorem derivable_iff_checked [DecidableEq ι] (G : NormalGraph ι) (t : Tm) (A : Ty ι) :

@@ -21,10 +21,10 @@ private def labels := List.range types.length
 private def pool := vocabulary G labels [] [[0,2],[0,3]]
 
 private def program : Program :=
-  [⟨.attach (.var 1) .nul,.bind 1⟩,
-   ⟨.write (.var 0) (.var 0),.effect 2⟩,
-   ⟨.read (.var 0),.bind 3⟩,
-   ⟨.ite (.test .isFun (.var 0)) (.app (.var 0) .fls) .tru,.ret⟩]
+  [⟨.attach (.var 1) .nul,.bind 1,none⟩,
+   ⟨.write (.var 0) (.var 0),.effect 2,none⟩,
+   ⟨.read (.var 0),.bind 3,none⟩,
+   ⟨.ite (.test .isFun (.var 0)) (.app (.var 0) .fls) .tru,.ret,none⟩]
 private def claims : List (PointClaim Nat) :=
   [⟨[],[2]⟩,⟨[[2]],[0]⟩,⟨[[2]],[0,2]⟩,⟨[[0,2],[2]],[1]⟩]
 private def request : Request := ⟨types,program,claims,[1],0,[]⟩
@@ -69,11 +69,11 @@ theorem returns_false : Execution program 14 [] (.at 0 (fun _ => .nul))
 /-- The getter captures the callable before its bag contains a callable. Calling
 it after the self-write observes the updated heap and returns a callable value. -/
 private def capturedProgram : Program :=
-  [⟨.attach (.var 1) .nul,.bind 1⟩,
-   ⟨.funE (.read (.var 2)),.bind 2⟩,
-   ⟨.write (.var 1) (.var 1),.effect 3⟩,
-   ⟨.app (.var 0) .tru,.bind 4⟩,
-   ⟨.ite (.test .isFun (.var 0)) (.app (.var 0) .fls) .tru,.ret⟩]
+  [⟨.attach (.var 1) .nul,.bind 1,none⟩,
+   ⟨.funE (.read (.var 2)),.bind 2,none⟩,
+   ⟨.write (.var 1) (.var 1),.effect 3,none⟩,
+   ⟨.app (.var 0) .tru,.bind 4,none⟩,
+   ⟨.ite (.test .isFun (.var 0)) (.app (.var 0) .fls) .tru,.ret,none⟩]
 private def capturedClaims : List (PointClaim Nat) :=
   [⟨[],[2]⟩,⟨[[2]],[6]⟩,⟨[[6],[2]],[0]⟩,⟨[[6],[2]],[0,2]⟩,
    ⟨[[0,2],[6],[2]],[1]⟩]

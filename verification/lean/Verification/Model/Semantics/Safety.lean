@@ -4,7 +4,10 @@ import Verification.Model.Semantics.Heaps
 # Safety and function types
 
 `Safe T n W h t` says that running `t` for `n` steps never gets stuck, and that
-if it reaches a value with budget left, that value is in `T`. Each step spends a
+if it reaches a value with budget left, that value is in `T`. Throwing is an
+outcome beside a value (`Thrown`): a term that throws a closed value is safe at
+every type, as ML-style type soundness with exceptions has it. A type promises
+what a *value* is, never that no exception is raised. Each step spends a
 level and the world drops with it; the world reached after a step must extend the
 truncation of the one before, and must itself be admissible.
 
@@ -27,19 +30,37 @@ through either position.
 namespace Verification
 namespace Model
 
-/-- Running `t` for `n` steps never gets stuck; each step spends a level, and
-the world drops with it. -/
+/-- `t` throws a closed value: the outcome that is neither a value nor a step.
+What is thrown is any value at all, so a handler binds it at `unknown`. -/
+def Thrown (t : Tm) : Prop := ∃ v, Raises t v ∧ Scoped 0 v
+
+theorem Thrown.no_step {t : Tm} (h : Thrown t) {hp hp' t'} : ¬ Step hp t hp' t' := by
+  obtain ⟨_, hr, _⟩ := h; exact raises_no_step hr
+
+theorem Thrown.not_val {t : Tm} (h : Thrown t) : isVal t = false := by
+  obtain ⟨_, hr, _⟩ := h; exact raises_not_val hr
+
+/-- A throw leaves every evaluation context it is in. -/
+theorem Thrown.lift {t : Tm} {C : Tm → Tm} (lift : ∀ {v}, Raises t v → Raises (C t) v)
+    (h : Thrown t) : Thrown (C t) := by
+  obtain ⟨v, hr, hs⟩ := h; exact ⟨v, lift hr, hs⟩
+
+theorem val_not_thrown {t : Tm} (hv : isVal t = true) : ¬ Thrown t := by
+  intro h; rw [h.not_val] at hv; contradiction
+
+/-- Running `t` for `n` steps never gets stuck: it is a value in `T`, it
+throws, or it steps. Each step spends a level, and the world drops with it. -/
 def Safe (T : Fam) : (n : Nat) → WorldT n → Heap → Tm → Prop
   | 0, _, _, _ => True
   | n + 1, W, h, t =>
-      (isVal t = true ∧ T (n + 1) W t) ∨
+      ((isVal t = true ∧ T (n + 1) W t) ∨ Thrown t) ∨
       (∃ (W' : WorldT n) (h' : Heap) (t' : Tm),
         WExt (trunc n (Nat.le_succ n) W) W' ∧ WorldAdm W' ∧ Step h t h' t' ∧
           HeapOk n W' h' ∧ Safe T n W' h' t')
 
 theorem Safe_nul : ∀ (n : Nat) (W : WorldT n) (h : Heap), Safe nulT n W h .nul
   | 0, _, _ => trivial
-  | _ + 1, _, _ => Or.inl ⟨rfl, rfl⟩
+  | _ + 1, _, _ => Or.inl (Or.inl ⟨rfl, rfl⟩)
 
 /-- The body executed after a unary call's beta step, whose receiver is
 `undefined`. This is a semantic helper, not an additional runtime operation.
@@ -92,10 +113,12 @@ theorem Safe_congr {B C : Fam} (n : Nat) (hag : Agree B C n) :
   | succ p ih =>
     intro hj W h t
     simp only [Safe]
-    constructor <;> rintro (⟨hv, hB⟩ | ⟨W', h', t', hx, ha, hs, hok, hsafe⟩)
-    · exact Or.inl ⟨hv, (hag (p + 1) hj W t).mp hB⟩
+    constructor <;> rintro ((⟨hv, hB⟩ | hr) | ⟨W', h', t', hx, ha, hs, hok, hsafe⟩)
+    · exact Or.inl (Or.inl ⟨hv, (hag (p + 1) hj W t).mp hB⟩)
+    · exact Or.inl (Or.inr hr)
     · exact Or.inr ⟨W', h', t', hx, ha, hs, hok, (ih (by omega) W' h' t').mp hsafe⟩
-    · exact Or.inl ⟨hv, (hag (p + 1) hj W t).mpr hB⟩
+    · exact Or.inl (Or.inl ⟨hv, (hag (p + 1) hj W t).mpr hB⟩)
+    · exact Or.inl (Or.inr hr)
     · exact Or.inr ⟨W', h', t', hx, ha, hs, hok, (ih (by omega) W' h' t').mpr hsafe⟩
 
 /-- Safety is monotone in the type, at every budget it can still reach. -/
@@ -107,8 +130,9 @@ theorem Safe_mono {B C : Fam} : ∀ (j : Nat),
   | zero => intro _ _ _ _ _; trivial
   | succ p ih =>
     intro hbc W h t hs
-    rcases hs with ⟨hv, hB⟩ | ⟨W', h', t', hx, ha, hst, hok, hsafe⟩
-    · exact Or.inl ⟨hv, hbc (p + 1) (Nat.le_refl _) W t hB⟩
+    rcases hs with (⟨hv, hB⟩ | hr) | ⟨W', h', t', hx, ha, hst, hok, hsafe⟩
+    · exact Or.inl (Or.inl ⟨hv, hbc (p + 1) (Nat.le_refl _) W t hB⟩)
+    · exact Or.inl (Or.inr hr)
     · exact Or.inr ⟨W', h', t', hx, ha, hst, hok,
         ih (fun m hm => hbc m (by omega)) W' h' t' hsafe⟩
 
@@ -183,11 +207,16 @@ theorem safe_cross_upto {B C D : Fam} : ∀ (n : Nat), CrossCompatUpTo n B C D �
   | zero => intro _ _ _ _ _ _ _ _ _; trivial
   | succ p ih =>
     intro hc W W' h t hok hok'
-    rintro (⟨hv1, hBv⟩ | ⟨Z, h1, t1, hz, huz, hst1, hok1, hcont1⟩)
-      (⟨hv2, hCv⟩ | ⟨Z', h2, t2, -, -, hst2, hok2, hcont2⟩)
-    · exact Or.inl ⟨hv1, hc (p + 1) (Nat.le_refl _) W W' h hok hok' t hBv hCv⟩
+    rintro ((⟨hv1, hBv⟩ | hr1) | ⟨Z, h1, t1, hz, huz, hst1, hok1, hcont1⟩)
+      ((⟨hv2, hCv⟩ | hr2) | ⟨Z', h2, t2, -, -, hst2, hok2, hcont2⟩)
+    · exact Or.inl (Or.inl ⟨hv1, hc (p + 1) (Nat.le_refl _) W W' h hok hok' t hBv hCv⟩)
+    · rw [hr2.not_val] at hv1; contradiction
     · exact absurd hst2 (value_no_step hv1)
+    · rw [hr1.not_val] at hv2; contradiction
+    · exact Or.inl (Or.inr hr1)
+    · exact absurd hst2 hr1.no_step
     · exact absurd hst1 (value_no_step hv2)
+    · exact absurd hst1 hr2.no_step
     · obtain ⟨rfl, rfl⟩ := Step_det hst1 hst2
       exact Or.inr ⟨Z, h1, t1, hz, huz, hst1, hok1,
         ih (fun j hj => hc j (by omega)) Z Z' h1 t1 hok1 hok2 hcont1 hcont2⟩
@@ -652,12 +681,20 @@ theorem value_safe (B : Fam) (n : Nat) (U : WorldT n) (h : Heap) (v : Val)
     (hv : isVal v = true) (hb : B n U v) : Safe B n U h v := by
   cases n with
   | zero => trivial
-  | succ n => exact Or.inl ⟨hv, hb⟩
+  | succ n => exact Or.inl (Or.inl ⟨hv, hb⟩)
+
+/-- A term that throws a closed value is safe at every type. -/
+theorem thrown_safe (B : Fam) (n : Nat) (U : WorldT n) (h : Heap) {t : Tm}
+    (ht : Thrown t) : Safe B n U h t := by
+  cases n with
+  | zero => trivial
+  | succ n => exact Or.inl (Or.inr ht)
 
 theorem safe_value_mem {B : Fam} {n : Nat} {U : WorldT (n+1)} {h : Heap} {v : Val}
     (hv : isVal v = true) (hs : Safe B (n+1) U h v) : B (n+1) U v := by
-  rcases hs with ⟨_, hb⟩ | ⟨_, _, _, _, _, hs, _, _⟩
+  rcases hs with (⟨_, hb⟩ | hr) | ⟨_, _, _, _, _, hs, _, _⟩
   · exact hb
+  · rw [hr.not_val] at hv; contradiction
   · exact False.elim (value_no_step hv hs)
 
 /-! ## Call contracts

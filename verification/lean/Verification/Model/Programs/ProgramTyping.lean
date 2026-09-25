@@ -168,7 +168,8 @@ theorem EnvOk.refine {G : NormalGraph ι} {Γ ρ n W i A B}
 /-- General evaluation-context composition. Contexts are supplied with their
 ordinary small-step congruence rule. -/
 theorem bind {A B : Fam} (C : Tm → Tm)
-    (lift : ∀ {h t h' t'}, Step h t h' t' → Step h (C t) h' (C t')) :
+    (lift : ∀ {h t h' t'}, Step h t h' t' → Step h (C t) h' (C t'))
+    (raise : ∀ {t v}, Raises t v → Raises (C t) v) :
     ∀ n W h t, WorldAdm W → HeapOk n W h → Safe A n W h t →
     (∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
       ∀ h' v, HeapOk j U h' → isVal v = true → A j U v → Safe B j U h' (C v)) →
@@ -178,8 +179,9 @@ theorem bind {A B : Fam} (C : Tm → Tm)
   | zero => intros; trivial
   | succ n ih =>
     intro W h t hw hh hs hk
-    rcases hs with ⟨hv, ht⟩ | ⟨U, h', t', hx, hu, step, hh', ht'⟩
+    rcases hs with (⟨hv, ht⟩ | hr) | ⟨U, h', t', hx, hu, step, hh', ht'⟩
     · exact hk (n+1) (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw h t hh hv ht
+    · exact Or.inl (Or.inr (hr.lift raise))
     · refine Or.inr ⟨U, h', C t', hx, hu, lift step, hh', ih U h' t' hu hh' ht' ?_⟩
       intro j hj V hx' hv h'' v hh'' hval ha
       apply hk j (by omega) V _ hv h'' v hh'' hval ha
@@ -204,6 +206,7 @@ resulting values. Earlier values retain their types across later heap effects. -
 theorem bind_list {B : Fam} (xs : List (Fam × Tm))
     (hA : ∀ p ∈ xs, Adm p.1) (C : List Tm → Tm)
     (lift : ∀ {h args h' args'}, CallArguments.ArgStep h args h' args' → Step h (C args) h' (C args'))
+    (raise : ∀ {args v}, CallArguments.ArgRaises args v → Raises (C args) v)
     {n W heap} (hw : WorldAdm W) (hh : HeapOk n W heap)
     (ht : ∀ p ∈ xs, FutureSafe p.1 n W p.2)
     (hk : ∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
@@ -213,11 +216,12 @@ theorem bind_list {B : Fam} (xs : List (Fam × Tm))
   | nil =>
     exact hk n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw heap [] hh trivial
   | cons p xs ih =>
-    apply bind (fun a => C (a :: xs.map Prod.snd)) (fun hs => lift (.head hs)) n W heap p.2 hw hh
+    apply bind (fun a => C (a :: xs.map Prod.snd)) (fun hs => lift (.head hs)) (fun hr => raise (.head hr))
+      n W heap p.2 hw hh
       (ht p (by simp) n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw heap hh)
     intro j hj U hx hu heap' v hok hv ha
     apply ih (fun q hq => hA q (by simp [hq])) (fun args => C (v :: args))
-      (fun hs => lift (.tail hv hs)) hu hok
+      (fun hs => lift (.tail hv hs)) (fun hr => raise (.tail hv hr)) hu hok
       (fun q hq => (ht q (by simp [hq])).transfer hj hx)
     intro k hk' V hy hv' heap'' args hok' hargs
     have hworld : WExt (trunc k (Nat.le_trans hk' hj) W) V := by
@@ -245,9 +249,10 @@ theorem construct_safe {B : Fam} (xs : List (Fam × Tm)) (Us : List Fam)
     (ha : ∀ p ∈ xs, FutureSafe p.1 n W p.2)
     (hu : ∀ A ∈ Us, FutureSafe A n W .undef) :
     Safe B n W heap (.construct f (xs.map Prod.snd)) := by
-  apply bind (fun f => .construct f (xs.map Prod.snd)) Step.constructL n W heap f hw hh hf
+  apply bind (fun f => .construct f (xs.map Prod.snd)) Step.constructL Raises.constructL n W heap f hw hh hf
   intro j hj U hx hw' heap' v hok hv hctor
-  apply bind_list xs hA (Tm.construct v) (fun hs => CallArguments.Step.constructArgs hv hs) hw' hok
+  apply bind_list xs hA (Tm.construct v) (fun hs => CallArguments.Step.constructArgs hv hs)
+    (fun hr => hr.construct hv) hw' hok
     (fun p hp => (ha p hp).transfer hj hx)
   intro k hk V hz hv' heap3 args hok3 hargs
   cases k with
@@ -298,13 +303,13 @@ theorem call_safe_short {Rc B : Fam} (xs : List (Fam × Tm)) (Us : List Fam)
     (ha : ∀ p ∈ xs, FutureSafe p.1 n W p.2)
     (hu : ∀ A ∈ Us, FutureSafe A n W .undef) :
     Safe B n W heap (.invoke f r (xs.map Prod.snd)) := by
-  apply bind (fun f => .invoke f r (xs.map Prod.snd)) Step.callL n W heap f hw hh hf
+  apply bind (fun f => .invoke f r (xs.map Prod.snd)) Step.callL Raises.callL n W heap f hw hh hf
   intro j hj U hx hw' heap' v hok hv hfun
-  apply bind (fun r => .invoke v r (xs.map Prod.snd)) (Step.callRecv hv) j U heap' r hw' hok
+  apply bind (fun r => .invoke v r (xs.map Prod.snd)) (Step.callRecv hv) (Raises.callRecv hv) j U heap' r hw' hok
     ((hr.transfer hj hx) j (Nat.le_refl _) U (by rw [trunc_id]; exact WExt_refl _) hw' heap' hok)
   intro i hi X hy hX heap'' rv hok'' hrv hrm
   apply bind_list xs hA (Tm.invoke v rv)
-    (fun hs => (CallArguments.Prepare.args hv hrv hs).step) hX hok''
+    (fun hs => (CallArguments.Prepare.args hv hrv hs).step) (fun hr => hr.invoke hv hrv) hX hok''
     (fun p hp => ((ha p hp).transfer hj hx).transfer hi hy)
   intro k hk V hz hv' heap3 args hok3 hargs
   cases k with
@@ -523,17 +528,11 @@ def printableClause : Clause α → Bool
   | .bool | .boolLit _ | .nul | .undef => true
   | _ => false
 
-/-- Whether a bigint right operand of this clause keeps the operator from
-throwing: a divisor must be a nonzero singleton, an exponent a non-negative
-one. Other arithmetic never throws on two bigints. -/
-def bigintRight : Arith → Clause α → Bool
-  | .div, .bigintLit i => i != 0
-  | .pow, .bigintLit i => decide (0 ≤ i)
-  | .div, _ | .pow, _ => false
-  | _, _ => true
-
-/-- What an operator yields on members of two clauses, when it answers for
-every pair of them. -/
+/-- What an operator yields on members of two clauses, when it answers or
+throws for every pair of them. Two bigints give a bigint for every arithmetic
+operator: a division by zero or a negative exponent throws a `RangeError`
+(`binopThrows`), which is an outcome, not a wrong value, so no divisor or
+exponent condition is needed. -/
 def opResult (op : Arith) (c d : Clause α) : Option OpResult :=
   if op.relational then
     if (numberClause c || bigintClause c) && (numberClause d || bigintClause d)
@@ -541,7 +540,7 @@ def opResult (op : Arith) (c d : Clause α) : Option OpResult :=
   else if op == .add && (stringClause c && printableClause d || printableClause c && stringClause d)
   then some .str
   else if numberClause c && numberClause d then some .num
-  else if bigintClause c && bigintClause d && bigintRight op d then some .bigint
+  else if bigintClause c && bigintClause d then some .bigint
   else none
 
 /-- The values of a result kind. -/
@@ -589,10 +588,10 @@ theorem boolVal_holds (q : Bool) : OpResult.holds .bool (boolVal q) := by
   cases q <;> simp [OpResult.holds, boolVal]
 
 /-- **The classification is sound**: on members of the two clauses the
-operator answers, with a value of the kind it names. -/
+operator answers, with a value of the kind it names, or throws. -/
 theorem opResult_sound {X : α → Fam} {P : α → ArgFam} {op : Arith} {c d : Clause α} {r n W v w}
     (h : opResult op c d = some r) (hv : semWithArgs X P c n W v) (hw : semWithArgs X P d n W w) :
-    ∃ z, binop op v w = some z ∧ r.holds z := by
+    (∃ z, binop op v w = some z ∧ r.holds z) ∨ binopThrows op v w = true := by
   -- A numeric member is a number or a bigint.
   have numeric : ∀ {e : Clause α} {u}, (numberClause e || bigintClause e) = true →
       semWithArgs X P e n W u → (∃ x, u = .num x) ∨ ∃ i, u = .bigint i := by
@@ -610,15 +609,15 @@ theorem opResult_sound {X : α → Fam} {P : α → ArgFam} {op : Arith} {c d : 
       · rcases Bool.and_eq_true_iff.mp hops with ⟨hc, hd⟩
         rcases numeric hc hv with ⟨x, rfl⟩ | ⟨x, rfl⟩ <;>
           rcases numeric hd hw with ⟨y, rfl⟩ | ⟨y, rfl⟩
-        · exact ⟨boolVal (relationHolds op (doubleOrder x y)), by simp [binop, hrel], boolVal_holds _⟩
-        · exact ⟨boolVal (relationHolds op (doubleIntOrder x y)), by simp [binop, hrel], boolVal_holds _⟩
-        · exact ⟨boolVal (relationHolds op ((doubleIntOrder y x).map Ordering.swap)),
+        · exact .inl ⟨boolVal (relationHolds op (doubleOrder x y)), by simp [binop, hrel], boolVal_holds _⟩
+        · exact .inl ⟨boolVal (relationHolds op (doubleIntOrder x y)), by simp [binop, hrel], boolVal_holds _⟩
+        · exact .inl ⟨boolVal (relationHolds op ((doubleIntOrder y x).map Ordering.swap)),
             by simp [binop, hrel], boolVal_holds _⟩
-        · exact ⟨boolVal (relationHolds op (some (compare x y))), by simp [binop, hrel], boolVal_holds _⟩
+        · exact .inl ⟨boolVal (relationHolds op (some (compare x y))), by simp [binop, hrel], boolVal_holds _⟩
       · rcases Bool.and_eq_true_iff.mp hops with ⟨hc, hd⟩
         obtain ⟨x, rfl⟩ := stringClause_member hc hv
         obtain ⟨y, rfl⟩ := stringClause_member hd hw
-        exact ⟨boolVal (relationHolds op (some (unitsOrder (utf16Units x) (utf16Units y)))),
+        exact .inl ⟨boolVal (relationHolds op (some (unitsOrder (utf16Units x) (utf16Units y)))),
           by simp [binop, hrel], boolVal_holds _⟩
     · cases h
   · simp only [hrel, Bool.false_eq_true, ↓reduceIte] at h
@@ -630,31 +629,30 @@ theorem opResult_sound {X : α → Fam} {P : α → ArgFam} {op : Arith} {c d : 
         obtain rfl : op = .add := by cases op <;> first | rfl | exact absurd hadd (by decide)
       · obtain ⟨x, rfl⟩ := stringClause_member hc hv
         obtain ⟨t, ht⟩ := printableClause_member hd hw
-        exact ⟨_, (add_string ht).1, _, rfl⟩
+        exact .inl ⟨_, (add_string ht).1, _, rfl⟩
       · obtain ⟨t, ht⟩ := printableClause_member hc hv
         obtain ⟨y, rfl⟩ := stringClause_member hd hw
-        exact ⟨_, (add_string ht).2, _, rfl⟩
+        exact .inl ⟨_, (add_string ht).2, _, rfl⟩
     split at h
     · rename_i hops
       cases h
       rcases Bool.and_eq_true_iff.mp hops with ⟨hc, hd⟩
       obtain ⟨x, rfl⟩ := numberClause_member hc hv
       obtain ⟨y, rfl⟩ := numberClause_member hd hw
-      exact ⟨.num (arithBits op x y), by simp [binop, hrel], _, rfl⟩
+      exact .inl ⟨.num (arithBits op x y), by simp [binop, hrel], _, rfl⟩
     · split at h
       · rename_i _ hops
         cases h
         simp only [Bool.and_eq_true] at hops
-        obtain ⟨⟨hc, hd⟩, hr⟩ := hops
+        obtain ⟨hc, hd⟩ := hops
         obtain ⟨x, rfl⟩ := bigintClause_member hc hv
         obtain ⟨y, rfl⟩ := bigintClause_member hd hw
-        have hdef : ∃ z, bigintArith op x y = some z := by
-          cases op <;> simp [Arith.relational] at hrel <;> simp [bigintArith]
-          all_goals
-            cases d <;> simp [bigintRight] at hr
-            cases hw; omega
-        obtain ⟨z, hz⟩ := hdef
-        exact ⟨.bigint z, by simp [binop, hrel, hz], z, rfl⟩
+        cases hz : bigintArith op x y with
+        | some z => exact .inl ⟨.bigint z, by simp [binop, hrel, hz], z, rfl⟩
+        | none =>
+          refine .inr ?_
+          cases op <;> simp [Arith.relational] at hrel <;> simp [bigintArith] at hz <;>
+            simp [binopThrows, hz]
       · cases h
 
 /-- Two operand types an operator answers for, pair by pair, with one kind
@@ -1001,11 +999,11 @@ theorem rest_call_safe {Rc : Fam} {Ps : List Fam} {E R : Fam} {P : ArgFam}
     (hr : FutureSafe Rc n W r)
     (hx : ∀ p ∈ xs, FutureSafe p.1 n W p.2) (hp : ∀ p ∈ parts, FutureSafe (p.1.getD E) n W p.2) :
     Safe R n W heap (.invoke f r (xs.map Prod.snd ++ parts.map RestCalls.partTerm)) := by
-  apply bind (fun f => .invoke f r (xs.map Prod.snd ++ parts.map RestCalls.partTerm)) Step.callL
+  apply bind (fun f => .invoke f r (xs.map Prod.snd ++ parts.map RestCalls.partTerm)) Step.callL Raises.callL
     n W heap f hw hh hf
   intro j0 hj0 U0 hx0 hu0 heap0 v hok0 hv hfun0
   apply bind (fun r => .invoke v r (xs.map Prod.snd ++ parts.map RestCalls.partTerm))
-    (Step.callRecv hv) j0 U0 heap0 r hu0 hok0
+    (Step.callRecv hv) (Raises.callRecv hv) j0 U0 heap0 r hu0 hok0
     ((hr.transfer hj0 hx0) j0 (Nat.le_refl _) U0 (by rw [trunc_id]; exact WExt_refl _) hu0 heap0 hok0)
   intro j hj1 U hy1 hu' heap' rv hok hrv hrm
   have hfun := adm_transfer2 (restsT_adm _) hfun0 hj1 hy1 (Nat.le_refl j)
@@ -1016,7 +1014,8 @@ theorem rest_call_safe {Rc : Fam} {Ps : List Fam} {E R : Fam} {P : ArgFam}
   have hj : j ≤ n := Nat.le_trans hj1 hj0
   apply bind_list xs (by intro p hm; exact hA p.1 (hxs ▸ List.mem_map_of_mem hm))
     (fun args => .invoke v rv (args ++ parts.map RestCalls.partTerm))
-    (fun hs => (CallArguments.Prepare.args hv hrv (ArgStep_append _ hs)).step) hu' hok
+    (fun hs => (CallArguments.Prepare.args hv hrv (ArgStep_append _ hs)).step)
+    (fun hr => (hr.append _).invoke hv hrv) hu' hok
     (fun p hm => (hx p hm).transfer hj hxU)
   intro k hk V hy hv' heap'' args hok' hargs
   rw [hxs] at hargs
@@ -1048,9 +1047,9 @@ theorem pack_call_safe {Rc : Fam} {Ps Us Qs : List Fam} {R : Fam} {P : ArgFam}
     (hr : FutureSafe Rc n W r) (hx : ∀ p ∈ xs, FutureSafe p.1 n W p.2)
     (hu : ∀ A ∈ Us, FutureSafe A n W .undef) :
     Safe R n W heap (.invoke f r (xs.map Prod.snd)) := by
-  apply bind (fun f => .invoke f r (xs.map Prod.snd)) Step.callL n W heap f hw hh hf
+  apply bind (fun f => .invoke f r (xs.map Prod.snd)) Step.callL Raises.callL n W heap f hw hh hf
   intro j0 hj0 U0 hx0 hu0 heap0 v hok0 hv hfun0
-  apply bind (fun r => .invoke v r (xs.map Prod.snd)) (Step.callRecv hv) j0 U0 heap0 r hu0 hok0
+  apply bind (fun r => .invoke v r (xs.map Prod.snd)) (Step.callRecv hv) (Raises.callRecv hv) j0 U0 heap0 r hu0 hok0
     ((hr.transfer hj0 hx0) j0 (Nat.le_refl _) U0 (by rw [trunc_id]; exact WExt_refl _) hu0 heap0 hok0)
   intro j hj1 U hy1 hu' heap' rv hok hrv hrm
   have hfun := adm_transfer2 (restsT_adm _) hfun0 hj1 hy1 (Nat.le_refl j)
@@ -1061,7 +1060,7 @@ theorem pack_call_safe {Rc : Fam} {Ps Us Qs : List Fam} {R : Fam} {P : ArgFam}
   have hj : j ≤ n := Nat.le_trans hj1 hj0
   apply bind_list xs (by intro p hm; exact hA p.1 (hxs ▸ List.mem_map_of_mem hm))
     (fun args => .invoke v rv args)
-    (fun hs => (CallArguments.Prepare.args hv hrv hs).step) hu' hok
+    (fun hs => (CallArguments.Prepare.args hv hrv hs).step) (fun hr => hr.invoke hv hrv) hu' hok
     (fun p hm => (hx p hm).transfer hj hxU)
   intro k hk V hy hv' heap'' args hok' hargs
   rw [hxs] at hargs
@@ -1109,7 +1108,8 @@ theorem copy_safe {S E : Fam} (hS : RestCalls.Spreads S E) (hE : Adm E) (hEv : V
     (hs : Safe S n W h s) :
     Safe (listT ⟨[], [], some E, false⟩) n W h (.arrLit [.spread s]) := by
   apply RestCalls.ctx_bind (fun t => .arrLit [.spread t])
-    (fun st => .arrArg (i := 0) rfl (by intro j hj; omega) (.spreadC st)) n W h s hw hh hs
+    (fun st => .arrArg (i := 0) rfl (by intro j hj; omega) (.spreadC st))
+    (fun hr => .arrArg (i := 0) rfl (by intro j hj; omega) (.spreadC hr)) n W h s hw hh hs
   intro j hj U hx hu heap v hok _ hv
   obtain ⟨ls, vs, rfl, hr, he⟩ := hS j U heap _ hok hv
   cases j with
@@ -1463,6 +1463,10 @@ and the receiver. -/
       (∀ q ∈ L, ∃ c ∈ m.calls, CoveredCall G q c) →
       (∀ s ∈ S, (s.2.1, s.2.2.1, s.2.2.2) ∈ m.rests) →
       HasTy G Γ (.letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])) F
+  /-- `throw a` has every type: it never produces a value, and a throw is an
+  outcome safety admits. Its operand is typed at a type of its own, since it
+  runs first. -/
+  | throw : HasTy G Γ a A → HasTy G Γ (.throw a) B
   | sub : HasTy G Γ t A → PositiveCertificates.check G A B cert = true → HasTy G Γ t B
 
 /-- Every derivation is safe in every admissible world and satisfying heap. -/
@@ -1575,7 +1579,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     apply bind_list (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2))
       (by intro q hq; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq; exact meaning_adm G r.2.1)
       (fun args => .makeAt (.closure arity (instantiate (arity + 1) ρ b)) (parts.map Prod.fst) args)
-      (fun hs => CallArguments.Step.makeArgs hs) hw hh
+      (fun hs => CallArguments.Step.makeArgs hs) (fun hr => hr.make) hw hh
       (by
         intro q hq
         obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq
@@ -1639,16 +1643,16 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       exact ihu q hq j U heap ρ (he.transfer j hj U hx) hu' hok
   | @readCallable Γ a Ref P Ps L S f A ha hr hm ih =>
     intro n W h ρ he hw hh
-    apply bind (Tm.readAt f) Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
+    apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
     exact bag_read (meaning_valOnly G A) (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩)
       ((represents_sem hr j U v).mp ha').1.1.1 hu hok
   | @writeCallable Γ a Ref P Ps L S f A b N ha hr hm hb hn iha ihb =>
     intro n W h ρ he hw hh
-    apply bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 n W h _ hw hh
+    apply bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 Raises.writeC1 n W h _ hw hh
       (iha n W h ρ he hw hh)
     intro j hj U hx hu heap av hok hav ha'
-    apply bind (.writeAt f av) (Step.writeC2 hav) j U heap _ hu hok
+    apply bind (.writeAt f av) (Step.writeC2 hav) (Raises.writeC2 hav) j U heap _ hu hok
       (ihb j U heap ρ (he.transfer j hj U hx) hu hok)
     intro k hk V hy hv heap' bv hok' hbval hb'
     have ha'' := (meaning_adm G Ref).mono k _ V hy av ((meaning_adm G Ref).down_le j k hk U av ha')
@@ -1686,7 +1690,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       exact ihu q hq j U heap ρ (he.transfer j hj U hx) hu' hok
   | @letE Γ a A b B ha hb iha ihb =>
     intro n W h ρ he hw hh
-    apply bind (fun a => .letE a (instantiate 1 ρ b)) Step.letC n W h _ hw hh
+    apply bind (fun a => .letE a (instantiate 1 ρ b)) Step.letC Raises.letC n W h _ hw hh
       (iha n W h ρ he hw hh)
     intro j hj U hx hu heap av hok hav ha'
     cases j with
@@ -1707,7 +1711,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     apply bind_list (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2))
       (by intro q hq; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq; exact meaning_adm G r.2.1)
       (fun args => .makeAt .absent (parts.map Prod.fst) args)
-      (fun hs => CallArguments.Step.makeArgs hs) hw hh
+      (fun hs => CallArguments.Step.makeArgs hs) (fun hr => hr.make) hw hh
       (by
         intro q hq
         obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq
@@ -1739,21 +1743,21 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     exact hrec
   | @read Γ a Ref c fs vs f A ha hr hc hm ih =>
     intro n W h ρ he hw hh
-    apply bind (Tm.readAt f) Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
+    apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
     obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ :=
       recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) (namedMembers_sem hr hc ha').1
     exact read_rule (meaning_valOnly G A) j U heap l hu hok hf hl hag
   | @readView Γ a Ref c fs vs f A ha hr hc hm ih =>
     intro n W h ρ he hw hh
-    apply bind (Tm.readAt f) Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
+    apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
     obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ :=
       viewT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) (namedMembers_sem hr hc ha').2
     exact read_view_rule (meaning_valOnly G A) j U heap l hu hok hf hl hag
   | @readProto Γ a Ref P fs vs os ms ks K gs ws os' ms' ks' f A ha hr hK hf hpr hP hm ih =>
     intro n W h ρ he hw hh
-    apply bind (Tm.readAt f) Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
+    apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
     have hs := (represents_sem hr j U v).mp ha'
     have hloc : ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr j), v = .objAt flds .absent ∧
@@ -1778,7 +1782,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       exact read_view_rule (meaning_valOnly G A) i V h' l' hV hh' hf' hl' hag'
   | @readOptional Γ a Ref fs vs os ms ks f r A U ha hr hm hUnd ih =>
     intro n W h ρ he hw hh
-    apply bind (Tm.readAt f) Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
+    apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj V hx hv heap v hok hval ha'
     have hs := (represents_sem hr j V v).mp ha'
     obtain ⟨flds, rfl, _⟩ := hs.1.1
@@ -1792,7 +1796,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
 
   | @readDict Γ a Ref fs vs ix os ms ks cs A U f ha hr hm hUnd ih =>
     intro n W h ρ he hw hh
-    apply bind (Tm.readAt (.str f)) Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
+    apply bind (Tm.readAt (.str f)) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj V hx hv heap v hok hval ha'
     have hd := ((represents_sem hr j V v).mp ha').2.2.1.1 A hm
     obtain ⟨flds, rfl, _⟩ := ((represents_sem hr j V v).mp ha').1.1
@@ -1801,10 +1805,10 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       (read_dict_rule (meaning_valOnly G A) j V heap hv hok hd)
   | @indexDict Γ a Ref fs vs ix os ms ks cs key K A U ha hr hk hStr hm hUnd iha ihk =>
     intro n W h ρ he hw hh
-    apply bind (fun v => .indexAt v (instantiate 0 ρ key)) Step.indexC1 n W h _ hw hh
+    apply bind (fun v => .indexAt v (instantiate 0 ρ key)) Step.indexC1 Raises.indexC1 n W h _ hw hh
       (iha n W h ρ he hw hh)
     intro j hj V hx hv heap av hok hav ha'
-    apply bind (Tm.indexAt av) (Step.indexC2 hav) j V heap _ hv hok
+    apply bind (Tm.indexAt av) (Step.indexC2 hav) (Raises.indexC2 hav) j V heap _ hv hok
       (ihk j V heap ρ (he.transfer j hj V hx) hv hok)
     intro k hk X hy hX heap' kv hok' hkv hk'
     have ha'' := (meaning_adm G Ref).mono k _ X hy av
@@ -1823,7 +1827,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     rw [← hmap]
     apply bind_list (xs.map fun p => (meaning G p.1, instantiate 0 ρ p.2))
       (by intro q hq; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq; exact meaning_adm G r.1)
-      (fun args => .arrLit args) (fun hs => CallArguments.Step.arrArgs hs) hw hh
+      (fun args => .arrLit args) (fun hs => CallArguments.Step.arrArgs hs) (fun hr => hr.arrLit) hw hh
       (by
         intro q hq
         obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq
@@ -1858,9 +1862,9 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     · exact hl
   | @elem Γ a i L I A T b k ha hr hi hI hk hA iha ihi =>
     intro n W h ρ he hw hh
-    apply bind (fun a => .elemAt a (instantiate 0 ρ i)) Step.elemC1 n W h _ hw hh (iha n W h ρ he hw hh)
+    apply bind (fun a => .elemAt a (instantiate 0 ρ i)) Step.elemC1 Raises.elemC1 n W h _ hw hh (iha n W h ρ he hw hh)
     intro j hj U hx hu heap av hok hav ha'
-    apply bind (.elemAt av) (Step.elemC2 hav) j U heap _ hu hok
+    apply bind (.elemAt av) (Step.elemC2 hav) (Raises.elemC2 hav) j U heap _ hu hok
       (ihi j U heap ρ (he.transfer j hj U hx) hu hok)
     intro m hm V hy hv heap' iv hok' hival hi'
     have ha'' := (meaning_adm G L).mono m _ V hy av ((meaning_adm G L).down_le j m hm U av ha')
@@ -1873,9 +1877,9 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       (fun j hj U u => (hag j hj U u).1)
   | @elemOpt Γ a i L I A U T b k ha hr hi hI hk hnone hA hU iha ihi =>
     intro n W h ρ he hw hh
-    apply bind (fun a => .elemAt a (instantiate 0 ρ i)) Step.elemC1 n W h _ hw hh (iha n W h ρ he hw hh)
+    apply bind (fun a => .elemAt a (instantiate 0 ρ i)) Step.elemC1 Raises.elemC1 n W h _ hw hh (iha n W h ρ he hw hh)
     intro j hj U' hx hu heap av hok hav ha'
-    apply bind (.elemAt av) (Step.elemC2 hav) j U' heap _ hu hok
+    apply bind (.elemAt av) (Step.elemC2 hav) (Raises.elemC2 hav) j U' heap _ hu hok
       (ihi j U' heap ρ (he.transfer j hj U' hx) hu hok)
     intro m hm V hy hv heap' iv hok' hival hi'
     have ha'' := (meaning_adm G L).mono m _ V hy av ((meaning_adm G L).down_le j m hm U' av ha')
@@ -1920,9 +1924,9 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       exact elem_read_rule (meaning_valOnly G A) m V heap' l hv hok' hloc hw' (fun j hj U u => (hag j hj U u).1)
   | @elemAny Γ a i L I E U ha hr hi hq hU iha ihi =>
     intro n W h ρ he hw hh
-    apply bind (fun a => .elemAt a (instantiate 0 ρ i)) Step.elemC1 n W h _ hw hh (iha n W h ρ he hw hh)
+    apply bind (fun a => .elemAt a (instantiate 0 ρ i)) Step.elemC1 Raises.elemC1 n W h _ hw hh (iha n W h ρ he hw hh)
     intro j hj U' hx hu heap av hok hav ha'
-    apply bind (.elemAt av) (Step.elemC2 hav) j U' heap _ hu hok
+    apply bind (.elemAt av) (Step.elemC2 hav) (Raises.elemC2 hav) j U' heap _ hu hok
       (ihi j U' heap ρ (he.transfer j hj U' hx) hu hok)
     intro m hm V hy hv heap' iv hok' hival hi'
     have ha'' := (meaning_adm G L).mono m _ V hy av ((meaning_adm G L).down_le j m hm U' av ha')
@@ -1953,13 +1957,13 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       exact elem_read_rule (meaning_valOnly G E) m V heap' l hv hok' hloc hw' (fun j hj U u => (hag j hj U u).1)
   | @setElem Γ a i v L I A T b k ha hr hi hI hk hA hkle hro hv iha ihi ihv =>
     intro n W h ρ he hw hh
-    apply bind (fun a => .setElem a (instantiate 0 ρ i) (instantiate 0 ρ v)) Step.setC1 n W h _ hw hh
+    apply bind (fun a => .setElem a (instantiate 0 ρ i) (instantiate 0 ρ v)) Step.setC1 Raises.setC1 n W h _ hw hh
       (iha n W h ρ he hw hh)
     intro j hj U hx hu heap av hok hav ha'
-    apply bind (fun i => .setElem av i (instantiate 0 ρ v)) (Step.setC2 hav) j U heap _ hu hok
+    apply bind (fun i => .setElem av i (instantiate 0 ρ v)) (Step.setC2 hav) (Raises.setC2 hav) j U heap _ hu hok
       (ihi j U heap ρ (he.transfer j hj U hx) hu hok)
     intro m hm V hy hvw heap' iv hok' hival hi'
-    apply bind (.setElem av iv) (Step.setC3 hav hival) m V heap' _ hvw hok'
+    apply bind (.setElem av iv) (Step.setC3 hav hival) (Raises.setC3 hav hival) m V heap' _ hvw hok'
       (ihv m V heap' ρ ((he.transfer j hj U hx).transfer m hm V hy) hvw hok')
     intro p hp X hz hxw heap'' vv hok'' hvval hv'
     have hav' := (meaning_adm G L).mono p _ X hz av ((meaning_adm G L).down_le m p hp V av
@@ -2026,13 +2030,13 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       · exact hm'
   | @len Γ a L N T ha hr hn ih =>
     intro n W h ρ he hw hh
-    apply bind Tm.lenOf Step.lenC n W h _ hw hh (ih n W h ρ he hw hh)
+    apply bind Tm.lenOf Step.lenC Raises.lenC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap av hok hav ha'
     obtain ⟨ls, rfl, -⟩ := ((represents_sem hr j U av).mp ha').1
     exact len_rule j U heap hu hok (fun m U' => (represents_sem hn m U' _).mpr ⟨_, rfl⟩)
   | @lenStr Γ a S N ha hs hn ih =>
     intro n W h ρ he hw hh
-    apply bind Tm.lenOf Step.lenC n W h _ hw hh (ih n W h ρ he hw hh)
+    apply bind Tm.lenOf Step.lenC Raises.lenC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap av hok hav ha'
     have hstr := answers_sound hs ha'
     obtain ⟨s, rfl⟩ : ∃ s, av = .str s := by
@@ -2040,9 +2044,9 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     exact len_str_rule j U heap hu hok (fun m U' => (represents_sem hn m U' _).mpr ⟨_, rfl⟩)
   | @elemStr Γ a i S I T U ha hs hi hq hT hU iha ihi =>
     intro n W h ρ he hw hh
-    apply bind (fun a => .elemAt a (instantiate 0 ρ i)) Step.elemC1 n W h _ hw hh (iha n W h ρ he hw hh)
+    apply bind (fun a => .elemAt a (instantiate 0 ρ i)) Step.elemC1 Raises.elemC1 n W h _ hw hh (iha n W h ρ he hw hh)
     intro j hj U' hx hu heap av hok hav ha'
-    apply bind (.elemAt av) (Step.elemC2 hav) j U' heap _ hu hok
+    apply bind (.elemAt av) (Step.elemC2 hav) (Raises.elemC2 hav) j U' heap _ hu hok
       (ihi j U' heap ρ (he.transfer j hj U' hx) hu hok)
     intro m hm V hy hv heap' iv hok' hival hi'
     have ha'' := (meaning_adm G S).mono m _ V hy av ((meaning_adm G S).down_le j m hm U' av ha')
@@ -2057,7 +2061,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       (fun m' U'' => (meaning_append G T U m' U'' _).mpr (Or.inr ((represents_sem hU m' U'' _).mpr rfl)))
   | @test Γ a A B k ha ht hf ih =>
     intro n W h ρ he hw hh
-    apply bind (.test k) Step.testC n W h _ hw hh (ih n W h ρ he hw hh)
+    apply bind (.test k) Step.testC Raises.testC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap av hok hav ha'
     cases j with
     | zero => trivial
@@ -2068,10 +2072,10 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       · exact expand_sem_mpr ⟨_, expand_sub hf, rfl⟩
   | @arith Γ a A b B op N ha hb hopt iha ihb =>
     intro n W h ρ he hw hh
-    apply bind (fun a => .arith op a (instantiate 0 ρ b)) Step.arithC1 n W h _ hw hh
+    apply bind (fun a => .arith op a (instantiate 0 ρ b)) Step.arithC1 Raises.arithC1 n W h _ hw hh
       (iha n W h ρ he hw hh)
     intro j hj U hx hu heap av hok hav ha'
-    apply bind (.arith op av) (Step.arithC2 hav) j U heap _ hu hok
+    apply bind (.arith op av) (Step.arithC2 hav) (Raises.arithC2 hav) j U heap _ hu hok
       (ihb j U heap ρ (he.transfer j hj U hx) hu hok)
     intro k hk V hy hv heap' bv hok' hbval hb'
     unfold OperatorTypes at hopt
@@ -2082,7 +2086,8 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     have ha'' := (meaning_adm G A).mono k _ V hy av ((meaning_adm G A).down_le j k hk U av ha')
     obtain ⟨c, hc, hca⟩ := (expand_sem G A hops.1 k V av).mp ha''
     obtain ⟨d, hd, hdb⟩ := (expand_sem G B hops.2.1 k V bv).mp hb'
-    obtain ⟨z, hz, hr⟩ := opResult_sound (hops.2.2 c hc d hd) hca hdb
+    rcases opResult_sound (hops.2.2 c hc d hd) hca hdb with ⟨z, hz, hr⟩ | hthrow
+    case inr => exact arith_throw_safe op av bv hthrow k V heap' hv hok'
     refine arith_value_safe op av bv z hz k V heap' hv hok' (fun m U => ?_)
     cases r with
     | num => obtain ⟨x, rfl⟩ := hr; exact (represents_sem hn m U _).mpr ⟨x, rfl⟩
@@ -2094,10 +2099,10 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       · exact expand_sem_mpr ⟨_, expand_sub hn.2, rfl⟩
   | @write Γ a Ref fs vs os ms ks f A b N ha hr hm hb hn iha ihb =>
     intro n W h ρ he hw hh
-    apply bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 n W h _ hw hh
+    apply bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 Raises.writeC1 n W h _ hw hh
       (iha n W h ρ he hw hh)
     intro j hj U hx hu heap av hok hav ha'
-    apply bind (.writeAt f av) (Step.writeC2 hav) j U heap _ hu hok
+    apply bind (.writeAt f av) (Step.writeC2 hav) (Raises.writeC2 hav) j U heap _ hu hok
       (ihb j U heap ρ (he.transfer j hj U hx) hu hok)
     intro k hk V hy hv heap' bv hok' hbval hb'
     have ha'' := (meaning_adm G Ref).mono k _ V hy av ((meaning_adm G Ref).down_le j k hk U av ha')
@@ -2107,7 +2112,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     exact write_rule (meaning_adm G A) k V heap' l bv hbval hv hok' hf hl hag hb'
   | @ifBool Γ c C t A e hc hbool ht he ihc iht ihe =>
     intro n W h ρ henv hw hh
-    apply bind (fun c => .ite c (instantiate 0 ρ t) (instantiate 0 ρ e)) Step.iteC
+    apply bind (fun c => .ite c (instantiate 0 ρ t) (instantiate 0 ρ e)) Step.iteC Raises.iteC
       n W h _ hw hh (ihc n W h ρ henv hw hh)
     intro j hj U hx hu heap v hok hv ha
     have hb := answers_sound hbool ha
@@ -2129,7 +2134,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
           _ (WExt_refl _)) (WorldAdm_trunc _ hu) (HeapOk_trunc k U heap hok)
   | @ifKnown Γ c C q t e A hc hq ht ihc iht =>
     intro n W h ρ henv hw hh
-    apply bind (fun c => .ite c (instantiate 0 ρ t) (instantiate 0 ρ e)) Step.iteC
+    apply bind (fun c => .ite c (instantiate 0 ρ t) (instantiate 0 ρ e)) Step.iteC Raises.iteC
       n W h _ hw hh (ihc n W h ρ henv hw hh)
     intro j hj U hx hu heap v hok hv ha
     have hvalue := (represents_sem hq j U v).mp ha
@@ -2225,7 +2230,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     apply bind_list (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2))
       (by intro q hq; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq; exact meaning_adm G r.2.1)
       (fun args => .makeAt (.variadic k (instantiate (k + 2) ρ b)) (parts.map Prod.fst) args)
-      (fun hs => CallArguments.Step.makeArgs hs) hw hh
+      (fun hs => CallArguments.Step.makeArgs hs) (fun hr => hr.make) hw hh
       (by
         intro q hq
         obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq
@@ -2461,7 +2466,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
         n W h (.readAt k (ρ i)) := by
       have := member_read_safe hw hh hmem
       rwa [show (MethodMembers.Member.of (meaning G) (argMeaning G) m).key = k from hkey] at this
-    apply bind (fun a => Tm.letE a (.makeAt (.bound (.var 0) (ρ i) []) [] [])) Step.letC
+    apply bind (fun a => Tm.letE a (.makeAt (.bound (.var 0) (ρ i) []) [] [])) Step.letC Raises.letC
       n W h _ hw hh hread
     intro j hj U hx hu h' u hok hval hon
     cases j with
@@ -2519,6 +2524,11 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
             (c := .bound u (ρ i) []) (by simp) rfl)
         · rw [trunc_trunc]
           exact hdown
+  | throw ha iha =>
+    intro n W h ρ he hw hh
+    apply bind Tm.throw Step.throwC Raises.throwC n W h _ hw hh (iha n W h ρ he hw hh)
+    intro j hj U hx hu heap v hok hv ha'
+    exact thrown_safe _ _ _ _ ⟨v, .throwV hv, (meaning_value ha').2⟩
   | sub ht hc ih =>
     intro n W h ρ he hw hh
     exact Safe_mono n (fun k _ V v hv => (PositiveCertificates.check_sound hc).sound k V v hv)

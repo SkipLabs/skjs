@@ -424,8 +424,11 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i j fld R A ρ n
   | zero => trivial
   | succ n =>
     have step := hs
-    rcases step with ⟨hbad,_⟩ | ⟨U,h',t',_,_,step,_,_⟩
+    rcases step with (⟨hbad,_⟩ | ⟨_,hr,_⟩) | ⟨U,h',t',_,_,step,_,_⟩
     · contradiction
+    · cases hr with
+      | writeC1 hr => rw [raises_not_val hr] at hiv; contradiction
+      | writeC2 _ hr => rw [raises_not_val hr] at hvv; contradiction
     · obtain ⟨flds,c,l,hl,hfd,hlt,_,_⟩ := write_inv hiv hvv step
       rw [hl] at hs ⊢
       apply one_step rfl rfl (.writeField hvv hfd hlt) _ hs
@@ -454,6 +457,7 @@ def pureTerm : Tm → Bool
   | .test _ a => pureTerm a
   | .ite c t e => pureTerm c && pureTerm t && pureTerm e
   | .arith _ a b => pureTerm a && pureTerm b
+  | .throw a => pureTerm a
   | t => isVal t
 
 /-- Purity is closed under actual reduction and rules out every heap change.
@@ -464,6 +468,7 @@ theorem pure_step {h t h' t'} (hs : Step h t h' t') (hp : pureTerm t = true) :
   case testV => split <;> simp [pureTerm,isVal]
   case arithV hb =>
     rcases (binop_result hb).2.2 with rfl | rfl | ⟨_, rfl⟩ | ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> rfl
+  case arithThrow => rfl
 
 theorem pure_instantiate {G : NormalGraph ι} {Γ t ρ n W}
     (hp : pureTerm t = true) (hc : checkScope Γ.length t = true)
@@ -481,8 +486,9 @@ theorem pure_frame {T Q} : ∀ {n W h t}, Safe T n W h t → pureTerm t = true �
   | zero => intros; trivial
   | succ n ih =>
     intro W h t hs hp hq
-    rcases hs with ⟨hv,ht⟩ | ⟨U,h',t',hx,hu,step,hh,hs⟩
-    · exact Or.inl ⟨hv,ht,hq t⟩
+    rcases hs with (⟨hv,ht⟩ | hr) | ⟨U,h',t',hx,hu,step,hh,hs⟩
+    · exact Or.inl (Or.inl ⟨hv,ht,hq t⟩)
+    · exact Or.inl (Or.inr hr)
     · obtain ⟨rfl,hp'⟩ := pure_step step hp
       exact Or.inr ⟨U,_,t',hx,hu,step,hh,ih hs hp' hq⟩
 
@@ -531,8 +537,10 @@ theorem creation_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k arity b A ρ 
   cases n with
   | zero => trivial
   | succ n =>
-    rcases hs with ⟨hv, _⟩ | ⟨U,h',t',hx,hu,step,hh',hs'⟩
+    rcases hs with (⟨hv, _⟩ | ⟨_,hr,_⟩) | ⟨U,h',t',hx,hu,step,hh',hs'⟩
     · simp [instantiate,Tm.funE,isVal] at hv
+    · simp only [instantiate, instantiateArgs_eq_map, List.map] at hr
+      cases hr with | makeArg hg _ hr => obtain ⟨rfl, rfl⟩ := singleton_get hg; cases hr
     · obtain ⟨rfl,rfl⟩ := make_step_inv rfl step
       exact Or.inr ⟨U,_,_,hx,hu,step,hh',
         refine_value rfl (HeapKnowledge.shift_holds (HeapKnowledge.alloc_frame hk)) hs'⟩

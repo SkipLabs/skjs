@@ -15,6 +15,51 @@ inductive ArgStep : Heap → List Tm → Heap → List Tm → Prop where
 
 def Values (args : List Tm) : Prop := ∀ a ∈ args, isVal a = true
 
+/-- The leftmost non-value argument throws: the list's evaluation throws. -/
+inductive ArgRaises : List Tm → Tm → Prop where
+  | head : Raises a v → ArgRaises (a::args) v
+  | tail : isVal w = true → ArgRaises args v → ArgRaises (w::args) v
+
+/-- A throwing argument sits at a position with only values before it. -/
+theorem ArgRaises.position {args : List Tm} {v : Tm} (h : ArgRaises args v) :
+    ∃ (i : Nat) (a : Tm), args[i]? = some a ∧ (∀ j, j < i → ∀ w, args[j]? = some w → isVal w = true) ∧
+      Raises a v := by
+  induction h with
+  | @head a v rest hr => exact ⟨0, a, rfl, fun j hj => by omega, hr⟩
+  | @tail w rest v hw _ ih =>
+    obtain ⟨i, a, hg, hb, hr⟩ := ih
+    refine ⟨i + 1, a, by simpa using hg, ?_, hr⟩
+    intro j hj u hu
+    cases j with
+    | zero => simp at hu; exact hu ▸ hw
+    | succ j => exact hb j (by omega) u (by simpa using hu)
+
+theorem ArgRaises.invoke {f r : Tm} {args : List Tm} {v : Tm} (hf : isVal f = true)
+    (hr : isVal r = true) (h : ArgRaises args v) : Raises (.invoke f r args) v := by
+  obtain ⟨i, a, hg, hb, ha⟩ := h.position
+  exact .callArg hf hr hg hb ha
+
+theorem ArgRaises.construct {f : Tm} {args : List Tm} {v : Tm} (hf : isVal f = true)
+    (h : ArgRaises args v) : Raises (.construct f args) v := by
+  obtain ⟨i, a, hg, hb, ha⟩ := h.position
+  exact .constructArg hf hg hb ha
+
+theorem ArgRaises.make {c : CallCode} {ns : List PropKey} {args : List Tm} {v : Tm}
+    (h : ArgRaises args v) : Raises (.makeAt c ns args) v := by
+  obtain ⟨i, a, hg, hb, ha⟩ := h.position
+  exact .makeArg hg hb ha
+
+theorem ArgRaises.arrLit {args : List Tm} {v : Tm} (h : ArgRaises args v) :
+    Raises (.arrLit args) v := by
+  obtain ⟨i, a, hg, hb, ha⟩ := h.position
+  exact .arrArg hg hb ha
+
+theorem ArgRaises.append {args : List Tm} {v : Tm} (rest : List Tm) (h : ArgRaises args v) :
+    ArgRaises (args ++ rest) v := by
+  induction h with
+  | head hr => exact .head hr
+  | tail hw _ ih => exact .tail hw ih
+
 theorem length_preserved (s : ArgStep h args h' args') : args'.length = args.length := by
   induction s with
   | head => rfl

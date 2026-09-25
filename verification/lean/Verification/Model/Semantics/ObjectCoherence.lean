@@ -76,7 +76,7 @@ def Names (D : Registry) : Tm → Prop
   | .construct f args => Names D f ∧ NamesArgs D args
   | .letE a b | .writeAt _ a b | .arith _ a b | .elemAt a b
   | .indexAt a b => Names D a ∧ Names D b
-  | .readAt _ a | .test _ a | .lenOf a | .spread a => Names D a
+  | .readAt _ a | .test _ a | .lenOf a | .spread a | .throw a => Names D a
   | .setElem a b c => Names D a ∧ Names D b ∧ Names D c
   | .arrLit args => NamesArgs D args
   | .arr ls => ∀ l ∈ ls.filterMap id, D[l]? = some .absent
@@ -172,7 +172,7 @@ def sourceTerm : Tm → Bool
   | .construct f args => sourceTerm f && sourceArgs args
   | .letE a b | .writeAt _ a b | .arith _ a b | .elemAt a b
   | .indexAt a b => sourceTerm a && sourceTerm b
-  | .readAt _ a | .test _ a | .lenOf a | .spread a => sourceTerm a
+  | .readAt _ a | .test _ a | .lenOf a | .spread a | .throw a => sourceTerm a
   | .setElem a b c => sourceTerm a && sourceTerm b && sourceTerm c
   | .arrLit args => sourceArgs args
   | .arr .. => false
@@ -221,6 +221,44 @@ theorem HeapOk.alloc {D h vs} (hh : HeapOk D h)
   · have hw := hh.2 w hw
     exact ⟨hw.1, hw.2.mono (extends_append D _)⟩
   · exact ⟨(hv w hw).1, (hv w hw).2.mono (extends_append D _)⟩
+
+/-- A makeAt's initializers are coherent whatever its code. -/
+theorem termOk_make_arg {D c ns inits a} (ht : TermOk D (.makeAt c ns inits)) (hm : a ∈ inits) :
+    TermOk D a := by
+  cases c <;> simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht
+  · exact ⟨ht.1 a hm, ht.2 a hm⟩
+  · exact ⟨ht.1.2 a hm, ht.2.2 a hm⟩
+  · exact ⟨ht.1.2 a hm, ht.2.2 a hm⟩
+  · exact ⟨ht.1.2.2.2 a hm, ht.2.2.2.2 a hm⟩
+
+/-- What a coherent term throws is coherent. -/
+theorem raises_termOk {t v} (hr : Raises t v) {D} (ht : TermOk D t) : TermOk D v := by
+  induction hr with
+  | throwV => simpa [TermOk, Scoped, Names] using ht
+  | callArg _ _ hg _ _ ih =>
+    simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht
+    have hm := List.mem_of_getElem? hg
+    exact ih ⟨ht.1.2.2 _ hm, ht.2.2.2 _ hm⟩
+  | constructArg _ hg _ _ ih =>
+    simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht
+    have hm := List.mem_of_getElem? hg
+    exact ih ⟨ht.1.2 _ hm, ht.2.2 _ hm⟩
+  | makeArg hg _ _ ih => exact ih (termOk_make_arg ht (List.mem_of_getElem? hg))
+  | arrArg hg _ _ ih =>
+    simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht
+    have hm := List.mem_of_getElem? hg
+    exact ih ⟨ht.1 _ hm, ht.2 _ hm⟩
+  | callL _ ih => exact ih ⟨ht.1.1, ht.2.1⟩
+  | callRecv _ _ ih => exact ih ⟨ht.1.2.1, ht.2.2.1⟩
+  | constructL _ ih => exact ih ⟨ht.1.1, ht.2.1⟩
+  | letC _ ih => exact ih ⟨ht.1.1, ht.2.1⟩
+  | indexC1 _ ih | writeC1 _ ih | arithC1 _ ih | elemC1 _ ih | iteC _ ih | setC1 _ ih =>
+    exact ih ⟨ht.1.1, ht.2.1⟩
+  | indexC2 _ _ ih | writeC2 _ _ ih | arithC2 _ _ ih | elemC2 _ _ ih =>
+    exact ih ⟨ht.1.2, ht.2.2⟩
+  | setC2 _ _ ih => exact ih ⟨ht.1.2.1, ht.2.2.1⟩
+  | setC3 _ _ _ ih => exact ih ⟨ht.1.2.2, ht.2.2.2⟩
+  | throwC _ ih | spreadC _ ih | readC _ ih | testC _ ih | lenC _ ih => exact ih ht
 
 /-- Every actual expression step preserves coherence. Only allocation extends
 its registry; existing entries are never rewritten. -/
@@ -518,6 +556,12 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
   | lenC step ih =>
     intro D hh ht
     exact ih D hh ht
+  | throwC step ih =>
+    intro D hh ht
+    exact ih D hh ht
+  | arithThrow _ =>
+    intro D hh ht
+    exact ⟨D,.refl D,hh,by simp [Scoped, thrownError],by simp [Names, thrownError, locs]⟩
   | lenV | lenStr =>
     intro D hh ht
     exact ⟨D,.refl D,hh,trivial,trivial⟩

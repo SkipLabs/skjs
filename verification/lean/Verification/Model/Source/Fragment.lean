@@ -450,6 +450,9 @@ inductive Expr where
   none denotes a source ternary whose own expression claim supplies its result. -/
   | ifBody (pos : Span) (result : Option Json) (cond thn els : Expr)
   | letBody (pos : Span) (name : String) (annot : Option Json) (init body : Expr)
+  /-- A closure body's `throw e`: it ends the body, as a return does, and has
+  every type. -/
+  | throwBody (pos : Span) (e : Expr)
 
 /-- Lexical dependencies, including deferred bodies. Exhaustive so a new
 executable source form cannot bypass parameter-initialization checks. -/
@@ -460,7 +463,8 @@ partial def Expr.freeNames : Expr → List String
     -- An ordinary function binds its own `this`; an arrow captures it.
     ((ds.flatMap fun d => d.2.freeNames) ++ b.freeNames).filter
       (fun n => !(ps.map Prod.fst).contains n && (receiver.isNone || n != "this"))
-  | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .atEnv _ e | .ctor _ e => e.freeNames
+  | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .atEnv _ e | .ctor _ e
+  | .throwBody _ e => e.freeNames
   | .construct _ f args => f.freeNames ++ args.flatMap Expr.freeNames
   | .alloc _ _ es | .arrayLit _ es => es.flatMap Expr.freeNames
   | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b
@@ -486,7 +490,8 @@ partial def Expr.callees : Expr → List (Span × Span × String)
   | .lambda _ _ _ ps ds _ _ b =>
     ((ds.flatMap fun d => d.2.callees) ++ b.callees).filter
       (fun c => !(ps.map Prod.fst).contains c.2.2)
-  | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .atEnv _ e | .ctor _ e => e.callees
+  | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .atEnv _ e | .ctor _ e
+  | .throwBody _ e => e.callees
   | .construct p f args =>
     (match f with | .var q n => [(p, q, n)] | _ => []) ++ f.callees ++ args.flatMap Expr.callees
   | .alloc _ _ es | .arrayLit _ es => es.flatMap Expr.callees
@@ -547,7 +552,7 @@ abbrev Expr.app (p : Span) (callee arg : Expr) : Expr := .call p callee [arg] []
 
 def Expr.span : Expr → Span
   | .atEnv _ body | .letBody _ _ _ _ body | .seqBody _ _ body => body.span
-  | .ifBody p _ _ _ _ | .done p | .equality p _ _ _ | .singletonTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
+  | .ifBody p _ _ _ _ | .done p | .throwBody p _ | .equality p _ _ _ | .singletonTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
   | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
   | .comma p _ _ => p
   | .arrayLit p _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ => p
@@ -601,6 +606,16 @@ inductive Stmt where
   `name` for one run of the body. -/
   | forOf (pos : Span) (name : String) (namePos : Span) (iterable : Expr) (body : List Stmt)
   | effect (pos : Span) (e : Expr)
+  /-- `throw e`: `e`, then a throw of its value, which leaves the function
+  unless an enclosing `try` catches it. -/
+  | throw (pos : Span) (e : Expr)
+  /-- `try { body } catch (param) { handler } finally { finalizer }`. A throw
+  in the body goes to the handler, which binds the thrown value to `param`
+  (`unknown`), when there is one; the finalizer runs on every way out of the
+  body and the handler, a normal completion, a `return` or a throw, and then
+  that way out resumes, unless the finalizer itself leaves. -/
+  | tryStmt (pos : Span) (body : List Stmt)
+      (handler : Option (Option (String × Span) × List Stmt)) (finalizer : Option (List Stmt))
 
 /-- The intrinsic a `for...of` over an array steps (`intrinsics.mts`):
 `<T>(xs: readonly T[]) => () => { readonly value: T } | null`, trusted. -/
@@ -623,11 +638,13 @@ def decodeArrayElem (decodeExpr : Json → Except String Expr) (q : Json) :
 def Stmt.pos : Stmt → Span
   | .ret p _ | .constants p _ | .mutables p _ | .pattern p _ _ | .arrayPattern p _ _
   | .ite p _ _ _ | .loop p _ _ _ | .forOf p _ _ _ _ | .brk p _ | .cont p | .effect p _
-  | .block p _ _ => p
+  | .block p _ _ | .throw p _ | .tryStmt p _ _ _ => p
 
 /-- Every direct call of a named function in a statement. -/
 partial def Stmt.callees : Stmt → List (Span × Span × String)
-  | .ret _ e | .effect _ e => e.callees
+  | .ret _ e | .effect _ e | .throw _ e => e.callees
+  | .tryStmt _ b h f => b.flatMap Stmt.callees ++ ((h.map (·.2)).getD []).flatMap Stmt.callees ++
+    (f.getD []).flatMap Stmt.callees
   | .constants _ bs | .mutables _ bs => bs.flatMap fun b => b.init.callees
   | .pattern _ props init => init.callees ++
     props.flatMap fun q => (q.default_.map Expr.callees).getD []
@@ -867,6 +884,9 @@ partial def decodeExpr (j : Json) : Except String Expr := do
       (if annot == .null then none else some annot)
       (← decodeExpr (← jField j "init")) (← decodeExpr (← jField j "body"))
   | "returnBody" => return .atEnv p (← decodeExpr (← jField j "e"))
+  | "throwBody" => do
+    CellClaims.fieldsExactly j ["k","pos","e"]
+    return .throwBody p (← decodeExpr (← jField j "e"))
   | "apply" => do
     let args ← (← jArr j "args").mapM decodeExpr
     let spreads ← match (j.getObjVal? "spreads").toOption with
@@ -976,6 +996,27 @@ partial def decodeStmt (j : Json) : Except String Stmt := do
     CellClaims.fieldsExactly j ["k","pos","label"]
     return .brk p (← decodeLabel j)
   | "continue" => return .cont p
+  | "throw" =>
+    CellClaims.fieldsExactly j ["k","pos","e"]
+    return .throw p (← decodeExpr (← jField j "e"))
+  | "try" =>
+    CellClaims.fieldsExactly j ["k","pos","body","handler","finalizer"]
+    let handler ← match ← jField j "handler" with
+      | .null => pure none
+      | h => do
+        CellClaims.fieldsExactly h ["param","body"]
+        let param ← match ← jField h "param" with
+          | .null => pure none
+          | q => do
+            CellClaims.fieldsExactly q ["name","namePos"]
+            pure (some (← jStr (← jField q "name"), ← jSpan q "namePos"))
+        pure (some (param, ← (← jArr h "body").mapM decodeStmt))
+    let finalizer ← match ← jField j "finalizer" with
+      | .null => pure none
+      | .arr a => pure (some (← a.toList.mapM decodeStmt))
+      | _ => throw "malformed finalizer"
+    if handler.isNone && finalizer.isNone then throw "a try needs a catch or a finally"
+    return .tryStmt p (← (← jArr j "body").mapM decodeStmt) handler finalizer
   | "while" =>
     CellClaims.fieldsExactly j ["k","pos","cond","body","update"]
     return .loop p (← decodeExpr (← jField j "cond")) (← (← jArr j "body").mapM decodeStmt)

@@ -110,7 +110,8 @@ theorem call_elim_rest {S : List (Fam × List Fam × ArgFam × Fam)} {s : Fam ×
 
 /-- Run a subterm in an evaluation context, then continue with its value. -/
 theorem ctx_bind {A B : Fam} (C : Tm → Tm)
-    (lift : ∀ {h t h' t'}, Step h t h' t' → Step h (C t) h' (C t')) :
+    (lift : ∀ {h t h' t'}, Step h t h' t' → Step h (C t) h' (C t'))
+    (raise : ∀ {t v}, Raises t v → Raises (C t) v) :
     ∀ n W h t, WorldAdm W → HeapOk n W h → Safe A n W h t →
     (∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
       ∀ h' v, HeapOk j U h' → isVal v = true → A j U v → Safe B j U h' (C v)) →
@@ -120,8 +121,9 @@ theorem ctx_bind {A B : Fam} (C : Tm → Tm)
   | zero => intros; trivial
   | succ n ih =>
     intro W h t hw hh hs hk
-    rcases hs with ⟨hv, ht⟩ | ⟨U, h', t', hx, hu, step, hh', ht'⟩
+    rcases hs with (⟨hv, ht⟩ | hr) | ⟨U, h', t', hx, hu, step, hh', ht'⟩
     · exact hk (n+1) (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw h t hh hv ht
+    · exact Or.inl (Or.inr (hr.lift raise))
     · refine Or.inr ⟨U, h', C t', hx, hu, lift step, hh', ih U h' t' hu hh' ht' ?_⟩
       intro j hj V hx' hv h'' v hh'' hval ha
       apply hk j (by omega) V _ hv h'' v hh'' hval ha
@@ -148,7 +150,7 @@ theorem restSpec_of_body {n : Nat} {Rc : Fam} {Ps : List Fam} {E : ArgFam} {Arr 
   have hl : args.length = n := (ArgsT_length ha).trans hlen
   unfold CallArguments.bindRest
   rw [List.drop_left' hl, ← hl, parameters_prefix]
-  apply ctx_bind (.letE · _) .letC j U h _ hu hh (halloc j U h extra hu hh he hev)
+  apply ctx_bind (.letE · _) .letC .letC j U h _ hu hh (halloc j U h extra hu hh he hev)
   intro i hi V hy hv h' a hh' hval harr
   cases i with
   | zero => trivial
@@ -294,6 +296,11 @@ theorem call_lift {h h' : Heap} {f r t t' : Tm} {pre rest : List Tm}
   (CallArguments.Prepare.args (r := r) (args := pre ++ t :: rest) hf hr
     (CallArguments.keep_prefix hp (.head s))).step
 
+theorem call_raise {f r t v : Tm} {pre rest : List Tm}
+    (hf : isVal f = true) (hr : isVal r = true) (hp : CallArguments.Values pre)
+    (s : Raises t v) : Raises (.invoke f r (pre ++ t :: rest)) v :=
+  .callArg hf hr (prefix_position hp).1 (prefix_position hp).2 s
+
 /-- The term a part is written as: itself, or a spread of it. -/
 def partTerm (p : Option Fam × Tm) : Tm :=
   match p.1 with
@@ -320,7 +327,7 @@ theorem spread_parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) {f r : Tm}
   | (none, a) :: parts, n, W, heap, pre, hS, hw, hh, hp, ht, hk => by
     have ha := ht (none, a) (by simp) n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw heap hh
     apply ctx_bind (A := E) (fun t => .invoke f r (pre ++ t :: parts.map partTerm))
-      (fun s => call_lift hf hrv hp s) n W heap a hw hh ha
+      (fun s => call_lift hf hrv hp s) (fun s => call_raise hf hrv hp s) n W heap a hw hh ha
     intro j hj U hx hu heap' v hh' hv hEv'
     have hrest := spread_parts_safe hE hEv hf hrv parts j U heap' (pre ++ [v])
       (fun p hm => hS p (by simp [hm])) hu hh'
@@ -349,7 +356,8 @@ theorem spread_parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) {f r : Tm}
     have hs := ht (some S, s) (by simp) n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw heap hh
     show Safe R n W heap (.invoke f r (pre ++ .spread s :: parts.map partTerm))
     apply ctx_bind (A := S) (fun t => .invoke f r (pre ++ .spread t :: parts.map partTerm))
-      (fun s => call_lift hf hrv hp (.spreadC s)) n W heap s hw hh hs
+      (fun s => call_lift hf hrv hp (.spreadC s)) (fun s => call_raise hf hrv hp (.spreadC s))
+      n W heap s hw hh hs
     intro j hj U hx hu heap' v hh' _ hv
     obtain ⟨ls, vs, rfl, hr, he⟩ := hSs j U heap' _ hh' hv
     cases j with

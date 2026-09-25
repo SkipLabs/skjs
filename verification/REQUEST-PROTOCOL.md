@@ -23,7 +23,7 @@ Save this minimal request as `request.json`:
 ```json
 {
   "types": [["nul"]],
-  "program": [{ "expression": "nul", "continuation": "ret" }],
+  "program": [{ "expression": "nul", "continuation": "ret", "handler": null }],
   "claims": [{ "context": [], "type": [0] }],
   "result": [0],
   "start": 0,
@@ -165,6 +165,13 @@ zero, and target slot one receives source slot two. `"mapping":null` means
 identity selection. Missing `mapping` is rejected; the protocol does not silently
 supply a default.
 
+A node's `handler` is `null`, or a target `T` where a throw out of its
+expression goes, the thrown value pushed first as a bind pushes a value
+([handlers](PROGRAM-TYPING.md#checked-control-flow-graphs)). Its evidence,
+`NodeEvidence.handler`, is `null` or a pair `[T, p]`: the type the thrown
+value is bound at, which must have a top clause, and the handler edge's
+subtype-evidence list.
+
 The encoding follows mechanically from the
 [term grammar](SEMANTICS.md#operational-language) and the
 [continuations](PROGRAM-TYPING.md#checked-control-flow-graphs). In full, writing
@@ -191,6 +198,7 @@ The encoding follows mechanically from the
 | length of a store                    | `{"lenOf":{"a":t}}`                                   |              |                                               |
 | store locations, a hole as `null`    | `{"arr":{"elems":[0,null]}}`                          |              |                                               |
 | spread actual                        | `{"spread":{"a":t}}`                                  |              |                                               |
+| throw                                | `{"throw":{"a":t}}`                                   |              |                                               |
 
 A descriptor `c` is `"absent"`, `{"closure":{"arity":2,"body":t}}` (with
 `"kind":"construct"` for a class's construct-only code, which only `new` runs;
@@ -224,7 +232,8 @@ one subtype-evidence list per outgoing edge. A derivation node names the
 `read`, `readOptional`, `readDict`, `indexDict`, `write`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
 `unionVar`, `makeCallable`, `callCallable`, `readCallable`, `writeCallable`, `readView`, `readProto`, `arith`, `test`,
 `arrLit`, `elem`, `elemOpt`, `elemAny`, `setElem`, `len`, `lenStr`, `elemStr`, `funRest`, `makeCallableRest`,
-`callRest`, `arrCopy`, `bindE`, `bindRestE`, `bindMember`, `ctorE`, `construct`, or `sub`.
+`callRest`, `arrCopy`, `bindE`, `bindRestE`, `bindMember`, `ctorE`, `construct`, `sub`, or
+`throw`, whose one premise types the thrown operand.
 The array rules act on a store, the value an array object holds in its store
 field: `arrLit` allocates one location per element under the positions of a
 tuple contract; `elem` reads a required position named by a literal index at

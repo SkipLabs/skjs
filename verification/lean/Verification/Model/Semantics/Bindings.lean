@@ -32,6 +32,7 @@ def Scoped (d : Nat) : Tm → Prop
   | .arrLit args => ScopedArgs d args
   | .lenOf a => Scoped d a
   | .spread a => Scoped d a
+  | .throw a => Scoped d a
   | _ => True
 
 def ScopedArgs (d : Nat) : List Tm → Prop
@@ -76,6 +77,7 @@ theorem Scoped.mono {t : Tm} {d e : Nat} (h : Scoped d t) (hde : d ≤ e) :
   case setElem a b c iha ihb ihc => exact ⟨iha h.1 hde, ihb h.2.1 hde, ihc h.2.2 hde⟩
   case lenOf a ih => exact ih h hde
   case spread a ih => exact ih h hde
+  case throw a ih => exact ih h hde
   case read f a ih => exact ih h hde
   case test k a ih => exact ih h hde
   all_goals trivial
@@ -128,6 +130,7 @@ theorem subst_above {t : Tm} {d j : Nat} (h : Scoped d t) (hj : d ≤ j) (a : Tm
   case setElem b c e ihb ihc ihe => rw [ihb h.1 hj, ihc h.2.1 hj, ihe h.2.2 hj]
   case lenOf b ih => rw [ih h hj]
   case spread b ih => rw [ih h hj]
+  case throw b ih => rw [ih h hj]
   case read f b ih => rw [ih h hj]
   case index b key ihb ihkey => rw [ihb h.1 hj, ihkey h.2 hj]
   case test k b ih => rw [ih h hj]
@@ -200,6 +203,7 @@ theorem subst_scoped {t a : Tm} {d j : Nat} (ht : Scoped (d + 1) t)
   case setElem b c e ihb ihc ihe => exact ⟨ihb ht.1 hj, ihc ht.2.1 hj, ihe ht.2.2 hj⟩
   case lenOf b ih => exact ih ht hj
   case spread b ih => exact ih ht hj
+  case throw b ih => exact ih ht hj
   case read f b ih => exact ih ht hj
   case test k b ih => exact ih ht hj
   all_goals trivial
@@ -241,6 +245,7 @@ def instantiate (d : Nat) (ρ : Env) : Tm → Tm
   | .setElem a b c => .setElem (instantiate d ρ a) (instantiate d ρ b) (instantiate d ρ c)
   | .lenOf a => .lenOf (instantiate d ρ a)
   | .spread a => .spread (instantiate d ρ a)
+  | .throw a => .throw (instantiate d ρ a)
   | t => t
 
 def instantiateArgs (d : Nat) (ρ : Env) : List Tm → List Tm
@@ -308,6 +313,7 @@ theorem instantiate_scoped (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (t : Tm) (d
   case setElem a b c iha ihb ihc => exact ⟨iha _, ihb _, ihc _⟩
   case lenOf a ih => exact ih _
   case spread a ih => exact ih _
+  case throw a ih => exact ih _
   case read f a ih => exact ih d
   case test k a ih => exact ih d
   all_goals trivial
@@ -384,6 +390,7 @@ theorem instantiate_beta (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (a t : Tm) (d
   case setElem b c e ihb ihc ihe => rw [ihb, ihc, ihe]
   case lenOf b ih => rw [ih]
   case spread b ih => rw [ih]
+  case throw b ih => rw [ih]
   case read f b ih => rw [ih]
   case index b key ihb ihkey => rw [ihb, ihkey]
   case test k b ih => rw [ih]
@@ -467,6 +474,7 @@ theorem instantiate_above {t : Tm} {d : Nat} (ht : Scoped d t) (ρ : Env) :
   case setElem a b c iha ihb ihc => rw [iha ht.1, ihb ht.2.1, ihc ht.2.2]
   case lenOf a ih => rw [ih ht]
   case spread a ih => rw [ih ht]
+  case throw a ih => rw [ih ht]
   case read f a ih => rw [ih ht]
   case test k a ih => rw [ih ht]
   all_goals rfl

@@ -18,8 +18,8 @@ private def initial : Tm := .letE (.write (.var 0) .tru) (.letE (.alloc .tru) .f
 private def callee : Tm := .attach (.read (.var 2)) initial
 private def argument : Tm := .letE (.write (.var 0) .fls) .nul
 private def program (callable : Bool) : Program :=
-  [⟨if callable then .attach (.var 0) .fls else .alloc .fls,.bind 1⟩,
-   ⟨.app callee argument,.ret⟩]
+  [⟨if callable then .attach (.var 0) .fls else .alloc .fls,.bind 1,none⟩,
+   ⟨.app callee argument,.ret,none⟩]
 private def claims : List (PointClaim Nat) := [⟨[],[2,3]⟩,⟨[[2,3]],[1]⟩]
 private def request (callable : Bool) : Request := ⟨types,program callable,claims,[1],0,[]⟩
 #guard [false,true].all fun callable => match (do

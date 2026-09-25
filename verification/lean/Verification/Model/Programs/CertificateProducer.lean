@@ -792,6 +792,12 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         (A :: pool).findSome? fun N =>
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ .lenStr [ea]
           if checkTree G e then coerce G pool e A else none
+    | .throw a =>
+      -- A throw has every type; its operand, at a type of its own.
+      let types := (match a with | .var i => Γ[i]?.toList | _ => []) ++ pool
+      return types.findSome? fun B => do
+        let ea ← recur Γ a B
+        some (ProgramCertificates.Evidence.node ⟨Γ,t,A⟩ .throw [ea])
     | .ite (.test tag (.var i)) u e =>
       let some B := Γ[i]? | return none
       if decide (Answers G B tag true) then
@@ -877,7 +883,9 @@ def edge [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         match o with
         | .boolean q =>
           if BranchRefinement.booleanMember G B q then pure .subset else failure
-        | .tag t q => subtype G pool (BranchRefinement.tagSlice G A t q) B
+        | .tag t q =>
+          if BranchRefinement.tagMember G B t q then pure .subset
+          else subtype G pool (BranchRefinement.tagSlice G A t q) B
       else subtype G pool A B
     | none => subtype G pool A B
 
@@ -956,7 +964,20 @@ private def produceNode [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty �
         (branchTarget (c.type :: c.context) (.boolean false) n 1).map (fun pn => [py,pn]))
     | .tagBind t y n => (branchTarget (c.type :: c.context) (.tag t true) y 0).bind (fun py =>
         (branchTarget (c.type :: c.context) (.tag t false) n 1).map (fun pn => [py,pn])) : Except Failure (List (EdgeEvidence ι)))
-  return {expression := e, edges := ps, knowledge := k, effect := some effect, output := out}
+  -- A handler receives the thrown value at a type admitting every value: the
+  -- type its target states for the slot it lands in, else one from the pool.
+  let hd ← (match node.handler with
+    | none => pure none
+    | some t =>
+      let landing := ((claims[t.label]?).toList.flatMap fun tc =>
+        (List.range tc.context.length).filterMap fun i =>
+          if PointClaims.slot t.mapping i == 0 then tc.context[i]? else none)
+      match (landing ++ pool).findSome? fun T =>
+          if ControlFlow.admitsAll G T then (edge G pool claims (T :: c.context) t).map (T, ·) else none with
+      | some x => pure (some x)
+      | none => throw (Failure.edge l t.label (successors node.continuation).length)
+    : Except Failure (Option (Ty ι × EdgeEvidence ι)))
+  return {expression := e, edges := ps, knowledge := k, effect := some effect, output := out, handler := hd}
 
 /-- Propagate established postconditions along single-predecessor paths. Entry
 starts empty; source cuts use exactly their supplied requirements, even when

@@ -760,7 +760,7 @@ const recorded = (d: ObligationDiagnostic) =>
     sequent: { context: [[1, 2], [1, 2]], term: { var: { i: 0 } }, type: [1] },
     source: {
       label: 1,
-      node: { continuation: "ret", expression: { var: { i: 0 } } },
+      node: { continuation: "ret", expression: { var: { i: 0 } }, handler: null },
       claim: { context: [[1, 2], [1, 2]], type: [1] },
       sourceMap,
       requiredKnowledge: null,

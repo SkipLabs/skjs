@@ -24,10 +24,10 @@ private def body (fresh : Bool) : Tm :=
 private def callback : Tm :=
   .letE (.write (.var 3) .tru) (.app (.var 3) (.funE .fls))
 private def program (callable fresh : Bool) : Program :=
-  [⟨if callable then .attach (.var 1) .fls else .alloc .fls,.bind 1⟩,
-   ⟨.funE (body fresh),.bind 2⟩,
-   ⟨.funE callback,.bind 3⟩,
-   ⟨.app (.var 1) (.var 0),.ret⟩]
+  [⟨if callable then .attach (.var 1) .fls else .alloc .fls,.bind 1,none⟩,
+   ⟨.funE (body fresh),.bind 2,none⟩,
+   ⟨.funE callback,.bind 3,none⟩,
+   ⟨.app (.var 1) (.var 0),.ret,none⟩]
 private def claims : List (PointClaim Nat) :=
   [⟨[],[2,3]⟩,⟨[[2,3]],[5]⟩,⟨[[5],[2,3]],[4]⟩,⟨[[4],[5],[2,3]],[1]⟩]
 private def request (callable fresh : Bool) : Request :=

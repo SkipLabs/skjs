@@ -14,10 +14,10 @@ private def dispatch : Tm := .ite (.test .isFun (.var 0)) (.app (.var 0) .nul) .
 /-- The body reads the captured cell, past its parameter and receiver. -/
 private def body : Tm := .letE (.read (.var 2)) dispatch
 private def program : Program :=
-  [⟨.alloc .nul,.bind 1⟩,
-   ⟨.funE body,.bind 2⟩,
-   ⟨.write (.var 1) (.var 0),.effect 3⟩,
-   ⟨.app (.var 0) .nul,.ret⟩]
+  [⟨.alloc .nul,.bind 1,none⟩,
+   ⟨.funE body,.bind 2,none⟩,
+   ⟨.write (.var 1) (.var 0),.effect 3,none⟩,
+   ⟨.app (.var 0) .nul,.ret,none⟩]
 private def claims : List (PointClaim Nat) :=
   [⟨[],[2]⟩,⟨[[2]],[1]⟩,⟨[[1],[2]],[0]⟩,⟨[[1],[2]],[0]⟩]
 private def request : Request := ⟨types,program,claims,[0],0,[]⟩
@@ -68,7 +68,7 @@ private def cell : Tm := .obj 0 .absent
 private def fn : Tm := .fn 1 (.letE (.read cell) dispatch)
 private def loopHeap : Heap := [fn,.nul]
 private def loopState : State :=
-  .eval (.app fn .nul) (push fn (push cell (fun _ => .nul))) .ret
+  .eval (.app fn .nul) (push fn (push cell (fun _ => .nul))) .ret none
 
 /-- Every recursive round pays beta, a heap read, a binding, a tag test, and
 branch selection. It returns to precisely the same allocated state. -/

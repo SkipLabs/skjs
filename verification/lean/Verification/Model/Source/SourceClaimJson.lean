@@ -780,6 +780,8 @@ private partial def exprSites : Fragment.Expr → Sites
   | .nullishAssign p _ np e => joinSites ([],[p,np],[]) (exprSites e)
   | .assign p _ _ e => joinSites ([],[p],[]) (exprSites e)
   | .atEnv p e => joinSites ([p.1],[],[]) (exprSites e)
+  -- A closure's `throw` states no entry: only its operand is claimed.
+  | .throwBody _ e => exprSites e
   | .bindWithReceiver p f receiver args | .callWithReceiver p f receiver args => args.foldl (fun acc a => joinSites acc (exprSites a))
       (joinSites ([],[p],[]) (joinSites (exprSites f) (exprSites receiver)))
   | .call p f args _ | .invoke p f args _ _ => args.foldl (fun acc a => joinSites acc (exprSites a)) (joinSites ([],[p],[]) (exprSites f))
@@ -795,7 +797,11 @@ private partial def exprSites : Fragment.Expr → Sites
   | .ifBody p result a b c => joinSites (if result.isSome then ([p.1],[],[]) else ([],[p],[])) (joinSites (exprSites a) (joinSites (exprSites b) (exprSites c)))
 private partial def stmtSites : Fragment.Stmt → Sites
   | .brk p _ | .cont p => ([p.1],[],[])
-  | .ret p e | .effect p e => joinSites ([p.1],[],[]) (exprSites e)
+  | .ret p e | .effect p e | .throw p e => joinSites ([p.1],[],[]) (exprSites e)
+  -- A `try` is an entry; its blocks' statements have their own.
+  | .tryStmt p body handler finalizer =>
+    (body ++ ((handler.map (·.2)).getD []) ++ finalizer.getD []).foldl
+      (fun s st => joinSites s (stmtSites st)) ([p.1],[],[])
   -- One entry for the statement; every declarator's initializer is a site.
   | .constants p bs | .mutables p bs => bs.foldl (fun acc b => joinSites acc (exprSites b.init)) ([p.1],[],[])
   -- The initializer and each default are sites; the pattern's reads are not.

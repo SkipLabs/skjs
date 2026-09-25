@@ -37,7 +37,7 @@ reject forged identities in their bodies, independently of that typing rule. -/
 private def G : PositiveGraphs.NormalGraph Nat := .ofRows fun _ => [.arrs [] []]
 private def forged : Tm := .funE (.obj 0 .absent)
 private def forgedEvidence : Evidence Nat := .node ⟨[],forged,[0]⟩ .funE []
-private def forgedNode : Node := ⟨forged,.ret⟩
+private def forgedNode : Node := ⟨forged,.ret,none⟩
 private def forgedCertificate : ControlFlow.Certificate Nat :=
   [{expression := forgedEvidence, edges := []}]
 

@@ -93,6 +93,11 @@ private structure Built where
   one it is being checked against. Keyed by that body's span, so no nested
   expression is affected. -/
   resultOverride : Option (Span × Ty Nat) := none
+  /-- While a `try` body or handler is compiled: where a throw out of a node
+  goes, as a target over the handler's scope (the thrown value's slot, then
+  the scope of the `try`), and the length of the `try`'s scope. Every node
+  emitted meanwhile whose expression may throw names it. -/
+  handler : Option (Target × Nat) := none
 
 /-- Source-validation failures that already know their source site use the same
 structured channel as proof obligations. Keeping the diagnostic construction
@@ -375,6 +380,7 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
   | .seqBody p i b => return .seqBody p (← comparisonsExpr fc i) (← comparisonsExpr fc b)
   | .ifBody p result c t e => return .ifBody p result (← comparisonsExpr fc c) (← comparisonsExpr fc t) (← comparisonsExpr fc e)
   | .letBody p n annot i b => return .letBody p n annot (← comparisonsExpr fc i) (← comparisonsExpr fc b)
+  | .throwBody p e => return .throwBody p (← comparisonsExpr fc e)
 
 private partial def comparisonsStmt (fc : SourceClaims.Function) (s : Fragment.Stmt) :
     Compiler Fragment.Stmt := do
@@ -401,6 +407,10 @@ private partial def comparisonsStmt (fc : SourceClaims.Function) (s : Fragment.S
     return .loop p (← comparisonsExpr fc c) (← b.mapM (comparisonsStmt fc)) (← u.mapM (comparisonsStmt fc))
   | .forOf p n np i b => return .forOf p n np (← comparisonsExpr fc i) (← b.mapM (comparisonsStmt fc))
   | .block p k b => return .block p k (← b.mapM (comparisonsStmt fc))
+  | .throw p e => return .throw p (← comparisonsExpr fc e)
+  | .tryStmt p b h f =>
+    let h ← h.mapM fun (param, c) => do return (param, ← c.mapM (comparisonsStmt fc))
+    return .tryStmt p (← b.mapM (comparisonsStmt fc)) h (← f.mapM (·.mapM (comparisonsStmt fc)))
   | .brk .. | .cont .. => pure s
 
 /-- Storage is selected from source assignments, including writes in nested
@@ -412,7 +422,8 @@ private partial def assignsExpr (name : String) : Fragment.Expr → Bool
   | .assign _ target _ rhs | .nullishAssign _ target _ rhs => target == name || assignsExpr name rhs
   | .lambda _ _ _ _ defaults _ _ e =>
     defaults.attach.any (fun ⟨d,_⟩ => assignsExpr name d.2) || assignsExpr name e
-  | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e =>
+  | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e
+  | .throwBody _ e =>
     assignsExpr name e
   | .equality _ _ a b | .logical _ _ a b | .coalesce _ a b
   | .singletonTest _ _ _ _ a b | .write _ _ a b | .withValue _ a b _ _ | .index _ _ a b
@@ -439,7 +450,9 @@ private partial def assignsExpr (name : String) : Fragment.Expr → Bool
   | .ifBody _ _ c t e => assignsExpr name c || assignsExpr name t || assignsExpr name e
 
 private partial def assignsStmt (name : String) : Fragment.Stmt → Bool
-  | .ret _ e | .effect _ e => assignsExpr name e
+  | .ret _ e | .effect _ e | .throw _ e => assignsExpr name e
+  | .tryStmt _ b h f => b.any (assignsStmt name) || ((h.map (·.2)).getD []).any (assignsStmt name) ||
+    (f.getD []).any (assignsStmt name)
   | .constants _ bs | .mutables _ bs => bs.any fun b => assignsExpr name b.init
   | .pattern _ props init => assignsExpr name init ||
     props.any fun q => (q.default_.map (assignsExpr name)).getD false
@@ -455,7 +468,9 @@ private partial def assignsStmt (name : String) : Fragment.Stmt → Bool
 /-- Every name a statement's expressions mention, bound or not: a superset of
 the module functions its body can reach. -/
 partial def stmtNames : Fragment.Stmt → List String
-  | .ret _ e | .effect _ e => e.freeNames
+  | .ret _ e | .effect _ e | .throw _ e => e.freeNames
+  | .tryStmt _ b h f => b.flatMap stmtNames ++ ((h.map (·.2)).getD []).flatMap stmtNames ++
+    (f.getD []).flatMap stmtNames
   | .constants _ bs | .mutables _ bs => bs.flatMap fun b => b.init.freeNames
   | .pattern _ props init => init.freeNames ++
     props.flatMap fun q => (q.default_.map Fragment.Expr.freeNames).getD []
@@ -492,13 +507,36 @@ private def closureType (fc : SourceClaims.Function) (e : Fragment.Expr) : Compi
   match e with
   | .atEnv _ b | .letBody _ _ _ _ b | .seqBody _ _ b => closureType fc b
   | .done _ => pure [0]
+  -- A throw has every type: the empty union, which every result contains.
+  | .throwBody .. => pure []
   | .ifBody _ (some result) _ _ _ => do lower (Fragment.callableType result)
   | e => exprType fc e
 
+/-- A term that cannot throw: a value, or a slot, which holds one. Every other
+node inside a `try` names its handler. -/
+private def cannotThrow : Tm → Bool
+  | .var _ => true
+  | t => isVal t
+
+/-- The handler a node emitted now names: the current one, its target's slots
+read from the thrown value's (0) and from the `try`'s scope, which the node's
+scope ends with, past the node's own `Γ.length - n` inner slots. -/
+private def nodeHandler (Γ : List (Ty Nat)) (t : Tm) : Compiler (Option Target) := do
+  match (← get).handler with
+  | none => return none
+  | some (entry, n) =>
+    if cannotThrow t then return none
+    if Γ.length < n then
+      throw "internal extraction error: a node inside a try is outside the try's scope"
+    let inner := Γ.length - n
+    return some ⟨entry.label, some ((entry.mapping.getD (List.range (n+1))).map
+      fun i => if i == 0 then 0 else i + inner)⟩
+
 private def emit (t : Tm) (k : Continuation) (Γ : List (Ty Nat)) (A : Ty Nat) :
     Compiler Target := do
+  let handler ← nodeHandler Γ t
   let s : Built ← get
-  set { s with program := s.program ++ [(⟨t,k⟩ : ControlFlow.Node)]
+  set { s with program := s.program ++ [(⟨t,k,handler⟩ : ControlFlow.Node)]
                claims := s.claims ++ [(⟨Γ,A⟩ : PointClaim Nat)]
                sourceMap := s.sourceMap ++ [none] }
   return ⟨s.program.length, none⟩
@@ -663,6 +701,7 @@ escaping closure. Reads are plain modeled cells, never JavaScript accessors. -/
 private def readOnly : Fragment.Expr → Bool
   | .var .. | .lit .. | .done .. => true
   | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e => readOnly e
+  | .throwBody .. => false
   | .equality _ _ a b | .singletonTest _ _ _ _ a b | .logical _ _ a b | .coalesce _ a b
   | .seqBody _ a b | .letBody _ _ _ a b | .index _ _ a b | .arith _ _ a b | .elemAt _ a b
   | .comma _ a b => readOnly a && readOnly b
@@ -1672,6 +1711,10 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
       conditionalPlan scope H A cond c
         (fun names types => closureExpr fc names types thn)
         (fun names types => closureExpr fc names types els)
+  | .throwBody _ e => do
+    -- `throw e`: the operand at its own claim, then a throw at every type.
+    let a ← closureExpr fc scope Γ e
+    pure (DirectProof.node Γ (.throw a.term) A .throw [a])
   | .atEnv pos body => do
     let H ← closureEnv fc pos.1 scope Γ
     for (B,i) in H.zipIdx do
@@ -2324,7 +2367,8 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
       compileExpr fc
         ((operands.take i |>.map fun a => held ⟨"",some a.span⟩).reverse ++ scope)
         ((As.take i).reverse ++ Γ) arg next) make
-  | .atEnv .. | .letBody .. | .ifBody _ (some _) .. | .done .. | .seqBody .. => throw "statement environment wrapper is only supported inside a closure"
+  | .atEnv .. | .letBody .. | .ifBody _ (some _) .. | .done .. | .seqBody .. | .throwBody .. =>
+    throw "statement environment wrapper is only supported inside a closure"
   | .ifBody _ none cond thn els =>
     -- A source ternary branches in the graph like an `if` statement, so an
     -- effect in its condition or an arm is a node with its own knowledge;
@@ -3001,9 +3045,70 @@ end
 destination: the nearest enclosing loop's next iteration and its end, if there
 is a loop, and the end of each enclosing labeled block, innermost first. An
 end is `none` where it is the function's. -/
+private structure Finalizer where
+  /-- The `finally` block, and the `try` it belongs to. -/
+  stmts : List Fragment.Stmt
+  pos : Span
+  /-- The lexical context of the `try`, which the block runs in: its scope,
+  handler and jump targets. -/
+  scope : List ScopeBinding
+  handler : Option (Target × Nat)
+  loop : Option ((Target × List ScopeBinding) × Option (Target × List ScopeBinding))
+  labels : List (String × Option (Target × List ScopeBinding))
+  loopDepth : Nat
+  labelDepths : List (String × Nat)
+
 private structure LoopTargets where
   loop : Option ((Target × List ScopeBinding) × Option (Target × List ScopeBinding)) := none
   labels : List (String × Option (Target × List ScopeBinding)) := []
+  /-- The `finally` blocks of the `try` statements around this point,
+  innermost first: a `return` runs each of them before it returns. -/
+  finalizers : List Finalizer := []
+  /-- How many of those were around the nearest loop, and around each labeled
+  block: a jump to one of them past a `finally` is refused. -/
+  loopDepth : Nat := 0
+  labelDepths : List (String × Nat) := []
+
+/-- Whether a statement list never completes normally: it ends in a jump, a
+`return` or a `throw`, or in a statement all of whose ways on do. An
+unlabeled block is its statements; a labeled one may be left by a `break`. -/
+private partial def abrupt (ss : List Fragment.Stmt) : Bool :=
+  match ss.getLast? with
+  | some (.ret ..) | some (.throw ..) | some (.brk ..) | some (.cont ..) => true
+  | some (.ite _ _ t (some e)) => abrupt t && abrupt e
+  | some (.block _ none b) => abrupt b
+  | some (.tryStmt _ b h f) =>
+    (f.map abrupt).getD false || (abrupt b && (h.map (abrupt ·.2)).getD true)
+  | _ => false
+
+/-- Entering a loop: its targets, behind as many `finally` blocks as now. -/
+private def LoopTargets.enterLoop (t : LoopTargets)
+    (l : (Target × List ScopeBinding) × Option (Target × List ScopeBinding)) : LoopTargets :=
+  { t with loop := some l, loopDepth := t.finalizers.length }
+
+/-- Entering a labeled block, likewise. -/
+private def LoopTargets.enterLabel (t : LoopTargets) (label : String)
+    (done : Option (Target × List ScopeBinding)) : LoopTargets :=
+  { t with labels := (label, done) :: t.labels,
+           labelDepths := (label, t.finalizers.length) :: t.labelDepths }
+
+/-- Compile with `h` as the handler of every node emitted. -/
+private def withHandler (h : Option (Target × Nat)) (act : Compiler α) : Compiler α := do
+  let saved := (← get).handler
+  modify fun s => { s with handler := h }
+  let r ← act
+  modify fun s => { s with handler := saved }
+  return r
+
+/-- A jump from `scope` to a target over `targetScope`: the target's slots,
+read through its own mapping, found by name in `scope`. -/
+private def jumpTo (scope : List ScopeBinding) (target : Target) (targetScope : List ScopeBinding) :
+    Compiler Target := do
+  let slots ← targetScope.mapM fun b => match (names scope).idxOf? b.source.name with
+    | some i => pure i
+    | none => throw s!"internal extraction error: lost binding '{b.source.name}'"
+  return ⟨target.label, some ((target.mapping.getD (List.range targetScope.length)).map
+    fun i => slots[i]?.getD 0)⟩
 
 /-- The entry of the first statement a list runs: a block has none of its
 own, so it is its first statement's, or, empty, the next one's. -/
@@ -3135,15 +3240,113 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
         | .brk _ none :: _, some (_, done) => pure done
         | .cont _ :: _, some (again, _) => pure (some again)
         | _, _ => throw "break or continue outside a source loop"
+      -- A jump past a `finally` would run it first; that is not lowered.
+      let depth := match stmts with
+        | .brk _ (some l) :: _ => (loopTargets.labelDepths.lookup l).getD 0
+        | _ => loopTargets.loopDepth
+      if depth != loopTargets.finalizers.length then
+        throw (locatedRefusal (← table) pos .bindingAnnotation
+          "a jump out of a `try` with a `finally` is outside the fragment")
       let next ← leave fc.namePos R scope destination
       emitAt pos .nul (.effect next) Γ [0] (scope := scope)
     | .ret pos e :: rest =>
       if !rest.isEmpty then throw "statements after return are outside the fragment"
       let Γ ← env fc pos.1 scope
       let A ← exprType fc e
-      let done ← emitAt e.span (.var 0) .ret (A::Γ) R "return-contract" (some pos.1)
+      match loopTargets.finalizers with
+      | [] =>
+        let done ← emitAt e.span (.var 0) .ret (A::Γ) R "return-contract" (some pos.1)
+          (scope := held ⟨"",some e.span⟩ :: scope)
+        compileExpr fc scope Γ e done
+      | fins =>
+        -- The value, held in a slot of its own, passes through every
+        -- enclosing `finally`, innermost first, each run in its `try`'s
+        -- context; after the outermost, it is returned. A `finally` that
+        -- itself returns or throws leaves by its own way instead.
+        let retHeld : ScopeBinding := { source := ⟨s!"%return@{pos.1}%", some e.span⟩, fixed := some A }
+        let some outermost := fins.getLast? | throw "internal extraction error: no finalizer"
+        let Γo ← env fc outermost.pos.1 outermost.scope
+        let mut after ← emitAt e.span (.var 0) .ret (A::Γo) R "return-contract" (some pos.1)
+          (scope := retHeld :: outermost.scope)
+        let mut afterScope := retHeld :: outermost.scope
+        for i in (List.range fins.length).reverse do
+          let some fin := fins[i]? | throw "internal extraction error: finalizer index"
+          let fscope := retHeld :: fin.scope
+          let targets : LoopTargets := ⟨fin.loop, fin.labels, fins.drop (i+1), fin.loopDepth, fin.labelDepths⟩
+          after ← withHandler fin.handler
+            (body fuel fc R fscope fin.stmts (some (after, afterScope)) targets)
+          afterScope := fscope
+        let first ← jumpTo (retHeld :: scope) after afterScope
+        compileExpr fc scope Γ e first
+    | .throw pos e :: rest =>
+      if !rest.isEmpty then throw "statements after throw are outside the fragment"
+      let Γ ← env fc pos.1 scope
+      let A ← exprType fc e
+      -- `throw` has every type: the node claims the result, and never
+      -- produces a value to return.
+      let raise ← emitAt e.span (.throw (.var 0)) .ret (A::Γ) R "throw" (some pos.1)
         (scope := held ⟨"",some e.span⟩ :: scope)
-      compileExpr fc scope Γ e done
+      compileExpr fc scope Γ e raise
+    | .tryStmt pos tryBody handler finalizer :: rest =>
+      let Γ ← env fc pos.1 scope
+      let continuation ← if rest.isEmpty then pure tail else do
+        let next ← body fuel fc R scope rest tail loopTargets
+        pure (some (next,scope))
+      -- A thrown value is bound at `unknown`: anything may be thrown.
+      let top ← lower (SourceTypes.use .top)
+      modify fun s => { s with hints := top :: s.hints }
+      let outer := (← get).handler
+      let n := scope.length
+      -- The `finally` block, twice: after a normal completion of the body or
+      -- the handler, continuing after the statement; and after a throw out of
+      -- either, holding the thrown value, then throwing it again. Each runs in
+      -- the `try`'s own context.
+      -- The normal way through the `finally` is there only if the body or
+      -- the handler can complete.
+      let completes := !abrupt tryBody || (handler.map (fun h => !abrupt h.2)).getD false
+      let (completed, onThrow) ← match finalizer with
+        | none => pure ((continuation, none) :
+            Option (Target × List ScopeBinding) × Option (Target × Finalizer))
+        | some F =>
+          -- Where neither can, no way leads there: a node that loops on
+          -- itself stands for it, so nothing is claimed of a completion.
+          let normal ← if completes then
+              withHandler outer (body fuel fc R scope F continuation loopTargets)
+            else do
+              let self := (← get).program.length
+              let stub ← withHandler none (emitAt pos .nul (.effect ⟨self, some []⟩) [] [0] "unreachable")
+              -- Its own predecessor, it states its (empty) knowledge as a cut.
+              modify fun s => { s with cuts := stub.label :: s.cuts }
+              pure stub
+          let thrown : ScopeBinding := { source := ⟨s!"%thrown@{pos.1}%", some pos⟩, fixed := some [top] }
+          let tscope := thrown :: scope
+          let rethrow ← withHandler outer
+            (emitAt pos (.throw (.var 0)) .ret ([top] :: Γ) R "rethrow" (some pos.1) (scope := tscope))
+          let entry ← withHandler outer (body fuel fc R tscope F (some (rethrow, tscope)) loopTargets)
+          let fin : Finalizer := ⟨F, pos, scope, outer, loopTargets.loop, loopTargets.labels,
+            loopTargets.loopDepth, loopTargets.labelDepths⟩
+          pure ((some (normal, if completes then scope else []), some (entry, fin)) :
+            Option (Target × List ScopeBinding) × Option (Target × Finalizer))
+      let inner : LoopTargets := match onThrow with
+        | none => loopTargets
+        | some (_, fin) => { loopTargets with finalizers := fin :: loopTargets.finalizers }
+      -- Where a throw goes from the handler: the `finally`, or else out.
+      let afterHandler : Option (Target × Nat) := match onThrow with
+        | some (entry, _) => some (entry, n)
+        | none => outer
+      let bodyHandler ← match handler with
+        | none => pure afterHandler
+        | some (param, C) =>
+          let caught : ScopeBinding ← match param with
+            | some (name, namePos) =>
+              if name == "undefined" then throw "shadowing undefined is outside the fragment"
+              if (names scope).contains name then
+                throw s!"duplicate or shadowing local declaration '{name}'"
+              pure (held ⟨name, some namePos⟩)
+            | none => pure { source := ⟨s!"%caught@{pos.1}%", some pos⟩, fixed := some [top] }
+          let entry ← withHandler afterHandler (body fuel fc R (caught :: scope) C completed inner)
+          pure (some (entry, n))
+      withHandler bodyHandler (body fuel fc R scope tryBody completed inner)
     | .constants pos bindings :: rest =>
       let Γ ← env fc pos.1 scope
       constants fc pos (fun scope => body fuel fc R scope rest tail loopTargets) scope Γ bindings
@@ -3168,10 +3371,10 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
       let again ← if update.isEmpty then pure head else
         body fuel fc R scope update (some (head,scope)) loopTargets
       let yes ← body fuel fc R scope loopBody (some (again,scope))
-        { loopTargets with loop := some ((again,scope), continuation) }
+        (loopTargets.enterLoop ((again,scope), continuation))
       let no ← leave fc.namePos R scope continuation
       let condition ← compileCondition fc scope Γ cond yes no
-      modify fun s => { s with program := s.program.set head.label ⟨.nul,.effect condition⟩ }
+      modify fun s => { s with program := s.program.set head.label ⟨.nul,.effect condition,none⟩ }
       let facts ← entryFacts fc pos.1 scope
       let links := distinctLinks (SourceTypes.graph (← table)) scope Γ
       if !facts.isEmpty || !links.isEmpty then
@@ -3206,7 +3409,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
         pure (some (next,scope))
       let elemScope := held ⟨name, some namePos⟩ :: loopScope
       let first ← body fuel fc R elemScope loopBody (some (head,loopScope))
-        { loopTargets with loop := some ((head,loopScope), continuation) }
+        (loopTargets.enterLoop ((head,loopScope), continuation))
       let exit ← leave fc.namePos R loopScope continuation
       -- `name` takes the value read; the record it was read from is dropped.
       let bindElement := ⟨first.label, some ((first.mapping.getD (List.range elemScope.length)).map
@@ -3223,7 +3426,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
         "for-of-dispatch" (scope := stepped)
       let step ← emitAt pos (Tm.call (.var 0) []) (.bind dispatch) ΓH S "for-of-step"
         (scope := loopScope)
-      modify fun s => { s with program := s.program.set head.label ⟨.nul,.effect step⟩ }
+      modify fun s => { s with program := s.program.set head.label ⟨.nul,.effect step,none⟩ }
       let facts ← entryFacts fc pos.1 scope
       let links := distinctLinks (SourceTypes.graph (← table)) loopScope ΓH
       if !facts.isEmpty || !links.isEmpty then
@@ -3273,7 +3476,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
         let next ← body fuel fc R scope rest tail loopTargets
         pure (some (next,scope))
       let targets := match label with
-        | some l => { loopTargets with labels := (l, continuation) :: loopTargets.labels }
+        | some l => loopTargets.enterLabel l continuation
         | none => loopTargets
       body fuel fc R scope inner continuation targets
     match stmts with
@@ -3292,6 +3495,16 @@ private def traversalBudget : List Fragment.Stmt → Nat
       1 + traversalBudget loopBody + traversalBudget update + traversalBudget rest
   | .forOf _ _ _ _ inner :: rest | .block _ _ inner :: rest =>
       1 + traversalBudget inner + traversalBudget rest
+  | .throw .. :: rest => 1 + traversalBudget rest
+  -- A `finally` block is compiled on each way out, at most as deep as the
+  -- body and handler around the `return` that runs it.
+  | .tryStmt _ b none none :: rest => 1 + traversalBudget b + traversalBudget rest
+  | .tryStmt _ b (some (_, c)) none :: rest =>
+      1 + traversalBudget b + traversalBudget c + traversalBudget rest
+  | .tryStmt _ b none (some f) :: rest =>
+      2 + traversalBudget b + 3 * traversalBudget f + traversalBudget rest
+  | .tryStmt _ b (some (_, c)) (some f) :: rest =>
+      2 + traversalBudget b + traversalBudget c + 3 * traversalBudget f + traversalBudget rest
   | .ite _ _ thn none :: rest => 2 + traversalBudget thn + traversalBudget rest
   | .ite _ _ thn (some els) :: rest =>
       1 + traversalBudget thn + traversalBudget els + traversalBudget rest

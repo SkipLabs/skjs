@@ -60,7 +60,7 @@ private def proof : Option (Evidence Nat) :=
   DirectProof.render G (CertificateProducer.vocabulary G [0,1,2,3,4,5,7] [] [[1,2]]) Γ recipe
 #guard (proof.map (checkTree G)) == some true
 
-private def program : Program := [⟨.alloc .tru,.bind 1⟩,⟨term,.ret⟩]
+private def program : Program := [⟨.alloc .tru,.bind 1,none⟩,⟨term,.ret,none⟩]
 private def request : Request :=
   ⟨T,program,[⟨[[1,2],[1,2]],[4]⟩,⟨Γ,[1,2]⟩],[1,2],0,[[1,2],[1,2]]⟩
 private def accepted : Except String Unit := do
@@ -132,7 +132,7 @@ private def refinedTerm := share (.var 1)
   (.ite (.var 1) (.ite (.var 2) .tru (.app (.var 0) (.var 2)))
     (.ite (.var 2) .tru (.app (.var 0) (.var 2))))
 #guard refinedRecipe.term == refinedTerm
-private def refinedProgram : Program := [⟨refinedTerm,.ret⟩]
+private def refinedProgram : Program := [⟨refinedTerm,.ret,none⟩]
 #guard match (do
   let some p := refinedProof | throw "missing refinement proof"
   let r : Request := ⟨refinedTypes,refinedProgram,[⟨outer,[1,2]⟩],[1,2],0,outer⟩

@@ -330,6 +330,8 @@ and expr_node =
   | WithFields of expr * expr * ty * ty
   | Cast of string * ty option * expr
   | DoneBody | ReturnBody of expr | SequenceBody of expr * expr
+  (* A closure body's `throw e`: it ends the body, as a return does. *)
+  | ThrowBody of expr
   | LetBody of string * ty option * expr * expr
   | IfBody of ty * expr * expr * expr
 and stmt = { span: Json.t; statement: stmt_node }
@@ -346,6 +348,11 @@ and stmt_node =
   (* `for (const name of iterable) body`: the name's position, the iterable
      and the body. *)
   | ForOf of string * Json.t * expr * stmt list
+  (* `throw e`. *)
+  | Throw of expr
+  (* `try body catch (param) handler finally finalizer`: the handler's
+     parameter, with its position, if it names one. *)
+  | Try of stmt list * ((string * Json.t) option * stmt list) option * stmt list option
 and fn = { quantified: quantifier list; name: string; name_pos: Json.t; params: (string * ty) list;
            rest: bool; result: ty; body: stmt list }
 type declaration = { id: string; parameters: rigid list;
@@ -360,7 +367,8 @@ type program = { file: Json.t; digest: Json.t; declarations: declaration list;
 (* The immediate subexpressions and nested statements of a form. *)
 let children e = match e.node with
   | Id _ | Literal _ | DoneBody -> []
-  | Not e | TypeofTest (_,_,e) | Read (e,_) | Ctor e | Cast (_,_,e) | ReturnBody e | Unary (_,e) -> [e]
+  | Not e | TypeofTest (_,_,e) | Read (e,_) | Ctor e | Cast (_,_,e) | ReturnBody e | Unary (_,e)
+  | ThrowBody e -> [e]
   | Assign (_,e) | NullishAssign (_,_,e) -> [e]
   | Update (_,t,r,_) -> t :: Option.to_list r
   | LogicalAssign (_,a,b) | Comma (a,b) -> [a;b]
@@ -388,6 +396,9 @@ let rec assigns name s = match s.statement with
   | While (c,body,update) -> assigns_expr name c || List.exists (assigns name) (body @ update)
   | ForOf (_,_,c,body) -> assigns_expr name c || List.exists (assigns name) body
   | Block (_,body) -> List.exists (assigns name) body
+  | Throw e -> assigns_expr name e
+  | Try (body,handler,finalizer) -> List.exists (assigns name)
+    (body @ (match handler with Some (_,h) -> h | None -> []) @ Option.value finalizer ~default:[])
   | Break | Continue -> false
 let arithmetic = function
   | "add" -> Add | "sub" -> Sub | "mul" -> Mul | "div" -> Div | "pow" -> Pow
@@ -473,6 +484,7 @@ let rec expr binders j =
   | "bindWithReceiver" -> Bind (sub "callee",sub "receiver",List.map (expr binders) (items "args" j))
   | "cast" -> Cast (text "cast" j,(match field "annot" j with Null -> None | a -> Some (source_type binders a)),sub "e")
   | "doneBody" -> DoneBody | "returnBody" -> ReturnBody (sub "e")
+  | "throwBody" -> ThrowBody (sub "e")
   | "seqBody" -> SequenceBody (sub "init",sub "body")
   | "letBody" -> LetBody (text "name" j,(match field "annot" j with Null -> None | a -> Some (source_type binders a)),sub "init",sub "body")
   | "ifBody" -> IfBody (source_type binders (field "result" j),sub "cond",sub "then",sub "else_")
@@ -489,6 +501,20 @@ let rec stmt binders j =
   | "forOf" -> ForOf (text "name" j,field "namePos" j,expr binders (field "iterable" j),
       List.map (stmt binders) (items "body" j))
   | "break" -> Break | "continue" -> Continue
+  | "throw" -> Throw (expr binders (field "e" j))
+  | "try" ->
+    let block k = List.map (stmt binders) (items k j) in
+    let handler = match field "handler" j with
+      | Null -> None
+      | h ->
+        let param = match field "param" h with
+          | Null -> None
+          | p -> Some (text "name" p,field "namePos" p) in
+        Some (param,List.map (stmt binders) (items "body" h)) in
+    let finalizer = match field "finalizer" j with
+      | Null -> None
+      | xs -> Some (List.map (stmt binders) (list xs)) in
+    Try (block "body",handler,finalizer)
   | "if" -> If (expr binders (field "cond" j),List.map (stmt binders) (items "then" j),
       match field "else_" j with Null -> [] | xs -> List.map (stmt binders) (list xs))
   | k -> unsupported ("statement " ^ k) in {span=field "pos" j;statement}

@@ -1,7 +1,7 @@
-// Standard library globals read through the reviewed overlay: `BigInt` at
-// what it converts without throwing (a bigint, a Boolean, an integer literal,
-// a string literal it parses), `Symbol` and `String` as called, and
-// `console.log` as output.
+// Standard library globals read through the reviewed overlay: `BigInt` of a
+// bigint, a Boolean, an integer literal and a string literal it parses (any
+// number or string is admitted too: `bigint-conversions`), `Symbol` and
+// `String` as called, and `console.log` as output.
 function toBig(x: bigint, flag: boolean): bigint {
   return (
     BigInt(x) +

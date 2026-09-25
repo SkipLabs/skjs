@@ -10,7 +10,9 @@ export type Continuation = "ret"
   | {branch: {yes: Target; no: Target}}
   | {branchBind: {yes: Target; no: Target}}
   | {tagBind: {test: Tag; yes: Target; no: Target}};
-export interface ProgramNode { expression: Term; continuation: Continuation }
+/** A node's handler is where a throw out of its expression goes, the thrown
+ * value bound first; none lets the throw leave the program. */
+export interface ProgramNode { expression: Term; continuation: Continuation; handler: Target | null }
 export function decodeTarget(value: unknown): Target {
   const t = fields(value,["label","mapping"]); nat(t.label);
   if (t.mapping !== null) {
@@ -21,7 +23,8 @@ export function decodeTarget(value: unknown): Target {
   return value as Target;
 }
 export function decodeNode(value: unknown): ProgramNode {
-  const n = fields(value,["expression","continuation"]); decodeTerm(n.expression);
+  const n = fields(value,["expression","continuation","handler"]); decodeTerm(n.expression);
+  if (n.handler !== null) decodeTarget(n.handler);
   // Checked above: a returning node has nothing else to check.
   if (n.continuation === "ret") return value as ProgramNode;
   if (!n.continuation || typeof n.continuation !== "object") throw Error("invalid continuation");

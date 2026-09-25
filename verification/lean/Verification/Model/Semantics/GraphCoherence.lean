@@ -11,8 +11,9 @@ abbrev EnvCoherent (D : Registry) (ρ : Env) := ∀ i, TermOk D (ρ i)
 
 def StateCoherent (D : Registry) : State → Prop
   | .at _ ρ => EnvCoherent D ρ
-  | .eval t ρ _ => TermOk D t ∧ EnvCoherent D ρ
+  | .eval t ρ _ _ => TermOk D t ∧ EnvCoherent D ρ
   | .done v => TermOk D v
+  | .raised v => TermOk D v
 
 theorem env_mono {D E ρ} (h : EnvCoherent D ρ) (hx : Extends D E) : EnvCoherent E ρ :=
   fun i => (h i).mono hx
@@ -55,6 +56,8 @@ theorem transition_preserves {P h s h' s'} (hp : SourceGraph P)
   | yesBind => exact ⟨D,.refl D,hh,env_map (env_push hs.2 hs.1) _⟩
   | noBind => exact ⟨D,.refl D,hh,env_map (env_push hs.2 hs.1) _⟩
   | tagBind hv => exact ⟨D,.refl D,hh,env_map (env_push hs.2 hs.1) _⟩
+  | handle hr => exact ⟨D,.refl D,hh,env_map (env_push hs.2 (raises_termOk hr hs.1)) _⟩
+  | raise hr => exact ⟨D,.refl D,hh,raises_termOk hr hs.1⟩
 
 theorem execution_preserves {P k h s h' s'} (hp : SourceGraph P)
     (run : Execution P k h s h' s') {D} (hh : ObjectCoherence.HeapOk D h)

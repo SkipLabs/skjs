@@ -94,24 +94,30 @@ the budget, as a call's body is.
 
 **Binary operators.** $a\mathbin{op}b$ (`Tm.arith`) evaluates $a$, then $b$
 (`arithC1`, `arithC2`), then takes one step where the operator answers for the
-two values, and is stuck otherwise:
+two values, or throws where JavaScript throws, and is stuck otherwise:
 
 $$
 \frac{\mathsf{binop}(op,v_1,v_2)=v}{h,\ v_1\mathbin{op}v_2\to h,\ v}\ (\texttt{arithV})
+\qquad
+\frac{\mathsf{binopThrows}(op,v_1,v_2)}{h,\ v_1\mathbin{op}v_2\to h,\ \mathsf{throw}\ \mathit{err}}\ (\texttt{arithThrow})
 \qquad op\in\{+,-,*,/,{*}{*},\mathbin{\hat{}},<,\le,>,\ge\}.
 $$
 
-$\mathsf{binop}$ is JavaScript's operation on the operand kinds it models, and
-answers nothing where JavaScript throws or converts through code or coercions
-the calculus does not have:
+$\mathsf{binop}$ is JavaScript's operation on the operand kinds it models;
+$\mathsf{binopThrows}$ is where JavaScript throws with no code of the
+program's run first, and $\mathit{err}$ the error object (`thrownError`, an
+object without fields, standing for the `TypeError` or `RangeError`
+instance). Neither answers where JavaScript converts through code or
+coercions the calculus does not have:
 
 | Operands | Arithmetic ($+,-,*,/,{*}{*},\hat{}$) | Relational ($<,\le,>,\ge$) |
 | --- | --- | --- |
 | two numbers | the IEEE-754 double operation; ${*}{*}$ is `Number::exponentiate` (C's `pow`, but NaN for a NaN exponent and for a base of magnitude 1 to an infinite power); $\hat{}$ is exclusive or after `ToInt32` on both | the IEEE order: false when either is NaN, the two zeros equal |
-| two bigints | the integer operation; $/$ truncates toward zero; none for $/$ by $0$ and ${*}{*}$ by a negative exponent (a `RangeError`) | the integer order |
-| a number and a bigint | none (a `TypeError`) | the exact order of the double's rational value and the integer; false when the number is NaN, an infinity beyond every integer |
+| two bigints | the integer operation; $/$ truncates toward zero; throws for $/$ by $0$ and ${*}{*}$ by a negative exponent (a `RangeError`) | the integer order |
+| a number and a bigint | throws (a `TypeError`) | the exact order of the double's rational value and the integer; false when the number is NaN, an infinity beyond every integer |
 | two strings | $+$ concatenates; others none | lexicographic over UTF-16 code units, a proper prefix less |
 | a string and a number, bigint, Boolean, `null` or `undefined`, either order | $+$ concatenates the string with $\mathsf{str}$ of the other, in operand order; others none | none |
+| a symbol and a primitive, either order | throws (a `TypeError`: `ToString` or `ToNumeric` of a symbol) | throws |
 | anything else | none | none |
 
 $\mathsf{str}(v)$ (`primString`) is JavaScript's `ToString` of a primitive
@@ -123,14 +129,14 @@ otherwise the fewest decimal digits $s$ whose value $s\cdot10^{d}$ rounds to
 the double, the one closest to it where several have that length (the even one
 on a tie, as the specification's note recommends and engines do), written
 plainly up to 21 integer digits, as `0.` and up to six zeros below one, else
-in exponent form `d.ddde±x`. A symbol converts by throwing a `TypeError`, and
-an object through its own `toString`/`valueOf`, which is code: $+$ with either
-is stuck.
+in exponent form `d.ddde±x`. A symbol converts by throwing a `TypeError`,
+which $+$ with it does (`binopThrows`), and an object through its own
+`toString`/`valueOf`, which is code: $+$ with one is stuck.
 
 So the operation never computes on a value it would convert through code or a
 coercion it does not define: a string compared with a number, a Boolean in
-arithmetic, an object (whose `valueOf` is code) and a symbol concatenated all
-leave the term stuck, which the typing rule rules out. The unary operators are this one with a
+arithmetic and an object (whose `valueOf` is code) all leave the term stuck,
+which the typing rule rules out. The unary operators are this one with a
 constant right operand of the operand's family ([source
 forms](PROGRAM-TYPING.md#judgments-and-constructor-views)): $-x=x*(-1)$, $+x=x*1$
 and $\sim x=x\mathbin{\hat{}}(-1)$, exact on doubles (a sign flip, the identity,
@@ -453,22 +459,59 @@ observational equivalence is assumed.
 ## Computations and recursive types
 
 `Safe A 0 W h e` imposes no obligation. At a positive budget, either `e` is a
-value belonging to `A`, or it can step with one budget spent, preserving heap
-satisfaction in an admissible extension of the truncated world. This is partial
-correctness/safety, not termination.
+value belonging to `A`, or it throws a closed value, or it can step with one
+budget spent, preserving heap satisfaction in an admissible extension of the
+truncated world. This is partial correctness/safety, not termination, and a
+throw is an outcome, as a value is: a type says what a value is, never that
+none is thrown ([Design](DESIGN.md#throws)).
+
+**Throws.** `throw a` (`Tm.throw`) evaluates `a` (`throwC`), then throws its
+value. A term *throws* $v$ (`Raises t v`) when `throw v`, $v$ a value, is in
+evaluation position: under exactly the contexts the step relation evaluates
+in, one constructor per congruence rule of `Step`:
+
+$$
+\frac{v\ \text{a value}}{\mathsf{throw}\ v\ \text{raises}\ v}
+\qquad
+\frac{t\ \text{raises}\ v}{E[t]\ \text{raises}\ v}
+\qquad
+E ::= [\,]\ a\mid f\,[\,]\mid\mathsf{let}([\,],b)\mid\mathsf{read}([\,])\mid v\mathbin{op}[\,]\mid\cdots
+$$
+
+A throwing term is not a value, does not step, and throws one value
+(`raises_not_val`, `raises_no_step`, `Raises_det`), so evaluation stays
+deterministic. No step propagates a throw: the context closure is the
+predicate, and a handler, where there is one, catches it
+([graphs](PROGRAM-TYPING.md#checked-control-flow-graphs)). The safety
+predicate:
+
+$$
+\mathit{Safe}(A)(n{+}1,W,h,t)\iff
+\bigl(t\in A(n{+}1,W)\ \lor\ \exists v\ \text{closed}.\ t\ \text{raises}\ v\bigr)\ \lor\
+\exists W',h',t'.\ h,t\to h',t'\land\ldots\land\mathit{Safe}(A)(n,W',h',t')
+$$
+
+Every composition lemma takes, beside its context's step rule, the context's
+throw rule (`bind`, `bind_list` with `ArgRaises`, `ctx_bind`,
+`HeapObservations.bind`); `thrown_safe` makes a throwing term safe at every
+type. `SafePost` is the same with no postcondition on a throw: the facts it
+states describe the heap a value is produced in.
 
 `SafeGraph` is the same predicate one level up, for the machine that runs a
 control-flow graph rather than a single term. Its states are
 
-$$s ::= \mathsf{at}(p,\rho)\mid\mathsf{eval}(t,\rho,k)\mid\mathsf{done}(v),$$
+$$s ::= \mathsf{at}(p,\rho)\mid\mathsf{eval}(t,\rho,k,x)\mid\mathsf{done}(v)\mid\mathsf{raised}(v),$$
 
 where $p$ is a program point (a node label, not a location), $\rho$ an
-environment of closed values, and $k$ a
-[continuation](PROGRAM-TYPING.md#checked-control-flow-graphs). Entering a node
+environment of closed values, $k$ a
+[continuation](PROGRAM-TYPING.md#checked-control-flow-graphs) and $x$ the
+node's handler, if it has one. Entering a node
 instantiates its term against $\rho$; the term then steps as usual; a value meets
 the node's continuation, which either finishes the run or moves to the next label
-with a transformed environment. `SafeGraph P T n W h s` says that at a positive
-budget the state is either $\mathsf{done}(v)$ with $v\in T$, or it can take one
+with a transformed environment; a throw goes to the handler, the thrown value
+bound, or without one ends the run in $\mathsf{raised}(v)$. `SafeGraph P T n W h s`
+says that at a positive budget the state is $\mathsf{done}(v)$ with $v\in T$,
+or $\mathsf{raised}(v)$ with $v$ closed, or it can take one
 graph transition, spending a budget and preserving heap satisfaction in an
 admissible future, and remain safe there. `Safe` is the special case with no
 graph. Starting a graph means starting at $\mathsf{at}(p,\rho)$ for the entry
@@ -618,9 +661,10 @@ the operation and composition rules using this predicate;
 - `PointClaims.lean` checks supplied environment claims against individual incoming
   edges, proves environment transfer, and composes checked computations through
   such claims.
-- `ControlFlow.lean` enumerates every actual node and outgoing edge, then proves
-  global safety, no stuck execution and typed returns, including cyclic graphs.
-  It reuses expression steps and adds explicit dispatch and transfer steps.
+- `ControlFlow.lean` enumerates every actual node and outgoing edge, handler
+  edges included, then proves global safety, no stuck execution, typed returns
+  and closed throws, including cyclic graphs. It reuses expression steps and
+  adds explicit dispatch, transfer and handler steps.
 - `PositiveNormalization.lean` and `PositiveGraphs.lean` prove finite and
   recursive normalization preservation.
 - `PositiveRules.lean` defines declarative subtype rules and proves their

@@ -34,11 +34,13 @@ def exact (v : Val) : Fam := fun _ _ u => u = v
 
 /-- At budget zero there is no observation, just as in `Safe`. At positive
 budget, termination establishes both the value type and a fact about that heap.
+A throw, as in `Safe`, is an outcome with no postcondition: the facts `Q`
+describe the heap a value is produced in, and a thrown value is not one.
 Divergence remains permitted; this is safety with partial correctness. -/
 def SafePost (T : Fam) (Q : Post) : (n : Nat) → WorldT n → Heap → Tm → Prop
   | 0, _, _, _ => True
   | n + 1, W, h, t =>
-      (isVal t = true ∧ T (n + 1) W t ∧ Q h t) ∨
+      ((isVal t = true ∧ T (n + 1) W t ∧ Q h t) ∨ Thrown t) ∨
       (∃ (U : WorldT n) (h' : Heap) (t' : Tm),
         WExt (trunc n (Nat.le_succ n) W) U ∧ WorldAdm U ∧ Step h t h' t' ∧
           HeapOk n U h' ∧ SafePost T Q n U h' t')
@@ -48,8 +50,9 @@ theorem erase {T Q} : ∀ {n W h t}, SafePost T Q n W h t → Safe T n W h t := 
   | zero => intros; trivial
   | succ n ih =>
     intro W h t hs
-    rcases hs with ⟨hv,ht,_⟩ | ⟨U,h',t',hx,hu,step,hh,hs⟩
-    · exact Or.inl ⟨hv,ht⟩
+    rcases hs with (⟨hv,ht,_⟩ | hr) | ⟨U,h',t',hx,hu,step,hh,hs⟩
+    · exact Or.inl (Or.inl ⟨hv,ht⟩)
+    · exact Or.inl (Or.inr hr)
     · exact Or.inr ⟨U,h',t',hx,hu,step,hh,ih hs⟩
 
 /-- Finite closure of the existing step relation, with its step count. This
@@ -65,13 +68,15 @@ theorem postcondition {T Q k h t h' v} (run : Steps k h t h' v) (hv : isVal v = 
   induction run with
   | refl =>
     intro W hs
-    rcases hs with ⟨_,_,hq⟩ | ⟨_,_,_,_,_,step,_,_⟩
+    rcases hs with (⟨_,_,hq⟩ | hr) | ⟨_,_,_,_,_,step,_,_⟩
     · exact hq
+    · exact absurd hr (val_not_thrown hv)
     · exact False.elim (value_no_step hv step)
   | next step run ih =>
     intro W hs
-    rcases hs with ⟨hval,_,_⟩ | ⟨U,h'',t'',hx,hu,step',hh,hs⟩
+    rcases hs with (⟨hval,_,_⟩ | hr) | ⟨U,h'',t'',hx,hu,step',hh,hs⟩
     · exact False.elim (value_no_step hval step)
+    · exact absurd step hr.no_step
     · obtain ⟨rfl,rfl⟩ := Step_det step step'
       exact ih hv U hs
 
@@ -82,8 +87,9 @@ theorem forget {T} : ∀ {n W h t}, Safe T n W h t → SafePost T (fun _ _ => Tr
   | zero => intros; trivial
   | succ n ih =>
     intro W h t hs
-    rcases hs with ⟨hv,ht⟩ | ⟨U,h',t',hx,hu,step,hh,hs⟩
-    · exact Or.inl ⟨hv,ht,trivial⟩
+    rcases hs with (⟨hv,ht⟩ | hr) | ⟨U,h',t',hx,hu,step,hh,hs⟩
+    · exact Or.inl (Or.inl ⟨hv,ht,trivial⟩)
+    · exact Or.inl (Or.inr hr)
     · exact Or.inr ⟨U,h',t',hx,hu,step,hh,ih hs⟩
 
 /-- Add a postcondition entailed by the final value's type. This preserves the
@@ -94,8 +100,9 @@ theorem of_value_property {T Q} (hq : ∀ n W h v, T n W v → Q h v) :
   | zero => intros; trivial
   | succ n ih =>
     intro W h t hs
-    rcases hs with ⟨hv,ht⟩ | ⟨U,h',t',hx,hu,step,hh,hs⟩
-    · exact Or.inl ⟨hv,ht,hq _ _ _ _ ht⟩
+    rcases hs with (⟨hv,ht⟩ | hr) | ⟨U,h',t',hx,hu,step,hh,hs⟩
+    · exact Or.inl (Or.inl ⟨hv,ht,hq _ _ _ _ ht⟩)
+    · exact Or.inl (Or.inr hr)
     · exact Or.inr ⟨U,h',t',hx,hu,step,hh,ih hs⟩
 
 theorem consequence {T U : Fam} {Q R : Post}
@@ -105,8 +112,9 @@ theorem consequence {T U : Fam} {Q R : Post}
   | zero => intros; trivial
   | succ n ih =>
     intro W h t hs
-    rcases hs with ⟨hv,ht,hq⟩ | ⟨U,h',t',hx,hu,step,hh,hs⟩
-    · exact Or.inl ⟨hv,hsub _ _ _ ht,hr _ _ hq⟩
+    rcases hs with (⟨hv,ht,hq⟩ | hth) | ⟨U,h',t',hx,hu,step,hh,hs⟩
+    · exact Or.inl (Or.inl ⟨hv,hsub _ _ _ ht,hr _ _ hq⟩)
+    · exact Or.inl (Or.inr hth)
     · exact Or.inr ⟨U,h',t',hx,hu,step,hh,ih hs⟩
 
 theorem weaken {T Q R} (hr : ∀ h v, Q h v → R h v)
@@ -117,15 +125,16 @@ theorem value {T Q n W h v} (hv : isVal v = true) (ht : T n W v) (hq : Q h v) :
     SafePost T Q n W h v := by
   cases n with
   | zero => trivial
-  | succ n => exact Or.inl ⟨hv,ht,hq⟩
+  | succ n => exact Or.inl (Or.inl ⟨hv,ht,hq⟩)
 
 theorem refine_value {T Q n W h v} (hv : isVal v = true) (hq : Q h v)
     (hs : Safe T n W h v) : SafePost T Q n W h v := by
   cases n with
   | zero => trivial
   | succ n =>
-    rcases hs with ⟨_,ht⟩ | ⟨_,_,_,_,_,step,_,_⟩
-    · exact Or.inl ⟨hv,ht,hq⟩
+    rcases hs with (⟨_,ht⟩ | hr) | ⟨_,_,_,_,_,step,_,_⟩
+    · exact Or.inl (Or.inl ⟨hv,ht,hq⟩)
+    · exact absurd hr (val_not_thrown hv)
     · exact False.elim (value_no_step hv step)
 
 /-- Enrich an existing one-step safety rule with its actual post-state, using
@@ -136,15 +145,17 @@ theorem one_step {T Q n W h t h' v} (ht : isVal t = false) (hv : isVal v = true)
   cases n with
   | zero => trivial
   | succ n =>
-    rcases hs with ⟨hval,_⟩ | ⟨U,h'',t'',hx,hu,step',hh,hs'⟩
+    rcases hs with (⟨hval,_⟩ | hr) | ⟨U,h'',t'',hx,hu,step',hh,hs'⟩
     · simp [ht] at hval
+    · exact absurd step hr.no_step
     · obtain ⟨rfl,rfl⟩ := Step_det step step'
       exact Or.inr ⟨U,h',v,hx,hu,step',hh,refine_value hv hq hs'⟩
 
 /-- Composition passes facts about the heap actually produced by the subterm,
 not facts about the initial heap. Works for every existing evaluation context. -/
 theorem bind {A B : Fam} {Q R : Post} (C : Tm → Tm)
-    (lift : ∀ {h t h' t'}, Step h t h' t' → Step h (C t) h' (C t')) :
+    (lift : ∀ {h t h' t'}, Step h t h' t' → Step h (C t) h' (C t'))
+    (raise : ∀ {t v}, Raises t v → Raises (C t) v) :
     ∀ n W h t, WorldAdm W → HeapOk n W h → SafePost A Q n W h t →
     (∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
       ∀ h' v, HeapOk j U h' → isVal v = true → A j U v → Q h' v →
@@ -153,8 +164,9 @@ theorem bind {A B : Fam} {Q R : Post} (C : Tm → Tm)
   | zero => intros; trivial
   | succ p ih =>
     intro W h t hw hh hs hc
-    rcases hs with ⟨hv,ha,hq⟩ | ⟨U,h',t',hx,hu,step,hh',hs'⟩
+    rcases hs with (⟨hv,ha,hq⟩ | hr) | ⟨U,h',t',hx,hu,step,hh',hs'⟩
     · exact hc (p+1) (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw h t hh hv ha hq
+    · exact Or.inl (Or.inr (hr.lift raise))
     · refine Or.inr ⟨U,h',C t',hx,hu,lift step,hh',ih U h' t' hu hh' hs' ?_⟩
       intro j hj V he hv h'' v hh'' hval ha hq
       apply hc j (by omega) V _ hv h'' v hh'' hval ha hq
@@ -254,7 +266,7 @@ theorem write_then_read {A : Fam} (ha : Adm A) {n W h l v}
     rw [lookup_value] at hf
     cases hf
     rw [hh.1]; exact (List.getElem?_eq_some_iff.mp hl).1
-  apply bind (fun t => .letE t (.read (.obj l .absent))) Step.letC
+  apply bind (fun t => .letE t (.read (.obj l .absent))) Step.letC Raises.letC
     n W h (.write (.obj l .absent) v) hw hh
     (write_observed ha hw hh hr (lookup_value l) hv ht)
   intro j hj U hx hu h' u hh' hval ht hpost

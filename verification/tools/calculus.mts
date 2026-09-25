@@ -58,7 +58,9 @@ export type Term =
   /** A store: the location of each element, in order, or none at a hole. */
   | { arr: { elems: (number | null)[] } }
   /** An actual standing for the elements of a store, read where it is written. */
-  | { spread: { a: Term } };
+  | { spread: { a: Term } }
+  /** Evaluate `a`, then throw its value. */
+  | { throw: { a: Term } };
 /** Every binary operator, as `Arith` in Calculus.lean names them. */
 const OPERATORS = ["add", "sub", "mul", "div", "pow", "xor", "lt", "le", "gt", "ge"] as const;
 /** Every tag, checked against `Tag`: adding one there and not here is a type
@@ -172,6 +174,7 @@ export function decodeTerm(value: unknown): Term {
     lenOf: ["a"],
     arr: ["elems"],
     spread: ["a"],
+    throw: ["a"],
   };
   const keys = shape[key];
   if (!keys) throw Error("unknown term constructor");

@@ -19,11 +19,11 @@ def G : NormalGraph Nat := .ofRows fun i => types[i]?.getD []
 def labels := List.range types.length
 
 def program : Program :=
-  [⟨.attach (.var 1) .tru,.bind 1⟩,
-   ⟨.var 0,.bind 2⟩,
-   ⟨.write (.var 1) .fls,.effect 3⟩,
-   ⟨.read (.var 0),.bind 4⟩,
-   ⟨.app (.var 1) (.var 0),.ret⟩]
+  [⟨.attach (.var 1) .tru,.bind 1,none⟩,
+   ⟨.var 0,.bind 2,none⟩,
+   ⟨.write (.var 1) .fls,.effect 3,none⟩,
+   ⟨.read (.var 0),.bind 4,none⟩,
+   ⟨.app (.var 1) (.var 0),.ret,none⟩]
 def claims : List (PointClaim Nat) :=
   [⟨[],[2]⟩,⟨[[2]],[2]⟩,⟨[[2],[2]],[0]⟩,⟨[[2],[2]],[1]⟩,⟨[[1],[2],[2]],[1]⟩]
 def request : Request := ⟨types,program,claims,[1],0,[]⟩
@@ -138,7 +138,7 @@ private def rows : List (List (Clause (List Nat))) := types ++
    [.arrs [([7],[[0],[0,1],[1]],[1])] []], [.arrs [([7],[],[0])] []]]
 private def graph : NormalGraph Nat := .ofRows fun i => rows[i]?.getD []
 private def body := Tm.make (.closure 3 (.var 3)) .nul
-private def req : Request := ⟨rows,[⟨body,.bind 1⟩,⟨.var 0,.ret⟩],[⟨[],[9]⟩,⟨[[9]],[10]⟩],[10],0,[]⟩
+private def req : Request := ⟨rows,[⟨body,.bind 1,none⟩,⟨.var 0,.ret,none⟩],[⟨[],[9]⟩,⟨[[9]],[10]⟩],[10],0,[]⟩
 #guard ok (do
   let r ← Json.parse (toJson req).compress
   let c ← produceJson r 8
@@ -154,7 +154,7 @@ private def req : Request := ⟨rows,[⟨body,.bind 1⟩,⟨.var 0,.ret⟩],[⟨
   (.node ⟨[],body,[9]⟩ .funE
     [.node ⟨[[7],[0],[0],[1]],.var 3,[1]⟩ .var [],
      .node ⟨[[7],[0],[1],[1]],.var 3,[1]⟩ .var []])
-private def zeroReq : Request := ⟨rows,[⟨.make (.closure 0 .nul) .nul,.ret⟩],[⟨[],[11]⟩],[11],0,[]⟩
+private def zeroReq : Request := ⟨rows,[⟨.make (.closure 0 .nul) .nul,.ret,none⟩],[⟨[],[11]⟩],[11],0,[]⟩
 #guard ok (do
   let r := toJson zeroReq
   verifyJson r (← produceJson r 8))
@@ -163,14 +163,14 @@ private def zeroReq : Request := ⟨rows,[⟨.make (.closure 0 .nul) .nul,.ret�
 -- Native invocation reaches the same producer/JSON consumer as unary calls.
 private def callReq : Request :=
   {req with
-    program := [⟨body,.bind 1⟩,⟨.call (.var 0) [.nul,.tru,.fls],.ret⟩],
+    program := [⟨body,.bind 1,none⟩,⟨.call (.var 0) [.nul,.tru,.fls],.ret,none⟩],
     claims := [⟨[],[9]⟩,⟨[[9]],[1]⟩], result := [1]}
 #guard ok (do
   let r := toJson callReq
   verifyJson r (← produceJson r 8))
 private def zeroCallReq : Request :=
   {zeroReq with
-    program := [⟨.call (.make (.closure 0 .nul) .nul) [],.ret⟩],
+    program := [⟨.call (.make (.closure 0 .nul) .nul) [],.ret,none⟩],
     claims := [⟨[],[0]⟩], result := [0]}
 #guard ok (do
   let r := toJson zeroCallReq
@@ -181,8 +181,8 @@ private def zeroCallReq : Request :=
 private def cellRows := rows ++ RequestJson.rows [[.callable [(valueField, [1])] [] [([7],[[0],[1]],[1])] []]]
 private def cellCallReq : Request :=
   ⟨cellRows,
-   [⟨.make (.closure 2 (.var 2)) .tru,.bind 1⟩,
-    ⟨.call (.var 0) [.write (.var 0) .fls,.read (.var 0)],.ret⟩],
+   [⟨.make (.closure 2 (.var 2)) .tru,.bind 1,none⟩,
+    ⟨.call (.var 0) [.write (.var 0) .fls,.read (.var 0)],.ret,none⟩],
    [⟨[],[12]⟩,⟨[[12]],[1]⟩],[1],0,[]⟩
 #guard ok (do
   let r := toJson cellCallReq

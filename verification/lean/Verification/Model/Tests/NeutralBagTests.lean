@@ -63,9 +63,9 @@ private def writeProof : Evidence Nat := .node writeClaim (.unionVar 0)
 -- Both allocation shapes run through one shared graph interface. The neutral
 -- view promises no call signature and does not require a runtime shape branch.
 private def program (callable : Bool) : Program :=
-  [⟨if callable then .attach (.var 0) .tru else .alloc .tru,.bind 1⟩,
-   ⟨.write (.var 0) .fls,.effect 2⟩,
-   ⟨.read (.var 0),.ret⟩]
+  [⟨if callable then .attach (.var 0) .tru else .alloc .tru,.bind 1,none⟩,
+   ⟨.write (.var 0) .fls,.effect 2,none⟩,
+   ⟨.read (.var 0),.ret,none⟩]
 private def claims : List (PointClaim Nat) :=
   [⟨[],[2,3]⟩,⟨[[2,3]],[0]⟩,⟨[[2,3]],[1]⟩]
 private def request (callable : Bool) : Request :=
@@ -91,11 +91,11 @@ theorem returns_false (callable : Bool) : Execution (program callable) 9 []
 -- A neutral read must preserve the false fact about a different cell.
 -- Without that frame, the final Boolean read cannot establish a false singleton.
 private def framedProgram (callable : Bool) : Program :=
-  [⟨if callable then .attach (.var 0) .tru else .alloc .tru,.bind 1⟩,
-   ⟨.fls,.bind 2⟩,
-   ⟨.alloc (.var 0),.bind 3⟩,
-   ⟨.read (.var 2),.bind 4⟩,
-   ⟨.read (.var 1),.ret⟩]
+  [⟨if callable then .attach (.var 0) .tru else .alloc .tru,.bind 1,none⟩,
+   ⟨.fls,.bind 2,none⟩,
+   ⟨.alloc (.var 0),.bind 3,none⟩,
+   ⟨.read (.var 2),.bind 4,none⟩,
+   ⟨.read (.var 1),.ret,none⟩]
 private def framedClaims : List (PointClaim Nat) :=
   [⟨[],[2,3]⟩,⟨[[2,3]],[1]⟩,⟨[[1],[2,3]],[2]⟩,
    ⟨[[2],[1],[2,3]],[1]⟩,⟨[[1],[2],[1],[2,3]],[5]⟩]

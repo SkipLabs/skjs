@@ -13,16 +13,16 @@ private def program : Program := ((extracted.toOption.getD []).map (·.program))
 private def start : Nat := ((extracted.toOption.getD []).map (·.start)).headD 0
 #guard (SourceClaimJson.produceJson ast claims "verification/tests/stateful-source/loops.ts" 10).toOption.isSome
 private def expected : Program :=
-  [⟨.nul,.effect 13⟩,⟨.var 0,.ret⟩,
-   ⟨.read (.var 0),.bind ⟨1,some [0,2,3]⟩⟩,⟨.var 1,.bind 2⟩,
-   ⟨.var 0,.bind ⟨0,some [4,5]⟩⟩,
-   ⟨.write (.var 1) (.var 0),.effect 4⟩,⟨.fls,.bind 5⟩,
-   ⟨.var 0,.bind 6⟩,⟨.var 0,.effect 7⟩,⟨.var 1,.bind 8⟩,
-   ⟨.var 0,.branchBind ⟨9,some [2,3]⟩ ⟨3,some [2,3]⟩⟩,
-   ⟨.app (.var 1) (.var 0),.bind ⟨10,some [0,3,4]⟩⟩,
-   ⟨.nul,.bind 11⟩,⟨.var 0,.bind 12⟩,⟨.var 0,.effect 0⟩,
-   ⟨.funE (.read (.var 2)),.bind 14⟩,⟨.var 0,.effect 15⟩,
-   ⟨.alloc (.var 0),.bind ⟨16,some [0]⟩⟩,⟨.tru,.bind 17⟩,⟨.nul,.effect 18⟩]
+  [⟨.nul,.effect 13,none⟩,⟨.var 0,.ret,none⟩,
+   ⟨.read (.var 0),.bind ⟨1,some [0,2,3]⟩,none⟩,⟨.var 1,.bind 2,none⟩,
+   ⟨.var 0,.bind ⟨0,some [4,5]⟩,none⟩,
+   ⟨.write (.var 1) (.var 0),.effect 4,none⟩,⟨.fls,.bind 5,none⟩,
+   ⟨.var 0,.bind 6,none⟩,⟨.var 0,.effect 7,none⟩,⟨.var 1,.bind 8,none⟩,
+   ⟨.var 0,.branchBind ⟨9,some [2,3]⟩ ⟨3,some [2,3]⟩,none⟩,
+   ⟨.app (.var 1) (.var 0),.bind ⟨10,some [0,3,4]⟩,none⟩,
+   ⟨.nul,.bind 11,none⟩,⟨.var 0,.bind 12,none⟩,⟨.var 0,.effect 0,none⟩,
+   ⟨.funE (.read (.var 2)),.bind 14,none⟩,⟨.var 0,.effect 15,none⟩,
+   ⟨.alloc (.var 0),.bind ⟨16,some [0]⟩,none⟩,⟨.tru,.bind 17,none⟩,⟨.nul,.effect 18,none⟩]
 #guard program == expected
 #guard start == 19
 

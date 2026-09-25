@@ -17,7 +17,7 @@ empty heap nor absence of other aliases elsewhere in it. -/
 theorem program_post {n W h} (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (exact .tru) (fun h' v => Observes h' h.length .tru ∧ v = .tru)
       n W h program := by
-  apply bind (fun t => .letE t body) Step.letC
+  apply bind (fun t => .letE t body) Step.letC Raises.letC
     n W h (.alloc .fls) hw hh (alloc_observed boolT_adm hw hh rfl (Or.inr rfl))
   intro j hj U hx hu h' v hh' hval hr hp
   have he : v = .obj h.length .absent := hp.2

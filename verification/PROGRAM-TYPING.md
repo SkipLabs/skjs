@@ -650,16 +650,14 @@ $$
 \mathsf{bool} & op\ \text{relational},\ c,d\in\mathsf N\cup\mathsf Z\ \text{or}\ c,d\in\mathsf S\\
 \mathsf{str} & op={+},\ c\in\mathsf S,\ d\in\mathsf P\ \text{or}\ c\in\mathsf P,\ d\in\mathsf S\\
 \mathsf{num} & op\ \text{arithmetic},\ c,d\in\mathsf N\\
-\mathsf{bigint} & op\ \text{arithmetic},\ c,d\in\mathsf Z,\ \operatorname{right}(op,d)\\
+\mathsf{bigint} & op\ \text{arithmetic},\ c,d\in\mathsf Z\\
 \text{none} & \text{otherwise}
 \end{cases}
 $$
 
-where $\operatorname{right}(/,d)$ holds only of $d=\mathsf{bigintLit}(i)$ with
-$i\neq0$, $\operatorname{right}({*}{*},d)$ only of $d=\mathsf{bigintLit}(i)$
-with $i\ge0$, and every other arithmetic operator's (`bigintRight`): a bigint
-divisor that may be zero, or an exponent that may be negative, throws, and the
-calculus has no throw, so the rule refuses it. $\operatorname{Operands}_G(op,A,B,r)$
+A bigint divisor that may be zero, or an exponent that may be negative, is
+admitted: the operation then throws a `RangeError`, an outcome safety admits
+([Design](DESIGN.md#throws)). $\operatorname{Operands}_G(op,A,B,r)$
 requires both types of clause rows and every clause pair of $A$ and $B$ to
 classify as $r$, and the result type must hold every value of the kind
 ($\operatorname{covers}$): the number, bigint or string family exactly, or both
@@ -673,7 +671,8 @@ $$
 
 The result is never a singleton, since its value is not typed. `opResult_sound`
 proves the classification: on members of the two clauses $\mathsf{binop}$
-answers, with a value of the kind. So a number never meets a bigint in
+answers, with a value of the kind, or $\mathsf{binopThrows}$ holds, and the
+term steps to a throw (`arith_throw_safe`). So a number never meets a bigint in
 arithmetic (a `TypeError`), a string is compared only with a string and
 concatenated only with a primitive whose `ToString` runs no code, and a
 Boolean or object operand of arithmetic or comparison, and an object or symbol
@@ -1017,11 +1016,28 @@ These are local obligations. `checkIncoming` checks the edges it is given;
 it does not establish that they enumerate a graph's actual predecessors.
 The graph checker below discharges that enumeration obligation.
 
+### Throwing
+
+`throw a` has every type: it never produces a value, and a throw is an
+outcome safety admits ([Design](DESIGN.md#throws)). Its operand is typed at a
+type of its own, since it runs first:
+
+$$
+\frac{\Gamma\vdash_G a:A}{\Gamma\vdash_G\mathsf{throw}\ a:B}\ \textsc{throw}
+$$
+
+The soundness case composes `a`'s safety with the throw's context rule
+(`bind` over `Tm.throw`) and closes with `thrown_safe`: the value `a` produces
+is closed, as every member of a type is (`meaning_value`). Evidence names the
+rule `throw` with the operand's derivation as its one premise; the producer
+types a slot operand at the slot's type.
+
 ### Checked control-flow graphs
 
 `ControlFlow.lean` adds a finite control-flow graph over the existing expression
 language. A program is a finite list of nodes indexed by label; each node is one
-[term](SEMANTICS.md#operational-language) and one of these six continuations:
+[term](SEMANTICS.md#operational-language), one of these six continuations,
+and an optional handler (below):
 
 | Continuation            | Action after evaluating the expression                                                                                              |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
@@ -1043,6 +1059,34 @@ program data, shared by the machine and checker; evidence cannot supply a
 different binding transfer. Numeric targets abbreviate an identity map. A bind
 or `branchBind` map indexes the environment **after** pushing the result; effect
 and ordinary branch maps index the unchanged incoming environment.
+
+A node's **handler** is a target too: where a throw out of its expression
+goes, the thrown value pushed as a `bind` pushes a value. A node without one
+lets the throw end the run, in the state $\mathsf{raised}(v)$. The machine:
+
+$$
+\frac{h,t\ \text{raises}\ v}{h,\ \mathsf{eval}(t,\rho,k,\ell)\to h,\ \mathsf{at}(\ell,\mathsf{push}(v,\rho))}\ (\texttt{handle})
+\qquad
+\frac{h,t\ \text{raises}\ v}{h,\ \mathsf{eval}(t,\rho,k,\varnothing)\to h,\ \mathsf{raised}(v)}\ (\texttt{raise})
+$$
+
+Node evidence for a node with a handler supplies the type $T$ the thrown value
+is bound at and the handler edge's certificate. `checkHandler` requires $T$ to
+admit every value, one of its clauses being top (`admitsAll`), and the edge to
+check against the target's claims under the facts that hold wherever the
+expression throws, which are those of the node's entry that do not mention the
+heap (`handlerFacts`: immutable values, alias and distinct links, shifted past
+the thrown value's slot):
+
+$$
+\frac{\mathsf{top}\in\operatorname{expand}_G(T)\quad
+      \operatorname{TargetOk}_G(C,\ T{:}\Gamma,\ \ell,\ \operatorname{handlerFacts}(K))}
+     {\operatorname{HandlerOk}_G(C,\Gamma,K,\ell)}\ \textsc{handler}
+$$
+
+where $\Gamma$ and $K$ are the node's entry claims and facts. The machine
+state after a throw is safe by that edge, `admitsAll_sound` giving the thrown
+value its type, and `handlerFacts_holds` its facts at any heap.
 
 Node evidence supplies its entry environment, expression type and program
 evidence, and exactly the edge certificates required by its continuation. It
@@ -1091,9 +1135,11 @@ relation, with `SafePost` carrying checked output facts to the continuation.
 Node dispatch and control transfer each consume
 one step; a control-flow cycle cannot masquerade as progress at zero cost.
 
-`Transition.det` proves determinism of this combined machine.
+`Transition.det` proves determinism of this combined machine, a throw
+included (`Raises_det`).
 `accepted_no_stuck` proves that after any finite actual execution, the machine
-has returned a typed value or can take another step. `accepted_result` proves
+has returned a typed value, ended by a throw of a closed value, or can take
+another step. `accepted_result` proves
 that any returned value meets the declared result type at every positive
 remaining budget, in an admissible world satisfied by the final heap. These
 are safety and partial-correctness theorems, not termination guarantees.
@@ -1165,8 +1211,17 @@ Two implementations discharge the tested-slot obligation:
   the observation, then checks an ordinary subtype certificate from the remaining
   labels to the supplied destination. Mixed-shape labels are retained intact.
   Filtering is a conservative algorithm, not the definition of `ObservedSub`.
-  A more precise algorithm can implement the same contract without changing the
-  edge or environment rule.
+  Alternatively, a passed test naming one primitive family is covered by that
+  family's clause in the destination, whatever the tested type, `unknown`
+  included (`tagMember`, with the marker `subset`): every value `typeof`
+  answers `"string"` for is a string. A more precise algorithm can implement
+  the same contract without changing the edge or environment rule.
+
+$$
+\frac{\mathsf{tagHolds}(t,v)=\mathsf{true}\ \Rightarrow\ v\in\llbracket c\rrbracket\quad c\in\operatorname{expand}_G(B)}
+     {A\preceq_{t=\mathsf{true}}B}\ \textsc{tag-member}
+\qquad t\in\{\mathsf{isStr},\mathsf{isNum},\mathsf{isBigint},\mathsf{isSymbol},\mathsf{isUndef},\mathsf{isNul},\mathsf{isBool}\}
+$$
 
 For the current primitive profile, null filtering gives:
 
@@ -1232,6 +1287,18 @@ kind, continuation or rule; each is a shape of ordinary nodes and edges.
   goes to the statement after the block labeled $\ell$, dropping the slots
   the block introduced, exactly as a loop's `break` goes to its exit. A block
   adds no node of its own.
+- `throw e`: `e`'s nodes, then one node `throw x` returning, at the result
+  type, which the `throw` rule gives it.
+- `try`: every node of the body that may throw (not a slot or a value) names
+  the handler's entry as its handler, the thrown value landing in the catch
+  binding's slot and the `try`'s scope kept; the handler's nodes name the
+  `finally` block's throw-path entry, or the enclosing handler. The `finally`
+  block is compiled once per way out ([DESIGN.md](DESIGN.md#throws)): after a
+  normal completion, before each `return` in the body or handler with the
+  value held in a slot of its own, and after a throw with the thrown value
+  held, ending in a node that throws it again. Where neither the body nor the
+  handler can complete, the normal way leads to an unreachable node that
+  loops on itself and states nothing.
 
 ## State
 

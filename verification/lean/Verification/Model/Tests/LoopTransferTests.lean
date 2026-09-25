@@ -10,12 +10,12 @@ private def program : Program := ((extracted.toOption.getD []).map (·.program))
 private def start : Nat := ((extracted.toOption.getD []).map (·.start)).headD 0
 #guard (SourceClaimJson.produceJson ast claims "verification/tests/stateful-source/loop-transfers.ts" 10).toOption.isSome
 private def expected : Program :=
-  [⟨.nul,.effect 12⟩,⟨.var 0,.ret⟩,⟨.fls,.bind 1⟩,
-   ⟨.nul,.effect 10⟩,⟨.var 0,.ret⟩,⟨.tru,.bind 4⟩,
-   ⟨.nul,.effect ⟨5,some [1]⟩⟩,⟨.var 0,.effect 6⟩,⟨.var 0,.bind 7⟩,
-   ⟨.var 0,.branchBind ⟨8,some [2]⟩ ⟨5,some [2]⟩⟩,
-   ⟨.var 0,.bind 9⟩,⟨.var 0,.branchBind ⟨3,some [0]⟩ ⟨2,some [0]⟩⟩,
-   ⟨.var 0,.bind 11⟩,⟨.nul,.effect 0⟩]
+  [⟨.nul,.effect 12,none⟩,⟨.var 0,.ret,none⟩,⟨.fls,.bind 1,none⟩,
+   ⟨.nul,.effect 10,none⟩,⟨.var 0,.ret,none⟩,⟨.tru,.bind 4,none⟩,
+   ⟨.nul,.effect ⟨5,some [1]⟩,none⟩,⟨.var 0,.effect 6,none⟩,⟨.var 0,.bind 7,none⟩,
+   ⟨.var 0,.branchBind ⟨8,some [2]⟩ ⟨5,some [2]⟩,none⟩,
+   ⟨.var 0,.bind 9,none⟩,⟨.var 0,.branchBind ⟨3,some [0]⟩ ⟨2,some [0]⟩,none⟩,
+   ⟨.var 0,.bind 11,none⟩,⟨.nul,.effect 0,none⟩]
 #guard program == expected
 #guard start == 13
 
@@ -38,27 +38,27 @@ private def continueAst : Json := (Json.parse "{\"file\":\"verification/tests/st
 private def continueClaims : Json := (Json.parse "{\"file\":\"verification/tests/stateful-source/loop-transfers.ts\",\"functions\":[{\"entries\":[{\"bindings\":[],\"start\":334},{\"bindings\":[{\"name\":\"cell\",\"type\":[4],\"current\":null}],\"start\":386},{\"bindings\":[{\"name\":\"cell\",\"type\":[4],\"current\":null},{\"name\":\"test\",\"type\":[5],\"current\":null}],\"start\":457},{\"bindings\":[{\"name\":\"cell\",\"type\":[4],\"current\":null},{\"name\":\"test\",\"type\":[5],\"current\":null}],\"start\":482},{\"bindings\":[{\"name\":\"alias\",\"type\":[4],\"current\":null},{\"name\":\"cell\",\"type\":[4],\"current\":null},{\"name\":\"test\",\"type\":[5],\"current\":null}],\"start\":526},{\"bindings\":[{\"name\":\"alias\",\"type\":[4],\"current\":null},{\"name\":\"cell\",\"type\":[4],\"current\":null},{\"name\":\"test\",\"type\":[5],\"current\":null}],\"start\":551},{\"bindings\":[{\"name\":\"cell\",\"type\":[4],\"current\":null},{\"name\":\"test\",\"type\":[5],\"current\":null}],\"start\":567}],\"expressions\":[{\"pos\":[367,382],\"type\":[4],\"current\":null},{\"pos\":[376,380],\"type\":[1],\"current\":null},{\"pos\":[421,453],\"type\":[5],\"current\":null},{\"pos\":[443,447],\"type\":[4],\"current\":null},{\"pos\":[443,453],\"type\":[1,2],\"current\":null},{\"pos\":[464,468],\"type\":[5],\"current\":null},{\"pos\":[464,474],\"type\":[1,2],\"current\":null},{\"pos\":[469,473],\"type\":[0],\"current\":null},{\"pos\":[516,520],\"type\":[4],\"current\":null},{\"pos\":[526,531],\"type\":[4],\"current\":null},{\"pos\":[526,545],\"type\":[1,2],\"current\":null},{\"pos\":[540,545],\"type\":[1,2],\"current\":null},{\"pos\":[574,578],\"type\":[4],\"current\":null},{\"pos\":[574,584],\"type\":[1,2],\"current\":null}],\"name\":\"continueAfterWrite\",\"namePos\":[300,318],\"params\":[],\"result\":[1,2]}],\"types\":[[\"nul\"],[{\"boolLit\":{\"value\":true}}],[{\"boolLit\":{\"value\":false}}],[\"undef\"],[{\"refs\":{\"first\":[[\"value\",[1,2]]],\"rest\":[],\"views\":[]}}],[{\"arrs\":{\"arrows\":[[[6],[[[0]],[1,2]]]]}}],[\"top\"]],\"sourceSha256\":\"3e7de21dc2e672fbff32a2035752cc08e68fb99770355c72a4b476b00950cdb9\"}").toOption.getD .null
 private def continued := SourceClaimJson.extractGraphRequests continueAst continueClaims "verification/tests/stateful-source/loop-transfers.ts"
 private def continueProgram : Program := [
-  ⟨.nul,.effect 14⟩,
-  ⟨.var 0,.ret⟩,
-  ⟨.read (.var 0),.bind ⟨1,some [0, 2, 3]⟩⟩,
-  ⟨.var 1,.bind 2⟩,
-  ⟨.nul,.effect ⟨0,some [1, 2]⟩⟩,
-  ⟨.var 0,.bind ⟨4,some [3, 4, 5]⟩⟩,
-  ⟨.write (.var 1) (.var 0),.effect 5⟩,
-  ⟨.fls,.bind 6⟩,
-  ⟨.var 0,.bind 7⟩,
-  ⟨.var 0,.effect 8⟩,
-  ⟨.var 1,.bind 9⟩,
-  ⟨.var 0,.branchBind ⟨10,some [2, 3]⟩ ⟨3,some [2, 3]⟩⟩,
-  ⟨.app (.var 1) (.var 0),.bind ⟨11,some [0, 3, 4]⟩⟩,
-  ⟨.nul,.bind 12⟩,
-  ⟨.var 0,.bind 13⟩,
-  ⟨.var 0,.effect 0⟩,
-  ⟨.funE (.read (.var 2)),.bind 15⟩,
-  ⟨.var 0,.effect 16⟩,
-  ⟨.alloc (.var 0),.bind ⟨17,some [0]⟩⟩,
-  ⟨.tru,.bind 18⟩,
-  ⟨.nul,.effect 19⟩]
+  ⟨.nul,.effect 14,none⟩,
+  ⟨.var 0,.ret,none⟩,
+  ⟨.read (.var 0),.bind ⟨1,some [0, 2, 3]⟩,none⟩,
+  ⟨.var 1,.bind 2,none⟩,
+  ⟨.nul,.effect ⟨0,some [1, 2]⟩,none⟩,
+  ⟨.var 0,.bind ⟨4,some [3, 4, 5]⟩,none⟩,
+  ⟨.write (.var 1) (.var 0),.effect 5,none⟩,
+  ⟨.fls,.bind 6,none⟩,
+  ⟨.var 0,.bind 7,none⟩,
+  ⟨.var 0,.effect 8,none⟩,
+  ⟨.var 1,.bind 9,none⟩,
+  ⟨.var 0,.branchBind ⟨10,some [2, 3]⟩ ⟨3,some [2, 3]⟩,none⟩,
+  ⟨.app (.var 1) (.var 0),.bind ⟨11,some [0, 3, 4]⟩,none⟩,
+  ⟨.nul,.bind 12,none⟩,
+  ⟨.var 0,.bind 13,none⟩,
+  ⟨.var 0,.effect 0,none⟩,
+  ⟨.funE (.read (.var 2)),.bind 15,none⟩,
+  ⟨.var 0,.effect 16,none⟩,
+  ⟨.alloc (.var 0),.bind ⟨17,some [0]⟩,none⟩,
+  ⟨.tru,.bind 18,none⟩,
+  ⟨.nul,.effect 19,none⟩]
 #guard ((continued.toOption.getD []).map (·.program)).headD [] == continueProgram
 #guard ((continued.toOption.getD []).map (·.start)).headD 0 == 20
 #guard (SourceClaimJson.produceJson continueAst continueClaims "verification/tests/stateful-source/loop-transfers.ts" 10).toOption.isSome

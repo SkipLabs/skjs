@@ -104,8 +104,10 @@ theorem Safe_bind_appR {A B : Fam} (f : Tm) (hfv : isVal f = true) :
   | zero => intro _ _ _ _ _ _ _; trivial
   | succ p ih =>
     intro W h a hadm hok hsafe hcont
-    rcases hsafe with ⟨hv, hA⟩ | ⟨W', h', a', hx, hadm', hstep, hok', hsafe'⟩
+    rcases hsafe with (⟨hv, hA⟩ | hr) | ⟨W', h', a', hx, hadm', hstep, hok', hsafe'⟩
     · exact hcont (p + 1) (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hadm h a hok hA
+    · exact Or.inl (Or.inr (hr.lift (C := (.app f ·))
+        fun hr => .callArg (i := 0) hfv rfl rfl (by intro j hj; omega) hr))
     · refine Or.inr ⟨W', h', .app f a', hx, hadm', .appR hfv hstep, hok', ?_⟩
       refine ih W' h' a' hadm' hok' hsafe' ?_
       intro j hj W'' hW hadm'' h'' v hok'' hAv
@@ -135,7 +137,7 @@ theorem read_rule {code : CallCode} {flds : List (PropKey × Nat)} {f : PropKey}
       WorldAdm_trunc _ hadm, .readField hf hv, HeapOk_trunc p W h hok, ?_⟩
     cases p with
     | zero => trivial
-    | succ q => exact Or.inl ⟨hA _ _ _ hAv, hAv⟩
+    | succ q => exact Or.inl (Or.inl ⟨hA _ _ _ hAv, hAv⟩)
 
 /-- **Read through a view.** The location's contract implies the stated family,
 which is all a read observes. -/
@@ -154,7 +156,7 @@ theorem read_view_rule {code : CallCode} {flds : List (PropKey × Nat)} {f : Pro
       WorldAdm_trunc _ hadm, .readField hf hv, HeapOk_trunc p W h hok, ?_⟩
     cases p with
     | zero => trivial
-    | succ q => exact Or.inl ⟨hA _ _ _ hAv, hAv⟩
+    | succ q => exact Or.inl (Or.inl ⟨hA _ _ _ hAv, hAv⟩)
 
 /-- A read whose location's contract implies `A` only in worlds extending the
 current one: the read happens in the current world, so that is all it needs. -/
@@ -175,7 +177,7 @@ theorem read_view_rule_ext {code : CallCode} {flds : List (PropKey × Nat)} {f :
       WorldAdm_trunc _ hadm, .readField hf hv, HeapOk_trunc p W h hok, ?_⟩
     cases p with
     | zero => trivial
-    | succ q => exact Or.inl ⟨hA _ _ _ hAv, hAv⟩
+    | succ q => exact Or.inl (Or.inl ⟨hA _ _ _ hAv, hAv⟩)
 
 /-- **Read through the prototype.** A key the object lacks is read from its
 prototype, which the object's prototype location holds under a contract
@@ -221,7 +223,7 @@ theorem read_dict_rule {flds : List (PropKey × Nat)} {f : String} {A : Fam}
         WorldAdm_trunc _ hadm, .readMissing hlook (dictViewT_no_proto hd), HeapOk_trunc p W h hok, ?_⟩
       cases p with
       | zero => trivial
-      | succ q => exact Or.inl ⟨rfl, Or.inr rfl⟩
+      | succ q => exact Or.inl (Or.inl ⟨rfl, Or.inr rfl⟩)
 
 /-- **Read an optional field.** Where the object has the key, its location's
 contract implies `A`, as an optional field's (equal to it) or a readonly
@@ -248,7 +250,7 @@ theorem read_optional_rule {flds : List (PropKey × Nat)} {f : PropKey} {A : Fam
         WorldAdm_trunc _ hadm, .readMissing hlook (hp hlook), HeapOk_trunc p W h hok, ?_⟩
       cases p with
       | zero => trivial
-      | succ q => exact Or.inl ⟨rfl, Or.inr rfl⟩
+      | succ q => exact Or.inl (Or.inl ⟨rfl, Or.inr rfl⟩)
 
 /-- The same dictionary guarantee when the property name was evaluated at
 runtime. The caller must separately prove that the key is a string. -/
@@ -269,7 +271,7 @@ theorem index_dict_rule {flds : List (PropKey × Nat)} {f : String} {A : Fam}
         WorldAdm_trunc _ hadm, .indexField hlook hv, HeapOk_trunc p W h hok, ?_⟩
       cases p with
       | zero => trivial
-      | succ q => exact Or.inl ⟨hA _ _ _ hAv, Or.inl hAv⟩
+      | succ q => exact Or.inl (Or.inl ⟨hA _ _ _ hAv, Or.inl hAv⟩)
   | none =>
     cases n with
     | zero => trivial
@@ -278,7 +280,7 @@ theorem index_dict_rule {flds : List (PropKey × Nat)} {f : String} {A : Fam}
         WorldAdm_trunc _ hadm, .indexMissing hlook (dictViewT_no_proto hd), HeapOk_trunc p W h hok, ?_⟩
       cases p with
       | zero => trivial
-      | succ q => exact Or.inl ⟨rfl, Or.inr rfl⟩
+      | succ q => exact Or.inl (Or.inl ⟨rfl, Or.inr rfl⟩)
 
 #print axioms index_dict_rule
 
@@ -337,7 +339,7 @@ theorem make_rule {A Q : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (
     cases p with
     | zero => trivial
     | succ q =>
-      refine Or.inl ⟨rfl, result (q + 1) (by omega) _ (WExt_appendW _ _) ?_⟩
+      refine Or.inl (Or.inl ⟨rfl, result (q + 1) (by omega) _ (WExt_appendW _ _) ?_⟩)
       refine refT_cell (c := res A) ?_ (fun _ _ _ _ => Iff.rfl)
       simp only [lookup, appendW, toList_ofList]
       rw [List.getElem?_append_right (by omega)]
@@ -384,7 +386,7 @@ theorem make_fields_rule {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
     cases p with
     | zero => trivial
     | succ q =>
-      refine Or.inl ⟨rfl, result (q + 1) (by omega) _ (WExt_appendWs _ _) ?_⟩
+      refine Or.inl (Or.inl ⟨rfl, result (q + 1) (by omega) _ (WExt_appendWs _ _) ?_⟩)
       refine recT_alloc hnd (by omega) ?_
       intro i hi
       have hib : i < (As.map (fun A => (res A : Ctr (q + 1)))).length := by
@@ -435,7 +437,7 @@ theorem arr_alloc_rule_below {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A
     cases p with
     | zero => trivial
     | succ q =>
-      refine Or.inl ⟨rfl, result (q + 1) (by omega) _ (WExt_appendWs _ _) ?_⟩
+      refine Or.inl (Or.inl ⟨rfl, result (q + 1) (by omega) _ (WExt_appendWs _ _) ?_⟩)
       intro i hi
       have hib : i < (As.map (fun A => (res A : Ctr (q + 1)))).length := by
         simp; omega
@@ -476,7 +478,7 @@ theorem elem_read_rule {ls : List (Option Nat)} {b : UInt64} {A : Fam}
       WorldAdm_trunc _ hadm, .elemRead hl hv, HeapOk_trunc p W h hok, ?_⟩
     cases p with
     | zero => trivial
-    | succ q => exact Or.inl ⟨hA _ _ _ hAv, hAv⟩
+    | succ q => exact Or.inl (Or.inl ⟨hA _ _ _ hAv, hAv⟩)
 
 /-- **An absent element reads `undefined`.** -/
 theorem elem_absent_rule {ls : List (Option Nat)} {b : UInt64} {Q : Fam}
@@ -551,7 +553,7 @@ theorem set_grow_rule {ls : List (Option Nat)} {b : UInt64} {k : Nat} {A Q : Fam
     cases p with
     | zero => trivial
     | succ q =>
-      refine Or.inl ⟨rfl, hq (q + 1) (by omega) _ (WExt_appendWs _ _) ?_⟩
+      refine Or.inl (Or.inl ⟨rfl, hq (q + 1) (by omega) _ (WExt_appendWs _ _) ?_⟩)
       rw [hlen]
       have := lookup_appendWs (trunc (q + 1) (Nat.le_succ (q + 1)) W) [(res A : Ctr (q + 1))]
         (i := 0) (by simp)
@@ -632,8 +634,12 @@ theorem diverging_arrow {A B : Fam} (n : Nat) (W : WorldT n) :
 /-- Being stuck is exactly what `Safe` forbids. -/
 theorem stuck_not_safe (B : Fam) (k : Nat) (W : WorldT (k + 1)) (h : Heap) :
     ¬ Safe B (k + 1) W h (.app .nul .nul) := by
-  rintro (⟨hv, -⟩ | ⟨_, _, _, _, _, hs, _, _⟩)
+  rintro ((⟨hv, -⟩ | ⟨v, hr, -⟩) | ⟨_, _, _, _, _, hs, _, _⟩)
   · simp [isVal] at hv
+  · cases hr with
+    | callL h => cases h
+    | callRecv _ h => cases h
+    | callArg _ _ hg _ h => obtain ⟨rfl, rfl⟩ := singleton_get hg; cases h
   · exact stuck_no_step hs
 
 /-- An arrow with an uninhabited domain constrains nothing: every function has
@@ -658,7 +664,7 @@ theorem test_value_safe (k : Tag) (v : Val) (hv : isVal v = true) (p : Nat)
   cases p with
   | zero => trivial
   | succ q =>
-    refine Or.inl ⟨?_, ?_⟩ <;> cases tagHolds k v <;> simp [boolT, isVal]
+    refine Or.inl (Or.inl ⟨?_, ?_⟩) <;> cases tagHolds k v <;> simp [boolT, isVal]
 
 /-- **An operator that answers is safe.** Where `binop` gives the operands'
 result, the term takes one step to it, a value of whatever family `S` names. -/
@@ -672,6 +678,19 @@ theorem arith_value_safe {S : Fam} (op : Arith) (a b v : Tm) (hv : binop op a b 
     refine Or.inr ⟨trunc p (Nat.le_succ p) W, h, _, WExt_refl _, WorldAdm_trunc _ hadm,
       .arithV hv, HeapOk_trunc p W h hok, ?_⟩
     exact value_safe _ _ _ _ _ (binop_values hv).2.2 (hr _ _)
+
+/-- **An operator that throws is safe.** Where `binopThrows` holds of the
+operands, the term takes one step to throwing a fresh error object, which is
+an outcome at every type. -/
+theorem arith_throw_safe {S : Fam} (op : Arith) (a b : Tm) (ht : binopThrows op a b = true)
+    (n : Nat) (W : WorldT n) (h : Heap) (hadm : WorldAdm W) (hok : HeapOk n W h) :
+    Safe S n W h (.arith op a b) := by
+  cases n with
+  | zero => trivial
+  | succ p =>
+    refine Or.inr ⟨trunc p (Nat.le_succ p) W, h, _, WExt_refl _, WorldAdm_trunc _ hadm,
+      .arithThrow ht, HeapOk_trunc p W h hok, ?_⟩
+    exact thrown_safe _ _ _ _ ⟨thrownError, .throwV rfl, by simp [thrownError, Scoped]⟩
 
 /-- **Branching on a shape test.** The two branches are checked under the answer
 they run in, which is what makes this narrowing rather than a plain conditional:

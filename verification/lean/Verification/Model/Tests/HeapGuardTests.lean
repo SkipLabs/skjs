@@ -23,10 +23,10 @@ private def yes : Knowledge := ⟨[⟨0,[.tru],valueField⟩],[],[]⟩
 private def no : Knowledge := ⟨[⟨0,[.fls],valueField⟩],[],[]⟩
 
 def program : Program :=
-  [⟨.alloc (.var 0),.bind 1⟩,⟨.read (.var 0),.bind 2⟩,
-   ⟨.var 0,.branchBind ⟨3,some [2]⟩ ⟨4,some [2]⟩⟩,
-   ⟨.read (.var 0),.bind ⟨5,some [0]⟩⟩,
-   ⟨.read (.var 0),.bind ⟨5,some [0]⟩⟩,⟨.var 0,.ret⟩]
+  [⟨.alloc (.var 0),.bind 1,none⟩,⟨.read (.var 0),.bind 2,none⟩,
+   ⟨.var 0,.branchBind ⟨3,some [2]⟩ ⟨4,some [2]⟩,none⟩,
+   ⟨.read (.var 0),.bind ⟨5,some [0]⟩,none⟩,
+   ⟨.read (.var 0),.bind ⟨5,some [0]⟩,none⟩,⟨.var 0,.ret,none⟩]
 
 def certificate : ControlFlow.Certificate Nat :=
   [{expression := allocProof, edges := [[.subset,.subset]],

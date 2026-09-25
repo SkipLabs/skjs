@@ -848,7 +848,8 @@ type SelectionContext = {
  * generic, optional or `this`-typed method or call signature, are refused.
  * A global the standard library declares is read only through the reviewed
  * overlay (`library-globals.mts`): each signature read must be listed, and a
- * parameter at which the host may throw is stated at what it accepts.
+ * parameter at which the host would run the client's code is stated at what
+ * it accepts without running any.
  *
  * A global the client only constructs, `new Array<T>()`, is instead its
  * construct signatures, as a class value is: each the overlay's statement of
@@ -907,10 +908,9 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
       m.getSourceFile().fileName === resolved.getSourceFile().fileName);
   };
   // A method's or call signature's forms. A parameter the overlay restricts
-  // is stated at what the host accepts: its safe part, and each literal
-  // argument of `calls` the host converts.
+  // is stated at what the host accepts: its safe part.
   const forms = (signature: ts.MethodSignatureDeclaration | ts.CallSignatureDeclaration, key: string,
-      what: string, entry: GlobalEntry | undefined, calls: readonly ts.CallExpression[]) => {
+      what: string, entry: GlobalEntry | undefined) => {
     if (signature.typeParameters?.length || (ts.isMethodSignatureDeclaration(signature) &&
         (signature.postfixToken || signature.modifiers?.length)))
       throw Error(`${what} is generic, optional or modified`);
@@ -929,22 +929,6 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
     const stated: TypeTerm[] = admit.safe.map(atom => ({ k: "atom", name: atom, span: at }));
     if (parameter.questionToken && !admit.safe.includes("undefined"))
       stated.push({ k: "atom", name: "undefined", span: at });
-    const seen = new Set<string>();
-    for (const call of calls) {
-      const argument = call.arguments[index];
-      const type = argument ? checker.getTypeAtLocation(argument) : undefined;
-      for (const part of type ? type.isUnionType() ? type.getTypes() ?? [] : [type] : []) {
-        const literal: TypeTerm | null =
-          part.isStringLiteralType() && admit.literal(part.value)
-            ? { k: "literal", name: "string", text: part.value, span: at }
-          : part.isNumberLiteralType() && admit.literal(part.value) && /^-?\d+$/.test(String(part.value))
-            ? { k: "literal", name: "number", text: String(part.value), span: at }
-          : null;
-        if (!literal || seen.has(`${literal.name}:${literal.text}`)) continue;
-        seen.add(`${literal.name}:${literal.text}`);
-        stated.push(literal);
-      }
-    }
     const [only] = stated;
     const type: TypeTerm = stated.length === 1 && only ? only : { k: "union", parts: stated, span: at };
     return read.map(form => ({ ...form, params: form.params.map((p, i) => i === index ? type : p) }));
@@ -1005,7 +989,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
           }
           return [];
         }
-        return forms(overload, key, what, entry, calls).map(form => {
+        return forms(overload, key, what, entry).map(form => {
           if (form.receiver) throw Error(`the method ${what} states its receiver`);
           return { ...form, receiver: { k: "self", span: form.span } satisfies TypeTerm };
         });
@@ -1037,7 +1021,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   }
   const what = `${name}(…)`;
   const callForms = [...chosen].flatMap(([signature, calls]) =>
-    forms(signature, name, what, reviewed(undefined, signature, what), calls).map(form => {
+    forms(signature, name, what, reviewed(undefined, signature, what)).map(form => {
       if (form.receiver) throw Error(`${what} states its receiver`);
       return form;
     }));

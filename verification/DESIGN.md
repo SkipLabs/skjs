@@ -809,7 +809,7 @@ verdict.
 | Subtype evidence           | The checker is sound and complete for the declarative rules.                                                                                                                                                                       |
 | Program evidence           | Acceptance is equivalent to closed-program derivability for the stated rules; typing implies computation safety.                                                                                                                   |
 | Point claims and slot maps | Checked incoming relations preserve semantic environments under the program's binding transfers.                                                                                                                                   |
-| Control-flow graphs        | The checker covers actual nodes and edges; accepted graphs have no stuck execution and typed returns, including cycles.                                                                                                            |
+| Control-flow graphs        | The checker covers actual nodes and edges, handler edges included; accepted graphs have no stuck execution, typed returns and closed throws, including cycles.                                                                   |
 | In-memory producer         | Builds evidence from fixed point annotations; successful output passes the consumer and preserves the exact requested claims. Search completeness is not claimed.                                                                  |
 | Serialized requests        | Requests and evidence pass through a separate JSON consumer in the existing verifier binary. Acceptance yields decoded-request safety.                                                                                             |
 | Source-facing integration  | Primitive inputs, branches, local cells and bounded expression closures reach the stateful consumer. Primitive, cell-label and function-label translations have exact interpretation theorems; source compilation remains trusted. |
@@ -943,7 +943,7 @@ modeling choices; they do not replace proof.
   `BooleanProto`, each read from TypeScript's `String`, `Number`, `BigInt`
   and `Boolean` through the same overlay: only the listed members, each an
   own property of that prototype, at the primitive as receiver, without the
-  dropped parameters and with the narrowed ones. A unit reading a primitive's
+  dropped parameters. A unit reading a primitive's
   member has the input slot `[[String.prototype]]` (and so on) at that
   contract, a premise as `[[Array.prototype]]` is. The realm's
   `String.prototype` and `Object.prototype` own no numeric key, so a
@@ -963,8 +963,7 @@ modeling choices; they do not replace proof.
   and no code the module does not see reassigns it. A standard library global
   meets its reviewed overlay entries
   ([Library globals](#library-globals), [`library-globals.mts`](tools/library-globals.mts)):
-  `BigInt` converts a bigint, a Boolean, an integer and each string literal
-  the reader converted when it read the call; `Symbol`, `Symbol.for` and
+  `BigInt` returns a bigint or throws; `Symbol`, `Symbol.for` and
   `Symbol.keyFor` return what they declare; `String` converts a primitive;
   `console.log` returns `undefined` without running client code; `Object.keys`,
   `Object.values` and `Object.entries` return fresh arrays of own enumerable
@@ -995,8 +994,10 @@ modeling choices; they do not replace proof.
   ([Async functions and await](#async-functions-and-await)): awaiting a
   `Promise<T>` yields a `T`, other jobs running meanwhile as during any call;
   an async function's promise settles to the primitive its body returns, or
-  to `undefined` when the body completes. Nothing models the job queue, a
-  rejection or a promise that never settles. The assumption enters every
+  to `undefined` when the body completes. Awaiting a rejected promise throws
+  its reason, which the safety theorem admits as an outcome
+  ([Throws](#throws)). Nothing models the job queue or a promise that never
+  settles. The assumption enters every
   result as a premise: a unit that awaits or returns from an async body has
   input slots `%Await%`, `%AsyncReturn%` and `%AsyncComplete%` at their
   declared signatures, and the safety theorem holds for every environment
@@ -1011,6 +1012,15 @@ modeling choices; they do not replace proof.
 - A `for...in` loop visits keys, each a string, of any value
   ([Statement forms](#statement-forms)): `%ForIn%` at its declared signature
   is an input slot of every unit with such a loop.
+- **Trusted steps may throw.** A trusted step's contract is a safety
+  promise, and safety admits a throw ([Throws](#throws)): an imported or
+  ambient function, a library global or prototype member, `%Await%`,
+  `%AsyncReturn%`, `%AsyncComplete%`, `%Iterate%` and `%ForIn%` are assumed to
+  return a value of their declared result *or throw*, never to return a wrong
+  value. This assumes less than before, when a trusted step was assumed not
+  to throw; `await` of a rejected promise throws, as JavaScript's does. A
+  thrown value is assumed to be a value, of any type: a handler binds it at
+  `unknown`.
 - Code outside a unit adds keys to a dictionary it holds at a mutable index
   signature only at that signature's contract; the calculus has no step that
   adds a key ([Writable string index signatures](#writable-string-index-signatures)).
@@ -1022,7 +1032,7 @@ modeling choices; they do not replace proof.
   runtime's `as EagerCollection<K, V>`), and throws for a definition the
   service does not declare. A client can write that call, with a definition
   it constructs itself (`inputs.get(new InputDefinition<string, number>())`):
-  it type-checks and throws, which is a stop, not a value at a wrong type.
+  it type-checks and throws, which is an outcome, not a value at a wrong type.
   Reading an undeclared input of the service, `this.inputs.input3`, does not
   type-check. It also constructs each resource class with the request's
   parameters, a `Json`, and calls `instantiate` with what `createGraph`
@@ -2459,11 +2469,11 @@ assumptions and historical coverage counts are not an implementation plan.
 | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Flow refinement across loops and calls | State which observations survive writes and calls, and prove branch/refinement transfer rules. Stable cell contracts alone do not supply these facts.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Mutable structural objects             | Specify field presence, width, aliasing and allowed mutation; extend beyond the current invariant cells and export their types.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| More primitives and operators          | Numbers are admitted as opaque values with singleton literal types, in closure signatures and as the storage contract of a mutable local; finite singleton comparisons are supported, and a comparison on the broad family branches both ways; arithmetic on numbers is the IEEE-754 double operation yielding the number family, and on bigints the integer operation yielding the bigint family (a bigint divisor or exponent only at a singleton that cannot throw), relational comparison of numbers, bigints and strings yields a Boolean, and `-`, `+` and `~` are the binary operators with a constant ([Numeric operators and bigints](#numeric-operators-and-bigints)), with compound assignments, increments and logical assignments to fields and elements evaluating their target once, the Boolean logical forms needing a Boolean target; strings are admitted on the same terms, with literal singletons and equality against a literal, and `+` concatenates a string with any primitive but a symbol, converting it by `ToString` exactly, template literals included ([String concatenation, templates and `void`](#string-concatenation-templates-and-void)); truthiness is JavaScript's `ToBoolean` ([Truthiness](#truthiness)); general equality is not, and needs its runtime behavior defined and agreement validated. Numeric current-content predicates now cover both singletons and the number family, with checked transfer across graph edges.                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| More primitives and operators          | Numbers are admitted as opaque values with singleton literal types, in closure signatures and as the storage contract of a mutable local; finite singleton comparisons are supported, and a comparison on the broad family branches both ways; arithmetic on numbers is the IEEE-754 double operation yielding the number family, and on bigints the integer operation yielding the bigint family (a division by zero and a negative exponent throw), relational comparison of numbers, bigints and strings yields a Boolean, and `-`, `+` and `~` are the binary operators with a constant ([Numeric operators and bigints](#numeric-operators-and-bigints)), with compound assignments, increments and logical assignments to fields and elements evaluating their target once, the Boolean logical forms needing a Boolean target; strings are admitted on the same terms, with literal singletons and equality against a literal, and `+` concatenates a string with any primitive but a symbol, converting it by `ToString` exactly, template literals included ([String concatenation, templates and `void`](#string-concatenation-templates-and-void)); truthiness is JavaScript's `ToBoolean` ([Truthiness](#truthiness)); general equality is not, and needs its runtime behavior defined and agreement validated. Numeric current-content predicates now cover both singletons and the number family, with checked transfer across graph edges.                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Graph-backed closure bodies            | Extend the call/body interface if source functions require graph control flow internally; surrounding graph loops are insufficient.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Generics and bounds                    | The rigid model slice is in [TypeParams.lean](lean/Verification/Model/Types/TypeParams.lean). Source extraction of identity, `T extends boolean`, annotated and inferred immutable copies, and extra `T` parameters is in [GenericSource.lean](lean/Verification/Model/Source/GenericSource.lean). Declaration applications over rigid binders are expanded from their source equations in [DeclarationGraph.lean](lean/Verification/Model/Source/DeclarationGraph.lean); [GenericAlias.lean](lean/Verification/Model/Source/GenericAlias.lean) now only expands alias atoms in SKJS's exported claims. Distinct parameters and dependent upper-bound chains in variable-copy bodies are checked using [GenericBounds.lean](lean/Verification/Model/Types/GenericBounds.lean). [TypeSchemes.lean](lean/Verification/Model/Types/TypeSchemes.lean) gives quantified callable semantics; source extraction connects the narrow unbounded local-closure slice described above, checks introduction universally, and compiles checked ground eliminations to graph arrows. Remaining: calls to generic declarations, generic callbacks, bounded or nested local schemes, general quantified closure bodies, conditional types, higher-rank polymorphism and parameter-changing recursion. Generic parameters, inference variables and hidden object type arguments are not interchangeable. Observing several calls is not universal certification; the separate introduction check is. |
 | Difference and negation                | Supply sound rules or approximations: pointwise complement need not preserve admissibility. They do not follow from positive normalization.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| Exceptions                             | Model abrupt completion, state at raising, and pending returns/exceptions through `finally`; ordinary graph edges alone are insufficient.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Exceptions                             | A throw is an outcome of the calculus and of graphs, with handler edges and `finally` compiled on each way out ([Throws](#throws)). Remaining: a `break`/`continue` through a `finally`, `try` inside a closure body, a generic closure that throws, `new Error(…)` and the `Error` hierarchy, `JSON`, `Promise.*` overlay entries.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 For example, `L-LOOP-CARRIED` remains a useful integration target: a write on a
 back edge must not preserve a stale narrowing at the loop head. A corrected
@@ -3005,8 +3015,9 @@ and soundness needs, one entry per member:
   overlay states `Iterator<T>`, the result `Iterable<T>` asks for, and trusts
   no more than that.
 - *Dropped overloads.* An overload whose declared result the library does not
-  deliver is removed. `reduce(cb): T` throws on an empty array, so only
-  `reduce(cb, init)` is kept.
+  deliver is removed. `reduce(cb): T` only throws on an empty array, which is
+  an outcome ([Throws](#throws)), so it could now be kept; only
+  `reduce(cb, init)` is listed so far.
 
 Each entry records the text of the TypeScript signature it was reviewed
 against; a test compares it with the signature TypeScript reads, so a changed
@@ -3130,13 +3141,15 @@ refuses to list it.
 `BooleanProto` are the members the overlay lists, each an own property of its
 prototype (`String.prototype.toLocaleString` is `Object.prototype`'s and is
 not listed; `Boolean.prototype.toString` is its own, though TypeScript reads
-it from `Object`). A signature TypeScript admits calls on that throw is
-narrowed or dropped: `toString(radix)` of a number or bigint takes 2 to 36,
-`toFixed` and `toExponential` 0 to 100 digits, `toPrecision` 1 to 100, as a
-union of literals; `locales` and `options` of `toLocaleString` are dropped,
-so a call must omit them. Members that throw on arguments no simple narrowing
-states (`repeat`, `normalize(form?: string)`), or that name `RegExp` or an
-`any` callback (`replace`, `match`, `search`, `split`), are not listed. The
+it from `Object`). A member that throws on some argument its declaration
+admits is read as declared, since a throw is an outcome
+([Throws](#throws)): `toString(radix)` of a number or bigint throws outside 2
+to 36, `toFixed` and `toExponential` outside 0 to 100 digits, `toPrecision`
+outside 1 to 100 (`primitive-radix`). `locales` and `options` of
+`toLocaleString` are dropped, so a call must omit them. Members that name
+`RegExp` or an `any` callback (`replace`, `match`, `search`, `split`) are
+not listed, nor, yet, `repeat` and `normalize(form?: string)`, which only
+throw on some arguments and could now be. The
 parser asks TypeScript which receivers of member reads are primitives, and
 each primitive so read brings its contract into the declaration document and
 its realm prototype into the module's values, at the name
@@ -3247,10 +3260,11 @@ representable clause, and is refused.
 `String`, `console`, …) are global variables like Node's `process`, read by
 the one global rule of [Modules and code units](#modules-and-code-units)
 (**Global values**) at the members and call signatures a module uses. But
-TypeScript's declarations of them are not all true: `BigInt(value: bigint |
-boolean | number | string): bigint` throws a `RangeError` at `1.5` and a
-`SyntaxError` at `"x"`, and a throw is a stuck term here, so a signature
-promising a `bigint` there would be false. So, as for `Array.prototype`
+TypeScript's declarations of them are not all true: `String(value?: any):
+string` converts an object by calling its `toString` or `valueOf`, code of
+the client's that may do anything. A throw is not such a falsehood:
+`BigInt(1.5)` throws a `RangeError`, an outcome safety admits
+([Throws](#throws)), so `BigInt` is read as declared. So, as for `Array.prototype`
 ([The array prototype](#the-array-prototype)), a standard library global is
 read only through a checked-in overlay
 ([`library-globals.mts`](tools/library-globals.mts)), one entry per signature,
@@ -3262,21 +3276,19 @@ holding only what the declarations do not say and soundness needs:
   (`… is not in the reviewed overlay of library globals`), so a changed
   library is re-reviewed, never trusted silently. A global declared elsewhere,
   such as `@types/node`'s `process`, is read as declared.
-- *Admitted arguments.* Where the host throws on some arguments the declared
-  parameter admits, the entry states the parameter at what the host accepts:
-  a safe part $S$, at which it never throws, and each literal argument type
-  $\ell$ of the module's calls of that signature that the host converts,
-  decided by converting it (`admit`).
+- *Admitted arguments.* Where the host runs code of the client's on some
+  arguments the declared parameter admits, the entry states the parameter at
+  the part $S$ on which it runs none (`admit`). A host that only throws on an
+  argument needs no entry: a throw is an outcome.
 
 With $s$ a selected signature (in $C$ or some $O_m$ of the global rule),
-$\Omega$ the overlay, $\omega$ an entry and $L_s$ the literal types TypeScript
-gives the argument at $\omega$'s parameter in the calls that select $s$:
+$\Omega$ the overlay and $\omega$ an entry:
 
 $$
 \frac{\mathit{lib}(x)\quad \omega\in\Omega\quad
       \omega.\mathit{global}=x\quad \omega.\mathit{text}=\mathsf{text}(s)\quad
-      \omega\ \text{admits}\ (i, S, \mathit{ok})}
-     {\llbracket s\rrbracket_\Omega=\llbracket s\rrbracket\bigl[\,p_i:=S\cup\{\ell\in L_s\mid \mathit{ok}(\ell)\}\,\bigr]}\ \textsc{library-global}
+      \omega\ \text{admits}\ (i, S)}
+     {\llbracket s\rrbracket_\Omega=\llbracket s\rrbracket\bigl[\,p_i:=S\,\bigr]}\ \textsc{library-global}
 $$
 
 and an entry without `admit` reads $s$ as declared. Replacing a parameter by
@@ -3288,7 +3300,7 @@ weaker signature, which is what is actually true.
 
 | Global | Signature | Read as |
 | --- | --- | --- |
-| `BigInt` | `(value: bigint \| boolean \| number \| string): bigint` | `value` at `bigint \| boolean`, and each integer number literal and each string literal `BigInt` converts: `BigInt(42)`, `BigInt(-42)`, `BigInt("0xFF")`; not `BigInt(1.5)`, `BigInt("x")`, nor a `number` or `string` operand |
+| `BigInt` | `(value: bigint \| boolean \| number \| string): bigint` | as declared: a bigint, or a throw (`BigInt(1.5)` a `RangeError`, `BigInt("x")` a `SyntaxError`); no client code runs on a primitive |
 | `Symbol` | `(description?: string \| number): symbol` | as declared: a fresh symbol, whose description converts without running code |
 | `Symbol.for`, `Symbol.keyFor` | `for(key: string): symbol`, `keyFor(sym: symbol): string \| undefined` | as declared |
 | `Symbol.iterator`, `Symbol.asyncIterator`, `Symbol.hasInstance`, `Symbol.toPrimitive`, `Symbol.toStringTag` | `readonly iterator: unique symbol` and the like | stated as `symbol`: which symbol each is, a key the library's own types use, is not read |
@@ -3401,17 +3413,20 @@ Reading these members as intrinsics, not as generic members of the global,
 also keeps to the one statement of adoption the async rules make.
 
 **Refused, by decision.** `JSON.stringify` returns `undefined` for
-`undefined` and functions and throws on bigints and cycles; `JSON.parse`
-throws on text that is not JSON; the generic
+`undefined` and functions, which its declared `string` does not admit (its
+throws on bigints and cycles are outcomes, [Throws](#throws)); `JSON.parse`
+returns `any`, which says nothing true of the value (its throw on text that
+is not JSON is an outcome); the generic
 `values<T>(o: { [s: string]: T } | ArrayLike<T>): T[]` and its `entries`
 twin, which TypeScript selects for a record type written as a literal,
 promise `T` of keys the record type does not bound (their dictionary
 parameter is sound, but a reader of generic global methods and of a
 parameter restated without `ArrayLike` is not built). None is listed.
 `Promise.reject(r)`, and `new Promise(executor)`, whose executor may call
-its `reject`, make a promise that rejects, and awaiting it throws: they wait
-for a throw to be an outcome of the calculus (`promise-reject-refused.ts`),
-as do `JSON.parse` and `JSON.stringify`. `new Set(xs)` and `new Map(es)` are not
+its `reject`, make a promise that rejects, and awaiting it throws, which is
+now an outcome of the calculus ([Throws](#throws)); they are not listed yet
+(`promise-reject-refused.ts`), nor `JSON.parse` stated at `unknown` or
+`JSON.stringify` at a `Json` parameter. `new Set(xs)` and `new Map(es)` are not
 listed: their results, `Set<T>` and `Map<K, V>`, are library interfaces the
 declaration reader does not read (`add` returns `this`), and would need an
 overlay of their own, as `Array.prototype` has. `new Array(n)` and
@@ -3429,7 +3444,8 @@ relative to.
 ### Async functions and await
 
 **Decision.** `await` is a trusted step: `await e` yields the value the
-promise `e` settles to, at its type argument, with no model of the job queue.
+promise `e` settles to, at its type argument, or throws the reason a rejected
+promise carries ([Throws](#throws)), with no model of the job queue.
 An async function's call returns a promise of what its body returns. Both are
 stated as values the program calls, so no calculus rule, typing rule or proof
 changes: the calculus has calls, and a call's callee is an assumption at its
@@ -3664,9 +3680,144 @@ $$
 shared across switch clauses, a `for` closure capturing its `let`, a `var`, a
 labeled source statement, a `do…while`, and any of these forms inside a
 closure body (its lowering has no graph). `try`, `catch`, `finally` and
-`throw` are not these lowerings: they belong with the calculus's throw
-outcome ([Later feature gates](#later-feature-gates)). A statement after a
-`throw` is dead code all the same.
+`throw` are not these lowerings: they use the calculus's throw outcome
+([Throws](#throws)). A statement after a `throw` is dead code all the same.
+
+### Throws
+
+**Principle.** A throw is an outcome, beside a value and a step. Safety
+states that every well-typed program evaluates to a value of its type, takes
+a step, or throws a value; it never gets stuck, and it never reaches a wrong
+value. This is ML-style type soundness with exceptions (Wright and Felleisen's,
+where a division by zero raises): a type says what a *value* is, never that
+none is thrown. What is refused because it would produce a wrong-typed value
+stays refused; what was refused only because it could throw is admitted.
+
+**Calculus.** `throw a` (`Tm.throw`) evaluates `a`, then throws its value. A
+throwing term is one with `throw v` in evaluation position, under exactly the
+contexts `Step` evaluates in (`Raises t v`, one constructor per congruence
+rule); it does not step and throws one value (`raises_no_step`, `Raises_det`).
+There is no propagation step: the context closure is the predicate, so no
+step rule, and no proof about steps, changes but for the throwing primitives.
+Those step to throwing an error object where JavaScript throws, no code of
+the program's run first (`binopThrows`, disjoint from `binop`): a bigint
+division by zero or negative exponent (`RangeError`), arithmetic mixing a
+number and a bigint (`TypeError`), and any operator with a symbol operand and
+a primitive other one (`TypeError`). The error object is an object with no
+field (`thrownError`), standing for the `TypeError` or `RangeError` instance;
+a handler binds it at `unknown`, and nothing typed reads more of it.
+
+$$
+\frac{v\ \text{a value}}{\mathsf{throw}\ v\ \text{raises}\ v}
+\qquad
+\frac{t\ \text{raises}\ v}{E[t]\ \text{raises}\ v}
+\qquad
+\frac{\mathsf{binopThrows}(op,v_1,v_2)}{h,\ v_1\mathbin{op}v_2\to h,\ \mathsf{throw}\ \mathit{err}}
+$$
+
+with $E$ an evaluation context. `Safe` gains the outcome
+([semantics](SEMANTICS.md#computations-and-recursive-types)):
+
+```lean
+def Thrown (t : Tm) : Prop := ∃ v, Raises t v ∧ Scoped 0 v
+
+def Safe (T : Fam) : (n : Nat) → WorldT n → Heap → Tm → Prop
+  | 0, _, _, _ => True
+  | n + 1, W, h, t =>
+      ((isVal t = true ∧ T (n + 1) W t) ∨ Thrown t) ∨
+      (∃ (W' : WorldT n) (h' : Heap) (t' : Tm),
+        WExt (trunc n (Nat.le_succ n) W) W' ∧ WorldAdm W' ∧ Step h t h' t' ∧
+          HeapOk n W' h' ∧ Safe T n W' h' t')
+```
+
+Every composition lemma (`bind`, `bind_list`, `ctx_bind`,
+`HeapObservations.bind`) takes, beside the context's step rule, its throw
+rule, which carries a throw out of the context. The graph machine
+(`SafeGraph`, [program typing](PROGRAM-TYPING.md#checked-control-flow-graphs))
+ends a run either returning a typed value or with a closed thrown value no
+handler caught.
+
+**Typing.** `throw e` has every type (`HasTy.throw`), its operand at a type
+of its own:
+
+$$
+\frac{\Gamma\vdash a:A}{\Gamma\vdash\mathsf{throw}\ a:B}\ \textsc{throw}
+$$
+
+Two bigints give a bigint for every arithmetic operator: the nonzero-divisor
+and non-negative-exponent conditions are dropped (`bigint-range-errors`).
+Arithmetic mixing a number and a bigint, `+` on a bigint, and a symbol in a
+concatenation or a template stay refused, as TypeScript refuses them: each
+would throw, which safety admits, but TypeScript's rule is sound and each is
+almost surely a bug, and following TypeScript where it is sound is a
+principle (`invalid-mixed-arithmetic`, `invalid-unary-plus-bigint`,
+`invalid-template-symbol`). An object in a concatenation stays refused for
+another reason: its conversion runs its own code.
+
+**Handlers.** A graph node carries an optional handler: where a throw out of
+its expression goes, the thrown value bound in a fresh slot as a `bind`
+continuation binds a value. A node without one lets the throw end the run.
+The checker requires the handler's edge (`checkHandler`) at a type admitting
+every value (`admitsAll`: one of its clauses is top) and under only the facts
+that hold without the heap (`handlerFacts`: immutable values, alias and
+distinct links), since the expression may have run any effect before it
+threw:
+
+$$
+\frac{h,t\ \text{raises}\ v\quad v\ \text{closed}}{h,\ \mathsf{eval}(t,\rho,k,\ell)\to h,\ \mathsf{at}(\ell,\mathsf{push}(v,\rho))}
+\qquad
+\frac{h,t\ \text{raises}\ v}{h,\ \mathsf{eval}(t,\rho,k,\varnothing)\to h,\ \mathsf{raised}(v)}
+$$
+
+**Source.** `throw e` is the node `throw x` after `e`'s value, whose
+continuation is the return and whose claim is the function's result, which a
+throw has: a body ending in a throw needs no return. In a closure body,
+`throw e` ends the body as a return does (`throwBody`). `try B catch (e) C
+finally F`:
+
+- The nodes of `B` that may throw name `C`'s entry as their handler, with the
+  thrown value bound to `e` and the slots of the `try`'s scope kept; those of
+  `C` name `F`'s throw-path entry, or the enclosing handler. `e` is
+  `unknown`, the only annotation admitted: anything may be thrown, by the
+  body's own `throw` or by any trusted step. A `typeof` test narrows it to the
+  family it names (`tagMember`: a passed test naming one primitive family is
+  covered by that family's clause, whatever the tested type).
+- `F` runs on every way out, and is compiled on each: after a normal
+  completion of `B` or `C`, where one can complete, continuing after the
+  statement; after a throw, the thrown value held in a slot of its own, then
+  thrown again; before each `return` in `B` or `C`, the value held in a slot
+  of its own, through every enclosing `finally`, innermost first, then
+  returned. Each copy runs in the `try`'s own context: its scope, handler and
+  jump targets. A `return` or `throw` in `F` leaves by its own way, as
+  JavaScript's replaces the pending completion. So `F` never changes the
+  completion unless it itself returns or throws, and then exactly as
+  JavaScript does.
+
+$$
+\frac{\Gamma\vdash_R B\ \text{with throws}\mapsto(\mathsf{unknown},\Gamma)\vdash_R C\quad
+      \Gamma\vdash_R F\ \text{on each way out}}
+     {\Gamma\vdash_R\ \mathsf{try}\ B\ \mathsf{catch}\ (e)\ C\ \mathsf{finally}\ F}\ \textsc{try}
+$$
+
+- The producer states the handler's and the finalizer's entries with each
+  cell at its contract and the caught value at `unknown`: a throw may leave
+  the body after any part of it ran (`invalid-try-catch`).
+- In an async body a throw rejects the returned promise. The lowering lets it
+  leave the body as a throw, which safety admits as well: the function's
+  callers use its declared signature, and the over-approximation adds no
+  wrong value.
+
+**Refused.** A `break` or `continue` leaving a `try` with a `finally` (the
+lowering runs `F` for returns and throws, not for jumps:
+`try-finally-jump-refused`); `try` inside a closure body (its lowering has no
+graph); a destructured or annotated (other than `unknown`) catch binding; a
+throw inside a generic closure, whose certificate language has no throw rule.
+
+**Flipped.** `invalid-bigint-division` and `invalid-bigint-exponent` became
+`bigint-range-errors`; `invalid-bigint-number`, `invalid-bigint-fraction`
+and `invalid-bigint-string` became `bigint-conversions`;
+`invalid-primitive-radix` and `invalid-primitive-radix-number` became
+`primitive-radix`. The refusals they tested existed only to avoid a throw.
 
 ### Next object milestone
 
@@ -3789,10 +3940,11 @@ numeric operators, not a second mechanism: `binop` concatenates, and
   JavaScriptCore do. Only values depend on it, never a type: every result is
   the `string` family. TypeScript admits these operands beside a string, so
   this follows it.
-- **What converts through code or throws is refused.** An object concatenates
-  through its own `toString`/`valueOf`, which may run anything or throw;
-  TypeScript admits it, and the rule refuses it (`invalid-concat-object`). A
-  symbol throws a `TypeError` (`invalid-template-symbol`).
+- **What converts through code is refused.** An object concatenates through
+  its own `toString`/`valueOf`, which may run anything; TypeScript admits it,
+  and the rule refuses it (`invalid-concat-object`). A symbol's conversion
+  throws a `TypeError`, which the calculus steps to; TypeScript refuses it,
+  and the rule follows (`invalid-template-symbol`).
 - **One kind of result.** A `string | number` operand added to a number is a
   string or a number by the value; the rule wants every clause pair to agree
   and refuses it, as TypeScript does.
@@ -3827,16 +3979,12 @@ string with a primitive ([String concatenation, templates and
 assignment through the same rule, as `+=` is. The decisions, each from what
 JavaScript does:
 
-- **Where JavaScript throws, the rule refuses.** Arithmetic mixing a number and
-  a bigint throws a `TypeError`, as does `+` on a bigint; a bigint division by
-  zero and a negative bigint exponent throw a `RangeError`. The calculus has no
-  exceptions: a throw is a stuck term, which safety rules out, so a program
-  that may throw has no derivation. The divisor of a bigint `/` must therefore
-  be a nonzero singleton, and a bigint exponent a non-negative one; a divisor
-  typed `bigint` is refused though TypeScript accepts it (a `RangeError` is
-  not a type error to TypeScript). Modelling a throw as a stop would admit
-  these; it needs abrupt completion in the calculus, the same work as
-  `try`/`catch` ([Later feature gates](#later-feature-gates)).
+- **Where JavaScript throws, the calculus throws.** A bigint division by zero
+  and a negative bigint exponent throw a `RangeError`, an outcome
+  ([Throws](#throws)): the divisor and the exponent may be any bigint, as
+  TypeScript admits. Arithmetic mixing a number and a bigint throws a
+  `TypeError`, as does `+` on a bigint; TypeScript refuses both, and the rule
+  follows it.
 - **Where JavaScript converts, the rule refuses.** A relational operator on a
   string and a number converts the string, on an object runs its `valueOf`, on
   Booleans converts them to numbers. TypeScript refuses the first and admits
@@ -3864,8 +4012,8 @@ JavaScript does:
   `isBigint` shape test, which a bigint singleton answers as the family does.
 - **The `BigInt` function is a library global.** `BigInt(v)` calls the global
   `BigInt`, read through the reviewed overlay
-  ([Library globals](#library-globals)) at what it converts without throwing:
-  a bigint, a Boolean, an integer literal or a string literal it parses.
+  ([Library globals](#library-globals)) as declared: it returns a bigint or
+  throws (`bigint-conversions`).
 
 ### Null predicates through union elimination
 

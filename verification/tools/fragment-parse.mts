@@ -528,8 +528,10 @@ class Gate {
   private asyncCompletion(block: ts.Block, statements: Stmt[]): Stmt[] {
     const returns = (xs: Stmt[]): boolean => {
       const last = xs.at(-1);
-      return last?.k === "return" ||
-        (last?.k === "if" && last.else_ !== null && returns(last.then) && returns(last.else_));
+      return last?.k === "return" || last?.k === "throw" ||
+        (last?.k === "if" && last.else_ !== null && returns(last.then) && returns(last.else_)) ||
+        (last?.k === "try" && ((last.finalizer !== null && returns(last.finalizer)) ||
+          (returns(last.body) && (last.handler === null || returns(last.handler.body)))));
     };
     if (returns(statements)) return statements;
     const brace: Span = [block.end - 1, block.end];
@@ -1675,16 +1677,17 @@ class Gate {
     result: () => TypeTerm,
     fallThrough?: Expr,
   ): Expr {
+    // A `throw` ends a body as a `return` does.
     const hasReturn = (xs: Stmt[]): boolean =>
       xs.some(
         (st) =>
-          st.k === "return" ||
+          st.k === "return" || st.k === "throw" ||
           (st.k === "if" && (hasReturn(st.then) || hasReturn(st.else_ ?? []))),
       );
     const returns = (xs: Stmt[]): boolean => {
       const last = xs.at(-1);
       return (
-        last?.k === "return" ||
+        last?.k === "return" || last?.k === "throw" ||
         (last?.k === "if" && returns(last.then) && returns(last.else_ ?? []))
       );
     };
@@ -1697,10 +1700,10 @@ class Gate {
             at,
             "loops inside closures require a graph-backed call/body interface",
           );
-        if (st.k === "block")
+        if (st.k === "block" || st.k === "try")
           this.fail(
             at,
-            "a block or switch inside a closure requires a graph-backed call/body interface",
+            "a block, switch or try inside a closure requires a graph-backed call/body interface",
           );
         if (st.k === "if") {
           const yes = st.then,
@@ -1775,6 +1778,8 @@ class Gate {
       let tail: Expr;
       if (last?.k === "return")
         tail = { k: "returnBody", pos: last.pos, e: last.e };
+      else if (last?.k === "throw")
+        tail = { k: "throwBody", pos: last.pos, e: last.e };
       else if (last?.k === "if" && last.else_ !== null)
         tail = {
           k: "ifBody",
@@ -2101,13 +2106,40 @@ class Gate {
     return { k: "block", pos: this.span(node), label: end, body: [...bound, ...body] };
   }
 
+  /** `try { … } catch (e) { … } finally { … }`. The caught value is
+   * `unknown`, the only annotation admitted: anything may be thrown. The
+   * finalizer runs on every way out of the body and the handler, which the
+   * lowering states by running it on each (`SourceExtraction`). */
+  private tryStmt(node: ts.TryStatement): Stmt {
+    const handler = node.catchClause;
+    let param: { name: string; namePos: Span } | null = null;
+    const d = handler?.variableDeclaration;
+    if (d) {
+      if (!ts.isIdentifier(d.name)) this.fail(d, "destructuring is outside the fragment");
+      if (d.type && d.type.kind !== ts.SyntaxKind.UnknownKeyword)
+        this.fail(d.type, "a caught value is `unknown`");
+      if (d.name.text === "undefined") this.fail(d, "shadowing undefined is outside the fragment");
+      param = { name: d.name.text, namePos: this.span(d.name) };
+    }
+    return {
+      k: "try",
+      pos: this.span(node),
+      body: this.statements(node.tryBlock.statements),
+      handler: handler ? { param, body: this.statements(handler.block.statements) } : null,
+      finalizer: node.finallyBlock ? this.statements(node.finallyBlock.statements) : null,
+    };
+  }
+
   /** Whether a statement never completes normally: a jump, or a list or both
    * arms of an `if` that reach one. A loop may complete. */
   private abrupt(s: Statement): boolean {
     return ts.isReturnStatement(s) || ts.isBreakStatement(s) || ts.isContinueStatement(s) ||
       ts.isThrowStatement(s) ||
       (ts.isBlock(s) && s.statements.some((t) => this.abrupt(t))) ||
-      (ts.isIfStatement(s) && !!s.elseStatement && this.abrupt(s.thenStatement) && this.abrupt(s.elseStatement));
+      (ts.isIfStatement(s) && !!s.elseStatement && this.abrupt(s.thenStatement) && this.abrupt(s.elseStatement)) ||
+      // A `try` completes through its body or handler, then its `finally`.
+      (ts.isTryStatement(s) && ((!!s.finallyBlock && this.abrupt(s.finallyBlock)) ||
+        (this.abrupt(s.tryBlock) && (!s.catchClause || this.abrupt(s.catchClause.block)))));
   }
 
   stmt(node: Statement): Stmt {
@@ -2231,6 +2263,11 @@ class Gate {
     if (ts.isForStatement(node)) return this.forStmt(node);
     if (ts.isForInStatement(node)) return this.forInStmt(node);
     if (ts.isSwitchStatement(node)) return this.switchStmt(node);
+    if (ts.isTryStatement(node)) return this.tryStmt(node);
+    // `throw e`: `e`, then a throw of its value, which leaves the function
+    // unless a `try` around it catches it.
+    if (ts.isThrowStatement(node))
+      return { k: "throw", pos: this.span(node), e: this.expr(node.expression) };
 
     // `{ … }`: its statements in a scope of their own.
     if (ts.isBlock(node))

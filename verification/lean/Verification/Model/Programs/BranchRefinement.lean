@@ -72,13 +72,37 @@ def isSubset : PositiveCertificates.Proof ι → Bool
   | .subset => true
   | _ => false
 
+/-- Whether one clause of `B` holds every value a passed tag test admits:
+`string` after `typeof x === "string"`, whatever `x` was before, `unknown`
+included. Only the tests that name one primitive family do. -/
+def tagMember (G : NormalGraph ι) (B : Ty ι) : Tag → Bool → Bool
+  | .isStr, true => (expand G B).any fun c => match c with | .str => true | _ => false
+  | .isNum, true => (expand G B).any fun c => match c with | .num => true | _ => false
+  | .isBigint, true => (expand G B).any fun c => match c with | .bigint => true | _ => false
+  | .isSymbol, true => (expand G B).any fun c => match c with | .symbol => true | _ => false
+  | .isUndef, true => (expand G B).any fun c => match c with | .undef => true | _ => false
+  | .isNul, true => (expand G B).any fun c => match c with | .nul => true | _ => false
+  | .isBool, true => (expand G B).any fun c => match c with | .bool => true | _ => false
+  | _, _ => false
+
+theorem tagMember_sound {G : NormalGraph ι} {B : Ty ι} {t : Tag} {q : Bool}
+    (hm : tagMember G B t q = true) {n W v} (hv : isVal v = true) (ht : tagHolds t v = q) :
+    meaning G B n W v := by
+  cases t <;> cases q <;> simp only [tagMember, Bool.false_eq_true] at hm
+  all_goals
+    obtain ⟨c, hc, hk⟩ := List.any_eq_true.mp hm
+    cases c <;> simp at hk
+    cases v <;> simp [tagHolds, isVal] at ht hv <;>
+      exact expand_sem_mpr ⟨_, expand_sub hc, by
+        simp [semWithArgs, nulT, undefT, boolT, numT, strT, bigintT, symbolT]⟩
+
 /-- Sufficient implementations of ObservedSub. Whole-label filtering is only
 an algorithm for the tag case, not the meaning of refinement. -/
 def checkObservedSub [DecidableEq ι] (G : NormalGraph ι) (A B : Ty ι)
     (o : Observation) (p : PositiveCertificates.Proof ι) : Bool :=
   match o with
   | .boolean q => isSubset p && booleanMember G B q
-  | .tag t q => PositiveCertificates.check G (tagSlice G A t q) B p
+  | .tag t q => PositiveCertificates.check G (tagSlice G A t q) B p || (isSubset p && tagMember G B t q)
 
 theorem checkObservedSub_sound [DecidableEq ι] {G : NormalGraph ι} {A B o p}
     (hc : checkObservedSub G A B o p = true) : ObservedSub G A B o := by
@@ -91,7 +115,10 @@ theorem checkObservedSub_sound [DecidableEq ι] {G : NormalGraph ι} {A B o p}
     rw [ho]
     exact booleanMember_sound hb n W
   | tag t q =>
-    exact (PositiveCertificates.check_sound hc).sound n W v (tagSlice_sound hv ho)
+    simp only [checkObservedSub, Bool.or_eq_true, Bool.and_eq_true] at hc
+    rcases hc with hc | ⟨_, hm⟩
+    · exact (PositiveCertificates.check_sound hc).sound n W v (tagSlice_sound hv ho)
+    · exact tagMember_sound hm (meaning_value hv).1 ho
 
 /-- One mapped-edge checker for all supported observations. Other slots use
 ordinary subtype evidence. The tested slot must exist, even if forgotten. -/

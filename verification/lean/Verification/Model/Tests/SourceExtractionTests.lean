@@ -408,7 +408,7 @@ private def numberStrings : List (UInt64 × String) := [
 
 private def G0 := SourceTypes.graph SourceTypes.initial
 private def request (t : Tm) (A : Ty Nat) : Request :=
-  ⟨SourceTypes.initial, [⟨t,.ret⟩], [⟨[],A⟩], A, 0, []⟩
+  ⟨SourceTypes.initial, [⟨t,.ret,none⟩], [⟨[],A⟩], A, 0, []⟩
 #guard ok (produceSourceJson (toJson (request .tru [1])) 5)
 #guard ok (produceSourceJson (toJson (request .fls [2])) 5)
 #guard ok (produceSourceJson (toJson (request .tru [1,2])) 5)
@@ -595,13 +595,13 @@ private def cellRequest : Request :=
 #guard ok (produceSourceJson (toJson cellRequest) 8)
 
 private def cellProgram : ControlFlow.Program :=
-  [⟨.var 0,.ret⟩,
-   ⟨.var 0,.bind ⟨0,some [0,3,4]⟩⟩,
-   ⟨.write (.var 1) (.var 0),.effect 1⟩,
-   ⟨.fls,.bind 2⟩, ⟨.var 0,.bind 3⟩,
-   ⟨.var 0,.effect 4⟩, ⟨.var 0,.bind 5⟩,
-   ⟨.var 0,.effect 6⟩, ⟨.alloc (.var 0),.bind ⟨7,some [0]⟩⟩,
-   ⟨.tru,.bind 8⟩, ⟨.nul,.effect 9⟩]
+  [⟨.var 0,.ret,none⟩,
+   ⟨.var 0,.bind ⟨0,some [0,3,4]⟩,none⟩,
+   ⟨.write (.var 1) (.var 0),.effect 1,none⟩,
+   ⟨.fls,.bind 2,none⟩, ⟨.var 0,.bind 3,none⟩,
+   ⟨.var 0,.effect 4,none⟩, ⟨.var 0,.bind 5,none⟩,
+   ⟨.var 0,.effect 6,none⟩, ⟨.alloc (.var 0),.bind ⟨7,some [0]⟩,none⟩,
+   ⟨.tru,.bind 8,none⟩, ⟨.nul,.effect 9,none⟩]
 #guard cellRequest.program == cellProgram
 #guard cellRequest.start == 10
 
@@ -646,13 +646,13 @@ private def captureRequest : Request :=
 #guard ok (SourceExtraction.extractFn captureFn captureClaims)
 #guard ok (produceSourceJson (toJson captureRequest) 10)
 private def captureProgram : ControlFlow.Program :=
-  [⟨.var 0,.ret⟩, ⟨.app (.var 1) (.var 0),.bind ⟨0,some [0,3,4,5]⟩⟩,
-   ⟨.nul,.bind 1⟩, ⟨.var 1,.bind 2⟩,
-   ⟨.var 0,.bind ⟨3,some [3,4,5]⟩⟩, ⟨.write (.var 1) (.var 0),.effect 4⟩,
-   ⟨.fls,.bind 5⟩, ⟨.var 0,.bind 6⟩, ⟨.var 0,.effect 7⟩, ⟨.var 1,.bind 8⟩,
-   ⟨.var 0,.effect 9⟩, ⟨.funE (.read (.var 2)),.bind 10⟩,
-   ⟨.var 0,.effect 11⟩, ⟨.alloc (.var 0),.bind ⟨12,some [0]⟩⟩,
-   ⟨.tru,.bind 13⟩, ⟨.nul,.effect 14⟩]
+  [⟨.var 0,.ret,none⟩, ⟨.app (.var 1) (.var 0),.bind ⟨0,some [0,3,4,5]⟩,none⟩,
+   ⟨.nul,.bind 1,none⟩, ⟨.var 1,.bind 2,none⟩,
+   ⟨.var 0,.bind ⟨3,some [3,4,5]⟩,none⟩, ⟨.write (.var 1) (.var 0),.effect 4,none⟩,
+   ⟨.fls,.bind 5,none⟩, ⟨.var 0,.bind 6,none⟩, ⟨.var 0,.effect 7,none⟩, ⟨.var 1,.bind 8,none⟩,
+   ⟨.var 0,.effect 9,none⟩, ⟨.funE (.read (.var 2)),.bind 10,none⟩,
+   ⟨.var 0,.effect 11,none⟩, ⟨.alloc (.var 0),.bind ⟨12,some [0]⟩,none⟩,
+   ⟨.tru,.bind 13,none⟩, ⟨.nul,.effect 14,none⟩]
 #guard captureRequest.program == captureProgram
 #guard captureRequest.start == 15
 
@@ -689,7 +689,7 @@ private def branchCaptureClaims : Fragment.Claims :=
     envs := captureClaims.envs ++ [(40,H),(41,H),(45,H)]
     exprs := captureClaims.exprs ++ [((42,43),t),((46,47),b)] }
 private def branchCaptureProgram : ControlFlow.Program :=
-  captureProgram.set 11 ⟨.funE (.ite (.read (.var 2)) .tru .fls),.bind 10⟩
+  captureProgram.set 11 ⟨.funE (.ite (.read (.var 2)) .tru .fls),.bind 10,none⟩
 #guard is ((extractFn branchCaptureFn branchCaptureClaims).map (·.program)) branchCaptureProgram
 #guard ok (do
   let r ← extractFn branchCaptureFn branchCaptureClaims
@@ -737,7 +737,7 @@ private def joinedCaptureProgram : ControlFlow.Program :=
   let assignment := Tm.letE (.var 2) (.letE .tru (.letE (.write (.var 1) (.var 0)) (.var 1)))
   captureProgram.set 11
     ⟨.funE (.letE (.ite (.read (.var 2)) .nul (.letE assignment .nul))
-      (.read (.var 3))),.bind 10⟩
+      (.read (.var 3))),.bind 10,none⟩
 #guard is ((extractFn joinedCaptureFn joinedCaptureClaims).map (·.program)) joinedCaptureProgram
 #guard ok (do
   let r ← extractFn joinedCaptureFn joinedCaptureClaims
@@ -791,9 +791,9 @@ private def earlyCaptureClaims (q : Bool) : Fragment.Claims :=
        ((53,55),wireTy ⟨false,[.bool]⟩),((53,54),cellWire)] }
 private def earlyCaptureProgram (q : Bool) : ControlFlow.Program :=
   let assignment := Tm.letE (.var 2) (.letE .fls (.letE (.write (.var 1) (.var 0)) (.var 1)))
-  (captureProgram.set 6 ⟨if q then .tru else .fls,.bind 5⟩).set 11
+  (captureProgram.set 6 ⟨if q then .tru else .fls,.bind 5,none⟩).set 11
     ⟨.funE (.ite (.read (.var 2)) .tru
-      (.letE (.letE assignment .nul) (.read (.var 3)))),.bind 10⟩
+      (.letE (.letE assignment .nul) (.read (.var 3)))),.bind 10,none⟩
 #guard [true,false].all fun q =>
   is ((extractFn (earlyCaptureFn q) (earlyCaptureClaims q)).map (·.program)) (earlyCaptureProgram q)
 #guard [true,false].all fun q => ok (do
@@ -852,11 +852,11 @@ private def writerClaims : Fragment.Claims :=
     ((12,13),cellWire),((18,19),b),((22,27),wireTy ⟨false,[.bool]⟩),
     ((22,23),functionWire),((26,27),wireTy ⟨false,[.null]⟩)]⟩
 private def writerProgram : ControlFlow.Program :=
-  [⟨.var 0,.ret⟩, ⟨.app (.var 1) (.var 0),.bind ⟨0,some [0,3,4]⟩⟩,
-   ⟨.nul,.bind 1⟩, ⟨.var 0,.bind 2⟩, ⟨.var 0,.effect 3⟩,
-   ⟨.funE (.letE (.var 2) (.letE .fls (.letE (.write (.var 1) (.var 0)) (.var 1)))),.bind 4⟩,
-   ⟨.var 0,.effect 5⟩, ⟨.alloc (.var 0),.bind ⟨6,some [0]⟩⟩,
-   ⟨.tru,.bind 7⟩, ⟨.nul,.effect 8⟩]
+  [⟨.var 0,.ret,none⟩, ⟨.app (.var 1) (.var 0),.bind ⟨0,some [0,3,4]⟩,none⟩,
+   ⟨.nul,.bind 1,none⟩, ⟨.var 0,.bind 2,none⟩, ⟨.var 0,.effect 3,none⟩,
+   ⟨.funE (.letE (.var 2) (.letE .fls (.letE (.write (.var 1) (.var 0)) (.var 1)))),.bind 4,none⟩,
+   ⟨.var 0,.effect 5,none⟩, ⟨.alloc (.var 0),.bind ⟨6,some [0]⟩,none⟩,
+   ⟨.tru,.bind 7,none⟩, ⟨.nul,.effect 8,none⟩]
 #guard is ((extractFn writerFn writerClaims).map (·.program)) writerProgram
 #guard is ((extractFn writerFn writerClaims).map (·.start)) 9
 #guard ok (do
@@ -927,7 +927,7 @@ private def localWriterClaims : Fragment.Claims :=
 private def localWriterProgram : ControlFlow.Program :=
   let write : Tm := .letE (.var 3) (.letE (.var 1) (.letE (.write (.var 1) (.var 0)) (.var 1)))
   writerProgram.set 5
-    ⟨.funE (.letE .fls (.letE write (.read (.var 4)))),.bind 4⟩
+    ⟨.funE (.letE .fls (.letE write (.read (.var 4)))),.bind 4,none⟩
 #guard is ((extractFn localWriterFn localWriterClaims).map (·.program)) localWriterProgram
 
 /-- A saved local is used by the write and survives the anonymous effect slot. -/
@@ -1130,9 +1130,9 @@ private def assignedParametersClaims : Fragment.Claims :=
   let r ← extractFn assignedParametersFn assignedParametersClaims
   if r.inputs != [[1,2],[1,2],[1,2]] then throw "changed public parameter contract"
   match r.program.reverse with
-  | ⟨.nul,.effect entry⟩ ::
-    ⟨.makeAt .absent ["value"] [.var 0],.bind first⟩ ::
-    ⟨.makeAt .absent ["value"] [.var 2],.bind second⟩ :: _ =>
+  | ⟨.nul,.effect entry,none⟩ ::
+    ⟨.makeAt .absent ["value"] [.var 0],.bind first,none⟩ ::
+    ⟨.makeAt .absent ["value"] [.var 2],.bind second,none⟩ :: _ =>
     if entry.label != r.start-1 || first.label != r.start-2 ||
        first.mapping != some [0,2,3] || second.mapping != some [1,2,0] then
       throw "parameter allocation permuted or aliased the source bindings"

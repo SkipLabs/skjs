@@ -21,8 +21,10 @@ closing-substitution laws; `ProgramTyping.lean` ensures typed positive values
 are closed. The untyped step relation itself imposes no scope check.
 
 The step relation is small-step and total in the sense that matters: a term
-that is not a value and cannot step is **stuck**, and the safety predicate in
-`Safety.lean` rules that out.
+that is not a value, does not throw (`Raises`) and cannot step is **stuck**,
+and the safety predicate in `Safety.lean` rules that out. A throw is an
+outcome, as a value is: JavaScript's exceptions are part of its meaning, and a
+well-typed program may throw, never reach a wrong value.
 -/
 namespace Verification
 namespace Model
@@ -178,6 +180,10 @@ inductive Tm where
   read in order when every earlier actual is a value. Only an argument list
   gives it meaning: anywhere else it is stuck. -/
   | spread (a : Tm)
+  /-- `throw a`: evaluate `a`, then throw its value. A thrown value is not a
+  value: it propagates outward through every evaluation context (`Raises`)
+  until a handler catches it or it leaves the program. -/
+  | throw (a : Tm)
   deriving Repr
 
 /-- Invocation code is not a runtime value. A plain object has no call code. -/
@@ -285,7 +291,7 @@ def arithBits (op : Arith) (x y : UInt64) : UInt64 :=
 
 /-- Arithmetic on two bigints: JavaScript's integer operations. Division
 truncates toward zero; dividing by zero and a negative exponent throw a
-`RangeError`, so they have no result. -/
+`RangeError` (`binopThrows`), so they have no result. -/
 def bigintArith : Arith → Int → Int → Option Int
   | .add, x, y => some (x + y)
   | .sub, x, y => some (x - y)
@@ -432,8 +438,8 @@ def primString : Tm → Option String
 
 /-- **What a binary operator does on two values**, as JavaScript's does on
 them, where that is a value. Arithmetic combines two numbers or two bigints,
-never one of each (JavaScript throws a `TypeError`), and not a bigint division
-by zero or a negative bigint exponent (a `RangeError`). A relational operator
+never one of each (JavaScript throws a `TypeError`: `binopThrows`), and not a
+bigint division by zero or a negative bigint exponent (a `RangeError`). A relational operator
 compares two numeric values of either kind, exactly, or two strings by their
 UTF-16 code units. `+` with a string operand concatenates: the other operand,
 a primitive other than a symbol, converts by `ToString` (`primString`), which
@@ -456,6 +462,37 @@ def binop (op : Arith) : Tm → Tm → Option Tm
   | .str s, b => if op == .add then (primString b).map fun t => .str (s ++ t) else none
   | a, .str t => if op == .add then (primString a).map fun s => .str (s ++ t) else none
   | _, _ => none
+
+def isSym : Tm → Bool
+  | .sym _ => true
+  | _ => false
+
+/-- A primitive value: one no conversion runs code on. -/
+def isPrim : Tm → Bool
+  | .nul | .undef | .tru | .fls | .num _ | .str _ | .bigint _ | .sym _ => true
+  | _ => false
+
+/-- **Where a binary operator throws** on two values, as JavaScript's does,
+with no code of the program's run first: a bigint division by zero and a
+negative bigint exponent (`RangeError`); arithmetic combining a number and a
+bigint (`TypeError`); and any operator with a symbol operand and a primitive
+other one, which converts the symbol by `ToString` or `ToNumeric`
+(`TypeError`). An object operand converts through its own code first, which is
+not modelled: that combination stays stuck. Disjoint from `binop`
+(`binop_not_throws`). -/
+def binopThrows (op : Arith) : Tm → Tm → Bool
+  | .bigint _, .bigint y => match op with
+    | .div => y == 0
+    | .pow => decide (y < 0)
+    | _ => false
+  | .num _, .bigint _ | .bigint _, .num _ => !op.relational
+  | a, b => isSym a && isPrim b || isPrim a && isSym b
+
+/-- The object a primitive operation throws: an object with no field, which
+takes no location, as `{}` allocates. It stands for the `TypeError` or
+`RangeError` instance JavaScript allocates; a handler binds it at `unknown`,
+and nothing typed reads more of it. -/
+def thrownError : Tm := .objAt [] .absent
 
 /-- The array index a number denotes, when it is one: a finite integer in the
 index range, the property name it would spell. Any other number names an
@@ -631,6 +668,9 @@ def tmDecEq (a b : Tm) : Decidable (a = b) := by
   case spread.spread a0 b0 =>
     haveI : Decidable (a0 = b0) := tmDecEq a0 b0
     exact decidable_of_iff (a0 = b0) (by simp only [Tm.spread.injEq])
+  case throw.throw a0 b0 =>
+    haveI : Decidable (a0 = b0) := tmDecEq a0 b0
+    exact decidable_of_iff (a0 = b0) (by simp only [Tm.throw.injEq])
 termination_by sizeOf a
 
 def callCodeDecEq (a b : CallCode) : Decidable (a = b) := by
@@ -761,13 +801,14 @@ theorem lookup_slots {ns : List PropKey} (hnd : ns.Nodup) {base i : Nat}
     (elemAt : ∀ a i, P a → P i → P (.elemAt a i))
     (setElem : ∀ a i v, P a → P i → P v → P (.setElem a i v))
     (lenOf : ∀ a, P a → P (.lenOf a))
-    (spread : ∀ a, P a → P (.spread a)) (t : Tm) : P t := by
+    (spread : ∀ a, P a → P (.spread a))
+    (throw : ∀ a, P a → P (.throw a)) (t : Tm) : P t := by
   apply Tm.rec (motive_1 := P)
     (motive_2 := fun c => match c with
       | .absent => True | .closure _ b _ => P b | .variadic _ b => P b
       | .bound t r pre => P t ∧ P r ∧ ∀ a ∈ pre, P a)
     (motive_3 := fun args => ∀ a ∈ args, P a)
-    var invoke construct letE nul undef tru fls num str bigint sym ?_ ?_ read index write test ite arith arr arrLit elemAt setElem lenOf spread
+    var invoke construct letE nul undef tru fls num str bigint sym ?_ ?_ read index write test ite arith arr arrLit elemAt setElem lenOf spread throw
     True.intro (fun _ _ _ h => h) (fun _ _ h => h) (fun _ _ _ ht hr hp => ⟨ht, hr, hp⟩) (by simp) (by
       intro a args ha ih v hv
       rcases List.mem_cons.mp hv with rfl | hv
@@ -821,6 +862,33 @@ theorem binop_values {op : Arith} {a b v : Tm} (h : binop op a b = some v) :
   obtain ⟨ha, hb, hv⟩ := binop_result h
   refine ⟨ha, hb, ?_⟩
   rcases hv with rfl | rfl | ⟨_, rfl⟩ | ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> rfl
+
+theorem isPrim_val {a : Tm} (h : isPrim a = true) : isVal a = true := by
+  cases a <;> simp_all [isPrim, isVal]
+
+theorem isSym_val {a : Tm} (h : isSym a = true) : isVal a = true := by
+  cases a <;> simp_all [isSym, isVal]
+
+/-- An operator throws only on two values. -/
+theorem binopThrows_values {op : Arith} {a b : Tm} (h : binopThrows op a b = true) :
+    isVal a = true ∧ isVal b = true := by
+  unfold binopThrows at h
+  split at h
+  · exact ⟨rfl, rfl⟩
+  · exact ⟨rfl, rfl⟩
+  · exact ⟨rfl, rfl⟩
+  · simp only [Bool.or_eq_true, Bool.and_eq_true] at h
+    rcases h with ⟨h1, h2⟩ | ⟨h1, h2⟩
+    · exact ⟨isSym_val h1, isPrim_val h2⟩
+    · exact ⟨isPrim_val h1, isSym_val h2⟩
+
+/-- An operator never both answers and throws. -/
+theorem binop_not_throws {op : Arith} {a b v : Tm} (h : binop op a b = some v) :
+    binopThrows op a b = false := by
+  obtain ⟨ha, hb, -⟩ := binop_values h
+  cases a <;> simp [isVal] at ha <;> cases b <;> simp [isVal] at hb <;>
+    cases op <;> simp_all [binop, binopThrows, bigintArith, isPrim, isSym, Arith.relational, primString] <;>
+    (obtain ⟨_, ⟨h1, _⟩, _⟩ := h; exact h1)
 
 /-- ECMAScript Number::equal on IEEE-754 bits: NaN never equals, and the
 sign of zero is ignored. All other equal Numbers have the same encoding. -/
@@ -897,6 +965,7 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
   | .setElem x y z => .setElem (subst j a x) (subst j a y) (subst j a z)
   | .lenOf x => .lenOf (subst j a x)
   | .spread x => .spread (subst j a x)
+  | .throw x => .throw (subst j a x)
 
 termination_by structural t => t
 
@@ -1086,6 +1155,54 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   length, `undefined` at any other number. -/
   | elemStr {s : String} {b : UInt64} {h : Heap} :
       Step h (.elemAt (.str s) (.num b)) h (codeUnitAt s b)
+  /-- A throw's operand is evaluated first. -/
+  | throwC : Step h a h' a' → Step h (.throw a) h' (.throw a')
+  /-- Two values an operator throws on step to throwing a fresh error object. -/
+  | arithThrow : binopThrows op a b = true → Step h (.arith op a b) h (.throw thrownError)
+
+/-- **A term that throws.** `Raises t v`: `t` is `throw v` for a value `v`, in
+evaluation position: under exactly the contexts `Step` evaluates in, each
+constructor here the congruence rule of the same name with a throw in place of
+a step. Such a term does not step (`raises_no_step`); the thrown value leaves
+every context it is in, until a handler catches it. -/
+inductive Raises : Tm → Tm → Prop where
+  | throwV : isVal v = true → Raises (.throw v) v
+  | throwC : Raises a v → Raises (.throw a) v
+  | callL : Raises f v → Raises (.invoke f r args) v
+  | callRecv : isVal f = true → Raises r v → Raises (.invoke f r args) v
+  | callArg {f r a v : Tm} {args : List Tm} {i : Nat} :
+      isVal f = true → isVal r = true → args[i]? = some a →
+      (∀ j, j < i → ∀ w, args[j]? = some w → isVal w = true) →
+      Raises a v → Raises (.invoke f r args) v
+  | constructL : Raises f v → Raises (.construct f args) v
+  | constructArg {f a v : Tm} {args : List Tm} {i : Nat} :
+      isVal f = true → args[i]? = some a →
+      (∀ j, j < i → ∀ w, args[j]? = some w → isVal w = true) →
+      Raises a v → Raises (.construct f args) v
+  | letC : Raises a v → Raises (.letE a b) v
+  | spreadC : Raises a v → Raises (.spread a) v
+  | makeArg {c : CallCode} {ns : List PropKey} {inits : List Tm} {i : Nat} {a v : Tm} :
+      inits[i]? = some a →
+      (∀ j, j < i → ∀ w, inits[j]? = some w → isVal w = true) →
+      Raises a v → Raises (.makeAt c ns inits) v
+  | readC : Raises a v → Raises (.readAt f a) v
+  | indexC1 : Raises a v → Raises (.indexAt a key) v
+  | indexC2 : isVal a = true → Raises key v → Raises (.indexAt a key) v
+  | writeC1 : Raises a v → Raises (.writeAt f a b) v
+  | writeC2 : isVal a = true → Raises b v → Raises (.writeAt f a b) v
+  | testC : Raises a v → Raises (.test k a) v
+  | iteC : Raises c v → Raises (.ite c t e) v
+  | arithC1 : Raises a v → Raises (.arith op a b) v
+  | arithC2 : isVal a = true → Raises b v → Raises (.arith op a b) v
+  | arrArg {inits : List Tm} {i : Nat} {a v : Tm} : inits[i]? = some a →
+      (∀ j, j < i → ∀ w, inits[j]? = some w → isVal w = true) →
+      Raises a v → Raises (.arrLit inits) v
+  | elemC1 : Raises a v → Raises (.elemAt a i) v
+  | elemC2 : isVal a = true → Raises i v → Raises (.elemAt a i) v
+  | setC1 : Raises a v → Raises (.setElem a i x) v
+  | setC2 : isVal a = true → Raises i v → Raises (.setElem a i x) v
+  | setC3 : isVal a = true → isVal i = true → Raises x v → Raises (.setElem a i x) v
+  | lenC : Raises a v → Raises (.lenOf a) v
 
 /-! ### The one-field rules
 
@@ -1482,16 +1599,28 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     | arithC1 s' => exact (ih s').imp id (congrArg (Tm.arith _ · _))
     | arithC2 hv _ => exact absurd s (by intro hs; exact value_no_step hv hs)
     | arithV hb => exact absurd s (by intro hs; exact value_no_step (binop_values hb).1 hs)
+    | arithThrow ht => exact absurd s (by intro hs; exact value_no_step (binopThrows_values ht).1 hs)
   | arithC2 hv s ih =>
     cases s2 with
     | arithC1 s' => exact absurd s' (by intro hs; exact value_no_step hv hs)
     | arithC2 _ s' => exact (ih s').imp id (congrArg (Tm.arith _ _ ·))
     | arithV hb => exact absurd s (by intro hs; exact value_no_step (binop_values hb).2.1 hs)
+    | arithThrow ht => exact absurd s (by intro hs; exact value_no_step (binopThrows_values ht).2 hs)
   | arithV hb =>
     cases s2 with
     | arithC1 s' => exact absurd s' (by intro hs; exact value_no_step (binop_values hb).1 hs)
     | arithC2 _ s' => exact absurd s' (by intro hs; exact value_no_step (binop_values hb).2.1 hs)
     | arithV hb' => exact ⟨rfl, Option.some.inj (hb.symm.trans hb')⟩
+    | arithThrow ht => simp [binop_not_throws hb] at ht
+  | arithThrow ht =>
+    cases s2 with
+    | arithC1 s' => exact absurd s' (by intro hs; exact value_no_step (binopThrows_values ht).1 hs)
+    | arithC2 _ s' => exact absurd s' (by intro hs; exact value_no_step (binopThrows_values ht).2 hs)
+    | arithV hb => simp [binop_not_throws hb] at ht
+    | arithThrow _ => exact ⟨rfl, rfl⟩
+  | throwC s ih =>
+    cases s2 with
+    | throwC s' => exact (ih s').imp id (congrArg Tm.throw)
   | @arrArg inits i h h1 a a1 hg hb s ih =>
     cases s2 with
     | @arrArg _ j _ _ b b1 hg' hb' s' =>
@@ -1609,6 +1738,361 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     | elemC1 s' => exact absurd s' (by intro hs; exact value_no_step rfl hs)
     | elemC2 _ s' => exact absurd s' (by intro hs; exact value_no_step rfl hs)
     | elemStr => exact ⟨rfl, rfl⟩
+
+/-! ### Throwing
+
+A throwing term is neither a value nor a term that steps, and the value it
+throws is determined. -/
+
+theorem raises_not_val {t v : Tm} (h : Raises t v) : isVal t = false := by
+  cases h <;> rfl
+
+theorem raises_val {t v : Tm} (h : Raises t v) : isVal v = true := by
+  induction h <;> assumption
+
+/-- In a list evaluated left to right, the first entry that is not a value is
+determined: two such positions with only values before each coincide. -/
+theorem first_nonval_unique {xs : List Tm} {i j : Nat} {a b : Tm}
+    (ha : xs[i]? = some a) (hb : xs[j]? = some b)
+    (hi : ∀ k, k < i → ∀ w, xs[k]? = some w → isVal w = true)
+    (hj : ∀ k, k < j → ∀ w, xs[k]? = some w → isVal w = true)
+    (na : isVal a = false) (nb : isVal b = false) : i = j ∧ a = b := by
+  have hij : i = j := by
+    rcases Nat.lt_trichotomy i j with h | h | h
+    · have := hj i h a ha; simp [na] at this
+    · exact h
+    · have := hi j h b hb; simp [nb] at this
+  subst hij
+  exact ⟨rfl, Option.some.inj (ha.symm.trans hb)⟩
+
+theorem not_val_of_step {h h' t t'} (s : Step h t h' t') : isVal t = false := by
+  cases ht : isVal t
+  · rfl
+  · exact False.elim (value_no_step ht s)
+
+/-- A spread whose store is ready never throws. -/
+theorem spread_arr_no_raise {ls : List (Option Nat)} {v : Tm} : ¬ Raises (.spread (.arr ls)) v := by
+  intro h; cases h with | spreadC h => cases h
+
+/-- A ready spread is the first actual still to run: nothing before it throws. -/
+theorem spread_blocks_raise {args pre post : List Tm} {ls : List (Option Nat)}
+    (he : args = pre ++ .spread (.arr ls) :: post) (hpre : ∀ w ∈ pre, isVal w = true)
+    {i : Nat} {a v : Tm} (hg : args[i]? = some a)
+    (hb : ∀ j, j < i → ∀ w, args[j]? = some w → isVal w = true)
+    (hr : Raises a v) : False := by
+  subst he
+  rcases Nat.lt_trichotomy i pre.length with hi | hi | hi
+  · rw [List.getElem?_append_left hi] at hg
+    have := hpre a (List.mem_of_getElem? hg)
+    rw [raises_not_val hr] at this; contradiction
+  · subst hi
+    rw [List.getElem?_append_right (Nat.le_refl _)] at hg
+    simp only [Nat.sub_self, List.getElem?_cons_zero, Option.some.injEq] at hg
+    subst hg
+    exact spread_arr_no_raise hr
+  · have := hb pre.length hi (.spread (.arr ls)) (by simp)
+    simp [isVal] at this
+
+/-- The entry after a prefix of values is the first one still to run. -/
+theorem prefix_position {pre rest : List Tm} {t : Tm} (hp : ∀ w ∈ pre, isVal w = true) :
+    (pre ++ t :: rest)[pre.length]? = some t ∧
+      ∀ j, j < pre.length → ∀ w, (pre ++ t :: rest)[j]? = some w → isVal w = true := by
+  refine ⟨by simp, ?_⟩
+  intro j hj w hw
+  rw [List.getElem?_append_left hj] at hw
+  exact hp w (List.mem_of_getElem? hw)
+
+/-- **A throwing term does not step.** -/
+theorem raises_no_step {t v : Tm} (hr : Raises t v) : ∀ {h h' t'}, ¬ Step h t h' t' := by
+  induction hr with
+  | throwV hv => intro _ _ _ s; cases s with | throwC s => exact value_no_step hv s
+  | throwC _ ih => intro _ _ _ s; cases s with | throwC s => exact ih s
+  | callL hf ih =>
+    intro _ _ _ s
+    cases s with
+    | callL s => exact ih s
+    | callRecv hv _ => rw [raises_not_val hf] at hv; contradiction
+    | callArg hv _ _ _ _ => rw [raises_not_val hf] at hv; contradiction
+    | callV => cases hf
+    | callRest => cases hf
+    | callBound => cases hf
+    | callSpread hv _ _ _ _ => rw [raises_not_val hf] at hv; contradiction
+  | callRecv hfv hr ih =>
+    intro _ _ _ s
+    cases s with
+    | callL s => exact value_no_step hfv s
+    | callRecv _ s => exact ih s
+    | callArg _ hv _ _ _ => rw [raises_not_val hr] at hv; contradiction
+    | callV hv _ => rw [raises_not_val hr] at hv; contradiction
+    | callRest hv _ => rw [raises_not_val hr] at hv; contradiction
+    | callBound hv _ => rw [raises_not_val hr] at hv; contradiction
+    | callSpread _ hv _ _ _ => rw [raises_not_val hr] at hv; contradiction
+  | callArg hfv hrv hg hb hr ih =>
+    intro _ _ _ s
+    cases s with
+    | callL s => exact value_no_step hfv s
+    | callRecv _ s => exact value_no_step hrv s
+    | callArg _ _ hg' hb' s =>
+      obtain ⟨rfl, rfl⟩ := first_nonval_unique hg hg' hb hb' (raises_not_val hr) (not_val_of_step s)
+      exact ih s
+    | callV _ hvs => have := hvs _ (List.mem_of_getElem? hg); rw [raises_not_val hr] at this; contradiction
+    | callRest _ hvs => have := hvs _ (List.mem_of_getElem? hg); rw [raises_not_val hr] at this; contradiction
+    | callBound _ hvs => have := hvs _ (List.mem_of_getElem? hg); rw [raises_not_val hr] at this; contradiction
+    | callSpread _ _ he hpre _ => exact spread_blocks_raise he hpre hg hb hr
+  | constructL hf ih =>
+    intro _ _ _ s
+    cases s with
+    | constructL s => exact ih s
+    | constructArg hv _ _ _ => rw [raises_not_val hf] at hv; contradiction
+    | constructV => cases hf
+  | constructArg hfv hg hb hr ih =>
+    intro _ _ _ s
+    cases s with
+    | constructL s => exact value_no_step hfv s
+    | constructArg _ hg' hb' s =>
+      obtain ⟨rfl, rfl⟩ := first_nonval_unique hg hg' hb hb' (raises_not_val hr) (not_val_of_step s)
+      exact ih s
+    | constructV hvs => have := hvs _ (List.mem_of_getElem? hg); rw [raises_not_val hr] at this; contradiction
+  | letC hr ih =>
+    intro _ _ _ s
+    cases s with
+    | letC s => exact ih s
+    | letV hv => rw [raises_not_val hr] at hv; contradiction
+  | spreadC _ ih => intro _ _ _ s; cases s with | spreadC s => exact ih s
+  | makeArg hg hb hr ih =>
+    intro _ _ _ s
+    cases s with
+    | makeArg hg' hb' s =>
+      obtain ⟨rfl, rfl⟩ := first_nonval_unique hg hg' hb hb' (raises_not_val hr) (not_val_of_step s)
+      exact ih s
+    | makeFields hvs _ => have := hvs _ (List.mem_of_getElem? hg); rw [raises_not_val hr] at this; contradiction
+  | readC hr ih =>
+    intro _ _ _ s
+    cases s with
+    | readC s => exact ih s
+    | readField => cases hr
+    | readProto => cases hr
+    | readMissing => cases hr
+  | indexC1 hr ih =>
+    intro _ _ _ s
+    cases s with
+    | indexC1 s => exact ih s
+    | indexC2 hv _ => rw [raises_not_val hr] at hv; contradiction
+    | indexField => cases hr
+    | indexProto => cases hr
+    | indexMissing => cases hr
+  | indexC2 hv hr ih =>
+    intro _ _ _ s
+    cases s with
+    | indexC1 s => exact value_no_step hv s
+    | indexC2 _ s => exact ih s
+    | indexField => cases hr
+    | indexProto => cases hr
+    | indexMissing => cases hr
+  | writeC1 hr ih =>
+    intro _ _ _ s
+    cases s with
+    | writeC1 s => exact ih s
+    | writeC2 hv _ => rw [raises_not_val hr] at hv; contradiction
+    | writeField => cases hr
+  | writeC2 hv hr ih =>
+    intro _ _ _ s
+    cases s with
+    | writeC1 s => exact value_no_step hv s
+    | writeC2 _ s => exact ih s
+    | writeField hw _ _ => rw [raises_not_val hr] at hw; contradiction
+  | testC hr ih =>
+    intro _ _ _ s
+    cases s with
+    | testC s => exact ih s
+    | testV hv => rw [raises_not_val hr] at hv; contradiction
+  | iteC hr ih =>
+    intro _ _ _ s
+    cases s with
+    | iteC s => exact ih s
+    | iteT => cases hr
+    | iteF => cases hr
+  | arithC1 hr ih =>
+    intro _ _ _ s
+    cases s with
+    | arithC1 s => exact ih s
+    | arithC2 hv _ => rw [raises_not_val hr] at hv; contradiction
+    | arithV hb => have := (binop_values hb).1; rw [raises_not_val hr] at this; contradiction
+    | arithThrow ht => have := (binopThrows_values ht).1; rw [raises_not_val hr] at this; contradiction
+  | arithC2 hv hr ih =>
+    intro _ _ _ s
+    cases s with
+    | arithC1 s => exact value_no_step hv s
+    | arithC2 _ s => exact ih s
+    | arithV hb => have := (binop_values hb).2.1; rw [raises_not_val hr] at this; contradiction
+    | arithThrow ht => have := (binopThrows_values ht).2; rw [raises_not_val hr] at this; contradiction
+  | arrArg hg hb hr ih =>
+    intro _ _ _ s
+    cases s with
+    | arrArg hg' hb' s =>
+      obtain ⟨rfl, rfl⟩ := first_nonval_unique hg hg' hb hb' (raises_not_val hr) (not_val_of_step s)
+      exact ih s
+    | arrSpread he hpre _ => exact spread_blocks_raise he hpre hg hb hr
+    | arrAlloc hvs => have := hvs _ (List.mem_of_getElem? hg); rw [raises_not_val hr] at this; contradiction
+  | elemC1 hr ih =>
+    intro _ _ _ s
+    cases s with
+    | elemC1 s => exact ih s
+    | elemC2 hv _ => rw [raises_not_val hr] at hv; contradiction
+    | elemRead => cases hr
+    | elemAbsent => cases hr
+    | elemStr => cases hr
+  | elemC2 hv hr ih =>
+    intro _ _ _ s
+    cases s with
+    | elemC1 s => exact value_no_step hv s
+    | elemC2 _ s => exact ih s
+    | elemRead => cases hr
+    | elemAbsent => cases hr
+    | elemStr => cases hr
+  | setC1 hr ih =>
+    intro _ _ _ s
+    cases s with
+    | setC1 s => exact ih s
+    | setC2 hv _ => rw [raises_not_val hr] at hv; contradiction
+    | setC3 hv _ _ => rw [raises_not_val hr] at hv; contradiction
+    | setPresent => cases hr
+    | setGrow => cases hr
+  | setC2 hv hr ih =>
+    intro _ _ _ s
+    cases s with
+    | setC1 s => exact value_no_step hv s
+    | setC2 _ s => exact ih s
+    | setC3 _ hi _ => rw [raises_not_val hr] at hi; contradiction
+    | setPresent => cases hr
+    | setGrow => cases hr
+  | setC3 hv hi hr ih =>
+    intro _ _ _ s
+    cases s with
+    | setC1 s => exact value_no_step hv s
+    | setC2 _ s => exact value_no_step hi s
+    | setC3 _ _ s => exact ih s
+    | setPresent hw _ _ => rw [raises_not_val hr] at hw; contradiction
+    | setGrow hw _ _ => rw [raises_not_val hr] at hw; contradiction
+  | lenC hr ih =>
+    intro _ _ _ s
+    cases s with
+    | lenC s => exact ih s
+    | lenV => cases hr
+    | lenStr => cases hr
+
+/-- **The thrown value is determined.** -/
+theorem Raises_det {t v w : Tm} (h1 : Raises t v) (h2 : Raises t w) : v = w := by
+  induction h1 generalizing w with
+  | throwV hv =>
+    cases h2 with
+    | throwV => rfl
+    | throwC h => rw [raises_not_val h] at hv; contradiction
+  | throwC h ih =>
+    cases h2 with
+    | throwV hv => rw [raises_not_val h] at hv; contradiction
+    | throwC h' => exact ih h'
+  | callL h ih =>
+    cases h2 with
+    | callL h' => exact ih h'
+    | callRecv hv _ => rw [raises_not_val h] at hv; contradiction
+    | callArg hv _ _ _ _ => rw [raises_not_val h] at hv; contradiction
+  | callRecv hf h ih =>
+    cases h2 with
+    | callL h' => rw [raises_not_val h'] at hf; contradiction
+    | callRecv _ h' => exact ih h'
+    | callArg _ hv _ _ _ => rw [raises_not_val h] at hv; contradiction
+  | callArg hf hr hg hb h ih =>
+    cases h2 with
+    | callL h' => rw [raises_not_val h'] at hf; contradiction
+    | callRecv _ h' => rw [raises_not_val h'] at hr; contradiction
+    | callArg _ _ hg' hb' h' =>
+      obtain ⟨rfl, rfl⟩ := first_nonval_unique hg hg' hb hb' (raises_not_val h) (raises_not_val h')
+      exact ih h'
+  | constructL h ih =>
+    cases h2 with
+    | constructL h' => exact ih h'
+    | constructArg hv _ _ _ => rw [raises_not_val h] at hv; contradiction
+  | constructArg hf hg hb h ih =>
+    cases h2 with
+    | constructL h' => rw [raises_not_val h'] at hf; contradiction
+    | constructArg _ hg' hb' h' =>
+      obtain ⟨rfl, rfl⟩ := first_nonval_unique hg hg' hb hb' (raises_not_val h) (raises_not_val h')
+      exact ih h'
+  | letC h ih => cases h2 with | letC h' => exact ih h'
+  | spreadC h ih => cases h2 with | spreadC h' => exact ih h'
+  | makeArg hg hb h ih =>
+    cases h2 with
+    | makeArg hg' hb' h' =>
+      obtain ⟨rfl, rfl⟩ := first_nonval_unique hg hg' hb hb' (raises_not_val h) (raises_not_val h')
+      exact ih h'
+  | readC h ih => cases h2 with | readC h' => exact ih h'
+  | indexC1 h ih =>
+    cases h2 with
+    | indexC1 h' => exact ih h'
+    | indexC2 hv _ => rw [raises_not_val h] at hv; contradiction
+  | indexC2 hv h ih =>
+    cases h2 with
+    | indexC1 h' => rw [raises_not_val h'] at hv; contradiction
+    | indexC2 _ h' => exact ih h'
+  | writeC1 h ih =>
+    cases h2 with
+    | writeC1 h' => exact ih h'
+    | writeC2 hv _ => rw [raises_not_val h] at hv; contradiction
+  | writeC2 hv h ih =>
+    cases h2 with
+    | writeC1 h' => rw [raises_not_val h'] at hv; contradiction
+    | writeC2 _ h' => exact ih h'
+  | testC h ih => cases h2 with | testC h' => exact ih h'
+  | iteC h ih => cases h2 with | iteC h' => exact ih h'
+  | arithC1 h ih =>
+    cases h2 with
+    | arithC1 h' => exact ih h'
+    | arithC2 hv _ => rw [raises_not_val h] at hv; contradiction
+  | arithC2 hv h ih =>
+    cases h2 with
+    | arithC1 h' => rw [raises_not_val h'] at hv; contradiction
+    | arithC2 _ h' => exact ih h'
+  | arrArg hg hb h ih =>
+    cases h2 with
+    | arrArg hg' hb' h' =>
+      obtain ⟨rfl, rfl⟩ := first_nonval_unique hg hg' hb hb' (raises_not_val h) (raises_not_val h')
+      exact ih h'
+  | elemC1 h ih =>
+    cases h2 with
+    | elemC1 h' => exact ih h'
+    | elemC2 hv _ => rw [raises_not_val h] at hv; contradiction
+  | elemC2 hv h ih =>
+    cases h2 with
+    | elemC1 h' => rw [raises_not_val h'] at hv; contradiction
+    | elemC2 _ h' => exact ih h'
+  | setC1 h ih =>
+    cases h2 with
+    | setC1 h' => exact ih h'
+    | setC2 hv _ => rw [raises_not_val h] at hv; contradiction
+    | setC3 hv _ _ => rw [raises_not_val h] at hv; contradiction
+  | setC2 hv h ih =>
+    cases h2 with
+    | setC1 h' => rw [raises_not_val h'] at hv; contradiction
+    | setC2 _ h' => exact ih h'
+    | setC3 _ hi _ => rw [raises_not_val h] at hi; contradiction
+  | setC3 hv hi h ih =>
+    cases h2 with
+    | setC1 h' => rw [raises_not_val h'] at hv; contradiction
+    | setC2 _ h' => rw [raises_not_val h'] at hi; contradiction
+    | setC3 _ _ h' => exact ih h'
+  | lenC h ih => cases h2 with | lenC h' => exact ih h'
+
+theorem Raises.makeC {c : CallCode} {a v : Tm} (h : Raises a v) : Raises (.make c a) v :=
+  .makeArg (i := 0) rfl (by intro j hj; omega) h
+
+theorem Raises.appR {f a v : Tm} (hf : isVal f = true) (h : Raises a v) : Raises (.app f a) v :=
+  .callArg (i := 0) hf rfl rfl (by intro j hj; omega) h
+
+theorem Raises.appL {f a v : Tm} (h : Raises f v) : Raises (.app f a) v := .callL h
+
+#print axioms raises_no_step
+#print axioms Raises_det
 
 theorem make_step_inv {c : CallCode} {v : Val} (hv : isVal v = true) {h h' t}
     (hs : Step h (.make c v) h' t) : h' = h ++ [v] ∧ t = .obj h.length c := by

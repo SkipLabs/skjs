@@ -21,26 +21,26 @@ private def start : Nat := ((extracted.toOption.getD []).map (·.start)).headD 0
 -- returned (0). The assertion is a `.var 0` node: no operation, no effect.
 private def expected : Program :=
   [
-   ⟨.var 0,.ret⟩,
-   ⟨.var 0,.bind 0⟩,
-   ⟨.var 0,.bind ⟨1,some [3, 4]⟩⟩,
-   ⟨.writeAt "value" (.var 1) (.var 0),.effect 2⟩,
-   ⟨.nul,.bind 3⟩,
-   ⟨.var 1,.bind 4⟩,
-   ⟨.var 0,.effect 5⟩,
-   ⟨.var 0,.bind ⟨6,some [0, 2]⟩⟩,
-   ⟨.readAt "value" (.var 0),.bind ⟨7,some [0, 2]⟩⟩,
-   ⟨.var 0,.bind 8⟩,
-   ⟨.nul,.effect 9⟩,
-   ⟨.var 0,.ret⟩,
-   ⟨.num 0,.bind 11⟩,
-   ⟨.var 1,.tagBind .isNul ⟨12,some [3]⟩ ⟨10,some [3]⟩⟩,
-   ⟨.ite (.test .isNul (.var 1)) (.tru) (.fls),.bind ⟨13,some [0, 3, 4]⟩⟩,
-   ⟨.nul,.bind 14⟩,
-   ⟨.var 0,.bind 15⟩,
-   ⟨.readAt "value" (.var 0),.bind ⟨16,some [0, 2]⟩⟩,
-   ⟨.var 0,.bind 17⟩,
-   ⟨.nul,.effect 18⟩]
+   ⟨.var 0,.ret,none⟩,
+   ⟨.var 0,.bind 0,none⟩,
+   ⟨.var 0,.bind ⟨1,some [3, 4]⟩,none⟩,
+   ⟨.writeAt "value" (.var 1) (.var 0),.effect 2,none⟩,
+   ⟨.nul,.bind 3,none⟩,
+   ⟨.var 1,.bind 4,none⟩,
+   ⟨.var 0,.effect 5,none⟩,
+   ⟨.var 0,.bind ⟨6,some [0, 2]⟩,none⟩,
+   ⟨.readAt "value" (.var 0),.bind ⟨7,some [0, 2]⟩,none⟩,
+   ⟨.var 0,.bind 8,none⟩,
+   ⟨.nul,.effect 9,none⟩,
+   ⟨.var 0,.ret,none⟩,
+   ⟨.num 0,.bind 11,none⟩,
+   ⟨.var 1,.tagBind .isNul ⟨12,some [3]⟩ ⟨10,some [3]⟩,none⟩,
+   ⟨.ite (.test .isNul (.var 1)) (.tru) (.fls),.bind ⟨13,some [0, 3, 4]⟩,none⟩,
+   ⟨.nul,.bind 14,none⟩,
+   ⟨.var 0,.bind 15,none⟩,
+   ⟨.readAt "value" (.var 0),.bind ⟨16,some [0, 2]⟩,none⟩,
+   ⟨.var 0,.bind 17,none⟩,
+   ⟨.nul,.effect 18,none⟩]
 #guard program == expected
 #guard start == 19
 

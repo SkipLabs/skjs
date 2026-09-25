@@ -87,7 +87,9 @@ SKJS itself; it is not required for changes confined to the verifier or reports.
 The source adapter supports **functions with primitive or bounded callable
 parameters, initialized `const` bindings, nested branches (`else if`, unbraced arms), `while`,
 `for`, `for...of` and `for...in` loops with `break`/`continue`, `switch`, nested
-blocks and returns** ([statement forms](DESIGN.md#statement-forms)), where a `const` or `let` statement may declare several bindings,
+blocks and returns** ([statement forms](DESIGN.md#statement-forms)), **`throw`
+and `try`/`catch`/`finally`** ([throws](DESIGN.md#throws): a throw is an
+outcome, as a value is), where a `const` or `let` statement may declare several bindings,
 bound left to right under the statement's one entry, and a `const` may bind an
 object pattern of identifier properties with optional defaults over a local
 record, over local cells and bounded expression closures and calls. Cell

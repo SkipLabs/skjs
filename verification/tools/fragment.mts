@@ -166,6 +166,8 @@ export type Expr =
      would otherwise have to invent. */
   | { k: "doneBody"; pos: Span }
   | { k: "returnBody"; pos: Span; e: Expr }
+  /* A closure body's `throw e`: it ends the body, as a return does. */
+  | { k: "throwBody"; pos: Span; e: Expr }
   | { k: "seqBody"; pos: Span; init: Expr; body: Expr }
   | {
       k: "letBody";
@@ -203,6 +205,20 @@ export type Stmt =
      then one run of the body per element, bound to `name`. */
   | { k: "forOf"; pos: Span; name: string; namePos: Span; iterable: Expr; body: Stmt[] }
   | { k: "if"; pos: Span; cond: Expr; then: Stmt[]; else_: Stmt[] | null }
+  /* `throw e`: `e`, then a throw of its value, which leaves the function
+     unless an enclosing `try` catches it. */
+  | { k: "throw"; pos: Span; e: Expr }
+  /* `try { body } catch (param) { handler.body } finally { finalizer }`. A
+     throw in the body goes to the handler, whose `param` binds the thrown
+     value, `unknown`; the finalizer runs on every way out of the body and the
+     handler, then that way out resumes. */
+  | {
+      k: "try";
+      pos: Span;
+      body: Stmt[];
+      handler: { param: { name: string; namePos: Span } | null; body: Stmt[] } | null;
+      finalizer: Stmt[] | null;
+    }
   /* A declaration statement binds one or more names, left to right, each
      initializer seeing the earlier bindings. The statement is the entry; the
      producer states no cut between its declarators. */

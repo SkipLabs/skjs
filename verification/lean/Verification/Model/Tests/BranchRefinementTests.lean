@@ -44,11 +44,14 @@ private def mixed : PositiveGraphs.NormalGraph Nat := .ofRows fun _ => [.nul,.bo
 #guard !checkObserved G [] [] 0 (.boolean true) none []
 #guard !checkObserved G [] [] 0 (.tag .isNul true) none []
 #guard checkObserved G [[0,1,2]] [] 0 (.tag .isNul true) none []
--- Filtering's precision limit does not restrict the semantic obligation.
+-- Filtering's precision limit does not restrict the semantic obligation, and
+-- a passed test naming one family is covered by that family's clause
+-- (`tagMember`), whatever the tested type was.
 private def mixedWithNull : PositiveGraphs.NormalGraph Nat := .ofRows fun
   | 0 => [.nul,.bool]
   | _ => [.nul]
-#guard !checkObservedSub mixedWithNull [0] [1] (.tag .isNul true) .subset
+#guard checkObservedSub mixedWithNull [0] [1] (.tag .isNul true) .subset
+#guard !checkObservedSub mixedWithNull [0] [1] (.tag .isNul false) .subset
 example : ObservedSub mixedWithNull [0] [1] (.tag .isNul true) := by
   intro n W v _ ho
   have hn : v = .nul := by cases v <;> simp_all [Observation.holds, tagHolds]
@@ -71,8 +74,8 @@ example : ObservedSub mixedWithNull [0] [1] (.tag .isNul true) := by
 
 private def request (v : Tm) : Request :=
   ⟨T,
-    [⟨v,.bind 1⟩, ⟨.var 0,.branchBind ⟨2,some [0,1]⟩ ⟨3,some [0,1]⟩⟩,
-     ⟨.var 0,.ret⟩, ⟨.var 0,.ret⟩],
+    [⟨v,.bind 1,none⟩, ⟨.var 0,.branchBind ⟨2,some [0,1]⟩ ⟨3,some [0,1]⟩,none⟩,
+     ⟨.var 0,.ret,none⟩, ⟨.var 0,.ret,none⟩],
     [⟨[],[1,2]⟩,⟨[[1,2]],[1,2]⟩,⟨[[1],[1,2]],[1,2]⟩,⟨[[2],[1,2]],[1,2]⟩],
     [1,2],0,[]⟩
 
@@ -87,38 +90,38 @@ private def roundtrip (r : Request) : Except String Unit := do
 #guard ok (roundtrip (request .tru))
 #guard ok (roundtrip (request .fls))
 #guard !ok (roundtrip { request .tru with program := ((request .tru).program.set 1
-  ⟨.var 0,.branchBind ⟨3,some [0,1]⟩ ⟨2,some [0,1]⟩⟩) })
+  ⟨.var 0,.branchBind ⟨3,some [0,1]⟩ ⟨2,some [0,1]⟩,none⟩) })
 #guard !ok (roundtrip { request .tru with claims := (request .tru).claims.set 3 ⟨[[1],[1,2]],[1,2]⟩ })
 #guard !ok (roundtrip { request .tru with claims := (request .tru).claims.set 2 ⟨[[1],[1]],[1,2]⟩ })
 #guard !ok (roundtrip { request .tru with program := ((request .tru).program.set 1
-  ⟨.var 0,.branchBind ⟨2,some [1,0]⟩ ⟨3,some [0,1]⟩⟩) })
+  ⟨.var 0,.branchBind ⟨2,some [1,0]⟩ ⟨3,some [0,1]⟩,none⟩) })
 #guard !ok (roundtrip { request .tru with program := ((request .tru).program.set 1
-  ⟨.var 0,.branchBind ⟨2,some [0,1]⟩ 99⟩) })
+  ⟨.var 0,.branchBind ⟨2,some [0,1]⟩ 99,none⟩) })
 -- A possibly-null result is not accepted as a Boolean dispatch, even when this
 -- particular source expression happens to evaluate to true.
 #guard !ok (roundtrip { request .tru with claims := (request .tru).claims.set 1 ⟨[[1,2]],[0,1,2]⟩ })
 -- Refining transfers also participate in cycles; checking requires no iteration.
 #guard ok (roundtrip ⟨T,
-  [⟨.tru,.bind 1⟩,⟨.var 0,.branchBind ⟨1,some [0]⟩ ⟨2,some [0]⟩⟩,⟨.var 0,.ret⟩],
+  [⟨.tru,.bind 1,none⟩,⟨.var 0,.branchBind ⟨1,some [0]⟩ ⟨2,some [0]⟩,none⟩,⟨.var 0,.ret,none⟩],
   [⟨[],[1,2]⟩,⟨[[1,2]],[1,2]⟩,⟨[[2]],[1,2]⟩],[1,2],0,[]⟩)
 -- Tag dispatch uses the same observed edge checker and retains the value itself.
 private def tagRequest : Request :=
   ⟨T,
-    [⟨.var 0,.tagBind .isNul ⟨1,some [0]⟩ ⟨2,some [0]⟩⟩,
-     ⟨.fls,.ret⟩,⟨.var 0,.ret⟩],
+    [⟨.var 0,.tagBind .isNul ⟨1,some [0]⟩ ⟨2,some [0]⟩,none⟩,
+     ⟨.fls,.ret,none⟩,⟨.var 0,.ret,none⟩],
     [⟨[[0,1,2]],[0,1,2]⟩,⟨[[0]],[1,2]⟩,⟨[[1,2]],[1,2]⟩],
     [1,2],0,[[0,1,2]]⟩
 #guard ok (roundtrip tagRequest)
 #guard !ok (roundtrip { tagRequest with program := (tagRequest.program.set 0
-  ⟨.var 0,.tagBind .isBool ⟨1,some [0]⟩ ⟨2,some [0]⟩⟩) })
+  ⟨.var 0,.tagBind .isBool ⟨1,some [0]⟩ ⟨2,some [0]⟩,none⟩) })
 #guard !ok (roundtrip { tagRequest with program := (tagRequest.program.set 0
-  ⟨.var 0,.tagBind .isNul ⟨1,some [1]⟩ ⟨2,some [0]⟩⟩) })
+  ⟨.var 0,.tagBind .isNul ⟨1,some [1]⟩ ⟨2,some [0]⟩,none⟩) })
 #guard !ok (roundtrip { tagRequest with program := (tagRequest.program.set 0
-  ⟨.var 0,.tagBind .isNul 99 ⟨2,some [0]⟩⟩) })
+  ⟨.var 0,.tagBind .isNul 99 ⟨2,some [0]⟩,none⟩) })
 -- Dispatch operates on the value, even at an empty heap or without an alias map.
-example : Transition [] [] (.eval .nul (fun _ => .nul) (.tagBind .isNul 1 2)) []
+example : Transition [] [] (.eval .nul (fun _ => .nul) (.tagBind .isNul 1 2) none) []
     (.at 1 (PointClaims.mapEnv none (push .nul (fun _ => .nul)))) := .tagBind rfl
-example : Transition [] [] (.eval .fls (fun _ => .nul) (.tagBind .isNul 1 2)) []
+example : Transition [] [] (.eval .fls (fun _ => .nul) (.tagBind .isNul 1 2) none) []
     (.at 2 (PointClaims.mapEnv none (push .fls (fun _ => .nul)))) := .tagBind rfl
 
 end Verification.Model.BranchRefinementTests

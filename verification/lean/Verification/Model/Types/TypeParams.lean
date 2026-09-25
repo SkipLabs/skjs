@@ -207,7 +207,7 @@ theorem Safe_of_mem {T : Fam} {n : Nat} {W : WorldT n} {h v}
     (hv : isVal v = true) (hm : T n W v) : Safe T n W h v := by
   cases n with
   | zero => trivial
-  | succ _ => exact Or.inl ⟨hv, hm⟩
+  | succ _ => exact Or.inl (Or.inl ⟨hv, hm⟩)
 
 /-- The identity inhabits `T → T` for every family `T` of closed values.
 Instantiating the scheme is specializing this theorem; it is not a separate
@@ -463,7 +463,8 @@ theorem alloc_safeP {G : NormalGraph ι} {P η} {Γ a A Ref f n W h ρ}
     Safe (meaningP G P η Ref) n W h (instantiate 0 ρ (.makeAt .absent [f] [a])) := by
   simp only [instantiate, instantiateArgs_eq_map, List.map_cons, List.map_nil]
   apply bind (fun t => .makeAt .absent [f] [t])
-    (fun hs => CallArguments.Step.makeArgs (.head hs)) n W h _ hw hh (ih n W h ρ he hw hh)
+    (fun hs => CallArguments.Step.makeArgs (.head hs)) (fun hr => (CallArguments.ArgRaises.head hr).make)
+    n W h _ hw hh (ih n W h ρ he hw hh)
   intro j hj U hx hu heap v hok hv ha'
   apply Safe_mono j (fun k _ V w hw => (represents_semP hr hRef k V w).mpr
     ⟨⟨hw, by simp⟩, fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm,
@@ -488,7 +489,7 @@ theorem read_safeP {G : NormalGraph ι} {P η} {Γ a A fs f Ref n W h ρ}
     (he : EnvOkP G P η Γ ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
     Safe (meaningP G P η A) n W h (instantiate 0 ρ (.readAt f a)) := by
   simp only [instantiate]
-  apply bind (Tm.readAt f) Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
+  apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
   intro j hj U hx hu heap v hok hv ha'
   obtain ⟨flds, l, c, rfl, hfd, hl, hag⟩ :=
     recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩)
@@ -507,10 +508,10 @@ theorem write_safeP {G : NormalGraph ι} {P η} {Γ a b A fs f Ref N n W h ρ}
     (he : EnvOkP G P η Γ ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
     Safe (meaningP G P η N) n W h (instantiate 0 ρ (.writeAt f a b)) := by
   simp only [instantiate]
-  apply bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 n W h _ hw hh
+  apply bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 Raises.writeC1 n W h _ hw hh
     (iha n W h ρ he hw hh)
   intro j hj U hx hu heap av hok hav ha'
-  apply bind (.writeAt f av) (Step.writeC2 hav) j U heap _ hu hok
+  apply bind (.writeAt f av) (Step.writeC2 hav) (Raises.writeC2 hav) j U heap _ hu hok
     (ihb j U heap ρ (he.transfer hC j hj U hx) hu hok)
   intro k hk V hy hv heap' bv hok' hbval hb'
   have ha'' :=
@@ -570,7 +571,7 @@ theorem ifBool_safeP {G : NormalGraph ι} {P η} {Γ c C t e A n W h ρ}
     (he : EnvOkP G P η Γ ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
     Safe (meaningP G P η A) n W h (instantiate 0 ρ (.ite c t e)) := by
   simp only [instantiate]
-  apply bind (fun c => .ite c (instantiate 0 ρ t) (instantiate 0 ρ e)) Step.iteC
+  apply bind (fun c => .ite c (instantiate 0 ρ t) (instantiate 0 ρ e)) Step.iteC Raises.iteC
     n W h _ hw hh (ihc n W h ρ he hw hh)
   intro j hj U hx hu heap v hok hv ha
   have hb := answers_soundP hbool hCP ha
@@ -601,7 +602,7 @@ theorem ifKnown_safeP {G : NormalGraph ι} {P η} {Γ c C q t e A n W h ρ}
     (he : EnvOkP G P η Γ ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
     Safe (meaningP G P η A) n W h (instantiate 0 ρ (.ite c t e)) := by
   simp only [instantiate]
-  apply bind (fun c => .ite c (instantiate 0 ρ t) (instantiate 0 ρ e)) Step.iteC
+  apply bind (fun c => .ite c (instantiate 0 ρ t) (instantiate 0 ρ e)) Step.iteC Raises.iteC
     n W h _ hw hh (ihc n W h ρ he hw hh)
   intro j hj U hx hu heap v hok hv ha
   have hvalue := (represents_semP hq hCP j U v).mp ha
@@ -711,7 +712,7 @@ theorem makeCallable_safeP {G : NormalGraph ι} {P η} {Γ F Bag arity a b n W h
       (instantiate 0 ρ (.make (.closure arity b) a)) := by
   simp only [instantiate, Nat.zero_add]
   have hcode := invocation_of_bodyP hC he hlen ihb
-  apply bind (Tm.make (.closure arity (instantiate (arity + 1) ρ b))) Step.makeC n W h _ hw hh
+  apply bind (Tm.make (.closure arity (instantiate (arity + 1) ρ b))) Step.makeC Raises.makeC n W h _ hw hh
     (iha n W h ρ he hw hh)
   intro j hj U hx hu heap av hok hav ha'
   have hc : InvocationSpec arity
@@ -769,7 +770,7 @@ theorem readCallable_safeP {G : NormalGraph ι} {P η} {Γ a F Bag A f Ps L S n 
     (he : EnvOkP G P η Γ ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
     Safe (meaningP G P η A) n W h (instantiate 0 ρ (.readAt f a)) := by
   simp only [instantiate]
-  apply bind (Tm.readAt f) Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
+  apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
   intro j hj U hx hu heap v hok hv ha'
   exact bag_read (meaningP_valOnly hC A) (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩)
     ((represents_semP hr hF j U v).mp ha').1.1.1 hu hok
@@ -785,10 +786,10 @@ theorem writeCallable_safeP {G : NormalGraph ι} {P η} {Γ a b F Bag A f Ps L S
     (he : EnvOkP G P η Γ ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
     Safe (meaningP G P η N) n W h (instantiate 0 ρ (.writeAt f a b)) := by
   simp only [instantiate]
-  apply bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 n W h _ hw hh
+  apply bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 Raises.writeC1 n W h _ hw hh
     (iha n W h ρ he hw hh)
   intro j hj U hx hu heap av hok hav ha'
-  apply bind (.writeAt f av) (Step.writeC2 hav) j U heap _ hu hok
+  apply bind (.writeAt f av) (Step.writeC2 hav) (Raises.writeC2 hav) j U heap _ hu hok
     (ihb j U heap ρ (he.transfer hC j hj U hx) hu hok)
   intro k hk V hy hv heap' bv hok' hbval hb'
   have ha'' :=
@@ -998,7 +999,7 @@ theorem letE_safeP {G : NormalGraph ι} {P η} {Γ A B a b n W h ρ}
     (he : EnvOkP G P η Γ ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
     Safe (meaningP G P η B) n W h (instantiate 0 ρ (.letE a b)) := by
   simp only [instantiate]
-  apply bind (fun a => .letE a (instantiate 1 ρ b)) Step.letC n W h _ hw hh
+  apply bind (fun a => .letE a (instantiate 1 ρ b)) Step.letC Raises.letC n W h _ hw hh
     (iha n W h ρ he hw hh)
   intro j hj U hx hu heap av hok hav ha'
   cases j with

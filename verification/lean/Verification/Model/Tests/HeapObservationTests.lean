@@ -67,16 +67,19 @@ theorem callback_does_not_frame (W : WorldT 3) :
     ¬ SafePost nulT (fun h _ => Observes h 0 .tru) 3 W [.tru]
       (.app (writer 0) .nul) := by
   intro hs
-  rcases hs with ⟨hv,_,_⟩ | ⟨U,h',t',hx,hu,step,hh,hs⟩
+  rcases hs with (⟨hv,_,_⟩ | hr) | ⟨U,h',t',hx,hu,step,hh,hs⟩
   · cases hv
+  · exact hr.no_step (hp := [.tru]) (.beta rfl)
   · have st : Step [.tru] (.app (writer 0) .nul) [.tru] (.write (.obj 0 .absent) .fls) := .beta rfl
     obtain ⟨rfl,rfl⟩ := Step_det st step
-    rcases hs with ⟨hv,_,_⟩ | ⟨V,h'',t'',hx,hu,step,hh,hs⟩
+    rcases hs with (⟨hv,_,_⟩ | hr) | ⟨V,h'',t'',hx,hu,step,hh,hs⟩
     · cases hv
+    · exact hr.no_step (Step.writeV (h := [.tru]) rfl (by decide))
     · have st : Step [.tru] (.write (.obj 0 .absent) .fls) [.fls] .nul := .writeV rfl (by decide)
       obtain ⟨rfl,rfl⟩ := Step_det st step
-      rcases hs with ⟨_,_,ho⟩ | ⟨_,_,_,_,_,step,_,_⟩
+      rcases hs with (⟨_,_,ho⟩ | hr) | ⟨_,_,_,_,_,step,_,_⟩
       · simp [Observes] at ho
+      · exact val_not_thrown rfl hr
       · exact value_no_step rfl step
 
 /-- The observation counterexample has a genuinely inhabited, admissible input

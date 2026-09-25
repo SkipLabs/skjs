@@ -18,11 +18,11 @@ def callEvidence : Evidence (Fin 7) := .node ⟨[[3],[2]],callCaptured,[1]⟩ .a
 /-- The same closure survives a write through the original reference. Node 2
 is reached after closure creation and again through the back edge from node 3. -/
 def loop : Program :=
-  [⟨.alloc .tru, .bind 1⟩,
-   ⟨dispatch, .bind 2⟩,
-   ⟨callCaptured, .branch 3 4⟩,
-   ⟨.write (.var 1) .fls, .effect 2⟩,
-   ⟨callCaptured, .ret⟩]
+  [⟨.alloc .tru, .bind 1,none⟩,
+   ⟨dispatch, .bind 2,none⟩,
+   ⟨callCaptured, .branch 3 4,none⟩,
+   ⟨.write (.var 1) .fls, .effect 2,none⟩,
+   ⟨callCaptured, .ret,none⟩]
 
 def loopEvidence : ControlFlow.Certificate (Fin 7) :=
   [{expression := .node ⟨[], .alloc .tru, [2]⟩ .alloc [leaf [] .tru [1] .tru], edges :=  [[.subset]]},
@@ -68,7 +68,7 @@ theorem loop_returns_false : Execution loop 27 [] (.at 0 (fun _ => .nul)) [.fls,
 
 -- Both predecessors justify the supplied union at the shared node 3.
 def diamond : Program :=
-  [⟨.tru, .branch 1 2⟩, ⟨.nul, .bind 3⟩, ⟨.fls, .bind 3⟩, ⟨.var 0, .ret⟩]
+  [⟨.tru, .branch 1 2,none⟩, ⟨.nul, .bind 3,none⟩, ⟨.fls, .bind 3,none⟩, ⟨.var 0, .ret,none⟩]
 def diamondEvidence : ControlFlow.Certificate (Fin 7) :=
   [{expression := leaf [] .tru [1] .tru, edges :=  [[],[]]},
    {expression := leaf [] .nul [0] .nul, edges :=  [[.subset]]},
@@ -77,7 +77,7 @@ def diamondEvidence : ControlFlow.Certificate (Fin 7) :=
 #guard checkClosed G [0,1] diamond diamondEvidence 0
 
 -- The false edge is still checked when the condition is literally true.
-#guard !(checkClosed G [0,1] (diamond.set 0 ⟨.tru, .branch 1 99⟩) diamondEvidence 0)
+#guard !(checkClosed G [0,1] (diamond.set 0 ⟨.tru, .branch 1 99,none⟩) diamondEvidence 0)
 #guard !(checkClosed G [0,1] diamond
   (diamondEvidence.set 0 {expression := leaf [] .tru [1] .tru, edges :=  [[]]}) 0)
 -- Narrowing the supplied merge claim rejects the boolean predecessor.
@@ -86,13 +86,13 @@ def diamondEvidence : ControlFlow.Certificate (Fin 7) :=
 -- Omitted/extra node evidence, changed code and invalid entry points fail.
 #guard !(checkClosed G [1] loop loopEvidence.tail 0)
 #guard !(checkClosed G [1] loop (loopEvidence ++ loopEvidence) 0)
-#guard !(checkClosed G [1] (loop.set 3 ⟨.write (.var 1) .nul, .effect 2⟩) loopEvidence 0)
+#guard !(checkClosed G [1] (loop.set 3 ⟨.write (.var 1) .nul, .effect 2,none⟩) loopEvidence 0)
 #guard !(checkClosed G [1] loop loopEvidence 99)
 #guard !(checkClosed G [1] loop loopEvidence 1)
 #guard !(checkClosed G [1] [] [] 0)
 
 -- A genuinely nonterminating cycle is accepted without a return requirement.
-def forever : Program := [⟨.nul, .effect 0⟩]
+def forever : Program := [⟨.nul, .effect 0,none⟩]
 def foreverEvidence : ControlFlow.Certificate (Fin 7) := [{expression := leaf [] .nul [0] .nul, edges :=  [[]]}]
 #guard checkClosed G [] forever foreverEvidence 0
 

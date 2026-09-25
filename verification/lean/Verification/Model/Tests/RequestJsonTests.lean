@@ -25,8 +25,8 @@ def diamondRequest : Request := ⟨types, CertificateProducerTests.mappedDiamond
 /-- This request forces a structural overload subsumption certificate, including
 its cyclic relation table and union-domain arrow evidence, through JSON. -/
 def overloadRequest : Request := ⟨types,
-  [⟨.alloc .tru, .bind 1⟩, ⟨ProgramTypingTests.dispatch, .bind 2⟩,
-   ⟨.var 0, .bind ⟨3,some [0,2]⟩⟩, ⟨.app (.var 0) .nul, .ret⟩],
+  [⟨.alloc .tru, .bind 1,none⟩, ⟨ProgramTypingTests.dispatch, .bind 2,none⟩,
+   ⟨.var 0, .bind ⟨3,some [0,2]⟩,none⟩, ⟨.app (.var 0) .nul, .ret,none⟩],
   [⟨[],[2]⟩, ⟨[[2]],[3]⟩, ⟨[[3],[2]],[4]⟩, ⟨[[4],[2]],[0,1]⟩], [0,1], 0, []⟩
 
 def ok (r : Except String α) : Bool := match r with
@@ -60,8 +60,8 @@ def response : Json := match produceJson (toJson mappedRequest) 12 with
 #guard !(ok (verifyJson (toJson { mappedRequest with result := [0] }) response))
 #guard !(ok (verifyJson (toJson { mappedRequest with start := 99 }) response))
 #guard !(ok (verifyJson (toJson { mappedRequest with claims := [] }) response))
-#guard !(ok (verifyJson (toJson { mappedRequest with program := (mappedRequest.program.set 3 ⟨.write (.var 1) .nul, .effect ⟨4,some [0,2]⟩⟩) }) response))
-#guard !(ok (verifyJson (toJson { mappedRequest with program := (mappedRequest.program.set 0 ⟨.alloc .tru, .bind ⟨1,some [0,99]⟩⟩) }) response))
+#guard !(ok (verifyJson (toJson { mappedRequest with program := (mappedRequest.program.set 3 ⟨.write (.var 1) .nul, .effect ⟨4,some [0,2]⟩,none⟩) }) response))
+#guard !(ok (verifyJson (toJson { mappedRequest with program := (mappedRequest.program.set 0 ⟨.alloc .tru, .bind ⟨1,some [0,99]⟩,none⟩) }) response))
 
 -- Reject dangling labels even in unused type definitions.
 #guard !(ok (decodeRequest (toJson { mappedRequest with types := (mappedRequest.types ++ RequestJson.rows [[PositiveNormalization.Clause.refs [(valueField, [99])] [] []]]) })))
@@ -107,7 +107,7 @@ private def reverseFields : Json → Json
   (Json.mkObj [("x",toJson (0 : Nat)),("y",toJson (1 : Nat))]))
 
 -- External inputs are checked independently of the entry point claim.
-def inputRequest : Request := ⟨RequestJson.rows [[.bool]], [⟨.var 0,.ret⟩], [⟨[[0]],[0]⟩], [0],0,[[0]]⟩
+def inputRequest : Request := ⟨RequestJson.rows [[.bool]], [⟨.var 0,.ret,none⟩], [⟨[[0]],[0]⟩], [0],0,[[0]]⟩
 #guard ok (roundtrip inputRequest)
 #guard !ok (roundtrip { inputRequest with inputs := [] })
 #guard !ok (roundtrip { inputRequest with inputs := [[0],[0]] })
@@ -116,7 +116,7 @@ def inputRequest : Request := ⟨RequestJson.rows [[.bool]], [⟨.var 0,.ret⟩]
 -- The generalized theorem also covers stateful arguments, not just primitive
 -- source parameters. The input reference may belong to any satisfying heap.
 def referenceInput : Request := ⟨RequestJson.rows [[.bool],[.refs [(valueField, [0])] [] []]],
-  [⟨.read (.var 0),.ret⟩], [⟨[[1]],[0]⟩], [0],0,[[1]]⟩
+  [⟨.read (.var 0),.ret,none⟩], [⟨[[1]],[0]⟩], [0],0,[[1]]⟩
 #guard ok (roundtrip referenceInput)
 #guard !ok (roundtrip { referenceInput with inputs := [[0]] })
 

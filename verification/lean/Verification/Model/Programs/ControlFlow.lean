@@ -27,9 +27,13 @@ inductive Continuation where
   | tagBind (test : Tag) (yes no : Target)
   deriving DecidableEq, Repr
 
+/-- A node's handler is where a throw out of its expression goes: the target
+receives the thrown value bound in a fresh slot, as a `bind` continuation
+receives a value. A node with none lets the throw leave the program. -/
 structure Node where
   expression : Tm
   continuation : Continuation
+  handler : Option Target := none
   deriving DecidableEq, Repr
 
 abbrev Program := List Node
@@ -42,38 +46,51 @@ structure NodeEvidence (ι : Type) where
   /-- None uses ordinary evidence; some selects a checked effect rule. -/
   effect : Option (HeapExpressionRules.StepEvidence ι) := none
   output : HeapKnowledge.Knowledge := ⟨[],[],[]⟩
+  /-- For a node with a handler: the type the thrown value is bound at, which
+  must admit every value, and the evidence for the edge to the handler. -/
+  handler : Option (Ty ι × EdgeEvidence ι) := none
 
 abbrev Certificate (ι : Type) := List (NodeEvidence ι)
 def entry (c : NodeEvidence ι) := (claim c.expression).context
 def result (c : NodeEvidence ι) := (claim c.expression).type
 
+/-- A run of a graph: at a node, evaluating a node's term (with its
+continuation and handler), returned, or ended by a throw no handler caught. -/
 inductive State where
   | at (label : Nat) (env : Env)
-  | eval (term : Tm) (env : Env) (continuation : Continuation)
+  | eval (term : Tm) (env : Env) (continuation : Continuation) (handler : Option Target)
   | done (value : Tm)
+  | raised (value : Tm)
 
 inductive Transition (P : Program) : Heap → State → Heap → State → Prop where
   | enter : P[l]? = some node →
-      Transition P h (.at l ρ) h (.eval (instantiate 0 ρ node.expression) ρ node.continuation)
-  | expr : Step h t h' t' → Transition P h (.eval t ρ k) h' (.eval t' ρ k)
-  | ret : isVal v = true → Transition P h (.eval v ρ .ret) h (.done v)
-  | bind : isVal v = true → Transition P h (.eval v ρ (.bind l)) h (.at l.label (mapEnv l.mapping (push v ρ)))
-  | effect : isVal v = true → Transition P h (.eval v ρ (.effect l)) h (.at l.label (mapEnv l.mapping ρ))
-  | yes : Transition P h (.eval .tru ρ (.branch y n)) h (.at y.label (mapEnv y.mapping ρ))
-  | no : Transition P h (.eval .fls ρ (.branch y n)) h (.at n.label (mapEnv n.mapping ρ))
+      Transition P h (.at l ρ) h (.eval (instantiate 0 ρ node.expression) ρ node.continuation node.handler)
+  | expr : Step h t h' t' → Transition P h (.eval t ρ k x) h' (.eval t' ρ k x)
+  | ret : isVal v = true → Transition P h (.eval v ρ .ret x) h (.done v)
+  | bind : isVal v = true → Transition P h (.eval v ρ (.bind l) x) h (.at l.label (mapEnv l.mapping (push v ρ)))
+  | effect : isVal v = true → Transition P h (.eval v ρ (.effect l) x) h (.at l.label (mapEnv l.mapping ρ))
+  | yes : Transition P h (.eval .tru ρ (.branch y n) x) h (.at y.label (mapEnv y.mapping ρ))
+  | no : Transition P h (.eval .fls ρ (.branch y n) x) h (.at n.label (mapEnv n.mapping ρ))
 
-  | yesBind : Transition P h (.eval .tru ρ (.branchBind y n)) h (.at y.label (mapEnv y.mapping (push .tru ρ)))
-  | noBind : Transition P h (.eval .fls ρ (.branchBind y n)) h (.at n.label (mapEnv n.mapping (push .fls ρ)))
+  | yesBind : Transition P h (.eval .tru ρ (.branchBind y n) x) h (.at y.label (mapEnv y.mapping (push .tru ρ)))
+  | noBind : Transition P h (.eval .fls ρ (.branchBind y n) x) h (.at n.label (mapEnv n.mapping (push .fls ρ)))
 
   | tagBind : isVal v = true →
-      Transition P h (.eval v ρ (.tagBind tag y n)) h
+      Transition P h (.eval v ρ (.tagBind tag y n) x) h
         (.at (if tagHolds tag v then y else n).label
           (mapEnv (if tagHolds tag v then y else n).mapping (push v ρ)))
+  /-- A throw out of a node with a handler goes there, the thrown value bound. -/
+  | handle : Raises t v →
+      Transition P h (.eval t ρ k (some l)) h (.at l.label (mapEnv l.mapping (push v ρ)))
+  /-- A throw out of a node without one ends the run. -/
+  | raise : Raises t v → Transition P h (.eval t ρ k none) h (.raised v)
 
+/-- The graph machine is safe: it returns a value of the result type, ends by
+a throw of a closed value, or takes a transition. -/
 def SafeGraph (P : Program) (T : Fam) : (n : Nat) → WorldT n → Heap → State → Prop
   | 0, _, _, _ => True
   | n+1, W, h, s =>
-    (∃ v, s = .done v ∧ isVal v = true ∧ T (n+1) W v) ∨
+    ((∃ v, s = .done v ∧ isVal v = true ∧ T (n+1) W v) ∨ (∃ v, s = .raised v ∧ Scoped 0 v)) ∨
     ∃ U : WorldT n, ∃ h' s', WExt (trunc n (Nat.le_succ n) W) U ∧
       WorldAdm U ∧ Transition P h s h' s' ∧ HeapOk n U h' ∧ SafeGraph P T n U h' s'
 
@@ -91,9 +108,42 @@ def checkBranchTarget [DecidableEq ι] (G : NormalGraph ι) (P : Program) (C : C
   | _, _ => false
 
 
+/-- A type every closed value inhabits: one of its clauses is top. A thrown
+value is bound at such a type, since anything at all may be thrown. -/
+def admitsAll (G : NormalGraph ι) (T : Ty ι) : Bool := (expand G T).any isTop
+
+theorem admitsAll_sound {G : NormalGraph ι} {T : Ty ι} (h : admitsAll G T = true)
+    {n W v} (hv : isVal v = true) (hs : Scoped 0 v) : meaning G T n W v := by
+  obtain ⟨c, hc, ht⟩ := List.any_eq_true.mp h
+  cases c <;> simp [isTop] at ht
+  exact (expand_sem G T (plain_of_mem_expand hc) n W v).mpr ⟨.top, hc, hv, hs⟩
+
+/-- The facts that hold wherever a node's expression throws: only what its
+entry knowledge says without the heap (immutable values, alias and distinct
+links), since the expression may have run any effect before throwing. The
+thrown value takes the fresh slot, as a call's result does. -/
+def handlerFacts (k : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
+  HeapExpressionRules.ordinaryOutput k
+
+theorem handlerFacts_holds {k ρ h} (hk : HeapKnowledge.Holds k ρ h) (v : Tm) (h' : Heap) :
+    HeapKnowledge.Holds (handlerFacts k) (push v ρ) h' :=
+  ⟨HeapFacts.holds_nil _ _,(HeapKnowledge.shift_holds (v := v) hk).2.1,
+    HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := v) hk).2.2⟩
+
+/-- A node's handler, when it has one, is a checked target for the thrown
+value at a type admitting every value, under the facts that survive a throw. -/
+def checkHandler [DecidableEq ι] (G : NormalGraph ι) (P : Program) (C : Certificate ι)
+    (node : Node) (c : NodeEvidence ι) : Bool :=
+  match node.handler, c.handler with
+  | none, none => true
+  | some l, some (T, p) =>
+      admitsAll G T && checkTarget G P C (T :: entry c) l p (handlerFacts c.knowledge)
+  | _, _ => false
+
 def checkNode [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι)
     (P : Program) (C : Certificate ι) (node : Node) (c : NodeEvidence ι) : Bool :=
   decide ((claim c.expression).term = node.expression) &&
+  checkHandler G P C node c &&
   checkScope (entry c).length node.expression &&
   decide (HeapExpressionRules.checkStep G (claim c.expression) c.knowledge
     (c.effect.getD (.ordinary c.expression)) = some c.output) &&
@@ -126,6 +176,14 @@ def BranchTargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι)
     (Γ : List (Ty ι)) (o : Observation) (l : Target) (facts : HeapKnowledge.Knowledge) : Prop :=
   ∃ c, C[l.label]? = some c ∧ ObservedCovers G Γ (entry c) 0 o l.mapping ∧ HeapKnowledge.check (HeapKnowledge.observe facts 0 o) c.knowledge l.mapping = true
 
+
+/-- Where a throw out of a node in environment `ρ` may go: nowhere (it leaves
+the program), or a target the thrown value and the surviving facts enter. -/
+def HandlerOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι)
+    (Γ : List (Ty ι)) (ρ : Env) : Option Target → Prop
+  | none => True
+  | some l => ∃ T facts, admitsAll G T = true ∧ TargetOk G C (T :: Γ) l facts ∧
+      ∀ v h, HeapKnowledge.Holds facts (push v ρ) h
 
 def ContinuationOk [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι) (C : Certificate ι)
     (Γ : List (Ty ι)) (A : Ty ι) (facts : HeapKnowledge.Knowledge) : Continuation → Prop
@@ -161,15 +219,28 @@ def ExpressionOk [DecidableEq ι] (G : NormalGraph ι) (c : NodeEvidence ι) (t 
     WorldAdm W → HeapOk n W h → HeapObservations.SafePost (meaning G (result c))
       (fun h' v => HeapKnowledge.Holds c.output (push v ρ) h') n W h (instantiate 0 ρ t)
 
+theorem handler_sound [DecidableEq ι] {G : NormalGraph ι} {P C node c}
+    (hc : checkHandler G P C node c = true) {ρ h} (hk : HeapKnowledge.Holds c.knowledge ρ h) :
+    HandlerOk G C (entry c) ρ node.handler := by
+  unfold checkHandler at hc
+  split at hc
+  · rename_i hn _; rw [hn]; trivial
+  · rename_i l T p hn _
+    rw [hn]
+    simp only [Bool.and_eq_true] at hc
+    exact ⟨T, _, hc.1, target_sound hc.2, fun v h' => handlerFacts_holds hk v h'⟩
+  · contradiction
+
 theorem node_sound [DecidableEq ι] {G : NormalGraph ι} {Rty P C node c}
     (hc : checkNode G Rty P C node c = true) :
     ExpressionOk G c node.expression ∧
-    ContinuationOk G Rty C (entry c) (result c) c.output node.continuation := by
+    ContinuationOk G Rty C (entry c) (result c) c.output node.continuation ∧
+    ∀ ρ h, HeapKnowledge.Holds c.knowledge ρ h → HandlerOk G C (entry c) ρ node.handler := by
   simp only [checkNode, Bool.and_eq_true, decide_eq_true_eq] at hc
-  refine ⟨?_, ?_⟩
+  refine ⟨?_, ?_, fun ρ h hk => handler_sound hc.1.1.1.2 hk⟩
   · intro n W h ρ he hf hw hh
     have ht := HeapExpressionRules.checkStep_sound hc.1.2 he hf hw hh
-    simpa only [entry, result, hc.1.1.1] using ht
+    simpa only [entry, result, hc.1.1.1.1] using ht
   · have hk := hc.2
     split at hk <;> (try (rename_i hcont hedges; rw [hcont]))
     · exact (of_decide_eq_true hk : result c = Rty)
@@ -186,7 +257,8 @@ theorem node_sound [DecidableEq ι] {G : NormalGraph ι} {Rty P C node c}
 theorem graph_node [DecidableEq ι] {G : NormalGraph ι} {Rty P C c} {l : Nat}
     (hg : checkGraph G Rty P C = true) (hc : C[l]? = some c) :
     ∃ node : Node, P[l]? = some node ∧ ExpressionOk G c node.expression ∧
-      ContinuationOk G Rty C (entry c) (result c) c.output node.continuation := by
+      ContinuationOk G Rty C (entry c) (result c) c.output node.continuation ∧
+      ∀ ρ h, HeapKnowledge.Holds c.knowledge ρ h → HandlerOk G C (entry c) ρ node.handler := by
   simp only [checkGraph, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at hg
   have hg := hg.1
   have hl : l < P.length := by
@@ -201,10 +273,11 @@ theorem graph_node [DecidableEq ι] {G : NormalGraph ι} {Rty P C c} {l : Nat}
 def StateOk [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι) (C : Certificate ι)
     (n : Nat) (W : WorldT n) (h : Heap) : State → Prop
   | .at l ρ => ∃ c, C[l]? = some c ∧ EnvOk G (entry c) ρ n W ∧ HeapKnowledge.Holds c.knowledge ρ h
-  | .eval t ρ k => ∃ Γ A out, EnvOk G Γ ρ n W ∧
+  | .eval t ρ k x => ∃ Γ A out, EnvOk G Γ ρ n W ∧
       HeapObservations.SafePost (meaning G A) (fun h' v => HeapKnowledge.Holds out (push v ρ) h') n W h t ∧
-      ContinuationOk G Rty C Γ A out k
+      ContinuationOk G Rty C Γ A out k ∧ HandlerOk G C Γ ρ x
   | .done v => isVal v = true ∧ meaning G Rty n W v
+  | .raised v => Scoped 0 v
 
 theorem target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ l ρ n W h facts}
     (ht : TargetOk G C Γ l facts) (he : EnvOk G Γ ρ n W) (hf : HeapKnowledge.Holds facts ρ h) : StateOk G Rty C n W h (.at l.label (mapEnv l.mapping ρ)) := by
@@ -234,14 +307,15 @@ theorem state_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C}
     cases s with
     | «at» l ρ =>
       obtain ⟨c, hc, he, hf⟩ := hs
-      obtain ⟨node, hn, ht, hk⟩ := graph_node hg hc
+      obtain ⟨node, hn, ht, hk, hx⟩ := graph_node hg hc
       have he' := he.transfer n (Nat.le_succ n) U (WExt_refl _)
       exact Or.inr ⟨U, h, _, WExt_refl _, hw', .enter hn, hh',
-        ih U h _ hw' hh' ⟨entry c, result c, c.output, he', ht n U h ρ he' hf hw' hh', hk⟩⟩
-    | done v => exact Or.inl ⟨v, rfl, hs⟩
-    | eval t ρ k =>
-      obtain ⟨Γ, A, out, he, ht, hk⟩ := hs
-      rcases ht with ⟨hv, ha, hf⟩ | ⟨V, h', t', hx, hu, step, hok, hsafe⟩
+        ih U h _ hw' hh' ⟨entry c, result c, c.output, he', ht n U h ρ he' hf hw' hh', hk, hx ρ h hf⟩⟩
+    | done v => exact Or.inl (Or.inl ⟨v, rfl, hs⟩)
+    | raised v => exact Or.inl (Or.inr ⟨v, rfl, hs⟩)
+    | eval t ρ k x =>
+      obtain ⟨Γ, A, out, he, ht, hk, hx⟩ := hs
+      rcases ht with (⟨hv, ha, hf⟩ | ⟨v, hr, hsc⟩) | ⟨V, h', t', hx', hu, step, hok, hsafe⟩
       · have he' := he.transfer n (Nat.le_succ n) U (WExt_refl _)
         have ha' := (meaning_adm G A).down n W t ha
         cases k with
@@ -280,8 +354,18 @@ theorem state_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C}
             exact Or.inr ⟨U, h, _, WExt_refl _, hw', .tagBind hv, hh',
               ih U h _ hw' hh' (by
                 simpa [htag] using (branch_target_state hk.2 (he'.push ha') htag hf))⟩
-      · exact Or.inr ⟨V, h', .eval t' ρ k, hx, hu, .expr step, hok,
-          ih V h' _ hu hok ⟨Γ,A,out,he.transfer n (Nat.le_succ n) V hx,hsafe,hk⟩⟩
+      · have he' := he.transfer n (Nat.le_succ n) U (WExt_refl _)
+        cases x with
+        | none =>
+          exact Or.inr ⟨U, h, .raised v, WExt_refl _, hw', .raise hr, hh',
+            ih U h _ hw' hh' hsc⟩
+        | some l =>
+          obtain ⟨T, facts, hT, htarget, hfacts⟩ := hx
+          exact Or.inr ⟨U, h, _, WExt_refl _, hw', .handle hr, hh',
+            ih U h _ hw' hh' (target_state htarget
+              (he'.push (admitsAll_sound hT (raises_val hr) hsc)) (hfacts v h))⟩
+      · exact Or.inr ⟨V, h', .eval t' ρ k x, hx', hu, .expr step, hok,
+          ih V h' _ hu hok ⟨Γ,A,out,he.transfer n (Nat.le_succ n) V hx',hsafe,hk,hx⟩⟩
 
 /-- Safety from any checked entry and concrete environment meeting its claim. -/
 theorem accepted_entry_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C l c}
@@ -324,7 +408,34 @@ theorem accepted_closed_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C star
 
 theorem Transition.det {P h s h₁ s₁ h₂ s₂}
     (ha : Transition P h s h₁ s₁) (hb : Transition P h s h₂ s₂) : h₁ = h₂ ∧ s₁ = s₂ := by
+  -- A throwing expression neither steps nor is a value.
+  have nr : ∀ {t v}, Raises t v → isVal t = true → False := fun hr hv => by
+    rw [raises_not_val hr] at hv; contradiction
   cases ha with
+  | handle hr =>
+    cases hb with
+    | expr hs => exact False.elim (raises_no_step hr hs)
+    | handle hr' => cases Raises_det hr hr'; exact ⟨rfl, rfl⟩
+    | ret hv => exact False.elim (nr hr hv)
+    | bind hv => exact False.elim (nr hr hv)
+    | effect hv => exact False.elim (nr hr hv)
+    | yes => cases hr
+    | no => cases hr
+    | yesBind => cases hr
+    | noBind => cases hr
+    | tagBind hv => exact False.elim (nr hr hv)
+  | raise hr =>
+    cases hb with
+    | expr hs => exact False.elim (raises_no_step hr hs)
+    | raise hr' => cases Raises_det hr hr'; exact ⟨rfl, rfl⟩
+    | ret hv => exact False.elim (nr hr hv)
+    | bind hv => exact False.elim (nr hr hv)
+    | effect hv => exact False.elim (nr hr hv)
+    | yes => cases hr
+    | no => cases hr
+    | yesBind => cases hr
+    | noBind => cases hr
+    | tagBind hv => exact False.elim (nr hr hv)
   | enter hn =>
     cases hb with
     | enter hn' =>
@@ -342,44 +453,63 @@ theorem Transition.det {P h s h₁ s₁ h₂ s₂}
     | yesBind => exact False.elim (tru_no_step hs)
     | noBind => exact False.elim (fls_no_step hs)
     | tagBind hv => exact False.elim (value_no_step hv hs)
+    | handle hr => exact False.elim (raises_no_step hr hs)
+    | raise hr => exact False.elim (raises_no_step hr hs)
   | ret hv =>
     cases hb with
     | expr hs => exact False.elim (value_no_step hv hs)
     | ret => exact ⟨rfl,rfl⟩
+    | handle hr => exact False.elim (nr hr hv)
+    | raise hr => exact False.elim (nr hr hv)
   | bind hv =>
     cases hb with
     | expr hs => exact False.elim (value_no_step hv hs)
     | bind => exact ⟨rfl,rfl⟩
+    | handle hr => exact False.elim (nr hr hv)
+    | raise hr => exact False.elim (nr hr hv)
   | effect hv =>
     cases hb with
     | expr hs => exact False.elim (value_no_step hv hs)
     | effect => exact ⟨rfl,rfl⟩
+    | handle hr => exact False.elim (nr hr hv)
+    | raise hr => exact False.elim (nr hr hv)
   | yes =>
     cases hb with
     | expr hs => exact False.elim (tru_no_step hs)
     | yes => exact ⟨rfl,rfl⟩
+    | handle hr => cases hr
+    | raise hr => cases hr
   | no =>
     cases hb with
     | expr hs => exact False.elim (fls_no_step hs)
     | no => exact ⟨rfl,rfl⟩
+    | handle hr => cases hr
+    | raise hr => cases hr
   | yesBind =>
     cases hb with
     | expr hs => exact False.elim (tru_no_step hs)
     | yesBind => exact ⟨rfl,rfl⟩
+    | handle hr => cases hr
+    | raise hr => cases hr
   | noBind =>
     cases hb with
     | expr hs => exact False.elim (fls_no_step hs)
     | noBind => exact ⟨rfl,rfl⟩
+    | handle hr => cases hr
+    | raise hr => cases hr
   | tagBind hv =>
     cases hb with
     | expr hs => exact False.elim (value_no_step hv hs)
     | tagBind => exact ⟨rfl,rfl⟩
+    | handle hr => exact False.elim (nr hr hv)
+    | raise hr => exact False.elim (nr hr hv)
 
 /-- Safety follows the actual operational successor, not just a chosen run. -/
 theorem SafeGraph.successor {P T n W h s h' s'}
     (hs : SafeGraph P T (n+1) W h s) (step : Transition P h s h' s') :
     ∃ U : WorldT n, WorldAdm U ∧ HeapOk n U h' ∧ SafeGraph P T n U h' s' := by
-  rcases hs with ⟨v,rfl,_⟩ | ⟨U,h'',s'',hx,hu,st,hh,ht⟩
+  rcases hs with (⟨v,rfl,_⟩ | ⟨v,rfl,_⟩) | ⟨U,h'',s'',hx,hu,st,hh,ht⟩
+  · cases step
   · cases step
   · obtain ⟨rfl,rfl⟩ := Transition.det st step
     exact ⟨U,hu,hh,ht⟩
@@ -401,19 +531,22 @@ theorem execution_safe {P T k h s h' s'} (run : Execution P k h s h' s')
     obtain ⟨U,hu,hh,hs⟩ := hs.successor st
     exact ih U hu hh hs
 
-/-- At the end of any finite execution, the machine has returned a typed value
-or has another operational step. In particular, invalid jumps and stuck
-expressions cannot be reached by an accepted closed invocation. -/
+/-- At the end of any finite execution, the machine has returned a typed value,
+ended by a throw of a closed value, or has another operational step. In
+particular, invalid jumps and stuck expressions cannot be reached by an
+accepted closed invocation. -/
 theorem accepted_no_stuck [DecidableEq ι] {G : NormalGraph ι} {Rty P C start k h s}
     (hc : checkClosed G Rty P C start = true)
     (run : Execution P k [] (.at start (fun _ => .nul)) h s) :
     (∃ U : WorldT 1, ∃ v, s = .done v ∧ isVal v = true ∧ meaning G Rty 1 U v) ∨
+    (∃ v, s = .raised v ∧ Scoped 0 v) ∨
     (∃ h' s', Transition P h s h' s') := by
   obtain ⟨U,hu,hh,hs⟩ := execution_safe run 0 (ofList []) WorldAdm_nil (emptyHeapOk (1+k))
     (accepted_closed_safe hc (1+k))
-  rcases hs with ⟨v,hv,hval,ht⟩ | ⟨V,h',s',hx,hv,step,hh,hs⟩
+  rcases hs with (⟨v,hv,hval,ht⟩ | hr) | ⟨V,h',s',hx,hv,step,hh,hs⟩
   · exact Or.inl ⟨U,v,hv,hval,ht⟩
-  · exact Or.inr ⟨h',s',step⟩
+  · exact Or.inr (Or.inl hr)
+  · exact Or.inr (Or.inr ⟨h',s',step⟩)
 
 /-- Returned values satisfy the declared result at every positive remaining
 budget, in an admissible world satisfied by the final heap. -/
@@ -423,8 +556,9 @@ theorem accepted_result [DecidableEq ι] {G : NormalGraph ι} {Rty P C start k h
     ∃ U : WorldT (n+1), WorldAdm U ∧ HeapOk (n+1) U h ∧ isVal v = true ∧ meaning G Rty (n+1) U v := by
   obtain ⟨U,hu,hh,hs⟩ := execution_safe run n (ofList []) WorldAdm_nil (emptyHeapOk _)
     (accepted_closed_safe hc ((n+1)+k))
-  rcases hs with ⟨w,he,hval,ht⟩ | ⟨V,h',s',hx,hv,step,hh,hs⟩
+  rcases hs with (⟨w,he,hval,ht⟩ | ⟨w,he,_⟩) | ⟨V,h',s',hx,hv,step,hh,hs⟩
   · cases he; exact ⟨U,hu,hh,hval,ht⟩
+  · cases he
   · cases step
 
 #print axioms accepted_result

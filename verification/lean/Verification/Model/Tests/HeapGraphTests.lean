@@ -18,9 +18,9 @@ private def widen (e : Evidence Nat) : Evidence Nat :=
   .node {(claim e) with type := [1,2]} (.sub .subset) [e]
 
 def program : Program :=
-  [⟨.fls,.bind 1⟩,⟨.alloc (.var 0),.bind 2⟩,⟨.tru,.bind 3⟩,
-   ⟨.write (.var 1) (.var 0),.effect ⟨4,some [1]⟩⟩,
-   ⟨.read (.var 0),.bind 5⟩,⟨.var 0,.ret⟩]
+  [⟨.fls,.bind 1,none⟩,⟨.alloc (.var 0),.bind 2,none⟩,⟨.tru,.bind 3,none⟩,
+   ⟨.write (.var 1) (.var 0),.effect ⟨4,some [1]⟩,none⟩,
+   ⟨.read (.var 0),.bind 5,none⟩,⟨.var 0,.ret,none⟩]
 
 private def allocProof : Evidence Nat := .node ⟨[[2]],.alloc (.var 0),[4]⟩ .alloc
   [widen (leaf [[2]] (.var 0) [2] .var)]
@@ -61,10 +61,10 @@ theorem safe (n : Nat) : SafeGraph program (PositiveRules.meaning G [1]) n
 -- Nor can evidence invent its own postcondition or change the actual slot map.
 #guard !(checkClosed G [1] program
   (certificate.set 3 {certificate[3] with output := ⟨[⟨2,[.fls],valueField⟩],[],[]⟩}) 0)
-#guard !(checkClosed G [1] (program.set 3 ⟨.write (.var 1) (.var 0),.effect ⟨4,some [0]⟩⟩) certificate 0)
+#guard !(checkClosed G [1] (program.set 3 ⟨.write (.var 1) (.var 0),.effect ⟨4,some [0]⟩,none⟩) certificate 0)
 
 -- A back edge must re-establish the head's facts just like the first edge.
-private def cycleProgram := program.set 5 ⟨.var 0,.effect ⟨4,some [1]⟩⟩
+private def cycleProgram := program.set 5 ⟨.var 0,.effect ⟨4,some [1]⟩,none⟩
 private def cycleValue := leaf [[1,2],[4]] (.var 0) [1,2] .var
 private def cycleCertificate := certificate.set 5
   {expression := cycleValue, edges := [[.subset]], knowledge := readResult,
