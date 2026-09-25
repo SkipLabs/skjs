@@ -29,6 +29,7 @@
     "../examples/recursive-json*.ts",
     "../examples/invalid-recursive-json-*.ts",
     "../examples/reactive-sum-prettier-ignore.ts",
-    "../examples/reactive-sum-sound.ts"
+    "../examples/reactive-sum-sound.ts",
+    "../examples/sum-*.ts"
   ]
 }
