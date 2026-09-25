@@ -10,7 +10,8 @@ import { API, DiagnosticCategory, SymbolFlags, type Checker, type Program } from
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, SourceFile, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
-import { classInstance, members, optionalTerm, signature, signatures, typeTerm, type TermScope } from "./type-term.mts";
+import { classInstance, expandMapped, mapped, members, optionalTerm, signature, signatures, substitute, typeTerm,
+  type Mapped, type TermScope } from "./type-term.mts";
 import { arrayPrototype, overlay, type OverlayEntry } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule } from "./intrinsics.mts";
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
@@ -41,6 +42,31 @@ export interface SeenDiagnostic {
   end: { line: number; character: number };
   text: string;
 }
+
+/** A standard library type whose declaration is not what it means to
+ * TypeScript, so a reference to it is read as that meaning (DESIGN.md,
+ * "Library types"): `Array<T>` and `ReadonlyArray<T>` are the array types
+ * `T[]` and `readonly T[]`, and a library type alias whose equation is a
+ * mapped type, such as `Record<K, V>`, is that mapped type at the
+ * reference's arguments. */
+export type LibraryType =
+  | { k: "array"; readonly: boolean }
+  | { k: "mapped"; parameters: number; template: Mapped };
+
+/** A reference to `library` at `args`, located at `span`. */
+export function libraryTerm(library: LibraryType, args: readonly TypeTerm[], span: Span,
+    fail: (message: string) => never): TypeTerm {
+  if (library.k === "array") {
+    const [element] = args;
+    if (!element || args.length !== 1) return fail("an array type takes one type argument");
+    return { k: "array", readonly: library.readonly, element, span };
+  }
+  if (args.length !== library.parameters) return fail("a mapped library type needs all its type arguments");
+  const t = library.template;
+  return expandMapped({ ...t, key: substitute(t.key, args), value: substitute(t.value, args) }, span, fail);
+}
+
+const isLibraryModule = (module: string): boolean => module.startsWith("typescript/lib/");
 
 /** The configured project named on a command line: a tsconfig file, or the
  * directory holding one. */
@@ -177,6 +203,10 @@ export function collectDeclarations(file: string, options: {
    * declarations: each that TypeScript binds to a global declaration becomes
    * a root. A type parameter is not one. */
   globals?: readonly Span[];
+  /** Told each of the client's global type names, at its first reference
+   * (`globals`), that TypeScript binds to a library type read at its meaning
+   * rather than joining the graph (`LibraryType`). */
+  library?: (span: Span, library: LibraryType) => void;
   /** The client uses arrays: `Array.prototype`'s contract joins the graph
    * (`array-prototype.mts`), at `arrays`, the first array the client writes. */
   arrays?: Span;
@@ -275,6 +305,55 @@ export function collectDeclarations(file: string, options: {
       partners.set(node, types);
       return node;
     };
+    // A standard library type read at its meaning (`LibraryType`). Every
+    // declaration TypeScript binds the name to must be the library's, so a
+    // client that declares its own `Array`, merging into the global one, is
+    // read as any other interface.
+    const library = (identifier: Identifier, what: string): LibraryType | null => {
+      const nodes = (targetOf(checker, identifier)?.declarations ?? []).map(d => d.resolve());
+      const types: TypeDeclaration[] = [];
+      for (const node of nodes) {
+        if (!node || !isLibraryModule(idOf(node.getSourceFile()))) return null;
+        if (isTypeDeclaration(node)) types.push(node);
+      }
+      const [first] = types;
+      const name = first?.name?.text;
+      if (!first || !name || types.some(t => t.name?.text !== name)) return null;
+      const cleanAll = () => types.forEach(part => clean(part, `${idOf(part.getSourceFile())}#${name}`));
+      if ((name === "Array" || name === "ReadonlyArray") && types.every(ts.isInterfaceDeclaration)) {
+        cleanAll();
+        return { k: "array", readonly: name === "ReadonlyArray" };
+      }
+      let body = types.length === 1 && ts.isTypeAliasDeclaration(first) ? first.type : undefined;
+      while (body && ts.isParenthesizedTypeNode(body)) body = body.type;
+      if (!body || !ts.isMappedTypeNode(body)) return null;
+      cleanAll();
+      // The alias's parameters are positional in its template, and its
+      // equation may name nothing else. Its bounds are TypeScript's to check
+      // at each reference; only string keys expand.
+      const source = first.getSourceFile();
+      const where = `${idOf(source)}#${name}`;
+      const parameters = (first.typeParameters ?? []).map(p => p.name.text);
+      const template = mapped({ source, annotation: false,
+        fail: (_node, message) => { throw Error(`${message} in ${where} for ${what}`); },
+        named: (node, span) => {
+          const index = ts.isIdentifier(node.typeName) ? parameters.indexOf(node.typeName.text) : -1;
+          if (index < 0 || node.typeArguments?.length) throw Error(`${where} names a type outside its template`);
+          return { k: "parameter", index, span };
+        } }, body);
+      return { k: "mapped", parameters: parameters.length, template };
+    };
+    // The standard library's `Function`: a value with call or construct code,
+    // and nothing more is known. Its declared members are dropped, which is a
+    // supertype of TypeScript's `Function`; TypeScript's own special case,
+    // that every callable meets it, is the equation.
+    const equation = (node: TypeDeclaration): TypeTerm | null => {
+      const source = node.getSourceFile();
+      const parts = partners.get(node) ?? [node];
+      return ts.isInterfaceDeclaration(node) && node.name.text === "Function" && !node.typeParameters?.length &&
+        parts.every(part => isLibraryModule(idOf(part.getSourceFile())))
+        ? { k: "callable", span: [node.getStart(source), node.end] } : null;
+    };
     // A computed key names a `unique symbol` constant. Each such declaration
     // is listed once, and its position in the list is the symbol's identity.
     const symbols: DeclarationIdentity[] = [];
@@ -324,6 +403,9 @@ export function collectDeclarations(file: string, options: {
             if (part.typeArguments?.length) throw Error(`type parameter applied as constructor: ${name.text}`);
             return { k: "binder", name: name.text, span: pos };
           }
+          const known = library(name, `${idOf(source)}#${name.text}`);
+          if (known) return libraryTerm(known, (part.typeArguments ?? []).map(read), pos,
+            message => { throw Error(`${message} in ${what}`); });
           const targetNode = lookup(name, `${idOf(source)}#${name.text}`);
           const parameters = targetNode.typeParameters ?? [];
           const args = part.typeArguments ?? [];
@@ -434,6 +516,11 @@ export function collectDeclarations(file: string, options: {
       if (!declaration || ts.isTypeParameterDeclaration(declaration) ||
           declaration.getSourceFile().fileName === client.fileName) continue;
       try {
+        const known = library(identifier, identifier.text);
+        if (known) {
+          options.library?.(span, known);
+          continue;
+        }
         const node = lookup(identifier, identifier.text);
         roots.push({ node, root: { binding: { kind: "global", local: identifier.text, span },
           declaration: identityOf(node) } });
@@ -539,7 +626,7 @@ export function collectDeclarations(file: string, options: {
     const definitions: TypeDefinition[] = [];
     for (const { root, node: start } of roots) {
       try {
-        collect(start, seen, definitions, lookup, identityOf, symbolOf, partners);
+        collect(start, seen, definitions, { lookup, identityOf, symbol: symbolOf, partners, library, equation });
       } catch (error) {
         throw new DeclarationError(root.binding.span,
           error instanceof Error ? error.message : String(error));
@@ -547,7 +634,7 @@ export function collectDeclarations(file: string, options: {
     }
     for (const [index, start] of valueStarts.entries()) {
       try {
-        collect(start, seen, definitions, lookup, identityOf, symbolOf, partners);
+        collect(start, seen, definitions, { lookup, identityOf, symbol: symbolOf, partners, library, equation });
       } catch (error) {
         throw new DeclarationError(values[Math.min(index, values.length - 1)]?.binding.span ?? [0, 0],
           error instanceof Error ? error.message : String(error));
@@ -729,11 +816,16 @@ function mergeMembers(parts: TypeTerm[], fail: (at: Node, message: string) => ne
 }
 
 /** Every declaration reachable from `start`, each once across roots. */
-function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDefinition[],
-  lookup: (identifier: Identifier, what: string) => TypeDeclaration,
-  identityOf: (node: TypeDeclaration) => DeclarationIdentity,
-  symbol: (identifier: Identifier) => number,
-  partners: ReadonlyMap<TypeDeclaration, readonly TypeDeclaration[]>): void {
+function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDefinition[], context: {
+  lookup: (identifier: Identifier, what: string) => TypeDeclaration;
+  identityOf: (node: TypeDeclaration) => DeclarationIdentity;
+  symbol: (identifier: Identifier) => number;
+  partners: ReadonlyMap<TypeDeclaration, readonly TypeDeclaration[]>;
+  library: (identifier: Identifier, what: string) => LibraryType | null;
+  /** A declaration's equation where it is not its declared body. */
+  equation: (node: TypeDeclaration) => TypeTerm | null;
+}): void {
+  const { lookup, identityOf, symbol, partners, library, equation } = context;
   const queue: TypeDeclaration[] = [start];
   for (let cursor = 0; cursor < queue.length; cursor++) {
     const node = queue[cursor];
@@ -742,14 +834,27 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     const key = `${identity.module}#${identity.span[0]}:${identity.span[1]}`;
     if (seen.has(key)) continue;
     seen.add(key);
+    const stated = equation(node);
+    if (stated) {
+      definitions.push({ declaration: identity, parameters: [], bases: [], expression: stated });
+      continue;
+    }
     const source = node.getSourceFile();
     const parameterNodes = node.typeParameters ?? [];
     const parameterNames = parameterNodes.map(parameter => parameter.name.text);
     if (new Set(parameterNames).size !== parameterNames.length)
       throw Error(`duplicate binder in ${identity.module}#${identity.name}`);
     const reference = (source: SourceFile, identifier: Identifier, arguments_: readonly TypeNode[], pos: Span,
-        read: (part: TypeNode) => TypeTerm): TypeTerm => {
-      const targetNode = lookup(identifier, `${identity.module}#${identifier.text}`);
+        read: (part: TypeNode) => TypeTerm, base = false): TypeTerm => {
+      const what = `${identity.module}#${identifier.text}`;
+      const known = library(identifier, what);
+      // A base is a declaration whose members are inherited; a library type
+      // read at its meaning has none here.
+      if (known && base)
+        throw Error(`extending the standard library's ${identifier.text} is outside the fragment`);
+      if (known) return libraryTerm(known, arguments_.map(read), pos,
+        message => { throw Error(`${message} in ${identity.module}#${identity.name}`); });
+      const targetNode = lookup(identifier, what);
       const target = identityOf(targetNode);
       const targetParameters = targetNode.typeParameters ?? [];
       const required = targetParameters.filter(p => !p.defaultType).length;
@@ -812,7 +917,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
             if (!ts.isIdentifier(base.expression))
               throw Error(`qualified heritage in ${identity.module}#${identity.name}`);
             return reference(file, base.expression, base.typeArguments ?? [],
-              [base.getStart(file), base.end], read);
+              [base.getStart(file), base.end], read, true);
           });
         });
     });

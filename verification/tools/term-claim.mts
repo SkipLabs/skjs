@@ -64,6 +64,7 @@ export function claimOfTerm(term: TypeTerm): ClaimType {
     case "self":
     case "parameter":
     case "scheme":
+    case "callable":
       throw Error(`declaration syntax '${term.k}' outside a declaration`);
   }
 }

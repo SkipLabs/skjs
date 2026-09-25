@@ -61,6 +61,10 @@ export type TypeTerm =
    * as written; which bounds are admitted is the reader's decision. */
   | { k: "scheme"; binders: { name: string; bound: TypeTerm | null; default: TypeTerm | null;
       span: Span }[]; signatures: Extract<TypeTerm, { k: "function" }>[]; span: Span }
+  /** A value with call or construct code, of which no signature is known:
+   * the meaning of the standard library's `Function` (DESIGN.md, "Library
+   * interfaces"). Nothing may be called or constructed through it. */
+  | { k: "callable"; span: Span }
   /** The containing declaration is the implicit receiver of a method signature. */
   | { k: "self"; span: Span }
   | { k: "parameter"; index: number; span: Span }

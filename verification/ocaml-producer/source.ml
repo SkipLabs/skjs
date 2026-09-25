@@ -66,6 +66,11 @@ let rec source_type ctx j =
     | "string" -> Atoms [Str] | "bigint" -> Atoms [Bigint] | "symbol" -> Atoms [Symbol]
     | "unknown" | "void" -> top
     | "never" -> Atoms [] | name -> unsupported ("atom " ^ name))
+  (* The standard library's `Function`: callable or constructible, with no
+     signature. The producer knows nothing it may do with such a value, which
+     is what `unknown` says; Lean lowers the term itself, to exactly the
+     callable and constructible values. *)
+  | "callable" -> top
   | "literal" -> (match text "name" j with
     | "true" -> Atoms [True] | "false" -> Atoms [False]
     | "number" -> number_literal_type (text "text" j)

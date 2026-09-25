@@ -895,6 +895,11 @@ modeling choices; they do not replace proof.
   that allocates arrays has an input slot `[[Array.prototype]]` at `ArrayProto`,
   and the safety theorem holds for every environment meeting its inputs, as
   for an imported value's declared type.
+- A value whose trusted declaration types it `Function`, an imported one or a
+  library member's, has call or construct code
+  ([Library types](#library-types)). TypeScript also admits an object that
+  merely has `Function`'s members; a program's own such value is refused, an
+  assumed one is not checked.
 - `async` and `await` are trusted steps
   ([Async functions and await](#async-functions-and-await)): awaiting a
   `Promise<T>` yields a `T`, other jobs running meanwhile as during any call;
@@ -2767,6 +2772,97 @@ it: its own keys are its store and its prototype.
 at its type (`array-marked.ts`; not as a number,
 `invalid-array-marked-read.ts`), by the symbol-keyed read of
 "Bigints and symbols" in [Modules and code units](#modules-and-code-units).
+
+### Library types
+
+**Principle.** A few standard-library declarations do not say what TypeScript
+means by their names: `T[]` is `Array<T>` by definition, every function and
+class is a `Function` though that interface has no call signature, and
+`Record<K, V>` is an alias of a mapped type. The declaration reader reads a
+reference to such a name as its meaning, not as the declaration's members
+(`LibraryType` in [`declaration-graph.mts`](tools/declaration-graph.mts)), and
+only when every declaration TypeScript binds the name to is in a standard
+library file. A program that declares its own `Array` in a module reads its
+own interface; one that merges members into the global `Array` is refused, as
+the merged interface is read.
+
+**Source reading.** Write $\llbracket\tau\rrbracket$ for the source term the
+reader gives type syntax $\tau$ (`typeTerm`), and $\mathit{lib}(N)$ when
+every declaration of $N$ is a standard library's:
+
+$$
+\frac{\mathit{lib}(\mathtt{Array})}
+     {\llbracket\mathtt{Array}\langle T\rangle\rrbracket=\llbracket T[\,]\rrbracket}
+\qquad
+\frac{\mathit{lib}(\mathtt{ReadonlyArray})}
+     {\llbracket\mathtt{ReadonlyArray}\langle T\rangle\rrbracket=\llbracket\mathtt{readonly}\;T[\,]\rrbracket}
+$$
+
+So `Array<T>` is the one array type of [The array prototype](#the-array-prototype),
+with its store, its exclusion bound and its `[[proto]]` at `ArrayProto`:
+values pass between the spellings, the prototype's members apply, and it is
+invariant in `T` as `T[]` is (`array-generic-name.ts`,
+`invalid-array-generic-readonly.ts`, `invalid-array-generic-invariant.ts`).
+Using the name is using arrays: the file's first `Array<T>` may stand for its
+arrays and bring `ArrayProto` in. A declaration that extends `Array`, such as
+`class StringArray extends Array<string>`, has no base to inherit members from
+here and is refused.
+
+A mapped type whose value does not name its key is expanded where its key is
+known, as TypeScript expands it: string-literal keys are fields, `string` a
+string index, and $m$ its `readonly` and `?` modifiers (a `-` modifier over a
+key union copies nothing, so it states nothing):
+
+$$
+\frac{P\notin\mathrm{fv}(V)\quad\llbracket K\rrbracket=\texttt{"}s_1\texttt{"}\mid\cdots\mid\texttt{"}s_n\texttt{"}\quad(n\ge0)}
+     {\llbracket\{[P\ \mathtt{in}\ K]^m\colon V\}\rrbracket=\{s_1^m\colon\llbracket V\rrbracket;\ \ldots;\ s_n^m\colon\llbracket V\rrbracket\}}
+\qquad
+\frac{P\notin\mathrm{fv}(V)\quad\llbracket K\rrbracket=\mathtt{string}\quad\mathtt{?}\notin m}
+     {\llbracket\{[P\ \mathtt{in}\ K]^m\colon V\}\rrbracket=\{[k\colon\mathtt{string}]^m\colon\llbracket V\rrbracket\}}
+$$
+
+Any other key, a number, a symbol, a type parameter or a mix, is refused
+(`record-numeric-key-refused.ts`). A library alias whose equation is a mapped
+type is that mapped type at the reference's arguments, which is how
+`Record<K, V> = { [P in K]: V }` reads:
+
+$$
+\frac{\mathit{lib}(L)\quad L\langle\vec X\rangle=\{[P\ \mathtt{in}\ K]^m\colon V\}}
+     {\llbracket L\langle\vec A\rangle\rrbracket=
+      \llbracket\{[P\ \mathtt{in}\ K[\vec A/\vec X]]^m\colon V[\vec A/\vec X]\}\rrbracket}
+$$
+
+Its parameters' bounds (`K extends keyof any`) are TypeScript's to check at
+each reference; only string keys expand. So `Record<"a" | "b", V>` is a record
+with both fields required (`record-library.ts`, `invalid-record-missing-key.ts`),
+and `Record<string, V>` is the writable string index `{ [k: string]: V }`,
+whose read at a key the object may not own is `V | undefined`, where
+TypeScript types it `V` (`invalid-record-string-read.ts`).
+
+**`Function`.** Its equation is the source term `callable`, whatever members
+the library declares:
+
+$$
+\frac{\mathit{lib}(\mathtt{Function})}{\mathtt{Function}=\mathsf{callable}}
+\qquad
+\llbracket\mathsf{callable}\rrbracket=\llbracket\mathsf{arrs}\,[\,]\,[\,]\rrbracket\cup\llbracket\mathsf{ctors}\,[\,]\,[\,]\rrbracket
+$$
+
+that is, a value with closed invocation code or a class: what TypeScript's
+special case says every callable and constructible type meets. Dropping the
+declared members (`apply`, `call`, `bind`, `length`, …) gives a supertype of
+TypeScript's `Function` that the model can state: no closure here owns those
+keys. It meets no signature, so nothing calls or constructs through it; a
+call of a `Function`, which TypeScript types at `any`, is refused
+(`function-call-refused.ts`). A function, a class and a construct-signature
+value meet it (`function-library.ts`), by the coverage rules of
+[POSITIVE-TYPES](POSITIVE-TYPES.md#function-and-class-coverage) with no
+target signature; a record does not, though TypeScript admits an object
+with `Function`'s members (`invalid-function-from-object.ts`). The OCaml
+producer proposes `unknown` for it, which states nothing it may use; Lean
+lowers the term itself (`DeclarationGraph.lowerType`). An interface that
+extends `Function` meets `callable` with its own record operand, which has no
+representable clause, and is refused.
 
 ### Async functions and await
 

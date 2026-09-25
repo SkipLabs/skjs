@@ -240,7 +240,18 @@ $$
 $$
 
 No class is callable and no function is constructible, so `ctors` meets
-neither `arrs` nor `callable`.
+neither `arrs` nor `callable`. With no signature, `ctors [] []` is any class.
+TypeScript's `Function` is the union of the two empty forms, a value with
+closed invocation code or a class
+([DESIGN, "Library types"](DESIGN.md#library-types)):
+
+$$
+\llbracket\mathtt{Function}\rrbracket_k(W,v)\iff
+\mathsf{Invocable}(v)\lor\mathsf{Constructible}(v).
+$$
+
+Every function and every class is covered by it, since
+[coverage](#function-and-class-coverage) has no target signature to derive.
 
 Lean: `callsT`, `restsT` (`Semantics/Safety.lean`), `objectsT`
 (`Types/CallableConjunctions.lean`), `ctorsT`, `ctorRestsT`, `ConstructsTo`.

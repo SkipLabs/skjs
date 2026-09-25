@@ -578,6 +578,14 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     if restTerm == .null then return [← use (.ctors [(ps.toList, result)])]
     let P ← lowerRest ds owner params seen restTerm
     return [← use (.ctors [] [(ps.toList, P, result)])]
+  -- The standard library's `Function`: a value with call code or with
+  -- construct code, meeting no signature, so nothing calls or constructs
+  -- through it (`callsT []`, `ctorsT []`).
+  | "callable" =>
+    CellClaims.fieldsExactly term ["k", "span"]
+    let calls ← use (.arrs [] [])
+    let ctors ← use (.ctors [])
+    return [calls, ctors].eraseDups.mergeSort (· ≤ ·)
   | "pack" => throw "a pack parameter outside a signature's rest"
   | "object" =>
     CellClaims.fieldsExactly term ["k", "fields", "stringIndex", "calls", "span"]

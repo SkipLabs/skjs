@@ -110,6 +110,7 @@ export function typeTerm(scope: TermScope, node: TypeNode | undefined, at: Node 
     return scope.fail(literal, "literal type outside the fragment");
   }
   if (ts.isTypeLiteralNode(node)) return members(scope, node.members, node, span, false);
+  if (ts.isMappedTypeNode(node)) return expandMapped(mapped(scope, node), span, message => scope.fail(node, message));
   if (ts.isFunctionTypeNode(node)) {
     if (node.typeParameters?.length) scope.fail(node, "generic function types are outside the fragment");
     return oneTerm(signatures(scope, node.parameters, node.type, node, span), span);
@@ -132,6 +133,86 @@ export function typeTerm(scope: TermScope, node: TypeNode | undefined, at: Node 
     return scope.named(node, span, part => typeTerm(scope, part));
   }
   return scope.fail(node, `type outside the fragment (${ts.SyntaxKind[node.kind]})`);
+}
+
+/** A mapped type `{ [P in K]: V }` whose value does not name its key `P`:
+ * the key and value terms as read, and its modifiers. A `-` modifier removes
+ * what a homomorphic mapped type would copy from its source; over a key union
+ * nothing is copied, so it states nothing. */
+export type Mapped = { key: TypeTerm; value: TypeTerm; optional: boolean; readonly: boolean };
+
+export function mapped(scope: TermScope, node: ts.MappedTypeNode): Mapped {
+  if (node.nameType) scope.fail(node, "a mapped type with an 'as' clause is outside the fragment");
+  if (node.members?.length) scope.fail(node, "a mapped type with members is outside the fragment");
+  const parameter = node.typeParameter;
+  const name = parameter.name.text;
+  const names = (t: Node): boolean =>
+    (ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName) && t.typeName.text === name) ||
+    (t.forEachChild(names) ?? false);
+  if (!node.type || names(node.type)) scope.fail(node, "a mapped type's value names its key");
+  const plus = (token: Node | undefined, keyword: ts.SyntaxKind) =>
+    !!token && (token.kind === keyword || token.kind === ts.SyntaxKind.PlusToken);
+  return { key: typeTerm(scope, parameter.constraint, parameter), value: typeTerm(scope, node.type),
+    optional: plus(node.questionToken, ts.SyntaxKind.QuestionToken),
+    readonly: plus(node.readonlyToken, ts.SyntaxKind.ReadonlyKeyword) };
+}
+
+/** A mapped type at a known key, as TypeScript expands it: over string
+ * literals, one field per literal; over `string`, a string index. Its value
+ * does not name the key, so every field and the index have the one value
+ * type. Any other key (numbers, symbols, a type parameter, a mix) is outside
+ * the fragment. */
+export function expandMapped(m: Mapped, span: Span, fail: (message: string) => never): TypeTerm {
+  const keys: TypeTerm[] = [];
+  const flatten = (t: TypeTerm): void => {
+    if (t.k === "union") t.parts.forEach(flatten);
+    else if (!(t.k === "atom" && t.name === "never")) keys.push(t);
+  };
+  flatten(m.key);
+  const [only] = keys;
+  if (keys.length === 1 && only?.k === "atom" && only.name === "string") {
+    if (m.optional) fail("an optional mapped type over string is outside the fragment");
+    return { k: "object", fields: [], stringIndex: { readonly: m.readonly, value: m.value, span }, calls: [],
+      span };
+  }
+  const names: string[] = [];
+  for (const key of keys) {
+    if (key.k !== "literal" || key.name !== "string")
+      return fail("a mapped type's keys must be string or string literals");
+    if (!names.includes(key.text)) names.push(key.text);
+  }
+  return { k: "object", fields: names.map(name => ({ name, optional: m.optional, readonly: m.readonly,
+    type: m.value, span })), stringIndex: null, calls: [], span };
+}
+
+/** `term` with each of its declaration's parameters replaced by the term at
+ * that position of `args`. */
+export function substitute(term: TypeTerm, args: readonly TypeTerm[]): TypeTerm {
+  const go = (t: TypeTerm): TypeTerm => substitute(t, args);
+  const fn = (f: FunctionTerm): FunctionTerm => ({ ...f, receiver: f.receiver && go(f.receiver),
+    params: f.params.map(go), rest: f.rest && go(f.rest), result: go(f.result) });
+  switch (term.k) {
+    case "parameter": {
+      const arg = args[term.index];
+      if (!arg) throw Error("declaration parameter index outside its application");
+      return arg;
+    }
+    case "atom": case "literal": case "self": case "binder": case "callable": return term;
+    case "union": case "intersection": return { ...term, parts: term.parts.map(go) };
+    case "array": return { ...term, element: go(term.element) };
+    case "tuple": return { ...term, required: term.required.map(go), optional: term.optional.map(go),
+      rest: term.rest && go(term.rest) };
+    case "object": return { ...term, fields: term.fields.map(f => ({ ...f, type: go(f.type) })),
+      stringIndex: term.stringIndex && { ...term.stringIndex, value: go(term.stringIndex.value) },
+      calls: term.calls.map(fn) };
+    case "function": return fn(term);
+    case "constructor": return { ...term, params: term.params.map(go), rest: term.rest && go(term.rest),
+      result: go(term.result) };
+    case "pack": return { ...term, of: go(term.of) };
+    case "scheme": return { ...term, binders: term.binders.map(b => ({ ...b, bound: b.bound && go(b.bound),
+      default: b.default && go(b.default) })), signatures: term.signatures.map(fn) };
+    case "reference": return { ...term, args: term.args.map(go) };
+  }
 }
 
 function tuple(scope: TermScope, node: ts.TupleTypeNode, readonly: boolean, span: Span): TypeTerm {

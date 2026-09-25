@@ -29,7 +29,8 @@ function referencesIn(term: TypeTerm): Reference[] {
     case "literal":
     case "self":
     case "parameter":
-    case "binder": return [];
+    case "binder":
+    case "callable": return [];
     case "union":
     case "intersection": return term.parts.flatMap(referencesIn);
     case "array": return referencesIn(term.element);

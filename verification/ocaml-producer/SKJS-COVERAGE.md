@@ -4,8 +4,8 @@ How much of what SKJS accepts in its own test suite the pipeline
 (`check.mts`: parser → OCaml producer → Lean search and check) verifies, what
 stops the rest, and where the two disagree because SKJS is wrong.
 
-**576 of 2,676 SKJS-accepted units verify (21.5%); 556 of 2,026 accepted
-functions (27.4%).** 45 of the 377 files with an accepted unit verify entirely.
+**594 of 2,676 SKJS-accepted units verify (22.2%); 573 of 2,026 accepted
+functions (28.3%).** 45 of the 377 files with an accepted unit verify entirely.
 Two families of SKJS-accepted functions that the pipeline reaches and refuses
 are real SKJS unsoundnesses, each with a runtime witness that SKJS accepts and
 node crashes on ([below](#suspected-skjs-unsoundnesses)).
@@ -30,14 +30,14 @@ is not part of `verification/run.sh`.
 
 | Suite | Harness verdict | Files | Units | Accepted | Verified | Accepted functions | Verified functions |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,885 | 2,458 | 474 | 1,863 | 465 |
+| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,885 | 2,458 | 492 | 1,863 | 482 |
 | `tests/callgraph` | no error allowed | 25 | 59 | 59 | 38 | 51 | 37 |
 | `tests/constprop` | no error allowed | 14 | 66 | 66 | 37 | 49 | 30 |
 | `tests/deadcode` | no error allowed | 7 | 27 | 27 | 9 | 16 | 6 |
 | `tests/cfg` | no error allowed | 7 | 22 | 22 | 7 | 21 | 7 |
 | `tests/projects` | expect-error markers, under the project's tsconfig | 24 of 68 | 44 | 34 | 9 | 23 | 9 |
 | `tests/ts-conformance/cases` | lines listed in `reference/*.errors.txt` | 4 | 11 | 10 | 2 | 3 | 2 |
-| **total** | | **480** | **4,114** | **2,676** | **576** | **2,026** | **556** |
+| **total** | | **480** | **4,114** | **2,676** | **594** | **2,026** | **573** |
 
 Excluded (79 files, listed in the JSON with reasons): `ts-conformance/not-supported`
 (31) and `callgraph-unsupported` (4) assert only that SKJS reports errors;
@@ -73,11 +73,11 @@ reason, its feature group, and where it lies: in the unit's own statement
 
 | Phase of first blocker | Units |
 | --- | ---: |
-| verified | 576 |
-| source (gate) | 1,521 |
-| proposal (producer) | 240 |
-| search (Lean) | 337 (130 of them: "no source functions to verify") |
-| error (producer: unbound `__SKJS_show`, `process`) | 2 |
+| verified | 594 |
+| source (gate) | 1,480 |
+| proposal (producer) | 248 |
+| search (Lean) | 351 (130 of them: "no source functions to verify") |
+| error (producer: unbound `__SKJS_show`, `process`) | 3 |
 
 **Caveats on the method.**
 
@@ -117,7 +117,7 @@ Ordered by value for cost (units per effort, files as a tiebreak):
 
 | # | Group | Units | self | dep | Files | Cost | Layers |
 | ---: | --- | ---: | ---: | ---: | ---: | --- | --- |
-| 1 | `Array<T>` / `ReadonlyArray<T>` read from `lib.es5.d.ts` | 59 | 34 | 25 | 17 | S | D |
+| 1 | ~~`Array<T>` / `ReadonlyArray<T>` read from `lib.es5.d.ts`~~ done (task B) | 0 | | | | | |
 | 2 | Relational operators `< <= > >=`, `**` | 53 | 37 | 16 | 21 | S | P L |
 | 3 | Producer claim differs from annotation (literal-union parameters, cells) — done | 0 (was 17) | | | | S | O L |
 | 4 | Ambient declarations (`declare function/const/class`) | 89 | 0 | 89 | 34 | M | P D L |
@@ -144,7 +144,7 @@ Ordered by value for cost (units per effort, files as a tiebreak):
 | 25 | Calls: overloads, `.call`, spread arguments, `Object.assign`, arrow callee | 12 | 5 | 0 | 7 | M | P O |
 | 26 | `await` of non-promises and unions | 12 | 12 | 0 | 2 | M | L |
 | 27 | Object-literal methods, accessors, spreads | 33 | 31 | 2 | 13 | M | P O L |
-| 28 | Lib `Function` methods, `Record` | 19 | 18 | 1 | 2 | M | D |
+| 28 | ~~Lib `Function` methods, `Record`~~ done (task B) | 0 | | | | | |
 | 29 | Optional chaining | 8 | 8 | 0 | 3 | M | P L |
 | 30 | Sloppy (non-strict) code reading `this` | 8 | 6 | 2 | 5 | S | P |
 | 31 | Other forms (type assertions `<T>e`, empty statement, shadowing, body forms) | 12 | 9 | 0 | 9 | S | P L |
@@ -161,7 +161,14 @@ constants; by files they are the least valuable groups.
 Each entry: the refusals it covers (normalized: positions and quoted names
 dropped), examples, what the extension needs.
 
-1. **`Array<T>` from lib.** `source: duplicate field name in a record in
+1. **`Array<T>` from lib.** *Done (task B): `Array<T>`/`ReadonlyArray<T>` are
+   read as `T[]`/`readonly T[]`, `Record<K, V>` as the library's mapped type at
+   its arguments, `Function` as callable-or-class (DESIGN.md, "Library
+   types"); +23 units, +22 functions, no unit lost. The 59 + 19 units now stop
+   at their next blocker (else-if, rest parameters over `readonly`/alias
+   arrays, generics, `typeof`, number/symbol mapped keys, `class … extends
+   Array`); the new search refusals were read and are incompleteness, not
+   SKJS unsoundness.* Before: `source: duplicate field name in a record in
    typescript/lib/lib.es5.d.ts#Array` (48), `#ReadonlyArray` (11). Written
    `Array<number>` rather than `number[]`, the reference is read as the lib
    interface, whose overloaded methods collide. Examples:

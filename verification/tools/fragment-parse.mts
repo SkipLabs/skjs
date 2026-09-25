@@ -54,7 +54,8 @@ import type {
 } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { messageOf } from "./thrown.mts";
-import { collectDeclarations, DeclarationError, tsconfigOf, type SeenDiagnostic } from "./declaration-graph.mts";
+import { collectDeclarations, DeclarationError, libraryTerm, tsconfigOf, type LibraryType, type SeenDiagnostic }
+  from "./declaration-graph.mts";
 import { asyncCompleteName, asyncReturnName, awaitName } from "./intrinsics.mts";
 
 /** A question-mark parameter requires an optional suffix. A default may
@@ -168,6 +169,9 @@ class Gate {
    * reference names the declaration TypeScript resolved the spelling to. */
   private readonly declaredTypes = new Map<string,
     { required: number; total: number; declaration: DeclarationIdentity }>();
+  /** Global spellings TypeScript binds to a standard library type read at
+   * its meaning, `Array<T>` as `T[]` (`LibraryType`). */
+  readonly libraryTypes = new Map<string, LibraryType>();
   /* Whether the code being read is strict, by a module or a "use strict"
    * directive (ECMAScript's, not TypeScript's `strict` option). An ordinary
    * function records it: its receiver rule is the strict one. */
@@ -420,6 +424,10 @@ class Gate {
       fail: (node, message) => this.fail(node, message),
       named: (node, span, read) => {
         const name = (node.typeName as Identifier).text;
+        const library = this.libraryTypes.get(name);
+        if (library !== undefined && !this.hasTypeParam(name))
+          return libraryTerm(library, (node.typeArguments ?? []).map(read), span,
+            message => this.fail(node, message));
         const declared = this.declaredTypes.get(name);
         if (declared !== undefined && !this.hasTypeParam(name)) {
           const args = node.typeArguments ?? [];
@@ -2009,11 +2017,14 @@ export function parseFile(file: string, carriesContext = false,
   };
   if (!carriesContext) findGlobalValues(source);
   // An array reaches `Array.prototype`, whose contract then joins the graph;
-  // the first array the file writes stands for it.
+  // the first array the file writes stands for it. `Array<T>` is written by
+  // name: if TypeScript binds the name elsewhere, the contract is unused.
   let firstArray: Node | undefined;
   const findArray = (node: Node): void => {
     if (firstArray) return;
-    if (ts.isArrayTypeNode(node) || ts.isTupleTypeNode(node) || ts.isArrayLiteralExpression(node) ||
+    const arrayReference = ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) &&
+      (node.typeName.text === "Array" || node.typeName.text === "ReadonlyArray");
+    if (ts.isArrayTypeNode(node) || ts.isTupleTypeNode(node) || ts.isArrayLiteralExpression(node) || arrayReference ||
         ts.isForOfStatement(node) || (ts.isParameterDeclaration(node) && !!node.dotDotDotToken)) {
       firstArray = node;
       return;
@@ -2067,6 +2078,10 @@ export function parseFile(file: string, carriesContext = false,
         ...(firstAsync ? { intrinsics: gate.span(firstAsync) } : {}),
         symbolKeys: keyNodes.map(node => gate.span(node)),
         symbolKey: ([start, end], symbol) => gate.symbolKeys.set(`${start}:${end}`, symbol),
+        library: ([start, end], library) => {
+          const node = globalNodes.find(n => n.getStart(source) === start && n.end === end);
+          if (node) gate.libraryTypes.set(node.text, library);
+        },
         ...(seen ? { seen } : {}) });
     } catch (error) {
       const at = error instanceof DeclarationError
