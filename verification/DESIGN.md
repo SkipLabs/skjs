@@ -634,6 +634,36 @@ row alone: the body is certified at every assignment, stronger than
 TypeScript's statement and still true, and a body using that bound finds no
 derivation.
 
+#### Generic classes
+
+A generic class's binders are in scope in its members, which the parser
+desugars as a non-generic class's are: one constant per method, a closure over
+the instance type `C<T>`, then the class value, construct-only code allocating
+the instance. The binders belong to the code unit that runs the declaration,
+the module's initialization unit: it is a generic unit like a function, its
+binders read as parameter rows (a bounded one as the meet of its row and its
+bound), one row per spelling for the whole top-level code, so two classes may
+share a binder's name only with the same bound. The unit is certified at every
+assignment of those rows: each constructor and method body at every
+instantiation of its class. The instance type `C<T>`, whose methods' receiver
+is the application itself, has no finite expansion in claim form; it is the
+application row at the binder's row, in the producer's claims and in the
+source annotations alike. A member read through a bounded binder inside a
+method reads the bound's member (`throughBound`).
+
+A unit that uses the class reads it as a generic module value: each `new`
+names its instance, and the slot holds the constructor at those instances, read
+from the class's constructor type with the binders fixed. That reading relies
+on the class value meeting its constructor type at every assignment, which the
+initialization unit's certificate states one assignment at a time; linking
+units, as for every module value, is outside the proof.
+
+A generic method with binders of its own, a closure over a class's binders
+that declares more, is refused: typing it needs scheme introduction in the
+program typing, a closure at a scheme row whose body is checked at every
+reassignment of the scheme's binders, which the graph does not yet have.
+Class inheritance stays outside the fragment.
+
 **The direct checker.** A generic unit goes to the direct rigid checker
 (`GenericSource`) first, for the variable-copy bodies and dependent bounds it
 states located obligations for; a failed obligation stands. A body outside its
@@ -1925,9 +1955,10 @@ checked in that unit. Before this, a module needed a function, and a
 module of constants or classes was refused whatever its code.
 
 **Generic module values.** A generic module function is certified for every
-admissible instantiation by its own unit; a generic imported value is assumed
-at its declared type. A unit that calls one gives its slot the instances its
-calls name. Each call's type arguments must be ground and name exactly its
+admissible instantiation by its own unit, and a generic class by the
+initialization unit that declares it ([generic classes](#generic-classes));
+a generic imported value is assumed at its declared type. A unit that calls
+or constructs one gives its slot the instances its calls name. Each call's type arguments must be ground and name exactly its
 binders; the signature and bounds are then read from the source terms with the
 binders fixed to those arguments, so a declaration applied to a binder is an
 ordinary ground application, and each bound must hold by the graph's certified

@@ -345,6 +345,8 @@ export const cases: Case[] = [
   negative("invalid-generic-recursive-list", "a number is no `T`: a `List<T>` cannot hold one"),
   positive("generic-graph-bounds", "a binder with a ground bound is the meet of its parameter row and the bound: reads through it at the bound"),
   negative("invalid-generic-graph-bound", "a value within the bound is not a `T`"),
+  positive("generic-class", "generic classes `Box<T>` with methods and `Pair<A, B>`: the declaring unit certifies them at every assignment of their binders' rows; uses construct named instances"),
+  negative("invalid-generic-class", "a `Box` constructed at `number` returns no string"),
   negative("invalid-generic-union-bound", "a binder bounded by a union is below the union, not one member",
     /cannot establish T ≤ string under \[T ≤ string \| number\]/),
   positive("explicit-type-arguments", "explicit type arguments on plain calls state each call's instance: module, declared and local generic callees, dependent bounds"),

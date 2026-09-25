@@ -1555,14 +1555,29 @@ let infer program =
   let init = match program.Source.init with
     | [] -> None
     | body -> Some (infer_with module_functions
-        {quantified=[];name="";name_pos=Json.Null;params=[];rest=false;
+        {quantified=program.Source.init_quantified;name="";name_pos=Json.Null;params=[];rest=false;
          result=Atoms [Undef];body}) in
   (* A function reads a module constant at its annotation or, without one, at
      the initialization unit's claim for its initializer; that unit is what
      establishes it. *)
+  (* A generic class's constructor is quantified over the class's binders:
+     a unit reading it names its instance, as for a generic function. *)
+  let quantify_class t = match t with
+    | Atoms [Ctors [signature]] when program.Source.init_quantified <> [] ->
+      let mentioned = List.filter (fun (q:Semantic.quantifier) ->
+        let rec mentions = function
+          | Rigid r -> r = q.identity
+          | Union ts -> List.exists mentions ts
+          | Meet (t,ts) -> List.exists mentions (t::ts)
+          | Atoms atoms -> List.exists (function
+              | Named (_,args) -> List.exists mentions args
+              | _ -> false) atoms in
+        List.exists mentions (signature.result :: signature.params)) program.Source.init_quantified in
+      if mentioned = [] then t else Atoms [Ctors [{signature with quantified=mentioned}]]
+    | t -> t in
   let module_constants = List.concat_map (fun (s:Source.stmt) -> match s.statement with
     | Declare (false,bindings) -> List.map (fun (n,written,(e:expr)) -> n,lazy (match written with
-        | Some t -> t
+        | Some t -> quantify_class t
         | None ->
           match Option.bind init (fun c -> List.find_opt (fun (x:expression) -> x.pos = e.pos) c.expressions) with
           | Some x -> x.type_

@@ -422,7 +422,10 @@ type declaration = { id: string; parameters: rigid list;
 (* `values` are the client's value imports, at the types their declarations
    state: assumptions, not checked here. *)
 type program = { file: Json.t; digest: Json.t; declarations: declaration list;
-                 functions: fn list; init: stmt list; values: (string * ty) list }
+                 functions: fn list; init: stmt list; values: (string * ty) list;
+                 (* The binders of the generic classes the top-level code
+                    declares: the initialization unit's. *)
+                 init_quantified: quantifier list }
 
 (* A pattern's defaults, in evaluation order. *)
 let rec pattern_defaults = function
@@ -661,9 +664,24 @@ let decode ast =
       | _ -> None)
     | _ -> None) definitions in
   let top={bindings=[];owner=None;positional=[];arity;symbolic;own=false;self_owner=false} in
+  (* A generic class's binders are in scope in its members: one binder per
+     spelling for the whole top-level code, as Lean reads them. *)
+  let rec class_params = function
+    | Object fields as j ->
+      let here = if List.assoc_opt "k" fields = Some (String "ctor") then
+          (match List.assoc_opt "typeParams" fields with Some (Array ps) -> ps | _ -> [])
+        else [] in
+      ignore j; here @ List.concat_map (fun (_,v) -> class_params v) fields
+    | Array xs -> List.concat_map class_params xs
+    | _ -> [] in
+  let class_params = List.fold_left (fun acc p ->
+    if List.exists (fun q -> text "name" q = text "name" p) acc then acc else acc @ [p])
+    [] (class_params (field "init" ast)) in
+  let init_binders,init_quantified = quantify top (-2000) class_params in
   { file=field "file" ast;digest=field "sourceSha256" ast;
     declarations=definitions;
-    init=List.map (stmt top) (items "init" ast);
+    init=List.map (stmt init_binders) (items "init" ast);
+    init_quantified;
     values=List.mapi (fun index v ->
       (* A generic value's binders quantify its one signature. *)
       let binders,quantified = quantify top (-1000-index) (items "typeParams" v) in

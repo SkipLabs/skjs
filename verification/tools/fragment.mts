@@ -131,7 +131,9 @@ export type Expr =
   | { k: "new"; pos: Span; callee: Expr; args: Expr[]; typeArgs?: TypeTerm[] }
   /* A class value: its constructor lambda as construct-only code, which only
      `new` runs. */
-  | { k: "ctor"; pos: Span; lambda: Expr }
+  /* A generic class's binders, when it has any: they are in scope in its
+     members, and Lean reads them as parameter rows of the declaring unit. */
+  | { k: "ctor"; pos: Span; typeParams?: TypeParamAst[]; lambda: Expr }
   /* A call through a property reference, `o.m(a)` or `o[k](a)`, parentheses
      around the reference included: the object is saved, the method read from
      it and saved, the arguments evaluated, and the saved method invoked with

@@ -407,6 +407,7 @@ controls hold; the numbers live in its output, not here.
 | One value with both fields and calls        | `function-fields.ts`                                                                                                                          |
 | No usable result guarantee                  | `top-void.ts` (unknown, discarded callback result)                                                                                            |
 | Rigid parameters and dependent bounds       | `generics.ts`, `aliases.ts`, `generic-inferred.ts`, `generic-bounds.ts` (ground bounds, unions over a binder, bodies without a return) |
+| Generic bodies as graph requests            | `generic-graph-bodies.ts`, `generic-recursive-list.ts`, `generic-graph-bounds.ts`, `generic-class.ts` (each binder a parameter row, a bounded one met with its bound; records, recursive aliases and classes over a binder) |
 | Explicit type arguments and `as const`      | `explicit-type-arguments.ts`, `as-const.ts` (readonly literal tuples and fields, tuple bounds as contextual types)                  |
 | Quantified rest collection and callbacks | `generic-rest.ts` (declaration, fresh arrays, independent instances, prefixes, spreads, defaults, callback invocation) |
 | Quantified closures and their calls         | `generic-closure.ts`, `generic-two-calls.ts`, `generic-bounded.ts`, `generic-returned.ts`, `generic-captured-store.ts`, `generic-callback.ts` |
@@ -990,7 +991,8 @@ first milestone, in order of how much each gates:
    parameter properties and `this.f = e` assignments; `new C(args)` calls
    it, and no other read of the class is admitted. Remaining: `implements` as
    a checked obligation, inheritance (`extends`, needed by
-   `InputDefinition`), generic classes, general constructor bodies, statics,
+   `InputDefinition`), generic methods with binders of their own, general
+   constructor bodies, statics,
    and array operations inside methods (a closure limitation `AddIndex`
    meets).
 3. **Generic calls.** Done for generic module functions and generic imported

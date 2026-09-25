@@ -1059,9 +1059,52 @@ private def annotationAtRows := SourceTypes.annotationAtRows
 a generic closure, whose binders the unit's rows do not stand for. -/
 private partial def nestedBinders : Json → Bool
   | .arr xs => xs.any nestedBinders
-  | .obj kvs => kvs.toList.any fun (k, v) =>
-      (k == "typeParams" && v != Json.arr #[]) || nestedBinders v
+  | .obj kvs =>
+    -- A class's binders are its declaring unit's, not a closure's.
+    let isClass := kvs.toList.lookup "k" == some (.str "ctor")
+    kvs.toList.any fun (k, v) =>
+      (k == "typeParams" && !isClass && v != Json.arr #[]) || nestedBinders v
   | _ => false
+
+/-- The ctor nodes' binder lists in a tree. -/
+private partial def ctorBinderLists : Json → List Json
+  | .arr xs => xs.toList.flatMap ctorBinderLists
+  | .obj kvs =>
+    let here := if kvs.toList.lookup "k" == some (.str "ctor") then
+        match kvs.toList.lookup "typeParams" with
+        | some (.arr ps) => ps.toList
+        | _ => []
+      else []
+    here ++ kvs.toList.flatMap fun (_, v) => ctorBinderLists v
+  | _ => []
+
+/-- The names the top-level code binds generic classes to. -/
+private def genericClassNames (j : Json) : List String :=
+  match j with
+  | .arr sts => sts.toList.flatMap fun st =>
+    match (st.getObjVal? "bindings").toOption with
+    | some (.arr bs) => bs.toList.filterMap fun b =>
+      match (b.getObjVal? "init").toOption with
+      | some init =>
+        if (init.getObjValAs? String "k").toOption == some "ctor" &&
+            ((init.getObjVal? "typeParams").toOption.bind (·.getArr?.toOption)).any (!·.isEmpty)
+        then (b.getObjValAs? String "name").toOption else none
+      | none => none
+    | _ => []
+  | _ => []
+
+/-- The binders of the generic classes the module's top-level code declares:
+the initialization unit's, read as parameter rows. One spelling is one row,
+so two classes may share a binder's name only with the same bound. -/
+private def classBinders (j : Json) : Except String (List Fragment.TypeParam) := do
+  let mut out : List Fragment.TypeParam := []
+  for p in ctorBinderLists j do
+    let tp ← Fragment.decodeTypeParam p
+    match out.find? (·.name == tp.name) with
+    | some q => if q.bound != tp.bound then
+        throw s!"two generic classes bind '{tp.name}' with different bounds"
+    | none => out := out ++ [tp]
+  return out
 
 /-- `only` selects one function of the file, named with its position: the
 others remain its module, reachable at their signatures, and need no claims. -/
@@ -1108,8 +1151,12 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
   -- initialization unit claims for its initializer: the type that unit's
   -- binding checks the initializer's value against (TypeScript's declared
   -- type for an unannotated `const`, a literal kept as its literal type).
+  -- A generic class is read at the instances its uses name, as a generic
+  -- module function is (`generics`), not at its declaring unit's rows.
+  let classNames := genericClassNames ((ast.getObjVal? "init").toOption.getD (.arr #[]))
   let moduleConstants : List SourceExtraction.ModuleValue := init.flatMap fun
-    | .constants _ bs => bs.map fun b => (b.name, b.namePos, match b.annot with
+    | .constants _ bs => (bs.filter fun b => !classNames.contains b.name).map fun b =>
+      (b.name, b.namePos, match b.annot with
         | some ty => .ok (.written ty)
         | none => match (d.init.map (·.expressions)).getD [] |>.find? (·.pos == b.init.span) with
           | some e => .ok (.claimed e.type.ground)
@@ -1125,7 +1172,8 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
       let span := (first.pos.1, (init.getLast?.map (·.pos.2)).getD first.pos.2)
       let undefinedType := Json.mkObj [("top", toJson false),
         ("atoms", toJson [Json.mkObj [("a", toJson "undefined")]])]
-      pure [(⟨"", span, [], undefinedType, init⟩, [],
+      let binders ← classBinders ((ast.getObjVal? "init").toOption.getD (.arr #[]))
+      pure [(⟨"", span, [], undefinedType, init⟩, binders,
         ⟨"", span, [], .labels [3], c.entries, c.expressions, c.arrows⟩)]
   let decoded := match only with
     | none => all
@@ -1171,6 +1219,8 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
       -- row, and the unit is an ordinary graph request, certified at every
       -- assignment of those rows (`Parametricity.accepted_at`).
       let direct : Except (Bool × String) FunctionPlan := do
+        -- A generic class's binders are the graph checker's alone.
+        if initClaims.isSome then throw (true, "")
         if !(c.arrows.getD []).isEmpty then
           throw (true, "per-arrow source claims are for ground closures, not quantified schemes")
         let direct ← match c.directClaims d.types with
@@ -1184,7 +1234,9 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
       | .ok plan => return plan
       | .error (false, failure) => throw failure
       | .error (true, _) =>
-        let some source := functionJsons.find? fun j =>
+        let some source := if initClaims.isSome then
+            some (Json.mkObj [("body", (ast.getObjVal? "init").toOption.getD (.arr #[]))])
+          else functionJsons.find? fun j =>
             (j.getObjValAs? String "name").toOption == some f.name &&
               (j.getObjValAs? Span "namePos").toOption == some f.namePos
           | throw "a generic unit's source function is missing"
@@ -1197,7 +1249,12 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
         let (T, atRows) := c.atRows T rows
         d := { d with types := T }
         c := atRows
-        f := (← Fragment.decodeFn (annotationAtRows rows source)).1
+        if initClaims.isSome then
+          let body ← Fragment.decodeInit (Json.mkObj [("init",
+            ((annotationAtRows rows source).getObjValD "body"))])
+          f := { f with body }
+        else
+          f := (← Fragment.decodeFn (annotationAtRows rows source)).1
     let finish (d : Document) (module : List SourceExtraction.ModuleValue) (c : Function)
         (f : Fragment.Fn) : Except String FunctionPlan := do
       let mut d := d
@@ -1206,7 +1263,7 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
       -- A generic module function this unit calls: its slot holds the instances
       -- the calls name, and those reads and calls are claimed at them.
       if !c.hasScheme then
-        for g in generics do
+        for g in generics.filter (fun g => !(initClaims.isSome && classNames.contains g.name)) do
           if (f.body.flatMap Fragment.Stmt.callees).any (·.2.2.1 == g.name) then
             match Scheme.moduleInstances d.types g f.body c with
             | .ok (T, slot, reads, calls) =>

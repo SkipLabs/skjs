@@ -56,7 +56,7 @@ let encode (proposal : Proposal.t) =
   let bounds = List.concat_map (fun (f : Proposal.function_claim) ->
     List.filter_map (fun (q:Semantic.quantifier) -> match q.bound with
       | Some (ValueArgument b) when not (Semantic.mentions_rigid b) -> Some (q.identity,b)
-      | _ -> None) f.source.quantified) proposal.functions in
+      | _ -> None) f.source.quantified) (Option.to_list proposal.init @ proposal.functions) in
   let rec labels t = Array (List.map int (label_list t))
   and label_list = function
     | Rigid r -> (match List.assoc_opt r bounds with
@@ -279,11 +279,42 @@ let encode (proposal : Proposal.t) =
   (* A declaration applied to a rigid argument has no graph row of its own:
      its definition, with the argument substituted, is the claim, exactly as
      Lean expands the source equation. Ground applications keep their rows. *)
+  (* A declaration that reaches itself, a class's instance type through its
+     methods' receiver or a recursive alias, has no finite expansion: applied
+     to a binder, it is its application row at the binder's parameter row, as
+     Lean reads its source annotation. *)
+  let rec named_in = function
+    | Atoms atoms -> List.concat_map (function
+        | Named (id,args) -> id :: List.concat_map named_in args
+        | Shape s -> List.concat_map (fun (f:Semantic.field) -> named_in f.read
+            @ Option.fold ~none:[] ~some:named_in f.write) s.fields
+          @ List.concat_map (fun (c:Semantic.signature) ->
+              List.concat_map named_in (c.receiver :: c.result :: c.params @ Option.to_list c.variadic)) s.calls
+          @ Option.fold ~none:[] ~some:(fun (i:Semantic.index_signature) -> named_in i.value) s.string_index
+          @ Option.fold ~none:[] ~some:(fun (q:Semantic.sequence) ->
+              List.concat_map named_in (q.required @ q.optional_elements @ Option.to_list q.rest)) s.elements
+        | Exact fs -> List.concat_map (fun (f:Semantic.field) -> named_in f.read) fs
+        | Ctors cs -> List.concat_map (fun (c:Semantic.signature) ->
+            List.concat_map named_in (c.receiver :: c.result :: c.params)) cs
+        | _ -> []) atoms
+    | Union ts -> List.concat_map named_in ts
+    | Meet (t,ts) -> List.concat_map named_in (t::ts)
+    | Rigid _ -> [] in
+  let references id = match List.find_opt (fun (d:Source.declaration) -> d.id=id) declarations with
+    | Some d -> List.concat_map named_in (d.expression :: d.bases)
+    | None -> [] in
+  let self_referential id =
+    let rec reach seen = function
+      | [] -> false
+      | x :: rest -> x = id || (if List.mem x seen then reach seen rest
+                                else reach (x::seen) (references x @ rest)) in
+    reach [] (references id) in
   let rec expand_rigid = function
     | Atoms atoms when List.exists (function
-        | Named (_,args) -> List.exists contains_symbolic args | _ -> false) atoms ->
+        | Named (id,args) -> List.exists contains_symbolic args && not (self_referential id)
+        | _ -> false) atoms ->
       List.fold_left (fun acc atom -> union acc (match atom with
-        | Named (id,args) when List.exists contains_symbolic args ->
+        | Named (id,args) when List.exists contains_symbolic args && not (self_referential id) ->
           expand_rigid (Proposal.definition declarations id args)
         | atom -> Atoms [atom])) (Atoms []) atoms
     | t -> t

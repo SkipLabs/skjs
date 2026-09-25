@@ -1166,6 +1166,23 @@ private def explicitInstance (pos : Span) (O M : Ty Nat) (fld : PropKey) (typeAr
     if !sameMeaning T A θ then
       throw (refuse "the call's instance is not the one its explicit type arguments state")
 
+/-- A plan at a meet row, a bounded binder read as its row met with its bound,
+cast to the bound: the row holding exactly the meet's clauses, which the meet
+is below (`PositiveRules.meetSources`). A member read through the binder reads
+the bound's member. Any other plan is itself. -/
+private def throughBound (Γ : List (Ty Nat)) (a : DirectProof.Plan) : Compiler DirectProof.Plan := do
+  let T ← table
+  let [l] := a.type | return a
+  let some (.meet _ cs) := (T[l]? : Option RequestJson.Row) | return a
+  let row := RequestJson.Row.clauses cs
+  let m ← match T.idxOf? row with
+    | some m => pure m
+    | none => do
+      modify fun s => { s with types := s.types ++ [row] }
+      pure T.length
+  modify fun s => { s with hints := m :: s.hints }
+  return DirectProof.cast Γ [m] a
+
 /-- Read a field from a cell plan under context `Γ`: one contract, a callable
 bag, or an explicit union of cell contracts each naming the field. -/
 private partial def readCell (G : PositiveGraphs.NormalGraph Nat) (Γ : List (Ty Nat)) (fld : PropKey)
@@ -1472,7 +1489,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     pure (DirectProof.node Γ (.makeAt .absent (ns.map .str) (ps.map (·.term))) [Ref] .alloc casts)
   | .read _ fld a => do
     let receiver := a
-    let a ← closureExpr fc scope Γ a
+    let a ← throughBound Γ (← closureExpr fc scope Γ a)
     let snapshot := match receiver with
       | .var _ name => (readSnapshot name fld).bind (names scope).idxOf?
       | _ => none
@@ -1487,7 +1504,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
   | .index _ (some fld) receiver key => do
     -- The receiver, then the key, then the read: the key's own claim was
     -- resolved to the field, and is checked here like any operand's.
-    let r ← closureExpr fc scope Γ receiver
+    let r ← throughBound Γ (← closureExpr fc scope Γ receiver)
     let k ← closureExpr fc (held ⟨"",some receiver.span⟩ :: scope) (r.type::Γ) key
     let H := k.type::r.type::Γ
     let arms ← primitiveArms (held ⟨"",some key.span⟩ :: held ⟨"",some receiver.span⟩ :: scope) H r.type fld

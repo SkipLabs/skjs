@@ -1007,7 +1007,10 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     return .withValue p (← decodeExpr (← jField j "fn")) (← decodeExpr (← jField j "initial"))
       (← jField j "functionType") (← jField j "bagType")
   | "ctor" => do
-    CellClaims.fieldsExactly j ["k","pos","lambda"]
+    -- A generic class's binders are the declaring unit's (`typeParams`);
+    -- they are read where the unit's binders are, not here.
+    CellClaims.fieldsExactly j (["k","pos","lambda"] ++
+      (if (j.getObjVal? "typeParams").isOk then ["typeParams"] else []))
     let lam ← decodeExpr (← jField j "lambda")
     let .lambda _ none [] _ [] false _ _ := lam
       | throw "a class value is a constructor lambda with plain parameters"

@@ -3862,7 +3862,10 @@ $$
 $$
 
 One derivation, checked once, covers every instantiation of the binders: the
-inputs and the result are read at the same $\eta$. Lean:
+inputs and the result are read at the same $\eta$. The binders of a generic
+class are those of the unit that declares it, the module's initialization
+unit, so its constructor and methods are certified at every instantiation the
+same way. Lean:
 `Parametricity.accepted_at`, `RequestJson.verify_safe_at`,
 `SourceExtraction.checkRequests_safe_at`.
 

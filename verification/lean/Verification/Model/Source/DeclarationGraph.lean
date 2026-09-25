@@ -902,7 +902,8 @@ private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table)
     let ((filled, grown), expanded) ← (fill.run memo).run table
     memo := grown
     table := expanded.set row filled
-  return (table, memo)
+  -- Keys again, now every reserved row, a meet row among them, is filled.
+  return (table, memo.rekey table)
 
 private def claimType (atoms : List Json) : Json :=
   Json.mkObj [("top", toJson false), ("atoms", toJson atoms)]
@@ -1046,8 +1047,8 @@ are the ones declaration bodies use; a reference resolves to the declaration
 TypeScript named, by identity. A ground application is its graph labels, and
 one over an enclosing function's binder is its expanded equation. -/
 private partial def annotationClaim (ds : Array Definition) (term : Json)
-    (bound : List (String × Json) := []) : Lowering Json := do
-  let recur := fun t => annotationClaim ds t bound
+    (bound : List (String × Json) := []) (scope : List (String × Json) := []) : Lowering Json := do
+  let recur := fun t => annotationClaim ds t bound scope
   sourceObject term
   match ← str term "k" with
   | "scheme" =>
@@ -1174,19 +1175,41 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
     -- one is its graph labels, so `Id<boolean>` is exactly `[1, 2]`, the
     -- type a producer claims, not a new row with the same meaning.
     if args.any hasRigidParameter then
-      return ← tryCatch (expandApplication ds index args []) fun e => do
-        unless e.startsWith "recursive generic application" do throw e
-        -- A recursive declaration applied to a binder has no finite
-        -- expansion; it is its application row at the binder's parameter
-        -- row, which the graph checker reads (`SourceTypes.binderRow`).
+      -- A class's instance type, whose methods' receiver is the application
+      -- itself, and a recursive declaration have no finite claim-form
+      -- expansion over a binder; each is its application row at the binder's
+      -- parameter row, which the graph checker reads (`SourceTypes.binderRow`).
+      let atRows : Lowering Json := do
         let names := (args.toList.flatMap SourceTypes.binderNames).eraseDups
-        let rows ← names.mapM fun n => do return (n, ← (SourceTypes.binderRow n : SourceTypes.Lowering Nat))
+        -- A binder with a ground bound of clause rows is its row met with the
+        -- bound, as the unit reads it, so a bounded declaration's own bound
+        -- check sees the binder within it.
+        let rows ← names.mapM fun n => do
+          let p ← (SourceTypes.binderRow n : SourceTypes.Lowering Nat)
+          match scope.lookup n with
+          | some b =>
+            if b == .null || !groundTerm b then return (n, p)
+            let B ← (Fragment.translate (← annotationClaim ds b) : SourceTypes.Lowering _)
+            let G := SourceTypes.graph (← getThe SourceTypes.Table)
+            if B.isEmpty || !G.plainTy B then return (n, p)
+            let r := RequestJson.Row.meet p (B.flatMap G)
+            let i ← modifyGetThe SourceTypes.Table fun (T : SourceTypes.Table) =>
+              match T.idxOf? r with
+              | some i => (i, T)
+              | none => (T.length, T ++ [r])
+            return (n, i)
+          | none => return (n, p)
         let values ← args.mapM fun a =>
           (Fragment.translate (SourceTypes.annotationAtRows rows a) : SourceTypes.Lowering _)
         let values ← lowerApplication ds index values {}
         let labels ← groundApplication ds index values {}
         if labels.isEmpty then throw "generic application has no inhabited graph clause"
         return graphClaim labels
+      if mentionsSelf ds[index]!.expression then return ← atRows
+      return ← tryCatch (expandApplication ds index args []) fun e => do
+        unless e.startsWith "recursive generic application" ||
+          e.startsWith "a bounded declaration applied to a type parameter" do throw e
+        atRows
     if ds[index]!.parameters.isEmpty then
       if !args.isEmpty then throw "type application has wrong arity"
       return graphClaim [rowIndex ds index]
@@ -1209,23 +1232,31 @@ private def annotationFields : List String :=
   ["annot", "functionType", "bagType", "type", "result", "bound", "retType"]
 
 /-- Every annotation of the function tree in claim form. -/
-private partial def rewrite (ds : Array Definition) (j : Json) : Lowering Json := do
+private partial def rewrite (ds : Array Definition) (j : Json)
+    (scope : List (String × Json) := []) : Lowering Json := do
   match j with
-  | .arr values => return .arr (← values.mapM (rewrite ds))
+  | .arr values => return .arr (← values.mapM (rewrite ds · scope))
   | .obj fields =>
     sourceObject j
+    -- The binders a function, closure or class declares are in scope below
+    -- it, each with its raw bound, innermost first.
+    let scope := match fields.toList.lookup "typeParams" with
+      | some (.arr ps) => (ps.toList.filterMap fun p => do
+          let n ← (p.getObjValAs? String "name").toOption
+          return (n, (p.getObjVal? "bound").toOption.getD .null)) ++ scope
+      | _ => scope
     let pairs ← fields.toArray.mapM fun (name, value) => do
       -- A ground type-parameter bound is its graph rows, whatever its form:
       -- the bound is only ever read as a type.
       if name == "bound" && value != .null && groundTerm value then
         return (name, graphClaim (← Fragment.translate (← annotationClaim ds value)))
       if annotationFields.contains name && value != .null then
-        return (name, ← annotationClaim ds value)
+        return (name, ← annotationClaim ds value [] scope)
       -- A method call's explicit type arguments: a list of annotations.
       if name == "typeArgs" then
         let .arr values := value | throw "type arguments are a list"
-        return (name, .arr (← values.mapM (annotationClaim ds)))
-      return (name, ← rewrite ds value)
+        return (name, .arr (← values.mapM (annotationClaim ds · [] scope)))
+      return (name, ← rewrite ds value scope)
     return Json.mkObj pairs.toList
   | _ => return j
 
@@ -1307,8 +1338,42 @@ def prepare (ast : Json) (candidate : SourceTypes.Table)
         return (n, ← if b == .null then pure none else some <$> annotationClaim ds b σ)
       return (c, bounds)
     return some (name, pos, binders.map Prod.fst, instantiate)
+  -- A generic class, a value of the top-level code: its constructor at each
+  -- instance its uses name, read from the class's constructor type with the
+  -- binders fixed. The initialization unit certifies the class at every
+  -- assignment of its binders' rows.
+  let genericClasses ← (← arr ast "init").toList.flatMapM fun st => do
+    if (st.getObjValAs? String "k").toOption != some "const" then return []
+    (← arr st "bindings").toList.filterMapM fun b => do
+      let init ← field b "init"
+      if (init.getObjValAs? String "k").toOption != some "ctor" then return none
+      let some (.arr tps) := (init.getObjVal? "typeParams").toOption | return none
+      if tps.isEmpty then return none
+      let annot ← field b "annot"
+      let binders ← tps.toList.mapM fun p => do return (← str p "name", ← field p "bound")
+      let name ← str b "name"
+      let pos ← fromJson? (α := Span) (← field b "namePos")
+      let instantiate (σ : List (String × Json)) : Lowering (Json × List (String × Option Json)) := do
+        let c ← annotationClaim ds annot σ
+        let bounds ← binders.mapM fun (n, bd) => do
+          return (n, ← if bd == .null then pure none else some <$> annotationClaim ds bd σ)
+        return (c, bounds)
+      return some (name, pos, binders.map Prod.fst, instantiate)
+  let genericFunctions := genericFunctions ++ genericClasses
   let ((functions, memo), types) ← ((rewrite ds (← field ast "functions")).run memo).run types
-  let ((init, memo), types) ← ((rewrite ds (← field ast "init")).run memo).run types
+  -- A generic class's binders are in scope in every member, and the members
+  -- are bindings of their own beside the class value: the top-level code's
+  -- scope holds every generic class's binders, one per spelling.
+  let classScope : List (String × Json) :=
+    ((← arr ast "init").toList.flatMap fun st =>
+      match (st.getObjVal? "bindings").toOption with
+      | some (.arr bs) => bs.toList.flatMap fun b =>
+        match ((b.getObjVal? "init").toOption.bind fun i => (i.getObjVal? "typeParams").toOption) with
+        | some (.arr ps) => ps.toList.filterMap fun p => do
+            return (← (p.getObjValAs? String "name").toOption, (p.getObjVal? "bound").toOption.getD .null)
+        | _ => []
+      | _ => [])
+  let ((init, memo), types) ← ((rewrite ds (← field ast "init") classScope).run memo).run types
   -- An imported value, at the type its declaration states: an assumption,
   -- read in claim form like an annotation. A generic one is instantiated at
   -- each call instead.

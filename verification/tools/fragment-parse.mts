@@ -434,15 +434,30 @@ class Gate {
   classStmt(node: ClassDeclaration): Stmt {
     const name = node.name;
     if (!name) return this.fail(node, "an anonymous class is outside the fragment");
-    if (node.typeParameters?.length) this.fail(node, "a generic class is outside the fragment");
     if (node.heritageClauses?.some((c) => c.token === ts.SyntaxKind.ExtendsKeyword))
       this.fail(node, "class inheritance is outside the fragment");
     if (node.modifiers?.some((m) => m.kind !== ts.SyntaxKind.ExportKeyword))
       this.fail(node, "a class modifier outside the fragment");
     const declared = this.declaredTypes.get(name.text);
     if (!declared) return this.fail(node, "a class declaration has no instance type");
+    // A generic class's binders are in scope in its members; its instance
+    // type is the class applied to them. Lean reads them as parameter rows of
+    // the code unit that declares the class.
+    const typeParams = this.enterTypeParams(node.typeParameters);
+    try {
+      return this.classBody(node, name, declared.declaration, typeParams);
+    } finally {
+      this.leaveTypeParams();
+    }
+  }
+
+  private classBody(node: ClassDeclaration, name: ts.Identifier, declaration: DeclarationIdentity,
+      typeParams: TypeParamAst[]): Stmt {
+    const binders = node.typeParameters ?? [];
     const instance: TypeTerm = { k: "reference", reference: { name: name.text, span: this.span(name),
-      arguments: [], target: declared.declaration }, args: [], span: this.span(name) };
+      arguments: binders.map((tp) => this.span(tp.name)), target: declaration },
+      args: binders.map((tp) => ({ k: "binder", name: tp.name.text, span: this.span(tp.name) })),
+      span: this.span(name) };
     const outerStrict = this.strict;
     // A class body is strict code.
     this.strict = true;
@@ -605,7 +620,8 @@ class Gate {
       };
       // The class value is its constructor as construct-only code, which only
       // `new` runs.
-      const lambda: Expr = { k: "ctor", pos: this.span(node), lambda: { k: "lambda", pos: this.span(node),
+      const lambda: Expr = { k: "ctor", pos: this.span(node), ...(typeParams.length ? { typeParams } : {}),
+        lambda: { k: "lambda", pos: this.span(node),
         typeParams: [], receiver: null, params: params.map((p) => ({ name: p.name, type: p.type })),
         result: instance, body: construct(constructor?.body?.statements ?? [], fields, new Set()) } };
       const type: TypeTerm = { k: "constructor", params: params.map((p) => p.type), rest: null, result: instance,
