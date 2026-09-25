@@ -1160,6 +1160,27 @@ used as an array value must keep its array interpretation too; an argument
 list is not an array, and such a method stays opaque. Rerun the original client
 independently: its array-library and asynchronous-startup gaps are separate.
 
+**A tight service binding, verified with its use.**
+[`framework-binding-sound.ts`](examples/framework-binding-sound.ts) is the
+first framework binding verified together with a client, beside
+[`framework-binding-unsound.ts`](examples/framework-binding-unsound.ts),
+today's binding in one file, under which a service reading an undeclared
+input verifies and crashes: the unsoundness is the binding's, not a checker's.
+In the sound binding, a service's
+`createGraph` obtains each input collection through the definition that
+declared it (`get<K, V>(definition: InputDefinition<K, V>):
+Collection<K, V>`), so a collection's types are its definition's. The
+runtime's current binding instead gives `createGraph` a collections type
+`Inputs` that nothing ties to the declared inputs (`runService<InputDefs,
+Inputs, ...>` on upstream's `anyskipservice` branch; `AnySkipService` on
+upstream main), so a service reading an undeclared input
+type-checks and crashes. The binding is declared in the file, so every tool
+reads the same one. Its negative, `invalid-framework-binding-sound.ts`, is
+a service taking more than the framework passes, which TypeScript accepts by
+method bivariance. The matching change to Skip's API (`InputCollections`,
+`runService` generic over the concrete service, `ResourceClass<R, Json>`) type-checks under `tsc` against the pinned
+runtime; sum.ts on it still stops at the generic `runService` call.
+
 **Record values as `Json` (done for ground instances).**
 
 *The problem.* A record type is open: its value may carry keys the type does
