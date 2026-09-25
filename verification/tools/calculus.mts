@@ -62,7 +62,7 @@ export type Term =
   /** Evaluate `a`, then throw its value. */
   | { throw: { a: Term } };
 /** Every binary operator, as `Arith` in Calculus.lean names them. */
-const OPERATORS = ["add", "sub", "mul", "div", "pow", "xor", "lt", "le", "gt", "ge"] as const;
+const OPERATORS = ["add", "sub", "mul", "div", "pow", "xor", "rem", "lt", "le", "gt", "ge"] as const;
 /** Every tag, checked against `Tag`: adding one there and not here is a type
  * error rather than an "unknown tag" at run time. */
 const TAGS: Record<Extract<Tag, string>, true> = {

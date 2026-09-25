@@ -264,8 +264,8 @@ let quantify binders scope parameters =
       loop (index+1) binders (quantified::accumulated) rest in
   loop 0 binders [] parameters
 (* A binary operator on primitive operands: arithmetic, or a comparison. *)
-type arithmetic = Add | Sub | Mul | Div | Pow | Lt | Le | Gt | Ge
-let relational = function Lt | Le | Gt | Ge -> true | Add | Sub | Mul | Div | Pow -> false
+type arithmetic = Add | Sub | Mul | Div | Pow | Rem | Lt | Le | Gt | Ge
+let relational = function Lt | Le | Gt | Ge -> true | Add | Sub | Mul | Div | Pow | Rem -> false
 (* `-e`, `+e` and `~e`. *)
 type unary = Neg | Plus | BitNot
 type equality = StrictEqual | StrictUnequal | LooseEqual | LooseUnequal
@@ -434,7 +434,7 @@ let rec assigns name s = match s.statement with
     (body @ (match handler with Some (_,h) -> h | None -> []) @ Option.value finalizer ~default:[])
   | Break | Continue -> false
 let arithmetic = function
-  | "add" -> Add | "sub" -> Sub | "mul" -> Mul | "div" -> Div | "pow" -> Pow
+  | "add" -> Add | "sub" -> Sub | "mul" -> Mul | "div" -> Div | "pow" -> Pow | "rem" -> Rem
   | "lt" -> Lt | "le" -> Le | "gt" -> Gt | "ge" -> Ge
   | k -> unsupported ("arithmetic " ^ k)
 let rec expr binders j =

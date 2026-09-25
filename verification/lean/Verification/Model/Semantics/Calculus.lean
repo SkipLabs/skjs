@@ -88,10 +88,11 @@ operation, or two bigints as the integer one: `pow` is `**`, `xor` is `^`,
 which `~x` is written with (`x ^ -1`). The relational operators compare two
 numeric operands, number and bigint alike, or two strings, and answer a
 Boolean. A combination JavaScript throws on, or converts through anything
-else, is stuck. -/
+else, is stuck. `rem` is `%`: on doubles the exact remainder of truncating
+division, with the dividend's sign; on bigints the truncating remainder. -/
 inductive Arith where
   | add | sub | mul | div
-  | pow | xor
+  | pow | xor | rem
   | lt | le | gt | ge
   deriving Repr, DecidableEq, BEq
 
@@ -273,6 +274,43 @@ def intXor : Int → Int → Int
 def int32Bits (i : Int) : UInt64 :=
   (if i < 0 then -((-i).toNat.toFloat) else i.toNat.toFloat).toBits
 
+/-- The bits of the double `mant * 2^(b - 1075)`, positive, where the value is
+a double: normalized to 53 significant bits, or subnormal when its exponent
+is below the least normal one. -/
+def encodeBits (mant b : Nat) : UInt64 :=
+  if mant == 0 then 0 else
+  let len := Nat.log2 mant + 1
+  if len ≤ 53 then
+    let up := 53 - len
+    if up < b then
+      UInt64.ofNat (((b - up) <<< 52) ||| (mant <<< up - 2 ^ 52))
+    else UInt64.ofNat (mant <<< (b - 1))
+  else
+    let down := len - 53
+    UInt64.ofNat (((b + down) <<< 52) ||| (mant >>> down - 2 ^ 52))
+
+/-- JavaScript's `Number::remainder`, exactly (the result is always a double,
+so no rounding occurs): NaN when the dividend is NaN or infinite or the
+divisor is NaN or a zero; the dividend when the divisor is infinite or the
+dividend a zero; otherwise `n - d * q` for `q` the quotient truncated toward
+zero, computed on the integers both operands are multiples of, with the
+dividend's sign (so `-4 % 2` is `-0`). -/
+def remBits (x y : UInt64) : UInt64 :=
+  let ex := ((x >>> 52) &&& 0x7ff).toNat
+  let mx := (x &&& 0xfffffffffffff).toNat
+  let ey := ((y >>> 52) &&& 0x7ff).toNat
+  let my := (y &&& 0xfffffffffffff).toNat
+  if ex == 0x7ff || (ey == 0x7ff && my != 0) || (ey == 0 && my == 0) then (0.0 / 0.0 : Float).toBits
+  else if ey == 0x7ff || (ex == 0 && mx == 0) then x
+  else
+    let bx := if ex == 0 then 1 else ex
+    let by_ := if ey == 0 then 1 else ey
+    let nx := if ex == 0 then mx else mx + 2 ^ 52
+    let ny := if ey == 0 then my else my + 2 ^ 52
+    let b := min bx by_
+    let r := (nx * 2 ^ (bx - b)) % (ny * 2 ^ (by_ - b))
+    (x &&& 0x8000000000000000) ||| encodeBits r b
+
 /-- The bits of an arithmetic result on two numbers: the double operation on
 the operands' doubles. Signed zero is preserved: division observes its sign
 even though strict equality equates the two zeros. A relational operator
@@ -287,11 +325,13 @@ def arithBits (op : Arith) (x y : UInt64) : UInt64 :=
     | .div => (a / b).toBits
     | .pow => (jsPow a b).toBits
     | .xor => int32Bits (intXor (toInt32 x) (toInt32 y))
+    | .rem => remBits x y
     | .lt | .le | .gt | .ge => (0.0 / 0.0 : Float).toBits
 
 /-- Arithmetic on two bigints: JavaScript's integer operations. Division
-truncates toward zero; dividing by zero and a negative exponent throw a
-`RangeError` (`binopThrows`), so they have no result. -/
+truncates toward zero, and the remainder is the one it leaves, with the
+dividend's sign; dividing by zero, a remainder by zero and a negative exponent
+throw a `RangeError` (`binopThrows`), so they have no result. -/
 def bigintArith : Arith → Int → Int → Option Int
   | .add, x, y => some (x + y)
   | .sub, x, y => some (x - y)
@@ -299,6 +339,7 @@ def bigintArith : Arith → Int → Int → Option Int
   | .div, x, y => if y = 0 then none else some (x.tdiv y)
   | .pow, x, y => if y < 0 then none else some (x ^ y.toNat)
   | .xor, x, y => some (intXor x y)
+  | .rem, x, y => if y = 0 then none else some (x.tmod y)
   | .lt, _, _ | .le, _, _ | .gt, _, _ | .ge, _, _ => none
 
 /-- The order of two doubles: none when either is NaN, and the two zeros
@@ -439,7 +480,8 @@ def primString : Tm → Option String
 /-- **What a binary operator does on two values**, as JavaScript's does on
 them, where that is a value. Arithmetic combines two numbers or two bigints,
 never one of each (JavaScript throws a `TypeError`: `binopThrows`), and not a
-bigint division by zero or a negative bigint exponent (a `RangeError`). A relational operator
+bigint division or remainder by zero or a negative bigint exponent (a
+`RangeError`). A relational operator
 compares two numeric values of either kind, exactly, or two strings by their
 UTF-16 code units. `+` with a string operand concatenates: the other operand,
 a primitive other than a symbol, converts by `ToString` (`primString`), which
@@ -473,8 +515,8 @@ def isPrim : Tm → Bool
   | _ => false
 
 /-- **Where a binary operator throws** on two values, as JavaScript's does,
-with no code of the program's run first: a bigint division by zero and a
-negative bigint exponent (`RangeError`); arithmetic combining a number and a
+with no code of the program's run first: a bigint division or remainder by
+zero and a negative bigint exponent (`RangeError`); arithmetic combining a number and a
 bigint (`TypeError`); and any operator with a symbol operand and a primitive
 other one, which converts the symbol by `ToString` or `ToNumeric`
 (`TypeError`). An object operand converts through its own code first, which is
@@ -482,7 +524,7 @@ not modelled: that combination stays stuck. Disjoint from `binop`
 (`binop_not_throws`). -/
 def binopThrows (op : Arith) : Tm → Tm → Bool
   | .bigint _, .bigint y => match op with
-    | .div => y == 0
+    | .div | .rem => y == 0
     | .pow => decide (y < 0)
     | _ => false
   | .num _, .bigint _ | .bigint _, .num _ => !op.relational

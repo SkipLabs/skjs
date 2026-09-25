@@ -9,7 +9,7 @@ import type { DeclarationDocument, PropertyKey, TypeTerm } from "./declaration-t
 import type { Span } from "./span.mts";
 
 /** The arithmetic a compound assignment may perform. */
-export type ArithOp = "add" | "sub" | "mul" | "div" | "pow";
+export type ArithOp = "add" | "sub" | "mul" | "div" | "pow" | "rem";
 /** Every binary operator on primitive operands: arithmetic, and the
  * relational comparisons `<`, `<=`, `>`, `>=`. */
 export type BinaryOp = ArithOp | "lt" | "le" | "gt" | "ge";

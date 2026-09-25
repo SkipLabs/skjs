@@ -100,7 +100,7 @@ $$
 \frac{\mathsf{binop}(op,v_1,v_2)=v}{h,\ v_1\mathbin{op}v_2\to h,\ v}\ (\texttt{arithV})
 \qquad
 \frac{\mathsf{binopThrows}(op,v_1,v_2)}{h,\ v_1\mathbin{op}v_2\to h,\ \mathsf{throw}\ \mathit{err}}\ (\texttt{arithThrow})
-\qquad op\in\{+,-,*,/,{*}{*},\mathbin{\hat{}},<,\le,>,\ge\}.
+\qquad op\in\{+,-,*,/,\%,{*}{*},\mathbin{\hat{}},<,\le,>,\ge\}.
 $$
 
 $\mathsf{binop}$ is JavaScript's operation on the operand kinds it models;
@@ -110,10 +110,10 @@ object without fields, standing for the `TypeError` or `RangeError`
 instance). Neither answers where JavaScript converts through code or
 coercions the calculus does not have:
 
-| Operands | Arithmetic ($+,-,*,/,{*}{*},\hat{}$) | Relational ($<,\le,>,\ge$) |
+| Operands | Arithmetic ($+,-,*,/,\%,{*}{*},\hat{}$) | Relational ($<,\le,>,\ge$) |
 | --- | --- | --- |
-| two numbers | the IEEE-754 double operation; ${*}{*}$ is `Number::exponentiate` (C's `pow`, but NaN for a NaN exponent and for a base of magnitude 1 to an infinite power); $\hat{}$ is exclusive or after `ToInt32` on both | the IEEE order: false when either is NaN, the two zeros equal |
-| two bigints | the integer operation; $/$ truncates toward zero; throws for $/$ by $0$ and ${*}{*}$ by a negative exponent (a `RangeError`) | the integer order |
+| two numbers | the IEEE-754 double operation; ${*}{*}$ is `Number::exponentiate` (C's `pow`, but NaN for a NaN exponent and for a base of magnitude 1 to an infinite power); $\hat{}$ is exclusive or after `ToInt32` on both; $\%$ is `Number::remainder`, exact: $n-d\cdot q$ for $q$ the quotient truncated toward zero, with $n$'s sign (so `-4 % 2` is $-0$), NaN for a NaN or infinite $n$ or a NaN or zero $d$, and $n$ itself for an infinite $d$ or a zero $n$ | the IEEE order: false when either is NaN, the two zeros equal |
+| two bigints | the integer operation; $/$ truncates toward zero and $\%$ is the remainder it leaves, with the dividend's sign; throws for $/$ or $\%$ by $0$ and ${*}{*}$ by a negative exponent (a `RangeError`) | the integer order |
 | a number and a bigint | throws (a `TypeError`) | the exact order of the double's rational value and the integer; false when the number is NaN, an infinity beyond every integer |
 | two strings | $+$ concatenates; others none | lexicographic over UTF-16 code units, a proper prefix less |
 | a string and a number, bigint, Boolean, `null` or `undefined`, either order | $+$ concatenates the string with $\mathsf{str}$ of the other, in operand order; others none | none |
@@ -140,7 +140,7 @@ which the typing rule rules out. The unary operators are this one with a
 constant right operand of the operand's family ([source
 forms](PROGRAM-TYPING.md#judgments-and-constructor-views)): $-x=x*(-1)$, $+x=x*1$
 and $\sim x=x\mathbin{\hat{}}(-1)$, exact on doubles (a sign flip, the identity,
-`ToInt32` complemented) and on integers alike. Lean: `binop`, `arithBits`,
+`ToInt32` complemented) and on integers alike. Lean: `binop`, `arithBits`, `remBits`,
 `bigintArith`, `doubleIntOrder`, `utf16Units`, `primString`, `numberToString`
 (`Semantics/Calculus.lean`); the values it gives are checked against node's for
 the edge cases, and `numberToString` for 300 pseudo-random doubles and short

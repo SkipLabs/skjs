@@ -54,6 +54,27 @@ private def isNaNValue : Option Tm → Bool
 #guard binop .pow (.bigint 2) (.bigint (-1)) == none
 #guard binop .add (.bigint 1) (dbl 1.0) == none
 #guard binop .lt (.str "1") (dbl 2.0) == none
+-- `%` on doubles is the exact remainder with the dividend's sign, and on
+-- bigints the truncating one; a zero bigint divisor throws. Bits from node.
+#guard binop .rem (dbl 5.5) (dbl 2.0) == some (dbl 1.5)
+#guard binop .rem (dbl (-5.0)) (dbl 3.0) == some (dbl (-2.0))
+#guard binop .rem (dbl 5.0) (dbl (-3.0)) == some (dbl 2.0)
+#guard binop .rem (dbl (-4.0)) (dbl 2.0) == some (.num 9223372036854775808)
+#guard binop .rem (dbl 7.0) (dbl (1.0 / 0.0)) == some (dbl 7.0)
+#guard isNaNValue (binop .rem (dbl (1.0 / 0.0)) (dbl 2.0))
+#guard isNaNValue (binop .rem (dbl 2.0) (dbl 0.0))
+#guard remBits 9094988921128908188 4613937818241073152 == 0
+#guard remBits 1 4611686018427387904 == 1
+#guard remBits 3 2 == 1
+#guard remBits 9214871658872686752 2024022533073106 == 708093261633040
+#guard remBits 4599075939470750515 4591870180066957722 == 4591870180066957720
+#guard remBits 13843220829606772736 4602678819172646912 == 13821547256400052224
+#guard remBits 4845873199050653696 118622047889322841 == 117815928586361606
+#guard binop .rem (.bigint (-7)) (.bigint 2) == some (.bigint (-1))
+#guard binop .rem (.bigint 7) (.bigint (-2)) == some (.bigint 1)
+#guard binop .rem (.bigint 7) (.bigint 0) == none
+#guard binopThrows .rem (.bigint 7) (.bigint 0)
+#guard binop .rem (.bigint 7) (dbl 2.0) == none
 
 -- `Number::toString` against node's `String(x)` for the same bits: the
 -- shortest round-tripping digits, the closest of them, the three notations,

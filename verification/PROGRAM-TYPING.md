@@ -658,7 +658,7 @@ $$
 \end{cases}
 $$
 
-A bigint divisor that may be zero, or an exponent that may be negative, is
+A bigint divisor, of `/` or `%`, that may be zero, or an exponent that may be negative, is
 admitted: the operation then throws a `RangeError`, an outcome safety admits
 ([Design](DESIGN.md#throws)). $\operatorname{Operands}_G(op,A,B,r)$
 requires both types of clause rows and every clause pair of $A$ and $B$ to

@@ -499,7 +499,7 @@ theorem answers_sound {G : NormalGraph ι} {A tag q n W v}
 One rule types every binary operator (`arith`): each pair of operand clauses
 must make the operator answer (`binop`) for every pair of their members, all
 with one kind of result. Arithmetic takes two numbers or two bigints, never one
-of each; a bigint divisor must exclude zero, and a bigint exponent be
+of each; a bigint divisor (of `/` or `%`) must exclude zero, and a bigint exponent be
 non-negative, since those throw. `+` also takes a string and a primitive other
 than a symbol, in either order, and concatenates. A relational operator takes
 two numeric operands, of either kind, or two strings. -/
@@ -530,7 +530,7 @@ def printableClause : Clause α → Bool
 
 /-- What an operator yields on members of two clauses, when it answers or
 throws for every pair of them. Two bigints give a bigint for every arithmetic
-operator: a division by zero or a negative exponent throws a `RangeError`
+operator: a division or remainder by zero or a negative exponent throws a `RangeError`
 (`binopThrows`), which is an outcome, not a wrong value, so no divisor or
 exponent condition is needed. -/
 def opResult (op : Arith) (c d : Clause α) : Option OpResult :=

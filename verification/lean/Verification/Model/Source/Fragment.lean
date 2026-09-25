@@ -735,6 +735,7 @@ private def decodeArith (j : Json) : Except String Arith := do
   | "mul" => pure .mul
   | "div" => pure .div
   | "pow" => pure .pow
+  | "rem" => pure .rem
   | "lt" => pure .lt
   | "le" => pure .le
   | "gt" => pure .gt

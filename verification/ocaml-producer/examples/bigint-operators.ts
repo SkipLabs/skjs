@@ -1,5 +1,5 @@
 // Bigints: literals in every spelling, literal types, arithmetic within the
-// family, division and exponentiation by a literal the operation cannot throw
+// family, division, remainder and exponentiation by a literal the operation cannot throw
 // on, comparisons across the two numeric families, and `typeof` as a tag.
 const big: bigint = 9007199254740993n;
 const hex: 16n = 0x10n;
@@ -12,6 +12,9 @@ function difference(a: bigint, b: bigint): bigint {
 }
 function halve(x: bigint): bigint {
   return x / 2n;
+}
+function lastDigit(x: bigint): bigint {
+  return x % 10n;
 }
 function cube(x: bigint): bigint {
   return x ** 3n;

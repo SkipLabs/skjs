@@ -1,4 +1,4 @@
-// Relational comparisons, `**` and the unary numeric operators on numbers.
+// Relational comparisons, `**`, `%` and the unary numeric operators on numbers.
 function less(a: number, b: number): boolean {
   return a < b;
 }
@@ -45,4 +45,12 @@ function count(values: number[]): number {
 }
 function lastIndex(values: readonly string[]): number {
   return values.length - 1;
+}
+function isEven(n: number): boolean {
+  return n % 2 === 0;
+}
+function wrap(i: number, size: number): number {
+  let k: number = i;
+  k %= size;
+  return k;
 }

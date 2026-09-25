@@ -4104,15 +4104,15 @@ numeric operators, not a second mechanism: `binop` concatenates, and
 Every binary operator the fragment has on primitive operands is one term,
 `arith`, with one meaning (`binop`, [semantics](SEMANTICS.md#operational-language))
 and one typing rule ([`arith`](PROGRAM-TYPING.md#judgments-and-constructor-views)):
-`+ - * /` and `**` on two numbers or two bigints, and `< <= > >=` on two
+`+ - * / %` and `**` on two numbers or two bigints, and `< <= > >=` on two
 numeric operands of either kind or on two strings, and `+` concatenating a
 string with a primitive ([String concatenation, templates and
 `void`](#string-concatenation-templates-and-void)). `**=` is a compound
 assignment through the same rule, as `+=` is. The decisions, each from what
 JavaScript does:
 
-- **Where JavaScript throws, the calculus throws.** A bigint division by zero
-  and a negative bigint exponent throw a `RangeError`, an outcome
+- **Where JavaScript throws, the calculus throws.** A bigint division by zero,
+  a bigint remainder by zero and a negative bigint exponent throw a `RangeError`, an outcome
   ([Throws](#throws)): the divisor and the exponent may be any bigint, as
   TypeScript admits. Arithmetic mixing a number and a bigint throws a
   `TypeError`, as does `+` on a bigint; TypeScript refuses both, and the rule
@@ -4133,8 +4133,16 @@ JavaScript does:
   `ToInt32`, as JavaScript's) and on integers. Lean lowers the source form by
   the operand's claimed family, which the operand's own obligation
   establishes, so no second mechanism types them. `^` itself is in the
-  calculus for `~`; the gate does not admit the binary bitwise operators, nor
-  `%`, whose double remainder the calculus does not define.
+  calculus for `~`; the gate does not admit the binary bitwise operators.
+- **`%` is the exact remainder.** On two numbers it is `Number::remainder`,
+  which never rounds: the result `n - d * trunc(n / d)` is always a double, so
+  `remBits` computes it on the integers both operands are multiples of and
+  encodes it back, with the dividend's sign; NaN, infinities and zeros as the
+  specification lists them. It is not C's `fmod` through Lean's `Float` (Lean
+  has none), and not `n - d * trunc(n / d)` in doubles, which rounds. On two
+  bigints it is the truncating remainder (`Int.tmod`), and throws a
+  `RangeError` on a zero divisor (`binopThrows`), an outcome, as for `/`: any
+  divisor is admitted. `%=` is a compound assignment through the same rule.
 - **A bigint is its integer.** Its identity is its value, as a number's is its
   double, so `16n`, `0x10n` and `1_6n` are one singleton. The trusted parser
   writes every bigint literal, and every bigint literal type, as its

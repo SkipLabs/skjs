@@ -1279,6 +1279,7 @@ class Gate {
       [ts.SyntaxKind.AsteriskEqualsToken]: "mul",
       [ts.SyntaxKind.SlashEqualsToken]: "div",
       [ts.SyntaxKind.AsteriskAsteriskEqualsToken]: "pow",
+      [ts.SyntaxKind.PercentEqualsToken]: "rem",
       [ts.SyntaxKind.PlusPlusToken]: "add",
       [ts.SyntaxKind.MinusMinusToken]: "sub",
     };
@@ -1333,6 +1334,7 @@ class Gate {
       case ts.SyntaxKind.AsteriskEqualsToken:
       case ts.SyntaxKind.SlashEqualsToken:
       case ts.SyntaxKind.AsteriskAsteriskEqualsToken:
+      case ts.SyntaxKind.PercentEqualsToken:
         return this.update(
           node,
           node.left,
@@ -1347,6 +1349,7 @@ class Gate {
       [ts.SyntaxKind.AsteriskToken]: "mul",
       [ts.SyntaxKind.SlashToken]: "div",
       [ts.SyntaxKind.AsteriskAsteriskToken]: "pow",
+      [ts.SyntaxKind.PercentToken]: "rem",
       [ts.SyntaxKind.LessThanToken]: "lt",
       [ts.SyntaxKind.LessThanEqualsToken]: "le",
       [ts.SyntaxKind.GreaterThanToken]: "gt",
