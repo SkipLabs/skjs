@@ -121,6 +121,10 @@ private structure Built where
   /-- Plans for nodes whose derivation the lowering already knows: search
   hints only, rendered where they can be and never obligations. -/
   nodePlans : List DirectProof.Plan := []
+  /-- For each declaration, by its statement's start and its name, the names
+  its block mentions or declares before it and what its own initializers
+  mention up to it (`earlierNames`). -/
+  earlier : List (Nat × String × List String) := []
 
 /-- Source-validation failures that already know their source site use the same
 structured channel as proof obligations. Keeping the diagnostic construction
@@ -1874,6 +1878,61 @@ private def guardedReturn (fc : SourceClaims.Function) (scope : List ScopeBindin
   if sameMeaning T slice B || !within T slice (← exprType fc e) then return none
   let ds := { held ⟨snapshot, some read.span⟩ with fixed := some slice } :: scope
   return some (ds, K, read, tested, e, rp)
+
+/-- For each declaration in each statement list of a body, keyed by its
+statement's start and its name: the names the list mentions or declares
+before it (`seed` for the body's own list: the parameters), and what its own
+initializers mention up to it. JavaScript gives a block's declared name to
+the declaration from the start of its block, so any of these mentions would
+be the declaration's own binding before it is initialized (the temporal dead
+zone), not an outer one. -/
+private partial def earlierNames (seed : List String) (ss : List Fragment.Stmt) :
+    List (Nat × String × List String) :=
+  go seed ss
+where
+  go (before : List String) : List Fragment.Stmt → List (Nat × String × List String)
+    | [] => []
+    | st :: rest =>
+      let own : List (String × List String) := match st with
+        | .constants _ bs | .mutables _ bs =>
+          (bs.foldl (fun (acc, seen) (b : Fragment.Binding) =>
+            let seen := seen ++ b.init.freeNames
+            (acc ++ [(b.name, seen)], seen ++ [b.name])) (([] : List (String × List String)), ([] : List String))).1
+        | .destructure _ t d i =>
+          let ms := i.freeNames ++ (d.toList ++ t.defaults).flatMap Fragment.Expr.freeNames
+          t.names.map (·, ms)
+        | _ => []
+      let here := own.map fun (n, ms) => (st.pos.1, n, before ++ ms)
+      let nested := match st with
+        | .ite _ _ t e => earlierNames [] t ++ ((e.map (earlierNames [])).getD [])
+        | .loop _ _ b u => earlierNames [] b ++ earlierNames [] u
+        | .forOf _ _ _ _ b => earlierNames [] b
+        | .block _ _ b => earlierNames [] b
+        | .tryStmt _ b h f => earlierNames [] b ++
+            ((h.map fun (p, c) => earlierNames (p.map (·.1)).toList c).getD []) ++
+            ((f.map (earlierNames [])).getD [])
+        | _ => []
+      here ++ nested ++ go (before ++ stmtNames st ++ own.map (·.1)) rest
+
+/-- A declaration of `name` at the statement starting at `pos` where an outer
+binding of that name is in scope. The declaration takes the name from the
+start of its block, so no mention of it may come before the declaration there
+or in its own initializers (`earlierNames`); the outer binding, a value, stays
+in its slot, anonymous at its type, where no source name reaches it, and so
+do the reads saved of it. A cell is not hidden. -/
+private def shadow (pos : Span) (name : String) (scope : List ScopeBinding) (Γ : List (Ty Nat)) :
+    Compiler (List ScopeBinding) := do
+  if !(names scope).contains name then return scope
+  let some (_, _, mentioned) := (← get).earlier.find? fun (p, n, _) => p == pos.1 && n == name
+    | throw s!"duplicate or shadowing local declaration '{name}'"
+  if mentioned.contains name then
+    throw s!"'{name}' is mentioned before its declaration in its block, where an outer '{name}' is in scope: the declaration's own binding, not yet initialized"
+  scope.zipIdx.mapM fun (b, i) => do
+    let n := b.source.name
+    if n != name && !n.startsWith (name ++ ".") && n != localSnapshotName name then return b
+    match b.storage, Γ[i]? with
+    | .value, some A => pure { b with source := ⟨"", some pos⟩, fixed := some A }
+    | _, _ => throw "shadowing a mutable binding is outside the fragment"
 
 mutual
 /-- One graph a closure's code runs, at one of its signatures: its statements
@@ -4265,7 +4324,7 @@ private partial def bindTarget (fc : SourceClaims.Function) (pos : Span)
   match target with
   | .name n namePos =>
     if n == "undefined" then throw "shadowing undefined is outside the fragment"
-    if (names scope).contains n then throw s!"duplicate or shadowing local declaration '{n}'"
+    let scope ← shadow pos n scope Γ
     let bound := held ⟨n,some pos⟩
     readWithDefault fc pos namePos term R default_ bound scope Γ
       fun T => after (bound::scope) (T::Γ)
@@ -4346,7 +4405,7 @@ private partial def constants (fc : SourceClaims.Function) (pos : Span)
   | scope, _, [] => after scope
   | scope, Γ, b :: more => do
     if b.name == "undefined" then throw "shadowing undefined is outside the fragment"
-    if (names scope).contains b.name then throw s!"duplicate or shadowing local declaration '{b.name}'"
+    let scope ← shadow pos b.name scope Γ
     let A ← exprType fc b.init
     let B ← match b.annot with | none => pure A | some ty => lower (Fragment.translate ty)
     let fresh := match b.init with | .alloc .. | .arrayLit .. => true | _ => false
@@ -4366,7 +4425,7 @@ private partial def mutables (fc : SourceClaims.Function) (pos : Span) (next : O
   | scope, _, [] => after scope
   | scope, Γ, b :: more => do
     if b.name == "undefined" then throw "shadowing undefined is outside the fragment"
-    if (names scope).contains b.name then throw "shadowing is outside the fragment"
+    let scope ← shadow pos b.name scope Γ
     let A ← exprType fc b.init
     let contract ← match b.annot with
       | some ty => lower (Fragment.translate ty)
@@ -4824,6 +4883,7 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceCl
     let bodyScope := paramScope ++ siblingScope
     let slotTypes := bindings ++ siblingTypes
     let fullScope := scope ++ siblingScope
+    modify fun (st : Built) => { st with earlier := earlierNames (f.params.map fun (p : Fragment.Param) => p.name) stmts }
     let mut first ← body (traversalBudget stmts) fc R bodyScope stmts none {}
     -- Each assigned parameter gets one fresh private cell at function entry.
     -- Replace its slot in place; the caller still supplies the original value

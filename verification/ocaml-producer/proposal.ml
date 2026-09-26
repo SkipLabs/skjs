@@ -998,10 +998,10 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
   let entry env span = match Json.list span with
     | start::_ ->
       (* A field's contents are claimed where its object is still one record. *)
-      let bindings = List.filter (fun (n,_) -> not (is_field n) ||
+      let bindings = List.filter (fun (n,_) -> not (is_hidden n) && (not (is_field n) ||
         (match List.assoc_opt (owner n) env with
          | Some (Value t) -> record_field declarations t (field_of n)
-         | _ -> false)) env in
+         | _ -> false))) env in
       entries := {start;bindings} :: !entries
     | [] -> Json.fail "empty source span" in
   (* A step that may write a cell it does not name: a call, or a write. The
@@ -1014,6 +1014,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | _ -> List.exists stirs (Source.children e) in
   (* Where two arms meet, a cell holds what either left in it. *)
   let join before left right =
+    let left = unshadow before left and right = unshadow before right in
     List.filter_map (fun (n,b) -> match b,List.assoc_opt n left,List.assoc_opt n right with
       | Storage (contract,_),Some (Storage (_,l)),Some (Storage (_,r)) -> Some (n,holding contract (union l r))
       | _ when is_field n -> None
@@ -1977,7 +1978,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     else forget ~only:(fun n -> List.exists (assigns n) body) env in
   (* What continues past a point from an arm: the bindings in scope before
      it, and the fields of their objects the arm knows. *)
-  let continuing before env = List.filter (fun (n,_) ->
+  let continuing before env = let env = unshadow before env in List.filter (fun (n,_) ->
     List.mem_assoc n before || (is_field n && List.mem_assoc (owner n) before)) env in
   (* The environments a `break` of each label leaves with, gathered until the
      labeled block it leaves ends. *)
@@ -1988,7 +1989,8 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
   let merge before fallback arrivals =
     (* A path that knows a value of the empty type is never taken. *)
     let reachable = List.filter (fun env ->
-      not (List.exists (fun (_,b) -> binding_type b = Atoms []) env)) arrivals in
+      not (List.exists (fun (_,b) -> binding_type b = Atoms []) env))
+      (List.map (unshadow before) arrivals) in
     match reachable with
     | [] -> fallback
     | first::_ ->

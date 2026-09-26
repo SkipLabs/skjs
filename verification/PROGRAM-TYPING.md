@@ -1490,6 +1490,22 @@ kind, continuation or rule; each is a shape of ordinary nodes and edges.
   held, ending in a node that throws it again. Where neither the body nor the
   handler can complete, the normal way leads to an unreachable node that
   loops on itself and states nothing.
+- A declaration hiding an outer value of its name adds no node either: the
+  outer slot stays in the context, anonymous and fixed at its type, so no
+  later source name resolves to it (`shadow`), and it is dropped where the
+  block ends, as the block's own slots are. With $\mathit{mentions}(S)$ the
+  names statements $S$ mention or declare (`earlierNames`), a block
+  $S_1;\ \mathsf{const}\ x=e;\ S_2$ whose $x$ hides an outer immutable
+  binding is lowered only where
+
+$$
+x\notin\mathit{mentions}(S_1)\cup\mathit{mentions}(e)
+$$
+
+  since JavaScript binds $x$ to the declaration from the block's start: any
+  such mention, a closure's included, would read the declaration's binding
+  before it is initialized, not the outer one. A `let` or a pattern alike; an
+  outer cell is not hidden.
 
 ## State
 
