@@ -371,7 +371,7 @@ export function collectDeclarations(file: string, options: {
       if (!found) {
         found = [...program.getSyntacticDiagnostics(file.fileName),
           ...program.getSemanticDiagnostics(file.fileName)]
-          .filter(d => d.category === DiagnosticCategory.Error);
+          .filter(d => d.category === DiagnosticCategory.Error && !untypedAmbientField(file, d));
         errors.set(file.fileName, found);
         for (const d of found)
           options.seen?.({ file: file.fileName, client: file === client, pos: [d.pos, d.end],
@@ -1085,6 +1085,18 @@ export function collectDeclarations(file: string, options: {
     if (arrayProto) definitions.unshift(arrayProto);
     return { roots: roots.map(r => r.root), definitions, values, symbols };
   });
+}
+
+/** TypeScript's "implicitly has an 'any' type" (TS7008) on a field an
+ * ambient class declares without a type: nothing defines the class here, so
+ * the field is only read, at `unknown` (`classInstance`), never at the `any`
+ * TypeScript gives it. */
+function untypedAmbientField(file: SourceFile, d: { code: number; pos: number; end: number }): boolean {
+  if (d.code !== 7008) return false;
+  const inside = (node: Node) => node.getStart(file) <= d.pos && d.end <= node.end;
+  return file.statements.some(s => ts.isClassDeclaration(s) && inside(s) &&
+    s.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword) === true &&
+    s.members.some(m => ts.isPropertyDeclaration(m) && !m.type && inside(m.name)));
 }
 
 /** The specifier of a primitive wrapper's prototype: the realm's, which no

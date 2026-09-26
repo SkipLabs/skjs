@@ -710,9 +710,15 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
       // TypeScript was promised: the class value's construction decides
       // whether every instance holds a `T` there.
       const name = named(member);
+      // A field an ambient class declares without a type is read at
+      // `unknown` and never written: nothing here says what it holds, or
+      // what the code outside expects of it.
+      const untyped = !member.type &&
+        node.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword) === true;
       fields.push({ name, optional: member.postfixToken?.kind === ts.SyntaxKind.QuestionToken,
-        readonly: member.modifiers?.some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword) === true,
-        type: typeTerm(scope, member.type, member), span: memberSpan });
+        readonly: untyped || member.modifiers?.some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword) === true,
+        type: untyped ? { k: "atom", name: "unknown", span: memberSpan } : typeTerm(scope, member.type, member),
+        span: memberSpan });
     } else if (ts.isMethodDeclaration(member)) {
       only(member, []);
       if (member.postfixToken || member.asteriskToken || member.typeParameters?.length)
