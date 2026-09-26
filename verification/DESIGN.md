@@ -332,7 +332,10 @@ with a storage contract fixed where they are declared: the annotation, or
 the producer's proposal (TypeScript's widened or evolved type), against which
 the initializer and every write are checked. A closure holds the cell's
 identity; a `const` copy holds a snapshot
-([rules](PROGRAM-TYPING.md#mutable-bindings-and-module-constants)).
+([rules](PROGRAM-TYPING.md#mutable-bindings-and-module-constants)). A
+declaration may hide an outer value for the rest of its block; any mention of
+the name earlier in the block or in its own initializers is refused, as
+JavaScript's temporal dead zone throws there.
 
 ### Objects and prototypes
 
@@ -403,6 +406,9 @@ contract, so a key added at `V` keeps them: covering a writable index
 requires every index and optional field of the source over its keys to admit
 `V`. This argument is informal.
 
+A read `o[k]` whose key is one of several string or number literals tests
+`k` against each and reads that member (NaN excluded).
+
 ### Method members are host-relative
 
 A method member's contract is relative to its host: read from `o` and invoked
@@ -439,7 +445,14 @@ actuals into a fresh array. A rest typed by a binder is an argument pack,
 whose contracts are over lists at the actuals' own level
 ([argument packs](POSITIVE-TYPES.md#argument-packs)). A closure claimed at
 several signatures is checked once per signature. A spread among the actuals
-is replaced by its store's elements once every earlier actual is a value.
+is replaced by its store's elements once every earlier actual is a value;
+spreads may sit at any position of fixed parameters or feed a generic
+signature's inference, and an actual after a spread that runs code is refused
+(the elements are read after every actual). A union callee is called at every
+arm, its result the union of theirs; a method call on a union whose arms'
+members differ reads and calls in one step dispatched on the receiver, where
+every actual is a name or a literal. A callee that is a callable with fields
+is refused ([call rules](PROGRAM-TYPING.md#reading-the-source)).
 
 ### Primitive members
 
@@ -557,7 +570,7 @@ throw, which safety admits, but never return a wrong value.
 | The intrinsics meet their signatures: `%Await%` yields what a promise settles to or throws its rejection; `%AsyncReturn%` and `%AsyncComplete%` settle an async function's promise to a primitive or `undefined` (also `Promise.resolve`); `%PromiseAll%` (`Promise.all`), `%PromiseReject%` (`Promise.reject`), `%NewPromise%` (`new Promise`, calling its executor at once); `%Iterate%` steps an array's iterator, reading the current length at each step; `%ForIn%` gives the keys a `for...in` visits, strings. The job queue and a promise that never settles are not modelled. | `tools/intrinsics.mts`; [async](PROGRAM-TYPING.md#async-functions-and-await) |
 | A thrown value is a value, of any type. | `Thrown` in `Safe` (`Semantics/Safety.lean`) |
 | The runtime with the sound service binding meets its declarations: `InputCollections.get(definition)` returns the collection built from that definition at its types, or throws; resources are constructed with the request's `Json` parameters. | `ocaml-producer/upstream-sound/` |
-| In the SKJS test environment, SKJS's import stubs describe the modules a test imports, and `skjs-environment.d.ts` the host's `process`, `__SKJS_show` and `__SKJS_show_expanded` as SKJS's builtins stub does; `Closed<T>` is read as `T`. These are premises of the coverage result only. | `ocaml-producer/skjs-environment/`; `STUB`, `ENV` |
+| In the SKJS test environment, SKJS's import stubs describe the modules a test imports, and `skjs-environment.d.ts` the host's `process`, `__SKJS_show` and `__SKJS_show_expanded` as SKJS's builtins stub does, with the ES2022 library and no DOM (`console` restated); `Closed<T>` and `SKJS_Ignorable<T>` are read as `T`; an ambient class's untyped field is a readonly `unknown` field. These are premises of the coverage result only. | `ocaml-producer/skjs-environment/`; `STUB`, `ENV` |
 
 **Assumed of the host.** Properties of every value a unit receives, on which
 the model's reading of an operation relies.
@@ -606,7 +619,7 @@ not yet taken are [next steps](#next-steps); a search failure is neither.
 | An accessor (`get`/`set`), `__proto__`, a computed key in a literal, a spread of a string, a function or a class value | The heap has data properties only; the key or copy is known only at run time; the model gives a closure a field JavaScript's lacks. |
 | An array rest of unknown length (a slice) | Its length is known only at run time; the calculus has no slice term. |
 | `for...of` or a spread over a non-array iterable (string, `Set`, `Map`, a client iterator); `for await` | `%Iterate%` is stated for arrays; a client iterator's `return` runs on early exit. |
-| An async function returning an object, `return p` of a promise, a void async function returning a value, `await` of a non-`Promise` | JavaScript adopts thenables, and a record type does not rule out a `then`. |
+| An async function returning an object other than a promise of a primitive, a void async function returning a value, `await` of a non-promise object at its own type | JavaScript adopts thenables, and a record type does not rule out a `then`. |
 | `String(o)`, `o + ""`, `new Date(o)`, `new Set(it)` of a non-array iterable, `JSON.parse` with a reviver, `JSON.stringify` with a replacer, of an array or an open record | The host runs client code (`toString`, `valueOf`, an iterator, a callback, a `toJSON`). |
 | Relational comparison converting its operands (a string and a number, an object, two Booleans); `==` other than `== null`; `+` on a bigint, number–bigint arithmetic, a symbol in a concatenation | The conversion runs code or is not the primitive order; TypeScript refuses the throwing ones. |
 | A library global both constructed and read through members, or both called and read through a method (`new Date()` beside `Date.now()`, `Symbol()` beside `Symbol.for`) | A class value or callable object with members has no clause. |
@@ -678,6 +691,7 @@ One line each; the reason is the one the design keeps.
   zeros.
 - **An omitted closure result is the producer's claim**; an annotation adds a
   requirement at the annotated signature and never removes a check.
+- **`<T>e` is `e as T`**, and a type reference to a name that is also a function resolves to the type.
 - **A type assertion decides nothing**: `e as T` is an obligation that the
   operand meets `T`.
 - **Two model laws stay refused**: distributing arrow results over an
