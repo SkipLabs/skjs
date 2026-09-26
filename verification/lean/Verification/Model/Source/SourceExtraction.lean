@@ -1868,7 +1868,11 @@ private def positionRead (G : PositiveGraphs.NormalGraph Nat) (A : Ty Nat) (i : 
       match T.required[i]?, ProgramTyping.positionTy T i with
       | some E, _ => pure E
       | none, some E => pure (E ++ [3])
-      | none, none => throw s!"position {i} is outside the array's contract"
+      | none, none =>
+        -- A mutable tuple may have grown past its positions: `push` is
+        -- allowed on it, so a position past them holds whatever was pushed.
+        if T.readonly then throw s!"position {i} is outside the array's contract"
+        else throw s!"position {i} is past the positions of a mutable tuple, which `push` may have extended with a value its type does not state there (TypeScript reads it as `undefined`, which is unsound)"
   pure alts.flatten.flatten.eraseDups
 
 /-- An operand of a split comparison: a slot, the field read from it, and

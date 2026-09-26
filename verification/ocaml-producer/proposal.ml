@@ -601,6 +601,17 @@ let arms declarations t = match t with
      | Some (Atoms (_::_::_ as atoms)) -> Atoms atoms
      | _ -> t)
   | _ -> t
+(* The arms an immutable binding's object literal may be of, as TypeScript
+   narrows a declared union on its initialization (the assignment-reduced
+   type): an arm the literal's keys or literal-valued members rule out is
+   dropped, the arm the literal is built at stays. A proposal: Lean checks
+   the initializer against what is kept. *)
+let assigned_arms declarations t (init:expr) = match t,init.node with
+  | Atoms (_::_::_ as atoms),Alloc members ->
+    (match List.filter (fun a -> discriminated_record declarations (Atoms [a]) members <> None) atoms with
+     | [] -> t
+     | kept -> Atoms kept)
+  | _ -> t
 (* A type's atoms through the declarations and unions that name them. *)
 let flat_atoms declarations t =
   let rec go seen t = match t with
@@ -727,6 +738,10 @@ let invariance_reason =
 let shape_test_reason =
   "the values of that shape have a type no clause states (`T & number`, a callable of no known \
    signature), so the test narrows nothing the model states"
+let family_test_reason =
+  "the value is narrowed to that primitive family, and a value of both the type parameter and the \
+   family, the `T & number` of TypeScript, has no clause, so it is no longer read as a `T`"
+let primitive_shape shape = List.mem shape ["string";"number";"bigint";"symbol";"undefined";"boolean"]
 let object_cell_reason =
   "a `let` without an initializer holds `undefined` until it is assigned, and is known to hold another \
    value only where every path into the read assigned one, with no step between that may write it (a \
@@ -746,6 +761,39 @@ let dictionary_presence_reason =
    still at the index, which may miss"
 let absent_key_reason =
   "the key may be absent, and a read of an absent key is stated by no clause the model reads"
+let relational_reason =
+  "`<` converts such an operand to a number or a string first (`undefined` to NaN, an object through its \
+   `valueOf` or `toString`), and the comparison the model states is of two numbers or two strings, the primitive \
+   order; an index read past the end is `undefined`, where TypeScript types it as the element"
+let exact_optional_reason =
+  "the pipeline reads `f?: T` exactly, as absent or a `T` (as `exactOptionalPropertyTypes` does), \
+   where the default reading of TypeScript also admits a present `undefined`; `f?: T | undefined` states it"
+let thenable_reason =
+  "JavaScript adopts a thenable, calling its `then`, instead of settling to it, and a record type does \
+   not rule out a `then`, its own or one on its prototype (a `PromiseLike` is one), so the model admits only a \
+   realm promise or a primitive there"
+let symbol_copy_reason =
+  "the copy is stated at its string keys only, and JavaScript also copies an own enumerable \
+   symbol-keyed property, so the result states no symbol key"
+let copy_field_reason =
+  "a field of the copy is allocated at the one type its value is claimed at, for every arm of the operand, \
+   and a writable field is invariant, so the arms requiring it at different types (TypeScript types the \
+   literal per arm of the contextual union) are not all met"
+let extraction_reason =
+  "a method is a member of its object, called with it as receiver, and read off it the function loses \
+   that receiver; TypeScript types the read as a function, which is unsound"
+(* Positions of the callees of calls, a method read among them. *)
+let method_callees : Json.t list ref = ref []
+(* Whether a read of `key` from a value of `t` finds a method: a host-relative
+   member of its record, or of the prototype it reads through. *)
+let method_member declarations t key =
+  let rec go depth t = depth < 4 && List.exists (function
+      | Shape {fields;_} | Exact fields ->
+        (match List.find_opt (fun (f:Semantic.field) -> f.name = key) fields with
+         | Some f -> f.host
+         | None -> List.exists (fun (f:Semantic.field) -> f.name = Name proto_key && go (depth+1) f.read) fields)
+      | _ -> false) (try flat_atoms declarations t with Json.Error _ -> []) in
+  go 0 t
 let mutable_tuple_length_reason =
   "the length of a mutable tuple is not fixed by its type, since `push` is allowed on it (an unsoundness \
    of TypeScript), so its `length` is a number"
@@ -801,6 +849,11 @@ let rec typeof_slice shape holds = function
      | "string" -> Atoms [Str] | "number" -> Atoms [Num] | "bigint" -> Atoms [Bigint]
      | "symbol" -> Atoms [Symbol] | "undefined" -> Atoms [Undef] | "boolean" -> bool
      | _ -> Atoms [Top])
+  (* A type parameter's value, where a test naming one primitive family
+     holds: that family, as for `unknown` (TypeScript's `T & number`, of
+     which the model states the `number`). *)
+  | Rigid _ when holds && primitive_shape shape ->
+    typeof_slice shape holds (Atoms [Top])
   (* A union's arms each; an intersection's values are its principal's, so
      it goes where none of those can. *)
   | Union ts -> List.fold_left union (Atoms []) (List.map (typeof_slice shape holds) ts)
@@ -1447,13 +1500,40 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       else Some (record (List.map (fun (name,t) ->
         {name;optional=false;read=Option.get t;write=None;host=false}) fields))
     | _ -> None
+  (* `await e` and an async body's `return e` (the intrinsics `%Await%` and
+     `%AsyncReturn%`) of a value that may be an object other than a promise
+     the intrinsic names, or of a type parameter or `unknown`. *)
+  and explain_thenable (e:expr) (target:expr) (signature:Semantic.signature) actuals =
+    match target.node,signature.params,actuals with
+    | Id ("%Await%" | "%AsyncReturn%" as n),[param],[actual] ->
+      let rec shallow = function
+        | Atoms xs -> xs | Union ts -> List.concat_map shallow ts | Rigid _ | Meet _ -> [] in
+      let promises = List.filter_map (function Named (id,_) -> Some id | _ -> None) (shallow param) in
+      let rec atoms seen = function
+        | Union ts -> List.concat_map (atoms seen) ts
+        | Atoms xs -> List.concat_map (function
+            | Named (id,_) as a when List.mem id promises -> [a]
+            | Named (id,args) as a when not (List.mem id seen) ->
+              (try atoms (id::seen) (definition declarations id args) with Json.Error _ -> [a])
+            | a -> [a]) xs
+        | Rigid _ | Meet _ -> [Top] in
+      let settled = function
+        | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | BigintLit _ | Symbol -> true
+        | Named (id,_) -> List.mem id promises
+        | _ -> false in
+      if not (List.for_all settled (atoms [] actual)) then
+        explain e.pos (if n = "%Await%"
+          then "an await of a non-promise object, or of a value of a type parameter or `unknown`: " ^ thenable_reason
+          else "the result of an async function that may be an object other than a promise: " ^ thenable_reason
+            ^ "; the promise of an async function is settled to a primitive or adopts a promise of one")
+    | _ -> ()
   (* A name `Array.isArray` found an array of, where it was `unknown`, used
      where every array would do. *)
   and explain_open_array site env n expected =
     match expected with
     | Some x when List.mem n !open_array_tests ->
       let any_array = function
-        | Shape {elements=Some {required=[];optional_elements=[];rest=Some (Atoms [Top] | Rigid _);readonly=true};
+        | Shape {elements=Some {required=[];optional_elements=[];rest=Some (Atoms [Top] | Rigid _);_};
                  fields=[];indexes=[];calls=[]} -> true
         | _ -> false in
       let wanted = flat_atoms declarations x in
@@ -1553,6 +1633,10 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       (* A value a type test found of a shape, where its type is a type
          parameter or `unknown`. *)
       (match expected, List.assoc_opt n !shape_tests with
+       | Some x, Some shape when primitive_shape shape ->
+         if rigid_arm x then
+           explain site ("a `typeof x === \"" ^ shape ^ "\"` test on a value of a type parameter or `unknown`: "
+             ^ family_test_reason)
        | Some x, Some shape when not (rigid_arm x) ->
          explain site ("a `typeof x === \"" ^ shape ^ "\"` test on a value of a type parameter or `unknown`: "
            ^ shape_test_reason)
@@ -1642,7 +1726,19 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
        left one is all bigints, else number. *)
     | Arith (op,l,r) ->
       let left = expr env l in let right = expr env r in
-      if relational op then bool else operation_result declarations op left right
+      if relational op then begin
+        (* Operands both numbers, both bigints or both strings are compared
+           without a conversion; any other may be converted. *)
+        let comparable t = match (try declared_head declarations [] t with Json.Error _ -> t) with
+          | Atoms atoms -> List.for_all (function
+              | Num | NumLit _ | Str | StrLit _ | Bigint | BigintLit _ -> true
+              | _ -> false) atoms
+          | Rigid _ | Union _ | Meet _ -> true in
+        if not (comparable left && comparable right) then
+          explain e.pos ("a relational comparison of operands that may not both be numbers or both \
+            strings: " ^ relational_reason);
+        bool
+      end else operation_result declarations op left right
     | Comma (a,b) -> ignore (expr env a); expr ?expected env b
     (* The target is read at its storage contract and written back: a local's
        contract, or the field's type. An increment adds one of that family;
@@ -1736,6 +1832,11 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
           | None,Some shape -> Option.map (fun (i:Semantic.index_signature) -> i.value)
               (index_for shape name)
           | None,_ -> None in
+        (match hint,e.node with
+         | Some f,Literal LUndefined when f.optional && not (Semantic.admits_undefined f.read) ->
+           explain site ("an optional field left without an initializer holds `undefined` from the \
+             creation of the instance: " ^ exact_optional_reason)
+         | _ -> ());
         let inferred=expr ?expected env e in
         (* A method's closure offered further signatures is held at its own
            claim: a construct signature offering them reads them there. *)
@@ -1777,6 +1878,11 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
                | None -> []) with
         | atoms when List.exists (function Shape {indexes=_::_;_} -> true | _ -> false) atoms ->
           explain site ("a spread of a dictionary: " ^ dictionary_spread_reason)
+        | atoms when List.exists (function
+            | Shape {fields;_} | Exact fields ->
+              List.exists (fun (f:Semantic.field) -> not (string_key f) && not f.host) fields
+            | _ -> false) atoms ->
+          explain site ("a spread of an object with a symbol-keyed property: " ^ symbol_copy_reason)
         | _ -> ()) parts;
       let contract = Option.bind expected (object_hint declarations []) in
       (* A field is built at the type the contract names for it, else at its
@@ -1801,6 +1907,23 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let alts = match alts with
         | None -> [group fields]
         | Some alts -> if fields = [] then alts else merge alts [group fields] in
+      (* Expected at a union of records, an alternative whose keys are one
+         arm's, with a written field that arm types otherwise than the field
+         is built, is refused by name. *)
+      (match expected,contract with
+       | Some t,None when List.exists (fun (n,_) -> n = None) parts ->
+         let arms = record_arms declarations [] t in
+         let names fs = List.sort compare (List.map (fun (f:Semantic.field) -> f.name) fs) in
+         let written = List.filter_map (fun (n,_) -> Option.map (fun n -> Name n) n) parts in
+         if List.exists (fun (a:alternative) ->
+             match List.filter (fun (s:shape) -> s.indexes = [] && names s.fields = names a.afields
+                                  && List.for_all (fun (f:Semantic.field) -> not f.optional) s.fields) arms with
+             | [arm] -> List.exists (fun (f:Semantic.field) -> List.mem f.name written &&
+                 List.exists (fun (g:Semantic.field) -> g.name = f.name && g.read <> f.read) arm.fields) a.afields
+             | _ -> false) alts
+         then explain site ("a spread with a written field that the arms of the expected union type \
+           differently: " ^ copy_field_reason)
+       | _ -> ());
       combine (List.map alternative_type alts)
     (* `Object.assign(t, ...sources)`: each source copied over what the
        target and the sources before it give, as a spread is; a literal
@@ -1865,6 +1988,8 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
           a test does not narrow a cell holding an object, whose known contents are primitive values"))
     | Read (e,n) ->
       let receiver = expr env e in
+      if not (List.mem site !method_callees) && method_member declarations receiver n then
+        explain site ("a method '" ^ key_text n ^ "' read off its object is not a function value: " ^ extraction_reason);
       (match e.node,n with
        | Id o,Name k when List.mem (o,k) !dictionary_keys && expected <> None ->
          explain site ("a read of a key `in` found in a dictionary: " ^ dictionary_presence_reason)
@@ -2174,6 +2299,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let no_type_arguments () = if type_args <> [] then
         unsupported "explicit type arguments on a callee without binders" in
       let target = callee in
+      method_callees := callee.pos :: !method_callees;
       (* A binder's value is called at its bound, as it is read there. *)
       let callee = match declared_head declarations [] (expr env callee) with
         | Rigid r -> (match rigid_bound r with
@@ -2312,10 +2438,10 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
            if not (List.mem i spreads) then [actual]
            else if i < List.length signature.params then
              unsupported "a spread cannot fill fixed parameters of a variadic signature"
-           else match Semantic.tuple_positions actual, Semantic.array_element actual with
+           else match Semantic.tuple_positions ~readonly:true actual, Semantic.array_element ~readonly:true actual with
              | Some positions,_ -> positions
              | None,Some element -> [union element (Atoms [Undef])]
-             | _ -> unsupported "generic spread requires a mutable array or required tuple") args) in
+             | _ -> unsupported "generic spread requires an array or a tuple of required positions") args) in
          let missing = max 0 (List.length signature.params - List.length actuals) in
          let substitution,result = infer_explicit ~receiver:receiver_type signature
            (actuals @ List.init missing (fun _ -> Atoms [Undef])) in
@@ -2405,12 +2531,24 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         (* An array literal at a parameter typed by a binder bounded by a
            tuple is built at that tuple, as TypeScript types it by the
            constraint: `exact<K extends [0, 1]>(x: K)` called with `[0, 1]`
-           instantiates `K` at the tuple, not at `number[]`. *)
-        let tuple_bound = function
+           instantiates `K` at the tuple, not at `number[]`. A bound with one
+           tuple arm of the literal's length among others, through its
+           declarations (`S extends [number, number] | string`), is that arm,
+           as TypeScript's contextual type makes the literal a tuple. *)
+        let tuple_bound (arg:expr) = function
           | Rigid r -> (match List.find_opt (fun (q:Semantic.quantifier) -> q.identity = r)
                           signature.quantified with
             | Some {bound=Some (ValueArgument (Atoms [Shape {elements=Some {rest=None;_};fields=[];
                 calls=[];indexes=[]}] as t));_} -> Some t
+            | Some {bound=Some (ValueArgument t);_} ->
+              let length = match arg.node with ArrayLiteral es -> List.length es | _ -> -1 in
+              (match List.filter (function
+                 | Shape {elements=Some {rest=None;required;optional_elements;_};fields=[];calls=[];indexes=[]} ->
+                   List.length required <= length
+                   && length <= List.length required + List.length optional_elements
+                 | _ -> false) (flat_atoms declarations t) with
+               | [arm] -> Some (Atoms [arm])
+               | _ -> None)
             | _ -> None)
           | _ -> None in
         (* A fresh array literal at a parameter whose every binder is
@@ -2452,8 +2590,8 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
           | Some p,_ when not (Semantic.mentions_rigid p) -> expr ~expected:p env arg
           | Some p,Some solution -> expr ~expected:(Inference.substitute solution p) env arg
           | Some p,None when (match arg.node with ArrayLiteral _ -> true | _ -> false)
-                              && tuple_bound p <> None ->
-            expr ?expected:(tuple_bound p) env arg
+                              && tuple_bound arg p <> None ->
+            expr ?expected:(tuple_bound arg p) env arg
           | Some p,None when (match arg.node with ArrayLiteral _ -> true | _ -> false)
                               && literal_bounds p <> None ->
             expr ?expected:(literal_bounds p) env arg
@@ -2464,8 +2602,11 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
           | Some p,None when (match arg.node with Alloc _ -> true | _ -> false)
                               && dictionary_bound p <> None ->
             expr ?expected:(dictionary_bound p) env arg
-          | _ -> expr env arg]) args) @
+          | p,_ ->
+            (match arg.node with Id n -> explain_open_array arg.pos env n p | _ -> ());
+            expr env arg]) args) @
           List.init (max 0 (List.length signature.params - written_positions)) (fun _ -> Atoms [Undef]) in
+        explain_thenable e target signature actuals;
         let substitution,result = infer_explicit ~receiver:receiver_type ?expected signature actuals in
         instance_of ~declared:callee target substitution;
         offer ~substitute:(Inference.substitute substitution) signature;
@@ -2812,7 +2953,11 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
      at a type (an annotated constant's initializer, a returned value, an
      argument of a call to a function of one plain signature), that type;
      any other first use, none. `None` where it is not used. *)
-  let first_use env n rest =
+  let rec first_use env n rest = Option.join (List.find_map Fun.id (uses env n rest))
+  (* Each statement's use of the constant: `Some` of where its first
+     mention in the statement is the whole value expected at a type, as
+     [first_use] reads it. *)
+  and uses env n rest =
     let rec sink expected (e:expr) = match e.node with
       | Id m when m = n -> Some expected
       | Call ({node=Id g;_},None,args,[],[]) when g <> n ->
@@ -2826,7 +2971,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       | Return e -> sink !block_result e
       | Effect e -> sink None e
       | _ -> if stmt_mentions n s then Some None else None in
-    Option.join (List.find_map at rest) in
+    List.map at rest in
   let rec statements env ss =
     let rec record = function [] -> () | s :: rest -> Hashtbl.replace following s.span rest; record rest in
     record ss;
@@ -2901,6 +3046,27 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
              (Option.value (Hashtbl.find_opt following s.span) ~default:[]) ->
          exact_allocs := init.pos :: !exact_allocs;
          exact_locals := n :: !exact_locals
+       (* A constant's object literal used whole where a type with an
+          optional field it leaves out is expected is claimed with its exact
+          keys, as a literal written there would be: the bound is what says
+          it lacks the key. Not where it is also used as a writable
+          dictionary. A proposal: Lean checks the bound at the allocation
+          and every use against it. *)
+       | false,None,Alloc fs ->
+         let lacks_optional t = match object_hint declarations [] t with
+           | Some {fields;indexes=[];_} -> List.exists (fun (f:Semantic.field) ->
+               f.optional && not f.host && not (List.mem_assoc f.name fs)) fields
+           | _ -> false in
+         (* A holder of a writable dictionary some value meets may add
+            keys, so no view learns from the bound which it lacks. *)
+         let writable_dictionary t = match object_hint declarations [] t with
+           | Some {indexes;_} -> List.exists (fun (i:Semantic.index_signature) ->
+               match i.writable with Some (Atoms []) | None -> false | Some _ -> true) indexes
+           | None -> false in
+         let used = uses env n (Option.value (Hashtbl.find_opt following s.span) ~default:[]) in
+         if List.exists (function Some (Some t) -> lacks_optional t | _ -> false) used
+            && not (List.exists (function Some (Some t) -> writable_dictionary t | _ -> false) used) then
+           exact_allocs := init.pos :: !exact_allocs
        | _ -> ());
       let initial = expr ?expected:(if committed <> None then committed else written) env init in
       if not mutable_ then named_closure n written init;
@@ -2920,7 +3086,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
            annotation's: the binding is the closure, claimed at all of them,
            which Lean checks against the annotation. *)
         | false,Some _ when List.mem_assoc init.pos offered -> Value initial
-        | false,Some contract -> Value (arms declarations contract)
+        | false,Some contract -> Value (assigned_arms declarations (arms declarations contract) init)
         (* An unannotated constant of a named union is held at its arms, as
            an annotated one is: a guard then keeps or drops each. *)
         | false,None -> Value (arms declarations initial) in

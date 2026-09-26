@@ -111,7 +111,11 @@ language. The boundaries are:
    binding's object holds after a guard, until a step may write it, which the
    claims state as that binding's `current` field assertion; and an
    immutable binding declared at a named union is held at its arms, which a
-   field test against a singleton keeps or drops (discriminated unions). A
+   field test against a singleton keeps or drops (discriminated unions);
+   initialized by an object literal, at the arms the literal's keys and
+   literal members admit, as TypeScript narrows a declared union on
+   assignment. A `typeof` test naming a primitive family narrows a value of
+   a type parameter to that family where it holds, as one of `unknown`. A
    labeled block (a lowered `switch`) is left with what each `break` of its
    label knew, joined at its end.
 4. `proposal.ml` infers immutable candidate claims. It neither validates nor
@@ -132,7 +136,15 @@ language. The boundaries are:
    as an invariant position makes them, is that type; otherwise a declared
    graph bound is preferred. Candidate types join lower bounds;
    upper-only candidates intersect primitive bounds when representable; a
-   binder with no candidate is `unknown`, as in TypeScript. Every
+   binder with no candidate is `unknown`, as in TypeScript. A literal
+   candidate of an unbounded binder the result does not return bare widens,
+   as TypeScript widens it (`box(42)` is a `Box<number>`, `id(42)` is `42`),
+   where every upper bound admits the widened type. A record at a
+   discriminated union of records is related to the one arm whose literal
+   tags it holds (`{ kind: "some"; value: number }` at `Option<T>` gives
+   `T := number`). An array literal at a binder bounded by a union with one
+   tuple arm of its length is built at that tuple, and a tuple below a bound
+   with a tuple arm is the binder's instance. Every
    argument and substituted bound is still validated by Lean. It conservatively joins branches and infers local
    values, object shapes, callback results and calls from explicit signatures.
    A closure without a result annotation is proposed at its body's widened
@@ -149,7 +161,8 @@ language. The boundaries are:
    passes more actuals than the constructor binds. A fresh object literal whose contract
    has a readonly index or an optional field is claimed at its exact record (`Exact`:
    its fields and an own-key bound: own keys among exactly theirs), which is how
-   it meets a readonly dictionary or leaves an optional field out; one whose
+   it meets a readonly dictionary or leaves an optional field out, and so is
+   a constant's literal used whole where such a contract is expected; one whose
    contract has a writable index is claimed at the dictionary itself, each
    field at its index's type, since a writable index is never met through an
    own-key bound. Explicit type
@@ -167,7 +180,9 @@ language. The boundaries are:
    with their declaration and argument rows (`"applications"`), for array
    types, listing each with its store row (`"arrays"`), and for
    intersections, which the producer keeps as their operands (`Meet`),
-   listing each with its operands' rows (`"meets"`). Lean fills the
+   listing each with its operands' rows (`"meets"`); an intersection with
+   a union operand is written as the union of the intersections with each
+   arm, the same values, so a read splits on them. Lean fills the
    reserved rows from the source equations, the one array shape and its own
    lowering of an intersection: every declaration, array and intersection
    has one lowering, and OCaml cannot supply a competing interpretation. A

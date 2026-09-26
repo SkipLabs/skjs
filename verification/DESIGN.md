@@ -392,7 +392,11 @@ with a storage contract fixed where they are declared: the annotation, or
 the producer's proposal (TypeScript's widened or evolved type), against which
 the initializer and every write are checked. A closure holds the cell's
 identity; a `const` copy holds a snapshot, and an unannotated constant of a
-named union is held at the union's arms, as an annotated one is
+named union is held at the union's arms, as an annotated one is, an
+annotated one initialized by an object literal at the arms the literal may
+be of (TypeScript's narrowing on assignment); a constant's object literal
+used whole where an optional field it leaves out is expected is claimed
+with its exact keys
 ([rules](PROGRAM-TYPING.md#mutable-bindings-and-module-constants)). A `let`
 statement whose initialized bindings nothing in their scope writes, closures
 included, is a `const`: each holds its initial value throughout, so a test
@@ -818,7 +822,7 @@ not yet taken are [next steps](#next-steps); a search failure is neither.
 | An array assignment pattern writing a field (`[o.f] = e`) | Its target's reference is evaluated before its position is read and defaulted; the lowering writes locals only. |
 | An accessor (`get`/`set`), `__proto__`, a computed key in a literal other than a `unique symbol` constant, a spread of a string, a function or a class value | The heap has data properties only; the key or copy is known only at run time; the model gives a closure a field JavaScript's lacks. |
 | A literal or class member keyed by a well-known symbol other than `Symbol.iterator` (`Symbol.toStringTag`, `Symbol.toPrimitive`, …), but a class's static `[Symbol.hasInstance]` method, which `instanceof` calls | It changes how the host treats the object, which the model does not state; a tag would let it pass for a host collection, whose iteration is trusted. |
-| An element read past a tuple arm's length (`const [a, b] = t` with `t: [number] \| [number, string]`); a slice rest in a closure's directly checked body | The read is `undefined`, which no element rule gives; the slice's call is graph code. |
+| An element read past a tuple arm's length (`const [a, b] = t` with `t: [number] \| [number, string]`); a slice rest in a closure's directly checked body | Past a readonly tuple's length the read is `undefined`, which no element rule gives; a mutable tuple may have grown by `push`, so the read is whatever was pushed, where TypeScript reads `undefined` (unsound); the slice's call is graph code. |
 | A rest parameter of a definition typed by a type parameter; one typed by an intersection, by a tuple with optional or rest elements, or by what is no array | A definition has no allocation rule for an array only an instance fixes (a function type's is a pack); the fresh array's meet has no representation; several lengths are several signatures; the collected array is no value of it. |
 | A written `let` pattern in a `for` head; a test of a written `let` holding a union of objects | Its bindings are cells, which only a statement of a block lowers them to; a cell's known contents are primitive or merely no `undefined`. |
 | An array pattern over a value that may not be an array | It would step the value's own iterator. |
@@ -980,8 +984,8 @@ need the protocol's steps interleaved with that code, in the expression, not
 before the statement. A generator needs a state-machine lowering, as
 TypeScript's downlevel emit writes one: a closure over the suspension
 point's number and the live locals, whose `next` resumes at a `switch` on
-it. An element read past a tuple arm's length needs a rule reading
-`undefined` beyond an exact length.
+it. An element read past a readonly tuple arm's length needs a rule
+reading `undefined` beyond an exact length.
 
 **Remaining source forms.** Assignment patterns into fields: each
 element's target reference (receiver, computed key) evaluated into slots

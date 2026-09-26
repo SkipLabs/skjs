@@ -60,6 +60,16 @@ let encode (proposal : Proposal.t) =
       | Some (ValueArgument b) when not (Semantic.mentions_rigid b) -> Some (q.identity,b)
       | Some (ValueArgument (Rigid t)) when t <> q.identity -> Some (q.identity,Rigid t)
       | _ -> None) f.source.quantified) (Option.to_list proposal.init @ proposal.functions) in
+  (* The operand lists an intersection distributes into over its operands'
+     union arms, each a choice of one arm per operand (at most 16 are
+     written; more stay one meet, as before). *)
+  let distributed parts =
+    let rec arms = function
+      | Union ts -> List.concat_map arms ts
+      | Atoms (_::_::_ as atoms) -> List.map (fun a -> Atoms [a]) atoms
+      | t -> [t] in
+    List.fold_right (fun part acc ->
+      List.concat_map (fun arm -> List.map (fun rest -> arm :: rest) acc) (arms part)) parts [[]] in
   let rec labels t = Array (List.map int (label_list t))
   and label_list = function
     | Rigid r -> (match List.assoc_opt r bounds with
@@ -74,6 +84,15 @@ let encode (proposal : Proposal.t) =
            meets := !meets @ [(parts,label)];
            [label]))
     | Union ts -> List.sort_uniq compare (List.concat_map label_list ts)
+    | Meet (t,ts) as m when (let n = List.length (distributed (t::ts)) in n > 1 && n <= 16) ->
+      if Semantic.mentions_rigid m then unsupported "rigid type nested in a graph type";
+      (* An intersection with a union operand is the union of the
+         intersections with each of its arms, `(A | B) & C` is
+         `(A & C) | (B & C)`, the same values: the claim states it so, one
+         meet row per arm, which a read then splits on. *)
+      List.sort_uniq compare (List.concat_map (fun parts -> match parts with
+        | p::ps -> label_list (Meet (p,ps))
+        | [] -> []) (distributed (t::ts)))
     | Meet (t,ts) as m ->
       if Semantic.mentions_rigid m then unsupported "rigid type nested in a graph type";
       let parts = Array (List.map labels (t::ts)) in

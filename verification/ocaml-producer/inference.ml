@@ -187,6 +187,25 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
                     fields=[];calls=[];indexes=[]}] ->
       List.iter (fun x -> constrain x y; if not r.readonly then constrain y x)
         (l.required @ l.optional_elements @ Option.to_list l.rest)
+      (* Records at a union of records, a discriminated one: each record at
+         the one arm whose literal-typed required fields it holds at the same
+         literals, as TypeScript matches a discriminated union's constituent
+         (`{ kind: "some"; value: number }` at `Option<T>` gives `T :=
+         number`). A record matching no arm, or several, fixes nothing. *)
+      | Atoms (_::_ as xs),Atoms (_::_::_ as ys)
+        when List.for_all (function Shape {calls=[];elements=None;_} -> true | _ -> false) (xs @ ys) ->
+        let literal = function
+          | Atoms [(StrLit _ | NumLit _ | True | False | Nul | Undef | BigintLit _)] -> true
+          | _ -> false in
+        let matches x y = match x,y with
+          | Shape a,Shape e ->
+            let tags = List.filter (fun (f:field) -> not f.optional && literal f.read) e.fields in
+            tags <> [] && List.for_all (fun (f:field) ->
+              List.exists (fun (g:field) -> g.name=f.name && g.read=f.read) a.fields) tags
+          | _ -> false in
+        List.iter (fun x -> match List.filter (matches x) ys with
+          | [y] -> constrain (Atoms [x]) (Atoms [y])
+          | _ -> ()) xs
       (* A union is below a type where each of its parts is. *)
       | Union parts,_ -> List.iter (fun part -> constrain part right) parts
       (* A type below a union of several bare binders, `T | U`, is taken
@@ -310,14 +329,18 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
     | _ -> false in
   (* Whether a declared bound has an arm that is an array of any length,
      through its declarations. *)
-  let rec has_plain_array ?(depth=0) t = depth < 4 && match t with
+  let rec has_arm ?(depth=0) arm t = depth < 4 && match t with
     | Atoms atoms -> List.exists (function
-        | Shape {elements=Some {rest=Some _;_};_} -> true
         | Named _ as a -> (match expand (Atoms [a]) with
-          | Some e -> has_plain_array ~depth:(depth+1) e
+          | Some e -> has_arm ~depth:(depth+1) arm e
           | None -> false)
-        | _ -> false) atoms
-    | Union ts -> List.exists (has_plain_array ~depth:(depth+1)) ts
+        | a -> arm a) atoms
+    | Union ts -> List.exists (has_arm ~depth:(depth+1) arm) ts
+    | _ -> false in
+  let has_plain_array = has_arm (function Shape {elements=Some {rest=Some _;_};_} -> true | _ -> false) in
+  (* A tuple: an array of fixed positions. *)
+  let tuple = function
+    | Shape {elements=Some {rest=None;_};fields=[];calls=[];indexes=[]} -> true
     | _ -> false in
   let substitution = List.map (fun v ->
     (* A variable below and above one type, as an invariant position makes
@@ -342,12 +365,36 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
       (* Primitives below a declared bound: the binder is what they are, as
          TypeScript infers it, not the bound (`Y extends boolean | string`
          at "hello" is "hello"), and so are arrays of primitives
-         (`S extends number[] | string` at `[1, 2, 3]` is `number[]`). *)
+         (`S extends number[] | string` at `[1, 2, 3]` is `number[]`), and
+         tuples below a bound with a tuple arm (`S extends [number, number]
+         | string` at `[1, 2]` is `[number, number]`). *)
       | Some (Atoms atoms as t),Some bound when atoms <> [] && List.for_all (fun a ->
-          primitive a || (plain_array a && has_plain_array bound)) atoms -> Some t
+          primitive a || (plain_array a && has_plain_array bound)
+          || (tuple a && has_arm tuple bound)) atoms -> Some t
       | _,(Some _ as chosen) -> chosen
       | (Some _ as chosen),None -> chosen
       | None,None -> upper_candidate v.upper in
+    (* Literals inferred for an unbounded binder that the result does not
+       return bare widen, as TypeScript widens such a binder's literal
+       candidates (`box<T>(x: T): Box<T>` at `42` is `Box<number>`, while
+       `id<T>(x: T): T` at `42` is `42`). *)
+    let rec bare = function
+      | Rigid r -> r = v.identity
+      | Union ts -> List.exists bare ts
+      | Atoms _ | Meet _ -> false in
+    let unbounded = List.exists (fun (q:quantifier) -> q.identity = v.identity && q.bound = None)
+      signature.quantified
+      (* Nor a binder another's bound names, whose choice that one fits. *)
+      && not (List.exists (fun ((a:variable),(b:variable)) ->
+        a.identity = v.identity || b.identity = v.identity) !edges) in
+    (* The widened type must still be below every upper bound met. *)
+    let admitted w = List.for_all (fun u -> match u,w with
+      | Atoms us,Atoms ws -> List.mem Top us || List.for_all (fun x -> List.mem x us) ws
+      | _ -> false) v.upper in
+    let candidate = match candidate with
+      | Some t when unbounded && candidate = join v.lower && not (bare signature.result)
+                    && admitted (widen t) -> Some (widen t)
+      | c -> c in
     (* With no candidate at all, TypeScript infers `unknown`. *)
     v.identity,ValueArgument (Option.value candidate ~default:top)) variables in
   let result = substitute substitution signature.result in
