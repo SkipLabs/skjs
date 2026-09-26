@@ -136,32 +136,6 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
     | Some x,None -> x.upper <- add x.upper right
     | None,None when depth > 8 -> ()
     | None,None -> (match left,right with
-      (* A union of one binder and ground atoms, `A | null`: what the actual
-         holds beside those atoms is the binder's, as TypeScript infers
-         `A := string` from `string | null`. An arm over a binder,
-         `Promise<T> | U`, is below. *)
-      | _,Union parts when (match List.partition (fun p -> local p <> None) parts with
-          | [_],ground -> List.for_all (function
-              | Atoms _ as a -> not (Semantic.mentions_rigid a)
-              | _ -> false) ground
-          | _ -> false) ->
-        let binder,ground = List.partition (fun p -> local p <> None) parts in
-        let covered = List.concat_map (function Atoms xs -> xs | _ -> []) ground in
-        (* The actual through its declarations, `Maybe<string>` as
-           `string | null`, so its atoms can be told apart. *)
-        let rec opened depth t = if depth = 0 then t else match t with
-          | Atoms [Named _] -> (match expand t with Some e -> opened (depth-1) e | None -> t)
-          | Union ts -> List.fold_left union (Atoms []) (List.map (opened (depth-1)) ts)
-          | t -> t in
-        (* Opened only where that tells some atom apart: a declaration none
-           of whose atoms the union names is the binder's whole. *)
-        let rest = match opened 4 left with
-          | Atoms xs when List.exists (fun x -> List.mem x covered) xs ->
-            Atoms (List.filter (fun x -> not (List.mem x covered)) xs)
-          | _ -> (match left with
-            | Atoms xs -> Atoms (List.filter (fun x -> not (List.mem x covered)) xs)
-            | t -> t) in
-        if rest <> Atoms [] then constrain rest (List.hd binder)
       (* One declaration's applications: their arguments, both ways, as no
          variance is known here. *)
       | Atoms [Named (a,xs)],Atoms [Named (b,ys)] when a=b && List.length xs=List.length ys ->
@@ -219,13 +193,13 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
          below each: an instance at least as wide as the one needed. *)
       | _,Union arms when arms <> [] && List.for_all (fun a -> local a <> None) arms ->
         List.iter (fun arm -> constrain left arm) arms
-      (* A union with one bare binder among its arms, `Promise<T> | U` or
-         `T | undefined`, as TypeScript infers it: each part of the actual
-         goes to an arm of its own kind (an object part to an object arm, a
-         primitive to an arm naming it), and every other part to the
-         binder. An arm no part reaches receives the empty type, so the
-         binders it holds are inferred as `never` where nothing else
-         constrains them. *)
+      (* A union with one bare binder among its arms, `A | null` or
+         `Promise<T> | U`, as TypeScript infers it: each part of the actual
+         goes to an arm of its own kind (an object part to an object arm
+         over a binder, any part to an arm naming it), and every other part
+         to the binder, so `string | null` gives `A := string`. An arm no
+         part reaches receives the empty type, so the binders it holds are
+         inferred as `never` where nothing else constrains them. *)
       | _,Union arms when List.length (List.filter (fun a -> local a <> None) arms) = 1 ->
         let rec pieces = function
           | Atoms xs -> List.map (fun x -> Atoms [x]) xs
@@ -235,14 +209,40 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
           | Named _ | Shape _ | Exact _ | Ctors _ | Callable -> true
           | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Top
           | Bigint | Symbol | BigintLit _ -> false in
+        (* An object part goes to an arm whose binders it can fix; a
+           ground arm takes only a part it names. *)
+        let open_arm = Semantic.mentions_rigid in
         let heads piece arm = match piece,arm with
-          | Atoms [x],Atoms ys when objective x -> List.exists objective ys
+          | Atoms [x],Atoms ys when objective x && open_arm arm -> List.exists objective ys
           | Atoms [x],Atoms ys -> List.mem x ys
           | _ -> false in
-        let parts = pieces left in
+        (* The actual through its declarations, `Maybe<string>` as
+           `string | null`, where that tells some part apart: a declaration
+           none of whose atoms an arm names goes whole. *)
+        let named = List.concat_map (function
+          | Atoms xs as a when not (Semantic.mentions_rigid a) -> xs
+          | _ -> []) arms in
+        let rec opened depth t = if depth = 0 then t else match t with
+          | Atoms [Named _] -> (match expand t with Some e -> opened (depth-1) e | None -> t)
+          | Union ts -> List.fold_left union (Atoms []) (List.map (opened (depth-1)) ts)
+          | t -> t in
+        let parts = pieces (match opened 4 left with
+          | Atoms xs as o when List.exists (fun x -> List.mem x named) xs -> o
+          | _ -> left) in
         let owner piece = match List.find_opt (fun a -> local a = None && heads piece a) arms with
           | Some a -> a
           | None -> List.find (fun a -> local a <> None) arms in
+        (* A part holding a generic member, a library interface read as its
+           shape, is no instance a claim can state: where one would go to the
+           bare binder, the union proposes nothing. *)
+        let rec generic = function
+          | Atoms atoms -> List.exists (function
+              | Shape sh -> List.exists (fun (s:signature) -> s.quantified <> []) sh.calls
+                  || List.exists (fun (f:field) -> generic f.read) sh.fields
+              | _ -> false) atoms
+          | Union ts -> List.exists generic ts
+          | Rigid _ | Meet _ -> false in
+        if not (List.exists (fun piece -> generic piece && local (owner piece) <> None) parts) then
         List.iter (fun arm ->
           let received = List.filter (fun piece -> owner piece = arm) parts in
           match received with

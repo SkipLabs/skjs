@@ -421,6 +421,7 @@ export const cases: Case[] = [
   positive("async-await", "await yields a promise's settled value, or a primitive itself; async functions and arrows return promises of their results, adopting a returned promise of a primitive; the module awaits"),
   negative("invalid-await-result", "awaiting a Promise<number> yields no string"),
   negative("invalid-await-thenable", "only a Promise or a primitive is awaited: a record may be a thenable"),
+  positive("union-binder-inference", "a union with one bare binder is inferred as TypeScript infers it: a part to the arm of its kind, a ground arm taking only what it names, the rest to the binder"),
   negative("invalid-await-primitive", "awaiting a promise or a primitive yields either"),
   negative("invalid-async-adopt", "an async function's promise adopts a returned promise, settling to what it settles to"),
   negative("invalid-async-object", "an async function returns no object, which JavaScript would adopt if thenable",
