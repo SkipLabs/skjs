@@ -4,13 +4,13 @@ How much of what SKJS accepts in its own test suite the pipeline
 (`check.mts`: parser → OCaml producer → Lean search and check) verifies, what
 stops the rest, and where the two disagree because SKJS is wrong.
 
-**2,379 verified + 90 refused on principle = 2,469 of 2,674 done (92.3%);
-182 gaps, 23 unexplained.** Of the 90, 10 are units of confirmed SKJS
+**2,389 verified + 99 refused on principle = 2,488 of 2,674 done (93.0%);
+186 gaps, 0 unexplained.** Of the 99, 10 are units of confirmed SKJS
 unsoundnesses; the classes are defined in the method
 ([refusal classes](#refusals-by-class)).
 
-**2,379 of 2,674 SKJS-accepted units verify (89.0%); 1,762 of 2,026 accepted
-functions (87.0%).** 269 of the 377 files with an accepted unit verify entirely.
+**2,389 of 2,674 SKJS-accepted units verify (89.3%); 1,771 of 2,026 accepted
+functions (87.4%).** 270 of the 377 files with an accepted unit verify entirely.
 Five families of SKJS-accepted functions that the pipeline reaches and refuses
 are real SKJS unsoundnesses, each with a runtime witness that SKJS accepts and
 node crashes on ([below](#suspected-skjs-unsoundnesses)).
@@ -35,14 +35,14 @@ is not part of `verification/run.sh`.
 
 | Suite | Harness verdict | Files | Units | Accepted | Verified | Accepted functions | Verified functions |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,458 | 2,167 | 1,863 | 1,602 |
+| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,458 | 2,177 | 1,863 | 1,611 |
 | `tests/callgraph` | no error allowed | 25 | 59 | 59 | 57 | 51 | 49 |
 | `tests/constprop` | no error allowed | 14 | 66 | 66 | 64 | 49 | 48 |
 | `tests/deadcode` | no error allowed | 7 | 27 | 27 | 27 | 16 | 16 |
 | `tests/cfg` | no error allowed | 7 | 22 | 22 | 22 | 21 | 21 |
 | `tests/projects` | expect-error markers, under the project's tsconfig | 24 of 68 | 44 | 34 | 34 | 23 | 23 |
 | `tests/ts-conformance/cases` | lines listed in `reference/*.errors.txt` | 4 | 9 | 8 | 8 | 3 | 3 |
-| **total** | | **480** | **4,110** | **2,674** | **2,379** | **2,026** | **1,762** |
+| **total** | | **480** | **4,110** | **2,674** | **2,389** | **2,026** | **1,771** |
 
 Excluded (79 files, listed in the JSON with reasons): `ts-conformance/not-supported`
 (31) and `callgraph-unsupported` (4) assert only that SKJS reports errors;
@@ -99,10 +99,10 @@ is.
 
 | Phase of first blocker | Units |
 | --- | ---: |
-| verified | 2,344 |
-| source (gate) | 115 |
-| proposal (producer) | 56 |
-| search (Lean) | 159 |
+| verified | 2,389 |
+| source (gate) | 112 |
+| proposal (producer) | 38 |
+| search (Lean) | 135 |
 
 **Refusal classes.** The project's goal is that every accepted unit either
 verifies or is refused for a specific, principled reason. Each accepted unit
@@ -184,60 +184,65 @@ principled, or the one principled entry DESIGN also lists as open work.
 
 | Class | Units |
 | --- | ---: |
-| verified | 2,379 |
-| principled (P) | 80 |
+| verified | 2,389 |
+| principled (P) | 89 |
 | SKJS unsound (S) | 10 |
-| gap (G) | 182 |
-| unexplained (U) | 23 (21 with an `obligation:` line) |
+| gap (G) | 186 |
+| unexplained (U) | 0 |
 | **accepted** | **2,674** |
 
 | Class | Reason | Units | Files | Why |
 | --- | --- | ---: | ---: | --- |
 | P | TypeScript refuses the code | 28 | 17 | TypeScript itself rejects the program or a declaration it depends on |
 | P | object identity without fields | 8 | 2 | objects without a field have no identity in the model; identity narrowing is declined (DESIGN, Fragment boundary) |
-| P | `instanceof` of a constructor from outside the file | 7 | 3 | nothing in the file says which prototype it gives its instances (Fragment boundary) |
 | P | implicit index signature | 7 | 2 | TypeScript's implicit index signature is unsound: a value of a type literal may carry other keys of any type |
+| P | `instanceof` of a constructor from outside the file | 7 | 3 | nothing in the file says which prototype it gives its instances (Fragment boundary) |
 | P | `instanceof` narrowing `unknown` | 7 | 3 | an object gets C's prototype without C's constructor running (`Object.create(C.prototype)`, `Object.setPrototypeOf`, `Reflect.construct`): the brand is no evidence of C's fields, and assuming it of every value a unit receives is false of ordinary JavaScript (Fragment boundary) |
 | P | `this` in sloppy code | 6 | 3 | sloppy receiver conversion (global object, wrappers) is not modelled (Fragment boundary) |
+| P | `await` of a non-promise object, an async result that may be an object: thenable adoption | 5 | 4 | JavaScript adopts thenables and a record type does not rule out `then`, its own or its prototype's: an awaited value is a realm promise or a primitive, an async result a primitive (Fragment boundary) |
 | P | `extends` a library constructor | 4 | 1 | `extends Array` and kin allocate host objects, not the ordinary object a class allocates (Fragment boundary) |
 | P | iterator without a stated `return` | 3 | 3 | IteratorClose calls whatever `return` an open record owns (Fragment boundary) |
+| P | relational comparison converting operands | 2 | 1 | the conversion runs code or is not the primitive order (Fragment boundary) |
 | P | a base class from outside the file | 2 | 2 | nothing in the file says what its constructor allocates; trusting it is an assumption declined (Fragment boundary) |
 | P | invariance of writable storage | 2 | 1 | TypeScript relates writable storage covariantly, which is unsound (Fragment boundary) |
-| P | an ambient enum | 1 | 1 | its object is the environment's, whose members a declaration need not value (Fragment boundary) |
+| P | a mutable tuple's `length` at its arity, a position past it | 2 | 2 | `push` is allowed on a mutable tuple: TypeScript's literal length, and its `undefined` past the positions, are unsound |
+| P | method extraction | 2 | 1 | a method read off its object loses its receiver; TypeScript's typing of it is unsound (Fragment boundary) |
 | P | `...x: T` with T no array | 1 | 1 | TypeScript rejects a rest parameter of a non-array type (TS2370) |
-| P | a contextual `any` parameter | 1 | 1 | `any` states no contract (Fragment boundary) |
-| P | method extraction | 1 | 1 | a method read off its object loses its receiver; TypeScript's typing of it is unsound (Fragment boundary) |
 | P | a `this`-typed function as a receiver-indifferent callback | 1 | 1 | the callback type admits any receiver, the function requires its own: TypeScript's relation is unsound |
-| P | a mutable tuple's `length` at its arity | 1 | 1 | `push` is allowed on a mutable tuple: TypeScript's literal length is unsound |
+| P | a contextual `any` parameter | 1 | 1 | `any` states no contract (Fragment boundary) |
+| P | an ambient enum | 1 | 1 | its object is the environment's, whose members a declaration need not value (Fragment boundary) |
 | S | aliased views of an empty object literal | 6 | 1 | witnessed below |
 | S | `typeof c === "function"` on a class instance is `never` | 1 | 1 | witnessed below |
 | S | an inferred literal type through a generic declaration is closed | 1 | 1 | witnessed below |
 | S | `await` passes a record through | 1 | 1 | witnessed below |
 | S | a body falling off its end at a binder bounded by `void` | 1 | 1 | witnessed below |
 | G | intersections without a representable clause | 26 | 13 | a representation limit (Next steps). *Review:* the Fragment boundary refuses an intersection that normalizes to nothing, which would be principled; these name no such emptiness |
-| G | object growth (a key-adding write) | 24 | 8 | sound JavaScript; needs a key-adding write (DESIGN Next steps). *Review:* also in the Fragment boundary table ("keys are fixed at allocation") |
 | G | computed types over binders, `keyof` with unique symbols, `typeof` of unannotated bindings | 23 | 12 | no term of the fragment states the type exactly: a representation limit. *Review:* in the Fragment boundary table |
-| G | generics: generic closures, methods, function types, dependent bounds | 17 | 11 | generic closures, generic methods and binders as packs are open (Next steps) |
+| G | generics: generic closures, methods, function types, dependent bounds | 15 | 10 | generic closures, generic methods and binders as packs are open (Next steps) |
 | G | rest parameters (intersection, type parameter, declaration binder) | 14 | 5 | a representation limit: no allocation rule for the collected array at that type. *Review:* in the Fragment boundary table |
-| G | numeric keys and indices | 13 | 7 | numeric properties and array-element `in` are not modelled. *Review:* `in` on an array index is in the Fragment boundary ("the model would answer otherwise"), a model limit |
+| G | numeric keys and indices | 12 | 6 | numeric properties and array-element `in` are not modelled. *Review:* `in` on an array index is in the Fragment boundary ("the model would answer otherwise"), a model limit |
 | G | calls: `.call`, spreads, `Object.assign`, array literal spreads | 10 | 6 | iteration and call forms left open (Next steps) |
-| G | reads the producer holds on no object | 8 | 5 | producer typing of the receiver |
+| G | a key-adding write on an object another reference may hold | 8 | 4 | typed only on an unaliased local; alias tracking beyond that is open (DESIGN, Next steps) |
 | G | a read at a `for...in` key under `!` | 8 | 1 | needs a relational fact (the object owns the key) no statement entry states. *Review:* `!` is TypeScript's unchecked assertion; the read may be `undefined` |
 | G | a named function at a longer signature | 8 | 4 | fewer parameters is sound JavaScript; the slot is the annotated signature by design. *Review:* rests on the host-relative/slot-is-its-signature decision |
-| G | generic methods: `then` through a callback returning a promise, `catch` | 2 | 1 | producer inference through an application (a callback returning a promise); an accumulating binder's family is truncated a level early under instantiation (Next steps) |
+| G | reads the producer holds on no object | 8 | 5 | producer typing of the receiver |
 | G | a method with a `this` parameter | 8 | 3 | sound JavaScript; method members are host-relative, so the contract states no receiver. *Review:* rests on a lasting decision (method members are host-relative) and is in the Fragment boundary table |
-| G | source forms left | 6 | 6 | remaining source forms (Next steps) |
 | G | enum forms: computed members, an empty enum | 6 | 1 | keys known only at run time; an empty object has no record: representation limits. *Review:* in the Fragment boundary table |
-| G | class forms: constructor rests and defaults reading `this`, computed members, index signatures, statics, private names | 3 | 1 | no rule constructs at a variadic construct signature, the instance is allocated at the constructor's end, statics read late, private slots in inheritance (Next steps) |
-| G | `length` over an array-or-record union | 2 | 2 | needs a dispatch on `Array.isArray` reading an array's length from its store and a record's from its field, with the array invariant excluding an own `length` key (Next steps) |
-| G | `Array.isArray` on `unknown` | 2 | 1 | the array invariant is a fact of record and dictionary types; `unknown` is also a handler's binding type, and the throw outcome states nothing of a thrown value: needs the throw outcome to carry the invariant (Next steps) |
-| G | object literal spreads of functions, class values, arrays, strings | 4 | 4 | the copy's keys are known only at run time: no record states them. *Review:* in the Fragment boundary table |
+| G | source forms left | 6 | 6 | remaining source forms (Next steps) |
+| G | object literal spreads of functions, class values, arrays, strings | 5 | 5 | the copy's keys are known only at run time: no record states them. *Review:* in the Fragment boundary table |
 | G | cells after a step that may write them | 4 | 3 | a call forgets heap facts: needs a reachability statement (Next steps, Precision) |
-| G | a spread of a dictionary | 4 | 3 | needs the key-adding write's spread into an index (Next steps) |
-| G | library globals not reviewed | 2 | 2 | a library signature is trusted only once reviewed |
+| G | an optional class field left `undefined` | 4 | 3 | the pipeline reads `f?: T` exactly, as `exactOptionalPropertyTypes` does; TypeScript's default reading, which admits a present `undefined`, is also sound: a reading chosen, not a soundness limit. *Review:* the class rule refuses it by design (PROGRAM-TYPING, Classes); `f?: T | undefined` states it |
+| G | `Array.isArray` on `unknown` | 3 | 1 | the array invariant is a fact of record and dictionary types; `unknown` is also a handler's binding type, and the throw outcome states nothing of a thrown value: needs the throw outcome to carry the invariant (Next steps) |
+| G | class forms: constructor rests and defaults reading `this`, computed members, index signatures, statics, private names | 3 | 1 | no rule constructs at a variadic construct signature, the instance is allocated at the constructor's end, statics read late, private slots in inheritance (Next steps) |
+| G | a key-adding write of a symbol key, a spread of a symbol-keyed property | 2 | 2 | the copy step copies string keys only (Trust surface: JavaScript also copies an own enumerable symbol-keyed property) |
+| G | `length` over an array-or-record union | 2 | 2 | needs a dispatch on `Array.isArray` reading an array's length from its store and a record's from its field, with the array invariant excluding an own `length` key (Next steps) |
+| G | generic methods: `then` through a callback returning a promise, `catch` | 2 | 1 | producer inference through an application (a callback returning a promise); an accumulating binder's family is truncated a level early under instantiation (Next steps) |
 | G | absent-key and dictionary presence facts | 2 | 2 | needs a clause stating an absent key or dictionary presence |
 | G | well-known symbol keys | 2 | 1 | the model does not state how the host treats them. *Review:* in the Fragment boundary table |
-| U | search: no derivation found | 24 | 15 | Lean found no derivation; the obligation is named, its cause is not |
+| G | library globals not reviewed | 2 | 2 | a library signature is trusted only once reviewed |
+| G | a key-adding write at a runtime string key | 1 | 1 | the model reserves `[]` and `[[proto]]`; a representation choice, not unsoundness |
+| G | a key-adding write at one of several literal keys | 1 | 1 | needs a dispatch on the key |
+| G | a spread's written field typed per arm of the expected union | 1 | 1 | a copy's field is allocated at one type for every arm of its operand; a copy per arm, at that arm's contract, is not lowered |
 
 No reason is unmatched (`summary.unmatchedReasons` is empty), and no unit of a
 confirmed SKJS unsoundness verifies (`summary.skjsUnsoundVerified`).
