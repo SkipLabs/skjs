@@ -144,7 +144,8 @@ let encode (proposal : Proposal.t) =
                 | None,None -> None in
               Option.map (fun rest -> Array [Array (List.map labels s.params);
                 Array [rest;labels s.result]]) rest) signatures in
-            Object ["key",key_json f.name;"calls",Array calls;"rests",Array rests]) fs)] in
+            Object ["key",key_json f.name;"calls",Array calls;"rests",Array rests;
+                    "schemes",Array []]) fs)] in
       let fields writable fs = Array (List.map (fun (f:Semantic.field) ->
         if writable && f.write <> Some f.read then unsupported "asymmetric read/write capability export";
         Array [key_json f.name;labels f.read]) fs) in

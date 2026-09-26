@@ -14,15 +14,17 @@ export type Fields = [name: PropertyKey, labels: Labels][];
 /** An optional field: constrains its key only where the object has it; a
  * readonly one is a view there. */
 export type OptionalField = { key: PropertyKey; readonly: boolean; type: Labels };
-/** A host-relative method member: its key, its fixed signatures
- * `[params, result]` and its variadic ones `[params, [rest, result]]`. */
 /** An own-key bound: the object's own keys are among `keys` (`among`), or
  * none of them is (an array owns no key its prototype provides). */
 export type KeyBound = { among: boolean; keys: PropertyKey[] };
+/** A host-relative method member: its key, its fixed signatures
+ * `[params, result]`, its variadic ones `[params, [rest, result]]`, and its
+ * quantified ones, each a scheme row the member bound to its host meets. */
 export type MethodSig = {
   key: PropertyKey;
   calls: [params: Labels[], result: Labels][];
   rests: [params: Labels[], [rest: Labels, result: Labels]][];
+  schemes: Labels[];
 };
 export type Tuple = {
   required: Labels[];
@@ -276,8 +278,9 @@ export function decodeGraph(value: unknown): TypeGraph {
   };
   const methods = (v: unknown) =>
     array(v).forEach((m) => {
-      const r = obj(m, ["key", "calls", "rests"]);
+      const r = obj(m, ["key", "calls", "rests", "schemes"]);
       key(r.key, "a method key");
+      array(r.schemes).forEach(labels);
       array(r.calls).forEach((c) => {
         const pair = array(c);
         if (pair.length !== 2) throw Error("expected a method signature");

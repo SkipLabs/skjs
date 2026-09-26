@@ -46,10 +46,13 @@ it, in this order:
   such a record, a mutable tuple's `length` at its arity; a named function
   (a module function or a parameter) where a signature binding more
   parameters, or indifferent to the receiver it requires, is expected (its
-  type is its annotated signature); two instances of a declaration with
-  generic methods (`Promise<A>` at `Promise<B>`: quantified signatures are
-  related only by identity); a call inferring a binder written beside an
-  application of it (`R | PromiseLike<R>`, `then` and `catch`); a record at
+  type is its annotated signature); an instance of a declaration with
+  generic methods at an instance of another declaring them otherwise
+  (quantified signatures are related binding the same rows); a call
+  inferring a binder written beside an application of it
+  (`R | PromiseLike<R>`, `then` through a callback returning a promise); a
+  call instantiating a binder its result accumulates (`catch`'s
+  `Promise<T | TResult>`, whose family is truncated); a record at
   an index signature (TypeScript's implicit index signature; `Closed<T>` is
   read as `T`); a mutable array or a writable field at a wider one
   (invariance); a `typeof` test, `??` or strict

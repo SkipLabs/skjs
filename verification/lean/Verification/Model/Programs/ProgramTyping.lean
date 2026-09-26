@@ -1264,6 +1264,11 @@ def memberOf (G : NormalGraph ι) (O : Ty ι) (k : PropKey) : Option (MethodMemb
   | [.refs _ _ _ _ ms _] | [.dict _ _ _ _ _ ms _ _] => ms.find? (·.key == k)
   | _ => none
 
+/-- The quantified signatures of the member of key `k` of `O`: the schemes a
+generic method's member bound to its host meets (`bindScheme`). -/
+def memberSchemes (G : NormalGraph ι) (O : Ty ι) (k : PropKey) : List (Ty ι) :=
+  ((memberOf G O k).map (·.schemes)).getD []
+
 /-- A fixed signature covered by one of a member's: each claimed parameter
 within the member's, and the member's result within the claimed one, by
 checked proofs. The claimed types may be other rows for the same types, such as
@@ -2137,6 +2142,15 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
       Γ[i]? = some O → memberOf G O k = some m → Represents G F (.arrs L S) →
       (∀ q ∈ L, ∃ c ∈ m.calls, CoveredCall G q c) →
       (∀ s ∈ S, (s.2.1, s.2.2.1, s.2.2.2) ∈ m.rests) →
+      HasTy G Γ (.letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])) F
+  /-- **A member bound to its host, at its quantified signatures.** As
+  `bindMember`, the member is read from the object in a slot and bound to that
+  same object; a generic method's signatures are a scheme the bound function
+  meets, whatever receiver it is later given. A call names its instance below
+  the scheme (`Sub.inst`). -/
+  | bindScheme {Γ : List (Ty ι)} {F O : Ty ι} {i : Nat} {k : PropKey}
+      {m : MethodMembers.Sig (Ty ι)} :
+      Γ[i]? = some O → memberOf G O k = some m → F ∈ m.schemes → expand G F = [] →
       HasTy G Γ (.letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])) F
   /-- `throw a` has every type: it never produces a value, and a throw is an
   outcome safety admits. Its operand is typed at a type of its own, since it
@@ -3262,7 +3276,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
             meaning G s.2.2.2)) (q + 2) U (.objAt [] (.bound u (ρ i) [])) := by
           refine restsT_of_signatures hinv fun x hx => ?_
           obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx
-          have ht := restsT_select hon.2 (List.mem_map_of_mem (List.mem_map_of_mem (hS y hy)))
+          have ht := restsT_select hon.2.1 (List.mem_map_of_mem (List.mem_map_of_mem (hS y hy)))
           have hb := restsT_bound (Rc := meaning G y.1) (pvs := []) (fs := [])
             (MethodMembers.hostT_adm _)
             (fun A hA => by obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G b)
@@ -3275,6 +3289,44 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
           simpa using hb
         have hmem : meaning G F (q + 2) U (.objAt [] (.bound u (ρ i) [])) :=
           represents_back hF (q + 2) U _ rfl ⟨hcalls, hrests⟩
+        have hdown := (meaning_adm G F).down_le (q + 2) q (by omega) U _ hmem
+        refine Or.inr ⟨trunc q (Nat.le_succ q) (trunc (q + 1) (Nat.le_succ (q + 1)) U), h',
+          .objAt [] (.bound u (ρ i) []), WExt_refl _, WorldAdm_trunc _ (WorldAdm_trunc _ hu), ?_,
+          HeapOk_trunc q _ h' (HeapOk_trunc (q + 1) U h' hok), value_safe _ _ _ _ _ rfl ?_⟩
+        · simpa [Model.slots] using (Step.makeFields (h := h') (ns := []) (vs := [])
+            (c := .bound u (ρ i) []) (by simp) rfl)
+        · rw [trunc_trunc]
+          exact hdown
+  | @bindScheme Γ F O i k m hi hmo hF _ =>
+    intro n W h ρ he hw hh
+    obtain ⟨hkey, hmem⟩ := memberOf_at hmo (he.2 i O hi)
+    have hscope : Scoped 0 (ρ i) := he.1 i
+    have hterm : instantiate 0 ρ
+        (.letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])) =
+        .letE (.readAt k (ρ i)) (.makeAt (.bound (.var 0) (ρ i) []) [] []) := by
+      simp [instantiate, instantiateArgs_eq_map]
+    rw [hterm]
+    have hread : Safe (MethodMembers.onHost (ρ i) (MethodMembers.Member.of (meaning G) (argMeaning G) m))
+        n W h (.readAt k (ρ i)) := by
+      have := member_read_safe hw hh hmem
+      rwa [show (MethodMembers.Member.of (meaning G) (argMeaning G) m).key = k from hkey] at this
+    apply bind (fun a => Tm.letE a (.makeAt (.bound (.var 0) (ρ i) []) [] [])) Step.letC Raises.letC
+      n W h _ hw hh hread
+    intro j hj U hx hu h' u hok hval hon
+    cases j with
+    | zero => trivial
+    | succ p =>
+      apply let_rule _ u hval p U h' hu hok
+      have hsub : subst 0 u (.makeAt (.bound (.var 0) (ρ i) []) [] []) =
+          .makeAt (.bound u (ρ i) []) [] [] := by
+        simp [subst, substArgs_eq_map, subst_above hscope (Nat.zero_le 0)]
+      rw [hsub]
+      cases p with
+      | zero => trivial
+      | succ q =>
+        -- The member bound to its host meets each of its schemes.
+        have hmem : meaning G F (q + 2) U (.objAt [] (.bound u (ρ i) [])) :=
+          hon.2.2 _ (List.mem_map_of_mem hF)
         have hdown := (meaning_adm G F).down_le (q + 2) q (by omega) U _ hmem
         refine Or.inr ⟨trunc q (Nat.le_succ q) (trunc (q + 1) (Nat.le_succ (q + 1)) U), h',
           .objAt [] (.bound u (ρ i) []), WExt_refl _, WorldAdm_trunc _ (WorldAdm_trunc _ hu), ?_,

@@ -669,12 +669,29 @@ let wrapped_binder (s:Semantic.signature) =
   List.exists wraps s.params
 let wrapped_binder_reason =
   "TypeScript infers such a binder through the application and fills one left unconstrained from its \
-   default, and the producer does neither; nor does Lean find the instance, as it pairs a union's labels by \
-   position"
+   default, and the producer does neither: a callback whose result is itself an application (a promise) \
+   instantiates the binder at its bound"
+(* Whether a signature's result applies a declaration to a union of one of
+   the signature's binders and something else, as `catch` of `Promise` does
+   (`Promise<T | TResult>`): every call's result then adds a binder. *)
+let accumulating_binder (s:Semantic.signature) =
+  let binders = List.map (fun (q:Semantic.quantifier) -> q.identity) s.quantified in
+  match s.result with
+  | Atoms atoms -> List.exists (function
+      | Named (_,args) -> List.exists (function
+          | Union ts -> List.length ts > 1 && List.exists (function
+              | Rigid r -> List.mem r binders | _ -> false) ts
+              && List.exists (function Rigid r -> not (List.mem r binders) | _ -> true) ts
+          | _ -> false) args
+      | _ -> false) atoms
+  | _ -> false
+let accumulating_binder_reason =
+  "the family of applications grows with every call, so the graph truncates it at a colour budget, and an \
+   instance of the binder is truncated one level before the type it is claimed at"
 let generic_instances_reason =
-  "relating two instances relates their generic methods (`then` and `catch` of `Promise`, say), and the \
-   positive checker relates quantified signatures only by identity: that needs a rule instantiating the \
-   target's binders rigidly and the source's at them"
+  "the covering rule for quantified signatures relates schemes binding the same rows, which members of one \
+   key declared alike (as many binders, the same bounds) do: members declared otherwise need an instance \
+   table naming each source signature's image at the target's binders"
 (* SKJS's `Closed<T>`, which the SKJS environment declares as the identity
    alias `T` (skjs-environment.d.ts). *)
 let closed_alias declarations id =
@@ -1551,8 +1568,9 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
          then explain site ("a `let` holding an object read where it must be assigned: " ^ object_cell_reason)
          else explain site ("a cell read at its contract: " ^ forgotten_cell_reason)
        | _ -> ());
-      (* Two instances of declarations with generic methods, `Promise<A>` at
-         `Promise<B>`: refused by name. *)
+      (* An instance of a declaration with generic methods at an instance of
+         another, `Promise<A>` at `PromiseLike<B>`: refused by name. Two
+         instances of one declaration relate through their methods. *)
       (match expected with
        | Some x ->
          let generic_methods id args =
@@ -1568,7 +1586,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
            | _ -> [] in
          (match apps (resolve env n), apps x with
           | [a,xs], (_::_ as wanted) when not (List.mem (a,xs) wanted)
-              && List.for_all (fun (b,ys) -> generic_methods b ys
+              && List.for_all (fun (b,ys) -> b <> a && generic_methods b ys
                    (* Instances that are one type, their arguments unused. *)
                    && (try
                          (* A method's receiver names the instance itself. *)
@@ -1582,7 +1600,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
                          unreceived (definition declarations b ys) <> unreceived (definition declarations a xs)
                        with Json.Error _ -> true)) wanted
               && generic_methods a xs ->
-            explain site ("an instance of a declaration with generic methods at another instance: "
+            explain site ("an instance of a declaration with generic methods at an instance of another: "
               ^ generic_instances_reason)
           | _ -> ())
        | None -> ());
@@ -2138,7 +2156,10 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let infer_explicit ~receiver ?expected (signature:Semantic.signature) actuals =
         if List.length type_args > List.length signature.quantified then
           unsupported "more explicit type arguments than the callee has binders";
-        if type_args = [] && wrapped_binder signature then
+        if type_args = [] && accumulating_binder signature then
+          explain (e:expr).pos ("a call instantiating a binder its result accumulates in an application \
+            (`catch`'s `Promise<T | TResult>`): " ^ accumulating_binder_reason)
+        else if type_args = [] && wrapped_binder signature then
           explain (e:expr).pos ("a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): "
             ^ wrapped_binder_reason);
         let fixed = List.mapi (fun i t ->

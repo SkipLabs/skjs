@@ -800,12 +800,12 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
       only(member, [ts.SyntaxKind.AsyncKeyword]);
       if (member.postfixToken || member.asteriskToken)
         scope.fail(member, "an optional or generator method is outside the fragment");
-      // A generic method would be a host-relative member with quantified
-      // signatures, which the model does not have: a view of a scheme, as an
-      // interface's generic method is read, is an own field, and the method
-      // lives on the prototype.
+      // A generic method is a host-relative member with quantified
+      // signatures, as an interface's is; its closure lives on the
+      // prototype, at a scheme received by the instance, which nothing yet
+      // relates to the instance's member (DESIGN, next steps).
       if (member.typeParameters?.length)
-        scope.fail(member, "a generic class method is outside the fragment: it would be a host-relative member with quantified signatures, which the model does not have");
+        scope.fail(member, "a generic class method is outside the fragment: its prototype's closure is not yet related to the instance's quantified member");
       const name = named(member);
       const method = signature(scope, member.parameters, member.type, member, memberSpan);
       if (method.receiver) scope.fail(member, METHOD_RECEIVER);

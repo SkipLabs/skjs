@@ -135,10 +135,21 @@ $$
   it, they behave as typed
   ([DESIGN.md](DESIGN.md#method-members-are-host-relative)). A member $m$ has
   fixed signatures $(\vec P\to B)$ and variadic ones $(\vec P,\ldots Q)\to B$,
-  none with a receiver. With $\mathsf{on}_v(m)$ the member's signatures, each
-  with $v$ as the one receiver it admits, and $\mathsf{holds}_k(A)$ the
-  objects holding key $k$ at a location whose contract implies $A$ below the
-  level,
+  none with a receiver, and **quantified signatures**: types $S$, a generic
+  method's scheme rows, that the member bound to its host meets. With
+  $\mathsf{bound}(u,v)$ the forwarding function `.bind` makes of $u$ and $v$,
+  which invokes $u$ with $v$ whatever receiver it is given, and
+  $\mathsf{on}_v(m)$ the invocable values meeting the member's signatures,
+  each with $v$ as the one receiver it admits, and bound to $v$ its schemes,
+
+  $$
+  u\in\mathsf{on}_v(m)_n(W)\iff u\in\mathsf{Calls}(m.\mathsf{calls}^{v})\cap
+    \mathsf{Rests}(m.\mathsf{rests}^{v})\land
+    \forall S\in m.\mathsf{schemes}.\;\mathsf{bound}(u,v)\in\llbracket S\rrbracket_n(W),
+  $$
+
+  and $\mathsf{holds}_k(A)$ the objects holding key $k$ at a location whose
+  contract implies $A$ below the level,
 
   $$
   \mathsf{holds}_k(A)_n(W,v)\iff\exists l,c.\;
@@ -160,7 +171,11 @@ $$
   \end{aligned}
   $$
 
-  A prototype's member is invoked on $v$, the object the read began at. The
+  A prototype's member is invoked on $v$, the object the read began at. A
+  quantified signature is host-relative through binding: a scheme meets its
+  signatures at every instantiation of its binders, and the bound function
+  invokes the member with its host, so a scheme's own receivers say nothing of
+  the host and admit every value. The
   implication is claimed only in worlds extending the current one: in an
   unrelated world the object's locations need not hold their contracts, and no
   method reading them could be safe.
@@ -236,7 +251,7 @@ of a type covering a writable index says a key of its class is absent
 recursive graph can contain `JsonObject = { readonly [key: string]: Json | null }`.
 
 Lean: `refsT`, `viewT`, `OptionalField`, `optT`, `SlotContract`, `NumericKey`, `IndexKeys`, `dictViewT`, `dictCellT`, `KeyBound`, `ownKeysT` (`Types/Types.lean`), `methodT`,
-`memberT`, `along`, `holdsAt`, `onHost` (`Types/MethodMembers.lean`). The heap facts behind invariant
+`memberT`, `along`, `holdsAt`, `onHost`, `boundTo`, `boundOn` (`Types/MethodMembers.lean`). The heap facts behind invariant
 operands (`adm`, `congr_below`, `operands_agree`, `read_all`, `write_first`,
 `cyclic_inhabited`) are in `Types/ReferenceConjunctions.lean`: a read meets
 every operand, and writing a value at the first operand preserves every
@@ -700,11 +715,15 @@ array, whose bound only excludes keys.
 **Methods.** A target method $m$ is covered by a source method of the same
 key, by a function the source holds under that key whose receiver the source
 type $S$ is within, or, when a key bound of the source excludes the key, by
-such a function along its prototype chain:
+such a function along its prototype chain. A quantified signature is covered
+by one of the source member's, the two related as types: both are met by the
+same bound function, so the coverage of two schemes is subtyping between them
+(below, [quantified signatures](#core-tables)):
 
 $$
 \frac{m'\in\mu\quad m'.\mathsf{key}=m.\mathsf{key}\quad
-      \forall(\vec Q\to D)\in m.\;\exists(\vec P\to B)\in m'.\;\Delta(\vec Q,\vec P)\land\Delta(B,D)}
+      \forall(\vec Q\to D)\in m.\;\exists(\vec P\to B)\in m'.\;\Delta(\vec Q,\vec P)\land\Delta(B,D)\quad
+      \forall S'\in m.\mathsf{schemes}.\;\exists S\in m'.\mathsf{schemes}.\;\Delta(S,S')}
      {\Delta;S\vdash(\Phi\,\psi;\mu)\sqsubseteq_{\mathsf{meth}}m}
 $$
 
@@ -721,7 +740,9 @@ $$
      {\Delta;\kappa;S\vdash(\Phi\,\psi;\mu;\beta)\sqsubseteq_{\mathsf{meth}}m}
 $$
 
-The third reads the member through the prototype chain, as the meaning does
+The second and third cover a member stating no quantified signature: a
+function's own signatures name no binder to instantiate. The third reads the
+member through the prototype chain, as the meaning does
 (`CoversByProto`, `ProtoHolds`). A prototype type $P$ holds $m$ where its
 one record clause has $m$'s key at a function type covering it, or, where
 that clause's key bound $\beta_P$ excludes the key, its own prototype field
@@ -911,7 +932,8 @@ $(S,T)$ in which every entry $(A,B)$ satisfies three conditions:
    value meaning is empty.
 2. **Opaque rows.** Every parameter or scheme row of $A$ appears in $B$, or
    $B$ holds `top`; a meet row of $A$ may instead be below a row of $B$ by its
-   parameters, or be covered through its clauses.
+   parameters, or be covered through its clauses; a scheme row of $A$ may
+   instead have its quantified signatures covered by a scheme row of $B$.
 3. **Coverage.** Every split part of every clause of $A$ is covered by some
    clause of $B$, with $A$ as the source type; so is every split part of the
    clauses of each meet row of $A$ that $B$ does not name.
@@ -955,6 +977,36 @@ $\mathsf{bool}\le\mathsf{true}\lor\mathsf{false}$ and
 $\mathsf{bool}\le\mathsf{bool}$ are derivable, and
 $\mathsf{bool}\le\mathsf{true}$ is not.
 
+**Quantified signatures.** A scheme row $i=(\vec p;\Sigma;\beta;\Sigma_\ldots)$ of
+$A$ is covered by a scheme row $j=(\vec p;\Sigma';\beta';\Sigma'_\ldots)$ of $B$
+binding the same parameter rows, each source bound among the target's, whose
+signatures, the binders opaque, the source's cover as an arrow clause's
+(`SchemeCoversWith`):
+
+$$
+\frac{i=(\vec p;\Sigma;\beta;\Sigma_\ldots)\quad j=(\vec p;\Sigma';\beta';\Sigma'_\ldots)\quad
+      \beta\subseteq\beta'\quad
+      \Delta\vdash\mathsf{arrs}(\Sigma;\Sigma_\ldots)\sqsubseteq\mathsf{arrs}(\Sigma';\Sigma'_\ldots)}
+     {\Delta\vdash i\sqsubseteq_{\forall}j}\ \textsc{quantified}
+$$
+
+It is the subtyping rule for quantified signatures under the restriction of
+F<:'s kernel rule ([Pierce 1994](REFERENCES.md#pierce-1994)): the target's
+binders are taken rigidly and the source's instantiated at them, which the
+same rows make the identity, and no bound is compared but by inclusion of the
+lists, so the check stays decidable. A member of $i$ meets, at every instance
+$\vec X$ within $\beta'$, which is within $\beta$, $\Sigma$ read at
+$\eta[\vec p\mapsto\vec X]$; the arrow coverage, whose premises are table
+entries, gives $\Sigma'$ there (`scheme_covers_sound`). The premises are read
+at the instance's assignment, not the table's own, so the table's induction
+is over every assignment at once (`Core.mixed_sound`): every derivation holds
+at every assignment, since none reads it. So `Promise<number>` is below
+`Promise<number | string>`: their `then` members bind the same rows, and the
+target's callback, which takes `number | string`, is one the source's may be
+given. The reverse fails at that callback's parameter, and a method whose
+parameter is the declaration's argument, `send<U>(value: T, tag: U)`, makes
+the declaration invariant there: TypeScript's method bivariance is refused.
+
 Every cyclic premise occurs under an operand, so the table is sound by
 induction on the level; the induction also supplies the source-type premise a
 method covered by a function needs.
@@ -968,7 +1020,8 @@ for everything those contracts reach.
 `Core.mixed_sound` holds wherever the known rows do: each $(F,L,M)\in\kappa$
 with $F$'s values within $\mathsf{arrs}(L;M)$ at every level.
 
-Lean: `Core`, `Valid`, `Known`, `SameKind`, `Opaque`, `meetSources`, `meet_clause_of`, `splitClause`,
+Lean: `Core`, `Valid`, `Known`, `SameKind`, `Opaque`, `OpaqueWith`, `SchemeCoversWith`,
+`scheme_covers_sound`, `covers_arrs_sound`, `meetSources`, `meet_clause_of`, `splitClause`,
 `splitClause_sem`, `source_sem`, `CoversByProto`, `ProtoHolds`, `FoundOn`, `lacksKey`, `viewOf`,
 `covers_arrows_sound`, `protoHolds_sound`,
 `Core.mixed_sound`.
@@ -1112,7 +1165,12 @@ $$
 Here $\tau\doteq\sigma'$ when the two have the same arity and each type of
 $\tau$ has the same members as the corresponding type of $\sigma'$: a type
 means the union of its labels, so their order does not matter
-(`sameLabels`, `sigMatch`, `restMatch`, and for clauses `sameClauses`). The
+(`sameLabels`, `sigMatch`, `restMatch`, and for clauses `sameClauses`). Where
+the scheme signature's receiver admits every value (`top`), as a quantified
+member's does, the instance's receiver is not compared: a callable safe at
+every receiver is safe at a narrower one, every receiver being a closed value
+(`instSig`, `instRest`, `top_row_mixed`). So a method call's instance states
+its object as the receiver. The
 premises other than $T\equiv_G\mathsf{arrs}(L;M)$ are $G\vdash\{i\}\le_{\mathsf{inst}}\mathsf{arrs}(L;M)$
 (`InstArrs`).
 

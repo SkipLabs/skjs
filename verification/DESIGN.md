@@ -157,8 +157,10 @@ creation, an array literal, an element read) carries that plan, which is
 rendered, not searched; elsewhere search tries a sequent's own types before
 the vocabulary, which is only what the file's request mentions. Subtype
 search proposes finite core tables, instance tables and arrow certificates,
-first over the types near the pair, and prunes rows that no table could make
-valid. None of this changes what is checked: orderings and pruning decide
+first over the types near the pair, then over a table grown from the pair on
+demand (each row adding the rows relating what its coverage compares, until it
+closes: how two instances of a recursive declaration unfold together), and
+prunes rows that no table could make valid. None of this changes what is checked: orderings and pruning decide
 only how soon evidence is found, and the checker validates every table
 ([producing evidence](PROGRAM-TYPING.md#producing-evidence-from-supplied-claims)).
 A failed search is refused by name for display only: `producer --explain`
@@ -561,6 +563,23 @@ forced by soundness:
   claimed at the longer signature as well, the extra actuals discarded at
   binding (`offersArity`); no subtyping widens an arrow's parameters.
 
+A generic method is a member with **quantified signatures**: a scheme the
+member bound to its host meets, whatever receiver the bound function is
+later given (`MethodMembers.boundOn`). It is the same host-relative promise,
+read through `.bind`, so the scheme's own receivers admit every value, and a
+call binds the member (`bindScheme`) and names its instance below the scheme.
+Two quantified members relate as their schemes do, by the covering rule for
+quantified signatures ([core tables](POSITIVE-TYPES.md#core-tables)): equal
+binders, the source's bounds among the target's, the target's signatures
+covered with its binders opaque, so decidable
+([Pierce 1994](REFERENCES.md#pierce-1994)). Since the receiver is the host on
+both sides, it is never compared, and a declaration whose generic methods take
+its argument only covariantly is covariant: `Promise<A>` is below `Promise<B>`
+where `A` is below `B`, by `then`'s and `catch`'s own signatures. A
+generic method's binder rows are its member's, keyed by its key, position and
+bound ([generic methods](PROGRAM-TYPING.md#generic-methods)), so members of one
+key declared alike bind the same rows: `Promise<A>` is below `PromiseLike<A>`.
+
 ### Calls
 
 Argument lists are native: the callee is evaluated first, then
@@ -613,7 +632,8 @@ A generic application with methods is one row per
 declaration and arguments for the module, lowered from an empty visit, so a
 recursive family of applications is a finite graph
 ([one row per application](PROGRAM-TYPING.md#one-row-per-application)). A
-generic method is a scheme row whose binders are coloured parameter rows; a
+generic method is a [member with quantified signatures](#method-members-are-host-relative),
+a scheme row whose binders are parameter rows coloured per member; a
 binder intersected with ground types is a meet row
 ([rows](POSITIVE-TYPES.md#parameter-and-scheme-rows)).
 
@@ -798,7 +818,7 @@ not yet taken are [next steps](#next-steps); a search failure is neither.
 | A rest parameter of a definition typed by a type parameter; one typed by an intersection, by a tuple with optional or rest elements, or by what is no array | A definition has no allocation rule for an array only an instance fixes (a function type's is a pack); the fresh array's meet has no representation; several lengths are several signatures; the collected array is no value of it. |
 | A written `let` pattern in a `for` head; a test of a written `let` holding a union of objects | Its bindings are cells, which only a statement of a block lowers them to; a cell's known contents are primitive or merely no `undefined`. |
 | An array pattern over a value that may not be an array | It would step the value's own iterator. |
-| A class method declaring `this: T`; a generic class method; a constructor's rest parameter; a constructor parameter default reading `this` | A method member is host-relative; a generic method would be a host-relative member with quantified signatures, which the model does not have ([next steps](#next-steps)); no rule constructs at a variadic construct signature ([next steps](#next-steps)); the instance is allocated at the end of the constructor. |
+| A class method declaring `this: T`; a generic class method; a constructor's rest parameter; a constructor parameter default reading `this` | A method member is host-relative; a generic class method's closure, on the prototype, is not yet related to the instance's quantified member ([next steps](#next-steps)); no rule constructs at a variadic construct signature ([next steps](#next-steps)); the instance is allocated at the end of the constructor. |
 | A class member with a computed key other than a method's `unique symbol` constant or a static `[Symbol.hasInstance]`; an index signature in a class; a static block reading `this`; a class extending a generic class other than at the base's own binders | A method is a binding and a prototype key named by its plain name or its symbol; instances are what construction allocates; the block's receiver is the class value, whose statics are bindings of their own; a generic base's construction is at its binders' rows ([classes](PROGRAM-TYPING.md#classes)). |
 | A class with a private name in inheritance; `#x in o` | A derived instance's base part is a copy, and a copy holds no private slot; the test asks for an own slot, where the model's key test walks the prototype chain. |
 | A loop or an array pattern over an iterable whose iterator's type states no `return` | Leaving it early, or a throw out of its body, calls whatever `return` the iterator owns, and an open record type says nothing of that property. |
@@ -915,24 +935,22 @@ construct signature: `ctorRestsT` has neither an introduction from code nor
 an elimination by `new`, so that rule and its `construction` for code with a
 rest (whose padded actuals would reach the store) come first.
 
-**Generic methods as host-relative members.** A declaration's generic method
-is lowered to a readonly view of a scheme row whose signatures take the
-application itself as receiver ([generic methods](PROGRAM-TYPING.md#generic-methods)).
-Two things are then out of reach, both because a view is a field, not a
-method. `Promise<A> ≤ Promise<B>` does not hold at those types: the `then`
-field of a `Promise<number>` promises nothing for a receiver of type
-`Promise<number | string>`, which the target's `then` field would have to
-accept; only a method read from its own host, whose receiver is that host,
-is covariant ([host-relative methods](#method-members-are-host-relative)).
-And a class's generic method lives on its prototype, where a view, an own
-field, does not find it (`class-generic-method-refused`). Both need a method
-member with quantified signatures: `methodT` whose signatures are read at
-every instantiation of the member's binders, which needs a clause's member
-operands read at reassigned assignments, as a scheme row's signatures are.
-Covering one such member by another is then the subtyping rule for quantified
-signatures: the target's binders taken rigidly, the source's instantiated at
-them, under a decidable restriction (equal binder counts, identical bounds;
-F<:'s general rule is undecidable, [Pierce 1994](REFERENCES.md#pierce-1994)).
+**Generic methods left.** A class's generic method needs its prototype's
+closure, typed at a scheme whose receiver is the instance, to cover the
+instance type's quantified member: the claim format states no scheme inside a
+record (the prototype object's field), the closure's binders are the
+producer's rows where the member's are the declaration's, and the covering
+rule needs the receiver to read none of the binders, a free-variable
+certificate in the core table (`class-generic-method-refused`). Two members
+declared unalike (another bound, another arity) bind other rows: relating them
+needs an instance table naming each source signature's image at the target's
+binders, inside the core table. A binder a member's result accumulates
+(`catch`'s `Promise<T | TResult>`) grows its family by one binder per call,
+which the graph truncates at a colour budget: an instance of it is truncated
+one level before the type it is claimed at, so exact instance tables cannot
+relate them; it needs a truncation that commutes with instantiation. A
+callback returning a promise instantiates `then`'s binder through
+`PromiseLike<TResult>`, which the producer's inference does not do.
 
 **The array invariant at `unknown`, and a record's `length`.** `Array.isArray`
 on `unknown` needs the invariant of every value, a thrown one included: the

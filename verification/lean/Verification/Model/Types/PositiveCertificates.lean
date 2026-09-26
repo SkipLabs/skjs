@@ -216,6 +216,22 @@ instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop
   cases a <;> cases b <;> unfold CoversWith <;> infer_instance
 
 set_option synthInstance.maxSize 1024 in
+instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R]
+    {known : Known ι}
+    {arrows : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop}
+    [∀ L S M, Decidable (arrows L S M)] (i j : ι) :
+    Decidable (SchemeCoversWith G R known arrows i j) := by
+  unfold SchemeCoversWith; split <;> infer_instance
+
+set_option synthInstance.maxSize 1024 in
+instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R]
+    {known : Known ι}
+    {arrows : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop}
+    [∀ L S M, Decidable (arrows L S M)] (S T : List ι) :
+    Decidable (OpaqueWith G R known arrows S T) := by
+  unfold OpaqueWith; infer_instance
+
+set_option synthInstance.maxSize 1024 in
 /-- The executable checker is the shared coverage rule interpreted with checked
 arrow evidence. Adding a coverage condition changes the checker automatically. -/
 def checkClause [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (known : Known ι)
@@ -290,7 +306,8 @@ structure Certificate (ι : Type) where
 set_option synthInstance.maxSize 1024 in
 def checkCore [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (S T : List ι)
     (cert : Certificate ι) : Bool :=
-  decide ((S, T) ∈ cert.table ∧ ∀ p ∈ cert.table, SameKind G p.1 p.2 = true ∧ Opaque G p.1 p.2 ∧
+  decide ((S, T) ∈ cert.table ∧ ∀ p ∈ cert.table, SameKind G p.1 p.2 = true ∧
+    OpaqueWith G (Rel cert.table) known (ArrowsChecked G cert.table cert.arrows) p.1 p.2 ∧
     ∀ a ∈ sourceClauses G p.1 ++ meetSources G p.1 p.2, ∃ b ∈ clausesOf G p.2,
       checkClause G cert.table known cert.arrows p.1 a b = true)
 
@@ -300,31 +317,83 @@ theorem checkCore_sound [DecidableEq ι] {G : NormalGraph ι} {known S T cert}
   simp only [checkCore, decide_eq_true_eq] at h
   refine ⟨cert.table, h.1, ?_⟩
   intro p hp
-  refine ⟨(h.2 p hp).1, (h.2 p hp).2.1, fun a ha => ?_⟩
+  refine ⟨(h.2 p hp).1, OpaqueWith.mono (fun L S M hs q hq => ?_) (h.2 p hp).2.1, fun a ha => ?_⟩
+  · obtain ⟨e, _, _, _, he⟩ := hs q hq
+    exact checkArrow_sound he
   obtain ⟨b, hb, hc⟩ := (h.2 p hp).2.2 a ha
   exact ⟨b, hb, checkClause_sound hc⟩
+
+/-- Opaque rows checked with one evidence list stay checked with a larger one. -/
+theorem opaque_mono [DecidableEq ι] {G : NormalGraph ι} {table known S T es es'}
+    (hm : ∀ e ∈ es, e ∈ es')
+    (h : OpaqueWith G (Rel table) known (ArrowsChecked G table es) S T) :
+    OpaqueWith G (Rel table) known (ArrowsChecked G table es') S T :=
+  OpaqueWith.mono (fun L S M hs p hp => by
+    obtain ⟨e, he, hL, hP, hc⟩ := hs p hp
+    exact ⟨e, hm e he, hL, hP, hc⟩) h
+
+set_option synthInstance.maxSize 1024 in
+/-- Declarative opaque rows have checked evidence: each quantified signature
+coverage is an arrow coverage, whose evidence `checkClause_complete` finds. -/
+theorem opaque_complete [DecidableEq ι] {G : NormalGraph ι} {table known S T}
+    (h : Opaque G (Rel table) known S T) :
+    ∃ es, OpaqueWith G (Rel table) known (ArrowsChecked G table es) S T := by
+  have each : ∀ i ∈ S, ∃ es : Evidence ι, G.plain i = true ∨ i ∈ T ∨ .top ∈ clausesOf G T ∨
+      G.meetRow i = true ∨ ∃ j ∈ T, SchemeCoversWith G (Rel table) known (ArrowsChecked G table es) i j := by
+    intro i hi
+    rcases h i hi with h | h | h | h | ⟨j, hj, hc⟩
+    · exact ⟨[], .inl h⟩
+    · exact ⟨[], .inr (.inl h)⟩
+    · exact ⟨[], .inr (.inr (.inl h))⟩
+    · exact ⟨[], .inr (.inr (.inr (.inl h)))⟩
+    · unfold SchemeCoversWith at hc
+      split at hc
+      · rename_i s s' hs hs'
+        obtain ⟨es, he⟩ := checkClause_complete (self := []) hc.2.2.2.2
+        refine ⟨es, .inr (.inr (.inr (.inr ⟨j, hj, ?_⟩)))⟩
+        simp only [SchemeCoversWith, hs, hs']
+        exact ⟨hc.1, hc.2.1, hc.2.2.1, hc.2.2.2.1, of_decide_eq_true he⟩
+      · exact hc.elim
+  obtain ⟨es, he⟩ := collect S _ (fun i es es' hm h => by
+    rcases h with h | h | h | h | ⟨j, hj, hc⟩
+    · exact .inl h
+    · exact .inr (.inl h)
+    · exact .inr (.inr (.inl h))
+    · exact .inr (.inr (.inr (.inl h)))
+    · refine .inr (.inr (.inr (.inr ⟨j, hj, ?_⟩)))
+      unfold SchemeCoversWith at hc ⊢
+      split at hc
+      · exact ⟨hc.1, hc.2.1, hc.2.2.1, hc.2.2.2.1, of_decide_eq_true
+          (checkClause_mono hm (decide_eq_true hc.2.2.2.2))⟩
+      · exact hc.elim) each
+  exact ⟨es, fun i hi => he i hi⟩
 
 theorem checkCore_complete [DecidableEq ι] {G : NormalGraph ι} {known S T}
     (h : Core G known S T) : ∃ cert, checkCore G known S T cert = true := by
   obtain ⟨table, hm, hv⟩ := h
   have rows : ∀ p ∈ table, ∃ es : Evidence ι,
+      OpaqueWith G (Rel table) known (ArrowsChecked G table es) p.1 p.2 ∧
       ∀ a ∈ sourceClauses G p.1 ++ meetSources G p.1 p.2, ∃ b ∈ clausesOf G p.2,
         checkClause G table known es p.1 a b = true := by
     intro p hp
-    apply collect (sourceClauses G p.1 ++ meetSources G p.1 p.2)
+    obtain ⟨es₀, ho⟩ := opaque_complete (hv p hp).2.1
+    obtain ⟨es₁, hc⟩ := collect (sourceClauses G p.1 ++ meetSources G p.1 p.2)
       (fun a es => ∃ b ∈ clausesOf G p.2, checkClause G table known es p.1 a b = true)
-    · intro a es es' hm ⟨b, hb, hc⟩
-      exact ⟨b, hb, checkClause_mono hm hc⟩
-    · intro a ha
-      obtain ⟨b, hb, hc⟩ := (hv p hp).2.2 a ha
-      obtain ⟨es, he⟩ := checkClause_complete hc
-      exact ⟨es, b, hb, he⟩
-  obtain ⟨es, he⟩ := collect table _ (fun p es es' hm h a ha => by
-    obtain ⟨b, hb, hc⟩ := h a ha
+      (fun a es es' hm ⟨b, hb, hc⟩ => ⟨b, hb, checkClause_mono hm hc⟩)
+      (fun a ha => by
+        obtain ⟨b, hb, hc⟩ := (hv p hp).2.2 a ha
+        obtain ⟨es, he⟩ := checkClause_complete hc
+        exact ⟨es, b, hb, he⟩)
+    refine ⟨es₀ ++ es₁, opaque_mono (fun e he => List.mem_append_left _ he) ho, fun a ha => ?_⟩
+    obtain ⟨b, hb, hc⟩ := hc a ha
+    exact ⟨b, hb, checkClause_mono (fun e he => List.mem_append_right _ he) hc⟩
+  obtain ⟨es, he⟩ := collect table _ (fun p es es' hm h => by
+    refine ⟨opaque_mono hm h.1, fun a ha => ?_⟩
+    obtain ⟨b, hb, hc⟩ := h.2 a ha
     exact ⟨b, hb, checkClause_mono hm hc⟩) rows
   exact ⟨⟨table, es⟩, by
     simp only [checkCore, decide_eq_true_eq]
-    exact ⟨hm, fun p hp => ⟨(hv p hp).1, (hv p hp).2.1, he p hp⟩⟩⟩
+    exact ⟨hm, fun p hp => ⟨(hv p hp).1, (he p hp).1, (he p hp).2⟩⟩⟩
 
 /-- A checked instance of a scheme row's signatures: the instance table, the
 types the binders are instantiated at, a certificate per bound, the table's
@@ -446,8 +515,8 @@ def checkInstArrs [DecidableEq ι] (G : NormalGraph ι) (S : List ι) (L : Ops �
         c.bounds.length == s.bounds.length &&
         (s.bounds.zip c.bounds).all (fun bc => boundOk G s.binders c.instances bc.1 bc.2) &&
         TableOk G c.table c.domain c.free &&
-        (L.all fun q => s.signatures.any fun p => sigMatch c.table (s.binders.zip c.instances) p q) &&
-        M.all fun q => s.variadic.any fun p => restMatch c.table (s.binders.zip c.instances) p q
+        (L.all fun q => s.signatures.any fun p => instSig G c.table (s.binders.zip c.instances) p q) &&
+        M.all fun q => s.variadic.any fun p => instRest G c.table (s.binders.zip c.instances) p q
     | none => false
   | _ => false
 

@@ -48,7 +48,10 @@ theorem checkClause_reassign (table : Table ι) (known : Known ι) (proofs : Pos
 
 theorem checkCore_reassign (known : Known ι) (S T : List ι) (cert : PositiveCertificates.Certificate ι) :
     checkCore (reassign G η) known S T cert = checkCore G known S T cert := by
-  simp only [checkCore, checkClause_reassign]
+  have hA : ArrowsChecked (reassign G η) cert.table cert.arrows =
+      ArrowsChecked G cert.table cert.arrows := by
+    funext L S M; simp only [ArrowsChecked, checkArrow_reassign]
+  simp only [checkCore, checkClause_reassign, hA]
   rfl
 
 theorem boundOk_reassign (binders : List ι) (θs : List (List ι)) (b : ι × List ι)

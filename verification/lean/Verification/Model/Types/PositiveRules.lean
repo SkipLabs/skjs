@@ -664,7 +664,8 @@ def CoversSig (elem : List ι → Option (List ι)) (R : List ι → List ι →
     (p q : MethodMembers.Sig (List ι)) : Prop :=
   (∀ t ∈ q.calls, ∃ s ∈ p.calls, Domains R t.1 s.1 ∧ R s.2 t.2) ∧
   (∀ t ∈ q.rests, ∃ s ∈ p.rests, Domains R (t.1.take s.1.length) s.1 ∧
-    IntoRest elem R (t.1.drop s.1.length) s.2.1 ∧ R t.2.1 s.2.1 ∧ R s.2.2 t.2.2)
+    IntoRest elem R (t.1.drop s.1.length) s.2.1 ∧ R t.2.1 s.2.1 ∧ R s.2.2 t.2.2) ∧
+  ∀ t ∈ q.schemes, ∃ s ∈ p.schemes, R s t
 
 /-- A method signature is covered by a function the source object holds in a
 field or view: each target signature by one of the function's taking at least
@@ -674,7 +675,7 @@ behaves as typed, so it meets the host-relative member. -/
 def CoversArrows (G : NormalGraph ι) (R : List ι → List ι → Prop) (self : List ι)
     (L : Ops ι) (S : List (List ι × List (List ι) × List ι × List ι))
     (q : MethodMembers.Sig (List ι)) : Prop :=
-  (∀ t ∈ q.calls, ∃ s ∈ L, R self s.1 ∧ Domains R t.1 s.2.1 ∧ R s.2.2 t.2) ∧
+  q.schemes = [] ∧ (∀ t ∈ q.calls, ∃ s ∈ L, R self s.1 ∧ Domains R t.1 s.2.1 ∧ R s.2.2 t.2) ∧
   (∀ t ∈ q.rests, ∃ s ∈ S, R self s.1 ∧ Domains R (t.1.take s.2.1.length) s.2.1 ∧
     IntoRest (restElem G) R (t.1.drop s.2.1.length) s.2.2.1 ∧ R t.2.1 s.2.2.1 ∧ R s.2.2.2 t.2.2)
 
@@ -1234,12 +1235,19 @@ host: parameters contravariant, results covariant, the host on both sides. -/
 theorem covers_sig_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
     {p q : MethodMembers.Sig (List ι)} (hc : CoversSig (restElem G) R p q) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
+    (hrn : ∀ S T, R S T → FamLeAt G η S T n)
     (W : WorldT n) (v u : Val)
     (h : MethodMembers.onHost v (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η) p) n W u) :
     MethodMembers.onHost v (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η) q) n W u := by
-  obtain ⟨hcalls, hrests⟩ := hc
-  obtain ⟨⟨hinv, hL⟩, ⟨_, hS⟩⟩ := h
-  refine ⟨⟨hinv, fun x hx => ?_⟩, ⟨hinv, fun x hx => ?_⟩⟩
+  obtain ⟨hcalls, hrests, hschemes⟩ := hc
+  obtain ⟨⟨hinv, hL⟩, ⟨_, hS⟩, hB⟩ := h
+  refine ⟨⟨hinv, fun x hx => ?_⟩, ⟨hinv, fun x hx => ?_⟩, fun F hF => ?_⟩
+  rotate_left 2
+  · -- A quantified signature: the member bound to the host meets a source
+    -- scheme within the target's.
+    obtain ⟨t, ht, rfl⟩ := List.mem_map.mp hF
+    obtain ⟨s, hs, hst⟩ := hschemes t ht
+    exact hrn _ _ hst W _ (hB _ (List.mem_map_of_mem hs))
   · obtain ⟨t', ht', rfl⟩ := List.mem_map.mp hx
     obtain ⟨t, ht, rfl⟩ := List.mem_map.mp ht'
     obtain ⟨s, hs, hd, hres⟩ := hcalls t ht
@@ -1268,7 +1276,7 @@ theorem covers_arrows_sound {G : NormalGraph ι} {η : MixedAssignment ι}
     {j : Nat} (hj : j < n) {U : WorldT j} (hU : WExt (trunc j (Nat.le_of_lt hj) W) U) {u : Val}
     (hsem : mixedSem G η (.arrs L S) j U u) :
     MethodMembers.onHost v (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η) q) j U u := by
-  obtain ⟨hcalls, hrests⟩ := hby
+  obtain ⟨hnone, hcalls, hrests⟩ := hby
   -- The host is in `self`, hence in the function's receiver, below `j`.
   have host : ∀ (s : List ι), R self s → ∀ j' (hj' : j' < j) (U' : WorldT j'),
       WExt (trunc j' (Nat.le_of_lt hj') U) U' → ∀ r, MethodMembers.hostT v j' U' r →
@@ -1281,7 +1289,9 @@ theorem covers_arrows_sound {G : NormalGraph ι} {η : MixedAssignment ι}
       exact WExt_trans this hU'
     exact hr j' (by omega) _ _ hs U' _ (hself j' (by omega) U' hx)
   obtain ⟨hsem, -⟩ := hsem
-  refine ⟨⟨hsem.1.1, fun x hx => ?_⟩, ⟨hsem.1.1, fun x hx => ?_⟩⟩
+  refine ⟨⟨hsem.1.1, fun x hx => ?_⟩, ⟨hsem.1.1, fun x hx => ?_⟩, fun F hF => ?_⟩
+  rotate_left 2
+  · simp [MethodMembers.Member.of, hnone] at hF
   · obtain ⟨t', ht', rfl⟩ := List.mem_map.mp hx
     obtain ⟨t, ht, rfl⟩ := List.mem_map.mp ht'
     obtain ⟨s, hs, hsr, hd, hres⟩ := hcalls t ht
@@ -1520,7 +1530,7 @@ theorem covers_methods_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R :
   rcases hc q hq with ⟨p, hp, hkey, hpq⟩ | ⟨f, hf, hkey, hby⟩ | ⟨⟨K, hK, hnot⟩, f, hf, hpk, hview⟩
   · exact MethodMembers.memberT_mono (by simpa [MethodMembers.Member.of] using hkey)
       (fun w j hj U u hu => covers_sig_sound hpq j (fun i hi => hr i (by omega))
-        (fun i hi => hpa i (by omega)) U w u hu)
+        (fun i hi => hpa i (by omega)) (hr j hj) U w u hu)
       (MethodMembers.methodT_at (List.mem_map_of_mem hp) hv)
   · obtain ⟨flds, l, c, hρ, hfl, hl, hag⟩ := hfields f hf
     exact ⟨0, flds, l, c, hρ, by simpa [MethodMembers.Member.of, ← hkey] using hfl, hl,
@@ -2049,16 +2059,57 @@ theorem meetBelow_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignm
       simp only [qLayerWithArgs, hjp, hjs, hmj, Bool.false_eq_true, ite_false]
       exact ⟨⟨hpar q hq, fun r hr => hpar r (hqs r hr)⟩, hvc⟩
 
+/-- **Quantified signatures.** A scheme row is covered by another binding the
+same parameter rows, each source bound among the target's, whose signatures,
+the binders opaque, the source's cover: every instance the target admits the
+source admits too, and at that instance the target's signatures follow from
+the source's by the ordinary arrow coverage. This is the subtyping rule for
+quantified signatures restricted as F<:'s kernel rule is (Pierce 1994): the
+binders are the same, so the target's are taken rigidly and the source's are
+instantiated at them, and no bound is compared, so the check stays decidable.
+Its premises hold at the reassigned assignment, which the core table's
+induction over every assignment supplies (`Core.mixed_sound`). -/
+def SchemeCoversWith (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
+    (arrows : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop)
+    (i j : ι) : Prop :=
+  match G.schemes i, G.schemes j with
+  | some s, some s' => G.params i = false ∧ G.params j = false ∧ s.binders = s'.binders ∧
+      (∀ b ∈ s.bounds, b ∈ s'.bounds) ∧
+      CoversWith G R known arrows [] (.arrs s.signatures s.variadic) (.arrs s'.signatures s'.variadic)
+  | _, _ => False
+
 /-- A parameter or scheme row of the source is in the target, or the target
 admits every value: the row has no clauses for a target clause to cover. A
 meet row not in the target is below a target row by its parameters
-(`meetBelow`), or covered through its clauses (`meetSources`). -/
-def Opaque (G : NormalGraph ι) (S T : List ι) : Prop :=
-  ∀ i ∈ S, G.plain i = true ∨ i ∈ T ∨ .top ∈ clausesOf G T ∨ G.meetRow i = true
+(`meetBelow`), or covered through its clauses (`meetSources`). A scheme row
+is below a target scheme row whose quantified signatures its own cover
+(`SchemeCoversWith`). -/
+def OpaqueWith (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
+    (arrows : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop)
+    (S T : List ι) : Prop :=
+  ∀ i ∈ S, G.plain i = true ∨ i ∈ T ∨ .top ∈ clausesOf G T ∨ G.meetRow i = true ∨
+    ∃ j ∈ T, SchemeCoversWith G R known arrows i j
 
-instance [DecidableEq ι] {G : NormalGraph ι} {S T : List ι} : Decidable (Opaque G S T) :=
-  inferInstanceAs (Decidable (∀ i ∈ S, G.plain i = true ∨ i ∈ T ∨ .top ∈ clausesOf G T ∨
-    G.meetRow i = true))
+/-- The same, with declarative arrow coverage. -/
+abbrev Opaque (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι) :=
+  OpaqueWith G R known (fun L S M => ∀ p ∈ M,
+    CallArrow (compatible G) (restElem G) R L S p.1 p.2.1 p.2.2)
+
+theorem OpaqueWith.mono {G : NormalGraph ι} {R : List ι → List ι → Prop} {known : Known ι}
+    {arrows arrows' : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop}
+    (ha : ∀ L S M, arrows L S M → arrows' L S M) {S T : List ι}
+    (h : OpaqueWith G R known arrows S T) : OpaqueWith G R known arrows' S T := by
+  intro i hi
+  rcases h i hi with h | h | h | h | ⟨j, hj, hc⟩
+  · exact .inl h
+  · exact .inr (.inl h)
+  · exact .inr (.inr (.inl h))
+  · exact .inr (.inr (.inr (.inl h)))
+  · refine .inr (.inr (.inr (.inr ⟨j, hj, ?_⟩)))
+    unfold SchemeCoversWith at hc ⊢
+    split at hc
+    · exact ⟨hc.1, hc.2.1, hc.2.2.1, hc.2.2.2.1, CoversWith.mono ha hc.2.2.2.2⟩
+    · exact hc.elim
 
 /-- The clauses of the source's meet rows the target does not name, split as
 source clauses are: a member of a meet row `p ⊓ cs` is in one of `cs`, so the
@@ -2079,7 +2130,7 @@ clause. A `bool` source is therefore discharged by the pair of Boolean singleton
 clauses, or by a single `bool` clause, or by any target containing both.
 Coverage may also use the `known` rows, proved elsewhere. -/
 def Valid [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (table : Table ι) : Prop :=
-  ∀ p ∈ table, SameKind G p.1 p.2 = true ∧ Opaque G p.1 p.2 ∧
+  ∀ p ∈ table, SameKind G p.1 p.2 = true ∧ Opaque G (Rel table) known p.1 p.2 ∧
     ∀ a ∈ sourceClauses G p.1 ++ meetSources G p.1 p.2, ∃ b ∈ clausesOf G p.2,
       Covers G (Rel table) known p.1 a b
 
@@ -2138,11 +2189,16 @@ theorem core_arguments_of_values [DecidableEq ι] {G : NormalGraph ι} {known : 
   by_cases hp : G.parameterKinds i = some .arguments
   · have hn : G.plain i = false := by simp [NormalGraph.plain, NormalGraph.params, hp]
     have hiB : i ∈ B := by
-      rcases hopaque i hi with h | h | h | h
+      rcases hopaque i hi with h | h | h | h | ⟨j, -, h⟩
       · simp [hn] at h
       · exact h
       · exact False.elim (noTop h)
       · simp [NormalGraph.meetRow, NormalGraph.params, hp] at h
+      · -- A scheme row is no parameter.
+        unfold SchemeCoversWith at h
+        split at h
+        · simp [NormalGraph.params, hp] at h
+        · exact h.elim
     exact ⟨i, hiB, by simpa [hp] using ha⟩
   · simp only [hp, ite_false] at ha
     obtain ⟨c, hci, hca⟩ := ha
@@ -2167,21 +2223,81 @@ theorem core_arguments_of_values [DecidableEq ι] {G : NormalGraph ι} {known : 
       exact covers_arguments hpq (mixedValues G η) (fun A v => A n W v)
         (fun S T h v hv' => hv S T h W v hv') vs (hca p hp)
 
+/-- Arrow coverage alone: a callable clause's signatures, covered, give the
+target's. It reads no source type. -/
+theorem covers_arrs_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R known self}
+    {L : Ops ι} {S : List (List ι × List (List ι) × List ι × List ι)}
+    {M : Ops ι} {T : List (List ι × List (List ι) × List ι × List ι)}
+    (hc : Covers G R known self (.arrs L S) (.arrs M T)) (n : Nat)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
+    (W : WorldT n) (v : Val) :
+    semWithArgs (mixedValues G η) (mixedArgs G η) (.arrs L S) n W v →
+      semWithArgs (mixedValues G η) (mixedArgs G η) (.arrs M T) n W v := by
+  simp only [Covers, CoversWith] at hc
+  intro hv
+  refine ⟨⟨hv.1.1, fun p hp => ?_⟩, ⟨hv.1.1, fun t ht => ?_⟩⟩
+  · obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
+    exact CallArrow.sound (hc.1 q hq) n hr W v hv
+  · obtain ⟨t0, ht0, rfl⟩ := List.mem_map.mp ht
+    rcases hc.2 t0 ht0 with ⟨s, hs, hst⟩ | ⟨p, hp, hfp⟩
+    · exact rest_covers_sound hst n hr hpa W v (hv.2.2 _ (List.mem_map_of_mem hs))
+    · exact fixed_calls_pack_sound hfp n hr W v hv.1.1 (hv.1.2 _ (List.mem_map_of_mem hp))
+
+/-- **Quantified signatures, soundly.** A member of a scheme row is a member of
+one its quantified signatures cover: at each instance the target admits, the
+source admits it too, and there the arrow coverage holds, its premises read
+at that instance's assignment. -/
+theorem scheme_covers_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R known i j}
+    (hc : SchemeCoversWith G R known (fun L S M => ∀ p ∈ M,
+      CallArrow (compatible G) (restElem G) R L S p.1 p.2.1 p.2.2) i j) (n : Nat)
+    (hr : ∀ η' : MixedAssignment ι, ∀ j, j < n → ∀ S T, R S T → FamLeAt G η' S T j)
+    (hpa : ∀ η' : MixedAssignment ι, ArgsLeBelow G η' R n)
+    (W : WorldT n) (v : Val)
+    (hv : qDenoteWithArgs G (mixedParameters G) (η, i) n W v) :
+    qDenoteWithArgs G (mixedParameters G) (η, j) n W v := by
+  unfold SchemeCoversWith at hc
+  split at hc
+  · rename_i s s' hs hs'
+    obtain ⟨hpi, hpj, hbs, hbnd, hcov⟩ := hc
+    rw [qDenoteWithArgs_unfold] at hv ⊢
+    simp only [qLayerWithArgs, hpi, hpj, hs, hs', Bool.false_eq_true, if_false] at hv ⊢
+    refine ⟨hv.1, fun As hl hb => ?_⟩
+    have hb' : Bounded (fun θ S => (mixedParameters G).bound θ
+        (setSem (fun l => qDenoteWithArgs G (mixedParameters G) (θ, l))) S) η s As n := by
+      intro b hbm hbin j hj U u hu
+      rw [hbs] at hbin hu
+      exact hb b (hbnd b hbm) hbin j hj U u hu
+    have hi : semWithArgs (mixedValues G (assign η s.binders As)) (mixedArgs G (assign η s.binders As))
+        (.arrs s.signatures s.variadic) n W v := hv.2 As (by rw [hbs]; exact hl) hb'
+    show semWithArgs (mixedValues G (assign η s'.binders As)) (mixedArgs G (assign η s'.binders As))
+        (.arrs s'.signatures s'.variadic) n W v
+    rw [← hbs]
+    exact covers_arrs_sound hcov n (hr _) (hpa _) W v hi
+  · exact hc.elim
+
 /-- **Core.** A checked table relates both components of the meaning, at every
 assignment where its known rows do: value members through coverage, argument
 lists through same-level tuple coverage. The induction on the level proves
-values from both components below it, then lists at it from values at it. -/
+values from both components below it, at every assignment at once, since a
+quantified signature's premises are read at its instances; then lists at it
+from values at it. -/
 theorem Core.mixed_sound [DecidableEq ι] {G : NormalGraph ι} {known : Known ι} {S T} (hc : Core G known S T)
-    (η : MixedAssignment ι)
-    (hk : ∀ k ∈ known, FamLe (mixedValues G η k.1) (mixedSem G η (.arrs k.2.1 k.2.2))) :
+    (hk : ∀ η : MixedAssignment ι,
+      ∀ k ∈ known, FamLe (mixedValues G η k.1) (mixedSem G η (.arrs k.2.1 k.2.2)))
+    (η : MixedAssignment ι) :
     FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
   obtain ⟨table, hm, hc⟩ := hc
-  have hs : ∀ n, (∀ a b, Rel table a b → FamLeAt G η a b n) ∧
+  have hs : ∀ n, ∀ η : MixedAssignment ι, (∀ a b, Rel table a b → FamLeAt G η a b n) ∧
       ∀ a b, Rel table a b → ∀ (W : WorldT n) vs,
         mixedMeaning G η a n W (.inr vs) → mixedMeaning G η b n W (.inr vs) := by
     intro n
     induction n using Nat.strongRecOn with
     | ind n ih =>
+      intro η
+      have hr : ∀ η' : MixedAssignment ι, ∀ j, j < n → ∀ S T, Rel table S T → FamLeAt G η' S T j :=
+        fun η' j hj => (ih j hj η').1
+      have hpa : ∀ η' : MixedAssignment ι, ArgsLeBelow G η' (Rel table) n :=
+        fun η' j hj S T h W vs hvs => (ih j hj η').2 S T h W vs hvs
       have hv : ∀ a b, Rel table a b → FamLeAt G η a b n := by
         intro A B hab W v hv
         rcases hab with hab | hsub
@@ -2194,9 +2310,9 @@ theorem Core.mixed_sound [DecidableEq ι] {G : NormalGraph ι} {known : Known ι
         · obtain ⟨a, ha, hv⟩ := (splitClause_row G _ _ _ c n W v).mpr hv
           obtain ⟨b, hb, hcover⟩ :=
             (hc (A, B) hab).2.2 a (List.mem_append_left _ (List.mem_flatMap.mpr ⟨c, hcm, ha⟩))
-          exact mixed_expand_mpr ⟨b, hb, Covers.sound hcover hk n (fun j hj => (ih j hj).1)
-            (fun j hj S T h W vs hvs => (ih j hj).2 S T h W vs hvs) W v hself hv⟩
-        · rcases ((hc (A, B) hab).2.1 i hi).resolve_left (by simp [hp]) with hB | htop | hmeet
+          exact mixed_expand_mpr ⟨b, hb, Covers.sound hcover (hk η) n (hr η) (hpa η) W v hself hv⟩
+        · rcases ((hc (A, B) hab).2.1 i hi).resolve_left (by simp [hp]) with
+            hB | htop | hmeet | ⟨j, hj, hsc⟩
           · exact ⟨i, hB, hv⟩
           · exact mixed_expand_mpr ⟨.top, htop, mixedDenote_value G η i hv,
               realmInvariant_of_not_record rfl n W v⟩
@@ -2210,13 +2326,13 @@ theorem Core.mixed_sound [DecidableEq ι] {G : NormalGraph ι} {known : Known ι
               have hmem : a ∈ meetSources G A B := List.mem_flatMap.mpr ⟨c,
                 List.mem_flatMap.mpr ⟨i, List.mem_filter.mpr ⟨hi, by simp [hmeet, hB, hbelow]⟩, hcm⟩, ha⟩
               obtain ⟨b, hb, hcover⟩ := (hc (A, B) hab).2.2 a (List.mem_append_right _ hmem)
-              exact mixed_expand_mpr ⟨b, hb, Covers.sound hcover hk n (fun j hj => (ih j hj).1)
-                (fun j hj S T h W vs hvs => (ih j hj).2 S T h W vs hvs) W v hself hv⟩
+              exact mixed_expand_mpr ⟨b, hb, Covers.sound hcover (hk η) n (hr η) (hpa η) W v hself hv⟩
+          · exact ⟨j, hj, scheme_covers_sound hsc n hr hpa W v hv⟩
       exact ⟨hv, core_arguments_of_values hc η n (fun A B h W v hv' => hv A B h W v hv')⟩
   intro n W x hx
   cases x with
-  | inl v => exact (hs n).1 S T (.inl hm) W v hx
-  | inr vs => exact (hs n).2 S T (.inl hm) W vs hx
+  | inl v => exact (hs n η).1 S T (.inl hm) W v hx
+  | inr vs => exact (hs n η).2 S T (.inl hm) W vs hx
 
 /-! ## Instances of a scheme row
 
@@ -2625,6 +2741,37 @@ def restMatch [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
   | some q' => sameLabels q'.1 q.1 && sameLabelLists q'.2.1 q.2.1 &&
       sameLabels q'.2.2.1 q.2.2.1 && sameLabels q'.2.2.2 q.2.2.2
   | none => false
+
+/-- A signature's parameters and result are a scheme signature's images; its
+receiver is not compared. -/
+def sigBodyMatch [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
+    (p q : List ι × List (List ι) × List ι) : Bool :=
+  match p.2.1.mapM (tyImg tbl κ), tyImg tbl κ p.2.2 with
+  | some ps, some r => sameLabelLists ps q.2.1 && sameLabels r q.2.2
+  | _, _ => false
+
+/-- A variadic signature's fixed parameters, rest and result are a scheme
+one's images; its receiver is not compared. -/
+def restBodyMatch [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
+    (p q : List ι × List (List ι) × List ι × List ι) : Bool :=
+  match p.2.1.mapM (tyImg tbl κ), tyImg tbl κ p.2.2.1, tyImg tbl κ p.2.2.2 with
+  | some ps, some e, some r => sameLabelLists ps q.2.1 && sameLabels e q.2.2.1 && sameLabels r q.2.2.2
+  | _, _, _ => false
+
+/-- A signature an instance states: a scheme signature's image, or, where the
+scheme's receiver admits every value, one whose parameters and result are its
+images at any receiver. A callable invoked safely with every receiver is
+invoked safely with a narrower one, such as a generic method's scheme, which
+the member bound to its host meets whatever receiver it is given, at a call
+whose receiver is the host. -/
+def instSig [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (κ : Ctx ι)
+    (p q : List ι × List (List ι) × List ι) : Bool :=
+  sigMatch tbl κ p q || (expand G p.1 == [.top] && sigBodyMatch tbl κ p q)
+
+/-- The same, for a variadic signature. -/
+def instRest [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (κ : Ctx ι)
+    (p q : List ι × List (List ι) × List ι × List ι) : Bool :=
+  restMatch tbl κ p q || (expand G p.1 == [.top] && restBodyMatch tbl κ p q)
 
 /-- The context `κ` on the rows `ps` outside `src`, in the order of `ps`. -/
 def keep [DecidableEq ι] (κ : Ctx ι) (src ps : List ι) : Ctx ι :=
@@ -3366,6 +3513,35 @@ theorem restMatch_some [DecidableEq ι] {tbl : InstTable ι} {κ : Ctx ι}
     simp only [Bool.and_eq_true] at h
     exact ⟨q', hq, h.1.1.1, h.1.1.2, h.1.2, h.2⟩
   · cases h
+
+theorem sigBodyMatch_some [DecidableEq ι] {tbl : InstTable ι} {κ : Ctx ι}
+    {p q : List ι × List (List ι) × List ι} (h : sigBodyMatch tbl κ p q = true) :
+    ∃ ps r, p.2.1.mapM (tyImg tbl κ) = some ps ∧ tyImg tbl κ p.2.2 = some r ∧
+      sameLabelLists ps q.2.1 = true ∧ sameLabels r q.2.2 = true := by
+  unfold sigBodyMatch at h
+  split at h
+  · rename_i ps r h1 h2
+    simp only [Bool.and_eq_true] at h
+    exact ⟨ps, r, h1, h2, h.1, h.2⟩
+  · cases h
+
+theorem restBodyMatch_some [DecidableEq ι] {tbl : InstTable ι} {κ : Ctx ι}
+    {p q : List ι × List (List ι) × List ι × List ι} (h : restBodyMatch tbl κ p q = true) :
+    ∃ ps e r, p.2.1.mapM (tyImg tbl κ) = some ps ∧ tyImg tbl κ p.2.2.1 = some e ∧
+      tyImg tbl κ p.2.2.2 = some r ∧ sameLabelLists ps q.2.1 = true ∧
+      sameLabels e q.2.2.1 = true ∧ sameLabels r q.2.2.2 = true := by
+  unfold restBodyMatch at h
+  split at h
+  · rename_i ps e r h1 h2 h3
+    simp only [Bool.and_eq_true] at h
+    exact ⟨ps, e, r, h1, h2, h3, h.1.1, h.1.2, h.2⟩
+  · cases h
+
+/-- A type whose one clause is `top` holds every closed value. -/
+theorem top_row_mixed {G : NormalGraph ι} {η : MixedAssignment ι} {S : List ι}
+    (h : expand G S = [.top]) {n W v} (hv : isVal v = true ∧ Scoped 0 v) :
+    mixedValues G η S n W v :=
+  mixed_of_expand h ⟨hv, realmInvariant_of_not_record rfl n W v⟩
 
 theorem sigImg_some [DecidableEq ι] {tbl : InstTable ι} {κ : Ctx ι}
     {p q : List ι × List (List ι) × List ι} (h : sigImg tbl κ p = some q) :
@@ -4198,8 +4374,8 @@ theorem inst_mixed_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssign
       FamLe (mixedMeaning G η U) (mixedMeaning G η b.2))
     (hkinds : instKinds G s.binders θs = true)
     (hok : TableOk G tbl D V = true)
-    (hL : ∀ q ∈ L, ∃ p ∈ s.signatures, sigMatch tbl (s.binders.zip θs) p q = true)
-    (hM : ∀ q ∈ M, ∃ p ∈ s.variadic, restMatch tbl (s.binders.zip θs) p q = true)
+    (hL : ∀ q ∈ L, ∃ p ∈ s.signatures, instSig G tbl (s.binders.zip θs) p q = true)
+    (hM : ∀ q ∈ M, ∃ p ∈ s.variadic, instRest G tbl (s.binders.zip θs) p q = true)
     : FamLe (mixedValues G η [i])
       (semWithArgs (mixedValues G η) (graphArguments G η (mixedValues G η)) (.arrs L M)) := by
   intro n W v hv
@@ -4256,36 +4432,59 @@ theorem inst_mixed_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssign
           have : Ts = S' :: Ts' := by simp [List.mapM_cons, hS, hr] at h; exact h.symm
           subst this
           simp only [List.map_cons, hfam S S' hS, ihs Ts' hr]
+  -- A receiver the instance states within a scheme receiver admitting every
+  -- value: every receiver is a closed value.
+  have anyRecv : ∀ (P Q : List ι), expand G P = [.top] → ∀ j (hj : j < n) (U : WorldT j),
+      WExt (trunc j (Nat.le_of_lt hj) W) U → ∀ r, mixedValues G η Q j U r →
+        mixedValues G (assign η s.binders As) P j U r := by
+    intro P Q hP j hj U _ r hr
+    obtain ⟨l, _, hl⟩ := hr
+    exact top_row_mixed hP (mixedDenote_value G η l hl)
   refine ⟨⟨hinv, fun q' hq' => ?_⟩, ⟨hinv, fun r' hr' => ?_⟩⟩
   · obtain ⟨q, hqL, rfl⟩ := List.mem_map.mp hq'
     obtain ⟨p, hps, hsig⟩ := hL q hqL
     have hpr := hc.1.2 _ (List.mem_map_of_mem hps)
-    obtain ⟨q', hq', s1, s2, s3⟩ := sigMatch_some hsig
-    obtain ⟨h1, h2, h3⟩ := sigImg_some hq'
-    have e1 := (hfam _ _ h1).trans (sameLabels_values s1)
-    have e3 := (hfam _ _ h3).trans (sameLabels_values s3)
-    have e2 := (hargs _ _ h2).trans (sameLabelLists_values s2)
     change Promise (ArgsShort (p.2.1.map (mixedValues G (assign η s.binders As))))
       (mixedValues G (assign η s.binders As) p.1)
       (mixedValues G (assign η s.binders As) p.2.2) n W v at hpr
-    simp only [e1, e2, e3] at hpr
-    exact hpr
+    rcases Bool.or_eq_true_iff.mp hsig with hsig | hbody
+    · obtain ⟨q', hq', s1, s2, s3⟩ := sigMatch_some hsig
+      obtain ⟨h1, h2, h3⟩ := sigImg_some hq'
+      have e1 := (hfam _ _ h1).trans (sameLabels_values s1)
+      have e3 := (hfam _ _ h3).trans (sameLabels_values s3)
+      have e2 := (hargs _ _ h2).trans (sameLabelLists_values s2)
+      simp only [e1, e2, e3] at hpr
+      exact hpr
+    · simp only [Bool.and_eq_true, beq_iff_eq] at hbody
+      obtain ⟨ps, r, h2, h3, s2, s3⟩ := sigBodyMatch_some hbody.2
+      have e3 := (hfam _ _ h3).trans (sameLabels_values s3)
+      have e2 := (hargs _ _ h2).trans (sameLabelLists_values s2)
+      simp only [e2, e3] at hpr
+      exact hpr.weaken_recv (anyRecv p.1 q.1 hbody.1)
   · obtain ⟨q, hqM, rfl⟩ := List.mem_map.mp hr'
     obtain ⟨p, hps, hsig⟩ := hM q hqM
     have hpr := hc.2.2 _ (List.mem_map_of_mem hps)
-    obtain ⟨q', hq', s1, s2, s3, s4⟩ := restMatch_some hsig
-    obtain ⟨h1, h2, h3, h4⟩ := restImg_some hq'
-    have e1 := (hfam _ _ h1).trans (sameLabels_values s1)
-    have e3 := (hpack _ _ h3).trans (sameLabels_arguments s3)
-    have e4 := (hfam _ _ h4).trans (sameLabels_values s4)
-    have e2 := (hargs _ _ h2).trans (sameLabelLists_values s2)
     change Promise (ArgsRest _ (graphArguments G (assign η s.binders As)
       (mixedValues G (assign η s.binders As)) p.2.2.1)) _ _ n W v at hpr
     change Promise (ArgsRest (p.2.1.map (mixedValues G (assign η s.binders As)))
       (graphArguments G (assign η s.binders As) (mixedValues G (assign η s.binders As)) p.2.2.1))
       (mixedValues G (assign η s.binders As) p.1) (mixedValues G (assign η s.binders As) p.2.2.2) n W v at hpr
-    simp only [e1, e2, e3, e4] at hpr
-    exact hpr
+    rcases Bool.or_eq_true_iff.mp hsig with hsig | hbody
+    · obtain ⟨q', hq', s1, s2, s3, s4⟩ := restMatch_some hsig
+      obtain ⟨h1, h2, h3, h4⟩ := restImg_some hq'
+      have e1 := (hfam _ _ h1).trans (sameLabels_values s1)
+      have e3 := (hpack _ _ h3).trans (sameLabels_arguments s3)
+      have e4 := (hfam _ _ h4).trans (sameLabels_values s4)
+      have e2 := (hargs _ _ h2).trans (sameLabelLists_values s2)
+      simp only [e1, e2, e3, e4] at hpr
+      exact hpr
+    · simp only [Bool.and_eq_true, beq_iff_eq] at hbody
+      obtain ⟨ps, e, r, h2, h3, h4, s2, s3, s4⟩ := restBodyMatch_some hbody.2
+      have e3 := (hpack _ _ h3).trans (sameLabels_arguments s3)
+      have e4 := (hfam _ _ h4).trans (sameLabels_values s4)
+      have e2 := (hargs _ _ h2).trans (sameLabelLists_values s2)
+      simp only [e2, e3, e4] at hpr
+      exact hpr.weaken_recv (anyRecv p.1 q.1 hbody.1)
 
 /-- **Instantiation.** A scheme row is below an arrow type whose signatures
 are images of its own under one checked instance map: the binders' instances,
@@ -4298,8 +4497,8 @@ def InstArrs [DecidableEq ι] (G : NormalGraph ι) (S : List ι) (L : Ops ι)
     (∀ b ∈ s.bounds, ∀ U, (s.binders.zip θs).lookup b.1 = some U →
       Core G [] U b.2 ∨ ∀ l ∈ U, l ∈ b.2) ∧
     TableOk G tbl D V = true ∧
-    (∀ q ∈ L, ∃ p ∈ s.signatures, sigMatch tbl (s.binders.zip θs) p q = true) ∧
-    (∀ q ∈ M, ∃ p ∈ s.variadic, restMatch tbl (s.binders.zip θs) p q = true)
+    (∀ q ∈ L, ∃ p ∈ s.signatures, instSig G tbl (s.binders.zip θs) p q = true) ∧
+    (∀ q ∈ M, ∃ p ∈ s.variadic, instRest G tbl (s.binders.zip θs) p q = true)
 
 /-- An instance below an arrow type. -/
 def Inst [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) : Prop :=
@@ -4362,7 +4561,7 @@ theorem InstArrs.mixed_sound [DecidableEq ι] {G : NormalGraph ι} {S L M} (h : 
   intro η n W v hv
   exact ⟨inst_mixed_sound η hp hq hlen (fun b hb U hU => by
     rcases hbnd b hb U hU with hc | hsub
-    · exact Core.mixed_sound hc η (by simp)
+    · exact Core.mixed_sound hc (fun _ => by simp) η
     · exact mixed_subset hsub) hkinds hok hL hM n W v hv, realmInvariant_of_not_record rfl n W v⟩
 
 /-- A checked instance holds at every assignment, for both components. -/
@@ -4381,7 +4580,7 @@ reads no assignment. -/
 theorem Sub.mixed_sound {G : NormalGraph ι} {S T} (h : Sub G S T) :
     ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
   induction h with
-  | core hk h => exact fun η => Core.mixed_sound h η fun k hk' => (hk k hk').mixed_sound η
+  | core hk h => exact Core.mixed_sound h fun η k hk' => (hk k hk').mixed_sound η
   | subset h => exact fun _ => mixed_subset h
   | trans _ _ ih ih' => exact fun η n W x hx => ih' η n W x (ih η n W x (hx))
   | inst h => exact h.mixed_sound
@@ -4463,6 +4662,8 @@ theorem Sub.congr {G : NormalGraph ι} {S S' T T' : List ι}
 #print axioms Domains.sound
 #print axioms CallArrow.sound
 #print axioms Core.mixed_sound
+#print axioms scheme_covers_sound
+#print axioms covers_arrs_sound
 #print axioms meetBelow_sound
 #print axioms Sub.mixed_sound
 #print axioms Sub.sound

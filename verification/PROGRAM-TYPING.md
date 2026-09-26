@@ -432,6 +432,22 @@ $$
      {\Gamma\vdash_G\mathsf{let}\ f=i.k\ \mathsf{in}\ \mathsf{bound}(f,i,[]):\mathsf{arrs}(L;S)}
 $$
 
+A generic method's member states its signatures as schemes, quantified
+signatures the member bound to its host meets
+([records](POSITIVE-TYPES.md#records)). The same term, bound to its host, is
+then one of those schemes (`bindScheme`), and a call names its instance below
+it ([`Sub.inst`](POSITIVE-TYPES.md#instances-of-a-scheme-row)):
+
+$$
+\frac{\Gamma(i)=O\quad\operatorname{member}_G(O,k)=m\quad [j]\in m.\mathsf{schemes}}
+     {\Gamma\vdash_G\mathsf{let}\ f=i.k\ \mathsf{in}\ \mathsf{bound}(f,i,[]):[j]}\ \textsc{bind-scheme}
+$$
+
+The certificate is `bindMember` with no proofs, at a type of no clauses, the
+scheme row. A scheme's own receivers are the forwarding function's, which
+ignores them, so a member's scheme admits every receiver; an instance may
+state a narrower one, the call's object (`instSig`).
+
 The member read from $v=\rho(i)$ meets $m$'s signatures with receiver $\{v\}$
 (`memberOf_at`, `MethodMembers.onHost`). The read finds the key on $v$, or, one
 step later, on the object $v$'s prototype holds (`Step.readProto`,
@@ -3346,19 +3362,38 @@ declaration's (`useRow`).
 
 #### Generic methods
 
-A declaration's generic method lowers to a scheme row whose binders are
-parameter rows, shared by name so the unfolding closes. A method's binders
-take the least **colour** not free in the arguments of the application it
-belongs to:
+A declaration's generic method, a scheme whose signatures take the
+declaration as receiver, lowers to a host-relative member with quantified
+signatures: the member's one scheme row, whose binders are parameter rows,
+shared by name so the unfolding closes, and whose receivers admit every value
+(the member bound to its host is what meets the scheme,
+[records](POSITIVE-TYPES.md#records)). A generic member of a library
+prototype (`ArrayProto`'s `map`, whose receiver is an array of its element
+binder) stays a readonly view of its scheme. A method's binder rows are its
+member's: binder $k$ of the member of key $\kappa$ with declared bound $B_k$
+at colour $c$ is the row $\kappa\#k{:}B_k\,{}^c$, whichever declaration
+states the member, so members of one key declared alike (as many binders, the
+same bounds) quantify over the same rows, and the [covering rule for
+quantified signatures](POSITIVE-TYPES.md#core-tables) relates them
+(`Promise`'s `then` and `PromiseLike`'s). Any other scheme's rows are its own.
+The binders take the least **colour** at which none of the member's own rows
+is free in the arguments of the application it belongs to:
 
 $$
-\mathsf{colour}(m, \vec A)=\min\{\,c<\mathit{budget}\;\mid\;c\notin\mathsf{colours}(\mathit{fv}(\vec A))\,\},
+\mathsf{colour}(m, \vec A)=\min\{\,c<\mathit{budget}\;\mid\;c\notin\mathsf{colours}_m(\mathit{fv}(\vec A))\,\},
 $$
 
-and binder $k$ of $m$ at colour $c$ is one row, whoever lowers it. No binder
+where $\mathsf{colours}_m$ reads only the rows of $m$'s key. A binder captures
+only its own row, so another member's binders take no colour: a family of
+applications then closes, and is truncated, alike at every instance of another
+member's binders (`Promise<R1 | R2>`, which `then` returns, unfolds as
+`Promise<string>` does, and its instance at `string` is that row). No binder
 captures one of another scope; the instance tables of `Sub.inst` tell apart
 the scopes sharing a row. Past the budget, at growing arguments, and for an
-F-bounded binder, the method stays an opaque member. A rest typed by one of
+F-bounded binder, the method stays an opaque view. A binder a member's result
+accumulates, `catch`'s `Promise<T | TResult>`, grows its family by one
+binder per call: an instance of it is truncated one level before the type it
+is claimed at, so such a call is refused ([DESIGN](DESIGN.md#next-steps)). A rest typed by one of
 the method's binders makes it a pack parameter, bounded by its element pack.
 A value binder $p$ with a ground declared bound $B_p$ establishes a
 parameter's bound $B$ through that one:
@@ -3416,7 +3451,7 @@ A method call may state its instance, `o.m<A₁,…,Aₖ>(…)`. The arguments
 instantiate the member's binders in order, its own leading; binders past them
 (an `ArrayProto` member's element `T`, listed last) are fixed by the receiver
 and actuals. Lean reads the member's scheme row $S$ from the receiver's
-contract, finds the instance map $\theta$ relating $S$ to the read's claimed
+contract (a quantified member's scheme, or a view's), finds the instance map $\theta$ relating $S$ to the read's claimed
 arrows $M$, checks it (`checkInstArrs`, sound by `Inst.mixed_sound`) and
 requires each explicit argument to mean what $\theta$ gives its binder:
 

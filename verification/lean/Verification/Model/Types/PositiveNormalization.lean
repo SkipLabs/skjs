@@ -887,20 +887,20 @@ private theorem tuple_self {t : Tuple α} {f : α → α} (h : ∀ a ∈ t.opera
 
 private theorem sig_self {m : Sig α} {f : α → α} (h : ∀ a ∈ m.operands, f a = a) :
     m.map f = m := by
-  obtain ⟨k, cs, rs⟩ := m
+  obtain ⟨k, cs, rs, ss⟩ := m
   simp only [Sig.operands, List.mem_append, List.mem_flatMap] at h
   simp only [Sig.map, Sig.mk.injEq, true_and]
-  constructor
+  refine ⟨?_, ?_, map_self fun a ha => h a (.inr ha)⟩
   · apply map_self
     rintro ⟨ps, r⟩ hp
-    have h1 := map_self (l := ps) fun x hx => h x (.inl ⟨(ps, r), hp, by simp [hx]⟩)
-    have h2 := h r (.inl ⟨(ps, r), hp, by simp⟩)
+    have h1 := map_self (l := ps) fun x hx => h x (.inl (.inl ⟨(ps, r), hp, by simp [hx]⟩))
+    have h2 := h r (.inl (.inl ⟨(ps, r), hp, by simp⟩))
     simp [h1, h2]
   · apply map_self
     rintro ⟨ps, e, r⟩ hp
-    have h1 := map_self (l := ps) fun x hx => h x (.inr ⟨(ps, e, r), hp, by simp [hx]⟩)
-    have h2 := h e (.inr ⟨(ps, e, r), hp, by simp⟩)
-    have h3 := h r (.inr ⟨(ps, e, r), hp, by simp⟩)
+    have h1 := map_self (l := ps) fun x hx => h x (.inl (.inr ⟨(ps, e, r), hp, by simp [hx]⟩))
+    have h2 := h e (.inl (.inr ⟨(ps, e, r), hp, by simp⟩))
+    have h3 := h r (.inl (.inr ⟨(ps, e, r), hp, by simp⟩))
     simp [h1, h2, h3]
 
 /-- A renaming fixing every operand fixes the clause. -/

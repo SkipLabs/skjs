@@ -1426,7 +1426,7 @@ private def explicitInstance (pos : Span) (O M : Ty Nat) (fld : PropKey) (typeAr
   let T ← table
   let G := SourceTypes.graph T
   let refuse (reason : String) := locatedRefusal T pos .schemeElimination reason
-  let some S := fieldRow G O fld
+  let some S := (ProgramTyping.memberSchemes G O fld).head? <|> fieldRow G O fld
     | throw (refuse s!"explicit type arguments name no member '{fld}' of the receiver")
   let [i] := S | throw (refuse "explicit type arguments need a generic member")
   let some s := G.schemes i | throw (refuse "explicit type arguments need a generic member")
@@ -2966,7 +2966,12 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     explicitInstance e.span r.type M fld typeArgs
     let arms ← primitiveArms ds K r.type fld
     let method ← if (ProgramTyping.memberOf G r.type fld).isSome then
-        pure (DirectProof.node K (memberHead G r.type fld (.var ri)) M (.bindMember []) [])
+        -- A generic method's member, bound to its host, is its scheme; the
+        -- call's claimed instance is below it.
+        match ProgramTyping.memberSchemes G r.type fld with
+        | S :: _ => pure (DirectProof.cast K M
+            (DirectProof.node K (memberHead G r.type fld (.var ri)) S (.bindMember []) []))
+        | [] => pure (DirectProof.node K (memberHead G r.type fld (.var ri)) M (.bindMember []) [])
       else if !arms.isEmpty then memberReadPlan G K ri fld M arms
       else DirectProof.cast K M <$> readCell G K fld (DirectProof.var K ri r.type)
     obligation callee.span method.goal (some method) "expression-claim" ds

@@ -73,13 +73,23 @@ def arrowSearch [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (L : Op
 def arrowEvidence [DecidableEq ι] (G : NormalGraph ι) (table : Table ι)
     (pool : List (Ty ι)) : PositiveCertificates.Evidence ι :=
   let clauses := pool.flatMap (expand G)
-  clauses.flatMap fun a => match a with
+  let arrows (L : Ops ι) (S : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)) (M : Ops ι) :=
+    M.filterMap fun p =>
+      (arrowSearch G table L S p.1 p.2.1 p.2.2 (p.2.1.length + p.1.length + 1)).map
+        (fun proof => (L,(p,proof)))
+  -- A scheme row's signatures are compared as an arrow clause's, against
+  -- those of a scheme binding the same rows that a row of the table relates
+  -- it to (`SchemeCoversWith`).
+  let schemes := (table.flatMap fun r => r.1.flatMap fun i => r.2.filterMap fun j =>
+    if i ∈ r.2 then none else match G.schemes i, G.schemes j with
+      | some s, some s' => if s.binders = s'.binders then some (s, s') else none
+      | _, _ => none).eraseDups
+  (clauses.flatMap fun a => match a with
     | .arrs L S | .callable _ _ L S => clauses.flatMap fun b => match b with
-      | .arrs M _ | .callable _ _ M _ => M.filterMap fun p =>
-          (arrowSearch G table L S p.1 p.2.1 p.2.2 (p.2.1.length + p.1.length + 1)).map
-            (fun proof => (L,(p,proof)))
+      | .arrs M _ | .callable _ _ M _ => arrows L S M
       | _ => []
-    | _ => []
+    | _ => []) ++
+  schemes.flatMap fun (s, s') => arrows s.signatures s.variadic s'.signatures
 
 /-- Delete unsupported rows of a finite candidate relation. A surviving cyclic
 relation is only proposed evidence; checkCore validates every row. -/
@@ -89,7 +99,8 @@ def prune [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) (known : P
   | fuel+1, table =>
     let es := arrowEvidence G table pool
     let next := table.filter fun p => PositiveRules.SameKind G p.1 p.2 &&
-      decide (PositiveRules.Opaque G p.1 p.2) &&
+      decide (PositiveRules.OpaqueWith G (PositiveRules.Rel table) known
+        (PositiveCertificates.ArrowsChecked G table es) p.1 p.2) &&
       (sourceClauses G p.1 ++ PositiveRules.meetSources G p.1 p.2).all fun a =>
       (clausesOf G p.2).any fun b => PositiveCertificates.checkClause G table known es p.1 a b
     if next = table then table else prune G pool known fuel next
@@ -103,7 +114,8 @@ was, and a pair failing it is refused before any table is built. Untrusted:
 `checkCore` decides. -/
 def rowFeasible [DecidableEq ι] (G : NormalGraph ι) (known : PositiveRules.Known ι)
     (A B : Ty ι) : Bool :=
-  PositiveRules.SameKind G A B && decide (PositiveRules.Opaque G A B) &&
+  PositiveRules.SameKind G A B &&
+    decide (PositiveRules.OpaqueWith G (fun _ _ => True) known (fun _ _ _ => True) A B) &&
     (sourceClauses G A ++ PositiveRules.meetSources G A B).all fun a => (clausesOf G B).any fun b =>
       decide (CoversWith G (fun _ _ => True) known (fun _ _ _ => True) A a b)
 
@@ -130,6 +142,57 @@ def subtypeWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
 def subtypeBase [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     (A B : Ty ι) : Option (PositiveCertificates.Proof ι) :=
   subtypeWith G pool [] A B
+
+/-- The types a row's coverage may relate: its clauses' operands, a scheme
+row's signature types, a meet row's clauses' operands, and the operands of
+the prototype a record holds, whose members are the object's. -/
+def demandOperands [DecidableEq ι] (G : NormalGraph ι) (T : Ty ι) : List (Ty ι) :=
+  let proto (c : Clause (List ι)) : List (Ty ι) := match c with
+    | .refs a bs vs _ _ _ =>
+      (((a :: bs).flatten ++ vs).filter (·.1 == CallArguments.protoField)).flatMap fun f =>
+        f.2.flatMap fun i => (G i).flatMap Clause.operands
+    | _ => []
+  (T.flatMap fun i =>
+    (G i).flatMap (fun c => c.operands ++ proto c) ++
+    (match G.schemes i with
+      | some s => s.signatures.flatMap (fun p => p.1 :: p.2.2 :: p.2.1) ++
+          s.variadic.flatMap (fun p => p.1 :: p.2.2.1 :: p.2.2.2 :: p.2.1)
+      | none => []) ++
+    ((G.meets i).map fun m => m.2.flatMap Clause.operands).getD []).eraseDups
+
+/-- The most rows a table grown on demand may hold before the search gives
+up on it. -/
+def demandLimit : Nat := 400
+
+/-- A core table grown from a pair on demand: each row adds the rows relating
+the operands its coverage may compare, one side's against the other's, in
+both directions, that could hold and are not label inclusions. A recursive
+family of types (`Promise<A>` and `Promise<B>`, whose `catch` returns
+`Promise<A | R>` and `Promise<B | R>`) closes into a finite table of the pairs
+the two unfold into together, without a table over every type the unit
+names. `none` past `demandLimit` rows. Untrusted: `checkCore` decides. -/
+def demandTable [DecidableEq ι] (G : NormalGraph ι) (known : PositiveRules.Known ι) :
+    Nat → Table ι → Table ι → Option (Table ι)
+  | 0, _, _ => none
+  | fuel + 1, table, frontier =>
+    let next := (frontier.flatMap fun r =>
+        let xs := demandOperands G r.1
+        let ys := demandOperands G r.2
+        xs.flatMap fun x => ys.flatMap fun y => [(x, y), (y, x)]).eraseDups.filter fun r =>
+      !(r.1.all (· ∈ r.2)) && !table.contains r && rowFeasible G known r.1 r.2
+    if next.isEmpty then some table
+    else if table.length + next.length > demandLimit then none
+    else demandTable G known fuel (table ++ next) next
+
+/-- A proof of `A ≤ B` by a table grown on demand (`demandTable`). -/
+def demandProof [DecidableEq ι] (G : NormalGraph ι) (A B : Ty ι) :
+    Option (PositiveCertificates.Proof ι) := do
+  if !rowFeasible G [] A B then none
+  let table ← demandTable G [] demandLimit [(A, B)] [(A, B)]
+  let types := (table.flatMap fun r => [r.1, r.2]).eraseDups
+  let table := prune G types [] table.length table
+  let p := PositiveCertificates.Proof.core ⟨table, arrowEvidence G table types⟩ []
+  if PositiveCertificates.check G A B p then some p else none
 
 
 /-- The table built while matching, and the instances found for the
@@ -258,15 +321,19 @@ def matchSig [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap �
     (st : InstState ι) (κ : Ctx ι) (p q : List ι × List (List ι) × List ι) :
     Option (InstState ι) := do
   if p.2.1.length ≠ q.2.1.length then none
-  (p.1 :: p.2.2 :: p.2.1).zip (q.1 :: q.2.2 :: q.2.1) |>.foldlM
-    (fun st xy => matchRow G bs V fuel st κ xy.1 xy.2) st
+  -- A scheme receiver admitting every value admits the target's
+  -- (`instSig`): it is not matched.
+  let pairs := if expand G p.1 = [.top] then (p.2.2 :: p.2.1).zip (q.2.2 :: q.2.1)
+    else (p.1 :: p.2.2 :: p.2.1).zip (q.1 :: q.2.2 :: q.2.1)
+  pairs.foldlM (fun st xy => matchRow G bs V fuel st κ xy.1 xy.2) st
 
 def matchRest [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap ι) (fuel : Nat)
     (st : InstState ι) (κ : Ctx ι) (p q : List ι × List (List ι) × List ι × List ι) :
     Option (InstState ι) := do
   if p.2.1.length ≠ q.2.1.length then none
-  (p.1 :: p.2.2.1 :: p.2.2.2 :: p.2.1).zip (q.1 :: q.2.2.1 :: q.2.2.2 :: q.2.1) |>.foldlM
-    (fun st xy => matchRow G bs V fuel st κ xy.1 xy.2) st
+  let pairs := if expand G p.1 = [.top] then (p.2.2.1 :: p.2.2.2 :: p.2.1).zip (q.2.2.1 :: q.2.2.2 :: q.2.1)
+    else (p.1 :: p.2.2.1 :: p.2.2.2 :: p.2.1).zip (q.1 :: q.2.2.1 :: q.2.2.2 :: q.2.1)
+  pairs.foldlM (fun st xy => matchRow G bs V fuel st κ xy.1 xy.2) st
 
 
 /-- The types a proof of `A ≤ B` may relate: the two, every row they reach,
@@ -430,7 +497,7 @@ def subtype [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
   -- Every label of `A` among `B`'s: the inclusion needs no search.
   (if A.all (· ∈ B) then some .subset else none) <|>
   (subtypeBase G [] A B) <|> ((tableProof G fuel A B).filter ok) <|>
-    (subtypeBase G (nearPool G A B) A B) <|> (subtypeBase G pool A B) <|>
+    (subtypeBase G (nearPool G A B) A B) <|> (demandProof G A B) <|> (subtypeBase G pool A B) <|>
     ((instProof G fuel A B pool).filter ok) <|> proto (nearPool G A B) <|> proto pool <|>
     ((genProof G pool fuel A B).filter ok)
 /-- Proofs that the member of key `k` on `O` covers each fixed signature of
@@ -439,6 +506,8 @@ parameter within the member's and the member's result within the claimed. -/
 def memberProofs [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) (O : Ty ι) (k : PropKey)
     (F : Ty ι) : Option (List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι)) := do
   let m ← ProgramTyping.memberOf G O k
+  -- At a quantified signature, the member bound to its host is the scheme.
+  if expand G F = [] && m.schemes.contains F then return []
   let [.arrs L _] := expand G F | none
   L.mapM fun q => m.calls.findSome? fun c => do
     if q.2.1.length != c.1.length then none
@@ -567,7 +636,10 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     -- A member bound to its host: a leaf whose checker reads the object's type
     -- from the context; the claimed type, or a pool type, is its result.
     | .letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var _) []) [] []) =>
-      return (A :: pool).findSome? fun F => do
+      let schemes := match Γ[i]? with
+        | some O => ProgramTyping.memberSchemes G O k
+        | none => []
+      return (A :: schemes ++ pool).findSome? fun F => do
         let ps ← memberProofs G pool (← Γ[i]?) k F
         if checkTree G (leaf F (.bindMember ps)) then coerce G pool (leaf F (.bindMember ps)) A
         else none

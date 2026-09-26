@@ -286,11 +286,15 @@ private structure Visit where
   declarations : List Nat := []
   /-- The binders of the generic methods being lowered, innermost first. -/
   binders : List (String × BinderBinding) := []
+  /-- The key of the member whose scheme is lowered next, when it is a
+  generic method's: its binder rows are the member's
+  (`quantified members`, below). -/
+  member : Option String := none
 
 /-- Entering a declaration's equation: its terms see none of the enclosing
 methods' binders, as type parameters are lexically scoped. -/
 private def Visit.enter (v : Visit) (i : Nat) : Visit :=
-  { v with declarations := i :: v.declarations, binders := [] }
+  { v with declarations := i :: v.declarations, binders := [], member := none }
 private def Visit.contains (v : Visit) (i : Nat) : Bool := v.declarations.contains i
 
 /-! ### Generic methods
@@ -353,17 +357,19 @@ private def reach (m : Memo) (T : SourceTypes.Table) (floor limit : Nat) (A : Li
       else go fuel (seen ++ [l]) (todo ++ next l)
   go ProgramTyping.closureFuel [] A
 
-/-- A binder row's colour, from its name `…^c`. -/
-private def colourOf (name : String) : Option Nat :=
-  match name.splitOn "^" with
-  | [_, c] => c.toNat?
-  | _ => none
-
-/-- The colours of the binder rows `labels` reach. A binder a nested scheme
-binds counts too: the colours taken are over-approximated, never missed. -/
-private def freeColours (m : Memo) (T : SourceTypes.Table) (floor : Nat) (labels : List Nat) : List Nat :=
+/-- The colours of the method's binder rows `labels` reach: the rows whose
+name, before its colour, `mine` accepts. A binder a nested scheme binds counts
+too: the colours taken are over-approximated, never missed. Another method's
+binders are other rows whatever their colour, so they capture nothing and take
+no colour: a family of applications then closes, and is truncated, alike at
+every instance of another method's binders. -/
+private def freeColours (m : Memo) (T : SourceTypes.Table) (floor : Nat) (mine : String → Bool)
+    (labels : List Nat) : List Nat :=
   (reach m T floor ProgramTyping.closureFuel labels).filterMap fun p => match T[p]? with
-    | some (RequestJson.Row.param _ n _) => colourOf n
+    | some (RequestJson.Row.param _ n _) =>
+      match n.splitOn "^" with
+      | [head, c] => if mine head then c.toNat? else none
+      | _ => none
     | _ => none
 
 /-- The one row of the binder named `name`, shared by every lowering. -/
@@ -537,14 +543,27 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     let uses := names.map fun n => (n, binderUse n (.arr sigTerms))
     if uses.any (fun (_, use) => use.pack && use.value) then return ← opaqueMember
     let packs := (uses.filter fun (_, use) => use.pack).map Prod.fst
-    let taken := freeColours (← get) (← getThe SourceTypes.Table) (4 + nullaryCount ds)
+    let spanKey := (← field term "span").compress
+    -- A generic method's binder rows are its member's: the key, the binder's
+    -- position and declared bound, and the colour. Members of one key
+    -- declared alike quantify over the same rows, whichever declaration
+    -- states them, so the covering rule for quantified signatures, which
+    -- relates schemes binding the same rows, relates them
+    -- (`SchemeCoversWith`). Any other scheme's rows are its own.
+    let rowName (k : Nat) (n : String) (bound : Json) (c : Nat) : String :=
+      match seen.member with
+      | some key => s!"{key}#{k}:{bound.compress}^{c}"
+      | none => s!"{n}#{k}@{spanKey}^{c}"
+    let mine (head : String) : Bool := match seen.member with
+      | some key => head.startsWith s!"{key}#"
+      | none => head.endsWith s!"@{spanKey}"
+    let taken := freeColours (← get) (← getThe SourceTypes.Table) (4 + nullaryCount ds) mine
       (params.toList.flatten ++ seen.binders.map (fun p => p.2.row))
     match (List.range colourBudget).find? (fun c => !taken.contains c) with
     | none => opaqueMember
     | some c =>
-      let spanKey := (← field term "span").compress
-      let rows ← ((List.range names.length).zip names).mapM fun (k, n) =>
-        paramRow s!"{n}#{k}@{spanKey}^{c}" (if packs.contains n then .arguments else .value)
+      let rows ← ((List.range names.length).zip (names.zip bs.toList)).mapM fun (k, n, b) => do
+        paramRow (rowName k n (← field b "bound") c) (if packs.contains n then .arguments else .value)
       -- Bounds are read where the method is declared, outside its binders. A
       -- pack parameter's bound is an array or a tuple of required positions,
       -- read as the argument lists it admits.
@@ -572,7 +591,7 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
       let some bounds := bounds?.mapM id | return ← opaqueMember
       let bindings := (names.zip rows).map fun (name, row) =>
         (name, if packs.contains name then BinderBinding.pack row else .value row)
-      let inner := { seen with binders := bindings ++ seen.binders }
+      let inner := { seen with binders := bindings ++ seen.binders, member := none }
       -- A method whose signatures cannot be lowered, as one whose unfolding
       -- keeps growing (`Promise<T>`'s `catch<R>` returns `Promise<T | R>`),
       -- stays opaque; the attempt leaves no rows behind.
@@ -708,6 +727,20 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
           ((f.getObjVal? "receiver").toOption.bind fun r => (r.getObjValAs? String "k").toOption) ==
             some "self")
       then some forms else none
+    -- A generic method, a scheme whose signatures take the declaration as
+    -- receiver, is a host-relative member with quantified signatures: the
+    -- scheme the member bound to its host meets (`MethodMembers.boundOn`).
+    -- The forwarding function ignores the receiver it is given, so the
+    -- scheme's own receivers admit any value.
+    let schemeMethod (t : Json) : Option Json := do
+      guard ((t.getObjValAs? String "k").toOption == some "scheme")
+      let sigs ← (t.getObjValAs? (Array Json) "signatures").toOption
+      guard (!sigs.isEmpty && sigs.all fun f =>
+        ((f.getObjVal? "receiver").toOption.bind fun r => (r.getObjValAs? String "k").toOption) ==
+          some "self")
+      let anyReceiver (f : Json) : Json := f.setObjVal! "receiver"
+        (Json.mkObj [("k", "atom"), ("name", "unknown"), ("span", f.getObjValD "span")])
+      return t.setObjVal! "signatures" (toJson (sigs.map anyReceiver))
     let mut methods : List (MethodMembers.Sig (List Nat)) := []
     let mut all : Array (PropKey × List Nat × Bool × Bool) := #[]
     -- An optional field constrains its key only where the object has it; a
@@ -729,10 +762,17 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
           let result ← lowerType ds owner params seen (← field form "result")
           if rest == .null then calls := calls ++ [(domains.toList, result)]
           else rests := rests ++ [(domains.toList, ← lowerRest ds owner params seen rest, result)]
-        methods := methods ++ [⟨name, calls, rests⟩]
+        methods := methods ++ [⟨name, calls, rests, []⟩]
       | none =>
-        let value ← lowerType ds owner params seen ty
-        all := all.push (name, value, ← bool f "readonly", optional)
+        match (if optional then none else schemeMethod ty) with
+        | some t =>
+          -- A method whose scheme stays opaque is a view of every value.
+          let scheme ← lowerType ds owner params { seen with member := some (toJson name).compress } t
+          if scheme == [← use .top] then all := all.push (name, scheme, ← bool f "readonly", optional)
+          else methods := methods ++ [⟨name, [], [], [scheme]⟩]
+        | none =>
+          let value ← lowerType ds owner params seen ty
+          all := all.push (name, value, ← bool f "readonly", optional)
     let fs := all.filterMap fun (n, v, r, o) => if o then none else some (n, v, r)
     let optional := all.toList.filterMap fun (n, v, r, o) =>
       if o then some (⟨n, r, v⟩ : OptionalField (List Nat)) else none

@@ -74,7 +74,8 @@ inductive Rule (ι : Type) where
   | bindRestE
   /-- A member read from a slot's object and bound to that same object: for
   each fixed signature of the result, proofs that a member signature covers it,
-  one per parameter, then the result. -/
+  one per parameter, then the result; or, with no proofs, the result one of the
+  member's quantified signatures, a scheme. -/
   | bindMember (proofs : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι))
   /-- `new`: the constructor, then the actuals in order. -/
   | construct
@@ -489,7 +490,9 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     | some O, [.arrs L S] => ∃ m ∈ (memberOf G O k).toList,
         proofs.length = L.length ∧ (∀ qp ∈ L.zip proofs, ∃ c ∈ m.calls, CallProofs G qp.1 c qp.2) ∧
         (∀ s ∈ S, (s.2.1, s.2.2.1, s.2.2.2) ∈ m.rests)
-    | _, _ => False
+    | some O, _ => proofs = [] ∧ expand G j.type = [] ∧
+        ∃ m ∈ (memberOf G O k).toList, j.type ∈ m.schemes
+    | none, _ => False
   -- The constructor, the actual premises in order, then one premise per
   -- position the signature declares and `new` omits, proving `undefined`
   -- there, as for `.app`.
@@ -1213,6 +1216,9 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : Code
         obtain ⟨pp, hpp⟩ := PositiveCertificates.exists_mem_zip hlen q hq
         obtain ⟨c, hc, hcp⟩ := hL _ hpp
         exact ⟨c, hc, hcp.covered⟩) hS
+    · rename_i O hO _
+      obtain ⟨-, hE, m, hm, hF⟩ := hl
+      exact HasTy.bindScheme hO (by simpa using hm) hF hE
     · contradiction
   · rename_i f args jf jas
     rcases hl with ⟨hΓf, htf, hterms, hundef, hctx, hL⟩
@@ -1846,9 +1852,26 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
         | some O, [.arrs L S] => ∃ m ∈ (memberOf G O k).toList,
             proofs.length = L.length ∧ (∀ qp ∈ L.zip proofs, ∃ c ∈ m.calls, CallProofs G qp.1 c qp.2) ∧
             (∀ s ∈ S, (s.2.1, s.2.2.1, s.2.2.2) ∈ m.rests)
-        | _, _ => False)
+        | some O, _ => proofs = [] ∧ expand G F = [] ∧ ∃ m ∈ (memberOf G O k).toList, F ∈ m.schemes
+        | none, _ => False)
       rw [hi, show expand G F = [.arrs L S] from hF]
       exact ⟨m, by simp [hmo], hlen, hps, hS⟩
+    · simp
+  | @bindScheme Γ F O i k m hi hmo hF hE =>
+    apply node_complete (r := .bindMember []) (js := [])
+    · refine ⟨rfl, rfl, rfl, rfl, ?_⟩
+      show (match Γ[i]?, expand G F with
+        | some O, [.arrs L S] => ∃ m ∈ (memberOf G O k).toList,
+            ([] : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι)).length =
+              L.length ∧
+            (∀ qp ∈ L.zip ([] : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι)),
+              ∃ c ∈ m.calls, CallProofs G qp.1 c qp.2) ∧
+            (∀ s ∈ S, (s.2.1, s.2.2.1, s.2.2.2) ∈ m.rests)
+        | some O, _ => ([] : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι)) = [] ∧
+            expand G F = [] ∧ ∃ m ∈ (memberOf G O k).toList, F ∈ m.schemes
+        | none, _ => False)
+      rw [hi, hE]
+      exact ⟨rfl, rfl, m, by simp [hmo], hF⟩
     · simp
   | @bindRestE Γ F T Rt E El R Rc t r saved Ps Qs ht hsig hel hr hmap hQs hF =>
     apply node_complete (r := .bindRestE) (js := [])
