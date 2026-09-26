@@ -188,8 +188,9 @@ exact CLI success condition; its conclusion is that every extracted plan was
 certified, and that for every accepted unit's request, every assignment
 $\eta$ of its parameter rows, and every environment meeting the unit's
 inputs at $\eta$ in an admissible world with a satisfying heap, the graph is
-safe at its declared result read at $\eta$ (`SafeGraph`; each generic plan
-additionally carries its universal certificate). The inputs are the unit's
+safe at its declared result read at $\eta$ (`SafeGraph`; each scheme plan, a
+function holding a quantified closure on the rigid path, additionally carries
+its universal certificate). The inputs are the unit's
 parameters, the module values it reads, and every assumed value: imports,
 ambient declarations, globals, prototypes, intrinsics. Every plan reaches
 acceptance through one exhaustive conversion to `CertifiedPlan`; no variant
@@ -247,12 +248,17 @@ Generic closures nest, in function bodies and in generic ones alike. A call
 names its instance: the callee is read at the instance's signature, below the
 scheme by a checked instance (`Sub.inst`).
 
-Two older paths remain. The direct rigid checker (`GenericSource`) is tried
-first for variable-copy bodies and dependent bounds (`U extends T`), which it
-states located obligations for; a body outside its forms goes to the graph.
-A generic closure graph code cannot yet express (a rest parameter, a
-parameter default, a bound naming another of its binders) has its
-introduction checked under rigid binders (`ClosureCertificate`) and its
+A binder bounded by another, `U extends T`, is the meet of the two
+parameter rows, within `T`'s clauses if it has any: a meet row may name
+several parameters, and is below each of them and below a meet of some of
+them within the same clauses ([`meetBelow`](POSITIVE-TYPES.md#core-tables)).
+Every generic unit is a graph request; there is no second checker for
+generic bodies.
+
+One older path remains, for a generic closure graph code cannot yet express
+(a rest parameter, a parameter default, a bound naming another of its
+binders): its introduction is checked under rigid binders
+(`GenericSource.closureCertificate`, `ClosureCertificate`) and its
 eliminations compiled to ordinary arrows
 ([quantified schemes](POSITIVE-TYPES.md#quantified-scheme-layer)), one such
 closure per function.
@@ -843,11 +849,12 @@ closure at a scheme row, as a generic closure is; its member in the class's
 instance type is a scheme-typed view, which the producer does not yet encode
 inside a record's claim.
 
-**Dependent bounds** (`U extends T`) on the graph path: a bound naming
-another binder is read at the instantiation, which a scheme row's bounds and
-a meet row's clauses are not. A meet of two parameter rows, with its bound
-read under the reassignment, would let the graph read them and retire the
-direct rigid checker (`GenericSource`).
+**The rigid path for generic closures.** A generic closure with a rest
+parameter or a default waits for those forms in graph code
+([closures on term code](#next-steps)); one whose bound names another of its
+binders needs a scheme whose meet rows name several binders to be
+instantiated, which instance tables do not yet map (`meetOk` maps a meet of
+one parameter). With both, `GenericSource` and `ClosureCertificate` retire.
 
 **`Promise<A> ≤ Promise<B>`**, and generally two applications whose methods
 are generic: relating them needs a subtyping rule for quantified signatures,

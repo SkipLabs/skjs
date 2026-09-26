@@ -438,8 +438,8 @@ calculus's major mechanisms, not the full language.
 Decision completeness is stated and proved for the rigid fragment:
 `RigidJudgments.Sub` is inclusion under declared bounds, decided by
 `Ty.leUnder` on the well-formed parameter lists `parametersOf` builds;
-`SourceJudgments.HasTy` and `Checked` are typing of lowered closure and
-declaration bodies, decided by the pure checker `GenericSource` runs after
+`SourceJudgments.HasTy` is typing of lowered bodies of quantified closures
+on the rigid path, decided by the pure checker `GenericSource` runs after
 lowering; `CertificateJudgments.Typed` types calculus terms, and every
 derivation has a certificate accepted by `Proof.check`. Each is stated by
 rules, without proof terms or fuel, and each

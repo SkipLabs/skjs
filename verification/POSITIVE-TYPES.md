@@ -349,9 +349,12 @@ A label is one of four kinds of **row**:
 - a **scheme row** $(\vec p;\Sigma;\beta;\Sigma_\ldots)$ means one function
   meeting its signatures at every reassignment of its binders $\vec p$, which
   are parameter rows, within their bounds $\beta$;
-- a **meet row** $p\sqcap\vec c$ means the values the assignment gives the
-  value parameter row $p$ that are also in the clauses $\vec c$: the
-  intersection of a type parameter with ground types, `V & DepSafe`.
+- a **meet row** $p\sqcap\vec q\sqcap\vec c$ means the values the assignment
+  gives the value parameter row $p$, and each of the value parameter rows
+  $\vec q$ (none, usually), that are also in the clauses $\vec c$: the
+  intersection of a type parameter with ground types, `V & DepSafe`, or with
+  other type parameters, `U ⊓ T` for a binder bounded by another,
+  `U extends T`, whose clauses are then `T`'s, or every value.
   [Instances](#instances-of-a-scheme-row) give it its meaning at each
   instance, and [PROGRAM-TYPING.md](PROGRAM-TYPING.md#binders-met-with-ground-types) says how
   it is lowered.
@@ -369,7 +372,7 @@ $$
   v\in\mathsf{Calls}(\Sigma^{\eta'})\cap\mathsf{Rests}(\Sigma_\ldots^{\eta'}),\
   \eta'=\eta[\vec p\mapsto\vec X]\,\bigr\}
   & i\ \text{a scheme row},\\[2pt]
-\eta(p)\cap\textstyle\bigcup_{c\in\vec c}\llbracket c\rrbracket^\eta & i\ \text{the meet row}\ p\sqcap\vec c,\\[2pt]
+\eta(p)\cap\textstyle\bigcap_{q\in\vec q}\eta(q)\cap\bigcup_{c\in\vec c}\llbracket c\rrbracket^\eta & i\ \text{the meet row}\ p\sqcap\vec q\sqcap\vec c,\\[2pt]
 \textstyle\bigcup_{c\in G(i)}\llbracket c\rrbracket^\eta & i\ \text{a clause row},
 \end{cases}
 $$
@@ -844,8 +847,8 @@ $(S,T)$ in which every entry $(A,B)$ satisfies three conditions:
    either. So value `top` cannot discharge a pack edge, even though a pack's
    value meaning is empty.
 2. **Opaque rows.** Every parameter or scheme row of $A$ appears in $B$, or
-   $B$ holds `top`; a meet row of $A$ may instead be covered through its
-   clauses.
+   $B$ holds `top`; a meet row of $A$ may instead be below a row of $B$ by its
+   parameters, or be covered through its clauses.
 3. **Coverage.** Every split part of every clause of $A$ is covered by some
    clause of $B$, with $A$ as the source type; so is every split part of the
    clauses of each meet row of $A$ that $B$ does not name.
@@ -861,9 +864,23 @@ $$
 
 Here $\mathsf{cl}_G(A)$ lists the clauses of $A$'s clause rows, and
 $\mathsf{mcl}_G(A,B)$ the clauses $\vec c$ of each meet row $p\sqcap\vec c$ of
-$A$ not in $B$ (`meetSources`). A member of $p\sqcap\vec c$ is in one of
-$\vec c$, so covering them puts it in $B$: a meet row is below its clauses
-(`meet_clause_of`). This is how a bounded binder, read as the meet of its
+$A$ not in $B$ and below no row of $B$ by its parameters (`meetSources`). A
+member of $p\sqcap\vec c$ is in one of $\vec c$, so covering them puts it in
+$B$: a meet row is below its clauses (`meet_clause_of`). A meet row is below a
+row **by its parameters** (`meetBelow`, sound by `meetBelow_sound`) when the
+row is one of its value parameters, or a meet row of some of them within the
+same clauses:
+
+$$
+\frac{j\in\{p\}\cup\vec q}{p\sqcap\vec q\sqcap\vec c\ \sqsubseteq_{\mathsf{par}}\ j}
+\qquad
+\frac{\{p'\}\cup\vec q'\subseteq\{p\}\cup\vec q\qquad\vec c'=\vec c}
+     {p\sqcap\vec q\sqcap\vec c\ \sqsubseteq_{\mathsf{par}}\ p'\sqcap\vec q'\sqcap\vec c'}
+$$
+
+This is how a binder bounded by another is below it: `U extends T` is
+$p_U\sqcap p_T\sqcap\top$, below $p_T$, and with `T extends B` it is
+$p_U\sqcap p_T\sqcap B$, below $T$'s $p_T\sqcap B$. This is how a bounded binder, read as the meet of its
 parameter row and its bound, is below the bound: `T extends { length: number }`
 is $p_T\sqcap\{\mathit{length}:\mathsf{number}\}$, and
 $p_T\sqcap\{\mathit{length}:\mathsf{number}\}\le\{\mathit{length}:\mathsf{number}\}$.
@@ -951,9 +968,10 @@ $\kappa(A)$ for the image of a type, each entry is one of:
   scheme matched against itself its binders stand for themselves; `fixedBy`);
 - $i$ a clause row, $T=\{j\}$, $j$ a clause row, and $G(j)\doteq G(i)[\kappa]$:
   the same clauses, each operand with the same members as its image;
-- $i$ the meet row $p\sqcap\vec c$ of a value parameter row $p$, every operand
+- $i$ the meet row $p\sqcap\vec c$ of a value parameter row $p$, with no
+  further parameters, every operand
   of $\vec c$ with an image, and $T=\{j\}$ with either $j$ the meet row
-  $q\sqcap\vec d$ of a value parameter row $q$, $\kappa(p)=\{q\}$ (or $q=p$
+  $q\sqcap\vec d$ of a value parameter row $q$ with no further parameters, $\kappa(p)=\{q\}$ (or $q=p$
   when $\kappa$ does not name $p$) and $\vec d\doteq\vec c[\kappa]$; or $j$ a
   clause row of value kind, $\kappa(p)=U$ a type of clause rows, and
   $G(j)\doteq\mathsf{meetLists}(G(U),\vec c[\kappa])$ or

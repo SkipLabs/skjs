@@ -342,7 +342,7 @@ private def reach (m : Memo) (T : SourceTypes.Table) (floor limit : Nat) (A : Li
         | some (.scheme _ sigs bounds rests) =>
           sigs.flatMap (fun (r, ps, res) => r ++ ps.flatten ++ res) ++ bounds.flatMap (·.2) ++
             rests.flatMap (fun (r, ps, p, res) => r ++ ps.flatten ++ p ++ res)
-        | some (.meet p cs) => p :: cs.flatMap fun c => c.operands.flatten
+        | some (.meet p cs ps) => p :: ps ++ cs.flatMap fun c => c.operands.flatten
         | _ => []
   let rec go : Nat → List Nat → List Nat → List Nat
     | 0, seen, _ => seen
@@ -402,16 +402,27 @@ private def groundMeet (parts : List (List Nat)) : Lowering (List (Clause (List 
 alone, with ground others, is a meet row: the binder within the meet of the
 others (`V & DepSafe`), whose instance at `V := T` is the meet of `T` with them
 (`meetOk`), which is what lowering `T & DepSafe` itself gives when the binder
-is the first operand. Any other intersection is the meet of its operands'
-clauses. -/
+is the first operand. Several binders, or a binder with another binder's meet
+row (a binder bounded by another, `U extends T`, whose row is `U ⊓ T`), are
+the meet of their parameters within the ground operands' clauses, or within
+every value when there are none (`SourceTypes.dependentMeet`). Any other
+intersection is the meet of its operands' clauses. -/
 private def meetRow (parts : List (List Nat)) : Lowering (List Nat) := do
   let table ← getThe SourceTypes.Table
   let graph := SourceTypes.graph table
   let binders : List Nat := parts.filterMap fun A => match A with
     | [x] => if graph.parameterKinds x == some .value then some x else none
     | _ => none
-  match binders.eraseDups with
-  | [] =>
+  -- An operand that is a binder's meet row stands for its parameters and
+  -- its clauses.
+  let meetOperands : List (Nat × List (Clause (List Nat)) × List Nat) := parts.filterMap fun A =>
+    match A with
+    | [x] => match (table[x]? : Option RequestJson.Row) with
+      | some (.meet p cs qs) => some (p, cs, qs)
+      | _ => none
+    | _ => none
+  match binders.eraseDups, meetOperands with
+  | [], [] =>
     let m ← get
     let reserved := m.meets.find? fun (ps, _) => ps.length == parts.length &&
       (ps.zip parts).all fun (a, b) => sameKey (m.key table a) (m.key table b)
@@ -422,7 +433,7 @@ private def meetRow (parts : List (List Nat)) : Lowering (List Nat) := do
         modifyThe SourceTypes.Table (·.set row (.clauses cs))
       return [row]
     | none => return [← useRow (← groundMeet parts)]
-  | [x] =>
+  | [x], [] =>
     let others := parts.filter (· != [x])
     if others.isEmpty then return [x]
     let cs ← groundMeet others
@@ -439,7 +450,30 @@ private def meetRow (parts : List (List Nat)) : Lowering (List Nat) := do
       match T.idxOf? r with
       | some i => ([i], T)
       | none => ([T.length], T ++ [r])
-  | _ => throw "an intersection of two type parameters is outside the graph fragment"
+  | bs, ms =>
+    let params := (bs ++ ms.flatMap fun (p, _, qs) => p :: qs).eraseDups
+    let some x := params.head? | throw "empty declaration intersection"
+    let isMeet (y : Nat) : Bool := match (table[y]? : Option RequestJson.Row) with
+      | some (.meet ..) => true
+      | _ => false
+    let others := parts.filter fun A => match A with
+      | [y] => !bs.contains y && !isMeet y
+      | _ => true
+    let clauseSets ← do
+      let ground ← if others.isEmpty then pure [] else pure [← groundMeet others]
+      pure (ground ++ (ms.map (·.2.1)).filter (· != [.top]))
+    let cs := match clauseSets.getLast? with
+      | none => [.top]
+      | some last => clauseSets.dropLast.foldr PositiveNormalization.meetLists last
+    if cs.isEmpty then throw "declaration intersection has no representable clause"
+    let r := RequestJson.Row.meet x cs params.tail
+    let m ← get
+    let reserved := m.meets.find? fun (ps, _) => ps == parts
+    if let some (_, row) := reserved then
+      if table[row]? == some (.clauses []) then
+        modifyThe SourceTypes.Table (·.set row r)
+        return [row]
+    return [← (SourceTypes.internRow r : SourceTypes.Lowering Nat)]
 
 mutual
 /-- A rest's type: a pack parameter's row, or the pack of any number of
@@ -777,7 +811,7 @@ private partial def lowerApplication (ds : Array Definition) (i : Nat)
       let T ← getThe SourceTypes.Table
       let actual := values[index]!.flatMap fun l =>
         let p := match T[l]? with
-          | some (RequestJson.Row.meet p _) => p
+          | some (RequestJson.Row.meet p _ _) => p
           | _ => l
         match binders.lookup p with
         | some declared => declared
@@ -1278,22 +1312,31 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
         let names := (args.toList.flatMap SourceTypes.binderNames).eraseDups
         -- A binder with a ground bound of clause rows is its row met with the
         -- bound, as the unit reads it, so a bounded declaration's own bound
-        -- check sees the binder within it.
-        let rows ← names.mapM fun n => do
-          let p ← (SourceTypes.binderRow n : SourceTypes.Lowering Nat)
-          match scope.lookup n with
-          | some b =>
-            if b == .null || !groundTerm b then return (n, p)
-            let B ← (Fragment.translate (← annotationClaim ds b) : SourceTypes.Lowering _)
-            let G := SourceTypes.graph (← getThe SourceTypes.Table)
-            if B.isEmpty || !G.plainTy B then return (n, p)
-            let r := RequestJson.Row.meet p (B.flatMap G)
-            let i ← modifyGetThe SourceTypes.Table fun (T : SourceTypes.Table) =>
-              match T.idxOf? r with
-              | some i => (i, T)
-              | none => (T.length, T ++ [r])
-            return (n, i)
-          | none => return (n, p)
+        -- check sees the binder within it; one bounded by another binder in
+        -- scope is its row met with that binder's (`dependentMeet`).
+        let rec rowOf : Nat → String → Lowering Nat
+          | 0, n => (SourceTypes.binderRow n : SourceTypes.Lowering Nat)
+          | fuel + 1, n => do
+            let p ← (SourceTypes.binderRow n : SourceTypes.Lowering Nat)
+            match scope.lookup n with
+            | some b =>
+              if b == .null then return p
+              if groundTerm b then
+                let B ← (Fragment.translate (← annotationClaim ds b) : SourceTypes.Lowering _)
+                let G := SourceTypes.graph (← getThe SourceTypes.Table)
+                if B.isEmpty || !G.plainTy B then return p
+                return ← (SourceTypes.internRow (RequestJson.Row.meet p (B.flatMap G)) :
+                  SourceTypes.Lowering Nat)
+              match (b.getObjValAs? String "k").toOption, (b.getObjValAs? String "name").toOption with
+              | some "binder", some m =>
+                if m == n || (scope.lookup m).isNone then return p
+                let r ← rowOf fuel m
+                match SourceTypes.dependentMeet (← getThe SourceTypes.Table) p r with
+                | some meet => (SourceTypes.internRow meet : SourceTypes.Lowering Nat)
+                | none => return p
+              | _, _ => return p
+            | none => return p
+        let rows ← names.mapM fun n => do return (n, ← rowOf scope.length n)
         let values ← args.mapM fun a =>
           (Fragment.translate (SourceTypes.annotationAtRows rows a) : SourceTypes.Lowering _)
         let values ← lowerApplication ds index values {}

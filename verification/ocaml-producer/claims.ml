@@ -53,9 +53,12 @@ let encode (proposal : Proposal.t) =
   in
   (* A binder's ground bound, from the signature that declares it: such a
      binder is the meet of its row and the bound, which Lean fills. *)
+  (* A binder bounded by another binder, `U extends T`, is the meet of the
+     two, which Lean fills as `U ⊓ T`. *)
   let bounds = List.concat_map (fun (f : Proposal.function_claim) ->
     List.filter_map (fun (q:Semantic.quantifier) -> match q.bound with
       | Some (ValueArgument b) when not (Semantic.mentions_rigid b) -> Some (q.identity,b)
+      | Some (ValueArgument (Rigid t)) when t <> q.identity -> Some (q.identity,Rigid t)
       | _ -> None) f.source.quantified) (Option.to_list proposal.init @ proposal.functions) in
   let rec labels t = Array (List.map int (label_list t))
   and label_list = function

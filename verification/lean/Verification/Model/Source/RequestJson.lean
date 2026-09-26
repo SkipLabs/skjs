@@ -130,8 +130,9 @@ inductive Row where
   /-- `name` identifies the binder the row stands for (its spelling, where it
   is declared, and its colour); it carries no meaning. -/
   | param (label : Nat) (name : String) (kind : ParameterKind)
-  /-- The parameter row `binder` within the clauses `union`. -/
-  | meet (binder : Nat) (union : List (Clause (List Nat)))
+  /-- The parameter row `binder` within the clauses `union`, and the value
+  parameter rows `also` as well: `U ⊓ T` for `U extends T`, `T & U`. -/
+  | meet (binder : Nat) (union : List (Clause (List Nat))) (also : List Nat := [])
   deriving DecidableEq, Repr, Inhabited
 
 instance : Coe (List (Clause (List Nat))) Row := ⟨.clauses⟩
@@ -158,7 +159,8 @@ instance : ToJson Row := ⟨fun
         (if bounds.isEmpty then [] else [("bounds", toJson bounds)]) ++
         (if rests.isEmpty then [] else [("variadic", toJson rests)])))]
   | .param l n k => Json.mkObj [("param", toJson l), ("name", toJson n), ("kind", toJson k)]
-  | .meet p cs => Json.mkObj [("meet", toJson p), ("clauses", toJson cs)]⟩
+  | .meet p cs ps => Json.mkObj ([("meet", toJson p), ("clauses", toJson cs)] ++
+      (if ps.isEmpty then [] else [("also", toJson ps)]))⟩
 
 instance : FromJson Row := ⟨fun j =>
   match j with
@@ -166,6 +168,9 @@ instance : FromJson Row := ⟨fun j =>
   | _ => match j.getObjVal? "scheme", j.getObjVal? "param", j.getObjVal? "meet" with
     | .error _, .error _, .ok p => do
       return .meet (← fromJson? p) (← fromJson? (← j.getObjVal? "clauses"))
+        (← match j.getObjVal? "also" with
+          | .ok v => fromJson? v
+          | .error _ => pure [])
     | .ok b, .error _, .error _ => do
       return .scheme (← fromJson? (← b.getObjVal? "binders"))
         (← fromJson? (← b.getObjVal? "signatures"))
@@ -196,8 +201,11 @@ def tableGraph (T : List Row) : NormalGraph Nat :=
       | some (.param _ _ k) => some k
       | _ => none
     meets i := match A[i]? with
-      | some (.meet p cs) => some (p, cs)
-      | _ => none }
+      | some (.meet p cs _) => some (p, cs)
+      | _ => none
+    meetParams i := match A[i]? with
+      | some (.meet _ _ ps) => ps
+      | _ => [] }
 
 @[simp] theorem tableGraph_clauses_row {T : List Row} {i : Nat} {cs : List (Clause (List Nat))}
     (h : T[i]? = some (.clauses cs)) : (tableGraph T).plain i = true ∧ tableGraph T i = cs := by
@@ -276,7 +284,7 @@ def rowTypes : Row → List (Ty Nat)
       bounds.map (fun b => b.1 :: b.2) ++
       rests.flatMap fun p => p.1 :: p.2.2.1 :: p.2.2.2 :: p.2.1
   | .param _ _ _ => []
-  | .meet p cs => [p] :: cs.flatMap clauseTypes
+  | .meet p cs ps => (p :: ps) :: cs.flatMap clauseTypes
 
 /-- Every label a row names indexes the table; a parameter row names itself;
 a scheme's binders are parameter rows, and a meet row's is a value one. -/
@@ -287,7 +295,7 @@ def validRows (T : List Row) : Bool :=
     | some (.scheme bs _ _ _) => bs.all fun b => match T[b]? with
       | some (.param _ _ _) => true
       | _ => false
-    | some (.meet p _) => match T[p]? with
+    | some (.meet p _ ps) => (p :: ps).all fun q => match T[q]? with
       | some (.param _ _ .value) => true
       | _ => false
     | _ => true

@@ -179,6 +179,9 @@ structure NormalGraph (ι : Type) where
   /-- A meet row's value parameter row and the clauses it is intersected with
   (`V & DepSafe`). -/
   meets : ι → Option (ι × List (Clause (List ι))) := fun _ => none
+  /-- A meet row's further value parameter rows: its value is what the
+  assignment gives each of them as well (`U ⊓ T` for `U extends T`, `T & U`). -/
+  meetParams : ι → List ι := fun _ => []
   /-- What the parameter rows mean. Semantic only. -/
   env : MixedAssignment ι := ParameterAssignment.empty .mixed
 
@@ -642,7 +645,8 @@ noncomputable def qLayerWithArgs (G : NormalGraph ι) (I : ParameterInterpretati
   | none =>
     match G.meets ηi.2 with
     -- A meet row: the parameter's values within the clauses.
-    | some (p, cs) => fun n W v => I.value p (ηi.1.1 p) n W v ∧
+    | some (p, cs) => fun n W v =>
+        (I.value p (ηi.1.1 p) n W v ∧ ∀ q ∈ G.meetParams ηi.2, I.value q (ηi.1.1 q) n W v) ∧
         setSem (semWithArgs (setSem fun l => X (ηi.1, l))
           (I.arguments ηi.1 (setSem fun l => X (ηi.1, l)))) cs n W v
     | none => setSem (semWithArgs (setSem fun l => X (ηi.1, l))
@@ -824,7 +828,10 @@ theorem qLayer_invWithArgs (G : NormalGraph ι) (I : ParameterInterpretation ι 
         cases hm : G.meets i with
         | none => exact setSem_adm (fun c => semWithArgs_adm _ _ c) (G i)
         | some pc =>
-          exact interT_adm _ _ (I.value_adm pc.1 _ (η.2 pc.1).1)
+          have hq : Adm (fun n W v => ∀ q ∈ G.meetParams i, I.value q (η.1 q) n W v) :=
+            ⟨fun n W v h q hq => (I.value_adm q _ (η.2 q).1).down n W v (h q hq),
+             fun n W U hx v h q hq => (I.value_adm q _ (η.2 q).1).mono n W U hx v (h q hq)⟩
+          exact interT_adm _ _ (interT_adm _ _ (I.value_adm pc.1 _ (η.2 pc.1).1) hq)
             (setSem_adm (fun c => semWithArgs_adm _ _ c) pc.2)
       | some s =>
         exact boundedSem_adm _ η s _ (I.bound_adm η _ (hD η))
@@ -853,7 +860,8 @@ theorem qLayer_invWithArgs (G : NormalGraph ι) (I : ParameterInterpretation ι 
               (I.arguments_nonexp η η' _ _ k (fun p => Agree.mono (h p) (by omega)) (fun a => Agree.mono (sets η η' m h a) (by omega))) c W v).mpr hv⟩
         cases hm : G.meets i with
         | none => exact cl _
-        | some pc => exact and_congr (I.value_congr pc.1 _ _ m (h pc.1) k hk W v) (cl pc.2)
+        | some pc => exact and_congr (and_congr (I.value_congr pc.1 _ _ m (h pc.1) k hk W v)
+            (forall_congr' fun q => imp_congr_right fun _ => I.value_congr q _ _ m (h q) k hk W v)) (cl pc.2)
       | some s =>
         refine and_congr Iff.rfl (forall_congr' fun As => forall_congr' fun _ => ?_)
         have hre := reassign η η' s.binders As m h

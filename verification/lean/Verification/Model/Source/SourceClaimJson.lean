@@ -1183,36 +1183,28 @@ inductive FunctionPlan where
   | graph (name : String) (namePos : Span) (request : SourceRequest)
   | scheme (name : String) (namePos : Span) (request : SourceRequest)
       (types : SourceTypes.Table) (certificate : Option GenericCertificate.ClosureCertificate)
-  | generic (name : String) (namePos : Span) (types : SourceTypes.Table)
-      (certificate : GenericCertificate.ClosureCertificate)
 
 /-- A plan admitted by the top-level verified outcome. Graph evidence is
-consumed separately. Generic and scheme plans store the successful checks of
-their direct-body and universal-invocation certificates. Adding a source-plan
-variant cannot silently enter this exhaustive boundary through a projection. -/
+consumed separately. A scheme plan stores the successful check of its
+universal-invocation certificate. Adding a source-plan variant cannot silently
+enter this exhaustive boundary through a projection. -/
 inductive CertifiedPlan where
   | graph (name : String) (namePos : Span) (request : SourceRequest)
   | scheme (name : String) (namePos : Span) (request : SourceRequest)
       (types : SourceTypes.Table) (certificate : GenericCertificate.ClosureCertificate)
       (term : Tm) (checked : certificate.check = some term)
       (primitives : GenericCertificate.Primitives (SourceTypes.graph types))
-  | generic (name : String) (namePos : Span) (types : SourceTypes.Table)
-      (certificate : GenericCertificate.ClosureCertificate) (term : Tm)
-      (checked : certificate.check = some term)
-      (primitives : GenericCertificate.Primitives (SourceTypes.graph types))
 
 def CertifiedPlan.requests : List CertifiedPlan → List SourceRequest
   | [] => []
   | .graph _ _ request :: rest => request :: CertifiedPlan.requests rest
   | .scheme _ _ request .. :: rest => request :: CertifiedPlan.requests rest
-  | .generic .. :: rest => CertifiedPlan.requests rest
 
 /-- Semantic obligations beyond the graph execution, by plan variant. Keep this
 match exhaustive so extending the accepted language also requires deciding its
 universal guarantee in the headline theorem. Graph plans need no extra premise. -/
 def CertifiedPlan.UniversalSafety : CertifiedPlan → Prop
   | .graph .. => True
-  | .generic _ _ types certificate .. => certificate.Safe (SourceTypes.graph types)
   | .scheme _ _ _ types certificate .. => certificate.Safe (SourceTypes.graph types)
 
 /-- Graph projection for search and inspection. This is intentionally not the
@@ -1222,7 +1214,6 @@ def FunctionPlan.requests : List FunctionPlan → List SourceRequest
   | [] => []
   | .graph _ _ request :: rest => request :: FunctionPlan.requests rest
   | .scheme _ _ request .. :: rest => request :: FunctionPlan.requests rest
-  | .generic .. :: rest => FunctionPlan.requests rest
 
 /-- The table's first four rows are the primitives. Every decoded table has
 them; a certificate's literal types name them. -/
@@ -1253,13 +1244,6 @@ def FunctionPlan.certify : FunctionPlan → Except String CertifiedPlan
         else throw (sourceRefusal types pos .schemeIntroduction "type table lacks the primitive rows")
       | none => throw (sourceRefusal types pos .schemeIntroduction
           "quantified callable semantic certificate is invalid")
-  | .generic name pos types certificate => match h : certificate.check with
-      | some term =>
-        if hp : primitiveRows types then
-          pure (.generic name pos types certificate term h (primitives_of_rows hp))
-        else throw (sourceRefusal types pos .genericValidation "type table lacks the primitive rows")
-      | none => throw (sourceRefusal types pos .genericValidation
-          "generic semantic certificate is invalid")
 
 def certifyPlans (plans : List FunctionPlan) : Except String (List CertifiedPlan) :=
   plans.mapM FunctionPlan.certify
@@ -1300,25 +1284,38 @@ private def boundLabels (j : Json) : Option (List Nat) := do
     if (a.getObjValAs? String "a").toOption != some "graph" then none
     (a.getObjValAs? Nat "label").toOption
 
+/-- A prepared bound naming exactly one binder: that binder's name. -/
+private def boundBinder (j : Json) : Option String := do
+  if (j.getObjVal? "top").toOption != some (toJson false) then none
+  let atoms ← ((j.getObjVal? "atoms").toOption).bind (·.getArr?.toOption)
+  let #[a] := atoms | none
+  if a != Json.mkObj [("a", toJson "param"), ("name", a.getObjValD "name")] then none
+  (a.getObjValAs? String "name").toOption
+
 /-- The row that stands for each of a generic unit's binders: its parameter
 row (`SourceTypes.binderRow`), met with its bound when the bound is a ground
 type of clause rows, `T extends { length: number }` read as `T ⊓ { length:
-number }`. Every assignment of the parameter row is an instance: one within
-the bound is the binder itself, and the body is certified at all of them. A
-bound over another binder leaves the parameter row alone. -/
+number }`, or when the bound is an earlier binder, `U extends T` read as
+`U ⊓ T` (`SourceTypes.dependentMeet`). Every assignment of the parameter row
+is an instance: one within the bound is the binder itself, and the body is
+certified at all of them. Any other bound leaves the parameter row alone. -/
 private def binderRows (T : SourceTypes.Table) (tps : List Fragment.TypeParam) :
     Except String (SourceTypes.Table × List (String × Nat)) := do
-  let (rows, T) ← (tps.mapM fun (tp : Fragment.TypeParam) => do
+  let (rows, T) ← (tps.foldlM (fun (rows : List (String × Nat)) (tp : Fragment.TypeParam) => do
     let p ← SourceTypes.binderRow tp.name
     let G := SourceTypes.graph (← get)
-    match tp.bound.bind boundLabels with
-    | some B =>
-      if B.isEmpty || !G.plainTy B then return (tp.name, p)
-      let r := RequestJson.Row.meet p (B.flatMap G)
-      modifyGet fun (T : SourceTypes.Table) => match T.idxOf? r with
-        | some i => ((tp.name, i), T)
-        | none => ((tp.name, T.length), T ++ [r])
-    | none => return (tp.name, p)).run T
+    let row : Nat ← match tp.bound.bind boundLabels, tp.bound.bind boundBinder with
+      | some B, _ =>
+        if B.isEmpty || !G.plainTy B then pure p
+        else SourceTypes.internRow (RequestJson.Row.meet p (B.flatMap G))
+      | none, some m =>
+        match rows.lookup m with
+        | some r => match SourceTypes.dependentMeet (← get) p r with
+          | some meet => SourceTypes.internRow meet
+          | none => pure p
+        | none => pure p
+      | none, none => pure p
+    return rows ++ [(tp.name, row)]) []).run T
   return (T, rows)
 
 private def annotationAtRows := SourceTypes.annotationAtRows
@@ -1512,50 +1509,34 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
       | none => []
     let graphClosures := !closures.isEmpty && closures.all (·.plain)
     if !tps.isEmpty then
-      -- The direct checker first, for the variable-copy bodies it states
-      -- obligations for; a failed obligation stands. A body outside its
-      -- forms is the graph checker's: each binder is read as its parameter
-      -- row, and the unit is an ordinary graph request, certified at every
-      -- assignment of those rows (`Parametricity.accepted_at`).
-      let direct : Except (Bool × String) FunctionPlan := do
-        -- A generic class's binders are the graph checker's alone.
-        if initClaims.isSome then throw (true, "")
-        if !(c.arrows.getD []).isEmpty then
-          throw (true, "per-arrow source claims are for ground closures, not quantified schemes")
-        let direct ← match c.directClaims d.types with
-          | .ok claims => pure claims
-          | .error reason => throw (true, sourceRefusal d.types f.namePos .genericValidation reason)
-        match (GenericSource.check f tps direct).run d.types with
-        | .ok (certificate, types) => pure (.generic f.name f.namePos types certificate)
-        | .error (.obligation failure) => throw (false, directFailure d.types failure)
-        | .error (.refusal pos role reason) => throw (true, sourceRefusal d.types pos role reason)
-      match direct with
-      | .ok plan => return plan
-      | .error (false, failure) => throw failure
-      | .error (true, _) =>
-        let some source := unitSource
-          | throw "a generic unit's source function is missing"
-        if nestedBinders ((source.getObjVal? "body").toOption.getD .null) && !graphClosures then
-          throw (sourceRefusal d.types f.namePos .genericValidation
-            "a generic closure inside a generic body has binders of its own")
-        let (T, rows) ← match binderRows d.types tps with
+      -- A generic unit is an ordinary graph request: each binder is read as
+      -- its parameter row, a bounded one as its meet with its bound (an
+      -- earlier binder's row, for a dependent bound), and the unit is
+      -- certified at every assignment of those rows
+      -- (`Parametricity.accepted_at`).
+      let some source := unitSource
+        | throw "a generic unit's source function is missing"
+      if nestedBinders ((source.getObjVal? "body").toOption.getD .null) && !graphClosures then
+        throw (sourceRefusal d.types f.namePos .genericValidation
+          "a generic closure inside a generic body has binders of its own")
+      let (T, rows) ← match binderRows d.types tps with
+        | .ok r => pure r
+        | .error reason => throw (sourceRefusal d.types f.namePos .genericValidation reason)
+      let (T, atRows, scopes) ← if graphClosures then
+          match Scheme.closureRows T rows closures (f.body.flatMap Fragment.Stmt.callees) c with
           | .ok r => pure r
-          | .error reason => throw (sourceRefusal d.types f.namePos .genericValidation reason)
-        let (T, atRows, scopes) ← if graphClosures then
-            match Scheme.closureRows T rows closures (f.body.flatMap Fragment.Stmt.callees) c with
-            | .ok r => pure r
-            | .error reason => throw (sourceRefusal T f.namePos .schemeIntroduction reason)
-          else
-            let (T, atRows) := c.atRows T rows
-            pure (T, atRows, [])
-        d := { d with types := T }
-        c := atRows
-        let source := Scheme.annotationAtScopes scopes rows source
-        if initClaims.isSome then
-          let body ← Fragment.decodeInit (Json.mkObj [("init", source.getObjValD "body")])
-          f := { f with body }
+          | .error reason => throw (sourceRefusal T f.namePos .schemeIntroduction reason)
         else
-          f := (← Fragment.decodeFn source).1
+          let (T, atRows) := c.atRows T rows
+          pure (T, atRows, [])
+      d := { d with types := T }
+      c := atRows
+      let source := Scheme.annotationAtScopes scopes rows source
+      if initClaims.isSome then
+        let body ← Fragment.decodeInit (Json.mkObj [("init", source.getObjValD "body")])
+        f := { f with body }
+      else
+        f := (← Fragment.decodeFn source).1
     else if graphClosures && c.hasScheme then
       -- A generic closure in a unit without binders of its own: its scheme is
       -- a scheme row, its code graph code checked at the row's signatures.
@@ -1697,8 +1678,6 @@ theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
           intro plan _
           cases plan with
           | graph => trivial
-          | generic _ _ _ certificate _ checked primitives =>
-            exact GenericCertificate.ClosureCertificate.check_safe primitives checked
           | scheme _ _ _ _ certificate _ checked primitives =>
             exact GenericCertificate.ClosureCertificate.check_safe primitives checked
         · simp [hx] at h

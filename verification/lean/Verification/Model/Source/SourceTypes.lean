@@ -167,6 +167,23 @@ def binderRow (name : String) : Lowering Nat := do
     return T.length
   | _ => throw s!"two parameter rows stand for the binder '{name}'"
 
+/-- The meet row a binder's parameter row `p` is read as when its bound is
+another binder, read as the row `r`: `p ⊓ r`, the meet of the two parameters,
+within `r`'s clauses when `r` is itself a meet. `U extends T` is `U ⊓ T`,
+which is below `T` (`PositiveRules.meetBelow`): at every instantiation within
+the bound, the meet is the binder. -/
+def dependentMeet (T : Table) (p r : Nat) : Option Row :=
+  match (T[r]? : Option Row) with
+  | some (.param _ _ .value) => some (.meet p [.top] [r])
+  | some (.meet q cs ps) => some (.meet p cs (q :: ps))
+  | _ => none
+
+/-- A row's label, interning it if the table lacks it. -/
+def internRow (r : Row) : Lowering Nat :=
+  modifyGet fun T => match T.idxOf? r with
+    | some i => (i, T)
+    | none => (T.length, T ++ [r])
+
 /-- Whether a type reaches a parameter row no scheme binds: a generic unit's
 binder, read as its row. Only the graph checker reads such a type; the direct
 rigid checker's ground types have none. -/

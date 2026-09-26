@@ -186,7 +186,7 @@ def freeMapOf [DecidableEq ι] (G : NormalGraph ι) (D : List ι) : Nat → Free
         | some s => s.binders
         | none => []
       ((if G.params i then [i] else []) ++
-        (match G.meets i with | some (q, _) => [q] | none => []) ++ fv V i ++
+        (match G.meets i with | some (q, _) => q :: G.meetParams i | none => []) ++ fv V i ++
         (reads G i).flatMap fun l => (fv V l).filter (fun p => !bound.contains p)).eraseDups
     let V' := D.map fun i => (i, step i)
     if D.all (fun i => (fv V' i).length == (fv V i).length) then V' else freeMapOf G D fuel V'
@@ -3151,6 +3151,7 @@ theorem HasTy.closed_safe {G : NormalGraph ι} {t A} (ht : HasTy G [] t A)
 #print axioms invocation_of_body
 #print axioms HasTy.invocationSpec
 #print axioms HasTy.sound
+#print axioms meaning_assign_free
 #print axioms HasTy.closed_safe
 #print axioms tagClause_sound
 #print axioms opResult_sound

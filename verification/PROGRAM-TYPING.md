@@ -3247,18 +3247,29 @@ $$
       [\,\mathsf{meet}(A_1,\ldots,A_n)\,]}\ \textsc{meet}
 $$
 
+$$
+\frac{\vec p\ \text{the value binders among the}\ A_i\ \text{and the parameters of their meet rows},\ |\vec p|\ge 2\ \text{or a meet row among them}\qquad
+      \vec c\ \text{the meet of the other operands' and those rows' clauses, or}\ \top}
+     {\llbracket A_1\mathbin{\&}\cdots\mathbin{\&}A_n\rrbracket=
+      [\,p_1\sqcap p_2\cdots\sqcap\vec c\,]}\ \textsc{binders-meet}
+$$
+
 where $\mathsf{meet}$ is `meetLists` of the operands' clauses folded from the
 right ([conjunction](POSITIVE-TYPES.md#conjunction-and-normalization)), and
-any other intersection (two binders, a scheme, a union holding a binder) is
-refused rather than an operand being dropped. A meet row is below $p$, so it
-establishes what $p$ does. At an instance $p:=U$ it means
+any other intersection (a scheme, a union holding a binder) is refused rather
+than an operand being dropped. A meet row is below each of its parameters, so
+it establishes what each does. At an instance $p:=U$ it means
 $\mathsf{meetLists}(G(U),\vec c)$ (`meetOk`), which is exactly what lowering
 the intersection at $U$ gives. A producer names a meet it does not compute by
 a reserved row in the claims' `"meets"`, which Lean fills with `meetRow`.
 
 A generic body's bounded binder is read the same way, as the meet of its
-parameter row and its bound; a bound over another binder leaves the parameter
-row alone ([generic bodies](#overloads-polymorphism-and-binding)).
+parameter row and its bound, and a binder bounded by another, `U extends T`,
+as the meet of the two, $p_U\sqcap p_T\sqcap\vec c$ with $T$'s clauses or
+$\top$ (`SourceTypes.dependentMeet`), which is below $T$ by its parameters
+([`meetBelow`](POSITIVE-TYPES.md#core-tables); [generic
+bodies](#overloads-polymorphism-and-binding)). Any other bound naming a binder
+leaves the parameter row alone.
 
 ### Explicit type arguments
 
@@ -4655,23 +4666,15 @@ constructs an accepted certificate from a derivation; `Typed.safe` composes
 that direction with `Proof.check_safe`, so
 every derivation is safe for every admissible assignment satisfying the bounds.
 
-`SourceJudgments.HasTy c env b t` types a lowered source body — a variable,
-a primitive literal, a write into a captured cell below its contract, a call
-to a callable binding with each argument below its parameter, or a closure
-claimed exactly as annotated with its body below its declared result — and
-`SourceJudgments.Checked c env result stmts` types a declaration body: at each
-statement the claimed environment has distinct names, exactly the scope's
-names, and each claim above the established type; each initializer and the
-return is claimed above its established type; a copy's binding type is its
-annotation or its initializer's claim; the return's claim is below the
-declared result; an expression statement's claim is checked and binds no
-name; and a body that ends without a return returns `undefined`:
+`SourceJudgments.HasTy c env b t` types a lowered source body of a
+quantified closure on the rigid path (one with a rest parameter, a default or
+a bound naming another of its binders; every other generic body is a graph
+request, [Generic-Body](#overloads-polymorphism-and-binding)) — a variable, a
+primitive literal, a write into a captured cell below its contract, a call to
+a callable binding with each argument below its parameter, or a closure
+claimed exactly as annotated with its body below its declared result:
 
 $$
-\frac{\bar P\vdash\{\texttt{undefined}\}\le R}{\bar P;\Gamma\vdash[\,]:R}\;\textsc{done}
-\qquad
-\frac{\bar P;\Gamma\vdash e:A\quad\bar P;\Gamma\vdash\bar s:R}{\bar P;\Gamma\vdash e;\,\bar s:R}\;\textsc{effect}
-\qquad
 \frac{\Gamma(\mathit{pos})=(\bar A)\Rightarrow R\quad \bar P;\Gamma,\bar x:\bar A\vdash b:B\quad \bar P\vdash B\le R}
      {\bar P;\Gamma\vdash(\bar x:\bar A)\Rightarrow b:(\bar A)\Rightarrow R}\;\textsc{closure}
 $$
@@ -4680,27 +4683,12 @@ where, for a closure the source leaves without a result annotation, $R$ is the
 result of the closure's own claimed arrow, whose parameters must be exactly the
 annotated ones (`GenericSource.lambdaResult`): the claim proposes the result
 and the body is checked against it, as an annotation would be. The
-certificate compiler emits `widen R` around such a body, an expression
-statement as a `let` of an unnamed slot no source name reads, and the end of a
-body as `lit undefined` widened to the declared result. `exprTyB_iff_HasTy` and
-`bodyClaimsB_iff_Checked` prove that the pure checker decides both on
-well-formed binders, both directions.
-
-`GenericSource.check` is annotation lowering, then that pure checker, then the
-signature check, then certificate generation. Lowering is the trusted
-translation every annotation takes and is outside these judgments. The
-certificate compiler is one for declarations and closures; a body the
-judgment accepts and the proof language cannot express is refused by name.
-Two such gaps are now closed: a returned call and a returned
-primitive literal, both refused before, are certified, the literal through
-`Proof.lit` under `GenericCertificate.Primitives`, the assumption that the
-graph's first four rows are the primitives, which `FunctionPlan.certify`
-establishes for every certified plan. Kernel guards in `SourceJudgments`
-record both. This is not an end-to-end completeness theorem for
-`GenericSource.check`: lowering, exact signature/site checks and certificate
-generation are additional conditions. Captured-cell writes are still typed
-by `HasTy.assign` but not expressible by `closureProof`. Certificate existence
-also does not prove that OCaml inference finds a suitable substitution or that
+certificate compiler emits `widen R` around such a body.
+`exprTyB_iff_HasTy` proves that the pure checker decides it on well-formed
+binders, both directions. A body the judgment accepts and the proof language
+cannot express is refused by name; captured-cell writes are typed by
+`HasTy.assign` but not expressible by `closureProof`. Certificate existence
+does not prove that OCaml inference finds a suitable substitution or that
 graph proof search finds evidence.
 Certificates are reconstructed in Lean on consumption; source-to-calculus
 correspondence remains part of the stated trust boundary. These theorems prove
@@ -5342,10 +5330,14 @@ $$
 $$
 
 One derivation, checked once, covers every instantiation of the binders: the
-inputs and the result are read at the same $\eta$. The binders of a generic
-class are those of the unit that declares it, the module's initialization
-unit, so its constructor and methods are certified at every instantiation the
-same way. Lean:
+inputs and the result are read at the same $\eta$. A bounded binder is read as
+the meet of its row and its bound, and one bounded by another binder as the
+meet of the two ([binders met](#binders-met-with-ground-types)); at every
+instantiation within the bounds the meets are the binders, and the body is
+certified at the others too. Every generic unit takes this one path. The
+binders of a generic class are those of the unit that declares it, the
+module's initialization unit, so its constructor and methods are certified at
+every instantiation the same way. Lean:
 `Parametricity.accepted_at`, `RequestJson.verify_safe_at`,
 `SourceExtraction.checkRequests_safe_at`.
 

@@ -19,18 +19,17 @@ from the AST and sidecar. It checks evidence using the same `checkRequests`
 function and soundness theorems as SKJS-backed source checking.
 `SourceClaimJson.checkJson_safe` states that every accepted plan first becomes
 a `CertifiedPlan` and that every such function has the calculus safety
-guarantee. Direct generic and quantified-scheme plans cannot become certified
-without their own semantic certificate. No SKJS invocation
+guarantee. A quantified-scheme plan cannot become certified without its own
+semantic certificate. No SKJS invocation
 or `--keep-going` is needed.
 
-Generic variable-copy functions use the same sidecar: any `type` or `result`
-may be `{"param":"T"}`, referring to that function's source type parameter.
-The TS exporter matches compiler symbol identities before emitting this name.
-Bounds come from the source, never from producer assertions. Generic claims are
-checked directly by `GenericSource` on both production and consumption;
-variable-copy bodies reconstruct independent semantic certificates whose
-soundness theorem quantifies over all admissible rigid assignments satisfying
-the source bounds. Ground functions cannot use rigid claims,
+Generic functions use the same sidecar: any `type` or `result` may be
+`{"param":"T"}`, referring to that function's source type parameter, which
+Lean reads as the binder's parameter row (a bounded one as its meet with the
+bound) before the unit is extracted as an ordinary graph request, certified at
+every assignment of those rows. The TS exporter matches compiler symbol
+identities before emitting this name. Bounds come from the source, never from
+producer assertions. Ground functions cannot use rigid claims,
 and rigid claims cannot carry current-content assertions. Within this fragment,
 ground annotations retain their ordinary graph meanings; no parameter is
 replaced by its bound. Declarations certify invocation as well as body safety,

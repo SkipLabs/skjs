@@ -1933,6 +1933,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let enclosing_bounds = !rigid_bounds in
       rigid_bounds := List.filter_map (fun (q:Semantic.quantifier) -> match q.bound with
         | Some (ValueArgument b) when not (Semantic.mentions_rigid b) -> Some (q.identity,b)
+        | Some (ValueArgument (Rigid t)) when t <> q.identity -> Some (q.identity,Rigid t)
         | _ -> None) quantified @ enclosing_bounds;
       let body_type = Fun.protect ~finally:(fun () -> rigid_bounds := enclosing_bounds) (fun () ->
         expr ?expected:(if written <> None then written else contextual) inner body) in
@@ -2941,8 +2942,11 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
    offer it more parameters are reached: a first pass finds those offers, and
    the second states them at the creation. *)
 let infer_function declarations module_functions (f:Source.fn) =
+  (* A binder bounded by another reads through it: `U extends T` reads a
+     member at `T`'s bound. *)
   rigid_bounds := List.filter_map (fun (q:Semantic.quantifier) -> match q.bound with
     | Some (ValueArgument b) when not (Semantic.mentions_rigid b) -> Some (q.identity,b)
+    | Some (ValueArgument (Rigid t)) when t <> q.identity -> Some (q.identity,Rigid t)
     | _ -> None) f.quantified;
   (* An evolving binding's contract is what the body writes into it, which
      a pass finds under the contract the previous pass assumed: passes run
