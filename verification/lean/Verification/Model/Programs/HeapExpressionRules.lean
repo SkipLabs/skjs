@@ -578,6 +578,88 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
       omega
     · exact HeapLinks.alloc_frames (parts.map fun p => ρ p.2) hshift.2.2 g hg
 
+theorem slots_lookup_ge {base : Nat} {ns : List PropKey} {f : PropKey} {l : Nat}
+    (h : (slots base ns).lookup f = some l) : base ≤ l := by
+  induction ns generalizing base with
+  | nil => simp [slots, List.lookup] at h
+  | cons g ns ih =>
+    simp only [slots, List.lookup] at h
+    split at h
+    · cases h; exact Nat.le_refl _
+    · have := ih h; omega
+
+/-- An object allocated past the heap's end keeps what was known of the old
+heap, and each of its fields, whichever keys it has, is distinct from every
+contract field of the context's record-typed slots. -/
+theorem fresh_holds [DecidableEq ι] {G : NormalGraph ι} {Γ k ρ n W h}
+    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hh : HeapOk n W h)
+    (ns : List PropKey) (vs : List Val) (code : CallCode) (fields : List PropKey) :
+    HeapKnowledge.Holds (allocOutput k [] (contractFields G Γ) fields)
+      (push (.objAt (slots h.length ns) code) ρ) (h ++ vs) := by
+  have hshift := HeapKnowledge.shift_holds (v := Tm.objAt (slots h.length ns) code) hk
+  refine ⟨?_, hshift.2.1, ?_⟩
+  · intro f hf
+    simp only [allocOutput, List.map_nil, List.nil_append] at hf
+    obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
+    obtain ⟨flds,c,l,v,hl,hfd,hh',b,hb,hv'⟩ := hk.1 g hg
+    exact ⟨flds,c,l,v,hl,hfd,alloc_frames _ hh',b,hb,hv'⟩
+  · intro g hg
+    simp only [allocOutput] at hg
+    rcases List.mem_append.mp hg with hg | hg
+    · obtain ⟨fld,_,hg⟩ := List.mem_flatMap.mp hg
+      obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hg
+      obtain ⟨Ref,hidx,hfo⟩ := contractFields_mem hq
+      obtain ⟨B,El,hmem,hbag⟩ := fieldOperand_sound hfo (he.2 q.1 Ref hidx)
+      obtain ⟨flds0,code0,hl0,_,hrec⟩ := hbag
+      obtain ⟨flds1,l1,c1,hproj,hfd1,hlookup,_⟩ :=
+        recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩) hrec
+      obtain ⟨u,hu,_⟩ := hh.2 l1 c1 hlookup
+      have hlt : l1 < h.length := List.getElem?_eq_some_iff.mp hu |>.1
+      simp only [ite_true]
+      intro flds c l flds' c' l' h0 hfl hs' hfl'
+      simp only [push] at h0 hs'
+      cases h0
+      have hge : h.length ≤ l := slots_lookup_ge hfl
+      rw [hl0] at hs'
+      cases hs'
+      cases hproj
+      have hl'eq : l' = l1 := Option.some.inj (hfl'.symm.trans hfd1)
+      omega
+    · exact HeapLinks.alloc_frames vs hshift.2.2 g hg
+
+/-- A merge of two values reads the heap and allocates a fresh object: what
+was known of the heap stays known, and the new object's fields are distinct
+from the context's contract fields, as a literal's are (`alloc_sound`). -/
+theorem merge_alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h}
+    {d : List PropKey} {a b : Tm} (fields : List PropKey)
+    (hva : isVal a = true) (hvb : isVal b = true)
+    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hh : HeapOk n W h)
+    (hs : Safe (meaning G A) n W h (.merge d a b)) :
+    SafePost (meaning G A)
+      (fun h' v => HeapKnowledge.Holds (allocOutput k [] (contractFields G Γ) fields) (push v ρ) h')
+      n W h (.merge d a b) := by
+  cases n with
+  | zero => trivial
+  | succ p =>
+    rcases hs with (⟨hval,_⟩ | hr) | ⟨U,h1,t1,hx,hu,step,hh1,hs1⟩
+    · simp [isVal] at hval
+    · obtain ⟨v, hr, _⟩ := hr
+      cases hr with
+      | mergeC1 hr => rw [raises_not_val hr] at hva; contradiction
+      | mergeC2 _ hr => rw [raises_not_val hr] at hvb; contradiction
+    · cases step with
+      | mergeC1 s => exact absurd s (value_no_step hva)
+      | mergeC2 _ s => exact absurd s (value_no_step hvb)
+      | mergeV _ _ hparts =>
+        refine Or.inr ⟨U, h, _, hx, hu, .mergeV hva hvb hparts, hh1, ?_⟩
+        refine one_step rfl rfl (.makeFields ?vals (by simp)) (fresh_holds he hk hh _ _ _ fields) hs1
+        case vals =>
+          intro v hv
+          obtain ⟨e, hm, rfl⟩ := List.mem_map.mp hv
+          rcases mergeParts_vals hparts e hm with h1 | ⟨-, h2⟩
+          · rw [h1]; rfl
+          · exact h2
+
 /-- A write forgets old cell observations, except those about locations known
 to be distinct from the written one, establishes its new contents where the
 written value is a known primitive (`R`), and retains immutable values
@@ -804,6 +886,23 @@ theorem readSlot_eq {t f i} (h : readSlot t = some (f, i)) : t = .readAt f (.var
   unfold readSlot at h
   split at h <;> simp_all
 
+/-- A merge of two slots, which allocates the object it copies into. -/
+def mergeSlots : Tm → Option (List PropKey × Nat × Nat)
+  | .merge d (.var a) (.var b) => some (d, a, b)
+  | _ => none
+
+theorem mergeSlots_eq {t d a b} (h : mergeSlots t = some (d, a, b)) :
+    t = .merge d (.var a) (.var b) := by
+  unfold mergeSlots at h
+  split at h <;> simp_all
+
+/-- The keys a claimed object type names: the fields a fresh object's
+distinctness is stated at, since a later claim can name no other. -/
+def namedKeys [DecidableEq ι] (G : NormalGraph ι) (A : Ty ι) : List PropKey :=
+  ((expand G A).flatMap fun c => match c with
+    | .refs fs rs vs os _ _ => ((fs :: rs).flatten ++ vs).map Prod.fst ++ os.map (·.key)
+    | _ => []).eraseDups
+
 theorem writeSlots_eq {t f i v} (h : writeSlots t = some (f, i, v)) :
     t = .writeAt f (.var i) (.var v) := by
   unfold writeSlots at h
@@ -868,7 +967,12 @@ def checkStep [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι)
           (slots.map Prod.fst).Nodup ∧ ∀ p ∈ slots, p.2 < j.context.length
       then some (allocOutput k (allocationFacts G j.context k slots) (contractFields G j.context)
         (slots.map Prod.fst)) else none
-    | none => none
+    | none =>
+      match mergeSlots j.term with
+      | some (_, a, b) =>
+        if claim e = j ∧ checkTree G e codes = true ∧ a < j.context.length ∧ b < j.context.length
+        then some (allocOutput k [] (contractFields G j.context) (namedKeys G j.type)) else none
+      | none => none
   | .written i v R e =>
     match writeSlots j.term with
     | some (fld, i', v') =>
@@ -1028,7 +1132,23 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
             Function.comp_def] at hs ⊢
         all_goals exact alloc_sound hnd hin he hk hh hs
       · contradiction
-    · contradiction
+    · split at hc
+      · rename_i d a b hmerge
+        split at hc
+        · rename_i hp
+          obtain ⟨hj,ht,ha,hb⟩ := hp
+          have typed := checkTree_sound e ht hcodes
+          rw [hj] at typed
+          have term := mergeSlots_eq hmerge
+          cases hc
+          rw [term] at typed ⊢
+          have hs := typed.sound n W h ρ he hw hh
+          simp only [instantiate] at hs ⊢
+          have hva := (meaning_value (he.2 a _ (List.getElem?_eq_getElem ha))).1
+          have hvb := (meaning_value (he.2 b _ (List.getElem?_eq_getElem hb))).1
+          exact merge_alloc_sound _ hva hvb he hk hh hs
+        · contradiction
+      · contradiction
   | written i v R e =>
     simp only [checkStep] at hc
     split at hc
@@ -1049,6 +1169,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
 #print axioms bagOperand_mem
 #print axioms bagOperand_sound
 #print axioms alloc_sound
+#print axioms merge_alloc_sound
 #print axioms creation_sound
 #print axioms checkStep_sound
 #print axioms fieldOperand_sound

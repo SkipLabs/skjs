@@ -393,7 +393,19 @@ JavaScript's temporal dead zone throws there.
 ### Objects and prototypes
 
 An object's keys are fixed at its allocation; a
-write stores at an existing location and never adds a key. A record type is
+write stores at an existing location and never adds a key. A source write
+that adds a key, `o.k = e` where `o`'s type does not state `k`, is the copy
+of the object with the key (an allocation from parts), which the local holds
+from then on: JavaScript's write in place and the copy agree because nothing
+else can observe the object the copy replaces. It is lowered so only on a
+local's own fresh object that nothing else has reached (not passed, stored,
+captured, returned or copied to another binding, and outside any loop its
+declaration does not enclose); on any other object it is refused, since
+another reference would see the object's keys change
+([key-adding writes](PROGRAM-TYPING.md#key-adding-writes); a strong update
+where the location is unaliased, as in
+[Smith, Walker and Morrisett 2000](REFERENCES.md#smith-walker-and-morrisett-2000)).
+A record type is
 open: it constrains the keys it names and says nothing of others. An
 **own-key bound** says which keys an object may own, $\mathsf{among}\,K$ or
 $\mathsf{outside}\,N$ ([records](POSITIVE-TYPES.md#records)); a fresh
@@ -422,7 +434,10 @@ instance's methods are its prototype's and are not copied, nor is an
 key is the property its `ToString` spells, and a computed key naming a
 `unique symbol` constant (`Symbol.iterator`, or one the program makes) is that
 symbol's key; `__proto__`, any other computed key and accessors are refused. An object pattern's rest is the same copy less the
-named keys.
+named keys. Where a part is a dictionary and every part says what it gives
+under the index's keys, through an index or its exact keys, the result is a
+writable dictionary at what the parts give there; a spread of an open record
+meets no index.
 
 ### Arrays
 
@@ -459,13 +474,25 @@ it to the readonly view would be unsound: a caller handed a dictionary of
 `true` at `{ [key: string]: boolean }` could store `false` where the program
 still reads `true`. So every present field under its class holds exactly
 `V` (`dictCellT`), a mutable dictionary is invariant, and a readonly one is
-never mutable. No program rule writes through an index. That code outside
+never mutable. The program adds a key to a dictionary only as it adds one
+to any object, by copying a local's own object with a key the source spells.
+A write at a key known only at run time is refused: through a dictionary
+another reference may hold, as any key-adding write is; on a local's own one
+at a string, since the string may spell a key the model keeps for itself
+(`[]`, `[[proto]]`), which JavaScript owns as an ordinary property; at a
+number or a symbol it is not yet lowered. That code outside
 the unit adds keys to a writable dictionary only at its contract, and only
 keys of its class, is an assumption ([trust surface](#trust-surface)). Every
 capability the checker grants on such an object is implied by the writable
 contract, so a key added at `V` keeps them: covering a writable index
 requires every index and optional field of the source over its keys to admit
-`V`. This argument is informal.
+`V`. This argument is informal, and it has a gap: an own-key bound
+($\mathsf{among}\,K$) is a capability the writable contract does not imply.
+A value claimed with one and also met as a writable dictionary, through that
+bound, can be held elsewhere at a type stating a key absent that outside code
+then adds; the checker accepts such claims today. The OCaml producer claims
+no own-key bound of a local from the first statement that may let its object
+escape; closing the gap in Lean is a [next step](#next-steps).
 
 A read `o[k]` whose key is one of several string or number literals tests
 `k` against each and reads that member (NaN excluded).
@@ -646,7 +673,7 @@ text.
 | Assumption | Where it is stated |
 | --- | --- |
 | The parser represents the source faithfully: it admits only the fragment, and its lowerings (unbraced arms, `switch`, `for`, templates, enums, optional chains, async forms, patterns, dead code, a shadowing local's renaming by the declaration TypeScript binds each reference to, a `let` nothing writes as a `const`, a written `let` pattern as a `const` pattern and `let`s, a static block as a closure called at once, `instanceof` of a class with a static `[Symbol.hasInstance]` as its call, a private name as its member's symbol, a rest parameter's alias equation, the iterator protocol of a program's iterable in a `for...of`, a spread and an array pattern, with its closing region) preserve JavaScript's execution. | `tools/fragment-parse.mts`, `fragment.mts` |
-| Source extraction preserves control flow, lexical binding, evaluation order and annotations: which program point a claim is attached to is unproved. No source-to-graph preservation theorem exists. | `Source/Fragment.lean`, `Source/SourceExtraction.lean` |
+| Source extraction preserves control flow, lexical binding, evaluation order and annotations: which program point a claim is attached to is unproved. No source-to-graph preservation theorem exists. A key-adding write is lowered as a copy only where the object is its local's own and unreached (`growSites`, a syntactic analysis): that JavaScript's write in place and the copy agree rests on it. | `Source/Fragment.lean`, `Source/SourceExtraction.lean` |
 | Decoding represents the submitted AST, declarations, claims and evidence faithfully. | `RequestJson.lean`, `SourceClaimJson.lean` |
 | TypeScript's checker resolves each name to its declaration in the file's project, whose strict `tsconfig.json` (paths, links, library set, type packages) reflects the real build; a TypeScript error in a collected declaration or on an import it passes through refuses the graph. The parser checks TypeScript read the bytes it parsed. | `tools/declaration-graph.mts` |
 | TypeScript's evaluation is trusted as its resolution is: a computed type (`typeof`, `keyof`, `T[K]`, template literal types, primitive intersections, mapped keys) means what its checker computes; an enum member's value is `getConstantValue`'s, which its emit writes; a `const enum` read is the member TypeScript binds it to; global member and overload resolution selects which declared signatures are assumed. | `tools/computed-types.mts`, `declaration-graph.mts` |
@@ -684,7 +711,7 @@ the model's reading of an operation relies.
 | The model's reserved keys (the store key `[]` and every name in double brackets) are spelled by no source key, and an object a program receives is represented with its own keys apart from them. | `Fragment.sourceKey`, `reservedSourceKey` |
 | `Object.prototype`, `Array.prototype` and `Function.prototype` own no string key but those `inKeyRefusal` lists (node's `Object.getOwnPropertyNames`); `String.prototype` and `Object.prototype` own no numeric key; `String.prototype` owns no `[Symbol.split]` or `[Symbol.replace]`; `Object.prototype` has no `toJSON`. | `inKeyRefusal` in `Source/Fragment.lean`; the overlay comments |
 | Distinct JavaScript objects have disjoint field locations, which is how `===` on objects with a field is answered; only allocation creates an object value. | `Arith.eq` |
-| Code outside a unit adds keys to a dictionary it holds at a writable index only at that index's contract and only keys of its class. The calculus has no step that adds a key. | [index signatures](#index-signatures) |
+| Code outside a unit adds keys to a dictionary it holds at a writable index only at that index's contract and only keys of its class. The calculus has no step that adds a key; a program adds one by copying its own object. Where a claim states an own-key bound of such an object, the assumption does not cover it (the gap in [index signatures](#index-signatures)). | [index signatures](#index-signatures) |
 | A spread does not copy an own enumerable symbol-keyed property, which JavaScript copies; the result states no symbol key and is open, so nothing typed reads one. | [object literals](#object-literals) |
 | The standard `Object.assign`, `Function.prototype.call`, `apply` and `bind` are the intrinsics the parser identifies by lexical provenance; the fragment cannot write those properties. | `tools/fragment-parse.mts` |
 | A value of type `Promise<T>` is a realm promise, which resolution never fulfills with a thenable (it adopts one), so awaiting it yields a `T`: runtime and library promises, the program's `async` functions (`%AsyncReturn%` adopts), `Promise.resolve`, `new Promise`, `%PromiseReject%` and `%PromiseAll%`. A trusted generic signature (imported, ambient, library) is truthful about `Promise<T>` or `PromiseLike<T>` only at a `T` no thenable inhabits, so each type parameter such a position names is bounded by the non-thenable types. | `%Await%` and `nonThenable` in `tools/intrinsics.mts`, `promisedBinders` in `tools/declaration-graph.mts`; [async](PROGRAM-TYPING.md#async-functions-and-await) |
@@ -701,7 +728,9 @@ not yet taken are [next steps](#next-steps); a search failure is neither.
 
 | Construct | Refused because |
 | --- | --- |
-| Object growth: a write of a key the object's type does not have (`o.x = 5` on `{}`), a write of a writable optional field, a computed write through an index signature | Keys are fixed at allocation; the calculus has no key-adding write. |
+| A write adding a key (`o.x = 5` where `o`'s type does not state `x`, a writable optional field, a key of an index) to an object another reference may hold: a parameter, a module constant, a local whose object was passed, stored, captured, returned, copied to another binding or written into itself, or a write in a loop the declaration does not enclose | The model's objects keep their keys, and a key is added by copying the object: another reference would still see the object without the key, where JavaScript's sees it with. |
+| A write at a string key known only at run time (`d[k] = v`), even on a local's own dictionary | The string may spell a key the model keeps for itself (`[]`, `[[proto]]`), which JavaScript owns as an ordinary property. |
+| A write of `__proto__`; adding a symbol key | The first runs the prototype's setter and adds no key; the copy that adds a key copies string keys only. |
 | `new Array(n)`, `new Array(x)` with one argument | It makes an array with holes; an array type promises none. |
 | An element write at an index not proven in bounds or appending | It could create a hole. |
 | A mutable `Dog[]` as an `Animal[]`, a mutable dictionary of `true` as one of `boolean`, a readonly view as a writable one | Mutable storage is invariant: a write through the wider alias breaks the narrower one's contract. |
@@ -759,6 +788,9 @@ One line each; the reason is the one the design keeps.
   vacuously.
 - **A fresh literal has exact keys; an existing record is open.** Only
   allocation establishes absence.
+- **A key is added by copying an object nothing else can observe.** Objects
+  keep their keys; a write that would change them where another reference
+  sees it is refused.
 - **Enum types are their value sets.** Any number is not a numeric enum;
   two enums with the same values are one type.
 - **`in` tests own keys along the prototype chain the model holds**, and
@@ -878,11 +910,19 @@ chain holds `C`'s prototype meets `C`'s type). That is a change to the
 safety theorem's heap premise; until then such uses are located search
 failures, never wrong verdicts.
 
-**A key-adding write.** Object growth and writes through an index signature
-need a calculus step that adds a key, typed where no other reference to the
-object exists, changing its own-key bound. `Object.assign(t, s)` and a
-spread into an index signature (a result clause with an index, every copied
-location at its type) follow.
+**Own-key bounds and writable indexes.** An own-key bound is not implied by
+a writable index's contract, which lets outside code add keys ([the
+gap](#index-signatures)). Closing it in Lean: a writable index met only by a
+value typed at a writable index, never through an own-key bound
+(`CoversKeys`), and a fresh literal allocated directly at a dictionary; or an
+own-key bound treated as a heap fact, which a call forgets.
+
+**Keys known only at run time.** A key-adding write at one of several literal
+keys needs a dispatch on the key, one copy per key; at a number or a symbol,
+a one-key allocation at a computed key, and for a symbol a copy that takes
+symbol keys. A write adding a key to an object another reference holds needs
+objects to have an identity the heap maps to their keys, which the model's
+values do not.
 
 **Module composition** as a Lean theorem: the step-indexed argument that
 units certified against each other's signatures compose.

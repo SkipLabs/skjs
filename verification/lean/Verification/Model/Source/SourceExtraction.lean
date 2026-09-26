@@ -122,6 +122,9 @@ private structure Built where
   /-- Plans for nodes whose derivation the lowering already knows: search
   hints only, rendered where they can be and never obligations. -/
   nodePlans : List DirectProof.Plan := []
+  /-- The key-adding write sites of the body (`growSites`): the writes that
+  may add a key, by copying their owned object. -/
+  grows : List Span := []
 
 /-- Source-validation failures that already know their source site use the same
 structured channel as proof obligations. Keeping the diagnostic construction
@@ -551,7 +554,20 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
     let rhs ← comparisonsExpr fc rhs
     match ← keyField fc key (record := ← recordReceiver fc r) (dict := ← dictReceiver fc r) with
     | .field s => return .indexWrite p (some s) r key rhs
-    | .dynamic => throw "a dynamic index write is outside the dictionary fragment: it may add a key, and the calculus adds no key to an existing object"
+    | .dynamic =>
+      -- A write at a key known only at run time may add the key. On an
+      -- object another reference may hold it is refused as a named write
+      -- adding a key is; on a local's own object the key must be one the
+      -- source spells.
+      let K ← exprType fc key
+      let G := SourceTypes.graph (← table)
+      if !(← get).grows.contains p then
+        throw "a write at a key known only at run time may add the key to an object another reference holds, which would see the object's keys change: a key-adding write is typed only on a local's own fresh object that nothing else has reached"
+      if (keySingletons G K).isSome then
+        throw "a key-adding write at one of several literal keys is not lowered: it needs a dispatch on the key, one copy of the object per key"
+      if (PositiveRules.expand G K).any (fun c => match c with | .str | .top => true | _ => false) then
+        throw "a key-adding write at a string known only at run time: the key may spell one the model keeps for itself (`[]`, `[[proto]]`), which JavaScript owns as an ordinary property"
+      throw "a key-adding write at a number or symbol known only at run time is not lowered: the copy that adds the key allocates only keys the source spells"
     | .element => return .elemWrite p r key rhs
   | .withValue p f i ft bt => return .withValue p (← comparisonsExpr fc f) (← comparisonsExpr fc i) ft bt
   | .lambda p receiver tps ps defaults rest result b =>
@@ -672,6 +688,151 @@ partial def stmtNames : Fragment.Stmt → List String
   | .block _ _ b => b.flatMap stmtNames
   | .closing _ c b => c.flatMap stmtNames ++ b.flatMap stmtNames
   | .brk .. | .cont .. => []
+
+/-! ### Owned objects
+
+A key-adding write is lowered as a copy (`Tm.merge`, allocation from parts)
+of the object with the key added, rebound to the local that held it. That is
+JavaScript's in-place write only where nothing else can observe the object
+the copy replaces: the local's own fresh allocation, which no other reference
+has reached. The analysis is syntactic and decides only which lowering a
+write gets; the copy is checked by the merge rule like any other. -/
+
+/-- Whether `n` may reach a place other than the receiver of a member read or
+write of `n`: another binding, a field, an argument or `this` of a call, a
+result, a capture. Reads, writes, index reads and `in` tests of `n`'s own
+members only look at the object. Any other occurrence counts, and every
+occurrence inside a closure does, since the closure holds the object. -/
+partial def escapesExpr (n : String) : Fragment.Expr → Bool
+  | .var _ m => m == n
+  | .lit .. | .done .. => false
+  | .read _ _ (.var ..) => false
+  | .index _ _ (.var ..) key => escapesExpr n key
+  | .write _ _ (.var ..) rhs => escapesExpr n rhs
+  | .indexWrite _ _ (.var ..) key rhs => escapesExpr n key || escapesExpr n rhs
+  | .inKeys _ key (.var ..) => escapesExpr n key
+  | .shapeTest _ (.hasKey _) _ (.var ..) => false
+  | .update _ _ (.read _ _ (.var ..)) rhs _ => (rhs.map (escapesExpr n)).getD false
+  | .update _ _ (.index _ _ (.var ..) key) rhs _ =>
+    escapesExpr n key || (rhs.map (escapesExpr n)).getD false
+  | .logicalAssign _ _ (.read _ _ (.var ..)) rhs => escapesExpr n rhs
+  | .logicalAssign _ _ (.index _ _ (.var ..) key) rhs => escapesExpr n key || escapesExpr n rhs
+  -- A method call passes its object as `this`.
+  | .invoke _ (.read _ _ (.var _ m)) args _ _ => m == n || args.any (escapesExpr n)
+  | .invoke _ (.index _ _ (.var _ m) key) args _ _ =>
+    m == n || escapesExpr n key || args.any (escapesExpr n)
+  | e@(.lambda ..) | e@(.ctor ..) | e@(.block ..) | e@(.letBody ..) | e@(.destructBody ..)
+  | e@(.seqBody ..) | e@(.ifBody ..) | e@(.atEnv ..) | e@(.throwBody ..) | e@(.optional ..)
+  | e@(.withValue ..) | e@(.arrayAssign ..) | e@(.assign ..) | e@(.nullishAssign ..) =>
+    e.freeNames.contains n
+  | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e => escapesExpr n e
+  | .equality _ _ a b | .logical _ _ a b | .coalesce _ a b | .singletonTest _ _ _ _ a b
+  | .write _ _ a b | .index _ _ a b | .arith _ _ a b | .elemAt _ a b | .comma _ a b
+  | .inKeys _ a b | .logicalAssign _ _ a b => escapesExpr n a || escapesExpr n b
+  | .indexWrite _ _ a b c | .elemWrite _ a b c => escapesExpr n a || escapesExpr n b || escapesExpr n c
+  | .update _ _ a b _ => escapesExpr n a || (b.map (escapesExpr n)).getD false
+  | .alloc _ _ es | .build _ _ es | .arrayLit _ es => es.any (escapesExpr n)
+  | .call _ f args _ _ | .invoke _ f args _ _ | .construct _ f args _ =>
+    escapesExpr n f || args.any (escapesExpr n)
+  | .callWithReceiver _ f r args | .bindWithReceiver _ f r args =>
+    escapesExpr n f || escapesExpr n r || args.any (escapesExpr n)
+  | .applyWithReceiver _ f r list =>
+    escapesExpr n f || escapesExpr n r || (list.map (escapesExpr n)).getD false
+
+/-- The closures' statement bodies an expression creates, where their own
+owned objects are found. -/
+partial def closureBodies : Fragment.Expr → List (List Fragment.Stmt)
+  | .lambda _ _ _ _ ds _ _ b => ds.flatMap (fun d => closureBodies d.2) ++
+    (match b with | .block _ ss => [ss] | b => closureBodies b)
+  | .ctor _ lam => closureBodies lam
+  | .var .. | .lit .. | .done .. => []
+  | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e
+  | .throwBody _ e => closureBodies e
+  | .equality _ _ a b | .logical _ _ a b | .coalesce _ a b | .singletonTest _ _ _ _ a b
+  | .write _ _ a b | .index _ _ a b | .arith _ _ a b | .elemAt _ a b | .comma _ a b
+  | .inKeys _ a b | .logicalAssign _ _ a b | .optional _ _ a b | .seqBody _ a b
+  | .withValue _ a b _ _ | .letBody _ _ _ a b => closureBodies a ++ closureBodies b
+  | .destructBody _ t a b => closureBodies a ++ t.defaults.flatMap closureBodies ++ closureBodies b
+  | .indexWrite _ _ a b c | .elemWrite _ a b c | .ifBody _ _ a b c =>
+    closureBodies a ++ closureBodies b ++ closureBodies c
+  | .update _ _ a b _ => closureBodies a ++ (b.map closureBodies).getD []
+  | .alloc _ _ es | .build _ _ es | .arrayLit _ es => es.flatMap closureBodies
+  | .arrayAssign _ targets _ rhs => closureBodies rhs ++
+    targets.flatMap fun q => (q.default_.map closureBodies).getD []
+  | .assign _ _ _ e | .nullishAssign _ _ _ e => closureBodies e
+  | .call _ f args _ _ | .invoke _ f args _ _ | .construct _ f args _ =>
+    closureBodies f ++ args.flatMap closureBodies
+  | .callWithReceiver _ f r args | .bindWithReceiver _ f r args =>
+    closureBodies f ++ closureBodies r ++ args.flatMap closureBodies
+  | .applyWithReceiver _ f r list =>
+    closureBodies f ++ closureBodies r ++ (list.map closureBodies).getD []
+  | .block _ ss => [ss]
+
+/-- The analysis state: the owned locals in scope, each with the loop depth
+of its declaration, and the key-adding writes found so far. -/
+private structure Owned where
+  locals : List (String × Nat) := []
+  sites : List Span := []
+
+mutual
+/-- An expression runs: every owned local it may let escape stops being
+owned, and the closures it creates are analysed as bodies of their own. -/
+private partial def ownedExpr (e : Fragment.Expr) (s : Owned) : Owned :=
+  let s := { s with locals := s.locals.filter fun (n, _) => !escapesExpr n e }
+  (closureBodies e).foldl (fun s ss => { s with sites := (ownedStmts 0 ss {}).sites ++ s.sites }) s
+
+/-- The statements in order at loop depth `d`. An `o.k = e` statement on an
+owned `o` declared at the same depth is a key-adding site when `e` (and a
+computed key) lets `o` escape nowhere: no other reference exists before the
+write, and outside a loop the declaration does not enclose, the write runs
+once per allocation. Later escapes are after the write in every run. -/
+private partial def ownedStmts (d : Nat) : List Fragment.Stmt → Owned → Owned
+  | [], s => s
+  | st :: rest, s => ownedStmts d rest (ownedStmt d st s)
+
+private partial def ownedStmt (d : Nat) (st : Fragment.Stmt) (s : Owned) : Owned :=
+  match st with
+  | .constants _ bs => bs.foldl (fun s b =>
+      let s := ownedExpr b.init s
+      let s := { s with locals := s.locals.filter (·.1 != b.name) }
+      match b.init with
+      | .alloc .. | .build .. => { s with locals := (b.name, d) :: s.locals }
+      | _ => s) s
+  | .mutables _ bs => bs.foldl (fun s b =>
+      let s := ownedExpr b.init s
+      { s with locals := s.locals.filter (·.1 != b.name) }) s
+  | .effect _ e =>
+    let site := match e with
+      | .write _ _ (.var _ n) rhs =>
+        if s.locals.contains (n, d) && !escapesExpr n rhs then some e.span else none
+      | .indexWrite _ _ (.var _ n) key rhs =>
+        if s.locals.contains (n, d) && !escapesExpr n key && !escapesExpr n rhs then some e.span
+        else none
+      | _ => none
+    let s := { s with sites := site.toList ++ s.sites }
+    ownedExpr e s
+  | .ret _ e | .throw _ e => ownedExpr e s
+  | .destructure _ t dflt init => (init :: dflt.toList ++ t.defaults).foldl (fun s e => ownedExpr e s) s
+  | .ite _ c t e => ownedStmts d (e.getD []) (ownedStmts d t (ownedExpr c s))
+  | .loop _ c b u => ownedStmts (d + 1) u (ownedStmts (d + 1) b (ownedExpr c s))
+  | .forOf _ _ _ i b => ownedStmts (d + 1) b (ownedExpr i s)
+  | .block _ _ b => ownedStmts d b s
+  | .tryStmt _ b h f => ownedStmts d (f.getD []) (ownedStmts d ((h.map (·.2)).getD []) (ownedStmts d b s))
+  | .brk .. | .cont .. => s
+end
+
+/-- The key-adding write sites of a body: the spans of the writes the
+lowering may make a copy of an owned object (`ownedStmts`). In the module's
+initialization, a top-level constant is a module value, which the module's
+functions and classes read: it is never owned. -/
+def growSites (ss : List Fragment.Stmt) (module : Bool := false) : List Span :=
+  if module then
+    (ss.foldl (fun s st =>
+      let s := ownedStmt 0 st s
+      match st with
+      | .constants _ bs => { s with locals := s.locals.filter fun (n, _) => !bs.any (·.name == n) }
+      | _ => s) {}).sites
+  else (ownedStmts 0 ss {}).sites
 
 /-- A module function's value as its callers see it: an ordinary function at
 exactly its annotated parameters and result. A leading `this: T` parameter
@@ -978,7 +1139,7 @@ private def mergeType (A B : Ty Nat) (drop : List PropKey := []) : Compiler (Ty 
   let mut labels : List Nat := []
   for c in ca do
     for d in cb do
-      let some r := ObjectMerge.mergeResult drop c d
+      let some r := ObjectMerge.mergeResult G drop c d
         | throw "a spread copies the own enumerable properties of a plain object; one of a string, an array, a function or a class value is outside the fragment"
       labels := labels ++ [← lower (SourceTypes.use r)]
   modify fun s => {s with hints := labels ++ s.hints}
@@ -1506,6 +1667,49 @@ private def writeCell (G : PositiveGraphs.NormalGraph Nat) (H : List (Ty Nat)) (
       DirectProof.node branch term [0] .write
         [DirectProof.var branch ri [label],DirectProof.cast branch D (DirectProof.var branch 0 C)]
     pure (DirectProof.node H term [0] (.unionVar ri) children)
+
+/-- Whether a write of `fld` to an object of type `B` may add the key: some
+plain-object clause states it neither as a field, a view nor a method, and
+none as a readonly optional field, which grants no write. -/
+private def mayLack (G : PositiveGraphs.NormalGraph Nat) (B : Ty Nat) (fld : PropKey) : Bool :=
+  let cs := PositiveRules.expand G B
+  let optionalView := fun (os : List (OptionalField (Ty Nat))) => os.any fun o => o.key == fld && o.readonly
+  cs.any (fun c => match c with
+    | .refs fs rs vs _ ms _ | .dict fs rs vs _ _ ms _ _ =>
+      !((fs :: rs).flatten ++ vs).any (·.1 == fld) && !ms.any (·.key == fld)
+    | _ => false) &&
+  !cs.any fun c => match c with
+    | .refs _ _ _ os _ _ | .dict _ _ _ _ os _ _ _ => optionalView os
+    | _ => false
+
+/-- A write statement that adds a key: `o.k = e` or `o["k"] = e` whose
+receiver's claimed type may lack `k`. On an owned local (`growSites`) it is
+the copy of the object with the key, rebound to the local's slot, returned
+with the parts the write evaluates; any other such write is refused, since
+another reference may hold the object and see its keys change. -/
+private def growingWrite (fc : SourceClaims.Function) (scope : List ScopeBinding) (e : Fragment.Expr) :
+    Compiler (Option (Nat × Fragment.Expr × PropKey × Option Fragment.Expr × Fragment.Expr)) := do
+  let (receiver, fld, key, rhs) ← match e with
+    | .write _ fld receiver rhs => pure (receiver, fld, none, rhs)
+    | .indexWrite _ (some s) receiver key rhs => pure (receiver, PropKey.str s, some key, rhs)
+    | _ => return none
+  let G := SourceTypes.graph (← table)
+  if !mayLack G (← exprType fc receiver) fld then return none
+  let sites := (← get).grows
+  let owned := match receiver with
+    | .var _ n => (valueSlot scope n).filter fun _ => sites.contains e.span
+    | _ => none
+  let some i := owned
+    | throw (locatedRefusal (← table) e.span .expressionClaim
+        s!"a write of '{fld}', a key the object's type does not state, may add it to an object \
+          another reference holds, which would see the object's keys change: a key-adding write \
+          is typed only on a local's own fresh object that nothing else has reached (not passed, \
+          stored, captured, returned or copied to another binding), outside any loop its \
+          declaration does not enclose")
+  if fld == .str "__proto__" then
+    throw (locatedRefusal (← table) e.span .expressionClaim
+      "a write of `__proto__` runs the prototype's setter: it replaces the prototype, and adds no key")
+  return some (i, receiver, fld, key, rhs)
 
 /-- The element at literal index `b` of the array `r` reads under `H`, from
 its store: a required position at its type, an optional or rest position at
@@ -4839,6 +5043,34 @@ private partial def body : Nat → SourceClaims.Function → Ty Nat → List Sco
     | .effect pos e :: rest =>
       let Γ ← env fc pos.1 scope
       let next ← body fuel fc R scope rest tail loopTargets
+      match ← growingWrite fc scope e with
+      | some (i, receiver, fld, key, rhs) =>
+        -- A key-adding write on an owned object: the receiver, the key and
+        -- the right side as the write evaluates them, then the object built
+        -- from the one new field and the copy of the receiver with it
+        -- (`Tm.merge`), which the local holds from here on.
+        let parts := receiver :: key.toList ++ [rhs]
+        let types ← parts.mapM (exprType fc)
+        let m := parts.length
+        let temporaries := (parts.map fun p => held ⟨"",some p.span⟩).reverse
+        let K := types.reverse ++ Γ
+        let W ← exprType fc e
+        let some name := match fld with | .str s => some s | .sym _ => none
+          | throw (locatedRefusal (← table) e.span .expressionClaim
+              "a key-adding write of a symbol key: the copy that adds the key copies string keys only")
+        let T ← groupType [name] [W]
+        let Rm ← mergeType types[0]! T
+        let mapping := (next.mapping.getD (List.range Γ.length)).map fun j =>
+          if j == i then 0 else j + m + 2
+        let marks := held ⟨"",some e.span⟩ :: held ⟨"",some e.span⟩ :: temporaries
+        let merged ← emitAt e.span (.merge [] (.var (m + 0)) (.var 0)) (.bind ⟨next.label, some mapping⟩)
+          (T :: K) Rm (scope := marks.drop 1 ++ scope)
+        let field ← emitAt e.span (.makeAt .absent [fld] [.var 0]) (.bind merged) K T
+          (scope := temporaries ++ scope)
+        parts.attach.zipIdx.reverse.foldlM (fun next (⟨part,_⟩,j) =>
+          compileExpr fc ((parts.take j |>.map fun p => held ⟨"",some p.span⟩).reverse ++ scope)
+            ((types.take j).reverse ++ Γ) part next) field
+      | none =>
       let drop := ⟨next.label, some ((next.mapping.getD (List.range Γ.length)).map (·+1))⟩
       compileExpr fc scope Γ e drop
     -- A block's statements run in a scope of their own and continue after it,
@@ -5045,7 +5277,7 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceCl
         inputs S "rest-allocation" (scope := restScope)
       first := store
     let entry ← emit .nul (.effect first) inputs [0]
-    return (inputs, R, entry)).run { types := T }
+    return (inputs, R, entry)).run { types := T, grows := growSites f.body (module := f.name == "") }
   return ⟨⟨built.types, built.program, built.claims, R, entry.label, inputs, built.codes⟩,
     built.obligations, built.sourceMap, built.assertions, built.cuts, built.hints, built.codeSources,
     built.nodePlans⟩

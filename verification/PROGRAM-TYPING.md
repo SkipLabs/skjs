@@ -603,9 +603,10 @@ the named members' `recT` and `viewT` (`namedMembers_sem`); only a key it does
 not name is read through the index, with `undefined`. An optional named field
 ($\omega$ above) holds beside the index as a named field does, so a key the
 dictionary does not name is still read through the index: `process.env` is a
-writable index beside the optional `TZ`. A write to an optional field,
-writable or readonly, is not typed, since the object's keys are fixed at
-allocation; a readonly one grants no write in any case.
+writable index beside the optional `TZ`. A write to a writable optional
+field may add its key: it is a [key-adding write](#key-adding-writes), a copy
+of a local's own object, refused on any other; a readonly one grants no write
+in any case.
 
 A fresh literal meets a dictionary, or a record whose optional fields it
 leaves out, with no rule of its own: `alloc` types it at the record whose own
@@ -1215,15 +1216,92 @@ Booleans, numbers, bigints, symbols); each field $(k{:}T)\in\varphi$ surely
 given within $T$ by $c_b$, or by $c_a$ where whatever $c_b$ gives under $k$ is
 within $T$; each optional field within its type on both sides, and then $c_a$
 holding no prototype; each bound of $\beta$ admitting every key either side
-may give. "Within" is label inclusion, whose meaning is a union's. The
+may give (`FieldsOk`). "Within" is label inclusion, whose meaning is a
+union's.
+
+The result may instead be a dictionary
+$\mathsf{Dict}(\varphi;\iota;\omega;\beta;\chi)$, of index views $\iota$ and
+writable indexes $\chi$ beside the same fields, optional fields and bounds
+(`DictOk`): every entry of $\iota\mathbin{+\!\!+}\chi$ is at one type $V$;
+$c_a$ holds no prototype ($\neg\pi$ among its keys, by a bound or by an index
+of its own, which `dictViewT` states); and for each class $K$ of an entry,
+whatever either side gives under a key $K$ admits is within $V$:
+
+$$
+\operatorname{given}_K(c,V)\iff
+  \forall (k{:}T)\in\varphi_c\cup\omega_c.\ K\ \text{may admit}\ k\Rightarrow T\subseteq V
+  \ \land\ \big(\exists (K'{:}T')\in\iota_c.\ K\subseteq K'\land T'\subseteq V
+  \ \lor\ \exists\,\mathsf{among}\,N\in\beta_c.\ \forall k\in N.\ K\ \text{may admit}\ k\Rightarrow k\in\operatorname{dom}(\varphi_c\cup\omega_c)\big)
+$$
+
+($\operatorname{given}_K(c_a,V)$ is `classWithinA`). For the source it is
+`classWithin`, over the keys a copy takes, less $\delta$, and also no array
+store whose elements a copy would give under index keys: a bound excluding the
+store key, or a string index at a type no member of which is a list
+(`noStore`, since the store key `[]` is a string), unless $K$ is the symbol
+class, which admits no key a copy gives. A field or optional field of the
+result whose key a class may admit is within $V$, and exactly $V$ where a
+writable index's class may admit it, whose locations hold exactly $V$. The
 soundness case evaluates the operands with `bind`, as `arith` does, and
 closes with `ObjectMerge.merge_values_safe`, which takes the merge's step,
 then the allocation's by `make_fields_rule`, giving each location the
-contract its result key states, or its copied value for a key the result
-does not state. Evidence names the rule `merge` with the two operands'
-derivations; the search types a slot operand at the slot's type and tries
-the requested type, then the pool's, for the result, coercing; extraction
-proposes the clauses (`ObjectMerge.mergeResult`) and states them as hints.
+contract its result key states, $V$ for a key an index's class admits, or its
+copied value for a key the result does not state. Evidence names the rule
+`merge` with the two operands' derivations; the search types a slot operand
+at the slot's type and tries the requested type, then the pool's, for the
+result, coercing; extraction proposes the clauses (`ObjectMerge.mergeResult`:
+where a side states an index, the dictionary over the sides' classes at the
+union of their index types and the admitted fields' types, if the rule
+admits it, else the record) and states them as hints.
+
+For heap knowledge a merge is an allocation, as a literal is
+(`HeapExpressionRules.merge_alloc_sound`): it reads the heap and writes no
+old location, so every fact survives, and its fresh object's fields, under
+whatever keys, are distinct from every field a record-typed slot names.
+
+### Key-adding writes
+
+A source write that adds a key is the copy of the object with the key,
+rebound to the local that held it: the statement $x.k = e$ (or $x[\text{"}k\text{"}] = e$)
+where some plain-object clause of $x$'s claimed type states $k$ neither as a
+field, a view nor a method, nor as a readonly optional field (`mayLack`),
+lowers, when $x$ **owns** its object at the statement, to
+
+$$
+x;\ e;\ o\leftarrow\mathsf{makeAt}(\{k\mapsto v\});\ x\leftarrow\mathsf{merge}_{[]}(x,o)
+$$
+
+with the value of $e$ at the claim of the write expression $W$, the one-key
+object at $\mathsf{Ref}(k{:}W;\ \mathsf{among}\,\{k\})$ and the merge at the
+record or dictionary `mergeResult` proposes, checked by
+[$\textsc{merge}$](#allocation-from-parts); the last node's slot map puts the
+merge's value in $x$'s slot. The value of the assignment is discarded: only a
+statement is lowered so. Ownership (`growSites`) is syntactic:
+
+$$
+\operatorname{Own}(x,s)\iff
+  \begin{cases}
+  x\ \text{is declared}\ \mathtt{const}\ x = o\ \text{with}\ o\ \text{an object literal, not at module level;}\\
+  s\ \text{is at the loop depth of the declaration, in the same body;}\\
+  \text{no statement from the declaration through}\ s\ \text{lets}\ x\ \text{escape.}
+  \end{cases}
+$$
+
+An expression lets $x$ escape (`escapesExpr`) when $x$ occurs in it other
+than as the receiver of a member read, index read, write, index write, `in`
+test, compound or logical assignment: in a call's arguments or as a method
+call's receiver, in a binding's or field's value, a result, a spread, a
+comparison, and anywhere in a closure, which holds the object. In textual
+order every path from the declaration to $s$ passes only earlier statements,
+since $s$ is in no loop the declaration is outside; a module constant is read
+by the module's functions. With $\operatorname{Own}(x,s)$ no reference but
+$x$'s slot holds the object, so JavaScript's write in place, which every
+reference would see, and the copy, which only $x$ sees, agree. Any other
+write adding a key is refused, located at the write, as is a write of
+`__proto__` (a setter) or a symbol key (the copy takes string keys). A write
+at a key known only at run time is refused on an object another reference
+may hold; on an owned one, at a string, which may spell `[]` or `[[proto]]`,
+keys the model keeps for itself; at a number or symbol it is not lowered.
 
 ### Checked control-flow graphs
 
@@ -1949,11 +2027,12 @@ It computes a guaranteed output, not an assumed postcondition:
 | Observed read                        | Preserve facts and links; record the result's primitive predicate and its current read relationship. That set must fit the requested ordinary result type.                                                                               |
 | Sliced read (`slicedRead`)           | A read a cell fact says finds no `undefined` (every predicate other than it): ordinary read evidence at the location's contract $C$, whose slice $T_{\mathsf{false}}(C)$ by the `undefined` tag is below the requested type by a checked subtype proof. As an ordinary typed read otherwise. |
 | Known immutable value                | Check the requested primitive type against a proved slot fact or the slot's ordinary primitive type.                                                                                                                                     |
-| Allocation                           | Check ordinary creation evidence and scope for either descriptor, preserve old facts, add the fresh bag's initial contents where a checked value slot's are known, and its fields' distinctness from every record slot's. Closure code is not executed. |
+| Allocation                           | Check ordinary creation evidence and scope for either descriptor, preserve old facts, add the fresh bag's initial contents where a checked value slot's are known, and its fields' distinctness from every record slot's. Closure code is not executed. A merge of two slots is an allocation too: old facts preserved, the fields its result type names distinct. |
 | Write                                | Check ordinary write evidence (no old-content premise), discard old cell facts but those a distinct link separates from the written location, record new contents for the receiver and its witnessed aliases where the value is a known primitive, or `defined` where its type rules `undefined` out, and preserve immutable facts and slot equalities. Read links are discarded. |
 | Ordinary expression, including calls | Check ordinary evidence, discard cell facts and read links, preserving immutable facts and slot equalities.                                                                                                                              |
 
-`typedRead_sound`, `slicedRead_sound`, `read_sound`, `alloc_sound` and
+`typedRead_sound`, `slicedRead_sound`, `read_sound`, `alloc_sound` (with
+`merge_alloc_sound`) and
 `write_sound` prove the read, allocation and write rules above. The sliced
 read is
 

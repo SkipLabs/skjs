@@ -224,41 +224,54 @@ let rec field_type declarations seen t name = match t with
   | Rigid r -> (match rigid_bound r with
     | Some b -> field_type declarations seen b name
     | None -> unsupported "field read on rigid parameter")
-(* Whether writing the key would add a property: the object is a record (not
-   an array, a dictionary or a declaration of either) none of whose arms has
-   it. An object's keys are fixed where it is allocated, in JavaScript's
-   meaning of a record type as in the model's, so such a write is refused by
-   name rather than left to fail in search (TypeScript refuses it too). *)
-let adds_key declarations t name =
+(* A key-adding write (DESIGN.md, "A key-adding write"): a write of a key
+   some plain-object arm of the receiver's type states neither as a required
+   field nor as a method may add the key. Lean lowers it on an owned local as
+   the copy of the object with the key, and refuses it on any other object;
+   the producer proposes the grown type and the new field's contract. *)
+let plain_arms declarations t =
   match (try declared_head declarations [] t with Json.Error _ -> t) with
-  | Atoms (_::_ as atoms) -> List.for_all (function
-      | Shape {elements=None;indexes=[];calls=[];fields;_} ->
-        not (List.exists (fun (f:Semantic.field) -> f.name=name) fields)
-      | Exact fields -> not (List.exists (fun (f:Semantic.field) -> f.name=name) fields)
-      | _ -> false) atoms
-  | _ -> false
-(* Whether the key is a writable optional field of some arm and a required
-   or readonly one of none: writing it may add it, where the object was
-   allocated without it. (A readonly one grants no write, which Lean
-   refuses.) *)
-let may_add_key declarations t name =
-  match (try declared_head declarations [] t with Json.Error _ -> t) with
-  | Atoms (_::_ as atoms) ->
-    let field = function
-      | Shape {elements=None;calls=[];fields;_} | Exact fields ->
-        List.find_opt (fun (f:Semantic.field) -> f.name=name) fields
-      | _ -> None in
-    List.exists (fun a -> match field a with Some f -> f.optional | None -> false) atoms
-    && not (List.exists (fun a -> match field a with
-      | Some f -> not f.optional || f.write = None | None -> false) atoms)
-  | _ -> false
-let refuse_growth declarations t name =
-  if adds_key declarations t name then
-    unsupported ("a write adds the property '" ^ key_text name ^ "'"
-      ^ " to an object allocated without it: an object's keys are fixed at its allocation");
-  if may_add_key declarations t name then
-    unsupported ("a write to the optional property '" ^ key_text name ^ "'"
-      ^ " adds it where the object was allocated without it: an object's keys are fixed at its allocation")
+  | Atoms (_::_ as atoms) when List.for_all (function
+      | Shape {elements=None;calls=[];_} | Exact _ -> true | _ -> false) atoms -> Some atoms
+  | _ -> None
+let arm_fields = function Shape {fields;_} | Exact fields -> fields | _ -> []
+let may_lack declarations t name =
+  match plain_arms declarations t with
+  | Some atoms ->
+    List.exists (fun a -> not (List.exists (fun (f:Semantic.field) ->
+      f.name=name && not f.optional) (arm_fields a))) atoms
+    && not (List.exists (fun a -> List.exists (fun (f:Semantic.field) ->
+      f.name=name && f.optional && f.write=None) (arm_fields a)) atoms)
+  | None -> false
+(* The contract the new field is added at: an optional field's own where an
+   arm states one, else the value's type, a literal's widened as a fresh
+   literal's field is. *)
+let added_contract declarations t name (rhs:Source.expr) value =
+  let declared = Option.bind (plain_arms declarations t) (List.find_map (fun a ->
+    List.find_map (fun (f:Semantic.field) ->
+      if f.name=name && f.optional then f.write else None) (arm_fields a))) in
+  (* A binding's or a read's type is the contract as it stands, without the
+     exact keys a fresh literal has, as TypeScript's declared type is. *)
+  let loosen = function
+    | Atoms atoms -> Atoms (List.map (function
+        | Exact fields -> Shape {fields;indexes=[];calls=[];elements=None}
+        | a -> a) atoms)
+    | t -> t in
+  match declared,rhs.node with
+  | Some c,_ -> c
+  | None,(Id _ | Read _) -> loosen value
+  | None,_ -> loosen (widen value)
+(* The object's type once the key is added at [c]: every arm owns it. *)
+let grown declarations t name c =
+  match plain_arms declarations t with
+  | Some atoms ->
+    let field = {name;optional=false;read=c;write=Some c;host=false} in
+    let add fs = List.filter (fun (f:Semantic.field) -> f.name<>name) fs @ [field] in
+    Atoms (List.map (function
+      | Shape s -> Shape {s with fields=add s.fields}
+      | Exact fs -> Exact (add fs)
+      | a -> a) atoms)
+  | None -> t
 (* What a fresh array literal expected at an iterable type holds, found as
    TypeScript finds it: the expected type's member under the key
    `Array.prototype` iterates by (its one symbol key, `[Symbol.iterator]`),
@@ -1080,12 +1093,33 @@ let merge_alternative (a:alternative) (b:alternative) : alternative =
       | Some f ->
         if b_never then Some (field k true f.read)
         else Option.map (fun t -> field k true (union f.read t)) b_maybe
-      | None -> if a.exact then Option.map (field k true) b_maybe else None) names in
-  { afields=fields; exact=a.exact && b.exact; index=None }
+      (* A key the alternative may hold at its index: a dictionary owns no
+         prototype, so the key is optional at either side's type. *)
+      | None -> (match a.index,k with
+        | Some ta,Name _ -> Option.map (fun t -> field k true (union ta t)) b_maybe
+        | _ -> if a.exact then Option.map (field k true) b_maybe else None)) names in
+  (* Where a side states an index and each side says what it gives under
+     every string key, by an index or by its exact keys, the result states
+     the index, at what either side and the string-keyed fields hold, and so
+     does every string-keyed field: Lean's merge of a dictionary. *)
+  match a.index,b.index with
+  | (Some _,_ | _,Some _) when (a.index <> None || a.exact) && (b.index <> None || b.exact) ->
+    let keyed (f:Semantic.field) = match f.name with Name _ -> true | Key _ -> false in
+    let v = List.fold_left union (Atoms [])
+      (Option.to_list a.index @ Option.to_list b.index
+       @ List.map (fun (f:Semantic.field) -> f.read) (List.filter keyed fields)) in
+    { afields=List.map (fun (f:Semantic.field) ->
+        if keyed f then {f with read=v; write=Some v} else f) fields;
+      exact=a.exact && b.exact; index=Some v }
+  | _ -> { afields=fields; exact=a.exact && b.exact; index=None }
 
 let alternative_type (a:alternative) =
-  if a.exact && List.for_all (fun (f:Semantic.field) -> not f.optional) a.afields
-  then Atoms [Exact a.afields] else record a.afields
+  match a.index with
+  | Some v -> Atoms [Shape {fields=a.afields;
+      indexes=[{keys=Strings;value=v;writable=Some v}];calls=[];elements=None}]
+  | None ->
+    if a.exact && List.for_all (fun (f:Semantic.field) -> not f.optional) a.afields
+    then Atoms [Exact a.afields] else record a.afields
 
 (* Evolving bindings, TypeScript's evolving `any`: an unannotated `let`
    initialized with `null` or `undefined`, and an unannotated local
@@ -1110,6 +1144,9 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
   (* The evolving bindings in scope, by name: the key, and whether the
      binding is an array whose elements evolve. *)
   let evolving = ref [] in
+  (* The immutable locals a statement added a key to, and those of them
+     claimed with their exact keys while nothing else can reach the object. *)
+  let grown_locals = ref [] and exact_locals = ref [] in
   let branch = branch_with declarations ~modules:(fun n ->
     try Option.map Lazy.force (List.assoc_opt n module_functions) with Json.Error _ -> None)
     ~claimed:(fun pos -> List.find_map (fun (x:expression) ->
@@ -1296,6 +1333,9 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
   let join before left right =
     List.filter_map (fun (n,b) -> match b,List.assoc_opt n left,List.assoc_opt n right with
       | Storage (contract,_),Some (Storage (_,l)),Some (Storage (_,r)) -> Some (n,holding contract (union l r))
+      (* A local an arm added a key to holds the object either arm left. *)
+      | Value _,Some (Value l),Some (Value r) when List.mem n !grown_locals && l <> r ->
+        Some (n,Value (union l r))
       | _ when is_field n -> None
       | _ -> Some (n,b)) before
     (* A field's contents are known after both arms where each knows them. *)
@@ -1309,6 +1349,15 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
      in order; any other step that may write a cell it does not name (a call,
      a write, a short circuit), each cell by its contract. The claims of the
      expression's parts are already made. *)
+  (* A write adding a key to an immutable local's object: the value it adds
+     is claimed at the new field's contract, and the local holds the grown
+     object from the next statement on. Lean decides whether the local owns
+     its object. *)
+  let adds env (receiver:expr) t name = match receiver.node with
+    | Id n -> (match List.assoc_opt n env with
+      | Some (Value _) -> may_lack declarations t name
+      | _ -> false)
+    | _ -> false in
   let rec effects env (e:expr) = match e.node with
     | Lambda _ | Literal _ | Id _ -> env
     | Assign (n,rhs) ->
@@ -1399,7 +1448,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
           not (List.exists (fun (f:Semantic.field) -> f.name = field) fields)
         | _ -> false) atoms then
       explain site ("a write adds the property '" ^ key_text field ^ "' where a dictionary may lack it: \
-        an object's keys are fixed at its allocation")
+        another reference may hold the dictionary, and would see its keys change")
   and expr ?expected env e =
     let site = e.pos in
     let t = match e.node with
@@ -1801,16 +1850,21 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | IndexWrite (receiver,key,rhs) ->
       Option.iter (fun k -> Option.iter (evolve k) (quietly (fun () -> expr env rhs))) (evolving_array receiver);
       let t = expr env receiver in
-      (match expr env key with
-       | Atoms [StrLit k] -> refuse_growth declarations t (Name k); dictionary_growth site t (Name k)
+      let key_type = expr env key in
+      (match key_type with
+       | Atoms [StrLit k] -> dictionary_growth site t (Name k)
        | Atoms [NumLit bits] -> Option.iter (fun k -> dictionary_growth site t (Name k)) (number_key bits)
        | _ -> ());
-      expr (effects (effects env receiver) key) rhs
+      let name = match key_type with Atoms [StrLit k] -> Some (Name k) | _ -> None in
+      let value = expr (effects (effects env receiver) key) rhs in
+      (match name with
+       | Some name when adds env receiver t name -> added_contract declarations t name rhs value
+       | _ -> value)
     | Write (receiver,field,rhs) ->
-      let object_type = expr env receiver in
-      refuse_growth declarations object_type field;
-      dictionary_growth site object_type field;
-      expr (effects env receiver) rhs
+      let t = expr env receiver in
+      dictionary_growth site t field;
+      let value = expr (effects env receiver) rhs in
+      if adds env receiver t field then added_contract declarations t field rhs value else value
     | Assign (n,rhs) ->
       if not (List.mem_assoc n env) && List.mem_assoc n module_functions then
         unsupported ("assignment to module function " ^ n);
@@ -2667,6 +2721,29 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       (b @ (match h with Some (_,h) -> h | None -> []) @ Option.value f ~default:[])
     | Closing (c,b) -> List.exists (stmt_mentions n) (b @ c)
     | Break _ | Continue -> false in
+  (* Whether [n] may reach a place other than the receiver of its own member
+     reads and writes, as Lean's `escapesExpr` reads it: a binding, a field,
+     an argument or the receiver of a call, a result, a closure. *)
+  let rec escapes n (e:expr) = match e.node with
+    | Id m -> m = n
+    | Read ({node=Id _;_},_) -> false
+    | Index ({node=Id _;_},key) -> escapes n key
+    | Write ({node=Id _;_},_,rhs) -> escapes n rhs
+    | IndexWrite ({node=Id _;_},key,rhs) -> escapes n key || escapes n rhs
+    | Invoke ({node=Read ({node=Id m;_},_);_},args,_,_) -> m = n || List.exists (escapes n) args
+    | Lambda _ | Ctor _ -> mentions n e
+    | _ -> List.exists (escapes n) (Source.children e) in
+  (* Whether a statement among [ss] adds a key other than [keys] to the
+     object [n] names: `n.k = e` or `n["k"] = e`. *)
+  let rec grows_later n keys ss = List.exists (fun (s:stmt) -> match s.statement with
+    | Effect {node=Write ({node=Id m;_},Name k,_);_}
+    | Effect {node=IndexWrite ({node=Id m;_},{node=Literal (LString k);_},_);_} ->
+      m = n && not (List.mem k keys)
+    | If (_,a,b) -> grows_later n keys a || grows_later n keys b
+    | Block (_,b) -> grows_later n keys b
+    | Try (b,h,f) -> grows_later n keys (b @ (match h with Some (_,h) -> h | None -> [])
+        @ Option.value f ~default:[])
+    | _ -> false) ss in
   (* The first use of an unannotated constant's fresh array, in the
      statements after its declaration: where it is the whole value expected
      at a type (an annotated constant's initializer, a returned value, an
@@ -2691,6 +2768,28 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     let rec record = function [] -> () | s :: rest -> Hashtbl.replace following s.span rest; record rest in
     record ss;
     List.fold_left (fun env s ->
+    (* A grown local's exact keys are claimed only where nothing else can
+       reach its object: from the first statement that may let it escape on
+       (but a `return` of it, after which the body runs nothing), it is its
+       record, so no other reference, and no callee that may add a key to a
+       writable dictionary, learns which keys it lacks. *)
+    let env = List.fold_left (fun env n ->
+      let escaping = match s.statement with
+        | Return {node=Id _;_} -> false
+        | _ -> List.exists (escapes n) (Source.statement_children s) in
+      if not escaping then env else begin
+        exact_locals := List.filter ((<>) n) !exact_locals;
+        List.map (fun (m,b) -> match b with
+          | Value (Atoms atoms) when m = n -> m,Value (Atoms (List.map (function
+              | Exact fields -> Shape {fields;indexes=[];calls=[];elements=None}
+              | a -> a) atoms))
+          | Value (Union ts) when m = n -> m,Value (Union (List.map (function
+              | Atoms atoms -> Atoms (List.map (function
+                  | Exact fields -> Shape {fields;indexes=[];calls=[];elements=None}
+                  | a -> a) atoms)
+              | t -> t) ts))
+          | _ -> m,b) env
+      end) env !exact_locals in
     let env = match s.statement with
       | While (c,body,update) -> loop_fix env c body update
       | ForOf _ -> forget env
@@ -2732,6 +2831,17 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         | None,Literal (LNull | LUndefined) when mutable_ ->
           evolving := (n,(init.pos,false)) :: !evolving; committed
         | _ -> committed in
+      (* A constant's object literal to which a later statement of its
+         block adds a key is claimed with its exact keys: the bound says
+         which keys it lacks, so a key added on one path only is optional
+         where the paths join. *)
+      exact_locals := List.filter ((<>) n) !exact_locals;
+      (match mutable_,written,init.node with
+       | false,None,Alloc fs when grows_later n (List.map fst fs)
+             (Option.value (Hashtbl.find_opt following s.span) ~default:[]) ->
+         exact_allocs := init.pos :: !exact_allocs;
+         exact_locals := n :: !exact_locals
+       | _ -> ());
       let initial = expr ?expected:(if committed <> None then committed else written) env init in
       if not mutable_ then named_closure n written init;
       let binding = match mutable_,written with
@@ -2770,6 +2880,23 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       (match lookup env n with
        | Storage _ -> assign (after rhs env) n t
        | Value _ -> env)
+    | Effect ({node=Write ({node=Id n;_},_,_) | IndexWrite ({node=Id n;_},_,_);_} as e)
+      when (match List.assoc_opt n env with Some (Value _) -> true | _ -> false) ->
+      let t = binding_type (lookup env n) in
+      let c = expr env e in
+      let claimed (x:expr) = List.find_map (fun (y:expression) ->
+        if y.pos = x.pos then Some y.type_ else None) !expressions in
+      let receiver,name = match e.node with
+        | Write (r,name,_) -> r,Some name
+        | IndexWrite (r,key,_) -> r,(match claimed key with Some (Atoms [StrLit k]) -> Some (Name k) | _ -> None)
+        | _ -> e,None in
+      let before = env in
+      let env = after e env in
+      (match name with
+       | Some name when adds before receiver t name ->
+         grown_locals := n :: !grown_locals;
+         List.map (fun (m,b) -> if m=n then m,Value (grown declarations t name c) else m,b) env
+       | _ -> env)
     | Effect e -> ignore (expr env e); after e env
     | If (c,a,b) -> ignore (expr env c);
       let env = after c env in

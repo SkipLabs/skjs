@@ -127,8 +127,10 @@ $$
   writable one as an invariant field does, a readonly one (`readonly k?: T`)
   as a view does, so a readonly optional field is a view that may be absent.
   A read gives $T$ or undefined, so an object lacking an optional key has no
-  prototype, whose members the read would otherwise reach. No rule writes one,
-  since an object's keys are fixed at allocation.
+  prototype, whose members the read would otherwise reach. No rule writes one
+  in place, since an object's keys are fixed at allocation; a write that may
+  add the key copies a local's own object
+  ([key-adding writes](PROGRAM-TYPING.md#key-adding-writes)).
 - **Methods** are host-relative members: read from the object and invoked on
   it, they behave as typed
   ([DESIGN.md](DESIGN.md#method-members-are-host-relative)). A member $m$ has
@@ -223,8 +225,10 @@ number spells it (`notNumericKey`, sound by `numberToString_shape`: every
 number's spelling is `NaN`, an infinity, or begins with a digit or with `-`
 and a digit).
 
-The calculus adds no key to an existing object; that TypeScript lets code
-holding a mutable dictionary add keys at $C$ is a trust assumption
+The calculus adds no key to an existing object; a program adds one by
+copying its own object ([key-adding writes](PROGRAM-TYPING.md#key-adding-writes)).
+That TypeScript lets code holding a mutable dictionary add keys at $C$ is a
+trust assumption, which an own-key bound of the same object falls outside
 ([DESIGN.md](DESIGN.md#writable-string-index-signatures)). Index contracts are guarded through the world, so a
 recursive graph can contain `JsonObject = { readonly [key: string]: Json | null }`.
 

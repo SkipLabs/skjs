@@ -162,6 +162,23 @@ types or its object subtyping.
 in `6a823646` and `d6645444`; the citation was dropped from DESIGN in
 `6ee739f8`.
 
+### Smith, Walker and Morrisett 2000
+
+Frederick Smith, David Walker and Greg Morrisett. *Alias Types.* In
+Programming Languages and Systems (ESOP 2000), LNCS 1782, pages 366–381,
+Springer, 2000.
+[doi:10.1007/3-540-46425-5_24](https://doi.org/10.1007/3-540-46425-5_24).
+
+**Used for** the strong update: a change to a location's type is sound where
+no other reference to the location exists, since no one else holds the old
+type. A key-adding write changes an object's own keys, so it is typed only on
+a local's own fresh object nothing else has reached; the pipeline takes the
+idea, not the paper's linear capabilities: the unaliasedness is a syntactic
+fact of the source (`growSites`), and the write is a copy the local is
+rebound to rather than an update in place.
+**Discussed in** [DESIGN: objects and prototypes](DESIGN.md#objects-and-prototypes),
+[PROGRAM-TYPING: key-adding writes](PROGRAM-TYPING.md#key-adding-writes).
+
 ## Type-system design
 
 ### Frisch, Castagna and Benzaken 2008
