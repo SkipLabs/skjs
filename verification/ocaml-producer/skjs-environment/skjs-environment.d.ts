@@ -1,10 +1,10 @@
 // The host environment SKJS's test harness checks its tests in, beyond the
 // ECMAScript library TypeScript supplies, as `tsconfig.json` here gives it to
-// the pipeline (DESIGN.md, "The SKJS test environment"). SKJS reads these names from its builtins stub
+// the pipeline (DESIGN.md, "Trust surface"). SKJS reads these names from its builtins stub
 // (`import-stubs/@types/skjs/index.d.ts`), which replaces the library and so
 // cannot be loaded beside it; each is restated here, as a global variable
 // annotated with an interface, which the declaration reader reads at the
-// members and call signatures a unit uses (DESIGN.md, "Global values"). Every
+// members and call signatures a unit uses (PROGRAM-TYPING.md, "Imported, ambient and global values"). Every
 // declaration is a trusted assumption about the host, as an import's is.
 
 /** `__SKJS_show(e, "T")` is SKJS's test assertion that it infers `T` for

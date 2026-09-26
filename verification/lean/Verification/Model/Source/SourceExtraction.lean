@@ -3640,7 +3640,7 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     -- been evaluated, which is where a call reads them; the operand is a name,
     -- so nothing is evaluated twice. No iterator of the source's own can be
     -- installed in this fragment, so the array's positions are what a spread
-    -- yields (DESIGN.md, the trust boundary).
+    -- yields (DESIGN.md, "Trust surface").
     let spreadElements : List (Nat × List (Ty Nat)) ← if !spread then pure [] else
       spreadOrder.mapM fun i => do
         let some arrayTy := As[i]? | throw "a spread argument needs an operand"
@@ -4802,7 +4802,7 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceCl
     -- the heap rules are stated over locations, so nothing here assumes they
     -- do not. What a JavaScript value must be for that meaning to hold (a
     -- plain data object, not an accessor or proxy) is part of the interpreted
-    -- caller contract, as it is for arrows (DESIGN.md, the trust boundary).
+    -- caller contract, as it is for arrows (DESIGN.md, "Trust surface").
     for ((p, A), (name, claimed)) in (f.params.zip bindings).zip fc.params do
       if p.name != name then throw "parameter claim name or order mismatch"
       let B ← SourceClaims.resolve (← table).length claimed

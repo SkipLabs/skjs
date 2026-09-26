@@ -356,7 +356,7 @@ function fromSkjs(
  * expression statements, constants and class declarations. An ambient
  * `declare const` or `declare class` runs nothing. */
 // An enum runs where it is written unless it is ambient or a `const enum`,
-// whose reads are its values (DESIGN.md, "Enums").
+// whose reads are its values (PROGRAM-TYPING.md, "Enums").
 const isInitStatement=(n: ts.Statement)=>ts.isExpressionStatement(n)||
   ((ts.isVariableStatement(n)||ts.isClassDeclaration(n))&&!n.modifiers?.some(m=>m.kind===ts.SyntaxKind.DeclareKeyword))||
   (ts.isEnumDeclaration(n)&&!n.modifiers?.some(m=>m.kind===ts.SyntaxKind.DeclareKeyword||m.kind===ts.SyntaxKind.ConstKeyword));
@@ -445,7 +445,7 @@ function fromSourceClaims(
   // An entry is at a statement, or at the closing brace of a function body:
   // the point where the body completes, which an async body's completion
   // (a `Promise<void>` settled with no value) is claimed at. A lowered
-  // `switch` or `for` has entries of its own (DESIGN.md, "Statement forms"):
+  // `switch` or `for` has entries of its own (PROGRAM-TYPING.md, "Statement forms"):
   // a label's test and jump, `default`'s and the clauses' `{` jumps, the
   // bound discriminant; a `for`'s initializer, its loop at the `;` after the
   // initializer, and its update. A parameter pattern's or default's is at the
@@ -469,10 +469,11 @@ function fromSourceClaims(
     }
     if(ts.isForStatement(n)&&n.incrementor)at(n.incrementor.getStart(sf),n.incrementor.end);
     // A parameter written as a pattern or with a default is bound by a
-    // statement of its own at the parameter (DESIGN.md, "Patterns").
+    // statement of its own at the parameter (PROGRAM-TYPING.md, "Patterns").
     if(ts.isParameterDeclaration(n)&&(n.initializer||!ts.isIdentifier(n.name)))at(n.getStart(sf),n.end);
     // A derived class's implicit constructor constructs its base at the
-    // `extends` clause (DESIGN.md, "Modules and code units", "Class members").
+    // `extends` clause (DESIGN.md, "Modules and code units";
+    // PROGRAM-TYPING.md, "Classes").
     if(ts.isHeritageClause(n)&&n.token===ts.SyntaxKind.ExtendsKeyword&&ts.isClassDeclaration(n.parent))
       at(n.getStart(sf),n.end);
     const p=n.parent;
@@ -575,25 +576,25 @@ function render(
       spans.add(`${n.getStart(sf)}:${p.expression.end}`);spans.add(`${n.getStart(sf)}:${p.literal.end}`);
     }
     // An optional chain's body nodes span from a `?.` token to the end of
-    // their link (DESIGN.md, "Optional chaining").
+    // their link (PROGRAM-TYPING.md, "Derived source forms").
     if(n.flags&ts.NodeFlags.OptionalChain)
       scanTokens(source.slice(0,n.end),(k,scanner)=>{
         if(k===ts.SyntaxKind.QuestionDotToken&&scanner.getTokenStart()>=n.getStart(sf))
           spans.add(`${scanner.getTokenStart()}:${n.end}`);
       });
     // An enum's object is allocated from its name to its end, and a member's
-    // reverse mapping is claimed from the member to the end (DESIGN.md, "Enums").
+    // reverse mapping is claimed from the member to the end (PROGRAM-TYPING.md, "Enums").
     if(ts.isEnumDeclaration(n)){
       spans.add(`${n.name.getStart(sf)}:${n.end}`);
       for(const m of n.members)spans.add(`${m.getStart(sf)}:${n.end}`);
     }
     // A class's prototype object is allocated from its name to its end
-    // (DESIGN.md, "Modules and code units", "Classes").
+    // (DESIGN.md, "Modules and code units"; PROGRAM-TYPING.md, "Classes").
     if(ts.isClassDeclaration(n)&&n.name)spans.add(`${n.name.getStart(sf)}:${n.end}`);
     // The key a class's prototype owns for `instanceof` is claimed after the
     // name, to the end; an implicit derived constructor's forwarded
-    // parameters at the characters of its `extends` keyword (DESIGN.md,
-    // "Class inheritance").
+    // parameters at the characters of its `extends` keyword (PROGRAM-TYPING.md,
+    // "Classes").
     if(ts.isClassDeclaration(n)&&n.name){
       starts.add(n.name.end);spans.add(`${n.name.end}:${n.end}`);
       const heritage=n.heritageClauses?.find(c=>c.token===ts.SyntaxKind.ExtendsKeyword);

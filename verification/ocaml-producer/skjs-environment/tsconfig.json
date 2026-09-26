@@ -1,6 +1,6 @@
 {
   // The environment SKJS's test harness checks a test in, as the pipeline
-  // reads it (DESIGN.md, "The SKJS test environment"). SKJS runs with
+  // reads it (DESIGN.md, "Trust surface"). SKJS runs with
   // `--import-stubs import-stubs`: a bare import specifier resolves in that
   // directory, and its builtins stub declares the host's globals, of which
   // `skjs-environment.d.ts` restates those the ECMAScript library lacks. The

@@ -21,12 +21,9 @@ are the types a graph label can name. [Control-flow graphs](PROGRAM-TYPING.md#ch
 and [state assertions](POSITIVE-TYPES.md#state-assertion-grammar) are layered on
 those two rather than alternatives to them.
 
-The supported source profile includes null, undefined, Boolean and numeric unions, required
-cell fields, and callbacks with ordered required parameters. The
-[undefined examples](tests/stateful-source/undefined.ts) exercise contracts, alias
-writes, strict comparisons and nullish coalescing. This does not imply support
-for `void`, optional properties or implicit returns; see the
-[current fragment](#current-source-fragment) and the [fragment boundary](DESIGN.md#fragment-boundary).
+The TypeScript the pipeline reads is summarised under
+[current source fragment](#current-source-fragment); the
+[fragment boundary](DESIGN.md#fragment-boundary) lists what it refuses and why.
 
 ## Run
 
@@ -85,106 +82,51 @@ SKJS itself; it is not required for changes confined to the verifier or reports.
 
 ## Current source fragment
 
-The source adapter supports **functions with primitive or bounded callable
-parameters, initialized `const` bindings, nested branches (`else if`, unbraced arms), `while`,
-`for`, `for...of` and `for...in` loops with `break`/`continue`, `switch`, nested
-blocks and returns** ([statement forms](PROGRAM-TYPING.md#statement-forms)), **`throw`
-and `try`/`catch`/`finally`** ([throws](DESIGN.md#throws): a throw is an
-outcome, as a value is), where a `const` or `let` statement may declare several bindings,
-bound left to right under the statement's one entry, and a `const`, an array
-assignment or a parameter may bind a pattern (object and array patterns,
-nested, with defaults, holes and a tuple's rest; [patterns](PROGRAM-TYPING.md#patterns)),
-over local cells and bounded expression closures and calls. Cell
-fields, arrow arguments and arrow results admit primitive and recursively
-callable contracts; nested record operands remain excluded. Annotations may union the supported primitive, cell and
-function types with ordered required parameters. Creating and invoking closures
-preserves parameter order and requires an exact argument count, including zero. Immutable Boolean, null and undefined tests refine what
-follows them, including through `&&`, `||`, `??`, `?:` and negation.
-Strict `typeof e === "function"` and `!==` tests evaluate the operand once;
-tests on immutable variables retain only the corresponding callable alternatives. A path that falls off the end of a body returns `undefined`, which the result must admit.
+A source file is a module, checked per code unit: each function, and the
+module's initialization, which runs its constants, classes, enums and
+top-level statements ([modules and code units](DESIGN.md#modules-and-code-units)).
+In outline, the parser admits:
 
-A type assertion (`e as T`, `e satisfies T`, `e!`) is the operand's value: the
-claim at the assertion must follow from the operand, and `T` is one more type
-the operand must meet, so an assertion never establishes what a guard would.
+- **Statements**: `const` and `let` bindings, annotated or not (a `let`
+  nothing writes is a `const`); object and array patterns with defaults,
+  holes and rests; `if`, `switch`, `while`, `for`, `for...of` over arrays,
+  `for...in`, labeled blocks, `break` and `continue`; `throw` and
+  `try`/`catch`/`finally`, a throw being an outcome
+  ([statement forms](PROGRAM-TYPING.md#statement-forms),
+  [patterns](PROGRAM-TYPING.md#patterns), [throws](DESIGN.md#throws)).
+- **Values and operators**: `null`, `undefined`, Booleans, numbers, bigints,
+  strings and symbols, with literal types; arithmetic, relational comparison
+  of operands in their primitive order, string `+` and template literals,
+  compound and logical assignment; `typeof`, `in`, `instanceof`,
+  truthiness, strict equality and `== null` as guards
+  ([values](DESIGN.md#values), [guards](DESIGN.md#guards)).
+- **Objects and arrays**: object literals with spreads, records, index
+  signatures, dense arrays and tuples, optional chaining, enums, and classes
+  with fields, methods, statics, parameter properties and a base class of the
+  file ([objects and prototypes](DESIGN.md#objects-and-prototypes),
+  [classes](PROGRAM-TYPING.md#classes)).
+- **Functions**: declarations, function expressions and arrows with
+  optional, default and rest parameters, closures as graph code, method
+  members host-relative, `.call`, `.apply` and `.bind`; generic functions and
+  classes certified at every instantiation; `async` functions and `await`
+  of promises of primitives ([calls](DESIGN.md#calls),
+  [generic bodies](DESIGN.md#generic-bodies),
+  [async and iteration](DESIGN.md#async-and-iteration)).
+- **Types**: what TypeScript's declarations state, read by the declaration
+  reader: aliases, interfaces, unions, intersections, computed types and
+  library types through reviewed overlays; imports, ambient declarations and
+  globals are assumptions at their declared types
+  ([trust surface](DESIGN.md#trust-surface)).
 
-Nullish assignment to mutable locals and parameters (`x ??= rhs`) is supported.
-Its lowering lives in Lean and checks both the skipped and writing paths, using
-the existing heap and nullish-test rules. [nullish-assignment.ts](tests/stateful-source/nullish-assignment.ts)
-covers skipped RHS effects, nested assignments and escaping callbacks with both
-producers. Property assignment targets remain outside this form.
+A type assertion (`e as T`, `e satisfies T`, `e!`) decides nothing: `T` is one
+more type the operand must meet, so an assertion never establishes what a
+guard would.
 
-A fresh arrow can acquire one initialized mutable `value` field using explicitly
-typed `Object.assign`; aliases preserve both the field invariant and call signature.
-See [function-field.ts](tests/callables/function-field.ts). Known local
-functions and their immutable aliases support `.call(receiver, ...actuals)`,
-`.bind(receiver, ...prefix)` and `.apply(receiver, list)`, and in strict code
-ordinary function expressions and methods bind the receiver of each call as
-`this` while arrows capture it ([methods.ts](tests/callables/methods.ts),
-[apply.ts](tests/callables/apply.ts)). Arbitrary callable parameters remain
-excluded as `.call` targets. `.bind` saves the target, the receiver and a
-required argument prefix in a forwarding descriptor that ignores the receiver
-it is later called with, including a thunk when all parameters are bound. SKJS rejects this
-partial binding; the [incompleteness example](tests/skjs-incomplete/bound-arguments.ts)
-verifies using TypeScript’s claims.
-
-Object parameters are assumed at their annotation like every other input: a
-record annotation means a reference to a location whose fields hold the stated
-types, read and written by the same rules as a record allocated here, and two
-such references may alias. What a JavaScript value must be for that meaning to
-hold is part of the interpreted caller contract, as it is for arrow parameters.
-Loops inside closures, labeled transfers,
-other `typeof` comparisons, general strings, and overloads
-are outside it. An initialized `let` is in it: it allocates a private
-cell the source never sees as a value, reading the name reads the cell,
-assignment writes it and yields the value written, and a closure holds the
-cell's identity, so it observes later writes. The annotation is the storage
-contract every assignment is checked against when one is written. Current-content claims are checked
-as read obligations or primitive heap observations; immutable snapshots can keep
-precise contents across later writes. Guard refinement of mutable contents is
-still conservative. A `let` may omit its annotation: the producer states the
-contract for a binding it inferred, the type it gives the name where it first
-stands in scope, and that is checked like a written one rather than the
-initializer's type being taken for it. A `let` without an initializer is
-outside. Numbers can be bound, passed, returned, held in a union and shape-tested.
-Strict comparisons against numeric singletons also verify for finite unions
-with known comparison outcomes. Arithmetic (`+ - * / **`) combines two
-numbers or two bigints, relational comparison (`< <= > >=`) two numeric values
-of either kind or two strings, and `-`, `+` and `~` are the binary operators
-with a constant; a bigint is its integer, with literal singletons below
-`bigint` ([values](DESIGN.md#values)).
-Strings are otherwise admitted on the same terms as numbers: values with literal
-singletons below the `string` family, compared for equality with a literal,
-never indexed; `+` concatenates a string with any primitive but a symbol,
-converted by `ToString` exactly, and a template literal is that concatenation
-([values](DESIGN.md#values)). A numeric
-literal is its own singleton and is below `number`; its identity is the double
-it denotes, so `1`, `1.0` and `1e0` are one literal. A number may be a
-parameter or result of a closure, and the storage contract of a mutable local,
-so a captured reader of a numeric `let` verifies. Numeric current-content assertions are supported on incoming edges, including
-numeric contents of local cells; a broad `number` assertion does not establish a
-particular singleton. Generic variable-copy bodies admit distinct type parameters and bounds to
-`boolean` or an earlier parameter, including transitive chains. Parameters,
-annotated `const` copies, inferred immutable copies and results use those rigid
-types, `boolean`, or function types over them; conversions follow declared
-bounds only. One checker, `GenericSource`, types every body under rigid binders
-— a declaration's and a quantified closure's alike — and every failed inclusion
-is a located obligation. Direct variable-copy declarations additionally emit a
-checked semantic certificate whose soundness theorem covers every admissible
-interpretation of the rigid parameters satisfying those bounds. Dependent parameters retain their rigid identity in raw SKJS exports. First-order aliases
-`type Id<T> = T` and `type Box<T> = { value: T }` remain single-parameter.
-Generic declarations taking callbacks, and other generic declaration bodies,
-remain outside; a quantified closure taking a callback is checked by the scheme
-path. Immutable reads, captured-cell reads, returned closures and callback calls, including dependent
-bounds and separate instantiations at different types, have universal invocation
-certificates in addition to their enclosing graph evidence. Captured slots use
-fixed storage contracts; writes within a quantified body still need certificate
-support. Call-site
-instantiation is outside this declaration-level path, but a quantified closure
-held in a binding, bounded or not, is checked by the separate scheme path in
-[SOURCE-CLAIMS.md](SOURCE-CLAIMS.md#quantified-callables-and-their-eliminations).
-The fragment is smaller than the calculus,
-and the parser can represent syntax the Lean adapter then rejects: such a
-rejection is a limitation, never evidence that a producer claim is false.
+Everything else is refused with a located reason. The fragment is smaller
+than the calculus, and the parser can represent syntax the Lean adapter then
+rejects: such a rejection is a limitation, never evidence that a producer
+claim is false. How much of SKJS's own test suite this covers, and what stops
+the rest, is measured in [SKJS-COVERAGE](ocaml-producer/SKJS-COVERAGE.md).
 
 [Design](DESIGN.md#fragment-boundary) owns what
 is refused and why, and [PROGRAM-TYPING](PROGRAM-TYPING.md#reading-the-source)

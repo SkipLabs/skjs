@@ -1,5 +1,5 @@
 /** Types TypeScript computes from other types: `typeof x`, `keyof T`, `T[K]`
- * and template literal types (DESIGN.md, "Computed types"). Their meaning is
+ * and template literal types (PROGRAM-TYPING.md, "Computed types"). Their meaning is
  * the type TypeScript computes, which the checker gives; this module states it
  * as the equivalent type term the fragment already has, or refuses it with
  * the reason no such term exists. Nothing here is a second reading of type
@@ -162,7 +162,7 @@ function typeQuery(context: ComputedContext, node: ts.TypeQueryNode, type: Type,
   const [first] = nodes;
   if (!first) throw Error(`${what} names nothing TypeScript declares`);
   // An annotation's `typeof E` is the enum's object type, which the parser
-  // reads (DESIGN.md, "Enums"); the declaration reader does not read enums.
+  // reads (PROGRAM-TYPING.md, "Enums"); the declaration reader does not read enums.
   if (ts.isEnumDeclaration(first))
     throw Error(`${what} is an enum's object type, which only an annotation of the enum's module states`);
   if (nodes.every(n => ts.isFunctionDeclaration(n)) || (nodes.length === 1 && ts.isClassDeclaration(first))) {

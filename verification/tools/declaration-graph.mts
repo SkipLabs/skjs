@@ -47,7 +47,7 @@ export interface SeenDiagnostic {
 }
 
 /** A standard library type whose declaration is not what it means to
- * TypeScript, so a reference to it is read as that meaning (DESIGN.md,
+ * TypeScript, so a reference to it is read as that meaning (PROGRAM-TYPING.md,
  * "Library types"): `Array<T>` and `ReadonlyArray<T>` are the array types
  * `T[]` and `readonly T[]`, and a library type alias whose equation is a
  * mapped type, such as `Record<K, V>`, is that mapped type at the
@@ -324,7 +324,7 @@ export function collectDeclarations(file: string, options: {
   /** The client's top-level enum declarations: each must be one TypeScript
    * accepts, and each member, by its span, is reported to `enumMember` with
    * the value TypeScript computes for it, which is the value its emit writes
-   * (DESIGN.md, "Enums"), or undefined where it computes none. */
+   * (PROGRAM-TYPING.md, "Enums"), or undefined where it computes none. */
   enums?: readonly Span[];
   enumMember?: (span: Span, value: string | number | undefined) => void;
   /** The client's reads `X.y` and `X["y"]` with `X` an identifier: each that
@@ -728,7 +728,8 @@ export function collectDeclarations(file: string, options: {
         throw new DeclarationError(binding.span, error instanceof Error ? error.message : String(error));
       }
     }
-    // The client's ambient declarations (DESIGN.md, "Ambient declarations"):
+    // The client's ambient declarations (PROGRAM-TYPING.md,
+    // "Imported, ambient and global values"):
     // each name joins the values like an import of the client's own
     // declaration, at the type it states. Nothing runs them.
     for (const span of options.ambient ?? []) {
@@ -877,8 +878,8 @@ export function collectDeclarations(file: string, options: {
       }
     };
     if (options.intrinsics) listIntrinsics(options.intrinsics);
-    // Global variables the client reads, such as Node's `process` (DESIGN.md,
-    // "Global values"): each joins the values like an import, at a definition
+    // Global variables the client reads, such as Node's `process` (PROGRAM-TYPING.md,
+    // "Imported, ambient and global values"): each joins the values like an import, at a definition
     // of its own, keyed by the variable's declaration, that holds only the
     // members and call signatures the client's references select.
     const selections: TypeDefinition[] = [];
@@ -1236,7 +1237,8 @@ type SelectionContext = {
 /**
  * A global variable, such as Node's `process` or the standard library's
  * `BigInt`, read at the members and call signatures the client's references
- * `uses` select (DESIGN.md, "Global values" and "Library globals"). Every
+ * `uses` select (PROGRAM-TYPING.md, "Imported, ambient and global values"
+ * and "Library globals"). Every
  * reference must read a member by name, `process.m`, or be called,
  * `BigInt(v)`. TypeScript resolves the member on the interface the variable
  * is annotated with, through its heritage and merged declarations, and a

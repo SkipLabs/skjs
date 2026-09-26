@@ -3,7 +3,7 @@
 // DepSafe's alternatives, which is below each side: its elements are read as
 // the tuple's, the array is sorted and reduced, and the value is Managed.
 // The meet is one object, the array shape with Managed's symbol key, which
-// an array may own (DESIGN.md, "Arrays may carry other own keys").
+// an array may own (DESIGN.md, "Arrays").
 import type { Managed, Mapper, Values } from "@skipruntime/core";
 class Minus implements Mapper<string, [number, number], string, number> {
   mapEntry(

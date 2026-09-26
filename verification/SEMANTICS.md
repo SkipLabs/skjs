@@ -855,20 +855,18 @@ require keeping separator searches or a second subtyping implementation.
 
 ## Remaining scope
 
-The bounded source adapter and graph consumer are connected; their guarantees
-are described in [Program typing](PROGRAM-TYPING.md) and the
-[request protocol](REQUEST-PROTOCOL.md). This does not prove source-to-graph
-correspondence. Source current-content claims are connected to graph checkpoints. Type parameters, bounded polymorphism, and general
-difference/negation require further syntax and sound rules; definability of
-quantification over semantic families alone is not a generics result.
-Rigid parameters, substitution on the identity and `Ref T` aliases (source
-`type Id<T> = T` and `type Box<T> = { value: T }`), and the
-identity function at every `T` are in
-[TypeParams.lean](lean/Verification/Model/Types/TypeParams.lean).
-Receivers follow the strict rule only: sloppy code's global-object substitution
-and primitive boxing, `super` and home objects, construction and `new.target`,
-and a bound function's reflective properties (`name`, `length`) are later
-obligations, not approximated by the strict rule.
-The intended path is the
-[operation-level contracts](DESIGN.md#skjs-operation-contracts).
-[Design](DESIGN.md#next-steps) owns the next steps.
+The source adapter and graph consumer are connected; their guarantees are in
+[Program typing](PROGRAM-TYPING.md) and the
+[request protocol](REQUEST-PROTOCOL.md). Source-to-graph correspondence is
+not proved: the lowering is a trusted step
+([trust surface](DESIGN.md#trust-surface)). Generic bodies are graph requests
+over parameter rows, certified at every assignment of those rows
+([generic bodies](DESIGN.md#generic-bodies)); general difference and negation
+types are not in the calculus. Receivers follow the strict rule only: sloppy
+code's global-object substitution and primitive boxing, `new.target`, and a
+bound function's reflective properties (`name`, `length`) are not modelled,
+and the source forms that would need them are refused. What the source
+fragment admits is summarised in the
+[README](README.md#current-source-fragment); what it refuses on principle is
+the [fragment boundary](DESIGN.md#fragment-boundary), and the open work is
+[next steps](DESIGN.md#next-steps).

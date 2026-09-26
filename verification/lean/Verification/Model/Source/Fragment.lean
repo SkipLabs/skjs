@@ -219,8 +219,8 @@ private def canonicalFields (fs : List (PropKey × Ty Nat)) : List (PropKey × T
 /-- One object under every conjunct. Each conjunct is a record with views, as
 a plain record arm is (`CellUnion.lower`): its invariant fields and its
 readonly fields as views. The conjunction is their meet, the one a
-declaration's intersection gets (`PositiveNormalization.meetLists`, DESIGN.md
-`meet`): one record operand holding every conjunct's invariant fields, and
+declaration's intersection gets (`PositiveNormalization.meetLists`, POSITIVE-TYPES.md
+"Conjunction and normalization"): one record operand holding every conjunct's invariant fields, and
 every conjunct's views. -/
 private def cellConjunction (atom : Json) : SourceTypes.Lowering Nat := do
   let clauses ← (← CellClaims.conjuncts atom).mapM fun part => do
@@ -479,7 +479,7 @@ inductive Expr where
   /-- An object literal with spreads of values, in source order: a named
   field (`some k`) or a spread (`none`), each part evaluated where written and
   a spread's operand copied as soon as it is evaluated (DESIGN.md, "Object
-  spreads"). -/
+  literals"). -/
   | build (pos : Span) (names : List (Option String)) (es : List Expr)
   /-- A named read: a string key, or, for `e[k]` with `k` a `unique symbol`
   constant, that symbol's key. -/

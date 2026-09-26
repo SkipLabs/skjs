@@ -113,7 +113,7 @@ export type TermScope = {
    * symbol key. */
   symbol?(name: Identifier | ts.PropertyAccessExpression): number;
   /** `E.A` and `typeof E` for one of the file's enums: the member's literal
-   * type and the enum's object type (DESIGN.md, "Enums"); null for any other
+   * type and the enum's object type (PROGRAM-TYPING.md, "Enums"); null for any other
    * such node. A scope without it reads neither. */
   enumerated?(node: TypeNode, span: Span): TypeTerm | null;
   /** A type TypeScript computes from other types (`COMPUTED`): `typeof x`,
@@ -134,7 +134,7 @@ export type TermScope = {
 
 /** The type forms TypeScript computes from other types, as the syntax kind a
  * refusal names. Their meaning is the type TypeScript computes, which the
- * declaration reader evaluates (DESIGN.md, "Computed types"). */
+ * declaration reader evaluates (PROGRAM-TYPING.md, "Computed types"). */
 export function computedForm(node: TypeNode): string | null {
   if (ts.isTypeQueryNode(node)) return "typeof";
   if (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.KeyOfKeyword) return "keyof";

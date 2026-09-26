@@ -1,6 +1,6 @@
 /** The standard library's global values, such as `BigInt` and `Symbol`, as a
  * client may use them: TypeScript's own declarations, as the project's
- * standard library states them, through a reviewed overlay (DESIGN.md,
+ * standard library states them, through a reviewed overlay (PROGRAM-TYPING.md,
  * "Library globals"). Nothing is vendored. As for `Array.prototype`
  * (`array-prototype.mts`), the overlay holds only what those declarations do
  * not say and soundness needs:
@@ -81,7 +81,7 @@ const dictionary = (value: TypeTerm): TypeTerm =>
  * `JsonValue` (`dictViewT`), so no key it owns is callable and it inherits
  * only what `Object.prototype` holds: `toJSON` is never called, and no
  * getter runs. Arrays are left out: an array may own keys its type does not
- * state (DESIGN.md, "Arrays may carry other own keys"), a callable `toJSON`
+ * state (DESIGN.md, "Arrays"), a callable `toJSON`
  * among them, which `stringify` would call, and whose result may be
  * `undefined`. A cycle throws, an outcome; a bigint would throw too, and is
  * left out as a value the host never serializes. */

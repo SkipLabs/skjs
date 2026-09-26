@@ -60,7 +60,7 @@ import type {
 import { CHAIN } from "./fragment.mts";
 
 /** A value typed `Promise<T>` is assumed to be a realm promise, which is
- * never fulfilled with a thenable (DESIGN.md, "Async functions and await"):
+ * never fulfilled with a thenable (PROGRAM-TYPING.md, "Async functions and await"):
  * so the source builds no object with a `then`, which could pass for one. */
 const FORGED_PROMISE = "an object the source builds with a `then` member could pass for a promise, and a value typed `Promise` is assumed to be a realm promise";
 import type { Span } from "./span.mts";
@@ -101,7 +101,7 @@ const freshName = (cls: string): string => `${cls}.[[class]]`;
  * constructor and its instance field initializers read: JavaScript's class
  * scope binding, initialized before anything in the class body can run. A
  * name no source binding can spell; the initialization unit reads it as the
- * module value the class is (DESIGN.md, "Classes"). */
+ * module value the class is (PROGRAM-TYPING.md, "Classes"). */
 const selfName = (cls: string): string => `${cls}.[[self]]`;
 
 /** The binding holding a derived instance's base part. */
@@ -359,7 +359,7 @@ class Gate {
   /** Calls the reviewed overlay reads as a call of an intrinsic,
    * `Promise.resolve(v)`, by span: the intrinsic's name. */
   readonly globalIntrinsics = new Map<string, string>();
-  /** The file's enums by name (DESIGN.md, "Enums"), each member's value as
+  /** The file's enums by name (PROGRAM-TYPING.md, "Enums"), each member's value as
    * TypeScript computes it, once the declaration graph has been read. */
   readonly enums = new Map<string, EnumInfo>();
   /** Reads of a `const enum` member TypeScript writes as the member's value,

@@ -1,5 +1,5 @@
 /** `async`, `await`, `for...of` over an array and `for...in` as trusted
- * steps (DESIGN.md, "Async functions and await", "Loops over arrays" and
+ * steps (PROGRAM-TYPING.md, "Async functions and await", "Loops over arrays" and
  * "Statement forms"). Each is a
  * call of an intrinsic, a value no source name can denote: the parser writes
  * the async ones, and Lean compiles a `for...of` to its calls. The declaration

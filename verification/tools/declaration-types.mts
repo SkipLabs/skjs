@@ -76,8 +76,8 @@ export type TypeTerm =
   | { k: "scheme"; binders: { name: string; bound: TypeTerm | null; default: TypeTerm | null;
       span: Span }[]; signatures: Extract<TypeTerm, { k: "function" }>[]; span: Span }
   /** A value with call or construct code, of which no signature is known:
-   * the meaning of the standard library's `Function` (DESIGN.md, "Library
-   * interfaces"). Nothing may be called or constructed through it. */
+   * the meaning of the standard library's `Function` (PROGRAM-TYPING.md,
+   * "Library types"). Nothing may be called or constructed through it. */
   | { k: "callable"; span: Span }
   /** The containing declaration is the implicit receiver of a method signature. */
   | { k: "self"; span: Span }
@@ -102,8 +102,8 @@ export type TypeDefinition = {
  * constant its annotation, and a class its constructor, which only `new`
  * calls. A global variable the client reads, such as `process`, is listed
  * the same way, with the specifier `global`, at a definition keyed by its
- * declaration that holds the members the client selects (DESIGN.md, "Global
- * values"). Nothing here checks the imported code: each is an assumption the
+ * declaration that holds the members the client selects (PROGRAM-TYPING.md,
+ * "Imported, ambient and global values"). Nothing here checks the imported code: each is an assumption the
  * client's result is relative to. */
 export type ValueRoot = {
   binding: { local: string; imported: string; specifier: string; span: Span };
