@@ -1744,7 +1744,15 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
                | _ -> None)
             | _ -> None)
           | _ -> None in
-        let actuals=List.mapi (fun i arg -> match param_at signature i,stated with
+        (* A spread's actuals are its tuple's positions, which Lean reads
+           and checks each at its parameter. *)
+        let actuals=List.concat (List.mapi (fun i (arg:expr) ->
+          if List.mem i spreads then begin
+            (match arg.node with Id _ -> ignore (expr env arg) | _ -> ());
+            match Semantic.tuple_positions (Lazy.force (List.assoc i spread_types)) with
+            | Some positions -> positions
+            | None -> unsupported "a spread argument needs a tuple of required positions"
+          end else [match param_at signature (List.nth offsets i),stated with
           | Some p,_ when not (Semantic.mentions_rigid p) -> expr ~expected:p env arg
           | Some p,Some solution -> expr ~expected:(Inference.substitute solution p) env arg
           | Some p,None when (match arg.node with ArrayLiteral _ -> true | _ -> false)
@@ -1757,8 +1765,8 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
           | Some p,None when (match arg.node with Alloc _ -> true | _ -> false)
                               && dictionary_bound p <> None ->
             expr ?expected:(dictionary_bound p) env arg
-          | _ -> expr env arg) args @
-          List.init (max 0 (List.length signature.params - List.length args)) (fun _ -> Atoms [Undef]) in
+          | _ -> expr env arg]) args) @
+          List.init (max 0 (List.length signature.params - written_positions)) (fun _ -> Atoms [Undef]) in
         let substitution,result = infer_explicit ~receiver:receiver_type ?expected signature actuals in
         instance_of ~declared:callee target substitution;
         offer ~substitute:(Inference.substitute substitution) signature;
@@ -1807,6 +1815,9 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       | Atoms [Shape {calls=[{variadic=None;rest_pack=None;params;_}];_}]
           when written_positions > List.length params ->
         unsupported "a call writes more positions than its callee's parameters, which TypeScript rejects"
+      (* `(() => R) & { a: T }` is a function carrying fields, the model's
+         callable object; the meet of an arrow and a record forms none. *)
+      | Meet _ -> unsupported "a call of an intersection of a function type and a record, a callable with fields, which an annotation's meet does not form"
       | _ -> unsupported "call requires a single arrow the arguments can call"))
     | Apply (callee,receiver,list) ->
       (* The list is typed at its own contract; Lean reads each element's

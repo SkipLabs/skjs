@@ -26,3 +26,12 @@ function spreadsBeforeFixed(seed: boolean): boolean {
   const pick = (first: boolean, second: null, third: boolean): boolean => third;
   return pick(...pair, seed);
 }
+// Into a generic signature, a spread's positions are actuals the binders are
+// inferred from.
+function both<T>(a: T, b: T): T {
+  return b;
+}
+function spreadsGeneric(seed: boolean): boolean | null {
+  const pair: [boolean, null] = [seed, null];
+  return both(...pair);
+}
