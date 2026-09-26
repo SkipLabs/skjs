@@ -4014,9 +4014,11 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let fieldType := fun (B : Ty Nat) (fld : PropKey) => do
       match PositiveRules.expand G B with
       | [.refs fs [] _ _ _ _] =>
-        let some T := fs.lookup fld | throw s!"update of a field '{fld}' the contract does not name"
+        let some T := fs.lookup fld
+          | throw (locatedRefusal (← table) e.span .storageWrite
+              s!"update of a field '{fld}' the contract does not name as a writable location")
         pure T
-      | _ => throw "a compound assignment needs one cell contract"
+      | _ => throw (locatedRefusal (← table) e.span .storageWrite "a compound assignment needs one cell contract")
     let (parts, T, readTerm, receiverSlot, fld) ← match target with
       | .var _ name =>
         let some (i, .cell contract _) := resolve scope name
@@ -4077,9 +4079,11 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let fieldType := fun (B : Ty Nat) (fld : PropKey) => do
       match PositiveRules.expand G B with
       | [.refs fs [] _ _ _ _] =>
-        let some T := fs.lookup fld | throw s!"update of a field '{fld}' the contract does not name"
+        let some T := fs.lookup fld
+          | throw (locatedRefusal (← table) pos .storageWrite
+              s!"update of a field '{fld}' the contract does not name as a writable location")
         pure T
-      | _ => throw "a logical assignment needs one cell contract"
+      | _ => throw (locatedRefusal (← table) pos .storageWrite "a logical assignment needs one cell contract")
     let (parts, T, readTerm, receiverSlot, fld) ← match target with
       | .var _ name =>
         let some (i, .cell contract _) := resolve scope name

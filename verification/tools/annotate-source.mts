@@ -483,6 +483,11 @@ function fromSourceClaims(
     // A parameter written as a pattern or with a default is bound by a
     // statement of its own at the parameter (PROGRAM-TYPING.md, "Patterns").
     if(ts.isParameterDeclaration(n)&&(n.initializer||!ts.isIdentifier(n.name)))at(n.getStart(sf),n.end);
+    // A written `let` pattern's cells are bound by a `let` of their own at
+    // the pattern, after the pattern's reads (PROGRAM-TYPING.md, "Derived
+    // source forms").
+    if(ts.isVariableDeclaration(n)&&(ts.isObjectBindingPattern(n.name)||ts.isArrayBindingPattern(n.name)))
+      at(n.name.getStart(sf),n.name.end);
     // A derived class's implicit constructor constructs its base at the
     // `extends` clause (DESIGN.md, "Modules and code units";
     // PROGRAM-TYPING.md, "Classes").
@@ -492,9 +497,11 @@ function fromSourceClaims(
     // An expression body after such parameters is the `return` of the
     // statements they start.
     if(p&&ts.isArrowFunction(p)&&n===p.body&&!ts.isBlock(n))at(n.getStart(sf),n.end);
+    // A static block is the closure of its statements called at once: its
+    // completion is at its closing brace too.
     if(ts.isBlock(n)&&p&&(ts.isFunctionDeclaration(p)||ts.isFunctionExpression(p)||ts.isArrowFunction(p)||
         ts.isMethodDeclaration(p)||ts.isConstructorDeclaration(p)||ts.isGetAccessorDeclaration(p)||
-        ts.isSetAccessorDeclaration(p)))entries.set(n.end-1,n.end);
+        ts.isSetAccessorDeclaration(p)||ts.isClassStaticBlockDeclaration(p)))entries.set(n.end-1,n.end);
     n.forEachChild(walk);};walk(sf);
   // The module initialization is a unit like a function: no name, the span of
   // the top-level code, no parameters, and `undefined` as its completion.
@@ -615,6 +622,11 @@ function render(
     // A class's prototype object is allocated from its name to its end
     // (DESIGN.md, "Modules and code units"; PROGRAM-TYPING.md, "Classes").
     if(ts.isClassDeclaration(n)&&n.name)spans.add(`${n.name.getStart(sf)}:${n.end}`);
+    // `x instanceof C` of a class with a static `[Symbol.hasInstance]` calls
+    // it, the call claimed from the operand to the keyword's end
+    // (PROGRAM-TYPING.md, "Derived source forms").
+    if(ts.isBinaryExpression(n)&&n.operatorToken.kind===ts.SyntaxKind.InstanceOfKeyword)
+      spans.add(`${n.getStart(sf)}:${n.operatorToken.end}`);
     // The key a class's prototype owns for `instanceof` is claimed after the
     // name, to the end; an implicit derived constructor's forwarded
     // parameters at the characters of its `extends` keyword (PROGRAM-TYPING.md,

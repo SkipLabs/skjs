@@ -2313,7 +2313,7 @@ class Gate {
         const call: Expr = { k: "apply", pos: [node.getStart(this.file), node.operatorToken.end], callee,
           args: [this.expr(node.left)] };
         return { k: "not", pos: this.span(node),
-          e: { k: "not", pos: [keyword, keyword + "instanceof".length - 1], e: call } };
+          e: { k: "not", pos: [keyword, keyword + "instanceof".length], e: call } };
       }
       if (this.hasInstanceClass(node.right))
         this.fail(node, "`instanceof` of a class with a static `[Symbol.hasInstance]` calls that method, a computed static member, outside the fragment");
