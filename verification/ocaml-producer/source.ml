@@ -574,8 +574,10 @@ let rec expr binders j =
         | Null -> None
         | r ->
           (* The receiver rule is the strict one; sloppy code substitutes the
-             global object, which nothing here models. *)
-          if not (boolean (field "strict" r)) then unsupported "an ordinary function in sloppy code";
+             global object for an undefined receiver, which nothing here
+             models. That is observable only where the body reads `this`,
+             which the parser and Lean refuse in sloppy code; a sloppy body
+             that does not is proposed as a strict one. *)
           Some (source_type inner (field "type" r)) in
       Lambda (receiver,quantified,
         List.map (fun p -> text "name" p,source_type inner (field "type" p)) parameters,

@@ -1208,7 +1208,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     let body ← decodeExpr (← jField j "body")
     if let some (_, false) := receiver then
       if (body :: defaults.map Prod.snd).any (·.freeNames.contains "this") then
-        throw s!"unsupported source expression at [{p.1},{p.2}): a function that reads `this` must be strict code"
+        throw s!"unsupported source expression at [{p.1},{p.2}): a function that reads `this` must be strict code: sloppy code replaces an undefined or primitive receiver by the global object or a wrapper object, which the model, whose receiver rule is strict code's, does not have"
     -- A result the source does not annotate is null: the producer's claim
     -- at the closure proposes it, and every claimed arrow's body is checked.
     let result ← jField j "result"

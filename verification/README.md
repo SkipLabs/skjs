@@ -133,7 +133,7 @@ types, read and written by the same rules as a record allocated here, and two
 such references may alias. What a JavaScript value must be for that meaning to
 hold is part of the interpreted caller contract, as it is for arrow parameters.
 Loops inside closures, labeled transfers,
-active-name shadowing, other `typeof` comparisons, general strings, and overloads
+other `typeof` comparisons, general strings, and overloads
 are outside it. An initialized `let` is in it: it allocates a private
 cell the source never sees as a value, reading the name reads the cell,
 assignment writes it and yields the value written, and a closure holds the

@@ -309,6 +309,12 @@ export function collectDeclarations(file: string, options: {
   /** Called for each of them TypeScript binds to a class declared at the
    * client's top level, with the class's name. */
   classTest?: (span: Span, cls: string) => void;
+  /** Identifiers of the client that may name one of its local bindings: each
+   * that TypeScript binds to a value declaration in the client is reported
+   * to `bindingRead` with the span of that declaration's name. A shorthand
+   * property `{ x }` names the binding its value reads. */
+  bindingReads?: readonly Span[];
+  bindingRead?: (span: Span, declaration: Span) => void;
   /** The names of the client's closure parameters written without a type:
    * each is reported to `contextualParam` with the type TypeScript gives it
    * from its context, as a type term (`contextualTerm`), or the reason none
@@ -952,6 +958,19 @@ export function collectDeclarations(file: string, options: {
       if (owners.length === 1 && owner && ts.isClassDeclaration(owner) && owner.name &&
           owner.parent === client && owner.name.text === name.text)
         options.classTest?.(span, owner.name.text);
+    }
+    for (const span of options.bindingReads ?? []) {
+      const name = identifierAt(client, span);
+      if (!name) throw new DeclarationError(span, "TypeScript binding reference missing");
+      const parent = name.parent;
+      const symbol = parent && ts.isShorthandPropertyAssignment(parent) && parent.name === name
+        ? checker.getShorthandAssignmentValueSymbol(parent) : checker.getSymbolAtLocation(name);
+      const declarations = symbol?.declarations.map(d => d.resolve()) ?? [];
+      const [declaration] = declarations;
+      const declared = declaration && (declaration as Node & { name?: Node }).name;
+      if (declarations.length === 1 && declaration && declared && ts.isIdentifier(declared) &&
+          declaration.getSourceFile().fileName === client.fileName)
+        options.bindingRead?.(span, [declared.getStart(client), declared.end]);
     }
     // A closure parameter without a type is at the type TypeScript gives it
     // from its context: stated as a term of primitives, literals, arrays,

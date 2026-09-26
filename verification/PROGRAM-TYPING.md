@@ -2216,6 +2216,31 @@ Null coalescing is likewise a derived form: a let saves the left value, and
 `unionVar` with known nullish-tag conditionals selects the fallback or saved value.
 No truthiness rule is involved; false remains a result of the left operand.
 
+**Shadowing.** JavaScript's scopes nest; the lowering's are lists of
+names, each declared once (a second is `duplicate or shadowing local
+declaration`). The parser renames instead: a local whose name another
+declaration binds in a scope enclosing its own (a module binding, an outer
+local or parameter, a named function or class expression's own name) binds
+$x^{@l:c}$, its spelling and its declaration's line and column
+(`x@3:9`, which no source identifier spells), and every identifier
+TypeScript binds to that declaration, a shorthand property `{ x }`
+included, reads it. This is $\alpha$-conversion, which changes no value:
+
+$$
+\frac{x\in\operatorname{dom}\Gamma\quad x'=x^{@l:c}\notin\operatorname{names}(\Gamma,S)\quad \Gamma\vdash_R\ \mathsf{const}\ x'=e;\ S[x'/x]}
+     {\Gamma\vdash_R\ \mathsf{const}\ x=e;\ S}\ \textsc{shadow}
+$$
+
+and likewise for `let`, parameters, patterns, `for...of` and `catch`
+bindings. A read of a shadowing local above its declaration and outside any
+closure (`const first = seed; const seed = 2;`) is refused by the parser:
+JavaScript throws there (the temporal dead zone), and the outer binding is
+not what it reads.
+
+**Older spellings.** `<T>e` is `e as T` and `<const>e` is `e as const`,
+the same assertion (an obligation on the operand, never a fact); a
+top-level `;`, as one in a body, is nothing.
+
 A derived class's constructor (`class D extends B`, its body
 `s̄₁; super(ā); s̄₂`, `s̄₁` reading no `this`) is its base's construction,
 bound to a name no source spells, then the class constructor's lowering

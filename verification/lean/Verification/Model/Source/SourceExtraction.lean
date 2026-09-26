@@ -12,7 +12,8 @@ The currently supported fragment is deliberately small: primitive/callable param
 initialized consts, branches, variables, null/boolean literals and local plain
 cells (allocation, reads and assignments), expression-bodied closures and calls,
 with every path returning. Boolean variable tests, including negations, refine the tested binding.
-Active-name shadowing is not yet supported. This compiler remains a reviewed
+Active-name shadowing is refused here: the parser gives a shadowing local a
+name of its own (PROGRAM-TYPING.md, "Shadowing"). This compiler remains a reviewed
 extraction boundary, not a proved TypeScript semantics. Its output is checked by the proved calculus consumer. -/
 namespace Verification.Model.SourceExtraction
 open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJson

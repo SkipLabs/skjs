@@ -315,6 +315,15 @@ class Gate {
   /** Closure parameters written without a type, by the span of their name:
    * the type TypeScript gives each from its context, or why none states it. */
   readonly contextualParams = new Map<string, TypeTerm | { refused: string }>();
+  /** Local bindings that shadow a binding of an enclosing scope, and every
+   * reference TypeScript resolves to one, by the span of the identifier: the
+   * name the fragment gives the binding instead (`shadowName`). */
+  readonly renames = new Map<string, string>();
+  /** The fragment's name of a value binding or reference spelled by `id`:
+   * its own text, unless it is or names a shadowing local (`renames`). */
+  local(id: Identifier): string {
+    return this.renames.get(`${id.getStart(this.file)}:${id.end}`) ?? id.text;
+  }
   /** The class whose instance members are being lowered: its own name reads
    * its class binding there (`selfName`). */
   private selfClass: { name: string; generic: boolean } | null = null;
@@ -597,8 +606,8 @@ class Gate {
         const keyword = heritage ? heritage.getStart(this.file) : 0;
         if (base.params.length > "extends".length)
           this.fail(node, "an implicit derived constructor forwarding more parameters than its `extends` keyword has characters has no source site for each");
-        return base.params.map((p, i) => ({ name: parameterName(i), pos: [keyword + i, keyword + i + 1] as Span,
-          property: false, at: this.span(name), type: p.type }));
+        return base.params.map((p, i) => ({ name: parameterName(i), field: parameterName(i),
+          pos: [keyword + i, keyword + i + 1] as Span, property: false, at: this.span(name), type: p.type }));
       };
       // An optional parameter, `x?: T`, binds `T | undefined`, as a closure's.
       const params = constructor ? constructor.parameters.map((p, i, all) => {
@@ -608,7 +617,7 @@ class Gate {
           this.fail(p, "a required parameter cannot follow an optional one");
         if (p.name.text === "undefined") this.fail(p, "shadowing undefined is outside the fragment");
         if (p.modifiers?.length && p.name.text === "then") this.fail(p, FORGED_PROMISE);
-        return { name: p.name.text, pos: this.span(p.name), property: !!p.modifiers?.length, at: this.span(p),
+        return { name: this.local(p.name), field: p.name.text, pos: this.span(p.name), property: !!p.modifiers?.length, at: this.span(p),
           type: p.questionToken ? this.optionalTypeOf(p.type, p) : this.typeOf(p.type, p) };
       }) : base ? implicitParams(base) : [];
       // Static members are bindings of their own, which `C.x` reads
@@ -674,7 +683,7 @@ class Gate {
       }
       this.selfClass = instanceMembers;
       for (const p of params)
-        if (p.property) fields.push({ name: p.name, e: { k: "id", pos: p.pos, name: p.name }, bind: { pos: p.at, type: p.type } });
+        if (p.property) fields.push({ name: p.field, e: { k: "id", pos: p.pos, name: p.name }, bind: { pos: p.at, type: p.type } });
       // A class allocates its prototype object once, holding its methods, and
       // each instance holds it under the prototype key, first: the key's
       // value is a read of a constant, so its place changes nothing. A
@@ -1112,7 +1121,7 @@ class Gate {
       // plain call cannot run, which its type records. Its own name in its
       // instance members, which run only once the class exists, is its class
       // binding, which they cannot capture where they are created.
-      return { k: "id", pos: this.span(node), name: this.ownClass(node) ?? node.text };
+      return { k: "id", pos: this.span(node), name: this.ownClass(node) ?? this.local(node) };
     }
 
     if (ts.isNewExpression(node)) {
@@ -1150,7 +1159,7 @@ class Gate {
       // captures. The calculus has no sloppy receiver conversion; checking only
       // lambda construction leaves declaration entry points unprotected.
       if (this.receiverMode === "sloppy")
-        this.fail(node, "a function that reads `this` must be strict code");
+        this.fail(node, "a function that reads `this` must be strict code: sloppy code replaces an undefined or primitive receiver by the global object or a wrapper object, which the model, whose receiver rule is strict code's, does not have");
       return { k: "this", pos: this.span(node) };
     }
 
@@ -2035,7 +2044,7 @@ class Gate {
       return {
         k: "nullishAssign",
         pos: this.span(node),
-        name: node.left.text,
+        name: this.local(node.left),
         namePos: this.span(node.left),
         rhs: this.expr(node.right),
       };
@@ -2069,7 +2078,7 @@ class Gate {
         if (ts.isOmittedExpression(el)) return [];
         if (ts.isSpreadElement(el)) {
           const target = named(el.expression);
-          rest = { index, pos: this.span(el), name: target.text, namePos: this.span(target) };
+          rest = { index, pos: this.span(el), name: this.local(target), namePos: this.span(target) };
           return [];
         }
         const target =
@@ -2085,7 +2094,7 @@ class Gate {
         const name = named(target);
         return [{
           index,
-          name: name.text,
+          name: this.local(name),
           namePos: this.span(name),
           default_: dflt ? this.expr(dflt) : null,
         }];
@@ -2109,7 +2118,7 @@ class Gate {
         return {
           k: "assign",
           pos: this.span(node),
-          name: node.left.text,
+          name: this.local(node.left),
           namePos: this.span(node.left),
           rhs: this.expr(node.right),
         };
@@ -2363,7 +2372,7 @@ class Gate {
         const params = parameters.map((p, i) => {
           if (ts.isIdentifier(p.name) && !p.initializer)
             return {
-              name: p.name.text,
+              name: this.local(p.name),
               type: p.dotDotDotToken ? this.restType(p) : this.closureParamType(p),
               ...rest(p),
             };
@@ -2372,7 +2381,7 @@ class Gate {
           bindings.push({
             k: "destructure",
             pos: this.span(p),
-            target: patterns[i] ?? { k: "name", name: (p.name as ts.Identifier).text, pos: at },
+            target: patterns[i] ?? { k: "name", name: this.local(p.name as ts.Identifier), pos: at },
             default_: p.initializer ? this.expr(p.initializer) : null,
             init: { k: "id", pos: at, name: hidden },
           });
@@ -2421,14 +2430,14 @@ class Gate {
       const defaults = parameters.map((p) => p.initializer ? this.expr(p.initializer) : null);
       // A parameter default's own schedule is Lean's (`parameterOrder`).
       this.initializedBefore(node, parameters.map((p): [PatternAst, Expr | null] =>
-        [{ k: "name", name: (p.name as ts.Identifier).text, pos: this.span(p.name) }, null]));
+        [{ k: "name", name: this.local(p.name as ts.Identifier), pos: this.span(p.name) }, null]));
       return {
         k: "lambda",
         pos: this.span(node),
         typeParams,
         receiver,
         params: parameters.map((p, i) => ({
-          name: (p.name as ts.Identifier).text,
+          name: this.local(p.name as ts.Identifier),
           // A defaulted parameter's type is what the body reads; the default
           // itself is the expression that replaces an omitted argument. A rest
           // parameter's type is the tuple its arguments are collected into.
@@ -2506,7 +2515,7 @@ class Gate {
         this.fail(node, "shadowing undefined is outside the fragment");
       if (names.has(node.text)) this.fail(node, "duplicate pattern binding");
       names.add(node.text);
-      return { k: "name", name: node.text, pos: this.span(node) };
+      return { k: "name", name: this.local(node), pos: this.span(node) };
     }
     if (node.elements.length === 0)
       this.fail(node, "an empty pattern binds nothing");
@@ -2687,7 +2696,7 @@ class Gate {
     return {
       k: "forOf",
       pos: this.span(node),
-      name: d.name.text,
+      name: this.local(d.name),
       namePos: this.span(d.name),
       iterable: this.intrinsic(forInName, this.span(list), [keyword, keyword + "in".length],
         [this.expr(node.expression)]),
@@ -2749,9 +2758,9 @@ class Gate {
     const fieldOf = ts.isPropertyAccessExpression(discriminant) && !discriminant.questionDotToken &&
       ts.isIdentifier(discriminant.expression) &&
       !this.staticReads.has(this.span(discriminant.name).join(":"))
-      ? { object: discriminant.expression.text, field: discriminant.name.text } : null;
+      ? { object: this.local(discriminant.expression), field: discriminant.name.text } : null;
     const reread = clauses.every((c) => !ts.isCaseClause(c) || plain(c.expression));
-    if (ts.isIdentifier(discriminant) && reread) name = discriminant.text;
+    if (ts.isIdentifier(discriminant) && reread) name = this.local(discriminant);
     else if (fieldOf && reread) name = fieldOf.object;
     else {
       name = `%switch@${node.getStart(this.file)}%`;
@@ -2798,7 +2807,7 @@ class Gate {
       if (d.type && d.type.kind !== ts.SyntaxKind.UnknownKeyword)
         this.fail(d.type, "a caught value is `unknown`");
       if (d.name.text === "undefined") this.fail(d, "shadowing undefined is outside the fragment");
-      param = { name: d.name.text, namePos: this.span(d.name) };
+      param = { name: this.local(d.name), namePos: this.span(d.name) };
     }
     return {
       k: "try",
@@ -2907,7 +2916,7 @@ class Gate {
         if (!mutable || !d.type)
           this.fail(d, `a \`${kindWord}\` needs an initializer`);
         return {
-          name: d.name.text,
+          name: this.local(d.name),
           namePos: this.span(d.name),
           annot: this.optionalTypeOf(d.type, d),
           init: { k: "lit", pos: this.span(d), lit: { a: "undefined" } },
@@ -2918,7 +2927,7 @@ class Gate {
       // producer states one for the binding and the adapter checks that,
       // rather than this taking the initializer's type for the contract.
       return {
-        name: d.name.text,
+        name: this.local(d.name),
         namePos: this.span(d.name),
         annot: d.type ? this.typeOf(d.type) : null,
         init: this.expr(d.initializer),
@@ -2972,7 +2981,7 @@ class Gate {
       return {
         k: "forOf",
         pos: this.span(node),
-        name: d.name.text,
+        name: this.local(d.name),
         namePos: this.span(d.name),
         iterable: this.expr(node.expression),
         body: this.block(node.statement),
@@ -3069,7 +3078,7 @@ class Gate {
         if (ts.isIdentifier(p.name) && !p.initializer) {
           names.add(p.name.text);
           return {
-            name: p.name.text,
+            name: this.local(p.name),
             pos: this.span(p.name),
             type: p.dotDotDotToken ? this.restType(p) : p.questionToken
               ? this.optionalTypeOf(p.type, p)
@@ -3159,6 +3168,77 @@ function literalExpr(value: string | number, pos: Span): Expr {
  * is verified. A type they introduce still has to be sayable in a claim, so a
  * function that depends on one fails on that claim, in its own words.
  */
+/** The name the fragment gives a local that shadows a binding of an
+ * enclosing scope: its spelling and where it is declared, which no source
+ * binding can spell. */
+function shadowName(id: Identifier, source: SourceFile): string {
+  const { line, character } = source.getLineAndCharacterOfPosition(id.getStart(source));
+  return `${id.text}@${line + 1}:${character + 1}`;
+}
+
+/** The scope a value declaration binds its name in, JavaScript's: a
+ * parameter its function's, a `let`, `const`, class or function declaration
+ * its block's (a `switch`'s clauses sharing one), a `for` head's binding the
+ * loop's, a `var` its function's, a caught value its `catch` clause's, a
+ * named function or class expression its own. */
+function bindingScope(node: Node): Node {
+  const block = (n: Node): Node => (ts.isCaseClause(n) || ts.isDefaultClause(n)) && n.parent ? n.parent : n;
+  const functionOf = (n: Node): Node => {
+    let at: Node | undefined = n.parent;
+    while (at && !ts.isFunctionLikeDeclaration(at) && !ts.isSourceFile(at)) at = at.parent;
+    return at ?? n;
+  };
+  if (ts.isBindingElement(node)) {
+    let at: Node | undefined = node.parent;
+    while (at && !ts.isVariableDeclaration(at) && !ts.isParameterDeclaration(at)) at = at.parent;
+    return at ? bindingScope(at) : node;
+  }
+  if (ts.isParameterDeclaration(node)) return node.parent ?? node;
+  if (ts.isVariableDeclaration(node)) {
+    const list = node.parent;
+    if (!list || ts.isCatchClause(list)) return list ?? node;
+    if (!(list.flags & (ts.NodeFlags.Let | ts.NodeFlags.Const))) return functionOf(node);
+    const holder = list.parent;
+    if (!holder) return list;
+    if (ts.isForStatement(holder) || ts.isForOfStatement(holder) || ts.isForInStatement(holder)) return holder;
+    return holder.parent ? block(holder.parent) : holder;
+  }
+  if (ts.isFunctionExpression(node) || ts.isClassExpression(node)) return node;
+  return node.parent ? block(node.parent) : node;
+}
+
+/** The file's local value bindings that shadow a binding of an enclosing
+ * scope, by the span of their name: a declaration whose name another
+ * declaration binds in a scope enclosing its own (a named function or class
+ * expression's own name encloses its parameters). */
+function shadowingLocals(source: SourceFile): Map<string, Identifier> {
+  const declared: { id: Identifier; scope: Node; own: boolean }[] = [];
+  const visit = (node: Node): void => {
+    if (ts.isTypeNode(node) || ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node)) return;
+    const name = (node as Node & { name?: Node }).name;
+    if ((ts.isParameterDeclaration(node) || ts.isVariableDeclaration(node) || ts.isBindingElement(node) ||
+         ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node) || ts.isEnumDeclaration(node) ||
+         ts.isFunctionExpression(node) || ts.isClassExpression(node) || ts.isImportSpecifier(node) ||
+         ts.isNamespaceImport(node) || ts.isImportClause(node)) &&
+        name && ts.isIdentifier(name) && name.text !== "this")
+      declared.push({ id: name, own: ts.isFunctionExpression(node) || ts.isClassExpression(node),
+        scope: ts.isImportSpecifier(node) || ts.isNamespaceImport(node) || ts.isImportClause(node)
+          ? source : bindingScope(node) });
+    node.forEachChild(visit);
+  };
+  visit(source);
+  const encloses = (outer: Node, inner: Node): boolean => {
+    for (let at: Node | undefined = inner.parent; at; at = at.parent) if (at === outer) return true;
+    return false;
+  };
+  const found = new Map<string, Identifier>();
+  for (const d of declared)
+    if (declared.some(o => o !== d && o.id.text === d.id.text &&
+        (encloses(o.scope, d.scope) || (o.scope === d.scope && o.own && !d.own))))
+      found.set(`${d.id.getStart(source)}:${d.id.end}`, d.id);
+  return found;
+}
+
 export function parseFile(file: string, carriesContext = false,
   tsconfigPath?: string, resolutionFile = file,
   seen?: (diagnostic: SeenDiagnostic) => void): Ast {
@@ -3308,6 +3388,24 @@ export function parseFile(file: string, carriesContext = false,
     node.forEachChild(findBound);
   };
   findBound(source);
+  // A local may shadow a binding of an enclosing scope, as JavaScript's
+  // scopes allow. The fragment's scopes are lists of names, so such a local
+  // is given a name of its own (`shadowName`), and every reference
+  // TypeScript binds to it reads that name.
+  const shadowing = shadowingLocals(source);
+  const shadowedTexts = new Set([...shadowing.values()].map(d => d.text));
+  const bindingNodes: Identifier[] = [];
+  // Reads of a shadowing local above its declaration (`bindingRead`).
+  const early: Identifier[] = [];
+  const findBindingReads = (node: Node): void => {
+    if (ts.isTypeNode(node) || ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node)) return;
+    if (ts.isIdentifier(node) && shadowedTexts.has(node.text) &&
+        !shadowing.has(`${node.getStart(source)}:${node.end}`))
+      bindingNodes.push(node);
+    node.forEachChild(findBindingReads);
+  };
+  for (const [key, id] of shadowing) gate.renames.set(key, shadowName(id, source));
+  if (shadowing.size && !carriesContext) findBindingReads(source);
   const globalValueNodes: Identifier[] = [];
   const findGlobalValues = (node: Node): void => {
     if (ts.isTypeNode(node) || ts.isComputedPropertyName(node) || ts.isImportDeclaration(node) ||
@@ -3467,11 +3565,11 @@ export function parseFile(file: string, carriesContext = false,
       firstArray || firstAsync || keyNodes.length || ambientNames.length || staticNodes.length ||
       classTestNodes.length || classReadNodes.length || contextualNodes.length ||
       receiverNodes.length || enumNodes.length || computedNodes.length || symbolNameNodes.length ||
-      keyTypeNodes.length) {
+      keyTypeNodes.length || bindingNodes.length) {
     const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
       firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? classTestNodes[0] ?? classReadNodes[0] ?? contextualNodes[0] ??
       receiverNodes[0] ?? enumNodes[0] ??
-      computedNodes[0] ?? symbolNameNodes[0] ?? keyTypeNodes[0];
+      computedNodes[0] ?? symbolNameNodes[0] ?? keyTypeNodes[0] ?? bindingNodes[0];
     if (!first) throw Error("missing declaration root");
     // Named imports only. A type import joins the declaration graph; a value
     // import is an assumption at the type its declaration states.
@@ -3500,6 +3598,21 @@ export function parseFile(file: string, carriesContext = false,
           const key = `${start}:${end}`;
           if (classTestKeys.has(key)) gate.classTests.set(key, cls);
           if (classReadKeys.has(key)) gate.classReads.set(key, cls);
+        },
+        bindingReads: bindingNodes.map(node => gate.span(node)),
+        bindingRead: ([start, end], [dStart, dEnd]) => {
+          const declared = shadowing.get(`${dStart}:${dEnd}`);
+          const renamed = gate.renames.get(`${dStart}:${dEnd}`);
+          if (!declared || renamed === undefined) return;
+          // A read above its declaration, outside any closure, runs before
+          // the binding is initialized: JavaScript throws there.
+          const read = bindingNodes.find(n => n.getStart(source) === start && n.end === end);
+          const scope = bindingScope(declared.parent ?? declared);
+          let closure = false;
+          for (let at = read?.parent; at && at !== scope; at = at.parent)
+            if (ts.isFunctionLikeDeclaration(at)) closure = true;
+          if (read && start < dStart && !closure) early.push(read);
+          gate.renames.set(`${start}:${end}`, renamed);
         },
         contextualParams: contextualNodes.map(node => gate.span(node)),
         contextualParam: ([start, end], result) => gate.contextualParams.set(`${start}:${end}`, result),
@@ -3530,11 +3643,13 @@ export function parseFile(file: string, carriesContext = false,
             ...(firstAsync ? [firstAsync] : []), ...keyNodes, ...ambientNames.map(topStatement), ...staticNodes,
             ...classTestNodes, ...classReadNodes, ...contextualNodes,
             ...receiverNodes, ...enumNodes, ...constEnumNodes, ...computedNodes, ...symbolNameNodes,
-            ...keyTypeNodes].find(node =>
+            ...keyTypeNodes, ...bindingNodes].find(node =>
             node.getStart(source) === error.at[0]) ?? first
         : first;
       gate.fail(at, messageOf(error));
     }
+    if (early[0])
+      gate.fail(early[0], `a read of \`${early[0].text}\` before its declaration: JavaScript throws there (the temporal dead zone)`);
     for (const root of declarations.roots) {
       const identity = root.declaration;
       const definition = declarations.definitions.find(d =>
