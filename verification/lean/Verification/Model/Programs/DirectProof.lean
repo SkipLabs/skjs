@@ -132,9 +132,16 @@ def renderAt (G : NormalGraph Nat) (pool : List (Ty Nat)) :
       let pe ← renderAt G pool depth (Γ.set i F) e
       pure (.node ⟨Γ,j.term,j.type⟩ (.ifBoolVar T F) [pt,pe])
     | .unionVar i, _, children =>
+      -- One child per label the slot holds in the actual context: the
+      -- planned label's child. An enclosing split may have left the slot
+      -- fewer labels than the recipe planned for (a variable tested twice).
       let some C := Γ[i]? | failure
-      if C.length != children.length then failure else do
-        let ps ← (C.zip children).mapM fun (a,p) => renderAt G pool depth (Γ.set i [a]) p
+      let some P := j.context[i]? | failure
+      if P.length != children.length then failure else do
+        let ps ← C.mapM fun a => do
+          let some k := P.idxOf? a | failure
+          let some p := children[k]? | failure
+          renderAt G pool depth (Γ.set i [a]) p
         pure (.node ⟨Γ,j.term,j.type⟩ (.unionVar i) ps)
     | _, _, _ =>
       let es ← children.attach.mapM fun q => renderAt G pool depth Γ q.val

@@ -1804,12 +1804,14 @@ private def withHandler (h : Option (Target × Nat)) (act : Compiler α) : Compi
   return r
 
 /-- A jump from `scope` to a target over `targetScope`: the target's slots,
-read through its own mapping, found by name in `scope`. -/
+read through its own mapping, found in `scope` by descriptor, else by name
+(an anonymous slot has no name of its own to be found by). -/
 private def jumpTo (scope : List ScopeBinding) (target : Target) (targetScope : List ScopeBinding) :
     Compiler Target := do
-  let slots ← targetScope.mapM fun b => match (names scope).idxOf? b.source.name with
-    | some i => pure i
-    | none => throw s!"internal extraction error: lost binding '{b.source.name}'"
+  let slots ← targetScope.mapM fun b =>
+    match (sources scope).idxOf? b.source, (names scope).idxOf? b.source.name with
+    | some i, _ | none, some i => pure i
+    | none, none => throw s!"internal extraction error: lost binding '{b.source.name}'"
   return ⟨target.label, some ((target.mapping.getD (List.range targetScope.length)).map
     fun i => slots[i]?.getD 0)⟩
 
@@ -2352,6 +2354,13 @@ losing their individual claims. Requirements use the lexical context at the occu
 slots are introduced only after the operand supplying their type is checked. -/
 private partial def closureExpr (fc : SourceClaims.Function) (scope : List ScopeBinding) (Γ : List (Ty Nat))
     (e : Fragment.Expr) : Compiler DirectProof.Plan := do
+  -- `(a && b) && c` is `a && (b && c)`, and `||` likewise: JavaScript
+  -- evaluates the operands in the same order and yields the same value either
+  -- way, and read so, `c` sees what `a` and `b` answered. The inner operator
+  -- is typed at the whole's claim, which covers every value it yields.
+  if let .logical p andOp (.logical _ andOp' l1 l2) right := e then
+    if andOp' == andOp then
+      return ← closureExpr fc scope Γ (.logical p andOp l1 (.logical p andOp l2 right))
   let A ← closureType fc e
   let G := SourceTypes.graph (← table)
   if let some asserted := fc.exprCurrent.lookup e.span then
@@ -4506,21 +4515,33 @@ private partial def body : Nat → SourceClaims.Function → Ty Nat → List Sco
         | .brk _ none :: _, some (_, done) => pure done
         | .cont _ :: _, some (again, _) => pure (some again)
         | _, _ => throw "break or continue outside a source loop"
-      -- A jump past a `finally` would run it first; that is not lowered.
+      -- The `finally` blocks between the jump and its target, innermost
+      -- first: the jump runs each, in its `try`'s context, before it lands,
+      -- as a `return` does. One that itself jumps, returns or throws leaves
+      -- by its own way instead.
       let depth := match stmts with
         | .brk _ (some l) :: _ => (loopTargets.labelDepths.lookup l).getD 0
         | _ => loopTargets.loopDepth
-      if depth != loopTargets.finalizers.length then
-        throw (locatedRefusal (← table) pos .bindingAnnotation
-          "a jump out of a `try` with a `finally` is outside the fragment")
+      let fins := loopTargets.finalizers
+      let passed := fins.take (fins.length - depth)
       -- A jump whose entry claims a binding of the empty type is never
       -- reached (every incoming edge proves that claim): it completes the
       -- function instead, which it may claim at any result.
       if Γ.any (·.isEmpty) then
         emitAt pos .undef .ret Γ R "unreachable" (scope := scope)
       else
-      let next ← leave fc.namePos R scope destination
-      emitAt pos .nul (.effect next) Γ [0] (scope := scope)
+        -- The outermost passed `finally` completes into the destination;
+        -- each inner one into the next outer one's entry.
+        let mut after := destination
+        for i in (List.range passed.length).reverse do
+          let some fin := passed[i]? | throw "internal extraction error: finalizer index"
+          let targets : LoopTargets := ⟨fin.loop, fin.labels, fins.drop (i+1), fin.loopDepth, fin.labelDepths⟩
+          let entry ← withHandler fin.handler (body fuel fc R fin.scope fin.stmts after targets)
+          after := some (entry, fin.scope)
+        let next ← match passed, after with
+          | _ :: _, some (entry, entryScope) => jumpTo scope entry entryScope
+          | _, _ => leave fc.namePos R scope after
+        emitAt pos .nul (.effect next) Γ [0] (scope := scope)
     | .ret pos e :: rest =>
       if !rest.isEmpty then throw "statements after return are outside the fragment"
       let Γ ← env fc pos.1 scope

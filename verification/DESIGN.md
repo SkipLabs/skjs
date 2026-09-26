@@ -537,8 +537,9 @@ by zero or a negative exponent, and, where the gate admits them at all, a
 number mixed with a bigint or a symbol converted. A handler binds the thrown
 value at `unknown`, under only the facts that hold without the heap
 (`handlerFacts`), since the body may have run any effect before it threw. A
-`finally` block is compiled on every way out, returns included
-([try](PROGRAM-TYPING.md#statement-forms)).
+`finally` block is compiled on every way out, returns and jumps included: a
+`break` or `continue` runs each `finally` it passes, innermost first, then
+lands ([try](PROGRAM-TYPING.md#statement-forms)).
 
 ### Guards
 
@@ -704,7 +705,6 @@ not yet taken are [next steps](#next-steps); a search failure is neither.
 | `this` before `super(...)`; a statement reading `this` before the instance is complete | The instance is allocated at the end; no term stands for the uninitialized binding. |
 | A base class declared later, imported, ambient, a library class (`extends Array`), or an expression | Nothing in the file says what its constructor allocates. |
 | A static method that reads `this`; a mutable static field | Statics are module bindings, exact only when immutable; a static method's receiver is whatever its call passes. |
-| A `break`/`continue` leaving a `try` with a `finally` | The lowering runs the `finally` for returns and throws, not for jumps. |
 | A catch binding annotated other than `unknown`, or destructured | Anything may be thrown. |
 | A template literal type with a `${string}` hole; a computed type over a type parameter; `keyof` with a unique-symbol key; `typeof` of an unannotated binding or of a class with statics | No term of the fragment states it exactly. |
 | TypeScript's `any` in the checked module's own annotations; a contextual closure parameter TypeScript types `any` | It states no contract. |

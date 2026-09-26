@@ -496,7 +496,7 @@ let operation_result declarations op left right =
 (* The atoms of `t` that may be (`equal`) or may not be strictly equal to a
    singleton value. Unknown/rigid predicates conservatively retain their type;
    proof checking validates each narrower cut. *)
-let restrict ?declarations singleton equal t = match t with
+let rec restrict ?declarations singleton equal t = match t with
   | Atoms xs -> ground (List.filter (fun atom ->
       let rec known atom = match atom,singleton with
         | Nul,Nul | Undef,Undef | True,True | False,False -> Some true
@@ -506,18 +506,22 @@ let restrict ?declarations singleton equal t = match t with
         | BigintLit a,BigintLit b -> Some (a=b)
         | Num,NumLit _ | Str,StrLit _ | Bigint,BigintLit _ -> None
         (* A declaration answers as its atoms do, where they all agree, as
-           Lean's slice of its row does. *)
+           Lean's slice of its row does; an intersection as its first
+           part's, which holds every value of it. *)
         | Named _,_ ->
+          let agree = function
+            | Some r :: more when List.for_all (( = ) (Some r)) more -> Some r
+            | _ -> None in
+          let rec head_answer = function
+            | Atoms (a::rest) when Atoms (a::rest) <> Atoms [atom] -> agree (List.map known (a::rest))
+            | Meet (principal,_) -> head_answer principal
+            | _ -> None in
           (match declarations with
            | None -> None
            | Some declarations ->
              (match (try Some (declared_head declarations [] (Atoms [atom])) with Json.Error _ -> None) with
-              | Some (Atoms (a::rest)) when Atoms (a::rest) <> Atoms [atom] ->
-                let answers = List.map known (a::rest) in
-                (match answers with
-                 | Some r :: more when List.for_all (( = ) (Some r)) more -> Some r
-                 | _ -> None)
-              | _ -> None))
+              | Some head -> head_answer head
+              | None -> None))
         (* Any other atom is of another kind than the singleton, or an
            object, never equal to it. *)
         | Top,_ -> None
@@ -529,7 +533,11 @@ let restrict ?declarations singleton equal t = match t with
       | Num,NumLit b when equal && Int64.float_of_bits b <> 0.0 -> NumLit b
       | Str,StrLit s when equal -> StrLit s
       | _ -> atom))
-  | Rigid _ | Union _ | Meet _ -> t
+  (* A union's arms each; an intersection's values are its principal's, so
+     it goes where none of those can. *)
+  | Union ts -> List.fold_left union (Atoms []) (List.map (restrict ?declarations singleton equal) ts)
+  | Meet (principal,_) when restrict ?declarations singleton equal principal = Atoms [] -> Atoms []
+  | Rigid _ | Meet _ -> t
 (* The one value every member of a type is, as Lean selects a singleton
    operand: null, undefined, a Boolean, a string, a bigint, or one number
    (both zeros are one). *)
@@ -1696,9 +1704,16 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       combine (List.map alternative_type alts)
     | ArrayLiteral es ->
       (* One array arm of the expected type is the literal's contract: an
-         optional array parameter, `readonly T[] | undefined`, is its array. *)
+         optional array parameter, `readonly T[] | undefined`, is its array;
+         a declaration's, such as a tuple alias at arguments, its equation's. *)
       let arrays = match expected with
-        | Some (Atoms atoms) -> List.filter_map (function Shape {elements=Some s;_} -> Some s | _ -> None) atoms
+        | Some (Atoms atoms) -> List.concat_map (fun atom -> match atom with
+          | Shape {elements=Some s;_} -> [s]
+          | Named _ ->
+            (match (try Some (declared_head declarations [] (Atoms [atom])) with Json.Error _ -> None) with
+             | Some (Atoms heads) -> List.filter_map (function Shape {elements=Some s;_} -> Some s | _ -> None) heads
+             | _ -> [])
+          | _ -> []) atoms
         | _ -> [] in
       let contract = match expected,arrays with
         | _,[s] -> Some s
@@ -2269,6 +2284,24 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
                 calls=[];indexes=[]}] as t));_} -> Some t
             | _ -> None)
           | _ -> None in
+        (* A fresh array literal at a parameter whose every binder is
+           bounded by literal types is built at the parameter read at those
+           bounds, as TypeScript keeps a fresh literal's literal type where a
+           binder's constraint names literals: `pick<K extends 0 | 1>(e:
+           Array<[K, number]>)` called with `[[0, 1]]` builds a pair whose
+           first position is `0 | 1`, and `K` is inferred from it. *)
+        let literal_bounds p =
+          let literal = function
+            | Nul | Undef | True | False | NumLit _ | StrLit _ | BigintLit _ -> true
+            | _ -> false in
+          let solution = List.filter_map (fun (q:Semantic.quantifier) -> match q.bound with
+            | Some (ValueArgument (Atoms (_::_ as atoms) as t)) when List.for_all literal atoms ->
+              Some (q.identity,ValueArgument t)
+            | _ -> None) signature.quantified in
+          if solution = [] then None
+          else
+            let t = Inference.substitute solution p in
+            if Semantic.mentions_rigid t then None else Some t in
         let dictionary_bound = function
           | Rigid r -> (match List.find_opt (fun (q:Semantic.quantifier) -> q.identity = r)
                           signature.quantified with
@@ -2292,6 +2325,9 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
           | Some p,None when (match arg.node with ArrayLiteral _ -> true | _ -> false)
                               && tuple_bound p <> None ->
             expr ?expected:(tuple_bound p) env arg
+          | Some p,None when (match arg.node with ArrayLiteral _ -> true | _ -> false)
+                              && literal_bounds p <> None ->
+            expr ?expected:(literal_bounds p) env arg
           (* An object literal at a binder bounded by a union with one
              dictionary arm, `T extends Json`, is built at that arm, with
              its exact keys, as a record held in a variable could not be:

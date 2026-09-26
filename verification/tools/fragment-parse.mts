@@ -152,6 +152,9 @@ const SPREAD_POSITION = "a spread of a program's iterable is outside the fragmen
  * spell, apart from the instance methods' `C.m`. */
 const staticName = (cls: string, member: string): string => `static ${cls}.${member}`;
 
+/** The static member name of a class's `[Symbol.hasInstance]` method. */
+const HAS_INSTANCE = "[Symbol.hasInstance]";
+
 /** The binding holding a class's prototype object: a name no source binding
  * can spell, apart from an instance method's `C.m` and a static member's. */
 const prototypeName = (cls: string): string => `${cls}.[[prototype]]`;
@@ -387,6 +390,9 @@ class Gate {
   /** `e[k]` keys TypeScript binds to a `unique symbol` constant, by span:
    * the symbol, as the declaration document lists it. */
   symbolKeys = new Map<string, number>();
+  /** The symbols the declaration document lists, by index: which one a
+   * computed class member's key names. */
+  symbolIdentities: readonly { module: string; name: string }[] = [];
   /** The computed types of the file's annotations (`computedForm`), by span:
    * the term TypeScript's evaluation denotes, or the reason it has none
    * (`computed-types.mts`). */
@@ -767,10 +773,15 @@ class Gate {
           this.fail(member, "a class member modifier outside the fragment");
         this.selfClass = instanceMembers;
         if (modifiers.some((m) => m.kind === ts.SyntaxKind.StaticKeyword)) {
-          if (!(ts.isPropertyDeclaration(member) || ts.isMethodDeclaration(member)) || !ts.isIdentifier(member.name))
+          // A static `[Symbol.hasInstance]` method is the binding `instanceof`
+          // of the class calls (`binary`), named apart from every source name.
+          const hasInstance = ts.isMethodDeclaration(member) && this.staticHasInstance(member.name);
+          if (!(ts.isPropertyDeclaration(member) || ts.isMethodDeclaration(member)) ||
+              (!ts.isIdentifier(member.name) && !hasInstance))
             return this.fail(member, unnamedMember(member, true));
           this.selfClass = null;
-          const binding = staticName(name.text, member.name.text);
+          const binding = staticName(name.text,
+            ts.isIdentifier(member.name) ? member.name.text : HAS_INSTANCE);
           if (ts.isMethodDeclaration(member)) {
             // `C.m()` passes `C` as the receiver, a detached call `undefined`:
             // a body that reads none is the same function either way, called
@@ -2138,23 +2149,41 @@ class Gate {
    * declares or inherits, from a class of this file, a static
    * `[Symbol.hasInstance]`. Syntactic: it only chooses a refusal's reason. */
   private hasInstanceClass(right: Expression): boolean {
+    return this.hasInstanceAlong(ts.isIdentifier(right) ? right.text : undefined) !== null;
+  }
+
+  /** The class, of those the file declares at its top level, along `name`'s
+   * chain of bases whose static `[Symbol.hasInstance]` method `instanceof`
+   * of `name` calls: the nearest declaring one, which a derived class
+   * inherits through its constructor's prototype chain. Syntactic up to the
+   * key, which `staticHasInstance` resolves. */
+  private hasInstanceAlong(name: string | undefined): { cls: string; member: ts.MethodDeclaration } | null {
     const classes = new Map<string, ClassDeclaration>();
     for (const s of this.file.statements)
       if (ts.isClassDeclaration(s) && s.name) classes.set(s.name.text, s);
     const seen = new Set<string>();
-    let name = ts.isIdentifier(right) ? right.text : undefined;
     while (name && !seen.has(name)) {
       seen.add(name);
       const c = classes.get(name);
-      if (!c) return false;
-      if (c.members.some((m) => ts.isMethodDeclaration(m) && m.name && ts.isComputedPropertyName(m.name) &&
-          m.modifiers?.some((k) => k.kind === ts.SyntaxKind.StaticKeyword) &&
-          m.name.expression.getText(this.file) === "Symbol.hasInstance"))
-        return true;
+      if (!c) return null;
+      const member = c.members.find((m): m is ts.MethodDeclaration => ts.isMethodDeclaration(m) &&
+        ts.isComputedPropertyName(m.name) && !!m.modifiers?.some((k) => k.kind === ts.SyntaxKind.StaticKeyword) &&
+        m.name.expression.getText(this.file) === "Symbol.hasInstance");
+      if (member) return { cls: name, member };
       const base = c.heritageClauses?.find((h) => h.token === ts.SyntaxKind.ExtendsKeyword)?.types[0]?.expression;
       name = base && ts.isIdentifier(base) ? base.text : undefined;
     }
-    return false;
+    return null;
+  }
+
+  /** Whether a class member's computed key is the realm's well-known
+   * `Symbol.hasInstance`: TypeScript binds it to the standard library's
+   * `unique symbol` property of that name (`symbolKeys`). */
+  private staticHasInstance(name: ts.PropertyName): boolean {
+    if (!ts.isComputedPropertyName(name) || !ts.isPropertyAccessExpression(name.expression)) return false;
+    const symbol = this.symbolKeys.get(this.span(name.expression).join(":"));
+    const identity = symbol === undefined ? undefined : this.symbolIdentities[symbol];
+    return !!identity && identity.module.startsWith("typescript/lib/") && identity.name === "hasInstance";
   }
 
   private binary(node: BinaryExpression): Expr {
@@ -2172,9 +2201,25 @@ class Gate {
     // prototype object, and looks for the key only that object owns along
     // the operand's chain (DESIGN.md, "Guards").
     if (node.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword) {
+      const cls = this.classTests.get(this.span(node.right).join(":"));
+      // A class whose chain of constructors holds a static
+      // `[Symbol.hasInstance]`: `instanceof` calls that method with the
+      // operand and converts its result by `ToBoolean` (ECMA-262,
+      // InstanceofOperator), walking no prototype chain. The method reads no
+      // `this` (`classBody`), so its receiver, the class, is unobservable,
+      // and it is the static binding a plain call reads. Its answer says
+      // nothing of the operand's type, so the test narrows nothing.
+      const custom = cls ? this.hasInstanceAlong(cls) : null;
+      if (custom && this.staticHasInstance(custom.member.name)) {
+        const keyword = node.operatorToken.getStart(this.file);
+        const callee: Expr = { k: "id", pos: this.span(node.right), name: staticName(custom.cls, HAS_INSTANCE) };
+        const call: Expr = { k: "apply", pos: [node.getStart(this.file), node.operatorToken.end], callee,
+          args: [this.expr(node.left)] };
+        return { k: "not", pos: this.span(node),
+          e: { k: "not", pos: [keyword, keyword + "instanceof".length - 1], e: call } };
+      }
       if (this.hasInstanceClass(node.right))
         this.fail(node, "`instanceof` of a class with a static `[Symbol.hasInstance]` calls that method, a computed static member, outside the fragment");
-      const cls = this.classTests.get(this.span(node.right).join(":"));
       if (!cls)
         this.fail(node, "`instanceof` whose right operand is not a class declared at the file's top level: nothing in the file says which prototype a constructor from elsewhere gives its instances");
       return { k: "instanceTest", pos: this.span(node), e: this.expr(node.left),
@@ -4130,6 +4175,12 @@ export function parseFile(file: string, carriesContext = false,
         (ts.isPropertyAccessExpression(node.argumentExpression) && ts.isIdentifier(node.argumentExpression.expression) &&
           ts.isIdentifier(node.argumentExpression.name))))
       keyNodes.push(node.argumentExpression);
+    // A static method's computed key, `static [Symbol.hasInstance]`.
+    if (ts.isComputedPropertyName(node) && node.parent && ts.isMethodDeclaration(node.parent) &&
+        node.parent.modifiers?.some((m) => m.kind === ts.SyntaxKind.StaticKeyword) &&
+        ts.isPropertyAccessExpression(node.expression) && ts.isIdentifier(node.expression.expression) &&
+        ts.isIdentifier(node.expression.name))
+      keyNodes.push(node.expression);
     node.forEachChild(findKeys);
   };
   if (!carriesContext) findKeys(source);
@@ -4356,6 +4407,7 @@ export function parseFile(file: string, carriesContext = false,
           if (node) gate.libraryTypes.set(node.text, library);
         },
         ...(seen ? { seen } : {}) });
+      gate.symbolIdentities = declarations.symbols;
     } catch (error) {
       const at = error instanceof DeclarationError
         ? [...importNodes, ...localNodes, ...globalNodes, ...globalValueNodes, ...(firstArray ? [firstArray] : []),

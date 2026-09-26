@@ -1518,7 +1518,9 @@ kind, continuation or rule; each is a shape of ordinary nodes and edges.
   `finally` block's throw-path entry, or the enclosing handler. The `finally`
   block is compiled once per way out ([statement forms](#statement-forms)): after a
   normal completion, before each `return` in the body or handler with the
-  value held in a slot of its own, and after a throw with the thrown value
+  value held in a slot of its own, before each `break` or `continue` that
+  leaves the `try` (every `finally` the jump passes, innermost first, the
+  outermost completing into the jump's target), and after a throw with the thrown value
   held, ending in a node that throws it again. Where neither the body nor the
   handler can complete, the normal way leads to an unreachable node that
   loops on itself and states nothing.
@@ -2334,10 +2336,9 @@ What a class declaration may not hold, each for its reason:
   declared scheme and needs none);
 - a constructor parameter with a default: construct code is a term over
   plain parameters, with no default schedule as a closure's `parameterOrder`;
-- a `#private` member (a slot, not a property), a member with a computed
-  key (a method is a binding and a prototype key named by its plain name),
-  and a static `[Symbol.hasInstance]`, which replaces the prototype-chain
-  test `instanceof` is here with a call;
+- a `#private` member (a slot, not a property), and a member with a
+  computed key (a method is a binding and a prototype key named by its
+  plain name) other than a static `[Symbol.hasInstance]`, below;
 - an accessor (reading it runs code; a member read is a plain one), an
   index signature (instances are what construction allocates), a static
   block (code the definition runs);
@@ -2362,6 +2363,27 @@ $$
 Any operand is admitted: $\mathsf{hasKey}$ answers `false` on a primitive,
 as `instanceof` does (it throws only on its right operand). A tested
 immutable variable is refined as by every tag test ([guards](#guards)).
+
+A class whose chain of bases, classes of the file, holds a static method
+keyed by the realm's `Symbol.hasInstance` (TypeScript binds the key to the
+standard library's `unique symbol` property) answers `instanceof` itself:
+ECMA-262's InstanceofOperator calls `C[Symbol.hasInstance]` with the
+operand and converts the result by `ToBoolean`, walking no chain. The
+method is a static binding $C.\texttt{[Symbol.hasInstance]}$ as any static
+method is, reading no `this`, so its receiver is unobservable and it is
+called plainly; a derived class reads its nearest base's, which its
+constructor inherits:
+
+$$
+e\ \mathtt{instanceof}\ C\;\equiv\;\mathord{!}\,\mathord{!}\,\big(C.\texttt{[Symbol.hasInstance]}(e)\big)
+\qquad
+\frac{\Gamma\vdash C.\texttt{[Symbol.hasInstance]}(e):B}
+     {\Gamma\vdash e\ \mathtt{instanceof}\ C:\mathsf{boolean}}
+$$
+
+The operand must meet the method's parameter, as any actual's, and the
+test refines nothing: the method's answer says nothing of the operand's
+type, where TypeScript narrows it to `C`.
 
 An optional chain is the same derived form with the arms exchanged. The
 parser writes `r?.x` and every link after it in the chain (`.b`, `[k]`,
@@ -2491,6 +2513,22 @@ At statement guards the source compiler instead emits short-circuit graph paths,
 whose Boolean/null observations justify the intermediate and successor contexts.
 It also checks the complete expression claim using the derived expression form.
 Thus graph decomposition cannot silently discard the producer's condition type.
+
+A chain of one operator is read right-nested, the parser's left nesting
+reassociated:
+
+$$
+(a\mathbin{\&\&}b)\mathbin{\&\&}c\;\equiv\;a\mathbin{\&\&}(b\mathbin{\&\&}c),
+\qquad
+(a\mathbin{\Vert}b)\mathbin{\Vert}c\;\equiv\;a\mathbin{\Vert}(b\mathbin{\Vert}c),
+$$
+
+which JavaScript evaluates in the same order to the same value (a falsy
+$a$ is the result either way, and so on). Read so, $c$ is checked where $a$
+and $b$ each answered, and the inner operator is typed at the whole's
+claim, which covers every value it yields. A variable tested by both $a$
+and $b$ is split twice; the inner split takes, of its planned arms, those
+of the labels the outer one left.
 
 Closure branches whose two arms fall through require no additional typing rule.
 Their extracted shape is:
@@ -3720,9 +3758,11 @@ the keys the loop visits: strings, for any value. `try B catch (e) C finally
 F` names $C$'s entry as the handler of $B$'s nodes that may throw, with `e`
 at `unknown` (the only annotation admitted), and compiles $F$ on every way
 out: after a normal completion, before each `return` with the value held,
-after a throw with the thrown value held and rethrown. A `return` or `throw`
-in $F$ leaves by its own way, as JavaScript's replaces the pending
-completion:
+before each `break` or `continue` leaving it, then on to the jump's target
+through the `finally` of every enclosing `try` the jump also leaves, after a
+throw with the thrown value held and rethrown. A `return`, `throw`, `break`
+or `continue` in $F$ leaves by its own way, as JavaScript's replaces the
+pending completion:
 
 $$
 \frac{\Gamma\vdash_R B\ \text{with throws}\mapsto(\mathsf{unknown},\Gamma)\vdash_R C\quad
