@@ -2282,9 +2282,18 @@ $$
 $$
 
 So a tag test narrows such a binding as it narrows a `const`, and a `let`
-pattern binds. A `let` pattern whose binding is written is refused: each
-binding would be a cell with a storage contract of its own, which a pattern
-does not lower to. A `let` that is written and holds a union of objects is
+pattern binds. A `let` pattern whose bindings are written binds names no
+source spells, as a `const` pattern does, then a `let` of each source name
+at its value: a cell of its own, whose contract is an unannotated `let`'s,
+its initial value's type widened:
+
+$$
+\mathsf{let}\ p = e\;\equiv\;\mathsf{const}\ p[\overline{x\mapsto x^{\circ}}] = e\,;\ \mathsf{let}\ \overline{x = x^{\circ}}
+$$
+
+JavaScript reads and defaults the pattern's positions, then initializes the
+bindings, in that order either way; each cell is claimed at its name, where
+its initial value is. Such a pattern in a `for` head is refused. A `let` that is written and holds a union of objects is
 not narrowed by a test of its object (a cell's known contents are primitive
 values, and a write between the test and the read may replace it); a read of
 a member only some arms state is refused with that reason.

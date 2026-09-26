@@ -351,7 +351,8 @@ included, is a `const`: each holds its initial value throughout, so a test
 narrows it and a `let` pattern binds (`LET-CONST`). A `let` that is written
 and holds a union of objects is not narrowed by a test of its object: a
 cell's known contents are primitive, and a write in between may replace it.
-An assigned `let` pattern is refused: each binding would be a cell of its own.
+A written `let` pattern binds hidden names, then each source name is a
+cell of its own at its value.
 
 A local may hide an outer binding of its name. The parser renames it, by
 the declaration TypeScript binds each reference to, to a name no source
@@ -617,7 +618,7 @@ text.
 
 | Assumption | Where it is stated |
 | --- | --- |
-| The parser represents the source faithfully: it admits only the fragment, and its lowerings (unbraced arms, `switch`, `for`, templates, enums, optional chains, async forms, patterns, dead code, a shadowing local's renaming by the declaration TypeScript binds each reference to, a `let` nothing writes as a `const`, a rest parameter's alias equation, the iterator protocol of a program's iterable in a `for...of`, a spread and an array pattern, with its closing region) preserve JavaScript's execution. | `tools/fragment-parse.mts`, `fragment.mts` |
+| The parser represents the source faithfully: it admits only the fragment, and its lowerings (unbraced arms, `switch`, `for`, templates, enums, optional chains, async forms, patterns, dead code, a shadowing local's renaming by the declaration TypeScript binds each reference to, a `let` nothing writes as a `const`, a written `let` pattern as a `const` pattern and `let`s, a static block as a closure called at once, `instanceof` of a class with a static `[Symbol.hasInstance]` as its call, a private name as its member's symbol, a rest parameter's alias equation, the iterator protocol of a program's iterable in a `for...of`, a spread and an array pattern, with its closing region) preserve JavaScript's execution. | `tools/fragment-parse.mts`, `fragment.mts` |
 | Source extraction preserves control flow, lexical binding, evaluation order and annotations: which program point a claim is attached to is unproved. No source-to-graph preservation theorem exists. | `Source/Fragment.lean`, `Source/SourceExtraction.lean` |
 | Decoding represents the submitted AST, declarations, claims and evidence faithfully. | `RequestJson.lean`, `SourceClaimJson.lean` |
 | TypeScript's checker resolves each name to its declaration in the file's project, whose strict `tsconfig.json` (paths, links, library set, type packages) reflects the real build; a TypeScript error in a collected declaration or on an import it passes through refuses the graph. The parser checks TypeScript read the bytes it parsed. | `tools/declaration-graph.mts` |
@@ -692,7 +693,7 @@ not yet taken are [next steps](#next-steps); a search failure is neither.
 | A literal or class member keyed by a well-known symbol other than `Symbol.iterator` (`Symbol.toStringTag`, `Symbol.hasInstance`, `Symbol.toPrimitive`, …) | It changes how the host treats the object, which the model does not state; a tag would let it pass for a host collection, whose iteration is trusted. |
 | An element read past a tuple arm's length (`const [a, b] = t` with `t: [number] \| [number, string]`); a slice rest in a closure's directly checked body | The read is `undefined`, which no element rule gives; the slice's call is graph code. |
 | A rest parameter of a definition typed by a type parameter; one typed by an intersection, by a tuple with optional or rest elements, or by what is no array | A definition has no allocation rule for an array only an instance fixes (a function type's is a pack); the fresh array's meet has no representation; several lengths are several signatures; the collected array is no value of it. |
-| A `let` pattern whose bindings are written; a test of a written `let` holding a union of objects | Each binding would be a cell with its own contract; a cell's known contents are primitive. |
+| A written `let` pattern in a `for` head; a test of a written `let` holding a union of objects | Its bindings are cells, which only a statement of a block lowers them to; a cell's known contents are primitive. |
 | An array pattern over a value that may not be an array | It would step the value's own iterator. |
 | A class method declaring `this: T`; a generic class method; a constructor parameter with a default | A method member is host-relative; the closure's claim would be a quantified callable, which the claim format does not encode; construct code is a term over plain parameters with no default schedule. |
 | A class member with a computed key other than a method's `unique symbol` constant or a static `[Symbol.hasInstance]`; an index signature in a class; a static block reading `this`; a generic class in inheritance | A method is a binding and a prototype key named by its plain name or its symbol; instances are what construction allocates; the block's receiver is the class value, whose statics are bindings of their own; a generic base's construction is quantified. |

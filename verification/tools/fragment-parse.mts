@@ -2407,7 +2407,7 @@ class Gate {
       const names = new Set<string>();
       const named = (target: Node): Identifier => {
         if (!ts.isIdentifier(target))
-          this.fail(target, "only field and local assignments are supported");
+          this.fail(target, "an array assignment pattern writing other than a local is outside the fragment: a field target's reference is evaluated before its position is read and defaulted, and the lowering writes locals only");
         if (target.text === "undefined")
           this.fail(target, "shadowing undefined is outside the fragment");
         if (names.has(target.text)) this.fail(target, "duplicate pattern binding");
@@ -2807,7 +2807,7 @@ class Gate {
      lowering states. */
   private patternStmt(list: ts.VariableDeclarationList, node: Node, mutable: boolean): Stmt {
     if (mutable)
-      this.fail(node, "a `let` pattern whose bindings are assigned is outside the fragment: each binding would be a cell with a storage contract of its own, which a pattern does not lower to (one never assigned is a `const` pattern)");
+      this.fail(node, "a `let` pattern whose bindings are assigned in a `for` head is outside the fragment: its bindings are cells, which only a statement of a block lowers them to (one never assigned is a `const` pattern)");
     if (list.declarations.length !== 1)
       this.fail(node, "a pattern declares alone in the fragment");
     const d = list.declarations[0];
@@ -3209,12 +3209,55 @@ class Gate {
       site: { entry: () => lazy().entry(), span: () => lazy().span() } };
     this.hoisted = [];
     try {
-      const stmt = this.stmt(s);
-      return [...this.hoisted, stmt];
+      const stmts = (ts.isVariableStatement(s) ? this.letPattern(s) : null) ?? [this.stmt(s)];
+      return [...this.hoisted, ...stmts];
     } finally {
       this.hoist = savedHoist;
       this.hoisted = savedHoisted;
     }
+  }
+
+  /** `let pattern = init;` whose bindings are written: the pattern binds
+   * names no source spells, as a `const` pattern binds, then a `let` binds
+   * each of the source's names to its value, a cell of its own whose
+   * contract is as an unannotated `let`'s, its initializer's type widened.
+   * JavaScript reads and defaults the pattern's positions, then initializes
+   * the bindings, in the same order either way. Each cell is claimed at its
+   * name, as the value it starts with is. Null for any other statement. */
+  private letPattern(s: ts.VariableStatement): Stmt[] | null {
+    const list = s.declarationList;
+    const [d] = list.declarations;
+    if (list.flags & ts.NodeFlags.Const || !(list.flags & ts.NodeFlags.Let) || list.declarations.length !== 1 ||
+        !d || !(ts.isObjectBindingPattern(d.name) || ts.isArrayBindingPattern(d.name)) || this.neverAssigned(list))
+      return null;
+    if (d.type) this.fail(d, "an annotated pattern is outside the fragment");
+    if (!d.initializer) this.fail(d, "a `let` pattern needs an initializer");
+    // Over a program's iterable, an array pattern is the iterator's steps
+    // (`protocolPattern`), which bind no cells.
+    if (ts.isArrayBindingPattern(d.name) &&
+        this.iterations.get(this.span(d.initializer).join(":"))?.startsWith("client"))
+      return null;
+    const target = this.pattern(d.name, new Set());
+    this.initializedBefore(d, [[target, null]]);
+    const cells: BindingAst[] = [];
+    const hide = (t: PatternAst): PatternAst => {
+      switch (t.k) {
+        case "name": {
+          const hidden = `%let-pattern ${t.name}`;
+          cells.push({ name: t.name, namePos: t.pos, annot: null, init: { k: "id", pos: t.pos, name: hidden } });
+          return { ...t, name: hidden };
+        }
+        case "object": return { ...t, props: t.props.map((q) => ({ ...q, target: hide(q.target) })),
+          rest: t.rest ? { ...t.rest, target: hide(t.rest.target) } : null };
+        case "array": return { ...t, elems: t.elems.map((q) => ({ ...q, target: hide(q.target) })),
+          rest: t.rest ? { ...t.rest, target: hide(t.rest.target) } : null };
+      }
+    };
+    const hidden = hide(target);
+    return [
+      { k: "destructure", pos: this.span(s), target: hidden, default_: null, init: this.expr(d.initializer) },
+      { k: "let", pos: this.span(d.name), bindings: cells },
+    ];
   }
 
   /** The offset of `token` at or after `from`, past whitespace and comments:

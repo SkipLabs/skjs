@@ -3609,7 +3609,8 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
       | .invoke _ (.elemAt _ o key) _ _ typeArgs => do
         if !typeArgs.isEmpty then
           throw (locatedRefusal (← table) e.span .schemeElimination
-            "explicit type arguments on an element call are outside the fragment")
+            ("explicit type arguments on an element call are outside the fragment: an element that " ++
+              "is a generic closure is claimed at a quantified callable, which the claim format does not encode"))
         let K ← exprType fc key
         let index ← arrayKeyTerm K
         pure (some (o, some key, fun obj => .elemAt (.readAt SourceTypes.storeField obj) index))
