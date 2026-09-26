@@ -243,4 +243,6 @@ an exporter change needs a place to show, one phenomenon per file.
   must exercise source evaluation order and binding scope, including forged
   producer claims against both evidence production and consumption; calculus
   safety alone does not prove correspondence with JavaScript execution.
-- Docs: a doc-only change needs no suite run; check anchors and prose.
+- Docs: a doc-only change needs no suite run; check anchors and prose. Cite
+  papers, specifications and issues by a link to an entry of
+  [REFERENCES.md](REFERENCES.md), adding the entry there.

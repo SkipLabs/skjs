@@ -31,11 +31,13 @@ gate and by Lean's re-extraction of the claims, not proved preserving; see
 
 ## The pieces of a connection
 
-- **M**, a mechanized ECMA-262 semantics: an abstract machine over the
+- **M**, a mechanized [ECMA-262](REFERENCES.md#ecma-262) semantics: an abstract machine over the
   specification's values, records, realms and job queue, with the built-ins'
-  algorithms. ESMeta (formerly JISET) extracts such a semantics from the
+  algorithms. ESMeta (formerly JISET, [Park et al. 2020](REFERENCES.md#jiset-and-esmeta)) extracts such a semantics from the
   specification's own algorithm text and covers promises and async. Using it
-  from Lean would mean importing or re-stating its fragment in Lean.
+  from Lean would mean importing or re-stating its fragment in Lean. JSCert
+  ([Bodin et al. 2014](REFERENCES.md#bodin-et-al-2014-jscert)) is a hand-written Coq alternative, for
+  ECMAScript 5, before promises.
 - **C**, the existing compilation from a TypeScript source unit to a
   calculus program.
 - **R**, a relation between calculus states and M states:
@@ -135,7 +137,9 @@ Under the connection:
   longer vacuous.
 
 The only assumption left is that third-party code keeps its declared promise
-types, which no specification can state.
+types, which no specification can state. The same fact is discussed for
+ReScript ([#5709](REFERENCES.md#rescript-5709), [#6433](REFERENCES.md#rescript-6433), [#2345](REFERENCES.md#rescript-2345)) and TypeScript
+([#27711](REFERENCES.md#typescript-27711), [#49946](REFERENCES.md#typescript-49946), [#35419](REFERENCES.md#typescript-35419)).
 
 The same shape recurs in any **flattening** constructor, one whose runtime
 representation satisfies $c\langle c\langle t\rangle\rangle = c\langle t\rangle$,
@@ -143,7 +147,7 @@ such as nullable values and promises. A generic signature is truthful at
 $c\langle T\rangle$ only for $T$ outside $c$'s image, and generic
 instantiation can always produce the nested type. So soundness cannot rest
 on banning nested types: it has to come from the meaning of the constructor,
-or from a bound at every trusted instantiation.
+or from a bound at every trusted instantiation ([ReScript #5707](REFERENCES.md#rescript-5707)).
 
 ## Cost, roughly
 

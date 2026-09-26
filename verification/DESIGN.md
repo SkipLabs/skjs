@@ -18,7 +18,8 @@ subtyping to [POSITIVE-TYPES](POSITIVE-TYPES.md), program and source rules to
 [PROGRAM-TYPING](PROGRAM-TYPING.md), wire formats to
 [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md) and [SOURCE-CLAIMS](SOURCE-CLAIMS.md).
 How much of SKJS's own test suite verifies, and what stops the rest, is
-[SKJS-COVERAGE](ocaml-producer/SKJS-COVERAGE.md).
+[SKJS-COVERAGE](ocaml-producer/SKJS-COVERAGE.md). Works the design draws on
+are cited from [REFERENCES](REFERENCES.md).
 
 **The experiment's boundary.** The pipeline checks SKJS; it does not change
 it. SKJS's acceptance, inference and diagnostics stay as they are, and only
@@ -31,7 +32,8 @@ finding about SKJS or about the pipeline, never a reason to weaken a rule.
 **Soundness is no wrong values.** An accepted unit, run in any environment
 meeting its inputs, evaluates to a value of its declared type, takes a step,
 or throws a value: it never gets stuck and never produces a value outside its
-type. A throw is an outcome, as in ML-style soundness with exceptions: a type
+type. A throw is an outcome, as in ML-style soundness with exceptions
+([Wright and Felleisen 1994](REFERENCES.md#wright-and-felleisen-1994)): a type
 says what a value is, never that none is thrown. Termination is not claimed.
 What is refused because it could produce a wrong value stays refused; what
 would only throw is admitted (`BigInt(1.5)`, a bigint division by zero,
@@ -216,7 +218,7 @@ viewer shows one unit at a time, with the module's units as an outline.
 A generic unit is an ordinary graph request whose binders are **parameter
 rows**: rows the graph's assignment interprets and no rule reads.
 `Parametricity.accept_reassign` proves acceptance independent of that
-assignment, so one derivation is safe at every instantiation
+assignment ([Reynolds 1983](REFERENCES.md#reynolds-1983)), so one derivation is safe at every instantiation
 ([Generic-Body](PROGRAM-TYPING.md#overloads-polymorphism-and-binding)).
 Records, tuples, arrays, field reads and writes, literals, calls of other
 generic functions at a binder: whatever the graph checks for ground types it
@@ -306,9 +308,10 @@ Every location carries a stable invariant contract in
 the world; heap satisfaction ties contracts to contents, and a write must
 meet the location's contract. References are invariant views of storage, not
 covariant containers. Functions are safe in every admissible future world
-([types, worlds and heaps](SEMANTICS.md#computations-and-recursive-types)).
+([types, worlds and heaps](SEMANTICS.md#computations-and-recursive-types);
+[Ahmed 2004](REFERENCES.md#ahmed-2004)).
 Recursive types are finite guarded graphs, interpreted by a budget-indexed
-fixed point ([POSITIVE-TYPES](POSITIVE-TYPES.md)).
+fixed point ([POSITIVE-TYPES](POSITIVE-TYPES.md); [Appel and McAllester 2001](REFERENCES.md#appel-and-mcallester-2001)).
 
 ### Current-content assertions
 
@@ -416,7 +419,8 @@ A read `o[k]` whose key is one of several string or number literals tests
 
 A method member's contract is relative to its host: read from `o` and invoked
 with receiver `o` and admitted actuals, it behaves as typed, and it promises
-nothing for another receiver ([`methodT`](POSITIVE-TYPES.md#records)). A
+nothing for another receiver ([`methodT`](POSITIVE-TYPES.md#records)): the
+self-application of [Abadi and Cardelli 1996](REFERENCES.md#abadi-and-cardelli-1996). A
 method call reads the member and binds it to its host in one term
 (`bindMember`); nothing types a member read on its own. Consequences, each
 forced by soundness:
@@ -532,7 +536,8 @@ values no source name spells, whose signatures the declaration reader
 states ([async](PROGRAM-TYPING.md#async-functions-and-await),
 [loops](PROGRAM-TYPING.md#loops-over-arrays)). No calculus rule changes: a
 call's callee is an assumption at its declared type. An async function's
-promise settles only to a primitive, the values that are never thenables.
+promise settles only to a primitive, the values that are never thenables
+([nested promises](ECMA-CONNECTION.md#illustration-nested-promises)).
 The model runs a body to its end; every point where other code can intervene
 is an `await` or a call, across which only contracts survive.
 
@@ -699,7 +704,8 @@ One line each; the reason is the one the design keeps.
   operand meets `T`.
 - **Two model laws stay refused**: distributing arrow results over an
   intersection, and collapsing eventually incompatible reference contracts to
-  bottom ([retained constraints](SEMANTICS.md#two-retained-design-constraints)).
+  bottom ([retained constraints](SEMANTICS.md#two-retained-design-constraints);
+  contrast [Frisch, Castagna and Benzaken 2008](REFERENCES.md#frisch-castagna-and-benzaken-2008)).
 - **Graph evidence is certified at every assignment of parameter rows**
   (`Parametricity.accept_reassign`); a checker that read the assignment could
   not be given its `_reassign` lemma.

@@ -601,7 +601,9 @@ value belonging to `A`, or it throws a closed value, or it can step with one
 budget spent, preserving heap satisfaction in an admissible extension of the
 truncated world. This is partial correctness/safety, not termination, and a
 throw is an outcome, as a value is: a type says what a value is, never that
-none is thrown ([Design](DESIGN.md#throws)).
+none is thrown ([Design](DESIGN.md#throws)). The model is step-indexed
+([Appel and McAllester 2001](REFERENCES.md#appel-and-mcallester-2001)) with worlds for mutable state ([Ahmed 2004](REFERENCES.md#ahmed-2004)); the
+safety shape is that of [Wright and Felleisen 1994](REFERENCES.md#wright-and-felleisen-1994).
 
 **Throws.** `throw a` (`Tm.throw`) evaluates `a` (`throwC`), then throws its
 value. A term *throws* $v$ (`Raises t v`) when `throw v`, $v$ a value, is in
@@ -670,7 +672,9 @@ Its approximation tower stabilizes at every finite observation level, and the
 diagonal is a fixed point. `Tower.lean` supplies that construction for graph
 interpretations. It does not require monotonicity of the recursive operand, so
 negative occurrences in function domains are permitted when guarded. This is
-not a greatest-fixed-point construction on unindexed sets of values.
+not a greatest-fixed-point construction on unindexed sets of values; it is
+guarded recursion ([Nakano 2000](REFERENCES.md#nakano-2000); [Birkedal et al. 2012](REFERENCES.md#birkedal-et-al-2012))
+with [Banach's](REFERENCES.md#banach-1922) fixed point.
 
 The type graph is a finite system of guarded positive formulas. Normalization
 preserves the entire interpretation operator, hence also its recursive fixed
@@ -838,7 +842,8 @@ First, unrestricted arrow-result distribution fails:
 An allocating function can satisfy the two arrows using different invariant
 choices for a new cell. Requiring a single result-world interpretation is
 stronger. The maintained combination rule uses a proved conservative shape
-condition instead.
+condition instead. The law holds in set-theoretic semantic subtyping
+([Frisch, Castagna and Benzaken 2008](REFERENCES.md#frisch-castagna-and-benzaken-2008)), which has no state.
 
 Second, eventual incompatibility of nested reference contracts cannot justify
 collapsing their arrow results to bottom at every finite index. A concrete

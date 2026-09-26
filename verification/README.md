@@ -11,7 +11,8 @@ source integration, and tests. Declarations share the `Verification.Model`
 namespace; module paths identify their topic. These folders aid navigation,
 not an enforced dependency order: some derived semantic lemmas depend on
 program rules.
-[DESIGN.md](DESIGN.md) describes the architecture and trust surface.
+[DESIGN.md](DESIGN.md) describes the architecture and trust surface;
+[REFERENCES.md](REFERENCES.md) collects the works it draws on.
 
 The base language everything else is defined over is small, and stated in two
 places. [Terms and values](SEMANTICS.md#operational-language) are the programs
@@ -244,6 +245,7 @@ owner; other documents link to them and give only the context their readers need
 | [OBLIGATION-DIAGNOSTICS](OBLIGATION-DIAGNOSTICS.md) | Failure records, source maps, outcome classification and reason vocabulary. |
 | [Viewer README](report-viewer/README.md) | Viewer/editor UX, local server, implementation structure and browser integration. |
 | [Test index](tests/README.md) and linked corpus READMEs | Regression coverage, runnable witnesses, producer/runtime outcomes and exact candidate repairs. |
+| [REFERENCES](REFERENCES.md) | Every cited paper, specification, tool and issue, with what the project uses from it and where. Other documents link to its anchors. |
 | [INTERSECTIONS](INTERSECTIONS.md) | Historical design analysis from before the present Lean model. Read the current rules and proofs above for implemented behavior. |
 
 When adding a rule, put its mathematical statement and proof scope in

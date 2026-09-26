@@ -3401,7 +3401,7 @@ the types no thenable inhabits (`promisedBinders`); the client's own generic
 bodies are checked at every instantiation instead. The producer infers $T$ and $U$ as TypeScript infers a
 union with one bare binder: an object part of the operand goes to the
 `Promise` arm, a primitive to the bare binder, and an arm nothing reaches is
-inferred at `never`.
+inferred at `never`. Background: [promises and flattened types](REFERENCES.md#promises-and-flattened-types).
 
 ### Loops over arrays
 

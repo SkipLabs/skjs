@@ -72,7 +72,8 @@ Two laws one might expect, of which only the second holds:
 (A → C) ∧ (B → C)  =  (A ∨ B) → C    arrowT_union_dom
 ```
 
-The first fails left to right: `ModelBoundaries.arrow_inter_codomain_fails`
+The first holds in semantic subtyping
+([Frisch, Castagna and Benzaken 2008](REFERENCES.md#frisch-castagna-and-benzaken-2008)) and fails here, left to right: `ModelBoundaries.arrow_inter_codomain_fails`
 exhibits a function in both `null → Ref(null)` and `null → Ref(null | boolean)`
 that is in neither result's conjunction, because each call allocates and the
 two contracts are invariant. `Safe` at a conjunction of result families is not

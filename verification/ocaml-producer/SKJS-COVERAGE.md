@@ -865,7 +865,7 @@ that names no `then` (a lint warning only), and `testAwaitAliasContract`
 states that awaiting a plain object preserves its identity. Record types are
 open, so the record may own a `then`, and `await` then calls it and yields
 what it passes. The pipeline awaits only a promise or a primitive
-([DESIGN.md](../DESIGN.md#async-functions-and-await)) and refuses the unit.
+([DESIGN.md](../DESIGN.md#async-and-iteration)) and refuses the unit.
 Witness: SKJS reports no error for
 
 ```ts

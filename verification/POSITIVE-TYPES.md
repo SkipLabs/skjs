@@ -17,7 +17,7 @@ the end.
 
 **Notation.** A meaning is a family $X_n(W,v)$: at level $n$ and world $W$,
 value $v$ is a member. A lower level is a weaker observation; "below the
-level" means at every $j<n$. Throughout, $\Delta$ is a finite table of subtype
+level" means at every $j<n$ ([Appel and McAllester 2001](REFERENCES.md#appel-and-mcallester-2001)). Throughout, $\Delta$ is a finite table of subtype
 obligations, and $\Delta(A,B)$ says the pair $(A,B)$ is in it or that every
 label of $A$ is a label of $B$: a type is within any type listing its labels,
 which needs no row (`Rel`). Each section
@@ -393,6 +393,7 @@ reads `env`, so every theorem proved for all graphs holds at every
 reassignment; for the whole graph checker this is a theorem,
 `Parametricity.accept_reassign`, and a generic body checked with its binders
 as parameter rows is safe at every assignment of them
+([Reynolds 1983](REFERENCES.md#reynolds-1983))
 ([PROGRAM-TYPING.md](PROGRAM-TYPING.md#overloads-polymorphism-and-binding)). A member of a scheme row meets each instance's signatures
 (`scheme_elim`), and a function meeting them at every instantiation is a
 member (`scheme_intro`). Without scheme rows, meet rows and pack binders this
