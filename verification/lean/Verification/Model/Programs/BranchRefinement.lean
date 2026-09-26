@@ -21,17 +21,18 @@ theorem booleanMember_sound [DecidableEq ι] {G : NormalGraph ι} {A q}
     (h : booleanMember G A q = true) (n W) :
     meaning G A n W (if q then .tru else .fls) := by
   obtain ⟨c,hc,h⟩ := List.any_eq_true.mp h
-  refine expand_sem_mpr ⟨c,expand_sub hc,?_⟩
-  cases c <;> simp_all [clauseSem, semWithArgs, boolT]
+  have hrec : c.record = false := by cases c <;> simp_all [Clause.record]
+  refine expand_sem_mpr ⟨c,expand_sub hc,?_,realmInvariant_of_not_record hrec _ _ _⟩
+  cases c <;> simp_all [semWithArgs, boolT]
 
 theorem onlyBoolean_sound {G : NormalGraph ι} {A n W v}
     (h : onlyBoolean G A = true) (hv : meaning G A n W v) :
     v = .tru ∨ v = .fls := by
   simp only [onlyBoolean, Bool.and_eq_true] at h
   rw [expand_sem G A h.1] at hv
-  obtain ⟨c,hc,hv⟩ := hv
+  obtain ⟨c,hc,hv,-⟩ := hv
   have h := List.all_eq_true.mp h.2 c hc
-  cases c <;> simp_all [clauseSem, semWithArgs, boolT]
+  cases c <;> simp_all [semWithArgs, boolT]
 
 /-- Drop only labels whose every clause contradicts the observed tag. A mixed
 label is retained intact: this does not assume that labels have uniform shapes.
@@ -83,7 +84,7 @@ theorem field_value {G : NormalGraph ι} {c : Clause (Ty ι)} {f : PropKey} {K :
     (hK : match c with
       | .refs a _ vs _ _ _ => (f, K) ∈ a ++ vs
       | _ => False)
-    (hv : clauseSem G c (n+1) W v) (hh : HeapOk (n+1) W h)
+    (hv : semWithArgs (meaning G) (argMeaning G) c (n+1) W v) (hh : HeapOk (n+1) W h)
     (hl : v = .objAt flds code) (hf : flds.lookup f = some l) (hu : h[l]? = some u) :
     meaning G K n (trunc n (Nat.le_succ n) W) u := by
   cases c with
@@ -127,7 +128,7 @@ theorem fieldSlice_sound {G : NormalGraph ι} {A : Ty ι} {f tag q n W h v flds 
     simp only [Bool.and_eq_true, List.all_eq_true] at hd
     have hm : meaning G [a] (n+1) W v := ⟨a, by simp, hva⟩
     rw [expand_sem G [a] (by simp [NormalGraph.plainTy, hd.1])] at hm
-    obtain ⟨c, hc, hcv⟩ := hm
+    obtain ⟨c, hc, hcv, -⟩ := hm
     have hans := hd.2 c hc
     cases c with
     | refs a' bs vs os ms ks =>
@@ -156,7 +157,7 @@ theorem fieldSlice_absent {G : NormalGraph ι} {A : Ty ι} {f tag q n W v flds c
     simp only [Bool.and_eq_true, List.all_eq_true] at hd
     have hm : meaning G [a] (n+1) W v := ⟨a, by simp, hva⟩
     rw [expand_sem G [a] (by simp [NormalGraph.plainTy, hd.1])] at hm
-    obtain ⟨c, hc, hcv⟩ := hm
+    obtain ⟨c, hc, hcv, -⟩ := hm
     have hans := hd.2 c hc
     cases c with
     | refs a' bs vs os ms ks =>
@@ -299,9 +300,15 @@ theorem promotes_sound [DecidableEq ι] {G : NormalGraph ι} {A B : Ty ι} {k : 
     (hp : promotes G A B k = true) (hv : meaning G A n W v)
     (hk : KeyFound k v) : meaning G B n W v := by
   simp only [promotes, Bool.and_eq_true, List.all_eq_true, List.any_eq_true] at hp
-  obtain ⟨c, hc, hcv⟩ := (expand_sem G A hp.1 n W v).mp hv
+  obtain ⟨c, hc, hcv, hinv⟩ := (expand_sem G A hp.1 n W v).mp hv
   obtain ⟨d, hd, hw⟩ := hp.2 c hc
-  exact expand_sem_mpr ⟨d, expand_sub hd, weaker_sound hw (promote_sound hcv hk)⟩
+  have hdr : d.record = true ∧ c.record = true := by
+    cases d <;> cases hpc : promote k c <;> simp [weaker, hpc] at hw
+    all_goals
+      refine ⟨rfl, ?_⟩
+      cases c <;> simp_all [promote, Clause.record]
+  exact expand_sem_mpr ⟨d, expand_sub hd, weaker_sound hw (promote_sound hcv hk),
+    (realmInvariant_record hdr.2 hdr.1).mp hinv⟩
 
 /-- A small, explicit vocabulary of observations established by execution. -/
 inductive Observation where
@@ -354,7 +361,7 @@ theorem tagMember_sound {G : NormalGraph ι} {B : Ty ι} {t : Tag} {q : Bool}
     simp only [numberEqual, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at ht
     rcases ht.2 with h | h
     · subst h
-      exact expand_sem_mpr ⟨_, expand_sub hc, by simp [semWithArgs]⟩
+      exact expand_sem_mpr ⟨_, expand_sub hc, by simp [semWithArgs], realmInvariant_of_not_record rfl _ _ _⟩
     · exact absurd h.2 hm.1
   case strEq.true s =>
     obtain ⟨c, hc, hk⟩ := List.any_eq_true.mp hm
@@ -362,13 +369,14 @@ theorem tagMember_sound {G : NormalGraph ι} {B : Ty ι} {t : Tag} {q : Bool}
     subst hk
     cases v <;> simp [tagHolds, isVal] at ht hv
     subst ht
-    exact expand_sem_mpr ⟨_, expand_sub hc, by simp [semWithArgs]⟩
+    exact expand_sem_mpr ⟨_, expand_sub hc, by simp [semWithArgs], realmInvariant_of_not_record rfl _ _ _⟩
   all_goals
     obtain ⟨c, hc, hk⟩ := List.any_eq_true.mp hm
     cases c <;> simp at hk
     cases v <;> simp [tagHolds, isVal] at ht hv <;>
       exact expand_sem_mpr ⟨_, expand_sub hc, by
-        simp [semWithArgs, nulT, undefT, boolT, numT, strT, bigintT, symbolT]⟩
+        simp [semWithArgs, nulT, undefT, boolT, numT, strT, bigintT, symbolT],
+        realmInvariant_of_not_record rfl _ _ _⟩
 
 /-- A passed `hasKey` test finds its key present: `check` of the key. -/
 def presentKey (t : Tag) (q : Bool) (check : PropKey → Bool) : Bool :=
@@ -391,6 +399,141 @@ theorem presentKey_sound {t : Tag} {q : Bool} {check : PropKey → Bool}
   · simp only [protoFree, hl, Option.isSome_none, Bool.false_or, Option.isNone_iff_eq_none] at hv
     simpa [Option.isSome_iff_ne_none] using hv
 
+/-! ### An array of the realm
+
+`Array.isArray` finds that an object owns the store key. A record or
+dictionary type is of objects meeting the realm's array invariant
+(`PositiveGraphs.realmInvariant`): one owning the store key holds a dense store
+and the realm's prototype and owns no key it provides. So where the test holds,
+a member of such a type is a member of the realm's `readonly unknown[]`, the
+array shape over a store of values (`realmArrayLabel`). -/
+
+/-- A type every value meets: one of its rows holds `top`. -/
+def valuesTy [DecidableEq ι] (G : NormalGraph ι) (T : Ty ι) : Bool :=
+  T.any fun t => G.plain t && (G t).contains .top
+
+theorem valuesTy_sound [DecidableEq ι] {G : NormalGraph ι} {T : Ty ι} (h : valuesTy G T = true)
+    {n W v} (hv : topT n W v) : meaning G T n W v := by
+  obtain ⟨t, ht, hp⟩ := List.any_eq_true.mp h
+  simp only [Bool.and_eq_true, List.contains_iff_mem] at hp
+  exact ⟨t, ht, (unfold_plain hp.1 n W v).mpr ⟨.top, hp.2, hv, realmInvariant_of_not_record rfl n W v⟩⟩
+
+/-- A type holding every dense store of values: a readonly array store at a
+type every value meets. -/
+def storeOfValues [DecidableEq ι] (G : NormalGraph ι) (S : Ty ι) : Bool :=
+  S.any fun s => G.plain s && (G s).any fun c => match c with
+    | .list ⟨[], [], some T, true⟩ [] => valuesTy G T
+    | _ => false
+
+theorem storeOfValues_sound [DecidableEq ι] {G : NormalGraph ι} {S : Ty ι}
+    (h : storeOfValues G S = true) {n W v} (hv : anyStoreT n W v) : meaning G S n W v := by
+  obtain ⟨s, hs, hp⟩ := List.any_eq_true.mp h
+  simp only [Bool.and_eq_true, List.any_eq_true] at hp
+  obtain ⟨hplain, c, hc, hcv⟩ := hp
+  refine ⟨s, hs, (unfold_plain hplain n W v).mpr ⟨c, hc, ?_, ?_⟩⟩
+  · split at hcv
+    · rename_i T
+      obtain ⟨ls, rfl, hd, hlen, hbound, hreq, hopt, hrest⟩ := hv
+      refine ⟨⟨ls, rfl, hd, by simp [tupleFams], by simp [tupleFams],
+        fun i A hA => by simp [tupleFams] at hA, fun i A l hA => by simp [tupleFams] at hA, ?_⟩, by simp⟩
+      intro i l hi hl
+      obtain ⟨E, c', hE, hw, hag⟩ := hrest i l hi hl
+      cases hE
+      exact ⟨_, c', rfl, hw, fun j hj W' u => ⟨fun hu => valuesTy_sound hcv ((hag j hj W' u).1 hu),
+        fun h => nomatch h⟩⟩
+    · cases hcv
+  · split at hcv
+    · exact realmInvariant_of_not_record rfl n W v
+    · cases hcv
+
+/-- The realm's `readonly unknown[]`: a clause row holding the array shape
+over a store of values, `ArrayProto` read at a type without parameters, and
+the keys that prototype provides. -/
+def realmArrayLabel [DecidableEq ι] (G : NormalGraph ι) (L : ι) : Bool :=
+  match G.realm with
+  | none => false
+  | some r => realmFree G r.proto && G.plain L && match G L with
+    | [.refs [] [] [(k, S), (p, P)] [] [] [K]] =>
+      k == CallArguments.arrayStoreField && p == CallArguments.protoField && P == r.proto &&
+        K == ⟨false, r.keys⟩ && storeOfValues G S
+    | _ => false
+
+/-- **An array of the realm.** A member of a record or dictionary clause that
+owns the store key is a member of the realm's `readonly unknown[]`. -/
+theorem realmArray_of_record [DecidableEq ι] {G : NormalGraph ι} {L : ι}
+    (hL : realmArrayLabel G L = true) {c : Clause (Ty ι)} (hc : c.record = true) {n W v}
+    (hinv : realmInvariant G (realmValues G) c n W v) (ha : tagHolds .isArray v = true) :
+    meaning G [L] n W v := by
+  unfold realmArrayLabel at hL
+  cases hr : G.realm with
+  | none => rw [hr] at hL; cases hL
+  | some r =>
+    rw [hr] at hL
+    simp only [Bool.and_eq_true] at hL
+    obtain ⟨⟨hfree, hplain⟩, hrow⟩ := hL
+    split at hrow
+    · rename_i k S p P K hGL
+      simp only [Bool.and_eq_true, beq_iff_eq] at hrow
+      obtain ⟨⟨⟨⟨rfl, rfl⟩, rfl⟩, rfl⟩, hS⟩ := hrow
+      -- The tested value is a plain object owning the store key.
+      obtain ⟨flds, rfl, hst⟩ : ∃ flds, v = .objAt flds .absent ∧
+          (flds.lookup CallArguments.arrayStoreField).isSome = true := by
+        cases v with
+        | objAt fs code =>
+          cases code <;> simp [tagHolds] at ha
+          exact ⟨fs, rfl, by simpa [CallArguments.arrayStoreField] using ha⟩
+        | _ => simp [tagHolds] at ha
+      have hinv' := hinv
+      unfold realmInvariant at hinv'
+      rw [hr] at hinv'
+      simp only [hc, ite_true] at hinv'
+      obtain ⟨hview, hkeys⟩ := hinv' flds rfl hst
+      refine ⟨L, List.mem_singleton_self L, (unfold_plain hplain n W _).mpr
+        ⟨.refs [] [] [(CallArguments.arrayStoreField, S), (CallArguments.protoField, r.proto)] [] []
+          [⟨false, r.keys⟩], by rw [hGL]; simp, ?_, ?_⟩⟩
+      · refine ⟨⟨⟨flds, rfl, fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm⟩, by simp⟩,
+          fun f T hm => ?_, by simpa [OptionalField.map] using optT_nil,
+          MethodMembers.methodT_nil _ _ _, fun K hK => ?_⟩
+        · simp only [ReferenceConjunctions.famsOf, List.map_cons, List.map_nil, List.mem_cons,
+            Prod.mk.injEq, List.not_mem_nil, or_false] at hm
+          rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+          · obtain ⟨flds', l, c', he, hl, hw, hag⟩ := hview CallArguments.arrayStoreField anyStoreT (by simp)
+            exact ⟨flds', l, c', he, hl, hw, fun j hj W' u hu =>
+              storeOfValues_sound hS (hag j hj W' u hu)⟩
+          · obtain ⟨flds', l, c', he, hl, hw, hag⟩ := hview CallArguments.protoField (realmValues G r.proto) (by simp)
+            exact ⟨flds', l, c', he, hl, hw, fun j hj W' u hu =>
+              (realmFree_meaning hfree j W' u).mpr (hag j hj W' u hu)⟩
+        · simp only [List.mem_singleton] at hK
+          subst hK
+          exact hkeys
+      · exact (realmInvariant_record hc rfl).mp hinv
+    · cases hrow
+
+/-- Where `Array.isArray` holds, every label of the tested type is kept in
+`B`, or is a clause row each clause of which is of no array or a record's,
+whose members that are arrays `B`'s realm array label holds. -/
+def arraySlice [DecidableEq ι] (G : NormalGraph ι) (A B : Ty ι) : Bool :=
+  B.any (realmArrayLabel G) &&
+    (tagSlice G A .isArray true).all fun a =>
+      B.contains a || (G.plain a && (G a).all fun c => tagClause .isArray c == some false || c.record)
+
+theorem arraySlice_sound [DecidableEq ι] {G : NormalGraph ι} {A B : Ty ι}
+    (h : arraySlice G A B = true) {n W v} (hv : meaning G A n W v)
+    (ha : tagHolds .isArray v = true) : meaning G B n W v := by
+  simp only [arraySlice, Bool.and_eq_true, List.any_eq_true, List.all_eq_true] at h
+  obtain ⟨⟨L, hLB, hL⟩, hall⟩ := h
+  obtain ⟨a, haS, hva⟩ := tagSlice_sound (tag := .isArray) (q := true) hv (Or.inl ha)
+  rcases Bool.or_eq_true_iff.mp (hall a haS) with hB | hrow
+  · exact ⟨a, List.contains_iff_mem.mp hB, hva⟩
+  · simp only [Bool.and_eq_true, List.all_eq_true] at hrow
+    obtain ⟨c, hc, hcv, hinv⟩ := (unfold_plain hrow.1 n W v).mp hva
+    rcases Bool.or_eq_true_iff.mp (hrow.2 c hc) with hno | hrec
+    · have := tagClause_sound (beq_iff_eq.mp hno) hcv
+      rw [ha] at this; cases this
+    · obtain ⟨l, hl, hvl⟩ := realmArray_of_record hL hrec hinv ha
+      cases List.mem_singleton.mp hl
+      exact ⟨L, hLB, hvl⟩
+
 /-- Sufficient implementations of ObservedSub. Whole-label filtering is only
 an algorithm for the tag case, not the meaning of refinement. -/
 def checkObservedSub [DecidableEq ι] (G : NormalGraph ι) (A B : Ty ι)
@@ -398,7 +541,8 @@ def checkObservedSub [DecidableEq ι] (G : NormalGraph ι) (A B : Ty ι)
   match o with
   | .boolean q => isSubset p && booleanMember G B q
   | .tag t q => PositiveCertificates.check G (tagSlice G A t q) B p || (isSubset p && tagMember G B t q) ||
-      (isSubset p && presentKey t q (promotes G (tagSlice G A t q) B))
+      (isSubset p && presentKey t q (promotes G (tagSlice G A t q) B)) ||
+      (isSubset p && t == .isArray && q && arraySlice G A B)
 
 theorem checkObservedSub_sound [DecidableEq ι] {G : NormalGraph ι} {A B o p}
     (hc : checkObservedSub G A B o p = true) : ObservedSub G A B o := by
@@ -412,12 +556,15 @@ theorem checkObservedSub_sound [DecidableEq ι] {G : NormalGraph ι} {A B o p}
     exact booleanMember_sound hb n W
   | tag t q =>
     simp only [checkObservedSub, Bool.or_eq_true, Bool.and_eq_true] at hc
-    rcases hc with (hc | ⟨_, hm⟩) | ⟨_, hk⟩
+    rcases hc with ((hc | ⟨_, hm⟩) | ⟨_, hk⟩) | ⟨⟨⟨_, ht⟩, hq⟩, hs⟩
     · exact (PositiveCertificates.check_sound hc).sound n W v (tagSlice_sound hv ho)
     · exact tagMember_sound hm (meaning_value hv).1 (ho.resolve_right (by
         cases t <;> simp [tagMember] at hm <;> simp [protoFree]))
     · obtain ⟨k, hp, hkey⟩ := presentKey_sound hk ho
       exact promotes_sound hp (tagSlice_sound hv ho) hkey
+    · have ht := beq_iff_eq.mp ht
+      subst ht; subst hq
+      exact arraySlice_sound hs hv (ho.resolve_right (by simp [protoFree]))
 
 /-- The field refinements a tag observation admits for other slots: each
 object a current read link says the tested value was read from, and the
@@ -471,7 +618,7 @@ theorem impossible_sound [DecidableEq ι] {G : NormalGraph ι} {A o n W v}
     cases ha
   | boolean q =>
     simp only [impossible, Bool.and_eq_true, List.all_eq_true, Bool.or_eq_true, beq_iff_eq] at h
-    obtain ⟨c, hc, hcv⟩ := (expand_sem G A h.1 n W v).mp hv
+    obtain ⟨c, hc, hcv, -⟩ := (expand_sem G A h.1 n W v).mp hv
     change v = (if q then .tru else .fls) at ho
     subst ho
     rcases h.2 c hc with rfl | hb
@@ -599,4 +746,6 @@ theorem ObservedCovers.env [DecidableEq ι] {G : NormalGraph ι} {Γ Δ i o mapp
 #print axioms checkObservedSub_sound
 #print axioms checkObserved_sound
 #print axioms ObservedCovers.env
+#print axioms realmArray_of_record
+#print axioms arraySlice_sound
 end Verification.Model.BranchRefinement

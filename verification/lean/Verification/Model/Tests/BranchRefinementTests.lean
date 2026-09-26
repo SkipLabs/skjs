@@ -57,7 +57,8 @@ example : ObservedSub mixedWithNull [0] [1] (.tag .isNul true) := by
   have hn : v = .nul := by cases v <;> simp_all [Observation.holds, tagHolds, protoFree]
   subst v
   apply PositiveRules.expand_sem_mpr
-  exact ⟨.nul, by simp [PositiveRules.clausesOf, mixedWithNull], rfl⟩
+  exact ⟨.nul, by simp [PositiveRules.clausesOf, mixedWithNull], rfl,
+    PositiveGraphs.realmInvariant_of_not_record rfl _ _ _⟩
 
 -- Slot zero is justified by the branch observation. Slot one is not refined.
 #guard checkObserved G [[1,2],[1,2]] [[1],[1,2]] 0 (.boolean true)
@@ -131,5 +132,32 @@ private def instanceWithProto : Tm := .objAt [("x", 2), ("[[proto]]", 0)] .absen
 #guard tagHoldsIn protoHeap (.hasKey "m") instanceWithProto
 #guard !tagHolds (.hasKey "m") instanceWithProto
 #guard !tagHoldsIn protoHeap (.hasKey "n") instanceWithProto
+
+-- The realm's array invariant, at boundaries no source reaches: a graph whose
+-- realm's prototype is row 3, `readonly unknown[]` row 2 over the store of
+-- values row 1, and an open record row 4.
+private def realmG : PositiveGraphs.NormalGraph Nat :=
+  { rows := fun
+      | 0 => [.top]
+      | 1 => [.list ⟨[], [], some [0], true⟩ []]
+      | 2 => [.refs [] [] [(CallArguments.arrayStoreField, [1]), (CallArguments.protoField, [3])] [] []
+          [⟨false, []⟩]]
+      | 3 => [.refs [] [] []]
+      | 4 => [.refs [("a", [5])] [] []]
+      | 5 => [.num]
+      | _ => []
+    realm := some ⟨[3], []⟩ }
+#guard realmArrayLabel realmG 2
+#guard !realmArrayLabel realmG 4
+-- A record arm, where `Array.isArray` holds, is the realm's array; `unknown`
+-- and a destination without that array are not.
+#guard arraySlice realmG [4] [2]
+#guard !arraySlice realmG [4] [4]
+#guard !arraySlice realmG [0] [2]
+-- An allocation owning the store key is an array of the realm, or refused.
+#guard allocRealm realmG [(CallArguments.arrayStoreField, [1]), (CallArguments.protoField, [3])]
+#guard !allocRealm realmG [(CallArguments.arrayStoreField, [5]), (CallArguments.protoField, [3])]
+#guard !allocRealm realmG [(CallArguments.arrayStoreField, [1])]
+#guard allocRealm realmG [("a", [5])]
 
 end Verification.Model.BranchRefinementTests

@@ -242,6 +242,41 @@ operands (`adm`, `congr_below`, `operands_agree`, `read_all`, `write_first`,
 every operand, and writing a value at the first operand preserves every
 alias's contract.
 
+#### The realm's array invariant
+
+A graph with arrays states its **realm** $\mathcal R$: the row of `ArrayProto`
+($P_{\mathcal R}$) and the keys it provides ($N_{\mathcal R}$)
+(`NormalGraph.realm`, set by `RequestJson.tableRealm` where the table has an
+array type). In such a graph a label's record or dictionary clause means its
+members that are also arrays of the realm where they own the store key
+$\sigma$ ([SEMANTICS](SEMANTICS.md#the-array-invariant)):
+
+$$
+\llbracket c\rrbracket^{\mathrm{row}}_n(W,v)\iff\llbracket c\rrbracket_n(W,v)\land
+\bigl(c\ \text{a record or dictionary}\Rightarrow\mathsf{Arr}_{\mathcal R}{}_n(W,v)\bigr)
+$$
+
+$$
+\mathsf{Arr}_{\mathcal R}{}_n(W,v)\iff\forall\mathit{flds}.\;v=\mathsf{obj}(\mathit{flds},\mathsf{absent})\land\sigma\in\mathrm{dom}(\mathit{flds})\Rightarrow
+\mathsf{view}(\sigma{:}\mathsf{AnyStore},\mathsf{proto}{:}\llbracket P_{\mathcal R}\rrbracket)_n(W,v)\land\mathsf{own}(\mathsf{outside}\,N_{\mathcal R})_n(W,v)
+$$
+
+with $\mathsf{AnyStore}$ the dense stores of values
+($\mathsf{list}\langle;;\mathsf{top}\rangle$, readonly). Only the world is read,
+through the contracts of $\sigma$ and $\mathsf{proto}$, so the invariant is
+admissible and read below the level (`arrayInvariant_adm`,
+`arrayInvariant_congr`). $P_{\mathcal R}$ is read at one fixed assignment
+(`ParameterInterpretation.realmAt`), so a row's meaning stays independent of
+the graph's own assignment; `ArrayProto` reads no parameter row, and a rule
+relating the invariant to a type checks that (`realmFree`). Every other clause
+(`top`, primitives, functions, classes, stores, packs) asks nothing more, and
+a graph without a realm asks nothing. Coverage keeps it (a record is covered
+by records only, `CoversWith.record`), and so do meets (`meetLists_row`),
+renamings (`realmInvariant_map`) and instance images (`clauseImg_row`).
+
+Lean: `ArrayRealm`, `anyStoreT`, `arrayInvariant`, `realmInvariant`, `rowSem`
+(`Types/PositiveGraphs.lean`).
+
 ### Arrays
 
 An array is a value $\mathsf{arr}(\vec l)$ over a list of element locations.

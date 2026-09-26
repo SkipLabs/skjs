@@ -185,13 +185,63 @@ instance : FromJson Row := ⟨fun j =>
         (← fromJson? (← j.getObjVal? "kind"))
     | _, _, _ => .error "expected a clause array, a scheme row, a parameter row or a meet row"⟩
 
+/-! ### The realm's arrays -/
+
+/-- A name in double brackets, which the model keeps for itself: the
+prototype key and a class's prototype object's own key
+(`Fragment.classKeyOf`). -/
+def bracketed : PropKey → Bool
+  | .str s => s.startsWith "[[" && s.endsWith "]]"
+  | .sym _ => false
+
+/-- A key the model keeps for itself: the array store, the prototype, and
+every other name in double brackets. -/
+def reservedKey (k : PropKey) : Bool :=
+  k == CallArguments.arrayStoreField || k == CallArguments.protoField || bracketed k
+
+/-- The row of `ArrayProto`, `Array.prototype`'s contract: the declaration
+document of a source with arrays lists it first, so its row follows the four
+fixed ones (`DeclarationGraph.prepare` checks this). -/
+def arrayProtoLabel : Nat := 4
+
+/-- One spelling of a set of prototype keys: sorted, each once, the reserved
+keys aside. -/
+def prototypeKeys (ks : List PropKey) : List PropKey :=
+  ((ks.filter fun k => !reservedKey k).eraseDups).mergeSort PropKey.before
+
+/-- The keys a prototype row provides: its fields', views', optional fields'
+and methods', the reserved keys aside. -/
+def protoKeysOf : List (Clause (List Nat)) → List PropKey
+  | [.refs a bs vs os ms _] =>
+    prototypeKeys (((a :: bs).flatten ++ vs).map (·.1) ++ os.map (·.key) ++ ms.map (·.key))
+  | _ => []
+
+/-- An array type's clause: an object owning the store key, holding
+`ArrayProto` as a view under the prototype key. -/
+def arrayShaped : Clause (List Nat) → Bool
+  | .refs a bs vs _ _ _ =>
+    ((a :: bs).flatten ++ vs).any (·.1 == CallArguments.arrayStoreField) &&
+      vs.any (· == (CallArguments.protoField, [arrayProtoLabel]))
+  | _ => false
+
+/-- The realm a table states: where it has an array type, `ArrayProto` is its
+row `arrayProtoLabel`, and the keys it provides are that row's. A table without
+arrays states none. -/
+def tableRealm (T : List Row) : Option (ArrayRealm Nat) :=
+  if T.any (fun r => match r with | .clauses cs => cs.any arrayShaped | _ => false) then
+    some ⟨[arrayProtoLabel], match T[arrayProtoLabel]? with
+      | some (.clauses cs) => protoKeysOf cs
+      | _ => []⟩
+  else none
+
 /-- The graph a table of rows denotes. Its rows are read by index at every
 step of search and checking, so the table is copied into an array once, when
 the graph is built: a lookup is then constant time, not a walk down the list.
 -/
 def tableGraph (T : List Row) : NormalGraph Nat :=
   let A := T.toArray
-  { rows i := match A[i]? with
+  { realm := tableRealm T
+    rows i := match A[i]? with
       | some r => r.union
       | none => []
     schemes i := match A[i]? with

@@ -80,16 +80,21 @@ noncomputable def mixedValues (G : NormalGraph ι) (η : MixedAssignment ι) (S 
 noncomputable abbrev mixedArgs (G : NormalGraph ι) (η : MixedAssignment ι) : List ι → ArgFam :=
   graphArguments G η (mixedValues G η)
 
+/-- The realm's prototype type as rows read it: at the fixed assignment
+`realmAt`. -/
+noncomputable abbrev realmValues (G : NormalGraph ι) : List ι → Fam :=
+  mixedValues G (ParameterAssignment.empty .mixed)
+
 /-- A clause's value members, its operands read at `η`. -/
 noncomputable abbrev mixedSem (G : NormalGraph ι) (η : MixedAssignment ι) : Clause (List ι) → Fam :=
-  semWithArgs (mixedValues G η) (mixedArgs G η)
+  rowSem G (realmValues G) (mixedValues G η) (mixedArgs G η)
 
 /-- A type's value members at the graph's own assignment. -/
 noncomputable def meaning (G : NormalGraph ι) (S : List ι) : Fam := setSem (normalDenote G) S
 
 /-- A clause's value members at the graph's own assignment. -/
 noncomputable abbrev clauseSem (G : NormalGraph ι) : Clause (List ι) → Fam :=
-  semWithArgs (meaning G) (argMeaning G)
+  rowSem G (realmValues G) (meaning G) (argMeaning G)
 
 /-- A clause row means its clauses, at every assignment. -/
 theorem mixed_unfold_plain {G : NormalGraph ι} (η : MixedAssignment ι) {i : ι}
@@ -103,7 +108,7 @@ theorem mixed_unfold_plain {G : NormalGraph ι} (η : MixedAssignment ι) {i : �
 
 /-- A clause row means its clauses. -/
 theorem unfold_normal (G : NormalGraph ι) (i : ι) (hi : G.plain i = true) (n W v) :
-    normalDenote G i n W v ↔ semList (meaning G) (argMeaning G) (G i) n W v :=
+    normalDenote G i n W v ↔ setSem (clauseSem G) (G i) n W v :=
   unfold_plain hi n W v
 
 /-- Every clause of a type's labels is within the type's meaning. -/
@@ -114,7 +119,7 @@ theorem mixed_expand_mpr {G : NormalGraph ι} {η : MixedAssignment ι} {S : Lis
   exact ⟨i, hi, (mixed_unfold_plain η (NormalGraph.plain_of_clauses hc) n W v).mpr ⟨c, hc, hv⟩⟩
 
 theorem expand_sem_mpr {G : NormalGraph ι} {S : List ι} {n W v}
-    (h : semList (meaning G) (argMeaning G) (clausesOf G S) n W v) : meaning G S n W v :=
+    (h : setSem (clauseSem G) (clausesOf G S) n W v) : meaning G S n W v :=
   mixed_expand_mpr (η := G.env) h
 
 /-- A member of a type is in one of its clauses, or in one of its parameter or
@@ -130,7 +135,7 @@ theorem mixed_cases {G : NormalGraph ι} {η : MixedAssignment ι} {S : List ι}
     exact .inl ⟨c, List.mem_flatMap.mpr ⟨i, hi, hc⟩, hv⟩
 
 theorem meaning_cases {G : NormalGraph ι} {S : List ι} {n W v} (h : meaning G S n W v) :
-    semList (meaning G) (argMeaning G) (clausesOf G S) n W v ∨
+    setSem (clauseSem G) (clausesOf G S) n W v ∨
       ∃ i ∈ S, G.plain i = false ∧ normalDenote G i n W v :=
   mixed_cases (η := G.env) h
 
@@ -156,7 +161,7 @@ theorem mixed_of_expand {G : NormalGraph ι} {η : MixedAssignment ι} {S : List
   exact (mixed_expand η hp n W v).mpr ⟨c, by simp [hS], hv⟩
 
 theorem expand_sem (G : NormalGraph ι) (S : List ι) (hS : G.plainTy S = true) (n W v) :
-    meaning G S n W v ↔ semList (meaning G) (argMeaning G) (expand G S) n W v :=
+    meaning G S n W v ↔ setSem (clauseSem G) (expand G S) n W v :=
   mixed_expand G.env hS n W v
 
 /-- The split is meaning preserving, in the same style as `meet_sound` and
@@ -166,16 +171,34 @@ theorem splitClause_sem (X : α → Fam) (P : α → ArgFam) (c : Clause α) (n 
   cases c
   all_goals simp [splitClause, semList, setSem, semWithArgs, boolT]
 
+/-- The split is meaning preserving in a row too: only `bool` splits, and
+neither it nor its parts is a record's. -/
+theorem splitClause_row (G : NormalGraph ι) (A X : List ι → Fam) (P : List ι → ArgFam)
+    (c : Clause (List ι)) (n W v) :
+    setSem (rowSem G A X P) (splitClause c) n W v ↔ rowSem G A X P c n W v := by
+  cases c
+  case bool =>
+    simp only [splitClause, setSem, rowSem, List.mem_cons, List.not_mem_nil, or_false,
+      exists_eq_or_imp, exists_eq_left]
+    simp only [realmInvariant_of_not_record (G := G) (X := A) (show (Clause.bool : Clause (List ι)).record = false from rfl),
+      realmInvariant_of_not_record (G := G) (X := A) (show (Clause.boolLit true : Clause (List ι)).record = false from rfl),
+      realmInvariant_of_not_record (G := G) (X := A) (show (Clause.boolLit false : Clause (List ι)).record = false from rfl),
+      and_true, semWithArgs, boolT]
+    constructor
+    · rintro (h | h) <;> simp [h]
+    · rintro (h | h) <;> simp [h]
+  all_goals simp [splitClause, setSem]
+
 theorem source_sem (G : NormalGraph ι) (S : List ι) (hS : G.plainTy S = true) (n W v) :
-    meaning G S n W v ↔ semList (meaning G) (argMeaning G) (sourceClauses G S) n W v := by
+    meaning G S n W v ↔ setSem (clauseSem G) (sourceClauses G S) n W v := by
   rw [expand_sem G S hS n W v, expand_of_plain hS]
   constructor
   · rintro ⟨c, hc, hv⟩
-    obtain ⟨d, hd, hvd⟩ := (splitClause_sem _ _ c n W v).mpr hv
+    obtain ⟨d, hd, hvd⟩ := (splitClause_row G _ _ _ c n W v).mpr hv
     exact ⟨d, List.mem_flatMap.mpr ⟨c, hc, hd⟩, hvd⟩
   · rintro ⟨d, hd, hv⟩
     obtain ⟨c, hc, hd⟩ := List.mem_flatMap.mp hd
-    exact ⟨c, hc, (splitClause_sem _ _ c n W v).mp ⟨d, hd, hv⟩⟩
+    exact ⟨c, hc, (splitClause_row G _ _ _ c n W v).mp ⟨d, hd, hv⟩⟩
 
 /-- Rows sharing a value through one clause each are compatible, whatever the
 clauses' operands mean. -/
@@ -202,8 +225,8 @@ theorem mixed_compatible {G : NormalGraph ι} {η : MixedAssignment ι} {i k : �
   · simp [compatible, hpi]
   cases hpk : G.plain k
   · simp [compatible, hpk]
-  obtain ⟨a, ha, hva⟩ := (mixed_unfold_plain η hpi n W v).mp hi
-  obtain ⟨b, hb, hvb⟩ := (mixed_unfold_plain η hpk n U v).mp hk
+  obtain ⟨a, ha, hva, -⟩ := (mixed_unfold_plain η hpi n W v).mp hi
+  obtain ⟨b, hb, hvb, -⟩ := (mixed_unfold_plain η hpk n U v).mp hk
   exact compatible_of_clauses ha hb hva hvb
 
 /-- The element of an element rest: a type whose one clause is the pack of any
@@ -1257,6 +1280,7 @@ theorem covers_arrows_sound {G : NormalGraph ι} {η : MixedAssignment ι}
       rw [trunc_trunc] at this
       exact WExt_trans this hU'
     exact hr j' (by omega) _ _ hs U' _ (hself j' (by omega) U' hx)
+  obtain ⟨hsem, -⟩ := hsem
   refine ⟨⟨hsem.1.1, fun x hx => ?_⟩, ⟨hsem.1.1, fun x hx => ?_⟩⟩
   · obtain ⟨t', ht', rfl⟩ := List.mem_map.mp hx
     obtain ⟨t, ht, rfl⟩ := List.mem_map.mp ht'
@@ -1385,7 +1409,7 @@ theorem viewOf_at {G : NormalGraph ι} {η : MixedAssignment ι} {P F : List ι}
   split at hF
   · rename_i a bs vs os ms ks hE
     have hplain := plain_of_mem_expand (G := G) (S := P) (c := .refs a bs vs os ms ks) (by simp [hE])
-    obtain ⟨c', hc', hsem⟩ := (mixed_expand η hplain n W p).mp hp
+    obtain ⟨c', hc', hsem, -⟩ := (mixed_expand η hplain n W p).mp hp
     rw [hE, List.mem_singleton] at hc'
     subst hc'
     obtain ⟨f, hf, rfl⟩ := Option.map_eq_some_iff.mp hF
@@ -1402,7 +1426,7 @@ theorem lacksKey_at {G : NormalGraph ι} {η : MixedAssignment ι} {P : List ι}
   split at hk
   · rename_i a bs vs os ms ks hE
     have hplain := plain_of_mem_expand (G := G) (S := P) (c := .refs a bs vs os ms ks) (by simp [hE])
-    obtain ⟨c', hc', hsem⟩ := (mixed_expand η hplain n W p).mp hp
+    obtain ⟨c', hc', hsem, -⟩ := (mixed_expand η hplain n W p).mp hp
     rw [hE, List.mem_singleton] at hc'
     subst hc'
     obtain ⟨K, hK, hnot⟩ := hk
@@ -1749,7 +1773,13 @@ theorem covers_arguments_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R
   covers_arguments hc (mixedValues G η) (fun A v => A n W v)
     (fun S T h v => hr S T h W v) vs hv
 
-theorem Covers.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R known self a b}
+/-- A record clause is covered by record clauses only. -/
+theorem CoversWith.record {G : NormalGraph ι} {R known arrows self} {a b : Clause (List ι)}
+    (hc : CoversWith G R known arrows self a b) (hb : b.record = true) : a.record = true := by
+  cases a <;> cases b <;> simp_all [CoversWith, Clause.record]
+
+/-- Coverage of the clauses themselves, the row's invariant aside. -/
+theorem Covers.sound_raw {G : NormalGraph ι} {η : MixedAssignment ι} {R known self a b}
     (hc : Covers G R known self a b)
     (hknown : ∀ k ∈ known, FamLe (mixedValues G η k.1) (mixedSem G η (.arrs k.2.1 k.2.2)))
     (n : Nat)
@@ -1757,7 +1787,8 @@ theorem Covers.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R known sel
     (W : WorldT n) (v : Val)
     (hself : ∀ j (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
       mixedValues G η self j U v) :
-    mixedSem G η a n W v → mixedSem G η b n W v := by
+    semWithArgs (mixedValues G η) (mixedArgs G η) a n W v →
+      semWithArgs (mixedValues G η) (mixedArgs G η) b n W v := by
   by_cases hb : b = .top
   · subst hb; exact fun hv => semWithArgs_value hv
   cases a <;> cases b <;> simp only [Covers, CoversWith] at hc
@@ -1913,6 +1944,22 @@ theorem Covers.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R known sel
     intro hv; cases hv; exact ⟨i, rfl⟩
   · -- bigintLit ≤ bigintLit at equal integers
     cases hc; exact id
+
+/-- Coverage in a row: a record target's invariant is the record source's. -/
+theorem Covers.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R known self a b}
+    (hc : Covers G R known self a b)
+    (hknown : ∀ k ∈ known, FamLe (mixedValues G η k.1) (mixedSem G η (.arrs k.2.1 k.2.2)))
+    (n : Nat)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
+    (W : WorldT n) (v : Val)
+    (hself : ∀ j (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
+      mixedValues G η self j U v) :
+    mixedSem G η a n W v → mixedSem G η b n W v := by
+  rintro ⟨hv, hinv⟩
+  refine ⟨Covers.sound_raw hc hknown n hr hpa W v hself hv, ?_⟩
+  cases hbr : b.record
+  · exact realmInvariant_of_not_record hbr n W v
+  · exact (realmInvariant_record (CoversWith.record hc hbr) hbr).mp hinv
 
 /-- A type's meaning is a family of closed values. -/
 theorem meaning_valueFam (G : NormalGraph ι) (S : List ι) : ValueFam (meaning G S) :=
@@ -2143,21 +2190,22 @@ theorem Core.mixed_sound [DecidableEq ι] {G : NormalGraph ι} {known : Known ι
           (setSem_adm (fun i => qDenoteWithArgs_adm G (mixedParameters G) (η, i)) A).transfer
             hv j (Nat.le_of_lt hj) U hU
         rcases mixed_cases hv with ⟨c, hcm, hv⟩ | ⟨i, hi, hp, hv⟩
-        · obtain ⟨a, ha, hv⟩ := (splitClause_sem _ _ c n W v).mpr hv
+        · obtain ⟨a, ha, hv⟩ := (splitClause_row G _ _ _ c n W v).mpr hv
           obtain ⟨b, hb, hcover⟩ :=
             (hc (A, B) hab).2.2 a (List.mem_append_left _ (List.mem_flatMap.mpr ⟨c, hcm, ha⟩))
           exact mixed_expand_mpr ⟨b, hb, Covers.sound hcover hk n (fun j hj => (ih j hj).1)
             (fun j hj S T h W vs hvs => (ih j hj).2 S T h W vs hvs) W v hself hv⟩
         · rcases ((hc (A, B) hab).2.1 i hi).resolve_left (by simp [hp]) with hB | htop | hmeet
           · exact ⟨i, hB, hv⟩
-          · exact mixed_expand_mpr ⟨.top, htop, mixedDenote_value G η i hv⟩
+          · exact mixed_expand_mpr ⟨.top, htop, mixedDenote_value G η i hv,
+              realmInvariant_of_not_record rfl n W v⟩
           · by_cases hB : i ∈ B
             · exact ⟨i, hB, hv⟩
             · by_cases hbelow : B.any (meetBelow G i) = true
               · obtain ⟨j, hj, hij⟩ := List.any_eq_true.mp hbelow
                 exact ⟨j, hj, meetBelow_sound hmeet hij hv⟩
               obtain ⟨c, hcm, hv⟩ := meet_clause_of hmeet hv
-              obtain ⟨a, ha, hv⟩ := (splitClause_sem _ _ c n W v).mpr hv
+              obtain ⟨a, ha, hv⟩ := (splitClause_row G _ _ _ c n W v).mpr hv
               have hmem : a ∈ meetSources G A B := List.mem_flatMap.mpr ⟨c,
                 List.mem_flatMap.mpr ⟨i, List.mem_filter.mpr ⟨hi, by simp [hmeet, hB, hbelow]⟩, hcm⟩, ha⟩
               obtain ⟨b, hb, hcover⟩ := (hc (A, B) hab).2.2 a (List.mem_append_right _ hmem)
@@ -2211,6 +2259,16 @@ theorem clauseArguments_congr_on [DecidableEq ι] {D : List ι} {c : Clause (Lis
   apply clauseArguments_congr _ _ c n W (fun S v => ?_) vs
   exact exists_congr fun l => and_congr_right fun hl =>
     h l (by simpa using (List.mem_filter.mp hl).2) W v
+
+/-- Local operand agreement for a clause read in a row: its operands; the
+realm's prototype type is read by the same family on both sides. -/
+theorem rowSem_congr_on [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {c : Clause (List ι)}
+    (hops : ∀ S ∈ c.operands, ∀ l ∈ S, l ∈ D) (A : List ι → Fam)
+    (X Y : ι → Fam) (P Q : List ι → ArgFam) (n : Nat)
+    (h : ∀ l ∈ D, Agree (X l) (Y l) n)
+    (ha : ∀ S, (∀ l ∈ S, l ∈ D) → Agree (P S) (Q S) n) (W : WorldT n) (v : Val) :
+    rowSem G A (setSem X) P c n W v ↔ rowSem G A (setSem Y) Q c n W v :=
+  and_congr (semWithArgs_congr_on hops X Y P Q n h ha W v) Iff.rfl
 
 /-- A meet row's clauses: what its parameter is intersected with. -/
 def meetClauses (G : NormalGraph ι) (i : ι) : List (Clause (List ι)) :=
@@ -2481,14 +2539,14 @@ theorem qLayer_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : Fre
         simp only [reads, hq]
         exact List.mem_flatMap.mpr ⟨c, hc, List.mem_flatten.mpr ⟨S, hS, hl⟩⟩
       have cl : ∀ cs, (∀ c ∈ cs, c ∈ G i ++ meetClauses G i) →
-          (setSem (semWithArgs (setSem fun l => X (η, l)) (I.arguments η (setSem fun l => X (η, l)))) cs n W v ↔
-            setSem (semWithArgs (setSem fun l => X (η', l)) (I.arguments η' (setSem fun l => X (η', l)))) cs n W v) := by
+          (setSem (rowSem G (setSem fun l => X (I.realmAt, l)) (setSem fun l => X (η, l)) (I.arguments η (setSem fun l => X (η, l)))) cs n W v ↔
+            setSem (rowSem G (setSem fun l => X (I.realmAt, l)) (setSem fun l => X (η', l)) (I.arguments η' (setSem fun l => X (η', l)))) cs n W v) := by
         intro cs hcs
         constructor
         · rintro ⟨c, hc, h⟩
-          exact ⟨c, hc, (semWithArgs_congr_on (hops c (hcs c hc)) _ _ _ _ n hag' hpack W v).mp h⟩
+          exact ⟨c, hc, (rowSem_congr_on (hops c (hcs c hc)) _ _ _ _ _ n hag' hpack W v).mp h⟩
         · rintro ⟨c, hc, h⟩
-          exact ⟨c, hc, (semWithArgs_congr_on (hops c (hcs c hc)) _ _ _ _ n hag' hpack W v).mpr h⟩
+          exact ⟨c, hc, (rowSem_congr_on (hops c (hcs c hc)) _ _ _ _ _ n hag' hpack W v).mpr h⟩
       cases hm : G.meets i with
       | none => exact cl _ fun c hc => List.mem_append_left _ hc
       | some pc =>
@@ -2605,6 +2663,19 @@ theorem clauseImg_value [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
       simpa [r, hS, hT] using And.intro hx ha
     · simpa [r, hS, tyImg] using And.intro he hp
   exact semWithArgs_congr _ _ _ _ n (fun S => (h S).1) (fun S => (h S).2) c W v
+
+/-- A checked operand image transports a clause read in a row: the realm's
+invariant is the same of a clause and of its image. -/
+theorem clauseImg_row [DecidableEq ι] {G : NormalGraph ι} (tbl : InstTable ι) (κ : Ctx ι)
+    (c : Clause (List ι)) (A X Y : List ι → Fam) (P Q : List ι → ArgFam)
+    (n : Nat) (W : WorldT n) (v : Val)
+    (himg : ∀ S ∈ c.operands, ∃ T, tyImg tbl κ S = some T ∧
+      Agree (X S) (Y T) n ∧ Agree (P S) (Q T) n)
+    (he : Agree (X []) (Y []) n) (hp : Agree (P []) (Q []) n) :
+    rowSem G A X P c n W v ↔ rowSem G A Y Q (clauseImg tbl κ c) n W v := by
+  refine and_congr (clauseImg_value tbl κ c X Y P Q n W v himg he hp) ?_
+  unfold clauseImg
+  rw [realmInvariant_map]
 
 /-- The list component of the same checked clause image uses element equality
 at this level. Requiring only agreement below it would lose object evidence. -/
@@ -3407,8 +3478,8 @@ theorem meet_row_value [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι
   have members : ∀ {Cs Ds : List (Clause (List ι))}, sameClauses Cs Ds = true →
       (setSem (mixedSem G ηR) Cs n W v ↔ setSem (mixedSem G ηR) Ds n W v) := fun h =>
     sameClauses_iff h (fun d => mixedSem G ηR d n W v) (fun c f hf hn => by
-      simp only [semWithArgs_members (fun S T h => sameLabels_values h)
-        (fun S T h => sameLabels_arguments h) hf hn])
+      simp only [rowSem, semWithArgs_members (fun S T h => sameLabels_values h)
+        (fun S T h => sameLabels_arguments h) hf hn, realmInvariant_map])
   rw [hL, hsingle]
   cases hmj : G.meets j with
   | some qd =>
@@ -3454,9 +3525,9 @@ theorem meet_row_value [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι
       rw [mixed_unfold_plain ηR hjplain n W v, hp, hUc]
       rcases horder with h | h
       · rw [members h]
-        exact (meetLists_sound (mixedValues G ηR) (mixedArgs G ηR) _ _ n W v).symm
+        exact (meetLists_row G _ (mixedValues G ηR) (mixedArgs G ηR) _ _ n W v).symm
       · rw [members h, and_comm]
-        exact (meetLists_sound (mixedValues G ηR) (mixedArgs G ηR) _ _ n W v).symm
+        exact (meetLists_row G _ (mixedValues G ηR) (mixedArgs G ηR) _ _ n W v).symm
 
 /-- The argument half of table transport uses the value half at exactly the
 same level. It covers every checked entry, including parameters, unchanged
@@ -3866,7 +3937,7 @@ theorem table_row_mixed [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable �
                   cases List.mem_singleton.mp hq
                   exact hrel p (freeOk_meet hF hiD hm))
               intro c hc
-              apply clauseImg_value tbl κ c _ _ _ _ n W v
+              apply clauseImg_row tbl κ c _ _ _ _ _ n W v
               · intro S hS
                 obtain ⟨S', hS'⟩ := Option.isSome_iff_exists.mp (hops c hc S hS)
                 have hrelS : ∀ l ∈ S, RelKWith G (mixedParameters G) κ (fv V l) ηL ηR := by
@@ -3891,20 +3962,20 @@ theorem table_row_mixed [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable �
             simp only [NormalGraph.plain, Bool.and_eq_true, Bool.not_eq_true',
               Option.isNone_iff_eq_none] at hi hj
             simp only [qLayerWithArgs, hi.1, hj.1, hi.2, hj.2, Bool.false_eq_true, ite_false]
-            have key := sameClauses_iff hG (fun d => semWithArgs (mixedValues G ηR)
+            have key := sameClauses_iff hG (fun d => rowSem G (realmValues G) (mixedValues G ηR)
                 (graphArguments G ηR (mixedValues G ηR)) d n W v)
               (fun c f hf hn => by
-                simp only [semWithArgs_members (fun S T h => sameLabels_values h)
-                  (fun S T h => sameLabels_arguments h) hf hn])
+                simp only [rowSem, semWithArgs_members (fun S T h => sameLabels_values h)
+                  (fun S T h => sameLabels_arguments h) hf hn, realmInvariant_map])
             simp only [setSem]
             refine Iff.trans ?_ key.symm
             simp only [List.mem_map]
             have clause : ∀ c ∈ G i,
-                semWithArgs (mixedValues G ηL) (graphArguments G ηL (mixedValues G ηL)) c n W v ↔
-                  semWithArgs (mixedValues G ηR) (graphArguments G ηR (mixedValues G ηR))
+                rowSem G (realmValues G) (mixedValues G ηL) (graphArguments G ηL (mixedValues G ηL)) c n W v ↔
+                  rowSem G (realmValues G) (mixedValues G ηR) (graphArguments G ηR (mixedValues G ηR))
                     (clauseImg tbl κ c) n W v := by
               intro c hc
-              apply clauseImg_value tbl κ c _ _ _ _ n W v
+              apply clauseImg_row tbl κ c _ _ _ _ _ n W v
               · intro S hS
                 obtain ⟨S', hS'⟩ := Option.isSome_iff_exists.mp (by simpa using hops c hc S hS)
                 have hrelS : ∀ l ∈ S, RelKWith G (mixedParameters G) κ (fv V l) ηL ηR := by
@@ -4212,11 +4283,11 @@ private theorem arrs_noArguments {G : NormalGraph ι} {η : MixedAssignment ι} 
 theorem InstArrs.mixed_sound [DecidableEq ι] {G : NormalGraph ι} {S L M} (h : InstArrs G S L M) :
     ∀ η, FamLe (mixedValues G η S) (mixedSem G η (.arrs L M)) := by
   obtain ⟨i, s, tbl, θs, D, V, rfl, hp, hq, hlen, hkinds, hbnd, hok, hL, hM⟩ := h
-  intro η
-  exact inst_mixed_sound η hp hq hlen (fun b hb U hU => by
+  intro η n W v hv
+  exact ⟨inst_mixed_sound η hp hq hlen (fun b hb U hU => by
     rcases hbnd b hb U hU with hc | hsub
     · exact Core.mixed_sound hc η (by simp)
-    · exact mixed_subset hsub) hkinds hok hL hM
+    · exact mixed_subset hsub) hkinds hok hL hM n W v hv, realmInvariant_of_not_record rfl n W v⟩
 
 /-- A checked instance holds at every assignment, for both components. -/
 theorem Inst.mixed_sound [DecidableEq ι] {G : NormalGraph ι} {S T} (h : Inst G S T) :
@@ -4270,7 +4341,7 @@ theorem Sub.mixed_sound {G : NormalGraph ι} {S T} (h : Sub G S T) :
           (fun η' S => setSem (fun l => qDenoteWithArgs G (mixedParameters G) (η', l)) S) η s As
           (graphArguments G) n W v := by
         intro As
-        obtain ⟨c, hc, hcv⟩ := (mixed_expand (assign η s.binders As) hUp n W v).mp (hat As)
+        obtain ⟨c, hc, hcv, -⟩ := (mixed_expand (assign η s.binders As) hUp n W v).mp (hat As)
         rw [hU, List.mem_singleton] at hc
         subst hc
         exact hcv

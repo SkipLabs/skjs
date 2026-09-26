@@ -196,7 +196,7 @@ theorem bagOperand_sound [DecidableEq ι] {G : NormalGraph ι} {Ref B n W v}
     cases he : expand G Ref with
     | nil => rw [he] at hr; contradiction
     | cons c _ => exact plain_of_mem_expand (c := c) (by simp [he])
-  obtain ⟨c,hm,hc⟩ := (expand_sem G Ref hp n W v).mp hv
+  obtain ⟨c,hm,hc,-⟩ := (expand_sem G Ref hp n W v).mp hv
   have hb := bagOperand_mem hr hm
   cases c <;> simp only [clauseBagOperand] at hb
   all_goals try contradiction
@@ -219,7 +219,7 @@ theorem fieldOperand_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
   have hp : G.plainTy Ref = true := by
     obtain ⟨c, hc⟩ := List.exists_mem_of_ne_nil _ hr.1
     exact plain_of_mem_expand (c := c) hc
-  obtain ⟨c,hm,hc⟩ := (expand_sem G Ref hp n W v).mp hv
+  obtain ⟨c,hm,hc,-⟩ := (expand_sem G Ref hp n W v).mp hv
   have hb := hr.2 c hm
   cases c <;> simp only [clauseBagOperand] at hb
   all_goals try contradiction
@@ -332,7 +332,7 @@ theorem optionalOperand_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W
   have hp : G.plainTy Ref = true := by
     obtain ⟨c, hc⟩ := List.exists_mem_of_ne_nil _ hr.1
     exact plain_of_mem_expand (c := c) hc
-  obtain ⟨c,hm,hc⟩ := (expand_sem G Ref hp (n+1) W v).mp hv
+  obtain ⟨c,hm,hc,-⟩ := (expand_sem G Ref hp (n+1) W v).mp hv
   have hb := hr.2 c hm
   cases c with
   | refs a bs vs os ms ks =>

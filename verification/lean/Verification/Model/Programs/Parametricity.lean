@@ -88,9 +88,52 @@ theorem checkMapped_reassign (Γ Δ : List (List ι)) (m : Mapping) (ps : EdgeEv
     checkMapped (reassign G η) Γ Δ m ps = checkMapped G Γ Δ m ps := by
   cases m <;> simp only [checkMapped, checkEdge_reassign, check_fun_reassign]
 
+theorem reads_reassign : reads (reassign G η) = reads G := rfl
+
+theorem readsFrom_go_reassign : ∀ fuel (seen frontier : List ι),
+    readsFrom.go (reassign G η) fuel seen frontier = readsFrom.go G fuel seen frontier
+  | 0, _, _ => rfl
+  | fuel + 1, seen, frontier => by
+    simp only [readsFrom.go, reads_reassign, readsFrom_go_reassign fuel]
+
+theorem readsFrom_reassign (fuel : Nat) (S : List ι) :
+    readsFrom (reassign G η) fuel S = readsFrom G fuel S := by
+  simp only [readsFrom, readsFrom_go_reassign]
+
+theorem freeMapOf_reassign (D : List ι) : ∀ fuel (V : FreeMap ι),
+    freeMapOf (reassign G η) D fuel V = freeMapOf G D fuel V
+  | 0, _ => rfl
+  | fuel + 1, V => by
+    simp only [freeMapOf, reads_reassign, freeMapOf_reassign D fuel]
+    rfl
+
+/-- The realm checks read the graph's rows only. -/
+theorem realmFree_reassign (P : List ι) : realmFree (reassign G η) P = realmFree G P := by
+  simp only [realmFree, readsFrom_reassign, freeMapOf_reassign]
+  rfl
+
+theorem allocRealm_reassign (parts : List (PropKey × List ι)) :
+    allocRealm (reassign G η) parts = allocRealm G parts := by
+  unfold allocRealm
+  simp only [realmFree_reassign]
+  rfl
+
+theorem realmArrayLabel_reassign :
+    BranchRefinement.realmArrayLabel (reassign G η) = BranchRefinement.realmArrayLabel G := by
+  funext L
+  unfold BranchRefinement.realmArrayLabel
+  simp only [realmFree_reassign]
+  rfl
+
+theorem arraySlice_reassign (A B : List ι) :
+    BranchRefinement.arraySlice (reassign G η) A B = BranchRefinement.arraySlice G A B := by
+  unfold BranchRefinement.arraySlice
+  simp only [realmArrayLabel_reassign]
+  rfl
+
 theorem checkObservedSub_reassign (A B : List ι) (o : Observation) (p : Proof ι) :
     checkObservedSub (reassign G η) A B o p = checkObservedSub G A B o p := by
-  cases o <;> simp only [checkObservedSub, check_reassign] <;> rfl
+  cases o <;> simp only [checkObservedSub, check_reassign, arraySlice_reassign] <;> rfl
 
 theorem fieldRefinements_reassign (o : Observation) (fields : List (Nat × PropKey)) (A B : List ι)
     (j : Nat) (p : Proof ι) :
@@ -114,25 +157,6 @@ theorem CallProofs_reassign (q : List ι × List (List ι) × List ι) (c : List
     CallProofs (reassign G η) q c ps = CallProofs G q c ps := by
   simp only [CallProofs, check_reassign]
 
-theorem reads_reassign : reads (reassign G η) = reads G := rfl
-
-theorem readsFrom_go_reassign : ∀ fuel (seen frontier : List ι),
-    readsFrom.go (reassign G η) fuel seen frontier = readsFrom.go G fuel seen frontier
-  | 0, _, _ => rfl
-  | fuel + 1, seen, frontier => by
-    simp only [readsFrom.go, reads_reassign, readsFrom_go_reassign fuel]
-
-theorem readsFrom_reassign (fuel : Nat) (S : List ι) :
-    readsFrom (reassign G η) fuel S = readsFrom G fuel S := by
-  simp only [readsFrom, readsFrom_go_reassign]
-
-theorem freeMapOf_reassign (D : List ι) : ∀ fuel (V : FreeMap ι),
-    freeMapOf (reassign G η) D fuel V = freeMapOf G D fuel V
-  | 0, _ => rfl
-  | fuel + 1, V => by
-    simp only [freeMapOf, reads_reassign, freeMapOf_reassign D fuel]
-    rfl
-
 /-- A generic closure's capture check reads the graph's rows only. -/
 theorem capturesFree_reassign (s : SchemeRow ι) (Cs : List (List ι)) :
     capturesFree (reassign G η) s Cs = capturesFree G s Cs := by
@@ -152,7 +176,7 @@ theorem Local_reassign (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
     (codes : CodeEntry ι → Bool := fun _ => false) :
     Local (reassign G η) j r ps codes = Local G j r ps codes := by
   unfold Local
-  simp only [check_fun_reassign, CallProofs_reassign, graphCodesChecked_reassign]
+  simp only [check_fun_reassign, CallProofs_reassign, graphCodesChecked_reassign, allocRealm_reassign]
   rfl
 
 theorem checkTree_reassign (e : ProgramCertificates.Evidence ι)

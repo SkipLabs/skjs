@@ -225,6 +225,13 @@ private def storeOf (G : PositiveGraphs.NormalGraph Nat) (A : Ty Nat) : Option (
   | [.refs fs [] vs _ _ _] => fs.lookup SourceTypes.storeField <|> vs.lookup SourceTypes.storeField
   | _ => none
 
+/-- A union of arrays: every clause of the type holds a store. -/
+private def arraysOnly (G : PositiveGraphs.NormalGraph Nat) (A : Ty Nat) : Bool :=
+  let cs := PositiveRules.expand G A
+  !cs.isEmpty && cs.all fun c => match c with
+    | .refs fs [] vs _ _ _ => (fs.lookup SourceTypes.storeField <|> vs.lookup SourceTypes.storeField).isSome
+    | _ => false
+
 /-- A source numeric key must denote one valid array index. The two runtime
 zeros name the same property although their numeric values remain distinct. -/
 private def arrayIndex (G : PositiveGraphs.NormalGraph Nat) (K : Ty Nat) : Except String Nat := do
@@ -3620,7 +3627,7 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
       (fun i => if i == 0 then 0 else i+1))⟩
     -- An array's `length` is its store's, read as a number; a primitive's
     -- member is read by its shape (`dispatchTerm`).
-    let object := if fld == "length" && (storeOf (SourceTypes.graph (← table)) B).isSome
+    let object := if fld == "length" && arraysOnly (SourceTypes.graph (← table)) B
       then Tm.lenOf (.readAt SourceTypes.storeField (.var 0)) else .readAt fld (.var 0)
     let arms ← primitiveArms (held ⟨"",some a.span⟩ :: scope) (B::Γ) B fld
     let node ← emitAt e.span (dispatchTerm arms fld 0 object) (.bind drop) (B::Γ) A

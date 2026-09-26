@@ -493,12 +493,29 @@ are exactly those names, so its type may also bound them: each own-key bound
 $b$ the type states must admit every name
 ([POSITIVE-TYPES.md](POSITIVE-TYPES.md#records)). An array is allocated this
 way, its store and prototype as the two fields, own keys among those two, then
-read as an array, owning none of `ArrayProto`'s keys, by subsumption:
+read as an array, owning none of `ArrayProto`'s keys, by subsumption. A record
+type is of objects meeting the realm's
+[array invariant](SEMANTICS.md#the-array-invariant), so an allocation owning
+the store key $\sigma$ must be an array of the realm
+($\mathsf{realm}\vDash\overline{f{:}A}$, `allocRealm`): its store field at a
+store type (every clause a `list`, whose members are dense stores of values,
+`storeTy_sound`), its prototype field at the realm's prototype type
+$P_{\mathcal R}$, which reads no parameter row (`realmFree`, so it means the
+same at the assignment the invariant reads it at, `realmFree_meaning`), and
+none of its names a key that prototype provides ($N_{\mathcal R}$). An
+allocation without $\sigma$, or in a graph stating no realm, meets it at once:
 
 $$
 \frac{\overline{f}\ \text{distinct}\qquad\forall i.\;\Gamma\vdash_G a_i:A_i
-      \qquad\forall b\in\beta.\;\forall f\in\overline{f}.\;b\vDash f}
+      \qquad\forall b\in\beta.\;\forall f\in\overline{f}.\;b\vDash f
+      \qquad\mathsf{realm}\vDash\overline{f{:}A}}
      {\Gamma\vdash_G\{\overline{f=a}\}:\mathsf{Ref}(\overline{f{:}A};\beta)}
+$$
+
+$$
+\mathsf{realm}\vDash\overline{f{:}A}\iff
+\sigma\notin\overline{f}\ \lor\ \bigl(\overline{f}\cap N_{\mathcal R}=\varnothing\land
+  (\sigma{:}S)\in\overline{f{:}A}\ \text{with}\ S\ \text{a store type}\land(\mathsf{proto}{:}P_{\mathcal R})\in\overline{f{:}A}\bigr)
 $$
 
 `read` and `write` name the field they act on and require it of the receiver's
@@ -636,7 +653,7 @@ says is absent
 ([writable string index signatures](DESIGN.md#writable-string-index-signatures),
 [covering](POSITIVE-TYPES.md#records)). So a literal meant for a writable
 dictionary is allocated at the dictionary itself, `allocDict`: its fields are
-the clause's named fields, none the prototype key, each whose key an index's
+the clause's named fields, none the prototype key or the store key, each whose key an index's
 class may admit ($\theta\ni_?k$, `IndexKeys.may`) at exactly that index's
 type, and the clause states no own-key bound. It may state optional fields
 $\omega$ the literal leaves out, each, where a writable index's class may
@@ -649,7 +666,7 @@ $\overline{C}$ the writable indexes:
 
 $$
 \frac{\begin{array}{c}
-      \vec k\ \text{distinct}\quad\mathsf{proto}\notin\vec k\quad
+      \vec k\ \text{distinct}\quad\mathsf{proto},\sigma\notin\vec k\quad
       \Gamma\vdash_G e_i:A_i\quad
       \forall i.\;\forall(\theta{:}V)\in\overline{D}\,\overline{C}.\;\theta\ni_?k_i\Rightarrow A_i=V\\
       \forall(\kappa{:}^{r}B)\in\omega.\;\kappa\notin\vec k\land
@@ -1557,7 +1574,7 @@ these obligations. `checkObserved_sound` and `ObservedCovers.env` prove the
 common path. The observation is established by execution, never accepted as a
 producer assertion. Heap contents are not refined.
 
-Three implementations discharge the tested-slot obligation:
+Four implementations discharge the tested-slot obligation:
 
 - **Boolean equality:** `booleanMember` checks that the supplied destination
   contains the observed Boolean. `subset` is the canonical evidence marker for
@@ -1575,6 +1592,27 @@ Three implementations discharge the tested-slot obligation:
   $x\equiv 1$ with $x:\mathsf{number}$ gives $x:1$. A more precise algorithm
   can implement the same contract without changing the edge or environment
   rule.
+- **Array of the realm:** a passed `Array.isArray` finds an object owning
+  the store key. A member of a record or dictionary clause meets the realm's
+  [array invariant](SEMANTICS.md#the-array-invariant), so such a member is a
+  member of the realm's `readonly unknown[]`: a clause row $L$ holding the
+  array shape over a store of values, $P_{\mathcal R}$ and $N_{\mathcal R}$
+  (`realmArrayLabel`, `realmArray_of_record`). Each label the tag slice
+  keeps is kept in the destination, or is a clause row each clause of which
+  answers `false` or is a record's; and the destination holds $L$
+  (`arraySlice`, `arraySlice_sound`, with the marker `subset`). A label with
+  `top`, and a parameter row, is no record's: `unknown` and a type parameter
+  are not narrowed so:
+
+$$
+\frac{\forall a\in T_{\mathsf{isArray}}(A).\;a\in B\ \lor\ \forall c\in G(a).\;
+         \mathsf{tag}(\mathsf{isArray},c)=\mathsf{false}\lor c\ \text{a record's}
+       \qquad L\in B\qquad G(L)=[\mathsf{Ref}(;\sigma{:}S,\mathsf{proto}{:}P_{\mathcal R};\langle\mathsf{outside}\,N_{\mathcal R}\rangle)]}
+      {A\preceq_{\mathsf{isArray}=\mathsf{true}}B}\ \textsc{tag-array}
+$$
+
+  with $S$ a readonly store at a type holding `top`.
+
 - **Present key:** a passed `in` test finds its key on the object's chain:
   its own, or, where it lacks it, one a prototype holds (`KeyFound`). An
   object of a record lacking one of its optional keys holds no prototype
@@ -4070,6 +4108,18 @@ equality without a singleton is the $\equiv$ operator of `arith`, which
 narrows nothing and is refused between two operands that may both be objects
 without a field. `x instanceof C`, for a class the file declares at its top
 level, is $\mathsf{hasKey}(\kappa_C)$ ([derived form](#derived-source-forms)).
+It does not narrow `unknown`: an object gets $C$'s prototype without $C$'s
+constructor running (`Object.create(C.prototype)`), so the key is no evidence
+of $C$'s fields. `Array.isArray(x)` narrows a record or dictionary arm of $x$
+to the realm's `readonly unknown[]` where it holds
+([**tag-array**](#refinement-under-an-observed-outcome)), and keeps
+`unknown`, which the array invariant says nothing of:
+
+$$
+\frac{\Gamma(x)=A\quad A\preceq_{\mathsf{isArray}=\mathsf{true}}B\quad \Gamma[x:B]\vdash_R S_1\quad
+      \Gamma[x:T_{\lnot\mathsf{isArray}}(A)]\vdash_R S_2}
+     {\Gamma\vdash_R\ \mathsf{if}\ (\mathtt{Array.isArray}(x))\ S_1\ \mathsf{else}\ S_2}\ \textsc{if-array}
+$$
 
 ### Enums
 

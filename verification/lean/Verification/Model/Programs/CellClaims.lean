@@ -169,9 +169,11 @@ theorem translate_checked {j : Json} {fs} (h : translate j = .ok fs) :
     exact ⟨cs, rfl, translateFields_spec h⟩
 
 /-- The record a reference label stands for: each named field under the family
-its contract denotes. -/
-def interpretation (T : Table) (fs : List (PropKey × Ty Nat)) : Fam :=
-  recT (ReferenceConjunctions.famsOf (meaning (graph T)) fs)
+its contract denotes, of an object meeting the realm's array invariant, as
+every record type's is. -/
+def interpretation (T : Table) (fs : List (PropKey × Ty Nat)) : Fam := fun n W v =>
+  recT (ReferenceConjunctions.famsOf (meaning (graph T)) fs) n W v ∧
+    PositiveGraphs.realmInvariant (graph T) (realmValues (graph T)) (.refs fs [] []) n W v
 
 /-- The accepted invariant preserves both supplied primitive membership tests,
 using the existing exact translation theorem. No new semantic axioms are used. -/
@@ -251,7 +253,9 @@ theorem reference_exact {T : Table} {fs : List (PropKey × Ty Nat)}
     (hm : RequestJson.Row.clauses [.refs fs [] []] ∈ T) (n W v) :
     meaning (graph T) [label T (.refs fs [] [])] n W v ↔ interpretation T fs n W v := by
   rw [label_meaning hm]
-  simp [clauseSem, PositiveNormalization.semWithArgs, ReferenceConjunctions.refsT, interpretation,
+  simp only [clauseSem, PositiveGraphs.rowSem, interpretation]
+  refine and_congr ?_ Iff.rfl
+  simp [PositiveNormalization.semWithArgs, ReferenceConjunctions.refsT,
     ReferenceConjunctions.famsOf, viewT]
   exact fun h => ⟨recT_optT_nil h, MethodMembers.methodT_nil _ _ _⟩
 

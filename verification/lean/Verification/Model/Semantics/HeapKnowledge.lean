@@ -367,11 +367,27 @@ theorem primitive_sem {G : NormalGraph ι} {cs R} (hc : primitive cs = some R) (
         simp [semWithArgs,nulT,undefT,boolT,numT,strT,Atom.holds,apply_ite,or_assoc]
         all_goals try (split <;> simp_all [Atom.holds])
 
+/-- Primitive clauses are no records'. -/
+theorem primitive_plain : ∀ {cs : List (Clause (Ty ι))} {R}, primitive cs = some R →
+    ∀ c ∈ cs, c.record = false
+  | [], _, _ => by simp
+  | c :: cs, R, hc => by
+    intro d hd
+    cases c <;> simp only [primitive] at hc
+    all_goals try contradiction
+    all_goals
+      cases hr : primitive cs with
+      | none => simp [hr] at hc
+      | some rs =>
+        rcases List.mem_cons.mp hd with rfl | hd
+        · rfl
+        · exact primitive_plain hr d hd
+
 theorem atoms_sem {G : NormalGraph ι} {A R} (h : atoms G A = some R) (n W v) :
     meaning G A n W v ↔ ∃ a ∈ R, a.holds v := by
   unfold atoms at h
   split at h
-  · rw [expand_sem G A (by assumption)]
+  · rw [expand_sem G A (by assumption), setSem_row_plain (primitive_plain h)]
     exact primitive_sem h n W v
   · cases h
 

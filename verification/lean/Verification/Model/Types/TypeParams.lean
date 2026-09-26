@@ -87,8 +87,8 @@ theorem param_adm (G : NormalGraph ι) (P : ι → Bool) (η : ι → Fam)
   by_cases hp : P i = true
   · simpa [paramLayer, hp] using hη i hp
   · have hn : P i = false := eq_false_of_ne_true hp
-    simpa [paramLayer, hn, normalLayer, semList] using
-      setSem_adm (fun c => semWithArgs_adm (setSem X) (plainArguments G (setSem X)) c) (G i)
+    simpa [paramLayer, hn, normalLayer] using
+      setSem_adm (fun c => rowSem_adm G (setSem X) (setSem X) (plainArguments G (setSem X)) c) (G i)
 
 def denoteP (G : NormalGraph ι) (P : ι → Bool) (η : ι → Fam) : ι → Fam :=
   Tower.denote (paramLayer G P η)
@@ -162,6 +162,7 @@ theorem instantiate_param [DecidableEq ι] {G : NormalGraph ι} {P η} {p : ι}
 Source `type Box<T> = { value: T }` applied to `A` is this theorem. -/
 theorem instantiate_ref [DecidableEq ι] {G : NormalGraph ι} {P η} {p b : ι}
     (hp : P p = true) (hb : P b = false) (hG : G b = [.refs [(valueField, [p])] [] []])
+    (hR : G.realm = none)
     (T : Fam) (n : Nat) (W : WorldT n) (v : Val) :
     meaningP G P (update η p T) [b] n W v ↔ refT T n W v := by
   have hη : update η p T p = T := by simp [update]
@@ -170,7 +171,8 @@ theorem instantiate_ref [DecidableEq ι] {G : NormalGraph ι} {P η} {p b : ι}
         ReferenceConjunctions.refsT [(valueField, meaningP G P (update η p T) [p])] [] n W v := by
     simp only [meaningP, setSem, List.mem_singleton, exists_eq_left]
     rw [unfold_param]
-    simp [paramLayer, normalLayer, hb, hG, semList, setSem, semWithArgs, ReferenceConjunctions.famsOf, viewT]
+    simp [paramLayer, normalLayer, hb, hG, setSem, rowSem, realmInvariant, hR, semWithArgs,
+      ReferenceConjunctions.famsOf, viewT]
     intro h
     obtain ⟨flds, rfl, -⟩ := h.1
     exact ⟨optT_nil, MethodMembers.methodT_nil _ _ _⟩
@@ -238,7 +240,7 @@ def isT : Nat → Bool := fun i => i == 4
 theorem box_instantiate (n : Nat) (W : WorldT n) (v : Val) :
     meaningP boxG isT (update (fun _ => nulT) 4 falseT) [5] n W v ↔
       refT falseT n W v :=
-  instantiate_ref (by decide : isT 4 = true) (by decide : isT 5 = false) rfl falseT n W v
+  instantiate_ref (by decide : isT 4 = true) (by decide : isT 5 = false) rfl rfl falseT n W v
 
 /-! ## Typing under a rigid assignment
 
@@ -261,9 +263,13 @@ theorem EnvOkP.transfer {G : NormalGraph ι} {P η} {Γ ρ n W}
     (meaningP_adm G P η (fun i hi => (hη i hi).1) A).mono j _ U hx _
       ((meaningP_adm G P η (fun i hi => (hη i hi).1) A).down_le n j hj W _ (h.2 i A hi))⟩
 
+/-- A clause read in a row under a rigid assignment. -/
+abbrev rowP (G : NormalGraph ι) (P : ι → Bool) (η : ι → Fam) : Clause (List ι) → Fam :=
+  rowSem G (meaningP G P η) (meaningP G P η) (argsP G P η)
+
 theorem unfold_nonparam {G : NormalGraph ι} {P η} {i : ι}
     (hP : P i = false) (n : Nat) (W : WorldT n) (v : Val) :
-    denoteP G P η i n W v ↔ semList (meaningP G P η) (argsP G P η) (G i) n W v := by
+    denoteP G P η i n W v ↔ setSem (rowP G P η) (G i) n W v := by
   rw [unfold_param]
   simp [paramLayer, hP]
   rfl
@@ -277,7 +283,7 @@ theorem meaningP_value {G : NormalGraph ι} {P η} {A n W v}
     exact ⟨(hC i hp).2.1 n W v hv', (hC i hp).2.2 n W v hv'⟩
   · have hn : P i = false := eq_false_of_ne_true hp
     obtain ⟨c, _, hc⟩ := (unfold_nonparam hn n W v).mp hv
-    exact semWithArgs_value hc
+    exact semWithArgs_value hc.1
 
 theorem meaningP_valOnly {G : NormalGraph ι} {P η} (hC : ClosedAssign P η)
     (A : Ty ι) : ValOnly (meaningP G P η A) :=
@@ -310,7 +316,7 @@ theorem EnvOkP.prepend {G : NormalGraph ι} {P η} {Γ ρ n W As args}
 
 theorem expand_semP {G : NormalGraph ι} {P η} {S : List ι}
     (hS : ∀ i ∈ S, P i = false) (n : Nat) (W : WorldT n) (v : Val) :
-    meaningP G P η S n W v ↔ semList (meaningP G P η) (argsP G P η) (clausesOf G S) n W v := by
+    meaningP G P η S n W v ↔ setSem (rowP G P η) (clausesOf G S) n W v := by
   constructor
   · rintro ⟨i, hi, hv⟩
     obtain ⟨c, hc, hv⟩ := (unfold_nonparam (hS i hi) n W v).mp hv
@@ -322,21 +328,32 @@ theorem expand_semP {G : NormalGraph ι} {P η} {S : List ι}
 theorem represents_semP {G : NormalGraph ι} {P η} {A c}
     (hr : Represents G A c) (hA : ∀ i ∈ A, P i = false)
     (n : Nat) (W : WorldT n) (v : Val) :
-    meaningP G P η A n W v ↔ semP G P η c n W v := by
+    meaningP G P η A n W v ↔ rowP G P η c n W v := by
   rw [expand_semP hA, ← expand_of_plain hr.plain, show expand G A = [c] from hr]
-  simp [semList, setSem]
+  simp [setSem]
+
+theorem represents_rawP {G : NormalGraph ι} {P η} {A c}
+    (hr : Represents G A c) (hA : ∀ i ∈ A, P i = false)
+    (n : Nat) (W : WorldT n) (v : Val) : meaningP G P η A n W v → semP G P η c n W v :=
+  fun h => ((represents_semP hr hA n W v).mp h).1
+
+theorem represents_backP {G : NormalGraph ι} {P η} {A c}
+    (hr : Represents G A c) (hA : ∀ i ∈ A, P i = false)
+    (n : Nat) (W : WorldT n) (v : Val) (hc : c.record = false := by rfl) :
+    semP G P η c n W v → meaningP G P η A n W v :=
+  fun h => (represents_semP hr hA n W v).mpr ⟨h, realmInvariant_of_not_record hc n W v⟩
 
 theorem answers_soundP {G : NormalGraph ι} {P η} {A tag q n W v}
     (hq : Answers G A tag q) (hA : ∀ i ∈ A, P i = false)
     (hv : meaningP G P η A n W v) : tagHolds tag v = q := by
-  obtain ⟨c, hc, hv⟩ := (expand_semP hA n W v).mp hv
+  obtain ⟨c, hc, hv, -⟩ := (expand_semP hA n W v).mp hv
   exact tagClause_sound (hq.2 c (by rwa [expand_of_plain hq.1])) hv
 
 /-- An answered test reads no prototype, so the heap does not change it. -/
 theorem answers_heapP {G : NormalGraph ι} {P η} {A tag q n W v} (h : Heap)
     (hq : Answers G A tag q) (hA : ∀ i ∈ A, P i = false)
     (hv : meaningP G P η A n W v) : tagHoldsIn h tag v = q := by
-  obtain ⟨c, hc, hv'⟩ := (expand_semP hA n W v).mp hv
+  obtain ⟨c, hc, hv', -⟩ := (expand_semP hA n W v).mp hv
   rw [tagHoldsIn_of_protoFree (tagClause_protoFree (hq.2 c (by rwa [expand_of_plain hq.1])) hv')]
   exact answers_soundP hq hA hv
 
@@ -418,7 +435,7 @@ theorem funE_safeP {G : NormalGraph ι} {P η} {Γ F L arity b n W h ρ}
   simp only [instantiate, Nat.zero_add]
   have hcode := invocation_of_bodyP hC he hlen hb
   have hs := make_callable_rule nulT_adm arity n W h _ .nul hcode rfl hw hh rfl
-  exact Safe_mono n (fun k _ U v hv => (represents_semP hr hF k U v).mpr
+  exact Safe_mono n (fun k _ U v hv => (represents_backP hr hF k U v)
     ⟨hv.2, hv.2.1, by simp⟩) W h _ hs
 
 theorem app_safeP {G : NormalGraph ι} {P η} {Γ F Rt B f r n W h ρ}
@@ -449,7 +466,7 @@ theorem app_safeP {G : NormalGraph ι} {P η} {Γ F Rt B f r n W h ρ}
   · apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh)
     intro k hk U v hv
     simpa only [List.map_map, Function.comp_def] using
-      callsT_select ((represents_semP hr hF k U v).mp hv).1
+      callsT_select ((represents_rawP hr hF k U v) hv).1
         (List.mem_map.mpr ⟨(Rt, xs.map Prod.fst, B), hp, rfl⟩)
   · intro j hj U hx hu heap hok
     exact ihr j U heap ρ (he.transfer hC j hj U hx) hu hok
@@ -463,7 +480,7 @@ general many-field rule is `make_fields_rule`; nothing here depends on the
 arity, only on the parameter being interpreted rather than erased. -/
 theorem alloc_safeP {G : NormalGraph ι} {P η} {Γ a A Ref f n W h ρ}
     (hC : ClosedAssign P η) (hr : Represents G Ref (.refs [(f, A)] [] []))
-    (hRef : ∀ i ∈ Ref, P i = false)
+    (hRef : ∀ i ∈ Ref, P i = false) (hf : f ≠ CallArguments.arrayStoreField)
     (ih : ∀ n W h ρ, EnvOkP G P η Γ ρ n W → WorldAdm W → HeapOk n W h →
       Safe (meaningP G P η A) n W h (instantiate 0 ρ a))
     (he : EnvOkP G P η Γ ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
@@ -473,12 +490,7 @@ theorem alloc_safeP {G : NormalGraph ι} {P η} {Γ a A Ref f n W h ρ}
     (fun hs => CallArguments.Step.makeArgs (.head hs)) (fun hr => (CallArguments.ArgRaises.head hr).make)
     n W h _ hw hh (ih n W h ρ he hw hh)
   intro j hj U hx hu heap v hok hv ha'
-  apply Safe_mono j (fun k _ V w hw => (represents_semP hr hRef k V w).mpr
-    ⟨⟨hw, by simp⟩, fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm,
-      by obtain ⟨flds, rfl, -⟩ := hw
-         exact ⟨by simpa [ReferenceConjunctions.famsOf] using optT_nil, MethodMembers.methodT_nil _ _ _,
-           by simp⟩⟩)
-  refine make_fields_rule (As := [meaningP G P η A])
+  refine make_fields_rule (Q := meaningP G P η Ref) (As := [meaningP G P η A])
     (by intro X hX; simp only [List.mem_singleton] at hX; subst hX
         exact meaningP_adm G P η (fun i hi => (hC i hi).1) A)
     j U heap .absent [f] [v] (by simp) rfl rfl (by simpa using hv) hu hok
@@ -486,7 +498,12 @@ theorem alloc_safeP {G : NormalGraph ι} {P η} {Γ a A Ref f n W h ρ}
         simp only [List.zip_cons_cons, List.zip_nil_right, List.mem_singleton] at hq
         subst hq; exact ha') ?_
   intro k hk V hy hrec
-  exact hrec
+  refine (represents_semP hr hRef k V _).mpr ⟨⟨⟨hrec, by simp⟩,
+    fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm,
+    by simpa [ReferenceConjunctions.famsOf] using optT_nil, MethodMembers.methodT_nil _ _ _,
+    by simp⟩, realmInvariant_of_lookup ?_⟩
+  have hne : (CallArguments.arrayStoreField == f) = false := by simp [Ne.symm hf]
+  simp [slots, List.lookup, hne]
 
 theorem read_safeP {G : NormalGraph ι} {P η} {Γ a A fs f Ref n W h ρ}
     (hC : ClosedAssign P η) (hr : Represents G Ref (.refs fs [] []))
@@ -500,7 +517,7 @@ theorem read_safeP {G : NormalGraph ι} {P η} {Γ a A fs f Ref n W h ρ}
   intro j hj U hx hu heap v hok hv ha'
   obtain ⟨flds, l, c, rfl, hfd, hl, hag⟩ :=
     recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩)
-      ((represents_semP hr hRef j U v).mp ha').1.1
+      ((represents_rawP hr hRef j U v) ha').1.1
   exact read_rule (meaningP_valOnly hC A) j U heap l hu hok hfd hl hag
 
 theorem write_safeP {G : NormalGraph ι} {P η} {Γ a b A fs f Ref N n W h ρ}
@@ -526,8 +543,8 @@ theorem write_safeP {G : NormalGraph ι} {P η} {Γ a b A fs f Ref N n W h ρ}
       ((meaningP_adm G P η (fun i hi => (hC i hi).1) Ref).down_le j k hk U av ha')
   obtain ⟨flds, l, c, rfl, hfd, hl, hag⟩ :=
     recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩)
-      ((represents_semP hr hRef k V av).mp ha'').1.1
-  apply Safe_mono k (fun i _ X v hval => (represents_semP hn hN i X v).mpr hval)
+      ((represents_rawP hr hRef k V av) ha'').1.1
+  apply Safe_mono k (fun i _ X v hval => (represents_backP hn hN i X v) hval)
   exact write_rule (meaningP_adm G P η (fun i hi => (hC i hi).1) A)
     k V heap' l bv hbval hv hok' hfd hl hag hb'
 
@@ -536,35 +553,35 @@ theorem nul_safeP {G : NormalGraph ι} {P η} {A Γ n W h ρ}
     (_he : EnvOkP G P η Γ ρ n W) :
     Safe (meaningP G P η A) n W h (instantiate 0 ρ .nul) := by
   simp only [instantiate]
-  exact value_safe _ _ _ _ _ rfl ((represents_semP hr hA n W _).mpr rfl)
+  exact value_safe _ _ _ _ _ rfl ((represents_backP hr hA n W _) rfl)
 
 theorem undef_safeP {G : NormalGraph ι} {P η} {A Γ n W h ρ}
     (hr : Represents G A .undef) (hA : ∀ i ∈ A, P i = false)
     (_he : EnvOkP G P η Γ ρ n W) :
     Safe (meaningP G P η A) n W h (instantiate 0 ρ .undef) := by
   simp only [instantiate]
-  exact value_safe _ _ _ _ _ rfl ((represents_semP hr hA n W _).mpr rfl)
+  exact value_safe _ _ _ _ _ rfl ((represents_backP hr hA n W _) rfl)
 
 theorem tru_safeP {G : NormalGraph ι} {P η} {A Γ n W h ρ}
     (hr : Represents G A .bool) (hA : ∀ i ∈ A, P i = false)
     (_he : EnvOkP G P η Γ ρ n W) :
     Safe (meaningP G P η A) n W h (instantiate 0 ρ .tru) := by
   simp only [instantiate]
-  exact value_safe _ _ _ _ _ rfl ((represents_semP hr hA n W _).mpr (Or.inl rfl))
+  exact value_safe _ _ _ _ _ rfl ((represents_backP hr hA n W _) (Or.inl rfl))
 
 theorem fls_safeP {G : NormalGraph ι} {P η} {A Γ n W h ρ}
     (hr : Represents G A .bool) (hA : ∀ i ∈ A, P i = false)
     (_he : EnvOkP G P η Γ ρ n W) :
     Safe (meaningP G P η A) n W h (instantiate 0 ρ .fls) := by
   simp only [instantiate]
-  exact value_safe _ _ _ _ _ rfl ((represents_semP hr hA n W _).mpr (Or.inr rfl))
+  exact value_safe _ _ _ _ _ rfl ((represents_backP hr hA n W _) (Or.inr rfl))
 
 theorem flsLit_safeP {G : NormalGraph ι} {P η} {A Γ n W h ρ}
     (hr : Represents G A (.boolLit false)) (hA : ∀ i ∈ A, P i = false)
     (_he : EnvOkP G P η Γ ρ n W) :
     Safe (meaningP G P η A) n W h (instantiate 0 ρ .fls) := by
   simp only [instantiate]
-  exact value_safe _ _ _ _ _ rfl ((represents_semP hr hA n W _).mpr rfl)
+  exact value_safe _ _ _ _ _ rfl ((represents_backP hr hA n W _) rfl)
 
 theorem ifBool_safeP {G : NormalGraph ι} {P η} {Γ c C t e A n W h ρ}
     (hC : ClosedAssign P η) (hCP : ∀ i ∈ C, P i = false)
@@ -612,7 +629,7 @@ theorem ifKnown_safeP {G : NormalGraph ι} {P η} {Γ c C q t e A n W h ρ}
   apply bind (fun c => .ite c (instantiate 0 ρ t) (instantiate 0 ρ e)) Step.iteC Raises.iteC
     n W h _ hw hh (ihc n W h ρ he hw hh)
   intro j hj U hx hu heap v hok hv ha
-  have hvalue := (represents_semP hq hCP j U v).mp ha
+  have hvalue := (represents_rawP hq hCP j U v) ha
   cases q <;> simp only [semP, semWithArgs] at hvalue <;> subst v
   · cases j with
     | zero => trivial
@@ -648,14 +665,14 @@ theorem ifBoolVar_safeP {G : NormalGraph ι} {P η} {Γ i C T F t e A n W h ρ}
   | zero => trivial
   | succ k =>
     rcases shape with hv | hv
-    · have refined := he.refine hi ((represents_semP hT hTP (k + 1) W (ρ i)).mpr
+    · have refined := he.refine hi (represents_backP hT hTP (k + 1) W (ρ i) rfl
         (by simpa [hv, semP, semWithArgs] using rfl))
       rw [hv]
       refine Or.inr ⟨trunc k (Nat.le_succ k) W, h, instantiate 0 ρ t, WExt_refl _,
         WorldAdm_trunc _ hw, .iteT, HeapOk_trunc k W h hh, ?_⟩
       exact iht k _ h ρ (refined.transfer hCl k (Nat.le_succ k) _ (WExt_refl _))
         (WorldAdm_trunc _ hw) (HeapOk_trunc k W h hh)
-    · have refined := he.refine hi ((represents_semP hF hFP (k + 1) W (ρ i)).mpr
+    · have refined := he.refine hi (represents_backP hF hFP (k + 1) W (ρ i) rfl
         (by simpa [hv, semP, semWithArgs] using rfl))
       rw [hv]
       refine Or.inr ⟨trunc k (Nat.le_succ k) W, h, instantiate 0 ρ e, WExt_refl _,
@@ -729,7 +746,7 @@ theorem makeCallable_safeP {G : NormalGraph ι} {P η} {Γ F Bag arity a b n W h
       ((codeCallsT_adm _).down_le n j hj W _ ((codeCallsT_code_iff _ arity [] _ n W).mpr hcode)))
   have hs := make_callable_rule (meaningP_adm G P η (fun i hi => (hC i hi).1) Bag)
     arity j U heap _ av hc hav hu hok ha'
-  exact Safe_mono j (fun k _ V v hv => (represents_semP hr hF k V v).mpr
+  exact Safe_mono j (fun k _ V v hv => (represents_backP hr hF k V v)
     ⟨⟨⟨hv.1, by simp⟩, hv.2⟩, hv.2.1, by simp⟩) U heap _ hs
 
 theorem callCallable_safeP {G : NormalGraph ι} {P η} {Γ F Bag Ps Rt B f r n W h ρ}
@@ -760,7 +777,7 @@ theorem callCallable_safeP {G : NormalGraph ι} {P η} {Γ F Bag Ps Rt B f r n W
   · apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh)
     intro k hk U v hv
     simpa only [List.map_map, Function.comp_def] using
-      callsT_select (((represents_semP hr hF k U v).mp hv).1.2)
+      callsT_select (((represents_rawP hr hF k U v) hv).1.2)
         (List.mem_map.mpr ⟨(Rt, xs.map Prod.fst, B), hp, rfl⟩)
   · intro j hj U hx hu heap hok
     exact ihr j U heap ρ (he.transfer hC j hj U hx) hu hok
@@ -780,7 +797,7 @@ theorem readCallable_safeP {G : NormalGraph ι} {P η} {Γ a F Bag A f Ps L S n 
   apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
   intro j hj U hx hu heap v hok hv ha'
   exact bag_read (meaningP_valOnly hC A) (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩)
-    ((represents_semP hr hF j U v).mp ha').1.1.1 hu hok
+    ((represents_rawP hr hF j U v) ha').1.1.1 hu hok
 
 theorem writeCallable_safeP {G : NormalGraph ι} {P η} {Γ a b F Bag A f Ps L S N n W h ρ}
     (hC : ClosedAssign P η) (hr : Represents G F (.callable Bag Ps L S))
@@ -802,10 +819,10 @@ theorem writeCallable_safeP {G : NormalGraph ι} {P η} {Γ a b F Bag A f Ps L S
   have ha'' :=
     (meaningP_adm G P η (fun i hi => (hC i hi).1) F).mono k _ V hy av
       ((meaningP_adm G P η (fun i hi => (hC i hi).1) F).down_le j k hk U av ha')
-  apply Safe_mono k (fun i _ X v hval => (represents_semP hn hN i X v).mpr hval)
+  apply Safe_mono k (fun i _ X v hval => (represents_backP hn hN i X v) hval)
   exact bag_write (meaningP_adm G P η (fun i hi => (hC i hi).1) A)
     (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩)
-    ((represents_semP hr hF k V av).mp ha'').1.1.1 hb' hbval hv hok'
+    ((represents_rawP hr hF k V av) ha'').1.1.1 hb' hbval hv hok'
 
 /-- Generic identity: `function id<T>(x: T): T { return x }`. Label 0 is the
 scheme `T → T` for calls whose receiver is label 2, `undefined`; label 1 is the
@@ -895,8 +912,8 @@ theorem id_call_true (n : Nat) (W : WorldT n) (h : Heap)
     (fun n W h ρ he hw hh => by
       simp only [instantiate]
       exact value_safe _ _ _ _ _ rfl
-        ((represents_semP (G := idG) (P := idP) (A := [2]) (c := .undef) rfl
-          (fun i hi => by simp at hi; subst hi; rfl) n W .undef).mpr rfl))
+        (represents_backP (G := idG) (P := idP) (A := [2]) (c := .undef) rfl
+          (fun i hi => by simp at hi; subst hi; rfl) n W .undef rfl rfl))
     (fun p hp n W h ρ he hw hh => by
       have : p = ([1], Tm.tru) := List.mem_singleton.mp hp
       subst this
@@ -933,6 +950,19 @@ theorem prim_semList (X Y : α → Fam) (P Q : α → ArgFam) {L : List (Clause 
   · rintro ⟨c, hc, hv⟩
     exact ⟨c, hc, (prim_sem X Y P Q (hL c hc) n W v).mpr hv⟩
 
+theorem prim_rowList (G : NormalGraph ι) (A B X Y : List ι → Fam) (P Q : List ι → ArgFam)
+    {L : List (Clause (List ι))}
+    (hL : ∀ c ∈ L, isPrim c = true) (n : Nat) (W : WorldT n) (v : Val) :
+    setSem (rowSem G A X P) L n W v ↔ setSem (rowSem G B Y Q) L n W v := by
+  have hr : ∀ c ∈ L, c.record = false := fun c hc => by
+    have := hL c hc
+    cases c <;> simp_all [isPrim, Clause.record]
+  constructor
+  · rintro ⟨c, hc, hv, -⟩
+    exact ⟨c, hc, (prim_sem X Y P Q (hL c hc) n W v).mp hv, realmInvariant_of_not_record (hr c hc) n W v⟩
+  · rintro ⟨c, hc, hv, -⟩
+    exact ⟨c, hc, (prim_sem X Y P Q (hL c hc) n W v).mpr hv, realmInvariant_of_not_record (hr c hc) n W v⟩
+
 theorem primitive_meaningP {G : NormalGraph ι} {P η} {S : List ι}
     (hS : primitiveTy G P S) (n : Nat) (W : WorldT n) (v : Val) :
     meaningP G P η S n W v ↔ meaning G S n W v := by
@@ -944,7 +974,7 @@ theorem primitive_meaningP {G : NormalGraph ι} {P η} {S : List ι}
     have hC := (hS i hi).2.2
     have := (unfold_nonparam hP n W v).mp hv
     have hnorm := (unfold_normal G i (hS i hi).2.1 n W v).mpr
-      ((prim_semList (meaningP G P η) (meaning G) _ _ hC n W v).mp this)
+      ((prim_rowList G _ _ (meaningP G P η) (meaning G) _ _ hC n W v).mp this)
     exact hnorm
   · rintro ⟨i, hi, hv⟩
     refine ⟨i, hi, ?_⟩
@@ -952,7 +982,7 @@ theorem primitive_meaningP {G : NormalGraph ι} {P η} {S : List ι}
     have hC := (hS i hi).2.2
     have := (unfold_normal G i (hS i hi).2.1 n W v).mp hv
     exact (unfold_nonparam hP n W v).mpr
-      ((prim_semList (meaningP G P η) (meaning G) _ _ hC n W v).mpr this)
+      ((prim_rowList G _ _ (meaningP G P η) (meaning G) _ _ hC n W v).mpr this)
 
 inductive SubP (G : NormalGraph ι) (P : ι → Bool) (Δ : List (ι × List ι)) :
     List ι → List ι → Prop where
@@ -995,7 +1025,7 @@ theorem truLit_safeP {G : NormalGraph ι} {P η} {A Γ n W h ρ}
     (_he : EnvOkP G P η Γ ρ n W) :
     Safe (meaningP G P η A) n W h (instantiate 0 ρ .tru) := by
   simp only [instantiate]
-  exact value_safe _ _ _ _ _ rfl ((represents_semP hr hA n W _).mpr rfl)
+  exact value_safe _ _ _ _ _ rfl ((represents_backP hr hA n W _) rfl)
 
 theorem letE_safeP {G : NormalGraph ι} {P η} {Γ A B a b n W h ρ}
     (hC : ClosedAssign P η)
@@ -1084,7 +1114,7 @@ theorem falseT_satisfies :
   refine (primitive_meaningP bound_prim_bool n W .fls).mpr ?_
   refine ⟨2, by simp, ?_⟩
   rw [unfold_normal _ _ rfl]
-  simp [boundG, semList, setSem, semWithArgs]
+  exact ⟨.boolLit false, by simp [boundG], rfl, realmInvariant_of_not_record rfl _ _ _⟩
 
 #print axioms param_denote
 #print axioms instantiate_param

@@ -226,6 +226,14 @@ def arrayClauseOf (store proto : α) (excluded : List PropKey) (readonly : Bool)
       [(CallArguments.protoField, proto)])
     [] [] [⟨false, excluded⟩]
 
+/-- A record or dictionary clause: the clauses the array invariant applies to
+(`PositiveGraphs.realmInvariant`), the object types of values the host
+builds. `unknown` is not one: it is also what a handler binds a thrown value
+at, of which the model states nothing. -/
+def Clause.record : Clause α → Bool
+  | .refs .. | .dict .. => true
+  | _ => false
+
 /-- The keys an object clause says its object owns: its fields' and views'. -/
 def Clause.presentKeys : Clause α → List PropKey
   | .refs a bs vs .. | .dict a bs vs .. => ((a :: bs).flatten ++ vs).map (·.1)
@@ -791,6 +799,16 @@ def Clause.map (f : α → β) : Clause α → Clause β
   | .ctors L S => .ctors (L.map fun q => (q.1.map f, f q.2))
       (S.map fun q => (q.1.map f, f q.2.1, f q.2.2))
   | .pack a bs => .pack (a.map f) (bs.map (·.map f))
+
+/-- Renaming operands keeps a clause a record's or not. -/
+@[simp] theorem Clause.record_map (f : α → β) (c : Clause α) : (c.map f).record = c.record := by
+  cases c <;> rfl
+
+/-- A clause of a meet is a record's exactly where an operand is. -/
+theorem meet_record {a b d : Clause α} (h : d ∈ meet a b) : d.record = (a.record || b.record) := by
+  cases a <;> cases b <;> simp only [meet, List.mem_singleton, List.not_mem_nil] at h <;>
+    (try split at h) <;> (try simp only [List.mem_singleton, List.not_mem_nil] at h) <;>
+    (try subst h) <;> simp_all [Clause.record]
 
 /-- Every operand of a clause. -/
 def Clause.operands : Clause α → List α

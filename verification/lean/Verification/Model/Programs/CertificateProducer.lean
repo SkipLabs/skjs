@@ -957,7 +957,10 @@ def edge [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           else (subtype G pool (BranchRefinement.tagSlice G A t q) B).orElse fun _ =>
             -- A passed `in` test: the key is present from then on.
             if BranchRefinement.presentKey t q (BranchRefinement.promotes G (BranchRefinement.tagSlice G A t q) B)
-            then some .subset else none
+            then some .subset
+            -- A passed `Array.isArray`: a record's member is an array of the realm.
+            else if t == .isArray && q && BranchRefinement.arraySlice G A B then some .subset
+            else none
       else (subtype G pool A B).orElse (fun _ => match o with
         -- An object the tested value was read from keeps the labels whose
         -- field admits the observation.

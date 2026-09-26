@@ -360,24 +360,24 @@ theorem Proof.check_safe {G : NormalGraph Nat} {parameters} {Gamma : List Slot}
       simp only [Proof.check, Option.some.injEq, Prod.mk.injEq] at hc
       obtain ⟨rfl, rfl⟩ := hc
       intro n W heap rho _ _ _
-      exact value_safe _ _ _ _ _ rfl ((represents_sem hG.represents_nul n W _).mpr rfl)
+      exact value_safe _ _ _ _ _ rfl ((represents_back hG.represents_nul n W _) rfl)
     | vundef =>
       simp only [Proof.check, Option.some.injEq, Prod.mk.injEq] at hc
       obtain ⟨rfl, rfl⟩ := hc
       intro n W heap rho _ _ _
-      exact value_safe _ _ _ _ _ rfl ((represents_sem hG.represents_undef n W _).mpr rfl)
+      exact value_safe _ _ _ _ _ rfl ((represents_back hG.represents_undef n W _) rfl)
     | vbool b =>
       cases b with
       | true =>
         simp only [Proof.check, Option.some.injEq, Prod.mk.injEq] at hc
         obtain ⟨rfl, rfl⟩ := hc
         intro n W heap rho _ _ _
-        exact value_safe _ _ _ _ _ rfl ((represents_sem hG.represents_tru n W _).mpr rfl)
+        exact value_safe _ _ _ _ _ rfl ((represents_back hG.represents_tru n W _) rfl)
       | false =>
         simp only [Proof.check, Option.some.injEq, Prod.mk.injEq] at hc
         obtain ⟨rfl, rfl⟩ := hc
         intro n W heap rho _ _ _
-        exact value_safe _ _ _ _ _ rfl ((represents_sem hG.represents_fls n W _).mpr rfl)
+        exact value_safe _ _ _ _ _ rfl ((represents_back hG.represents_fls n W _) rfl)
     | vnum _ => simp [Proof.check] at hc
     | vstr _ => simp [Proof.check] at hc
     | vbigint _ => simp [Proof.check] at hc
@@ -516,7 +516,7 @@ theorem Proof.check_safe {G : NormalGraph Nat} {parameters} {Gamma : List Slot}
                 Function.comp_def] using safe
             · intro j hj U hx hu heap' hh'
               exact value_safe _ _ _ _ _ rfl
-                ((represents_sem hG.represents_undef j U _).mpr rfl)
+                ((represents_back hG.represents_undef j U _) rfl)
             · intro p hp
               obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
               obtain ⟨arg, harg, hcArg⟩ := checked_argument ha hq
@@ -653,7 +653,8 @@ theorem array_wrap_safe {G : NormalGraph Nat} {eta} (E : Ty) {n : Nat} {W : Worl
     have hr : SourceTypes.reservedKey n = true := by
       simp only [List.mem_cons, List.not_mem_nil, or_false] at hn
       rcases hn with rfl | rfl <;>
-        simp [SourceTypes.reservedKey, SourceTypes.storeField, SourceTypes.protoField]
+        simp [SourceTypes.reservedKey, RequestJson.reservedKey, SourceTypes.storeField,
+          SourceTypes.protoField]
     have hn' : n ∉ SourceTypes.arrayProtoKeys G := fun h => by
       have := SourceTypes.arrayProtoKeys_reserved h
       simp_all

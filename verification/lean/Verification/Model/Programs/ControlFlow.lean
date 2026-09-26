@@ -151,7 +151,8 @@ theorem admitsAll_sound {G : NormalGraph ι} {T : Ty ι} (h : admitsAll G T = tr
     {n W v} (hv : isVal v = true) (hs : Scoped 0 v) : meaning G T n W v := by
   obtain ⟨c, hc, ht⟩ := List.any_eq_true.mp h
   cases c <;> simp [isTop] at ht
-  exact (expand_sem G T (plain_of_mem_expand hc) n W v).mpr ⟨.top, hc, hv, hs⟩
+  exact (expand_sem G T (plain_of_mem_expand hc) n W v).mpr
+    ⟨.top, hc, ⟨hv, hs⟩, realmInvariant_of_not_record rfl n W v⟩
 
 /-- The facts that hold wherever a node's expression throws: only what its
 entry knowledge says without the heap (immutable values, alias and distinct
@@ -373,7 +374,7 @@ theorem state_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C}
           exact Or.inr ⟨U, h, .at l.label (mapEnv l.mapping ρ), WExt_refl _, hw', .effect hv, hh',
             ih U h _ hw' hh' (target_state hk he' (HeapKnowledge.dropResult_holds hf))⟩
         | branch y no =>
-          have hb := (represents_sem hk.1 (n+1) W t).mp ha
+          have hb := represents_raw hk.1 (n+1) W t ha
           rcases hb with rfl | rfl
           · exact Or.inr ⟨U, h, .at y.label (mapEnv y.mapping ρ), WExt_refl _, hw', .yes, hh',
               ih U h _ hw' hh' (target_state hk.2.1 he' (HeapKnowledge.dropResult_holds hf))⟩

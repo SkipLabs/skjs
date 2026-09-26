@@ -301,7 +301,17 @@ Language Specification* as of this writing). Sections relied on by name:
   (a private name a key of its own, a missing slot a throw),
   [ClassStaticBlockDefinition](https://tc39.es/ecma262/multipage/ecmascript-language-functions-and-classes.html#sec-class-definitions)
   evaluation, and the `try` statement's completions (a `break` or
-  `continue` running each `finally` it leaves).
+  `continue` running each `finally` it leaves);
+- arrays and prototypes: [IsArray](https://tc39.es/ecma262/#sec-isarray)
+  (`Array.isArray` holds of exactly the Array exotic objects),
+  [ArrayCreate](https://tc39.es/ecma262/#sec-arraycreate) (an array's
+  prototype is the one its creator passes, `Array.prototype` for the realm's
+  own constructors), [Object.create](https://tc39.es/ecma262/#sec-object.create),
+  [Object.setPrototypeOf](https://tc39.es/ecma262/#sec-object.setprototypeof)
+  and [Reflect.construct](https://tc39.es/ecma262/#sec-reflect.construct)
+  (any object may be given any prototype, a class's included, without its
+  constructor running): the array invariant and why no class invariant is
+  assumed.
 
 **Used for** the meaning of every calculus step and every host row of the
 trust surface; checked by review and `#guard` tests against node, not proved.
@@ -309,6 +319,7 @@ trust surface; checked by review and `#guard` tests against node, not proved.
 [DESIGN: the model in brief](DESIGN.md#the-model-in-brief),
 [DESIGN: trust surface](DESIGN.md#trust-surface),
 [SEMANTICS: operational language](SEMANTICS.md#operational-language),
+[SEMANTICS: the array invariant](SEMANTICS.md#the-array-invariant),
 [PROGRAM-TYPING: async functions and await](PROGRAM-TYPING.md#async-functions-and-await),
 [PROGRAM-TYPING: loops and spreads over iterables](PROGRAM-TYPING.md#loops-and-spreads-over-iterables),
 [PROGRAM-TYPING: patterns](PROGRAM-TYPING.md#patterns),

@@ -740,15 +740,15 @@ let shape_tests : (string * string) list ref = ref []
 let undefined_fields : (string * string) list ref = ref []
 let dictionary_keys : (string * string) list ref = ref []
 let rec rigid_arm = function Rigid _ -> true | Union ts -> List.exists rigid_arm ts | _ -> false
-(* Names found arrays by `Array.isArray` while an open-record arm of theirs
-   remained: such an object is an array, but not one of `Array.prototype`'s
-   by any type. *)
+(* Names found arrays by `Array.isArray` where they were `unknown`: such a
+   value owns an array's store, but no type says it is an array of
+   `Array.prototype`. *)
 let open_array_tests : string list ref = ref []
 let open_array_reason =
-  "`Array.isArray(x)`, or `x instanceof Array`, on an open record or `unknown` finds that the object \
-   owns the store of an array, not that it is an array of `Array.prototype`: that every object owning a \
-   store was allocated as an array is a fact about every allocation of the program, which no type of a \
-   value states"
+  "`Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an \
+   array, not that it is an array of `Array.prototype`: the array invariant is a fact of every record and \
+   dictionary type, and `unknown` is also the type a handler binds a thrown value at, of which the model \
+   states nothing"
 (* Keep the atoms of a `typeof` test's shape where it holds, and the others
    where it fails. *)
 let rec typeof_slice shape holds = function
@@ -789,13 +789,32 @@ let rec typeof_slice shape holds = function
   | Union ts -> List.fold_left union (Atoms []) (List.map (typeof_slice shape holds) ts)
   | Meet (t,_) when typeof_slice shape holds t = Atoms [] -> Atoms []
   | t -> t
+(* Where `Array.isArray` holds, an open record's arm is an array of the realm:
+   a record type is of objects meeting the array invariant, so one owning an
+   array's store holds a dense store and `Array.prototype` (Lean's
+   `arraySlice`). Such arms become `readonly unknown[]`; an array arm stays;
+   `unknown` and a type parameter's arms, of which the invariant says nothing,
+   stay as they are. *)
+let any_array = array {required=[];optional_elements=[];rest=Some top;readonly=true}
+let array_slice declarations t =
+  let sliced = typeof_slice "array" true t in
+  let rec plain = function
+    | Atoms _ -> true | Union ts -> List.for_all plain ts | Rigid _ | Meet _ -> false in
+  if not (plain sliced) then sliced else
+  let atoms = flat_atoms declarations sliced in
+  if List.mem Top atoms || not (List.exists open_record_atom atoms) then sliced
+  else match typeof_slice "array" true (Atoms atoms) with
+    | Atoms kept -> union (ground (List.filter (fun a -> not (open_record_atom a)) kept)) any_array
+    | _ -> sliced
 (* Names an `instanceof` of a class tested where they were `unknown`: the
    test narrows nothing there, and a member read of one is refused with that
    reason rather than as a read of `unknown`. *)
 let unknown_instance_tests : string list ref = ref []
 let unknown_instance_reason =
-  "`x instanceof C` does not narrow `unknown` to C: that every object whose prototype chain holds C's \
-   prototype has C's fields is a fact about every allocation of the program, which no type of a value states"
+  "`x instanceof C` does not narrow `unknown` to C: an object gets C's prototype without C's constructor \
+   running (`Object.create(C.prototype)`, `Object.setPrototypeOf`, `Reflect.construct` with C as the new \
+   target), so C's prototype on its chain is no evidence of C's fields, and the model assumes it of no value \
+   a unit receives"
 (* Keep the atoms that may own the key where `key in o` held, and those that
    may lack it where it failed: a record's required field is owned, a fresh
    literal's keys are exactly its fields', and a primitive owns none. *)
@@ -908,10 +927,10 @@ let rec branch_with ?(modules = fun _ -> None) ?(claimed = fun _ -> None) declar
       | Some b when rigid_arm (binding_type b) || binding_type b = top ->
         shape_tests := (name,shape) :: !shape_tests
       | _ -> ());
-    let env = refine_value env name (typeof_slice shape (truth = equal)) in
+    let env = refine_value env name (if shape = "array" && truth = equal then array_slice declarations
+      else typeof_slice shape (truth = equal)) in
     (if shape = "array" && truth = equal then match List.assoc_opt name env with
-      | Some b when binding_type b = top
-          || List.exists open_record_atom (flat_atoms declarations (binding_type b)) ->
+      | Some b when binding_type b = top ->
         open_array_tests := name :: !open_array_tests
       | _ -> ());
     env
@@ -1411,8 +1430,8 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       else Some (record (List.map (fun (name,t) ->
         {name;optional=false;read=Option.get t;write=None;host=false}) fields))
     | _ -> None
-  (* A name `Array.isArray` found an array of, where it may be an open
-     record or anything, used where every array would do. *)
+  (* A name `Array.isArray` found an array of, where it was `unknown`, used
+     where every array would do. *)
   and explain_open_array site env n expected =
     match expected with
     | Some x when List.mem n !open_array_tests ->
@@ -1422,9 +1441,8 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         | _ -> false in
       let wanted = flat_atoms declarations x in
       let actual = try resolve env n with Json.Error _ -> Atoms [] in
-      if wanted <> [] && List.for_all any_array wanted
-         && (actual = top || List.exists open_record_atom (flat_atoms declarations actual))
-      then explain site ("an open record or `unknown` used as an array after `Array.isArray`: " ^ open_array_reason)
+      if wanted <> [] && List.for_all any_array wanted && actual = top
+      then explain site ("`unknown` used as an array after `Array.isArray`: " ^ open_array_reason)
     | _ -> ()
   (* A record at an index signature, which TypeScript admits through an
      implicit index signature. *)
@@ -1849,7 +1867,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       (match e.node with
        | Id name when List.mem name !open_array_tests ->
          (try field_type declarations [] receiver n with Json.Error m ->
-           explain site ("a member of an open record read as one of an array after `Array.isArray`: " ^ open_array_reason);
+           explain site ("a member of `unknown` read as one of an array after `Array.isArray`: " ^ open_array_reason);
            (match receiver with
             | Atoms atoms when String.length m >= 27 && String.sub m 0 27 = "unsupported: missing field "
                 && List.exists (function Shape {elements=Some _;_} -> true | _ -> false) atoms ->

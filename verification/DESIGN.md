@@ -459,6 +459,14 @@ its positions. An array's `length` is read from its store, in a statement and
 in a closed expression alike. An array pattern's rest over a tuple of
 required positions is reads; any other is a slice, a call of the trusted
 `%RestFrom:k%` ([patterns](PROGRAM-TYPING.md#patterns)).
+Every record and dictionary type is of objects meeting the **array
+invariant**: one owning the store key is an array of the realm, a dense store
+and `Array.prototype`, owning no key it provides. Allocation keeps it, since
+an allocation owning the store key is typed only as such an array and a
+merge copies no store; it is assumed of every value a unit receives at such a
+type ([the array invariant](SEMANTICS.md#the-array-invariant)). So where
+`Array.isArray` holds, a record arm is `readonly unknown[]`. `unknown`, which
+is also what a handler binds a thrown value at, carries no invariant.
 
 ### Index signatures
 
@@ -623,8 +631,11 @@ with the reason where the model would answer otherwise
 `key in o` (`hasKey`, along the prototype chain the model holds), truthiness
 (`ToBoolean`), `== null`, strict equality against a singleton of any
 primitive kind, `Array.isArray` and `instanceof Array` (`isArray`: owns the
-store key), and `x instanceof C` for a class the file declares
-(`hasKey` of the key only `C`'s prototype owns). A test of a field of an
+store key; a record or dictionary arm is then the realm's `readonly
+unknown[]`, by the [array invariant](#arrays)), and `x instanceof C` for a
+class the file declares (`hasKey` of the key only `C`'s prototype owns; it
+narrows a union's arms, never `unknown`, since JavaScript gives any object
+`C`'s prototype without `C`'s constructor). A test of a field of an
 immutable binding's object against a singleton, or of its truthiness where
 an arm leaves the field optional (an `IteratorResult`'s `done`), narrows the
 object's arms; a
@@ -720,6 +731,7 @@ the model's reading of an operation relies.
 | A value whose trusted declaration types it `Function` has call or construct code. | [`Function`](PROGRAM-TYPING.md#library-types) |
 | A value TypeScript types as `Set<T>`, `Map<K, V>`, `SetIterator<T>` or `MapIterator<T>` that a loop or spread iterates is the host's: its iterator is the realm's, and the prototypes it inherits (`%IteratorPrototype%` included) hold no `return` and are unmodified. Assumed of every such value a program receives; the fragment builds none but through the host: a `Set`'s and a `Map`'s type state their `[Symbol.toStringTag]`, a well-known symbol key no literal or class of the fragment writes, and no annotation of the fragment states a `SetIterator` or `MapIterator`. A host iterator a program's protocol steps (an array's, as an `Iterable<T>`) likewise has no `return` along its chain. | the iteration intrinsics' pick, `iterationKind` in `tools/declaration-graph.mts`; `writtenSymbol` in `tools/fragment-parse.mts` |
 | Every object owning the array store key is a JavaScript array: every object the model allocates, and assumed of every object a program receives. `Array.isArray` is the native test. For `instanceof Array`, every array a program receives is of its realm and no object but an array inherits from `Array.prototype`. | `isArray` ([SEMANTICS](SEMANTICS.md#operational-language)); the `Array` entries of `library-globals.mts` |
+| The array invariant: every object a unit receives at a record or dictionary type that owns the array store key is an array of the realm: its store is dense, it holds `Array.prototype` (meeting `ArrayProto`, which reads no parameter row), and it owns no key `Array.prototype` provides. Proved of every object the unit allocates; assumed of every value it receives, as the arrays it receives at array types already are. Nothing is assumed of a value at `unknown`, and no class invariant: an object whose prototype chain holds a class's prototype need not have the class's fields. | `realmInvariant` in the meaning of record and dictionary rows, so `EnvOk` in the premise of `checkJson_safe` ([SEMANTICS](SEMANTICS.md#the-array-invariant)) |
 | An array a program receives owns no key its prototype provides. | the $\mathsf{outside}\,N$ bound of the array shape |
 | The model's reserved keys (the store key `[]` and every name in double brackets) are spelled by no source key, and an object a program receives is represented with its own keys apart from them. | `Fragment.sourceKey`, `reservedSourceKey` |
 | `Object.prototype`, `Array.prototype` and `Function.prototype` own no string key but those `inKeyRefusal` lists (node's `Object.getOwnPropertyNames`); `String.prototype` and `Object.prototype` own no numeric key; `String.prototype` owns no `[Symbol.split]` or `[Symbol.replace]`; `Object.prototype` has no `toJSON`. | `inKeyRefusal` in `Source/Fragment.lean`; the overlay comments |
@@ -753,10 +765,10 @@ not yet taken are [next steps](#next-steps); a search failure is neither.
 | A record type where an index signature or a dictionary is expected (TypeScript's implicit index signature); width subtyping into an optional field; an array where a number index is expected | A record is open: it may own further keys at any type; an array has a prototype a dictionary lacks. |
 | `declare let`, `declare var`, a module-level `let` or `var` | Module storage outside code may write during any call; the fragment has none. |
 | An ambient `declare enum`; an enum member TypeScript computes no value for; a NaN or infinite member; a reverse key naming a member; an empty enum | The object is the environment's, or its keys are known only at run time, or it has no literal type. |
-| Narrowing `unknown` by `instanceof C`, and a member read of the result | "An object whose chain holds `C`'s prototype has `C`'s fields" is a world invariant over every allocation, not a fact about a value of `unknown`. |
+| Narrowing `unknown` by `instanceof C`, and a member read of the result | JavaScript gives an object `C`'s prototype without `C`'s constructor running (`Object.create(C.prototype)`, `Object.setPrototypeOf`, `Reflect.construct` with `C` as the new target), so "an object whose chain holds `C`'s prototype has `C`'s fields" is false of values a unit may receive; the fragment cannot forge the key, but a host can, and assuming it would be trusting what ordinary JavaScript breaks. |
 | `instanceof` of a constructor not declared at the file's top level (imported, ambient, a function, an expression); a class value as the operand of `in` | Nothing in the file says which prototype it gives its instances; its statics are bound apart. |
 | `key in o` for a key the realm's prototypes hold, an array index, a `string` or numeric key; an operand with a primitive arm or `unknown` | The model would answer otherwise than JavaScript, or JavaScript throws. |
-| Narrowing `number[] \| Foo` by `Array.isArray` to drop `Foo` | An array may carry `Foo`'s keys. |
+| Narrowing `number[] \| Foo` by `Array.isArray` to drop `Foo` | An array may carry `Foo`'s keys: where the test holds, the `Foo` arm is `readonly unknown[]`, not dropped. |
 | `===` between two operands that may both be objects without a field (functions, records of optional fields, `unknown`); narrowing by object identity | Such values have no identity in the model; a statement entry states no slot equality. |
 | A user-defined type guard (`x is T`) or assertion function (`asserts x is T`), with a body or declared | Its promise relates the result, or the completion, to the argument, which no function type states. |
 | An array assignment pattern writing a field (`[o.f] = e`) | Its target's reference is evaluated before its position is read and defaulted; the lowering writes locals only. |
@@ -809,6 +821,10 @@ One line each; the reason is the one the design keeps.
   two enums with the same values are one type.
 - **`in` tests own keys along the prototype chain the model holds**, and
   refuses keys the realm's prototypes hold.
+- **A record or dictionary type is of arrays of the realm where it owns a
+  store; `unknown` is every value.** `Array.isArray` narrows a record arm,
+  never `unknown`; no class invariant is assumed, so `instanceof` never
+  narrows `unknown`.
 - **Method members are host-relative, read-only and contravariant in their
   parameters.** Bivariance is refused.
 - **Mutable arrays, dictionaries, `Set` and `Map` are invariant.**
@@ -916,13 +932,13 @@ signatures: the target's binders taken rigidly, the source's instantiated at
 them, under a decidable restriction (equal binder counts, identical bounds;
 F<:'s general rule is undecidable, [Pierce 1994](REFERENCES.md#pierce-1994)).
 
-**The array-coherence heap invariant.** `Array.isArray` narrowing a record
-arm to `readonly unknown[]`, and `instanceof C` narrowing `unknown`, need an
-invariant of every object a program receives or allocates (an object owning
-the store key holds a dense store and `Array.prototype`; an object whose
-chain holds `C`'s prototype meets `C`'s type). That is a change to the
-safety theorem's heap premise; until then such uses are located search
-failures, never wrong verdicts.
+**The array invariant at `unknown`, and a record's `length`.** `Array.isArray`
+on `unknown` needs the invariant of every value, a thrown one included: the
+throw outcome of `Safe` would carry it, which makes it relative to the graph's
+realm. `length` read on a union of an array and a record naming `length`
+needs a dispatch on `Array.isArray`, the store's length on one arm and the
+field on the other, with the invariant excluding an own `length` key, which
+the model's arrays never have. Until then both are located search failures.
 
 **Keys known only at run time.** A key-adding write at one of several literal
 keys needs a dispatch on the key, one copy per key; at a number or a symbol,

@@ -117,6 +117,59 @@ theorem mergeData_nodup {a b : List (PropKey × Tm)} (ha : (a.map Prod.fst).Nodu
   rw [Bool.not_eq_true', ← Bool.not_eq_true] at this
   exact this ((any_key_iff b p.1).mpr hy)
 
+/-- No index key a store's copy writes is the store key: an index key is the
+decimal spelling of a natural number. -/
+theorem index_key_not_store (i : Nat) : PropKey.str (toString i) ≠ arrayStoreKey := by
+  intro h
+  have hs : toString i = "[]" := by simpa [arrayStoreKey] using h
+  have hm : '[' ∈ Nat.toDigits 10 i := by
+    rw [← Nat.toList_repr]
+    change '[' ∈ (toString i).toList
+    rw [hs]
+    decide
+  have := Nat.isDigit_of_mem_toDigits (by decide) (by decide) hm
+  revert this
+  decide
+
+/-- **A merge allocates no store.** The accumulator's fields are copied but its
+store, and a source gives its copied keys and its elements' index keys, none
+of which is the store key: an object a merge allocates is no array. -/
+theorem mergeParts_store {h : List Tm} {d : List PropKey} {a b : Tm} {ps : List (PropKey × Tm)}
+    (hp : mergeParts h d a b = some ps) : ∀ e ∈ ps, e.1 ≠ arrayStoreKey := by
+  simp only [mergeParts, Option.bind_eq_bind, Option.bind_eq_some_iff] at hp
+  obtain ⟨pa, ha, qb, hb, he⟩ := hp
+  cases he
+  intro e he
+  rcases mem_mergeData he with he | he
+  · unfold ownAll at ha
+    split at ha
+    · cases ha
+      obtain ⟨r, hr, rfl⟩ := List.mem_map.mp (mem_firstKeys he)
+      have := (List.mem_filter.mp hr).2
+      simp only [bne_iff_ne, ne_eq] at this
+      exact this
+    · cases ha
+  · have he := (List.mem_filter.mp he).1
+    unfold ownData at hb
+    split at hb
+    · cases hb
+      rcases List.mem_append.mp (mem_firstKeys he) with he | he
+      · obtain ⟨r, hr, rfl⟩ := List.mem_map.mp he
+        have := (List.mem_filter.mp hr).2
+        intro hk
+        change r.1 = arrayStoreKey at hk
+        rw [hk] at this
+        simp [arrayStoreKey, copiedKey] at this
+      · unfold storeData at he
+        split at he
+        · split at he
+          · obtain ⟨q, -, hq⟩ := List.mem_filterMap.mp he
+            obtain ⟨m, -, rfl⟩ := Option.map_eq_some_iff.mp hq
+            exact index_key_not_store _
+          · simp at he
+        · simp at he
+    all_goals first | (simp at he; done) | (cases hb; simp at he; done) | (cases hb; done)
+
 /-- In a list naming each key once, an entry is what its key looks up. -/
 theorem lookup_of_mem {β : Type} : ∀ {ps : List (PropKey × β)}, (ps.map Prod.fst).Nodup →
     ∀ {k : PropKey} {v : β}, (k, v) ∈ ps → ps.lookup k = some v
@@ -279,6 +332,7 @@ structure ObjFacts (G : NormalGraph ι) (o : Obj ι) (n : Nat) (W : WorldT n)
 theorem objFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {o : Obj ι} (ho : objOf c = some o)
     {n : Nat} {W : WorldT n} {v : Val} (hv : clauseSem G c n W v) :
     ∃ fs, v = .objAt fs .absent ∧ ObjFacts G o n W fs := by
+  obtain ⟨hv, -⟩ := hv
   unfold objOf at ho
   split at ho
   · rename_i a bs vs os ms ks
@@ -321,7 +375,8 @@ theorem objFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {o : Obj ι}
 theorem emptyClause_ownData {G : NormalGraph ι} {c : Clause (List ι)} (he : emptyClause c = true)
     {n : Nat} {W : WorldT n} {v : Val} (hv : clauseSem G c n W v) (h : List Tm) :
     ownData h v = some [] ∧ isVal v = true := by
-  cases c <;> simp [emptyClause] at he <;> simp only [clauseSem, semWithArgs] at hv
+  obtain ⟨hv, -⟩ := hv
+  cases c <;> simp [emptyClause] at he <;> simp only [semWithArgs] at hv
   · subst hv; exact ⟨rfl, rfl⟩
   · rcases hv with rfl | rfl <;> exact ⟨rfl, rfl⟩
   · rename_i b; subst hv; cases b <;> exact ⟨rfl, rfl⟩
@@ -404,7 +459,7 @@ theorem noStore_sound {G : NormalGraph ι} {T : List ι} (h : noStore G T = true
     {n : Nat} {W : WorldT n} {ls : List (Option Nat)} : ¬ meaning G T n W (.arr ls) := by
   intro hm
   simp only [noStore, Bool.and_eq_true, List.all_eq_true] at h
-  obtain ⟨c, hc, hs⟩ := (expand_sem G T h.1 _ _ _).mp hm
+  obtain ⟨c, hc, hs, -⟩ := (expand_sem G T h.1 _ _ _).mp hm
   have hw := h.2 c hc
   cases c with
   | nul => simp only [clauseSem, semWithArgs, nulT] at hs; cases hs
@@ -1204,7 +1259,13 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
     have hbounds : ∀ K ∈ ks, ownKeysT K j U (.objAt (slots h.length (ps.map Prod.fst)) .absent) := by
       intro K hKm
       exact ⟨_, rfl, fun q hq => hK K hKm q.1 (slots_fst_mem hq)⟩
-    refine (expand_sem G R (plain_of_mem_expand hcr) j U _).mpr ⟨_, hcr, ?_⟩
+    have hstore : (slots h.length (ps.map Prod.fst)).lookup CallArguments.arrayStoreField = none := by
+      apply lookup_slots_none
+      intro hm
+      obtain ⟨e, he, hk⟩ := List.mem_map.mp hm
+      exact mergeParts_store hparts e he hk
+    refine (expand_sem G R (plain_of_mem_expand hcr) j U _).mpr
+      ⟨_, hcr, ?_, realmInvariant_of_lookup hstore⟩
     rcases hshape with rfl | ⟨rfl, hne⟩
     · simp only [clauseSem, semWithArgs]
       exact ⟨hrefs, hviews, hopt, MethodMembers.methodT_nil _ _ _, hbounds⟩

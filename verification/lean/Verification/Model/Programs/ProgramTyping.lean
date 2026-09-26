@@ -28,12 +28,24 @@ theorem Represents.plain {G : NormalGraph ι} {A c} (hr : Represents G A c) :
 theorem represents_sem {G : NormalGraph ι} {A c} (hr : Represents G A c) (n W v) :
     meaning G A n W v ↔ clauseSem G c n W v := by
   rw [expand_sem G A hr.plain, show expand G A = [c] from hr]
-  simp [semList, setSem]
+  simp [setSem]
+
+/-- A member of a represented type is a member of its clause. -/
+theorem represents_raw {G : NormalGraph ι} {A c} (hr : Represents G A c) (n W v) :
+    meaning G A n W v → semWithArgs (meaning G) (argMeaning G) c n W v :=
+  fun h => ((represents_sem hr n W v).mp h).1
+
+/-- A member of a clause that is not a record's is a member of the type it
+represents: the realm asks nothing of it. -/
+theorem represents_back {G : NormalGraph ι} {A c} (hr : Represents G A c) (n W v)
+    (hc : c.record = false := by rfl) :
+    semWithArgs (meaning G) (argMeaning G) c n W v → meaning G A n W v :=
+  fun h => (represents_sem hr n W v).mpr ⟨h, realmInvariant_of_not_record hc n W v⟩
 
 /-- A value of a class's key clause is a key the class admits, by the
 `ToPropertyKey` a computed key's step applies. -/
 theorem keyClause_admits {G : NormalGraph ι} {K : IndexKeys} {n W v}
-    (h : clauseSem G (keyClause K) n W v) :
+    (h : semWithArgs (meaning G) (argMeaning G) (keyClause K) n W v) :
     ∃ f, propertyKey v = some f ∧ K.Admits f := by
   cases K
   · obtain ⟨s, rfl⟩ := h; exact ⟨_, rfl, trivial⟩
@@ -193,6 +205,117 @@ def freeMapOf [DecidableEq ι] (G : NormalGraph ι) (D : List ι) : Nat → Free
 
 /-- How far to follow a graph's rows. -/
 def closureFuel : Nat := 4096
+
+/-! ### The realm's prototype type
+
+The array invariant reads `ArrayProto` at one fixed assignment
+(`ParameterInterpretation.realmAt`); a type reading no parameter row means the
+same at every assignment, which a rule relating the invariant to a type checks
+of the realm's prototype type. -/
+
+/-- The realm's prototype type reads no parameter row: a checked free map of
+the rows it reaches gives it none. -/
+def realmFree [DecidableEq ι] (G : NormalGraph ι) (P : Ty ι) : Bool :=
+  let D := readsFrom G closureFuel P
+  let V := freeMapOf G D closureFuel []
+  FreeOk G D V && P.all fun l => D.contains l && (fv V l).isEmpty
+
+/-- Such a type means at the graph's assignment what the invariant reads. -/
+theorem realmFree_meaning [DecidableEq ι] {G : NormalGraph ι} {P : Ty ι}
+    (h : realmFree G P = true) (n W v) : meaning G P n W v ↔ realmValues G P n W v := by
+  simp only [realmFree, Bool.and_eq_true, List.all_eq_true, List.contains_iff_mem,
+    List.isEmpty_iff] at h
+  obtain ⟨hF, hP⟩ := h
+  have heq : ∀ l ∈ P, normalDenote G l = qDenoteWithArgs G (mixedParameters G)
+      (ParameterAssignment.empty .mixed, l) := fun l hl =>
+    agree_freeWith hF (mixedParameters G) (mixed_respectsFree hF) G.env _ l (hP l hl).1
+      (fun p hp => by rw [(hP l hl).2] at hp; cases hp)
+  constructor
+  · rintro ⟨l, hl, hv⟩
+    refine ⟨l, hl, ?_⟩
+    show qDenoteWithArgs G (mixedParameters G) (ParameterAssignment.empty .mixed, l) n W v
+    rw [← heq l hl]; exact hv
+  · rintro ⟨l, hl, hv⟩
+    refine ⟨l, hl, ?_⟩
+    change qDenoteWithArgs G (mixedParameters G) (ParameterAssignment.empty .mixed, l) n W v at hv
+    rw [← heq l hl] at hv; exact hv
+
+/-- A type whose every clause is a store's. -/
+def storeTy (G : NormalGraph ι) (S : Ty ι) : Bool :=
+  G.plainTy S && (expand G S).all fun c => match c with | .list .. => true | _ => false
+
+/-- A store type's members are stores of values. -/
+theorem storeTy_sound {G : NormalGraph ι} {S : Ty ι} (h : storeTy G S = true) {n W v}
+    (hv : meaning G S n W v) : anyStoreT n W v := by
+  simp only [storeTy, Bool.and_eq_true, List.all_eq_true] at h
+  obtain ⟨c, hc, hv, -⟩ := (expand_sem G S h.1 n W v).mp hv
+  have hl := h.2 c hc
+  cases c with
+  | list a bs =>
+    refine listT_anyStore (fun A hA j W' u hu => ?_) hv.1
+    simp only [tupleFams] at hA
+    rcases hA with hA | hA | hA
+    · obtain ⟨B, -, rfl⟩ := List.mem_map.mp hA; exact meaning_value hu
+    · obtain ⟨B, -, rfl⟩ := List.mem_map.mp hA; exact meaning_value hu
+    · obtain ⟨B, -, hB⟩ := Option.map_eq_some_iff.mp hA; subst hB; exact meaning_value hu
+  | _ => simp at hl
+
+/-- **An allocation meets the realm's invariant**: it owns no store, or it is
+an array of the realm, holding a store and the realm's prototype and owning
+no key that prototype provides. -/
+def allocRealm [DecidableEq ι] (G : NormalGraph ι) (parts : List (PropKey × Ty ι)) : Bool :=
+  !parts.any (·.1 == CallArguments.arrayStoreField) ||
+  match G.realm with
+  | none => true
+  | some r => realmFree G r.proto && parts.all (fun p => !r.keys.contains p.1) &&
+      parts.any (fun p => p.1 == CallArguments.arrayStoreField && storeTy G p.2) &&
+      parts.any (fun p => p.1 == CallArguments.protoField && p.2 == r.proto)
+
+theorem allocRealm_sound [DecidableEq ι] {G : NormalGraph ι} {parts : List (PropKey × Ty ι)}
+    (hok : allocRealm G parts = true) (hnd : (parts.map Prod.fst).Nodup) (c : Clause (Ty ι))
+    {k : Nat} {V : WorldT k} {base : Nat}
+    (hrec : recT ((parts.map Prod.fst).zip (parts.map fun p => meaning G p.2)) k V
+      (.objAt (slots base (parts.map Prod.fst)) .absent)) :
+    realmInvariant G (realmValues G) c k V (.objAt (slots base (parts.map Prod.fst)) .absent) := by
+  have hmem : ∀ p ∈ parts, (p.1, meaning G p.2) ∈ (parts.map Prod.fst).zip (parts.map fun p => meaning G p.2) := by
+    intro p hp
+    rw [List.zip_map']
+    exact List.mem_map.mpr ⟨p, hp, rfl⟩
+  unfold allocRealm at hok
+  cases hs : parts.any (·.1 == CallArguments.arrayStoreField)
+  · apply realmInvariant_of_lookup
+    apply ObjectMerge.lookup_slots_none
+    intro hm
+    obtain ⟨p, hp, hk⟩ := List.mem_map.mp hm
+    have := List.any_eq_false.mp hs p hp
+    simp [hk] at this
+  · simp only [hs, Bool.not_true, Bool.false_or] at hok
+    cases hr : G.realm with
+    | none => exact realmInvariant_of_none hr k V _
+    | some r =>
+      rw [hr] at hok
+      simp only [Bool.and_eq_true, List.all_eq_true, List.any_eq_true, Bool.not_eq_true',
+        beq_iff_eq] at hok
+      obtain ⟨⟨⟨hfree, hkeys⟩, ⟨ps, hps, hsk, hst⟩⟩, ⟨pp, hpp, hpk, hpr⟩⟩ := hok
+      unfold realmInvariant
+      rw [hr]
+      cases c.record
+      · trivial
+      · intro flds he _
+        cases he
+        refine ⟨fun f T hm => ?_, ⟨_, rfl, fun q hq => ?_⟩⟩
+        · simp only [List.mem_cons, Prod.mk.injEq, List.not_mem_nil, or_false] at hm
+          rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+          · obtain ⟨flds, l, c, he, hl, hw, hag⟩ := recT_at (hmem ps hps) hrec
+            refine ⟨flds, l, c, he, by rw [← hsk]; exact hl, hw, fun j hj W' u hu => ?_⟩
+            exact storeTy_sound hst ((hag j hj W' u).mp hu)
+          · obtain ⟨flds, l, c, he, hl, hw, hag⟩ := recT_at (hmem pp hpp) hrec
+            refine ⟨flds, l, c, he, by rw [← hpk]; exact hl, hw, fun j hj W' u hu => ?_⟩
+            rw [← hpr]
+            exact (realmFree_meaning (hpr ▸ hfree) j W' u).mp ((hag j hj W' u).mp hu)
+        · obtain ⟨p, hp, hq1⟩ := List.mem_map.mp (ObjectMerge.slots_fst_mem hq)
+          simp only [KeyBound.admits, hq1 ▸ hkeys p hp]
+          rfl
 
 /-- The rows capture types reach, and those rows' free parameter rows: the
 domain and map a generic closure's captures are checked over. -/
@@ -769,7 +892,7 @@ theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
 
 theorem answers_sound {G : NormalGraph ι} {A tag q n W v}
     (hq : Answers G A tag q) (hv : meaning G A n W v) : tagHolds tag v = q := by
-  obtain ⟨c, hc, hv⟩ := (expand_sem G A hq.1 n W v).mp hv
+  obtain ⟨c, hc, hv, -⟩ := (expand_sem G A hq.1 n W v).mp hv
   exact tagClause_sound (hq.2 c hc) hv
 
 theorem inAnswer_protoFree {S : α → Fam} {P : α → ArgFam} {c : Clause α} {k : PropKey} {q n W v}
@@ -821,7 +944,7 @@ theorem tagClause_protoFree {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
 /-- An answered test's values read no prototype. -/
 theorem answers_protoFree {G : NormalGraph ι} {A tag q n W v}
     (hq : Answers G A tag q) (hv : meaning G A n W v) : protoFree tag v = true := by
-  obtain ⟨c, hc, hv'⟩ := (expand_sem G A hq.1 n W v).mp hv
+  obtain ⟨c, hc, hv', -⟩ := (expand_sem G A hq.1 n W v).mp hv
   exact tagClause_protoFree (hq.2 c hc) hv'
 
 /-- An answered test's own answer is the answer of a weaker observation too:
@@ -837,7 +960,7 @@ theorem answers_weak {G : NormalGraph ι} {A tag q n W v}
 change it. -/
 theorem answers_heap {G : NormalGraph ι} {A tag q n W v} (h : Heap)
     (hq : Answers G A tag q) (hv : meaning G A n W v) : tagHoldsIn h tag v = q := by
-  obtain ⟨c, hc, hv'⟩ := (expand_sem G A hq.1 n W v).mp hv
+  obtain ⟨c, hc, hv', -⟩ := (expand_sem G A hq.1 n W v).mp hv
   rw [tagHoldsIn_of_protoFree (tagClause_protoFree (hq.2 c hc) hv')]
   exact answers_sound hq hv
 
@@ -1146,10 +1269,10 @@ theorem restsT_of_restSigs {G : NormalGraph ι} {F : Ty ι} {s} (hs : s ∈ rest
   unfold restSigs at hs
   split at hs
   · rename_i L S hF
-    have hv' := ((represents_sem hF n W v).mp hv).2
+    have hv' := ((represents_raw hF n W v) hv).2
     exact restsT_select hv' (List.mem_map_of_mem hs)
   · rename_i P Ps L S hF
-    have hv' := ((represents_sem hF n W v).mp hv).2
+    have hv' := ((represents_raw hF n W v) hv).2
     exact restsT_select hv' (List.mem_map_of_mem hs)
   · cases hs
 
@@ -1195,7 +1318,7 @@ theorem memberOf_at {G : NormalGraph ι} {O : Ty ι} {k : PropKey} {m : MethodMe
     rename_i ms hO
     have hmem := List.mem_of_find?_eq_some hm
     have hkey : m.key = k := by simpa using List.find?_some hm
-    have hs := (represents_sem (show Represents G O _ from hO) n W v).mp hv
+    have hs := represents_raw (show Represents G O _ from hO) n W v hv
     exact ⟨hkey, MethodMembers.methodT_at (List.mem_map_of_mem hmem)
       (by first | exact hs.2.2.2.1 | exact hs.2.2.2.2.1)⟩
 
@@ -1242,10 +1365,10 @@ theorem callsT_of_callSigs {G : NormalGraph ι} {F : Ty ι} {p} (hp : p ∈ call
   unfold callSigs at hp
   split at hp
   · rename_i L S hF
-    have hv' := ((represents_sem hF n W v).mp hv).1
+    have hv' := ((represents_raw hF n W v) hv).1
     exact callsT_select hv' (List.mem_map_of_mem hp)
   · rename_i P Ps L S hF
-    have hv' := ((represents_sem hF n W v).mp hv).1.2
+    have hv' := ((represents_raw hF n W v) hv).1.2
     exact callsT_select hv' (List.mem_map_of_mem hp)
   · cases hp
 
@@ -1318,7 +1441,7 @@ theorem ArgsT_scoped {G : NormalGraph ι} {As : List (Ty ι)} {j U args}
 
 theorem undef_of_label {G : NormalGraph ι} {E : Ty ι} {i : ι} (hi : i ∈ E)
     (hr : Represents G [i] .undef) (j : Nat) (U : WorldT j) : meaning G E j U .undef := by
-  obtain ⟨i', hi', hv⟩ := (represents_sem hr j U .undef).mpr rfl
+  obtain ⟨i', hi', hv⟩ := (represents_back hr j U .undef) rfl
   simp only [List.mem_singleton] at hi'
   rw [hi'] at hv
   exact ⟨i, hi, hv⟩
@@ -1336,7 +1459,7 @@ theorem spreadsInto_sound {G : NormalGraph ι} {S E : Ty ι} (h : SpreadsInto G 
         rintro n W v ⟨k, hk, hv⟩
         exact ⟨k, h A' (positionTy_mem hA') k hk, hv⟩)
     intro n W heap v hh hv
-    exact hl n W heap v hh ((represents_sem hS n W v).mp hv).1
+    exact hl n W heap v hh ((represents_raw hS n W v) hv).1
   · exact h.elim
 
 /-- A prefix covering a signature's first fixed positions, then its element
@@ -1369,7 +1492,7 @@ theorem restStore_safe {G : NormalGraph ι} {S P : Ty ι} (hS : RestStore G S P)
     have := RestCalls.argument_alloc_safe hpos hw hh ((mixed_pack_args hP).mp he) hvals
     apply Safe_mono n _ W h _ this
     intro k _ V v hv
-    exact (represents_sem hS k V v).mpr ⟨by simpa [tupleFams] using hv, by simp⟩
+    exact (represents_back hS k V v) ⟨by simpa [tupleFams] using hv, by simp⟩
   · exact hS.elim
 
 /-- The parts a variadic call writes past its fixed actuals fit its rest. With
@@ -1629,7 +1752,7 @@ theorem namedMembers_sem {G : NormalGraph ι} {A : Ty ι} {c : Clause (Ty ι)}
     (hc : namedMembers c = some (fs, vs)) {n W v} (h : meaning G A n W v) :
     recT (ReferenceConjunctions.famsOf (meaning G) fs) n W v ∧
       viewT (ReferenceConjunctions.famsOf (meaning G) vs) n W v := by
-  have hs := (represents_sem hr n W v).mp h
+  have hs := (represents_raw hr n W v) h
   match c, hc with
   | .refs _ [] _ _ _ _, rfl => exact ⟨hs.1.1, hs.2.1⟩
   | .dict _ [] _ _ _ _ _ _, rfl => exact ⟨hs.1.1, hs.2.1⟩
@@ -1751,6 +1874,7 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
       (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) →
       Represents G Ref (.refs (parts.map fun p => (p.1, p.2.1)) [] [] [] [] ks) →
       (∀ K ∈ ks, ∀ p ∈ parts, K.admits p.1 = true) →
+      allocRealm G (parts.map fun p => (p.1, p.2.1)) = true →
       HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
   /-- **Allocation at a dictionary.** A literal allocated directly at a
   dictionary type: its fields are the clause's first operand, with no key the
@@ -1763,6 +1887,7 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   | allocDict {parts : List (PropKey × Ty ι × Tm)} {ix cs : List (IndexKeys × Ty ι)}
       {os : List (OptionalField (Ty ι))} :
       (parts.map Prod.fst).Nodup → CallArguments.protoField ∉ parts.map Prod.fst →
+      CallArguments.arrayStoreField ∉ parts.map Prod.fst →
       (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) →
       Represents G Ref (.dict (parts.map fun p => (p.1, p.2.1)) [] [] ix os [] [] cs) →
       (∀ p ∈ parts, ∀ y ∈ ix ++ cs, y.1.may p.1 = true → p.2.1 = y.2) →
@@ -1991,34 +2116,34 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     exact value_safe _ _ _ _ _ (meaning_value (he.2 _ _ hi)).1 (he.2 _ _ hi)
   | nul hr | undef hr =>
     intro n W h ρ he hw hh
-    exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr rfl)
+    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) rfl)
   | tru hr =>
     intro n W h ρ he hw hh
-    exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr (Or.inl rfl))
+    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) (Or.inl rfl))
   | fls hr =>
     intro n W h ρ he hw hh
-    exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr (Or.inr rfl))
+    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) (Or.inr rfl))
   | truLit hr | flsLit hr =>
     intro n W h ρ he hw hh
-    exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr rfl)
+    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) rfl)
   | numLit hr =>
     intro n W h ρ he hw hh
-    exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr rfl)
+    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) rfl)
   | @num _ _ b hr =>
     intro n W h ρ he hw hh
-    exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr ⟨b, rfl⟩)
+    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) ⟨b, rfl⟩)
   | bigintLit hr =>
     intro n W h ρ he hw hh
-    exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr rfl)
+    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) rfl)
   | @bigint _ _ i hr =>
     intro n W h ρ he hw hh
-    exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr ⟨i, rfl⟩)
+    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) ⟨i, rfl⟩)
   | strLit hr =>
     intro n W h ρ he hw hh
-    exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr rfl)
+    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) rfl)
   | @str _ _ s hr =>
     intro n W h ρ he hw hh
-    exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr ⟨s, rfl⟩)
+    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) ⟨s, rfl⟩)
   | @funE Γ F L S arity b hr hlen hb ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, Nat.zero_add]
@@ -2033,7 +2158,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
           List.mem_append_right _ (List.mem_map.mpr ⟨q, hq, rfl⟩)
         exact ⟨by simpa using hlen _ hrow, List.mem_map.mpr ⟨_, hrow, rfl⟩⟩)
       rfl hw hh rfl
-    exact Safe_mono n (fun k _ U v hv => (represents_sem hr k U v).mpr
+    exact Safe_mono n (fun k _ U v hv => (represents_back hr k U v)
       ⟨⟨hv.2.1.1, fun p hp => hv.2.1.2 p (by
         obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
         exact List.mem_map.mpr ⟨q, List.mem_append_left _ hq, rfl⟩)⟩, hv.2.2⟩) W h _ hs
@@ -2070,7 +2195,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       obtain ⟨c', hc', rfl⟩ := hv
       cases hc.symm.trans hc'
       exact hcapv c (List.mem_of_getElem? hc)
-    refine (represents_sem hr j V _).mpr ⟨?_, ?_⟩
+    refine (represents_back hr j V _) ⟨?_, ?_⟩
     · exact callsT_of_graph _ (fun p hp => hspec p (List.mem_append_left _ hp)) henv hsc
     · exact restsT_of_graph _ (fun s hs => hspec _
         (List.mem_append_right _ (List.mem_map.mpr ⟨s, hs, rfl⟩))) henv hsc
@@ -2134,14 +2259,14 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       (by intro p hp; obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp; exact ih q hq)
     apply make_rule nulT_adm n W h _ .nul rfl hw hh rfl
     intro j hj V hx _
-    refine (represents_sem hr j V _).mpr ⟨ctorsT_of_body ?_ ?_, ctorRestsT_nil ?_⟩
+    refine (represents_back hr j V _) ⟨ctorsT_of_body ?_ ?_, ctorRestsT_nil ?_⟩
     · simpa [Scoped, Nat.add_comm] using hcode.1
     · intro p hp i hi V' hx' hu' heap hok args ha
       obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
       have hWV : WExt (trunc i (by omega) W) V' := WExt_trans
         (by simpa only [trunc_trunc] using WExt_trunc (Nat.le_of_lt hi) hx) hx'
       exact hcode.2 _ (List.mem_map.mpr ⟨(U, q.1, q.2), List.mem_map.mpr ⟨q, hq, rfl⟩, rfl⟩)
-        i (by omega) V' hWV hu' heap hok .undef ((represents_sem hu i V' _).mpr rfl) args
+        i (by omega) V' hWV hu' heap hok .undef ((represents_back hu i V' _) rfl) args
         (by simpa using ha)
     · exact ⟨_, _, _, rfl, by simpa [Scoped, Nat.add_comm] using hcode.1⟩
   | @construct Γ f F B L xs Us hf hr hp hx hu ihf ihx ihu =>
@@ -2157,7 +2282,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     · apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh)
       intro k hk U v hv
       simpa only [List.map_map, Function.comp_def, List.map_append] using
-        ctorsT_select ((represents_sem hr k U v).mp hv).1
+        ctorsT_select ((represents_raw hr k U v) hv).1
           (List.mem_map.mpr ⟨(xs.map Prod.fst ++ Us, B), hp,
             by simp [List.map_append, List.map_map, Function.comp_def]⟩)
     · intro p hp'
@@ -2204,7 +2329,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
         (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_valOnly G r.2.1)
         hargs)
       hu hok (ArgsT_zip hargs)
-    apply Safe_mono j (fun k _ V v hv => (represents_sem hr k V v).mpr
+    apply Safe_mono j (fun k _ V v hv => (represents_back hr k V v)
       ⟨⟨⟨?_, by simp⟩, hv.2⟩, hv.2.1, by simp⟩) U heap _ hs
     case _ =>
       have hfam : ReferenceConjunctions.famsOf (meaning G) (parts.map fun p => (p.1, p.2.1))
@@ -2228,7 +2353,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     · apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh)
       intro k hk U v hv
       simpa only [List.map_map,Function.comp_def,List.map_append] using
-        callsT_select (((represents_sem hr k U v).mp hv).1.2)
+        callsT_select (((represents_raw hr k U v) hv).1.2)
           (List.mem_map.mpr ⟨(Rt, xs.map Prod.fst ++ Us,B), hp,
             by simp [List.map_append, List.map_map, Function.comp_def]⟩)
     · intro j hj U hx hu' heap hok
@@ -2246,7 +2371,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
     exact bag_read (meaning_valOnly G A) (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩)
-      ((represents_sem hr j U v).mp ha').1.1.1 hu hok
+      ((represents_raw hr j U v) ha').1.1.1 hu hok
   | @writeCallable Γ a Ref P Ps L S f A b N ha hr hm hb hn iha ihb =>
     intro n W h ρ he hw hh
     apply bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 Raises.writeC1 n W h _ hw hh
@@ -2256,9 +2381,9 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       (ihb j U heap ρ (he.transfer j hj U hx) hu hok)
     intro k hk V hy hv heap' bv hok' hbval hb'
     have ha'' := (meaning_adm G Ref).mono k _ V hy av ((meaning_adm G Ref).down_le j k hk U av ha')
-    apply Safe_mono k (fun i _ X v hval => (represents_sem hn i X v).mpr hval)
+    apply Safe_mono k (fun i _ X v hval => (represents_back hn i X v) hval)
     exact bag_write (meaning_adm G A) (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩)
-      ((represents_sem hr k V av).mp ha'').1.1.1 hb' hbval hv hok'
+      ((represents_raw hr k V av) ha'').1.1.1 hb' hbval hv hok'
   | @app Γ f r F Rt B L S xs Us hf hr hp hrt ha hu ihf ihrt iha ihu =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
@@ -2275,7 +2400,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     · apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh)
       intro k hk U v hv
       simpa only [List.map_map,Function.comp_def,List.map_append] using
-        callsT_select ((represents_sem hr k U v).mp hv).1
+        callsT_select ((represents_raw hr k U v) hv).1
           (List.mem_map.mpr ⟨(Rt, xs.map Prod.fst ++ Us,B), hp,
             by simp [List.map_append, List.map_map, Function.comp_def]⟩)
     · intro j hj U hx hu' heap hok
@@ -2301,7 +2426,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       have he' := ((he.transfer (k+1) hj U hx).push ha').transfer k (Nat.le_succ k)
         (trunc k (Nat.le_succ k) U) (WExt_refl _)
       exact ihb k _ heap (push av ρ) he' (WorldAdm_trunc _ hu) (HeapOk_trunc k U heap hok)
-  | @alloc Γ Ref parts ks hnd hp hr hbound ih =>
+  | @alloc Γ Ref parts ks hnd hp hr hbound hreal ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
     have hmap : (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2)).map Prod.snd
@@ -2331,17 +2456,21 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
         hargs)
       hu hok (ArgsT_zip hargs)
     intro k hk V hy hrec
-    refine (represents_sem hr k V _).mpr ⟨⟨?_, by simp⟩, fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm,
-      ⟨by simpa [ReferenceConjunctions.famsOf] using optT_nil, MethodMembers.methodT_nil _ _ _,
-        fun K hK => ownKeysT_slots fun n hn => by
-          obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hn
-          exact hbound K hK p hp⟩⟩
     have hfam : ReferenceConjunctions.famsOf (meaning G) (parts.map fun p => (p.1, p.2.1))
         = (parts.map Prod.fst).zip (parts.map fun p => meaning G p.2.1) := by
       simp [ReferenceConjunctions.famsOf, List.map_map, Function.comp_def, List.zip_map']
-    rw [hfam]
-    exact hrec
-  | @allocDict Γ Ref parts ix cs os hnd hproto hp hr hix habs _ ih =>
+    have hrec' := hrec
+    rw [← hfam] at hrec'
+    refine (represents_sem hr k V _).mpr ⟨⟨⟨hrec', by simp⟩, fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm,
+      ⟨by simpa [ReferenceConjunctions.famsOf] using optT_nil, MethodMembers.methodT_nil _ _ _,
+        fun K hK => ownKeysT_slots fun n hn => by
+          obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hn
+          exact hbound K hK p hp⟩⟩, ?_⟩
+    have hinv := allocRealm_sound hreal (by simpa [List.map_map, Function.comp_def] using hnd)
+      (.refs (parts.map fun p => (p.1, p.2.1)) [] [] [] [] ks) (base := heap.length) (k := k) (V := V)
+      (by simpa [List.map_map, Function.comp_def] using hrec)
+    simpa [List.map_map, Function.comp_def] using hinv
+  | @allocDict Γ Ref parts ix cs os hnd hproto hstore hp hr hix habs _ ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
     have hmap : (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2)).map Prod.snd
@@ -2392,7 +2521,9 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       cases hqe
       rw [hix p hp y hy (IndexKeys.may_of_admits hk)]
       exact fun _ _ _ _ => Iff.rfl
-    refine (represents_sem hr k V _).mpr ⟨⟨?_, by simp⟩,
+    have hrec' := hrec
+    rw [← hfam] at hrec'
+    refine (represents_sem hr k V _).mpr ⟨⟨⟨hrec', by simp⟩,
       fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm,
       ⟨fun y hy => dictCellT_view (hcell y (List.mem_append_left _ hy)),
         fun y hy => hcell y (List.mem_append_right _ hy)⟩,
@@ -2401,9 +2532,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
         rw [show (OptionalField.map (meaning G) o').key = o'.key from rfl,
           slots_lookup_none (habs o' ho')] at hl
         cases hl⟩, MethodMembers.methodT_nil _ _ _,
-      fun K hK => by simp at hK⟩
-    rw [hfam]
-    exact hrec
+      fun K hK => by simp at hK⟩, realmInvariant_of_lookup (slots_lookup_none hstore)⟩
   | @read Γ a Ref c fs vs f A ha hr hc hm ih =>
     intro n W h ρ he hw hh
     apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
@@ -2422,7 +2551,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     intro n W h ρ he hw hh
     apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
-    have hs := (represents_sem hr j U v).mp ha'
+    have hs := (represents_raw hr j U v) ha'
     have hloc : ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr j), v = .objAt flds .absent ∧
         flds.lookup CallArguments.protoField = some l ∧ lookup U l = some c ∧
         ∀ (i : Nat) (hi : i < j) (V : WorldT i) (u : Val), c i hi V u → meaning G P i V u := by
@@ -2435,7 +2564,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     have hmiss := ownKeysT_lookup (hs.2.2.2.2 K hK) hf
     apply read_proto_rule j U heap l hu hok hmiss hpf hl hag
     intro i V h' hV hh' u hu
-    have hp := (represents_sem hP i V u).mp hu
+    have hp := (represents_raw hP i V u) hu
     rcases List.mem_append.mp hm with hm | hm
     · obtain ⟨flds', l', c', rfl, hf', hl', hag'⟩ :=
         recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) hp.1.1
@@ -2447,10 +2576,10 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     intro n W h ρ he hw hh
     apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj V hx hv heap v hok hval ha'
-    have hs := (represents_sem hr j V v).mp ha'
+    have hs := (represents_raw hr j V v) ha'
     obtain ⟨flds, rfl, _⟩ := hs.1.1
     apply Safe_mono j (fun k _ X u hu => (meaning_append G A U k X u).mpr
-      (hu.elim Or.inl (fun h => Or.inr ((represents_sem hUnd k X u).mpr h)))) V heap _
+      (hu.elim Or.inl (fun h => Or.inr ((represents_back hUnd k X u) h)))) V heap _
       (read_optional_rule (meaning_valOnly G A) j V heap hv hok
         (optT_no_proto (List.mem_map_of_mem hm) hs.2.2.1)
         (fun l hl => by
@@ -2461,10 +2590,10 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     intro n W h ρ he hw hh
     apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj V hx hv heap v hok hval ha'
-    have hd := ((represents_sem hr j V v).mp ha').2.2.1.1 (K, A) hm
-    obtain ⟨flds, rfl, _⟩ := ((represents_sem hr j V v).mp ha').1.1
+    have hd := ((represents_raw hr j V v) ha').2.2.1.1 (K, A) hm
+    obtain ⟨flds, rfl, _⟩ := ((represents_raw hr j V v) ha').1.1
     apply Safe_mono j (fun k _ X u hu => (meaning_append G A U k X u).mpr
-      (hu.elim Or.inl (fun h => Or.inr ((represents_sem hUnd k X u).mpr h)))) V heap _
+      (hu.elim Or.inl (fun h => Or.inr ((represents_back hUnd k X u) h)))) V heap _
       (read_dict_rule (meaning_valOnly G A) j V heap hv hok (IndexKeys.surely_admits hsure) hd)
   | @indexDict Γ a Ref fs vs ix os ms ks cs key Kt A U K KK ha hr hk hStr hwithin hm hUnd iha ihk =>
     intro n W h ρ he hw hh
@@ -2476,11 +2605,11 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     intro k hk X hy hX heap' kv hok' hkv hk'
     have ha'' := (meaning_adm G Ref).mono k _ X hy av
       ((meaning_adm G Ref).down_le j k hk V av ha')
-    obtain ⟨f, hkey, hadmits⟩ := keyClause_admits ((represents_sem hStr k X kv).mp hk')
-    have hd := dictViewT_within hwithin (((represents_sem hr k X av).mp ha'').2.2.1.1 (K, A) hm)
-    obtain ⟨flds, rfl, _⟩ := ((represents_sem hr k X av).mp ha'').1.1
+    obtain ⟨f, hkey, hadmits⟩ := keyClause_admits ((represents_raw hStr k X kv) hk')
+    have hd := dictViewT_within hwithin (((represents_raw hr k X av) ha'').2.2.1.1 (K, A) hm)
+    obtain ⟨flds, rfl, _⟩ := ((represents_raw hr k X av) ha'').1.1
     apply Safe_mono k (fun i _ Y u hu => (meaning_append G A U i Y u).mpr
-      (hu.elim Or.inl (fun h => Or.inr ((represents_sem hUnd i Y u).mpr h)))) X heap' _
+      (hu.elim Or.inl (fun h => Or.inr ((represents_back hUnd i Y u) h)))) X heap' _
       (index_dict_rule (meaning_valOnly G A) k X heap' hX hok' hkey hadmits hd)
   | @arrLit Γ L T xs hr hreq hbound hpos hx ih =>
     intro n W h ρ he hw hh
@@ -2509,7 +2638,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
         hargs)
       hu hok (ArgsT_zip hargs)
     intro k hk V hy hl
-    refine (represents_sem hr k V _).mpr ⟨?_, by simp⟩
+    refine (represents_back hr k V _) ⟨?_, by simp⟩
     rw [hlen]
     apply listT_alloc
     · simpa [tupleFams] using hreq
@@ -2531,9 +2660,9 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       (ihi j U heap ρ (he.transfer j hj U hx) hu hok)
     intro m hm V hy hv heap' iv hok' hival hi'
     have ha'' := (meaning_adm G L).mono m _ V hy av ((meaning_adm G L).down_le j m hm U av ha')
-    obtain ⟨ls, rfl, -, -, -, hreq, -, -⟩ := ((represents_sem hr m V av).mp ha'').1
+    obtain ⟨ls, rfl, -, -, -, hreq, -, -⟩ := ((represents_raw hr m V av) ha'').1
     simp only [tupleFams, List.length_map, List.getElem?_map] at hreq
-    have hb : iv = .num b := (represents_sem hI m V iv).mp hi'
+    have hb : iv = .num b := (represents_raw hI m V iv) hi'
     subst hb
     obtain ⟨l, c, hl, hw', hag⟩ := hreq k (meaning G A) (by simp [hA])
     exact elem_read_rule (meaning_valOnly G A) m V heap' l hv hok' (by simp [elemLoc, hk, hl]) hw'
@@ -2546,12 +2675,12 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       (ihi j U' heap ρ (he.transfer j hj U' hx) hu hok)
     intro m hm V hy hv heap' iv hok' hival hi'
     have ha'' := (meaning_adm G L).mono m _ V hy av ((meaning_adm G L).down_le j m hm U' av ha')
-    obtain ⟨ls, rfl, -, -, -, -, hopt, hrest⟩ := ((represents_sem hr m V av).mp ha'').1
+    obtain ⟨ls, rfl, -, -, -, -, hopt, hrest⟩ := ((represents_raw hr m V av) ha'').1
     simp only [tupleFams, List.length_map, List.getElem?_map] at hopt hrest
-    have hb : iv = .num b := (represents_sem hI m V iv).mp hi'
+    have hb : iv = .num b := (represents_raw hI m V iv) hi'
     subst hb
     have hundef : ∀ m' (U'' : WorldT m'), meaning G (A ++ U) m' U'' .undef := fun m' U'' =>
-      (meaning_append G A U m' U'' _).mpr (Or.inr ((represents_sem hU m' U'' _).mpr rfl))
+      (meaning_append G A U m' U'' _).mpr (Or.inr ((represents_back hU m' U'' _) rfl))
     cases hloc : elemLoc ls b with
     | none => exact elem_absent_rule m V heap' hv hok' hloc hundef
     | some l =>
@@ -2593,12 +2722,12 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       (ihi j U' heap ρ (he.transfer j hj U' hx) hu hok)
     intro m hm V hy hv heap' iv hok' hival hi'
     have ha'' := (meaning_adm G L).mono m _ V hy av ((meaning_adm G L).down_le j m hm U' av ha')
-    obtain ⟨ls, rfl, -, -, -, -, -, hrest⟩ := ((represents_sem hr m V av).mp ha'').1
+    obtain ⟨ls, rfl, -, -, -, -, -, hrest⟩ := ((represents_raw hr m V av) ha'').1
     have hnum := answers_sound hq hi'
     obtain ⟨b, rfl⟩ : ∃ b, iv = .num b := by
       cases iv <;> simp [tagHolds] at hnum; exact ⟨_, rfl⟩
     have hundef : ∀ m' (U'' : WorldT m'), meaning G (E ++ U) m' U'' .undef := fun m' U'' =>
-      (meaning_append G E U m' U'' _).mpr (Or.inr ((represents_sem hU m' U'' _).mpr rfl))
+      (meaning_append G E U m' U'' _).mpr (Or.inr ((represents_back hU m' U'' _) rfl))
     cases hloc : elemLoc ls b with
     | none => exact elem_absent_rule m V heap' hv hok' hloc hundef
     | some l =>
@@ -2631,14 +2760,14 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     intro p hp X hz hxw heap'' vv hok'' hvval hv'
     have hav' := (meaning_adm G L).mono p _ X hz av ((meaning_adm G L).down_le m p hp V av
       ((meaning_adm G L).mono m _ V hy av ((meaning_adm G L).down_le j m hm U av ha')))
-    have hlist := ((represents_sem hr p X av).mp hav').1
+    have hlist := ((represents_raw hr p X av) hav').1
     obtain ⟨ls, rfl, -, hlen, -, hreq, hopt, hrest⟩ := hlist
     simp only [tupleFams, List.length_map, List.getElem?_map] at hreq hopt hrest hlen
     have rwContract : ∀ P Q : Prop, SlotContract T.readonly P Q ↔ (P ↔ Q) := by
       intro P Q; simp [SlotContract, hro, iff_def]
     simp only [rwContract] at hreq hopt hrest
     have hb : iv = .num b := (meaning_adm G I).mono p _ X hz iv ((meaning_adm G I).down_le m p hp V iv hi')
-      |> (represents_sem hI p X iv).mp
+      |> (represents_raw hI p X iv)
     subst hb
     have hkeep : ∀ j' (hj' : j' < p) (U' : WorldT j'), WExt (trunc j' (Nat.le_of_lt hj') X) U' →
         meaning G L j' U' (.arr ls) := fun j' hj' U' hx' =>
@@ -2684,8 +2813,8 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     | none =>
       apply set_grow_rule (meaning_adm G A) p X heap'' vv hvval hxw hok'' hk hloc hv'
       intro j' hj' U' hx' hm'
-      refine (represents_sem hr j' U' _).mpr ⟨?_, by simp⟩
-      have hold := ((represents_sem hr j' U' _).mp (hkeep j' hj' U' hx')).1
+      refine (represents_back hr j' U' _) ⟨?_, by simp⟩
+      have hold := ((represents_raw hr j' U' _) (hkeep j' hj' U' hx')).1
       apply listT_grow hold
       · rw [positionFam_tupleFams, hA]; rfl
       · simp only [elemLoc, hk, Option.bind_some] at hloc; exact hloc
@@ -2695,8 +2824,8 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     intro n W h ρ he hw hh
     apply bind Tm.lenOf Step.lenC Raises.lenC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap av hok hav ha'
-    obtain ⟨ls, rfl, -⟩ := ((represents_sem hr j U av).mp ha').1
-    exact len_rule j U heap hu hok (fun m U' => (represents_sem hn m U' _).mpr ⟨_, rfl⟩)
+    obtain ⟨ls, rfl, -⟩ := ((represents_raw hr j U av) ha').1
+    exact len_rule j U heap hu hok (fun m U' => (represents_back hn m U' _) ⟨_, rfl⟩)
   | @lenStr Γ a S N ha hs hn ih =>
     intro n W h ρ he hw hh
     apply bind Tm.lenOf Step.lenC Raises.lenC n W h _ hw hh (ih n W h ρ he hw hh)
@@ -2704,7 +2833,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     have hstr := answers_sound hs ha'
     obtain ⟨s, rfl⟩ : ∃ s, av = .str s := by
       cases av <;> simp [tagHolds] at hstr; exact ⟨_, rfl⟩
-    exact len_str_rule j U heap hu hok (fun m U' => (represents_sem hn m U' _).mpr ⟨_, rfl⟩)
+    exact len_str_rule j U heap hu hok (fun m U' => (represents_back hn m U' _) ⟨_, rfl⟩)
   | @elemStr Γ a i S I T U ha hs hi hq hT hU iha ihi =>
     intro n W h ρ he hw hh
     apply bind (fun a => .elemAt a (instantiate 0 ρ i)) Step.elemC1 Raises.elemC1 n W h _ hw hh (iha n W h ρ he hw hh)
@@ -2720,8 +2849,8 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     obtain ⟨b, rfl⟩ : ∃ b, iv = .num b := by
       cases iv <;> simp [tagHolds] at hnum; exact ⟨_, rfl⟩
     exact elem_str_rule m V heap' hv hok'
-      (fun m' U'' t => (meaning_append G T U m' U'' _).mpr (Or.inl ((represents_sem hT m' U'' _).mpr ⟨t, rfl⟩)))
-      (fun m' U'' => (meaning_append G T U m' U'' _).mpr (Or.inr ((represents_sem hU m' U'' _).mpr rfl)))
+      (fun m' U'' t => (meaning_append G T U m' U'' _).mpr (Or.inl ((represents_back hT m' U'' _) ⟨t, rfl⟩)))
+      (fun m' U'' => (meaning_append G T U m' U'' _).mpr (Or.inr ((represents_back hU m' U'' _) rfl)))
   | @test Γ a A B k ha ht hf ih =>
     intro n W h ρ he hw hh
     apply bind (.test k) Step.testC Raises.testC n W h _ hw hh (ih n W h ρ he hw hh)
@@ -2731,8 +2860,8 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     | succ p =>
       apply Safe_mono (p+1) (fun m _ X v hv => ?_) U heap _ (test_value_safe k av hav p U heap hu hok)
       rcases hv with rfl | rfl
-      · exact expand_sem_mpr ⟨_, expand_sub ht, rfl⟩
-      · exact expand_sem_mpr ⟨_, expand_sub hf, rfl⟩
+      · exact expand_sem_mpr ⟨_, expand_sub ht, rfl, realmInvariant_of_not_record rfl _ _ _⟩
+      · exact expand_sem_mpr ⟨_, expand_sub hf, rfl, realmInvariant_of_not_record rfl _ _ _⟩
   | @merge Γ d a b A B R ha hb hm iha ihb =>
     intro n W h ρ he hw hh
     apply bind (fun a => .merge d a (instantiate 0 ρ b)) Step.mergeC1 Raises.mergeC1 n W h _ hw hh
@@ -2757,19 +2886,19 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     rename_i r _
     obtain ⟨hops, hn⟩ := hopt
     have ha'' := (meaning_adm G A).mono k _ V hy av ((meaning_adm G A).down_le j k hk U av ha')
-    obtain ⟨c, hc, hca⟩ := (expand_sem G A hops.1 k V av).mp ha''
-    obtain ⟨d, hd, hdb⟩ := (expand_sem G B hops.2.1 k V bv).mp hb'
+    obtain ⟨c, hc, hca, -⟩ := (expand_sem G A hops.1 k V av).mp ha''
+    obtain ⟨d, hd, hdb, -⟩ := (expand_sem G B hops.2.1 k V bv).mp hb'
     rcases opResult_sound (hops.2.2 c hc d hd) hca hdb with ⟨z, hz, hr⟩ | hthrow
     case inr => exact arith_throw_safe op av bv hthrow k V heap' hv hok'
     refine arith_value_safe op av bv z hz k V heap' hv hok' (fun m U => ?_)
     cases r with
-    | num => obtain ⟨x, rfl⟩ := hr; exact (represents_sem hn m U _).mpr ⟨x, rfl⟩
-    | bigint => obtain ⟨i, rfl⟩ := hr; exact (represents_sem hn m U _).mpr ⟨i, rfl⟩
-    | str => obtain ⟨s, rfl⟩ := hr; exact (represents_sem hn m U _).mpr ⟨s, rfl⟩
+    | num => obtain ⟨x, rfl⟩ := hr; exact (represents_back hn m U _) ⟨x, rfl⟩
+    | bigint => obtain ⟨i, rfl⟩ := hr; exact (represents_back hn m U _) ⟨i, rfl⟩
+    | str => obtain ⟨s, rfl⟩ := hr; exact (represents_back hn m U _) ⟨s, rfl⟩
     | bool =>
       rcases hr with rfl | rfl
-      · exact expand_sem_mpr ⟨_, expand_sub hn.1, rfl⟩
-      · exact expand_sem_mpr ⟨_, expand_sub hn.2, rfl⟩
+      · exact expand_sem_mpr ⟨_, expand_sub hn.1, rfl, realmInvariant_of_not_record rfl _ _ _⟩
+      · exact expand_sem_mpr ⟨_, expand_sub hn.2, rfl, realmInvariant_of_not_record rfl _ _ _⟩
   | @write Γ a Ref fs vs os ms ks f A b N ha hr hm hb hn iha ihb =>
     intro n W h ρ he hw hh
     apply bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 Raises.writeC1 n W h _ hw hh
@@ -2780,8 +2909,8 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     intro k hk V hy hv heap' bv hok' hbval hb'
     have ha'' := (meaning_adm G Ref).mono k _ V hy av ((meaning_adm G Ref).down_le j k hk U av ha')
     obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ :=
-      recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) ((represents_sem hr k V av).mp ha'').1.1
-    apply Safe_mono k (fun i _ X v hval => (represents_sem hn i X v).mpr hval)
+      recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) ((represents_raw hr k V av) ha'').1.1
+    apply Safe_mono k (fun i _ X v hval => (represents_back hn i X v) hval)
     exact write_rule (meaning_adm G A) k V heap' l bv hbval hv hok' hf hl hag hb'
   | @ifBool Γ c C t A e hc hbool ht he ihc iht ihe =>
     intro n W h ρ henv hw hh
@@ -2810,7 +2939,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     apply bind (fun c => .ite c (instantiate 0 ρ t) (instantiate 0 ρ e)) Step.iteC Raises.iteC
       n W h _ hw hh (ihc n W h ρ henv hw hh)
     intro j hj U hx hu heap v hok hv ha
-    have hvalue := (represents_sem hq j U v).mp ha
+    have hvalue := (represents_raw hq j U v) ha
     cases q <;> simp only [clauseSem, semWithArgs] at hvalue <;> subst v
     · cases j with
       | zero => trivial
@@ -2836,13 +2965,13 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     | zero => trivial
     | succ k =>
       rcases shape with hv | hv
-      · have refined := henv.refine hi ((represents_sem hT (k+1) W (ρ i)).mpr (by simpa [hv, clauseSem, semWithArgs, boolT]))
+      · have refined := henv.refine hi (represents_back hT (k+1) W (ρ i) rfl (by simp [hv, semWithArgs, boolT]))
         rw [hv]
         refine Or.inr ⟨trunc k (Nat.le_succ k) W,h,instantiate 0 ρ t,WExt_refl _,
           WorldAdm_trunc _ hw,.iteT,HeapOk_trunc k W h hh,?_⟩
         exact iht k _ h ρ (refined.transfer k (Nat.le_succ k) _ (WExt_refl _))
           (WorldAdm_trunc _ hw) (HeapOk_trunc k W h hh)
-      · have refined := henv.refine hi ((represents_sem hF (k+1) W (ρ i)).mpr (by simpa [hv, clauseSem, semWithArgs, boolT]))
+      · have refined := henv.refine hi (represents_back hF (k+1) W (ρ i) rfl (by simp [hv, semWithArgs, boolT]))
         rw [hv]
         refine Or.inr ⟨trunc k (Nat.le_succ k) W,h,instantiate 0 ρ e,WExt_refl _,
           WorldAdm_trunc _ hw,.iteF,HeapOk_trunc k W h hh,?_⟩
@@ -2882,7 +3011,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     intro j hj U hx _
     have hinv : Invocable (.obj h.length (.variadic k (instantiate (k + 2) ρ b))) :=
       ⟨_, _, rfl, rfl, by simpa [Scoped] using instantiate_scoped ρ he.1 b (k + 2)⟩
-    refine (represents_sem hr j U _).mpr ⟨⟨hinv, by simp⟩, hinv, ?_⟩
+    refine (represents_back hr j U _) ⟨⟨hinv, by simp⟩, hinv, ?_⟩
     intro s' hs'
     obtain ⟨s, hs, rfl⟩ := List.mem_map.mp hs'
     obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hs
@@ -2928,7 +3057,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     have hfam : ReferenceConjunctions.famsOf (meaning G) (parts.map fun p => (p.1, p.2.1))
         = (parts.map Prod.fst).zip (parts.map fun p => meaning G p.2.1) := by
       simp [ReferenceConjunctions.famsOf, List.map_map, Function.comp_def, List.zip_map']
-    refine (represents_sem hr k' V _).mpr
+    refine (represents_back hr k' V _)
       ⟨⟨⟨⟨_, _, rfl, rfl, by rw [hfam]; exact hrec⟩, by simp⟩, hinv, by simp⟩, hinv, ?_⟩
     intro s' hs'
     obtain ⟨s, hs, rfl⟩ := List.mem_map.mp hs'
@@ -2947,7 +3076,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       (ih n W h ρ he hw hh)
     apply Safe_mono n _ W h _ this
     intro k _ U v hv
-    exact (represents_sem hr k U v).mpr ⟨by simpa [tupleFams] using hv, by simp⟩
+    exact (represents_back hr k U v) ⟨by simpa [tupleFams] using hv, by simp⟩
   | @callRest Γ f r F Rt xs Us P B parts hf hmem hrt hx hu hshort hp hparts
       ihf ihrt ihx ihu ihp =>
     intro n W h ρ he hw hh
@@ -3086,7 +3215,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
         HeapOk_trunc m W h hh, value_safe _ _ _ _ _ rfl ?_⟩
       · simpa [Model.slots] using (Step.makeFields (h := h) (ns := []) (vs := [])
           (c := .bound (ρ t) (ρ r) (saved.map ρ)) (by simp) rfl)
-      · exact (represents_sem hF m _ _).mpr ⟨by simpa using hdown, hdown.1, by simp⟩
+      · exact (represents_back hF m _ _) ⟨by simpa using hdown, hdown.1, by simp⟩
   | @bindRestE Γ F T Rt E El R Rc t r saved Ps Qs ht hsig hel hr hpre hQs hF =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def,
@@ -3123,7 +3252,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
         HeapOk_trunc m W h hh, value_safe _ _ _ _ _ rfl ?_⟩
       · simpa [Model.slots] using (Step.makeFields (h := h) (ns := []) (vs := [])
           (c := .bound (ρ t) (ρ r) (saved.map ρ)) (by simp) rfl)
-      · refine (represents_sem hF m _ _).mpr ⟨⟨hdown.1, by simp⟩, ?_⟩
+      · refine (represents_back hF m _ _) ⟨⟨hdown.1, by simp⟩, ?_⟩
         simpa [List.map_drop, hlen] using hdown
   | @bindMember Γ F O i k m L S hi hmo hF hL hS =>
     intro n W h ρ he hw hh
@@ -3188,7 +3317,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
             (by simp [CallArguments.Values]) (by simp)
           simpa using hb
         have hmem : meaning G F (q + 2) U (.objAt [] (.bound u (ρ i) [])) :=
-          (represents_sem hF (q + 2) U _).mpr ⟨hcalls, hrests⟩
+          represents_back hF (q + 2) U _ rfl ⟨hcalls, hrests⟩
         have hdown := (meaning_adm G F).down_le (q + 2) q (by omega) U _ hmem
         refine Or.inr ⟨trunc q (Nat.le_succ q) (trunc (q + 1) (Nat.le_succ (q + 1)) U), h',
           .objAt [] (.bound u (ρ i) []), WExt_refl _, WorldAdm_trunc _ (WorldAdm_trunc _ hu), ?_,
@@ -3237,5 +3366,8 @@ theorem HasTy.closed_safe {G : NormalGraph ι} {t A} (ht : HasTy G [] t A)
 #print axioms HasTy.closed_safe
 #print axioms tagClause_sound
 #print axioms opResult_sound
+#print axioms realmFree_meaning
+#print axioms storeTy_sound
+#print axioms allocRealm_sound
 
 end Verification.Model.ProgramTyping

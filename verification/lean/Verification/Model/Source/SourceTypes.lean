@@ -21,16 +21,13 @@ def storeField : PropKey := CallArguments.arrayStoreField
 /-- The field an object holds its prototype in. No source name spells it. -/
 def protoField : PropKey := CallArguments.protoField
 
-/-- A name in double brackets, which the model keeps for itself: the
-prototype key and a class's prototype object's own key
-(`Fragment.classKeyOf`). -/
-def bracketed : PropKey → Bool
-  | .str s => s.startsWith "[[" && s.endsWith "]]"
-  | .sym _ => false
+/-- A name in double brackets, which the model keeps for itself
+(`RequestJson.bracketed`). -/
+abbrev bracketed : PropKey → Bool := RequestJson.bracketed
 
 /-- A key the model keeps for itself: the array store, the prototype, and
-every other name in double brackets. -/
-def reservedKey (k : PropKey) : Bool := k == storeField || k == protoField || bracketed k
+every other name in double brackets (`RequestJson.reservedKey`). -/
+abbrev reservedKey : PropKey → Bool := RequestJson.reservedKey
 
 /-- The module value holding `Array.prototype`: a name no source identifier
 spells, at `ArrayProto`. Every array a unit allocates takes its prototype from
@@ -48,10 +45,9 @@ def primitivePrototypes : List (Tag × String) :=
 /-- Every realm prototype a unit may read through, whether or not it names it. -/
 def prototypeNames : List String := arrayPrototypeName :: primitivePrototypes.map (·.2)
 
-/-- The row of `ArrayProto`, `Array.prototype`'s contract: the declaration
-document of a source with arrays lists it first, so its row follows the four
-fixed ones (`DeclarationGraph.prepare` checks this). -/
-def arrayProtoLabel : Nat := 4
+/-- The row of `ArrayProto`, `Array.prototype`'s contract
+(`RequestJson.arrayProtoLabel`). -/
+abbrev arrayProtoLabel : Nat := RequestJson.arrayProtoLabel
 
 /-- An array type: its store at `store`, invariant or, for a readonly array, a
 view; the prototype as a view at `ArrayProto`; and none of `excluded`, the keys
@@ -73,15 +69,10 @@ fields, views, optional fields and methods, the reserved keys aside. An array
 owns none of them, so reading one continues at the prototype; any other own
 key an array may have. -/
 def arrayProtoKeys (G : NormalGraph Nat) : List PropKey :=
-  match expand G [arrayProtoLabel] with
-  | [.refs a bs vs os ms _] =>
-    prototypeKeys (((a :: bs).flatten ++ vs).map (·.1) ++ os.map (·.key) ++ ms.map (·.key))
-  | _ => []
+  RequestJson.protoKeysOf (expand G [arrayProtoLabel])
 where
-  /-- One spelling of a set of prototype keys: sorted, each once, the
-  reserved keys aside. -/
-  prototypeKeys (ks : List PropKey) : List PropKey :=
-    ((ks.filter fun k => !reservedKey k).eraseDups).mergeSort PropKey.before
+  /-- One spelling of a set of prototype keys (`RequestJson.prototypeKeys`). -/
+  prototypeKeys (ks : List PropKey) : List PropKey := RequestJson.prototypeKeys ks
 
 /-- No reserved key is a prototype key: every array owns its store and its
 prototype. -/
@@ -92,7 +83,7 @@ theorem prototypeKeys_reserved {ks : List PropKey} {k : PropKey}
 
 theorem arrayProtoKeys_reserved {G : NormalGraph Nat} {k : PropKey} (h : k ∈ arrayProtoKeys G) :
     reservedKey k = false := by
-  unfold arrayProtoKeys at h
+  unfold arrayProtoKeys RequestJson.protoKeysOf at h
   split at h
   · exact prototypeKeys_reserved h
   · simp at h
@@ -412,7 +403,12 @@ theorem encode_meaning {T : Table} (h : initial <+: T) (t : Claim.Ty) (n W v) :
   rw [expand_sem _ _ hp, expand_of_plain hp]
   cases hn : admits t .vnull <;> cases ht : admits t (.vbool true) <;>
     cases hf : admits t (.vbool false) <;> cases hu : admits t .vundef <;>
-    simp [encode, hn, ht, hf, hu, clausesOf, h0, h1, h2, h3, semList, Tower.setSem, semWithArgs, nulT, undefT]
+    simp [encode, hn, ht, hf, hu, clausesOf, h0, h1, h2, h3, Tower.setSem, rowSem,
+      realmInvariant_iff_of_not_record (show (Clause.nul : Clause (List Nat)).record = false from rfl),
+      realmInvariant_iff_of_not_record (show (Clause.undef : Clause (List Nat)).record = false from rfl),
+      realmInvariant_iff_of_not_record (show (Clause.boolLit true : Clause (List Nat)).record = false from rfl),
+      realmInvariant_iff_of_not_record (show (Clause.boolLit false : Clause (List Nat)).record = false from rfl),
+      semWithArgs, nulT, undefT]
 
 /-- No atom of the primitive fragment admits a number, so a numeric value is
 outside every type that fragment can state. `value` decodes one because the
@@ -486,8 +482,8 @@ theorem arrow_exact {T : Table} {Rc D R : Ty Nat} (hm : Row.clauses [.arrs [(Rc,
     meaning (graph T) [label T (.arrs [(Rc,[D],R)] [])] n W v ↔
       callsT [(meaning (graph T) Rc, [meaning (graph T) D], meaning (graph T) R)] n W v := by
   rw [label_meaning hm]
-  simp only [clauseSem, PositiveNormalization.semWithArgs, List.map_cons, List.map_nil]
-  exact ⟨fun h => h.1, fun h => ⟨h, h.1, by simp⟩⟩
+  simp only [clauseSem, rowSem, PositiveNormalization.semWithArgs, List.map_cons, List.map_nil]
+  exact ⟨fun h => h.1.1, fun h => ⟨⟨h, h.1, by simp⟩, realmInvariant_of_not_record rfl _ _ _⟩⟩
 
 #print axioms arrow_exact
 #print axioms translate_exact

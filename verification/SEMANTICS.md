@@ -685,6 +685,75 @@ preserves the entire interpretation operator, hence also its recursive fixed
 point. No cycle is unfolded during normalization. See the grammar and equations
 in [POSITIVE-TYPES.md](POSITIVE-TYPES.md).
 
+## The array invariant
+
+`Array.isArray` holds of an object owning the store key $\sigma$
+([operational language](#operational-language)); what makes such an object an
+array of `Array.prototype` is an **invariant** of every object the program
+receives or allocates: it holds a dense store and the realm's prototype, and
+owns no key that prototype provides. The model states it in the meaning of
+types, not in the heap premise: the tested value is in a slot, not in the heap,
+and it came from an input, a read, a call's result or an allocation, each of
+which a type describes. With $\mathcal R$ the graph's realm (`ArrayRealm`: the
+row of `ArrayProto` and the keys it provides):
+
+$$
+\mathsf{Arr}_{\mathcal R}{}_n(W,v)\iff\forall\mathit{flds}.\;
+v=\mathsf{obj}(\mathit{flds},\mathsf{absent})\land\sigma\in\mathrm{dom}(\mathit{flds})\Rightarrow
+\mathsf{view}(\sigma{:}\mathsf{AnyStore},\mathsf{proto}{:}\llbracket P_{\mathcal R}\rrbracket)_n(W,v)
+\land\mathsf{own}(\mathsf{outside}\,N_{\mathcal R})_n(W,v)
+$$
+
+(`PositiveGraphs.arrayInvariant`), and every record or dictionary clause of a
+row means its members meeting it (`realmInvariant`, `rowSem`;
+[POSITIVE-TYPES](POSITIVE-TYPES.md#the-realms-array-invariant)). It reads the
+world only: the contract of $\sigma$'s location implies a dense store of values
+in every world and heap to come, and the contract of $\mathsf{proto}$'s implies
+`ArrayProto`. A world grows only by appending contracts and never replaces
+one, so the invariant is admissible (`arrayInvariant_adm`), and nothing a step
+does to the heap can falsify it.
+
+**Every step keeps it.** A value's keys and their locations are its identity,
+fixed at its allocation, so only allocation creates a value the invariant is
+about:
+
+- an allocation from named fields (`HasTy.alloc`) owning $\sigma$ is typed only
+  as an array of the realm: its store field at a store type, its prototype
+  field at $P_{\mathcal R}$, no name among $N_{\mathcal R}$ (`allocRealm`,
+  `allocRealm_sound`); every other allocation owns no $\sigma$
+  (`realmInvariant_of_lookup`);
+- a literal allocated at a dictionary names neither $\sigma$ nor the prototype
+  key (`HasTy.allocDict`);
+- a merge, the copy a spread or a key-adding write is, allocates the
+  accumulator's fields but its store and the source's copied keys and index
+  keys, never $\sigma$ (`ObjectMerge.mergeParts_store`);
+- closures, bound functions and class values carry code, and `isArray` is false
+  of them;
+- a write stores a value at an existing location and adds no key; the heap is
+  not read by the invariant, and a location's contract is fixed.
+
+A read, a call's result, a caught value and a value passed on are values of
+types, which already state what they state.
+
+**The premise.** The safety theorem (`checkJson_safe`) quantifies over
+environments meeting the unit's inputs at their types (`EnvOk`), so a value
+the unit receives at a record or dictionary type meets the invariant: an
+object owning an array's store is a dense array holding `Array.prototype`
+(meeting `ArrayProto`) and owning none of its keys. That is an assumption
+about the host and the unit's callers, stated in the
+[trust surface](DESIGN.md#trust-surface). The heap premise `HeapOk` is
+unchanged.
+
+**What it does not cover.** `unknown` (the `top` clause) asks nothing more of
+its members: it is also the type a handler binds a thrown value at, and the
+throw outcome of `Safe` is any closed value, of which the model states
+nothing, so `Array.isArray` on `unknown` narrows nothing. A type parameter's
+row asks what its assignment gives. And no invariant ties an object whose
+prototype chain holds a class's prototype to the class's fields: JavaScript
+gives any object any prototype (`Object.create`, `Object.setPrototypeOf`,
+`Reflect.construct` with another new target; [ECMA-262](REFERENCES.md#ecma-262)),
+so `x instanceof C` does not narrow `unknown`.
+
 ## Current-content assertions and postconditions
 
 The [assertion grammar](POSITIVE-TYPES.md#state-assertion-grammar) defines the
