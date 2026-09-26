@@ -790,12 +790,14 @@ def DictOk (G : NormalGraph ι) (d : List PropKey) (oa : Obj ι) (sb : Src ι)
 and the source a plain object or a value owning no enumerable property; the
 result is a record of fields and optional fields with key bounds
 (`FieldsOk`), and, where both sides say what they give under an index's
-keys, a dictionary (`DictOk`). -/
+keys, a dictionary (`DictOk`). A writable index lets outside code add keys,
+which an own-key bound listing keys would deny: a result with one lists
+none. -/
 def MergeClause (G : NormalGraph ι) (d : List PropKey) (ca cb cr : Clause (List ι)) : Bool :=
   match objOf ca, srcOf cb, cr with
   | some oa, some sb, .refs fs [] [] os [] ks => FieldsOk d oa sb fs os ks
   | some oa, some sb, .dict fs [] [] ds os [] ks cs =>
-    FieldsOk d oa sb fs os ks && DictOk G d oa sb fs os ds cs
+    FieldsOk d oa sb fs os ks && DictOk G d oa sb fs os ds cs && (cs.isEmpty || ks.all (!·.among))
   | _, _, _ => false
 
 /-- Every pair of the operands' clauses merges into a clause of the result. -/
@@ -1359,7 +1361,7 @@ theorem merge_values_safe {G : NormalGraph ι} {d : List PropKey} {A B R : List 
   · rename_i oa sb fs ds os ks cs hoa hsrc
     obtain ⟨pa, qs, hpn, hqn, hva, hvb, hparts, hs⟩ := merge_sides (d := d) hoa hsrc hok hsa hsb
     simp only [Bool.and_eq_true] at hmc
-    obtain ⟨hmf, hmd⟩ := hmc
+    obtain ⟨⟨hmf, hmd⟩, -⟩ := hmc
     obtain ⟨hnd, hfs, hos, hpr, hks⟩ := fieldsOk_facts hmf
     obtain ⟨V, hne, hnp, hix, hfd, hod⟩ := dictOk_facts hmd
     refine merge_finish (V := V) hadm hok hs hpn hqn hva hvb hparts hcr (.inr ⟨rfl, hne⟩) hnd hfs
@@ -1450,7 +1452,8 @@ def mergeResult (G : NormalGraph ι) (d : List PropKey) (ca cb : Clause (List ι
   let ix := classes.map (·, V)
   let dict : Clause (List ι) :=
     .dict (fields.map fun (k, T) => if admitted k then (k, V) else (k, T)) [] [] ix
-      (optional.map fun q => if admitted q.key then { q with type := V } else q) [] bound ix
+      (optional.map fun q => if admitted q.key then { q with type := V } else q) []
+      (bound.filter (!·.among)) ix
   pure (if MergeClause G d ca cb dict then dict else record)
 
 #print axioms merge_values_safe

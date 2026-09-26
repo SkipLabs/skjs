@@ -1241,7 +1241,9 @@ store key, or a string index at a type no member of which is a list
 (`noStore`, since the store key `[]` is a string), unless $K$ is the symbol
 class, which admits no key a copy gives. A field or optional field of the
 result whose key a class may admit is within $V$, and exactly $V$ where a
-writable index's class may admit it, whose locations hold exactly $V$. The
+writable index's class may admit it, whose locations hold exactly $V$; and a
+result with a writable index has no bound listing keys, which the keys outside
+code may add under the index would contradict. The
 soundness case evaluates the operands with `bind`, as `arith` does, and
 closes with `ObjectMerge.merge_values_safe`, which takes the merge's step,
 then the allocation's by `make_fields_rule`, giving each location the
