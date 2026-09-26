@@ -3460,9 +3460,9 @@ class Gate {
    * declaration, the intrinsic read at `in`. */
   private forInStmt(node: ts.ForInStatement): Stmt {
     const list = node.initializer;
-    if (!ts.isVariableDeclarationList(list) || !(list.flags & ts.NodeFlags.Const) ||
-        list.declarations.length !== 1)
-      this.fail(node, "a `for...in` loop declares one `const` binding");
+    if (!ts.isVariableDeclarationList(list) || list.declarations.length !== 1 ||
+        !(list.flags & ts.NodeFlags.Const || (list.flags & ts.NodeFlags.Let && this.neverAssigned(list, true))))
+      this.fail(node, "a `for...in` loop declares one `const` binding, or a `let` nothing assigns");
     const d = list.declarations[0];
     if (!ts.isIdentifier(d.name)) this.fail(d, "destructuring is outside the fragment");
     if (d.type || d.initializer) this.fail(d, "a `for...in` binding takes the key's type");
@@ -3867,9 +3867,10 @@ class Gate {
    * logical assignment, update or destructuring assignment names one. A
    * write is found by the name the fragment gives the binding (`local`), so
    * a same-named binding elsewhere in that scope keeps the list a `let`. */
-  private neverAssigned(list: ts.VariableDeclarationList): boolean {
+  private neverAssigned(list: ts.VariableDeclarationList, loopHead = false): boolean {
     const [first] = list.declarations;
-    if (!first || list.declarations.some((d) => !d.initializer)) return false;
+    // A loop head's binding is bound by each iteration, not by an initializer.
+    if (!first || (!loopHead && list.declarations.some((d) => !d.initializer))) return false;
     const names = new Set<string>();
     const bind = (n: ts.BindingName): void => {
       if (ts.isIdentifier(n)) names.add(this.local(n));
@@ -3933,10 +3934,12 @@ class Gate {
     if (ts.isForOfStatement(node)) {
       if (node.awaitModifier)
         this.fail(node, "`for await` is outside the fragment");
+      // A `let` nothing assigns is a `const`, as a statement's is: each
+      // iteration binds it afresh, and nothing changes it after.
       const list = node.initializer;
-      if (!ts.isVariableDeclarationList(list) || !(list.flags & ts.NodeFlags.Const) ||
-          list.declarations.length !== 1)
-        this.fail(node, "a `for...of` loop declares one `const` binding");
+      if (!ts.isVariableDeclarationList(list) || list.declarations.length !== 1 ||
+          !(list.flags & ts.NodeFlags.Const || (list.flags & ts.NodeFlags.Let && this.neverAssigned(list, true))))
+        this.fail(node, "a `for...of` loop declares one `const` binding, or a `let` nothing assigns");
       const d = list.declarations[0];
       if (!ts.isIdentifier(d.name))
         this.fail(d, "destructuring is outside the fragment");
