@@ -827,7 +827,9 @@ private partial def ownedStmt (d : Nat) (st : Fragment.Stmt) (s : Owned) : Owned
   | .destructure _ t dflt init => (init :: dflt.toList ++ t.defaults).foldl (fun s e => ownedExpr e s) s
   | .ite _ c t e => ownedStmts d (e.getD []) (ownedStmts d t (ownedExpr c s))
   | .loop _ c b u => ownedStmts (d + 1) u (ownedStmts (d + 1) b (ownedExpr c s))
-  | .forOf _ _ _ i b => ownedStmts (d + 1) b (ownedExpr i s)
+  | .forOf _ _ _ _ i b => ownedStmts (d + 1) b (ownedExpr i s)
+  -- The iterator's `close` runs where the body is left, after what of it ran.
+  | .closing _ c b => ownedStmts d c (ownedStmts d b s)
   | .block _ _ b => ownedStmts d b s
   | .tryStmt _ b h f => ownedStmts d (f.getD []) (ownedStmts d ((h.map (·.2)).getD []) (ownedStmts d b s))
   | .brk .. | .cont .. => s

@@ -721,8 +721,9 @@ let forgotten_cell_reason =
 let equality_reason =
   "the value may be an object without a field, and the model states no object identity"
 let dictionary_spread_reason =
-  "the copy owns the keys the dictionary holds when it runs, which no type states, and an object's \
-   keys are fixed at its allocation"
+  "the copy owns the keys the dictionary holds when it runs, which no type states: the result is a \
+   dictionary only where every part says what it gives under the index's keys, by an index or its \
+   exact keys"
 let dictionary_presence_reason =
   "presence promotes an optional field of a record, not the index of a dictionary, so the read is \
    still at the index, which may miss"
@@ -2751,7 +2752,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
   let rec grows_later n keys ss = List.exists (fun (s:stmt) -> match s.statement with
     | Effect {node=Write ({node=Id m;_},Name k,_);_}
     | Effect {node=IndexWrite ({node=Id m;_},{node=Literal (LString k);_},_);_} ->
-      m = n && not (List.mem k keys)
+      m = n && not (List.mem (Name k) keys)
     | Effect {node=ObjectAssign ({node=Id m;_},_::_);_} -> m = n
     | If (_,a,b) -> grows_later n keys a || grows_later n keys b
     | Block (_,b) -> grows_later n keys b
