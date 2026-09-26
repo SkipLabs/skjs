@@ -23,6 +23,50 @@ was required, or, for a term that is not a slot, its form and the claims of
 the slots it reads), so a refusal read in a log or a coverage row says why
 without opening the record.
 
+### A failed search refused by name
+
+Where the cause of a failed search is known, `check.mts` puts it first, as a
+line `reject: <reason>` before the verifier's own, which follow unchanged.
+The outcome stays the unverified search Lean decided on the ordinary
+proposal; the line only names why it found no derivation. Two sources give
+it, in this order:
+
+- The producer's explanation: `producer --explain fragment.json` runs the
+  ordinary inference and prints, instead of claims, the forms it met whose
+  failure has a stated reason, each at its source span
+  (`Proposal.explain`). The one whose span meets the failed obligation's,
+  the innermost, names it. The forms and their reasons: a `for...of` loop
+  or a spread over a string or a non-array iterable (only an array's
+  iteration is stated, `%Iterate%`); an open record or `unknown` that
+  `Array.isArray` or `instanceof Array` found an array, used as one (the
+  object owns an array's store, not a proven array of `Array.prototype`);
+  `length` on a union of an array and a record naming it, an array used as
+  such a record, a mutable tuple's `length` at its arity; a named function
+  (a module function or a parameter) where a signature binding more
+  parameters, or indifferent to the receiver it requires, is expected (its
+  type is its annotated signature); two instances of a declaration with
+  generic methods (`Promise<A>` at `Promise<B>`: quantified signatures are
+  related only by identity); a call inferring a binder written beside an
+  application of it (`R | PromiseLike<R>`, `then` and `catch`); a record at
+  an index signature (TypeScript's implicit index signature; `Closed<T>` is
+  read as `T`); a mutable array or a writable field at a wider one
+  (invariance); a tuple at an iterable; a `typeof` test, `??` or strict
+  equality on a value of a type parameter or `unknown`; a cell read at its
+  contract (contents are stated only for primitives, and forgotten across a
+  step that may write them); a write adding a dictionary's key, a spread of
+  a dictionary, a read of a key `in` found in a dictionary; an optional key
+  found `undefined` read at `undefined`; a non-null assertion on a read at
+  a `for...in` key.
+- With `check.mts --typescript-errors` (the coverage run passes it; it loads
+  the project again), for code TypeScript refuses, the TypeScript error
+  nearest the failed obligation: `reject: TypeScript refuses this code too
+  (line L, col C: <message>); the pipeline follows TypeScript's types`. SKJS
+  accepting what TypeScript refuses goes beyond the types the pipeline
+  follows.
+
+Neither is a premise of anything: the explanation run's claims are
+discarded, and a failure no source names keeps the verifier's lines alone.
+
 `verification/tools/diagnostic.mts` reads the record without parsing the
 human sentence. A record it cannot decode field by field, and a duplicate
 record, are not interpreted: the reader requires the fields below and refuses

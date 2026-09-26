@@ -1537,6 +1537,19 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
     expression: { k: "object", fields, stringIndex: null, calls: callForms, span: spanOf(first) } } };
 }
 
+/** The errors TypeScript reports in `file` itself, in its configured project:
+ * what attributes a failed search to code TypeScript refuses too. Display
+ * only; never a premise of acceptance. */
+export function clientErrors(file: string, tsconfigPath?: string): SeenDiagnostic[] {
+  const clientFile = resolve(file);
+  return withProject(clientFile, tsconfigPath, (_checker, client, _root, program) =>
+    [...program.getSyntacticDiagnostics(client.fileName), ...program.getSemanticDiagnostics(client.fileName)]
+      .filter(d => d.category === DiagnosticCategory.Error)
+      .map(d => ({ file: client.fileName, client: true, pos: [d.pos, d.end],
+        start: client.getLineAndCharacterOfPosition(d.pos),
+        end: client.getLineAndCharacterOfPosition(d.end), text: d.text })));
+}
+
 /** Where each named import of `file` resolves, whatever kind of declaration
  * it is. Provenance for declarations the fragment cannot yet interpret; never
  * a typing certificate. */

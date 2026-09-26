@@ -16,7 +16,7 @@ const here = import.meta.dirname;
  * command line, so that several cases run at once. */
 export function runCase(test: Case): Promise<Outcome> {
   return checkApart(join(here, "examples", `${test.file}.ts`),
-    test.project ? resolve(here, "../..", test.project) : undefined)
+    test.project ? resolve(here, "../..", test.project) : undefined, test.typescriptErrors)
     .catch((error: unknown) => { throw new Error(`${test.file}: ${error instanceof Error ? error.message : String(error)}`); });
 }
 

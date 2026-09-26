@@ -428,6 +428,7 @@ function reason(text: string): string {
     .replace(/: Verification\.Model\.\S*.*$/, "")
     .replace(/\b(missing field|unbound name|unresolved type reference|declarations for|module constant) [\w$]+/g, "$1 _")
     .replace(/(TypeScript reports an error in a declaration of the source): .*/, "$1")
+    .replace(/(TypeScript refuses this code too) .*/, "$1")
     .replace(/(cannot establish) .*/, "$1 …")
     .replace(/'[^']*'/g, "'_'")
     .replace(/"[^"]*"/g, '"_"')
@@ -471,6 +472,18 @@ function brief(detail: string): string {
  * wins; order is specificity, not value. Unmatched reasons are grouped under
  * their own text, so a new refusal shows up rather than hiding in "other". */
 const GROUPS: [string, RegExp][] = [
+  ["TypeScript refuses the code too (the pipeline follows TypeScript's types)", /TypeScript refuses this code too/],
+  ["arrays and open records: `Array.isArray` on an open record, `length` of an array read as a record's", /after `Array\.isArray`|`length` on a union of an array|array used as a record naming `length`|`length` of a mutable tuple/],
+  ["a non-null assertion on a read at a for...in key (that the object owns the key relates two values)", /non-null assertion on a read at a for\.\.\.in key/],
+  ["generic methods: instances of a declaration with them related, a binder inferred beside an application of it (Promise)", /an instance of a declaration with generic methods at another|a call inferring a binder written beside an application of it/],
+  ["implicit index signatures: a record at an index signature (`Closed<T>` read as `T` among them)", /a record at an index signature/],
+  ["a named function at a signature binding more parameters, or indifferent to the receiver it requires (its type is its annotated signature)", /a named function where a signature binding more parameters|a function whose `this` is typed where a callback/],
+  ["invariance: a writable element or field at a wider one (TypeScript relates them covariantly)", /a mutable array at one of a wider element|an instance at another whose writable field differs/],
+  ["a tuple at an iterable (the search relates only an array's store to the iterator's element)", /a tuple at an iterable/],
+  ["tests on a value of a type parameter or `unknown` (`T & number` has no clause; no object identity)", /test on a value of a type parameter or `unknown`|`\?\?` on a value of a type parameter|strict equality with a value of a type parameter/],
+  ["cells read at their contract (contents are stated for primitives only, and forgotten across a step that may write them)", /a `let` holding an object read where it must be assigned|a cell read at its contract/],
+  ["dictionaries: a spread of one, a key `in` found in one", /a spread of a dictionary|a read of a key `in` found in a dictionary/],
+  ["an optional key found `undefined` (the key may be absent)", /an optional key found `undefined`/],
   ["bigint", /BigInt|non-decimal numeric literal type/],
   ["enums", /EnumDeclaration|enum member|an ambient enum|an enum without members/],
   ["ambient declarations (declare let/var, overloaded generic functions)", /`declare let` or `declare var`|overloaded generic function|an ambient constant needs/],
@@ -491,16 +504,16 @@ const GROUPS: [string, RegExp][] = [
   ["discriminated-union narrowing (a field read after a tag test)", /missing field _|a `let` holding a union of objects|a union of an array and a record/],
   ["classes: modifiers, inheritance, fields, parameter properties, receivers", /class member|class inheritance|extending the standard library|inheritance needs|parameter property|constructor (statement|parameter|assigns)|a static (field|method|member|initializer)|method receiver|method with a `this` parameter|Symbol.hasInstance|#private|class extending|class accessor|index signature in a class|static block|optional, generator or generic method|optional or generator method|generic class method|a class extends/],
   ["generic classes", /a generic class is outside the fragment|reading its own class/],
-  ["generics: constraints, explicit type arguments, rigid types, generic function types", /only `extends boolean`|explicit type arguments are admitted|rigid type nested|union containing rigid types|generic claim checking|closure under a binder|unknown type parameter|generic (function|constructor) types|field read on rigid parameter|establish (its|the) declared bound|an argument list is not a runtime value/],
+  ["generics: constraints, explicit type arguments, rigid types, generic function types", /only `extends boolean`|explicit type arguments are admitted|rigid type nested|union containing rigid types|generic claim checking|closure under a binder|unknown type parameter|generic (function|constructor) types|field read on rigid parameter|establish (its|the) declared bound|an argument list is not a runtime value|a quantified closure has no checked instantiation|generic return contract|quantified callable claim encoding/],
   ["type forms: literal types, keyof, indexed access, mapped, object, index signatures, intersections, method signatures", /literal type outside|TypeOperator|IndexedAccessType|MappedType|mapped type|ObjectKeyword|index signature|intersection|unsupported method signature|unsupported member in a record type|expected a required mutable field|a record with no field|optional named fields with a string index|keyof|the indexed access|typeof [\w.$]+ (is|has)|computes no type for this|unique symbol|computed key|optional method of a nested type literal|an annotation's type literal|construct signatures and other members/],
   ["type aliases and names the declaration reader cannot resolve", /unresolved type reference|unknown type alias|TypeScript found \d+ declarations|TypeScript reports an error/],
   ["optional chaining", /optional property access|an optional call of a method/],
-  ["compound and update assignments (x++, ||=, ??=, a[i] op=)", /expression (update|logicalAssign|nullishAssign|arrayAssign)|only field and local assignments/],
+  ["compound and update assignments (x++, ||=, ??=, a[i] op=)", /expression (update|logicalAssign|nullishAssign|arrayAssign)|only field and local assignments|(compound|logical) assignment inside a closed expression/],
   ["reads on unions/primitives (field/index read on non-object, string keys)", /(field|indexed) read on non-object|record index requires a string key|numeric array key|dynamic string index write/],
   ["value-level && / || (non-boolean operands)", /operator (&&|\|\|)/],
   ["equality: objects without a field (no identity), loose equality", /strict equality of two operands that may both be objects without a field|loose equality converts its operands/],
   ["await of non-promises and unions (the await bound)", /quantified call does not satisfy the closure's bound: cannot establish/],
-  ["calls: overloads, .call, spread arguments, Object.assign, arrow callee", /overloaded call|\.(call|apply|bind) requires|spread (argument|into)|array literal spreads|Object\.assign|single arrow the arguments can call|read off its object is not a function value/],
+  ["calls: overloads, .call, spread arguments, Object.assign, arrow callee", /overloaded call|\.(call|apply|bind) requires|spread (argument|into)|array literal spreads|Object\.assign|single arrow the arguments can call|read off its object is not a function value|a call writes more positions than its callee/],
   ["sloppy (non-strict) code", /sloppy code|must be strict code/],
   ["other source forms", /TypeAssertionExpression|EmptyStatement|ExportDeclaration|missing type annotation|shadowing|duplicate or shadowing|body requires a variable|unannotated closure parameter/],
   ["receiver types the producer and TypeScript disagree on (a member read on a primitive TypeScript excludes)", /the producer and TypeScript disagree on the receiver/],
@@ -570,7 +583,7 @@ async function main() {
   let done = 0;
   const attempt = async (u: Unit) => {
     const t0 = Date.now();
-    const o = await checkApart(u.derived!, projectOf(u.derived!));
+    const o = await checkApart(u.derived!, projectOf(u.derived!), true);
     if (!flag("--keep")) fs.rmSync(o.artifacts, { recursive: true, force: true });
     return { o, ms: Date.now() - t0 };
   };

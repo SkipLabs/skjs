@@ -10,6 +10,9 @@ export interface Case {
   diagnostic?: RegExp;
   /** Source tree supplying named imports; the reader and suite use the same path. */
   project?: string;
+  /** Whether a failed search is named by TypeScript's errors
+   * (`check.mts --typescript-errors`). */
+  typescriptErrors?: boolean;
 }
 const positive = (file: string, area: string): Case => ({
   file,
@@ -297,8 +300,8 @@ export const cases: Case[] = [
     /Math\.random is not in the reviewed overlay of library globals/),
   positive("library-collections", "`Set<T>` and `Map<K, V>` through the interface overlay: `add` and `set` chains returning the receiver, `has`, `get` at `V | undefined`, `delete`, `clear`, `size`; `new Set<T>(xs)`, `new Map<K, V>(es)`, and each of nothing"),
   negative("invalid-set-covariant", "a `Set<number>` is no `Set<number | string>`: `add` takes its element, though TypeScript's bivariant methods admit it"),
-  gap("set-for-of-refused", "`for...of` steps `%Iterate%`, stated for arrays only: a loop over a `Set` is refused", "unverified", "search",
-    /evidence search failed/),
+  gap("set-for-of-refused", "`for...of` steps `%Iterate%`, stated for arrays only: a loop over a `Set` is refused, by name", "unverified", "search",
+    /^reject: a for\.\.\.of loop over an object that is not an array .*only the iteration of an array is stated[\s\S]*evidence search failed/),
   positive("library-date", "`Date` through the overlays: `new Date()`, of a number or string, of components; getters and `toISOString`"),
   positive("library-date-now", "`Date.now()`, a number"),
   negative("invalid-date-object-argument", "`new Date(d)` converts an object by its own `valueOf`: the argument is stated at a number or a string, though TypeScript admits a `Date`"),
@@ -994,4 +997,32 @@ export const cases: Case[] = [
   negative("invalid-closure-array-length", "an array's `length` is a number, not a literal", /source expression obligation at \[150,159\)/),
   positive("const-union-arms", "an unannotated constant of a named union is held at its arms: tag tests keep and drop each, test after test"),
   negative("invalid-const-union-arms", "past a test the constant is of the other arms", /source expression obligation at \[608,614\)/),
+  // A search that finds no derivation where the cause is known names it on
+  // its first line (`check.mts`, `producer --explain`); Lean decided on the
+  // ordinary proposal.
+  gap("named-open-array", "`Array.isArray` on an open record, used as an array", "unverified", "search",
+    /^reject: an open record or `unknown` used as an array after `Array\.isArray`[\s\S]*evidence search failed/),
+  gap("named-length-union", "`length` of a union of an array and a record naming it", "unverified", "search",
+    /^reject: a read of `length` on a union of an array and a record[\s\S]*evidence search failed/),
+  gap("named-function-arity", "a module function where a signature binding more parameters is expected", "unverified", "search",
+    /^reject: a named function where a signature binding more parameters is expected[\s\S]*evidence search failed/),
+  gap("named-generic-instances", "`Promise<number>` at `Promise<number | string>`: generic methods related only by identity", "unverified", "search",
+    /^reject: an instance of a declaration with generic methods at another instance[\s\S]*evidence search failed/),
+  gap("named-implicit-index", "a type literal at an index signature it fits (an implicit index signature)", "unverified", "search",
+    /^reject: a record at an index signature[\s\S]*evidence search failed/),
+  gap("named-invariance", "a mutable array at one of a wider element", "unverified", "search",
+    /^reject: a mutable array at one of a wider element[\s\S]*evidence search failed/),
+  gap("named-type-parameter-test", "a `typeof` test on a value of a type parameter", "unverified", "search",
+    /^reject: a `typeof x === "number"` test on a value of a type parameter[\s\S]*evidence search failed/),
+  gap("named-object-cell", "a `let` without an initializer holding an object, assigned on every path", "unverified", "search",
+    /^reject: a `let` holding an object read where it must be assigned[\s\S]*evidence search failed/),
+  gap("named-dictionary-write", "a write at a key a dictionary may lack", "unverified", "search",
+    /^reject: a write adds the property 'fresh' where a dictionary may lack it[\s\S]*evidence search failed/),
+  gap("named-for-in-key", "a non-null assertion on a dictionary read at a `for...in` key", "unverified", "search",
+    /^reject: a non-null assertion on a read at a for\.\.\.in key[\s\S]*evidence search failed/),
+  { ...gap("named-typescript-refuses", "code TypeScript refuses, which SKJS accepts: the TypeScript error names the failure", "unverified", "search",
+    /^reject: TypeScript refuses this code too \(line 5, col 9: Type 'string \| number' is not assignable to type 'number'\.\)[\s\S]*evidence search failed/),
+    typescriptErrors: true },
+  gap("named-promise-then", "`then` inferring its binders through `TResult | PromiseLike<TResult>` and a default", "unverified", "search",
+    /^reject: a call inferring a binder written beside an application of it[\s\S]*evidence search failed/),
 ];

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, resolve, join } from "node:path";
 import { createHash } from "node:crypto";
 import { parseFile } from "../tools/fragment-parse.mts";
-import { tsconfigOf, type SeenDiagnostic } from "../tools/declaration-graph.mts";
+import { clientErrors, tsconfigOf, type SeenDiagnostic } from "../tools/declaration-graph.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
 import { presentObligation } from "../tools/diagnostic-view.mts";
 
@@ -73,9 +73,65 @@ function namingTheObligation(detail: string, source: string): string {
   const [first, ...rest] = detail.split("\n");
   return [first, `obligation: ${summary}`, ...rest].join("\n");
 }
+/** One known cause of failure the producer met (`producer --explain`): a
+ * form at a source span, and why no derivation of it is found. */
+interface Explanation {
+  pos: [number, number];
+  reason: string;
+}
+function readExplanations(text: string): Explanation[] {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((e: unknown): Explanation[] =>
+      e && typeof e === "object" && "pos" in e && "reason" in e && typeof e.reason === "string" &&
+        Array.isArray(e.pos) && e.pos.length === 2 && typeof e.pos[0] === "number" && typeof e.pos[1] === "number"
+        ? [{ pos: [e.pos[0], e.pos[1]], reason: e.reason }] : []);
+  } catch {
+    return [];
+  }
+}
+/** A search that found no derivation is refused by name where its cause is
+ * known, on a first line of its own before the verifier's, which follow
+ * unchanged: the producer's explanation of a form at the failed obligation
+ * (the innermost whose span meets the obligation's), else, for code
+ * TypeScript refuses, where the caller asks for it (`--typescript-errors`: it
+ * loads the project again, a second of CPU), the TypeScript error nearest
+ * the failed obligation: the
+ * pipeline follows TypeScript's types, and SKJS accepting what TypeScript
+ * refuses is SKJS going beyond them (the repository's AGENTS.md, "Match
+ * TypeScript"). Display only: the outcome is the same unverified search,
+ * which Lean decided on the ordinary proposal. */
+function refusedByName(detail: string, explain: () => Explanation[],
+    read: () => SeenDiagnostic[]): string {
+  if (!detail.includes("evidence search failed")) return detail;
+  const at = /at \[(\d+),(\d+)\)/.exec(detail);
+  if (at) {
+    const [start, end] = [Number(at[1]), Number(at[2])];
+    const meets = explain().filter((e) => e.pos[0] < Math.max(end, start + 1) && start < e.pos[1])
+      .sort((a, b) => (a.pos[1] - a.pos[0]) - (b.pos[1] - b.pos[0]));
+    if (meets.length) return `reject: ${meets[0].reason}\n${detail}`;
+  }
+  const errors = read();
+  if (!errors.length) return detail;
+  const pos = at ? Number(at[1]) : 0;
+  const distance = (d: SeenDiagnostic) =>
+    pos < d.pos[0] ? d.pos[0] - pos : pos > d.pos[1] ? pos - d.pos[1] : 0;
+  const nearest = errors.reduce((a, b) => (distance(b) < distance(a) ? b : a));
+  const text = nearest.text.split("\n")[0];
+  return `reject: TypeScript refuses this code too (line ${nearest.start.line + 1}, col ${
+    nearest.start.character + 1}: ${text}); the pipeline follows TypeScript's types\n${detail}`;
+}
+function typeScriptErrors(file: string, tsconfigPath?: string): SeenDiagnostic[] {
+  try {
+    return clientErrors(file, tsconfigPath);
+  } catch {
+    return [];
+  }
+}
 /** Acceptance is deliberately private to this module. An OCaml proposal alone
  * cannot construct the public verified outcome: both Lean phases must succeed. */
-export function check(source: string, tsconfigPath?: string): Outcome {
+export function check(source: string, tsconfigPath?: string, typescriptErrors = false): Outcome {
   const artifacts = mkdtempSync(join(tmpdir(), "ocaml-producer-"));
   let phase: Phase = "source";
   try {
@@ -185,7 +241,9 @@ export function check(source: string, tsconfigPath?: string): Outcome {
         status: "unverified",
         artifacts,
         phase,
-        detail: namingTheObligation(produced.detail, bytes.toString("utf8")),
+        detail: refusedByName(namingTheObligation(produced.detail, bytes.toString("utf8")),
+          () => readExplanations(run(join(here, "_build/default/producer.exe"), ["--explain", ast]).out),
+          () => typescriptErrors ? typeScriptErrors(tsconfigPath ? resolve(source) : snapshot, tsconfigPath) : []),
       };
     phase = "check";
     const checked = run(verifier, [
@@ -210,9 +268,11 @@ export function check(source: string, tsconfigPath?: string): Outcome {
 }
 /** The same run in a process of its own, exactly as the command line below
  * runs it, for a caller that must stay responsive or runs several at once.
- * `project` is what `--project` takes. */
-export function checkApart(source: string, project?: string): Promise<Outcome> {
-  const args = [import.meta.filename, source, ...(project ? ["--project", project] : [])];
+ * `project` is what `--project` takes; `typescriptErrors`, whether a failed
+ * search is named by TypeScript's errors (`--typescript-errors`). */
+export function checkApart(source: string, project?: string, typescriptErrors = false): Promise<Outcome> {
+  const args = [import.meta.filename, source, ...(project ? ["--project", project] : []),
+    ...(typescriptErrors ? ["--typescript-errors"] : [])];
   return new Promise((done, fail) =>
     execFile(process.execPath, args, { cwd: repo, maxBuffer: 16 * 1024 * 1024 }, (_error, stdout, stderr) => {
       // A source that is not verified exits 1 and still prints its outcome.
@@ -224,13 +284,15 @@ export function checkApart(source: string, project?: string): Promise<Outcome> {
     }));
 }
 if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
-  const args = process.argv.slice(2);
+  const all = process.argv.slice(2);
+  const typescriptErrors = all.includes("--typescript-errors");
+  const args = all.filter((a) => a !== "--typescript-errors");
   if (!(args.length === 1 || (args.length === 3 && args[1] === "--project"))) {
-    process.stderr.write("usage: node check.mts file.ts [--project tsconfig-or-directory]\n");
+    process.stderr.write("usage: node check.mts file.ts [--project tsconfig-or-directory] [--typescript-errors]\n");
     process.exitCode = 2;
   } else {
     try {
-      const result = check(args[0], args[2] ? tsconfigOf(args[2]) : undefined);
+      const result = check(args[0], args[2] ? tsconfigOf(args[2]) : undefined, typescriptErrors);
       process.stdout.write(JSON.stringify(result, null, 2) + "\n");
       process.exitCode = result.status === "verified" ? 0 : 1;
     } catch (error) {

@@ -15,6 +15,14 @@ type function_claim = { source: fn; entries: entry list; expressions: expression
                         arrows: (Json.t * overlay list) list }
 type t = { program: program; functions: function_claim list; init: function_claim option }
 let unsupported s = Json.fail ("unsupported: " ^ s)
+(* A run that explains a failed search (`producer --explain`): each form
+   whose failure has a known cause is recorded at its source span with its
+   reason, and the one at the failed obligation names it. An ordinary run
+   proposes these forms as any other, and Lean decides; an explanation only
+   names why it found no derivation. *)
+let explaining = ref false
+let explanations : (Json.t * string) list ref = ref []
+let explain pos s = if !explaining then explanations := (pos,s) :: !explanations
 let combine = List.fold_left union (Atoms [])
 (* A proposal heuristic for choosing an advertised arrow. It does not
    establish subtyping: Lean checks the selected call and its arguments. *)
@@ -285,6 +293,32 @@ let iterated_hint declarations expected =
       | _ -> member (Name "value") r) (parts [] results) with
   | [] -> None
   | values -> Some (combine values)
+(* The first arm of an iterated value that is not an array, named for the
+   refusal: `for...of` steps through `%Iterate%`, and a spread argument
+   copies its operand's elements, and both are stated for arrays only
+   (DESIGN.md "Loops over arrays"). A type parameter is left to Lean. *)
+let rec non_array_arm declarations seen t = match t with
+  | Rigid _ -> None
+  | Union ts -> List.find_map (non_array_arm declarations seen) ts
+  | Meet (t,_) -> non_array_arm declarations seen t
+  | Atoms atoms -> List.find_map (function
+      | Shape {elements=Some _;_} -> None
+      | Named (id,args) when not (List.mem id seen) ->
+        (match definition declarations id args with
+         | body -> non_array_arm declarations (id::seen) body
+         | exception Json.Error _ -> None)
+      | Named _ -> None
+      | Str | StrLit _ -> Some "a string"
+      (* An object naming a symbol-keyed member, as `[Symbol.iterator]` is:
+         an iterable to TypeScript. Any other is left to Lean, which finds
+         no iterator, as TypeScript does not. *)
+      | Shape {fields;_} when List.exists (fun (f:Semantic.field) ->
+            match f.name with Key _ -> true | Name _ -> false) fields ->
+        Some "an object that is not an array (a Set, a Map, an iterator or another iterable)"
+      | _ -> None) atoms
+let iteration_reason =
+  "only the iteration of an array is stated (%Iterate%): that of a string or a host collection is not, \
+   and a client iterable runs its own code (its `next` and `return`)"
 (* A key of several string or number singletons (NaN, which no equality
    test finds, is none): Lean reads, per singleton, the member its key names. *)
 let key_singletons = function
@@ -506,6 +540,155 @@ let arms declarations t = match t with
      | Some (Atoms (_::_::_ as atoms)) -> Atoms atoms
      | _ -> t)
   | _ -> t
+(* A type's atoms through the declarations and unions that name them. *)
+let flat_atoms declarations t =
+  let rec go seen t = match t with
+    | Union ts -> List.concat_map (go seen) ts
+    | Atoms atoms -> List.concat_map (function
+        | Named (id,args) when not (List.mem id seen) ->
+          (match definition declarations id args with
+           | body -> go (id::seen) body
+           | exception Json.Error _ -> [Named (id,args)])
+        | a -> [a]) atoms
+    | Rigid _ | Meet _ -> [] in
+  go [] t
+let array_atom = function Shape {elements=Some _;_} -> true | _ -> false
+(* An open record: a plain object whose keys its type does not bound, which
+   may be an array carrying other keys. *)
+let open_record_atom = function
+  | Shape {elements=None;calls=[];_} -> true
+  | _ -> false
+let array_or_record_reason =
+  "an array keeps its length in its store, not at a location a field of a record names, and an open record \
+   may be an array carrying other keys, so no rule reads `length` on a union of an array and a record"
+(* `length` read on a union of an array and an open record naming it: refused
+   by name. *)
+let refuse_length_union declarations pos t name =
+  if name = Name "length" then
+    let atoms = flat_atoms declarations t in
+    let names_length = function
+      | Shape {elements=None;calls=[];fields;_} ->
+        List.exists (fun (f:Semantic.field) -> f.name = name) fields
+      | _ -> false in
+    if List.exists array_atom atoms && List.exists names_length atoms then
+      explain pos ("a read of `length` on a union of an array and a record: " ^ array_or_record_reason)
+let module_arity_reason =
+  "its slot is its annotated signature, checked by its own unit, and the arity of an arrow is exact; \
+   offering it more parameters would make that slot a claim (DESIGN.md, \"Method members are host-relative\")"
+(* Names a `for...in` loop binds: the keys it steps over. *)
+let for_in_keys : string list ref = ref []
+let for_in_key_reason =
+  "a read at a key the loop found may still miss, and that the object owns the key it yields relates \
+   two values, which no type and no statement entry states"
+(* Whether a signature's parameters, or its callbacks' results, write a
+   binder beside an application mentioning it, as `then` and `catch` of
+   `Promise` do (`TResult | PromiseLike<TResult>`). *)
+let wrapped_binder (s:Semantic.signature) =
+  let rec mentions r = function
+    | Rigid q -> q = r
+    | Union ts -> List.exists (mentions r) ts
+    | Meet (t,ts) -> List.exists (mentions r) (t::ts)
+    | Atoms atoms -> List.exists (function
+        | Named (_,args) -> List.exists (mentions r) args
+        | Shape sh -> List.exists (fun (c:Semantic.signature) ->
+            List.exists (mentions r) (c.result :: c.params)) sh.calls
+        | _ -> false) atoms in
+  let binders = List.map (fun (q:Semantic.quantifier) -> q.identity) s.quantified in
+  let rec wraps = function
+    | Union ts ->
+      List.exists (function
+        | Rigid r when List.mem r binders -> List.exists (function
+            | Atoms atoms -> List.exists (function Named _ as a -> mentions r (Atoms [a]) | _ -> false) atoms
+            | _ -> false) ts
+        | _ -> false) ts || List.exists wraps ts
+    | Atoms atoms -> List.exists (function
+        | Shape sh -> List.exists (fun (c:Semantic.signature) -> List.exists wraps (c.result :: c.params)) sh.calls
+        | _ -> false) atoms
+    | Rigid _ | Meet _ -> false in
+  List.exists wraps s.params
+let wrapped_binder_reason =
+  "TypeScript infers such a binder through the application and fills one left unconstrained from its \
+   default, and the producer does neither; nor does Lean find the instance, as it pairs a union's labels by \
+   position"
+let generic_instances_reason =
+  "relating two instances relates their generic methods (`then` and `catch` of `Promise`, say), and the \
+   positive checker relates quantified signatures only by identity: that needs a rule instantiating the \
+   target's binders rigidly and the source's at them"
+(* SKJS's `Closed<T>`, which the SKJS environment declares as the identity
+   alias `T` (skjs-environment.d.ts). *)
+let closed_alias declarations id =
+  let suffix = "skjs-environment.d.ts#" in
+  let rec contains i = i + String.length suffix <= String.length id
+    && (String.sub id i (String.length suffix) = suffix || contains (i+1)) in
+  contains 0 && List.exists (fun (d:Source.declaration) -> d.id = id && match d.parameters,d.expression with
+    | [r],Rigid r' -> r = r'
+    | _ -> false) declarations
+(* Whether a type is, or names through its aliases, a `Closed<T>`. *)
+let rec mentions_closed declarations seen t = match t with
+  | Union ts -> List.exists (mentions_closed declarations seen) ts
+  | Atoms atoms -> List.exists (function
+      | Named (id,_) when closed_alias declarations id -> true
+      | Named (id,args) when not (List.mem id seen) ->
+        (match definition declarations id args with
+         | body -> mentions_closed declarations (id::seen) body
+         | exception Json.Error _ -> false)
+      | _ -> false) atoms
+  | Rigid _ | Meet _ -> false
+let implicit_index_reason =
+  "TypeScript admits a type literal whose named fields fit the index (an implicit index signature), but \
+   a value of it may carry other keys of any type, so it meets no index"
+let closed_reason =
+  "the pipeline reads `Closed<T>` as `T` (the SKJS environment states it so), which promises less than \
+   SKJS's closed type"
+let receiver_reason =
+  "that type admits a call passing any receiver, and the function requires its own"
+let invariance_reason =
+  "a writable element or field is invariant, as a write through the wider view would break the narrower \
+   one; TypeScript relates them covariantly, which is unsound, and SKJS infers the narrower from a \
+   later use"
+let tuple_iterable_reason =
+  "the search relates the store of an array to the element of `Array.prototype[Symbol.iterator]`, and \
+   a tuple's positions to no one element"
+let shape_test_reason =
+  "the values of that shape have a type no clause states (`T & number`, a callable of no known \
+   signature), so the test narrows nothing the model states"
+let object_cell_reason =
+  "the contents of a cell are stated only as primitive values, so that a `let` without an initializer \
+   holding an object was assigned on every path, and so is not `undefined`, is not stated"
+let forgotten_cell_reason =
+  "a cell is known by its contract after a step that may write it (a call, whose callee may write any \
+   location its operands reach, as the model states no reachability; a closure run later; a throw from \
+   anywhere in a `try`)"
+let equality_reason =
+  "the value may be an object without a field, and the model states no object identity"
+let dictionary_spread_reason =
+  "the copy owns the keys the dictionary holds when it runs, which no type states, and an object's \
+   keys are fixed at its allocation"
+let dictionary_presence_reason =
+  "presence promotes an optional field of a record, not the index of a dictionary, so the read is \
+   still at the index, which may miss"
+let absent_key_reason =
+  "the key may be absent, and a read of an absent key is stated by no clause the model reads"
+let mutable_tuple_length_reason =
+  "the length of a mutable tuple is not fixed by its type, since `push` is allowed on it (an unsoundness \
+   of TypeScript), so its `length` is a number"
+(* Names a `typeof` test found of a shape where their type is a type
+   parameter or `unknown`, with that shape; keys `in` found present in a
+   dictionary, by name. *)
+let shape_tests : (string * string) list ref = ref []
+(* Fields of names a strict equality found `undefined`. *)
+let undefined_fields : (string * string) list ref = ref []
+let dictionary_keys : (string * string) list ref = ref []
+let rec rigid_arm = function Rigid _ -> true | Union ts -> List.exists rigid_arm ts | _ -> false
+(* Names found arrays by `Array.isArray` while an open-record arm of theirs
+   remained: such an object is an array, but not one of `Array.prototype`'s
+   by any type. *)
+let open_array_tests : string list ref = ref []
+let open_array_reason =
+  "`Array.isArray(x)`, or `x instanceof Array`, on an open record or `unknown` finds that the object \
+   owns the store of an array, not that it is an array of `Array.prototype`: that every object owning a \
+   store was allocated as an array is a fact about every allocation of the program, which no type of a \
+   value states"
 (* Keep the atoms of a `typeof` test's shape where it holds, and the others
    where it fails. *)
 let rec typeof_slice shape holds = function
@@ -652,8 +835,25 @@ let rec branch_with ?(modules = fun _ -> None) ?(claimed = fun _ -> None) declar
       | _ when is_field n -> None
       | _ -> Some (n,x)) either
   | TypeofTest (shape,equal,{node=Id name;_}) ->
-    refine_value env name (typeof_slice shape (truth = equal))
-  | HasKey ({node=Literal (LString key);_},{node=Id name;_}) -> refine_value env name (key_slice key truth)
+    (if truth = equal && shape <> "array" && shape <> "object" then match List.assoc_opt name env with
+      | Some b when rigid_arm (binding_type b) || binding_type b = top ->
+        shape_tests := (name,shape) :: !shape_tests
+      | _ -> ());
+    let env = refine_value env name (typeof_slice shape (truth = equal)) in
+    (if shape = "array" && truth = equal then match List.assoc_opt name env with
+      | Some b when binding_type b = top
+          || List.exists open_record_atom (flat_atoms declarations (binding_type b)) ->
+        open_array_tests := name :: !open_array_tests
+      | _ -> ());
+    env
+  | HasKey ({node=Literal (LString key);_},{node=Id name;_}) ->
+    (if truth then match List.assoc_opt name env with
+      | Some b when List.exists (function
+          | Shape {indexes=_::_;fields;_} -> not (List.exists (fun (f:Semantic.field) -> f.name = Name key) fields)
+          | _ -> false) (flat_atoms declarations (binding_type b)) ->
+        dictionary_keys := (name,key) :: !dictionary_keys
+      | _ -> ());
+    refine_value env name (key_slice key truth)
   (* `x instanceof C` is the same test of the class's key: primitives and
      fresh literals lack it; any other arm may have it or not. *)
   | InstanceTest (key,{node=Id name;_},_) ->
@@ -663,6 +863,7 @@ let rec branch_with ?(modules = fun _ -> None) ?(claimed = fun _ -> None) declar
      | _ -> ());
     refine_value env name (key_slice key truth)
   | TypeofTest (shape,equal,{node=Read ({node=Id name;_},Name field);_}) ->
+    if shape = "undefined" && truth = equal then undefined_fields := (name,field) :: !undefined_fields;
     refine_field env name field (typeof_slice shape (truth = equal))
   (* `x == null` holds of null and undefined alike. *)
   | Equality ((LooseEqual | LooseUnequal as op),{node=Id name;_},{node=Literal (LNull | LUndefined);_})
@@ -678,6 +879,10 @@ let rec branch_with ?(modules = fun _ -> None) ?(claimed = fun _ -> None) declar
      other to the values that may equal one of them. *)
   | Equality ((StrictEqual | StrictUnequal as op),l,r) ->
     let equal = truth=(op=StrictEqual) in
+    (match l.node,r.node with
+     | Read ({node=Id o;_},Name k),Literal LUndefined | Literal LUndefined,Read ({node=Id o;_},Name k) when equal ->
+       undefined_fields := (o,k) :: !undefined_fields
+     | _ -> ());
     (* An immutable name, or a field of one: read again where Lean tests it
        against each singleton, which nothing between has changed. *)
     let immutable n = match List.assoc_opt n env with
@@ -1097,7 +1302,47 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       else Some (record (List.map (fun (name,t) ->
         {name=Name name;optional=false;read=Option.get t;write=None;host=false}) fields))
     | _ -> None
+  (* A name `Array.isArray` found an array of, where it may be an open
+     record or anything, used where every array would do. *)
+  and explain_open_array site env n expected =
+    match expected with
+    | Some x when List.mem n !open_array_tests ->
+      let any_array = function
+        | Shape {elements=Some {required=[];optional_elements=[];rest=Some (Atoms [Top] | Rigid _);readonly=true};
+                 fields=[];indexes=[];calls=[]} -> true
+        | _ -> false in
+      let wanted = flat_atoms declarations x in
+      let actual = try resolve env n with Json.Error _ -> Atoms [] in
+      if wanted <> [] && List.for_all any_array wanted
+         && (actual = top || List.exists open_record_atom (flat_atoms declarations actual))
+      then explain site ("an open record or `unknown` used as an array after `Array.isArray`: " ^ open_array_reason)
+    | _ -> ()
+  (* A record at an index signature, which TypeScript admits through an
+     implicit index signature. *)
+  and explain_record_at_index site env n expected =
+    match expected with
+    | Some x ->
+      let named = try resolve env n with Json.Error _ -> Atoms [] in
+      let actual = flat_atoms declarations named and wanted = flat_atoms declarations x in
+      let record = function Shape {elements=None;calls=[];indexes=[];_} -> true | _ -> false in
+      let dictionary = function Shape {elements=None;calls=[];indexes=_::_;_} -> true | _ -> false in
+      if actual <> [] && List.for_all record actual && List.exists dictionary wanted
+         && not (List.exists (fun a -> record a || a = Top) wanted) then
+        explain site ("a record at an index signature: " ^ implicit_index_reason
+          ^ (if mentions_closed declarations [] named then "; " ^ closed_reason else ""))
+    | None -> ()
+  (* A write at a key a dictionary may lack adds it. *)
+  and dictionary_growth site t field =
+    match flat_atoms declarations t with
+    | [] -> ()
+    | atoms -> if List.for_all (function
+        | Shape {indexes=_::_;elements=None;calls=[];fields;_} ->
+          not (List.exists (fun (f:Semantic.field) -> f.name = field) fields)
+        | _ -> false) atoms then
+      explain site ("a write adds the property '" ^ key_text field ^ "' where a dictionary may lack it: \
+        an object's keys are fixed at its allocation")
   and expr ?expected env e =
+    let site = e.pos in
     let t = match e.node with
     | Id n ->
       Option.iter (fun expected -> Option.iter (fun c -> offer_class c expected)
@@ -1110,6 +1355,135 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
          when List.mem_assoc n !closures && List.mem_assoc n env ->
          Option.iter (fun state -> state ()) (closure_offer n o)
        | _ -> ());
+      (* A named function value, a module function or a parameter, where a
+         signature binding more parameters than it does, or indifferent to
+         the receiver it requires, is expected (a closure literal is offered
+         such a signature instead). *)
+      (match expected with
+       | Some x when not (List.mem_assoc n !closures) ->
+         let rec calls t = match t with
+           | Meet (t,ts) -> List.concat_map calls (t::ts)
+           | t -> List.concat_map (function Shape s -> s.calls | _ -> [])
+                    (flat_atoms declarations t) in
+         let own = if not (List.mem_assoc n env) && List.mem_assoc n module_functions
+           then (try Some (Lazy.force (List.assoc n module_functions)) with Json.Error _ -> None)
+           else (try Some (resolve env n) with Json.Error _ -> None) in
+         (match own with
+          | Some (Atoms [Shape {calls=[own];fields=[];indexes=[];elements=None}]) ->
+            if List.exists (fun (c:Semantic.signature) ->
+                List.length c.params > List.length own.params
+                || (c.variadic <> None && own.variadic = None)) (calls x)
+            then explain site ("a named function where a signature binding more parameters is expected: "
+              ^ module_arity_reason)
+            else if own.receiver <> top && List.exists (fun (c:Semantic.signature) -> c.receiver = top) (calls x)
+            then explain site ("a function whose `this` is typed where a callback indifferent to its receiver is \
+              expected: " ^ receiver_reason)
+          | _ -> ())
+       | _ -> ());
+      (* A mutable array, or an instance with a writable field, at one whose
+         element or field is wider. *)
+      (match expected with
+       | Some x ->
+         let mutable_rest = function
+           | Shape {elements=Some {required=[];optional_elements=[];rest=Some r;readonly=false};_} -> Some r
+           | _ -> None in
+         let actual = flat_atoms declarations (resolve env n) and wanted = flat_atoms declarations x in
+         let rests = List.filter_map mutable_rest actual and wanted_rests = List.filter_map mutable_rest wanted in
+         if rests <> [] && List.length rests = List.length actual && wanted_rests <> []
+            && List.for_all (fun r -> not (List.mem r wanted_rests)
+                 && List.exists (fun w -> plausible_subtype r w) wanted_rests) rests
+            && not (List.exists (function
+                 | Shape {elements=Some {readonly=true;_};_} -> true | _ -> false) wanted) then
+           explain site ("a mutable array at one of a wider element: " ^ invariance_reason);
+         (match resolve env n, x with
+          | Atoms [Named (a,xs)], Atoms [Named (b,ys)] when a = b && xs <> ys ->
+            (match definition declarations a xs, definition declarations b ys with
+             | Atoms [Shape s1], Atoms [Shape s2] ->
+               if List.exists (fun (f:Semantic.field) -> f.write <> None && not f.host && List.exists (fun (g:Semantic.field) ->
+                   g.name = f.name && g.read <> f.read) s2.fields) s1.fields then
+                 explain site ("an instance at another whose writable field differs: " ^ invariance_reason)
+             | _ -> ()
+             | exception Json.Error _ -> ())
+          | _ -> ())
+       | None -> ());
+      (* A tuple at an iterable. *)
+      (match expected with
+       | Some x when List.exists (function
+             | Shape {elements=Some {required=_::_;_};_} -> true | _ -> false)
+             (flat_atoms declarations (resolve env n))
+           && List.exists (function
+             | Shape {elements=None;fields;_} -> List.exists (fun (f:Semantic.field) ->
+                 match f.name with Key _ -> true | Name _ -> false) fields
+             | _ -> false) (flat_atoms declarations x) ->
+         explain site ("a tuple at an iterable: " ^ tuple_iterable_reason)
+       | _ -> ());
+      (* A value a type test found of a shape, where its type is a type
+         parameter or `unknown`. *)
+      (match expected, List.assoc_opt n !shape_tests with
+       | Some x, Some shape when not (rigid_arm x) ->
+         explain site ("a `typeof x === \"" ^ shape ^ "\"` test on a value of a type parameter or `unknown`: "
+           ^ shape_test_reason)
+       | _ -> ());
+      (* A cell read at its contract where the use asks for less. *)
+      (match expected, List.assoc_opt n env with
+       | Some x, Some (Storage (contract,current)) when current = contract
+           && not (plausible_subtype contract x) ->
+         let atoms = flat_atoms declarations contract in
+         if List.mem Undef atoms && List.exists (function
+             | Shape _ | Exact _ | Named _ | Callable | Ctors _ -> true | _ -> false) atoms
+            && plausible_subtype (Semantic.without_nullish contract) x
+         then explain site ("a `let` holding an object read where it must be assigned: " ^ object_cell_reason)
+         else explain site ("a cell read at its contract: " ^ forgotten_cell_reason)
+       | _ -> ());
+      (* Two instances of declarations with generic methods, `Promise<A>` at
+         `Promise<B>`: refused by name. *)
+      (match expected with
+       | Some x ->
+         let generic_methods id args =
+           match definition declarations id args with
+           | Atoms [Shape sh] -> List.exists (fun (f:Semantic.field) -> match f.read with
+               | Atoms [Shape {calls;_}] ->
+                 List.exists (fun (c:Semantic.signature) -> c.quantified <> []) calls
+               | _ -> false) sh.fields
+           | _ -> false
+           | exception Json.Error _ -> false in
+         let apps t = match t with
+           | Atoms atoms -> List.filter_map (function Named (id,args) -> Some (id,args) | _ -> None) atoms
+           | _ -> [] in
+         (match apps (resolve env n), apps x with
+          | [a,xs], (_::_ as wanted) when not (List.mem (a,xs) wanted)
+              && List.for_all (fun (b,ys) -> generic_methods b ys
+                   (* Instances that are one type, their arguments unused. *)
+                   && (try
+                         (* A method's receiver names the instance itself. *)
+                         let unreceived = function
+                           | Atoms [Shape sh] -> Atoms [Shape {sh with fields=List.map (fun (f:Semantic.field) ->
+                               match f.read with
+                               | Atoms [Shape m] -> {f with read=Atoms [Shape {m with calls=List.map
+                                   (fun (c:Semantic.signature) -> {c with receiver=top}) m.calls}]}
+                               | _ -> f) sh.fields}]
+                           | t -> t in
+                         unreceived (definition declarations b ys) <> unreceived (definition declarations a xs)
+                       with Json.Error _ -> true)) wanted
+              && generic_methods a xs ->
+            explain site ("an instance of a declaration with generic methods at another instance: "
+              ^ generic_instances_reason)
+          | _ -> ())
+       | None -> ());
+      explain_record_at_index site env n expected;
+      (* An array used as a record naming `length`. *)
+      (match expected with
+       | Some x when List.exists (function
+             | Shape {elements=None;calls=[];fields;_} ->
+               List.exists (fun (f:Semantic.field) -> f.name = Name "length") fields
+             | _ -> false) (flat_atoms declarations x) ->
+         (match flat_atoms declarations (resolve env n) with
+          | [] -> ()
+          | atoms -> if List.for_all array_atom atoms then
+              explain site ("an array used as a record naming `length`: " ^ array_or_record_reason))
+       | _ -> ());
+      (* An open record `Array.isArray` found an array, used as one. *)
+      explain_open_array site env n expected;
       resolve env n
     | Literal l -> literal_type l
     | Not e -> ignore (expr env e); bool
@@ -1192,7 +1566,11 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
           | _ -> unsupported "an array rest needs one tuple of required positions: the rest of an array of unknown length is a slice" in
         expressions := {pos=span;type_=claim;instantiation=None} :: !expressions) rest;
       actual
-    | Equality (_,l,r) -> ignore (expr env l); ignore (expr env r); bool
+    | Equality (op,l,r) ->
+      let lt = expr env l and rt = expr env r in
+      if (op = StrictEqual || op = StrictUnequal) && (rigid_arm lt || rigid_arm rt) then
+        explain site ("strict equality with a value of a type parameter: " ^ equality_reason);
+      bool
     | Alloc fs ->
       let contract = match Option.bind expected (object_hint declarations []) with
         | Some shape -> Some shape
@@ -1232,6 +1610,13 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
          when List.exists (fun (f:Semantic.field) -> f.optional) contract_fields -> Atoms [Exact fields]
        | _ -> record fields)
     | Build parts ->
+      List.iter (fun (name,(e:expr)) -> if name = None then
+        match (match quietly (fun () -> expr env e) with
+               | Some t -> (try flat_atoms declarations t with Json.Error _ -> [])
+               | None -> []) with
+        | atoms when List.exists (function Shape {indexes=_::_;_} -> true | _ -> false) atoms ->
+          explain site ("a spread of a dictionary: " ^ dictionary_spread_reason)
+        | _ -> ()) parts;
       let contract = Option.bind expected (object_hint declarations []) in
       (* A field is built at the type the contract names for it, else at its
          own, widened, as a literal's field is. *)
@@ -1278,7 +1663,10 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         | None -> array {required=[];optional_elements=[];rest=Some (widen (combine types));readonly=false})
     (* A field a guard found holding less than its type is read at that. *)
     | Read (({node=Id name;_} as o),Name field) when List.mem_assoc (field_key name field) env ->
-      ignore (expr env o); binding_type (List.assoc (field_key name field) env)
+      let known = binding_type (List.assoc (field_key name field) env) in
+      if List.mem (name,field) !undefined_fields then
+        explain site ("an optional key found `undefined`, read at `undefined`: " ^ absent_key_reason);
+      ignore (expr env o); known
     | Read ({node=Id name;_} as e,n) when List.mem name !unknown_instance_tests ->
       (match expr env e with
        | Atoms xs as t when List.mem Top xs ->
@@ -1296,16 +1684,39 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         unsupported ("a read of " ^ key_text n ^ " on a `let` holding a union of objects, some without it: \
           a test does not narrow a cell holding an object, whose known contents are primitive values"))
     | Read (e,n) ->
-      let t = expr env e in
-      (try field_type declarations [] t n with Json.Error m
-        when String.length m >= 27 && String.sub m 0 27 = "unsupported: missing field "
-             && (match t with
-                 | Atoms atoms -> List.exists (function Shape {elements=Some _;_} -> true | _ -> false) atoms
-                 | _ -> false) ->
-        (* `Array.isArray` keeps a record arm on both outcomes: a value of
-           the record's type may be an array carrying its keys. *)
-        unsupported ("a read of " ^ key_text n ^ " on a union of an array and a record that does not state it: \
-          a test that the value is an array keeps the record, a value of which may be an array carrying its keys"))
+      let receiver = expr env e in
+      (match e.node,n with
+       | Id o,Name k when List.mem (o,k) !dictionary_keys && expected <> None ->
+         explain site ("a read of a key `in` found in a dictionary: " ^ dictionary_presence_reason)
+       | Id o,Name k when List.mem (o,k) !undefined_fields && expected <> None ->
+         explain site ("an optional key found `undefined`, read at `undefined`: " ^ absent_key_reason)
+       | _ -> ());
+      refuse_length_union declarations site receiver n;
+      (match expected with
+       | Some x when n = Name "length"
+           && List.exists (function
+               | Shape {elements=Some {rest=None;readonly=false;_};_} -> true
+               | _ -> false) (flat_atoms declarations receiver)
+           && (match flat_atoms declarations x with
+               | [] -> false
+               | wanted -> List.for_all (function NumLit _ -> true | _ -> false) wanted) ->
+         explain site ("the `length` of a mutable tuple read at its arity: " ^ mutable_tuple_length_reason)
+       | _ -> ());
+      (match e.node with
+       | Id name when List.mem name !open_array_tests ->
+         (try field_type declarations [] receiver n with Json.Error m ->
+           explain site ("a member of an open record read as one of an array after `Array.isArray`: " ^ open_array_reason);
+           Json.fail m)
+       | _ ->
+         (try field_type declarations [] receiver n with Json.Error m
+           when String.length m >= 27 && String.sub m 0 27 = "unsupported: missing field "
+                && (match receiver with
+                    | Atoms atoms -> List.exists (function Shape {elements=Some _;_} -> true | _ -> false) atoms
+                    | _ -> false) ->
+           (* `Array.isArray` keeps a record arm on both outcomes: a value of
+              the record's type may be an array carrying its keys. *)
+           unsupported ("a read of " ^ key_text n ^ " on a union of an array and a record that does not state it: \
+             a test that the value is an array keeps the record, a value of which may be an array carrying its keys")))
     | Index (e,key) -> let receiver=expr env e in let key=expr env key in index_type declarations [] receiver key
     (* The right side runs after the receiver and the key: it sees what they
        assigned. *)
@@ -1313,11 +1724,15 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       Option.iter (fun k -> Option.iter (evolve k) (quietly (fun () -> expr env rhs))) (evolving_array receiver);
       let t = expr env receiver in
       (match expr env key with
-       | Atoms [StrLit k] -> refuse_growth declarations t (Name k)
+       | Atoms [StrLit k] -> refuse_growth declarations t (Name k); dictionary_growth site t (Name k)
+       | Atoms [NumLit bits] -> Option.iter (fun k -> dictionary_growth site t (Name k)) (number_key bits)
        | _ -> ());
       expr (effects (effects env receiver) key) rhs
     | Write (receiver,field,rhs) ->
-      refuse_growth declarations (expr env receiver) field; expr (effects env receiver) rhs
+      let object_type = expr env receiver in
+      refuse_growth declarations object_type field;
+      dictionary_growth site object_type field;
+      expr (effects env receiver) rhs
     | Assign (n,rhs) ->
       if not (List.mem_assoc n env) && List.mem_assoc n module_functions then
         unsupported ("assignment to module function " ^ n);
@@ -1535,6 +1950,9 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let infer_explicit ~receiver ?expected (signature:Semantic.signature) actuals =
         if List.length type_args > List.length signature.quantified then
           unsupported "more explicit type arguments than the callee has binders";
+        if type_args = [] && wrapped_binder signature then
+          explain (e:expr).pos ("a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): "
+            ^ wrapped_binder_reason);
         let fixed = List.mapi (fun i t ->
           (List.nth signature.quantified i).identity,ValueArgument t) type_args in
         let partial = Inference.substitute_signature fixed
@@ -1592,6 +2010,18 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
            is expected. *)
         | Id n when List.mem_assoc n !classes ->
           Some (fun () -> offer_class (List.assoc n !classes) param)
+        (* Any other named function is its annotated signature: one binding
+           more parameters is not offered it. *)
+        | Id n ->
+          explain_open_array arg.pos env n (Some param);
+          explain_record_at_index arg.pos env n (Some param);
+          (match param, (try Some (resolve env n) with Json.Error _ -> None) with
+           | Atoms [Shape {calls=[o];_}], Some (Atoms [Shape {calls=[own];fields=[];indexes=[];elements=None}])
+               when List.length o.params > List.length own.params || (o.variadic <> None && own.variadic = None) ->
+             explain arg.pos ("a named function where a signature binding more parameters is expected: "
+               ^ module_arity_reason)
+           | _ -> ());
+          None
         | _ -> None in
       let param_at (s:Semantic.signature) i = match List.nth_opt s.params i with
         | Some p -> Some p
@@ -1622,7 +2052,10 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
                       (List.filteri (fun i _ -> i >= List.length args) params))
          then unsupported "a variadic call omits a fixed parameter that does not admit undefined";
          List.iteri (fun i e ->
-           if List.mem i spreads then ignore (expr env e)
+           if List.mem i spreads then
+             Option.iter (fun arm ->
+               explain (e:expr).pos ("a spread argument of " ^ arm ^ ": " ^ iteration_reason))
+               (non_array_arm declarations [] (expr env e))
            else match List.nth_opt params i with
              | Some p -> ignore (expr ~expected:p env e)
              | None -> ignore (expr ~expected:element env e)) args;
@@ -1893,6 +2326,9 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let left = expr ?expected (branch env c true) a in
       let right = expr ?expected (branch env c false) b in union left right
     | Coalesce (a,b) -> let left=expr env a in let right=expr ?expected env b in
+      if expected <> None && rigid_arm left then
+        explain site ("`??` on a value of a type parameter: its values other than null and undefined have \
+          the type `T & {}`, which no clause states");
       union (without_nullish left) right
     (* The body runs where the receiver is present, and reads it so; a
        nullish receiver gives `undefined`. An inner chain's receiver hides
@@ -1911,7 +2347,12 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       (match const_type env e with
        | Some t -> ignore (expr ~expected:t env e); t
        | None -> unsupported "`as const` on an operand other than a literal, an array or object literal, or a name")
-    | Cast (kind,annot,e) -> let actual=expr ?expected:annot env e in
+    | Cast (kind,annot,e) ->
+      (match kind,e.node with
+       | "nonNull",Index (_,{node=Id k;_}) when List.mem k !for_in_keys ->
+         explain site ("a non-null assertion on a read at a for...in key: " ^ for_in_key_reason)
+       | _ -> ());
+      let actual=expr ?expected:annot env e in
       (match kind,annot with
         | "nonNull",None -> without_nullish actual
         | "satisfies",Some _ -> actual
@@ -2223,7 +2664,13 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | ForOf (name,name_pos,iterable,body) ->
       (* The loop is the call of `%Iterate%` on the iterable, claimed at the
          statement with its instance; the element, at the name it binds. *)
+      (match iterable.node with
+       | Call ({node=Id "%ForIn%";_},_,_,_,_) -> for_in_keys := name :: !for_in_keys
+       | _ -> ());
       let actual = expr env iterable in
+      Option.iter (fun arm ->
+        explain s.span ("a for...of loop over " ^ arm ^ ": " ^ iteration_reason))
+        (non_array_arm declarations [] actual);
       let signature = match declared_head declarations [] (resolve env "%Iterate%") with
         | Atoms [Shape {calls=[signature];_}] when signature.quantified<>[] -> signature
         | _ -> unsupported "a for...of loop needs the %Iterate% intrinsic" in
