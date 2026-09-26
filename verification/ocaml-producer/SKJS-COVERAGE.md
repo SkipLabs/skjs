@@ -349,12 +349,12 @@ named).
    ([computed types](../PROGRAM-TYPING.md#computed-types)).
 10. **Mutable bindings.** A `let` or an assigned parameter is a cell with a
     storage contract (its annotation, or TypeScript's widened or evolved
-    type); module constants read by functions verify ([mutable bindings](../PROGRAM-TYPING.md#mutable-bindings-and-module-constants)).
-    Left (1): a closure assigning its own parameter
-    (`captured-local-write.ts#paramReassignNarrowsInLambda`, producer:
-    "assignment to immutable binding").
+    type); module constants read by functions verify ([mutable bindings](../PROGRAM-TYPING.md#mutable-bindings-and-module-constants)),
+    as does a closure's parameter its block body assigns, a cell as a
+    function's is (`captured-local-write.ts#paramReassignNarrowsInLambda`).
 11. **Compound and update assignments.** `x++`, `+=`, `||=`, `??=` and array
-    destructuring assignment verify. Left (1): an assignment pattern whose
+    destructuring assignment verify, an update of a local inside a closed
+    expression too (`postfix-with-binary-ops.ts`). Left (1): an assignment pattern whose
     target is neither a field nor a local
     (`destructuring-assignment.ts#keyBeforeDefault`), one of the
     [remaining source forms](../DESIGN.md#next-steps).
@@ -397,8 +397,14 @@ named).
     `promise-object.ts#testAwaitPlainObject`, an
     [SKJS unsoundness](#confirmed-await-passes-a-record-through-testsexpect-errorpromise-objecttstestawaitplainobject));
     a numeric key on a value not proved an array with that index (7,
-    `algebraic-data-types-comprehensive.ts#countDataValues`); an indexed read
-    on a non-object (1, `instanceof-generic-skolem-args.ts#arrayRead`).
+    `algebraic-data-types-comprehensive.ts#countDataValues`): an array may
+    own keys besides its elements, and a number that is no index names one;
+    an indexed read on a non-object (1, `instanceof-generic-skolem-args.ts#arrayRead`).
+    Since named by their causes: a guard finding an object where a field or a
+    cell holds one beside `null` (`destructuring.ts#checkedNestedPattern`,
+    `test.ts#reverse`), which states no contents, `Array.isArray` on
+    `unknown` (`#arrayRead`), and a program TypeScript rejects
+    (`test.ts#main`).
 15. **Equality.** A singleton operand of every primitive kind selects a tag
     test that narrows the other operand on both edges; any other `===` is the
     strict-equality operator, exact where one operand is a primitive or an
@@ -423,9 +429,11 @@ named).
     right operand that is not a class of the file (7,
     `instanceof-rhs.ts#instanceofFunction`); `instanceof` narrowing
     `unknown`: an object gets a class's prototype without its constructor
-    (7, `instanceof-generic-skolem-args.ts#observe`); `in` with a numeric key,
-    an array element (3, `in.ts#literalInTupleAlwaysTrue`); `in` with a key
-    that is not a union of string literals (2, `in.ts#stringInRecord`).
+    (7, `instanceof-generic-skolem-args.ts#observe`). `in` with a key
+    TypeScript types as other than string literals (a number, an array index
+    among them, a `string`, a symbol) is the host's `%HasProperty%`, a
+    Boolean that narrows nothing (`in.ts#stringInRecord`,
+    `#literalInTupleAlwaysTrue`, `symbols.ts#inResult`).
 18. **Search found no derivation.** 139 units in 59 files. The message names
     the failed obligation and why (`… evidence search failed: no derivation
     of its return-contract claim`), and `check.mts` adds the reader's summary
@@ -451,7 +459,7 @@ named).
     | Sound aliased views without fields | `obj-literal-indexes.ts#testAliasMutableOptionalThenOptional`, `#testAliasTwoReadonlyOptionals` | (b) | the same search as the unsound family's |
     | Guards: `typeof x === "function"` on `unknown` or a binder | `function-type.ts` (2) | (b) | search |
     | `then` through a callback returning a promise; `catch` instantiating the binder its result accumulates | `promise-object.ts#testThenChained`, `#testCatch` | (a), (b) | producer inference through `PromiseLike<TResult>`; the accumulating family is truncated a level early under instantiation ([next steps](../DESIGN.md#next-steps)) |
-    | A module function where a longer signature, or an intersection with one, is expected | `function-intersection.ts` (4), `function-subtyping.ts#testMissingRestFails` | (c) | its slot is its annotated signature, checked by its own unit; offering more would make that slot a claim |
+    | A module function where a longer signature, or an intersection with one, is expected | `function-intersection.ts` (4), `function-subtyping.ts#testMissingRestFails` | (b) | sound (its code discards the actuals past its parameters), but its slot is its annotated signature, checked by its own unit; offering more would make that slot a claim ([next steps](../DESIGN.md#next-steps)) |
     | Classes: field annotations and a `#private` field in a class body, a method reattached through a `this` parameter | `field-type-annotations.ts#FieldsWithAnnotations`, `private-fields.ts#HasPrivateForInTest`, `this-parameter-implicit-class.ts#compatibleReattachment` | (b) | search |
     | SKJS's own literal typing, where TypeScript differs and the pipeline follows TypeScript: `[1, "a"]` as a tuple, an evolving `[]` | `array_literal_examples.ts` | (c) | TypeScript types these as `(number \| string)[]` and `any[]` |
     | An array's `length` as a record field; an 11-tuple's `length` as the literal 11 | `literal-representation-lifetime.ts`, `tuple-large-arity.ts#arity11Length` | (c) | an array keeps its length in its store, not at a field; a mutable tuple's length is not fixed by its type |
@@ -470,7 +478,10 @@ named).
     earlier in the file (`super(...)`, `super.m(...)`, overrides checked, the
     derived prototype linked to the base's, an implicit constructor
     forwarding the base's parameters) and interface inheritance through
-    aliases ([classes](../PROGRAM-TYPING.md#classes)). Left (25), each refused
+    aliases ([classes](../PROGRAM-TYPING.md#classes)); an optional field is
+    TypeScript's `f?: T | undefined`, which the `undefined` an instance holds
+    without an initializer meets (`field-type-annotations.ts#FieldsWithAnnotations`).
+    Left (25), each refused
     by its reason: a method with a `this` parameter (8,
     `this-parameter-detached.ts#H`; a method member is
     [host-relative](../DESIGN.md#method-members-are-host-relative)); extending
@@ -534,7 +545,7 @@ named).
 23. **Loops.** `for(;;)` is a `while` whose body's end and `continue` run the
     update; `for...in` iterates the trusted `%ForIn%`; `for...of` over an
     array steps `%Iterate%` ([loops over arrays](../PROGRAM-TYPING.md#loops-over-arrays)).
-    Left (1): a `for...of` declaring other than one `const` binding
+    A `let` in a `for...of` or `for...in` head nothing assigns is a `const`
     (`for_in_for_of_tests.ts#testForLoopsWithDifferentDeclarations`).
 24. **Exceptions.** A throw is an outcome of the calculus
     ([throws](../DESIGN.md#throws)); `throw`, `try`/`catch`/`finally` and
@@ -543,16 +554,17 @@ named).
     `finally` for returns and throws only.
 25. **Calls.** `.call`, `.apply` and `.bind` on the file's functions, a
     leading `this: T` parameter as the receiver, and spreads among the
-    actuals verify ([calls](../DESIGN.md#calls)). Left (11): array literal
-    spreads outside the fragment (4, `generic-spread-params.ts#pushAll`);
-    `.call` other than on a known local function with an explicit receiver
-    (3, `this-parameter-bind-call-apply.ts#implicitRebindCompatibleOk`); a
-    spread argument of no fixed length (1,
-    `spread-in-function-calls.ts#testSpreadUndefined`) or into `new` (1,
-    `#testSpreadInConstructor`); a method read off its object as a function
-    value (1, `this-parameter-implicit-class.ts#compatibleDestructuring`,
-    refused); `Object.assign` other than of a fresh arrow and an object
-    literal (1, `typeof.ts#testCallableObject`).
+    actuals verify ([calls](../DESIGN.md#calls)), and `[...e]` of a host
+    iterable is its spread intrinsic (`symbols.ts#testSpreadInArrayLiteral`).
+    Left: array literal spreads of several parts or of an array
+    (`generic-spread-params.ts#pushAll`); `.call` of a function value read
+    from an object, which may own a `call` of its own
+    (`spread-callable.ts#copyReaderArgument`); a spread into `new`
+    (`repro311.ts#perform`, `spread-in-function-calls.ts#testSpreadInConstructor`);
+    refused: `.call`, `.apply` or `.bind` of a method read off its object,
+    extraction (`this-parameter-bind-call-apply.ts#implicitRebindCompatibleOk`),
+    and a spread of no fixed length into fixed parameters, which TypeScript
+    rejects (`spread-in-function-calls.ts#testSpreadUndefined`).
 26. **`await`.** `await` is a trusted step and an async result is a primitive
     ([async and iteration](../DESIGN.md#async-and-iteration)). Left (4): a
     thenable awaited where the closure's bound admits no thenable
@@ -579,8 +591,8 @@ named).
     `instanceof-generic-skolem-args.ts#unionRoundTrip`).
 32. **bigint.** Literals, `BigInt`, bigint literal types and arithmetic
     through the one operator rule, division and exponent throwing where
-    JavaScript does. Left (1): a non-decimal numeric literal type
-    (`number-literal-precision.ts#beyondRangePair`).
+    JavaScript does. A numeric literal past the largest double, `1e309`, is
+    its infinity (`number-literal-precision.ts#beyondRangePair`).
 33. **Enums.** An enum is the module constant bound to the object
     TypeScript's emit makes, members and reverse mappings as readonly fields;
     `E`, `E.A` and `typeof E` as types; a `const enum`'s reads are its values
