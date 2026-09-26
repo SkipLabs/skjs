@@ -723,7 +723,7 @@ not yet taken are [next steps](#next-steps); a search failure is neither.
 | A rest parameter of a definition typed by a type parameter; one typed by an intersection, by a tuple with optional or rest elements, or by what is no array | A definition has no allocation rule for an array only an instance fixes (a function type's is a pack); the fresh array's meet has no representation; several lengths are several signatures; the collected array is no value of it. |
 | A written `let` pattern in a `for` head; a test of a written `let` holding a union of objects | Its bindings are cells, which only a statement of a block lowers them to; a cell's known contents are primitive or merely no `undefined`. |
 | An array pattern over a value that may not be an array | It would step the value's own iterator. |
-| A class method declaring `this: T`; a generic class method; a constructor parameter with a default | A method member is host-relative; the closure's claim would be a quantified callable, which the claim format does not encode; construct code is a term over plain parameters with no default schedule. |
+| A class method declaring `this: T`; a generic class method; a constructor parameter with a default | A method member is host-relative; a generic method would be a host-relative member with quantified signatures, which the model does not have ([next steps](#next-steps)); construct code is a term over plain parameters with no default schedule. |
 | A class member with a computed key other than a method's `unique symbol` constant or a static `[Symbol.hasInstance]`; an index signature in a class; a static block reading `this`; a class extending a generic class other than at the base's own binders | A method is a binding and a prototype key named by its plain name or its symbol; instances are what construction allocates; the block's receiver is the class value, whose statics are bindings of their own; a generic base's construction is at its binders' rows ([classes](PROGRAM-TYPING.md#classes)). |
 | A class with a private name in inheritance; `#x in o` | A derived instance's base part is a copy, and a copy holds no private slot; the test asks for an own slot, where the model's key test walks the prototype chain. |
 | A loop or an array pattern over an iterable whose iterator's type states no `return` | Leaving it early, or a throw out of its body, calls whatever `return` the iterator owns, and an open record type says nothing of that property. |
@@ -844,11 +844,6 @@ trust surface into theorems; the expected results and their cost are in
 - a callable object built by `Object.assign` needs `makeCallable` over graph
   code, one table entry per advertised overload.
 
-**Generic class methods.** A class method with binders of its own is a
-closure at a scheme row, as a generic closure is; its member in the class's
-instance type is a scheme-typed view, which the producer does not yet encode
-inside a record's claim.
-
 **The rigid path for generic closures.** A generic closure with a rest
 parameter or a default waits for those forms in graph code
 ([closures on term code](#next-steps)); one whose bound names another of its
@@ -856,9 +851,24 @@ binders needs a scheme whose meet rows name several binders to be
 instantiated, which instance tables do not yet map (`meetOk` maps a meet of
 one parameter). With both, `GenericSource` and `ClosureCertificate` retire.
 
-**`Promise<A> ≤ Promise<B>`**, and generally two applications whose methods
-are generic: relating them needs a subtyping rule for quantified signatures,
-instantiating the target's binders rigidly and the source's at them.
+**Generic methods as host-relative members.** A declaration's generic method
+is lowered to a readonly view of a scheme row whose signatures take the
+application itself as receiver ([generic methods](PROGRAM-TYPING.md#generic-methods)).
+Two things are then out of reach, both because a view is a field, not a
+method. `Promise<A> ≤ Promise<B>` does not hold at those types: the `then`
+field of a `Promise<number>` promises nothing for a receiver of type
+`Promise<number | string>`, which the target's `then` field would have to
+accept; only a method read from its own host, whose receiver is that host,
+is covariant ([host-relative methods](#method-members-are-host-relative)).
+And a class's generic method lives on its prototype, where a view, an own
+field, does not find it (`class-generic-method-refused`). Both need a method
+member with quantified signatures: `methodT` whose signatures are read at
+every instantiation of the member's binders, which needs a clause's member
+operands read at reassigned assignments, as a scheme row's signatures are.
+Covering one such member by another is then the subtyping rule for quantified
+signatures: the target's binders taken rigidly, the source's instantiated at
+them, under a decidable restriction (equal binder counts, identical bounds;
+F<:'s general rule is undecidable, [Pierce 1994](REFERENCES.md#pierce-1994)).
 
 **The array-coherence heap invariant.** `Array.isArray` narrowing a record
 arm to `readonly unknown[]`, and `instanceof C` narrowing `unknown`, need an

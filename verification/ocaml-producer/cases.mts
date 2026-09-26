@@ -1033,7 +1033,7 @@ export const cases: Case[] = [
     "unsupported", "source", /a rest parameter needs a tuple of required positions or an array: one typed by a type parameter/),
   gap("array-test-keeps-record-refused", "`Array.isArray` keeps a record arm, which may be an array carrying its keys: `length` read on the union is refused by that reason",
     "unsupported", "proposal", /a read of length on a union of an array and a record that does not state it/),
-  gap("class-generic-method-refused", "a generic class method: its closure's claim would be a quantified callable",
+  gap("class-generic-method-refused", "a generic class method: it would be a host-relative member with quantified signatures, which the model does not have",
     "unsupported", "source", /a generic class method is outside the fragment/),
   gap("class-constructor-default-refused", "a constructor parameter with a default: construct code has no default schedule",
     "unsupported", "source", /a constructor parameter with a default is outside the fragment/),

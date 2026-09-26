@@ -227,6 +227,20 @@ Journal of the ACM 13(1):158–169, 1966.
 condition corresponds to guardedness.
 **Discussed in** `50217bc1` (removed in `d54ee142`).
 
+### Pierce 1994
+
+Benjamin C. Pierce. *Bounded quantification is undecidable.* Information and
+Computation 112(1):131–165, 1994.
+[doi:10.1006/inco.1994.1055](https://doi.org/10.1006/inco.1994.1055).
+
+**Used for** the restriction a subtyping rule between quantified signatures
+must take: subtyping in System F<:, whose rule for bounded quantifiers
+compares the bounds contravariantly and the bodies under the target's, is
+undecidable, so the rule relating two generic methods instantiates the
+target's binders rigidly and the source's at them only where the binder
+counts are equal and the bounds identical, a decidable check.
+**Discussed in** [DESIGN: next steps](DESIGN.md#next-steps).
+
 ## JavaScript and ECMAScript
 
 ### ECMA-262
