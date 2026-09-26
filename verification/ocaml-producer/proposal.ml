@@ -1018,17 +1018,21 @@ let method_field (f:Semantic.field) = f.host
 
 (* The alternatives a spread's operand gives: nothing from a primitive other
    than a string, a record's fields otherwise. *)
+let string_key (f:Semantic.field) = match f.name with Name _ -> true | Key _ -> false
 let rec source_alternatives declarations seen t = match t with
   | Atoms atoms -> List.concat_map (function
       | Nul | Undef | True | False | Num | NumLit _ | Bigint | BigintLit _ | Symbol ->
         [{afields=[];exact=true;index=None}]
-      | Exact fs -> [{afields=List.filter (fun (f:Semantic.field) -> f.name <> Name proto_key) fs;
+      (* A copy takes no symbol-keyed property, a private slot's included
+         (DESIGN.md, "Object literals"). *)
+      | Exact fs -> [{afields=List.filter (fun (f:Semantic.field) -> f.name <> Name proto_key && string_key f) fs;
                       exact=true;index=None}]
       | Shape {fields;indexes;calls=[];elements=None} ->
         (* The string index states every own string key's type; a number
            index states only the canonical numeric ones', so a key it covers
            is left unstated, as an open record's is. *)
-        [{afields=List.filter (fun (f:Semantic.field) -> not (method_field f) && f.name <> Name proto_key) fields;exact=false;
+        [{afields=List.filter (fun (f:Semantic.field) ->
+            not (method_field f) && f.name <> Name proto_key && string_key f) fields;exact=false;
           index=Option.map (fun (i:index_signature) -> i.value)
             (List.find_opt (fun (i:index_signature) -> i.keys=Strings) indexes)}]
       | Named (id,args) ->
@@ -1635,7 +1639,8 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | Alloc fs ->
       let contract = match Option.bind expected (object_hint declarations []) with
         | Some shape -> Some shape
-        | None -> Option.bind expected (fun t -> discriminated_record declarations t fs) in
+        | None -> Option.bind expected (fun t -> discriminated_record declarations t
+            (List.filter_map (function (Name n,e) -> Some (n,e) | (Key _,_) -> None) fs)) in
       let fields = List.map (fun (name,e) ->
         let hint = Option.bind contract (fun s -> List.find_opt (fun (f:Semantic.field) -> f.name=name) s.fields) in
         (* A key the contract names is built at its member's type; any other

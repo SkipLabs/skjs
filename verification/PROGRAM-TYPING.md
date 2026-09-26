@@ -2336,12 +2336,17 @@ What a class declaration may not hold, each for its reason:
   declared scheme and needs none);
 - a constructor parameter with a default: construct code is a term over
   plain parameters, with no default schedule as a closure's `parameterOrder`;
-- a `#private` member (a slot, not a property), and a member with a
-  computed key (a method is a binding and a prototype key named by its
-  plain name) other than a static `[Symbol.hasInstance]`, below;
+- a member with a computed key (a method is a binding and a prototype key
+  named by its plain name) other than a static `[Symbol.hasInstance]`,
+  below;
 - an accessor (reading it runs code; a member read is a plain one), an
   index signature (instances are what construction allocates), a static
-  block (code the definition runs);
+  block reading `this` (the class value, whose statics are bindings of their
+  own);
+- a private name in inheritance (a derived instance's base part is a copy,
+  and a copy holds no private slot), and `#x in o` (it tests an own slot,
+  where $\mathsf{hasKey}$ walks the prototype chain and would find an
+  instance's slot from an object inheriting from it);
 - extending a generic class, or a generic class extending one (a generic
   base's construction is quantified, and no record of it at arguments is
   kept), and extending `Array` (its instances are what the library's
@@ -3243,6 +3248,30 @@ construct-only code. Its own name inside its body is `C.[[self]]`
 ([`class-self`](#mutable-bindings-and-module-constants)). Static members are
 module bindings of their own, `static C.x`, after the class; a static read
 `C.x` is that binding where TypeScript binds it to the member (`staticReads`).
+A static block runs where it stands among the static fields, as the closure
+of its statements called at once, reading no `this`:
+
+$$
+\mathtt{static}\ \{\ \vec s\ \}\;\equiv\;\mathsf{const}\ \textit{b} = (()\Rightarrow\{\ \vec s\ \})()
+$$
+
+with $\textit{b}$ a binding no source spells. An `async` method is a method
+whose body reads as an async function's, its returns and `await`s the
+[async intrinsics](#async-functions-and-await).
+
+**Private names.** A private name `#x` is a key no code outside its class
+spells: the declaration reader lists it as a symbol of its own, identified by
+the member declaring it ($\sigma_{C.\#x}$), as it lists a `unique symbol`
+constant, and TypeScript binds each `#x` of the class body to that member. A
+private field is an own key of each instance, allocated with the others
+(entries $\sigma_{C.\#x}\mapsto e$ of $\varphi_0$); a private method is held
+by the prototype under its key, as a method under its name; a static one is
+a static binding `static C.#x`. So `o.#x`, `o.#x = e` and `o.#m(ā)` are the
+named read, write and method call at $\sigma_{C.\#x}$, and a copy
+(`{...o}`) takes no private slot, as it takes no symbol key. JavaScript
+throws where `o` holds no slot of its own; the model reads `o.#x` along the
+prototype chain as any key, where only an object inheriting from an instance
+differs, and there JavaScript throws, which safety admits.
 
 The instance type states each member as what it is at run time: a field
 `f: T`, `f!: T` or `readonly f: T` a required field or view, `f?: T` an

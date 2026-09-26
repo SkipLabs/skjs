@@ -152,6 +152,9 @@ const SPREAD_POSITION = "a spread of a program's iterable is outside the fragmen
  * spell, apart from the instance methods' `C.m`. */
 const staticName = (cls: string, member: string): string => `static ${cls}.${member}`;
 
+/** Why a class with a private name takes no part in inheritance. */
+const PRIVATE_INHERITANCE = "a class with a private name `#x` in inheritance is outside the fragment: a derived instance's base part is copied, and a copy holds no private slot";
+
 /** The static member name of a class's `[Symbol.hasInstance]` method. */
 const HAS_INSTANCE = "[Symbol.hasInstance]";
 
@@ -393,6 +396,9 @@ class Gate {
   /** The symbols the declaration document lists, by index: which one a
    * computed class member's key names. */
   symbolIdentities: readonly { module: string; name: string }[] = [];
+  /** Private names `#x`, by span: the symbol of the member each names, as
+   * the declaration document lists it. */
+  readonly privateKeys = new Map<string, number>();
   /** The computed types of the file's annotations (`computedForm`), by span:
    * the term TypeScript's evaluation denotes, or the reason it has none
    * (`computed-types.mts`). */
@@ -705,13 +711,18 @@ class Gate {
     this.selfClass = instanceMembers;
     try {
       const methods: BindingAst[] = [];
+      if ((base || extended) && node.members.some((m) => {
+        const memberName = (m as { name?: Node }).name;
+        return !!memberName && ts.isPrivateIdentifier(memberName);
+      }))
+        this.fail(node, PRIVATE_INHERITANCE);
       // The methods its prototype holds: its base's, then its own over them.
       const methodBindings = new Map<string, string>(base?.methods ?? []);
       // The instance's own values, in the order JavaScript evaluates them:
       // field initializers and methods, parameter properties, then the
       // constructor's assignments. `bind` is where an evaluated value is
       // bound before a later constructor statement runs, at its field's type.
-      type Field = { name: string; e: Expr; bind: { pos: Span; type: TypeTerm } | null };
+      type Field = { name: PropertyKey; text: string; e: Expr; bind: { pos: Span; type: TypeTerm } | null };
       const fields: Field[] = [];
       const constructors = node.members.filter(ts.isConstructorDeclaration);
       const constructor = constructors[0];
@@ -724,7 +735,7 @@ class Gate {
       // allocated with its final values. Whether a field left `undefined`
       // meets its type (`x!: T` promises TypeScript it does) is Lean's check
       // of that allocation.
-      const uninitialized = new Map<string, { type: TypeTerm; pos: Span }>();
+      const uninitialized = new Map<string, { type: TypeTerm; pos: Span; key: PropertyKey }>();
       const readsThis = (n: Node): boolean =>
         n.kind === ts.SyntaxKind.ThisKeyword ||
         (!ts.isFunctionExpression(n) && !ts.isFunctionDeclaration(n) && !!n.forEachChild((c) => readsThis(c) || undefined));
@@ -764,6 +775,29 @@ class Gate {
       const prototype: { name: PropertyKey; e: Expr }[] = [];
       for (const member of node.members) {
         if (ts.isSemicolonClassElement(member) || ts.isConstructorDeclaration(member)) continue;
+        // A static block is code the definition runs where it stands among
+        // the static fields: the closure of its statements, called at once,
+        // `static { S }` as `(() => { S })()`. Its receiver is the class
+        // value, whose statics are bindings of their own, so it reads no
+        // `this`; its declarations are its own, as a closure body's are.
+        if (ts.isClassStaticBlockDeclaration(member)) {
+          if (readsThis(member.body))
+            this.fail(member, "a static block that reads `this` is outside the fragment: its receiver is the class value, whose statics are bindings of their own");
+          this.selfClass = null;
+          const start = member.getStart(this.file);
+          const keyword: Span = [start, start + "static".length];
+          const brace: Span = [member.body.end - 1, member.body.end];
+          const stmts = this.statements(member.body.statements);
+          const body: Stmt[] = completes(stmts)
+            ? [...stmts, { k: "return", pos: brace, e: { k: "lit", pos: brace, lit: { a: "undefined" } } }]
+            : stmts;
+          const block: Expr = { k: "lambda", pos: this.span(member.body), typeParams: [], receiver: null,
+            params: [], result: { k: "atom", name: "undefined", span: keyword },
+            body: { k: "blockBody", pos: this.span(member.body), body } };
+          statics.push({ name: staticName(name.text, `[[block@${start}]]`), namePos: keyword, annot: null,
+            init: { k: "apply", pos: this.span(member), callee: block, args: [] } });
+          continue;
+        }
         const memberName = (member as { name?: Node }).name;
         if (memberName && (ts.isIdentifier(memberName) || ts.isStringLiteral(memberName)) && memberName.text === "then")
           this.fail(member, FORGED_PROMISE);
@@ -775,13 +809,15 @@ class Gate {
         if (modifiers.some((m) => m.kind === ts.SyntaxKind.StaticKeyword)) {
           // A static `[Symbol.hasInstance]` method is the binding `instanceof`
           // of the class calls (`binary`), named apart from every source name.
+          // A static private member `#x` is a binding as any static is,
+          // which `C.#x` in the class reads (`staticPrivate`).
           const hasInstance = ts.isMethodDeclaration(member) && this.staticHasInstance(member.name);
           if (!(ts.isPropertyDeclaration(member) || ts.isMethodDeclaration(member)) ||
-              (!ts.isIdentifier(member.name) && !hasInstance))
+              (!ts.isIdentifier(member.name) && !ts.isPrivateIdentifier(member.name) && !hasInstance))
             return this.fail(member, unnamedMember(member, true));
           this.selfClass = null;
           const binding = staticName(name.text,
-            ts.isIdentifier(member.name) ? member.name.text : HAS_INSTANCE);
+            ts.isIdentifier(member.name) || ts.isPrivateIdentifier(member.name) ? member.name.text : HAS_INSTANCE);
           if (ts.isMethodDeclaration(member)) {
             // `C.m()` passes `C` as the receiver, a detached call `undefined`:
             // a body that reads none is the same function either way, called
@@ -805,13 +841,17 @@ class Gate {
           continue;
         }
         if (ts.isPropertyDeclaration(member)) {
-          if (!ts.isIdentifier(member.name)) this.fail(member, unnamedMember(member, false));
+          // A private field `#x` is an own key of each instance, its private
+          // name's symbol (`memberKey`).
+          if (!ts.isIdentifier(member.name) && !ts.isPrivateIdentifier(member.name))
+            this.fail(member, unnamedMember(member, false));
+          const key = this.memberKey(member.name);
           const type = this.typeOf(member.type, member);
           if (member.initializer) {
             if (readsThis(member.initializer)) this.fail(member, "a field initializer that reads `this` is outside the fragment");
-            fields.push({ name: member.name.text, e: this.expr(member.initializer),
+            fields.push({ name: key, text: member.name.text, e: this.expr(member.initializer),
               bind: { pos: this.span(member), type } });
-          } else uninitialized.set(member.name.text, { type, pos: this.span(member.name) });
+          } else uninitialized.set(member.name.text, { type, pos: this.span(member.name), key });
         } else if (ts.isMethodDeclaration(member)) {
           // A method named by a `unique symbol` constant, `[Symbol.iterator]()`,
           // is the prototype's property under that symbol's key, bound under
@@ -826,17 +866,22 @@ class Gate {
             prototype.push({ name: { symbol }, e: { k: "id", pos: this.span(member.name), name: binding } });
             continue;
           }
-          if (!ts.isIdentifier(member.name)) this.fail(member, unnamedMember(member, false));
+          // A private method `#m` is held by the prototype under its private
+          // name's symbol, as a method under its name; a derived class
+          // reaches none, so it is no base method.
+          if (!ts.isIdentifier(member.name) && !ts.isPrivateIdentifier(member.name))
+            this.fail(member, unnamedMember(member, false));
           methods.push({ name: `${name.text}.${member.name.text}`, namePos: this.span(member.name),
             annot: null, init: this.lambda(member, instance) });
-          methodBindings.set(member.name.text, `${name.text}.${member.name.text}`);
-          prototype.push({ name: member.name.text,
+          if (ts.isIdentifier(member.name))
+            methodBindings.set(member.name.text, `${name.text}.${member.name.text}`);
+          prototype.push({ name: this.memberKey(member.name),
             e: { k: "id", pos: this.span(member.name), name: `${name.text}.${member.name.text}` } });
         } else this.fail(member, classMemberRefusal(member));
       }
       this.selfClass = instanceMembers;
       for (const p of params)
-        if (p.property) fields.push({ name: p.field, e: { k: "id", pos: p.pos, name: p.name }, bind: { pos: p.at, type: p.type } });
+        if (p.property) fields.push({ name: p.field, text: p.field, e: { k: "id", pos: p.pos, name: p.name }, bind: { pos: p.at, type: p.type } });
       // A class allocates its prototype object once, holding its methods, and
       // each instance holds it under the prototype key, first: the key's
       // value is a read of a constant, so its place changes nothing. A
@@ -876,7 +921,8 @@ class Gate {
         const e = ts.isExpressionStatement(statement) ? statement.expression : undefined;
         return e && ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
           ts.isPropertyAccessExpression(e.left) && e.left.expression.kind === ts.SyntaxKind.ThisKeyword &&
-          ts.isIdentifier(e.left.name) ? { field: e.left.name.text, value: e.right } : undefined;
+          (ts.isIdentifier(e.left.name) || ts.isPrivateIdentifier(e.left.name))
+          ? { field: e.left.name.text, value: e.right } : undefined;
       };
       const assigns = (statement: Statement): boolean => !!assignment(statement) ||
         (ts.isBlock(statement) && statement.statements.some(assigns)) ||
@@ -896,7 +942,7 @@ class Gate {
         const flush = () => {
           for (const f of fields) {
             if (!f.bind || f.e.k === "lit") continue;
-            const hidden = `this.${f.name}`;
+            const hidden = `this.${f.text}`;
             statements.push({ k: "const", pos: f.bind.pos,
               bindings: [{ name: hidden, namePos: f.bind.pos, annot: f.bind.type, init: f.e }] });
             f.e = { k: "id", pos: f.bind.pos, name: hidden };
@@ -912,7 +958,7 @@ class Gate {
             if (readsThis(assigning.value))
               this.fail(statement, "a constructor assignment that reads `this` is outside the fragment");
             assigned.add(assigning.field);
-            fields.push({ name: assigning.field, e: this.expr(assigning.value),
+            fields.push({ name: field.key, text: assigning.field, e: this.expr(assigning.value),
               bind: { pos: this.span(statement), type: field.type } });
             continue;
           }
@@ -939,8 +985,8 @@ class Gate {
           statements.push(this.stmt(statement));
         }
         if (!branched) {
-          for (const [f, { pos }] of uninitialized)
-            if (!assigned.has(f)) fields.push({ name: f, e: { k: "lit", pos, lit: { a: "undefined" } }, bind: null });
+          for (const [f, { pos, key }] of uninitialized)
+            if (!assigned.has(f)) fields.push({ name: key, text: f, e: { k: "lit", pos, lit: { a: "undefined" } }, bind: null });
           // The allocation ends the constructor's block: the instance is what
           // `new` evaluates to. A derived instance is its base's part, copied,
           // then its own fields over it: the allocation from parts an object
@@ -948,7 +994,8 @@ class Gate {
           const at = this.span(name);
           const instanceValue: Expr = derivedBase
             ? { k: "build", pos: at, parts: [{ spread: derivedBase },
-                ...fields.map(({ name, e }) => ({ name, e }))], ...(proto ? { proto } : {}) }
+                ...fields.map(({ name, e }) => ({ name: typeof name === "string" ? name : this.fail(node, PRIVATE_INHERITANCE), e }))],
+                ...(proto ? { proto } : {}) }
             : { k: "alloc", pos: at, fields: fields.map(({ name, e }) => ({ name, e })),
               ...(proto ? { proto } : {}) };
           statements.push({ k: "return", pos: at, e: instanceValue });
@@ -1042,6 +1089,38 @@ class Gate {
 
   span(node: Node): Span {
     return [node.getStart(this.file), node.end];
+  }
+
+  /** The key a member name spells: its text, or a private name's symbol,
+   * the key of the member TypeScript binds it to, which no code outside
+   * the class spells. */
+  private memberKey(name: ts.MemberName): PropertyKey {
+    if (ts.isIdentifier(name)) return name.text;
+    const symbol = this.privateKeys.get(this.span(name).join(":"));
+    if (symbol === undefined) return this.fail(name, "a private name TypeScript binds to no member");
+    return { symbol };
+  }
+
+  /** `C.#x` of a static private member of the file's class `C`, with `C`
+   * the class TypeScript binds it to: the binding the class statement gives
+   * the member. Null for a private name no static member declares. */
+  private staticPrivate(node: ts.PropertyAccessExpression): string | null {
+    const name = node.name;
+    if (!ts.isPrivateIdentifier(name)) return null;
+    const symbol = this.privateKeys.get(this.span(name).join(":"));
+    const cls = symbol === undefined ? undefined : this.symbolIdentities[symbol]?.name.split(".")[0];
+    const declaration = cls === undefined ? undefined : this.file.statements.find((st): st is ClassDeclaration =>
+      ts.isClassDeclaration(st) && st.name?.text === cls);
+    const member = declaration?.members.find((m) => {
+      const memberName = (m as { name?: Node }).name;
+      return !!memberName && ts.isPrivateIdentifier(memberName) && memberName.text === name.text;
+    });
+    if (!cls || !member || !(member as { modifiers?: readonly Node[] }).modifiers?.some((m) =>
+        m.kind === ts.SyntaxKind.StaticKeyword))
+      return null;
+    if (!ts.isIdentifier(node.expression) || this.classReads.get(this.span(node.expression).join(":")) !== cls)
+      this.fail(node, "a static private member read other than through its class's name: statics are bindings of their own");
+    return staticName(cls, name.text);
   }
 
   /** The class binding an identifier of an instance member reads, where
@@ -1459,10 +1538,12 @@ class Gate {
       const cls = this.staticReads.get(this.span(node.name).join(":"));
       if (cls !== undefined)
         return { k: "id", pos: this.span(node), name: staticName(cls, node.name.text) };
+      const privateStatic = this.staticPrivate(node);
+      if (privateStatic !== null) return { k: "id", pos: this.span(node), name: privateStatic };
       return {
         k: "read",
         pos: this.span(node),
-        field: node.name.text,
+        field: this.memberKey(node.name),
         e: this.expr(node.expression),
       };
     }
@@ -1757,7 +1838,7 @@ class Gate {
       // A static method is not read from its class but bound on its own, so
       // its call is a plain call: its body reads no receiver it is given.
       const isStatic = ts.isPropertyAccessExpression(target) &&
-        this.staticReads.has(this.span(target.name).join(":"));
+        (this.staticReads.has(this.span(target.name).join(":")) || this.staticPrivate(target) !== null);
       if (
         (ts.isPropertyAccessExpression(target) && !isStatic) ||
         ts.isElementAccessExpression(target)
@@ -1897,9 +1978,9 @@ class Gate {
   ): Expr {
     if (ts.isNonNullExpression(node)) return { k: "cast", pos, cast: "nonNull", annot: null, e: object };
     if (ts.isPropertyAccessExpression(node)) {
-      if (this.staticReads.has(this.span(node.name).join(":")))
+      if (this.staticReads.has(this.span(node.name).join(":")) || this.staticPrivate(node) !== null)
         this.fail(node, "an optional read of a static member is outside the fragment");
-      return { k: "read", pos, field: node.name.text, e: object };
+      return { k: "read", pos, field: this.memberKey(node.name), e: object };
     }
     if (ts.isElementAccessExpression(node)) {
       const [start, end] = this.span(node.argumentExpression);
@@ -2234,6 +2315,12 @@ class Gate {
       while (ts.isParenthesizedExpression(key)) key = key.expression;
       if (ts.isNumericLiteral(key))
         this.fail(node.left, "`in` with a numeric key tests an array element, which the model keeps in the array's store, not as a key");
+      // `#x in o` asks whether `o` itself holds the slot, as its class's
+      // construction installs it; the model's key test walks the prototype
+      // chain, and would find an instance's slot from an object inheriting
+      // from it.
+      if (ts.isPrivateIdentifier(key))
+        this.fail(node.left, "`#x in o` tests an object's own private slot, where the model's key test walks the prototype chain");
       return { k: "inTest", pos: this.span(node), key: this.expr(node.left), e: this.expr(node.right) };
     }
     switch (node.operatorToken.kind) {
@@ -2405,7 +2492,9 @@ class Gate {
         k: "write",
         pos: this.span(node),
         field: ts.isPropertyAccessExpression(node.left)
-          ? node.left.name.text
+          ? (this.staticPrivate(node.left) !== null
+            ? this.fail(node.left, "a write to a static member: statics are immutable bindings")
+            : this.memberKey(node.left.name))
           : this.fail(
               node.left,
               "only field and local assignments are supported",
@@ -4107,6 +4196,14 @@ export function parseFile(file: string, carriesContext = false,
   // TypeScript binds to it reads that name.
   const shadowing = shadowingLocals(source);
   const shadowedTexts = new Set([...shadowing.values()].map(d => d.text));
+  // Every private name `#x`, a member's and each read, write or call of
+  // one: TypeScript binds it to the member declaring it, whose key it is.
+  const privateNodes: Node[] = [];
+  const findPrivate = (node: Node): void => {
+    if (ts.isPrivateIdentifier(node)) privateNodes.push(node);
+    node.forEachChild(findPrivate);
+  };
+  if (!carriesContext) findPrivate(source);
   const bindingNodes: Identifier[] = [];
   // Reads of a shadowing local above its declaration (`bindingRead`).
   const early: Identifier[] = [];
@@ -4323,12 +4420,12 @@ export function parseFile(file: string, carriesContext = false,
       classTestNodes.length || classReadNodes.length || contextualNodes.length ||
       receiverNodes.length || enumNodes.length || computedNodes.length || symbolNameNodes.length ||
       keyTypeNodes.length || bindingNodes.length || iterableNodes.length || spreadNodes.length ||
-      restTargets.length) {
+      restTargets.length || privateNodes.length) {
     const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
       firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? classTestNodes[0] ?? classReadNodes[0] ?? contextualNodes[0] ??
       receiverNodes[0] ?? enumNodes[0] ??
       computedNodes[0] ?? symbolNameNodes[0] ?? keyTypeNodes[0] ?? bindingNodes[0] ?? iterableNodes[0] ??
-      spreadNodes[0] ?? restTargets[0]?.node;
+      spreadNodes[0] ?? restTargets[0]?.node ?? privateNodes[0];
     if (!first) throw Error("missing declaration root");
     // Named imports only. A type import joins the declaration graph; a value
     // import is an assumption at the type its declaration states.
@@ -4358,6 +4455,8 @@ export function parseFile(file: string, carriesContext = false,
           if (classTestKeys.has(key)) gate.classTests.set(key, cls);
           if (classReadKeys.has(key)) gate.classReads.set(key, cls);
         },
+        privateNames: privateNodes.map(node => gate.span(node)),
+        privateName: ([start, end], symbol) => gate.privateKeys.set(`${start}:${end}`, symbol),
         bindingReads: bindingNodes.map(node => gate.span(node)),
         bindingRead: ([start, end], [dStart, dEnd]) => {
           const declared = shadowing.get(`${dStart}:${dEnd}`);
@@ -4414,7 +4513,7 @@ export function parseFile(file: string, carriesContext = false,
             ...(firstAsync ? [firstAsync] : []), ...keyNodes, ...ambientNames.map(topStatement), ...staticNodes,
             ...classTestNodes, ...classReadNodes, ...contextualNodes,
             ...receiverNodes, ...enumNodes, ...constEnumNodes, ...computedNodes, ...symbolNameNodes,
-            ...keyTypeNodes, ...bindingNodes].find(node =>
+            ...keyTypeNodes, ...bindingNodes, ...privateNodes].find(node =>
             node.getStart(source) === error.at[0]) ?? first
         : first;
       gate.fail(at, messageOf(error));

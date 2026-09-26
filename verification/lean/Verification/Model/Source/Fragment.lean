@@ -1101,6 +1101,8 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     return .cast p (if a == .null then none else some a) (← decodeExpr (← jField j "e"))
   | "alloc" =>
     let fields ← jArr j "fields"
+    -- A name the source spells, or a class's private name, which the
+    -- declaration document lists as a symbol of its own.
     let parts ← fields.mapM fun f => do
       let key ← PropKey.decode (← jField f "name")
       if let .str s := key then discard <| sourceKey s

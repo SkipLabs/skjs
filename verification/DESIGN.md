@@ -374,7 +374,10 @@ dictionary or leaves out an optional field. An object may hold a prototype
 under the reserved key `[[proto]]`, and a read of a key the object lacks
 continues there (`readProto`). A class instance holds its class's prototype
 object, whose methods it reads; a derived class's prototype links to its
-base's. Optional fields read an absent key as `undefined`, which holds only
+base's. A private name `#x` is a key no code outside its class spells, a
+symbol of its own: a private field an own key of each instance, a private
+method the prototype's, a static one a binding; a copy takes none
+([classes](PROGRAM-TYPING.md#classes)). Optional fields read an absent key as `undefined`, which holds only
 without a prototype, so they require none. `readonly` is a view: a read
 capability that withholds writes through that view without retyping the
 location.
@@ -560,7 +563,10 @@ object's arms; a
 key found present promotes an optional field to a field, since an object
 keeps its keys. A test on a mutable cell refines the read, never the cell.
 `&&`, `||` and `??` return an operand, as JavaScript's do, by the same
-tests.
+tests; a chain of one of them reads right-nested, so each operand sees what
+every earlier one answered. `x instanceof C` of a class whose chain of bases
+holds a static `[Symbol.hasInstance]` is a call of that method, its result
+converted by `ToBoolean`, and narrows nothing.
 
 ### Async and iteration
 
@@ -642,7 +648,7 @@ the model's reading of an operation relies.
 
 | Assumption | Where it is stated |
 | --- | --- |
-| The caller contract: a value conforming to a structural annotation (a parameter, an import, a library result) is a plain data object, its stated string-keyed fields own enumerable data properties, not accessors or proxies, which a spread copies; a conforming function respects its contract across every future heap, callback effects included. Two such parameters may alias. `Error`'s `message` is the exception, held on a prototype the model gives it. | `RequestJson.verify_safe` quantifies over environments meeting the input types |
+| The caller contract: a value conforming to a structural annotation (a parameter, an import, a library result) is a plain data object, its stated string-keyed fields own enumerable data properties, not accessors or proxies, which a spread copies, and a class instance owns its private slots, keyed by their private names; a conforming function respects its contract across every future heap, callback effects included. Two such parameters may alias. `Error`'s `message` is the exception, held on a prototype the model gives it. | `RequestJson.verify_safe` quantifies over environments meeting the input types |
 | A value whose trusted declaration types it `Function` has call or construct code. | [`Function`](PROGRAM-TYPING.md#library-types) |
 | A value TypeScript types as `Set<T>`, `Map<K, V>`, `SetIterator<T>` or `MapIterator<T>` that a loop or spread iterates is the host's: its iterator is the realm's, and the prototypes it inherits (`%IteratorPrototype%` included) hold no `return` and are unmodified. Assumed of every such value a program receives; the fragment builds none but through the host: a `Set`'s and a `Map`'s type state their `[Symbol.toStringTag]`, a well-known symbol key no literal or class of the fragment writes, and no annotation of the fragment states a `SetIterator` or `MapIterator`. A host iterator a program's protocol steps (an array's, as an `Iterable<T>`) likewise has no `return` along its chain. | the iteration intrinsics' pick, `iterationKind` in `tools/declaration-graph.mts`; `writtenSymbol` in `tools/fragment-parse.mts` |
 | Every object owning the array store key is a JavaScript array: every object the model allocates, and assumed of every object a program receives. `Array.isArray` is the native test. For `instanceof Array`, every array a program receives is of its realm and no object but an array inherits from `Array.prototype`. | `isArray` ([SEMANTICS](SEMANTICS.md#operational-language)); the `Array` entries of `library-globals.mts` |
@@ -689,7 +695,8 @@ not yet taken are [next steps](#next-steps); a search failure is neither.
 | A `let` pattern whose bindings are written; a test of a written `let` holding a union of objects | Each binding would be a cell with its own contract; a cell's known contents are primitive. |
 | An array pattern over a value that may not be an array | It would step the value's own iterator. |
 | A class method declaring `this: T`; a generic class method; a constructor parameter with a default | A method member is host-relative; the closure's claim would be a quantified callable, which the claim format does not encode; construct code is a term over plain parameters with no default schedule. |
-| A class member with a computed key other than a method's `unique symbol` constant, or a `#private` name; a static `[Symbol.hasInstance]`; an index signature or static block in a class; a generic class in inheritance | A method is a binding and a prototype key named by its plain name or its symbol; a private name is a slot, not a property; `instanceof` becomes a call; instances are what construction allocates; a static block is code the definition runs; a generic base's construction is quantified. |
+| A class member with a computed key other than a method's `unique symbol` constant or a static `[Symbol.hasInstance]`; an index signature in a class; a static block reading `this`; a generic class in inheritance | A method is a binding and a prototype key named by its plain name or its symbol; instances are what construction allocates; the block's receiver is the class value, whose statics are bindings of their own; a generic base's construction is quantified. |
+| A class with a private name in inheritance; `#x in o` | A derived instance's base part is a copy, and a copy holds no private slot; the test asks for an own slot, where the model's key test walks the prototype chain. |
 | A loop or an array pattern over an iterable whose iterator's type states no `return` | Leaving it early, or a throw out of its body, calls whatever `return` the iterator owns, and an open record type says nothing of that property. |
 | A generator function (`function*`) | Its body suspends at each `yield` and resumes there on the next `next`, which no term of the calculus expresses. |
 | `for await` | Its iterator's steps are promises the model does not adopt. |

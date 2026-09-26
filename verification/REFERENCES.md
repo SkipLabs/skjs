@@ -262,7 +262,15 @@ Language Specification* as of this writing). Sections relied on by name:
   [IteratorBindingInitialization](https://tc39.es/ecma262/#sec-runtime-semantics-iteratorbindinginitialization)
   of a rest element and
   [ArgumentListEvaluation](https://tc39.es/ecma262/#sec-runtime-semantics-argumentlistevaluation)
-  of a spread.
+  of a spread;
+- [InstanceofOperator](https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-instanceofoperator)
+  (a static `[Symbol.hasInstance]` called, its result converted by
+  `ToBoolean`), [Private Names](https://tc39.es/ecma262/multipage/ecmascript-data-types-and-values.html#sec-private-names)
+  and [PrivateFieldGet](https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-privatefieldget)
+  (a private name a key of its own, a missing slot a throw),
+  [ClassStaticBlockDefinition](https://tc39.es/ecma262/multipage/ecmascript-language-functions-and-classes.html#sec-class-definitions)
+  evaluation, and the `try` statement's completions (a `break` or
+  `continue` running each `finally` it leaves).
 
 **Used for** the meaning of every calculus step and every host row of the
 trust surface; checked by review and `#guard` tests against node, not proved.
@@ -273,6 +281,7 @@ trust surface; checked by review and `#guard` tests against node, not proved.
 [PROGRAM-TYPING: async functions and await](PROGRAM-TYPING.md#async-functions-and-await),
 [PROGRAM-TYPING: loops and spreads over iterables](PROGRAM-TYPING.md#loops-and-spreads-over-iterables),
 [PROGRAM-TYPING: patterns](PROGRAM-TYPING.md#patterns),
+[PROGRAM-TYPING: classes](PROGRAM-TYPING.md#classes),
 PROGRAM-TYPING's callable-object sections (its `[c1]`–`[c7]` links),
 [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md),
 [callables tests](tests/callables/README.md).

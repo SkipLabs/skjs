@@ -112,6 +112,10 @@ export type TermScope = {
    * constant or readonly property it denotes. A scope without it reads no
    * symbol key. */
   symbol?(name: Identifier | ts.PropertyAccessExpression): number;
+  /** A class member's private name `#x`: the index of the symbol the
+   * declaration document lists for it, a key no code outside the class
+   * spells. A scope without it reads no private name. */
+  privateName?(name: ts.PrivateIdentifier): number;
   /** `E.A` and `typeof E` for one of the file's enums: the member's literal
    * type and the enum's object type (PROGRAM-TYPING.md, "Enums"); null for any other
    * such node. A scope without it reads neither. */
@@ -556,6 +560,7 @@ function propertyKey(scope: TermScope, name: Node | undefined): PropertyKey | nu
   if (ts.isComputedPropertyName(name) && scope.symbol &&
       (ts.isIdentifier(name.expression) || ts.isPropertyAccessExpression(name.expression)))
     return { symbol: scope.symbol(name.expression) };
+  if (ts.isPrivateIdentifier(name) && scope.privateName) return { symbol: scope.privateName(name) };
   return null;
 }
 
@@ -749,7 +754,9 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
   const names = new Set<string>();
   const named = (member: ts.ClassElement & { name?: Node }): PropertyKey => {
     const name = member.name;
-    const key = name && (ts.isIdentifier(name) || ts.isComputedPropertyName(name))
+    // A private name `#x` is a key of its own, a symbol no code outside the
+    // class spells (PROGRAM-TYPING.md, "Classes").
+    const key = name && (ts.isIdentifier(name) || ts.isComputedPropertyName(name) || ts.isPrivateIdentifier(name))
       ? propertyKey(scope, name) : null;
     if (key === null) return scope.fail(member, "a class member needs a plain name");
     const text = typeof key === "string" ? key : `[symbol ${key.symbol}]`;
@@ -768,6 +775,8 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
     if ((ts.isPropertyDeclaration(member) || ts.isMethodDeclaration(member)) &&
         member.modifiers?.some(m => m.kind === ts.SyntaxKind.StaticKeyword))
       continue;
+    // A static block is code the definition runs, no member of an instance.
+    if (ts.isClassStaticBlockDeclaration(member)) continue;
     if (ts.isPropertyDeclaration(member)) {
       only(member, [ts.SyntaxKind.ReadonlyKeyword]);
       // `x?: T` is an optional field. `x!: T` is a required one, whatever
@@ -784,7 +793,10 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
         type: untyped ? { k: "atom", name: "unknown", span: memberSpan } : typeTerm(scope, member.type, member),
         span: memberSpan });
     } else if (ts.isMethodDeclaration(member)) {
-      only(member, []);
+      // An async method is one returning its promise: its annotation, which
+      // its body, read with `await` and its returns as intrinsic steps, is
+      // checked against.
+      only(member, [ts.SyntaxKind.AsyncKeyword]);
       if (member.postfixToken || member.asteriskToken)
         scope.fail(member, "an optional or generator method is outside the fragment");
       // A generic method's closure would be claimed as a quantified callable,

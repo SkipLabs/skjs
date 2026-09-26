@@ -43,7 +43,8 @@ export type Expr =
      under the key no source property spells (`proto`); so does a derived
      class's prototype, its base's. A prototype `instanceof` tests owns its
      class's key, which no source property spells either, at `undefined`
-     (`brand`, its value claimed at `pos`). */
+     (`brand`, its value claimed at `pos`). A class's private field or
+     method `#x` is keyed by its private name's symbol. */
   | { k: "alloc"; pos: Span; fields: { name: PropertyKey; e: Expr }[]; proto?: Expr;
       brand?: { key: string; pos: Span } }
   /* An object literal with spreads of values: its parts in source order, a

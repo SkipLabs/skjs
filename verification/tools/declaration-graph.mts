@@ -298,6 +298,11 @@ export function collectDeclarations(file: string, options: {
    * reported to `symbolKey` with its index. */
   symbolKeys?: readonly Span[];
   symbolKey?: (span: Span, symbol: number) => void;
+  /** The client's private names `#x` (a member's, or one a read, a write or
+   * a call names): each joins the symbols as the key of the member that
+   * declares it and is reported to `privateName` with its index. */
+  privateNames?: readonly Span[];
+  privateName?: (span: Span, symbol: number) => void;
   /** The client's member names of reads `X.y` with `X` an identifier: each
    * that TypeScript binds to a static member of a class the client declares
    * at its top level, `X` naming that class, is reported to `staticMember`
@@ -573,6 +578,37 @@ export function collectDeclarations(file: string, options: {
         symbolIndex.set(key, index);
       }
       return index;
+    };
+    // A private name `#x` of a class member: a key no code outside the class
+    // spells, as a symbol whose value no code obtains. It joins the symbols,
+    // identified by the member declaring it; the class must be a top-level
+    // declaration, evaluated once, so one member is one key.
+    const privateOf = (member: Node): number => {
+      const name = (member as { name?: Node }).name;
+      const cls = member.parent;
+      if (!name || !ts.isPrivateIdentifier(name) || !cls || !ts.isClassDeclaration(cls) || !cls.name ||
+          !ts.isSourceFile(cls.parent))
+        throw Error("a private name is declared by a member of a class at a file's top level");
+      const source = member.getSourceFile();
+      const identity: DeclarationIdentity = { module: idOf(source), name: `${cls.name.text}.${name.text}`,
+        span: [name.getStart(source), name.end] };
+      const key = `private ${identity.module}#${identity.span[0]}:${identity.span[1]}`;
+      let index = symbolIndex.get(key);
+      if (index === undefined) {
+        index = symbols.length;
+        symbols.push(identity);
+        symbolIndex.set(key, index);
+      }
+      return index;
+    };
+    const privateNameOf = (name: ts.PrivateIdentifier): number => {
+      if (name.parent && (ts.isPropertyDeclaration(name.parent) || ts.isMethodDeclaration(name.parent)) &&
+          name.parent.name === name)
+        return privateOf(name.parent);
+      const members = (checker.getSymbolAtLocation(name)?.declarations ?? []).map(d => d.resolve());
+      const [member] = members;
+      if (members.length !== 1 || !member) throw Error(`the private name ${name.text} names no one member`);
+      return privateOf(member);
     };
     // The type an imported value's declaration states, and the declarations
     // that type reaches, which join the graph.
@@ -1057,6 +1093,16 @@ export function collectDeclarations(file: string, options: {
         throw new DeclarationError(at, error instanceof Error ? error.message : String(error));
       }
     }
+    // A private name reads the key of the member TypeScript binds it to.
+    for (const span of options.privateNames ?? []) {
+      const name = expressionAt(client, span);
+      if (!name || !ts.isPrivateIdentifier(name)) throw new DeclarationError(span, "TypeScript private name missing");
+      try {
+        options.privateName?.(span, privateNameOf(name));
+      } catch (error) {
+        throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
+      }
+    }
     // An element key naming a `unique symbol` constant reads that symbol's
     // key; any other is an ordinary index, left to the expression.
     for (const span of options.symbolKeys ?? []) {
@@ -1235,7 +1281,7 @@ export function collectDeclarations(file: string, options: {
     const definitions: TypeDefinition[] = [];
     for (const { root, node: start } of roots) {
       try {
-        collect(start, seen, definitions, { lookup, identityOf, symbol: symbolOf, partners, library, equation,
+        collect(start, seen, definitions, { lookup, identityOf, symbol: symbolOf, privateName: privateNameOf, partners, library, equation,
           libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
           keys: keyTypeOf });
       } catch (error) {
@@ -1245,7 +1291,7 @@ export function collectDeclarations(file: string, options: {
     }
     for (const [index, start] of valueStarts.entries()) {
       try {
-        collect(start, seen, definitions, { lookup, identityOf, symbol: symbolOf, partners, library, equation,
+        collect(start, seen, definitions, { lookup, identityOf, symbol: symbolOf, privateName: privateNameOf, partners, library, equation,
           libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
           keys: keyTypeOf });
       } catch (error) {
@@ -1809,6 +1855,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
   lookup: (identifier: Identifier, what: string) => TypeDeclaration;
   identityOf: (node: TypeDeclaration) => DeclarationIdentity;
   symbol: (written: Identifier | ts.PropertyAccessExpression) => number;
+  privateName: (name: ts.PrivateIdentifier) => number;
   partners: ReadonlyMap<TypeDeclaration, readonly TypeDeclaration[]>;
   library: (identifier: Identifier, what: string) => LibraryType | null;
   /** A declaration's equation where it is not its declared body. */
@@ -1876,6 +1923,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       annotation: false,
       ...(body ? { body } : {}),
       symbol,
+      privateName: context.privateName,
       keys: context.keys,
       // A declaration's own parameters are positional: a computed type that
       // reaches a function's binder has no reading in its equation.
