@@ -25,3 +25,8 @@ function hidesAsCell(): number {
   seed = seed + 1;
   return seed;
 }
+const later: number = 1;
+function patternEarlier(source: { first?: number; later?: number }): number {
+  const { later = 2, first = later } = source;
+  return first;
+}

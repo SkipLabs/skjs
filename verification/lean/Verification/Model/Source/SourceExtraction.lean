@@ -1879,6 +1879,27 @@ private def guardedReturn (fc : SourceClaims.Function) (scope : List ScopeBindin
   let ds := { held ⟨snapshot, some read.span⟩ with fixed := some slice } :: scope
   return some (ds, K, read, tested, e, rp)
 
+/-- Each name a pattern binds, in the order it binds them, with the names
+mentioned before it: `seen`, then each default evaluated first, and the names
+bound before it. -/
+private partial def patternMentions (seen : List String) :
+    Fragment.Pattern Fragment.Expr → List (String × List String) × List String
+  | .name n _ => ([(n, seen)], seen ++ [n])
+  | .object _ props rest =>
+    let (xs, seen) := props.foldl (fun (acc, seen) (_, t, d) =>
+      let (xs, seen) := patternMentions (seen ++ ((d.map Fragment.Expr.freeNames).getD [])) t
+      (acc ++ xs, seen)) ([], seen)
+    match rest with
+    | some (_, t) => let (ys, seen) := patternMentions seen t; (xs ++ ys, seen)
+    | none => (xs, seen)
+  | .array _ elems rest =>
+    let (xs, seen) := elems.foldl (fun (acc, seen) (_, t, d) =>
+      let (xs, seen) := patternMentions (seen ++ ((d.map Fragment.Expr.freeNames).getD [])) t
+      (acc ++ xs, seen)) ([], seen)
+    match rest with
+    | some (_, _, t) => let (ys, seen) := patternMentions seen t; (xs ++ ys, seen)
+    | none => (xs, seen)
+
 /-- For each declaration in each statement list of a body, keyed by its
 statement's start and its name: the names the list mentions or declares
 before it (`seed` for the body's own list: the parameters), and what its own
@@ -1899,8 +1920,7 @@ where
             let seen := seen ++ b.init.freeNames
             (acc ++ [(b.name, seen)], seen ++ [b.name])) (([] : List (String × List String)), ([] : List String))).1
         | .destructure _ t d i =>
-          let ms := i.freeNames ++ (d.toList ++ t.defaults).flatMap Fragment.Expr.freeNames
-          t.names.map (·, ms)
+          (patternMentions (i.freeNames ++ (d.toList.flatMap Fragment.Expr.freeNames)) t).1
         | _ => []
       let here := own.map fun (n, ms) => (st.pos.1, n, before ++ ms)
       let nested := match st with

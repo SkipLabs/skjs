@@ -1504,8 +1504,9 @@ $$
 
   since JavaScript binds $x$ to the declaration from the block's start: any
   such mention, a closure's included, would read the declaration's binding
-  before it is initialized, not the outer one. A `let` or a pattern alike; an
-  outer cell is not hidden.
+  before it is initialized, not the outer one. A `let` alike, and a pattern
+  per element, $e$ being its initializer and the defaults evaluated before
+  that element (`patternMentions`); an outer cell is not hidden.
 
 ## State
 
