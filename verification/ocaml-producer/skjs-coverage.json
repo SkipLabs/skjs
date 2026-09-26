@@ -14,17 +14,17 @@
   "rejected": 2
  },
  "accepted": 2674,
- "verified": 2296,
+ "verified": 2315,
  "byStatus": {
-  "verified (check)": 2296,
-  "unverified (search)": 187,
-  "unsupported (source)": 130,
-  "unsupported (proposal)": 61
+  "verified (check)": 2315,
+  "unverified (search)": 174,
+  "unsupported (source)": 129,
+  "unsupported (proposal)": 56
  },
  "bySuite": {
   "expect-error": {
    "accepted": 2458,
-   "verified": 2086
+   "verified": 2104
   },
   "constprop": {
    "accepted": 66,
@@ -32,7 +32,7 @@
   },
   "callgraph": {
    "accepted": 59,
-   "verified": 56
+   "verified": 57
   },
   "projects": {
    "accepted": 34,
@@ -51,11 +51,11 @@
    "verified": 8
   }
  },
- "filesAllVerified": 256,
+ "filesAllVerified": 261,
  "filesWithAccepted": 377,
  "functions": {
   "accepted": 2026,
-  "verified": 1694
+  "verified": 1711
  },
  "byGroup": {
   "type forms: literal types, keyof, indexed access, mapped, object, index signatures, intersections, method signatures": {
@@ -76,29 +76,29 @@
    "dependency": 4,
    "files": 19
   },
-  "classes: modifiers, inheritance, fields, parameter properties, receivers": {
-   "units": 25,
-   "self": 13,
-   "dependency": 12,
-   "files": 12
-  },
   "object growth: a write adding a key (keys are fixed at allocation)": {
    "units": 24,
    "self": 23,
    "dependency": 0,
    "files": 8
   },
-  "destructuring and rest/default parameters": {
+  "classes: modifiers, inheritance, fields, parameter properties, receivers": {
    "units": 22,
-   "self": 17,
-   "dependency": 5,
-   "files": 11
+   "self": 11,
+   "dependency": 11,
+   "files": 10
   },
   "TypeScript refuses the code too (the pipeline follows TypeScript's types)": {
    "units": 21,
    "self": 20,
    "dependency": 1,
    "files": 14
+  },
+  "destructuring and rest/default parameters": {
+   "units": 16,
+   "self": 11,
+   "dependency": 5,
+   "files": 7
   },
   "reads on unions/primitives (field/index read on non-object, string keys)": {
    "units": 15,
@@ -118,35 +118,23 @@
    "dependency": 2,
    "files": 10
   },
-  "calls: overloads, .call, spread arguments, Object.assign, arrow callee": {
-   "units": 13,
-   "self": 8,
-   "dependency": 2,
-   "files": 8
-  },
   "arrays and open records: `Array.isArray` on an open record, `length` of an array read as a record's": {
    "units": 12,
    "self": 12,
    "dependency": 0,
    "files": 5
   },
-  "loops (for, for-in, for-of forms)": {
-   "units": 9,
-   "self": 8,
-   "dependency": 1,
-   "files": 5
+  "calls: overloads, .call, spread arguments, Object.assign, arrow callee": {
+   "units": 11,
+   "self": 6,
+   "dependency": 2,
+   "files": 7
   },
   "a named function at a signature binding more parameters, or indifferent to the receiver it requires (its type is its annotated signature)": {
    "units": 9,
    "self": 8,
    "dependency": 1,
    "files": 5
-  },
-  "object literal members (methods, accessors, spreads)": {
-   "units": 8,
-   "self": 7,
-   "dependency": 0,
-   "files": 6
   },
   "tests on a value of a type parameter or `unknown` (`T & number` has no clause; no object identity)": {
    "units": 8,
@@ -178,6 +166,12 @@
    "dependency": 7,
    "files": 1
   },
+  "object literal members (methods, accessors, spreads)": {
+   "units": 6,
+   "self": 5,
+   "dependency": 0,
+   "files": 4
+  },
   "equality: objects without a field (no identity), loose equality": {
    "units": 6,
    "self": 6,
@@ -202,17 +196,17 @@
    "dependency": 0,
    "files": 4
   },
+  "iterables the program defines: an iterator whose type states no `return`, a spread or a pattern the protocol's lowering does not place, a well-known symbol key other than `Symbol.iterator`": {
+   "units": 5,
+   "self": 4,
+   "dependency": 1,
+   "files": 4
+  },
   "await of non-promises and unions (the await bound)": {
    "units": 4,
    "self": 4,
    "dependency": 0,
    "files": 3
-  },
-  "discriminated-union narrowing (a field read after a tag test)": {
-   "units": 3,
-   "self": 3,
-   "dependency": 0,
-   "files": 2
   },
   "other source forms": {
    "units": 3,
@@ -220,9 +214,9 @@
    "dependency": 0,
    "files": 2
   },
-  "a tuple at an iterable (the search relates only an array's store to the iterator's element)": {
-   "units": 3,
-   "self": 3,
+  "discriminated-union narrowing (a field read after a tag test)": {
+   "units": 2,
+   "self": 2,
    "dependency": 0,
    "files": 1
   },
@@ -250,7 +244,19 @@
    "dependency": 0,
    "files": 1
   },
+  "unclassified: search: reject: position 1 is outside the array's contract": {
+   "units": 1,
+   "self": 1,
+   "dependency": 0,
+   "files": 1
+  },
   "an optional key found `undefined` (the key may be absent)": {
+   "units": 1,
+   "self": 1,
+   "dependency": 0,
+   "files": 1
+  },
+  "loops (for, for-in, for-of forms)": {
    "units": 1,
    "self": 1,
    "dependency": 0,
@@ -287,7 +293,7 @@
    "files": 1
   }
  },
- "reachedButRefused": 187,
+ "reachedButRefused": 174,
  "byKey": {
   "search: reject: TypeScript refuses this code too": 21,
   "search: reject: source expression obligation at _: evidence search failed: no derivation of its node-typing claim": 16,
@@ -313,23 +319,18 @@
   "search: reject: closure expression claim at _: evidence search failed": 5,
   "source: TypeScript reports an error in a declaration of the source Property '_' of type '_' is not assignable to '_' index type '_'.": 5,
   "search: reject: a dynamic index write is outside the dictionary fragment: it may add a key, and the calculus adds no key to an existing object": 5,
-  "search: reject: a for...of loop over an object that is not an array (a Set, a Map, an iterator or another iterable): only the iteration of an array is stated (%Iterate%": 5,
   "search: reject: an instance of a declaration with generic methods at another instance: relating two instances relates their generic methods (`then` and `catch` of `Prom": 5,
   "search: reject: a cell read at its contract: a cell is known by its contract after a step that may write it (a call, whose callee may write any location its operands re": 4,
   "source: extending the standard library'_'s constructor allocates, not an ordinary object a class allocates, and its members are read at the library type's meaning, not ": 4,
   "proposal: a type parameter's intersection in a claim": 4,
-  "source: array literal spreads and holes are outside the fragment": 4,
   "source: `instanceof` of a class with a static `[Symbol.hasInstance]` calls that method, a computed static member, outside the fragment": 4,
   "search: reject: source direct obligation at _: quantified call does not satisfy the closure's bound: cannot establish …": 4,
   "search: reject: a spread of a dictionary: the copy owns the keys the dictionary holds when it runs, which no type states, and an object's keys are fixed at its allocati": 4,
-  "proposal: an array rest needs one tuple of required positions: the rest of an array of unknown length is a slice": 3,
-  "proposal: missing field _": 3,
   "source: a generic class method is outside the fragment: its closure's claim would be a quantified callable, which the claim format does not encode in a declaration of t": 3,
-  "search: reject: a for...of loop over a string: only the iteration of an array is stated (%Iterate%): that of a string or a host collection is not, and a client iterable": 3,
   "search: reject: a `typeof x === \"_\"` test on a value of a type parameter or `unknown`: the values of that shape have a type no clause states (`T & number`, a callable o": 3,
+  "source: array literal spreads and holes are outside the fragment": 3,
   "source: `in` with a numeric key tests an array element, which the model keeps in the array's store, not as a key": 3,
   "search: reject: a write adds the property '_' where a dictionary may lack it: an object's keys are fixed at its allocation": 3,
-  "source: a class member with a computed key is outside the fragment: a method is a binding, and its prototype key, named by its plain name": 3,
   "source: keyof is keyof [number], whose part unique symbol is a unique symbol, which no type of the fragment names": 3,
   "search: reject: `??` on a value of a type parameter: its values other than null and undefined have the type `T & {}`, which no clause states": 3,
   "proposal: a type parameter types both a value and a rest parameter's argument list: an argument list is not a runtime value": 3,
@@ -337,15 +338,17 @@
   "search: reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills ": 3,
   "source: a constructor parameter with a default is outside the fragment: construct code is a term over plain parameters, with no default schedule as a closure has in a d": 3,
   "source: .call requires a known local function, an explicit receiver and ordinary arguments": 3,
-  "search: reject: a tuple at an iterable: the search relates the store of an array to the element of `Array.prototype[Symbol.iterator]`, and a tuple's positions to no one": 3,
+  "source: an iterable whose iterator'_'s `return` if it owns one (IteratorClose), and the iterator's open record type says nothing of what that property holds": 3,
   "search: reject: a `let` holding an object read where it must be assigned: the contents of a cell are stated only as primitive values, so that a `let` without an initial": 3,
   "source: the indexed access ElementOf<T> over a type parameter is computed only at an instance": 2,
   "source: typeof box is { value: number; }, the type TypeScript infers for a binding without an annotation, and not a union of literals and primitives": 2,
+  "proposal: a read of length on a union of an array and a record that does not state it: a test that the value is an array keeps the record, a value of which may be an arra": 2,
   "proposal: a spread copies the own enumerable properties of a plain object; a function'_'s are whatever was assigned to it, which its type does not bound": 2,
   "source: a class extends a non-generic class declared earlier in the file; one from a library, an ambient declaration or a value is outside the fragment": 2,
   "search: reject: strict equality with a value of a type parameter: the value may be an object without a field, and the model states no object identity": 2,
   "search: reject: the type parameter U does not establish the declared bound for U at [22,33]: a type parameter whose bound names another is read as its own parameter row": 2,
   "search: reject: unsupported source expression at _: `in` with a key that is not a union of string literals": 2,
+  "source: a well-known symbol key other than `Symbol.iterator` is outside the fragment: it changes how the host treats the object, which the model does not state, and `Sy": 2,
   "source: keyof is number | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | ... 34 more ... | unique symbol, whose part unique s": 2,
   "search: reject: source refusal at _: a method of an annotation's type literal over a type parameter is outside the fragment": 2,
   "proposal: a write to the optional property '_' adds it where the object was allocated without it: an object's keys are fixed at its allocation": 2,
@@ -354,7 +357,6 @@
   "source: a rest parameter needs a tuple of required positions or an array: one typed by a declaration'_'s own type parameter in a declaration of the source": 2,
   "proposal: a spread of an intersection or a type parameter is outside the fragment": 2,
   "proposal: a spread copies the own enumerable properties of a plain object; a class value's are its static fields, which its construct signatures do not state": 2,
-  "source: a computed key in an object literal is outside the fragment: an allocation's keys are the property names the literal spells, and a symbol or a key computed at r": 2,
   "source: keyof over a type parameter, keyof T, is computed only at an instance": 1,
   "proposal: a spread copies the own enumerable properties of a plain object; an array's are its indices and whatever keys it carries, which no record states": 1,
   "search: reject: a read of `length` on a union of an array and a record: an array keeps its length in its store, not at a location a field of a record names, and an open": 1,
@@ -363,9 +365,8 @@
   "source: a `let` pattern whose bindings are assigned is outside the fragment: each binding would be a cell with a storage contract of its own, which a pattern does not l": 1,
   "source: generic constructor types are outside the fragment": 1,
   "source: new Date(…) is read with at most 1 argument(s)": 1,
-  "search: reject: an array rest needs one tuple contract of required positions: the rest of an array of unknown length is a slice": 1,
   "source: only field and local assignments are supported": 1,
-  "search: reject: source refusal at _: an array rest needs one array contract: over a union of arrays of different lengths its rest is a slice of a length known only at r": 1,
+  "search: reject: position 1 is outside the array's contract": 1,
   "source: an enum without members allocates an object with no property, which the heap model has no record for": 1,
   "source: an ambient enum is outside the fragment: its object is the environment's, whose members a declaration need not all value, and the declaration reader has no ambi": 1,
   "search: reject: an optional key found `undefined`, read at `undefined`: the key may be absent, and a read of an absent key is stated by no clause the model reads": 1,
@@ -399,7 +400,6 @@
   "proposal: a member read on a number where the type TypeScript gives the receiver holds no number: the producer and TypeScript disagree on the receiver": 1,
   "source: unresolved type reference _": 1,
   "search: reject: a callable object with methods needs a combined clause": 1,
-  "search: reject: a spread argument of an object that is not an array (a Set, a Map, an iterator or another iterable): only the iteration of an array is stated (%Iterate%": 1,
   "search: reject: a method '_' read off its object is not a function value: it takes the object as its receiver": 1,
   "search: reject: a function whose `this` is typed where a callback indifferent to its receiver is expected: that type admits a call passing any receiver, and the functio": 1,
   "search: reject: the `length` of a mutable tuple read at its arity: the length of a mutable tuple is not fixed by its type, since `push` is allowed on it (an unsoundness": 1,
@@ -411,7 +411,6 @@
   "proposal: `as const` on an operand other than a literal, an array or object literal, or a name": 1,
   "source: generic function types are outside the fragment in identity": 1,
   "search: reject: source direct obligation at _: generic return contract at _: cannot establish …": 1,
-  "proposal: an array pattern over a value that may not be an array: it would step that value'_'s positions are read": 1,
   "search: reject: source refusal at _: a jump out of a `try` with a `finally` is outside the fragment": 1
  }
 },
@@ -618,12 +617,12 @@
 {"source":"tests/expect-error/array-destructuring-rest.ts","name":"restFromTupleSkipped","kind":"function","line":12,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/array-destructuring-rest.ts","name":"restAllElements","kind":"function","line":19,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/array-destructuring-rest.ts","name":"restZeroRemaining","kind":"function","line":25,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
-{"source":"tests/expect-error/array-destructuring-rest.ts","name":"restFromArray","kind":"function","line":33,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: an array rest needs one tuple of required positions: the rest of an array of unknown length is a slice","group":"destructuring and rest/default parameters","where":"self","detail":"unsupported: an array rest needs one tuple of required positions: the rest of an array of unknown length is a slice"},
+{"source":"tests/expect-error/array-destructuring-rest.ts","name":"restFromArray","kind":"function","line":33,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/array-destructuring-rest.ts","name":"restTooManyBeforeRest","kind":"function","line":42,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/array-isarray-refinement.ts","name":"testBasicArrayRefinement","kind":"function","line":20,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: an open record or `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on an open record or `unknown` finds th","group":"arrays and open records: `Array.isArray` on an open record, `length` of an array read as a record's","where":"self","at":"x","detail":"reject: an open record or `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on an open record or `unknown` finds that the object owns the store of an array, not that it is an array of `Array.prototype`: that every object owning a store was allocated as an — The available claim for x is { a: string, b: number } | { \"[[proto]]\": never = ({ forEach: never = (type 16), map: never = (type 24), reduce: never = (type 26), reduceRight: never = (type 26), every: never = (type 27), some: never = (type 27), filter: never = (type 30), slice: never = (type 31), join: never = (type 33), indexOf: never = (type 34), lastIndexOf: never = (type 34), includ"},
 {"source":"tests/expect-error/array-isarray-refinement.ts","name":"testNegativeArrayRefinement","kind":"function","line":31,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/array-isarray-refinement.ts","name":"testStringArrayRefinement","kind":"function","line":41,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: an open record or `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on an open record or `unknown` finds th","group":"arrays and open records: `Array.isArray` on an open record, `length` of an array read as a record's","where":"self","at":"x","detail":"reject: an open record or `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on an open record or `unknown` finds that the object owns the store of an array, not that it is an array of `Array.prototype`: that every object owning a store was allocated as an — The available claim for x is { a: string, b: number } | { \"[[proto]]\": never = ({ forEach: never = (type 17), map: never = (type 25), reduce: never = (type 27), reduceRight: never = (type 27), every: never = (type 28), some: never = (type 28), filter: never = (type 31), slice: never = (type 32), join: never = (type 33), indexOf: never = (type 34), lastIndexOf: never = (type 34), includ"},
-{"source":"tests/expect-error/array-isarray-refinement.ts","name":"testArrayMethodsAfterRefinement","kind":"function","line":55,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: missing field _","group":"discriminated-union narrowing (a field read after a tag test)","where":"self","detail":"unsupported: missing field length"},
+{"source":"tests/expect-error/array-isarray-refinement.ts","name":"testArrayMethodsAfterRefinement","kind":"function","line":55,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: a read of length on a union of an array and a record that does not state it: a test that the value is an array keeps the record, a value of which may be an arra","group":"discriminated-union narrowing (a field read after a tag test)","where":"self","detail":"unsupported: a read of length on a union of an array and a record that does not state it: a test that the value is an array keeps the record, a value of which may be an array carrying its keys"},
 {"source":"tests/expect-error/array-isarray-refinement.ts","name":"testArrayPushAfterRefinement","kind":"function","line":64,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/array-isarray-refinement.ts","name":"testMultipleUnion","kind":"function","line":77,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: an open record or `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on an open record or `unknown` finds th","group":"arrays and open records: `Array.isArray` on an open record, `length` of an array read as a record's","where":"self","at":"x","detail":"reject: an open record or `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on an open record or `unknown` finds that the object owns the store of an array, not that it is an array of `Array.prototype`: that every object owning a store was allocated as an — The available claim for x is { a: string, b: number } | { \"[[proto]]\": never = ({ forEach: never = (type 17), map: never = (type 25), reduce: never = (type 27), reduceRight: never = (type 27), every: never = (type 28), some: never = (type 28), filter: never = (type 31), slice: never = (type 32), join: never = (type 33), indexOf: never = (type 34), lastIndexOf: never = (type 34), includ"},
 {"source":"tests/expect-error/array-isarray-refinement.ts","name":"testMultipleUnionElseBranch","kind":"function","line":87,"skjsMarker":"rejected-self"},
@@ -634,7 +633,7 @@
 {"source":"tests/expect-error/array-isarray-refinement.ts","name":"testElseBranchRefined","kind":"function","line":158,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/array-isarray-refinement.ts","name":"testObjectPropOnArray","kind":"function","line":168,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/array-isarray-refinement.ts","name":"testEarlyReturn","kind":"function","line":182,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: an open record or `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on an open record or `unknown` finds th","group":"arrays and open records: `Array.isArray` on an open record, `length` of an array read as a record's","where":"self","at":"x","detail":"reject: an open record or `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on an open record or `unknown` finds that the object owns the store of an array, not that it is an array of `Array.prototype`: that every object owning a store was allocated as an — The available claim for x is { a: string, b: number } | { \"[[proto]]\": never = ({ forEach: never = (type 16), map: never = (type 24), reduce: never = (type 26), reduceRight: never = (type 26), every: never = (type 27), some: never = (type 27), filter: never = (type 30), slice: never = (type 31), join: never = (type 33), indexOf: never = (type 34), lastIndexOf: never = (type 34), includ"},
-{"source":"tests/expect-error/array-isarray-refinement.ts","name":"testEarlyReturnWithLength","kind":"function","line":190,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: missing field _","group":"discriminated-union narrowing (a field read after a tag test)","where":"self","detail":"unsupported: missing field length"},
+{"source":"tests/expect-error/array-isarray-refinement.ts","name":"testEarlyReturnWithLength","kind":"function","line":190,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: a read of length on a union of an array and a record that does not state it: a test that the value is an array keeps the record, a value of which may be an arra","group":"discriminated-union narrowing (a field read after a tag test)","where":"self","detail":"unsupported: a read of length on a union of an array and a record that does not state it: a test that the value is an array keeps the record, a value of which may be an array carrying its keys"},
 {"source":"tests/expect-error/array-isarray-refinement.ts","name":"testCombinedWithTypeof","kind":"function","line":202,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: an open record or `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on an open record or `unknown` finds th","group":"arrays and open records: `Array.isArray` on an open record, `length` of an array read as a record's","where":"self","at":"x","detail":"reject: an open record or `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on an open record or `unknown` finds that the object owns the store of an array, not that it is an array of `Array.prototype`: that every object owning a store was allocated as an — The available claim for x is { a: string, b: number } | { \"[[proto]]\": never = ({ forEach: never = (type 17), map: never = (type 25), reduce: never = (type 27), reduceRight: never = (type 27), every: never = (type 28), some: never = (type 28), filter: never = (type 31), slice: never = (type 32), join: never = (type 33), indexOf: never = (type 34), lastIndexOf: never = (type 34), includ"},
 {"source":"tests/expect-error/array-isarray-refinement.ts","name":"testNegativeWithNull","kind":"function","line":218,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/array-isarray-refinement.ts","name":"testMultipleArrays","kind":"function","line":229,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
@@ -1141,16 +1140,16 @@
 {"source":"tests/expect-error/destructuring-assignment.ts","name":"restTargetElementsAreChecked","kind":"function","line":78,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/destructuring-assignment.ts","name":"emptyRestTargetAccepted","kind":"function","line":87,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/destructuring-assignment.ts","name":"restDoesNotLetATupleBecomeAnArray","kind":"function","line":96,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/destructuring-assignment.ts","name":"restTargetOfArrayAccepted","kind":"function","line":106,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: an array rest needs one tuple contract of required positions: the rest of an array of unknown length is a slice","group":"destructuring and rest/default parameters","where":"self","detail":"reject: an array rest needs one tuple contract of required positions: the rest of an array of unknown length is a slice"},
+{"source":"tests/expect-error/destructuring-assignment.ts","name":"restTargetOfArrayAccepted","kind":"function","line":106,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/destructuring-assignment.ts","name":"inferredTargetEvolves","kind":"function","line":115,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/destructuring-assignment.ts","name":"keyBeforeDefault","kind":"function","line":123,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: only field and local assignments are supported","group":"compound and update assignments (x++, ||=, ??=, a[i] op=)","where":"self","at":"[box[(value = 1) === 1 ? \"slot\" : \"slot\"] = value] = [undefined];","detail":"gate: only field and local assignments are supported (line 4, col 4)"},
 {"source":"tests/expect-error/destructuring-assignment.ts","name":"keyClearsDefault","kind":"function","line":129,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/destructuring-const.ts","name":"first,second","kind":"variable","line":4,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/destructuring-const.ts","name":"name2,age","kind":"variable","line":9,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/destructuring-tuple-rest-union.ts","name":"declaredRest","kind":"function","line":1,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: an array rest needs one tuple of required positions: the rest of an array of unknown length is a slice","group":"destructuring and rest/default parameters","where":"self","detail":"unsupported: an array rest needs one tuple of required positions: the rest of an array of unknown length is a slice"},
-{"source":"tests/expect-error/destructuring-tuple-rest-union.ts","name":"assignedRest","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source refusal at _: an array rest needs one array contract: over a union of arrays of different lengths its rest is a slice of a length known only at r","group":"destructuring and rest/default parameters","where":"self","at":"assignedRest","detail":"reject: source refusal at [9,21): an array rest needs one array contract: over a union of arrays of different lengths its rest is a slice of a length known only at run time — an array rest needs one array contract: over a union of arrays of different lengths its rest is a slice of a length known only at run time"},
+{"source":"tests/expect-error/destructuring-tuple-rest-union.ts","name":"declaredRest","kind":"function","line":1,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
+{"source":"tests/expect-error/destructuring-tuple-rest-union.ts","name":"assignedRest","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/destructuring-tuple-rest-union.ts","name":"incompatibleRest","kind":"function","line":11,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/destructuring-tuple-rest-union.ts","name":"emptyRemainder","kind":"function","line":18,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: an array rest needs one tuple of required positions: the rest of an array of unknown length is a slice","group":"destructuring and rest/default parameters","where":"self","detail":"unsupported: an array rest needs one tuple of required positions: the rest of an array of unknown length is a slice"},
+{"source":"tests/expect-error/destructuring-tuple-rest-union.ts","name":"emptyRemainder","kind":"function","line":18,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: position 1 is outside the array's contract","group":"unclassified: search: reject: position 1 is outside the array's contract","where":"self","detail":"reject: position 1 is outside the array's contract"},
 {"source":"tests/expect-error/destructuring-tuple-union.ts","name":"assignedPrefix","kind":"function","line":1,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/destructuring-tuple-union.ts","name":"declaredPrefix","kind":"function","line":6,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/destructuring-tuple-union.ts","name":"missingPosition","kind":"function","line":10,"skjsMarker":"rejected-self"},
@@ -1431,7 +1430,7 @@
 {"source":"tests/expect-error/filedefs-type-not-found.ts","name":"f","kind":"function","line":2,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/filedefs-unsupported-exports.ts","name":"statement@7","kind":"statement","line":7,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/for-in-for-of-invalid.ts","name":"testForInWithPrimitive","kind":"function","line":3,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/for-in-for-of-invalid.ts","name":"testForOfWithPrimitive","kind":"function","line":10,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a for...of loop over a string: only the iteration of an array is stated (%Iterate%): that of a string or a host collection is not, and a client iterable","group":"loops (for, for-in, for-of forms)","where":"self","at":"for (const char of str) { console.log(char); }","detail":"reject: a for...of loop over a string: only the iteration of an array is stated (%Iterate%): that of a string or a host collection is not, and a client iterable runs its own code (its `next` and `return`) — No rule derives this invoke at () => null | { value: never = (unknown) } from str: \"hello\", %Iterate%: ({ \"[]\": never = (Store<ReadonlyArray<unknown>>), \"[[proto]]\": never = ({ forEach: never = (type 17), map: never = (type 25), reduce: never = (type 27), reduceRight: never = (type 27), every: never = (type 28), some: never = (type 28), filter: never = (type 31), slice: never = (type 3"},
+{"source":"tests/expect-error/for-in-for-of-invalid.ts","name":"testForOfWithPrimitive","kind":"function","line":10,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/for-in-for-of-invalid.ts","name":"testForInWrongVariableType","kind":"function","line":17,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/for-in-for-of-invalid.ts","name":"testForOfWrongVariableType","kind":"function","line":26,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/for-in-for-of-invalid.ts","name":"testForInWithNull","kind":"function","line":35,"skjsMarker":"rejected-self"},
@@ -1449,10 +1448,10 @@
 {"source":"tests/expect-error/for_in_for_of_tests.ts","name":"testForOfWithArrays","kind":"function","line":56,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/for_in_for_of_tests.ts","name":"testForOfWithTuples","kind":"function","line":76,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/for_in_for_of_tests.ts","name":"testNestedForLoops","kind":"function","line":97,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/for_in_for_of_tests.ts","name":"testForOfWithStrings","kind":"function","line":114,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a for...of loop over a string: only the iteration of an array is stated (%Iterate%): that of a string or a host collection is not, and a client iterable","group":"loops (for, for-in, for-of forms)","where":"self","at":"ch","detail":"reject: a for...of loop over a string: only the iteration of an array is stated (%Iterate%): that of a string or a host collection is not, and a client iterable runs its own code (its `next` and `return`) — The available claim for letter is unknown. This obligation requires string."},
+{"source":"tests/expect-error/for_in_for_of_tests.ts","name":"testForOfWithStrings","kind":"function","line":114,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/for_in_for_of_tests.ts","name":"testForLoopsWithControlFlow","kind":"function","line":121,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/for_in_for_of_tests.ts","name":"testForLoopsWithDifferentDeclarations","kind":"function","line":141,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a `for...of` loop declares one `const` binding","group":"loops (for, for-in, for-of forms)","where":"self","at":"for (let value of arr) {","detail":"gate: a `for...of` loop declares one `const` binding (line 6, col 3)"},
-{"source":"tests/expect-error/for_in_for_of_tests.ts","name":"statement@164","kind":"statement","line":164,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a for...of loop over a string: only the iteration of an array is stated (%Iterate%): that of a string or a host collection is not, and a client iterable","group":"loops (for, for-in, for-of forms)","where":"dependency","at":"ch","detail":"reject: a for...of loop over a string: only the iteration of an array is stated (%Iterate%): that of a string or a host collection is not, and a client iterable runs its own code (its `next` and `return`) — The available claim for letter is unknown. This obligation requires string."},
+{"source":"tests/expect-error/for_in_for_of_tests.ts","name":"statement@164","kind":"statement","line":164,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/forin-exclamation.ts","name":"testForInBasic","kind":"function","line":9,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two ","group":"a non-null assertion on a read at a for...in key (that the object owns the key relates two values)","where":"self","at":"v[k]!","detail":"reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two values, which no type and no statement entry states"},
 {"source":"tests/expect-error/forin-exclamation.ts","name":"testForInDotAccess","kind":"function","line":15,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two ","group":"a non-null assertion on a read at a for...in key (that the object owns the key relates two values)","where":"self","at":"obj.field[k]!","detail":"reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two values, which no type and no statement entry states"},
 {"source":"tests/expect-error/forin-exclamation.ts","name":"testForInDeepDotAccess","kind":"function","line":21,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two ","group":"a non-null assertion on a read at a for...in key (that the object owns the key relates two values)","where":"self","at":"a.b.c[k]!","detail":"reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two values, which no type and no statement entry states"},
@@ -1985,8 +1984,8 @@
 {"source":"tests/expect-error/instanceof-hasinstance.ts","name":"BaseHasInstance","kind":"class","line":48,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a static `[Symbol.hasInstance]` method is outside the fragment: it replaces the prototype-chain test that `instanceof` is in the model with a call","group":"in / instanceof / typeof tests","where":"self","at":"static [Symbol.hasInstance](_x: unknown): boolean {","detail":"gate: a static `[Symbol.hasInstance]` method is outside the fragment: it replaces the prototype-chain test that `instanceof` is in the model with a call (line 2, col 3)"},
 {"source":"tests/expect-error/instanceof-hasinstance.ts","name":"DerivedHasInstance","kind":"class","line":53,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a static `[Symbol.hasInstance]` method is outside the fragment: it replaces the prototype-chain test that `instanceof` is in the model with a call","group":"in / instanceof / typeof tests","where":"dependency","at":"static [Symbol.hasInstance](_x: unknown): boolean {","detail":"gate: a static `[Symbol.hasInstance]` method is outside the fragment: it replaces the prototype-chain test that `instanceof` is in the model with a call (line 2, col 3)"},
 {"source":"tests/expect-error/instanceof-hasinstance.ts","name":"inheritedHasInstance","kind":"function","line":57,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/instanceof-hasinstance.ts","name":"InstanceHasInstance","kind":"class","line":67,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a class member with a computed key is outside the fragment: a method is a binding, and its prototype key, named by its plain name","group":"classes: modifiers, inheritance, fields, parameter properties, receivers","where":"self","at":"[Symbol.hasInstance](_x: unknown): boolean {","detail":"gate: a class member with a computed key is outside the fragment: a method is a binding, and its prototype key, named by its plain name (line 3, col 3)"},
-{"source":"tests/expect-error/instanceof-hasinstance.ts","name":"instanceLevelHasInstance","kind":"function","line":74,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a class member with a computed key is outside the fragment: a method is a binding, and its prototype key, named by its plain name","group":"classes: modifiers, inheritance, fields, parameter properties, receivers","where":"dependency","at":"[Symbol.hasInstance](_x: unknown): boolean {","detail":"gate: a class member with a computed key is outside the fragment: a method is a binding, and its prototype key, named by its plain name (line 3, col 3)"},
+{"source":"tests/expect-error/instanceof-hasinstance.ts","name":"InstanceHasInstance","kind":"class","line":67,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a well-known symbol key other than `Symbol.iterator` is outside the fragment: it changes how the host treats the object, which the model does not state, and `Sy","group":"iterables the program defines: an iterator whose type states no `return`, a spread or a pattern the protocol's lowering does not place, a well-known symbol key other than `Symbol.iterator`","where":"self","at":"[Symbol.hasInstance](_x: unknown): boolean {","detail":"gate: a well-known symbol key other than `Symbol.iterator` is outside the fragment: it changes how the host treats the object, which the model does not state, and `Symbol.toStringTag` would let it pass for a host collection whose iteration is trusted (line 3, col 3)"},
+{"source":"tests/expect-error/instanceof-hasinstance.ts","name":"instanceLevelHasInstance","kind":"function","line":74,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a well-known symbol key other than `Symbol.iterator` is outside the fragment: it changes how the host treats the object, which the model does not state, and `Sy","group":"iterables the program defines: an iterator whose type states no `return`, a spread or a pattern the protocol's lowering does not place, a well-known symbol key other than `Symbol.iterator`","where":"dependency","at":"[Symbol.hasInstance](_x: unknown): boolean {","detail":"gate: a well-known symbol key other than `Symbol.iterator` is outside the fragment: it changes how the host treats the object, which the model does not state, and `Symbol.toStringTag` would let it pass for a host collection whose iteration is trusted (line 3, col 3)"},
 {"source":"tests/expect-error/instanceof-hasinstance.ts","name":"Plain","kind":"class","line":82,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/instanceof-hasinstance.ts","name":"plainClass","kind":"function","line":86,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: `x instanceof C` does not narrow `unknown` to C: that every object whose prototype chain holds C'_'s fields is a fact about every allocation of the program, whi","group":"in / instanceof / typeof tests","where":"unknown","detail":"unsupported: `x instanceof C` does not narrow `unknown` to C: that every object whose prototype chain holds C's prototype has C's fields is a fact about every allocation of the program, which no type of a value states"},
 {"source":"tests/expect-error/instanceof-readonly-field.ts","name":"Cell","kind":"class","line":6,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
@@ -2063,7 +2062,7 @@
 {"source":"tests/expect-error/iterator-effects.ts","name":"consumeNumbers","kind":"function","line":49,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/iterator-effects.ts","name":"spreadBeforeArgument","kind":"function","line":50,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/iterator-effects.ts","name":"assignedIteration","kind":"function","line":59,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/iterator-effects.ts","name":"freshGuardAndSnapshot","kind":"function","line":70,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a for...of loop over an object that is not an array (a Set, a Map, an iterator or another iterable): only the iteration of an array is stated (%Iterate%","group":"loops (for, for-in, for-of forms)","where":"self","at":"for (const value of values) { if (cell.value !== null) return cell.value; }","detail":"reject: a for...of loop over an object that is not an array (a Set, a Map, an iterator or another iterable): only the iteration of an array is stated (%Iterate%): that of a string or a host collection is not, and a client iterable runs its own code (its `next` and `return`) — No rule derives this invoke at () => null | { value: never = (unknown) } from values: {  }, %Iterate%: ({ \"[]\": never = (Store<ReadonlyArray<unknown>>), \"[[proto]]\": never = ({ forEach: never = (type 16), map: never = (type 24), reduce: never = (type 26), reduceRight: never = (type 26), every: never = (type 27), some: never = (type 27), filter: never = (type 30), slice: never = (type 3"},
+{"source":"tests/expect-error/iterator-effects.ts","name":"freshGuardAndSnapshot","kind":"function","line":70,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/jobj-nested-array.ts","name":"test","kind":"function","line":20,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/json-generated-service.ts","name":"IdentityMapper","kind":"class","line":52,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its node-typing claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"[key, v]","detail":"reject: source expression obligation at [469,477): evidence search failed: no derivation of its node-typing claim"},
 {"source":"tests/expect-error/json-generated-service.ts","name":"GraphResource","kind":"class","line":68,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: type argument does not establish its declared bound for V at [1173,1187]: object ≤ null | true | false | number | string | object | indexed object","group":"generics: constraints, explicit type arguments, rigid types, generic function types","where":"self","detail":"reject: type argument does not establish its declared bound for V at [1173,1187]: object ≤ null | true | false | number | string | object | indexed object"},
@@ -2739,7 +2738,7 @@
 {"source":"tests/expect-error/private-fields.ts","name":"HasPrivateForDestruct","kind":"class","line":179,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/private-fields.ts","name":"destructureFromOutside","kind":"function","line":188,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/private-fields.ts","name":"symKey","kind":"variable","line":198,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
-{"source":"tests/expect-error/private-fields.ts","name":"WithPrivateSymbolMethod","kind":"class","line":199,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a class member with a computed key is outside the fragment: a method is a binding, and its prototype key, named by its plain name","group":"classes: modifiers, inheritance, fields, parameter properties, receivers","where":"self","at":"private [symKey](): number {","detail":"gate: a class member with a computed key is outside the fragment: a method is a binding, and its prototype key, named by its plain name (line 4, col 3)"},
+{"source":"tests/expect-error/private-fields.ts","name":"WithPrivateSymbolMethod","kind":"class","line":199,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/promise-object.ts","name":"testThen","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills ","group":"generic methods: instances of a declaration with them related, a binder inferred beside an application of it (Promise)","where":"self","at":"p.then","detail":"reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills one left unconstrained from its default, and the producer does neither; nor does Lean find the instance, as it pairs a union's labels by pos — No rule derives this readAt at (this: { then: never = (type 194), catch: never = (type 212), \"\": never = (string) }, null | undefined | ((number) => string | { then: never = (type 236) }), null | undefined | ((unknown) => string | { then: never = (type 236) })) => { then: never = (type 215), catch: never = (type 233), \"\": never = (string) } from p: { then: never = (type 194), catch: ne"},
 {"source":"tests/expect-error/promise-object.ts","name":"testThenChained","kind":"function","line":10,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills ","group":"generic methods: instances of a declaration with them related, a binder inferred beside an application of it (Promise)","where":"self","at":"p.then","detail":"reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills one left unconstrained from its default, and the producer does neither; nor does Lean find the instance, as it pairs a union's labels by pos — No rule derives this readAt at (this: { then: never = (type 200), catch: never = (type 218), \"\": never = (string) }, null | undefined | ((number) => null | boolean | undefined | number | string | bigint | symbol | { \"[]\": never = (…), \"[[proto]]\": never = (…) } | {  } | { then: never = (type 266) }), null | undefined | ((unknown) => null | boolean | undefined | number | string | bigint"},
 {"source":"tests/expect-error/promise-object.ts","name":"testCatch","kind":"function","line":14,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills ","group":"generic methods: instances of a declaration with them related, a binder inferred beside an application of it (Promise)","where":"self","at":"p.catch","detail":"reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills one left unconstrained from its default, and the producer does neither; nor does Lean find the instance, as it pairs a union's labels by pos — No rule derives this readAt at (this: { then: never = (type 186), catch: never = (type 204), \"\": never = (string) }, null | undefined | ((unknown) => { then: never = (type 207) })) => { then: never = (type 186), catch: never = (type 204), \"\": never = (string) } from p: { then: never = (type 186), catch: never = (type 204), \"\": never = (string) }."},
@@ -2992,7 +2991,7 @@
 {"source":"tests/expect-error/spread-in-function-calls.ts","name":"testSpreadWithArrayMethods","kind":"function","line":173,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/spread-object-literal-index-contamination.ts","name":"siblings","kind":"function","line":14,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/spread-object-literal-index-contamination.ts","name":"chained","kind":"function","line":23,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
-{"source":"tests/expect-error/spread-object-literal-index-contamination.ts","name":"symbolPath","kind":"function","line":31,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a computed key in an object literal is outside the fragment: an allocation's keys are the property names the literal spells, and a symbol or a key computed at r","group":"object literal members (methods, accessors, spreads)","where":"self","at":"return { [kId]: idv, ...{} };","detail":"gate: a computed key in an object literal is outside the fragment: an allocation's keys are the property names the literal spells, and a symbol or a key computed at run time is none of them (line 6, col 12)"},
+{"source":"tests/expect-error/spread-object-literal-index-contamination.ts","name":"symbolPath","kind":"function","line":31,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/spread-object-literal-index-contamination.ts","name":"realIndex","kind":"function","line":40,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a spread of a dictionary: the copy owns the keys the dictionary holds when it runs, which no type states, and an object's keys are fixed at its allocati","group":"dictionaries: a spread of one, a key `in` found in one","where":"self","at":"{ x: 1, y: 2, ...source }","detail":"reject: a spread of a dictionary: the copy owns the keys the dictionary holds when it runs, which no type states, and an object's keys are fixed at its allocation"},
 {"source":"tests/expect-error/spread-union-cap.ts","name":"convergingFinalSpread","kind":"function","line":209,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/spread-union-distribute.ts","name":"fieldAfter","kind":"function","line":11,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
@@ -3179,7 +3178,7 @@
 {"source":"tests/expect-error/symbols.ts","name":"testCovariance","kind":"function","line":132,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/symbols.ts","name":"testContravariance","kind":"function","line":137,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/symbols.ts","name":"symbolAtRuntime","kind":"function","line":148,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a callable object with methods needs a combined clause","group":"library globals as values (Array, Symbol, Error, Promise, Set, Map, Date, JSON, …)","where":"self","detail":"reject: a callable object with methods needs a combined clause"},
-{"source":"tests/expect-error/symbols.ts","name":"testSymObj","kind":"function","line":177,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a computed key in an object literal is outside the fragment: an allocation's keys are the property names the literal spells, and a symbol or a key computed at r","group":"object literal members (methods, accessors, spreads)","where":"self","at":"const symObj = { [Symbol.iterator]: () => {} };","detail":"gate: a computed key in an object literal is outside the fragment: an allocation's keys are the property names the literal spells, and a symbol or a key computed at run time is none of them (line 2, col 20)"},
+{"source":"tests/expect-error/symbols.ts","name":"testSymObj","kind":"function","line":177,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/symbols.ts","name":"testIterFn","kind":"function","line":185,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/symbols.ts","name":"testForInWithSymbols","kind":"function","line":193,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/symbols.ts","name":"inResult","kind":"variable","line":206,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: unsupported source expression at _: `in` with a key that is not a union of string literals","group":"in / instanceof / typeof tests","where":"self","at":"Symbol.iterator in {}","detail":"reject: unsupported source expression at [17,38): `in` with a key that is not a union of string literals"},
@@ -3194,13 +3193,13 @@
 {"source":"tests/expect-error/symbols.ts","name":"toPrimitiveSym","kind":"variable","line":265,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/symbols.ts","name":"testBracketAssignSymbol","kind":"function","line":271,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: a write adds the property '_' to an object allocated without it: an object's keys are fixed at its allocation","group":"object growth: a write adding a key (keys are fixed at allocation)","where":"self","detail":"unsupported: a write adds the property '[symbol 0]' to an object allocated without it: an object's keys are fixed at its allocation"},
 {"source":"tests/expect-error/symbols.ts","name":"testBracketAssignString","kind":"function","line":282,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: a write adds the property '_' to an object allocated without it: an object's keys are fixed at its allocation","group":"object growth: a write adding a key (keys are fixed at allocation)","where":"self","detail":"unsupported: a write adds the property 'foo' to an object allocated without it: an object's keys are fixed at its allocation"},
-{"source":"tests/expect-error/symbols.ts","name":"testForOfWithIterator","kind":"function","line":293,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a for...of loop over an object that is not an array (a Set, a Map, an iterator or another iterable): only the iteration of an array is stated (%Iterate%","group":"loops (for, for-in, for-of forms)","where":"self","at":"x","detail":"reject: a for...of loop over an object that is not an array (a Set, a Map, an iterator or another iterable): only the iteration of an array is stated (%Iterate%): that of a string or a host collection is not, and a client iterable runs its own code (its `next` and `return`) — The available claim for n is unknown. This obligation requires number."},
+{"source":"tests/expect-error/symbols.ts","name":"testForOfWithIterator","kind":"function","line":293,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: an iterable whose iterator'_'s `return` if it owns one (IteratorClose), and the iterator's open record type says nothing of what that property holds","group":"iterables the program defines: an iterator whose type states no `return`, a spread or a pattern the protocol's lowering does not place, a well-known symbol key other than `Symbol.iterator`","where":"self","at":"for (const x of obj) {","detail":"gate: an iterable whose iterator's type states no `return` is outside the fragment here: a loop left early, or a throw out of its body, calls the iterator's `return` if it owns one (IteratorClose), and the iterator's open record type says nothing of what that property holds (line 4, col 19)"},
 {"source":"tests/expect-error/symbols.ts","name":"testForOfArray","kind":"function","line":305,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
-{"source":"tests/expect-error/symbols.ts","name":"testForOfSet","kind":"function","line":316,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a for...of loop over an object that is not an array (a Set, a Map, an iterator or another iterable): only the iteration of an array is stated (%Iterate%","group":"loops (for, for-in, for-of forms)","where":"self","at":"x","detail":"reject: a for...of loop over an object that is not an array (a Set, a Map, an iterator or another iterable): only the iteration of an array is stated (%Iterate%): that of a string or a host collection is not, and a client iterable runs its own code (its `next` and `return`) — The available claim for n is unknown. This obligation requires number."},
-{"source":"tests/expect-error/symbols.ts","name":"testForOfMap","kind":"function","line":327,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a for...of loop over an object that is not an array (a Set, a Map, an iterator or another iterable): only the iteration of an array is stated (%Iterate%","group":"loops (for, for-in, for-of forms)","where":"self","at":"entry","detail":"reject: a for...of loop over an object that is not an array (a Set, a Map, an iterator or another iterable): only the iteration of an array is stated (%Iterate%): that of a string or a host collection is not, and a client iterable runs its own code (its `next` and `return`) — The available claim for pair is unknown. This obligation requires { \"[[proto]]\": never = ({ forEach: never = (type 22), map: never = (type 30), reduce: never = (type 32), reduceRight: never = (type 32), every: never = (type 33), some: never = (type 33), filter: never = (type 36), slice: never = (type 37), join: never = (type 38), indexOf: never = (type 39), lastIndexOf: never = (type 3"},
-{"source":"tests/expect-error/symbols.ts","name":"testForOfMapIterator","kind":"function","line":338,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: missing field _","group":"discriminated-union narrowing (a field read after a tag test)","where":"self","detail":"unsupported: missing field keys"},
+{"source":"tests/expect-error/symbols.ts","name":"testForOfSet","kind":"function","line":316,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
+{"source":"tests/expect-error/symbols.ts","name":"testForOfMap","kind":"function","line":327,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
+{"source":"tests/expect-error/symbols.ts","name":"testForOfMapIterator","kind":"function","line":338,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/symbols.ts","name":"spreadTarget","kind":"function","line":349,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
-{"source":"tests/expect-error/symbols.ts","name":"testSpreadIterableInCall","kind":"function","line":351,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a spread argument of an object that is not an array (a Set, a Map, an iterator or another iterable): only the iteration of an array is stated (%Iterate%","group":"calls: overloads, .call, spread arguments, Object.assign, arrow callee","where":"self","at":"spreadTarget(...s)","detail":"reject: a spread argument of an object that is not an array (a Set, a Map, an iterator or another iterable): only the iteration of an array is stated (%Iterate%): that of a string or a host collection is not, and a client iterable runs its own code (its `next` and `return`) — No rule derives this invoke at unknown from spreadTarget: (...Array<number>) => unknown."},
+{"source":"tests/expect-error/symbols.ts","name":"testSpreadIterableInCall","kind":"function","line":351,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/symbols.ts","name":"testDestructureArray","kind":"function","line":360,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/symbols.ts","name":"testSpreadInArrayLiteral","kind":"function","line":373,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: array literal spreads and holes are outside the fragment","group":"calls: overloads, .call, spread arguments, Object.assign, arrow callee","where":"self","at":"const arr: Array<number> = [...s];","detail":"gate: array literal spreads and holes are outside the fragment (line 3, col 30)"},
 {"source":"tests/expect-error/symbols.ts","name":"testClassSymContravariance","kind":"function","line":383,"skjsMarker":"rejected-self"},
@@ -3745,11 +3744,11 @@
 {"source":"tests/expect-error/tuple-constraint-literal.ts","name":"intersectionMissingMethod","kind":"function","line":142,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/tuple-constraint-literal.ts","name":"abstractConstraint","kind":"function","line":149,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/tuple-constraint-literal.ts","name":"openConstraintVariable","kind":"function","line":159,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/tuple-iterable.ts","name":"homogeneousTupleAsIterable","kind":"function","line":6,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a tuple at an iterable: the search relates the store of an array to the element of `Array.prototype[Symbol.iterator]`, and a tuple's positions to no one","group":"a tuple at an iterable (the search relates only an array's store to the iterator's element)","where":"self","at":"t","detail":"reject: a tuple at an iterable: the search relates the store of an array to the element of `Array.prototype[Symbol.iterator]`, and a tuple's positions to no one element — The available claim for it is { \"[[proto]]\": never = ({ forEach: never = (type 16), map: never = (type 24), reduce: never = (type 26), reduceRight: never = (type 26), every: never = (type 27), some: never = (type 27), filter: never = (type 30), slice: never = (type 31), join: never = (type 33), indexOf: never = (type 34), lastIndexOf: never = (type 34), includes: never = (type 35), at:"},
-{"source":"tests/expect-error/tuple-iterable.ts","name":"heterogeneousTupleAsIterable","kind":"function","line":13,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a tuple at an iterable: the search relates the store of an array to the element of `Array.prototype[Symbol.iterator]`, and a tuple's positions to no one","group":"a tuple at an iterable (the search relates only an array's store to the iterator's element)","where":"self","at":"t","detail":"reject: a tuple at an iterable: the search relates the store of an array to the element of `Array.prototype[Symbol.iterator]`, and a tuple's positions to no one element — The available claim for it is { \"[[proto]]\": never = ({ forEach: never = (type 17), map: never = (type 25), reduce: never = (type 27), reduceRight: never = (type 27), every: never = (type 28), some: never = (type 28), filter: never = (type 31), slice: never = (type 32), join: never = (type 33), indexOf: never = (type 34), lastIndexOf: never = (type 34), includes: never = (type 35), at:"},
+{"source":"tests/expect-error/tuple-iterable.ts","name":"homogeneousTupleAsIterable","kind":"function","line":6,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
+{"source":"tests/expect-error/tuple-iterable.ts","name":"heterogeneousTupleAsIterable","kind":"function","line":13,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/tuple-iterable.ts","name":"wrongElementType","kind":"function","line":20,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/tuple-iterable.ts","name":"takesIterable","kind":"function","line":29,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
-{"source":"tests/expect-error/tuple-iterable.ts","name":"tupleAcceptedByGenericIterable","kind":"function","line":32,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a tuple at an iterable: the search relates the store of an array to the element of `Array.prototype[Symbol.iterator]`, and a tuple's positions to no one","group":"a tuple at an iterable (the search relates only an array's store to the iterator's element)","where":"self","at":"takesIterable<number | string>(t)","detail":"reject: a tuple at an iterable: the search relates the store of an array to the element of `Array.prototype[Symbol.iterator]`, and a tuple's positions to no one element — No rule derives this invoke at unknown from t: { \"[[proto]]\": never = ({ forEach: never = (type 20), map: never = (type 28), reduce: never = (type 30), reduceRight: never = (type 30), every: never = (type 31), some: never = (type 31), filter: never = (type 34), slice: never = (type 35), join: never = (type 36), indexOf: never = (type 37), lastIndexOf: never = (type 37), includes: never"},
+{"source":"tests/expect-error/tuple-iterable.ts","name":"tupleAcceptedByGenericIterable","kind":"function","line":32,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/tuple-iterable.ts","name":"forOfOverTuple","kind":"function","line":39,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/tuple-large-arity.ts","name":"fromArity11","kind":"function","line":6,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/tuple-large-arity.ts","name":"arity11Length","kind":"function","line":22,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: the `length` of a mutable tuple read at its arity: the length of a mutable tuple is not fixed by its type, since `push` is allowed on it (an unsoundness","group":"arrays and open records: `Array.isArray` on an open record, `length` of an array read as a record's","where":"self","at":"t.length","detail":"reject: the `length` of a mutable tuple read at its arity: the length of a mutable tuple is not fixed by its type, since `push` is allowed on it (an unsoundness of TypeScript), so its `length` is a number — The available claim for t.length is number. This return requires 11."},
@@ -4411,10 +4410,10 @@
 {"source":"tests/callgraph/default-params.ts","name":"getDefault","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/callgraph/default-params.ts","name":"foo","kind":"function","line":8,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/callgraph/default-params.ts","name":"bar","kind":"function","line":11,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
-{"source":"tests/callgraph/destructuring-iterator.ts","name":"test","kind":"function","line":10,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: an array pattern over a value that may not be an array: it would step that value'_'s positions are read","group":"destructuring and rest/default parameters","where":"self","detail":"unsupported: an array pattern over a value that may not be an array: it would step that value's own iterator, which is not modeled; only an array's positions are read"},
+{"source":"tests/callgraph/destructuring-iterator.ts","name":"test","kind":"function","line":10,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: an iterable whose iterator'_'s `return` if it owns one (IteratorClose), and the iterator's open record type says nothing of what that property holds","group":"iterables the program defines: an iterator whose type states no `return`, a spread or a pattern the protocol's lowering does not place, a well-known symbol key other than `Symbol.iterator`","where":"self","at":"const [first] = iter;","detail":"gate: an iterable whose iterator's type states no `return` is outside the fragment here: a loop left early, or a throw out of its body, calls the iterator's `return` if it owns one (IteratorClose), and the iterator's open record type says nothing of what that property holds (line 6, col 19)"},
 {"source":"tests/callgraph/export-wrappers.ts","name":"helper","kind":"function","line":4,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/callgraph/export-wrappers.ts","name":"exported","kind":"function","line":7,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
-{"source":"tests/callgraph/for-of-iterator.ts","name":"test","kind":"function","line":12,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a for...of loop over an object that is not an array (a Set, a Map, an iterator or another iterable): only the iteration of an array is stated (%Iterate%","group":"loops (for, for-in, for-of forms)","where":"self","at":"for (const n of iter) { sum += n; }","detail":"reject: a for...of loop over an object that is not an array (a Set, a Map, an iterator or another iterable): only the iteration of an array is stated (%Iterate%): that of a string or a host collection is not, and a client iterable runs its own code (its `next` and `return`) — No rule derives this invoke at () => null | { value: never = (unknown) } from iter: {  }, %Iterate%: ({ \"[]\": never = (Store<ReadonlyArray<unknown>>), \"[[proto]]\": never = ({ forEach: never = (type 15), map: never = (type 23), reduce: never = (type 25), reduceRight: never = (type 25), every: never = (type 26), some: never = (type 26), filter: never = (type 29), slice: never = (type 30)"},
+{"source":"tests/callgraph/for-of-iterator.ts","name":"test","kind":"function","line":12,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: an iterable whose iterator'_'s `return` if it owns one (IteratorClose), and the iterator's open record type says nothing of what that property holds","group":"iterables the program defines: an iterator whose type states no `return`, a spread or a pattern the protocol's lowering does not place, a well-known symbol key other than `Symbol.iterator`","where":"self","at":"for (const n of iter) {","detail":"gate: an iterable whose iterator's type states no `return` is outside the fragment here: a loop left early, or a throw out of its body, calls the iterator's `return` if it owns one (IteratorClose), and the iterator's open record type says nothing of what that property holds (line 7, col 19)"},
 {"source":"tests/callgraph/generic-calls.ts","name":"identity","kind":"function","line":4,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/callgraph/generic-calls.ts","name":"useIdentity","kind":"function","line":7,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/callgraph/generic-higher-order.ts","name":"double","kind":"function","line":13,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
@@ -4440,7 +4439,7 @@
 {"source":"tests/callgraph/recursion.ts","name":"factorial","kind":"function","line":6,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/callgraph/recursion.ts","name":"isEven","kind":"function","line":10,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/callgraph/recursion.ts","name":"isOdd","kind":"function","line":13,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
-{"source":"tests/callgraph/spread-iterator.ts","name":"test","kind":"function","line":10,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: array literal spreads and holes are outside the fragment","group":"calls: overloads, .call, spread arguments, Object.assign, arrow callee","where":"self","at":"return [...iter];","detail":"gate: array literal spreads and holes are outside the fragment (line 6, col 10)"},
+{"source":"tests/callgraph/spread-iterator.ts","name":"test","kind":"function","line":10,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/callgraph/static-methods.ts","name":"defaultValue","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/callgraph/static-methods.ts","name":"Counter","kind":"class","line":9,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/callgraph/static-methods.ts","name":"test","kind":"function","line":15,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},

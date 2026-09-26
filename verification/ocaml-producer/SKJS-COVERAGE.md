@@ -4,8 +4,8 @@ How much of what SKJS accepts in its own test suite the pipeline
 (`check.mts`: parser → OCaml producer → Lean search and check) verifies, what
 stops the rest, and where the two disagree because SKJS is wrong.
 
-**2,296 of 2,674 SKJS-accepted units verify (85.9%); 1,694 of 2,026 accepted
-functions (83.6%).** 256 of the 377 files with an accepted unit verify entirely.
+**2,315 of 2,674 SKJS-accepted units verify (86.6%); 1,711 of 2,026 accepted
+functions (84.5%).** 261 of the 377 files with an accepted unit verify entirely.
 Five families of SKJS-accepted functions that the pipeline reaches and refuses
 are real SKJS unsoundnesses, each with a runtime witness that SKJS accepts and
 node crashes on ([below](#suspected-skjs-unsoundnesses)).
@@ -30,14 +30,14 @@ is not part of `verification/run.sh`.
 
 | Suite | Harness verdict | Files | Units | Accepted | Verified | Accepted functions | Verified functions |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,885 | 2,458 | 2086 | 1,863 | 1536 |
-| `tests/callgraph` | no error allowed | 25 | 59 | 59 | 56 | 51 | 48 |
+| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,885 | 2,458 | 2,104 | 1,863 | 1,552 |
+| `tests/callgraph` | no error allowed | 25 | 59 | 59 | 57 | 51 | 49 |
 | `tests/constprop` | no error allowed | 14 | 66 | 66 | 64 | 49 | 48 |
 | `tests/deadcode` | no error allowed | 7 | 27 | 27 | 27 | 16 | 16 |
 | `tests/cfg` | no error allowed | 7 | 22 | 22 | 21 | 21 | 20 |
 | `tests/projects` | expect-error markers, under the project's tsconfig | 24 of 68 | 44 | 34 | 34 | 23 | 23 |
 | `tests/ts-conformance/cases` | lines listed in `reference/*.errors.txt` | 4 | 11 | 10 | 8 | 3 | 3 |
-| **total** | | **480** | **4,110** | **2,674** | **2,296** | **2,026** | **1,694** |
+| **total** | | **480** | **4,110** | **2,674** | **2,315** | **2,026** | **1,711** |
 
 Excluded (79 files, listed in the JSON with reasons): `ts-conformance/not-supported`
 (31) and `callgraph-unsupported` (4) assert only that SKJS reports errors;
@@ -94,10 +94,10 @@ is.
 
 | Phase of first blocker | Units |
 | --- | ---: |
-| verified | 2,296 |
-| source (gate) | 130 |
-| proposal (producer) | 61 |
-| search (Lean) | 187 |
+| verified | 2,315 |
+| source (gate) | 129 |
+| proposal (producer) | 56 |
+| search (Lean) | 174 |
 
 **Caveats on the method.**
 
@@ -310,7 +310,7 @@ named).
     | Cells written in a `try` or before a call, read after it | `catch-entry-writes.ts` (2), `jump-through-finally.ts#jumpBeforeTheTryIsUntouched` | (b) | a call forgets every cell: no reachability is stated, so no capture analysis can be justified ([current-content assertions](../DESIGN.md#current-content-assertions)) |
     | Object identity: `x.child !== narrow`, then a read at `narrow`'s type; a computed key assigning its own receiver | `unsound-refinement.ts#stableMemberScalar`, `#capturedReceiver`, `destructuring.ts#identityPatternScalar` | (c) | a statement entry states no slot equality, nor what a field of a mutable local's object holds; TypeScript refuses these returns too |
     | `obj.val === undefined` on an optional key, then `obj.val` at `undefined` | `field-refinement.ts#testOptionalFieldEqualsUndefined` | (b) | knowledge of an absent key needs a record clause whose bound excludes it |
-    | `for...of` and spreads over a non-array iterable: a string, `Set`, `Map`, an iterator | `symbols.ts` (4), `for_in_for_of_tests.ts` (2), `for-in-for-of-invalid.ts#testForOfWithPrimitive`, `iterator-effects.ts`, `callgraph/for-of-iterator.ts` | (c) | `%Iterate%` is stated for arrays only ([loops over arrays](../PROGRAM-TYPING.md#loops-over-arrays)); the host collections' iterators could be stated, a client's cannot |
+    | `for...of` over an iterable whose iterator's type states no `return` (refused: IteratorClose would call whatever `return` it owns) | `symbols.ts#testForOfWithIterator`, `callgraph/for-of-iterator.ts`, `callgraph/destructuring-iterator.ts` | (c) | an open record may own any `return`, which an early exit or a throw out of the body calls ([fragment boundary](../DESIGN.md#fragment-boundary)) |
     | Generic call inference: nested instantiation, a spread into a generic | `per-field-tvar-isolation.ts`, `tvar-widening-ordinary-check.ts` (2) | (a) | producer inference |
     | SKJS unsound: aliased views of an empty literal, an inferred literal type that stays closed, `typeof c === "function"` on a class instance | `obj-literal-indexes.ts` (8), `callability.ts#testInstanceTypeofFunction` | (d) | [below](#suspected-skjs-unsoundnesses) |
     | Sound aliased views without fields | `obj-literal-indexes.ts#testAliasMutableOptionalThenOptional`, `#testAliasTwoReadonlyOptionals` | (b) | the same search as the unsound family's |
@@ -341,7 +341,7 @@ named).
     [host-relative](../DESIGN.md#method-members-are-host-relative)); extending
     a library constructor (4, `class-extends-generic-constructor.ts#StringArray`);
     a generic class method (3, `clauses-diff-subset.ts#Helper`); a member with
-    a computed key (3, `private-fields.ts#WithPrivateSymbolMethod`); a
+    a computed key other than a method's `unique symbol` (2); a
     constructor parameter with a default (3, `repro311.ts#MyClass`); a base
     from a library, an ambient declaration or a value (2,
     `class-extends-interface.ts#ClassExtendsMerged`); a class extending a
@@ -424,7 +424,7 @@ named).
     (8), each refused by its reason: a spread of a function (2), a class
     value (2), an array (1) or a string (1), whose own enumerable properties no
     record states (`spread-callable.ts`, `objects.ts#spreadFieldsAfterSpread`);
-    a computed key (2, `symbols.ts#testSymObj`).
+    a computed key other than a `unique symbol` constant.
 28. **Library `Function` methods, `Record`.** Read as in 1.
 29. **Optional chaining.** One derived form, a conditional with the arms
     exchanged ([derived source forms](../PROGRAM-TYPING.md#derived-source-forms)).
@@ -701,6 +701,7 @@ split by function.
 | R. Remaining source forms (done) | Enums (runtime, `const`, types, reverse mappings, number keys on records); object literals (numeric keys, literal spreads, construct-signature type literals; value spreads and accessors refused with reasons); optional chaining as one derived form; `.call`/`.apply`/`.bind` on module functions and `this` parameters as receivers; `%` exact on numbers and bigints | 80 / 19 verified, measured on 414fc86a before task S (1,361 → 1,441 units, 880 → 956 functions, 136 → 142 whole files, none lost) | `fragment-parse.mts`, `type-term.mts`, `declaration-graph.mts`, `annotate-source.mts`, `Fragment.lean`, `SourceExtraction.lean`, `Calculus.lean`, `ProgramTyping.lean`, `source.ml`, `proposal.ml` | D (bigint) | I (enum narrowing) |
 | U. Source-gate groups (done) | One shadowing mechanism: the parser renames a hiding local by the declaration TypeScript binds each reference to (closure bodies, parameters, cells, `for...of`, `catch` included; the TDZ refused), replacing Lean's `shadow`; a `let` nothing assigns as a `const` (narrowing, `let` patterns); sloppy methods without a `this` read; rest parameters through generic alias equations; interface inheritance through an alias and from bases sharing an index; every other unit of classes, destructuring, sloppy code, enums, object literal members and other forms refused naming its reason | 10 units verified over b9196b01 (2,281 → 2,291, `--skjs --width 3`, none lost), 1,679 → 1,689 functions, 249 → 254 whole files | `fragment-parse.mts`, `type-term.mts`, `declaration-graph.mts`, `skjs-coverage.mts`, `proposal.ml`, `source.ml`, `environment.ml`, `Fragment.lean`, `GenericSource.lean`, `SourceExtraction.lean` | — | — |
 | T. Closure bodies as graph code (done) | A closure's body is a graph as a function body is (`CallCode.graph`, `funGraph`): mutable locals, loops, `switch`, labeled blocks, `try`/`catch`/`finally` and `x++` inside closures; captures are the named bindings the body reads, cells by identity; an expression arrow is the graph of `return e`; node plans the extractor knows are rendered, not searched; `if (x.f !== c) return x.f;` returns the tested read in any body. Still term code, with reasons: generic closures (their certificate is universal), rest parameters (graph code is fixed-arity), parameter defaults and class constructors | 12 units verified (2,207 → 2,219 on the marker corpus, `--width 3`, none lost), two of them past a duplicate-claim failure in closure statements; `sum-*` cases 39.4 s → 37.0 s CPU, `sum-sound-binding` 7.8 s → 5.9 s | `Calculus.lean`, `Bindings.lean`, `CallArguments.lean`, `ObjectCoherence.lean`, `ProgramTyping.lean`, `ProgramCertificates.lean`, `HeapExpressionRules.lean`, `ControlFlow.lean`, `GraphCode.lean`, `CertificateProducer.lean`, `RequestJson.lean`, `SourceExtraction.lean`, `Fragment.lean`, `fragment-parse.mts`, `annotate-source.mts`, `calculus.mts`, `source.ml`, `proposal.ml` | — | N (generic closures) |
+| V. The iterator protocol for iterables the program writes (done) | `for...of`, spreads and array patterns over an iterable the program defines run ECMA-262's protocol as ordinary calls; IteratorClose a closing region the `try` machinery compiles; `[Symbol.iterator]` keys in literals and class methods; refused with reasons: an iterator whose type states no `return`, generators, other well-known symbol keys | 19 units newly verified over the committed run (2,296 → 2,315, 1,694 → 1,711 functions, 256 → 261 whole files, none lost), 14 of them the host iterables and slice rests of the previous commit, never measured | `fragment-parse.mts`, `declaration-graph.mts`, `array-prototype.mts`, `annotate-source.mts`, `Fragment.lean`, `SourceExtraction.lean`, `BranchRefinement.lean`, `ControlFlow.lean`, `DeclarationGraph.lean`, `source.ml`, `proposal.ml`, `claims.ml` | — | source forms (jumps through `finally`) |
 
 Suggested order: A, B, D in parallel (disjoint files except D's gate
 entries); then C, E, G; then F, H; then I, K; then J, L, P; M, N, O last (the
