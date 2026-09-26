@@ -171,40 +171,45 @@ export function restFromIntrinsic(k: number):
 
 /** The intrinsics' binders and signatures, given the standard library's
  * `Promise` applied to an argument. */
-export function intrinsics(promise: (argument: TypeTerm) => TypeTerm):
+export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: ReadonlySet<string>):
   { name: string; typeParams: { name: string; bound: TypeTerm | null }[]; type: Signature }[] {
-  return [
+  const definitions: Record<string, () => { typeParams: { name: string; bound: TypeTerm | null }[]; type: Signature }> = {
     // `await` of a promise of `T` or of a primitive `U`: what the promise
     // settles to, or the primitive itself.
-    { name: awaitName, typeParams: [{ name: "T", bound: null }, { name: "U", bound: primitive }],
-      type: fn([either(promise(binder), other)], either(binder, other)) },
+    [awaitName]: () => ({ typeParams: [{ name: "T", bound: null }, { name: "U", bound: primitive }],
+      type: fn([either(promise(binder), other)], either(binder, other)) }),
     // Settling to a primitive `T`, or adopting a promise of a primitive `U`:
     // adoption calls its `then`, which passes a `U`, and settles to it.
-    { name: asyncReturnName, typeParams: [{ name: "T", bound: primitive }, { name: "U", bound: primitive }],
-      type: fn([either(binder, promise(other))], promise(either(binder, other))) },
-    { name: asyncCompleteName, typeParams: [], type: fn([], promise(atom("void"))) },
-    { name: iterateName, typeParams: [{ name: "T", bound: null }],
-      type: fn([{ k: "array", readonly: true, element: binder, span }], step) },
-    { name: promiseAllName, typeParams: [{ name: "T", bound: null }],
+    [asyncReturnName]: () => ({ typeParams: [{ name: "T", bound: primitive }, { name: "U", bound: primitive }],
+      type: fn([either(binder, promise(other))], promise(either(binder, other))) }),
+    [asyncCompleteName]: () => ({ typeParams: [], type: fn([], promise(atom("void"))) }),
+    [iterateName]: () => ({ typeParams: [{ name: "T", bound: null }],
+      type: fn([{ k: "array", readonly: true, element: binder, span }], step) }),
+    [promiseAllName]: () => ({ typeParams: [{ name: "T", bound: null }],
       type: fn([{ k: "array", readonly: true, element: promise(binder), span }],
-        promise({ k: "array", readonly: false, element: binder, span })) },
+        promise({ k: "array", readonly: false, element: binder, span })) }),
     // A promise rejected with the reason: awaiting it throws, so it is a
     // promise of every type, never settling to a value.
-    { name: promiseRejectName, typeParams: [{ name: "T", bound: null }],
-      type: fn([atom("unknown")], promise(binder)) },
+    [promiseRejectName]: () => ({ typeParams: [{ name: "T", bound: null }],
+      type: fn([atom("unknown")], promise(binder)) }),
     // `new Promise(executor)`: the executor runs at once, given functions
     // that settle the promise to their argument, or reject it; a throw out
     // of the executor rejects it. The bound is `%AsyncReturn%`'s: resolving
     // with a thenable would adopt it instead of settling to it.
-    { name: newPromiseName, typeParams: [{ name: "T", bound: primitive }],
+    [newPromiseName]: () => ({ typeParams: [{ name: "T", bound: primitive }],
       type: fn([fn([fn([binder], atom("void")), fn([atom("unknown")], atom("void"))], atom("void"))],
-        promise(binder)) },
-    { name: forInName, typeParams: [],
-      type: fn([atom("unknown")], { k: "array", readonly: true, element: atom("string"), span }) },
-    { name: hasPropertyName, typeParams: [],
-      type: fn([either(atom("string"), atom("number"), atom("symbol")), atom("object")], atom("boolean")) },
-    { name: elementAtName, typeParams: [{ name: "T", bound: null }],
+        promise(binder)) }),
+    [forInName]: () => ({ typeParams: [],
+      type: fn([atom("unknown")], { k: "array", readonly: true, element: atom("string"), span }) }),
+    [hasPropertyName]: () => ({ typeParams: [],
+      type: fn([either(atom("string"), atom("number"), atom("symbol")), atom("object")], atom("boolean")) }),
+    [elementAtName]: () => ({ typeParams: [{ name: "T", bound: null }],
       type: fn([{ k: "array", readonly: true, element: binder, span }, atom("number")],
-        either(binder, atom("undefined"))) },
-  ];
+        either(binder, atom("undefined"))) }),
+  };
+  return [...needed].map(name => {
+    const make = definitions[name];
+    if (!make) throw Error(`no intrinsic ${name}`);
+    return { name, ...make() };
+  });
 }

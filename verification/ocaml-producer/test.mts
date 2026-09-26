@@ -758,6 +758,21 @@ function checkIteratorProtocol(): void {
   assert.equal(run("const log = { closed: 0 }; JSON.stringify([firstEven(new Countdowns(5, log)), log.closed])"), "[4,1]");
   assert.equal(run("bodyThrows(new Brittle()).message"), "body");
 }
+// Execute the same sources the verifier refuses. These exercise trusted
+// native contracts, not Lean's proved rules: callbacks can mutate aliases and
+// conversion invokes methods with arguments absent from TypeScript's type.
+for (const [file, call] of [
+  ["invalid-native-find-mutation", "wrong([1, 2], { value: 0 })"],
+  ["invalid-native-map-mutation", "wrong([1, 2], { value: 0 })"],
+  ["invalid-native-join-coercion", "wrong({ value: 0 })"],
+  ["invalid-native-sort-coercion", "wrong({ value: 0 })"],
+]) {
+  const source = stripTypes(readFileSync(join(here, "examples", `${file}.ts`), "utf8"))
+    .replace(/^export /gm, "");
+  assert.equal(vm.runInNewContext(`${source}\n${call}`, {}, { timeout: 1000 }), undefined,
+    `${file}: the actual source returns undefined despite its number contract`);
+}
+let erasedContract = "";
 let good = "";
 let generic = "";
 let genericClosure = "";
@@ -827,6 +842,7 @@ for (const [i, test] of cases.entries()) {
   );
   if (test.file === "generic-rest") checkGenericRest(verifier, result.artifacts);
   if (test.file === "overloads") checkOverloads(verifier, result.artifacts);
+  if (test.file === "invalid-generic-contract-erasure") erasedContract = result.artifacts;
   if (test.file === "values") good = result.artifacts;
   if (test.file === "default-parameter-scope") checkDefaults(verifier, result.artifacts);
   if (test.file === "for-of-program-iterable") checkIteratorProtocol();
@@ -846,10 +862,10 @@ for (const [i, test] of cases.entries()) {
   if (test.file === "index-signature") indexed = result.artifacts;
   if (test.file === "sum-mapper-signature") sumMapper = result.artifacts;
   if (test.file === "sum-constructor-field") sumConstructor = result.artifacts;
-  if (test.file === "sum-local-closure") localClosure = result.artifacts;
+  if (test.file === "closure-result-contract") localClosure = result.artifacts;
   if (test.file === "invalid-writable-dictionary-exact-keys") exactKeys = result.artifacts;
   if (test.file === "invalid-writable-dictionary-rest-keys") restKeys = result.artifacts;
-  if (test.file === "variadic-offer") variadicOffer = result.artifacts;
+  if (test.file === "variadic-offer-sync") variadicOffer = result.artifacts;
   if (test.file === "explicit-type-arguments") explicitCalls = result.artifacts;
 }
 process.stdout.write(
@@ -933,6 +949,33 @@ process.stdout.write("forged import closure: refused\n");
     join(recursiveJson, "evidence.json"), recursiveJson, forged),
     /source cannot state an internal graph label/);
   process.stdout.write("source-authored internal graph label: refused\n");
+}
+// Bypass the producer's refusal: manufacture its old proposal by erasing
+// the method in a copy of the AST. Both verifier entry points must still
+// refuse the ORIGINAL contract before accepting any such proposal/evidence.
+{
+  const ast: Ast = JSON.parse(readFileSync(join(erasedContract, "fragment.json"), "utf8"));
+  const declaration = ast.declarations?.definitions.find(d => d.declaration.name === "Witness");
+  assert(declaration?.expression.k === "object");
+  const member = declaration.expression.fields.find(f => f.name === "choose");
+  assert(member?.type.k === "scheme");
+  member.type = { k: "atom", name: "unknown", span: member.type.span };
+  const weakened = join(erasedContract, "weakened.json");
+  writeFileSync(weakened, JSON.stringify(ast));
+  const proposal = spawnSync(join(here, "_build/default/producer.exe"), [weakened],
+    { encoding: "utf8", timeout: 30_000 });
+  assert.equal(proposal.status, 0, proposal.stderr);
+  const claims = join(erasedContract, "forged-claims.json");
+  const evidence = join(erasedContract, "forged-evidence.json");
+  writeFileSync(claims, proposal.stdout);
+  writeFileSync(evidence, "{}");
+  const searched = spawnSync(verifier, ["--produce-source-claims",
+    join(erasedContract, "fragment.json"), claims, join(erasedContract, "source.ts"), evidence, "12"],
+    { encoding: "utf8", timeout: 30_000 });
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  assert.match(searched.stdout + searched.stderr, /generic contract.*cannot be erased/);
+  assert.match(invoke(claims, evidence, erasedContract), /generic contract.*cannot be erased/);
+  process.stdout.write("unsupported generic contract: refused independently of the producer\n");
 }
 const extraField = join(good, "extra-ast-field.json");
 writeFileSync(extraField, JSON.stringify({ ...fragment, unexamined: true }));
@@ -1070,7 +1113,7 @@ process.stdout.write("an instance other than the explicit type argument, method 
     forged, join(localClosure, "source.ts"), join(localClosure, "forged-evidence.json"), "12"],
     { encoding: "utf8", timeout: 30_000 });
   assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-  // The body, `p !== null ? p - c[1] : c[1]`, is a number, not the null
+  // The body, `p !== null ? p - c : c`, is a number, not the null
   // claimed: the closure's one node returns it at that result.
   const body = readFileSync(join(localClosure, "source.ts"), "utf8").indexOf("p !== null");
   assert.ok((searched.stdout + searched.stderr).includes(
@@ -1442,15 +1485,17 @@ process.stdout.write(
   `reader collection: ${collected.manifest.functions.length} functions, producer's own claims verified\n`,
 );
 
-// An async body's completion, a Promise<void> settled with no value, is
-// claimed at the body's closing brace: the reader attaches it there.
+// A declaration failure must surface in the reader, even before a graph can
+// be built. In particular an unsupported Promise contract is not a green
+// async body and must not crash report collection as an unlocated failure.
 {
   const shown = await analyse(repositoryPath("async-await"), "ocaml");
-  assert.equal(shown.collection?.verified, true);
-  const braces = shown.manifest.functions.flatMap((f) => f.entries)
-    .filter((e) => shown.source.slice(e.pos[0], e.pos[1]) === "}");
-  assert(braces.length > 0, "an async completion entry at a closing brace");
-  process.stdout.write(`reader collection: ${braces.length} async completion entries at closing braces\n`);
+  assert(shown.outcome?.status !== "verified");
+  const results = shown.manifest.results ?? [];
+  assert(results.length > 0);
+  assert(results.every(r => r.status === "not-established" &&
+    r.obligation?.kind === "source-refusal" && /contract cannot be erased/.test(r.detail ?? "")));
+  process.stdout.write("reader collection: unsupported declaration contracts visibly refused\n");
 }
 
 const collectedGeneric = await analyse(
@@ -1487,15 +1532,16 @@ assert.deepEqual(collectedJsonBound.manifest.results?.map(r => r.status), ["veri
 assert.equal(collectedJsonBound.collection?.verified, true);
 process.stdout.write("reader collection: imported Json bound verified\n");
 
-// A negative control must reach validation and fail there. Failing there means
+// Validation controls must reach validation and fail there. Failing there means
 // failing an obligation, which the reader can show at its span; an adapter that
 // throws before any obligation exists has refused, not validated, and the
 // reader can point at nothing. Ranging over the inventory is what keeps a new
-// control from escaping this.
+// control from escaping this. Explicit source/proposal refusal controls instead
+// require that exact unsupported outcome and cannot claim to have checked a graph.
 // A call of a generic module value at a type argument outside its bound
 // fails a direct judgment, checked before any graph request exists.
 const directControls = new Set([
-  "invalid-nested-promise-instance",
+  "invalid-explicit-type-argument-bound",
 ]);
 let testedDirectProtocol = false;
 const controls = cases.filter((c) => c.kind === "negative");
@@ -1504,6 +1550,15 @@ for (const [i, control] of controls.entries()) {
   const settled = shownControls[i];
   if (settled.status === "rejected") throw settled.reason;
   const shown = settled.value;
+  if (control.phase === "source" || control.phase === "proposal") {
+    const outcome = shown.outcome;
+    assert(outcome && outcome.status === "unsupported");
+    assert.equal(outcome.phase, control.phase);
+    if (control.diagnostic) assert.match(outcome.detail, control.diagnostic);
+    assert.equal(shown.collection?.verified, false);
+    assert.equal(shown.manifest.results?.length ?? 0, 0);
+    continue;
+  }
   // A control may hold correct functions beside the failing one: those it
   // calls are verified, and only the failing one is shown not established.
   const all = shown.manifest.results ?? [];
@@ -1552,7 +1607,7 @@ for (const [i, control] of controls.entries()) {
 }
 assert(testedDirectProtocol, "no direct control reached the direct checker");
 process.stdout.write(
-  `reader collection: ${cases.filter((c) => c.kind === "negative").length} negative controls failed an obligation\n`,
+  `reader collection: ${cases.filter((c) => c.kind === "negative").length} negative controls refused at their expected boundaries\n`,
 );
 
 // What this producer does not implement is refused where it is refused, in the

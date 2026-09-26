@@ -4462,14 +4462,18 @@ export function parseFile(file: string, carriesContext = false,
   // which then join the declarations; the first such construct stands for
   // them.
   let firstAsync: Node | undefined;
+  const intrinsicNames = new Set<string>();
   const findAsync = (node: Node): void => {
-    if (firstAsync) return;
-    if (ts.isAwaitExpression(node) || ts.isForOfStatement(node) || ts.isForInStatement(node) ||
-        (ts.isFunctionLikeDeclaration(node) &&
-        !!node.modifiers?.some(m => m.kind === ts.SyntaxKind.AsyncKeyword))) {
-      firstAsync = node;
-      return;
-    }
+    const add = (...names: string[]) => {
+      firstAsync ??= node;
+      names.forEach(name => intrinsicNames.add(name));
+    };
+    if (ts.isAwaitExpression(node)) add(awaitName);
+    if (ts.isForOfStatement(node)) add(iterateName);
+    if (ts.isForInStatement(node)) add(forInName, iterateName);
+    if (ts.isFunctionLikeDeclaration(node) &&
+        node.modifiers?.some(m => m.kind === ts.SyntaxKind.AsyncKeyword))
+      add(asyncReturnName, asyncCompleteName);
     node.forEachChild(findAsync);
   };
   if (!carriesContext) findAsync(source);
@@ -4696,7 +4700,7 @@ export function parseFile(file: string, carriesContext = false,
         globalValues: globalValueNodes.map(node => gate.span(node)),
         ambient: ambientNames.map(node => gate.span(node)),
         ...(firstArray ? { arrays: gate.span(firstArray) } : {}),
-        ...(firstAsync ? { intrinsics: gate.span(firstAsync) } : {}),
+        ...(firstAsync ? { intrinsics: { span: gate.span(firstAsync), names: [...intrinsicNames] } } : {}),
         symbolKeys: keyNodes.map(node => gate.span(node)),
         symbolKey: ([start, end], symbol) => gate.symbolKeys.set(`${start}:${end}`, symbol),
         staticReads: staticNodes.map(node => gate.span(node)),

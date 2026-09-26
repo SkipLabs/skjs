@@ -98,7 +98,7 @@ let rec source_type ctx j =
       rest=(match field "rest" j with Null -> None | t -> Some (recur t));
       readonly=boolean (field "readonly" j)}
   (* A generic method: its signatures quantify lexically scoped binders.
-     Self-dependent bounds and mixed value/pack uses remain opaque,
+     Self-dependent bounds and mixed value/pack uses are refused,
      consistently with Lean's declaration lowering; a rest is a pack
      parameter or any number of actuals at an element, as Lean reads it. *)
   | "scheme" ->
@@ -111,7 +111,9 @@ let rec source_type ctx j =
     let uses=List.map (fun name -> name,binder_uses name signatures) names in
     let packs=List.filter_map (fun (name,(_,pack)) -> if pack then Some name else None) uses in
     if List.exists (fun (_, (value,pack)) -> value && pack) uses
-       || List.exists (fun b -> mentions_own (field "bound" b)) binders then top
+       || List.exists (fun b -> mentions_own (field "bound" b)) binders then
+      unsupported ("generic contract at " ^ Json.encode (field "span" j) ^
+        ": dependent method bounds or mixed value/pack binders are not represented; the contract cannot be erased")
     else begin
       let start = match list (field "span" j) with
         | Number n :: _ -> int_of_string n

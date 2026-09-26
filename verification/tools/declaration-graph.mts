@@ -15,7 +15,7 @@ import { classInstance, computedAlias, computedForm, expandMapped, mapped, membe
 import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePrototype, primitivePrototypeName, type OverlayEntry,
   type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule, iterateIteratorName, iterateMapName, iterateSetName, iterateStringName,
-  iterationIntrinsic, nonThenable, restFromIntrinsic, spreadName } from "./intrinsics.mts";
+  iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName } from "./intrinsics.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { computedType, enclosingBinders, literalUnion, type ComputedContext } from "./computed-types.mts";
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
@@ -276,7 +276,7 @@ export function collectDeclarations(file: string, options: {
   /** The client uses `async`, `await` or `for...of`: the intrinsics that
    * stand for them (`intrinsics.mts`) join its values, located at the first
    * such construct. */
-  intrinsics?: Span;
+  intrinsics?: { span: Span; names: string[] };
   /** The client's value references to names it neither imports nor binds:
    * each that TypeScript binds to a global variable, such as Node's
    * `process` or the standard library's `BigInt`, joins its values, read at
@@ -1063,32 +1063,35 @@ export function collectDeclarations(file: string, options: {
     // like an import's.
     // Listed once, located at the first construct or overlay entry that uses
     // them.
-    let intrinsicsListed = false;
-    const listIntrinsics = (at: Span): void => {
-      if (intrinsicsListed) return;
-      intrinsicsListed = true;
+    const intrinsicsListed = new Set<string>();
+    const listIntrinsics = (at: Span, names: string[]): void => {
+      const needed = new Set(names.filter(name => !intrinsicsListed.has(name)));
+      if (!needed.size) return;
       try {
-        const symbol = checker.resolveName("Promise", SymbolFlags.Interface, client, false);
-        const parts = (symbol?.declarations ?? []).map(d => d.resolve())
-          .filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
-        const [promise] = parts;
-        if (!promise) throw Error("the standard library declares no Promise");
-        for (const part of parts) clean(part, `${idOf(part.getSourceFile())}#Promise`);
-        partners.set(promise, parts);
-        valueStarts.push(promise);
-        const target = identityOf(promise);
-        for (const intrinsic of intrinsics(argument => ({ k: "reference",
-          reference: { name: "Promise", span: [0, 0], arguments: [[0, 0]], target },
-          args: [argument], span: [0, 0] })))
+        // Resolve Promise only if a requested intrinsic actually names it.
+        const promiseType = (argument: TypeTerm): TypeTerm => {
+          const symbol = checker.resolveName("Promise", SymbolFlags.Interface, client, false);
+          const parts = (symbol?.declarations ?? []).map(d => d.resolve())
+            .filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
+          const [promise] = parts;
+          if (!promise) throw Error("the standard library declares no Promise");
+          for (const part of parts) clean(part, `${idOf(part.getSourceFile())}#Promise`);
+          partners.set(promise, parts);
+          if (!valueStarts.includes(promise)) valueStarts.push(promise);
+          return { k: "reference", reference: { name: "Promise", span: [0, 0],
+            arguments: [[0, 0]], target: identityOf(promise) }, args: [argument], span: [0, 0] };
+        };
+        for (const intrinsic of intrinsics(promiseType, needed))
           values.push({ binding: { local: intrinsic.name, imported: intrinsic.name,
             specifier: intrinsicModule, span: at },
             declaration: { module: intrinsicModule, name: intrinsic.name, span: [0, 0] },
             construct: false, typeParams: intrinsic.typeParams, type: intrinsic.type });
+        for (const name of needed) intrinsicsListed.add(name);
       } catch (error) {
         throw new DeclarationError(at, error instanceof Error ? error.message : String(error));
       }
     };
-    if (options.intrinsics) listIntrinsics(options.intrinsics);
+    if (options.intrinsics) listIntrinsics(options.intrinsics.span, options.intrinsics.names);
     // `k in o` with a key TypeScript types as string literals only is the
     // model's key test, which narrows `o`; any other key, a number, a symbol
     // or a string known only at run time, is the host's `%HasProperty%`.
@@ -1098,7 +1101,7 @@ export function collectDeclarations(file: string, options: {
       const type = checker.getTypeAtLocation(key);
       const parts = type && isUnionType(type) ? type.getTypes() : type ? [type] : [];
       if (parts.length && parts.every(t => !!(t.flags & TypeFlags.StringLiteral))) continue;
-      listIntrinsics(span);
+      listIntrinsics(span, [hasPropertyName]);
       options.hostIn?.(span);
     }
     for (const span of options.elementReads ?? []) {
@@ -1110,7 +1113,7 @@ export function collectDeclarations(file: string, options: {
       const keys = key && isUnionType(key) ? key.getTypes() : key ? [key] : [];
       if (objects.length && objects.every(t => checker.isArrayType(t) || checker.isTupleType(t)) &&
           keys.length && keys.every(t => !!(t.flags & TypeFlags.Number))) {
-        listIntrinsics(span);
+        listIntrinsics(span, [elementAtName]);
         options.hostElement?.(span);
       }
     }
@@ -1145,7 +1148,7 @@ export function collectDeclarations(file: string, options: {
         const selection = selectGlobal(checker, uses, { lookup, identityOf: idOf, clean, valueScope, partners,
           overlay: globalsOverlay, test: (span, test) => options.globalTest?.(span, test),
           intrinsic: (span, name) => {
-            listIntrinsics(span);
+            listIntrinsics(span, [name]);
             options.globalIntrinsic?.(span, name);
           },
           library: libraryReference,

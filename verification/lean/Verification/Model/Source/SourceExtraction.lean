@@ -2256,9 +2256,9 @@ private def lambdaSetup (fc : SourceClaims.Function) (scope : List ScopeBinding)
   -- the actuals past them. The ones it takes are the source's.
   if !rows.all (fun (_,Di,_) => arity ≤ Di.length &&
       ((Di.take arity).zip sourceDs).all (fun (D,B) => within T D B)) then
-    throw (match mode with
+    throw (locatedRefusal T pos .bindingAnnotation (match mode with
       | .ctor _ => "construct signature claim is outside the source annotation"
-      | _ => "closure signature claim is outside the source annotation")
+      | _ => "closure signature claim is outside the source annotation"))
   -- An ordinary function may be claimed at fewer receivers than it states,
   -- never at more: its body reads the one it is given.
   if Rsource != [top] && !rows.all (fun (Rt,_,_) => Rt.all Rsource.contains) then

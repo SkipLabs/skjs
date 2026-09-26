@@ -1075,10 +1075,17 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
         ((d.getObjVal? "declaration").toOption.bind fun i => (i.getObjVal? "module").toOption) ==
           some (Json.str "skjs/array-prototype")
     | _ => false
-  let (ast, types, imported, generics) ← DeclarationGraph.prepare ast d.types
+  -- Declaration failures precede graph construction, but still belong to the
+  -- unit requiring these contracts. Locate them at that unit, not at an
+  -- external library's byte offset misinterpreted as a span in this file.
+  let contractSite := only.map Prod.snd |>.getD
+    ((d.functions.head?.map (·.namePos)).getD (0, 0))
+  let (ast, types, imported, generics) ← (DeclarationGraph.prepare ast d.types
     ((d.applications.getD []).map fun a => (a.row, a.declaration, a.args))
     ((d.arrays.getD []).map fun a => (a.row, a.store, a.readonly))
-    ((d.meets.getD []).map fun m => (m.row, m.parts))
+    ((d.meets.getD []).map fun m => (m.row, m.parts))).mapError fun reason =>
+      sourceRefusal d.types contractSite .bindingAnnotation
+        s!"the declarations required by this unit cannot be interpreted: {reason}"
   let d := { d with types }
   if !validTable d.types then throw "declaration graph has an invalid type reference"
   let functionJsons := ((ast.getObjVal? "functions").toOption.bind (·.getArr?.toOption)).getD #[]

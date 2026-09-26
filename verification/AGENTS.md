@@ -167,6 +167,46 @@ for every extracted function. Preserve this by construction:
 - A repair is a hand-written candidate edit kept beside the original export,
   never an automatic widening of SKJS's claims.
 
+## Source and host soundness boundaries
+
+The calculus theorem does not prove that a source annotation was interpreted
+faithfully or that a native library meets its assumed contract. These are
+separate review obligations, even when every Lean proof and suite passes.
+
+- **Never erase an unsupported contract.** Source annotation lowering either
+  represents the whole contract or refuses it. An unsupported method, a failed
+  expansion, or an exhausted search/colour budget must not become `top`, lose
+  a field, or lose a bound. An opaque type is not `unknown`: hiding its
+  representation does not discharge its introduction obligation. The same
+  declaration occurs in inputs, outputs, and invariant storage; an
+  over-approximation safe for reading is not safe for producing a value.
+- **Native declarations are specifications to audit, not evidence.** Review
+  every callback (including implicit conversion, iteration and thenable
+  callbacks), its actual arguments, alias mutation, and whether lengths or
+  keys are captured before callbacks run. A readonly alias does not prevent
+  mutation through another alias. Establish result invariants after all such
+  effects; density at entry does not imply density of `map`'s result.
+- **Test the unproved boundary independently.** A producer-side refusal needs
+  a verifier test bypassing that producer when annotation interpretation is
+  involved. For native-contract repairs, execute the actual negative source
+  fixture under Node as well as refusing it in the pipeline. This is a small
+  contract counterexample, not a test of a proved Lean typing rule.
+- **Keep dependencies exact.** Collect only intrinsics a source uses; do not
+  load all trusted contracts because one is needed. Dependency collection may
+  avoid unused declarations, but may not discard members of a collected type.
+- **Coverage losses are results.** Preserve motivating sources; mark a case
+  blocked by an earlier unsupported contract as a gap, not as a passing
+  negative control for the later obligation. Report lost framework coverage
+  explicitly. Changing an expected result requires inspecting its cause;
+  passing tests after reclassification does not close the corresponding goal.
+
+The September 2026 boundary audit found two shared specification mistakes:
+OCaml and Lean both treated unsupported generic methods as `unknown`, and
+native array contracts copied TypeScript signatures without accounting for
+reentrancy and coercion. Agreement between independent implementations did not
+catch a shared mistake. Keep these mechanisms and controls when extending the
+fragment; do not restore acceptance by increasing trust silently.
+
 ## Snapshots of the exporter
 
 `tests/export-snapshots/` holds small probes with SKJS's exported claims

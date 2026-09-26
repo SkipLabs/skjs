@@ -14,8 +14,8 @@
  *   primitive itself for a primitive's member;
  * - parameters dropped (`thisArg?: any`, `locales`), which calls must then
  *   omit;
- * - which overload is kept: one whose declared result the library does not
- *   deliver is not listed.
+ * - which overload is kept, and any restriction or result correction needed
+ *   when the native does not meet TypeScript's declared contract.
  *
  * A member that throws on some argument its declaration admits
  * (`toString(radix)` outside 2 to 36, a `RangeError`) is read as declared: a
@@ -48,20 +48,36 @@ export type OverlayEntry = {
   /** The result stated as this standard library interface at `T`, which the
    * declared result implies: a weaker contract than the declaration's. */
   resultAs?: "Iterator";
-  /** The signature read instead of the declared one, its parameters a part
-   * of the declared ones on which the host runs no client code: a string
-   * where the declaration admits a `RegExp` or an object with a
-   * `[Symbol.split]` (`"a,b".split(",")`). The receiver is the prototype's. */
+  /** A reviewed restriction on a quantified parameter. Required when native
+   * coercion could otherwise call an arbitrary client method. */
+  bounds?: Readonly<Record<string, TypeTerm>>;
+  /** A reviewed result contract replacing TypeScript's result. In particular,
+   * map may produce holes and cannot promise a dense array. */
+  result?: TypeTerm;
+  /** A reviewed replacement signature: restrict implicit client hooks (e.g.
+   * split on strings only), or correct explicit callback arguments (find
+   * visits missing positions with undefined). The receiver is the prototype's. */
   stated?: { params: TypeTerm[]; result: TypeTerm };
 };
 
 const at: [number, number] = [0, 0];
-const atomOf = (name: "string" | "number" | "undefined"): TypeTerm => ({ k: "atom", name, span: at });
+const atomOf = (name: "string" | "number" | "undefined" | "unknown" | "boolean" | "null" | "bigint" | "symbol"): TypeTerm => ({ k: "atom", name, span: at });
 const optionalNumber: TypeTerm = { k: "union", parts: [atomOf("number"), atomOf("undefined")], span: at };
 /** `locales`, as the host reads it without running client code: a tag, or a
  * readonly array of tags read by index; a malformed tag is a `RangeError`. */
 const locales: TypeTerm = { k: "union", span: at, parts: [atomOf("string"),
   { k: "array", readonly: true, element: atomOf("string"), span: at }, atomOf("undefined")] };
+
+// Native conversion of a primitive runs no client code. This is a bound on
+// the receiver's element type, not a claim that a readonly alias is immutable.
+const primitiveElements: TypeTerm = { k: "union", span: at, parts:
+  [atomOf("string"), atomOf("number"), atomOf("boolean"), atomOf("null"),
+   atomOf("undefined"), atomOf("bigint"), atomOf("symbol")] };
+const element: TypeTerm = { k: "binder", name: "T", span: at };
+const maybeElement: TypeTerm = { k: "union", parts: [element, atomOf("undefined")], span: at };
+const findingCallback: TypeTerm = { k: "function", receiver: null, rest: null, span: at,
+  params: [maybeElement, atomOf("number"), { k: "array", readonly: true, element, span: at }],
+  result: atomOf("unknown") };
 
 export const overlay: readonly OverlayEntry[] = [
   { name: "forEach", from: "ReadonlyArray",
@@ -69,7 +85,9 @@ export const overlay: readonly OverlayEntry[] = [
     drop: ["thisArg"] },
   { name: "map", from: "ReadonlyArray",
     signature: "map<U>(callbackfn: (value: T, index: number, array: readonly T[]) => U, thisArg?: any): U[];",
-    drop: ["thisArg"] },
+    // A callback can shrink the source, leaving holes in the result. Until
+    // sparse arrays have a source type, only an unknown result is promised.
+    drop: ["thisArg"], result: atomOf("unknown") },
   // Only the overload with an initial value. The one without, `reduce(cb)`,
   // is a second signature of the member beside the generic `reduce<U>`,
   // and a prototype member is read as one scheme with one signature
@@ -79,8 +97,8 @@ export const overlay: readonly OverlayEntry[] = [
     signature: "reduce<U>(callbackfn: (previousValue: U, currentValue: T, currentIndex: number, array: readonly T[]) => U, initialValue: U): U;" },
   { name: "reduceRight", from: "ReadonlyArray",
     signature: "reduceRight<U>(callbackfn: (previousValue: U, currentValue: T, currentIndex: number, array: readonly T[]) => U, initialValue: U): U;" },
-  // Arrays are dense, so a callback sees only elements. The predicate-typed
-  // overloads (`value is S`) are not listed.
+  // These callbacks run only for properties still present when visited.
+  // find/findIndex below instead visit every index in the original range.
   { name: "every", from: "ReadonlyArray",
     signature: "every(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): boolean;",
     drop: ["thisArg"] },
@@ -91,7 +109,8 @@ export const overlay: readonly OverlayEntry[] = [
     signature: "filter(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): T[];",
     drop: ["thisArg"] },
   { name: "slice", from: "ReadonlyArray", signature: "slice(start?: number, end?: number): T[];" },
-  { name: "join", from: "ReadonlyArray", signature: "join(separator?: string): string;" },
+  { name: "join", from: "ReadonlyArray", signature: "join(separator?: string): string;",
+    bounds: { T: primitiveElements } },
   { name: "indexOf", from: "ReadonlyArray",
     signature: "indexOf(searchElement: T, fromIndex?: number): number;" },
   { name: "lastIndexOf", from: "ReadonlyArray",
@@ -101,13 +120,14 @@ export const overlay: readonly OverlayEntry[] = [
   { name: "at", from: "ReadonlyArray", signature: "at(index: number): T | undefined;" },
   { name: "find", from: "ReadonlyArray",
     signature: "find(predicate: (value: T, index: number, obj: readonly T[]) => unknown, thisArg?: any): T | undefined;",
-    drop: ["thisArg"] },
+    stated: { params: [findingCallback], result: maybeElement } },
   { name: "findIndex", from: "ReadonlyArray",
     signature: "findIndex(predicate: (value: T, index: number, obj: readonly T[]) => unknown, thisArg?: any): number;",
-    drop: ["thisArg"] },
+    stated: { params: [findingCallback], result: atomOf("number") } },
   // Mutators take a mutable array.
   { name: "sort", from: "Array",
-    signature: "sort(compareFn?: (a: T, b: T) => number): this;", resultIsReceiver: true },
+    signature: "sort(compareFn?: (a: T, b: T) => number): this;", resultIsReceiver: true,
+    bounds: { T: primitiveElements } },
   { name: "push", from: "Array", signature: "push(...items: T[]): number;" },
   { name: "pop", from: "Array", signature: "pop(): T | undefined;" },
   { name: "shift", from: "Array", signature: "shift(): T | undefined;" },
@@ -388,9 +408,9 @@ function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: P
     const receiver = proto.receiver(entry.from);
     const nameOf = (p: ts.ParameterDeclaration) => ts.isIdentifier(p.name) ? p.name.text : "";
     const parameters = member.parameters.filter(p => !entry.drop?.includes(nameOf(p)));
-    const stated = entry.resultAs
+    const stated = entry.result ?? (entry.resultAs
       ? library.reference(interfaceOf(entry.resultAs), [{ k: "binder", name: "T", span }], span)
-      : entry.resultIsReceiver ? receiver : undefined;
+      : entry.resultIsReceiver ? receiver : undefined);
     const forms = entry.stated
       ? [{ k: "function", receiver: null, params: entry.stated.params, rest: null, result: entry.stated.result,
           span } satisfies Extract<TypeTerm, { k: "function" }>]
@@ -398,7 +418,7 @@ function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: P
     if (forms.length !== 1 || forms.some(f => f.receiver))
       throw Error(`${entry.from}.${entry.name} is not one signature`);
     const type: TypeTerm = binders.length
-      ? { k: "scheme", binders: binders.map(name => ({ name, bound: null, default: null, span })),
+      ? { k: "scheme", binders: binders.map(name => ({ name, bound: entry.bounds?.[name] ?? null, default: null, span })),
           signatures: forms.map(f => ({ ...f, receiver })), span }
       : { ...forms[0]!, receiver };
     const key = ts.isComputedPropertyName(member.name) &&

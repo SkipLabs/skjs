@@ -3408,7 +3408,7 @@ graph; two applications that differ by a renaming of binder rows are related
 by an [instance table](POSITIVE-TYPES.md#instances-of-a-scheme-row).
 $\mathsf{reach}(\vec U)$ is the rows the arguments reach (an application's
 row reaching its arguments, not its equation): arguments that keep growing
-pass the bound and the application is refused, its method staying opaque. A
+pass the bound and the entire declaration is refused. A
 declaration without methods is expanded inline unless it reaches itself
 (`recursiveDeclaration`), when its application is a row of its own as well;
 any other recursion through declarations is refused after three expansions
@@ -3441,15 +3441,13 @@ $$
 
 where $\mathsf{colours}_m$ reads only the rows of $m$'s key. A binder captures
 only its own row, so another member's binders take no colour: a family of
-applications then closes, and is truncated, alike at every instance of another
-member's binders (`Promise<R1 | R2>`, which `then` returns, unfolds as
-`Promise<string>` does, and its instance at `string` is that row). No binder
-captures one of another scope; the instance tables of `Sub.inst` tell apart
-the scopes sharing a row. Past the budget, at growing arguments, and for an
-F-bounded binder, the method stays an opaque view. A binder a member's result
-accumulates, `catch`'s `Promise<T | TResult>`, grows its family by one
-binder per call: an instance of it is truncated one level before the type it
-is claimed at, so such a call is refused ([DESIGN](DESIGN.md#next-steps)). A rest typed by one of
+applications closes when a finite set of instances suffices. Past the colour
+budget, at growing arguments, and for unsupported dependent bounds, lowering
+refuses the entire declaration. It never weakens the member to an opaque
+`unknown` view. In particular, `catch`'s accumulating `Promise<T | TResult>`
+currently prevents interpreting the full Promise declaration. Budget limits
+are operational refusal conditions, not changes to the type's meaning.
+A rest typed by one of
 the method's binders makes it a pack parameter, bounded by its element pack.
 A value binder $p$ with a ground declared bound $B_p$ establishes a
 parameter's bound $B$ through that one:
@@ -3831,6 +3829,14 @@ $$
       \omega.\mathit{stated}=(\vec P)\Rightarrow R}
      {\llbracket m\rrbracket_\omega=(\mathsf{this}:p,\ \vec P)\Rightarrow R}\ \textsc{proto-stated}
 $$
+
+The reviewed overlay can also restrict quantified binders (`bounds`) and
+weaken a native's *promised result* (`result`). This is a specification of the
+native, not an erasure of a source annotation. Currently `join`/`sort` bound
+`T` to primitives, `find`/`findIndex` pass `T | undefined` to their callback,
+and `map` promises `unknown` because callback mutation may make its result
+sparse. A caller still has to establish its full source result annotation.
+The realm's dense-array invariant does not apply to an `unknown` result.
 
 `Set<T>`, `Map<K, V>` and `Date` are read through the same mechanism
 (`interfaceOverlay`), as an interface with only its listed members:

@@ -476,6 +476,7 @@ function brief(detail: string): string {
  * wins; order is specificity, not value. Unmatched reasons are grouped under
  * their own text, so a new refusal shows up rather than hiding in "other". */
 const GROUPS: [string, RegExp][] = [
+  ["generic contracts requiring an unsupported exact representation", /generic contract (?:at|:)/],
   ["TypeScript refuses the code too (the pipeline follows TypeScript's types)", /TypeScript refuses this code too/],
   ["arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's", /after `Array\.isArray`|`length` on a union of an array|array used as a record naming `length`|`length` of a mutable tuple|past the positions of a mutable tuple/],
   ["a non-null assertion on a read at a for...in key (that the object owns the key relates two values)", /non-null assertion on a read at a for\.\.\.in key/],
@@ -554,6 +555,8 @@ function groupOf(key: string): string {
 type RefusalClass = "principled" | "gap" | "unexplained";
 type ClassEntry = { cls: RefusalClass; label: string; re: RegExp; why: string; review?: string };
 const CLASSES: ClassEntry[] = [
+  { cls: "gap", label: "a generic contract cannot be represented in full", re: /generic contract (?:at|:)/,
+    why: "dependent bounds, mixed binder roles or a recursive quantified family exceed the exact lowering; the contract is refused, not replaced by unknown" },
   // ------------------------------------------------------- unexplained
   { cls: "unexplained", label: "search: no derivation found", re: /evidence search failed|: cannot establish|No rule derives/,
     why: "Lean found no derivation; the obligation is named, its cause is not" },

@@ -591,6 +591,31 @@ prototype's closure, a scheme received by the instance whose binders are the
 member's rows, covers bound to the instance
 ([classes](PROGRAM-TYPING.md#classes)).
 
+### Exact contracts and native effects
+
+A source declaration is lowered in full or refused. Unsupported generic
+bounds, mixed value/argument-pack binders, and exhaustion of the binder-colour
+or application budget are refusals. No such failure denotes `unknown`, and no
+method is dropped. This matters in result and writable positions: forgetting
+a contract there would certify a value that does not satisfy its annotation.
+
+Native contracts are reviewed separately from their TypeScript declarations.
+`find` and `findIndex` callbacks receive `T | undefined`: a prior callback can
+shrink even an initially dense array through another reference, while these
+methods visit the original index range. `map` visits only present indices,
+but shrinking its source can leave holes in its result. Until sparse arrays
+are represented, its result contract is `unknown`, not a dense `U[]`.
+`join` and `sort` currently require primitive elements: implicit string
+conversion must not invoke an unchecked client method. This also restricts
+`sort` with an explicit comparator; separating that safe overload is remaining
+completeness work, not a reason to weaken the default-call contract.
+
+The native regression sources are also executed under Node. Source-contract
+erasure is tested against both verifier entry points using a forged producer
+proposal. These tests exercise premises and translation that the calculus
+safety theorem does not prove. Intrinsics are collected on demand; a loop no
+longer brings in unrelated Promise declarations.
+
 ### Calls
 
 Argument lists are native: the callee is evaluated first, then
@@ -760,7 +785,7 @@ throw, which safety admits, but never return a wrong value.
 | An ambient declaration (`declare function`, `declare const`, `declare class`) holds of the value the environment supplies under that name; the declaration document lists it with the specifier `ambient`. | `AMBIENT`; `collectDeclarations` |
 | A global variable outside the standard library (Node's `process`) meets its declaration at the members and calls the module selects, from the project's type packages, and no code the module does not see reassigns it. | `GLOBAL`; `selectGlobal` |
 | Each standard library global meets its reviewed overlay entry: `console.log`; `BigInt`; `Symbol`, `Symbol.for`, `Symbol.keyFor` and five well-known symbols; `String` of a primitive; `Object.keys`, `Object.values`, `Object.entries` (and the generic two at a dictionary); `new Array()`; `Array.isArray` and `Array` as `instanceof`'s operand; `new Error(m)`; `new Set`, `new Map` of an array, `new Date` of nothing, a primitive or components, `Date.now`; the `Promise` statics and constructor, through the intrinsics below; `JSON.parse` of a string and `JSON.stringify` of a `JsonValue`. | `globalsOverlay` in `tools/library-globals.mts`; [rules](PROGRAM-TYPING.md#library-globals) |
-| `Array.prototype` meets `ArrayProto`: its natives `forEach`, `map`, `reduce` and `reduceRight` (with an initial value), `every`, `some`, `filter`, `slice`, `join`, `indexOf`, `lastIndexOf`, `includes`, `at`, `find`, `findIndex`, `sort`, `push`, `pop`, `shift`, `unshift`, `reverse` and `[Symbol.iterator]` behave as TypeScript declares them, at the listed receiver, without `thisArg`. Units allocating arrays read it from the input slot `[[Array.prototype]]`. | `overlay` in `tools/array-prototype.mts` |
+| `Array.prototype` meets `ArrayProto`: its natives `forEach`, `map`, `reduce` and `reduceRight` (with an initial value), `every`, `some`, `filter`, `slice`, `join`, `indexOf`, `lastIndexOf`, `includes`, `at`, `find`, `findIndex`, `sort`, `push`, `pop`, `shift`, `unshift`, `reverse` and `[Symbol.iterator]` meet the reviewed overlay contracts, at the listed receiver, without `thisArg`; `find`/`findIndex` admit missing callback values, `map` returns `unknown`, and `join`/`sort` restrict elements to primitives. Units allocating arrays read it from the input slot `[[Array.prototype]]`. | `overlay` in `tools/array-prototype.mts` |
 | `String.prototype`, `Number.prototype`, `BigInt.prototype` and `Boolean.prototype` meet `StringProto`, `NumberProto`, `BigIntProto` and `BooleanProto`, each member an own property of that prototype (`split`, `replace`, `replaceAll` stated at a string pattern; `toLocaleString` without `options`), read from the slot `[[String.prototype]]` and so on. | `primitiveOverlay` in `tools/array-prototype.mts` |
 | `Set.prototype`, `Map.prototype` and `Date.prototype` hold the listed natives, unmodified (`keys`, `values` and `entries` giving a host iterator of the collection). | `interfaceOverlay` in `tools/array-prototype.mts` |
 | The intrinsics meet their signatures: `%Await%` yields what a promise settles to or throws its rejection; `%AsyncReturn%` and `%AsyncComplete%` settle an async function's promise to a primitive or `undefined` (also `Promise.resolve`); `%PromiseAll%` (`Promise.all`), `%PromiseReject%` (`Promise.reject`), `%NewPromise%` (`new Promise`, calling its executor at once); `%Iterate%` steps an array's iterator, reading the current length at each step; `%Iterate:string%` a string's, by code point; `%Iterate:Set%` a `Set`'s, in insertion order; `%Iterate:Map%` a `Map`'s, a fresh `[key, value]` array per entry; `%Iterate:Iterator%` a `SetIterator` or `MapIterator`, which is its own iterator; none of these iterators has a `return`; `%Spread:K%` is the fresh array of what `%Iterate:K%`'s step yields until it ends; `%RestFrom:k%` is the fresh array of an array's elements from `k` to its current length, as its iterator yields them after a pattern's `k` elements; `%ForIn%` gives the keys a `for...in` visits, strings; `%HasProperty%` answers `k in o` for a key TypeScript types as other than string literals, as the host's lookup does; `%ElementAt%` reads `xs[k]` of an array at a `number` key as the host does: the element at an index below the length, an own property at another numeric key, else `undefined`. The job queue and a promise that never settles are not modelled. | `tools/intrinsics.mts`; [async](PROGRAM-TYPING.md#async-functions-and-await) |
@@ -974,11 +999,20 @@ declared unalike (another bound, another arity) bind other rows: relating them
 needs an instance table naming each source signature's image at the target's
 binders, inside the core table. A binder a member's result accumulates
 (`catch`'s `Promise<T | TResult>`) grows its family by one binder per call,
-which the graph truncates at a colour budget: an instance of it is truncated
-one level before the type it is claimed at, so exact instance tables cannot
-relate them; it needs a truncation that commutes with instantiation. A
+which exceeds the finite graph's colour budget. The entire declaration is
+refused, including ordinary `Promise` uses that reach it. Supporting these
+contracts again needs a faithful representation of the recursive quantified
+family; a truncation to `unknown` is not an implementation option. A
 callback returning a promise instantiates `then`'s binder through
 `PromiseLike<TResult>`, which the producer's inference does not do.
+
+**Coverage lost to the boundary repairs.** The original framework
+`sum-sound-binding`/`sum-main` sources no longer verify: Promise's
+recursive quantified contracts exceed the budget, and the tuple-valued
+`sort()` needs a justified conversion contract. Their sources remain
+unchanged. Array `map` results used as arrays need sparse-array support or an
+enforced non-mutation guarantee. These are open completeness tasks; green
+regression suites include these explicit gaps.
 
 **The array invariant at `unknown`, and a record's `length`.** `Array.isArray`
 on `unknown` needs the invariant of every value, a thrown one included: the

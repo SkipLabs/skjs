@@ -1,5 +1,12 @@
 # OCaml producer prototype
 
+> **Current soundness boundary repairs:** unsupported generic contracts are
+> refused rather than erased. This reopens Promise-dependent framework cases,
+> including `sum-main`. `map` currently returns `unknown` because it may produce
+> holes; `find` callbacks must admit `undefined`; `join`/`sort` require primitive
+> elements. Original sources are retained as gaps in `cases.mts`. See
+> [the current design](../DESIGN.md#exact-contracts-and-native-effects).
+
 An independent OCaml producer with **verified acceptance**, using the existing
 Fragment → SourceClaims → Lean evidence pipeline. It does not invoke SKJS or
 TypeScript's type checker to infer claims. The shared TypeScript parser remains
@@ -528,10 +535,12 @@ APIs it uses, `Values.getUnique` and `process.on`
 
 Its whole declaration graph is read: the runtime API, the standard
 library's `Promise`, `Iterable` and `Iterator`, and `ResourceClass` as a
-construct signature. Every class (`AddIndex`, `Plus`, `Minus`, `Add`, `Sub`,
-`Service`) and `main`, given an `AnySkipService`, verify; each construct they
-need has its own `sum-*` case in [`cases.mts`](cases.mts). The module stops at
-its one remaining refusal, `runService(new Service(), …)`: sum.ts's `Service`
+construct signature. Before the contract-erasure repair, every class
+(`AddIndex`, `Plus`, `Minus`, `Add`, `Sub`, `Service`) and `main`, given an
+`AnySkipService`, verified; the `sum-*` cases in [`cases.mts`](cases.mts)
+retain those targets. Promise-dependent units now stop earlier: recursive
+quantified contracts need an exact representation. Beyond that gap, the module
+also has a service-binding refusal, `runService(new Service(), …)`: sum.ts's `Service`
 takes the named `Collections` in `createGraph` and in its resources'
 `instantiate`, so it is not an `AnySkipService`, which TypeScript admits only
 through bivariant method parameters. What would make the call safe is the
@@ -539,7 +548,10 @@ runtime's link from a service's `inputs` to the collections `createGraph`
 receives, which no trusted contract states yet
 ([trust surface](../DESIGN.md#trust-surface)).
 
-**Under a sound service binding, sum.ts verifies.**
+**The sound-service-binding target is reopened.** It previously verified,
+but now fails at the unsupported full recursive Promise contract. The binding
+work below remains useful; its earlier successful verification relied on the
+contract erasure that has been removed.
 [`upstream-sound`](upstream-sound/tsconfig.json) is the pinned snapshot with
 that link stated: a second project that holds only the three files the
 binding changes and reuses every other file of `upstream` through symlinks
@@ -564,8 +576,8 @@ patched tree reports the same errors as the snapshot and no new one.
 `reactive-sum-sound.ts` as a client of it, changed only where the binding
 changed: `SkipService<Inputs, Collections>`, `ResourceClass<Collections,
 Json>`, and `createGraph(inputs: InputCollections, …)` returning
-`{ input1: inputs.get(this.inputs.input1), … }`. The whole module verifies:
-every class (`AddIndex`, `Plus`, `Minus`, `Add`, `Sub`, `Service`), the module's
+`{ input1: inputs.get(this.inputs.input1), … }`. The target remains verification
+of the whole module: every class (`AddIndex`, `Plus`, `Minus`, `Add`, `Sub`, `Service`), the module's
 initialization and `main`, including `runService(new Service(), …)`, where
 `InputDefs` and `ResourceInputs` are inferred from the service as `Inputs` and
 `Collections`. Two refusals TypeScript does not make:
@@ -616,8 +628,8 @@ client of the same project, each stops at its first refused declaration
 | Interface | First refusal | Why |
 | --- | --- | --- |
 | `Mapper<K1, V1, K2, V2>` | none: collected | `mapEntry` returns `Iterable<[K2, V2]>`, read from the standard library |
-| `Resource<C>` | none: collected | its `Context` parameter's generic methods are opaque members |
-| `EagerCollection<K, V>` | none: collected | it extends `Managed`, whose brand `[sk_managed]: true` is a symbol-keyed field; its generic methods are opaque members |
+| `Resource<C>` | none: collected | collection alone does not certify its generic contracts |
+| `EagerCollection<K, V>` | none: collected | it extends `Managed`, whose brand `[sk_managed]: true` is a symbol-keyed field; its generic contracts must be lowered in full before verification |
 | `Values<T>` | none: collected | it extends `Iterable<T & DepSafe>`, read from the standard library |
 
 The admitted contract work is larger than recognizing the declaration keyword:
@@ -987,8 +999,7 @@ first milestone, in order of how much each gates:
 4. **The runtime API's declaration forms.** `Mapper` reaches `Context` and
    `Values`; interpreting them needs:
    - generic interface methods, i.e. quantified method signatures: read today
-     as opaque readonly members, which a program may read but not call. They
-     are quantified types in the graph, one semantics for every use (below,
+     as quantified types in the graph, one semantics for every use (below,
      "Quantified types"); calling one (`EagerCollection.map`) is its
      elimination;
    - constructor types (done: construct signatures in the calculus, class
@@ -1018,8 +1029,8 @@ first milestone, in order of how much each gates:
    roots; an interface declared several times is merged, as TypeScript
    merges it; well-known symbol keys (`[Symbol.iterator]`) are symbol keys; a
    declaration's `any` is `unknown`; a recursive generic application at the
-   same arguments is its reserved row. `Promise<T>` is read this way (its
-   generic `then`/`catch` are opaque, so its argument is not yet visible).
+   same arguments is its reserved row. `Promise<T>` is collected this way, but its full recursive generic contract
+   currently exceeds the lowering budget and is refused, not erased.
    `Iterable`/`Iterator` are read too: `next(...[value]: [] | [TNext])` is
    one signature per tuple, and `return?`/`throw?` are optional fields.
    Remaining: arrays as iterables (every `mapEntry` returns an array literal as
@@ -1140,11 +1151,13 @@ bounded position by position (`pack-method-value-import`, whose class takes the
 one number the pack holds; its negatives refuse a string outside the bound and
 a constructor needing more actuals than the rest;
 `object-pack-method-value-import` holds an object). A fixed construct or call
-signature meets a rest that is one exact tuple, whatever its positions. F-bounded binders and methods whose
-unfolding keeps growing stay opaque members. The runtime API's
+signature meets a rest that is one exact tuple, whatever its positions. Unsupported dependent bounds and methods whose
+unfolding keeps growing refuse the whole declaration. The runtime API's
 `V & DepSafe` is proposed as its parameter, which Lean lowers and checks
-whole; what stops `sum.ts`'s mappers now is their bodies, which return an array
-as an `Iterable`: arrays as library objects.
+whole. Arrays as library objects are implemented, but the full framework
+now stops earlier at recursive quantified contracts. Separately, `map` cannot
+promise a dense array after callbacks that may mutate its receiver; recovering
+that result needs a justified sparse-array or effect-aware contract.
 
 Scheme rows are the one mechanism for quantified callables: a local generic
 closure is graph code at a scheme row, with bounds, rests and defaults.
@@ -1200,7 +1213,7 @@ substitutions internally and uses one pack encoder for homogeneous and tuple
 rests. The framework calls need `Params = []` for `Plus`/`Minus` and
 `[number]` for `AddIndex`, with `Params extends readonly DepSafe[]`. A binder
 used as an array value must keep its array interpretation too; an argument
-list is not an array, and such a method stays opaque. Rerun the original client
+list is not an array, and such a declaration is refused. Rerun the original client
 independently: its array-library and asynchronous-startup gaps are separate.
 
 **A tight service binding, verified with its use.**

@@ -162,13 +162,6 @@ private def Memo.give (m : Memo) (T : SourceTypes.Table) (i : Nat) (values : Arr
 private def Memo.rekey (m : Memo) (T : SourceTypes.Table) : Memo :=
   { m with applications := m.applications.map fun g => { g with key := g.args.map (m.key T) } }
 
-/-- Keep the table and the memo as they were when a lowering fails, so a
-rejected candidate leaves no rows, and names no rows, behind. -/
-private def attempt (m : Lowering α) : Lowering (Except String α) := fun memo T =>
-  match (m.run memo).run T with
-  | .ok ((a, memo'), T') => .ok ((.ok a, memo'), T')
-  | .error e => .ok ((.error e, memo), T)
-
 /-- A literal type as the claim atom of its value. -/
 private def literalAtom (term : Json) : Except String Json := do
   CellClaims.fieldsExactly term ["k", "name", "text", "span"]
@@ -381,7 +374,7 @@ alone: what it becomes depends on the application, never on the path that
 reached it first. So a recursive family of applications closes into a finite
 graph in which every application has its whole equation. Past the colour
 budget, and at arguments that keep growing (`Pair<[T, U]>`, refused by the
-argument budget), the method stays an opaque member. -/
+argument budget), lowering refuses the declaration. Limits never weaken a contract. -/
 
 /-- How many colours generic methods' binders may take. -/
 private def colourBudget : Nat := 4
@@ -629,26 +622,26 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
       return [plain, calls, ctors].eraseDups.mergeSort (· ≤ ·)
     | _ => throw "unsupported declaration primitive"
   -- A generic method's scheme comes from its source terms. Unsupported
-  -- binder roles or bounds remain opaque instead of accepting producer rows.
+  -- binder roles or bounds refuse the declaration; no contract is erased.
   | "scheme" =>
     CellClaims.fieldsExactly term ["k", "binders", "signatures", "span"]
     let bs ← arr term "binders"
     let sigTerms ← arr term "signatures"
-    let opaqueMember : Lowering (List Nat) := do return [← use .top]
-    -- A bound naming the method's own binders (an F-bound) is not what a
-    -- scheme's bounds mean: they are read outside the binders. It keeps the
-    -- member opaque.
+    let refuse (reason : String) : Lowering (List Nat) := do
+      throw s!"generic contract at {(← field term "span").compress}: {reason}; the contract cannot be erased"
+    -- A bound naming the method's own binders is not what a
+    -- scheme's bounds mean: they are read outside the binders.
     let names ← bs.toList.mapM fun b => do
       CellClaims.fieldsExactly b ["name", "bound", "default", "span"]
       str b "name"
     let own (j : Json) : Bool := names.any fun n =>
       let use := binderUse n j
       use.value || use.pack
-    if ← bs.anyM (fun b => do return own (← field b "bound")) then return ← opaqueMember
+    if ← bs.anyM (fun b => do return own (← field b "bound")) then return ← refuse "dependent method bounds are not represented"
     -- Until a pack's collected-array view is implemented, a binder used in
-    -- both roles remains opaque. Classification respects nested scopes.
+    -- both roles cannot be represented. Classification respects nested scopes.
     let uses := names.map fun n => (n, binderUse n (.arr sigTerms))
-    if uses.any (fun (_, use) => use.pack && use.value) then return ← opaqueMember
+    if uses.any (fun (_, use) => use.pack && use.value) then return ← refuse "a binder used as both a value and an argument pack is not represented"
     let packs := (uses.filter fun (_, use) => use.pack).map Prod.fst
     let spanKey := (← field term "span").compress
     -- A generic method's binder rows are its member's: the key, the binder's
@@ -667,7 +660,7 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     let taken := freeColours (← get) (← getThe SourceTypes.Table) (4 + nullaryCount ds) mine
       (params.toList.flatten ++ seen.binders.map (fun p => p.2.row))
     match (List.range colourBudget).find? (fun c => !taken.contains c) with
-    | none => opaqueMember
+    | none => refuse "the binder colour budget is exhausted"
     | some c =>
       let rows ← ((List.range names.length).zip (names.zip bs.toList)).mapM fun (k, n, b) => do
         paramRow (rowName k n (← field b "bound") c) (if packs.contains n then .arguments else .value)
@@ -684,7 +677,7 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
           let required ← (← arr b "required").mapM (lowerType ds owner params seen)
           return some [← use (.pack ⟨required.toList, [], none, false⟩ [])]
         | _ => return none
-      let bounds? ← attempt ((bs.toList.zip (rows.zip names)).filterMapM fun (b, row, n) => do
+      let bounds? ← (bs.toList.zip (rows.zip names)).filterMapM fun (b, row, n) => do
         let bound ← field b "bound"
         if packs.contains n then
           if bound == .null then return none
@@ -693,16 +686,15 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
         let declared ← lowerType ds owner params seen bound
         if groundTerm bound then
           modify fun m => { m with binders := (row, declared) :: m.binders.filter (·.1 != row) }
-        return some (some (row, declared)))
-      let .ok bounds? := bounds? | return ← opaqueMember
-      let some bounds := bounds?.mapM id | return ← opaqueMember
+        return some (some (row, declared))
+      let some bounds := bounds?.mapM id | return ← refuse "the argument-pack bound is not represented"
       let bindings := (names.zip rows).map fun (name, row) =>
         (name, if packs.contains name then BinderBinding.pack row else .value row)
       let inner := { seen with binders := bindings ++ seen.binders, member := none }
       -- A method whose signatures cannot be lowered, as one whose unfolding
       -- keeps growing (`Promise<T>`'s `catch<R>` returns `Promise<T | R>`),
-      -- stays opaque; the attempt leaves no rows behind.
-      let lowered ← attempt (sigTerms.toList.mapM fun f => do
+      -- refuses the declaration: failure is never recovered as a weaker type.
+      let sigs ← sigTerms.toList.mapM fun f => do
         CellClaims.fieldsExactly f ["k", "receiver", "params", "rest", "result", "span"]
         let recv ← lowerType ds owner params inner (← field f "receiver")
         let ps ← (← arr f "params").toList.mapM (lowerType ds owner params inner)
@@ -710,13 +702,10 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
         let rest ← if restTerm == .null then pure none else
           some <$> lowerRest ds owner params inner restTerm
         let res ← lowerType ds owner params inner (← field f "result")
-        return (recv, ps, rest, res))
-      match lowered with
-      | .ok sigs =>
-        let fixed := sigs.filterMap fun (r, ps, rest, res) => if rest.isNone then some (r, ps, res) else none
-        let rests := sigs.filterMap fun (r, ps, rest, res) => rest.map fun P => (r, ps, P, res)
-        return [← schemeRow rows fixed bounds rests]
-      | .error _ => opaqueMember
+        return (recv, ps, rest, res)
+      let fixed := sigs.filterMap fun (r, ps, rest, res) => if rest.isNone then some (r, ps, res) else none
+      let rests := sigs.filterMap fun (r, ps, rest, res) => rest.map fun P => (r, ps, P, res)
+      return [← schemeRow rows fixed bounds rests]
   | "binder" =>
     CellClaims.fieldsExactly term ["k", "name", "span"]
     match seen.binders.lookup (← str term "name") with
@@ -879,10 +868,8 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
       | none =>
         match (if optional then none else schemeMethod ty) with
         | some t =>
-          -- A method whose scheme stays opaque is a view of every value.
           let scheme ← lowerType ds owner params { seen with member := some (toJson name).compress } t
-          if scheme == [← use .top] then all := all.push (name, scheme, ← bool f "readonly", optional)
-          else methods := methods ++ [⟨name, [], [], [scheme]⟩]
+          methods := methods ++ [⟨name, [], [], [scheme]⟩]
         | none =>
           let value ← lowerType ds owner params seen ty
           all := all.push (name, value, ← bool f "readonly", optional)
