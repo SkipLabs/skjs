@@ -160,6 +160,39 @@ where $\kappa[\vec x]$ is $\kappa$ capturing the slots $\vec x$. Its evidence
 the codes a request carries, each checked in order against the table of those
 before it (`GraphCode.checkCodes`), so that every entry meets its signature
 (`CodesSound`, `checkCodes_sound`); code created inside code is checked first.
+No code check reads the graph's assignment (`Parametricity.checkEntry_reassign`),
+so an entry meets its signature in the graph reassigned at every assignment
+$\eta$ of its parameter rows, $\vec C\vdash_{G[\eta]}\kappa:\sigma$, which is
+what `CodesSound` states.
+
+A generic closure is graph code at a scheme row $j$, $G(j)=\forall\vec p.\,(L,S)$
+with binders $\vec p$ (parameter rows) and signatures $L$ and $S$ over them
+(`HasTy.funScheme`). Its code is checked once, at the scheme's own signatures:
+a table entry holds at every assignment, so at every instantiation of $\vec p$.
+Its captures' types read none of $\vec p$ (`capturesFree`: their free parameter
+rows, computed and checked by `FreeOk` as `Sub.gen` checks its source's,
+exclude the binders), so a capture means at every instantiation what it means
+here (`meaning_assign_free`):
+
+$$
+\frac{G(j)=\forall\vec p.\,(L,S)
+      \quad\forall\eta.\;\forall(R,\vec A,B)\in L\cup S^\flat.\;\vec C\vdash_{G[\eta]}\kappa:(R;\vec A\to B)
+      \quad\mathrm{fv}(\vec C)\cap\vec p=\emptyset
+      \quad\forall i.\;\Gamma\vdash_G x_i:C_i}
+     {\Gamma\vdash_G \mathsf{make}(\kappa[\vec x],\mathsf{null}):j}\ (\texttt{funScheme})
+$$
+
+Soundness is **Call-Scheme-I** ([below](#overloads-polymorphism-and-binding))
+with each instance's signatures read in the graph reassigned at that instance.
+The evidence is `Rule.funGraph` at a scheme row: the checker reads the row's
+signatures instead of an arrow clause's (`graphCodesChecked`, `schemeOf`). A
+binder with a bound of clause rows is read, in the signatures and inside the
+closure, as the meet row $p\sqcap B$, as a generic unit's is: at every
+instantiation within the bound the meet is the binder. A call of a binding at
+the scheme row names its instance: the callee is read at the instance's
+signature, below the scheme by a checked instance (`Sub.inst`), a bounded
+binder's meet row mapped to the meet of its type argument with the bound
+(`meetOk`).
 
 A call writes a prefix of the positions the selected signature declares:
 $|\vec a|=|\vec A|$, and $\vec U$ are the positions it omits. Omission is
@@ -5272,11 +5305,13 @@ unrestricted generalization of an effectful allocation expression.
 [TypeSchemes.lean](lean/Verification/Model/Types/TypeSchemes.lean) realizes
 these rules as `scheme_intro` and `scheme_elim`: one callable value and one
 captured world satisfy every admissible assignment, while elimination selects a
-signature only afterwards. The source checker admits the restricted local
-closure form described above. Schemes do not become graph clauses; checked
-eliminations become fixed or variadic graph signatures. Introduction requires the
-independently reconstructed rigid-body certificate described above; it is not
-yet serialized as a first-class scheme node in the graph evidence.
+signature only afterwards. A generic closure is graph code at a scheme row
+(**funScheme**, [above](#judgments-and-constructor-views)), its introduction the table's
+check of its code, which holds at every assignment. A closure the graph code
+cannot yet express, one with a rest parameter, a parameter default or a bound
+naming another of its binders, keeps the rigid path: introduction by the
+independently reconstructed rigid-body certificate described above, and its
+checked eliminations compiled to fixed or variadic graph signatures.
 
 **Generic bodies.** A generic function's body is a graph request whose
 binders are parameter rows $\vec p$: rows the graph's assignment interprets,

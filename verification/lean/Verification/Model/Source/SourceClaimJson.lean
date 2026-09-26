@@ -724,6 +724,259 @@ private def atRows (σ : List (String × ClaimType)) (t : ClaimType) :
   | .ok (T, A) => (.labels A, T)
   | .error reason => (.unavailable reason, T)
 
+/-! ### Generic closures as graph code
+
+A generic closure is graph code at a scheme row (`HasTy.funScheme`): its code
+is checked once, at the scheme's signatures with the scheme's binders as
+parameter rows, and a table entry holds at every assignment of the parameter
+rows (`ProgramCertificates.CodesSound`), so at every instantiation. Here each
+generic closure's claimed scheme becomes a scheme row whose binders are fresh
+value parameter rows; every claim and annotation inside the closure reads its
+binders as those rows; and a call of a scheme-typed local is claimed at the
+instance the call names, which the checker relates to the scheme by a checked
+instance (`Sub.inst`). -/
+
+/-- A generic closure of a unit's source: its span, its binders, and whether
+its code can be graph code: no rest parameter and no default (graph code has
+fixed arity and no entry schedule), and no bound naming another of its
+binders (a scheme row's bounds are read outside its binders). -/
+structure GenericClosure where
+  span : Span
+  binders : List Fragment.TypeParam
+  plain : Bool
+
+/-- The generic closures a source tree creates, outer before inner. -/
+partial def genericClosures : Json → List GenericClosure
+  | .arr xs => xs.toList.flatMap genericClosures
+  | .obj kvs =>
+    let j := Json.obj kvs
+    let here : List GenericClosure :=
+      if (j.getObjValAs? String "k").toOption == some "lambda" then
+        match (j.getObjValAs? Span "pos").toOption,
+            (j.getObjVal? "typeParams").toOption.bind (·.getArr?.toOption) with
+        | some pos, some tps =>
+          if tps.isEmpty then [] else
+          match tps.toList.mapM Fragment.decodeTypeParam with
+          | .ok binders =>
+            let params := ((j.getObjVal? "params").toOption.bind (·.getArr?.toOption)).getD #[]
+            let names := binders.map (·.name)
+            -- A bound naming a binder of the same closure is read at the
+            -- instantiation, which a scheme row's bounds are not.
+            let dependent := binders.any fun b =>
+              (b.bound.map SourceTypes.binderNames).getD [] |>.any names.contains
+            let plain := !dependent && params.all fun q =>
+              (q.getObjVal? "rest").toOption.isNone && (q.getObjVal? "default").toOption.isNone
+            [⟨pos, binders, plain⟩]
+          | .error _ => []
+        | _, _ => []
+      else []
+    here ++ kvs.toList.flatMap fun (_, v) => genericClosures v
+  | _ => []
+
+/-- Scheme rows made so far: a scheme claim, its enclosing binders already
+read as rows, with its row and its binders' rows. -/
+abbrev Registry := List (ClaimType × Nat × List (String × Nat))
+
+private abbrev SchemeM := StateT (SourceTypes.Table × Registry) (Except String)
+
+private def internS (c : PositiveNormalization.Clause (List Nat)) : SchemeM Nat :=
+  modifyGet fun (T, reg) =>
+    let T := SourceTypes.intern T c
+    (SourceTypes.label T c, (T, reg))
+
+mutual
+/-- A claim, its binders already rows, in ground form: a scheme with binders
+of its own is a scheme row, the same row for the same scheme. -/
+private partial def groundT : ClaimType → SchemeM (List Nat)
+  | .labels A => pure A
+  | .union ts => do
+    let arms ← ts.mapM groundT
+    pure (arms.flatten.eraseDups.mergeSort (· ≤ ·))
+  | .array e => do
+    let E ← groundT e
+    let store ← internS (.list ⟨[], [], some E, false⟩ [])
+    let (T, _) ← get
+    pure [← internS (SourceTypes.arrayOf T store false)]
+  | .scheme [] rc ps rest r => do
+    let rc ← groundT rc
+    let ps ← ps.mapM groundT
+    let r ← groundT r
+    match rest with
+    | none => pure [← internS (.arrs [(rc, ps, r)] [])]
+    | some e => do
+      let E ← groundT e
+      let pack ← internS (.pack ⟨[], [], some E, false⟩ [])
+      pure [← internS (.arrs [] [(rc, ps, [pack], r)])]
+  | .scheme tps rc ps rest r => do
+    return [(← schemeRowOf (.scheme tps rc ps rest r)).1]
+  | .param name => throw s!"the rigid parameter '{name}' is not in scope"
+  | .unavailable reason => throw reason
+
+/-- The row of a scheme with binders: its binders fresh value parameter rows,
+its signature over them, its bounds read outside it. A binder with a bound of
+clause rows is read, in the signature and inside the closure, as the meet of
+its row and its bound, as a generic unit's is (`binderRows`): at every
+instantiation within the bound the meet is the binder, and elsewhere the
+scheme promises nothing. Returns the row and what each binder is read as. -/
+private partial def schemeRowOf (t : ClaimType) : SchemeM (Nat × List (String × Nat)) := do
+  if let some (_, l, rows) := (← get).2.find? (·.1 == t) then return (l, rows)
+  let .scheme tps rc ps rest r := t | throw "not a scheme"
+  let bounds ← tps.mapM fun (_, b) => b.mapM groundT
+  let (T, reg) ← get
+  let params := tps.zipIdx.map fun ((n, _), i) => (n, T.length + i)
+  set (T ++ params.map (fun (n, l) => RequestJson.Row.param l n .value), reg)
+  let rows ← (params.zip bounds).mapM fun ((n, l), b) => do
+    let (T, reg) ← get
+    let G := SourceTypes.graph T
+    match b with
+    | some B =>
+      if B.isEmpty || !G.plainTy B then return (n, l)
+      let m := RequestJson.Row.meet l (B.flatMap G)
+      match T.idxOf? m with
+      | some i => return (n, i)
+      | none => set (T ++ [m], reg); return (n, T.length)
+    | none => return (n, l)
+  let σ := rows.map fun (n, l) => (n, ClaimType.labels [l])
+  let rc ← groundT (subst σ rc)
+  let ps ← ps.mapM fun q => groundT (subst σ q)
+  let r ← groundT (subst σ r)
+  let (sigs, rests) ← match rest with
+    | none => pure ([(rc, ps, r)], [])
+    | some e => do
+      let E ← groundT (subst σ e)
+      let pack ← internS (.pack ⟨[], [], some E, false⟩ [])
+      pure ([], [(rc, ps, [pack], r)])
+  let boundRows := (params.zip bounds).filterMap fun ((_, l), b) => b.map (l, ·)
+  let (T, reg) ← get
+  let label := T.length
+  set (T ++ [RequestJson.Row.scheme (params.map Prod.snd) sigs boundRows rests],
+    reg ++ [(t, label, rows)])
+  return (label, rows)
+end
+
+/-- The innermost scope, among `scopes`, strictly containing the span `p`. -/
+private def scopeAt (scopes : List (Span × List (String × Nat))) (outer : List (String × Nat))
+    (p : Span) : List (String × Nat) :=
+  let inside := scopes.filter fun (q, _) => q.1 ≤ p.1 && p.2 ≤ q.2 && q != p
+  match inside.foldl (fun (best : Option (Span × List (String × Nat))) x => match best with
+      | some b => if x.1.2 - x.1.1 < b.1.2 - b.1.1 then some x else some b
+      | none => some x) none with
+  | some (_, rows) => rows
+  | none => outer
+
+/-- A unit's claims with its generic closures' schemes as scheme rows, each
+claim inside a closure reading the closure's binders as that row's binders,
+and a call of a scheme-typed local claimed at the instance it names. `outer`
+reads the unit's own binders, if any, as their rows. Returns the grown
+table, the claims and the binder scope of each closure. -/
+def closureRows (T : SourceTypes.Table) (outer : List (String × Nat))
+    (closures : List GenericClosure) (calls : List (Span × Span × String × List Json))
+    (c : Function) :
+    Except String (SourceTypes.Table × Function × List (Span × List (String × Nat))) := do
+  let asClaims (rows : List (String × Nat)) : List (String × ClaimType) :=
+    rows.map fun (n, l) => (n, .labels [l])
+  let run : SchemeM (Function × List (Span × List (String × Nat))) := do
+    -- Each closure's scheme, outer closures first: a closure's binders are
+    -- in scope for the closures inside it.
+    let mut scopes : List (Span × List (String × Nat)) := []
+    for gc in closures do
+      let enclosing := scopeAt scopes outer gc.span
+      let some e := c.expressions.find? (·.pos == gc.span)
+        | throw "a generic closure has no claim"
+      let .scheme tps _ _ _ _ := e.type
+        | throw "a generic closure is claimed at no scheme"
+      if tps.map Prod.fst != gc.binders.map (·.name) then
+        throw "a generic closure's claimed scheme names other binders than its own"
+      if gc.binders.any fun b => (enclosing.lookup b.name).isSome then
+        throw "a generic closure's binder hides an enclosing binder of its name"
+      let (_, rows) ← schemeRowOf (subst (asClaims enclosing) e.type)
+      scopes := scopes ++ [(gc.span, rows ++ enclosing)]
+    -- A call of a local whose claim is a scheme: its callee is claimed at the
+    -- instance the call names.
+    let mut instances : List (Span × ClaimType) := []
+    let mut named : List Span := []
+    for (p, q, _, _) in calls do
+      let some e := c.expressions.find? (·.pos == p) | continue
+      let some inst := e.instantiate | continue
+      let some callee := c.expressions.find? (·.pos == q) | continue
+      let σ := asClaims (scopeAt scopes outer q)
+      let .scheme tps rc ps rest r := subst σ callee.type | continue
+      if tps.isEmpty then continue
+      let given := inst.map (·.name)
+      if given.eraseDups.length != given.length || given.length != tps.length ||
+          given.any (fun n => !(tps.map Prod.fst).contains n) then
+        throw "type arguments do not instantiate exactly the scheme's binders"
+      let σp := asClaims (scopeAt scopes outer p)
+      -- A bounded binder is read as the meet of its row and its bound, so
+      -- its instance is the meet of the type argument and the bound: the
+      -- clause row an instance table maps the meet row to (`meetOk`).
+      let σi ← inst.mapM fun i => do
+        let U := subst σp i.type
+        let some (_, some bound) := tps.find? (·.1 == i.name) | pure (i.name, U)
+        let st ← get
+        let meet : SchemeM (Option Nat) := do
+          let A ← groundT U
+          let B ← groundT (subst σp bound)
+          let (T, reg) ← get
+          let G := SourceTypes.graph T
+          if !G.plainTy A || !G.plainTy B then return none
+          let cs := PositiveNormalization.meetLists (PositiveRules.clausesOf G A)
+            (PositiveRules.clausesOf G B)
+          if cs.isEmpty then return none
+          let row := RequestJson.Row.clauses cs
+          match T.idxOf? row with
+          | some l => return some l
+          | none => set (T ++ [row], reg); return some T.length
+        match meet.run st with
+        | .ok (some l, st) => set st; pure (i.name, .labels [l])
+        | _ => pure (i.name, U)
+      instances := instances ++ [(q, .scheme [] (subst σi rc) (ps.map (subst σi))
+        (rest.map (subst σi)) (subst σi r))]
+      named := named ++ [p]
+    let go (at_ : Span) (t : ClaimType) : SchemeM ClaimType := do
+      let t := ((instances.find? (·.1 == at_)).map (·.2)).getD t
+      let st ← get
+      match (groundT (subst (asClaims (scopeAt scopes outer at_)) t)).run st with
+      | .ok (A, st) => set st; pure (.labels A)
+      | .error reason => pure (.unavailable reason)
+    let entry (e : Entry) : SchemeM Entry := do
+      return { e with bindings := ← e.bindings.mapM fun b => do
+        return { b with type := ← go (e.start, e.start + 1) b.type } }
+    let params ← c.params.mapM fun b => do return { b with type := ← go (0, 0) b.type }
+    let result ← go (0, 0) c.result
+    let entries ← c.entries.mapM entry
+    let expressions ← c.expressions.mapM fun e => do
+      let type ← go e.pos e.type
+      let instantiate ← if named.contains e.pos then pure none else
+        e.instantiate.mapM (·.mapM fun i => do return { i with type := ← go e.pos i.type })
+      return { e with type, instantiate }
+    return ({ c with params, result, entries, expressions }, scopes)
+  let ((c, scopes), (T, _)) ← run.run (T, [])
+  return (T, c, scopes)
+
+/-- A source annotation in claim form with each binder read as its row: the
+unit's binders by `σ`, a generic closure's, inside it, by its scope. -/
+partial def annotationAtScopes (scopes : List (Span × List (String × Nat)))
+    (σ : List (String × Nat)) : Json → Json
+  | .arr xs => .arr (xs.map (annotationAtScopes scopes σ))
+  | .obj kvs =>
+    let j := Json.obj kvs
+    match (j.getObjValAs? String "a").toOption, (j.getObjValAs? String "name").toOption with
+    | some "param", some name =>
+      match σ.lookup name with
+      | some l => if j == Json.mkObj [("a", toJson "param"), ("name", toJson name)] then
+          Json.mkObj [("a", toJson "graph"), ("label", toJson l)] else j
+      | none => j
+    | _, _ =>
+      let σ := if (j.getObjValAs? String "k").toOption == some "lambda" then
+          match (j.getObjValAs? Span "pos").toOption.bind (fun p => scopes.lookup p) with
+          | some rows => rows
+          | none => σ
+        else σ
+      Json.mkObj (kvs.toList.map fun (k, v) =>
+        (k, if k == "typeParams" then v else annotationAtScopes scopes σ v))
+  | j => j
+
 end Scheme
 
 /-- A generic unit's claims with each binder read as its parameter row
@@ -1247,6 +1500,17 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
           throw "per-arrow claim site is outside its source closure"
     if c.hasScheme && tps.isEmpty && !(c.arrows.getD []).isEmpty then
       throw "per-arrow source claims are for ground closures, not quantified schemes"
+    -- The unit's source tree, and the generic closures it creates: graph
+    -- code at scheme rows when every one of them has plain parameters.
+    let unitSource := if initClaims.isSome then
+        some (Json.mkObj [("body", (ast.getObjVal? "init").toOption.getD (.arr #[]))])
+      else functionJsons.find? fun j =>
+        (j.getObjValAs? String "name").toOption == some f.name &&
+          (j.getObjValAs? Span "namePos").toOption == some f.namePos
+    let closures := match unitSource with
+      | some j => Scheme.genericClosures ((j.getObjVal? "body").toOption.getD .null)
+      | none => []
+    let graphClosures := !closures.isEmpty && closures.all (·.plain)
     if !tps.isEmpty then
       -- The direct checker first, for the variable-copy bodies it states
       -- obligations for; a failed obligation stands. A body outside its
@@ -1269,27 +1533,45 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
       | .ok plan => return plan
       | .error (false, failure) => throw failure
       | .error (true, _) =>
-        let some source := if initClaims.isSome then
-            some (Json.mkObj [("body", (ast.getObjVal? "init").toOption.getD (.arr #[]))])
-          else functionJsons.find? fun j =>
-            (j.getObjValAs? String "name").toOption == some f.name &&
-              (j.getObjValAs? Span "namePos").toOption == some f.namePos
+        let some source := unitSource
           | throw "a generic unit's source function is missing"
-        if nestedBinders ((source.getObjVal? "body").toOption.getD .null) then
+        if nestedBinders ((source.getObjVal? "body").toOption.getD .null) && !graphClosures then
           throw (sourceRefusal d.types f.namePos .genericValidation
             "a generic closure inside a generic body has binders of its own")
         let (T, rows) ← match binderRows d.types tps with
           | .ok r => pure r
           | .error reason => throw (sourceRefusal d.types f.namePos .genericValidation reason)
-        let (T, atRows) := c.atRows T rows
+        let (T, atRows, scopes) ← if graphClosures then
+            match Scheme.closureRows T rows closures (f.body.flatMap Fragment.Stmt.callees) c with
+            | .ok r => pure r
+            | .error reason => throw (sourceRefusal T f.namePos .schemeIntroduction reason)
+          else
+            let (T, atRows) := c.atRows T rows
+            pure (T, atRows, [])
         d := { d with types := T }
         c := atRows
+        let source := Scheme.annotationAtScopes scopes rows source
         if initClaims.isSome then
-          let body ← Fragment.decodeInit (Json.mkObj [("init",
-            ((annotationAtRows rows source).getObjValD "body"))])
+          let body ← Fragment.decodeInit (Json.mkObj [("init", source.getObjValD "body")])
           f := { f with body }
         else
-          f := (← Fragment.decodeFn (annotationAtRows rows source)).1
+          f := (← Fragment.decodeFn source).1
+    else if graphClosures && c.hasScheme then
+      -- A generic closure in a unit without binders of its own: its scheme is
+      -- a scheme row, its code graph code checked at the row's signatures.
+      let some source := unitSource | throw "a unit's source function is missing"
+      let (T, claims, scopes) ← match Scheme.closureRows d.types [] closures
+          (f.body.flatMap Fragment.Stmt.callees) c with
+        | .ok r => pure r
+        | .error reason => throw (sourceRefusal d.types f.namePos .schemeIntroduction reason)
+      d := { d with types := T }
+      c := claims
+      let source := Scheme.annotationAtScopes scopes [] source
+      if initClaims.isSome then
+        let body ← Fragment.decodeInit (Json.mkObj [("init", source.getObjValD "body")])
+        f := { f with body }
+      else
+        f := (← Fragment.decodeFn source).1
     let finish (d : Document) (module : List SourceExtraction.ModuleValue) (c : Function)
         (f : Fragment.Fn) : Except String FunctionPlan := do
       let mut d := d

@@ -672,21 +672,24 @@ export const cases: Case[] = [
     "default value outside its parameter's contract",
   ),
   positive("generic-closure", "polymorphic closure / fresh call inference"),
+  positive("generic-closure-graph", "a generic closure is graph code at a scheme row, checked once at the scheme's signature: statements in its body, a bounded binder read as its meet with the bound, a generic closure inside a generic body, one no call instantiates"),
+  negative("invalid-generic-closure-nested", "inside a generic body, a generic closure returning the body's binder at its own: the one call's instance would meet it, the scheme does not",
+    /source expression obligation at \[258,263\): evidence search failed: no derivation of its return-contract claim/),
   positive(
     "generic-two-calls",
     "one scheme, two independently substituted eliminations",
   ),
   negative(
     "invalid-generic-closure",
-    "universally quantified closure body",
-    /cannot establish true ≤ T for every instantiation of \[T\]/,
+    "universally quantified closure body: its code is checked once, with T its scheme's parameter row, which `true` is not below",
+    /source expression obligation at \[103,107\): evidence search failed: no derivation of its return-contract claim/,
   ),
   // Every observed call instantiates T at boolean, so the compiled arrow is
   // satisfied: only the universal gate separates this from specialization.
   negative(
     "invalid-scheme-capture",
-    "scheme valid at every observed call but not universally",
-    /cannot establish boolean ≤ T for every instantiation of \[T\]/,
+    "scheme valid at every observed call but not universally: the code is checked at the scheme's signature, not at the calls' instances",
+    /source expression obligation at \[104,108\): evidence search failed: no derivation of its return-contract claim/,
   ),
   positive("generic-inferred", "inferred rigid copies / dependent bounds"),
   positive(
@@ -714,7 +717,7 @@ export const cases: Case[] = [
   negative(
     "invalid-captured-write",
     "captured cell written at the binder's type",
-    /captured storage write at \[\d+,\d+\): cannot establish T ≤ number under \[T\]/,
+    /source expression obligation at \[128,143\): evidence search failed: no derivation of its storage-contract claim/,
   ),
   positive(
     "generic-callback",
@@ -727,21 +730,21 @@ export const cases: Case[] = [
   negative(
     "invalid-callback-result",
     "closure fabricating a result the callback should supply",
-    /does not satisfy its scheme universally: cannot establish boolean ≤ T/,
+    /source expression obligation at \[107,111\): evidence search failed: no derivation of its return-contract claim/,
   ),
   // The nested body is checked under the outer binders like the outer body:
   // a capture that happens to fit every observed call is still not `T`.
   negative(
     "invalid-returned-capture",
     "nested closure body against its rigid result",
-    /does not satisfy its scheme universally: cannot establish boolean ≤ T/,
+    /source expression obligation at \[129,133\): evidence search failed: no derivation of its return-contract claim/,
   ),
   // A genuine bound violation survives inference: number cannot instantiate
   // a binder constrained to boolean, regardless of candidate selection.
   negative(
     "invalid-bound-argument",
-    "substituted bound obligation",
-    /does not satisfy the closure's bound: cannot establish number ≤ boolean/,
+    "substituted bound obligation: no instance of the scheme at `number` is within its bound",
+    /source expression obligation at \[113,115\): evidence search failed: no derivation of its node-typing claim/,
   ),
   // The bound justifies T ≤ U, never U ≤ T; every observed call could still
   // agree, so only introduction refuses it.

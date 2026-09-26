@@ -1927,7 +1927,15 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
                   && List.length s.params >= List.length ps -> Some s.result
            | _ -> None)
         | _ -> None in
-      let body_type = expr ?expected:(if written <> None then written else contextual) inner body in
+      (* A generic closure's own ground bounds hold in its body, as a generic
+         function's do: a member read through a bounded binder reads the
+         bound's member. *)
+      let enclosing_bounds = !rigid_bounds in
+      rigid_bounds := List.filter_map (fun (q:Semantic.quantifier) -> match q.bound with
+        | Some (ValueArgument b) when not (Semantic.mentions_rigid b) -> Some (q.identity,b)
+        | _ -> None) quantified @ enclosing_bounds;
+      let body_type = Fun.protect ~finally:(fun () -> rigid_bounds := enclosing_bounds) (fun () ->
+        expr ?expected:(if written <> None then written else contextual) inner body) in
       (* Without a result annotation the result is the body's, widened as
          TypeScript widens an inferred return type, or the contextual return
          type where the body's fits it: a literal result the context asks for

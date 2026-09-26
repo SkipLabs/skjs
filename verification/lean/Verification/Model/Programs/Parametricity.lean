@@ -114,11 +114,45 @@ theorem CallProofs_reassign (q : List ι × List (List ι) × List ι) (c : List
     CallProofs (reassign G η) q c ps = CallProofs G q c ps := by
   simp only [CallProofs, check_reassign]
 
+theorem reads_reassign : reads (reassign G η) = reads G := rfl
+
+theorem readsFrom_go_reassign : ∀ fuel (seen frontier : List ι),
+    readsFrom.go (reassign G η) fuel seen frontier = readsFrom.go G fuel seen frontier
+  | 0, _, _ => rfl
+  | fuel + 1, seen, frontier => by
+    simp only [readsFrom.go, reads_reassign, readsFrom_go_reassign fuel]
+
+theorem readsFrom_reassign (fuel : Nat) (S : List ι) :
+    readsFrom (reassign G η) fuel S = readsFrom G fuel S := by
+  simp only [readsFrom, readsFrom_go_reassign]
+
+theorem freeMapOf_reassign (D : List ι) : ∀ fuel (V : FreeMap ι),
+    freeMapOf (reassign G η) D fuel V = freeMapOf G D fuel V
+  | 0, _ => rfl
+  | fuel + 1, V => by
+    simp only [freeMapOf, reads_reassign, freeMapOf_reassign D fuel]
+    rfl
+
+/-- A generic closure's capture check reads the graph's rows only. -/
+theorem capturesFree_reassign (s : SchemeRow ι) (Cs : List (List ι)) :
+    capturesFree (reassign G η) s Cs = capturesFree G s Cs := by
+  simp only [capturesFree, captureDomain, captureFree, readsFrom_reassign, freeMapOf_reassign]
+  rfl
+
+theorem graphCodesChecked_reassign (A : List ι) (codes : CodeEntry ι → Bool) (arity : Nat)
+    (E : List Tm) (K : List (ControlFlow.Continuation × Option ControlFlow.Target)) (start : Nat)
+    (Cs : List (List ι)) :
+    graphCodesChecked (reassign G η) A codes arity E K start Cs =
+      graphCodesChecked G A codes arity E K start Cs := by
+  unfold graphCodesChecked
+  simp only [capturesFree_reassign]
+  rfl
+
 theorem Local_reassign (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
     (codes : CodeEntry ι → Bool := fun _ => false) :
     Local (reassign G η) j r ps codes = Local G j r ps codes := by
   unfold Local
-  simp only [check_fun_reassign, CallProofs_reassign]
+  simp only [check_fun_reassign, CallProofs_reassign, graphCodesChecked_reassign]
   rfl
 
 theorem checkTree_reassign (e : ProgramCertificates.Evidence ι)

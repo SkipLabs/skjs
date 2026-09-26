@@ -161,6 +161,61 @@ theorem invocation_of_body {G : NormalGraph ι} {Γ ρ n W b arity}
     have henv := (he.transfer j (Nat.le_of_lt hj) U hx).prepend hall
     exact hb q hq j U heap _ (by simpa [bodyFrame, List.append_assoc] using henv) hu hok
 
+/-- The rows `S` reads, transitively, without repeats, in the order they are
+first reached. Only the rows added by the last step are read again: the rows
+before them have had their reads added already, so each row is read once. -/
+def readsFrom [DecidableEq ι] (G : NormalGraph ι) (fuel : Nat) (S : List ι) : List ι :=
+  let S := S.eraseDups
+  go fuel S S
+where
+  go : Nat → List ι → List ι → List ι
+  | 0, seen, _ => seen
+  | fuel + 1, seen, frontier =>
+    let fresh := (frontier.flatMap (reads G)).foldl (fun acc l =>
+      if seen.contains l || acc.contains l then acc else l :: acc) []
+    if fresh.isEmpty then seen else go fuel (seen ++ fresh.reverse) fresh.reverse
+
+/-- The free parameter rows of the rows of `D`, by iteration to a fixed point:
+a parameter row is free in itself, and a row has the free rows of what it
+reads, except a scheme row's own binders. Untrusted: `FreeOk` checks it. -/
+def freeMapOf [DecidableEq ι] (G : NormalGraph ι) (D : List ι) : Nat → FreeMap ι → FreeMap ι
+  | 0, V => V
+  | fuel + 1, V =>
+    let step (i : ι) : List ι :=
+      let bound := match G.schemes i with
+        | some s => s.binders
+        | none => []
+      ((if G.params i then [i] else []) ++
+        (match G.meets i with | some (q, _) => [q] | none => []) ++ fv V i ++
+        (reads G i).flatMap fun l => (fv V l).filter (fun p => !bound.contains p)).eraseDups
+    let V' := D.map fun i => (i, step i)
+    if D.all (fun i => (fv V' i).length == (fv V i).length) then V' else freeMapOf G D fuel V'
+
+/-- How far to follow a graph's rows. -/
+def closureFuel : Nat := 4096
+
+/-- The rows capture types reach, and those rows' free parameter rows: the
+domain and map a generic closure's captures are checked over. -/
+def captureDomain [DecidableEq ι] (G : NormalGraph ι) (Cs : List (Ty ι)) : List ι :=
+  readsFrom G closureFuel Cs.flatten
+
+def captureFree [DecidableEq ι] (G : NormalGraph ι) (Cs : List (Ty ι)) : FreeMap ι :=
+  freeMapOf G (captureDomain G Cs) closureFuel []
+
+/-- No capture type reads a binder of the scheme `s`: the computed free rows
+are checked (`FreeOk`) and exclude them. -/
+def capturesFree [DecidableEq ι] (G : NormalGraph ι) (s : SchemeRow ι) (Cs : List (Ty ι)) : Bool :=
+  FreeOk G (captureDomain G Cs) (captureFree G Cs) &&
+    Cs.all fun C => C.all fun l =>
+      decide (l ∈ captureDomain G Cs ∧ ∀ p ∈ fv (captureFree G Cs) l, p ∉ s.binders)
+
+theorem capturesFree_sound [DecidableEq ι] {G : NormalGraph ι} {s : SchemeRow ι} {Cs : List (Ty ι)}
+    (h : capturesFree G s Cs = true) :
+    FreeOk G (captureDomain G Cs) (captureFree G Cs) = true ∧
+      ∀ C ∈ Cs, ∀ l ∈ C, l ∈ captureDomain G Cs ∧ ∀ p ∈ fv (captureFree G Cs) l, p ∉ s.binders := by
+  simp only [capturesFree, Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at h
+  exact ⟨h.1, h.2⟩
+
 /-- **Graph code at a signature.** Code of `arity` whose body is the graph of
 the node lists `E`, `K`, entered at `start`, with captures at `Cs`, meets the
 signature `row` when every run of it started from an environment meeting the
@@ -1624,6 +1679,21 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
       (∀ c ∈ caps, c.2 < Γ.length) →
       (∀ c ∈ caps, HasTy G Γ (.var c.2) c.1) →
       HasTy G Γ (.make (.graph arity E K start (caps.map fun c => .var c.2)) .nul) F
+  /-- **A generic closure.** Graph code at a scheme row: the code meets each
+  signature the scheme offers in the graph reassigned at every assignment of
+  its parameter rows, so at every instantiation of the scheme's binders. Its
+  captures are slots whose types read none of those binders (`FreeOk`, as
+  `Sub.gen` states it), so they mean the same at every instantiation. -/
+  | funScheme {Γ : List (Ty ι)} {j : ι} {s : SchemeRow ι} {arity start : Nat} {E : List Tm}
+      {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
+      {caps : List (Ty ι × Nat)} :
+      G.params j = false → G.schemes j = some s →
+      (∀ p ∈ offerRows s.signatures s.variadic, ∀ η,
+        GraphCodeSpec (reassign G η) arity E K start (caps.map Prod.fst) p) →
+      capturesFree G s (caps.map Prod.fst) = true →
+      (∀ c ∈ caps, c.2 < Γ.length) →
+      (∀ c ∈ caps, HasTy G Γ (.var c.2) c.1) →
+      HasTy G Γ (.make (.graph arity E K start (caps.map fun c => .var c.2)) .nul) [j]
   /-- A class value: construct-only code, its body typed at each construct
   signature with `undefined` for the receiver `new` passes. -/
   | ctorE {Γ : List (Ty ι)} {F U : Ty ι} {L : List (List (Ty ι) × Ty ι)} {arity : Nat}
@@ -1880,6 +1950,19 @@ and the receiver. -/
       HasTy G Γ (.merge d a b) R
   | sub : HasTy G Γ t A → PositiveCertificates.check G A B cert = true → HasTy G Γ t B
 
+/-- A type reading none of a scheme's binders means the same at every
+instantiation of them (`agree_freeWith`), as `Sub.gen` reads its source. -/
+theorem meaning_assign_free {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
+    (hF : FreeOk G D V = true) {bs : List ι} {A : Ty ι}
+    (hA : ∀ l ∈ A, l ∈ D ∧ ∀ p ∈ fv V l, p ∉ bs) (As : List MixedFamily) {n W v}
+    (h : meaning G A n W v) : meaning (reassign G (assign G.env bs As)) A n W v := by
+  obtain ⟨l, hl, hv⟩ := h
+  refine ⟨l, hl, ?_⟩
+  change qDenoteWithArgs G (mixedParameters G) (assign G.env bs As, l) n W v
+  rw [agree_freeWith hF (mixedParameters G) (mixed_respectsFree hF) _ G.env l (hA l hl).1
+    (fun p hp => by rw [assign_nmem G.env bs As ((hA l hl).2 p hp)])]
+  exact hv
+
 /-- Every derivation is safe in every admissible world and satisfying heap. -/
 theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     ∀ n W h ρ, EnvOk G Γ ρ n W → WorldAdm W → HeapOk n W h →
@@ -1974,6 +2057,58 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     · exact callsT_of_graph _ (fun p hp => hspec p (List.mem_append_left _ hp)) henv hsc
     · exact restsT_of_graph _ (fun s hs => hspec _
         (List.mem_append_right _ (List.mem_map.mpr ⟨s, hs, rfl⟩))) henv hsc
+  | @funScheme Γ i s arity start E K caps hp hq hspec hcf hlt hcap ih =>
+    obtain ⟨hF, hfree⟩ := capturesFree_sound hcf
+    intro n W h ρ he hw hh
+    simp only [instantiate, instantiateArgs_eq_map, List.map_map]
+    have hvals : ∀ c ∈ caps, isVal (ρ c.2) = true ∧ Scoped 0 (ρ c.2) := by
+      intro c hc
+      obtain ⟨B, hB⟩ : ∃ B, Γ[c.2]? = some B :=
+        ⟨_, List.getElem?_eq_getElem (hlt c hc)⟩
+      exact meaning_value (he.2 _ _ hB)
+    apply make_rule nulT_adm n W h _ .nul rfl hw hh rfl
+    intro j hj U hx _
+    have hcapv : ∀ c ∈ caps, meaning G c.1 j U (ρ c.2) := by
+      intro c hc
+      cases n with
+      | zero => omega
+      | succ p =>
+        have hs := ih c hc (p+1) W h ρ he hw hh
+        simp only [instantiate, Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero] at hs
+        have hm := safe_value_mem (hvals c hc).1 hs
+        exact (meaning_adm G c.1).mono j _ U hx _
+          ((meaning_adm G c.1).down_le (p+1) j (Nat.le_of_lt hj) W _ hm)
+    let vs := caps.map fun c => ρ c.2
+    have hsc : ∀ v ∈ vs, Scoped 0 v := by
+      intro v hv
+      obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hv
+      exact (hvals c hc).2
+    -- The captures, at every instantiation of the scheme's binders: their
+    -- types read none of them.
+    have henv : ∀ As : List MixedFamily,
+        EnvOk (reassign G (assign G.env s.binders As)) (caps.map Prod.fst) (envOf vs .nul) j U := by
+      intro As
+      apply EnvOk.envOf_nul hsc (by simp [vs])
+      intro k A hA v hv
+      simp only [vs, List.getElem?_map, Option.map_eq_some_iff] at hA hv
+      obtain ⟨c, hc, rfl⟩ := hA
+      obtain ⟨c', hc', rfl⟩ := hv
+      cases hc.symm.trans hc'
+      exact meaning_assign_free hF (hfree c.1 (List.mem_map_of_mem (List.mem_of_getElem? hc))) As
+        (hcapv c (List.mem_of_getElem? hc))
+    have hsig : ∀ As : List MixedFamily,
+        instanceTWithArgs (fun η S => mixedValues G η S) G.env s As (graphArguments G) j U
+          (Tm.obj h.length (.graph arity E K start vs)) := by
+      intro As
+      exact ⟨callsT_of_graph (G := reassign G (assign G.env s.binders As)) _
+          (fun p hp => hspec p (List.mem_append_left _ hp) _) (henv As) hsc,
+        restsT_of_graph (G := reassign G (assign G.env s.binders As)) _ (fun q hq => hspec _
+          (List.mem_append_right _ (List.mem_map.mpr ⟨q, hq, rfl⟩)) _) (henv As) hsc⟩
+    refine ⟨i, List.mem_singleton_self i, ?_⟩
+    change qDenoteWithArgs G (mixedParameters G) (G.env, i) j U _
+    rw [qDenoteWithArgs_unfold]
+    simp only [qLayerWithArgs, hp, hq, Bool.false_eq_true, if_false]
+    exact ⟨(hsig []).1.1, fun As _ _ => hsig As⟩
   | @ctorE Γ F U L arity b hr hu hlen hb ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, Nat.zero_add]

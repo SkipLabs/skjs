@@ -130,12 +130,20 @@ def codeChecked [DecidableEq ι] (G : NormalGraph ι) (table : List (CodeEntry �
     checkEntry G c.row.2.2 (program c.exprs c.conts) C c.start
       (bodyFrame c.arity c.row c.captures) (admits table)
 
+/-- A checked entry meets its signature in the graph reassigned at every
+assignment: the check reads none (`Parametricity.checkEntry_reassign`). -/
 theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {table c C}
     (htable : ProgramCertificates.CodesSound G (admits table))
-    (h : codeChecked G table c C = true) : c.Spec G := by
+    (h : codeChecked G table c C = true) : ∀ η, c.Spec (reassign G η) := by
+  intro η
   simp only [codeChecked, Bool.and_eq_true, decide_eq_true_eq] at h
+  have hc : checkEntry (reassign G η) c.row.2.2 (program c.exprs c.conts) C c.start
+      (bodyFrame c.arity c.row c.captures) (admits table) = true := by
+    exact (Parametricity.checkEntry_reassign G η _ _ _ _ _ _).trans h.2
+  have ht : ProgramCertificates.CodesSound (reassign G η) (admits table) :=
+    fun e he η' => htable e he η'
   exact ⟨h.1, fun n W heap L he hw hh =>
-    goto_safe h.2 htable n W heap L .nul he hw hh⟩
+    goto_safe hc ht n W heap L .nul he hw hh⟩
 
 /-- Check codes in order, each against the table of those before it. -/
 def extendTable [DecidableEq ι] (G : NormalGraph ι) :

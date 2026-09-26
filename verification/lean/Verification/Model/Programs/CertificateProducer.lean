@@ -137,6 +137,10 @@ instantiated binders. -/
 structure InstState (ι : Type) where
   table : InstTable ι := []
   found : Ctx ι := []
+  /-- Meet rows of a binder not yet found, matched against a clause row: the
+  binder, the meet's clauses and the row. The binder's instance is a type
+  whose meet with the clauses that row holds. -/
+  meets : List (ι × List (Clause (List ι)) × ι) := []
 
 /-- Match the scheme-side type `S` against the graph's type `T` under context
 `κ`, adding table entries: a parameter row to its context image, a top binder
@@ -200,6 +204,7 @@ def matchRow [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap �
                 ops.foldlM (fun st S => matchRow G bs V fuel st κ S S) st
               let image := (κ.lookup q).orElse fun _ => if bs.contains q then none else some [q]
               match image, G.meets j with
+              | none, none => some { st with meets := (q, cs, j) :: st.meets }
               | none, _ => some st
               | some U, some (r, ds) =>
                 if U = [r] ∧ ds.length = cs.length then
@@ -226,7 +231,24 @@ def matchRow [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap �
         | [p] => matchRow G bs V fuel (fixed.foldl (fun st q => add st q [q]) st) κ [p]
             (T.filter (!fixed.contains ·))
         | _ => none
-      positional.orElse fun _ => bySet
+      -- A union of binders and fixed rows (`T | U`): its image is theirs
+      -- together. Before the binders' instances are found, nothing is matched.
+      let byParts : Option (InstState ι) := do
+        let (st, img, deferred) ← S.foldlM (fun (acc : InstState ι × List ι × Bool) l =>
+          let (st, img, deferred) := acc
+          if G.params l then
+            match κ.lookup l with
+            | some U => some (add st l U, img ++ U, deferred)
+            | none =>
+              if bs.contains l then
+                match st.found.lookup l with
+                | some U => some (st, img ++ U, deferred)
+                | none => some (st, img, true)
+              else some (add st l [l], img ++ [l], deferred)
+          else if fixedBy G κ V l then some (add st l [l], img ++ [l], deferred)
+          else none) (st, [], false)
+        if deferred || (img.all (· ∈ T) && T.all (· ∈ img)) then some st else none
+      positional.orElse fun _ => bySet.orElse fun _ => byParts
 
 def matchSig [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap ι) (fuel : Nat)
     (st : InstState ι) (κ : Ctx ι) (p q : List ι × List (List ι) × List ι) :
@@ -242,38 +264,6 @@ def matchRest [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap 
   (p.1 :: p.2.2.1 :: p.2.2.2 :: p.2.1).zip (q.1 :: q.2.2.1 :: q.2.2.2 :: q.2.1) |>.foldlM
     (fun st xy => matchRow G bs V fuel st κ xy.1 xy.2) st
 
-/-- The rows `S` reads, transitively, without repeats, in the order they are
-first reached. Only the rows added by the last step are read again: the rows
-before them have had their reads added already, so each row is read once. -/
-def readsFrom [DecidableEq ι] (G : NormalGraph ι) (fuel : Nat) (S : List ι) : List ι :=
-  let S := S.eraseDups
-  go fuel S S
-where
-  go : Nat → List ι → List ι → List ι
-  | 0, seen, _ => seen
-  | fuel + 1, seen, frontier =>
-    let fresh := (frontier.flatMap (reads G)).foldl (fun acc l =>
-      if seen.contains l || acc.contains l then acc else l :: acc) []
-    if fresh.isEmpty then seen else go fuel (seen ++ fresh.reverse) fresh.reverse
-
-/-- The free parameter rows of the rows of `D`, by iteration to a fixed point:
-a parameter row is free in itself, and a row has the free rows of what it
-reads, except a scheme row's own binders. Untrusted: `FreeOk` checks it. -/
-def freeMapOf [DecidableEq ι] (G : NormalGraph ι) (D : List ι) : Nat → FreeMap ι → FreeMap ι
-  | 0, V => V
-  | fuel + 1, V =>
-    let step (i : ι) : List ι :=
-      let bound := match G.schemes i with
-        | some s => s.binders
-        | none => []
-      ((if G.params i then [i] else []) ++
-        (match G.meets i with | some (q, _) => [q] | none => []) ++ fv V i ++
-        (reads G i).flatMap fun l => (fv V l).filter (fun p => !bound.contains p)).eraseDups
-    let V' := D.map fun i => (i, step i)
-    if D.all (fun i => (fv V' i).length == (fv V i).length) then V' else freeMapOf G D fuel V'
-
-/-- How far to follow a graph's rows. -/
-def closureFuel : Nat := 4096
 
 /-- The types a proof of `A ≤ B` may relate: the two, every row they reach,
 and every operand of those rows' clauses, a union such as an index contract
@@ -302,7 +292,8 @@ def nearPool [DecidableEq ι] (G : NormalGraph ι) (A B : Ty ι) : List (Ty ι) 
 `L`, `M`: find the binders' instances, then build the table under the context
 giving each binder its instance. Untrusted: `checkInstArrs` validates it. -/
 def instanceFor [DecidableEq ι] (G : NormalGraph ι) (fuel : Nat) (s : SchemeRow ι)
-    (L : PositiveRules.Ops ι) (M : List (List ι × List (List ι) × List ι × List ι)) :
+    (L : PositiveRules.Ops ι) (M : List (List ι × List (List ι) × List ι × List ι))
+    (candidates : List (Ty ι) := []) :
     Option (PositiveCertificates.Instance ι) := do
   let roots := s.signatures.flatMap (fun p => p.1 ++ p.2.1.flatten ++ p.2.2) ++
     s.variadic.flatMap (fun p => p.1 ++ p.2.1.flatten ++ p.2.2.1 ++ p.2.2.2) ++
@@ -318,8 +309,24 @@ def instanceFor [DecidableEq ι] (G : NormalGraph ι) (fuel : Nat) (s : SchemeRo
     M.foldlM (fun st q =>
       s.variadic.findSome? fun p => matchRest G s.binders V fuel st κ p q) st
   let first ← each [] {}
-  let θs := s.binders.map fun b => (first.found.lookup b).getD [b]
+  -- A binder read only through meet rows: an instance among the candidates
+  -- whose meet with the row's clauses is the clause row it was matched to.
+  let throughMeet (b : ι) : Option (Ty ι) := first.meets.findSome? fun (q, cs, j) =>
+    if q != b then none else candidates.find? fun U => G.plainTy U &&
+      (PositiveRules.sameClauses (G j) (meetLists (PositiveRules.clausesOf G U) cs) ||
+        PositiveRules.sameClauses (G j) (meetLists cs (PositiveRules.clausesOf G U)))
+  let θs := s.binders.map fun b => ((first.found.lookup b).orElse fun _ => throughMeet b).getD [b]
   let κ₀ := s.binders.zip θs
+  -- An instance found through a meet row is named by no target row: the
+  -- table's domain holds it too.
+  let (D, V) := if first.meets.isEmpty then (D, V) else
+    let D := readsFrom G closureFuel (roots ++ θs.flatten)
+    (D, freeMapOf G D closureFuel [])
+  let each (κ : Ctx ι) (st : InstState ι) : Option (InstState ι) := do
+    let st ← L.foldlM (fun st q =>
+      s.signatures.findSome? fun p => matchSig G s.binders V fuel st κ p q) st
+    M.foldlM (fun st q =>
+      s.variadic.findSome? fun p => matchRest G s.binders V fuel st κ p q) st
   let final ← each κ₀ {}
   -- Each instance within its binder's bounds: inclusion, or a core table.
   let certs ← s.bounds.mapM fun b =>
@@ -333,12 +340,13 @@ def instanceFor [DecidableEq ι] (G : NormalGraph ι) (fuel : Nat) (s : SchemeRo
   some ⟨final.table, θs, certs, D, V⟩
 
 /-- A scheme row below an arrow type. -/
-def instProof [DecidableEq ι] (G : NormalGraph ι) (fuel : Nat) (A B : Ty ι) :
+def instProof [DecidableEq ι] (G : NormalGraph ι) (fuel : Nat) (A B : Ty ι)
+    (candidates : List (Ty ι) := []) :
     Option (PositiveCertificates.Proof ι) :=
   match A, expand G B with
   | [i], [.arrs L M] =>
     match G.schemes i with
-    | some s => (instanceFor G fuel s L M).map .inst
+    | some s => (instanceFor G fuel s L M candidates).map .inst
     | none => none
   | _, _ => none
 
@@ -412,7 +420,7 @@ def subtype [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
   (if A.all (· ∈ B) then some .subset else none) <|>
   (subtypeBase G [] A B) <|> ((tableProof G fuel A B).filter ok) <|>
     (subtypeBase G (nearPool G A B) A B) <|> (subtypeBase G pool A B) <|>
-    ((instProof G fuel A B).filter ok) <|> proto (nearPool G A B) <|> proto pool <|>
+    ((instProof G fuel A B pool).filter ok) <|> proto (nearPool G A B) <|> proto pool <|>
     ((genProof G pool fuel A B).filter ok)
 /-- Proofs that the member of key `k` on `O` covers each fixed signature of
 `F`: for each, a member signature of as many parameters, each claimed

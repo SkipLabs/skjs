@@ -154,7 +154,7 @@ def within (T : SourceTypes.Table) (C A : List Nat) : Bool :=
   (SourceTypes.canonical T C).all (SourceTypes.canonical T A).contains ||
     (let G := SourceTypes.graph T
      let pool := CertificateProducer.vocabulary G
-       (CertificateProducer.readsFrom G CertificateProducer.closureFuel (C ++ A)) [] [C, A]
+       (ProgramTyping.readsFrom G ProgramTyping.closureFuel (C ++ A)) [] [C, A]
      match CertificateProducer.subtype G pool C A with
        | some proof => PositiveCertificates.check G C A proof
        | none => false)
@@ -1632,13 +1632,17 @@ private partial def firstUse (name : String) : Fragment.Expr → Option Span
 source binding the arm reads before any branch of its own holds what the
 producer claims that read at, which the edge from the condition checks as it
 checks a statement entry's claims (a slice by the test, a field slice, a
-present key); the others, the condition's own refinement. -/
+present key); the others, the condition's own refinement. A binding at a
+scheme row keeps it: no test narrows a scheme, and a call reads it at the
+instance it names, not the binding. -/
 private def armContext (fc : SourceClaims.Function) (scope : List ScopeBinding)
-    (Γ : List (Ty Nat)) (arm : Fragment.Expr) : Compiler (List (Ty Nat)) :=
+    (Γ : List (Ty Nat)) (arm : Fragment.Expr) : Compiler (List (Ty Nat)) := do
+  let G := SourceTypes.graph (← table)
   scope.zipIdx.foldlM (fun Δ (b,i) => do
     match b.storage, firstUse b.source.name arm with
     | .value, some p =>
       if b.source.name == "" || isSnapshot b.source.name then return Δ
+      if (Γ[i]?.bind (ProgramCertificates.schemeOf G ·)).isSome then return Δ
       match fc.exprs.lookup p with
       | some _ => return Δ.set i (← claimAt fc p)
       | none => return Δ
@@ -2300,7 +2304,13 @@ private partial def graphClosure (fc : SourceClaims.Function) (scope : List Scop
   let Rsource ← match receiverAnnot with
     | some annot => lower (Fragment.callableType annot)
     | none => pure [top]
-  let [.arrs L S] := PositiveRules.expand G A | throw "closure claim must name a source arrow"
+  -- A generic closure's claim is a scheme row: its code is checked at the
+  -- scheme's signatures, over its binders' rows.
+  let (L, S) ← match ProgramCertificates.schemeOf G A with
+    | some (_, s) => pure (s.signatures, s.variadic)
+    | none => match PositiveRules.expand G A with
+      | [.arrs L S] => pure (L, S)
+      | _ => throw "closure claim must name a source arrow"
   let rows := ProgramTyping.offerRows L S
   let Ds ← params.mapM fun p => lower (Fragment.callableType p.2)
   -- A claim may offer more parameters than the closure takes: calls discard
@@ -3110,10 +3120,13 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
         ++ omittedPremises Γ Ds actuals.length))
   | .lambda pos receiverAnnot typeParams params defaults rest ret (.block bpos stmts) => do
     -- A body of statements is a graph, as a function body is, unless the
-    -- closure's code must be a term: a generic closure's, whose certificate
-    -- is universal over its binders, or one collecting a rest array or
-    -- binding rest positions, whose code allocates the array itself.
-    let polymorphic := !typeParams.isEmpty ||
+    -- closure's code must be a term: a generic closure's the scheme path
+    -- compiles, or one collecting a rest array or binding rest positions,
+    -- whose code allocates the array itself. A generic closure claimed at a
+    -- scheme row is graph code checked at the row's signatures, its binders
+    -- the row's (`HasTy.funScheme`).
+    let schemeRow := (ProgramCertificates.schemeOf G A).isSome
+    let polymorphic := (!typeParams.isEmpty && !schemeRow) ||
       (params.map Prod.snd ++ ret.toList).any GenericSource.mentionsParam
     if !polymorphic && !rest && defaults.isEmpty then
       graphClosure fc scope Γ pos receiverAnnot params (.block bpos stmts) A
@@ -3129,7 +3142,8 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let termForm := match body with
       | .atEnv .. | .letBody .. | .seqBody .. | .ifBody .. | .throwBody .. | .destructBody .. | .done .. => true
       | _ => false
-    if !termForm && typeParams.isEmpty && !(params.map Prod.snd ++ ret.toList).any GenericSource.mentionsParam then
+    if !termForm && (typeParams.isEmpty || (ProgramCertificates.schemeOf G A).isSome) &&
+        !(params.map Prod.snd ++ ret.toList).any GenericSource.mentionsParam then
       graphClosure fc scope Γ pos receiverAnnot params body A
     else closureTerm fc scope Γ e
   | .lambda .. => closureTerm fc scope Γ e
@@ -4870,6 +4884,9 @@ consumer still checks against the complete graph and the exact request. -/
 def SourceRequest.searchLabels (r : SourceRequest) : List Nat :=
   let roots := ([0,1,2,3] ++ r.result ++ r.inputs.flatten ++ r.hints ++
     r.claims.flatMap (fun (c : PointClaim Nat) => c.type ++ c.context.flatten) ++
+    -- A closure's code is searched with the request's vocabulary: what its
+    -- claims mention is part of it (a generic closure's binder rows).
+    r.codes.flatMap (fun (q : RequestJson.CodeRequest) => q.claims.flatMap (fun (c : PointClaim Nat) => c.type ++ c.context.flatten)) ++
     r.obligations.flatMap (fun (o : ExpressionClaims.Required) => o.sequent.type ++ o.sequent.context.flatten)).eraseDups
   -- Readonly array coercions depend on the store's element unions two levels
   -- below the object. Close the vocabulary over the finite reachable graph,

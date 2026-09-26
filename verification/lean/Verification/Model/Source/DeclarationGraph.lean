@@ -351,7 +351,7 @@ private def reach (m : Memo) (T : SourceTypes.Table) (floor limit : Nat) (A : Li
       if seen.length > limit then seen
       else if seen.contains l then go fuel seen todo
       else go fuel (seen ++ [l]) (todo ++ next l)
-  go CertificateProducer.closureFuel [] A
+  go ProgramTyping.closureFuel [] A
 
 /-- A binder row's colour, from its name `…^c`. -/
 private def colourOf (name : String) : Option Nat :=
@@ -362,7 +362,7 @@ private def colourOf (name : String) : Option Nat :=
 /-- The colours of the binder rows `labels` reach. A binder a nested scheme
 binds counts too: the colours taken are over-approximated, never missed. -/
 private def freeColours (m : Memo) (T : SourceTypes.Table) (floor : Nat) (labels : List Nat) : List Nat :=
-  (reach m T floor CertificateProducer.closureFuel labels).filterMap fun p => match T[p]? with
+  (reach m T floor ProgramTyping.closureFuel labels).filterMap fun p => match T[p]? with
     | some (RequestJson.Row.param _ n _) => colourOf n
     | _ => none
 

@@ -235,12 +235,27 @@ certified at every instantiation. A call of a generic module value names its
 instance, checked against the value's signature and bounds
 ([instances](PROGRAM-TYPING.md#imported-ambient-and-global-values)).
 
+A generic closure is graph code at a scheme row
+([`funScheme`](PROGRAM-TYPING.md#judgments-and-constructor-views)): its
+claimed scheme becomes a row whose binders are fresh parameter rows, every
+claim and annotation inside it reads its binders as those rows (a bounded one
+as its meet with the bound), and its code is checked once, at the scheme's
+signatures. A code table entry holds at every assignment of the parameter
+rows (`CodesSound`, `checkCodes_reassign`), so at every instantiation; the
+captures' types read none of the binders, so they mean the same at each.
+Generic closures nest, in function bodies and in generic ones alike. A call
+names its instance: the callee is read at the instance's signature, below the
+scheme by a checked instance (`Sub.inst`).
+
 Two older paths remain. The direct rigid checker (`GenericSource`) is tried
 first for variable-copy bodies and dependent bounds (`U extends T`), which it
 states located obligations for; a body outside its forms goes to the graph.
-One local quantified closure per function has its introduction checked once
-under rigid binders (`ClosureCertificate`) and its eliminations compiled to
-ordinary arrows ([quantified schemes](POSITIVE-TYPES.md#quantified-scheme-layer)).
+A generic closure graph code cannot yet express (a rest parameter, a
+parameter default, a bound naming another of its binders) has its
+introduction checked under rigid binders (`ClosureCertificate`) and its
+eliminations compiled to ordinary arrows
+([quantified schemes](POSITIVE-TYPES.md#quantified-scheme-layer)), one such
+closure per function.
 
 ### Closures are graph code
 
@@ -248,11 +263,13 @@ A closure's body is a graph, as a function body is (`funGraph`,
 [graph code](SEMANTICS.md#graph-code)), checked by its own certificate at
 each signature its claim offers, entered with its receiver, parameters and
 captured slots. Mutable locals, loops, `switch`, `try` and patterns inside a
-closure are the same graph shapes as anywhere. Five kinds of closure still
-keep term code (`funE`, `funRest`, `ctorE`, `makeCallable`): a generic
-closure, one with a rest parameter, one with a parameter default, a class
-constructor, and a callable object built by `Object.assign`. A statement
-form not admitted in term code is refused there ([next steps](#next-steps)).
+closure are the same graph shapes as anywhere; a generic closure's code is
+checked at its scheme's signatures ([generic bodies](#generic-bodies)). Four
+kinds of closure still keep term code (`funE`, `funRest`, `ctorE`,
+`makeCallable`): one with a rest parameter, one with a parameter default, a
+class constructor, and a callable object built by `Object.assign`. A
+statement form not admitted in term code is refused there
+([next steps](#next-steps)).
 
 ### SKJS is frozen
 
@@ -813,21 +830,24 @@ trust surface into theorems; the expected results and their cost are in
   discards them;
 - a parameter default needs entry nodes, a tag dispatch on `undefined` at the
   parameter's slot first in the graph, as a function's default already is,
-  with `parameterOrder`'s deferred closures as statements;
-- a generic closure needs its code checked universally, one code request at
-  its binders' parameter rows (`checkCodes_reassign` already makes the table
-  assignment-free); a throw inside one then comes for free;
+  with `parameterOrder`'s deferred closures as statements; with rest
+  parameters, it retires the rigid path for generic closures;
 - a class constructor needs construct-only graph code, a `ctorE` for graph
   code at construct signatures with `undefined` for the receiver; constructor
   defaults and rests follow;
 - a callable object built by `Object.assign` needs `makeCallable` over graph
   code, one table entry per advertised overload.
 
-**Generic methods with their own binders**, and a generic closure inside a
-generic body: typing one needs scheme introduction in the program typing, a
-closure at a scheme row whose body is checked at every reassignment of the
-scheme's binders. With it, the direct rigid checker (`GenericSource`) can be
-retired once the graph path reads dependent bounds (`U extends T`).
+**Generic class methods.** A class method with binders of its own is a
+closure at a scheme row, as a generic closure is; its member in the class's
+instance type is a scheme-typed view, which the producer does not yet encode
+inside a record's claim.
+
+**Dependent bounds** (`U extends T`) on the graph path: a bound naming
+another binder is read at the instantiation, which a scheme row's bounds and
+a meet row's clauses are not. A meet of two parameter rows, with its bound
+read under the reassignment, would let the graph read them and retire the
+direct rigid checker (`GenericSource`).
 
 **`Promise<A> ≤ Promise<B>`**, and generally two applications whose methods
 are generic: relating them needs a subtyping rule for quantified signatures,

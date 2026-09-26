@@ -150,14 +150,35 @@ def capSlotsBelow (caps : List Tm) (n : Nat) : Bool :=
   | some slots => slots.all (· < n)
   | none => false
 
-/-- Every signature the arrow type `A` offers is a checked entry of graph code
-with captures at `Cs`. -/
+/-- The scheme row a type is, if it is one. -/
+def schemeOf (G : NormalGraph ι) : Ty ι → Option (ι × SchemeRow ι)
+  | [i] => if G.params i then none else (G.schemes i).map (i, ·)
+  | _ => none
+
+theorem schemeOf_plain {G : NormalGraph ι} {A : Ty ι} (h : G.plainTy A = true) :
+    schemeOf G A = none := by
+  unfold schemeOf
+  split
+  · rename_i i
+    have hi := NormalGraph.plain_iff.mp (List.all_eq_true.mp h i (by simp))
+    simp [hi.1, hi.2.1]
+  · rfl
+
+/-- Every signature the type `A` offers is a checked entry of graph code with
+captures at `Cs`: an arrow type's signatures, or, for a generic closure, a
+scheme row's, whose captures' types then read none of its binders. A table
+entry is checked at every assignment of the parameter rows
+(`CodesSound`), so at every instantiation of the scheme's binders. -/
 def graphCodesChecked [DecidableEq ι] (G : NormalGraph ι) (A : Ty ι) (codes : CodeEntry ι → Bool)
     (arity : Nat) (E : List Tm) (K : List (ControlFlow.Continuation × Option ControlFlow.Target))
     (start : Nat) (Cs : List (Ty ι)) : Bool :=
-  match expand G A with
-  | [.arrs L S] => (offerRows L S).all fun p => codes ⟨arity, E, K, start, Cs, p⟩
-  | _ => false
+  match schemeOf G A with
+  | some (_, s) => capturesFree G s Cs &&
+      (offerRows s.signatures s.variadic).all fun p => codes ⟨arity, E, K, start, Cs, p⟩
+  | none =>
+    match expand G A with
+    | [.arrs L S] => (offerRows L S).all fun p => codes ⟨arity, E, K, start, Cs, p⟩
+    | _ => false
 
 /-- The prototype type `P` has a field or view `f` at `A`. -/
 def ProtoMember (G : NormalGraph ι) (P : Ty ι) (f : PropKey) (A : Ty ι) : Prop :=
@@ -566,9 +587,12 @@ def check [DecidableEq ι] (G : NormalGraph ι) (t : Tm) (A : Ty ι) (e : Eviden
     (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
   decide (claim e = ⟨[], t, A⟩) && checkScope 0 t && checkTree G e codes
 
-/-- A code table is sound when each entry's code meets its signature. -/
+/-- A code table is sound when each entry's code meets its signature in the
+graph reassigned at every assignment of its parameter rows: a code check reads
+no assignment (`Parametricity`), so a checked table is sound at all of them,
+which is what a generic closure's creation needs (`HasTy.funScheme`). -/
 def CodesSound (G : NormalGraph ι) (codes : CodeEntry ι → Bool) : Prop :=
-  ∀ c, codes c = true → c.Spec G
+  ∀ c, codes c = true → ∀ η, c.Spec (reassign G η)
 
 theorem codesSound_none (G : NormalGraph ι) : CodesSound G (fun _ => false) := by
   intro c h; cases h
@@ -596,30 +620,46 @@ theorem funGraph_of_local [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
       have : caps.map Prod.snd = slots := List.map_snd_zip (by omega)
       rw [← this, List.map_map]; rfl
     have hfst : caps.map Prod.fst = ps.map Sequent.type := List.map_fst_zip (by omega)
+    have hlt : ∀ c ∈ caps, c.2 < Γ.length := fun c hc => by
+      have := List.of_mem_zip hc
+      exact of_decide_eq_true (List.all_eq_true.mp hslots c.2 this.2)
+    have hcap : ∀ c ∈ caps, HasTy G Γ (.var c.2) c.1 := fun c hc => by
+      obtain ⟨i, hi, hci⟩ := List.mem_iff_getElem.mp hc
+      have hi' : i < ps.length := by simp [caps] at hi; omega
+      have hsl : i < slots.length := by simp [caps] at hi; omega
+      rw [List.getElem_zip] at hci
+      subst hci
+      have hq := hp ps[i] (List.getElem_mem hi')
+      have ht : ps[i].term = .var slots[i] := by
+        have := congrArg (·[i]?) hterms
+        simp [List.getElem?_map, List.getElem?_eq_getElem hi', List.getElem?_eq_getElem hsl] at this
+        exact this
+      rw [hctx _ (List.getElem_mem hi'), ht] at hq
+      simpa using hq
+    rw [← hvar]
     unfold graphCodesChecked at hok
     split at hok
-    · rename_i L S hL
-      have h := HasTy.funGraph (caps := caps) (E := E) (K := K) (start := start) (arity := arity) hL
-        (fun q hq => by rw [hfst]; exact hcodes _ (List.all_eq_true.mp hok q hq))
-        (fun c hc => by
-          have := List.of_mem_zip hc
-          exact of_decide_eq_true (List.all_eq_true.mp hslots c.2 this.2))
-        (fun c hc => by
-          obtain ⟨i, hi, hci⟩ := List.mem_iff_getElem.mp hc
-          have hi' : i < ps.length := by simp [caps] at hi; omega
-          have hsl : i < slots.length := by simp [caps] at hi; omega
-          rw [List.getElem_zip] at hci
-          subst hci
-          have hq := hp ps[i] (List.getElem_mem hi')
-          have ht : ps[i].term = .var slots[i] := by
-            have := congrArg (·[i]?) hterms
-            simp [List.getElem?_map, List.getElem?_eq_getElem hi', List.getElem?_eq_getElem hsl] at this
-            exact this
-          rw [hctx _ (List.getElem_mem hi'), ht] at hq
-          simpa using hq)
-      rw [hvar] at h
-      exact h
-    · contradiction
+    · -- A generic closure: its type is a scheme row.
+      rename_i i s hs
+      simp only [Bool.and_eq_true, List.all_eq_true] at hok
+      unfold schemeOf at hs
+      split at hs
+      · rename_i i'
+        split at hs
+        · cases hs
+        · rename_i hpar
+          obtain ⟨s', hq, he⟩ := Option.map_eq_some_iff.mp hs
+          cases he
+          exact HasTy.funScheme (caps := caps) (E := E) (K := K) (start := start) (arity := arity)
+            (by simpa using hpar) hq
+            (fun q hq' η => by rw [hfst]; exact hcodes _ (hok.2 q hq') η)
+            (by rw [hfst]; exact hok.1) hlt hcap
+      · cases hs
+    · split at hok
+      · rename_i L S hL
+        exact HasTy.funGraph (caps := caps) (E := E) (K := K) (start := start) (arity := arity) hL
+          (fun q hq => by rw [hfst]; exact hcodes _ (List.all_eq_true.mp hok q hq) G.env) hlt hcap
+      · contradiction
   · contradiction
 
 theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : CodeEntry ι → Bool}
@@ -1338,7 +1378,28 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
         simp only [capSlotsBelow, hv, List.all_eq_true, List.mem_map]
         rintro _ ⟨c, hc, rfl⟩
         exact decide_eq_true (hlt c hc)
-      · simp [graphCodesChecked, show expand G F = [.arrs L S] from hr]
+      · simp [graphCodesChecked, schemeOf_plain (Represents.plain hr),
+          show expand G F = [.arrs L S] from hr]
+    · intro j hj
+      obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hj
+      exact ih c hc
+  | @funScheme Γ i s arity start E K caps hp hq hspec hcf hlt hcap ih =>
+    apply node_complete (r := .funGraph)
+      (j := ⟨Γ, .make (.graph arity E K start (caps.map fun c => .var c.2)) .nul, [i]⟩)
+      (js := caps.map fun c => ⟨Γ, .var c.2, c.1⟩)
+    · refine ⟨rfl, rfl, by simp, ?_, ?_, ?_⟩
+      · intro q hq
+        obtain ⟨c, _, rfl⟩ := List.mem_map.mp hq
+        rfl
+      · have hv : varSlots (caps.map fun c => Tm.var c.2) = some (caps.map Prod.snd) := by
+          have := varSlots_map (caps.map Prod.snd)
+          simpa [List.map_map, Function.comp_def] using this
+        simp only [capSlotsBelow, hv, List.all_eq_true, List.mem_map]
+        rintro _ ⟨c, hc, rfl⟩
+        exact decide_eq_true (hlt c hc)
+      · have hmap : (caps.map fun c => (⟨Γ, .var c.2, c.1⟩ : Sequent ι)).map Sequent.type =
+            caps.map Prod.fst := by simp
+        simp [graphCodesChecked, schemeOf, hp, hq, hmap, hcf]
     · intro j hj
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hj
       exact ih c hc
