@@ -739,6 +739,13 @@ class Gate {
       const readsThis = (n: Node): boolean =>
         n.kind === ts.SyntaxKind.ThisKeyword ||
         (!ts.isFunctionExpression(n) && !ts.isFunctionDeclaration(n) && !!n.forEachChild((c) => readsThis(c) || undefined));
+      // In a static member, `super` is the base's constructor, whose statics
+      // are bindings of their own, not the prototype `super.m(...)` reads.
+      const readsSuper = (n: Node): boolean =>
+        n.kind === ts.SyntaxKind.SuperKeyword ||
+        (!ts.isFunctionExpression(n) && !ts.isFunctionDeclaration(n) && !ts.isClassDeclaration(n) && !ts.isClassExpression(n) &&
+          !!n.forEachChild((c) => readsSuper(c) || undefined));
+      const STATIC_SUPER = "`super` in a static member is outside the fragment: it is the base's constructor, whose statics are bindings of their own";
       // A derived class without a constructor has JavaScript's implicit one,
       // `constructor(...args) { super(...args); }`: it takes its base's
       // parameters, at their types, under names no source binding spells,
@@ -783,6 +790,7 @@ class Gate {
         if (ts.isClassStaticBlockDeclaration(member)) {
           if (readsThis(member.body))
             this.fail(member, "a static block that reads `this` is outside the fragment: its receiver is the class value, whose statics are bindings of their own");
+          if (readsSuper(member.body)) this.fail(member, STATIC_SUPER);
           this.selfClass = null;
           const start = member.getStart(this.file);
           const keyword: Span = [start, start + "static".length];
@@ -824,6 +832,7 @@ class Gate {
             // plainly. Its signature is its annotation: functions read it there.
             if (member.body && readsThis(member.body))
               this.fail(member, "a static method that reads `this` is outside the fragment");
+            if (member.body && readsSuper(member.body)) this.fail(member, STATIC_SUPER);
             const annot = member.type && !member.typeParameters?.length
               ? signature(this.scope, member.parameters, member.type, member, this.span(member), true) : null;
             staticMethods.push({ name: binding, namePos: this.span(member.name), annot, init: this.lambda(member) });
@@ -834,6 +843,7 @@ class Gate {
             this.fail(member, "a static field must be readonly and required");
           if (member.initializer && readsThis(member.initializer))
             this.fail(member, "a static initializer that reads `this` is outside the fragment");
+          if (member.initializer && readsSuper(member.initializer)) this.fail(member, STATIC_SUPER);
           statics.push({ name: binding, namePos: this.span(member.name),
             annot: member.type ? this.typeOf(member.type, member) : null,
             init: member.initializer ? this.expr(member.initializer)

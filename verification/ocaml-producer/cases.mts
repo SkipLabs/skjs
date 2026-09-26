@@ -793,6 +793,8 @@ export const cases: Case[] = [
   negative("invalid-class-async-method", "an async method's promise settles to what its body returns, which must meet the annotation", /return-contract claim/),
   positive("class-static-block", "a static block runs where it stands among the static fields, as the closure of its statements called at once, its declarations its own, reading statics by name"),
   negative("invalid-class-static-block", "a static block's statements are checked as a closure body's", /No rule derives this invoke/),
+  gap("class-static-super-refused", "`super` in a static member is the base's constructor, whose statics are bindings of their own, not the prototype `super.m(...)` reads",
+    "unsupported", "source", /`super` in a static member is outside the fragment/),
   gap("class-static-block-this-refused", "a static block reading `this` reads the class value, whose statics are bindings of their own",
     "unsupported", "source", /a static block that reads `this` is outside the fragment/),
   positive("class-private-members", "a private name `#x` is a key no code outside its class spells, a symbol of its own: private fields are own keys of each instance, read and written in methods and the constructor, private methods the prototype's, static ones bindings; a spread copies no private slot"),

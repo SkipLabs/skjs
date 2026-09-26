@@ -717,7 +717,7 @@ not yet taken are [next steps](#next-steps); a search failure is neither.
 | A `let` binding captured by a closure in a `for` loop | JavaScript copies it per iteration. |
 | `this` before `super(...)`; a statement reading `this` before the instance is complete | The instance is allocated at the end; no term stands for the uninitialized binding. |
 | A base class declared later, imported, ambient, a library class (`extends Array`), or an expression | Nothing in the file says what its constructor allocates. |
-| A static method that reads `this`; a mutable static field | Statics are module bindings, exact only when immutable; a static method's receiver is whatever its call passes. |
+| A static method that reads `this`; `super` in a static member; a mutable static field | Statics are module bindings, exact only when immutable; a static method's receiver is whatever its call passes, and its `super` the base's constructor, not the prototype `super.m(...)` reads. |
 | A catch binding annotated other than `unknown`, or destructured | Anything may be thrown. |
 | A template literal type with a `${string}` hole; a computed type over a type parameter; `keyof` with a unique-symbol key; `typeof` of an unannotated binding or of a class with statics | No term of the fragment states it exactly. |
 | TypeScript's `any` in the checked module's own annotations; a contextual closure parameter TypeScript types `any` | It states no contract. |
