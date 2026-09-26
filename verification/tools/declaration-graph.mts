@@ -347,6 +347,12 @@ export function collectDeclarations(file: string, options: {
    * `methodTarget`. */
   receiverTargets?: readonly Span[];
   methodTarget?: (span: Span) => void;
+  /** The client's element reads `e[k]`: each whose object TypeScript types
+   * as arrays and tuples only and whose key as `number`, no literal, is
+   * reported to `hostElement`, and the intrinsics, among them
+   * `%ElementAt%`, which reads it, join the values. */
+  elementReads?: readonly Span[];
+  hostElement?: (span: Span) => void;
   /** Identifiers of the client that may name one of its local bindings: each
    * that TypeScript binds to a value declaration in the client is reported
    * to `bindingRead` with the span of that declaration's name. A shorthand
@@ -1094,6 +1100,19 @@ export function collectDeclarations(file: string, options: {
       if (parts.length && parts.every(t => !!(t.flags & TypeFlags.StringLiteral))) continue;
       listIntrinsics(span);
       options.hostIn?.(span);
+    }
+    for (const span of options.elementReads ?? []) {
+      const read = expressionAt(client, span);
+      if (!read || !ts.isElementAccessExpression(read)) throw new DeclarationError(span, "TypeScript element read missing");
+      const object = checker.getTypeAtLocation(read.expression);
+      const key = checker.getTypeAtLocation(read.argumentExpression);
+      const objects = object && isUnionType(object) ? object.getTypes() : object ? [object] : [];
+      const keys = key && isUnionType(key) ? key.getTypes() : key ? [key] : [];
+      if (objects.length && objects.every(t => checker.isArrayType(t) || checker.isTupleType(t)) &&
+          keys.length && keys.every(t => !!(t.flags & TypeFlags.Number))) {
+        listIntrinsics(span);
+        options.hostElement?.(span);
+      }
     }
     for (const span of options.receiverTargets ?? []) {
       const name = identifierAt(client, span);

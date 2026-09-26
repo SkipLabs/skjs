@@ -39,6 +39,13 @@
  *   conversion of a string, a number or a symbol runs no code, and neither
  *   does the lookup on the objects a program holds (no proxy, DESIGN.md
  *   "Trust surface"); the answer is a Boolean, which narrows nothing.
+ * - `xs[k]` of an array or a tuple at a key TypeScript types as `number` (no
+ *   literal) is `%ElementAt%(xs, k)`: the property the number names, an
+ *   element where it is an index below the length, an own property of
+ *   another numeric key, which `Array<T>`'s declared `[n: number]: T` says
+ *   holds a `T`, else `undefined`, since the realm's `Array.prototype` and
+ *   `Object.prototype` own no numeric key. The read runs no code (no
+ *   accessor or proxy, DESIGN.md "Trust surface").
  *
  * The reviewed overlay of library globals (`library-globals.mts`) reads some
  * members as these: `Promise.resolve(v)` is `%AsyncReturn%(v)`, a promise
@@ -65,6 +72,7 @@ export const iterateMapName = "%Iterate:Map%";
 export const iterateIteratorName = "%Iterate:Iterator%";
 export const forInName = "%ForIn%";
 export const hasPropertyName = "%HasProperty%";
+export const elementAtName = "%ElementAt%";
 export const promiseAllName = "%PromiseAll%";
 export const promiseRejectName = "%PromiseReject%";
 export const newPromiseName = "%NewPromise%";
@@ -195,5 +203,8 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm):
       type: fn([atom("unknown")], { k: "array", readonly: true, element: atom("string"), span }) },
     { name: hasPropertyName, typeParams: [],
       type: fn([either(atom("string"), atom("number"), atom("symbol")), atom("object")], atom("boolean")) },
+    { name: elementAtName, typeParams: [{ name: "T", bound: null }],
+      type: fn([{ k: "array", readonly: true, element: binder, span }, atom("number")],
+        either(binder, atom("undefined"))) },
   ];
 }

@@ -2463,8 +2463,22 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
          result
        | Atoms [Shape {calls=[signature];_}]
            when signature.quantified<>[] && signature.variadic<>None ->
+         (* The binders the receiver fixes alone (`push` of a `T[]`, the
+            array's `T`): a fresh literal at a parameter they instantiate is
+            built at it, as TypeScript's contextual type of it is. A hint:
+            Lean checks the actual at the instance. *)
+         let fixed = lazy (if not (Semantic.mentions_rigid signature.receiver) then None else
+           try Some (Inference.infer ~expand:(expand_named declarations) ~receiver:receiver_type
+                  {signature with params=[];variadic=None} []).substitution
+           with Json.Error _ -> None) in
+         let built (arg:expr) i = match arg.node,Lazy.force fixed,param_at signature i with
+           | (Alloc _ | ArrayLiteral _),Some solution,Some p
+             when not (List.exists (fun (_,a) -> a = ValueArgument top) solution) ->
+             let t = Inference.substitute solution p in
+             if Semantic.mentions_rigid t then None else Some t
+           | _ -> None in
          let actuals = List.concat (List.mapi (fun i arg ->
-           let actual = expr env arg in
+           let actual = expr ?expected:(if List.mem i spreads then None else built arg i) env arg in
            if not (List.mem i spreads) then [actual]
            else if i < List.length signature.params then
              unsupported "a spread cannot fill fixed parameters of a variadic signature"

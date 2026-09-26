@@ -784,13 +784,10 @@ export const cases: Case[] = [
   negative("invalid-unassigned-let", "`let x: number;` assigned on one path only reads `undefined` on the other"),
   negative("invalid-captured-unassigned-let", "a closure reads a captured `let x: T;` at `T | undefined`: it may run before the assignment, though TypeScript accepts it",
     /source expression obligation at \[349,350\)/),
-  gap(
-    "dynamic-index",
-    "arbitrary numeric indexing",
-    "unverified",
-    "search",
-    /proved array-index singleton/,
-  ),
+  positive("dynamic-index", "an array read at a `number` key is the host's `%ElementAt%`: an element, or `undefined`"),
+  negative("invalid-dynamic-index", "a read at a `number` key may find no element"),
+  positive("method-receiver-literal", "a fresh literal at a prototype member's binder its receiver fixes is built at the receiver's element"),
+  negative("invalid-method-receiver-literal", "an element must meet the array's element type"),
   positive("optional-field", "an optional field reads at its contract or undefined"),
   gap(
     "module-function-assignment",

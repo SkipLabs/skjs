@@ -653,7 +653,7 @@ const CLASSES: ClassEntry[] = [
   { cls: "gap", label: "absent-key and dictionary presence facts", re: /an optional key found `undefined`|a read of a key `in` found in a dictionary/,
     why: "needs a clause stating an absent key or dictionary presence" },
   { cls: "gap", label: "numeric keys and indices", re: /numeric array key|numeric property keys|position \d+ is outside the array|`in` with a key that is not a union|record index requires a string key/,
-    why: "a number not proved an array index names an ordinary property, and an array may own keys besides its elements (DESIGN, Lasting decisions), which its type does not bound: needs an index type (an integer below the length, as a loop's counter is) or an array shape bounding its canonical numeric keys" },
+    why: "a numeric key read where TypeScript's types are not an array and a `number` (the host's `%ElementAt%` reads those): a receiver that may be a record, a key of several numeric literals, which the model reads as array indices only where each is proved one" },
   { cls: "gap", label: "reads the producer holds on no object", re: /(field|indexed) read on non-object|the producer and TypeScript disagree on the receiver/,
     why: "producer typing of the receiver: a bounded binder instantiated at its bound where TypeScript infers an object literal's type" },
   { cls: "gap", label: "a method with a `this` parameter", re: /a method with a `this` parameter/,

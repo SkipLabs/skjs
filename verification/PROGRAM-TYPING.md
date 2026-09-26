@@ -798,6 +798,22 @@ $$
 
 Writes at a greater index, or at one no contract names, and reads by a
 non-literal index into a tuple, have no rule; a program appends with `push`.
+A read `xs[k]` of an array or a tuple at a key TypeScript types as `number`,
+no literal, is the host's read of the property the number names, a call of
+the intrinsic $\%\mathsf{ElementAt}\%$ (`intrinsics.mts`), which the parser
+writes where TypeScript's types of the object and the key are these:
+
+$$
+\mathit{xs}[k]\;\equiv\;\%\mathsf{ElementAt}\%(\mathit{xs},\ k)
+\qquad
+\%\mathsf{ElementAt}\%:\forall T.\ (\mathtt{readonly}\ T[\,],\ \mathtt{number})\Rightarrow T\mid\mathtt{undefined}
+$$
+
+The element at an index below the length, an own property at another
+numeric key, which `Array<T>`'s `[n: number]: T` says holds a `T`, else
+`undefined`: `Array.prototype` and `Object.prototype` own no numeric key
+([trust surface](DESIGN.md#trust-surface)). `elemAny` would read the store
+alone, which answers `undefined` where the array owns such a key.
 
 A string owns its `length` and its code units ([semantics](SEMANTICS.md#operational-language),
 "Strings"). `lenStr` reads the length of an operand whose every clause is a

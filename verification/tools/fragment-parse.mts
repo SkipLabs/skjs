@@ -69,7 +69,7 @@ import { enclosingBinders } from "./computed-types.mts";
 import { collectDeclarations, DeclarationError, libraryArguments, libraryTerm, tsconfigOf, type LibraryType,
   type SeenDiagnostic }
   from "./declaration-graph.mts";
-import { asyncCompleteName, asyncReturnName, awaitName, forInName, hasPropertyName, iterateName } from "./intrinsics.mts";
+import { asyncCompleteName, asyncReturnName, awaitName, elementAtName, forInName, hasPropertyName, iterateName } from "./intrinsics.mts";
 
 /** Why a generator is refused: its body stops at each `yield` and resumes
  * where it stopped when `next` is called again, and no term of the calculus
@@ -446,6 +446,8 @@ class Gate {
   /** The member names of `o.m.call(…)`, `.apply` and `.bind` TypeScript
    * resolves to a method. */
   readonly methodTargets = new Set<string>();
+  /** The element reads `%ElementAt%` answers. */
+  readonly hostElements = new Set<string>();
   /** The well-known `Symbol.iterator`'s index among the declaration
    * document's symbols, where a program iterable is iterated. */
   wellKnownIterator: number | null = null;
@@ -1668,6 +1670,14 @@ class Gate {
         this.fail(node, "optional element access is outside the fragment");
       // A `unique symbol` constant names one key: evaluating it has no
       // effect, so the read is the named read of that symbol's key.
+      // `xs[k]` of an array at a `number` key is the host's read of the
+      // property the number names (`%ElementAt%`, `intrinsics.mts`): the
+      // object, the key, then the read, as the access evaluates them.
+      if (this.hostElements.has(this.span(node).join(":"))) {
+        const bracket = node.expression.end;
+        return this.intrinsic(elementAtName, this.span(node), [bracket, bracket + 1],
+          [this.expr(node.expression), this.expr(node.argumentExpression)]);
+      }
       const [start, end] = this.span(node.argumentExpression);
       const symbol = this.symbolKeys.get(`${start}:${end}`);
       if (symbol !== undefined)
@@ -4114,6 +4124,22 @@ type EnumInfo = { end: number; members: (Omit<EnumMember, "value"> & { value: st
 
 /** A number's spelling as a literal: its `Number::toString`, which reads back
  * as the same double, and `-0` for negative zero, which that spells `0`. */
+/** Whether an element access is written rather than read: the target of an
+ * assignment, a compound assignment or an update, or `delete`'s operand. */
+function writtenElement(node: ts.ElementAccessExpression): boolean {
+  let at: Node = node;
+  while (at.parent && ts.isParenthesizedExpression(at.parent)) at = at.parent;
+  const parent = at.parent;
+  if (!parent) return false;
+  if (ts.isBinaryExpression(parent) && parent.left === at &&
+      parent.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+      parent.operatorToken.kind <= ts.SyntaxKind.LastAssignment) return true;
+  if ((ts.isPrefixUnaryExpression(parent) || ts.isPostfixUnaryExpression(parent)) &&
+      (parent.operator === ts.SyntaxKind.PlusPlusToken || parent.operator === ts.SyntaxKind.MinusMinusToken))
+    return true;
+  return ts.isDeleteExpression(parent);
+}
+
 /** The key of `k in o`, its parentheses dropped. */
 function inKey(node: ts.BinaryExpression): Expression {
   let key: Expression = node.left;
@@ -4471,6 +4497,15 @@ export function parseFile(file: string, carriesContext = false,
     node.forEachChild(findReceiverTargets);
   };
   if (!carriesContext) findReceiverTargets(source);
+  // Element reads `e[k]` other than a write's target: TypeScript's types of
+  // the object and the key decide whether `%ElementAt%` reads it.
+  const elementReadNodes: Node[] = [];
+  const findElementReads = (node: Node): void => {
+    if (ts.isElementAccessExpression(node) && !node.questionDotToken && !writtenElement(node))
+      elementReadNodes.push(node);
+    node.forEachChild(findElementReads);
+  };
+  if (!carriesContext) findElementReads(source);
   // An identifier as an element key, `e[k]`, may name a `unique symbol`
   // constant, and `e[S.k]` a `unique symbol` property, such as the
   // well-known `Symbol.iterator`: TypeScript decides, and such a key joins
@@ -4637,12 +4672,12 @@ export function parseFile(file: string, carriesContext = false,
       classTestNodes.length || classReadNodes.length || contextualNodes.length ||
       receiverNodes.length || enumNodes.length || computedNodes.length || symbolNameNodes.length ||
       keyTypeNodes.length || bindingNodes.length || iterableNodes.length || spreadNodes.length ||
-      restTargets.length || privateNodes.length || inKeyNodes.length || receiverTargetNodes.length) {
+      restTargets.length || privateNodes.length || inKeyNodes.length || receiverTargetNodes.length || elementReadNodes.length) {
     const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
       firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? classTestNodes[0] ?? classReadNodes[0] ?? contextualNodes[0] ??
       receiverNodes[0] ?? enumNodes[0] ??
       computedNodes[0] ?? symbolNameNodes[0] ?? keyTypeNodes[0] ?? bindingNodes[0] ?? iterableNodes[0] ??
-      spreadNodes[0] ?? restTargets[0]?.node ?? privateNodes[0] ?? inKeyNodes[0] ?? receiverTargetNodes[0];
+      spreadNodes[0] ?? restTargets[0]?.node ?? privateNodes[0] ?? inKeyNodes[0] ?? receiverTargetNodes[0] ?? elementReadNodes[0];
     if (!first) throw Error("missing declaration root");
     // Named imports only. A type import joins the declaration graph; a value
     // import is an assumption at the type its declaration states.
@@ -4705,6 +4740,8 @@ export function parseFile(file: string, carriesContext = false,
         hostIn: ([start, end]) => gate.hostIns.add(`${start}:${end}`),
         receiverTargets: receiverTargetNodes.map(node => gate.span(node)),
         methodTarget: ([start, end]) => gate.methodTargets.add(`${start}:${end}`),
+        elementReads: elementReadNodes.map(node => gate.span(node)),
+        hostElement: ([start, end]) => gate.hostElements.add(`${start}:${end}`),
         restTargets: restTargets.map(({ node, index }) => ({ span: gate.span(node), index })),
         restSlice: ([start, end]) => gate.slices.add(`${start}:${end}`),
         computed: computedNodes.map(node => gate.span(node)),

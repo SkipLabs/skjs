@@ -396,10 +396,10 @@ named).
     `recursive-type-absorption.ts#nestedExpansionDeep`, and
     `promise-object.ts#testAwaitPlainObject`, an
     [SKJS unsoundness](#confirmed-await-passes-a-record-through-testsexpect-errorpromise-objecttstestawaitplainobject));
-    a numeric key on a value not proved an array with that index (7,
-    `algebraic-data-types-comprehensive.ts#countDataValues`): an array may
-    own keys besides its elements, and a number that is no index names one;
     an indexed read on a non-object (1, `instanceof-generic-skolem-args.ts#arrayRead`).
+    A read of an array at a `number` key is the host's `%ElementAt%`, an
+    element or `undefined` (`algebraic-data-types-comprehensive.ts#countDataValues`,
+    `precedence-types.ts#testIndexBinaryPositive`, `constprop/compound_exprs.ts`).
     Since named by their causes: a guard finding an object where a field or a
     cell holds one beside `null` (`destructuring.ts#checkedNestedPattern`,
     `test.ts#reverse`), which states no contents, `Array.isArray` on
