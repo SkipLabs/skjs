@@ -470,7 +470,7 @@ export const cases: Case[] = [
   negative("invalid-module-init", "a module constant's initializer must meet its annotation"),
   positive("module-init-only", "a module with no function: its initialization, a class and its method, checked as one unit"),
   negative("invalid-module-init-only", "a module with no function whose initialization reads past an array's end at `number`"),
-  { ...positive("skjs-environment", "SKJS's test environment: a stub import, `__SKJS_show`, `process.on`, `Closed<T>` read as `T`"),
+  { ...positive("skjs-environment", "SKJS's test environment: a stub import, `__SKJS_show`, `process.on`, `console.log`, `Closed<T>` read as `T`, no DOM globals"),
     project: "verification/ocaml-producer/skjs-environment" },
   { ...negative("invalid-skjs-environment", "`Closed<T>` read as `T` is not a string index of its field's type"),
     project: "verification/ocaml-producer/skjs-environment" },

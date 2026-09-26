@@ -1,6 +1,7 @@
 // SKJS's test environment: a bare specifier resolves in its import stubs,
-// `__SKJS_show` is a host function taking any value, `process` is SKJS's stub
-// of Node's, and `Closed<T>` is read as `T`.
+// `__SKJS_show` is a host function taking any value, `process` and `console`
+// are SKJS's stubs of Node's, `Closed<T>` is read as `T`, and no DOM global
+// (`Event`) collides with the test's own names.
 import { functionFromStubs } from "for-tests";
 
 type Point = Closed<{ x: number }>;
@@ -15,6 +16,11 @@ export function onShutdown(close: () => Promise<void>): void {
     await close();
   };
   process.on("SIGTERM", shutdown);
+}
+
+type Event = { kind: string };
+function logged(e: Event): void {
+  console.log("event", e.kind);
 }
 
 const origin: Point = { x: 0 };

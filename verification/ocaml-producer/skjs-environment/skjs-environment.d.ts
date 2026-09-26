@@ -42,3 +42,12 @@ interface SkjsProcess {
   on(event: string, listener: () => unknown): void;
 }
 declare const process: SkjsProcess;
+
+/** SKJS's stub for the host's `console`, with its members as SKJS declares
+ * them. */
+interface SkjsConsole {
+  log(...msg: unknown[]): void;
+  assert(cond: boolean, msg?: string): void;
+  error(message?: unknown, ...optionalParams: unknown[]): void;
+}
+declare const console: SkjsConsole;

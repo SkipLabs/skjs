@@ -11,6 +11,9 @@
     "strict": true,
     "noEmit": true,
     "target": "es2022",
+    // The ECMAScript library alone: SKJS's host has no DOM, whose globals
+    // (`Event`, `Response`) would collide with a test's own declarations.
+    "lib": ["es2022"],
     "types": [],
     "paths": { "*": ["../../../import-stubs/*"] }
   },
