@@ -408,14 +408,15 @@ export function collectDeclarations(file: string, options: {
     };
     // An interface declared several times is one interface with every
     // declaration's members, as TypeScript merges it; the first declaration is
-    // its identity. A same-named value declaration is the name's other
-    // meaning, which a type reference does not denote.
+    // its identity. A same-named value declaration, a constant or a function,
+    // is the name's other meaning, which a type reference does not denote.
     const partners = new Map<TypeDeclaration, TypeDeclaration[]>();
     const lookup = (identifier: Identifier, what: string): TypeDeclaration => {
       const nodes = resolveDeclarations(identifier, what);
       const types = nodes.filter(isTypeDeclaration);
       const [node] = types;
-      if (!node || nodes.some(n => !isTypeDeclaration(n) && !ts.isVariableDeclaration(n)) ||
+      if (!node || nodes.some(n => !isTypeDeclaration(n) && !ts.isVariableDeclaration(n) &&
+            !ts.isFunctionDeclaration(n)) ||
           (types.length > 1 && !types.every(ts.isInterfaceDeclaration)))
         throw Error(types.length > 1 || nodes.length > 1
           ? `TypeScript found ${nodes.length} declarations for ${what}`

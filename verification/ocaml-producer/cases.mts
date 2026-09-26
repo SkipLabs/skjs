@@ -362,6 +362,8 @@ export const cases: Case[] = [
     /source expression obligation at \[276,291\)/),
   negative("invalid-explicit-type-argument-covariance", "an instance TypeScript accepts only by array covariance: `string[]` is not `(string | number)[]`",
     /source expression obligation at \[342,373\)/),
+  positive("type-and-function-name", "a type alias or interface and a function of one name: the type in a type position, the function in a value position"),
+  negative("invalid-type-and-function-name", "the type of a name shared with a function is its own declaration"),
   positive("ambient-untyped-field", "a field an ambient class declares without a type is a readonly `unknown` field, the same at every type argument"),
   negative("invalid-ambient-untyped-field", "an untyped ambient field is not read as a string"),
   positive("angle-assertion", "`<T>e` is `e as T`, and `<const>e` is `e as const`"),
