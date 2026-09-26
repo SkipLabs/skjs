@@ -445,6 +445,8 @@ export const cases: Case[] = [
   positive("for-of", "for...of over arrays: readonly, mutable and literal, nested, with break, continue and return"),
   negative("invalid-for-of-element", "an element keeps its array's element type"),
   negative("invalid-for-of-record", "only an array is iterated: a record's iterator is unknown"),
+  positive("closure-parameter-assigned", "a closure parameter its block body assigns is a cell holding its argument, as a function's is"),
+  negative("invalid-closure-parameter-assigned", "the cell holds what was written"),
   positive("for-let-head", "a `let` in a `for...of` or `for...in` head that nothing assigns is a `const`"),
   gap("for-let-head-assigned-refused", "a `let` in a `for...of` head the body assigns", "unsupported", "source",
     /a `for...of` loop declares one `const` binding, or a `let` nothing assigns/),

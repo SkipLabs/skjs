@@ -2174,7 +2174,12 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
           | Json.Error message when String.starts_with ~prefix:"unbound name " message ->
             unsupported ("parameter default may only read initialized earlier parameters and captures: " ^ message))
           (List.assoc_opt i defaults);
-        extend env n (Value t)) env (List.mapi (fun i p -> i,p) ps) in
+        (* A parameter a block body assigns is a cell holding its argument,
+           at its annotation, as a function's is. *)
+        let assigned = match body.node with
+          | BlockBody ss -> List.exists (assigns n) ss
+          | _ -> false in
+        extend env n (if assigned then cell t else Value t)) env (List.mapi (fun i p -> i,p) ps) in
       (* A closure literal without a result annotation expected at one
          signature taking at least its parameters has that signature's result
          as its contextual return type, as in TypeScript. *)
