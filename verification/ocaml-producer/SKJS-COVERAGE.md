@@ -4,13 +4,13 @@ How much of what SKJS accepts in its own test suite the pipeline
 (`check.mts`: parser → OCaml producer → Lean search and check) verifies, what
 stops the rest, and where the two disagree because SKJS is wrong.
 
-**2,361 verified + 99 refused on principle = 2,460 of 2,674 done (92.0%);
-190 gaps, 24 unexplained.** Of the 99, 10 are units of confirmed SKJS
+**2,370 verified + 90 refused on principle = 2,460 of 2,674 done (92.0%);
+190 gaps, 24 unexplained.** Of the 90, 10 are units of confirmed SKJS
 unsoundnesses; the classes are defined in the method
 ([refusal classes](#refusals-by-class)).
 
-**2,361 of 2,674 SKJS-accepted units verify (88.3%); 1,746 of 2,026 accepted
-functions (86.2%).** 268 of the 377 files with an accepted unit verify entirely.
+**2,370 of 2,674 SKJS-accepted units verify (88.6%); 1,755 of 2,026 accepted
+functions (86.6%).** 268 of the 377 files with an accepted unit verify entirely.
 Five families of SKJS-accepted functions that the pipeline reaches and refuses
 are real SKJS unsoundnesses, each with a runtime witness that SKJS accepts and
 node crashes on ([below](#suspected-skjs-unsoundnesses)).
@@ -35,14 +35,14 @@ is not part of `verification/run.sh`.
 
 | Suite | Harness verdict | Files | Units | Accepted | Verified | Accepted functions | Verified functions |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,458 | 2,132 | 1,863 | 1,569 |
+| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,458 | 2,158 | 1,863 | 1,595 |
 | `tests/callgraph` | no error allowed | 25 | 59 | 59 | 57 | 51 | 49 |
 | `tests/constprop` | no error allowed | 14 | 66 | 66 | 64 | 49 | 48 |
 | `tests/deadcode` | no error allowed | 7 | 27 | 27 | 27 | 16 | 16 |
 | `tests/cfg` | no error allowed | 7 | 22 | 22 | 22 | 21 | 21 |
 | `tests/projects` | expect-error markers, under the project's tsconfig | 24 of 68 | 44 | 34 | 34 | 23 | 23 |
 | `tests/ts-conformance/cases` | lines listed in `reference/*.errors.txt` | 4 | 9 | 8 | 8 | 3 | 3 |
-| **total** | | **480** | **4,110** | **2,674** | **2,344** | **2,026** | **1,729** |
+| **total** | | **480** | **4,110** | **2,674** | **2,370** | **2,026** | **1,755** |
 
 Excluded (79 files, listed in the JSON with reasons): `ts-conformance/not-supported`
 (31) and `callgraph-unsupported` (4) assert only that SKJS reports errors;
@@ -118,8 +118,8 @@ justification; the first entry matching the key decides:
   whose reason is one of these: TypeScript's implicit index signature,
   covariant writable storage, method extraction, object identity without
   fields, `this` in sloppy code, `extends Array`, `new Array(n)`'s holes,
-  `instanceof` narrowing `unknown` (a world invariant over every
-  allocation), a constructor or base class from outside the file, an
+  `instanceof` narrowing `unknown` (an object gets a class's prototype
+  without its constructor), a constructor or base class from outside the file, an
   iterator whose type states no `return`, a contextual `any`, and code or
   declarations TypeScript rejects.
 - **gap** (G): a sound construct the pipeline does not yet support: a
@@ -184,21 +184,20 @@ principled, or the one principled entry DESIGN also lists as open work.
 
 | Class | Units |
 | --- | ---: |
-| verified | 2,344 |
-| principled (P) | 89 |
+| verified | 2,370 |
+| principled (P) | 80 |
 | SKJS unsound (S) | 10 |
-| gap (G) | 207 |
+| gap (G) | 190 |
 | unexplained (U) | 24 (21 with an `obligation:` line) |
 | **accepted** | **2,674** |
 
 | Class | Reason | Units | Files | Why |
 | --- | --- | ---: | ---: | --- |
 | P | TypeScript refuses the code | 28 | 17 | TypeScript itself rejects the program or a declaration it depends on |
-| P | `Array.isArray` on an open record or `unknown` | 9 | 3 | an object owning an array store need not be an array of `Array.prototype`: the same world invariant as `instanceof` narrowing `unknown` (Fragment boundary). *Review:* DESIGN Next steps lists the array-coherence invariant as open work; classified as the `instanceof unknown` case is |
 | P | object identity without fields | 8 | 2 | objects without a field have no identity in the model; identity narrowing is declined (DESIGN, Fragment boundary) |
 | P | `instanceof` of a constructor from outside the file | 7 | 3 | nothing in the file says which prototype it gives its instances (Fragment boundary) |
 | P | implicit index signature | 7 | 2 | TypeScript's implicit index signature is unsound: a value of a type literal may carry other keys of any type |
-| P | `instanceof` narrowing `unknown` | 7 | 3 | "an object whose chain holds C's prototype has C's fields" is a world invariant over every allocation, an assumption not taken (Fragment boundary) |
+| P | `instanceof` narrowing `unknown` | 7 | 3 | an object gets C's prototype without C's constructor running (`Object.create(C.prototype)`, `Object.setPrototypeOf`, `Reflect.construct`): the brand is no evidence of C's fields, and assuming it of every value a unit receives is false of ordinary JavaScript (Fragment boundary) |
 | P | `this` in sloppy code | 6 | 3 | sloppy receiver conversion (global object, wrappers) is not modelled (Fragment boundary) |
 | P | `extends` a library constructor | 4 | 1 | `extends Array` and kin allocate host objects, not the ordinary object a class allocates (Fragment boundary) |
 | P | iterator without a stated `return` | 3 | 3 | IteratorClose calls whatever `return` an open record owns (Fragment boundary) |
@@ -230,7 +229,8 @@ principled, or the one principled entry DESIGN also lists as open work.
 | G | source forms left | 6 | 6 | remaining source forms (Next steps) |
 | G | enum forms: computed members, an empty enum | 6 | 1 | keys known only at run time; an empty object has no record: representation limits. *Review:* in the Fragment boundary table |
 | G | class forms: constructor defaults, computed members, index signatures, statics, private names | 6 | 2 | constructor graph code, statics read late, private slots in inheritance (Next steps) |
-| G | `Array.isArray`/`length` over an array-or-record union | 4 | 3 | needs the array-coherence invariant (Next steps) |
+| G | `length` over an array-or-record union | 2 | 2 | needs a dispatch on `Array.isArray` reading an array's length from its store and a record's from its field, with the array invariant excluding an own `length` key (Next steps) |
+| G | `Array.isArray` on `unknown` | 2 | 1 | the array invariant is a fact of record and dictionary types; `unknown` is also a handler's binding type, and the throw outcome states nothing of a thrown value: needs the throw outcome to carry the invariant (Next steps) |
 | G | object literal spreads of functions, class values, arrays, strings | 4 | 4 | the copy's keys are known only at run time: no record states them. *Review:* in the Fragment boundary table |
 | G | cells after a step that may write them | 4 | 3 | a call forgets heap facts: needs a reachability statement (Next steps, Precision) |
 | G | a spread of a dictionary | 4 | 3 | needs the key-adding write's spread into an index (Next steps) |
@@ -402,12 +402,11 @@ named).
     `#funDisjoint`, `void.ts#x7`): such values have no identity in the model.
 16. **Discriminated-union narrowing.** A test of a field of an immutable
     binding's object against a singleton keeps the arms whose field admits
-    the outcome; a `let` nothing assigns is a `const`. Left (3): `length` read
-    after `Array.isArray` on a union with a record, which the test keeps
-    (2, `array-isarray-refinement.ts#testArrayMethodsAfterRefinement`,
-    `#testEarlyReturnWithLength`, refused: an open record may be an array),
-    and `m.keys()` of a `Map` in a `for...of` (1,
-    `symbols.ts#testForOfMapIterator`: `MapIterator` is not read).
+    the outcome; a `let` nothing assigns is a `const`; where `Array.isArray`
+    holds, a record arm is `readonly unknown[]` by the
+    [array invariant](../SEMANTICS.md#the-array-invariant), so `length` reads
+    on the union of arrays. Left (1): `m.keys()` of a `Map` in a `for...of`
+    (`symbols.ts#testForOfMapIterator`: `MapIterator` is not read).
 17. **`in`/`instanceof`/`typeof`.** `typeof` as a value and in guards
     (`typeofObject` for `"object"`), `key in o` as `hasKey` along the
     prototype chain the model holds, and `x instanceof C` for a class the file
@@ -417,9 +416,8 @@ named).
     testing such a class, `implicit-instanceof-effects.ts`); `instanceof` of a
     right operand that is not a class of the file (7,
     `instanceof-rhs.ts#instanceofFunction`); `instanceof` narrowing
-    `unknown`, a world invariant over every allocation (7,
-    `instanceof-generic-skolem-args.ts#observe`; the array-coherence invariant
-    of the [next steps](../DESIGN.md#next-steps)); `in` with a numeric key,
+    `unknown`: an object gets a class's prototype without its constructor
+    (7, `instanceof-generic-skolem-args.ts#observe`); `in` with a numeric key,
     an array element (3, `in.ts#literalInTupleAlwaysTrue`); `in` with a key
     that is not a union of string literals (2, `in.ts#stringInRecord`).
 18. **Search found no derivation.** 139 units in 59 files. The message names
@@ -445,7 +443,7 @@ named).
     | Generic call inference: nested instantiation, a spread into a generic | `per-field-tvar-isolation.ts`, `tvar-widening-ordinary-check.ts` (2) | (a) | producer inference |
     | SKJS unsound: aliased views of an empty literal, an inferred literal type that stays closed, `typeof c === "function"` on a class instance | `obj-literal-indexes.ts` (8), `callability.ts#testInstanceTypeofFunction` | (d) | [below](#suspected-skjs-unsoundnesses) |
     | Sound aliased views without fields | `obj-literal-indexes.ts#testAliasMutableOptionalThenOptional`, `#testAliasTwoReadonlyOptionals` | (b) | the same search as the unsound family's |
-    | Guards: `Array.isArray` narrowing a union with a record, `typeof x === "function"` on `unknown` or a binder | `array-isarray-refinement.ts` (6), `array-object-union-operations.ts#testNarrowToArray`, `function-type.ts` (2) | (b) | needs the array-coherence heap invariant ([next steps](../DESIGN.md#next-steps)) |
+    | Guards: `typeof x === "function"` on `unknown` or a binder | `function-type.ts` (2) | (b) | search |
     | `Promise<A>` below `Promise<B>`: `then` and `catch` are generic methods | `promise-object.ts#testThen`, `#testCatch`, `#testCovariantWiden` | (b) | relating two schemes needs a subtyping rule for quantified signatures ([next steps](../DESIGN.md#next-steps)) |
     | A module function where a longer signature, or an intersection with one, is expected | `function-intersection.ts` (4), `function-subtyping.ts#testMissingRestFails` | (c) | its slot is its annotated signature, checked by its own unit; offering more would make that slot a claim |
     | Classes: inheritance across a shadowed binder, field annotations and a `#private` field in a class body, a method reattached through a `this` parameter | `tparam_shadow.ts` (2), `field-type-annotations.ts#FieldsWithAnnotations`, `private-fields.ts#HasPrivateForInTest`, `this-parameter-implicit-class.ts#compatibleReattachment` | (b) | search |
@@ -833,6 +831,7 @@ split by function.
 | U. Source-gate groups (done) | One shadowing mechanism: the parser renames a hiding local by the declaration TypeScript binds each reference to (closure bodies, parameters, cells, `for...of`, `catch` included; the TDZ refused), replacing Lean's `shadow`; a `let` nothing assigns as a `const` (narrowing, `let` patterns); sloppy methods without a `this` read; rest parameters through generic alias equations; interface inheritance through an alias and from bases sharing an index; every other unit of classes, destructuring, sloppy code, enums, object literal members and other forms refused naming its reason | 10 units verified over b9196b01 (2,281 → 2,291, `--skjs --width 3`, none lost), 1,679 → 1,689 functions, 249 → 254 whole files | `fragment-parse.mts`, `type-term.mts`, `declaration-graph.mts`, `skjs-coverage.mts`, `proposal.ml`, `source.ml`, `environment.ml`, `Fragment.lean`, `GenericSource.lean`, `SourceExtraction.lean` | — | — |
 | T. Closure bodies as graph code (done) | A closure's body is a graph as a function body is (`CallCode.graph`, `funGraph`): mutable locals, loops, `switch`, labeled blocks, `try`/`catch`/`finally` and `x++` inside closures; captures are the named bindings the body reads, cells by identity; an expression arrow is the graph of `return e`; node plans the extractor knows are rendered, not searched; `if (x.f !== c) return x.f;` returns the tested read in any body. Still term code, with reasons: generic closures (their certificate is universal), rest parameters (graph code is fixed-arity), parameter defaults and class constructors | 12 units verified (2,207 → 2,219 on the marker corpus, `--width 3`, none lost), two of them past a duplicate-claim failure in closure statements; `sum-*` cases 39.4 s → 37.0 s CPU, `sum-sound-binding` 7.8 s → 5.9 s | `Calculus.lean`, `Bindings.lean`, `CallArguments.lean`, `ObjectCoherence.lean`, `ProgramTyping.lean`, `ProgramCertificates.lean`, `HeapExpressionRules.lean`, `ControlFlow.lean`, `GraphCode.lean`, `CertificateProducer.lean`, `RequestJson.lean`, `SourceExtraction.lean`, `Fragment.lean`, `fragment-parse.mts`, `annotate-source.mts`, `calculus.mts`, `source.ml`, `proposal.ml` | — | N (generic closures) |
 | V. The iterator protocol for iterables the program writes (done) | `for...of`, spreads and array patterns over an iterable the program defines run ECMA-262's protocol as ordinary calls; IteratorClose a closing region the `try` machinery compiles; `[Symbol.iterator]` keys in literals and class methods; refused with reasons: an iterator whose type states no `return`, generators, other well-known symbol keys | 19 units newly verified over the committed run (2,296 → 2,315, 1,694 → 1,711 functions, 256 → 261 whole files, none lost), 14 of them the host iterables and slice rests of the previous commit, never measured | `fragment-parse.mts`, `declaration-graph.mts`, `array-prototype.mts`, `annotate-source.mts`, `Fragment.lean`, `SourceExtraction.lean`, `BranchRefinement.lean`, `ControlFlow.lean`, `DeclarationGraph.lean`, `source.ml`, `proposal.ml`, `claims.ml` | — | source forms (jumps through `finally`) |
+| W. The realm's array invariant (done) | Record and dictionary types are of objects meeting the array invariant (an object owning the store key is a dense array holding `Array.prototype`, owning none of its keys), in the meaning of types (`realmInvariant`); allocation keeps it (`allocRealm`, merges copy no store); `Array.isArray` narrows a record arm to `readonly unknown[]` (`arraySlice`), and a union of arrays reads its `length`; decided and refused with reasons: `Array.isArray` on `unknown` (gap: the throw outcome carries no invariant), `instanceof` narrowing `unknown` (principled: any object may get a class's prototype) | 9 units / 1 file newly verified (2,361 → 2,370 units, 1,746 → 1,755 functions, none lost; `--skjs --width 3`); `sum-*` cases 38.7–39.2 s → 38.2–38.4 s CPU | `PositiveGraphs.lean`, `PositiveRules.lean`, `TypeParams.lean`, `ProgramTyping.lean`, `ProgramCertificates.lean`, `BranchRefinement.lean`, `ObjectMerge.lean`, `Parametricity.lean`, `RequestJson.lean`, `SourceExtraction.lean`, `proposal.ml` | J, M2 | — |
 
 Suggested order: A, B, D in parallel (disjoint files except D's gate
 entries); then C, E, G; then F, H; then I, K; then J, L, P; M, N, O last (the
