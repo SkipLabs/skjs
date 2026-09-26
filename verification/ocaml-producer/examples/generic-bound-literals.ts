@@ -1,5 +1,5 @@
 // Instances TypeScript infers at a bounded binder: a fresh object literal at
-// `T extends Json` is built at the bound's dictionary arm with its exact keys,
+// `T extends Json` is allocated at the bound's dictionary arm, a writable one,
 // and primitives below a bound are the binder, not the bound.
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 

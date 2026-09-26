@@ -2732,17 +2732,35 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let ps ← es.mapM fun a => closureExpr fc scope Γ a
     -- A record naming exactly the literal's keys; a key bound, if claimed,
     -- admits every one of them, as the fresh object's own keys are exactly
-    -- those. Such a bound is what lets the literal meet a dictionary or an
-    -- optional field it leaves out (`CoversKeys`, `CoversOptional`).
-    let [.refs B [] [] [] [] ks] := PositiveRules.expand G A
-      | throw "allocation claim must name a record contract"
-    if B.length != ns.length then throw "allocation claim names different fields"
-    if !ks.all (fun K => ns.all (fun n => K.admits n)) then
-      throw "an allocation's key bound must admit every key it allocates"
-    let B ← ns.mapM fun name => do
-      let some D := B.lookup name | throw "allocation claim names different fields"
-      pure (name,D)
-    let Ref ← lower (SourceTypes.use (.refs B [] [] [] [] ks))
+    -- those. Such a bound is what lets the literal meet a readonly dictionary
+    -- or an optional field it leaves out (`CoversKeys`, `CoversOptional`).
+    -- Or a dictionary the literal is allocated at directly, each field an
+    -- index may admit at exactly that index's type (`HasTy.allocDict`): a
+    -- writable index is never met through an own-key bound.
+    let clause ← match PositiveRules.expand G A with
+      | [.refs B [] [] [] [] ks] => do
+        if B.length != ns.length then throw "allocation claim names different fields"
+        if !ks.all (fun K => ns.all (fun n => K.admits n)) then
+          throw "an allocation's key bound must admit every key it allocates"
+        let B ← ns.mapM fun name => do
+          let some D := B.lookup name | throw "allocation claim names different fields"
+          pure (name,D)
+        pure (PositiveNormalization.Clause.refs B [] [] [] [] ks)
+      | [.dict B [] [] ix [] [] [] cs] => do
+        if B.length != ns.length then throw "allocation claim names different fields"
+        if ns.contains SourceTypes.protoField then
+          throw "a literal allocated at a dictionary holds no prototype"
+        let B ← ns.mapM fun name => do
+          let some D := B.lookup name | throw "allocation claim names different fields"
+          pure (name,D)
+        if !B.all (fun f => (ix ++ cs).all fun y => !y.1.may f.1 || f.2 == y.2) then
+          throw "a literal allocated at a dictionary holds each field an index admits at that index's type"
+        pure (PositiveNormalization.Clause.dict B [] [] ix [] [] [] cs)
+      | _ => throw "allocation claim must name a record or dictionary contract"
+    let B := match clause with
+      | .refs B .. | .dict B .. => B
+      | _ => []
+    let Ref ← lower (SourceTypes.use clause)
     -- The calculus evaluates these initializers from left to right.
     let casts := (ps.zip (B.map Prod.snd)).map fun (p,D) => DirectProof.cast Γ D p
     pure (DirectProof.node Γ (.makeAt .absent ns (ps.map (·.term))) [Ref] .alloc casts)

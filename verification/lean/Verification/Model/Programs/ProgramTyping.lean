@@ -1752,6 +1752,18 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
       Represents G Ref (.refs (parts.map fun p => (p.1, p.2.1)) [] [] [] [] ks) →
       (∀ K ∈ ks, ∀ p ∈ parts, K.admits p.1 = true) →
       HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
+  /-- **Allocation at a dictionary.** A literal allocated directly at a
+  dictionary type: its fields are the clause's first operand, with no key the
+  model keeps for its prototype, and each field whose key an index's class may
+  admit is at exactly that index's type. The object owns no other key, so each
+  index holds of it, writable ones included; no own-key bound is stated, since
+  code holding the dictionary may add keys (`covers_writable_keeps`). -/
+  | allocDict {parts : List (PropKey × Ty ι × Tm)} {ix cs : List (IndexKeys × Ty ι)} :
+      (parts.map Prod.fst).Nodup → CallArguments.protoField ∉ parts.map Prod.fst →
+      (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) →
+      Represents G Ref (.dict (parts.map fun p => (p.1, p.2.1)) [] [] ix [] [] [] cs) →
+      (∀ p ∈ parts, ∀ y ∈ ix ++ cs, y.1.may p.1 = true → p.2.1 = y.2) →
+      HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
   /-- A named field, of a record or of a dictionary, reads at its contract. -/
   | read : HasTy G Γ a Ref → Represents G Ref c → namedMembers c = some (fs, vs) →
       (f, A) ∈ fs → HasTy G Γ (.readAt f a) A
@@ -2322,6 +2334,65 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     have hfam : ReferenceConjunctions.famsOf (meaning G) (parts.map fun p => (p.1, p.2.1))
         = (parts.map Prod.fst).zip (parts.map fun p => meaning G p.2.1) := by
       simp [ReferenceConjunctions.famsOf, List.map_map, Function.comp_def, List.zip_map']
+    rw [hfam]
+    exact hrec
+  | @allocDict Γ Ref parts ix cs hnd hproto hp hr hix ih =>
+    intro n W h ρ he hw hh
+    simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
+    have hmap : (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2)).map Prod.snd
+        = parts.map fun x => instantiate 0 ρ x.2.2 := by
+      simp [List.map_map, Function.comp_def]
+    rw [← hmap]
+    apply bind_list (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2))
+      (by intro q hq; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq; exact meaning_adm G r.2.1)
+      (fun args => .makeAt .absent (parts.map Prod.fst) args)
+      (fun hs => CallArguments.Step.makeArgs hs) (fun hr => hr.make) hw hh
+      (by
+        intro q hq
+        obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq
+        intro j hj U hx hu heap hok
+        exact ih r hr' j U heap ρ (he.transfer j hj U hx) hu hok)
+    intro j hj U hx hu heap args hok hargs
+    have hAs : (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2)).map Prod.fst
+        = parts.map fun p => meaning G p.2.1 := by simp [List.map_map, Function.comp_def]
+    rw [hAs] at hargs
+    have hlen := ArgsT_length hargs
+    apply make_fields_rule
+      (As := parts.map fun p => meaning G p.2.1)
+      (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_adm G r.2.1)
+      j U heap .absent _ args hnd (by simpa using hlen.symm) (by simpa using hlen.symm)
+      (ArgsT_values
+        (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_valOnly G r.2.1)
+        hargs)
+      hu hok (ArgsT_zip hargs)
+    intro k hk V hy hrec
+    have hfam : ReferenceConjunctions.famsOf (meaning G) (parts.map fun p => (p.1, p.2.1))
+        = (parts.map Prod.fst).zip (parts.map fun p => meaning G p.2.1) := by
+      simp [ReferenceConjunctions.famsOf, List.map_map, Function.comp_def, List.zip_map']
+    -- The object owns exactly the fields, each at its part's type.
+    have hown : ∀ f l, (slots heap.length (parts.map Prod.fst)).lookup f = some l →
+        ∃ T, (f, T) ∈ (parts.map Prod.fst).zip (parts.map fun p => meaning G p.2.1) := by
+      intro f l hl
+      obtain ⟨p, hp, rfl⟩ := List.mem_map.mp (slots_lookup_mem hl)
+      exact ⟨meaning G p.2.1, by
+        rw [← hfam]; exact List.mem_map.mpr ⟨(p.1, p.2.1), List.mem_map_of_mem hp, rfl⟩⟩
+    have hnp := slots_lookup_none (base := heap.length) hproto
+    have hcell : ∀ y ∈ ix ++ cs,
+        dictCellT y.1 (meaning G y.2) k V (.objAt (slots heap.length (parts.map Prod.fst)) .absent) := by
+      intro y hy
+      refine dictCellT_of_recT hrec hown hnp fun f T hT hk => ?_
+      rw [← hfam] at hT
+      obtain ⟨q, hq, hqe⟩ := List.mem_map.mp hT
+      obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
+      cases hqe
+      rw [hix p hp y hy (IndexKeys.may_of_admits hk)]
+      exact fun _ _ _ _ => Iff.rfl
+    refine (represents_sem hr k V _).mpr ⟨⟨?_, by simp⟩,
+      fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm,
+      ⟨fun y hy => dictCellT_view (hcell y (List.mem_append_left _ hy)),
+        fun y hy => hcell y (List.mem_append_right _ hy)⟩,
+      by simpa [ReferenceConjunctions.famsOf] using optT_nil, MethodMembers.methodT_nil _ _ _,
+      fun K hK => by simp at hK⟩
     rw [hfam]
     exact hrec
   | @read Γ a Ref c fs vs f A ha hr hc hm ih =>
@@ -3151,6 +3222,8 @@ theorem HasTy.closed_safe {G : NormalGraph ι} {t A} (ht : HasTy G [] t A)
 #print axioms invocation_of_body
 #print axioms HasTy.invocationSpec
 #print axioms HasTy.sound
+#print axioms ownKeysT_keeps
+#print axioms dictCellT_of_recT
 #print axioms meaning_assign_free
 #print axioms HasTy.closed_safe
 #print axioms tagClause_sound

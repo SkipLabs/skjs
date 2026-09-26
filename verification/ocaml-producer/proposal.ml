@@ -1718,9 +1718,15 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
          lets it meet an index, or an optional field it leaves out. A class
          instance, which holds its prototype, is claimed with its exact keys
          too: the bound is what says a method is not its own, so a read of it
-         continues at the prototype. *)
+         continues at the prototype. A writable index is never met through an
+         own-key bound, since code holding it may add keys: a literal meant
+         for one is allocated at the dictionary itself, each field at its
+         index's type. *)
       (match contract with
        | _ when List.mem_assoc (Name proto_key) fs || List.mem e.pos !exact_allocs -> Atoms [Exact fields]
+       | Some {indexes=(_::_ as indexes);_}
+         when List.exists (fun (i:Semantic.index_signature) -> i.writable <> None) indexes ->
+         Atoms [Shape {fields;indexes;calls=[];elements=None}]
        | Some {indexes=_::_;_} -> Atoms [Exact fields]
        | Some {fields=contract_fields;_}
          when List.exists (fun (f:Semantic.field) -> f.optional) contract_fields -> Atoms [Exact fields]

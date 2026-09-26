@@ -255,6 +255,8 @@ one subtype-evidence list per outgoing edge. A derivation node names the
 `throw`, whose one premise types the thrown operand, or `merge`, an allocation
 from parts, whose two premises type the accumulator and the source
 ([Allocation from parts](PROGRAM-TYPING.md#allocation-from-parts)).
+`alloc` at a record type is the typing rule `alloc`; at a dictionary type,
+`allocDict`, a literal allocated at a dictionary with no own-key bound.
 The array rules act on a store, the value an array object holds in its store
 field: `arrLit` allocates one location per element under the positions of a
 tuple contract; `elem` reads a required position named by a literal index at

@@ -330,11 +330,15 @@ then reads the selected field (or `undefined` if it is absent). The proved
 index's (`string`, `number` or `symbol`; a number's key is canonical numeric,
 `numeric_admits_number`). Both reads carry `undefined` in their result. This path reaches the same certified
 source acceptance theorem as other expressions. A fresh literal is a
-dictionary through its exact own keys: `alloc` bounds them among the literal's
-names (`ownKeysT_slots`), and a record so bounded, with no prototype key among
-them, meets an index view whose contract every field's is within, and a
-writable index equivalent to every field's (`covers_keys_sound`); an existing
-open record, which may hold further keys, meets neither. A mutable index
+readonly dictionary through its exact own keys: `alloc` bounds them among the
+literal's names (`ownKeysT_slots`), and a record so bounded, with no prototype
+key among them, meets an index view whose contract every field's is within
+(`covers_keys_sound`); an existing open record, which may hold further keys,
+meets none. A writable index is never met through an own-key bound, since
+code holding it may add a key the bound says is absent
+(`covers_writable_keeps`): a literal meant for one is allocated at the
+dictionary, each field an index may admit at that index's type
+(`HasTy.allocDict`, `dictCellT_of_recT`). A mutable index
 signature lowers to a writable index contract `dictCellT K A`, whose present
 fields under keys of `K` have contracts agreeing with `A` rather than implying
 it, and covering keeps it invariant. Imported recursive declarations remain outside the source fragment.

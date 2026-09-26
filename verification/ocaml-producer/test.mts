@@ -13,7 +13,7 @@ import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { check, verifier } from "./check.mts";
 import { cases } from "./cases.mts";
 import { expectOutcome, pooled, runCase } from "./run-cases.mts";
-import type { SourceClaims } from "../tools/source-claims.mts";
+import type { Row, SourceClaims } from "../tools/source-claims.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
 import { checkGenericRest } from "./generic-rest.mts";
 import { checkOverloads } from "./overload-claims.mts";
@@ -810,6 +810,8 @@ let genericModule = "";
 let sumMapper = "";
 let sumConstructor = "";
 let localClosure = "";
+let exactKeys = "";
+let restKeys = "";
 let variadicOffer = "";
 let explicitCalls = "";
 let verifiedFunctions = 0;
@@ -845,6 +847,8 @@ for (const [i, test] of cases.entries()) {
   if (test.file === "sum-mapper-signature") sumMapper = result.artifacts;
   if (test.file === "sum-constructor-field") sumConstructor = result.artifacts;
   if (test.file === "sum-local-closure") localClosure = result.artifacts;
+  if (test.file === "invalid-writable-dictionary-exact-keys") exactKeys = result.artifacts;
+  if (test.file === "invalid-writable-dictionary-rest-keys") restKeys = result.artifacts;
   if (test.file === "variadic-offer") variadicOffer = result.artifacts;
   if (test.file === "explicit-type-arguments") explicitCalls = result.artifacts;
 }
@@ -1073,6 +1077,47 @@ process.stdout.write("an instance other than the explicit type argument, method 
     `source expression obligation at [${body},`), searched.stdout + searched.stderr);
   assert.match(invoke(forged, evidence, localClosure), /does not justify/);
   process.stdout.write("an unannotated closure's result claim its body does not meet: refused\n");
+}
+
+// A writable index is never met through an own-key bound: a callee holding
+// the object as a writable dictionary may add a key the bound says is absent.
+// Claims forged to state one, the literal's exact keys (none) or the rest's
+// lacking the pattern's key `x`, are refused at the call handing the object to
+// the callee. Run as JavaScript with a callee that stores `x`, each function
+// returns the string stored, where its result claims `number | undefined`.
+for (const [artifacts, file, name, call, clause] of [
+  [exactKeys, "invalid-writable-dictionary-exact-keys", "o", "exact((d) => { d.x = 's'; })",
+    (_str: number): Row[number] => ({ refs: { first: [], rest: [], views: [],
+      bounds: [{ among: true, keys: [] }] } })],
+  [restKeys, "invalid-writable-dictionary-rest-keys", "r", "rest((d) => { d.x = 's'; }, {})",
+    (str: number): Row[number] => ({ dict: { first: [], rest: [], views: [],
+      indexes: [["strings", [str]]], cells: [["strings", [str]]],
+      bounds: [{ among: false, keys: ["x", "[[proto]]"] }] } })],
+] as const) {
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const claims: SourceClaims = JSON.parse(readFileSync(join(artifacts, "claims.json"), "utf8"));
+  const str = claims.types.findIndex((row) => row.length === 1 && row[0] === "str");
+  assert.ok(str >= 0, "the string row");
+  const label = claims.types.push([clause(str)]) - 1;
+  const fn = must(claims.functions[0], "the function's claims");
+  for (const entry of fn.entries)
+    for (const b of entry.bindings) if (b.name === name) b.type = [label];
+  // The object's own sites: its allocation (`{}`, `...r`) and every read of it.
+  for (const e of fn.expressions)
+    if ([name, "{}", `...${name}`].includes(source.slice(e.pos[0], e.pos[1]))) e.type = [label];
+  const forged = join(artifacts, "forged-own-key-bound.json");
+  writeFileSync(forged, JSON.stringify(claims));
+  const searched = spawnSync(verifier, ["--produce-source-claims", join(artifacts, "fragment.json"),
+    forged, join(artifacts, "source.ts"), join(artifacts, "forged-evidence.json"), "12"],
+    { encoding: "utf8", timeout: 30_000 });
+  const detail = searched.stdout + searched.stderr;
+  assert.equal(searched.status, 1, detail);
+  const site = source.indexOf(`add(${name})`);
+  const at = /source expression obligation at \[(\d+),(\d+)\)/.exec(detail);
+  assert.ok(at && Number(at[1]) >= site && Number(at[2]) <= site + `add(${name})`.length, detail);
+  const run = stripTypes(readFileSync(join(here, "examples", `${file}.ts`), "utf8")).replace(/^export /gm, "");
+  assert.equal(vm.runInNewContext(`${run}\n${call}`, {}, { timeout: 1000 }), "s");
+  process.stdout.write(`a forged own-key bound on a writable dictionary (${file}): refused\n`);
 }
 
 // A closure is created at a variadic signature only when the signature's

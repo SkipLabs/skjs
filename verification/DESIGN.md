@@ -410,7 +410,9 @@ open: it constrains the keys it names and says nothing of others. An
 **own-key bound** says which keys an object may own, $\mathsf{among}\,K$ or
 $\mathsf{outside}\,N$ ([records](POSITIVE-TYPES.md#records)); a fresh
 literal's own keys are exactly its written ones, which is how it meets a
-dictionary or leaves out an optional field. An object may hold a prototype
+readonly dictionary or leaves out an optional field; a literal meant for a
+writable dictionary is allocated at it instead
+([index signatures](#writable-string-index-signatures)). An object may hold a prototype
 under the reserved key `[[proto]]`, and a read of a key the object lacks
 continues there (`readProto`). A class instance holds its class's prototype
 object, whose methods it reads; a derived class's prototype links to its
@@ -485,16 +487,24 @@ at a string, since the string may spell a key the model keeps for itself
 number or a symbol it is not yet lowered. That code outside
 the unit adds keys to a writable dictionary only at its contract, and only
 keys of its class, is an assumption ([trust surface](#trust-surface)). Every
-capability the checker grants on such an object is implied by the writable
-contract, so a key added at `V` keeps them: covering a writable index
+type the checker lets the unit hold such an object at stays true of it with
+such a key, so every capability it grants is kept. Covering a writable index
 requires every index and optional field of the source over its keys to admit
-`V`. This argument is informal, and it has a gap: an own-key bound
-($\mathsf{among}\,K$) is a capability the writable contract does not imply.
-A value claimed with one and also met as a writable dictionary, through that
-bound, can be held elsewhere at a type stating a key absent that outside code
-then adds; the checker accepts such claims today. The OCaml producer claims
-no own-key bound of a local from the first statement that may let its object
-escape; closing the gap in Lean is a [next step](#next-steps).
+`V`, and every own-key bound of the source to keep its class: none lists keys
+(the class has keys it does not list) and none excludes a key the class may
+admit (`KeyBound.keeps`, [covering](POSITIVE-TYPES.md#records)). A bound is
+the one capability the writable contract does not imply: a value met as a
+writable dictionary through one could be held elsewhere at a type saying a
+key is absent that outside code then adds. So a record meets a writable index
+through no bound (`CoversKeys` gives index views only); a literal meant for a
+writable dictionary is allocated at it, with no bound
+([`allocDict`](PROGRAM-TYPING.md#judgments-and-constructor-views)); a merge's
+dictionary result states only bounds that keep its writable classes. That a
+kept bound survives a key of its class, and that every clause covering a
+writable index has only kept bounds, are theorems (`ownKeysT_keeps`,
+`covers_writable_keeps`, `covers_writable_bounds_grow`); that fields, views,
+indexes and optional fields survive it is the argument above, which the
+covering premises state.
 
 A read `o[k]` whose key is one of several string or number literals tests
 `k` against each and reads that member (NaN excluded).
@@ -713,7 +723,7 @@ the model's reading of an operation relies.
 | The model's reserved keys (the store key `[]` and every name in double brackets) are spelled by no source key, and an object a program receives is represented with its own keys apart from them. | `Fragment.sourceKey`, `reservedSourceKey` |
 | `Object.prototype`, `Array.prototype` and `Function.prototype` own no string key but those `inKeyRefusal` lists (node's `Object.getOwnPropertyNames`); `String.prototype` and `Object.prototype` own no numeric key; `String.prototype` owns no `[Symbol.split]` or `[Symbol.replace]`; `Object.prototype` has no `toJSON`. | `inKeyRefusal` in `Source/Fragment.lean`; the overlay comments |
 | Distinct JavaScript objects have disjoint field locations, which is how `===` on objects with a field is answered; only allocation creates an object value. | `Arith.eq` |
-| Code outside a unit adds keys to a dictionary it holds at a writable index only at that index's contract and only keys of its class. The calculus has no step that adds a key; a program adds one by copying its own object. Where a claim states an own-key bound of such an object, the assumption does not cover it (the gap in [index signatures](#index-signatures)). | [index signatures](#index-signatures) |
+| Code outside a unit adds keys to an object it holds at a writable index only at that index's contract and only keys of its class, none the model keeps for itself (`[[proto]]`, `[]`: an object owning a property JavaScript spells so is one the model does not represent, as for any object it meets). The calculus has no step that adds a key; a program adds one by copying its own object. Every type the unit may hold such an object at stays true of it with the key: its own-key bounds by `ownKeysT_keeps` and `covers_writable_keeps` (a writable index is met only through bounds that keep its class; a literal meant for one is allocated at it, `allocDict`), its fields, views, indexes and optional fields by the covering premises a writable target states. | [index signatures](#writable-string-index-signatures) |
 | A spread or `Object.assign` does not copy an own enumerable symbol-keyed property, which JavaScript copies; the result states no symbol key and is open, so nothing typed reads one. | [object literals](#object-literals) |
 | The standard `Object.assign`, `Function.prototype.call`, `apply` and `bind` are the intrinsics the parser identifies by lexical provenance; the fragment cannot write those properties. | `tools/fragment-parse.mts` |
 | A value of type `Promise<T>` is a realm promise, which resolution never fulfills with a thenable (it adopts one), so awaiting it yields a `T`: runtime and library promises, the program's `async` functions (`%AsyncReturn%` adopts), `Promise.resolve`, `new Promise`, `%PromiseReject%` and `%PromiseAll%`. A trusted generic signature (imported, ambient, library) is truthful about `Promise<T>` or `PromiseLike<T>` only at a `T` no thenable inhabits, so each type parameter such a position names is bounded by the non-thenable types. | `%Await%` and `nonThenable` in `tools/intrinsics.mts`, `promisedBinders` in `tools/declaration-graph.mts`; [async](PROGRAM-TYPING.md#async-functions-and-await) |
@@ -912,13 +922,6 @@ the store key holds a dense store and `Array.prototype`; an object whose
 chain holds `C`'s prototype meets `C`'s type). That is a change to the
 safety theorem's heap premise; until then such uses are located search
 failures, never wrong verdicts.
-
-**Own-key bounds and writable indexes.** An own-key bound is not implied by
-a writable index's contract, which lets outside code add keys ([the
-gap](#index-signatures)). Closing it in Lean: a writable index met only by a
-value typed at a writable index, never through an own-key bound
-(`CoversKeys`), and a fresh literal allocated directly at a dictionary; or an
-own-key bound treated as a heap fact, which a call forgets.
 
 **Keys known only at run time.** A key-adding write at one of several literal
 keys needs a dispatch on the key, one copy per key; at a number or a symbol,

@@ -608,14 +608,15 @@ field may add its key: it is a [key-adding write](#key-adding-writes), a copy
 of a local's own object, refused on any other; a readonly one grants no write
 in any case.
 
-A fresh literal meets a dictionary, or a record whose optional fields it
-leaves out, with no rule of its own: `alloc` types it at the record whose own
-keys are bounded by exactly its names, and that record is below the target by
-coverage through the bound ([`CoversKeys`, `CoversOptional`](POSITIVE-TYPES.md#records)).
-No other key exists and the prototype key is not among them, so the object has
-no prototype, lacks every key it does not write, and each field's contract
-need only be within each index view, or equivalent to each writable index.
-The literal may be empty, `{}`, and may write members the dictionary names:
+A fresh literal meets a readonly dictionary, or a record whose optional
+fields it leaves out, with no rule of its own: `alloc` types it at the record
+whose own keys are bounded by exactly its names, and that record is below the
+target by coverage through the bound
+([`CoversKeys`, `CoversOptional`](POSITIVE-TYPES.md#records)). No other key
+exists and the prototype key is not among them, so the object has no
+prototype, lacks every key it does not write, and each field's contract need
+only be within each index view. The literal may be empty, `{}`, and may write
+members the dictionary names:
 
 $$
 \frac{\vec k\ \text{distinct}\quad\Gamma\vdash_G e_i:A_i\quad
@@ -624,9 +625,32 @@ $$
 $$
 
 which is `alloc` followed by subsumption; the producer states the bounded
-record as the literal's claim wherever its contract has an index or an
-optional field. None of these rules grants a write capability to a readonly
-dictionary.
+record as the literal's claim wherever its contract has a readonly index or
+an optional field. None of these rules grants a write capability to a
+readonly dictionary.
+
+A writable index is never met through an own-key bound: code holding the
+dictionary may add a key of its class, which a bound listing keys, or one
+excluding such a key, says is absent
+([writable string index signatures](DESIGN.md#writable-string-index-signatures),
+[covering](POSITIVE-TYPES.md#records)). So a literal meant for a writable
+dictionary is allocated at the dictionary itself, `allocDict`: its fields are
+the clause's named fields, none the prototype key, each whose key an index's
+class may admit ($\theta\ni_?k$, `IndexKeys.may`) at exactly that index's
+type, and the clause states no own-key bound. The object owns no other key,
+so every index, a view or writable, holds of it (`dictCellT_of_recT`), and no
+bound is claimed that a key added later would falsify. With $\overline{D}$
+the index views and $\overline{C}$ the writable indexes:
+
+$$
+\frac{\vec k\ \text{distinct}\quad\mathsf{proto}\notin\vec k\quad
+      \Gamma\vdash_G e_i:A_i\quad
+      \forall i.\;\forall(\theta{:}V)\in\overline{D}\,\overline{C}.\;\theta\ni_?k_i\Rightarrow A_i=V}
+     {\Gamma\vdash_G\{\overline{k_i{:}e_i}\}:\mathsf{Dict}(\overline{k_i{:}A_i};\overline{D};\overline{C})}
+$$
+
+Its evidence is `alloc` at a dictionary type. The producer claims the literal
+so wherever its contract has a writable index.
 
 $$
 \frac{\Gamma\vdash_G t:A\quad\operatorname{check}(G,A,B,p)=\mathsf{true}}
@@ -1241,9 +1265,11 @@ store key, or a string index at a type no member of which is a list
 (`noStore`, since the store key `[]` is a string), unless $K$ is the symbol
 class, which admits no key a copy gives. A field or optional field of the
 result whose key a class may admit is within $V$, and exactly $V$ where a
-writable index's class may admit it, whose locations hold exactly $V$; and a
-result with a writable index has no bound listing keys, which the keys outside
-code may add under the index would contradict. The
+writable index's class may admit it, whose locations hold exactly $V$; and
+each bound of a result with a writable index keeps that index's class
+($b\ \mathsf{keeps}\ K$, [covering](POSITIVE-TYPES.md#records)): none lists
+keys or excludes one the class may admit, which the keys outside code may add
+under the index would contradict. The
 soundness case evaluates the operands with `bind`, as `arith` does, and
 closes with `ObjectMerge.merge_values_safe`, which takes the merge's step,
 then the allocation's by `make_fields_rule`, giving each location the

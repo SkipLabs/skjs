@@ -641,6 +641,40 @@ theorem ownKeysT_admits {b : KeyBound} {k : Nat} {W : WorldT k}
     cases hl
   · rfl
 
+/-- A key the model keeps for itself: the prototype and the array store. No
+code adds one as a property; an object owning a property JavaScript spells so
+is not one the model represents. -/
+def modelKey (k : PropKey) : Bool := k == CallArguments.protoField || k == arrayStoreKey
+
+/-- A bound keeps a class's keys: a key of the class added to an object
+leaves the bound true of it. A bound listing keys keeps none (it excludes every
+key it does not list); one excluding keys keeps a class admitting none of
+them but the model's own. -/
+def KeyBound.keeps (K : KeyBound) (C : IndexKeys) : Bool :=
+  !K.among && K.keys.all fun k => modelKey k || !C.may k
+
+/-- **A kept bound survives a key of its class.** Code holding an object at a
+writable index may add a key the index's class admits
+([DESIGN.md](../../../../DESIGN.md#writable-string-index-signatures)); a bound
+that keeps the class stays true of the object with the key. -/
+theorem ownKeysT_keeps {K : KeyBound} {C : IndexKeys} (hk : K.keeps C = true) {k : Nat}
+    {W : WorldT k} {flds : List (PropKey × Nat)} {f : PropKey} {l : Nat}
+    (h : ownKeysT K k W (.objAt flds .absent)) (hf : C.Admits f) (hm : modelKey f = false) :
+    ownKeysT K k W (.objAt ((f, l) :: flds) .absent) := by
+  obtain ⟨flds', he, hall⟩ := h
+  cases he
+  simp only [KeyBound.keeps, Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true,
+    Bool.or_eq_true] at hk
+  obtain ⟨hna, hkeys⟩ := hk
+  refine ⟨_, rfl, fun p hp => ?_⟩
+  rcases List.mem_cons.mp hp with rfl | hp
+  · have hn : f ∉ K.keys := fun hmem => by
+      rcases hkeys f hmem with h | h
+      · rw [hm] at h; cases h
+      · rw [IndexKeys.may_of_admits hf] at h; cases h
+    simp [KeyBound.admits, hna, hn]
+  · exact hall p hp
+
 /-- No optional field constrains a plain object. -/
 theorem optT_nil {k} {W : WorldT k} {flds : List (PropKey × Nat)} :
     optT [] k W (.objAt flds .absent) :=
@@ -748,6 +782,39 @@ theorem ownKeysT_slots {K : KeyBound} {k : Nat} {W : WorldT k} {base : Nat}
   refine ⟨slots base ns, rfl, fun p hp => h _ ?_⟩
   have := List.mem_map_of_mem (f := Prod.fst) hp
   rwa [slots_names] at this
+
+/-- A record owning no key but its fields, and no prototype, is a writable
+index over a class whose every field agrees with the index's contract: an
+object allocated with exactly those fields is a dictionary from the start. -/
+theorem dictCellT_of_recT {fs : Fields} {flds : List (PropKey × Nat)} {K : IndexKeys} {A : Fam}
+    {k : Nat} {W : WorldT k} (hrec : recT fs k W (.objAt flds .absent))
+    (hown : ∀ f l, flds.lookup f = some l → ∃ T, (f, T) ∈ fs)
+    (hproto : flds.lookup CallArguments.protoField = none)
+    (hA : ∀ f T, (f, T) ∈ fs → K.Admits f →
+      ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), T j W' u ↔ A j W' u) :
+    dictCellT K A k W (.objAt flds .absent) := by
+  refine ⟨flds, rfl, hproto, fun f l hl hk => ?_⟩
+  obtain ⟨T, hT⟩ := hown f l hl
+  obtain ⟨flds', he, hfs⟩ := hrec
+  cases he
+  obtain ⟨l', c, hl', hc, hag⟩ := hfs f T hT
+  rw [hl] at hl'
+  cases hl'
+  exact ⟨c, hc, fun j hj W' u => (hag j hj W' u).trans (hA f T hT hk j hj W' u)⟩
+
+/-- A fresh object owns exactly the keys it allocated. -/
+theorem slots_lookup_mem {base : Nat} {ns : List PropKey} {f : PropKey} {l : Nat}
+    (h : (slots base ns).lookup f = some l) : f ∈ ns := by
+  have hown : ownKeysT ⟨true, ns⟩ 0 (ofList []) (.objAt (slots base ns) .absent) :=
+    ownKeysT_slots fun n hn => by simp [KeyBound.admits, hn]
+  simpa [KeyBound.admits] using ownKeysT_admits hown h
+
+/-- A fresh object lacks every key it did not allocate. -/
+theorem slots_lookup_none {base : Nat} {ns : List PropKey} {f : PropKey} (h : f ∉ ns) :
+    (slots base ns).lookup f = none := by
+  cases hl : (slots base ns).lookup f with
+  | none => rfl
+  | some l => exact absurd (slots_lookup_mem hl) h
 
 /-- Even a Boolean dictionary admits an empty object. Its missing read is
 `undefined`, which is not Boolean; the indexed-read result must include it. -/

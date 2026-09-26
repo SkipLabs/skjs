@@ -70,6 +70,25 @@ def MeetG : PositiveGraphs.Graph (Fin 3) := fun i => match i.val with
 #guard checkCoreSource MeetG [1] [2] ⟨[([1], [2]), ([0], [0])], []⟩
 #guard !(checkCoreSource MeetG [2] [1] ⟨[([2], [1]), ([0], [0])], []⟩)
 
+-- A writable index is met only through bounds that keep its keys: code holding
+-- it may add any key of its class. An object owning exactly its written keys
+-- (here none) meets a readonly view through that bound, never a writable
+-- index; nor does a dictionary whose bound excludes `x`. One excluding only
+-- the prototype key, which no code adds as a property, does. Every subtype
+-- premise is granted, so only the clause rule decides.
+def WritableG : PositiveGraphs.Graph (Fin 6) := fun i => match i.val with
+  | 0 => .atom .str
+  | 1 => .atom (.refs [] [] [] [] [] [⟨true, []⟩])
+  | 2 => .atom (.dict [] [] [] [(.strings, [0])] [] [] [] [(.strings, [0])])
+  | 3 => .atom (.dict [] [] [] [(.strings, [0])] [] [] [⟨false, ["x", "[[proto]]"]⟩]
+      [(.strings, [0])])
+  | 4 => .atom (.dict [] [] [] [(.strings, [0])] [] [] [⟨false, ["[[proto]]"]⟩] [(.strings, [0])])
+  | _ => .atom (.dict [] [] [] [(.strings, [0])])
+#guard checkCoreSource WritableG [1] [5] ⟨[([1], [5]), ([0], [0])], []⟩
+#guard !(checkCoreSource WritableG [1] [2] ⟨[([1], [2]), ([0], [0])], []⟩)
+#guard !(checkCoreSource WritableG [3] [2] ⟨[([3], [2]), ([0], [0])], []⟩)
+#guard checkCoreSource WritableG [4] [2] ⟨[([4], [2]), ([0], [0])], []⟩
+
 -- Previously supported domain splitting survives the representation extension.
 def splitCert : Certificate (Fin 12) :=
   ⟨[([9], [10]), ([0], [0]), ([1], [1])],

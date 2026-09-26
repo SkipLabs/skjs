@@ -147,9 +147,12 @@ language. The boundaries are:
    its method's closure that longer signature, and the class value that
    construct signature, the same way; so does one whose construct signature
    passes more actuals than the constructor binds. A fresh object literal whose contract
-   has an index or an optional field is claimed at its exact record (`Exact`:
+   has a readonly index or an optional field is claimed at its exact record (`Exact`:
    its fields and an own-key bound: own keys among exactly theirs), which is how
-   it meets a dictionary or leaves an optional field out. Explicit type
+   it meets a readonly dictionary or leaves an optional field out; one whose
+   contract has a writable index is claimed at the dictionary itself, each
+   field at its index's type, since a writable index is never met through an
+   own-key bound. Explicit type
    arguments fix a call's leading binders before the rest are inferred; an
    actual at a parameter mentioning none of them is built at that parameter.
    Expected types guide fresh object/array construction, while the actual
