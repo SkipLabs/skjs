@@ -80,10 +80,12 @@ def arrowEvidence [DecidableEq ι] (G : NormalGraph ι) (table : Table ι)
   -- A scheme row's signatures are compared as an arrow clause's, against
   -- those of a scheme binding the same rows that a row of the table relates
   -- it to (`SchemeCoversWith`).
-  let schemes := (table.flatMap fun r => r.1.flatMap fun i => r.2.filterMap fun j =>
-    if i ∈ r.2 then none else match G.schemes i, G.schemes j with
-      | some s, some s' => if s.binders = s'.binders then some (s, s') else none
-      | _, _ => none).eraseDups
+  let schemeRow (i : ι) : Bool := (G.schemes i).isSome
+  let schemes := ((table.filter fun r => r.1.any schemeRow && r.2.any schemeRow).flatMap fun r =>
+    r.1.flatMap fun i => r.2.filterMap fun j =>
+      if i ∈ r.2 then none else match G.schemes i, G.schemes j with
+        | some s, some s' => if s.binders = s'.binders then some (s, s') else none
+        | _, _ => none).eraseDups
   (clauses.flatMap fun a => match a with
     | .arrs L S | .callable _ _ L S => clauses.flatMap fun b => match b with
       | .arrs M _ | .callable _ _ M _ => arrows L S M
@@ -113,9 +115,9 @@ it is left out of a table's candidates, which leaves the pruned table as it
 was, and a pair failing it is refused before any table is built. Untrusted:
 `checkCore` decides. -/
 def rowFeasible [DecidableEq ι] (G : NormalGraph ι) (known : PositiveRules.Known ι)
-    (A B : Ty ι) : Bool :=
+    (A B : Ty ι) (schemes : Bool := false) : Bool :=
   PositiveRules.SameKind G A B &&
-    decide (PositiveRules.OpaqueWith G (fun _ _ => True) known (fun _ _ _ => True) A B) &&
+    decide (PositiveRules.OpaqueWith G (fun _ _ => True) known (fun _ _ _ => schemes) A B) &&
     (sourceClauses G A ++ PositiveRules.meetSources G A B).all fun a => (clausesOf G B).any fun b =>
       decide (CoversWith G (fun _ _ => True) known (fun _ _ _ => True) A a b)
 
@@ -143,51 +145,116 @@ def subtypeBase [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     (A B : Ty ι) : Option (PositiveCertificates.Proof ι) :=
   subtypeWith G pool [] A B
 
-/-- The types a row's coverage may relate: its clauses' operands, a scheme
-row's signature types, a meet row's clauses' operands, and the operands of
-the prototype a record holds, whose members are the object's. -/
-def demandOperands [DecidableEq ι] (G : NormalGraph ι) (T : Ty ι) : List (Ty ι) :=
-  let proto (c : Clause (List ι)) : List (Ty ι) := match c with
-    | .refs a bs vs _ _ _ =>
-      (((a :: bs).flatten ++ vs).filter (·.1 == CallArguments.protoField)).flatMap fun f =>
-        f.2.flatMap fun i => (G i).flatMap Clause.operands
-    | _ => []
-  (T.flatMap fun i =>
-    (G i).flatMap (fun c => c.operands ++ proto c) ++
-    (match G.schemes i with
-      | some s => s.signatures.flatMap (fun p => p.1 :: p.2.2 :: p.2.1) ++
-          s.variadic.flatMap (fun p => p.1 :: p.2.2.1 :: p.2.2.2 :: p.2.1)
-      | none => []) ++
-    ((G.meets i).map fun m => m.2.flatMap Clause.operands).getD []).eraseDups
+/-- The pairs one signature list's coverage of another compares: each target
+signature against each source one, position by position (receivers,
+parameters contravariantly, results covariantly), and each part of a target
+parameter's union against the source's parameter, as arrow coverage splits
+it. -/
+def signaturePairs (source target : List (List ι × List (List ι) × List ι)) :
+    List (List ι × List ι) :=
+  target.flatMap fun t => source.flatMap fun s =>
+    (t.1, s.1) :: (s.2.2, t.2.2) :: (t.2.1.zip s.2.1).flatMap fun (q, p) =>
+      (q, p) :: q.map fun l => ([l], p)
+
+/-- The same, for variadic signatures: fixed parameters, rest and result. -/
+def restPairs (source target : List (List ι × List (List ι) × List ι × List ι)) :
+    List (List ι × List ι) :=
+  target.flatMap fun t => source.flatMap fun s =>
+    (t.1, s.1) :: (t.2.2.1, s.2.2.1) :: (s.2.2.2, t.2.2.2) :: t.2.1.zip s.2.1
+
+/-- The pairs a record's coverage of another compares, key by key: fields
+both ways, views and optional fields, methods signature by signature and
+scheme by scheme, and a method the source's prototype holds under the key
+(its receiver against the source, its signatures against the target's
+schemes'). -/
+def recordPairs [DecidableEq ι] (G : NormalGraph ι) (self : List ι)
+    (fs vs : List (PropKey × List ι)) (os : List (OptionalField (List ι)))
+    (ms : List (MethodMembers.Sig (List ι)))
+    (fs' vs' : List (PropKey × List ι)) (os' : List (OptionalField (List ι)))
+    (ms' : List (MethodMembers.Sig (List ι))) : List (List ι × List ι) :=
+  let slots := fs ++ vs ++ os.map fun o => (o.key, o.type)
+  let keyed (k : PropKey) : List (List ι) := (slots.filter (·.1 == k)).map (·.2)
+  let proto : List (List ι) := (fs ++ vs).filter (·.1 == CallArguments.protoField) |>.map (·.2)
+  let schemeSigs (F : List ι) := F.filterMap G.schemes
+  (fs'.flatMap fun f => (keyed f.1).flatMap fun A => [(A, f.2), (f.2, A)]) ++
+  (vs'.flatMap fun f => (keyed f.1).map fun A => (A, f.2)) ++
+  (os'.flatMap fun o => (keyed o.key).flatMap fun A => [(A, o.type), (o.type, A)]) ++
+  ms'.flatMap fun q =>
+    let own := ms.filter (·.key == q.key)
+    let targetSchemes := q.schemes.flatMap schemeSigs
+    (own.flatMap fun p =>
+      signaturePairs (p.calls.map fun c => ([], c.1, c.2)) (q.calls.map fun c => ([], c.1, c.2)) ++
+      (q.schemes.flatMap fun S' => p.schemes.map fun S => (S, S'))) ++
+    ((keyed q.key ++ proto.flatMap fun P => (PositiveRules.viewOf G P q.key).toList).flatMap fun F =>
+      (schemeSigs F).flatMap fun s =>
+        (s.signatures.map fun p => (self, p.1)) ++
+        targetSchemes.flatMap fun s' => signaturePairs s.signatures s'.signatures ++
+          restPairs s.variadic s'.variadic)
+
+/-- The pairs one clause's coverage of another compares. -/
+def clausePairs [DecidableEq ι] (G : NormalGraph ι) (self : List ι) :
+    Clause (List ι) → Clause (List ι) → List (List ι × List ι)
+  | .refs a bs vs os ms _, .refs c ds ws ps ns _
+  | .refs a bs vs os ms _, .dict c ds ws _ ps ns _ _
+  | .dict a bs vs _ os ms _ _, .refs c ds ws ps ns _ =>
+    recordPairs G self (a :: bs).flatten vs os ms (c :: ds).flatten ws ps ns
+  | .dict a bs vs ix os ms _ cx, .dict c ds ws iy ps ns _ cy =>
+    recordPairs G self (a :: bs).flatten vs os ms (c :: ds).flatten ws ps ns ++
+      (iy ++ cy).flatMap fun y => (ix ++ cx).flatMap fun x => [(x.2, y.2), (y.2, x.2)]
+  | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T | .callable _ _ L S, .callable _ _ M T =>
+    signaturePairs L M ++ restPairs S T
+  | .ctors L _, .ctors M _ =>
+    signaturePairs (L.map fun p => ([], p.1, p.2)) (M.map fun p => ([], p.1, p.2))
+  | .list a bs, .list c ds | .pack a bs, .pack c ds =>
+    (c :: ds).flatMap fun q => (a :: bs).flatMap fun p =>
+      let pos (t : PositiveNormalization.Tuple (List ι)) := t.required ++ t.optional ++ t.rest.toList
+      (pos p).flatMap fun x => (pos q).flatMap fun y => [(x, y), (y, x)]
+  | _, _ => []
+
+/-- The pairs a row's coverage compares: its clauses' against the target's,
+and a scheme's signatures against a target scheme's binding the same rows. -/
+def demandPairs [DecidableEq ι] (G : NormalGraph ι) (X Y : Ty ι) : List (List ι × List ι) :=
+  (clausesOf G X).flatMap (fun a => (clausesOf G Y).flatMap (clausePairs G X a)) ++
+  X.flatMap fun i => Y.flatMap fun j => match G.schemes i, G.schemes j with
+    | some s, some s' => if s.binders = s'.binders then
+        signaturePairs s.signatures s'.signatures ++ restPairs s.variadic s'.variadic else []
+    | _, _ => []
 
 /-- The most rows a table grown on demand may hold before the search gives
 up on it. -/
 def demandLimit : Nat := 400
 
 /-- A core table grown from a pair on demand: each row adds the rows relating
-the operands its coverage may compare, one side's against the other's, in
-both directions, that could hold and are not label inclusions. A recursive
-family of types (`Promise<A>` and `Promise<B>`, whose `catch` returns
-`Promise<A | R>` and `Promise<B | R>`) closes into a finite table of the pairs
-the two unfold into together, without a table over every type the unit
-names. `none` past `demandLimit` rows. Untrusted: `checkCore` decides. -/
+what its coverage compares (`demandPairs`), that could hold and are not label
+inclusions. A recursive family of types (`Promise<A>` and `Promise<B>`, whose
+`catch` returns `Promise<A | R>` and `Promise<B | R>`) closes into a finite
+table of the pairs the two unfold into together, without a table over every
+type the unit names. `none` past `demandLimit` rows. Untrusted: `checkCore`
+decides. -/
 def demandTable [DecidableEq ι] (G : NormalGraph ι) (known : PositiveRules.Known ι) :
     Nat → Table ι → Table ι → Option (Table ι)
   | 0, _, _ => none
   | fuel + 1, table, frontier =>
-    let next := (frontier.flatMap fun r =>
-        let xs := demandOperands G r.1
-        let ys := demandOperands G r.2
-        xs.flatMap fun x => ys.flatMap fun y => [(x, y), (y, x)]).eraseDups.filter fun r =>
-      !(r.1.all (· ∈ r.2)) && !table.contains r && rowFeasible G known r.1 r.2
+    let next := (frontier.flatMap fun r => demandPairs G r.1 r.2).eraseDups.filter fun r =>
+      !(r.1.all (· ∈ r.2)) && !table.contains r && rowFeasible G known r.1 r.2 true
     if next.isEmpty then some table
     else if table.length + next.length > demandLimit then none
     else demandTable G known fuel (table ++ next) next
 
-/-- A proof of `A ≤ B` by a table grown on demand (`demandTable`). -/
+/-- Whether a type is of objects with a member of quantified signatures: an
+instance of a declaration with generic methods. -/
+def quantifiedMembers (G : NormalGraph ι) (T : Ty ι) : Bool :=
+  (expand G T).any fun c => match c with
+    | .refs _ _ _ _ ms _ | .dict _ _ _ _ _ ms _ _ => ms.any (!·.schemes.isEmpty)
+    | _ => false
+
+/-- A proof of `A ≤ B` by a table grown on demand (`demandTable`), for two
+instances of declarations with generic methods, whose unfolding together the
+tables over the types near the pair do not reach. -/
 def demandProof [DecidableEq ι] (G : NormalGraph ι) (A B : Ty ι) :
     Option (PositiveCertificates.Proof ι) := do
-  if !rowFeasible G [] A B then none
+  if !(quantifiedMembers G A && quantifiedMembers G B) then none
+  if !rowFeasible G [] A B true then none
   let table ← demandTable G [] demandLimit [(A, B)] [(A, B)]
   let types := (table.flatMap fun r => [r.1, r.2]).eraseDups
   let table := prune G types [] table.length table
