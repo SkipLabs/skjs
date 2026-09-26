@@ -84,17 +84,23 @@ let encode (proposal : Proposal.t) =
            meets := !meets @ [(parts,label)];
            [label]))
     | Union ts -> List.sort_uniq compare (List.concat_map label_list ts)
-    | Meet (t,ts) as m when (let n = List.length (distributed (t::ts)) in n > 1 && n <= 16) ->
-      if Semantic.mentions_rigid m then unsupported "rigid type nested in a graph type";
+    | Meet (t,ts) when (let n = List.length (distributed (t::ts)) in n > 1 && n <= 16) ->
       (* An intersection with a union operand is the union of the
          intersections with each of its arms, `(A | B) & C` is
          `(A & C) | (B & C)`, the same values: the claim states it so, one
          meet row per arm, which a read then splits on. *)
+      (* An arm meeting two disjoint primitives, `"hi" & "fixed"` at an
+         instance, holds no value, and is left out. *)
+      let empty parts = List.exists (fun a -> List.exists (fun b -> match a,b with
+        | Atoms [x],Atoms [y] -> Inference.meet_atom x y = Some []
+        | _ -> false) parts) parts in
       List.sort_uniq compare (List.concat_map (fun parts -> match parts with
+        | _ when empty parts -> []
         | p::ps -> label_list (Meet (p,ps))
         | [] -> []) (distributed (t::ts)))
-    | Meet (t,ts) as m ->
-      if Semantic.mentions_rigid m then unsupported "rigid type nested in a graph type";
+    (* A meet row, filled by Lean from its operands' rows: a binder's is its
+       parameter row, and the meet of a binder with others is a meet row. *)
+    | Meet (t,ts) ->
       let parts = Array (List.map labels (t::ts)) in
       (match List.assoc_opt parts !meets with
        | Some label -> [label]
@@ -416,8 +422,7 @@ let encode (proposal : Proposal.t) =
       let rigid, ground = List.partition contains_symbolic ts in
       Object ["union", Array (List.map claim_type (rigid @ ground))]
     | (Atoms _ | Union _) as t -> labels t
-    | Meet _ as t when not (contains_symbolic t) -> labels t
-    | Meet _ -> unsupported "a type parameter's intersection in a claim"
+    | Meet _ as t -> labels t
   in
   (* The substitution is exported so Lean re-checks the elimination it names,
      rather than re-inferring one of its own. A site that calls no quantified

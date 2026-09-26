@@ -3,7 +3,7 @@
  * where a name resolves, which the caller's scope decides, and which record
  * forms an annotation may state. */
 import * as ts from "typescript/unstable/ast";
-import type { Identifier, Node, SourceFile, TypeElement, TypeNode, TypeReferenceNode } from "typescript/unstable/ast";
+import type { Identifier, Node, SourceFile, TypeAliasDeclaration, TypeElement, TypeNode, TypeReferenceNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
 import type { PropertyKey, TypeTerm } from "./declaration-types.mts";
 
@@ -144,6 +144,23 @@ export function computedForm(node: TypeNode): string | null {
       ts.isLiteralTypeNode(t) || PRIMITIVE_KEYWORDS.includes(t.kind)))
     return "an intersection of primitives";
   return null;
+}
+
+/** A generic type alias whose equation is a type TypeScript computes
+ * (`computedForm`), `type ElementOf<T> = T[number]`, `type Keys<T> = keyof T`,
+ * or is an application of another such alias: over its parameters it is
+ * known only at an application, so it has no equation of its own, and each
+ * reference to it is a computed type, evaluated at the reference's arguments
+ * (`computed-types.mts`). `aliasOf` is the alias a reference names, if any. */
+export function computedAlias(node: Node, aliasOf: (reference: TypeReferenceNode) => TypeAliasDeclaration | null,
+    seen: Set<Node> = new Set()): node is TypeAliasDeclaration {
+  if (!ts.isTypeAliasDeclaration(node) || !node.typeParameters?.length || seen.has(node)) return false;
+  seen.add(node);
+  const body = unwrap(node.type);
+  if (computedForm(body) !== null) return true;
+  if (!ts.isTypeReferenceNode(body)) return false;
+  const target = aliasOf(body);
+  return !!target && computedAlias(target, aliasOf, seen);
 }
 
 const PRIMITIVE_KEYWORDS: ts.SyntaxKind[] = [ts.SyntaxKind.NullKeyword, ts.SyntaxKind.UndefinedKeyword,
@@ -444,9 +461,11 @@ function tuple(scope: TermScope, node: ts.TupleTypeNode, readonly: boolean, span
 /** Union is a list of parts; an intersection's operands are met in Lean,
  * which refuses a meet it cannot represent: record and function operands are
  * one location under several contracts or one function with several
- * signatures, any other ground operands the graph's meet of their rows. An
- * annotation's operand over a type parameter is known only at an instance,
- * and is refused. */
+ * signatures, any other ground operands the graph's meet of their rows, and a
+ * type parameter with others the meet row of its parameter row within them
+ * (`T & U`, `T & "fixed"`). An annotation's union operand holding a type
+ * parameter, `(T | null) & A`, is refused: it would distribute into meets
+ * each known only at an instance. */
 function intersection(scope: TermScope, node: ts.IntersectionTypeNode, span: Span): TypeTerm {
   if (computedForm(node) !== null && scope.computed)
     return scope.computed(node, span, part => typeTerm(scope, part));
@@ -460,9 +479,9 @@ function intersection(scope: TermScope, node: ts.IntersectionTypeNode, span: Spa
       if (part.k === "atom" && (part.name === "unknown" || part.name === "never"))
         scope.fail(operands[i] ?? node, "an intersection operand must be a single type");
     });
-    if (parts.some(binder))
-      scope.fail(node, "an intersection with a type parameter is known only at an instance: its meet has no " +
-        "representation");
+    if (parts.some(part => part.k === "union" && binder(part)))
+      scope.fail(node, "an intersection with a union holding a type parameter distributes into meets known " +
+        "only at an instance: its meet has no representation");
   }
   return { k: "intersection", parts, span };
 }

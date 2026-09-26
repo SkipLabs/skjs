@@ -39,7 +39,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { Atom } from "./claim.mts";
 import type { DeclarationIdentity, PropertyKey, TypeTerm } from "./declaration-types.mts";
-import { bigintText, CLASS_ACCESS, METHOD_RECEIVER, classMemberRefusal, computedForm, numericKey, optionalTerm, restPositions, restRefusal, restTerm, signature, substitute, typeTerm,
+import { bigintText, CLASS_ACCESS, METHOD_RECEIVER, classMemberRefusal, computedAlias, computedForm, numericKey, optionalTerm, restPositions, restRefusal, restTerm, signature, substitute, typeTerm,
   type TermScope } from "./type-term.mts";
 import type {
   Ast,
@@ -65,6 +65,7 @@ import { CHAIN } from "./fragment.mts";
 const FORGED_PROMISE = "an object the source builds with a `then` member could pass for a promise, and a value typed `Promise` is assumed to be a realm promise";
 import type { Span } from "./span.mts";
 import { messageOf } from "./thrown.mts";
+import { enclosingBinders } from "./computed-types.mts";
 import { collectDeclarations, DeclarationError, libraryArguments, libraryTerm, tsconfigOf, type LibraryType,
   type SeenDiagnostic }
   from "./declaration-graph.mts";
@@ -1322,6 +1323,13 @@ class Gate {
       },
       named: (node, span, read) => {
         const name = (node.typeName as Identifier).text;
+        // An application of an alias TypeScript computes from its parameters
+        // is a computed type, evaluated where it is written.
+        const computed = this.hasTypeParam(name) ? undefined : this.computedTypes.get(`${span[0]}:${span[1]}`);
+        if (computed) {
+          if ("refused" in computed) return this.fail(node, computed.refused);
+          return computed;
+        }
         if (this.enums.has(name) && !this.hasTypeParam(name)) {
           if (node.typeArguments?.length) this.fail(node, "an enum type takes no type arguments");
           return this.enumTerm(name, span);
@@ -4532,9 +4540,17 @@ export function parseFile(file: string, carriesContext = false,
   const computedNodes: Node[] = [];
   const symbolNameNodes: Node[] = [];
   const keyTypeNodes: Node[] = [];
+  // The file's aliases TypeScript computes from their parameters
+  // (`computedAlias`): an application of one is a computed type too.
+  const localAlias = (reference: ts.TypeReferenceNode): TypeAliasDeclaration | null =>
+    ts.isIdentifier(reference.typeName)
+      ? aliasNodes.find(a => a.name.text === (reference.typeName as Identifier).text) ?? null : null;
+  const computedAliases = new Set(aliasNodes.filter(a => computedAlias(a, localAlias)).map(a => a.name.text));
   const findComputed = (node: Node): void => {
     if (ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node)) return;
-    if (ts.isTypeNode(node) && computedForm(node) !== null) {
+    if (ts.isTypeNode(node) && (computedForm(node) !== null ||
+        (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) && computedAliases.has(node.typeName.text) &&
+          !enclosingBinders(node).includes(node.typeName.text)))) {
       computedNodes.push(node);
       return;
     }

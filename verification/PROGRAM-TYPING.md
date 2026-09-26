@@ -3440,10 +3440,23 @@ $$
       [\,p_1\sqcap p_2\cdots\sqcap\vec c\,]}\ \textsc{binders-meet}
 $$
 
-where $\mathsf{meet}$ is `meetLists` of the operands' clauses folded from the
-right ([conjunction](POSITIVE-TYPES.md#conjunction-and-normalization)), and
-any other intersection (a scheme, a union holding a binder) is refused rather
-than an operand being dropped. A meet row is below each of its parameters, so
+where $\mathsf{meet}$ is the operands' clauses met pairwise and folded from
+the right: `meetLists` ([conjunction](POSITIVE-TYPES.md#conjunction-and-normalization)),
+except that a record of invariant fields met with a function type is the
+callable carrying them (`sourceMeetLists`, [below](#intersections-of-functions-and-records)),
+and any other intersection (a scheme, a union holding a binder) is refused
+rather than an operand being dropped. A function's own annotation lowers its
+intersections so (`annotationClaim`), each binder read as the row the unit
+reads it as, its parameter row met with a ground bound or with the binder
+bounding it (`binderRows`): `T & U`, `T & "fixed"`, `T & object` and
+`A<U> & B<V>` are meet rows or meets of application rows over the binders'
+rows. An operand whose row is not yet filled, a declaration being lowered or
+a recursive application met inside its own equation
+(`TreeNode<T> & TreeLeaf<T>` in `TreeLeaf<T>`'s field), makes the meet a row
+of its own that waits for it (`waitingMeet`), filled once every operand is
+(`settle`); a nullary declaration an intersection names is lowered first, so
+the declarations' order does not matter. No lowering ends with a meet left
+waiting. A meet row is below each of its parameters, so
 it establishes what each does. At an instance $p_1:=U_1,\ldots,p_k:=U_k$ it
 means $\mathsf{meetLists}(G(U_1),\ldots,G(U_k),\vec c)$ (`meetOk`, the meet
 folded left to right, or in the reverse order), which is exactly what lowering
@@ -3632,6 +3645,36 @@ $$
 with each list sorted and deduplicated (`Fragment.cellConjunction`); it is
 exact by `recT_append`.
 
+#### Intersections of functions and records
+
+A record type's clause is a plain object, which no function is, so the
+model's meet of a function type and a record is empty. TypeScript's record
+type also holds functions with those properties, and its intersection with a
+function type is exactly those functions: the callable with the record's
+fields (`sourceMeetLists`), as an interface with a call signature and fields
+is. With $\varphi$ invariant fields and no view, optional field, method or
+bound:
+
+$$
+\frac{\llbracket F\rrbracket\ni\mathsf{arrs}(L;S)\quad \llbracket R\rrbracket\ni\mathsf{Ref}(\varphi)}
+     {\llbracket F\mathbin{\&}R\rrbracket\ni\mathsf{callable}(\varphi;L;S)}\ \textsc{callable-meet}
+\qquad
+\frac{\llbracket F\rrbracket\ni\mathsf{callable}(\psi;L;S)\quad \llbracket R\rrbracket\ni\mathsf{Ref}(\varphi)}
+     {\llbracket F\mathbin{\&}R\rrbracket\ni\mathsf{callable}(\varphi\psi;L;S)}
+$$
+
+An interface's `extends` clauses meet so too. A record with a readonly or
+optional field, a method or an index met with a function type has no clause:
+that pair is dropped, as the model's meet drops it (so `{}`'s function arm
+meets such a record as nothing, and its record arm as the record), and an
+intersection it leaves with nothing is refused for it. An array owns its store, so a function is
+never one, and their meet is empty. An interface stating no member of its own
+is its bases' meet (`interface Callback extends Function {}` is `Function`).
+An intersection whose meet is empty (`string & { a: number }`, a function and
+an array, `number[] & { map: number }`) is refused rather than verified
+vacuously: TypeScript keeps such a type (a branded primitive), which no value
+of the model inhabits.
+
 ### Computed types
 
 `typeof x`, `keyof T`, `T[K]`, template literal types and intersections of
@@ -3654,11 +3697,51 @@ where $\llbracket\sigma\rrbracket_x$ reads $\sigma$ where $x$ is declared and
 $\mathsf{type}(x)$ is what an import of $x$ reads. An indexed access projects
 $\llbracket T\rrbracket$ at each key of $\mathsf{lits}(\mathit{ts}(K))$: a
 record's field (with `| undefined` where optional), an array's element at
-`number`, a tuple's position, a union's parts, an alias through its equation,
-a named type's member through its annotation under the same identity premise.
+`number`, a tuple's position, a union's parts, an intersection's operands'
+members met, an alias through its equation (a generic one's at the
+reference's arguments), a named type's member through its annotation under
+the same identity premise.
+
+A **computed alias** is a generic alias whose equation is a computed form or
+an application of another computed alias (`computedAlias`): `type
+ElementOf<T> = T[number]`, `type Keys<T> = keyof T`. Over its parameters it
+is known only at an application, so it has no equation of its own, and an
+application of it is a computed type, evaluated where it is written, its
+equation read with the parameters as the arguments:
+
+$$
+\frac{A\langle\vec X\rangle=\tau\ \text{a computed alias}\quad
+      \mathsf{lits}(\mathit{ts}(A\langle\vec\sigma\rangle))=U}
+     {\llbracket A\langle\vec\sigma\rangle\rrbracket=U}
+\qquad
+\frac{A\langle\vec X\rangle=\tau\ \text{a computed alias}\quad
+      \mathsf{lits}(\mathit{ts}(A\langle\vec\sigma\rangle))\ \text{undefined}}
+     {\llbracket A\langle\vec\sigma\rangle\rrbracket=\llbracket\tau\rrbracket_{\vec X:=\llbracket\vec\sigma\rrbracket}}\ \textsc{computed-alias}
+$$
+
+where $\llbracket\tau\rrbracket_{\vec X:=\vec S}$ evaluates $\tau$ by the
+rules here with each $X_i$ read as $S_i$: an indexed access projects its
+argument, and `keyof` of a type literal is the union of its property names'
+string literals (`keysOf`), so `ElementOf<readonly E[]>` is `E` and
+`Keys<{ good: E }>` is `"good"`. A `typeof` of a constant without an
+annotation is the type TypeScript infers for its initializer where that is a
+union of literals and primitives or an object literal's record of such
+types, each property a writable field and each index a spread copied, read
+from the checker (`inferredTerm`):
+
+$$
+\frac{\mathtt{const}\ x=e\quad \mathit{ts}(\mathtt{typeof}\ x)=\{\overline{k_i\colon t_i};\ \overline{[\theta_j]\colon u_j}\}\ \text{from}\ e\text{'s literal}\quad
+      \forall i.\ \llbracket t_i\rrbracket\ \text{inferred}}
+     {\llbracket\mathtt{typeof}\ x\rrbracket=\{\overline{k_i\colon\llbracket t_i\rrbracket};\ \overline{[\theta_j]\colon\llbracket u_j\rrbracket}\}}\ \textsc{typeof-inferred}
+$$
+
 Refused: a template literal type with a `${string}` or `${number}` hole; a
-form over a type parameter; `keyof` with a unique-symbol key; `typeof` of an
-unannotated binding; `typeof C` of a class with statics.
+form over a function's own type parameter (`keyof T`, `T[number]` with `T`
+the function's binder), which denotes a function of the type an instance
+names, not of the values a parameter row stands for; `keyof` with a
+unique-symbol key, which no type of the fragment names; `typeof` of a binding
+TypeScript infers another type for (a `let`, a method, a `const` assertion);
+`typeof C` of a class with statics.
 
 ### Index signatures
 

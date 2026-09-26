@@ -259,7 +259,9 @@ which a scheme row's bounds, read outside its binders, cannot, so the meet
 alone states it, and at every instantiation within the bound the meet is the
 binder. An instance maps a meet row of several parameters to the meet of
 their instances with its clauses (`meetOk`), which is what a call's
-claimed instance names. Every generic unit and every generic closure is a
+claimed instance names. An intersection an annotation writes over binders,
+`T & U`, `T & "fixed"`, `T & A`, is the same meet row, each binder read as
+the unit reads it. Every generic unit and every generic closure is a
 graph request; there is no second checker for generic bodies.
 
 ### Closures are graph code
@@ -846,9 +848,11 @@ not yet taken are [next steps](#next-steps); a search failure is neither.
 | An instance member or constructor reading a static of its own class | Statics are bindings the class defines after its methods and constructor, whose closures cannot hold them. |
 | A static method that reads `this`; `super` in a static member; a mutable static field | Statics are module bindings, exact only when immutable; a static method's receiver is whatever its call passes, and its `super` the base's constructor, not the prototype `super.m(...)` reads. |
 | A catch binding annotated other than `unknown`, or destructured | Anything may be thrown. |
-| A template literal type with a `${string}` hole; a computed type over a type parameter; `keyof` with a unique-symbol key; `typeof` of an unannotated binding or of a class with statics | No term of the fragment states it exactly. |
+| A template literal type with a `${string}` hole; `keyof` with a unique-symbol key; `typeof` of a binding whose inferred type is not an object literal's record of literals and primitives, or of a class with statics | No term of the fragment states it exactly. |
+| `keyof T`, `T[K]` over a function's own type parameter (an alias computed from its parameters is evaluated at each application) | They are functions of the type an instance names (its declared, optional and readonly keys), not of the values a parameter row stands for, which is all a row's meaning may read at every assignment. |
 | TypeScript's `any` in the checked module's own annotations; a contextual closure parameter TypeScript types `any` | It states no contract. |
-| An intersection Lean cannot represent, or that normalizes to nothing (`number[] & { map: number }`) | Refused rather than verified vacuously. |
+| An intersection that normalizes to nothing (`string & { a: number }`, `(() => void) & number[]`, `number[] & { map: number }`) | No value of the model inhabits it (TypeScript keeps a branded primitive); it is refused rather than verified vacuously. |
+| An intersection with a union holding a type parameter, `(T \| null) & A`; a function type met with a record of readonly or optional fields, methods or an index | It distributes into meets known only at an instance; no clause states such a callable. |
 | An empty module (no function, no initialization code) | Accepting it would check nothing. |
 
 ## Lasting decisions

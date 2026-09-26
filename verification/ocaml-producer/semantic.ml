@@ -1,15 +1,16 @@
 (* Semantic types contain no solver state. More precise proposals do not mutate them.
    A rigid parameter remains distinct from any future inference/existential IDs. *)
 type ty = Atoms of atom list | Rigid of rigid | Union of ty list
-         (* An intersection in a declaration's equation whose operands are
-            known only where it is applied: one is a parameter of the
-            declaration, `T & { readonly [k: string]: Json }`, or another
-            declaration. It is kept, its principal operand first, until the
-            application: there it is the one object its operands describe
-            where they are records (`Proposal.definition`), and otherwise its
-            principal, the parameter's instance, a proposal Lean checks
-            against the whole intersection. It never leaves a declaration's
-            expansion. *)
+         (* An intersection whose operands are known only where it is
+            applied or instantiated: in a declaration's equation one is a
+            parameter of the declaration, `T & { readonly [k: string]: Json }`,
+            or another declaration, and it is kept, its principal operand
+            first, until the application: there it is the one object its
+            operands describe where they are records (`Proposal.definition`),
+            and otherwise its principal, the parameter's instance, a proposal
+            Lean checks against the whole intersection. In a function's
+            annotation, a binder met with other types (`T & U`, `T & "fixed"`)
+            is claimed as the meet row of its operands (`Claims`). *)
          | Meet of ty * ty list
 and rigid = { scope: int; index: int; spelling: string }
 and atom = Nul | Undef | True | False | Num | Str | NumLit of int64 | StrLit of string | Top
@@ -88,14 +89,18 @@ and sequence_mentions_rigid s = List.exists mentions_rigid
 and signature_mentions_rigid (s:signature) =
   s.quantified <> [] || s.rest_pack <> None ||
   List.exists mentions_rigid (s.receiver :: s.result :: s.params @ Option.to_list s.variadic)
+(* Record operands are one object; a function type met with a record is the
+   function carrying the record's fields, a callable object, as Lean meets
+   them (`sourceMeetLists`). *)
 let meet_objects a b = match a,b with
   | Atoms [Shape x],Atoms [Shape y]
-    when x.calls=[] && y.calls=[] && x.elements=None && y.elements=None &&
+    when (x.calls=[] || y.calls=[]) && x.elements=None && y.elements=None &&
          (x.indexes=[] || y.indexes=[]) ->
     let names = List.map (fun (f:field) -> f.name) (x.fields @ y.fields) in
     if List.length names <> List.length (List.sort_uniq compare names) then None
     else Some (Atoms [Shape {x with fields=x.fields @ y.fields;
-      indexes=(match x.indexes with [] -> y.indexes | own -> own)}])
+      indexes=(match x.indexes with [] -> y.indexes | own -> own);
+      calls=x.calls @ y.calls}])
   | _ -> None
 let top = Atoms [Top]
 let arrow params result =

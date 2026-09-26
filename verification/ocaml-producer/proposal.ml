@@ -92,8 +92,8 @@ let definition declarations id args =
        read through its equation (`Serializable<Todo>`); otherwise, with ground
        operands, it stays their intersection, a row Lean fills with their meet
        (`[number, number] & DepSafe`), and over a type parameter it is its
-       principal operand, the argument, as a type parameter's intersection is
-       proposed. *)
+       principal operand, the argument, a hint Lean checks against the whole
+       intersection. *)
     let meet t ts =
       let expand t = match t with
         | Atoms [Named (named,named_args)] when not (List.mem named (id::seen)) ->
@@ -131,11 +131,14 @@ let rec declared_head declarations seen = function
     if List.mem id seen then unsupported "unguarded callable alias cycle";
     declared_head declarations (id::seen) (definition declarations id args)
   | t -> t
-(* The first operand of an intersection a read succeeds on. *)
+(* The first operand of an intersection a read succeeds on; where none has
+   it, the principal operand's reason. *)
 let first_part read parts =
   match List.find_map (fun t -> try Some (read t) with Json.Error _ -> None) parts with
   | Some t -> t
-  | None -> unsupported "read on an intersection none of whose operands has it"
+  | None -> (match parts with
+    | principal :: _ -> read principal
+    | [] -> unsupported "read on an empty intersection")
 (* `ArrayProto`, the declaration of `Array.prototype`'s members, by identity. *)
 (* The key an object keeps its prototype under: no source property spells it. *)
 let proto_key = "[[proto]]"
@@ -736,11 +739,12 @@ let invariance_reason =
    one; TypeScript relates them covariantly, which is unsound, and SKJS infers the narrower from a \
    later use"
 let shape_test_reason =
-  "the values of that shape have a type no clause states (`T & number`, a callable of no known \
-   signature), so the test narrows nothing the model states"
+  "the values of that shape are the meet of the type parameter with it (`T & number`, a meet row), \
+   but a tag test refines only clause rows, and no rule narrows a parameter row to that meet \
+   (`unknown` to a callable of no known signature)"
 let family_test_reason =
-  "the value is narrowed to that primitive family, and a value of both the type parameter and the \
-   family, the `T & number` of TypeScript, has no clause, so it is no longer read as a `T`"
+  "the value is narrowed to that primitive family, and a tag test does not narrow a type parameter's \
+   row to its meet with the family, the `T & number` of TypeScript, so it is no longer read as a `T`"
 let primitive_shape shape = List.mem shape ["string";"number";"bigint";"symbol";"undefined";"boolean"]
 let object_cell_reason =
   "a `let` without an initializer holds `undefined` until it is assigned, and is known to hold another \
@@ -2707,8 +2711,8 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let right = expr ?expected (branch env c false) b in union left right
     | Coalesce (a,b) -> let left=expr env a in let right=expr ?expected env b in
       if expected <> None && rigid_arm left then
-        explain site ("`??` on a value of a type parameter: its values other than null and undefined have \
-          the type `T & {}`, which no clause states");
+        explain site ("`??` on a value of a type parameter: its values other than null and undefined are \
+          the meet `T & {}`, but no rule narrows a parameter row to its meet with the non-nullish values");
       union (without_nullish left) right
     (* The body runs where the receiver is present, and reads it so; a
        nullish receiver gives `undefined`. An inner chain's receiver hides

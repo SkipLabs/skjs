@@ -10,7 +10,7 @@ import { API, DiagnosticCategory, ElementFlags, SignatureKind, SymbolFlags, Type
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, SourceFile, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
-import { classInstance, computedForm, expandMapped, mapped, members, oneTerm, optionalTerm, signature, signatures, substitute,
+import { classInstance, computedAlias, computedForm, expandMapped, mapped, members, oneTerm, optionalTerm, signature, signatures, substitute,
   typeTerm, type Mapped, type TermScope } from "./type-term.mts";
 import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePrototype, primitivePrototypeName, type OverlayEntry,
   type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
@@ -219,12 +219,13 @@ function typeNodeAt(file: SourceFile, span: Span): TypeNode | null {
   return visit(file);
 }
 
-/** The computed type (`computedForm`) at exactly `span`. */
+/** The computed type (`computedForm`) at exactly `span`, or the application
+ * of a computed alias (`computedAlias`) there. */
 function computedAt(file: SourceFile, span: Span): TypeNode | null {
   const visit = (node: Node): TypeNode | null => {
     if (node.end < span[1] || node.pos > span[0]) return null;
-    if (ts.isTypeNode(node) && computedForm(node) !== null && node.getStart(file) === span[0] &&
-        node.end === span[1]) return node;
+    if (ts.isTypeNode(node) && (computedForm(node) !== null || ts.isTypeReferenceNode(node)) &&
+        node.getStart(file) === span[0] && node.end === span[1]) return node;
     return node.forEachChild(visit) ?? null;
   };
   return visit(file);
@@ -444,6 +445,12 @@ export function collectDeclarations(file: string, options: {
     // its identity. A same-named value declaration, a constant or a function,
     // is the name's other meaning, which a type reference does not denote.
     const partners = new Map<TypeDeclaration, TypeDeclaration[]>();
+    // The type aliases a name resolved to, by identity: a rest parameter
+    // typed by one, and an indexed access into one's application, read it
+    // through its equation (`restTerm`, `computed-types.mts`).
+    const aliasNodes = new Map<string, ts.TypeAliasDeclaration>();
+    const aliasKey = (identity: DeclarationIdentity) =>
+      `${identity.module}#${identity.name}@${identity.span[0]}:${identity.span[1]}`;
     const lookup = (identifier: Identifier, what: string): TypeDeclaration => {
       const nodes = resolveDeclarations(identifier, what);
       const types = nodes.filter(isTypeDeclaration);
@@ -462,7 +469,18 @@ export function collectDeclarations(file: string, options: {
         clean(part, `${idOf(part.getSourceFile())}#${part.name.text}`);
       }
       partners.set(node, types);
+      if (ts.isTypeAliasDeclaration(node)) aliasNodes.set(aliasKey(identityOf(node)), node);
       return node;
+    };
+    // The type alias a reference names, if it names one the program declares.
+    const aliasOf = (reference: ts.TypeReferenceNode): TypeAliasDeclaration | null => {
+      if (!ts.isIdentifier(reference.typeName)) return null;
+      try {
+        const node = lookup(reference.typeName, reference.typeName.text);
+        return ts.isTypeAliasDeclaration(node) ? node : null;
+      } catch {
+        return null;
+      }
     };
     // A standard library type read at its meaning (`LibraryType`). Every
     // declaration TypeScript binds the name to must be the library's, so a
@@ -613,11 +631,6 @@ export function collectDeclarations(file: string, options: {
     // The type an imported value's declaration states, and the declarations
     // that type reaches, which join the graph.
     const valueStarts: TypeDeclaration[] = [];
-    // The type aliases a value's type names, by identity: a rest parameter
-    // typed by one is read through its equation (`restTerm`).
-    const aliasNodes = new Map<string, ts.TypeAliasDeclaration>();
-    const aliasKey = (identity: DeclarationIdentity) =>
-      `${identity.module}#${identity.name}@${identity.span[0]}:${identity.span[1]}`;
     const valueScope = (node: Node, what: string, binders: string[] = []): TermScope => {
       const source = node.getSourceFile();
       return {
@@ -656,12 +669,14 @@ export function collectDeclarations(file: string, options: {
           if (known) return libraryTerm(known, libraryArguments(known, part.typeArguments ?? [], read, keyTypeOf), pos,
             message => { throw Error(`${message} in ${what}`); });
           const targetNode = lookup(name, `${idOf(source)}#${name.text}`);
+          // An alias TypeScript computes from its parameters is the type it
+          // computes at this reference's arguments.
+          if (computedAlias(targetNode, aliasOf)) return computedType(computedContext, part, pos, read);
           const parameters = targetNode.typeParameters ?? [];
           const args = part.typeArguments ?? [];
           if (args.length < parameters.filter(p => !p.defaultType).length || args.length > parameters.length)
             throw Error(`type argument arity: ${identityOf(targetNode).module}#${name.text}`);
           valueStarts.push(targetNode);
-          if (ts.isTypeAliasDeclaration(targetNode)) aliasNodes.set(aliasKey(identityOf(targetNode)), targetNode);
           return { k: "reference", reference: { name: name.text, span: pos,
             arguments: args.map(arg => [arg.getStart(source), arg.end] as Span), target: identityOf(targetNode) },
             args: args.map(read), span: pos };
@@ -761,6 +776,21 @@ export function collectDeclarations(file: string, options: {
         return typeTerm(valueScope(at, what, binders), type, at);
       },
       value: (nodes, what) => valueOf(nodes, what),
+      alias: aliasOf,
+      applied: (alias, args) => {
+        const what = `${idOf(alias.getSourceFile())}#${alias.name.text}`;
+        const parameters = (alias.typeParameters ?? []).map(p => p.name.text);
+        const outer = valueScope(alias, what);
+        const scope: TermScope = { ...outer, named: (part, pos, read) => {
+          const index = ts.isIdentifier(part.typeName) ? parameters.indexOf(part.typeName.text) : -1;
+          const argument = args[index];
+          if (index < 0 || !argument) return outer.named(part, pos, read);
+          if (part.typeArguments?.length) throw Error(`type parameter applied as constructor: ${part.typeName.getText(alias.getSourceFile())}`);
+          return argument;
+        } };
+        return node => typeTerm(scope, node, alias);
+      },
+      equation: reference => valueScope(client, "an alias's equation").equation?.(reference) ?? null,
     };
     const roots: { root: TypeRoot; node: TypeDeclaration }[] = [];
     const values: ValueRoot[] = [];
@@ -810,8 +840,10 @@ export function collectDeclarations(file: string, options: {
         throw new DeclarationError(span, "TypeScript local declaration missing");
       try {
         const node = lookup(declaration.name, declaration.name.text);
-        // A merged interface's later declarations are the same root.
-        if (roots.some(r => r.node === node)) continue;
+        // A merged interface's later declarations are the same root. An
+        // alias TypeScript computes from its parameters has no equation: each
+        // reference to it is a computed type.
+        if (roots.some(r => r.node === node) || computedAlias(node, aliasOf)) continue;
         roots.push({ node, root: { binding: { kind: "local", local: declaration.name.text, span },
           declaration: identityOf(node) } });
       } catch (error) {
@@ -1283,7 +1315,7 @@ export function collectDeclarations(file: string, options: {
       try {
         collect(start, seen, definitions, { lookup, identityOf, symbol: symbolOf, privateName: privateNameOf, partners, library, equation,
           libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
-          keys: keyTypeOf });
+          keys: keyTypeOf, alias: aliasOf });
       } catch (error) {
         throw new DeclarationError(root.binding.span,
           error instanceof Error ? error.message : String(error));
@@ -1293,7 +1325,7 @@ export function collectDeclarations(file: string, options: {
       try {
         collect(start, seen, definitions, { lookup, identityOf, symbol: symbolOf, privateName: privateNameOf, partners, library, equation,
           libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
-          keys: keyTypeOf });
+          keys: keyTypeOf, alias: aliasOf });
       } catch (error) {
         throw new DeclarationError(values[Math.min(index, values.length - 1)]?.binding.span ?? [0, 0],
           error instanceof Error ? error.message : String(error));
@@ -1864,6 +1896,8 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
   libraryInterface: (name: string) => TypeDeclaration;
   /** A computed type's term (`computed-types.mts`). */
   computed: NonNullable<TermScope["computed"]>;
+  /** The type alias a reference names, if any. */
+  alias: (reference: ts.TypeReferenceNode) => TypeAliasDeclaration | null;
   /** A mapped type's keys as TypeScript computes them. */
   keys: NonNullable<TermScope["keys"]>;
 }): void {
@@ -1887,7 +1921,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     if (new Set(parameterNames).size !== parameterNames.length)
       throw Error(`duplicate binder in ${identity.module}#${identity.name}`);
     const reference = (source: SourceFile, identifier: Identifier, arguments_: readonly TypeNode[], pos: Span,
-        read: (part: TypeNode) => TypeTerm, base = false): TypeTerm => {
+        read: (part: TypeNode) => TypeTerm, base = false, written?: ts.TypeReferenceNode): TypeTerm => {
       const what = `${identity.module}#${identifier.text}`;
       const known = library(identifier, what);
       // A base is a declaration whose members are inherited; a library type
@@ -1902,6 +1936,9 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       if (known) return libraryTerm(known, libraryArguments(known, arguments_, read, context.keys), pos,
         message => { throw Error(`${message} in ${identity.module}#${identity.name}`); });
       const targetNode = lookup(identifier, what);
+      // An alias TypeScript computes from its parameters is the type it
+      // computes at this reference's arguments.
+      if (written && computedAlias(targetNode, context.alias)) return computed(written, pos, read);
       const target = identityOf(targetNode);
       const targetParameters = targetNode.typeParameters ?? [];
       const required = targetParameters.filter(p => !p.defaultType).length;
@@ -1918,6 +1955,14 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       body = node.type;
       while (ts.isParenthesizedTypeNode(body)) body = body.type;
     }
+    // A declaration's own parameters are positional: a computed type that
+    // reaches a function's binder has no reading in its equation.
+    const computed: NonNullable<TermScope["computed"]> = (part, pos, read) => {
+      const term = context.computed(part, pos, read);
+      if (JSON.stringify(term).includes('"k":"binder"'))
+        throw Error(`${computedForm(part) ?? "a computed alias"} reaches a function's type parameter in ${identity.module}#${identity.name}`);
+      return term;
+    };
     const scopeOf = (source: SourceFile): TermScope => ({
       source,
       annotation: false,
@@ -1925,19 +1970,12 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       symbol,
       privateName: context.privateName,
       keys: context.keys,
-      // A declaration's own parameters are positional: a computed type that
-      // reaches a function's binder has no reading in its equation.
-      computed: (part, pos, read) => {
-        const term = context.computed(part, pos, read);
-        if (JSON.stringify(term).includes('"k":"binder"'))
-          throw Error(`${computedForm(part)} reaches a function's type parameter in ${identity.module}#${identity.name}`);
-        return term;
-      },
+      computed,
       fail: (_node, message) => { throw Error(`${message} in ${identity.module}#${identity.name}`); },
       named: (part, pos, read) => {
         const name = part.typeName as Identifier;
         const index = parameterNames.indexOf(name.text);
-        if (index < 0) return reference(source, name, part.typeArguments ?? [], pos, read);
+        if (index < 0) return reference(source, name, part.typeArguments ?? [], pos, read, false, part);
         if (part.typeArguments?.length)
           throw Error(`type parameter applied as constructor: ${name.text}`);
         return { k: "parameter", index, span: pos };

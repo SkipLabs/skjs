@@ -235,14 +235,13 @@ let rec source_type ctx j =
     | None -> fail "unbound rigid parameter")
   | "intersection" ->
     (* Function operands are one overloaded callable. A type parameter's
-       intersection with another type, `V & DepSafe`, is proposed as the
-       parameter: its instances are what the declarations call it at, and Lean
-       lowers and checks the whole intersection. In a declaration's equation,
-       a parameter of the declaration or a named operand is read once it is
-       known, at the application (`Meet`); elsewhere, record operands are the
-       one object they describe, and any other ground operands, such as an
-       array with a record's members, are kept as `Meet`, whose row Lean
-       fills with its own meet. *)
+       intersection with other types, `V & DepSafe`, `T & U`, is `Meet` with
+       the parameter first: in a declaration's equation it is read once the
+       parameter is known, at the application; in a function's annotation it
+       is a meet row, which Lean fills from the operands' rows. Elsewhere,
+       record operands are the one object they describe, and any other ground
+       operands, such as an array with a record's members, are kept as
+       `Meet`, whose row Lean fills with its own meet. *)
     let parts = List.map recur (items "parts" j) in
     let callable = function
       | Atoms [Shape {fields=[];indexes=[];calls;elements=None}] when calls <> [] -> Some calls
@@ -252,9 +251,10 @@ let rec source_type ctx j =
       | _ -> None in
     let rigid = List.find_opt (function Rigid _ -> true | _ -> false) parts in
     (match rigid,parts with
-     | Some (Rigid r as rigid),_ when List.mem r ctx.positional ->
-       Meet (rigid,List.filter (fun part -> part <> rigid) parts)
-     | Some rigid,_ -> rigid
+     | Some rigid,_ ->
+       (match List.filter (fun part -> part <> rigid) parts with
+        | [] -> rigid
+        | others -> Meet (rigid,others))
      | None,_ when List.for_all (fun part -> callable part <> None) parts ->
        Atoms [Shape {fields=[];indexes=[];calls=List.concat (List.filter_map callable parts);elements=None}]
      (* Construct operands are one overloaded constructor, `new Date()` and

@@ -1,16 +1,19 @@
-/** Types TypeScript computes from other types: `typeof x`, `keyof T`, `T[K]`
- * and template literal types (PROGRAM-TYPING.md, "Computed types"). Their meaning is
- * the type TypeScript computes, which the checker gives; this module states it
- * as the equivalent type term the fragment already has, or refuses it with
- * the reason no such term exists. Nothing here is a second reading of type
+/** Types TypeScript computes from other types: `typeof x`, `keyof T`, `T[K]`,
+ * template literal types and applications of aliases computed from their
+ * parameters (PROGRAM-TYPING.md, "Computed types"). Their meaning is the type
+ * TypeScript computes, which the checker gives; this module states it as the
+ * equivalent type term the fragment already has, or refuses it with the
+ * reason no such term exists. Nothing here is a second reading of type
  * syntax: a type the result names is read by `type-term.mts`, where it is
- * declared. */
-import { TypeFlags, type Checker, type Type } from "typescript/unstable/sync";
+ * declared. What is read from the checker's types is only what has no
+ * syntax: a union of literals and primitives, and the record an object
+ * literal's inferred type is. */
+import { SignatureKind, SymbolFlags, TypeFlags, type Checker, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
-import type { Node, TypeNode } from "typescript/unstable/ast";
+import type { Node, TypeAliasDeclaration, TypeNode, TypeReferenceNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
 import type { TypeTerm } from "./declaration-types.mts";
-import { computedForm, optionalTerm } from "./type-term.mts";
+import { computedAlias, computedForm, numericKey, optionalTerm } from "./type-term.mts";
 
 /** What the evaluator reads with: the project's checker, and the reader of a
  * declaration's own annotation, in that declaration's scope, with the binders
@@ -22,6 +25,15 @@ export type ComputedContext = {
   /** The type of the value `declarations` bind, read as an imported one's
    * is, with its binders (a generic value has some). */
   value(declarations: readonly Node[], what: string): { typeParams: readonly unknown[]; type: TypeTerm };
+  /** The type alias a reference names, as TypeScript resolves it, if it
+   * names one. */
+  alias(reference: TypeReferenceNode): TypeAliasDeclaration | null;
+  /** The reader of type syntax inside `alias`'s equation with its parameters
+   * read as `args`, in the alias's own scope. */
+  applied(alias: TypeAliasDeclaration, args: readonly TypeTerm[]): (node: TypeNode) => TypeTerm;
+  /** A generic alias's equation at a reference's arguments, when it is an
+   * array, a tuple or another alias's application; null otherwise. */
+  equation(reference: Extract<TypeTerm, { k: "reference" }>): TypeTerm | null;
 };
 
 /** The number's decimal spelling, as a literal type's text is written. */
@@ -103,14 +115,60 @@ export function computedType(context: ComputedContext, node: TypeNode, span: Spa
   const literals = literalUnion(type, span);
   if (literals) return literals;
   const computed = describe(checker, type);
+  if (ts.isTypeReferenceNode(node)) return aliasApplication(context, node, span, read, computed);
   if (ts.isTypeQueryNode(node)) return typeQuery(context, node, type, span);
   if (ts.isIndexedAccessTypeNode(node)) return indexedAccess(context, node, type, span, read);
+  // `keyof` of the type literal its operand reads as, where TypeScript
+  // defers it over a type parameter (an alias's, read at its argument).
+  if (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.KeyOfKeyword) {
+    const keys = keysOf(read(node.type), span);
+    if (keys) return keys;
+  }
   if (ts.isTemplateLiteralTypeNode(node) || type.isTemplateLiteralType() || type.isStringMappingType())
     throw Error(`the template literal type ${computed} is a string pattern: it holds infinitely many ` +
       "strings, not a union of literals, and the fragment has no string-pattern type");
   if (generic(type))
     throw Error(`${form} over a type parameter, ${computed}, is computed only at an instance`);
   throw Error(`${form} is ${computed}, ${inexpressible(checker, type)}`);
+}
+
+/** An application of a computed type alias (`computedAlias`),
+ * `ElementOf<readonly E[]>`: its equation evaluated with the alias's
+ * parameters read as the reference's arguments, which are read where the
+ * reference is written. Where TypeScript computes a union of literals and
+ * primitives for the reference, that union was taken already. */
+function aliasApplication(context: ComputedContext, node: TypeReferenceNode, span: Span,
+    read: (node: TypeNode) => TypeTerm, computed: string): TypeTerm {
+  const alias = context.alias(node);
+  if (!alias || !computedAlias(alias, context.alias))
+    throw Error(`${computed} is not an application of a type alias TypeScript computes`);
+  const parameters = alias.typeParameters ?? [];
+  const written = node.typeArguments ?? [];
+  if (written.length !== parameters.length)
+    throw Error(`the computed type alias ${alias.name.text} is applied at a default type argument, outside the fragment`);
+  let body = alias.type;
+  while (ts.isParenthesizedTypeNode(body)) body = body.type;
+  return computedType(context, body, span, context.applied(alias, written.map(read)));
+}
+
+/** `keyof` of a type literal: the union of its property names' string
+ * literals, as TypeScript computes it; null where the keys are not only such
+ * names (an index signature, a symbol or numeric key, a type that is not a
+ * literal). */
+function keysOf(object: TypeTerm, span: Span): TypeTerm | null {
+  if (object.k !== "object" || object.stringIndex || object.numberIndex || object.symbolIndex || object.prototype)
+    return null;
+  const parts: TypeTerm[] = [];
+  for (const field of object.fields) {
+    if (typeof field.name !== "string") return null;
+    // A numeric name's key is its literal as written, `1` or `"1"`, which
+    // the term no longer tells apart.
+    if (numericKey(field.name) === field.name) return null;
+    parts.push({ k: "literal", name: "string", text: field.name, span });
+  }
+  const [only] = parts;
+  if (!only) return { k: "atom", name: "never", span };
+  return parts.length === 1 ? only : { k: "union", parts, span };
 }
 
 /** Why `type` is not a union of literals and primitives: its first part that
@@ -176,8 +234,15 @@ function typeQuery(context: ComputedContext, node: ts.TypeQueryNode, type: Type,
   }
   if (nodes.length !== 1) throw Error(`${what} has ${nodes.length} declarations`);
   const { annotation, optional } = declared(first);
-  if (!annotation) throw Error(`${what} is ${computed}, the type TypeScript infers for a binding without an ` +
-    "annotation, and not a union of literals and primitives");
+  if (!annotation) {
+    // A constant's inferred type is that of its initializer, which a later
+    // assignment cannot change: an object literal's is a record read as the
+    // checker states it.
+    const inferred = ts.isVariableDeclaration(first) && isConstant(first) ? inferredTerm(checker, type, span) : null;
+    if (inferred) return inferred;
+    throw Error(`${what} is ${computed}, the type TypeScript infers for a binding without an ` +
+      "annotation, and not a union of literals and primitives or an object literal's record of them");
+  }
   const stated = checker.getTypeFromTypeNode(annotation);
   const same = stated?.id === type.id;
   // `x?: T` is `T | undefined` where it is read.
@@ -191,6 +256,62 @@ function typeQuery(context: ComputedContext, node: ts.TypeQueryNode, type: Type,
   return orUndefined ? optionalTerm(term, span) : term;
 }
 
+/** Whether a variable is declared `const`. */
+function isConstant(node: ts.VariableDeclaration): boolean {
+  const list = node.parent;
+  return !!list && ts.isVariableDeclarationList(list) && (list.flags & ts.NodeFlags.Const) !== 0;
+}
+
+/** Whether `node` is inside a `const` assertion, `e as const`, which makes
+ * an object literal's properties readonly. */
+function underConstAssertion(node: Node): boolean {
+  for (let at: Node | undefined = node.parent; at; at = at.parent) {
+    if (ts.isAssertionExpression(at) && ts.isTypeReferenceNode(at.type) &&
+        ts.isIdentifier(at.type.typeName) && at.type.typeName.text === "const") return true;
+    if (ts.isVariableDeclaration(at)) return false;
+  }
+  return false;
+}
+
+/** The type TypeScript infers for an object literal, as the term that states
+ * it: its properties, each a writable field (an object literal's property is
+ * one) of a union of literals and primitives or of such a record in turn, and
+ * the index signatures a spread copied into it. Null for anything else: a
+ * method, a symbol-keyed or `const`-asserted property, a property a spread
+ * copied from a declared type, an array, a function. */
+function inferredTerm(checker: Checker, type: Type, span: Span, depth = 0): TypeTerm | null {
+  const literals = literalUnion(type, span);
+  if (literals) return literals;
+  if (depth > 8 || !(type.flags & TypeFlags.Object) ||
+      checker.getSignaturesOfType(type, SignatureKind.Call).length ||
+      checker.getSignaturesOfType(type, SignatureKind.Construct).length) return null;
+  const fields: Extract<TypeTerm, { k: "object" }>["fields"] = [];
+  for (const property of checker.getPropertiesOfType(type)) {
+    const declaration = property.valueDeclaration?.resolve();
+    if (!declaration || !(ts.isPropertyAssignment(declaration) || ts.isShorthandPropertyAssignment(declaration)) ||
+        !ts.isIdentifier(declaration.name) || declaration.name.text !== property.name ||
+        (property.flags & SymbolFlags.Optional) !== 0 || underConstAssertion(declaration)) return null;
+    const value = checker.getTypeOfSymbol(property);
+    const term = value ? inferredTerm(checker, value, span, depth + 1) : null;
+    if (!term) return null;
+    fields.push({ name: property.name, optional: false, readonly: false, type: term, span });
+  }
+  const indexes: { stringIndex: { readonly: boolean; value: TypeTerm; span: Span } | null;
+    numberIndex?: { readonly: boolean; value: TypeTerm; span: Span };
+    symbolIndex?: { readonly: boolean; value: TypeTerm; span: Span } } = { stringIndex: null };
+  for (const info of checker.getIndexInfosOfType(type)) {
+    const value = inferredTerm(checker, info.valueType, span, depth + 1);
+    if (!value) return null;
+    const index = { readonly: info.isReadonly, value, span };
+    const key = info.keyType.flags;
+    if (key & TypeFlags.String && !indexes.stringIndex) indexes.stringIndex = index;
+    else if (key & TypeFlags.Number && !indexes.numberIndex) indexes.numberIndex = index;
+    else if (key & TypeFlags.ESSymbol && !indexes.symbolIndex) indexes.symbolIndex = index;
+    else return null;
+  }
+  return { k: "object", fields, ...indexes, calls: [], span };
+}
+
 /** `T[K]`: the member, element or position of `T` at each key `K` denotes,
  * read from `T` as this scope reads it; a member of a named type is its
  * declaration's annotation, which must denote exactly the type TypeScript
@@ -200,7 +321,15 @@ function indexedAccess(context: ComputedContext, node: ts.IndexedAccessTypeNode,
   const { checker } = context;
   const computed = describe(checker, type);
   const keyType = checker.getTypeFromTypeNode(node.indexType);
-  const keys = keyType ? literalUnion(keyType, span) : null;
+  // A key over an alias's parameter is the literals its argument reads as.
+  const literal = (t: TypeTerm): boolean =>
+    t.k === "literal" || (t.k === "atom" && ["string", "number", "symbol"].includes(t.name)) ||
+    (t.k === "union" && t.parts.every(literal));
+  const keyTerm = (): TypeTerm | null => {
+    const written = read(node.indexType);
+    return literal(written) ? written : null;
+  };
+  const keys = (keyType ? literalUnion(keyType, span) : null) ?? keyTerm();
   if (!keys) throw Error(`the indexed access ${computed} has a key that is not a union of literals and primitives`);
   const keyList = keys.k === "union" ? keys.parts : [keys];
   const union = (parts: TypeTerm[]): TypeTerm => {
@@ -210,6 +339,9 @@ function indexedAccess(context: ComputedContext, node: ts.IndexedAccessTypeNode,
   const project = (object: TypeTerm): TypeTerm => {
     switch (object.k) {
       case "union": return union(object.parts.map(project));
+      // An intersection's member at a key is the meet of its operands'
+      // members there: `(A[] & B[])[number]` is `A & B`.
+      case "intersection": return { k: "intersection", parts: object.parts.map(project), span };
       case "array":
         if (keyList.every(k => k.k === "atom" && k.name === "number")) return object.element;
         break;
@@ -245,6 +377,10 @@ function indexedAccess(context: ComputedContext, node: ts.IndexedAccessTypeNode,
         const alias = aliasOf(node.objectType);
         if (alias && object.args.length === 0)
           return project(context.annotation(alias.type, alias, []));
+        // A generic alias of an array, a tuple or another alias: its
+        // equation at the reference's arguments.
+        const equation = object.args.length ? context.equation(object) : null;
+        if (equation) return project(equation);
         return member();
       }
     }

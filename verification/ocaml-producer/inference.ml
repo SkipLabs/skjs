@@ -274,6 +274,9 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
               | Meet _ -> [] in
             List.iter (fun (v:variable) -> v.lower <- add v.lower (Atoms [])) (binders arm)
           | received -> List.iter (fun piece -> constrain piece arm) received) arms
+      (* A type below an intersection is below each operand: `"fixed"` at
+         `T & "fixed"` is a lower bound of `T`. *)
+      | _,Meet (t,ts) -> List.iter (fun part -> constrain left part) (t::ts)
       | _ -> ()) (* Unsupported structure contributes no guessed constraints;
                     Lean still checks the entire substituted signature. *) in
   List.iter2 (fun actual domain -> constrain actual domain) actuals domains;
