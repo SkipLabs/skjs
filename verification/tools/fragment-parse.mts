@@ -58,6 +58,11 @@ import type {
   TypeofShape,
 } from "./fragment.mts";
 import { CHAIN } from "./fragment.mts";
+
+/** A value typed `Promise<T>` is assumed to be a realm promise, which is
+ * never fulfilled with a thenable (DESIGN.md, "Async functions and await"):
+ * so the source builds no object with a `then`, which could pass for one. */
+const FORGED_PROMISE = "an object the source builds with a `then` member could pass for a promise, and a value typed `Promise` is assumed to be a realm promise";
 import type { Span } from "./span.mts";
 import { messageOf } from "./thrown.mts";
 import { collectDeclarations, DeclarationError, libraryArguments, libraryTerm, tsconfigOf, type LibraryType,
@@ -602,6 +607,7 @@ class Gate {
         if (!p.questionToken && i > firstOptional(all))
           this.fail(p, "a required parameter cannot follow an optional one");
         if (p.name.text === "undefined") this.fail(p, "shadowing undefined is outside the fragment");
+        if (p.modifiers?.length && p.name.text === "then") this.fail(p, FORGED_PROMISE);
         return { name: p.name.text, pos: this.span(p.name), property: !!p.modifiers?.length, at: this.span(p),
           type: p.questionToken ? this.optionalTypeOf(p.type, p) : this.typeOf(p.type, p) };
       }) : base ? implicitParams(base) : [];
@@ -614,6 +620,9 @@ class Gate {
       const prototype: { name: string; e: Expr }[] = [];
       for (const member of node.members) {
         if (ts.isSemicolonClassElement(member) || ts.isConstructorDeclaration(member)) continue;
+        const memberName = (member as { name?: Node }).name;
+        if (memberName && (ts.isIdentifier(memberName) || ts.isStringLiteral(memberName)) && memberName.text === "then")
+          this.fail(member, FORGED_PROMISE);
         const modifiers = (member as { modifiers?: readonly Node[] }).modifiers ?? [];
         if (modifiers.some((m) => m.kind !== ts.SyntaxKind.ReadonlyKeyword && m.kind !== ts.SyntaxKind.AsyncKeyword &&
             m.kind !== ts.SyntaxKind.StaticKeyword && !CLASS_ACCESS.includes(m.kind)))
@@ -1601,6 +1610,7 @@ class Gate {
         : this.fail(f, "expected a plain property name");
       if (seen.has(text)) this.fail(f, "duplicate field name in a record");
       if (text === "__proto__") this.fail(f, "prototype initializers are outside the fragment");
+      if (text === "then") this.fail(f, FORGED_PROMISE);
       seen.add(text);
       return text;
     };

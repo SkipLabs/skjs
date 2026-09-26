@@ -574,6 +574,7 @@ the model's reading of an operation relies.
 | Code outside a unit adds keys to a dictionary it holds at a writable index only at that index's contract and only keys of its class. The calculus has no step that adds a key. | [index signatures](#index-signatures) |
 | A spread does not copy an own enumerable symbol-keyed property, which JavaScript copies; the result states no symbol key and is open, so nothing typed reads one. | [object literals](#object-literals) |
 | The standard `Object.assign`, `Function.prototype.call`, `apply` and `bind` are the intrinsics the parser identifies by lexical provenance; the fragment cannot write those properties. | `tools/fragment-parse.mts` |
+| A value of type `Promise<T>` is a realm promise, which resolution never fulfills with a thenable (it adopts one), so awaiting it yields a `T`: runtime and library promises, the program's `async` functions (`%AsyncReturn%` adopts), `Promise.resolve`, `new Promise`, `%PromiseReject%` and `%PromiseAll%`. | `%Await%` in `tools/intrinsics.mts`; [async](PROGRAM-TYPING.md#async-functions-and-await) |
 
 **Not yet proved.** Module composition: a unit's certificate assumes the
 signatures of the module values it reads, each certified by its own unit;
@@ -611,6 +612,7 @@ not yet taken are [next steps](#next-steps); a search failure is neither.
 | A library global both constructed and read through members, or both called and read through a method (`new Date()` beside `Date.now()`, `Symbol()` beside `Symbol.for`) | A class value or callable object with members has no clause. |
 | Any library signature the overlays do not list (`Math.random`, `concat`) | Not reviewed; nothing is trusted by default. |
 | A `this` read in sloppy code | Sloppy receiver conversion is not modelled. |
+| An object literal, class or parameter property the source builds with a `then` member, which could be claimed as a `Promise` | A value of type `Promise<T>` is assumed a realm promise; the source must not forge one. |
 | A `let` binding captured by a closure in a `for` loop | JavaScript copies it per iteration. |
 | `this` before `super(...)`; a statement reading `this` before the instance is complete | The instance is allocated at the end; no term stands for the uninitialized binding. |
 | A base class declared later, imported, ambient, a library class (`extends Array`), or an expression | Nothing in the file says what its constructor allocates. |

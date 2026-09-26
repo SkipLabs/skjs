@@ -3358,8 +3358,8 @@ the primitives (the values that are never thenables):
 
 $$
 \begin{aligned}
-\mathtt{\%Await\%}&:\forall T.\ (\mathit{promise}:\mathsf{Promise}\langle T\rangle)\Rightarrow T\\
-\mathtt{\%AsyncReturn\%}&:\forall T\le P.\ (\mathit{value}:T)\Rightarrow\mathsf{Promise}\langle T\rangle
+\mathtt{\%Await\%}&:\forall T,\,U\le P.\ (\mathit{value}:\mathsf{Promise}\langle T\rangle\mid U)\Rightarrow T\mid U\\
+\mathtt{\%AsyncReturn\%}&:\forall T\le P,\,U\le P.\ (\mathit{value}:T\mid\mathsf{Promise}\langle U\rangle)\Rightarrow\mathsf{Promise}\langle T\mid U\rangle
 \qquad P=\mathsf{null}\mid\mathsf{undefined}\mid\mathsf{boolean}\mid\mathsf{number}\mid\mathsf{string}\mid\mathsf{bigint}\mid\mathsf{symbol}\\
 \mathtt{\%AsyncComplete\%}&:()\Rightarrow\mathsf{Promise}\langle\mathsf{void}\rangle\\
 \mathtt{\%PromiseAll\%}&:\forall T.\ (\mathit{values}:\mathsf{readonly}\ \mathsf{Promise}\langle T\rangle[\,])\Rightarrow\mathsf{Promise}\langle T[\,]\rangle\\
@@ -3372,15 +3372,26 @@ Instantiated by $\textsc{instances}$, with $R$ the async function's result
 annotation, they derive:
 
 $$
-\frac{\Gamma\vdash e:\mathsf{Promise}\langle A\rangle}{\Gamma\vdash\mathsf{await}\ e:A}\ \textsc{await}
+\frac{\Gamma\vdash e:\mathsf{Promise}\langle A\rangle\mid B\quad B\le P}{\Gamma\vdash\mathsf{await}\ e:A\mid B}\ \textsc{await}
 \qquad
-\frac{\Gamma\vdash e:A\quad A\le P\quad \mathsf{Promise}\langle A\rangle\le R}{\Gamma\vdash_R\mathsf{return}\ e}\ \textsc{async-return}
+\frac{\Gamma\vdash e:A\mid\mathsf{Promise}\langle B\rangle\quad A\le P\quad B\le P\quad \mathsf{Promise}\langle A\mid B\rangle\le R}{\Gamma\vdash_R\mathsf{return}\ e}\ \textsc{async-return}
 \qquad
 \frac{\mathsf{Promise}\langle\mathsf{void}\rangle\le R}{\Gamma\vdash_R\text{completion}}\ \textsc{async-complete}
 $$
 
 `Promise<void>` is `Promise<unknown>` (`void` is top), so a void async
 function may only complete. A throw in an async body leaves it as a throw.
+A non-promise operand is awaited at its own type only where it is a
+primitive ($U\le P$): `await` calls an object's callable `then` instead. A
+value of type `Promise<A>` is a realm promise
+([trust surface](DESIGN.md#trust-surface)), which resolution never fulfills
+with a thenable, since it adopts one, so awaiting it yields an $A$ at any
+$A$; a returned promise of a primitive is adopted the same way. The source
+builds no object with a `then` member (`fragment-parse.mts`), which could
+pass for a promise. The producer infers $T$ and $U$ as TypeScript infers a
+union with one bare binder: an object part of the operand goes to the
+`Promise` arm, a primitive to the bare binder, and an arm nothing reaches is
+inferred at `never`.
 
 ### Loops over arrays
 
