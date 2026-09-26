@@ -2915,7 +2915,14 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       not (List.exists (fun (_,b) -> binding_type b = Atoms []) env))
       arrivals in
     match reachable with
-    | [] -> fallback
+    | [] ->
+      (* Where every path that arrives knows a value of the empty type, the
+         point is never reached, and so is what follows it: the fallback
+         keeps that knowledge, so a later merge drops it too. *)
+      (match List.find_map (List.find_opt (fun (n,b) ->
+           not (is_field n) && binding_type b = Atoms [] && List.mem_assoc n fallback)) arrivals with
+       | Some (n,b) -> List.map (fun (m,c) -> if m = n then m,b else m,c) fallback
+       | None -> fallback)
     | first::_ ->
       (* A field's contents are known where every path knows them; the
          first path names the candidates. *)

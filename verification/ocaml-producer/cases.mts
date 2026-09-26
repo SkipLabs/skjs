@@ -921,6 +921,8 @@ export const cases: Case[] = [
   negative("invalid-switch-fallthrough", "a clause falling through carries its state into the next one"),
   gap("switch-scope-refused", "the clauses of a switch share one scope, which the lowering does not: a name read outside the clause declaring it is refused",
     "unsupported", "source", /declared in one switch clause and read in another/),
+  positive("switch-nested-exhaustive", "a nested exhaustive `switch` whose clauses all return leaves no path out of its clause"),
+  negative("invalid-switch-nested-exhaustive", "a nested `switch` not covering its scrutinee leaves a path out"),
   positive("switch-case-narrowing", "each case narrows the discriminant, `default` sees the rest, an exhaustive switch never completes, clauses join what each left"),
   negative("invalid-switch-case-narrowing", "`default` never sees a label's value"),
   positive("literal-equality", "`===` with string, Boolean, bigint and named singletons narrows both edges; primitives and objects with a field compare exactly; `== null` is the nullish test; two unions of singletons, and a field against one, narrow where equal; an impossible outcome's edge is never taken"),
