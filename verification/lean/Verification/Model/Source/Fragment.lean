@@ -329,6 +329,10 @@ def reservedSourceKey (s : String) : Bool :=
   PropKey.str s == CallArguments.arrayStoreField || PropKey.str s == CallArguments.protoField
 
 /-- A key the source spells: any but a reserved one. -/
+def protoKeyName : String := "[[proto]]"
+
+#guard PropKey.str protoKeyName == CallArguments.protoField
+
 def sourceKey (s : String) : Except String String :=
   if reservedSourceKey s then throw s!"'{s}' is internal to the model, not a source property"
   else pure s
@@ -387,21 +391,27 @@ positions from there on into a fresh array. An element's default replaces a
 read that is `undefined`. -/
 inductive Pattern (Expr : Type) where
   | name (name : String) (namePos : Span)
+  /-- An object pattern: its properties, then, with `rest`, the fresh object
+  holding the source's other own enumerable properties, bound where its span
+  is claimed. -/
   | object (pos : Span) (props : List (String × Pattern Expr × Option Expr))
+      (rest : Option (Span × Pattern Expr))
   | array (pos : Span) (elems : List (Nat × Pattern Expr × Option Expr))
       (rest : Option (Nat × Span × Pattern Expr))
 
 /-- The names a pattern binds, in the order it binds them. -/
 partial def Pattern.names {Expr : Type} : Pattern Expr → List String
   | .name n _ => [n]
-  | .object _ props => props.flatMap fun (_, t, _) => t.names
+  | .object _ props rest => props.flatMap (fun (_, t, _) => t.names) ++
+      ((rest.map fun (_, t) => t.names).getD [])
   | .array _ elems rest => elems.flatMap (fun (_, t, _) => t.names) ++
       ((rest.map fun (_, _, t) => t.names).getD [])
 
 /-- A pattern's defaults, in evaluation order. -/
 partial def Pattern.defaults {Expr : Type} : Pattern Expr → List Expr
   | .name .. => []
-  | .object _ props => props.flatMap fun (_, t, d) => d.toList ++ t.defaults
+  | .object _ props rest => props.flatMap (fun (_, t, d) => d.toList ++ t.defaults) ++
+      ((rest.map fun (_, t) => t.defaults).getD [])
   | .array _ elems rest => elems.flatMap (fun (_, t, d) => d.toList ++ t.defaults) ++
       ((rest.map fun (_, _, t) => t.defaults).getD [])
 
@@ -409,8 +419,9 @@ partial def Pattern.defaults {Expr : Type} : Pattern Expr → List Expr
 partial def Pattern.mapDefaultsM {Expr : Type} {m : Type → Type} [Monad m] (f : Expr → m Expr) :
     Pattern Expr → m (Pattern Expr)
   | .name n p => pure (.name n p)
-  | .object p props => return .object p (← props.mapM fun (k, t, d) => do
-      return (k, ← t.mapDefaultsM f, ← d.mapM f))
+  | .object p props rest => return .object p (← props.mapM fun (k, t, d) => do
+      return (k, ← t.mapDefaultsM f, ← d.mapM f)) (← rest.mapM fun (q, t) => do
+      return (q, ← t.mapDefaultsM f))
   | .array p elems rest => return .array p (← elems.mapM fun (i, t, d) => do
       return (i, ← t.mapDefaultsM f, ← d.mapM f)) (← rest.mapM fun (i, p, t) => do
       return (i, p, ← t.mapDefaultsM f))
@@ -448,6 +459,11 @@ inductive Expr where
   | cast (pos : Span) (annot : Option Json) (e : Expr)
   /-- An object literal: one named field per initializer, in source order. -/
   | alloc (pos : Span) (names : List String) (es : List Expr)
+  /-- An object literal with spreads of values, in source order: a named
+  field (`some k`) or a spread (`none`), each part evaluated where written and
+  a spread's operand copied as soon as it is evaluated (DESIGN.md, "Object
+  spreads"). -/
+  | build (pos : Span) (names : List (Option String)) (es : List Expr)
   /-- A named read: a string key, or, for `e[k]` with `k` a `unique symbol`
   constant, that symbol's key. -/
   | read (pos : Span) (field : PropKey) (e : Expr)
@@ -567,7 +583,7 @@ partial def Expr.freeNames : Expr → List String
   | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .atEnv _ e | .ctor _ e
   | .throwBody _ e => e.freeNames
   | .construct _ f args _ => f.freeNames ++ args.flatMap Expr.freeNames
-  | .alloc _ _ es | .arrayLit _ es => es.flatMap Expr.freeNames
+  | .alloc _ _ es | .build _ _ es | .arrayLit _ es => es.flatMap Expr.freeNames
   | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b
   | .singletonTest _ _ _ _ a b | .write _ _ a b | .index _ _ a b
   | .elemAt _ a b | .arith _ _ a b | .logicalAssign _ _ a b | .comma _ a b | .inKeys _ a b
@@ -599,7 +615,7 @@ partial def Expr.callees : Expr → List (Span × Span × String × List Json)
   | .throwBody _ e => e.callees
   | .construct p f args ts =>
     (match f with | .var q n => [(p, q, n, ts)] | _ => []) ++ f.callees ++ args.flatMap Expr.callees
-  | .alloc _ _ es | .arrayLit _ es => es.flatMap Expr.callees
+  | .alloc _ _ es | .build _ _ es | .arrayLit _ es => es.flatMap Expr.callees
   | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b
   | .singletonTest _ _ _ _ a b | .write _ _ a b | .index _ _ a b
   | .elemAt _ a b | .arith _ _ a b | .logicalAssign _ _ a b | .comma _ a b | .inKeys _ a b
@@ -664,7 +680,7 @@ def Expr.span : Expr → Span
   | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
   | .comma p _ _ | .inKeys p _ _ | .optional p _ _ _ => p
   | .arrayLit p _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ _ => p
-  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ _ _ _ _ | .call p _ _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ | .construct p _ _ _ => p
+  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .build p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ _ _ _ _ | .call p _ _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ | .construct p _ _ _ => p
 
 /-- One declarator of a `const` or `let`. -/
 structure Binding where
@@ -810,13 +826,18 @@ partial def decodePattern (decodeExpr : Json → Except String Expr) (j : Json) 
     CellClaims.fieldsExactly j ["k","name","pos"]
     return .name (← jStr (← jField j "name")) (← jSpan j "pos")
   | "object" =>
-    CellClaims.fieldsExactly j ["k","pos","props"]
+    CellClaims.fieldsExactly j ["k","pos","props","rest"]
     let props ← (← jArr j "props").mapM fun q => do
       CellClaims.fieldsExactly q ["field","target","default_"]
       let (t, d) ← target q
       return (← sourceKey (← jStr (← jField q "field")), t, d)
-    if props.isEmpty then throw "an empty pattern binds nothing"
-    return .object (← jSpan j "pos") props
+    let rest ← match ← jField j "rest" with
+      | .null => pure none
+      | r => do
+        CellClaims.fieldsExactly r ["pos","target"]
+        pure (some (← jSpan r "pos", ← decodePattern decodeExpr (← jField r "target")))
+    if props.isEmpty && rest.isNone then throw "an empty pattern binds nothing"
+    return .object (← jSpan j "pos") props rest
   | "array" =>
     CellClaims.fieldsExactly j ["k","pos","elems","rest"]
     let elems ← (← jArr j "elems").mapM fun q => do
@@ -947,7 +968,30 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     let fields ← jArr j "fields"
     let parts ← fields.mapM fun f => do
       return (← sourceKey (← jStr (← jField f "name")), ← decodeExpr (← jField f "e"))
-    return .alloc p (parts.map Prod.fst) (parts.map Prod.snd)
+    -- A class instance holds its class's prototype object under the key no
+    -- source property spells: the parser's lowering of a class states it
+    -- apart from the fields, never as a key.
+    match (j.getObjVal? "proto").toOption with
+    | some e =>
+      return .alloc p (protoKeyName :: parts.map Prod.fst) ((← decodeExpr e) :: parts.map Prod.snd)
+    | none => return .alloc p (parts.map Prod.fst) (parts.map Prod.snd)
+  | "build" =>
+    let fields ← jArr j "parts"
+    let parts ← fields.mapM fun f => do
+      match (f.getObjVal? "spread").toOption with
+      | some e => do
+        CellClaims.fieldsExactly f ["spread"]
+        return ((none : Option String), ← decodeExpr e)
+      | none => do
+        CellClaims.fieldsExactly f ["name", "e"]
+        return (some (← sourceKey (← jStr (← jField f "name"))), ← decodeExpr (← jField f "e"))
+    if !parts.any (·.1.isNone) then throw "an object literal with no spread is an allocation"
+    -- A derived class's instance holds its prototype, as a class instance's
+    -- allocation does, first.
+    let parts ← match (j.getObjVal? "proto").toOption with
+      | some e => pure ((some protoKeyName, ← decodeExpr e) :: parts)
+      | none => pure parts
+    return .build p (parts.map Prod.fst) (parts.map Prod.snd)
   | "read" => do
     let field ← PropKey.decode (← jField j "field")
     if let .str s := field then discard <| sourceKey s

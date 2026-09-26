@@ -54,7 +54,7 @@ private def mixedWithNull : PositiveGraphs.NormalGraph Nat := .ofRows fun
 #guard !checkObservedSub mixedWithNull [0] [1] (.tag .isNul false) .subset
 example : ObservedSub mixedWithNull [0] [1] (.tag .isNul true) := by
   intro n W v _ ho
-  have hn : v = .nul := by cases v <;> simp_all [Observation.holds, tagHolds]
+  have hn : v = .nul := by cases v <;> simp_all [Observation.holds, tagHolds, protoFree]
   subst v
   apply PositiveRules.expand_sem_mpr
   exact ⟨.nul, by simp [PositiveRules.clausesOf, mixedWithNull], rfl⟩
@@ -123,5 +123,13 @@ example : Transition [] [] (.eval .nul (fun _ => .nul) (.tagBind .isNul 1 2) non
     (.at 1 (PointClaims.mapEnv none (push .nul (fun _ => .nul)))) := .tagBind rfl
 example : Transition [] [] (.eval .fls (fun _ => .nul) (.tagBind .isNul 1 2) none) []
     (.at 2 (PointClaims.mapEnv none (push .fls (fun _ => .nul)))) := .tagBind rfl
+
+-- `key in o` reads the prototype chain: a class instance holds its
+-- prototype, whose method it lacks as an own key, and `in` finds it there.
+private def protoHeap : List Tm := [.objAt [("m", 1)] .absent, .num 0, .num 1]
+private def instanceWithProto : Tm := .objAt [("x", 2), ("[[proto]]", 0)] .absent
+#guard tagHoldsIn protoHeap (.hasKey "m") instanceWithProto
+#guard !tagHolds (.hasKey "m") instanceWithProto
+#guard !tagHoldsIn protoHeap (.hasKey "n") instanceWithProto
 
 end Verification.Model.BranchRefinementTests

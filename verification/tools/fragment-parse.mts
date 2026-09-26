@@ -71,6 +71,28 @@ import { asyncCompleteName, asyncReturnName, awaitName, forInName } from "./intr
  * spell, apart from the instance methods' `C.m`. */
 const staticName = (cls: string, member: string): string => `static ${cls}.${member}`;
 
+/** The binding holding a class's prototype object: a name no source binding
+ * can spell, apart from an instance method's `C.m` and a static member's. */
+const prototypeName = (cls: string): string => `${cls}.[[prototype]]`;
+
+/** A class as a class extending it reads it: its constructor's parameters,
+ * its methods (each the binding holding its closure, its base's included,
+ * its own overriding them), and the binding holding its constructor at the
+ * fresh instance it allocates. */
+type ClassRecord = { params: { name: string; type: TypeTerm }[]; methods: Map<string, string>; fresh: string;
+  proto: string | null };
+
+/** The binding holding a class's constructor where a class extends it: the
+ * class value itself, claimed also at the fresh instance it allocates, whose
+ * own keys are exactly known. */
+const freshName = (cls: string): string => `${cls}.[[class]]`;
+
+/** The binding holding a derived instance's base part. */
+const baseName = (cls: string): string => `${cls}.[[base]]`;
+
+/** A part of an object literal: a named field, or a spread of a value. */
+type ObjectPart = { name: string; e: Expr } | { spread: Expr };
+
 /** The hidden name a parameter written as a pattern or with a default
  * binds: a name no source binding can spell. The body's first statements
  * bind the source's names from it, in parameter order (`functionAst`). */
@@ -91,7 +113,8 @@ function namesRead(e: unknown, out: Set<string> = new Set()): Set<string> {
 function patternNames(t: PatternAst): string[] {
   switch (t.k) {
     case "name": return [t.name];
-    case "object": return t.props.flatMap((q) => patternNames(q.target));
+    case "object": return [...t.props.flatMap((q) => patternNames(q.target)),
+      ...(t.rest ? patternNames(t.rest.target) : [])];
     case "array": return [...t.elems.flatMap((q) => patternNames(q.target)),
       ...(t.rest ? patternNames(t.rest.target) : [])];
   }
@@ -250,6 +273,12 @@ class Gate {
   /** `C.x` member names TypeScript binds to a static member of the file's
    * class `C`, by span: the class. */
   staticReads = new Map<string, string>();
+  /** The classes lowered so far, by name: what a class extending one reads
+   * (`classStmt`). */
+  private readonly classRecords = new Map<string, ClassRecord>();
+  /** The class a method being lowered inherits from: what `super.m(...)`
+   * calls. */
+  private superClass: ClassRecord | null = null;
   /** Calls the reviewed overlay of library globals reads as a test of the
    * calculus, `Array.isArray(e)`, and `e instanceof Array`, by span. */
   readonly globalTests = new Set<string>();
@@ -434,8 +463,25 @@ class Gate {
   classStmt(node: ClassDeclaration): Stmt {
     const name = node.name;
     if (!name) return this.fail(node, "an anonymous class is outside the fragment");
-    if (node.heritageClauses?.some((c) => c.token === ts.SyntaxKind.ExtendsKeyword))
-      this.fail(node, "class inheritance is outside the fragment");
+    // A class extending another reads what that class's lowering recorded:
+    // one declared earlier in the file. A class value from elsewhere, an
+    // ambient or library class (`Array` included) and an expression are
+    // outside the fragment: nothing here says what their constructors
+    // allocate. Generic classes take no part in inheritance yet.
+    const heritage = node.heritageClauses?.find((c) => c.token === ts.SyntaxKind.ExtendsKeyword);
+    let base: ClassRecord | null = null;
+    if (heritage) {
+      const t = heritage.types[0];
+      if (heritage.types.length !== 1 || !t || !ts.isIdentifier(t.expression) || t.typeArguments?.length)
+        this.fail(heritage, "a class extends one class, by its name");
+      if (node.typeParameters?.length) this.fail(heritage, "a generic class extending another is outside the fragment");
+      base = this.classRecords.get(t.expression.text) ?? null;
+      if (!base)
+        this.fail(t, "a class extends a non-generic class declared earlier in the file; one from a library, an ambient declaration or a value is outside the fragment");
+    }
+    const extended = !node.typeParameters?.length && this.file.statements.some((st) => ts.isClassDeclaration(st) &&
+      !!st.heritageClauses?.some((c) => c.token === ts.SyntaxKind.ExtendsKeyword &&
+        c.types.some((t) => ts.isIdentifier(t.expression) && t.expression.text === name.text)));
     if (node.modifiers?.some((m) => m.kind !== ts.SyntaxKind.ExportKeyword))
       this.fail(node, "a class modifier outside the fragment");
     const declared = this.declaredTypes.get(name.text);
@@ -445,24 +491,30 @@ class Gate {
     // the code unit that declares the class.
     const typeParams = this.enterTypeParams(node.typeParameters);
     try {
-      return this.classBody(node, name, declared.declaration, typeParams);
+      return this.classBody(node, name, declared.declaration, typeParams, heritage, base, extended);
     } finally {
       this.leaveTypeParams();
     }
   }
 
   private classBody(node: ClassDeclaration, name: ts.Identifier, declaration: DeclarationIdentity,
-      typeParams: TypeParamAst[]): Stmt {
+      typeParams: TypeParamAst[], heritage: ts.HeritageClause | undefined, base: ClassRecord | null,
+      extended: boolean): Stmt {
     const binders = node.typeParameters ?? [];
     const instance: TypeTerm = { k: "reference", reference: { name: name.text, span: this.span(name),
       arguments: binders.map((tp) => this.span(tp.name)), target: declaration },
       args: binders.map((tp) => ({ k: "binder", name: tp.name.text, span: this.span(tp.name) })),
       span: this.span(name) };
     const outerStrict = this.strict;
-    // A class body is strict code.
+    const outerSuper = this.superClass;
+    // A class body is strict code; `super.m(...)` in its methods calls its
+    // base's method.
     this.strict = true;
+    this.superClass = base;
     try {
       const methods: BindingAst[] = [];
+      // The methods its prototype holds: its base's, then its own over them.
+      const methodBindings = new Map<string, string>(base?.methods ?? []);
       // The instance's own values, in the order JavaScript evaluates them:
       // field initializers and methods, parameter properties, then the
       // constructor's assignments. `bind` is where an evaluated value is
@@ -494,10 +546,15 @@ class Gate {
         return { name: p.name.text, pos: this.span(p.name), property: !!p.modifiers?.length, at: this.span(p),
           type: p.questionToken ? this.optionalTypeOf(p.type, p) : this.typeOf(p.type, p) };
       }) : [];
+      if (base && !constructor && base.params.length)
+        this.fail(node, "an implicit derived constructor passing its base's parameters is outside the fragment");
       // Static members are bindings of their own, which `C.x` reads
       // (`staticReads`), after the class, as JavaScript defines them once the
       // class value exists: the methods, then the fields, in order.
       const staticMethods: BindingAst[] = [], statics: BindingAst[] = [];
+      // The prototype's methods, in member order: every instance holds the
+      // prototype object under its prototype key, and reads a method there.
+      const prototype: { name: string; e: Expr }[] = [];
       for (const member of node.members) {
         if (ts.isSemicolonClassElement(member) || ts.isConstructorDeclaration(member)) continue;
         const modifiers = (member as { modifiers?: readonly Node[] }).modifiers ?? [];
@@ -542,12 +599,41 @@ class Gate {
           if (!ts.isIdentifier(member.name)) this.fail(member, "a class member needs a plain name");
           methods.push({ name: `${name.text}.${member.name.text}`, namePos: this.span(member.name),
             annot: null, init: this.lambda(member, instance) });
-          fields.push({ name: member.name.text, bind: null,
+          methodBindings.set(member.name.text, `${name.text}.${member.name.text}`);
+          prototype.push({ name: member.name.text,
             e: { k: "id", pos: this.span(member.name), name: `${name.text}.${member.name.text}` } });
         } else this.fail(member, "a class member outside the fragment");
       }
       for (const p of params)
         if (p.property) fields.push({ name: p.name, e: { k: "id", pos: p.pos, name: p.name }, bind: { pos: p.at, type: p.type } });
+      // A class with methods allocates its prototype object once, holding
+      // them, and each instance holds it under the prototype key, first: the
+      // key's value is a read of a constant, so its place changes nothing.
+      // A derived class's prototype holds every method of the chain: its
+      // base's prototype's, copied, then its own over them. JavaScript's
+      // holds its own and links to its base's, which nothing in the fragment
+      // tells apart (DESIGN.md, "Class inheritance"). Without methods of its
+      // own, it is its base's prototype.
+      const prototypeBinding: BindingAst[] = [];
+      let proto: Expr | null = null;
+      let protoBinding: string | null = null;
+      const baseProto: Expr | null = base?.proto && heritage
+        ? { k: "id", pos: this.span(heritage.types[0]!.expression), name: base.proto } : null;
+      if (!prototype.length && base?.proto) protoBinding = base.proto;
+      if (prototype.length) {
+        const at: Span = [name.getStart(this.file), node.end];
+        protoBinding = prototypeName(name.text);
+        prototypeBinding.push({ name: prototypeName(name.text), namePos: at, annot: null,
+          init: baseProto ? { k: "build", pos: at, parts: [{ spread: baseProto }, ...prototype] }
+            : { k: "alloc", pos: at, fields: prototype } });
+      }
+      if (protoBinding) {
+        // Read at the `class` keyword, a site no other claim has; the
+        // allocation states it apart from the fields, as no source key.
+        const keyword = this.file.text.indexOf("class", node.getStart(this.file));
+        if (keyword < 0 || keyword > name.getStart(this.file)) this.fail(node, "a class declaration without its keyword");
+        proto = { k: "id", pos: [keyword, keyword + "class".length], name: protoBinding };
+      }
       const assignment = (statement: Statement) => {
         const e = ts.isExpressionStatement(statement) ? statement.expression : undefined;
         return e && ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
@@ -563,10 +649,11 @@ class Gate {
       // the values evaluated before one are bound first, in order, to names
       // no source binding can spell, so evaluation order is the source's. A
       // last `if` that assigns fields ends each arm with its own allocation.
-      const construct = (body: readonly Statement[], before: Field[], done: Set<string>): Expr => {
+      const construct = (body: readonly Statement[], before: Field[], done: Set<string>,
+          prelude: Stmt[] = []): Expr => {
         const fields = before.map((f) => ({ ...f }));
         const assigned = new Set(done);
-        const statements: Stmt[] = [];
+        const statements: Stmt[] = [...prelude];
         let tail: Expr | null = null;
         const flush = () => {
           for (const f of fields) {
@@ -613,24 +700,81 @@ class Gate {
         if (!tail) {
           for (const [f, { pos }] of uninitialized)
             if (!assigned.has(f)) fields.push({ name: f, e: { k: "lit", pos, lit: { a: "undefined" } }, bind: null });
-          tail = { k: "alloc", pos: this.span(name), fields: fields.map(({ name, e }) => ({ name, e })) };
+          // A derived instance is its base's part, copied, then its own
+          // fields over it: the allocation from parts an object literal with
+          // a spread is.
+          tail = derivedBase
+            ? { k: "build", pos: this.span(name), parts: [{ spread: derivedBase },
+                ...fields.map(({ name, e }) => ({ name, e }))], ...(proto ? { proto } : {}) }
+            : { k: "alloc", pos: this.span(name), fields: fields.map(({ name, e }) => ({ name, e })),
+              ...(proto ? { proto } : {}) };
         }
-        return statements.length === 0 ? tail : this.closureBlock(constructor!, statements,
-          () => this.fail(constructor!, "a constructor does not return"), tail);
+        return statements.length === 0 ? tail : this.closureBlock(constructor ?? node, statements,
+          () => this.fail(constructor ?? node, "a constructor does not return"), tail);
       };
+      // A derived constructor: its statements before `super(...)`, which may
+      // not touch `this`, then the base's constructor at the actuals, bound
+      // to a name no source binding spells, then its own fields and
+      // statements, as JavaScript runs them.
+      let body: readonly Statement[] = constructor?.body?.statements ?? [];
+      let prelude: Stmt[] = [];
+      let derivedBase: Expr | null = null;
+      if (base && heritage) {
+        const isSuperCall = (st: Statement): st is ts.ExpressionStatement =>
+          ts.isExpressionStatement(st) && ts.isCallExpression(st.expression) &&
+          st.expression.expression.kind === ts.SyntaxKind.SuperKeyword;
+        const callsSuper = (n: Node): boolean => n.kind === ts.SyntaxKind.SuperKeyword ||
+          (!ts.isFunctionExpression(n) && !ts.isFunctionDeclaration(n) && !!n.forEachChild((c) => callsSuper(c) || undefined));
+        let at: Span = this.span(heritage);
+        let calleeAt: Span = [node.end - 1, node.end];
+        let actuals: Expr[] = [];
+        if (constructor) {
+          const index = body.findIndex(isSuperCall);
+          if (index < 0 || body.some((st, i) => i !== index && callsSuper(st)))
+            this.fail(constructor, "a derived constructor calls `super(...)` once, as a statement of its own body");
+          for (const st of body.slice(0, index))
+            if (readsThis(st))
+              this.fail(st, "`this` before `super(...)` throws in JavaScript; the instance is allocated at the end of the constructor, so a read or write of it there is refused");
+          prelude = body.slice(0, index).map((st) => this.stmt(st));
+          const call = (body[index] as ts.ExpressionStatement).expression as ts.CallExpression;
+          for (const a of call.arguments)
+            if (ts.isSpreadElement(a) || readsThis(a)) this.fail(a, "a `super(...)` argument is an ordinary expression not reading `this`");
+          actuals = call.arguments.map((a) => this.expr(a));
+          at = this.span(call);
+          calleeAt = this.span(call.expression);
+          body = body.slice(index + 1);
+        }
+        const slot = baseName(name.text);
+        prelude.push({ k: "const", pos: at, bindings: [{ name: slot, namePos: at, annot: null,
+          init: { k: "new", pos: at, callee: { k: "id", pos: calleeAt, name: base.fresh }, args: actuals } }] });
+        derivedBase = { k: "id", pos: [heritage.getStart(this.file), heritage.getStart(this.file) + "extends".length], name: slot };
+      }
       // The class value is its constructor as construct-only code, which only
       // `new` runs.
       const lambda: Expr = { k: "ctor", pos: this.span(node), ...(typeParams.length ? { typeParams } : {}),
         lambda: { k: "lambda", pos: this.span(node),
         typeParams: [], receiver: null, params: params.map((p) => ({ name: p.name, type: p.type })),
-        result: instance, body: construct(constructor?.body?.statements ?? [], fields, new Set()) } };
+        result: instance, body: construct(body, fields, new Set(), prelude) } };
       const type: TypeTerm = { k: "constructor", params: params.map((p) => p.type), rest: null, result: instance,
         span: this.span(name) };
+      // A class another extends is also bound, first, as its fresh
+      // constructor, claimed at the instance it allocates besides its own
+      // construct signature; the class value is that binding.
+      let classBindings: BindingAst[] = [{ name: name.text, namePos: this.span(name), annot: type, init: lambda }];
+      if (extended) {
+        const brace = this.file.text.indexOf("{", heritage ? heritage.end : name.end);
+        classBindings = [
+          { name: freshName(name.text), namePos: [node.getStart(this.file), name.end], annot: null, init: lambda },
+          { name: name.text, namePos: this.span(name), annot: type,
+            init: { k: "id", pos: [brace, brace + 1], name: freshName(name.text) } }];
+      }
+      if (!binders.length) this.classRecords.set(name.text, { params: params.map((p) => ({ name: p.name, type: p.type })),
+        methods: methodBindings, fresh: freshName(name.text), proto: protoBinding });
       return { k: "const", pos: this.span(node),
-        bindings: [...methods, { name: name.text, namePos: this.span(name), annot: type, init: lambda },
-          ...staticMethods, ...statics] };
+        bindings: [...methods, ...prototypeBinding, ...classBindings, ...staticMethods, ...statics] };
     } finally {
       this.strict = outerStrict;
+      this.superClass = outerSuper;
     }
   }
 
@@ -970,8 +1114,13 @@ class Gate {
     if (ts.isArrowFunction(node) || ts.isFunctionExpression(node))
       return this.lambda(node);
 
-    if (ts.isObjectLiteralExpression(node))
-      return { k: "alloc", pos: this.span(node), fields: this.objectFields(node, new Set<string>()) };
+    if (ts.isObjectLiteralExpression(node)) {
+      const parts = this.objectFields(node, new Set<string>());
+      const fields = parts.flatMap((p) => "spread" in p ? [] : [p]);
+      return fields.length === parts.length
+        ? { k: "alloc", pos: this.span(node), fields }
+        : { k: "build", pos: this.span(node), parts };
+    }
 
     if (ts.isPropertyAccessExpression(node)) {
       if (node.questionDotToken)
@@ -1253,6 +1402,19 @@ class Gate {
       // value, and takes the `apply` form below.
       let target: Expression = node.expression;
       while (ts.isParenthesizedExpression(target)) target = target.expression;
+      // `super.m(args)` calls the method the base class's prototype holds,
+      // with this method's receiver: that binding's `.call(this, args)`.
+      if (ts.isPropertyAccessExpression(target) && target.expression.kind === ts.SyntaxKind.SuperKeyword) {
+        const binding = ts.isIdentifier(target.name) ? this.superClass?.methods.get(target.name.text) : undefined;
+        if (!binding) this.fail(node, "`super.m(...)` calls a method of the base class's prototype");
+        if (node.typeArguments?.length || node.arguments.some((arg) => ts.isSpreadElement(arg)))
+          this.fail(node, "a `super.m(...)` call takes ordinary arguments");
+        if (this.receiverMode !== "strict") this.fail(node, "`super` where no receiver is bound");
+        return { k: "callWithReceiver", pos: this.span(node),
+          callee: { k: "id", pos: this.span(target), name: binding },
+          receiver: { k: "this", pos: this.span(target.expression) },
+          args: node.arguments.map((arg) => this.expr(arg)) };
+      }
       // A static method is not read from its class but bound on its own, so
       // its call is a plain call: its body reads no receiver it is given.
       const isStatic = ts.isPropertyAccessExpression(target) &&
@@ -1315,8 +1477,11 @@ class Gate {
    * field: it has no `super` or construction here, which is all that tells
    * them apart. `{ x }` is `{ x: x }`, the name read where it is written. A
    * spread of an object literal is its fields, in place: evaluated where
-   * written, owning exactly those keys (DESIGN.md, "Object literals"). */
-  private objectFields(node: ts.ObjectLiteralExpression, seen: Set<string>): { name: string; e: Expr }[] {
+   * written, owning exactly those keys (DESIGN.md, "Object literals"). A
+   * spread of any other value is a part of its own, copied where written
+   * (DESIGN.md, "Object literals"). A key is written once: a later field
+   * over an earlier one is refused, as in a literal without spreads. */
+  private objectFields(node: ts.ObjectLiteralExpression, seen: Set<string>): ObjectPart[] {
     const key = (f: Node, name: Node): string => {
       const text = ts.isIdentifier(name) || ts.isStringLiteral(name) ? name.text
         : ts.isNumericLiteral(name) ? numericKey(name.text)
@@ -1336,7 +1501,9 @@ class Gate {
         let operand: Expression = f.expression;
         while (ts.isParenthesizedExpression(operand)) operand = operand.expression;
         if (ts.isObjectLiteralExpression(operand)) return this.objectFields(operand, seen);
-        return this.fail(f, "a spread copies the own enumerable properties of its operand, which the heap model does not tell from prototype members; only those of an object literal are known");
+        // A spread of a value copies its own enumerable properties when it
+        // is evaluated; which it has is its type's to say, and Lean's.
+        return [{ spread: this.expr(f.expression) }];
       }
       if (ts.isGetAccessorDeclaration(f) || ts.isSetAccessorDeclaration(f))
         return this.fail(f, "an accessor runs code where its property is read or written; the heap model has data properties only");
@@ -2274,7 +2441,10 @@ class Gate {
     const visit = (t: PatternAst, d: Expr | null): void => {
       check(d);
       if (t.k === "name") bound.add(t.name);
-      else if (t.k === "object") for (const q of t.props) visit(q.target, q.default_);
+      else if (t.k === "object") {
+        for (const q of t.props) visit(q.target, q.default_);
+        if (t.rest) visit(t.rest.target, null);
+      }
       else {
         for (const q of t.elems) visit(q.target, q.default_);
         if (t.rest) visit(t.rest.target, null);
@@ -2284,10 +2454,9 @@ class Gate {
   }
 
   /* What a binding name or pattern binds. An object pattern reads identifier
-     keys; an object rest is refused: it copies every remaining own
-     enumerable key, which a record contract does not bound, and an object's
-     keys are fixed where it is allocated, so the copy's keys are not the
-     contract's. An array pattern's hole is a position no element names. */
+     keys; its rest binds a fresh object holding the source's other own
+     enumerable properties. An array pattern's hole is a position no element
+     names. */
   private pattern(node: ts.BindingName, names: Set<string>): PatternAst {
     if (ts.isIdentifier(node)) {
       if (node.text === "undefined")
@@ -2315,10 +2484,17 @@ class Gate {
       });
       return { k: "array", pos: this.span(node), elems, rest };
     }
-    const props: PatternPropAst[] = node.elements.map((el) => {
+    // An object rest, last, copies the source's other own enumerable
+    // properties onto a fresh object (DESIGN.md, "Object literals").
+    let rest: Extract<PatternAst, { k: "object" }>["rest"] = null;
+    const last = node.elements[node.elements.length - 1];
+    if (last?.dotDotDotToken) {
+      const restName = last.name;
+      if (!restName || !ts.isIdentifier(restName)) return this.fail(last, "an object rest binds a name");
+      rest = { pos: this.span(last), target: this.pattern(restName, names) };
+    }
+    const props: PatternPropAst[] = node.elements.filter((el) => !el.dotDotDotToken).map((el) => {
       if (!el.name) this.fail(el, "a pattern element needs a name");
-      if (el.dotDotDotToken)
-        this.fail(el, "an object rest copies the source's remaining own enumerable keys, which a record contract does not bound");
       const key = el.propertyName ?? el.name;
       if (!ts.isIdentifier(key))
         this.fail(el, "computed or string pattern keys are outside the fragment");
@@ -2328,7 +2504,7 @@ class Gate {
         default_: el.initializer ? this.expr(el.initializer) : null,
       };
     });
-    return { k: "object", pos: this.span(node), props };
+    return { k: "object", pos: this.span(node), props, rest };
   }
 
   /* A branch or loop body. TypeScript allows a single statement where a block

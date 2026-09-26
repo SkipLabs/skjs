@@ -1,4 +1,5 @@
 import Verification.Model.Programs.CallableObjects
+import Verification.Model.Programs.ObjectMerge
 import Verification.Model.Types.PositiveCertificates
 
 /-!
@@ -394,6 +395,30 @@ def keyAnswer (k : PropKey) (c : Clause α) : Option Bool :=
   else if c.keyBounds.any (fun K => !K.admits k) then some false
   else none
 
+/-- Whether `k in o` holds of an object clause's members: a clause stating
+the key present says it does; one whose bounds exclude both the key and the
+prototype key says it does not, since the object neither owns the key nor
+has a prototype that could hold it; any other may do either. -/
+def inAnswer (k : PropKey) (c : Clause α) : Option Bool :=
+  if c.presentKeys.contains k then some true
+  else if c.keyBounds.any (fun K => !K.admits k) &&
+      c.keyBounds.any (fun K => !K.admits CallArguments.protoField) then some false
+  else none
+
+theorem inAnswer_keyAnswer {k : PropKey} {c : Clause α} {q : Bool} (h : inAnswer k c = some q) :
+    keyAnswer k c = some q := by
+  unfold inAnswer at h
+  unfold keyAnswer
+  by_cases hp : c.presentKeys.contains k = true
+  · rw [if_pos hp] at h ⊢; exact h
+  · rw [if_neg hp] at h ⊢
+    by_cases hb : (c.keyBounds.any fun K => !K.admits k) = true
+    · rw [if_pos hb]
+      by_cases hb2 : (c.keyBounds.any fun K => !K.admits CallArguments.protoField) = true
+      · rw [if_pos (by simp [hb, hb2])] at h; exact h
+      · rw [if_neg (by simp [hb2])] at h; cases h
+    · rw [if_neg (by simp [hb])] at h; cases h
+
 /-- `Array.isArray` on an object clause: whether it owns the store key. A
 clause saying its object owns the store key is of arrays; one whose bound
 excludes the key is of other objects; an open record may be either, since an
@@ -412,7 +437,7 @@ def tagClause (tag : Tag) (c : Clause α) : Option Bool :=
   | .truthy, .strLit t => some (t != "")
   | .truthy, .bigintLit i => some (i != 0)
   | .isArray, .refs .. | .isArray, .dict .. => arrayAnswer c
-  | .hasKey k, .refs .. | .hasKey k, .dict .. => keyAnswer k c
+  | .hasKey k, .refs .. | .hasKey k, .dict .. => inAnswer k c
   | _, _ => tagShape tag (shape c)
 
 /-- An object clause's answer for a key is its members': each is a plain
@@ -539,10 +564,10 @@ theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
     cases c
     case top => exact absurd rfl hc
     case refs =>
-      obtain ⟨flds, rfl, h⟩ := keyAnswer_sound (by simpa [tagClause] using hq) hv
+      obtain ⟨flds, rfl, h⟩ := keyAnswer_sound (inAnswer_keyAnswer (by simpa [tagClause] using hq)) hv
       simpa [tagHolds] using h
     case dict =>
-      obtain ⟨flds, rfl, h⟩ := keyAnswer_sound (by simpa [tagClause] using hq) hv
+      obtain ⟨flds, rfl, h⟩ := keyAnswer_sound (inAnswer_keyAnswer (by simpa [tagClause] using hq)) hv
       simpa [tagHolds] using h
     -- Another object clause's answer is unknown; a primitive owns no key.
     all_goals
@@ -570,6 +595,75 @@ theorem answers_sound {G : NormalGraph ι} {A tag q n W v}
     (hq : Answers G A tag q) (hv : meaning G A n W v) : tagHolds tag v = q := by
   obtain ⟨c, hc, hv⟩ := (expand_sem G A hq.1 n W v).mp hv
   exact tagClause_sound (hq.2 c hc) hv
+
+theorem inAnswer_protoFree {S : α → Fam} {P : α → ArgFam} {c : Clause α} {k : PropKey} {q n W v}
+    (hin : inAnswer k c = some q) (hv : semWithArgs S P c n W v) : protoFree (.hasKey k) v = true := by
+  unfold inAnswer at hin
+  by_cases hp : c.presentKeys.contains k = true
+  · obtain ⟨flds, l, rfl, hl⟩ := semWithArgs_owns hv (List.contains_iff_mem.mp hp)
+    simp [protoFree, hl]
+  · rw [if_neg hp] at hin
+    by_cases hb : ((c.keyBounds.any fun K => !K.admits k) &&
+        c.keyBounds.any fun K => !K.admits CallArguments.protoField) = true
+    · simp only [Bool.and_eq_true] at hb
+      obtain ⟨K, hK, hadm⟩ := List.any_eq_true.mp hb.2
+      obtain ⟨flds, rfl, hk⟩ := semWithArgs_bounded hv hK
+      have hl : flds.lookup CallArguments.protoField = none :=
+        ownKeysT_lookup (b := K) (k := n) (W := W) ⟨flds, rfl, hk⟩ (by simpa using hadm)
+      simp [protoFree, hl]
+    · rw [if_neg hb] at hin; cases hin
+
+/-- A clause that answers `key in o` reads no prototype: its members own the
+key, or have no prototype. -/
+theorem tagClause_protoFree {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
+    (hq : tagClause tag c = some q) (hv : semWithArgs S P c n W v) : protoFree tag v = true := by
+  cases tag
+  case hasKey k =>
+    cases c
+    case refs a bs vs os ms ks =>
+      have hin : inAnswer k (Clause.refs a bs vs os ms ks) = some q := by simpa [tagClause] using hq
+      exact inAnswer_protoFree hin hv
+    case dict a bs vs ds os ms ks cs =>
+      have hin : inAnswer k (Clause.dict a bs vs ds os ms ks cs) = some q := by simpa [tagClause] using hq
+      exact inAnswer_protoFree hin hv
+    case top => simp [tagClause] at hq
+    -- Another clause's members are no objects, whose answer is `false`, or
+    -- objects whose answer is unknown.
+    all_goals
+      cases v with
+      | objAt fs code =>
+        exfalso
+        have hs := semWithArgs_shape (by simp) hv
+        simp only [tagClause] at hq
+        rw [← hs] at hq
+        cases code with
+        | closure _ _ kind => cases kind <;> simp [valueShape, tagShape] at hq
+        | _ => simp [valueShape, tagShape] at hq
+      | _ => rfl
+  all_goals rfl
+
+/-- An answered test's values read no prototype. -/
+theorem answers_protoFree {G : NormalGraph ι} {A tag q n W v}
+    (hq : Answers G A tag q) (hv : meaning G A n W v) : protoFree tag v = true := by
+  obtain ⟨c, hc, hv'⟩ := (expand_sem G A hq.1 n W v).mp hv
+  exact tagClause_protoFree (hq.2 c hc) hv'
+
+/-- An answered test's own answer is the answer of a weaker observation too:
+the one that may only say the object reads a prototype. -/
+theorem answers_weak {G : NormalGraph ι} {A tag q n W v}
+    (hq : Answers G A tag q) (hv : meaning G A n W v)
+    (ho : tagHolds tag v = q' ∨ protoFree tag v = false) : q' = q := by
+  rcases ho with ho | ho
+  · exact ho.symm.trans (answers_sound hq hv)
+  · rw [answers_protoFree hq hv] at ho; cases ho
+
+/-- What an answered test observes needs no prototype, so the heap does not
+change it. -/
+theorem answers_heap {G : NormalGraph ι} {A tag q n W v} (h : Heap)
+    (hq : Answers G A tag q) (hv : meaning G A n W v) : tagHoldsIn h tag v = q := by
+  obtain ⟨c, hc, hv'⟩ := (expand_sem G A hq.1 n W v).mp hv
+  rw [tagHoldsIn_of_protoFree (tagClause_protoFree (hq.2 c hc) hv')]
+  exact answers_sound hq hv
 
 /-! ## Binary operators
 
@@ -1634,6 +1728,14 @@ and the receiver. -/
   outcome safety admits. Its operand is typed at a type of its own, since it
   runs first. -/
   | throw : HasTy G Γ a A → HasTy G Γ (.throw a) B
+  /-- **An allocation from parts.** The accumulator, then the source; the
+  result is what `MergeOk` states each pair of their clauses gives: a fresh
+  plain object holding the accumulator's own fields and, over them, the own
+  enumerable data properties the source has when it is copied, less the
+  dropped keys (`ObjectMerge.merge_values_safe`). -/
+  | merge {d : List PropKey} {a b : Tm} {A B R : Ty ι} :
+      HasTy G Γ a A → HasTy G Γ b B → ObjectMerge.MergeOk G d A B R = true →
+      HasTy G Γ (.merge d a b) R
   | sub : HasTy G Γ t A → PositiveCertificates.check G A B cert = true → HasTy G Γ t B
 
 /-- Every derivation is safe in every admissible world and satisfying heap. -/
@@ -2237,6 +2339,16 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       rcases hv with rfl | rfl
       · exact expand_sem_mpr ⟨_, expand_sub ht, rfl⟩
       · exact expand_sem_mpr ⟨_, expand_sub hf, rfl⟩
+  | @merge Γ d a b A B R ha hb hm iha ihb =>
+    intro n W h ρ he hw hh
+    apply bind (fun a => .merge d a (instantiate 0 ρ b)) Step.mergeC1 Raises.mergeC1 n W h _ hw hh
+      (iha n W h ρ he hw hh)
+    intro j hj U hx hu heap av hok hav ha'
+    apply bind (.merge d av) (Step.mergeC2 hav) (Raises.mergeC2 hav) j U heap _ hu hok
+      (ihb j U heap ρ (he.transfer j hj U hx) hu hok)
+    intro k hk V hy hv heap' bv hok' hbval hb'
+    have ha'' := (meaning_adm G A).mono k _ V hy av ((meaning_adm G A).down_le j k hk U av ha')
+    exact ObjectMerge.merge_values_safe hm hv hok' ha'' hb'
   | @arith Γ a A b B op N ha hb hopt iha ihb =>
     intro n W h ρ he hw hh
     apply bind (fun a => .arith op a (instantiate 0 ρ b)) Step.arithC1 Raises.arithC1 n W h _ hw hh
@@ -2345,7 +2457,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
   | @ifTag Γ i A tag q u B e hi hq ht he iht ihe =>
     intro n W h ρ henv hw hh
     have hval := (meaning_value (henv.2 i A hi)).1
-    have htag := answers_sound hq (henv.2 i A hi)
+    have htag := answers_heap h hq (henv.2 i A hi)
     simp only [instantiate, Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero]
     cases n with
     | zero => trivial

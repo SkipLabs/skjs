@@ -41,7 +41,8 @@ private def indexSignatures (term : Json) : List (String × IndexKeys × Json) :
 present. -/
 private def objectMembers (term : Json) : List String :=
   ["k", "fields", "stringIndex", "calls", "span"] ++
-    ((indexSignatures term).map (·.1)).filter (· != "stringIndex")
+    ((indexSignatures term).map (·.1)).filter (· != "stringIndex") ++
+    if (term.getObjVal? "prototype").toOption.isSome then ["prototype"] else []
 
 /-- Whether an object term has a number or symbol index. -/
 private def keyedIndexes (term : Json) : Bool :=
@@ -651,6 +652,16 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
   | "pack" => throw "a pack parameter outside a signature's rest"
   | "object" =>
     CellClaims.fieldsExactly term (objectMembers term)
+    -- Members held as own properties that are not enumerable (the library
+    -- overlay's `Error`): on a prototype the object holds, whose keys the
+    -- object does not own, so a read and `in` find them there and a spread
+    -- does not copy them.
+    let hidden ← match term.getObjVal? "prototype" with
+      | .ok t => do
+        let P ← lowerType ds owner params seen t
+        let keys ← (← arr t "fields").mapM fun f => do PropKey.decode (← field f "name")
+        pure (some (P, keys.toList))
+      | .error _ => pure none
     -- A method, one signature or several with the declaration as receiver, is
     -- a host-relative member: its contract holds when it is invoked on the
     -- object it is read from, so it is neither a field nor a view. An
@@ -723,8 +734,14 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
       else
         variadic := variadic ++ [(receiver, domains.toList,
           ← lowerRest ds owner params seen rest, result)]
+    if hidden.isSome && (!fixed.isEmpty || !variadic.isEmpty || !indexes.isEmpty) then
+      throw "a prototype of hidden members is stated of a plain record only"
     let row ← if fixed.isEmpty && variadic.isEmpty then
-        if indexes.isEmpty then use (.refs writes [] views optional methods)
+        if indexes.isEmpty then
+          match hidden with
+          | some (P, keys) =>
+            use (.refs writes [] (views ++ [(CallArguments.protoField, P)]) optional methods [⟨false, keys⟩])
+          | none => use (.refs writes [] views optional methods)
         else use (.dict writes [] views indexes optional methods [] cells)
       else if !methods.isEmpty then
         throw "a callable object with methods needs a combined clause"
@@ -1157,6 +1174,10 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
     return claimType [Json.mkObj [("a", toJson "constructor"), ("params", toJson params),
       ("result", ← recur (← field term "result"))]]
   | "object" =>
+    -- Members held on a prototype (the library overlay's): no claim atom
+    -- spells a record's prototype, so the record is its graph rows.
+    if (term.getObjVal? "prototype").toOption.isSome then
+      return graphClaim (← lowerType ds ds.size #[] {} term)
     CellClaims.fieldsExactly term (objectMembers term)
     if !(← arr term "calls").isEmpty then
       throw "a call signature in a source annotation is outside the fragment"

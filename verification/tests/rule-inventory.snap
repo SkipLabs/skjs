@@ -52,6 +52,7 @@ HasTy  (Programs/ProgramTyping.lean)
   bindRestE {Γ : List (Ty ι)} {F T Rt E El R Rc : Ty ι} {t r : Nat} {slots : List Nat} {Ps Qs : List (Ty ι)} : Γ[t]? = some T → (Rt, Ps, E, R) ∈ restSigs G T → restElem G E = some El → Γ[r]? = some Rt → slots.map (Γ[·]?) = Qs.map some → Qs = Ps.take slots.length ++ List.replicate (slots.length - Ps.length) El → Represents G F (.arrs [] [(Rc, Ps.drop slots.length, E, R)]) → HasTy G Γ (.makeAt (.bound (.var t) (.var r) (slots.map .var)) [] []) F
   bindMember {Γ : List (Ty ι)} {F O : Ty ι} {i : Nat} {k : PropKey} {m : MethodMembers.Sig (Ty ι)} {L : List (Ty ι × List (Ty ι) × Ty ι)} {S : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)} : Γ[i]? = some O → memberOf G O k = some m → Represents G F (.arrs L S) → (∀ q ∈ L, ∃ c ∈ m.calls, CoveredCall G q c) → (∀ s ∈ S, (s.2.1, s.2.2.1, s.2.2.2) ∈ m.rests) → HasTy G Γ (.letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])) F
   throw : HasTy G Γ a A → HasTy G Γ (.throw a) B
+  merge {d : List PropKey} {a b : Tm} {A B R : Ty ι} : HasTy G Γ a A → HasTy G Γ b B → ObjectMerge.MergeOk G d A B R = true → HasTy G Γ (.merge d a b) R
   sub : HasTy G Γ t A → PositiveCertificates.check G A B cert = true → HasTy G Γ t B
 
 Rule  (Programs/ProgramCertificates.lean)
@@ -110,6 +111,7 @@ Rule  (Programs/ProgramCertificates.lean)
   construct
   sub (proof : PositiveCertificates.Proof ι)
   throw
+  merge
 
 Proof  (Types/PositiveCertificates.lean)
   core (certificate : Certificate ι) (instances : List (List ι × Ops ι × List (List ι × List (List ι) × List ι × List ι) × Instance ι) := [])

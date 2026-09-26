@@ -159,7 +159,7 @@ Ordered by value for cost (units per effort, files as a tiebreak):
 | 24 | Exceptions: ~~`try`/`catch`/`finally`, `throw`~~ done (throw outcome) | 0 (was 11) | 0 | 0 | 0 | M | P L |
 | 25 | Calls: ~~`.call`/`.apply`/`.bind` on module functions, `this` parameters~~ done (task R); left: overloads, union callees, spreads not last or into `new`, `.call` on a method read, `Object.assign` | 15 | 7 | 1 | 8 | M | P O |
 | 26 | `await` of non-promises and unions | 12 | 12 | 0 | 2 | M | L |
-| 27 | Object literals: ~~numeric keys, spreads of literals, construct-signature type literals~~ done (task R); spreads of values refused (own-key provenance), computed keys, accessors | 32 | 31 | 1 | 12 | L | P O L |
+| 27 | Object literals: ~~numeric keys, spreads of literals, construct-signature type literals~~ done (task R); ~~spreads of values, object rests~~ done (task M2); left: a spread into an index signature, string, function and class-value operands, computed keys, accessors | 32 | 31 | 1 | 12 | L | P O L |
 | 28 | ~~Lib `Function` methods, `Record`~~ done (task B) | 0 | | | | | |
 | 29 | ~~Optional chaining~~ done (task R); 1 left at search (incompleteness) | 0 (was 8) | | | | | |
 | 30 | Sloppy (non-strict) code reading `this` | 8 | 6 | 2 | 5 | S | P |
@@ -518,6 +518,13 @@ dropped), examples, what the extension needs.
     definitely-assigned fields (17), parameter properties (9), inheritance
     (7 + 2 in the producer), constructor statements other than `this.f = e`
     (5), method receivers (4), optional/generator/generic methods (3).
+    *Inheritance done (task M2; DESIGN.md, "Class members"):* a base
+    declared earlier in the file, `super(...)` after statements not reading
+    `this`, `super.m(...)`, overrides checked against the base's member types,
+    an implicit constructor over a base taking nothing. Left: an implicit
+    constructor forwarding a base's parameters, `instanceof` a derived class
+    (the model's derived prototype is a copy, not a link), `extends` of a
+    library, ambient or later class.
 20. **Generic classes.** `a generic class is outside the fragment` (47).
     An instance of `class Box<T> { v: T }` is a record over its binder, which
     no universal certificate reaches yet (21, left).
@@ -630,12 +637,14 @@ dropped), examples, what the extension needs.
     type literals (`{ new (): T }`, 6 units, 4 of them first blocked here),
     numeric keys in literals and types (8, 6 of them in
     `number-literal-normalization.ts`) and a spread of an object literal (1)
-    verify; a spread of any other value is refused (30):
-    it copies the operand's own enumerable properties, and the heap model
-    keeps a class instance's methods as fields of the instance, so the copy
-    would own properties JavaScript's does not; admitting it needs own-key
-    provenance, the same allocation-from-parts class inheritance needs. Two
-    computed keys stay outside. Of 29, 7 verify; `composedReceiverSnapshot`
+    verify. Task M2 (DESIGN.md, "Object literals"): a spread of a value is
+    an allocation from parts copying its operand's own enumerable string-keyed
+    properties; a class instance's methods are its prototype's and an
+    `Error`'s `message` is on a prototype, so neither is copied; object rest
+    patterns are the same copy less the named keys. Left: a spread whose
+    result states an index signature (4, a dictionary result clause), a
+    string, function or class-value operand, an array's object rest, a
+    literal writing a key its type lacks. Two computed keys stay outside. Of 29, 7 verify; `composedReceiverSnapshot`
     stops at the fresh-literal snapshot its plain `snapshot.read()` also
     stops at (incompleteness). `%` (6 units, unclassified before): 3 verified
     before the throw outcome; the other 3, bigint remainders by a `bigint`
@@ -843,10 +852,9 @@ script and read new `search` refusals. Task R's (an empty enum's allocation,
 now refused at the gate; enum equality narrowing; a number key on a string
 index; the bigint `%` by a `bigint` divisor before the throw outcome; generic
 inference through `Maybe<A>`; a fresh-literal snapshot read through `?.`)
-are incompleteness. Its refusals of object spreads were probed against SKJS:
-SKJS refuses accessors and tracks a method's declaration provenance through
-a spread, so the class-instance copy the heap model cannot express is not an
-SKJS unsoundness either.
+are incompleteness. Task M2's remaining refusals of spreads and derived
+classes (listed under 19 and 27) are incompleteness; no new `search`
+refusal of an SKJS-accepted unit it reaches is a wrong SKJS verdict.
 
 ## Proposed tasks
 
@@ -868,7 +876,7 @@ split by function.
 | J. Guards (done) | `typeof` as a value and `typeof x === "object"` (tag `typeofObject`); `key in o` as the own-key tag `hasKey` (literal keys, unions of string literals), `isArray` its store-key case; refused with reasons: keys the realm's prototypes hold, array indices, `string` keys, primitive and class operands, source keys naming the model's reserved keys (a soundness hole in `isArray` closed); `tagTestPlan` branches on an unsettled arm; decided and documented, not lowered: `instanceof` of a constructor (no class identity in the model), static `[Symbol.hasInstance]`, user-defined guards; presence narrowing left | 1,791 → 1,842 units (+51, none lost), 1,261 → 1,310 functions, 180 → 182 whole files (marker corpus) | `Calculus.lean`, `ProgramTyping.lean`, `Fragment.lean`, `SourceExtraction.lean`, `SourceClaimJson.lean`, `calculus.mts`, `fragment.mts`, `fragment-parse.mts`, `tsc-claims.mts`, `source.ml`, `proposal.ml` | I, K (`Array`) | I, M (class allocation for `instanceof`) |
 | K. Library globals (done, first part) | Global values read at the call signatures a module calls (`BigInt(v)`, `Symbol()`, `String(v)`) as well as members; a standard library global only through a reviewed overlay (`library-globals.mts`) that states a parameter at what the host accepts without throwing | all 102 `BigInt` units and the `Symbol()`/`String()` calls pass the reader; 6 units / 2 files newly verified (703 → 709 units, 61 → 62 whole files); `Array.isArray`, `new X(…)`, well-known symbols, `Promise`/`JSON`/`Object` statics left | `declaration-graph.mts`, `library-globals.mts` | B, C | B, C |
 | L. Primitive and union reads (done) | Truthiness as a tag test, value-level `&&`/`||`, `!`; string `length` and code units; primitive members through their wrapper prototypes' contracts (the overlay generalized); not done: method calls on primitive unions, dynamic string index writes (objects cannot grow) | 68 / 30 reached, 61 / 7 (files fully) verified | `Calculus.lean`, `ProgramTyping.lean`, `ProgramCertificates.lean`, `CertificateProducer.lean`, `SourceExtraction.lean`, `array-prototype.mts`, `declaration-graph.mts`, `fragment-parse.mts`, `proposal.ml` | B (string lib) | I |
-| M. Class members | Modifiers, optional/definite fields, parameter properties, constructor statements, receivers; then inheritance | 104 / 31 | `fragment-parse.mts` (classes), `proposal.ml`, class model in Lean | — | N |
+| M. Class members | Modifiers, optional/definite fields, parameter properties, constructor statements, receivers (inheritance: M2) | 104 / 31 | `fragment-parse.mts` (classes), `proposal.ml`, class model in Lean | — | N |
 | N. Generics (done, first part) | Bounds of any ground type, unions mentioning a binder, rigid bodies ending without a return or with expression statements, unannotated nested closure results, explicit type arguments on plain calls and `new`, `as const`, tuple bounds as contextual types, `T & D` at ground instances; left: records, tuples and field reads over a binder, and generic classes, which need them | 71 / 7 (files fully) verified (911 → 982 units, 860 → 930 functions, none lost) | `fragment-parse.mts`, `proposal.ml`, `DirectObligation.lean`, `RigidJudgments.lean`, `GenericSource.lean`, `SourceJudgments.lean`, `SourceClaimJson.lean`, `DeclarationGraph.lean` | M for generic classes | M |
 | O. Type forms (done) | Computed types (`typeof`, `keyof`, `T[K]`, template literal types, intersections of primitives, mapped keys) evaluated by the declaration reader through TypeScript's checker; `object`, `{}`; method and construct signatures in type literals; numeric property names and number-keyed reads of non-arrays; `unique symbol` constants; annotation intersections as Lean's meet; `string \| number` and equal number indexes as the string index; refused with reasons: number and symbol index signatures, forms over a type parameter, `keyof` with unique symbol keys | 106 units / 13 files (fully) verified (1,791 → 1,897 units, 1,261 → 1,350 functions, 180 → 193 whole files, none lost, marker corpus) | `computed-types.mts`, `type-term.mts`, `declaration-graph.mts`, `fragment-parse.mts`, `DeclarationGraph.lean`, `SourceExtraction.lean`, `source.ml`, `claims.ml`, `semantic.ml` | — | N |
 | O2. Index keys (done) | An index over a key class (`IndexKeys`: every string key, the canonical numeric keys "0", "1.5", "NaN" that some number's `ToString` spells, every symbol key), one mechanism for `[k: string]`, `[k: number]` and `[k: symbol]`, their unions and mapped types over them; the calculus's computed key converted by `ToPropertyKey` (a number reads the key its `ToString` spells, a symbol its own key); reads by a named key an index surely admits and by a `string`/`number`/`symbol` key; covering over as many keys, a writable target's contract within every source index and optional field over its keys; fresh literals excuse keys no number spells. Refused with reasons: writes through an index (`x[99] = v`, `x[n] = v`: the calculus adds no key), intersections of declared interfaces (no representable clause at lowering), a spread, `{ a?: number; [k: string]: never }` built with `a` (the index constrains `a` too) | 39 units / 2 files (fully) verified (1,897 → 1,936 units, 1,350 → 1,388 functions, 193 → 195 whole files, none lost; `--skjs`) | `Calculus.lean`, `Types.lean`, `PositiveNormalization.lean`, `PositiveRules.lean`, `ProgramTyping.lean`, `ProgramCertificates.lean`, `CertificateProducer.lean`, `DeclarationGraph.lean`, `SourceExtraction.lean`, `type-term.mts`, `semantic.ml`, `source.ml`, `proposal.ml`, `claims.ml` | O | — |
@@ -876,6 +884,7 @@ split by function.
 | Q. Module initialization and run setup (done) | A module with no function checked through its initialization unit; verdicts attributed only to units whose own code was checked; SKJS's test environment (stub imports through a per-unit `--project`, `__SKJS_show`, `process`, `StringRecord`, `Closed<T>` as `T`) | 450 / 98 verified (911 → 1,361 units, 860 → 880 functions, 96 → 136 whole files, none lost) | `SourceClaimJson.lean`, `check.mts`, `skjs-coverage.mts`, `skjs-environment/` | — | — |
 | K2. Library globals, second part (done) | `JSON.parse`/`stringify`, `Promise.reject`, `new Promise`, `Set`/`Map`/`Date` contracts and constructors, `Date.now`, `instanceof Array`, generic `Object.values`/`entries` at dictionaries, throwing string members and string-pattern `split`/`replace` | 5 units / 1 file newly verified (1,420 → 1,425 units, 917 → 922 functions, 141 → 142 whole files, none lost); the corpus reaches these globals in 16 units | `library-globals.mts`, `array-prototype.mts`, `intrinsics.mts`, `declaration-graph.mts`, `fragment-parse.mts`, `source.ml`, `proposal.ml`, `DeclarationGraph.lean` | K, S | K |
 | S. Throws (done) | A throw is an outcome: `throw`, `try`/`catch`/`finally` (handler edges, the `finally` compiled on each way out, returns included), `typeof` narrowing `unknown`; bigint division and exponent, `BigInt` of any number or string, and primitive radix/digit arguments read as declared | 59 units newly verified over the committed run (1,361 → 1,420, 880 → 917 functions, 136 → 141 whole files, none lost), of which about 38 in exception or bigint units and the rest from overlay work the committed run predated | `Calculus.lean`, `Safety.lean`, `ControlFlow.lean`, `ProgramTyping.lean`, `SourceExtraction.lean`, `fragment-parse.mts`, `library-globals.mts`, `array-prototype.mts`, `proposal.ml` | — | — |
+| M2. Allocation from parts (done) | `Tm.merge`: object spreads of values and object rest patterns copy own enumerable string keys; class methods on a `[[proto]]` prototype object; `in` follows the prototype chain; `Error`'s `message` on a prototype; `class D extends B` (base part copied, prototype a copy of the base's with the overrides, `super.m()`, implicit constructors over a base taking nothing, overrides checked, `this` before `super` refused) | `--only` probes over the committed run at ad8564d8: spread files +11 (38 of 66), `class_inheritance_test.ts` +2, generic class files +1, none lost; on the run before tasks J and O, about 25 units by name, none lost | `Calculus.lean`, `ObjectMerge.lean`, `ProgramTyping.lean`, `ProgramCertificates.lean`, `CertificateProducer.lean`, `PositiveRules.lean`, `SourceExtraction.lean`, `Fragment.lean`, `fragment-parse.mts`, `library-globals.mts`, `source.ml`, `proposal.ml`, `claims.ml` | J (`in`) | J, M |
 | R. Remaining source forms (done) | Enums (runtime, `const`, types, reverse mappings, number keys on records); object literals (numeric keys, literal spreads, construct-signature type literals; value spreads and accessors refused with reasons); optional chaining as one derived form; `.call`/`.apply`/`.bind` on module functions and `this` parameters as receivers; `%` exact on numbers and bigints | 80 / 19 verified, measured on 414fc86a before task S (1,361 → 1,441 units, 880 → 956 functions, 136 → 142 whole files, none lost) | `fragment-parse.mts`, `type-term.mts`, `declaration-graph.mts`, `annotate-source.mts`, `Fragment.lean`, `SourceExtraction.lean`, `Calculus.lean`, `ProgramTyping.lean`, `source.ml`, `proposal.ml` | D (bigint) | I (enum narrowing) |
 
 Suggested order: A, B, D in parallel (disjoint files except D's gate

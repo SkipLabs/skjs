@@ -830,7 +830,10 @@ private def joinSites (a b : Sites) : Sites := (a.1 ++ b.1,a.2.1 ++ b.2.1,a.2.2 
 an array literal. -/
 private partial def restSpans : Fragment.Pattern Fragment.Expr → List Span
   | .name .. => []
-  | .object _ props => props.flatMap fun (_, t, _) => restSpans t
+  | .object _ props rest => props.flatMap (fun (_, t, _) => restSpans t) ++
+      match rest with
+      | some (q, t) => q :: restSpans t
+      | none => []
   | .array _ elems rest => elems.flatMap (fun (_, t, _) => restSpans t) ++
       match rest with
       | some (_, q, t) => q :: restSpans t
@@ -843,7 +846,7 @@ private partial def exprSites : Fragment.Expr → Sites
     defaults.attach.foldl (fun acc ⟨d,_⟩ => joinSites acc (exprSites d.2))
       (joinSites ([],[p],[p]) (exprSites e))
   | .shapeTest p _ _ e | .not p e | .unary p _ e | .cast p _ e | .read p _ e => joinSites ([],[p],[]) (exprSites e)
-  | .alloc p _ es => es.foldl (fun acc a => joinSites acc (exprSites a)) ([],[p],[])
+  | .alloc p _ es | .build p _ es => es.foldl (fun acc a => joinSites acc (exprSites a)) ([],[p],[])
   | .withValue p a b _ _ | .write p _ a b | .singletonTest p _ _ _ a b | .equality p _ a b | .coalesce p a b | .logical p _ a b => joinSites ([],[p],[]) (joinSites (exprSites a) (exprSites b))
   -- An assignment is an expression site, and the name it assigns is not one:
   -- the producer claims the value written, not the location.

@@ -77,8 +77,8 @@ inductive Transition (P : Program) : Heap → State → Heap → State → Prop 
 
   | tagBind : isVal v = true →
       Transition P h (.eval v ρ (.tagBind tag y n) x) h
-        (.at (if tagHolds tag v then y else n).label
-          (mapEnv (if tagHolds tag v then y else n).mapping (push v ρ)))
+        (.at (if tagHoldsIn h tag v then y else n).label
+          (mapEnv (if tagHoldsIn h tag v then y else n).mapping (push v ρ)))
   /-- A throw out of a node with a handler goes there, the thrown value bound. -/
   | handle : Raises t v →
       Transition P h (.eval t ρ k (some l)) h (.at l.label (mapEnv l.mapping (push v ρ)))
@@ -367,15 +367,15 @@ theorem state_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C}
           · exact Or.inr ⟨U, h, _, WExt_refl _, hw', .noBind, hh',
               ih U h _ hw' hh' (branch_target_state hk.2.2 (he.push ha) hh rfl hf)⟩
         | tagBind tag y no =>
-          cases htag : tagHolds tag t with
+          cases htag : tagHoldsIn h tag t with
           | true =>
             exact Or.inr ⟨U, h, _, WExt_refl _, hw', .tagBind hv, hh',
               ih U h _ hw' hh' (by
-                simpa [htag] using (branch_target_state hk.1 (he.push ha) hh htag hf))⟩
+                simpa [htag] using (branch_target_state hk.1 (he.push ha) hh (tagHolds_of_heap htag) hf))⟩
           | false =>
             exact Or.inr ⟨U, h, _, WExt_refl _, hw', .tagBind hv, hh',
               ih U h _ hw' hh' (by
-                simpa [htag] using (branch_target_state hk.2 (he.push ha) hh htag hf))⟩
+                simpa [htag] using (branch_target_state hk.2 (he.push ha) hh (tagHolds_of_heap htag) hf))⟩
       · have he' := he.transfer n (Nat.le_succ n) U (WExt_refl _)
         cases x with
         | none =>

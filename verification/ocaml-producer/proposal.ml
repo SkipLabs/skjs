@@ -52,7 +52,13 @@ let definition declarations id args =
       | Atoms [Shape inherited],Atoms [Shape local]
         when inherited.calls=[] && local.calls=[] && inherited.elements=None && local.elements=None
              && (inherited.indexes=[] || local.indexes=[]) ->
-        unsupported "overlapping inherited fields need compatibility checking"
+        (* A member both declare, as a derived class's override: the
+           declaration's own is the hint; Lean's meaning is both, and a value
+           must meet each. *)
+        let own_names = List.map (fun (f:Semantic.field) -> f.name) local.fields in
+        Atoms [Shape {local with fields=local.fields @ List.filter
+          (fun (f:Semantic.field) -> not (List.mem f.name own_names)) inherited.fields;
+          indexes=(if local.indexes=[] then inherited.indexes else local.indexes)}]
       | _ -> unsupported "inheritance needs plain object contracts") in
   let rec instantiate seen id args =
   if List.mem id seen then unsupported "cyclic inheritance";
@@ -117,6 +123,8 @@ let first_part read parts =
   | Some t -> t
   | None -> unsupported "read on an intersection none of whose operands has it"
 (* `ArrayProto`, the declaration of `Array.prototype`'s members, by identity. *)
+(* The key an object keeps its prototype under: no source property spells it. *)
+let proto_key = "[[proto]]"
 let array_prototype = "skjs/array-prototype#0:0"
 let key_text = function Name n -> n | Key i -> "[symbol " ^ string_of_int i ^ "]"
 (* The contract of the prototype a primitive's members are read through:
@@ -171,7 +179,10 @@ let rec field_type declarations seen t name = match t with
           | Some f -> if f.optional then union f.read (Atoms [Undef]) else f.read
           | None -> (match index_for shape name with
             | Some index -> union index.value (Atoms [Undef])
-            | None -> unsupported ("missing field " ^ key_text name)))
+            | None -> (match List.find_opt (fun (f:Semantic.field) -> f.name=Name proto_key) shape.fields with
+              (* A member the object holds on its prototype. *)
+              | Some p -> field_type declarations seen p.read name
+              | None -> unsupported ("missing field " ^ key_text name))))
       | Exact fields -> (match List.find_opt (fun (f:Semantic.field) -> f.name=name) fields with
           | Some f -> f.read
           | None -> unsupported ("missing field " ^ key_text name))
@@ -497,7 +508,10 @@ let key_slice key holds = function
       | Shape s -> (match field_of s.fields with
         | Some f when not f.optional -> Some true | _ -> None)
       | Exact fields -> (match field_of fields with
-        | Some f -> if f.optional then None else Some true | None -> Some false)
+        | Some f -> if f.optional then None else Some true
+        (* A class instance may inherit the key from its prototype. *)
+        | None -> if List.exists (fun (f:Semantic.field) -> f.name = Name proto_key) fields
+          then None else Some false)
       | Ctors _ | Callable | Named _ | Top -> None
       | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _
       | Bigint | Symbol | BigintLit _ -> Some false in
@@ -612,6 +626,72 @@ let module_type (g:Source.fn) =
      | _ -> unsupported "rest parameter contract of a module function")
   | _ -> quantified_arrow ~receiver g.quantified tys g.result
 
+(* An object literal with spreads, as a merge reads it: each alternative of
+   what is built so far is its fields and whether its own keys are exactly
+   theirs; a source's alternative may also state an index, the type of every
+   own string key it does not name. *)
+type alternative = { afields : Semantic.field list; exact : bool; index : ty option }
+
+(* A method member is host-relative: its object may hold it on its
+   prototype, which a spread does not copy. *)
+let method_field (f:Semantic.field) = f.host
+
+(* The alternatives a spread's operand gives: nothing from a primitive other
+   than a string, a record's fields otherwise. *)
+let rec source_alternatives declarations seen t = match t with
+  | Atoms atoms -> List.concat_map (function
+      | Nul | Undef | True | False | Num | NumLit _ | Bigint | BigintLit _ | Symbol ->
+        [{afields=[];exact=true;index=None}]
+      | Exact fs -> [{afields=List.filter (fun (f:Semantic.field) -> f.name <> Name proto_key) fs;
+                      exact=true;index=None}]
+      | Shape {fields;indexes;calls=[];elements=None} ->
+        (* The string index states every own string key's type; a number
+           index states only the canonical numeric ones', so a key it covers
+           is left unstated, as an open record's is. *)
+        [{afields=List.filter (fun (f:Semantic.field) -> not (method_field f) && f.name <> Name proto_key) fields;exact=false;
+          index=Option.map (fun (i:index_signature) -> i.value)
+            (List.find_opt (fun (i:index_signature) -> i.keys=Strings) indexes)}]
+      | Named (id,args) ->
+        if List.mem id seen then unsupported "unguarded spread cycle";
+        source_alternatives declarations (id::seen) (definition declarations id args)
+      | _ -> unsupported "a spread copies the own enumerable properties of a plain object; one of a string, an array, a function or a class value is outside the fragment") atoms
+  | Union ts -> List.concat_map (source_alternatives declarations seen) ts
+  | Meet _ | Rigid _ -> unsupported "a spread of an intersection or a type parameter is outside the fragment"
+
+(* A source's properties defined over an alternative's: a key the source
+   surely has takes its type; one the alternative has keeps its own where the
+   source never has it, or with the source's optional or index type where it
+   may; a key only the source may have is optional where the alternative's
+   keys are exact. A key either side may hold at an unknown type is not
+   stated. *)
+let merge_alternative (a:alternative) (b:alternative) : alternative =
+  let find fs k = List.find_opt (fun (f:Semantic.field) -> f.name = k) fs in
+  let names = List.fold_left (fun ns (f:Semantic.field) ->
+    if List.mem f.name ns then ns else ns @ [f.name]) [] (a.afields @ b.afields) in
+  let field name optional t = ({name;optional;read=t;write=Some t;host=false} : Semantic.field) in
+  let fields = List.filter_map (fun k ->
+    match find b.afields k with
+    | Some f when not f.optional -> Some (field k false f.read)
+    | bf ->
+      let b_maybe = match bf,b.index,k with
+        | Some f,_,_ -> Some f.read
+        | None,Some t,Name _ -> Some t
+        | None,_,_ -> None in
+      let b_never = bf = None && b.exact in
+      match find a.afields k with
+      | Some f when not f.optional ->
+        if b_never then Some (field k false f.read)
+        else Option.map (fun t -> field k false (union f.read t)) b_maybe
+      | Some f ->
+        if b_never then Some (field k true f.read)
+        else Option.map (fun t -> field k true (union f.read t)) b_maybe
+      | None -> if a.exact then Option.map (field k true) b_maybe else None) names in
+  { afields=fields; exact=a.exact && b.exact; index=None }
+
+let alternative_type (a:alternative) =
+  if a.exact && List.for_all (fun (f:Semantic.field) -> not f.optional) a.afields
+  then Atoms [Exact a.afields] else record a.afields
+
 (* One pass over a function. [offered] gives, for a named closure's creation,
    the further signatures its uses offer it; the pass reports them as
    [requests], and [infer_function] runs a second pass with them. *)
@@ -634,11 +714,29 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | Alloc fs -> Some fs
     | LetBody (_,_,_,rest) | SequenceBody (_,rest) | IfBody (_,_,rest,_) -> allocated rest
     | _ -> None in
+  (* The allocations a constructor ends in, each arm's. *)
+  let rec tails (body:expr) = match body.node with
+    | Alloc _ | Build _ -> [body.pos]
+    | LetBody (_,_,_,rest) | SequenceBody (_,rest) -> tails rest
+    | IfBody (_,_,a,b) -> tails a @ tails b
+    | _ -> [] in
+  (* Whether the constructor being typed is a class's fresh one, which a
+     class extending it constructs: claimed also at the instance it
+     allocates, whose own keys are exact. *)
+  let fresh_constructor = ref false in
+  (* Objects bound to a name: a class's prototype, read by its instances
+     under the prototype key. *)
+  let objects = ref [] in
   let named_closure n written (init:expr) = match written,init.node with
     | (None | Some (Atoms [Shape {calls=[_];fields=[];indexes=[];elements=None}])),Lambda (_,[],ps,_,false,_,_) ->
       closures := (n,(init.pos,List.map snd ps)) :: !closures
+    | None,Alloc fs -> objects := (n,fs) :: !objects
     | Some _,Ctor {node=Lambda (None,[],ps,[],false,Some instance,body);_} when allocated body <> None ->
       let fs = Option.get (allocated body) in
+      (* An instance's methods are its prototype's. *)
+      let fs = match List.assoc_opt proto_key fs with
+        | Some {node=Id p;_} -> Option.value (List.assoc_opt p !objects) ~default:[]
+        | _ -> fs in
       let methods = List.filter_map (fun (key,(e:expr)) -> match e.node with
         | Id m when List.mem_assoc m !closures -> Some (key,m)
         | _ -> None) fs in
@@ -697,6 +795,16 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | None -> (match List.assoc_opt n module_functions with
       | Some g -> Lazy.force g | None -> Json.fail ("unbound name " ^ n)) in
   let entries = ref [] and expressions = ref [] and instantiations = ref [] in
+  (* Object literals a spread copies, directly or as an arm of `&&`, `||`,
+     `??` or a conditional: each is claimed with its exact keys, which is
+     what tells the copy owns no other key. *)
+  let exact_allocs = ref [] in
+  let rec mark_exact (e:expr) = match e.node with
+    | Alloc _ -> exact_allocs := e.pos :: !exact_allocs
+    | Logical (_,_,b) | Coalesce (_,b) | Comma (_,b) -> mark_exact b
+    | Conditional (_,a,b) -> mark_exact a; mark_exact b
+    | Cast (("nonNull" | "satisfies"),_,e) -> mark_exact e
+    | _ -> () in
   (* A read of a generic module value that a call instantiates is claimed at
      that instance: Lean gives the value's slot the instances its calls name. *)
   let instances = ref [] in
@@ -883,12 +991,41 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         {name=Name name;optional=false;read=t;write=Some t;host=false}) fs in
       (* Where the contract is a dictionary, or has optional fields, the
          literal is claimed with its exact keys: that own-key bound is what
-         lets it meet an index, or an optional field it leaves out. *)
+         lets it meet an index, or an optional field it leaves out. A class
+         instance, which holds its prototype, is claimed with its exact keys
+         too: the bound is what says a method is not its own, so a read of it
+         continues at the prototype. *)
       (match contract with
+       | _ when List.mem_assoc proto_key fs || List.mem e.pos !exact_allocs -> Atoms [Exact fields]
        | Some {indexes=_::_;_} -> Atoms [Exact fields]
        | Some {fields=contract_fields;_}
          when List.exists (fun (f:Semantic.field) -> f.optional) contract_fields -> Atoms [Exact fields]
        | _ -> record fields)
+    | Build parts ->
+      let contract = Option.bind expected (object_hint declarations []) in
+      (* A field is built at the type the contract names for it, else at its
+         own, widened, as a literal's field is. *)
+      let field_of (name,e) =
+        let hint = Option.bind contract (fun s ->
+          List.find_opt (fun (f:Semantic.field) -> f.name=Name name) s.fields) in
+        let expected = Option.map (fun (f:Semantic.field) -> f.read) hint in
+        let inferred = expr ?expected env e in
+        let t = Option.value expected ~default:(widen inferred) in
+        ({name=Name name;optional=false;read=t;write=Some t;host=false} : Semantic.field) in
+      let group fs = {afields=fs;exact=true;index=None} in
+      let merge alts b = List.concat_map (fun a -> List.map (merge_alternative a) b) alts in
+      let alts,fields = List.fold_left (fun (alts,fields) (name,e) -> match name with
+        | Some name -> alts,fields @ [field_of (name,e)]
+        | None ->
+          let alts = match alts with
+            | None -> [group fields]
+            | Some alts -> if fields = [] then alts else merge alts [group fields] in
+          mark_exact e;
+          Some (merge alts (source_alternatives declarations [] (expr env e))),[]) (None,[]) parts in
+      let alts = match alts with
+        | None -> [group fields]
+        | Some alts -> if fields = [] then alts else merge alts [group fields] in
+      combine (List.map alternative_type alts)
     | ArrayLiteral es ->
       (* One array arm of the expected type is the literal's contract: an
          optional array parameter, `readonly T[] | undefined`, is its array. *)
@@ -933,12 +1070,17 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
          what its contract admits. The class value's type is its construct
          signature. *)
       let inner = List.fold_left (fun env (n,t) -> extend env n (Value t)) (forget env) ps in
-      ignore (expr ~expected:result inner body);
+      let fresh = !fresh_constructor in
+      fresh_constructor := false;
+      if fresh then exact_allocs := tails body @ !exact_allocs;
+      let allocated_type = expr ~expected:result inner body in
       (* A class offered construct signatures giving other instances is
          claimed at them too, beside its own; Lean checks the body at each. *)
       let own = {quantified=[];receiver=Semantic.top;params=List.map snd ps;variadic=None;rest_pack=None;result} in
       let extra = Option.value (List.assoc_opt e.pos offered) ~default:[] in
-      Atoms [Ctors (own :: List.filter (fun s -> s <> own) (List.sort_uniq compare extra))]
+      (* A fresh constructor gives, first, the instance it allocates. *)
+      let fresh_sig = if fresh then [{own with result=allocated_type}] else [] in
+      Atoms [Ctors (fresh_sig @ own :: List.filter (fun s -> s <> own) (List.sort_uniq compare extra))]
     | Ctor _ -> unsupported "a class value is a constructor lambda with plain parameters"
     | New (callee,types,args) ->
       (* `new` may omit trailing actuals, as a call may: the machine binds
@@ -1480,8 +1622,22 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         union kept (expr ?expected env d) in
     match target with
     | PName (n,_) -> extend env n (Value t)
-    | PObject props -> List.fold_left (fun env (f,target,d) ->
-        bind env target (field_type declarations [] t (Name f)) d) env props
+    | PObject (props,rest) ->
+      let env = List.fold_left (fun env (f,target,d) ->
+        bind env target (field_type declarations [] t (Name f)) d) env props in
+      (match rest with
+       | None -> env
+       | Some (span,target) ->
+         (* The source's other own enumerable properties, copied onto a fresh
+            object: a merge dropping the properties' keys. *)
+         let drop = List.map (fun (f,_,_) -> Name f) props in
+         let sources = List.map (fun (a:alternative) ->
+           {a with afields=List.filter (fun (f:Semantic.field) -> not (List.mem f.name drop)) a.afields})
+           (source_alternatives declarations [] t) in
+         let rest_t = combine (List.map (fun b ->
+           alternative_type (merge_alternative {afields=[];exact=true;index=None} b)) sources) in
+         expressions := {pos=span;type_=rest_t;instantiation=None} :: !expressions;
+         bind env target rest_t None)
     | PArray (elems,rest) ->
       let env = List.fold_left (fun env (i,target,d) ->
         bind env target (index_type declarations [] t (number_literal (string_of_int i))) d) env elems in
@@ -1650,6 +1806,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     (match s.statement with Block _ -> () | _ -> entry env s.span);
     match s.statement with
     | Declare (mutable_,bs) -> List.fold_left (fun env (n,written,init) ->
+      if String.ends_with ~suffix:".[[class]]" n then fresh_constructor := true;
       (* An unannotated constant's fresh array is built at the array type its
          first use expects it at, where that use is one (SKJS commits such a
          literal there; TypeScript widens it at the declaration, and refuses

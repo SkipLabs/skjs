@@ -678,7 +678,8 @@ def CoversByProto (G : NormalGraph ι) (R : List ι → List ι → Prop) (known
     (self : List ι) (fields : List (PropKey × List ι)) (bounds : List KeyBound)
     (q : MethodMembers.Sig (List ι)) : Prop :=
   Excludes bounds q.key ∧ ∃ f ∈ fields, f.1 = CallArguments.protoField ∧
-    ∃ k ∈ known, viewOf G f.2 q.key = some k.1 ∧ CoversArrows G R self k.2.1 k.2.2 q
+    ((∃ k ∈ known, viewOf G f.2 q.key = some k.1 ∧ CoversArrows G R self k.2.1 k.2.2 q) ∨
+      ∃ F ∈ (viewOf G f.2 q.key).toList, CoversByFunction G R self F q)
 
 /-- Every target method is covered by a source method of the same key, by a
 function the source holds under that key whose receiver the source's own type
@@ -1329,18 +1330,27 @@ theorem covers_methods_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R :
     exact .inl ⟨flds, l, c, hρ, by simpa [MethodMembers.Member.of, ← hkey] using hfl, hl,
       fun j hj U hU u hu => covers_by_function_sound hby hr hpa hself hj hU (hag j hj U u hu)⟩
   · obtain ⟨flds, lp, cp, rfl, hfl, hlp, hpag⟩ := hfields f hf
-    obtain ⟨k, hk, hF, hby⟩ := hview
     refine .inr ⟨flds, rfl, ownKeysT_lookup (hbounds K hK) hnot,
       flds, lp, cp, rfl, by rw [← hpk]; exact hfl, hlp, ?_⟩
     intro j hj U hU p hp
-    obtain ⟨pf, l, c, rfl, hl1, hl2, hag⟩ := viewOf_at hF (hpag j hj U p hp)
-    refine ⟨pf, l, c, rfl, hl1, hl2, fun i hi U' hU' u hu => ?_⟩
-    have hx : WExt (trunc i (Nat.le_of_lt (Nat.lt_trans hi hj)) W) U' := by
-      have := WExt_trunc (Nat.le_of_lt hi) hU
-      rw [trunc_trunc] at this
-      exact WExt_trans this hU'
-    exact covers_arrows_sound hby hr hpa hself (Nat.lt_trans hi hj) hx
-      (hknown k hk i U' u (hag i hi U' u hu))
+    rcases hview with ⟨k, hk, hF, hby⟩ | ⟨F, hF, hby⟩
+    · obtain ⟨pf, l, c, rfl, hl1, hl2, hag⟩ := viewOf_at hF (hpag j hj U p hp)
+      refine ⟨pf, l, c, rfl, hl1, hl2, fun i hi U' hU' u hu => ?_⟩
+      have hx : WExt (trunc i (Nat.le_of_lt (Nat.lt_trans hi hj)) W) U' := by
+        have := WExt_trunc (Nat.le_of_lt hi) hU
+        rw [trunc_trunc] at this
+        exact WExt_trans this hU'
+      exact covers_arrows_sound hby hr hpa hself (Nat.lt_trans hi hj) hx
+        (hknown k hk i U' u (hag i hi U' u hu))
+    · -- The prototype's field or view holds a function, as an own one would.
+      obtain ⟨pf, l, c, rfl, hl1, hl2, hag⟩ :=
+        viewOf_at (Option.mem_toList.mp hF) (hpag j hj U p hp)
+      refine ⟨pf, l, c, rfl, hl1, hl2, fun i hi U' hU' u hu => ?_⟩
+      have hx : WExt (trunc i (Nat.le_of_lt (Nat.lt_trans hi hj)) W) U' := by
+        have := WExt_trunc (Nat.le_of_lt hi) hU
+        rw [trunc_trunc] at this
+        exact WExt_trans this hU'
+      exact covers_by_function_sound hby hr hpa hself (Nat.lt_trans hi hj) hx (hag i hi U' u hu)
 
 /-- The same argument for a callable object's property bag, which forgets the
 call slot but names the same locations. -/

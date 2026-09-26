@@ -40,7 +40,7 @@ def tagSlice (G : NormalGraph ι) (A : Ty ι) (tag : Tag) (q : Bool) : Ty ι :=
   A.filter fun a => !(G.plain a && (expand G [a]).all fun c => (tagClause tag c) == some (!q))
 
 theorem tagSlice_sound {G : NormalGraph ι} {A tag q n W v}
-    (hv : meaning G A n W v) (hq : tagHolds tag v = q) :
+    (hv : meaning G A n W v) (hq : tagHolds tag v = q ∨ protoFree tag v = false) :
     meaning G (tagSlice G A tag q) n W v := by
   obtain ⟨a, ha, hv⟩ := hv
   refine ⟨a, List.mem_filter.mpr ⟨ha, ?_⟩, hv⟩
@@ -51,8 +51,8 @@ theorem tagSlice_sound {G : NormalGraph ι} {A tag q n W v}
     have hop : Answers G [a] tag (!q) := by
       refine ⟨by simp [NormalGraph.plainTy, h.1], fun c hc => ?_⟩
       exact beq_iff_eq.mp (List.all_eq_true.mp h.2 c hc)
-    have he := answers_sound hop (show meaning G [a] n W v from ⟨a, by simp, hv⟩)
-    cases q <;> simp_all
+    have he := answers_weak hop (show meaning G [a] n W v from ⟨a, by simp, hv⟩) hq
+    cases q <;> simp at he
 
 /-! ### Refinement by an observed field
 
@@ -117,7 +117,7 @@ theorem field_value {G : NormalGraph ι} {c : Clause (Ty ι)} {f : PropKey} {K :
 theorem fieldSlice_sound {G : NormalGraph ι} {A : Ty ι} {f tag q n W h v flds code l u}
     (hv : meaning G A (n+1) W v) (hh : HeapOk (n+1) W h)
     (hl : v = .objAt flds code) (hf : flds.lookup f = some l) (hu : h[l]? = some u)
-    (hq : tagHolds tag u = q) : meaning G (fieldSlice G A f tag q) (n+1) W v := by
+    (hq : tagHolds tag u = q ∨ protoFree tag u = false) : meaning G (fieldSlice G A f tag q) (n+1) W v := by
   obtain ⟨a, ha, hva⟩ := hv
   refine ⟨a, List.mem_filter.mpr ⟨ha, ?_⟩, hva⟩
   cases hd : (G.plain a && (expand G [a]).all fun c => fieldAnswers G c f tag (!q)) with
@@ -136,8 +136,7 @@ theorem fieldSlice_sound {G : NormalGraph ι} {A : Ty ι} {f tag q n W h v flds 
       have hK : Answers G K tag (!q) :=
         ⟨hplain, fun c hc => beq_iff_eq.mp (List.all_eq_true.mp hall c hc)⟩
       have hu' := field_value (c := .refs a' bs vs os ms ks) (K := K) hp hcv hh hl hf hu
-      have := answers_sound hK hu'
-      rw [hq] at this
+      have := answers_weak hK hu' hq
       cases q <;> simp at this
     | _ => simp [fieldAnswers] at hans
 
@@ -148,7 +147,8 @@ inductive Observation where
 
 def Observation.holds : Observation → Tm → Prop
   | .boolean q, v => v = (if q then .tru else .fls)
-  | .tag t q, v => tagHolds t v = q
+  -- `key in o` on an object reading a prototype may answer either way.
+  | .tag t q, v => tagHolds t v = q ∨ protoFree t v = false
 
 /-- The durable refinement obligation. B is supplied; no canonical filtered
 representation, join, or inferred invariant is required by this contract. -/
@@ -205,7 +205,8 @@ theorem checkObservedSub_sound [DecidableEq ι] {G : NormalGraph ι} {A B o p}
     simp only [checkObservedSub, Bool.or_eq_true, Bool.and_eq_true] at hc
     rcases hc with hc | ⟨_, hm⟩
     · exact (PositiveCertificates.check_sound hc).sound n W v (tagSlice_sound hv ho)
-    · exact tagMember_sound hm (meaning_value hv).1 ho
+    · exact tagMember_sound hm (meaning_value hv).1 (ho.resolve_right (by
+        cases t <;> simp [tagMember] at hm <;> simp [protoFree]))
 
 /-- The field refinements a tag observation admits for other slots: each
 object a current read link says the tested value was read from, and the

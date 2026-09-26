@@ -153,6 +153,13 @@ let encode (proposal : Proposal.t) =
             Object ["key",key_json f.name;"readonly",Bool (f.write = None);"type",labels f.read]) fs)] in
 
       let fields,views = fields true writes,fields false reads in
+      (* A record holding its prototype does not own the keys the prototype
+         states (the library overlay's hidden members). *)
+      let hidden_bound = match List.find_opt (fun (f:Semantic.field) -> f.name = Name "[[proto]]") shape.fields with
+        | Some {read=Atoms [Shape p];_} ->
+          ["bounds",Array [Object ["among",Bool false;
+            "keys",Array (List.map (fun (f:Semantic.field) -> key_json f.name) p.fields)]]]
+        | _ -> [] in
       List.iter (fun (a:Semantic.signature) ->
         if a.quantified <> [] then unsupported "quantified callable claim encoding") shape.calls;
       (* Fixed arrows and variadic signatures of one value share its clause; the
@@ -206,7 +213,7 @@ let encode (proposal : Proposal.t) =
             "indexes",Array (List.map entry indexes)] @ optional_list @ methods
             @ (if cells = [] then [] else ["cells",Array cells]))]
         | _,_::_,_ -> unsupported "callable with an index signature needs a combined clause"
-        | _,[],[] -> Object ["refs",Object (["first",fields;"rest",Array [];"views",views] @ optional_list @ methods)]
+        | _,[],[] -> Object ["refs",Object (["first",fields;"rest",Array [];"views",views] @ optional_list @ methods @ hidden_bound)]
         | _ when methods <> [] -> unsupported "a callable object with methods needs a combined clause"
         | [],[],_ -> Object ["arrs",Object calls]
         | _,_,_ ->

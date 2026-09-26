@@ -672,7 +672,8 @@ A generic method with binders of its own, a closure over a class's binders
 that declares more, is refused: typing it needs scheme introduction in the
 program typing, a closure at a scheme row whose body is checked at every
 reassignment of the scheme's binders, which the graph does not yet have.
-Class inheritance stays outside the fragment.
+A generic class neither extends a class nor is extended: the base part's
+construction would be a generic application the derived constructor states.
 
 **The direct checker.** A generic unit goes to the direct rigid checker
 (`GenericSource`) first, for the variable-copy bodies and dependent bounds it
@@ -1111,6 +1112,9 @@ modeling choices; they do not replace proof.
   TypeScript's checker computes for it, which the reader states exactly or
   refuses ([Computed types](#computed-types)): TypeScript's evaluation is
   trusted as its resolution is.
+- A value from a declaration or the library owns its stated string-keyed fields as enumerable data properties, which a spread copies ([Object literals](#object-literals)); the overlay's `Error` holds its non-enumerable `message` on a prototype the model gives it.
+- A spread does not copy an own enumerable symbol-keyed property JavaScript copies; its result states no symbol key and is open, so nothing typed reads one.
+- A derived class's prototype holds a copy of its base's methods rather than a link to its base's prototype; nothing in the fragment reads a prototype object itself ("Class inheritance").
 - Source and claim translation preserve intended control flow, lexical binding,
   annotations and type meaning. Scope association cannot be recovered merely
   by checking that two slots have compatible types.
@@ -2688,13 +2692,23 @@ gives the semantics.
 
 **Classes.** A class declares its instance type in the declaration graph,
 and its value is a statement of the module initialization, in order. The
-parser lowers it to method closures allocated once, as its prototype's, and
-its constructor, which allocates the instance, as construct-only code (`ctor`).
-A class is a value like any other, at its construct signature: `new C(args)`
-(`new`) runs that code, and a plain call cannot, since calling a class without
-`new` throws. An instance's methods are readonly fields: within the fragment
-nothing distinguishes a prototype member from an own one, and no write reaches
-either.
+parser lowers it to method closures allocated once, its prototype object
+holding them (`C.[[prototype]]`, a name no source binding spells, allocated
+once), and its constructor, which allocates the instance, as construct-only
+code (`ctor`). A class is a value like any other, at its construct signature:
+`new C(args)` (`new`) runs that code, and a plain call cannot, since calling a
+class without `new` throws. An instance holds the prototype object under the
+prototype key (`[[proto]]`, which no source key spells: `Fragment.sourceKey`),
+as JavaScript's does, so its own keys are its fields and a method is read
+from the prototype (`Step.readProto`, `memberT`'s second arm): a spread
+copies the fields and not the methods, as JavaScript's does
+([Object literals](#object-literals)), and `key in instance` finds a method
+along the chain ([Guards](#guards)). The instance's allocation is claimed at
+its exact keys, the prototype key among them: that bound says a method is
+not its own, so the class's type, whose methods are host-relative members,
+covers it through the prototype's function-typed fields (`CoversByProto`, its
+second disjunct, [POSITIVE-TYPES](POSITIVE-TYPES.md#covered-methods)). No
+write reaches a prototype or a method.
 
 **Class members.** The instance type (`classInstance`) states each member as
 what it is at run time. `public`, `private` and `protected` are TypeScript's
@@ -2717,8 +2731,9 @@ is always present does not change the type: TypeScript lets any value with
 the class's shape have it, a literal lacking the key included.
 
 The constructor is lowered as follows. With $\varphi_0$ the entries, in
-member order, of the initialized fields ($f \mapsto e_f$), the methods
-($m \mapsto C.m$), then the parameter properties ($p \mapsto p$), $U$ the fields
+member order, of the prototype key ($\texttt{[[proto]]} \mapsto C.\texttt{[[prototype]]}$,
+for a class with methods), the initialized fields ($f \mapsto e_f$), then the
+parameter properties ($p \mapsto p$), $U$ the fields
 without an initializer and $T_f$ each field's annotation, the constructor
 `constructor(x̄) { s̄ }` is $\mathsf{class}(\vec x).\,\mathcal{C}(\vec s,\varphi_0,\varnothing)$
 where
@@ -2750,6 +2765,56 @@ on two paths; the producer claims such an expression once when both paths
 agree on its claim. A constructor's parameters are required or optional (a
 closure's `x?: T`, which binds `T | undefined`); defaults and rests are not yet
 read.
+
+**Class inheritance.** `class D extends B`, with `B` a class declared earlier
+in the file, is lowered from the same parts, with the one addition JavaScript
+makes: `super(ā)`, a statement of `D`'s constructor's own body, runs `B`'s
+constructor on the actuals, and `D`'s instance holds the fields that made,
+then its own over them. The model allocates at the end, so the base part is
+`B`'s fresh instance, bound to a name no source spells, and `D`'s instance is
+the allocation from parts ([Object literals](#object-literals)) that copies
+it ([the lowering](PROGRAM-TYPING.md#derived-source-forms)). JavaScript runs
+the same things in the same order: the statements before `super`, the
+actuals, `B`'s initializers and body, then `D`'s initializers and statements;
+the copy reads the base part after `D`'s own statements, and nothing else
+holds it. `this` before `super(...)` throws a `ReferenceError` in JavaScript;
+a throw is an allowed outcome, but the instance is allocated at the end, so
+no term stands for the uninitialized binding, and it is refused (TypeScript
+refuses it too). An implicit constructor passes nothing to a base taking
+nothing; one passing a base's parameters is next.
+
+- *The base part is exact.* `B°` (`B.[[class]]`) is `B`'s constructor, bound
+  as the class value itself is, and claimed also at the fresh instance it
+  allocates: its fields and prototype key, exactly
+  ([Fresh literals have exact keys](#fresh-literals-have-exact-keys)). Its
+  body is checked at that signature too (`ctorE`). So `D`'s allocation knows
+  its own keys exactly, and its type covers `D`'s methods through its
+  prototype, as a base class's does.
+- *The prototype holds every method of the chain.* JavaScript's
+  `D.prototype` holds `D`'s methods and links to `B.prototype`. The model's
+  `D.[[prototype]]` is a copy of `B`'s, then `D`'s methods over it: the same
+  merge. No operation of the fragment reads a prototype object itself
+  (`Object.getPrototypeOf`, `instanceof`, a write to it), and a read of a
+  method through an instance finds the same closure either way, so the two
+  are not told apart. A class without methods of its own shares its base's.
+- *`super.m(ā)`* is `B.m`'s closure (the one `B`'s prototype holds, `B`'s own
+  or inherited) called with this method's receiver: `B.m.call(this, ā)`.
+  The receiver is a `D`, which is a `B` by `D`'s declared type.
+- *An override must be sound.* `D`'s declared type is its own members and
+  `B`'s ([interface heritage](#source-integration), `inheritRows`): an
+  overridden method is two member signatures, and `D`'s allocation meets both
+  only where the override's parameters are at least as wide and its result
+  at most as wide. TypeScript's bivariant method parameters admit a narrower
+  one; that allocation is refused (`invalid-class-override.ts`).
+- *Refused bases.* A class declared later, a library class (`extends Array`
+  keeps its reason, [Library types](#library-types)), an ambient or imported
+  class, a class value from an expression: nothing in the file says what
+  their constructors allocate.
+
+Next: `D.[[prototype]]` linking to `B.[[prototype]]` under its own prototype
+key, JavaScript's shape, which `instanceof` a base class needs; a read and
+`in` already follow the chain (`keyInChain`), and what is left is method
+coverage (`CoversByProto`) through more than one prototype.
 
 **Static members.** A static member is a property of the class value, which
 the fragment types by its construct signature alone. It is lowered as a
@@ -3961,7 +4026,7 @@ weaker signature, which is what is actually true.
 | `Object.keys` | `keys(o: object): string[]` (ES5), `keys(o: {}): string[]` (ES2015) | as declared: a fresh array of the own enumerable string keys, true of every object; no getter runs |
 | `Object.values`, `Object.entries` | `values(o: {}): any[]`, `entries(o: {}): [string, any][]` | as declared, `any` as `unknown`: nothing is known of an open record's other keys' values (`invalid-object-values.ts`) |
 | `new Array` | `new (arrayLength?: number): any[]`, `new <T>(...items: T[]): T[]` | stated as $\forall T.\ \mathsf{new}()\Rightarrow T[\,]$: a fresh empty array is at every element type, which `any[]` states less precisely; no argument |
-| `new Error` | `new (message?: string): Error` (ES5), `new (message?: string, options?: ErrorOptions): Error` (ES2022) | stated as $\mathsf{new}(\mathit{message}:\mathsf{string})\Rightarrow\{\mathsf{readonly}\ \mathit{message}:\mathsf{string}\}$: the message is own; `name`, and a message not given, are `Error.prototype`'s, which the model does not hold, so an `Error`, a record owning both, is not claimed (`invalid-error-name.ts`, `invalid-error-no-message.ts`) |
+| `new Error` | `new (message?: string): Error` (ES5), `new (message?: string, options?: ErrorOptions): Error` (ES2022) | stated as $\mathsf{new}(\mathit{message}:\mathsf{string})\Rightarrow\{\texttt{[[proto]]}:\{\mathsf{readonly}\ \mathit{message}:\mathsf{string}\}\}$, owning no `message` key: the message is own in JavaScript but not enumerable, which the model states by holding it on a prototype it gives the object (the object term's `prototype`), so a read and `in` find it and a spread does not copy it ([Object literals](#object-literals)); `name`, and a message not given, are `Error.prototype`'s, which the model does not hold, so an `Error`, a record owning both, is not claimed (`invalid-error-name.ts`, `invalid-error-no-message.ts`) |
 | `Promise.resolve` | `resolve<T>(value: T): Promise<Awaited<T>>`, `resolve(): Promise<void>` | the intrinsics `%AsyncReturn%` and `%AsyncComplete%`, below: a promise settled to a primitive, or to `undefined` |
 | `Promise.all` | `all<T extends readonly unknown[] \| []>(values: T): Promise<{ -readonly [P in keyof T]: Awaited<T[P]>; }>` | the intrinsic `%PromiseAll%`, below: an array of promises gives a promise of the array of their values |
 | `Promise.reject` | `reject<T = never>(reason?: any): Promise<T>` | the intrinsic `%PromiseReject%`, below: a promise of every type, whose await throws the reason |
@@ -4822,17 +4887,19 @@ nothing. A `switch (typeof x)` compares a temporary and narrows nothing either.
 
 **`in`.** `key in o` evaluates the key, then the object, and asks whether the
 object has the key, its own or one its prototype chain holds; it throws a
-`TypeError` on a primitive. The model's test (`hasKey`) asks whether the
-object owns the key. The two agree on the objects of the fragment for a key
-none of their prototypes holds and whose own keys the model keeps as
-JavaScript does:
+`TypeError` on a primitive. The model's test (`hasKey`) asks the same along
+the prototype keys it holds (`tagHoldsIn`, `keyInChain`: the object's own
+fields, then its prototype's, as far as the heap reaches). The two agree on
+the objects of the fragment for a key none of the realm's prototypes holds and
+whose own keys the model keeps as JavaScript does:
 
 - *Plain objects and class instances.* A record literal's prototype is
-  `Object.prototype`; a class instance's is its class's, whose methods the
-  model allocates as own fields of the instance and whose other key,
-  `constructor`, is `Object.prototype`'s name too. So a key that is not one of
-  `Object.prototype`'s names is owned in the model exactly where JavaScript
-  finds it.
+  `Object.prototype`; a class instance's is its class's, which the model
+  holds under the prototype key with the class's methods (a derived class's,
+  every method of its chain), and whose other key, `constructor`, is
+  `Object.prototype`'s name too. So a key that is not one of
+  `Object.prototype`'s names is found in the model exactly where JavaScript
+  finds it: `"m" in instance` holds of a method `m`.
 - *Arrays.* An array owns `length` and its indices, which the model keeps in
   the store, and inherits `Array.prototype`'s names: those are refused. Its
   other own keys are the model's ([Arrays may carry other own keys](#arrays-may-carry-other-own-keys)).
@@ -4866,10 +4933,15 @@ $$
      {\Gamma\vdash_R\ \mathsf{if}\ (\texttt{"}\kappa\texttt{"}\ \mathtt{in}\ x)\ S_1\ \mathsf{else}\ S_2}\ \textsc{if-in}
 $$
 
-Narrowing is by keys the types state (`keyAnswer`): a failed test drops an
-arm that owns the key (a required field or view, a method), and a passed one
-drops an arm whose key bound excludes it (a fresh literal) and every
-primitive. A passed test keeps an open record that does not name the key:
+Narrowing is by keys the types state (`inAnswer`): a failed test drops an
+arm that owns the key (a required field or view), and a passed one drops an
+arm whose key bounds exclude both it and the prototype key (a fresh literal)
+and every primitive. An arm that may hold a prototype, a class instance's
+exact type among them, answers nothing, since its prototype may hold the
+key; so does a method, which the object or its prototype may hold. An answer
+reads no prototype (`tagClause_protoFree`), so it is the test's in any heap
+(`answers_heap`); an edge's observation of a test that read one says only
+that it did (`Observation.holds`). A passed test keeps an open record that does not name the key:
 it may own it at any type. TypeScript narrows `{ a: number } | { b: string }`
 to its first arm there, which is unsound: `{ b: "", a: "x" }` is a
 `{ b: string }` (`invalid-in-open.ts`; SKJS refuses the read too).
@@ -4883,9 +4955,10 @@ as `T` by the environment, so its absent keys prove nothing.
 
 **`instanceof`.** `x instanceof C` looks for `C.prototype` along `x`'s
 prototype chain, unless `C` has a `[Symbol.hasInstance]`, which it then calls.
-The model gives an instance no identity of its class: a class's methods are
-own fields of the instance and there is no `[[proto]]`, so no test of the
-model tells an instance of `C` from another object of its shape, and the
+The model's instance holds its class's prototype object, but a derived
+class's prototype is a copy of its base's, not a link to it
+([Modules and code units](#modules-and-code-units), "Class inheritance"), so
+the chain the model holds does not answer `instanceof B` of a `D`, and the
 operator is not lowered. The sound lowering is known and is left for the
 class work: `C`'s constructor allocates a key of its own, which no source key
 can spell, and `x instanceof C` is `hasKey` of it, the same test as `in`;
@@ -5012,36 +5085,53 @@ folded constant expression or an earlier member):
 ### Object literals
 
 An object literal allocates one object owning exactly the properties it
-writes (`alloc`), each a data property at the value its initializer gives,
-evaluated in order. What the parser admits, and why the rest is refused:
+writes, each a data property at the value its initializer gives, evaluated in
+order; one with a spread of a value is an allocation from parts. What the
+parser admits, and why the rest is refused:
 
 - **Keys.** An identifier, a string, or a number, whose property is the one
   its `ToString` spells (`{0: x}` owns `"0"`, `{1e3: x}` owns `"1000"`), as
   `ToPropertyKey` has it; a type literal's numeric name is read the same way.
   `__proto__` sets the prototype and is refused. A computed key `[k]` is
-  refused: its property is known only by evaluating `k`.
+  refused: its property is known only by evaluating `k`. A key written twice
+  as a field is refused, spreads between them or not.
 - **Methods and shorthand.** `m() {…}` is an ordinary function expression in
-  a field and `{ x }` is `{ x: x }` (unchanged).
+  a field and `{ x }` is `{ x: x }`.
 - **A spread of an object literal is its fields.** `{ a, ...{ b: e } }` is
   `{ a, b: e }`: the inner object is fresh, so it owns exactly its written
   keys, its allocation is unobservable, and copying reads back the values it
-  was built from, in the order they were evaluated. A key written twice is
-  refused, as in a literal.
-- **Any other spread is refused.** `{ ...o }` copies `o`'s own enumerable
-  properties, which the heap model does not know: a class instance's methods
-  are fields of the instance here ([Modules and code units](#modules-and-code-units),
-  "Classes"), where JavaScript keeps them on the prototype and a spread skips
-  them, and an array's elements live in its store. Copying the model's fields
-  would give the copy properties JavaScript's does not have, so the lowering
-  would not be faithful. Admitting it needs own-key provenance in the heap:
-  each allocation records which of its fields are own enumerable properties
-  (a literal's all of them, a class instance's its fields but not its
-  methods), and an allocation from parts, `alloc [field k e | copy e]`, whose
-  `copy` takes exactly those of the source, at run time. That is a calculus
-  change (the object value, `makeAt`, and a copy step with its typing rule),
-  scheduled as its own task because class inheritance needs the same form:
-  the base constructor's fresh instance copied into the derived allocation,
-  where the keys are the base class's, known statically.
+  was built from, in the order they were evaluated.
+- **A spread of any other value copies its own enumerable properties** when
+  it is evaluated, the later parts' over the earlier ones'
+  (`CopyDataProperties`). The literal is a chain of merges from a fresh
+  accumulator: the fields before the first spread allocated together, each
+  spread copied onto what is built so far, each later run of fields
+  allocated and copied on too ([the step](SEMANTICS.md#operational-language),
+  `Tm.merge`). In a closure body the chain is one nested term; in a graph
+  body each merge is a node right after its operand's, so the copy reads the
+  operand before any later part runs. A field is built at the type the
+  literal's claim states for it. What a spread copies: a plain object's fields
+  under string keys the model does not reserve, and an array's elements under
+  their index keys; nothing from `null`, `undefined`, a Boolean, a number, a
+  bigint or a symbol. A string (its code units), a function (the model gives
+  a closure a field JavaScript's lacks) and a class value (its static fields
+  are bindings here) are refused as operands. A symbol-keyed field is never
+  copied (What remains assumed).
+- **What a copy is known to hold** is decided per pair of the operands'
+  clauses ([the rule](PROGRAM-TYPING.md#allocation-from-parts)): a field
+  after a spread is the literal's; one the source's type names is the
+  source's, writable whatever it was; one before a spread survives only where
+  the source never has its key or has it within the field's type, since an
+  open record may own any key at any type (`invalid-object-spread-before.ts`;
+  TypeScript keeps the field's type); a union operand distributes, one result
+  per alternative; a class instance's methods, its prototype's, are not
+  copied (`invalid-object-spread-method.ts`); an `Error`'s `message`, which
+  is not enumerable, is not either (`invalid-object-spread-error.ts`). The
+  copy is exact where every part's keys are, as a fresh literal's are: a
+  literal spread directly, or as an arm of `&&`, `||`, `??` or a
+  conditional, is claimed with its exact keys (`cond && { y: 1 }`).
+- **An object pattern's rest** `const { a, ...r } = x` is the same copy onto a
+  fresh object, less the keys the pattern names (`object-rest.ts`).
 - **Accessors are refused.** `get x() {…}` runs code on every read of `x`
   and `set` on every write; the heap model's properties are data only.
 - **A write never adds a key.** An object's keys are fixed at its
@@ -5056,6 +5146,11 @@ evaluated in order. What the parser admits, and why the rest is refused:
   Admitting growth needs a key-adding write in the calculus, whose typing
   changes the object's own-key bound at a point where no other reference to
   it exists; a write through an index signature is the same step.
+
+Next: a copy whose result states an index signature (a spread of a
+dictionary into one; 4 units), which needs an index on the result clause
+with every copied location at its type; `Object.assign(t, s)`, which defines
+on the existing `t`, whose keys the model fixes at allocation.
 
 A type literal of construct signatures only, `{ new (x: number): T }`, is the
 constructor type it states, `new (x: number) => T`; several are overloads of

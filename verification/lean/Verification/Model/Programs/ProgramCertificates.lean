@@ -76,6 +76,8 @@ inductive Rule (ι : Type) where
   | sub (proof : PositiveCertificates.Proof ι)
   /-- `throw`: its operand at a type of its own. -/
   | throw
+  /-- An allocation from parts: the accumulator, then the source. -/
+  | merge
 
 inductive Evidence (ι : Type) where
   | node (claim : Sequent ι) (rule : Rule ι) (premises : List (Evidence ι))
@@ -466,6 +468,9 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     jt.context = j.context ∧ jt.term = j.term ∧
     PositiveCertificates.check G jt.type j.type proof = true
   | .throw, .throw a, [ja] => ja.context = j.context ∧ ja.term = a
+  | .merge, .merge d a b, [ja, jb] =>
+    ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
+    ObjectMerge.MergeOk G d ja.type jb.type j.type = true
   | _, _, _ => False
 
 instance [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (ps) :
@@ -498,7 +503,7 @@ def checkScope (d : Nat) : Tm → Bool
   | .letE a b => checkScope d a && checkScope (d+1) b
   | .invoke f r args => checkScope d f && checkScope d r && checkScopes d args
   | .construct f args => checkScope d f && checkScopes d args
-  | .writeAt _ a b | .arith _ a b | .elemAt a b | .indexAt a b =>
+  | .writeAt _ a b | .arith _ a b | .elemAt a b | .indexAt a b | .merge _ a b =>
       checkScope d a && checkScope d b
   | .readAt _ a | .test _ a | .lenOf a | .spread a | .throw a => checkScope d a
   | .setElem a b c => checkScope d a && checkScope d b && checkScope d c
@@ -1131,6 +1136,13 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
     have ha := hp ja (by simp)
     rw [hΓ, hta] at ha
     exact .throw ha
+  · rename_i d a b ja jb
+    rcases hl with ⟨hΓa, hta, hΓb, htb, hm⟩
+    have ha := hp ja (by simp)
+    have hb := hp jb (by simp)
+    rw [hΓa, hta] at ha
+    rw [hΓb, htb] at hb
+    exact .merge ha hb hm
 
 theorem checkTree_sound [DecidableEq ι] {G : NormalGraph ι} (e : Evidence ι)
     (he : checkTree G e = true) : HasTy G (claim e).context (claim e).term (claim e).type := by
@@ -1699,6 +1711,14 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
   | @throw Γ a A B ha ih =>
     apply node_complete (G := G) (j := ⟨Γ, .throw a, B⟩) (r := .throw) (js := [⟨Γ,a,A⟩]) ⟨rfl,rfl⟩
     simpa using ih
+  | @merge Γ d a b A B R ha hb hm iha ihb =>
+    apply node_complete (G := G) (j := ⟨Γ, .merge d a b, R⟩) (r := .merge)
+      (js := [⟨Γ,a,A⟩, ⟨Γ,b,B⟩]) ⟨rfl,rfl,rfl,rfl,hm⟩
+    intro j hj
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hj
+    rcases hj with rfl | rfl
+    · exact iha
+    · exact ihb
 
 theorem derivable_iff_checked [DecidableEq ι] (G : NormalGraph ι) (t : Tm) (A : Ty ι) :
     (Scoped 0 t ∧ HasTy G [] t A) ↔ ∃ e, check G t A e = true := by

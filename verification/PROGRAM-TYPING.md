@@ -1082,6 +1082,38 @@ is closed, as every member of a type is (`meaning_value`). Evidence names the
 rule `throw` with the operand's derivation as its one premise; the producer
 types a slot operand at the slot's type.
 
+### Allocation from parts
+
+$\mathsf{merge}_\delta(a,b)$ allocates the fields $a$'s object owns and, over
+them, the own enumerable data properties $b$ has, less $\delta$
+([SEMANTICS](SEMANTICS.md#operational-language)). Its type is a record every
+pair of the operands' clauses gives ([Design](DESIGN.md#object-literals)):
+
+$$
+\frac{\Gamma\vdash_G a:A\quad\Gamma\vdash_G b:B\quad
+      \operatorname{MergeOk}_G(\delta,A,B,R)}
+     {\Gamma\vdash_G\mathsf{merge}_\delta(a,b):R}\ \textsc{merge}
+$$
+
+$\operatorname{MergeOk}_G(\delta,A,B,R)$ holds where $A$ and $B$ are of clause
+rows and, for each clause $c_a$ of $A$ and $c_b$ of $B$, some clause
+$\mathsf{Ref}(\varphi;\omega;\beta)$ of $R$ is given by them
+(`ObjectMerge.MergeClause`): $c_a$ a record or dictionary, $c_b$ one too or a
+clause of values owning no enumerable property (`null`, `undefined`,
+Booleans, numbers, bigints, symbols); each field $(k{:}T)\in\varphi$ surely
+given within $T$ by $c_b$, or by $c_a$ where whatever $c_b$ gives under $k$ is
+within $T$; each optional field within its type on both sides, and then $c_a$
+holding no prototype; each bound of $\beta$ admitting every key either side
+may give. "Within" is label inclusion, whose meaning is a union's. The
+soundness case evaluates the operands with `bind`, as `arith` does, and
+closes with `ObjectMerge.merge_values_safe`, which takes the merge's step,
+then the allocation's by `make_fields_rule`, giving each location the
+contract its result key states, or its copied value for a key the result
+does not state. Evidence names the rule `merge` with the two operands'
+derivations; the search types a slot operand at the slot's type and tries
+the requested type, then the pool's, for the result, coercing; extraction
+proposes the clauses (`ObjectMerge.mergeResult`) and states them as hints.
+
 ### Checked control-flow graphs
 
 `ControlFlow.lean` adds a finite control-flow graph over the existing expression
@@ -2037,6 +2069,27 @@ trusted proof-search step.
 Null coalescing is likewise a derived form: a let saves the left value, and
 `unionVar` with known nullish-tag conditionals selects the fallback or saved value.
 No truthiness rule is involved; false remains a result of the left operand.
+
+A derived class's constructor (`class D extends B`, its body
+`s̄₁; super(ā); s̄₂`, `s̄₁` reading no `this`) is its base's construction,
+bound to a name no source spells, then the class constructor's lowering
+([DESIGN](DESIGN.md#modules-and-code-units), "Class members") whose
+allocation is the allocation from parts copying it:
+
+$$
+\mathsf{class}(\vec x).\ \vec s_1\,;\ \mathsf{const}\ \textit{base} = \mathsf{new}\ B^{\circ}(\vec a)\,;\
+  \mathcal{C}(\vec s_2,\ \varphi_0,\ \varnothing)
+  \quad\text{with}\quad
+  \mathcal{C}(\varepsilon,\varphi,A) = \{\texttt{[[proto]]}{:}\,D.\texttt{[[prototype]]},\ \ldots\textit{base},\ \varphi,\ \overline{f{:}\,\mathsf{undefined}}\}
+$$
+
+where $B^{\circ}$ is `B`'s constructor claimed also at the fresh instance it
+allocates, its keys exact (`ctorE` checks its body at that signature too),
+and $D.\texttt{[[prototype]]}$ is `{ ...B.[[prototype]], m: D.m, … }`, `D`'s
+methods over its base's, or its base's where it has none. `super.m(ā)` is
+`B.m.call(this, ā)`, with `B.m` the closure `B`'s prototype holds. So the
+allocation's keys are exact, and `D`'s declared type, its own members and
+`B`'s, covers it through the prototype.
 
 An optional chain is the same derived form with the arms exchanged. The
 parser writes `r?.x` and every link after it in the chain (`.b`, `[k]`,

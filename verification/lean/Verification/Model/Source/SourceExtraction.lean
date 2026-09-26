@@ -464,6 +464,7 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
   | .ctor p lam => return .ctor p (← comparisonsExpr fc lam)
   | .construct p f args ts => return .construct p (← comparisonsExpr fc f) (← args.mapM (comparisonsExpr fc)) ts
   | .alloc p ns es => return .alloc p ns (← es.mapM (comparisonsExpr fc))
+  | .build p ns es => return .build p ns (← es.mapM (comparisonsExpr fc))
   | .read p f e => return .read p f (← comparisonsExpr fc e)
   | .write p f l r => return .write p f (← comparisonsExpr fc l) (← comparisonsExpr fc r)
   | .index p _ e key =>
@@ -570,7 +571,7 @@ private partial def assignsExpr (name : String) : Fragment.Expr → Bool
   | .update _ _ target rhs _ =>
     (match target with | .var _ n => n == name | _ => false) ||
       assignsExpr name target || (rhs.map (assignsExpr name)).getD false
-  | .alloc _ _ es => es.any (assignsExpr name)
+  | .alloc _ _ es | .build _ _ es => es.any (assignsExpr name)
   | .call _ f args _ _ | .invoke _ f args _ _ => assignsExpr name f || args.any (assignsExpr name)
   | .callWithReceiver _ f r args | .bindWithReceiver _ f r args =>
     assignsExpr name f || assignsExpr name r || args.any (assignsExpr name)
@@ -838,6 +839,48 @@ private def observed (scope : List ScopeBinding) (Γ : List (Ty Nat))
   else
     persistentObservation d pos A fld R
 
+/-- The record a group of an object literal's fields allocates: exactly their
+keys, each at its initializer's type, which its own obligation establishes. -/
+private def groupType (ns : List String) (As : List (Ty Nat)) : Compiler (Ty Nat) := do
+  let keys := ns.map PropKey.str
+  let label ← lower (SourceTypes.use (.refs (keys.zip As) [] [] [] [] [⟨true, keys⟩]))
+  -- A type the search may need at a node it types on its own.
+  modify fun s => {s with hints := label :: s.hints}
+  return [label]
+
+/-- The type an object literal's claim states for each key it names, where
+its records agree on it: a field initializer is built at it, as a literal's
+fields are at its claim's. -/
+private def claimedFields (A : Ty Nat) : Compiler (List (String × Ty Nat)) := do
+  let G := SourceTypes.graph (← table)
+  let keyed := fun (ps : List (PropKey × Ty Nat)) => ps.filterMap fun (k, T) => match k with
+    | .str s => some (s, T) | .sym _ => none
+  let each := (PositiveRules.expand G A).map fun c => match c with
+    | .refs fs [] vs os _ _ | .dict fs [] vs _ os _ _ _ => keyed (fs ++ vs ++ os.map fun o => (o.key, o.type))
+    | _ => []
+  -- Over a union, a key every record naming it states at one type.
+  let all := each.flatten
+  return all.filter fun (k, T) => all.all fun (k', T') => k' != k || T' == T
+
+/-- The type a merge of a source of type `B` onto an accumulator of type `A`
+is given, less the dropped keys: one record per pair of their clauses
+(`ObjectMerge.mergeResult`), which the merge rule checks. -/
+private def mergeType (A B : Ty Nat) (drop : List PropKey := []) : Compiler (Ty Nat) := do
+  let G := SourceTypes.graph (← table)
+  let ca := PositiveRules.expand G A
+  let cb := PositiveRules.expand G B
+  if ca.isEmpty then throw "internal: an object literal's accumulator has no clause"
+  if cb.isEmpty then
+    throw "a spread's operand must have a type of plain objects, null, undefined, Booleans, numbers, bigints or symbols"
+  let mut labels : List Nat := []
+  for c in ca do
+    for d in cb do
+      let some r := ObjectMerge.mergeResult drop c d
+        | throw "a spread copies the own enumerable properties of a plain object; one of a string, an array, a function or a class value is outside the fragment"
+      labels := labels ++ [← lower (SourceTypes.use r)]
+  modify fun s => {s with hints := labels ++ s.hints}
+  return labels.eraseDups
+
 /-- A saved read is usable only in a subtree with no possible heap effects or
 escaping closure. Reads are plain modeled cells, never JavaScript accessors. -/
 private partial def readOnly : Fragment.Expr → Bool
@@ -849,7 +892,7 @@ private partial def readOnly : Fragment.Expr → Bool
   | .comma _ a b | .inKeys _ a b => readOnly a && readOnly b
   | .ifBody _ _ c t e => readOnly c && readOnly t && readOnly e
   | .destructBody _ t a b => readOnly a && t.defaults.all readOnly && readOnly b
-  | .alloc .. | .write .. | .indexWrite .. | .update .. | .logicalAssign .. | .assign .. | .arrayLit .. | .elemWrite .. | .arrayAssign .. | .nullishAssign .. | .lambda .. | .withValue .. | .bindWithReceiver ..
+  | .alloc .. | .build .. | .write .. | .indexWrite .. | .update .. | .logicalAssign .. | .assign .. | .arrayLit .. | .elemWrite .. | .arrayAssign .. | .nullishAssign .. | .lambda .. | .withValue .. | .bindWithReceiver ..
   | .callWithReceiver .. | .applyWithReceiver .. | .call .. | .invoke .. | .ctor .. | .construct .. => false
 
 /-- The other operand of a singleton comparison, when saving the tested read
@@ -1503,6 +1546,39 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     -- The calculus evaluates these initializers from left to right.
     let casts := (ps.zip (B.map Prod.snd)).map fun (p,D) => DirectProof.cast Γ D p
     pure (DirectProof.node Γ (.makeAt .absent (ns.map .str) (ps.map (·.term))) [Ref] .alloc casts)
+  | .build _ ns es => do
+    -- A chain of merges from a fresh accumulator: the fields before the
+    -- first spread allocated together, each spread copied onto what is
+    -- built so far as soon as its operand is evaluated, and each later run
+    -- of fields allocated, then copied on too. One nested term evaluates the
+    -- parts in source order.
+    let merge (a b : DirectProof.Plan) : Compiler DirectProof.Plan := do
+      let R ← mergeType a.type b.type
+      pure (DirectProof.node Γ (.merge [] a.term b.term) R .merge [a, b])
+    let claimed ← claimedFields A
+    let group (fields : List (String × DirectProof.Plan)) : Compiler DirectProof.Plan := do
+      let fields := fields.map fun (k, p) => (k, match claimed.lookup k with
+        | some D => DirectProof.cast Γ D p
+        | none => p)
+      let T ← groupType (fields.map Prod.fst) (fields.map (·.2.type))
+      pure (DirectProof.node Γ (.makeAt .absent (fields.map (.str ·.1)) (fields.map (·.2.term))) T .alloc
+        (fields.map Prod.snd))
+    let mut acc : Option DirectProof.Plan := none
+    let mut fields : List (String × DirectProof.Plan) := []
+    for (n, a) in ns.zip es do
+      let p ← closureExpr fc scope Γ a
+      match n with
+      | some k => fields := fields ++ [(k, p)]
+      | none =>
+        let g ← group fields
+        let base ← match acc with
+          | none => pure g
+          | some x => if fields.isEmpty then pure x else merge x g
+        fields := []
+        acc := some (← merge base p)
+    let some x := acc | throw "internal: an object literal with spreads has none"
+    let result ← if fields.isEmpty then pure x else merge x (← group fields)
+    pure (DirectProof.cast Γ A result)
   | .read _ fld a => do
     let receiver := a
     let a ← throughBound Γ (← closureExpr fc scope Γ a)
@@ -2370,7 +2446,7 @@ private partial def closureBind (fc : SourceClaims.Function) (pos : Span)
   let G := SourceTypes.graph (← table)
   let (name, at_) := match target with
     | .name n p => (n, p)
-    | .object p _ | .array p _ _ => ("", p)
+    | .object p _ _ | .array p _ _ => ("", p)
   if name == "undefined" then throw "shadowing undefined is outside the fragment"
   if name != "" && (names scope).contains name then
     throw s!"duplicate or shadowing local declaration '{name}'"
@@ -2413,12 +2489,24 @@ private partial def closureDestructure (fc : SourceClaims.Function) (pos : Span)
         elems scope' H' (obj + (H'.length - H.length)) read last more
   match target with
   | .name .. => throw "internal: a name is bound, not destructured"
-  | .object _ props =>
+  | .object _ props rest =>
     elems scope H obj (fun H obj (i, _, _) => do
         let some (fld, _, _) := props[i]? | throw "internal pattern property"
         noMethodRead G A fld
         readCell G H fld (DirectProof.var H obj A))
-      (fun scope H _ => k scope H)
+      (fun scope H obj => match rest with
+        | none => k scope H
+        | some (restPos, t) => do
+          -- The source's other own enumerable properties, copied onto a
+          -- fresh object: a merge dropping the keys the properties name.
+          let drop := props.map fun (fld, _, _) => PropKey.str fld
+          let E ← groupType [] []
+          let empty := DirectProof.node H (.makeAt .absent [] []) E .alloc []
+          let R ← mergeType E A drop
+          let C ← claimAt fc restPos
+          let copy := DirectProof.node H (.merge drop empty.term (.var obj)) R .merge
+            [empty, DirectProof.var H obj A]
+          closureBind fc pos t (DirectProof.cast H C copy) none scope H k)
       (props.zipIdx.map fun ((_, t, d), i) => (i, t, d))
   | .array _ positions rest =>
     elems scope H obj (fun H obj (i, _, _) => elemReadPlan G H (DirectProof.var H obj A) (bitsOfNat i))
@@ -2732,6 +2820,72 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
       compileExpr fc
         ((operands.take i |>.map fun a => held ⟨"",some a.span⟩).reverse ++ scope)
         ((As.take i).reverse ++ Γ) arg next) make
+  | .build _ ns operands =>
+    -- The parts in source order, each operand into a slot of its own, and
+    -- each merge a node of its own right after its spread's operand, so the
+    -- copy reads the source before any later part runs; then the result,
+    -- at the literal's claim. Forward, the context the chain runs in: the
+    -- slots pushed so far, the newest first, with the accumulator's.
+    let mut steps : List (Option Fragment.Expr × Tm × Ty Nat × List (Ty Nat) × List ScopeBinding) := []
+    let mut temps : List (Ty Nat) := []
+    let mut tscope : List ScopeBinding := []
+    let mut acc : Option Nat := none
+    let mut group : List (String × Nat) := []
+    let at_ (a : Nat) (c : Nat) : Tm := .var (c - 1 - a)
+    let mark := held ⟨"",some e.span⟩
+    -- A field is allocated at the type the literal's claim states for it,
+    -- which its slot's value is coerced to, else at its own claim's.
+    let claimed ← claimedFields A
+    let fieldType (k : String) (T : Ty Nat) : Ty Nat := (claimed.lookup k).getD T
+    for (n, a) in ns.zip operands do
+      if n.isNone then
+        -- Close the fields before the spread: allocate them, and copy them
+        -- onto the accumulator when there is one.
+        if acc.isNone || !group.isEmpty then
+          let T ← groupType (group.map Prod.fst)
+            (group.map fun (k, i) => fieldType k temps[temps.length - 1 - i]!)
+          let term := Tm.makeAt .absent (group.map (.str ·.1)) (group.map fun (_, i) => at_ i temps.length)
+          steps := steps ++ [(none, term, T, temps, tscope)]
+          temps := T :: temps; tscope := mark :: tscope
+          match acc with
+          | none => acc := some (temps.length - 1)
+          | some x =>
+            let R ← mergeType temps[temps.length - 1 - x]! T
+            steps := steps ++ [(none, .merge [] (at_ x temps.length) (.var 0), R, temps, tscope)]
+            temps := R :: temps; tscope := mark :: tscope
+            acc := some (temps.length - 1)
+          group := []
+      let B ← exprType fc a
+      steps := steps ++ [(some a, .nul, B, temps, tscope)]
+      temps := B :: temps; tscope := held ⟨"",some a.span⟩ :: tscope
+      match n with
+      | some k => group := group ++ [(k, temps.length - 1)]
+      | none =>
+        let some x := acc | throw "internal: a spread without an accumulator"
+        let R ← mergeType temps[temps.length - 1 - x]! B
+        steps := steps ++ [(none, .merge [] (at_ x temps.length) (.var 0), R, temps, tscope)]
+        temps := R :: temps; tscope := mark :: tscope
+        acc := some (temps.length - 1)
+    if !group.isEmpty then
+      let some x := acc | throw "internal: an object literal with spreads has none"
+      let T ← groupType (group.map Prod.fst)
+        (group.map fun (k, i) => fieldType k temps[temps.length - 1 - i]!)
+      let term := Tm.makeAt .absent (group.map (.str ·.1)) (group.map fun (_, i) => at_ i temps.length)
+      steps := steps ++ [(none, term, T, temps, tscope)]
+      temps := T :: temps; tscope := mark :: tscope
+      let R ← mergeType temps[temps.length - 1 - x]! T
+      steps := steps ++ [(none, .merge [] (at_ x temps.length) (.var 0), R, temps, tscope)]
+      temps := R :: temps; tscope := mark :: tscope
+    -- The result, the newest slot, at the literal's claim.
+    let k := temps.length
+    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun i => if i == 0 then 0 else i+k))⟩
+    let final ← emitAt e.span (.var 0) (.bind drop) (temps ++ Γ) A (scope := tscope ++ scope)
+    -- Backward, each step continues to the one after it.
+    steps.reverse.foldlM (fun next (operand, term, T, before, bscope) =>
+      match operand with
+      | some a => compileExpr fc (bscope ++ scope) (before ++ Γ) a next
+      | none => emitAt e.span term (.bind next) (before ++ Γ) T (scope := bscope ++ scope)) final
   | .atEnv .. | .letBody .. | .destructBody .. | .ifBody _ (some _) .. | .done .. | .seqBody .. | .throwBody .. =>
     throw "statement environment wrapper is only supported inside a closure"
   | .ifBody _ none cond thn els =>
@@ -3591,7 +3745,7 @@ private partial def bindTarget (fc : SourceClaims.Function) (pos : Span)
     let bound := held ⟨n,some pos⟩
     readWithDefault fc pos namePos term R default_ bound scope Γ
       fun T => after (bound::scope) (T::Γ)
-  | .object p _ | .array p _ _ =>
+  | .object p _ _ | .array p _ _ =>
     let bound := held ⟨"",some p⟩
     readWithDefault fc pos p term R default_ bound scope Γ fun T =>
       destructureAt fc pos target (bound::scope) (T::Γ) 0 fun scope' Γ' =>
@@ -3623,14 +3777,24 @@ private partial def destructureAt (fc : SourceClaims.Function) (pos : Span)
         elems scope' Γ' (obj + (scope'.length - scope.length)) read last more
   match target with
   | .name .. => throw "internal: a name is bound, not destructured"
-  | .object _ props =>
+  | .object _ props rest =>
     elems scope Γ obj (fun obj (i, _, _) => do
         let some (fld, _, _) := props[i]? | throw "internal pattern property"
         let G := SourceTypes.graph (← table)
         noMethodRead G A fld
         let plan ← readCell G Γ fld (DirectProof.var Γ obj A)
         pure (Tm.readAt fld (.var obj), plan.type))
-      (fun scope Γ _ => after scope Γ)
+      (fun scope Γ obj => match rest with
+        | none => after scope Γ
+        | some (restPos, t) => do
+          -- The source's other own enumerable properties, copied onto a
+          -- fresh object: a merge dropping the keys the properties name,
+          -- bound as the rest's value at its claim.
+          let drop := props.map fun (fld, _, _) => PropKey.str fld
+          let E ← groupType [] []
+          let _ ← mergeType E A drop
+          let C ← claimAt fc restPos
+          bindTarget fc pos t (.merge drop (.makeAt .absent [] []) (.var obj)) C none scope Γ after)
       (props.zipIdx.map fun ((_, t, d), i) => (i, t, d))
   | .array _ positions rest =>
     elems scope Γ obj (fun obj (i, _, _) => do

@@ -39,7 +39,15 @@ export type Expr =
     }
   /* An object literal: one named field per initializer, in source order. A
      shorthand `{ x }` is `{ x: x }`. */
-  | { k: "alloc"; pos: Span; fields: { name: string; e: Expr }[] }
+  /* A class instance's allocation also holds its class's prototype object,
+     under the key no source property spells (`proto`). */
+  | { k: "alloc"; pos: Span; fields: { name: string; e: Expr }[]; proto?: Expr }
+  /* An object literal with spreads of values: its parts in source order, a
+     named field or a spread. Each part is evaluated where written, and a
+     spread's operand copied as soon as it is evaluated: its own enumerable
+     properties, the later parts' over the earlier ones' (DESIGN.md, "Object
+     spreads"). A spread of an object literal is its fields, in place. */
+  | { k: "build"; pos: Span; parts: ({ name: string; e: Expr } | { spread: Expr })[]; proto?: Expr }
   /* A named read: `e.name`, or `e[k]` with `k` a `unique symbol` constant,
      which reads that symbol's key as a type's computed key names it. */
   | { k: "read"; pos: Span; field: PropertyKey; e: Expr }
@@ -267,7 +275,9 @@ export type Stmt =
  * an array literal. An element's default replaces a read that is undefined. */
 export type PatternAst =
   | { k: "name"; name: string; pos: Span }
-  | { k: "object"; pos: Span; props: PatternPropAst[] }
+  /* An object pattern's rest copies the source's other own enumerable
+     properties onto a fresh object, claimed at the rest's span. */
+  | { k: "object"; pos: Span; props: PatternPropAst[]; rest: { pos: Span; target: PatternAst } | null }
   | { k: "array"; pos: Span; elems: PatternElemAst[];
       rest: { index: number; pos: Span; target: PatternAst } | null };
 

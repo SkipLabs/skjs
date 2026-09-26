@@ -471,6 +471,10 @@ function fromSourceClaims(
     // A parameter written as a pattern or with a default is bound by a
     // statement of its own at the parameter (DESIGN.md, "Patterns").
     if(ts.isParameterDeclaration(n)&&(n.initializer||!ts.isIdentifier(n.name)))at(n.getStart(sf),n.end);
+    // A derived class's implicit constructor constructs its base at the
+    // `extends` clause (DESIGN.md, "Modules and code units", "Class members").
+    if(ts.isHeritageClause(n)&&n.token===ts.SyntaxKind.ExtendsKeyword&&ts.isClassDeclaration(n.parent))
+      at(n.getStart(sf),n.end);
     const p=n.parent;
     if(ts.isBlock(n)&&p&&(ts.isFunctionDeclaration(p)||ts.isFunctionExpression(p)||ts.isArrowFunction(p)||
         ts.isMethodDeclaration(p)||ts.isConstructorDeclaration(p)||ts.isGetAccessorDeclaration(p)||
@@ -580,6 +584,9 @@ function render(
       spans.add(`${n.name.getStart(sf)}:${n.end}`);
       for(const m of n.members)spans.add(`${m.getStart(sf)}:${n.end}`);
     }
+    // A class's prototype object is allocated from its name to its end
+    // (DESIGN.md, "Modules and code units", "Classes").
+    if(ts.isClassDeclaration(n)&&n.name)spans.add(`${n.name.getStart(sf)}:${n.end}`);
     n.forEachChild(walk);
   }
   walk(sf);

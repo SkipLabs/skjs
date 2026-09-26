@@ -288,7 +288,13 @@ contracts its fields and methods name, and those to theirs, without a table
 over the whole pool; label inclusion (`Rel`) relates what lies further. -/
 def nearPool [DecidableEq ι] (G : NormalGraph ι) (A B : Ty ι) : List (Ty ι) :=
   let step (T : Ty ι) : List (Ty ι) := T.flatMap fun i => (G i).flatMap Clause.operands
-  let one := step A ++ step B
+  -- A prototype's members are the object's methods: its operands are one
+  -- step away, as an own field's are.
+  let proto (T : Ty ι) : List (Ty ι) := T.flatMap fun i => (G i).flatMap fun c => match c with
+    | .refs a bs vs _ _ _ =>
+      (((a :: bs).flatten ++ vs).filter (·.1 == CallArguments.protoField)).map (·.2)
+    | _ => []
+  let one := step A ++ step B ++ (proto A ++ proto B).flatMap step
   (A :: B :: one ++ one.flatMap step).eraseDups
 
 /-- An instance of scheme row `s` whose signatures' images are the arrows
@@ -803,6 +809,19 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         (A :: pool).findSome? fun N =>
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ .lenStr [ea]
           if checkTree G e then coerce G pool e A else none
+    | .merge d a b =>
+      -- The accumulator and the source at their slots' types, or a pool
+      -- type; the result the requested type, when every pair of their
+      -- clauses merges into it, else a pool type coerced to it.
+      let slot (x : Tm) := match x with | .var i => Γ[i]?.toList | _ => []
+      return (slot a ++ pool).findSome? fun R => do
+        let ea ← recur Γ a R
+        (slot b ++ pool).findSome? fun S => do
+          let eb ← recur Γ b S
+          (A :: pool).findSome? fun N =>
+            if ObjectMerge.MergeOk G d R S N then
+              coerce G pool (.node ⟨Γ,t,N⟩ .merge [ea,eb]) A
+            else none
     | .throw a =>
       -- A throw has every type; its operand, at a type of its own.
       let types := (match a with | .var i => Γ[i]?.toList | _ => []) ++ pool

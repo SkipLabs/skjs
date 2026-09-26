@@ -68,12 +68,23 @@ $\mathsf{isArray}(\mathsf{obj}(\mathit{fs},\mathsf{absent}))\iff\sigma\in\operat
 and false of every other value. $\mathsf{typeofObject}$ holds of
 $\mathsf{null}$ and of an object without call code, which is where `typeof`
 answers `"object"`: $\mathsf{typeofObject}(v)\iff v=\mathsf{null}\lor v=\mathsf{obj}(\mathit{fs},\mathsf{absent})$.
-$\mathsf{hasKey}(\kappa)$ holds of an object owning the key $\kappa$, whatever
-its code, $\mathsf{hasKey}(\kappa)(\mathsf{obj}(\mathit{fs},c))\iff\kappa\in\operatorname{dom}\mathit{fs}$,
-and of no other value: keys are fixed at allocation, so its answer never
-changes. It is `in` for the keys and objects the lowering admits
-([DESIGN](DESIGN.md#guards)); JavaScript's `in` also looks along the prototype
-chain and throws on a primitive. A closure descriptor records which invocation its code
+$\mathsf{hasKey}(\kappa)$ is `in`: it holds of an object owning the key
+$\kappa$, whatever its code, or lacking it and holding under the prototype key
+$\pi$ an object of which it holds, as far as the heap reaches, and of no other
+value. It is the one test that reads the heap (`tagHoldsIn`, `keyInChain`):
+
+$$
+\mathsf{hasKey}_h(\kappa)(\mathsf{obj}(\mathit{fs},c))\iff\kappa\in\operatorname{dom}\mathit{fs}\ \lor\
+  (\mathit{fs}(\pi)=\ell\land\mathsf{hasKey}_h(\kappa)(h(\ell)))
+$$
+
+bounded by the heap's length, so a chain the heap makes cyclic, which no
+JavaScript object has, answers false. Keys are fixed at allocation and no
+source writes a prototype, so its answer never changes. It is `in` for the
+keys the lowering admits ([DESIGN](DESIGN.md#guards)); JavaScript's `in`
+throws on a primitive. Where the object owns the key or holds no prototype
+(`protoFree`) the answer is the heap-free $\kappa\in\operatorname{dom}\mathit{fs}$
+(`tagHoldsIn_of_protoFree`), which is what a type's answer states. A closure descriptor records which invocation its code
 admits, $\mathsf{closure}(m,t,\mathit{kind})$ with
 $\mathit{kind}\in\{\mathsf{call},\mathsf{construct}\}$: JavaScript gives a
 function object `[[Call]]` and `[[Construct]]` separately, an arrow has only
@@ -101,6 +112,30 @@ relation stays deterministic (`Step_det`). What a construct signature promises
 is in [the clause's meaning](POSITIVE-TYPES.md#functions-and-classes):
 the construct step's result is safe at the signature's result, one level below
 the budget, as a call's body is.
+
+**Allocation from parts.** $\mathsf{merge}_\delta(a,b)$ (`Tm.merge`)
+evaluates $a$, then $b$ (`mergeC1`, `mergeC2`), then reads, in the heap as it
+is, the fields $a$'s object owns but the array store $\sigma$, and the own
+enumerable data properties $b$ has, less the keys in $\delta$, and steps to
+the allocation of both, $b$'s over $a$'s:
+
+$$
+\frac{\mathsf{own}_h(v_a)=P\quad\mathsf{data}_h(v_b)=Q}
+     {h,\ \mathsf{merge}_\delta(v_a,v_b)\to h,\ \mathsf{makeAt}(\mathsf{absent},\ P\lhd(Q\setminus\delta))}\ (\texttt{mergeV})
+$$
+
+where $\mathsf{own}_h(\mathsf{obj}(\mathit{fs},\mathsf{absent}))$ is each key of
+$\mathit{fs}$ but $\sigma$ at its value (the first entry of a key, as a read
+finds it); $\mathsf{data}_h(\mathsf{obj}(\mathit{fs},\mathsf{absent}))$ is each
+string key of $\mathit{fs}$ but $\sigma$ and $\pi$ at its value, then, for an
+array, each element under its index's decimal spelling; $\mathsf{data}_h$ of
+$\mathsf{null}$, $\mathsf{undefined}$, a Boolean, a number, a bigint or a symbol
+is empty; and $P\lhd Q$ keeps $P$'s entries whose key $Q$ lacks, then $Q$'s
+(`mergeParts`, `ownAll`, `ownData`, `mergeData`). A value the heap lacks, or a
+term that is not a value there, reads as `undefined`, so the step never
+depends on one (`heapVal`). The step is stuck on any other value, a string
+or a function. It allocates nothing itself; the `makeAt` it steps to does, as
+a literal's. Symbol-keyed fields are not read ([DESIGN](DESIGN.md#object-literals)).
 
 **Binary operators.** $a\mathbin{op}b$ (`Tm.arith`) evaluates $a$, then $b$
 (`arithC1`, `arithC2`), then takes one step where the operator answers for the

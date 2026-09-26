@@ -332,6 +332,14 @@ theorem answers_soundP {G : NormalGraph ι} {P η} {A tag q n W v}
   obtain ⟨c, hc, hv⟩ := (expand_semP hA n W v).mp hv
   exact tagClause_sound (hq.2 c (by rwa [expand_of_plain hq.1])) hv
 
+/-- An answered test reads no prototype, so the heap does not change it. -/
+theorem answers_heapP {G : NormalGraph ι} {P η} {A tag q n W v} (h : Heap)
+    (hq : Answers G A tag q) (hA : ∀ i ∈ A, P i = false)
+    (hv : meaningP G P η A n W v) : tagHoldsIn h tag v = q := by
+  obtain ⟨c, hc, hv'⟩ := (expand_semP hA n W v).mp hv
+  rw [tagHoldsIn_of_protoFree (tagClause_protoFree (hq.2 c (by rwa [expand_of_plain hq.1])) hv')]
+  exact answers_soundP hq hA hv
+
 theorem EnvOkP.refine {G : NormalGraph ι} {P η} {Γ ρ n W i A B}
     (h : EnvOkP G P η Γ ρ n W) (hi : Γ[i]? = some A)
     (hb : meaningP G P η B n W (ρ i)) : EnvOkP G P η (Γ.set i B) ρ n W := by
@@ -665,7 +673,7 @@ theorem ifTag_safeP {G : NormalGraph ι} {P η} {Γ i A tag q u e B n W h ρ}
     (he : EnvOkP G P η Γ ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
     Safe (meaningP G P η B) n W h (instantiate 0 ρ (.ite (.test tag (.var i)) u e)) := by
   have hval := (meaningP_value hC (he.2 i A hi)).1
-  have htag := answers_soundP hq hAP (he.2 i A hi)
+  have htag := answers_heapP h hq hAP (he.2 i A hi)
   simp only [instantiate, Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero]
   cases n with
   | zero => trivial

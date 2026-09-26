@@ -666,7 +666,7 @@ theorem test_value_safe (k : Tag) (v : Val) (hv : isVal v = true) (p : Nat)
   cases p with
   | zero => trivial
   | succ q =>
-    refine Or.inl (Or.inl ⟨?_, ?_⟩) <;> cases tagHolds k v <;> simp [boolT, isVal]
+    refine Or.inl (Or.inl ⟨?_, ?_⟩) <;> cases tagHoldsIn h k v <;> simp [boolT, isVal]
 
 /-- **An operator that answers is safe.** Where `binop` gives the operands'
 result, the term takes one step to it, a value of whatever family `S` names. -/
@@ -700,14 +700,14 @@ the `then` branch may assume the test succeeded. -/
 theorem ite_test_rule {B : Fam} (k : Tag) (a : Val) (hv : isVal a = true) (u e : Tm)
     (p : Nat) (W : WorldT (p + 2)) (h : Heap) (hadm : WorldAdm W)
     (hok : HeapOk (p + 2) W h)
-    (hthen : tagHolds k a = true → Safe B p (trunc p (by omega) W) h u)
-    (helse : tagHolds k a = false → Safe B p (trunc p (by omega) W) h e) :
+    (hthen : tagHoldsIn h k a = true → Safe B p (trunc p (by omega) W) h u)
+    (helse : tagHoldsIn h k a = false → Safe B p (trunc p (by omega) W) h e) :
     Safe B (p + 2) W h (.ite (.test k a) u e) := by
   refine Or.inr ⟨trunc (p + 1) (Nat.le_succ _) W, h, _, WExt_refl _,
     WorldAdm_trunc _ hadm, .iteC (.testV hv), HeapOk_trunc (p + 1) W h hok, ?_⟩
   have hadm' : WorldAdm (trunc (p + 1) (Nat.le_succ _) W) := WorldAdm_trunc _ hadm
   have hok' : HeapOk (p + 1) (trunc (p + 1) (Nat.le_succ _) W) h := HeapOk_trunc (p + 1) W h hok
-  cases hb : tagHolds k a with
+  cases hb : tagHoldsIn h k a with
   | true =>
     refine Or.inr ⟨trunc p (Nat.le_succ p) _, h, u, WExt_refl _, WorldAdm_trunc _ hadm',
       by simp; exact Step.iteT, HeapOk_trunc p _ h hok', ?_⟩

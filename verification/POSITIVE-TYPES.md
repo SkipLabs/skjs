@@ -660,7 +660,19 @@ meet the arrows $L$, $M$, proved outside the table. For an array, $F$ is a
 generic member of `ArrayProto` and $L$ its instance at the array's element
 type, with the array as receiver: `Array.prototype[Symbol.iterator]` at
 `number` covers `Iterable<number>`'s member. Each premise that names $\kappa$
-passes it on unchanged.
+passes it on unchanged. The fourth reads it through the prototype too, from a
+function-typed field or view there, as the second reads an own one: a class
+instance's methods are its prototype's closures, whose receiver is the
+class's instance type (`CoversByProto`, its second disjunct;
+[DESIGN.md](DESIGN.md#modules-and-code-units), "Classes"):
+
+$$
+\frac{\beta\nvDash m.\mathsf{key}\quad(\mathsf{proto}{:}P)\in\Phi\,\psi\quad
+      (m.\mathsf{key}{:}F)\ \text{a field or view of}\ P\quad F\equiv\mathsf{arrs}(L;\ldots)\quad
+      \forall(\vec Q\to D)\in m.\;\exists(Q_0;\vec P)\to B\in L.\;
+      \Delta(S,Q_0)\land\Delta(\vec Q,\vec P)\land\Delta(B,D)}
+     {\Delta;\kappa;S\vdash(\Phi\,\psi;\mu;\beta)\sqsubseteq_{\mathsf{meth}}m}
+$$
 
 Here $\Delta(\vec Q,\vec P)$ pairs the lists position by position and needs
 equal lengths (`Domains`). Receivers of two members are not compared: both

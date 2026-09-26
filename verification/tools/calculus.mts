@@ -71,7 +71,10 @@ export type Term =
   /** An actual standing for the elements of a store, read where it is written. */
   | { spread: { a: Term } }
   /** Evaluate `a`, then throw its value. */
-  | { throw: { a: Term } };
+  | { throw: { a: Term } }
+  /** Allocate `a`'s fields and, over them, `b`'s own enumerable data
+   * properties, but the keys in `drop` (an object literal's spread). */
+  | { merge: { drop: (string | { symbol: number })[]; a: Term; b: Term } };
 /** Every binary operator, as `Arith` in Calculus.lean names them. */
 const OPERATORS = ["add", "sub", "mul", "div", "pow", "xor", "rem", "lt", "le", "gt", "ge", "eq"] as const;
 /** Every tag, checked against `Tag`: adding one there and not here is a type
@@ -207,6 +210,7 @@ export function decodeTerm(value: unknown): Term {
     arr: ["elems"],
     spread: ["a"],
     throw: ["a"],
+    merge: ["drop", "a", "b"],
   };
   const keys = shape[key];
   if (!keys) throw Error("unknown term constructor");
@@ -250,6 +254,10 @@ export function decodeTerm(value: unknown): Term {
     } else if (k === "elems") {
       if (!Array.isArray(v)) throw Error("invalid store");
       for (const l of v) if (l !== null) nat(l);
+    } else if (k === "drop") {
+      if (!Array.isArray(v) || v.some((key) => typeof key !== "string" &&
+          !(isRecord(key) && Object.keys(key).length === 1 && typeof key.symbol === "number")))
+        throw Error("invalid dropped keys");
     } else if (k === "args" || k === "inits") {
       if (!Array.isArray(v)) throw Error("invalid arguments");
       v.forEach(decodeTerm);

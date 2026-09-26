@@ -87,8 +87,9 @@ inductive Tag where
   /-- `typeof v === "object"`: `null`, or an object without call code. An
   object with call code, a class included, is `"function"` (`isFun`). -/
   | typeofObject
-  /-- `key in v`: an object owning the key. Keys are fixed at allocation, so
-  the answer never changes; which source keys and operands this answers as
+  /-- `key in v`: an object owning the key, or one its prototype chain
+  reaches (`tagHoldsIn`). Keys are fixed at allocation and no source writes a
+  prototype, so the answer never changes; which source keys this answers as
   JavaScript does is the lowering's business (`inKeyRefusal`). -/
   | hasKey (key : PropKey)
   deriving Repr, DecidableEq
@@ -200,6 +201,13 @@ inductive Tm where
   value: it propagates outward through every evaluation context (`Raises`)
   until a handler catches it or it leaves the program. -/
   | throw (a : Tm)
+  /-- An allocation from parts: evaluate `a`, then `b`, then allocate one
+  fresh plain object holding `a`'s own fields (its prototype included, its
+  store not) and, over them, the own enumerable data properties `b` has now,
+  but the keys in `drop` (`mergeParts`). An object literal with spreads is a
+  chain of these from a fresh accumulator: `{ ...x, k: e }` copies `x` into
+  `{}`, then `{ k: e }` into that (DESIGN.md, "Object literals"). -/
+  | merge (drop : List PropKey) (a b : Tm)
   deriving Repr
 
 /-- Invocation code is not a runtime value. A plain object has no call code. -/
@@ -791,6 +799,10 @@ def tmDecEq (a b : Tm) : Decidable (a = b) := by
   case throw.throw a0 b0 =>
     haveI : Decidable (a0 = b0) := tmDecEq a0 b0
     exact decidable_of_iff (a0 = b0) (by simp only [Tm.throw.injEq])
+  case merge.merge a0 a1 a2 b0 b1 b2 =>
+    haveI : Decidable (a1 = b1) := tmDecEq a1 b1
+    haveI : Decidable (a2 = b2) := tmDecEq a2 b2
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2) (by simp only [Tm.merge.injEq])
 termination_by sizeOf a
 
 def callCodeDecEq (a b : CallCode) : Decidable (a = b) := by
@@ -922,13 +934,14 @@ theorem lookup_slots {ns : List PropKey} (hnd : ns.Nodup) {base i : Nat}
     (setElem : ∀ a i v, P a → P i → P v → P (.setElem a i v))
     (lenOf : ∀ a, P a → P (.lenOf a))
     (spread : ∀ a, P a → P (.spread a))
-    (throw : ∀ a, P a → P (.throw a)) (t : Tm) : P t := by
+    (throw : ∀ a, P a → P (.throw a))
+    (merge : ∀ d a b, P a → P b → P (.merge d a b)) (t : Tm) : P t := by
   apply Tm.rec (motive_1 := P)
     (motive_2 := fun c => match c with
       | .absent => True | .closure _ b _ => P b | .variadic _ b => P b
       | .bound t r pre => P t ∧ P r ∧ ∀ a ∈ pre, P a)
     (motive_3 := fun args => ∀ a ∈ args, P a)
-    var invoke construct letE nul undef tru fls num str bigint sym ?_ ?_ read index write test ite arith arr arrLit elemAt setElem lenOf spread throw
+    var invoke construct letE nul undef tru fls num str bigint sym ?_ ?_ read index write test ite arith arr arrLit elemAt setElem lenOf spread throw merge
     True.intro (fun _ _ _ h => h) (fun _ _ h => h) (fun _ _ _ ht hr hp => ⟨ht, hr, hp⟩) (by simp) (by
       intro a args ha ih v hv
       rcases List.mem_cons.mp hv with rfl | hv
@@ -1089,6 +1102,7 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
   | .lenOf x => .lenOf (subst j a x)
   | .spread x => .spread (subst j a x)
   | .throw x => .throw (subst j a x)
+  | .merge d x y => .merge d (subst j a x) (subst j a y)
 
 termination_by structural t => t
 
@@ -1144,6 +1158,224 @@ def bindRest (fixed : Nat) (args : List Tm) (recv : Tm) (body : Tm) : Tm :=
   .letE (.arrLit (args.drop fixed)) (bindArgs 1 (recv :: parameters fixed args) body)
 
 end CallArguments
+
+/-! ### Copying own data properties
+
+What an object spread reads (`Tm.merge`). The model's own fields are data
+properties; those a spread copies are its own enumerable ones, which are the
+fields under string keys other than the two the model keeps for itself, and,
+for an array, the elements of its store under their index keys. -/
+
+/-- The value a copy reads at a location. A location the heap lacks, or one
+holding a term that is not a value, reads as `undefined`: no run reaches
+either, and the copy stays total. -/
+def heapVal (h : List Tm) (l : Nat) : Tm :=
+  match h[l]? with
+  | some v => if isVal v then v else .undef
+  | none => .undef
+
+/-- `key in o`: `o` owns the key, or an object along its prototype chain
+does, as far as the heap reaches. A chain longer than the heap has a cycle,
+which no JavaScript object has; it answers `false`. -/
+def keyInChain (h : List Tm) (k : PropKey) : Nat → Tm → Bool
+  | 0, _ => false
+  | fuel + 1, .objAt fs _ => (fs.lookup k).isSome ||
+      match fs.lookup CallArguments.protoField with
+      | some l => keyInChain h k fuel (heapVal h l)
+      | none => false
+  | _ + 1, _ => false
+
+/-- A test's answer in a heap: `tagHolds`, but `key in o`, which also reads
+the objects `o`'s prototype chain reaches. Every other test reads the value
+alone. -/
+def tagHoldsIn (h : List Tm) : Tag → Tm → Bool
+  | .hasKey k, v@(.objAt ..) => keyInChain h k (h.length + 1) v
+  | t, v => tagHolds t v
+
+/-- A test that needs no prototype: every one but `key in o` on an object
+lacking the key and holding a prototype. -/
+def protoFree : Tag → Tm → Bool
+  | .hasKey k, .objAt fs _ => (fs.lookup k).isSome || (fs.lookup CallArguments.protoField).isNone
+  | _, _ => true
+
+/-- Where no prototype is read, the heap does not matter. -/
+theorem tagHoldsIn_of_protoFree {h : List Tm} {t : Tag} {v : Tm} (hp : protoFree t v = true) :
+    tagHoldsIn h t v = tagHolds t v := by
+  unfold tagHoldsIn
+  split
+  · rename_i k fs c
+    simp only [protoFree, Bool.or_eq_true, Option.isSome_iff_ne_none, ne_eq,
+      Option.isNone_iff_eq_none] at hp
+    simp only [keyInChain, tagHolds]
+    rcases hp with hk | hn
+    · simp [Option.isSome_iff_ne_none, hk]
+    · rw [hn]; simp
+  · rfl
+
+/-- What a test's answer in a heap says of the value alone: its own answer,
+or, for `key in o`, that the object reads a prototype. -/
+theorem tagHolds_of_heap {h : List Tm} {t : Tag} {v : Tm} {q : Bool} (hq : tagHoldsIn h t v = q) :
+    tagHolds t v = q ∨ protoFree t v = false := by
+  cases hp : protoFree t v
+  · exact .inr rfl
+  · exact .inl ((tagHoldsIn_of_protoFree hp).symm.trans hq)
+
+/-- A key a spread copies: a string key the model does not keep for itself.
+A symbol-keyed field is never copied: the model's are the library's, whose
+enumerability it does not record (Skip's `sk_managed` is not enumerable), and
+no allocation of the fragment makes one. -/
+def copiedKey : PropKey → Bool
+  | .str s => s != "[[proto]]" && s != "[]"
+  | .sym _ => false
+
+/-- The first entry of each key, which is the one `List.lookup` finds. -/
+def firstKeys {α : Type} : List (PropKey × α) → List (PropKey × α)
+  | [] => []
+  | (k, x) :: ps => (k, x) :: (firstKeys ps).filter (·.1 != k)
+
+/-- An array's elements, under their index keys, when the object holds a
+store. -/
+def storeData (h : List Tm) (fs : List (PropKey × Nat)) : List (PropKey × Tm) :=
+  match fs.lookup arrayStoreKey with
+  | some l => match h[l]? with
+    | some (.arr ls) => ls.zipIdx.filterMap fun p => p.1.map fun m => (.str (toString p.2), heapVal h m)
+    | _ => []
+  | none => []
+
+/-- The own enumerable data properties a spread copies from a value: a plain
+object's copied fields, then an array's elements; nothing from `null`,
+`undefined`, a Boolean, a number, a bigint or a symbol, whose wrappers own no
+enumerable property. A string (its code units) and a function are not
+copied here: the copy is stuck, and no typing rule admits them. -/
+def ownData (h : List Tm) : Tm → Option (List (PropKey × Tm))
+  | .objAt fs .absent => some (firstKeys
+      ((fs.filter (copiedKey ·.1)).map (fun p => (p.1, heapVal h p.2)) ++ storeData h fs))
+  | .nul | .undef | .tru | .fls | .num _ | .bigint _ | .sym _ => some []
+  | _ => none
+
+/-- The fields of the accumulator a copy is made onto: all of a plain
+object's own fields, its prototype included, but its store. -/
+def ownAll (h : List Tm) : Tm → Option (List (PropKey × Tm))
+  | .objAt fs .absent => some (firstKeys
+      ((fs.filter (·.1 != arrayStoreKey)).map (fun p => (p.1, heapVal h p.2))))
+  | _ => none
+
+/-- The properties of `a` with `b`'s defined over them: a key `b` has takes
+`b`'s value. The order of an object's fields is not observable in the model
+(no operation enumerates them in order), so the ones `b` redefines are not
+kept in `a`'s places. -/
+def mergeData (a b : List (PropKey × Tm)) : List (PropKey × Tm) :=
+  a.filter (fun p => !b.any (·.1 == p.1)) ++ b
+
+/-- The fields a merge allocates: the accumulator's, with the source's
+copied properties, less the dropped keys, defined over them. -/
+def mergeParts (h : List Tm) (drop : List PropKey) (a b : Tm) : Option (List (PropKey × Tm)) := do
+  let p ← ownAll h a
+  let q ← ownData h b
+  pure (mergeData p (q.filter fun e => !drop.contains e.1))
+
+/-- A copied value is `undefined` or a value the heap holds. -/
+theorem heapVal_mem (h : List Tm) (l : Nat) :
+    heapVal h l = .undef ∨ (heapVal h l ∈ h ∧ isVal (heapVal h l) = true) := by
+  unfold heapVal
+  split
+  · rename_i v hv
+    split
+    · exact .inr ⟨List.mem_of_getElem? hv, by assumption⟩
+    · exact .inl rfl
+  · exact .inl rfl
+
+theorem mem_firstKeys {α : Type} : ∀ {ps : List (PropKey × α)} {p : PropKey × α},
+    p ∈ firstKeys ps → p ∈ ps
+  | [], _, h => by simp [firstKeys] at h
+  | (k, x) :: ps, p, h => by
+    simp only [firstKeys, List.mem_cons, List.mem_filter] at h
+    rcases h with rfl | ⟨h, -⟩
+    · exact List.mem_cons_self
+    · exact List.mem_cons_of_mem _ (mem_firstKeys h)
+
+theorem lookup_filter_ne {α : Type} (ps : List (PropKey × α)) {k j : PropKey} (hne : j ≠ k) :
+    (ps.filter (·.1 != k)).lookup j = ps.lookup j := by
+  induction ps with
+  | nil => rfl
+  | cons p ps ih =>
+    obtain ⟨g, x⟩ := p
+    by_cases hg : g = k
+    · subst hg
+      have : (j == g) = false := by simpa using hne
+      simp [List.filter_cons, List.lookup, this, ih]
+    · have hgk : (g != k) = true := by simpa using hg
+      rw [List.filter_cons, if_pos hgk]
+      by_cases hj : j = g
+      · subst hj; simp [List.lookup]
+      · have : (j == g) = false := by simpa using hj
+        simp [List.lookup, this, ih]
+
+/-- The first entry of each key is the one `lookup` finds. -/
+theorem lookup_firstKeys {α : Type} : ∀ (ps : List (PropKey × α)) (j : PropKey),
+    (firstKeys ps).lookup j = ps.lookup j
+  | [], _ => rfl
+  | (k, x) :: ps, j => by
+    by_cases hj : j = k
+    · subst hj; simp [firstKeys, List.lookup]
+    · have : (j == k) = false := by simpa using hj
+      simp only [firstKeys, List.lookup, this]
+      rw [lookup_filter_ne _ hj, lookup_firstKeys ps j]
+
+theorem firstKeys_nodup {α : Type} : ∀ (ps : List (PropKey × α)),
+    ((firstKeys ps).map Prod.fst).Nodup
+  | [] => by simp [firstKeys]
+  | (k, x) :: ps => by
+    simp only [firstKeys, List.map_cons, List.nodup_cons]
+    refine ⟨?_, ?_⟩
+    · intro hk
+      obtain ⟨p, hp, he⟩ := List.mem_map.mp hk
+      have := (List.mem_filter.mp hp).2
+      simp [he] at this
+    · exact (firstKeys_nodup ps).sublist (List.Sublist.map _ List.filter_sublist)
+
+theorem mem_mergeData {a b : List (PropKey × Tm)} {p : PropKey × Tm}
+    (h : p ∈ mergeData a b) : p ∈ a ∨ p ∈ b := by
+  rcases List.mem_append.mp h with h | h
+  · exact .inl (List.mem_filter.mp h).1
+  · exact .inr h
+
+/-- Every value a merge allocates is `undefined` or a value the heap holds. -/
+theorem mergeParts_vals {h : List Tm} {d : List PropKey} {a b : Tm} {ps : List (PropKey × Tm)}
+    (hp : mergeParts h d a b = some ps) :
+    ∀ p ∈ ps, p.2 = .undef ∨ (p.2 ∈ h ∧ isVal p.2 = true) := by
+  simp only [mergeParts, Option.bind_eq_bind, Option.bind_eq_some_iff] at hp
+  obtain ⟨pa, ha, qb, hb, he⟩ := hp
+  cases he
+  intro p hp
+  have hA : ∀ p ∈ pa, p.2 = .undef ∨ (p.2 ∈ h ∧ isVal p.2 = true) := by
+    unfold ownAll at ha
+    split at ha
+    · cases ha
+      intro p hp
+      obtain ⟨r, -, rfl⟩ := List.mem_map.mp (mem_firstKeys hp)
+      exact heapVal_mem h r.2
+    · cases ha
+  have hB : ∀ p ∈ qb, p.2 = .undef ∨ (p.2 ∈ h ∧ isVal p.2 = true) := by
+    unfold ownData at hb
+    split at hb
+    · cases hb
+      intro p hp
+      rcases List.mem_append.mp (mem_firstKeys hp) with hp | hp
+      · obtain ⟨r, -, rfl⟩ := List.mem_map.mp hp
+        exact heapVal_mem h r.2
+      · unfold storeData at hp
+        split at hp
+        · split at hp
+          · obtain ⟨r, -, hr⟩ := List.mem_filterMap.mp hp
+            obtain ⟨m, -, rfl⟩ := Option.map_eq_some_iff.mp hr
+            exact heapVal_mem h m
+          · simp at hp
+        · simp at hp
+    all_goals (cases hb <;> (intro p hp; simp at hp))
+  rcases mem_mergeData hp with hp | hp
+  · exact hA p hp
+  · exact hB p (List.mem_filter.mp hp).1
 
 abbrev Heap := List Val
 
@@ -1232,7 +1464,7 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
       Step h (.writeAt f (.objAt fs c) v) (h.set l v) .nul
   | testC : Step h a h' a' → Step h (.test k a) h' (.test k a')
   | testV : isVal v = true →
-      Step h (.test k v) h (if tagHolds k v then .tru else .fls)
+      Step h (.test k v) h (if tagHoldsIn h k v then .tru else .fls)
   | iteC : Step h c h' c' → Step h (.ite c t e) h' (.ite c' t e)
   | iteT : Step h (.ite .tru t e) h t
   | iteF : Step h (.ite .fls t e) h e
@@ -1285,6 +1517,13 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   | throwC : Step h a h' a' → Step h (.throw a) h' (.throw a')
   /-- Two values an operator throws on step to throwing a fresh error object. -/
   | arithThrow : binopThrows op a b = true → Step h (.arith op a b) h (.throw thrownError)
+  /-- A merge evaluates its accumulator, then its source. -/
+  | mergeC1 : Step h a h' a' → Step h (.merge d a b) h' (.merge d a' b)
+  | mergeC2 : isVal a = true → Step h b h' b' → Step h (.merge d a b) h' (.merge d a b')
+  /-- Both values: the properties are read now, and allocated by the
+  allocation this steps to, which runs no code. -/
+  | mergeV {ps : List (PropKey × Tm)} : isVal a = true → isVal b = true → mergeParts h d a b = some ps →
+      Step h (.merge d a b) h (.makeAt .absent (ps.map Prod.fst) (ps.map Prod.snd))
 
 /-- **A term that throws.** `Raises t v`: `t` is `throw v` for a value `v`, in
 evaluation position: under exactly the contexts `Step` evaluates in, each
@@ -1329,6 +1568,8 @@ inductive Raises : Tm → Tm → Prop where
   | setC2 : isVal a = true → Raises i v → Raises (.setElem a i x) v
   | setC3 : isVal a = true → isVal i = true → Raises x v → Raises (.setElem a i x) v
   | lenC : Raises a v → Raises (.lenOf a) v
+  | mergeC1 : Raises a v → Raises (.merge d a b) v
+  | mergeC2 : isVal a = true → Raises b v → Raises (.merge d a b) v
 
 /-! ### The one-field rules
 
@@ -1873,6 +2114,23 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     | elemC1 s' => exact absurd s' (by intro hs; exact value_no_step rfl hs)
     | elemC2 _ s' => exact absurd s' (by intro hs; exact value_no_step rfl hs)
     | elemStr => exact ⟨rfl, rfl⟩
+  | mergeC1 s ih =>
+    cases s2 with
+    | mergeC1 s' => exact (ih s').imp id (congrArg (Tm.merge _ · _))
+    | mergeC2 hv _ => exact absurd s (by intro hs; exact value_no_step hv hs)
+    | mergeV hv _ _ => exact absurd s (by intro hs; exact value_no_step hv hs)
+  | mergeC2 hv s ih =>
+    cases s2 with
+    | mergeC1 s' => exact absurd s' (by intro hs; exact value_no_step hv hs)
+    | mergeC2 _ s' => exact (ih s').imp id (congrArg (Tm.merge _ _ ·))
+    | mergeV _ hw _ => exact absurd s (by intro hs; exact value_no_step hw hs)
+  | mergeV hv hw hp =>
+    cases s2 with
+    | mergeC1 s' => exact absurd s' (by intro hs; exact value_no_step hv hs)
+    | mergeC2 _ s' => exact absurd s' (by intro hs; exact value_no_step hw hs)
+    | mergeV _ _ hp' =>
+      cases Option.some.inj (hp.symm.trans hp')
+      exact ⟨rfl, rfl⟩
 
 /-! ### Throwing
 
@@ -2115,6 +2373,18 @@ theorem raises_no_step {t v : Tm} (hr : Raises t v) : ∀ {h h' t'}, ¬ Step h t
     | lenC s => exact ih s
     | lenV => cases hr
     | lenStr => cases hr
+  | mergeC1 hr ih =>
+    intro _ _ _ s
+    cases s with
+    | mergeC1 s => exact ih s
+    | mergeC2 hv _ => rw [raises_not_val hr] at hv; contradiction
+    | mergeV hv _ _ => rw [raises_not_val hr] at hv; contradiction
+  | mergeC2 hv hr ih =>
+    intro _ _ _ s
+    cases s with
+    | mergeC1 s => exact value_no_step hv s
+    | mergeC2 _ s => exact ih s
+    | mergeV _ hw _ => rw [raises_not_val hr] at hw; contradiction
 
 /-- **The thrown value is determined.** -/
 theorem Raises_det {t v w : Tm} (h1 : Raises t v) (h2 : Raises t w) : v = w := by
@@ -2217,6 +2487,14 @@ theorem Raises_det {t v w : Tm} (h1 : Raises t v) (h2 : Raises t w) : v = w := b
     | setC2 _ h' => rw [raises_not_val h'] at hi; contradiction
     | setC3 _ _ h' => exact ih h'
   | lenC h ih => cases h2 with | lenC h' => exact ih h'
+  | mergeC1 h ih =>
+    cases h2 with
+    | mergeC1 h' => exact ih h'
+    | mergeC2 hv _ => rw [raises_not_val h] at hv; contradiction
+  | mergeC2 hv h ih =>
+    cases h2 with
+    | mergeC1 h' => rw [raises_not_val h'] at hv; contradiction
+    | mergeC2 _ h' => exact ih h'
 
 theorem Raises.makeC {c : CallCode} {a v : Tm} (h : Raises a v) : Raises (.make c a) v :=
   .makeArg (i := 0) rfl (by intro j hj; omega) h

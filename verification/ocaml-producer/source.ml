@@ -201,6 +201,11 @@ let rec source_type ctx j =
     let calls = List.map (fun c -> match recur c with
       | Atoms [Shape {fields=[];indexes=[];calls=[signature];elements=None}] -> signature
       | _ -> unsupported "call signature") (items "calls" j) in
+    (* Members held as own properties that are not enumerable, on the
+       prototype the model gives the object (the library overlay's). *)
+    let fields = match List.assoc_opt "prototype" (obj j) with
+      | Some p -> fields @ [{name=Name "[[proto]]";optional=false;read=recur p;write=None;host=false}]
+      | None -> fields in
     Atoms [Shape {fields;indexes;calls;elements=None}]
   | "reference" ->
     let id = identity (field "target" (field "reference" j)) in
@@ -324,6 +329,9 @@ and expr_node =
   (* `key in e`: the key, then whether the operand has it. *)
   | HasKey of expr * expr
   | Equality of equality * expr * expr | Alloc of (string * expr) list
+  (* An object literal with spreads of values: its parts in source order, a
+     named field (`Some key`) or a spread (`None`). *)
+  | Build of (string option * expr) list
   (* A named read: a string key, or the symbol key of `e[k]` with `k` a
      `unique symbol` constant. *)
   | Read of expr * key | Write of expr * string * expr
@@ -394,7 +402,9 @@ and stmt = { span: Json.t; statement: stmt_node }
    element's default replaces a read that is undefined. *)
 and pattern =
   | PName of string * Json.t
-  | PObject of (string * pattern * expr option) list
+  (* An object pattern's rest, claimed at its span, is a fresh object holding
+     the source's other own enumerable properties. *)
+  | PObject of (string * pattern * expr option) list * (Json.t * pattern) option
   | PArray of (int * pattern * expr option) list * (int * Json.t * pattern) option
 and stmt_node =
   | Declare of bool * (string * ty option * expr) list
@@ -434,7 +444,8 @@ type program = { file: Json.t; digest: Json.t; declarations: declaration list;
 (* A pattern's defaults, in evaluation order. *)
 let rec pattern_defaults = function
   | PName _ -> []
-  | PObject props -> List.concat_map (fun (_,t,d) -> Option.to_list d @ pattern_defaults t) props
+  | PObject (props,rest) -> List.concat_map (fun (_,t,d) -> Option.to_list d @ pattern_defaults t) props @
+    (match rest with Some (_,t) -> pattern_defaults t | None -> [])
   | PArray (elems,rest) -> List.concat_map (fun (_,t,d) -> Option.to_list d @ pattern_defaults t) elems
       @ (match rest with Some (_,_,t) -> pattern_defaults t | None -> [])
 
@@ -456,6 +467,7 @@ let children e = match e.node with
   | DestructBody (t,a,b) -> a :: pattern_defaults t @ [b]
   | Conditional (a,b,c) | IndexWrite (a,b,c) | IfBody (_,a,b,c) -> [a;b;c]
   | Alloc fs -> List.map snd fs
+  | Build parts -> List.map snd parts
   | ArrayLiteral es -> es
   | Lambda (_,_,_,defaults,_,_,body) -> List.map snd defaults @ [body]
   | Call (f,r,args,_,_) -> f :: Option.to_list r @ args
@@ -522,7 +534,17 @@ let rec expr binders j =
       | "===" -> StrictEqual | "!==" -> StrictUnequal
       | "==" -> LooseEqual | "!=" -> LooseUnequal
       | k -> unsupported ("operator " ^ k) in Equality (op,sub "l",sub "r")
-  | "alloc" -> Alloc (List.map (fun f -> text "name" f,expr binders (field "e" f)) (items "fields" j))
+  | "alloc" ->
+    (* A class instance's prototype, under the key no source property spells. *)
+    let proto = match List.assoc_opt "proto" (Json.obj j) with
+      | Some e -> ["[[proto]]",expr binders e] | None -> [] in
+    Alloc (proto @ List.map (fun f -> text "name" f,expr binders (field "e" f)) (items "fields" j))
+  | "build" ->
+    let proto = match List.assoc_opt "proto" (Json.obj j) with
+      | Some e -> [Some "[[proto]]",expr binders e] | None -> [] in
+    Build (proto @ List.map (fun p -> match List.assoc_opt "spread" (Json.obj p) with
+      | None -> Some (text "name" p),expr binders (field "e" p)
+      | Some e -> None,expr binders e) (items "parts" j))
   | "read" -> Read (sub "e",property_key (field "field" j))
   | "write" -> Write (sub "receiver",text "field" j,sub "rhs")
   | "assign" -> Assign (text "name" j,sub "rhs")
@@ -593,7 +615,8 @@ and pattern binders j =
     | Json.Number n -> n | _ -> Json.fail "an index is a number") in
   match text "k" j with
   | "name" -> PName (text "name" j,field "pos" j)
-  | "object" -> PObject (List.map (fun q -> text "field" q,target q,default q) (items "props" j))
+  | "object" -> PObject (List.map (fun q -> text "field" q,target q,default q) (items "props" j),
+      match field "rest" j with Null -> None | r -> Some (field "pos" r,target r))
   | "array" -> PArray (List.map (fun q -> index q,target q,default q) (items "elems" j),
       match field "rest" j with Null -> None | r -> Some (index r,field "pos" r,target r))
   | k -> unsupported ("pattern " ^ k)

@@ -321,7 +321,7 @@ private theorem default_safe {G : NormalGraph Nat} {eta Gamma index B init n W h
           · exact (Ty.denote_adm hC B).down_le _ k (by omega) W _ hb
           · change rho index = .undef at hu
             rw [hu] at hnot
-            simp [tagHolds] at hnot
+            simp [tagHoldsIn, tagHolds] at hnot
         exact value_safe _ _ _ _ _ hvval hvalue
 
 private theorem checked_argument {f : α → Option β} {xs : List α} {ys : List β}

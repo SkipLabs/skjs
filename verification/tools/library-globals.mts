@@ -165,15 +165,18 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   ...["new (arrayLength?: number): any[];", "new <T>(...items: T[]): T[];"].map(
     (signature): GlobalEntry => ({ global: "Array", signature,
       stated: { binders: ["T"], params: [], result: { k: "array", readonly: false, element: binder("T"), span: at } } })),
-  // `new Error(m)` with a string owns `message`, that string; its `name`
-  // and a missing message are `Error.prototype`'s, which the model does not
-  // hold, so only the own field is stated, and the message is required.
+  // `new Error(m)` with a string owns `message`, that string, as a property
+  // that is not enumerable: the model holds it on a prototype it gives the
+  // object, so a read and `in` find it and a spread does not copy it. Its
+  // `name` and a missing message are `Error.prototype`'s, which the model
+  // does not hold, so only the message is stated, and it is required.
   // `stack` is the engine's and is not stated. ES2022 adds `options`.
   ...["new (message?: string): Error;", "new (message?: string, options?: ErrorOptions): Error;"].map(
     (signature): GlobalEntry => ({ global: "Error", signature,
       stated: { binders: [], params: [atom("string")],
-        result: { k: "object", fields: [{ name: "message", optional: false, readonly: true,
-          type: atom("string"), span: at }], stringIndex: null, calls: [], span: at } } })),
+        result: { k: "object", fields: [], stringIndex: null, calls: [], span: at,
+          prototype: { k: "object", fields: [{ name: "message", optional: false, readonly: true,
+            type: atom("string"), span: at }], stringIndex: null, calls: [], span: at } } } })),
   // A promise settled to the value, as an async function's return is: the
   // intrinsic `%AsyncReturn%`, whose bound admits only a primitive, which
   // is never a thenable JavaScript would adopt instead. Without a value, the

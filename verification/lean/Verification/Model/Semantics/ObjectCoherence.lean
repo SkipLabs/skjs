@@ -74,7 +74,7 @@ def Names (D : Registry) : Tm → Prop
   | .makeAt .absent _ args => NamesArgs D args
   | .invoke f r args => Names D f ∧ Names D r ∧ NamesArgs D args
   | .construct f args => Names D f ∧ NamesArgs D args
-  | .letE a b | .writeAt _ a b | .arith _ a b | .elemAt a b
+  | .letE a b | .writeAt _ a b | .arith _ a b | .elemAt a b | .merge _ a b
   | .indexAt a b => Names D a ∧ Names D b
   | .readAt _ a | .test _ a | .lenOf a | .spread a | .throw a => Names D a
   | .setElem a b c => Names D a ∧ Names D b ∧ Names D c
@@ -170,7 +170,7 @@ def sourceTerm : Tm → Bool
   | .makeAt .absent _ args => sourceArgs args
   | .invoke f r args => sourceTerm f && sourceTerm r && sourceArgs args
   | .construct f args => sourceTerm f && sourceArgs args
-  | .letE a b | .writeAt _ a b | .arith _ a b | .elemAt a b
+  | .letE a b | .writeAt _ a b | .arith _ a b | .elemAt a b | .merge _ a b
   | .indexAt a b => sourceTerm a && sourceTerm b
   | .readAt _ a | .test _ a | .lenOf a | .spread a | .throw a => sourceTerm a
   | .setElem a b c => sourceTerm a && sourceTerm b && sourceTerm c
@@ -252,9 +252,9 @@ theorem raises_termOk {t v} (hr : Raises t v) {D} (ht : TermOk D t) : TermOk D v
   | callRecv _ _ ih => exact ih ⟨ht.1.2.1, ht.2.2.1⟩
   | constructL _ ih => exact ih ⟨ht.1.1, ht.2.1⟩
   | letC _ ih => exact ih ⟨ht.1.1, ht.2.1⟩
-  | indexC1 _ ih | writeC1 _ ih | arithC1 _ ih | elemC1 _ ih | iteC _ ih | setC1 _ ih =>
+  | indexC1 _ ih | writeC1 _ ih | arithC1 _ ih | elemC1 _ ih | iteC _ ih | setC1 _ ih | mergeC1 _ ih =>
     exact ih ⟨ht.1.1, ht.2.1⟩
-  | indexC2 _ _ ih | writeC2 _ _ ih | arithC2 _ _ ih | elemC2 _ _ ih =>
+  | indexC2 _ _ ih | writeC2 _ _ ih | arithC2 _ _ ih | elemC2 _ _ ih | mergeC2 _ _ ih =>
     exact ih ⟨ht.1.2, ht.2.2⟩
   | setC2 _ _ ih => exact ih ⟨ht.1.2.1, ht.2.2.1⟩
   | setC3 _ _ _ ih => exact ih ⟨ht.1.2.2, ht.2.2.2⟩
@@ -563,6 +563,27 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
   | arithThrow _ =>
     intro D hh ht
     exact ⟨D,.refl D,hh,by simp [Scoped, thrownError],by simp [Names, thrownError, locs]⟩
+  | mergeC1 step ih =>
+    intro D hh ht
+    obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.1,ht.2.1⟩
+    exact ⟨E,hx,hh',⟨hs,ht.1.2⟩,hn,ht.2.2.mono hx⟩
+  | mergeC2 hv step ih =>
+    intro D hh ht
+    obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.2,ht.2.2⟩
+    exact ⟨E,hx,hh',⟨ht.1.1,hs⟩,ht.2.1.mono hx,hn⟩
+  | @mergeV _ _ _ _ ps _ _ hp =>
+    -- The copied values are the heap's, or `undefined`.
+    intro D hh ht
+    have hvs : ∀ p ∈ ps, TermOk D p.2 := fun p hp' =>
+      (mergeParts_vals hp p hp').elim (fun he => he ▸ ⟨trivial, trivial⟩)
+        (fun ⟨hm, _⟩ => (hh.2 _ hm).2)
+    refine ⟨D,.refl D,hh,?_,?_⟩
+    · simp only [Scoped, scopedArgs_iff, List.mem_map]
+      rintro _ ⟨p, hp', rfl⟩
+      exact (hvs p hp').1
+    · simp only [Names, namesArgs_iff, List.mem_map]
+      rintro _ ⟨p, hp', rfl⟩
+      exact (hvs p hp').2
   | lenV | lenStr =>
     intro D hh ht
     exact ⟨D,.refl D,hh,trivial,trivial⟩

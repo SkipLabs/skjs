@@ -232,8 +232,10 @@ one subtype-evidence list per outgoing edge. A derivation node names the
 `read`, `readOptional`, `readDict`, `indexDict`, `write`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
 `unionVar`, `makeCallable`, `callCallable`, `readCallable`, `writeCallable`, `readView`, `readProto`, `arith`, `test`,
 `arrLit`, `elem`, `elemOpt`, `elemAny`, `setElem`, `len`, `lenStr`, `elemStr`, `funRest`, `makeCallableRest`,
-`callRest`, `arrCopy`, `bindE`, `bindRestE`, `bindMember`, `ctorE`, `construct`, `sub`, or
-`throw`, whose one premise types the thrown operand.
+`callRest`, `arrCopy`, `bindE`, `bindRestE`, `bindMember`, `ctorE`, `construct`, `sub`,
+`throw`, whose one premise types the thrown operand, or `merge`, an allocation
+from parts, whose two premises type the accumulator and the source
+([Allocation from parts](PROGRAM-TYPING.md#allocation-from-parts)).
 The array rules act on a store, the value an array object holds in its store
 field: `arrLit` allocates one location per element under the positions of a
 tuple contract; `elem` reads a required position named by a literal index at

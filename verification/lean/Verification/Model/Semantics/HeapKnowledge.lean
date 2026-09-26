@@ -182,8 +182,15 @@ def observeTag (k : Knowledge) (slot : Nat) (tag : Tag) (q : Bool) : Knowledge :
         (fun g => ⟨g.cell,R,g.field⟩) ++ k.cells,
       ⟨slot,R,valueField⟩ :: k.values,k.links⟩
 
+/-- A primitive reads no prototype. -/
+theorem atom_protoFree {a : Atom} {v : Tm} (h : a.holds v) (t : Tag) : protoFree t v = true := by
+  cases v with
+  | objAt fs c => cases a <;> simp [Atom.holds] at h
+  | _ => cases t <;> rfl
+
 theorem observeTag_holds {k slot tag q ρ h} (hk : Holds k ρ h)
-    (hq : tagHolds tag (ρ slot) = q) : Holds (observeTag k slot tag q) ρ h := by
+    (hq' : tagHolds tag (ρ slot) = q ∨ protoFree tag (ρ slot) = false) :
+    Holds (observeTag k slot tag q) ρ h := by
   unfold observeTag
   split
   · exact hk
@@ -192,6 +199,9 @@ theorem observeTag_holds {k slot tag q ρ h} (hk : Holds k ρ h)
     have hs : f.slot = slot := by simpa using List.find?_some hf
     obtain ⟨a,ha,hv⟩ := hk.2.1 f hm
     have hv : a.holds (ρ slot) := by simpa [hs] using hv
+    -- A primitive reads no prototype.
+    have hq : tagHolds tag (ρ slot) = q := hq'.resolve_right (by
+      rw [atom_protoFree hv tag]; simp)
     have hmem : a ∈ f.contents.filter (fun a => tagClause tag (a.clause (α := Ty Nat)) != some (!q)) := by
       apply List.mem_filter.mpr
       refine ⟨ha,?_⟩

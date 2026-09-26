@@ -47,6 +47,10 @@ export type TypeTerm =
   | { k: "array"; readonly: boolean; element: TypeTerm; span: Span }
   | { k: "tuple"; readonly: boolean; required: TypeTerm[];
       optional: TypeTerm[]; rest: TypeTerm | null; span: Span }
+  /** `prototype`, stated by the library overlay only: members the object
+   * holds as own properties that are not enumerable (an `Error`'s
+   * `message`), which the model holds on a prototype it gives the object, so
+   * that a spread does not copy them and `in` and reads still find them. */
   | { k: "object"; fields: { name: PropertyKey; optional: boolean; readonly: boolean; type: TypeTerm; span: Span }[];
       stringIndex: { readonly: boolean; value: TypeTerm; span: Span } | null;
       /** A number index, `[k: number]: V` with a contract of its own: it
@@ -55,7 +59,7 @@ export type TypeTerm =
        * symbol key. */
       numberIndex?: { readonly: boolean; value: TypeTerm; span: Span };
       symbolIndex?: { readonly: boolean; value: TypeTerm; span: Span };
-      calls: Extract<TypeTerm, { k: "function" }>[]; span: Span }
+      calls: Extract<TypeTerm, { k: "function" }>[]; span: Span; prototype?: TypeTerm }
   | { k: "function"; receiver: TypeTerm | null; params: TypeTerm[];
       rest: TypeTerm | null; result: TypeTerm; span: Span }
   /** `new (params) => result`: a construct signature, which a class meets and

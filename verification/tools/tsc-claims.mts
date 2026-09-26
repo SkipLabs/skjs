@@ -137,11 +137,16 @@ function addExpr(out: Sites, pos: Span, kind: string): void {
 /** A pattern's defaults and array rests (fresh arrays) are sites; its reads
  * are not source expressions and carry no claim. */
 function walkPattern(t: PatternAst, out: Sites): void {
-  if (t.k === "object")
+  if (t.k === "object") {
     t.props.forEach((p) => {
       if (p.default_) walkExpr(p.default_, out);
       walkPattern(p.target, out);
     });
+    if (t.rest) {
+      addExpr(out, t.rest.pos, "alloc");
+      walkPattern(t.rest.target, out);
+    }
+  }
   else if (t.k === "array") {
     t.elems.forEach((p) => {
       if (p.default_) walkExpr(p.default_, out);
