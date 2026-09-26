@@ -23,14 +23,6 @@ private def program (callable fresh : Bool) : Program :=
    ⟨.app (.var 0) .nul,.effect 5,none⟩,
    ⟨if fresh then .read (.var 2) else .var 1,.ret,none⟩]
 private def codes : List CodeRequest := oneNodeCodes 1 mutator [[1],[2,3],[1]] [([6],[[0]],[0])]
-/-- The same program with the codes as terms, run by the machine. -/
-private def executed (callable fresh : Bool) : Program :=
-  [⟨.fls,.bind 1,none⟩,
-   ⟨if callable then .attach (.var 0) (.var 0) else .alloc (.var 0),.bind 2,none⟩,
-   ⟨.read (.var 0),.bind 3,none⟩,
-   ⟨.funE (.write (.var 3) .tru),.bind 4,none⟩,
-   ⟨.app (.var 0) .nul,.effect 5,none⟩,
-   ⟨if fresh then .read (.var 2) else .var 1,.ret,none⟩]
 private def claims (R : List Nat) : List (PointClaim Nat) :=
   [⟨[],[1]⟩,⟨[[1]],[2,3]⟩,⟨[[2,3],[1]],[1]⟩,
    ⟨[[1],[2,3],[1]],[5]⟩,⟨[[5],[1],[2,3],[1]],[0]⟩,
@@ -72,7 +64,7 @@ private def certificate (callable fresh : Bool) (R : List Nat) : ControlFlow.Cer
 /-- The heap really changes to true; a saved immutable value remains false.
 Creation of the mutator accounts for the second, null-initialized heap cell. -/
 theorem returns_expected (callable fresh : Bool) :
-    Execution (executed callable fresh) (if fresh then 18 else 17) []
+    Execution (program callable fresh) (if fresh then 20 else 19) []
       (.at 0 (fun _ => .nul)) [.tru,.nul] (.done (if fresh then .tru else .fls)) := by
   cases callable <;> cases fresh <;>
     repeat first
@@ -81,7 +73,10 @@ theorem returns_expected (callable fresh : Bool) :
       | apply Execution.next (.expr (.makeV rfl))
       | apply Execution.next (.expr (.readV rfl))
       | apply Execution.next (.expr (.writeV rfl (by decide)))
-      | apply Execution.next (.expr (.beta rfl))
+      | apply Execution.next (.expr (.callGraph rfl (by decide)))
+      | apply Execution.next (.expr (.gotoEnter rfl rfl))
+      | apply Execution.next (.expr (.frameC (.writeV rfl (by decide))))
+      | apply Execution.next (.expr (.frameRet rfl))
       | apply Execution.next (.bind rfl)
       | apply Execution.next (.effect rfl)
       | apply Execution.next (.ret rfl)

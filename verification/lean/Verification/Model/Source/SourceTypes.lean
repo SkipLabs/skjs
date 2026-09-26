@@ -175,23 +175,6 @@ def internRow (r : Row) : Lowering Nat :=
     | some i => (i, T)
     | none => (T.length, T ++ [r])
 
-/-- Whether a type reaches a parameter row no scheme binds: a generic unit's
-binder, read as its row. Only the graph checker reads such a type; the direct
-rigid checker's ground types have none. -/
-def reachesParameter (T : Table) (A : List Nat) : Bool := Id.run do
-  let schemeBinders := T.flatMap fun
-    | .scheme bs .. => bs
-    | _ => []
-  let mut known := A.eraseDups
-  for _ in List.range (T.length + 1) do
-    let next := (known ++ known.flatMap fun i =>
-      ((T[i]?.map RequestJson.rowTypes).getD []).flatten).eraseDups
-    if next.length == known.length then break
-    known := next
-  return known.any fun i => match (T[i]? : Option Row) with
-    | some (.param _ _ .value) => !schemeBinders.contains i
-    | _ => false
-
 /-- A source annotation in claim form with the named binders read as their
 parameter rows: each binder atom becomes the graph atom of its row. -/
 partial def annotationAtRows (rows : List (String × Nat)) : Lean.Json → Lean.Json

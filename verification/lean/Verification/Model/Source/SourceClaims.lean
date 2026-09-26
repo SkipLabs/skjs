@@ -16,9 +16,6 @@ structure Overlay where
   entryCurrent : List (Nat × List (String × List (PropKey × Ty Nat))) := []
   exprCurrent : List (Span × List (PropKey × Ty Nat)) := []
 
-  /-- Source annotations after a checked scheme substitution; not producer claims. -/
-  initializedParams : Option (List (Ty Nat)) := none
-
 structure Function where
   name : String
   namePos : Span
@@ -36,8 +33,7 @@ structure Function where
   body are stated per arrow as well: an entry environment replaces the context
   it is checked against, so one body's entries differ with its signature. One body has a different
   obligation at each arrow, so these are the claims it carries under each,
-  rather than one claim re-cast to every arrow's result. A compiled scheme
-  supplies the substituted claims for its checked instantiations; an overloaded
+  rather than one claim re-cast to every arrow's result. An overloaded
   closure's producer states them. Empty for a closure advertising one
   signature. -/
   arrowClaims : List (Span × List Overlay) := []

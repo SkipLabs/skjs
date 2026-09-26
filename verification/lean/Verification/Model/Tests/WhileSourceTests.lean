@@ -1,4 +1,5 @@
 import Verification.Model.Source.SourceClaimJson
+import Verification.Model.Tests.GraphCodeFixtures
 
 namespace Verification.Model.WhileSourceTests
 open Lean ProgramTyping SourceExtraction SourceClaimJson ControlFlow
@@ -21,10 +22,12 @@ private def expected : Program :=
    ⟨.var 0,.branchBind ⟨9,some [2,3]⟩ ⟨3,some [2,3]⟩,none⟩,
    ⟨.app (.var 1) (.var 0),.bind ⟨10,some [0,3,4]⟩,none⟩,
    ⟨.nul,.bind 11,none⟩,⟨.var 0,.bind 12,none⟩,⟨.var 0,.effect 0,none⟩,
-   ⟨.funE (.read (.var 2)),.bind 14,none⟩,⟨.var 0,.effect 15,none⟩,
+   ⟨.makeAt (.graph 1 [.var 0, .read (.var 0), .var 2]
+      [(.ret, none), (.bind ⟨0, some [0, 2, 3, 4]⟩, none), (.bind ⟨1, none⟩, none)] 2 [.var 0])
+      [valueField] [.nul],.bind 14,none⟩,
+   ⟨.var 0,.effect 15,none⟩,
    ⟨.alloc (.var 0),.bind ⟨16,some [0]⟩,none⟩,⟨.tru,.bind 17,none⟩,⟨.nul,.effect 18,none⟩]
--- The program this pins was the term-closure lowering's; closures are graph code now,
--- and the pipeline cases check what the lowering produces.
+#guard program == expected
 #guard start == 19
 
 -- The condition is called twice: true before the write and false afterwards.
@@ -32,19 +35,8 @@ private def expected : Program :=
 -- remain in the correct slots. This is a trace, not a general compiler proof.
 theorem one_iteration : ∃ n, Execution expected n []
     (.at 19 (fun _ => .nul)) [.fls,.nul] (.done .fls) := by
-  refine ⟨58,?_⟩
-  repeat first
-    | exact Execution.refl
-    | apply Execution.next (.enter rfl)
-    | apply Execution.next (.expr (.makeV rfl))
-    | apply Execution.next (.expr (.writeV rfl (by decide)))
-    | apply Execution.next (.expr (.beta rfl))
-    | apply Execution.next (.expr (.readV rfl))
-    | apply Execution.next (.bind rfl)
-    | apply Execution.next (.effect rfl)
-    | apply Execution.next .yesBind
-    | apply Execution.next .noBind
-    | apply Execution.next (.ret rfl)
+  apply Exists.intro
+  run_machine
 
 #print axioms one_iteration
 end Verification.Model.WhileSourceTests

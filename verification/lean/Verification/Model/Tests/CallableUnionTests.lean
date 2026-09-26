@@ -47,26 +47,15 @@ private def request (nullResult : Bool) : Request :=
   ⟨types,program nullResult,claims,[0,1],0,[],
    if nullResult then oneNodeCodes 1 .nul [] [([9],[[0]],[1])]
    else oneNodeCodes 1 (.var 1) [] [([9],[[0]],[0])]⟩
-/-- The same program with the codes as terms, run by the machine. -/
-private def executed (nullResult : Bool) : Program :=
-  [⟨if nullResult then .attach .nul .nul else .attach (.var 1) .tru,.bind 1,none⟩,
-   ⟨.app (.var 0) .tru,.ret,none⟩]
 #guard [false,true].all fun nullResult => match (do
     let response ← produceJson (Lean.toJson (request nullResult)) 8
     verifyJson (Lean.toJson (request nullResult)) response) with
   | .ok _ => true | .error _ => false
 
-theorem returns_expected (nullResult : Bool) : Execution (executed nullResult) 6 []
+theorem returns_expected (nullResult : Bool) : Execution (program nullResult) 8 []
     (.at 0 (fun _ => .nul)) [if nullResult then .nul else .tru]
     (.done (if nullResult then .nul else .tru)) := by
-  cases nullResult <;>
-    repeat first
-      | exact Execution.refl
-      | apply Execution.next (.enter rfl)
-      | apply Execution.next (.expr (.makeV rfl))
-      | apply Execution.next (.expr (.beta rfl))
-      | apply Execution.next (.bind rfl)
-      | apply Execution.next (.ret rfl)
+  cases nullResult <;> run_machine
 
 #print axioms checked
 #print axioms returns_expected

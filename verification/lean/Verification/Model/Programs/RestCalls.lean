@@ -3,91 +3,13 @@ import Verification.Model.Semantics.Rules
 /-!
 # Variadic calls
 
-Variadic code takes a fixed number of parameters and collects every further
-actual into one fresh store. What it promises is `RestSpec`, a code contract;
-its signatures are `restsT`, which says only which actual lists a caller may
-write, so the same value may also meet fixed signatures (`Safety`, call
-contracts).
-
-The store is not built by invocation. `CallArguments.bindRest` yields a term
-that allocates it with the ordinary store step, so the heap changes only as
-that step runs; the body wraps it into an array.
+A variadic signature (`restsT`) says only which actual lists a caller may
+write, so one value may also meet fixed signatures (`Safety`, call
+contracts). What code collecting a rest promises is proved where graph code is
+created (`ProgramTyping.restsT_of_graphRest`). Here: eliminating a variadic
+signature, allocating a rest store, and spreading actuals.
 -/
 namespace Verification.Model.RestCalls
-
-/-- What variadic code promises: for a receiver in `Rc` and fixed actuals in
-`Ps`, followed by further actuals that as one pack are in `E`, the term
-invocation yields is safe at `R`. -/
-def RestSpec (n : Nat) (Rc : Fam) (Ps : List Fam) (E : ArgFam) (R : Fam) (k : Nat) (W : WorldT k)
-    (b : Tm) : Prop :=
-  Scoped (n + 2) b ∧ Ps.length = n ∧
-  ∀ (j : Nat) (hj : j < k) (W' : WorldT j),
-    WExt (trunc j (Nat.le_of_lt hj) W) W' → WorldAdm W' → ∀ (h : Heap), HeapOk j W' h →
-      ∀ r, Rc j W' r → ∀ args extra, ArgsT Ps j W' args → E j W' extra →
-        CallArguments.Values extra →
-        Safe R j W' h (CallArguments.bindRest n (args ++ extra) r b)
-
-/-- Fixed actuals exactly as many as the parameters bind as themselves; the
-rest are left to the store. -/
-theorem parameters_prefix (args extra : List Tm) :
-    CallArguments.parameters args.length (args ++ extra) = args := by
-  induction args with
-  | nil => rfl
-  | cons a args ih => simp [CallArguments.parameters, ih]
-
-theorem RestSpec.down {n Rc Ps E R k W b} (h : RestSpec n Rc Ps E R (k + 1) W b) :
-    RestSpec n Rc Ps E R k (trunc k (Nat.le_succ k) W) b := by
-  refine ⟨h.1, h.2.1, ?_⟩
-  intro j hj U hx hu heap hh r hr args extra ha he hv
-  exact h.2.2 j (by omega) U (by rwa [trunc_trunc] at hx) hu heap hh r hr args extra ha he hv
-
-theorem RestSpec.mono {n Rc Ps E R k W W' b} (hx : WExt W W')
-    (h : RestSpec n Rc Ps E R k W b) : RestSpec n Rc Ps E R k W' b := by
-  refine ⟨h.1, h.2.1, ?_⟩
-  intro j hj U hy hu heap hh r hr args extra ha he hv
-  exact h.2.2 j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy) hu heap hh r hr args
-    extra ha he hv
-
-/-- Binding fewer actuals than parameters pads the rest with `undefined`. -/
-theorem parameters_short : ∀ (n : Nat) (args : List Tm), args.length ≤ n →
-    CallArguments.parameters n args = args ++ List.replicate (n - args.length) .undef
-  | 0, [], _ => rfl
-  | n + 1, [], _ => by
-    simp [CallArguments.parameters, parameters_short n [] (by simp), List.replicate_succ]
-  | n + 1, a :: args, h => by
-    simp [CallArguments.parameters, parameters_short n args (by simp at h; omega)]
-  | 0, _ :: _, h => by simp at h
-
-/-- Variadic code meeting its code contract meets the signature: a list its
-fixed parameters admit binds as the padded one, collecting nothing, and a
-longer one binds its fixed prefix and collects the rest. -/
-theorem restsT_of_restSpec {n : Nat} {Rc : Fam} {Ps : List Fam} {E : ArgFam} {R : Fam} {k : Nat}
-    {W : WorldT k} {b : Tm} (fs : List (PropKey × Nat)) (hs : RestSpec n Rc Ps E R k W b) :
-    restsT [(Rc, Ps, E, R)] k W (.objAt fs (.variadic n b)) := by
-  refine ⟨⟨fs, _, rfl, rfl, by simpa [Scoped, Nat.add_comm, Nat.add_left_comm] using hs.1⟩, ?_⟩
-  intro s hsm j hj U hx hu heap hh r hrv hr args hvals ha
-  cases List.mem_singleton.mp hsm
-  refine ⟨_, .variadic hrv hvals, ?_⟩
-  obtain ⟨hshort, hpack⟩ := ha
-  have hn : Ps.length = n := hs.2.1
-  by_cases hl : args.length ≤ Ps.length
-  · rw [List.take_of_length_le hl] at hshort
-    rw [List.drop_eq_nil_of_le hl] at hpack
-    have hsafe := hs.2.2 j hj U hx hu heap hh r hr _ [] (ArgsShort_pad hshort) hpack (fun a ha => by cases ha)
-    simp only [List.append_nil] at hsafe
-    unfold CallArguments.bindRest at hsafe ⊢
-    have hlen : (args ++ List.replicate (Ps.length - args.length) Tm.undef).length = n := by
-      simp; omega
-    rw [List.drop_eq_nil_of_le (by omega), ← hlen, CallArguments.parameters_exact] at hsafe
-    rw [List.drop_eq_nil_of_le (by omega), parameters_short n args (by omega), ← hn]
-    exact hsafe
-  · have htl : (args.take Ps.length).length = Ps.length := by simp; omega
-    have ht : ArgsT Ps j U (args.take Ps.length) := by
-      have := hshort.2.1
-      rwa [htl, List.take_length] at this
-    have hsafe := hs.2.2 j hj U hx hu heap hh r hr _ _ ht hpack
-      (fun a ha => hvals a (List.mem_of_mem_drop ha))
-    rwa [List.take_append_drop] at hsafe
 
 /-- A ready variadic call consumes one step, then meets the result contract. -/
 theorem call_elim_rest {S : List (Fam × List Fam × ArgFam × Fam)} {s : Fam × List Fam × ArgFam × Fam}
@@ -129,41 +51,6 @@ theorem ctx_bind {A B : Fam} (C : Tm → Tm)
       apply hk j (by omega) V _ hv h'' v hh'' hval ha
       apply WExt_trans _ hx'
       simpa only [trunc_trunc] using WExt_trunc hj hx
-
-/-- **Creating a variadic value.** Code whose body is safe with any receiver
-in `Rc` (slot 1), any fixed actuals in `Ps` (from slot 2) and any store in `Arr` in slot 0 meets the
-variadic signature, provided collecting further actuals whose pack is in `E`
-allocates such a store. -/
-theorem restSpec_of_body {n : Nat} {Rc : Fam} {Ps : List Fam} {E : ArgFam} {Arr R : Fam} {k : Nat}
-    {W : WorldT k} {b : Tm}
-    (hscope : Scoped (n + 2) b) (hlen : Ps.length = n) (hRc : Adm Rc)
-    (hP : ∀ A ∈ Ps, Adm A) (hArr : Adm Arr)
-    (halloc : ∀ j (U : WorldT j) h extra, WorldAdm U → HeapOk j U h →
-      E j U extra → CallArguments.Values extra →
-      Safe Arr j U h (.arrLit extra))
-    (hbody : ∀ (j : Nat) (hj : j < k) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
-      WorldAdm U → ∀ h, HeapOk j U h → ∀ r, Rc j U r → ∀ args a, ArgsT Ps j U args →
-        Arr j U a → isVal a = true → Safe R j U h (subst 0 a (bindArgs 1 (r :: args) b))) :
-    RestSpec n Rc Ps E R k W b := by
-  refine ⟨hscope, hlen, ?_⟩
-  intro j hj U hx hu h hh r hr args extra ha he hev
-  have hl : args.length = n := (ArgsT_length ha).trans hlen
-  unfold CallArguments.bindRest
-  rw [List.drop_left' hl, ← hl, parameters_prefix]
-  apply ctx_bind (.letE · _) .letC .letC j U h _ hu hh (halloc j U h extra hu hh he hev)
-  intro i hi V hy hv h' a hh' hval harr
-  cases i with
-  | zero => trivial
-  | succ p =>
-    apply let_rule _ a hval p V h' hv hh'
-    have hUV : WExt (trunc p (by omega) U) (trunc p (Nat.le_succ p) V) := by
-      simpa only [trunc_trunc] using WExt_trunc (Nat.le_succ p) hy
-    have hWV : WExt (trunc p (by omega) W) (trunc p (Nat.le_succ p) V) := by
-      apply WExt_trans _ hUV
-      simpa only [trunc_trunc] using WExt_trunc (show p ≤ j by omega) hx
-    exact hbody p (by omega) _ hWV (WorldAdm_trunc _ hv) h' (HeapOk_trunc p V h' hh') r
-      (hRc.mono p _ _ hUV r (hRc.down_le j p (by omega) U r hr)) args a
-      (ArgsT_transfer hP ha p (by omega) _ hUV) (hArr.down p V a harr) hval
 
 /-- **Allocating a rest store.** Actuals meeting a tuple contract at the
 current level, as a fresh store, meet it as a writable store. The allocation
@@ -391,10 +278,8 @@ theorem spread_parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) {f r : Tm}
           simpa using this)
       simpa using hrest
 
-#print axioms restsT_of_restSpec
 #print axioms argument_alloc_safe
 #print axioms call_elim_rest
-#print axioms restSpec_of_body
 #print axioms listT_spreads
 #print axioms spread_parts_safe
 

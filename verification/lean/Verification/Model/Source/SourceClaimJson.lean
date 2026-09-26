@@ -1,6 +1,5 @@
 import Verification.Model.Source.SourceExtraction
 import Verification.Model.Source.DeclarationGraph
-import Verification.Model.Types.TypeSchemes
 
 /-! Strict producer-independent sidecars. A document carries its own type table,
 which its labels index; the primitives are its first four rows. The external
@@ -235,71 +234,12 @@ def Function.normalized (f : Function) : SourceClaims.Function :=
     f.expressions.map (fun e => (e.pos,e.type.ground)),
     f.entries.map (fun e => (e.start,e.bindings.filterMap fun b => b.current.map (b.name,·))),
     f.expressions.filterMap (fun e => e.current.map (e.pos,·)),
-    -- Stated by the producer for an overloaded closure, and supplied by scheme
-    -- compilation for a quantified one.
+    -- Stated by the producer for an overloaded closure.
     (f.arrows.getD []).map (fun a => (a.pos, a.rows.map (fun row =>
       ⟨row.expressions.map (fun e => (e.pos,e.type.ground)),
        row.entries.map (fun e => (e.start,e.bindings.map (fun b => (b.name,b.type.ground)))),
        row.entries.map (fun e => (e.start,e.bindings.filterMap fun b => b.current.map (b.name,·))),
-       row.expressions.filterMap (fun e => e.current.map (e.pos,·)), none⟩)))⟩
-
-/-! ## Scheme compilation
-
-The one interface between quantified source checking and the ordinary graph
-evidence engine. Introduction is checked first, universally, once per allocated
-closure and independently of how many calls the program makes or at what types.
-Each elimination then validates its own explicit substitution. Only after both
-does this section compile the checked eliminations into ordinary arrows.
-
-The per-arrow body derivations that produces are consequences of the universal
-result, never its justification: a closure that satisfies every observed call
-but cannot produce an arbitrary rigid result fails the gate below, before any
-arrow exists. Replacing this section with a first-class scheme certificate
-changes neither Fragment, SourceClaims, nor the producer's semantic types. -/
-private partial def ofClaim (T : SourceTypes.Table) (role : String) :
-    ClaimType → Except String DirectObligation.Ty
-  | .array e => return .array (← ofClaim T role e)
-  | .param name => pure (.rigid name)
-  | .union ts => do return .mkUnion (← ts.mapM (ofClaim T role))
-  -- A union holding `unknown` is `unknown`: the direct checker's top, as an
-  -- annotation of it is.
-  | .labels A =>
-    if SourceTypes.reachesParameter T A then
-      throw "a type over a binder's parameter row is the graph checker's"
-    else pure (if A.any (fun l => T[l]? == some (.clauses [.top])) then .top else .ground A)
-  | .scheme [] rc ps rest r => do
-    let receiver ← ofClaim T role rc
-    let params ← ps.mapM (ofClaim T role)
-    let result ← ofClaim T role r
-    match rest with
-    | none => return .arrow receiver params result
-    | some e => return .variadic receiver params (← ofClaim T role e) result
-  | .scheme .. => throw s!"a nested scheme is outside {role}"
-  | .unavailable reason => throw reason
-
-/-- The sidecar's claims as direct types, decoded once for the rigid checker.
-A generic declaration's claims must all be direct. A function holding a
-quantified closure also claims that closure's scheme at its sites; those are
-the scheme compiler's concern, not the body checker's, and are left out when
-`withinScheme` — the checker never looks a quantified scheme up. -/
-private def Function.directClaims (c : Function) (T : SourceTypes.Table)
-    (withinScheme : Bool := false) : Except String GenericSource.Claims := do
-  if c.entries.any (fun e => e.bindings.any (fun b => b.current.isSome)) ||
-      c.expressions.any (fun e => e.current.isSome) then
-    throw "generic claims cannot assert current contents"
-  let quantified : ClaimType → Bool
-    | .scheme (_ :: _) _ _ _ _ => true
-    | _ => false
-  let ty := ofClaim T "a rigid claim"
-  let keep (t : ClaimType) : Bool := !(withinScheme && quantified t)
-  return ⟨c.name, c.namePos,
-    ← (c.params.filter (keep ·.type)).mapM (fun b => do return (b.name, ← ty b.type)),
-    ← (if keep c.result then ty c.result else pure (.ground [])),
-    -- `this` is a claimed binding of every function and no source name.
-    ← c.entries.mapM (fun e => do return (e.start,
-      ← (e.bindings.filter fun b => b.name != "this" && keep b.type).mapM
-        (fun b => do return (b.name, ← ty b.type)))),
-    ← (c.expressions.filter (keep ·.type)).mapM (fun e => do return (e.pos, ← ty e.type))⟩
+       row.expressions.filterMap (fun e => e.current.map (e.pos,·))⟩)))⟩
 
 private def claimHasScheme : ClaimType → Bool
   | .scheme .. => true
@@ -310,30 +250,18 @@ private def Function.hasScheme (f : Function) : Bool :=
     f.entries.any (fun e => e.bindings.any (claimHasScheme ·.type)) ||
     f.expressions.any (claimHasScheme ·.type)
 
-/-- Direct rigid/scheme checks do not pretend to be ordinary graph sequents,
-but their failures use the same mandatory located diagnostic channel. The
-viewer consumes this record structurally and derives all prose from it. -/
+/-- A generic module value's instance checks (`moduleInstances`) are not
+ordinary graph sequents, but their failures use the same mandatory located
+diagnostic channel. The viewer consumes this record structurally and derives
+all prose from it. A type argument outside its binder's bound belongs to the
+scheme the call eliminates, and says so. -/
 private def directFailure (T : SourceTypes.Table) (failure : DirectObligation.Located) : String :=
-  -- A substituted bound at a call is a subtyping judgment like a generic one,
-  -- but it belongs to the scheme it eliminates, and says so.
-  let system := if failure.role == .schemeElimination then "scheme" else failure.judgment.system
-  let words : DirectObligation.SourceRole → Option String
-    | .entryClaim => some "entry claim" | .expressionClaim => some "expression claim"
-    | .returnContract => some "return contract" | .bindingAnnotation => some "binding annotation"
-    | .storageWrite => some "captured storage write"
-    | .callArgument => some "call argument"
-    | _ => none
-  let message := if failure.role == .schemeElimination
-    then s!"quantified call does not satisfy the closure's bound: cannot establish {failure.judgment.render T}"
-    else match words failure.role with
-      | some role => s!"generic {role} at [{failure.pos.1},{failure.pos.2}): cannot establish {failure.judgment.render T}"
-      | none => failure.judgment.message T
-  let context := failure.judgment.context.map fun binding => binding.name
+  let message :=
+    s!"quantified call does not satisfy the closure's bound: cannot establish {failure.judgment.render T}"
   RequestJson.withDiagnostic s!"source direct obligation at [{failure.pos.1},{failure.pos.2}): {message}"
     [("kind",toJson "direct-obligation"),("phase",toJson "request-validation"),
-     ("outcome",toJson "not-established"),("id",toJson s!"{system}:{failure.pos.1}"),
-     ("sourceMap",toJson (SourceMapEntry.mk failure.pos failure.role.wire none
-       (context.map fun name => (Descriptor.mk name none)))),
+     ("outcome",toJson "not-established"),("id",toJson s!"scheme:{failure.pos.1}"),
+     ("sourceMap",toJson (SourceMapEntry.mk failure.pos failure.role.wire none [])),
      ("judgment",failure.judgment.toJson),
      ("fuel",toJson 0),("types",toJson T)]
 
@@ -346,24 +274,6 @@ private def sourceRefusal (T : SourceTypes.Table) (pos : Span)
      ("reason",toJson reason),("fuel",toJson 0),("types",toJson T)]
 
 namespace Scheme
-
-/-- A direct type in the claim language: the wire form of what the checker
-established. Top is the table's `unknown` row. -/
-private partial def claimOfTy : DirectObligation.Ty → SourceTypes.Lowering ClaimType
-  | .variadic rc ps e r => do
-    return .scheme [] (← claimOfTy rc) (← ps.mapM claimOfTy) (some (← claimOfTy e)) (← claimOfTy r)
-  | .array e => do return .array (← claimOfTy e)
-  | .rigid name => pure (.param name)
-  | .ground A => pure (.labels A)
-  | .top => do return .labels [← SourceTypes.use .top]
-  | .arrow rc ps r => do
-    return .scheme [] (← claimOfTy rc) (← ps.mapM claimOfTy) none (← claimOfTy r)
-  | .union ms => do return .union (← ms.mapM claimOfTy)
-
-/-- A quantified closure's annotation, in the claim language, by the one
-converter every annotation takes. -/
-private def claimOfType (names : List String) (j : Json) : SourceTypes.Lowering ClaimType := do
-  claimOfTy (← GenericSource.annotationTy names j)
 
 /-- Ground a claim, interning any callable it contains. Only after substitution
 does a rigid arrow such as `() => T` have a graph row. -/
@@ -421,111 +331,6 @@ private partial def subst (σ : List (String × ClaimType)) : ClaimType → Clai
         (rest.map (subst inner)) (subst inner r)
   | c => c
 
-/-- The wire presentation of a semantic scheme. `TypeSchemes.identityScheme` is
-the one scheme with a universal allocation theorem (`identity_scheme_safe`);
-the checker below is general and does not special-case it, so this keeps that
-theorem's scheme recognisable in the claim language and makes a drift on either
-side visible. It is a correspondence, not a proof that the checker implements
-the rule. -/
-private def ofScheme (names : List String) (s : TypeSchemes.Scheme Nat) :
-    Option ClaimType := do
-  let binder (i : Nat) : Option String := names[i-1]?
-  let rigid (p : List Nat) : Option ClaimType := do
-    let [i] := p | none
-    return .param (← binder i)
-  let [(rc, ps, r)] := s.signatures | none
-  guard (s.variadic.isEmpty && s.bounds.isEmpty && s.binders == (List.range names.length).map (· + 1))
-  return .scheme (names.map (·, none)) (.labels rc) (← ps.mapM rigid) none (← rigid r)
-
-#guard ofScheme ["T"] TypeSchemes.identityScheme
-  == some (.scheme [("T", none)] (.labels [2]) [.param "T"] none (.param "T"))
-
-private structure Closure where
-  span : Span
-  binding : String
-  /-- Declared in order; a bound names an earlier binder or `boolean`. -/
-  parameters : List DirectObligation.Parameter
-  /-- The source parameter and result annotations, as written. -/
-  sourceParams : List (String × Json)
-  /-- Initialization is part of the source closure, never discard it while
-  selecting the universal certificate path. -/
-  defaults : List (Nat × Fragment.Expr)
-  rest : Option ClaimType
-  sourceResult : Json
-  /-- An ordinary function's receiver annotation; none for an arrow. -/
-  sourceReceiver : Option Json
-  /-- The receiver the claim states: the annotation, or top for an arrow, which
-  never reads it. -/
-  receiver : ClaimType
-  params : List ClaimType
-  result : ClaimType
-  body : Fragment.Expr
-  declStart : Nat
-
-/-- One quantified closure per function in this slice. The declared signature
-must name the closure's own binders. A bound names an earlier binder or
-`boolean`, exactly as for generic declarations. -/
-private def find (f : Fragment.Fn) : SourceTypes.Lowering (Option Closure) := do
-  let mut found : Option Closure := none
-  for s in f.body do
-    if let .constants pos bs := s then
-      for b in bs do
-        if let .lambda lpos receiverAnnot tps ps defaults rest ret body := b.init then
-          if !tps.isEmpty then
-            if found.isSome then
-              throw "this slice checks one quantified closure per function"
-            let names := tps.map (·.name)
-            if names.eraseDups.length != names.length then throw "duplicate closure binder"
-            let parameters ← GenericSource.parametersOf (← get) tps
-            let params : List ClaimType ← ps.zipIdx.mapM fun (q,i) => do
-              let t ← claimOfType names q.2
-              if (defaults.lookup i).isNone then pure t
-              else match t with
-                | .labels A => pure (.labels ((A ++ [3]).eraseDups |>.mergeSort (· ≤ ·)))
-                | _ => pure (.union [t, .labels [3]])
-            let (params, element) ← if rest then
-              match params.reverse with
-              | .array e :: fixed => pure (fixed.reverse, some e)
-              | _ => throw "a quantified rest requires a mutable array contract"
-              else pure (params, none)
-            -- A quantified closure is checked universally against the
-            -- signature it states, so it states its result.
-            let some ret := ret | throw "a quantified closure needs its result annotation"
-            let r ← claimOfType names ret
-            let receiver ← match receiverAnnot with
-              | some annot => claimOfType names annot
-              | none => claimOfTy .top
-            found := some ⟨lpos, b.name, parameters, ps, defaults, element, ret, receiverAnnot,
-              receiver, params, r, body, pos.1⟩
-  return found
-
-/-- Introduction. The gate every accepted scheme passes, whatever its calls:
-the quantified closure is checked as a closure under its own binders, in the
-scope its declaration sees, by the same checker as a generic declaration. The
-enclosing function's cells are the only names it may assign; each keeps its
-fixed contract at every instantiation. Returns the table, grown by any ground
-annotation met on the way. -/
-private def introduce (T : SourceTypes.Table) (f : Fragment.Fn) (c : Closure) (claims : Function) :
-    Except DirectObligation.Failure (SourceTypes.Table × Option GenericCertificate.ClosureCertificate) := do
-  let refuse := DirectObligation.Failure.refusal c.span .schemeIntroduction
-  let some entry := claims.entries.find? (·.start == c.declStart)
-    | throw (refuse "quantified closure declaration has no entry claim")
-  -- Captures keep the types they already have; no instantiation may retype them.
-  let outer ← entry.bindings.mapM fun b => do
-    return (b.name, ← (ofClaim T "a quantified closure's captured scope" b.type).mapError refuse)
-  let direct ← (claims.directClaims T (withinScheme := true)).mapError refuse
-  let storage := f.body.flatMap fun
-    | .mutables _ bs => bs
-    | _ => []
-  let cells := storage.map (·.name)
-  let ctx : GenericSource.Ctx := ⟨c.parameters, direct, cells⟩
-  let (_, T) ← (GenericSource.parameterDefaults ctx outer c.span c.sourceParams c.defaults).run T
-  let (_, T) ← (GenericSource.closureTy ctx outer c.span c.sourceParams c.sourceResult c.body
-    c.sourceReceiver).run T
-  let (certificate, T) ← (GenericSource.closureCertificate ctx outer storage c.span
-    c.sourceParams c.sourceResult c.body c.defaults c.rest.isSome c.sourceReceiver).run T
-  return (T, certificate)
-
 /-- Explicit type arguments are a requirement on a call's instance: the call
 is typed at the instance they state, binder by binder in declaration order,
 even where another would fit. `σ` is the claimed instance, ground. -/
@@ -543,116 +348,6 @@ def explicitInstance (T : SourceTypes.Table) (pos : Span) (binders : List String
     unless sameMeaning T stated claimed do
       throw (refuse "the call's instance is not the one its explicit type arguments state")
   return T
-
-/-- Elimination, then compilation. Each call validates its own substitution;
-the arrows are derived from the scheme signature by that substitution, so a
-forged instantiation can only name another genuine instance of a scheme that
-has already passed the universal gate. -/
-private def compile (T : SourceTypes.Table) (f : Fragment.Fn) (claims : Function) :
-    Except DirectObligation.Failure (SourceTypes.Table × Function ×
-      List (Span × List SourceClaims.Overlay)) := do
-  let refuse (pos : Span) (reason : String) : DirectObligation.Failure :=
-    .refusal pos .schemeElimination reason
-  let (c, T) ← match (find f).run T with
-    | .ok (some c, T) => pure (c, T)
-    | .ok (none, _) => throw (refuse f.namePos "a scheme claim has no quantified closure in its source")
-    | .error reason => throw (refuse f.namePos reason)
-  let parameters := c.parameters
-  let names := parameters.map (·.name)
-  let lowered : SourceTypes.Lowering (List (String × Option ClaimType)) :=
-    parameters.mapM fun (q : DirectObligation.Parameter) => do
-      return (q.name, ← q.upper.mapM claimOfTy)
-  let (binders, T) ← match lowered.run T with
-    | .ok r => pure r
-    | .error reason => throw (refuse c.span reason)
-  let sites := claims.expressions.filterMap fun e => e.instantiate.map ((e.pos, ·))
-  if sites.isEmpty then throw (refuse c.span "a quantified closure has no checked instantiation")
-  let subs ← sites.mapM fun (pos, inst) => do
-    let given := inst.map (·.name)
-    if given.eraseDups.length != given.length then
-      throw (refuse pos "duplicate type argument")
-    if given.length != names.length || given.any (!names.contains ·) then
-      throw (refuse pos "type arguments do not instantiate exactly the closure's binders")
-    for i in inst do
-      let _ ← (groundOf s!"the type argument for '{i.name}'" i.type).mapError (refuse pos)
-    let σ := inst.map fun i => (i.name, i.type)
-    -- Elimination proves every substituted bound. The obligation is located at
-    -- the call, under the closure's declared parameters, so a reversed bound
-    -- is shown as the inclusion that failed rather than refused by name.
-    for (name, bound) in binders do
-      if let some upper := bound then
-        let some argument := σ.lookup name | throw (refuse pos s!"no type argument for '{name}'")
-        let actual ← (groundOf s!"the type argument for '{name}'" argument).mapError (refuse pos)
-        let required ← (groundOf s!"the bound of '{name}'" (subst σ upper)).mapError (refuse pos)
-        -- By the graph's certified subtyping, as a module value's bound.
-        unless within T actual required do
-          throw (.obligation ⟨pos, .schemeElimination,
-            .subtyping parameters [] (.expression pos) (.ground actual) (.ground required)⟩)
-    pure σ
-  -- Explicit type arguments on a call of the closure state its instance.
-  let calls := f.body.flatMap Fragment.Stmt.callees
-  let T ← (sites.zip subs).foldlM (fun T ((pos, _), σ) => do
-    let written := ((calls.find? (·.1 == pos)).map (·.2.2.2)).getD []
-    let ground ← σ.mapM fun (n, t) => do
-      return (n, ← (groundOf s!"the type argument for '{n}'" t).mapError (refuse pos))
-    explicitInstance T pos names written ground) T
-  let σs := subs.foldl (fun acc σ => if acc.contains σ then acc else acc ++ [σ]) []
-  let (T, arrows, variadic) ← σs.foldlM (fun (T, acc, rest) σ => do
-    let (T, rc) ← (groundIn T (subst σ c.receiver)).mapError (refuse c.span)
-    let (T, ps) ← c.params.foldlM (fun (T, ps) q => do
-      let (T, p) ← (groundIn T (subst σ q)).mapError (refuse c.span)
-      pure (T, ps ++ [p])) (T, [])
-    let (T, r) ← (groundIn T (subst σ c.result)).mapError (refuse c.span)
-    match c.rest with
-    | none => pure (T, acc ++ [(rc, ps, r)], rest)
-    | some e => do
-      let (T, E) ← (groundIn T (subst σ e)).mapError (refuse c.span)
-      let pack := PositiveNormalization.Clause.pack ⟨[], [], some E, false⟩ []
-      let T := SourceTypes.intern T pack
-      pure (T, acc, rest ++ [(rc, ps, [SourceTypes.label T pack], r)])) (T, [], [])
-  let clause : PositiveNormalization.Clause (List Nat) := .arrs arrows variadic
-  let T := SourceTypes.intern T clause
-  let arrow := SourceTypes.label T clause
-  let expected : ClaimType := .scheme binders c.receiver c.params c.rest c.result
-  let inside (p : Span) : Bool := c.span.1 ≤ p.1 && p.2 ≤ c.span.2
-  let retype (pos : Span) (t : ClaimType) : Except DirectObligation.Failure ClaimType :=
-    match t with
-    | .scheme [] _ _ _ _ =>
-      if inside pos then pure t
-      else throw (refuse pos "a callable over a rigid parameter escapes its closure")
-    | .scheme .. =>
-      if t == expected then pure (.labels [arrow])
-      else throw (refuse pos "quantified claim differs from its source scheme")
-    | .param n =>
-      if inside pos then pure t
-      else throw (refuse pos s!"rigid parameter '{n}' escapes its closure")
-    | _ => pure t
-  let claims := { claims with
-    result := ← retype claims.namePos claims.result
-    params := ← claims.params.mapM fun b => do
-      return { b with type := ← retype claims.namePos b.type }
-    entries := ← claims.entries.mapM fun e => do
-      return { e with bindings := ← e.bindings.mapM fun b => do
-        return { b with type := ← retype (e.start, e.start + 1) b.type } }
-    expressions := ← claims.expressions.mapM fun e => do
-      return { e with type := ← retype e.pos e.type } }
-  -- One source span, one type per instantiation: the interior claims are
-  -- substituted rather than re-cast, which is what no single claim can do.
-  let interior := claims.expressions.filter fun e => inside e.pos && e.pos != c.span
-  let init : SourceTypes.Table × List SourceClaims.Overlay := (T, [])
-  let (T, overlays) ← σs.foldlM (fun (T, acc) σ => do
-    let (T, overlay) ← interior.foldlM (fun (T, overlay) e => do
-      match groundIn T (subst σ e.type) with
-      | .ok (T, A) => pure (T, overlay ++ [(e.pos, (.ok A : SourceClaims.Candidate))])
-      | .error reason => pure (T, overlay ++ [(e.pos, (.error reason : SourceClaims.Candidate))])) (T, [])
-    let (original, T) ← match (c.sourceParams.mapM fun q => claimOfType names q.2).run T with
-      | .ok (ps, T) => pure (ps, T)
-      | .error reason => throw (refuse c.span reason)
-    let (T, initialized) ← original.foldlM (fun (T, acc) q => do
-      let (T, A) ← (groundIn T (subst σ q)).mapError (refuse c.span)
-      pure (T, acc ++ [A])) (T, [])
-    pure (T, acc ++ [({ exprs := overlay, initializedParams := some initialized } : SourceClaims.Overlay)])) init
-  return (T, claims, [(c.span, overlays)])
 
 /-- A generic module value reached from a unit (a generic module function,
 or a generic imported one): the unit's calls name its instances. Each call's
@@ -706,7 +401,7 @@ def moduleInstances (T : SourceTypes.Table) (g : DeclarationGraph.Instantiable)
           | none => false
         unless proved do
           throw (.obligation ⟨pos, .schemeElimination,
-            .subtyping [] [] (.expression pos) (.ground actual) (.ground required)⟩, T)
+            .subtyping pos actual required⟩, T)
     let some atom := (callable.getObjVal? "atoms").toOption.bind (fun a => (a.getArr?.toOption.bind (·[0]?)))
       | throw (refuse pos s!"'{g.name}' is not one callable")
     instances := instances ++ [atom]
@@ -736,13 +431,10 @@ binders as those rows; and a call of a scheme-typed local is claimed at the
 instance the call names, which the checker relates to the scheme by a checked
 instance (`Sub.inst`). -/
 
-/-- A generic closure of a unit's source: its span, its binders, and whether
-it is graph code at a scheme row: no bound naming another of its binders (a
-scheme row's bounds are read outside its binders). -/
+/-- A generic closure of a unit's source: its span and its binders. -/
 structure GenericClosure where
   span : Span
   binders : List Fragment.TypeParam
-  plain : Bool
 
 /-- The generic closures a source tree creates, outer before inner. -/
 partial def genericClosures : Json → List GenericClosure
@@ -756,13 +448,7 @@ partial def genericClosures : Json → List GenericClosure
         | some pos, some tps =>
           if tps.isEmpty then [] else
           match tps.toList.mapM Fragment.decodeTypeParam with
-          | .ok binders =>
-            let names := binders.map (·.name)
-            -- A bound naming a binder of the same closure is read at the
-            -- instantiation, which a scheme row's bounds are not.
-            let dependent := binders.any fun b =>
-              (b.bound.map SourceTypes.binderNames).getD [] |>.any names.contains
-            [⟨pos, binders, !dependent⟩]
+          | .ok binders => [⟨pos, binders⟩]
           | .error _ => []
         | _, _ => []
       else []
@@ -779,6 +465,17 @@ private def internS (c : PositiveNormalization.Clause (List Nat)) : SchemeM Nat 
   modifyGet fun (T, reg) =>
     let T := SourceTypes.intern T c
     (SourceTypes.label T c, (T, reg))
+
+/-- A parameter row `l` with a bound of rows `B`: the meet of the two when `B`
+is of clause rows, the row itself otherwise. -/
+private def boundedRow (l : Nat) (B : List Nat) : SchemeM Nat := do
+  let (T, reg) ← get
+  let G := SourceTypes.graph T
+  if B.isEmpty || !G.plainTy B then return l
+  let m := RequestJson.Row.meet l (B.flatMap G)
+  match T.idxOf? m with
+  | some i => return i
+  | none => set (T ++ [m], reg); return T.length
 
 mutual
 /-- A claim, its binders already rows, in ground form: a scheme with binders
@@ -808,30 +505,61 @@ private partial def groundT : ClaimType → SchemeM (List Nat)
   | .param name => throw s!"the rigid parameter '{name}' is not in scope"
   | .unavailable reason => throw reason
 
+/-- Whether a claim names one of `names` as a binder. -/
+private partial def mentions (names : List String) : ClaimType → Bool
+  | .param n => names.contains n
+  | .union ts => ts.any (mentions names)
+  | .array e => mentions names e
+  | .scheme tps rc ps rest r =>
+    let names := names.filter fun n => !(tps.map Prod.fst).contains n
+    tps.any (fun q => q.2.any (mentions names)) || mentions names rc || ps.any (mentions names) ||
+      rest.any (mentions names) || mentions names r
+  | _ => false
+
 /-- The row of a scheme with binders: its binders fresh value parameter rows,
-its signature over them, its bounds read outside it. A binder with a bound of
-clause rows is read, in the signature and inside the closure, as the meet of
-its row and its bound, as a generic unit's is (`binderRows`): at every
-instantiation within the bound the meet is the binder, and elsewhere the
-scheme promises nothing. Returns the row and what each binder is read as. -/
+its signature over them. A binder with a bound of clause rows is read, in the
+signature and inside the closure, as the meet of its row and its bound, as a
+generic unit's is (`binderRows`): at every instantiation within the bound the
+meet is the binder, and elsewhere the scheme promises nothing. Such a bound is
+read outside the binders and is the scheme's bound too. A binder bounded by an
+earlier one of the same scheme, `U extends T`, is the meet of the two
+parameter rows, within `T`'s clauses if it has any (`dependentMeet`), as a
+generic unit's is: its bound reads a binder, which the scheme's bounds do not,
+so the meet alone states it. Returns the row and what each binder is read as. -/
 private partial def schemeRowOf (t : ClaimType) : SchemeM (Nat × List (String × Nat)) := do
   if let some (_, l, rows) := (← get).2.find? (·.1 == t) then return (l, rows)
   let .scheme tps rc ps rest r := t | throw "not a scheme"
-  let bounds ← tps.mapM fun (_, b) => b.mapM groundT
+  let names := tps.map Prod.fst
   let (T, reg) ← get
   let params := tps.zipIdx.map fun ((n, _), i) => (n, T.length + i)
   set (T ++ params.map (fun (n, l) => RequestJson.Row.param l n .value), reg)
-  let rows ← (params.zip bounds).mapM fun ((n, l), b) => do
+  let meetRow (m : RequestJson.Row) : SchemeM Nat := do
     let (T, reg) ← get
-    let G := SourceTypes.graph T
+    match T.idxOf? m with
+    | some i => return i
+    | none => set (T ++ [m], reg); return T.length
+  let mut rows : List (String × Nat) := []
+  let mut bounds : List (Nat × List Nat) := []
+  for ((n, l), (_, b)) in params.zip tps do
     match b with
-    | some B =>
-      if B.isEmpty || !G.plainTy B then return (n, l)
-      let m := RequestJson.Row.meet l (B.flatMap G)
-      match T.idxOf? m with
-      | some i => return (n, i)
-      | none => set (T ++ [m], reg); return (n, T.length)
-    | none => return (n, l)
+    | none => rows := rows ++ [(n, l)]
+    | some (.param m) =>
+      if !names.contains m then
+        let B ← groundT (.param m)
+        rows := rows ++ [(n, ← boundedRow l B)]
+        bounds := bounds ++ [(l, B)]
+      else match rows.lookup m with
+        | some r =>
+          match SourceTypes.dependentMeet (← get).1 l r with
+          | some m => rows := rows ++ [(n, ← meetRow m)]
+          | none => rows := rows ++ [(n, l)]
+        | none => throw "a type-parameter bound must name an earlier parameter"
+    | some bound =>
+      if mentions names bound then
+        throw "a type-parameter bound is a ground type or an earlier type parameter"
+      let B ← groundT bound
+      rows := rows ++ [(n, ← boundedRow l B)]
+      bounds := bounds ++ [(l, B)]
   let σ := rows.map fun (n, l) => (n, ClaimType.labels [l])
   let rc ← groundT (subst σ rc)
   let ps ← ps.mapM fun q => groundT (subst σ q)
@@ -842,7 +570,7 @@ private partial def schemeRowOf (t : ClaimType) : SchemeM (Nat × List (String �
       let E ← groundT (subst σ e)
       let pack ← internS (.pack ⟨[], [], some E, false⟩ [])
       pure ([], [(rc, ps, [pack], r)])
-  let boundRows := (params.zip bounds).filterMap fun ((_, l), b) => b.map (l, ·)
+  let boundRows := bounds
   let (T, reg) ← get
   let label := T.length
   set (T ++ [RequestJson.Row.scheme (params.map Prod.snd) sigs boundRows rests],
@@ -903,29 +631,37 @@ def closureRows (T : SourceTypes.Table) (outer : List (String × Nat))
           given.any (fun n => !(tps.map Prod.fst).contains n) then
         throw "type arguments do not instantiate exactly the scheme's binders"
       let σp := asClaims (scopeAt scopes outer p)
-      -- A bounded binder is read as the meet of its row and its bound, so
-      -- its instance is the meet of the type argument and the bound: the
-      -- clause row an instance table maps the meet row to (`meetOk`).
-      let σi ← inst.mapM fun i => do
-        let U := subst σp i.type
-        let some (_, some bound) := tps.find? (·.1 == i.name) | pure (i.name, U)
+      -- A bounded binder is read as a meet row, so its instance is the meet
+      -- of the type arguments of the row's parameters with the row's
+      -- clauses: the clause row an instance table maps the meet row to
+      -- (`meetOk`), in the order it reads them.
+      let args := inst.map fun i => (i.name, subst σp i.type)
+      let (sl, rows) ← schemeRowOf (.scheme tps rc ps rest r)
+      let binders := match (← get).1[sl]? with
+        | some (.scheme bs ..) => bs
+        | _ => []
+      let nameOf := binders.zip (tps.map Prod.fst)
+      let σi ← args.mapM fun (n, U) => do
+        let some l := rows.lookup n | pure (n, U)
+        let some (.meet b cs also) := (← get).1[l]? | pure (n, U)
         let st ← get
         let meet : SchemeM (Option Nat) := do
-          let A ← groundT U
-          let B ← groundT (subst σp bound)
+          let Us ← (b :: also).mapM fun q => do
+            let some m := nameOf.lookup q | throw "a meet row's parameter is no binder of its scheme"
+            let some A := args.lookup m | throw s!"no type argument for '{m}'"
+            groundT A
           let (T, reg) ← get
           let G := SourceTypes.graph T
-          if !G.plainTy A || !G.plainTy B then return none
-          let cs := PositiveNormalization.meetLists (PositiveRules.clausesOf G A)
-            (PositiveRules.clausesOf G B)
+          if !Us.all G.plainTy then return none
+          let cs := PositiveRules.meetMany (Us.map (PositiveRules.clausesOf G) ++ [cs])
           if cs.isEmpty then return none
           let row := RequestJson.Row.clauses cs
           match T.idxOf? row with
           | some l => return some l
           | none => set (T ++ [row], reg); return some T.length
         match meet.run st with
-        | .ok (some l, st) => set st; pure (i.name, .labels [l])
-        | _ => pure (i.name, U)
+        | .ok (some l, st) => set st; pure (n, .labels [l])
+        | _ => pure (n, U)
       instances := instances ++ [(q, .scheme [] (subst σi rc) (ps.map (subst σi))
         (rest.map (subst σi)) (subst σi r))]
       named := named ++ [p]
@@ -1170,71 +906,32 @@ def functionSites (f : Fragment.Fn) : List Nat × List Span :=
   let sites := allFunctionSites f
   (sites.1, sites.2.1)
 
+/-- A unit's plan: its graph request. Every unit is one, a generic unit and a
+generic closure included, their binders parameter rows the graph checks at
+every assignment. -/
 inductive FunctionPlan where
   | graph (name : String) (namePos : Span) (request : SourceRequest)
-  | scheme (name : String) (namePos : Span) (request : SourceRequest)
-      (types : SourceTypes.Table) (certificate : Option GenericCertificate.ClosureCertificate)
 
 /-- A plan admitted by the top-level verified outcome. Graph evidence is
-consumed separately. A scheme plan stores the successful check of its
-universal-invocation certificate. Adding a source-plan variant cannot silently
-enter this exhaustive boundary through a projection. -/
+consumed separately. Adding a source-plan variant cannot silently enter this
+exhaustive boundary through a projection. -/
 inductive CertifiedPlan where
   | graph (name : String) (namePos : Span) (request : SourceRequest)
-  | scheme (name : String) (namePos : Span) (request : SourceRequest)
-      (types : SourceTypes.Table) (certificate : GenericCertificate.ClosureCertificate)
-      (term : Tm) (checked : certificate.check = some term)
-      (primitives : GenericCertificate.Primitives (SourceTypes.graph types))
 
 def CertifiedPlan.requests : List CertifiedPlan → List SourceRequest
   | [] => []
   | .graph _ _ request :: rest => request :: CertifiedPlan.requests rest
-  | .scheme _ _ request .. :: rest => request :: CertifiedPlan.requests rest
-
-/-- Semantic obligations beyond the graph execution, by plan variant. Keep this
-match exhaustive so extending the accepted language also requires deciding its
-universal guarantee in the headline theorem. Graph plans need no extra premise. -/
-def CertifiedPlan.UniversalSafety : CertifiedPlan → Prop
-  | .graph .. => True
-  | .scheme _ _ _ types certificate .. => certificate.Safe (SourceTypes.graph types)
 
 /-- Graph projection for search and inspection. This is intentionally not the
-acceptance boundary: a scheme has useful ground graph evidence while its
-universal certificate is still missing. -/
+acceptance boundary. -/
 def FunctionPlan.requests : List FunctionPlan → List SourceRequest
   | [] => []
   | .graph _ _ request :: rest => request :: FunctionPlan.requests rest
-  | .scheme _ _ request .. :: rest => request :: FunctionPlan.requests rest
 
-/-- The table's first four rows are the primitives. Every decoded table has
-them; a certificate's literal types name them. -/
-def primitiveRows (T : SourceTypes.Table) : Prop :=
-  T[0]? = some (.clauses [.nul]) ∧ T[1]? = some (.clauses [.boolLit true]) ∧
-    T[2]? = some (.clauses [.boolLit false]) ∧ T[3]? = some (.clauses [.undef])
-
-instance (T : SourceTypes.Table) : Decidable (primitiveRows T) := by
-  unfold primitiveRows; infer_instance
-
-theorem primitives_of_rows {T : SourceTypes.Table} (h : primitiveRows T) :
-    GenericCertificate.Primitives (SourceTypes.graph T) := by
-  obtain ⟨h0, h1, h2, h3⟩ := h
-  exact ⟨by simp [SourceTypes.graph, h0], by simp [SourceTypes.graph, h1],
-    by simp [SourceTypes.graph, h2], by simp [SourceTypes.graph, h3]⟩
-
-/-- The sole conversion into the verified-plan type. Missing semantic
-certificates are ordinary located source limitations. Exhaustive matching makes
+/-- The sole conversion into the verified-plan type. Exhaustive matching makes
 a new `FunctionPlan` constructor a compile error here. -/
 def FunctionPlan.certify : FunctionPlan → Except String CertifiedPlan
   | .graph name pos request => pure (.graph name pos request)
-  | .scheme _ pos _ types none => throw (sourceRefusal types pos .schemeIntroduction
-      "quantified callable has no universal semantic certificate")
-  | .scheme name pos request types (some certificate) => match h : certificate.check with
-      | some term =>
-        if hp : primitiveRows types then
-          pure (.scheme name pos request types certificate term h (primitives_of_rows hp))
-        else throw (sourceRefusal types pos .schemeIntroduction "type table lacks the primitive rows")
-      | none => throw (sourceRefusal types pos .schemeIntroduction
-          "quantified callable semantic certificate is invalid")
 
 def certifyPlans (plans : List FunctionPlan) : Except String (List CertifiedPlan) :=
   plans.mapM FunctionPlan.certify
@@ -1488,8 +1185,8 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
           throw "per-arrow claim site is outside its source closure"
     if c.hasScheme && tps.isEmpty && !(c.arrows.getD []).isEmpty then
       throw "per-arrow source claims are for ground closures, not quantified schemes"
-    -- The unit's source tree, and the generic closures it creates: graph
-    -- code at scheme rows when every one of them has plain parameters.
+    -- The unit's source tree, and the generic closures it creates, each
+    -- graph code at its scheme row.
     let unitSource := if initClaims.isSome then
         some (Json.mkObj [("body", (ast.getObjVal? "init").toOption.getD (.arr #[]))])
       else functionJsons.find? fun j =>
@@ -1498,7 +1195,7 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
     let closures := match unitSource with
       | some j => Scheme.genericClosures ((j.getObjVal? "body").toOption.getD .null)
       | none => []
-    let graphClosures := !closures.isEmpty && closures.all (·.plain)
+    let graphClosures := !closures.isEmpty
     if !tps.isEmpty then
       -- A generic unit is an ordinary graph request: each binder is read as
       -- its parameter row, a bounded one as its meet with its bound (an
@@ -1569,23 +1266,11 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
                 else if calls.contains e.pos then { e with instantiate := none } else e }
             | .error (.obligation failure, T) => throw (directFailure T failure)
             | .error (.refusal pos role reason, _) => throw (sourceRefusal d.types pos role reason)
+      -- Every generic closure's scheme is a scheme row by now; a scheme claim
+      -- left names no closure of the source.
       if c.hasScheme then
-        let (closure, T) ← match (Scheme.find f).run d.types with
-          | .ok (some closure, T) => pure (closure, T)
-          | .ok (none, _) => throw (sourceRefusal d.types f.namePos .schemeIntroduction
-              "a scheme claim has no quantified closure in its source")
-          | .error reason =>
-            throw (sourceRefusal d.types f.namePos .schemeIntroduction reason)
-        let (T, certificate) ← match Scheme.introduce T f closure c with
-          | .error (.obligation failure) => throw (directFailure d.types failure)
-          | .error (.refusal pos role reason) => throw (sourceRefusal d.types pos role reason)
-          | .ok result => pure result
-        match Scheme.compile T f c with
-        | .ok (T, compiled, overlays) =>
-          return .scheme f.name f.namePos
-            (← extractNormalizedFn T f { compiled.normalized with arrowClaims := overlays } module) T certificate
-        | .error (.obligation failure) => throw (directFailure d.types failure)
-        | .error (.refusal pos role reason) => throw (sourceRefusal d.types pos role reason)
+        throw (sourceRefusal d.types f.namePos .schemeIntroduction
+          "a scheme claim has no quantified closure in its source")
       return .graph f.name f.namePos (← extractNormalizedFn d.types f c.normalized module)
     -- A generic unit's graph extraction reports where it stops as a
     -- located refusal at the function, as the direct checker's do.
@@ -1619,16 +1304,14 @@ def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat)
     let j ← RequestJson.produceJson (toJson r.toRequest) fuel [] known r.sourceMap (some r.searchLabels) r.assertions r.cuts r.codeHints
     decodeResponse r.toRequest j
   let evidence := toJson (Bundle.mk cs es)
-  -- Search may expose the graph consequences of an uncertified scheme. It
-  -- does not turn those consequences into top-level semantic acceptance.
   let b : Bundle ← decodeStrict evidence
   if !checkRequests rs b then
     throw "source evidence does not justify the extracted graph requests"
   return evidence
 
-/-- Every extracted plan crosses the exhaustive certification boundary. Graph
-requests prove the enclosing execution safe; direct generic and scheme plans
-add their universal semantic guarantees, independently of observed calls. -/
+/-- Every extracted plan crosses the exhaustive certification boundary, and its
+graph request proves the enclosing execution safe at every assignment of the
+parameter rows, so a generic unit or closure at every instantiation. -/
 theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
     {only : Option (String × Span)}
     (h : checkJson ast claims fileKey evidence only = .ok ()) :
@@ -1640,8 +1323,7 @@ theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
         ∀ η n W heap ρ, EnvOk (reassign (RequestJson.graph r.toRequest) η) r.inputs ρ n W →
           WorldAdm W → HeapOk n W heap →
           SafeGraph r.program (meaning (reassign (RequestJson.graph r.toRequest) η) r.result)
-            n W heap (.at r.start ρ)) ∧
-      ∀ plan ∈ certified, plan.UniversalSafety := by
+            n W heap (.at r.start ρ)) := by
   unfold checkJson at h
   cases he : extractPlans ast claims fileKey only with
   | error e =>
@@ -1663,14 +1345,9 @@ theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
       | ok b =>
         rw [hb] at h
         by_cases hx : checkRequests (CertifiedPlan.requests certified) b = true
-        · refine ⟨plans,certified,b,rfl,hc,rfl,hx,?_,?_⟩
+        · refine ⟨plans,certified,b,rfl,hc,rfl,hx,?_⟩
           intro r c hm η n W heap ρ he hw hh
           exact checkRequests_safe_at hx hm η n W heap ρ he hw hh
-          intro plan _
-          cases plan with
-          | graph => trivial
-          | scheme _ _ _ _ certificate _ checked primitives =>
-            exact GenericCertificate.ClosureCertificate.check_safe primitives checked
         · simp [hx] at h
 
 #print axioms checkJson_safe

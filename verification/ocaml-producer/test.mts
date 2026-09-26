@@ -1201,9 +1201,11 @@ for (const [name, mutate] of [
   process.stdout.write(`tampered ${name}: refused\n`);
 }
 
-// A substitution is checked against every declared bound before it is
-// compiled. Reversing one call's type arguments keeps them ground and complete,
-// so the domain check passes and only the bound obligation can refuse it.
+// A substitution names an instance of the scheme row, whose binder bounded by
+// another is read as the meet of the two parameter rows, so at the instance as
+// the meet of the two type arguments. Reversing one call's type arguments keeps
+// them ground and complete, so the domain check passes, but the instance they
+// name is not one the call's actuals meet: the evidence no longer justifies it.
 const boundedClaims: SourceClaims = JSON.parse(
   readFileSync(join(bounded, "claims.json"), "utf8"),
 );
@@ -1218,7 +1220,7 @@ const boundedClaims: SourceClaims = JSON.parse(
   const file = join(bounded, "forged-bound.json");
   writeFileSync(file, JSON.stringify(claims));
   const said = invoke(file, join(bounded, "evidence.json"), bounded);
-  assert.match(said, /does not satisfy the closure's bound: cannot establish boolean ≤ true/);
+  assert.match(said, /source evidence does not justify the extracted program/);
   process.stdout.write("tampered substituted bound: refused\n");
 }
 
@@ -1490,11 +1492,10 @@ process.stdout.write("reader collection: imported Json bound verified\n");
 // throws before any obligation exists has refused, not validated, and the
 // reader can point at nothing. Ranging over the inventory is what keeps a new
 // control from escaping this.
-// A generic closure whose bound names another of its binders is the one left
-// on the rigid path, checked by the direct checker; a rest or a default makes
-// none so, its code being checked as graph code.
+// A call of a generic module value at a type argument outside its bound
+// fails a direct judgment, checked before any graph request exists.
 const directControls = new Set([
-  "invalid-bound-body",
+  "invalid-nested-promise-instance",
 ]);
 let testedDirectProtocol = false;
 const controls = cases.filter((c) => c.kind === "negative");
@@ -1521,7 +1522,7 @@ for (const [i, control] of controls.entries()) {
     assert.equal(
       results[0]?.obligation?.kind,
       "direct-obligation",
-      `${control.file}: a direct checker failure needs a structured judgment`,
+      `${control.file}: a direct failure needs a structured judgment`,
     );
     const direct = results[0]?.obligation;
     assert(direct?.kind === "direct-obligation");
@@ -1541,8 +1542,8 @@ for (const [i, control] of controls.entries()) {
       Reflect.set(unknown.judgment, "kind", "future-judgment");
       assert.equal(readDiagnostic(line(unknown)),undefined,"an unhandled judgment variant is refused");
       const unscoped = structuredClone(wire);
-      unscoped.judgment.actual = {kind:"rigid",name:"Undeclared"};
-      assert.equal(readDiagnostic(line(unscoped)),undefined,"an undeclared rigid type is refused");
+      unscoped.judgment.actual = [wire.types.length];
+      assert.equal(readDiagnostic(line(unscoped)),undefined,"a label outside the table is refused");
       const misplaced = structuredClone(wire);
       misplaced.sourceMap.pos = [0,0];
       assert.equal(readDiagnostic(line(misplaced)),undefined,"a judgment cannot borrow another source span");

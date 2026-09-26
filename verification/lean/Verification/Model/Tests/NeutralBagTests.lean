@@ -78,11 +78,7 @@ private def request (callable : Bool) : Request :=
     verifyJson (Lean.toJson (request callable)) response) with
   | .ok _ => true | .error _ => false
 
-/-- The same program with the code as a term, run by the machine. -/
-private def executed (callable : Bool) : Program :=
-  (program callable).set 0 ⟨if callable then .attach (.var 0) .tru else .alloc .tru,.bind 1,none⟩
-
-theorem returns_false (callable : Bool) : Execution (executed callable) 9 []
+theorem returns_false (callable : Bool) : Execution (program callable) 9 []
     (.at 0 (fun _ => .nul)) [.fls] (.done .fls) := by
   cases callable <;>
     repeat first
@@ -113,11 +109,7 @@ private def framedRequest (callable : Bool) : Request :=
     verifyJson (Lean.toJson (framedRequest callable)) response) with
   | .ok _ => true | .error _ => false
 
-/-- The same program with the code as a term, run by the machine. -/
-private def framedExecuted (callable : Bool) : Program :=
-  (framedProgram callable).set 0 ⟨if callable then .attach (.var 0) .tru else .alloc .tru,.bind 1,none⟩
-
-theorem framed_returns_false (callable : Bool) : Execution (framedExecuted callable) 14 []
+theorem framed_returns_false (callable : Bool) : Execution (framedProgram callable) 14 []
     (.at 0 (fun _ => .nul)) [.tru,.fls] (.done .fls) := by
   cases callable <;>
     repeat first

@@ -1,4 +1,4 @@
-import Verification.Model.Types.TypeParams
+import Verification.Model.Programs.ProgramTyping
 
 /-! # Quantified rows in the type graph
 
@@ -32,11 +32,10 @@ instance map, `inst_type`) and `Sub.gen` (generalization: a type reading none
 of a scheme's binders, below its signatures with the binders opaque, is below
 the scheme, `agree_free`).
 
-Without scheme rows or pack binders, the denotation is the parametric semantics
-`denoteP`. The quantifier ranges over every family of closed values. A bound on a binder is
-not part of this row: bounded binders are a separate step. -/
+The quantifier ranges over every family of closed values. A bound on a binder
+is not part of this row: bounded binders are a separate step. -/
 namespace Verification.Model.QuantifiedGraphs
-open PositiveNormalization PositiveGraphs PositiveRules Tower TypeParams ProgramTyping
+open PositiveNormalization PositiveGraphs PositiveRules Tower ProgramTyping
 
 variable {ι : Type}
 
@@ -98,52 +97,7 @@ theorem param_row {G : NormalGraph ι} {η : MixedAssignment ι} {i : ι} (hp : 
   rw [qDenoteWithArgs_unfold]
   simp [qLayerWithArgs, mixedParameters, hp]
 
-/-- The value projection of an assignment, for the rigid semantics. -/
-def valueAssignment (G : NormalGraph ι) (η : MixedAssignment ι) : ι → Fam :=
-  fun p n W v => G.parameterKinds p = some .value ∧ η.1 p n W (.inl v)
-
-private theorem approx_bridge (G : NormalGraph ι) (hq : ∀ i, G.schemes i = none)
-    (hm : ∀ i, G.meets i = none) (hR : G.realm = none)
-    (ha : ∀ i, G.parameterKinds i ≠ some .arguments) (η : MixedAssignment ι) :
-    ∀ k, (fun i => Tower.approx (qLayerWithArgs G (mixedParameters G)) k (η, i)) =
-      Tower.approx (paramLayer G G.params (valueAssignment G η)) k
-  | 0 => rfl
-  | k + 1 => by
-    funext i
-    have ih := approx_bridge G hq hm hR ha η k
-    show qLayerWithArgs G (mixedParameters G)
-        (Tower.approx (qLayerWithArgs G (mixedParameters G)) k) (η, i) =
-      paramLayer G G.params (valueAssignment G η)
-        (Tower.approx (paramLayer G G.params (valueAssignment G η)) k) i
-    rw [← ih]
-    have hargs : ∀ X, graphArguments G η X = plainArguments G X := by
-      intro X
-      funext S n W vs
-      apply propext
-      unfold graphArguments plainArguments
-      refine exists_congr fun l => and_congr Iff.rfl ?_
-      simp only [ha l, ↓reduceIte]
-    unfold qLayerWithArgs paramLayer
-    cases hp : G.params i
-    · simp only [hq i, hm i, Bool.false_eq_true, ite_false, normalLayer, rowSem_none hR]
-      rw [show (mixedParameters G).arguments = graphArguments G from rfl, hargs]
-    · simp [mixedParameters]
-      rfl
-
-/-- **Conservative.** Without scheme rows, meet rows, pack binders or a realm,
-the denotation at an assignment is the parametric semantics at its value
-projection. -/
-theorem qDenote_no_schemes (G : NormalGraph ι) (hq : ∀ i, G.schemes i = none)
-    (hm : ∀ i, G.meets i = none) (hR : G.realm = none)
-    (ha : ∀ i, G.parameterKinds i ≠ some .arguments) (η : MixedAssignment ι) (i : ι) :
-    qDenote G (η, i) = denoteP G G.params (valueAssignment G η) i := by
-  funext n
-  show Tower.approx (qLayerWithArgs G (mixedParameters G)) (n + 1) (η, i) n =
-    Tower.approx (paramLayer G G.params (valueAssignment G η)) (n + 1) i n
-  rw [← approx_bridge G hq hm hR ha η (n + 1)]
-
 #print axioms scheme_elim
 #print axioms scheme_intro
-#print axioms qDenote_no_schemes
 
 end Verification.Model.QuantifiedGraphs

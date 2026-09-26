@@ -753,11 +753,12 @@ export const cases: Case[] = [
     /source expression obligation at \[113,115\): evidence search failed: no derivation of its node-typing claim/,
   ),
   // The bound justifies T ≤ U, never U ≤ T; every observed call could still
-  // agree, so only introduction refuses it.
+  // agree, so only the code, checked once with T read as the meet of the two
+  // parameter rows, refuses it.
   negative(
     "invalid-bound-body",
-    "reversed bound in a scheme body",
-    /does not satisfy its scheme universally: cannot establish U ≤ T/,
+    "reversed bound in a scheme body: `first` at U is not at the meet T ⊓ U the result states",
+    /source expression obligation at \[123,128\): evidence search failed: no derivation of its return-contract claim/,
   ),
   positive("mutable-bindings", "an unannotated `let` stores its initializer's widened type, an assigned parameter is a cell at its annotation, `let x: T;` is read at `T` where every path has assigned it"),
   negative("invalid-inferred-storage", "an unannotated `let` of a boolean is a boolean cell: `null` is not written"),

@@ -533,10 +533,6 @@ mutual
 def checkScope (d : Nat) : Tm → Bool
   | .var i => decide (i < d)
   | .objAt _ .absent => true
-  | .objAt _ (.closure n b _) => checkScope (d+n+1) b
-  | .makeAt (.closure n b _) _ args => checkScope (d+n+1) b && checkScopes d args
-  | .objAt _ (.variadic n b) => checkScope (d+n+2) b
-  | .makeAt (.variadic n b) _ args => checkScope (d+n+2) b && checkScopes d args
   | .objAt _ (.bound t r pre) => checkScope d t && checkScope d r && checkScopes d pre
   | .makeAt (.bound t r pre) _ args =>
       checkScope d t && checkScope d r && checkScopes d pre && checkScopes d args

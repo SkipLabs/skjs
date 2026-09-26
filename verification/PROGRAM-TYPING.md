@@ -202,10 +202,14 @@ The evidence is `Rule.funGraph` at a scheme row: the checker reads the row's
 signatures instead of an arrow clause's (`graphCodesChecked`, `schemeOf`). A
 binder with a bound of clause rows is read, in the signatures and inside the
 closure, as the meet row $p\sqcap B$, as a generic unit's is: at every
-instantiation within the bound the meet is the binder. A call of a binding at
-the scheme row names its instance: the callee is read at the instance's
-signature, below the scheme by a checked instance (`Sub.inst`), a bounded
-binder's meet row mapped to the meet of its type argument with the bound
+instantiation within the bound the meet is the binder. A binder bounded by
+another of the closure's binders, `U extends T`, is read as the meet of the two
+parameter rows, $p_U\sqcap p_T$ within $T$'s clauses if it has any
+(`dependentMeet`): its bound reads a binder, which a scheme row's bounds, read
+outside its binders, cannot, so the meet alone states it. A call of a binding
+at the scheme row names its instance: the callee is read at the instance's
+signature, below the scheme by a checked instance (`Sub.inst`), a meet row
+mapped to the meet of its parameters' type arguments with its clauses
 (`meetOk`).
 
 A call writes a prefix of the positions the selected signature declares:
@@ -3128,27 +3132,7 @@ refused: a class whose constructor calls its parameter's `toString` is not a
 `new (params: Json) => Resource<C>`, as a Json object may own that key at any
 Json (`invalid-sum-sound-binding-constructor.ts`).
 
-### Universal parameter initialization
-
-The direct generic certificate distinguishes value slots, cell identities, and
-raw defaulted argument slots. An argument slot carrying contract `B` denotes
-`⟦B⟧η ∪ undefT`; `B` may contain rigid parameters. It has no ordinary variable
-or cell-read rule. `defaultE i d` is the only rule that consumes it:
-
-```text
-Γ(i) = argument(B)       Δ; Γ ⊢ d : B
-────────────────────────────────────────────────────────────
-Δ; Γ ⊢ if isUndefined(var i) then d else var i : B
-```
-
-`GenericCertificate.Proof.check_safe` proves this for every admissible rigid
-assignment `η`. The undefined branch uses the initializer's proof; the other
-branch has meaning `⟦B⟧η`. This does not assume `undefined ∉ ⟦B⟧η`.
-`ClosureCertificate.inputs` distinguishes ordinary and defaulted inputs, and
-`invocation_of_inputs` connects their denotations to the closure's actual
-argument binding. The universal proof is required even if every observed call
-supplies the argument. A `let` prologue then exposes each initialized value.
-`CertificateJudgments.check_iff_Typed` includes this rule.
+### Parameter initialization order
 
 The source adapter also performs acyclic closure conversion for literal
 closures capturing later parameters. `Fragment.parameterOrder` delays only
@@ -3159,8 +3143,8 @@ immutable parameters and unchanged outer cell identities. This preserves
 sharing and observations up to renaming fresh locations. Cycles and pending
 closure exposure are refused. This source-correspondence argument remains in
 the trusted adapter; it is not claimed as a Lean proof about JavaScript.
-The same schedule drives graph lowering and universal certificate construction.
-No heap location changes its fixed world type.
+The same schedule orders a code's entry nodes, a default's evaluation among
+them. No heap location changes its fixed world type.
 
 ## Reading the source
 
@@ -3412,9 +3396,10 @@ where $\mathsf{meet}$ is `meetLists` of the operands' clauses folded from the
 right ([conjunction](POSITIVE-TYPES.md#conjunction-and-normalization)), and
 any other intersection (a scheme, a union holding a binder) is refused rather
 than an operand being dropped. A meet row is below each of its parameters, so
-it establishes what each does. At an instance $p:=U$ it means
-$\mathsf{meetLists}(G(U),\vec c)$ (`meetOk`), which is exactly what lowering
-the intersection at $U$ gives. A producer names a meet it does not compute by
+it establishes what each does. At an instance $p_1:=U_1,\ldots,p_k:=U_k$ it
+means $\mathsf{meetLists}(G(U_1),\ldots,G(U_k),\vec c)$ (`meetOk`, the meet
+folded left to right, or in the reverse order), which is exactly what lowering
+the intersection at $\vec U$ gives. A producer names a meet it does not compute by
 a reserved row in the claims' `"meets"`, which Lean fills with `meetRow`.
 
 A generic body's bounded binder is read the same way, as the meet of its
@@ -4180,10 +4165,9 @@ semantic proofs `make_rule` and `make_fields_rule`. `isFun` recognizes function 
 
 The implemented semantic slice is in
 [CallableObjects.lean](lean/Verification/Model/Programs/CallableObjects.lean).
-`arrowT` and `arrowsT` admit function objects; `bagT P` describes an object's
-writable cell independently of its call slot; `callableT L P` combines both
-contracts on the same value. `CodeSpec` checks invocation bodies separately
-from object membership. `EnvOk.prepend` extends environments with ordered
+`bagT P` describes an object's writable fields independently of its call code,
+read and written as a record's (`bag_read`, `bag_write`); the call contracts
+(`callsT`, `restsT`) hold of the same value. `EnvOk.prepend` extends environments with ordered
 parameter lists, `frame_envOk` builds the frame graph code is entered with
 from the receiver, the parameters the code takes and the captured values, and
 `graph_invoke` and `graphRest_invoke` derive the native call contract from a
@@ -4610,8 +4594,8 @@ $$
 $$
 
 They are **not** assertions that a writable internal cell has two different
-invariant content types. This is the law `TypeAlgebra.overload_append` already
-proves for `arrowsT`.
+invariant content types. This is the law `TypeAlgebra.calls_append` proves for
+`callsT`.
 
 Consequently, placing the implementation in the heap does not itself damage
 overloads. The difficulty with A — boxing every function as an ordinary
@@ -4639,224 +4623,12 @@ monomorphic arrows this document has so far. It needs a specified
 quantification discipline and rules connecting those richer contracts to the
 existing type fragment.
 
-A first-order slice is in
-[TypeParams.lean](lean/Verification/Model/Types/TypeParams.lean). The
-`HasTy` rules are unchanged. Every constructor has a soundness lemma under a
-rigid assignment `η`, including branches, callables and union split. Branch
-and `typeof` tests require a non-parameter scrutinee. Instantiating and
-applying `id<boolean>(true)` specializes the generic-identity theorem.
-`extends` contributes assumptions to `Δ`; `SubP` is inclusion for every `η`
-that satisfies `Δ`. `T extends boolean` yields `T ≤ boolean`, not `true ≤ T`.
-Source extraction of `id<T>(x: T): T { return x }` is connected, as is
-`type Id<T> = T` / `type Box<T> = { value: T }` via substitution,
-`T extends boolean` as `T ≤ boolean`, and bodies that copy `T` through
-annotated or inferred immutable `const` bindings and extra parameters. Calls to
-generic declarations and other generic declaration bodies are not connected.
-
-A separate executable slice connects local quantified closures to the scheme
-rules below. One closure per containing function is checked under its rigid
-binders and declared bounds. Its certified body may read immutable values or
-captured cells, construct a nested closure, or call a callback. Every observed
-call supplies a complete ground substitution checked as elimination evidence.
-Those instantiations become fixed or variadic signatures for the surrounding graph. Final
-acceptance additionally requires the universal certificate described next;
-per-instance graph derivations cannot replace it.
-
-**Executable rigid-body certificates.**
-[GenericCertificate.lean](lean/Verification/Model/Types/GenericCertificate.lean)
-implements proof constructors over the existing calculus. These extend the
-certificate checker, not the calculus's runtime or semantic typing rules.
-Write $\Delta;\Sigma\vdash p\leadsto e:A$ when a proof $p$ checks, reconstructing
-term $e$ and direct type $A$. $\Delta$ contains rigid parameters and bounds;
-$\Sigma$ describes runtime slots as either $\mathsf{value}(A)$ or
-$\mathsf{cell}(A)$. The latter is a private location with fixed contract $A$,
-not a source-visible value type.
-
-The value and captured-cell rules are:
-
-$$
-\frac{\Sigma_i=\mathsf{value}(A)}
- {\Delta;\Sigma\vdash\mathsf{var}(i)\leadsto\mathsf{var}(i):A}
-\qquad
-\frac{\Sigma_i=\mathsf{cell}(A)}
- {\Delta;\Sigma\vdash\mathsf{read}(i)\leadsto\mathsf{read}(\mathsf{var}(i)):A}.
-$$
-
-There is no ordinary variable rule for a cell slot. The source lowering takes
-its contract from the mutable declaration, never from a point-specific content
-claim. Semantically,
-
-$$
-\llbracket\mathsf{value}(A)\rrbracket_\eta=\llbracket A\rrbracket_\eta,
-\qquad
-\llbracket\mathsf{cell}(A)\rrbracket_\eta=
-\mathsf{bagT}[(\mathsf{valueField},\llbracket A\rrbracket_\eta)].
-$$
-
-Thus `bag_read` reads through the registered location in a satisfying heap;
-it does not preserve a snapshot of its contents or change its world contract.
-
-Nested closure construction and callback invocation have the rules:
-
-$$
-\frac{\Delta;\mathsf{value}(R)::\mathsf{value}(\bar A){+\!+}\Sigma\vdash p\leadsto b:B}
- {\Delta;\Sigma\vdash\mathsf{lambda}(R,\bar A,p)\leadsto
-   \mathsf{make}(\mathsf{closure}(|\bar A|,b),\mathsf{null}):R;\bar A\to B}
-$$
-
-$$
-\frac{\Delta;\Sigma\vdash p_f\leadsto f:\bar A\to B
- \qquad\Delta;\Sigma\vdash\bar p\leadsto\bar e:\bar C
- \qquad\Delta\vdash(\bar A\to B)\le(\bar C\to B)}
- {\Delta;\Sigma\vdash\mathsf{call}(p_f,\bar p)\leadsto
-   \mathsf{call}(f,\bar e):B}.
-$$
-
-The arrow comparison enforces equal arity and contravariant argument
-compatibility. `invocation_of_body` and `make_callable_rule` justify closure
-construction, retaining the outer environment. `call_safe` checks the callee
-and every effectful argument in future worlds before invocation. The existing
-`let_rule` justifies immutable copies; `widen` applies the proved bounded
-subtype relation. No inferred type or producer success flag is a premise.
-
-`Proof.check_safe` proves these constructors safe for every admissible rigid
-assignment satisfying $\Delta$, in every admissible world and satisfying heap.
-For a quantified closure, `ClosureCertificate.check_safe` holds the captured
-environment $\rho$ and world $W$ fixed while quantifying over assignments:
-
-$$
-\forall\eta\models\Delta.\quad
-\mathsf{InvocationSpec}\bigl(|\bar A|,
- [(\llbracket\bar A\rrbracket_\eta,\llbracket B\rrbracket_\eta)],n,W,
- \mathsf{instantiate}(|\bar A|,\rho,b)\bigr).
-$$
-
-This is the universal invocation premise of scheme introduction, independent
-of observed calls. `SourceClaimJson.checkJson_safe` requires it alongside the
-enclosing graph's safety proof through exhaustive `CertifiedPlan` cases.
-
-### Universal rest collection
-
-Direct types include arrays and variadic signatures over rigid parameters:
-
-$$
-\begin{aligned}
-\llbracket\mathsf{Array}(E)\rrbracket_\eta
- &= \mathsf{recT}[(\texttt{[]},
-       \mathsf{listT}(\langle[],[],\mathsf{some}(\llbracket E\rrbracket_\eta),
-                        \mathsf{false}\rangle))],\\
-\llbracket(\bar P;E^*)\Rightarrow R\rrbracket_\eta
- &= \mathsf{restsT}[(\llbracket\bar P\rrbracket_\eta,
-                     \llbracket E\rrbracket_\eta,\llbracket R\rrbracket_\eta)].
-\end{aligned}
-$$
-
-`Array(E)` is an ordinary mutable array contract, not a frozen array or an
-inference variable. The world's store contract is invariant. The direct
-comparison currently requires identical element types; it never derives array
-covariance from an upper bound on `E`.
-
-The allocation premises of rest introduction are proved for arbitrary
-admissible value families, not just ground graph labels: invocation collects
-the store, and the body's first step wraps it (`wrapStore`):
-
-$$
-\frac{\forall a\in\bar a.\;a:\llbracket E\rrbracket_\eta}
- {[\bar a]:\mathsf{Store}(\llbracket E\rrbracket_\eta)}
-\qquad
-\frac{s:\mathsf{Store}(\llbracket E\rrbracket_\eta)}
- {\mathsf{makeAt}\;[\mathsf{store}]\;[s]:\mathsf{Array}(\llbracket E\rrbracket_\eta)}.
-$$
-
-`GenericCertificate.store_collect_safe` and `array_wrap_safe` supply the
-indexed, heap-safe forms.
-Together with a universal body derivation it yields:
-
-$$
-\frac{\forall\eta\models\Delta.\quad
-  \rho:\Gamma_\eta\ ;\ xs:\mathsf{Array}(E_\eta),\bar x:\bar P_\eta
-  \vdash b:R_\eta}
- {\forall\eta\models\Delta.\quad
-  \mathsf{RestSpec}(|\bar P|,\bar P_\eta,E_\eta,R_\eta,n,W,
-    \mathsf{instantiate}(|\bar P|+2,\rho,\mathsf{wrapStore}(b)))}.
-$$
-
-The same captured environment and world occur at every assignment.
-`rest_invocation_of_inputs` proves this step; `ClosureCertificate.check_safe`
-uses it for both generic declarations and local quantified closures.
-`restsT_of_restSpec` then supplies the common behavioral promise. Rest binding
-puts the store in slot zero and the receiver in slot one; fixed inputs and
-captures follow. After the wrap, the checked body sees the array in slot zero
-and the store, which it never reads, in slot one. Parameter defaults retain
-their universal initialization obligations.
-
-A direct call through a variadic callback uses a finite-arity consequence:
-
-$$
-\frac{f:(\bar P;E^*)\Rightarrow R}
- {f:(\bar P\mathbin{+\!+}\underbrace{[E,\ldots,E]}_{m})\Rightarrow R}
- \quad(m\geq0).
-$$
-
-`DirectObligation.variadic_fixed` proves that every actual list admitted by
-this fixed view is admitted by the rest promise, including its licensed
-omissions. The existing widening and call certificate rules then apply.
-The direct subtype decision includes this rule and reflexivity of variadic
-signatures; general variance between distinct variadic direct signatures is
-not yet part of that decision relation. Ground graph subtyping has its own
-broader signature-coverage rules. The decision-completeness theorems below
-cover the extended declarative relation, not all semantic inclusions.
-
-### Decision completeness of the direct checker
-
-Declarative judgments state the direct checkers' contracts by rules, without
-proof terms or fuel. Source checking is a decision procedure; certificate
-completeness states existence of evidence, not a search procedure for it.
-
-`CertificateJudgments.Typed ps Γ t A` types a calculus term over a slot
-environment: primitive literals, variables and cell reads from their slots, subsumption along
-`RigidJudgments.Sub`, immutable `let`, closures, and calls whose arguments
-are each below the callable's parameters. `check_iff_Typed` proves, for
-well-formed parameters,
-
-$$
-\bigl(\exists p.\;\mathsf{check}(\bar P,\Gamma,p) = (t, A)\bigr)
-\quad\Longleftrightarrow\quad
-\bar P;\Gamma \vdash t : A .
-$$
-
-Left to right needs no hypothesis (`Typed_of_check`). The reverse direction
-constructs an accepted certificate from a derivation; `Typed.safe` composes
-that direction with `Proof.check_safe`, so
-every derivation is safe for every admissible assignment satisfying the bounds.
-
-`SourceJudgments.HasTy c env b t` types a lowered source body of a
-quantified closure on the rigid path (one with a rest parameter, a default or
-a bound naming another of its binders; every other generic body is a graph
-request, [Generic-Body](#overloads-polymorphism-and-binding)) — a variable, a
-primitive literal, a write into a captured cell below its contract, a call to
-a callable binding with each argument below its parameter, or a closure
-claimed exactly as annotated with its body below its declared result:
-
-$$
-\frac{\Gamma(\mathit{pos})=(\bar A)\Rightarrow R\quad \bar P;\Gamma,\bar x:\bar A\vdash b:B\quad \bar P\vdash B\le R}
-     {\bar P;\Gamma\vdash(\bar x:\bar A)\Rightarrow b:(\bar A)\Rightarrow R}\;\textsc{closure}
-$$
-
-where, for a closure the source leaves without a result annotation, $R$ is the
-result of the closure's own claimed arrow, whose parameters must be exactly the
-annotated ones (`GenericSource.lambdaResult`): the claim proposes the result
-and the body is checked against it, as an annotation would be. The
-certificate compiler emits `widen R` around such a body.
-`exprTyB_iff_HasTy` proves that the pure checker decides it on well-formed
-binders, both directions. A body the judgment accepts and the proof language
-cannot express is refused by name; captured-cell writes are typed by
-`HasTy.assign` but not expressible by `closureProof`. Certificate existence
-does not prove that OCaml inference finds a suitable substitution or that
-graph proof search finds evidence.
-Certificates are reconstructed in Lean on consumption; source-to-calculus
-correspondence remains part of the stated trust boundary. These theorems prove
-soundness of accepted certificates, not decision completeness of proof search.
+Quantified contracts are scheme rows
+([quantified schemes](POSITIVE-TYPES.md#quantified-scheme-layer)): a generic
+unit is a graph request over parameter rows, and a generic closure is graph
+code at a scheme row (`funScheme`), both certified at every assignment of the
+rows ([Generic-Body](#overloads-polymorphism-and-binding)). There is no second
+checker for generic bodies.
 
 **Effects and state.** The behavioural obligation must use the computation
 semantics, not just a relation between input and output values. Schematically,
@@ -5420,11 +5192,13 @@ every advertised signature before allocating one function object. Call selects
 an applicable member. Forgetting members is subsumption; no writable
 implementation cell is retyped.
 
-**Generic signatures.** Let $S$ be a scheme, $\eta_0$ the assignment outside
-its binders, and $\mathsf{Instance}_{G,P}(\eta_0,S,\eta)$ the closed,
-bound-satisfying assignment relation defined in
-[POSITIVE-TYPES.md](POSITIVE-TYPES.md#quantified-scheme-layer). The exact
-introduction rule **Call-Scheme-I**, implemented by `scheme_intro`, is
+**Generic signatures.** Let $S$ be a scheme row, $\eta_0$ the assignment
+outside its binders, and $\mathsf{Instance}_{G,P}(\eta_0,S,\eta)$ the
+reassignments of its binders within their bounds, $\eta_0$ unchanged outside
+them (`Bounded`), as
+[POSITIVE-TYPES.md](POSITIVE-TYPES.md#quantified-scheme-layer) defines. The exact
+introduction rule **Call-Scheme-I**, implemented by
+`QuantifiedGraphs.scheme_intro`, is
 
 $$
 \frac{
@@ -5443,7 +5217,8 @@ $$
 The value $v$, step index $n$, world $W$, and outer assignment $\eta_0$ are
 outside the quantifier. The proof is therefore uniform in the binders, and
 captured mutable cells retain the same invariant at every instantiation.
-Fixed-signature elimination **Call-Scheme-E**, implemented by `scheme_elim`, is
+Fixed-signature elimination **Call-Scheme-E**, implemented by
+`QuantifiedGraphs.scheme_elim`, is
 
 $$
 \frac{
@@ -5455,25 +5230,22 @@ $$
 }.
 $$
 
-For rest signatures, `scheme_rest_elim` gives the corresponding conclusion
-$\mathsf{Rests}(\mathsf{RestSig}_{G,P,\eta}(S),n,W,v)$ from the same premises.
+The same `scheme_elim` gives the corresponding conclusion for the rest
+signatures, $\mathsf{Rests}(\mathsf{RestSig}_{G,P,\eta}(S),n,W,v)$, from the
+same premises: an instance's contract is both (`instanceTWithArgs`).
 
-The executable source substitution $[\bar A/\bar X]$ constructs one such
-$\eta$ only after its ground arguments and bounds have been checked. It selects
-a signature of the same callable; it neither allocates a new value nor changes
+A call names its instance: the callee is read at the instance's signatures,
+below the scheme by a checked instance table (`Sub.inst`), which constructs one
+such $\eta$ after the type arguments' bounds are checked. It selects a
+signature of the same callable; it neither allocates a new value nor changes
 the outer assignment. These are rules for quantified invocation contracts, not
-unrestricted generalization of an effectful allocation expression.
-
-[TypeSchemes.lean](lean/Verification/Model/Types/TypeSchemes.lean) realizes
-these rules as `scheme_intro` and `scheme_elim`: one callable value and one
-captured world satisfy every admissible assignment, while elimination selects a
-signature only afterwards. A generic closure is graph code at a scheme row
-(**funScheme**, [above](#judgments-and-constructor-views)), its introduction the table's
-check of its code, which holds at every assignment, a rest or a default
-included. A closure whose bound names another of its binders, which a scheme
-row cannot yet be instantiated at, keeps the rigid path: introduction by the
-independently reconstructed rigid-body certificate described above, and its
-checked eliminations compiled to fixed or variadic graph signatures.
+unrestricted generalization of an effectful allocation expression. One
+callable value and one captured world satisfy every admissible assignment,
+while elimination selects a signature only afterwards. A generic closure is
+graph code at a scheme row (**funScheme**,
+[above](#judgments-and-constructor-views)), its introduction the table's check
+of its code, which holds at every assignment, a rest, a default or a binder
+bounded by another included.
 
 **Generic bodies.** A generic function's body is a graph request whose
 binders are parameter rows $\vec p$: rows the graph's assignment interprets,

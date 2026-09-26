@@ -24,9 +24,9 @@ than erase a requirement.
 | `{ value: A = (B) }` | Storage invariant A and current-content assertion B |
 | `(A, B) => C` | Ordered parameters and result; zero parameters and nested functions are allowed |
 | `((A) => B) & { value: C }` | Combined invocation and field contract |
-| `T` | A rigid type parameter of the enclosing function or closure, by its source name |
+| `T` | A type parameter of the enclosing function or closure, by its source name |
 | `<T>(arg0: T) => T` | A quantified callable; binders carry `extends A` when bounded, and its parameters are shown positionally |
-| `() => T` | A callable over an enclosing rigid parameter, with no binders of its own |
+| `() => T` | A callable over an enclosing type parameter, with no binders of its own |
 | `T @{...}` | Explicit nondefault object metadata |
 
 Arrow alternatives in a union are parenthesized. Nondefault metadata on an
@@ -89,10 +89,9 @@ record is validated as program data rather than inferred from its expression.
 `tools/diagnostic.mts` reads the native failure record, checking its
 graph, sequent, mappings, source descriptors, and heap facts. Malformed or unknown
 records remain human diagnostics. `tools/diagnostic-view.mts` prepares a typed
-presentation at report generation and the complete graph legend. Direct
-obligations use a closed union of subtyping and scheme-introduction judgments;
-their rigid and ground types, parameters, bounds, contexts and source subjects
-are decoded structurally, with every rigid reference checked against its scope.
+presentation at report generation and the complete graph legend. A direct
+obligation is a subtyping judgment between two ground types at a call's span,
+decoded structurally, its labels checked against the record's graph.
 `formatJudgement` is the only `A ⊢ B` printer and takes the structured assumptions
 and conclusion, so neither a producer nor a presentation call site can put prose
 to the right of a turnstile. Its switches use `never` exhaustiveness checks, and

@@ -9,7 +9,7 @@
 
 import surface from "./claim-text.mts";
 import { decodeGraph, numberOfBits, graphDefinitions, printLabels, type GraphDefinition, type Labels } from "./type-graph.mts";
-import type { DirectJudgment, DirectType, HeapAtom, HeapKnowledge, ObligationDiagnostic, SourceMapEntry } from "./diagnostic.mts";
+import type { DirectJudgment, HeapAtom, HeapKnowledge, ObligationDiagnostic, SourceMapEntry } from "./diagnostic.mts";
 import { printTerm, type Term } from "./calculus.mts";
 import type { Span } from "./span.mts";
 
@@ -168,43 +168,10 @@ function typeText(types: unknown, labels: unknown, depth = 3): string {
   return surface.printType(surface.lift(types, labels, null, depth)).text;
 }
 
-const unreachable = (value: never): never => { throw Error(`unhandled variant: ${JSON.stringify(value)}`); };
-// A receiver is shown as a `this` parameter, unless any receiver is accepted.
-const receiverText = (types: unknown, receiver: DirectType): string[] =>
-  receiver.kind === "top" ? [] : [`this: ${directTypeText(types,receiver)}`];
-function directTypeText(types: unknown, type: DirectType): string {
-  switch (type.kind) {
-    case "rigid": return type.name;
-    case "top": return "unknown";
-    case "variadic":
-      return `(${[...receiverText(types,type.receiver), ...type.params.map(p=>directTypeText(types,p)), `...Array<${directTypeText(types,type.element)}>`].join(", ")}) => ${directTypeText(types,type.result)}`;
-    case "array": return `Array<${directTypeText(types,type.element)}>`;
-    case "union": return type.members.map((m) => directTypeText(types,m)).join(" | ");
-    case "ground": return typeText(types,type.labels);
-    case "arrow":
-      return `(${[...receiverText(types,type.receiver), ...type.params.map((p) => directTypeText(types,p))].join(", ")}) => ${directTypeText(types,type.result)}`;
-    default: return unreachable(type);
-  }
-}
 function directView(types: unknown, judgment: DirectJudgment) {
-  const parameter = (p: DirectJudgment["parameters"][number]) =>
-    p.upper
-      ? `${p.name} ≤ ${directTypeText(types,p.upper)}`
-      : `${p.name} is ${p.scope === "quantified" ? "arbitrary" : "rigid"}`;
-  const assumptions = [
-    ...judgment.parameters.map(parameter),
-    ...judgment.context.map((b) => `${b.name}: ${directTypeText(types,b.type)}`),
-  ];
-  const conclusion = `${directTypeText(types,judgment.actual)} ≤ ${directTypeText(types,judgment.expected)}`;
-  switch (judgment.kind) {
-    case "subtyping":
-      return {title:"Generic source obligation", assumptions, conclusion,
-        summary:`The generic checker could not establish ${conclusion}.`};
-    case "scheme-introduction":
-      return {title:"Universal scheme obligation", assumptions, conclusion,
-        summary:`The closure body could not establish ${conclusion} for every permitted instantiation.`};
-    default: return unreachable(judgment);
-  }
+  const conclusion = `${typeText(types,judgment.actual)} ≤ ${typeText(types,judgment.expected)}`;
+  return {title:"Generic instance obligation", assumptions:[] as string[], conclusion,
+    summary:`The call's type argument is not shown within its bound: ${conclusion}.`};
 }
 
 /** The only printer for a turnstile. Callers supply both structured sides. */
@@ -416,7 +383,7 @@ function obligationView(ob: ObligationDiagnostic, source = ""): ObligationView {
   if (ob.kind === "direct-obligation") {
     const direct = directView(types,ob.judgment);
     view.title = direct.title;
-    view.what = "The direct source checker could not establish this non-ground judgment.";
+    view.what = "A generic value's instance could not be shown within its binder's bound.";
     view.summary = direct.summary;
     view.judgement = {assumptions:direct.assumptions,conclusion:direct.conclusion};
     return view;

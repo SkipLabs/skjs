@@ -1,7 +1,7 @@
 # Producer-independent source sidecars
 
 The sidecar supplies ground types as calculus labels into a type table the
-document carries, and rigid parameters as function-scoped references. It contains no SKJS type atoms, inferred bounds or stored
+document carries, and type parameters as function-scoped references. It contains no SKJS type atoms, inferred bounds or stored
 proof results. A human or another producer can write it. This is a bounded
 interface for the existing source fragment, not support for arbitrary graphs,
 TypeScript types, shadowing or recursive source aliases.
@@ -19,8 +19,7 @@ from the AST and sidecar. It checks evidence using the same `checkRequests`
 function and soundness theorems as SKJS-backed source checking.
 `SourceClaimJson.checkJson_safe` states that every accepted plan first becomes
 a `CertifiedPlan` and that every such function has the calculus safety
-guarantee. A quantified-scheme plan cannot become certified without its own
-semantic certificate. No SKJS invocation
+guarantee, at every assignment of its parameter rows. No SKJS invocation
 or `--keep-going` is needed.
 
 Generic functions use the same sidecar: any `type` or `result` may be
@@ -29,8 +28,8 @@ Lean reads as the binder's parameter row (a bounded one as its meet with the
 bound) before the unit is extracted as an ordinary graph request, certified at
 every assignment of those rows. The TS exporter matches compiler symbol
 identities before emitting this name. Bounds come from the source, never from
-producer assertions. Ground functions cannot use rigid claims,
-and rigid claims cannot carry current-content assertions. Within this fragment,
+producer assertions. Ground functions cannot use parameter claims,
+and parameter claims cannot carry current-content assertions. Within this fragment,
 ground annotations retain their ordinary graph meanings; no parameter is
 replaced by its bound. Declarations certify invocation as well as body safety,
 and every supplied callee and operand claim is checked at its source span.
@@ -64,73 +63,20 @@ unresolved parameter or a nested scheme is refused. The consumer re-checks the
 substitution and derives the call's arrow from the scheme's own signature, so a
 forged `instantiate` can only name another genuine instance.
 
-The intermediate graph compilation never rests on observed calls alone.
-`SourceClaimJson`'s scheme section checks
-introduction first — the closure body, read from the source and not from its
-claim, must satisfy the declared signature for _every_ assignment of the
-binders — and only then compiles the checked eliminations to ordinary arrows.
-A closure that satisfies each observed call but cannot produce an arbitrary
-rigid result is refused at that gate, whatever its calls.
-
-Final acceptance also requires a semantic certificate for that universal check.
-Closures built from immutable reads, captured-cell reads, nested closures and callback calls
-reconstruct a `ClosureCertificate`, checked
-independently of observed calls. Its theorem establishes the invocation
-contract for every admissible instantiation, keeping the captured environment
-and world fixed. The enclosing function must also pass ordinary graph evidence
-checking. Captured runtime slots distinguish values from cell identities, and
-cell contracts come from the source's storage annotations. Ordinary variable
-proofs cannot expose these private identities; reading one requires a cell-read
-proof. Writes within a quantified body still lack a certificate constructor.
-Quantified closures with defaults reconstruct initialization in the universal
-certificate. The source input `T | undefined` is represented as
-`{"union":[{"param":"T"},[3]]}`; union arms are recursive claim types and
-ground-only types continue to use label lists. Substitution recursively grounds
-these arms. The initialized annotation is substituted separately from the raw
-input contract, since `T` itself may contain `undefined`. The certificate has a
-private raw-argument slot that ordinary variable proofs cannot read; its
-initialization rule establishes the declared type under every rigid assignment.
-Initializers use the same supported expression language as the rigid body.
-Acyclic literal-closure forward captures use the same checked initialization
-schedule as ordinary graph extraction. Effects keep source order; pending
-closure exposure and cycles are refused. See
-[the rule and trust boundary](PROGRAM-TYPING.md#universal-parameter-initialization).
-
-Quantified array rests have universal collection certificates. The rest binding
-occupies slot zero, before the receiver, fixed inputs and captures; invocation allocates a
-fresh array whose element contract is the assigned family. The same certificate
-format covers top-level generic declarations. Local schemes additionally compile
-each validated substitution to a variadic graph signature. An array over `T`
-can be returned or passed intact, and a variadic callback over `T` can be called
-at a finite arity using a proved consequence of its rest promise. Its body is
-never checked only at the observed Boolean or numeric instances.
-
-The executable source slice is narrower than the semantic scheme rules. A
-containing function may declare one immutable quantified closure. A binder may
-be bounded by an earlier binder or a ground type; introduction checks the body under
-those bounds, and every instantiation must satisfy each substituted bound at its
-call. Parameters and results may contain a binder, a mutable array over a
-binder, fixed or variadic function types over those, and ground types; a callable that mentions an enclosing binder, such as a
-returned `() => T`, is written in the `scheme` form with empty `typeParams`. The
-closure may be an ordinary function expression whose receiver annotation names
-a binder, as in `function <R>(this: R): R { return this; }`: its body sees
-`this` at that binder, and `.call`, `.apply` or a method call instantiates it at
-the receiver passed. The body — the returned expression of a block, or an
-arrow's expression — is a variable, a primitive literal, an assignment to a captured cell, a
-call to a callable the body knows over rigid types — such as a callback
-parameter `(arg: T) => number`, whose arguments are obligations against those
-parameters — or a closure whose annotation names the binders; such a closure is checked under
-them like the outer body, and its claim must be exactly its source annotation,
-since the compiled graph takes its types from that claim. A captured cell keeps
-the contract its declaration states at every instantiation: a write into it is
-an obligation on the value against that contract, and `T` never meets it.
-Ground annotations in a signature — `number`, a record — are lowered by the
-same translation every annotation takes, so the checker knows every type the
-graph does, not only `boolean`. At least one expression claim
-must carry a complete ground instantiation. Multiple calls may carry different
-instantiations, but they all eliminate the same universally checked closure.
-Nested quantified schemes, general closure bodies and calls to generic
-function declarations remain outside this path.
+Lean reads each such scheme as a scheme row whose binders are fresh parameter
+rows ([quantified schemes](POSITIVE-TYPES.md#quantified-scheme-layer)): every
+claim and annotation inside the closure reads the closure's binders as those
+rows, a bounded one as the meet of its row and its bound, one bounded by
+another of the closure's binders as the meet of the two parameter rows. The
+closure is graph code at the row (`funScheme`), checked once at the row's
+signatures, so at every instantiation and never at the observed calls alone: a
+closure that satisfies each observed call but cannot produce an arbitrary
+binder's value fails its own code's check, whatever its calls. A call of a
+local holding one is claimed at the instance its `instantiate` names, a bounded
+binder's instance the meet of its type argument with the bound, and the callee
+is read there, below the scheme by a checked instance table (`Sub.inst`).
+Nested generic closures, generic closures in generic bodies, rests, defaults
+and receivers over a binder are all graph code the same way.
 
 Both producers feed this format into `SourceClaimJson`. The native SKJS CLI
 entry points first run `SourceClaimExport`; they do not have another verifier.

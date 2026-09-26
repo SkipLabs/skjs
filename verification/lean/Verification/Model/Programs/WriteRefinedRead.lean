@@ -34,14 +34,6 @@ theorem program_post {n W h} (hw : WorldAdm W) (hh : HeapOk n W h) :
 theorem program_safe {n W h} (hw : WorldAdm W) (hh : HeapOk n W h) :
     Safe (exact .tru) n W h program := erase (program_post hw hh)
 
-/-- Unary null is the semantic wrapper for a source function with no inputs.
-The unused argument has no effect on the proved body or return guarantee. -/
-theorem function_arrow (n : Nat) (W : WorldT n) :
-    arrowT nulT (exact .tru) n W (.fn 0 program) := by
-  apply fn_intro _ _ _ (by simp [program,body,Scoped])
-  intro j hj U hx hu h hh a ha
-  simpa [program,body,subst] using program_safe hu hh
-
 /-- The actual finite execution witnesses termination and the returned value;
 program_post establishes safety independently by composition of general rules. -/
 theorem program_runs (h : Heap) :
@@ -53,6 +45,5 @@ theorem program_runs (h : Heap) :
   exact Steps.next (.readV (by simp [subst])) .refl
 
 #print axioms program_post
-#print axioms function_arrow
 #print axioms program_runs
 end Verification.Model.WriteRefinedRead

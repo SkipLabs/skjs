@@ -57,36 +57,13 @@ private def nullCallback : Request :=
    oneNodeCodes 1 .nul [] [([7],[[0]],[1])]⟩
 #guard !ok (roundtrip nullCallback)
 
-/-- The same program with the codes as terms, run by the machine. -/
-private def executed (callable fresh : Bool) : Program :=
-  [⟨if callable then .attach (.var 1) .fls else .alloc .fls,.bind 1,none⟩,
-   ⟨.funE (body fresh),.bind 2,none⟩,
-   ⟨.funE (.letE (.write (.var 3) .tru) (.app (.var 3) (.funE .fls))),.bind 3,none⟩,
-   ⟨.app (.var 1) (.var 0),.ret,none⟩]
-
 /-- Reentry writes true while the outer frame retains its saved false value.
 The fourth heap cell is allocated for the terminating inner callback. -/
 theorem returns_expected (callable fresh : Bool) :
-    Execution (executed callable fresh) (if fresh then 26 else 24) []
+    Execution (program callable fresh) (if fresh then 34 else 32) []
       (.at 0 (fun _ => .nul)) [.tru,.nul,.nul,.nul]
       (.done (if fresh then .tru else .fls)) := by
-  cases callable <;> cases fresh <;>
-    repeat first
-      | exact Execution.refl
-      | apply Execution.next (.enter rfl)
-      | apply Execution.next (.expr (.makeV rfl))
-      | apply Execution.next (.expr (.beta rfl))
-      | apply Execution.next (.expr (.readV rfl))
-      | apply Execution.next (.expr (.letV rfl))
-      | apply Execution.next (.expr (.letC (.readV rfl)))
-      | apply Execution.next (.expr (.letC (.beta rfl)))
-      | apply Execution.next (.expr (.letC (.letV rfl)))
-      | apply Execution.next (.expr (.letC (.appR rfl (.makeV rfl))))
-      | apply Execution.next (.expr (.letC (.letC (.readV rfl))))
-      | apply Execution.next (.expr (.letC (.letC (.writeV rfl (by decide)))))
-      | apply Execution.next (.expr (.letC (.letC (.beta rfl))))
-      | apply Execution.next (.bind rfl)
-      | apply Execution.next (.ret rfl)
+  cases callable <;> cases fresh <;> run_machine
 
 #print axioms returns_expected
 end Verification.Model.CallableReentryTests

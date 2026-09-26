@@ -666,34 +666,8 @@ private def captureRequest : Request :=
   (SourceExtraction.extractFn captureFn captureClaims).map (·.toRequest) |>.toOption.getD (request .nul [0])
 #guard ok (SourceExtraction.extractFn captureFn captureClaims)
 #guard ok (produceSourceJson (toJson captureRequest) 10)
-private def captureProgram : ControlFlow.Program :=
-  [⟨.var 0,.ret,none⟩, ⟨.app (.var 1) (.var 0),.bind ⟨0,some [0,3,4,5]⟩,none⟩,
-   ⟨.nul,.bind 1,none⟩, ⟨.var 1,.bind 2,none⟩,
-   ⟨.var 0,.bind ⟨3,some [3,4,5]⟩,none⟩, ⟨.write (.var 1) (.var 0),.effect 4,none⟩,
-   ⟨.fls,.bind 5,none⟩, ⟨.var 0,.bind 6,none⟩, ⟨.var 0,.effect 7,none⟩, ⟨.var 1,.bind 8,none⟩,
-   ⟨.var 0,.effect 9,none⟩, ⟨.funE (.read (.var 2)),.bind 10,none⟩,
-   ⟨.var 0,.effect 11,none⟩, ⟨.alloc (.var 0),.bind ⟨12,some [0]⟩,none⟩,
-   ⟨.tru,.bind 13,none⟩, ⟨.nul,.effect 14,none⟩]
--- The program this pins was the term-closure lowering's; closures are graph code now,
--- and the pipeline cases check what the lowering produces.
 #guard captureRequest.start == 15
 
-/-- The extracted closure reads after the alias write and returns false.
-The graph-equality guards above tie this trace to the source compiler regression. -/
-theorem captured_alias_trace : ControlFlow.Execution captureProgram 37 []
-    (.at 15 (fun _ => .nul)) [.fls,.nul] (.done .fls) := by
-  repeat first
-    | exact ControlFlow.Execution.refl
-    | apply ControlFlow.Execution.next (.enter rfl)
-    | apply ControlFlow.Execution.next (.expr (.makeV rfl))
-    | apply ControlFlow.Execution.next (.expr (.writeV rfl (by decide)))
-    | apply ControlFlow.Execution.next (.expr (.beta rfl))
-    | apply ControlFlow.Execution.next (.expr (.readV rfl))
-    | apply ControlFlow.Execution.next (.bind rfl)
-    | apply ControlFlow.Execution.next (.effect rfl)
-    | apply ControlFlow.Execution.next (.ret rfl)
-
-#print axioms captured_alias_trace
 
 -- A terminal closure branch adds one conditional step, with each arm occurring
 -- once. The condition reads the heap at call time, after the alias write.
@@ -710,31 +684,12 @@ private def branchCaptureClaims : Fragment.Claims :=
   { captureClaims with
     envs := captureClaims.envs ++ [(40,H),(41,H),(45,H)]
     exprs := captureClaims.exprs ++ [((42,43),t),((46,47),b)] }
-private def branchCaptureProgram : ControlFlow.Program :=
-  captureProgram.set 11 ⟨.funE (.ite (.read (.var 2)) .tru .fls),.bind 10,none⟩
--- The program this pins was the term-closure lowering's; closures are graph code now,
--- and the pipeline cases check what the lowering produces.
 #guard ok (do
   let r ← extractFn branchCaptureFn branchCaptureClaims
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
     r.searchLabels r.types.length 0 r.obligations
   pure ())
 
-theorem terminal_branch_trace : ControlFlow.Execution branchCaptureProgram 38 []
-    (.at 15 (fun _ => .nul)) [.fls,.nul] (.done .fls) := by
-  repeat first
-    | exact ControlFlow.Execution.refl
-    | apply ControlFlow.Execution.next (.enter rfl)
-    | apply ControlFlow.Execution.next (.expr (.makeV rfl))
-    | apply ControlFlow.Execution.next (.expr (.writeV rfl (by decide)))
-    | apply ControlFlow.Execution.next (.expr (.beta rfl))
-    | apply ControlFlow.Execution.next (.expr (.iteC (.readV rfl)))
-    | apply ControlFlow.Execution.next (.expr .iteF)
-    | apply ControlFlow.Execution.next (.bind rfl)
-    | apply ControlFlow.Execution.next (.effect rfl)
-    | apply ControlFlow.Execution.next (.ret rfl)
-
-#print axioms terminal_branch_trace
 
 -- Both arms complete before the shared read; the false arm changes the cell
 -- to true. Branch-local administrative slots cannot shift the continuation.
@@ -754,39 +709,12 @@ private def joinedCaptureClaims : Fragment.Claims :=
     envs := captureClaims.envs ++ [(40,H),(43,H),(50,H)]
     exprs := captureClaims.exprs ++ [((44,47),t),((44,45),cellWire),((46,47),t),
       ((51,53),wireTy ⟨false,[.bool]⟩),((51,52),cellWire)] }
-private def joinedCaptureProgram : ControlFlow.Program :=
-  let assignment := Tm.letE (.var 2) (.letE .tru (.letE (.write (.var 1) (.var 0)) (.var 1)))
-  captureProgram.set 11
-    ⟨.funE (.letE (.ite (.read (.var 2)) .nul (.letE assignment .nul))
-      (.read (.var 3))),.bind 10,none⟩
--- The program this pins was the term-closure lowering's; closures are graph code now,
--- and the pipeline cases check what the lowering produces.
 #guard ok (do
   let r ← extractFn joinedCaptureFn joinedCaptureClaims
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
     r.searchLabels r.types.length 0 r.obligations
   pure ())
 
-theorem shared_continuation_trace : ControlFlow.Execution joinedCaptureProgram 45 []
-    (.at 15 (fun _ => .nul)) [.tru,.nul] (.done .tru) := by
-  repeat first
-    | exact ControlFlow.Execution.refl
-    | apply ControlFlow.Execution.next (.enter rfl)
-    | apply ControlFlow.Execution.next (.expr (.makeV rfl))
-    | apply ControlFlow.Execution.next (.expr (.writeV rfl (by decide)))
-    | apply ControlFlow.Execution.next (.expr (.letV rfl))
-    | apply ControlFlow.Execution.next (.expr (.beta rfl))
-    | apply ControlFlow.Execution.next (.expr (.letC (.iteC (.readV rfl))))
-    | apply ControlFlow.Execution.next (.expr (.letC .iteF))
-    | apply ControlFlow.Execution.next (.expr (.letC (.letC (.letV rfl))))
-    | apply ControlFlow.Execution.next (.expr (.letC (.letC (.letC (.writeV rfl (by decide))))))
-    | apply ControlFlow.Execution.next (.expr (.letC (.letV rfl)))
-    | apply ControlFlow.Execution.next (.expr (.readV rfl))
-    | apply ControlFlow.Execution.next (.bind rfl)
-    | apply ControlFlow.Execution.next (.effect rfl)
-    | apply ControlFlow.Execution.next (.ret rfl)
-
-#print axioms shared_continuation_trace
 
 -- The same extracted conditional must skip its continuation on early return.
 private def earlyCaptureFn (q : Bool) : Fragment.Fn :=
@@ -809,46 +737,15 @@ private def earlyCaptureClaims (q : Bool) : Fragment.Claims :=
       (pos,if pos == (24,25) || pos == (20,25) then (if q then t else b) else A)) ++
       [((42,43),t),((46,49),b),((46,47),cellWire),((48,49),b),
        ((53,55),wireTy ⟨false,[.bool]⟩),((53,54),cellWire)] }
-private def earlyCaptureProgram (q : Bool) : ControlFlow.Program :=
-  let assignment := Tm.letE (.var 2) (.letE .fls (.letE (.write (.var 1) (.var 0)) (.var 1)))
-  (captureProgram.set 6 ⟨if q then .tru else .fls,.bind 5,none⟩).set 11
-    ⟨.funE (.ite (.read (.var 2)) .tru
-      (.letE (.letE assignment .nul) (.read (.var 3)))),.bind 10,none⟩
--- The program this pins was the term-closure lowering's; closures are graph code now,
--- and the pipeline cases check what the lowering produces.
 #guard [true,false].all fun q => ok (do
   let r ← extractFn (earlyCaptureFn q) (earlyCaptureClaims q)
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
     r.searchLabels r.types.length 0 r.obligations
   pure ())
 
-theorem early_return_trace (q : Bool) : ControlFlow.Execution (earlyCaptureProgram q)
-    (if q then 38 else 45) [] (.at 15 (fun _ => .nul))
-    [if q then .tru else .fls,.nul] (.done (if q then .tru else .fls)) := by
-  cases q <;> repeat first
-    | exact ControlFlow.Execution.refl
-    | apply ControlFlow.Execution.next (.enter rfl)
-    | apply ControlFlow.Execution.next (.expr (.makeV rfl))
-    | apply ControlFlow.Execution.next (.expr (.writeV rfl (by decide)))
-    | apply ControlFlow.Execution.next (.expr (.letV rfl))
-    | apply ControlFlow.Execution.next (.expr (.beta rfl))
-    | apply ControlFlow.Execution.next (.expr (.iteC (.readV rfl)))
-    | apply ControlFlow.Execution.next (.expr .iteT)
-    | apply ControlFlow.Execution.next (.expr .iteF)
-    | apply ControlFlow.Execution.next (.expr (.letC (.letC (.letV rfl))))
-    | apply ControlFlow.Execution.next (.expr (.letC (.letC (.letC (.writeV rfl (by decide))))))
-    | apply ControlFlow.Execution.next (.expr (.letC (.letV rfl)))
-    | apply ControlFlow.Execution.next (.expr (.readV rfl))
-    | apply ControlFlow.Execution.next (.bind rfl)
-    | apply ControlFlow.Execution.next (.effect rfl)
-    | apply ControlFlow.Execution.next (.ret rfl)
-
-#print axioms early_return_trace
 
 -- Supplemental proofs are necessary even when the whole lambda is typable.
 private def captureRequired := (extractFn captureFn captureClaims).toOption.getD ⟨captureRequest,[],[],[],[],[], [], []⟩
--- The program this pins was the term-closure lowering's; closures are graph code now,
--- and the pipeline cases check what the lowering produces.
 #guard ok (ExpressionClaims.produce (RequestJson.graph captureRequest)
   captureRequired.searchLabels captureRequest.types.length 10 captureRequired.obligations)
 private def narrowedCapture : Fragment.Claims :=
@@ -871,35 +768,12 @@ private def writerClaims : Fragment.Claims :=
    [((4,7),cellWire),((5,6),t),((10,19),functionWire),((12,19),b),
     ((12,13),cellWire),((18,19),b),((22,27),wireTy ⟨false,[.bool]⟩),
     ((22,23),functionWire),((26,27),wireTy ⟨false,[.null]⟩)]⟩
-private def writerProgram : ControlFlow.Program :=
-  [⟨.var 0,.ret,none⟩, ⟨.app (.var 1) (.var 0),.bind ⟨0,some [0,3,4]⟩,none⟩,
-   ⟨.nul,.bind 1,none⟩, ⟨.var 0,.bind 2,none⟩, ⟨.var 0,.effect 3,none⟩,
-   ⟨.funE (.letE (.var 2) (.letE .fls (.letE (.write (.var 1) (.var 0)) (.var 1)))),.bind 4,none⟩,
-   ⟨.var 0,.effect 5,none⟩, ⟨.alloc (.var 0),.bind ⟨6,some [0]⟩,none⟩,
-   ⟨.tru,.bind 7,none⟩, ⟨.nul,.effect 8,none⟩]
--- The program this pins was the term-closure lowering's; closures are graph code now,
--- and the pipeline cases check what the lowering produces.
 #guard is ((extractFn writerFn writerClaims).map (·.start)) 9
 #guard ok (do
   let r ← extractFn writerFn writerClaims
   let _ ← produceSourceJson (toJson r.toRequest) 10
   ExpressionClaims.produce (RequestJson.graph r.toRequest) r.searchLabels r.types.length 10 r.obligations)
 
-/-- Calling the extracted writer changes the heap and returns its RHS, not null. -/
-theorem closure_write_trace : ControlFlow.Execution writerProgram 27 []
-    (.at 9 (fun _ => .nul)) [.fls,.nul] (.done .fls) := by
-  repeat first
-    | exact ControlFlow.Execution.refl
-    | apply ControlFlow.Execution.next (.enter rfl)
-    | apply ControlFlow.Execution.next (.expr (.makeV rfl))
-    | apply ControlFlow.Execution.next (.expr (.letV rfl))
-    | apply ControlFlow.Execution.next (.expr (.beta rfl))
-    | apply ControlFlow.Execution.next (.expr (.letC (.writeV rfl (by decide))))
-    | apply ControlFlow.Execution.next (.bind rfl)
-    | apply ControlFlow.Execution.next (.effect rfl)
-    | apply ControlFlow.Execution.next (.ret rfl)
-
-#print axioms closure_write_trace
 
 -- A single-return block has the same execution as its expression body, but
 -- adds proof obligations for the supplied statement environment.
@@ -911,8 +785,6 @@ private def blockCaptureFn : Fragment.Fn :=
 private def blockCaptureClaims (unitTy : Json) : Fragment.Claims :=
   { captureClaims with envs := captureClaims.envs ++
     [(11,[("unit",unitTy),("cell",cellWire)])] }
--- The program this pins was the term-closure lowering's; closures are graph code now,
--- and the pipeline cases check what the lowering produces.
 private def blockObligations (unitTy : Json) : Except String Unit := do
   let r ← extractFn blockCaptureFn (blockCaptureClaims unitTy)
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
@@ -945,30 +817,7 @@ private def localWriterClaims : Fragment.Claims :=
     exprs := writerClaims.exprs ++
       [((32,33),b),((36,39),B),((36,37),cellWire),((38,39),B),
        ((41,43),B),((41,42),cellWire)] }
-private def localWriterProgram : ControlFlow.Program :=
-  let write : Tm := .letE (.var 3) (.letE (.var 1) (.letE (.write (.var 1) (.var 0)) (.var 1)))
-  writerProgram.set 5
-    ⟨.funE (.letE .fls (.letE write (.read (.var 4)))),.bind 4,none⟩
--- The program this pins was the term-closure lowering's; closures are graph code now,
--- and the pipeline cases check what the lowering produces.
 
-/-- A saved local is used by the write and survives the anonymous effect slot. -/
-theorem local_writer_trace : ControlFlow.Execution localWriterProgram 30 []
-    (.at 9 (fun _ => .nul)) [.fls,.nul] (.done .fls) := by
-  repeat first
-    | exact ControlFlow.Execution.refl
-    | apply ControlFlow.Execution.next (.enter rfl)
-    | apply ControlFlow.Execution.next (.expr (.makeV rfl))
-    | apply ControlFlow.Execution.next (.expr (.letV rfl))
-    | apply ControlFlow.Execution.next (.expr (.beta rfl))
-    | apply ControlFlow.Execution.next (.expr (.letC (.letV rfl)))
-    | apply ControlFlow.Execution.next (.expr (.letC (.letC (.writeV rfl (by decide)))))
-    | apply ControlFlow.Execution.next (.expr (.readV rfl))
-    | apply ControlFlow.Execution.next (.bind rfl)
-    | apply ControlFlow.Execution.next (.effect rfl)
-    | apply ControlFlow.Execution.next (.ret rfl)
-
-#print axioms local_writer_trace
 
 -- A suggested intermediate type cannot turn false into true.
 #guard !(CertificateProducer.expressionWith G0 [[1],[2],[1,2]]

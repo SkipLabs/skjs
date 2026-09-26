@@ -1,4 +1,5 @@
 import Verification.Model.Tests.CallableGraphTests
+import Verification.Model.Tests.GraphCodeFixtures
 
 /-! The same heap evidence rules track callable and plain bags. Creating code
 with an effect does not execute that effect; invoking it remains ordinary and
@@ -87,21 +88,9 @@ private def request : Request := ⟨types,program,claims,[9],0,[],CallableGraphT
     verifyJson (Lean.toJson request) response) with
   | .ok _ => true | .error _ => false
 
-/-- The same program with the code as a term, run by the machine. -/
-private def executed : Program := program.set 1 ⟨.attach (.var 1) (.var 0),.bind 2,none⟩
-
 /-- The precise return is the saved read value; invocation does not erase it. -/
-theorem returns_false : Execution executed 21 [] (.at 0 (fun _ => .nul)) [.fls] (.done .fls) := by
-  repeat first
-    | exact Execution.refl
-    | apply Execution.next (.enter rfl)
-    | apply Execution.next (.expr (.makeV rfl))
-    | apply Execution.next (.expr (.readV rfl))
-    | apply Execution.next (.expr (.writeV rfl (by decide)))
-    | apply Execution.next (.expr (.beta rfl))
-    | apply Execution.next (.bind rfl)
-    | apply Execution.next (.effect rfl)
-    | apply Execution.next (.ret rfl)
+theorem returns_false : Execution program 23 [] (.at 0 (fun _ => .nul)) [.fls] (.done .fls) := by
+  run_machine
 
 #print axioms returns_false
 end Verification.Model.CallableEffectTests

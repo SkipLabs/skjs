@@ -3,24 +3,28 @@ import Verification.Model.Semantics.GraphCoherence
 namespace Verification.Model.CoherenceTests
 open ObjectCoherence GraphCoherence ControlFlow ProgramCertificates
 
+/-- Code of one node returning its capture, frame slot 2, past the receiver
+and the parameter. -/
+private def code (caps : List Tm) : CallCode := .graph 1 [.var 2] [(.ret, none)] 0 caps
+
 /-- Matching identities cannot acquire different callability or different code. -/
-example {D l b} (h : Names D (.obj l .absent)) (h' : Names D (.fn l b)) : False := by
+example {D l} (h : Names D (.obj l .absent)) (h' : Names D (.obj l (code []))) : False := by
   have he := descriptor_unique (l := l) (by simp [locs]) h h'
   cases he
 
-example {D l b b'} (h : Names D (.fn l b)) (h' : Names D (.fn l b')) : b = b' := by
+example {D l c c'} (h : Names D (.obj l (code [c]))) (h' : Names D (.obj l (code [c']))) :
+    c = c' := by
   have he := descriptor_unique (l := l) (by simp [locs]) h h'
-  cases he
-  rfl
+  simpa [code] using he
 
 /-- Scope at the enclosing binder is insufficient for an existing object.
-Its descriptor must already be closed, so substitution cannot change it. -/
-example : Scoped 1 (.fn 0 (.var 2)) := by simp [Scoped]
-example (D : Registry) : ¬ Names D (.fn 0 (.var 2)) := by simp [Names, Scoped]
+Its captures must already be closed, so substitution cannot change them. -/
+example : Scoped 1 (.obj 0 (code [.var 0])) := by simp [Scoped, code]
+example (D : Registry) : ¬ Names D (.obj 0 (code [.var 0])) := by simp [Names, Scoped, code]
 
-/-- An object hidden inside captured code is checked against the same registry. -/
-example : ¬ Names [.absent, .closure 1 (.fn 0 (.var 0))] (.fn 1 (.fn 0 (.var 0))) := by
-  simp [Names,locs]
+/-- An object captured by code is checked against the same registry. -/
+example : ¬ Names [.absent, code [.obj 0 (code [])]] (.obj 1 (code [.obj 0 (code [])])) := by
+  simp [Names, locs, code]
 
 /- Native call lists must not hide malformed syntax after the first argument.
 These check syntax traversal; non-singleton source calls remain gated. -/
@@ -28,8 +32,8 @@ These check syntax traversal; non-singleton source calls remain gated. -/
 #guard !sourceTerm (.call .nul [.tru, .obj 0 .absent])
 
 /- Source functions may capture variables, but may not spell allocated identities. -/
-#guard sourceTerm (.funE (.var 1))
-#guard !sourceTerm (.funE (.obj 0 .absent))
+#guard sourceTerm (.make (code [.var 1]) .nul)
+#guard !sourceTerm (.make (code [.obj 0 .absent]) .nul)
 #guard !sourceTerm (.ite .tru .nul (.obj 0 .absent))
 
 /-- Empty overloads name no code of the table. The graph consumer must still
@@ -53,19 +57,20 @@ private theorem initial_ok : ObjectCoherence.HeapOk initial [.tru] := by
   simp [ObjectCoherence.HeapOk,initial,TermOk,Scoped,Names,locs,isVal]
 
 example : ∃ D, Extends initial D ∧ ObjectCoherence.HeapOk D [.tru,.nul] ∧
-    TermOk D (.fn 1 captured) :=
-  step_preserves (.makeV rfl : Step [.tru] (.funE captured) [.tru,.nul] (.fn 1 captured))
-    initial initial_ok (by simp [TermOk,Scoped,Names,locs,captured,initial])
+    TermOk D (.obj 1 (code [captured])) :=
+  step_preserves (.makeV rfl : Step [.tru] (.make (code [captured]) .nul) [.tru,.nul]
+      (.obj 1 (code [captured])))
+    initial initial_ok (by simp [TermOk,Scoped,Names,locs,captured,initial,code])
 
 /-- A write can create a heap cycle through captured code while retaining both
 identities' descriptors. The invariant does not forbid mutable heap cycles. -/
-example : ∃ E, Extends [.absent,.closure 1 captured] E ∧
-    ObjectCoherence.HeapOk E [.fn 1 captured,.fn 1 captured] ∧ TermOk E .nul :=
+example : ∃ E, Extends [.absent,code [captured]] E ∧
+    ObjectCoherence.HeapOk E [.obj 1 (code [captured]),.obj 1 (code [captured])] ∧ TermOk E .nul :=
   step_preserves (.writeV rfl (by decide) :
-    Step [.tru,.fn 1 captured] (.write (.obj 0 .absent) (.fn 1 captured))
-      [.fn 1 captured,.fn 1 captured] .nul)
-    [.absent,.closure 1 captured]
-    (by simp [ObjectCoherence.HeapOk,TermOk,Scoped,Names,locs,isVal,captured])
-    (by simp [TermOk,Scoped,Names,locs,captured])
+    Step [.tru,.obj 1 (code [captured])] (.write (.obj 0 .absent) (.obj 1 (code [captured])))
+      [.obj 1 (code [captured]),.obj 1 (code [captured])] .nul)
+    [.absent,code [captured]]
+    (by simp [ObjectCoherence.HeapOk,TermOk,Scoped,Names,locs,isVal,captured,code])
+    (by simp [TermOk,Scoped,Names,locs,captured,code])
 
 end Verification.Model.CoherenceTests

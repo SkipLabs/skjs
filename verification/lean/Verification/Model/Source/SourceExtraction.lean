@@ -1,6 +1,6 @@
 import Verification.Model.Source.SkjsSourceClaims
 import Verification.Model.Programs.ExpressionClaims
-import Verification.Model.Source.GenericSource
+import Verification.Model.Programs.DirectObligation
 import Verification.Model.Source.GenericAlias
 
 /-! First source adapter for the stateful consumer. Names are resolved against
@@ -2158,18 +2158,13 @@ private def lambdaSetup (fc : SourceClaims.Function) (scope : List ScopeBinding)
   let scheme := match mode with
     | .fn => ProgramCertificates.schemeOf G A
     | _ => none
-  -- A closure whose annotations name binders its claim instantiates: its own,
-  -- checked through the arrows a scheme's checked instantiations compile to,
-  -- each with an overlay stating the body's claims there; or an enclosing
-  -- scheme's, whose one substituted arrow supplies its types. Each arrow's
-  -- types are its own.
-  let polymorphic := scheme.isNone && (!typeParams.isEmpty ||
-    (params.map Prod.snd ++ ret.toList).any GenericSource.mentionsParam)
+  -- A generic closure is graph code at its scheme row, which its claim names
+  -- (`closureRows`); its annotations read its binders as the row's.
+  if scheme.isNone && !typeParams.isEmpty then
+    throw "a quantified closure is checked at its scheme row, which its claim does not name"
   let overlays := (fc.arrowClaims.lookup pos).getD []
-  if polymorphic && !typeParams.isEmpty && overlays.isEmpty then
-    throw "quantified closure checking requires the scheme evidence path"
   let Rsource ← match receiverAnnot with
-    | some annot => if polymorphic then pure [top] else lower (Fragment.callableType annot)
+    | some annot => lower (Fragment.callableType annot)
     | none => pure [top]
   let fixedParams := if hasRest then params.dropLast else params
   let restParam := if hasRest then params.getLast? else none
@@ -2188,7 +2183,7 @@ private def lambdaSetup (fc : SourceClaims.Function) (scope : List ScopeBinding)
     throw "a rest parameter is neither defaulted nor quantified"
   -- The parameters the source annotates, a defaulted one's advertised type
   -- with `undefined`: a call may omit it.
-  let sourceDs : List (Ty Nat) ← if polymorphic then pure [] else do
+  let sourceDs : List (Ty Nat) ← do
     let fixed ← fixedParams.mapM fun p => lower (Fragment.callableType p.2)
     let elements ← restElements.mapM fun ty => lower (Fragment.callableType ty)
     pure ((fixed ++ elements).zipIdx.map fun (D,i) =>
@@ -2196,16 +2191,10 @@ private def lambdaSetup (fc : SourceClaims.Function) (scope : List ScopeBinding)
   let ctorReceiver := match mode with
     | .ctor U => some U
     | _ => none
-  -- The rest's array type at each arrow: the annotation's, or, where it names
-  -- binders an arrow instantiates, that arrow's checked instantiation.
-  let restAt (i : Nat) : Compiler (Ty Nat) := do
+  -- The rest's array type: the annotation's, a binder read as its row.
+  let restAt : Compiler (Ty Nat) := do
     let some (_, ty) := restParam | pure []
-    if polymorphic then
-      let some o := overlays[i]? | throw "quantified rest checking requires the scheme evidence path"
-      let some initialized := o.initializedParams | throw "missing instantiated parameter annotations"
-      let some restTy := initialized.getLast? | throw "missing instantiated rest annotation"
-      pure restTy
-    else lower (Fragment.translate ty)
+    lower (Fragment.translate ty)
   -- The rows the code is checked at, each with the store it collects its rest
   -- into and its rest's array type, and the type the code offers them at.
   let (rows, offered) ← match arrayRest with
@@ -2216,20 +2205,15 @@ private def lambdaSetup (fc : SourceClaims.Function) (scope : List ScopeBinding)
           throw "a closure collecting a rest array offers no fixed signature"
         pure (s.variadic.map (fun (Rt, Di, P, Ri) => ((Rt, Di, Ri), some P)), A)
       | none =>
-        if polymorphic then
-          let [.arrs [] signatures] := PositiveRules.expand G A
-            | throw "quantified rest claims must name variadic signatures"
-          pure (signatures.map (fun (Rt, Di, P, Ri) => ((Rt, Di, Ri), some P)), A)
-        else
-          let E ← lower (Fragment.callableType elementJson)
-          let some ret := ret
-            | throw (locatedRefusal (← table) pos .bindingAnnotation
-                "a closure collecting a rest array needs its result annotation")
-          let R ← lower (Fragment.callableType ret)
-          let restPack ← lower (SourceTypes.use (.pack ⟨[], [], some E, false⟩ []))
-          let own ← lower (SourceTypes.use (.arrs [] [(Rsource, sourceDs, [restPack], R)]))
-          modify fun st => {st with hints := own :: st.hints}
-          pure ([((Rsource, sourceDs, R), some [restPack])], [own])
+        let E ← lower (Fragment.callableType elementJson)
+        let some ret := ret
+          | throw (locatedRefusal (← table) pos .bindingAnnotation
+              "a closure collecting a rest array needs its result annotation")
+        let R ← lower (Fragment.callableType ret)
+        let restPack ← lower (SourceTypes.use (.pack ⟨[], [], some E, false⟩ []))
+        let own ← lower (SourceTypes.use (.arrs [] [(Rsource, sourceDs, [restPack], R)]))
+        modify fun st => {st with hints := own :: st.hints}
+        pure ([((Rsource, sourceDs, R), some [restPack])], [own])
     | none => do
       let (L, S) ← match mode, scheme with
         | .ctor U, _ => match PositiveRules.expand G A with
@@ -2250,7 +2234,8 @@ private def lambdaSetup (fc : SourceClaims.Function) (scope : List ScopeBinding)
   -- Each arrow's rest: its array type, and, for code collecting it, the store
   -- the call collects its further actuals into, which the arrow's rest pack
   -- must fit (`RestStore`).
-  let restTys ← (List.range rows.length).mapM restAt
+  let restTy ← restAt
+  let restTys := rows.map fun _ => restTy
   let stores ← (rows.zip restTys).mapM fun ((_, P), restTy) => do
     let some P := P | pure none
     let G := SourceTypes.graph (← table)
@@ -2263,28 +2248,20 @@ private def lambdaSetup (fc : SourceClaims.Function) (scope : List ScopeBinding)
   -- The positions the code takes: the fixed parameters, and a tuple rest's.
   let arity := fixedParams.length + restElements.length
   let T ← table
-  if polymorphic then
-    if !typeParams.isEmpty && overlays.length != rows.length then
-      throw "per-arrow interior claims do not match the claimed arrows"
-    if typeParams.isEmpty && rows.length != 1 then
-      throw "a closure annotated with a scheme binder must carry one substituted arrow"
-    if !rows.all (fun (_, Di, _) => Di.length == arity || (arrayRest.isNone && arity ≤ Di.length)) then
-      throw "an arrow's arity differs from its closure"
-  else
-    -- A claim may offer more parameters than the closure takes: calls discard
-    -- the actuals past them. The ones it takes are the source's.
-    if !rows.all (fun (_,Di,_) => arity ≤ Di.length &&
-        ((Di.take arity).zip sourceDs).all (fun (D,B) => within T D B)) then
-      throw (match mode with
-        | .ctor _ => "construct signature claim is outside the source annotation"
-        | _ => "closure signature claim is outside the source annotation")
-    -- An ordinary function may be claimed at fewer receivers than it states,
-    -- never at more: its body reads the one it is given.
-    if Rsource != [top] && !rows.all (fun (Rt,_,_) => Rt.all Rsource.contains) then
-      throw (locatedRefusal (← table) pos .bindingAnnotation
-        "closure receiver claim is outside the source annotation")
-    if !overlays.isEmpty && overlays.length != rows.length then
-      throw "per-arrow interior claims do not match the claimed arrows"
+  -- A claim may offer more parameters than the closure takes: calls discard
+  -- the actuals past them. The ones it takes are the source's.
+  if !rows.all (fun (_,Di,_) => arity ≤ Di.length &&
+      ((Di.take arity).zip sourceDs).all (fun (D,B) => within T D B)) then
+    throw (match mode with
+      | .ctor _ => "construct signature claim is outside the source annotation"
+      | _ => "closure signature claim is outside the source annotation")
+  -- An ordinary function may be claimed at fewer receivers than it states,
+  -- never at more: its body reads the one it is given.
+  if Rsource != [top] && !rows.all (fun (Rt,_,_) => Rt.all Rsource.contains) then
+    throw (locatedRefusal (← table) pos .bindingAnnotation
+      "closure receiver claim is outside the source annotation")
+  if !overlays.isEmpty && overlays.length != rows.length then
+    throw "per-arrow interior claims do not match the claimed arrows"
   -- The captures: the named bindings in scope the lambda reads (a class's
   -- method binding, `C.m`, which `super.m(...)` reads, included), and the
   -- prototypes a literal or a primitive's member reads through. A read

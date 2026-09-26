@@ -1031,16 +1031,17 @@ $\kappa(A)$ for the image of a type, each entry is one of:
   scheme matched against itself its binders stand for themselves; `fixedBy`);
 - $i$ a clause row, $T=\{j\}$, $j$ a clause row, and $G(j)\doteq G(i)[\kappa]$:
   the same clauses, each operand with the same members as its image;
-- $i$ the meet row $p\sqcap\vec c$ of a value parameter row $p$, with no
-  further parameters, every operand
-  of $\vec c$ with an image, and $T=\{j\}$ with either $j$ the meet row
-  $q\sqcap\vec d$ of a value parameter row $q$ with no further parameters, $\kappa(p)=\{q\}$ (or $q=p$
-  when $\kappa$ does not name $p$) and $\vec d\doteq\vec c[\kappa]$; or $j$ a
-  clause row of value kind, $\kappa(p)=U$ a type of clause rows, and
-  $G(j)\doteq\mathsf{meetLists}(G(U),\vec c[\kappa])$ or
-  $G(j)\doteq\mathsf{meetLists}(\vec c[\kappa],G(U))$ (`meetOk`): the meet of
-  the parameter's image with the clauses' images, which is what lowering
-  `T & DepSafe` at `T := U` gives;
+- $i$ the meet row $p_1\sqcap\cdots\sqcap p_k\sqcap\vec c$ of value
+  parameter rows $\vec p$ (its parameter and `meetParams`), every operand of
+  $\vec c$ with an image, and $T=\{j\}$ with either $j$ the meet row
+  $q_1\sqcap\cdots\sqcap q_l\sqcap\vec d$ of value parameter rows whose set is
+  that of the $\vec p$'s images, each $\kappa(p_i)=\{q\}$ (or $p_i$ itself
+  when $\kappa$ does not name it), and $\vec d\doteq\vec c[\kappa]$; or $j$ a
+  clause row of value kind, each $\kappa(p_i)=U_i$ a type of clause rows, and
+  $G(j)\doteq\mathsf{meetLists}(G(U_1),\ldots,G(U_k),\vec c[\kappa])$, the
+  meet folded left to right or in the reverse order (`meetOk`, `meetMany`):
+  the meet of the parameters' images with the clauses' images, which is what
+  lowering `T & DepSafe` at `T := U`, or `U extends T` at both, gives;
 - $i$ the scheme row $(\vec q;\Sigma';\beta';\Sigma'_\ldots)$, $T=\{j\}$, $j$
   the scheme row $(\vec r;\Sigma'[\kappa'];\beta'[\kappa];\Sigma'_\ldots[\kappa'])$
   with $|\vec r|=|\vec q|$, $\vec r$ distinct parameter rows of matching kinds
@@ -1260,113 +1261,45 @@ encoding.
 
 ## Related layers
 
-### Rigid inclusion
-
-Direct types are a rigid name, ground graph labels, a callable over direct
-types, or a union of direct types mentioning a rigid name, `string | T`, whose
-meaning is a value of one of its members:
-
-$$
-\llbracket A_1\mid\cdots\mid A_k\rrbracket_\eta=
-\bigcup_i\llbracket A_i\rrbracket_\eta .
-$$
-
-A union has one spelling, whoever builds it (`Ty.mkUnion`): nested unions
-flattened, the rigid names sorted, then the other members, then every ground
-label in one list, a member `unknown` making the whole top, so an annotation
-and a claim of the same union are equal. Inclusion under declared bounds,
-`RigidJudgments.Sub ps a b`: a rigid name is below itself; it is below
-whatever its declared bound is below, a union excepted; ground label lists
-are compared by inclusion; a callable is below another when the other's
-parameters are each below its own and its result is below the other's; and
-for unions,
-
-$$
-\frac{}{\bar P\vdash U\le U}
-\qquad
-\frac{\forall i.\;\bar P\vdash A_i\le B}{\bar P\vdash A_1\mid\cdots\mid A_k\le B}
-\qquad
-\frac{\bar P\vdash A\le B_j\quad A\ \text{neither a union nor ground}}
-     {\bar P\vdash A\le B_1\mid\cdots\mid B_m}
-\qquad
-\frac{\forall \ell\in L.\;\exists j.\;\bar P\vdash\{\ell\}\le B_j}
-     {\bar P\vdash L\le B_1\mid\cdots\mid B_m}
-$$
-
-(the last for a ground label list $L$, label by label). A rigid name is below
-a union through one member: its bound, ground or an earlier name, is below the
-union exactly when it is below the union's one ground member or reaches one of
-its names. The chain rule carries transitivity. `Sub.refl` holds for every
-type, and `Sub.sound` proves the judgment semantically sound on its own.
-
-`Ty.leUnder` is the executable relation, a fuelled walk. For well-formed
-parameter lists (distinct names, every rigid bound naming an earlier
-parameter, every bound ground or rigid), `leUnder_iff_Sub` proves
-
-$$
-\mathsf{leUnder}(\bar P, a, b) = \mathsf{true}
-\quad\Longleftrightarrow\quad
-\bar P \vdash a \le b .
-$$
-
-`SourceJudgments.parametersOf_wellFormed` proves every list the source checker
-builds is well formed, and `Sub_of_leUnder` needs no hypothesis. A parameter
-bounded by a deep callable once exposed insufficient fuel:
-`RigidJudgments.counterexample_derivable` is the derivation, and two kernel
-guards record that the repaired fuel, which also pays for each parameter's
-bound, accepts it.
-
-#### Planned completeness extension: callable upper bounds
-
-Well-formedness excludes callable bounds. This matches the current source
-bound parser and simplifies the proof; it is not a design restriction or
-evidence that completeness fails. `Sub.sound` and `Ty.leUnder_sound` already
-cover callable bounds; what is unproved is that the walk accepts every
-derivable inclusion with them.
-
-The plan: extend well-formedness to acyclic callable bounds whose rigid
-references, including those inside parameter and result types, name earlier
-binders; prove a sufficient fuel bound, or replace the walk with an algorithm
-whose termination measure accounts for entering bounds and reversing at
-callable parameters; then extend `leUnder_iff_Sub` and the bound parser. This
-is expected to need no change to the declarative rules, but that is not a
-theorem. Recursive bounds are a separate extension and must not be admitted by
-removing the restriction or adding fuel.
-
 ### Quantified scheme layer
 
-Quantified local callables also form a layer outside the graph.
-`TypeSchemes.schemeT` denotes one callable meeting its signatures at every
-admissible assignment, while keeping the same captured world and field
-contracts. The source slice checks one local closure under rigid binders and
-their bounds, then compiles each checked ground elimination to fixed or
-variadic graph signatures. For a scheme $S$, outer assignment $\eta_0$ and
-assignment $\eta$,
+A quantified callable is a scheme row
+([Parameter and scheme rows](#parameter-and-scheme-rows)): its binders are
+parameter rows, and a member meets its signatures at every instantiation of
+them within their bounds (`schemeSemWithArgs`). For a scheme $S$ at the outer
+assignment $\eta_0$, an instance is a reassignment $\eta$ of its binders
+alone:
 
 $$
 \begin{aligned}
-\mathsf{Instance}_{G,P}(\eta_0,S,\eta)
+\mathsf{Instance}_{G}(\eta_0,S,\eta)
 \;\overset{\mathrm{def}}{\Longleftrightarrow}\;&
-\mathsf{ClosedAssign}_P(\eta)
-\land\mathsf{Satisfies}_{G,P}(\eta,S.\mathsf{bounds})
-\land\forall i\notin S.\mathsf{binders}.\;\eta(i)=\eta_0(i),\\
-\llbracket S\rrbracket^{\mathsf{scheme}}_{G,P,\eta_0}(n,W,v)
+\eta=\eta_0[S.\mathsf{binders}:=\vec A]
+\land\mathsf{Bounded}_n(\eta_0,S,\vec A),\\
+\llbracket S\rrbracket^{\mathsf{scheme}}_{G,\eta_0}(n,W,v)
 \;\overset{\mathrm{def}}{\Longleftrightarrow}\;&
 \mathsf{Invocable}(v)\land\forall\eta.\;
-\mathsf{Instance}_{G,P}(\eta_0,S,\eta)
+\mathsf{Instance}_{G}(\eta_0,S,\eta)
 \Rightarrow
-\mathsf{Calls}(\mathsf{Sig}_\eta(S))\land\mathsf{Rests}(\mathsf{RestSig}_\eta(S)).
+\mathsf{Calls}(\mathsf{Sig}_\eta(S))\land\mathsf{Rests}(\mathsf{RestSig}_\eta(S)),
 \end{aligned}
 $$
 
-The quantifier is inside membership of one $v$ at one $n,W$, so it cannot be
-witnessed by a different closure per call. The last conjunct of `Instance`
-keeps every non-binder meaning, including those the captured environment uses,
-fixed across instantiations. Scheme rows are the graph form of the same idea
-for generic methods ([Parameter and scheme rows](#parameter-and-scheme-rows)).
+a bound read at $\eta_0$, outside the binders. The quantifier is inside
+membership of one $v$ at one $n,W$, so it cannot be witnessed by a different
+closure per call, and every row outside the binders, those the captures' types
+use included, means the same at every instance. `QuantifiedGraphs.scheme_intro`
+and `scheme_elim` state introduction and elimination on this meaning. A
+generic closure is graph code at a scheme row (`funScheme`): its code is
+checked once at the row's signatures, over the binders' parameter rows, and a
+code table entry holds at every assignment of them (`CodesSound`), so at every
+instance. A bound naming another binder, `U extends T`, is no scheme bound,
+since it reads a binder: the binder is read as the meet of the two parameter
+rows (`dependentMeet`), which an instance maps to the meet of their type
+arguments (`meetOk`).
 
-Lean: `TypeSchemes.lean`, `TypeParams.lean`, `Source/GenericSource.lean`,
-`Source/GenericAlias.lean`.
+Lean: `Types/PositiveGraphs.lean` (`schemeSemWithArgs`),
+`Types/QuantifiedGraphs.lean`, `Source/GenericAlias.lean`.
 
 ## Limits
 
@@ -1376,8 +1309,6 @@ Lean: `TypeSchemes.lean`, `TypeParams.lean`, `Source/GenericSource.lean`,
   complete for the model. For example, incompatible invariant contracts are
   never recognized as empty.
 - `compatible` is a shape test, not a test of joint inhabitation.
-- Rigid inclusion is complete only for well-formed bounds, which exclude
-  callable bounds.
 - Normalization has no growth control, and no verified compiler from textual
   type syntax to graphs exists.
 - Generic methods are still receiver-quantified signatures, not host-relative

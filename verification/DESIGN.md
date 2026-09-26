@@ -188,9 +188,9 @@ exact CLI success condition; its conclusion is that every extracted plan was
 certified, and that for every accepted unit's request, every assignment
 $\eta$ of its parameter rows, and every environment meeting the unit's
 inputs at $\eta$ in an admissible world with a satisfying heap, the graph is
-safe at its declared result read at $\eta$ (`SafeGraph`; each scheme plan, a
-function holding a quantified closure on the rigid path, additionally carries
-its universal certificate). The inputs are the unit's
+safe at its declared result read at $\eta$ (`SafeGraph`). Every plan is a
+graph request: a generic unit and a generic closure are checked by the same
+checker, their binders parameter rows. The inputs are the unit's
 parameters, the module values it reads, and every assumed value: imports,
 ambient declarations, globals, prototypes, intrinsics. Every plan reaches
 acceptance through one exhaustive conversion to `CertifiedPlan`; no variant
@@ -252,16 +252,13 @@ A binder bounded by another, `U extends T`, is the meet of the two
 parameter rows, within `T`'s clauses if it has any: a meet row may name
 several parameters, and is below each of them and below a meet of some of
 them within the same clauses ([`meetBelow`](POSITIVE-TYPES.md#core-tables)).
-Every generic unit is a graph request; there is no second checker for
-generic bodies.
-
-One older path remains, for a generic closure whose bound names another of
-its binders, which a scheme row cannot yet be instantiated at: its
-introduction is checked under rigid binders
-(`GenericSource.closureCertificate`, `ClosureCertificate`) and its
-eliminations compiled to ordinary arrows
-([quantified schemes](POSITIVE-TYPES.md#quantified-scheme-layer)), one such
-closure per function.
+A generic closure's binder is read so too: such a bound reads a binder,
+which a scheme row's bounds, read outside its binders, cannot, so the meet
+alone states it, and at every instantiation within the bound the meet is the
+binder. An instance maps a meet row of several parameters to the meet of
+their instances with its clauses (`meetOk`), which is what a call's
+claimed instance names. Every generic unit and every generic closure is a
+graph request; there is no second checker for generic bodies.
 
 ### Closures are graph code
 
@@ -272,7 +269,9 @@ captured slots. Mutable locals, loops, `switch`, `try` and patterns inside a
 closure are the same graph shapes as anywhere; a generic closure's code is
 checked at its scheme's signatures ([generic bodies](#generic-bodies)). There
 is no other closure code: every kind of closure is graph code, and one rule
-creates each kind.
+creates each kind. The calculus has no other code either: an object's call
+code is graph code, `.bind`'s forwarding descriptor, or none
+([call codes](SEMANTICS.md#graph-code)).
 
 - **A rest parameter** makes the code collect the actuals past its fixed
   parameters into a fresh store, in slot 0 of the frame, below the receiver
@@ -909,11 +908,6 @@ numbers and the tasks sized for agents are in
 specification and the host's stated types as lemmas would turn most of the
 trust surface into theorems; the expected results and their cost are in
 [ECMA-CONNECTION](ECMA-CONNECTION.md).
-
-**The rigid path for generic closures.** A generic closure whose bound names
-another of its binders needs a scheme whose meet rows name several binders to
-be instantiated, which instance tables do not yet map (`meetOk` maps a meet of
-one parameter). With that, `GenericSource` and `ClosureCertificate` retire.
 
 **Constructor rests.** A constructor's rest parameter is refused. The code
 could collect it as a closure's does, but no rule constructs at a variadic

@@ -47,16 +47,8 @@ private def roundtrip (r : Request) : Except String Unit := do
 #guard !ok (roundtrip {request with codes := codes.map fun q =>
   {q with entry := {q.entry with exprs := [.app .nul .nul]}}})
 
-/-- The same program with the code as a term, run by the machine. -/
-def executed : Program :=
-  [⟨.attach (.var 1) .tru,.bind 1,none⟩,
-   ⟨.var 0,.bind 2,none⟩,
-   ⟨.write (.var 1) .fls,.effect 3,none⟩,
-   ⟨.read (.var 0),.bind 4,none⟩,
-   ⟨.app (.var 1) (.var 0),.ret,none⟩]
-
 /-- One allocation, then an alias write, bag read, and call on the same identity. -/
-theorem returns_false : Execution executed 14 [] (.at 0 (fun _ => .nul)) [.fls] (.done .fls) := by
+theorem returns_false : Execution program 16 [] (.at 0 (fun _ => .nul)) [.fls] (.done .fls) := by
   apply Execution.next (.enter rfl)
   apply Execution.next (.expr (.makeV rfl))
   apply Execution.next (.bind rfl)
@@ -69,7 +61,9 @@ theorem returns_false : Execution executed 14 [] (.at 0 (fun _ => .nul)) [.fls] 
   apply Execution.next (.expr (.readV rfl))
   apply Execution.next (.bind rfl)
   apply Execution.next (.enter rfl)
-  apply Execution.next (.expr (.beta rfl))
+  apply Execution.next (.expr (.callGraph rfl (by decide)))
+  apply Execution.next (.expr (.gotoEnter rfl rfl))
+  apply Execution.next (.expr (.frameRet rfl))
   apply Execution.next (.ret rfl)
   exact .refl
 

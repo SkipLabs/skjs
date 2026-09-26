@@ -419,7 +419,7 @@ theorem callsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W}
 
 /-- Graph code of fixed arity meets a variadic signature whose fixed
 parameters cover it and whose fixed part it meets: the further actuals are
-discarded, as for closure code (`restsT_of_invocationSpec`). -/
+discarded. -/
 theorem restsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W}
     {S : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)} (fs : List (PropKey × Nat))
     (hs : ∀ s ∈ S, GraphCodeSpec G arity E K start Cs (s.1, s.2.1, s.2.2.2))
@@ -761,7 +761,6 @@ theorem truthy_of_shape {v : Val} :
   cases v with
   | objAt fs code =>
     cases code with
-    | closure _ _ kind => cases kind <;> simp [valueShape, tagHolds]
     | graph _ _ _ _ _ kind _ => cases kind <;> simp [valueShape, tagHolds]
     | _ => simp [valueShape, tagHolds]
   | _ => simp [valueShape, tagHolds]
@@ -859,7 +858,6 @@ theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
       cases v with
       | objAt fs code =>
         cases code with
-        | closure _ _ kind => cases kind <;> simp_all [valueShape, shape]
         | graph _ _ _ _ _ kind _ => cases kind <;> simp_all [valueShape, shape]
         | _ => simp_all [valueShape, shape]
       | _ => simp_all [valueShape, tagHolds, shape]
@@ -919,7 +917,6 @@ theorem tagClause_protoFree {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
         simp only [tagClause] at hq
         rw [← hs] at hq
         cases code with
-        | closure _ _ kind => cases kind <;> simp [valueShape, tagShape] at hq
         | graph _ _ _ _ _ kind _ => cases kind <;> simp [valueShape, tagShape] at hq
         | _ => simp [valueShape, tagShape] at hq
       | _ => rfl

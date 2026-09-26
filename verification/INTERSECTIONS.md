@@ -69,16 +69,17 @@ Two laws one might expect, of which only the second holds:
 
 ```
 (A → B) ∧ (A → C)  =  A → (B ∧ C)    refuted
-(A → C) ∧ (B → C)  =  (A ∨ B) → C    arrowT_union_dom
+(A → C) ∧ (B → C)  =  (A ∨ B) → C    ArrowCert.union
 ```
 
 The first holds in semantic subtyping
 ([Frisch, Castagna and Benzaken 2008](REFERENCES.md#frisch-castagna-and-benzaken-2008)) and fails here, left to right: `ModelBoundaries.arrow_inter_codomain_fails`
-exhibits a function in both `null → Ref(null)` and `null → Ref(null | boolean)`
-that is in neither result's conjunction, because each call allocates and the
+exhibits a function in both `(x: null) => Ref(null)` and `(x: null) => Ref(null | boolean)`
+(`callsT`, its code a graph of one node) whose result is in neither
+conjunction of the two, because each call allocates and the
 two contracts are invariant. `Safe` at a conjunction of result families is not
 safety at each when the result is allocated. What does hold is the overload law,
-`TypeAlgebra.overload_append`: an intersection of arrows is exactly the arrow
+`TypeAlgebra.calls_append`: an intersection of signatures is exactly the call
 family over the concatenated signature list, with no distribution into the
 result.
 
@@ -243,6 +244,6 @@ never the answer for two arrows. SKJS gives that answer today: `TFun::inter`
 other, and that `None` propagates through `TFields::inter` and `TObject::inter`
 until the clause is dropped, so `((x: string) => number) & ((x: number) =>
 string)` is empty in the checker. The repair the model prescribes is the one
-`overload_append` states: let `Callability::CPresent` carry a set of signatures
+`calls_append` states: let `Callability::CPresent` carry a set of signatures
 and concatenate on `inter`. Boxing functions does not help here and makes it
 worse — see [Callables](PROGRAM-TYPING.md#callables), design A.

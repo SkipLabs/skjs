@@ -275,9 +275,8 @@ def shape : Clause α → Nat
 
 def valueShape : Val → Nat
   | .nul => 0 | .tru | .fls => 1 | .objAt _ .absent => 2 | .undef => 4
-  | .objAt _ (.closure _ _ .call) | .objAt _ (.variadic _ _) | .objAt _ (.bound _ _ _)
-  | .objAt _ (.graph _ _ _ _ _ .call _) => 3
-  | .objAt _ (.closure _ _ .construct) | .objAt _ (.graph _ _ _ _ _ .construct _) => 11
+  | .objAt _ (.bound _ _ _) | .objAt _ (.graph _ _ _ _ _ .call _) => 3
+  | .objAt _ (.graph _ _ _ _ _ .construct _) => 11
   | .num _ => 5
   | .str _ => 6
   | .arr _ => 8
@@ -326,14 +325,12 @@ theorem semWithArgs_shape {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
   | arrs L S =>
     obtain ⟨fs, code, rfl, hc, -⟩ := h.1.1
     cases code
-    case closure kind => cases kind <;> simp_all [valueShape, shape, CallCode.callable]
     case graph kind _ => cases kind <;> simp_all [valueShape, shape, CallCode.callable]
     all_goals simp_all [valueShape, shape, CallCode.callable]
   | undef => cases h; rfl
   | callable a bs L S =>
     obtain ⟨fs, code, rfl, hc, -⟩ := h.1.2.1
     cases code
-    case closure kind => cases kind <;> simp_all [valueShape, shape, CallCode.callable]
     case graph kind _ => cases kind <;> simp_all [valueShape, shape, CallCode.callable]
     all_goals simp_all [valueShape, shape, CallCode.callable]
   | str => obtain ⟨s, rfl⟩ := h; rfl

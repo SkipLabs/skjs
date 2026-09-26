@@ -26,28 +26,24 @@ the subset
 
 $$v ::= \mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}\mid\mathsf{obj}(\ell,c),$$
 
-where $c ::= \mathsf{absent}\mid\mathsf{closure}(m,t)\mid\mathsf{variadic}(m,t)\mid\mathsf{bound}(f,r,\vec p)\mid\mathsf{graph}(m,E,K,s,\vec c,\kappa,\varrho)$ is a separate invocation
-descriptor, the first two with a declared parameter count `m`. A closure body is
-under `m + 1` binders: the receiver of the call in slot 0, then its parameters.
-A variadic body has its rest store in slot 0, the receiver in slot 1, then `m`
-parameters; its first step wraps the store into the array its rest parameter
-names. `bound` is the forwarding descriptor `.bind` creates: the target, the
-receiver and the argument prefix it saved, values that no field holds and no
-write can reach. $\mathsf{graph}$ is code whose body is a control-flow graph,
-as a program's is: node expressions $E$, each node's continuation and handler
-$K$, an entry label $s$ and the captured values $\vec c$, invoked by a call
-or, construct-only, by `new` ($\kappa$), collecting a rest or not
-($\varrho$) ([graph code](#graph-code)). Every closure the source creates is
-graph code; the term descriptors remain for the machine's own examples. An argument list is not a value: which lists a rest
+where $c ::= \mathsf{absent}\mid\mathsf{bound}(f,r,\vec p)\mid\mathsf{graph}(m,E,K,s,\vec c,\kappa,\varrho)$ is a separate invocation
+descriptor, the call code. `bound` is the forwarding descriptor `.bind`
+creates: the target, the receiver and the argument prefix it saved, values
+that no field holds and no write can reach. $\mathsf{graph}$ is code whose
+body is a control-flow graph, as a program's is: a declared parameter count
+$m$, node expressions $E$, each node's continuation and handler $K$, an entry
+label $s$ and the captured values $\vec c$, invoked by a call or,
+construct-only, by `new` ($\kappa$), collecting a rest or not ($\varrho$)
+([graph code](#graph-code)). Every closure the source creates, a class and a
+callable object included, is graph code; there is no other code. An argument list is not a value: which lists a rest
 parameter's type admits is a separate contract on lists of values
 ([argument packs](POSITIVE-TYPES.md#argument-packs)).
 `make c a` evaluates its initializer `a`, then appends that value
 to the heap and returns `obj h.length c`, where `h.length` is the length
 before appending.
-`alloc a` abbreviates `make absent a`; `attach b a` abbreviates
-`make (closure 1 b) a`; `funE b` abbreviates `make (closure 1 b) null`.
-All three use the same constructor and the same allocation step, `Step.makeV`.
-The closure body is not evaluated during creation. There is no bare lambda value.
+`alloc a` abbreviates `make absent a`; creating code is `make (graph …) a`.
+Both use the same constructor and the same allocation step, `Step.makeV`.
+The code is not run during creation. There is no bare lambda value.
 
 Since that kernel, the values also include numbers (the bit pattern of the
 double), strings, bigints $\mathsf{bigint}(i)$ with $i\in\mathbb Z$ (a bigint is
@@ -92,14 +88,14 @@ object owns, it is `instanceof C`: an object along whose chain that
 prototype is, and `false` of a primitive, as JavaScript's `instanceof`
 answers. Where the object owns the key or holds no prototype
 (`protoFree`) the answer is the heap-free $\kappa\in\operatorname{dom}\mathit{fs}$
-(`tagHoldsIn_of_protoFree`), which is what a type's answer states. A closure descriptor records which invocation its code
-admits, $\mathsf{closure}(m,t,\mathit{kind})$ with
-$\mathit{kind}\in\{\mathsf{call},\mathsf{construct}\}$: JavaScript gives a
-function object `[[Call]]` and `[[Construct]]` separately, an arrow has only
-the first and a class only the second. A plain call dispatches only call code
-(`dispatch` refuses construct code), and $\mathsf{new}\,f(\vec a)$ is its own
-term, which evaluates the callee, then the actuals left to right, and runs only
-construct code, with `undefined` for the receiver:
+(`tagHoldsIn_of_protoFree`), which is what a type's answer states. Graph code
+records which invocation it admits, $\kappa\in\{\mathsf{call},\mathsf{construct}\}$:
+JavaScript gives a function object `[[Call]]` and `[[Construct]]` separately,
+an arrow has only the first and a class only the second. A plain call
+dispatches only call code (`dispatch` refuses construct code), and
+$\mathsf{new}\,f(\vec a)$ is its own term, which evaluates the callee, then
+the actuals left to right, and runs only construct code, with `undefined` for
+the receiver:
 
 $$
 \frac{h,f\to h',f'}{h,\mathsf{new}\,f(\vec a)\to h',\mathsf{new}\,f'(\vec a)}
@@ -108,14 +104,8 @@ $$
      {h,\mathsf{new}\,f(\vec a)\to h',\mathsf{new}\,f(\vec a[i:=a_i'])}
 $$
 
-$$
-\frac{\vec a\ \text{values}}
-     {h,\mathsf{new}\,\mathsf{obj}(\mathit{fs},\mathsf{closure}(m,b,\mathsf{construct}))(\vec a)
-      \to h,\mathsf{bind}_m(\vec a,\mathsf{undefined},b)}
-$$
-
-(`constructL`, `constructArg`, `constructV`), where $\mathsf{bind}_m$ is the
-same parameter binding a call uses, missing actuals `undefined`. The step
+(`constructL`, `constructArg`), then enters the code as a call does
+([`constructGraph`](#graph-code)), missing actuals `undefined`. The step
 relation stays deterministic (`Step_det`). What a construct signature promises
 is in [the clause's meaning](POSITIVE-TYPES.md#functions-and-classes):
 the construct step's result is safe at the signature's result, one level below
@@ -250,14 +240,15 @@ $\mathsf{makeAt}\;\mathsf{absent}\;[\mathsf{proto}]\;[P]$ with $P$ the realm's
 prototype, from which `readProto` reads the member. No step is added.
 
 `make_rule` proves heap and world extension once, with a result obligation for
-the fresh object's descriptor. `alloc_rule` and `attach_rule` specialize that
-proof to plain reference and callable contracts.
+the fresh object's descriptor. `alloc_rule` specializes that proof to plain
+reference contracts; creating code uses it with the code's contracts
+(`HasTy.sound`).
 
 [ObjectCoherence.lean](lean/Verification/Model/Semantics/ObjectCoherence.lean)
 proves the separate identity invariant. An append-only ghost registry records
-each allocation's descriptor. Every object occurrence in terms, closure bodies,
-and heap cells agrees with that registry; an already allocated closure has no
-free variables other than its argument. Substitution therefore preserves its
+each allocation's descriptor. Every object occurrence in terms, code nodes,
+captures and heap cells agrees with that registry; an already allocated
+object's captures are closed values. Substitution therefore preserves its
 descriptor. `step_preserves` follows the existing `Step` relation and proves that
 reads, writes, calls, and allocation preserve coherence, including heap cycles.
 The registry is proof data, not an additional runtime heap.
@@ -357,7 +348,7 @@ A **binding** lives in the environment $\rho$; a **location** $\ell$ is an addre
 in the heap $h$. This is the usual store/heap pair of an ML-style operational
 semantics. A binding may *hold* an object: $\rho(x)=\mathsf{obj}(\ell,c)$. Below,
 $\ell$ abbreviates the plain-object value $\mathsf{obj}(\ell,\mathsf{absent})$.
-A function object carries closure code at the same kind of heap identity;
+A function object carries graph code at the same kind of heap identity;
 [callable contracts](PROGRAM-TYPING.md#callables) additionally constrain that code.
 
 Because the calculus is nameless, a binding is really a de Bruijn position, and
@@ -385,7 +376,8 @@ for a strict comparison with a singleton operand, the nullish test for `??` and
 for `== null`, and strict equality $\equiv$ for any other strict comparison. Every test is total on values.
 
 Substitution operates on closed substituted values. `Bindings.lean` supplies
-scope and simultaneous closing substitution, including its beta law. The program
+scope and simultaneous closing substitution, which entering a node of graph
+code instantiates in its run's environment. The program
 typing theorem uses semantic environments of closed values; its closed-program
 interface explicitly checks scope.
 
@@ -526,24 +518,23 @@ All the callable uses build on this equation:
   uses the call promises on that same object. Returning, passing or capturing
   a callback simply uses this family as a result, domain or environment type.
 - Quantification requires the same value, in the same world, to satisfy the
-  promises at every admissible binder assignment. `TypeSchemes.schemeT`
-  universally quantifies the conjunction of instantiated `callsT` and `restsT`;
-  its shape condition is `Invocable`, even when no assignment satisfies the
-  bounds. The executable universal certificate covers both fixed and rest
-  descriptors. `T[]` denotes invariant array storage under the same assignment,
-  and each invocation allocates its rest store with that contract.
+  promises at every admissible binder assignment. A scheme row
+  (`schemeSemWithArgs`) universally quantifies the conjunction of instantiated
+  `callsT` and `restsT`; its shape condition is `Invocable`, even when no
+  assignment satisfies the bounds. `T[]` denotes invariant array storage under
+  the same assignment, and each invocation allocates its rest store with that
+  contract.
 - Contract weakening follows `Promise.weaken`: admit fewer argument lists
   and weaken the result. Fixed-to-variadic coverage is not generally valid
   from a fixed contract alone, since it promises nothing about longer lists.
-  A concrete ordinary closure can nevertheless have stronger behavior.
+  Concrete code of fixed arity can nevertheless have stronger behavior
+  (`restsT_of_graph`).
 
 The [typing rules](PROGRAM-TYPING.md#expressions) build creation and
-application rules on this meaning. `InvocationSpec` and `RestCalls.RestSpec`
-are code-specific introduction premises. `callsT_of_invocationSpec` and
-`restsT_of_restSpec` turn them into the behavioral contracts above. The older
-unary `arrowT`, `arrowsT` and fixed-code `codeCallsT` remain specialized
-semantic lemmas for ordinary closure code; they are not the graph's definition
-of all function values. `callsT_of_arrowsT` embeds that specialized guarantee.
+application rules on this meaning. What code promises is proved where it is
+created, from its graph's check at each signature (`GraphCodeSpec`):
+`callsT_of_graph`, `restsT_of_graph`, `restsT_of_graphRest` and
+`ctorsT_of_graph` turn a checked code into the behavioral contracts above.
 
 ## Argument-list preparation
 
@@ -565,16 +556,16 @@ all preparation. `prepare_deterministic` and `call_step_iff` connect preparation
 and invocation to the deterministic term machine. A ready frame has value
 operands; readiness alone does not establish callability or typing.
 
-Ordinary code uses `parameters n args` to pad missing positions with
-`undefined` and discard extra positions after their effects have occurred.
-`bindParameters` substitutes the receiver in slot 0 and these values after it,
-without allocating. Variadic code uses
-`bindRest`: fixed positions are padded in the same way, while `args.drop n`
-becomes a fresh rest store. Padding never enters the rest store. Dispatch
-itself leaves the heap unchanged; the yielded term allocates the store with
-the ordinary store step, and the body wraps it into an array with the
-prototype it captured, as an array literal is allocated. These operational distinctions
-are independent of the contracts callers use.
+Code uses `parameters n args` to pad missing positions with `undefined` and
+discard extra positions after their effects have occurred; entering graph
+code places the receiver in slot 0 and these values after it, without
+allocating (`graphEntry`). Code collecting a rest pads its fixed positions in
+the same way, while `args.drop n` becomes a fresh rest store in slot 0, below
+the receiver. Padding never enters the rest store. Dispatch itself leaves the
+heap unchanged; the yielded term allocates the store with the ordinary store
+step, and the code wraps it into an array with the prototype it captured, as
+an array literal is allocated. These operational distinctions are independent
+of the contracts callers use.
 
 A `bound` descriptor dispatches without binding anything: `Step.callBound`
 turns `invoke (bound f r₀ p⃗) r a⃗` into `invoke f r₀ (p⃗ ++ a⃗)`, dropping the
@@ -595,7 +586,7 @@ index in order with the ordinary store operations, then invokes the target with
 those elements. It never iterates the list, so it shares the prepared actual
 list with ordinary calls but not the spread's operation.
 
-`callsT_invoke` obtains safe dispatch from a behavioral promise.
+`ArgumentContracts.call_safe` obtains safe dispatch from a behavioral promise.
 `ProgramTyping.call_safe` first evaluates the callee and composes effectful
 arguments using `bind_list` and `FutureSafe`. `ArgsT_transfer` preserves saved
 value types as the budget decreases and the world extends. Variadic calls
@@ -889,12 +880,8 @@ the operation and composition rules using this predicate;
 
 ## What the checked development establishes
 
-- `Rules.lean` gives the operational rules for functions, application, heap
-  operations, shape testing and branching, including an application-context
-  composition rule.
-- `Examples.lean` checks negative recursive function types, closures surviving
-  alias writes, and a composed program that allocates, mutates and reads back a
-  changed boolean. It also rejects a stuck function.
+- `Rules.lean` gives the operational rules for calls, heap operations, shape
+  testing and branching, including an application-context composition rule.
 - `ProgramTyping.lean` proves safety by induction on syntactic typing derivations.
   `ProgramTypingTests.lean` combines overload dispatch, captured state, an alias
   write and checked overload subsumption in one program.
@@ -928,18 +915,20 @@ already contain all necessary subtype evidence.
 First, unrestricted arrow-result distribution fails:
 
 ```text
-(A → B) & (A → C) ≤ A → (B & C)
+((x: A) => B) & ((x: A) => C) ≤ (x: A) => B & C
 ```
 
-An allocating function can satisfy the two arrows using different invariant
-choices for a new cell. Requiring a single result-world interpretation is
+An allocating function (one node of graph code, `arrow_inter_codomain_fails`)
+can satisfy the two signatures using different invariant choices for a new
+cell. Requiring a single result-world interpretation is
 stronger. The maintained combination rule uses a proved conservative shape
 condition instead. The law holds in set-theoretic semantic subtyping
 ([Frisch, Castagna and Benzaken 2008](REFERENCES.md#frisch-castagna-and-benzaken-2008)), which has no state.
 
 Second, eventual incompatibility of nested reference contracts cannot justify
-collapsing their arrow results to bottom at every finite index. A concrete
-cyclic heap and constant function witness the failure. This is a limitation of
+collapsing their signatures' results to bottom at every finite index. A
+concrete cyclic heap and constant function witness the failure
+(`deeper_reference_rule_fails`). This is a limitation of
 that indexed semantic inclusion, not evidence of a program accepted unsafely.
 
 These counterexamples are regression tests for the model's laws. They do not

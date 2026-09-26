@@ -506,30 +506,19 @@ constrain it. In SKJS's claims,
 `type Id<T> = T` and `type Box<T> = { value: T }` are the admitted
 substitution schemes, and a one-argument named instantiation is an `alias`
 atom `{ "a": "alias", "name": "Id", "args": [A] }`.
-The adapter substitutes using the identity and cell theorems before identity
-checking or ground extraction. `asBoolean<T extends boolean>(x: T): boolean { return x }`
-is accepted; returning `true` as `T` is not. A generic body may copy `T`
-through annotated consts or an unannotated immutable const whose checked
-initializer retains `T`, and return a variable. Parameters and annotations may
-name distinct declared parameters or boolean. A conversion requires identity
-or a forward path through the declared bounds, so `U extends T` permits `U`
-to `T` but never the reverse. A const retains its annotation after conversion.
-Generic callbacks remain outside the fragment, and so does call-site
-instantiation of a generic _declaration_. A quantified closure bound to a local
-takes a different route: its scheme claim is checked by the scheme section of
-`SourceClaimJson`, described in
-[SOURCE-CLAIMS.md](SOURCE-CLAIMS.md#quantified-callables-and-their-eliminations),
-which validates each call's explicit substitution and compiles the checked
-eliminations to ordinary arrows. A file of
-only these schemes still produces an empty graph evidence bundle. Both production
-and consumption nevertheless check the source body, signature, and every source
-entry/expression claim. Sites must match exactly, without duplicates or missing
-claims. Entry inclusions, expression inclusions and binding/return contracts
-are checked under rigid parameters and the declared bounds; failure reports the
-source span and named inclusion. The scheme is then omitted from the ground
-graph request. No per-site generic evidence is serialized yet. The neutral
-source sidecar also accepts function-scoped `{ "param": "T" }` claims from
-TypeScript, checked by the same generic checker against source binders and bounds.
+A generic unit is an ordinary graph request: each binder is read as its
+parameter row, a bounded one as the meet of its row and its bound, a binder
+bounded by another as the meet of the two parameter rows, and the request is
+checked at every assignment of those rows
+([generic bodies](DESIGN.md#generic-bodies)). A generic closure's scheme claim
+becomes a scheme row whose binders are fresh parameter rows, read so too; its
+code is graph code checked at the row's signatures (`funScheme`), and a call
+of it names its instance, below the scheme by a checked instance
+(`Sub.inst`). A call of a generic module value names its instance: each type
+argument must lie within its binder's bound by the graph's certified
+subtyping, a failure being a located direct obligation. The neutral source
+sidecar's function-scoped `{ "param": "T" }` claims are read the same way,
+each binder as its row.
 
 Generate an AST with `tools/fragment-parse.mts`, and claims with SKJS's
 `--emit-skjs-type-claims`. Then run:
@@ -551,8 +540,8 @@ Native SKJS source commands first import through `SourceClaimExport` into the
 same `SourceClaimJson` document and consumer used by TS. Unavailable claims stay
 explicit and do not denote types. There is no separate native whole-file checker.
 Ground functions lower to `SourceClaims.Function`; used candidates are resolved
-with source-graph label bounds checks. Generic functions use the shared rigid
-checker. See [the source-claim interface](SOURCE-CLAIMS.md).
+with source-graph label bounds checks. Generic functions are graph requests
+over their binders' parameter rows. See [the source-claim interface](SOURCE-CLAIMS.md).
 
 The adapter represents boolean as the union of exact true and false labels.
 [SourceTypes.lean](lean/Verification/Model/Source/SourceTypes.lean) proves

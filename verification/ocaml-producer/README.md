@@ -206,21 +206,19 @@ delayed literals are inference work, not new semantic types. Keep
 inference-variable identities and write capabilities out of the published
 semantic-type API.
 
-The implemented slice accepts a quantified closure — unbounded, or bounded by
-`boolean` or by an earlier binder — called any number of times at any ground
-types. It preserves the scheme in SourceClaims, checks the closure body once and
-universally against its declared signature, validates each call's own explicit
-substitution, and only then compiles the checked eliminations to ordinary graph
-arrows. The universal gate reads the body from the source rather than from its
-claim, so acceptance does not depend on which calls the program makes. One
-quantified closure per containing function is admitted; a second is refused by
-name. An unannotated immutable local retains its checked initializer type,
-through dependent bounds and sequential declarators alike.
+The implemented slice accepts generic closures — unbounded, bounded by any
+ground type or by another of their binders, nested, in generic bodies, with
+rests and defaults — called any number of times at any ground types. Each
+preserves its scheme in SourceClaims; Lean reads the scheme as a scheme row
+whose binders are fresh parameter rows, and the closure is graph code at that
+row (`funScheme`), checked once at its signatures, so acceptance does not
+depend on which calls the program makes. A call names its instance, checked
+against the scheme (`Sub.inst`). An unannotated immutable local retains its
+checked initializer type, through dependent bounds and sequential declarators
+alike.
 
-Missing: nested quantified schemes throughout the direct checker, fresh
-inference variables, and a compositional scheme certificate. An unquantified
-returned closure may retain an outer binder in the implemented slice; that is
-not a nested quantified scheme.
+Missing: fresh inference variables. An unquantified returned closure may
+retain an outer binder; that is not a nested quantified scheme.
 
 ## Extending the producer
 
@@ -284,13 +282,13 @@ aliases; arrays, tuples and readonly views; higher-order callbacks and variance;
 closure scope and partial application; callable objects with fields; omitted
 trailing arguments, for optional and for defaulted parameters; closures
 advertising several signatures, checked once per signature; rest parameters,
-tuple or mutable array, and spreads among the actuals; universally certified
-quantified array rests and calls through variadic callbacks; universally checked
-rigid defaults and acyclic forward captures with preserved effect order; generic
-declarations and rigid bounds; quantified closures — one inferred call, one
-closure called at two types, bounded, returned or outer-dependent, reading
-captured storage, and as a callback argument; and generic inference constraints,
-for the maintained witnesses.
+tuple or mutable array, and spreads among the actuals; quantified array rests
+and calls through variadic callbacks; defaults and acyclic forward captures
+with preserved effect order, generic ones included; generic declarations and
+bounds; quantified closures — one inferred call, one closure called at two
+types, bounded, dependently bounded, returned or outer-dependent, reading
+captured storage, and as a callback argument; and generic inference
+constraints, for the maintained witnesses.
 
 | Open row                            | State                                   | Witness                              | Architectural pressure                                                        |
 | ----------------------------------- | --------------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------- |
@@ -301,77 +299,53 @@ Take the first open row whose prerequisite representation already exists. For
 every quantified row, rewriting a closure to the finite overloads observed in
 that program, checking its body once per observed call, or replacing its scheme
 claim with a monomorphic arrow does not satisfy the row: acceptance must require
-the universal check independently of the number and types of observed calls, and
-each call must validate its fresh substitution and bounds before lowering. The
-compiled arrows stay behind one interface, so a later first-class scheme
-certificate can replace them without changing Fragment, SourceClaims, OCaml
-semantic types or inference.
+the code's check at its scheme row independently of the number and types of
+observed calls, and each call must name an instance checked against the
+scheme.
 
 The procedure for a row is [Extending the producer](#extending-the-producer)
 above.
 
 ### Schemes: what exists, what is missing
 
-The model interprets rigid labels under an assignment in `TypeParams.lean` and
-proves parameter/field substitution equations. `TypeSchemes.lean` provides
-semantic scheme introduction/elimination, call safety, and allocation with fixed
-field contracts (`make_scheme_fields` allocates independently of the call
-instantiation, and `invocation_of_scheme_body` retains the same capture
-environment). Its closure-body rule quantifies over assignments while retaining
-the same captured environment and world, so outer parameter meanings cannot
-change, and scheme meanings are admissible closed-value families that can
-themselves serve as semantic type arguments.
+A quantified callable is a scheme row
+([quantified schemes](../POSITIVE-TYPES.md#quantified-scheme-layer)): one
+callable value, in one world, meeting its signatures at every instantiation of
+its binders within their bounds. A generic closure is graph code at a scheme
+row (`funScheme`): its code is checked once, at the row's signatures over the
+binders' parameter rows, and a code table entry holds at every assignment of
+them, so at every instantiation, with one unchanged capture environment. A
+call names its instance: the callee is read at the instance's signatures,
+below the scheme by a checked instance table (`Sub.inst`). A bounded binder is
+read as the meet of its row and its bound, one bounded by another binder as
+the meet of the two rows, and an instance maps a meet row to the meet of its
+parameters' instances (`meetOk`). There is one checker for generic bodies.
 
-The executable path runs from `SourceClaimJson`'s scheme section, which checks
-introduction universally from the source, validates each call's explicit
-substitution and compiles the checked eliminations to ordinary arrows.
-`DirectObligation.Ty.leUnder_sound` proves the executable subtype gate's
-rigid-bound, ground-union and contravariant/covariant arrow cases denote
-inclusion. `GenericSource.closureCertificate` reconstructs a proof for immutable
-reads, captured-cell reads, nested closures and callback calls independently of
-the observed calls — nested closure proofs use safe allocation and the same
-invocation lemma as universal introduction, and callback proofs use the existing
-effectful call rule for the callee and every argument, with subtyping at the call
-boundary. `GenericCertificate.ClosureCertificate.check_safe` then establishes
-`InvocationSpec` for every admissible assignment satisfying the bounds, with one
-unchanged capture environment and world: the universal code premise of scheme
-introduction. Final acceptance requires that certificate as well as the enclosing
-function's graph evidence. Cell slots carry their declaration's fixed contract,
-and `bag_read` proves reads through the captured identity.
-
-Missing: nested quantified schemes, arbitrary substitution evidence, a proof of
-general syntactic substitution, further body proof constructors, and recursive
-scheme graph nodes, which need the layer congruence/contractiveness argument —
-admissibility alone does not establish recursive interpretation. There is no
-general executable scheme certificate checker; the compiled arrows are
-consequences carried by the graph rather than a certificate of the scheme itself.
-First-class scheme hypotheses in the request protocol are a later
-certificate-depth milestone. `identity_scheme_safe` is a closed model example;
-executable acceptance uses the general `ClosureCertificate.check_safe` theorem
-instead.
+Missing: recursive scheme graph nodes and first-class scheme hypotheses in the
+request protocol.
 
 Invariants any extension must keep. Scoped quantifiers have one shared
 representation across Fragment, semantic types and SourceClaims, including bounds
 and occurrences inside fields, callbacks and results; a spelling-only top-level
 `{param: "T"}` cannot identify nested, shadowing binders, and no producer may add
 its own encoding or flatten quantifiers into monomorphic arrows. Introduction
-checks the body under fresh rigid parameters for every admissible assignment
-satisfying its bounds, captures keep their types and location contracts, and an
+checks the code at the scheme's signatures over parameter rows, for every
+assignment of them; captures keep their types and location contracts, and an
 already allocated location must not acquire a different contract at each
-instantiation. Elimination supplies an explicit substitution and proves the
-substituted bounds and argument obligations. Each call gets fresh proposal-only
+instantiation. Elimination names an instance and proves its bounds and
+argument obligations. Each call gets fresh proposal-only
 candidates in the solver module, including reversed callback inputs and both
 read/write obligations for writable fields; no unresolved candidate ID appears in
 published semantic types or evidence, and hidden existential witnesses remain
-rigid rather than being solved as candidates. Extending only the parser, or
-specializing each closure body at its observed calls, would bypass the universal
-obligation.
+opaque rather than being solved as candidates. Extending only the parser, or
+specializing each closure body at its observed calls, would bypass the
+universal obligation.
 
 `generic-closure.ts` is the first end-to-end witness and `generic-two-calls.ts`
 the first with two independently substituted eliminations of one retained scheme.
 `invalid-scheme-capture.ts` is what separates this from specialization: every one
-of its calls instantiates `T` at Boolean, so the compiled arrow is satisfied, and
-only the universal check refuses it. A successful OCaml solver unit test or an
+of its calls instantiates `T` at Boolean, so a check at the observed instance
+would pass, and only the code's check at the scheme row refuses it. A successful OCaml solver unit test or an
 unchecked concrete specialization would not close that gap.
 
 ### Subsequent flow work
@@ -438,15 +412,12 @@ Callable overloads, imported recursive aliases and named type-only imports
 have narrower implemented slices; this is breadth across the current
 calculus's major mechanisms, not the full language.
 
-Decision completeness is stated and proved for the rigid fragment:
-`RigidJudgments.Sub` is inclusion under declared bounds, decided by
-`Ty.leUnder` on the well-formed parameter lists `parametersOf` builds;
-`SourceJudgments.HasTy` is typing of lowered bodies of quantified closures
-on the rigid path, decided by the pure checker `GenericSource` runs after
-lowering; `CertificateJudgments.Typed` types calculus terms, and every
-derivation has a certificate accepted by `Proof.check`. Each is stated by
-rules, without proof terms or fuel, and each
-theorem gives both directions. This is completeness for the declared rules,
+Decision completeness is stated and proved for the certificate checkers:
+every derivable subtyping has an accepted certificate
+(`PositiveCertificates.check_complete`), and program evidence is accepted
+exactly when the program is derivable. Each is stated by rules, without proof
+terms or fuel, and each theorem gives both directions. This is completeness
+for the declared rules,
 not for every inclusion that happens to hold in the semantic model, and it is
 separate from completeness of graph proof search. The operational target
 stands beside it: every positive row reaches final semantic certification and
@@ -763,15 +734,14 @@ incorrect inherited-field result fails. TypeScript resolves the local root to
 the declaration itself, as it resolves an imported one. Every declaration
 application, local or imported, has one interpretation from its source
 equation. With ground arguments it lowers to graph rows. With an argument over
-the enclosing function's rigid binders, Lean expands the equation with the
-arguments substituted: parameters, functions and arrays become the forms the
-rigid checker reads, and parameter-free parts still lower to graph rows. The
+the enclosing function's binders, Lean expands the equation with the
+arguments substituted: parameters, functions and arrays become claim forms,
+each binder read as its parameter row, and parameter-free parts still lower
+to graph rows. The
 OCaml encoder expands the same application from the same definition. So
 `GenericCallable<T> = (value: T) => T` applied to a rigid `T` verifies, and a
 wrong result fails with the same generic obligation, whether the declaration
-is local or imported; `test.mts` compares the two outcomes. A record over a
-rigid binder (`{ readonly value: T }`) stays outside the rigid checker for both.
-Bounded declarations and recursive applications over a binder refuse.
+is local or imported; `test.mts` compares the two outcomes. Bounded declarations and recursive applications over a binder refuse.
 Declaration location is no longer a separate type meaning.
 
 The present source checker recognizes `boolean`, an earlier rigid parameter,
@@ -1031,8 +1001,9 @@ first milestone, in order of how much each gates:
      method's value binder, a meet row whose instance is the meet of the
      binder's instance with the ground operands
      ([binders met with ground types](../PROGRAM-TYPING.md#binders-met-with-ground-types)), which the producer proposes as `Meet` operands and
-     Lean fills (`"meets"`); a generic function's own binder still lowers
-     through the rigid claim reader, which refuses it.
+     Lean fills (`"meets"`); a generic unit's own binder met with ground
+     types is a meet row the same way
+     ([binders met](../PROGRAM-TYPING.md#binders-met-with-ground-types)).
 5. **Library contracts**, read from TypeScript's own standard library
    declarations (`lib.*.d.ts`) through the same declaration graph as any
    library, not written by hand. Done: global type names are declaration
@@ -1167,17 +1138,15 @@ unfolding keeps growing stay opaque members. The runtime API's
 whole; what stops `sum.ts`'s mappers now is their bodies, which return an array
 as an `Iterable`: arrays as library objects.
 
-`TypeSchemes.lean` is an older, separate scheme layer for local generic
-closures (with bounds and rest signatures, outside the graph). Scheme rows
-subsume it once they have bounds (stage 5) and rest signatures; that slice
-then moves onto them, so there is one mechanism.
+Scheme rows are the one mechanism for quantified callables: a local generic
+closure is graph code at a scheme row, with bounds, rests and defaults.
 
 The one semantics serves three rules, each needed:
 - *elimination*, calling a generic method at an instance: every generic call
   `sum.ts` makes (`EagerCollection.map`, `Promise.then` under `await`,
   `Array.reduce`) is one, on a value the library provides;
-- *introduction*, a body checked at rigid binders, as a local generic closure
-  already is (`TypeSchemes.scheme_intro`): no client `sum.ts` needs it, but
+- *introduction*, code checked at a scheme row's signatures, as a local
+  generic closure's is (`funScheme`): no client `sum.ts` needs it, but
   the runtime it calls implements every one of those methods
   (`EagerCollectionImpl.map`, `ContextImpl.createLazyCollection`, in
   `core/src/index.ts`), and TypeScript accepts it for classes and objects
@@ -1366,7 +1335,7 @@ verifies, local and imported alike, with a wrong read refused.
   Behind that, measured with `deepFreeze(t)` for `t: Todo`, its result
   `T & DepSafe` over its own binder is refused at the call's scheme
   elimination ("an intersection of anything but records or functions"): the
-  same exact meet, in the rigid checker.
+  same exact meet, at the scheme elimination.
 - Generic `Serializable<T>`, `T` a type parameter, is `T & {index}`, a binder
   met with a ground type: that same work. OCaml still proposes the binder for
   it (a `Meet` whose principal stays rigid resolves to it), and refuses a

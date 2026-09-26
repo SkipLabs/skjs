@@ -56,25 +56,11 @@ private def certificate : ControlFlow.Certificate Nat :=
   | none => false
 #guard (expression G pool 10 [[5],[2]] (.app (.var 0) (.var 1)) [2]).isSome
 
-/-- The same program with the code as a term, run by the machine. -/
-private def executed : Program := program.set 0 ⟨.attach (.var 1) .nul,.bind 1,none⟩
-
 /-- Reading the cyclic bag returns the same callable; its descriptor still
-executes identity code. No recursive unfolding is performed by the machine. -/
-theorem returns_false : Execution executed 14 [] (.at 0 (fun _ => .nul))
-    [.fn 0 (.var 1)] (.done .fls) := by
-  repeat first
-    | exact Execution.refl
-    | apply Execution.next (.enter rfl)
-    | apply Execution.next (.expr (.makeV rfl))
-    | apply Execution.next (.expr (.writeV rfl (by decide)))
-    | apply Execution.next (.expr (.readV rfl))
-    | apply Execution.next (.expr (.iteC (.testV rfl)))
-    | apply Execution.next (.expr .iteT)
-    | apply Execution.next (.expr (.beta rfl))
-    | apply Execution.next (.bind rfl)
-    | apply Execution.next (.effect rfl)
-    | apply Execution.next (.ret rfl)
+runs its identity code. No recursive unfolding is performed by the machine. -/
+theorem returns_false : Execution program 16 [] (.at 0 (fun _ => .nul))
+    [.obj 0 (oneNode 1 (.var 1) 0)] (.done .fls) := by
+  run_machine
 
 /-- The getter captures the callable before its bag contains a callable. Calling
 it after the self-write observes the updated heap and returns a callable value. -/
@@ -104,24 +90,9 @@ private def nullGetterRequest : Request :=
    identityCodes ++ oneNodeCodes 1 getter [[2]] [([7],[[1]],[0])]⟩
 #guard !ok (roundtrip nullGetterRequest)
 
-/-- The same program with the codes as terms, run by the machine. -/
-private def capturedExecuted : Program :=
-  (capturedProgram.set 0 ⟨.attach (.var 1) .nul,.bind 1,none⟩).set 1 ⟨.funE (.read (.var 2)),.bind 2,none⟩
-
-theorem captured_returns_false : Execution capturedExecuted 18 [] (.at 0 (fun _ => .nul))
-    [.fn 0 (.var 1),.nul] (.done .fls) := by
-  repeat first
-    | exact Execution.refl
-    | apply Execution.next (.enter rfl)
-    | apply Execution.next (.expr (.makeV rfl))
-    | apply Execution.next (.expr (.writeV rfl (by decide)))
-    | apply Execution.next (.expr (.readV rfl))
-    | apply Execution.next (.expr (.iteC (.testV rfl)))
-    | apply Execution.next (.expr .iteT)
-    | apply Execution.next (.expr (.beta rfl))
-    | apply Execution.next (.bind rfl)
-    | apply Execution.next (.effect rfl)
-    | apply Execution.next (.ret rfl)
+theorem captured_returns_false : Execution capturedProgram 22 [] (.at 0 (fun _ => .nul))
+    [.obj 0 (oneNode 1 (.var 1) 0),.nul] (.done .fls) := by
+  run_machine
 
 #print axioms captured_returns_false
 #print axioms returns_false

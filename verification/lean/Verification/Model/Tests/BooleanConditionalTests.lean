@@ -149,21 +149,26 @@ private def captureRequest (q : Bool) : Request :=
 -- Without the code's entry in its table, the creation has no evidence.
 #guard !ok (roundtrip {captureRequest true with codes := []})
 
-/-- The same program with the closure's code as a term, run by the machine. -/
+/-- The same program, run by the machine. -/
 private def captureProgram (q : Bool) : Program :=
   [⟨.alloc .tru,.bind 1,none⟩,
-   ⟨.funE (.ite (.read (.var 2)) .tru .fls),.bind 2,none⟩,
+   ⟨.make captureCode .nul,.bind 2,none⟩,
    ⟨.write (.var 1) (if q then .tru else .fls),.effect 3,none⟩,
    ⟨.app (.var 0) .nul,.ret,none⟩]
 
-theorem captured_branch_reads_latest (q : Bool) : Execution (captureProgram q) 14 []
+theorem captured_branch_reads_latest (q : Bool) : Execution (captureProgram q) 16 []
     (.at 0 (fun _ => .nul)) [if q then .tru else .fls,.nul] (.done (if q then .tru else .fls)) := by
   cases q <;> repeat first
     | exact Execution.refl
     | apply Execution.next (.enter rfl)
     | apply Execution.next (.expr (.makeV rfl))
     | apply Execution.next (.expr (.writeV rfl (by decide)))
-    | apply Execution.next (.expr (.beta rfl))
+    | apply Execution.next (.expr (.callGraph rfl (by decide)))
+    | apply Execution.next (.expr (.gotoEnter rfl rfl))
+    | apply Execution.next (.expr (.frameC (.iteC (.readV rfl))))
+    | apply Execution.next (.expr (.frameC .iteT))
+    | apply Execution.next (.expr (.frameC .iteF))
+    | apply Execution.next (.expr (.frameRet rfl))
     | apply Execution.next (.expr (.iteC (.readV rfl)))
     | apply Execution.next (.expr .iteT)
     | apply Execution.next (.expr .iteF)

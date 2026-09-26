@@ -65,7 +65,7 @@ export type Status =
 export type FailureKind =
   /** An expression's own claim did not follow. */
   | "expression-obligation"
-  /** A rigid-generic or universal-scheme judgment checked outside the ground graph. */
+  /** A generic value's instance outside its binder's bound, checked outside the graph. */
   | "direct-obligation"
   /** An edge into a statement entry did not justify what the entry claims. */
   | "edge-obligation"

@@ -14,13 +14,6 @@ private def evidence : Evidence Nat :=
 #guard check G term [0] evidence
 #guard (expressionWith G [[0]] [] 3 [] term [0]).isSome
 
-/- The consumer no longer accepts lambda application as a binding certificate. -/
-#guard !checkTree G (.node ⟨[],.app (.funE (.var 0)) .tru,[0]⟩ .letE
-  [.node ⟨[],.tru,[0]⟩ .tru [], .node ⟨[[0]],.var 0,[0]⟩ .var []])
-
-/- The producer cannot use the removed shortcut to avoid a function type. -/
-#guard !(expressionWith G [[0]] [] 3 [] (.app (.funE (.var 0)) .tru) [0]).isSome
-
 /- The binder scopes the body, not its initializer. -/
 #guard checkScope 0 term
 #guard !checkScope 0 (.letE (.var 0) (.var 0))

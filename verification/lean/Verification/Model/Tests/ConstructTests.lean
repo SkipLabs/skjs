@@ -45,19 +45,12 @@ def found (Γ : List (List Nat)) (t : Tm) (A : List Nat) : Bool :=
 #guard !found [[4]] (.construct (.var 0) [.nul]) [1, 2]
 
 -- A plain call dispatches nothing on construct-only code.
-#guard CallArguments.dispatch (.closure 1 .nul .construct) .undef [] = none
 #guard CallArguments.dispatch (.graph 1 [.var 1] [(.ret, none)] 0 [] .construct) .undef [] = none
 -- `new` runs construct-only code without a rest, and no other.
 #guard (CallArguments.construction (.graph 1 [.var 1] [(.ret, none)] 0 [] .construct)).isSome
 #guard (CallArguments.construction (.graph 1 [.var 1] [(.ret, none)] 0 [])).isNone
 #guard (CallArguments.construction (.graph 1 [.var 1] [(.ret, none)] 0 [] .construct true)).isNone
 
--- A call-only closure's JSON is unchanged: its kind is left out. A class's
--- kind is spelled, and both read back as themselves.
-#guard !((toJson (Tm.objAt [] (.closure 1 .nul))).compress.contains "kind")
-#guard (toJson (Tm.objAt [] (.closure 1 .nul .construct))).compress.contains "construct"
-#guard (fromJson? (toJson (Tm.objAt [] (.closure 1 .nul .construct))) : Except String Tm).toOption ==
-  some (Tm.objAt [] (.closure 1 .nul .construct))
 -- Graph code's kind and rest are spelled only when not `call` and `false`.
 #guard !((toJson (Tm.objAt [] (.graph 1 [] [] 0 []))).compress.contains "kind")
 #guard !((toJson (Tm.objAt [] (.graph 1 [] [] 0 []))).compress.contains "rest")

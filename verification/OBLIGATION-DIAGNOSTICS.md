@@ -73,8 +73,8 @@ discarded, and a failure no source names keeps the verifier's lines alone.
 human sentence. A record it cannot decode field by field, and a duplicate
 record, are not interpreted: the reader requires the fields below and refuses
 what it does not recognize, so a record it accepts is one of exactly this
-shape. Every `not-established` result has a `location`. A failed direct
-generic/scheme judgment carries the `direct-obligation` record described below;
+shape. Every `not-established` result has a `location`. A generic value's
+instance outside its bound carries the `direct-obligation` record described below;
 source-conversion refusals use their typed source location. A verifier failure
 that supplies neither is an internal protocol error and no report is written.
 Absence of a structured record never changes a failure into success.
@@ -111,44 +111,29 @@ saved results. They are not necessarily a source statement environment.
 
 ## Direct obligations
 
-Rigid-generic validation and universal scheme introduction happen before a
-ground graph request exists. Their failures are `direct-obligation` records,
-with mandatory `sourceMap` and a closed, structured `judgment`. There is no
-prose field. A `subtyping` judgment carries declared parameters, their ambient
-or quantified scope, and bounds, a
-typed source context, a source subject, and its actual and expected types. A
-`scheme-introduction` judgment carries the same declared scope, the closure-body
-span, and its actual and expected types. A scheme elimination is a `subtyping`
-judgment under the role `scheme-elimination`: the closure's declared parameters
-with their bounds, the call as its subject, and one substituted type argument
-against its substituted bound. A write into a captured cell inside a checked
-body is a `subtyping` judgment under `storage-write`: the value against the
-cell's fixed contract. An argument to a callable the body knows over rigid
-types is one under `call-argument`: the argument against that parameter. The reader locates a direct obligation by the claim it
-concerns — an `entry-claim` at its statement start, an `expression-claim` at
-its span — and any other role at the judgment's own span. Direct types are a declared rigid
-name, ground graph labels, an invariant array (`array` with `element`), or a
-callable over those. Fixed callables have `arrow`, `params`, `result`; variadic
-callables have `variadic`, `params`, `element`, `result`. The same exhaustive
-printer derives `Array<T>` and the rest signature for diagnostics and edits. They must not be disguised as graph sequents.
-Lean diagnostics render ground types only through `SourceTypes.render`; numeric
+A call of a generic module value names its instance before any graph request
+exists, and each type argument must lie within its binder's bound. A failure is
+a `direct-obligation` record, with mandatory `sourceMap` and a closed,
+structured `judgment`. There is no prose field. The judgment is
+`{"kind": "subtyping", "subject": span, "actual": labels, "expected": labels}`:
+the call's span, the type argument and the bound, both ground types, under the
+role `scheme-elimination`. They must not be disguised as graph sequents. Lean
+diagnostics render ground types only through `SourceTypes.render`; numeric
 labels remain references inside the graph document and never become type names
 in user-facing judgments.
 
-The decoder checks scope rather than trusting names: parameters are unique,
-bounds mention only declared parameters, every rigid type is declared, and the
-source map has exactly the judgment's span and context names. Unknown judgment,
-subject, and type variants are rejected. Viewer text, including the turnstile,
-is derived by one exhaustive printer from the structured sides; no producer or
+The decoder checks the record rather than trusting it: the labels lie in the
+record's graph, and the source map has exactly the judgment's span and no
+context. An unknown judgment variant is rejected. Viewer text, including the
+turnstile, is derived by one printer from the structured sides; no producer or
 call site can store arbitrary prose as a judgment. Unsupported source remains a
 separate `source-refusal`, with a mandatory source map and reason, and cannot be
 rendered as a failed semantic obligation or with a turnstile.
 
-Source extraction constructs one explicit plan for every decoded function:
-either a graph request or a successfully checked direct-generic plan. There is
-no optional request and no filtering step, so adding a source function cannot
-silently omit it from validation. A direct check that fails stops request
-construction through the located diagnostic channel.
+Source extraction constructs one explicit plan for every decoded function, a
+graph request. There is no optional request and no filtering step, so adding a
+source function cannot silently omit it from validation. A direct check that
+fails stops request construction through the located diagnostic channel.
 
 ## Node and expression obligations
 

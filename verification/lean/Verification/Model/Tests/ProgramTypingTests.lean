@@ -13,11 +13,11 @@ def G : NormalGraph (Fin 7) := .ofRows fun i => match i.val with
   | 5 => [.arrs [([6], [[3]], [1])] []]
   | _ => [.undef]
 
-/-- A single closure implementing both signatures of label 3: `var 0` is its
-receiver, `var 1` its parameter and `var 2` the captured cell. Its code is a
-term here, run below by the machine; the checked closures are graph code
-(`GraphCode`), whose rules the source pipeline exercises. -/
-def dispatch : Tm := .funE (.ite (.test .isNul (.var 1)) (.read (.var 2)) .nul)
+/-- A single closure implementing both signatures of label 3: graph code of one
+node, run from the frame of its receiver (`var 0`), its parameter (`var 1`) and
+the captured cell (`var 2`). -/
+def dispatch : Tm :=
+  .make (.graph 1 [.ite (.test .isNul (.var 1)) (.read (.var 2)) .nul] [(.ret, none)] 0 [.var 0]) .nul
 
 /-- Genuine overload subsumption: splitting a union domain across two signatures. -/
 def widenCert : Proof (Fin 7) := .core
@@ -27,14 +27,6 @@ def widenCert : Proof (Fin 7) := .core
 
 #guard check G [3] [4] widenCert
 #guard !(check G [4] [3] widenCert)
-
-/-- A lambda with a free variable is excluded even at budget zero. Slot 0 is
-its receiver and slot 1 its parameter; slot 2 is free. -/
-theorem open_lambda_excluded (A B : Fam) (n W) :
-    ¬ arrowT A B n W (.fn 0 (.var 2)) := by
-  rintro ⟨⟨arity, b, l, he, hc⟩, _⟩
-  cases he
-  exact Nat.lt_irrefl 2 hc
 
 /--
 let r = alloc true;
@@ -88,14 +80,18 @@ theorem program_returns_false : Runs [] program [.fls,.nul] .fls := by
   apply Runs.next (.letV rfl)
   apply Runs.next (.letC (.writeV rfl (by decide)))
   apply Runs.next (.letV rfl)
-  apply Runs.next (.letC (.beta rfl))
-  apply Runs.next (.letC (.iteC (.testV rfl)))
-  apply Runs.next (.letC .iteF)
+  apply Runs.next (.letC (.callGraph rfl (by decide)))
+  apply Runs.next (.letC (.gotoEnter rfl rfl))
+  apply Runs.next (.letC (.frameC (.iteC (.testV rfl))))
+  apply Runs.next (.letC (.frameC .iteF))
+  apply Runs.next (.letC (.frameRet rfl))
   apply Runs.next (.letV rfl)
-  apply Runs.next (.beta rfl)
-  apply Runs.next (.iteC (.testV rfl))
-  apply Runs.next .iteT
-  apply Runs.next (.readV rfl)
+  apply Runs.next (.callGraph rfl (by decide))
+  apply Runs.next (.gotoEnter rfl rfl)
+  apply Runs.next (.frameC (.iteC (.testV rfl)))
+  apply Runs.next (.frameC .iteT)
+  apply Runs.next (.frameC (.readV rfl))
+  apply Runs.next (.frameRet rfl)
   exact .done
 
 /-- A stuck application cannot receive a derivation, even with subsumption. -/

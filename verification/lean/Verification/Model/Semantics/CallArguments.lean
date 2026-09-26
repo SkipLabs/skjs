@@ -7,7 +7,7 @@ remain integration work. -/
 namespace Verification.Model.CallArguments
 
 /-- Only the leftmost non-value argument can step. Completed values are retained
-in their original positions, including closures with live heap captures. -/
+in their original positions, including code objects with live heap captures. -/
 inductive ArgStep : Heap → List Tm → Heap → List Tm → Prop where
   | head : Step h a h' a' → ArgStep h (a::args) h' (a'::args)
   | tail : isVal v = true → ArgStep h args h' args' →
@@ -273,10 +273,6 @@ theorem parameters_pad (n : Nat) (args pad : List Tm) (hp : ∀ a ∈ pad, a = .
       simp only [List.cons_append, parameters]
       exact congrArg _ (ih args pad hp)
 
-theorem bindParameters_pad (arity : Nat) (args pad : List Tm) (recv body : Tm)
-    (hp : ∀ a ∈ pad, a = .undef) :
-    bindParameters arity (args ++ pad) recv body = bindParameters arity args recv body := by
-  simp only [bindParameters, parameters_pad arity args pad hp]
 
 /-- Binding reads only the first `n` actuals: later ones were evaluated for
 their effects and are discarded. -/
@@ -285,9 +281,6 @@ theorem parameters_take : ∀ (n : Nat) (args : List Tm), parameters n (args.tak
   | _ + 1, [] => rfl
   | n + 1, a :: args => by simp [parameters, parameters_take n args]
 
-theorem bindParameters_take (arity : Nat) (args : List Tm) (recv body : Tm) :
-    bindParameters arity (args.take arity) recv body = bindParameters arity args recv body := by
-  simp only [bindParameters, parameters_take]
 
 /-- Position i receives actual i if present, otherwise undefined. -/
 theorem parameter_at (hi : i < n) :
@@ -319,25 +312,10 @@ theorem parameters_property {P : Tm → Prop} (hu : P .undef)
       · exact ha a (by simp)
       · exact ih (fun a h => ha a (by simp [h])) a hm
 
-theorem bound_body_closed (hb : Scoped (arity + 1) body) (hr : Scoped 0 recv)
-    (ha : ∀ a ∈ args, Scoped 0 a) : Scoped 0 (bindParameters arity args recv body) := by
-  apply bindArgs_scoped
-  · simpa [parameters_length, Nat.add_comm] using hb
-  · intro a hm
-    rcases List.mem_cons.mp hm with rfl | hm
-    · exact hr
-    · exact parameters_property (by trivial) ha a hm
 
 theorem prepared_parameters_values {frame : Frame} (hf : frame.ready) : Values (parameters arity frame.args) :=
   parameters_property rfl hf.2.2
 
-/-- The binding operation recovers unary beta substitution, the receiver
-bound in slot 0 and the parameter after it. -/
-theorem unary_binding (a r body : Tm) :
-    bindParameters 1 [a] r body = subst 0 r (subst 1 a body) := rfl
-
-theorem omitted_unary_binding (r body : Tm) :
-    bindParameters 1 [] r body = subst 0 r (subst 1 .undef body) := rfl
 
 /-- Initializers of an allocation reduce exactly as actual arguments do. -/
 theorem Step.makeArgs {c : CallCode} {ns : List PropKey} {h h' : Heap} {args args' : List Tm}
@@ -363,10 +341,6 @@ descriptor supplies the parameter count; the receiver and all actuals,
 including extras, must be values before normalization. Invocation itself
 performs no heap effect. -/
 inductive Invoke : Frame → Tm → Prop where
-  | closure : isVal r = true → Values args →
-      Invoke ⟨.objAt fs (.closure arity body), r, args⟩ (bindParameters arity args r body)
-  | variadic : isVal r = true → Values args →
-      Invoke ⟨.objAt fs (.variadic fixed body), r, args⟩ (bindRest fixed args r body)
   /-- A forwarding descriptor yields the target's call: the saved receiver in
   place of this one, the saved prefix before these actuals. -/
   | bound : isVal r = true → Values args →
@@ -379,12 +353,9 @@ inductive Invoke : Frame → Tm → Prop where
 
 /-- The term each kind of code yields for a ready receiver and argument list. -/
 def dispatch : CallCode → Tm → List Tm → Option Tm
-  | .closure arity body, r, args => some (bindParameters arity args r body)
-  | .variadic fixed body, r, args => some (bindRest fixed args r body)
   | .bound target r₀ pre, _, args => some (.invoke target r₀ (pre ++ args))
   | .graph arity E K start caps .call rest, r, args => some (graphEntry arity E K start caps rest r args)
   -- A class constructor's plain call throws: nothing runs.
-  | .closure _ _ .construct, _, _ => none
   | .graph _ _ _ _ _ .construct _, _, _ => none
   | .absent, _, _ => none
 
@@ -393,7 +364,6 @@ argument list: the code's body or graph run, with `undefined` for the
 receiver. Other code has none: `new` on call code, and on code collecting a
 rest, is not a class value here. -/
 def construction : CallCode → Option (List Tm → Tm)
-  | .closure arity body .construct => some fun args => bindParameters arity args .undef body
   | .graph arity E K start caps .construct false =>
       some fun args => graphEntry arity E K start caps false .undef args
   | _ => none
@@ -404,8 +374,7 @@ theorem construction_pad {c : CallCode} {enter : List Tm → Tm} (h : constructi
     (args pad : List Tm) (hp : ∀ a ∈ pad, a = .undef) : enter (args ++ pad) = enter args := by
   unfold construction at h
   split at h <;> cases h
-  · exact bindParameters_pad _ _ _ _ _ hp
-  · simp only [graphEntry, parameters_pad _ _ _ hp]
+  simp only [graphEntry, parameters_pad _ _ _ hp]
 
 /-- A ready construction is one step of the machine. -/
 theorem construction_step {fs : List (PropKey × Nat)} {c : CallCode} {enter : List Tm → Tm}
@@ -413,13 +382,10 @@ theorem construction_step {fs : List (PropKey × Nat)} {c : CallCode} {enter : L
     Step heap (.construct (.objAt fs c) args) heap (enter args) := by
   unfold construction at h
   split at h <;> cases h
-  · exact .constructV hv
-  · exact .constructGraph hv
+  exact .constructGraph hv
 
 theorem invoke_ready (hi : Invoke frame body) : frame.ready := by
   cases hi with
-  | closure hr hv => exact ⟨rfl, hr, hv⟩
-  | variadic hr hv => exact ⟨rfl, hr, hv⟩
   | bound hr hv => exact ⟨rfl, hr, hv⟩
   | graph hr hv => exact ⟨rfl, hr, hv⟩
 
@@ -438,8 +404,6 @@ theorem invoke_iff : Invoke frame result ↔
   constructor
   · intro hi
     cases hi with
-    | closure hr hv => exact ⟨_, _, rfl, hr, hv, rfl⟩
-    | variadic hr hv => exact ⟨_, _, rfl, hr, hv, rfl⟩
     | bound hr hv => exact ⟨_, _, rfl, hr, hv, rfl⟩
     | graph hr hv => exact ⟨_, _, rfl, hr, hv, rfl⟩
   · rcases frame with ⟨f, r, args⟩
@@ -447,28 +411,12 @@ theorem invoke_iff : Invoke frame result ↔
     cases hf
     cases code with
     | absent => cases hd
-    | closure arity body kind => cases kind <;> cases hd; exact .closure hr hv
-    | variadic fixed body => cases hd; exact .variadic hr hv
     | bound target r₀ pre => cases hd; exact .bound hr hv
     | graph arity E K start caps kind rest => cases kind <;> cases hd; exact .graph hr hv
 
 theorem invoke_closed (hi : Invoke frame result) (hf : Scoped 0 frame.callee)
     (hr : Scoped 0 frame.recv) (ha : ∀ a ∈ frame.args, Scoped 0 a) : Scoped 0 result := by
   cases hi with
-  | closure _ _ => exact bound_body_closed (by simpa [Scoped] using hf) hr ha
-  | @variadic r args fs fixed body _ _ =>
-    refine ⟨?_, ?_⟩
-    · simp only [Scoped, scopedArgs_iff]
-      intro a hm
-      exact ha a (List.mem_of_mem_drop hm)
-    · apply bindArgs_scoped
-      · have hb : Scoped (0 + fixed + 2) body := by simpa [Scoped] using hf
-        simp only [List.length_cons, parameters_length]
-        simpa [Nat.add_comm, Nat.add_left_comm] using hb
-      · intro a hm
-        rcases List.mem_cons.mp hm with rfl | hm
-        · exact hr
-        · exact parameters_property (by trivial) ha a hm
   | bound _ _ =>
     simp only [Scoped, scopedArgs_iff] at hf ⊢
     refine ⟨hf.1, hf.2.1, fun a hm => ?_⟩
@@ -497,8 +445,6 @@ theorem invoke_closed (hi : Invoke frame result) (hf : Scoped 0 frame.callee)
 theorem Invoke.step (hi : Invoke frame body) (h : Heap) :
     Step h (.invoke frame.callee frame.recv frame.args) h body := by
   cases hi with
-  | closure hr hv => exact .callV hr hv
-  | variadic hr hv => exact .callRest hr hv
   | bound hr hv => exact .callBound hr hv
   | graph hr hv => exact .callGraph hr hv
 
@@ -513,8 +459,6 @@ theorem ready_step_iff (hf : frame.ready) :
     | callRecv _ hs => exact False.elim (value_no_step hf.2.1 hs)
     | callArg _ _ hg _ hs =>
       exact False.elim (value_no_step (hf.2.2 _ (List.mem_of_getElem? hg)) hs)
-    | callV hr hv => exact ⟨rfl, .closure hr hv⟩
-    | callRest hr hv => exact ⟨rfl, .variadic hr hv⟩
     | callBound hr hv => exact ⟨rfl, .bound hr hv⟩
     | callGraph hr hv => exact ⟨rfl, .graph hr hv⟩
     | callSpread _ _ he _ _ => exact False.elim (spread_not_values he hf.2.2)
@@ -546,8 +490,6 @@ theorem call_step_iff : Step h (.invoke f r args) h' result ↔
     | callRecv hv hs => exact Or.inl ⟨_, .recv hv hs, rfl⟩
     | callArg hv hr hg hb hs =>
       exact Or.inl ⟨_, .args hv hr (focus_iff.mpr ⟨_, _, _, hg, hb, hs, rfl⟩), rfl⟩
-    | callV hr hv => exact Or.inr ⟨rfl, .closure hr hv⟩
-    | callRest hr hv => exact Or.inr ⟨rfl, .variadic hr hv⟩
     | callBound hr hv => exact Or.inr ⟨rfl, .bound hr hv⟩
     | callGraph hr hv => exact Or.inr ⟨rfl, .graph hr hv⟩
     | callSpread hv hr he hp hre => exact Or.inl ⟨_, .splice hv hr he hp hre, rfl⟩
@@ -595,7 +537,6 @@ theorem rebind_keeps_receiver {h : Heap} {fs gs t r₀ r₁ p₀ p₁ r args}
 #print axioms bound_ignores_receiver
 #print axioms rebind_keeps_receiver
 #print axioms parameter_at
-#print axioms bound_body_closed
 #print axioms prefix_iff
 #print axioms deterministic
 #print axioms prepare_deterministic

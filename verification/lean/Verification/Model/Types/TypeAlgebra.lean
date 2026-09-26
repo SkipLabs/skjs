@@ -3,8 +3,7 @@ import Verification.Model.Semantics.Tower
 
 /-! Local semantic equations used in positive normalization. Reference conjunctions
 are handled by ReferenceConjunctions; finite graph normalization is implemented
-and proved in PositiveNormalization and PositiveGraphs. The arrow-domain union
-equation is arrowT_union_dom in Safety, rather than a duplicate proof here. -/
+and proved in PositiveNormalization and PositiveGraphs. -/
 namespace Verification.Model.TypeAlgebra
 
 theorem inter_union (A B C : Fam) (n : Nat) (W : WorldT n) (v : Val) :
@@ -32,11 +31,5 @@ theorem rests_append (S T : List (Fam × List Fam × ArgFam × Fam)) (n : Nat) (
   simp only [restsT, interT, List.mem_append, or_imp, forall_and]
   exact ⟨fun ⟨hc, hl, hm⟩ => ⟨⟨hc, hl⟩, hc, hm⟩, fun ⟨⟨hc, hl⟩, _, hm⟩ => ⟨hc, hl, hm⟩⟩
 
-theorem overload_append (L M : List (Fam × Fam)) (n : Nat) (W : WorldT n) (v : Val) :
-    arrowsT (L ++ M) n W v ↔ interT (arrowsT L) (arrowsT M) n W v := by
-  simp only [arrowsT, interT, List.mem_append, or_imp, forall_and]
-  exact ⟨fun ⟨hc, hl, hm⟩ => ⟨⟨hc, hl⟩, hc, hm⟩, fun ⟨⟨hc, hl⟩, _, hm⟩ => ⟨hc, hl, hm⟩⟩
-
 #print axioms calls_append
-#print axioms overload_append
 end Verification.Model.TypeAlgebra

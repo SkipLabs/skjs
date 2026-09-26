@@ -18,17 +18,9 @@ theorem before_write {n W h l} (hw : WorldAdm W) (hh : HeapOk n W h)
     (ho : Observes h l .tru) : Safe (exact .tru) n W h (.read (.obj l .absent)) :=
   erase (read_observed hw hh (lookup_value _) rfl ho)
 
-/-- This closure is a valid ordinary null-to-null arrow in every future
-admissible world/heap, despite overwriting the captured cell. -/
-def writer (l : Nat) : Tm := .fn 0 (.write (.obj l .absent) .fls)
-
-theorem writer_arrow {n W l} (hr : refT boolT n W (.obj l .absent)) :
-    arrowT nulT nulT n W (writer l) := by
-  apply fn_intro _ _ _ (by simp [Scoped])
-  intro j hj U hx hu h hh a ha
-  change Safe nulT j U h (.write (.obj l .absent) .fls)
-  exact erase (write_observed boolT_adm hu hh (refT_transfer hr j (by omega) U hx)
-    (lookup_value _) rfl (Or.inr rfl))
+/-- A callback overwriting a cell it names: graph code of one node, taking one
+parameter. -/
+def writer (l : Nat) : Tm := .obj 1 (.graph 1 [.write (.obj l .absent) .fls] [(.ret, none)] 0 [])
 
 /-- The persistent Boolean world admits both heaps at every budget. -/
 def boolWorld (n : Nat) : WorldT n := ofList [res boolT]
@@ -61,37 +53,42 @@ theorem alias_write_changes_observation :
     ¬ Observes (([.tru] : Heap).set 0 .fls) 0 .tru := by
   simp [Observes]
 
-/-- Even a well-typed callback cannot be given a generic observation frame.
-Three levels see beta, the write, and the returned value/postcondition. -/
-theorem callback_does_not_frame (W : WorldT 3) :
-    ¬ SafePost nulT (fun h _ => Observes h 0 .tru) 3 W [.tru]
+/-- A callback cannot be given a generic observation frame: one of type
+`(x: null) => null` may overwrite the observed cell. Five levels see the call
+enter the code, its node, the write, the run returning, and the returned
+value/postcondition. -/
+theorem callback_does_not_frame (W : WorldT 5) :
+    ¬ SafePost nulT (fun h _ => Observes h 0 .tru) 5 W [.tru]
       (.app (writer 0) .nul) := by
   intro hs
-  rcases hs with (⟨hv,_,_⟩ | hr) | ⟨U,h',t',hx,hu,step,hh,hs⟩
+  have s1 : Step [.tru] (.app (writer 0) .nul) [.tru] _ := .callGraph rfl (by decide)
+  rcases hs with (⟨hv,_,_⟩ | hr) | ⟨_,_,_,_,_,step,_,hs⟩
   · cases hv
-  · exact hr.no_step (hp := [.tru]) (.beta rfl)
-  · have st : Step [.tru] (.app (writer 0) .nul) [.tru] (.write (.obj 0 .absent) .fls) := .beta rfl
-    obtain ⟨rfl,rfl⟩ := Step_det st step
-    rcases hs with (⟨hv,_,_⟩ | hr) | ⟨V,h'',t'',hx,hu,step,hh,hs⟩
-    · cases hv
-    · exact hr.no_step (Step.writeV (h := [.tru]) rfl (by decide))
-    · have st : Step [.tru] (.write (.obj 0 .absent) .fls) [.fls] .nul := .writeV rfl (by decide)
-      obtain ⟨rfl,rfl⟩ := Step_det st step
-      rcases hs with (⟨_,_,ho⟩ | hr) | ⟨_,_,_,_,_,step,_,_⟩
-      · simp [Observes] at ho
-      · exact val_not_thrown rfl hr
-      · exact value_no_step rfl step
-
-/-- The observation counterexample has a genuinely inhabited, admissible input
-world and a valid arrow. It is not a consequence of inconsistent assumptions. -/
-theorem callback_counterexample :
-    WorldAdm (boolWorld 3) ∧ HeapOk 3 (boolWorld 3) [.tru] ∧
-    arrowT nulT nulT 3 (boolWorld 3) (writer 0) ∧
-    Observes [.tru] 0 .tru ∧
-    ¬ SafePost nulT (fun h _ => Observes h 0 .tru) 3 (boolWorld 3) [.tru]
-      (.app (writer 0) .nul) :=
-  ⟨boolWorld_adm 3,boolWorld_heap 3 .tru (Or.inl rfl),writer_arrow (boolWorld_ref 3),
-    rfl,callback_does_not_frame _⟩
+  · exact hr.no_step s1
+  obtain ⟨rfl,rfl⟩ := Step_det s1 step
+  have s2 : Step [.tru] (CallArguments.graphEntry 1 [.write (.obj 0 .absent) .fls] [(.ret, none)]
+      0 [] false .undef [.nul]) [.tru] _ := .gotoEnter rfl rfl
+  rcases hs with (⟨hv,_,_⟩ | hr) | ⟨_,_,_,_,_,step,_,hs⟩
+  · cases hv
+  · exact hr.no_step s2
+  obtain ⟨rfl,rfl⟩ := Step_det s2 step
+  have s3 : Step [.tru] (.frame [.write (.obj 0 .absent) .fls] [(.ret, none)]
+      (.write (.obj 0 .absent) .fls) [.undef, .nul] .nul .ret none) [.fls] _ :=
+    .frameC (.writeV rfl (by decide))
+  rcases hs with (⟨hv,_,_⟩ | hr) | ⟨_,_,_,_,_,step,_,hs⟩
+  · cases hv
+  · exact hr.no_step s3
+  obtain ⟨rfl,rfl⟩ := Step_det s3 step
+  have s4 : Step [.fls] (.frame [.write (.obj 0 .absent) .fls] [(.ret, none)]
+      .nul [.undef, .nul] .nul .ret none) [.fls] .nul := .frameRet rfl
+  rcases hs with (⟨hv,_,_⟩ | hr) | ⟨_,_,_,_,_,step,_,hs⟩
+  · cases hv
+  · exact hr.no_step s4
+  obtain ⟨rfl,rfl⟩ := Step_det s4 step
+  rcases hs with (⟨_,_,ho⟩ | hr) | ⟨_,_,_,_,_,step,_,_⟩
+  · simp [Observes] at ho
+  · exact val_not_thrown rfl hr
+  · exact value_no_step rfl step
 
 /-- The very same world admits true and false contents. Consequently no
 heap-independent value family can characterize the current true observation. -/
@@ -127,5 +124,5 @@ theorem observation_does_not_narrow_invariant :
 #print axioms observation_not_a_value_type
 #print axioms observation_does_not_narrow_invariant
 #print axioms write_then_read
-#print axioms callback_counterexample
+#print axioms callback_does_not_frame
 end Verification.Model.HeapObservationTests

@@ -92,7 +92,7 @@ runtime test executes the same source that the verifier rejects.
    including captured-field refinements. Each signature checks the same lowered
    body. Both CLI entry points reject malformed or misplaced rows.
 3. **Defaults:** closed for this breadth milestone. Sequential initialization,
-   rigid defaults, and acyclic forward captures are implemented. Both formerly
+   generic defaults, and acyclic forward captures are implemented. Both formerly
    gated witnesses, `generic-rigid-default` and `default-deferred-capture`, now
    verify. The former also covers `T` containing `undefined` and a generic
    forward capture; the latter checks a capture chain across effectful defaults.
@@ -100,21 +100,21 @@ runtime test executes the same source that the verifier rejects.
    are negative controls. Both verifier entry points reject early invocation,
    and the viewer receives a located refusal.
 
-The universal certificate distinguishes an unreadable raw argument slot of
-meaning `T ∪ {undefined}` from an initialized value binding of type `T`.
-Initialization must establish `T` for every admissible assignment; observed
-calls cannot justify it. The source claim uses an ordinary union, and scheme
-compilation substitutes the initialized annotation separately from the input
-contract. In particular it must not obtain `T` by deleting `undefined` from the
-input: `T` can itself contain `undefined`.
+A default is an entry node of the code's graph: a tag dispatch on
+`undefined` at the parameter's slot, the default's evaluation on one arm. The
+slot's type is `T ∪ {undefined}` and the initialized binding's `T`; in a
+generic closure the code is checked at its scheme row, so initialization must
+establish `T` for every assignment of the binders, and observed calls cannot
+justify it. It never obtains `T` by deleting `undefined` from the input: `T` can
+itself contain `undefined`.
 
 Forward capture support uses closure conversion in the trusted Lean extractor,
 not a new mutable-world rule. A literal closure allocation can wait until its
 captures are initialized because no pending closure is exposed and parameters
 are immutable in this fragment. It is allocated once, preserving sharing, and
 captures outer mutable cells by identity. All potentially effectful defaults
-retain source order. `Fragment.parameterOrder` is shared by ordinary lowering
-and universal certificates, and its dependency traversal is exhaustive.
+retain source order. `Fragment.parameterOrder` fixes the entry nodes' order,
+and its dependency traversal is exhaustive.
 
 This closes the planned breadth witnesses, not all JavaScript initialization
 patterns. Cyclic captures and exposing a pending closure during initialization
@@ -124,25 +124,21 @@ initializedness separate from fixed world types; it must not expose raw actuals
 or retype locations. The closure-conversion argument is part of the trusted
 source adapter, as other JavaScript-to-calculus correspondence is; Lean proves
 safety of the resulting term, not equivalence to a formal JavaScript semantics.
-Generic field-write defaults still await the generic effect certificate, an
-independent restriction of generic bodies rather than a missing default rule.
 
 4. **Rest and spread: closed.** Fixed and variadic signatures share the
    behavioral call meaning. Array rests, ordered spread snapshots,
    variadic-to-fixed callback use, optional-prefix omission, callable fields
-   and mixed signatures have checked witnesses. Quantified rest now also
-   reaches the certified-plan boundary, for declarations and local closures.
+   and mixed signatures have checked witnesses. Quantified rests are graph
+   code too, in declarations and local closures.
    Required tuple snapshots retain their dense contract; potentially sparse
    arrays still need an element contract admitting `undefined`.
 
 The [common function equation](../../SEMANTICS.md#one-meaning-for-callable-contracts)
-remains the foundation. `DirectObligation.Ty` represents arrays over rigid
-parameters and variadic signatures. `GenericCertificate.array_collect_safe`
-proves fresh rest allocation and `rest_invocation_of_inputs` lifts a universal
-body proof to the variadic code contract. Direct callback calls use the proved
-finite-arity consequence of that same promise; they do not choose an
-instantiation for the body. Both declaration and closure certificates are
-consumed by `SourceClaimJson.checkJson_safe`.
+remains the foundation. Code collecting a rest allocates the store of the
+further actuals before its run (`graphEntry`), and `restsT_of_graphRest` lifts
+the code's check at each variadic signature to the variadic contract; over a
+binder, at every assignment of it. Both declarations and closures are
+consumed by `SourceClaimJson.checkJson_safe` as graph requests.
 
 The OCaml producer's [`generic-rest.ts`](../../ocaml-producer/examples/generic-rest.ts)
 checks a returned `T[]`, independent Boolean and numeric uses of one closure,
@@ -302,7 +298,7 @@ with its source span, environment, actual type and required receiver type.
 | Step                     | Work and gate before proceeding                                                                                                                                                                                                                                                                                                                       |
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | R1: core invocation      | Migrate call syntax, ready frames and binder layout in `Calculus`, `Bindings`, `CallArguments`, `Types`, `Safety`, and coherence traversals. Prove order, determinism, receiver/argument binding and invocation safety. Existing arrows acquire the explicit ignored slot.                                                                            |
-| R2: certificates         | Thread receiver families and premises through positive graphs, creation/elimination rules, `ProgramCertificates`, `GenericCertificate` and scheme introduction/elimination. Extend exhaustive certification and rebuild `SourceClaimJson.checkJson_safe` with its exact CLI-success premise unchanged. No source method is accepted before this gate. |
+| R2: certificates         | Thread receiver families and premises through positive graphs, creation/elimination rules, `ProgramCertificates` and scheme introduction/elimination. Extend exhaustive certification and rebuild `SourceClaimJson.checkJson_safe` with its exact CLI-success premise unchanged. No source method is accepted before this gate. |
 | R3: source and producers | Add method/function expressions, strictness facts, lexical `this` resolution and reference-preserving call targets. Update all typed mirrors and display/editor syntax together. OCaml and TS witnesses must independently verify; SKJS export refusals remain separately reported, with no checker change hidden in this extension.                  |
 | R4: binding              | Add the forwarding descriptor and prove receiver/prefix preservation and its residual signature. Integrate `.bind` and the existing intrinsic guards.                                                                                                                                                                                                 |
 | R5: apply                | Add checked array-like preparation, retaining its effects and order, then reuse the proved invocation rule.                                                                                                                                                                                                                                           |
@@ -375,9 +371,7 @@ intended check, not pass because the parser refused it.
 
 Promote `call-objects.ts` from boundary to verified coverage only after adding
 strict-mode evidence to that fixture and independently certifying both its
-ordinary method and lexical arrow behavior. Extend the direct completeness
-judgments with receiver premises wherever the direct checker accepts the new
-forms; do not describe the old receiverless theorem as covering them. Keep
+ordinary method and lexical arrow behavior. Keep
 sloppy functions, `super`/home objects, construction/`new.target`, and reflective
 bound-function properties as explicit later obligations. The receiver interface
 is shared with those future extensions; their semantics are not implied by it.

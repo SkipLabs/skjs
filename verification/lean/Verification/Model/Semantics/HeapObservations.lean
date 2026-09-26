@@ -285,11 +285,6 @@ still holds. Testing an old immutable snapshot cannot re-establish this premise.
 theorem test_refines {h l v P} (ho : Observes h l v) (hp : P v) : Contents h l P :=
   ⟨v,ho,hp⟩
 
-theorem call_forget {A B : Fam} (ha : Adm A) (hav : ValOnly A) {n W h f a}
-    (hw : WorldAdm W) (hh : HeapOk n W h) (hf : arrowT A B n W f) (ht : A n W a) :
-    SafePost B (fun _ _ => True) n W h (.app f a) :=
-  forget (app_elim ha hav hf ht hw hh)
-
 #print axioms bind_value
 #print axioms postcondition
 #print axioms bind

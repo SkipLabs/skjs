@@ -3,15 +3,13 @@ import Verification.Model.Types.ReferenceConjunctions
 /-!
 # Callable objects and their bags
 
-A bag invariant forgets the call slot without changing the value. A callable
-object combines that invariant with the existing overloaded call contracts.
-The old reference family still denotes plain objects, so its disjointness and
-certificate rules keep their existing meaning. The positive graph now exposes combined callable/property contracts through
-`CallableConjunctions` and its `callable` clause.
-
-This is the one-cell, closed-closure fragment: construction, receiver binding,
-and property descriptors remain outside this fragment. `ObjectCoherence`
-proves the separate identity/descriptor invariant for execution.
+A bag invariant forgets the call slot without changing the value: a callable
+object's fields are read and written as a record's, whatever its code. The
+old reference family still denotes plain objects, so its disjointness and
+certificate rules keep their existing meaning. The positive graph exposes
+combined callable/property contracts through `CallableConjunctions` and its
+`callable` clause. `ObjectCoherence` proves the separate identity/descriptor
+invariant for execution.
 -/
 namespace Verification.Model
 
@@ -19,10 +17,6 @@ namespace Verification.Model
 object in `refT` is only a semantic projection, never an allocation or coercion. -/
 def bagT (P : Fields) : Fam := fun n W v =>
   ∃ flds code, v = .objAt flds code ∧ isVal v = true ∧ recT P n W (.objAt flds .absent)
-
-/-- Call and property contracts hold of the same object value. -/
-def callableT (L : List (Fam × Fam)) (P : Fields) : Fam :=
-  interT (bagT P) (arrowsT L)
 
 theorem bagT_adm (P : Fields) : Adm (bagT P) := by
   constructor
@@ -47,26 +41,6 @@ theorem recT_bag {P : Fields} {n W v} (h : recT P n W v) : bagT P n W v := by
   obtain ⟨flds, rfl, hr⟩ := h
   exact ⟨flds, .absent, rfl, rfl, flds, rfl, hr⟩
 
-theorem callableT_adm (L : List (Fam × Fam)) (P : Fields) : Adm (callableT L P) :=
-  interT_adm _ _ (bagT_adm P) (arrowsT_adm L)
-
-/-- Forgetting properties leaves the same callable and all its call contracts. -/
-theorem callableT_calls {L P n W v} (h : callableT L P n W v) : arrowsT L n W v := h.2
-
-theorem callableT_bag {L P n W v} (h : callableT L P n W v) : bagT P n W v := h.1
-
-/-- An overload intersection is a conjunction of code obligations, with one bag
-invariant; it does not impose incompatible writable types on the code. -/
-theorem callableT_append (L M : List (Fam × Fam)) (P : Fields) (n W v) :
-    callableT (L ++ M) P n W v ↔ interT (callableT L P) (callableT M P) n W v := by
-  simp only [callableT, interT, arrowsT, List.mem_append]
-  constructor
-  · rintro ⟨hp, hc, hs⟩
-    exact ⟨⟨hp, hc, fun p hm => hs p (Or.inl hm)⟩,
-      ⟨hp, hc, fun p hm => hs p (Or.inr hm)⟩⟩
-  · rintro ⟨⟨hp, hc, hs⟩, ⟨_, _, ht⟩⟩
-    exact ⟨hp, hc, fun p hm => hm.elim (hs p) (ht p)⟩
-
 theorem bag_read {fs : Fields} {f : PropKey} {P : Fam} (hP : ValOnly P)
     (hm : (f, P) ∈ fs) {n W h v}
     (hv : bagT fs n W v) (hw : WorldAdm W) (hh : HeapOk n W h) :
@@ -86,56 +60,8 @@ theorem bag_write {fs : Fields} {f : PropKey} {P : Fam} (hP : Adm P)
   cases he
   exact write_rule (code := code) hP n W h l a hval hw hh hf hl hc ha
 
-/-- Native creation preserves every list signature across allocation, and
-every variadic one whose fixed parameters cover the code's arity and whose
-fixed part is among the list signatures (`restsT_of_invocationSpec`). -/
-theorem make_closure_rule {P : Fam} {L : List (Fam × List Fam × Fam)}
-    {S : List (Fam × List Fam × ArgFam × Fam)} (hA : Adm P)
-    (arity n : Nat) (W : WorldT n) (h : Heap) (b v : Tm)
-    (hf : InvocationSpec arity L n W b)
-    (hS : ∀ s ∈ S, arity ≤ s.2.1.length ∧ (s.1, s.2.1, s.2.2.2) ∈ L) (hval : isVal v = true)
-    (hadm : WorldAdm W) (hok : HeapOk n W h) (hv : P n W v) :
-    Safe (interT (bagT [(valueField, P)]) (interT (callsT L) (restsT S))) n W h
-      (.make (.closure arity b) v) := by
-  apply make_rule hA n W h (.closure arity b) v hval hadm hok hv
-  intro j hj U hx hr
-  have hf' := (callsT_adm L).mono j _ U hx _ ((callsT_adm L).down_le n j
-    (Nat.le_of_lt hj) W _ (callsT_of_invocationSpec [(valueField, h.length)] hf))
-  have hs' := (restsT_adm S).mono j _ U hx _ ((restsT_adm S).down_le n j
-    (Nat.le_of_lt hj) W _ (restsT_of_invocationSpec [(valueField, h.length)] hf hS))
-  exact ⟨⟨_, .closure arity b, rfl, rfl, hr⟩, hf', hs'⟩
-
-/-- The list signatures alone. -/
-theorem make_callable_rule {P : Fam} {L : List (Fam × List Fam × Fam)} (hA : Adm P)
-    (arity n : Nat) (W : WorldT n) (h : Heap) (b v : Tm)
-    (hf : InvocationSpec arity L n W b) (hval : isVal v = true)
-    (hadm : WorldAdm W) (hok : HeapOk n W h) (hv : P n W v) :
-    Safe (interT (bagT [(valueField, P)]) (callsT L)) n W h (.make (.closure arity b) v) :=
-  Safe_mono n (fun _ _ _ _ hv => ⟨hv.1, hv.2.1⟩) W h _
-    (make_closure_rule (S := []) hA arity n W h b v hf (by simp) hval hadm hok hv)
-
-/-- Creation checks the code and the stored value separately, then allocates a
-single fresh identity. The call contracts survive the extended world. -/
-theorem attach_rule {P : Fam} {L : List (Fam × Fam)} (hA : Adm P)
-    (n : Nat) (W : WorldT n) (h : Heap) (b v : Tm)
-    (hf : CodeSpec L n W b) (hval : isVal v = true)
-    (hadm : WorldAdm W) (hok : HeapOk n W h) (hv : P n W v) :
-    Safe (callableT L [(valueField, P)]) n W h (.attach b v) := by
-  apply make_rule hA n W h (.closure 1 b) v hval hadm hok hv
-  intro j hj U hx hr
-  have hf' : arrowsT L j U (.obj h.length (.closure 1 b)) :=
-    (arrowsT_adm L).mono j _ U hx _ ((arrowsT_adm L).down_le n j
-      (Nat.le_of_lt hj) W _ ((arrowsT_code_iff L [(valueField, h.length)] b n W).mpr hf))
-  exact ⟨⟨_, .closure 1 b, rfl, rfl, hr⟩, hf'⟩
-
-#print axioms Callable.step
 #print axioms bagT_contractive
-#print axioms callableT_adm
-#print axioms callableT_append
 #print axioms bag_read
 #print axioms bag_write
-#print axioms make_closure_rule
-#print axioms make_callable_rule
-#print axioms attach_rule
 
 end Verification.Model

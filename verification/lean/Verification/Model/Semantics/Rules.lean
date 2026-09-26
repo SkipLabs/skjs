@@ -3,8 +3,8 @@ import Verification.Model.Semantics.ArgumentContracts
 # Compatibility rules
 
 The rules a program's safety proof should be assembled from, rather than traced
-by hand. Application spends the beta step and uses the function guarantee one level
-below the current budget. Abstraction proves the substituted body safe.
+by hand. A call spends its dispatch step and uses the callee's contract one
+level below the current budget.
 
 `Safe_bind_appR` is the bind: run a subterm, then continue with whatever value it
 produces, in whatever world and heap it produced them. It is what lets composite
@@ -12,20 +12,6 @@ programs be built compositionally.
 -/
 namespace Verification
 namespace Model
-
-/-- The invocation code of an existing object establishes safety at every smaller
-budget. Application, rather than this obligation, spends the beta step. The
-body is under the frame `[this, x]`: a plain application binds `undefined` in
-slot 0 and the argument in slot 1. -/
-theorem fn_intro {l : Nat} {A B : Fam} (b : Tm) (k : Nat) (W : WorldT k) (hc : Scoped 2 b)
-    (h : ∀ (j : Nat) (hj : j < k) (U : WorldT j),
-      WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U →
-      ∀ (heap : Heap), HeapOk j U heap → ∀ a, A j U a →
-        Safe B j U heap (subst 0 .undef (subst 1 a b))) : arrowT A B k W (.fn l b) := by
-  refine ⟨⟨1, b, _, rfl, hc⟩, ?_⟩
-  intro j hj U hx hu heap hh a ha
-  simpa [callBody, CallArguments.bindParameters, CallArguments.parameters, bindArgs]
-    using h j hj U hx hu heap hh a ha
 
 /-- Ready native list calls consume one step, then satisfy the chosen result
 contract. The receiver's contract and the domains transfer the saved receiver
@@ -56,31 +42,6 @@ theorem call_elim_short {L : List (Fam × List Fam × Fam)} {p : Fam × List Fam
     ⟨hf.1, hf.2 p hp⟩ hr hrv
     (fun a hm => ArgsT_values hAv ha a (List.mem_append_left pad hm))
     (ArgsShort_of_pad hpad ha) hw hh
-
-/-- Same-budget application compatibility, the rule needed for the fundamental
- theorem under semantic environments. Both values are available at the current
-budget; beta consumes one step and uses the function guarantee below it. -/
-theorem app_elim {A B : Fam} (hA : Adm A) (hAv : ValOnly A)
-    {n : Nat} {W : WorldT n} {f a : Tm} {heap : Heap}
-    (hf : arrowT A B n W f) (ha : A n W a)
-    (hw : WorldAdm W) (hh : HeapOk n W heap) : Safe B n W heap (.app f a) := by
-  apply call_elim (L := [(undefT, [A], B)]) (p := (undefT, [A], B)) undefT_adm
-    (by simpa using hA) (by simpa using hAv) rfl
-  · exact callsT_of_arrowsT (L := [(A, B)]) ((arrowsT_singleton A B n W f).mpr hf)
-  · simp
-  · rfl
-  · exact ⟨ha, trivial⟩
-  · exact hw
-  · exact hh
-
-/-- **Beta.** -/
-theorem beta_rule {l : Nat} {B : Fam} (b a : Tm) (hval : isVal a = true) (p : Nat) (W : WorldT (p + 1))
-    (h : Heap) (hadm : WorldAdm W) (hok : HeapOk (p + 1) W h)
-    (hb : Safe B p (trunc p (Nat.le_succ p) W) h (subst 0 .undef (subst 1 a b))) :
-    Safe B (p + 1) W h (.app (.fn l b) a) :=
-  Or.inr ⟨_, h, _, WExt_refl _, WorldAdm_trunc _ hadm, .beta hval,
-    HeapOk_trunc p W h hok, by
-      simpa [CallArguments.bindParameters, CallArguments.parameters, bindArgs] using hb⟩
 
 /-- A binding consumes one step after its initializer has become a value. -/
 theorem let_rule {B : Fam} (b a : Tm) (hval : isVal a = true) (p : Nat) (W : WorldT (p + 1))
@@ -614,25 +575,6 @@ theorem refT_transfer {A : Fam} {k : Nat} {W : WorldT k} {flds : List (PropKey �
     (hW : WExt (trunc j hj W) W') : refT A j W' (.objAt flds .absent) :=
   (refT_adm A).mono j _ _ hW _ ((refT_adm A).down_le k j hj W _ hr)
 
-/-- A function that ignores its argument and diverges inhabits *every* arrow
-type: applied to anything, it never returns, and that is safe at any result. -/
-theorem ignore_safe (B : Fam) (n : Nat) (W : WorldT n) (h : Heap)
-    (ha : WorldAdm W) (hh : HeapOk n W h) (v : Val) (hv : isVal v = true) :
-    Safe B n W h (.app (.fn 0 omegaTm) v) := by
-  cases n with
-  | zero => trivial
-  | succ n =>
-    apply beta_rule _ _ hv n W h ha hh
-    simpa [omegaTm, delta, subst] using
-      omega_safe B n _ h (WorldAdm_trunc _ ha) (HeapOk_trunc n W h hh)
-
-theorem diverging_arrow {A B : Fam} (n : Nat) (W : WorldT n) :
-    arrowT A B n W (.fn 0 omegaTm) := by
-  apply fn_intro _ _ _ (by simp [omegaTm, delta, Scoped])
-  intro p hp U hx hu h hh a hA
-  simpa [omegaTm, delta, subst] using
-    omega_safe B p U h hu hh
-
 /-- Being stuck is exactly what `Safe` forbids. -/
 theorem stuck_not_safe (B : Fam) (k : Nat) (W : WorldT (k + 1)) (h : Heap) :
     ¬ Safe B (k + 1) W h (.app .nul .nul) := by
@@ -643,12 +585,6 @@ theorem stuck_not_safe (B : Fam) (k : Nat) (W : WorldT (k + 1)) (h : Heap) :
     | callRecv _ h => cases h
     | callArg _ _ hg _ h => obtain ⟨rfl, rfl⟩ := singleton_get hg; cases h
   · exact stuck_no_step hs
-
-/-- An arrow with an uninhabited domain constrains nothing: every function has
-that type, including one that would get stuck if it were ever applied. -/
-theorem vacuous_arrow {l : Nat} {A B : Fam} (hA : ∀ (j : Nat) (W : WorldT j) (v : Val), ¬ A j W v)
-    (b : Tm) (k : Nat) (W : WorldT k) (hc : Scoped 2 b) : arrowT A B k W (.fn l b) :=
-  ⟨⟨1, b, _, rfl, hc⟩, fun _ _ _ _ _ _ _ a ha => absurd ha (hA _ _ a)⟩
 
 /-! ## Testing a value's shape, and branching on the answer
 
@@ -720,28 +656,7 @@ theorem ite_test_rule {B : Fam} (k : Tag) (a : Val) (hv : isVal a = true) (u e :
     exact helse hb
 
 
-/-- An arrow below every conjunct is below the intersection: one function serves
-a whole overloaded type when its domain covers every domain and its codomain
-sits inside every codomain. -/
-theorem arrowsT_of_arrow {L : List (Fam × Fam)} {A B : Fam}
-    (hdom : ∀ p ∈ L, FamLe p.1 A) (hcod : ∀ p ∈ L, FamLe B p.2) :
-    FamLe (arrowT A B) (arrowsT L) := by
-  rintro n W v ⟨hl, h⟩
-  refine ⟨hl, ?_⟩
-  intro p hp j hj W' hx hu hh hok a ha
-  exact Safe_mono j (fun m _ U u hb => hcod p hp m U u hb) W' hh _
-    (h j hj W' hx hu hh hok a (hdom p hp j W' a ha))
-
-/-- The diverging function inhabits every intersection of arrows, as a direct check that these types admit safe nontermination. -/
-theorem diverging_in_arrowsT (L : List (Fam × Fam))
-    (k : Nat) (W : WorldT k) : arrowsT L k W (.fn 0 omegaTm) := by
-  refine ⟨⟨1, omegaTm, _, rfl, by simp [omegaTm, delta, Scoped]⟩, ?_⟩
-  intro p hp j hj W' hx hu hh hok a ha
-  exact (diverging_arrow (A := p.1) (B := p.2) k W).2 j hj W' hx hu hh hok a ha
-
-
 #print axioms call_elim
-#print axioms app_elim
 #print axioms let_rule
 
 end Model

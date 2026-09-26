@@ -1046,8 +1046,8 @@ mutual
 /-- A declaration's source equation under its parameters, each bound to a
 claim that may mention the enclosing function's rigid binders. Parts without a
 parameter are ground and lower to graph rows like any other application; the
-parts over parameters are rebuilt as the claim forms the rigid checker reads.
-This is the one path for every declaration applied to a rigid argument. -/
+parts over parameters are rebuilt as claim forms, which read each binder as its
+parameter row. This is the one path for every declaration applied to a binder. -/
 private partial def rigidClaim (ds : Array Definition) (owner : Nat) (env : Array Json)
     (seen : List Nat) (term : Json) : Lowering Json := do
   if !mentionsParameter term then

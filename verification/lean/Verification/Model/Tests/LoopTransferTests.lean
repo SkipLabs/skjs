@@ -1,4 +1,5 @@
 import Verification.Model.Source.SourceClaimJson
+import Verification.Model.Tests.GraphCodeFixtures
 
 namespace Verification.Model.LoopTransferTests
 open Lean ProgramTyping SourceExtraction SourceClaimJson ControlFlow
@@ -54,31 +55,22 @@ private def continueProgram : Program := [
   ⟨.nul,.bind 12,none⟩,
   ⟨.var 0,.bind 13,none⟩,
   ⟨.var 0,.effect 0,none⟩,
-  ⟨.funE (.read (.var 2)),.bind 15,none⟩,
+  ⟨.makeAt (.graph 1 [.var 0, .read (.var 0), .var 2]
+      [(.ret, none), (.bind ⟨0, some [0, 2, 3, 4]⟩, none), (.bind ⟨1, none⟩, none)] 2 [.var 0])
+      [valueField] [.nul],.bind 15,none⟩,
   ⟨.var 0,.effect 16,none⟩,
   ⟨.alloc (.var 0),.bind ⟨17,some [0]⟩,none⟩,
   ⟨.tru,.bind 18,none⟩,
   ⟨.nul,.effect 19,none⟩]
--- The program this pins was the term-closure lowering's; closures are graph code now,
--- and the pipeline cases check what the lowering produces.
+#guard ((continued.toOption.getD []).map (·.program)).headD [] == continueProgram
 #guard ((continued.toOption.getD []).map (·.start)).headD 0 == 20
 #guard (SourceClaimJson.produceJson continueAst continueClaims "verification/tests/stateful-source/loop-transfers.ts" 10).toOption.isSome
 
 -- Continue drops the alias and returns to condition evaluation after the write.
-theorem continue_retests : Execution continueProgram 60 []
+theorem continue_retests : ∃ n, Execution continueProgram n []
     (.at 20 (fun _ => .nul)) [.fls,.nul] (.done .fls) := by
-  repeat first
-    | exact Execution.refl
-    | apply Execution.next (.enter rfl)
-    | apply Execution.next (.expr (.makeV rfl))
-    | apply Execution.next (.expr (.writeV rfl (by decide)))
-    | apply Execution.next (.expr (.beta rfl))
-    | apply Execution.next (.expr (.readV rfl))
-    | apply Execution.next (.bind rfl)
-    | apply Execution.next (.effect rfl)
-    | apply Execution.next .yesBind
-    | apply Execution.next .noBind
-    | apply Execution.next (.ret rfl)
+  apply Exists.intro
+  run_machine
 #print axioms continue_retests
 
 end Verification.Model.LoopTransferTests

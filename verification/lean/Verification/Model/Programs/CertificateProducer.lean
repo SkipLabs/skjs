@@ -137,10 +137,11 @@ instantiated binders. -/
 structure InstState (ι : Type) where
   table : InstTable ι := []
   found : Ctx ι := []
-  /-- Meet rows of a binder not yet found, matched against a clause row: the
-  binder, the meet's clauses and the row. The binder's instance is a type
-  whose meet with the clauses that row holds. -/
-  meets : List (ι × List (Clause (List ι)) × ι) := []
+  /-- Meet rows of binders not yet found, matched against a clause row: the
+  meet's parameters, its clauses and the row. A binder's instance is a type
+  whose meet with the other parameters' instances and the clauses that row
+  holds. -/
+  meets : List (List ι × List (Clause (List ι)) × ι) := []
 
 /-- Match the scheme-side type `S` against the graph's type `T` under context
 `κ`, adding table entries: a parameter row to its context image, a top binder
@@ -197,17 +198,20 @@ def matchRow [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap �
           | none, [j] =>
             match G.meets p with
             | some (q, cs) =>
-              -- A meet row: its binder's image decides its own. Before the
-              -- binder's instance is found, nothing is matched.
+              -- A meet row: its parameters' images decide its own. Before
+              -- every binder's instance is found, nothing is matched.
+              let qs := q :: G.meetParams p
               let ops := cs.flatMap Clause.operands
               let fixed (st : InstState ι) : Option (InstState ι) :=
                 ops.foldlM (fun st S => matchRow G bs V fuel st κ S S) st
-              let image := (κ.lookup q).orElse fun _ => if bs.contains q then none else some [q]
-              match image, G.meets j with
-              | none, none => some { st with meets := (q, cs, j) :: st.meets }
+              let image (q : ι) := (κ.lookup q).orElse fun _ => if bs.contains q then none else some [q]
+              match qs.mapM image, G.meets j with
+              | none, none => some { st with meets := (qs, cs, j) :: st.meets }
               | none, _ => some st
-              | some U, some (r, ds) =>
-                if U = [r] ∧ ds.length = cs.length then
+              | some Us, some (r, ds) =>
+                let rs := r :: G.meetParams j
+                if Us.all (fun U => rs.any (U == [·])) ∧ rs.all (fun r => Us.contains [r]) ∧
+                    ds.length = cs.length then
                   (cs.zip ds).foldlM (fun st cd => pairs st κ cd.1.operands cd.2.operands)
                     (add st p [j])
                 else none
@@ -310,11 +314,18 @@ def instanceFor [DecidableEq ι] (G : NormalGraph ι) (fuel : Nat) (s : SchemeRo
       s.variadic.findSome? fun p => matchRest G s.binders V fuel st κ p q) st
   let first ← each [] {}
   -- A binder read only through meet rows: an instance among the candidates
-  -- whose meet with the row's clauses is the clause row it was matched to.
-  let throughMeet (b : ι) : Option (Ty ι) := first.meets.findSome? fun (q, cs, j) =>
-    if q != b then none else candidates.find? fun U => G.plainTy U &&
-      (PositiveRules.sameClauses (G j) (meetLists (PositiveRules.clausesOf G U) cs) ||
-        PositiveRules.sameClauses (G j) (meetLists cs (PositiveRules.clausesOf G U)))
+  -- whose meet with the other parameters' instances and the row's clauses is
+  -- the clause row it was matched to.
+  let throughMeet (b : ι) : Option (Ty ι) := first.meets.findSome? fun (qs, cs, j) =>
+    if !qs.contains b then none else candidates.find? fun U =>
+      match qs.mapM (fun q => if q == b then some U else
+          (first.found.lookup q).orElse fun _ => if s.binders.contains q then none else some [q]) with
+      | some Us =>
+        let Ls := Us.map (PositiveRules.clausesOf G) ++ [cs]
+        Us.all G.plainTy &&
+          (PositiveRules.sameClauses (G j) (PositiveRules.meetMany Ls) ||
+            PositiveRules.sameClauses (G j) (PositiveRules.meetMany Ls.reverse))
+      | none => false
   let θs := s.binders.map fun b => ((first.found.lookup b).orElse fun _ => throughMeet b).getD [b]
   let κ₀ := s.binders.zip θs
   -- An instance found through a meet row is named by no target row: the

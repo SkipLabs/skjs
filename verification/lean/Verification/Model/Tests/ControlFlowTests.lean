@@ -1,5 +1,6 @@
 import Verification.Model.Programs.ControlFlow
 import Verification.Model.Tests.ProgramCertificateTests
+import Verification.Model.Tests.GraphCodeFixtures
 
 set_option maxHeartbeats 3200000
 
@@ -28,8 +29,6 @@ def loop : Program :=
    ⟨callCaptured, .branch 3 4,none⟩,
    ⟨.write (.var 1) .fls, .effect 2,none⟩,
    ⟨callCaptured, .ret,none⟩]
-/-- The same program with the code as a term, run by the machine. -/
-def loopExecuted : Program := loop.set 1 ⟨dispatch, .bind 2,none⟩
 
 /-- Every code admitted: whether the code meets its signatures is its table's
 question, not its creation's. -/
@@ -50,35 +49,8 @@ def loopEvidence : ControlFlow.Certificate (Fin 7) :=
 
 /-- The trace actually traverses the back edge, then returns the changed value.
 The global safety proof is independent of this terminating example's trace. -/
-theorem loop_returns_false : Execution loopExecuted 27 [] (.at 0 (fun _ => .nul)) [.fls,.nul] (.done .fls) := by
-  apply Execution.next (.enter rfl)
-  apply Execution.next (.expr (.makeV rfl))
-  apply Execution.next (.bind rfl)
-  apply Execution.next (.enter rfl)
-  apply Execution.next (.expr (.makeV rfl))
-  apply Execution.next (.bind rfl)
-  apply Execution.next (.enter rfl)
-  apply Execution.next (.expr (.beta rfl))
-  apply Execution.next (.expr (.iteC (.testV rfl)))
-  apply Execution.next (.expr .iteT)
-  apply Execution.next (.expr (.readV rfl))
-  apply Execution.next .yes
-  apply Execution.next (.enter rfl)
-  apply Execution.next (.expr (.writeV rfl (by decide)))
-  apply Execution.next (.effect rfl)
-  apply Execution.next (.enter rfl)
-  apply Execution.next (.expr (.beta rfl))
-  apply Execution.next (.expr (.iteC (.testV rfl)))
-  apply Execution.next (.expr .iteT)
-  apply Execution.next (.expr (.readV rfl))
-  apply Execution.next .no
-  apply Execution.next (.enter rfl)
-  apply Execution.next (.expr (.beta rfl))
-  apply Execution.next (.expr (.iteC (.testV rfl)))
-  apply Execution.next (.expr .iteT)
-  apply Execution.next (.expr (.readV rfl))
-  apply Execution.next (.ret rfl)
-  exact .refl
+theorem loop_returns_false : Execution loop 33 [] (.at 0 (fun _ => .nul)) [.fls,.nul] (.done .fls) := by
+  run_machine
 
 -- Both predecessors justify the supplied union at the shared node 3.
 def diamond : Program :=

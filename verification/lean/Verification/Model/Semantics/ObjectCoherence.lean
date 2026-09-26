@@ -60,12 +60,6 @@ theorem mem_slots {base : Nat} {ns : List PropKey} {p : PropKey × Nat}
 mutual
 def Names (D : Registry) : Tm → Prop
   | .objAt fs .absent => ∀ l ∈ locs fs, D[l]? = some .absent
-  | .objAt fs (.closure n b k) =>
-      (∀ l ∈ locs fs, D[l]? = some (.closure n b k)) ∧ Scoped (n + 1) b ∧ Names D b
-  | .makeAt (.closure _ b _) _ args => Names D b ∧ NamesArgs D args
-  | .objAt fs (.variadic n b) =>
-      (∀ l ∈ locs fs, D[l]? = some (.variadic n b)) ∧ Scoped (n + 2) b ∧ Names D b
-  | .makeAt (.variadic _ b) _ args => Names D b ∧ NamesArgs D args
   | .objAt fs (.bound t r pre) =>
       (∀ l ∈ locs fs, D[l]? = some (.bound t r pre)) ∧
         (Scoped 0 t ∧ Scoped 0 r ∧ ScopedArgs 0 pre) ∧ Names D t ∧ Names D r ∧ NamesArgs D pre
@@ -102,8 +96,6 @@ theorem Names.mono {D E t} (ht : Names D t) (hx : Extends D E) : Names E t := by
   induction t using Tm.induct <;> simp_all [Names]
   case arr ls => exact fun l hl => hx l _ (ht l hl)
   case objAbsent fs => exact fun l hl => hx _ _ (ht l hl)
-  case objClosure fs n b ih => exact fun l hl => hx _ _ (ht.1 l hl)
-  case objVariadic fs n b ih => exact fun l hl => hx _ _ (ht.1 l hl)
   case objBound fs t r pre iht ihr ihp => exact fun l hl => hx _ _ (ht.1 l hl)
   case objGraph fs n E K st caps k r ihE ihc => exact fun l hl => hx _ _ (ht.1 l hl)
 
@@ -111,8 +103,6 @@ theorem Names.descriptor {D fs c} (ht : Names D (.objAt fs c)) :
     ∀ l ∈ locs fs, D[l]? = some c := by
   cases c with
   | absent => exact ht
-  | closure n b => exact ht.1
-  | variadic n b => exact ht.1
   | bound t r pre => exact ht.1
   | graph n E K st caps k r => exact ht.1
 
@@ -126,8 +116,6 @@ theorem Names.subst {D t a} (ht : Names D t) (ha : Names D a) (j : Nat) :
     Names D (subst j a t) := by
   induction t using Tm.induct generalizing j <;> simp only [Names, namesArgs_iff, Model.subst, substArgs_eq_map] at *
   case var i => split <;> (try split) <;> simp_all [Names]
-  case objClosure l n b ih => rw [subst_above ht.2.1 (by omega)]; exact ht
-  case objVariadic l n b ih => rw [subst_above ht.2.1 (by omega)]; exact ht
   case objBound fs t r pre iht ihr ihp =>
     have hpre : pre.map (Model.subst j a) = pre := by
       simpa using (List.map_congr_left (g := id)
@@ -150,18 +138,11 @@ theorem Names.bindArgs {D t args} (ht : Names D t)
     exact (ih (fun v hv => ha v (List.mem_cons_of_mem a hv)) (d + 1)).subst
       (ha a (by simp)) d
 
-theorem Names.bindParameters {D t r args} (ht : Names D t) (hr : Names D r)
-    (ha : ∀ a ∈ args, Names D a) (arity : Nat) :
-    Names D (CallArguments.bindParameters arity args r t) :=
-  ht.bindArgs (fun a hm => (List.mem_cons.mp hm).elim (fun h => h ▸ hr)
-    (CallArguments.parameters_property (by trivial) ha a)) 0
 
 theorem Names.instantiate {D t} (ht : Names D t) (ρ : Env)
     (hρ : ∀ i, Names D (ρ i)) (d : Nat) : Names D (instantiate d ρ t) := by
   induction t using Tm.induct generalizing d <;> simp only [Names, namesArgs_iff, Model.instantiate, instantiateArgs_eq_map] at *
   case var i => split <;> simp_all [Names]
-  case objClosure l n b ih => rw [instantiate_above (ht.2.1.mono (by omega))]; exact ht
-  case objVariadic l n b ih => rw [instantiate_above (ht.2.1.mono (by omega))]; exact ht
   case objBound fs t r pre iht ihr ihp =>
     have hpre : pre.map (Model.instantiate d ρ) = pre := by
       simpa using (List.map_congr_left (g := id)
@@ -184,8 +165,6 @@ an unreachable branch or the body of an empty overload. -/
 mutual
 def sourceTerm : Tm → Bool
   | .objAt .. => false
-  | .makeAt (.closure _ b _) _ args => sourceTerm b && sourceArgs args
-  | .makeAt (.variadic _ b) _ args => sourceTerm b && sourceArgs args
   | .makeAt (.bound t r pre) _ args =>
       sourceTerm t && sourceTerm r && sourceArgs pre && sourceArgs args
   | .makeAt .absent _ args => sourceArgs args
@@ -250,8 +229,6 @@ theorem termOk_make_arg {D c ns inits a} (ht : TermOk D (.makeAt c ns inits)) (h
     TermOk D a := by
   cases c <;> simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht
   · exact ⟨ht.1 a hm, ht.2 a hm⟩
-  · exact ⟨ht.1.2 a hm, ht.2.2 a hm⟩
-  · exact ⟨ht.1.2 a hm, ht.2.2 a hm⟩
   · exact ⟨ht.1.2.2.2 a hm, ht.2.2.2.2 a hm⟩
   · exact ⟨ht.1.2 a hm, ht.2.2.2 a hm⟩
 
@@ -360,13 +337,6 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
       rcases List.mem_or_eq_of_mem_set hv with hv | rfl
       · exact (ht.2.2 v hv).mono hx
       · exact hn
-  | constructV hv =>
-    intro D hh ht
-    simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht
-    refine ⟨D,.refl D,hh,?_,?_⟩
-    · exact CallArguments.bound_body_closed (by simpa [Scoped, Nat.add_comm] using ht.1.1)
-        (by simp [Scoped]) ht.1.2
-    · exact ht.2.1.2.2.bindParameters (by simp [Names]) ht.2.2 _
   | constructGraph hv =>
     intro D hh ht
     simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht
@@ -405,24 +375,6 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
   | letV hv =>
     intro D hh ht
     exact ⟨D,.refl D,hh,subst_scoped ht.1.2 ht.1.1 (by omega),ht.2.2.subst ht.2.1 0⟩
-  | callV hr hv =>
-    intro D hh ht
-    simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht
-    refine ⟨D,.refl D,hh,?_,?_⟩
-    · exact CallArguments.bound_body_closed (by simpa [Scoped, Nat.add_comm] using ht.1.1)
-        ht.1.2.1 ht.1.2.2
-    · exact ht.2.1.2.2.bindParameters ht.2.2.1 ht.2.2.2 _
-  | @callRest r args _ fs n b hr hv =>
-    intro D hh ht
-    simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht
-    refine ⟨D,.refl D,hh,?_,?_⟩
-    · exact CallArguments.invoke_closed (CallArguments.Invoke.variadic (fs := fs) hr hv)
-        (by simpa [Scoped] using ht.1.1) ht.1.2.1 ht.1.2.2
-    · simp only [CallArguments.bindRest, Names, namesArgs_iff,
-        List.mem_singleton, forall_eq]
-      exact ⟨fun a hm => ht.2.2.2 a (List.mem_of_mem_drop hm),
-        ht.2.1.2.2.bindArgs (fun a hm => (List.mem_cons.mp hm).elim (fun h => h ▸ ht.2.2.1)
-          (CallArguments.parameters_property (by trivial) ht.2.2.2 a)) 1⟩
   | callBound hr hv =>
     intro D hh ht
     simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
@@ -449,18 +401,6 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
       · intro v hv
         rcases List.mem_or_eq_of_mem_set hv with hv | rfl
         · exact (ht.2 v hv).mono hx
-        · exact hn
-    | closure n b | variadic n b =>
-      simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
-      obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.2 _ hm,ht.2.2 _ hm⟩
-      refine ⟨E,hx,hh',⟨ht.1.1,?_⟩,ht.2.1.mono hx,?_⟩
-      · intro v hv
-        rcases List.mem_or_eq_of_mem_set hv with hv | rfl
-        · exact ht.1.2 v hv
-        · exact hs
-      · intro v hv
-        rcases List.mem_or_eq_of_mem_set hv with hv | rfl
-        · exact (ht.2.2 v hv).mono hx
         · exact hn
     | bound t r pre =>
       simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
@@ -504,11 +444,6 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
       simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
       exact ⟨_,hx,hh.alloc (fun v hv' => ⟨hv v hv',ht.1 v hv',ht.2 v hv'⟩) .absent,
         trivial,hfield⟩
-    | closure n b | variadic n b =>
-      simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
-      refine ⟨_,hx,hh.alloc (fun v hv' => ⟨hv v hv',ht.1.2 v hv',ht.2.2 v hv'⟩) _,?_,?_⟩
-      · simpa using ht.1.1
-      · exact ⟨hfield,by simpa using ht.1.1,ht.2.1.mono hx⟩
     | bound t r pre =>
       simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
       refine ⟨_,hx,hh.alloc (fun v hv' => ⟨hv v hv',ht.1.2.2.2 v hv',ht.2.2.2.2 v hv'⟩) _,

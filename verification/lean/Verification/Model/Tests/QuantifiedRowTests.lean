@@ -3,8 +3,8 @@ import Verification.Model.Types.QuantifiedGraphs
 
 /-! Parameter and scheme rows are opaque to every check: they have no clauses,
 so no rule reads a clause off them. A parameter is below itself and below
-`unknown`, and nothing else is proved about it. A scheme row has no
-introduction rule yet, so no value is typed at one. -/
+`unknown`, and nothing else is proved about it. A value is typed at a scheme
+row only as graph code checked at its signatures (`funScheme`). -/
 namespace Verification.Model.QuantifiedRowTests
 open ProgramTyping ProgramCertificates CertificateProducer PositiveNormalization PositiveGraphs
   PositiveRules BranchRefinement
@@ -71,9 +71,6 @@ def subtypes (A B : List Nat) : Bool := (subtype G pool A B).isSome
 #guard found [[4]] (.var 0) [4, 3]
 #guard !found [[4]] (.var 0) [0]
 #guard !found [] .nul [4]
-
--- No value is typed at a scheme row before its introduction rule.
-#guard !found [] (.make (.closure 1 (.var 1)) .nul) [5]
 
 -- Instantiation: a scheme row is below each instance of its signatures, the
 -- instance named by a checked map.
