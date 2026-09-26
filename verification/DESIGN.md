@@ -812,7 +812,7 @@ not yet taken are [next steps](#next-steps); a search failure is neither.
 | An element write at an index not proven in bounds or appending | It could create a hole. |
 | A mutable `Dog[]` as an `Animal[]`, a mutable dictionary of `true` as one of `boolean`, a readonly view as a writable one | Mutable storage is invariant: a write through the wider alias breaks the narrower one's contract. |
 | Method bivariance (`Handler<Dog>` as `Handler<Animal>`), an override with narrower parameters, a narrower constructor at a construct signature | The member may be invoked with the wider argument. |
-| A method as a function-typed property, method extraction, a write to a method member, `o.m?.()` | A method is host-relative; `o.m?.()` would call the tested value with a receiver the form does not save. |
+| A method as a function-typed property, method extraction (`o.m.call(r)`, `.apply` and `.bind` of one included), a write to a method member, `o.m?.()` | A method is host-relative; `o.m?.()` would call the tested value with a receiver the form does not save. |
 | A record type where an index signature or a dictionary is expected (TypeScript's implicit index signature); width subtyping into an optional field; an array where a number index is expected | A record is open: it may own further keys at any type; an array has a prototype a dictionary lacks. |
 | `declare let`, `declare var`, a module-level `let` or `var` | Module storage outside code may write during any call; the fragment has none. |
 | An ambient `declare enum`; an enum member TypeScript computes no value for; a NaN or infinite member; a reverse key naming a member; an empty enum | The object is the environment's, or its keys are known only at run time, or it has no literal type. |

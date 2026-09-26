@@ -444,6 +444,9 @@ class Gate {
   readonly iterations = new Map<string, string>();
   /** The keys of `k in o` tests the host answers (`%HasProperty%`). */
   readonly hostIns = new Set<string>();
+  /** The member names of `o.m.call(…)`, `.apply` and `.bind` TypeScript
+   * resolves to a method. */
+  readonly methodTargets = new Set<string>();
   /** The well-known `Symbol.iterator`'s index among the declaration
    * document's symbols, where a program iterable is iterated. */
   wellKnownIterator: number | null = null;
@@ -1854,10 +1857,8 @@ class Gate {
           node.arguments.some((arg) => ts.isSpreadElement(arg)) ||
           !this.localArrow(node.expression.expression)
         )
-          this.fail(
-            node,
-            ".apply requires a known local function, an explicit receiver and at most one argument list",
-          );
+          this.refuseReceiverForm(node,
+            ".apply requires a known local function, an explicit receiver and at most one argument list");
         const list = node.arguments[1];
         // A fresh array literal as the list is its elements: its allocation
         // is unobservable, and `apply` reads back exactly the values it was
@@ -1893,10 +1894,8 @@ class Gate {
           node.arguments.some((arg) => ts.isSpreadElement(arg)) ||
           !this.localArrow(node.expression.expression)
         )
-          this.fail(
-            node,
-            `.${node.expression.name.text} requires a known local function, an explicit receiver and ordinary arguments`,
-          );
+          this.refuseReceiverForm(node,
+            `.${node.expression.name.text} requires a known local function, an explicit receiver and ordinary arguments`);
         return {
           k:
             node.expression.name.text === "bind"
@@ -2112,6 +2111,21 @@ class Gate {
   // function-valued member of a `const` object literal whose member no write
   // in the file can replace. Parameters and arbitrary call results may carry
   // their own .call property, so are refused.
+  /** `f.call(r, …)`, `.apply` or `.bind` of what is no known local
+   * function. Of a method TypeScript resolves the member to, the form passes
+   * it a receiver other than its host, where a method's contract is relative
+   * to its host: extraction, refused by that reason. */
+  private refuseReceiverForm(node: ts.CallExpression, refusal: string): never {
+    const form = ts.isPropertyAccessExpression(node.expression) ? node.expression.name.text : "call";
+    let target: Expression = ts.isPropertyAccessExpression(node.expression) ? node.expression.expression : node.expression;
+    while (ts.isParenthesizedExpression(target)) target = target.expression;
+    if (ts.isPropertyAccessExpression(target) && this.methodTargets.has(this.span(target.name).join(":")))
+      this.fail(node, `a method read off its object is not a function value: \`.${form}\` passes it a receiver ` +
+        "other than the object it is read from, and a method's contract is relative to that object " +
+        "(DESIGN.md, \"Method members are host-relative\")");
+    this.fail(node, refusal);
+  }
+
   private localArrow(node: Expression, seen = new Set<number>()): boolean {
     if (ts.isParenthesizedExpression(node))
       return this.localArrow(node.expression, seen);
@@ -4436,6 +4450,19 @@ export function parseFile(file: string, carriesContext = false,
     node.forEachChild(findInKeys);
   };
   if (!carriesContext) findInKeys(source);
+  // The member names of `o.m.call(…)`, `.apply` and `.bind`: TypeScript
+  // decides which is a method, whose receiver is its host.
+  const receiverTargetNodes: Node[] = [];
+  const findReceiverTargets = (node: Node): void => {
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
+        ["call", "apply", "bind"].includes(node.expression.name.text)) {
+      let target: Expression = node.expression.expression;
+      while (ts.isParenthesizedExpression(target)) target = target.expression;
+      if (ts.isPropertyAccessExpression(target) && ts.isIdentifier(target.name)) receiverTargetNodes.push(target.name);
+    }
+    node.forEachChild(findReceiverTargets);
+  };
+  if (!carriesContext) findReceiverTargets(source);
   // An identifier as an element key, `e[k]`, may name a `unique symbol`
   // constant, and `e[S.k]` a `unique symbol` property, such as the
   // well-known `Symbol.iterator`: TypeScript decides, and such a key joins
@@ -4602,12 +4629,12 @@ export function parseFile(file: string, carriesContext = false,
       classTestNodes.length || classReadNodes.length || contextualNodes.length ||
       receiverNodes.length || enumNodes.length || computedNodes.length || symbolNameNodes.length ||
       keyTypeNodes.length || bindingNodes.length || iterableNodes.length || spreadNodes.length ||
-      restTargets.length || privateNodes.length || inKeyNodes.length) {
+      restTargets.length || privateNodes.length || inKeyNodes.length || receiverTargetNodes.length) {
     const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
       firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? classTestNodes[0] ?? classReadNodes[0] ?? contextualNodes[0] ??
       receiverNodes[0] ?? enumNodes[0] ??
       computedNodes[0] ?? symbolNameNodes[0] ?? keyTypeNodes[0] ?? bindingNodes[0] ?? iterableNodes[0] ??
-      spreadNodes[0] ?? restTargets[0]?.node ?? privateNodes[0] ?? inKeyNodes[0];
+      spreadNodes[0] ?? restTargets[0]?.node ?? privateNodes[0] ?? inKeyNodes[0] ?? receiverTargetNodes[0];
     if (!first) throw Error("missing declaration root");
     // Named imports only. A type import joins the declaration graph; a value
     // import is an assumption at the type its declaration states.
@@ -4668,6 +4695,8 @@ export function parseFile(file: string, carriesContext = false,
         },
         inKeys: inKeyNodes.map(node => gate.span(node)),
         hostIn: ([start, end]) => gate.hostIns.add(`${start}:${end}`),
+        receiverTargets: receiverTargetNodes.map(node => gate.span(node)),
+        methodTarget: ([start, end]) => gate.methodTargets.add(`${start}:${end}`),
         restTargets: restTargets.map(({ node, index }) => ({ span: gate.span(node), index })),
         restSlice: ([start, end]) => gate.slices.add(`${start}:${end}`),
         computed: computedNodes.map(node => gate.span(node)),

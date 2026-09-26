@@ -342,6 +342,11 @@ export function collectDeclarations(file: string, options: {
    * them `%HasProperty%`, which answers such a test, join the values. */
   inKeys?: readonly Span[];
   hostIn?: (span: Span) => void;
+  /** The member names `m` of the client's `o.m.call(…)`, `.apply` and
+   * `.bind` targets: each TypeScript resolves to a method is reported to
+   * `methodTarget`. */
+  receiverTargets?: readonly Span[];
+  methodTarget?: (span: Span) => void;
   /** Identifiers of the client that may name one of its local bindings: each
    * that TypeScript binds to a value declaration in the client is reported
    * to `bindingRead` with the span of that declaration's name. A shorthand
@@ -1089,6 +1094,11 @@ export function collectDeclarations(file: string, options: {
       if (parts.length && parts.every(t => !!(t.flags & TypeFlags.StringLiteral))) continue;
       listIntrinsics(span);
       options.hostIn?.(span);
+    }
+    for (const span of options.receiverTargets ?? []) {
+      const name = identifierAt(client, span);
+      const symbol = name && checker.getSymbolAtLocation(name);
+      if (symbol && symbol.flags & SymbolFlags.Method) options.methodTarget?.(span);
     }
     // Global variables the client reads, such as Node's `process` (PROGRAM-TYPING.md,
     // "Imported, ambient and global values"): each joins the values like an import, at a definition

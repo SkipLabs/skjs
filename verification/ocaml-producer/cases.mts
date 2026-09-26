@@ -1194,6 +1194,8 @@ export const cases: Case[] = [
     /^unsupported: a cell read at its contract/),
   gap("array-isarray-unknown-element-refused", "an element of `unknown` read after `Array.isArray`", "unsupported", "proposal",
     /^unsupported: `unknown` used as an array after `Array\.isArray`, read at an element/),
+  gap("method-call-extraction-refused", "`.call` of a method read off its object passes it another receiver", "unsupported", "source",
+    /^gate: a method read off its object is not a function value: `\.call` passes it a receiver/),
   { ...gap("typescript-refuses-spread-refused", "a producer refusal of code TypeScript rejects too is named by TypeScript's error", "unsupported", "proposal",
     /^reject: TypeScript refuses this code too \(line 8, col 16: A spread argument must[\s\S]*\nunsupported: a spread argument needs a tuple/),
     typescriptErrors: true },
