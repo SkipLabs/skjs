@@ -345,6 +345,8 @@ export const cases: Case[] = [
   negative("invalid-increment-string", "`s++` converts a string to a number, not a concatenation", /an increment needs a target of one numeric family/),
   negative("invalid-nullish-assignment", "the right side of `??=` is written at the target's contract"),
   negative("invalid-compound-contract", "an increment's value is any number, not the target's literal type"),
+  positive("array-literal-keeps-facts", "an array literal's store is allocated past the heap's end, so field facts survive it; an `as const` element keeps its type; an array pattern forgets the heap"),
+  negative("invalid-array-literal-keeps-facts", "a write after the literal still changes the field"),
   positive("update-closed-expression", "an increment or compound assignment of a local cell inside a closed expression: an operand of `&&`, an arrow's expression body"),
   negative("invalid-update-closed-expression", "inside a closed expression the write back is at the cell's contract too"),
   positive("objects", "multi-field objects / aliases"),

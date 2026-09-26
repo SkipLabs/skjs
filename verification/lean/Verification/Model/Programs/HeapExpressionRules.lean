@@ -878,6 +878,31 @@ theorem mergeSlots_eq {t d a b} (h : mergeSlots t = some (d, a, b)) :
   unfold mergeSlots at h
   split at h <;> simp_all
 
+/-- A store allocated from value slots: its elements' fresh locations lie past
+the heap's end, so what was known of the heap stays known. -/
+def storeSlots : Tm → Option (List Nat)
+  | .arrLit inits => ProgramCertificates.varSlots inits
+  | _ => none
+
+theorem storeSlots_eq {t slots} (h : storeSlots t = some slots) :
+    t = .arrLit (slots.map .var) := by
+  unfold storeSlots at h
+  split at h
+  · rw [ProgramCertificates.varSlots_eq h]
+  · simp at h
+
+/-- A store of values takes one fresh location per element, past the heap's
+end: every fact about the old heap, and every link, still holds. -/
+theorem store_alloc_sound [DecidableEq ι] {G : NormalGraph ι} {k A ρ n W h}
+    {vs : List Tm} (hvals : ∀ v ∈ vs, isVal v = true)
+    (hk : HeapKnowledge.Holds k ρ h)
+    (hs : Safe (meaning G A) n W h (.arrLit vs)) :
+    SafePost (meaning G A)
+      (fun h' v => HeapKnowledge.Holds (HeapKnowledge.shift k) (push v ρ) h')
+      n W h (.arrLit vs) :=
+  one_step rfl rfl (.arrAlloc hvals)
+    (HeapKnowledge.shift_holds (HeapKnowledge.alloc_frames vs hk)) hs
+
 /-- The keys a claimed object type names: the fields a fresh object's
 distinctness is stated at, since a later claim can name no other. -/
 def namedKeys [DecidableEq ι] (G : NormalGraph ι) (A : Ty ι) : List PropKey :=
@@ -953,7 +978,12 @@ def checkStep [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι)
       | some (_, a, b) =>
         if claim e = j ∧ checkTree G e codes = true ∧ a < j.context.length ∧ b < j.context.length
         then some (allocOutput k [] (contractFields G j.context) (namedKeys G j.type)) else none
-      | none => none
+      | none =>
+        match storeSlots j.term with
+        | some slots =>
+          if claim e = j ∧ checkTree G e codes = true ∧ ∀ i ∈ slots, i < j.context.length
+          then some (HeapKnowledge.shift k) else none
+        | none => none
   | .written i v R e =>
     match writeSlots j.term with
     | some (fld, i', v') =>
@@ -1125,7 +1155,24 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
           have hvb := (meaning_value (he.2 b _ (List.getElem?_eq_getElem hb))).1
           exact merge_alloc_sound _ hva hvb he hk hh hs
         · contradiction
-      · contradiction
+      · split at hc
+        · rename_i slots hstore
+          split at hc
+          · rename_i hp
+            obtain ⟨hj,ht,hin⟩ := hp
+            have typed := checkTree_sound e ht hcodes
+            rw [hj] at typed
+            have term := storeSlots_eq hstore
+            cases hc
+            rw [term] at typed ⊢
+            have hs := typed.sound n W h ρ he hw hh
+            simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def] at hs ⊢
+            refine store_alloc_sound ?_ hk hs
+            intro v hv
+            obtain ⟨i, hi, rfl⟩ := List.mem_map.mp hv
+            exact (meaning_value (he.2 i _ (List.getElem?_eq_getElem (hin i hi)))).1
+          · contradiction
+        · contradiction
   | written i v R e =>
     simp only [checkStep] at hc
     split at hc
@@ -1147,6 +1194,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
 #print axioms bagOperand_sound
 #print axioms alloc_sound
 #print axioms merge_alloc_sound
+#print axioms store_alloc_sound
 #print axioms graphCreation_sound
 #print axioms checkStep_sound
 #print axioms fieldOperand_sound

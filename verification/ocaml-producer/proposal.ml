@@ -1489,20 +1489,23 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
   (* The type `e as const` gives its operand: a literal its own type, an
      array literal the readonly tuple of its elements', an object literal
      readonly fields of theirs; a name keeps its type. None for any other
-     operand, which TypeScript refuses. *)
-  and const_type env (e:expr) = match e.node with
+     operand, which TypeScript refuses. An element or field of a literal
+     that is none of these (`[x.f] as const`) keeps its own type, as
+     TypeScript's const context does. *)
+  and const_type ?(nested = false) env (e:expr) = match e.node with
     | Literal l -> Some (literal_type l)
     | Id n -> Some (resolve env n)
-    | Cast ("const",None,e) -> const_type env e
+    | Cast ("const",None,e) -> const_type ~nested env e
     | ArrayLiteral es ->
-      let elements = List.map (const_type env) es in
+      let elements = List.map (const_type ~nested:true env) es in
       if List.mem None elements then None
       else Some (array {required=List.filter_map Fun.id elements;optional_elements=[];rest=None;readonly=true})
     | Alloc fs ->
-      let fields = List.map (fun (name,e) -> name,const_type env e) fs in
+      let fields = List.map (fun (name,e) -> name,const_type ~nested:true env e) fs in
       if List.exists (fun (_,t) -> t = None) fields then None
       else Some (record (List.map (fun (name,t) ->
         {name;optional=false;read=Option.get t;write=None;host=false}) fields))
+    | _ when nested -> quietly (fun () -> expr env e)
     | _ -> None
   (* `await e` and an async body's `return e` (the intrinsics `%Await%` and
      `%AsyncReturn%`) of a value that may be an object other than a promise
@@ -3131,7 +3134,15 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
        sees the earlier bindings, replaces the read's undefined slice. *)
     | Destructure (target,default,init) ->
       let env = bind env target (expr env init) default in
-      if stirs_statement s then forget env else env
+      (* An array pattern reads its positions from a store, a step after
+         which Lean keeps no fact of the heap: the fields' and cells'
+         contents are known by their contracts again. *)
+      let rec reads_store = function
+        | PArray _ -> true
+        | PName _ -> false
+        | PObject (props,rest) -> List.exists (fun (_,t,_) -> reads_store t) props
+            || (match rest with Some (_,t) -> reads_store t | None -> false) in
+      if stirs_statement s || reads_store target then forget env else env
     | Return e -> !block_returned := expr ?expected:!block_result env e :: !(!block_returned); env
     (* An assignment statement leaves the cell holding the value written;
        `n ??= rhs`, the value it yields. *)

@@ -1132,7 +1132,7 @@ def expressionEffect [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         if HeapExpressionRules.fieldOperand (expand G Ref) fld ||
             HeapExpressionRules.optionalOperand (expand G Ref) fld then
           choices := choices ++ [.typedRead i e]
-    | .makeAt .. | .merge .. =>
+    | .makeAt .. | .merge .. | .arrLit .. =>
       choices := choices ++ [.allocated e]
     | .writeAt _ (.var i) (.var v) =>
       choices := choices ++ [.written i v (HeapExpressionRules.valuesAt G j.context k v) e]

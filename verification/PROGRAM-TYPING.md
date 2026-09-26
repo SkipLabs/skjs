@@ -2167,12 +2167,12 @@ It computes a guaranteed output, not an assumed postcondition:
 | Observed read                        | Preserve facts and links; record the result's primitive predicate and its current read relationship. That set must fit the requested ordinary result type.                                                                               |
 | Sliced read (`slicedRead`)           | A read a cell fact says finds no `undefined` (every predicate other than it): ordinary read evidence at the location's contract $C$, whose slice $T_{\mathsf{false}}(C)$ by the `undefined` tag is below the requested type by a checked subtype proof. As an ordinary typed read otherwise. |
 | Known immutable value                | Check the requested primitive type against a proved slot fact or the slot's ordinary primitive type.                                                                                                                                     |
-| Allocation                           | Check ordinary creation evidence and scope for either descriptor, preserve old facts, add the fresh bag's initial contents where a checked value slot's are known, and its fields' distinctness from every record slot's. Closure code is not executed. A merge of two slots is an allocation too: old facts preserved, the fields its result type names distinct. |
+| Allocation                           | Check ordinary creation evidence and scope for either descriptor, preserve old facts, add the fresh bag's initial contents where a checked value slot's are known, and its fields' distinctness from every record slot's. Closure code is not executed. A merge of two slots is an allocation too: old facts preserved, the fields its result type names distinct. So is an array literal's store of value slots, whose element locations lie past the heap's end: old facts preserved (`store_alloc_sound`); an element read (`elemAt`) or a length (`lenOf`) is still an ordinary expression. |
 | Write                                | Check ordinary write evidence (no old-content premise), discard old cell facts but those a distinct link separates from the written location, record new contents for the receiver and its witnessed aliases where the value is a known primitive, or `defined` where its type rules `undefined` out, and preserve immutable facts and slot equalities. Read links are discarded. |
 | Ordinary expression, including calls | Check ordinary evidence, discard cell facts and read links, preserving immutable facts and slot equalities.                                                                                                                              |
 
 `typedRead_sound`, `slicedRead_sound`, `read_sound`, `alloc_sound` (with
-`merge_alloc_sound`) and
+`merge_alloc_sound` and `store_alloc_sound`) and
 `write_sound` prove the read, allocation and write rules above. The sliced
 read is
 
@@ -4284,7 +4284,9 @@ $$
 \mathsf{const}(e\;\texttt{as const})=\mathsf{const}(e),
 $$
 
-for a literal $\ell$; any other operand is refused. The const type is a
+for a literal $\ell$; any other operand is refused. An element or field of a
+literal that is none of these (`[x.f] as const`) keeps its own type,
+$\mathsf{const}(e_i)=\tau(e_i)$, as TypeScript's const context does. The const type is a
 proposal: Lean checks the operand's allocation at it and the cast's claim
 from the operand's. Other assertions (`e as T`, `e satisfies T`, `e!`) are
 the same node with $T$ an obligation the operand meets; nothing decides an
