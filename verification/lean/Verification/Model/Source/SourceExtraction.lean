@@ -4009,9 +4009,11 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     -- storage contract, never at a claim; then the right side, the
     -- operation, the write back at the contract, and the old or new value.
     let G := SourceTypes.graph (← table)
+    -- The field's contract, of the one record the target's object is: its
+    -- views, methods and key bounds say nothing of the field.
     let fieldType := fun (B : Ty Nat) (fld : PropKey) => do
       match PositiveRules.expand G B with
-      | [.refs fs [] []] =>
+      | [.refs fs [] _ _ _ _] =>
         let some T := fs.lookup fld | throw s!"update of a field '{fld}' the contract does not name"
         pure T
       | _ => throw "a compound assignment needs one cell contract"
@@ -4074,7 +4076,7 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let G := SourceTypes.graph (← table)
     let fieldType := fun (B : Ty Nat) (fld : PropKey) => do
       match PositiveRules.expand G B with
-      | [.refs fs [] []] =>
+      | [.refs fs [] _ _ _ _] =>
         let some T := fs.lookup fld | throw s!"update of a field '{fld}' the contract does not name"
         pure T
       | _ => throw "a logical assignment needs one cell contract"

@@ -152,6 +152,9 @@ const SPREAD_POSITION = "a spread of a program's iterable is outside the fragmen
  * spell, apart from the instance methods' `C.m`. */
 const staticName = (cls: string, member: string): string => `static ${cls}.${member}`;
 
+/** Why an instance member reads none of its class's statics. */
+const INSTANCE_STATIC = "an instance member or constructor reading a static member of its own class is outside the fragment: statics are bindings the class defines after its methods and constructor, whose closures cannot hold them";
+
 /** Why a class with a private name takes no part in inheritance. */
 const PRIVATE_INHERITANCE = "a class with a private name `#x` in inheritance is outside the fragment: a derived instance's base part is copied, and a copy holds no private slot";
 
@@ -1546,9 +1549,12 @@ class Gate {
       // `C.x` that TypeScript binds to a static member of class `C` reads the
       // binding the class statement gives it (`classStmt`).
       const cls = this.staticReads.get(this.span(node.name).join(":"));
+      const privateStatic = this.staticPrivate(node);
+      if ((cls !== undefined && cls === this.selfClass?.name) ||
+          (privateStatic !== null && privateStatic.startsWith(staticName(this.selfClass?.name ?? "", ""))))
+        this.fail(node, INSTANCE_STATIC);
       if (cls !== undefined)
         return { k: "id", pos: this.span(node), name: staticName(cls, node.name.text) };
-      const privateStatic = this.staticPrivate(node);
       if (privateStatic !== null) return { k: "id", pos: this.span(node), name: privateStatic };
       return {
         k: "read",

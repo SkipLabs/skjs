@@ -717,6 +717,7 @@ not yet taken are [next steps](#next-steps); a search failure is neither.
 | A `let` binding captured by a closure in a `for` loop | JavaScript copies it per iteration. |
 | `this` before `super(...)`; a statement reading `this` before the instance is complete | The instance is allocated at the end; no term stands for the uninitialized binding. |
 | A base class declared later, imported, ambient, a library class (`extends Array`), or an expression | Nothing in the file says what its constructor allocates. |
+| An instance member or constructor reading a static of its own class | Statics are bindings the class defines after its methods and constructor, whose closures cannot hold them. |
 | A static method that reads `this`; `super` in a static member; a mutable static field | Statics are module bindings, exact only when immutable; a static method's receiver is whatever its call passes, and its `super` the base's constructor, not the prototype `super.m(...)` reads. |
 | A catch binding annotated other than `unknown`, or destructured | Anything may be thrown. |
 | A template literal type with a `${string}` hole; a computed type over a type parameter; `keyof` with a unique-symbol key; `typeof` of an unannotated binding or of a class with statics | No term of the fragment states it exactly. |
@@ -868,9 +869,7 @@ before the position is read and defaulted, then a field write, where
 `arrayAssigns` writes locals only. A method call on a union of primitives,
 which needs one callee contract its receiver meets. A source binder used both
 as a pack and as an array value. Explicit type arguments on an element call,
-which reach an element only as a generic closure's quantified claim. An
-instance method reading its class's statics, which are bound after the
-methods, and a compound assignment of an instance field (`this.n++`).
+which reach an element only as a generic closure's quantified claim.
 User guards and assertion functions: the promise is a contract a
 conjunction of arrows states, `(x: A) => boolean` with
 `(x: Exclude<A, T>) => false` (an assertion function's `=> never`), which the
