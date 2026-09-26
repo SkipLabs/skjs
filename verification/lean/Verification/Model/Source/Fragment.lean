@@ -337,6 +337,11 @@ def classKeyOf (cls : String) : String := "[[" ++ cls ++ ".prototype]]"
 /-- The module binding holding class `C`'s prototype object. -/
 def prototypeBindingOf (cls : String) : String := cls ++ ".[[prototype]]"
 
+/-- Class `C`'s own binding of its name, which its instance members read: the
+class value, a module value of the initialization unit at the class's
+construct signature (`SourceClaimJson`, the module values). -/
+def selfBindingOf (cls : String) : String := cls ++ ".[[self]]"
+
 #guard reservedSourceKey (classKeyOf "C") && reservedSourceKey "[[proto]]" && reservedSourceKey "[]"
 
 /-- A key the source spells: any but a reserved one. -/
@@ -479,7 +484,8 @@ inductive Expr where
   /-- A named read: a string key, or, for `e[k]` with `k` a `unique symbol`
   constant, that symbol's key. -/
   | read (pos : Span) (field : PropKey) (e : Expr)
-  | write (pos : Span) (field : String) (receiver rhs : Expr)
+  /-- A named write, keyed as a named read is. -/
+  | write (pos : Span) (field : PropKey) (receiver rhs : Expr)
   /-- `e[key]`: the receiver, then the key, then the read of the field the
   key's claimed type names. The decoder leaves the field unresolved; the
   extractor fills it from the key's claim, a string singleton, and the key's
@@ -1005,13 +1011,17 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     -- `e instanceof C`, `C` a class the file declares at its top level, as
     -- TypeScript binds it: the operand, then a read of the class's
     -- prototype object, then the test of the key only that object owns
-    -- (`Tag.hasKey`, which walks the operand's prototype chain).
+    -- (`Tag.hasKey`, which walks the operand's prototype chain). In the
+    -- class's own instance members the read is of the class value, its
+    -- own binding (`selfBindingOf`): the test is the key's either way.
     CellClaims.fieldsExactly j ["k","pos","e","proto","key"]
     let key ← jStr (← jField j "key")
     let proto ← decodeExpr (← jField j "proto")
     let .var _ binding := proto | throw "`instanceof` reads its class's prototype object"
     unless (binding.dropRight ".[[prototype]]".length |> fun cls =>
-        prototypeBindingOf cls == binding && classKeyOf cls == key) do
+        prototypeBindingOf cls == binding && classKeyOf cls == key) ||
+        (binding.dropRight ".[[self]]".length |> fun cls =>
+          selfBindingOf cls == binding && classKeyOf cls == key) do
       throw s!"`instanceof` tests '{key}', not the key of the prototype '{binding}'"
     return .singletonTest p (.hasKey (.str key)) true true (← decodeExpr (← jField j "e")) proto
   | "arrayTest" => do
@@ -1224,9 +1234,10 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     | .read .. | .index .. => pure ()
     | _ => throw "a method call's target is a property reference"
     return .invoke p callee args spreads typeArgs
-  | "write" =>
-    return .write p (← sourceKey (← jStr (← jField j "field"))) (← decodeExpr (← jField j "receiver"))
-      (← decodeExpr (← jField j "rhs"))
+  | "write" => do
+    let field ← PropKey.decode (← jField j "field")
+    if let .str s := field then discard <| sourceKey s
+    return .write p field (← decodeExpr (← jField j "receiver")) (← decodeExpr (← jField j "rhs"))
   | "logicalAssign" => do
     CellClaims.fieldsExactly j ["k","pos","op","target","rhs"]
     let op ← match ← jStr (← jField j "op") with

@@ -1065,11 +1065,9 @@ private def tagTestPlan (G : PositiveGraphs.NormalGraph Nat) (tag : Tag) (Γ : L
     let B := if q == equal then [1] else [2]
     let rule := if q == equal then ProgramCertificates.Rule.truLit else .flsLit
     if !q && !(decide (Answers G [a] tag false)) then
-      -- A broad numeric arm is a documented proof boundary for equality. Any
-      -- other arm whose answer its type leaves open (an open record for a key,
-      -- an unknown shape) is a real Boolean: the test's own value.
-      if let .numEq _ := tag then
-        throw "numeric comparison requires a union of known singleton outcomes"
+      -- An arm whose answer its type leaves open (a number against a numeric
+      -- singleton, an open record for a key, an unknown shape) is a real
+      -- Boolean: the test's own value.
       let test := DirectProof.node H (.test tag (.var slot)) [1,2] .test [DirectProof.var H slot [a]]
       let yes := DirectProof.cast H A (DirectProof.node H (if equal then .tru else .fls) (if equal then [1] else [2])
         (if equal then .truLit else .flsLit))
@@ -1597,7 +1595,7 @@ type and the array's claimed type. -/
 private def restArray (fc : SourceClaims.Function) (A : Ty Nat) (obj start : Nat) (restPos : Span) :
     Compiler (Tm × Ty Nat × Ty Nat) := do
   let G := SourceTypes.graph (← table)
-  let some S := storeOf G A | throw "an array rest requires an array contract"
+  let some S := storeOf G A | throw "an array rest needs one array contract: over a union of arrays of different lengths its rest is a slice of a length known only at run time"
   let [.list T []] := PositiveRules.expand G S | throw restOfUnknownLength
   if !T.optional.isEmpty || T.rest.isSome then throw restOfUnknownLength
   let C ← claimAt fc restPos
@@ -3126,7 +3124,7 @@ private partial def closureDestructure (fc : SourceClaims.Function) (pos : Span)
       (fun scope H obj => match rest with
         | none => k scope H
         | some (start, restPos, t) => do
-          let some S := storeOf G A | throw "an array rest requires an array contract"
+          let some S := storeOf G A | throw "an array rest needs one array contract: over a union of arrays of different lengths its rest is a slice of a length known only at run time"
           let [.list T []] := PositiveRules.expand G S | throw restOfUnknownLength
           if !T.optional.isEmpty || T.rest.isSome then throw restOfUnknownLength
           let C ← claimAt fc restPos

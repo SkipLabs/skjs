@@ -92,6 +92,13 @@ type ClassRecord = { params: { name: string; type: TypeTerm }[]; methods: Map<st
  * own keys are exactly known. */
 const freshName = (cls: string): string => `${cls}.[[class]]`;
 
+/** The class's own binding of its name, which its instance methods, its
+ * constructor and its instance field initializers read: JavaScript's class
+ * scope binding, initialized before anything in the class body can run. A
+ * name no source binding can spell; the initialization unit reads it as the
+ * module value the class is (DESIGN.md, "Classes"). */
+const selfName = (cls: string): string => `${cls}.[[self]]`;
+
 /** The binding holding a derived instance's base part. */
 const baseName = (cls: string): string => `${cls}.[[base]]`;
 
@@ -297,6 +304,15 @@ class Gate {
   /** `instanceof` right operands TypeScript binds to a class declared at the
    * file's top level, by span: the class. */
   readonly classTests = new Map<string, string>();
+  /** Identifiers in a class's own body TypeScript binds to that class, by
+   * span: the class. */
+  readonly classReads = new Map<string, string>();
+  /** Closure parameters written without a type, by the span of their name:
+   * the type TypeScript gives each from its context, or why none states it. */
+  readonly contextualParams = new Map<string, TypeTerm | { refused: string }>();
+  /** The class whose instance members are being lowered: its own name reads
+   * its class binding there (`selfName`). */
+  private selfClass: { name: string; generic: boolean } | null = null;
   /** The classes lowered so far, by name: what a class extending one reads
    * (`classStmt`). */
   private readonly classRecords = new Map<string, ClassRecord>();
@@ -531,10 +547,15 @@ class Gate {
       span: this.span(name) };
     const outerStrict = this.strict;
     const outerSuper = this.superClass;
+    const outerSelf = this.selfClass;
     // A class body is strict code; `super.m(...)` in its methods calls its
-    // base's method.
+    // base's method. Its instance members read its own name as its class
+    // binding; its static members, lowered after the class value is bound,
+    // read that binding directly.
     this.strict = true;
     this.superClass = base;
+    const instanceMembers = { name: name.text, generic: binders.length > 0 };
+    this.selfClass = instanceMembers;
     try {
       const methods: BindingAst[] = [];
       // The methods its prototype holds: its base's, then its own over them.
@@ -597,9 +618,11 @@ class Gate {
         if (modifiers.some((m) => m.kind !== ts.SyntaxKind.ReadonlyKeyword && m.kind !== ts.SyntaxKind.AsyncKeyword &&
             m.kind !== ts.SyntaxKind.StaticKeyword && !CLASS_ACCESS.includes(m.kind)))
           this.fail(member, "a class member modifier outside the fragment");
+        this.selfClass = instanceMembers;
         if (modifiers.some((m) => m.kind === ts.SyntaxKind.StaticKeyword)) {
           if (!(ts.isPropertyDeclaration(member) || ts.isMethodDeclaration(member)) || !ts.isIdentifier(member.name))
             return this.fail(member, "a static member needs a plain name");
+          this.selfClass = null;
           const binding = staticName(name.text, member.name.text);
           if (ts.isMethodDeclaration(member)) {
             // `C.m()` passes `C` as the receiver, a detached call `undefined`:
@@ -640,6 +663,7 @@ class Gate {
             e: { k: "id", pos: this.span(member.name), name: `${name.text}.${member.name.text}` } });
         } else this.fail(member, "a class member outside the fragment");
       }
+      this.selfClass = instanceMembers;
       for (const p of params)
         if (p.property) fields.push({ name: p.name, e: { k: "id", pos: p.pos, name: p.name }, bind: { pos: p.at, type: p.type } });
       // A class allocates its prototype object once, holding its methods, and
@@ -824,6 +848,7 @@ class Gate {
     } finally {
       this.strict = outerStrict;
       this.superClass = outerSuper;
+      this.selfClass = outerSelf;
     }
   }
 
@@ -846,6 +871,16 @@ class Gate {
 
   span(node: Node): Span {
     return [node.getStart(this.file), node.end];
+  }
+
+  /** The class binding an identifier of an instance member reads, where
+   * TypeScript binds it to the class being lowered. */
+  private ownClass(node: Node): string | null {
+    const cls = this.classReads.get(this.span(node).join(":"));
+    if (!cls || cls !== this.selfClass?.name) return null;
+    if (this.selfClass.generic)
+      this.fail(node, "a generic class's instance member reading its own class: the class value is quantified over the binders its declaring unit reads as parameter rows, and a module value is read only at ground instances");
+    return selfName(cls);
   }
 
   /* ------------------------------------------------------ async, await -- */
@@ -967,6 +1002,32 @@ class Gate {
     return optionalTerm(this.typeOf(node, at), this.span(at));
   }
 
+  /** A closure parameter's contract: its annotation, or, without one, the
+   * type TypeScript gives it from its context (an optional one's includes
+   * `undefined` already). That type is a proposal like any claim: the body
+   * is checked at it, and the closure's signature wherever the closure
+   * goes, the call offering it included. A declaration it names must be one
+   * the file names, and a type parameter one in scope. */
+  private closureParamType(p: ts.ParameterDeclaration): TypeTerm {
+    if (p.type || p.dotDotDotToken) return p.questionToken ? this.optionalTypeOf(p.type, p) : this.typeOf(p.type, p);
+    const found = this.contextualParams.get(this.span(p.name).join(":"));
+    if (!found) return this.typeOf(undefined, p);
+    if ("refused" in found) return this.fail(p, found.refused);
+    const check = (t: TypeTerm): void => {
+      if (t.k === "reference") {
+        const target = t.reference.target, known = this.declaredTypes.get(t.reference.name)?.declaration;
+        if (!known || known.module !== target.module || known.span[0] !== target.span[0] || known.span[1] !== target.span[1])
+          this.fail(p, `TypeScript types this unannotated closure parameter from its context at ${t.reference.name}, a declaration the file does not name`);
+      }
+      if (t.k === "binder" && !this.hasTypeParam(t.name))
+        this.fail(p, `TypeScript types this unannotated closure parameter from its context at the type parameter ${t.name}, not one in scope here`);
+      if (t.k === "union") t.parts.forEach(check);
+      if (t.k === "array") check(t.element);
+    };
+    check(found);
+    return found;
+  }
+
   /** A rest parameter's contract: its tuple of required positions or its
    * array, the collected array viewed at it. A declared alias is read
    * through its equation, as TypeScript reads one: the parameter's type is
@@ -1039,8 +1100,10 @@ class Gate {
       if (node.text === "undefined")
         return { k: "lit", pos: this.span(node), lit: { a: "undefined" } };
       // A class is a value like any other: its construct-only code is what a
-      // plain call cannot run, which its type records.
-      return { k: "id", pos: this.span(node), name: node.text };
+      // plain call cannot run, which its type records. Its own name in its
+      // instance members, which run only once the class exists, is its class
+      // binding, which they cannot capture where they are created.
+      return { k: "id", pos: this.span(node), name: this.ownClass(node) ?? node.text };
     }
 
     if (ts.isNewExpression(node)) {
@@ -1210,8 +1273,7 @@ class Gate {
       // A `unique symbol` constant names one key: evaluating it has no
       // effect, so the read is the named read of that symbol's key.
       const [start, end] = this.span(node.argumentExpression);
-      const symbol = ts.isIdentifier(node.argumentExpression)
-        ? this.symbolKeys.get(`${start}:${end}`) : undefined;
+      const symbol = this.symbolKeys.get(`${start}:${end}`);
       if (symbol !== undefined)
         return {
           k: "read",
@@ -1601,8 +1663,7 @@ class Gate {
     }
     if (ts.isElementAccessExpression(node)) {
       const [start, end] = this.span(node.argumentExpression);
-      const symbol = ts.isIdentifier(node.argumentExpression)
-        ? this.symbolKeys.get(`${start}:${end}`) : undefined;
+      const symbol = this.symbolKeys.get(`${start}:${end}`);
       if (symbol !== undefined) return { k: "read", pos, field: { symbol }, e: object };
       return { k: "index", pos, e: object, key: this.expr(node.argumentExpression) };
     }
@@ -1888,7 +1949,8 @@ class Gate {
       if (!cls)
         this.fail(node, "`instanceof` whose right operand is not a class declared at the file's top level: nothing in the file says which prototype a constructor from elsewhere gives its instances");
       return { k: "instanceTest", pos: this.span(node), e: this.expr(node.left),
-        proto: { k: "id", pos: this.span(node.right), name: prototypeName(cls) }, key: classKey(cls) };
+        proto: { k: "id", pos: this.span(node.right), name: this.ownClass(node.right) ?? prototypeName(cls) },
+        key: classKey(cls) };
     }
     // `key in o`: whether `o` has the key, its own or an inherited one.
     // Which keys and operands the model answers as JavaScript does is Lean's
@@ -2041,6 +2103,13 @@ class Gate {
           rhs: this.expr(node.right),
         };
       }
+      // `o[k] = v` with `k` a `unique symbol` constant is the named write of
+      // that symbol's key, as the read is.
+      const symbolKey = ts.isElementAccessExpression(node.left)
+        ? this.symbolKeys.get(this.span(node.left.argumentExpression).join(":")) : undefined;
+      if (symbolKey !== undefined && ts.isElementAccessExpression(node.left) && !node.left.questionDotToken)
+        return { k: "write", pos: this.span(node), field: { symbol: symbolKey },
+          receiver: this.expr(node.left.expression), rhs: this.expr(node.right) };
       if (
         ts.isElementAccessExpression(node.left) &&
         !node.left.questionDotToken
@@ -2284,9 +2353,7 @@ class Gate {
           if (ts.isIdentifier(p.name) && !p.initializer)
             return {
               name: p.name.text,
-              type: p.dotDotDotToken ? this.restType(p) : p.questionToken
-                ? this.optionalTypeOf(p.type, p)
-                : this.typeOf(p.type, p),
+              type: p.dotDotDotToken ? this.restType(p) : this.closureParamType(p),
               ...rest(p),
             };
           const hidden = parameterName(i);
@@ -2301,7 +2368,8 @@ class Gate {
           // A caller may pass `undefined` where there is a default.
           return {
             name: hidden,
-            type: p.questionToken || p.initializer ? this.optionalTypeOf(p.type, p) : this.typeOf(p.type, p),
+            type: !p.type ? (p.initializer ? optionalTerm(this.closureParamType(p), this.span(p)) : this.closureParamType(p))
+              : p.questionToken || p.initializer ? this.optionalTypeOf(p.type, p) : this.typeOf(p.type, p),
           };
         });
         this.initializedBefore(node, params.map((q): [PatternAst, Expr | null] => {
@@ -2353,9 +2421,7 @@ class Gate {
           // A defaulted parameter's type is what the body reads; the default
           // itself is the expression that replaces an omitted argument. A rest
           // parameter's type is the tuple its arguments are collected into.
-          type: p.dotDotDotToken ? this.restType(p) : p.questionToken
-            ? this.optionalTypeOf(p.type, p)
-            : this.typeOf(p.type, p),
+          type: p.dotDotDotToken ? this.restType(p) : this.closureParamType(p),
           ...(defaults[i] ? { default: defaults[i] } : {}),
           ...rest(p),
         })),
@@ -3276,10 +3342,14 @@ export function parseFile(file: string, carriesContext = false,
   };
   if (!carriesContext) findAsync(source);
   // An identifier as an element key, `e[k]`, may name a `unique symbol`
-  // constant: TypeScript decides, and such a key joins the symbols.
-  const keyNodes: Identifier[] = [];
+  // constant, and `e[S.k]` a `unique symbol` property, such as the
+  // well-known `Symbol.iterator`: TypeScript decides, and such a key joins
+  // the symbols.
+  const keyNodes: Node[] = [];
   const findKeys = (node: Node): void => {
-    if (ts.isElementAccessExpression(node) && ts.isIdentifier(node.argumentExpression))
+    if (ts.isElementAccessExpression(node) && (ts.isIdentifier(node.argumentExpression) ||
+        (ts.isPropertyAccessExpression(node.argumentExpression) && ts.isIdentifier(node.argumentExpression.expression) &&
+          ts.isIdentifier(node.argumentExpression.name))))
       keyNodes.push(node.argumentExpression);
     node.forEachChild(findKeys);
   };
@@ -3317,6 +3387,30 @@ export function parseFile(file: string, carriesContext = false,
     node.forEachChild(findClassTests);
   };
   if (!carriesContext && classNames.size) findClassTests(source);
+  // A class's own name in its body: TypeScript decides which name it.
+  const classReadNodes: Identifier[] = [];
+  for (const c of classNodes) {
+    const own = c.name?.text;
+    const findReads = (node: Node): void => {
+      if (ts.isTypeNode(node)) return;
+      if (ts.isIdentifier(node) && node.text === own) classReadNodes.push(node);
+      node.forEachChild(findReads);
+    };
+    if (!carriesContext && own) c.members.forEach(findReads);
+  }
+  const classTestKeys = new Set(classTestNodes.map(node => gate.span(node).join(":")));
+  const classReadKeys = new Set(classReadNodes.map(node => gate.span(node).join(":")));
+  // A closure parameter without a type: TypeScript gives it one from its
+  // context.
+  const contextualNodes: Node[] = [];
+  const findContextual = (node: Node): void => {
+    if (ts.isParameterDeclaration(node) && !node.type && !node.dotDotDotToken && node.parent &&
+        (ts.isArrowFunction(node.parent) || ts.isFunctionExpression(node.parent) ||
+          (ts.isMethodDeclaration(node.parent) && ts.isObjectLiteralExpression(node.parent.parent))))
+      contextualNodes.push(node.name);
+    node.forEachChild(findContextual);
+  };
+  if (!carriesContext) findContextual(source);
   // A read `X.y` or `X["y"]` of a `const enum` is its member's value:
   // TypeScript decides which reads are.
   const inlined = new Set(enumNodes.filter(e => e.modifiers?.some(m => m.kind === ts.SyntaxKind.ConstKeyword))
@@ -3358,11 +3452,11 @@ export function parseFile(file: string, carriesContext = false,
   if (!carriesContext) findComputed(source);
   if (importNodes.length || localNodes.length || globalNodes.length || globalValueNodes.length ||
       firstArray || firstAsync || keyNodes.length || ambientNames.length || staticNodes.length ||
-      classTestNodes.length ||
+      classTestNodes.length || classReadNodes.length || contextualNodes.length ||
       receiverNodes.length || enumNodes.length || computedNodes.length || symbolNameNodes.length ||
       keyTypeNodes.length) {
     const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
-      firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? classTestNodes[0] ??
+      firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? classTestNodes[0] ?? classReadNodes[0] ?? contextualNodes[0] ??
       receiverNodes[0] ?? enumNodes[0] ??
       computedNodes[0] ?? symbolNameNodes[0] ?? keyTypeNodes[0];
     if (!first) throw Error("missing declaration root");
@@ -3388,8 +3482,14 @@ export function parseFile(file: string, carriesContext = false,
         symbolKey: ([start, end], symbol) => gate.symbolKeys.set(`${start}:${end}`, symbol),
         staticReads: staticNodes.map(node => gate.span(node)),
         staticMember: ([start, end], cls) => gate.staticReads.set(`${start}:${end}`, cls),
-        classTests: classTestNodes.map(node => gate.span(node)),
-        classTest: ([start, end], cls) => gate.classTests.set(`${start}:${end}`, cls),
+        classTests: [...classTestNodes, ...classReadNodes].map(node => gate.span(node)),
+        classTest: ([start, end], cls) => {
+          const key = `${start}:${end}`;
+          if (classTestKeys.has(key)) gate.classTests.set(key, cls);
+          if (classReadKeys.has(key)) gate.classReads.set(key, cls);
+        },
+        contextualParams: contextualNodes.map(node => gate.span(node)),
+        contextualParam: ([start, end], result) => gate.contextualParams.set(`${start}:${end}`, result),
         memberReceivers: receiverNodes.map(node => gate.span(node)),
         computed: computedNodes.map(node => gate.span(node)),
         computedType: ([start, end], result) => gate.computedTypes.set(`${start}:${end}`, result),
@@ -3415,7 +3515,7 @@ export function parseFile(file: string, carriesContext = false,
       const at = error instanceof DeclarationError
         ? [...importNodes, ...localNodes, ...globalNodes, ...globalValueNodes, ...(firstArray ? [firstArray] : []),
             ...(firstAsync ? [firstAsync] : []), ...keyNodes, ...ambientNames.map(topStatement), ...staticNodes,
-            ...classTestNodes,
+            ...classTestNodes, ...classReadNodes, ...contextualNodes,
             ...receiverNodes, ...enumNodes, ...constEnumNodes, ...computedNodes, ...symbolNameNodes,
             ...keyTypeNodes].find(node =>
             node.getStart(source) === error.at[0]) ?? first

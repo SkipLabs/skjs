@@ -206,6 +206,20 @@ and invariance of the mutable field would then refuse, and `async () =>
 names (`closure-contextual-result.ts`). Lean checks the body at the claimed
 result either way (`invalid-closure-contextual-result.ts`).
 
+A closure parameter written without a type, `xs.map((x) => x + 1)`, has the
+type TypeScript gives it from its context as its annotation: the declaration
+reader asks TypeScript for it and states it as a term of primitives,
+literals, arrays, type parameters in scope and declarations the file names
+(`contextualTerm`), and the parser writes it where an annotation would be.
+Nothing trusts it: the body is checked at the parameter's claimed type within
+it, and the closure's signature wherever the closure goes, the call offering
+it included, so a wrong contextual type only fails to verify
+(`closure-contextual-parameters.ts`; `invalid-closure-contextual-parameter.ts`,
+a Dog handler that method bivariance would pass as an Animal handler).
+TypeScript's `any` states no contract, and an object type written nowhere by
+name has no term here (`closure-contextual-literal-refused.ts`): both are
+refused.
+
 The annotation may be omitted. The candidate contract is then the producer's
 claim at the next statement entry in the same lexical block. That entry belongs
 to this declaration, independently of the order of exported entries or names
@@ -226,10 +240,15 @@ that storage decision, port the whole-local variants and
 Test both a captured writer invalidating the caller and a captured reader whose
 creation-time narrowing expires. Start with explicitly annotated primitive
 bindings. An evolving `let x = null` needs a supplied storage contract covering
-later writes; its initial value claim alone is not that contract. Its absence
-is explicit: the producer refuses an unannotated `let` initialized with `null`,
-`undefined` or `[]` rather than inferring a lifetime union or treating the
-initializer as a permanent invariant.
+later writes; its initial value claim alone is not that contract. The OCaml
+producer supplies it: the union of what the body writes into the binding,
+TypeScript's evolved type (every assignment, in closures too, each value read
+at the contract where it reads the binding; for `[]`, the array of what its
+`push`, `unshift` and index writes add), found by rerunning the proposal
+until the union is fixed. Extraction checks it as any supplied contract,
+every write against it, so the initializer is not taken as a permanent
+invariant; a write that grows with the binding (a list consed onto it) has no
+fixed union and is refused.
 
 ### Valuable later targets and the traps they introduce
 
@@ -2132,10 +2151,15 @@ A program reads such a field as `e[k]`, where TypeScript binds `k` to a
 `unique symbol` constant: evaluating the constant has no effect and yields
 that symbol, so the parser writes the read as the named read of its key, a
 `read` whose field is `{"symbol": i}`, and the declaration document lists the
-constant. Any other element key is an index, as before. The constant may be
+constant. `e[S.k]`, where TypeScript binds `S.k` to a readonly `unique
+symbol` property, such as the well-known `Symbol.iterator`, is the named read
+of that property's symbol likewise: reading a readonly data property of a
+declared value has no effect. A write `e[k] = v` is the named write of the
+key, checked against the field's contract as a named write is
+(`unique-symbol-constants.ts`, `invalid-symbol-key-write.ts`). Any other
+element key is an index, as before. The constant may be
 imported, or declared by the client, `declare const k: unique symbol`: it
-runs nothing, and names a symbol rather than binding a value. A symbol-keyed write is
-not in the fragment.
+runs nothing, and names a symbol rather than binding a value.
 
 A client's own constant `const k: unique symbol = e` is a binding like any
 other, whose value is a symbol (the annotation `unique symbol` reads as
@@ -2721,7 +2745,20 @@ code (`ctor`). A prototype holding nothing of its own that `instanceof`
 does not test is not allocated: nothing tells it apart from its base's, or
 from none ([Guards](#guards)). A class is a value like any other, at its construct signature:
 `new C(args)` (`new`) runs that code, and a plain call cannot, since calling a
-class without `new` throws. An instance holds the prototype object under the
+class without `new` throws. The methods and the constructor (field
+initializers included) are created before the class value is bound, and run
+only once it is: JavaScript binds the class's own name in its body before
+anything there can run. Where they read `C` (`new C(...)`, `x instanceof C`)
+they read that binding, `C.[[self]]` (a name no source spells), which the
+initialization unit reads as a module value at `C`'s construct signature, the
+annotation it checks the class value against where it binds `C`, as a
+function reads a module constant ([PROGRAM-TYPING](PROGRAM-TYPING.md),
+`class-self`). Static members run once the class value is bound and read it
+directly. A static initializer reaching a module function that reads `C`
+runs before the module's binding holds it, and initialization order refuses
+it. A generic class's instance member reading its own class is refused: the
+class value is quantified over binders its declaring unit reads as parameter
+rows, and a module value is read only at ground instances. An instance holds the prototype object under the
 prototype key (`[[proto]]`, which no source key spells: `Fragment.sourceKey`),
 as JavaScript's does, so its own keys are its fields and a method is read
 from the prototype (`Step.readProto`, `memberT`'s second arm): a spread

@@ -193,7 +193,15 @@ let rec field_type declarations seen t name = match t with
          wrapper prototype's. *)
       | Str | StrLit _ when name=Name "length" -> Atoms [Num]
       | atom when primitive_prototype atom <> None ->
-        field_type declarations seen (Atoms [Named (Option.get (primitive_prototype atom),[])]) name
+        let id = Option.get (primitive_prototype atom) in
+        (* The parser reads a wrapper prototype where TypeScript types a
+           member's receiver as that primitive. *)
+        if not (List.exists (fun (d:Source.declaration) -> d.id=id) declarations) then begin
+          let kind = String.sub id 5 (String.index id '-' - 5) in
+          unsupported ("a member read on a " ^ kind ^ " where the type TypeScript gives the receiver holds no " ^
+            kind ^ ": the producer and TypeScript disagree on the receiver")
+        end;
+        field_type declarations seen (Atoms [Named (id,[])]) name
       | _ -> unsupported "field read on non-object") atoms)
   | Union ts -> combine (List.map (fun t -> field_type declarations seen t name) ts)
   (* A value of an intersection is one of each operand: read as the first
@@ -483,7 +491,7 @@ let arms declarations t = match t with
   | _ -> t
 (* Keep the atoms of a `typeof` test's shape where it holds, and the others
    where it fails. *)
-let typeof_slice shape holds = function
+let rec typeof_slice shape holds = function
   | Atoms xs when not (List.mem Top xs) ->
     let has = function
       (* `Array.isArray`: an array owns its store; an open record may be an
@@ -516,6 +524,10 @@ let typeof_slice shape holds = function
      | "string" -> Atoms [Str] | "number" -> Atoms [Num] | "bigint" -> Atoms [Bigint]
      | "symbol" -> Atoms [Symbol] | "undefined" -> Atoms [Undef] | "boolean" -> bool
      | _ -> Atoms [Top])
+  (* A union's arms each; an intersection's values are its principal's, so
+     it goes where none of those can. *)
+  | Union ts -> List.fold_left union (Atoms []) (List.map (typeof_slice shape holds) ts)
+  | Meet (t,_) when typeof_slice shape holds t = Atoms [] -> Atoms []
   | t -> t
 (* Names an `instanceof` of a class tested where they were `unknown`: the
    test narrows nothing there, and a member read of one is refused with that
@@ -784,6 +796,19 @@ let alternative_type (a:alternative) =
   if a.exact && List.for_all (fun (f:Semantic.field) -> not f.optional) a.afields
   then Atoms [Exact a.afields] else record a.afields
 
+(* Evolving bindings, TypeScript's evolving `any`: an unannotated `let`
+   initialized with `null` or `undefined`, and an unannotated local
+   initialized with `[]`. Each is keyed by its initializer's position; its
+   contract is the union of what is written into it (the values assigned to
+   the `let`, the elements an array's `push`, `unshift` and index writes
+   add), which a pass collects in [evolving_seen] and the next assumes from
+   [evolving_assumed] (`infer_function`). *)
+let evolving_assumed : (Json.t * Semantic.ty) list ref = ref []
+let evolving_seen : (Json.t * Semantic.ty) list ref = ref []
+let evolve key t =
+  evolving_seen := (key,union (Option.value (List.assoc_opt key !evolving_seen) ~default:(Atoms []))
+    (widen t)) :: List.remove_assoc key !evolving_seen
+let evolved key = Option.value (List.assoc_opt key !evolving_assumed) ~default:(Atoms [])
 (* One pass over a function. [offered] gives, for a named closure's creation,
    the further signatures its uses offer it; the pass reports them as
    [requests], and [infer_function] runs a second pass with them. *)
@@ -791,6 +816,9 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
   let entries = ref [] and expressions = ref [] and instantiations = ref [] in
   (* A condition's operands are claimed before it is branched on: an operand
      Lean evaluates once into a slot of its own holds what it is claimed at. *)
+  (* The evolving bindings in scope, by name: the key, and whether the
+     binding is an array whose elements evolve. *)
+  let evolving = ref [] in
   let branch = branch_with declarations ~modules:(fun n ->
     try Option.map Lazy.force (List.assoc_opt n module_functions) with Json.Error _ -> None)
     ~claimed:(fun pos -> List.find_map (fun (x:expression) ->
@@ -942,6 +970,20 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
   let method_read (callee:expr) = match callee.node with
     | Read _ | Index _ -> true | _ -> false in
   let arrows = ref [] in
+  (* What [f] computes, leaving no claim behind: the elements an evolving
+     array is given, seen before the call that gives them is typed. *)
+  let quietly f =
+    let saved = (!closures,!requests,!classes,!entries,!expressions,!instantiations,!instances,!arrows) in
+    let result = try Some (f ()) with Json.Error _ -> None in
+    let (a,b,c,d,e,g,h,i) = saved in
+    closures := a; requests := b; classes := c; entries := d; expressions := e;
+    instantiations := g; instances := h; arrows := i;
+    result in
+  let rec reads n (e:expr) =
+    (match e.node with Id m -> m = n | _ -> false) || List.exists (reads n) (Source.children e) in
+  let evolving_array (receiver:expr) = match receiver.node with
+    | Id n -> (match List.assoc_opt n !evolving with Some (key,true) -> Some key | _ -> None)
+    | _ -> None in
   let entry env span = match Json.list span with
     | start::_ ->
       (* A field's contents are claimed where its object is still one record. *)
@@ -1077,7 +1119,11 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let contract = match lookup env n with
         | Storage (contract,_) -> contract
         | Value _ -> unsupported "assignment to immutable binding" in
-      union (without_nullish current) (expr ~expected:contract env rhs)
+      let right = expr ~expected:contract env rhs in
+      (match List.assoc_opt n !evolving with
+       | Some (key,false) -> evolve key right
+       | _ -> ());
+      union (without_nullish current) right
     (* `typeof e` names one of eight shapes: a string. *)
     | Unary (Typeof,e) -> ignore (expr env e); Atoms [Str]
     | Unary (_,e) -> numeric_family declarations (expr env e)
@@ -1216,18 +1262,30 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     (* The right side runs after the receiver and the key: it sees what they
        assigned. *)
     | IndexWrite (receiver,key,rhs) ->
+      Option.iter (fun k -> Option.iter (evolve k) (quietly (fun () -> expr env rhs))) (evolving_array receiver);
       let t = expr env receiver in
       (match expr env key with
        | Atoms [StrLit k] -> refuse_growth declarations t (Name k)
        | _ -> ());
       expr (effects (effects env receiver) key) rhs
     | Write (receiver,field,rhs) ->
-      refuse_growth declarations (expr env receiver) (Name field); expr (effects env receiver) rhs
+      refuse_growth declarations (expr env receiver) field; expr (effects env receiver) rhs
     | Assign (n,rhs) ->
       if not (List.mem_assoc n env) && List.mem_assoc n module_functions then
         unsupported ("assignment to module function " ^ n);
       (match lookup env n with
-      | Storage (contract,_) -> expr ~expected:contract env rhs
+      | Storage (contract,_) ->
+        let t = expr ~expected:contract env rhs in
+        (* A value that reads the binding is what it may be for anything the
+           binding may hold: its contract. *)
+        let written () = if reads n rhs
+          then (match quietly (fun () -> expr (forget env) rhs) with None -> Some t | s -> s)
+          else Some t in
+        (match List.assoc_opt n !evolving with
+         | Some (key,false) -> Option.iter (evolve key) (written ())
+         | Some (key,true) -> Option.iter (evolve key) (Option.bind (written ()) (fun t -> Semantic.array_element t))
+         | None -> ());
+        t
       | Value _ -> unsupported "assignment to immutable binding")
     | Ctor {node=Lambda (None,[],ps,[],false,Some result,body);_} ->
       (* The constructor's body under its parameters; `new` passes it no
@@ -1417,6 +1475,12 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         | Call (c,r,a,s,t) -> c,r,a,s,t
         | Invoke (c,a,s,t) -> c,None,a,s,t
         | _ -> assert false in
+      (* An evolving array's `push` and `unshift` add their arguments. *)
+      (match callee.node with
+       | Read (o,Name ("push" | "unshift")) when spreads = [] ->
+         Option.iter (fun k -> List.iter (fun a ->
+           Option.iter (evolve k) (quietly (fun () -> expr env a))) args) (evolving_array o)
+       | _ -> ());
       (* Explicit type arguments fix the callee's leading binders; the others
          are inferred from the receiver and the actuals. Lean checks that the
          claimed instance agrees with them. *)
@@ -1966,17 +2030,28 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
              | _ -> None)
            | None -> None)
         | _ -> None in
+      (* An evolving binding (TypeScript's evolving `any`): an unannotated
+         `let` of `null` or `undefined` holds what is assigned to it, an
+         unannotated `[]` the elements written into it. Its contract is the
+         union of those, TypeScript's evolved type: a proposal, which Lean
+         checks at every write. *)
+      evolving := List.remove_assoc n !evolving;
+      let committed = match written,init.node with
+        | None,ArrayLiteral [] ->
+          evolving := (n,(init.pos,true)) :: !evolving;
+          Some (array {required=[];optional_elements=[];rest=Some (evolved init.pos);readonly=false})
+        | None,Literal (LNull | LUndefined) when mutable_ ->
+          evolving := (n,(init.pos,false)) :: !evolving; committed
+        | _ -> committed in
       let initial = expr ?expected:(if committed <> None then committed else written) env init in
       if not mutable_ then named_closure n written init;
       let binding = match mutable_,written with
         (* TypeScript's declared type for an unannotated `let`: its
-           initializer's type, widened. Lean checks the initializer and every
-           assignment against it. `null`, `undefined` and `[]` give an
-           evolving type (implicit `any`) there, which is no contract. *)
+           initializer's type, widened, or an evolving one's evolved type.
+           Lean checks the initializer and every assignment against it. *)
         | true,None ->
           (match init.node with
-           | Literal (LNull | LUndefined) | ArrayLiteral [] ->
-             unsupported "an unannotated `let` initialized with null, undefined or [] has no storage contract"
+           | Literal (LNull | LUndefined) -> cell (union (widen initial) (evolved init.pos))
            | _ -> cell (widen initial))
         | true,Some contract -> cell contract
         (* A class's annotation is its own construct signature, which the
@@ -2131,7 +2206,11 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
   let expressions = List.map (fun (x:expression) -> match List.assoc_opt x.pos !instances with
     | Some instance -> {x with type_=instance}
     | None -> x) expressions in
-  {source=f;entries=List.rev !entries;expressions;arrows=List.rev !arrows},!requests
+  (* Likewise an entry, the closure body a guard's arm types twice. *)
+  let seen = Hashtbl.create 64 in
+  let entries = List.filter (fun x ->
+    not (Hashtbl.mem seen x) && (Hashtbl.add seen x (); true)) (List.rev !entries) in
+  {source=f;entries;expressions;arrows=List.rev !arrows},!requests
 (* A named closure's claim is fixed where it is created, before the calls that
    offer it more parameters are reached: a first pass finds those offers, and
    the second states them at the creation. *)
@@ -2139,20 +2218,49 @@ let infer_function declarations module_functions (f:Source.fn) =
   rigid_bounds := List.filter_map (fun (q:Semantic.quantifier) -> match q.bound with
     | Some (ValueArgument b) when not (Semantic.mentions_rigid b) -> Some (q.identity,b)
     | _ -> None) f.quantified;
-  let claim,requests = infer_pass [] declarations module_functions f in
+  (* An evolving binding's contract is what the body writes into it, which
+     a pass finds under the contract the previous pass assumed: passes run
+     until the contracts settle. A write whose value grows with the binding
+     itself (a list consed onto it) never settles. *)
+  let rec settled offered rounds =
+    evolving_seen := [];
+    let result = try Ok (infer_pass offered declarations module_functions f) with Json.Error m -> Error m in
+    let grown = List.filter (fun (key,t) -> union (evolved key) t <> evolved key) !evolving_seen in
+    match result,grown with
+    | Ok result,[] -> result
+    | Error m,[] -> raise (Json.Error m)
+    | _,_ when rounds = 0 ->
+      unsupported "an evolving binding's contract does not settle: a value written into it grows with the binding itself"
+    | _ ->
+      evolving_assumed := List.fold_left (fun acc (key,t) ->
+        (key,union (evolved key) t) :: List.remove_assoc key acc) !evolving_assumed grown;
+      settled offered (rounds - 1) in
+  evolving_assumed := [];
+  let claim,requests = settled [] 4 in
   if requests = [] then claim else
   let offered = List.map (fun pos -> pos,List.filter_map (fun (p,s) ->
     if p = pos then Some s else None) requests)
     (List.sort_uniq compare (List.map fst requests)) in
-  fst (infer_pass offered declarations module_functions f)
+  fst (settled offered 4)
 let infer program =
   let module_functions = List.map (fun (g:Source.fn) -> g.name,lazy (module_type g))
     program.Source.functions
     @ List.map (fun (name,t) -> name,lazy t) program.Source.values in
   let infer_with = infer_function program.Source.declarations in
+  (* A class's instance members read the class as its own binding, `C.[[self]]`,
+     at its construct signature: a module value of the initialization unit. *)
+  let class_selves = List.concat_map (fun (s:Source.stmt) -> match s.statement with
+    | Declare (false,bindings) ->
+      let ctors = List.filter_map (fun (n,_,(e:expr)) -> match e.node with
+        | Ctor _ -> Some n | _ -> None) bindings in
+      List.filter_map (fun (n,written,_) -> match written with
+        | Some t when List.mem n ctors || List.mem (n ^ ".[[class]]") ctors ->
+          Some (n ^ ".[[self]]",lazy t)
+        | _ -> None) bindings
+    | _ -> []) program.Source.init in
   let init = match program.Source.init with
     | [] -> None
-    | body -> Some (infer_with module_functions
+    | body -> Some (infer_with (module_functions @ class_selves)
         {quantified=program.Source.init_quantified;name="";name_pos=Json.Null;params=[];rest=false;
          result=Atoms [Undef];body}) in
   (* A function reads a module constant at its annotation or, without one, at

@@ -303,11 +303,18 @@ export function collectDeclarations(file: string, options: {
    * with the class's name. */
   staticReads?: readonly Span[];
   staticMember?: (span: Span, cls: string) => void;
-  /** `instanceof` right operands naming a class of the client by name. */
+  /** Identifiers spelling a class of the client by name: `instanceof` right
+   * operands, and a class's own name in its body. */
   classTests?: readonly Span[];
   /** Called for each of them TypeScript binds to a class declared at the
    * client's top level, with the class's name. */
   classTest?: (span: Span, cls: string) => void;
+  /** The names of the client's closure parameters written without a type:
+   * each is reported to `contextualParam` with the type TypeScript gives it
+   * from its context, as a type term (`contextualTerm`), or the reason none
+   * states it. */
+  contextualParams?: readonly Span[];
+  contextualParam?: (span: Span, result: TypeTerm | { refused: string }) => void;
   /** The client's top-level enum declarations: each must be one TypeScript
    * accepts, and each member, by its span, is reported to `enumMember` with
    * the value TypeScript computes for it, which is the value its emit writes
@@ -893,6 +900,22 @@ export function collectDeclarations(file: string, options: {
     // An element key naming a `unique symbol` constant reads that symbol's
     // key; any other is an ordinary index, left to the expression.
     for (const span of options.symbolKeys ?? []) {
+      // `S.k`: a readonly `unique symbol` property, such as the well-known
+      // `Symbol.iterator`.
+      const access = expressionAt(client, span);
+      if (access && ts.isPropertyAccessExpression(access) && ts.isIdentifier(access.name)) {
+        const members = targetOf(checker, access.name)?.declarations.map(d => d.resolve()) ?? [];
+        const [member] = members;
+        if (members.length !== 1 || !member || !ts.isPropertySignatureDeclaration(member) || !member.type ||
+            !ts.isTypeOperatorNode(member.type) || member.type.operator !== ts.SyntaxKind.UniqueKeyword)
+          continue;
+        try {
+          options.symbolKey?.(span, symbolOf(access));
+        } catch (error) {
+          throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
+        }
+        continue;
+      }
       const identifier = identifierAt(client, span);
       if (!identifier) throw new DeclarationError(span, "TypeScript element key missing");
       const nodes = targetOf(checker, identifier)?.declarations.map(d => d.resolve()) ?? [];
@@ -928,6 +951,57 @@ export function collectDeclarations(file: string, options: {
       if (owners.length === 1 && owner && ts.isClassDeclaration(owner) && owner.name &&
           owner.parent === client && owner.name.text === name.text)
         options.classTest?.(span, owner.name.text);
+    }
+    // A closure parameter without a type is at the type TypeScript gives it
+    // from its context: stated as a term of primitives, literals, arrays,
+    // type parameters and declarations by name, or refused.
+    const contextualTerm = (type: Type, span: Span): TypeTerm => {
+      if (type.flags & TypeFlags.Any)
+        throw Error("TypeScript types this unannotated closure parameter from its context as `any`, which states no contract");
+      const literals = literalUnion(type, span);
+      if (literals) return literals;
+      const text = () => checker.typeToString(type);
+      if (type.isUnionType()) {
+        const parts = (type.getTypes() ?? []).map(part => contextualTerm(part, span));
+        const [only] = parts;
+        return parts.length === 1 && only ? only : { k: "union", parts, span };
+      }
+      if (type.isTypeParameter()) {
+        const name = type.getSymbol()?.name;
+        if (name) return { k: "binder", name, span };
+      }
+      if (checker.isArrayType(type)) {
+        const [element] = checker.getTypeArguments(type as Parameters<Checker["getTypeArguments"]>[0]);
+        if (element) return { k: "array", readonly: type.getSymbol()?.name === "ReadonlyArray",
+          element: contextualTerm(element, span), span };
+      }
+      const symbol = type.getAliasSymbol() ?? type.getSymbol();
+      const nodes = (symbol?.declarations ?? []).map(d => d.resolve());
+      const [node] = nodes;
+      if (nodes.length === 1 && node && isTypeDeclaration(node) && node.name && !node.typeParameters?.length &&
+          !type.getAliasTypeArguments().length && !isLibraryModule(idOf(node.getSourceFile())))
+        return { k: "reference", reference: { name: node.name.text, span, arguments: [], target: identityOf(node) },
+          args: [], span };
+      throw Error(`TypeScript types this unannotated closure parameter from its context as ${text()}, which is ` +
+        "not stated by primitives, literals, arrays, type parameters and declarations by name");
+    };
+    const parameterAt = (span: Span): ts.ParameterDeclaration | null => {
+      const visit = (node: Node): ts.ParameterDeclaration | null => {
+        if (ts.isParameterDeclaration(node) && node.name.getStart(client) === span[0] && node.name.end === span[1]) return node;
+        return node.getStart(client) <= span[0] && span[1] <= node.end ? node.forEachChild(visit) ?? null : null;
+      };
+      return visit(client);
+    };
+    for (const span of options.contextualParams ?? []) {
+      const parameter = parameterAt(span);
+      if (!parameter) throw new DeclarationError(span, "TypeScript parameter missing");
+      const type = checker.getTypeAtLocation(parameter.name);
+      try {
+        if (!type || type.isErrorType()) throw Error("TypeScript gives this unannotated closure parameter no type");
+        options.contextualParam?.(span, contextualTerm(type, span));
+      } catch (error) {
+        options.contextualParam?.(span, { refused: error instanceof Error ? error.message : String(error) });
+      }
     }
     for (const span of options.enums ?? []) {
       const statement = client.statements.find(s => s.getStart(client) === span[0] && s.end === span[1]);

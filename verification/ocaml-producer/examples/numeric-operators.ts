@@ -54,3 +54,6 @@ function wrap(i: number, size: number): number {
   k %= size;
   return k;
 }
+function bothSet(n: number, m: number): boolean {
+  return n === 25 && m !== 3;
+}

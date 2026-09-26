@@ -140,7 +140,7 @@ try {
   );
   assert.match(
     limited.stderr,
-    /evidence search failed|requires a union of known singleton outcomes/,
+    /evidence search failed/,
   );
   const context = vm.createContext({});
   vm.runInContext(stripTypes(source), context);

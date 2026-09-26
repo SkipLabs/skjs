@@ -103,8 +103,10 @@ language. The boundaries are:
    closure body (which runs later) know a cell by its contract. No refinement
    replaces the contract itself: every write is checked against it. A `let`
    without an annotation has TypeScript's declared type as its contract, the
-   initializer's widened type (`null`, `undefined` and `[]` initializers,
-   TypeScript's evolving `any`, are refused); a parameter the body assigns is
+   initializer's widened type, or, for a `null` or `undefined` initializer
+   (TypeScript's evolving `any`), the union of what is assigned to it, and
+   an unannotated `[]` is claimed at the array of what is pushed or written
+   into it; a parameter the body assigns is
    a cell at its annotation. It also records what a field of an immutable
    binding's object holds after a guard, until a step may write it, which the
    claims state as that binding's `current` field assertion; and an

@@ -2550,9 +2550,21 @@ with $Q(e)$ the claimed type of the initializer. A declaration ending its block
 has no statement after it to read the binding, and the initializer meets its
 own claim, so any choice every write is checked against is sound. The producer
 proposes TypeScript's declared type, the initializer's type widened
-(`let x = 1` stores $\mathsf{Num}$); `null`, `undefined` and `[]`
-initializers have no declared type in TypeScript (an evolving `any`) and are
-refused. A parameter $x{:}D$ that the body assigns (`assignsStmt`) has
+(`let x = 1` stores $\mathsf{Num}$). A `null` or `undefined` initializer
+has no declared type in TypeScript (an evolving `any`): the producer proposes
+the union of what is written into the binding, its evolved type,
+
+$$
+\operatorname{contract}(\mathtt{let}\ x=e_0)=\bigcup_{x=e_i}\operatorname{widen}(Q(e_i))
+\qquad e_0\in\{\mathtt{null},\mathtt{undefined}\},
+$$
+
+over the initializer and every assignment of $x$ in its scope, closures
+included, each read at the contract where it reads $x$; the proposal is
+refused when no fixed union exists (a value consed onto $x$ grows with it).
+An unannotated `[]` is claimed at the array of what its `push`, `unshift` and
+index writes add. Any choice is sound here, since every write is checked
+against the contract. A parameter $x{:}D$ that the body assigns (`assignsStmt`) has
 contract $D$, the caller's value its initial contents.
 
 A `let` without an initializer binds `undefined` where its declaration runs,
@@ -2586,6 +2598,21 @@ checks an annotation, and a constant never changes, so the functions'
 assumption is what the unit establishes (the composition argument is
 [DESIGN.md](DESIGN.md#modules-and-code-units)'s, unchanged).
 
+A non-generic class $C$ bound by the initialization unit at its construct
+signature $K_C$ is read by its own instance methods and constructor, closures
+that unit creates before it binds $C$, as the class's own binding
+$C^{\mathit{self}}$ (`C.[[self]]`), which the initialization unit $I$ reads
+the way a function reads a module constant:
+
+$$
+\frac{\mathtt{const}\ C{:}K_C=\mathtt{ctor}\ldots\in I}
+     {\Gamma_I(C^{\mathit{self}})=\llbracket K_C\rrbracket}\ \textsc{class-self}
+$$
+
+The unit checks the class value against $K_C$ where it binds $C$, and nothing
+reaches $C^{\mathit{self}}$ before: only those closures read it, and none
+runs until an instance or the class value exists.
+
 ### Source closures and their annotations
 
 A source closure `(x₁: D₁, …, xₙ: Dₙ): Rₛ => t` is checked at the arrows its
@@ -2608,7 +2635,11 @@ with $R_s=\bot$ for a closure whose result the source leaves out (the
 Fragment's `result` is `null`) and $Q_s$ the receiver the source states (`top`
 for an arrow). The premise over $L$ is the creation rule's, so leaving the
 result out drops a requirement and no check: the result is the claim's, like
-any expression's. A named closure passed where a callback is offered more
+any expression's. A parameter written without a type has for $D_j$ the type
+TypeScript gives it from its context, which the parser writes
+(`closureParamType`): a proposal like any claim, since the body is checked at
+$A_j\sqsubseteq_G D_j$ and the closure at $\bigwedge L$ wherever it goes, the
+call offering it included. A named closure passed where a callback is offered more
 parameters, `xs.reduce(acc, null)`, is claimed where it is created at that
 signature beside its own; its body is checked at each (`offersArity`). So is
 one passed where a variadic callback is offered, `process.on(sig, shutdown)`

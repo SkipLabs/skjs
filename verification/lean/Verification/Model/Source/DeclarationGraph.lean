@@ -788,7 +788,14 @@ private partial def lowerApplication (ds : Array Definition) (i : Nat)
       let pool := CertificateProducer.reachablePool graph actual upper
       let name ← str p "name"
       let span ← field p "span"
-      let refusal := s!"type argument does not establish its declared bound for {name} at {span.compress}: {SourceTypes.render table actual} ≤ {SourceTypes.render table upper}"
+      -- A parameter row stands for any type: a unit's binder whose bound
+      -- names another binder is one (`binderRows`), without that bound.
+      let paramName := fun (l : Nat) => match table[l]? with
+        | some (RequestJson.Row.param _ n _) => some n
+        | _ => none
+      let refusal := match actual.mapM paramName with
+        | some (n :: ns) => s!"the type parameter {String.intercalate " | " (n :: ns)} does not establish the declared bound for {name} at {span.compress}: a type parameter whose bound names another is read as its own parameter row, which does not carry that bound"
+        | _ => s!"type argument does not establish its declared bound for {name} at {span.compress}: {SourceTypes.render table actual} ≤ {SourceTypes.render table upper}"
       match CertificateProducer.subtype graph pool actual upper with
       | some proof =>
         if !PositiveCertificates.check graph actual upper proof then
@@ -1133,8 +1140,11 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
     -- constructor, `new Date()` and `new Date(v)`, meets each.
     let atoms := parts.toList.filterMap single
     let shape := atoms.head?.bind fun atom => (atom.getObjVal? "a").toOption
+    -- A record with an index signature is not a conjunct's cell record: it
+    -- meets the others as graph rows, below.
     if atoms.length == parts.size && !atoms.isEmpty &&
-        atoms.all (fun atom => (atom.getObjVal? "a").toOption == shape) &&
+        atoms.all (fun atom => (atom.getObjVal? "a").toOption == shape &&
+          (atom.getObjVal? "indexSignature").toOption.isNone) &&
         (shape == some (.str "record") || shape == some (.str "function") ||
           shape == some (.str "constructor")) then
       return claimType [atoms.head!.setObjVal! "and" (toJson atoms.tail)]
@@ -1179,8 +1189,12 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
     if (term.getObjVal? "prototype").toOption.isSome then
       return graphClaim (← lowerType ds ds.size #[] {} term)
     CellClaims.fieldsExactly term (objectMembers term)
+    -- A type literal with call signatures is a callable: its graph rows, as
+    -- a declaration's body is lowered.
     if !(← arr term "calls").isEmpty then
-      throw "a call signature in a source annotation is outside the fragment"
+      if mentionsKind "binder" term then
+        throw "a call signature of an annotation's type literal over a type parameter is outside the fragment"
+      return graphClaim (← lowerType ds ds.size #[] {} term)
     -- A method is a host-relative member, and a number or symbol index an
     -- index over a class of keys, which no claim atom spells: the record is
     -- its graph rows, lowered as a declaration's body is.

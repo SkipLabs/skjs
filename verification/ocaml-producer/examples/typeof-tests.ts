@@ -18,3 +18,13 @@ export function call(f: ((x: boolean) => boolean) | null): boolean {
   }
   return f(true);
 }
+// An intersection goes where its principal goes.
+function tupleIntersection(
+  x: ([number, string] & { length: 2 }) | number,
+): number {
+  if (typeof x === "number") {
+    return x;
+  } else {
+    return x[0];
+  }
+}

@@ -788,7 +788,7 @@ private def validCurrent (T : SourceTypes.Table) (A : ClaimType) (current : Opti
     (match PositiveRules.expand (SourceTypes.graph T) (A.ground.toOption.getD []) with
       | [] => false
       | cs => cs.all fun
-        | .refs contract [] vs => fs.all (fun p => (contract.lookup p.1).isSome || (vs.lookup p.1).isSome)
+        | .refs contract [] vs .. => fs.all (fun p => (contract.lookup p.1).isSome || (vs.lookup p.1).isSome)
         | _ => false) &&
     fs.all (fun p => validType T (.labels p.2))
 private def validBindings (T : SourceTypes.Table) (bs : List Binding) : Bool :=
@@ -1173,6 +1173,25 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
           | some e => .ok (.claimed e.type.ground)
           | none => .error s!"module constant '{b.name}' has neither an annotation nor a claimed initializer")
     | _ => []
+  -- A class's instance members are closures created before the class value
+  -- is bound, and run only once it is: they read it as its own binding
+  -- (`Fragment.selfBindingOf`), which the initialization unit reads as a
+  -- module value at the class's construct signature, the annotation its
+  -- binding is checked at there, as a function reads a module constant. A
+  -- generic class's is not one (the parser refuses its self-reads).
+  let classSelves : List SourceExtraction.ModuleValue := init.flatMap fun
+    | .constants _ bs =>
+      let ctors := bs.filterMap fun b => match b.init with
+        | .ctor .. => some b.name
+        | _ => none
+      bs.filterMap fun b => match b.annot with
+        | some ty =>
+          if !classNames.contains b.name &&
+              (ctors.contains b.name || ctors.contains (b.name ++ ".[[class]]")) then
+            some (Fragment.selfBindingOf b.name, b.namePos, .ok (.written ty))
+          else none
+        | none => none
+    | _ => []
   -- The initialization unit: the top-level code, as a body with no
   -- parameters that completes with `undefined`.
   let initUnit : List (Fragment.Fn × List Fragment.TypeParam × Function) ← match init, d.init with
@@ -1200,7 +1219,8 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
   let units := decoded.map (fun (f, tps) => (f, tps, none)) ++
     initUnit.map (fun (f, tps, c) => (f, tps, some c))
   units.mapM fun (f,tps,initClaims) => do
-    let module := if initClaims.isSome then moduleFunctions else moduleFunctions ++ moduleConstants
+    let module := if initClaims.isSome then moduleFunctions ++ classSelves
+      else moduleFunctions ++ moduleConstants
     let mut c ← match initClaims with
       | some c => pure c
       | none => match d.functions.find? (fun c => c.name == f.name && c.namePos == f.namePos) with

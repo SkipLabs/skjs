@@ -231,7 +231,7 @@ let rec source_type ctx j =
     | None -> fail "declaration parameter index outside declaration")
   | "binder" -> (match List.assoc_opt (text "name" j) ctx.bindings with
     | Some (ValueArgument t) -> t
-    | Some (PackArgument _) -> unsupported "an argument pack used as a value type"
+    | Some (PackArgument _) -> unsupported "a type parameter types both a rest parameter's argument list and a value: an argument list is not a runtime value"
     | None -> fail "unbound rigid parameter")
   | "intersection" ->
     (* Function operands are one overloaded callable. A type parameter's
@@ -273,7 +273,7 @@ and source_pack ctx j =
   if text "k" j <> "binder" then unsupported "a pack rest must name a type parameter";
   match List.assoc_opt (text "name" j) ctx.bindings with
   | Some (PackArgument p) -> p
-  | Some (ValueArgument _) -> unsupported "a value parameter used as an argument pack"
+  | Some (ValueArgument _) -> unsupported "a type parameter types both a value and a rest parameter's argument list: an argument list is not a runtime value"
   | None -> fail "unbound pack parameter"
 
 type literal = LNull | LUndefined | LBool of bool | LNumber of string | LString of string
@@ -338,7 +338,7 @@ and expr_node =
   | Build of (string option * expr) list
   (* A named read: a string key, or the symbol key of `e[k]` with `k` a
      `unique symbol` constant. *)
-  | Read of expr * key | Write of expr * string * expr
+  | Read of expr * key | Write of expr * key * expr
   | Assign of string * expr
   (* `target op= rhs`, or an increment where the right side is absent: the
      target (a local, a field or a named index) is read and written back. The
@@ -563,7 +563,7 @@ let rec expr binders j =
       | None -> Some (text "name" p),expr binders (field "e" p)
       | Some e -> None,expr binders e) (items "parts" j))
   | "read" -> Read (sub "e",property_key (field "field" j))
-  | "write" -> Write (sub "receiver",text "field" j,sub "rhs")
+  | "write" -> Write (sub "receiver",property_key (field "field" j),sub "rhs")
   | "assign" -> Assign (text "name" j,sub "rhs")
   | "lambda" ->
       let inner,quantified = quantify binders (-1 - span_start (field "pos" j))
