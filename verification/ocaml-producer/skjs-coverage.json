@@ -14,17 +14,17 @@
   "rejected": 2
  },
  "accepted": 2674,
- "verified": 2370,
+ "verified": 2371,
  "byStatus": {
-  "verified (check)": 2370,
+  "verified (check)": 2371,
   "unverified (search)": 151,
-  "unsupported (source)": 114,
+  "unsupported (source)": 113,
   "unsupported (proposal)": 39
  },
  "bySuite": {
   "expect-error": {
    "accepted": 2458,
-   "verified": 2158
+   "verified": 2159
   },
   "constprop": {
    "accepted": 66,
@@ -76,16 +76,16 @@
    "dependency": 3,
    "files": 14
   },
-  "classes: modifiers, inheritance, fields, parameter properties, receivers": {
-   "units": 21,
-   "self": 10,
-   "dependency": 11,
-   "files": 9
-  },
   "in / instanceof / typeof tests": {
    "units": 19,
    "self": 12,
    "dependency": 0,
+   "files": 8
+  },
+  "classes: modifiers, inheritance, fields, parameter properties, receivers": {
+   "units": 18,
+   "self": 9,
+   "dependency": 9,
    "files": 8
   },
   "reads on unions/primitives (field/index read on non-object, string keys)": {
@@ -106,17 +106,17 @@
    "dependency": 0,
    "files": 3
   },
+  "calls: overloads, .call, spread arguments, Object.assign, arrow callee": {
+   "units": 12,
+   "self": 6,
+   "dependency": 3,
+   "files": 7
+  },
   "object growth: a key-adding write on an object another reference may hold, a dynamic index write": {
    "units": 11,
    "self": 11,
    "dependency": 0,
    "files": 5
-  },
-  "calls: overloads, .call, spread arguments, Object.assign, arrow callee": {
-   "units": 10,
-   "self": 5,
-   "dependency": 2,
-   "files": 6
   },
   "generics: constraints, explicit type arguments, rigid types, generic function types": {
    "units": 9,
@@ -283,9 +283,9 @@
  },
  "reachedButRefused": 151,
  "byClass": {
-  "verified": 2370,
+  "verified": 2371,
   "principled": 80,
-  "gap": 190,
+  "gap": 189,
   "unexplained": 24,
   "skjsUnsound": 10
  },
@@ -326,6 +326,11 @@
    "units": 13,
    "files": 7
   },
+  "calls: `.call`, spreads, `Object.assign`, array literal spreads": {
+   "class": "gap",
+   "units": 10,
+   "files": 6
+  },
   "reads the producer holds on no object": {
    "class": "gap",
    "units": 8,
@@ -345,11 +350,6 @@
    "class": "gap",
    "units": 8,
    "files": 4
-  },
-  "calls: `.call`, spreads, `Object.assign`, array literal spreads": {
-   "class": "gap",
-   "units": 8,
-   "files": 5
   },
   "a key-adding write on an object another reference may hold": {
    "class": "gap",
@@ -401,11 +401,6 @@
    "units": 6,
    "files": 1
   },
-  "class forms: constructor defaults, computed members, index signatures, statics, private names": {
-   "class": "gap",
-   "units": 6,
-   "files": 2
-  },
   "object literal spreads of functions, class values, arrays, strings": {
    "class": "gap",
    "units": 5,
@@ -419,6 +414,11 @@
   "`extends` a library constructor": {
    "class": "principled",
    "units": 4,
+   "files": 1
+  },
+  "class forms: constructor rests and defaults reading `this`, computed members, index signatures, statics, private names": {
+   "class": "gap",
+   "units": 3,
    "files": 1
   },
   "iterator without a stated `return`": {
@@ -531,8 +531,8 @@
  "skjsUnsoundVerified": [],
  "byKey": {
   "search: reject: TypeScript refuses this code too": 22,
+  "search: reject: source expression obligation at _: evidence search failed: no derivation of its node-typing claim": 14,
   "search: reject: a record at an index signature: TypeScript admits a type literal whose named fields fit the index (an implicit index signature), but a value of it may c": 14,
-  "search: reject: source expression obligation at _: evidence search failed: no derivation of its node-typing claim": 10,
   "search: reject: declaration intersection has no representable clause": 8,
   "search: reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two ": 8,
   "search: reject: a named function where a signature binding more parameters is expected: its slot is its annotated signature, checked by its own unit, and the arity of a": 8,
@@ -553,7 +553,6 @@
   "search: reject: an instance of a declaration with generic methods at another instance: relating two instances relates their generic methods (`then` and `catch` of `Prom": 5,
   "search: reject: a cell read at its contract: a cell is known by its contract after a step that may write it (a call, whose callee may write any location its operands re": 4,
   "source: extending the standard library'_'s constructor allocates, not an ordinary object a class allocates, and its members are read at the library type's meaning, not ": 4,
-  "search: reject: closure expression claim at _: evidence search failed": 4,
   "proposal: a type parameter's intersection in a claim": 4,
   "search: reject: source direct obligation at _: quantified call does not satisfy the closure's bound: cannot establish …": 4,
   "proposal: a spread copies the own enumerable properties of a plain object; a function'_'s are whatever was assigned to it, which its type does not bound": 3,
@@ -567,7 +566,7 @@
   "proposal: a type parameter types both a value and a rest parameter's argument list: an argument list is not a runtime value": 3,
   "source: the indexed access E over a type parameter is computed only at an instance": 3,
   "search: reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills ": 3,
-  "source: a constructor parameter with a default is outside the fragment: construct code is a term over plain parameters, with no default schedule as a closure has in a d": 3,
+  "source: a spread argument to `new` is outside the fragment": 3,
   "source: .call requires a known local function, an explicit receiver and ordinary arguments": 3,
   "source: an iterable whose iterator'_'s `return` if it owns one (IteratorClose), and the iterator's open record type says nothing of what that property holds": 3,
   "source: the indexed access ElementOf<T> over a type parameter is computed only at an instance": 2,
@@ -621,7 +620,6 @@
   "source: an index signature in a class is outside the fragment: a class's instances are the objects its construction allocates, with the keys it names in a declaration o": 1,
   "proposal: a call writes more positions than its callee's parameters, which TypeScript rejects": 1,
   "proposal: a spread argument needs a tuple of required positions": 1,
-  "source: a spread argument to `new` is outside the fragment": 1,
   "proposal: a member read on a number where the type TypeScript gives the receiver holds no number: the producer and TypeScript disagree on the receiver": 1,
   "source: unresolved type reference _": 1,
   "search: reject: a callable object with methods needs a combined clause": 1,
@@ -1648,7 +1646,7 @@
 {"source":"tests/expect-error/field-refinement.ts","name":"inferredFieldComparison","kind":"function","line":462,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/field-type-annotations.ts","name":"FieldWithoutAnnotation","kind":"class","line":4,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/field-type-annotations.ts","name":"FieldWithInitializerNoAnnotation","kind":"class","line":11,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/field-type-annotations.ts","name":"FieldsWithAnnotations","kind":"class","line":17,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: closure expression claim at _: evidence search failed","group":"search: no derivation found (evidence search failed)","where":"self","at":"FieldsWithAnnotations","detail":"reject: closure expression claim at [6,27): evidence search failed — No rule derives this makeAt at { field: number, optional: boolean }.","class":"unexplained"},
+{"source":"tests/expect-error/field-type-annotations.ts","name":"FieldsWithAnnotations","kind":"class","line":17,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its node-typing claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"FieldsWithAnnotations","detail":"reject: source expression obligation at [6,27): evidence search failed: no derivation of its node-typing claim — No rule derives this makeAt at { field: number, optional: boolean } from 5: 5, optional: undefined.","class":"unexplained"},
 {"source":"tests/expect-error/field-type-annotations.ts","name":"useObjectWithoutAnnotations","kind":"function","line":28,"skjsMarker":"rejected-dependency"},
 {"source":"tests/expect-error/filedefs-type-not-found.ts","name":"f","kind":"function","line":2,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/filedefs-unsupported-exports.ts","name":"statement@7","kind":"statement","line":7,"skjsMarker":"rejected-self"},
@@ -2943,7 +2941,7 @@
 {"source":"tests/expect-error/private-fields.ts","name":"WidensToPublic","kind":"class","line":83,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/private-fields.ts","name":"PrivateParentZ","kind":"class","line":93,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/private-fields.ts","name":"PrivateChildZ","kind":"class","line":98,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/private-fields.ts","name":"HasPrivateForInTest","kind":"class","line":102,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: closure expression claim at _: evidence search failed","group":"search: no derivation found (evidence search failed)","where":"self","at":"HasPrivateForInTest","detail":"reject: closure expression claim at [6,25): evidence search failed — No rule derives this makeAt at { px: number }.","class":"unexplained"},
+{"source":"tests/expect-error/private-fields.ts","name":"HasPrivateForInTest","kind":"class","line":102,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its node-typing claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"HasPrivateForInTest","detail":"reject: source expression obligation at [6,25): evidence search failed: no derivation of its node-typing claim — No rule derives this makeAt at { px: number } from px: undefined.","class":"unexplained"},
 {"source":"tests/expect-error/private-fields.ts","name":"inDoesNotLaunderPrivate","kind":"function","line":106,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/private-fields.ts","name":"UnionPrivateA","kind":"class","line":113,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/private-fields.ts","name":"UnionPublicB","kind":"class","line":117,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -3097,9 +3095,9 @@
 {"source":"tests/expect-error/recursive-type-mutual.ts","name":"mutualMismatch","kind":"function","line":28,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/recursive-type-mutual.ts","name":"mutualNested","kind":"function","line":34,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/repro-generic-constraint-tvar-instantiation.ts","name":"reproGenericConstraintTVarInstantiation","kind":"function","line":14,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/repro311.ts","name":"MyClass","kind":"class","line":1,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a constructor parameter with a default is outside the fragment: construct code is a term over plain parameters, with no default schedule as a closure has in a d","group":"classes: modifiers, inheritance, fields, parameter properties, receivers","where":"self","at":"class MyClass {","detail":"gate: a constructor parameter with a default is outside the fragment: construct code is a term over plain parameters, with no default schedule as a closure has in /ocaml-producer-unit/source.ts#MyClass (line 1, col 1)","class":"gap"},
-{"source":"tests/expect-error/repro311.ts","name":"perform","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a constructor parameter with a default is outside the fragment: construct code is a term over plain parameters, with no default schedule as a closure has in a d","group":"classes: modifiers, inheritance, fields, parameter properties, receivers","where":"dependency","at":"class MyClass {","detail":"gate: a constructor parameter with a default is outside the fragment: construct code is a term over plain parameters, with no default schedule as a closure has in /ocaml-producer-unit/source.ts#MyClass (line 1, col 1)","class":"gap"},
-{"source":"tests/expect-error/repro311.ts","name":"statement@12","kind":"statement","line":12,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a constructor parameter with a default is outside the fragment: construct code is a term over plain parameters, with no default schedule as a closure has in a d","group":"classes: modifiers, inheritance, fields, parameter properties, receivers","where":"dependency","at":"class MyClass {","detail":"gate: a constructor parameter with a default is outside the fragment: construct code is a term over plain parameters, with no default schedule as a closure has in /ocaml-producer-unit/source.ts#MyClass (line 1, col 1)","class":"gap"},
+{"source":"tests/expect-error/repro311.ts","name":"MyClass","kind":"class","line":1,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/repro311.ts","name":"perform","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a spread argument to `new` is outside the fragment","group":"calls: overloads, .call, spread arguments, Object.assign, arrow callee","where":"self","at":"console.log(new ctor(...params).x);","detail":"gate: a spread argument to `new` is outside the fragment (line 9, col 24)","class":"gap"},
+{"source":"tests/expect-error/repro311.ts","name":"statement@12","kind":"statement","line":12,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a spread argument to `new` is outside the fragment","group":"calls: overloads, .call, spread arguments, Object.assign, arrow callee","where":"dependency","at":"console.log(new ctor(...params).x);","detail":"gate: a spread argument to `new` is outside the fragment (line 9, col 24)","class":"gap"},
 {"source":"tests/expect-error/reserved-word-names-prettier-ignore.ts","name":"reservedProperties","kind":"function","line":4,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/reserved-word-names-prettier-ignore.ts","name":"reservedMemberAndKey","kind":"function","line":9,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/reserved-word-names-prettier-ignore.ts","name":"ReservedMembers","kind":"class","line":14,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -4018,9 +4016,9 @@
 {"source":"tests/expect-error/type-arg-constraint-explicit-call.ts","name":"acceptsBareValid","kind":"function","line":17,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/type-arg-constraint-explicit-call.ts","name":"rejectsDependentViolation","kind":"function","line":25,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/type-arg-constraint-explicit-call.ts","name":"acceptsDependentValid","kind":"function","line":31,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/type-arg-constraint-new-expression.ts","name":"Box","kind":"class","line":7,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: closure expression claim at _: evidence search failed","group":"search: no derivation found (evidence search failed)","where":"self","at":"Box","detail":"reject: closure expression claim at [6,9): evidence search failed — No rule derives this makeAt at { v: never }.","class":"unexplained"},
+{"source":"tests/expect-error/type-arg-constraint-new-expression.ts","name":"Box","kind":"class","line":7,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its node-typing claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"Box","detail":"reject: source expression obligation at [6,9): evidence search failed: no derivation of its node-typing claim — No rule derives this makeAt at { v: type 6 } from v: undefined.","class":"unexplained"},
 {"source":"tests/expect-error/type-arg-constraint-new-expression.ts","name":"violating","kind":"function","line":11,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/type-arg-constraint-new-expression.ts","name":"satisfying","kind":"function","line":16,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: closure expression claim at _: evidence search failed","group":"search: no derivation found (evidence search failed)","where":"dependency","at":"Box","detail":"reject: closure expression claim at [6,9): evidence search failed — No rule derives this makeAt at { v: never }.","class":"unexplained"},
+{"source":"tests/expect-error/type-arg-constraint-new-expression.ts","name":"satisfying","kind":"function","line":16,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its node-typing claim","group":"search: no derivation found (evidence search failed)","where":"dependency","at":"Box","detail":"reject: source expression obligation at [6,9): evidence search failed: no derivation of its node-typing claim — No rule derives this makeAt at { v: type 10 } from v: undefined.","class":"unexplained"},
 {"source":"tests/expect-error/type-arg-constraint-no-inference-bypass.ts","name":"bare","kind":"function","line":12,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/type-arg-constraint-no-inference-bypass.ts","name":"union","kind":"function","line":15,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/type-arg-constraint-no-inference-bypass.ts","name":"nested","kind":"function","line":18,"skjsMarker":"rejected-self"},
