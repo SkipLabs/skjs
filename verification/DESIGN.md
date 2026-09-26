@@ -835,7 +835,7 @@ not yet taken are [next steps](#next-steps); a search failure is neither.
 | A loop or an array pattern over an iterable whose iterator's type states no `return` | Leaving it early, or a throw out of its body, calls whatever `return` the iterator owns, and an open record type says nothing of that property. |
 | A generator function (`function*`) | Its body suspends at each `yield` and resumes there on the next `next`, which no term of the calculus expresses. |
 | `for await` | Its iterator's steps are promises the model does not adopt. |
-| An array literal spread (`[...xs]`) other than the one element over a program's iterable | No literal lowering takes a spread ([next steps](#next-steps)). |
+| An array literal spread (`[...xs]`) other than the one element over a program's or a host's iterable | No literal lowering takes a spread ([next steps](#next-steps)). |
 | An async function returning an object other than a promise of a primitive, a void async function returning a value, `await` of a non-promise object at its own type | JavaScript adopts thenables, and a record type does not rule out a `then`. |
 | `String(o)`, `o + ""`, `new Date(o)`, `new Set(it)` of a non-array iterable, `JSON.parse` with a reviver, `JSON.stringify` with a replacer, of an array or an open record | The host runs client code (`toString`, `valueOf`, an iterator, a callback, a `toJSON`). |
 | Relational comparison converting its operands (a string and a number, an object, two Booleans); `==` other than `== null`; `+` on a bigint, number–bigint arithmetic, a symbol in a concatenation | The conversion runs code or is not the primitive order; TypeScript refuses the throwing ones. |

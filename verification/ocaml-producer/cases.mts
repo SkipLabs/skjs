@@ -454,6 +454,8 @@ export const cases: Case[] = [
   positive("for-let-head", "a `let` in a `for...of` or `for...in` head that nothing assigns is a `const`"),
   gap("for-let-head-assigned-refused", "a `let` in a `for...of` head the body assigns", "unsupported", "source",
     /a `for...of` loop declares one `const` binding, or a `let` nothing assigns/),
+  positive("array-spread-host", "`[...e]` over a string, a `Set` or a `Map` is the spread intrinsic's fresh array"),
+  negative("invalid-array-spread-host", "a `Set<number>`'s spread holds numbers"),
   positive("for-of-host-iterables", "for...of over a string (code points), a `Set`, a `Map` (fresh entries) and `keys`, `values`, `entries` iterators: the iteration intrinsic of the iterable's kind, with break, continue and return"),
   negative("invalid-for-of-host-iterables", "a `Map`'s values keep their type"),
   positive("for-of-iterable-parameter", "for...of over an `Iterable<number>` parameter runs its iterator by the protocol, typed by the library's `Iterator` and `IteratorResult`: `return` from the body, a guard on the element"),

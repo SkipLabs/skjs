@@ -1642,6 +1642,10 @@ class Gate {
           if (this.hoist?.spread !== only) this.fail(only, SPREAD_POSITION);
           return this.collect(only.expression);
         }
+        // Over a string, a `Set`, a `Map` or a host collection iterator, it
+        // is `%Spread:K%(e)`, the fresh array of what the host's iterator
+        // yields, as an argument spread's operand is (`spreadOperand`).
+        if (kind) return this.spreadOperand(only);
       }
       if (
         node.elements.some(
