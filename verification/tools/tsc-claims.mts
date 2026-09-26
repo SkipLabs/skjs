@@ -171,6 +171,11 @@ function walkExpr(e: Expr, out: Sites): void {
       walkExpr(e.fn, out);
       walkExpr(e.initial, out);
       return;
+    case "objectAssign":
+      addExpr(out, e.pos, "objectAssign");
+      walkExpr(e.target, out);
+      for (const s of e.sources) walkExpr(s, out);
+      return;
     case "alloc":
       addExpr(out, e.pos, e.k);
       for (const f of e.fields) walkExpr(f.e, out);

@@ -1326,7 +1326,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
      nothing. *)
   let rec stirs (e:expr) = match e.node with
     | Call _ | Invoke _ | New _ | Apply _ | Bind _ | Write _ | IndexWrite _ | Assign _
-    | Update _ | LogicalAssign _ | NullishAssign _ | ArrayAssign _ -> true
+    | Update _ | LogicalAssign _ | NullishAssign _ | ArrayAssign _ | ObjectAssign _ -> true
     | Lambda _ -> false
     | _ -> List.exists stirs (Source.children e) in
   (* Where two arms meet, a cell holds what either left in it. *)
@@ -1755,6 +1755,18 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let alts = match alts with
         | None -> [group fields]
         | Some alts -> if fields = [] then alts else merge alts [group fields] in
+      combine (List.map alternative_type alts)
+    (* `Object.assign(t, ...sources)`: each source copied over what the
+       target and the sources before it give, as a spread is; a literal
+       source is claimed with its exact keys, which says it owns no
+       `__proto__`, a key the copy would set through a setter. *)
+    | ObjectAssign (target,sources) ->
+      mark_exact target;
+      let merge alts b = List.concat_map (fun a -> List.map (merge_alternative a) b) alts in
+      let alts = List.fold_left (fun alts (s:expr) ->
+        mark_exact s;
+        merge alts (source_alternatives declarations [] (expr env s)))
+        (source_alternatives declarations [] (expr env target)) sources in
       combine (List.map alternative_type alts)
     | ArrayLiteral es ->
       (* One array arm of the expected type is the literal's contract: an
@@ -2731,6 +2743,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | Write ({node=Id _;_},_,rhs) -> escapes n rhs
     | IndexWrite ({node=Id _;_},key,rhs) -> escapes n key || escapes n rhs
     | Invoke ({node=Read ({node=Id m;_},_);_},args,_,_) -> m = n || List.exists (escapes n) args
+    | ObjectAssign ({node=Id _;_},sources) -> List.exists (escapes n) sources
     | Lambda _ | Ctor _ -> mentions n e
     | _ -> List.exists (escapes n) (Source.children e) in
   (* Whether a statement among [ss] adds a key other than [keys] to the
@@ -2739,6 +2752,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | Effect {node=Write ({node=Id m;_},Name k,_);_}
     | Effect {node=IndexWrite ({node=Id m;_},{node=Literal (LString k);_},_);_} ->
       m = n && not (List.mem k keys)
+    | Effect {node=ObjectAssign ({node=Id m;_},_::_);_} -> m = n
     | If (_,a,b) -> grows_later n keys a || grows_later n keys b
     | Block (_,b) -> grows_later n keys b
     | Try (b,h,f) -> grows_later n keys (b @ (match h with Some (_,h) -> h | None -> [])
@@ -2880,6 +2894,13 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       (match lookup env n with
        | Storage _ -> assign (after rhs env) n t
        | Value _ -> env)
+    (* `Object.assign(o, …)` on a local: the local holds the copies. *)
+    | Effect ({node=ObjectAssign ({node=Id n;_},_);_} as e)
+      when (match List.assoc_opt n env with Some (Value _) -> true | _ -> false) ->
+      let t = expr env e in
+      let env = after e env in
+      grown_locals := n :: !grown_locals;
+      List.map (fun (m,b) -> if m=n then m,Value t else m,b) env
     | Effect ({node=Write ({node=Id n;_},_,_) | IndexWrite ({node=Id n;_},_,_);_} as e)
       when (match List.assoc_opt n env with Some (Value _) -> true | _ -> false) ->
       let t = binding_type (lookup env n) in

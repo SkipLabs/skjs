@@ -1709,18 +1709,13 @@ class Gate {
         node.expression.expression.text === "Object" &&
         node.expression.name.text === "assign"
       ) {
-        if (
-          node.questionDotToken ||
-          node.expression.questionDotToken ||
-          node.typeArguments?.length !== 2 ||
-          node.arguments.length !== 2 ||
-          !ts.isArrowFunction(node.arguments[0]) ||
-          !ts.isObjectLiteralExpression(node.arguments[1])
-        )
-          this.fail(
-            node,
-            "Object.assign requires a fresh arrow, an object literal and two explicit type arguments",
-          );
+        if (node.questionDotToken || node.expression.questionDotToken)
+          this.fail(node, "an optional call of Object.assign is outside the fragment");
+        const callable =
+          node.typeArguments?.length === 2 &&
+          node.arguments.length === 2 &&
+          ts.isArrowFunction(node.arguments[0]) &&
+          ts.isObjectLiteralExpression(node.arguments[1]);
         // The fragment cannot assign to Object.assign or pass Object as a value.
         // Reject any local declaration that could shadow the standard builtin.
         const checkBinding = (n: Node): void => {
@@ -1739,9 +1734,27 @@ class Gate {
           n.forEachChild(checkBinding);
         };
         checkBinding(this.file);
+        if (!callable) {
+          // Copies onto a target: the target, then each source, copied as
+          // it is evaluated. A spread among the arguments names sources
+          // known only at run time.
+          if (node.arguments.length === 0 || node.arguments.some(ts.isSpreadElement))
+            this.fail(node, "Object.assign needs its target and its sources written as arguments");
+          const [target, ...sources] = node.arguments;
+          return {
+            k: "objectAssign",
+            pos: this.span(node),
+            target: this.expr(target),
+            sources: sources.map((a) => this.expr(a)),
+          };
+        }
+        const initial = node.arguments[1];
+        const typeArguments = node.typeArguments;
+        if (!ts.isObjectLiteralExpression(initial) || typeArguments?.length !== 2)
+          this.fail(node, "Object.assign's callable form needs an object literal and two explicit type arguments");
         // These names either replace an intrinsic used by the lowering or
         // encounter special/non-writable properties on JavaScript functions.
-        for (const property of node.arguments[1].properties) {
+        for (const property of initial.properties) {
           if (
             ts.isPropertyAssignment(property) &&
             ts.isIdentifier(property.name) &&
@@ -1765,9 +1778,9 @@ class Gate {
           k: "withValue",
           pos: this.span(node),
           fn: this.expr(node.arguments[0]),
-          initial: this.expr(node.arguments[1]),
-          functionType: this.typeOf(node.typeArguments[0]),
-          bagType: this.typeOf(node.typeArguments[1]),
+          initial: this.expr(initial),
+          functionType: this.typeOf(typeArguments[0]),
+          bagType: this.typeOf(typeArguments[1]),
         };
       }
       if (

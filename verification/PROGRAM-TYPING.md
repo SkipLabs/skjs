@@ -1303,6 +1303,21 @@ at a key known only at run time is refused on an object another reference
 may hold; on an owned one, at a string, which may spell `[]` or `[[proto]]`,
 keys the model keeps for itself; at a number or symbol it is not lowered.
 
+`Object.assign(t, s_1, …, s_n)` copies each source onto its target as a
+spread copies, one $\mathsf{merge}_{[]}$ per source as soon as it is
+evaluated, checked by $\textsc{merge}$. Its target is a fresh literal, whose
+result is the call's value; or, for the statement `Object.assign(x, …);`
+with $\operatorname{Own}(x,s)$, the local, which holds the result from then
+on, as for a key-adding write (a source letting $x$ escape defeats
+ownership). Any other target is refused: the call's value is the target, one
+more reference to it. JavaScript sets each key through the target's `[[Set]]`,
+where a spread defines it: the two agree on a fresh plain object, but for
+`__proto__`, whose setter replaces the prototype. So each source's claimed
+type must give no `__proto__` (`ownsNoProto`: every clause owns no
+enumerable property, or a key bound excludes the key); a record type, which
+may own any key, is refused. As for a spread, a source's own symbol keys are
+not copied.
+
 ### Checked control-flow graphs
 
 `ControlFlow.lean` adds a finite control-flow graph over the existing expression

@@ -1110,6 +1110,8 @@ private partial def exprSites : Fragment.Expr → Sites
   -- the producer claims the value written, not the location.
   | .index p _ a b | .arith p _ a b | .logicalAssign p _ a b | .elemAt p a b | .comma p a b | .inKeys p a b => joinSites ([],[p],[]) (joinSites (exprSites a) (exprSites b))
   | .arrayLit p es => es.foldl (fun acc a => joinSites acc (exprSites a)) ([],[p],[])
+  | .objectAssign p t ss => ss.foldl (fun acc a => joinSites acc (exprSites a))
+      (joinSites ([],[p],[]) (exprSites t))
   | .arrayAssign p targets rest rhs => targets.foldl (fun acc q => match q.default_ with
       | some d => joinSites acc (exprSites d) | none => acc)
       (joinSites ([],p :: (rest.map (·.1)).toList,[]) (exprSites rhs))

@@ -570,6 +570,7 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
       throw "a key-adding write at a number or symbol known only at run time is not lowered: the copy that adds the key allocates only keys the source spells"
     | .element => return .elemWrite p r key rhs
   | .withValue p f i ft bt => return .withValue p (← comparisonsExpr fc f) (← comparisonsExpr fc i) ft bt
+  | .objectAssign p t ss => return .objectAssign p (← comparisonsExpr fc t) (← ss.mapM (comparisonsExpr fc))
   | .lambda p receiver tps ps defaults rest result b =>
     return .lambda p receiver tps ps (← defaults.attach.mapM fun ⟨(i,d),_⟩ => do
       return (i, ← comparisonsExpr fc d)) rest result (← comparisonsExpr fc b)
@@ -651,6 +652,7 @@ private partial def assignsExpr (name : String) : Fragment.Expr → Bool
   | .callWithReceiver _ f r args | .bindWithReceiver _ f r args =>
     assignsExpr name f || assignsExpr name r || args.any (assignsExpr name)
   | .ctor _ lam => assignsExpr name lam
+  | .objectAssign _ t ss => assignsExpr name t || ss.any (assignsExpr name)
   | .construct _ f args _ => assignsExpr name f || args.any (assignsExpr name)
   | .applyWithReceiver _ f r list =>
     assignsExpr name f || assignsExpr name r || (list.map (assignsExpr name)).getD false
@@ -717,6 +719,9 @@ partial def escapesExpr (n : String) : Fragment.Expr → Bool
     escapesExpr n key || (rhs.map (escapesExpr n)).getD false
   | .logicalAssign _ _ (.read _ _ (.var ..)) rhs => escapesExpr n rhs
   | .logicalAssign _ _ (.index _ _ (.var ..) key) rhs => escapesExpr n key || escapesExpr n rhs
+  -- `Object.assign(o, …)` copies onto `o`, as a write does; its value is `o`,
+  -- which only its statement form, whose value no one reads, lowers.
+  | .objectAssign _ (.var ..) ss => ss.any (escapesExpr n)
   -- A method call passes its object as `this`.
   | .invoke _ (.read _ _ (.var _ m)) args _ _ => m == n || args.any (escapesExpr n)
   | .invoke _ (.index _ _ (.var _ m) key) args _ _ =>
@@ -738,6 +743,7 @@ partial def escapesExpr (n : String) : Fragment.Expr → Bool
     escapesExpr n f || escapesExpr n r || args.any (escapesExpr n)
   | .applyWithReceiver _ f r list =>
     escapesExpr n f || escapesExpr n r || (list.map (escapesExpr n)).getD false
+  | .objectAssign _ t ss => escapesExpr n t || ss.any (escapesExpr n)
 
 /-- The closures' statement bodies an expression creates, where their own
 owned objects are found. -/
@@ -766,6 +772,7 @@ partial def closureBodies : Fragment.Expr → List (List Fragment.Stmt)
     closureBodies f ++ closureBodies r ++ args.flatMap closureBodies
   | .applyWithReceiver _ f r list =>
     closureBodies f ++ closureBodies r ++ (list.map closureBodies).getD []
+  | .objectAssign _ t ss => closureBodies t ++ ss.flatMap closureBodies
   | .block _ ss => [ss]
 
 /-- The analysis state: the owned locals in scope, each with the loop depth
@@ -808,6 +815,8 @@ private partial def ownedStmt (d : Nat) (st : Fragment.Stmt) (s : Owned) : Owned
       | .indexWrite _ _ (.var _ n) key rhs =>
         if s.locals.contains (n, d) && !escapesExpr n key && !escapesExpr n rhs then some e.span
         else none
+      | .objectAssign _ (.var _ n) ss =>
+        if s.locals.contains (n, d) && !ss.any (escapesExpr n) then some e.span else none
       | _ => none
     let s := { s with sites := site.toList ++ s.sites }
     ownedExpr e s
@@ -1157,7 +1166,8 @@ private partial def readOnly : Fragment.Expr → Bool
   | .ifBody _ _ c t e => readOnly c && readOnly t && readOnly e
   | .destructBody _ t a b => readOnly a && t.defaults.all readOnly && readOnly b
   | .alloc .. | .build .. | .write .. | .indexWrite .. | .update .. | .logicalAssign .. | .assign .. | .arrayLit .. | .elemWrite .. | .arrayAssign .. | .nullishAssign .. | .lambda .. | .withValue .. | .bindWithReceiver ..
-  | .callWithReceiver .. | .applyWithReceiver .. | .call .. | .invoke .. | .ctor .. | .construct .. | .block .. => false
+  | .callWithReceiver .. | .applyWithReceiver .. | .call .. | .invoke .. | .ctor .. | .construct .. | .block ..
+  | .objectAssign .. => false
 
 /-- The other operand of a singleton comparison, when saving the tested read
 before it changes nothing: a literal, a name, or one field read. Each is
@@ -1681,6 +1691,15 @@ private def mayLack (G : PositiveGraphs.NormalGraph Nat) (B : Ty Nat) (fld : Pro
   !cs.any fun c => match c with
     | .refs _ _ _ os _ _ | .dict _ _ _ _ os _ _ _ => optionalView os
     | _ => false
+
+/-- Whether no value of a type owns `__proto__`: `Object.assign` sets a
+source's `__proto__` on its target through the prototype's setter, which
+replaces the prototype rather than adds the key a copy would. Each clause
+gives no key (`srcOf`), or a key bound excludes it. -/
+private def ownsNoProto (G : PositiveGraphs.NormalGraph Nat) (S : Ty Nat) : Bool :=
+  (PositiveRules.expand G S).all fun c => match ObjectMerge.srcOf c with
+    | some sb => sb.never [] (.str "__proto__")
+    | none => false
 
 /-- A write statement that adds a key: `o.k = e` or `o["k"] = e` whose
 receiver's claimed type may lack `k`. On an owned local (`growSites`) it is
@@ -2593,6 +2612,8 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
   let p ← match e with
   | .equality .. => throw "internal unresolved equality"
   | .block .. => throw "internal extraction error: statements outside a closure body"
+  | .objectAssign .. => throw (locatedRefusal (← table) e.span .expressionClaim
+      "Object.assign in a closure's term code is outside the fragment: its copies are graph nodes")
   | .var _ name =>
     match resolve scope name with
     | some (i, .value) => pure (DirectProof.var Γ i A)
@@ -3680,6 +3701,19 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
       match operand with
       | some a => compileExpr fc (bscope ++ scope) (before ++ Γ) a next
       | none => emitAt e.span term (.bind next) (before ++ Γ) T (scope := bscope ++ scope)) final
+  | .objectAssign _ target sources =>
+    match target with
+    | .alloc .. | .build .. =>
+      -- Onto a fresh literal, which nothing else holds: the copies, and the
+      -- value is the result.
+      compileAssign fc scope Γ e.span target sources fun temps tscope => do
+        let k := temps.length
+        let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+          (fun i => if i == 0 then 0 else i+k))⟩
+        emitAt e.span (.var 0) (.bind drop) (temps ++ Γ) A (scope := tscope ++ scope)
+    | _ => throw (locatedRefusal (← table) e.span .expressionClaim
+        "Object.assign onto an object that is not a fresh literal is lowered only as a statement on \
+          a local's own object: the call's value would be one more reference to it")
   | .atEnv .. | .letBody .. | .destructBody .. | .ifBody _ (some _) .. | .done .. | .seqBody .. | .throwBody .. =>
     throw "statement environment wrapper is only supported inside a closure"
   | .ifBody _ none cond thn els =>
@@ -4366,6 +4400,37 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let right ← compileExpr fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) rhs write
     compileExpr fc scope Γ receiver right
 
+/-- `Object.assign(target, ...sources)`: the target into a slot of its own,
+then each source, each copied onto what is built so far as soon as it is
+evaluated (`Tm.merge`), as an object literal's spreads are; a source that may
+own `__proto__` is refused. `finish` continues from the context holding the
+result first. -/
+private partial def compileAssign (fc : SourceClaims.Function) (scope : List ScopeBinding)
+    (Γ : List (Ty Nat)) (pos : Span) (target : Fragment.Expr) (sources : List Fragment.Expr)
+    (finish : List (Ty Nat) → List ScopeBinding → Compiler Target) : Compiler Target := do
+  let G := SourceTypes.graph (← table)
+  let T0 ← exprType fc target
+  let mut steps : List (Option Fragment.Expr × Tm × Ty Nat × List (Ty Nat) × List ScopeBinding) :=
+    [(some target, .nul, T0, [], [])]
+  let mut temps : List (Ty Nat) := [T0]
+  let mut tscope : List ScopeBinding := [held ⟨"",some target.span⟩]
+  for src in sources do
+    let B ← exprType fc src
+    if !ownsNoProto G B then
+      throw (locatedRefusal (← table) src.span .expressionClaim
+        "Object.assign from a source that may own `__proto__`: it sets that key through the \
+          prototype's setter, which replaces the target's prototype rather than adds a key")
+    steps := steps ++ [(some src, .nul, B, temps, tscope)]
+    temps := B :: temps; tscope := held ⟨"",some src.span⟩ :: tscope
+    let R ← mergeType temps[1]! B
+    steps := steps ++ [(none, .merge [] (.var 1) (.var 0), R, temps, tscope)]
+    temps := R :: temps; tscope := held ⟨"",some pos⟩ :: tscope
+  let last ← finish temps tscope
+  steps.reverse.foldlM (fun next (operand, term, T, before, bscope) =>
+    match operand with
+    | some a => compileExpr fc (bscope ++ scope) (before ++ Γ) a next
+    | none => emitAt pos term (.bind next) (before ++ Γ) T (scope := bscope ++ scope)) last
+
 /-- Compile compound conditions as short-circuit edges. The full source
 expression still has an independent claimed typing obligation; the runtime
 traverses its operands once instead of evaluating it and then replaying it. -/
@@ -5043,6 +5108,22 @@ private partial def body : Nat → SourceClaims.Function → Ty Nat → List Sco
     | .effect pos e :: rest =>
       let Γ ← env fc pos.1 scope
       let next ← body fuel fc R scope rest tail loopTargets
+      if let .objectAssign _ target@(.var _ name) sources := e then
+        -- `Object.assign(o, …)` on an owned object: the copies onto it,
+        -- which the local holds from here on, as a key-adding write's.
+        let sites := (← get).grows
+        let some i := (valueSlot scope name).filter fun _ => sites.contains e.span
+          | throw (locatedRefusal (← table) e.span .expressionClaim
+              "Object.assign onto an object another reference may hold adds keys that reference \
+                would see: it is lowered on a local's own fresh object that nothing else has reached, \
+                outside any loop its declaration does not enclose")
+        compileAssign fc scope Γ e.span target sources fun temps tscope => do
+          let k := temps.length
+          let mapping := (next.mapping.getD (List.range Γ.length)).map fun j =>
+            if j == i then 0 else j + k + 1
+          emitAt e.span (.var 0) (.bind ⟨next.label, some mapping⟩) (temps ++ Γ) temps[0]!
+            (scope := tscope ++ scope)
+      else
       match ← growingWrite fc scope e with
       | some (i, receiver, fld, key, rhs) =>
         -- A key-adding write on an owned object: the receiver, the key and

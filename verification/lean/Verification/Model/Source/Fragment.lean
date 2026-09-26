@@ -554,6 +554,10 @@ inductive Expr where
   value written, where the calculus's write yields null. -/
   | assign (pos : Span) (name : String) (namePos : Span) (rhs : Expr)
   | withValue (pos : Span) (fn initial : Expr) (functionType bagType : Json)
+  /-- `Object.assign(target, ...sources)` other than the callable form: the
+  target, then each source, copied onto the target when it is evaluated; the
+  value is the target. -/
+  | objectAssign (pos : Span) (target : Expr) (sources : List Expr)
   /-- `params` are what the body reads. `defaults` names the positions a call
   may omit and the expression that replaces the `undefined` bound there; the
   advertised domain at such a position is the parameter's type with
@@ -719,6 +723,7 @@ partial def Expr.freeNames : Expr → List String
     f.freeNames ++ r.freeNames ++ args.flatMap Expr.freeNames
   | .applyWithReceiver _ f r list => f.freeNames ++ r.freeNames ++ (list.map Expr.freeNames).getD []
   | .call _ f args _ _ | .invoke _ f args _ _ => f.freeNames ++ args.flatMap Expr.freeNames
+  | .objectAssign _ t ss => t.freeNames ++ ss.flatMap Expr.freeNames
   | .letBody _ n _ a b => a.freeNames ++ b.freeNames.filter (· != n)
   | .destructBody _ t a b => a.freeNames ++ t.defaults.flatMap Expr.freeNames ++
       t.slices.map (restFromName ·.2) ++ b.freeNames.filter (!t.names.contains ·)
@@ -755,6 +760,7 @@ partial def Expr.callees : Expr → List (Span × Span × String × List Json)
   | .call p f args _ ts =>
     (match f with | .var q n => [(p, q, n, ts)] | _ => []) ++ f.callees ++ args.flatMap Expr.callees
   | .invoke _ f args _ _ => f.callees ++ args.flatMap Expr.callees
+  | .objectAssign _ t ss => t.callees ++ ss.flatMap Expr.callees
   | .letBody _ n _ a b => a.callees ++ b.callees.filter (·.2.2.1 != n)
   | .destructBody _ t a b => a.callees ++ t.defaults.flatMap Expr.callees ++ sliceCallees t.slices ++
       b.callees.filter (!t.names.contains ·.2.2.1)
@@ -862,7 +868,7 @@ def Expr.span : Expr → Span
   | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
   | .comma p _ _ | .inKeys p _ _ | .optional p _ _ _ | .block p _ => p
   | .arrayLit p _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ _ => p
-  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .build p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ _ _ _ _ | .call p _ _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ | .construct p _ _ _ => p
+  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .build p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .objectAssign p _ _ | .lambda p _ _ _ _ _ _ _ | .call p _ _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ | .construct p _ _ _ => p
 
 
 /-- The intrinsic a `for...in` iterates (`intrinsics.mts`):
@@ -1200,6 +1206,9 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     CellClaims.fieldsExactly j ["k","pos","fn","initial","functionType","bagType"]
     return .withValue p (← decodeExpr (← jField j "fn")) (← decodeExpr (← jField j "initial"))
       (← jField j "functionType") (← jField j "bagType")
+  | "objectAssign" => do
+    CellClaims.fieldsExactly j ["k","pos","target","sources"]
+    return .objectAssign p (← decodeExpr (← jField j "target")) (← (← jArr j "sources").mapM decodeExpr)
   | "ctor" => do
     -- A generic class's binders are the declaring unit's (`typeParams`);
     -- they are read where the unit's binders are, not here.

@@ -123,6 +123,10 @@ export type Expr =
       functionType: TypeTerm;
       bagType: TypeTerm;
     }
+  /* `Object.assign(target, ...sources)` other than the callable form: the
+     target, then each source, each copied onto the target as it is
+     evaluated; the value is the target. */
+  | { k: "objectAssign"; pos: Span; target: Expr; sources: Expr[] }
   /* `typeof e === "…"` (or `!==`, operands in either order): a test of the
      operand's shape. `"object"` holds of null and of an object without call
      code; a callable object, a class included, is `"function"`. */

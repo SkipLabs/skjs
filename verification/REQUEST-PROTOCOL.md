@@ -1087,7 +1087,11 @@ Here the annotation fields are source type terms, as every annotation is. The pa
 for standard `Object.assign<F, B>(freshArrow, {value: initializer})`, with no
 shadowed `Object`, extra arguments, spread or accessors. Both explicit type
 arguments and both source expression claims are independently checked before
-constructing the initialized callable.
+constructing the initialized callable. Any other call of the standard
+`Object.assign`, its arguments written without a spread, is
+`{"k":"objectAssign","pos":[start,end],"target":expression,"sources":[expression,...]}`:
+the target, then each source copied onto it as it is evaluated
+([key-adding writes](PROGRAM-TYPING.md#key-adding-writes)).
 
 Local-arrow `.call` expressions use
 `{"k":"callWithReceiver","pos":[start,end],"callee":expression,"receiver":expression,"args":[expression,...]}`.

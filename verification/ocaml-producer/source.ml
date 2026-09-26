@@ -391,6 +391,9 @@ and expr_node =
   | Optional of expr * expr
   | ArrayLiteral of expr list | Index of expr * expr | IndexWrite of expr * expr * expr
   | Bind of expr * expr * expr list
+  (* `Object.assign(target, ...sources)`, other than the callable form: the
+     target, then each source copied onto it as it is evaluated. *)
+  | ObjectAssign of expr * expr list
   | WithFields of expr * expr * ty * ty
   | Cast of string * ty option * expr
   (* A closure's body written as statements, a function body: its
@@ -484,6 +487,7 @@ let rec children e = match e.node with
   | Invoke (f,args,_,_) | New (f,_,args) -> f :: args
   | Apply (f,r,l) -> f :: r :: Option.to_list l
   | Bind (f,r,args) -> f :: r :: args
+  | ObjectAssign (t,sources) -> t :: sources
 and statement_children s = match s.statement with
   | Declare (_,bs) -> List.map (fun (_,_,e) -> e) bs
   | Destructure (t,d,init) -> init :: Option.to_list d @ pattern_defaults t
@@ -629,6 +633,7 @@ let rec expr binders j =
   | "indexWrite" -> IndexWrite (sub "receiver",sub "key",sub "rhs")
   | "withValue" -> WithFields (sub "fn",sub "initial",source_type binders (field "functionType" j),source_type binders (field "bagType" j))
   | "bindWithReceiver" -> Bind (sub "callee",sub "receiver",List.map (expr binders) (items "args" j))
+  | "objectAssign" -> ObjectAssign (sub "target",List.map (expr binders) (items "sources" j))
   | "cast" -> Cast (text "cast" j,(match field "annot" j with Null -> None | a -> Some (source_type binders a)),sub "e")
   | "blockBody" -> BlockBody (List.map (stmt binders) (items "body" j))
   | "conditional" -> Conditional (sub "cond",sub "then",sub "else_")
