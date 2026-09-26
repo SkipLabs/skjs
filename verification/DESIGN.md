@@ -161,6 +161,12 @@ first over the types near the pair, and prunes rows that no table could make
 valid. None of this changes what is checked: orderings and pruning decide
 only how soon evidence is found, and the checker validates every table
 ([producing evidence](PROGRAM-TYPING.md#producing-evidence-from-supplied-claims)).
+A failed search is refused by name for display only: `producer --explain`
+lists the forms with a known reason and their spans, the innermost one that
+meets the failed obligation is shown first, and with `--typescript-errors`
+code TypeScript also refuses is named by its nearest error. Nothing of this
+is a premise; Lean decides on the ordinary proposal
+([a failed search refused by name](OBLIGATION-DIAGNOSTICS.md#a-failed-search-refused-by-name)).
 
 ### The one entry
 
@@ -337,7 +343,8 @@ A `let` and an assigned parameter are private cells
 with a storage contract fixed where they are declared: the annotation, or
 the producer's proposal (TypeScript's widened or evolved type), against which
 the initializer and every write are checked. A closure holds the cell's
-identity; a `const` copy holds a snapshot
+identity; a `const` copy holds a snapshot, and an unannotated constant of a
+named union is held at the union's arms, as an annotated one is
 ([rules](PROGRAM-TYPING.md#mutable-bindings-and-module-constants)). A `let`
 statement whose initialized bindings nothing in their scope writes, closures
 included, is a `const`: each holds its initial value throughout, so a test
@@ -396,7 +403,8 @@ as Skip's runtime tags managed arrays with a symbol key. Arrays are
 **dense**: every index below the length holds an element, so an element write
 is typed only in bounds or appending. Mutable arrays are invariant;
 `readonly T[]` reads only and is covariant. Arrays are `Iterable<T>` through
-their prototype's `[Symbol.iterator]`.
+their prototype's `[Symbol.iterator]`. An array's `length` is read from its store, in a
+statement and in a closed expression alike.
 
 ### Index signatures
 
