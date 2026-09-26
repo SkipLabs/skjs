@@ -3326,9 +3326,22 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
       (fun i => if i == 0 then 0 else i+1))⟩
     -- An array's `length` is its store's, read as a number; a primitive's
     -- member is read by its shape (`dispatchTerm`).
-    let object := if fld == "length" && arraysOnly (SourceTypes.graph (← table)) B
+    let G := SourceTypes.graph (← table)
+    let object := if fld == "length" && arraysOnly G B
       then Tm.lenOf (.readAt SourceTypes.storeField (.var 0)) else .readAt fld (.var 0)
     let arms ← primitiveArms (held ⟨"",some a.span⟩ :: scope) (B::Γ) B fld
+    -- An array's store is read in a node of its own, a field read, and its
+    -- length in the next, which reads no heap: what was known of the heap
+    -- is known after both.
+    if fld == "length" && arraysOnly G B && arms.isEmpty then
+      if let some S := storeOf G B then
+        let drop2 := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+          (fun i => if i == 0 then 0 else i+2))⟩
+        let length ← emitAt e.span (.lenOf (.var 0)) (.bind drop2) (S::B::Γ) A
+          (scope := held ⟨"",some e.span⟩ :: held ⟨"",some a.span⟩ :: scope)
+        let store ← emitAt e.span (.readAt SourceTypes.storeField (.var 0)) (.bind length) (B::Γ) S
+          (scope := held ⟨"",some a.span⟩ :: scope)
+        return ← compileExpr fc scope Γ a store
     let node ← emitAt e.span (dispatchTerm arms fld 0 object) (.bind drop) (B::Γ) A
       (scope := held ⟨"",some a.span⟩ :: scope)
     compileExpr fc scope Γ a node

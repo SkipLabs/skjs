@@ -1019,7 +1019,16 @@ reachability or noninterference statement; set-valued clause covering (an
 arrow against a union of arrows) needs a covering relation of another arity;
 a vacuity escape for contradictory reference conjunctions
 (`Ref null ∧ Ref bool ≤ Ref (null ∨ bool)`) is true and not derivable; the
-producer's arrow search builds no nested `combine`.
+producer's arrow search builds no nested `combine`. An element read keeps no
+heap fact: it reads the heap only, but the value it finds is a value only
+where the store's contract says so, which the frame rule would have to take
+from the read's typing (a length is a number, and keeps them). A `for...in` key
+is one its object owns where nothing ran since the loop's step (a plain data
+object inherits no enumerable key): `o[k]!` needs that fact, a relation of
+two slots, which a statement entry does not state. A module function of fixed
+arity meets a longer signature (it discards the actuals past its parameters,
+`restsT_of_graph`), but its slot is its annotated signature: the slot would
+carry the padded promise, a claim its own unit checks.
 
 **Source-to-graph preservation.** Structural properties of the lowering
 (successor validity, freshness, binding resolution) can be proved in Lean

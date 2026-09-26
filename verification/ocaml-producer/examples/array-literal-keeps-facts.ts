@@ -21,3 +21,13 @@ export function snapshot(x: { f: 1 | 2 }): 1 {
   }
   return 1;
 }
+// An array's length reads its store, a field read, then counts it, reading
+// no heap: what a guard found is still known after it.
+export function counted(x: { f: 1 | 2 }, xs: number[]): 1 {
+  if (x.f === 1) {
+    const n = xs.length;
+    const one: 1 = x.f;
+    return n > 0 ? one : 1;
+  }
+  return 1;
+}

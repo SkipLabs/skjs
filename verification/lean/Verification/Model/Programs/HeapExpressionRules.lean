@@ -738,6 +738,9 @@ def pureTerm : Tm → Bool
   | .ite c t e => pureTerm c && pureTerm t && pureTerm e
   | .arith _ a b => pureTerm a && pureTerm b
   | .throw a => pureTerm a
+  /- A length reads the store it is given, or a string's code units, and
+  gives a number: it changes no heap. -/
+  | .lenOf a => pureTerm a
   | t => isVal t
 
 /-- Purity is closed under actual reduction and rules out every heap change.
