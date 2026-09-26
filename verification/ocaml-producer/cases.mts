@@ -990,4 +990,8 @@ export const cases: Case[] = [
     "unsupported", "proposal", /a write adds the property 'x' to an object allocated without it/),
   gap("optional-write-refused", "a write to a writable optional field may add its key",
     "unsupported", "proposal", /a write to the optional property 'opt' adds it/),
+  positive("closure-array-length", "an array's `length` in a closed expression, an arrow's body or a condition's operands, is its store's, as a statement reads it"),
+  negative("invalid-closure-array-length", "an array's `length` is a number, not a literal", /source expression obligation at \[150,159\)/),
+  positive("const-union-arms", "an unannotated constant of a named union is held at its arms: tag tests keep and drop each, test after test"),
+  negative("invalid-const-union-arms", "past a test the constant is of the other arms", /source expression obligation at \[608,614\)/),
 ];

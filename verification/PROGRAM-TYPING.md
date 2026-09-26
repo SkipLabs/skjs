@@ -642,7 +642,17 @@ required position named by a literal index, `elemOpt` an optional or rest
 position, adding `undefined`, and `elemAny` any numeric index into a
 homogeneous array, adding `undefined`; `setElem` writes a named position into
 its location, or a fresh one the new store records, keeping the contract for
-every alias; `len` reads the length. A write is typed only at an index no
+every alias; `len` reads the length. The source read `a.length` of an
+array, in a statement and in a closed expression (an arrow's expression
+body, a condition's operands) alike, is the length of its store:
+
+$$
+\frac{\Gamma\vdash_G a:A\quad \mathit{store}_G(A)=S\quad
+      \Gamma\vdash_G a.\mathtt{[]}:S\quad S\equiv_G\mathsf{list}(\tau)\quad N\equiv_G\mathsf{num}}
+     {\Gamma\vdash_G\llbracket a.\mathit{length}\rrbracket=\mathsf{lenOf}\;(a.\mathtt{[]}):N}\ \textsc{len}
+$$
+
+A write is typed only at an index no
 greater than the required length, so it lands in bounds or appends and never
 leaves a hole:
 

@@ -2174,7 +2174,9 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
            which Lean checks against the annotation. *)
         | false,Some _ when List.mem_assoc init.pos offered -> Value initial
         | false,Some contract -> Value (arms declarations contract)
-        | false,None -> Value initial in
+        (* An unannotated constant of a named union is held at its arms, as
+           an annotated one is: a guard then keeps or drops each. *)
+        | false,None -> Value (arms declarations initial) in
       extend (after init env) n binding) env bs
     (* The initializer, then each binding in pattern order: a property at its
        field's read, an element at its position's, a rest at the tuple of the

@@ -2517,7 +2517,13 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     else
       let K := a.type :: Γ
       let arms ← primitiveArms (held ⟨"",some receiver.span⟩ :: scope) K a.type fld
-      if arms.isEmpty then readCell G Γ fld a
+      -- An array's `length` is its store's, read as a number, as the graph
+      -- reads it.
+      if arms.isEmpty && fld == "length" && (storeOf G a.type).isSome then
+        let store ← readCell G Γ SourceTypes.storeField a
+        let N : Ty Nat := [← lower (SourceTypes.use .num)]
+        pure (DirectProof.node Γ (.lenOf store.term) N .len [store])
+      else if arms.isEmpty then readCell G Γ fld a
       else pure (DirectProof.letE Γ a (← memberReadPlan G K 0 fld A arms))
   | .index _ (some fld) receiver key => do
     -- The receiver, then the key, then the read: the key's own claim was
