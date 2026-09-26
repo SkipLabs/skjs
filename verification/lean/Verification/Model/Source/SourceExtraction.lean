@@ -2791,7 +2791,38 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let a ← closureExpr fc scope Γ l
     let b ← closureExpr fc (held ⟨"",some l.span⟩ :: scope) (a.type::Γ) r
     pure (DirectProof.letE Γ a (DirectProof.cast (a.type::Γ) A b))
-  | .update .. => throw "compound assignment inside a closed expression is outside the fragment"
+  | .update pos op (.var _ name) rhs post => do
+    -- `x op= r`, `x++` of a local cell, as the statement form does: the
+    -- cell's value read at its contract, the right side (the family's one
+    -- for an increment), the operation, the write back at the contract, and
+    -- the old or new value.
+    let some (i, .cell contract reference) := resolve scope name
+      | throw s!"assignment to '{name}', which is not a mutable local"
+    let targetClauses := PositiveRules.expand G contract
+    if rhs.isNone && (targetClauses.isEmpty ||
+        !(targetClauses.all ProgramTyping.numberClause || targetClauses.all ProgramTyping.bigintClause)) then
+      throw s!"unsupported source expression at [{pos.1},{pos.2}): an increment needs a target of one numeric family, number or bigint"
+    let read := DirectProof.node Γ (.readAt valueField (.var i)) contract .read [DirectProof.var Γ i reference]
+    let K := contract :: Γ
+    let c ← match rhs with
+      | some r => closureExpr fc (held ⟨"",some e.span⟩ :: scope) K r
+      | none =>
+        if !targetClauses.isEmpty && targetClauses.all ProgramTyping.bigintClause then do
+          pure (DirectProof.node K (.bigint 1) [← lower (SourceTypes.use (.bigintLit 1))] .bigintLit)
+        else do
+          let b := (1.0 : Float).toBits
+          pure (DirectProof.node K (.num b) [← lower (SourceTypes.use (.numLit b))] .numLit)
+    let H := c.type :: K
+    let N ← operatorResult op contract c.type
+    let combine := DirectProof.node H (.arith op (.var 1) (.var 0)) N .arith
+      [DirectProof.var H 1 contract, DirectProof.var H 0 c.type]
+    let W := N :: H
+    let write := DirectProof.node W (.writeAt valueField (.var (i+3)) (.var 0)) [0] .write
+      [DirectProof.var W (i+3) reference, DirectProof.cast W contract (DirectProof.var W 0 N)]
+    let done := DirectProof.letE W write
+      (if post then DirectProof.var ([0]::W) 3 contract else DirectProof.var ([0]::W) 1 N)
+    pure (DirectProof.letE Γ read (DirectProof.letE K c (DirectProof.letE H combine done)))
+  | .update .. => throw "compound assignment of other than a local inside a closed expression is outside the fragment"
   | .arrayLit _ elems => do
     -- The elements, in order, fill a fresh store, and the array object holds
     -- it with the prototype from its slot, then reads as the claimed array.

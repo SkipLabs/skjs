@@ -904,7 +904,11 @@ obligation establishes the family the lowering read. A compound assignment
 an increment adding that family's one; `x += e` concatenates where the
 contract or `e` is a string. An increment converts its operand to a number
 where `+ 1` would concatenate, so it is this addition only on a target of one
-numeric family, and is refused on any other.
+numeric family, and is refused on any other. Inside a closed expression (an
+operand of `&&`, `||` or `??`, an arrow's expression body) the target is a
+local cell, and the steps are the same: its read at the contract, the right
+side, the operation, the write back at the contract, and the old or the new
+value.
 
 A template literal is the concatenation of its parts, in order, starting from
 its first string part: `` `h${a}m${b}t` `` is $(((h+a)+m)+b)+t$, one `arith`
