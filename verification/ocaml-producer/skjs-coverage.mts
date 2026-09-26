@@ -557,6 +557,15 @@ const CLASSES: ClassEntry[] = [
     why: "Lean found no derivation; the obligation is named, its cause is not" },
   { cls: "unexplained", label: "run error or unattributed verification", re: /^\w+: attribution:/,
     why: "no refusal was stated (a crash or timeout is classed here by its status)" },
+  // ------------------------------------------------ key-adding write gaps
+  { cls: "gap", label: "a key-adding write on an object another reference may hold", re: /may add the key to an object another reference holds|a key-adding write is typed only on a local's own fresh object/,
+    why: "typed only on an unaliased local; alias tracking beyond that is open (DESIGN, Next steps)" },
+  { cls: "gap", label: "a key-adding write at a runtime string key", re: /the key may spell one the model keeps for itself/,
+    why: "the model reserves `[]` and `[[proto]]`; a representation choice, not unsoundness" },
+  { cls: "gap", label: "a key-adding write at one of several literal keys", re: /at one of several literal keys is not lowered/,
+    why: "needs a dispatch on the key" },
+  { cls: "gap", label: "a key-adding write of a symbol key", re: /a key-adding write of a symbol key/,
+    why: "the copy step copies string keys only" },
   // -------------------------------------------------------- principled
   { cls: "principled", label: "TypeScript refuses the code", re: /TypeScript refuses this code too|TypeScript reports an error in a declaration|which TypeScript rejects|TypeScript computes no type for this typeof: it is not valid TypeScript/,
     why: "TypeScript itself rejects the program or a declaration it depends on" },

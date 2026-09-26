@@ -4,13 +4,13 @@ How much of what SKJS accepts in its own test suite the pipeline
 (`check.mts`: parser → OCaml producer → Lean search and check) verifies, what
 stops the rest, and where the two disagree because SKJS is wrong.
 
-**2,344 verified + 99 refused on principle = 2,443 of 2,674 done (91.4%);
-207 gaps, 24 unexplained.** Of the 99, 10 are units of confirmed SKJS
+**2,361 verified + 99 refused on principle = 2,460 of 2,674 done (92.0%);
+190 gaps, 24 unexplained.** Of the 99, 10 are units of confirmed SKJS
 unsoundnesses; the classes are defined in the method
 ([refusal classes](#refusals-by-class)).
 
-**2,344 of 2,674 SKJS-accepted units verify (87.7%); 1,729 of 2,026 accepted
-functions (85.3%).** 267 of the 377 files with an accepted unit verify entirely.
+**2,361 of 2,674 SKJS-accepted units verify (88.3%); 1,746 of 2,026 accepted
+functions (86.2%).** 268 of the 377 files with an accepted unit verify entirely.
 Five families of SKJS-accepted functions that the pipeline reaches and refuses
 are real SKJS unsoundnesses, each with a runtime witness that SKJS accepts and
 node crashes on ([below](#suspected-skjs-unsoundnesses)).
