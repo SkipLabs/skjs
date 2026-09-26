@@ -138,9 +138,12 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
     | None,None -> (match left,right with
       (* A union of one binder and ground atoms, `A | null`: what the actual
          holds beside those atoms is the binder's, as TypeScript infers
-         `A := string` from `string | null`. *)
+         `A := string` from `string | null`. An arm over a binder,
+         `Promise<T> | U`, is below. *)
       | _,Union parts when (match List.partition (fun p -> local p <> None) parts with
-          | [_],ground -> List.for_all (function Atoms _ -> true | _ -> false) ground
+          | [_],ground -> List.for_all (function
+              | Atoms _ as a -> not (Semantic.mentions_rigid a)
+              | _ -> false) ground
           | _ -> false) ->
         let binder,ground = List.partition (fun p -> local p <> None) parts in
         let covered = List.concat_map (function Atoms xs -> xs | _ -> []) ground in
@@ -210,6 +213,48 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
                     fields=[];calls=[];indexes=[]}] ->
       List.iter (fun x -> constrain x y; if not r.readonly then constrain y x)
         (l.required @ l.optional_elements @ Option.to_list l.rest)
+      (* A union is below a type where each of its parts is. *)
+      | Union parts,_ -> List.iter (fun part -> constrain part right) parts
+      (* A type below a union of several bare binders, `T | U`, is taken
+         below each: an instance at least as wide as the one needed. *)
+      | _,Union arms when arms <> [] && List.for_all (fun a -> local a <> None) arms ->
+        List.iter (fun arm -> constrain left arm) arms
+      (* A union with one bare binder among its arms, `Promise<T> | U` or
+         `T | undefined`, as TypeScript infers it: each part of the actual
+         goes to an arm of its own kind (an object part to an object arm, a
+         primitive to an arm naming it), and every other part to the
+         binder. An arm no part reaches receives the empty type, so the
+         binders it holds are inferred as `never` where nothing else
+         constrains them. *)
+      | _,Union arms when List.length (List.filter (fun a -> local a <> None) arms) = 1 ->
+        let rec pieces = function
+          | Atoms xs -> List.map (fun x -> Atoms [x]) xs
+          | Union ts -> List.concat_map pieces ts
+          | t -> [t] in
+        let objective = function
+          | Named _ | Shape _ | Exact _ | Ctors _ | Callable -> true
+          | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Top
+          | Bigint | Symbol | BigintLit _ -> false in
+        let heads piece arm = match piece,arm with
+          | Atoms [x],Atoms ys when objective x -> List.exists objective ys
+          | Atoms [x],Atoms ys -> List.mem x ys
+          | _ -> false in
+        let parts = pieces left in
+        let owner piece = match List.find_opt (fun a -> local a = None && heads piece a) arms with
+          | Some a -> a
+          | None -> List.find (fun a -> local a <> None) arms in
+        List.iter (fun arm ->
+          let received = List.filter (fun piece -> owner piece = arm) parts in
+          match received with
+          | [] -> let rec binders = function
+              | Rigid _ as t -> Option.to_list (local t)
+              | Union ts -> List.concat_map binders ts
+              | Atoms atoms -> List.concat_map (function
+                  | Named (_,args) -> List.concat_map binders args
+                  | _ -> []) atoms
+              | Meet _ -> [] in
+            List.iter (fun (v:variable) -> v.lower <- add v.lower (Atoms [])) (binders arm)
+          | received -> List.iter (fun piece -> constrain piece arm) received) arms
       | _ -> ()) (* Unsupported structure contributes no guessed constraints;
                     Lean still checks the entire substituted signature. *) in
   List.iter2 (fun actual domain -> constrain actual domain) actuals domains;

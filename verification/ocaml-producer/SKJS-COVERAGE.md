@@ -858,6 +858,36 @@ export function witness(): string {
 
 and `node` throws at the marked line.
 
+### Confirmed: `await` passes a record through (`tests/expect-error/promise-object.ts#testAwaitPlainObject`)
+
+SKJS, like TypeScript, types `await o` at `o`'s own type when `o` is a record
+that names no `then` (a lint warning only), and `testAwaitAliasContract`
+states that awaiting a plain object preserves its identity. Record types are
+open, so the record may own a `then`, and `await` then calls it and yields
+what it passes. The pipeline awaits only a promise or a primitive
+([DESIGN.md](../DESIGN.md#async-functions-and-await)) and refuses the unit.
+Witness: SKJS reports no error for
+
+```ts
+async function testAwaitPlainObject(o: { a: number }): Promise<number> {
+  const r = await o;
+  return r.a;
+}
+export async function witness(): Promise<string> {
+  const o = {
+    a: 1,
+    then(resolve: (v: string) => void): void {
+      resolve("s");
+    },
+  };
+  const n = await testAwaitPlainObject(o);
+  return n.toFixed(1);   // TypeError: Cannot read properties of undefined
+}
+const s: string = await witness();
+```
+
+and `node` throws at the marked line: `r` is `"s"`, and `r.a` is `undefined`.
+
 ### Undetermined
 
 None of the other search refusals looked like SKJS errors on reading their

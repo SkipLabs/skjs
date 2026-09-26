@@ -25,5 +25,25 @@ export async function chained(p: Promise<number>): Promise<number> {
 async function start(): Promise<boolean> {
   return true;
 }
+// Awaiting a primitive yields it, as does awaiting a union of a promise and
+// primitives; an async function may return a promise of a primitive, which
+// its own promise adopts.
+export async function passes(n: number): Promise<number> {
+  return await n;
+}
+export async function either(
+  b: boolean,
+  p: Promise<number>,
+  n: number,
+): Promise<number> {
+  const x = b ? p : n;
+  return await x;
+}
+export async function forwards(p: Promise<string>): Promise<string> {
+  return p;
+}
+export function forwardsLater(p: Promise<number>): () => Promise<number> {
+  return async () => p;
+}
 const started: boolean = await start();
 await wait(start());

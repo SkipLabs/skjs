@@ -9,11 +9,14 @@
  * to.
  *
  * - `await e` is `%Await%(e)`: a promise settles, if ever, to a value of its
- *   type argument, and awaiting it yields that value. Other jobs may run in
- *   between, as they may during any call.
+ *   type argument, and awaiting it yields that value; awaiting a primitive,
+ *   which is never a thenable, yields the primitive itself. Other jobs may
+ *   run in between, as they may during any call.
  * - `return e` in an async function is `return %AsyncReturn%(e)`: the promise
- *   the call returned settles to `e`. Only a primitive is admitted, since
- *   JavaScript adopts a thenable object instead of settling to it.
+ *   the call returned settles to `e` where `e` is a primitive, and adopts `e`
+ *   where it is a promise of a primitive, settling to what `e` settles to.
+ *   No other object is admitted, since JavaScript adopts a thenable object
+ *   instead of settling to it.
  * - Completing an async function is `return %AsyncComplete%()`: its promise
  *   settles to `undefined`, which `Promise<void>` admits.
  * - `for (const x of xs)` over an array steps `%Iterate%(xs)`: the array's
@@ -49,6 +52,9 @@ type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
 const span: [number, number] = [0, 0];
 const atom = (name: AtomName): TypeTerm => ({ k: "atom", name, span });
 const binder: TypeTerm = { k: "binder", name: "T", span };
+/** A second binder, for the primitives a step passes through unchanged. */
+const other: TypeTerm = { k: "binder", name: "U", span };
+const either = (...parts: TypeTerm[]): TypeTerm => ({ k: "union", span, parts });
 const fn = (params: TypeTerm[], result: TypeTerm): Signature =>
   ({ k: "function", receiver: null, params, rest: null, result, span });
 /** The values no object is: a promise resolved with one settles to it. */
@@ -66,8 +72,14 @@ const step: Signature = fn([], { k: "union", span, parts: [
 export function intrinsics(promise: (argument: TypeTerm) => TypeTerm):
   { name: string; typeParams: { name: string; bound: TypeTerm | null }[]; type: Signature }[] {
   return [
-    { name: awaitName, typeParams: [{ name: "T", bound: null }], type: fn([promise(binder)], binder) },
-    { name: asyncReturnName, typeParams: [{ name: "T", bound: primitive }], type: fn([binder], promise(binder)) },
+    // `await` of a promise of `T` or of a primitive `U`: what the promise
+    // settles to, or the primitive itself.
+    { name: awaitName, typeParams: [{ name: "T", bound: null }, { name: "U", bound: primitive }],
+      type: fn([either(promise(binder), other)], either(binder, other)) },
+    // Settling to a primitive `T`, or adopting a promise of a primitive `U`:
+    // adoption calls its `then`, which passes a `U`, and settles to it.
+    { name: asyncReturnName, typeParams: [{ name: "T", bound: primitive }, { name: "U", bound: primitive }],
+      type: fn([either(binder, promise(other))], promise(either(binder, other))) },
     { name: asyncCompleteName, typeParams: [], type: fn([], promise(atom("void"))) },
     { name: iterateName, typeParams: [{ name: "T", bound: null }],
       type: fn([{ k: "array", readonly: true, element: binder, span }], step) },
