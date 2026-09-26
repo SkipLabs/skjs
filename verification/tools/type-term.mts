@@ -61,6 +61,41 @@ export function classMemberRefusal(member: ts.ClassElement): string {
 export const REST_CONTRACT =
   "a rest parameter needs a tuple of required positions or an array";
 
+/** A rest parameter's type, a declared alias read through its equation at
+ * the reference's arguments, as TypeScript reads one: the array a call
+ * collects is viewed at that equation. */
+export function restTerm(scope: TermScope, type: TypeTerm): TypeTerm {
+  for (let seen = 0; type.k === "reference" && seen < 16; seen++) {
+    const equation = scope.equation?.(type);
+    if (!equation) break;
+    type = equation;
+  }
+  return type;
+}
+
+/** Why a rest parameter's type is no contract for the array a call
+ * collects, by its form. */
+export function restRefusal(type: TypeTerm): string {
+  switch (type.k) {
+    case "parameter":
+      return `${REST_CONTRACT}: one typed by a declaration's type parameter is a pack only once the declaration ` +
+        "is applied, and a pack is over a function's own type parameter";
+    case "binder":
+      return `${REST_CONTRACT}: one typed by a type parameter would bind the array a call collects at that ` +
+        "parameter, which only an instance fixes; a function definition has no allocation rule for it (a function " +
+        "type's is a pack)";
+    case "intersection":
+      return `${REST_CONTRACT}: one typed by an intersection would view the fresh array a call collects at the ` +
+        "meet of its operands, which has no representation";
+    case "tuple":
+      return `${REST_CONTRACT}: a tuple with optional or rest elements is several lengths, one signature each`;
+    case "array": case "union": case "reference":
+      return REST_CONTRACT;
+    default:
+      return `${REST_CONTRACT}: the array a call collects is no value of a type that is not an array`;
+  }
+}
+
 export type TermScope = {
   source: SourceFile;
   fail(node: Node | null, message: string): never;
@@ -91,6 +126,10 @@ export type TermScope = {
    * computes for it, `"a" | "b"` for an alias of those, or null. A scope
    * without it reads the keys as written. */
   keys?(node: TypeNode): TypeTerm | null;
+  /** A reference to a declared type alias of an array, a tuple or another
+   * alias: its equation at the reference's arguments, or null. A scope
+   * without it reads no rest parameter through an alias. */
+  equation?(reference: Extract<TypeTerm, { k: "reference" }>): TypeTerm | null;
 };
 
 /** The type forms TypeScript computes from other types, as the syntax kind a
@@ -464,12 +503,12 @@ export function signatures(scope: TermScope, parameters: readonly ts.ParameterDe
       scope.fail(p, "expected an ordinary parameter");
     if (p.dotDotDotToken) {
       if (index !== ordinary.length - 1) scope.fail(p, "a rest parameter must be the last one");
-      const type = typeTerm(scope, p.type, p);
+      const type = restTerm(scope, typeTerm(scope, p.type, p));
       // A union of tuples is one signature per tuple.
       if (type.k === "union") {
         alternatives = type.parts.map(part => {
-          const contract = restPositions(part);
-          if (!contract || !("positions" in contract)) return scope.fail(p, REST_CONTRACT);
+          const contract = restPositions(restTerm(scope, part));
+          if (!contract || !("positions" in contract)) return scope.fail(p, restRefusal(part));
           return contract.positions;
         });
         continue;
@@ -484,7 +523,7 @@ export function signatures(scope: TermScope, parameters: readonly ts.ParameterDe
       // TypeScript itself reads it, so the signature carries them. An array
       // rest is any number of them: the signature says what each one is.
       const contract = restPositions(type);
-      if (!contract) scope.fail(p, REST_CONTRACT);
+      if (!contract) scope.fail(p, restRefusal(type));
       if ("positions" in contract) params.push(...contract.positions);
       else rest = contract.element;
     } else {

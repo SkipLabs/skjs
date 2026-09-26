@@ -188,7 +188,21 @@ admits no actual that runs code after the first spread, so the reads see what
 JavaScript's spreads, each read where it is written, would.
 That array is fresh, so a rest parameter's contract may also be `readonly`
 (`readonly T[]`, a readonly tuple) or name one through a declared alias: the
-body sees the fresh array through that view, which gives up only writes.
+body sees the fresh array through that view, which gives up only writes. A
+generic alias is read through its equation at the reference's arguments,
+$\mathit{Alias}\langle\vec A\rangle = E[\vec A/\vec X]$, in a definition, a
+function type and a declared function alike, as TypeScript reads it:
+
+$$
+\frac{\mathsf{type}\ \mathit{Alias}\langle\vec X\rangle = E\quad E[\vec A/\vec X]\ \text{an array or a tuple of required positions}}
+     {\ldots x : \mathit{Alias}\langle\vec A\rangle\ \text{collects into}\ E[\vec A/\vec X]}
+$$
+
+A rest typed by anything else is refused by its form: by a type parameter
+(a function definition has no allocation rule for an array only an instance
+fixes; a function type's is a pack), by an intersection (the fresh array's
+meet with the other operands has no representation), by a tuple with
+optional or rest elements (several lengths), or by what is no array.
 
 A function type is a promise about the actual lists a caller may write, not
 about the callee's code. A fixed signature $\vec A\to B$ admits the prefixes of

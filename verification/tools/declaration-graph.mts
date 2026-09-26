@@ -555,11 +555,35 @@ export function collectDeclarations(file: string, options: {
     // The type an imported value's declaration states, and the declarations
     // that type reaches, which join the graph.
     const valueStarts: TypeDeclaration[] = [];
+    // The type aliases a value's type names, by identity: a rest parameter
+    // typed by one is read through its equation (`restTerm`).
+    const aliasNodes = new Map<string, ts.TypeAliasDeclaration>();
+    const aliasKey = (identity: DeclarationIdentity) =>
+      `${identity.module}#${identity.name}@${identity.span[0]}:${identity.span[1]}`;
     const valueScope = (node: Node, what: string, binders: string[] = []): TermScope => {
       const source = node.getSourceFile();
       return {
         source,
         annotation: false,
+        // An alias's body, its parameters read as the reference's arguments.
+        equation: (reference) => {
+          const alias = reference.reference.target && aliasNodes.get(aliasKey(reference.reference.target));
+          const parameters = (alias?.typeParameters ?? []).map(p => p.name.text);
+          if (!alias || reference.args.length !== parameters.length) return null;
+          let body = alias.type;
+          while (ts.isParenthesizedTypeNode(body)) body = body.type;
+          if (!(ts.isArrayTypeNode(body) || ts.isTupleTypeNode(body) || ts.isTypeReferenceNode(body) ||
+              (ts.isTypeOperatorNode(body) && body.operator === ts.SyntaxKind.ReadonlyKeyword)))
+            return null;
+          const outer = valueScope(alias, what);
+          return typeTerm({ ...outer, named: (part, pos, read) => {
+            const index = ts.isIdentifier(part.typeName) ? parameters.indexOf(part.typeName.text) : -1;
+            const argument = reference.args[index];
+            if (index < 0 || !argument) return outer.named(part, pos, read);
+            if (part.typeArguments?.length) throw Error(`type parameter applied as constructor: ${part.typeName.getText(alias.getSourceFile())}`);
+            return argument;
+          } }, body, alias);
+        },
         symbol: symbolOf,
         computed: (part, pos, read) => computedType(computedContext, part, pos, read),
         keys: keyTypeOf,
@@ -579,6 +603,7 @@ export function collectDeclarations(file: string, options: {
           if (args.length < parameters.filter(p => !p.defaultType).length || args.length > parameters.length)
             throw Error(`type argument arity: ${identityOf(targetNode).module}#${name.text}`);
           valueStarts.push(targetNode);
+          if (ts.isTypeAliasDeclaration(targetNode)) aliasNodes.set(aliasKey(identityOf(targetNode)), targetNode);
           return { k: "reference", reference: { name: name.text, span: pos,
             arguments: args.map(arg => [arg.getStart(source), arg.end] as Span), target: identityOf(targetNode) },
             args: args.map(read), span: pos };

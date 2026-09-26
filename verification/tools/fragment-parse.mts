@@ -39,7 +39,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { Atom } from "./claim.mts";
 import type { DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
-import { bigintText, CLASS_ACCESS, CONSTRUCTOR_DEFAULT, METHOD_RECEIVER, classMemberRefusal, computedForm, numericKey, optionalTerm, restPositions, REST_CONTRACT, signature, typeTerm,
+import { bigintText, CLASS_ACCESS, CONSTRUCTOR_DEFAULT, METHOD_RECEIVER, classMemberRefusal, computedForm, numericKey, optionalTerm, restPositions, restRefusal, restTerm, signature, substitute, typeTerm,
   type TermScope } from "./type-term.mts";
 import type {
   Ast,
@@ -294,10 +294,11 @@ class Gate {
   private readonly typeParamScopes: Set<string>[] = [];
   /** Local spelling to the arity and identity of its declaration root. A
    * reference names the declaration TypeScript resolved the spelling to. */
-  /** The equations of the declared aliases without parameters that name an
-   * array, a tuple or another alias: what a rest parameter typed by one
-   * collects into (`restType`). */
-  private readonly arrayEquations = new Map<string, TypeTerm>();
+  /** The equations of the declared aliases that name an array, a tuple or
+   * another alias, over their parameters: what a rest parameter typed by one
+   * collects into (`restType`, `restTerm`). */
+  private readonly aliasEquations = new Map<string, { total: number; declaration: DeclarationIdentity;
+    expression: TypeTerm }>();
   private readonly declaredTypes = new Map<string,
     { required: number; total: number; declaration: DeclarationIdentity }>();
   /** Global spellings TypeScript binds to a standard library type read at
@@ -902,8 +903,8 @@ class Gate {
     if (this.declaredTypes.has(name))
       this.fail(node, "duplicate type name");
     this.declaredTypes.set(name, { required, total, declaration });
-    if (total === 0 && (expression.k === "array" || expression.k === "tuple" || expression.k === "reference"))
-      this.arrayEquations.set(name, expression);
+    if (expression.k === "array" || expression.k === "tuple" || expression.k === "reference")
+      this.aliasEquations.set(name, { total, declaration, expression });
   }
 
   fail(node: Node | null, message: string): never {
@@ -997,6 +998,17 @@ class Gate {
         return result;
       },
       keys: (node) => this.keyTypes.get(this.span(node).join(":")) ?? null,
+      // The alias the reference names, as TypeScript resolved it, at every
+      // one of its parameters.
+      equation: (reference) => {
+        const alias = this.aliasEquations.get(reference.reference.name);
+        const target = reference.reference.target;
+        if (!alias || reference.args.length !== alias.total || !target ||
+            target.module !== alias.declaration.module || target.name !== alias.declaration.name ||
+            target.span[0] !== alias.declaration.span[0] || target.span[1] !== alias.declaration.span[1])
+          return null;
+        return substitute(alias.expression, reference.args);
+      },
       computed: (node, span) => {
         const result = this.computedTypes.get(`${span[0]}:${span[1]}`);
         if (!result) return this.fail(node, `type outside the fragment (${ts.SyntaxKind[node.kind]})`);
@@ -1078,10 +1090,8 @@ class Gate {
    * through its equation, as TypeScript reads one: the parameter's type is
    * that equation. */
   restType(p: ParameterDeclaration): TypeTerm {
-    let type = this.typeOf(p.type, p);
-    for (let seen = 0; type.k === "reference" && type.args.length === 0 && seen < 16; seen++)
-      type = this.arrayEquations.get(type.reference.name) ?? type;
-    if (!restPositions(type)) this.fail(p, REST_CONTRACT);
+    const type = restTerm(this.scope, this.typeOf(p.type, p));
+    if (!restPositions(type)) this.fail(p, restRefusal(type));
     return type;
   }
 
