@@ -1504,23 +1504,9 @@ kind, continuation or rule; each is a shape of ordinary nodes and edges.
   held, ending in a node that throws it again. Where neither the body nor the
   handler can complete, the normal way leads to an unreachable node that
   loops on itself and states nothing.
-- A declaration hiding an outer value of its name adds no node either: the
-  outer slot stays in the context, anonymous and fixed at its type, so no
-  later source name resolves to it (`shadow`), and it is dropped where the
-  block ends, as the block's own slots are. With $\mathit{mentions}(S)$ the
-  names statements $S$ mention or declare (`earlierNames`), a block
-  $S_1;\ \mathsf{const}\ x=e;\ S_2$ whose $x$ hides an outer immutable
-  binding is lowered only where
-
-$$
-x\notin\mathit{mentions}(S_1)\cup\mathit{mentions}(e)
-$$
-
-  since JavaScript binds $x$ to the declaration from the block's start: any
-  such mention, a closure's included, would read the declaration's binding
-  before it is initialized, not the outer one. A `let` alike, and a pattern
-  per element, $e$ being its initializer and the defaults evaluated before
-  that element (`patternMentions`); an outer cell is not hidden.
+- A declaration hiding an outer binding of its name adds no node: the parser
+  has given it a name of its own ([shadowing](#derived-source-forms)), so
+  the lowering never meets two bindings of one name.
 
 ## State
 
@@ -2245,11 +2231,18 @@ $$
      {\Gamma\vdash_R\ \mathsf{const}\ x=e;\ S}\ \textsc{shadow}
 $$
 
-and likewise for `let`, parameters, patterns, `for...of` and `catch`
-bindings. A read of a shadowing local above its declaration and outside any
-closure (`const first = seed; const seed = 2;`) is refused by the parser:
-JavaScript throws there (the temporal dead zone), and the outer binding is
-not what it reads.
+and likewise for `let` (a cell included), parameters, patterns, closure
+parameters, `for...of` and `catch` bindings, in function and closure bodies
+alike. JavaScript gives the name to the declaration from its block's start,
+so a mention of a shadowing local above its declaration, a closure's
+included, or in its own initializer is refused by the parser (the temporal
+dead zone: JavaScript throws there, and the outer binding is not what it
+reads); a pattern element may name one bound before it in the pattern:
+
+$$
+\frac{x'\ \text{renames}\ x\ \text{declared at}\ d\quad \text{a mention}\ m\ \text{of}\ x'\quad m<d\ \lor\ m\in\mathit{init}(d)}
+     {\text{refused (temporal dead zone)}}
+$$
 
 **A `let` nothing assigns.** A `let` statement whose bindings are all
 initialized and which no assignment, compound or logical assignment, update,

@@ -3685,14 +3685,17 @@ export function parseFile(file: string, carriesContext = false,
           const declared = shadowing.get(`${dStart}:${dEnd}`);
           const renamed = gate.renames.get(`${dStart}:${dEnd}`);
           if (!declared || renamed === undefined) return;
-          // A read above its declaration, outside any closure, runs before
-          // the binding is initialized: JavaScript throws there.
+          // JavaScript gives a block's declared name to the declaration from
+          // the block's start: a mention above the declaration, a closure's
+          // included, or in its own initializer is its binding before it is
+          // initialized (the temporal dead zone), never the outer one. A
+          // pattern's element may name one bound before it in the pattern.
           const read = bindingNodes.find(n => n.getStart(source) === start && n.end === end);
-          const scope = bindingScope(declared.parent ?? declared);
-          let closure = false;
-          for (let at = read?.parent; at && at !== scope; at = at.parent)
-            if (ts.isFunctionLikeDeclaration(at)) closure = true;
-          if (read && start < dStart && !closure) early.push(read);
+          let declaration: Node | undefined = declared.parent;
+          while (declaration && ts.isBindingElement(declaration)) declaration = declaration.parent?.parent;
+          const initializer = declaration && ts.isVariableDeclaration(declaration) ? declaration.initializer : undefined;
+          const inInitializer = !!initializer && start >= initializer.getStart(source) && end <= initializer.end;
+          if (read && (start < dStart || inInitializer)) early.push(read);
           gate.renames.set(`${start}:${end}`, renamed);
         },
         contextualParams: contextualNodes.map(node => gate.span(node)),

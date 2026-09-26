@@ -338,9 +338,21 @@ with a storage contract fixed where they are declared: the annotation, or
 the producer's proposal (TypeScript's widened or evolved type), against which
 the initializer and every write are checked. A closure holds the cell's
 identity; a `const` copy holds a snapshot
-([rules](PROGRAM-TYPING.md#mutable-bindings-and-module-constants)). A
-declaration may hide an outer value for the rest of its block; any mention of
-the name earlier in the block or in its own initializers is refused, as
+([rules](PROGRAM-TYPING.md#mutable-bindings-and-module-constants)). A `let`
+statement whose initialized bindings nothing in their scope writes, closures
+included, is a `const`: each holds its initial value throughout, so a test
+narrows it and a `let` pattern binds (`LET-CONST`). A `let` that is written
+and holds a union of objects is not narrowed by a test of its object: a
+cell's known contents are primitive, and a write in between may replace it.
+An assigned `let` pattern is refused: each binding would be a cell of its own.
+
+A local may hide an outer binding of its name. The parser renames it, by
+the declaration TypeScript binds each reference to, to a name no source
+spells (`x@line:col`), so the lowering never meets two bindings of one name:
+$\alpha$-conversion, for `const`, `let`, parameters, patterns, closure
+parameters, `for...of` and `catch` bindings in any body
+([shadowing](PROGRAM-TYPING.md#derived-source-forms)). A mention above the
+declaration, a closure's included, or in its own initializer is refused, as
 JavaScript's temporal dead zone throws there.
 
 ### Objects and prototypes
@@ -448,7 +460,11 @@ actual lists a caller may write and what the call then guarantees
 (`callsT`, `restsT`), independently of the code's arity
 ([one meaning for callable contracts](SEMANTICS.md#one-meaning-for-callable-contracts)).
 A rest parameter makes the code variadic: invocation collects the remaining
-actuals into a fresh array. A rest typed by a binder is an argument pack,
+actuals into a fresh array, viewed at the rest's type: an array or a tuple of
+required positions, readonly or not, or a declared alias of one, a generic
+alias read through its equation at the reference's arguments. A rest typed
+by a function's type parameter in a definition, by an intersection, by a
+tuple of several lengths or by what is no array is refused by its form. A rest typed by a binder is an argument pack,
 whose contracts are over lists at the actuals' own level
 ([argument packs](POSITIVE-TYPES.md#argument-packs)). A closure claimed at
 several signatures is checked once per signature. A spread among the actuals
@@ -474,7 +490,10 @@ string's `length` and indices are its own
 Every signature states its receiver and every call passes one:
 `undefined` for a plain call, the object for a method call, the first
 argument for `.call` and `.apply`. The receiver rule is strict mode's; `this`
-in sloppy code is refused. `.bind` allocates a forwarding descriptor whose
+in sloppy code is refused, and a sloppy function that reads no `this` is the
+strict one, its receiver being unobservable. A class method declaring
+`this: T` is refused: a method member is [host-relative](#method-members-are-host-relative),
+its signatures stating no receiver apart from the host. `.bind` allocates a forwarding descriptor whose
 receiver a later `.bind` or `.call` cannot replace (`callsT_bound`).
 
 ### Generic types
@@ -554,7 +573,7 @@ text.
 
 | Assumption | Where it is stated |
 | --- | --- |
-| The parser represents the source faithfully: it admits only the fragment, and its lowerings (unbraced arms, `switch`, `for`, templates, enums, optional chains, async forms, patterns, dead code) preserve JavaScript's execution. | `tools/fragment-parse.mts`, `fragment.mts` |
+| The parser represents the source faithfully: it admits only the fragment, and its lowerings (unbraced arms, `switch`, `for`, templates, enums, optional chains, async forms, patterns, dead code, a shadowing local's renaming by the declaration TypeScript binds each reference to, a `let` nothing writes as a `const`, a rest parameter's alias equation) preserve JavaScript's execution. | `tools/fragment-parse.mts`, `fragment.mts` |
 | Source extraction preserves control flow, lexical binding, evaluation order and annotations: which program point a claim is attached to is unproved. No source-to-graph preservation theorem exists. | `Source/Fragment.lean`, `Source/SourceExtraction.lean` |
 | Decoding represents the submitted AST, declarations, claims and evidence faithfully. | `RequestJson.lean`, `SourceClaimJson.lean` |
 | TypeScript's checker resolves each name to its declaration in the file's project, whose strict `tsconfig.json` (paths, links, library set, type packages) reflects the real build; a TypeScript error in a collected declaration or on an import it passes through refuses the graph. The parser checks TypeScript read the bytes it parsed. | `tools/declaration-graph.mts` |
@@ -625,7 +644,12 @@ not yet taken are [next steps](#next-steps); a search failure is neither.
 | `===` between two operands that may both be objects without a field (functions, records of optional fields, `unknown`); narrowing by object identity | Such values have no identity in the model; a statement entry states no slot equality. |
 | A user-defined type guard with a body (`x is T`); narrowing through a declared one | Its promise relates the result to the argument, which no function type states. |
 | An accessor (`get`/`set`), `__proto__`, a computed key in a literal, a spread of a string, a function or a class value | The heap has data properties only; the key or copy is known only at run time; the model gives a closure a field JavaScript's lacks. |
-| An array rest of unknown length (a slice) | Its length is known only at run time; the calculus has no slice term. |
+| An array rest of unknown length (a slice), or over a union of tuples of different lengths | Its length is known only at run time; the calculus has no slice term ([next steps](#next-steps)). |
+| A rest parameter of a definition typed by a type parameter; one typed by an intersection, by a tuple with optional or rest elements, or by what is no array | A definition has no allocation rule for an array only an instance fixes (a function type's is a pack); the fresh array's meet has no representation; several lengths are several signatures; the collected array is no value of it. |
+| A `let` pattern whose bindings are written; a test of a written `let` holding a union of objects | Each binding would be a cell with its own contract; a cell's known contents are primitive. |
+| An array pattern over a value that may not be an array | It would step the value's own iterator. |
+| A class method declaring `this: T`; a generic class method; a constructor parameter with a default | A method member is host-relative; the closure's claim would be a quantified callable, which the claim format does not encode; construct code is a term over plain parameters with no default schedule. |
+| A class member with a computed key or a `#private` name; a static `[Symbol.hasInstance]`; an index signature or static block in a class; a generic class in inheritance | A method is a binding and a prototype key named by its plain name; a private name is a slot, not a property; `instanceof` becomes a call; instances are what construction allocates; a static block is code the definition runs; a generic base's construction is quantified. |
 | `for...of` or a spread over a non-array iterable (string, `Set`, `Map`, a client iterator); `for await` | `%Iterate%` is stated for arrays; a client iterator's `return` runs on early exit. |
 | An async function returning an object other than a promise of a primitive, a void async function returning a value, `await` of a non-promise object at its own type | JavaScript adopts thenables, and a record type does not rule out a `then`. |
 | `String(o)`, `o + ""`, `new Date(o)`, `new Set(it)` of a non-array iterable, `JSON.parse` with a reviver, `JSON.stringify` with a replacer, of an array or an open record | The host runs client code (`toString`, `valueOf`, an iterator, a callback, a `toJSON`). |
@@ -772,8 +796,17 @@ units certified against each other's signatures compose.
 names one intrinsic today. Strings likewise. A tuple as `Iterable<T>` needs
 the search to relate a tuple's store to the prototype's iterator element.
 
-**Remaining source forms.** A `break`/`continue` through a `finally`; `let`
-patterns and assignment patterns into fields; async class methods; `#private`
+**Array rests of unknown length.** A slice is principled as a trusted step
+of the same trust as `%Iterate%`: `%RestFrom%<T>(xs: readonly T[], k)`, a
+fresh array of `xs`'s elements from `k` to its current length. JavaScript
+steps the array's iterator on after the pattern's elements, and a call made
+after their reads and defaults reads the current length as that step does.
+It needs `restArray` and `arrayAssigns` to emit the call and the producer to
+claim its instance; a rest over a union of tuples of different lengths also
+needs a split by arm to keep each arm's positions.
+
+**Remaining source forms.** A `break`/`continue` through a `finally`; written
+`let` patterns and assignment patterns into fields; async class methods; `#private`
 members and static blocks; a method call on a union of primitives, which
 needs one callee contract its receiver meets; a source binder used both as a
 pack and as an array value; explicit type arguments on an element call; user
