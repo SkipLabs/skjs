@@ -1640,8 +1640,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | Alloc fs ->
       let contract = match Option.bind expected (object_hint declarations []) with
         | Some shape -> Some shape
-        | None -> Option.bind expected (fun t -> discriminated_record declarations t
-            (List.filter_map (function (Name n,e) -> Some (n,e) | (Key _,_) -> None) fs)) in
+        | None -> Option.bind expected (fun t -> discriminated_record declarations t fs) in
       let fields = List.map (fun (name,e) ->
         let hint = Option.bind contract (fun s -> List.find_opt (fun (f:Semantic.field) -> f.name=name) s.fields) in
         (* A key the contract names is built at its member's type; any other
