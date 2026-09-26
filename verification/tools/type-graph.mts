@@ -57,19 +57,19 @@ export type Clause =
    * own. Each is left out when there are none. */
   | { refs: { first: Fields; rest: Fields[]; views: Fields; optional?: OptionalField[];
       methods?: MethodSig[]; bounds?: KeyBound[] } }
-  /** Readonly string index views apply to every present own field; each of
-   * `cells`, a mutable index signature's, is also one every present own field
-   * holds exactly. Left out when there are none. */
+  /** Readonly index views apply to every present own field their key class
+   * admits; each of `cells`, a mutable index signature's, is also one every
+   * such field holds exactly. Left out when there are none. */
   | {
       dict: {
         first: Fields;
         rest: Fields[];
         views: Fields;
-        indexes: Labels[];
+        indexes: IndexEntry[];
         optional?: OptionalField[];
         methods?: MethodSig[];
         bounds?: KeyBound[];
-        cells?: Labels[];
+        cells?: IndexEntry[];
       };
     }
   /** A tuple contract on an array store: required positions, optional
@@ -191,9 +191,27 @@ export function decodeLabels(v: unknown, size: number): Labels {
   // Checked field by field above: this is where that becomes a type.
   return v as Labels;
 }
+/** The keys an index signature constrains: every string key, the canonical
+ * numeric ones, or every symbol key (Lean's `IndexKeys`). */
+export type IndexClass = "strings" | "numeric" | "symbols";
+/** An index contract: its key class and the type of each present key. */
+export type IndexEntry = [IndexClass, Labels];
+function isIndexClass(v: unknown): v is IndexClass {
+  return v === "strings" || v === "numeric" || v === "symbols";
+}
+/** The key type an index signature over a class is written with. */
+export function indexKeyText(keys: IndexClass): string {
+  return keys === "strings" ? "string" : keys === "numeric" ? "number" : "symbol";
+}
 export function decodeGraph(value: unknown): TypeGraph {
   const rows = array(value);
   const labels = (v: unknown) => decodeLabels(v, rows.length);
+  const indexEntry = (v: unknown) => {
+    const pair = array(v);
+    if (pair.length !== 2 || !isIndexClass(pair[0]))
+      throw Error("expected an index key class and its type");
+    labels(pair[1]);
+  };
   const arrows = (v: unknown) =>
     array(v).forEach((a) => {
       const sig = array(a);
@@ -334,8 +352,8 @@ export function decodeGraph(value: unknown): TypeGraph {
       fields(r.first);
       array(r.rest).forEach(fields);
       fields(r.views);
-      array(r.indexes).forEach(labels);
-      if ("cells" in r) array(r.cells).forEach(labels);
+      array(r.indexes).forEach(indexEntry);
+      if ("cells" in r) array(r.cells).forEach(indexEntry);
       if ("optional" in r) optionalFields(r.optional);
       if ("methods" in r) methods(r.methods);
       if ("bounds" in r) bounds(r.bounds);
@@ -487,9 +505,9 @@ function clauseText(c: Clause): string {
       [c.dict.first, ...c.dict.rest].map(printFields).join(" & "),
       ...(c.dict.views.length ? [`readonly ${printFields(c.dict.views)}`] : []),
       ...c.dict.indexes.map(
-        (index) => `readonly {[key: string]: ${printLabels(index)}}`,
+        ([keys, index]) => `readonly {[key: ${indexKeyText(keys)}]: ${printLabels(index)}}`,
       ),
-      ...(c.dict.cells ?? []).map((index) => `{[key: string]: ${printLabels(index)}}`),
+      ...(c.dict.cells ?? []).map(([keys, index]) => `{[key: ${indexKeyText(keys)}]: ${printLabels(index)}}`),
       ...(c.dict.optional?.length ? [`optional ${printOptional(c.dict.optional)}`] : []),
 
       ...(c.dict.methods?.length ? [`methods ${c.dict.methods.map((m) => keyText(m.key)).join(", ")}`] : []),

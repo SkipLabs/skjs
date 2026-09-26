@@ -1074,14 +1074,16 @@ function liftClause(types: unknown, clause: unknown, depth: number): unknown {
       !Array.isArray(dict.rest) ||
       dict.rest.length ||
       !Array.isArray(dict.indexes) ||
-      dict.indexes.length !== 1
+      dict.indexes.length !== 1 ||
+      !Array.isArray(dict.indexes[0]) ||
+      dict.indexes[0].length !== 2
     )
       return JSON.stringify(clause);
     const record = cell(types, dict.first, null, depth - 1, dict.views);
     return {
       ...record,
       indexSignature: {
-        read: liftType(types, dict.indexes[0], depth - 1),
+        read: liftType(types, dict.indexes[0][1], depth - 1),
         write: { top: false, atoms: [] },
       },
     };
@@ -1379,7 +1381,7 @@ function lowerAtom(types: unknown, atom: unknown): number[] {
                 first,
                 rest: [],
                 views: readViews,
-                indexes: [lowerType(types, indexSignature.read)],
+                indexes: [["strings", lowerType(types, indexSignature.read)]],
               },
             }
           : {

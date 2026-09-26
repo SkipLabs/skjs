@@ -561,13 +561,16 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
       -- source spells.
       let K ← exprType fc key
       let G := SourceTypes.graph (← table)
+      let T ← table
+      let refuse := fun {α : Type} (reason : String) =>
+        (throw (locatedRefusal T p .expressionClaim reason) : Compiler α)
       if !(← get).grows.contains p then
-        throw "a write at a key known only at run time may add the key to an object another reference holds, which would see the object's keys change: a key-adding write is typed only on a local's own fresh object that nothing else has reached"
+        refuse "a write at a key known only at run time may add the key to an object another reference holds, which would see the object's keys change: a key-adding write is typed only on a local's own fresh object that nothing else has reached"
       if (keySingletons G K).isSome then
-        throw "a key-adding write at one of several literal keys is not lowered: it needs a dispatch on the key, one copy of the object per key"
+        refuse "a key-adding write at one of several literal keys is not lowered: it needs a dispatch on the key, one copy of the object per key"
       if (PositiveRules.expand G K).any (fun c => match c with | .str | .top => true | _ => false) then
-        throw "a key-adding write at a string known only at run time: the key may spell one the model keeps for itself (`[]`, `[[proto]]`), which JavaScript owns as an ordinary property"
-      throw "a key-adding write at a number or symbol known only at run time is not lowered: the copy that adds the key allocates only keys the source spells"
+        refuse "a key-adding write at a string known only at run time: the key may spell one the model keeps for itself (`[]`, `[[proto]]`), which JavaScript owns as an ordinary property"
+      refuse "a key-adding write at a number or symbol known only at run time is not lowered: the copy that adds the key allocates only keys the source spells"
     | .element => return .elemWrite p r key rhs
   | .withValue p f i ft bt => return .withValue p (← comparisonsExpr fc f) (← comparisonsExpr fc i) ft bt
   | .objectAssign p t ss => return .objectAssign p (← comparisonsExpr fc t) (← ss.mapM (comparisonsExpr fc))
