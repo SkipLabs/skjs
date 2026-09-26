@@ -2237,6 +2237,26 @@ closure (`const first = seed; const seed = 2;`) is refused by the parser:
 JavaScript throws there (the temporal dead zone), and the outer binding is
 not what it reads.
 
+**A `let` nothing assigns.** A `let` statement whose bindings are all
+initialized and which no assignment, compound or logical assignment, update,
+destructuring assignment or `for` head in their scope writes (closures
+included, found by the name the parser gives each binding) is the `const`
+statement: each binding holds its initial value throughout, so a read of it
+is that value either way:
+
+$$
+\frac{\overline{x}\ \text{initialized}\quad \overline{x}\notin\operatorname{written}(S)\quad \Gamma\vdash_R\ \mathsf{const}\ \overline{x=e};\ S}
+     {\Gamma\vdash_R\ \mathsf{let}\ \overline{x=e};\ S}\ \textsc{let-const}
+$$
+
+So a tag test narrows such a binding as it narrows a `const`, and a `let`
+pattern binds. A `let` pattern whose binding is written is refused: each
+binding would be a cell with a storage contract of its own, which a pattern
+does not lower to. A `let` that is written and holds a union of objects is
+not narrowed by a test of its object (a cell's known contents are primitive
+values, and a write between the test and the read may replace it); a read of
+a member only some arms state is refused with that reason.
+
 **Older spellings.** `<T>e` is `e as T` and `<const>e` is `e as const`,
 the same assertion (an obligation on the operand, never a fact); a
 top-level `;`, as one in a body, is nothing.
@@ -2274,6 +2294,27 @@ the nearest ancestor's (or none), and every read and test answers the same.
 chain holds. So the allocation's keys are exact, and `D`'s declared type,
 its own members and `B`'s, covers it through the prototype chain
 ([method coverage](POSITIVE-TYPES.md#clause-coverage), `CoversByProto`).
+
+What a class declaration may not hold, each for its reason:
+
+- a method declaring `this: T`: a method member is host-relative, its
+  signatures carrying no receiver ([DESIGN](DESIGN.md#method-members-are-host-relative));
+- a generic method: its closure's claim would be a quantified callable,
+  which the claim format does not encode (an interface's generic method is a
+  declared scheme and needs none);
+- a constructor parameter with a default: construct code is a term over
+  plain parameters, with no default schedule as a closure's `parameterOrder`;
+- a `#private` member (a slot, not a property), a member with a computed
+  key (a method is a binding and a prototype key named by its plain name),
+  and a static `[Symbol.hasInstance]`, which replaces the prototype-chain
+  test `instanceof` is here with a call;
+- an accessor (reading it runs code; a member read is a plain one), an
+  index signature (instances are what construction allocates), a static
+  block (code the definition runs);
+- extending a generic class, or a generic class extending one (a generic
+  base's construction is quantified, and no record of it at arguments is
+  kept), and extending `Array` (its instances are what the library's
+  constructor allocates, not an ordinary object).
 
 `e instanceof C`, with `C` an identifier TypeScript binds to a class the
 file declares at its top level, evaluates $e$, then `C` (read as its

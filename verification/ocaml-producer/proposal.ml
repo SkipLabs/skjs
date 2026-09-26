@@ -51,7 +51,7 @@ let definition declarations id args =
           List.mem (Shape {fields=[];indexes=[];calls=[];elements=None}) atoms -> own
       | Atoms [Shape inherited],Atoms [Shape local]
         when inherited.calls=[] && local.calls=[] && inherited.elements=None && local.elements=None
-             && (inherited.indexes=[] || local.indexes=[]) ->
+             && (inherited.indexes=[] || local.indexes=[] || inherited.indexes=local.indexes) ->
         (* A member both declare, as a derived class's override: the
            declaration's own is the hint; Lean's meaning is both, and a value
            must meet each. *)
@@ -96,10 +96,16 @@ let definition declarations id args =
       | Some merged -> merged
       | None -> if List.exists Semantic.mentions_rigid (t::ts) then t else Meet (t,ts) in
     let body = Inference.substitute ~meet solution d.expression in
+    (* A base named through an alias of another declaration is that
+       declaration, instantiated: its members are inherited by structure. *)
+    let rec base_of seen t = match t with
+      | Atoms [Named (named,named_args)] ->
+        if List.mem named seen then unsupported "cyclic inheritance";
+        base_of (named::seen) (instantiate seen named named_args)
+      | t -> t in
     List.fold_left (fun own base ->
       match Inference.substitute ~meet solution base with
-      | Atoms [Named (baseId,baseArgs)] ->
-        merge (instantiate (id::seen) baseId baseArgs) own
+      | Atoms [Named _] as named -> merge (base_of (id::seen) named) own
       | _ -> unsupported "heritage is not a named base")
       body d.bases
   | None -> unsupported ("missing declaration " ^ id) in
@@ -1269,6 +1275,17 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
        | Atoms xs as t when List.mem Top xs ->
          (try field_type declarations [] t n with Json.Error _ -> unsupported unknown_instance_reason)
        | t -> field_type declarations [] t n)
+    (* A `let` holding a union of objects is not narrowed by a test of its
+       object: what a cell is known to hold is a union of primitives
+       (`holding`), and an object's fields may change through an alias. A
+       member only some arms have is refused by that reason. *)
+    | Read (({node=Id name;_} as e),n)
+      when (match List.assoc_opt name env with Some (Storage _) -> true | _ -> false) ->
+      let t = expr env e in
+      (try field_type declarations [] t n with Json.Error m
+        when String.length m >= 27 && String.sub m 0 27 = "unsupported: missing field " ->
+        unsupported ("a read of " ^ key_text n ^ " on a `let` holding a union of objects, some without it: \
+          a test does not narrow a cell holding an object, whose known contents are primitive values"))
     | Read (e,n) -> field_type declarations [] (expr env e) n
     | Index (e,key) -> let receiver=expr env e in let key=expr env key in index_type declarations [] receiver key
     (* The right side runs after the receiver and the key: it sees what they
@@ -1930,8 +1947,15 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
          expressions := {pos=span;type_=rest_t;instantiation=None} :: !expressions;
          bind env target rest_t None)
     | PArray (elems,rest) ->
+      (* An array pattern reads an array's positions. Over another iterable
+         (a string, a `Set`, an object with its own `[Symbol.iterator]`) it
+         steps that iterable's iterator, which nothing here models. *)
+      let position i = try index_type declarations [] t (number_literal (string_of_int i)) with Json.Error m
+        when String.length m >= 27 && String.sub m 0 27 = "unsupported: missing field " ->
+        unsupported "an array pattern over a value that may not be an array: it would step that value's own \
+          iterator, which is not modeled; only an array's positions are read" in
       let env = List.fold_left (fun env (i,target,d) ->
-        bind env target (index_type declarations [] t (number_literal (string_of_int i))) d) env elems in
+        bind env target (position i) d) env elems in
       (match rest with
        | None -> env
        | Some (start,span,target) ->

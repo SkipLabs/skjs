@@ -1677,9 +1677,14 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       const what = `${identity.module}#${identifier.text}`;
       const known = library(identifier, what);
       // A base is a declaration whose members are inherited; a library type
-      // read at its meaning has none here.
+      // read at its meaning has none here. A class extending `Array` has
+      // instances that are arrays, exotic objects allocated by the library's
+      // constructor, which a class's construction (an ordinary allocation)
+      // does not give.
       if (known && base)
-        throw Error(`extending the standard library's ${identifier.text} is outside the fragment`);
+        throw Error(`extending the standard library's ${identifier.text} is outside the fragment: ` +
+          "its instances are what the library's constructor allocates, not an ordinary object a class allocates, " +
+          "and its members are read at the library type's meaning, not inherited");
       if (known) return libraryTerm(known, libraryArguments(known, arguments_, read, context.keys), pos,
         message => { throw Error(`${message} in ${identity.module}#${identity.name}`); });
       const targetNode = lookup(identifier, what);

@@ -39,7 +39,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { Atom } from "./claim.mts";
 import type { DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
-import { bigintText, CLASS_ACCESS, computedForm, numericKey, optionalTerm, restPositions, REST_CONTRACT, signature, typeTerm,
+import { bigintText, CLASS_ACCESS, CONSTRUCTOR_DEFAULT, METHOD_RECEIVER, classMemberRefusal, computedForm, numericKey, optionalTerm, restPositions, REST_CONTRACT, signature, typeTerm,
   type TermScope } from "./type-term.mts";
 import type {
   Ast,
@@ -114,6 +114,25 @@ type ObjectPart = { name: string; e: Expr } | { spread: Expr };
  * binds: a name no source binding can spell. The body's first statements
  * bind the source's names from it, in parameter order (`functionAst`). */
 const parameterName = (index: number): string => `parameter ${index}`;
+
+/** Why a class member not named by a plain identifier is refused: each form
+ * of name, by what it would mean. */
+function unnamedMember(member: ts.ClassElement, isStatic: boolean): string {
+  const name = (member as { name?: Node }).name;
+  if (name && ts.isPrivateIdentifier(name))
+    return "a `#private` member is outside the fragment: it is a private slot of the instance, not a property, and the heap model has no such slot";
+  if (name && ts.isComputedPropertyName(name)) {
+    const key = name.expression;
+    if (isStatic && ts.isPropertyAccessExpression(key) && ts.isIdentifier(key.expression) &&
+        key.expression.text === "Symbol" && ts.isIdentifier(key.name) && key.name.text === "hasInstance")
+      return "a static `[Symbol.hasInstance]` method is outside the fragment: it replaces the prototype-chain test that `instanceof` is in the model with a call";
+    return isStatic
+      ? "a static member with a computed key is outside the fragment: a static member is a binding named by its plain name"
+      : "a class member with a computed key is outside the fragment: a method is a binding, and its prototype key, named by its plain name";
+  }
+  if (!name) return "a class member outside the fragment";
+  return isStatic ? "a static member needs a plain name" : "a class member needs a plain name";
+}
 
 /** The names an expression reads, closures' included: a superset of what
  * it may read when it runs. */
@@ -526,9 +545,15 @@ class Gate {
     let base: ClassRecord | null = null;
     if (heritage) {
       const t = heritage.types[0];
-      if (heritage.types.length !== 1 || !t || !ts.isIdentifier(t.expression) || t.typeArguments?.length)
+      if (heritage.types.length !== 1 || !t || !ts.isIdentifier(t.expression))
         this.fail(heritage, "a class extends one class, by its name");
-      if (node.typeParameters?.length) this.fail(heritage, "a generic class extending another is outside the fragment");
+      // A generic class's construction is quantified over its binders, and
+      // its record (`classRecords`) is at none: a base at type arguments, or
+      // a derived class with binders, has no construction to copy.
+      if (t.typeArguments?.length)
+        this.fail(heritage, "a class extending a generic class at type arguments is outside the fragment: generic classes take no part in inheritance, a generic base's construction being quantified");
+      if (node.typeParameters?.length)
+        this.fail(heritage, "a generic class extending another is outside the fragment: generic classes take no part in inheritance, a generic base's construction being quantified");
       base = this.classRecords.get(t.expression.text) ?? null;
       if (!base)
         this.fail(t, "a class extends a non-generic class declared earlier in the file; one from a library, an ambient declaration or a value is outside the fragment");
@@ -611,7 +636,9 @@ class Gate {
       };
       // An optional parameter, `x?: T`, binds `T | undefined`, as a closure's.
       const params = constructor ? constructor.parameters.map((p, i, all) => {
-        if (!ts.isIdentifier(p.name) || p.dotDotDotToken || p.initializer)
+        if (p.initializer)
+          this.fail(p, CONSTRUCTOR_DEFAULT);
+        if (!ts.isIdentifier(p.name) || p.dotDotDotToken)
           this.fail(p, "a constructor parameter must be plain, required or optional");
         if (!p.questionToken && i > firstOptional(all))
           this.fail(p, "a required parameter cannot follow an optional one");
@@ -639,7 +666,7 @@ class Gate {
         this.selfClass = instanceMembers;
         if (modifiers.some((m) => m.kind === ts.SyntaxKind.StaticKeyword)) {
           if (!(ts.isPropertyDeclaration(member) || ts.isMethodDeclaration(member)) || !ts.isIdentifier(member.name))
-            return this.fail(member, "a static member needs a plain name");
+            return this.fail(member, unnamedMember(member, true));
           this.selfClass = null;
           const binding = staticName(name.text, member.name.text);
           if (ts.isMethodDeclaration(member)) {
@@ -665,7 +692,7 @@ class Gate {
           continue;
         }
         if (ts.isPropertyDeclaration(member)) {
-          if (!ts.isIdentifier(member.name)) this.fail(member, "a class member needs a plain name");
+          if (!ts.isIdentifier(member.name)) this.fail(member, unnamedMember(member, false));
           const type = this.typeOf(member.type, member);
           if (member.initializer) {
             if (readsThis(member.initializer)) this.fail(member, "a field initializer that reads `this` is outside the fragment");
@@ -673,13 +700,13 @@ class Gate {
               bind: { pos: this.span(member), type } });
           } else uninitialized.set(member.name.text, { type, pos: this.span(member.name) });
         } else if (ts.isMethodDeclaration(member)) {
-          if (!ts.isIdentifier(member.name)) this.fail(member, "a class member needs a plain name");
+          if (!ts.isIdentifier(member.name)) this.fail(member, unnamedMember(member, false));
           methods.push({ name: `${name.text}.${member.name.text}`, namePos: this.span(member.name),
             annot: null, init: this.lambda(member, instance) });
           methodBindings.set(member.name.text, `${name.text}.${member.name.text}`);
           prototype.push({ name: member.name.text,
             e: { k: "id", pos: this.span(member.name), name: `${name.text}.${member.name.text}` } });
-        } else this.fail(member, "a class member outside the fragment");
+        } else this.fail(member, classMemberRefusal(member));
       }
       this.selfClass = instanceMembers;
       for (const p of params)
@@ -2280,7 +2307,7 @@ class Gate {
     const stated =
       !!head && ts.isIdentifier(head.name) && head.name.text === "this";
     if (stated && instance)
-      this.fail(head, "a class method's receiver is its instance");
+      this.fail(head, METHOD_RECEIVER);
     if (stated && !ordinary)
       this.fail(head, "an arrow cannot declare a receiver");
     if (
@@ -2462,7 +2489,8 @@ class Gate {
      nested, with identifier keys, defaults, holes and an array rest: what the
      lowering states. */
   private patternStmt(list: ts.VariableDeclarationList, node: Node, mutable: boolean): Stmt {
-    if (mutable) this.fail(node, "a `let` pattern is outside the fragment");
+    if (mutable)
+      this.fail(node, "a `let` pattern whose bindings are assigned is outside the fragment: each binding would be a cell with a storage contract of its own, which a pattern does not lower to (one never assigned is a `const` pattern)");
     if (list.declarations.length !== 1)
       this.fail(node, "a pattern declares alone in the fragment");
     const d = list.declarations[0];
@@ -2885,10 +2913,13 @@ class Gate {
   /** A `let` or `const` declaration list, the statement `at` spans: a
    * variable statement, or a `for` loop's initializer. */
   private declarations(list: ts.VariableDeclarationList, at: Node): Stmt {
-    const mutable = !(list.flags & ts.NodeFlags.Const);
     // `var` is function-scoped and hoisted, so it is not this binding form.
-    if (mutable && !(list.flags & ts.NodeFlags.Let))
+    if (!(list.flags & ts.NodeFlags.Const) && !(list.flags & ts.NodeFlags.Let))
       this.fail(at, "`var` is outside the fragment");
+    // A `let` statement whose bindings are all initialized and nothing
+    // assigns is a `const`: each binding holds its initial value throughout,
+    // so reading it reads that value, as a `const`'s read does.
+    const mutable = !(list.flags & ts.NodeFlags.Const) && !(ts.isVariableStatement(at) && this.neverAssigned(list));
     const kindWord = mutable ? "let" : "const";
     if (
       list.declarations.some(
@@ -2935,6 +2966,45 @@ class Gate {
     });
     if (mutable) return { k: "let", pos: this.span(at), bindings };
     return { k: "const", pos: this.span(at), bindings };
+  }
+
+  /** Whether a `let` list's bindings are all initialized and none is
+   * written in the scope it binds them in: no assignment, compound or
+   * logical assignment, update or destructuring assignment names one. A
+   * write is found by the name the fragment gives the binding (`local`), so
+   * a same-named binding elsewhere in that scope keeps the list a `let`. */
+  private neverAssigned(list: ts.VariableDeclarationList): boolean {
+    const [first] = list.declarations;
+    if (!first || list.declarations.some((d) => !d.initializer)) return false;
+    const names = new Set<string>();
+    const bind = (n: ts.BindingName): void => {
+      if (ts.isIdentifier(n)) names.add(this.local(n));
+      else for (const e of n.elements) if (!ts.isOmittedExpression(e) && e.name) bind(e.name);
+    };
+    for (const d of list.declarations) bind(d.name);
+    const targets = (e: Node): boolean => {
+      while (ts.isParenthesizedExpression(e)) e = e.expression;
+      if (ts.isIdentifier(e)) return names.has(this.local(e));
+      if (ts.isArrayLiteralExpression(e)) return e.elements.some(targets);
+      if (ts.isObjectLiteralExpression(e)) return e.properties.some((p) =>
+        ts.isShorthandPropertyAssignment(p) ? ts.isIdentifier(p.name) && names.has(this.local(p.name))
+          : ts.isPropertyAssignment(p) ? targets(p.initializer)
+          : ts.isSpreadAssignment(p) ? targets(p.expression) : false);
+      if (ts.isSpreadElement(e)) return targets(e.expression);
+      if (ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.EqualsToken) return targets(e.left);
+      return false;
+    };
+    const writes = (n: Node): boolean => {
+      if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+          n.operatorToken.kind <= ts.SyntaxKind.LastAssignment && targets(n.left)) return true;
+      if ((ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) &&
+          (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken) &&
+          targets(n.operand)) return true;
+      if ((ts.isForOfStatement(n) || ts.isForInStatement(n)) && !ts.isVariableDeclarationList(n.initializer) &&
+          targets(n.initializer)) return true;
+      return !!n.forEachChild((c) => writes(c) || undefined);
+    };
+    return !writes(bindingScope(first));
   }
 
   /** Loops, branches, blocks, `switch`, `try` and `throw`. */

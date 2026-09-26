@@ -33,6 +33,31 @@ export function numericKey(literal: string): string {
   return String(Number(literal.replace(/_/g, "")));
 }
 
+/** A method declaring `this: T`. A method member's contract is relative to
+ * its host, the object it is read from (DESIGN.md, "Method members are
+ * host-relative"): its signatures carry no receiver, so one stated apart from
+ * the host has nothing to be. */
+export const METHOD_RECEIVER =
+  "a method with a `this` parameter is outside the fragment: a method member's contract is relative to its host, the object it is read from, and states no receiver apart from it";
+
+/** A constructor parameter with a default. A class value's construct code
+ * is a term whose parameters are plain: the constructor rule has no default
+ * schedule, as a closure's has (`parameterOrder`). */
+export const CONSTRUCTOR_DEFAULT =
+  "a constructor parameter with a default is outside the fragment: construct code is a term over plain parameters, with no default schedule as a closure has";
+
+/** Why a class member of a kind the fragment has no lowering for is
+ * refused. */
+export function classMemberRefusal(member: ts.ClassElement): string {
+  if (ts.isGetAccessorDeclaration(member) || ts.isSetAccessorDeclaration(member))
+    return "a class accessor is outside the fragment: reading or writing it runs its code, where a member read or write in the model is a plain one";
+  if (ts.isIndexSignatureDeclaration(member))
+    return "an index signature in a class is outside the fragment: a class's instances are the objects its construction allocates, with the keys it names";
+  if (ts.isClassStaticBlockDeclaration(member))
+    return "a static block is outside the fragment: it is code the class definition runs, which the class's lowering does not have";
+  return "a class member outside the fragment";
+}
+
 export const REST_CONTRACT =
   "a rest parameter needs a tuple of required positions or an array";
 
@@ -615,7 +640,7 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
         scope.fail(member, "an optional method of a nested type literal has no declaration as its receiver");
       const name = named(member, "unsupported method signature");
       const forms = signatures(scope, member.parameters, member.type, member, memberSpan);
-      if (forms.some(m => m.receiver)) scope.fail(member, "unsupported method signature");
+      if (forms.some(m => m.receiver)) scope.fail(member, METHOD_RECEIVER);
       // An optional method, `return?(...)`, is an optional field.
       fields.push({ name, optional: member.postfixToken?.kind === ts.SyntaxKind.QuestionToken, readonly: false,
         type: oneTerm(forms.map(m => ({ ...m, receiver: { k: "self", span: memberSpan } })), memberSpan),
@@ -721,11 +746,16 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
         span: memberSpan });
     } else if (ts.isMethodDeclaration(member)) {
       only(member, []);
-      if (member.postfixToken || member.asteriskToken || member.typeParameters?.length)
-        scope.fail(member, "an optional, generator or generic method is outside the fragment");
+      if (member.postfixToken || member.asteriskToken)
+        scope.fail(member, "an optional or generator method is outside the fragment");
+      // A generic method's closure would be claimed as a quantified callable,
+      // which the claim format does not encode (an interface's generic method
+      // is a declared scheme, which needs no claim).
+      if (member.typeParameters?.length)
+        scope.fail(member, "a generic class method is outside the fragment: its closure's claim would be a quantified callable, which the claim format does not encode");
       const name = named(member);
       const method = signature(scope, member.parameters, member.type, member, memberSpan);
-      if (method.receiver) scope.fail(member, "a method receiver is its instance");
+      if (method.receiver) scope.fail(member, METHOD_RECEIVER);
       fields.push({ name, optional: false, readonly: true,
         type: { ...method, receiver: { k: "self", span: memberSpan } }, span: memberSpan });
     } else if (ts.isConstructorDeclaration(member)) {
@@ -736,7 +766,8 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
       // every call, with the `undefined` an omitted argument binds.
       for (const p of member.parameters) {
         if (!p.modifiers?.length) continue;
-        if (!ts.isIdentifier(p.name) || p.dotDotDotToken || p.initializer)
+        if (p.initializer) scope.fail(p, CONSTRUCTOR_DEFAULT);
+        if (!ts.isIdentifier(p.name) || p.dotDotDotToken)
           scope.fail(p, "a parameter property needs a plain parameter");
         const name = p.name.text;
         if (names.has(name)) scope.fail(p, "duplicate class member");
@@ -747,7 +778,7 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
           type: p.questionToken ? optionalTerm(type, spanOf(scope, p)) : type, span: spanOf(scope, p) });
       }
     } else if (!ts.isSemicolonClassElement(member)) {
-      scope.fail(member, "a class member outside the fragment");
+      scope.fail(member, classMemberRefusal(member));
     }
   }
   return { k: "object", fields, stringIndex: null, calls: [], span };
