@@ -878,7 +878,11 @@ through a fact the call leaves tying its result slot to its argument slot,
 "an argument in `Exclude<A, T>` gave `false`", which the branch on the
 result turns into a slice of the argument. Such a fact is about a type's
 meaning, world- and level-indexed, where current-content facts are not; it
-needs its own place in the knowledge a statement entry states.
+needs its own place in the knowledge a statement entry states. A class's
+statics read by its own methods, which needs them read late, from the class
+value, rather than as bindings its closures capture; private names in
+inheritance, which needs the derived construction's copy of its base part to
+carry the base's private slots; a prototype member keyed by a symbol.
 
 **Precision.** Retaining heap facts across calls needs a proved
 reachability or noninterference statement; set-valued clause covering (an
