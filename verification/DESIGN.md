@@ -403,8 +403,11 @@ as Skip's runtime tags managed arrays with a symbol key. Arrays are
 **dense**: every index below the length holds an element, so an element write
 is typed only in bounds or appending. Mutable arrays are invariant;
 `readonly T[]` reads only and is covariant. Arrays are `Iterable<T>` through
-their prototype's `[Symbol.iterator]`. An array's `length` is read from its store, in a
-statement and in a closed expression alike.
+their prototype's `[Symbol.iterator]`, a tuple through the readonly array of
+its positions. An array's `length` is read from its store, in a statement and
+in a closed expression alike. An array pattern's rest over a tuple of
+required positions is reads; any other is a slice, a call of the trusted
+`%RestFrom:k%` ([patterns](PROGRAM-TYPING.md#patterns)).
 
 ### Index signatures
 
@@ -557,12 +560,19 @@ tests.
 
 ### Async and iteration
 
-`await`, an async function's return and completion,
-`for...of` over an array and `for...in` are calls of trusted **intrinsics**,
-values no source name spells, whose signatures the declaration reader
-states ([async](PROGRAM-TYPING.md#async-functions-and-await),
-[loops](PROGRAM-TYPING.md#loops-over-arrays)). No calculus rule changes: a
-call's callee is an assumption at its declared type. An async function's
+`await`, an async function's return and completion, `for...of`, an argument
+spread of a non-array iterable, an array pattern's slice rest and `for...in`
+are calls of trusted **intrinsics**, values no source name spells, whose
+signatures the declaration reader states
+([async](PROGRAM-TYPING.md#async-functions-and-await),
+[loops](PROGRAM-TYPING.md#loops-and-spreads-over-iterables)). A loop steps
+one **iteration intrinsic** family, `%Iterate:K%`, picked by TypeScript's
+type of the iterable: an array's (`%Iterate%`), a string's, a `Set`'s, a
+`Map`'s and a host collection iterator's; a spread collects the same
+iterator into a fresh array (`%Spread:K%`). None of these iterators has a
+`return`, so leaving a loop early calls nothing; a client's iterable, whose
+`return` would run, is refused. No calculus rule changes: a call's callee is
+an assumption at its declared type. An async function's
 promise settles only to a primitive, the values that are never thenables
 ([nested promises](ECMA-CONNECTION.md#illustration-nested-promises)).
 The model runs a body to its end; every point where other code can intervene
@@ -601,8 +611,8 @@ throw, which safety admits, but never return a wrong value.
 | Each standard library global meets its reviewed overlay entry: `console.log`; `BigInt`; `Symbol`, `Symbol.for`, `Symbol.keyFor` and five well-known symbols; `String` of a primitive; `Object.keys`, `Object.values`, `Object.entries` (and the generic two at a dictionary); `new Array()`; `new Error(m)`; `new Set`, `new Map` of an array, `new Date` of a primitive, `Date.now`; `JSON.parse` of a string and `JSON.stringify` of a `JsonValue`. | `globalsOverlay` in `tools/library-globals.mts`; [rules](PROGRAM-TYPING.md#library-globals) |
 | `Array.prototype` meets `ArrayProto`: its natives `forEach`, `map`, `reduce` and `reduceRight` (with an initial value), `every`, `some`, `filter`, `slice`, `join`, `indexOf`, `lastIndexOf`, `includes`, `at`, `find`, `findIndex`, `sort`, `push`, `pop`, `shift`, `unshift`, `reverse` and `[Symbol.iterator]` behave as TypeScript declares them, at the listed receiver, without `thisArg`. Units allocating arrays read it from the input slot `[[Array.prototype]]`. | `overlay` in `tools/array-prototype.mts` |
 | `String.prototype`, `Number.prototype`, `BigInt.prototype` and `Boolean.prototype` meet `StringProto`, `NumberProto`, `BigIntProto` and `BooleanProto`, each member an own property of that prototype (`split`, `replace`, `replaceAll` stated at a string pattern; `toLocaleString` without `options`), read from the slot `[[String.prototype]]` and so on. | `primitiveOverlay` in `tools/array-prototype.mts` |
-| `Set.prototype`, `Map.prototype` and `Date.prototype` hold the listed natives, unmodified. | `interfaceOverlay` in `tools/array-prototype.mts` |
-| The intrinsics meet their signatures: `%Await%` yields what a promise settles to or throws its rejection; `%AsyncReturn%` and `%AsyncComplete%` settle an async function's promise to a primitive or `undefined` (also `Promise.resolve`); `%PromiseAll%` (`Promise.all`), `%PromiseReject%` (`Promise.reject`), `%NewPromise%` (`new Promise`, calling its executor at once); `%Iterate%` steps an array's iterator, reading the current length at each step; `%ForIn%` gives the keys a `for...in` visits, strings. The job queue and a promise that never settles are not modelled. | `tools/intrinsics.mts`; [async](PROGRAM-TYPING.md#async-functions-and-await) |
+| `Set.prototype`, `Map.prototype` and `Date.prototype` hold the listed natives, unmodified (`keys`, `values` and `entries` giving a host iterator of the collection). | `interfaceOverlay` in `tools/array-prototype.mts` |
+| The intrinsics meet their signatures: `%Await%` yields what a promise settles to or throws its rejection; `%AsyncReturn%` and `%AsyncComplete%` settle an async function's promise to a primitive or `undefined` (also `Promise.resolve`); `%PromiseAll%` (`Promise.all`), `%PromiseReject%` (`Promise.reject`), `%NewPromise%` (`new Promise`, calling its executor at once); `%Iterate%` steps an array's iterator, reading the current length at each step; `%Iterate:string%` a string's, by code point; `%Iterate:Set%` a `Set`'s, in insertion order; `%Iterate:Map%` a `Map`'s, a fresh `[key, value]` array per entry; `%Iterate:Iterator%` a `SetIterator` or `MapIterator`, which is its own iterator; none of these iterators has a `return`; `%Spread:K%` is the fresh array of what `%Iterate:K%`'s step yields until it ends; `%RestFrom:k%` is the fresh array of an array's elements from `k` to its current length, as its iterator yields them after a pattern's `k` elements; `%ForIn%` gives the keys a `for...in` visits, strings. The job queue and a promise that never settles are not modelled. | `tools/intrinsics.mts`; [async](PROGRAM-TYPING.md#async-functions-and-await) |
 | A thrown value is a value, of any type. | `Thrown` in `Safe` (`Semantics/Safety.lean`) |
 | The runtime with the sound service binding meets its declarations: `InputCollections.get(definition)` returns the collection built from that definition at its types, or throws; resources are constructed with the request's `Json` parameters. | `ocaml-producer/upstream-sound/` |
 | In the SKJS test environment, SKJS's import stubs describe the modules a test imports, and `skjs-environment.d.ts` the host's `process`, `__SKJS_show` and `__SKJS_show_expanded` as SKJS's builtins stub does, with the ES2022 library and no DOM (`console` restated); `Closed<T>` and `SKJS_Ignorable<T>` are read as `T`; an ambient class's untyped field is a readonly `unknown` field. These are premises of the coverage result only. | `ocaml-producer/skjs-environment/`; `STUB`, `ENV` |
@@ -614,6 +624,7 @@ the model's reading of an operation relies.
 | --- | --- |
 | The caller contract: a value conforming to a structural annotation (a parameter, an import, a library result) is a plain data object, its stated string-keyed fields own enumerable data properties, not accessors or proxies, which a spread copies; a conforming function respects its contract across every future heap, callback effects included. Two such parameters may alias. `Error`'s `message` is the exception, held on a prototype the model gives it. | `RequestJson.verify_safe` quantifies over environments meeting the input types |
 | A value whose trusted declaration types it `Function` has call or construct code. | [`Function`](PROGRAM-TYPING.md#library-types) |
+| A value TypeScript types as `Set<T>`, `Map<K, V>`, `SetIterator<T>` or `MapIterator<T>` that a loop or spread iterates is the host's: its iterator is the realm's, and the prototypes it inherits (`%IteratorPrototype%` included) hold no `return` and are unmodified. Assumed of every such value a program receives; the fragment builds none but through the host (a `[Symbol.iterator]` key is refused in literals and classes). | the iteration intrinsics' pick, `iterationKind` in `tools/declaration-graph.mts` |
 | Every object owning the array store key is a JavaScript array: every object the model allocates, and assumed of every object a program receives. `Array.isArray` is the native test. For `instanceof Array`, every array a program receives is of its realm and no object but an array inherits from `Array.prototype`. | `isArray` ([SEMANTICS](SEMANTICS.md#operational-language)); the `Array` entries of `library-globals.mts` |
 | An array a program receives owns no key its prototype provides. | the $\mathsf{outside}\,N$ bound of the array shape |
 | The model's reserved keys (the store key `[]` and every name in double brackets) are spelled by no source key, and an object a program receives is represented with its own keys apart from them. | `Fragment.sourceKey`, `reservedSourceKey` |
@@ -652,13 +663,14 @@ not yet taken are [next steps](#next-steps); a search failure is neither.
 | `===` between two operands that may both be objects without a field (functions, records of optional fields, `unknown`); narrowing by object identity | Such values have no identity in the model; a statement entry states no slot equality. |
 | A user-defined type guard with a body (`x is T`); narrowing through a declared one | Its promise relates the result to the argument, which no function type states. |
 | An accessor (`get`/`set`), `__proto__`, a computed key in a literal, a spread of a string, a function or a class value | The heap has data properties only; the key or copy is known only at run time; the model gives a closure a field JavaScript's lacks. |
-| An array rest of unknown length (a slice), or over a union of tuples of different lengths | Its length is known only at run time; the calculus has no slice term ([next steps](#next-steps)). |
+| An element read past a tuple arm's length (`const [a, b] = t` with `t: [number] \| [number, string]`); a slice rest in a closure's directly checked body | The read is `undefined`, which no element rule gives; the slice's call is graph code. |
 | A rest parameter of a definition typed by a type parameter; one typed by an intersection, by a tuple with optional or rest elements, or by what is no array | A definition has no allocation rule for an array only an instance fixes (a function type's is a pack); the fresh array's meet has no representation; several lengths are several signatures; the collected array is no value of it. |
 | A `let` pattern whose bindings are written; a test of a written `let` holding a union of objects | Each binding would be a cell with its own contract; a cell's known contents are primitive. |
 | An array pattern over a value that may not be an array | It would step the value's own iterator. |
 | A class method declaring `this: T`; a generic class method; a constructor parameter with a default | A method member is host-relative; the closure's claim would be a quantified callable, which the claim format does not encode; construct code is a term over plain parameters with no default schedule. |
 | A class member with a computed key or a `#private` name; a static `[Symbol.hasInstance]`; an index signature or static block in a class; a generic class in inheritance | A method is a binding and a prototype key named by its plain name; a private name is a slot, not a property; `instanceof` becomes a call; instances are what construction allocates; a static block is code the definition runs; a generic base's construction is quantified. |
-| `for...of` or a spread over a non-array iterable (string, `Set`, `Map`, a client iterator); `for await` | `%Iterate%` is stated for arrays; a client iterator's `return` runs on early exit. |
+| `for...of` or an argument spread over a client's iterable (an `Iterable<T>`, an object with its own `[Symbol.iterator]`); `for await` | Its own iterator runs, and a loop left early calls its `return`, which no step states. |
+| An array literal spread (`[...xs]`), of any iterable | No literal lowering takes a spread ([next steps](#next-steps)). |
 | An async function returning an object other than a promise of a primitive, a void async function returning a value, `await` of a non-promise object at its own type | JavaScript adopts thenables, and a record type does not rule out a `then`. |
 | `String(o)`, `o + ""`, `new Date(o)`, `new Set(it)` of a non-array iterable, `JSON.parse` with a reviver, `JSON.stringify` with a replacer, of an array or an open record | The host runs client code (`toString`, `valueOf`, an iterator, a callback, a `toJSON`). |
 | Relational comparison converting its operands (a string and a number, an object, two Booleans); `==` other than `== null`; `+` on a bigint, number–bigint arithmetic, a symbol in a concatenation | The conversion runs code or is not the primitive order; TypeScript refuses the throwing ones. |
@@ -701,8 +713,9 @@ One line each; the reason is the one the design keeps.
   their result or throw, never a wrong value.
 - **`await` is a trusted step; an async result is a primitive.** Thenable
   adoption is never modelled.
-- **`%Iterate%` is stated for arrays only**, one intrinsic generic over one
-  element type.
+- **Iteration is one intrinsic family, picked by the iterable's type**:
+  `%Iterate:K%` per host iterable kind, none with a `return`; a client's
+  iterable is refused.
 - **Library contracts are TypeScript's declarations through reviewed
   overlays**, each entry pinned to the declaration text; nothing is vendored.
 - **`Function` is "has call or construct code"**; `object` is every object;
@@ -799,19 +812,13 @@ location at its type) follow.
 **Module composition** as a Lean theorem: the step-indexed argument that
 units certified against each other's signatures compose.
 
-**Iteration beyond arrays.** The host's `Set` and `Map` iterators have no
-`return`, so stating `%Iterate%` for them would be sound; the loop's lowering
-names one intrinsic today. Strings likewise. A tuple as `Iterable<T>` needs
-the search to relate a tuple's store to the prototype's iterator element.
-
-**Array rests of unknown length.** A slice is principled as a trusted step
-of the same trust as `%Iterate%`: `%RestFrom%<T>(xs: readonly T[], k)`, a
-fresh array of `xs`'s elements from `k` to its current length. JavaScript
-steps the array's iterator on after the pattern's elements, and a call made
-after their reads and defaults reads the current length as that step does.
-It needs `restArray` and `arrayAssigns` to emit the call and the producer to
-claim its instance; a rest over a union of tuples of different lengths also
-needs a split by arm to keep each arm's positions.
+**Iteration left open.** An array literal spread needs a literal lowering
+that appends a spread's elements (the `%Spread:K%` array, or an array's
+store) after the positions before it. An array pattern over a non-array
+iterable needs the pattern's reads as steps of `%Iterate:K%`. A client's
+iterable needs its `return` called on every early exit, a `finally`-like
+edge on `break`, `return` and throws out of the loop. An element read past a
+tuple arm's length needs a rule reading `undefined` beyond an exact length.
 
 **Remaining source forms.** A `break`/`continue` through a `finally`; written
 `let` patterns and assignment patterns into fields; async class methods; `#private`

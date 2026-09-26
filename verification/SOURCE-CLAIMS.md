@@ -360,7 +360,9 @@ Arbitrary numbers can name ordinary properties (negative, fractional, NaN,
 or out of range), which this store does not represent. Destructuring reads
 positions of an array, under the trust the array iterator's `%Iterate%`
 states; an array pattern's rest is a fresh array, a site claimed like an array
-literal at the rest's span (`...r`), and the pattern's reads are not sites.
+literal at the rest's span (`...r`), and the pattern's reads are not sites. A
+slice rest's claim there carries the instance of its `%RestFrom:k%` call,
+like a generic call's.
 
 ## Current-content assertions
 

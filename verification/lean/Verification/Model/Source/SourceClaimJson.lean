@@ -840,7 +840,7 @@ private partial def restSpans : Fragment.Pattern Fragment.Expr → List Span
       | none => []
   | .array _ elems rest => elems.flatMap (fun (_, t, _) => restSpans t) ++
       match rest with
-      | some (_, q, t) => q :: restSpans t
+      | some (_, q, _, t) => q :: restSpans t
       | none => []
 mutual
 private partial def exprSites : Fragment.Expr → Sites
@@ -909,9 +909,9 @@ private partial def stmtSites : Fragment.Stmt → Sites
   | .ite p c a b =>
     joinSites ([p.1],[],[]) (joinSites (exprSites c)
       ((a ++ b.getD []).foldl (fun s st => joinSites s (stmtSites st)) ([],[],[])))
-  -- The loop's span is the `%Iterate%` call's, and the element is claimed at
-  -- the name it binds.
-  | .forOf p _ np i body => joinSites ([p.1],[p, np],[]) (joinSites (exprSites i)
+  -- The loop's span is its iteration intrinsic's call's, and the element is
+  -- claimed at the name it binds.
+  | .forOf p _ np _ i body => joinSites ([p.1],[p, np],[]) (joinSites (exprSites i)
       (body.foldl (fun s st => joinSites s (stmtSites st)) ([],[],[])))
 
 end

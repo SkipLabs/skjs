@@ -591,7 +591,7 @@ private partial def comparisonsStmt (fc : SourceClaims.Function) (s : Fragment.S
       (← e.mapM (fun ss => ss.mapM (comparisonsStmt fc)))
   | .loop p c b u =>
     return .loop p (← comparisonsExpr fc c) (← b.mapM (comparisonsStmt fc)) (← u.mapM (comparisonsStmt fc))
-  | .forOf p n np i b => return .forOf p n np (← comparisonsExpr fc i) (← b.mapM (comparisonsStmt fc))
+  | .forOf p n np it i b => return .forOf p n np it (← comparisonsExpr fc i) (← b.mapM (comparisonsStmt fc))
   | .block p k b => return .block p k (← b.mapM (comparisonsStmt fc))
   | .throw p e => return .throw p (← comparisonsExpr fc e)
   | .tryStmt p b h f =>
@@ -621,7 +621,7 @@ private partial def assignsExpr (name : String) : Fragment.Expr → Bool
   | .arith _ _ a b | .elemAt _ a b | .comma _ a b | .inKeys _ a b => assignsExpr name a || assignsExpr name b
   | .arrayLit _ es => es.any (assignsExpr name)
   | .arrayAssign _ targets rest rhs => targets.any (fun q => q.name == name ||
-      (q.default_.map (assignsExpr name)).getD false) || rest.any (·.2.name == name) ||
+      (q.default_.map (assignsExpr name)).getD false) || rest.any (·.2.2.name == name) ||
       assignsExpr name rhs
   | .logicalAssign _ _ target rhs =>
     (match target with | .var _ n => n == name | _ => false) ||
@@ -650,7 +650,7 @@ private partial def assignsStmt (name : String) : Fragment.Stmt → Bool
   | .ite _ c t e => assignsExpr name c || t.any (assignsStmt name) ||
     (e.getD []).any (assignsStmt name)
   | .loop _ c b u => assignsExpr name c || b.any (assignsStmt name) || u.any (assignsStmt name)
-  | .forOf _ _ _ i b => assignsExpr name i || b.any (assignsStmt name)
+  | .forOf _ _ _ _ i b => assignsExpr name i || b.any (assignsStmt name)
   | .block _ _ b => b.any (assignsStmt name)
   | .brk .. | .cont .. => false
 end
@@ -663,10 +663,10 @@ partial def stmtNames : Fragment.Stmt → List String
     (f.getD []).flatMap stmtNames
   | .constants _ bs | .mutables _ bs => bs.flatMap fun b => b.init.freeNames
   | .destructure _ target d init => init.freeNames ++
-    (d.toList ++ target.defaults).flatMap Fragment.Expr.freeNames
+    (d.toList ++ target.defaults).flatMap Fragment.Expr.freeNames ++ target.slices.map (Fragment.restFromName ·.2)
   | .ite _ c t e => c.freeNames ++ t.flatMap stmtNames ++ (e.getD []).flatMap stmtNames
   | .loop _ c b u => c.freeNames ++ b.flatMap stmtNames ++ u.flatMap stmtNames
-  | .forOf _ _ _ i b => Fragment.iterateName :: i.freeNames ++ b.flatMap stmtNames
+  | .forOf _ _ _ it i b => it :: i.freeNames ++ b.flatMap stmtNames
   | .block _ _ b => b.flatMap stmtNames
   | .brk .. | .cont .. => []
 
@@ -1653,6 +1653,15 @@ private def restArray (fc : SourceClaims.Function) (A : Ty Nat) (obj start : Nat
   let _ ← arrayObject Sr
   return (.arrLit reads, Sr, C)
 
+/-- A slice rest's collection: the call of its `%RestFrom:k%`, `k` the
+rest's index, on the array at slot `obj`, after the pattern's reads and
+defaults (`Fragment.restFromName`). The array is claimed at the rest's span
+with the call's instance. -/
+private def sliceCall (scope : List ScopeBinding) (obj k : Nat) : Except String Tm := do
+  let some (i, _) := resolve scope (Fragment.restFromName k)
+    | throw "internal extraction error: a slice rest without its intrinsic"
+  return Tm.call (.var i) [.var obj]
+
 /-- What a literal position of an array reads, by the array's contract: a
 required position reads at its type, an optional or rest position at its type
 or `undefined`, and a position no contract names is refused. A union of
@@ -1820,7 +1829,7 @@ private def traversalBudget : List Fragment.Stmt → Nat
   | .brk .. :: rest | .cont .. :: rest | .ret .. :: rest | .constants .. :: rest | .mutables .. :: rest | .destructure .. :: rest | .effect .. :: rest => 1 + traversalBudget rest
   | .loop _ _ loopBody update :: rest =>
       1 + traversalBudget loopBody + traversalBudget update + traversalBudget rest
-  | .forOf _ _ _ _ inner :: rest | .block _ _ inner :: rest =>
+  | .forOf _ _ _ _ _ inner :: rest | .block _ _ inner :: rest =>
       1 + traversalBudget inner + traversalBudget rest
   | .throw .. :: rest => 1 + traversalBudget rest
   -- A `finally` block is compiled on each way out, at most as deep as the
@@ -3177,7 +3186,9 @@ private partial def closureDestructure (fc : SourceClaims.Function) (pos : Span)
     elems scope H obj (fun H obj (i, _, _) => elemReadPlan G H (DirectProof.var H obj A) (bitsOfNat i))
       (fun scope H obj => match rest with
         | none => k scope H
-        | some (start, restPos, t) => do
+        | some (start, restPos, slice, t) => do
+          if slice then
+            throw s!"unsupported source expression at [{restPos.1},{restPos.2}): a slice rest in a closure's directly checked body is outside the fragment: its `%RestFrom%` call is graph code"
           let some S := storeOf G A | throw "an array rest needs one array contract: over a union of arrays of different lengths its rest is a slice of a length known only at run time"
           let [.list T []] := PositiveRules.expand G S | throw restOfUnknownLength
           if !T.optional.isEmpty || T.rest.isSome then throw restOfUnknownLength
@@ -4231,11 +4242,22 @@ side held at slot `obj`: each position is read, defaulted, and written to its
 mutable local, whose storage contract the write must meet. `after` compiles
 what follows, under the environment the reads started from. -/
 private partial def arrayAssigns (fc : SourceClaims.Function) (pos : Span) (A : Ty Nat)
-    (rest : Option (Span × Fragment.ArrayElem Fragment.Expr)) (after : Target) :
+    (rest : Option (Span × Bool × Fragment.ArrayElem Fragment.Expr)) (after : Target) :
     List ScopeBinding → List (Ty Nat) → Nat → List (Fragment.ArrayElem Fragment.Expr) → Compiler Target
   | scope, Γ, obj, [] => do
-    -- The rest's fresh array, written to its mutable local.
-    let some (restPos, q) := rest | pure after
+    -- The rest's fresh array, written to its mutable local: a slice's by
+    -- its `%RestFrom:k%`, any other's by reads.
+    let some (restPos, slice, q) := rest | pure after
+    if slice then
+      let C ← claimAt fc restPos
+      let call ← sliceCall scope obj q.index
+      let arrayScope := held ⟨"",some restPos⟩ :: scope
+      let some (i, .cell ..) := resolve scope q.name
+        | throw s!"assignment to '{q.name}', which is not a mutable local"
+      let dropped : Target := ⟨after.label, some ((after.mapping.getD (List.range Γ.length)).map (·+1))⟩
+      let write ← emitAt q.namePos (.writeAt valueField (.var (i+1)) (.var 0)) (.effect dropped)
+        (C::Γ) [0] "storage-contract" (some pos.1) (scope := arrayScope)
+      return ← emitAt restPos call (.bind write) Γ C "pattern-rest" (some pos.1) (scope := scope)
     let (store, Sr, C) ← restArray fc A obj q.index restPos
     let storeScope := held ⟨"",some restPos⟩ :: scope
     let arrayScope := held ⟨"",some restPos⟩ :: storeScope
@@ -4333,7 +4355,11 @@ private partial def destructureAt (fc : SourceClaims.Function) (pos : Span)
         pure (Tm.elemAt (.readAt SourceTypes.storeField (.var obj)) (.num (bitsOfNat i)), R))
       (fun scope Γ obj => match rest with
         | none => after scope Γ
-        | some (start, restPos, t) => do
+        | some (start, restPos, true, t) => do
+          -- A slice: its `%RestFrom:k%` on the array, bound as the rest's value.
+          let C ← claimAt fc restPos
+          bindTarget fc pos t (← sliceCall scope obj start) C none scope Γ after
+        | some (start, restPos, false, t) => do
           let (store, Sr, C) ← restArray fc A obj start restPos
           let storeScope := held ⟨"",some restPos⟩ :: scope
           let proto ← prototypeSlot storeScope
@@ -4595,17 +4621,18 @@ private partial def body : Nat → SourceClaims.Function → Ty Nat → List Sco
           sourceMap := s.sourceMap.set head.label (some ⟨pos,"heap-observation",some pos.1,sources scope⟩) }
       modify fun s => { s with cuts := head.label :: s.cuts }
       pure head
-    | .forOf pos name namePos iterable loopBody :: rest =>
-      -- The iterable once, then `%Iterate%` on it: the step closure, held in a
+    | .forOf pos name namePos iterate iterable loopBody :: rest =>
+      -- The iterable once, then its iteration intrinsic on it (`%Iterate%`
+      -- for an array): the step closure, held in a
       -- slot of its own at the claimed type the call's typing checks. At the
       -- head the step yields `{ value }` or `null`; null leaves the loop, and a
       -- record's value binds `name` for one run of the body, whose end and
       -- `continue` return to the head.
       let Γ ← env fc pos.1 scope
-      let some (iterate, _) := resolve scope Fragment.iterateName
+      let some (iterateSlot, _) := resolve scope iterate
         | throw "internal extraction error: a for...of loop without its intrinsic"
       let A ← exprType fc iterable
-      let N ← exprType fc (.var pos Fragment.iterateName)
+      let N ← exprType fc (.var pos iterate)
       let T ← exprType fc (.var namePos name)
       let G := SourceTypes.graph (← table)
       let [.arrs [(_, [], S)] _] := PositiveRules.expand G N
@@ -4649,7 +4676,7 @@ private partial def body : Nat → SourceClaims.Function → Ty Nat → List Sco
       -- Before the loop: the iterable, then the call making the step closure,
       -- which the head holds in place of the iterable.
       let toHead : Target := ⟨head.label, some (0 :: (List.range Γ.length).map (·+2))⟩
-      let start ← emitAt pos (Tm.call (.var (iterate+1)) [.var 0]) (.bind toHead) (A::Γ) N
+      let start ← emitAt pos (Tm.call (.var (iterateSlot+1)) [.var 0]) (.bind toHead) (A::Γ) N
         "for-of-iterator" (scope := held ⟨"",some iterable.span⟩ :: scope)
       compileExpr fc scope Γ iterable start
     | .mutables pos bindings :: rest =>

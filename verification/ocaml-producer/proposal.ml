@@ -294,9 +294,11 @@ let iterated_hint declarations expected =
   | [] -> None
   | values -> Some (combine values)
 (* The first arm of an iterated value that is not an array, named for the
-   refusal: `for...of` steps through `%Iterate%`, and a spread argument
-   copies its operand's elements, and both are stated for arrays only
-   (DESIGN.md "Loops over arrays"). A type parameter is left to Lean. *)
+   refusal where the loop or spread steps `%Iterate%` or copies an array:
+   the parser picks the intrinsic of a string, a `Set`, a `Map` or a host
+   collection iterator only where TypeScript types the whole iterable as one
+   such kind, and refuses a client's iterable (PROGRAM-TYPING.md "Loops and
+   spreads over iterables"). A type parameter is left to Lean. *)
 let rec non_array_arm declarations seen t = match t with
   | Rigid _ -> None
   | Union ts -> List.find_map (non_array_arm declarations seen) ts
@@ -317,8 +319,28 @@ let rec non_array_arm declarations seen t = match t with
         Some "an object that is not an array (a Set, a Map, an iterator or another iterable)"
       | _ -> None) atoms
 let iteration_reason =
-  "only the iteration of an array is stated (%Iterate%): that of a string or a host collection is not, \
-   and a client iterable runs its own code (its `next` and `return`)"
+  "the iteration of one host kind is stated (%Iterate:K%), picked where the whole iterable is of that \
+   kind: a union of kinds has no one intrinsic, and a client iterable runs its own code (its `next` and \
+   `return`)"
+(* The elements a slice rest from index [start] collects from an array of
+   type [t]: every arm's positions from there on, an optional one with
+   `undefined`, and its rest element. `%RestFrom:k%` is claimed at it. *)
+let slice_element declarations start t =
+  let rec arms seen t = match t with
+    | Union ts -> List.concat_map (arms seen) ts
+    | Atoms atoms -> List.concat_map (function
+        | Named (id,_) as a when not (List.mem id seen) ->
+          arms (id::seen) (declared_head declarations [] (Atoms [a]))
+        | a -> [a]) atoms
+    | Rigid _ | Meet _ -> unsupported "a slice rest over a type parameter or an intersection" in
+  combine (List.concat_map (function
+    | Shape {elements=Some s;_} ->
+      let r = List.length s.required in
+      List.filteri (fun i _ -> i >= start) s.required
+      @ List.filteri (fun i _ -> i + r >= start) (List.map (fun t -> union t (Atoms [Undef])) s.optional_elements)
+      @ Option.to_list s.rest
+    | _ -> unsupported "an array pattern over a value that may not be an array: it would step that value's own \
+        iterator, which is not modeled; only an array's positions are read") (arms [] t))
 (* A key of several string or number singletons (NaN, which no equality
    test finds, is none): Lean reads, per singleton, the member its key names. *)
 let key_singletons = function
@@ -646,9 +668,6 @@ let invariance_reason =
   "a writable element or field is invariant, as a write through the wider view would break the narrower \
    one; TypeScript relates them covariantly, which is unsound, and SKJS infers the narrower from a \
    later use"
-let tuple_iterable_reason =
-  "the search relates the store of an array to the element of `Array.prototype[Symbol.iterator]`, and \
-   a tuple's positions to no one element"
 let shape_test_reason =
   "the values of that shape have a type no clause states (`T & number`, a callable of no known \
    signature), so the test narrows nothing the model states"
@@ -1406,17 +1425,6 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
              | exception Json.Error _ -> ())
           | _ -> ())
        | None -> ());
-      (* A tuple at an iterable. *)
-      (match expected with
-       | Some x when List.exists (function
-             | Shape {elements=Some {required=_::_;_};_} -> true | _ -> false)
-             (flat_atoms declarations (resolve env n))
-           && List.exists (function
-             | Shape {elements=None;fields;_} -> List.exists (fun (f:Semantic.field) ->
-                 match f.name with Key _ -> true | Name _ -> false) fields
-             | _ -> false) (flat_atoms declarations x) ->
-         explain site ("a tuple at an iterable: " ^ tuple_iterable_reason)
-       | _ -> ());
       (* A value a type test found of a shape, where its type is a type
          parameter or `unknown`. *)
       (match expected, List.assoc_opt n !shape_tests with
@@ -1484,7 +1492,18 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
        | _ -> ());
       (* An open record `Array.isArray` found an array, used as one. *)
       explain_open_array site env n expected;
-      resolve env n
+      (* A tuple expected at an iterable other than an array is read as the
+         readonly array of its positions, whose prototype's iterator yields
+         them: Lean checks the tuple within that view, and the view within
+         the iterable. *)
+      (match resolve env n, expected with
+       | Atoms [Shape {elements=Some s;fields=[];indexes=[];calls=[]}],Some x
+         when (s.required <> [] || s.optional_elements <> []) && s.rest = None
+              && (match x with Atoms [Shape {elements=Some _;_}] -> false | _ -> true)
+              && iterated_hint declarations x <> None ->
+         array {required=[];optional_elements=[];
+           rest=Some (combine (s.required @ s.optional_elements));readonly=true}
+       | t,_ -> t)
     | Literal l -> literal_type l
     | Not e -> ignore (expr env e); bool
     | TypeofTest (_,_,e) -> ignore (expr env e); bool
@@ -1540,12 +1559,12 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
          tuple's positions or its array's element. *)
       let width = match rhs.node,rest with
         | ArrayLiteral es,_ -> List.length es
-        | _,Some (i,_,_) -> i
+        | _,Some (i,_,_,_) -> i
         | _,None -> 1 + List.fold_left (fun m (i,_,_) -> max m i) (-1) targets in
       let required = List.init width (fun i -> match List.find_opt (fun (j,_,_) -> j=i) targets,rest with
         | Some (_,n,Some _),_ -> union (contract n) (Atoms [Undef])
         | Some (_,n,None),_ -> contract n
-        | None,Some (start,_,n) when i >= start ->
+        | None,Some (start,_,n,_) when i >= start ->
           (match declared_head declarations [] (contract n) with
            | Atoms [Shape {elements=Some s;_}] ->
              (match List.nth_opt s.required (i-start) with
@@ -1557,7 +1576,14 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       (* The rest's fresh array is claimed at its local's contract where that
          is an array, which a fresh array meets, else at the positions it
          takes. *)
-      Option.iter (fun (start,span,n) ->
+      Option.iter (fun (start,span,n,slice) ->
+        if slice then
+          (* A slice: its `%RestFrom:k%`'s fresh array, at the instance of
+             the elements from the rest's index on. *)
+          let element = slice_element declarations start actual in
+          expressions := {pos=span;type_=array {required=[];optional_elements=[];rest=Some element;readonly=false};
+            instantiation=Some ["T",ValueArgument element]} :: !expressions
+        else
         let claim = match Semantic.array_element (contract n),declared_head declarations [] actual with
           | Some _,_ -> contract n
           | None,Atoms [Shape {elements=Some s;_}] when s.optional_elements=[] && s.rest=None ->
@@ -2423,7 +2449,14 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         bind env target (position i) d) env elems in
       (match rest with
        | None -> env
-       | Some (start,span,target) ->
+       | Some (start,span,true,target) ->
+         (* A slice: its `%RestFrom:k%`'s fresh array, at the instance of the
+            elements from the rest's index on. *)
+         let element = slice_element declarations start t in
+         let rest_t = array {required=[];optional_elements=[];rest=Some element;readonly=false} in
+         expressions := {pos=span;type_=rest_t;instantiation=Some ["T",ValueArgument element]} :: !expressions;
+         bind env target rest_t None
+       | Some (start,span,false,target) ->
          let remaining = match declared_head declarations [] t with
            | Atoms [Shape {elements=Some s;_}] when s.optional_elements=[] && s.rest=None ->
              List.filteri (fun i _ -> i >= start) s.required
@@ -2450,7 +2483,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | Break (Some l') -> l = l'
     | If (_,a,b) -> List.exists (leaves l) (a @ b)
     | While (_,body,update) -> List.exists (leaves l) (body @ update)
-    | ForOf (_,_,_,body) | Block (_,body) -> List.exists (leaves l) body
+    | ForOf (_,_,_,_,body) | Block (_,body) -> List.exists (leaves l) body
     | Try (body,handler,finalizer) -> List.exists (leaves l)
       (body @ (match handler with Some (_,h) -> h | None -> []) @ Option.value finalizer ~default:[])
     | Declare _ | Destructure _ | Return _ | Effect _ | Throw _ | Break _ | Continue -> false in
@@ -2463,7 +2496,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | Return e | Effect e -> stirs e
     | If (c,a,b) -> stirs c || List.exists stirs_statement (a @ b)
     | While (c,body,update) -> stirs c || List.exists stirs_statement (body @ update)
-    (* Each step of the loop calls `%Iterate%`. *)
+    (* Each step of the loop calls its iteration intrinsic. *)
     | ForOf _ -> true
     | Block (_,body) -> List.exists stirs_statement body
     | Throw e -> stirs e
@@ -2532,7 +2565,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | If (c,a,b) -> mentions n c || List.exists (stmt_mentions n) (a @ b)
     | While (c,b,u) -> mentions n c || List.exists (stmt_mentions n) (b @ u)
     | Block (_,b) -> List.exists (stmt_mentions n) b
-    | ForOf (_,_,e,b) -> mentions n e || List.exists (stmt_mentions n) b
+    | ForOf (_,_,_,e,b) -> mentions n e || List.exists (stmt_mentions n) b
     | Try (b,h,f) -> List.exists (stmt_mentions n)
       (b @ (match h with Some (_,h) -> h | None -> []) @ Option.value f ~default:[])
     | Break _ | Continue -> false in
@@ -2666,26 +2699,41 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
          List.iter (fun _ -> Hashtbl.remove exits l) breaks;
          merge env (havoc env body) (completes @ breaks)
        | None -> merge env env completes)
-    | ForOf (name,name_pos,iterable,body) ->
-      (* The loop is the call of `%Iterate%` on the iterable, claimed at the
-         statement with its instance; the element, at the name it binds. *)
+    | ForOf (name,name_pos,iterate,iterable,body) ->
+      (* The loop is the call of its iteration intrinsic on the iterable,
+         claimed at the statement with its instance; the element, what the
+         instance's step yields, at the name it binds. *)
       (match iterable.node with
        | Call ({node=Id "%ForIn%";_},_,_,_,_) -> for_in_keys := name :: !for_in_keys
        | _ -> ());
       let actual = expr env iterable in
-      Option.iter (fun arm ->
-        explain s.span ("a for...of loop over " ^ arm ^ ": " ^ iteration_reason))
-        (non_array_arm declarations [] actual);
-      let signature = match declared_head declarations [] (resolve env "%Iterate%") with
-        | Atoms [Shape {calls=[signature];_}] when signature.quantified<>[] -> signature
-        | _ -> unsupported "a for...of loop needs the %Iterate% intrinsic" in
-      let inferred = Inference.infer ~receiver:(Atoms [Undef]) signature [actual] in
-      let element = match inferred.substitution with
-        | [_,ValueArgument t] -> t
-        | _ -> unsupported "%Iterate% has one value binder" in
-      expressions := {pos=s.span;type_=inferred.result;
-        instantiation=Some (List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
-          inferred.substitution)} :: !expressions;
+      if iterate = "%Iterate%" then
+        Option.iter (fun arm ->
+          explain s.span ("a for...of loop over " ^ arm ^ ": " ^ iteration_reason))
+          (non_array_arm declarations [] actual);
+      let signature = match declared_head declarations [] (resolve env iterate) with
+        | Atoms [Shape {calls=[signature];_}] -> signature
+        | _ -> unsupported ("a for...of loop needs the " ^ iterate ^ " intrinsic") in
+      let result,substitution = if signature.quantified = [] then signature.result,[] else
+        let inferred = Inference.infer ~receiver:(Atoms [Undef]) signature [actual] in
+        inferred.result,inferred.substitution in
+      let element = match declared_head declarations [] result with
+        | Atoms [Shape {calls=[{params=[];result;_}];_}] ->
+          let yielded = match result with
+            | Union ts -> ts
+            | t -> [t] in
+          (match List.concat_map (fun t -> match declared_head declarations [] t with
+               | Atoms atoms -> List.filter_map (function
+                   | Shape {fields;_} -> List.find_map (fun (f:field) ->
+                       if f.name = Name "value" then Some f.read else None) fields
+                   | _ -> None) atoms
+               | _ -> []) yielded with
+           | [t] -> t
+           | _ -> unsupported (iterate ^ "'s step yields no one value"))
+        | _ -> unsupported (iterate ^ " gives no step") in
+      expressions := {pos=s.span;type_=result;
+        instantiation=if signature.quantified = [] then None else
+          Some (List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t) substitution)} :: !expressions;
       expressions := {pos=name_pos;type_=element;instantiation=None} :: !expressions;
       (* Its `break`s and `continue`s are its own. *)
       loops := (ref [],ref []) :: !loops;

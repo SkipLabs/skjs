@@ -2646,9 +2646,32 @@ $$
      {\Gamma\vdash[\ldots,\ldots p]\Leftarrow(\_{:}A)\dashv\ldots,\Delta}
 $$
 
-The rest of an array whose contract does not fix its length is a slice whose
-length only the run knows: no list of reads, and the calculus has no slice
-term, so it is refused. An object rest `{ a, ...r }` is the
+A rest TypeScript types as no one tuple of required positions (an array, a
+union of tuples, a tuple with optional or rest positions) is a **slice**,
+marked so by the parser, whose length only the run knows. It is a call of the
+trusted intrinsic
+
+$$
+\mathtt{\%RestFrom{:}k\%}:\forall T.\ (\mathsf{readonly}\ [\underbrace{\mathsf{unknown}?,\ldots,\mathsf{unknown}?}_{k},\ \ldots T[\,]])\Rightarrow T[\,]
+$$
+
+on the source, $k$ the rest's index, made after the pattern's reads and
+defaults: the fresh array of the source's elements from $k$ to its current
+length, claimed at the rest's span with the call's instance:
+
+$$
+\frac{\Gamma\vdash\_:A\quad A\le\mathsf{readonly}\ [\mathsf{unknown}?^k,\ldots T\sigma[\,]]\quad
+      \Gamma\vdash p\Leftarrow(\mathtt{\%RestFrom{:}k\%}(\_){:}T\sigma[\,])\dashv\Delta}
+     {\Gamma\vdash[\ldots,\ldots p]\Leftarrow(\_{:}A)\dashv\ldots,\Delta}\ \textsc{rest-slice}
+$$
+
+The parameter says nothing of the first $k$ positions, so a union of tuples
+of different lengths meets it arm by arm: `[number] | [number, string]` from
+1 at $T=\mathsf{string}$. JavaScript steps the array's iterator on past the
+pattern's elements to the end, reading the length at each step; no code runs
+between the call and that stepping, so the call's reading of the current
+length is the step's (the trust `%Iterate%` states). A slice in a closure's
+directly checked body is refused. An object rest `{ a, ...r }` is the
 [allocation from parts](#allocation-from-parts) copying the source's own
 enumerable keys less the ones the pattern names, onto a fresh object.
 
@@ -3486,20 +3509,36 @@ union with one bare binder: an object part of the operand goes to the
 `Promise` arm, a primitive to the bare binder, and an arm nothing reaches is
 inferred at `never`. Background: [promises and flattened types](REFERENCES.md#promises-and-flattened-types).
 
-### Loops over arrays
+### Loops and spreads over iterables
 
-`for (const x of e) S` steps the trusted intrinsic
+`for (const x of e) S` steps a trusted **iteration intrinsic**, one per kind
+of host iterable, which the parser picks by TypeScript's type of $e$
+(`iterationKind` in `declaration-graph.mts`, every part of a union alike).
+With $\mathit{Step}(E)=()\Rightarrow\{\mathsf{readonly}\ \mathit{value}:E\}\mid\mathsf{null}$:
 
 $$
-\mathtt{\%Iterate\%}:\forall T.\ (\mathit{xs}:\mathsf{readonly}\ T[\,])\Rightarrow
-(()\Rightarrow\{\mathsf{readonly}\ \mathit{value}:T\}\mid\mathsf{null})
+\begin{array}{ll}
+\mathtt{\%Iterate\%}:\forall T.\ (\mathsf{readonly}\ T[\,])\Rightarrow\mathit{Step}(T) & \text{an array or tuple}\\
+\mathtt{\%Iterate{:}string\%}:(\mathsf{string})\Rightarrow\mathit{Step}(\mathsf{string}) & \text{a string, by code point}\\
+\mathtt{\%Iterate{:}Set\%}:\forall T.\ (\mathsf{Set}\langle T\rangle)\Rightarrow\mathit{Step}(T) & \\
+\mathtt{\%Iterate{:}Map\%}:\forall K\,V.\ (\mathsf{Map}\langle K,V\rangle)\Rightarrow\mathit{Step}([K,V]) & \text{a fresh entry per step}\\
+\mathtt{\%Iterate{:}Iterator\%}:\forall T.\ (\mathsf{Iterator}\langle T\rangle)\Rightarrow\mathit{Step}(T) & \text{a SetIterator or MapIterator}
+\end{array}
 $$
 
-which Lean compiles itself (`SourceExtraction.body`):
+`Set` and `Map` are the [interface overlay](#library-types)'s, whose
+`keys`, `values` and `entries` give a `SetIterator` or `MapIterator` read as
+an `Iterator` of its argument. None of these iterators has a `return`, so a
+loop left early by `break`, `return` or a throw calls nothing. An iterable of
+any other kind with a `[Symbol.iterator]` (an `Iterable<T>`, a record with
+one) is a client's, whose `return` an early exit calls, and is refused; any
+other steps `%Iterate%`, whose typing then refuses what is no array. Lean
+compiles the loop itself (`SourceExtraction.body`), $\mathit{it}$ the picked
+intrinsic:
 
 $$
 \llbracket\mathsf{for}\ (\mathsf{const}\ x\ \mathsf{of}\ e)\ S\rrbracket=
-n\leftarrow\mathtt{\%Iterate\%}(\llbracket e\rrbracket);\
+n\leftarrow\mathit{it}(\llbracket e\rrbracket);\
 \mathit{head}:\ r\leftarrow n();\
 \mathsf{if}\ r\ \mathsf{is\ null}\ \mathsf{then}\ \mathit{exit}\
 \mathsf{else}\ x\leftarrow r.\mathit{value};\ \llbracket S\rrbracket;\ \mathsf{goto}\ \mathit{head}
@@ -3508,17 +3547,33 @@ $$
 `n` is a slot at the call's claimed type, the head a cut stated by the loop's
 entry claims, `continue` and the body's end go to the head and `break` to the
 exit; the tag dispatch refines `r` on each arm (`tagBind isNul`). The derived
-rule, with $T$ the call's instance:
+rule, with $\mathit{it}:\forall\vec\alpha.\ (P)\Rightarrow\mathit{Step}(E)$ and
+$\sigma$ the call's instance:
 
 $$
-\frac{\Gamma\vdash e:A\quad A\le\mathsf{readonly}\ T[\,]\quad
-      \Gamma_{\mathit{head}},x:T\vdash S\quad \Gamma_{\mathit{head}}\ \text{the loop's entry claims}}
+\frac{\Gamma\vdash e:A\quad A\le P\sigma\quad
+      \Gamma_{\mathit{head}},x:E\sigma\vdash S\quad \Gamma_{\mathit{head}}\ \text{the loop's entry claims}}
      {\Gamma\vdash\mathsf{for}\ (\mathsf{const}\ x\ \mathsf{of}\ e)\ S}\ \textsc{for-of}
 $$
 
 Arrays are dense (`listT`), so the iterator yields a `T` at every index
 below the length. Array patterns read positions under the same trust
 ([patterns](#patterns)).
+
+An argument spread `f(…, ...e, …)` over an iterable of one of the other kinds
+is the spread of the fresh array its iterator yields, collected where the
+spread is written: $\ldots e\equiv\ldots\mathtt{\%Spread{:}K\%}(e)$, with
+$\mathtt{\%Spread{:}K\%}:\forall\vec\alpha.\ (P)\Rightarrow E[\,]$ for each
+$\mathtt{\%Iterate{:}K\%}:\forall\vec\alpha.\ (P)\Rightarrow\mathit{Step}(E)$, the
+array of what that step yields until $\mathsf{null}$. It is an ordinary call
+of a trusted value, and the array an ordinary spread into a variadic
+callee. A spread of a client's iterable is refused.
+
+A tuple meets `Iterable<T>` through the readonly array of its positions: the
+producer claims a tuple expected at an iterable other than an array at
+$\mathsf{readonly}\ (A_0\cup\ldots\cup A_{n-1})[\,]$, which Lean derives from
+the tuple ($\mathsf{list}$ inclusion) and relates to the iterable through
+`Array.prototype[Symbol.iterator]`, as for any array.
 
 ### Statement forms
 

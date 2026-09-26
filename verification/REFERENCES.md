@@ -247,7 +247,22 @@ Language Specification* as of this writing). Sections relied on by name:
   `ToBoolean`, `typeof`;
 - [OrdinaryCallBindThis](https://tc39.es/ecma262/#sec-ordinarycallbindthis),
   [EvaluateCall](https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-evaluatecall),
-  bound function exotic objects, `Function.prototype.apply`.
+  bound function exotic objects, `Function.prototype.apply`;
+- iteration: [ForIn/OfBodyEvaluation](https://tc39.es/ecma262/#sec-runtime-semantics-forin-div-ofbodyevaluation-lhs-stmt-iterator-lhskind-labelset)
+  and [IteratorClose](https://tc39.es/ecma262/#sec-iteratorclose) (an early
+  exit calls `return` only where the iterator has one),
+  [%ArrayIteratorPrototype%.next](https://tc39.es/ecma262/#sec-%arrayiteratorprototype%.next)
+  (the length read at each step),
+  [%StringIteratorPrototype%.next](https://tc39.es/ecma262/#sec-%stringiteratorprototype%.next)
+  (code points), [CreateSetIterator](https://tc39.es/ecma262/#sec-createsetiterator)
+  and [CreateMapIterator](https://tc39.es/ecma262/#sec-createmapiterator)
+  (a fresh entry array per step), the
+  [%IteratorPrototype%](https://tc39.es/ecma262/#sec-%iteratorprototype%-object)
+  (its `[Symbol.iterator]` returns the iterator; no `return`),
+  [IteratorBindingInitialization](https://tc39.es/ecma262/#sec-runtime-semantics-iteratorbindinginitialization)
+  of a rest element and
+  [ArgumentListEvaluation](https://tc39.es/ecma262/#sec-runtime-semantics-argumentlistevaluation)
+  of a spread.
 
 **Used for** the meaning of every calculus step and every host row of the
 trust surface; checked by review and `#guard` tests against node, not proved.
@@ -256,6 +271,8 @@ trust surface; checked by review and `#guard` tests against node, not proved.
 [DESIGN: trust surface](DESIGN.md#trust-surface),
 [SEMANTICS: operational language](SEMANTICS.md#operational-language),
 [PROGRAM-TYPING: async functions and await](PROGRAM-TYPING.md#async-functions-and-await),
+[PROGRAM-TYPING: loops and spreads over iterables](PROGRAM-TYPING.md#loops-and-spreads-over-iterables),
+[PROGRAM-TYPING: patterns](PROGRAM-TYPING.md#patterns),
 PROGRAM-TYPING's callable-object sections (its `[c1]`–`[c7]` links),
 [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md),
 [callables tests](tests/callables/README.md).

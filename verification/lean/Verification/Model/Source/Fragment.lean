@@ -403,8 +403,9 @@ structure ArrayElem (Expr : Type) where
 value found there. An object pattern reads its fields in order; an array
 pattern reads its positions in order, a hole being a position no element
 names, and its rest, at the position after its elements, collects the
-positions from there on into a fresh array. An element's default replaces a
-read that is `undefined`. -/
+positions from there on into a fresh array: by reads where it is not a
+`slice`, and by a call of `%RestFrom:k%` (`restFromName`) where it is one.
+An element's default replaces a read that is `undefined`. -/
 inductive Pattern (Expr : Type) where
   | name (name : String) (namePos : Span)
   /-- An object pattern: its properties, then, with `rest`, the fresh object
@@ -413,7 +414,7 @@ inductive Pattern (Expr : Type) where
   | object (pos : Span) (props : List (String × Pattern Expr × Option Expr))
       (rest : Option (Span × Pattern Expr))
   | array (pos : Span) (elems : List (Nat × Pattern Expr × Option Expr))
-      (rest : Option (Nat × Span × Pattern Expr))
+      (rest : Option (Nat × Span × Bool × Pattern Expr))
 
 /-- The names a pattern binds, in the order it binds them. -/
 partial def Pattern.names {Expr : Type} : Pattern Expr → List String
@@ -421,7 +422,7 @@ partial def Pattern.names {Expr : Type} : Pattern Expr → List String
   | .object _ props rest => props.flatMap (fun (_, t, _) => t.names) ++
       ((rest.map fun (_, t) => t.names).getD [])
   | .array _ elems rest => elems.flatMap (fun (_, t, _) => t.names) ++
-      ((rest.map fun (_, _, t) => t.names).getD [])
+      ((rest.map fun (_, _, _, t) => t.names).getD [])
 
 /-- A pattern's defaults, in evaluation order. -/
 partial def Pattern.defaults {Expr : Type} : Pattern Expr → List Expr
@@ -429,7 +430,26 @@ partial def Pattern.defaults {Expr : Type} : Pattern Expr → List Expr
   | .object _ props rest => props.flatMap (fun (_, t, d) => d.toList ++ t.defaults) ++
       ((rest.map fun (_, t) => t.defaults).getD [])
   | .array _ elems rest => elems.flatMap (fun (_, t, d) => d.toList ++ t.defaults) ++
-      ((rest.map fun (_, _, t) => t.defaults).getD [])
+      ((rest.map fun (_, _, _, t) => t.defaults).getD [])
+
+/-- The intrinsic a slice rest after `k` positions calls (`intrinsics.mts`):
+`<T>(xs: readonly [unknown?, …, ...T[]]) => T[]`, `k` optional positions, a
+fresh array of `xs`'s elements from `k` to its current length, trusted. -/
+def restFromName (k : Nat) : String := s!"%RestFrom:{k}%"
+
+/-- A pattern's slice rests, each a call of its `%RestFrom:k%`: the rest's
+span, which is the call's, and `k`. -/
+partial def Pattern.slices {Expr : Type} : Pattern Expr → List (Span × Nat)
+  | .name .. => []
+  | .object _ props rest => props.flatMap (fun (_, t, _) => t.slices) ++
+      ((rest.map fun (_, t) => t.slices).getD [])
+  | .array _ elems rest => elems.flatMap (fun (_, t, _) => t.slices) ++
+      ((rest.map fun (k, p, slice, t) => (if slice then [(p, k)] else []) ++ t.slices).getD [])
+
+/-- The calls of the intrinsics slice rests make, as `Expr.callees` lists a
+call: the call at the rest's span, the intrinsic read at its `...`. -/
+def sliceCallees (slices : List (Span × Nat)) : List (Span × Span × String × List Json) :=
+  slices.map fun (p, k) => (p, (p.1, p.1 + "...".length), restFromName k, [])
 
 /-- The pattern with each default rewritten. -/
 partial def Pattern.mapDefaultsM {Expr : Type} {m : Type → Type} [Monad m] (f : Expr → m Expr) :
@@ -439,8 +459,8 @@ partial def Pattern.mapDefaultsM {Expr : Type} {m : Type → Type} [Monad m] (f 
       return (k, ← t.mapDefaultsM f, ← d.mapM f)) (← rest.mapM fun (q, t) => do
       return (q, ← t.mapDefaultsM f))
   | .array p elems rest => return .array p (← elems.mapM fun (i, t, d) => do
-      return (i, ← t.mapDefaultsM f, ← d.mapM f)) (← rest.mapM fun (i, p, t) => do
-      return (i, p, ← t.mapDefaultsM f))
+      return (i, ← t.mapDefaultsM f, ← d.mapM f)) (← rest.mapM fun (i, p, s, t) => do
+      return (i, p, s, ← t.mapDefaultsM f))
 
 /-- A lexically scoped rigid binder. Bounds may mention outer or preceding
 binders; the source decoder that consumes the expression checks that scope. -/
@@ -498,7 +518,7 @@ inductive Expr where
   takes its position of the store, or its default when that read is
   undefined, and the rest's local the fresh array of the positions after
   them, claimed at the rest's span; the value is the right side. -/
-  | arrayAssign (pos : Span) (targets : List (ArrayElem Expr)) (rest : Option (Span × ArrayElem Expr))
+  | arrayAssign (pos : Span) (targets : List (ArrayElem Expr)) (rest : Option (Span × Bool × ArrayElem Expr))
       (rhs : Expr)
   /-- `e[key]` with a numeric key: an element read of the array's store, and
   its assignment; resolved from `index` and `indexWrite` by the key's claim. -/
@@ -625,10 +645,12 @@ inductive Stmt where
   of their own: the first statement's is the block's. A labeled block is where
   a `break` of its label goes: a lowered `switch` is made of them. -/
   | block (pos : Span) (label : Option String) (body : List Stmt)
-  /-- `for (const name of iterable) body` over an array: the iterable once,
-  then the intrinsic `%Iterate%` steps its iterator, binding each element to
-  `name` for one run of the body. -/
-  | forOf (pos : Span) (name : String) (namePos : Span) (iterable : Expr) (body : List Stmt)
+  /-- `for (const name of iterable) body`: the iterable once, then the
+  iteration intrinsic `iterate` (one of `iterateNames`, which the parser picks
+  by the iterable's type) steps its iterator, binding each element to `name`
+  for one run of the body. -/
+  | forOf (pos : Span) (name : String) (namePos : Span) (iterate : String) (iterable : Expr)
+      (body : List Stmt)
   | effect (pos : Span) (e : Expr)
   /-- `throw e`: `e`, then a throw of its value, which leaves the function
   unless an enclosing `try` catches it. -/
@@ -645,6 +667,14 @@ end
 /-- The intrinsic a `for...of` over an array steps (`intrinsics.mts`):
 `<T>(xs: readonly T[]) => () => { readonly value: T } | null`, trusted. -/
 def iterateName : String := "%Iterate%"
+
+/-- The iteration intrinsics, one per kind of host iterable (`intrinsics.mts`):
+an array's, a string's (by code point), a `Set`'s, a `Map`'s and a host
+collection iterator's. Each is `() => { readonly value: E } | null` of the
+iterable at its signature; none has a `return`, so an early exit calls
+nothing. A loop names one of them and no other value. -/
+def iterateNames : List String :=
+  [iterateName, "%Iterate:string%", "%Iterate:Set%", "%Iterate:Map%", "%Iterate:Iterator%"]
 
 /-- The name an optional chain's body reads its saved receiver by: no source
 identifier is spelled so. -/
@@ -673,14 +703,16 @@ partial def Expr.freeNames : Expr → List String
   | .update _ _ a b _ => a.freeNames ++ (b.map Expr.freeNames).getD []
   | .assign _ n _ e | .nullishAssign _ n _ e => n :: e.freeNames
   | .arrayAssign _ targets rest rhs => rhs.freeNames ++ targets.flatMap
-      (fun q => q.name :: (q.default_.map Expr.freeNames).getD []) ++ (rest.map (·.2.name)).toList
+      (fun q => q.name :: (q.default_.map Expr.freeNames).getD []) ++ (rest.map (·.2.2.name)).toList ++
+      -- A slice rest reads its `%RestFrom:k%`.
+      (rest.filter (·.2.1)).toList.map (fun (_, _, q) => restFromName q.index)
   | .bindWithReceiver _ f r args | .callWithReceiver _ f r args =>
     f.freeNames ++ r.freeNames ++ args.flatMap Expr.freeNames
   | .applyWithReceiver _ f r list => f.freeNames ++ r.freeNames ++ (list.map Expr.freeNames).getD []
   | .call _ f args _ _ | .invoke _ f args _ _ => f.freeNames ++ args.flatMap Expr.freeNames
   | .letBody _ n _ a b => a.freeNames ++ b.freeNames.filter (· != n)
   | .destructBody _ t a b => a.freeNames ++ t.defaults.flatMap Expr.freeNames ++
-      b.freeNames.filter (!t.names.contains ·)
+      t.slices.map (restFromName ·.2) ++ b.freeNames.filter (!t.names.contains ·)
   | .optional _ _ r b => r.freeNames ++ b.freeNames.filter (· != chainName)
   | .block _ ss => stmtsFreeNames ss
 
@@ -705,8 +737,9 @@ partial def Expr.callees : Expr → List (Span × Span × String × List Json)
     a.callees ++ b.callees ++ c.callees
   | .update _ _ a b _ => a.callees ++ (b.map Expr.callees).getD []
   | .assign _ _ _ e | .nullishAssign _ _ _ e => e.callees
-  | .arrayAssign _ targets _ rhs => rhs.callees ++ targets.flatMap
-      (fun q => (q.default_.map Expr.callees).getD [])
+  | .arrayAssign _ targets rest rhs => rhs.callees ++ targets.flatMap
+      (fun q => (q.default_.map Expr.callees).getD []) ++
+      sliceCallees ((rest.filter (·.2.1)).toList.map fun (p, _, q) => (p, q.index))
   | .bindWithReceiver _ f r args | .callWithReceiver _ f r args =>
     f.callees ++ r.callees ++ args.flatMap Expr.callees
   | .applyWithReceiver _ f r list => f.callees ++ r.callees ++ (list.map Expr.callees).getD []
@@ -714,7 +747,7 @@ partial def Expr.callees : Expr → List (Span × Span × String × List Json)
     (match f with | .var q n => [(p, q, n, ts)] | _ => []) ++ f.callees ++ args.flatMap Expr.callees
   | .invoke _ f args _ _ => f.callees ++ args.flatMap Expr.callees
   | .letBody _ n _ a b => a.callees ++ b.callees.filter (·.2.2.1 != n)
-  | .destructBody _ t a b => a.callees ++ t.defaults.flatMap Expr.callees ++
+  | .destructBody _ t a b => a.callees ++ t.defaults.flatMap Expr.callees ++ sliceCallees t.slices ++
       b.callees.filter (!t.names.contains ·.2.2.1)
   | .optional _ _ r b => r.callees ++ b.callees.filter (·.2.2.1 != chainName)
   | .block _ ss => stmtsCallees ss
@@ -737,12 +770,13 @@ partial def Stmt.freeNames : Stmt → List String
     -- Each initializer sees the earlier declarators.
     (bs.zipIdx.flatMap fun (b, i) =>
       b.init.freeNames.filter fun n => !((bs.take i).map (·.name)).contains n)
-  | .destructure _ t d init => init.freeNames ++ (d.toList ++ t.defaults).flatMap Expr.freeNames
+  | .destructure _ t d init => init.freeNames ++ (d.toList ++ t.defaults).flatMap Expr.freeNames ++
+    t.slices.map (restFromName ·.2)
   | .ite _ c t e => c.freeNames ++ stmtsFreeNames t ++ stmtsFreeNames (e.getD [])
   | .loop _ c b u => c.freeNames ++ stmtsFreeNames b ++ stmtsFreeNames u
   | .block _ _ b => stmtsFreeNames b
-  -- The loop reads the `%Iterate%` intrinsic, which no expression names.
-  | .forOf _ name _ i b => iterateName :: i.freeNames ++ (stmtsFreeNames b).filter (· != name)
+  -- The loop reads its iteration intrinsic, which no expression names.
+  | .forOf _ name _ it i b => it :: i.freeNames ++ (stmtsFreeNames b).filter (· != name)
   | .tryStmt _ b h f => stmtsFreeNames b ++
     (match h with
      | some (some (name, _), hs) => (stmtsFreeNames hs).filter (· != name)
@@ -763,13 +797,13 @@ partial def Stmt.callees : Stmt → List (Span × Span × String × List Json)
     (f.getD []).flatMap Stmt.callees
   | .constants _ bs | .mutables _ bs => bs.flatMap fun b => b.init.callees
   | .destructure _ target d init => init.callees ++
-    (d.toList ++ target.defaults).flatMap Expr.callees
+    (d.toList ++ target.defaults).flatMap Expr.callees ++ sliceCallees target.slices
   | .ite _ c t e => c.callees ++ t.flatMap Stmt.callees ++ (e.getD []).flatMap Stmt.callees
   | .loop _ c b u => c.callees ++ b.flatMap Stmt.callees ++ u.flatMap Stmt.callees
   | .block _ _ b => b.flatMap Stmt.callees
-  -- The loop calls `%Iterate%` at its own span, reading it at the `for`
-  -- keyword, which is no expression and has no claim.
-  | .forOf p name _ i b => (p, (p.1, p.1 + "for".length), iterateName, []) :: i.callees ++
+  -- The loop calls its iteration intrinsic at its own span, reading it at
+  -- the `for` keyword, which is no expression and has no claim.
+  | .forOf p name _ it i b => (p, (p.1, p.1 + "for".length), it, []) :: i.callees ++
     (b.flatMap Stmt.callees).filter (·.2.2.1 != name)
   | .brk .. | .cont .. => []
 end
@@ -836,7 +870,7 @@ def decodeArrayElem (decodeExpr : Json → Except String Expr) (q : Json) :
 /-- A statement's own span. -/
 def Stmt.pos : Stmt → Span
   | .ret p _ | .constants p _ | .mutables p _ | .destructure p _ _ _
-  | .ite p _ _ _ | .loop p _ _ _ | .forOf p _ _ _ _ | .brk p _ | .cont p | .effect p _
+  | .ite p _ _ _ | .loop p _ _ _ | .forOf p _ _ _ _ _ | .brk p _ | .cont p | .effect p _
   | .block p _ _ | .throw p _ | .tryStmt p _ _ _ => p
 
 /-- Singleton notation for small source-adapter fixtures. -/
@@ -913,8 +947,8 @@ partial def decodePattern (decodeExpr : Json → Except String Expr) (j : Json) 
     let rest ← match ← jField j "rest" with
       | .null => pure none
       | r => do
-        CellClaims.fieldsExactly r ["index","pos","target"]
-        pure (some (← (← jField r "index").getNat?, ← jSpan r "pos",
+        CellClaims.fieldsExactly r ["index","pos","target","slice"]
+        pure (some (← (← jField r "index").getNat?, ← jSpan r "pos", ← (← jField r "slice").getBool?,
           ← decodePattern decodeExpr (← jField r "target")))
     let indices := elems.map (·.1) ++ (rest.map (·.1)).toList
     if indices.isEmpty then throw "an empty pattern binds nothing"
@@ -1117,10 +1151,10 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     let rest ← match ← jField j "rest" with
       | .null => pure none
       | r => do
-        CellClaims.fieldsExactly r ["index","pos","name","namePos"]
-        pure (some (← jSpan r "pos",
+        CellClaims.fieldsExactly r ["index","pos","name","namePos","slice"]
+        pure (some (← jSpan r "pos", ← (← jField r "slice").getBool?,
           (⟨← (← jField r "index").getNat?, ← jStr (← jField r "name"), ← jSpan r "namePos", none⟩ : ArrayElem Expr)))
-    let indices := targets.map (·.index) ++ (rest.map (·.2.index)).toList
+    let indices := targets.map (·.index) ++ (rest.map (·.2.2.index)).toList
     if indices.isEmpty then throw "an empty pattern binds nothing"
     if !(indices.zip (indices.drop 1)).all (fun (a, b) => a < b) then
       throw "array pattern positions must increase"
@@ -1313,8 +1347,11 @@ partial def decodeStmt (j : Json) : Except String Stmt := do
     CellClaims.fieldsExactly j ["k","pos","label","body"]
     return .block p (← decodeLabel j) (← (← jArr j "body").mapM decodeStmt)
   | "forOf" =>
-    CellClaims.fieldsExactly j ["k","pos","name","namePos","iterable","body"]
-    return .forOf p (← jStr (← jField j "name")) (← jSpan j "namePos")
+    CellClaims.fieldsExactly j ["k","pos","name","namePos","iterate","iterable","body"]
+    let iterate ← jStr (← jField j "iterate")
+    if !iterateNames.contains iterate then
+      throw s!"a for...of loop steps an iteration intrinsic, not {iterate}"
+    return .forOf p (← jStr (← jField j "name")) (← jSpan j "namePos") iterate
       (← decodeExpr (← jField j "iterable")) (← (← jArr j "body").mapM decodeStmt)
   | "if" =>
     let thn ← (← jArr j "then").mapM decodeStmt

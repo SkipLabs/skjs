@@ -217,9 +217,9 @@ export const primitiveOverlay: Readonly<Record<PrimitiveKind, readonly OverlayEn
  * The host's collections hold their elements in internal slots the model
  * does not see; a method's contract is what it returns. `Set<T>` and
  * `Map<K, V>` are invariant in their parameters, since `add` and `set` take
- * them and `has`, `get` and `forEach` give them. Not listed: `keys`,
- * `values` and `entries`, whose `SetIterator` and `MapIterator` are read by
- * no rule yet, and `[Symbol.toStringTag]`. Of `Date`, the getters,
+ * them and `has`, `get` and `forEach` give them. `keys`, `values` and
+ * `entries` give a `SetIterator` or `MapIterator`, read as an `Iterator` of
+ * its argument. Not listed: `[Symbol.toStringTag]`. Of `Date`, the getters,
  * `setTime`, `valueOf`, `toString` and `toISOString` (a `RangeError` for an
  * invalid date, an outcome); `[Symbol.toPrimitive]`, whose overloads take
  * hints, is not listed, nor the members taking locales. */
@@ -236,6 +236,11 @@ export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>>
     // As for arrays: `SetIterator<T>` is an `Iterator<T>`.
     { name: "[Symbol.iterator]", from: "Set", signature: "[Symbol.iterator](): SetIterator<T>;",
       resultAs: "Iterator" },
+    // A `SetIterator<T>` is read as an `Iterator<T>` too; a `for...of` over
+    // one steps it as the host's (`intrinsics.mts`).
+    { name: "keys", from: "Set", signature: "keys(): SetIterator<T>;", resultAs: "Iterator" },
+    { name: "values", from: "Set", signature: "values(): SetIterator<T>;", resultAs: "Iterator" },
+    { name: "entries", from: "Set", signature: "entries(): SetIterator<[T, T]>;", resultAs: "Iterator" },
   ],
   Map: [
     { name: "clear", from: "Map", signature: "clear(): void;" },
@@ -250,6 +255,9 @@ export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>>
     { name: "size", from: "Map", signature: "readonly size: number;" },
     { name: "[Symbol.iterator]", from: "Map", signature: "[Symbol.iterator](): MapIterator<[K, V]>;",
       resultAs: "Iterator" },
+    { name: "keys", from: "Map", signature: "keys(): MapIterator<K>;", resultAs: "Iterator" },
+    { name: "values", from: "Map", signature: "values(): MapIterator<V>;", resultAs: "Iterator" },
+    { name: "entries", from: "Map", signature: "entries(): MapIterator<[K, V]>;", resultAs: "Iterator" },
   ],
   Date: [
     ...["valueOf", "getTime", "getFullYear", "getUTCFullYear", "getMonth", "getUTCMonth", "getDate",

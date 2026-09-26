@@ -358,7 +358,9 @@ and expr_node =
      undefined, and the rest's, the fresh array of the positions from its
      index on, claimed at its span. The expression's value is the right
      side's. *)
-  | ArrayAssign of (int * string * expr option) list * (int * Json.t * string) option * expr
+  (* A rest's index, span, local and whether it is a slice, which
+     `%RestFrom:k%` collects. *)
+  | ArrayAssign of (int * string * expr option) list * (int * Json.t * string * bool) option * expr
   (* A parameter's type is what the body reads. A defaulted one also admits
      `undefined` where the closure is called; the default replaces it. A rest
      parameter reads the tuple its arguments are collected into, and the
@@ -407,7 +409,8 @@ and pattern =
   (* An object pattern's rest, claimed at its span, is a fresh object holding
      the source's other own enumerable properties. *)
   | PObject of (string * pattern * expr option) list * (Json.t * pattern) option
-  | PArray of (int * pattern * expr option) list * (int * Json.t * pattern) option
+  (* A rest's index, span, whether it is a slice (`%RestFrom:k%`), target. *)
+  | PArray of (int * pattern * expr option) list * (int * Json.t * bool * pattern) option
 and stmt_node =
   | Declare of bool * (string * ty option * expr) list
   (* `const target = init`, the default (a parameter's) replacing an
@@ -421,9 +424,10 @@ and stmt_node =
   (* A block, labeled (a `break` may leave it) when it is part of a lowered
      `switch`. *)
   | Block of string option * stmt list
-  (* `for (const name of iterable) body`: the name's position, the iterable
-     and the body. *)
-  | ForOf of string * Json.t * expr * stmt list
+  (* `for (const name of iterable) body`: the name's position, the
+     iteration intrinsic stepping the iterable (`%Iterate%` for an array),
+     the iterable and the body. *)
+  | ForOf of string * Json.t * string * expr * stmt list
   (* `throw e`. *)
   | Throw of expr
   (* `try body catch (param) handler finally finalizer`: the handler's
@@ -449,7 +453,7 @@ let rec pattern_defaults = function
   | PObject (props,rest) -> List.concat_map (fun (_,t,d) -> Option.to_list d @ pattern_defaults t) props @
     (match rest with Some (_,t) -> pattern_defaults t | None -> [])
   | PArray (elems,rest) -> List.concat_map (fun (_,t,d) -> Option.to_list d @ pattern_defaults t) elems
-      @ (match rest with Some (_,_,t) -> pattern_defaults t | None -> [])
+      @ (match rest with Some (_,_,_,t) -> pattern_defaults t | None -> [])
 
 (* The name an optional chain's body reads its saved receiver by; no source
    identifier is spelled so. *)
@@ -483,7 +487,7 @@ and statement_children s = match s.statement with
   | If (c,a,b) -> c :: List.concat_map statement_children (a @ b)
   | While (c,b,u) -> c :: List.concat_map statement_children (b @ u)
   | Block (_,b) -> List.concat_map statement_children b
-  | ForOf (_,_,i,b) -> i :: List.concat_map statement_children b
+  | ForOf (_,_,_,i,b) -> i :: List.concat_map statement_children b
   | Try (b,h,f) -> List.concat_map statement_children
       (b @ (match h with Some (_,hs) -> hs | None -> []) @ Option.value f ~default:[])
   | Break _ | Continue -> []
@@ -494,7 +498,7 @@ let rec assigns_expr name e = match e.node with
   | Assign (n,_) | NullishAssign (n,_,_) when n = name -> true
   | Update (_,{node=Id n;_},_,_) | LogicalAssign (_,{node=Id n;_},_) when n = name -> true
   | ArrayAssign (targets,rest,_) when List.exists (fun (_,n,_) -> n = name) targets
-      || (match rest with Some (_,_,n) -> n = name | None -> false) -> true
+      || (match rest with Some (_,_,n,_) -> n = name | None -> false) -> true
   | _ -> List.exists (assigns_expr name) (children e)
 let rec assigns name s = match s.statement with
   | Declare (_,bs) -> List.exists (fun (_,_,e) -> assigns_expr name e) bs
@@ -503,7 +507,7 @@ let rec assigns name s = match s.statement with
   | Return e | Effect e -> assigns_expr name e
   | If (c,a,b) -> assigns_expr name c || List.exists (assigns name) (a @ b)
   | While (c,body,update) -> assigns_expr name c || List.exists (assigns name) (body @ update)
-  | ForOf (_,_,c,body) -> assigns_expr name c || List.exists (assigns name) body
+  | ForOf (_,_,_,c,body) -> assigns_expr name c || List.exists (assigns name) body
   | Block (_,body) -> List.exists (assigns name) body
   | Throw e -> assigns_expr name e
   | Try (body,handler,finalizer) -> List.exists (assigns name)
@@ -540,7 +544,8 @@ let rec expr binders j =
       | Json.Number n -> n | _ -> Json.fail "an index is a number") in
     ArrayAssign (List.map (fun q -> index q,text "name" q,
       (match field "default_" q with Null -> None | d -> Some (expr binders d))) (items "targets" j),
-      (match field "rest" j with Null -> None | r -> Some (index r,field "pos" r,text "name" r)),
+      (match field "rest" j with Null -> None
+        | r -> Some (index r,field "pos" r,text "name" r,Json.boolean (field "slice" r))),
       sub "rhs")
   | "bin" when text "op" j = "&&" || text "op" j = "||" ->
     Logical (text "op" j = "&&",sub "l",sub "r")
@@ -632,7 +637,8 @@ and pattern binders j =
   | "object" -> PObject (List.map (fun q -> text "field" q,target q,default q) (items "props" j),
       match field "rest" j with Null -> None | r -> Some (field "pos" r,target r))
   | "array" -> PArray (List.map (fun q -> index q,target q,default q) (items "elems" j),
-      match field "rest" j with Null -> None | r -> Some (index r,field "pos" r,target r))
+      match field "rest" j with Null -> None
+        | r -> Some (index r,field "pos" r,Json.boolean (field "slice" r),target r))
   | k -> unsupported ("pattern " ^ k)
 and stmt binders j =
   let statement = match text "k" j with
@@ -645,7 +651,7 @@ and stmt binders j =
   | "while" -> While (expr binders (field "cond" j),List.map (stmt binders) (items "body" j),
       List.map (stmt binders) (items "update" j))
   | "block" -> Block ((match field "label" j with Null -> None | l -> Some (Json.str l)),List.map (stmt binders) (items "body" j))
-  | "forOf" -> ForOf (text "name" j,field "namePos" j,expr binders (field "iterable" j),
+  | "forOf" -> ForOf (text "name" j,field "namePos" j,text "iterate" j,expr binders (field "iterable" j),
       List.map (stmt binders) (items "body" j))
   | "break" -> Break (match field "label" j with Null -> None | l -> Some (Json.str l))
   | "continue" -> Continue

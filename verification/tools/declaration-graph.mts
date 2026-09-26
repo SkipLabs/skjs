@@ -6,7 +6,7 @@
  * cannot state; a refusal never drops a declaration. */
 import { realpathSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
-import { API, DiagnosticCategory, SymbolFlags, TypeFlags, isUnionType, type Checker, type Program, type Type } from "typescript/unstable/sync";
+import { API, DiagnosticCategory, ElementFlags, SymbolFlags, TypeFlags, isTupleType, isTypeReference, isUnionType, type Checker, type Program, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, SourceFile, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
@@ -14,7 +14,8 @@ import { classInstance, computedForm, expandMapped, mapped, members, oneTerm, op
   typeTerm, type Mapped, type TermScope } from "./type-term.mts";
 import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePrototype, primitivePrototypeName, type OverlayEntry,
   type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
-import { intrinsics, intrinsicModule, nonThenable } from "./intrinsics.mts";
+import { intrinsics, intrinsicModule, iterateIteratorName, iterateMapName, iterateSetName, iterateStringName,
+  iterationIntrinsic, nonThenable, restFromIntrinsic, spreadName } from "./intrinsics.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { computedType, enclosingBinders, literalUnion, type ComputedContext } from "./computed-types.mts";
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
@@ -309,6 +310,23 @@ export function collectDeclarations(file: string, options: {
   /** Called for each of them TypeScript binds to a class declared at the
    * client's top level, with the class's name. */
   classTest?: (span: Span, cls: string) => void;
+  /** The iterables of the client's `for...of` loops: each that TypeScript
+   * types as a string, a `Set`, a `Map` or a host collection iterator is
+   * reported to `iterable` with the iteration intrinsic that steps it
+   * (`iterationIntrinsic`), which then joins the values; one it types as an
+   * object with a `[Symbol.iterator]` that is none of these nor an array,
+   * with `client`. Any other is left to `%Iterate%`. */
+  iterables?: readonly Span[];
+  /** Likewise the operands of the client's argument spreads, `f(...x)`: one
+   * of these kinds is reported with its spread intrinsic (`spreadName`). */
+  spreads?: readonly Span[];
+  iterable?: (span: Span, intrinsic: string) => void;
+  /** The targets of the client's array pattern rests, each with the number of
+   * positions before it: each TypeScript types as no one tuple of required
+   * positions is a slice, reported to `restSlice`, and `%RestFrom:k%`
+   * (`restFromIntrinsic`) joins the values. */
+  restTargets?: readonly { span: Span; index: number }[];
+  restSlice?: (span: Span) => void;
   /** Identifiers of the client that may name one of its local bindings: each
    * that TypeScript binds to a value declaration in the client is reported
    * to `bindingRead` with the span of that declaration's name. A shorthand
@@ -846,6 +864,73 @@ export function collectDeclarations(file: string, options: {
       } catch (error) {
         throw new DeclarationError(at, error instanceof Error ? error.message : String(error));
       }
+    }
+    // A `for...of` over a host iterable other than an array steps the
+    // iteration intrinsic of its kind, picked by TypeScript's type of the
+    // iterable, every part of a union alike; an object with a
+    // `[Symbol.iterator]` of none of these kinds is a client's iterable.
+    const collections: Record<string, string> = { Set: iterateSetName, Map: iterateMapName,
+      SetIterator: iterateIteratorName, MapIterator: iterateIteratorName };
+    const iterationKind = (part: Type): string => {
+      if (checker.isArrayType(part) || checker.isTupleType(part)) return "array";
+      if (part.flags & TypeFlags.StringLike) return iterateStringName;
+      const symbol = part.getSymbol();
+      const named = symbol && Object.hasOwn(collections, symbol.name) ? collections[symbol.name] : undefined;
+      if (named && symbol?.declarations.length &&
+          symbol?.declarations.every(d => isLibraryModule(idOf(d.resolve()?.getSourceFile() ?? client))))
+        return named;
+      if (part.flags & TypeFlags.Object &&
+          checker.getPropertiesOfType(part).some(p => p.name.startsWith("__@iterator@")))
+        return "client";
+      return "other";
+    };
+    const listedIterations = new Set<string>();
+    const iterated = [...(options.iterables ?? []).map(span => ({ span, spread: false })),
+      ...(options.spreads ?? []).map(span => ({ span, spread: true }))];
+    for (const { span, spread } of iterated) {
+      const iterable = expressionAt(client, span);
+      if (!iterable) throw new DeclarationError(span, "TypeScript iterable missing");
+      const type = checker.getTypeAtLocation(iterable);
+      const kinds = [...new Set((type && isUnionType(type) ? type.getTypes() : type ? [type] : [])
+        .map(iterationKind))];
+      const [kind] = kinds;
+      const picked = kinds.length === 1 && kind ? kind : kinds.includes("client") ? "client" : "other";
+      if (picked === "array" || picked === "other") continue;
+      const listed = spread && picked !== "client" ? spreadName(picked) : picked;
+      if (picked !== "client" && !listedIterations.has(listed)) {
+        listedIterations.add(listed);
+        try {
+          const intrinsic = iterationIntrinsic(listed, (name, args) => libraryReference(name, args));
+          values.push({ binding: { local: intrinsic.name, imported: intrinsic.name,
+            specifier: intrinsicModule, span },
+            declaration: { module: intrinsicModule, name: intrinsic.name, span: [0, 0] },
+            construct: false, typeParams: intrinsic.typeParams, type: intrinsic.type });
+        } catch (error) {
+          throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
+        }
+      }
+      options.iterable?.(span, listed);
+    }
+    // An array pattern's rest over what is no one tuple of required
+    // positions (an array, a union of tuples, a tuple with optional or rest
+    // elements) is a slice, which `%RestFrom:k%` collects.
+    const listedRests = new Set<number>();
+    for (const { span, index } of options.restTargets ?? []) {
+      const target = expressionAt(client, span);
+      if (!target) throw new DeclarationError(span, "TypeScript rest source missing");
+      const type = checker.getTypeAtLocation(target);
+      const tuple = type && !isUnionType(type) && checker.isTupleType(type) && isTypeReference(type)
+        ? type.getTarget() : undefined;
+      const fixed = !!tuple && isTupleType(tuple) && (tuple.elementFlags ?? []).every(f => f === ElementFlags.Required);
+      if (fixed) continue;
+      if (!listedRests.has(index)) {
+        listedRests.add(index);
+        const intrinsic = restFromIntrinsic(index);
+        values.push({ binding: { local: intrinsic.name, imported: intrinsic.name, specifier: intrinsicModule, span },
+          declaration: { module: intrinsicModule, name: intrinsic.name, span: [0, 0] },
+          construct: false, typeParams: intrinsic.typeParams, type: intrinsic.type });
+      }
+      options.restSlice?.(span);
     }
     // `async`, `await` and `for...of`, as the intrinsics that stand for them
     // (`intrinsics.mts`): trusted steps at their signatures, listed as values

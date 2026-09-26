@@ -36,8 +36,9 @@ it, in this order:
   failure has a stated reason, each at its source span
   (`Proposal.explain`). The one whose span meets the failed obligation's,
   the innermost, names it. The forms and their reasons: a `for...of` loop
-  or a spread over a string or a non-array iterable (only an array's
-  iteration is stated, `%Iterate%`); an open record or `unknown` that
+  or a spread over a union of iterable kinds, an arm of which is no array
+  (one host kind's iteration is stated, `%Iterate:K%`, where the whole
+  iterable is of it; a client's iterable is refused by the parser); an open record or `unknown` that
   `Array.isArray` or `instanceof Array` found an array, used as one (the
   object owns an array's store, not a proven array of `Array.prototype`);
   `length` on a union of an array and a record naming it, an array used as
@@ -50,7 +51,7 @@ it, in this order:
   application of it (`R | PromiseLike<R>`, `then` and `catch`); a record at
   an index signature (TypeScript's implicit index signature; `Closed<T>` is
   read as `T`); a mutable array or a writable field at a wider one
-  (invariance); a tuple at an iterable; a `typeof` test, `??` or strict
+  (invariance); a `typeof` test, `??` or strict
   equality on a value of a type parameter or `unknown`; a cell read at its
   contract (contents are stated only for primitives, and forgotten across a
   step that may write them); a write adding a dictionary's key, a spread of

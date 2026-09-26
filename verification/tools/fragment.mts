@@ -63,10 +63,12 @@ export type Expr =
   /* `[a, b = d, ...r] = rhs`: the right side once, then each mutable local
      takes its position of the store, or its default when that read is
      undefined, and the rest's local the fresh array of the positions from its
-     index on, claimed at the rest's span. The expression's value is the right
+     index on, claimed at the rest's span; a `slice` rest, which TypeScript
+     types as no one tuple of required positions, is collected by
+     `%RestFrom:k%` (`intrinsics.mts`). The expression's value is the right
      side. */
   | { k: "arrayAssign"; pos: Span; targets: ArrayElemAst[];
-      rest: { index: number; pos: Span; name: string; namePos: Span } | null; rhs: Expr }
+      rest: { index: number; pos: Span; name: string; namePos: Span; slice: boolean } | null; rhs: Expr }
   | { k: "indexWrite"; pos: Span; receiver: Expr; key: Expr; rhs: Expr }
   | { k: "bin"; pos: Span; op: string; l: Expr; r: Expr }
   /* A binary operator on primitive operands: `l`, then `r`, then the
@@ -224,7 +226,9 @@ export type Stmt =
   | { k: "block"; pos: Span; label: string | null; body: Stmt[] }
   /* `for (const name of iterable) body`, over an array: the iterable once,
      then one run of the body per element, bound to `name`. */
-  | { k: "forOf"; pos: Span; name: string; namePos: Span; iterable: Expr; body: Stmt[] }
+  /** `iterate` is the iteration intrinsic stepping the iterable's iterator
+   * (`intrinsics.mts`), which the parser picks by TypeScript's type of it. */
+  | { k: "forOf"; pos: Span; name: string; namePos: Span; iterate: string; iterable: Expr; body: Stmt[] }
   | { k: "if"; pos: Span; cond: Expr; then: Stmt[]; else_: Stmt[] | null }
   /* `throw e`: `e`, then a throw of its value, which leaves the function
      unless an enclosing `try` catches it. */
@@ -261,14 +265,16 @@ export type Stmt =
  * pattern reads its positions in order (a hole is a position no element
  * names), and its rest, at the position after its elements, collects the
  * positions from there on into a fresh array, claimed at the rest's span like
- * an array literal. An element's default replaces a read that is undefined. */
+ * an array literal: a `slice` rest by a call of `%RestFrom:k%`, `k` its
+ * index (`intrinsics.mts`). An element's default replaces a read that is
+ * undefined. */
 export type PatternAst =
   | { k: "name"; name: string; pos: Span }
   /* An object pattern's rest copies the source's other own enumerable
      properties onto a fresh object, claimed at the rest's span. */
   | { k: "object"; pos: Span; props: PatternPropAst[]; rest: { pos: Span; target: PatternAst } | null }
   | { k: "array"; pos: Span; elems: PatternElemAst[];
-      rest: { index: number; pos: Span; target: PatternAst } | null };
+      rest: { index: number; pos: Span; target: PatternAst; slice: boolean } | null };
 
 /** One property of an object pattern: `field: target = default_`. */
 export interface PatternPropAst {

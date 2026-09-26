@@ -68,7 +68,7 @@ import { messageOf } from "./thrown.mts";
 import { collectDeclarations, DeclarationError, libraryArguments, libraryTerm, tsconfigOf, type LibraryType,
   type SeenDiagnostic }
   from "./declaration-graph.mts";
-import { asyncCompleteName, asyncReturnName, awaitName, forInName } from "./intrinsics.mts";
+import { asyncCompleteName, asyncReturnName, awaitName, forInName, iterateName } from "./intrinsics.mts";
 
 /** A question-mark parameter requires an optional suffix. A default may
  * precede a required parameter: callers supply undefined in that position. */
@@ -329,6 +329,11 @@ class Gate {
   /** `instanceof` right operands TypeScript binds to a class declared at the
    * file's top level, by span: the class. */
   readonly classTests = new Map<string, string>();
+  /** A `for...of` iterable's iteration intrinsic, where TypeScript's type of
+   * it picks one other than `%Iterate%`, or `client`, by the iterable's span. */
+  readonly iterations = new Map<string, string>();
+  /** The array pattern rest targets TypeScript types as a slice, by span. */
+  readonly slices = new Set<string>();
   /** Identifiers in a class's own body TypeScript binds to that class, by
    * span: the class. */
   readonly classReads = new Map<string, string>();
@@ -935,6 +940,22 @@ class Gate {
 
   private intrinsic(name: string, pos: Span, at: Span, args: Expr[]): Expr {
     return { k: "apply", pos, callee: { k: "id", pos: at, name }, args };
+  }
+
+  /** A spread argument's operand. Over a string, a `Set`, a `Map` or a host
+   * collection iterator, which TypeScript's type of it decides, `...x` is
+   * `...%Spread:K%(x)`: the fresh array of the elements its iterator yields
+   * (`intrinsics.mts`), the call at the spread, the intrinsic read at `...`.
+   * An array is spread as it is; a client's iterable is refused. */
+  private spreadOperand(arg: ts.SpreadElement): Expr {
+    const operand = this.expr(arg.expression);
+    const intrinsic = this.iterations.get(this.span(arg.expression).join(":"));
+    if (!intrinsic) return operand;
+    if (intrinsic === "client")
+      this.fail(arg, "a spread of an iterable other than an array, a string, a `Set`, a `Map` or a host " +
+        "collection iterator is outside the fragment: its own iterator runs, which the spread does not state");
+    const start = arg.getStart(this.file);
+    return this.intrinsic(intrinsic, this.span(arg), [start, start + "...".length], [operand]);
   }
 
   /** `await e`: `%Await%(e)`, the intrinsic read at the keyword. Every span
@@ -1594,7 +1615,7 @@ class Gate {
         const args = node.arguments.map((arg, i) => {
           if (!ts.isSpreadElement(arg)) return this.expr(arg);
           spreads.push(i);
-          return this.expr(arg.expression);
+          return this.spreadOperand(arg);
         });
         // Explicit type arguments instantiate the method's leading binders;
         // Lean checks the claimed instance against them.
@@ -1617,7 +1638,7 @@ class Gate {
       const args = node.arguments.map((arg, i) => {
         if (!ts.isSpreadElement(arg)) return this.expr(arg);
         spreads.push(i);
-        return this.expr(arg.expression);
+        return this.spreadOperand(arg);
       });
       // Explicit type arguments state the callee's instance; Lean checks the
       // claimed instance against them, as for a method call.
@@ -1734,7 +1755,7 @@ class Gate {
     const args = node.arguments.map((arg, i) => {
       if (!ts.isSpreadElement(arg)) return this.expr(arg);
       spreads.push(i);
-      return this.expr(arg.expression);
+      return this.spreadOperand(arg);
     });
     const method = !node.questionDotToken && (object.k === "read" || object.k === "index");
     const typeArgs = node.typeArguments?.map((t) => this.typeOf(t, node));
@@ -2115,7 +2136,8 @@ class Gate {
         if (ts.isOmittedExpression(el)) return [];
         if (ts.isSpreadElement(el)) {
           const target = named(el.expression);
-          rest = { index, pos: this.span(el), name: this.local(target), namePos: this.span(target) };
+          rest = { index, pos: this.span(el), name: this.local(target), namePos: this.span(target),
+            slice: this.slices.has(this.span(node.right).join(":")) };
           return [];
         }
         const target =
@@ -2564,7 +2586,8 @@ class Gate {
         // A hole is an omitted expression, or a binding element without a name.
         if (ts.isOmittedExpression(el) || !el.name) return;
         if (el.dotDotDotToken)
-          rest = { index, pos: this.span(el), target: this.pattern(el.name, names) };
+          rest = { index, pos: this.span(el), target: this.pattern(el.name, names),
+            slice: this.slices.has(this.span(node).join(":")) };
         else
           elems.push({
             index,
@@ -2736,6 +2759,7 @@ class Gate {
       pos: this.span(node),
       name: this.local(d.name),
       namePos: this.span(d.name),
+      iterate: iterateName,
       iterable: this.intrinsic(forInName, this.span(list), [keyword, keyword + "in".length],
         [this.expr(node.expression)]),
       body: this.block(node.statement),
@@ -3042,8 +3066,10 @@ class Gate {
       return { k: "block", pos: this.span(node), label: null, body: this.statements(node.statements) };
 
     // `for (const x of e) body`: one immutable binding per iteration. The
-    // loop is over an array, which Lean checks: the iterable is the argument
-    // of the intrinsic that steps its iterator (`intrinsics.mts`).
+    // iterable is the argument of the iteration intrinsic that steps its
+    // iterator (`intrinsics.mts`), picked by TypeScript's type of it:
+    // `%Iterate%` for an array, and the one of a string, a `Set`, a `Map` or
+    // a host collection iterator. Lean checks the call at its signature.
     if (ts.isForOfStatement(node)) {
       if (node.awaitModifier)
         this.fail(node, "`for await` is outside the fragment");
@@ -3058,11 +3084,17 @@ class Gate {
         this.fail(d, "a `for...of` binding takes the element's type");
       if (d.name.text === "undefined")
         this.fail(d, "shadowing undefined is outside the fragment");
+      const iterate = this.iterations.get(this.span(node.expression).join(":")) ?? iterateName;
+      if (iterate === "client")
+        this.fail(node.expression, "a `for...of` over an iterable other than an array, a string, a `Set`, a `Map` " +
+          "or a host collection iterator is outside the fragment: its own iterator runs, and a loop left early " +
+          "calls its `return`, which the loop does not state");
       return {
         k: "forOf",
         pos: this.span(node),
         name: this.local(d.name),
         namePos: this.span(d.name),
+        iterate,
         iterable: this.expr(node.expression),
         body: this.block(node.statement),
       };
@@ -3555,6 +3587,36 @@ export function parseFile(file: string, carriesContext = false,
     node.forEachChild(findReceivers);
   };
   if (!carriesContext) findReceivers(source);
+  // A `for...of` loop steps the iteration intrinsic of its iterable's kind:
+  // TypeScript's type of the iterable decides.
+  const iterableNodes: Node[] = [];
+  // An argument spread likewise collects its operand's elements.
+  const spreadNodes: Node[] = [];
+  const findIterables = (node: Node): void => {
+    if (ts.isForOfStatement(node)) iterableNodes.push(node.expression);
+    if (ts.isCallExpression(node))
+      for (const arg of node.arguments) if (ts.isSpreadElement(arg)) spreadNodes.push(arg.expression);
+    node.forEachChild(findIterables);
+  };
+  if (!carriesContext) findIterables(source);
+  // An array pattern's rest is a slice where TypeScript types its target as
+  // no one tuple of required positions: TypeScript's type decides.
+  const restTargets: { node: Node; index: number }[] = [];
+  const findRests = (node: Node): void => {
+    // The source a rest slices: the pattern's own value, or an assignment's
+    // right side.
+    if (ts.isArrayBindingPattern(node))
+      node.elements.forEach((el, index) => {
+        if (ts.isBindingElement(el) && el.dotDotDotToken) restTargets.push({ node, index });
+      });
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+        ts.isArrayLiteralExpression(node.left))
+      node.left.elements.forEach((el, index) => {
+        if (ts.isSpreadElement(el)) restTargets.push({ node: node.right, index });
+      });
+    node.forEachChild(findRests);
+  };
+  if (!carriesContext) findRests(source);
   // A read `C.x` of a class with static members may be one of them:
   // TypeScript decides.
   const withStatics = new Set(classNodes.filter(c => c.members.some(m =>
@@ -3646,11 +3708,13 @@ export function parseFile(file: string, carriesContext = false,
       firstArray || firstAsync || keyNodes.length || ambientNames.length || staticNodes.length ||
       classTestNodes.length || classReadNodes.length || contextualNodes.length ||
       receiverNodes.length || enumNodes.length || computedNodes.length || symbolNameNodes.length ||
-      keyTypeNodes.length || bindingNodes.length) {
+      keyTypeNodes.length || bindingNodes.length || iterableNodes.length || spreadNodes.length ||
+      restTargets.length) {
     const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
       firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? classTestNodes[0] ?? classReadNodes[0] ?? contextualNodes[0] ??
       receiverNodes[0] ?? enumNodes[0] ??
-      computedNodes[0] ?? symbolNameNodes[0] ?? keyTypeNodes[0] ?? bindingNodes[0];
+      computedNodes[0] ?? symbolNameNodes[0] ?? keyTypeNodes[0] ?? bindingNodes[0] ?? iterableNodes[0] ??
+      spreadNodes[0] ?? restTargets[0]?.node;
     if (!first) throw Error("missing declaration root");
     // Named imports only. A type import joins the declaration graph; a value
     // import is an assumption at the type its declaration states.
@@ -3701,6 +3765,11 @@ export function parseFile(file: string, carriesContext = false,
         contextualParams: contextualNodes.map(node => gate.span(node)),
         contextualParam: ([start, end], result) => gate.contextualParams.set(`${start}:${end}`, result),
         memberReceivers: receiverNodes.map(node => gate.span(node)),
+        iterables: iterableNodes.map(node => gate.span(node)),
+        spreads: spreadNodes.map(node => gate.span(node)),
+        iterable: ([start, end], intrinsic) => gate.iterations.set(`${start}:${end}`, intrinsic),
+        restTargets: restTargets.map(({ node, index }) => ({ span: gate.span(node), index })),
+        restSlice: ([start, end]) => gate.slices.add(`${start}:${end}`),
         computed: computedNodes.map(node => gate.span(node)),
         computedType: ([start, end], result) => gate.computedTypes.set(`${start}:${end}`, result),
         symbolNames: symbolNameNodes.map(node => gate.span(node)),
