@@ -75,16 +75,20 @@ def MeetG : PositiveGraphs.Graph (Fin 3) := fun i => match i.val with
 -- (here none) meets a readonly view through that bound, never a writable
 -- index; nor does a dictionary whose bound excludes `x`. One excluding only
 -- the prototype key, which no code adds as a property, does. Every subtype
--- premise is granted, so only the clause rule decides.
-def WritableG : PositiveGraphs.Graph (Fin 6) := fun i => match i.val with
+-- premise is granted, so only the clause rule decides. A writable index at an
+-- uninhabited contract takes no key, so the bound meets it.
+def WritableG : PositiveGraphs.Graph (Fin 8) := fun i => match i.val with
   | 0 => .atom .str
   | 1 => .atom (.refs [] [] [] [] [] [⟨true, []⟩])
   | 2 => .atom (.dict [] [] [] [(.strings, [0])] [] [] [] [(.strings, [0])])
   | 3 => .atom (.dict [] [] [] [(.strings, [0])] [] [] [⟨false, ["x", "[[proto]]"]⟩]
       [(.strings, [0])])
   | 4 => .atom (.dict [] [] [] [(.strings, [0])] [] [] [⟨false, ["[[proto]]"]⟩] [(.strings, [0])])
-  | _ => .atom (.dict [] [] [] [(.strings, [0])])
+  | 5 => .atom (.dict [] [] [] [(.strings, [0])])
+  | 6 => .bot
+  | _ => .atom (.dict [] [] [] [(.strings, [6])] [] [] [] [(.strings, [6])])
 #guard checkCoreSource WritableG [1] [5] ⟨[([1], [5]), ([0], [0])], []⟩
+#guard checkCoreSource WritableG [1] [7] ⟨[([1], [7]), ([6], [6])], []⟩
 #guard !(checkCoreSource WritableG [1] [2] ⟨[([1], [2]), ([0], [0])], []⟩)
 #guard !(checkCoreSource WritableG [3] [2] ⟨[([3], [2]), ([0], [0])], []⟩)
 #guard checkCoreSource WritableG [4] [2] ⟨[([4], [2]), ([0], [0])], []⟩

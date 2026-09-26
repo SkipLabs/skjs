@@ -492,11 +492,12 @@ such a key, so every capability it grants is kept. Covering a writable index
 requires every index and optional field of the source over its keys to admit
 `V`, and every own-key bound of the source to keep its class: none lists keys
 (the class has keys it does not list) and none excludes a key the class may
-admit (`KeyBound.keeps`, [covering](POSITIVE-TYPES.md#records)). A bound is
+admit (`KeyBound.keeps`, [covering](POSITIVE-TYPES.md#records)), unless no
+value meets `V`, so no key can be added. A bound is
 the one capability the writable contract does not imply: a value met as a
 writable dictionary through one could be held elsewhere at a type saying a
 key is absent that outside code then adds. So a record meets a writable index
-through no bound (`CoversKeys` gives index views only); a literal meant for a
+through a bound only at an uninhabited contract (`CoversKeys`); a literal meant for a
 writable dictionary is allocated at it, with no bound
 ([`allocDict`](PROGRAM-TYPING.md#judgments-and-constructor-views)); a merge's
 dictionary result states only bounds that keep its writable classes. That a
@@ -723,7 +724,7 @@ the model's reading of an operation relies.
 | The model's reserved keys (the store key `[]` and every name in double brackets) are spelled by no source key, and an object a program receives is represented with its own keys apart from them. | `Fragment.sourceKey`, `reservedSourceKey` |
 | `Object.prototype`, `Array.prototype` and `Function.prototype` own no string key but those `inKeyRefusal` lists (node's `Object.getOwnPropertyNames`); `String.prototype` and `Object.prototype` own no numeric key; `String.prototype` owns no `[Symbol.split]` or `[Symbol.replace]`; `Object.prototype` has no `toJSON`. | `inKeyRefusal` in `Source/Fragment.lean`; the overlay comments |
 | Distinct JavaScript objects have disjoint field locations, which is how `===` on objects with a field is answered; only allocation creates an object value. | `Arith.eq` |
-| Code outside a unit adds keys to an object it holds at a writable index only at that index's contract and only keys of its class, none the model keeps for itself (`[[proto]]`, `[]`: an object owning a property JavaScript spells so is one the model does not represent, as for any object it meets). The calculus has no step that adds a key; a program adds one by copying its own object. Every type the unit may hold such an object at stays true of it with the key: its own-key bounds by `ownKeysT_keeps` and `covers_writable_keeps` (a writable index is met only through bounds that keep its class; a literal meant for one is allocated at it, `allocDict`), its fields, views, indexes and optional fields by the covering premises a writable target states. | [index signatures](#writable-string-index-signatures) |
+| Code outside a unit adds keys to an object it holds at a writable index only at that index's contract and only keys of its class, none the model keeps for itself (`[[proto]]`, `[]`: an object owning a property JavaScript spells so is one the model does not represent, as for any object it meets). The calculus has no step that adds a key; a program adds one by copying its own object. Every type the unit may hold such an object at stays true of it with the key: its own-key bounds by `ownKeysT_keeps` and `covers_writable_keeps` (a writable index some value meets is met only through bounds that keep its class; a literal meant for one is allocated at it, `allocDict`), its fields, views, indexes and optional fields by the covering premises a writable target states. | [index signatures](#writable-string-index-signatures) |
 | A spread or `Object.assign` does not copy an own enumerable symbol-keyed property, which JavaScript copies; the result states no symbol key and is open, so nothing typed reads one. | [object literals](#object-literals) |
 | The standard `Object.assign`, `Function.prototype.call`, `apply` and `bind` are the intrinsics the parser identifies by lexical provenance; the fragment cannot write those properties. | `tools/fragment-parse.mts` |
 | A value of type `Promise<T>` is a realm promise, which resolution never fulfills with a thenable (it adopts one), so awaiting it yields a `T`: runtime and library promises, the program's `async` functions (`%AsyncReturn%` adopts), `Promise.resolve`, `new Promise`, `%PromiseReject%` and `%PromiseAll%`. A trusted generic signature (imported, ambient, library) is truthful about `Promise<T>` or `PromiseLike<T>` only at a `T` no thenable inhabits, so each type parameter such a position names is bounded by the non-thenable types. | `%Await%` and `nonThenable` in `tools/intrinsics.mts`, `promisedBinders` in `tools/declaration-graph.mts`; [async](PROGRAM-TYPING.md#async-functions-and-await) |

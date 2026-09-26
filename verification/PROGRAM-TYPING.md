@@ -629,24 +629,33 @@ record as the literal's claim wherever its contract has a readonly index or
 an optional field. None of these rules grants a write capability to a
 readonly dictionary.
 
-A writable index is never met through an own-key bound: code holding the
-dictionary may add a key of its class, which a bound listing keys, or one
-excluding such a key, says is absent
+A writable index is never met through an own-key bound (but at a contract no
+value meets, where no key can be added): code holding the dictionary may add
+a key of its class, which a bound listing keys, or one excluding such a key,
+says is absent
 ([writable string index signatures](DESIGN.md#writable-string-index-signatures),
 [covering](POSITIVE-TYPES.md#records)). So a literal meant for a writable
 dictionary is allocated at the dictionary itself, `allocDict`: its fields are
 the clause's named fields, none the prototype key, each whose key an index's
 class may admit ($\theta\ni_?k$, `IndexKeys.may`) at exactly that index's
-type, and the clause states no own-key bound. The object owns no other key,
-so every index, a view or writable, holds of it (`dictCellT_of_recT`), and no
-bound is claimed that a key added later would falsify. With $\overline{D}$
-the index views and $\overline{C}$ the writable indexes:
+type, and the clause states no own-key bound. It may state optional fields
+$\omega$ the literal leaves out, each, where a writable index's class may
+admit its key, at exactly that index's type or beside an index no value meets
+($\varnothing(V)$), so a key added there keeps it. The object owns no other
+key, so every index, a view or writable, holds of it (`dictCellT_of_recT`),
+it lacks every optional field (no prototype), and no bound is claimed that a
+key added later would falsify. With $\overline{D}$ the index views and
+$\overline{C}$ the writable indexes:
 
 $$
-\frac{\vec k\ \text{distinct}\quad\mathsf{proto}\notin\vec k\quad
+\frac{\begin{array}{c}
+      \vec k\ \text{distinct}\quad\mathsf{proto}\notin\vec k\quad
       \Gamma\vdash_G e_i:A_i\quad
-      \forall i.\;\forall(\theta{:}V)\in\overline{D}\,\overline{C}.\;\theta\ni_?k_i\Rightarrow A_i=V}
-     {\Gamma\vdash_G\{\overline{k_i{:}e_i}\}:\mathsf{Dict}(\overline{k_i{:}A_i};\overline{D};\overline{C})}
+      \forall i.\;\forall(\theta{:}V)\in\overline{D}\,\overline{C}.\;\theta\ni_?k_i\Rightarrow A_i=V\\
+      \forall(\kappa{:}^{r}B)\in\omega.\;\kappa\notin\vec k\land
+      \forall(\theta{:}V)\in\overline{C}.\;\theta\ni_?\kappa\Rightarrow B=V\lor\varnothing(V)
+      \end{array}}
+     {\Gamma\vdash_G\{\overline{k_i{:}e_i}\}:\mathsf{Dict}(\overline{k_i{:}A_i};\overline{D};\overline{C};\omega)}
 $$
 
 Its evidence is `alloc` at a dictionary type. The producer claims the literal

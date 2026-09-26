@@ -278,12 +278,15 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
       (∀ p ∈ ps, p.context = j.context) ∧ fs = ns.zip (ps.map Sequent.type) ∧
       (∀ K ∈ ks, ∀ n ∈ ns, K.admits n = true)
     -- A literal allocated directly at a dictionary: each field an index's
-    -- class may admit at exactly that index's type (`HasTy.allocDict`).
-    | [.dict fs [] [] ix [] [] [] cs] =>
+    -- class may admit at exactly that index's type, each optional field
+    -- absent (`HasTy.allocDict`).
+    | [.dict fs [] [] ix os [] [] cs] =>
       ns.Nodup ∧ CallArguments.protoField ∉ ns ∧ ns.length = ps.length ∧
       ps.map Sequent.term = inits ∧
       (∀ p ∈ ps, p.context = j.context) ∧ fs = ns.zip (ps.map Sequent.type) ∧
-      (∀ f ∈ fs, ∀ y ∈ ix ++ cs, y.1.may f.1 = true → f.2 = y.2)
+      (∀ f ∈ fs, ∀ y ∈ ix ++ cs, y.1.may f.1 = true → f.2 = y.2) ∧
+      (∀ o ∈ os, o.key ∉ ns) ∧
+      (∀ o ∈ os, ∀ y ∈ cs, y.1.may o.key = true → o.type = y.2 ∨ PositiveRules.Uninhabited G y.2)
     | _ => False
   | .read, .readAt f a, [ja] =>
     ja.context = j.context ∧ ja.term = a ∧
@@ -782,8 +785,8 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : Code
           exact hk K hK q.1 this)
       rw [hfst, hsnd] at this
       exact this
-    · rename_i fs ix cs he
-      obtain ⟨hnd, hnp, hlen, hterms, hctx, rfl, hix⟩ := hl
+    · rename_i fs ix os cs he
+      obtain ⟨hnd, hnp, hlen, hterms, hctx, rfl, hix, habs, hos⟩ := hl
       have hfst : ((ns.zip ps).map fun r => (r.1, r.2.type, r.2.term)).map Prod.fst = ns := by
         simp only [List.map_map, Function.comp_def]
         exact List.map_fst_zip (by omega)
@@ -803,7 +806,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : Code
         intro r _
         rfl
       have := HasTy.allocDict (G := G) (Γ := Γ) (Ref := A)
-        (parts := (ns.zip ps).map fun r => (r.1, r.2.type, r.2.term)) (ix := ix) (cs := cs)
+        (parts := (ns.zip ps).map fun r => (r.1, r.2.type, r.2.term)) (ix := ix) (cs := cs) (os := os)
         (by rw [hfst]; exact hnd) (by rw [hfst]; exact hnp)
         (by
           intro q hq
@@ -818,6 +821,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : Code
           have : (q.1, q.2.1) ∈ ns.zip (ps.map Sequent.type) := by
             rw [← htyp]; exact List.mem_map_of_mem hq
           exact hix _ this y hy hm)
+        (by rw [hfst]; exact habs) hos
       rw [hfst, hsnd] at this
       exact this
     · contradiction
@@ -1652,14 +1656,14 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     · intro j hj
       obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
       exact ih p hp
-  | @allocDict Γ Ref parts ix cs hnd hnp hpart hr hix ih =>
+  | @allocDict Γ Ref parts ix cs os hnd hnp hpart hr hix habs hos ih =>
     apply node_complete (G := G)
       (j := ⟨Γ, .makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2), Ref⟩)
       (r := .alloc) (js := parts.map fun p => ⟨Γ, p.2.2, p.2.1⟩)
     · simp only [Local, show expand G Ref =
-        [.dict (parts.map fun p => (p.1, p.2.1)) [] [] ix [] [] [] cs] from hr]
+        [.dict (parts.map fun p => (p.1, p.2.1)) [] [] ix os [] [] cs] from hr]
       refine ⟨hnd, hnp, by simp, by simp [List.map_map, Function.comp_def], by
-        intro q hq; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq; rfl, ?_, ?_⟩
+        intro q hq; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq; rfl, ?_, ?_, habs, hos⟩
       · simp only [List.map_map, Function.comp_def]
         rw [List.zip_map']
       · intro f hf y hy hm

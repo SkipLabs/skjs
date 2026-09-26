@@ -2746,7 +2746,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
           let some D := B.lookup name | throw "allocation claim names different fields"
           pure (name,D)
         pure (PositiveNormalization.Clause.refs B [] [] [] [] ks)
-      | [.dict B [] [] ix [] [] [] cs] => do
+      | [.dict B [] [] ix os [] [] cs] => do
         if B.length != ns.length then throw "allocation claim names different fields"
         if ns.contains SourceTypes.protoField then
           throw "a literal allocated at a dictionary holds no prototype"
@@ -2755,7 +2755,10 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
           pure (name,D)
         if !B.all (fun f => (ix ++ cs).all fun y => !y.1.may f.1 || f.2 == y.2) then
           throw "a literal allocated at a dictionary holds each field an index admits at that index's type"
-        pure (PositiveNormalization.Clause.dict B [] [] ix [] [] [] cs)
+        if !os.all (fun o => !ns.contains o.key && cs.all fun y => !y.1.may o.key ||
+            o.type == y.2 || (G.plainTy y.2 && (PositiveRules.expand G y.2).isEmpty)) then
+          throw "a literal allocated at a dictionary lacks each optional field, at a writable index's type there"
+        pure (PositiveNormalization.Clause.dict B [] [] ix os [] [] cs)
       | _ => throw "allocation claim must name a record or dictionary contract"
     let B := match clause with
       | .refs B .. | .dict B .. => B

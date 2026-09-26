@@ -587,7 +587,7 @@ $$
 
 So a fresh array object, own keys among its store and prototype, is an array,
 own keys outside `ArrayProto`'s; and an array type is covered by another with
-the same exclusion. A `dict` target also needs each readonly index contract within some source one over as many keys ($\theta'\sqsubseteq\theta$: `IndexKeys.within`), and each writable index contract equivalent to a writable source one over as many keys, so a mutable dictionary is invariant and a readonly one is never mutable. Code holding a writable index may add keys of its class at its contract (the trust boundary, [DESIGN](DESIGN.md#writable-string-index-signatures)), so a writable target's contract must also be within every source index and optional field over a key of its class ($\theta\between\theta'$: the classes overlap; $\theta'\ni_?\kappa$: the class may admit the key), and every source own-key bound must **keep** its class: say no key of it absent. A bound listing keys keeps none; one excluding keys keeps a class that may admit none of them but the model's own prototype and store keys, which no code adds as a property (`KeyBound.keeps`, `KeepsKeys`):
+the same exclusion. A `dict` target also needs each readonly index contract within some source one over as many keys ($\theta'\sqsubseteq\theta$: `IndexKeys.within`), and each writable index contract equivalent to a writable source one over as many keys, so a mutable dictionary is invariant and a readonly one is never mutable. Code holding a writable index may add keys of its class at its contract (the trust boundary, [DESIGN](DESIGN.md#writable-string-index-signatures)), so a writable target's contract must also be within every source index and optional field over a key of its class ($\theta\between\theta'$: the classes overlap; $\theta'\ni_?\kappa$: the class may admit the key), and every source own-key bound must **keep** its class: say no key of it absent. A bound listing keys keeps none; one excluding keys keeps a class that may admit none of them but the model's own prototype and store keys, which no code adds as a property (`KeyBound.keeps`, `KeepsKeys`). A writable index whose contract no value meets ($\varnothing(C')$: plain rows of no clause, `Uninhabited`) takes no key, so it needs no kept bound:
 
 $$
 b\ \mathsf{keeps}\ \theta\iff b=\mathsf{outside}\,N\land
@@ -601,16 +601,17 @@ $$
       \forall(\theta'{:}C')\in\overline{C'}.\;\bigl(\exists(\theta{:}C)\in\overline{C}.\;\theta'\sqsubseteq\theta\land\Delta^{\pm}(C,C')\bigr)\land
       \bigl(\forall(\theta{:}D)\in\overline{D}.\;\theta\between\theta'\Rightarrow\Delta(C',D)\bigr)\land
       \bigl(\forall(\kappa{:}^{r}A)\in\omega.\;\theta'\ni_?\kappa\Rightarrow\Delta(C',A)\bigr)\land
-      \bigl(\forall b\in\beta.\;b\ \mathsf{keeps}\ \theta'\bigr)
+      \bigl(\varnothing(C')\lor\forall b\in\beta.\;b\ \mathsf{keeps}\ \theta'\bigr)
 \end{array}}
      {\Delta;S\vdash\mathsf{Dict}(\Phi;\psi;\overline{D};\overline{C};\omega;\mu;\beta)\sqsubseteq
       \mathsf{Dict}(\varphi';\psi';\overline{D'};\overline{C'};\omega';\mu';\beta')}
 $$
 
-With the record rule, which meets no writable index, every clause covering a
-writable index keeps its class (`covers_writable_keeps`), so an object meeting
-it keeps its bounds when code holding it at that index adds a key of the class
-(`ownKeysT_keeps`, `covers_writable_bounds_grow`). A literal meant for a
+With the record rule, which meets a writable index only at an uninhabited
+contract, every clause covering a writable index some value meets keeps its
+class (`covers_writable_keeps`), so an object meeting it keeps its bounds when
+code holding it at that index adds a key of the class, at a value meeting the
+contract (`ownKeysT_keeps`, `covers_writable_bounds_grow`). A literal meant for a
 writable dictionary is allocated at it, with no bound
 ([`allocDict`](PROGRAM-TYPING.md#judgments-and-constructor-views)); a merge's dictionary
 result states only bounds that keep its writable classes
@@ -631,27 +632,30 @@ $$
       \mathsf{Ref}(\varphi';\psi';\omega';\mu';\beta')}
 $$
 
-A record covers a `dict`'s index views through an own-key bound
-(`CoversKeys`): its own keys are among some $\mathsf{among}\,K\in\beta$, where
-$K$ lists no prototype key, so the object has no prototype; and every key of
-$K$ that a target index's class may admit ($\theta'\ni_?\kappa$,
-`IndexKeys.may`) is a source field or view within that index view. No other
-key exists, so this is what a fresh literal, whose own keys are exactly its
-fields, needs to be a readonly dictionary; a key no number spells, such as
-`name`, is not held to a number index. It covers no writable index
-($\overline{C'}$ empty): code holding one may add a key the bound says is
-absent, so a literal meant for a writable dictionary is allocated at it
-([`allocDict`](PROGRAM-TYPING.md#judgments-and-constructor-views)). The named members are
-compared as a record's:
+A record covers a `dict` through an own-key bound (`CoversKeys`): its own
+keys are among some $\mathsf{among}\,K\in\beta$, where $K$ lists no
+prototype key, so the object has no prototype; and every key of $K$ that a
+target index's class may admit ($\theta'\ni_?\kappa$, `IndexKeys.may`) is a
+source field or view within that index view, and an invariant field
+equivalent to that writable index. No other key exists, so this is what a
+fresh literal, whose own keys are exactly its fields, needs to be a readonly
+dictionary; a key no number spells, such as `name`, is not held to a number
+index. It covers a writable index only at an uninhabited contract: code
+holding one some value meets may add a key the bound says is absent, so a
+literal meant for a writable dictionary is allocated at it
+([`allocDict`](PROGRAM-TYPING.md#judgments-and-constructor-views)). The named
+members are compared as a record's:
 
 $$
 \frac{\begin{array}{c}
 \Delta;S\vdash\mathsf{Ref}(\Phi;\psi;\omega;\mu;\beta)\sqsubseteq\mathsf{Ref}(\varphi';\psi';\omega';\mu';\beta')\qquad
 \mathsf{among}\,K\in\beta\qquad\mathsf{proto}\notin K\\
-\forall\kappa\in K.\;\forall(\theta'{:}D')\in\overline{D'}.\;\theta'\ni_?\kappa\Rightarrow\exists(\kappa{:}A)\in\Phi\,\psi.\;\Delta(A,D')
+\forall\kappa\in K.\;\bigl(\forall(\theta'{:}D')\in\overline{D'}.\;\theta'\ni_?\kappa\Rightarrow\exists(\kappa{:}A)\in\Phi\,\psi.\;\Delta(A,D')\bigr)\land
+\bigl(\forall(\theta'{:}C')\in\overline{C'}.\;\theta'\ni_?\kappa\Rightarrow\exists(\kappa{:}A)\in\Phi.\;\Delta^{\pm}(A,C')\bigr)\\
+\forall(\theta'{:}C')\in\overline{C'}.\;\varnothing(C')
 \end{array}}
 {\Delta;S\vdash\mathsf{Ref}(\Phi;\psi;\omega;\mu;\beta)\sqsubseteq
-      \mathsf{Dict}(\varphi';\psi';\overline{D'};\varnothing;\omega';\mu';\beta')}
+      \mathsf{Dict}(\varphi';\psi';\overline{D'};\overline{C'};\omega';\mu';\beta')}
 $$
 
 A record without such a bound, or whose bound admits a key it does not
@@ -773,7 +777,7 @@ $$
 So `[number, string]` is within `(number | string)[]` and `[number]` within
 `[number, string?]`, while `number[]` is within no bounded tuple.
 
-Lean: `CoversFields`, `CoversViews`, `optionalSources`, `Excludes`, `CoversOptional`, `CoversKeys`, `covers_keys_sound`, `KeyBound.keeps`, `KeepsKeys`, `covers_writable_keeps`, `covers_writable_bounds_grow`, `ownKeysT_keeps`, `CoversMethods`, `CoversBound`, `CoversBounds`,
+Lean: `CoversFields`, `CoversViews`, `optionalSources`, `Excludes`, `CoversOptional`, `CoversKeys`, `covers_keys_sound`, `KeyBound.keeps`, `KeepsKeys`, `Uninhabited`, `covers_writable_keeps`, `covers_writable_bounds_grow`, `ownKeysT_keeps`, `CoversMethods`, `CoversBound`, `CoversBounds`,
 `CoversSig`, `CoversByFunction`, `CoversShape`, `CoversTuple`, `CoversPack`,
 `covers_readonly_sound`, `covers_tuple_sound`, `covers_arguments_sound`.
 

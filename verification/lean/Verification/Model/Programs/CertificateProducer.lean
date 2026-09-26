@@ -673,9 +673,11 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           coerce G pool (.node ⟨Γ,t,R⟩ .alloc ps) A
         -- A literal allocated directly at a dictionary, each field an index
         -- may admit at that index's type.
-        | [.dict B [] [] ix [] [] [] cs] =>
+        | [.dict B [] [] ix os [] [] cs] =>
           if B.map Prod.fst != ns || ns.contains CallArguments.protoField ||
-            !B.all (fun f => (ix ++ cs).all fun y => !y.1.may f.1 || f.2 == y.2) then none else do
+            !B.all (fun f => (ix ++ cs).all fun y => !y.1.may f.1 || f.2 == y.2) ||
+            !os.all (fun o => !ns.contains o.key && cs.all fun y => !y.1.may o.key ||
+              o.type == y.2 || (G.plainTy y.2 && (expand G y.2).isEmpty)) then none else do
           let ps ← (inits.zip (B.map Prod.snd)).mapM fun (a,D) => recur Γ a D
           coerce G pool (.node ⟨Γ,t,R⟩ .alloc ps) A
         | _ => none

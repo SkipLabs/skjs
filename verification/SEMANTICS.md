@@ -334,8 +334,8 @@ readonly dictionary through its exact own keys: `alloc` bounds them among the
 literal's names (`ownKeysT_slots`), and a record so bounded, with no prototype
 key among them, meets an index view whose contract every field's is within
 (`covers_keys_sound`); an existing open record, which may hold further keys,
-meets none. A writable index is never met through an own-key bound, since
-code holding it may add a key the bound says is absent
+meets none. A writable index some value meets is never met through an
+own-key bound, since code holding it may add a key the bound says is absent
 (`covers_writable_keeps`): a literal meant for one is allocated at the
 dictionary, each field an index may admit at that index's type
 (`HasTy.allocDict`, `dictCellT_of_recT`). A mutable index

@@ -1756,13 +1756,18 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   dictionary type: its fields are the clause's first operand, with no key the
   model keeps for its prototype, and each field whose key an index's class may
   admit is at exactly that index's type. The object owns no other key, so each
-  index holds of it, writable ones included; no own-key bound is stated, since
-  code holding the dictionary may add keys (`covers_writable_keeps`). -/
-  | allocDict {parts : List (PropKey × Ty ι × Tm)} {ix cs : List (IndexKeys × Ty ι)} :
+  index holds of it, writable ones included, and it lacks each optional field
+  the clause states, which a key added at a writable index's contract keeps
+  (the field at that contract, or none meets it). No own-key bound is stated,
+  since code holding the dictionary may add keys (`covers_writable_keeps`). -/
+  | allocDict {parts : List (PropKey × Ty ι × Tm)} {ix cs : List (IndexKeys × Ty ι)}
+      {os : List (OptionalField (Ty ι))} :
       (parts.map Prod.fst).Nodup → CallArguments.protoField ∉ parts.map Prod.fst →
       (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) →
-      Represents G Ref (.dict (parts.map fun p => (p.1, p.2.1)) [] [] ix [] [] [] cs) →
+      Represents G Ref (.dict (parts.map fun p => (p.1, p.2.1)) [] [] ix os [] [] cs) →
       (∀ p ∈ parts, ∀ y ∈ ix ++ cs, y.1.may p.1 = true → p.2.1 = y.2) →
+      (∀ o ∈ os, o.key ∉ parts.map Prod.fst) →
+      (∀ o ∈ os, ∀ y ∈ cs, y.1.may o.key = true → o.type = y.2 ∨ PositiveRules.Uninhabited G y.2) →
       HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
   /-- A named field, of a record or of a dictionary, reads at its contract. -/
   | read : HasTy G Γ a Ref → Represents G Ref c → namedMembers c = some (fs, vs) →
@@ -2336,7 +2341,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       simp [ReferenceConjunctions.famsOf, List.map_map, Function.comp_def, List.zip_map']
     rw [hfam]
     exact hrec
-  | @allocDict Γ Ref parts ix cs hnd hproto hp hr hix ih =>
+  | @allocDict Γ Ref parts ix cs os hnd hproto hp hr hix habs _ ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
     have hmap : (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2)).map Prod.snd
@@ -2391,7 +2396,11 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm,
       ⟨fun y hy => dictCellT_view (hcell y (List.mem_append_left _ hy)),
         fun y hy => hcell y (List.mem_append_right _ hy)⟩,
-      by simpa [ReferenceConjunctions.famsOf] using optT_nil, MethodMembers.methodT_nil _ _ _,
+      ⟨_, rfl, fun _ _ _ => hnp, fun o ho l hl => by
+        obtain ⟨o', ho', rfl⟩ := List.mem_map.mp ho
+        rw [show (OptionalField.map (meaning G) o').key = o'.key from rfl,
+          slots_lookup_none (habs o' ho')] at hl
+        cases hl⟩, MethodMembers.methodT_nil _ _ _,
       fun K hK => by simp at hK⟩
     rw [hfam]
     exact hrec

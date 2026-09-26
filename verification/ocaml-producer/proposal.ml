@@ -1724,9 +1724,12 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
          index's type. *)
       (match contract with
        | _ when List.mem_assoc (Name proto_key) fs || List.mem e.pos !exact_allocs -> Atoms [Exact fields]
-       | Some {indexes=(_::_ as indexes);_}
+       | Some {indexes=(_::_ as indexes);fields=contract_fields;_}
          when List.exists (fun (i:Semantic.index_signature) -> i.writable <> None) indexes ->
-         Atoms [Shape {fields;indexes;calls=[];elements=None}]
+         (* The contract's optional fields it leaves out, which it lacks. *)
+         let absent = List.filter (fun (f:Semantic.field) -> f.optional && not f.host &&
+           not (List.mem_assoc f.name fs)) contract_fields in
+         Atoms [Shape {fields=fields @ absent;indexes;calls=[];elements=None}]
        | Some {indexes=_::_;_} -> Atoms [Exact fields]
        | Some {fields=contract_fields;_}
          when List.exists (fun (f:Semantic.field) -> f.optional) contract_fields -> Atoms [Exact fields]
