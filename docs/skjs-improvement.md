@@ -11,7 +11,7 @@ separation of inference from validation are its additional completion criteria.
 See [Architectural end state](#architectural-end-state).
 
 Status of each row is stated only here. Corpus row status stays in
-[ledger.yaml](ledger.yaml). Verification architecture stays in
+`docs/ledger.yaml`. Verification architecture stays in
 [verification/DESIGN.md](../verification/DESIGN.md).
 
 Update a row when a SKJS commit lands that addresses it: set the status, name
@@ -1408,5 +1408,5 @@ extraction also covers only specific supported shapes, not arbitrary bodies.
 
 The removed chronological implementation notes remain in Git history through
 `73572889`; current status belongs here, source-language restrictions in
-[skjs-rules.md](../skjs-rules.md), case status in [ledger.yaml](ledger.yaml), and
+[skjs-rules.md](../skjs-rules.md), case status in `docs/ledger.yaml`, and
 verification architecture in [DESIGN.md](../verification/DESIGN.md).

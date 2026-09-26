@@ -139,13 +139,15 @@ Under the connection:
 The only assumption left is that third-party code keeps its declared promise
 types, which no specification can state. The same fact is discussed for
 ReScript ([#5709](REFERENCES.md#rescript-5709), [#6433](REFERENCES.md#rescript-6433), [#2345](REFERENCES.md#rescript-2345)) and TypeScript
-([#27711](REFERENCES.md#typescript-27711), [#49946](REFERENCES.md#typescript-49946), [#35419](REFERENCES.md#typescript-35419)).
+([#27711](REFERENCES.md#typescript-27711), [#49946](REFERENCES.md#typescript-49946), [#35419](REFERENCES.md#typescript-35419),
+[#55408](REFERENCES.md#typescript-55408)).
 
 The same shape recurs in any **flattening** constructor, one whose runtime
 representation satisfies $c\langle c\langle t\rangle\rangle = c\langle t\rangle$,
 such as nullable values and promises. A generic signature is truthful at
 $c\langle T\rangle$ only for $T$ outside $c$'s image, and generic
-instantiation can always produce the nested type. So soundness cannot rest
+instantiation can always produce the nested type ([TypeScript #59111](REFERENCES.md#typescript-59111);
+two such constructors composed, [ReScript #5211](REFERENCES.md#rescript-5211)). So soundness cannot rest
 on banning nested types: it has to come from the meaning of the constructor,
 or from a bound at every trusted instantiation ([ReScript #5707](REFERENCES.md#rescript-5707)).
 

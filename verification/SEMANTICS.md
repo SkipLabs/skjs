@@ -948,6 +948,7 @@ code's global-object substitution and primitive boxing, `new.target`, and a
 bound function's reflective properties (`name`, `length`) are not modelled,
 and the source forms that would need them are refused. What the source
 fragment admits is summarised in the
-[README](README.md#current-source-fragment); what it refuses on principle is
-the [fragment boundary](DESIGN.md#fragment-boundary), and the open work is
+[README](README.md#current-source-fragment); what it refuses, on principle or
+as a model limit, is the [fragment boundary](DESIGN.md#fragment-boundary),
+and the open work is
 [next steps](DESIGN.md#next-steps).

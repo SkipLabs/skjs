@@ -568,7 +568,7 @@ forced by soundness:
 - Method members are read-only views: a write to one is refused.
 - A class method taking fewer parameters than an interface's member is
   claimed at the longer signature as well, the extra actuals discarded at
-  binding (`offersArity`); no subtyping widens an arrow's parameters.
+  binding (`CodeOffers`); no subtyping widens an arrow's parameters.
 
 A generic method is a member with **quantified signatures**: a scheme the
 member bound to its host meets, whatever receiver the bound function is
@@ -603,9 +603,7 @@ actual lists a caller may write and what the call then guarantees
 A rest parameter makes the code variadic: invocation collects the remaining
 actuals into a fresh array, viewed at the rest's type: an array or a tuple of
 required positions, readonly or not, or a declared alias of one, a generic
-alias read through its equation at the reference's arguments. A rest typed
-by a function's type parameter in a definition, by an intersection, by a
-tuple of several lengths or by what is no array is refused by its form. A rest typed by a binder is an argument pack,
+alias read through its equation at the reference's arguments. A rest typed by a binder is an argument pack,
 whose contracts are over lists at the actuals' own level
 ([argument packs](POSITIVE-TYPES.md#argument-packs)). A closure claimed at
 several signatures is checked once per signature. A spread among the actuals
@@ -630,11 +628,9 @@ string's `length` and indices are its own
 
 Every signature states its receiver and every call passes one:
 `undefined` for a plain call, the object for a method call, the first
-argument for `.call` and `.apply`. The receiver rule is strict mode's; `this`
-in sloppy code is refused, and a sloppy function that reads no `this` is the
-strict one, its receiver being unobservable. A class method declaring
-`this: T` is refused: a method member is [host-relative](#method-members-are-host-relative),
-its signatures stating no receiver apart from the host. `.bind` allocates a forwarding descriptor whose
+argument for `.call` and `.apply`. The receiver rule is strict mode's; a
+sloppy function that reads no `this` is the strict one, its receiver being
+unobservable. `.bind` allocates a forwarding descriptor whose
 receiver a later `.bind` or `.call` cannot replace (`callsT_bound`).
 
 ### Generic types
@@ -726,8 +722,7 @@ end, on a `continue`, or when the iterator is done. It calls the iterator's
 spread of such an iterable is collected before its statement, where nothing
 the statement evaluates before it can change, and an array pattern over one
 steps once per element and closes the iterator where no rest took it to its
-end. A generator is refused: its body suspends at `yield`, which no term
-expresses. No calculus rule changes: a call's callee is an assumption at its
+end. No calculus rule changes: a call's callee is an assumption at its
 declared type, or code the unit checks. An async function's
 promise settles only to a primitive, the values that are never thenables
 ([nested promises](ECMA-CONNECTION.md#illustration-nested-promises)).
@@ -764,14 +759,14 @@ throw, which safety admits, but never return a wrong value.
 | An imported value meets its declaration; a function declared with overloads meets every overload. | `IMPORT`, `OVERLOADS` in [PROGRAM-TYPING](PROGRAM-TYPING.md#imported-ambient-and-global-values) |
 | An ambient declaration (`declare function`, `declare const`, `declare class`) holds of the value the environment supplies under that name; the declaration document lists it with the specifier `ambient`. | `AMBIENT`; `collectDeclarations` |
 | A global variable outside the standard library (Node's `process`) meets its declaration at the members and calls the module selects, from the project's type packages, and no code the module does not see reassigns it. | `GLOBAL`; `selectGlobal` |
-| Each standard library global meets its reviewed overlay entry: `console.log`; `BigInt`; `Symbol`, `Symbol.for`, `Symbol.keyFor` and five well-known symbols; `String` of a primitive; `Object.keys`, `Object.values`, `Object.entries` (and the generic two at a dictionary); `new Array()`; `new Error(m)`; `new Set`, `new Map` of an array, `new Date` of a primitive, `Date.now`; `JSON.parse` of a string and `JSON.stringify` of a `JsonValue`. | `globalsOverlay` in `tools/library-globals.mts`; [rules](PROGRAM-TYPING.md#library-globals) |
+| Each standard library global meets its reviewed overlay entry: `console.log`; `BigInt`; `Symbol`, `Symbol.for`, `Symbol.keyFor` and five well-known symbols; `String` of a primitive; `Object.keys`, `Object.values`, `Object.entries` (and the generic two at a dictionary); `new Array()`; `Array.isArray` and `Array` as `instanceof`'s operand; `new Error(m)`; `new Set`, `new Map` of an array, `new Date` of nothing, a primitive or components, `Date.now`; the `Promise` statics and constructor, through the intrinsics below; `JSON.parse` of a string and `JSON.stringify` of a `JsonValue`. | `globalsOverlay` in `tools/library-globals.mts`; [rules](PROGRAM-TYPING.md#library-globals) |
 | `Array.prototype` meets `ArrayProto`: its natives `forEach`, `map`, `reduce` and `reduceRight` (with an initial value), `every`, `some`, `filter`, `slice`, `join`, `indexOf`, `lastIndexOf`, `includes`, `at`, `find`, `findIndex`, `sort`, `push`, `pop`, `shift`, `unshift`, `reverse` and `[Symbol.iterator]` behave as TypeScript declares them, at the listed receiver, without `thisArg`. Units allocating arrays read it from the input slot `[[Array.prototype]]`. | `overlay` in `tools/array-prototype.mts` |
 | `String.prototype`, `Number.prototype`, `BigInt.prototype` and `Boolean.prototype` meet `StringProto`, `NumberProto`, `BigIntProto` and `BooleanProto`, each member an own property of that prototype (`split`, `replace`, `replaceAll` stated at a string pattern; `toLocaleString` without `options`), read from the slot `[[String.prototype]]` and so on. | `primitiveOverlay` in `tools/array-prototype.mts` |
 | `Set.prototype`, `Map.prototype` and `Date.prototype` hold the listed natives, unmodified (`keys`, `values` and `entries` giving a host iterator of the collection). | `interfaceOverlay` in `tools/array-prototype.mts` |
 | The intrinsics meet their signatures: `%Await%` yields what a promise settles to or throws its rejection; `%AsyncReturn%` and `%AsyncComplete%` settle an async function's promise to a primitive or `undefined` (also `Promise.resolve`); `%PromiseAll%` (`Promise.all`), `%PromiseReject%` (`Promise.reject`), `%NewPromise%` (`new Promise`, calling its executor at once); `%Iterate%` steps an array's iterator, reading the current length at each step; `%Iterate:string%` a string's, by code point; `%Iterate:Set%` a `Set`'s, in insertion order; `%Iterate:Map%` a `Map`'s, a fresh `[key, value]` array per entry; `%Iterate:Iterator%` a `SetIterator` or `MapIterator`, which is its own iterator; none of these iterators has a `return`; `%Spread:K%` is the fresh array of what `%Iterate:K%`'s step yields until it ends; `%RestFrom:k%` is the fresh array of an array's elements from `k` to its current length, as its iterator yields them after a pattern's `k` elements; `%ForIn%` gives the keys a `for...in` visits, strings; `%HasProperty%` answers `k in o` for a key TypeScript types as other than string literals, as the host's lookup does; `%ElementAt%` reads `xs[k]` of an array at a `number` key as the host does: the element at an index below the length, an own property at another numeric key, else `undefined`. The job queue and a promise that never settles are not modelled. | `tools/intrinsics.mts`; [async](PROGRAM-TYPING.md#async-functions-and-await) |
 | A thrown value is a value, of any type. | `Thrown` in `Safe` (`Semantics/Safety.lean`) |
 | The runtime with the sound service binding meets its declarations: `InputCollections.get(definition)` returns the collection built from that definition at its types, or throws; resources are constructed with the request's `Json` parameters. | `ocaml-producer/upstream-sound/` |
-| In the SKJS test environment, SKJS's import stubs describe the modules a test imports, and `skjs-environment.d.ts` the host's `process`, `__SKJS_show` and `__SKJS_show_expanded` as SKJS's builtins stub does, with the ES2022 library and no DOM (`console` restated); `Closed<T>` and `SKJS_Ignorable<T>` are read as `T`; an ambient class's untyped field is a readonly `unknown` field. These are premises of the coverage result only. | `ocaml-producer/skjs-environment/`; `STUB`, `ENV` |
+| In the SKJS test environment, SKJS's import stubs describe the modules a test imports, and `skjs-environment.d.ts` the host's `process`, `__SKJS_show`, `__SKJS_show_expanded` and `StringRecord<V>` as SKJS's builtins stub does, with the ES2022 library and no DOM (`console` restated); `Closed<T>` and `SKJS_Ignorable<T>` are read as `T`; an ambient class's untyped field is a readonly `unknown` field. These are premises of the coverage result only. | `ocaml-producer/skjs-environment/`; `STUB`, `ENV` |
 
 **Assumed of the host.** Properties of every value a unit receives, on which
 the model's reading of an operation relies.
@@ -800,62 +795,82 @@ the step-indexed argument that they compose is not a Lean theorem
 
 ## Fragment boundary
 
-What the pipeline refuses on principle, each with its reason. Forms simply
-not yet taken are [next steps](#next-steps); a search failure is neither.
+What the pipeline refuses, each with its reason, in the two classes the
+coverage run counts (`CLASSES` in
+[skjs-coverage.mts](ocaml-producer/skjs-coverage.mts),
+[refusal classes](ocaml-producer/SKJS-COVERAGE.md#method)). A refusal is
+**principled** only when the construct is unsound, not faithful to
+JavaScript, rejected by TypeScript, or safe only under an assumption the
+project declines; any other refusal is a **model limit**, a gap, with the
+obstacle named. A search failure is neither.
+
+### Refused on principle
 
 | Construct | Refused because |
+| --- | --- |
+| `new Array(n)`, `new Array(x)` with one argument | It makes an array with holes; an array type promises none. |
+| An element write at an index not proven in bounds or appending | It could create a hole. |
+| A mutable `Dog[]` as an `Animal[]`, a mutable dictionary of `true` as one of `boolean`, a readonly view as a writable one | Mutable storage is invariant: a write through the wider alias breaks the narrower one's contract (TypeScript's covariance is unsound). |
+| Method bivariance (`Handler<Dog>` as `Handler<Animal>`), an override with narrower parameters, a narrower constructor at a construct signature | The member may be invoked with the wider argument. |
+| A method as a function-typed property, method extraction (`o.m.call(r)`, `.apply` and `.bind` of one included), a write to a method member; a function whose `this` is typed where a receiver-indifferent callback is expected | A method is host-relative: read off its host it loses its receiver, and TypeScript's typing of it is unsound. |
+| A record type where an index signature or a dictionary is expected (TypeScript's implicit index signature); width subtyping into an optional field; an array where a number index is expected | A record is open: it may own further keys at any type; an array has a prototype a dictionary lacks. |
+| A position past a mutable tuple's arity; its `length` read at the arity | `push` may have extended it: TypeScript's `undefined` there, and its literal length, are unsound. |
+| Narrowing `unknown` by `instanceof C`, and a member read of the result | JavaScript gives an object `C`'s prototype without `C`'s constructor running (`Object.create(C.prototype)`, `Object.setPrototypeOf`, `Reflect.construct` with `C` as the new target), so "an object whose chain holds `C`'s prototype has `C`'s fields" is false of values a unit may receive. |
+| `instanceof` of a constructor not declared at the file's top level (imported, ambient, a function, an expression) | Nothing in the file says which prototype it gives its instances; trusting it is an assumption declined. |
+| A base class declared later, imported, ambient, or an expression | Nothing in the file says what its constructor allocates (TypeScript rejects the first). |
+| `key in o` on an operand with a primitive arm or `unknown` | JavaScript throws on a primitive, and TypeScript rejects both. |
+| Narrowing `number[] \| Foo` by `Array.isArray` to drop `Foo` | An array may carry `Foo`'s keys: where the test holds, the `Foo` arm is `readonly unknown[]`, not dropped. |
+| A loop or an array pattern over an iterable whose iterator's type states no `return` | Leaving it early, or a throw out of its body, calls whatever `return` the iterator owns, and an open record type says nothing of that property. |
+| An async function returning an object other than a promise of a primitive, a void async function returning a value, `await` of a non-promise object at its own type | JavaScript adopts thenables, and a record type does not rule out a `then`. |
+| An object literal, class or parameter property the source builds with a `then` member, which could be claimed as a `Promise` | A value of type `Promise<T>` is assumed a realm promise; the source must not forge one. |
+| `String(o)`, `o + ""`, `new Date(o)`, `new Set(it)` of a non-array iterable, `JSON.parse` with a reviver, `JSON.stringify` with a replacer, of an array or an open record; a relational comparison with an object operand | The host runs client code (`toString`, `valueOf`, an iterator, a callback, a `toJSON`). |
+| `==` other than `== null`; `+` on a bigint, number–bigint arithmetic, a symbol in a concatenation; a relational comparison of a string with a number | `==` converts its operands; TypeScript refuses the rest. |
+| `this` before `super(...)` | TypeScript rejects it, and JavaScript throws. |
+| A catch binding annotated other than `unknown`, or destructured | Anything may be thrown; TypeScript's alternative is `any`. |
+| TypeScript's `any` in the checked module's own annotations; a contextual closure parameter TypeScript types `any` | It states no contract. |
+| A rest parameter typed by what is no array | TypeScript rejects it (TS2370). |
+| An intersection that normalizes to nothing (`string & { a: number }`, `(() => void) & number[]`, `number[] & { map: number }`) | No value of the model inhabits it (TypeScript keeps a branded primitive); it is refused rather than verified vacuously. |
+| An empty module (no function, no initialization code) | Accepting it would check nothing. |
+
+### Model limits
+
+Sound JavaScript that TypeScript accepts, refused because the model or its
+representation cannot state it yet; the paths are in
+[next steps](#next-steps).
+
+| Construct | Obstacle |
 | --- | --- |
 | A write adding a key (`o.x = 5` where `o`'s type does not state `x`, a writable optional field, a key of an index) to an object another reference may hold: a parameter, a module constant, a local whose object was passed, stored, captured, returned, copied to another binding or written into itself, or a write in a loop the declaration does not enclose | The model's objects keep their keys, and a key is added by copying the object: another reference would still see the object without the key, where JavaScript's sees it with. |
 | A write at a string key known only at run time (`d[k] = v`), even on a local's own dictionary | The string may spell a key the model keeps for itself (`[]`, `[[proto]]`), which JavaScript owns as an ordinary property. |
 | A write of `__proto__`; adding a symbol key | The first runs the prototype's setter and adds no key; the copy that adds a key copies string keys only. |
 | `Object.assign` onto an object other than a fresh literal or, as a statement, a local's own object; from a source whose type does not rule out an own `__proto__` | Its value is its target, and another reference would see the keys it adds; it sets `__proto__` through the prototype's setter, which replaces the prototype. |
-| `new Array(n)`, `new Array(x)` with one argument | It makes an array with holes; an array type promises none. |
-| An element write at an index not proven in bounds or appending | It could create a hole. |
-| A mutable `Dog[]` as an `Animal[]`, a mutable dictionary of `true` as one of `boolean`, a readonly view as a writable one | Mutable storage is invariant: a write through the wider alias breaks the narrower one's contract. |
-| Method bivariance (`Handler<Dog>` as `Handler<Animal>`), an override with narrower parameters, a narrower constructor at a construct signature | The member may be invoked with the wider argument. |
-| A method as a function-typed property, method extraction (`o.m.call(r)`, `.apply` and `.bind` of one included), a write to a method member, `o.m?.()` | A method is host-relative; `o.m?.()` would call the tested value with a receiver the form does not save. |
-| A record type where an index signature or a dictionary is expected (TypeScript's implicit index signature); width subtyping into an optional field; an array where a number index is expected | A record is open: it may own further keys at any type; an array has a prototype a dictionary lacks. |
-| `declare let`, `declare var`, a module-level `let` or `var` | Module storage outside code may write during any call; the fragment has none. |
-| An ambient `declare enum`; an enum member TypeScript computes no value for; a NaN or infinite member; a reverse key naming a member; an empty enum | The object is the environment's, or its keys are known only at run time, or it has no literal type. |
-| Narrowing `unknown` by `instanceof C`, and a member read of the result | JavaScript gives an object `C`'s prototype without `C`'s constructor running (`Object.create(C.prototype)`, `Object.setPrototypeOf`, `Reflect.construct` with `C` as the new target), so "an object whose chain holds `C`'s prototype has `C`'s fields" is false of values a unit may receive; the fragment cannot forge the key, but a host can, and assuming it would be trusting what ordinary JavaScript breaks. |
-| `instanceof` of a constructor not declared at the file's top level (imported, ambient, a function, an expression); a class value as the operand of `in` | Nothing in the file says which prototype it gives its instances; its statics are bound apart. |
-| `key in o` for a string literal key the realm's prototypes hold (another key is the host's `%HasProperty%`, a Boolean narrowing nothing); an operand with a primitive arm or `unknown` | The model would answer otherwise than JavaScript, or JavaScript throws. |
-| Narrowing `number[] \| Foo` by `Array.isArray` to drop `Foo` | An array may carry `Foo`'s keys: where the test holds, the `Foo` arm is `readonly unknown[]`, not dropped. |
-| `===` between two operands that may both be objects without a field (functions, records of optional fields, `unknown`); narrowing by object identity | Such values have no identity in the model; a statement entry states no slot equality. |
+| `===` between two operands that may both be objects without a field (functions, records of optional fields, `unknown`, a type parameter's value); narrowing by object identity | Such values carry no location to compare in the model; a statement entry states no slot equality. |
+| A relational comparison converting a primitive (`undefined`, a Boolean) | The model's comparison is of two numbers or two strings; the refusal does not tell this conversion, which runs no code, from an object's. |
+| `keyof T`, `T[K]` over a function's own type parameter (an alias computed from its parameters is evaluated at each application) | They are functions of the type an instance names (its declared, optional and readonly keys); a parameter row denotes a value set, which does not determine a key set. |
+| A template literal type with a `${string}` hole; `keyof` with a unique-symbol key; `typeof` of a binding whose inferred type is not an object literal's record of literals and primitives, or of a class with statics | No term of the fragment states it exactly. |
+| An intersection with a union holding a type parameter, `(T \| null) & A`; a function type met with a record of readonly or optional fields, methods or an index | It distributes into meets known only at an instance; no clause states such a callable. |
+| `declare let`, `declare var`, a module-level `let` or `var` | A unit's module inputs are immutable slots; module storage needs cells every call may write. |
+| An ambient `declare enum`; an enum member TypeScript computes no value for; a NaN or infinite member; a reverse key naming a member; an empty enum | An enum type is its value set, which an ambient declaration need not state; the other keys are known only at run time, or have no literal type, or leave no record. |
+| A `this` read in sloppy code | The receiver rule is strict code's; sloppy receiver conversion (the global object, a wrapper) has no term. |
+| A library class as a base (`extends Array`) | Construction allocates an ordinary object at the class's fields; a library constructor's instance has no construction rule. |
+| `key in o` for a string literal key the realm's prototypes hold (another key is the host's `%HasProperty%`, a Boolean narrowing nothing); a class value as the operand of `in` | The model holds no key of the realm's prototypes and would answer otherwise than JavaScript; a class's statics are bound apart. |
 | A user-defined type guard (`x is T`) or assertion function (`asserts x is T`), with a body or declared | Its promise relates the result, or the completion, to the argument, which no function type states. |
 | An array assignment pattern writing a field (`[o.f] = e`) | Its target's reference is evaluated before its position is read and defaulted; the lowering writes locals only. |
 | An accessor (`get`/`set`), `__proto__`, a computed key in a literal other than a `unique symbol` constant, a spread of a string, a function or a class value | The heap has data properties only; the key or copy is known only at run time; the model gives a closure a field JavaScript's lacks. |
 | A literal or class member keyed by a well-known symbol other than `Symbol.iterator` (`Symbol.toStringTag`, `Symbol.toPrimitive`, …), but a class's static `[Symbol.hasInstance]` method, which `instanceof` calls | It changes how the host treats the object, which the model does not state; a tag would let it pass for a host collection, whose iteration is trusted. |
-| An element read past a tuple arm's length (`const [a, b] = t` with `t: [number] \| [number, string]`); a slice rest in a closure's directly checked body | Past a readonly tuple's length the read is `undefined`, which no element rule gives; a mutable tuple may have grown by `push`, so the read is whatever was pushed, where TypeScript reads `undefined` (unsound); the slice's call is graph code. |
-| A rest parameter of a definition typed by a type parameter; one typed by an intersection, by a tuple with optional or rest elements, or by what is no array | A definition has no allocation rule for an array only an instance fixes (a function type's is a pack); the fresh array's meet has no representation; several lengths are several signatures; the collected array is no value of it. |
-| A written `let` pattern in a `for` head; a test of a written `let` holding a union of objects | Its bindings are cells, which only a statement of a block lowers them to; a cell's known contents are primitive or merely no `undefined`. |
-| An array pattern over a value that may not be an array | It would step the value's own iterator. |
-| A class method declaring `this: T`; a generic class method with a bounded binder; a constructor's rest parameter; a constructor parameter default reading `this` | A method member is host-relative; a generic class method's bounded binder, whose row its bound names ([next steps](#next-steps)); no rule constructs at a variadic construct signature ([next steps](#next-steps)); the instance is allocated at the end of the constructor. |
+| An element read past a readonly tuple arm's length (`const [a, b] = t` with `t: readonly [number] \| readonly [number, string]`); a slice rest in a closure's directly checked body | No element rule reads `undefined` beyond an exact length; the slice's call is graph code. |
+| A rest parameter of a definition typed by a type parameter; one typed by an intersection or by a tuple with optional or rest elements | A definition has no allocation rule for an array only an instance fixes (a function type's is a pack); the fresh array's meet has no representation; several lengths are several signatures. |
+| A written `let` pattern in a `for` head; a test of a written `let` holding a union of objects; a `let` captured by a closure in a `for` loop | Its bindings are cells, which only a statement of a block lowers them to; a cell's known contents are primitive or merely no `undefined`; JavaScript copies the binding per iteration, which the lowering does not. |
+| An array pattern over a value that may not be an array | The pattern reads an array's positions; over a host non-array iterable it would step `%Iterate:K%`, which the lowering does not place. |
+| A class method declaring `this: T`; a generic class method with a bounded binder; a constructor's rest parameter; a constructor parameter default, or a statement, reading `this` before the instance is complete | A method member is host-relative, its contract states no other receiver; a generic class method's bounded binder, whose row its bound names; no rule constructs at a variadic construct signature; the instance is allocated at the end of the constructor. |
 | A class member with a computed key other than a method's `unique symbol` constant or a static `[Symbol.hasInstance]`; an index signature in a class; a static block reading `this`; a class extending a generic class other than at the base's own binders | A method is a binding and a prototype key named by its plain name or its symbol; instances are what construction allocates; the block's receiver is the class value, whose statics are bindings of their own; a generic base's construction is at its binders' rows ([classes](PROGRAM-TYPING.md#classes)). |
 | A class with a private name in inheritance; `#x in o` | A derived instance's base part is a copy, and a copy holds no private slot; the test asks for an own slot, where the model's key test walks the prototype chain. |
-| A loop or an array pattern over an iterable whose iterator's type states no `return` | Leaving it early, or a throw out of its body, calls whatever `return` the iterator owns, and an open record type says nothing of that property. |
-| A generator function (`function*`) | Its body suspends at each `yield` and resumes there on the next `next`, which no term of the calculus expresses. |
-| `for await` | Its iterator's steps are promises the model does not adopt. |
-| An array literal spread (`[...xs]`) other than the one element over a program's or a host's iterable | No literal lowering takes a spread ([next steps](#next-steps)). |
-| An async function returning an object other than a promise of a primitive, a void async function returning a value, `await` of a non-promise object at its own type | JavaScript adopts thenables, and a record type does not rule out a `then`. |
-| `String(o)`, `o + ""`, `new Date(o)`, `new Set(it)` of a non-array iterable, `JSON.parse` with a reviver, `JSON.stringify` with a replacer, of an array or an open record | The host runs client code (`toString`, `valueOf`, an iterator, a callback, a `toJSON`). |
-| Relational comparison converting its operands (a string and a number, an object, two Booleans); `==` other than `== null`; `+` on a bigint, number–bigint arithmetic, a symbol in a concatenation | The conversion runs code or is not the primitive order; TypeScript refuses the throwing ones. |
+| An instance member or constructor reading a static of its own class; a static method that reads `this`; `super` in a static member; a mutable static field | Statics are bindings the class defines after its methods and constructor, whose closures cannot hold them, exact only when immutable; a static method's receiver is whatever its call passes, and its `super` the base's constructor. |
+| `o.m?.()` | It would call the tested value with a receiver the lowering does not save. |
+| A generator function (`function*`); `for await` | A body suspended at `yield` is no term of the calculus; an async iterator's steps are promises the model does not adopt. |
+| An array literal spread (`[...xs]`) other than the one element over a program's or a host's iterable | No literal lowering takes a spread. |
 | A library global both constructed and read through members, or both called and read through a method (`new Date()` beside `Date.now()`, `Symbol()` beside `Symbol.for`) | A class value or callable object with members has no clause. |
 | Any library signature the overlays do not list (`Math.random`, `concat`) | Not reviewed; nothing is trusted by default. |
-| A `this` read in sloppy code | Sloppy receiver conversion is not modelled. |
-| An object literal, class or parameter property the source builds with a `then` member, which could be claimed as a `Promise` | A value of type `Promise<T>` is assumed a realm promise; the source must not forge one. |
-| A `let` binding captured by a closure in a `for` loop | JavaScript copies it per iteration. |
-| `this` before `super(...)`; a statement reading `this` before the instance is complete | The instance is allocated at the end; no term stands for the uninitialized binding. |
-| A base class declared later, imported, ambient, a library class (`extends Array`), or an expression | Nothing in the file says what its constructor allocates. |
-| An instance member or constructor reading a static of its own class | Statics are bindings the class defines after its methods and constructor, whose closures cannot hold them. |
-| A static method that reads `this`; `super` in a static member; a mutable static field | Statics are module bindings, exact only when immutable; a static method's receiver is whatever its call passes, and its `super` the base's constructor, not the prototype `super.m(...)` reads. |
-| A catch binding annotated other than `unknown`, or destructured | Anything may be thrown. |
-| A template literal type with a `${string}` hole; `keyof` with a unique-symbol key; `typeof` of a binding whose inferred type is not an object literal's record of literals and primitives, or of a class with statics | No term of the fragment states it exactly. |
-| `keyof T`, `T[K]` over a function's own type parameter (an alias computed from its parameters is evaluated at each application) | They are functions of the type an instance names (its declared, optional and readonly keys), not of the values a parameter row stands for, which is all a row's meaning may read at every assignment. |
-| TypeScript's `any` in the checked module's own annotations; a contextual closure parameter TypeScript types `any` | It states no contract. |
-| An intersection that normalizes to nothing (`string & { a: number }`, `(() => void) & number[]`, `number[] & { map: number }`) | No value of the model inhabits it (TypeScript keeps a branded primitive); it is refused rather than verified vacuously. |
-| An intersection with a union holding a type parameter, `(T \| null) & A`; a function type met with a record of readonly or optional fields, methods or an index | It distributes into meets known only at an instance; no clause states such a callable. |
-| An empty module (no function, no initialization code) | Accepting it would check nothing. |
 
 ## Lasting decisions
 
@@ -937,9 +952,9 @@ One line each; the reason is the one the design keeps.
 
 ## Next steps
 
-Open design work, each a known gap with the reason it is open. Coverage
-numbers and the tasks sized for agents are in
-[SKJS-COVERAGE](ocaml-producer/SKJS-COVERAGE.md#proposed-tasks).
+Open design work, each a known gap with the reason it is open. How many
+units each gap stops is in
+[SKJS-COVERAGE](ocaml-producer/SKJS-COVERAGE.md#refusals-by-class).
 
 **A connection to ECMA-262.** Proving the calculus faithful to the
 specification and the host's stated types as lemmas would turn most of the
@@ -978,7 +993,7 @@ keys needs a dispatch on the key, one copy per key; at a number or a symbol,
 a one-key allocation at a computed key, and for a symbol a copy that takes
 symbol keys. A write adding a key to an object another reference holds needs
 objects to have an identity the heap maps to their keys, which the model's
-values do not.
+values do not; `===` of two objects without a field needs the same identity.
 
 **Module composition** as a Lean theorem: the step-indexed argument that
 units certified against each other's signatures compose.
@@ -1016,6 +1031,18 @@ statics read by its own methods, which needs them read late, from the class
 value, rather than as bindings its closures capture; private names in
 inheritance, which needs the derived construction's copy of its base part to
 carry the base's private slots; a prototype member keyed by a symbol.
+
+**Model limits of one form each.** Module storage (`declare let`, a
+module-level `let`) needs cells every call may write, read at their declared
+type. Sloppy code's `this` needs the receiver conversion (the global object,
+a wrapper). A library class as a base needs a construction rule for what its
+constructor allocates. An ambient enum needs an enum type that is not its
+value set. `keyof T` and `T[K]` over a function's own binder need a row whose
+meaning fixes a key set, which a value set does not. A relational comparison
+converting `undefined` or a Boolean needs the conversion's rule, and the
+refusal a reason apart from an object's. `o.m?.()` needs the receiver saved
+across the test. `key in o` at a key the realm's prototypes hold needs those
+prototypes' keys in the model.
 
 **Precision.** Retaining heap facts across calls needs a proved
 reachability or noninterference statement; set-valued clause covering (an

@@ -157,10 +157,9 @@ promises nothing for another receiver (`methodT`, `holdsAt`, `bindMember`).
 The development takes the self-application semantics, not the book's Self
 types or its object subtyping.
 **Discussed in** [DESIGN: method members are host-relative](DESIGN.md#method-members-are-host-relative),
-[POSITIVE-TYPES: records](POSITIVE-TYPES.md#records),
+[POSITIVE-TYPES: records](POSITIVE-TYPES.md#records) (`methodT`, uncited),
 `lean/Verification/Model/Types/MethodMembers.lean` (module comment). Designed
-in `6a823646` and `d6645444`; the citation was dropped from DESIGN in
-`6ee739f8`.
+in `6a823646` and `d6645444`.
 
 ### Smith, Walker and Morrisett 2000
 
@@ -256,7 +255,9 @@ compares the bounds contravariantly and the bodies under the target's, is
 undecidable, so the rule relating two generic methods instantiates the
 target's binders rigidly and the source's at them only where the binder
 counts are equal and the bounds identical, a decidable check.
-**Discussed in** [DESIGN: next steps](DESIGN.md#next-steps).
+**Discussed in** [DESIGN: method members are host-relative](DESIGN.md#method-members-are-host-relative),
+[POSITIVE-TYPES: core tables](POSITIVE-TYPES.md#core-tables),
+`lean/Verification/Model/Types/PositiveRules.lean`.
 
 ## JavaScript and ECMAScript
 
@@ -279,7 +280,8 @@ Language Specification* as of this writing). Sections relied on by name:
 - [OrdinaryCallBindThis](https://tc39.es/ecma262/#sec-ordinarycallbindthis),
   [EvaluateCall](https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-evaluatecall),
   bound function exotic objects, `Function.prototype.apply`;
-- iteration: [ForIn/OfBodyEvaluation](https://tc39.es/ecma262/#sec-runtime-semantics-forin-div-ofbodyevaluation-lhs-stmt-iterator-lhskind-labelset)
+- iteration: [GetIterator](https://tc39.es/ecma262/#sec-getiterator),
+  [ForIn/OfBodyEvaluation](https://tc39.es/ecma262/#sec-runtime-semantics-forin-div-ofbodyevaluation-lhs-stmt-iterator-lhskind-labelset)
   and [IteratorClose](https://tc39.es/ecma262/#sec-iteratorclose) (an early
   exit calls `return` only where the iterator has one),
   [%ArrayIteratorPrototype%.next](https://tc39.es/ecma262/#sec-%arrayiteratorprototype%.next)
@@ -416,7 +418,7 @@ rescript-lang/rescript issue #5211, opened 2021-07-09.
 [github.com/rescript-lang/rescript/issues/5211](https://github.com/rescript-lang/rescript/issues/5211).
 
 **Context**: a run-time witness of two flattening constructors (option and
-promise) composed.
+promise) composed. **Cited in** [ECMA-CONNECTION: illustration](ECMA-CONNECTION.md#illustration-nested-promises).
 
 ### TypeScript 27711
 
@@ -432,7 +434,8 @@ eps1lon. *Nested Promise not automatically unwrapped.* microsoft/TypeScript
 issue #59111, opened 2024-07-02.
 [github.com/microsoft/TypeScript/issues/59111](https://github.com/microsoft/TypeScript/issues/59111).
 
-**Context**: a generic instantiation producing the nested type.
+**Context**: a generic instantiation producing the nested type. **Cited in**
+[ECMA-CONNECTION: illustration](ECMA-CONNECTION.md#illustration-nested-promises).
 
 ### TypeScript 49946
 
@@ -450,7 +453,8 @@ rotu. *Cannot await Thenable.* microsoft/TypeScript issue #55408, opened
 2023-08-17.
 [github.com/microsoft/TypeScript/issues/55408](https://github.com/microsoft/TypeScript/issues/55408).
 
-**Context** for awaiting a thenable that is not a promise.
+**Context** for awaiting a thenable that is not a promise. **Cited in**
+[ECMA-CONNECTION: illustration](ECMA-CONNECTION.md#illustration-nested-promises).
 
 ### TypeScript 35419
 
@@ -499,7 +503,9 @@ its checker and its library declarations (`lib.*.d.ts`), and the handbook's
 [More on Functions](https://www.typescriptlang.org/docs/handbook/2/functions.html).
 
 **Used for** name resolution, computed and contextual types, and the library
-contracts the overlays filter: a trusted tool of the pipeline.
+contracts the overlays filter: a trusted tool of the pipeline. Its downlevel
+emit of a generator as a state machine is the lowering
+[DESIGN: next steps](DESIGN.md#next-steps) names for generators.
 **Discussed in** [DESIGN: principles](DESIGN.md#principles),
 [DESIGN: trust surface](DESIGN.md#trust-surface), PROGRAM-TYPING's `[c5]`
 link.

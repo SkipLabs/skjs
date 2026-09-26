@@ -436,17 +436,10 @@ for the declared rules,
 not for every inclusion that happens to hold in the semantic model, and it is
 separate from completeness of graph proof search. The operational target
 stands beside it: every positive row reaches final semantic certification and
-every negative control fails its intended obligation. [DESIGN.md](../DESIGN.md) records the
-counterexamples repaired to get here. These are component results, not a
+every negative control fails its intended obligation. These are component results, not a
 completeness theorem for the complete source-to-certificate pipeline or for
 OCaml inference. Captured-cell writes still have a source typing rule but no
 direct certificate constructor.
-
-Callable upper bounds are outside the current completeness theorem, not the
-semantic soundness result. The [planned extension](../POSITIVE-TYPES.md#planned-completeness-extension-callable-upper-bounds)
-starts with acyclic bounds referring to earlier binders; recursive bounds
-require separate work. The repaired fuel regression is not a general
-completeness proof for those bounds.
 
 ### OCaml inference completeness
 
