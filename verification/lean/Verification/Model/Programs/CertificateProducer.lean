@@ -879,7 +879,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     -- and a pool store type whose elements it admits.
     | .arrLit [.spread src] =>
       return (A :: pool).findSome? fun L => do
-        let [.list ⟨[], [], some E, false⟩ []] := expand G L | none
+        let [.list ⟨[], [], some E, false, true⟩ []] := expand G L | none
         pool.findSome? fun S => do
           if !decide (SpreadsInto G S E) then none else do
           let es ← recur Γ src S
@@ -915,7 +915,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
                 if checkTree G e then coerce G pool e A else none
           | _ =>
             match T with
-            | ⟨[], [], some E, false⟩ =>
+            | ⟨[], [], some E, false, true⟩ =>
               (A :: pool).findSome? fun U =>
                 let e := ProgramCertificates.Evidence.node ⟨Γ,t,E ++ U⟩ (.elemAny U) [ea,ei]
                 if checkTree G e then coerce G pool e A else none

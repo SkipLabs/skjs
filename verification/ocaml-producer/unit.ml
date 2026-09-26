@@ -53,12 +53,12 @@ let () =
      It may contain objects: packs are not a primitive-only inference mode. *)
   let p={scope=3;index=0;spelling="Params"} in
   let object_type=record [{name=Name "value";optional=false;read=num;write=None;host=false}] in
-  let pack=Pack {required=[object_type];optional_elements=[];rest=None;readonly=false} in
+  let pack=Pack {required=[object_type];optional_elements=[];rest=None;readonly=false;dense=true} in
   let constructor={signature with quantified=[];params=[];
     rest_pack=Some (PackParameter p);result=t} in
   let generic={constructor with
     quantified=[{identity=p;bound=Some (PackArgument (Pack {
-      required=[];optional_elements=[];rest=Some t;readonly=false}))}];
+      required=[];optional_elements=[];rest=Some t;readonly=false;dense=true}))}];
     params=[Atoms [Ctors [constructor]]]} in
   let solution=[p,PackArgument pack;identity,ValueArgument num] in
   let instance=Inference.substitute_signature solution {generic with quantified=[]} in
@@ -71,7 +71,7 @@ let () =
   assert (nested.rest_pack=Some (PackParameter p));
   assert (nested.params=[Atoms [Ctors [{constructor with result=num}]]]);
   assert (nested.quantified=[{identity=p;bound=Some (PackArgument (Pack {
-    required=[];optional_elements=[];rest=Some num;readonly=false}))}]);
+    required=[];optional_elements=[];rest=Some num;readonly=false;dense=true}))}]);
   let refuses expected f = match f () with
     | _ -> failwith ("expected substitution refusal: " ^ expected)
     | exception Json.Error message -> assert (message="unsupported: " ^ expected) in

@@ -134,12 +134,12 @@ private def instanceWithProto : Tm := .objAt [("x", 2), ("[[proto]]", 0)] .absen
 #guard !tagHoldsIn protoHeap (.hasKey "n") instanceWithProto
 
 -- The realm's array invariant, at boundaries no source reaches: a graph whose
--- realm's prototype is row 3, `readonly unknown[]` row 2 over the store of
+-- realm's prototype is row 3, `sparse ReadonlyArray<unknown>` row 2 over the store of
 -- values row 1, and an open record row 4.
 private def realmG : PositiveGraphs.NormalGraph Nat :=
   { rows := fun
       | 0 => [.top]
-      | 1 => [.list ⟨[], [], some [0], true⟩ []]
+      | 1 => [.list ⟨[], [], some [0], true, false⟩ []]
       | 2 => [.refs [] [] [(CallArguments.arrayStoreField, [1]), (CallArguments.protoField, [3])] [] []
           [⟨false, []⟩]]
       | 3 => [.refs [] [] []]

@@ -20,26 +20,26 @@ receiver; a signature's rest is an argument pack. -/
 def G : PositiveGraphs.NormalGraph Nat := .ofRows fun
   | 0 => [.num]
   | 1 => [.undef]
-  | 2 => [.list ⟨[], [], some [0,1], false⟩ []]
+  | 2 => [.list ⟨[], [], some [0,1], false, true⟩ []]
   | 3 => [.refs [(CallArguments.arrayStoreField, [2])] [] []]
   | 4 => [.arrs [] [([12], [[0]], [13], [0])]]
-  | 5 => [.list ⟨[[0]], [], none, false⟩ []]
-  | 6 => [.list ⟨[], [], some [0], false⟩ []]
+  | 5 => [.list ⟨[[0]], [], none, false, true⟩ []]
+  | 6 => [.list ⟨[], [], some [0], false, true⟩ []]
   | 7 => [.arrs [] [([12], [[0]], [14], [0])]]
   | 8 => [.refs [(CallArguments.arrayStoreField, [6])] [] []]
   | 9 => [.refs [(CallArguments.arrayStoreField, [5])] [] []]
   | 10 => [.arrs [([12], [[0], [0]], [0])] []]
   | 11 => [.arrs [] [([12], [[0, 1]], [14], [0])]]
   | 12 => [.top]
-  | 13 => [.pack ⟨[], [], some [0,1], false⟩ []]
-  | 14 => [.pack ⟨[], [], some [0], false⟩ []]
-  | 15 => [.pack ⟨[[0], [0]], [], none, false⟩ []]
+  | 13 => [.pack ⟨[], [], some [0,1], false, true⟩ []]
+  | 14 => [.pack ⟨[], [], some [0], false, true⟩ []]
+  | 15 => [.pack ⟨[[0], [0]], [], none, false, true⟩ []]
   | 16 => [.arrs [] [([12], [], [15], [0])]]
-  | 17 => [.list ⟨[[0], [0]], [], none, false⟩ []]
+  | 17 => [.list ⟨[[0], [0]], [], none, false, true⟩ []]
   | 18 => [.refs [(CallArguments.arrayStoreField, [17])] [] []]
   | 19 => [.arrs [] [([12], [], [15], [18])]]
   | 20 => [.arrs [] [([12], [], [14], [18])]]
-  | 21 => [.pack ⟨[[0]], [], none, false⟩ []]
+  | 21 => [.pack ⟨[[0]], [], none, false, true⟩ []]
   | 22 => [.arrs [] [([12], [[0]], [21], [0])]]
   | _ => []
 
@@ -66,7 +66,7 @@ def created (t : Tm) (A : Ty Nat) : Bool :=
 #guard created (.make (.graph 1 [.var 1] [(.ret, none)] 0 []) .nul) [4]
 
 /-- Against `...r: number[]`, in a context holding such a function and an
-array: plain actuals and spreads are accepted, since every store is dense and
+array: plain actuals and spreads are accepted, since these stores are dense and
 a spread passes only its elements. -/
 def searchIn (Γ : List (Ty Nat)) (t : Tm) : Bool :=
   match expression G pool 40 Γ t [0] with

@@ -276,7 +276,7 @@ $$
 \mathsf{view}(\sigma{:}\mathsf{AnyStore},\mathsf{proto}{:}\llbracket P_{\mathcal R}\rrbracket)_n(W,v)\land\mathsf{own}(\mathsf{outside}\,N_{\mathcal R})_n(W,v)
 $$
 
-with $\mathsf{AnyStore}$ the dense stores of values
+with $\mathsf{AnyStore}$ the possibly sparse stores of values
 ($\mathsf{list}\langle;;\mathsf{top}\rangle$, readonly). Only the world is read,
 through the contracts of $\sigma$ and $\mathsf{proto}$, so the invariant is
 admissible and read below the level (`arrayInvariant_adm`,
@@ -297,11 +297,23 @@ Lean: `ArrayRealm`, `anyStoreT`, `arrayInvariant`, `realmInvariant`, `rowSem`
 An array is a value $\mathsf{arr}(\vec l)$ over a list of element locations.
 A `list` clause holds one or more **tuple contracts** $\tau$, each with
 required positions $\vec R$, optional positions $\vec O$, an optional rest
-$E$, and a readonly flag. An array meets a contract when its length is within
+$E$, a readonly flag, and a density flag $d$. An array meets a contract when its length is within
 the contract's bounds and each present element's location has a contract that
 agrees with the position's type, or, for a readonly contract, implies it.
-Every contract of the clause constrains the same array. An array meeting a
-contract is **dense**: no element below its length is a hole.
+Every contract of the clause constrains the same array. Required positions
+must be present. Optional/rest positions constrain present entries; when
+$d$ is true every position below the length must also be present:
+
+$$
+\mathsf{List}_\tau(W,\mathsf{arr}(\vec\ell))
+\iff \mathsf{Bounds}_\tau(\vec\ell) \land
+\mathsf{RequiredPresent}_\tau(\vec\ell) \land
+\mathsf{PresentContracts}_\tau(W,\vec\ell) \land
+(d \Rightarrow \mathsf{none}\notin\vec\ell).
+$$
+
+Density is independent of readonly. A sparse store cannot be strengthened to
+a dense one merely by giving up writes.
 
 Lean: `listT`, `SlotContract` (`Types/Types.lean`).
 
@@ -813,14 +825,16 @@ so mutable arrays are invariant. A readonly target only reads each element
 present at its position's type, so it is covered as a pack is, below
 (`CoversTuple`): an element's location has the contract of its source
 position, which reads within the target position's type, and the list's
-length lies within the target's bounds:
+length lies within the target's bounds. Both store rules additionally require
+$d' \Rightarrow d$ (a dense target needs a dense source); argument packs
+hold values and do not use this heap-presence flag:
 
 $$
-\frac{\tau'\ \text{writable}\quad\tau\ \text{writable}\quad|\vec R|=|\vec R'|\quad|\vec O|=|\vec O'|\quad
+\frac{(d'\Rightarrow d)\quad\tau'\ \text{writable}\quad\tau\ \text{writable}\quad|\vec R|=|\vec R'|\quad|\vec O|=|\vec O'|\quad
       \forall i.\;\Delta^{\pm}(\mathsf{pos}_\tau(i),\mathsf{pos}_{\tau'}(i))}
      {\Delta\vdash\tau\sqsubseteq_{\mathsf{list}}\tau'}
 \qquad
-\frac{\tau'\ \text{readonly}\quad\Delta\vdash\tau\sqsubseteq_{\mathsf{pack}}\tau'}
+\frac{(d'\Rightarrow d)\quad\tau'\ \text{readonly}\quad\Delta\vdash\tau\sqsubseteq_{\mathsf{pack}}\tau'}
      {\Delta\vdash\tau\sqsubseteq_{\mathsf{list}}\tau'}
 $$
 

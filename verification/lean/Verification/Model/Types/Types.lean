@@ -856,16 +856,17 @@ structure TupleF where
   optional : List Fam
   rest : Option Fam
   readonly : Bool := false
+  dense : Bool
 
 /-- **A store under a tuple contract.** Every required position has a location
 under its family (or implying it for a readonly contract); an optional
 position is a location under the same capability; a further position exists
-only under a rest family, and holds a location under it. The store is
-**dense**: no position is a hole, so reading or iterating it within its length
-never meets an absent element. Lengths follow: at least the required
+only under a rest family, and holds a location under it. When `dense` is true, no position is a hole. Otherwise optional/rest
+positions may be absent: their contracts constrain present entries only.
+Required positions always exist. Lengths follow: at least the required
 positions, and no more than the optional ones without a rest. -/
 def listT (T : TupleF) : Fam := fun k W v =>
-  ∃ ls : List (Option Nat), v = .arr ls ∧ none ∉ ls ∧ T.required.length ≤ ls.length ∧
+  ∃ ls : List (Option Nat), v = .arr ls ∧ (T.dense = true → none ∉ ls) ∧ T.required.length ≤ ls.length ∧
     (T.rest = none → ls.length ≤ T.required.length + T.optional.length) ∧
     (∀ (i : Nat) (A : Fam), T.required[i]? = some A → ∃ (l : Nat) (c : Ctr k),
       ls[i]? = some (some l) ∧ lookup W l = some c ∧
@@ -975,7 +976,7 @@ theorem listT_alloc {n : Nat} {W : WorldT n} {T : TupleF} {As : List Fam} {base 
     listT T n W (.arr (elemSlots base As.length)) := by
   have hpos' : ∀ (i : Nat) (hi : i < As.length), positionFam T i = some (As[i]'hi) :=
     fun i hi => hpos i _ (List.getElem?_eq_some_iff.mpr ⟨hi, rfl⟩)
-  refine ⟨_, rfl, elemSlots_dense _ _, by simp [elemSlots, hreq],
+  refine ⟨_, rfl, (fun _ => elemSlots_dense _ _), by simp [elemSlots, hreq],
     fun hn => by simpa [elemSlots] using hbound hn, ?_, ?_, ?_⟩
   · intro i A hA
     have hi : i < As.length := by
@@ -1029,7 +1030,7 @@ theorem listT_grow {n : Nat} {W : WorldT n} {T : TupleF} {ls : List (Option Nat)
       · split at hpos
         · rw [hn] at hpos; cases hpos
         · cases hpos
-  refine ⟨_, rfl, placeAt_dense hd hk, by rw [placeAt_length]; omega,
+  refine ⟨_, rfl, (fun ht => placeAt_dense (hd ht) hk), by rw [placeAt_length]; omega,
     fun hn => by rw [placeAt_length]; have := hbound hn; have := hnamed hn; omega, ?_, ?_, ?_⟩
   · intro i A' hA
     obtain ⟨l, c, hl, hw, hag⟩ := hreq i A' hA

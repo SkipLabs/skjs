@@ -2,8 +2,8 @@
 
 > **Current soundness boundary repairs:** unsupported generic contracts are
 > refused rather than erased. This reopens Promise-dependent framework cases,
-> including `sum-main`. `map` currently returns `unknown` because it may produce
-> holes; `find` callbacks must admit `undefined`; `join` and default `sort` require primitive
+> including `sum-main`. `map` returns a sparse array because it may produce
+> holes (its length and present-element types are retained); `find` callbacks must admit `undefined`; `join` and default `sort` require primitive
 > elements; comparator sorting supports arbitrary elements. Original sources are retained as gaps in `cases.mts`. See
 > [the current design](../DESIGN.md#exact-contracts-and-native-effects).
 
@@ -1157,7 +1157,8 @@ unfolding keeps growing refuse the whole declaration. The runtime API's
 whole. Arrays as library objects are implemented, but the full framework
 now stops earlier at recursive quantified contracts. Separately, `map` cannot
 promise a dense array after callbacks that may mutate its receiver; recovering
-that result needs a justified sparse-array or effect-aware contract.
+that dense result needs a checked effect guarantee. Sparse results now retain
+their length and present-element type without claiming density.
 
 Scheme rows are the one mechanism for quantified callables: a local generic
 closure is graph code at a scheme row, with bounds, rests and defaults.

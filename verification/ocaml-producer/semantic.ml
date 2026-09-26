@@ -7,8 +7,7 @@ type ty = Atoms of atom list | Rigid of rigid | Union of ty list
             or another declaration, and it is kept, its principal operand
             first, until the application: there it is the one object its
             operands describe where they are records (`Proposal.definition`),
-            and otherwise its principal, the parameter's instance, a proposal
-            Lean checks against the whole intersection. In a function's
+            and otherwise the whole intersection, with every operand retained. In a function's
             annotation, a binder met with other types (`T & U`, `T & "fixed"`)
             is claimed as the meet row of its operands (`Claims`). *)
          | Meet of ty * ty list
@@ -59,7 +58,7 @@ and quantifier = { identity: rigid; bound: type_argument option }
    concrete pack instance. At most one is set. *)
 and signature = { quantified: quantifier list; receiver: ty; params: ty list;
                   variadic: ty option; rest_pack: pack option; result: ty }
-and sequence = { required: ty list; optional_elements: ty list; rest: ty option; readonly: bool }
+and sequence = { required: ty list; optional_elements: ty list; rest: ty option; readonly: bool; dense: bool }
 and shape = { fields: field list; indexes: index_signature list; calls: signature list; elements: sequence option }
 let record fields = Atoms [Shape {fields;indexes=[];calls=[];elements=None}]
 (* Two object contracts as the one object both describe: their named members,

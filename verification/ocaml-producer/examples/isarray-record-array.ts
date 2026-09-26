@@ -1,8 +1,8 @@
 // A record or dictionary type is of objects meeting the realm's array
-// invariant: one owning an array's store is a dense array holding
-// `Array.prototype` and owning no key it provides. So where `Array.isArray`
-// holds, a record arm is `readonly unknown[]`, and an array arm keeps its
-// own type.
+// invariant: one owning an array's store holds `Array.prototype` and owns
+// no key it provides. Array.isArray does not establish density. These safe
+// returns remain a completeness gap while source readonly unknown[] means
+// dense; the length operation needs no density guarantee.
 type Foo = { a: string; b: number };
 
 export function elements(x: number[] | Foo): readonly unknown[] {

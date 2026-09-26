@@ -57,6 +57,7 @@ export type Atom =
       optional: ClaimType[];
       rest: ClaimType | null;
       readonly: boolean;
+      dense: boolean;
     }
   | { a: "stringlit" | "numberlit" | "booleanlit"; v: string }
   /* One bigint, `v` its canonical decimal integer: `-5`, never `-05`. */
@@ -111,10 +112,11 @@ function atom(v: unknown): void {
       break;
     case "array":
     case "store":
-      keys(o, ["a", "required", "optional", "rest", "readonly"]);
+      keys(o, ["a", "required", "optional", "rest", "readonly", "dense"]);
       for (const t of list(o.required)) decodeClaimType(t);
       for (const t of list(o.optional)) decodeClaimType(t);
       if (o.rest !== null) decodeClaimType(o.rest);
+      if (typeof o.dense !== "boolean") throw Error("invalid density flag");
       if (typeof o.readonly !== "boolean") throw Error("invalid readonly flag");
       break;
     case "booleanlit":

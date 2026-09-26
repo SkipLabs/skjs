@@ -306,9 +306,9 @@ So one value may meet fixed and variadic signatures at once, and a graph call
 clause carries both: `arrs L S`, `callable P Ps L S`. Write
 $\operatorname{Store}_G(Q,P)$ when $Q$ is the store $P$'s one tuple contract
 describes, writable since the store is fresh (`RestStore`), and $\operatorname{Spreads}_G(S,E)$ when $S$ is a
-store contract every position of which is within $E$ (`SpreadsInto`); a typed
-store has no hole, so a spread yields no $\mathsf{undefined}$ its positions do
-not hold. Creation checks the code once per variadic signature, from the
+store contract every position of which is within $E$, and either it is
+dense or $E$ includes `undefined` (`SpreadsInto`). A hole yields
+$\mathsf{undefined}$ and must therefore be admitted by $E$. Creation checks the code once per variadic signature, from the
 frame with the rest store in slot 0, the receiver in slot 1, then the fixed
 parameters: the second case of $\operatorname{Offers}_G$ (`funGraph`;
 `callableGraph` adds a field bag). The code's entry node wraps the store into
@@ -534,7 +534,7 @@ type is of objects meeting the realm's
 [array invariant](SEMANTICS.md#the-array-invariant), so an allocation owning
 the store key $\sigma$ must be an array of the realm
 ($\mathsf{realm}\vDash\overline{f{:}A}$, `allocRealm`): its store field at a
-store type (every clause a `list`, whose members are dense stores of values,
+store type (every clause a `list`, whose members are possibly sparse stores of values,
 `storeTy_sound`), its prototype field at the realm's prototype type
 $P_{\mathcal R}$, which reads no parameter row (`realmFree`, so it means the
 same at the assignment the invariant reads it at, `realmFree_meaning`), and
@@ -764,9 +764,10 @@ the store is a value the object replaces when the array grows. A `list` clause
 is one or more tuple contracts on a store: required positions, each a
 location under its family; optional positions, a hole or such a location; and a
 rest family under which any further location must be, without which there is
-none. A store a tuple contract describes has no hole: an optional position is
-absent only past the length (`listT`, *dense*), so iteration and spreads never
-answer an `undefined` the positions do not hold. An index in bounds and an
+none. The density flag separately rules out holes below the length.
+A sparse store constrains present optional/rest entries and keeps required
+positions present. A spread must admit `undefined` unless its store is dense
+(`SpreadsInto`); `listT_spreads` proves the missing-entry case. An index in bounds and an
 arbitrary one differ, as do a mutable and a readonly array. A readonly store carries
 element read capabilities: each location invariant implies the element type.
 Writable stores require equality and are invariant; `setElem` requires a
@@ -1661,7 +1662,7 @@ Four implementations discharge the tested-slot obligation:
 - **Array of the realm:** a passed `Array.isArray` finds an object owning
   the store key. A member of a record or dictionary clause meets the realm's
   [array invariant](SEMANTICS.md#the-array-invariant), so such a member is a
-  member of the realm's `readonly unknown[]`: a clause row $L$ holding the
+  member of the realm's `sparse ReadonlyArray<unknown>`: a clause row $L$ holding the
   array shape over a store of values, $P_{\mathcal R}$ and $N_{\mathcal R}$
   (`realmArrayLabel`, `realmArray_of_record`). Each label the tag slice
   keeps is kept in the destination, or is a clause row each clause of which
@@ -3835,9 +3836,11 @@ The reviewed overlay can also restrict quantified binders (`bounds`) and
 weaken a native's *promised result* (`result`). This is a specification of the
 native, not an erasure of a source annotation. Currently `join` bounds
 `T` to primitives, `find`/`findIndex` pass `T | undefined` to their callback,
-and `map` promises `unknown` because callback mutation may make its result
-sparse. A caller still has to establish its full source result annotation.
-The realm's dense-array invariant does not apply to an `unknown` result.
+and `map` promises a fresh **sparse** array of its callback result type U,
+because mutation may leave holes. Its length and present-element contracts
+remain usable. A caller still has to establish its full source result
+annotation: source `U[]` currently requires density. The realm invariant
+permits sparse stores; density comes from the particular array contract.
 
 For `sort`, let A(T) be the mutable array contract, V(P) the readonly array
 view at primitive elements P, and C(T) the comparator `(T,T) → number`.
@@ -4058,8 +4061,9 @@ $$
      {\Gamma\vdash\mathsf{for}\ (\mathsf{const}\ x\ \mathsf{of}\ e)\ S}\ \textsc{for-of}
 $$
 
-Arrays are dense (`listT`), so the iterator yields a `T` at every index
-below the length. Array patterns read positions under the same trust
+The current native iterator contract requires a dense array receiver,
+so it yields a `T` at every index below the length. A sparse receiver does
+not satisfy that contract. Array patterns read positions under the same trust
 ([patterns](#patterns)).
 
 An argument spread `f(…, ...e, …)` over an iterable of one of the other kinds
@@ -4287,7 +4291,7 @@ level, is $\mathsf{hasKey}(\kappa_C)$ ([derived form](#derived-source-forms)).
 It does not narrow `unknown`: an object gets $C$'s prototype without $C$'s
 constructor running (`Object.create(C.prototype)`), so the key is no evidence
 of $C$'s fields. `Array.isArray(x)` narrows a record or dictionary arm of $x$
-to the realm's `readonly unknown[]` where it holds
+to the realm's `sparse ReadonlyArray<unknown>` where it holds
 ([**tag-array**](#refinement-under-an-observed-outcome)), and keeps
 `unknown`, which the array invariant says nothing of:
 

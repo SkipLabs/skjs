@@ -16,6 +16,7 @@ structure Tuple (α : Type) where
   optional : List α
   rest : Option α
   readonly : Bool
+  dense : Bool
   deriving DecidableEq, Repr
 
 /-- The operand a tuple contract states for an index, as `positionFam` states
@@ -29,7 +30,7 @@ def Tuple.position (t : Tuple α) (i : Nat) : Option α :=
 
 /-- The families a tuple contract denotes, position by position. -/
 def tupleFams {α : Type} (X : α → Fam) (t : Tuple α) : TupleF :=
-  ⟨t.required.map X, t.optional.map X, t.rest.map X, t.readonly⟩
+  ⟨t.required.map X, t.optional.map X, t.rest.map X, t.readonly, t.dense⟩
 
 inductive Clause (α : Type) where
   | nul | bool
@@ -768,7 +769,7 @@ clause read through the renaming (`semWithArgs_map`). A renaming fixing every op
 changes nothing (`map_of_operands`). -/
 
 def Tuple.map (f : α → β) (t : Tuple α) : Tuple β :=
-  ⟨t.required.map f, t.optional.map f, t.rest.map f, t.readonly⟩
+  ⟨t.required.map f, t.optional.map f, t.rest.map f, t.readonly, t.dense⟩
 
 def Tuple.operands (t : Tuple α) : List α := t.required ++ t.optional ++ t.rest.toList
 

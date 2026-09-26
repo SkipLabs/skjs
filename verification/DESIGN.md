@@ -1027,18 +1027,22 @@ positive sources as the targets. The work is split by semantic obligation:
    numeric tuples and explicit `undefined` on primitives; the optional-comparator
    negative rejects objects when default coercion remains possible. This does
    not restore the original tuple-valued **default** `sort()` examples.
-2. **Sparse results: next model extension.** The runtime store already uses a
+2. **Sparse results: implemented.** The runtime store already uses a
    list of optional locations, so holes have an operational representation.
-   Separate the contract on *present* elements from the guarantee that every
+   The contract on *present* elements is separate from the guarantee that every
    position below the length is present. Required tuple positions still require
    presence; optional/rest positions need an explicit density guarantee before
    a read or spread can omit `undefined`. Readonly is a separate capability,
-   not a presence guarantee. Generalize the existing store contract and its
-   proofs rather than introduce another array calculus. The realm-wide array
-   invariant must permit sparse stores. Native `map` can then return a fresh
+   not a presence guarantee. The existing store contract and its proofs are
+   generalized; there is no separate array calculus. The realm-wide array
+   invariant permits sparse stores. Native `map` now returns a fresh
    sparse store of U, retaining its length, prototype and present-element type.
-   First closure targets: the original `testTupleArrayMethod`, a sparse map
-   result's length, and rejection of consuming its iterator as dense U values.
+   The original `testTupleArrayMethod` and a sparse map result's length
+   now verify; consuming its iterator as dense U values still rejects.
+   One additional safe source is an explicit gap: `isarray-record-array`
+   returns the result of an `Array.isArray` test as `readonly unknown[]`.
+   The test establishes an array, not density, which that source annotation
+   currently requires. The realm invariant no longer invents that guarantee.
 3. **Density-sensitive calls.** Under the current meaning of source `T[]`
    (dense), a sparse result alone does not restore `testMapReturnsArray` or the
    pure-map curated examples. Restoring those unchanged needs a checked callback

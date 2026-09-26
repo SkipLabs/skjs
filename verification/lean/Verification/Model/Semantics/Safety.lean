@@ -546,7 +546,7 @@ theorem TupleFits.congr {P Q : Fam → Val → Prop} {T T' : TupleF} {vs}
     | some B => exact ((hpos i).2 A B hA hB u).mpr (h i u B hu hB)
 
 theorem positionFam_elem (E : Fam) (i : Nat) :
-    positionFam ⟨[], [], some E, false⟩ i = some E := by
+    positionFam ⟨[], [], some E, false, true⟩ i = some E := by
   simp [positionFam]
 
 theorem callsT_adm (L : List (Fam × List Fam × Fam)) : Adm (callsT L) :=

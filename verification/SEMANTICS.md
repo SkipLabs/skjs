@@ -698,7 +698,7 @@ in [POSITIVE-TYPES.md](POSITIVE-TYPES.md).
 `Array.isArray` holds of an object owning the store key $\sigma$
 ([operational language](#operational-language)); what makes such an object an
 array of `Array.prototype` is an **invariant** of every object the program
-receives or allocates: it holds a dense store and the realm's prototype, and
+receives or allocates: it holds a possibly sparse store and the realm's prototype, and
 owns no key that prototype provides. The model states it in the meaning of
 types, not in the heap premise: the tested value is in a slot, not in the heap,
 and it came from an input, a read, a call's result or an allocation, each of
@@ -715,7 +715,7 @@ $$
 (`PositiveGraphs.arrayInvariant`), and every record or dictionary clause of a
 row means its members meeting it (`realmInvariant`, `rowSem`;
 [POSITIVE-TYPES](POSITIVE-TYPES.md#the-realms-array-invariant)). It reads the
-world only: the contract of $\sigma$'s location implies a dense store of values
+world only: the contract of $\sigma$'s location implies a possibly sparse store of values
 in every world and heap to come, and the contract of $\mathsf{proto}$'s implies
 `ArrayProto`. A world grows only by appending contracts and never replaces
 one, so the invariant is admissible (`arrayInvariant_adm`), and nothing a step
@@ -746,7 +746,7 @@ types, which already state what they state.
 **The premise.** The safety theorem (`checkJson_safe`) quantifies over
 environments meeting the unit's inputs at their types (`EnvOk`), so a value
 the unit receives at a record or dictionary type meets the invariant: an
-object owning an array's store is a dense array holding `Array.prototype`
+object owning an array's store is a possibly sparse array holding `Array.prototype`
 (meeting `ArrayProto`) and owning none of its keys. That is an assumption
 about the host and the unit's callers, stated in the
 [trust surface](DESIGN.md#trust-surface). The heap premise `HeapOk` is

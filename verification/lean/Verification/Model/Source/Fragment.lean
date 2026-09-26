@@ -39,7 +39,7 @@ def tupleRequired (j : Json) : Except String (List Json) := do
     throw "a rest parameter needs a tuple contract of required positions"
   match ← jArr j "atoms" with
   | [atom] =>
-    CellClaims.fieldsExactly atom ["a","required","optional","rest","readonly"]
+    CellClaims.fieldsExactly atom ["a","required","optional","rest","readonly","dense"]
     if (← jStr (← jField atom "a")) != "array" then
       throw "a rest parameter needs a tuple contract of required positions"
     if !(← jArr atom "optional").isEmpty || (← jField atom "rest") != Json.null then
@@ -91,7 +91,7 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
         if E.isNone then some (Rc, Ds, R) else none
       -- A rest's type is the pack of any number of actuals at its element.
       let variadic ← signatures.filterMapM fun (Rc, Ds, E, R) => E.mapM fun E => do
-        return (Rc, Ds, [← SourceTypes.use (.pack ⟨[], [], some E, false⟩ [])], R)
+        return (Rc, Ds, [← SourceTypes.use (.pack ⟨[], [], some E, false, true⟩ [])], R)
       return [← SourceTypes.use (.arrs fixed.eraseDups variadic.eraseDups)]
     else if (← jStr (← jField atom "a")) == "constructor" then
       -- A construct signature: what a class meets and no plain function does.
@@ -174,13 +174,14 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
 field, invariantly or, for a readonly array, as a view. Element types are
 lowered as callable operands are. -/
 partial def arrayType (atom : Json) : SourceTypes.Lowering Nat := do
-  CellClaims.fieldsExactly atom ["a","required","optional","rest","readonly"]
+  CellClaims.fieldsExactly atom ["a","required","optional","rest","readonly","dense"]
   let required ← (← jArr atom "required").mapM callableType
   let optional ← (← jArr atom "optional").mapM callableType
   let restJson ← jField atom "rest"
   let rest ← if restJson == .null then pure none else do pure (some (← callableType restJson))
   let readonly ← (← jField atom "readonly").getBool?
-  let store ← SourceTypes.use (.list ⟨required, optional, rest, readonly⟩ [])
+  let dense ← (← jField atom "dense").getBool?
+  let store ← SourceTypes.use (.list ⟨required, optional, rest, readonly, dense⟩ [])
   if (← jStr (← jField atom "a")) == "store" then pure store
   else SourceTypes.use (SourceTypes.arrayOf (← get) store readonly)
 

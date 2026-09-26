@@ -510,6 +510,7 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
   const boolean = of({ a: "boolean" });
   const trueLit = of({ a: "booleanlit", v: "true" });
   const shapes = [
+    of({ a: "array", required: [], optional: [], rest: boolean, readonly: false, dense: false }),
     boolean,
     of({ a: "null" }),
     of({ a: "null" }, { a: "boolean" }),
@@ -531,6 +532,7 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
   ];
   const printed = shapes.map((t) => surface.printType(t).text);
   assert.deepEqual(printed, [
+    "sparse Array<boolean>",
     "boolean",
     "null",
     "null | boolean",

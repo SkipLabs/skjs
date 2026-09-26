@@ -44,8 +44,8 @@ export type TypeTerm =
      decimal integer; either may be negative. */
   | { k: "literal"; name: "true" | "false" | "string" | "number" | "bigint"; text: string; span: Span }
   | { k: "union" | "intersection"; parts: TypeTerm[]; span: Span }
-  | { k: "array"; readonly: boolean; element: TypeTerm; span: Span }
-  | { k: "tuple"; readonly: boolean; required: TypeTerm[];
+  | { k: "array"; dense: boolean; readonly: boolean; element: TypeTerm; span: Span }
+  | { k: "tuple"; dense: boolean; readonly: boolean; required: TypeTerm[];
       optional: TypeTerm[]; rest: TypeTerm | null; span: Span }
   /** `prototype`, stated by the library overlay only: members the object
    * holds as own properties that are not enumerable (an `Error`'s

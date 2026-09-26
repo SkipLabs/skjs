@@ -403,9 +403,9 @@ theorem presentKey_sound {t : Tag} {q : Bool} {check : PropKey → Bool}
 
 `Array.isArray` finds that an object owns the store key. A record or
 dictionary type is of objects meeting the realm's array invariant
-(`PositiveGraphs.realmInvariant`): one owning the store key holds a dense store
+(`PositiveGraphs.realmInvariant`): one owning the store key holds a possibly sparse store
 and the realm's prototype and owns no key it provides. So where the test holds,
-a member of such a type is a member of the realm's `readonly unknown[]`, the
+a member of such a type is a member of the realm's `sparse ReadonlyArray<unknown>`, the
 array shape over a store of values (`realmArrayLabel`). -/
 
 /-- A type every value meets: one of its rows holds `top`. -/
@@ -418,11 +418,11 @@ theorem valuesTy_sound [DecidableEq ι] {G : NormalGraph ι} {T : Ty ι} (h : va
   simp only [Bool.and_eq_true, List.contains_iff_mem] at hp
   exact ⟨t, ht, (unfold_plain hp.1 n W v).mpr ⟨.top, hp.2, hv, realmInvariant_of_not_record rfl n W v⟩⟩
 
-/-- A type holding every dense store of values: a readonly array store at a
+/-- A type holding every possibly sparse store of values: a readonly array store at a
 type every value meets. -/
 def storeOfValues [DecidableEq ι] (G : NormalGraph ι) (S : Ty ι) : Bool :=
   S.any fun s => G.plain s && (G s).any fun c => match c with
-    | .list ⟨[], [], some T, true⟩ [] => valuesTy G T
+    | .list ⟨[], [], some T, true, false⟩ [] => valuesTy G T
     | _ => false
 
 theorem storeOfValues_sound [DecidableEq ι] {G : NormalGraph ι} {S : Ty ι}
@@ -459,7 +459,7 @@ def realmArrayLabel [DecidableEq ι] (G : NormalGraph ι) (L : ι) : Bool :=
     | _ => false
 
 /-- **An array of the realm.** A member of a record or dictionary clause that
-owns the store key is a member of the realm's `readonly unknown[]`. -/
+owns the store key is a member of the realm's `sparse ReadonlyArray<unknown>`. -/
 theorem realmArray_of_record [DecidableEq ι] {G : NormalGraph ι} {L : ι}
     (hL : realmArrayLabel G L = true) {c : Clause (Ty ι)} (hc : c.record = true) {n W v}
     (hinv : realmInvariant G (realmValues G) c n W v) (ha : tagHolds .isArray v = true) :

@@ -1348,7 +1348,9 @@ def RestStore (G : NormalGraph ι) (S P : Ty ι) : Prop :=
 /-- A store type whose elements a spread passes at `E`. -/
 def SpreadsInto (G : NormalGraph ι) (S E : Ty ι) : Prop :=
   match expand G S with
-  | [.list T []] => ∀ A ∈ T.required ++ T.optional ++ T.rest.toList, ∀ i ∈ A, i ∈ E
+  | [.list T []] =>
+      (∀ A ∈ T.required ++ T.optional ++ T.rest.toList, ∀ i ∈ A, i ∈ E) ∧
+      (T.dense = true ∨ ∃ i ∈ E, Represents G [i] .undef)
   | _ => False
 
 instance [DecidableEq ι] (G : NormalGraph ι) (S P : Ty ι) : Decidable (RestStore G S P) := by
@@ -1412,7 +1414,12 @@ theorem spreadsInto_sound {G : NormalGraph ι} {S E : Ty ι} (h : SpreadsInto G 
         rw [positionFam_tupleFams] at hA
         obtain ⟨A', hA', rfl⟩ := Option.map_eq_some_iff.mp hA
         rintro n W v ⟨k, hk, hv⟩
-        exact ⟨k, h A' (positionTy_mem hA') k hk, hv⟩)
+        exact ⟨k, h.1 A' (positionTy_mem hA') k hk, hv⟩)
+      (by
+        intro hs j U
+        rcases h.2 with hd | ⟨i, hi, hr⟩
+        · simp [tupleFams] at hs; simp [hs] at hd
+        · exact undef_of_label hi hr j U)
     intro n W heap v hh hv
     exact hl n W heap v hh ((represents_raw hS n W v) hv).1
   · exact h.elim
@@ -1754,7 +1761,7 @@ written and allocates a fresh store of its elements, each at `E`. -/
 theorem copy_safe {S E : Fam} (hS : RestCalls.Spreads S E) (hE : Adm E) (hEv : ValOnly E)
     {n : Nat} {W : WorldT n} {h : Heap} {s : Tm} (hw : WorldAdm W) (hh : HeapOk n W h)
     (hs : Safe S n W h s) :
-    Safe (listT ⟨[], [], some E, false⟩) n W h (.arrLit [.spread s]) := by
+    Safe (listT ⟨[], [], some E, false, true⟩) n W h (.arrLit [.spread s]) := by
   apply RestCalls.ctx_bind (fun t => .arrLit [.spread t])
     (fun st => .arrArg (i := 0) rfl (by intro j hj; omega) (.spreadC st))
     (fun hr => .arrArg (i := 0) rfl (by intro j hj; omega) (.spreadC hr)) n W h s hw hh hs
@@ -1779,7 +1786,7 @@ theorem copy_safe {S E : Fam} (hS : RestCalls.Spreads S E) (hE : Adm E) (hEv : V
         rw [List.eq_of_mem_replicate (List.of_mem_zip hq).1]
         exact hvs q.2 (List.of_mem_zip hq).2)
     intro k hk X hy hl
-    have := listT_alloc (n := k) (W := X) (T := ⟨[], [], some E, false⟩)
+    have := listT_alloc (n := k) (W := X) (T := ⟨[], [], some E, false, true⟩)
       (As := List.replicate vs.length E) (base := heap.length)
       (by simp) (by simp)
       (by
@@ -2018,7 +2025,7 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   /-- Any numeric index into a homogeneous array reads an element or
   `undefined`; no index is in bounds by type alone. -/
   | elemAny {Γ : List (Ty ι)} {a i : Tm} {L I E U : Ty ι} :
-      HasTy G Γ a L → Represents G L (.list ⟨[], [], some E, false⟩ []) → HasTy G Γ i I →
+      HasTy G Γ a L → Represents G L (.list ⟨[], [], some E, false, true⟩ []) → HasTy G Γ i I →
       Answers G I .isNum true → Represents G U .undef → HasTy G Γ (.elemAt a i) (E ++ U)
   /-- A write at a literal index into a position the contract names keeps the
   contract: into the element's location, or a fresh one the store records.
@@ -2061,7 +2068,7 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   /-- **A copy of a spread.** `[...s]` allocates a fresh store holding the
   elements of the store `s` evaluates to, read where it is written. -/
   | arrCopy {Γ : List (Ty ι)} {s : Tm} {S T E : Ty ι} :
-      HasTy G Γ s S → SpreadsInto G S E → Represents G T (.list ⟨[], [], some E, false⟩ []) →
+      HasTy G Γ s S → SpreadsInto G S E → Represents G T (.list ⟨[], [], some E, false, true⟩ []) →
       HasTy G Γ (.arrLit [.spread s]) T
   /-- **A variadic call.** The fixed actuals meet the selected signature's
   parameters, less trailing ones `Us` the call omits, each admitting

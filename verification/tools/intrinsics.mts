@@ -98,7 +98,7 @@ const primitive: TypeTerm = { k: "union", span, parts: primitives.map(atom) };
 export const nonThenable: TypeTerm = { k: "union", span, parts: [...primitives.map(atom),
   { k: "object", span, stringIndex: null, calls: [],
     fields: [{ name: "then", optional: true, readonly: true, type: primitive, span }] },
-  { k: "array", readonly: true, element: atom("unknown"), span }] };
+  { k: "array", dense: true, readonly: true, element: atom("unknown"), span }] };
 
 /** `() => { readonly value: E } | null`: an iterator step, `null` at the end. */
 const stepOf = (element: TypeTerm): Signature => fn([], { k: "union", span, parts: [
@@ -136,13 +136,13 @@ export function iterationIntrinsic(name: string, library: (name: "Set" | "Map" |
     kind === iterateStringName ? [[], atom("string"), atom("string")]
     : kind === iterateSetName ? [t, library("Set", [binder]), binder]
     : kind === iterateMapName ? [[{ name: "K", bound: null }, { name: "V", bound: null }], library("Map", [key, value]),
-      { k: "tuple", readonly: false, required: [key, value], optional: [], rest: null, span }]
+      { k: "tuple", dense: true, readonly: false, required: [key, value], optional: [], rest: null, span }]
     : kind === iterateIteratorName ? [t, library("Iterator", [binder]), binder]
     : (() => { throw Error(`no iteration intrinsic ${name}`); })();
   // The step, or, for a spread, the fresh array of what the step yields until
   // it yields `null`, as `...` collects it.
   return { name, typeParams, type: fn([param],
-    spread ? { k: "array", readonly: false, element, span } : stepOf(element)) };
+    spread ? { k: "array", dense: true, readonly: false, element, span } : stepOf(element)) };
 }
 
 /** The spread form of an iteration intrinsic: `...x` in an argument list, over
@@ -165,8 +165,8 @@ export const restFromName = (k: number): string => `%RestFrom:${k}%`;
 export function restFromIntrinsic(k: number):
     { name: string; typeParams: { name: string; bound: TypeTerm | null }[]; type: Signature } {
   return { name: restFromName(k), typeParams: [{ name: "T", bound: null }],
-    type: fn([{ k: "tuple", readonly: true, required: [], optional: Array.from({ length: k }, () => atom("unknown")),
-      rest: binder, span }], { k: "array", readonly: false, element: binder, span }) };
+    type: fn([{ k: "tuple", dense: true, readonly: true, required: [], optional: Array.from({ length: k }, () => atom("unknown")),
+      rest: binder, span }], { k: "array", dense: true, readonly: false, element: binder, span }) };
 }
 
 /** The intrinsics' binders and signatures, given the standard library's
@@ -184,10 +184,10 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
       type: fn([either(binder, promise(other))], promise(either(binder, other))) }),
     [asyncCompleteName]: () => ({ typeParams: [], type: fn([], promise(atom("void"))) }),
     [iterateName]: () => ({ typeParams: [{ name: "T", bound: null }],
-      type: fn([{ k: "array", readonly: true, element: binder, span }], step) }),
+      type: fn([{ k: "array", dense: true, readonly: true, element: binder, span }], step) }),
     [promiseAllName]: () => ({ typeParams: [{ name: "T", bound: null }],
-      type: fn([{ k: "array", readonly: true, element: promise(binder), span }],
-        promise({ k: "array", readonly: false, element: binder, span })) }),
+      type: fn([{ k: "array", dense: true, readonly: true, element: promise(binder), span }],
+        promise({ k: "array", dense: true, readonly: false, element: binder, span })) }),
     // A promise rejected with the reason: awaiting it throws, so it is a
     // promise of every type, never settling to a value.
     [promiseRejectName]: () => ({ typeParams: [{ name: "T", bound: null }],
@@ -200,11 +200,11 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
       type: fn([fn([fn([binder], atom("void")), fn([atom("unknown")], atom("void"))], atom("void"))],
         promise(binder)) }),
     [forInName]: () => ({ typeParams: [],
-      type: fn([atom("unknown")], { k: "array", readonly: true, element: atom("string"), span }) }),
+      type: fn([atom("unknown")], { k: "array", dense: true, readonly: true, element: atom("string"), span }) }),
     [hasPropertyName]: () => ({ typeParams: [],
       type: fn([either(atom("string"), atom("number"), atom("symbol")), atom("object")], atom("boolean")) }),
     [elementAtName]: () => ({ typeParams: [{ name: "T", bound: null }],
-      type: fn([{ k: "array", readonly: true, element: binder, span }, atom("number")],
+      type: fn([{ k: "array", dense: true, readonly: true, element: binder, span }, atom("number")],
         either(binder, atom("undefined"))) }),
   };
   return [...needed].map(name => {

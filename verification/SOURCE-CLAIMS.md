@@ -279,7 +279,7 @@ requirement to consume every directive.
 An array claim is one atom:
 
 ```json
-{ "a": "array", "required": [T, ...], "optional": [T, ...], "rest": T | null, "readonly": false }
+{ "a": "array", "required": [T, ...], "optional": [T, ...], "rest": T | null, "readonly": false, "dense": true }
 ```
 
 `number[]` has no required or optional positions and `number` as its rest;
@@ -292,9 +292,14 @@ keeps it. A readonly store contract uses an upper bound at each element location
 is kept apart from a present `undefined`: an optional or rest position reads
 at its type or `undefined`, a required one at its type alone. Optional tuple
 positions are not produced by SKJS; the atom carries them for tsc.
+The required `dense` flag excludes holes below the length when true; when
+false, required positions remain present but optional/rest entries may be
+holes. Source arrays currently request density; native `map` results do not.
 
 The editor prints homogeneous arrays as `Array<T>` or `ReadonlyArray<T>` and
-also accepts `T[]` and `readonly T[]`. Tuples use `[T, U?, ...Array<V>]`.
+also accepts `T[]` and `readonly T[]`. Tuples use `[T, U?, ...Array<V>]`. The prefix `sparse` states
+`dense: false`, for example `sparse ReadonlyArray<number>` or
+`sparse [number, string?]`; it composes with `Store<...>`.
 `Store<...>` names the internal store contract when a graph row is edited
 by itself; it uses the same structural fields with atom tag `store`. Normalized
 array objects lift back to the array spelling. The `readonly` flag on a native

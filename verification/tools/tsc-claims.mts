@@ -779,7 +779,7 @@ function callRow(
   const rest = internRow(types, [
     {
       pack: {
-        first: { required: [], optional: [], rest: element, readonly: false },
+        first: { dense: true, required: [], optional: [], rest: element, readonly: false },
         rest: [],
       },
     },
@@ -825,13 +825,13 @@ function translateType(
         else throw new Refusal("variadic-tuple", checker.typeToString(type));
       });
       readonly = target.readonly;
-      tuple = { required, optional, rest, readonly };
+      tuple = { dense: true, required, optional, rest, readonly };
     } else {
       const elem = args[0];
       if (args.length !== 1 || elem === undefined)
         throw new Refusal("array-arity", checker.typeToString(type));
       readonly = target.getSymbol()?.name === "ReadonlyArray";
-      tuple = { required: [], optional: [], rest: elem, readonly };
+      tuple = { dense: true, required: [], optional: [], rest: elem, readonly };
     }
     const store = internRow(types, [{ list: { first: tuple, rest: [] } }]);
     const field: Fields = [["[]", [store]]];

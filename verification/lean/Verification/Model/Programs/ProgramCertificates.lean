@@ -376,7 +376,7 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     ja.context = j.context ∧ ja.term = a ∧ ji.context = j.context ∧ ji.term = i ∧
     Represents G U .undef ∧ Answers G ji.type .isNum true ∧
     (match expand G ja.type with
-     | [.list ⟨[], [], some E, false⟩ []] => j.type = E ++ U
+     | [.list ⟨[], [], some E, false, true⟩ []] => j.type = E ++ U
      | _ => False)
   | .setElem, .setElem a i v, [ja, ji, jv] =>
     ja.context = j.context ∧ ja.term = a ∧ ji.context = j.context ∧ ji.term = i ∧
@@ -445,7 +445,7 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
   -- The one premise is the store the spread reads.
   | .arrCopy E, .arrLit [.spread s], [js] =>
     js.context = j.context ∧ js.term = s ∧ SpreadsInto G js.type E ∧
-    Represents G j.type (.list ⟨[], [], some E, false⟩ [])
+    Represents G j.type (.list ⟨[], [], some E, false, true⟩ [])
   -- The callee, the receiver, the fixed actuals, one `undefined` premise per
   -- fixed position the call omits, then one premise per further part: the
   -- actual itself, or the store a spread reads. A call that omits a position
@@ -1673,7 +1673,7 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
   | @elemAny Γ a i L I E U ha hr hi hq hU iha ihi =>
     apply node_complete (G := G) (j := ⟨Γ, .elemAt a i, E ++ U⟩) (r := .elemAny U)
       (js := [⟨Γ,a,L⟩, ⟨Γ,i,I⟩])
-      ⟨rfl,rfl,rfl,rfl,hU,hq,by simp only [show expand G L = [.list ⟨[], [], some E, false⟩ []] from hr]⟩
+      ⟨rfl,rfl,rfl,rfl,hU,hq,by simp only [show expand G L = [.list ⟨[], [], some E, false, true⟩ []] from hr]⟩
     intro j hj
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hj
     rcases hj with rfl | rfl

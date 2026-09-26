@@ -4,23 +4,33 @@ How much of what SKJS accepts in its own test suite the pipeline
 (`check.mts`: parser → OCaml producer → Lean search and check) verifies, what
 stops the rest, and where the two disagree because SKJS is wrong.
 
-Measurement checkpoint: `5143e619` (the soundness repairs). The subsequent
-comparator-sorting extension has pipeline tests; the full census below has
-not been rerun for that extension.
+Measurement checkpoint: September 27, 2026, after explicit-comparator sorting
+and sparse-array contracts (full census with SKJS confirmation).
 
-**2,405 of 2,674 SKJS-accepted units verify (89.9%); 1,782 of 2,026
-accepted functions (88.0%).** 285 of the 377 files with an accepted unit
+**2,399 of 2,674 SKJS-accepted units verify (89.7%); 1,776 of 2,026
+accepted functions (87.7%).** 285 of the 377 files with an accepted unit
 verify entirely. There are 73 principled refusals, 10 registered SKJS-unsound
-units, 185 gaps and 1 refusal not explained by the automatic classifier.
+units, 184 gaps and 8 refusals not explained by the automatic classifier.
 
-The soundness repair loses 39 previously verified units. Unsupported generic
-contracts now refuse rather than erase members; native array contracts account
-for callback mutation and coercion. In particular, recursive Promise contracts
-and the Promise-dependent framework target are open again. The one automatic
-“unexplained” row, `testMapReturnsArray`, has an inspected cause: `map` now
-returns `unknown` because callbacks can leave holes, and the dense-array model
-cannot justify the requested array result. The classifier retains its generic
-search-failure label; this is known incompleteness, not a new soundness finding.
+Compared with the boundary-repair checkpoint `5143e619` (2,405 verified),
+`testTupleArrayMethod` is restored. Seven safe functions now expose an
+additional completeness gap: `testBasicArrayRefinement`,
+`testStringArrayRefinement`, `testMultipleUnion`, `testNestedRefinement`,
+`testEarlyReturn`, `testCombinedWithTypeof` in `array-isarray-refinement.ts`,
+and `testNarrowToArray` in `array-object-union-operations.ts`. They return
+an arbitrary array found by `Array.isArray` as `ReadonlyArray<unknown>`.
+The realm invariant correctly permits holes; the source annotation still
+requires density. This is unnecessarily restrictive for unknown elements,
+not a reason to consider the programs unsafe. Their original sources remain.
+The curated `isarray-record-array` records the same gap.
+
+The eight automatic “unexplained” rows have inspected causes: those seven,
+and `testMapReturnsArray`, whose callback is pure but whose native `map`
+contract conservatively returns a sparse array. A checked effect guarantee
+is still needed to recover its dense result. Sparse results now retain their
+length and present-element types, rather than becoming `unknown`.
+The original boundary repair's recursive Promise contracts and the
+Promise-dependent framework target remain open; no erased contract is restored.
 
 The SKJS-unsound list records independent runtime witnesses ([below](#suspected-skjs-unsoundnesses)).
 Membership alone does not show that the pipeline reached the corresponding
@@ -47,14 +57,14 @@ is not part of `verification/run.sh`.
 
 | Suite | Harness verdict | Files | Units | Accepted | Verified | Accepted functions | Verified functions |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,458 | 2,192 | 1,863 | 1,622 |
+| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,458 | 2,186 | 1,863 | 1,616 |
 | `tests/callgraph` | no error allowed | 25 | 59 | 59 | 56 | 51 | 48 |
 | `tests/constprop` | no error allowed | 14 | 66 | 66 | 66 | 49 | 49 |
 | `tests/deadcode` | no error allowed | 7 | 27 | 27 | 27 | 16 | 16 |
 | `tests/cfg` | no error allowed | 7 | 22 | 22 | 22 | 21 | 21 |
 | `tests/projects` | expect-error markers, under the project's tsconfig | 24 of 68 | 44 | 34 | 34 | 23 | 23 |
 | `tests/ts-conformance/cases` | lines listed in `reference/*.errors.txt` | 4 | 9 | 8 | 8 | 3 | 3 |
-| **total** | | **480** | **4,110** | **2,674** | **2,405** | **2,026** | **1,782** |
+| **total** | | **480** | **4,110** | **2,674** | **2,399** | **2,026** | **1,776** |
 
 Excluded (79 files, listed in the JSON with reasons): `ts-conformance/not-supported`
 (31) and `callgraph-unsupported` (4) assert only that SKJS reports errors;
@@ -111,7 +121,7 @@ is.
 
 | Phase of first blocker | Units |
 | --- | ---: |
-| verified | 2,405 |
+| verified | 2,399 |
 | source (gate) | 85 |
 | proposal (producer) | 33 |
 | search (Lean) | 151 |
@@ -194,11 +204,11 @@ blocker's key is given (`summary.byReason` and `summary.byClass` of
 
 | Class | Units |
 | --- | ---: |
-| verified | 2,405 |
+| verified | 2,399 |
 | principled (P) | 73 |
 | SKJS unsound (S) | 10 |
-| gap (G) | 185 |
-| unexplained (U) | 1 |
+| gap (G) | 184 |
+| unexplained (U) | 8 |
 | **accepted** | **2,674** |
 
 Reason definitions and justifications live in `CLASSES` in
@@ -232,9 +242,9 @@ First blocker, not every missing feature of a unit:
 | sloppy (non-strict) code | 6 | 4 | 2 | 3 |
 | iterables the program defines: an iterator whose type states no `return`, a spread or a pattern the protocol's lowering does not place, a well-known symbol key other than `Symbol.iterator` | 5 | 4 | 1 | 4 |
 | equality: objects without a field (no identity), loose equality | 4 | 4 | 0 | 2 |
-| reads on unions/primitives (field/index read on non-object, string keys) | 3 | 2 | 0 | 3 |
+| reads on unions/primitives (field/index read on non-object, string keys) | 2 | 1 | 0 | 2 |
 | relational operators (< <= > >=) and ** | 2 | 1 | 1 | 1 |
-| search: no derivation found (evidence search failed) | 2 | 2 | 0 | 2 |
+| search: no derivation found (evidence search failed) | 9 | 9 | 0 | 4 |
 | dictionaries: a spread of one, a key `in` found in one | 2 | 2 | 0 | 2 |
 | invariance: a writable element or field at a wider one (TypeScript relates them covariantly) | 2 | 2 | 0 | 1 |
 | compound and update assignments (x++, \|\|=, ??=, a[i] op=) | 1 | 1 | 0 | 1 |

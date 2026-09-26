@@ -92,11 +92,11 @@ let rec source_type ctx j =
     | Atoms atoms when List.mem Top atoms -> top
     | t -> t)
   | "array" -> array {required=[];optional_elements=[];
-      rest=Some (recur (field "element" j));readonly=boolean (field "readonly" j)}
+      rest=Some (recur (field "element" j));readonly=boolean (field "readonly" j);dense=boolean (field "dense" j)}
   | "tuple" -> array {required=List.map recur (items "required" j);
       optional_elements=List.map recur (items "optional" j);
       rest=(match field "rest" j with Null -> None | t -> Some (recur t));
-      readonly=boolean (field "readonly" j)}
+      readonly=boolean (field "readonly" j);dense=boolean (field "dense" j)}
   (* A generic method: its signatures quantify lexically scoped binders.
      Self-dependent bounds and mixed value/pack uses are refused,
      consistently with Lean's declaration lowering; a rest is a pack
@@ -126,10 +126,10 @@ let rec source_type ctx j =
           else ValueArgument (Rigid r)) identities @ ctx.bindings} in
       let pack_bound t = match text "k" t with
         | "array" -> Pack {required=[];optional_elements=[];
-            rest=Some (source_type ctx (field "element" t));readonly=false}
+            rest=Some (source_type ctx (field "element" t));readonly=false;dense=true}
         | "tuple" when items "optional" t = [] && field "rest" t = Null ->
           Pack {required=List.map (source_type ctx) (items "required" t);
-            optional_elements=[];rest=None;readonly=false}
+            optional_elements=[];rest=None;readonly=false;dense=true}
         | _ -> unsupported "a pack parameter's bound is an array or a tuple" in
       let quantified = List.map2 (fun identity b ->
         {identity;bound=(match field "bound" b with
@@ -148,7 +148,7 @@ let rec source_type ctx j =
     let rest_pack = match field "rest" j with
       | Null -> None
       | t when is_pack t -> Some (source_pack ctx (field "of" t))
-      | t -> Some (Pack {required=[];optional_elements=[];rest=Some (recur t);readonly=false}) in
+      | t -> Some (Pack {required=[];optional_elements=[];rest=Some (recur t);readonly=false;dense=true}) in
     Atoms [Ctors [{quantified=[];receiver=top;params=List.map recur (items "params" j);
       variadic=None;rest_pack;result=recur (field "result" j)}]]
   | "function" ->

@@ -2214,7 +2214,7 @@ private def lambdaSetup (fc : SourceClaims.Function) (scope : List ScopeBinding)
           | throw (locatedRefusal (← table) pos .bindingAnnotation
               "a closure collecting a rest array needs its result annotation")
         let R ← lower (Fragment.callableType ret)
-        let restPack ← lower (SourceTypes.use (.pack ⟨[], [], some E, false⟩ []))
+        let restPack ← lower (SourceTypes.use (.pack ⟨[], [], some E, false, true⟩ []))
         let own ← lower (SourceTypes.use (.arrs [] [(Rsource, sourceDs, [restPack], R)]))
         modify fun st => {st with hints := own :: st.hints}
         pure ([((Rsource, sourceDs, R), some [restPack])], [own])
@@ -3683,7 +3683,7 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
       if !E.contains 3 then
         throw (locatedRefusal (← table) e.span .bindingAnnotation
           "a spread copied before a later actual runs needs a rest element type that admits `undefined`")
-      let C ← lower (SourceTypes.use (.list ⟨[], [], some E, false⟩ []))
+      let C ← lower (SourceTypes.use (.list ⟨[], [], some E, false, true⟩ []))
       modify fun st => {st with hints := C :: st.hints}
       pure (i, [C])
     let As := As₀.zipIdx.map fun (A, i) =>

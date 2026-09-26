@@ -31,6 +31,7 @@ export type Tuple = {
   optional: Labels[];
   rest: Labels | null;
   readonly: boolean;
+  dense: boolean;
 };
 export type Clause =
   | "nul"
@@ -304,7 +305,8 @@ export function decodeGraph(value: unknown): TypeGraph {
       array(r.keys).forEach((k) => key(k, "a key in a bound"));
     });
   const tuple = (v: unknown) => {
-    const t = obj(v, ["required", "optional", "rest", "readonly"]);
+    const t = obj(v, ["required", "optional", "rest", "readonly", "dense"]);
+    if (typeof t.dense !== "boolean") throw Error("invalid tuple density flag");
     if (typeof t.readonly !== "boolean")
       throw Error("invalid tuple readonly flag");
     array(t.required).forEach(labels);
@@ -474,7 +476,7 @@ const arrowText = ([receiver, [domains, result]]: Arrow) =>
 const restArrowText = ([receiver, [domains, [rest, result]]]: RestArrow) =>
   `(${[receiverText(receiver), ...domains.map(printLabels), `...${printLabels(rest)}`].join(", ")}) => ${printLabels(result)}`;
 const printTuple = (t: Tuple) =>
-  `${t.readonly ? "readonly " : ""}[${[
+  `${t.dense ? "" : "sparse "}${t.readonly ? "readonly " : ""}[${[
     ...t.required.map(printLabels),
     ...t.optional.map((l) => `${printLabels(l)}?`),
     ...(t.rest ? [`...${printLabels(t.rest)}[]`] : []),

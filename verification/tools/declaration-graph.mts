@@ -63,7 +63,7 @@ export function libraryTerm(library: LibraryType, args: readonly TypeTerm[], spa
   if (library.k === "array") {
     const [element] = args;
     if (!element || args.length !== 1) return fail("an array type takes one type argument");
-    return { k: "array", readonly: library.readonly, element, span };
+    return { k: "array", dense: true, readonly: library.readonly, element, span };
   }
   if (args.length !== library.parameters) return fail("a mapped library type needs all its type arguments");
   const t = library.template;
@@ -1272,7 +1272,7 @@ export function collectDeclarations(file: string, options: {
       }
       if (checker.isArrayType(type)) {
         const [element] = checker.getTypeArguments(type as Parameters<Checker["getTypeArguments"]>[0]);
-        if (element) return { k: "array", readonly: type.getSymbol()?.name === "ReadonlyArray",
+        if (element) return { k: "array", dense: true, readonly: type.getSymbol()?.name === "ReadonlyArray",
           element: contextualTerm(element, span), span };
       }
       const symbol = type.getAliasSymbol() ?? type.getSymbol();

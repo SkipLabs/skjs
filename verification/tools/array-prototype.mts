@@ -66,7 +66,7 @@ const optionalNumber: TypeTerm = { k: "union", parts: [atomOf("number"), atomOf(
 /** `locales`, as the host reads it without running client code: a tag, or a
  * readonly array of tags read by index; a malformed tag is a `RangeError`. */
 const locales: TypeTerm = { k: "union", span: at, parts: [atomOf("string"),
-  { k: "array", readonly: true, element: atomOf("string"), span: at }, atomOf("undefined")] };
+  { k: "array", dense: true, readonly: true, element: atomOf("string"), span: at }, atomOf("undefined")] };
 
 // Native conversion of a primitive runs no client code. This is a bound on
 // the receiver's element type, not a claim that a readonly alias is immutable.
@@ -76,7 +76,7 @@ const primitiveElements: TypeTerm = { k: "union", span: at, parts:
 const element: TypeTerm = { k: "binder", name: "T", span: at };
 const maybeElement: TypeTerm = { k: "union", parts: [element, atomOf("undefined")], span: at };
 const findingCallback: TypeTerm = { k: "function", receiver: null, rest: null, span: at,
-  params: [maybeElement, atomOf("number"), { k: "array", readonly: true, element, span: at }],
+  params: [maybeElement, atomOf("number"), { k: "array", dense: true, readonly: true, element, span: at }],
   result: atomOf("unknown") };
 
 export const overlay: readonly OverlayEntry[] = [
@@ -85,9 +85,10 @@ export const overlay: readonly OverlayEntry[] = [
     drop: ["thisArg"] },
   { name: "map", from: "ReadonlyArray",
     signature: "map<U>(callbackfn: (value: T, index: number, array: readonly T[]) => U, thisArg?: any): U[];",
-    // A callback can shrink the source, leaving holes in the result. Until
-    // sparse arrays have a source type, only an unknown result is promised.
-    drop: ["thisArg"], result: atomOf("unknown") },
+    // Reentrant callbacks can shrink the source; map preserves the original
+    // length but only visited positions are present in its fresh result.
+    drop: ["thisArg"], result: { k: "array", dense: false, readonly: false,
+      element: { k: "binder", name: "U", span: at }, span: at } },
   // Only the overload with an initial value. The one without, `reduce(cb)`,
   // is a second signature of the member beside the generic `reduce<U>`,
   // and a prototype member is read as one scheme with one signature
@@ -133,11 +134,11 @@ export const overlay: readonly OverlayEntry[] = [
     stated: [
       { params: [{ k: "function", receiver: null, params: [element, element], rest: null,
           result: atomOf("number"), span: at }],
-        result: { k: "array", readonly: false, element, span: at } },
+        result: { k: "array", dense: true, readonly: false, element, span: at } },
       { receiver: { k: "intersection", parts: [
-          { k: "array", readonly: false, element, span: at },
-          { k: "array", readonly: true, element: primitiveElements, span: at }], span: at },
-        params: [atomOf("undefined")], result: { k: "array", readonly: false, element, span: at } },
+          { k: "array", dense: true, readonly: false, element, span: at },
+          { k: "array", dense: true, readonly: true, element: primitiveElements, span: at }], span: at },
+        params: [atomOf("undefined")], result: { k: "array", dense: true, readonly: false, element, span: at } },
     ] },
   { name: "push", from: "Array", signature: "push(...items: T[]): number;" },
   { name: "pop", from: "Array", signature: "pop(): T | undefined;" },
@@ -198,7 +199,7 @@ export const primitiveOverlay: Readonly<Record<PrimitiveKind, readonly OverlayEn
     // `replaceAll` of a non-global `RegExp` would throw.
     { name: "split", from: "String", signature: "split(separator: string | RegExp, limit?: number): string[];",
       stated: [{ params: [atomOf("string"), optionalNumber],
-        result: { k: "array", readonly: false, element: atomOf("string"), span: at } }] },
+        result: { k: "array", dense: true, readonly: false, element: atomOf("string"), span: at } }] },
     { name: "replace", from: "String", signature: "replace(searchValue: string | RegExp, replaceValue: string): string;",
       stated: [{ params: [atomOf("string"), atomOf("string")], result: atomOf("string") }] },
     { name: "replaceAll", from: "String",
@@ -349,7 +350,7 @@ export function arrayPrototype(checker: Checker, at: Node, library: OverlayLibra
     entries: readonly OverlayEntry[] = overlay): TypeDefinition {
   const element: TypeTerm = { k: "binder", name: "T", span: [0, 0] };
   return prototype(checker, at, library, { identity: arrayProtoIdentity, binders: ["T"], entries,
-    receiver: from => ({ k: "array", readonly: from === "ReadonlyArray", element, span: [0, 0] }) });
+    receiver: from => ({ k: "array", dense: true, readonly: from === "ReadonlyArray", element, span: [0, 0] }) });
 }
 
 /** A primitive's prototype contract, `StringProto` for `String.prototype`: a

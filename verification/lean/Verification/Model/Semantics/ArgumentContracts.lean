@@ -27,8 +27,8 @@ theorem fits_adm {T : TupleF}
 /-- Exact tuples and fixed parameters have identical membership, for arbitrary
 families: objects, callbacks and recursive types need no stability premise.
 Readonly positions admit the same lists: a list holds values, not locations. -/
-theorem fits_exact {r : Bool} (As : List Fam) (n W vs) :
-    Fits ⟨As, [], none, r⟩ n W vs ↔ ArgsT As n W vs := by
+theorem fits_exact {r d : Bool} (As : List Fam) (n W vs) :
+    Fits ⟨As, [], none, r, d⟩ n W vs ↔ ArgsT As n W vs := by
   constructor
   · rintro ⟨hl, hb, hp⟩
     dsimp at hl hb
@@ -49,8 +49,8 @@ theorem fits_exact {r : Bool} (As : List Fam) (n W vs) :
 
 /-- An element rest admits exactly the lists of its element's values at this
 level. -/
-theorem fits_elem {E : Fam} {r : Bool} {n W vs} :
-    Fits ⟨[], [], some E, r⟩ n W vs ↔ ∀ v ∈ vs, E n W v := by
+theorem fits_elem {E : Fam} {r d : Bool} {n W vs} :
+    Fits ⟨[], [], some E, r, d⟩ n W vs ↔ ∀ v ∈ vs, E n W v := by
   constructor
   · rintro ⟨-, -, hp⟩ v hv
     obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hv
@@ -97,7 +97,7 @@ theorem fits_bound {T : TupleF} {E : Fam}
 Existing locations retain their write contracts; only reads are widened. -/
 theorem array_bound {T : TupleF} {E : Fam}
     (hb : ∀ i A, positionFam T i = some A → FamLe A E) :
-    FamLe (listT T) (listT ⟨[], [], some E, true⟩) := by
+    FamLe (listT T) (listT ⟨[], [], some E, true, T.dense⟩) := by
   intro n W v h
   obtain ⟨ls, rfl, hd, hlen, hbound, hreq, hopt, hrest⟩ := h
   refine ⟨ls, rfl, hd, by simp, by simp, by simp, by simp, ?_⟩
@@ -159,7 +159,7 @@ theorem call_safe {P : Family} {Rc R : Fam} (hP : Admissible P) (hRc : Adm Rc)
 signature, even when a fixed signature additionally allows omitted undefined
 arguments. No claim of equality is made for that optional-argument case. -/
 theorem fixed_call_covers_tuple (As : List Fam) (Rc R : Fam) :
-    FamLe (callsT [(Rc, As, R)]) (callable (Fits ⟨As, [], none, false⟩) Rc R) := by
+    FamLe (callsT [(Rc, As, R)]) (callable (Fits ⟨As, [], none, false, true⟩) Rc R) := by
   intro n W v h
   refine ⟨h.1, ?_⟩
   intro j hj U hx hu heap hh r hrv hr args hvals ha
@@ -179,7 +179,7 @@ theorem constructor_adm (P : Family) (R : Fam) : Adm (constructor P R) :=
 
 /-- The desired general equation, without a stability side condition. -/
 theorem fixed_constructor_eq_tuple (As : List Fam) (R : Fam) :
-    ctorsT [(As, R)] = constructor (Fits ⟨As, [], none, false⟩) R := by
+    ctorsT [(As, R)] = constructor (Fits ⟨As, [], none, false, true⟩) R := by
   funext n W v
   apply propext
   simp only [ctorsT, constructor, ConstructPromise, List.mem_singleton, forall_eq, fits_exact]
@@ -187,7 +187,7 @@ theorem fixed_constructor_eq_tuple (As : List Fam) (R : Fam) :
 /-- The general equality uses the production variadic constructor contract,
 with no primitive/stability premise and no encoded value standing for a list. -/
 theorem fixed_constructor_eq_rest (As : List Fam) (R : Fam) :
-    ctorsT [(As, R)] = ctorRestsT [([], Fits ⟨As, [], none, false⟩, R)] := by
+    ctorsT [(As, R)] = ctorRestsT [([], Fits ⟨As, [], none, false, true⟩, R)] := by
   funext n W v
   apply propext
   simp [ctorsT, ctorRestsT, ConstructPromise, CtorRest, ArgsT, fits_exact]
