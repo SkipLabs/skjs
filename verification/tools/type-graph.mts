@@ -252,14 +252,14 @@ export function decodeGraph(value: unknown): TypeGraph {
       throw Error(`expected ${what}`);
     return { symbol: r.symbol };
   };
-  const fields = (v: unknown) => {
+  const fields = (v: unknown, repeated = false) => {
     const names = new Set<string>();
     array(v).forEach((f) => {
       const pair = array(f);
       if (pair.length !== 2)
         throw Error("expected a field name and its labels");
       const name = keyText(key(pair[0], "a field name"));
-      if (names.has(name))
+      if (!repeated && names.has(name))
         throw Error("duplicate field in an object contract");
       names.add(name);
       labels(pair[1]);
@@ -344,8 +344,10 @@ export function decodeGraph(value: unknown): TypeGraph {
     refs: (b) => {
       const r = objOptional(b, ["first", "rest", "views"], ["optional", "methods", "bounds"]);
       fields(r.first);
-      array(r.rest).forEach(fields);
-      fields(r.views);
+      array(r.rest).forEach(v => fields(v));
+      // Views are conjunctive capabilities, not an object literal: a meet
+      // can constrain one key more than once, exactly as Lean viewT does.
+      fields(r.views, true);
       if ("optional" in r) optionalFields(r.optional);
       if ("methods" in r) methods(r.methods);
       if ("bounds" in r) bounds(r.bounds);
@@ -353,8 +355,10 @@ export function decodeGraph(value: unknown): TypeGraph {
     dict: (b) => {
       const r = objOptional(b, ["first", "rest", "views", "indexes"], ["optional", "methods", "bounds", "cells"]);
       fields(r.first);
-      array(r.rest).forEach(fields);
-      fields(r.views);
+      array(r.rest).forEach(v => fields(v));
+      // Views are conjunctive capabilities, not an object literal: a meet
+      // can constrain one key more than once, exactly as Lean viewT does.
+      fields(r.views, true);
       array(r.indexes).forEach(indexEntry);
       if ("cells" in r) array(r.cells).forEach(indexEntry);
       if ("optional" in r) optionalFields(r.optional);
@@ -403,7 +407,7 @@ export function decodeGraph(value: unknown): TypeGraph {
     callable: (b) => {
       const r = objOptional(b, ["first", "rest", "arrows"], ["variadic"]);
       fields(r.first);
-      array(r.rest).forEach(fields);
+      array(r.rest).forEach(v => fields(v));
       arrows(r.arrows);
       if ("variadic" in r) variadic(r.variadic);
     },

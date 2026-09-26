@@ -3,8 +3,8 @@
 > **Current soundness boundary repairs:** unsupported generic contracts are
 > refused rather than erased. This reopens Promise-dependent framework cases,
 > including `sum-main`. `map` currently returns `unknown` because it may produce
-> holes; `find` callbacks must admit `undefined`; `join`/`sort` require primitive
-> elements. Original sources are retained as gaps in `cases.mts`. See
+> holes; `find` callbacks must admit `undefined`; `join` and default `sort` require primitive
+> elements; comparator sorting supports arbitrary elements. Original sources are retained as gaps in `cases.mts`. See
 > [the current design](../DESIGN.md#exact-contracts-and-native-effects).
 
 An independent OCaml producer with **verified acceptance**, using the existing

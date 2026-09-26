@@ -89,11 +89,10 @@ let definition declarations id args =
     let solution = complete [] args d.parameters d.defaults in
     (* An intersection of the equation, its arguments substituted, is the one
        object its operands describe where they are records, a declared one
-       read through its equation (`Serializable<Todo>`); otherwise, with ground
-       operands, it stays their intersection, a row Lean fills with their meet
-       (`[number, number] & DepSafe`), and over a type parameter it is its
-       principal operand, the argument, a hint Lean checks against the whole
-       intersection. *)
+       read through its equation (`Serializable<Todo>`); otherwise it stays
+       their intersection, including over type parameters. Keeping only the
+       principal operand would lose receiver restrictions when the equation
+       is later instantiated. Lean fills the claim's meet row independently. *)
     let meet t ts =
       let expand t = match t with
         | Atoms [Named (named,named_args)] when not (List.mem named (id::seen)) ->
@@ -102,7 +101,7 @@ let definition declarations id args =
       match List.fold_left (fun acc part -> Option.bind acc (fun a -> meet_objects a (expand part)))
               (Some (expand t)) ts with
       | Some merged -> merged
-      | None -> if List.exists Semantic.mentions_rigid (t::ts) then t else Meet (t,ts) in
+      | None -> Meet (t,ts) in
     let body = Inference.substitute ~meet solution d.expression in
     (* A base named through an alias of another declaration is that
        declaration, instantiated: its members are inherited by structure. *)
@@ -2658,6 +2657,43 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         instantiations := (e.pos,List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
           substitution) :: !instantiations;
         result
+      (* Quantified overloads use the same proposal/validation split as one
+         quantified signature. Type the actuals once, infer an instance for
+         each arity-compatible signature, then offer one matching contract.
+         Only that signature is projected from the scheme; Lean independently
+         checks both the projection and the call, including its receiver.
+         A nonmatching proposal may still be emitted to locate the failed
+         obligation; it is never acceptance. *)
+      | Atoms [Shape ({calls=(_::_::_ as calls);_} as shape)]
+          when not spread && List.for_all (fun (s:Semantic.signature) ->
+            s.quantified<>[] && s.variadic=None && s.rest_pack=None) calls ->
+        let usable = List.filter callable calls in
+        let actuals = shared_actuals usable in
+        let proposals = List.filter_map (fun (s:Semantic.signature) ->
+          Option.map (fun (substitution,result) -> s,substitution,result)
+            (quietly (fun () -> infer_explicit ~receiver:receiver_type ?expected s
+              (List.map fst actuals @ List.init (max 0 (List.length s.params - List.length args))
+                (fun _ -> Atoms [Undef]))))) usable in
+        let matches_actuals ((s:Semantic.signature),substitution,_) =
+          let at = Inference.substitute substitution in
+          List.for_all Fun.id (List.mapi (fun i (arg,(t,_)) ->
+            match List.nth_opt s.params i with
+            | Some p -> plausible_subtype t (at p) || offer_to arg (at p) <> None
+            | None -> false) (List.combine args actuals)) in
+        let matching = List.filter matches_actuals proposals in
+        let preferred = match List.find_opt (fun ((s:Semantic.signature),substitution,_) ->
+            plausible_subtype receiver_type (Inference.substitute substitution s.receiver)) matching with
+          | Some p -> Some p
+          | None -> List.nth_opt matching 0 in
+        (match preferred,proposals with
+         | Some (s,substitution,result),_ | None,((s,substitution,result)::_) ->
+           instance_of ~declared:(Atoms [Shape {shape with calls=[s]}]) target substitution;
+           offer ~substitute:(Inference.substitute substitution) s;
+           if not (method_read target) then
+             instantiations := (e.pos,List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
+               substitution) :: !instantiations;
+           result
+         | None,[] -> unsupported "quantified overloads have no inferable arity-compatible instance")
       (* Several advertised signatures on one value. The actuals are built
          as the usable signatures agree (`shared_actuals`), and the signature
          whose domains they match is proposed. Lean selects the row it checks

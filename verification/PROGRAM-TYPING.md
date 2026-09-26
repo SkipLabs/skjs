@@ -3821,22 +3821,40 @@ and `String`, `Number`, `BigInt`, `Boolean` through the overlay
 whose text is the reviewed one, at the receiver the entry names (`readonly
 T[]` for `ReadonlyArray`, `T[]` for a mutator, the primitive for a
 primitive's member), without dropped parameters. An entry may state its
-signature instead, with $\omega$ the entry of member $m$ of primitive $p$'s
-prototype:
+signature family instead, with $\omega$ the entry of member $m$ of prototype
+$p$, and $R_j$ its reviewed receiver (defaulting to $p$):
 
 $$
 \frac{\omega\in\Omega_p\quad \omega.\mathit{text}=\mathsf{text}(m)\quad
-      \omega.\mathit{stated}=(\vec P)\Rightarrow R}
-     {\llbracket m\rrbracket_\omega=(\mathsf{this}:p,\ \vec P)\Rightarrow R}\ \textsc{proto-stated}
+      \omega.\mathit{stated}=[(R_j,\vec P_j,Q_j)]_{j=1}^n\quad n>0}
+     {\llbracket m\rrbracket_\omega=\bigcap_{j=1}^n
+       (\mathsf{this}:R_j,\ \vec P_j)\Rightarrow Q_j}\ \textsc{proto-stated}
 $$
 
 The reviewed overlay can also restrict quantified binders (`bounds`) and
 weaken a native's *promised result* (`result`). This is a specification of the
-native, not an erasure of a source annotation. Currently `join`/`sort` bound
+native, not an erasure of a source annotation. Currently `join` bounds
 `T` to primitives, `find`/`findIndex` pass `T | undefined` to their callback,
 and `map` promises `unknown` because callback mutation may make its result
 sparse. A caller still has to establish its full source result annotation.
 The realm's dense-array invariant does not apply to an `unknown` result.
+
+For `sort`, let A(T) be the mutable array contract, V(P) the readonly array
+view at primitive elements P, and C(T) the comparator `(T,T) → number`.
+Its one scheme offers the intersection:
+
+$$
+\forall T.\quad
+ ((\mathsf{this}:A(T),\ C(T))\Rightarrow A(T))
+ \;\cap\;
+ ((\mathsf{this}:A(T)\cap V(P),\ \mathtt{undefined})\Rightarrow A(T)).
+$$
+
+Omitting the comparator supplies `undefined`, so it needs the second receiver
+contract. A comparator on arbitrary objects needs only the first. These are
+ordinary scheme instantiation and arrow application; the result is the same
+mutable array contract throughout. Selecting one signature never erases the
+other signature or its receiver condition from the declared scheme.
 
 `Set<T>`, `Map<K, V>` and `Date` are read through the same mechanism
 (`interfaceOverlay`), as an interface with only its listed members:

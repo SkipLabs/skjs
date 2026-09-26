@@ -4,6 +4,10 @@ How much of what SKJS accepts in its own test suite the pipeline
 (`check.mts`: parser → OCaml producer → Lean search and check) verifies, what
 stops the rest, and where the two disagree because SKJS is wrong.
 
+Measurement checkpoint: `5143e619` (the soundness repairs). The subsequent
+comparator-sorting extension has pipeline tests; the full census below has
+not been rerun for that extension.
+
 **2,405 of 2,674 SKJS-accepted units verify (89.9%); 1,782 of 2,026
 accepted functions (88.0%).** 285 of the 377 files with an accepted unit
 verify entirely. There are 73 principled refusals, 10 registered SKJS-unsound

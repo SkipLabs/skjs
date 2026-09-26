@@ -57,7 +57,7 @@ export type OverlayEntry = {
   /** A reviewed replacement signature: restrict implicit client hooks (e.g.
    * split on strings only), or correct explicit callback arguments (find
    * visits missing positions with undefined). The receiver is the prototype's. */
-  stated?: { params: TypeTerm[]; result: TypeTerm };
+  stated?: { receiver?: TypeTerm; params: TypeTerm[]; result: TypeTerm }[];
 };
 
 const at: [number, number] = [0, 0];
@@ -120,14 +120,25 @@ export const overlay: readonly OverlayEntry[] = [
   { name: "at", from: "ReadonlyArray", signature: "at(index: number): T | undefined;" },
   { name: "find", from: "ReadonlyArray",
     signature: "find(predicate: (value: T, index: number, obj: readonly T[]) => unknown, thisArg?: any): T | undefined;",
-    stated: { params: [findingCallback], result: maybeElement } },
+    stated: [{ params: [findingCallback], result: maybeElement }] },
   { name: "findIndex", from: "ReadonlyArray",
     signature: "findIndex(predicate: (value: T, index: number, obj: readonly T[]) => unknown, thisArg?: any): number;",
-    stated: { params: [findingCallback], result: atomOf("number") } },
+    stated: [{ params: [findingCallback], result: atomOf("number") }] },
   // Mutators take a mutable array.
   { name: "sort", from: "Array",
-    signature: "sort(compareFn?: (a: T, b: T) => number): this;", resultIsReceiver: true,
-    bounds: { T: primitiveElements } },
+    signature: "sort(compareFn?: (a: T, b: T) => number): this;",
+    // These are independent call contracts, not a restriction on every T.
+    // An explicit comparator avoids element coercion. Omitted/undefined
+    // comparison instead requires a primitive read view of the receiver.
+    stated: [
+      { params: [{ k: "function", receiver: null, params: [element, element], rest: null,
+          result: atomOf("number"), span: at }],
+        result: { k: "array", readonly: false, element, span: at } },
+      { receiver: { k: "intersection", parts: [
+          { k: "array", readonly: false, element, span: at },
+          { k: "array", readonly: true, element: primitiveElements, span: at }], span: at },
+        params: [atomOf("undefined")], result: { k: "array", readonly: false, element, span: at } },
+    ] },
   { name: "push", from: "Array", signature: "push(...items: T[]): number;" },
   { name: "pop", from: "Array", signature: "pop(): T | undefined;" },
   { name: "shift", from: "Array", signature: "shift(): T | undefined;" },
@@ -186,13 +197,13 @@ export const primitiveOverlay: Readonly<Record<PrimitiveKind, readonly OverlayEn
     // callback, are not stated. `split` gives a fresh array of strings;
     // `replaceAll` of a non-global `RegExp` would throw.
     { name: "split", from: "String", signature: "split(separator: string | RegExp, limit?: number): string[];",
-      stated: { params: [atomOf("string"), optionalNumber],
-        result: { k: "array", readonly: false, element: atomOf("string"), span: at } } },
+      stated: [{ params: [atomOf("string"), optionalNumber],
+        result: { k: "array", readonly: false, element: atomOf("string"), span: at } }] },
     { name: "replace", from: "String", signature: "replace(searchValue: string | RegExp, replaceValue: string): string;",
-      stated: { params: [atomOf("string"), atomOf("string")], result: atomOf("string") } },
+      stated: [{ params: [atomOf("string"), atomOf("string")], result: atomOf("string") }] },
     { name: "replaceAll", from: "String",
       signature: "replaceAll(searchValue: string | RegExp, replaceValue: string): string;",
-      stated: { params: [atomOf("string"), atomOf("string")], result: atomOf("string") } },
+      stated: [{ params: [atomOf("string"), atomOf("string")], result: atomOf("string") }] },
     { name: "codePointAt", from: "String", signature: "codePointAt(pos: number): number | undefined;" },
     { name: "trimStart", from: "String", signature: "trimStart(): string;" },
     { name: "trimEnd", from: "String", signature: "trimEnd(): string;" },
@@ -208,14 +219,14 @@ export const primitiveOverlay: Readonly<Record<PrimitiveKind, readonly OverlayEn
     { name: "toPrecision", from: "Number", signature: "toPrecision(precision?: number): string;" },
     { name: "toLocaleString", from: "Number",
       signature: "toLocaleString(locales?: string | string[], options?: Intl.NumberFormatOptions): string;",
-      stated: { params: [locales], result: atomOf("string") } },
+      stated: [{ params: [locales], result: atomOf("string") }] },
   ],
   bigint: [
     { name: "toString", from: "BigInt", signature: "toString(radix?: number): string;" },
     { name: "valueOf", from: "BigInt", signature: "valueOf(): bigint;" },
     { name: "toLocaleString", from: "BigInt",
       signature: "toLocaleString(locales?: Intl.LocalesArgument, options?: BigIntToLocaleStringOptions): string;",
-      stated: { params: [locales], result: atomOf("string") } },
+      stated: [{ params: [locales], result: atomOf("string") }] },
   ],
   boolean: [
     { name: "valueOf", from: "Boolean", signature: "valueOf(): boolean;" },
@@ -412,15 +423,16 @@ function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: P
       ? library.reference(interfaceOf(entry.resultAs), [{ k: "binder", name: "T", span }], span)
       : entry.resultIsReceiver ? receiver : undefined);
     const forms = entry.stated
-      ? [{ k: "function", receiver: null, params: entry.stated.params, rest: null, result: entry.stated.result,
-          span } satisfies Extract<TypeTerm, { k: "function" }>]
+      ? entry.stated.map(f => ({ k: "function", receiver: f.receiver ?? null,
+          params: f.params, rest: null, result: f.result,
+          span } satisfies Extract<TypeTerm, { k: "function" }>))
       : signatures(scope, parameters, entry.resultAs ? undefined : member.type, member, span, false, stated);
-    if (forms.length !== 1 || forms.some(f => f.receiver))
-      throw Error(`${entry.from}.${entry.name} is not one signature`);
+    if (!forms.length || (!binders.length && forms.length !== 1))
+      throw Error(`${entry.from}.${entry.name} requires a nonempty supported signature family`);
     const type: TypeTerm = binders.length
       ? { k: "scheme", binders: binders.map(name => ({ name, bound: entry.bounds?.[name] ?? null, default: null, span })),
-          signatures: forms.map(f => ({ ...f, receiver })), span }
-      : { ...forms[0]!, receiver };
+          signatures: forms.map(f => ({ ...f, receiver: f.receiver ?? receiver })), span }
+      : { ...forms[0]!, receiver: forms[0]!.receiver ?? receiver };
     const key = ts.isComputedPropertyName(member.name) &&
         (ts.isPropertyAccessExpression(member.name.expression) || ts.isIdentifier(member.name.expression))
       ? { symbol: library.symbol(member.name.expression) } : entry.name;

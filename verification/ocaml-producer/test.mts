@@ -772,6 +772,12 @@ for (const [file, call] of [
   assert.equal(vm.runInNewContext(`${source}\n${call}`, {}, { timeout: 1000 }), undefined,
     `${file}: the actual source returns undefined despite its number contract`);
 }
+{
+  const source = stripTypes(readFileSync(join(here, "examples", "native-sort-contracts.ts"), "utf8"))
+    .replace(/^export /gm, "");
+  assert.equal(vm.runInNewContext(`${source}\nnoCoercion({ value: 7 })`, {}, { timeout: 1000 }), 7,
+    "an explicit comparator never invokes the element's invalid conversion method");
+}
 let erasedContract = "";
 let good = "";
 let generic = "";
