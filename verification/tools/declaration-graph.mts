@@ -14,7 +14,7 @@ import { classInstance, computedForm, expandMapped, mapped, members, oneTerm, op
   typeTerm, type Mapped, type TermScope } from "./type-term.mts";
 import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePrototype, primitivePrototypeName, type OverlayEntry,
   type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
-import { intrinsics, intrinsicModule } from "./intrinsics.mts";
+import { intrinsics, intrinsicModule, nonThenable } from "./intrinsics.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { computedType, enclosingBinders, literalUnion, type ComputedContext } from "./computed-types.mts";
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
@@ -1084,7 +1084,17 @@ export function collectDeclarations(file: string, options: {
     definitions.push(...selections, ...primitiveProtos);
     // First, so its row follows the four fixed ones in every table.
     if (arrayProto) definitions.unshift(arrayProto);
-    return { roots: roots.map(r => r.root), definitions, values, symbols };
+    // A trusted generic signature instantiated at a thenable type states a
+    // promise of it, which a realm promise never is: each type parameter a
+    // `Promise` or `PromiseLike` argument names is bounded by `nonThenable`,
+    // for imported, ambient and library signatures and methods (DESIGN.md,
+    // "Trust surface"). The client's own bodies are checked instead.
+    const clientModule = idOf(client);
+    const trustedValues = values.map(v => v.binding.specifier === intrinsicModule ? v :
+      { ...v, typeParams: promisedBinders(v.typeParams, v.type), type: promisedMethods(v.type) });
+    const trustedDefinitions = definitions.map(d => d.declaration.module === clientModule ? d :
+      { ...d, expression: promisedMethods(d.expression) });
+    return { roots: roots.map(r => r.root), definitions: trustedDefinitions, values: trustedValues, symbols };
   });
 }
 
@@ -1098,6 +1108,56 @@ function untypedAmbientField(file: SourceFile, d: { code: number; pos: number; e
   return file.statements.some(s => ts.isClassDeclaration(s) && inside(s) &&
     s.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword) === true &&
     s.members.some(m => ts.isPropertyDeclaration(m) && !m.type && inside(m.name)));
+}
+
+/** The binders a `Promise<…>` or `PromiseLike<…>` argument of `type` names. */
+function promisedNames(type: TypeTerm): Set<string> {
+  const names = new Set<string>();
+  const visit = (t: TypeTerm, inside: boolean): void => {
+    switch (t.k) {
+      case "binder": if (inside) names.add(t.name); return;
+      case "reference": {
+        const promise = (t.reference.name === "Promise" || t.reference.name === "PromiseLike") &&
+          /typescript\/lib\//.test(t.reference.target.module);
+        for (const a of t.args) visit(a, inside || promise);
+        return;
+      }
+      case "union": case "intersection": for (const p of t.parts) visit(p, inside); return;
+      case "array": visit(t.element, inside); return;
+      case "tuple": for (const p of [...t.required, ...t.optional, ...(t.rest ? [t.rest] : [])]) visit(p, inside); return;
+      case "object":
+        for (const f of t.fields) visit(f.type, inside);
+        for (const c of t.calls) visit(c, inside);
+        if (t.stringIndex) visit(t.stringIndex.value, inside);
+        return;
+      case "function": case "constructor":
+        for (const p of t.params) visit(p, inside);
+        if (t.rest) visit(t.rest, inside);
+        visit(t.result, inside);
+        if (t.k === "function" && t.receiver) visit(t.receiver, inside);
+        return;
+      case "scheme": for (const f of t.signatures) visit(f, inside); return;
+      case "pack": visit(t.of, inside); return;
+      default: return;
+    }
+  };
+  visit(type, false);
+  return names;
+}
+/** Each binder a promise argument names, bounded by `nonThenable` as well. */
+function promisedBinders<B extends { name: string; bound: TypeTerm | null }>(binders: B[], type: TypeTerm): B[] {
+  const promised = promisedNames(type);
+  return binders.map(b => !promised.has(b.name) ? b : { ...b, bound: b.bound === null ? nonThenable
+    : { k: "intersection", span: b.bound.span, parts: [b.bound, nonThenable] } });
+}
+/** The generic methods of a type, each binder a promise argument names
+ * bounded by `nonThenable`. */
+function promisedMethods(type: TypeTerm): TypeTerm {
+  if (type.k === "object")
+    return { ...type, fields: type.fields.map(f => ({ ...f, type: promisedMethods(f.type) })) };
+  if (type.k === "scheme") return { ...type, binders: promisedBinders(type.binders, type) };
+  if (type.k === "union" || type.k === "intersection") return { ...type, parts: type.parts.map(promisedMethods) };
+  return type;
 }
 
 /** The specifier of a primitive wrapper's prototype: the realm's, which no

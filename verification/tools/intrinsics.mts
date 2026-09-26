@@ -60,6 +60,15 @@ const fn = (params: TypeTerm[], result: TypeTerm): Signature =>
 /** The values no object is: a promise resolved with one settles to it. */
 const primitives: AtomName[] = ["null", "undefined", "boolean", "number", "string", "bigint", "symbol"];
 const primitive: TypeTerm = { k: "union", span, parts: primitives.map(atom) };
+/** The types no thenable inhabits: primitives, arrays (whose prototype holds
+ * no `then`, and to which no step adds one), and objects whose `then` reads
+ * a primitive or nothing. A trusted generic signature is truthful about a
+ * promise of its type parameter only where the parameter is instantiated at
+ * one: a realm promise resolved with a thenable adopts it. */
+export const nonThenable: TypeTerm = { k: "union", span, parts: [...primitives.map(atom),
+  { k: "object", span, stringIndex: null, calls: [],
+    fields: [{ name: "then", optional: true, readonly: true, type: primitive, span }] },
+  { k: "array", readonly: true, element: atom("unknown"), span }] };
 
 /** `() => { readonly value: T } | null`: an iterator step, `null` at the end. */
 const step: Signature = fn([], { k: "union", span, parts: [

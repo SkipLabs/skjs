@@ -3388,7 +3388,17 @@ value of type `Promise<A>` is a realm promise
 with a thenable, since it adopts one, so awaiting it yields an $A$ at any
 $A$; a returned promise of a primitive is adopted the same way. The source
 builds no object with a `then` member (`fragment-parse.mts`), which could
-pass for a promise. The producer infers $T$ and $U$ as TypeScript infers a
+pass for a promise. A trusted generic signature instantiated at a thenable
+`T` would state a promise of it, which a realm promise never is (it adopts
+the thenable), so each binder a `Promise` or `PromiseLike` argument of an
+imported, ambient or library signature or method names is bounded by
+
+$$
+N=P\mid\{\,\mathtt{readonly\ then?}:P\,\}\mid\mathsf{readonly\ unknown[]}
+$$
+
+the types no thenable inhabits (`promisedBinders`); the client's own generic
+bodies are checked at every instantiation instead. The producer infers $T$ and $U$ as TypeScript infers a
 union with one bare binder: an object part of the operand goes to the
 `Promise` arm, a primitive to the bare binder, and an arm nothing reaches is
 inferred at `never`.

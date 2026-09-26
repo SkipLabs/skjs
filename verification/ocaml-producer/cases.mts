@@ -425,6 +425,8 @@ export const cases: Case[] = [
   negative("invalid-await-thenable-argument", "an object with a callable `then` is no promise: `await` would call it, so it is not awaited at its own type"),
   gap("forged-promise-refused", "a value typed `Promise` is assumed a realm promise: an object literal the source builds with a `then`, here claimed as `Promise<number>`, is refused",
     "unsupported", "source", /an object the source builds with a `then` member could pass for a promise/),
+  positive("promise-instance", "a trusted generic signature returning `Promise<T>`, instantiated at a type no thenable inhabits"),
+  negative("invalid-nested-promise-instance", "a trusted generic signature returning `Promise<T>` is not instantiated at a thenable `T`: its realm promise would adopt it", /quantified call does not satisfy the closure's bound/),
   negative("invalid-await-primitive", "awaiting a promise or a primitive yields either"),
   negative("invalid-async-adopt", "an async function's promise adopts a returned promise, settling to what it settles to"),
   negative("invalid-async-object", "an async function returns no object, which JavaScript would adopt if thenable",
