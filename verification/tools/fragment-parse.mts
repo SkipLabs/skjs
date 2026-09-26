@@ -175,7 +175,7 @@ const classKey = (cls: string): string => `[[${cls}.prototype]]`;
  * its own overriding them), and the binding holding its constructor at the
  * fresh instance it allocates. */
 type ClassRecord = { params: { name: string; type: TypeTerm }[]; methods: Map<string, string>; fresh: string;
-  proto: string | null };
+  proto: string | null; binders: string[] };
 
 /** The binding holding a class's constructor where a class extends it: the
  * class value itself, claimed also at the fresh instance it allocates, whose
@@ -664,18 +664,25 @@ class Gate {
       const t = heritage.types[0];
       if (heritage.types.length !== 1 || !t || !ts.isIdentifier(t.expression))
         this.fail(heritage, "a class extends one class, by its name");
-      // A generic class's construction is quantified over its binders, and
-      // its record (`classRecords`) is at none: a base at type arguments, or
-      // a derived class with binders, has no construction to copy.
-      if (t.typeArguments?.length)
-        this.fail(heritage, "a class extending a generic class at type arguments is outside the fragment: generic classes take no part in inheritance, a generic base's construction being quantified");
-      if (node.typeParameters?.length)
-        this.fail(heritage, "a generic class extending another is outside the fragment: generic classes take no part in inheritance, a generic base's construction being quantified");
       base = this.classRecords.get(t.expression.text) ?? null;
       if (!base)
-        this.fail(t, "a class extends a non-generic class declared earlier in the file; one from a library, an ambient declaration or a value is outside the fragment");
+        this.fail(t, "a class extends a class declared earlier in the file; one from a library, an ambient declaration or a value is outside the fragment");
+      // A generic class's binders are the declaring unit's parameter rows,
+      // one per spelling: a derived class extends a generic base at the
+      // base's own binders, which it declares too, so the base's
+      // construction and members are at the same rows. A base at other type
+      // arguments would need its construction instantiated there.
+      const own = (node.typeParameters ?? []).map((tp) => tp.name.text);
+      const args = t.typeArguments ?? [];
+      if (base.binders.length || args.length) {
+        const atOwn = args.length === base.binders.length && args.every((a, i) =>
+          ts.isTypeReferenceNode(a) && ts.isIdentifier(a.typeName) && !a.typeArguments?.length &&
+          a.typeName.text === base!.binders[i] && own.includes(a.typeName.text));
+        if (!atOwn)
+          this.fail(heritage, "a class extending a generic class other than at the base's own binders, which the derived class declares, is outside the fragment: the base's construction is at those binders' rows");
+      }
     }
-    const extended = !node.typeParameters?.length && this.file.statements.some((st) => ts.isClassDeclaration(st) &&
+    const extended = this.file.statements.some((st) => ts.isClassDeclaration(st) &&
       !!st.heritageClauses?.some((c) => c.token === ts.SyntaxKind.ExtendsKeyword &&
         c.types.some((t) => ts.isIdentifier(t.expression) && t.expression.text === name.text)));
     if (node.modifiers?.some((m) => m.kind !== ts.SyntaxKind.ExportKeyword))
@@ -1072,8 +1079,9 @@ class Gate {
           { name: name.text, namePos: this.span(name), annot: type,
             init: { k: "id", pos: [brace, brace + 1], name: freshName(name.text) } }];
       }
-      if (!binders.length) this.classRecords.set(name.text, { params: params.map((p) => ({ name: p.name, type: p.type })),
-        methods: methodBindings, fresh: freshName(name.text), proto: protoBinding });
+      this.classRecords.set(name.text, { params: params.map((p) => ({ name: p.name, type: p.type })),
+        methods: methodBindings, fresh: freshName(name.text), proto: protoBinding,
+        binders: binders.map((tp) => tp.name.text) });
       return { k: "const", pos: this.span(node),
         bindings: [...methods, ...prototypeBinding, ...classBindings, ...staticMethods, ...statics] };
     } finally {

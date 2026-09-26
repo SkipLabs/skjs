@@ -3362,6 +3362,16 @@ derived class's constructor is the [derived form](#derived-source-forms) over
 this one; an override must be sound, since the derived class's declared type
 is its own members and its base's.
 
+A generic class's binders are its declaring unit's parameter rows, one per
+spelling, so a generic class may extend a generic base exactly at the base's
+own binders, which it declares too: `class D<T> extends B<T>`. The base's
+construction, fields and methods are then at the rows the derived class's
+are, and the derived form is the non-generic one. Its instance type
+$D\langle T\rangle$ is its application row, as a class with methods is,
+holding its own members met with those of $B\langle T\rangle$'s row. A base at
+other arguments (`extends B<number>`) is refused: its construction would have
+to be instantiated there.
+
 ### Library types
 
 Write $\llbracket\tau\rrbracket$ for the source term the declaration reader

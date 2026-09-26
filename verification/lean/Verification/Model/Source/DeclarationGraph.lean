@@ -844,6 +844,14 @@ private partial def lowerHead (ds : Array Definition) (owner : Nat)
     if mentionsSelf ds[i]!.expression then
       let labels ← groundApplication ds i values seen
       let table ← getThe SourceTypes.Table
+      -- A generic base's application row reserved but not yet lowered (a
+      -- derived class's instance type met with its base's, lowered first):
+      -- its rows now, as the reservation would give it.
+      if let [row] := labels then
+        if !ds[i]!.parameters.isEmpty && (SourceTypes.graph table row).isEmpty then
+          let rows ← lowerDefinitionRows ds i (values.push [row]) (Visit.enter {} i)
+          modifyThe SourceTypes.Table fun T => T.set row rows
+          return rows
       return labels.flatMap (SourceTypes.graph table)
     lowerDefinitionRows ds i values (seen.enter i)
   | _ =>
@@ -1292,7 +1300,9 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
         let labels ← groundApplication ds index values {}
         if labels.isEmpty then throw "generic application has no inhabited graph clause"
         return graphClaim labels
-      if mentionsSelf ds[index]!.expression then return ← atRows
+      -- An application with methods, or with bases whose contracts it meets,
+      -- is its application row, as the unit reads it.
+      if mentionsSelf ds[index]!.expression || !ds[index]!.bases.isEmpty then return ← atRows
       return ← tryCatch (expandApplication ds index args []) fun e => do
         unless e.startsWith "recursive generic application" ||
           e.startsWith "a bounded declaration applied to a type parameter" do throw e
