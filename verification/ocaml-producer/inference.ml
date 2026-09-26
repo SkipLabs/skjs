@@ -205,9 +205,9 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
       (match l.rest,r.rest with Some x,Some y -> pair x y | _ -> ())
       (* A tuple at an array of any length: each of its positions is an
          element (`[string, number]` at `readonly T[]` gives `T` both). *)
-      | Atoms [Shape {elements=Some l;fields=[];calls=[];string_index=None}],
+      | Atoms [Shape {elements=Some l;fields=[];calls=[];indexes=[]}],
       Atoms [Shape {elements=Some ({required=[];optional_elements=[];rest=Some y;_} as r);
-                    fields=[];calls=[];string_index=None}] ->
+                    fields=[];calls=[];indexes=[]}] ->
       List.iter (fun x -> constrain x y; if not r.readonly then constrain y x)
         (l.required @ l.optional_elements @ Option.to_list l.rest)
       | _ -> ()) (* Unsupported structure contributes no guessed constraints;
@@ -261,7 +261,7 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
   (* An array of any length whose elements are primitives. *)
   let plain_array = function
     | Shape {elements=Some {required=[];optional_elements=[];rest=Some (Atoms xs);_};
-             fields=[];calls=[];string_index=None} -> List.for_all primitive xs
+             fields=[];calls=[];indexes=[]} -> List.for_all primitive xs
     | _ -> false in
   (* Whether a declared bound has an arm that is an array of any length,
      through its declarations. *)

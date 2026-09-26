@@ -635,7 +635,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | LetBody (_,_,_,rest) | SequenceBody (_,rest) | IfBody (_,_,rest,_) -> allocated rest
     | _ -> None in
   let named_closure n written (init:expr) = match written,init.node with
-    | (None | Some (Atoms [Shape {calls=[_];fields=[];string_index=None;elements=None}])),Lambda (_,[],ps,_,false,_,_) ->
+    | (None | Some (Atoms [Shape {calls=[_];fields=[];indexes=[];elements=None}])),Lambda (_,[],ps,_,false,_,_) ->
       closures := (n,(init.pos,List.map snd ps)) :: !closures
     | Some _,Ctor {node=Lambda (None,[],ps,[],false,Some instance,body);_} when allocated body <> None ->
       let fs = Option.get (allocated body) in
@@ -773,7 +773,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
          than it does is offered it, wherever it flows: an argument (as
          below), an annotated binding, a return, a field. *)
       (match expected with
-       | Some (Atoms [Shape {calls=[o];fields=[];string_index=None;elements=None}])
+       | Some (Atoms [Shape {calls=[o];fields=[];indexes=[];elements=None}])
          when List.mem_assoc n !closures && List.mem_assoc n env ->
          Option.iter (fun state -> state ()) (closure_offer n o)
        | _ -> ());
@@ -1056,7 +1056,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
          where it is created, as a named one is offered by its uses. *)
       let from_context = match expected with
         | Some t -> (match (try declared_head declarations [] t with Json.Error _ -> t) with
-          | Atoms [Shape {calls=[s];fields=[];string_index=None;elements=None}]
+          | Atoms [Shape {calls=[s];fields=[];indexes=[];elements=None}]
             when s.quantified=[] && s.rest_pack=None
                  && (match s.variadic with
                      | None -> List.length s.params > List.length ps
@@ -1329,7 +1329,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
                           signature.quantified with
             | Some {bound=Some (ValueArgument t);_} ->
               (match object_hint declarations [] t with
-               | Some {string_index=Some _;_} -> Some t
+               | Some sh when List.exists (fun (i:Semantic.index_signature) -> i.keys = Semantic.Strings) sh.indexes -> Some t
                | _ -> None)
             | _ -> None)
           | _ -> None in
