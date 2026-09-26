@@ -355,6 +355,15 @@ def inKeysTerm (keys : List String) (keySlot slot : Nat) : Tm :=
       .ite (.test (.strEq k) (.var keySlot)) (has k) rest) (has last)
 where has (k : String) : Tm := .ite (.test (.hasKey (.str k)) (.var slot)) .tru .fls
 
+/-- `o[k]` with the key in `keySlot` a union of singletons: each singleton,
+tested in turn, selects the read of its own key (`reads`); the last needs no
+test, since the key is one of them. -/
+def keyedReadTerm (arms : List (Tag × Tm)) (keySlot : Nat) : Tm :=
+  match arms.reverse with
+  | [] => .undef
+  | (_, last) :: earlier => earlier.reverse.foldr (fun (tag, read) rest =>
+      .ite (.test tag (.var keySlot)) read rest) last
+
 /-- `typeof v`, in the order the lowering tests it: each tag holds of exactly
 the values `typeof` names by its string, and a value none of them holds of is
 an object with call code, which `typeof` names `"function"`. -/
@@ -397,6 +406,18 @@ private def dictReceiver (fc : SourceClaims.Function) (e : Fragment.Expr) : Comp
   let cs := PositiveRules.expand (SourceTypes.graph (← table)) (← exprType fc e)
   return !cs.isEmpty && cs.all fun | .dict .. => true | _ => false
 
+/-- The singletons of a key's claim, each with the tag that tests a value for
+it and the property key it converts to (`ToPropertyKey`: a number's is the
+key its `ToString` spells). `none` unless every clause is a string or number
+singleton; NaN, which no equality test finds, is not one. -/
+def keySingletons (G : PositiveGraphs.NormalGraph Nat) (K : Ty Nat) : Option (List (Tag × PropKey)) :=
+  let cs := PositiveRules.expand G K
+  if !G.plainTy K || cs.isEmpty then none else
+  cs.mapM fun c => match c with
+    | .strLit v => some (.strEq v, .str v)
+    | .numLit b => if numberEqual b b then some (.numEq b, .str (numberToString b)) else none
+    | _ => none
+
 private def keyField (fc : SourceClaims.Function) (key : Fragment.Expr)
     (string : Bool := false) (record : Bool := false) (dict : Bool := false) : Compiler KeyKind := do
   let K ← exprType fc key
@@ -404,6 +425,15 @@ private def keyField (fc : SourceClaims.Function) (key : Fragment.Expr)
   let spelled := fun (s : String) =>
     if SourceTypes.reservedKey s then throw s!"'{s}' is internal to the model, not a source property"
     else pure (KeyKind.field s)
+  -- Several singletons on an object: each reads the member its key names
+  -- (`keyedReadTerm`).
+  if record || dict then
+    if let some keys := keySingletons G K then
+      if (keys.map (·.2)).eraseDups.length > 1 then
+        for (_, k) in keys do
+          if let .str s := k then
+            if SourceTypes.reservedKey s then throw s!"'{s}' is internal to the model, not a source property"
+        return .dynamic
   match PositiveRules.expand G K with
   | [.strLit s] => spelled s
   | [.str] => pure .dynamic
@@ -3836,7 +3866,18 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+2))⟩
     let temporaries := held ⟨"",some key.span⟩::held ⟨"",some receiver.span⟩ :: scope
-    let node ← emitAt e.span (.indexAt (.var 1) (.var 0)) (.bind drop) (K::B::Γ) A
+    -- A key of string or number singletons reads, per singleton, the member
+    -- its key names, as a literal key does (`keyedReadTerm`); any other key
+    -- reads through an index.
+    let G := SourceTypes.graph (← table)
+    let term ← match keySingletons G K with
+      | some keys => do
+        let reads ← keys.mapM fun (tag, fld) => do
+          let arms ← primitiveArms temporaries (K::B::Γ) B fld
+          pure (tag, dispatchTerm arms fld 1 (.readAt fld (.var 1)))
+        pure (keyedReadTerm reads 0)
+      | none => pure (.indexAt (.var 1) (.var 0))
+    let node ← emitAt e.span term (.bind drop) (K::B::Γ) A
       (scope := temporaries)
     let right ← compileExpr fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) key node
     compileExpr fc scope Γ receiver right

@@ -798,6 +798,8 @@ export const cases: Case[] = [
   positive("union-callee", "a call of a union of callables, at every arm; overloads stating a parameter alike build the actual at it; a binder's value called at its bound; a method call on a union of objects, dispatched on the object"),
   negative("invalid-union-callee", "every arm of a union callee must take the actuals"),
   negative("invalid-union-method", "a dispatched method call's value is the union of the members' results"),
+  positive("keyed-read", "a key of several string or number singletons reads, per singleton, the member it names: records, optional fields, numeric keys, an enum's reverse mapping"),
+  negative("invalid-keyed-read", "a key of several singletons reads any of their members"),
   positive("bare-return", "a bare `return` returns undefined"),
   negative("invalid-bare-return", "a bare `return` returns undefined, which a `number` result does not admit"),
   positive("empty-closure", "a block closure falling off its end returns undefined: void, `T | undefined` and unannotated results, an early bare return, an async completion"),

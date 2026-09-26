@@ -2311,6 +2311,22 @@ where $\mathcal R$ is the keys the model does not answer as JavaScript does
 objects because `in` throws on a primitive, where the test would answer
 `false`, and not a class value, whose static members are bound apart.
 
+A read `o[k]` of an object whose key is claimed at a union of string and number
+singletons $\kappa_1\mid\cdots\mid\kappa_n$ dispatches the same way, each
+singleton selecting the read of the key it converts to (a number's, the key
+its `ToString` spells), as a literal key's read is (`keySingletons`,
+`keyedReadTerm`):
+
+$$
+o[k]\;\equiv\;\mathsf{let}\ x=o\ \mathsf{in}\ \mathsf{let}\ y=k\ \mathsf{in}\
+\mathsf{if}\ \mathsf{eq}(\kappa_1)(y)\ \mathsf{then}\ \mathsf{readAt}\;\kappa_1\;x\ \mathsf{else}\ \cdots\
+\mathsf{readAt}\;\kappa_n\;x
+$$
+
+with $\mathsf{eq}$ the tag `strEq` or `numEq`. It is typed by `unionVar`,
+`ifTag` and the read rules alone. NaN is no singleton here, since no equality
+test finds it.
+
 Logical AND and OR return an operand, as in JavaScript: the left one where its
 truthiness decides, the right one elsewhere. For a left operand that is not a
 Boolean they are the same derived form on the truthiness test:

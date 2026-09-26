@@ -279,7 +279,18 @@ let iterated_hint declarations expected =
       | _ -> member (Name "value") r) (parts [] results) with
   | [] -> None
   | values -> Some (combine values)
-let rec index_type declarations seen receiver key = match receiver with
+(* A key of several string or number singletons (NaN, which no equality
+   test finds, is none): Lean reads, per singleton, the member its key names. *)
+let key_singletons = function
+  | Atoms (_::_::_ as ks) when List.for_all (function
+      | StrLit _ -> true
+      | NumLit bits -> not (Float.is_nan (Int64.float_of_bits bits)) && number_key bits <> None
+      | _ -> false) ks -> Some ks
+  | _ -> None
+let rec index_type declarations seen receiver key =
+  match key_singletons key with
+  | Some ks -> combine (List.map (fun k -> index_type declarations seen receiver (Atoms [k])) ks)
+  | None -> match receiver with
   | Atoms atoms -> combine (List.map (function
       | Shape {elements=Some sequence;_} ->
         let at i = if i < 0 then Atoms [Undef]
