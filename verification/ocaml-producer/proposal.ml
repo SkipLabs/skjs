@@ -1838,8 +1838,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
           | None,_ -> None in
         (match hint,e.node with
          | Some f,Literal LUndefined when f.optional && not (Semantic.admits_undefined f.read) ->
-           explain site ("an optional field left without an initializer holds `undefined` from the \
-             creation of the instance: " ^ exact_optional_reason)
+           explain site ("an optional field given `undefined`: " ^ exact_optional_reason)
          | _ -> ());
         let inferred=expr ?expected env e in
         (* A method's closure offered further signatures is held at its own

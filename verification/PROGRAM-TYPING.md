@@ -3540,9 +3540,12 @@ prototype chain as any key, where only an object inheriting from an instance
 differs, and there JavaScript throws, which safety admits.
 
 The instance type states each member as what it is at run time: a field
-`f: T`, `f!: T` or `readonly f: T` a required field or view, `f?: T` an
-optional field, a parameter property `p: T` a field and `p?: T` the optional
-field `p?: T | undefined`. With $\varphi_0$ the entries, in member order, of
+`f: T`, `f!: T` or `readonly f: T` a required field or view, `f?: T` the
+optional field `f?: T | undefined`, a parameter property `p: T` a field and
+`p?: T` the optional field `p?: T | undefined`. An optional member is
+TypeScript's `T | undefined` there, not the exact `f?: T` (absent or a `T`)
+the pipeline reads elsewhere: a class field is defined on every instance, at
+`undefined` where nothing assigns it. With $\varphi_0$ the entries, in member order, of
 the prototype key ($\texttt{[[proto]]} \mapsto C.\texttt{[[prototype]]}$,
 for a class with methods), the initialized fields ($f\mapsto e_f$) and the
 parameter properties ($p\mapsto p$), $U$ the fields without an initializer
@@ -3568,7 +3571,8 @@ e`, in order, a name no source binding spells, and $\varphi'$ reads `this.f`
 there, so every value is evaluated where JavaScript evaluates it. The
 allocation is checked like any other: a field without an initializer holds
 `undefined` until assigned, so `f!: T` holds exactly when the constructor
-assigns `f` on every path, and `f?: string` left unassigned is refused. A
+assigns `f` on every path, and `f?: string` left unassigned holds its
+`undefined`. A
 derived class's constructor is the [derived form](#derived-source-forms) over
 this one; an override must be sound, since the derived class's declared type
 is its own members and its base's.

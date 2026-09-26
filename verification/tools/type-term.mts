@@ -799,18 +799,26 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
     if (ts.isClassStaticBlockDeclaration(member)) continue;
     if (ts.isPropertyDeclaration(member)) {
       only(member, [ts.SyntaxKind.ReadonlyKeyword]);
-      // `x?: T` is an optional field. `x!: T` is a required one, whatever
-      // TypeScript was promised: the class value's construction decides
-      // whether every instance holds a `T` there.
+      // `x?: T` is the optional field `x?: T | undefined` TypeScript
+      // declares, as an optional parameter property is: a class field is
+      // defined on every instance its construction allocates, holding
+      // `undefined` where no initializer or constructor assigns it, and the
+      // exact reading of `f?: T` (absent or a `T`) is false of it. `x!: T`
+      // is a required one, whatever TypeScript was promised: the class
+      // value's construction decides whether every instance holds a `T`
+      // there.
       const name = named(member);
+      const optional = member.postfixToken?.kind === ts.SyntaxKind.QuestionToken;
       // A field an ambient class declares without a type is read at
       // `unknown` and never written: nothing here says what it holds, or
       // what the code outside expects of it.
       const untyped = !member.type &&
         node.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword) === true;
-      fields.push({ name, optional: member.postfixToken?.kind === ts.SyntaxKind.QuestionToken,
+      const declared = (): TypeTerm => typeTerm(scope, member.type, member);
+      fields.push({ name, optional,
         readonly: untyped || member.modifiers?.some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword) === true,
-        type: untyped ? { k: "atom", name: "unknown", span: memberSpan } : typeTerm(scope, member.type, member),
+        type: untyped ? { k: "atom", name: "unknown", span: memberSpan }
+          : optional ? optionalTerm(declared(), memberSpan) : declared(),
         span: memberSpan });
     } else if (ts.isMethodDeclaration(member)) {
       // An async method is one returning its promise: its annotation, which
