@@ -51,8 +51,12 @@
  * unmatched reason is its own group, named by its text, so a new refusal
  * appears rather than hiding in "other".
  *
+ * Each accepted unit also has a class: `verified`, or its refusal's class,
+ * `principled`, `gap` or `unexplained`, by the table `CLASSES` below, or
+ * `skjs-unsound` for a unit of a confirmed SKJS unsoundness (`SKJS_UNSOUND`).
+ *
  * The result JSON (default `verification/ocaml-producer/skjs-coverage.json`)
- * has one row per unit, the per-group counts, and the totals.
+ * has one row per unit, the per-group and per-class counts, and the totals.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -527,6 +531,169 @@ function groupOf(key: string): string {
   return `unclassified: ${key}`;
 }
 
+/* ------------------------------------------------------------- classes -- */
+/* Every SKJS-accepted unit is `verified` or refused, and a refusal is one of
+ * (SKJS-COVERAGE.md, Method, "Refusal classes"):
+ *   - `principled`: the construct is unsound, not faithful to JavaScript, or
+ *     rejected by TypeScript itself, or its soundness would need an
+ *     assumption the project declines (DESIGN.md "Fragment boundary", where
+ *     the reason is one of these);
+ *   - `gap`: a sound construct not yet supported (DESIGN.md "Next steps", or
+ *     a representation limit: "no term of the fragment states it");
+ *   - `unexplained`: no named cause (a failed search, which names the
+ *     obligation it could not establish but not why; a crash or timeout);
+ *   - `skjs-unsound`: a unit of a confirmed SKJS unsoundness family, with a
+ *     runtime witness SKJS accepts and node crashes on (SKJS-COVERAGE.md,
+ *     "Suspected SKJS unsoundnesses"); its refusal is correct.
+ * A reason is classified by its key (the phase-prefixed normalized reason),
+ * first match wins. Where the judgement is not clear-cut the entry is a gap
+ * and `review` says why it could be principled. A key no entry matches is a
+ * gap too, listed in `summary.unmatchedReasons`, so a new refusal is seen. */
+type RefusalClass = "principled" | "gap" | "unexplained";
+type ClassEntry = { cls: RefusalClass; label: string; re: RegExp; why: string; review?: string };
+const CLASSES: ClassEntry[] = [
+  // ------------------------------------------------------- unexplained
+  { cls: "unexplained", label: "search: no derivation found", re: /evidence search failed|: cannot establish|No rule derives/,
+    why: "Lean found no derivation; the obligation is named, its cause is not" },
+  { cls: "unexplained", label: "run error or unattributed verification", re: /^\w+: attribution:/,
+    why: "no refusal was stated (a crash or timeout is classed here by its status)" },
+  // -------------------------------------------------------- principled
+  { cls: "principled", label: "TypeScript refuses the code", re: /TypeScript refuses this code too|TypeScript reports an error in a declaration|which TypeScript rejects|TypeScript computes no type for this typeof: it is not valid TypeScript/,
+    why: "TypeScript itself rejects the program or a declaration it depends on" },
+  { cls: "principled", label: "`...x: T` with T no array", re: /the array a call collects is no value of a type that is not an array/,
+    why: "TypeScript rejects a rest parameter of a non-array type (TS2370)" },
+  { cls: "principled", label: "implicit index signature", re: /a record at an index signature/,
+    why: "TypeScript's implicit index signature is unsound: a value of a type literal may carry other keys of any type" },
+  { cls: "principled", label: "object identity without fields", re: /strict equality of two operands that may both be objects without a field|strict equality with a value of a type parameter/,
+    why: "objects without a field have no identity in the model; identity narrowing is declined (DESIGN, Fragment boundary)" },
+  { cls: "principled", label: "loose equality", re: /loose equality converts its operands/,
+    why: "`==` converts its operands, running client code (Fragment boundary)" },
+  { cls: "principled", label: "relational comparison converting operands", re: /relational comparison (converts|of operands)/,
+    why: "the conversion runs code or is not the primitive order (Fragment boundary)" },
+  { cls: "principled", label: "mixed number/bigint arithmetic", re: /number[–-]bigint arithmetic|mixes? (a )?number and (a )?bigint|`\+` on a bigint/,
+    why: "JavaScript throws; TypeScript refuses it (Fragment boundary)" },
+  { cls: "principled", label: "`this` in sloppy code", re: /a function that reads `this` must be strict code|sloppy code replaces/,
+    why: "sloppy receiver conversion (global object, wrappers) is not modelled (Fragment boundary)" },
+  { cls: "principled", label: "`extends` a library constructor", re: /extending the standard library/,
+    why: "`extends Array` and kin allocate host objects, not the ordinary object a class allocates (Fragment boundary)" },
+  { cls: "principled", label: "a base class from outside the file", re: /one from a library, an ambient declaration or a value is outside the fragment|base class declared later/,
+    why: "nothing in the file says what its constructor allocates; trusting it is an assumption declined (Fragment boundary)" },
+  { cls: "principled", label: "`instanceof` of a constructor from outside the file", re: /`instanceof` whose right operand is not a class declared/,
+    why: "nothing in the file says which prototype it gives its instances (Fragment boundary)" },
+  { cls: "principled", label: "`instanceof` narrowing `unknown`", re: /does not narrow `unknown` to C/,
+    why: "\"an object whose chain holds C's prototype has C's fields\" is a world invariant over every allocation, an assumption not taken (Fragment boundary)" },
+  { cls: "principled", label: "`Array.isArray` on an open record or `unknown`", re: /used as an array after `Array\.isArray`/,
+    why: "an object owning an array store need not be an array of `Array.prototype`: the same world invariant as `instanceof` narrowing `unknown` (Fragment boundary)",
+    review: "DESIGN Next steps lists the array-coherence invariant as open work; classified as the `instanceof unknown` case is" },
+  { cls: "principled", label: "iterator without a stated `return`", re: /states no `return`|if it owns one \(IteratorClose\)/,
+    why: "IteratorClose calls whatever `return` an open record owns (Fragment boundary)" },
+  { cls: "principled", label: "array pattern over a non-array", re: /an array pattern over a value that may not be an array/,
+    why: "it would step the value's own iterator, client code (Fragment boundary)" },
+  { cls: "principled", label: "`new Array(n)`, holes", re: /new Array\(n\)|makes an array with holes|could create a hole/,
+    why: "an array type promises no holes (Fragment boundary)" },
+  { cls: "principled", label: "invariance of writable storage", re: /a mutable array at one of a wider element|an instance at another whose writable field differs|a readonly view as a writable/,
+    why: "TypeScript relates writable storage covariantly, which is unsound (Fragment boundary)" },
+  { cls: "principled", label: "a mutable tuple's `length` at its arity", re: /the `length` of a mutable tuple/,
+    why: "`push` is allowed on a mutable tuple: TypeScript's literal length is unsound" },
+  { cls: "principled", label: "method extraction", re: /read off its object is not a function value/,
+    why: "a method read off its object loses its receiver; TypeScript's typing of it is unsound (Fragment boundary)" },
+  { cls: "principled", label: "a `this`-typed function as a receiver-indifferent callback", re: /a function whose `this` is typed where a callback/,
+    why: "the callback type admits any receiver, the function requires its own: TypeScript's relation is unsound" },
+  { cls: "principled", label: "method bivariance, narrower overrides", re: /bivarian|narrower parameters/,
+    why: "the member may be invoked with the wider argument (Fragment boundary)" },
+  { cls: "principled", label: "a contextual `any` parameter", re: /from its context as `any`|TypeScript's `any`/,
+    why: "`any` states no contract (Fragment boundary)" },
+  { cls: "principled", label: "`declare let`/`var`, module storage", re: /`declare let` or `declare var`|module-level `let`/,
+    why: "module storage outside code may be written during any call (Fragment boundary)" },
+  { cls: "principled", label: "an ambient enum", re: /an ambient enum is outside/,
+    why: "its object is the environment's, whose members a declaration need not value (Fragment boundary)" },
+  { cls: "principled", label: "`this` before `super(...)`", re: /`this` before `super|before the instance is complete/,
+    why: "TypeScript rejects it; no term stands for the uninitialized binding" },
+  { cls: "principled", label: "a catch binding typed other than `unknown`", re: /catch binding/,
+    why: "anything may be thrown (Fragment boundary)" },
+  { cls: "principled", label: "`await` of a non-promise object, thenable adoption", re: /await of a non-promise|a record type does not rule out a `then`/,
+    why: "JavaScript adopts thenables and a record type does not rule out `then` (Fragment boundary)" },
+  { cls: "principled", label: "the host runs client code", re: /the host runs client code|`toString`, `valueOf`/,
+    why: "the host calls program code (`toString`, an iterator, a reviver) (Fragment boundary)" },
+  { cls: "principled", label: "a forged promise (`then` member)", re: /forge|a `then` member/,
+    why: "a `Promise<T>` is assumed a realm promise; the source must not forge one (Fragment boundary)" },
+  // --------------------------------------------------------------- gap
+  { cls: "gap", label: "object growth (a key-adding write)", re: /a write adds the property|a write to the optional property|a dynamic index write/,
+    why: "sound JavaScript; needs a key-adding write (DESIGN Next steps)",
+    review: "also in the Fragment boundary table (\"keys are fixed at allocation\")" },
+  { cls: "gap", label: "a spread of a dictionary", re: /a spread of a dictionary/,
+    why: "needs the key-adding write's spread into an index (Next steps)" },
+  { cls: "gap", label: "a read at a `for...in` key under `!`", re: /non-null assertion on a read at a for\.\.\.in key/,
+    why: "needs a relational fact (the object owns the key) no statement entry states",
+    review: "`!` is TypeScript's unchecked assertion; the read may be `undefined`" },
+  { cls: "gap", label: "a named function at a longer signature", re: /a named function where a signature binding more parameters/,
+    why: "fewer parameters is sound JavaScript; the slot is the annotated signature by design",
+    review: "rests on the host-relative/slot-is-its-signature decision" },
+  { cls: "gap", label: "`Array.isArray`/`length` over an array-or-record union", re: /`?length`? on a union of an array|array used as a record naming `length`/,
+    why: "needs the array-coherence invariant (Next steps)" },
+  { cls: "gap", label: "generic methods, `Promise<A>` ≤ `Promise<B>`", re: /an instance of a declaration with generic methods|a call inferring a binder written beside/,
+    why: "needs a subtyping rule for quantified signatures, and producer inference (Next steps)" },
+  { cls: "gap", label: "cells after a step that may write them", re: /a cell read at its contract|a `let` holding an object read where/,
+    why: "a call forgets heap facts: needs a reachability statement (Next steps, Precision)" },
+  { cls: "gap", label: "absent-key and dictionary presence facts", re: /an optional key found `undefined`|a read of a key `in` found in a dictionary/,
+    why: "needs a clause stating an absent key or dictionary presence" },
+  { cls: "gap", label: "numeric keys and indices", re: /numeric array key|numeric property keys|position \d+ is outside the array|`in` with a numeric key|`in` with a key that is not a union|record index requires a string key/,
+    why: "numeric properties and array-element `in` are not modelled",
+    review: "`in` on an array index is in the Fragment boundary (\"the model would answer otherwise\"), a model limit" },
+  { cls: "gap", label: "reads the producer holds on no object", re: /(field|indexed) read on non-object|the producer and TypeScript disagree on the receiver/,
+    why: "producer typing of the receiver" },
+  { cls: "gap", label: "a method with a `this` parameter", re: /a method with a `this` parameter/,
+    why: "sound JavaScript; method members are host-relative, so the contract states no receiver",
+    review: "rests on a lasting decision (method members are host-relative) and is in the Fragment boundary table" },
+  { cls: "gap", label: "`Symbol.hasInstance`", re: /Symbol\.hasInstance/,
+    why: "sound; `instanceof` becomes a call the lowering does not make",
+    review: "in the Fragment boundary table" },
+  { cls: "gap", label: "rest parameters (intersection, type parameter, declaration binder)", re: /a rest parameter needs a tuple|rest parameter of a definition/,
+    why: "a representation limit: no allocation rule for the collected array at that type",
+    review: "in the Fragment boundary table" },
+  { cls: "gap", label: "intersections without a representable clause", re: /intersection has no representable|no representable intersection|an intersection with a type parameter|a type parameter's intersection|a call of an intersection of a function type|spread of an intersection/,
+    why: "a representation limit (Next steps)",
+    review: "the Fragment boundary refuses an intersection that normalizes to nothing, which would be principled; these name no such emptiness" },
+  { cls: "gap", label: "computed types over binders, `keyof` with unique symbols, `typeof` of unannotated bindings", re: /over a type parameter|keyof over a type parameter|whose part unique|the type TypeScript infers for a binding without an annotation|typeof \S+ is a class with static|\$\{string\}|non-decimal numeric literal type|construct signatures and other members|optional named fields with a string index/,
+    why: "no term of the fragment states the type exactly: a representation limit",
+    review: "in the Fragment boundary table" },
+  { cls: "gap", label: "generics: generic closures, methods, function types, dependent bounds", re: /generic class method|generic (function|constructor) types|quantified closure|quantified callable|body requires a variable|does not establish (its|the) declared bound|types both a value and a rest parameter|generic spread|a class extending a generic class|method of an annotation's type literal over|call or index signatures applied to a type parameter|`\?\?` on a value of a type parameter|test on a value of a type parameter or `unknown`/,
+    why: "generic closures, generic methods and binders as packs are open (Next steps)" },
+  { cls: "gap", label: "class forms: constructor defaults, computed members, index signatures, statics, private names", re: /constructor parameter with a default|index signature in a class|computed key|static|private name|#\w+ in/,
+    why: "constructor graph code, statics read late, private slots in inheritance (Next steps)" },
+  { cls: "gap", label: "enum forms: computed members, an empty enum", re: /computed enum member|an enum without members/,
+    why: "keys known only at run time; an empty object has no record: representation limits",
+    review: "in the Fragment boundary table" },
+  { cls: "gap", label: "object literal spreads of functions, class values, arrays, strings", re: /a spread copies the own enumerable/,
+    why: "the copy's keys are known only at run time: no record states them",
+    review: "in the Fragment boundary table" },
+  { cls: "gap", label: "well-known symbol keys", re: /well-known symbol key/,
+    why: "the model does not state how the host treats them",
+    review: "in the Fragment boundary table" },
+  { cls: "gap", label: "calls: `.call`, spreads, `Object.assign`, array literal spreads", re: /\.(call|apply|bind) requires|spread argument|array literal spreads|Object\.assign|a call writes more positions/,
+    why: "iteration and call forms left open (Next steps)" },
+  { cls: "gap", label: "library globals not reviewed", re: /new Date\(|the global \w+ is not|unbound name|reviewed overlay|a callable object with methods|read only through its members|construct signatures are not read/,
+    why: "a library signature is trusted only once reviewed" },
+  { cls: "gap", label: "source forms left", re: /only field and local assignments|array assignment pattern writing|compound assignment inside a closed|`let` pattern|for\.\.\.of. loop declares|a jump out of a `try`|assignment to immutable binding|`as const` on an operand|generator function|for await|type guard|assertion function|captured by a closure in a `for`|unresolved type reference|well-known/,
+    why: "remaining source forms (Next steps)" },
+];
+
+/** The confirmed SKJS unsoundnesses, by unit (`source#name`), each witnessed
+ * in SKJS-COVERAGE.md "Suspected SKJS unsoundnesses". */
+const SKJS_UNSOUND: Record<string, string> = Object.fromEntries([
+  ...["testAliasMutableOptionalThenIndex", "testAliasReadonlyOptionalThenIndex", "testAliasWidenedGrantThenIndex",
+      "testSameViewInBranchThenAfter", "testViewInsideLoop", "testAliasMutableSymbolOptionalThenIndex"]
+    .map((n) => [`tests/expect-error/obj-literal-indexes.ts#${n}`, "aliased views of an empty object literal"]),
+  ["tests/expect-error/obj-literal-indexes.ts#testEscapedInferredLiteralStaysClosed", "an inferred literal type through a generic declaration is closed"],
+  ["tests/expect-error/callability.ts#testInstanceTypeofFunction", "`typeof c === \"function\"` on a class instance is `never`"],
+  ["tests/expect-error/void.ts#returningConstrainedVoid", "a body falling off its end at a binder bounded by `void`"],
+  ["tests/expect-error/promise-object.ts#testAwaitPlainObject", "`await` passes a record through"],
+]);
+
+function classOf(key: string): ClassEntry | undefined {
+  return CLASSES.find((c) => c.re.test(key));
+}
+
 /* ------------------------------------------------------------------ run -- */
 /** A verified run speaks for a unit only when it checked the unit's own code:
  * a function unit is one of the functions it verified, any other unit
@@ -549,6 +716,8 @@ type Row = Omit<Unit, "closure" | "derived" | "self" | "selfNames" | "selfLines"
   where?: "self" | "dependency" | "unknown";
   /** The source text the blocker names, when it names a place. */
   at?: string;
+  /** An accepted unit's class: verified, or its refusal's (see `CLASSES`). */
+  class?: "verified" | RefusalClass | "skjs-unsound";
 };
 
 async function main() {
@@ -632,6 +801,31 @@ async function main() {
     }
   });
 
+  // Classes, for the accepted units (a unit SKJS rejects has none).
+  const reasonOf = new Map<string, string>();
+  const unmatched = new Set<string>();
+  const unsoundVerified: string[] = [];
+  for (const row of rows) {
+    if (row.skjsMarker !== "accepted" || row.skjs === "rejected") continue;
+    if (row.status === "verified") {
+      row.class = "verified";
+      if (SKJS_UNSOUND[row.id]) unsoundVerified.push(row.id);
+      continue;
+    }
+    if (SKJS_UNSOUND[row.id]) {
+      row.class = "skjs-unsound";
+      reasonOf.set(row.id, `SKJS unsoundness: ${SKJS_UNSOUND[row.id]}`);
+      continue;
+    }
+    const entry = row.status === "error" ? CLASSES.find((c) => c.label === "run error or unattributed verification")
+      : classOf(row.key!);
+    if (!entry) unmatched.add(row.key!);
+    row.class = entry?.cls ?? "gap";
+    reasonOf.set(row.id, entry?.label ?? `unmatched: ${row.key}`);
+  }
+  for (const id of unsoundVerified)
+    process.stderr.write(`warning: ${id}, a confirmed SKJS unsoundness, verified: read it\n`);
+
   const accepted = rows.filter((r) => r.skjsMarker === "accepted" && r.skjs !== "rejected");
   const count = <T,>(xs: T[], f: (x: T) => string) => {
     const m = new Map<string, number>();
@@ -669,6 +863,25 @@ async function main() {
     /* Reached Lean (parsed and proposed) and refused there: the candidates
      * for an SKJS unsoundness, or for a pipeline incompleteness. */
     reachedButRefused: blocked.filter((r) => r.phase === "search" || r.phase === "check").length,
+    /* Every accepted unit by class (`CLASSES`): verified, refused on
+     * principle, a gap, unexplained, or a confirmed SKJS unsoundness. */
+    byClass: {
+      verified: accepted.filter((r) => r.class === "verified").length,
+      principled: accepted.filter((r) => r.class === "principled").length,
+      gap: accepted.filter((r) => r.class === "gap").length,
+      unexplained: accepted.filter((r) => r.class === "unexplained").length,
+      skjsUnsound: accepted.filter((r) => r.class === "skjs-unsound").length,
+    },
+    /* Unexplained refusals whose failed search carries the reader's
+     * `obligation:` line (what was not established, not why). */
+    unexplainedWithObligation: accepted.filter((r) => r.class === "unexplained" && / — /.test(r.detail ?? "")).length,
+    /* Units by classified reason: [class, label] → units, files. */
+    byReason: Object.fromEntries(Object.keys(count(blocked, (r) => reasonOf.get(r.id)!)).map((label) => {
+      const rs = blocked.filter((r) => reasonOf.get(r.id) === label);
+      return [label, { class: rs[0].class, units: rs.length, files: new Set(rs.map((r) => r.source)).size }];
+    })),
+    unmatchedReasons: [...unmatched].sort(),
+    skjsUnsoundVerified: unsoundVerified,
     byKey: count(accepted.filter((r) => r.status !== "verified"), (r) => r.key!),
   };
   // One row per line, so a rerun's movement reads as a line diff.
@@ -681,6 +894,12 @@ async function main() {
   process.stderr.write(`elapsed: ${Math.round((Date.now() - started) / 1000)} s\n`);
   process.stdout.write(`${summary.verified}/${summary.accepted} SKJS-accepted units verified ` +
     `(${summary.units} units in ${summary.corpusFiles} files)\n`);
+  const c = summary.byClass;
+  process.stdout.write(`${c.verified} verified + ${c.principled + c.skjsUnsound} refused on principle ` +
+    `(${c.skjsUnsound} of them SKJS unsoundnesses) = ${c.verified + c.principled + c.skjsUnsound} of ` +
+    `${summary.accepted} done; ${c.gap} gaps, ${c.unexplained} unexplained\n`);
+  if (summary.unmatchedReasons.length)
+    process.stdout.write(`  ${summary.unmatchedReasons.length} reasons no class entry matches (counted as gaps): see summary.unmatchedReasons\n`);
   for (const [g, n] of Object.entries(summary.byGroup).slice(0, 25))
     process.stdout.write(`  ${String(n.units).padStart(4)} ${String(n.files).padStart(3)} files  ${g}\n`);
   process.stdout.write(`result: ${path.relative(process.cwd(), resultPath)}; derived files: ${outDir}\n`);

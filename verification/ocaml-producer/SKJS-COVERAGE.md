@@ -4,8 +4,13 @@ How much of what SKJS accepts in its own test suite the pipeline
 (`check.mts`: parser → OCaml producer → Lean search and check) verifies, what
 stops the rest, and where the two disagree because SKJS is wrong.
 
-**2,315 of 2,674 SKJS-accepted units verify (86.6%); 1,711 of 2,026 accepted
-functions (84.5%).** 261 of the 377 files with an accepted unit verify entirely.
+**2,344 verified + 99 refused on principle = 2,443 of 2,674 done (91.4%);
+207 gaps, 24 unexplained.** Of the 99, 10 are units of confirmed SKJS
+unsoundnesses; the classes are defined in the method
+([refusal classes](#refusals-by-class)).
+
+**2,344 of 2,674 SKJS-accepted units verify (87.7%); 1,729 of 2,026 accepted
+functions (85.3%).** 267 of the 377 files with an accepted unit verify entirely.
 Five families of SKJS-accepted functions that the pipeline reaches and refuses
 are real SKJS unsoundnesses, each with a runtime witness that SKJS accepts and
 node crashes on ([below](#suspected-skjs-unsoundnesses)).
@@ -30,14 +35,14 @@ is not part of `verification/run.sh`.
 
 | Suite | Harness verdict | Files | Units | Accepted | Verified | Accepted functions | Verified functions |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,885 | 2,458 | 2,104 | 1,863 | 1,552 |
+| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,458 | 2,132 | 1,863 | 1,569 |
 | `tests/callgraph` | no error allowed | 25 | 59 | 59 | 57 | 51 | 49 |
 | `tests/constprop` | no error allowed | 14 | 66 | 66 | 64 | 49 | 48 |
 | `tests/deadcode` | no error allowed | 7 | 27 | 27 | 27 | 16 | 16 |
-| `tests/cfg` | no error allowed | 7 | 22 | 22 | 21 | 21 | 20 |
+| `tests/cfg` | no error allowed | 7 | 22 | 22 | 22 | 21 | 21 |
 | `tests/projects` | expect-error markers, under the project's tsconfig | 24 of 68 | 44 | 34 | 34 | 23 | 23 |
-| `tests/ts-conformance/cases` | lines listed in `reference/*.errors.txt` | 4 | 11 | 10 | 8 | 3 | 3 |
-| **total** | | **480** | **4,110** | **2,674** | **2,315** | **2,026** | **1,711** |
+| `tests/ts-conformance/cases` | lines listed in `reference/*.errors.txt` | 4 | 9 | 8 | 8 | 3 | 3 |
+| **total** | | **480** | **4,110** | **2,674** | **2,344** | **2,026** | **1,729** |
 
 Excluded (79 files, listed in the JSON with reasons): `ts-conformance/not-supported`
 (31) and `callgraph-unsupported` (4) assert only that SKJS reports errors;
@@ -94,10 +99,63 @@ is.
 
 | Phase of first blocker | Units |
 | --- | ---: |
-| verified | 2,315 |
-| source (gate) | 129 |
+| verified | 2,344 |
+| source (gate) | 115 |
 | proposal (producer) | 56 |
-| search (Lean) | 174 |
+| search (Lean) | 159 |
+
+**Refusal classes.** The project's goal is that every accepted unit either
+verifies or is refused for a specific, principled reason. Each accepted unit
+that does not verify is put in one class, by its first blocker's key
+(`class` on its row, `summary.byClass`), through the table `CLASSES` in
+[skjs-coverage.mts](skjs-coverage.mts), one entry per reason with its
+justification; the first entry matching the key decides:
+
+- **principled** (P): the pipeline refuses because the construct is unsound,
+  not faithful to JavaScript, or rejected by TypeScript itself, or because
+  its soundness would need an assumption the project declines. Each such
+  entry is a row of the [fragment boundary](../DESIGN.md#fragment-boundary)
+  whose reason is one of these: TypeScript's implicit index signature,
+  covariant writable storage, method extraction, object identity without
+  fields, `this` in sloppy code, `extends Array`, `new Array(n)`'s holes,
+  `instanceof` narrowing `unknown` (a world invariant over every
+  allocation), a constructor or base class from outside the file, an
+  iterator whose type states no `return`, a contextual `any`, and code or
+  declarations TypeScript rejects.
+- **gap** (G): a sound construct the pipeline does not yet support: a
+  [next step](../DESIGN.md#next-steps), or a representation limit ("no term
+  of the fragment states it exactly", a rest parameter at an intersection,
+  a computed type over a binder). A fragment-boundary row whose reason is a
+  representation limit, or also a next step (object growth), is a gap; so is
+  any reason the table does not match (`summary.unmatchedReasons`, so a new
+  refusal is seen, never counted done).
+- **unexplained** (U): a refusal that names no cause: Lean's search found no
+  derivation (`evidence search failed`, `cannot establish …`), which names
+  the failed obligation and, on its `obligation:` line, what was not
+  established, but not why; a crash, a timeout, a verified run that checked
+  none of the unit's code.
+- **SKJS unsound** (S): a unit of a
+  [confirmed SKJS unsoundness](#suspected-skjs-unsoundnesses) family with a
+  witness that SKJS accepts and node crashes on (`SKJS_UNSOUND`, by unit).
+  Its refusal is correct: it counts as done, beside the principled ones. A
+  unit of that list that verifies is reported as a warning.
+
+For an accepted unit $u$ with first blocker key $k(u)$, and `CLASSES` the
+list $(c_1, r_1), \dots, (c_n, r_n)$ of a class and a pattern:
+
+$$
+\mathrm{class}(u)=
+\begin{cases}
+\mathsf{verified} & \text{if } u \text{ verifies}\\
+\mathsf{S} & \text{else if } u \in \texttt{SKJS\_UNSOUND}\\
+\mathsf{U} & \text{else if } u \text{ ended in an error}\\
+c_i & \text{else if } i=\min\{\, j \mid r_j \text{ matches } k(u) \,\}\\
+\mathsf{G} & \text{otherwise}
+\end{cases}
+$$
+
+Done is verified, principled or SKJS unsound: $V + P + S$ of the accepted
+$N = V + P + S + G + U$.
 
 **Caveats on the method.**
 
@@ -115,7 +173,80 @@ is.
   `./symbols-export.js`) does not resolve: 1 unit.
 - `where` is `unknown` for 33 producer refusals, which name no location.
 
+## Refusals by class
+
+Every accepted unit that does not verify, by the class and reason its first
+blocker's key is given (`summary.byReason` and `summary.byClass` of
+[skjs-coverage.json](skjs-coverage.json); definitions in the method,
+"Refusal classes"). P principled, S SKJS unsound, G gap, U unexplained.
+*Review* marks a judgement that is not clear-cut: a gap that could be argued
+principled, or the one principled entry DESIGN also lists as open work.
+
+| Class | Units |
+| --- | ---: |
+| verified | 2,344 |
+| principled (P) | 89 |
+| SKJS unsound (S) | 10 |
+| gap (G) | 207 |
+| unexplained (U) | 24 (21 with an `obligation:` line) |
+| **accepted** | **2,674** |
+
+| Class | Reason | Units | Files | Why |
+| --- | --- | ---: | ---: | --- |
+| P | TypeScript refuses the code | 28 | 17 | TypeScript itself rejects the program or a declaration it depends on |
+| P | `Array.isArray` on an open record or `unknown` | 9 | 3 | an object owning an array store need not be an array of `Array.prototype`: the same world invariant as `instanceof` narrowing `unknown` (Fragment boundary). *Review:* DESIGN Next steps lists the array-coherence invariant as open work; classified as the `instanceof unknown` case is |
+| P | object identity without fields | 8 | 2 | objects without a field have no identity in the model; identity narrowing is declined (DESIGN, Fragment boundary) |
+| P | `instanceof` of a constructor from outside the file | 7 | 3 | nothing in the file says which prototype it gives its instances (Fragment boundary) |
+| P | implicit index signature | 7 | 2 | TypeScript's implicit index signature is unsound: a value of a type literal may carry other keys of any type |
+| P | `instanceof` narrowing `unknown` | 7 | 3 | "an object whose chain holds C's prototype has C's fields" is a world invariant over every allocation, an assumption not taken (Fragment boundary) |
+| P | `this` in sloppy code | 6 | 3 | sloppy receiver conversion (global object, wrappers) is not modelled (Fragment boundary) |
+| P | `extends` a library constructor | 4 | 1 | `extends Array` and kin allocate host objects, not the ordinary object a class allocates (Fragment boundary) |
+| P | iterator without a stated `return` | 3 | 3 | IteratorClose calls whatever `return` an open record owns (Fragment boundary) |
+| P | a base class from outside the file | 2 | 2 | nothing in the file says what its constructor allocates; trusting it is an assumption declined (Fragment boundary) |
+| P | invariance of writable storage | 2 | 1 | TypeScript relates writable storage covariantly, which is unsound (Fragment boundary) |
+| P | an ambient enum | 1 | 1 | its object is the environment's, whose members a declaration need not value (Fragment boundary) |
+| P | `...x: T` with T no array | 1 | 1 | TypeScript rejects a rest parameter of a non-array type (TS2370) |
+| P | a contextual `any` parameter | 1 | 1 | `any` states no contract (Fragment boundary) |
+| P | method extraction | 1 | 1 | a method read off its object loses its receiver; TypeScript's typing of it is unsound (Fragment boundary) |
+| P | a `this`-typed function as a receiver-indifferent callback | 1 | 1 | the callback type admits any receiver, the function requires its own: TypeScript's relation is unsound |
+| P | a mutable tuple's `length` at its arity | 1 | 1 | `push` is allowed on a mutable tuple: TypeScript's literal length is unsound |
+| S | aliased views of an empty object literal | 6 | 1 | witnessed below |
+| S | `typeof c === "function"` on a class instance is `never` | 1 | 1 | witnessed below |
+| S | an inferred literal type through a generic declaration is closed | 1 | 1 | witnessed below |
+| S | `await` passes a record through | 1 | 1 | witnessed below |
+| S | a body falling off its end at a binder bounded by `void` | 1 | 1 | witnessed below |
+| G | intersections without a representable clause | 24 | 12 | a representation limit (Next steps). *Review:* the Fragment boundary refuses an intersection that normalizes to nothing, which would be principled; these name no such emptiness |
+| G | object growth (a key-adding write) | 24 | 8 | sound JavaScript; needs a key-adding write (DESIGN Next steps). *Review:* also in the Fragment boundary table ("keys are fixed at allocation") |
+| G | computed types over binders, `keyof` with unique symbols, `typeof` of unannotated bindings | 23 | 12 | no term of the fragment states the type exactly: a representation limit. *Review:* in the Fragment boundary table |
+| G | generics: generic closures, methods, function types, dependent bounds | 20 | 12 | generic closures, generic methods and binders as packs are open (Next steps) |
+| G | rest parameters (intersection, type parameter, declaration binder) | 14 | 5 | a representation limit: no allocation rule for the collected array at that type. *Review:* in the Fragment boundary table |
+| G | numeric keys and indices | 13 | 7 | numeric properties and array-element `in` are not modelled. *Review:* `in` on an array index is in the Fragment boundary ("the model would answer otherwise"), a model limit |
+| G | calls: `.call`, spreads, `Object.assign`, array literal spreads | 9 | 6 | iteration and call forms left open (Next steps) |
+| G | reads the producer holds on no object | 8 | 5 | producer typing of the receiver |
+| G | a read at a `for...in` key under `!` | 8 | 1 | needs a relational fact (the object owns the key) no statement entry states. *Review:* `!` is TypeScript's unchecked assertion; the read may be `undefined` |
+| G | a named function at a longer signature | 8 | 4 | fewer parameters is sound JavaScript; the slot is the annotated signature by design. *Review:* rests on the host-relative/slot-is-its-signature decision |
+| G | generic methods, `Promise<A>` ≤ `Promise<B>` | 8 | 2 | needs a subtyping rule for quantified signatures, and producer inference (Next steps) |
+| G | a method with a `this` parameter | 8 | 3 | sound JavaScript; method members are host-relative, so the contract states no receiver. *Review:* rests on a lasting decision (method members are host-relative) and is in the Fragment boundary table |
+| G | source forms left | 6 | 6 | remaining source forms (Next steps) |
+| G | enum forms: computed members, an empty enum | 6 | 1 | keys known only at run time; an empty object has no record: representation limits. *Review:* in the Fragment boundary table |
+| G | class forms: constructor defaults, computed members, index signatures, statics, private names | 6 | 2 | constructor graph code, statics read late, private slots in inheritance (Next steps) |
+| G | `Array.isArray`/`length` over an array-or-record union | 4 | 3 | needs the array-coherence invariant (Next steps) |
+| G | object literal spreads of functions, class values, arrays, strings | 4 | 4 | the copy's keys are known only at run time: no record states them. *Review:* in the Fragment boundary table |
+| G | cells after a step that may write them | 4 | 3 | a call forgets heap facts: needs a reachability statement (Next steps, Precision) |
+| G | a spread of a dictionary | 4 | 3 | needs the key-adding write's spread into an index (Next steps) |
+| G | library globals not reviewed | 2 | 2 | a library signature is trusted only once reviewed |
+| G | absent-key and dictionary presence facts | 2 | 2 | needs a clause stating an absent key or dictionary presence |
+| G | well-known symbol keys | 2 | 1 | the model does not state how the host treats them. *Review:* in the Fragment boundary table |
+| U | search: no derivation found | 24 | 15 | Lean found no derivation; the obligation is named, its cause is not |
+
+No reason is unmatched (`summary.unmatchedReasons` is empty), and no unit of a
+confirmed SKJS unsoundness verifies (`summary.skjsUnsoundVerified`).
+
 ## Groups, by value
+
+The group counts and details below are from the run at commit 873cf9a1
+(2,315 verified); the headline, the method tables and the classes above are
+from the current run.
 
 Units whose first blocker is in the group, from `summary.byGroup` of
 [skjs-coverage.json](skjs-coverage.json) (`self`: in the unit's own
