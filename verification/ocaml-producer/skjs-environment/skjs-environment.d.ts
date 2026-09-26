@@ -24,6 +24,10 @@ declare const __SKJS_show_expanded: SkjsShow;
  * relying on the absence of other keys is refused, never admitted. */
 type Closed<T> = T;
 
+/** SKJS's mark on a result a statement may discard, which its checker
+ * reserves: whatever it permits of a statement, the value is a `T`. */
+type SKJS_Ignorable<T> = T;
+
 /** SKJS's dictionary alias, as its stub declares it. */
 type StringRecord<V> = {
   [index: string]: V;

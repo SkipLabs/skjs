@@ -18,6 +18,12 @@ export function onShutdown(close: () => Promise<void>): void {
   process.on("SIGTERM", shutdown);
 }
 
+declare function discardable(): SKJS_Ignorable<number>;
+function discards(): number {
+  discardable();
+  return discardable();
+}
+
 type Event = { kind: string };
 function logged(e: Event): void {
   console.log("event", e.kind);
