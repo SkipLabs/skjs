@@ -337,6 +337,11 @@ export function collectDeclarations(file: string, options: {
    * (`restFromIntrinsic`) joins the values. */
   restTargets?: readonly { span: Span; index: number }[];
   restSlice?: (span: Span) => void;
+  /** The keys of the client's `k in o` tests: each TypeScript types as other
+   * than string literals is reported to `hostIn`, and the intrinsics, among
+   * them `%HasProperty%`, which answers such a test, join the values. */
+  inKeys?: readonly Span[];
+  hostIn?: (span: Span) => void;
   /** Identifiers of the client that may name one of its local bindings: each
    * that TypeScript binds to a value declaration in the client is reported
    * to `bindingRead` with the span of that declaration's name. A shorthand
@@ -1073,6 +1078,18 @@ export function collectDeclarations(file: string, options: {
       }
     };
     if (options.intrinsics) listIntrinsics(options.intrinsics);
+    // `k in o` with a key TypeScript types as string literals only is the
+    // model's key test, which narrows `o`; any other key, a number, a symbol
+    // or a string known only at run time, is the host's `%HasProperty%`.
+    for (const span of options.inKeys ?? []) {
+      const key = expressionAt(client, span);
+      if (!key) throw new DeclarationError(span, "TypeScript `in` key missing");
+      const type = checker.getTypeAtLocation(key);
+      const parts = type && isUnionType(type) ? type.getTypes() : type ? [type] : [];
+      if (parts.length && parts.every(t => !!(t.flags & TypeFlags.StringLiteral))) continue;
+      listIntrinsics(span);
+      options.hostIn?.(span);
+    }
     // Global variables the client reads, such as Node's `process` (PROGRAM-TYPING.md,
     // "Imported, ambient and global values"): each joins the values like an import, at a definition
     // of its own, keyed by the variable's declaration, that holds only the

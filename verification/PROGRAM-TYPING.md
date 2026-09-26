@@ -2726,6 +2726,23 @@ where $\mathcal R$ is the keys the model does not answer as JavaScript does
 objects because `in` throws on a primitive, where the test would answer
 `false`, and not a class value, whose static members are bound apart.
 
+A key TypeScript types as other than string literals (a `string`, a number,
+an array index among them, a symbol) may name what the model does not answer
+as JavaScript does: a prototype's key, or an array's element, which the store
+holds rather than a key. Such a test is the host's, a call of the intrinsic
+$\%\mathsf{HasProperty}\%$ (`intrinsics.mts`), which the parser writes where
+TypeScript's type of the key has another part, and which narrows nothing:
+
+$$
+k\ \mathtt{in}\ o\;\equiv\;\%\mathsf{HasProperty}\%(k,\ o)
+\qquad
+\%\mathsf{HasProperty}\%:(\mathtt{string}\mid\mathtt{number}\mid\mathtt{symbol},\ \mathtt{object})\Rightarrow\mathtt{boolean}
+$$
+
+The call evaluates the key, then the object, then the lookup, as `in` does;
+converting the key runs no code, and neither does the lookup on the objects
+a program holds (no proxy, [trust surface](DESIGN.md#trust-surface)).
+
 A read `o[k]` of an object whose key is claimed at a union of string and number
 singletons $\kappa_1\mid\cdots\mid\kappa_n$ dispatches the same way, each
 singleton selecting the read of the key it converts to (a number's, the key

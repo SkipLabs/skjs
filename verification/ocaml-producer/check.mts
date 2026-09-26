@@ -131,7 +131,9 @@ function refusedByName(detail: string, explain: () => Explanation[],
  * TypeScript's types, and a program TypeScript rejects has none to follow.
  * Display only: the outcome is the same refusal. */
 function refusedByTypeScript(detail: string, read: () => SeenDiagnostic[]): string {
-  const errors = read();
+  // An import TypeScript does not resolve says where the file was put, not
+  // what its code does.
+  const errors = read().filter((d) => !d.text.startsWith("Cannot find module"));
   if (!errors.length) return detail;
   const first = errors.reduce((a, b) => (b.pos[0] < a.pos[0] ? b : a));
   return `reject: TypeScript refuses this code too (line ${first.start.line + 1}, col ${

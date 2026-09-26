@@ -33,6 +33,12 @@
  *   `%RestFrom:k%(xs)` (`restFromIntrinsic`).
  * - `for (const k in o)` is `for (const k of %ForIn%(o))`: the keys the loop
  *   visits, each a string, of any value (none for null or undefined).
+ * - `k in o` whose key TypeScript types as other than string literals is
+ *   `%HasProperty%(k, o)`: whether `o`, an object, has the property the key
+ *   converts to, its own or an inherited one, as the host answers it. The
+ *   conversion of a string, a number or a symbol runs no code, and neither
+ *   does the lookup on the objects a program holds (no proxy, DESIGN.md
+ *   "Trust surface"); the answer is a Boolean, which narrows nothing.
  *
  * The reviewed overlay of library globals (`library-globals.mts`) reads some
  * members as these: `Promise.resolve(v)` is `%AsyncReturn%(v)`, a promise
@@ -58,6 +64,7 @@ export const iterateSetName = "%Iterate:Set%";
 export const iterateMapName = "%Iterate:Map%";
 export const iterateIteratorName = "%Iterate:Iterator%";
 export const forInName = "%ForIn%";
+export const hasPropertyName = "%HasProperty%";
 export const promiseAllName = "%PromiseAll%";
 export const promiseRejectName = "%PromiseReject%";
 export const newPromiseName = "%NewPromise%";
@@ -186,5 +193,7 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm):
         promise(binder)) },
     { name: forInName, typeParams: [],
       type: fn([atom("unknown")], { k: "array", readonly: true, element: atom("string"), span }) },
+    { name: hasPropertyName, typeParams: [],
+      type: fn([either(atom("string"), atom("number"), atom("symbol")), atom("object")], atom("boolean")) },
   ];
 }

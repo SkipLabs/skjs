@@ -69,7 +69,7 @@ import { enclosingBinders } from "./computed-types.mts";
 import { collectDeclarations, DeclarationError, libraryArguments, libraryTerm, tsconfigOf, type LibraryType,
   type SeenDiagnostic }
   from "./declaration-graph.mts";
-import { asyncCompleteName, asyncReturnName, awaitName, forInName, iterateName } from "./intrinsics.mts";
+import { asyncCompleteName, asyncReturnName, awaitName, forInName, hasPropertyName, iterateName } from "./intrinsics.mts";
 
 /** Why a generator is refused: its body stops at each `yield` and resumes
  * where it stopped when `next` is called again, and no term of the calculus
@@ -442,6 +442,8 @@ class Gate {
    * iterable's span; likewise a spread's operand and an array pattern's
    * initializer. */
   readonly iterations = new Map<string, string>();
+  /** The keys of `k in o` tests the host answers (`%HasProperty%`). */
+  readonly hostIns = new Set<string>();
   /** The well-known `Symbol.iterator`'s index among the declaration
    * document's symbols, where a program iterable is iterated. */
   wellKnownIterator: number | null = null;
@@ -2402,10 +2404,18 @@ class Gate {
     // Which keys and operands the model answers as JavaScript does is Lean's
     // to decide (`inKeyRefusal`, `inOperand`, `inKeyList`).
     if (node.operatorToken.kind === ts.SyntaxKind.InKeyword) {
-      let key: Expression = node.left;
-      while (ts.isParenthesizedExpression(key)) key = key.expression;
-      if (ts.isNumericLiteral(key))
-        this.fail(node.left, "`in` with a numeric key tests an array element, which the model keeps in the array's store, not as a key");
+      const key = inKey(node);
+      // A key TypeScript types as other than string literals (a number, an
+      // array index among them, a symbol, a string known only at run time)
+      // names what the model does not answer as JavaScript does: the test is
+      // the host's `%HasProperty%(k, o)`, a Boolean that narrows nothing
+      // (`intrinsics.mts`), evaluated as `in` evaluates: the key, the object,
+      // then the lookup.
+      if (this.hostIns.has(this.span(key).join(":"))) {
+        const keyword = node.operatorToken.getStart(this.file);
+        return this.intrinsic(hasPropertyName, this.span(node), [keyword, keyword + "in".length],
+          [this.expr(node.left), this.expr(node.right)]);
+      }
       // `#x in o` asks whether `o` itself holds the slot, as its class's
       // construction installs it; the model's key test walks the prototype
       // chain, and would find an instance's slot from an object inheriting
@@ -4082,6 +4092,13 @@ type EnumInfo = { end: number; members: (Omit<EnumMember, "value"> & { value: st
 
 /** A number's spelling as a literal: its `Number::toString`, which reads back
  * as the same double, and `-0` for negative zero, which that spells `0`. */
+/** The key of `k in o`, its parentheses dropped. */
+function inKey(node: ts.BinaryExpression): Expression {
+  let key: Expression = node.left;
+  while (ts.isParenthesizedExpression(key)) key = key.expression;
+  return key;
+}
+
 function numberText(value: number): string {
   return Object.is(value, -0) ? "-0" : String(value);
 }
@@ -4408,6 +4425,17 @@ export function parseFile(file: string, carriesContext = false,
     node.forEachChild(findAsync);
   };
   if (!carriesContext) findAsync(source);
+  // The keys of `k in o` tests: TypeScript's type of each decides whether
+  // the test is the model's key test or the host's `%HasProperty%`.
+  const inKeyNodes: Node[] = [];
+  const findInKeys = (node: Node): void => {
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.InKeyword) {
+      const key = inKey(node);
+      if (!ts.isPrivateIdentifier(key)) inKeyNodes.push(key);
+    }
+    node.forEachChild(findInKeys);
+  };
+  if (!carriesContext) findInKeys(source);
   // An identifier as an element key, `e[k]`, may name a `unique symbol`
   // constant, and `e[S.k]` a `unique symbol` property, such as the
   // well-known `Symbol.iterator`: TypeScript decides, and such a key joins
@@ -4574,12 +4602,12 @@ export function parseFile(file: string, carriesContext = false,
       classTestNodes.length || classReadNodes.length || contextualNodes.length ||
       receiverNodes.length || enumNodes.length || computedNodes.length || symbolNameNodes.length ||
       keyTypeNodes.length || bindingNodes.length || iterableNodes.length || spreadNodes.length ||
-      restTargets.length || privateNodes.length) {
+      restTargets.length || privateNodes.length || inKeyNodes.length) {
     const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
       firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? classTestNodes[0] ?? classReadNodes[0] ?? contextualNodes[0] ??
       receiverNodes[0] ?? enumNodes[0] ??
       computedNodes[0] ?? symbolNameNodes[0] ?? keyTypeNodes[0] ?? bindingNodes[0] ?? iterableNodes[0] ??
-      spreadNodes[0] ?? restTargets[0]?.node ?? privateNodes[0];
+      spreadNodes[0] ?? restTargets[0]?.node ?? privateNodes[0] ?? inKeyNodes[0];
     if (!first) throw Error("missing declaration root");
     // Named imports only. A type import joins the declaration graph; a value
     // import is an assumption at the type its declaration states.
@@ -4638,6 +4666,8 @@ export function parseFile(file: string, carriesContext = false,
           gate.iterations.set(`${start}:${end}`, intrinsic);
           if (symbol !== null) gate.wellKnownIterator = symbol;
         },
+        inKeys: inKeyNodes.map(node => gate.span(node)),
+        hostIn: ([start, end]) => gate.hostIns.add(`${start}:${end}`),
         restTargets: restTargets.map(({ node, index }) => ({ span: gate.span(node), index })),
         restSlice: ([start, end]) => gate.slices.add(`${start}:${end}`),
         computed: computedNodes.map(node => gate.span(node)),
