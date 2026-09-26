@@ -652,7 +652,8 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
             let eus ← omitted.mapM fun D => recur Γ .undef D
             coerce G pool (.node ⟨Γ,t,p.2.2⟩ r (ef :: er :: eas ++ eus)) A
       if let some e := variadic own <|> direct own <|> variadic pool <|> direct pool then return some e
-      return splitReceiver f
+      -- A callee or, for a method dispatched on its object, the receiver.
+      return splitReceiver f <|> splitReceiver recv
     | .makeAt .absent ns inits =>
       return (A :: pool).findSome? fun R => do
         if !(decide ns.Nodup) then none else do

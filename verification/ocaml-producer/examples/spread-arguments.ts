@@ -12,3 +12,17 @@ function spreadsAfterFixed(seed: boolean): boolean {
   const pick = (first: null, second: boolean, third: boolean): boolean => third;
   return pick(null, ...pair);
 }
+// Several spreads, or a spread before further arguments: each tuple's
+// elements are read once every argument is evaluated, which is where the call
+// reads them, since no argument after the first spread runs code.
+function spreadsTwo(seed: boolean): boolean {
+  const one: [boolean] = [seed];
+  const two: [null, boolean] = [null, seed];
+  const pick = (first: boolean, second: null, third: boolean): boolean => third;
+  return pick(...one, ...two);
+}
+function spreadsBeforeFixed(seed: boolean): boolean {
+  const pair: [boolean, null] = [seed, null];
+  const pick = (first: boolean, second: null, third: boolean): boolean => third;
+  return pick(...pair, seed);
+}

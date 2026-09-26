@@ -1391,6 +1391,23 @@ stuck, never misread. -/
 private def dispatchTerm (arms : List (Tag × PrimitiveArm)) (fld : PropKey) (o : Nat) (object : Tm) : Tm :=
   arms.foldr (fun (tag, arm) rest => .ite (.test tag (.var o)) (arm.term fld o) rest) object
 
+/-- `x.k(a…)` with `x` in slot `o` of a union type and the actuals `args`
+already evaluated: per shape of `x`, as `dispatchTerm` reads it, the member
+that shape reads, invoked with `x` as its receiver. An object's member is
+bound to it (`memberHead`) where every object alternative holds `k` as a
+member, and read as a field otherwise. -/
+private def dispatchCallTerm (G : PositiveGraphs.NormalGraph Nat) (O : Ty Nat)
+    (arms : List (Tag × PrimitiveArm)) (fld : PropKey) (o : Nat) (args : List Tm) : Tm :=
+  let objects := O.filter fun l => arms.all fun (tag, _) => !decide (Answers G [l] tag true)
+  let member := !objects.isEmpty &&
+    objects.all fun l => (ProgramTyping.memberOf G [l] fld).isSome
+  let object := if member
+    then Tm.letE (.readAt fld (.var o)) (.makeAt (.bound (.var 0) (.var (o + 1)) []) [] [])
+    else .readAt fld (.var o)
+  arms.foldr (fun (tag, arm) rest =>
+    .ite (.test tag (.var o)) (.invoke (arm.term fld o) (.var o) args) rest)
+    (.invoke object (.var o) args)
+
 /-- The member read of slot `o` of `K` at `A`, planned per label of the slot:
 a primitive's label selects its arm by its known shape answers, and any other
 is read as an object (`readCell`). -/
@@ -3518,31 +3535,53 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
       | .invoke .. => throw "a method call's target must name a field or an element"
       | _ => pure none
     let B ← exprType fc callee
-    let headTys : List (Ty Nat) ← match method with
-      | none => pure [B]
-      | some (o, key, _) => do
+    -- A method of an object of a union whose alternatives read different
+    -- members, `x.toString()` on `string | number`, is read and called in
+    -- one step dispatched on the object (`dispatchCallTerm`), after the
+    -- actuals: so no actual may run code.
+    let dispatch : Option PropKey ← match e, method, callee with
+      | .invoke _ _ _ [] _, some (o, none, _), .read _ fld _ => do
+        let O ← exprType fc o
+        let plain : Fragment.Expr → Bool := fun a => match a with
+          | .var .. | .lit .. => true
+          | _ => false
+        let G := SourceTypes.graph (← table)
+        pure (if O.length > 1 && B.length > 1 && args.all plain
+            && (ProgramTyping.restSigs G B).isEmpty then some fld else none)
+      | _, _, _ => pure none
+    let headTys : List (Ty Nat) ← match method, dispatch with
+      | none, _ => pure [B]
+      | some (o, _, _), some _ => do pure [← exprType fc o]
+      | some (o, key, _), none => do
         let O ← exprType fc o
         let keyTy ← key.mapM (exprType fc)
         pure (B :: keyTy.toList ++ [O])
-    let headScope := match method with
-      | none => [held ⟨"",some callee.span⟩]
-      | some (o, key, _) => held ⟨"",some callee.span⟩ ::
+    let headScope := match method, dispatch with
+      | none, _ => [held ⟨"",some callee.span⟩]
+      | some (o, _, _), some _ => [held ⟨"",some o.span⟩]
+      | some (o, key, _), none => held ⟨"",some callee.span⟩ ::
           (key.map fun k => held ⟨"",some k.span⟩).toList ++ [held ⟨"",some o.span⟩]
     let h := headTys.length
     -- Into a variadic callee a spread may be anywhere among the actuals past
     -- the fixed ones. The call reads a spread once every actual is evaluated;
     -- a spread followed by an actual that runs code is therefore copied where
     -- it is written, `[...xs]`, and the call spreads the copy, which nothing
-    -- else can reach. Into fixed parameters a spread is the last actual and
-    -- stands for a tuple's required positions.
+    -- else can reach. Into fixed parameters each spread stands for a tuple's
+    -- required positions, read once every actual is evaluated: no actual
+    -- after the first spread may run code.
     let variadic := !(ProgramTyping.restSigs (SourceTypes.graph (← table)) B).isEmpty
-    let copied := if variadic then spreads.filter fun i =>
-        (args.drop (i + 1)).any fun a => match a with | .var .. | .lit .. => false | _ => true
+    let runsCode : Fragment.Expr → Bool := fun a => match a with
+      | .var .. | .lit .. => false
+      | _ => true
+    let copied := if variadic then spreads.filter fun i => (args.drop (i + 1)).any runsCode
       else []
-    if !variadic && !spreads.isEmpty && spreads != [args.length - 1] then
-      throw (locatedRefusal (← table) e.span .bindingAnnotation
-        "a spread into fixed parameters must be the last argument")
     let spread := !variadic && !spreads.isEmpty
+    let spreadOrder := spreads.eraseDups.mergeSort (· ≤ ·)
+    if spread then
+      let first := spreadOrder.headD args.length
+      if (args.drop (first + 1)).any runsCode then
+        throw (locatedRefusal (← table) e.span .bindingAnnotation
+          "a spread into fixed parameters followed by an actual that runs code is outside the fragment")
     let As₀ ← operands.mapM (exprType fc)
     -- A dense tuple keeps its exact positions when copied. Other arrays use
     -- the existing unbounded copy rule, whose result may have holes.
@@ -3571,41 +3610,57 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     -- so nothing is evaluated twice. No iterator of the source's own can be
     -- installed in this fragment, so the array's positions are what a spread
     -- yields (DESIGN.md, the trust boundary).
-    let elements : List (Ty Nat) ← if !spread then pure [] else do
-      let some arrayTy := As.getLast? | throw "a spread argument needs an operand"
-      let G := SourceTypes.graph (← table)
-      let some S := storeOf G arrayTy | throw "a spread argument needs a tuple contract"
-      match PositiveRules.expand G S with
-      | [.list T []] =>
-        if !T.optional.isEmpty || T.rest.isSome then
-          throw "a spread argument needs a tuple contract of required positions"
-        pure T.required
-      | _ => throw "a spread argument needs a tuple contract of required positions"
+    let spreadElements : List (Nat × List (Ty Nat)) ← if !spread then pure [] else
+      spreadOrder.mapM fun i => do
+        let some arrayTy := As[i]? | throw "a spread argument needs an operand"
+        let G := SourceTypes.graph (← table)
+        let some S := storeOf G arrayTy | throw "a spread argument needs a tuple contract"
+        match PositiveRules.expand G S with
+        | [.list T []] =>
+          if !T.optional.isEmpty || T.rest.isSome then
+            throw "a spread argument needs a tuple contract of required positions"
+          pure (i, T.required)
+        | _ => throw "a spread argument needs a tuple contract of required positions"
+    let elements := spreadElements.flatMap (·.2)
+    -- Each element's operand and its position in that operand's tuple.
+    let sources : List (Nat × Nat) :=
+      spreadElements.flatMap fun (i, Es) => (List.range Es.length).map (i, ·)
     let k := elements.length
-    let fixedActuals := if spread then args.length - 1 else args.length
     let anonymous := held ⟨"",some e.span⟩
     let temporaries := (operands.map fun a => held ⟨"",some a.span⟩).reverse ++ headScope
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+n+h+k))⟩
     -- An actual sits above the elements a spread reads; a receiver, which is
     -- an operand and not an actual, sits below them all.
-    let actuals := ((List.range fixedActuals).map fun i =>
+    -- A spread into fixed parameters is its elements, in order, where it is
+    -- written.
+    let actuals := ((List.range args.length).foldl (fun (g, out) i =>
         let v := Tm.var (k + args.length - 1 - i)
-        if copied.contains i then .spread v
-        else if spreads.contains i && variadic then .spread (.readAt SourceTypes.storeField v) else v) ++
-      (List.range k).map fun j => Tm.var (k-1-j)
+        match spreadElements.lookup i with
+        | some Es => (g + Es.length, out ++ (List.range Es.length).map fun j => Tm.var (k-1-(g+j)))
+        | none =>
+          (g, out ++ [if copied.contains i then .spread v
+            else if spreads.contains i && variadic then .spread (.readAt SourceTypes.storeField v)
+            else v])) (0, ([] : List Tm))).2
     let callEnv := elements.reverse ++ As.reverse ++ headTys ++ Γ
+    let G := SourceTypes.graph (← table)
+    let callScope := (List.replicate k anonymous) ++ temporaries ++ scope
+    -- The alternatives' members, as the callee's claim names them, are the
+    -- types the dispatched call is typed at.
+    if dispatch.isSome then modify fun st => {st with hints := B ++ st.hints}
+    let dispatchArms ← match dispatch, headTys.getLast? with
+      | some fld, some O => primitiveArms callScope callEnv O fld
+      | _, _ => pure []
     -- `.call` passes its first operand as the receiver; a plain call passes
     -- `undefined`.
-    let callTerm := match e with
-      | .callWithReceiver .. => Tm.invoke (.var (k+n)) (.var (k+n-1)) actuals
-      | .invoke .. => Tm.invoke (.var (k+n)) (.var (k+n+h-1)) actuals
-      | _ => Tm.call (.var (k+n)) actuals
+    let callTerm := match e, dispatch, headTys.getLast? with
+      | .callWithReceiver .., _, _ => Tm.invoke (.var (k+n)) (.var (k+n-1)) actuals
+      | .invoke .., some fld, some O => dispatchCallTerm G O dispatchArms fld (k+n) actuals
+      | .invoke .., _, _ => Tm.invoke (.var (k+n)) (.var (k+n+h-1)) actuals
+      | _, _, _ => Tm.call (.var (k+n)) actuals
     -- The receiver the call passes, the `.call` operand or `undefined`, is
     -- checked where the call is made at the selected signature's receiver:
     -- a located obligation, apart from the call's own typing.
-    let G := SourceTypes.graph (← table)
-    let callScope := (List.replicate k anonymous) ++ temporaries ++ scope
     -- The receiver's selected contract: a fixed signature taking these
     -- actuals, or the variadic signature the call uses.
     let receiverOf (Rr : Ty Nat) (actualTys : List (Ty Nat)) : Option (Ty Nat) :=
@@ -3638,13 +3693,14 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let call ← emitAt e.span callTerm (.bind drop) callEnv A
       (scope := (List.replicate k anonymous) ++ temporaries ++ scope)
     -- The reads run in position order, so they are emitted from the last back.
-    let reads ← (List.range k).reverse.foldlM (fun next j => do
-      let some E := elements[j]? | throw "a spread element has no contract"
+    let reads ← (List.range k).reverse.foldlM (fun next g => do
+      let some E := elements[g]? | throw "a spread element has no contract"
+      let some (i, j) := sources[g]? | throw "a spread element has no operand"
       let index ← indexTerm j
-      let env := (elements.take j).reverse ++ As.reverse ++ headTys ++ Γ
-      emitAt e.span (.elemAt (.readAt SourceTypes.storeField (.var j)) index) (.bind next)
-        env E "spread-element"
-        (scope := (List.replicate j anonymous) ++ temporaries ++ scope)) call
+      let env := (elements.take g).reverse ++ As.reverse ++ headTys ++ Γ
+      emitAt e.span (.elemAt (.readAt SourceTypes.storeField (.var (g + n - 1 - i))) index)
+        (.bind next) env E "spread-element"
+        (scope := (List.replicate g anonymous) ++ temporaries ++ scope)) call
     let right ← operands.attach.zipIdx.reverse.foldlM (fun next (⟨arg,_⟩,i) => do
       let sc := (operands.take i |>.map fun a => held ⟨"",some a.span⟩).reverse ++
         headScope ++ scope
@@ -3668,9 +3724,10 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
           (scope := held ⟨"",some arg.span⟩ :: sc)
         compileExpr fc sc ctx arg ⟨copy.label, none⟩
       else compileExpr fc sc ctx arg next) reads
-    match method with
-    | none => compileExpr fc scope Γ callee right
-    | some (o, key, readTerm) =>
+    match method, dispatch with
+    | none, _ => compileExpr fc scope Γ callee right
+    | some (o, _, _), some _ => compileExpr fc scope Γ o right
+    | some (o, key, readTerm), none =>
       -- The method is read from the saved object, below any saved key; a
       -- primitive's, by its shape (`dispatchTerm`).
       let saved := headTys.drop 1

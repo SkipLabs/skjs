@@ -1499,7 +1499,12 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let no_type_arguments () = if type_args <> [] then
         unsupported "explicit type arguments on a callee without binders" in
       let target = callee in
-      let callee = declared_head declarations [] (expr env callee) in
+      (* A binder's value is called at its bound, as it is read there. *)
+      let callee = match declared_head declarations [] (expr env callee) with
+        | Rigid r -> (match rigid_bound r with
+          | Some b -> declared_head declarations [] b
+          | None -> Rigid r)
+        | t -> t in
       (* The receiver the call passes: the `.call` operand, the object a
          method is read from, or `undefined`. A scheme infers from it too. *)
       let receiver_type = match receiver, target.node with
@@ -1543,6 +1548,15 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let param_at (s:Semantic.signature) i = match List.nth_opt s.params i with
         | Some p -> Some p
         | None -> s.variadic in
+      (* Several candidate signatures (overloads, or a union's arms): an
+         actual is built at a parameter every candidate states alike, as a
+         single signature's actuals are, and typed on its own otherwise. *)
+      let shared_actuals (candidates:Semantic.signature list) =
+        List.mapi (fun i arg ->
+          match List.map (fun s -> param_at s i) candidates with
+          | Some p :: rest when List.for_all (fun q -> q = Some p) rest ->
+            expr ~expected:p env arg,Some p
+          | _ -> expr env arg,None) args in
       let offer ?(substitute=Fun.id) (s:Semantic.signature) =
         List.iteri (fun i arg -> Option.iter (fun p ->
           Option.iter (fun state -> state ()) (offer_to arg (substitute p))) (param_at s i)) args in
@@ -1622,8 +1636,15 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
          result
        | _ ->
       let spread = spreads <> [] in
-      if spread && spreads <> [List.length args - 1] then
-        unsupported "a spread into fixed parameters is the last argument";
+      (* Into fixed parameters, each spread's elements are read once every
+         actual is evaluated, where the call reads them: so no actual after
+         the first spread may run code. *)
+      let last_only = spreads = [List.length args - 1] in
+      if spread && not last_only then
+        List.iteri (fun i (a:expr) ->
+          if i > List.fold_left min max_int spreads then match a.node with
+            | Id _ | Literal _ -> ()
+            | _ -> unsupported "a spread into fixed parameters followed by an actual that runs code") args;
       (* A call writes a prefix of the declared positions. The rest are omitted,
          which is admissible exactly when each of their contracts admits
          `undefined`; Lean checks that premise for itself. *)
@@ -1632,19 +1653,21 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       (* Counting the positions must not state the operand's claim twice, so a
          name is read from the environment and anything else is typed once,
          here, and not again below. *)
-      let spread_type = lazy (match List.rev args with
-        | { node = Id name; _ } :: _ -> resolve env name
-        | last :: _ -> expr env last
-        | [] -> unsupported "a spread argument needs an operand") in
-      let named_spread = match List.rev args with
-        | { node = Id _; _ } :: _ -> true | _ -> false in
-      let spread_positions () =
-        match Semantic.tuple_positions (Lazy.force spread_type) with
+      let spread_types = List.map (fun i -> i,lazy (match List.nth args i with
+        | { node = Id name; _ } -> resolve env name
+        | operand -> expr env operand)) spreads in
+      let spread_positions i =
+        match Semantic.tuple_positions (Lazy.force (List.assoc i spread_types)) with
         | Some elements -> List.length elements
         | None -> unsupported "a spread argument needs a tuple of required positions" in
+      (* The position each actual starts at: a spread writes as many as its
+         tuple has. *)
+      let offsets = List.rev (snd (List.fold_left (fun (at,acc) i ->
+        (at + (if List.mem i spreads then spread_positions i else 1)),at :: acc)
+        (0,[]) (List.init (List.length args) Fun.id))) in
       let written_positions =
-        if not spread then List.length args
-        else List.length args - 1 + spread_positions () in
+        List.fold_left (+) 0 (List.mapi (fun i _ ->
+          if List.mem i spreads then spread_positions i else 1) args) in
       let callable (signature:Semantic.signature) =
         let declared = List.length signature.params and written = written_positions in
         (signature.variadic <> None && written >= declared)
@@ -1666,10 +1689,10 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         no_type_arguments ();
         (* A spread operand is checked at its own tuple contract; Lean reads
            the positions from that contract and checks each of them. *)
-        List.iteri (fun i e ->
-          if spread && i = List.length args - 1 then
-            (if named_spread then ignore (expr env e))
-          else let expected = match List.nth_opt signature.params i with
+        List.iteri (fun i (e:expr) ->
+          if List.mem i spreads then
+            (match e.node with Id _ -> ignore (expr env e) | _ -> ())
+          else let expected = match List.nth_opt signature.params (List.nth offsets i) with
             | Some t -> t
             | None -> (match signature.variadic with
               | Some t -> t
@@ -1678,7 +1701,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         offer signature;
         signature.result
       | Atoms [Shape {calls=[signature];_}]
-          when signature.quantified<>[] && callable signature ->
+          when signature.quantified<>[] && callable signature && (last_only || not spread) ->
         (* Omission contributes undefined to inference, but no expression or
            claim is inserted into the source's argument list. An actual at a
            parameter mentioning no type parameter is built at it, as at a
@@ -1731,25 +1754,47 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         instantiations := (e.pos,List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
           substitution) :: !instantiations;
         result
-      (* Several advertised signatures on one value. The actuals are typed on
-         their own — contextual construction inside such a call is not guided —
-         and the signature whose domains they match is proposed. Lean selects
-         the row it checks and re-checks every argument obligation. *)
+      (* Several advertised signatures on one value. The actuals are built
+         as the usable signatures agree (`shared_actuals`), and the signature
+         whose domains they match is proposed. Lean selects the row it checks
+         and re-checks every argument obligation. *)
       | Atoms [Shape {calls=(_::_::_ as calls);_}]
-          when List.for_all (fun (s:Semantic.signature) -> s.quantified=[]) calls ->
+          when List.for_all (fun (s:Semantic.signature) -> s.quantified=[]) calls
+               && (last_only || not spread) ->
         no_type_arguments ();
-        let actuals = List.map (expr env) args in
         let usable = List.filter callable calls in
-        (* A closure an offer would claim at the parameter matches it. *)
+        let actuals = shared_actuals usable in
+        (* A closure an offer would claim at the parameter matches it, as
+           does an actual built at it. *)
         let matching = List.filter (fun (s:Semantic.signature) ->
-          List.for_all Fun.id (List.mapi (fun i (arg,t) -> match param_at s i with
-            | Some p -> plausible_subtype t p || offer_to arg p <> None
+          List.for_all Fun.id (List.mapi (fun i (arg,(t,built)) -> match param_at s i with
+            | Some p -> built = Some p || plausible_subtype t p || offer_to arg p <> None
             | None -> false) (List.combine args actuals))) usable in
         (match matching,usable with
          | s :: _,_ -> offer s; s.result
          | [],(first :: rest) when List.for_all (fun (s:Semantic.signature) ->
              s.result = first.result) rest -> first.result
          | _ -> unsupported "overloaded call needs a signature its arguments match")
+      (* A union of callables: the call is one of its arms' calls, whichever
+         the value is, so it is valid when every arm takes the actuals, and
+         its value is the union of the arms' results. The actuals are built
+         as the arms agree (`shared_actuals`); Lean splits the saved callee
+         and checks the call once per arm. *)
+      | Atoms (_::_::_ as arms) when not spread && List.for_all (function
+          | Semantic.Shape {calls=[s];_} -> s.quantified=[] && s.variadic=None
+              && s.rest_pack=None && callable s
+          | _ -> false) arms ->
+        no_type_arguments ();
+        let signatures = List.filter_map (function
+          | Semantic.Shape {calls=[s];_} -> Some s | _ -> None) arms in
+        ignore (shared_actuals signatures);
+        List.fold_left (fun acc (s:Semantic.signature) -> union acc s.result)
+          (Atoms []) signatures
+      (* JavaScript drops actuals past the parameters, but the calculus's call
+         takes no more actuals than its signature's positions. *)
+      | Atoms [Shape {calls=[{variadic=None;rest_pack=None;params;_}];_}]
+          when written_positions > List.length params ->
+        unsupported "a call writes more positions than its callee's parameters, which TypeScript rejects"
       | _ -> unsupported "call requires a single arrow the arguments can call"))
     | Apply (callee,receiver,list) ->
       (* The list is typed at its own contract; Lean reads each element's

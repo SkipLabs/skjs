@@ -181,6 +181,11 @@ parameter list is a zero-argument call, not an absent one. A tuple rest
 parameter and a tuple spread are a fixed number of positions each, so they need
 no rule of their own here: the signature carries the positions, and the array a
 rest parameter binds is allocated by the ordinary store and allocation rules.
+Into fixed parameters, each spread's positions are ordinary element reads of
+its operand's store, made once every actual is evaluated, in position order,
+and the call takes them as actuals where the spread is written; the lowering
+admits no actual that runs code after the first spread, so the reads see what
+JavaScript's spreads, each read where it is written, would.
 That array is fresh, so a rest parameter's contract may also be `readonly`
 (`readonly T[]`, a readonly tuple) or name one through a declared alias: the
 body sees the fresh array through that view, which gives up only writes.
@@ -907,6 +912,29 @@ Combined with `ifTag`, this checks a term such as
 Proof search uses the rule for tag tests over explicit unions of labels. It does
 not repeatedly split a singleton label whose graph definition itself contains
 mixed shapes; that representation needs additional decomposition rules.
+
+A method call on a union receiver whose alternatives read different members
+is split on its receiver the same way. With the object $x$ and the actuals
+$\vec y$ already in slots, the source call `x.k(y…)` lowers to one term that
+reads the member and invokes it, dispatched as a member read is
+(`dispatchCallTerm`, over `dispatchTerm`'s tests):
+
+$$
+\mathsf{if}\ \mathsf{isStr}(x)\ \mathsf{then}\ \mathsf{invoke}\;r_{\mathsf{str}}\;x\;\vec y\ \mathsf{else}\ \cdots\
+\mathsf{invoke}\;o\;x\;\vec y,
+\qquad
+o=\begin{cases}
+\mathsf{let}\ m=\mathsf{readAt}\;k\;x\ \mathsf{in}\ \mathsf{bound}(m,x) & \text{every object alternative holds $k$ as a member}\\
+\mathsf{readAt}\;k\;x & \text{otherwise}
+\end{cases}
+$$
+
+with $r_s$ a primitive shape's read through its wrapper. `unionVar` splits
+$x$, `ifTag` selects the arm, and each arm is an ordinary call (`app`, with
+`bindMember` for an object's member): nothing but the existing rules. The
+member is read after the actuals, where JavaScript reads it before them; the
+lowering is used only where no actual runs code (each a name or a literal),
+so no step can tell the orders apart.
 
 ### Binding and soundness
 
