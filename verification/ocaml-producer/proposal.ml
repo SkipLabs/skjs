@@ -1706,7 +1706,12 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
        | Id name when List.mem name !open_array_tests ->
          (try field_type declarations [] receiver n with Json.Error m ->
            explain site ("a member of an open record read as one of an array after `Array.isArray`: " ^ open_array_reason);
-           Json.fail m)
+           (match receiver with
+            | Atoms atoms when String.length m >= 27 && String.sub m 0 27 = "unsupported: missing field "
+                && List.exists (function Shape {elements=Some _;_} -> true | _ -> false) atoms ->
+              unsupported ("a read of " ^ key_text n ^ " on a union of an array and a record that does not state it: \
+                a test that the value is an array keeps the record, a value of which may be an array carrying its keys")
+            | _ -> Json.fail m))
        | _ ->
          (try field_type declarations [] receiver n with Json.Error m
            when String.length m >= 27 && String.sub m 0 27 = "unsupported: missing field "
