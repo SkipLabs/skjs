@@ -4,13 +4,13 @@ How much of what SKJS accepts in its own test suite the pipeline
 (`check.mts`: parser → OCaml producer → Lean search and check) verifies, what
 stops the rest, and where the two disagree because SKJS is wrong.
 
-**2,371 verified + 90 refused on principle = 2,461 of 2,674 done (92.0%);
-189 gaps, 24 unexplained.** Of the 90, 10 are units of confirmed SKJS
+**2,379 verified + 90 refused on principle = 2,469 of 2,674 done (92.3%);
+182 gaps, 23 unexplained.** Of the 90, 10 are units of confirmed SKJS
 unsoundnesses; the classes are defined in the method
 ([refusal classes](#refusals-by-class)).
 
-**2,371 of 2,674 SKJS-accepted units verify (88.7%); 1,755 of 2,026 accepted
-functions (86.6%).** 268 of the 377 files with an accepted unit verify entirely.
+**2,379 of 2,674 SKJS-accepted units verify (89.0%); 1,762 of 2,026 accepted
+functions (87.0%).** 269 of the 377 files with an accepted unit verify entirely.
 Five families of SKJS-accepted functions that the pipeline reaches and refuses
 are real SKJS unsoundnesses, each with a runtime witness that SKJS accepts and
 node crashes on ([below](#suspected-skjs-unsoundnesses)).
@@ -35,14 +35,14 @@ is not part of `verification/run.sh`.
 
 | Suite | Harness verdict | Files | Units | Accepted | Verified | Accepted functions | Verified functions |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,458 | 2,159 | 1,863 | 1,595 |
+| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,458 | 2,167 | 1,863 | 1,602 |
 | `tests/callgraph` | no error allowed | 25 | 59 | 59 | 57 | 51 | 49 |
 | `tests/constprop` | no error allowed | 14 | 66 | 66 | 64 | 49 | 48 |
 | `tests/deadcode` | no error allowed | 7 | 27 | 27 | 27 | 16 | 16 |
 | `tests/cfg` | no error allowed | 7 | 22 | 22 | 22 | 21 | 21 |
 | `tests/projects` | expect-error markers, under the project's tsconfig | 24 of 68 | 44 | 34 | 34 | 23 | 23 |
 | `tests/ts-conformance/cases` | lines listed in `reference/*.errors.txt` | 4 | 9 | 8 | 8 | 3 | 3 |
-| **total** | | **480** | **4,110** | **2,674** | **2,371** | **2,026** | **1,755** |
+| **total** | | **480** | **4,110** | **2,674** | **2,379** | **2,026** | **1,762** |
 
 Excluded (79 files, listed in the JSON with reasons): `ts-conformance/not-supported`
 (31) and `callgraph-unsupported` (4) assert only that SKJS reports errors;
@@ -184,11 +184,11 @@ principled, or the one principled entry DESIGN also lists as open work.
 
 | Class | Units |
 | --- | ---: |
-| verified | 2,371 |
+| verified | 2,379 |
 | principled (P) | 80 |
 | SKJS unsound (S) | 10 |
-| gap (G) | 189 |
-| unexplained (U) | 24 (21 with an `obligation:` line) |
+| gap (G) | 182 |
+| unexplained (U) | 23 (21 with an `obligation:` line) |
 | **accepted** | **2,674** |
 
 | Class | Reason | Units | Files | Why |
@@ -214,17 +214,17 @@ principled, or the one principled entry DESIGN also lists as open work.
 | S | an inferred literal type through a generic declaration is closed | 1 | 1 | witnessed below |
 | S | `await` passes a record through | 1 | 1 | witnessed below |
 | S | a body falling off its end at a binder bounded by `void` | 1 | 1 | witnessed below |
-| G | intersections without a representable clause | 24 | 12 | a representation limit (Next steps). *Review:* the Fragment boundary refuses an intersection that normalizes to nothing, which would be principled; these name no such emptiness |
+| G | intersections without a representable clause | 26 | 13 | a representation limit (Next steps). *Review:* the Fragment boundary refuses an intersection that normalizes to nothing, which would be principled; these name no such emptiness |
 | G | object growth (a key-adding write) | 24 | 8 | sound JavaScript; needs a key-adding write (DESIGN Next steps). *Review:* also in the Fragment boundary table ("keys are fixed at allocation") |
 | G | computed types over binders, `keyof` with unique symbols, `typeof` of unannotated bindings | 23 | 12 | no term of the fragment states the type exactly: a representation limit. *Review:* in the Fragment boundary table |
-| G | generics: generic closures, methods, function types, dependent bounds | 20 | 12 | generic closures, generic methods and binders as packs are open (Next steps) |
+| G | generics: generic closures, methods, function types, dependent bounds | 17 | 11 | generic closures, generic methods and binders as packs are open (Next steps) |
 | G | rest parameters (intersection, type parameter, declaration binder) | 14 | 5 | a representation limit: no allocation rule for the collected array at that type. *Review:* in the Fragment boundary table |
 | G | numeric keys and indices | 13 | 7 | numeric properties and array-element `in` are not modelled. *Review:* `in` on an array index is in the Fragment boundary ("the model would answer otherwise"), a model limit |
 | G | calls: `.call`, spreads, `Object.assign`, array literal spreads | 10 | 6 | iteration and call forms left open (Next steps) |
 | G | reads the producer holds on no object | 8 | 5 | producer typing of the receiver |
 | G | a read at a `for...in` key under `!` | 8 | 1 | needs a relational fact (the object owns the key) no statement entry states. *Review:* `!` is TypeScript's unchecked assertion; the read may be `undefined` |
 | G | a named function at a longer signature | 8 | 4 | fewer parameters is sound JavaScript; the slot is the annotated signature by design. *Review:* rests on the host-relative/slot-is-its-signature decision |
-| G | generic methods, `Promise<A>` ≤ `Promise<B>` | 8 | 2 | needs a subtyping rule for quantified signatures, and producer inference (Next steps) |
+| G | generic methods: `then` through a callback returning a promise, `catch` | 2 | 1 | producer inference through an application (a callback returning a promise); an accumulating binder's family is truncated a level early under instantiation (Next steps) |
 | G | a method with a `this` parameter | 8 | 3 | sound JavaScript; method members are host-relative, so the contract states no receiver. *Review:* rests on a lasting decision (method members are host-relative) and is in the Fragment boundary table |
 | G | source forms left | 6 | 6 | remaining source forms (Next steps) |
 | G | enum forms: computed members, an empty enum | 6 | 1 | keys known only at run time; an empty object has no record: representation limits. *Review:* in the Fragment boundary table |
@@ -444,9 +444,9 @@ named).
     | SKJS unsound: aliased views of an empty literal, an inferred literal type that stays closed, `typeof c === "function"` on a class instance | `obj-literal-indexes.ts` (8), `callability.ts#testInstanceTypeofFunction` | (d) | [below](#suspected-skjs-unsoundnesses) |
     | Sound aliased views without fields | `obj-literal-indexes.ts#testAliasMutableOptionalThenOptional`, `#testAliasTwoReadonlyOptionals` | (b) | the same search as the unsound family's |
     | Guards: `typeof x === "function"` on `unknown` or a binder | `function-type.ts` (2) | (b) | search |
-    | `Promise<A>` below `Promise<B>`: `then` and `catch` are generic methods | `promise-object.ts#testThen`, `#testCatch`, `#testCovariantWiden` | (b) | relating two schemes needs a subtyping rule for quantified signatures ([next steps](../DESIGN.md#next-steps)) |
+    | `then` through a callback returning a promise; `catch` instantiating the binder its result accumulates | `promise-object.ts#testThenChained`, `#testCatch` | (a), (b) | producer inference through `PromiseLike<TResult>`; the accumulating family is truncated a level early under instantiation ([next steps](../DESIGN.md#next-steps)) |
     | A module function where a longer signature, or an intersection with one, is expected | `function-intersection.ts` (4), `function-subtyping.ts#testMissingRestFails` | (c) | its slot is its annotated signature, checked by its own unit; offering more would make that slot a claim |
-    | Classes: inheritance across a shadowed binder, field annotations and a `#private` field in a class body, a method reattached through a `this` parameter | `tparam_shadow.ts` (2), `field-type-annotations.ts#FieldsWithAnnotations`, `private-fields.ts#HasPrivateForInTest`, `this-parameter-implicit-class.ts#compatibleReattachment` | (b) | search |
+    | Classes: field annotations and a `#private` field in a class body, a method reattached through a `this` parameter | `field-type-annotations.ts#FieldsWithAnnotations`, `private-fields.ts#HasPrivateForInTest`, `this-parameter-implicit-class.ts#compatibleReattachment` | (b) | search |
     | SKJS's own literal typing, where TypeScript differs and the pipeline follows TypeScript: `[1, "a"]` as a tuple, an evolving `[]` | `array_literal_examples.ts` | (c) | TypeScript types these as `(number \| string)[]` and `any[]` |
     | An array's `length` as a record field; an 11-tuple's `length` as the literal 11 | `literal-representation-lifetime.ts`, `tuple-large-arity.ts#arity11Length` | (c) | an array keeps its length in its store, not at a field; a mutable tuple's length is not fixed by its type |
     | Computed types that follow TypeScript: `keyof typeof E` excluding reverse keys, `keyof (A \| B)` | `enums.ts#keyOfIncludesReverseKeys`, `type-operator-precedence.ts#testNestedKeyofBuggy` | (c) | TypeScript's computed type |
@@ -833,6 +833,7 @@ split by function.
 | W. The realm's array invariant (done) | Record and dictionary types are of objects meeting the array invariant (an object owning the store key is a dense array holding `Array.prototype`, owning none of its keys), in the meaning of types (`realmInvariant`); allocation keeps it (`allocRealm`, merges copy no store); `Array.isArray` narrows a record arm to `readonly unknown[]` (`arraySlice`), and a union of arrays reads its `length`; decided and refused with reasons: `Array.isArray` on `unknown` (gap: the throw outcome carries no invariant), `instanceof` narrowing `unknown` (principled: any object may get a class's prototype) | 9 units / 1 file newly verified (2,361 → 2,370 units, 1,746 → 1,755 functions, none lost; `--skjs --width 3`); `sum-*` cases 38.7–39.2 s → 38.2–38.4 s CPU | `PositiveGraphs.lean`, `PositiveRules.lean`, `TypeParams.lean`, `ProgramTyping.lean`, `ProgramCertificates.lean`, `BranchRefinement.lean`, `ObjectMerge.lean`, `Parametricity.lean`, `RequestJson.lean`, `SourceExtraction.lean`, `proposal.ml` | J, M2 | — |
 | X. Every closure is graph code (done) | Graph code collecting a rest (the store of the further actuals in slot 0, `graphRest_invoke`, `restsT_of_graphRest`) and construct-only graph code (`ctorGraph`, `ctorsT_of_graph`); parameter defaults as entry nodes in `parameterOrder`'s schedule; generic closures with a rest or a default as graph code at their scheme rows; constructor defaults; `Object.assign` callables (`callableGraph`); one predicate for what code offers (`CodeOffers`); `funE`, `funRest`, `ctorE`, `makeCallable`, `makeCallableRest`, `Expr.termBody` and continuation sharing deleted. Left with reasons: a constructor's rest (no rule constructs at a variadic construct signature), a generic closure whose bound names another binder (rigid path) | 1 unit newly verified (2,370 → 2,371, `repro311.ts#MyClass`; its two callers now stop at a spread into `new`), 1,755 functions, none lost (`--skjs --width 3`); `sum-*` cases 38.6 s + 7.8 s → 38.5–39.3 s + 7.6–7.7 s CPU | `Calculus.lean`, `CallArguments.lean`, `Safety.lean`, `ObjectCoherence.lean`, `ProgramTyping.lean`, `ProgramCertificates.lean`, `HeapExpressionRules.lean`, `CertificateProducer.lean`, `GraphCode.lean`, `RequestJson.lean`, `SourceExtraction.lean`, `SourceClaimJson.lean`, `Fragment.lean`, `fragment-parse.mts`, `annotate-source.mts`, `proposal.ml` | T | — |
 | Y. One checker for generics, no term closures (done) | A meet row's instance over several parameters (`meetOk`, `meetMany`), so a generic closure whose bound names another of its binders is graph code at its scheme row, that binder the meet of the two parameter rows; the rigid path (`GenericSource`, `GenericCertificate`, `RigidJudgments`, `CertificateJudgments`, `SourceJudgments`, `TypeParams`, `TypeSchemes`, the scheme plan variant) and the term closures (`CallCode.closure`, `CallCode.variadic`, `funE`, the unary arrow family, `InvocationSpec`, `RestSpec`) deleted; a direct obligation is a generic value's instance outside its bound only. Left: a constructor's rest (no rule constructs at a variadic construct signature) | none moved (2,371 → 2,371 units, 1,755 functions, `--skjs --width 3`): the corpus's dependently bounded closures were not reached; `sum-*` cases 55.7 s → 47.2 s CPU (user + sys) | `PositiveRules.lean`, `CertificateProducer.lean`, `SourceClaimJson.lean`, `SourceExtraction.lean`, `DirectObligation.lean`, `Calculus.lean`, `CallArguments.lean`, `Safety.lean`, `ObjectCoherence.lean`, `ModelBoundaries.lean`, `diagnostic.mts` | X | — |
+| Z. Generic methods as host-relative members with quantified signatures (done) | A generic method is a member whose schemes the member bound to its host meets (`MethodMembers.boundOn`); two quantified members relate by the covering rule for quantified signatures (`SchemeCoversWith`: the same binder rows, bounds among the target's, signatures covered at every instance, the core table inducting over every assignment); a call binds the member at its scheme (`bindScheme`) and names its instance, whose receiver may be narrower than a scheme receiver admitting every value (`instSig`); binder rows keyed by member and coloured per member; a class's generic method's prototype scheme covers the instance's member (`CoversByScheme`, binders named alike by the parser); search tables grown on demand | 8 units / 1 file newly verified (2,371 → 2,379 units, 1,755 → 1,762 functions, 268 → 269 whole files, none lost): `Promise` covariance and at `PromiseLike`, `then`, inherited generic methods across a shadowed binder, a generic class; `catch` and `then` through a promise-returning callback left | `MethodMembers.lean`, `PositiveRules.lean`, `PositiveCertificates.lean`, `ProgramTyping.lean`, `DeclarationGraph.lean`, `CertificateProducer.lean`, `claims.ml`, `fragment-parse.mts`, `type-term.mts` | G | G |
 
 Suggested order: A, B, D in parallel (disjoint files except D's gate
 entries); then C, E, G; then F, H; then I, K; then J, L, P; M, N, O last (the

@@ -14,17 +14,17 @@
   "rejected": 2
  },
  "accepted": 2674,
- "verified": 2371,
+ "verified": 2379,
  "byStatus": {
-  "verified (check)": 2371,
-  "unverified (search)": 151,
-  "unsupported (source)": 113,
+  "verified (check)": 2379,
+  "unverified (search)": 144,
+  "unsupported (source)": 112,
   "unsupported (proposal)": 39
  },
  "bySuite": {
   "expect-error": {
    "accepted": 2458,
-   "verified": 2159
+   "verified": 2167
   },
   "constprop": {
    "accepted": 66,
@@ -51,18 +51,18 @@
    "verified": 8
   }
  },
- "filesAllVerified": 268,
+ "filesAllVerified": 269,
  "filesWithAccepted": 377,
  "functions": {
   "accepted": 2026,
-  "verified": 1755
+  "verified": 1762
  },
  "byGroup": {
   "type forms: literal types, keyof, indexed access, mapped, object, index signatures, intersections, method signatures": {
-   "units": 48,
-   "self": 36,
+   "units": 50,
+   "self": 38,
    "dependency": 11,
-   "files": 24
+   "files": 25
   },
   "TypeScript refuses the code too (the pipeline follows TypeScript's types)": {
    "units": 22,
@@ -71,21 +71,15 @@
    "files": 15
   },
   "search: no derivation found (evidence search failed)": {
-   "units": 21,
-   "self": 18,
+   "units": 20,
+   "self": 17,
    "dependency": 3,
-   "files": 14
+   "files": 13
   },
   "in / instanceof / typeof tests": {
    "units": 19,
    "self": 12,
    "dependency": 0,
-   "files": 8
-  },
-  "classes: modifiers, inheritance, fields, parameter properties, receivers": {
-   "units": 18,
-   "self": 9,
-   "dependency": 9,
    "files": 8
   },
   "reads on unions/primitives (field/index read on non-object, string keys)": {
@@ -99,6 +93,12 @@
    "self": 10,
    "dependency": 5,
    "files": 6
+  },
+  "classes: modifiers, inheritance, fields, parameter properties, receivers": {
+   "units": 15,
+   "self": 8,
+   "dependency": 7,
+   "files": 7
   },
   "implicit index signatures: a record at an index signature (`Closed<T>` read as `T` among them)": {
    "units": 14,
@@ -141,12 +141,6 @@
    "self": 8,
    "dependency": 0,
    "files": 1
-  },
-  "generic methods: instances of a declaration with them related, a binder inferred beside an application of it (Promise)": {
-   "units": 8,
-   "self": 8,
-   "dependency": 0,
-   "files": 2
   },
   "object literal members (methods, accessors, spreads)": {
    "units": 7,
@@ -213,6 +207,12 @@
    "self": 2,
    "dependency": 0,
    "files": 2
+  },
+  "generic methods: two declarations' instances related, a binder inferred beside an application of it or accumulated in one (Promise)": {
+   "units": 2,
+   "self": 2,
+   "dependency": 0,
+   "files": 1
   },
   "invariance: a writable element or field at a wider one (TypeScript relates them covariantly)": {
    "units": 2,
@@ -281,40 +281,40 @@
    "files": 1
   }
  },
- "reachedButRefused": 151,
+ "reachedButRefused": 144,
  "byClass": {
-  "verified": 2371,
+  "verified": 2379,
   "principled": 80,
-  "gap": 189,
-  "unexplained": 24,
+  "gap": 182,
+  "unexplained": 23,
   "skjsUnsound": 10
  },
- "unexplainedWithObligation": 22,
+ "unexplainedWithObligation": 21,
  "byReason": {
   "TypeScript refuses the code": {
    "class": "principled",
    "units": 28,
    "files": 17
   },
-  "search: no derivation found": {
-   "class": "unexplained",
-   "units": 24,
-   "files": 15
-  },
   "intersections without a representable clause": {
    "class": "gap",
-   "units": 24,
-   "files": 12
+   "units": 26,
+   "files": 13
   },
   "computed types over binders, `keyof` with unique symbols, `typeof` of unannotated bindings": {
    "class": "gap",
    "units": 23,
    "files": 12
   },
+  "search: no derivation found": {
+   "class": "unexplained",
+   "units": 23,
+   "files": 15
+  },
   "generics: generic closures, methods, function types, dependent bounds": {
    "class": "gap",
-   "units": 20,
-   "files": 12
+   "units": 17,
+   "files": 11
   },
   "rest parameters (intersection, type parameter, declaration binder)": {
    "class": "gap",
@@ -355,11 +355,6 @@
    "class": "gap",
    "units": 8,
    "files": 4
-  },
-  "generic methods, `Promise<A>` ≤ `Promise<B>`": {
-   "class": "gap",
-   "units": 8,
-   "files": 2
   },
   "a method with a `this` parameter": {
    "class": "gap",
@@ -456,6 +451,11 @@
    "units": 2,
    "files": 1
   },
+  "generic methods: `then` through a callback returning a promise, `catch`": {
+   "class": "gap",
+   "units": 2,
+   "files": 1
+  },
   "invariance of writable storage": {
    "class": "principled",
    "units": 2,
@@ -531,12 +531,12 @@
  "skjsUnsoundVerified": [],
  "byKey": {
   "search: reject: TypeScript refuses this code too": 22,
-  "search: reject: source expression obligation at _: evidence search failed: no derivation of its node-typing claim": 14,
   "search: reject: a record at an index signature: TypeScript admits a type literal whose named fields fit the index (an implicit index signature), but a value of it may c": 14,
+  "search: reject: source expression obligation at _: evidence search failed: no derivation of its node-typing claim": 13,
+  "source: an intersection with a type parameter is known only at an instance: its meet has no representation": 10,
   "search: reject: declaration intersection has no representable clause": 8,
   "search: reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two ": 8,
   "search: reject: a named function where a signature binding more parameters is expected: its slot is its annotated signature, checked by its own unit, and the arity of a": 8,
-  "source: an intersection with a type parameter is known only at an instance: its meet has no representation": 8,
   "source: a method with a `this` parameter is outside the fragment: a method member's contract is relative to its host, the object it is read from, and states no receiver": 8,
   "search: reject: a numeric array key needs a proved array-index singleton; ordinary numeric properties are not modeled": 7,
   "source: `instanceof` whose right operand is not a class declared at the file's top level: nothing in the file says which prototype a constructor from elsewhere gives it": 7,
@@ -550,13 +550,11 @@
   "source: a computed enum member is outside the fragment: its reverse mapping is keyed by its value at run time": 5,
   "search: reject: source refusal at _: a write of '_', a key the object'_'s keys change: a key-adding write is typed only on a local's own fresh object that nothing else ": 5,
   "source: TypeScript reports an error in a declaration of the source Property '_' of type '_' is not assignable to '_' index type '_'.": 5,
-  "search: reject: an instance of a declaration with generic methods at another instance: relating two instances relates their generic methods (`then` and `catch` of `Prom": 5,
   "search: reject: a cell read at its contract: a cell is known by its contract after a step that may write it (a call, whose callee may write any location its operands re": 4,
   "source: extending the standard library'_'s constructor allocates, not an ordinary object a class allocates, and its members are read at the library type's meaning, not ": 4,
   "proposal: a type parameter's intersection in a claim": 4,
   "search: reject: source direct obligation at _: quantified call does not satisfy the closure's bound: cannot establish …": 4,
   "proposal: a spread copies the own enumerable properties of a plain object; a function'_'s are whatever was assigned to it, which its type does not bound": 3,
-  "source: a generic class method is outside the fragment: it would be a host-relative member with quantified signatures, which the model does not have in a declaration of": 3,
   "search: reject: a `typeof x === \"_\"` test on a value of a type parameter or `unknown`: the values of that shape have a type no clause states (`T & number`, a callable o": 3,
   "source: array literal spreads and holes are outside the fragment": 3,
   "source: `in` with a numeric key tests an array element, which the model keeps in the array's store, not as a key": 3,
@@ -565,7 +563,6 @@
   "search: reject: `??` on a value of a type parameter: its values other than null and undefined have the type `T & {}`, which no clause states": 3,
   "proposal: a type parameter types both a value and a rest parameter's argument list: an argument list is not a runtime value": 3,
   "source: the indexed access E over a type parameter is computed only at an instance": 3,
-  "search: reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills ": 3,
   "source: a spread argument to `new` is outside the fragment": 3,
   "source: .call requires a known local function, an explicit receiver and ordinary arguments": 3,
   "source: an iterable whose iterator'_'s `return` if it owns one (IteratorClose), and the iterator's open record type says nothing of what that property holds": 3,
@@ -615,6 +612,8 @@
   "proposal: generic spread requires a mutable array or required tuple": 1,
   "search: reject: a declaration with call or index signatures applied to a type parameter is outside the fragment": 1,
   "search: reject: compound assignment inside a closed expression is outside the fragment": 1,
+  "search: reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills ": 1,
+  "search: reject: a call instantiating a binder its result accumulates in an application (`catch`'s `Promise<T | TResult>`): the family of applications grows with every c": 1,
   "proposal: quantified callable claim encoding": 1,
   "source: keyof is keyof Promise<number>, whose part unique symbol is a unique symbol, which no type of the fragment names": 1,
   "source: an index signature in a class is outside the fragment: a class's instances are the objects its construction allocates, with the keys it names in a declaration o": 1,
@@ -1212,9 +1211,9 @@
 {"source":"tests/expect-error/classes.ts","name":"TwoConstructors","kind":"class","line":9,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/classes.ts","name":"ClassWithParameterProperty","kind":"class","line":16,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/classes.ts","name":"ClassWithPrivateParameterProperty","kind":"class","line":24,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/clauses-diff-subset.ts","name":"Helper","kind":"class","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a generic class method is outside the fragment: it would be a host-relative member with quantified signatures, which the model does not have in a declaration of","group":"classes: modifiers, inheritance, fields, parameter properties, receivers","where":"self","at":"class Helper<T> {","detail":"gate: a generic class method is outside the fragment: it would be a host-relative member with quantified signatures, which the model does not have in /ocaml-producer-unit/source.ts#Helper (line 1, col 1)","class":"gap"},
-{"source":"tests/expect-error/clauses-diff-subset.ts","name":"testExplicit","kind":"function","line":12,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a generic class method is outside the fragment: it would be a host-relative member with quantified signatures, which the model does not have in a declaration of","group":"classes: modifiers, inheritance, fields, parameter properties, receivers","where":"dependency","at":"class Helper<T> {","detail":"gate: a generic class method is outside the fragment: it would be a host-relative member with quantified signatures, which the model does not have in /ocaml-producer-unit/source.ts#Helper (line 1, col 1)","class":"gap"},
-{"source":"tests/expect-error/clauses-diff-subset.ts","name":"testInference","kind":"function","line":18,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a generic class method is outside the fragment: it would be a host-relative member with quantified signatures, which the model does not have in a declaration of","group":"classes: modifiers, inheritance, fields, parameter properties, receivers","where":"dependency","at":"class Helper<T> {","detail":"gate: a generic class method is outside the fragment: it would be a host-relative member with quantified signatures, which the model does not have in /ocaml-producer-unit/source.ts#Helper (line 1, col 1)","class":"gap"},
+{"source":"tests/expect-error/clauses-diff-subset.ts","name":"Helper","kind":"class","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/clauses-diff-subset.ts","name":"testExplicit","kind":"function","line":12,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: an intersection with a type parameter is known only at an instance: its meet has no representation","group":"type forms: literal types, keyof, indexed access, mapped, object, index signatures, intersections, method signatures","where":"self","at":"function testExplicit<T, U>(x: T & U, h: Helper<T>): string {","detail":"gate: an intersection with a type parameter is known only at an instance: its meet has no representation (line 7, col 32)","class":"gap"},
+{"source":"tests/expect-error/clauses-diff-subset.ts","name":"testInference","kind":"function","line":18,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: an intersection with a type parameter is known only at an instance: its meet has no representation","group":"type forms: literal types, keyof, indexed access, mapped, object, index signatures, intersections, method signatures","where":"self","at":"function testInference<T, U>(x: T & U, h: Helper<T>): string {","detail":"gate: an intersection with a type parameter is known only at an instance: its meet has no representation (line 7, col 33)","class":"gap"},
 {"source":"tests/expect-error/closed-type-in-narrowing.ts","name":"testInAbsentKeyAlwaysFalse","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"x","detail":"reject: TypeScript refuses this code too (line 5, col 11: Type '{ a: number; } & Record<\"b\", unknown>' is not assignable to type 'never'.); the pipeline follows TypeScript's types — The available claim for n is { a: number }. This obligation requires never.","class":"principled"},
 {"source":"tests/expect-error/closed-type-in-narrowing.ts","name":"testInPresentKeyAlwaysTrue","kind":"function","line":15,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/closed-type-in-narrowing.ts","name":"testInOptionalKeyNarrows","kind":"function","line":24,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -1235,7 +1234,7 @@
 {"source":"tests/expect-error/closed-type.ts","name":"testReadUnnamedSymbolKey","kind":"function","line":101,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/closed-type.ts","name":"testSatisfiesClosed","kind":"function","line":112,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/closed-type.ts","name":"testSatisfiesClosedExcess","kind":"function","line":119,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/closed-type.ts","name":"testObjectKeysValuesEntriesOnClosed","kind":"function","line":128,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a record at an index signature: TypeScript admits a type literal whose named fields fit the index (an implicit index signature), but a value of it may c","group":"implicit index signatures: a record at an index signature (`Closed<T>` read as `T` among them)","where":"self","at":"Object.entries(x)","detail":"reject: a record at an index signature: TypeScript admits a type literal whose named fields fit the index (an implicit index signature), but a value of it may carry other keys of any type, so it meets no index — No rule derives this invoke at { \"[[proto]]\": never = ({ values: never = (type 32), entries: never = (type 39) }), \"[]\": Store<Array<{ \"[[proto]]\": never = (…), \"[]\": … }>> } from x: { a: never = (number) }, Object.entries: (this: { values: never = (type 32), entries: never = (type 39) }, { readonly [key: string]: unknown }) => { \"[[proto]]\": never = ({ values: never = (type 32), entri","class":"principled"},
+{"source":"tests/expect-error/closed-type.ts","name":"testObjectKeysValuesEntriesOnClosed","kind":"function","line":128,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a record at an index signature: TypeScript admits a type literal whose named fields fit the index (an implicit index signature), but a value of it may c","group":"implicit index signatures: a record at an index signature (`Closed<T>` read as `T` among them)","where":"self","at":"Object.entries(x)","detail":"reject: a record at an index signature: TypeScript admits a type literal whose named fields fit the index (an implicit index signature), but a value of it may carry other keys of any type, so it meets no index — No rule derives this invoke at { \"[[proto]]\": never = ({  }), \"[]\": Store<Array<{ \"[[proto]]\": never = (…), \"[]\": … }>> } from x: { a: never = (number) }, Object.entries: (this: {  }, { readonly [key: string]: unknown }) => { \"[[proto]]\": never = ({  }), \"[]\": Store<Array<…>> }, Object: {  }.","class":"principled"},
 {"source":"tests/expect-error/closed-type.ts","name":"testKeyofClosed","kind":"function","line":139,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/closed-type.ts","name":"testClosedOfPrimitive","kind":"function","line":150,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/closed-type.ts","name":"testClosedOfIndexedObject","kind":"function","line":155,"skjsMarker":"rejected-self"},
@@ -2960,19 +2959,19 @@
 {"source":"tests/expect-error/private-fields.ts","name":"destructureFromOutside","kind":"function","line":188,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/private-fields.ts","name":"symKey","kind":"variable","line":198,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/private-fields.ts","name":"WithPrivateSymbolMethod","kind":"class","line":199,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/promise-object.ts","name":"testThen","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills ","group":"generic methods: instances of a declaration with them related, a binder inferred beside an application of it (Promise)","where":"self","at":"p.then","detail":"reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills one left unconstrained from its default, and the producer does neither; nor does Lean find the instance, as it pairs a union's labels by pos — No rule derives this readAt at (this: { then: never = (type 194), catch: never = (type 212), \"\": never = (string) }, null | undefined | ((number) => string | { then: never = (type 236) }), null | undefined | ((unknown) => string | { then: never = (type 236) })) => { then: never = (type 215), catch: never = (type 233), \"\": never = (string) } from p: { then: never = (type 194), catch: ne","class":"gap"},
-{"source":"tests/expect-error/promise-object.ts","name":"testThenChained","kind":"function","line":10,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills ","group":"generic methods: instances of a declaration with them related, a binder inferred beside an application of it (Promise)","where":"self","at":"p.then","detail":"reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills one left unconstrained from its default, and the producer does neither; nor does Lean find the instance, as it pairs a union's labels by pos — No rule derives this readAt at (this: { then: never = (type 200), catch: never = (type 218), \"\": never = (string) }, null | undefined | ((number) => null | boolean | undefined | number | string | bigint | symbol | { \"[]\": never = (…), \"[[proto]]\": never = (…) } | {  } | { then: never = (type 266) }), null | undefined | ((unknown) => null | boolean | undefined | number | string | bigint","class":"gap"},
-{"source":"tests/expect-error/promise-object.ts","name":"testCatch","kind":"function","line":14,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills ","group":"generic methods: instances of a declaration with them related, a binder inferred beside an application of it (Promise)","where":"self","at":"p.catch","detail":"reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills one left unconstrained from its default, and the producer does neither; nor does Lean find the instance, as it pairs a union's labels by pos — No rule derives this readAt at (this: { then: never = (type 186), catch: never = (type 204), \"\": never = (string) }, null | undefined | ((unknown) => { then: never = (type 207) })) => { then: never = (type 186), catch: never = (type 204), \"\": never = (string) } from p: { then: never = (type 186), catch: never = (type 204), \"\": never = (string) }.","class":"gap"},
+{"source":"tests/expect-error/promise-object.ts","name":"testThen","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/promise-object.ts","name":"testThenChained","kind":"function","line":10,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills ","group":"generic methods: two declarations' instances related, a binder inferred beside an application of it or accumulated in one (Promise)","where":"self","at":"p.then","detail":"reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills one left unconstrained from its default, and the producer does neither: a callback whose result is itself an application (a promise) instant — No rule derives this letE at (this: { \"\": never = (string) }, null | undefined | ((number) => null | boolean | undefined | number | string | bigint | symbol | { \"[]\": never = (…), \"[[proto]]\": never = (…) } | {  } | {  }), null | undefined | ((unknown) => null | boolean | undefined | number | string | bigint | symbol | { \"[]\": never = (…), \"[[proto]]\": never = (…) } | {  } | {  })) => ","class":"gap"},
+{"source":"tests/expect-error/promise-object.ts","name":"testCatch","kind":"function","line":14,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a call instantiating a binder its result accumulates in an application (`catch`'s `Promise<T | TResult>`): the family of applications grows with every c","group":"generic methods: two declarations' instances related, a binder inferred beside an application of it or accumulated in one (Promise)","where":"self","at":"p.catch","detail":"reject: a call instantiating a binder its result accumulates in an application (`catch`'s `Promise<T | TResult>`): the family of applications grows with every call, so the graph truncates it at a colour budget, and an instance of the binder is truncated one level before the type it is claimed at — No rule derives this letE at (this: { \"\": never = (string) }, null | undefined | ((unknown) => {  })) => { \"\": never = (string) } from p: { \"\": never = (string) }.","class":"gap"},
 {"source":"tests/expect-error/promise-object.ts","name":"testFinally","kind":"function","line":18,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/promise-object.ts","name":"testCovariantNever","kind":"function","line":23,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: an instance of a declaration with generic methods at another instance: relating two instances relates their generic methods (`then` and `catch` of `Prom","group":"generic methods: instances of a declaration with them related, a binder inferred beside an application of it (Promise)","where":"self","at":"p","detail":"reject: an instance of a declaration with generic methods at another instance: relating two instances relates their generic methods (`then` and `catch` of `Promise`, say), and the positive checker relates quantified signatures only by identity: that needs a rule instantiating the target's binders ri — The available claim for p is { then: never = (type 182), catch: never = (type 200), \"\": never = (string) }. This return requires { then: never = (type 203), catch: never = (type 221), \"\": never = (string) }.","class":"gap"},
-{"source":"tests/expect-error/promise-object.ts","name":"testCovariantWiden","kind":"function","line":27,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: an instance of a declaration with generic methods at another instance: relating two instances relates their generic methods (`then` and `catch` of `Prom","group":"generic methods: instances of a declaration with them related, a binder inferred beside an application of it (Promise)","where":"self","at":"p","detail":"reject: an instance of a declaration with generic methods at another instance: relating two instances relates their generic methods (`then` and `catch` of `Promise`, say), and the positive checker relates quantified signatures only by identity: that needs a rule instantiating the target's binders ri — The available claim for p is { then: never = (type 182), catch: never = (type 200), \"\": never = (string) }. This return requires { then: never = (type 203), catch: never = (type 221), \"\": never = (string) }.","class":"gap"},
+{"source":"tests/expect-error/promise-object.ts","name":"testCovariantNever","kind":"function","line":23,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/promise-object.ts","name":"testCovariantWiden","kind":"function","line":27,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/promise-object.ts","name":"testCovariantBad","kind":"function","line":31,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/promise-object.ts","name":"testAwait","kind":"function","line":37,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/promise-object.ts","name":"testAwaitUnion","kind":"function","line":41,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its node-typing claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"await p","detail":"reject: source expression obligation at [155,162): evidence search failed: no derivation of its node-typing claim — No rule derives this invoke at number | string from p: { then: never = (type 185), catch: never = (type 203), \"\": never = (string) } | { then: never = (type 206), catch: never = (type 224), \"\": never = (string) }, await: ({ then: never = (type 227), catch: never = (type 245), \"\": never = (string) }) => number | string.","class":"unexplained"},
+{"source":"tests/expect-error/promise-object.ts","name":"testAwaitUnion","kind":"function","line":41,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/promise-object.ts","name":"testAwaitPartialPromise","kind":"function","line":54,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/promise-object.ts","name":"testAwaitPartialPromiseMismatch","kind":"function","line":64,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/promise-object.ts","name":"testAwaitPartialThenableObject","kind":"function","line":77,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/promise-object.ts","name":"testPromiseIsPromiseLike","kind":"function","line":90,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: an instance of a declaration with generic methods at another instance: relating two instances relates their generic methods (`then` and `catch` of `Prom","group":"generic methods: instances of a declaration with them related, a binder inferred beside an application of it (Promise)","where":"self","at":"p","detail":"reject: an instance of a declaration with generic methods at another instance: relating two instances relates their generic methods (`then` and `catch` of `Promise`, say), and the positive checker relates quantified signatures only by identity: that needs a rule instantiating the target's binders ri — The available claim for p is { then: never = (type 182), catch: never = (type 200), \"\": never = (string) }. This return requires { then: never = (type 203) }.","class":"gap"},
+{"source":"tests/expect-error/promise-object.ts","name":"testPromiseIsPromiseLike","kind":"function","line":90,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/promise-object.ts","name":"testAwaitThenable","kind":"function","line":96,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source direct obligation at _: quantified call does not satisfy the closure's bound: cannot establish …","group":"await of non-promises and unions (the await bound)","where":"self","at":"return await t;","detail":"reject: source direct obligation at [78,93): quantified call does not satisfy the closure's bound: cannot establish unknown ≤ null | true | false | undefined | number | string | bigint | symbol — The call's type argument is not shown within its bound: unknown ≤ null | boolean | undefined | number | string | bigint | symbol.","class":"unexplained"},
 {"source":"tests/expect-error/promise-object.ts","name":"testAwaitNumber","kind":"function","line":101,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/promise-object.ts","name":"testAwaitPlainObject","kind":"function","line":106,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: field read on non-object","group":"reads on unions/primitives (field/index read on non-object, string keys)","where":"self","detail":"unsupported: field read on non-object","class":"skjs-unsound"},
@@ -3940,8 +3939,8 @@
 {"source":"tests/expect-error/tparam-name-collision.ts","name":"swapDirectionA","kind":"function","line":70,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/tparam-name-collision.ts","name":"swapDirectionB","kind":"function","line":79,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/tparam-name-collision.ts","name":"Shadow","kind":"class","line":90,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/tparam_shadow.ts","name":"acrossInheritance","kind":"function","line":17,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: an instance of a declaration with generic methods at another instance: relating two instances relates their generic methods (`then` and `catch` of `Prom","group":"generic methods: instances of a declaration with them related, a binder inferred beside an application of it (Promise)","where":"self","at":"t","detail":"reject: an instance of a declaration with generic methods at another instance: relating two instances relates their generic methods (`then` and `catch` of `Promise`, say), and the positive checker relates quantified signatures only by identity: that needs a rule instantiating the target's binders ri — The available claim for t is { a: never = (1), b: never = (\"x\"), u: never = (true), map: never = (type 24) }. This return requires { a: never = (number), b: never = (string), u: never = (boolean), map: never = (type 30) }.","class":"gap"},
-{"source":"tests/expect-error/tparam_shadow.ts","name":"acrossInheritanceRenamed","kind":"function","line":35,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: an instance of a declaration with generic methods at another instance: relating two instances relates their generic methods (`then` and `catch` of `Prom","group":"generic methods: instances of a declaration with them related, a binder inferred beside an application of it (Promise)","where":"self","at":"t","detail":"reject: an instance of a declaration with generic methods at another instance: relating two instances relates their generic methods (`then` and `catch` of `Promise`, say), and the positive checker relates quantified signatures only by identity: that needs a rule instantiating the target's binders ri — The available claim for t is { a: never = (1), b: never = (\"x\"), u: never = (true), map: never = (type 24) }. This return requires { a: never = (number), b: never = (string), u: never = (boolean), map: never = (type 30) }.","class":"gap"},
+{"source":"tests/expect-error/tparam_shadow.ts","name":"acrossInheritance","kind":"function","line":17,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/tparam_shadow.ts","name":"acrossInheritanceRenamed","kind":"function","line":35,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/tparam_shadow.ts","name":"directShadow","kind":"function","line":47,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/try-catch.ts","name":"validTryCatch","kind":"function","line":2,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/try-catch.ts","name":"invalidReturnInFinally","kind":"function","line":10,"skjsMarker":"rejected-self"},
