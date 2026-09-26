@@ -12,6 +12,17 @@ import type { PropertyKey, TypeTerm } from "./declaration-types.mts";
 // its integer, whatever its spelling (`bigintText`).
 const DECIMAL = /^[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?$/;
 
+/** A numeric literal's decimal lexeme: TypeScript's text of it, which
+ * spells a hexadecimal, octal or binary literal and one with separators in
+ * decimal, or, where that text is `Infinity` (a literal past the largest
+ * double, `1e309`), the decimal source text, which rounds to the infinity.
+ * None for a literal of neither form. */
+export function numericLexeme(node: ts.NumericLiteral, source: SourceFile): string | null {
+  if (DECIMAL.test(node.text)) return node.text;
+  const written = source.getFullText().slice(node.getStart(source), node.end).replace(/_/g, "");
+  return node.text === "Infinity" && DECIMAL.test(written) ? written : null;
+}
+
 /** A bigint literal's value as its canonical decimal integer: `0x10n`, `1_0n`
  * and `16n` are all `16`. */
 export function bigintText(literal: string, negative: boolean): string {
@@ -273,8 +284,9 @@ export function typeTerm(scope: TermScope, node: TypeNode | undefined, at: Node 
       literal.operator === ts.SyntaxKind.MinusToken ? literal.operand : null;
     const numeric = negated ?? literal;
     if (ts.isNumericLiteral(numeric)) {
-      if (!DECIMAL.test(numeric.text)) scope.fail(literal, "non-decimal numeric literal type");
-      return { k: "literal", name: "number", text: (negated ? "-" : "") + numeric.text, span };
+      const lexeme = numericLexeme(numeric, scope.source);
+      if (lexeme === null) scope.fail(literal, "non-decimal numeric literal type");
+      return { k: "literal", name: "number", text: (negated ? "-" : "") + lexeme, span };
     }
     if (ts.isBigIntLiteral(numeric))
       return { k: "literal", name: "bigint", text: bigintText(numeric.text, negated !== null), span };

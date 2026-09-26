@@ -262,6 +262,8 @@ export const cases: Case[] = [
   negative("invalid-mixed-arithmetic", "a bigint plus a number is refused as TypeScript refuses it; it would throw a TypeError"),
   positive("bigint-range-errors", "a bigint divisor of `/` or `%` that may be zero and a negative bigint exponent: each throws a RangeError, an outcome, not a wrong value"),
   negative("invalid-unary-plus-bigint", "unary + on a bigint throws a TypeError", /unary \+ on a bigint/),
+  positive("number-literal-infinity", "a numeric literal past the largest double is the infinity it rounds to, as a type and a value; a hexadecimal one its decimal value"),
+  negative("invalid-number-literal-infinity", "`1e309` is the infinity, not a finite literal"),
   negative("invalid-mixed-comparison", "a string compared with a number converts the string"),
   gap("boolean-comparison", "Booleans compared relationally convert to numbers: well defined, but outside the operator rule", "unverified", "search", /evidence search failed/),
   positive("library-globals", "standard library globals through the reviewed overlay: `BigInt` of a bigint, a Boolean, integer and parseable string literals; `Symbol` and `String` called; `console.log`"),

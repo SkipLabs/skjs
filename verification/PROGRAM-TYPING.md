@@ -83,6 +83,12 @@ $$
 \frac{}{\Gamma\vdash_G n:\mathsf{Number}}.
 $$
 
+A literal's $n$ is the double its decimal lexeme rounds to: TypeScript's
+decimal spelling of a hexadecimal, octal or binary literal or of one with
+separators, and the source's decimal text of one past the largest double
+(`1e309`, which TypeScript spells `Infinity`), so a literal type and a value
+of it name the infinity alike (`numericLexeme`).
+
 A bigint literal has the same pair, `bigintLit` and `bigint`:
 
 $$

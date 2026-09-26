@@ -39,7 +39,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { Atom } from "./claim.mts";
 import type { DeclarationIdentity, PropertyKey, TypeTerm } from "./declaration-types.mts";
-import { bigintText, CLASS_ACCESS, METHOD_RECEIVER, classMemberRefusal, computedAlias, computedForm, numericKey, optionalTerm, restPositions, restRefusal, restTerm, signature, substitute, typeTerm,
+import { bigintText, CLASS_ACCESS, numericLexeme, METHOD_RECEIVER, classMemberRefusal, computedAlias, computedForm, numericKey, optionalTerm, restPositions, restRefusal, restTerm, signature, substitute, typeTerm,
   type TermScope } from "./type-term.mts";
 import type {
   Ast,
@@ -382,7 +382,6 @@ export function close(): void {
 
 // Numeric literals in the fragment are plain decimals; every other spelling
 // (hex, binary, octal, separators, bigint) is outside it.
-const DECIMAL = /^[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?$/;
 
 class Gate {
   // Written out rather than a parameter property: node strips types, it does
@@ -1564,12 +1563,13 @@ class Gate {
       node.operator === ts.SyntaxKind.MinusToken &&
       ts.isNumericLiteral(node.operand)
     ) {
-      if (!DECIMAL.test(node.operand.text))
+      const lexeme = numericLexeme(node.operand, this.file);
+      if (lexeme === null)
         this.fail(node, "non-decimal numeric literal");
       return {
         k: "lit",
         pos: this.span(node),
-        lit: { a: "numberlit", v: "-" + node.operand.text },
+        lit: { a: "numberlit", v: "-" + lexeme },
       };
     }
     // `+1` is the number `1`: unary plus returns a number operand unchanged,
@@ -1578,21 +1578,22 @@ class Gate {
       ts.isPrefixUnaryExpression(node) &&
       node.operator === ts.SyntaxKind.PlusToken &&
       ts.isNumericLiteral(node.operand) &&
-      DECIMAL.test(node.operand.text)
+      numericLexeme(node.operand, this.file) !== null
     )
       return {
         k: "lit",
         pos: this.span(node),
-        lit: { a: "numberlit", v: node.operand.text },
+        lit: { a: "numberlit", v: numericLexeme(node.operand, this.file) ?? "" },
       };
 
     if (ts.isNumericLiteral(node)) {
-      if (!DECIMAL.test(node.text))
+      const lexeme = numericLexeme(node, this.file);
+      if (lexeme === null)
         this.fail(node, "non-decimal numeric literal");
       return {
         k: "lit",
         pos: this.span(node),
-        lit: { a: "numberlit", v: node.text },
+        lit: { a: "numberlit", v: lexeme },
       };
     }
 
