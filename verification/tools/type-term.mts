@@ -303,6 +303,13 @@ export function typeTerm(scope: TermScope, node: TypeNode | undefined, at: Node 
   }
   if (computedForm(node) !== null && scope.computed)
     return scope.computed(node, span, part => typeTerm(scope, part));
+  // `x is T` and `asserts x is T` promise a relation between an argument and
+  // the result or the completion, which no function type states: a caller
+  // narrowing by one needs a fact tying the call's result to its argument.
+  if (ts.isTypePredicateNode(node))
+    return scope.fail(node, node.assertsModifier
+      ? "an assertion function (`asserts x is T`) is outside the fragment: its promise, that a normal completion leaves the argument a `T`, relates the completion to the argument, which no function type states"
+      : "a user-defined type guard (`x is T`) is outside the fragment: its promise, that a `true` result leaves the argument a `T`, relates the result to the argument, which no function type states");
   return scope.fail(node, `type outside the fragment (${ts.SyntaxKind[node.kind]})`);
 }
 

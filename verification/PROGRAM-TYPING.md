@@ -3828,7 +3828,10 @@ a throw may leave after any part of the body ran.
 
 Every guard is a tag test ([SEMANTICS](SEMANTICS.md#operational-language)),
 refining a tested immutable binding by the tag slice $T_q$ of its type on
-each edge ([refinement](#refinement-under-an-observed-outcome)):
+each edge ([refinement](#refinement-under-an-observed-outcome)). A
+user-defined type guard (`x is T`) or assertion function (`asserts x is T`)
+is refused where its type is written: its promise ties the call's result, or
+its completion, to its argument, which no function type states:
 
 $$
 \frac{\Gamma(x)=A\quad\Gamma[x:T_{\mathsf{typeofObject}}(A)]\vdash_R S_1\quad\Gamma[x:T_{\lnot\mathsf{typeofObject}}(A)]\vdash_R S_2}

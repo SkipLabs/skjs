@@ -692,9 +692,10 @@ not yet taken are [next steps](#next-steps); a search failure is neither.
 | `key in o` for a key the realm's prototypes hold, an array index, a `string` or numeric key; an operand with a primitive arm or `unknown` | The model would answer otherwise than JavaScript, or JavaScript throws. |
 | Narrowing `number[] \| Foo` by `Array.isArray` to drop `Foo` | An array may carry `Foo`'s keys. |
 | `===` between two operands that may both be objects without a field (functions, records of optional fields, `unknown`); narrowing by object identity | Such values have no identity in the model; a statement entry states no slot equality. |
-| A user-defined type guard with a body (`x is T`); narrowing through a declared one | Its promise relates the result to the argument, which no function type states. |
+| A user-defined type guard (`x is T`) or assertion function (`asserts x is T`), with a body or declared | Its promise relates the result, or the completion, to the argument, which no function type states. |
+| An array assignment pattern writing a field (`[o.f] = e`) | Its target's reference is evaluated before its position is read and defaulted; the lowering writes locals only. |
 | An accessor (`get`/`set`), `__proto__`, a computed key in a literal other than a `unique symbol` constant, a spread of a string, a function or a class value | The heap has data properties only; the key or copy is known only at run time; the model gives a closure a field JavaScript's lacks. |
-| A literal or class member keyed by a well-known symbol other than `Symbol.iterator` (`Symbol.toStringTag`, `Symbol.hasInstance`, `Symbol.toPrimitive`, …) | It changes how the host treats the object, which the model does not state; a tag would let it pass for a host collection, whose iteration is trusted. |
+| A literal or class member keyed by a well-known symbol other than `Symbol.iterator` (`Symbol.toStringTag`, `Symbol.toPrimitive`, …), but a class's static `[Symbol.hasInstance]` method, which `instanceof` calls | It changes how the host treats the object, which the model does not state; a tag would let it pass for a host collection, whose iteration is trusted. |
 | An element read past a tuple arm's length (`const [a, b] = t` with `t: [number] \| [number, string]`); a slice rest in a closure's directly checked body | The read is `undefined`, which no element rule gives; the slice's call is graph code. |
 | A rest parameter of a definition typed by a type parameter; one typed by an intersection, by a tuple with optional or rest elements, or by what is no array | A definition has no allocation rule for an array only an instance fixes (a function type's is a pack); the fresh array's meet has no representation; several lengths are several signatures; the collected array is no value of it. |
 | A written `let` pattern in a `for` head; a test of a written `let` holding a union of objects | Its bindings are cells, which only a statement of a block lowers them to; a cell's known contents are primitive or merely no `undefined`. |
@@ -861,14 +862,24 @@ point's number and the live locals, whose `next` resumes at a `switch` on
 it. An element read past a tuple arm's length needs a rule reading
 `undefined` beyond an exact length.
 
-**Remaining source forms.** A `break`/`continue` through a `finally`; written
-`let` patterns and assignment patterns into fields; async class methods; `#private`
-members and static blocks; a method call on a union of primitives, which
-needs one callee contract its receiver meets; a source binder used both as a
-pack and as an array value; explicit type arguments on an element call; user
-guards and assertion functions as contracts checked against the body; a class
-with a static `[Symbol.hasInstance]`, as a call once computed static methods
-are read.
+**Remaining source forms.** Assignment patterns into fields: each
+element's target reference (receiver, computed key) evaluated into slots
+before the position is read and defaulted, then a field write, where
+`arrayAssigns` writes locals only. A method call on a union of primitives,
+which needs one callee contract its receiver meets. A source binder used both
+as a pack and as an array value. Explicit type arguments on an element call,
+which reach an element only as a generic closure's quantified claim. An
+instance method reading its class's statics, which are bound after the
+methods, and a compound assignment of an instance field (`this.n++`).
+User guards and assertion functions: the promise is a contract a
+conjunction of arrows states, `(x: A) => boolean` with
+`(x: Exclude<A, T>) => false` (an assertion function's `=> never`), which the
+body is checked at, as a closure at each of its signatures; a caller narrows
+through a fact the call leaves tying its result slot to its argument slot,
+"an argument in `Exclude<A, T>` gave `false`", which the branch on the
+result turns into a slice of the argument. Such a fact is about a type's
+meaning, world- and level-indexed, where current-content facts are not; it
+needs its own place in the knowledge a statement entry states.
 
 **Precision.** Retaining heap facts across calls needs a proved
 reachability or noninterference statement; set-valued clause covering (an
