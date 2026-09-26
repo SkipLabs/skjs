@@ -188,6 +188,9 @@ acceptance through one exhaustive conversion to `CertifiedPlan`; no variant
 can be dropped. The proofs use no `sorry` and no project axioms. What the
 definitions mean is reviewed, not proved; see
 [what the checked development establishes](SEMANTICS.md#what-the-checked-development-establishes).
+How the theorem relates to a JavaScript run, and what a connection to a
+mechanized ECMA-262 semantics would add, is sketched in
+[ECMA-CONNECTION](ECMA-CONNECTION.md).
 
 ### Modules and code units
 
@@ -706,6 +709,11 @@ One line each; the reason is the one the design keeps.
 Open design work, each a known gap with the reason it is open. Coverage
 numbers and the tasks sized for agents are in
 [SKJS-COVERAGE](ocaml-producer/SKJS-COVERAGE.md#proposed-tasks).
+
+**A connection to ECMA-262.** Proving the calculus faithful to the
+specification and the host's stated types as lemmas would turn most of the
+trust surface into theorems; the expected results and their cost are in
+[ECMA-CONNECTION](ECMA-CONNECTION.md).
 
 **Closures still on term code.** Each should become graph code, so that
 `Expr.termBody` and the term closure rules go away:
