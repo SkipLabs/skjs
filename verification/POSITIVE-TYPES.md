@@ -176,7 +176,7 @@ $$
   a read of one of those continues at the prototype, which it holds as a
   readonly view under the reserved key. An array may own further keys, as
   Skip's runtime marks the arrays it manages with a hidden symbol key
-  ([DESIGN.md](DESIGN.md#the-array-prototype)). Keys are fixed at allocation,
+  ([DESIGN.md](DESIGN.md#arrays)). Keys are fixed at allocation,
   so a bound holds in every world.
 
 A `dict` clause adds readonly **index contracts** $\overline{\theta{:}D}$,
@@ -278,7 +278,7 @@ No class is callable and no function is constructible, so `ctors` meets
 neither `arrs` nor `callable`. With no signature, `ctors [] []` is any class.
 TypeScript's `Function` is the union of the two empty forms, a value with
 closed invocation code or a class
-([DESIGN, "Library types"](DESIGN.md#library-types)):
+([library types](PROGRAM-TYPING.md#library-types)):
 
 $$
 \llbracket\mathtt{Function}\rrbracket_k(W,v)\iff
@@ -293,7 +293,7 @@ constraining no key, $\mathsf{Ref}(\varepsilon;\varepsilon;\varepsilon;\varepsil
 whose meaning is $v=\ell$ for some $\mathit{flds}$ (arrays and instances
 included, their store and prototype being own keys it does not constrain);
 and `{}` adds every primitive but `null` and `undefined`
-([DESIGN, "Library types"](DESIGN.md#library-types)):
+([library types](PROGRAM-TYPING.md#library-types)):
 
 $$
 \llbracket\mathtt{object}\rrbracket_k(W,v)\iff
@@ -353,7 +353,7 @@ A label is one of four kinds of **row**:
   value parameter row $p$ that are also in the clauses $\vec c$: the
   intersection of a type parameter with ground types, `V & DepSafe`.
   [Instances](#instances-of-a-scheme-row) give it its meaning at each
-  instance, and [DESIGN.md](DESIGN.md#binders-met-with-ground-types) says how
+  instance, and [PROGRAM-TYPING.md](PROGRAM-TYPING.md#binders-met-with-ground-types) says how
   it is lowered.
 
 With $\eta$ an assignment and
@@ -676,8 +676,7 @@ proved outside the table. For an array, $F$ is a generic member of
 as receiver: `Array.prototype[Symbol.iterator]` at `number` covers
 `Iterable<number>`'s member. Or it is an arrow type, as for the second rule:
 a class instance's methods are its prototype chain's closures, whose
-receiver is the class's instance type ([DESIGN.md](DESIGN.md#modules-and-code-units),
-"Classes"). Each premise that names $\kappa$ passes it on unchanged:
+receiver is the class's instance type ([classes](PROGRAM-TYPING.md#classes)). Each premise that names $\kappa$ passes it on unchanged:
 
 $$
 \frac{(F,L,M)\in\kappa\quad
@@ -1036,7 +1035,7 @@ premises other than $T\equiv_G\mathsf{arrs}(L;M)$ are $G\vdash\{i\}\le_{\mathsf{
 
 The same tables relate two rows of one type that differ only in which binder
 rows their schemes use. Lowering gives one row per generic application
-([DESIGN.md](DESIGN.md#one-row-per-application)), so this is for graphs that
+([PROGRAM-TYPING.md](PROGRAM-TYPING.md#one-row-per-application)), so this is for graphs that
 hold copies anyway. With the empty context each row means its image:
 
 $$

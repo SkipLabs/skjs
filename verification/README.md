@@ -11,7 +11,7 @@ source integration, and tests. Declarations share the `Verification.Model`
 namespace; module paths identify their topic. These folders aid navigation,
 not an enforced dependency order: some derived semantic lemmas depend on
 program rules.
-[DESIGN.md](DESIGN.md) describes the architecture and trust boundary.
+[DESIGN.md](DESIGN.md) describes the architecture and trust surface.
 
 The base language everything else is defined over is small, and stated in two
 places. [Terms and values](SEMANTICS.md#operational-language) are the programs
@@ -25,7 +25,7 @@ cell fields, and callbacks with ordered required parameters. The
 [undefined examples](tests/stateful-source/undefined.ts) exercise contracts, alias
 writes, strict comparisons and nullish coalescing. This does not imply support
 for `void`, optional properties or implicit returns; see the
-[current fragment](DESIGN.md#source-integration).
+[current fragment](#current-source-fragment) and the [fragment boundary](DESIGN.md#fragment-boundary).
 
 ## Run
 
@@ -87,12 +87,12 @@ SKJS itself; it is not required for changes confined to the verifier or reports.
 The source adapter supports **functions with primitive or bounded callable
 parameters, initialized `const` bindings, nested branches (`else if`, unbraced arms), `while`,
 `for`, `for...of` and `for...in` loops with `break`/`continue`, `switch`, nested
-blocks and returns** ([statement forms](DESIGN.md#statement-forms)), **`throw`
+blocks and returns** ([statement forms](PROGRAM-TYPING.md#statement-forms)), **`throw`
 and `try`/`catch`/`finally`** ([throws](DESIGN.md#throws): a throw is an
 outcome, as a value is), where a `const` or `let` statement may declare several bindings,
 bound left to right under the statement's one entry, and a `const`, an array
 assignment or a parameter may bind a pattern (object and array patterns,
-nested, with defaults, holes and a tuple's rest; [patterns](DESIGN.md#patterns)),
+nested, with defaults, holes and a tuple's rest; [patterns](PROGRAM-TYPING.md#patterns)),
 over local cells and bounded expression closures and calls. Cell
 fields, arrow arguments and arrow results admit primitive and recursively
 callable contracts; nested record operands remain excluded. Annotations may union the supported primitive, cell and
@@ -150,12 +150,12 @@ with known comparison outcomes. Arithmetic (`+ - * / **`) combines two
 numbers or two bigints, relational comparison (`< <= > >=`) two numeric values
 of either kind or two strings, and `-`, `+` and `~` are the binary operators
 with a constant; a bigint is its integer, with literal singletons below
-`bigint` ([Numeric operators and bigints](DESIGN.md#numeric-operators-and-bigints)).
+`bigint` ([values](DESIGN.md#values)).
 Strings are otherwise admitted on the same terms as numbers: values with literal
 singletons below the `string` family, compared for equality with a literal,
 never indexed; `+` concatenates a string with any primitive but a symbol,
 converted by `ToString` exactly, and a template literal is that concatenation
-([String concatenation, templates and `void`](DESIGN.md#string-concatenation-templates-and-void)). A numeric
+([values](DESIGN.md#values)). A numeric
 literal is its own singleton and is below `number`; its identity is the double
 it denotes, so `1`, `1.0` and `1e0` are one literal. A number may be a
 parameter or result of a closure, and the storage contract of a mutable local,
@@ -185,9 +185,9 @@ The fragment is smaller than the calculus,
 and the parser can represent syntax the Lean adapter then rejects: such a
 rejection is a limitation, never evidence that a producer claim is false.
 
-[Design](DESIGN.md#source-integration) owns what
-is accepted and why, together with the gates and the loop, closure and
-continuation constructions; [the protocol](REQUEST-PROTOCOL.md#source-mode) owns
+[Design](DESIGN.md#fragment-boundary) owns what
+is refused and why, and [PROGRAM-TYPING](PROGRAM-TYPING.md#reading-the-source)
+how the source is read; [the protocol](REQUEST-PROTOCOL.md#source-mode) owns
 the source-mode commands, the type and claim encodings, and their exact
 restrictions. Worked examples of each construct live in
 [the corpus](tests/README.md), including the [Callables coverage map](tests/callables/README.md)
@@ -232,7 +232,7 @@ owner; other documents link to them and give only the context their readers need
 | --- | --- |
 | This README | Commands, a concise supported-fragment overview, and navigation. |
 | [REPAIR-COVERAGE](REPAIR-COVERAGE.md) | Repair measurement, continuation checkpoint, inspected blockers and safe extension workflow. |
-| [DESIGN](DESIGN.md) | Architecture, trust boundary, decisions, corpus-led priorities and integration status. |
+| [DESIGN](DESIGN.md) | Principles, architecture, the model in brief, the trust surface, the fragment boundary, lasting decisions and next steps. |
 | [SEMANTICS](SEMANTICS.md) | The term and value grammar, execution, worlds, heap satisfaction, membership and safety predicates. |
 | [POSITIVE-TYPES](POSITIVE-TYPES.md) | Type and state-assertion grammars, normalization, declarative subtyping and subtype certificates. |
 | [PROGRAM-TYPING](PROGRAM-TYPING.md) | The graph program syntax, program/graph rules and their mathematics, side conditions, soundness, derived forms and evidence construction. Semantic rules awaiting integration are marked separately. |

@@ -555,7 +555,7 @@ takes the named `Collections` in `createGraph` and in its resources'
 through bivariant method parameters. What would make the call safe is the
 runtime's link from a service's `inputs` to the collections `createGraph`
 receives, which no trusted contract states yet
-([The service boundary](../DESIGN.md#modules-and-code-units)).
+([trust surface](../DESIGN.md#trust-surface)).
 
 **Under a sound service binding, sum.ts verifies.**
 [`upstream-sound`](upstream-sound/tsconfig.json) is the pinned snapshot with
@@ -576,7 +576,7 @@ makes `runService` generic over the concrete service,
 and the runtime's `createGraph` in
 [`index.ts`](upstream-sound/skipruntime-ts/core/src/index.ts) builds `get` from
 the service's own definitions, throwing for any other (a trust note:
-[What remains assumed](../DESIGN.md#what-remains-assumed)). Under `tsc` the
+[trust surface](../DESIGN.md#trust-surface)). Under `tsc` the
 patched tree reports the same errors as the snapshot and no new one.
 [`sum-sound-binding.ts`](examples/sum-sound-binding.ts) is
 `reactive-sum-sound.ts` as a client of it, changed only where the binding
@@ -938,7 +938,7 @@ initialization, receiver, result and forged evidence.
 | Classes, constructors, `new`, field initialization | Additional semantics and certified lowering; construction is not ordinary invocation. |
 | `Mapper<K1, V1, K2, V2>` and bounds such as `K extends Json` | Ground multiple-parameter applications, source bound checking, and disjoint object inheritance work; `Context` first needs a generic method with constructor and variadic tuple contracts. |
 | `new (...params: Params) => Mapper<…>` | Constructor contracts and generic tuple packs; ordinary quantified array-rest support is insufficient. |
-| Recursive `Json`, dictionaries and optional fields | The [cross-file `Json` milestone](#cross-file-recursive-json-milestone) covers the canonical recursive type and indexed reads; a key a guard found present is a field from then on ([DESIGN.md](../DESIGN.md#strict-equality-and-tag-narrowing)), still distinct from present-undefined. |
+| Recursive `Json`, dictionaries and optional fields | The [cross-file `Json` milestone](#cross-file-recursive-json-milestone) covers the canonical recursive type and indexed reads; a key a guard found present is a field from then on ([guards](../PROGRAM-TYPING.md#guards)), still distinct from present-undefined. |
 | `Iterable`, iteration and array/library methods | Explicit contracts and execution semantics, including callback effects and iterator behavior. |
 | Promises, exceptions and native/Wasm bindings | Further model extensions and explicit external assumptions for the implementation. |
 
@@ -1027,8 +1027,7 @@ first milestone, in order of how much each gates:
    - types over rigid binders, such as `T & DepSafe`: done for a generic
      method's value binder, a meet row whose instance is the meet of the
      binder's instance with the ground operands
-     ([DESIGN.md](../DESIGN.md#modules-and-code-units), "Binders met with
-     ground types"), which the producer proposes as `Meet` operands and
+     ([binders met with ground types](../PROGRAM-TYPING.md#binders-met-with-ground-types)), which the producer proposes as `Meet` operands and
      Lean fills (`"meets"`); a generic function's own binder still lowers
      through the rigid claim reader, which refuses it.
 5. **Library contracts**, read from TypeScript's own standard library
@@ -1045,7 +1044,7 @@ first milestone, in order of how much each gates:
    `Iterable`), and `Array.prototype.reduce` and `sort` with their callback
    effects and mutation.
 6. **Optional field presence** (done for mutable and readonly optional
-   fields: see DESIGN.md's object milestone; `optional-field.ts` and
+   fields: see [objects and prototypes](../DESIGN.md#objects-and-prototypes); `optional-field.ts` and
    `optional-view.ts` verify; a fresh literal leaving out an optional field,
    by its exact keys, `optional-literal.ts`); `in` tests (DESIGN.md's
    [Guards](../DESIGN.md#guards), `in-test.ts`). Remaining: presence
@@ -1210,7 +1209,7 @@ decoder barrier to object-valued pack calls.
 
 **Argument packs.** A rest parameter's type is a contract on argument lists,
 checked at the level of the actuals, not a runtime value
-([same-level argument contracts](../DESIGN.md#same-level-argument-contracts)).
+([argument packs](../POSITIVE-TYPES.md#argument-packs)).
 A pack parameter is instantiated at a pack type by one checked substitution,
 which may also carry value types, and its bound is checked on argument lists.
 A fixed constructor covers a rest that is one exact tuple of any positions, so
@@ -1355,8 +1354,7 @@ verifies, local and imported alike, with a wrong read refused.
 
 *Left.*
 - `sum-serializable-map` now verifies: the exact meet of a type parameter
-  with a ground type (a meet row, [DESIGN.md](../DESIGN.md#modules-and-code-units),
-  "Binders met with ground types") replaced the stopgap bound, so
+  with a ground type (a meet row, [binders met with ground types](../PROGRAM-TYPING.md#binders-met-with-ground-types)) replaced the stopgap bound, so
   `V2 = Serializable<Todo>` is within `Json`, and `V2 & DepSafe` is that
   dictionary meeting `Managed`, which is not empty.
 - `sum-serializable-freeze`: `deepFreeze`'s declaration is read (it is a

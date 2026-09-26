@@ -769,7 +769,7 @@ bounded recursion, and the tsc producer applies a depth limit when translating
 nested operands. No unsupported union alternative is discarded.
 
 `Fragment.callableType` lowers every supported operand to graph labels.
-See [callable integration](DESIGN.md#callable-integration) for the proof boundary.
+See [calls](DESIGN.md#calls) and the [trust surface](DESIGN.md#trust-surface) for the proof boundary.
 
 Source lambda ASTs carry `"params": [{"name": "x", "type": T}, ...]`, where a
 parameter may add `"default": expression`: its position also admits `undefined`,
@@ -890,8 +890,7 @@ terms, which shadow the declaration's. A rest typed by one of them,
 `...params: P`, is the rest term `{"k":"pack","of":binder}`: a **pack
 parameter**, whose actuals past the fixed ones are, as one argument list, at
 `P`; every other rest term is its element. Lean lowers it to a scheme row whose
-binders are coloured parameter rows (see [DESIGN.md](DESIGN.md#modules-and-code-units),
-generic methods) and whose bounds are the binders' bounds, lowered where the
+binders are coloured parameter rows (see [generic methods](PROGRAM-TYPING.md#generic-methods)) and whose bounds are the binders' bounds, lowered where the
 method is declared, a pack parameter's array or tuple bound as the argument
 lists it admits; a bound naming the method's own binders (an F-bound), a pack
 parameter used as a value's type, or unfolding past the budget keeps the
@@ -905,7 +904,7 @@ callee's claim. Explicit type arguments, `o.m<A>(…)`, are the invoke node's
 `"typeArgs":[terms]`, written only where the source has them; they instantiate
 the member's leading binders, and Lean requires the callee's claimed instance
 to give each of them a type of the same meaning (see
-[DESIGN.md](DESIGN.md#modules-and-code-units), explicit type arguments). A
+[explicit type arguments](PROGRAM-TYPING.md#explicit-type-arguments)). A
 plain call's `apply` node and a `new` node carry them the same way; there they
 are compared with the call's `instantiate` list, binder by binder in the
 callee's declaration order.
@@ -926,7 +925,7 @@ operand can refine a binding. `typeof e === "object"` (which includes null)
 and general string expressions remain outside the source fragment.
 `Array.isArray(e)`, where TypeScript binds `Array` to the standard library's
 global and the reviewed overlay lists `isArray` as a test
-([DESIGN.md](DESIGN.md#library-globals)), has shape
+([library globals](PROGRAM-TYPING.md#library-globals)), has shape
 `{"k":"arrayTest","pos":[start,end],"e":operand}` and lowers through the test
 `isArray`, as a `typeof` test through its shape's.
 
@@ -942,7 +941,7 @@ also has to satisfy the declared result. A narrower body claim with a wider
 result annotation is supported when both judgments are derivable. A block body is
 `{"k":"blockBody","pos":[start,end],"body":[statement, ...]}`, the statements
 of a function body, lowered and claimed as a function body's are
-([statement forms](DESIGN.md#statement-forms)): it is the closure's graph
+([statement forms](PROGRAM-TYPING.md#statement-forms)): it is the closure's graph
 code, one request of the file's `codes` per signature. The parser ends a body
 that can complete with `return undefined` at its closing brace, and a
 parameter written as a pattern or with a default binds a hidden name that a
@@ -1008,7 +1007,7 @@ Standalone field-test claims with unequal read/write meanings remain outside
 the invariant-cell slice; exact union absorption does not admit them on their own.
 
 Proof recipes are internal producer data, not wire fields. Their construction
-and reuse are described in [source integration](DESIGN.md#source-integration).
+and reuse are described in [search](DESIGN.md#search).
 
 Source assertion requirements are reconstructed from the source/claim inputs,
 not read from the certificate. Every statement entry requires certificate input
@@ -1027,8 +1026,8 @@ proof or substituting a valid proof of a different judgment is rejected.
 The whole lambda is also checked by the ordinary program certificate.
 Callable parameters are admitted at their source annotations; named top-level
 calls and external cell parameters remain outside the fragment. Evaluation order,
-capture lowering and assignment temporaries are described in
-[source integration](DESIGN.md#source-integration).
+capture lowering and assignment temporaries are part of the trusted
+extraction ([trust surface](DESIGN.md#trust-surface)).
 
 ### Singleton comparisons
 

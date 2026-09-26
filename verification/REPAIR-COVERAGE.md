@@ -274,7 +274,7 @@ Then check the following failure modes from earlier work:
 - **Lean soundness does not prove correct JavaScript lowering.** A translated
   graph can be well typed while evaluating the wrong branch, duplicating an
   effect, or returning the wrong value. Source extraction remains trusted;
-  see [the trust boundary](DESIGN.md#trust-boundary). Use a distinguishing
+  see [the trust surface](DESIGN.md#trust-surface). Use a distinguishing
   source example and, where there is a credible risk, a graph-shape or execution
   observation check. Moving lowering into Lean does not prove preservation.
 - **Separate identities from their contents.** `Tm.letE` is immutable;

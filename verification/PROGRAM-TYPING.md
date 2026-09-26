@@ -9,7 +9,7 @@ The ordinary and graph rules below are used by the current verifier, as are the
 observations reach checked obligations, specified under
 [source observation checkpoints](#source-observation-checkpoints). This document owns
 rule statements, side conditions, soundness scope and evidence construction;
-[Design](DESIGN.md) owns the integration roadmap.
+[Design](DESIGN.md) owns the decisions, the trust surface and the next steps.
 
 ## Notation
 
@@ -29,7 +29,7 @@ rule statements, side conditions, soundness scope and evidence construction;
 | $G$                      | the normalized positive graph                                                                         |
 | $\Gamma$                 | a typing context, one type per variable                                                               |
 | $\Pi$, $\Sigma$          | the [equality and heap parts](#checked-expression-postconditions) of the assertion state              |
-| $\rho$, $h$, $W$, $n$    | an environment, heap, world and budget, from [the model](SEMANTICS.md#types-worlds-and-heaps)         |
+| $\rho$, $h$, $W$, $n$    | an environment, heap, world and budget, from [the model](SEMANTICS.md#computations-and-recursive-types)         |
 | $\Delta$                 | a target claim environment, and in [POSITIVE-TYPES](POSITIVE-TYPES.md) a table of subtype obligations |
 
 $r$ never names an operand, and a premise can never mention it: it is bound by
@@ -423,7 +423,7 @@ positions $\vec U$ whose contracts admit `undefined`: the construct step binds
 (`bindParameters_pad`), and the source term keeps the actuals it writes. A
 `new` with explicit type arguments, `new C<T>()`, names the instance of a
 generic class it constructs: the producer proposes that instantiation, and it
-is checked as an inferred one is ([DESIGN.md](DESIGN.md#modules-and-code-units)). No arrow meets a construct signature and no
+is checked as an inferred one is ([explicit type arguments](#explicit-type-arguments)). No arrow meets a construct signature and no
 class a call signature, so `new` on an arrow and a plain call of a class are
 refused, as JavaScript throws. A construct signature is covered by one taking
 as many parameters, each at least as wide, with a result at most as wide:
@@ -1439,7 +1439,7 @@ arbitrary mixed-shape type labels.
 
 #### Statement forms as graphs
 
-The statement forms of [DESIGN.md](DESIGN.md#statement-forms) add no node
+The [statement forms](#statement-forms) add no node
 kind, continuation or rule; each is a shape of ordinary nodes and edges.
 
 - A loop with an update: the body's end and each `continue` edge go to the
@@ -1456,7 +1456,7 @@ kind, continuation or rule; each is a shape of ordinary nodes and edges.
   the handler's entry as its handler, the thrown value landing in the catch
   binding's slot and the `try`'s scope kept; the handler's nodes name the
   `finally` block's throw-path entry, or the enclosing handler. The `finally`
-  block is compiled once per way out ([DESIGN.md](DESIGN.md#throws)): after a
+  block is compiled once per way out ([statement forms](#statement-forms)): after a
   normal completion, before each `return` in the body or handler with the
   value held in a slot of its own, and after a throw with the thrown value
   held, ending in a node that throws it again. Where neither the body nor the
@@ -2174,7 +2174,7 @@ No truthiness rule is involved; false remains a result of the left operand.
 A derived class's constructor (`class D extends B`, its body
 `s̄₁; super(ā); s̄₂`, `s̄₁` reading no `this`) is its base's construction,
 bound to a name no source spells, then the class constructor's lowering
-([DESIGN](DESIGN.md#modules-and-code-units), "Class members") whose
+([classes](#classes)) whose
 allocation is the allocation from parts copying it:
 
 $$
@@ -2220,7 +2220,7 @@ $$
 
 Any operand is admitted: $\mathsf{hasKey}$ answers `false` on a primitive,
 as `instanceof` does (it throws only on its right operand). A tested
-immutable variable is refined as by every tag test ([Guards](DESIGN.md#guards)).
+immutable variable is refined as by every tag test ([guards](#guards)).
 
 An optional chain is the same derived form with the arms exchanged. The
 parser writes `r?.x` and every link after it in the chain (`.b`, `[k]`,
@@ -2259,7 +2259,7 @@ $$
 in the order undefined, object, boolean, number, string, bigint, symbol. It
 splits $x$ by `unionVar` as `??` does (`selectPlan`), so a label whose shape
 is settled reaches one answer; its claim is `string`. A comparison of `typeof e`
-with a shape's literal stays the one tag test ([shape predicates](DESIGN.md#shape-predicates)).
+with a shape's literal stays the one tag test ([guards](#guards)).
 
 `key in o` evaluates the key, then the object, then asks whether the object
 has the key. A string literal key is the tag test $\mathsf{hasKey}(\kappa)$ of
@@ -2279,7 +2279,7 @@ $$
 $$
 
 where $\mathcal R$ is the keys the model does not answer as JavaScript does
-(`inKeyRefusal`, [DESIGN](DESIGN.md#guards)). The operand's clauses are
+(`inKeyRefusal`, [guards](#guards)). The operand's clauses are
 objects because `in` throws on a primitive, where the test would answer
 `false`, and not a class value, whose static members are bound apart.
 
@@ -2424,7 +2424,7 @@ $$
      {a[k]\ \leadsto\ \mathsf{let}\ x=a\ \mathsf{in}\ \mathsf{let}\ \_=k\ \mathsf{in}\ x.\mathsf{str}(\mathsf{ToString}(n))}
 $$
 
-([DESIGN, "Numeric property names"](DESIGN.md#numeric-property-names)).
+([index signatures](#index-signatures)).
 
 A statement `if` whose arm is one `return` of the read its singleton test
 tests returns that read's saved value, in a function body and in a closure's
@@ -2470,7 +2470,7 @@ its type or $\mathsf{Undef}$), a hole being a position no element names. The
 array's own iterator, which JavaScript steps, reads the current length and the
 next index at each step, so reading position $i$ where its element is bound,
 after any default before it ran, is that step: the trust `%Iterate%` states
-([DESIGN.md](DESIGN.md#patterns)). A pattern over a value that is not an array
+([trust surface](DESIGN.md#trust-surface)). A pattern over a value that is not an array
 is refused.
 
 A default replaces a read that is `undefined`, and only then runs. With
@@ -2504,10 +2504,9 @@ $$
 
 The rest of an array whose contract does not fix its length is a slice whose
 length only the run knows: no list of reads, and the calculus has no slice
-term, so it is refused. An object rest is refused too: it copies every
-remaining own enumerable key of its source, which a record contract does not
-bound, and an object's keys are fixed where it is allocated, so a copy of the
-named fields would be another object than JavaScript's.
+term, so it is refused. An object rest `{ a, ...r }` is the
+[allocation from parts](#allocation-from-parts) copying the source's own
+enumerable keys less the ones the pattern names, onto a fresh object.
 
 A statement `const p = e` holds $e$ in an anonymous slot for its one entry,
 binds $p$ over it, and drops the slot before the next entry, which states
@@ -2529,7 +2528,7 @@ caller may omit it. A closure parameter's default stays the closure's own
 ### Mutable bindings and module constants
 
 A `let` binding and an assigned parameter lower to a private cell
-([DESIGN.md](DESIGN.md#next-fragment-extension-mutable-locals-aimed-at-a-known-loop-failure)). Its
+([DESIGN.md](DESIGN.md#mutable-bindings)). Its
 contract $C$ is fixed where it is declared; the initializer and every write
 are checked against it (`storage-contract`), and a point claim for the name
 describes the cell's current contents, which the
@@ -2729,6 +2728,783 @@ closure exposure are refused. This source-correspondence argument remains in
 the trusted adapter; it is not claimed as a Lean proof about JavaScript.
 The same schedule drives graph lowering and universal certificate construction.
 No heap location changes its fixed world type.
+
+## Reading the source
+
+How the trusted front end reads a module, its declarations and the standard
+library into the forms above, and the source rules that reading derives. The
+decisions and trust behind each are in [DESIGN.md](DESIGN.md); this section
+states the rules. Throughout, $\llbracket T\rrbracket$ is the graph type a
+declared or written term lowers to, and $T[\vec p:=\vec U]$ the term with its
+binders fixed to ground types.
+
+### Modules and code units
+
+A module is the unit of verification. Its function declarations are hoisted;
+its other top-level code (constants, classes, enums, expression statements)
+is the initialization unit $I$, run once, in order. With $F$ the module's
+functions and $\Gamma_M$ the module's scope:
+
+$$
+\frac{\forall f\in F.\;\Gamma_M\vdash f\quad
+      (I\neq[\,]\Rightarrow\Gamma_M\vdash I:\mathsf{undefined})\quad
+      F\neq\emptyset\lor I\neq[\,]}
+     {\vdash M}\ \textsc{module}
+$$
+
+where $\Gamma_M\vdash I:\mathsf{undefined}$ checks the initialization unit as
+a body with no parameters that completes with `undefined`. A module with
+neither runs nothing and states no claim; it is refused, so an acceptance
+always checked some code. A class's methods are closures its initialization
+allocates, so they are checked in that unit. A module function's slot is its
+annotated signature; a module constant is read at its annotation or at the
+initialization unit's claim for its initializer
+([module constants](#mutable-bindings-and-module-constants)). The
+initialization unit refuses a call, direct or through module functions, that
+can read a constant not yet initialized (`checkInitializationOrder`).
+
+**Claims against annotations.** A claimed type $C$ is within the
+annotation's $A$ (`within`) when
+
+$$
+\frac{\operatorname{canon}_G(C)\subseteq\operatorname{canon}_G(A)}{C\sqsubseteq_G A}
+\qquad
+\frac{\operatorname{check}(G,C,A,p)=\mathsf{true}}{C\sqsubseteq_G A},
+$$
+
+and $C\sqsubseteq_G A$ implies $\llbracket C\rrbracket_G\subseteq\llbracket A\rrbracket_G$
+(by `check_sound`; the first rule compares rows with identical clauses). A
+top-level function's claimed parameter and result types are the
+annotation's (`sameMeaning`):
+
+$$
+\frac{C\sqsubseteq_G A\quad A\sqsubseteq_G C}{A\simeq_G C},
+$$
+
+so the claim may replace the annotation. A closure's claimed signatures, a
+method's among them, and a class's claimed construct signatures need only be
+within the source's, parameter by parameter
+([source closures](#source-closures-and-their-annotations)). The body is
+checked at each claimed signature, so this comparison is not what makes a
+claim sound; it keeps a producer from advertising a signature the source does
+not state.
+
+### Imported, ambient and global values
+
+A value the module does not define joins its scope at the type its
+declaration states. These rules are assumptions a result is relative to:
+
+$$
+\frac{x\ \text{imported, declared at}\ T\ \text{with no binders}}
+     {\Gamma(x)=\llbracket T\rrbracket}\ \textsc{import}
+\qquad
+\frac{\begin{array}{c}
+x\ \text{declared at}\ \forall\vec p\le\vec B.\,T\quad
+\text{(certified by its own unit, or imported)}\\
+\forall k.\;\vec U_k\ \text{ground},\ |\vec U_k|=|\vec p|,\quad
+\forall i.\;G\vdash\llbracket U_{k,i}\rrbracket\le\llbracket B_i[\vec p:=\vec U_k]\rrbracket
+\end{array}}
+{\Gamma(x)=\bigwedge_k\llbracket T[\vec p:=\vec U_k]\rrbracket}\ \textsc{instances}
+$$
+
+where $\vec U_1,\ldots,\vec U_m$ are the type arguments the unit's calls of
+$x$ name and the conjunction is one callable carrying every instance's
+signatures (`Scheme.moduleInstances`); the second rule is sound because each
+instance holds of the value. An intersection in the signature whose operands
+are ground once the binders are fixed is the graph's meet of those operands
+(`meetRow`); one still over a binder at a non-record operand is refused. A
+class is read at its construct signature, which `new` meets.
+
+A function declared with overloads $S_1,\ldots,S_n$ ($n>1$) is callable at
+exactly those; an implementation's own signature is not callable from outside:
+
+$$
+\frac{x\ \text{declared with overloads}\ S_1,\ldots,S_n\ (n>1),\ \text{none generic}}
+     {\Gamma(x)=\bigwedge_i\llbracket S_i\rrbracket}\ \textsc{overloads}
+$$
+
+Each call is checked against the conjunction, so it is typed by any overload
+whose parameters admit its actuals. A generic overload is refused.
+
+An ambient declaration the module writes (`declare function`, `declare
+const`, `declare class`) runs nothing and is in scope everywhere, read as an
+import is. With $D$ the declarations TypeScript binds $x$ to:
+
+$$
+\frac{x\ \text{bound by ambient declarations}\ D\ \text{of the module}}
+     {\Gamma(x)=\llbracket\mathsf{type}(D)\rrbracket}\ \textsc{ambient}
+$$
+
+where $\mathsf{type}(D)$ is what `import` and `overloads` read. `declare const
+k: unique symbol` names a symbol and binds no value. A name that is also an
+interface or alias denotes the value in a value position and the other
+declaration in a type position.
+
+A value name the module neither imports nor binds is a **global** when
+TypeScript binds it to a global variable. A global is read only at the
+members and call signatures the module's references select (`selectGlobal`):
+every reference reads a member by name or is called; a method's reference
+must be called; a `this` result is the selection itself; a generic, optional
+or modified method, and a member of a generic base interface, are refused.
+With $I$ the annotated interface, $M$ the names read, $O_m$ the overloads
+TypeScript resolves the calls of method $m$ to, and $C$ the call signatures
+it resolves the calls $x(\ldots)$ to:
+
+$$
+\frac{x\ \text{a global variable annotated}\ I\qquad
+      M=\{m\mid x.m\ \text{occurs}\}\qquad
+      \text{every occurrence of}\ x\ \text{is some}\ x.m\ \text{or a callee}\qquad
+      O_m\subseteq\mathsf{overloads}_I(m)\qquad
+      C\subseteq\mathsf{calls}_I}
+     {\Gamma(x)=\llbracket\mathsf{sel}_{M,O,C}(I)\rrbracket}\ \textsc{global}
+\qquad
+\llbracket I\rrbracket\subseteq\llbracket\mathsf{sel}_{M,O,C}(I)\rrbracket .
+$$
+
+The inclusion is why the rule assumes no more than the declaration: a record
+says nothing of keys it does not name, a method's receiver is its host, and a
+`this` result is the host. A declaration's `any` is read as `unknown`. A
+global both called and read through a method, or both constructed and read
+through members, has no clause and is refused. A standard library global is
+read through the reviewed overlay ([Library globals](#library-globals)).
+
+In the SKJS test environment a bare import specifier resolves to SKJS's stub
+module, and the environment file's constants are globals:
+
+$$
+\frac{x\ \text{imported from}\ s\ \text{bare}\qquad
+      x\ \text{declared at}\ T\ \text{in}\ \mathsf{stub}(s)}
+     {\Gamma(x)=\llbracket T\rrbracket}\ \textsc{stub}
+\qquad
+\frac{\mathtt{declare\ const}\ x{:}\,I\in E}
+     {x\ \text{is a global variable annotated}\ I}\ \textsc{env}
+$$
+
+where $\textsc{env}$ feeds $\textsc{global}$.
+
+### One row per application
+
+A generic application with methods, $D\langle\vec U\rangle$ where $D$'s
+equation mentions its receiver, is one row for the whole module: the memo
+$\rho$ (`Memo.applications`) maps a declaration and its arguments' key to the
+row. Arguments are compared by $\mathsf{key}$, each label its row's clauses,
+except an application's row or an empty row, reserved and not yet filled,
+which is its label:
+
+$$
+\mathsf{key}(\vec U)=\bigl(\{\,k(l)\mid l\in U_i\,\}\bigr)_i,\qquad
+k(l)=\begin{cases}l & l\ \text{an application's row, or empty}\\ G(l) & \text{otherwise.}\end{cases}
+$$
+
+A producer's reserved row for $D\langle\vec U\rangle$ is in $\rho$ from the
+start. Otherwise the first lowering to meet the application gives it a fresh
+row, records it, and lowers $D$'s equation at $\vec U$ with that row for the
+receiver, **from an empty visit** (`groundApplication`):
+
+$$
+\frac{\rho(D,\mathsf{key}(\vec U))=r}{\llbracket D\langle\vec U\rangle\rrbracket=[r]}\ \textsc{app}
+\qquad
+\frac{\rho(D,\mathsf{key}(\vec U))\ \text{undefined}\quad
+      |\mathsf{reach}(\vec U)|\le 32\quad r\ \text{fresh}}
+     {\rho(D,\mathsf{key}(\vec U)):=r\quad G(r):=\mathsf{lower}_\emptyset(\mathit{eq}_D[\vec U,\mathsf{self}:=r])}\ \textsc{app-new}
+$$
+
+Every row of $D\langle\vec U\rangle$ is the lowering of one equation at one
+argument list, a function of the application and the memo, never of the path
+that met it first, so a recursive family of applications closes into a finite
+graph; two applications that differ by a renaming of binder rows are related
+by an [instance table](POSITIVE-TYPES.md#instances-of-a-scheme-row).
+$\mathsf{reach}(\vec U)$ is the rows the arguments reach (an application's
+row reaching its arguments, not its equation): arguments that keep growing
+pass the bound and the application is refused, its method staying opaque. A
+declaration without methods is expanded inline unless it reaches itself
+(`recursiveDeclaration`), when its application is a row of its own as well;
+any other recursion through declarations is refused after three expansions
+(`applicationDepth`). A declaration's row is a name, not a representative: the
+row for a type is the first row with exactly its clauses that is not a
+declaration's (`useRow`).
+
+#### Generic methods
+
+A declaration's generic method lowers to a scheme row whose binders are
+parameter rows, shared by name so the unfolding closes. A method's binders
+take the least **colour** not free in the arguments of the application it
+belongs to:
+
+$$
+\mathsf{colour}(m, \vec A)=\min\{\,c<\mathit{budget}\;\mid\;c\notin\mathsf{colours}(\mathit{fv}(\vec A))\,\},
+$$
+
+and binder $k$ of $m$ at colour $c$ is one row, whoever lowers it. No binder
+captures one of another scope; the instance tables of `Sub.inst` tell apart
+the scopes sharing a row. Past the budget, at growing arguments, and for an
+F-bounded binder, the method stays an opaque member. A rest typed by one of
+the method's binders makes it a pack parameter, bounded by its element pack.
+A value binder $p$ with a ground declared bound $B_p$ establishes a
+parameter's bound $B$ through that one:
+
+$$
+\frac{p\ \text{a value binder}\quad B_p\ \text{ground}\quad G\vdash_c B_p\le B}
+     {p\ \text{establishes}\ B}\ \textsc{binder-bound}
+$$
+
+#### Binders met with ground types
+
+An intersection of a value binder with ground types, `V & DepSafe`, is a
+[meet row](POSITIVE-TYPES.md#parameter-and-scheme-rows) $p\sqcap\vec c$
+(`RequestJson.Row.meet`). Lowering an intersection (`meetRow`):
+
+$$
+\frac{A_k=[p],\ p\ \text{a value binder}\qquad
+      \forall i\ne k.\ A_i\ \text{of clause rows}}
+     {\llbracket A_1\mathbin{\&}\cdots\mathbin{\&}A_n\rrbracket=
+      [\,p\sqcap\mathsf{meet}(A_{i\ne k})\,]}\ \textsc{binder-meet}
+\qquad
+\frac{\forall i.\ A_i\ \text{of clause rows}}
+     {\llbracket A_1\mathbin{\&}\cdots\mathbin{\&}A_n\rrbracket=
+      [\,\mathsf{meet}(A_1,\ldots,A_n)\,]}\ \textsc{meet}
+$$
+
+where $\mathsf{meet}$ is `meetLists` of the operands' clauses folded from the
+right ([conjunction](POSITIVE-TYPES.md#conjunction-and-normalization)), and
+any other intersection (two binders, a scheme, a union holding a binder) is
+refused rather than an operand being dropped. A meet row is below $p$, so it
+establishes what $p$ does. At an instance $p:=U$ it means
+$\mathsf{meetLists}(G(U),\vec c)$ (`meetOk`), which is exactly what lowering
+the intersection at $U$ gives. A producer names a meet it does not compute by
+a reserved row in the claims' `"meets"`, which Lean fills with `meetRow`.
+
+A generic body's bounded binder is read the same way, as the meet of its
+parameter row and its bound; a bound over another binder leaves the parameter
+row alone ([generic bodies](#overloads-polymorphism-and-binding)).
+
+### Explicit type arguments
+
+A method call may state its instance, `o.m<A₁,…,Aₖ>(…)`. The arguments
+instantiate the member's binders in order, its own leading; binders past them
+(an `ArrayProto` member's element `T`, listed last) are fixed by the receiver
+and actuals. Lean reads the member's scheme row $S$ from the receiver's
+contract, finds the instance map $\theta$ relating $S$ to the read's claimed
+arrows $M$, checks it (`checkInstArrs`, sound by `Inst.mixed_sound`) and
+requires each explicit argument to mean what $\theta$ gives its binder:
+
+$$
+\frac{o:O\quad \mathsf{field}_G(O,m)=S=[\forall\vec p.\Sigma]\quad
+      \mathsf{checkInstArrs}(G,S,M,\theta)=\mathsf{true}\quad
+      \forall i\le k.\;\theta(p_i)\simeq_G A_i}
+     {o.m\langle A_1,\ldots,A_k\rangle(\vec a)\ \text{is called at its stated instance }M}.
+$$
+
+A plain call or `new` of a generic module value, or a local quantified
+closure, states its instance alike (`Scheme.explicitInstance`):
+
+$$
+\frac{f\ \text{generic over}\ p_1,\ldots,p_n\quad
+      \text{the call's claimed instance}\ \sigma\quad
+      k\le n\quad
+      \forall i\le k.\;\sigma(p_i)\simeq_G\llbracket A_i\rrbracket}
+     {f\langle A_1,\ldots,A_k\rangle(\vec a)\ \text{is called at its stated instance}\ \sigma},
+$$
+
+with $\simeq_G$ inclusion both ways by certified subtyping. Both rules only
+refuse: acceptance rests on the call's typing, so safety does not depend on
+them; they make a stated instance honoured. The instance's bounds are checked
+as for any call. A declaration's defaults for method binders are not read.
+
+### Classes
+
+A class declares its instance type in the declaration graph, and its value is
+a statement of the initialization unit: method closures, the prototype object
+`C.[[prototype]]` holding them (allocated once; not allocated when it holds
+nothing of its own that `instanceof` tests), then the class value,
+construct-only code. Its own name inside its body is `C.[[self]]`
+([`class-self`](#mutable-bindings-and-module-constants)). Static members are
+module bindings of their own, `static C.x`, after the class; a static read
+`C.x` is that binding where TypeScript binds it to the member (`staticReads`).
+
+The instance type states each member as what it is at run time: a field
+`f: T`, `f!: T` or `readonly f: T` a required field or view, `f?: T` an
+optional field, a parameter property `p: T` a field and `p?: T` the optional
+field `p?: T | undefined`. With $\varphi_0$ the entries, in member order, of
+the prototype key ($\texttt{[[proto]]} \mapsto C.\texttt{[[prototype]]}$,
+for a class with methods), the initialized fields ($f\mapsto e_f$) and the
+parameter properties ($p\mapsto p$), $U$ the fields without an initializer
+and $T_f$ each field's annotation, `constructor(x̄) { s̄ }` is
+$\mathsf{class}(\vec x).\,\mathcal{C}(\vec s,\varphi_0,\varnothing)$ where
+
+$$
+\begin{aligned}
+\mathcal{C}(\varepsilon,\varphi,A) &= \mathsf{alloc}(\varphi,\ \overline{f\mapsto\mathsf{undefined}}^{\,f\in U\setminus A})\\
+\mathcal{C}(\texttt{this.}f\texttt{ = }e;\ \vec s,\varphi,A) &= \mathcal{C}(\vec s,\ \varphi,f\mapsto e,\ A\cup\{f\})
+  && f\in U\setminus A\\
+\mathcal{C}(\texttt{if (}c\texttt{) }\{\vec t\}\texttt{ else }\{\vec u\},\varphi,A) &=
+  \beta(\varphi)\,;\ \mathsf{if}\ c\ \mathsf{then}\ \mathcal{C}(\vec t,\varphi',A)\ \mathsf{else}\ \mathcal{C}(\vec u,\varphi',A)
+  && \text{last, assigns a field}\\
+\mathcal{C}(s;\ \vec s,\varphi,A) &= \beta(\varphi)\,;\ s\,;\ \mathcal{C}(\vec s,\varphi',A)
+  && \text{otherwise}
+\end{aligned}
+$$
+
+and `this` occurs in no $e$, $c$ or $s$. $\beta(\varphi)$ binds each entry
+$f\mapsto e$ that is not a literal or already bound as `const this.f: T_f =
+e`, in order, a name no source binding spells, and $\varphi'$ reads `this.f`
+there, so every value is evaluated where JavaScript evaluates it. The
+allocation is checked like any other: a field without an initializer holds
+`undefined` until assigned, so `f!: T` holds exactly when the constructor
+assigns `f` on every path, and `f?: string` left unassigned is refused. A
+derived class's constructor is the [derived form](#derived-source-forms) over
+this one; an override must be sound, since the derived class's declared type
+is its own members and its base's.
+
+### Library types
+
+Write $\llbracket\tau\rrbracket$ for the source term the declaration reader
+gives type syntax $\tau$ (`typeTerm`), and $\mathit{lib}(N)$ when every
+declaration TypeScript binds $N$ to is in a standard library file:
+
+$$
+\frac{\mathit{lib}(\mathtt{Array})}
+     {\llbracket\mathtt{Array}\langle T\rangle\rrbracket=\llbracket T[\,]\rrbracket}
+\qquad
+\frac{\mathit{lib}(\mathtt{ReadonlyArray})}
+     {\llbracket\mathtt{ReadonlyArray}\langle T\rangle\rrbracket=\llbracket\mathtt{readonly}\;T[\,]\rrbracket}
+\qquad
+\frac{\mathit{lib}(\mathtt{Function})}{\llbracket\mathtt{Function}\rrbracket=\mathsf{callable}}
+$$
+
+with $\mathsf{callable}$ the union of `arrs [] []` and `ctors [] []`
+([functions and classes](POSITIVE-TYPES.md#functions-and-classes)); `object`
+is `refs [] [] []` with $\mathsf{callable}$, and `{}` adds every primitive but
+`null` and `undefined`. A mapped type whose value does not name its key is
+expanded where its key is known, with $\mathsf{key}(\texttt{"}s\texttt{"})=s$,
+$\mathsf{key}(n)=\mathsf{ToString}(n)$ and $m$ its modifiers:
+
+$$
+\frac{P\notin\mathrm{fv}(V)\quad\llbracket K\rrbracket=\lambda_1\mid\cdots\mid\lambda_n\ \text{literals}\quad(n\ge0)}
+     {\llbracket\{[P\ \mathtt{in}\ K]^m\colon V\}\rrbracket=\{\mathsf{key}(\lambda_1)^m\colon\llbracket V\rrbracket;\ \ldots;\ \mathsf{key}(\lambda_n)^m\colon\llbracket V\rrbracket\}}
+\qquad
+\frac{P\notin\mathrm{fv}(V)\quad\mathtt{string}\in\llbracket K\rrbracket\subseteq\mathtt{string}\cup\mathtt{number}\cup\text{literals}\quad\mathtt{?}\notin m}
+     {\llbracket\{[P\ \mathtt{in}\ K]^m\colon V\}\rrbracket=\{[k\colon\mathtt{string}]^m\colon\llbracket V\rrbracket\}}
+$$
+
+`number` without `string` is a number index and `symbol` a symbol index
+beside the remaining literals' fields; an optional one, a type parameter or
+any other key is refused. The keys are the union TypeScript computes for $K$
+([computed types](#computed-types)). A library alias whose equation is a
+mapped type is that type at the reference's arguments:
+
+$$
+\frac{\mathit{lib}(L)\quad L\langle\vec X\rangle=\{[P\ \mathtt{in}\ K]^m\colon V\}}
+     {\llbracket L\langle\vec A\rangle\rrbracket=
+      \llbracket\{[P\ \mathtt{in}\ K[\vec A/\vec X]]^m\colon V[\vec A/\vec X]\}\rrbracket}
+$$
+
+so `Record<"a" | "b", V>` has both fields required and `Record<string, V>` is
+the writable string index. An interface's `extends` clauses are the meet of
+its own clauses with each base's, its own members first (`inheritRows`,
+[conjunction](POSITIVE-TYPES.md#conjunction-and-normalization)); a source
+intersection has the same meaning (`meetRow`).
+
+An annotation's intersection of records is the one meet, with $\varphi_i$
+the invariant and $\psi_i$ the readonly fields of $R_i$ (any other field is
+refused):
+
+$$
+\frac{\forall i.\ \llbracket R_i\rrbracket=\mathsf{Ref}(\varphi_i;\psi_i)}
+     {\llbracket R_1\mathbin{\&}\cdots\mathbin{\&}R_n\rrbracket=
+      \mathsf{Ref}(\varphi_1\cdots\varphi_n;\,\psi_1\cdots\psi_n)}\ \textsc{record-meet}
+$$
+
+with each list sorted and deduplicated (`Fragment.cellConjunction`); it is
+exact by `recT_append`.
+
+### Computed types
+
+`typeof x`, `keyof T`, `T[K]`, template literal types and intersections of
+primitives and literals mean the type TypeScript's checker computes
+(`computed-types.mts`). With $\mathit{ts}(\tau)$ the checker's type of the
+node $\tau$ and $\mathsf{lits}(t)$ for $t$ as a union of literals and
+primitive families when it is exactly one:
+
+$$
+\frac{\mathsf{lits}(\mathit{ts}(\tau))=U}{\llbracket\tau\rrbracket=U}\ \textsc{computed}
+\qquad
+\frac{x\ \text{declares}\ x\colon\sigma\quad\mathit{ts}(\sigma)=\mathit{ts}(\mathtt{typeof}\ x)}
+     {\llbracket\mathtt{typeof}\ x\rrbracket=\llbracket\sigma\rrbracket_{x}}
+\qquad
+\frac{x\ \text{a function or class value, not generic, no statics}}
+     {\llbracket\mathtt{typeof}\ x\rrbracket=\mathsf{type}(x)}
+$$
+
+where $\llbracket\sigma\rrbracket_x$ reads $\sigma$ where $x$ is declared and
+$\mathsf{type}(x)$ is what an import of $x$ reads. An indexed access projects
+$\llbracket T\rrbracket$ at each key of $\mathsf{lits}(\mathit{ts}(K))$: a
+record's field (with `| undefined` where optional), an array's element at
+`number`, a tuple's position, a union's parts, an alias through its equation,
+a named type's member through its annotation under the same identity premise.
+Refused: a template literal type with a `${string}` or `${number}` hole; a
+form over a type parameter; `keyof` with a unique-symbol key; `typeof` of an
+unannotated binding; `typeof C` of a class with statics.
+
+### Index signatures
+
+An index signature is a view (and, mutable, a writable contract) over a
+[key class](POSITIVE-TYPES.md#records). The reader states:
+
+$$
+\llbracket\{[k\colon\mathtt{number}]^m\colon V\}\rrbracket=\mathsf{Dict}(\mathsf{numeric}{:}V)
+\qquad
+\llbracket\{[k\colon\mathtt{symbol}]^m\colon V\}\rrbracket=\mathsf{Dict}(\mathsf{symbols}{:}V)
+\qquad
+\llbracket\{[k\colon\mathtt{string}]^m\colon S;\ [k\colon\mathtt{number}]^m\colon N\}\rrbracket=
+  \mathsf{Dict}(\mathsf{strings}{:}S,\ \mathsf{numeric}{:}N)
+$$
+
+An index over a union of key types is one per member; one over `string |
+number`, or a number index at the string index's contract, is the string
+index alone. A named key reads through an index whose class surely admits it,
+at $V\mid\mathtt{undefined}$ (`readDict`); a computed `string`, `number` or
+`symbol` key through an index over a class containing its keys (`indexDict`),
+the narrower number index where both admit it. No write through an index is
+typed. A numeric property name is the key its value's `ToString` spells
+(`numericKey` in `type-term.mts`), and a number key of a receiver claimed only
+at records is the [named access](#derived-source-forms) of that key.
+
+### Prototype contracts
+
+`ArrayProto`, `StringProto`, `NumberProto`, `BigIntProto` and `BooleanProto`
+are records of readonly members read from TypeScript's `ReadonlyArray`/`Array`
+and `String`, `Number`, `BigInt`, `Boolean` through the overlay
+(`array-prototype.mts`): only listed members, each read from the declaration
+whose text is the reviewed one, at the receiver the entry names (`readonly
+T[]` for `ReadonlyArray`, `T[]` for a mutator, the primitive for a
+primitive's member), without dropped parameters. An entry may state its
+signature instead, with $\omega$ the entry of member $m$ of primitive $p$'s
+prototype:
+
+$$
+\frac{\omega\in\Omega_p\quad \omega.\mathit{text}=\mathsf{text}(m)\quad
+      \omega.\mathit{stated}=(\vec P)\Rightarrow R}
+     {\llbracket m\rrbracket_\omega=(\mathsf{this}:p,\ \vec P)\Rightarrow R}\ \textsc{proto-stated}
+$$
+
+`Set<T>`, `Map<K, V>` and `Date` are read through the same mechanism
+(`interfaceOverlay`), as an interface with only its listed members:
+
+$$
+\frac{\mathit{lib}(I)\quad \Omega_I=[\omega_1,\ldots,\omega_n]\quad
+      m_j\ \text{the member of}\ I\ \text{with}\ \mathsf{text}(m_j)=\omega_j.\mathit{text}}
+     {\llbracket I\langle\vec X\rangle\rrbracket_\Omega=\{k_1:\llbracket m_1\rrbracket_{\omega_1};\ \ldots;\ k_n:\llbracket m_n\rrbracket_{\omega_n}\}}\ \textsc{library-interface}
+$$
+
+a supertype of the declared interface. $\llbracket m\rrbracket_\omega$ drops
+`thisArg`, reads a `this` result as the receiver, and reads a declared
+iterator result as `Iterator<T>`, which it extends. A property is a readonly
+view. A string's own `length` and indices are the calculus's `lenStr` and
+`elemStr`, never the prototype's; `s[i]` is `string | undefined`.
+
+### Library globals
+
+A standard library global is read only through the reviewed overlay
+(`library-globals.mts`), one entry per signature, with exactly the
+declaration text it was reviewed against. With $s$ a selected signature,
+$\Omega$ the overlay and $\omega$ an entry:
+
+$$
+\frac{\mathit{lib}(x)\quad \omega\in\Omega\quad
+      \omega.\mathit{global}=x\quad \omega.\mathit{text}=\mathsf{text}(s)\quad
+      \omega\ \text{admits}\ (i, S)}
+     {\llbracket s\rrbracket_\Omega=\llbracket s\rrbracket\bigl[\,p_i:=S\,\bigr]}\ \textsc{library-global}
+$$
+
+and an entry without `admit` reads $s$ as declared. Replacing a parameter by
+a subset gives a supertype of the declared signature. An entry may state the
+signature the host meets (`stated`), for a construct signature, a method (a
+scheme over its binders, host-relative) or a property (its type the result):
+
+$$
+\frac{\mathit{lib}(x)\quad \omega\in\Omega\quad \omega.\mathit{global}=x\quad
+      \omega.\mathit{text}=\mathsf{text}(s)\quad
+      \omega.\mathit{stated}=\forall\vec X.\ \mathsf{new}(\vec P)\Rightarrow R\quad
+      |\vec a|\le|\vec P|\ \text{for each}\ \mathsf{new}\ x(\vec a)\ \text{selecting}\ s}
+     {\llbracket s\rrbracket_\Omega=\forall\vec X.\ \mathsf{new}(\vec P)\Rightarrow R}\ \textsc{library-construct}
+$$
+
+$$
+\frac{\mathit{lib}(x)\quad \omega\in\Omega\quad \omega=(x,\ m,\ \mathsf{text}(s),\ \mathsf{stated}\ \forall\vec X.\ (\vec P)\Rightarrow R)\quad
+      |\vec a|\le|\vec P|\ \text{for each}\ x.m(\vec a)\ \text{selecting}\ s}
+     {\llbracket s\rrbracket_\Omega=\forall\vec X.\ (\mathsf{this}:\mathsf{self},\ \vec P)\Rightarrow R}\ \textsc{library-stated}
+$$
+
+Overloads stated alike are one signature. A statement may name a library
+interface (`Set<T>`, read through [its overlay](#prototype-contracts)) or a
+declaration no library has, which joins the document with the entry:
+
+$$
+\mathsf{JsonValue}=\mathsf{null}\mid\mathsf{boolean}\mid\mathsf{number}\mid\mathsf{string}\mid\{\mathsf{readonly}\ [k:\mathsf{string}]:\mathsf{JsonValue}\}
+$$
+
+(`JSON.stringify`'s parameter). An entry may read a member as a test of the
+calculus (`test`), and the variable's declaration as the right operand of
+`instanceof`:
+
+$$
+\frac{\mathit{lib}(\mathtt{Array})\quad \omega\in\Omega\quad
+      \omega=(\mathtt{Array},\ \mathtt{isArray},\ \mathsf{text}(s),\ \mathsf{test}\ \mathsf{isArray})}
+     {\llbracket\mathtt{Array.isArray}(e)\rrbracket=\mathsf{test}\ \mathsf{isArray}\ \llbracket e\rrbracket}\ \textsc{library-test}
+\qquad
+\frac{\mathit{lib}(\mathtt{Array})\quad \omega\in\Omega\quad
+      \omega=(\mathtt{Array},\ \cdot,\ \mathsf{text}(d),\ \mathsf{test}\ \mathsf{isArray})}
+     {\llbracket e\ \mathtt{instanceof}\ \mathtt{Array}\rrbracket=\mathsf{test}\ \mathsf{isArray}\ \llbracket e\rrbracket}\ \textsc{library-instanceof}
+$$
+
+The branch rule is the tag rule on $\mathsf{isArray}$
+([SEMANTICS](SEMANTICS.md#operational-language)); the declared guard `arg is
+any[]` is not read. An entry may read a member, or a construct signature, as
+a call of an [intrinsic](#async-functions-and-await) stating the same step
+(`intrinsic`), instantiated at each call by $\textsc{instances}$:
+
+$$
+\frac{\mathit{lib}(x)\quad \omega\in\Omega\quad
+      \omega=(x,\ m,\ \mathsf{text}(s),\ \mathsf{intrinsic}\ \iota)}
+     {\llbracket x.m(\vec e)\rrbracket=\iota(\llbracket\vec e\rrbracket)}\ \textsc{library-intrinsic}
+\qquad
+\frac{\mathit{lib}(x)\quad \omega\in\Omega\quad
+      \omega=(x,\ \cdot,\ \mathsf{text}(s),\ \mathsf{intrinsic}\ \iota)\quad s\ \text{a construct signature}}
+     {\llbracket \mathsf{new}\ x(\vec e)\rrbracket=\iota(\llbracket\vec e\rrbracket)}\ \textsc{library-construct-intrinsic}
+$$
+
+`Promise.resolve(v)` is `%AsyncReturn%(v)`, `Promise.resolve()` is
+`%AsyncComplete%()`, `Promise.all` is `%PromiseAll%`, `Promise.reject` is
+`%PromiseReject%` and `new Promise` is `%NewPromise%`.
+
+### Async functions and await
+
+The parser writes each async form as a call of an intrinsic, a value named
+`%…%` that no source identifier spells (`intrinsics.mts`):
+
+$$
+\begin{aligned}
+\llbracket\mathsf{await}\ e\rrbracket&=\mathtt{\%Await\%}(\llbracket e\rrbracket)\\
+\llbracket\mathsf{return}\ e\rrbracket_{\mathsf{async}}&=\mathsf{return}\ \mathtt{\%AsyncReturn\%}(\llbracket e\rrbracket)\\
+\llbracket\text{completion}\rrbracket_{\mathsf{async}}&=\mathsf{return}\ \mathtt{\%AsyncComplete\%}()
+\end{aligned}
+$$
+
+in an async function, arrow or function expression's own body. The
+declaration reader lists the intrinsics among the module's values, with $P$
+the primitives (the values that are never thenables):
+
+$$
+\begin{aligned}
+\mathtt{\%Await\%}&:\forall T.\ (\mathit{promise}:\mathsf{Promise}\langle T\rangle)\Rightarrow T\\
+\mathtt{\%AsyncReturn\%}&:\forall T\le P.\ (\mathit{value}:T)\Rightarrow\mathsf{Promise}\langle T\rangle
+\qquad P=\mathsf{null}\mid\mathsf{undefined}\mid\mathsf{boolean}\mid\mathsf{number}\mid\mathsf{string}\mid\mathsf{bigint}\mid\mathsf{symbol}\\
+\mathtt{\%AsyncComplete\%}&:()\Rightarrow\mathsf{Promise}\langle\mathsf{void}\rangle\\
+\mathtt{\%PromiseAll\%}&:\forall T.\ (\mathit{values}:\mathsf{readonly}\ \mathsf{Promise}\langle T\rangle[\,])\Rightarrow\mathsf{Promise}\langle T[\,]\rangle\\
+\mathtt{\%PromiseReject\%}&:\forall T.\ (\mathit{reason}:\mathsf{unknown})\Rightarrow\mathsf{Promise}\langle T\rangle\\
+\mathtt{\%NewPromise\%}&:\forall T\le P.\ (\mathit{executor}:(\mathit{resolve}:(T)\Rightarrow\mathsf{void},\ \mathit{reject}:(\mathsf{unknown})\Rightarrow\mathsf{void})\Rightarrow\mathsf{void})\Rightarrow\mathsf{Promise}\langle T\rangle
+\end{aligned}
+$$
+
+Instantiated by $\textsc{instances}$, with $R$ the async function's result
+annotation, they derive:
+
+$$
+\frac{\Gamma\vdash e:\mathsf{Promise}\langle A\rangle}{\Gamma\vdash\mathsf{await}\ e:A}\ \textsc{await}
+\qquad
+\frac{\Gamma\vdash e:A\quad A\le P\quad \mathsf{Promise}\langle A\rangle\le R}{\Gamma\vdash_R\mathsf{return}\ e}\ \textsc{async-return}
+\qquad
+\frac{\mathsf{Promise}\langle\mathsf{void}\rangle\le R}{\Gamma\vdash_R\text{completion}}\ \textsc{async-complete}
+$$
+
+`Promise<void>` is `Promise<unknown>` (`void` is top), so a void async
+function may only complete. A throw in an async body leaves it as a throw.
+
+### Loops over arrays
+
+`for (const x of e) S` steps the trusted intrinsic
+
+$$
+\mathtt{\%Iterate\%}:\forall T.\ (\mathit{xs}:\mathsf{readonly}\ T[\,])\Rightarrow
+(()\Rightarrow\{\mathsf{readonly}\ \mathit{value}:T\}\mid\mathsf{null})
+$$
+
+which Lean compiles itself (`SourceExtraction.body`):
+
+$$
+\llbracket\mathsf{for}\ (\mathsf{const}\ x\ \mathsf{of}\ e)\ S\rrbracket=
+n\leftarrow\mathtt{\%Iterate\%}(\llbracket e\rrbracket);\
+\mathit{head}:\ r\leftarrow n();\
+\mathsf{if}\ r\ \mathsf{is\ null}\ \mathsf{then}\ \mathit{exit}\
+\mathsf{else}\ x\leftarrow r.\mathit{value};\ \llbracket S\rrbracket;\ \mathsf{goto}\ \mathit{head}
+$$
+
+`n` is a slot at the call's claimed type, the head a cut stated by the loop's
+entry claims, `continue` and the body's end go to the head and `break` to the
+exit; the tag dispatch refines `r` on each arm (`tagBind isNul`). The derived
+rule, with $T$ the call's instance:
+
+$$
+\frac{\Gamma\vdash e:A\quad A\le\mathsf{readonly}\ T[\,]\quad
+      \Gamma_{\mathit{head}},x:T\vdash S\quad \Gamma_{\mathit{head}}\ \text{the loop's entry claims}}
+     {\Gamma\vdash\mathsf{for}\ (\mathsf{const}\ x\ \mathsf{of}\ e)\ S}\ \textsc{for-of}
+$$
+
+Arrays are dense (`listT`), so the iterator yields a `T` at every index
+below the length. Array patterns read positions under the same trust
+([patterns](#patterns)).
+
+### Statement forms
+
+The statement forms of a body are lowered to the graph compiler's where the
+lowering is exact ([as graphs](#statement-forms-as-graphs)). $\Gamma\vdash_R S$
+reads "the statements $S$ are safe under $\Gamma$ in a function whose result
+is $R$". An unbraced arm is the block holding it and `else if (c) S` is
+`else { if (c) S }`; `return;` is `return undefined`, and a block closure that
+does not return on every terminal arm ends with `return undefined`:
+
+$$
+\frac{\mathsf{undefined}\le R}{\Gamma\vdash_R\ \mathsf{return};}\ \textsc{return-bare}
+\qquad
+\frac{\Gamma\vdash_R S_1\quad S_1\ \text{always jumps}\quad \mathit{names}(S_2)\ \text{free in no live statement, none hoisted}}
+     {\Gamma\vdash_R S_1;S_2}\ \textsc{dead}
+$$
+
+`for (init; cond; update) S` is `{ init; loop }` with a `while (cond)` whose
+body's end and every `continue` run `update`, then go to the head (a closure
+capturing a `for` loop's `let` is refused, since JavaScript copies it per
+iteration):
+
+$$
+\frac{\Gamma\vdash_R \mathit{init}:\Gamma'\quad \Gamma_h\ \text{the head's entry claims}\quad
+      \Gamma'\le\Gamma_h\quad \Gamma_h\vdash c:\mathsf{boolean}\quad
+      \Gamma_h\wedge c\vdash_R S\ \text{with}\ \mathsf{continue}\mapsto u\quad
+      \Gamma_u\vdash \mathit{update}\ \text{back to}\ \Gamma_h}
+     {\Gamma\vdash_R\ \mathsf{for}\ (\mathit{init};c;\mathit{update})\ S}\ \textsc{for}
+$$
+
+`switch (d) { … }` is a labeled block per clause, nested in source order
+inside one for the whole switch: the innermost holds the dispatch, each case
+label in order `if (d === l) break` to the end of its clause's block, and
+each clause's statements follow its block's end, so fall-through is ordinary
+sequencing. The discriminant is evaluated once into a slot no source names,
+unless it is a name or a field of a name and every label a literal or a name,
+when it is re-read at each test. A name declared in one clause and read in
+another is refused.
+
+$$
+\frac{\Gamma\vdash_R S\ \text{with}\ \mathsf{break}\ \ell\mapsto\Gamma_{\mathit{after}}\quad
+      \Gamma_{\mathit{after}}\vdash_R S'}
+     {\Gamma\vdash_R\ \ell:\{S\};S'}\ \textsc{labeled-block}
+$$
+
+`for (const k in o) S` is `for (const k of %ForIn%(o)) S` with the trusted
+
+$$
+\mathtt{\%ForIn\%}:(o:\mathsf{unknown})\Rightarrow\mathsf{readonly}\ \mathsf{string}[\,],
+$$
+
+the keys the loop visits: strings, for any value. `try B catch (e) C finally
+F` names $C$'s entry as the handler of $B$'s nodes that may throw, with `e`
+at `unknown` (the only annotation admitted), and compiles $F$ on every way
+out: after a normal completion, before each `return` with the value held,
+after a throw with the thrown value held and rethrown. A `return` or `throw`
+in $F$ leaves by its own way, as JavaScript's replaces the pending
+completion:
+
+$$
+\frac{\Gamma\vdash_R B\ \text{with throws}\mapsto(\mathsf{unknown},\Gamma)\vdash_R C\quad
+      \Gamma\vdash_R F\ \text{on each way out}}
+     {\Gamma\vdash_R\ \mathsf{try}\ B\ \mathsf{catch}\ (e)\ C\ \mathsf{finally}\ F}\ \textsc{try}
+$$
+
+The handler's and finalizer's entries state each cell at its contract, since
+a throw may leave after any part of the body ran.
+
+### Guards
+
+Every guard is a tag test ([SEMANTICS](SEMANTICS.md#operational-language)),
+refining a tested immutable binding by the tag slice $T_q$ of its type on
+each edge ([refinement](#refinement-under-an-observed-outcome)):
+
+$$
+\frac{\Gamma(x)=A\quad\Gamma[x:T_{\mathsf{typeofObject}}(A)]\vdash_R S_1\quad\Gamma[x:T_{\lnot\mathsf{typeofObject}}(A)]\vdash_R S_2}
+     {\Gamma\vdash_R\ \mathsf{if}\ (\texttt{typeof}\ x\equiv\texttt{"object"})\ S_1\ \mathsf{else}\ S_2}\ \textsc{if-typeof-object}
+$$
+
+$$
+\frac{\Gamma(x)=A\quad A\ \text{objects, no class value}\quad \kappa\notin\mathcal R\quad
+      \Gamma[x:T_{\mathsf{hasKey}(\kappa)}(A)]\vdash_R S_1\quad\Gamma[x:T_{\lnot\mathsf{hasKey}(\kappa)}(A)]\vdash_R S_2}
+     {\Gamma\vdash_R\ \mathsf{if}\ (\texttt{"}\kappa\texttt{"}\ \mathtt{in}\ x)\ S_1\ \mathsf{else}\ S_2}\ \textsc{if-in}
+$$
+
+with $\mathcal R$ the refused keys (`inKeyRefusal`: `Object.prototype`'s,
+`Array.prototype`'s and `Function.prototype`'s own string keys, array
+indices, and the keys the model reserves). `in`'s answers are by keys the
+types state (`inAnswer`): a failed test drops an arm owning the key, a passed
+one drops an arm whose key bounds exclude it and the prototype key, and every
+primitive; a passed test promotes an optional key to a field (`promote`). A
+test against a claimed singleton $c$ of any primitive kind, and against a
+field of an immutable binding's object, narrows the binding or the object's
+arms:
+
+$$
+\frac{\Gamma\vdash a:A\quad \Gamma\vdash k:\{c\}\quad
+      \Gamma[x:T_{\mathsf{eq}(c)}(\Gamma(x))]\vdash_R S_1\quad
+      \Gamma[x:T_{\lnot\mathsf{eq}(c)}(\Gamma(x))]\vdash_R S_2}
+     {\Gamma\vdash_R\ \mathsf{if}\ (x\equiv k)\ S_1\ \mathsf{else}\ S_2}\ \textsc{if-singleton}
+\qquad
+\frac{\Gamma\vdash k:\{c\}\quad
+      \Gamma[o:F^{f}_{\mathsf{eq}(c)}(\Gamma(o))]\vdash_R S_1\quad
+      \Gamma[o:F^{f}_{\lnot\mathsf{eq}(c)}(\Gamma(o))]\vdash_R S_2}
+     {\Gamma\vdash_R\ \mathsf{if}\ (o.f\equiv k)\ S_1\ \mathsf{else}\ S_2}\ \textsc{if-field}
+$$
+
+with $F^f$ the field slice. `x === y` with `x` claimed at a union of
+singletons is dispatched as the disjunction over its singletons $c$ of
+$x\equiv c\land y\equiv c$ (`savedSplit` where `x` has effects). Strict
+equality without a singleton is the $\equiv$ operator of `arith`, which
+narrows nothing and is refused between two operands that may both be objects
+without a field. `x instanceof C`, for a class the file declares at its top
+level, is $\mathsf{hasKey}(\kappa_C)$ ([derived form](#derived-source-forms)).
+
+### Enums
+
+With $m_1,\ldots,m_n$ an enum's members and $v_i$ the value TypeScript
+computes for $m_i$ (`getConstantValue`):
+
+$$
+\frac{\forall i.\ v_i\ \text{computed by TypeScript, finite if a number}\quad
+      \text{no reverse key names a member}}
+     {\texttt{enum E}\{\vec m\}\ \leadsto\ \texttt{const E}:\mathcal O(E)=\{\overline{m_i:v_i},\ \overline{\mathrm{str}(v_j):\text{"}m_j\text{"}}^{\,v_j\in\mathbb R}\}}
+$$
+
+with $\mathcal O(E)$ the object type of those fields, each readonly at its
+value's literal type, in JavaScript's key order where the declaration is. The
+type `E` is $\bigcup_i\{v_i\}$, `E.A` the literal type of `A`'s value, and
+`typeof E` is $\mathcal O(E)$. A `const enum` read is its member's value
+(`constEnumReads`), and the declaration runs nothing.
+
+### Const assertions
+
+`e as const` returns its operand, claimed at the operand's *const type*:
+
+$$
+\mathsf{const}(\ell)=\{\ell\},\qquad
+\mathsf{const}([e_1,\ldots,e_k])=\mathsf{readonly}\;[\mathsf{const}(e_1),\ldots,\mathsf{const}(e_k)],
+$$
+$$
+\mathsf{const}(\{f_1:e_1,\ldots\})=\{\mathsf{readonly}\;f_1:\mathsf{const}(e_1),\ldots\},\qquad
+\mathsf{const}(x)=\Gamma(x),\qquad
+\mathsf{const}(e\;\texttt{as const})=\mathsf{const}(e),
+$$
+
+for a literal $\ell$; any other operand is refused. The const type is a
+proposal: Lean checks the operand's allocation at it and the cast's claim
+from the operand's. Other assertions (`e as T`, `e satisfies T`, `e!`) are
+the same node with $T$ an obligation the operand meets; nothing decides an
+assertion true.
 
 ## Callables
 
@@ -2930,7 +3706,7 @@ Source integration also needs explicit property-presence/initialization rules:
 the model's initial function bag does not establish a source `value` field.
 Object parameters are admitted at their annotation: the interpretation of a
 structural annotation as a plain data object is part of the caller contract,
-as the arrow interpretation already was (DESIGN.md, the trust boundary). The
+as the arrow interpretation already was (DESIGN.md, the trust surface). The
 heap evidence is stated over locations and so covers aliased parameters.
 `ObjectCoherence.step_preserves` proves global identity/descriptor coherence
 for the operational machine using an append-only ghost registry, including
@@ -4345,7 +5121,7 @@ judgments, not additional callable-object representations.
 What is implemented is weaker and trusted: `await` and an async body's returns
 are calls of intrinsic values at declared signatures, and **Await**,
 **Async-Return** and **Async-Complete** are instances of Call
-([DESIGN.md, Async functions and await](DESIGN.md#async-functions-and-await)).
+([async functions and await](#async-functions-and-await)).
 The judgments below remain the target that would discharge that trust.
 
 An asynchronous entry judgment

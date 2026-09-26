@@ -70,8 +70,7 @@ import specifier resolves in `import-stubs`, and
 builtins stub's globals TypeScript's library lacks (`__SKJS_show`, `process`,
 `StringRecord<V>`, and `Closed<T>` read as `T`). These declarations are
 assumptions of the result, as an import's are
-([DESIGN.md](../DESIGN.md#modules-and-code-units), "The SKJS test
-environment").
+([trust surface](../DESIGN.md#trust-surface)).
 
 **Pipeline.** Each derived file goes through `checkApart` (exactly
 `node check.mts <file> --project <its project>`), 10 at a time, with
@@ -208,7 +207,7 @@ dropped), examples, what the extension needs.
    Lean's source lowering of a record intersection refused readonly fields
    (`cell read and write types do not describe the same invariant`); it now
    lowers them by the declaration meet, as views
-   ([DESIGN.md](../DESIGN.md#compositional-unions-at-the-source-boundary)).
+   ([record-meet](../PROGRAM-TYPING.md#library-types)).
    The other 12 now stop at their next blocker: 9 at equality between two
    literal unions (15), 2 at truthiness of a number
    (`conditions.ts#acceptLiteralUnion`, `#acceptOctalZero`), 1 at narrowing a
@@ -221,8 +220,7 @@ dropped), examples, what the extension needs.
    values like an import, read from its own declaration by the declaration
    reader (specifier `ambient`); overloads, ambient or imported, are the
    conjunction of their signatures; `declare let`/`var` is refused as module
-   storage ([DESIGN.md](../DESIGN.md#modules-and-code-units), "Ambient
-   declarations"). Of the 94 units, 22 in 12 files verify; the other 72 stop
+   storage ([ambient](../PROGRAM-TYPING.md#imported-ambient-and-global-values)). Of the 94 units, 22 in 12 files verify; the other 72 stop
    at their next blocker: 9 at a generic call whose binder the producer
    instantiates at `number[]` where the bound is a tuple
    (`tuple-constraint-literal.ts`, `exact<K extends [0, 1]>(x: K)` called with
@@ -245,7 +243,7 @@ dropped), examples, what the extension needs.
    is `return undefined`, a block closure falling off its end returns
    `undefined`, and statements after one that always jumps are dropped unless
    a name they declare is hoisted or read live
-   ([DESIGN.md](../DESIGN.md#statement-forms)). 30 of the 100 units verify;
+   ([statement forms](../PROGRAM-TYPING.md#statement-forms)). 30 of the 100 units verify;
    the others now stop at discriminated-union and literal narrowing (15, 16),
    `let` inside closure bodies, and flow narrowing in search (18).
 6. **`switch` — done (task F).** Were `statement outside the fragment
@@ -263,7 +261,7 @@ dropped), examples, what the extension needs.
 8. **`void e`.** *Done (task E): `void e` is the comma form `e, undefined`,
    one new source form (`comma`, also the comma operator) lowered by binding
    the left operand in an unread slot, no new calculus term or rule
-   ([DESIGN.md](../DESIGN.md#string-concatenation-templates-and-void)).* Was
+   ([values](../DESIGN.md#values)).* Was
    `expression outside the fragment (VoidExpression)` (27). 13 verify; the
    other 14 stop at their next blocker: field narrowing after an effect
    (`call-effect-boundaries.ts`, the same without `void`), tuples as
@@ -335,7 +333,7 @@ dropped), examples, what the extension needs.
     an interface of the global's name (`interface BigInt` beside `declare var
     BigInt`) is its type meaning, not a second value. A standard library
     global is read only through a reviewed overlay
-    ([DESIGN.md](../DESIGN.md#library-globals), `tools/library-globals.mts`):
+    ([library globals](../PROGRAM-TYPING.md#library-globals), `tools/library-globals.mts`):
     `BigInt` at a bigint, a Boolean, or an integer or string literal it
     converts; `Symbol`, `Symbol.for`/`keyFor`; `String` of a primitive;
     `console.log`. 703 → 709 units verify (`simple_bigint_test.ts` 2,
@@ -410,7 +408,7 @@ dropped), examples, what the extension needs.
     as their tag tests and narrow where equal; `x == null` is the nullish
     test and other `==` is refused at the gate (it converts); an observation
     the tested type rules out makes its edge never taken
-    ([DESIGN.md](../DESIGN.md#strict-equality-and-tag-narrowing)). Was
+    ([guards](../PROGRAM-TYPING.md#guards)). Was
     `equality requires a null, undefined or numeric singleton operand` (46).*
     Left (6): two operands that may both be objects without a field
     (`equality.ts#weakObjects`, `#funDisjoint`, `#funCounterExample`,
@@ -477,7 +475,7 @@ dropped), examples, what the extension needs.
 
     | Cause | Units | Fix |
     | --- | ---: | --- |
-    | A fresh object or tuple literal at a union of records or tuples was widened, so no arm admitted it (`algebraic-data-types-comprehensive.ts` 3, `function-union.ts` 2, `spread-union-distribute.ts` 2, `typeof.ts` 2, `stypes-diff.ts`, `delayed-literal-union-contract.ts`) | 11 | built at the arm its keys, length and literal members select ([DESIGN.md](../DESIGN.md#fresh-literals-have-exact-keys)) |
+    | A fresh object or tuple literal at a union of records or tuples was widened, so no arm admitted it (`algebraic-data-types-comprehensive.ts` 3, `function-union.ts` 2, `spread-union-distribute.ts` 2, `typeof.ts` 2, `stypes-diff.ts`, `delayed-literal-union-contract.ts`) | 11 | built at the arm its keys, length and literal members select ([DESIGN.md](../DESIGN.md#objects-and-prototypes)) |
     | Generic call inference: a binder in `A \| null` (2), a fresh literal at `T extends Json` (3), primitives and arrays of primitives below a declared bound (3: `tvar-widening-in-constraint-check.ts`, `constrainedArrayLiteralDirect` and its caller), a tuple at `readonly T[]` for `for...of` (1) | 9 | `Inference.infer` and the literal's construction at a dictionary bound |
     | A closure literal claimed at its widened result where the context asks for a literal or an async body's promise (`object-literal-function-field-widening.ts`) | 6 | contextual return type where the body fits it |
     | An unannotated constant's fresh array committed by its first use, as SKJS does (`array_literal_examples.ts` 3 and 3 callers) | 6 | built at the array type its first use expects |
@@ -505,7 +503,7 @@ dropped), examples, what the extension needs.
 
     | Cause | Units | Fix |
     | --- | ---: | --- |
-    | A guard on an optional key (`field-refinement.ts` 2, `in.ts#refineLiteralInRecordOpt`, `optional-fields-exact.ts#inNarrowsToBareT`) | 4 | a key found present (`in`, or a read found not `undefined`) promotes the object's records, the key a field from then on; a read through an optional key is a typed read with an optional link ([DESIGN.md](../DESIGN.md#strict-equality-and-tag-narrowing)) |
+    | A guard on an optional key (`field-refinement.ts` 2, `in.ts#refineLiteralInRecordOpt`, `optional-fields-exact.ts#inNarrowsToBareT`) | 4 | a key found present (`in`, or a read found not `undefined`) promotes the object's records, the key a field from then on; a read through an optional key is a typed read with an optional link ([guards](../PROGRAM-TYPING.md#guards)) |
     | A test against several singletons, a call or another field (`field-refinement.ts` 2, `local-vs-local-refinement.ts` 2) | 4 | tested one singleton at a time with a field as the split operand, a call evaluated once into a slot of its own |
     | Fields of a union of records or of a view of one (`unsound-refinement.ts` 4) | 4 | facts about a field every record names; a family found equal to one value is it; a write of an object keeps what distinct links separate, and entries state the links a cell was allocated apart from; a conditional's arm starts where the producer claims its reads |
     | A computed key's assignment (`obj-literal-var-field-growth.ts` 2) | 2 | the producer's cells after an expression's assignments; entries state no link to an object a later call returned |
@@ -517,10 +515,10 @@ dropped), examples, what the extension needs.
     | --- | ---: | --- | --- |
     | Index signatures: `v[k]!` of a `for...in` key (`forin-exclamation.ts` 8), writes and numeric keys on a string index (`index-signatures.ts` 3, `local-objects.ts#testWithIndexSignature`), `Closed<T>` (read as `T`, an open record) into a dictionary or `Json` (`closed-type.ts` 5, `json-named-object-type.ts` 2) | 19 | (b)/(c) | key-restricted index signatures (parallel task) |
     | Flow narrowing, what is left of it (the rest verify, below): cells written in a `try` or before a call a condition makes, read after the call (`catch-entry-writes.ts` 2, `jump-through-finally.ts#jumpBeforeTheTryIsUntouched`) | 3 | (b) | a call forgets every cell: a callee may write any location its operands reach, and the model states no reachability (its record types admit objects with fields at any location, so a fresh cell cannot be shown unreachable from them), so no capture analysis can be justified ([DESIGN.md](../DESIGN.md#current-content-assertions)) |
-    | Object identity: `x.child !== narrow`, then a read of `x.child` at `narrow`'s type (`unsound-refinement.ts#stableMemberScalar`, `destructuring.ts#identityPatternScalar`) | 2 | (c) | that two slots hold one object is a slot equality, and a statement entry states none ([DESIGN.md](../DESIGN.md#strict-equality-and-tag-narrowing)); TypeScript refuses the first's return too |
+    | Object identity: `x.child !== narrow`, then a read of `x.child` at `narrow`'s type (`unsound-refinement.ts#stableMemberScalar`, `destructuring.ts#identityPatternScalar`) | 2 | (c) | that two slots hold one object is a slot equality, and a statement entry states none ([guards](../PROGRAM-TYPING.md#guards)); TypeScript refuses the first's return too |
     | A computed key assigning its own receiver, the old object's field read after it (`unsound-refinement.ts#capturedReceiver`) | 1 | (c) | what a field of a mutable local's object holds is not stated at a statement entry (the entry states a cell's own contents); TypeScript refuses the return |
-    | `obj.val === undefined` on an optional key, then `obj.val` at `undefined` (`field-refinement.ts#testOptionalFieldEqualsUndefined`) | 1 | (b) | the key may be absent, and knowledge of an absent key needs a record clause whose bound excludes it and a read rule for such a clause ([DESIGN.md](../DESIGN.md#strict-equality-and-tag-narrowing), "A key found present") |
-    | `for...of` and spreads over a non-array iterable: a string, `Set`, `Map`, an iterator (`symbols.ts` 4, `for_in_for_of_tests.ts` 2, `for-in-for-of-invalid.ts`, `iterator-effects.ts`, `callgraph/for-of-iterator.ts`) | 9 | (c) | `%Iterate%` is stated for arrays only ([DESIGN.md](../DESIGN.md#loops-over-arrays)); a string's and the host collections' iterators could be stated, a client's cannot (its `return`) |
+    | `obj.val === undefined` on an optional key, then `obj.val` at `undefined` (`field-refinement.ts#testOptionalFieldEqualsUndefined`) | 1 | (b) | the key may be absent, and knowledge of an absent key needs a record clause whose bound excludes it and a read rule for such a clause ([guards](../PROGRAM-TYPING.md#guards), "A key found present") |
+    | `for...of` and spreads over a non-array iterable: a string, `Set`, `Map`, an iterator (`symbols.ts` 4, `for_in_for_of_tests.ts` 2, `for-in-for-of-invalid.ts`, `iterator-effects.ts`, `callgraph/for-of-iterator.ts`) | 9 | (c) | `%Iterate%` is stated for arrays only ([loops over arrays](../PROGRAM-TYPING.md#loops-over-arrays)); a string's and the host collections' iterators could be stated, a client's cannot (its `return`) |
     | Generic call inference: a tuple literal at a bound with a tuple arm (2), `K extends 0 \| 1` through `Array<[K, number]>`, explicit type arguments with a `const`-bound array (which TypeScript refuses), nested instantiation (`per-field-tvar-isolation.ts`, `tvar-widening-ordinary-check.ts`), a spread into a generic, and `new Container()` instantiated from later pushes (2; TypeScript infers `unknown` and refuses) | 9 | (a) | producer inference |
     | SKJS unsound (confirmed, [below](#suspected-skjs-unsoundnesses)): aliased views of an empty literal (`obj-literal-indexes.ts` 6), an inferred literal type that stays closed, `typeof c === "function"` on a class instance | 8 | (d) | reported |
     | Guards: `Array.isArray` narrowing a union with a record (6), `typeof x === "function"` on `unknown`, `instanceof Array` at a readonly array | 8 | (b) | typeof/in/instanceof guards (parallel task) |
@@ -531,7 +529,7 @@ dropped), examples, what the extension needs.
     | An array's `length` as a record field (`{ readonly length: number }` view, a union with a record, an intersection with one) and an 11-tuple's `length` as the literal 11 | 4 | (c) | an array keeps its length in its store (`lenOf`), not at a location a record's field names, and an open record may be an array carrying other keys, so no test tells which reading a union's `length` is; a mutable tuple's length is not fixed by its type (`push` is allowed on it: TypeScript's own unsoundness, which SKJS shares where it accepts the literal) |
     | Computed types that follow TypeScript: `keyof typeof E` excluding reverse keys, `keyof ({ x: number } \| string)` (`never`), the meet of two tuple types | 3 | (c) | TypeScript's computed type |
     | `aliased views without fields` (`obj-literal-indexes.ts#testAliasMutableOptionalThenOptional`, `#testAliasTwoReadonlyOptionals`): sound, refused | 2 | (b) | as the unsound family's search |
-    | `<` with an operand that may be `undefined` (`supertypePositionTest` and its caller) | 2 | (c) | the rule admits only operands compared in their primitive order ([DESIGN.md](../DESIGN.md#numeric-operators-and-bigints)) |
+    | `<` with an operand that may be `undefined` (`supertypePositionTest` and its caller) | 2 | (c) | the rule admits only operands compared in their primitive order ([DESIGN.md](../DESIGN.md#values)) |
     | A tuple as `Iterable<T>` (`tuple-iterable.ts` 2) | 2 | (b) | the search relates a tuple's store to `Array.prototype[Symbol.iterator]`'s element only for arrays |
     | An optional parameter at a rest signature, a `this: undefined` function as a plain callback, a nested array literal at a generic class's constructor | 3 | (b) | search |
 

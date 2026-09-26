@@ -65,7 +65,7 @@ is private, separate from rollback state, and exposes only a scope checkpoint.
 Uses preserve rigidity, scope and witness identity through the retained escape
 roots described below; origin tagging alone would not establish that lifetime.
 
-Contracts (full text in [DESIGN](../verification/DESIGN.md#contracts)):
+Contracts (full text in [DESIGN](../verification/DESIGN.md#skjs-operation-contracts)):
 
 1. Substitution preserves meaning.
 2. Expansion and normalization have explicit exact / approx / cache guarantees.

@@ -175,7 +175,7 @@ Breadth first, cheapest new representation first:
 receiver design; [SEMANTICS](../../SEMANTICS.md#one-meaning-for-callable-contracts),
 [PROGRAM-TYPING](../../PROGRAM-TYPING.md#judgments-and-constructor-views),
 [REQUEST-PROTOCOL](../../REQUEST-PROTOCOL.md#receivers) and
-[DESIGN](../../DESIGN.md#receivers-and-methods) state the implemented rules.
+[DESIGN](../../DESIGN.md#receivers) state the implemented rules.
 
 #### Contract and runtime interface
 

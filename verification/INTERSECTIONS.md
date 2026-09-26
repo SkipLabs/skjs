@@ -137,7 +137,7 @@ them where TypeScript merges them.
   contravariant mirror. The `refs` clause's views give it that semantics, and
   a source intersection of records lowers its readonly fields to views of the
   one object (`record-meet` in
-  [DESIGN.md](DESIGN.md#compositional-unions-at-the-source-boundary)): each
+  [PROGRAM-TYPING.md](PROGRAM-TYPING.md#library-types)): each
   view is kept, not merged, which is sound and reads at the first one.
 
 `Object.assign(a, b)` is typed `A & B` and is the everyday producer of
@@ -164,7 +164,7 @@ Costs and a benefit. Every application goes through the heap, and closures
 acquire an allocation site. The benefit is identity: a boxed function is a
 location, so function identity is location identity, which the design notes
 list as the missing piece for reproducing SKJS's equality branch on arrows
-(`L-INTER-BOT`, [DESIGN.md](DESIGN.md#valuable-later-targets-and-the-traps-they-introduce)).
+(`L-INTER-BOT`, [corpus witness](https://github.com/SkipLabs/skjs/blob/bf20814b4c0bfc72305e9e58411e13da68f94bca/docs/deep-dives/issues/tfun-inter-incomparable-not-disjoint.md)).
 Extensional arrow membership cannot give that; boxing does.
 
 ### 5. Branding: `string & { readonly __brand: "UserId" }`

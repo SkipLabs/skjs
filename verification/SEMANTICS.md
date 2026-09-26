@@ -4,7 +4,7 @@ The stateful development in [Model](lean/Verification/Model)
 provides the semantic foundation for the positive-type rules specified in
 [POSITIVE-TYPES.md](POSITIVE-TYPES.md). This is the semantics used by the current verifier. [PROGRAM-TYPING.md](PROGRAM-TYPING.md) specifies the proved program
 typing system and checked control-flow graphs. The
-[source integration status](DESIGN.md#source-integration)
+[fragment boundary](DESIGN.md#fragment-boundary)
 distinguishes the supported source fragment from model-only features.
 
 ## Operational language
@@ -865,5 +865,5 @@ and primitive boxing, `super` and home objects, construction and `new.target`,
 and a bound function's reflective properties (`name`, `length`) are later
 obligations, not approximated by the strict rule.
 The intended path is the
-[operation-level contracts, then a small first-order fragment](DESIGN.md#semantic-contracts-for-skjs-operations).
-[Design](DESIGN.md#later-feature-gates) owns the feature roadmap and priorities.
+[operation-level contracts](DESIGN.md#skjs-operation-contracts).
+[Design](DESIGN.md#next-steps) owns the next steps.
