@@ -1,7 +1,7 @@
 /**
- * Future narrowing example using an `instanceof` test of a constructor. The
- * model gives an object no identity of the constructor that made it, so the
- * test has no lowering yet (DESIGN.md, "Guards").
+ * An `instanceof` test of a constructor passed in: nothing in the file says
+ * which prototype it gives its instances, so the test is not lowered; one of
+ * a class the file declares is (DESIGN.md, "Guards").
  */
 function describe(
   x: { a: number } | number,

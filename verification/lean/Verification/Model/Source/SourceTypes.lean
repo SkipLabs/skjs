@@ -21,8 +21,16 @@ def storeField : PropKey := CallArguments.arrayStoreField
 /-- The field an object holds its prototype in. No source name spells it. -/
 def protoField : PropKey := CallArguments.protoField
 
-/-- A key the model keeps for itself: the array store and the prototype. -/
-def reservedKey (k : PropKey) : Bool := k == storeField || k == protoField
+/-- A name in double brackets, which the model keeps for itself: the
+prototype key and a class's prototype object's own key
+(`Fragment.classKeyOf`). -/
+def bracketed : PropKey → Bool
+  | .str s => s.startsWith "[[" && s.endsWith "]]"
+  | .sym _ => false
+
+/-- A key the model keeps for itself: the array store, the prototype, and
+every other name in double brackets. -/
+def reservedKey (k : PropKey) : Bool := k == storeField || k == protoField || bracketed k
 
 /-- The module value holding `Array.prototype`: a name no source identifier
 spells, at `ArrayProto`. Every array a unit allocates takes its prototype from

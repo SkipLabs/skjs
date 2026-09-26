@@ -65,38 +65,58 @@ theorem holdsAt_mono {key : PropKey} {A B : Fam} {k : Nat}
   obtain ⟨flds, l, c, hρ, hf, hl, hag⟩ := hv
   exact ⟨flds, l, c, hρ, hf, hl, fun j hj U hU u hu => h j hj U u (hag j hj U hU u hu)⟩
 
+/-- `v` holds `key` along its prototype chain, `d` prototypes up: at `d = 0`
+its own location for the key, whose contract implies `A`; at `d + 1` it lacks
+the key and its prototype location's contract implies the same `d` up. The
+family `A` is fixed, so the host a member is read from stays the receiver
+however far up its key is found. -/
+def along (key : PropKey) (A : Fam) : Nat → Fam
+  | 0 => holdsAt key A
+  | d + 1 => fun k W v => ∃ flds : List (PropKey × Nat), v = .objAt flds .absent ∧
+      flds.lookup key = none ∧ holdsAt CallArguments.protoField (along key A d) k W v
+
+theorem along_adm (key : PropKey) (A : Fam) : ∀ d, Adm (along key A d)
+  | 0 => holdsAt_adm key A
+  | d + 1 => by
+    refine ⟨?_, ?_⟩
+    · rintro n W v ⟨flds, hρ, hmiss, h⟩
+      exact ⟨flds, hρ, hmiss, (holdsAt_adm _ (along key A d)).down n W v h⟩
+    · rintro n W W' hx v ⟨flds, hρ, hmiss, h⟩
+      exact ⟨flds, hρ, hmiss, (holdsAt_adm _ (along key A d)).mono n W W' hx v h⟩
+
+/-- A weaker family below the level is found wherever a stronger one is, the
+same number of prototypes up. -/
+theorem along_mono {key : PropKey} {A B : Fam} : ∀ (d : Nat) {k : Nat},
+    (∀ j, j < k → ∀ (U : WorldT j) u, A j U u → B j U u) →
+    ∀ {W : WorldT k} {v : Val}, along key A d k W v → along key B d k W v
+  | 0, _, h, _, _, hv => holdsAt_mono h hv
+  | d + 1, _, h, _, _, ⟨flds, hρ, hmiss, hv⟩ =>
+    ⟨flds, hρ, hmiss, holdsAt_mono (fun j hj U u hu =>
+      along_mono d (fun i hi U' u' => h i (by omega) U' u') hu) hv⟩
+
 /-- **Host-relative members.** A member of `v` is where JavaScript's lookup
-finds its key: at `v`'s own location for it, or, when `v` lacks the key, at
-that key's location in the object `v`'s prototype location holds. Either
-contract implies, in every world extending the current one, the member's
+finds its key: at `v`'s own location for it, or, when `v` lacks the key, where
+its prototype chain has it, some prototypes up (`along`). The contract found
+there implies, in every world extending the current one, the member's
 signatures invoked on `v`. The implication is not claimed in unrelated
 worlds: there the object's own locations need not hold their contracts, and a
 method reading them could not be safe. -/
-def memberT (m : Member) : Fam := fun k W v =>
-  holdsAt m.key (onHost v m) k W v ∨
-    ∃ flds : List (PropKey × Nat), v = .objAt flds .absent ∧ flds.lookup m.key = none ∧
-      holdsAt CallArguments.protoField (holdsAt m.key (onHost v m)) k W v
+def memberT (m : Member) : Fam := fun k W v => ∃ d, along m.key (onHost v m) d k W v
 
 theorem memberT_adm (m : Member) : Adm (memberT m) := by
   refine ⟨?_, ?_⟩
-  · intro n W v h
-    rcases h with h | ⟨flds, hρ, hmiss, h⟩
-    · exact .inl ((holdsAt_adm _ _).down n W v h)
-    · exact .inr ⟨flds, hρ, hmiss, (holdsAt_adm _ _).down n W v h⟩
-  · intro n W W' hx v h
-    rcases h with h | ⟨flds, hρ, hmiss, h⟩
-    · exact .inl ((holdsAt_adm _ _).mono n W W' hx v h)
-    · exact .inr ⟨flds, hρ, hmiss, (holdsAt_adm _ _).mono n W W' hx v h⟩
+  · rintro n W v ⟨d, h⟩
+    exact ⟨d, (along_adm _ _ d).down n W v h⟩
+  · rintro n W W' hx v ⟨d, h⟩
+    exact ⟨d, (along_adm _ _ d).mono n W W' hx v h⟩
 
 /-- A member whose signatures imply another's below the level, found by the
 same key, is that member. -/
 theorem memberT_mono {m m' : Member} (hkey : m.key = m'.key) {k : Nat}
     (h : ∀ v, ∀ j, j < k → ∀ (U : WorldT j) u, onHost v m j U u → onHost v m' j U u)
     {W : WorldT k} {v : Val} (hv : memberT m k W v) : memberT m' k W v := by
-  rcases hv with hv | ⟨flds, hρ, hmiss, hv⟩
-  · exact .inl (hkey ▸ holdsAt_mono (h v) hv)
-  · exact .inr ⟨flds, hρ, hkey ▸ hmiss, holdsAt_mono (fun j hj U u hu =>
-      hkey ▸ holdsAt_mono (fun i hi U' u' => h v i (by omega) U' u') hu) hv⟩
+  obtain ⟨d, hv⟩ := hv
+  exact ⟨d, hkey ▸ along_mono d (h v) hv⟩
 
 def methodT (ms : List Member) : Fam := fun k W v => ∀ m ∈ ms, memberT m k W v
 

@@ -15,7 +15,7 @@ const verifier = process.argv[2];
 const dir = "verification/tests/unsupported";
 const cases = {
   "in_inherited.ts": "every object inherits it from Object.prototype",
-  "instanceof_narrow.ts": "the model gives an object no identity of the constructor that made it",
+  "instanceof_narrow.ts": "nothing in the file says which prototype a constructor from elsewhere gives its instances",
   "mutable_binding.ts": "a `let` needs an initializer",
 };
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "source-boundaries-"));

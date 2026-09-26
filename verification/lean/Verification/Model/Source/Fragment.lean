@@ -321,12 +321,23 @@ def translatePoint (j : Json) : SourceTypes.Lowering PointType := do
     if current.isEmpty then throw original
     return ⟨[← CellClaims.reference write],some current⟩
 
-/-- Whether the model reserves a key for itself: an array's store and an
-object's prototype live under keys no source property may name. A literal
-owning one would be an array to `Array.isArray` and to `in`, and a read of it
-would read the store. -/
+/-- Whether the model reserves a key for itself: an array's store, an
+object's prototype and a class's prototype object's own key (`classKeyOf`)
+live under keys no source property may name, the store's `[]` and every name
+in double brackets. A literal owning one would be an array to `Array.isArray`
+and to `in`, or an instance to `instanceof`, and a read of it would read the
+store. -/
 def reservedSourceKey (s : String) : Bool :=
-  PropKey.str s == CallArguments.arrayStoreField || PropKey.str s == CallArguments.protoField
+  PropKey.str s == CallArguments.arrayStoreField || (s.startsWith "[[" && s.endsWith "]]")
+
+/-- The key class `C`'s prototype object owns and no other object does:
+`x instanceof C` looks for it along `x`'s prototype chain. -/
+def classKeyOf (cls : String) : String := "[[" ++ cls ++ ".prototype]]"
+
+/-- The module binding holding class `C`'s prototype object. -/
+def prototypeBindingOf (cls : String) : String := cls ++ ".[[prototype]]"
+
+#guard reservedSourceKey (classKeyOf "C") && reservedSourceKey "[[proto]]" && reservedSourceKey "[]"
 
 /-- A key the source spells: any but a reserved one. -/
 def protoKeyName : String := "[[proto]]"
@@ -934,6 +945,19 @@ partial def decodeExpr (j : Json) : Except String Expr := do
         throw s!"unsupported source expression at [{p.1},{p.2}): `in` with the key '{key}': {reason}"
       return .shapeTest p (.hasKey (.str key)) true (← decodeExpr (← jField j "e"))
     | key => return .inKeys p key (← decodeExpr (← jField j "e"))
+  | "instanceTest" => do
+    -- `e instanceof C`, `C` a class the file declares at its top level, as
+    -- TypeScript binds it: the operand, then a read of the class's
+    -- prototype object, then the test of the key only that object owns
+    -- (`Tag.hasKey`, which walks the operand's prototype chain).
+    CellClaims.fieldsExactly j ["k","pos","e","proto","key"]
+    let key ← jStr (← jField j "key")
+    let proto ← decodeExpr (← jField j "proto")
+    let .var _ binding := proto | throw "`instanceof` reads its class's prototype object"
+    unless (binding.dropRight ".[[prototype]]".length |> fun cls =>
+        prototypeBindingOf cls == binding && classKeyOf cls == key) do
+      throw s!"`instanceof` tests '{key}', not the key of the prototype '{binding}'"
+    return .singletonTest p (.hasKey (.str key)) true true (← decodeExpr (← jField j "e")) proto
   | "arrayTest" => do
     -- `Array.isArray(e)`, which the parser writes only for the standard
     -- library's `Array` through its reviewed overlay entry.
@@ -971,6 +995,17 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     -- A class instance holds its class's prototype object under the key no
     -- source property spells: the parser's lowering of a class states it
     -- apart from the fields, never as a key.
+    -- A class's prototype object that `instanceof` tests owns the class's
+    -- key, at `undefined`, after its own prototype.
+    let brand ← match (j.getObjVal? "brand").toOption with
+      | some b => do
+        CellClaims.fieldsExactly b ["key", "pos"]
+        let key ← jStr (← jField b "key")
+        unless key.startsWith "[[" && key.endsWith ".prototype]]" do
+          throw s!"'{key}' is not a class's prototype key"
+        pure [(key, Expr.lit (← jSpan b "pos") .vundef)]
+      | none => pure []
+    let parts := brand ++ parts
     match (j.getObjVal? "proto").toOption with
     | some e =>
       return .alloc p (protoKeyName :: parts.map Prod.fst) ((← decodeExpr e) :: parts.map Prod.snd)

@@ -498,6 +498,13 @@ let typeof_slice shape holds = function
      | "symbol" -> Atoms [Symbol] | "undefined" -> Atoms [Undef] | "boolean" -> bool
      | _ -> Atoms [Top])
   | t -> t
+(* Names an `instanceof` of a class tested where they were `unknown`: the
+   test narrows nothing there, and a member read of one is refused with that
+   reason rather than as a read of `unknown`. *)
+let unknown_instance_tests : string list ref = ref []
+let unknown_instance_reason =
+  "`x instanceof C` does not narrow `unknown` to C: that every object whose prototype chain holds C's \
+   prototype has C's fields is a fact about every allocation of the program, which no type of a value states"
 (* Keep the atoms that may own the key where `key in o` held, and those that
    may lack it where it failed: a record's required field is owned, a fresh
    literal's keys are exactly its fields', and a primitive owns none. *)
@@ -561,6 +568,14 @@ let rec branch_with ?(modules = fun _ -> None) declarations env cond truth =
   | TypeofTest (shape,equal,{node=Id name;_}) ->
     refine_value env name (typeof_slice shape (truth = equal))
   | HasKey ({node=Literal (LString key);_},{node=Id name;_}) -> refine_value env name (key_slice key truth)
+  (* `x instanceof C` is the same test of the class's key: primitives and
+     fresh literals lack it; any other arm may have it or not. *)
+  | InstanceTest (key,{node=Id name;_},_) ->
+    (match List.assoc_opt name env with
+     | Some b when truth && (match binding_type b with Atoms xs -> List.mem Top xs | _ -> false) ->
+       unknown_instance_tests := name :: !unknown_instance_tests
+     | _ -> ());
+    refine_value env name (key_slice key truth)
   | TypeofTest (shape,equal,{node=Read ({node=Id name;_},Name field);_}) ->
     refine_field env name field (typeof_slice shape (truth = equal))
   (* `x == null` holds of null and undefined alike. *)
@@ -733,10 +748,14 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | None,Alloc fs -> objects := (n,fs) :: !objects
     | Some _,Ctor {node=Lambda (None,[],ps,[],false,Some instance,body);_} when allocated body <> None ->
       let fs = Option.get (allocated body) in
-      (* An instance's methods are its prototype's. *)
-      let fs = match List.assoc_opt proto_key fs with
-        | Some {node=Id p;_} -> Option.value (List.assoc_opt p !objects) ~default:[]
-        | _ -> fs in
+      (* An instance's methods are its prototype chain's, the nearer first. *)
+      let rec chain seen fs = match List.assoc_opt proto_key fs with
+        | Some {node=Id p;_} when not (List.mem p seen) ->
+          let own = Option.value (List.assoc_opt p !objects) ~default:[] in
+          List.filter (fun (k,_) -> k <> proto_key) own
+          @ List.filter (fun (k,_) -> not (List.mem_assoc k own)) (chain (p::seen) own)
+        | _ -> [] in
+      let fs = if List.mem_assoc proto_key fs then chain [] fs else fs in
       let methods = List.filter_map (fun (key,(e:expr)) -> match e.node with
         | Id m when List.mem_assoc m !closures -> Some (key,m)
         | _ -> None) fs in
@@ -892,6 +911,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     (* A string literal key is part of the test, not a claim site. *)
     | HasKey ({node=Literal (LString _);_},e) -> ignore (expr env e); bool
     | HasKey (k,e) -> ignore (expr env k); ignore (expr env e); bool
+    | InstanceTest (_,e,proto) -> ignore (expr env e); ignore (expr env proto); bool
     (* A comparison is a Boolean; `+` with a string operand is a string;
        other arithmetic is of its operands' numeric family, bigint where the
        left one is all bigints, else number. *)
@@ -1049,6 +1069,11 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     (* A field a guard found holding less than its type is read at that. *)
     | Read (({node=Id name;_} as o),Name field) when List.mem_assoc (field_key name field) env ->
       ignore (expr env o); binding_type (List.assoc (field_key name field) env)
+    | Read ({node=Id name;_} as e,n) when List.mem name !unknown_instance_tests ->
+      (match expr env e with
+       | Atoms xs as t when List.mem Top xs ->
+         (try field_type declarations [] t n with Json.Error _ -> unsupported unknown_instance_reason)
+       | t -> field_type declarations [] t n)
     | Read (e,n) -> field_type declarations [] (expr env e) n
     | Index (e,key) -> let receiver=expr env e in let key=expr env key in index_type declarations [] receiver key
     | IndexWrite (receiver,key,rhs) ->

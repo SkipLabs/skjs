@@ -1023,16 +1023,15 @@ theorem memberOf_at {G : NormalGraph ι} {O : Ty ι} {k : PropKey} {m : MethodMe
     exact ⟨hkey, MethodMembers.methodT_at (List.mem_map_of_mem hmem)
       (by first | exact hs.2.2.2.1 | exact hs.2.2.2.2.1)⟩
 
-/-- **Reading a member.** The read finds the key on the host, or, one step
-later, on the object the host's prototype location holds; either way the
-value read meets the member's signatures invoked on the host. -/
-theorem member_read_safe {m : MethodMembers.Member} {n : Nat} {W : WorldT n} {h : Heap} {v : Val}
-    (hw : WorldAdm W) (hh : HeapOk n W h) (hm : MethodMembers.memberT m n W v) :
-    Safe (MethodMembers.onHost v m) n W h (.readAt m.key v) := by
-  have hval : ValOnly (MethodMembers.onHost v m) := fun _ _ _ hv => hv.1.1.val
-  rcases hm with ⟨flds, l, c, rfl, hf, hl, hag⟩ | ⟨flds, rfl, hmiss, hp⟩
-  · exact read_view_rule_ext hval n W h l hw hh hf hl hag
-  · obtain ⟨pf, lp, cp, hρ, hpf, hlp, hpag⟩ := hp
+/-- **Reading along the chain.** A key held `d` prototypes up is read in `d`
+delegation steps, each one level down, then from its location, whose contract
+implies `A`. -/
+theorem along_read_safe {A : Fam} (hval : ValOnly A) (key : PropKey) :
+    ∀ (d : Nat) {n : Nat} {W : WorldT n} {h : Heap} {v : Val}, WorldAdm W → HeapOk n W h →
+      MethodMembers.along key A d n W v → Safe A n W h (.readAt key v)
+  | 0, n, W, h, _, hw, hh, ⟨flds, l, c, rfl, hf, hl, hag⟩ => read_view_rule_ext hval n W h l hw hh hf hl hag
+  | d + 1, n, W, h, _, hw, hh, ⟨flds, rfl, hmiss, hp⟩ => by
+    obtain ⟨pf, lp, cp, hρ, hpf, hlp, hpag⟩ := hp
     cases hρ
     cases n with
     | zero => trivial
@@ -1040,10 +1039,19 @@ theorem member_read_safe {m : MethodMembers.Member} {n : Nat} {W : WorldT n} {h 
       obtain ⟨pv, hpv, hmem⟩ := hh.2 lp cp hlp
       have hU := WorldAdm_trunc (Nat.le_succ q) hw
       have hH := HeapOk_trunc q W h hh
-      obtain ⟨qf, l, c, rfl, hf, hl, hag⟩ :=
-        hpag q (by omega) _ (WExt_refl _) pv (hmem q (by omega))
-      exact Or.inr ⟨trunc q (Nat.le_succ q) W, h, .readAt m.key (.objAt qf .absent), WExt_refl _,
-        hU, .readProto hmiss hpf hpv, hH, read_view_rule_ext hval q _ h l hU hH hf hl hag⟩
+      exact Or.inr ⟨trunc q (Nat.le_succ q) W, h, .readAt key pv, WExt_refl _,
+        hU, .readProto hmiss hpf hpv, hH,
+        along_read_safe hval key d hU hH (hpag q (by omega) _ (WExt_refl _) pv (hmem q (by omega)))⟩
+
+/-- **Reading a member.** The read finds the key on the host, or, some steps
+later, on an object along the host's prototype chain; either way the value
+read meets the member's signatures invoked on the host. -/
+theorem member_read_safe {m : MethodMembers.Member} {n : Nat} {W : WorldT n} {h : Heap} {v : Val}
+    (hw : WorldAdm W) (hh : HeapOk n W h) (hm : MethodMembers.memberT m n W v) :
+    Safe (MethodMembers.onHost v m) n W h (.readAt m.key v) := by
+  have hval : ValOnly (MethodMembers.onHost v m) := fun _ _ _ hv => hv.1.1.val
+  obtain ⟨d, hd⟩ := hm
+  exact along_read_safe hval m.key d hw hh hd
 
 /-- The fixed signatures a callable type carries, fixed or callable object
 alike; none for any other type. -/

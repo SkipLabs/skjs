@@ -40,8 +40,12 @@ export type Expr =
   /* An object literal: one named field per initializer, in source order. A
      shorthand `{ x }` is `{ x: x }`. */
   /* A class instance's allocation also holds its class's prototype object,
-     under the key no source property spells (`proto`). */
-  | { k: "alloc"; pos: Span; fields: { name: string; e: Expr }[]; proto?: Expr }
+     under the key no source property spells (`proto`); so does a derived
+     class's prototype, its base's. A prototype `instanceof` tests owns its
+     class's key, which no source property spells either, at `undefined`
+     (`brand`, its value claimed at `pos`). */
+  | { k: "alloc"; pos: Span; fields: { name: string; e: Expr }[]; proto?: Expr;
+      brand?: { key: string; pos: Span } }
   /* An object literal with spreads of values: its parts in source order, a
      named field or a spread. Each part is evaluated where written, and a
      spread's operand copied as soon as it is evaluated: its own enumerable
@@ -126,6 +130,10 @@ export type Expr =
   /* `key in e`: the key, then the operand, then whether the operand has the
      key, its own or an inherited one. */
   | { k: "inTest"; pos: Span; key: Expr; e: Expr }
+  /* `e instanceof C`, `C` a class of the file: the operand, then a read of
+     the class's prototype object (`proto`), then whether the operand's
+     prototype chain has the key only that object owns (`key`). */
+  | { k: "instanceTest"; pos: Span; e: Expr; proto: Expr; key: string }
   /* `spreads` are the indices of the arguments written with `...`: each
      stands for the elements of its operand, read where it is written. `await
      e` and an async body's returns are written as calls of intrinsics

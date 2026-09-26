@@ -184,6 +184,24 @@ instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop
     (self F : List ι) (q) : Decidable (CoversByFunction G R self F q) := by
   unfold CoversByFunction; split <;> infer_instance
 
+instance [DecidableEq ι] {G : NormalGraph ι} (P : List ι) (k : PropKey) :
+    Decidable (lacksKey G P k) := by
+  unfold lacksKey; split <;> infer_instance
+
+instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R]
+    (known : Known ι) (self : List ι) (q P) : Decidable (FoundOn G R known self q P) := by
+  unfold FoundOn; infer_instance
+
+instance instDecidableProtoHolds [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop}
+    [DecidableRel R] (known : Known ι) (self : List ι) (q) :
+    (d : Nat) → (P : List ι) → Decidable (ProtoHolds G R known self q d P)
+  | 0, P => decidable_of_iff (FoundOn G R known self q P) (by rw [ProtoHolds])
+  | d + 1, P =>
+    have := instDecidableProtoHolds (G := G) (R := R) known self q d
+    decidable_of_iff (FoundOn G R known self q P ∨ (lacksKey G P q.key ∧
+        ∃ P' ∈ (viewOf G P CallArguments.protoField).toList, ProtoHolds G R known self q d P'))
+      (by rw [ProtoHolds])
+
 instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R]
     (known : Known ι) (self : List ι) (fields bounds q) :
     Decidable (CoversByProto G R known self fields bounds q) := by

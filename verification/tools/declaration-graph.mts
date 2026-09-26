@@ -303,6 +303,11 @@ export function collectDeclarations(file: string, options: {
    * with the class's name. */
   staticReads?: readonly Span[];
   staticMember?: (span: Span, cls: string) => void;
+  /** `instanceof` right operands naming a class of the client by name. */
+  classTests?: readonly Span[];
+  /** Called for each of them TypeScript binds to a class declared at the
+   * client's top level, with the class's name. */
+  classTest?: (span: Span, cls: string) => void;
   /** The client's top-level enum declarations: each must be one TypeScript
    * accepts, and each member, by its span, is reported to `enumMember` with
    * the value TypeScript computes for it, which is the value its emit writes
@@ -914,6 +919,15 @@ export function collectDeclarations(file: string, options: {
           (ts.isPropertyDeclaration(member) || ts.isMethodDeclaration(member)) &&
           member.modifiers?.some(m => m.kind === ts.SyntaxKind.StaticKeyword))
         options.staticMember?.(span, owner.name.text);
+    }
+    for (const span of options.classTests ?? []) {
+      const name = identifierAt(client, span);
+      if (!name) throw new DeclarationError(span, "TypeScript `instanceof` operand missing");
+      const owners = targetOf(checker, name)?.declarations.map(d => d.resolve()) ?? [];
+      const [owner] = owners;
+      if (owners.length === 1 && owner && ts.isClassDeclaration(owner) && owner.name &&
+          owner.parent === client && owner.name.text === name.text)
+        options.classTest?.(span, owner.name.text);
     }
     for (const span of options.enums ?? []) {
       const statement = client.statements.find(s => s.getStart(client) === span[0] && s.end === span[1]);

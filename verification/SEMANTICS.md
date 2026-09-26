@@ -82,7 +82,10 @@ bounded by the heap's length, so a chain the heap makes cyclic, which no
 JavaScript object has, answers false. Keys are fixed at allocation and no
 source writes a prototype, so its answer never changes. It is `in` for the
 keys the lowering admits ([DESIGN](DESIGN.md#guards)); JavaScript's `in`
-throws on a primitive. Where the object owns the key or holds no prototype
+throws on a primitive. For $\kappa_C$, the key only class `C`'s prototype
+object owns, it is `instanceof C`: an object along whose chain that
+prototype is, and `false` of a primitive, as JavaScript's `instanceof`
+answers. Where the object owns the key or holds no prototype
 (`protoFree`) the answer is the heap-free $\kappa\in\operatorname{dom}\mathit{fs}$
 (`tagHoldsIn_of_protoFree`), which is what a type's answer states. A closure descriptor records which invocation its code
 admits, $\mathsf{closure}(m,t,\mathit{kind})$ with

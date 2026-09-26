@@ -2084,12 +2084,42 @@ $$
 $$
 
 where $B^{\circ}$ is `B`'s constructor claimed also at the fresh instance it
-allocates, its keys exact (`ctorE` checks its body at that signature too),
-and $D.\texttt{[[prototype]]}$ is `{ ...B.[[prototype]], m: D.m, … }`, `D`'s
-methods over its base's, or its base's where it has none. `super.m(ā)` is
-`B.m.call(this, ā)`, with `B.m` the closure `B`'s prototype holds. So the
-allocation's keys are exact, and `D`'s declared type, its own members and
-`B`'s, covers it through the prototype.
+allocates, its keys exact (`ctorE` checks its body at that signature too).
+`D` without a constructor has JavaScript's implicit one,
+`constructor(...args) { super(...args); }`: its parameters are $B$'s, at
+their types, under names no source spells, and $\vec a$ is them. A class's
+prototype object is allocated once, at its definition:
+
+$$
+D.\texttt{[[prototype]]} = \{\texttt{[[proto]]}{:}\,B.\texttt{[[prototype]]},\ \kappa_D{:}\,\mathsf{undefined},\ m{:}\,D.m,\ \ldots\}
+$$
+
+its own methods, linked to its base's under the prototype key, as
+JavaScript's `D.prototype` is; $\kappa_D$, the class's key, is there where
+`instanceof D` is written in the file, below. A prototype holding nothing
+of its own that nothing tests is not allocated: `D`'s instances then hold
+the nearest ancestor's (or none), and every read and test answers the same.
+`super.m(ā)` is `B.m.call(this, ā)`, with `B.m` the closure `B`'s prototype
+chain holds. So the allocation's keys are exact, and `D`'s declared type,
+its own members and `B`'s, covers it through the prototype chain
+([method coverage](POSITIVE-TYPES.md#clause-coverage), `CoversByProto`).
+
+`e instanceof C`, with `C` an identifier TypeScript binds to a class the
+file declares at its top level, evaluates $e$, then `C` (read as its
+prototype object, which the class statement binds with it), then looks for
+$\kappa_C = \texttt{[[}C\texttt{.prototype]]}$, the key only
+$C.\texttt{[[prototype]]}$ owns, along $e$'s prototype chain:
+
+$$
+e\ \mathtt{instanceof}\ C\;\equiv\;\mathsf{let}\ x=e\ \mathsf{in}\ \mathsf{let}\ p=C.\texttt{[[prototype]]}\ \mathsf{in}\ \mathsf{hasKey}(\kappa_C)(x)
+\qquad
+\frac{\Gamma\vdash e:A\quad \Gamma\vdash C.\texttt{[[prototype]]}:P}
+     {\Gamma\vdash e\ \mathtt{instanceof}\ C:\mathsf{boolean}}
+$$
+
+Any operand is admitted: $\mathsf{hasKey}$ answers `false` on a primitive,
+as `instanceof` does (it throws only on its right operand). A tested
+immutable variable is refined as by every tag test ([Guards](DESIGN.md#guards)).
 
 An optional chain is the same derived form with the arms exchanged. The
 parser writes `r?.x` and every link after it in the chain (`.b`, `[k]`,

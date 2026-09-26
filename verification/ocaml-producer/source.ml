@@ -328,6 +328,10 @@ and expr_node =
   | TypeofTest of string * bool * expr
   (* `key in e`: the key, then whether the operand has it. *)
   | HasKey of expr * expr
+  (* `e instanceof C` of a class of the file: the operand, then a read of the
+     class's prototype object, then whether the key only that object owns is
+     along the operand's prototype chain. *)
+  | InstanceTest of string * expr * expr
   | Equality of equality * expr * expr | Alloc of (string * expr) list
   (* An object literal with spreads of values: its parts in source order, a
      named field (`Some key`) or a spread (`None`). *)
@@ -460,7 +464,7 @@ let children e = match e.node with
   | ThrowBody e -> [e]
   | Assign (_,e) | NullishAssign (_,_,e) -> [e]
   | Update (_,t,r,_) -> t :: Option.to_list r
-  | LogicalAssign (_,a,b) | Comma (a,b) | HasKey (a,b) -> [a;b]
+  | LogicalAssign (_,a,b) | Comma (a,b) | HasKey (a,b) | InstanceTest (_,a,b) -> [a;b]
   | ArrayAssign (targets,_,rhs) -> rhs :: List.filter_map (fun (_,_,d) -> d) targets
   | Arith (_,a,b) | Equality (_,a,b) | Write (a,_,b) | Coalesce (a,b) | Optional (a,b) | Index (a,b) | Logical (_,a,b)
   | WithFields (a,b,_,_) | SequenceBody (a,b) | LetBody (_,_,a,b) -> [a;b]
@@ -513,6 +517,7 @@ let rec expr binders j =
   (* `Array.isArray(e)`: a test of the operand's shape, the array one. *)
   | "arrayTest" -> TypeofTest ("array",true,sub "e")
   | "inTest" -> HasKey (sub "key",sub "e")
+  | "instanceTest" -> InstanceTest (text "key" j,sub "e",sub "proto")
   | "arith" -> Arith (arithmetic (text "op" j),sub "l",sub "r")
   | "update" -> Update (arithmetic (text "op" j),sub "target",
       (match field "rhs" j with Null -> None | r -> Some (expr binders r)),boolean (field "post" j))
@@ -538,7 +543,10 @@ let rec expr binders j =
     (* A class instance's prototype, under the key no source property spells. *)
     let proto = match List.assoc_opt "proto" (Json.obj j) with
       | Some e -> ["[[proto]]",expr binders e] | None -> [] in
-    Alloc (proto @ List.map (fun f -> text "name" f,expr binders (field "e" f)) (items "fields" j))
+    (* A prototype `instanceof` tests owns its class's key, at `undefined`. *)
+    let brand = match List.assoc_opt "brand" (Json.obj j) with
+      | Some b -> [text "key" b,{pos=field "pos" b;node=Literal LUndefined}] | None -> [] in
+    Alloc (proto @ brand @ List.map (fun f -> text "name" f,expr binders (field "e" f)) (items "fields" j))
   | "build" ->
     let proto = match List.assoc_opt "proto" (Json.obj j) with
       | Some e -> [Some "[[proto]]",expr binders e] | None -> [] in

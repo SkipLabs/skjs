@@ -145,16 +145,20 @@ $$
   $$
 
   a member is where JavaScript's lookup finds its key: on the object, or,
-  when the object lacks the key, on the object its prototype location holds:
+  when the object lacks the key, along its prototype chain, $d$ prototypes
+  up (`along`):
 
   $$
-  \mathsf{meth}(\mu)_n(W,v)\iff\forall m\in\mu.\;
-    \mathsf{holds}_{m.\mathsf{key}}(\mathsf{on}_v(m))_n(W,v)\lor
-    \bigl(m.\mathsf{key}\notin\mathit{flds}\land
-      \mathsf{holds}_{\mathsf{proto}}(\mathsf{holds}_{m.\mathsf{key}}(\mathsf{on}_v(m)))_n(W,v)\bigr).
+  \begin{aligned}
+  \mathsf{along}^0_k(A)&=\mathsf{holds}_k(A)\qquad
+  \mathsf{along}^{d+1}_k(A)_n(W,v)\iff v=\ell\land k\notin\mathit{flds}\land
+      \mathsf{holds}_{\mathsf{proto}}(\mathsf{along}^d_k(A))_n(W,v)\\
+  \mathsf{meth}(\mu)_n(W,v)&\iff\forall m\in\mu.\;\exists d.\;
+    \mathsf{along}^d_{m.\mathsf{key}}(\mathsf{on}_v(m))_n(W,v).
+  \end{aligned}
   $$
 
-  The prototype's member is invoked on $v$, the object the read began at. The
+  A prototype's member is invoked on $v$, the object the read began at. The
   implication is claimed only in worlds extending the current one: in an
   unrelated world the object's locations need not hold their contracts, and no
   method reading them could be safe.
@@ -225,7 +229,7 @@ holding a mutable dictionary add keys at $C$ is a trust assumption
 recursive graph can contain `JsonObject = { readonly [key: string]: Json | null }`.
 
 Lean: `refsT`, `viewT`, `OptionalField`, `optT`, `SlotContract`, `NumericKey`, `IndexKeys`, `dictViewT`, `dictCellT`, `KeyBound`, `ownKeysT` (`Types/Types.lean`), `methodT`,
-`memberT`, `holdsAt`, `onHost` (`Types/MethodMembers.lean`). The heap facts behind invariant
+`memberT`, `along`, `holdsAt`, `onHost` (`Types/MethodMembers.lean`). The heap facts behind invariant
 operands (`adm`, `congr_below`, `operands_agree`, `read_all`, `write_first`,
 `cyclic_inhabited`) are in `Types/ReferenceConjunctions.lean`: a read meets
 every operand, and writing a value at the first operand preserves every
@@ -629,7 +633,7 @@ array, whose bound only excludes keys.
 **Methods.** A target method $m$ is covered by a source method of the same
 key, by a function the source holds under that key whose receiver the source
 type $S$ is within, or, when a key bound of the source excludes the key, by
-such a function its prototype holds:
+such a function along its prototype chain:
 
 $$
 \frac{m'\in\mu\quad m'.\mathsf{key}=m.\mathsf{key}\quad
@@ -645,34 +649,52 @@ $$
 $$
 
 $$
-\frac{\begin{array}{c}
-\beta\nvDash m.\mathsf{key}\quad(\mathsf{proto}{:}P)\in\Phi\,\psi\quad
-      (m.\mathsf{key}{:}F)\ \text{a field or view of}\ P\quad(F,L,M)\in\kappa\\
-      \forall(\vec Q\to D)\in m.\;\exists(Q_0;\vec P)\to B\in L.\;
-      \Delta(S,Q_0)\land\Delta(\vec Q,\vec P)\land\Delta(B,D)
-\end{array}}
+\frac{\beta\nvDash m.\mathsf{key}\quad(\mathsf{proto}{:}P)\in\Phi\,\psi\quad
+      \Delta;\kappa;S\vdash P\ni^{d}_{\mathsf{proto}}m\quad d\le 16}
      {\Delta;\kappa;S\vdash(\Phi\,\psi;\mu;\beta)\sqsubseteq_{\mathsf{meth}}m}
 $$
 
-The third reads the member through the prototype, as the meaning does. Its
-function type is a **known row** $(F,L,M)$ of $\kappa$: a row $F$ whose values
-meet the arrows $L$, $M$, proved outside the table. For an array, $F$ is a
-generic member of `ArrayProto` and $L$ its instance at the array's element
-type, with the array as receiver: `Array.prototype[Symbol.iterator]` at
-`number` covers `Iterable<number>`'s member. Each premise that names $\kappa$
-passes it on unchanged. The fourth reads it through the prototype too, from a
-function-typed field or view there, as the second reads an own one: a class
-instance's methods are its prototype's closures, whose receiver is the
-class's instance type (`CoversByProto`, its second disjunct;
-[DESIGN.md](DESIGN.md#modules-and-code-units), "Classes"):
+The third reads the member through the prototype chain, as the meaning does
+(`CoversByProto`, `ProtoHolds`). A prototype type $P$ holds $m$ where its
+one record clause has $m$'s key at a function type covering it, or, where
+that clause's key bound $\beta_P$ excludes the key, its own prototype field
+does, one prototype further up (`lacksKey`):
 
 $$
-\frac{\beta\nvDash m.\mathsf{key}\quad(\mathsf{proto}{:}P)\in\Phi\,\psi\quad
-      (m.\mathsf{key}{:}F)\ \text{a field or view of}\ P\quad F\equiv\mathsf{arrs}(L;\ldots)\quad
+\frac{(m.\mathsf{key}{:}F)\ \text{a field or view of}\ P\quad \Delta;\kappa;S\vdash F\ni_{\mathsf{fn}}m}
+     {\Delta;\kappa;S\vdash P\ni^{d}_{\mathsf{proto}}m}
+\qquad
+\frac{P\equiv\mathsf{Ref}(\Phi_P;\psi_P;\omega_P;\mu_P;\beta_P)\quad\beta_P\nvDash m.\mathsf{key}\quad
+      (\mathsf{proto}{:}P')\ \text{a field or view of}\ P\quad \Delta;\kappa;S\vdash P'\ni^{d}_{\mathsf{proto}}m}
+     {\Delta;\kappa;S\vdash P\ni^{d+1}_{\mathsf{proto}}m}
+$$
+
+The function type $F$ covers $m$ in two ways (`FoundOn`). It is a **known
+row** $(F,L,M)$ of $\kappa$: a row $F$ whose values meet the arrows $L$, $M$,
+proved outside the table. For an array, $F$ is a generic member of
+`ArrayProto` and $L$ its instance at the array's element type, with the array
+as receiver: `Array.prototype[Symbol.iterator]` at `number` covers
+`Iterable<number>`'s member. Or it is an arrow type, as for the second rule:
+a class instance's methods are its prototype chain's closures, whose
+receiver is the class's instance type ([DESIGN.md](DESIGN.md#modules-and-code-units),
+"Classes"). Each premise that names $\kappa$ passes it on unchanged:
+
+$$
+\frac{(F,L,M)\in\kappa\quad
       \forall(\vec Q\to D)\in m.\;\exists(Q_0;\vec P)\to B\in L.\;
       \Delta(S,Q_0)\land\Delta(\vec Q,\vec P)\land\Delta(B,D)}
-     {\Delta;\kappa;S\vdash(\Phi\,\psi;\mu;\beta)\sqsubseteq_{\mathsf{meth}}m}
+     {\Delta;\kappa;S\vdash F\ni_{\mathsf{fn}}m}
+\qquad
+\frac{F\equiv\mathsf{arrs}(L;\ldots)\quad
+      \forall(\vec Q\to D)\in m.\;\exists(Q_0;\vec P)\to B\in L.\;
+      \Delta(S,Q_0)\land\Delta(\vec Q,\vec P)\land\Delta(B,D)}
+     {\Delta;\kappa;S\vdash F\ni_{\mathsf{fn}}m}
 $$
+
+The depth bound only limits completeness: a method more than 16 prototypes
+up is not found, never wrongly admitted. The rule is sound because the
+meaning's $\mathsf{along}^{d+1}$ is what the premises state of every member
+of the source, one prototype location at a time (`protoHolds_sound`).
 
 Here $\Delta(\vec Q,\vec P)$ pairs the lists position by position and needs
 equal lengths (`Domains`). Receivers of two members are not compared: both
@@ -867,7 +889,8 @@ for everything those contracts reach.
 with $F$'s values within $\mathsf{arrs}(L;M)$ at every level.
 
 Lean: `Core`, `Valid`, `Known`, `SameKind`, `Opaque`, `meetSources`, `meet_clause_of`, `splitClause`,
-`splitClause_sem`, `source_sem`, `CoversByProto`, `viewOf`, `covers_arrows_sound`,
+`splitClause_sem`, `source_sem`, `CoversByProto`, `ProtoHolds`, `FoundOn`, `lacksKey`, `viewOf`,
+`covers_arrows_sound`, `protoHolds_sound`,
 `Core.mixed_sound`.
 
 ### Structural rules

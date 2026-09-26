@@ -6,8 +6,8 @@ silently replace the intended gate.
 
 - `in_inherited.ts`: `"toString" in x`, a key every object inherits from
   `Object.prototype`, which the model's own-key test does not see.
-- `instanceof_narrow.ts`: `x instanceof C` for a constructor `C`, whose
-  instances the model does not tell from other objects of their shape.
+- `instanceof_narrow.ts`: `x instanceof C` for a constructor `C` passed in,
+  whose instances' prototype nothing in the file names.
 - `mutable_binding.ts`: mutable local bindings.
 
 The string and call example that used to sit here is gone: strings are in the

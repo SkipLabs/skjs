@@ -668,22 +668,50 @@ def viewOf (G : NormalGraph ι) (P : List ι) (k : PropKey) : Option (List ι) :
   | [.refs a bs vs _ _ _] => (((a :: bs).flatten ++ vs).find? (·.1 == k)).map (·.2)
   | _ => none
 
-/-- A method signature is covered through the source's prototype: a key bound
-of the source excludes the key (`Excludes`), so the object lacks it, and the prototype's
-field or view of that key is a known row, below arrows covering the signature
-with the object as receiver, as `CoversByFunction`. The known row is
-typically a generic prototype member and its instance at the array's element
-type: `Array.prototype[Symbol.iterator]` at `number`. -/
+/-- Whether a type's one record clause has an own-key bound excluding a key:
+its members lack it. -/
+def lacksKey (G : NormalGraph ι) (P : List ι) (k : PropKey) : Prop :=
+  match expand G P with
+  | [.refs _ _ _ _ _ ks] => Excludes ks k
+  | _ => False
+
+/-- A prototype type holds a method signature's key at a field or view that
+covers it with the object as receiver: a known row below arrows covering it
+(typically a generic prototype member and its instance at the array's element
+type: `Array.prototype[Symbol.iterator]` at `number`), or a function type
+covering it, as `CoversByFunction`. -/
+def FoundOn (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
+    (self : List ι) (q : MethodMembers.Sig (List ι)) (P : List ι) : Prop :=
+  (∃ k ∈ known, viewOf G P q.key = some k.1 ∧ CoversArrows G R self k.2.1 k.2.2 q) ∨
+    ∃ F ∈ (viewOf G P q.key).toList, CoversByFunction G R self F q
+
+/-- A method signature is found along a prototype chain from prototype type
+`P`, at most `d` further prototypes up: on `P` itself (`FoundOn`), or, where
+`P`'s key bound excludes the key, along the prototype `P`'s own prototype
+field or view holds. JavaScript's lookup does the same. -/
+def ProtoHolds (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
+    (self : List ι) (q : MethodMembers.Sig (List ι)) : Nat → List ι → Prop
+  | 0, P => FoundOn G R known self q P
+  | d + 1, P => FoundOn G R known self q P ∨ (lacksKey G P q.key ∧
+      ∃ P' ∈ (viewOf G P CallArguments.protoField).toList, ProtoHolds G R known self q d P')
+
+/-- How many prototypes up a method is looked for: a class hierarchy deeper
+than this has its inherited methods refused, never wrongly admitted. -/
+def protoChainDepth : Nat := 16
+
+/-- A method signature is covered through the source's prototype chain: a key
+bound of the source excludes the key (`Excludes`), so the object lacks it, and
+its prototype field's type holds it, on that prototype or further up
+(`ProtoHolds`). -/
 def CoversByProto (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
     (self : List ι) (fields : List (PropKey × List ι)) (bounds : List KeyBound)
     (q : MethodMembers.Sig (List ι)) : Prop :=
   Excludes bounds q.key ∧ ∃ f ∈ fields, f.1 = CallArguments.protoField ∧
-    ((∃ k ∈ known, viewOf G f.2 q.key = some k.1 ∧ CoversArrows G R self k.2.1 k.2.2 q) ∨
-      ∃ F ∈ (viewOf G f.2 q.key).toList, CoversByFunction G R self F q)
+    ProtoHolds G R known self q protoChainDepth f.2
 
 /-- Every target method is covered by a source method of the same key, by a
 function the source holds under that key whose receiver the source's own type
-is within, or by such a function its prototype holds. -/
+is within, or by such a function along its prototype chain. -/
 abbrev CoversMethods (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
     (self : List ι) (fields : List (PropKey × List ι)) (bounds : List KeyBound)
     (source target : List (MethodMembers.Sig (List ι))) : Prop :=
@@ -1299,6 +1327,83 @@ theorem viewOf_at {G : NormalGraph ι} {η : MixedAssignment ι} {P F : List ι}
     exact ⟨flds, l, c, hρ, hk ▸ hl1, hl2, hag⟩
   · cases hF
 
+/-- A member of a type whose one record clause excludes a key lacks it. -/
+theorem lacksKey_at {G : NormalGraph ι} {η : MixedAssignment ι} {P : List ι} {k : PropKey}
+    (hk : lacksKey G P k) {n : Nat} {W : WorldT n} {p : Val} (hp : mixedValues G η P n W p) :
+    ∃ flds : List (PropKey × Nat), p = .objAt flds .absent ∧ flds.lookup k = none := by
+  unfold lacksKey at hk
+  split at hk
+  · rename_i a bs vs os ms ks hE
+    have hplain := plain_of_mem_expand (G := G) (S := P) (c := .refs a bs vs os ms ks) (by simp [hE])
+    obtain ⟨c', hc', hsem⟩ := (mixed_expand η hplain n W p).mp hp
+    rw [hE, List.mem_singleton] at hc'
+    subst hc'
+    obtain ⟨K, hK, hnot⟩ := hk
+    have hown := hsem.2.2.2.2 K hK
+    obtain ⟨flds, rfl, -⟩ := hown
+    exact ⟨flds, rfl, ownKeysT_lookup (hsem.2.2.2.2 K hK) hnot⟩
+  · exact hk.elim
+
+/-- A prototype found along the chain holds the member: every member of the
+prototype type, below the level, in every world extending the host's, holds
+the key the same number of prototypes up, its contract implying the target's
+signatures invoked on the host. -/
+theorem protoHolds_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
+    {known : Known ι} {self : List ι} {q : MethodMembers.Sig (List ι)}
+    (hknown : ∀ k ∈ known, FamLe (mixedValues G η k.1) (mixedSem G η (.arrs k.2.1 k.2.2)))
+    {n : Nat} (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
+    {W : WorldT n} {v : Val}
+    (hself : ∀ j (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
+      mixedValues G η self j U v) :
+    ∀ (d : Nat) (P : List ι), ProtoHolds G R known self q d P → ∃ e : Nat,
+      ∀ j (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
+        ∀ p, mixedValues G η P j U p →
+          MethodMembers.along q.key
+            (MethodMembers.onHost v (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η) q)) e j U p := by
+  -- Found on the prototype itself: its field or view of the key holds a
+  -- function covering the signature, as an own one would.
+  have found : ∀ P, FoundOn G R known self q P →
+      ∀ j (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
+        ∀ p, mixedValues G η P j U p →
+          MethodMembers.along q.key
+            (MethodMembers.onHost v (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η) q)) 0 j U p := by
+    intro P hview j hj U hU p hp
+    have hx : ∀ i (hi : i < j) (U' : WorldT i), WExt (trunc i (Nat.le_of_lt hi) U) U' →
+        WExt (trunc i (Nat.le_of_lt (Nat.lt_trans hi hj)) W) U' := by
+      intro i hi U' hU'
+      have := WExt_trunc (Nat.le_of_lt hi) hU
+      rw [trunc_trunc] at this
+      exact WExt_trans this hU'
+    rcases hview with ⟨k, hk, hF, hby⟩ | ⟨F, hF, hby⟩
+    · obtain ⟨pf, l, c, rfl, hl1, hl2, hag⟩ := viewOf_at hF hp
+      exact ⟨pf, l, c, rfl, hl1, hl2, fun i hi U' hU' u hu =>
+        covers_arrows_sound hby hr hpa hself (Nat.lt_trans hi hj) (hx i hi U' hU')
+          (hknown k hk i U' u (hag i hi U' u hu))⟩
+    · obtain ⟨pf, l, c, rfl, hl1, hl2, hag⟩ := viewOf_at (Option.mem_toList.mp hF) hp
+      exact ⟨pf, l, c, rfl, hl1, hl2, fun i hi U' hU' u hu =>
+        covers_by_function_sound hby hr hpa hself (Nat.lt_trans hi hj) (hx i hi U' hU')
+          (hag i hi U' u hu)⟩
+  intro d
+  induction d with
+  | zero => intro P h; exact ⟨0, found P h⟩
+  | succ d ih =>
+    intro P h
+    rcases h with h | ⟨hk, P', hP', h⟩
+    · exact ⟨0, found P h⟩
+    · -- Further up: the prototype lacks the key, and its own prototype
+      -- location holds one of `P'`, which holds the key `e` up.
+      obtain ⟨e, he⟩ := ih P' h
+      refine ⟨e + 1, fun j hj U hU p hp => ?_⟩
+      obtain ⟨pf, rfl, hmiss⟩ := lacksKey_at hk hp
+      obtain ⟨pf', l, c, hρ, hl1, hl2, hag⟩ := viewOf_at (Option.mem_toList.mp hP') hp
+      cases hρ
+      refine ⟨pf, rfl, hmiss, pf, l, c, rfl, hl1, hl2, fun i hi U' hU' u hu => ?_⟩
+      have hx : WExt (trunc i (Nat.le_of_lt (Nat.lt_trans hi hj)) W) U' := by
+        have := WExt_trunc (Nat.le_of_lt hi) hU
+        rw [trunc_trunc] at this
+        exact WExt_trans this hU'
+      exact he i (Nat.lt_trans hi hj) U' hx u (hag i hi U' u hu)
+
 /-- Covered methods: each target member is read from the location a source
 member of its key names, whose contract implies the target's signatures on the
 same host; or from a field or view holding a function whose receiver the host
@@ -1327,30 +1432,13 @@ theorem covers_methods_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R :
         (fun i hi => hpa i (by omega)) U w u hu)
       (MethodMembers.methodT_at (List.mem_map_of_mem hp) hv)
   · obtain ⟨flds, l, c, hρ, hfl, hl, hag⟩ := hfields f hf
-    exact .inl ⟨flds, l, c, hρ, by simpa [MethodMembers.Member.of, ← hkey] using hfl, hl,
+    exact ⟨0, flds, l, c, hρ, by simpa [MethodMembers.Member.of, ← hkey] using hfl, hl,
       fun j hj U hU u hu => covers_by_function_sound hby hr hpa hself hj hU (hag j hj U u hu)⟩
   · obtain ⟨flds, lp, cp, rfl, hfl, hlp, hpag⟩ := hfields f hf
-    refine .inr ⟨flds, rfl, ownKeysT_lookup (hbounds K hK) hnot,
-      flds, lp, cp, rfl, by rw [← hpk]; exact hfl, hlp, ?_⟩
-    intro j hj U hU p hp
-    rcases hview with ⟨k, hk, hF, hby⟩ | ⟨F, hF, hby⟩
-    · obtain ⟨pf, l, c, rfl, hl1, hl2, hag⟩ := viewOf_at hF (hpag j hj U p hp)
-      refine ⟨pf, l, c, rfl, hl1, hl2, fun i hi U' hU' u hu => ?_⟩
-      have hx : WExt (trunc i (Nat.le_of_lt (Nat.lt_trans hi hj)) W) U' := by
-        have := WExt_trunc (Nat.le_of_lt hi) hU
-        rw [trunc_trunc] at this
-        exact WExt_trans this hU'
-      exact covers_arrows_sound hby hr hpa hself (Nat.lt_trans hi hj) hx
-        (hknown k hk i U' u (hag i hi U' u hu))
-    · -- The prototype's field or view holds a function, as an own one would.
-      obtain ⟨pf, l, c, rfl, hl1, hl2, hag⟩ :=
-        viewOf_at (Option.mem_toList.mp hF) (hpag j hj U p hp)
-      refine ⟨pf, l, c, rfl, hl1, hl2, fun i hi U' hU' u hu => ?_⟩
-      have hx : WExt (trunc i (Nat.le_of_lt (Nat.lt_trans hi hj)) W) U' := by
-        have := WExt_trunc (Nat.le_of_lt hi) hU
-        rw [trunc_trunc] at this
-        exact WExt_trans this hU'
-      exact covers_by_function_sound hby hr hpa hself (Nat.lt_trans hi hj) hx (hag i hi U' u hu)
+    obtain ⟨e, he⟩ := protoHolds_sound hknown hr hpa hself protoChainDepth f.2 hview
+    exact ⟨e + 1, flds, rfl, ownKeysT_lookup (hbounds K hK) hnot,
+      flds, lp, cp, rfl, by rw [← hpk]; exact hfl, hlp,
+      fun j hj U hU p hp => he j hj U hU p (hpag j hj U p hp)⟩
 
 /-- The same argument for a callable object's property bag, which forgets the
 call slot but names the same locations. -/

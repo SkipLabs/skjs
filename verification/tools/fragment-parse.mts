@@ -75,6 +75,11 @@ const staticName = (cls: string, member: string): string => `static ${cls}.${mem
  * can spell, apart from an instance method's `C.m` and a static member's. */
 const prototypeName = (cls: string): string => `${cls}.[[prototype]]`;
 
+/** The key a class's prototype object owns and no other object does, which
+ * `x instanceof C` looks for along `x`'s prototype chain: a name no source
+ * key can spell (Lean's `Fragment.reservedSourceKey`). */
+const classKey = (cls: string): string => `[[${cls}.prototype]]`;
+
 /** A class as a class extending it reads it: its constructor's parameters,
  * its methods (each the binding holding its closure, its base's included,
  * its own overriding them), and the binding holding its constructor at the
@@ -273,6 +278,9 @@ class Gate {
   /** `C.x` member names TypeScript binds to a static member of the file's
    * class `C`, by span: the class. */
   staticReads = new Map<string, string>();
+  /** `instanceof` right operands TypeScript binds to a class declared at the
+   * file's top level, by span: the class. */
+  readonly classTests = new Map<string, string>();
   /** The classes lowered so far, by name: what a class extending one reads
    * (`classStmt`). */
   private readonly classRecords = new Map<string, ClassRecord>();
@@ -536,6 +544,20 @@ class Gate {
       const readsThis = (n: Node): boolean =>
         n.kind === ts.SyntaxKind.ThisKeyword ||
         (!ts.isFunctionExpression(n) && !ts.isFunctionDeclaration(n) && !!n.forEachChild((c) => readsThis(c) || undefined));
+      // A derived class without a constructor has JavaScript's implicit one,
+      // `constructor(...args) { super(...args); }`: it takes its base's
+      // parameters, at their types, under names no source binding spells,
+      // and passes them on. Actuals past them reach no parameter of the
+      // base's constructor, which binds exactly its own. Each forwarded
+      // read is claimed at one character of the `extends` keyword, a site
+      // nothing else claims.
+      const implicitParams = (base: ClassRecord) => {
+        const keyword = heritage ? heritage.getStart(this.file) : 0;
+        if (base.params.length > "extends".length)
+          this.fail(node, "an implicit derived constructor forwarding more parameters than its `extends` keyword has characters has no source site for each");
+        return base.params.map((p, i) => ({ name: parameterName(i), pos: [keyword + i, keyword + i + 1] as Span,
+          property: false, at: this.span(name), type: p.type }));
+      };
       // An optional parameter, `x?: T`, binds `T | undefined`, as a closure's.
       const params = constructor ? constructor.parameters.map((p, i, all) => {
         if (!ts.isIdentifier(p.name) || p.dotDotDotToken || p.initializer)
@@ -545,9 +567,7 @@ class Gate {
         if (p.name.text === "undefined") this.fail(p, "shadowing undefined is outside the fragment");
         return { name: p.name.text, pos: this.span(p.name), property: !!p.modifiers?.length, at: this.span(p),
           type: p.questionToken ? this.optionalTypeOf(p.type, p) : this.typeOf(p.type, p) };
-      }) : [];
-      if (base && !constructor && base.params.length)
-        this.fail(node, "an implicit derived constructor passing its base's parameters is outside the fragment");
+      }) : base ? implicitParams(base) : [];
       // Static members are bindings of their own, which `C.x` reads
       // (`staticReads`), after the class, as JavaScript defines them once the
       // class value exists: the methods, then the fields, in order.
@@ -606,26 +626,27 @@ class Gate {
       }
       for (const p of params)
         if (p.property) fields.push({ name: p.name, e: { k: "id", pos: p.pos, name: p.name }, bind: { pos: p.at, type: p.type } });
-      // A class with methods allocates its prototype object once, holding
-      // them, and each instance holds it under the prototype key, first: the
-      // key's value is a read of a constant, so its place changes nothing.
-      // A derived class's prototype holds every method of the chain: its
-      // base's prototype's, copied, then its own over them. JavaScript's
-      // holds its own and links to its base's, which nothing in the fragment
-      // tells apart (DESIGN.md, "Class inheritance"). Without methods of its
-      // own, it is its base's prototype.
+      // A class allocates its prototype object once, holding its methods, and
+      // each instance holds it under the prototype key, first: the key's
+      // value is a read of a constant, so its place changes nothing. A
+      // derived class's prototype holds its own methods and links to its
+      // base's under the prototype key, as JavaScript's does. A class that
+      // `instanceof` tests owns its key there. A prototype holding nothing
+      // of its own, which nothing tests, is not allocated: its instances
+      // hold its base's, or none, and every read and test answers alike.
       const prototypeBinding: BindingAst[] = [];
       let proto: Expr | null = null;
       let protoBinding: string | null = null;
       const baseProto: Expr | null = base?.proto && heritage
         ? { k: "id", pos: this.span(heritage.types[0]!.expression), name: base.proto } : null;
-      if (!prototype.length && base?.proto) protoBinding = base.proto;
-      if (prototype.length) {
+      const tested = [...this.classTests.values()].includes(name.text);
+      if (!prototype.length && !tested && base?.proto) protoBinding = base.proto;
+      if (prototype.length || tested) {
         const at: Span = [name.getStart(this.file), node.end];
         protoBinding = prototypeName(name.text);
         prototypeBinding.push({ name: prototypeName(name.text), namePos: at, annot: null,
-          init: baseProto ? { k: "build", pos: at, parts: [{ spread: baseProto }, ...prototype] }
-            : { k: "alloc", pos: at, fields: prototype } });
+          init: { k: "alloc", pos: at, fields: prototype, ...(baseProto ? { proto: baseProto } : {}),
+            ...(tested ? { brand: { key: classKey(name.text), pos: [name.end, node.end] } } : {}) } });
       }
       if (protoBinding) {
         // Read at the `class` keyword, a site no other claim has; the
@@ -727,7 +748,7 @@ class Gate {
           (!ts.isFunctionExpression(n) && !ts.isFunctionDeclaration(n) && !!n.forEachChild((c) => callsSuper(c) || undefined));
         let at: Span = this.span(heritage);
         let calleeAt: Span = [node.end - 1, node.end];
-        let actuals: Expr[] = [];
+        let actuals: Expr[] = params.map((p) => ({ k: "id", pos: p.pos, name: p.name }));
         if (constructor) {
           const index = body.findIndex(isSuperCall);
           if (index < 0 || body.some((st, i) => i !== index && callsSuper(st)))
@@ -1828,12 +1849,19 @@ class Gate {
       return { k: "arrayTest", pos: this.span(node), e: this.expr(node.left) };
     // Any other `instanceof` looks for a constructor's prototype along the
     // operand's prototype chain, or calls the constructor's static
-    // `[Symbol.hasInstance]`: the model gives an object no identity of the
-    // constructor that made it (DESIGN.md, "Guards").
-    if (node.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword)
-      this.fail(node, this.hasInstanceClass(node.right)
-        ? "`instanceof` of a class with a static `[Symbol.hasInstance]` calls that method, a computed static member, outside the fragment"
-        : "`instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it");
+    // `[Symbol.hasInstance]`. For a class of this file, which TypeScript binds
+    // the right operand to, it evaluates the operand, then reads the class's
+    // prototype object, and looks for the key only that object owns along
+    // the operand's chain (DESIGN.md, "Guards").
+    if (node.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword) {
+      if (this.hasInstanceClass(node.right))
+        this.fail(node, "`instanceof` of a class with a static `[Symbol.hasInstance]` calls that method, a computed static member, outside the fragment");
+      const cls = this.classTests.get(this.span(node.right).join(":"));
+      if (!cls)
+        this.fail(node, "`instanceof` whose right operand is not a class declared at the file's top level: nothing in the file says which prototype a constructor from elsewhere gives its instances");
+      return { k: "instanceTest", pos: this.span(node), e: this.expr(node.left),
+        proto: { k: "id", pos: this.span(node.right), name: prototypeName(cls) }, key: classKey(cls) };
+    }
     // `key in o`: whether `o` has the key, its own or an inherited one.
     // Which keys and operands the model answers as JavaScript does is Lean's
     // to decide (`inKeyRefusal`, `inOperand`, `inKeyList`).
@@ -3340,6 +3368,17 @@ export function parseFile(file: string, carriesContext = false,
     node.forEachChild(findStatics);
   };
   if (!carriesContext && withStatics.size) findStatics(source);
+  // `x instanceof C` of a class the file declares: TypeScript decides which
+  // right operands name it.
+  const classNames = new Set(classNodes.flatMap(c => c.name ? [c.name.text] : []));
+  const classTestNodes: Identifier[] = [];
+  const findClassTests = (node: Node): void => {
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword &&
+        ts.isIdentifier(node.right) && classNames.has(node.right.text))
+      classTestNodes.push(node.right);
+    node.forEachChild(findClassTests);
+  };
+  if (!carriesContext && classNames.size) findClassTests(source);
   // A read `X.y` or `X["y"]` of a `const enum` is its member's value:
   // TypeScript decides which reads are.
   const inlined = new Set(enumNodes.filter(e => e.modifiers?.some(m => m.kind === ts.SyntaxKind.ConstKeyword))
@@ -3381,10 +3420,12 @@ export function parseFile(file: string, carriesContext = false,
   if (!carriesContext) findComputed(source);
   if (importNodes.length || localNodes.length || globalNodes.length || globalValueNodes.length ||
       firstArray || firstAsync || keyNodes.length || ambientNames.length || staticNodes.length ||
+      classTestNodes.length ||
       receiverNodes.length || enumNodes.length || computedNodes.length || symbolNameNodes.length ||
       keyTypeNodes.length) {
     const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
-      firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? receiverNodes[0] ?? enumNodes[0] ??
+      firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? classTestNodes[0] ??
+      receiverNodes[0] ?? enumNodes[0] ??
       computedNodes[0] ?? symbolNameNodes[0] ?? keyTypeNodes[0];
     if (!first) throw Error("missing declaration root");
     // Named imports only. A type import joins the declaration graph; a value
@@ -3409,6 +3450,8 @@ export function parseFile(file: string, carriesContext = false,
         symbolKey: ([start, end], symbol) => gate.symbolKeys.set(`${start}:${end}`, symbol),
         staticReads: staticNodes.map(node => gate.span(node)),
         staticMember: ([start, end], cls) => gate.staticReads.set(`${start}:${end}`, cls),
+        classTests: classTestNodes.map(node => gate.span(node)),
+        classTest: ([start, end], cls) => gate.classTests.set(`${start}:${end}`, cls),
         memberReceivers: receiverNodes.map(node => gate.span(node)),
         computed: computedNodes.map(node => gate.span(node)),
         computedType: ([start, end], result) => gate.computedTypes.set(`${start}:${end}`, result),
@@ -3434,6 +3477,7 @@ export function parseFile(file: string, carriesContext = false,
       const at = error instanceof DeclarationError
         ? [...importNodes, ...localNodes, ...globalNodes, ...globalValueNodes, ...(firstArray ? [firstArray] : []),
             ...(firstAsync ? [firstAsync] : []), ...keyNodes, ...ambientNames.map(topStatement), ...staticNodes,
+            ...classTestNodes,
             ...receiverNodes, ...enumNodes, ...constEnumNodes, ...computedNodes, ...symbolNameNodes,
             ...keyTypeNodes].find(node =>
             node.getStart(source) === error.at[0]) ?? first

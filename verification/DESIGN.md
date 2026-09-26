@@ -1114,7 +1114,7 @@ modeling choices; they do not replace proof.
   trusted as its resolution is.
 - A value from a declaration or the library owns its stated string-keyed fields as enumerable data properties, which a spread copies ([Object literals](#object-literals)); the overlay's `Error` holds its non-enumerable `message` on a prototype the model gives it.
 - A spread does not copy an own enumerable symbol-keyed property JavaScript copies; its result states no symbol key and is open, so nothing typed reads one.
-- A derived class's prototype holds a copy of its base's methods rather than a link to its base's prototype; nothing in the fragment reads a prototype object itself ("Class inheritance").
+- The model keeps the array store key `[]` and every name in double brackets (the prototype key, a class's prototype key) for itself: no source key spells one, and an object the program receives (an import, the library, `JSON.parse`) is represented with its own keys apart from them, so `Array.isArray`, `in` and `instanceof` never find one on it. No operation of the fragment reads a prototype object itself, so a class's prototype is never the operand of `instanceof` ([Guards](#guards)).
 - Source and claim translation preserve intended control flow, lexical binding,
   annotations and type meaning. Scope association cannot be recovered merely
   by checking that two slots have compatible types.
@@ -2695,7 +2695,9 @@ and its value is a statement of the module initialization, in order. The
 parser lowers it to method closures allocated once, its prototype object
 holding them (`C.[[prototype]]`, a name no source binding spells, allocated
 once), and its constructor, which allocates the instance, as construct-only
-code (`ctor`). A class is a value like any other, at its construct signature:
+code (`ctor`). A prototype holding nothing of its own that `instanceof`
+does not test is not allocated: nothing tells it apart from its base's, or
+from none ([Guards](#guards)). A class is a value like any other, at its construct signature:
 `new C(args)` (`new`) runs that code, and a plain call cannot, since calling a
 class without `new` throws. An instance holds the prototype object under the
 prototype key (`[[proto]]`, which no source key spells: `Fragment.sourceKey`),
@@ -2706,8 +2708,8 @@ copies the fields and not the methods, as JavaScript's does
 along the chain ([Guards](#guards)). The instance's allocation is claimed at
 its exact keys, the prototype key among them: that bound says a method is
 not its own, so the class's type, whose methods are host-relative members,
-covers it through the prototype's function-typed fields (`CoversByProto`, its
-second disjunct, [POSITIVE-TYPES](POSITIVE-TYPES.md#covered-methods)). No
+covers it through the function-typed fields of its prototype chain
+(`CoversByProto`, [POSITIVE-TYPES](POSITIVE-TYPES.md#clause-coverage)). No
 write reaches a prototype or a method.
 
 **Class members.** The instance type (`classInstance`) states each member as
@@ -2780,8 +2782,11 @@ the copy reads the base part after `D`'s own statements, and nothing else
 holds it. `this` before `super(...)` throws a `ReferenceError` in JavaScript;
 a throw is an allowed outcome, but the instance is allocated at the end, so
 no term stands for the uninitialized binding, and it is refused (TypeScript
-refuses it too). An implicit constructor passes nothing to a base taking
-nothing; one passing a base's parameters is next.
+refuses it too). A class without a constructor has JavaScript's implicit one,
+`constructor(...args) { super(...args); }`: it takes its base's parameters,
+at their types, and passes them on; an actual past them reaches no
+parameter of the base's constructor, which binds exactly its own, and has
+no `arguments` object to read it.
 
 - *The base part is exact.* `B°` (`B.[[class]]`) is `B`'s constructor, bound
   as the class value itself is, and claimed also at the fresh instance it
@@ -2790,15 +2795,16 @@ nothing; one passing a base's parameters is next.
   body is checked at that signature too (`ctorE`). So `D`'s allocation knows
   its own keys exactly, and its type covers `D`'s methods through its
   prototype, as a base class's does.
-- *The prototype holds every method of the chain.* JavaScript's
-  `D.prototype` holds `D`'s methods and links to `B.prototype`. The model's
-  `D.[[prototype]]` is a copy of `B`'s, then `D`'s methods over it: the same
-  merge. No operation of the fragment reads a prototype object itself
-  (`Object.getPrototypeOf`, `instanceof`, a write to it), and a read of a
-  method through an instance finds the same closure either way, so the two
-  are not told apart. A class without methods of its own shares its base's.
-- *`super.m(ā)`* is `B.m`'s closure (the one `B`'s prototype holds, `B`'s own
-  or inherited) called with this method's receiver: `B.m.call(this, ā)`.
+- *The prototype links to its base's.* `D.[[prototype]]` holds `D`'s own
+  methods and, under the prototype key, `B.[[prototype]]`, as JavaScript's
+  `D.prototype` links to `B.prototype`. A read of an inherited method, and
+  `in`, walk the chain (`Step.readProto`, `keyInChain`), and `D`'s type
+  covers a method as many prototypes up as it is found (`ProtoHolds`); an
+  `instanceof B` of a `D` finds `B`'s prototype there. A class without
+  methods of its own, which `instanceof` does not test, has no prototype of
+  its own: its instances hold its base's.
+- *`super.m(ā)`* is `B.m`'s closure (the one `B`'s prototype chain holds,
+  `B`'s own or inherited) called with this method's receiver: `B.m.call(this, ā)`.
   The receiver is a `D`, which is a `B` by `D`'s declared type.
 - *An override must be sound.* `D`'s declared type is its own members and
   `B`'s ([interface heritage](#source-integration), `inheritRows`): an
@@ -2810,11 +2816,6 @@ nothing; one passing a base's parameters is next.
   keeps its reason, [Library types](#library-types)), an ambient or imported
   class, a class value from an expression: nothing in the file says what
   their constructors allocate.
-
-Next: `D.[[prototype]]` linking to `B.[[prototype]]` under its own prototype
-key, JavaScript's shape, which `instanceof` a base class needs; a read and
-`in` already follow the chain (`keyInChain`), and what is left is method
-coverage (`CoversByProto`) through more than one prototype.
 
 **Static members.** A static member is a property of the class value, which
 the fragment types by its construct signature alone. It is lowered as a
@@ -4895,8 +4896,8 @@ whose own keys the model keeps as JavaScript does:
 
 - *Plain objects and class instances.* A record literal's prototype is
   `Object.prototype`; a class instance's is its class's, which the model
-  holds under the prototype key with the class's methods (a derived class's,
-  every method of its chain), and whose other key, `constructor`, is
+  holds under the prototype key with the class's methods (a derived class's
+  linking to its base's), and whose other key, `constructor`, is
   `Object.prototype`'s name too. So a key that is not one of
   `Object.prototype`'s names is found in the model exactly where JavaScript
   finds it: `"m" in instance` holds of a method `m`.
@@ -4915,8 +4916,9 @@ whose own keys the model keeps as JavaScript does:
 
 The refused names are `Object.prototype`'s, `Array.prototype`'s and
 `Function.prototype`'s own string keys, as node lists them
-(`Object.getOwnPropertyNames`), array indices, and the two keys the model
-reserves (`[]`, `[[proto]]`): `inKeyRefusal`, a trusted list, since a realm
+(`Object.getOwnPropertyNames`), array indices, and the keys the model
+reserves (`[]` and every name in double brackets, `[[proto]]` and a class's
+prototype key among them): `inKeyRefusal`, a trusted list, since a realm
 whose prototypes hold another string key would answer `true` where the model
 answers `false` ([What remains assumed](#what-remains-assumed)). The operand
 must be of object types (`inOperand`): a union with a primitive arm, or
@@ -4954,21 +4956,40 @@ of the same contract, `optT` against `recT`), which is future work
 as `T` by the environment, so its absent keys prove nothing.
 
 **`instanceof`.** `x instanceof C` looks for `C.prototype` along `x`'s
-prototype chain, unless `C` has a `[Symbol.hasInstance]`, which it then calls.
-The model's instance holds its class's prototype object, but a derived
-class's prototype is a copy of its base's, not a link to it
-([Modules and code units](#modules-and-code-units), "Class inheritance"), so
-the chain the model holds does not answer `instanceof B` of a `D`, and the
-operator is not lowered. The sound lowering is known and is left for the
-class work: `C`'s constructor allocates a key of its own, which no source key
-can spell, and `x instanceof C` is `hasKey` of it, the same test as `in`;
-with inheritance, a subclass's allocation carries every ancestor's key. It
-would narrow only as keys do: a passed test drops primitives and fresh
-literals, never another class's arm, since a class type is structural and
-any object of its shape meets it. TypeScript's narrowing to `C` on a passed
-test would need "owning `C`'s key implies `C`'s type", which is not a fact
-about a value of `unknown` in the model, whose meaning admits every object:
-it would be a world invariant over every object allocated. `instanceof Array`
+prototype chain, unless `C` has a `[Symbol.hasInstance]`, which it then
+calls. For `C` a class the file declares at its top level, as TypeScript
+binds the name, the model identifies that prototype by a key only it owns:
+`C.[[prototype]]`, allocated once at the class's definition, owns
+$\kappa_C$ (`[[C.prototype]]`, at `undefined`; a name in double brackets,
+which no source key spells: `Fragment.reservedSourceKey`), and
+`x instanceof C` is `hasKey` of it, the test `in` is, after evaluating `x`
+and reading the prototype's binding, so a test before the class's
+definition fails as a read of the class does
+([derived form](PROGRAM-TYPING.md#derived-source-forms)). The two answer
+alike: the key is along `x`'s chain exactly where that prototype is, since
+no other object owns it; a derived class's prototype links to its base's
+("Class inheritance"), so an instance of `D extends C` finds it; a primitive
+answers `false` in both; and the prototype itself, which owns the key where
+JavaScript's answer is `false`, is no value a source term reaches, since no
+operation of the fragment reads a prototype object. A constructor from
+elsewhere (an ambient or imported class, a function, a class-valued
+expression) gives its instances a prototype nothing in the file names, and
+is refused.
+
+Narrowing is the key test's (`inAnswer`): a passed test drops primitives and
+fresh literals, whose key bounds exclude both $\kappa_C$ and the prototype
+key, and a failed one drops nothing, since no type states $\kappa_C$
+present. So `x: Box<number> | string` is a `Box<number>` where
+`x instanceof Box` holds (`instanceof-class.ts`). A failed test removes no
+class arm: a class type is structural, and an object of its shape made
+elsewhere meets it without the prototype; SKJS does not narrow there either.
+TypeScript's narrowing of `unknown` to `C` is not taken, and a member read of
+such an operand is refused with the reason: it needs "an object whose chain
+holds `C`'s prototype has `C`'s fields". That holds of every object the
+program makes, since only `C`'s constructor and its subclasses' allocate
+with that prototype, each checked against `C`'s type, but it is a fact
+about every allocation, a world invariant, not about a value of `unknown`,
+whose meaning admits every object. `instanceof Array`
 is `Array.isArray` ([Library globals](#library-globals)). A class declaring
 a static `[Symbol.hasInstance]` makes `instanceof` a call of that method with
 `x`, its result read by `ToBoolean`, and no narrowing: that is how it would be

@@ -26,6 +26,16 @@ theorem checkArrow_reassign (table : Table ι) (L : Ops ι)
     checkArrow (reassign G η) table L S Rt As d cert = checkArrow G table L S Rt As d cert := by
   induction cert generalizing Rt As d <;> simp only [checkArrow, *] <;> rfl
 
+/-- Method coverage along a prototype chain reads the graph's rows only. -/
+theorem protoHolds_reassign (R : List ι → List ι → Prop) (known : Known ι) (self : List ι)
+    (q : MethodMembers.Sig (List ι)) :
+    ∀ d P, ProtoHolds (reassign G η) R known self q d P ↔ ProtoHolds G R known self q d P
+  | 0, _ => Iff.rfl
+  | d + 1, P => by
+    simp only [ProtoHolds]
+    exact or_congr Iff.rfl (and_congr Iff.rfl (exists_congr fun P' =>
+      and_congr Iff.rfl (protoHolds_reassign R known self q d P')))
+
 theorem checkClause_reassign (table : Table ι) (known : Known ι) (proofs : PositiveCertificates.Evidence ι)
     (self : List ι) (a b : Clause (List ι)) :
     checkClause (reassign G η) table known proofs self a b = checkClause G table known proofs self a b := by

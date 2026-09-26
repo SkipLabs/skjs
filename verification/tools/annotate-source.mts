@@ -587,6 +587,17 @@ function render(
     // A class's prototype object is allocated from its name to its end
     // (DESIGN.md, "Modules and code units", "Classes").
     if(ts.isClassDeclaration(n)&&n.name)spans.add(`${n.name.getStart(sf)}:${n.end}`);
+    // The key a class's prototype owns for `instanceof` is claimed after the
+    // name, to the end; an implicit derived constructor's forwarded
+    // parameters at the characters of its `extends` keyword (DESIGN.md,
+    // "Class inheritance").
+    if(ts.isClassDeclaration(n)&&n.name){
+      starts.add(n.name.end);spans.add(`${n.name.end}:${n.end}`);
+      const heritage=n.heritageClauses?.find(c=>c.token===ts.SyntaxKind.ExtendsKeyword);
+      if(heritage)for(let i=0;i<"extends".length;i++){
+        const at=heritage.getStart(sf)+i;starts.add(at);spans.add(`${at}:${at+1}`);
+      }
+    }
     n.forEachChild(walk);
   }
   walk(sf);
