@@ -1685,7 +1685,7 @@ where a certificate carries a permutation, in
 Two auxiliary forms. $(\Gamma;\Pi)(x)$ looks $x$ up in both contexts, $\Pi$
 first: it is the primitive predicate recorded for $x$ there, or
 failing that the one $\Gamma(x)$ denotes when it is a supported primitive
-union. It extends the $\Gamma(x)$ of the ordinary rules to the pair, is partial
+union, or `defined` when no member of $\Gamma(x)$ is `undefined`. It extends the $\Gamma(x)$ of the ordinary rules to the pair, is partial
 in the same way, and is a lookup rather than a search — `valuesAt` computes it in
 that order and `valuesAt_sound` proves the membership it yields.
 
@@ -1914,13 +1914,23 @@ It computes a guaranteed output, not an assumed postcondition:
 | Pure test or conditional             | Preserve existing facts and links, shifted past the result slot. Every evaluated subexpression must be syntactically pure; no new result-to-cell link is invented.                                                                       |
 | Ordinary typed read                  | Preserve facts and record read links to the receiver and witnessed aliases, retaining its plain or callable descriptor; through a key a record may lack, optional links. No prior current-content fact is needed. Its result has the supplied type. |
 | Observed read                        | Preserve facts and links; record the result's primitive predicate and its current read relationship. That set must fit the requested ordinary result type.                                                                               |
+| Sliced read (`slicedRead`)           | A read a cell fact says finds no `undefined` (every predicate other than it): ordinary read evidence at the location's contract $C$, whose slice $T_{\mathsf{false}}(C)$ by the `undefined` tag is below the requested type by a checked subtype proof. As an ordinary typed read otherwise. |
 | Known immutable value                | Check the requested primitive type against a proved slot fact or the slot's ordinary primitive type.                                                                                                                                     |
 | Allocation                           | Check ordinary creation evidence and scope for either descriptor, preserve old facts, add the fresh bag's initial contents where a checked value slot's are known, and its fields' distinctness from every record slot's. Closure code is not executed. |
-| Write                                | Check ordinary write evidence (no old-content premise), discard old cell facts but those a distinct link separates from the written location, record new contents for the receiver and its witnessed aliases where the value is a known primitive, and preserve immutable facts and slot equalities. Read links are discarded. |
+| Write                                | Check ordinary write evidence (no old-content premise), discard old cell facts but those a distinct link separates from the written location, record new contents for the receiver and its witnessed aliases where the value is a known primitive, or `defined` where its type rules `undefined` out, and preserve immutable facts and slot equalities. Read links are discarded. |
 | Ordinary expression, including calls | Check ordinary evidence, discard cell facts and read links, preserving immutable facts and slot equalities.                                                                                                                              |
 
-`typedRead_sound`, `read_sound`, `alloc_sound` and `write_sound` prove the four
-rules above. None of them takes a premise about a cell's old contents, and the
+`typedRead_sound`, `slicedRead_sound`, `read_sound`, `alloc_sound` and
+`write_sound` prove the read, allocation and write rules above. The sliced
+read is
+
+$$
+\frac{\Gamma\vdash_G \mathsf{readAt}\,f\,x : C\quad x.f\mapsto R\in\Sigma\quad
+      \mathsf{undefined}\notin R\quad T_{\mathsf{false}}^{\mathsf{isUndef}}(C)\le A}
+     {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow \mathsf{readAt}\,f\,x : A\dashv\Pi;\Sigma}\ \textsc{read-sliced}
+$$
+
+which is how `let x: T;` assigned an object on every path is read at $T$. None of them takes a premise about a cell's old contents, and the
 checker's write evidence carries none either. These are operation rules within a
 local segment: at the next statement entry, only the supplied interface
 survives.
@@ -2295,8 +2305,9 @@ JavaScript reads and defaults the pattern's positions, then initializes the
 bindings, in that order either way; each cell is claimed at its name, where
 its initial value is. Such a pattern in a `for` head is refused. A `let` that is written and holds a union of objects is
 not narrowed by a test of its object (a cell's known contents are primitive
-values, and a write between the test and the read may replace it); a read of
-a member only some arms state is refused with that reason.
+values, or that it holds no `undefined`, and a write between the test and the
+read may replace it); a read of a member only some arms state is refused
+with that reason.
 
 **Older spellings.** `<T>e` is `e as T` and `<const>e` is `e as const`,
 the same assertion (an obligation on the operand, never a fact); a
@@ -2810,10 +2821,12 @@ Definite assignment is not an extra rule: a read at $T$ types only where the
 cell's current contents are known to be in $T$, a fact a write of a $T$ value
 establishes and a join keeps only when every incoming edge proves it. A
 closure reads a captured cell at its contract, $T\cup\mathsf{Undefined}$,
-since it may run before the write. Current contents are primitive predicates,
-so a `let x: T;` of an object type `T` is read at $T\cup\mathsf{Undefined}$
-after its assignments. Without an annotation there is no contract and the
-parser refuses it.
+since it may run before the write. Current contents are primitive predicates
+or `defined`, which a write of a value whose type rules `undefined` out
+records: so a `let x: T;` of an object type `T` assigned on every path is read
+at $T$ ([`read-sliced`](#checked-expression-postconditions)), and a call in
+between forgets it. Without an annotation there is no contract and the parser
+refuses it.
 
 A module constant $c$ bound to $e_c$ by the initialization unit is read by
 the module's functions at

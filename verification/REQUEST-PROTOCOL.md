@@ -320,7 +320,7 @@ every record-typed slot in scope, and the reason a write to one cell keeps
 facts about another. These are finite state assertions, not extra type labels.
 `effect: null` selects ordinary expression evidence; a non-null effect selects
 one of the checked `StepEvidence` constructors (`ordinary`, `pure`,
-`typedRead`, `observedRead`, `knownValue`, `created`, `allocated`, `written`). Constructor payloads use
+`typedRead`, `observedRead`, `slicedRead`, `knownValue`, `created`, `allocated`, `written`). Constructor payloads use
 Lean's derived JSON encoding, with strict decode/re-encode checking; the
 [graph regression](lean/Verification/Model/Tests/HeapGraphTests.lean) tests a
 round trip with nonempty facts and effect evidence.

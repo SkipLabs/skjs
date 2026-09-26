@@ -17,14 +17,29 @@ let extend env name binding =
   env @ [name,binding]
 
 (* The contents Lean can know of a cell: a union of primitive atoms, its
-   supported current-content predicates. Anything else is read at the
+   supported current-content predicates; or, of contents of any shape none
+   of which is `undefined`, that the cell holds some other value, which a
+   read gives at the contract less `undefined`. Anything else is read at the
    contract. *)
 let knowable = function
   | Atoms xs -> List.for_all (function
       | Nul | Undef | True | False | Num | NumLit _ | Str | StrLit _ -> true
       | _ -> false) xs
   | Rigid _ | Union _ | Meet _ -> false
-let holding contract t = if knowable t then Storage (contract,t) else cell contract
+(* Contents proposed other than `undefined`: no atom is it or may be
+   anything. A declaration is taken at its word here; Lean refuses the fact
+   where its expansion admits `undefined`. *)
+let defined_contents = function
+  | Atoms (_::_ as xs) -> List.for_all (function
+      | Undef | Top -> false
+      | _ -> true) xs
+  | _ -> false
+let holding contract t =
+  if knowable t then Storage (contract,t)
+  else match contract with
+    | Atoms xs when defined_contents t && List.mem Undef xs && not (List.mem Top xs) ->
+      Storage (contract,Atoms (List.filter (fun a -> a <> Undef) xs))
+    | _ -> cell contract
 
 (* A branch refines an immutable value, and a cell's known contents where
    the refinement is a primitive predicate. Heap contents of objects require

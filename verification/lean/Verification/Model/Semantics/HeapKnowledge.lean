@@ -218,6 +218,9 @@ one number or string and holds of a value of its family, that value, a
 singleton (equality with a zero holds of both zeros, which stay the family);
 the predicate otherwise. -/
 def observeAtom (tag : Tag) (q : Bool) (a : Atom) : List Atom :=
+  -- Some value other than `undefined`: found `undefined`, it is none; else
+  -- still the same (it says nothing of the value's shape).
+  if a == .defined then (if tag == .isUndef && q then [] else [.defined]) else
   if tagClause tag (a.clause (α := Ty Nat)) == some (!q) then [] else
   match tag, q, a with
   | .numEq b, true, .num => if b &&& 0x7fffffffffffffff == 0 then [.num] else [.numLit b]
@@ -225,12 +228,30 @@ def observeAtom (tag : Tag) (q : Bool) (a : Atom) : List Atom :=
   | _, _, a => [a]
 
 theorem observeAtom_holds {tag : Tag} {q : Bool} {a : Atom} {v : Tm}
-    (hv : a.holds v) (hq : tagHolds tag v = q) : ∃ a' ∈ observeAtom tag q a, a'.holds v := by
+    (hv : a.holds v) (hq0 : tagHolds tag v = q ∨ (a = .defined ∧ tag ≠ .isUndef)) :
+    ∃ a' ∈ observeAtom tag q a, a'.holds v := by
+  by_cases hd : a = .defined
+  · subst hd
+    simp only [observeAtom, beq_self_eq_true, ↓reduceIte]
+    by_cases hu : (tag == .isUndef && q) = true
+    · simp only [Bool.and_eq_true, beq_iff_eq] at hu
+      obtain ⟨rfl, rfl⟩ := hu
+      obtain ⟨_, hne⟩ := hv
+      rcases hq0 with hq | hq
+      · cases v <;> simp_all [tagHolds]
+      · exact absurd rfl hq.2
+    · simp only [hu, Bool.false_eq_true, ↓reduceIte]
+      exact ⟨.defined, by simp, hv⟩
+  have hq : tagHolds tag v = q := hq0.resolve_right (fun h => hd h.1)
+  clear hq0
+  have hnd : (a == .defined) = false := by simpa using hd
   unfold observeAtom
+  rw [hnd]
+  simp only [Bool.false_eq_true, ↓reduceIte]
   split
   · rename_i hbad
     have hanswer := tagClause_sound (S := fun (_ : Ty Nat) => nulT) (P := fun _ _ _ _ => False)
-      (n := 0) (W := ofList []) (beq_iff_eq.mp hbad) (Atom.sem.mpr hv)
+      (n := 0) (W := ofList []) (beq_iff_eq.mp hbad) ((Atom.sem hd).mpr hv)
     rw [hq] at hanswer
     cases q <;> contradiction
   · split
@@ -262,9 +283,10 @@ def observeTag (k : Knowledge) (slot : Nat) (tag : Tag) (q : Bool) : Knowledge :
     ⟨linkFacts k slot R ++ k.cells,⟨slot,R,valueField⟩ :: k.values,k.links⟩
 
 /-- A primitive reads no prototype. -/
-theorem atom_protoFree {a : Atom} {v : Tm} (h : a.holds v) (t : Tag) : protoFree t v = true := by
+theorem atom_protoFree {a : Atom} {v : Tm} (h : a.holds v) (hd : a ≠ .defined) (t : Tag) :
+    protoFree t v = true := by
   cases v with
-  | objAt fs c => cases a <;> simp [Atom.holds] at h
+  | objAt fs c => cases a <;> simp [Atom.holds] at h; exact absurd rfl hd
   | _ => cases t <;> rfl
 
 theorem observeTag_holds {k slot tag q ρ h} (hk : Holds k ρ h)
@@ -278,9 +300,14 @@ theorem observeTag_holds {k slot tag q ρ h} (hk : Holds k ρ h)
     have hs : f.slot = slot := by simpa using List.find?_some hf
     obtain ⟨a,ha,hv⟩ := hk.2.1 f hm
     have hv : a.holds (ρ slot) := by simpa [hs] using hv
-    -- A primitive reads no prototype.
-    have hq : tagHolds tag (ρ slot) = q := hq'.resolve_right (by
-      rw [atom_protoFree hv tag]; simp)
+    -- A primitive reads no prototype; `undefined` is a test of no
+    -- prototype either.
+    have hq : tagHolds tag (ρ slot) = q ∨ (a = .defined ∧ tag ≠ .isUndef) := by
+      by_cases hd : a = .defined
+      · by_cases ht : tag = .isUndef
+        · subst ht; exact Or.inl (hq'.resolve_right (by simp [protoFree]))
+        · exact Or.inr ⟨hd, ht⟩
+      · exact Or.inl (hq'.resolve_right (by rw [atom_protoFree hv hd tag]; simp))
     obtain ⟨a',ha',hv'⟩ := observeAtom_holds hv hq
     have hR : ∃ b ∈ f.contents.flatMap (observeAtom tag q), b.holds (ρ slot) :=
       ⟨a', List.mem_flatMap.mpr ⟨a,ha,ha'⟩, hv'⟩

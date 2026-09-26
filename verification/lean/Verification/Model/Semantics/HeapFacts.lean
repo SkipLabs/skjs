@@ -9,9 +9,14 @@ namespace Verification.Model.HeapFacts
 open ProgramTyping PositiveRules PositiveGraphs HeapObservations
 
 /-- A finite vocabulary of primitive predicates. `num` covers every numeric
-value; `numLit` preserves an exact bit pattern. Neither is a storage contract. -/
+value; `numLit` preserves an exact bit pattern. Neither is a storage contract.
+`defined` is any value but `undefined`, of any shape: what a write of a value
+whose type rules `undefined` out leaves in a cell. No clause states it, so a
+read of the cell is typed at its contract less `undefined`
+(`HeapExpressionRules.slicedRead`), never at the atom. -/
 inductive Atom where
   | nul | undef | tru | fls | num | numLit (bits : UInt64) | str | strLit (value : String)
+  | defined
   deriving DecidableEq, Repr
 
 def Atom.holds : Atom → Tm → Prop
@@ -23,29 +28,42 @@ def Atom.holds : Atom → Tm → Prop
   | .numLit bits, v => v = .num bits
   | .str, v => ∃ s, v = .str s
   | .strLit s, v => v = .str s
+  | .defined, v => isVal v = true ∧ v ≠ .undef
 
 theorem Atom.isValue {a : Atom} {v} (h : a.holds v) : isVal v = true := by
   cases a <;> simp only [Atom.holds] at h
-  all_goals first | (rcases h with ⟨bits,rfl⟩; rfl) | (subst v; rfl)
+  all_goals first | exact h.1 | (rcases h with ⟨bits,rfl⟩; rfl) | (subst v; rfl)
 
 def Atom.clause (a : Atom) : PositiveNormalization.Clause α :=
   match a with
   | .nul => .nul | .undef => .undef | .tru => .boolLit true
   | .fls => .boolLit false | .num => .num | .numLit b => .numLit b
   | .str => .str | .strLit s => .strLit s
+  | .defined => .top
 
-theorem Atom.sem {a : Atom} {S : α → Fam} {P : α → ArgFam} {n W v} :
+/-- A primitive atom is exactly its clause. -/
+theorem Atom.sem {a : Atom} {S : α → Fam} {P : α → ArgFam} {n W v} (hd : a ≠ .defined) :
     PositiveNormalization.semWithArgs S P a.clause n W v ↔ a.holds v := by
-  cases a <;> rfl
+  cases a <;> first | rfl | exact absurd rfl hd
 
 def Atom.le (a b : Atom) : Bool :=
-  a == b || match a, b with | .numLit _, .num => true | .strLit _, .str => true | _, _ => false
+  a == b || match a, b with
+    | .numLit _, .num => true | .strLit _, .str => true
+    | .defined, _ | .undef, _ => false
+    | _, .defined => true
+    | _, _ => false
 
 theorem Atom.le_sound {a b : Atom} {v} (h : a.le b = true) (hv : a.holds v) : b.holds v := by
   simp only [Atom.le, Bool.or_eq_true, beq_iff_eq] at h
   rcases h with rfl | h
   · exact hv
-  · cases a <;> cases b <;> simp_all [Atom.holds]
+  · cases a <;> cases b <;> simp only [Atom.holds] at hv h ⊢ <;> try contradiction
+    all_goals first
+      | exact hv
+      | (obtain ⟨_, rfl⟩ := hv; exact ⟨rfl, by simp⟩)
+      | (subst v; exact ⟨rfl, by simp⟩)
+      | (subst v; rfl)
+      | (obtain ⟨_, rfl⟩ := hv; exact ⟨_, rfl⟩)
 
 def covers (source target : List Atom) : Bool :=
   source.all fun a => target.any a.le

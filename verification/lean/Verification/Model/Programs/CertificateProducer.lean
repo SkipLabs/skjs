@@ -978,6 +978,16 @@ def expressionEffect [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
   | .readAt fld (.var i) =>
     choices := (k.cells.filter fun f => f.slot == i && f.field == fld).map
       fun f => .observedRead i f.contents
+    -- A location a fact says holds no `undefined`: the read at its
+    -- contract, sliced, below the claim.
+    if let some Ref := j.context[i]? then
+      if HeapExpressionRules.fieldOperand (expand G Ref) fld &&
+          k.cells.any (fun f => f.slot == i && f.field == fld && f.contents.all (· != .undef)) then
+        if let [.refs fs _ _ _ _ _] := expand G Ref then
+          if let some C := fs.lookup fld then
+            if let some e := expressionWith G (C :: own) suggestions fuel j.context j.term C then
+              if let some p := subtype G pool (BranchRefinement.tagSlice G C .isUndef false) j.type then
+                choices := choices ++ [.slicedRead i e p]
   | _ => pure ()
   if let some e := ordinary then
     match j.term with

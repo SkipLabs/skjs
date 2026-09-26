@@ -480,7 +480,7 @@ const GROUPS: [string, RegExp][] = [
   ["a named function at a signature binding more parameters, or indifferent to the receiver it requires (its type is its annotated signature)", /a named function where a signature binding more parameters|a function whose `this` is typed where a callback/],
   ["invariance: a writable element or field at a wider one (TypeScript relates them covariantly)", /a mutable array at one of a wider element|an instance at another whose writable field differs/],
   ["tests on a value of a type parameter or `unknown` (`T & number` has no clause; no object identity)", /test on a value of a type parameter or `unknown`|`\?\?` on a value of a type parameter|strict equality with a value of a type parameter/],
-  ["cells read at their contract (contents are stated for primitives only, and forgotten across a step that may write them)", /a `let` holding an object read where it must be assigned|a cell read at its contract/],
+  ["cells read at their contract (contents known only as primitives or as no `undefined`, and forgotten across a step that may write them)", /a `let` holding an object read where it must be assigned|a cell read at its contract/],
   ["dictionaries: a spread of one, a key `in` found in one", /a spread of a dictionary|a read of a key `in` found in a dictionary/],
   ["an optional key found `undefined` (the key may be absent)", /an optional key found `undefined`/],
   ["bigint", /BigInt|non-decimal numeric literal type/],

@@ -241,6 +241,7 @@ const bindingsOf = (map: { context?: unknown } | null, source: string): string[]
 // into the slot table. See ../OBLIGATION-DIAGNOSTICS.md.
 const ATOM_TEXT: Record<Extract<HeapAtom, string>, string> = {
   nul: "null", undef: "undefined", tru: "true", fls: "false", num: "number", str: "string",
+  defined: "a value other than undefined",
 };
 const contentsText = (contents: readonly HeapAtom[]): string =>
   !contents.length ? "never" : contents.map((a) => {

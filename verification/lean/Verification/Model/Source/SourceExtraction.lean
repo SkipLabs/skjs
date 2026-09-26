@@ -875,12 +875,20 @@ private def entryFacts (fc : SourceClaims.Function) (pos : Nat) (scope : List Sc
       let some candidate := vars.lookup b.source.name
         | throw s!"missing claimed binding '{b.source.name}' at {pos}"
       let A ← SourceClaims.resolve (← table).length candidate
+      let G := SourceTypes.graph (← table)
       if contract.all A.contains then
         persistentObservation b.source (pos,pos+1) reference valueField A
       else
-        match HeapKnowledge.atoms (SourceTypes.graph (← table)) A with
+        match HeapKnowledge.atoms G A with
         | some atoms => facts := facts ++ [⟨i,atoms,valueField⟩]
-        | none => persistentObservation b.source (pos,pos+1) reference valueField A
+        | none =>
+          -- Contents no `undefined` is among, of any shape: the cell holds
+          -- some other value, and a read of it is its contract less
+          -- `undefined` (`slicedRead`).
+          if G.plainTy A && (PositiveRules.expand G A).all
+              (fun c => ProgramTyping.tagClause .isUndef c == some false) then
+            facts := facts ++ [⟨i,[.defined],valueField⟩]
+          else persistentObservation b.source (pos,pos+1) reference valueField A
     match cs.lookup b.source.name with
     | none => return facts
     | some asserted =>

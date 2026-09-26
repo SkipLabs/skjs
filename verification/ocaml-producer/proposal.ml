@@ -698,8 +698,9 @@ let shape_test_reason =
   "the values of that shape have a type no clause states (`T & number`, a callable of no known \
    signature), so the test narrows nothing the model states"
 let object_cell_reason =
-  "the contents of a cell are stated only as primitive values, so that a `let` without an initializer \
-   holding an object was assigned on every path, and so is not `undefined`, is not stated"
+  "a `let` without an initializer holds `undefined` until it is assigned, and is known to hold another \
+   value only where every path into the read assigned one, with no step between that may write it (a \
+   call, whose callee may write any location its operands reach)"
 let forgotten_cell_reason =
   "a cell is known by its contract after a step that may write it (a call, whose callee may write any \
    location its operands reach, as the model states no reachability; a closure run later; a throw from \

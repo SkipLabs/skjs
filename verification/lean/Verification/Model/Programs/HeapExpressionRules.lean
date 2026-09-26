@@ -53,7 +53,10 @@ value type. Both sources have independently proved membership. -/
 def valuesAt (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) (i : Nat) : Option (List Atom) :=
   match k.values.find? (fun f => f.slot == i) with
   | some f => some f.contents
-  | none => (Γ[i]?).bind (HeapKnowledge.atoms G)
+  | none => (Γ[i]?).bind fun B => (HeapKnowledge.atoms G B).orElse fun _ =>
+      -- A type no member of which is `undefined`: some value other than it.
+      if G.plainTy B && (expand G B).all (fun c => tagClause .isUndef c == some false)
+      then some [.defined] else none
 
 theorem valuesAt_sound {G : NormalGraph ι} {Γ k i R ρ n W h}
     (hr : valuesAt G Γ k i = some R) (he : EnvOk G Γ ρ n W)
@@ -69,7 +72,26 @@ theorem valuesAt_sound {G : NormalGraph ι} {Γ k i R ρ n W h}
     | none => simp [hb] at hr
     | some B =>
       simp only [hb,Option.bind_some] at hr
-      exact (atoms_sem hr n W (ρ i)).mp (he.2 i B hb)
+      cases ha : HeapKnowledge.atoms G B with
+      | some S =>
+        rw [ha] at hr
+        cases hr
+        exact (atoms_sem ha n W (ρ i)).mp (he.2 i B hb)
+      | none =>
+        rw [ha] at hr
+        simp only [Option.orElse_none] at hr
+        split at hr
+        · rename_i hq
+          cases hr
+          have hq : Answers G B .isUndef false := by
+            simp only [Bool.and_eq_true, List.all_eq_true, beq_iff_eq] at hq
+            exact ⟨hq.1, hq.2⟩
+          have hv := he.2 i B hb
+          refine ⟨.defined, by simp, (meaning_value hv).1, fun hu => ?_⟩
+          have := answers_sound hq hv
+          rw [hu] at this
+          simp [tagHolds] at this
+        · cases hr
 
 /-- A primitive type's predicate is a structural view, not semantic search. -/
 def includes (G : NormalGraph ι) (A : Ty ι) (R : List Atom) : Bool :=
@@ -237,6 +259,56 @@ theorem typedRead_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i fld Ref A 
     · obtain ⟨j,hj,rfl⟩ := List.mem_map.mp hm
       exact ⟨flds,code,l,(HeapLinks.aliases_eq hk.2.2 hj).trans hl,hfd,hv⟩
     · exact hout.2.2 link hm
+
+/-- A value that is no `undefined` answers the test for it `false`. -/
+theorem tagHolds_isUndef_false {v : Tm} (hne : v ≠ .undef) : tagHolds .isUndef v = false := by
+  cases v <;> simp_all [tagHolds]
+
+/-- A value of a type that is no `undefined` is of the type's slice without
+it, at every step count: what a finished read returns. -/
+theorem slice_value {G : NormalGraph ι} {C : Ty ι} {Q : Post} {n W h v}
+    (hs : SafePost (meaning G C) Q n W h v) (hv : isVal v = true) (hne : v ≠ .undef) :
+    SafePost (meaning G (BranchRefinement.tagSlice G C .isUndef false)) Q n W h v := by
+  cases n with
+  | zero => trivial
+  | succ n =>
+    rcases hs with (⟨hv',ht,hq⟩ | hth) | ⟨_,_,_,_,_,step,_,_⟩
+    · exact Or.inl (Or.inl ⟨hv',BranchRefinement.tagSlice_sound ht (Or.inl (tagHolds_isUndef_false hne)),hq⟩)
+    · exact absurd hth (val_not_thrown hv)
+    · exact False.elim (value_no_step hv step)
+
+/-- A read of a location a fact says holds no `undefined`, typed at its
+contract `C` by the ordinary rule: its result is of `C` less `undefined`.
+The fact is about the location the read finds, so the value it returns is
+one the fact describes. -/
+theorem slicedRead_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i fld Ref C R ρ n W h}
+    (ht : HasTy G Γ (.readAt fld (.var i)) C) (hi : Γ[i]? = some Ref)
+    (hr : fieldOperand (expand G Ref) fld = true)
+    (hm : Fact.mk i R fld ∈ k.cells) (hR : R.all (· != .undef) = true)
+    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
+    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (meaning G (BranchRefinement.tagSlice G C .isUndef false))
+      (fun h' v => HeapKnowledge.Holds (readFrame k i fld) (push v ρ) h') n W h
+      (.readAt fld (ρ i)) := by
+  have base := typedRead_sound ht hi hr he hk hw hh
+  obtain ⟨flds,c,l,v,hl,hfd,hv,a,ha,hav⟩ := hk.1 _ hm
+  have hne : v ≠ .undef := by
+    intro hu
+    subst hu
+    have hau := HeapKnowledge.holds_undef hav
+    subst hau
+    have := List.all_eq_true.mp hR _ ha
+    simp at this
+  have hvv : isVal v = true := Atom.isValue hav
+  have step : Step h (.readAt fld (ρ i)) h v := by rw [hl]; exact .readField hfd hv
+  cases n with
+  | zero => trivial
+  | succ n =>
+    rcases base with (⟨hval,_,_⟩ | hth) | ⟨U,h',t',hx,hu,step',hh',hs'⟩
+    · rw [hl] at hval; simp [isVal] at hval
+    · exact absurd step hth.no_step
+    · obtain ⟨rfl,rfl⟩ := Step_det step' step
+      exact Or.inr ⟨U,h',t',hx,hu,step',hh',slice_value hs' hvv hne⟩
 
 /-- Whether every alternative is a plain record naming the field `fld`,
 required or optional: a read of it is then of a location of the object, or,
@@ -701,6 +773,10 @@ inductive StepEvidence (ι : Type) where
   | created (proof : ProgramCertificates.Evidence ι)
   | typedRead (slot : Nat) (proof : ProgramCertificates.Evidence ι)
   | observedRead (slot : Nat) (contents : List Atom)
+  /-- A read of a location a fact says holds no `undefined`: the ordinary read
+  at the location's contract (`proof`), whose slice without `undefined` is
+  below the claim (`sub`). -/
+  | slicedRead (slot : Nat) (proof : ProgramCertificates.Evidence ι) (sub : PositiveCertificates.Proof ι)
   | knownValue (slot : Nat) (contents : List Atom)
   /-- The fields, their slots and their contents are read off the term and the
   state, so this carries only the ordinary derivation it stands beside. -/
@@ -770,6 +846,16 @@ def checkStep [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι)
       if i' = i ∧ i < j.context.length ∧
           Fact.mk i R fld ∈ k.cells ∧ includes G j.type R = true
       then some (readOutput k i fld R) else none
+    | none => none
+  | .slicedRead i e p =>
+    match readSlot j.term with
+    | some (fld, i') =>
+      if (claim e).context = j.context ∧ (claim e).term = j.term ∧ checkTree G e codes = true ∧ i' = i ∧
+          (j.context[i]?).any (fun Ref => fieldOperand (expand G Ref) fld) ∧
+          (k.cells.any fun f => f.slot == i && f.field == fld && f.contents.all (· != .undef)) ∧
+          PositiveCertificates.check G (BranchRefinement.tagSlice G (claim e).type .isUndef false)
+            j.type p = true
+      then some (readFrame k i fld) else none
     | none => none
   | .knownValue i R =>
     if j.term = .var i ∧ i < j.context.length ∧
@@ -883,6 +969,35 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
         cases hc
         rw [term]
         simpa [instantiate] using read_sound hm hi he hk hw hh
+      · contradiction
+    · contradiction
+  | slicedRead i e p =>
+    simp only [checkStep] at hc
+    split at hc
+    · rename_i fld i' hslot
+      split at hc
+      · rename_i hp
+        obtain ⟨hctx,hterm,ht,rfl,hr,hf,hsub⟩ := hp
+        have term := readSlot_eq hslot
+        cases hi : j.context[i']? with
+        | none => simp [hi] at hr
+        | some Ref =>
+          have hrep : fieldOperand (expand G Ref) fld = true := by simpa [hi] using hr
+          obtain ⟨f,hfm,hff⟩ := List.any_eq_true.mp hf
+          simp only [Bool.and_eq_true, beq_iff_eq] at hff
+          obtain ⟨⟨hfs,hfd⟩,hfc⟩ := hff
+          have hm : Fact.mk i' f.contents fld ∈ k.cells := by
+            have : f = Fact.mk i' f.contents fld := by cases f; simp_all
+            rw [← this]; exact hfm
+          have typed := checkTree_sound e ht hcodes
+          have hj : claim e = ⟨j.context,j.term,(claim e).type⟩ := by
+            cases hce : claim e; simp_all
+          rw [hj,term] at typed
+          cases hc
+          rw [term]
+          have hs := slicedRead_sound typed hi hrep hm hfc he hk hw hh
+          simpa [instantiate] using
+            consequence (Sub.sound (PositiveCertificates.check_sound hsub)) (fun _ _ hq => hq) hs
       · contradiction
     · contradiction
   | knownValue i R =>
