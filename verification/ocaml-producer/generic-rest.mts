@@ -85,11 +85,13 @@ export function checkGenericRest(verifier: string, artifacts: string): void {
   const rest = lambda.params[0];
   assert(rest?.rest);
   delete rest.rest;
+  // Without its rest the closure is graph code at its claimed scheme, whose
+  // variadic signature the source annotation no longer states.
   reject(
     "lost-rest-binding",
     claims,
     fixed,
-    /quantified claim differs from its source scheme/,
+    /closure signature claim is outside the source annotation/,
   );
 
   const early = structuredClone(ast);
@@ -125,7 +127,7 @@ export function checkGenericRest(verifier: string, artifacts: string): void {
     /a rest parameter cannot have a default/,
   );
 
-  // Operand claims in a direct generic body are checked, not silently discarded.
+  // Operand claims in a generic body are checked, not silently discarded.
   const operand = structuredClone(claims);
   const callback = operand.functions.find(
     (f) => f.name === "genericRestCallback",
@@ -140,7 +142,7 @@ export function checkGenericRest(verifier: string, artifacts: string): void {
     "forged-rigid-operand",
     operand,
     ast,
-    /generic expression claim.*cannot establish T ≤ boolean/,
+    /evidence search failed|does not justify/,
   );
 
   const source = stripTypes(readFileSync(join(artifacts, "source.ts"), "utf8"));

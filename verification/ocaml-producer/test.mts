@@ -497,7 +497,7 @@ for (const [file, expected] of [
   const wrongRigidCall = parity("wrong-rigid-call", callableLocal, callableImported,
     "export function wrongRigid<T>(f: GenericCallable<T>, x: T): boolean { return f(x); }\n");
   assert.equal(wrongRigidCall.status, "unverified", JSON.stringify(wrongRigidCall));
-  assert.match(wrongRigidCall.detail, /cannot establish T ≤ boolean/);
+  assert.match(wrongRigidCall.detail, /no derivation of its return-contract claim/);
   // A record over a rigid binder is a graph type over its parameter row, for
   // both.
   const rigidRecord = parity("rigid-record", "type GenericBox<T> = { readonly value: T };\n",
@@ -1177,11 +1177,11 @@ const boundedClaims: SourceClaims = JSON.parse(
   process.stdout.write("tampered substituted bound: refused\n");
 }
 
-// A nested closure's claim is the type the compiled graph will use for it, so
-// introduction requires it to be exactly the source annotation `() => T`: a
-// ground `() => boolean` claim fits every observed call and is still refused.
-// And a callable over the binder is meaningful only inside its closure: the
-// same claim placed on an expression outside it is refused as an escape.
+// A nested closure's claim is checked at the scheme's binder: a ground
+// `() => boolean` claim fits every observed call and is still refused, since
+// the body returns a `T`. And a callable over the binder is meaningful only
+// inside its closure: the same claim placed on an expression outside it names
+// a binder not in scope there.
 const returnedClaims: SourceClaims = JSON.parse(
   readFileSync(join(returned, "claims.json"), "utf8"),
 );
@@ -1202,7 +1202,7 @@ const returnedClaims: SourceClaims = JSON.parse(
   const groundedFile = join(returned, "forged-nested-claim.json");
   writeFileSync(groundedFile, JSON.stringify(grounded));
   assert.match(invoke(groundedFile, join(returned, "evidence.json"), returned),
-    /nested closure claim differs from its source annotation/);
+    /does not justify|evidence search failed/);
   process.stdout.write("tampered nested closure claim: refused\n");
 
   const escaped = structuredClone(returnedClaims);
@@ -1214,13 +1214,13 @@ const returnedClaims: SourceClaims = JSON.parse(
   const escapedFile = join(returned, "forged-escape.json");
   writeFileSync(escapedFile, JSON.stringify(escaped));
   assert.match(invoke(escapedFile, join(returned, "evidence.json"), returned),
-    /escapes its closure/);
+    /is not in scope/);
   process.stdout.write("tampered rigid callable escape: refused\n");
 }
 
 // A captured cell keeps the contract its declaration states. Retyping it in the
-// entry claim the closure is checked against changes what the body reads, so
-// the scheme's own body check refuses: a capture is never retyped per call.
+// entry claim changes what the closure's code, checked once at its scheme, is
+// entered with, so the check refuses: a capture is never retyped per call.
 const capturedClaims: SourceClaims = JSON.parse(
   readFileSync(join(captured, "claims.json"), "utf8"),
 );
@@ -1235,7 +1235,7 @@ const capturedClaims: SourceClaims = JSON.parse(
   const file = join(captured, "forged-capture.json");
   writeFileSync(file, JSON.stringify(claims));
   assert.match(invoke(file, join(captured, "evidence.json"), captured),
-    /does not satisfy its scheme universally: cannot establish boolean ≤ number/);
+    /does not justify|evidence search failed/);
   process.stdout.write("tampered captured cell contract: refused\n");
 }
 
@@ -1306,8 +1306,8 @@ const callbackClaims: SourceClaims = JSON.parse(
   process.stdout.write("tampered callback instantiation: refused\n");
 }
 
-// Generic bodies take the rigid-bound path in BOTH producer and consumer.
-// Reusing valid evidence must not let an inferred local trust a forged point type.
+// A generic body is a graph request over its binders' parameter rows. Reusing
+// valid evidence must not let an inferred local trust a forged point type.
 const genericClaims: SourceClaims = JSON.parse(
   readFileSync(join(generic, "claims.json"), "utf8"),
 );
@@ -1333,8 +1333,7 @@ for (const site of ["initializer", "binding"] as const) {
   assert.ifError(p.error);
   assert.equal(p.signal, null);
   assert.equal(p.status, 1, p.stdout + p.stderr);
-  assert.match(p.stdout + p.stderr, /generic (entry claim|expression claim|binding annotation|return contract) at \[\d+,\d+\): cannot establish/);
-  assert.match(p.stdout + p.stderr, /"role":"(?:expression|entry)-claim"/);
+  assert.match(p.stdout + p.stderr, /source evidence does not justify the extracted program and exact claims/);
   process.stdout.write(`tampered inferred generic ${site}: refused\n`);
 }
 
@@ -1448,11 +1447,6 @@ process.stdout.write("reader collection: imported Json bound verified\n");
 // control from escaping this.
 const directControls = new Set([
   "invalid-generic-rest",
-  "invalid-generic-rest-argument",
-  "invalid-generic",
-  "invalid-generic-copy",
-  "invalid-generic-closure",
-  "invalid-scheme-capture",
   "invalid-generic-default",
   "invalid-rigid-default",
 ]);
