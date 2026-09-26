@@ -1302,9 +1302,10 @@ class Gate {
     // A type assertion is the operand's value; the runtime never sees it.
     // What it asserts is an obligation on the operand, never a fact. `as
     // const` asserts nothing: it asks for the operand's literal types, which
-    // the claims state and the checker establishes from the operand.
+    // the claims state and the checker establishes from the operand. The
+    // older form `<T>e` is the same assertion as `e as T`.
     if (
-      ts.isAsExpression(node) &&
+      (ts.isAsExpression(node) || ts.isTypeAssertion(node)) &&
       ts.isTypeReferenceNode(node.type) &&
       ts.isIdentifier(node.type.typeName) &&
       node.type.typeName.text === "const" &&
@@ -1317,11 +1318,11 @@ class Gate {
         annot: null,
         e: this.expr(node.expression),
       };
-    if (ts.isAsExpression(node) || ts.isSatisfiesExpression(node))
+    if (ts.isAsExpression(node) || ts.isTypeAssertion(node) || ts.isSatisfiesExpression(node))
       return {
         k: "cast",
         pos: this.span(node),
-        cast: ts.isAsExpression(node) ? "as" : "satisfies",
+        cast: ts.isSatisfiesExpression(node) ? "satisfies" : "as",
         annot: this.typeOf(node.type),
         e: this.expr(node.expression),
       };
@@ -3210,6 +3211,8 @@ export function parseFile(file: string, carriesContext = false,
       if (!inlined) initNodes.push(s);
     }
     else if (carriesContext) continue;
+    // `;` is nothing, at the top level as in a body.
+    else if (ts.isEmptyStatement(s)) continue;
     else if (ts.isExpressionStatement(s)) initNodes.push(s);
     // `declare const x: T` runs nothing: the value is assumed at its
     // annotation, like an imported constant's. `declare const k: unique

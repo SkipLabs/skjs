@@ -49,7 +49,7 @@ config (5); and 2 files the project's own tsconfig does not check.
 **Units.** The pipeline verifies whole files and stops at the first blocker,
 and SKJS test files mix accepted and rejected functions, so each file is split.
 Every top-level value-level statement (function with a body, class, variable
-statement, top-level code) is a unit. Its derived file holds it plus, in source
+statement, top-level code other than an empty `;`) is a unit. Its derived file holds it plus, in source
 order, every top-level statement it reaches by name, transitively (aliases,
 interfaces, ambient declarations, other functions, overload signatures). A
 unit is marker-accepted when no statement of that closure has an error line

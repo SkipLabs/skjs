@@ -288,6 +288,8 @@ function statements(file: string): { stmts: Stmt[]; isModule: boolean } {
     else if (ts.isInterfaceDeclaration(s) || ts.isTypeAliasDeclaration(s) || ts.isEnumDeclaration(s) ||
              ts.isModuleDeclaration(s) || ts.isImportDeclaration(s) || ts.isImportEqualsDeclaration(s) ||
              ts.isExportDeclaration(s) || ts.isExportAssignment(s)) kind = "context";
+    // `;` runs nothing and declares nothing: no unit, as a type declaration is none.
+    else if (ts.isEmptyStatement(s)) kind = "context";
     else kind = "statement";
     if (kind !== "prologue") prologue = false;
     return {
