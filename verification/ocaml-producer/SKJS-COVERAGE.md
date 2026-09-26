@@ -4,8 +4,8 @@ How much of what SKJS accepts in its own test suite the pipeline
 (`check.mts`: parser → OCaml producer → Lean search and check) verifies, what
 stops the rest, and where the two disagree because SKJS is wrong.
 
-**2,181 of 2,676 SKJS-accepted units verify (81.5%); 1,589 of 2,026 accepted
-functions (78.4%).** 227 of the 377 files with an accepted unit verify entirely.
+**2,187 of 2,676 SKJS-accepted units verify (81.7%); 1,594 of 2,026 accepted
+functions (78.7%).** 228 of the 377 files with an accepted unit verify entirely.
 Four families of SKJS-accepted functions that the pipeline reaches and refuses
 are real SKJS unsoundnesses, each with a runtime witness that SKJS accepts and
 node crashes on ([below](#suspected-skjs-unsoundnesses)).
@@ -30,14 +30,14 @@ is not part of `verification/run.sh`.
 
 | Suite | Harness verdict | Files | Units | Accepted | Verified | Accepted functions | Verified functions |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,885 | 2,458 | 1972 | 1,863 | 1432 |
+| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,885 | 2,458 | 1978 | 1,863 | 1437 |
 | `tests/callgraph` | no error allowed | 25 | 59 | 59 | 56 | 51 | 48 |
 | `tests/constprop` | no error allowed | 14 | 66 | 66 | 64 | 49 | 48 |
 | `tests/deadcode` | no error allowed | 7 | 27 | 27 | 27 | 16 | 16 |
 | `tests/cfg` | no error allowed | 7 | 22 | 22 | 21 | 21 | 20 |
 | `tests/projects` | expect-error markers, under the project's tsconfig | 24 of 68 | 44 | 34 | 33 | 23 | 22 |
 | `tests/ts-conformance/cases` | lines listed in `reference/*.errors.txt` | 4 | 11 | 10 | 8 | 3 | 3 |
-| **total** | | **480** | **4,114** | **2,676** | **2,181** | **2,026** | **1,589** |
+| **total** | | **480** | **4,114** | **2,676** | **2,187** | **2,026** | **1,594** |
 
 Excluded (79 files, listed in the JSON with reasons): `ts-conformance/not-supported`
 (31) and `callgraph-unsupported` (4) assert only that SKJS reports errors;
@@ -95,10 +95,10 @@ is.
 
 | Phase of first blocker | Units |
 | --- | ---: |
-| verified | 2,181 |
-| source (gate) | 185 |
-| proposal (producer) | 80 |
-| search (Lean) | 229 |
+| verified | 2,187 |
+| source (gate) | 169 |
+| proposal (producer) | 87 |
+| search (Lean) | 233 |
 
 **Caveats on the method.**
 
@@ -149,7 +149,7 @@ Ordered by value for cost (units per effort, files as a tiebreak):
 | 14 | ~~Reads on primitives and unions, value-level `&&`/`||`~~ done (task L); left: dynamic string index writes, numeric keys on string indexes | 4 (was 48 + 20) | | | | M | O L |
 | 15 | ~~Equality against string/boolean literal singletons~~ done (task I); left: two objects without a field (no identity in the model) | 6 (was 46) | 6 | 0 | 2 | M | L |
 | 16 | ~~Discriminated-union narrowing~~ done (task I); left: a `let` holding a union object | 3 (was 28) | 3 | 0 | 1 | M | O L |
-| 17 | `in` / `instanceof` / `typeof` — `typeof` as a value and `"object"`, `in` with literal and literal-union keys done (task J); left: `instanceof` (no class identity in the model), `typeof` in types (task O), numeric and `string` `in` keys | 65 (was 127, marker corpus; 31 of them `typeof` in types) | 58 | 7 | 20 | L | P O L |
+| 17 | `in` / `instanceof` / `typeof` — `typeof` as a value and `"object"`, `in` with literal and literal-union keys done (task J); `instanceof` of a class of the file done (task M3); left: `instanceof` narrowing `unknown` (a world invariant), `typeof` in types (task O), numeric and `string` `in` keys | 65 (was 127, marker corpus; 31 of them `typeof` in types) | 58 | 7 | 20 | L | P O L |
 | 18 | Search: no derivation found — triaged (task S): 45 of 169 verify, 11 refused by name, the rest by cause below | 113 (was 169) | | | | L | L O |
 | 19 | Classes: member modifiers, optional/definite fields, parameter properties, inheritance, constructor statements, receivers | 104 | 65 | 39 | 31 | L | P O L |
 | 20 | Generic classes (records over a binder, below) | 47 | | | 21 | L | P O L |
@@ -445,10 +445,15 @@ dropped), examples, what the extension needs.
     the tag `hasKey`, an own-key test, with a literal key or a union of string
     literals, refused with reasons where JavaScript's answer differs: a key a
     realm prototype holds, an array index, a `string` key, a primitive or class
-    operand ([DESIGN](../DESIGN.md#guards)). Left, by reason: `instanceof` other
-    than `instanceof Array` (25: the model gives an object no identity of the
-    constructor that made it; 12 of them also generic classes), a class with a
-    static `[Symbol.hasInstance]` (4: a computed static member), `typeof` in
+    operand ([DESIGN](../DESIGN.md#guards)). Task M3 took `x instanceof C` for
+    a class of the file: `hasKey` of the key only `C`'s prototype owns, along
+    the prototype chain (6 units). Left, by reason: narrowing `unknown` to `C`
+    (6: a world invariant over every allocation, refused by name), a right
+    operand that is not a class of the file (6: a function, an ambient class,
+    an expression; nothing names the prototype its instances get), closures
+    around a narrowed value (8: evolving arrays and result annotations, other
+    groups), a class with a static `[Symbol.hasInstance]` (4: a computed static
+    member), a generic class extending another (1), `typeof` in
     types (31, done, task O), numeric `in` keys (3), `string` keys (2). Outside the
     group, presence narrowing after `in` on an optional field or a dictionary
     (4, search) and `x[s]` after `s in x` with a union key (3, producer).
@@ -521,10 +526,10 @@ dropped), examples, what the extension needs.
     *Inheritance done (task M2; DESIGN.md, "Class members"):* a base
     declared earlier in the file, `super(...)` after statements not reading
     `this`, `super.m(...)`, overrides checked against the base's member types,
-    an implicit constructor over a base taking nothing. Left: an implicit
-    constructor forwarding a base's parameters, `instanceof` a derived class
-    (the model's derived prototype is a copy, not a link), `extends` of a
-    library, ambient or later class.
+    an implicit constructor over a base taking nothing. *Task M3:* a derived
+    prototype links to its base's, methods covered along the chain, an
+    implicit constructor forwarding a base's parameters. Left: `extends` of a
+    library, ambient or later class, a generic class extending another.
 20. **Generic classes.** `a generic class is outside the fragment` (47).
     An instance of `class Box<T> { v: T }` is a record over its binder, which
     no universal certificate reaches yet (21, left).
@@ -885,6 +890,7 @@ split by function.
 | K2. Library globals, second part (done) | `JSON.parse`/`stringify`, `Promise.reject`, `new Promise`, `Set`/`Map`/`Date` contracts and constructors, `Date.now`, `instanceof Array`, generic `Object.values`/`entries` at dictionaries, throwing string members and string-pattern `split`/`replace` | 5 units / 1 file newly verified (1,420 → 1,425 units, 917 → 922 functions, 141 → 142 whole files, none lost); the corpus reaches these globals in 16 units | `library-globals.mts`, `array-prototype.mts`, `intrinsics.mts`, `declaration-graph.mts`, `fragment-parse.mts`, `source.ml`, `proposal.ml`, `DeclarationGraph.lean` | K, S | K |
 | S. Throws (done) | A throw is an outcome: `throw`, `try`/`catch`/`finally` (handler edges, the `finally` compiled on each way out, returns included), `typeof` narrowing `unknown`; bigint division and exponent, `BigInt` of any number or string, and primitive radix/digit arguments read as declared | 59 units newly verified over the committed run (1,361 → 1,420, 880 → 917 functions, 136 → 141 whole files, none lost), of which about 38 in exception or bigint units and the rest from overlay work the committed run predated | `Calculus.lean`, `Safety.lean`, `ControlFlow.lean`, `ProgramTyping.lean`, `SourceExtraction.lean`, `fragment-parse.mts`, `library-globals.mts`, `array-prototype.mts`, `proposal.ml` | — | — |
 | M2. Allocation from parts (done) | `Tm.merge`: object spreads of values and object rest patterns copy own enumerable string keys; class methods on a `[[proto]]` prototype object; `in` follows the prototype chain; `Error`'s `message` on a prototype; `class D extends B` (base part copied, prototype a copy of the base's with the overrides, `super.m()`, implicit constructors over a base taking nothing, overrides checked, `this` before `super` refused) | `--only` probes over the committed run at ad8564d8: spread files +11 (38 of 66), `class_inheritance_test.ts` +2, generic class files +1, none lost; on the run before tasks J and O, about 25 units by name, none lost | `Calculus.lean`, `ObjectMerge.lean`, `ProgramTyping.lean`, `ProgramCertificates.lean`, `CertificateProducer.lean`, `PositiveRules.lean`, `SourceExtraction.lean`, `Fragment.lean`, `fragment-parse.mts`, `library-globals.mts`, `source.ml`, `proposal.ml`, `claims.ml` | J (`in`) | J, M |
+| M3. Prototype chains and `instanceof` (done) | A derived class's prototype linked to its base's (`MethodMembers.along`, `CoversByProto` over `ProtoHolds`); `x instanceof C` for a top-level class of the file as `hasKey` of the key only `C`'s prototype owns; the implicit derived constructor forwarding its base's parameters; refused with reasons: narrowing `unknown` to `C`, a right operand that is not a class of the file | 6 units / 1 file newly verified (2,181 → 2,187 units, 1,589 → 1,594 functions, 227 → 228 whole files, none lost; `--skjs`) | `MethodMembers.lean`, `PositiveRules.lean`, `PositiveCertificates.lean`, `ProgramTyping.lean`, `Parametricity.lean`, `Fragment.lean`, `SourceTypes.lean`, `fragment-parse.mts`, `declaration-graph.mts`, `annotate-source.mts`, `source.ml`, `proposal.ml` | M2 | J |
 | R. Remaining source forms (done) | Enums (runtime, `const`, types, reverse mappings, number keys on records); object literals (numeric keys, literal spreads, construct-signature type literals; value spreads and accessors refused with reasons); optional chaining as one derived form; `.call`/`.apply`/`.bind` on module functions and `this` parameters as receivers; `%` exact on numbers and bigints | 80 / 19 verified, measured on 414fc86a before task S (1,361 → 1,441 units, 880 → 956 functions, 136 → 142 whole files, none lost) | `fragment-parse.mts`, `type-term.mts`, `declaration-graph.mts`, `annotate-source.mts`, `Fragment.lean`, `SourceExtraction.lean`, `Calculus.lean`, `ProgramTyping.lean`, `source.ml`, `proposal.ml` | D (bigint) | I (enum narrowing) |
 
 Suggested order: A, B, D in parallel (disjoint files except D's gate

@@ -14,18 +14,18 @@
   "rejected": 2
  },
  "accepted": 2676,
- "verified": 2181,
+ "verified": 2187,
  "byStatus": {
-  "verified (check)": 2181,
-  "unverified (search)": 229,
-  "unsupported (source)": 185,
-  "unsupported (proposal)": 80,
+  "verified (check)": 2187,
+  "unverified (search)": 233,
+  "unsupported (source)": 169,
+  "unsupported (proposal)": 86,
   "error (proposal)": 1
  },
  "bySuite": {
   "expect-error": {
    "accepted": 2458,
-   "verified": 1972
+   "verified": 1978
   },
   "constprop": {
    "accepted": 66,
@@ -52,16 +52,16 @@
    "verified": 8
   }
  },
- "filesAllVerified": 227,
+ "filesAllVerified": 228,
  "filesWithAccepted": 377,
  "functions": {
   "accepted": 2026,
-  "verified": 1589
+  "verified": 1594
  },
  "byGroup": {
   "search: no derivation found (evidence search failed)": {
-   "units": 148,
-   "self": 140,
+   "units": 149,
+   "self": 141,
    "dependency": 8,
    "files": 63
   },
@@ -71,23 +71,17 @@
    "dependency": 13,
    "files": 25
   },
-  "in / instanceof / typeof tests": {
-   "units": 36,
-   "self": 35,
-   "dependency": 1,
-   "files": 11
-  },
   "classes: modifiers, inheritance, fields, parameter properties, receivers": {
-   "units": 29,
+   "units": 30,
    "self": 18,
-   "dependency": 11,
+   "dependency": 12,
    "files": 13
   },
   "other source forms": {
-   "units": 24,
-   "self": 9,
+   "units": 26,
+   "self": 11,
    "dependency": 2,
-   "files": 8
+   "files": 10
   },
   "destructuring and rest/default parameters": {
    "units": 22,
@@ -101,17 +95,23 @@
    "dependency": 2,
    "files": 13
   },
+  "reads on unions/primitives (field/index read on non-object, string keys)": {
+   "units": 20,
+   "self": 15,
+   "dependency": 0,
+   "files": 13
+  },
   "type aliases and names the declaration reader cannot resolve": {
    "units": 20,
    "self": 0,
    "dependency": 20,
    "files": 8
   },
-  "reads on unions/primitives (field/index read on non-object, string keys)": {
-   "units": 19,
-   "self": 15,
+  "in / instanceof / typeof tests": {
+   "units": 16,
+   "self": 16,
    "dependency": 0,
-   "files": 13
+   "files": 7
   },
   "object growth: a write adding a key (keys are fixed at allocation)": {
    "units": 15,
@@ -161,6 +161,12 @@
    "dependency": 0,
    "files": 2
   },
+  "unclassified: proposal: `x instanceof C` does not narrow `unknown` to C: that every object whose prototype chain holds C'_'s fields is a fact about every allocation of the program, whi": {
+   "units": 6,
+   "self": 0,
+   "dependency": 0,
+   "files": 3
+  },
   "mutable bindings: evolving let (null, undefined, []), let with neither initializer nor annotation, closure parameter assignment": {
    "units": 4,
    "self": 4,
@@ -176,6 +182,12 @@
   "unclassified: proposal: an array rest needs one tuple of required positions: the rest of an array of unknown length is a slice": {
    "units": 3,
    "self": 3,
+   "dependency": 0,
+   "files": 2
+  },
+  "unclassified: search: reject: invalid source claims: duplicate identity, span, binding or type labels": {
+   "units": 3,
+   "self": 1,
    "dependency": 0,
    "files": 2
   },
@@ -208,6 +220,12 @@
    "self": 1,
    "dependency": 0,
    "files": 1
+  },
+  "control-flow forms (else-if, bare return, early return in closures, dead code)": {
+   "units": 2,
+   "self": 2,
+   "dependency": 0,
+   "files": 2
   },
   "library globals as values (Array, Symbol, Error, Promise, Set, Map, Date, JSON, …)": {
    "units": 2,
@@ -252,12 +270,6 @@
    "files": 1
   },
   "unclassified: search: reject: source refusal at _: an array rest requires an array contract": {
-   "units": 1,
-   "self": 1,
-   "dependency": 0,
-   "files": 1
-  },
-  "unclassified: search: reject: invalid source claims: duplicate identity, span, binding or type labels": {
    "units": 1,
    "self": 1,
    "dependency": 0,
@@ -341,12 +353,6 @@
    "dependency": 0,
    "files": 1
   },
-  "control-flow forms (else-if, bare return, early return in closures, dead code)": {
-   "units": 1,
-   "self": 1,
-   "dependency": 0,
-   "files": 1
-  },
   "unclassified: proposal: a primitive's member needs a string literal key": {
    "units": 1,
    "self": 1,
@@ -366,24 +372,24 @@
    "files": 1
   }
  },
- "reachedButRefused": 229,
+ "reachedButRefused": 233,
  "byKey": {
   "search: reject: source expression obligation at _: evidence search failed: no derivation of its binding-annotation claim": 50,
   "search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim": 41,
   "search: reject: source expression obligation at _: evidence search failed: no derivation of its node-typing claim": 32,
-  "source: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it": 27,
   "source: a rest parameter needs a tuple of required positions or an array": 15,
   "proposal: a write adds the property '_' to an object allocated without it: an object's keys are fixed at its allocation": 13,
+  "search: reject: closure expression claim at _: evidence search failed": 12,
   "search: reject: source direct obligation at _: quantified call does not satisfy the closure's bound: cannot establish …": 12,
-  "search: reject: closure expression claim at _: evidence search failed": 11,
   "source: a mutable local in a closure body is outside the fragment": 10,
+  "search: reject: a numeric array key needs a proved array-index singleton; ordinary numeric properties are not modeled": 9,
   "proposal: call requires a single arrow the arguments can call": 9,
-  "search: reject: a numeric array key needs a proved array-index singleton; ordinary numeric properties are not modeled": 8,
   "search: reject: declaration intersection has no representable clause": 8,
   "search: reject: source expression obligation at _: evidence search failed: no derivation of its cast claim": 8,
   "source: an intersection with a type parameter is known only at an instance: its meet has no representation": 8,
   "source: a static member needs a plain name": 8,
   "proposal: missing field _": 7,
+  "source: `instanceof` whose right operand is not a class declared at the file's top level: nothing in the file says which prototype a constructor from elsewhere gives it": 7,
   "search: reject: shadowing is outside the fragment": 7,
   "proposal: a spread copies the own enumerable properties of a plain object; one of a string, an array, a function or a class value is outside the fragment": 6,
   "search: reject: duplicate or shadowing local declaration '_'": 6,
@@ -391,7 +397,9 @@
   "source: TypeScript found 2 declarations for _": 6,
   "search: reject: unsupported source expression at _: strict equality of two operands that may both be objects without a field compares identities, which such objects do ": 6,
   "source: a function that reads `this` must be strict code": 6,
+  "proposal: `x instanceof C` does not narrow `unknown` to C: that every object whose prototype chain holds C'_'s fields is a fact about every allocation of the program, whi": 6,
   "source: a method receiver is its instance in a declaration of the source": 6,
+  "source: missing type annotation": 5,
   "source: a computed enum member is outside the fragment: its reverse mapping is keyed by its value at run time": 5,
   "source: TypeScript reports an error in a declaration of the source Property '_' of type '_' is not assignable to '_' index type '_'.": 5,
   "proposal: an ordinary function in sloppy code": 4,
@@ -406,10 +414,11 @@
   "proposal: an unannotated `let` initialized with null, undefined or [] has no storage contract": 3,
   "source: a `let` pattern is outside the fragment": 3,
   "source: an optional, generator or generic method is outside the fragment in a declaration of the source": 3,
+  "search: reject: invalid source claims: duplicate identity, span, binding or type labels": 3,
   "source: TypeScript reports an error in a declaration of the source Duplicate identifier '_'.": 3,
   "search: reject: source expression obligation at _: evidence search failed: no derivation of its for-of-iterator claim": 3,
-  "source: missing type annotation": 3,
   "source: `in` with a numeric key tests an array element, which the model keeps in the array's store, not as a key": 3,
+  "source: a class member needs a plain name": 3,
   "source: keyof is keyof [number], whose part unique symbol is a unique symbol, which no type of the fragment names": 3,
   "proposal: a value parameter used as an argument pack": 3,
   "source: the indexed access E over a type parameter is computed only at an instance": 3,
@@ -422,7 +431,7 @@
   "search: reject: numeric comparison requires a union of known singleton outcomes": 2,
   "search: reject: type argument does not establish its declared bound for U at [22,33]: never ≤ never": 2,
   "search: reject: unsupported source expression at _: `in` with a key that is not a union of string literals": 2,
-  "source: a class member needs a plain name": 2,
+  "source: a closure returning from a branch needs a result annotation": 2,
   "proposal: inheritance needs plain object contracts": 2,
   "source: keyof is number | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | ... 34 more ... | unique symbol, whose part unique s": 2,
   "search: reject: source refusal at _: a method of an annotation's type literal over a type parameter is outside the fragment": 2,
@@ -445,7 +454,6 @@
   "search: reject: an array rest needs one tuple contract of required positions: the rest of an array of unknown length is a slice": 1,
   "source: only field and local assignments are supported": 1,
   "search: reject: source refusal at _: an array rest requires an array contract": 1,
-  "search: reject: invalid source claims: duplicate identity, span, binding or type labels": 1,
   "source: an enum without members allocates an object with no property, which the heap model has no record for": 1,
   "source: an ambient enum is outside the fragment": 1,
   "source: a `for...of` loop declares one `const` binding": 1,
@@ -485,7 +493,6 @@
   "source: TypeScript computes no type for this typeof: it is not valid TypeScript": 1,
   "source: typeof WithStatic is a class with static members: its statics are bindings of their own, not members of the class value's type": 1,
   "source: Object.assign requires a fresh arrow, an object literal and two explicit type arguments": 1,
-  "source: a closure returning from a branch needs a result annotation": 1,
   "proposal: a primitive's member needs a string literal key": 1,
   "search: reject: source incoming edge obligation at _: evidence search failed: the edge from node 8 does not establish the claims at this point": 1,
   "source: generic function types are outside the fragment in identity": 1,
@@ -916,7 +923,7 @@
 {"source":"tests/expect-error/callability.ts","name":"testStrengthenedAfterFunctionElse","kind":"function","line":172,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its binding-annotation claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"o","detail":"reject: source expression obligation at [171,172): evidence search failed: no derivation of its binding-annotation claim — The available claim for n is boolean | number | string | bigint | symbol. This obligation requires never."},
 {"source":"tests/expect-error/callability.ts","name":"testProvenCallableThenObject","kind":"function","line":185,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/callability.ts","name":"testProvenCallableThenFunctionElse","kind":"function","line":194,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
-{"source":"tests/expect-error/callability.ts","name":"testProvenCallableInstanceofRhs","kind":"function","line":205,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it","group":"in / instanceof / typeof tests","where":"self","at":"if (x instanceof o) {","detail":"gate: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it (line 3, col 9)"},
+{"source":"tests/expect-error/callability.ts","name":"testProvenCallableInstanceofRhs","kind":"function","line":205,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` whose right operand is not a class declared at the file's top level: nothing in the file says which prototype a constructor from elsewhere gives it","group":"in / instanceof / typeof tests","where":"self","at":"if (x instanceof o) {","detail":"gate: `instanceof` whose right operand is not a class declared at the file's top level: nothing in the file says which prototype a constructor from elsewhere gives its instances (line 3, col 9)"},
 {"source":"tests/expect-error/callability.ts","name":"testProvenCallableTruthiness","kind":"function","line":216,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/callability.ts","name":"testInstanceTypeofFunction","kind":"function","line":229,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its binding-annotation claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"c","detail":"reject: source expression obligation at [134,135): evidence search failed: no derivation of its binding-annotation claim — The available claim for n is { a: number }. This obligation requires never."},
 {"source":"tests/expect-error/callability.ts","name":"testArrayTypeofFunction","kind":"function","line":237,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
@@ -1063,8 +1070,8 @@
 {"source":"tests/expect-error/class_inheritance_test.ts","name":"BaseClass","kind":"class","line":3,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/class_inheritance_test.ts","name":"DerivedClassWithDifferentConstructor","kind":"class","line":15,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/class_inheritance_test.ts","name":"AnotherDerivedClass","kind":"class","line":39,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
-{"source":"tests/expect-error/class_inheritance_test.ts","name":"testClassInheritance","kind":"function","line":58,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it","group":"in / instanceof / typeof tests","where":"self","at":"console.log(\"derived1 instanceof BaseClass:\", derived1 instanceof BaseClass);","detail":"gate: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it (line 69, col 49)"},
-{"source":"tests/expect-error/class_inheritance_test.ts","name":"statement@76","kind":"statement","line":76,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it","group":"in / instanceof / typeof tests","where":"dependency","at":"console.log(\"derived1 instanceof BaseClass:\", derived1 instanceof BaseClass);","detail":"gate: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it (line 69, col 49)"},
+{"source":"tests/expect-error/class_inheritance_test.ts","name":"testClassInheritance","kind":"function","line":58,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
+{"source":"tests/expect-error/class_inheritance_test.ts","name":"statement@76","kind":"statement","line":76,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/classes.ts","name":"FieldInitializationSubTyping","kind":"class","line":1,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/classes.ts","name":"FieldInitializationUsePreciseTyping","kind":"class","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/classes.ts","name":"TwoConstructors","kind":"class","line":9,"skjsMarker":"rejected-self"},
@@ -1146,7 +1153,7 @@
 {"source":"tests/expect-error/contextual-hidden-escape.ts","name":"ContextBox","kind":"class","line":1,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/contextual-hidden-escape.ts","name":"ContextRunner","kind":"class","line":7,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source refusal at _: callee has no signature with the actual argument count","group":"unclassified: search: reject: source refusal at _: callee has no signature with the actual argument count","where":"self","at":"class ContextRunner<T> { seed: T; constructor(seed: T) { this.seed = seed; } twice(f: (x: unknown, y?: T) => T, a: unkno","detail":"reject: source refusal at [0,188): callee has no signature with the actual argument count — callee has no signature with the actual argument count"},
 {"source":"tests/expect-error/contextual-hidden-escape.ts","name":"contextualRoot","kind":"function","line":16,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/contextual-hidden-escape.ts","name":"opaqueContextualRoot","kind":"function","line":29,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it","group":"in / instanceof / typeof tests","where":"self","at":"(x, y = x instanceof ContextBox ? x : null): unknown => y,","detail":"gate: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it (line 20, col 13)"},
+{"source":"tests/expect-error/contextual-hidden-escape.ts","name":"opaqueContextualRoot","kind":"function","line":29,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: missing type annotation","group":"other source forms","where":"self","at":"(x, y = x instanceof ContextBox ? x : null): unknown => y,","detail":"gate: missing type annotation (line 20, col 6)"},
 {"source":"tests/expect-error/contextual-literal-args.ts","name":"inlineLiteralKey","kind":"function","line":14,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/contextual-literal-args.ts","name":"variableLiteralKey","kind":"function","line":22,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its node-typing claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"update<0, { value: number }>(\"counter\", entries)","detail":"reject: source expression obligation at [172,220): evidence search failed: no derivation of its node-typing claim — No rule derives this invoke at unknown from \"counter\": \"counter\", entries: { \"[[proto]]\": never = ({ forEach: never = (type 28), map: never = (type 36), reduce: never = (type 38), reduceRight: never = (type 38), every: never = (type 39), some: never = (type 39), filter: never = (type 42), slice: never = (type 43), join: never = (type 44), indexOf: never = (type 45), lastIndexOf: never "},
 {"source":"tests/expect-error/contextual-literal-args.ts","name":"mismatchedLiteralKey","kind":"function","line":28,"skjsMarker":"rejected-self"},
@@ -1681,7 +1688,7 @@
 {"source":"tests/expect-error/function-type.ts","name":"testFunctionNotConstructable","kind":"function","line":82,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/function-type.ts","name":"testFunctionTypeofFunction","kind":"function","line":88,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/function-type.ts","name":"testFunctionTypeofObject","kind":"function","line":95,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
-{"source":"tests/expect-error/function-type.ts","name":"testFunctionInstanceofRhs","kind":"function","line":102,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it","group":"in / instanceof / typeof tests","where":"self","at":"if (x instanceof f) {","detail":"gate: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it (line 2, col 7)"},
+{"source":"tests/expect-error/function-type.ts","name":"testFunctionInstanceofRhs","kind":"function","line":102,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` whose right operand is not a class declared at the file's top level: nothing in the file says which prototype a constructor from elsewhere gives it","group":"in / instanceof / typeof tests","where":"self","at":"if (x instanceof f) {","detail":"gate: `instanceof` whose right operand is not a class declared at the file's top level: nothing in the file says which prototype a constructor from elsewhere gives its instances (line 2, col 7)"},
 {"source":"tests/expect-error/function-type.ts","name":"testFunctionTruthiness","kind":"function","line":111,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/function-type.ts","name":"testTParamTypeofFunction","kind":"function","line":120,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"x","detail":"reject: source expression obligation at [99,100): evidence search failed: no derivation of its return-contract claim — The available claim for x is type 9. This return requires {\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}."},
 {"source":"tests/expect-error/function-type.ts","name":"testUnknownTypeofFunction","kind":"function","line":128,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"x","detail":"reject: source expression obligation at [103,104): evidence search failed: no derivation of its return-contract claim — The available claim for x is unknown. This return requires {\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}."},
@@ -1818,7 +1825,7 @@
 {"source":"tests/expect-error/global-refinement.ts","name":"testAndChain","kind":"function","line":146,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/global-refinement.ts","name":"testOrChain","kind":"function","line":154,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/hidden-dependent-bounds.ts","name":"DependentBox","kind":"class","line":3,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: type argument does not establish its declared bound for U at [22,33]: never ≤ never","group":"unclassified: search: reject: type argument does not establish its declared bound for U at [22,33]: never ≤ never","where":"self","detail":"reject: type argument does not establish its declared bound for U at [22,33]: never ≤ never"},
-{"source":"tests/expect-error/hidden-dependent-bounds.ts","name":"sameWitness","kind":"function","line":12,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it","group":"in / instanceof / typeof tests","where":"self","at":"if (x instanceof DependentBox) x.first = x.second;","detail":"gate: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it (line 11, col 7)"},
+{"source":"tests/expect-error/hidden-dependent-bounds.ts","name":"sameWitness","kind":"function","line":12,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: `x instanceof C` does not narrow `unknown` to C: that every object whose prototype chain holds C'_'s fields is a fact about every allocation of the program, whi","group":"unclassified: proposal: `x instanceof C` does not narrow `unknown` to C: that every object whose prototype chain holds C'_'s fields is a fact about every allocation of the program, whi","where":"unknown","detail":"unsupported: `x instanceof C` does not narrow `unknown` to C: that every object whose prototype chain holds C's prototype has C's fields is a fact about every allocation of the program, which no type of a value states"},
 {"source":"tests/expect-error/hidden-dependent-bounds.ts","name":"reverseBound","kind":"function","line":16,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/hidden-dependent-bounds.ts","name":"crossWitness","kind":"function","line":21,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/hidden-dependent-bounds.ts","name":"inferredBound","kind":"function","line":28,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: type argument does not establish its declared bound for U at [22,33]: never ≤ never","group":"unclassified: search: reject: type argument does not establish its declared bound for U at [22,33]: never ≤ never","where":"unknown","detail":"reject: type argument does not establish its declared bound for U at [22,33]: never ≤ never"},
@@ -2017,15 +2024,15 @@
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"boundedWrite","kind":"function","line":136,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"concreteAdmission","kind":"function","line":147,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"subclassWrite","kind":"function","line":157,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"observe","kind":"function","line":167,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it","group":"in / instanceof / typeof tests","where":"self","at":"if (x instanceof Box) {","detail":"gate: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it (line 9, col 7)"},
-{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"boundedRead","kind":"function","line":174,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it","group":"in / instanceof / typeof tests","where":"self","at":"if (x instanceof Tagged) {","detail":"gate: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it (line 9, col 7)"},
-{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"roundTrip","kind":"function","line":182,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it","group":"in / instanceof / typeof tests","where":"self","at":"if (x instanceof Cell) {","detail":"gate: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it (line 15, col 7)"},
-{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"typedIdentity","kind":"function","line":191,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it","group":"in / instanceof / typeof tests","where":"self","at":"if (x instanceof Cell) {","detail":"gate: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it (line 15, col 7)"},
-{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"unionScrutinee","kind":"function","line":200,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it","group":"in / instanceof / typeof tests","where":"self","at":"if (x instanceof Box) {","detail":"gate: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it (line 9, col 7)"},
+{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"observe","kind":"function","line":167,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: `x instanceof C` does not narrow `unknown` to C: that every object whose prototype chain holds C'_'s fields is a fact about every allocation of the program, whi","group":"unclassified: proposal: `x instanceof C` does not narrow `unknown` to C: that every object whose prototype chain holds C'_'s fields is a fact about every allocation of the program, whi","where":"unknown","detail":"unsupported: `x instanceof C` does not narrow `unknown` to C: that every object whose prototype chain holds C's prototype has C's fields is a fact about every allocation of the program, which no type of a value states"},
+{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"boundedRead","kind":"function","line":174,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: `x instanceof C` does not narrow `unknown` to C: that every object whose prototype chain holds C'_'s fields is a fact about every allocation of the program, whi","group":"unclassified: proposal: `x instanceof C` does not narrow `unknown` to C: that every object whose prototype chain holds C'_'s fields is a fact about every allocation of the program, whi","where":"unknown","detail":"unsupported: `x instanceof C` does not narrow `unknown` to C: that every object whose prototype chain holds C's prototype has C's fields is a fact about every allocation of the program, which no type of a value states"},
+{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"roundTrip","kind":"function","line":182,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: `x instanceof C` does not narrow `unknown` to C: that every object whose prototype chain holds C'_'s fields is a fact about every allocation of the program, whi","group":"unclassified: proposal: `x instanceof C` does not narrow `unknown` to C: that every object whose prototype chain holds C'_'s fields is a fact about every allocation of the program, whi","where":"unknown","detail":"unsupported: `x instanceof C` does not narrow `unknown` to C: that every object whose prototype chain holds C's prototype has C's fields is a fact about every allocation of the program, which no type of a value states"},
+{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"typedIdentity","kind":"function","line":191,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
+{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"unionScrutinee","kind":"function","line":200,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"unionObjectArm","kind":"function","line":215,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"crossClassRead","kind":"function","line":227,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"genericFlow","kind":"function","line":240,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it","group":"in / instanceof / typeof tests","where":"self","at":"if (x instanceof Box) {","detail":"gate: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it (line 11, col 7)"},
-{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"unionRoundTrip","kind":"function","line":249,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it","group":"in / instanceof / typeof tests","where":"self","at":"if (x instanceof WithCb) {","detail":"gate: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it (line 18, col 7)"},
+{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"genericFlow","kind":"function","line":240,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: `x instanceof C` does not narrow `unknown` to C: that every object whose prototype chain holds C'_'s fields is a fact about every allocation of the program, whi","group":"unclassified: proposal: `x instanceof C` does not narrow `unknown` to C: that every object whose prototype chain holds C'_'s fields is a fact about every allocation of the program, whi","where":"unknown","detail":"unsupported: `x instanceof C` does not narrow `unknown` to C: that every object whose prototype chain holds C's prototype has C's fields is a fact about every allocation of the program, which no type of a value states"},
+{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"unionRoundTrip","kind":"function","line":249,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: missing type annotation","group":"other source forms","where":"self","at":"const selected = x.pick((_item) => true);","detail":"gate: missing type annotation (line 19, col 30)"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"hiddenTypeNoEscape","kind":"function","line":260,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"sharedReadOnly","kind":"function","line":273,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its node-typing claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"sharedRO(u, w)","detail":"reject: source expression obligation at [200,214): evidence search failed: no derivation of its node-typing claim — No rule derives this invoke at number from u: unknown, w: unknown, sharedRO: ({ \"[]\": never = (Store<ReadonlyArray<unknown>>), \"[[proto]]\": never = ({ forEach: never = (type 15), map: never = (type 23), reduce: never = (type 25), reduceRight: never = (type 25), every: never = (type 26), some: never = (type 26), filter: never = (type 29), slice: never = (type 30), join: never = (type 32"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"arrayWrite","kind":"function","line":281,"skjsMarker":"rejected-self"},
@@ -2043,15 +2050,15 @@
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"queryRejectedArrayIncludes","kind":"function","line":420,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"toArrayMutable","kind":"function","line":434,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"toArrayReadonly","kind":"function","line":445,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"x","detail":"reject: source expression obligation at [102,103): evidence search failed: no derivation of its return-contract claim — The available claim for x is unknown. This return requires { \"[]\": never = (Store<ReadonlyArray<unknown>>), \"[[proto]]\": never = ({ forEach: never = (type 13), map: never = (type 21), reduce: never = (type 23), reduceRight: never = (type 23), every: never = (type 24), some: never = (type 24), filter: never = (type 27), slice: never = (type 28), join: never = (type 30), indexOf: never ="},
-{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"observeLocalHiddenType","kind":"function","line":463,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it","group":"in / instanceof / typeof tests","where":"self","at":"if (value instanceof Tagged) return value.tag.length;","detail":"gate: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it (line 10, col 9)"},
-{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"opaqueHiddenResult","kind":"function","line":472,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it","group":"in / instanceof / typeof tests","where":"self","at":"if (value instanceof Box) return value;","detail":"gate: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it (line 10, col 9)"},
-{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"opaqueCapturedContainer","kind":"function","line":481,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it","group":"in / instanceof / typeof tests","where":"self","at":"if (value instanceof Box) values.push(value);","detail":"gate: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it (line 11, col 9)"},
-{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"localHiddenContainer","kind":"function","line":491,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it","group":"in / instanceof / typeof tests","where":"self","at":"if (value instanceof Box) values.push(value);","detail":"gate: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it (line 11, col 9)"},
+{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"observeLocalHiddenType","kind":"function","line":463,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a closure returning from a branch needs a result annotation","group":"control-flow forms (else-if, bare return, early return in closures, dead code)","where":"self","at":"const read = (value: unknown) => {","detail":"gate: a closure returning from a branch needs a result annotation (line 9, col 16)"},
+{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"opaqueHiddenResult","kind":"function","line":472,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
+{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"opaqueCapturedContainer","kind":"function","line":481,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: invalid source claims: duplicate identity, span, binding or type labels","group":"unclassified: search: reject: invalid source claims: duplicate identity, span, binding or type labels","where":"unknown","detail":"reject: invalid source claims: duplicate identity, span, binding or type labels"},
+{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"localHiddenContainer","kind":"function","line":491,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: invalid source claims: duplicate identity, span, binding or type labels","group":"unclassified: search: reject: invalid source claims: duplicate identity, span, binding or type labels","where":"unknown","detail":"reject: invalid source claims: duplicate identity, span, binding or type labels"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"holeSharedClosureResult","kind":"function","line":505,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"holeHigherOrderResult","kind":"function","line":525,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"holeCapturedContainer","kind":"function","line":539,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"iterationLocalContainer","kind":"function","line":558,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it","group":"in / instanceof / typeof tests","where":"self","at":"if (value instanceof Box) local.push(value);","detail":"gate: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it (line 12, col 9)"},
-{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"opaqueWhileContainer","kind":"function","line":569,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it","group":"in / instanceof / typeof tests","where":"self","at":"if (value instanceof Box) values.push(value);","detail":"gate: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it (line 13, col 9)"},
+{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"iterationLocalContainer","kind":"function","line":558,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: closure expression claim at _: evidence search failed","group":"search: no derivation found (evidence search failed)","where":"self","at":"local","detail":"reject: closure expression claim at [229,234): evidence search failed — The available claim for local is { \"[[proto]]\": never = ({ forEach: never, map: never, reduce: never, reduceRight: never, every: never, some: never, filter: never, slice: never, join: never, indexOf: never, lastIndexOf: never, includes: never, at: never, find: never, findIndex: never, sort: never, push: never, pop: never, shift: never, unshift: never, reverse: never, \"\": never }), \"[]\""},
+{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"opaqueWhileContainer","kind":"function","line":569,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a numeric array key needs a proved array-index singleton; ordinary numeric properties are not modeled","group":"reads on unions/primitives (field/index read on non-object, string keys)","where":"unknown","detail":"reject: a numeric array key needs a proved array-index singleton; ordinary numeric properties are not modeled"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"holeForConditionPooling","kind":"function","line":581,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"holeWhilePooling","kind":"function","line":593,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"holePureIdiom","kind":"function","line":614,"skjsMarker":"rejected-self"},
@@ -2064,20 +2071,20 @@
 {"source":"tests/expect-error/instanceof-hasinstance.ts","name":"DerivedHasInstance","kind":"class","line":53,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a static member needs a plain name","group":"classes: modifiers, inheritance, fields, parameter properties, receivers","where":"dependency","at":"static [Symbol.hasInstance](_x: unknown): boolean {","detail":"gate: a static member needs a plain name (line 2, col 3)"},
 {"source":"tests/expect-error/instanceof-hasinstance.ts","name":"inheritedHasInstance","kind":"function","line":57,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-hasinstance.ts","name":"InstanceHasInstance","kind":"class","line":67,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a class member needs a plain name","group":"classes: modifiers, inheritance, fields, parameter properties, receivers","where":"self","at":"[Symbol.hasInstance](_x: unknown): boolean {","detail":"gate: a class member needs a plain name (line 3, col 3)"},
-{"source":"tests/expect-error/instanceof-hasinstance.ts","name":"instanceLevelHasInstance","kind":"function","line":74,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it","group":"in / instanceof / typeof tests","where":"self","at":"if (x instanceof InstanceHasInstance) {","detail":"gate: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it (line 9, col 7)"},
+{"source":"tests/expect-error/instanceof-hasinstance.ts","name":"instanceLevelHasInstance","kind":"function","line":74,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a class member needs a plain name","group":"classes: modifiers, inheritance, fields, parameter properties, receivers","where":"dependency","at":"[Symbol.hasInstance](_x: unknown): boolean {","detail":"gate: a class member needs a plain name (line 3, col 3)"},
 {"source":"tests/expect-error/instanceof-hasinstance.ts","name":"Plain","kind":"class","line":82,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
-{"source":"tests/expect-error/instanceof-hasinstance.ts","name":"plainClass","kind":"function","line":86,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it","group":"in / instanceof / typeof tests","where":"self","at":"if (x instanceof Plain) {","detail":"gate: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it (line 6, col 7)"},
+{"source":"tests/expect-error/instanceof-hasinstance.ts","name":"plainClass","kind":"function","line":86,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: `x instanceof C` does not narrow `unknown` to C: that every object whose prototype chain holds C'_'s fields is a fact about every allocation of the program, whi","group":"unclassified: proposal: `x instanceof C` does not narrow `unknown` to C: that every object whose prototype chain holds C'_'s fields is a fact about every allocation of the program, whi","where":"unknown","detail":"unsupported: `x instanceof C` does not narrow `unknown` to C: that every object whose prototype chain holds C's prototype has C's fields is a fact about every allocation of the program, which no type of a value states"},
 {"source":"tests/expect-error/instanceof-readonly-field.ts","name":"Cell","kind":"class","line":6,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/instanceof-readonly-field.ts","name":"readonlyStaysReadonly","kind":"function","line":20,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-readonly-field.ts","name":"mutableRejectedByRigidity","kind":"function","line":36,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-readonly-field.ts","name":"readonlyIndexStaysReadonly","kind":"function","line":50,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-rhs.ts","name":"C","kind":"class","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
-{"source":"tests/expect-error/instanceof-rhs.ts","name":"instanceofClass","kind":"function","line":9,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it","group":"in / instanceof / typeof tests","where":"self","at":"return x instanceof C;","detail":"gate: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it (line 6, col 10)"},
-{"source":"tests/expect-error/instanceof-rhs.ts","name":"instanceofFunction","kind":"function","line":15,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it","group":"in / instanceof / typeof tests","where":"self","at":"return x instanceof fn;","detail":"gate: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it (line 4, col 10)"},
-{"source":"tests/expect-error/instanceof-rhs.ts","name":"instanceofClassAlias","kind":"function","line":21,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it","group":"in / instanceof / typeof tests","where":"self","at":"return x instanceof Alias;","detail":"gate: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it (line 8, col 10)"},
-{"source":"tests/expect-error/instanceof-rhs.ts","name":"instanceofConstructSignature","kind":"function","line":27,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it","group":"in / instanceof / typeof tests","where":"self","at":"return x instanceof Ctor;","detail":"gate: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it (line 4, col 10)"},
-{"source":"tests/expect-error/instanceof-rhs.ts","name":"instanceofExpression","kind":"function","line":31,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it","group":"in / instanceof / typeof tests","where":"self","at":"return x instanceof (cond ? C : C);","detail":"gate: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it (line 6, col 10)"},
-{"source":"tests/expect-error/instanceof-rhs.ts","name":"instanceofFunctionLikeUnion","kind":"function","line":35,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it","group":"in / instanceof / typeof tests","where":"self","at":"return x instanceof (cond ? C : fn);","detail":"gate: `instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it (line 8, col 10)"},
+{"source":"tests/expect-error/instanceof-rhs.ts","name":"instanceofClass","kind":"function","line":9,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
+{"source":"tests/expect-error/instanceof-rhs.ts","name":"instanceofFunction","kind":"function","line":15,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` whose right operand is not a class declared at the file's top level: nothing in the file says which prototype a constructor from elsewhere gives it","group":"in / instanceof / typeof tests","where":"self","at":"return x instanceof fn;","detail":"gate: `instanceof` whose right operand is not a class declared at the file's top level: nothing in the file says which prototype a constructor from elsewhere gives its instances (line 4, col 10)"},
+{"source":"tests/expect-error/instanceof-rhs.ts","name":"instanceofClassAlias","kind":"function","line":21,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` whose right operand is not a class declared at the file's top level: nothing in the file says which prototype a constructor from elsewhere gives it","group":"in / instanceof / typeof tests","where":"self","at":"return x instanceof Alias;","detail":"gate: `instanceof` whose right operand is not a class declared at the file's top level: nothing in the file says which prototype a constructor from elsewhere gives its instances (line 8, col 10)"},
+{"source":"tests/expect-error/instanceof-rhs.ts","name":"instanceofConstructSignature","kind":"function","line":27,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` whose right operand is not a class declared at the file's top level: nothing in the file says which prototype a constructor from elsewhere gives it","group":"in / instanceof / typeof tests","where":"self","at":"return x instanceof Ctor;","detail":"gate: `instanceof` whose right operand is not a class declared at the file's top level: nothing in the file says which prototype a constructor from elsewhere gives its instances (line 4, col 10)"},
+{"source":"tests/expect-error/instanceof-rhs.ts","name":"instanceofExpression","kind":"function","line":31,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` whose right operand is not a class declared at the file's top level: nothing in the file says which prototype a constructor from elsewhere gives it","group":"in / instanceof / typeof tests","where":"self","at":"return x instanceof (cond ? C : C);","detail":"gate: `instanceof` whose right operand is not a class declared at the file's top level: nothing in the file says which prototype a constructor from elsewhere gives its instances (line 6, col 10)"},
+{"source":"tests/expect-error/instanceof-rhs.ts","name":"instanceofFunctionLikeUnion","kind":"function","line":35,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` whose right operand is not a class declared at the file's top level: nothing in the file says which prototype a constructor from elsewhere gives it","group":"in / instanceof / typeof tests","where":"self","at":"return x instanceof (cond ? C : fn);","detail":"gate: `instanceof` whose right operand is not a class declared at the file's top level: nothing in the file says which prototype a constructor from elsewhere gives its instances (line 8, col 10)"},
 {"source":"tests/expect-error/instanceof-rhs.ts","name":"instanceofNumber","kind":"function","line":41,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-rhs.ts","name":"instanceofPlainObject","kind":"function","line":48,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-rhs.ts","name":"instanceofNonConstructableMerge","kind":"function","line":58,"skjsMarker":"rejected-self"},
