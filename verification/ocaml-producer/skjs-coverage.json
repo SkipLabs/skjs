@@ -14,21 +14,21 @@
   "rejected": 2
  },
  "accepted": 2674,
- "verified": 2421,
+ "verified": 2444,
  "byStatus": {
-  "verified (check)": 2421,
-  "unverified (search)": 127,
-  "unsupported (source)": 91,
-  "unsupported (proposal)": 35
+  "verified (check)": 2444,
+  "unverified (search)": 113,
+  "unsupported (source)": 85,
+  "unsupported (proposal)": 32
  },
  "bySuite": {
   "expect-error": {
    "accepted": 2458,
-   "verified": 2209
+   "verified": 2230
   },
   "constprop": {
    "accepted": 66,
-   "verified": 64
+   "verified": 66
   },
   "callgraph": {
    "accepted": 59,
@@ -51,41 +51,35 @@
    "verified": 8
   }
  },
- "filesAllVerified": 280,
+ "filesAllVerified": 291,
  "filesWithAccepted": 377,
  "functions": {
   "accepted": 2026,
-  "verified": 1803
+  "verified": 1821
  },
  "byGroup": {
   "TypeScript refuses the code too (the pipeline follows TypeScript's types)": {
-   "units": 23,
-   "self": 22,
-   "dependency": 1,
-   "files": 16
-  },
-  "in / instanceof / typeof tests": {
-   "units": 19,
-   "self": 12,
-   "dependency": 0,
-   "files": 8
-  },
-  "classes: modifiers, inheritance, fields, parameter properties, receivers": {
-   "units": 19,
-   "self": 11,
+   "units": 38,
+   "self": 30,
    "dependency": 8,
-   "files": 10
-  },
-  "reads on unions/primitives (field/index read on non-object, string keys)": {
-   "units": 15,
-   "self": 6,
-   "dependency": 0,
-   "files": 8
+   "files": 24
   },
   "destructuring and rest/default parameters": {
-   "units": 15,
-   "self": 10,
+   "units": 14,
+   "self": 9,
    "dependency": 5,
+   "files": 5
+  },
+  "in / instanceof / typeof tests": {
+   "units": 14,
+   "self": 7,
+   "dependency": 0,
+   "files": 6
+  },
+  "classes: modifiers, inheritance, fields, parameter properties, receivers": {
+   "units": 14,
+   "self": 7,
+   "dependency": 7,
    "files": 6
   },
   "implicit index signatures: a record at an index signature (`Closed<T>` read as `T` among them)": {
@@ -94,23 +88,11 @@
    "dependency": 0,
    "files": 3
   },
-  "calls: overloads, .call, spread arguments, Object.assign, arrow callee": {
-   "units": 13,
-   "self": 7,
-   "dependency": 3,
-   "files": 7
-  },
   "type forms: literal types, keyof, indexed access, mapped, object, index signatures, intersections, method signatures": {
-   "units": 12,
-   "self": 11,
-   "dependency": 1,
-   "files": 8
-  },
-  "object literal members (methods, accessors, spreads)": {
    "units": 11,
    "self": 10,
-   "dependency": 0,
-   "files": 6
+   "dependency": 1,
+   "files": 7
   },
   "generics: constraints, explicit type arguments, rigid types, generic function types": {
    "units": 11,
@@ -124,10 +106,28 @@
    "dependency": 0,
    "files": 5
   },
+  "object literal members (methods, accessors, spreads)": {
+   "units": 10,
+   "self": 9,
+   "dependency": 0,
+   "files": 5
+  },
+  "calls: overloads, .call, spread arguments, Object.assign, arrow callee": {
+   "units": 10,
+   "self": 6,
+   "dependency": 3,
+   "files": 6
+  },
   "a named function at a signature binding more parameters, or indifferent to the receiver it requires (its type is its annotated signature)": {
    "units": 9,
    "self": 8,
    "dependency": 1,
+   "files": 5
+  },
+  "arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's": {
+   "units": 8,
+   "self": 8,
+   "dependency": 0,
    "files": 5
   },
   "a non-null assertion on a read at a for...in key (that the object owns the key relates two values)": {
@@ -136,23 +136,23 @@
    "dependency": 0,
    "files": 1
   },
-  "arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's": {
+  "cells read at their contract (contents known only as primitives or as no `undefined`, and forgotten across a step that may write them)": {
    "units": 7,
-   "self": 7,
+   "self": 5,
    "dependency": 0,
    "files": 5
-  },
-  "enums": {
-   "units": 7,
-   "self": 0,
-   "dependency": 7,
-   "files": 1
   },
   "tests on a value of a type parameter or `unknown` (no rule narrows a parameter row to its meet `T & number`; no object identity)": {
    "units": 7,
    "self": 7,
    "dependency": 0,
    "files": 4
+  },
+  "enums": {
+   "units": 6,
+   "self": 0,
+   "dependency": 6,
+   "files": 1
   },
   "equality: objects without a field (no identity), loose equality": {
    "units": 6,
@@ -166,12 +166,6 @@
    "dependency": 2,
    "files": 3
   },
-  "type aliases and names the declaration reader cannot resolve": {
-   "units": 6,
-   "self": 0,
-   "dependency": 6,
-   "files": 2
-  },
   "iterables the program defines: an iterator whose type states no `return`, a spread or a pattern the protocol's lowering does not place, a well-known symbol key other than `Symbol.iterator`": {
    "units": 5,
    "self": 4,
@@ -184,29 +178,11 @@
    "dependency": 0,
    "files": 4
   },
-  "cells read at their contract (contents known only as primitives or as no `undefined`, and forgotten across a step that may write them)": {
-   "units": 4,
-   "self": 4,
-   "dependency": 0,
-   "files": 3
-  },
   "relational operators (< <= > >=) and **": {
    "units": 2,
    "self": 1,
    "dependency": 1,
    "files": 1
-  },
-  "library globals as values (Array, Symbol, Error, Promise, Set, Map, Date, JSON, …)": {
-   "units": 2,
-   "self": 2,
-   "dependency": 0,
-   "files": 2
-  },
-  "compound and update assignments (x++, ||=, ??=, a[i] op=)": {
-   "units": 2,
-   "self": 2,
-   "dependency": 0,
-   "files": 2
   },
   "dictionaries: a spread of one, a key `in` found in one": {
    "units": 2,
@@ -220,6 +196,12 @@
    "dependency": 0,
    "files": 1
   },
+  "reads on unions/primitives (field/index read on non-object, string keys)": {
+   "units": 2,
+   "self": 1,
+   "dependency": 0,
+   "files": 2
+  },
   "invariance: a writable element or field at a wider one (TypeScript relates them covariantly)": {
    "units": 2,
    "self": 2,
@@ -232,7 +214,7 @@
    "dependency": 0,
    "files": 1
   },
-  "mutable bindings: evolving let (null, undefined, []), let with neither initializer nor annotation, closure parameter assignment": {
+  "compound and update assignments (x++, ||=, ??=, a[i] op=)": {
    "units": 1,
    "self": 1,
    "dependency": 0,
@@ -244,42 +226,30 @@
    "dependency": 0,
    "files": 1
   },
-  "loops (for, for-in, for-of forms)": {
-   "units": 1,
-   "self": 1,
-   "dependency": 0,
-   "files": 1
-  },
   "other source forms": {
    "units": 1,
    "self": 1,
    "dependency": 0,
    "files": 1
   },
-  "bigint": {
+  "type aliases and names the declaration reader cannot resolve": {
    "units": 1,
-   "self": 1,
-   "dependency": 0,
+   "self": 0,
+   "dependency": 1,
    "files": 1
   },
-  "receiver types the producer and TypeScript disagree on (a member read on a primitive TypeScript excludes)": {
-   "units": 1,
-   "self": 1,
-   "dependency": 0,
-   "files": 1
-  },
-  "unclassified: proposal: `as const` on an operand other than a literal, an array or object literal, or a name": {
+  "library globals as values (Array, Symbol, Error, Promise, Set, Map, Date, JSON, …)": {
    "units": 1,
    "self": 1,
    "dependency": 0,
    "files": 1
   }
  },
- "reachedButRefused": 127,
+ "reachedButRefused": 113,
  "byClass": {
-  "verified": 2421,
-  "principled": 92,
-  "gap": 151,
+  "verified": 2444,
+  "principled": 99,
+  "gap": 121,
   "unexplained": 0,
   "skjsUnsound": 10
  },
@@ -287,8 +257,8 @@
  "byReason": {
   "TypeScript refuses the code": {
    "class": "principled",
-   "units": 29,
-   "files": 18
+   "units": 37,
+   "files": 23
   },
   "generics: generic closures, methods, function types, dependent bounds": {
    "class": "gap",
@@ -300,24 +270,9 @@
    "units": 14,
    "files": 5
   },
-  "numeric keys and indices": {
-   "class": "gap",
-   "units": 12,
-   "files": 6
-  },
-  "calls: `.call`, spreads, `Object.assign`, array literal spreads": {
-   "class": "gap",
-   "units": 10,
-   "files": 6
-  },
   "`keyof` with unique symbols, `typeof` of inferred bindings, template patterns": {
    "class": "gap",
-   "units": 10,
-   "files": 6
-  },
-  "reads the producer holds on no object": {
-   "class": "gap",
-   "units": 8,
+   "units": 9,
    "files": 5
   },
   "object identity without fields": {
@@ -345,11 +300,6 @@
    "units": 8,
    "files": 3
   },
-  "object literal spreads of functions, class values, arrays, strings": {
-   "class": "gap",
-   "units": 7,
-   "files": 5
-  },
   "`instanceof` of a constructor from outside the file": {
    "class": "principled",
    "units": 7,
@@ -365,15 +315,10 @@
    "units": 7,
    "files": 3
   },
-  "source forms left": {
+  "object literal spreads of functions, class values, arrays, strings": {
    "class": "gap",
    "units": 6,
-   "files": 6
-  },
-  "enum forms: computed members, an empty enum": {
-   "class": "gap",
-   "units": 6,
-   "files": 1
+   "files": 4
   },
   "`this` in sloppy code": {
    "class": "principled",
@@ -383,6 +328,11 @@
   "SKJS unsoundness: aliased views of an empty object literal": {
    "class": "skjs-unsound",
    "units": 6,
+   "files": 1
+  },
+  "enum forms: computed members, an empty enum": {
+   "class": "gap",
+   "units": 5,
    "files": 1
   },
   "`await` of a non-promise object, an async result that may be an object: thenable adoption": {
@@ -400,15 +350,20 @@
    "units": 4,
    "files": 1
   },
-  "an optional class field left `undefined`": {
-   "class": "gap",
-   "units": 4,
-   "files": 3
-  },
   "`Array.isArray` on `unknown`": {
    "class": "gap",
-   "units": 3,
+   "units": 4,
    "files": 1
+  },
+  "a guard finding an object where a field or cell holds one beside a primitive": {
+   "class": "gap",
+   "units": 3,
+   "files": 2
+  },
+  "a spread argument to `new`": {
+   "class": "gap",
+   "units": 3,
+   "files": 2
   },
   "class forms: constructor rests and defaults reading `this`, computed members, index signatures, statics, private names": {
    "class": "gap",
@@ -419,6 +374,11 @@
    "class": "principled",
    "units": 3,
    "files": 3
+  },
+  "method extraction": {
+   "class": "principled",
+   "units": 3,
+   "files": 2
   },
   "`length` over an array-or-record union": {
    "class": "gap",
@@ -435,12 +395,7 @@
    "units": 2,
    "files": 1
   },
-  "a base class from outside the file": {
-   "class": "principled",
-   "units": 2,
-   "files": 2
-  },
-  "library globals not reviewed": {
+  "source forms left": {
    "class": "gap",
    "units": 2,
    "files": 2
@@ -455,6 +410,11 @@
    "units": 2,
    "files": 2
   },
+  "calls: spreads, `Object.assign`, array literal spreads": {
+   "class": "gap",
+   "units": 2,
+   "files": 1
+  },
   "well-known symbol keys": {
    "class": "gap",
    "units": 2,
@@ -465,15 +425,15 @@
    "units": 2,
    "files": 1
   },
+  "`.call`, `.apply`, `.bind` of a function value read from an object": {
+   "class": "gap",
+   "units": 2,
+   "files": 1
+  },
   "a key-adding write of a symbol key, a spread of a symbol-keyed property": {
    "class": "gap",
    "units": 2,
    "files": 2
-  },
-  "method extraction": {
-   "class": "principled",
-   "units": 2,
-   "files": 1
   },
   "invariance of writable storage": {
    "class": "principled",
@@ -485,12 +445,12 @@
    "units": 1,
    "files": 1
   },
-  "an ambient enum": {
+  "a base class from outside the file": {
    "class": "principled",
    "units": 1,
    "files": 1
   },
-  "`...x: T` with T no array": {
+  "an ambient enum": {
    "class": "principled",
    "units": 1,
    "files": 1
@@ -530,8 +490,18 @@
    "units": 1,
    "files": 1
   },
+  "library globals not reviewed": {
+   "class": "gap",
+   "units": 1,
+   "files": 1
+  },
   "a `this`-typed function as a receiver-indifferent callback": {
    "class": "principled",
+   "units": 1,
+   "files": 1
+  },
+  "reads the producer holds on no object": {
+   "class": "gap",
    "units": 1,
    "files": 1
   },
@@ -546,26 +516,22 @@
  "byKey": {
   "search: reject: TypeScript refuses this code too": 23,
   "search: reject: a record at an index signature: TypeScript admits a type literal whose named fields fit the index (an implicit index signature), but a value of it may c": 14,
+  "source: reject: TypeScript refuses this code too": 10,
   "search: reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two ": 8,
   "search: reject: a named function where a signature binding more parameters is expected: its slot is its annotated signature, checked by its own unit, and the arity of a": 8,
   "source: a method with a `this` parameter is outside the fragment: a method member's contract is relative to its host, the object it is read from, and states no receiver": 8,
-  "search: reject: a numeric array key needs a proved array-index singleton; ordinary numeric properties are not modeled": 7,
   "source: `instanceof` whose right operand is not a class declared at the file's top level: nothing in the file says which prototype a constructor from elsewhere gives it": 7,
-  "proposal: field read on non-object": 7,
   "proposal: `x instanceof C` does not narrow `unknown` to C: an object gets C'_'s constructor running (`Object.create(C.prototype)`, `Object.setPrototypeOf`, `Reflect.const": 7,
   "source: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its ope": 6,
   "search: reject: unsupported source expression at _: strict equality of two operands that may both be objects without a field compares identities, which such objects do ": 6,
   "source: a function that reads `this` must be strict code: sloppy code replaces an undefined or primitive receiver by the global object or a wrapper object, which the mo": 6,
   "source: a rest parameter needs a tuple of required positions or an array: one typed by a type parameter would bind the array a call collects at that parameter, which on": 6,
-  "proposal: a spread copies the own enumerable properties of a plain object; a function'_'s are whatever was assigned to it, which its type does not bound": 5,
+  "proposal: reject: TypeScript refuses this code too": 5,
   "source: a computed enum member is outside the fragment: its reverse mapping is keyed by its value at run time": 5,
   "search: reject: source refusal at _: a write of '_', a key the object'_'s keys change: a key-adding write is typed only on a local's own fresh object that nothing else ": 5,
-  "source: TypeScript reports an error in a declaration of the source Property '_' of type '_' is not assignable to '_' index type '_'.": 5,
   "search: reject: a cell read at its contract: a cell is known by its contract after a step that may write it (a call, whose callee may write any location its operands re": 4,
   "source: extending the standard library'_'s constructor allocates, not an ordinary object a class allocates, and its members are read at the library type's meaning, not ": 4,
-  "search: reject: an optional field left without an initializer holds `undefined` from the creation of the instance: the pipeline reads `f?: T` exactly, as absent or a `T": 4,
-  "source: array literal spreads and holes are outside the fragment": 3,
-  "source: `in` with a numeric key tests an array element, which the model keeps in the array's store, not as a key": 3,
+  "proposal: a spread copies the own enumerable properties of a plain object; a function'_'s are whatever was assigned to it, which its type does not bound": 4,
   "search: reject: source refusal at _: a write at a key known only at run time may add the key to an object another reference holds, which would see the object'_'s own fr": 3,
   "search: reject: `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an ar": 3,
   "source: keyof is keyof [number], whose part unique symbol is a unique symbol, which no type of the fragment names": 3,
@@ -573,70 +539,62 @@
   "search: reject: `??` on a value of a type parameter: its values other than null and undefined are the meet `T & {}`, but no rule narrows a parameter row to its meet wit": 3,
   "proposal: a type parameter types both a value and a rest parameter's argument list: an argument list is not a runtime value": 3,
   "source: a spread argument to `new` is outside the fragment": 3,
-  "source: .call requires a known local function, an explicit receiver and ordinary arguments": 3,
   "source: an iterable whose iterator'_'s `return` if it owns one (IteratorClose), and the iterator's open record type says nothing of what that property holds": 3,
   "search: reject: the intersection is empty: its operands have no value in common (no value has two shapes, and an array owns no key its prototype provides), and an empty": 2,
   "search: reject: a relational comparison of operands that may not both be numbers or both strings: `<` converts such an operand to a number or a string first (`undefined": 2,
-  "source: a class extends a class declared earlier in the file; one from a library, an ambient declaration or a value is outside the fragment": 2,
   "search: reject: strict equality with a value of a type parameter: the value may be an object without a field, and the model states no object identity": 2,
   "search: reject: a `typeof x === \"_\"` test on a value of a type parameter or `unknown`: the values of that shape are the meet of the type parameter with it (`T & number`": 2,
   "proposal: field read on rigid parameter": 2,
-  "search: reject: unsupported source expression at _: `in` with a key that is not a union of string literals": 2,
+  "source: array literal spreads and holes are outside the fragment": 2,
   "source: a well-known symbol key other than `Symbol.iterator` is outside the fragment: it changes how the host treats the object, which the model does not state, and `Sy": 2,
   "source: keyof is number | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | ... 34 more ... | unique symbol, whose part unique s": 2,
   "search: reject: the result of an async function that may be an object other than a promise: JavaScript adopts a thenable, calling its `then`, instead of settling to it,": 2,
+  "proposal: field read on non-object": 2,
   "source: a rest parameter needs a tuple of required positions or an array: one typed by a declaration'_'s own type parameter in a declaration of the source": 2,
   "proposal: a spread copies the own enumerable properties of a plain object; a class value's are its static fields, which its construct signatures do not state": 2,
+  "source: .call requires a known local function, an explicit receiver and ordinary arguments": 2,
+  "proposal: a cell read at its contract: a read of head on a `let` or an assigned parameter holding a primitive beside an object, which a test does not narrow: what a cell ": 2,
   "proposal: a spread copies the own enumerable properties of a plain object; an array's are its indices and whatever keys it carries, which no record states": 1,
   "search: reject: a read of `length` on a union of an array and a record: an array keeps its length in its store, not at a location a field of a record names, and an open": 1,
   "search: reject: source expression obligation at _: evidence search failed: no derivation of its binding-annotation claim": 1,
-  "proposal: assignment to immutable binding": 1,
+  "source: a class extends a class declared earlier in the file; one from a library, an ambient declaration or a value is outside the fragment": 1,
   "source: generic constructor types are outside the fragment": 1,
-  "source: new Date(…) is read with at most 1 argument(s)": 1,
   "source: an array assignment pattern writing other than a local is outside the fragment: a field target's reference is evaluated before its position is read and defaulte": 1,
   "search: reject: position 1 is past the positions of a mutable tuple, which `push` may have extended with a value its type does not state there (TypeScript reads it as `": 1,
-  "source: an enum without members allocates an object with no property, which the heap model has no record for": 1,
+  "proposal: a field read at its contract: a nested pattern's read of a through a field holding an object beside null or undefined, which a test does not narrow: what a fiel": 1,
   "source: an ambient enum is outside the fragment: its object is the environment's, whose members a declaration need not all value, and the declaration reader has no ambi": 1,
   "search: reject: an optional key found `undefined`, read at `undefined`: the key may be absent, and a read of an absent key is stated by no clause the model reads": 1,
-  "source: a `for...of` loop declares one `const` binding": 1,
-  "source: a rest parameter needs a tuple of required positions or an array: the array a call collects is no value of a type that is not an array": 1,
   "source: generic function types are outside the fragment in a declaration of the source": 1,
   "search: reject: a read of a key `in` found in a dictionary: presence promotes an optional field of a record, not the index of a dictionary, so the read is still at the ": 1,
   "search: reject: a spread of a dictionary: the copy owns the keys the dictionary holds when it runs, which no type states: the result is a dictionary only where every pa": 1,
   "source: TypeScript types this unannotated closure parameter from its context as `any`, which states no contract": 1,
-  "proposal: indexed read on non-object": 1,
+  "proposal: `unknown` used as an array after `Array.isArray`, read at an element: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the st": 1,
   "search: reject: type argument does not establish its declared bound for V at [1173,1187]: object ≤ null | true | false | number | string | object | indexed object": 1,
   "search: reject: an array used as a record naming `length`: an array keeps its length in its store, not at a location a field of a record names, and an open record may b": 1,
   "search: reject: source refusal at _: a key-adding write at a string known only at run time: the key may spell one the model keeps for itself (`[]`, `[[proto]]`), which ": 1,
   "search: reject: source refusal at _: a key-adding write at one of several literal keys is not lowered: it needs a dispatch on the key, one copy of the object per key": 1,
   "source: an object type with construct signatures and other members: a class value's statics are not members of its type": 1,
-  "source: non-decimal numeric literal type": 1,
   "search: reject: optional named fields with a string index signature are not yet in the source fragment": 1,
   "source: generic function types are outside the fragment": 1,
   "proposal: a spread copies the own enumerable properties of a plain object; a string's are its characters at index keys, which no record states": 1,
-  "search: reject: compound assignment inside a closed expression is outside the fragment": 1,
   "search: reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills ": 1,
   "search: reject: a call instantiating a binder its result accumulates in an application (`catch`'s `Promise<T | TResult>`): the family of applications grows with every c": 1,
   "proposal: quantified callable claim encoding": 1,
   "source: keyof is keyof Promise<number>, whose part unique symbol is a unique symbol, which no type of the fragment names": 1,
   "source: an index signature in a class is outside the fragment: a class's instances are the objects its construction allocates, with the keys it names in a declaration o": 1,
-  "proposal: a call writes more positions than its callee's parameters, which TypeScript rejects": 1,
-  "proposal: a spread argument needs a tuple of required positions": 1,
   "search: reject: a spread of an object with a symbol-keyed property: the copy is stated at its string keys only, and JavaScript also copies an own enumerable symbol-keye": 1,
   "search: reject: a spread with a written field that the arms of the expected union type differently: a field of the copy is allocated at the one type its value is claime": 1,
-  "proposal: a member read on a number where the type TypeScript gives the receiver holds no number: the producer and TypeScript disagree on the receiver": 1,
   "source: unresolved type reference _": 1,
   "search: reject: a callable object with methods needs a combined clause": 1,
   "search: reject: source refusal at _: a key-adding write of a symbol key: the copy that adds the key copies string keys only": 1,
+  "source: a method read off its object is not a function value: `.call` passes it a receiver other than the object it is read from, and a method's contract is relative to": 1,
   "search: reject: a method '_' read off its object is not a function value: a method is a member of its object, called with it as receiver, and read off it the function l": 1,
   "search: reject: a method '_' read off its object is not a function value: it takes the object as its receiver": 1,
   "search: reject: a function whose `this` is typed where a callback indifferent to its receiver is expected: that type admits a call passing any receiver, and the functio": 1,
   "search: reject: the `length` of a mutable tuple read at its arity: the length of a mutable tuple is not fixed by its type, since `push` is allowed on it (an unsoundness": 1,
   "search: reject: a mutable array at one of a wider element: a writable element or field is invariant, as a write through the wider view would break the narrower one; Typ": 1,
   "search: reject: an instance at another whose writable field differs: a writable element or field is invariant, as a write through the wider view would break the narrowe": 1,
-  "source: TypeScript computes no type for this typeof: it is not valid TypeScript": 1,
   "source: typeof WithStatic is a class with static members: its statics are bindings of their own, not members of the class value's type": 1,
-  "proposal: `as const` on an operand other than a literal, an array or object literal, or a name": 1,
   "source: generic function types are outside the fragment in identity": 1
  }
 },
@@ -761,8 +719,8 @@
 {"source":"tests/expect-error/algebraic-data-types-comprehensive.ts","name":"isSome","kind":"function","line":310,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/algebraic-data-types-comprehensive.ts","name":"isNone","kind":"function","line":317,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/algebraic-data-types-comprehensive.ts","name":"processDataValue","kind":"function","line":333,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/algebraic-data-types-comprehensive.ts","name":"countDataValues","kind":"function","line":344,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a numeric array key needs a proved array-index singleton; ordinary numeric properties are not modeled","group":"reads on unions/primitives (field/index read on non-object, string keys)","where":"self","detail":"reject: a numeric array key needs a proved array-index singleton; ordinary numeric properties are not modeled","class":"gap"},
-{"source":"tests/expect-error/algebraic-data-types-comprehensive.ts","name":"extractNumbers","kind":"function","line":362,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a numeric array key needs a proved array-index singleton; ordinary numeric properties are not modeled","group":"reads on unions/primitives (field/index read on non-object, string keys)","where":"self","detail":"reject: a numeric array key needs a proved array-index singleton; ordinary numeric properties are not modeled","class":"gap"},
+{"source":"tests/expect-error/algebraic-data-types-comprehensive.ts","name":"countDataValues","kind":"function","line":344,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/algebraic-data-types-comprehensive.ts","name":"extractNumbers","kind":"function","line":362,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/algebraic-data-types-comprehensive.ts","name":"testBasicADTs","kind":"function","line":391,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/algebraic-data-types-comprehensive.ts","name":"testShapeADTs","kind":"function","line":405,"skjsMarker":"rejected-dependency"},
 {"source":"tests/expect-error/algebraic-data-types-comprehensive.ts","name":"testNestedADTs","kind":"function","line":428,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -771,7 +729,7 @@
 {"source":"tests/expect-error/algebraic-data-types-comprehensive.ts","name":"testTreeADT","kind":"function","line":510,"skjsMarker":"rejected-dependency"},
 {"source":"tests/expect-error/algebraic-data-types-comprehensive.ts","name":"doubleNumber","kind":"function","line":526,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/algebraic-data-types-comprehensive.ts","name":"testOptionADT","kind":"function","line":530,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/algebraic-data-types-comprehensive.ts","name":"testComplexNestedADT","kind":"function","line":547,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a numeric array key needs a proved array-index singleton; ordinary numeric properties are not modeled","group":"reads on unions/primitives (field/index read on non-object, string keys)","where":"unknown","detail":"reject: a numeric array key needs a proved array-index singleton; ordinary numeric properties are not modeled","class":"gap"},
+{"source":"tests/expect-error/algebraic-data-types-comprehensive.ts","name":"testComplexNestedADT","kind":"function","line":547,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/algebraic-data-types-comprehensive.ts","name":"testSimpleElimination","kind":"function","line":575,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/algebraic-data-types-comprehensive.ts","name":"testThreeVariantElimination","kind":"function","line":589,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/algebraic-data-types-comprehensive.ts","name":"testComplexElimination","kind":"function","line":607,"skjsMarker":"rejected-self"},
@@ -1070,7 +1028,7 @@
 {"source":"tests/expect-error/callability.ts","name":"testReadonlyArrayTypeofFunction","kind":"function","line":243,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/callability.ts","name":"testTupleTypeofFunction","kind":"function","line":249,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/callability.ts","name":"testLiteralTypeofFunction","kind":"function","line":257,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/callability.ts","name":"testSpreadTypeofFunction","kind":"function","line":264,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: a spread copies the own enumerable properties of a plain object; a function'_'s are whatever was assigned to it, which its type does not bound","group":"object literal members (methods, accessors, spreads)","where":"self","detail":"unsupported: a spread copies the own enumerable properties of a plain object; a function's or an indexed object's are whatever was assigned to it, which its type does not bound","class":"gap"},
+{"source":"tests/expect-error/callability.ts","name":"testSpreadTypeofFunction","kind":"function","line":264,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"const n: never = o;","detail":"reject: TypeScript refuses this code too (line 7, col 11: Type 'Function' is not assignable to type 'never'.); the pipeline follows TypeScript's types","class":"principled"},
 {"source":"tests/expect-error/callability.ts","name":"testEnumObjectTypeofFunction","kind":"function","line":280,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/callability.ts","name":"testFnToEmptyClass","kind":"function","line":297,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/callability.ts","name":"testStructuralToClass","kind":"function","line":304,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -1091,7 +1049,7 @@
 {"source":"tests/expect-error/captured-local-write.ts","name":"capturedWriteCorrectType","kind":"function","line":32,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/captured-local-write.ts","name":"capturedWriteWithinDeclaredUnion","kind":"function","line":41,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/captured-local-write.ts","name":"capturedWriteValidAgainstDeclaredType","kind":"function","line":52,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/captured-local-write.ts","name":"paramReassignNarrowsInLambda","kind":"function","line":64,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: assignment to immutable binding","group":"mutable bindings: evolving let (null, undefined, []), let with neither initializer nor annotation, closure parameter assignment","where":"self","detail":"unsupported: assignment to immutable binding","class":"gap"},
+{"source":"tests/expect-error/captured-local-write.ts","name":"paramReassignNarrowsInLambda","kind":"function","line":64,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/captured-local-write.ts","name":"capturedWriteWrongTypeAfterLocalWrite","kind":"function","line":74,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/captured-local-write.ts","name":"capturedWriteInDefaultParam","kind":"function","line":86,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/captured-read-stability.ts","name":"staleCapturedLocal","kind":"function","line":2,"skjsMarker":"rejected-self"},
@@ -1168,7 +1126,7 @@
 {"source":"tests/expect-error/circular-type-param-default.ts","name":"useOptional","kind":"function","line":148,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/circular-type-param-default.ts","name":"usePair","kind":"function","line":161,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/circular-type-param-default.ts","name":"useList","kind":"function","line":169,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/class-anonymous-method-prettier-ignore.ts","name":"Foo","kind":"class","line":3,"skjsMarker":"accepted","skjs":"rejected","status":"unsupported","phase":"source","key":"source: parse error: '_' expected.","group":"unclassified: source: parse error: '_' expected.","where":"self","detail":"gate: parse error: '}' expected."},
+{"source":"tests/expect-error/class-anonymous-method-prettier-ignore.ts","name":"Foo","kind":"class","line":3,"skjsMarker":"accepted","skjs":"rejected","status":"unsupported","phase":"source","key":"source: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"dependency","detail":"reject: TypeScript refuses this code too (line 2, col 1: '}' expected.); the pipeline follows TypeScript's types"},
 {"source":"tests/expect-error/class-anonymous-method-prettier-ignore.ts","name":"statement@5","kind":"statement","line":5,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/class-ctor-tparam-unsound.ts","name":"Holder","kind":"class","line":3,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/class-ctor-tparam-unsound.ts","name":"getNumber","kind":"function","line":9,"skjsMarker":"rejected-self"},
@@ -1190,7 +1148,7 @@
 {"source":"tests/expect-error/class-field-named-protected-prettier-ignore.ts","name":"MyClass","kind":"class","line":3,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/class-field-named-public-prettier-ignore.ts","name":"MyClass","kind":"class","line":3,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/class-field-named-static-prettier-ignore.ts","name":"MyClass","kind":"class","line":3,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/class-field-remove-readonly-prettier-ignore.ts","name":"Foo","kind":"class","line":3,"skjsMarker":"accepted","skjs":"rejected","status":"unsupported","phase":"source","key":"source: parse error: '_' expected.","group":"unclassified: source: parse error: '_' expected.","where":"self","detail":"gate: parse error: '}' expected."},
+{"source":"tests/expect-error/class-field-remove-readonly-prettier-ignore.ts","name":"Foo","kind":"class","line":3,"skjsMarker":"accepted","skjs":"rejected","status":"unsupported","phase":"source","key":"source: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"dependency","detail":"reject: TypeScript refuses this code too (line 2, col 1: '}' expected.); the pipeline follows TypeScript's types"},
 {"source":"tests/expect-error/class-field-remove-readonly-prettier-ignore.ts","name":"statement@5","kind":"statement","line":5,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/class-field-remove-readonly-prettier-ignore.ts","name":"statement@5#2","kind":"statement","line":5,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/class-fields-comma-separated-prettier-ignore.ts","name":"Foo","kind":"class","line":3,"skjsMarker":"rejected-self"},
@@ -1329,8 +1287,8 @@
 {"source":"tests/expect-error/control-flow-refinement.ts","name":"testNullCheck","kind":"function","line":23,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/control-flow-refinement.ts","name":"testNestedConditions","kind":"function","line":33,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/date-constructor-string.ts","name":"test","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/date-constructor-string.ts","name":"testWrongStringMonthCombination","kind":"function","line":21,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: new Date(…) is read with at most 1 argument(s)","group":"library globals as values (Array, Symbol, Error, Promise, Set, Map, Date, JSON, …)","where":"self","at":"return new Date(\"2020-01\", 1);","detail":"gate: new Date(…) is read with at most 1 argument(s) (line 2, col 14)","class":"gap"},
-{"source":"tests/expect-error/declared-class-fields.ts","name":"_UseAmbient","kind":"class","line":13,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a class extends a class declared earlier in the file; one from a library, an ambient declaration or a value is outside the fragment","group":"classes: modifiers, inheritance, fields, parameter properties, receivers","where":"self","at":"class _UseAmbient extends AmbientWithUntyped {}","detail":"gate: a class extends a class declared earlier in the file; one from a library, an ambient declaration or a value is outside the fragment (line 6, col 27)","class":"principled"},
+{"source":"tests/expect-error/date-constructor-string.ts","name":"testWrongStringMonthCombination","kind":"function","line":21,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"return new Date(\"2020-01\", 1);","detail":"reject: TypeScript refuses this code too (line 2, col 19: Argument of type 'string' is not assignable to parameter of type 'number'.); the pipeline follows TypeScript's types","class":"principled"},
+{"source":"tests/expect-error/declared-class-fields.ts","name":"_UseAmbient","kind":"class","line":13,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"dependency","at":"pub;","detail":"reject: TypeScript refuses this code too (line 3, col 3: Member 'pub' implicitly has an 'any' type.); the pipeline follows TypeScript's types","class":"principled"},
 {"source":"tests/expect-error/declared-class-fields.ts","name":"passThrough","kind":"function","line":16,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/declared-class-fields.ts","name":"box1","kind":"function","line":31,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/declared-class-fields.ts","name":"RegularPublicNoType","kind":"class","line":39,"skjsMarker":"rejected-self"},
@@ -1404,7 +1362,7 @@
 {"source":"tests/expect-error/destructuring.ts","name":"inferredDefaultCanReturnUndefined","kind":"function","line":134,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/destructuring.ts","name":"laterPatternRead","kind":"function","line":141,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/destructuring.ts","name":"earlierPatternRead","kind":"function","line":151,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"b","detail":"reject: TypeScript refuses this code too (line 4, col 5: Type 'number | null' is not assignable to type 'number'.); the pipeline follows TypeScript's types — The available claim for b is null | number. This return requires number.","class":"principled"},
-{"source":"tests/expect-error/destructuring.ts","name":"checkedNestedPattern","kind":"function","line":159,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: field read on non-object","group":"reads on unions/primitives (field/index read on non-object, string keys)","where":"self","detail":"unsupported: field read on non-object","class":"gap"},
+{"source":"tests/expect-error/destructuring.ts","name":"checkedNestedPattern","kind":"function","line":159,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: a field read at its contract: a nested pattern's read of a through a field holding an object beside null or undefined, which a test does not narrow: what a fiel","group":"cells read at their contract (contents known only as primitives or as no `undefined`, and forgotten across a step that may write them)","where":"self","detail":"unsupported: a field read at its contract: a nested pattern's read of a through a field holding an object beside null or undefined, which a test does not narrow: what a field is known to hold is a union of primitive values (DESIGN.md, \"Current-content assertions\")","class":"gap"},
 {"source":"tests/expect-error/destructuring.ts","name":"nestedPatternWithNull","kind":"function","line":170,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/destructuring.ts","name":"later","kind":"variable","line":180,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/destructuring.ts","name":"patternLaterBinding","kind":"function","line":181,"skjsMarker":"rejected-self"},
@@ -1460,7 +1418,7 @@
 {"source":"tests/expect-error/enums-computed.ts","name":"bareMemberReference","kind":"function","line":63,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/enums-computed.ts","name":"qualifiedMemberReference","kind":"function","line":67,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/enums-computed.ts","name":"duplicateValueReverse","kind":"function","line":96,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/enums-computed.ts","name":"emptyEnumIsUninhabited","kind":"function","line":104,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: an enum without members allocates an object with no property, which the heap model has no record for","group":"enums","where":"dependency","at":"enum Empty {}","detail":"gate: an enum without members allocates an object with no property, which the heap model has no record for (line 1, col 1)","class":"gap"},
+{"source":"tests/expect-error/enums-computed.ts","name":"emptyEnumIsUninhabited","kind":"function","line":104,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"return x;","detail":"reject: TypeScript refuses this code too (line 4, col 3: Type 'Empty' is not assignable to type 'never'.); the pipeline follows TypeScript's types","class":"principled"},
 {"source":"tests/expect-error/enums-computed.ts","name":"fractionalMember","kind":"function","line":113,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/enums-computed.ts","name":"fractionalAutoIncrement","kind":"function","line":119,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/enums-computed.ts","name":"autoIncrementAtDoubleLimit","kind":"function","line":129,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -1651,7 +1609,7 @@
 {"source":"tests/expect-error/field-refinement.ts","name":"inferredFieldComparison","kind":"function","line":462,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/field-type-annotations.ts","name":"FieldWithoutAnnotation","kind":"class","line":4,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/field-type-annotations.ts","name":"FieldWithInitializerNoAnnotation","kind":"class","line":11,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/field-type-annotations.ts","name":"FieldsWithAnnotations","kind":"class","line":17,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: an optional field left without an initializer holds `undefined` from the creation of the instance: the pipeline reads `f?: T` exactly, as absent or a `T","group":"classes: modifiers, inheritance, fields, parameter properties, receivers","where":"self","at":"FieldsWithAnnotations","detail":"reject: an optional field left without an initializer holds `undefined` from the creation of the instance: the pipeline reads `f?: T` exactly, as absent or a `T` (as `exactOptionalPropertyTypes` does), where the default reading of TypeScript also admits a present `undefined`; `f?: T | undefined` sta — No rule derives this makeAt at { field: number, optional: boolean } from 5: 5, optional: undefined.","class":"gap"},
+{"source":"tests/expect-error/field-type-annotations.ts","name":"FieldsWithAnnotations","kind":"class","line":17,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/field-type-annotations.ts","name":"useObjectWithoutAnnotations","kind":"function","line":28,"skjsMarker":"rejected-dependency"},
 {"source":"tests/expect-error/filedefs-type-not-found.ts","name":"f","kind":"function","line":2,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/filedefs-unsupported-exports.ts","name":"statement@7","kind":"statement","line":7,"skjsMarker":"rejected-self"},
@@ -1676,7 +1634,7 @@
 {"source":"tests/expect-error/for_in_for_of_tests.ts","name":"testNestedForLoops","kind":"function","line":97,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/for_in_for_of_tests.ts","name":"testForOfWithStrings","kind":"function","line":114,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/for_in_for_of_tests.ts","name":"testForLoopsWithControlFlow","kind":"function","line":121,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/for_in_for_of_tests.ts","name":"testForLoopsWithDifferentDeclarations","kind":"function","line":141,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a `for...of` loop declares one `const` binding","group":"loops (for, for-in, for-of forms)","where":"self","at":"for (let value of arr) {","detail":"gate: a `for...of` loop declares one `const` binding (line 6, col 3)","class":"gap"},
+{"source":"tests/expect-error/for_in_for_of_tests.ts","name":"testForLoopsWithDifferentDeclarations","kind":"function","line":141,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/for_in_for_of_tests.ts","name":"statement@164","kind":"statement","line":164,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/forin-exclamation.ts","name":"testForInBasic","kind":"function","line":9,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two ","group":"a non-null assertion on a read at a for...in key (that the object owns the key relates two values)","where":"self","at":"v[k]!","detail":"reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two values, which no type and no statement entry states — The available claim for v[k] is undefined | number. This obligation requires number.","class":"gap"},
 {"source":"tests/expect-error/forin-exclamation.ts","name":"testForInDotAccess","kind":"function","line":15,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two ","group":"a non-null assertion on a read at a for...in key (that the object owns the key relates two values)","where":"self","at":"obj.field[k]!","detail":"reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two values, which no type and no statement entry states — The available claim for obj.field[k] is undefined | number. This obligation requires number.","class":"gap"},
@@ -1728,7 +1686,7 @@
 {"source":"tests/expect-error/function-args.ts","name":"restTypeDefault","kind":"function","line":76,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/function-args.ts","name":"restTypeOptional","kind":"function","line":80,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/function-args.ts","name":"restTypeDefaultOptional","kind":"function","line":86,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/function-args.ts","name":"restNotArray","kind":"function","line":89,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a rest parameter needs a tuple of required positions or an array: the array a call collects is no value of a type that is not an array","group":"destructuring and rest/default parameters","where":"self","at":"function restNotArray(..._rest: number): void {}","detail":"gate: a rest parameter needs a tuple of required positions or an array: the array a call collects is no value of a type that is not an array (line 1, col 23)","class":"principled"},
+{"source":"tests/expect-error/function-args.ts","name":"restNotArray","kind":"function","line":89,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"function restNotArray(..._rest: number): void {}","detail":"reject: TypeScript refuses this code too (line 1, col 23: A rest parameter must be of an array type.); the pipeline follows TypeScript's types","class":"principled"},
 {"source":"tests/expect-error/function-args.ts","name":"restNotLast","kind":"function","line":92,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/function-intersection.ts","name":"returnString","kind":"function","line":49,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/function-intersection.ts","name":"returnBoolean","kind":"function","line":53,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -2024,12 +1982,12 @@
 {"source":"tests/expect-error/in.ts","name":"unionInRecordNotAlwaysFalse","kind":"function","line":267,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/in.ts","name":"refineUnionInRecordNotAlwaysFalse","kind":"function","line":271,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/in.ts","name":"refineUnionInRecordNotAlwaysFalse2","kind":"function","line":284,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/in.ts","name":"stringInRecord","kind":"function","line":297,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: unsupported source expression at _: `in` with a key that is not a union of string literals","group":"in / instanceof / typeof tests","where":"self","at":"s in x","detail":"reject: unsupported source expression at [73,79): `in` with a key that is not a union of string literals","class":"gap"},
+{"source":"tests/expect-error/in.ts","name":"stringInRecord","kind":"function","line":297,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/in.ts","name":"refineStringInRecord","kind":"function","line":301,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/in.ts","name":"refineStringInRecord2","kind":"function","line":311,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/in.ts","name":"literalInTupleAlwaysFalse","kind":"function","line":321,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `in` with a numeric key tests an array element, which the model keeps in the array's store, not as a key","group":"in / instanceof / typeof tests","where":"self","at":"return 0 in [];","detail":"gate: `in` with a numeric key tests an array element, which the model keeps in the array's store, not as a key (line 2, col 10)","class":"gap"},
-{"source":"tests/expect-error/in.ts","name":"literalInTupleAlwaysTrue","kind":"function","line":325,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `in` with a numeric key tests an array element, which the model keeps in the array's store, not as a key","group":"in / instanceof / typeof tests","where":"self","at":"return 0 in [1];","detail":"gate: `in` with a numeric key tests an array element, which the model keeps in the array's store, not as a key (line 2, col 10)","class":"gap"},
-{"source":"tests/expect-error/in.ts","name":"literalInTupleUnion","kind":"function","line":329,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `in` with a numeric key tests an array element, which the model keeps in the array's store, not as a key","group":"in / instanceof / typeof tests","where":"self","at":"return 1 in x;","detail":"gate: `in` with a numeric key tests an array element, which the model keeps in the array's store, not as a key (line 2, col 10)","class":"gap"},
+{"source":"tests/expect-error/in.ts","name":"literalInTupleAlwaysFalse","kind":"function","line":321,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/in.ts","name":"literalInTupleAlwaysTrue","kind":"function","line":325,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/in.ts","name":"literalInTupleUnion","kind":"function","line":329,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/in.ts","name":"literalInNonObject","kind":"function","line":333,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/in.ts","name":"refineInMandatoryField","kind":"function","line":338,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/in.ts","name":"FooWithPrivate","kind":"class","line":349,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -2114,13 +2072,13 @@
 {"source":"tests/expect-error/index-signatures.ts","name":"wideToNarrow","kind":"function","line":377,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/index-signatures.ts","name":"goodDualIdxReadonlyString","kind":"function","line":412,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/index-signatures.ts","name":"goodDualIdxReadonlyNumber","kind":"function","line":418,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/index-signatures.ts","name":"nonConformingDynamicStringKey","kind":"function","line":446,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: TypeScript reports an error in a declaration of the source Property '_' of type '_' is not assignable to '_' index type '_'.","group":"type aliases and names the declaration reader cannot resolve","where":"dependency","at":"interface NonConformingStrIndex {","detail":"gate: TypeScript reports an error in /ocaml-producer-unit/source.ts#NonConformingStrIndex: Property 'a' of type 'number' is not assignable to 'string' index type 'boolean'. (line 1, col 1)","class":"principled"},
+{"source":"tests/expect-error/index-signatures.ts","name":"nonConformingDynamicStringKey","kind":"function","line":446,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"dependency","at":"a: number;","detail":"reject: TypeScript refuses this code too (line 3, col 3: Property 'a' of type 'number' is not assignable to 'string' index type 'boolean'.); the pipeline follows TypeScript's types","class":"principled"},
 {"source":"tests/expect-error/index-signatures.ts","name":"nonConformingDynamicStringKeyTooNarrow","kind":"function","line":454,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/index-signatures.ts","name":"nonConformingLiteralMissOnlyIndex","kind":"function","line":464,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: TypeScript reports an error in a declaration of the source Property '_' of type '_' is not assignable to '_' index type '_'.","group":"type aliases and names the declaration reader cannot resolve","where":"dependency","at":"interface NonConformingStrIndex {","detail":"gate: TypeScript reports an error in /ocaml-producer-unit/source.ts#NonConformingStrIndex: Property 'a' of type 'number' is not assignable to 'string' index type 'boolean'. (line 1, col 1)","class":"principled"},
-{"source":"tests/expect-error/index-signatures.ts","name":"nonConformingLiteralHitsNamedField","kind":"function","line":471,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: TypeScript reports an error in a declaration of the source Property '_' of type '_' is not assignable to '_' index type '_'.","group":"type aliases and names the declaration reader cannot resolve","where":"dependency","at":"interface NonConformingStrIndex {","detail":"gate: TypeScript reports an error in /ocaml-producer-unit/source.ts#NonConformingStrIndex: Property 'a' of type 'number' is not assignable to 'string' index type 'boolean'. (line 1, col 1)","class":"principled"},
-{"source":"tests/expect-error/index-signatures.ts","name":"nonConformingDynamicNumberKey","kind":"function","line":485,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: TypeScript reports an error in a declaration of the source Property '_' of type '_' is not assignable to '_' index type '_'.","group":"type aliases and names the declaration reader cannot resolve","where":"dependency","at":"interface NonConformingNumIndex {","detail":"gate: TypeScript reports an error in /ocaml-producer-unit/source.ts#NonConformingNumIndex: Property '0' of type 'string' is not assignable to 'number' index type 'boolean'. (line 1, col 1)","class":"principled"},
+{"source":"tests/expect-error/index-signatures.ts","name":"nonConformingLiteralMissOnlyIndex","kind":"function","line":464,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"dependency","at":"a: number;","detail":"reject: TypeScript refuses this code too (line 3, col 3: Property 'a' of type 'number' is not assignable to 'string' index type 'boolean'.); the pipeline follows TypeScript's types","class":"principled"},
+{"source":"tests/expect-error/index-signatures.ts","name":"nonConformingLiteralHitsNamedField","kind":"function","line":471,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"dependency","at":"a: number;","detail":"reject: TypeScript refuses this code too (line 3, col 3: Property 'a' of type 'number' is not assignable to 'string' index type 'boolean'.); the pipeline follows TypeScript's types","class":"principled"},
+{"source":"tests/expect-error/index-signatures.ts","name":"nonConformingDynamicNumberKey","kind":"function","line":485,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"dependency","at":"0: string;","detail":"reject: TypeScript refuses this code too (line 3, col 3: Property '0' of type 'string' is not assignable to 'number' index type 'boolean'.); the pipeline follows TypeScript's types","class":"principled"},
 {"source":"tests/expect-error/index-signatures.ts","name":"conformingDynamicStringKey","kind":"function","line":499,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/index-signatures.ts","name":"nonFiniteNumberKeyReachesField","kind":"function","line":517,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: TypeScript reports an error in a declaration of the source Property '_' of type '_' is not assignable to '_' index type '_'.","group":"type aliases and names the declaration reader cannot resolve","where":"dependency","at":"interface NonFiniteNumKeyField {","detail":"gate: TypeScript reports an error in /ocaml-producer-unit/source.ts#NonFiniteNumKeyField: Property 'Infinity' of type 'bigint' is not assignable to 'string' index type 'boolean'. (line 1, col 1)","class":"principled"},
+{"source":"tests/expect-error/index-signatures.ts","name":"nonFiniteNumberKeyReachesField","kind":"function","line":517,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"dependency","at":"Infinity: bigint;","detail":"reject: TypeScript refuses this code too (line 3, col 3: Property 'Infinity' of type 'bigint' is not assignable to 'string' index type 'boolean'.); the pipeline follows TypeScript's types","class":"principled"},
 {"source":"tests/expect-error/index-signatures.ts","name":"nonFiniteNumberKeyTooNarrow","kind":"function","line":524,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/index-signatures.ts","name":"numericFieldTypeToNumberIndex","kind":"function","line":556,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/index-signatures.ts","name":"nonFiniteFieldTypeToNumberIndex","kind":"function","line":564,"skjsMarker":"rejected-self"},
@@ -2177,7 +2135,7 @@
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"sharedReadOnly","kind":"function","line":273,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an ar","group":"arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's","where":"self","at":"sharedRO(u, w)","detail":"reject: `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an array, not that it is an array of `Array.prototype`: the array invariant is a fact of every record and dictionary type, and `unknown` is also  — No rule derives this invoke at number from u: unknown, w: unknown, sharedRO: ({ \"[]\": never = (Store<ReadonlyArray<unknown>>), \"[[proto]]\": never = ({ forEach: never = (type 15), map: never = (type 23), reduce: never = (type 25), reduceRight: never = (type 25), every: never = (type 26), some: never = (type 26), filter: never = (type 29), slice: never = (type 30), join: never = (type 32","class":"gap"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"arrayWrite","kind":"function","line":281,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"arrayPush","kind":"function","line":293,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"arrayRead","kind":"function","line":305,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: indexed read on non-object","group":"reads on unions/primitives (field/index read on non-object, string keys)","where":"self","detail":"unsupported: indexed read on non-object","class":"gap"},
+{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"arrayRead","kind":"function","line":305,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: `unknown` used as an array after `Array.isArray`, read at an element: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the st","group":"arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's","where":"self","detail":"unsupported: `unknown` used as an array after `Array.isArray`, read at an element: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an array, not that it is an array of `Array.prototype`: the array invariant is a fact of every record and dictionary typ","class":"gap"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"typedArrayIdentity","kind":"function","line":313,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"separateArrayParams","kind":"function","line":322,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an ar","group":"arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's","where":"self","at":"eachLen(u, w)","detail":"reject: `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an array, not that it is an array of `Array.prototype`: the array invariant is a fact of every record and dictionary type, and `unknown` is also  — No rule derives this invoke at number from u: unknown, w: unknown, eachLen: ({ \"[[proto]]\": never = ({ forEach: never = (type 15), map: never = (type 23), reduce: never = (type 25), reduceRight: never = (type 25), every: never = (type 26), some: never = (type 26), filter: never = (type 29), slice: never = (type 30), join: never = (type 32), indexOf: never = (type 33), lastIndexOf: neve","class":"gap"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"rejectSharedArrayElement","kind":"function","line":332,"skjsMarker":"rejected-self"},
@@ -2198,7 +2156,7 @@
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"holeHigherOrderResult","kind":"function","line":525,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"holeCapturedContainer","kind":"function","line":539,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"iterationLocalContainer","kind":"function","line":558,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"opaqueWhileContainer","kind":"function","line":569,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a numeric array key needs a proved array-index singleton; ordinary numeric properties are not modeled","group":"reads on unions/primitives (field/index read on non-object, string keys)","where":"unknown","detail":"reject: a numeric array key needs a proved array-index singleton; ordinary numeric properties are not modeled","class":"gap"},
+{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"opaqueWhileContainer","kind":"function","line":569,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"holeForConditionPooling","kind":"function","line":581,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"holeWhilePooling","kind":"function","line":593,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"holePureIdiom","kind":"function","line":614,"skjsMarker":"rejected-self"},
@@ -2492,7 +2450,7 @@
 {"source":"tests/expect-error/number-literal-precision.ts","name":"wraparoundAlwaysTrue","kind":"function","line":25,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/number-literal-precision.ts","name":"hexVsDecimalSameDouble","kind":"function","line":30,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/number-literal-precision.ts","name":"impreciseDecimalPair","kind":"function","line":38,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/number-literal-precision.ts","name":"beyondRangePair","kind":"function","line":46,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: non-decimal numeric literal type","group":"bigint","where":"self","at":"function beyondRangePair(x: 1e309, y: 2e309): boolean {","detail":"gate: non-decimal numeric literal type (line 1, col 29)","class":"gap"},
+{"source":"tests/expect-error/number-literal-precision.ts","name":"beyondRangePair","kind":"function","line":46,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/number-literal-signed-exponent-minus.ts","name":"signedExponentMinus","kind":"function","line":3,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/number-literal-signed-exponent-minus.ts","name":"signedExponentType","kind":"function","line":7,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/number-literal-signed-exponent-minus.ts","name":"subtractionAfterDigit","kind":"function","line":13,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -2864,7 +2822,7 @@
 {"source":"tests/expect-error/postfix-exclamation.ts","name":"testWrongPromiseGeneric","kind":"function","line":732,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/postfix-exclamation.ts","name":"nonNullAliasContract","kind":"function","line":738,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/postfix-exclamation.ts","name":"nonNullScalarSnapshot","kind":"function","line":747,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/postfix-with-binary-ops.ts","name":"testPostfixPlusBinary","kind":"function","line":3,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: compound assignment inside a closed expression is outside the fragment","group":"compound and update assignments (x++, ||=, ??=, a[i] op=)","where":"self","detail":"reject: compound assignment inside a closed expression is outside the fragment","class":"gap"},
+{"source":"tests/expect-error/postfix-with-binary-ops.ts","name":"testPostfixPlusBinary","kind":"function","line":3,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/postfix-with-binary-ops.ts","name":"testPostfixWithMemberAccess","kind":"function","line":23,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/postfix-with-binary-ops.ts","name":"testPostfixWithFunctionCall","kind":"function","line":30,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/pp-union-named-inst-separator.ts","name":"clauseThenNamedInst","kind":"function","line":11,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -2912,7 +2870,7 @@
 {"source":"tests/expect-error/precedence-types.ts","name":"testMultAddPositive","kind":"function","line":116,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/precedence-types.ts","name":"testNullishComparisonPositive","kind":"function","line":125,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/precedence-types.ts","name":"testTernaryBinaryPositive","kind":"function","line":134,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/precedence-types.ts","name":"testIndexBinaryPositive","kind":"function","line":143,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a numeric array key needs a proved array-index singleton; ordinary numeric properties are not modeled","group":"reads on unions/primitives (field/index read on non-object, string keys)","where":"self","detail":"reject: a numeric array key needs a proved array-index singleton; ordinary numeric properties are not modeled","class":"gap"},
+{"source":"tests/expect-error/precedence-types.ts","name":"testIndexBinaryPositive","kind":"function","line":143,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/precedence-types.ts","name":"testChainedMemberPositive","kind":"function","line":150,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/precedence-types.ts","name":"testChainedMemberNegative","kind":"function","line":154,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/precedence.ts","name":"testUnaryVsFunctionCall","kind":"function","line":1,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -2946,7 +2904,7 @@
 {"source":"tests/expect-error/private-fields.ts","name":"WidensToPublic","kind":"class","line":83,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/private-fields.ts","name":"PrivateParentZ","kind":"class","line":93,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/private-fields.ts","name":"PrivateChildZ","kind":"class","line":98,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/private-fields.ts","name":"HasPrivateForInTest","kind":"class","line":102,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: an optional field left without an initializer holds `undefined` from the creation of the instance: the pipeline reads `f?: T` exactly, as absent or a `T","group":"classes: modifiers, inheritance, fields, parameter properties, receivers","where":"self","at":"HasPrivateForInTest","detail":"reject: an optional field left without an initializer holds `undefined` from the creation of the instance: the pipeline reads `f?: T` exactly, as absent or a `T` (as `exactOptionalPropertyTypes` does), where the default reading of TypeScript also admits a present `undefined`; `f?: T | undefined` sta — No rule derives this makeAt at { px: number } from px: undefined.","class":"gap"},
+{"source":"tests/expect-error/private-fields.ts","name":"HasPrivateForInTest","kind":"class","line":102,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/private-fields.ts","name":"inDoesNotLaunderPrivate","kind":"function","line":106,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/private-fields.ts","name":"UnionPrivateA","kind":"class","line":113,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/private-fields.ts","name":"UnionPublicB","kind":"class","line":117,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -3203,13 +3161,13 @@
 {"source":"tests/expect-error/spread-in-function-calls.ts","name":"testSpreadSingleElement","kind":"function","line":80,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/spread-in-function-calls.ts","name":"testWrongTypes","kind":"function","line":88,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/spread-in-function-calls.ts","name":"testTooFewArguments","kind":"function","line":95,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/spread-in-function-calls.ts","name":"testTooManyArguments","kind":"function","line":102,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: a call writes more positions than its callee's parameters, which TypeScript rejects","group":"calls: overloads, .call, spread arguments, Object.assign, arrow callee","where":"unknown","detail":"unsupported: a call writes more positions than its callee's parameters, which TypeScript rejects","class":"principled"},
+{"source":"tests/expect-error/spread-in-function-calls.ts","name":"testTooManyArguments","kind":"function","line":102,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"takesThreeNumbers(...tooMany);","detail":"reject: TypeScript refuses this code too (line 7, col 21: Expected 3 arguments, but got 4.); the pipeline follows TypeScript's types","class":"principled"},
 {"source":"tests/expect-error/spread-in-function-calls.ts","name":"testSpreadNonArray","kind":"function","line":110,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/spread-in-function-calls.ts","name":"testSpreadObject","kind":"function","line":118,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/spread-in-function-calls.ts","name":"testMixedWrongTypes","kind":"function","line":126,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/spread-in-function-calls.ts","name":"testRestTypeMismatch","kind":"function","line":133,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/spread-in-function-calls.ts","name":"testGenericSpread","kind":"function","line":140,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/spread-in-function-calls.ts","name":"testSpreadUndefined","kind":"function","line":147,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: a spread argument needs a tuple of required positions","group":"calls: overloads, .call, spread arguments, Object.assign, arrow callee","where":"unknown","detail":"unsupported: a spread argument needs a tuple of required positions","class":"gap"},
+{"source":"tests/expect-error/spread-in-function-calls.ts","name":"testSpreadUndefined","kind":"function","line":147,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"takesThreeNumbers(...args);","detail":"reject: TypeScript refuses this code too (line 6, col 21: A spread argument must either have a tuple type or be passed to a rest parameter.); the pipeline follows TypeScript's types","class":"principled"},
 {"source":"tests/expect-error/spread-in-function-calls.ts","name":"MyClass","kind":"class","line":154,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/spread-in-function-calls.ts","name":"testSpreadInConstructor","kind":"function","line":158,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a spread argument to `new` is outside the fragment","group":"calls: overloads, .call, spread arguments, Object.assign, arrow callee","where":"self","at":"const instance = new MyClass(...args);","detail":"gate: a spread argument to `new` is outside the fragment (line 7, col 32)","class":"gap"},
 {"source":"tests/expect-error/spread-in-function-calls.ts","name":"returnsArray","kind":"function","line":164,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -3311,7 +3269,7 @@
 {"source":"tests/expect-error/switch-boolean-exhaustive.ts","name":"onlyOneValue","kind":"function","line":46,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/switch-boolean-exhaustive.ts","name":"bothValuesButOneBreaks","kind":"function","line":57,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/switch-clause-termination.ts","name":"clauseEndingInExhaustiveSwitch","kind":"function","line":12,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/switch-clause-termination.ts","name":"terminalLastClauseLeavesNoPath","kind":"function","line":30,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: a member read on a number where the type TypeScript gives the receiver holds no number: the producer and TypeScript disagree on the receiver","group":"receiver types the producer and TypeScript disagree on (a member read on a primitive TypeScript excludes)","where":"self","detail":"unsupported: a member read on a number where the type TypeScript gives the receiver holds no number: the producer and TypeScript disagree on the receiver","class":"gap"},
+{"source":"tests/expect-error/switch-clause-termination.ts","name":"terminalLastClauseLeavesNoPath","kind":"function","line":30,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/switch-clause-termination.ts","name":"deadComparisonAfterTerminalClause","kind":"function","line":50,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/switch-default-narrowing.ts","name":"defaultIsTheComplement","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/switch-default-narrowing.ts","name":"defaultRulesOutOneCase","kind":"function","line":18,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -3407,7 +3365,7 @@
 {"source":"tests/expect-error/symbols.ts","name":"testSymObj","kind":"function","line":177,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/symbols.ts","name":"testIterFn","kind":"function","line":185,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/symbols.ts","name":"testForInWithSymbols","kind":"function","line":193,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/symbols.ts","name":"inResult","kind":"variable","line":206,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: unsupported source expression at _: `in` with a key that is not a union of string literals","group":"in / instanceof / typeof tests","where":"self","at":"Symbol.iterator in {}","detail":"reject: unsupported source expression at [17,38): `in` with a key that is not a union of string literals","class":"gap"},
+{"source":"tests/expect-error/symbols.ts","name":"inResult","kind":"variable","line":206,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/symbols.ts","name":"symbolOrNull","kind":"function","line":212,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/symbols.ts","name":"symbolOrUndefined","kind":"function","line":220,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/symbols.ts","name":"exportedUniqueSym","kind":"variable","line":233,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -3427,7 +3385,7 @@
 {"source":"tests/expect-error/symbols.ts","name":"spreadTarget","kind":"function","line":349,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/symbols.ts","name":"testSpreadIterableInCall","kind":"function","line":351,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/symbols.ts","name":"testDestructureArray","kind":"function","line":360,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/symbols.ts","name":"testSpreadInArrayLiteral","kind":"function","line":373,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: array literal spreads and holes are outside the fragment","group":"calls: overloads, .call, spread arguments, Object.assign, arrow callee","where":"self","at":"const arr: Array<number> = [...s];","detail":"gate: array literal spreads and holes are outside the fragment (line 3, col 30)","class":"gap"},
+{"source":"tests/expect-error/symbols.ts","name":"testSpreadInArrayLiteral","kind":"function","line":373,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/symbols.ts","name":"testClassSymContravariance","kind":"function","line":383,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/symbols.ts","name":"testAnonUniqueSymbol","kind":"function","line":396,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/symbols.ts","name":"symFieldRead","kind":"function","line":415,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -3539,11 +3497,11 @@
 {"source":"tests/expect-error/test-template-literal.ts","name":"withUndefined","kind":"variable","line":24,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/test-template-literal.ts","name":"complex","kind":"variable","line":27,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/test-template-literal.ts","name":"multiline","kind":"variable","line":30,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/test.ts","name":"reverse","kind":"function","line":3,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: field read on non-object","group":"reads on unions/primitives (field/index read on non-object, string keys)","where":"unknown","detail":"unsupported: field read on non-object","class":"gap"},
-{"source":"tests/expect-error/test.ts","name":"list","kind":"function","line":12,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: field read on non-object","group":"reads on unions/primitives (field/index read on non-object, string keys)","where":"unknown","detail":"unsupported: field read on non-object","class":"gap"},
+{"source":"tests/expect-error/test.ts","name":"reverse","kind":"function","line":3,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: a cell read at its contract: a read of head on a `let` or an assigned parameter holding a primitive beside an object, which a test does not narrow: what a cell ","group":"cells read at their contract (contents known only as primitives or as no `undefined`, and forgotten across a step that may write them)","where":"unknown","detail":"unsupported: a cell read at its contract: a read of head on a `let` or an assigned parameter holding a primitive beside an object, which a test does not narrow: what a cell is known to hold is primitive values or merely no `undefined`","class":"gap"},
+{"source":"tests/expect-error/test.ts","name":"list","kind":"function","line":12,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: a cell read at its contract: a read of head on a `let` or an assigned parameter holding a primitive beside an object, which a test does not narrow: what a cell ","group":"cells read at their contract (contents known only as primitives or as no `undefined`, and forgotten across a step that may write them)","where":"unknown","detail":"unsupported: a cell read at its contract: a read of head on a `let` or an assigned parameter holding a primitive beside an object, which a test does not narrow: what a cell is known to hold is primitive values or merely no `undefined`","class":"gap"},
 {"source":"tests/expect-error/test.ts","name":"myObject","kind":"function","line":23,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/test.ts","name":"main","kind":"function","line":29,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: field read on non-object","group":"reads on unions/primitives (field/index read on non-object, string keys)","where":"unknown","detail":"unsupported: field read on non-object","class":"gap"},
-{"source":"tests/expect-error/test.ts","name":"statement@33","kind":"statement","line":33,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: field read on non-object","group":"reads on unions/primitives (field/index read on non-object, string keys)","where":"unknown","detail":"unsupported: field read on non-object","class":"gap"},
+{"source":"tests/expect-error/test.ts","name":"main","kind":"function","line":29,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"console.log(list(1, 2, true));","detail":"reject: TypeScript refuses this code too (line 24, col 26: Argument of type 'boolean' is not assignable to parameter of type 'number'.); the pipeline follows TypeScript's types","class":"principled"},
+{"source":"tests/expect-error/test.ts","name":"statement@33","kind":"statement","line":33,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"dependency","at":"console.log(list(1, 2, true));","detail":"reject: TypeScript refuses this code too (line 24, col 26: Argument of type 'boolean' is not assignable to parameter of type 'number'.); the pipeline follows TypeScript's types","class":"principled"},
 {"source":"tests/expect-error/test_bigint.ts","name":"a","kind":"variable","line":4,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/test_bigint.ts","name":"b","kind":"variable","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/test_bigint.ts","name":"c","kind":"variable","line":6,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -3834,7 +3792,7 @@
 {"source":"tests/expect-error/this-parameter-bind-call-apply.ts","name":"optionalRestOk","kind":"function","line":57,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/this-parameter-bind-call-apply.ts","name":"optionalCallWrongArg","kind":"function","line":65,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/this-parameter-bind-call-apply.ts","name":"Impl","kind":"class","line":74,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/this-parameter-bind-call-apply.ts","name":"implicitRebindCompatibleOk","kind":"function","line":80,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: .call requires a known local function, an explicit receiver and ordinary arguments","group":"calls: overloads, .call, spread arguments, Object.assign, arrow callee","where":"self","at":"let _c: number = o.mm.call(o2, 1);","detail":"gate: .call requires a known local function, an explicit receiver and ordinary arguments (line 9, col 20)","class":"gap"},
+{"source":"tests/expect-error/this-parameter-bind-call-apply.ts","name":"implicitRebindCompatibleOk","kind":"function","line":80,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a method read off its object is not a function value: `.call` passes it a receiver other than the object it is read from, and a method's contract is relative to","group":"calls: overloads, .call, spread arguments, Object.assign, arrow callee","where":"self","at":"let _c: number = o.mm.call(o2, 1);","detail":"gate: a method read off its object is not a function value: `.call` passes it a receiver other than the object it is read from, and a method's contract is relative to that object (DESIGN.md, \"Method members are host-relative\") (line 9, col 20)","class":"principled"},
 {"source":"tests/expect-error/this-parameter-bind-call-apply.ts","name":"implicitRebindWrongReceiver","kind":"function","line":86,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/this-parameter-bind-call-apply.ts","name":"noArgs","kind":"function","line":92,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/this-parameter-bind-call-apply.ts","name":"applyZeroArgOk","kind":"function","line":95,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -4021,9 +3979,9 @@
 {"source":"tests/expect-error/type-arg-constraint-explicit-call.ts","name":"acceptsBareValid","kind":"function","line":17,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/type-arg-constraint-explicit-call.ts","name":"rejectsDependentViolation","kind":"function","line":25,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/type-arg-constraint-explicit-call.ts","name":"acceptsDependentValid","kind":"function","line":31,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/type-arg-constraint-new-expression.ts","name":"Box","kind":"class","line":7,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: an optional field left without an initializer holds `undefined` from the creation of the instance: the pipeline reads `f?: T` exactly, as absent or a `T","group":"classes: modifiers, inheritance, fields, parameter properties, receivers","where":"self","at":"Box","detail":"reject: an optional field left without an initializer holds `undefined` from the creation of the instance: the pipeline reads `f?: T` exactly, as absent or a `T` (as `exactOptionalPropertyTypes` does), where the default reading of TypeScript also admits a present `undefined`; `f?: T | undefined` sta — No rule derives this makeAt at { v: type 6 } from v: undefined.","class":"gap"},
+{"source":"tests/expect-error/type-arg-constraint-new-expression.ts","name":"Box","kind":"class","line":7,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/type-arg-constraint-new-expression.ts","name":"violating","kind":"function","line":11,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/type-arg-constraint-new-expression.ts","name":"satisfying","kind":"function","line":16,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: an optional field left without an initializer holds `undefined` from the creation of the instance: the pipeline reads `f?: T` exactly, as absent or a `T","group":"classes: modifiers, inheritance, fields, parameter properties, receivers","where":"dependency","at":"Box","detail":"reject: an optional field left without an initializer holds `undefined` from the creation of the instance: the pipeline reads `f?: T` exactly, as absent or a `T` (as `exactOptionalPropertyTypes` does), where the default reading of TypeScript also admits a present `undefined`; `f?: T | undefined` sta — No rule derives this makeAt at { v: type 10 } from v: undefined.","class":"gap"},
+{"source":"tests/expect-error/type-arg-constraint-new-expression.ts","name":"satisfying","kind":"function","line":16,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/type-arg-constraint-no-inference-bypass.ts","name":"bare","kind":"function","line":12,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/type-arg-constraint-no-inference-bypass.ts","name":"union","kind":"function","line":15,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/type-arg-constraint-no-inference-bypass.ts","name":"nested","kind":"function","line":18,"skjsMarker":"rejected-self"},
@@ -4080,7 +4038,7 @@
 {"source":"tests/expect-error/typeof-type-position-prettier-ignore.ts","name":"testStrLiteralReturn","kind":"function","line":41,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/typeof-type-position-prettier-ignore.ts","name":"statement@41","kind":"statement","line":41,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/typeof-type-position-prettier-ignore.ts","name":"statement@41#2","kind":"statement","line":41,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/typeof-type-position-prettier-ignore.ts","name":"testBoolLiteralLocal","kind":"function","line":47,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: TypeScript computes no type for this typeof: it is not valid TypeScript","group":"type forms: literal types, keyof, indexed access, mapped, object, index signatures, intersections, method signatures","where":"self","at":"const x: typeof true = true;","detail":"gate: TypeScript computes no type for this typeof: it is not valid TypeScript (line 2, col 12)","class":"principled"},
+{"source":"tests/expect-error/typeof-type-position-prettier-ignore.ts","name":"testBoolLiteralLocal","kind":"function","line":47,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"const x: typeof true = true;","detail":"reject: TypeScript refuses this code too (line 2, col 19: Cannot find name 'true'.); the pipeline follows TypeScript's types","class":"principled"},
 {"source":"tests/expect-error/typeof-type-position-prettier-ignore.ts","name":"statement@61","kind":"statement","line":61,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/typeof-type-position-prettier-ignore.ts","name":"testFuncCallParam","kind":"function","line":65,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/typeof-type-position-prettier-ignore.ts","name":"statement@65","kind":"statement","line":65,"skjsMarker":"rejected-self"},
@@ -4475,7 +4433,7 @@
 {"source":"tests/expect-error/unsound-refinement.ts","name":"destructuredAlias","kind":"function","line":194,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/unsound-refinement.ts","name":"readonlyTupleAlias","kind":"function","line":206,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/unsound-refinement.ts","name":"defaultAlias","kind":"function","line":217,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/unsound-refinement.ts","name":"checkedArrayAlias","kind":"function","line":229,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: `as const` on an operand other than a literal, an array or object literal, or a name","group":"unclassified: proposal: `as const` on an operand other than a literal, an array or object literal, or a name","where":"self","detail":"unsupported: `as const` on an operand other than a literal, an array or object literal, or a name","class":"gap"},
+{"source":"tests/expect-error/unsound-refinement.ts","name":"checkedArrayAlias","kind":"function","line":229,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/unsound-refinement.ts","name":"tupleDeclarationDefault","kind":"function","line":241,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/unsound-refinement.ts","name":"iterableDeclarationDefault","kind":"function","line":256,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/unsound-refinement.ts","name":"objectDeclarationDefault","kind":"function","line":271,"skjsMarker":"rejected-self"},
@@ -4692,8 +4650,8 @@
 {"source":"tests/constprop/compound_exprs.ts","name":"indexed","kind":"function","line":25,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/constprop/compound_exprs.ts","name":"inObject","kind":"function","line":29,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/constprop/compound_exprs.ts","name":"inDot","kind":"function","line":33,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/constprop/compound_exprs.ts","name":"main","kind":"function","line":37,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a numeric array key needs a proved array-index singleton; ordinary numeric properties are not modeled","group":"reads on unions/primitives (field/index read on non-object, string keys)","where":"unknown","detail":"reject: a numeric array key needs a proved array-index singleton; ordinary numeric properties are not modeled","class":"gap"},
-{"source":"tests/constprop/compound_exprs.ts","name":"_","kind":"variable","line":48,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a numeric array key needs a proved array-index singleton; ordinary numeric properties are not modeled","group":"reads on unions/primitives (field/index read on non-object, string keys)","where":"unknown","detail":"reject: a numeric array key needs a proved array-index singleton; ordinary numeric properties are not modeled","class":"gap"},
+{"source":"tests/constprop/compound_exprs.ts","name":"main","kind":"function","line":37,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/constprop/compound_exprs.ts","name":"_","kind":"variable","line":48,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/constprop/eval_forms.ts","name":"typeofNumber","kind":"function","line":9,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/constprop/eval_forms.ts","name":"typeofString","kind":"function","line":13,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/constprop/eval_forms.ts","name":"typeofNull","kind":"function","line":18,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
