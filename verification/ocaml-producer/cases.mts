@@ -1188,4 +1188,13 @@ export const cases: Case[] = [
     /^reject: `unknown` used as an array after `Array\.isArray`[\s\S]*evidence search failed/),
   gap("mutable-tuple-position-refused", "a position past a mutable tuple's, which `push` may have filled", "unverified", "search",
     /^reject: position 1 is past the positions of a mutable tuple/),
+  gap("field-object-guard-refused", "a guard finding an object where a field holds one beside `null` states no contents", "unsupported", "proposal",
+    /^unsupported: a field read at its contract/),
+  gap("cell-object-guard-refused", "a guard finding an object where a cell holds one beside `null` states no contents", "unsupported", "proposal",
+    /^unsupported: a cell read at its contract/),
+  gap("array-isarray-unknown-element-refused", "an element of `unknown` read after `Array.isArray`", "unsupported", "proposal",
+    /^unsupported: `unknown` used as an array after `Array\.isArray`, read at an element/),
+  { ...gap("typescript-refuses-spread-refused", "a producer refusal of code TypeScript rejects too is named by TypeScript's error", "unsupported", "proposal",
+    /^reject: TypeScript refuses this code too \(line 8, col 16: A spread argument must[\s\S]*\nunsupported: a spread argument needs a tuple/),
+    typescriptErrors: true },
 ];

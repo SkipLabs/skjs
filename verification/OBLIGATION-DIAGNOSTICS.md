@@ -67,7 +67,8 @@ it, in this order:
   nearest the failed obligation: `reject: TypeScript refuses this code too
   (line L, col C: <message>); the pipeline follows TypeScript's types`. SKJS
   accepting what TypeScript refuses goes beyond the types the pipeline
-  follows.
+  follows. A refusal of the parser's gate or of the producer, which names no
+  obligation, is named the same way by the file's first TypeScript error.
 
 Neither is a premise of anything: the explanation run's claims are
 discarded, and a failure no source names keeps the verifier's lines alone.

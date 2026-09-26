@@ -124,6 +124,19 @@ function refusedByName(detail: string, explain: () => Explanation[],
   return `reject: TypeScript refuses this code too (line ${nearest.start.line + 1}, col ${
     nearest.start.character + 1}: ${text}); the pipeline follows TypeScript's types\n${detail}`;
 }
+/** A refusal of the gate or the producer, which names no obligation, is
+ * refused by name where TypeScript refuses the code too (`--typescript-errors`):
+ * the first TypeScript error of the checked file, on a first line of its own
+ * before the refusal, which follows unchanged. The pipeline follows
+ * TypeScript's types, and a program TypeScript rejects has none to follow.
+ * Display only: the outcome is the same refusal. */
+function refusedByTypeScript(detail: string, read: () => SeenDiagnostic[]): string {
+  const errors = read();
+  if (!errors.length) return detail;
+  const first = errors.reduce((a, b) => (b.pos[0] < a.pos[0] ? b : a));
+  return `reject: TypeScript refuses this code too (line ${first.start.line + 1}, col ${
+    first.start.character + 1}: ${first.text.split("\n")[0]}); the pipeline follows TypeScript's types\n${detail}`;
+}
 function typeScriptErrors(file: string, tsconfigPath?: string): SeenDiagnostic[] {
   try {
     return clientErrors(file, tsconfigPath);
@@ -175,13 +188,12 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors = 
           diagnostics,
         ]);
     writeFileSync(join(artifacts, "parse.log"), parsed.detail);
+    const refusedErrors = () =>
+      typescriptErrors ? typeScriptErrors(tsconfigPath ? resolve(source) : snapshot, tsconfigPath) : [];
     if (parsed.code !== 0)
-      return {
-        status: parsed.detail.startsWith("gate:") ? "unsupported" : "error",
-        artifacts,
-        phase,
-        detail: parsed.detail,
-      };
+      return parsed.detail.startsWith("gate:")
+        ? { status: "unsupported", artifacts, phase, detail: refusedByTypeScript(parsed.detail, refusedErrors) }
+        : { status: "error", artifacts, phase, detail: parsed.detail };
     const ast = join(artifacts, "fragment.json");
     writeFileSync(ast, parsed.out);
     const parsedData: unknown = JSON.parse(parsed.out);
@@ -217,14 +229,9 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors = 
     const proposed = run(join(here, "_build/default/producer.exe"), [ast]);
     writeFileSync(join(artifacts, "proposal.log"), proposed.detail);
     if (proposed.code !== 0)
-      return {
-        status: proposed.detail.startsWith("unsupported:")
-          ? "unsupported"
-          : "error",
-        artifacts,
-        phase,
-        detail: proposed.detail,
-      };
+      return proposed.detail.startsWith("unsupported:")
+        ? { status: "unsupported", artifacts, phase, detail: refusedByTypeScript(proposed.detail, refusedErrors) }
+        : { status: "error", artifacts, phase, detail: proposed.detail };
     const claims = join(artifacts, "claims.json"),
       evidence = join(artifacts, "evidence.json");
     writeFileSync(claims, proposed.out);
@@ -245,7 +252,7 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors = 
         phase,
         detail: refusedByName(namingTheObligation(produced.detail, bytes.toString("utf8")),
           () => readExplanations(run(join(here, "_build/default/producer.exe"), ["--explain", ast]).out),
-          () => typescriptErrors ? typeScriptErrors(tsconfigPath ? resolve(source) : snapshot, tsconfigPath) : []),
+          refusedErrors),
       };
     phase = "check";
     const checked = run(verifier, [

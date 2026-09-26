@@ -1988,7 +1988,11 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       (try field_type declarations [] t n with Json.Error m
         when String.length m >= 27 && String.sub m 0 27 = "unsupported: missing field " ->
         unsupported ("a read of " ^ key_text n ^ " on a `let` holding a union of objects, some without it: \
-          a test does not narrow a cell holding an object, whose known contents are primitive values"))
+          a test does not narrow a cell holding an object, whose known contents are primitive values")
+        | Json.Error m when m = "unsupported: field read on non-object" ->
+          unsupported ("a cell read at its contract: a read of " ^ key_text n ^ " on a `let` or an assigned \
+            parameter holding a primitive beside an object, which a test does not narrow: what a cell is known \
+            to hold is primitive values or merely no `undefined`"))
     | Read (e,n) ->
       let receiver = expr env e in
       if not (List.mem site !method_callees) && method_member declarations receiver n then
@@ -2029,8 +2033,23 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
            (* `Array.isArray` keeps a record arm on both outcomes: a value of
               the record's type may be an array carrying its keys. *)
            unsupported ("a read of " ^ key_text n ^ " on a union of an array and a record that does not state it: \
-             a test that the value is an array keeps the record, a value of which may be an array carrying its keys")))
-    | Index (e,key) -> let receiver=expr env e in let key=expr env key in index_type declarations [] receiver key
+             a test that the value is an array keeps the record, a value of which may be an array carrying its keys")
+           (* A field holding an object or `null` (`undefined`), which a
+              guard found an object: what a field is known to hold is a union
+              of primitives, and an object's contents may change through an
+              alias, so the guard leaves it at its type. *)
+           | Json.Error m when m = "unsupported: field read on non-object"
+               && (match e.node with Read ({node=Id _;_},_) -> true | _ -> false) ->
+             unsupported ("a field read at its contract: a read of " ^ key_text n ^ " through a field holding \
+               an object beside null or undefined, which a test does not narrow: what a field is known to hold \
+               is a union of primitive values (DESIGN.md, \"Current-content assertions\")")))
+    | Index (e,key) -> let receiver=expr env e in let key=expr env key in
+      (match e.node with
+       (* An element of `unknown` read after `Array.isArray`: the test
+          narrows nothing there, so the read is of no object. *)
+       | Id name when List.mem name !open_array_tests && receiver = top ->
+         unsupported ("`unknown` used as an array after `Array.isArray`, read at an element: " ^ open_array_reason)
+       | _ -> index_type declarations [] receiver key)
     (* The right side runs after the receiver and the key: it sees what they
        assigned. *)
     | IndexWrite (receiver,key,rhs) ->
@@ -2757,7 +2776,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
      tuple of the positions from its index on, claimed at its span; a
      default, which sees the earlier bindings, replaces the read's undefined
      slice. *)
-  and bind env target t default =
+  and bind ?(nested = false) env target t default =
     (* The read's defined slice, through the declarations naming it. *)
     let rec present t = match t with
       | Union ts -> combine (List.map present ts)
@@ -2774,8 +2793,15 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     match target with
     | PName (n,_) -> extend env n (Value t)
     | PObject (props,rest) ->
+      (* A nested pattern over a field holding an object beside `null`,
+         which a guard found an object, reads it at its type. *)
+      let read f = try field_type declarations [] t (Name f) with Json.Error m
+        when nested && m = "unsupported: field read on non-object" ->
+        unsupported ("a field read at its contract: a nested pattern's read of " ^ f ^ " through a field \
+          holding an object beside null or undefined, which a test does not narrow: what a field is known \
+          to hold is a union of primitive values (DESIGN.md, \"Current-content assertions\")") in
       let env = List.fold_left (fun env (f,target,d) ->
-        bind env target (field_type declarations [] t (Name f)) d) env props in
+        bind ~nested:true env target (read f) d) env props in
       (match rest with
        | None -> env
        | Some (span,target) ->

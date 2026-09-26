@@ -166,7 +166,8 @@ only how soon evidence is found, and the checker validates every table
 A failed search is refused by name for display only: `producer --explain`
 lists the forms with a known reason and their spans, the innermost one that
 meets the failed obligation is shown first, and with `--typescript-errors`
-code TypeScript also refuses is named by its nearest error. Nothing of this
+code TypeScript also refuses is named by its nearest error (a gate's or the
+producer's refusal, which names no obligation, by its first). Nothing of this
 is a premise; Lean decides on the ordinary proposal
 ([a failed search refused by name](OBLIGATION-DIAGNOSTICS.md#a-failed-search-refused-by-name)).
 
