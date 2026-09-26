@@ -4,8 +4,8 @@ How much of what SKJS accepts in its own test suite the pipeline
 (`check.mts`: parser → OCaml producer → Lean search and check) verifies, what
 stops the rest, and where the two disagree because SKJS is wrong.
 
-**2,291 of 2,674 SKJS-accepted units verify (85.7%); 1,689 of 2,026 accepted
-functions (83.4%).** 254 of the 377 files with an accepted unit verify entirely.
+**2,296 of 2,674 SKJS-accepted units verify (85.9%); 1,694 of 2,026 accepted
+functions (83.6%).** 256 of the 377 files with an accepted unit verify entirely.
 Five families of SKJS-accepted functions that the pipeline reaches and refuses
 are real SKJS unsoundnesses, each with a runtime witness that SKJS accepts and
 node crashes on ([below](#suspected-skjs-unsoundnesses)).
@@ -30,14 +30,14 @@ is not part of `verification/run.sh`.
 
 | Suite | Harness verdict | Files | Units | Accepted | Verified | Accepted functions | Verified functions |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,885 | 2,458 | 2,081 | 1,863 | 1,531 |
+| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,885 | 2,458 | 2086 | 1,863 | 1536 |
 | `tests/callgraph` | no error allowed | 25 | 59 | 59 | 56 | 51 | 48 |
 | `tests/constprop` | no error allowed | 14 | 66 | 66 | 64 | 49 | 48 |
 | `tests/deadcode` | no error allowed | 7 | 27 | 27 | 27 | 16 | 16 |
 | `tests/cfg` | no error allowed | 7 | 22 | 22 | 21 | 21 | 20 |
 | `tests/projects` | expect-error markers, under the project's tsconfig | 24 of 68 | 44 | 34 | 34 | 23 | 23 |
 | `tests/ts-conformance/cases` | lines listed in `reference/*.errors.txt` | 4 | 11 | 10 | 8 | 3 | 3 |
-| **total** | | **480** | **4,110** | **2,674** | **2,291** | **2,026** | **1,689** |
+| **total** | | **480** | **4,110** | **2,674** | **2,296** | **2,026** | **1,694** |
 
 Excluded (79 files, listed in the JSON with reasons): `ts-conformance/not-supported`
 (31) and `callgraph-unsupported` (4) assert only that SKJS reports errors;
@@ -94,10 +94,10 @@ is.
 
 | Phase of first blocker | Units |
 | --- | ---: |
-| verified | 2,291 |
+| verified | 2,296 |
 | source (gate) | 130 |
-| proposal (producer) | 62 |
-| search (Lean) | 191 |
+| proposal (producer) | 61 |
+| search (Lean) | 187 |
 
 **Caveats on the method.**
 
