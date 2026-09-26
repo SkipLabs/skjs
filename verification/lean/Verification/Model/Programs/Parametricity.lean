@@ -97,10 +97,16 @@ theorem fieldRefinements_reassign (o : Observation) (fields : List (Nat × PropK
     fieldRefinements o fields A B j (reassign G η) p = fieldRefinements o fields A B j G p := by
   cases o <;> simp only [fieldRefinements, check_fun_reassign] <;> rfl
 
+theorem optionalRefinements_reassign (o : Observation) (optionals : List (Nat × PropKey)) (A B : List ι)
+    (j : Nat) (p : Proof ι) :
+    optionalRefinements o optionals A B j (reassign G η) p = optionalRefinements o optionals A B j G p := rfl
+
 theorem checkObserved_reassign (Γ Δ : List (List ι)) (tested : Nat) (o : Observation)
-    (m : Mapping) (ps : EdgeEvidence ι) (fields : List (Nat × PropKey)) :
-    checkObserved (reassign G η) Γ Δ tested o m ps fields = checkObserved G Γ Δ tested o m ps fields := by
-  simp only [checkObserved, checkObservedSub_reassign, check_fun_reassign, fieldRefinements_reassign]
+    (m : Mapping) (ps : EdgeEvidence ι) (fields optionals : List (Nat × PropKey)) :
+    checkObserved (reassign G η) Γ Δ tested o m ps fields optionals =
+      checkObserved G Γ Δ tested o m ps fields optionals := by
+  simp only [checkObserved, checkObservedSub_reassign, check_fun_reassign, fieldRefinements_reassign,
+    optionalRefinements_reassign]
   rfl
 
 theorem CallProofs_reassign (q : List ι × List (List ι) × List ι) (c : List (List ι) × List ι)

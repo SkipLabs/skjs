@@ -51,6 +51,15 @@ private structure ScopeBinding where
   /-- A module function's slot: its type is its own source signature, never a
   producer claim, and it is a value slot, so no assignment can reach it. -/
   fixed : Option (Ty Nat) := none
+  /-- A `let`'s cell: the types of the slots below it when it was allocated,
+  whose records' fields its fresh location differs from. -/
+  apart : Option (List (Ty Nat)) := none
+  /-- A constant bound to an object or array it allocated: its fields are
+  fresh, so they differ from every older cell's location. -/
+  fresh : Bool := false
+  /-- A parameter: bound before the body runs, so before any cell the body
+  allocates, and at the same time as an assigned parameter's cell. -/
+  param : Bool := false
   deriving Repr
 
 private def held (d : Descriptor) : ScopeBinding := { source := d }
@@ -700,11 +709,23 @@ private def emitAt (pos : Span) (t : Tm) (k : Continuation) (Γ : List (Ty Nat))
     { s with sourceMap := s.sourceMap.set target.label (some ⟨pos,role,environmentStart,sources scope⟩) }
   return target
 
+/-- The fields every record of a type names: where each of its clauses is a
+record naming them, the locations of an object of the type. -/
+private def commonFields (G : Verification.Model.PositiveGraphs.NormalGraph Nat) (A : Ty Nat) : List PropKey :=
+  match PositiveRules.expand G A with
+  | .refs fs _ _ _ _ _ :: _ =>
+    (fs.map Prod.fst).eraseDups.filter (HeapExpressionRules.fieldOperand (PositiveRules.expand G A))
+  | _ => []
+
 /-- The cells this lowering allocated sit at locations no other object in
 scope has: a private cell's identity never becomes a source value, and every
 record-typed slot holds something else. Stated at each cut so the allocation's
 freshness survives the reset of knowledge there; every incoming edge proves
-it, from the allocation or from the cut before. -/
+it, from the allocation or from the cut before. What the allocation proves is
+about the fields the older slots' records named then (`apart`), whatever a
+later test narrowed them to, and about the objects allocated after it, other
+cells and fresh constants; an object a later call returned may be any
+object. -/
 private def distinctLinks (G : Verification.Model.PositiveGraphs.NormalGraph Nat) (scope : List ScopeBinding)
     (Γ : List (Ty Nat)) : HeapLinks.Links :=
   scope.zipIdx.flatMap fun (b,i) =>
@@ -712,9 +733,21 @@ private def distinctLinks (G : Verification.Model.PositiveGraphs.NormalGraph Nat
     | .cell .. =>
       Γ.zipIdx.flatMap fun (A,j) =>
         if i == j then [] else
-        match PositiveRules.expand G A with
-        | [.refs fs _ _ [] _ _] => fs.map fun p => (⟨i,j,false,valueField,true,p.1⟩ : HeapLinks.Link)
-        | _ => []
+        let other := scope[j]?
+        let isCell := other.any fun o => match o.storage with | .cell .. => true | .value => false
+        let fields :=
+          if j > i || (b.param && other.any (·.param)) then
+            -- Older than the cell: the fields its record named when the cell
+            -- was allocated, where that is known.
+            match b.apart with
+            | some older =>
+              match older[j - i - 1]? with
+              | some B => (commonFields G A).filter (commonFields G B).contains
+              | none => []
+            | none => commonFields G A
+          else if isCell || other.any (·.fresh) then commonFields G A
+          else []
+        fields.map fun f => (⟨i,j,false,valueField,true,f,false⟩ : HeapLinks.Link)
     | .value => []
 
 /-- A checkpoint is an actual no-op graph node. Every incoming edge must
@@ -2621,6 +2654,40 @@ private def conditionContext (G : PositiveGraphs.NormalGraph Nat) (scope : List 
       Γ.set i (if answer then [1] else [2])
     else Γ
 
+/-- The span of the first read of `name` an expression always evaluates,
+before any branch or closure: its claim is what the name holds on entry to
+the expression. -/
+private partial def firstUse (name : String) : Fragment.Expr → Option Span
+  | .var p n => if n == name then some p else none
+  | .lit .. | .done .. | .lambda .. | .ctor .. => none
+  | .ifBody _ _ c _ _ => firstUse name c
+  | .logical _ _ a _ | .coalesce _ a _ | .optional _ _ a _ => firstUse name a
+  | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .atEnv _ e
+  | .throwBody _ e => firstUse name e
+  | .construct _ f args _ | .call _ f args _ _ | .invoke _ f args _ _ =>
+    (f :: args).findSome? (firstUse name)
+  | .alloc _ _ es | .arrayLit _ es => es.findSome? (firstUse name)
+  | .equality _ _ a b | .singletonTest _ _ _ _ a b | .write _ _ a b | .index _ _ a b
+  | .elemAt _ a b | .arith _ _ a b | .comma _ a b | .inKeys _ a b =>
+    (firstUse name a).orElse fun _ => firstUse name b
+  | _ => none
+
+/-- A conditional's arm starts where the condition answered: each immutable
+source binding the arm reads before any branch of its own holds what the
+producer claims that read at, which the edge from the condition checks as it
+checks a statement entry's claims (a slice by the test, a field slice, a
+present key); the others, the condition's own refinement. -/
+private def armContext (fc : SourceClaims.Function) (scope : List ScopeBinding)
+    (Γ : List (Ty Nat)) (arm : Fragment.Expr) : Compiler (List (Ty Nat)) :=
+  scope.zipIdx.foldlM (fun Δ (b,i) => do
+    match b.storage, firstUse b.source.name arm with
+    | .value, some p =>
+      if b.source.name == "" || isSnapshot b.source.name then return Δ
+      match fc.exprs.lookup p with
+      | some _ => return Δ.set i (← claimAt fc p)
+      | none => return Δ
+    | _, _ => return Δ) Γ
+
 /-- The fresh array an array pattern's rest collects from the array at slot
 `obj` of `A`: the positions from `start` on, read into a store. They are a
 fixed list of reads where `A` is one tuple of required positions, whose
@@ -2665,28 +2732,58 @@ private def positionRead (G : PositiveGraphs.NormalGraph Nat) (A : Ty Nat) (i : 
       | none, none => throw s!"position {i} is outside the array's contract"
   pure alts.flatten.flatten.eraseDups
 
-/-- A strict comparison of two operands neither of which is a singleton, one
-an immutable name whose every label is one singleton and the other a name or
-a field of a name, both read without effect, dispatches as the tag tests it
-amounts to: the split operand's slot and singletons, and the other operand
-(a slot, and the field read from it) with its source expression. -/
-private def equalitySplit (scope : List ScopeBinding) (Γ : List (Ty Nat))
+/-- An operand of a split comparison: a slot, the field read from it, and
+the source expression. -/
+private abbrev SplitOperand := (Nat × Option PropKey) × Fragment.Expr
+
+/-- A strict comparison of two operands neither of which is a singleton, both
+read without effect (a name, or a field of a name), one of them claimed at a
+union of singletons, dispatches as the tag tests it amounts to: the split
+operand, the other operand, and the split operand's singletons. An immutable
+name is split first, as before; otherwise a field read. -/
+private def equalitySplit (fc : SourceClaims.Function) (scope : List ScopeBinding) (Γ : List (Ty Nat))
     (l r : Fragment.Expr) :
-    Compiler (Option ((Nat × Option PropKey) × (Nat × Option PropKey) × Fragment.Expr × List Tag)) := do
+    Compiler (Option (SplitOperand × SplitOperand × List Tag)) := do
   let G := SourceTypes.graph (← table)
   let operand : Fragment.Expr → Option (Nat × Option PropKey)
     | .var _ name => (valueSlot scope name).map (·, none)
     | .read _ f (.var _ name) => (valueSlot scope name).map (·, some f)
     | _ => none
-  let singletons := fun (k : Nat) => do
-    let C ← Γ[k]?
+  let singletons := fun (C : Ty Nat) =>
     if C.isEmpty then none else C.mapM fun a => singletonTag G [a]
-  let attempt := fun (s o : Fragment.Expr) => do
-    let (k, none) ← operand s | none
-    let other ← operand o
-    let tags ← singletons k
-    some ((k, none), other, o, tags)
-  return (attempt r l).orElse fun _ => attempt l r
+  let attempt := fun (s o : Fragment.Expr) (field : Bool) => do
+    let some sop := operand s | return none
+    let some oop := operand o | return none
+    let C ← match sop with
+      | (k, none) => if field then pure none else pure Γ[k]?
+      | (_, some _) => if field then (some <$> exprType fc s) else pure none
+    match C.bind singletons with
+    | some tags => return some ((sop, s), (oop, o), tags)
+    | none => return none
+  for (s, o, field) in [(r, l, false), (l, r, false), (r, l, true), (l, r, true)] do
+    if let some x ← attempt s o field then return some x
+  return none
+
+/-- A strict comparison of an immutable name with an operand that is not read
+without effect (a call, say) claimed at a union of singletons: the operand is
+evaluated once, into a slot of its own, and split there; the name, which no
+effect changes, is the other operand. -/
+private def savedSplit (fc : SourceClaims.Function) (scope : List ScopeBinding)
+    (l r : Fragment.Expr) : Compiler (Option (Nat × Fragment.Expr × Fragment.Expr × List Tag)) := do
+  let G := SourceTypes.graph (← table)
+  let attempt := fun (n e : Fragment.Expr) => do
+    let .var _ name := n | return none
+    let some k := valueSlot scope name | return none
+    match e with
+    | .var .. | .lit .. | .read _ _ (.var ..) => return none
+    | _ =>
+      let C ← exprType fc e
+      if C.isEmpty then return none
+      match C.mapM fun a => singletonTag G [a] with
+      | some tags => return some (k, n, e, tags)
+      | none => return none
+  if let some x ← attempt l r then return some x
+  attempt r l
 
 mutual
 /-- Each expression leaves its result in slot zero and preserves the original
@@ -2894,8 +2991,8 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     -- each arm is compiled under the condition's refinement of its context
     -- and joins the continuation with its own claim.
     let G := SourceTypes.graph (← table)
-    let yes ← compileExpr fc scope (conditionContext G scope Γ cond true) thn next
-    let no ← compileExpr fc scope (conditionContext G scope Γ cond false) els next
+    let yes ← compileExpr fc scope (← armContext fc scope (conditionContext G scope Γ cond true) thn) thn next
+    let no ← compileExpr fc scope (← armContext fc scope (conditionContext G scope Γ cond false) els) els next
     compileCondition fc scope Γ cond yes no
   | .bindWithReceiver .. | .withValue .. | .lambda .. | .ctor .. | .coalesce .. | .optional .. | .logical .. =>
     let t ← closureExpr fc scope Γ e
@@ -3515,54 +3612,76 @@ private partial def compileCondition (fc : SourceClaims.Function) (scope : List 
     else
       let node ← emitBranch scope Γ cond A yes no
       compileExpr fc scope Γ cond node
+  -- For each singleton the split operand may be, in order: it is that one,
+  -- and the other operand is too (strict equality is transitive where it
+  -- holds). After every one failed, the split operand equals none of them
+  -- (NaN, which equals nothing), so the operands differ. A test of a field
+  -- read reads it again, which nothing between has written, and records its
+  -- link, which lets the edge refine the object's arms (`fieldSlice`) and
+  -- tells what the field holds.
+  let dispatch := fun (p : Span) (scope : List ScopeBinding) (Γ : List (Ty Nat))
+      (split other : SplitOperand) (tags : List Tag) (yes no : Target) => do
+    let G := SourceTypes.graph (← table)
+    let width := scope.length
+    let test := fun (Δ : List (Ty Nat)) (op : SplitOperand) (tag : Tag) (y n : Target) =>
+      match op with
+      | ((k, none), _) =>
+        emitAt p (.var k) (.tagBind tag (branchMapping width (some k) y) (branchMapping width (some k) n))
+          Δ (Δ[k]?.getD []) "tag-dispatch" (scope := scope)
+      | ((k, some f), e) => do
+        -- The read is saved and its copy tested, as a guard's saved read is:
+        -- the copy states what the value is, and its link what the field holds.
+        let R ← exprType fc e
+        let drop := fun (t : Target) =>
+          (⟨t.label, some ((t.mapping.getD (List.range width)).map (·+2))⟩ : Target)
+        let dispatchNode ← emitAt p (.var 0) (.tagBind tag (drop y) (drop n)) (R::Δ) R "tag-dispatch"
+          (scope := held ⟨"",some e.span⟩ :: scope)
+        emitAt p (.readAt f (.var k)) (.bind dispatchNode) Δ R "tag-dispatch" (scope := scope)
+    let refine := fun (Δ : List (Ty Nat)) (op : SplitOperand) (tag : Tag) (q : Bool) =>
+      match op.1 with
+      | (k, none) => Δ.set k (BranchRefinement.tagSlice G (Δ[k]?.getD []) tag q)
+      | (k, some f) => Δ.set k (BranchRefinement.fieldSlice G (Δ[k]?.getD []) f tag q)
+    let rec chain : List Tag → List (Ty Nat) → Compiler Target
+      | [], _ => pure no
+      | tag :: more, Δ => do
+        -- Where the other operand cannot be this singleton, its test's true
+        -- edge is never taken; it goes where the false one does, so that
+        -- no target claims what the split operand holds on that path.
+        let possible ← match other with
+          | ((k, none), _) => pure !(BranchRefinement.tagSlice G ((refine Δ split tag true)[k]?.getD []) tag true).isEmpty
+          | ((_, some _), e) => do
+            pure !(BranchRefinement.tagSlice G (← exprType fc e) tag true).isEmpty
+        let inner ← test (refine Δ split tag true) other tag (if possible then yes else no) no
+        let next ← chain more (refine Δ split tag false)
+        test Δ split tag inner next
+    chain tags Γ
   match cond with
   | .arith p .eq l r =>
-    match ← equalitySplit scope Γ l r with
-    | none => simple
-    | some (split, other, otherExpr, tags) =>
-      let G := SourceTypes.graph (← table)
-      let width := scope.length
-      -- Test one operand against one singleton, dispatching to `yes` or
-      -- `no`; a read also records its link, which lets the edge refine the
-      -- object's arms (`fieldSlice`).
-      let test := fun (Δ : List (Ty Nat)) (op : Nat × Option PropKey) (tag : Tag) (y n : Target) =>
-        match op with
-        | (k, none) =>
-          emitAt p (.var k) (.tagBind tag (branchMapping width (some k) y) (branchMapping width (some k) n))
-            Δ (Δ[k]?.getD []) "tag-dispatch" (scope := scope)
-        | (k, some f) => do
-          let R ← exprType fc otherExpr
-          emitAt p (.readAt f (.var k)) (.tagBind tag (branchMapping width none y) (branchMapping width none n))
-            Δ R "tag-dispatch" (scope := scope)
-      let refine := fun (Δ : List (Ty Nat)) (op : Nat × Option PropKey) (tag : Tag) (q : Bool) =>
-        match op with
-        | (k, none) => Δ.set k (BranchRefinement.tagSlice G (Δ[k]?.getD []) tag q)
-        | (k, some f) => Δ.set k (BranchRefinement.fieldSlice G (Δ[k]?.getD []) f tag q)
-      -- For each singleton the split operand may be, in order: it is that
-      -- one, and the other operand is too (strict equality is transitive
-      -- where it holds). After every one failed, the split operand equals
-      -- none of them (NaN, which equals nothing), so the operands differ.
-      let rec chain : List Tag → List (Ty Nat) → Compiler Target
-        | [], _ => pure no
-        | tag :: more, Δ => do
-          -- Where the other operand cannot be this singleton, its test's true
-          -- edge is never taken; it goes where the false one does, so that
-          -- no target claims what the split operand holds on that path.
-          let possible ← match other with
-            | (k, none) => pure !(BranchRefinement.tagSlice G ((refine Δ split tag true)[k]?.getD []) tag true).isEmpty
-            | (_, some _) => do
-              pure !(BranchRefinement.tagSlice G (← exprType fc otherExpr) tag true).isEmpty
-          let inner ← test (refine Δ split tag true) other tag (if possible then yes else no) no
-          let next ← chain more (refine Δ split tag false)
-          test Δ split tag inner next
-      let start ← chain tags Γ
+    match ← equalitySplit fc scope Γ l r with
+    | some (split, other, tags) =>
+      let start ← dispatch p scope Γ split other tags yes no
       -- The comparison itself runs first, as the source has it, with its
       -- obligations; its Boolean is dropped, and the dispatch re-reads the
       -- operands, which nothing between has written.
       let A ← exprType fc cond
+      let width := scope.length
       let skip : Target := ⟨start.label, some ((start.mapping.getD (List.range width)).map (·+1))⟩
       let discard ← emitAt p (.var 0) (.effect skip) (A::Γ) A (scope := held ⟨"",some p⟩ :: scope)
       compileExpr fc scope Γ cond discard
+    | none =>
+      match ← savedSplit fc scope l r with
+      | none => simple
+      | some (k, name, e, tags) =>
+        -- The comparison's own claim is a supplemental obligation; the
+        -- operand is evaluated once, into a slot above the scope, and the
+        -- name, which no effect changes, is read where it is.
+        let _ ← closureExpr fc scope Γ cond
+        let C ← exprType fc e
+        let lift := fun (t : Target) =>
+          ⟨t.label, some ((t.mapping.getD (List.range scope.length)).map (·+1))⟩
+        let inner := held ⟨"",some e.span⟩ :: scope
+        let start ← dispatch p inner (C::Γ) (((0, none)), e) (((k+1, none)), name) tags (lift yes) (lift no)
+        compileExpr fc scope Γ e start
   | .logical _ andOp left right =>
     let _ ← closureExpr fc scope Γ cond
     let H := conditionContext (SourceTypes.graph (← table)) scope Γ left andOp
@@ -3826,7 +3945,9 @@ private def constants (fc : SourceClaims.Function) (pos : Span)
     if (names scope).contains b.name then throw s!"duplicate or shadowing local declaration '{b.name}'"
     let A ← exprType fc b.init
     let B ← match b.annot with | none => pure A | some ty => lower (Fragment.translate ty)
-    let next ← constants fc pos after (held ⟨b.name,some pos⟩::scope) (A::Γ) more
+    let fresh := match b.init with | .alloc .. | .arrayLit .. => true | _ => false
+    let bound : ScopeBinding := { source := ⟨b.name,some pos⟩, fresh := fresh }
+    let next ← constants fc pos after (bound::scope) (A::Γ) more
     let annotation ← emitAt b.init.span (.var 0) (.effect next) (A::Γ) B "binding-annotation" (some pos.1)
       (scope := held ⟨b.name,some b.init.span⟩::scope)
     compileExpr fc scope Γ b.init annotation
@@ -3867,6 +3988,7 @@ private def mutables (fc : SourceClaims.Function) (pos : Span) (next : Option Na
     -- The slot holds the identity of a cell only this lowering allocated.
     -- Storage is decided here, by the declaration, and nowhere else.
     let binding : ScopeBinding := { source := ⟨b.name,some pos⟩, storage := .cell contract reference }
+    let binding := { binding with apart := some Γ }
     let continued ← mutables fc pos next after (binding::scope) (reference::Γ) more
     let drop := ⟨continued.label, some ((continued.mapping.getD (List.range (Γ.length+1))).map
       (fun j => if j == 0 then 0 else j+1))⟩
@@ -4291,8 +4413,9 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceCl
       let (b,contract) := pair
       if stmts.any (assignsStmt b.source.name) then
         let reference ← lower (do return [← CellClaims.reference [(valueField, contract)]])
+        let b := { b with param := true }
         pure { b with storage := .cell contract reference }
-      else pure b
+      else pure { b with param := true }
     let bodyScope := paramScope ++ siblingScope
     let slotTypes := bindings ++ siblingTypes
     let fullScope := scope ++ siblingScope

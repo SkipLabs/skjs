@@ -1294,6 +1294,15 @@ later, so writes and calls after the test do not undo it. A discriminated
 union is this: `s.kind === "circle"` keeps the arms whose `kind` admits
 `"circle"`.
 
+A slot $k$ the tested value was read from through a key $f$ it may lack (an
+optional read link, `optionalFields`) is covered by a promotion instead, where
+the observation rules `undefined` out (`excludesUndef`): the read then found
+the key, which the object keeps from its allocation on, so its type is its
+records with $f$ present (`promotes`, below). The environment theorem takes the
+optional links' meaning as one more premise, $\forall(k,f)\in\mathit{os}.\
+f\notin\operatorname{keys}\rho(k)\Rightarrow\rho(i)=\mathsf{undefined}$
+(`ObservedCovers.env`).
+
 An observation the tested slot's type rules out (`impossible`: a tag answer
 every label of it contradicts, or a Boolean it does not hold) covers any
 destination: no environment meets both, so the edge is never taken.
@@ -1302,7 +1311,7 @@ these obligations. `checkObserved_sound` and `ObservedCovers.env` prove the
 common path. The observation is established by execution, never accepted as a
 producer assertion. Heap contents are not refined.
 
-Two implementations discharge the tested-slot obligation:
+Three implementations discharge the tested-slot obligation:
 
 - **Boolean equality:** `booleanMember` checks that the supplied destination
   contains the observed Boolean. `subset` is the canonical evidence marker for
@@ -1315,13 +1324,37 @@ Two implementations discharge the tested-slot obligation:
   Alternatively, a passed test naming one primitive family is covered by that
   family's clause in the destination, whatever the tested type, `unknown`
   included (`tagMember`, with the marker `subset`): every value `typeof`
-  answers `"string"` for is a string. A more precise algorithm can implement
-  the same contract without changing the edge or environment rule.
+  answers `"string"` for is a string. So is equality with one number other
+  than a zero, which holds of that number alone, or with one string:
+  $x\equiv 1$ with $x:\mathsf{number}$ gives $x:1$. A more precise algorithm
+  can implement the same contract without changing the edge or environment
+  rule.
+- **Present key:** a passed `in` test finds its key on the object's chain:
+  its own, or, where it lacks it, one a prototype holds (`KeyFound`). An
+  object of a record lacking one of its optional keys holds no prototype
+  (`optT`), so there the key is its own, and an object's keys are fixed at its
+  allocation: each record clause $c$ of the tested type holds with its
+  optional key $k$ taken as present, $c^{+k}$ (`promote`: a writable optional
+  key becomes an invariant field, a readonly one a view, as `optT` states of a
+  present key). The destination needs a clause asking
+  no more than that, $d\sqsubseteq c^{+k}$ (`weaker`: each operand of $d$ is
+  one of $c^{+k}$'s; every part of a record clause's meaning is a statement
+  about each operand) (`promotes_sound`, with the marker `subset`):
 
 $$
 \frac{\mathsf{tagHolds}(t,v)=\mathsf{true}\ \Rightarrow\ v\in\llbracket c\rrbracket\quad c\in\operatorname{expand}_G(B)}
      {A\preceq_{t=\mathsf{true}}B}\ \textsc{tag-member}
-\qquad t\in\{\mathsf{isStr},\mathsf{isNum},\mathsf{isBigint},\mathsf{isSymbol},\mathsf{isUndef},\mathsf{isNul},\mathsf{isBool}\}
+\qquad t\in\{\mathsf{isStr},\mathsf{isNum},\mathsf{isBigint},\mathsf{isSymbol},\mathsf{isUndef},\mathsf{isNul},\mathsf{isBool},\mathsf{numEq}(b)_{b\neq\pm0},\mathsf{strEq}(s)\}
+$$
+
+$$
+\frac{v\in\llbracket c\rrbracket\quad k\notin\operatorname{keys}(v)\Rightarrow v\ \text{holds a prototype}}
+     {v\in\llbracket c^{+k}\rrbracket}
+\qquad
+\frac{G\vdash A\ \text{plain}\quad
+      \forall c\in\operatorname{expand}_G(F_{\mathsf{hasKey}(k),\mathsf{true}}(A)).\
+      \exists d\in\operatorname{expand}_G(B).\ d\sqsubseteq c^{+k}}
+     {A\preceq_{\mathsf{hasKey}(k)=\mathsf{true}}B}\ \textsc{present-key}
 $$
 
 For the current primitive profile, null filtering gives:
@@ -1648,6 +1681,20 @@ $$
    \Sigma,\{y\mapsto r\mid y\approx_\Pi x\}}
 $$
 
+A read of a key some record of $x$'s type names only as optional has no
+location to link where the object lacks the key; there the read gave
+`undefined`, since such an object has no prototype (`optT`). Its link is the
+optional one, $x.f\mapsto^{?}r$ ([its meaning](SEMANTICS.md#what-is-asserted-and-what-a-heap-change-can-touch)),
+written for every record of $\Gamma(x)$ naming $f$, as a field or an optional
+key (`optionalOperand`, `optionalRead_sound`):
+
+$$
+\frac{\Gamma\vdash_G\operatorname{read}_f(x):A\qquad
+      \forall c\in\operatorname{expand}_G(\Gamma(x)).\ f\in\operatorname{fields}(c)\cup\operatorname{optional}(c)}
+{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow\operatorname{read}_f(x):A
+  \dashv \Pi\;;\;\Sigma,\{y.f\mapsto^{?} r\mid y\approx_\Pi x\}}
+$$
+
 Two fixtures show the difference. In
 [`write-refined-read.ts`](tests/skjs-incomplete/write-refined-read.ts),
 
@@ -1684,18 +1731,29 @@ where an atom exists only the second does. Where both apply the second yields
 strictly more, the evidence records which was used, and soundness does not depend
 on the choice — only precision does.
 
-**Writing** stores $y$'s value in the cell $x$ names. The result is `null`. It
-establishes the new contents for $x$ and every variable recorded equal to it, and
-destroys the rest of $\Sigma$ — including atoms about cells that may or may not
-be this one:
+**Writing** stores $y$'s value in the field $f$ of the object $x$ names. The
+result is `null`. Where $y$'s value is a known primitive it establishes the new
+contents for $x$ and every variable recorded equal to it; it keeps the atoms
+about locations a distinct link $z.g\neq x.f$ separates from the written one;
+it destroys the rest of $\Sigma$ — including atoms about cells that may or may
+not be this one. Writing a value that is not a known primitive, an object say,
+establishes no new contents and keeps the separated atoms all the same:
 
 $$
-\frac{\Gamma\vdash_G\operatorname{write}(x,y):\mathsf{Null}
+\frac{\Gamma\vdash_G\operatorname{write}_f(x,y):\mathsf{Null}
       \qquad(\Gamma;\Pi)(y)=R}
-{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow\operatorname{write}(x,y):\mathsf{Null}
+{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow\operatorname{write}_f(x,y):\mathsf{Null}
   \dashv \Pi,\;r=\mathsf{null}\;;\;
-   \{z\mapsto R\mid z\approx_\Pi x\}}
+   \{z.f\mapsto R\mid z\approx_\Pi x\},\;\Sigma_{\neq x.f}}
+\qquad
+\frac{\Gamma\vdash_G\operatorname{write}_f(x,y):\mathsf{Null}
+      \qquad(\Gamma;\Pi)(y)\ \text{undefined}}
+{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow\operatorname{write}_f(x,y):\mathsf{Null}
+  \dashv \Pi,\;r=\mathsf{null}\;;\;\Sigma_{\neq x.f}}
 $$
+
+where $\Sigma_{\neq x.f}=\{z.g\mapsto S\in\Sigma\mid z.g\neq x.f\}$ (`writeOutput`,
+`write_sound`).
 
 **Every other expression**, calls included, empties the heap part and leaves the
 equalities untouched:
@@ -1712,25 +1770,25 @@ equality mentions the heap. There is no separating conjunction here — these
 facts are duplicable, and carry no ownership or disjointness.
 
 The shape a type theorist will look for is missing on purpose: **there is no
-frame rule.** A write through $x$ discards what is known about $z$ even when $z$
-is a different name, because distinct names need not be distinct locations — the
-assertion language can witness that two names are equal, never that they are
-not. So
-the positive direction is proof-driven and the negative direction is total: the
-new contents propagate exactly to the witnessed aliases $z\approx_\Pi x$, while
-everything else is dropped rather than framed around. `write_frame` in the
-semantic layer does preserve a fact at another location, but only from a proved
-runtime inequality, and $\Pi$ cannot state one: it carries equalities and no
-disequalities. Preservation for proved-distinct cells is
-therefore not implemented. That is a gap in the assertion language, not a limit
-of the model.
+general frame rule.** A write through $x$ discards what is known about $z$ even
+when $z$ is a different name, because distinct names need not be distinct
+locations — $\Pi$ can witness that two names are equal, never that they are
+not. So the positive direction is proof-driven and the negative direction is
+total but for one timeless fact, the distinct link $z.g\neq x.f$: two field
+locations that differ whatever they hold (`HeapLinks.distinctFrom`, from
+`write_frame`, which preserves a fact at another location from a proved
+runtime inequality). Allocation states it: a fresh object's locations differ
+from every field each record of a record-typed slot names (`contractFields`).
+The lowering restates, at each statement entry, the links between a private
+cell and the slots whose records' fields it was allocated after, or that were
+allocated after it ([DESIGN.md](DESIGN.md#current-content-assertions)).
 
 The practical shape of the gap is worth stating. Facts about several cells
 coexist freely: allocation and reads preserve every one of them, so a program
-that allocates three cells knows the contents of all three. The first write
-collapses that set to the written cell and its aliases, and a call empties it.
-So a program that mutates carries current-content knowledge for essentially one
-cell at a time, the one written most recently. $\Pi$ is not subject to this at
+that allocates three cells knows the contents of all three. A write collapses
+that set to the written cell, its aliases and the locations distinct links
+separate from it, and a call empties it: a callee may write any location its
+operands reach, and nothing states which locations those are. $\Pi$ is not subject to this at
 all, which is why a value read out of a cell before a callback
 remains usable after the callback has overwritten that cell.
 
@@ -1761,11 +1819,11 @@ It computes a guaranteed output, not an assumed postcondition:
 | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Pure value or variable copy          | Preserve facts and links; copies establish slot equality and duplicate existing facts. Literals establish their exact result even when their supplied type is wider. Lambda bodies require ordinary typing, without captured heap facts. |
 | Pure test or conditional             | Preserve existing facts and links, shifted past the result slot. Every evaluated subexpression must be syntactically pure; no new result-to-cell link is invented.                                                                       |
-| Ordinary typed read                  | Preserve facts and record read links to the receiver and witnessed aliases, retaining its plain or callable descriptor; no prior current-content fact is needed. Its result has the supplied type.                                       |
+| Ordinary typed read                  | Preserve facts and record read links to the receiver and witnessed aliases, retaining its plain or callable descriptor; through a key a record may lack, optional links. No prior current-content fact is needed. Its result has the supplied type. |
 | Observed read                        | Preserve facts and links; record the result's primitive predicate and its current read relationship. That set must fit the requested ordinary result type.                                                                               |
 | Known immutable value                | Check the requested primitive type against a proved slot fact or the slot's ordinary primitive type.                                                                                                                                     |
 | Allocation                           | Check ordinary creation evidence and scope for either descriptor, preserve old facts, add the fresh bag's initial contents where a checked value slot's are known, and its fields' distinctness from every record slot's. Closure code is not executed. |
-| Write                                | Check ordinary write evidence (no old-content premise), discard all old cell facts, record new contents for the receiver and its witnessed aliases, and preserve immutable facts and slot equalities. Read links are discarded.          |
+| Write                                | Check ordinary write evidence (no old-content premise), discard old cell facts but those a distinct link separates from the written location, record new contents for the receiver and its witnessed aliases where the value is a known primitive, and preserve immutable facts and slot equalities. Read links are discarded. |
 | Ordinary expression, including calls | Check ordinary evidence, discard cell facts and read links, preserving immutable facts and slot equalities.                                                                                                                              |
 
 `typedRead_sound`, `read_sound`, `alloc_sound` and `write_sound` prove the four
@@ -1862,7 +1920,24 @@ $$
 
 The points-to atom must hold in the current heap. Note that
 $\operatorname{read}(x)$ is the language's read expression; the assertion that
-used to share its name is now $x\mapsto y$. `HeapGuardTests.lean` proves a
+used to share its name is now $x\mapsto y$. A tag observation does the same with
+what it leaves of $y$'s predicate (`observeTag_holds`): each atom whose clause
+answers the other way is dropped, and a family found equal to one of its
+values is that value (`observeAtom`: `number` equal to a number other than a
+zero is that number, `string` equal to a string is that string; equal to a
+zero it stays `number`, the zeros being two values). An optional read link
+gives the fact only where what remains rules `undefined` out, which then says
+the key is present (`linkFacts_holds`):
+
+$$
+\frac{x.f\mapsto y\quad y=R}{x.f\mapsto R}
+\qquad
+\frac{x.f\mapsto^{?}y\quad y=R\quad \mathsf{undefined}\notin R}{x.f\mapsto R}
+\qquad
+\frac{y=\mathsf{number}\quad y\equiv b\quad b\neq\pm0}{y=\{b\}}
+\qquad
+\frac{y=\mathsf{string}\quad y\equiv s}{y=\{s\}}.
+$$ `HeapGuardTests.lean` proves a
 complete two-branch graph safe and checks that discarding the link prevents this
 refinement. A slot equality $x=y$ permits a checked write through either alias to
 establish the new contents for both, as the

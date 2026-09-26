@@ -783,9 +783,13 @@ private def validCurrent (T : SourceTypes.Table) (A : ClaimType) (current : Opti
   | none => true
   | some fs =>
     !fs.isEmpty && (fs.map Prod.fst).eraseDups.length == fs.length &&
+    -- Every record the binding may hold names the field: a fact is about
+    -- the location the field is at, whichever record the object is.
     (match PositiveRules.expand (SourceTypes.graph T) (A.ground.toOption.getD []) with
-      | [.refs contract [] vs] => fs.all (fun p => (contract.lookup p.1).isSome || (vs.lookup p.1).isSome)
-      | _ => false) &&
+      | [] => false
+      | cs => cs.all fun
+        | .refs contract [] vs => fs.all (fun p => (contract.lookup p.1).isSome || (vs.lookup p.1).isSome)
+        | _ => false) &&
     fs.all (fun p => validType T (.labels p.2))
 private def validBindings (T : SourceTypes.Table) (bs : List Binding) : Bool :=
   (bs.map (·.name)).eraseDups.length == bs.length &&

@@ -293,9 +293,10 @@ predicates: `nul`, `undef`, `tru`, `fls`, `num`, `str`,
 `{"numLit":{"bits":"…"}}`, with the same unsigned 64-bit decimal encoding as
 numeric graph clauses, or `{"strLit":{"value":"…"}}`. The empty list is
 impossible. A singleton fact can weaken to its family, never the reverse. `links` is a list of
-`{cell, value, alias, field, distinct, other}` objects: `alias: true` means equal
+`{cell, value, alias, field, distinct, other, optional}` objects: `alias: true` means equal
 slot values; `alias: false` means the named field currently contains the other
-slot's value; `distinct: true` means field `field` of the object in `cell` and
+slot's value, or, with `optional: true`, that the object lacks the key and the
+other slot holds `undefined`; `distinct: true` means field `field` of the object in `cell` and
 field `other` of the object in `value` are different locations, a timeless fact
 established by allocation, since fresh locations differ from every field of
 every record-typed slot in scope, and the reason a write to one cell keeps
@@ -311,7 +312,9 @@ The effect checker binds to the root expression sequent and must establish exact
 `output`. Each actual outgoing edge checks fact entailment against the destination's
 `knowledge`, in addition to ordinary type coverage. Effect-only continuations drop
 the result slot before transferring facts. External entry requires empty knowledge.
-All type labels in nested effect proofs are bounds checked. `allocated` retains its existing payload
+All type labels in nested effect proofs are bounds checked. `written` carries
+the written value's predicate, or `null` where it is not a known primitive.
+`allocated` retains its existing payload
 (`slot`, `contents`, and ordinary `proof`) for either descriptor: it requires
 `make code (var slot)` and checks the entire term's scope and creation proof.
 The code descriptor is part of the requested term, so changing it invalidates

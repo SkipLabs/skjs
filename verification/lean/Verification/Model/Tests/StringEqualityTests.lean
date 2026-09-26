@@ -25,9 +25,10 @@ private def G : NormalGraph Nat := .ofRows fun i =>
 #guard decide (Answers G [0] (.strEq "a") true)
 #guard decide (Answers G [1] (.strEq "a") false)
 
--- A broad string observation cannot disappear from either equality edge.
+-- A broad string observation cannot disappear from either equality edge; found
+-- equal to "a", it is "a".
 private def observed : HeapKnowledge.Knowledge := ⟨[],[⟨0,[.str,.nul],valueField⟩],[]⟩
-#guard (HeapKnowledge.observeTag observed 0 (.strEq "a") true).values.head?.map (·.contents) == some [.str]
+#guard (HeapKnowledge.observeTag observed 0 (.strEq "a") true).values.head?.map (·.contents) == some [.strLit "a"]
 #guard (HeapKnowledge.observeTag observed 0 (.strEq "a") false).values.head?.map (·.contents) == some [.str,.nul]
 #guard (HeapKnowledge.observeTag observed 0 .isNul false).values.head?.map (·.contents) == some [.str]
 

@@ -105,7 +105,7 @@ def checkTarget [DecidableEq ι] (G : NormalGraph ι) (P : Program) (C : Certifi
 current read links ending at it. -/
 def readFields (facts : HeapKnowledge.Knowledge) (slot : Nat) : List (Nat × PropKey) :=
   facts.links.filterMap fun g =>
-    if !g.alias && !g.distinct && g.value == slot then some (g.cell, g.field) else none
+    if !g.alias && !g.distinct && !g.optional && g.value == slot then some (g.cell, g.field) else none
 
 theorem readFields_holds {facts : HeapKnowledge.Knowledge} {slot ρ h}
     (hf : HeapKnowledge.Holds facts ρ h) :
@@ -122,10 +122,36 @@ theorem readFields_holds {facts : HeapKnowledge.Knowledge} {slot ρ h}
     simpa [hc.2] using this
   · cases he
 
+/-- The objects the value in `slot` was read from through a key they may
+lack, with the key: the current optional read links ending at it. -/
+def optionalFields (facts : HeapKnowledge.Knowledge) (slot : Nat) : List (Nat × PropKey) :=
+  facts.links.filterMap fun g =>
+    if !g.alias && !g.distinct && g.optional && g.value == slot then some (g.cell, g.field) else none
+
+theorem optionalFields_holds {facts : HeapKnowledge.Knowledge} {slot ρ h}
+    (hf : HeapKnowledge.Holds facts ρ h) :
+    ∀ k f, (k, f) ∈ optionalFields facts slot → ∃ flds c, ρ k = .objAt flds c ∧
+      (flds.lookup f = none → ρ slot = .undef) := by
+  intro k f hk
+  obtain ⟨g, hg, he⟩ := List.mem_filterMap.mp hk
+  split at he
+  · rename_i hc
+    cases he
+    simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at hc
+    have := hf.2.2 g hg
+    simp only [hc.1.1.1, hc.1.1.2, hc.1.2, Bool.false_eq_true, ↓reduceIte] at this
+    obtain ⟨flds, c, hl, hr⟩ := this
+    refine ⟨flds, c, hl, fun hn => ?_⟩
+    unfold HeapLinks.ReadGave at hr
+    rw [hn] at hr
+    simpa [hc.2] using hr
+  · cases he
+
 def checkBranchTarget [DecidableEq ι] (G : NormalGraph ι) (P : Program) (C : Certificate ι)
     (Γ : List (Ty ι)) (o : Observation) (target : Target) (p : EdgeEvidence ι) (facts : HeapKnowledge.Knowledge := ⟨[],[],[]⟩) : Bool :=
   match P[target.label]?, C[target.label]? with
-  | some _, some c => checkObserved G Γ (entry c) 0 o target.mapping p (readFields facts 0) && HeapKnowledge.check (HeapKnowledge.observe facts 0 o) c.knowledge target.mapping
+  | some _, some c => checkObserved G Γ (entry c) 0 o target.mapping p (readFields facts 0)
+      (optionalFields facts 0) && HeapKnowledge.check (HeapKnowledge.observe facts 0 o) c.knowledge target.mapping
   | _, _ => false
 
 
@@ -195,7 +221,8 @@ def TargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι) (Γ : Li
 
 def BranchTargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι)
     (Γ : List (Ty ι)) (o : Observation) (l : Target) (facts : HeapKnowledge.Knowledge) : Prop :=
-  ∃ c, C[l.label]? = some c ∧ ObservedCovers G Γ (entry c) 0 o l.mapping (readFields facts 0) ∧ HeapKnowledge.check (HeapKnowledge.observe facts 0 o) c.knowledge l.mapping = true
+  ∃ c, C[l.label]? = some c ∧ ObservedCovers G Γ (entry c) 0 o l.mapping (readFields facts 0)
+    (optionalFields facts 0) ∧ HeapKnowledge.check (HeapKnowledge.observe facts 0 o) c.knowledge l.mapping = true
 
 
 /-- Where a throw out of a node in environment `ρ` may go: nowhere (it leaves
@@ -310,7 +337,8 @@ theorem branch_target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ q l 
     (hq : q.holds (ρ 0)) (hf : HeapKnowledge.Holds facts ρ h) :
     StateOk G Rty C n (trunc n (Nat.le_succ n) W) h (.at l.label (mapEnv l.mapping ρ)) := by
   obtain ⟨c,hc,hcov,hfact⟩ := ht
-  exact ⟨c,hc,(hcov.env he hq hh (readFields_holds hf)).transfer n (Nat.le_succ n) _ (WExt_refl _),
+  exact ⟨c,hc,(hcov.env he hq hh (readFields_holds hf) (optionalFields_holds hf)).transfer n
+    (Nat.le_succ n) _ (WExt_refl _),
     HeapKnowledge.check_sound hfact (HeapKnowledge.observe_holds hf hq)⟩
 
 /-- Global safety is by execution budget, not by acyclicity or graph unfolding. -/

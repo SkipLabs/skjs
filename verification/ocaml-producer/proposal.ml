@@ -414,20 +414,39 @@ let operation_result declarations op left right =
 (* The atoms of `t` that may be (`equal`) or may not be strictly equal to a
    singleton value. Unknown/rigid predicates conservatively retain their type;
    proof checking validates each narrower cut. *)
-let restrict singleton equal t = match t with
+let restrict ?declarations singleton equal t = match t with
   | Atoms xs -> ground (List.filter (fun atom ->
-      let known = match atom,singleton with
+      let rec known atom = match atom,singleton with
         | Nul,Nul | Undef,Undef | True,True | False,False -> Some true
         (* Number::equal: NaN equals nothing, and the zeros each other. *)
         | NumLit a,NumLit b -> Some (Int64.float_of_bits a = Int64.float_of_bits b)
         | StrLit a,StrLit b -> Some (a=b)
         | BigintLit a,BigintLit b -> Some (a=b)
         | Num,NumLit _ | Str,StrLit _ | Bigint,BigintLit _ -> None
-        (* A declaration's atoms are not known here; any other atom is of
-           another kind than the singleton, or an object, never equal to it. *)
-        | (Top | Named _),_ -> None
+        (* A declaration answers as its atoms do, where they all agree, as
+           Lean's slice of its row does. *)
+        | Named _,_ ->
+          (match declarations with
+           | None -> None
+           | Some declarations ->
+             (match (try Some (declared_head declarations [] (Atoms [atom])) with Json.Error _ -> None) with
+              | Some (Atoms (a::rest)) when Atoms (a::rest) <> Atoms [atom] ->
+                let answers = List.map known (a::rest) in
+                (match answers with
+                 | Some r :: more when List.for_all (( = ) (Some r)) more -> Some r
+                 | _ -> None)
+              | _ -> None))
+        (* Any other atom is of another kind than the singleton, or an
+           object, never equal to it. *)
+        | Top,_ -> None
         | _,_ -> Some false in
-      match known with Some result -> result=equal | None -> true) xs)
+      match known atom with Some result -> result=equal | None -> true) xs
+    (* Equal to one number other than a zero, or to one string: that value
+       (Lean's `observeAtom` and `tagMember`). *)
+    |> List.map (fun atom -> match atom,singleton with
+      | Num,NumLit b when equal && Int64.float_of_bits b <> 0.0 -> NumLit b
+      | Str,StrLit s when equal -> StrLit s
+      | _ -> atom))
   | Rigid _ | Union _ | Meet _ -> t
 (* The one value every member of a type is, as Lean selects a singleton
    operand: null, undefined, a Boolean, a string, a bigint, or one number
@@ -508,6 +527,16 @@ let unknown_instance_reason =
 (* Keep the atoms that may own the key where `key in o` held, and those that
    may lack it where it failed: a record's required field is owned, a fresh
    literal's keys are exactly its fields', and a primitive owns none. *)
+(* A plain record whose optional key was found present: the key is a field
+   of it from then on, since an object's keys are fixed at its allocation.
+   Lean checks the promoted record against the tested one (`promote`). *)
+let present key =
+  let promote = List.map (fun (f:Semantic.field) ->
+    if f.name = Name key && f.optional then {f with optional=false} else f) in
+  function
+  | Shape ({calls=[];elements=None;indexes=[];_} as s) -> Shape {s with fields=promote s.fields}
+  | Exact fields -> Exact (promote fields)
+  | a -> a
 let key_slice key holds = function
   | Atoms xs when not (List.mem Top xs) ->
     let field_of fields = List.find_opt (fun (f:Semantic.field) -> f.name = Name key) fields in
@@ -522,30 +551,58 @@ let key_slice key holds = function
       | Ctors _ | Callable | Named _ | Top -> None
       | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _
       | Bigint | Symbol | BigintLit _ -> Some false in
-    Atoms (List.filter (fun a -> match has a with
-      | Some result -> result = holds | None -> true) xs)
+    Atoms (List.filter_map (fun a -> match has a with
+      | Some result -> if result = holds then Some a else None
+      | None -> Some (if holds then present key a else a)) xs)
   | t -> t
 (* Whether a field's contents can be asserted of an object of this type: a
-   plain record that has the field, not optionally. *)
-let single_record declarations t field =
-  match (try Some (declared_head declarations [] t) with Json.Error _ -> None) with
-  | Some (Atoms [Shape {fields;calls=[];elements=None;indexes=[]}])
-  | Some (Atoms [Exact fields]) ->
-    List.exists (fun (f:Semantic.field) -> f.name = Name field && not f.optional) fields
-  | _ -> false
+   plain record that has the field, not optionally, or a union of such: a
+   fact names the location the field is at, whichever record the object is. *)
+let record_field declarations t field =
+  let rec has seen t = match (try Some (declared_head declarations seen t) with Json.Error _ -> None) with
+    | Some (Atoms (_::_ as atoms)) -> List.for_all (function
+        | Shape {fields;calls=[];elements=None;indexes=[]} | Exact fields ->
+          List.exists (fun (f:Semantic.field) -> f.name = Name field && not f.optional) fields
+        | Named (id,_) as atom when not (List.mem id seen) -> has (id::seen) (Atoms [atom])
+        | _ -> false) atoms
+    | _ -> false in
+  has [] t
 (* A guard on a field of an immutable binding's object: what the field holds
    is known until a step may write it. *)
 let refine_field declarations env name field refine =
+  (* A read of an optional key that gave something other than `undefined`
+     found the key present: the object's record arms have it from then on
+     (Lean's `promote`, through the read's optional link). *)
+  let env = match List.assoc_opt name env with
+    | Some (Value t) when refine (Atoms [Undef]) = Atoms [] ->
+      let rec arms seen t = match declared_head declarations seen t with
+        | Atoms atoms -> List.concat_map (function
+            | Named (id,_) as atom when not (List.mem id seen) -> arms (id::seen) (Atoms [atom])
+            | a -> [a]) atoms
+        | _ -> [] in
+      let atoms = try arms [] t with Json.Error _ -> [] in
+      let names = function
+        | Shape {fields;calls=[];elements=None;indexes=[]} | Exact fields ->
+          List.exists (fun (f:Semantic.field) -> f.name = Name field) fields
+        | _ -> false in
+      let optional = function
+        | Shape {fields;_} | Exact fields ->
+          List.exists (fun (f:Semantic.field) -> f.name = Name field && f.optional) fields
+        | _ -> false in
+      if atoms <> [] && List.for_all names atoms && List.exists optional atoms
+      then refine_value env name (fun _ -> Atoms (List.map (present field) atoms))
+      else env
+    | _ -> env in
   match List.assoc_opt name env with
-  | Some (Value t) when single_record declarations t field ->
+  | Some (Value t) when record_field declarations t field ->
     let key = field_key name field in
     let current = match List.assoc_opt key env with
       | Some (Value c) -> Some c
       | _ -> (try Some (field_type declarations [] t (Name field)) with Json.Error _ -> None) in
     (match current with Some c -> fact env key (refine c) | None -> env)
   | _ -> env
-let rec branch_with ?(modules = fun _ -> None) declarations env cond truth =
-  let branch = branch_with ~modules declarations in
+let rec branch_with ?(modules = fun _ -> None) ?(claimed = fun _ -> None) declarations env cond truth =
+  let branch = branch_with ~modules ~claimed declarations in
   let refine_field = refine_field declarations in
   match cond.node with
   | Not e -> branch env e (not truth)
@@ -583,8 +640,8 @@ let rec branch_with ?(modules = fun _ -> None) declarations env cond truth =
   | Equality ((LooseEqual | LooseUnequal as op),{node=Literal (LNull | LUndefined);_},{node=Id name;_}) ->
     let equal = truth=(op=LooseEqual) in
     refine_value env name (fun t ->
-      if equal then union (restrict Nul true t) (restrict Undef true t)
-      else restrict Undef false (restrict Nul false t))
+      if equal then union (restrict ~declarations Nul true t) (restrict ~declarations Undef true t)
+      else restrict ~declarations Undef false (restrict ~declarations Nul false t))
   (* A comparison with a singleton, a literal or a name or field holding one,
      narrows the other operand where it is a name, or a field of a name's
      object, and that object's arms, on both outcomes. Where it holds, one
@@ -592,6 +649,18 @@ let rec branch_with ?(modules = fun _ -> None) declarations env cond truth =
      other to the values that may equal one of them. *)
   | Equality ((StrictEqual | StrictUnequal as op),l,r) ->
     let equal = truth=(op=StrictEqual) in
+    (* An immutable name, or a field of one: read again where Lean tests it
+       against each singleton, which nothing between has changed. *)
+    let immutable n = match List.assoc_opt n env with
+      | Some (Value _) -> true | Some (Storage _) -> false | None -> modules n <> None in
+    let reread (e:expr) = match e.node with
+      | Id n | Read ({node=Id n;_},_) -> immutable n
+      | _ -> false in
+    (* An operand evaluated once into a slot of its own, a call say: Lean
+       splits it there, against an immutable name. *)
+    let saved (e:expr) = match e.node with
+      | Literal _ | Id _ | Read ({node=Id _;_},_) -> false
+      | _ -> true in
     let values (e:expr) = Option.bind (match e.node with
       | Literal lit -> Some (literal_type lit)
       | Id n -> (match List.assoc_opt n env with Some b -> Some (binding_type b) | None -> modules n)
@@ -602,21 +671,29 @@ let rec branch_with ?(modules = fun _ -> None) declarations env cond truth =
          (* A module value's field, an enum member: its declared type. *)
          | None,None -> Option.bind (modules n) (fun t ->
              try Some (field_type declarations [] t (Name f)) with Json.Error _ -> None))
-      | _ -> None) (fun t -> match singleton_atom t,t with
-        | Some a,_ -> Some ((fun t -> restrict a equal t),true)
+      | _ -> claimed e.pos) (fun t -> match singleton_atom t,t with
+        | Some a,_ -> Some ((fun t -> restrict ~declarations a equal t),true)
         | None,Atoms (_::_ as atoms) when equal
             && List.for_all (fun a -> singleton_atom (Atoms [a]) <> None) atoms ->
-          Some ((fun t -> combine (List.map (fun a -> restrict a true t) atoms)),false)
+          Some ((fun t -> combine (List.map (fun a -> restrict ~declarations a true t) atoms)),false)
         | _ -> None) in
     (* What a field holds is known from a test against one singleton, whose
-       saved read Lean observes; several are tested one read at a time. *)
+       saved read Lean observes; against several, from Lean's test of each,
+       one read at a time, where both operands are read again there or the
+       other is saved and this one is an immutable name. *)
     let narrow env (operand:expr) other = match values other,operand.node with
       | None,_ -> env
+      (* Against a singleton, this operand is the one Lean tests: it learns
+         nothing of the other's several values. *)
+      | Some (_,false),_ when (match values operand with Some (_,true) -> true | _ -> false) -> env
+      | Some (_,false),Id name when not (immutable name && (reread other || saved other)) -> env
+      | Some (_,false),Read _ when not (reread operand && reread other) -> env
+      | Some (_,true),Read _ when saved other -> env
       | Some (slice,_),Id name -> refine_value env name slice
-      | Some (slice,single),Read ({node=Id name;_},key) ->
+      | Some (slice,_),Read ({node=Id name;_},key) ->
         let env = refine_value env name (fun t -> discriminate declarations t key slice) in
         (match key with
-         | Name field when single -> refine_field env name field slice
+         | Name field -> refine_field env name field slice
          | _ -> env)
       | Some _,_ -> env in
     narrow (narrow env l r) r l
@@ -711,8 +788,13 @@ let alternative_type (a:alternative) =
    the further signatures its uses offer it; the pass reports them as
    [requests], and [infer_function] runs a second pass with them. *)
 let infer_pass offered declarations module_functions (f:Source.fn) =
+  let entries = ref [] and expressions = ref [] and instantiations = ref [] in
+  (* A condition's operands are claimed before it is branched on: an operand
+     Lean evaluates once into a slot of its own holds what it is claimed at. *)
   let branch = branch_with declarations ~modules:(fun n ->
-    try Option.map Lazy.force (List.assoc_opt n module_functions) with Json.Error _ -> None) in
+    try Option.map Lazy.force (List.assoc_opt n module_functions) with Json.Error _ -> None)
+    ~claimed:(fun pos -> List.find_map (fun (x:expression) ->
+      if x.pos = pos then Some x.type_ else None) !expressions) in
   (* A parameter the body assigns is a cell holding its argument, at its
      annotation. *)
   let env0 = List.map (fun (n,t) ->
@@ -813,7 +895,6 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | Some b -> binding_type b
     | None -> (match List.assoc_opt n module_functions with
       | Some g -> Lazy.force g | None -> Json.fail ("unbound name " ^ n)) in
-  let entries = ref [] and expressions = ref [] and instantiations = ref [] in
   (* Object literals a spread copies, directly or as an arm of `&&`, `||`,
      `??` or a conditional: each is claimed with its exact keys, which is
      what tells the copy owns no other key. *)
@@ -859,10 +940,51 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       (* A field's contents are claimed where its object is still one record. *)
       let bindings = List.filter (fun (n,_) -> not (is_field n) ||
         (match List.assoc_opt (owner n) env with
-         | Some (Value t) -> single_record declarations t (field_of n)
+         | Some (Value t) -> record_field declarations t (field_of n)
          | _ -> false)) env in
       entries := {start;bindings} :: !entries
     | [] -> Json.fail "empty source span" in
+  (* A step that may write a cell it does not name: a call, or a write. The
+     cells are then known only by their contracts. Creating a closure runs
+     nothing. *)
+  let rec stirs (e:expr) = match e.node with
+    | Call _ | Invoke _ | New _ | Apply _ | Bind _ | Write _ | IndexWrite _ | Assign _
+    | Update _ | LogicalAssign _ | NullishAssign _ | ArrayAssign _ -> true
+    | Lambda _ -> false
+    | _ -> List.exists stirs (Source.children e) in
+  (* Where two arms meet, a cell holds what either left in it. *)
+  let join before left right =
+    List.filter_map (fun (n,b) -> match b,List.assoc_opt n left,List.assoc_opt n right with
+      | Storage (contract,_),Some (Storage (_,l)),Some (Storage (_,r)) -> Some (n,holding contract (union l r))
+      | _ when is_field n -> None
+      | _ -> Some (n,b)) before
+    (* A field's contents are known after both arms where each knows them. *)
+    @ List.filter_map (fun (n,b) -> match b,List.assoc_opt n right with
+      | Value l,Some (Value r) when is_field n && List.mem_assoc (owner n) before ->
+        Some (n,Value (union l r))
+      | _ -> None) left in
+  (* What is known after an expression ran, from what was known before: an
+     assignment leaves its cell holding the value it wrote, its claim; a
+     conditional, what either arm left; an operator, what its operands left,
+     in order; any other step that may write a cell it does not name (a call,
+     a write, a short circuit), each cell by its contract. The claims of the
+     expression's parts are already made. *)
+  let rec effects env (e:expr) = match e.node with
+    | Lambda _ | Literal _ | Id _ | DoneBody -> env
+    | Assign (n,rhs) ->
+      let env = effects env rhs in
+      let t = List.find_map (fun (x:expression) -> if x.pos = e.pos then Some x.type_ else None) !expressions in
+      (match List.assoc_opt n env,t with
+       | Some (Storage _),Some t -> assign env n t
+       | Some (Storage _),None -> forget ~only:(( = ) n) env
+       | _ -> env)
+    | Conditional (c,a,b) ->
+      let env = effects env c in
+      join env (effects (branch env c true) a) (effects (branch env c false) b)
+    | Arith _ | Equality _ | Not _ | Unary _ | Read _ | Index _ | Cast _ | TypeofTest _
+    | HasKey _ | Alloc _ | ArrayLiteral _ | Comma _ ->
+      List.fold_left effects env (Source.children e)
+    | _ -> if stirs e then forget env else env in
   (* The contract an assignment target is read and written at: a local's
      storage contract, or the type of the field or named index, whose read is
      also the target's claim. *)
@@ -1076,13 +1198,16 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
        | t -> field_type declarations [] t n)
     | Read (e,n) -> field_type declarations [] (expr env e) n
     | Index (e,key) -> let receiver=expr env e in let key=expr env key in index_type declarations [] receiver key
+    (* The right side runs after the receiver and the key: it sees what they
+       assigned. *)
     | IndexWrite (receiver,key,rhs) ->
       let t = expr env receiver in
       (match expr env key with
        | Atoms [StrLit k] -> refuse_growth declarations t (Name k)
        | _ -> ());
-      expr env rhs
-    | Write (receiver,field,rhs) -> refuse_growth declarations (expr env receiver) (Name field); expr env rhs
+      expr (effects (effects env receiver) key) rhs
+    | Write (receiver,field,rhs) ->
+      refuse_growth declarations (expr env receiver) (Name field); expr (effects env receiver) rhs
     | Assign (n,rhs) ->
       if not (List.mem_assoc n env) && List.mem_assoc n module_functions then
         unsupported ("assignment to module function " ^ n);
@@ -1699,15 +1824,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | Try (body,handler,finalizer) -> List.exists (leaves l)
       (body @ (match handler with Some (_,h) -> h | None -> []) @ Option.value finalizer ~default:[])
     | Declare _ | Destructure _ | Return _ | Effect _ | Throw _ | Break _ | Continue -> false in
-  (* A step that may write a cell it does not name: a call, or a write. The
-     cells are then known only by their contracts. Creating a closure runs
-     nothing. *)
-  let rec stirs (e:expr) = match e.node with
-    | Call _ | Invoke _ | New _ | Apply _ | Bind _ | Write _ | IndexWrite _ | Assign _
-    | Update _ | LogicalAssign _ | NullishAssign _ | ArrayAssign _ -> true
-    | Lambda _ -> false
-    | _ -> List.exists stirs (Source.children e) in
-  let after e env = if stirs e then forget env else env in
+  let after e env = effects env e in
   (* An assignment statement writes only the cell it names. *)
   let rec stirs_statement s = match s.statement with
     | Declare (_,bs) -> List.exists (fun (_,_,e) -> stirs e) bs
@@ -1729,17 +1846,6 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
   let havoc env body =
     if List.exists stirs_statement body then forget env
     else forget ~only:(fun n -> List.exists (assigns n) body) env in
-  (* Where two arms meet, a cell holds what either left in it. *)
-  let join before left right =
-    List.filter_map (fun (n,b) -> match b,List.assoc_opt n left,List.assoc_opt n right with
-      | Storage (contract,_),Some (Storage (_,l)),Some (Storage (_,r)) -> Some (n,holding contract (union l r))
-      | _ when is_field n -> None
-      | _ -> Some (n,b)) before
-    (* A field's contents are known after both arms where each knows them. *)
-    @ List.filter_map (fun (n,b) -> match b,List.assoc_opt n right with
-      | Value l,Some (Value r) when is_field n && List.mem_assoc (owner n) before ->
-        Some (n,Value (union l r))
-      | _ -> None) left in
   (* What continues past a point from an arm: the bindings in scope before
      it, and the fields of their objects the arm knows. *)
   let continuing before env = List.filter (fun (n,_) ->

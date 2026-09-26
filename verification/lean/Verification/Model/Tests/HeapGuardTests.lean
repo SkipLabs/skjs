@@ -53,8 +53,8 @@ theorem safe (n W h ρ) (he : EnvOk G [[1,2]] ρ n W) (hw : WorldAdm W) (hh : He
 #guard (ordinaryOutput readResult).links == []
 #guard !(HeapKnowledge.check (observeBoolean (ordinaryOutput readResult) 1 true) yes (some [2]))
 -- Writes discard the old relation even when the immutable value remains true.
-#guard (writeOutput readResult 1 valueField [.fls]).links == []
-#guard !(HeapKnowledge.check (observeBoolean (writeOutput readResult 1 valueField [.fls]) 1 true) yes (some [2]))
+#guard (writeOutput readResult 1 valueField (some [.fls])).links == []
+#guard !(HeapKnowledge.check (observeBoolean (writeOutput readResult 1 valueField (some [.fls])) 1 true) yes (some [2]))
 -- Without a checked read link, the broad cell fact cannot justify either branch.
 #guard !(HeapKnowledge.check (observeBoolean {copied with links := []} 0 true) yes (some [2]))
 #guard !(checkEntry G [1,2] program (certificate.set 3 {certificate[3] with knowledge := no}) 0 [[1,2]])

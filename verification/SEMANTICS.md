@@ -676,11 +676,20 @@ x\mapsto R&\equiv
   &&\text{the cell }x\text{ names satisfies }R\\
 x\mapsto y&\equiv
   \exists\ell.\;\rho(x)=\ell\land h(\ell)=\rho(y),
-  &&\text{that cell holds the value of }y
+  &&\text{that cell holds the value of }y\\
+x.f\mapsto^{?}y&\equiv
+  \bigl(\exists\ell.\;\rho(x).f=\ell\land h(\ell)=\rho(y)\bigr)\lor
+  \bigl(f\notin\operatorname{keys}\rho(x)\land\rho(y)=\mathsf{undefined}\bigr),
+  &&\text{a read of }f\text{ that may have found no key gave }y
 \end{aligned}
 $$
 
 Two relations, each taking a finite primitive-predicate disjunction or a variable on the right.
+The last form is the read link of a read through an optional key
+(`HeapLinks.ReadGave`, the link's `optional` flag): an object of a record
+lacking one of its optional keys has no prototype, so its read gave
+`undefined` there. An observation of $y$ ruling `undefined` out
+therefore says the key is present, and what it holds.
 The [predicate vocabulary](POSITIVE-TYPES.md#state-assertion-grammar) includes
 numeric singletons and the whole number family.
 The $=$ atoms mention only $\rho$; the $\mapsto$ atoms mention $h$ as well, and

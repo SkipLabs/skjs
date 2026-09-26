@@ -28,7 +28,7 @@ private def writeProof : Evidence Nat := .node ⟨[[1],[4],[2]],.write (.var 1) 
   [leaf [[1],[4],[2]] (.var 1) [4] .var, widen (leaf [[1],[4],[2]] (.var 0) [1] .var)]
 private def allocated : Knowledge := allocOutput ⟨[],[],[]⟩ [(valueField, [.fls])]
 private def beforeWrite := pureOutput allocated .tru
-private def written := writeOutput beforeWrite 1 valueField [.tru]
+private def written := writeOutput beforeWrite 1 valueField (some [.tru])
 private def beforeRead : Knowledge := ⟨[⟨0,[.tru],valueField⟩],[],[]⟩
 private def readResult := readOutput beforeRead 0 valueField [.tru]
 
@@ -39,7 +39,7 @@ def certificate : ControlFlow.Certificate Nat :=
    {expression := leaf [[4],[2]] .tru [1] .truLit, edges := [[.subset,.subset,.subset]],
     knowledge := allocated, effect := some (.pure (leaf [[4],[2]] .tru [1] .truLit)), output := beforeWrite},
    {expression := writeProof, edges := [[.subset]], knowledge := beforeWrite,
-    effect := some (.written 1 0 [.tru] writeProof), output := written},
+    effect := some (.written 1 0 (some [.tru]) writeProof), output := written},
    {expression := leaf [[4]] (.read (.var 0)) [1,2] .read, edges := [[.subset,.subset]],
     knowledge := beforeRead, effect := some (.observedRead 0 [.tru]), output := readResult},
    {expression := leaf [[1,2],[4]] (.var 0) [1] .var, edges := [], knowledge := readResult,

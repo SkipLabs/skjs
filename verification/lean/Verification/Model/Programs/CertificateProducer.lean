@@ -898,7 +898,7 @@ observation comes from graph dispatch, never from supplied point annotations. -/
 def edge [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     (claims : List (PointClaim ι)) (Γ : List (Ty ι)) (target : Target)
     (observed : Option (Nat × BranchRefinement.Observation) := none)
-    (fields : List (Nat × PropKey) := []) :
+    (fields : List (Nat × PropKey) := []) (optionals : List (Nat × PropKey) := []) :
     Option (EdgeEvidence ι) := do
   let c ← claims[target.label]?
   if let some (tested, o) := observed then
@@ -919,14 +919,22 @@ def edge [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           if BranchRefinement.booleanMember G B q then pure .subset else failure
         | .tag t q =>
           if BranchRefinement.tagMember G B t q then pure .subset
-          else subtype G pool (BranchRefinement.tagSlice G A t q) B
-      else (subtype G pool A B).orElse fun _ => match o with
+          else (subtype G pool (BranchRefinement.tagSlice G A t q) B).orElse fun _ =>
+            -- A passed `in` test: the key is present from then on.
+            if BranchRefinement.presentKey t q (BranchRefinement.promotes G (BranchRefinement.tagSlice G A t q) B)
+            then some .subset else none
+      else (subtype G pool A B).orElse (fun _ => match o with
         -- An object the tested value was read from keeps the labels whose
         -- field admits the observation.
         | .tag t q => fields.findSome? fun (k, f) =>
             if k == slot target.mapping i then subtype G pool (BranchRefinement.fieldSlice G A f t q) B
             else none
-        | .boolean _ => none
+        | .boolean _ => none) |>.orElse fun _ =>
+        -- One read through an optional key, where the observation rules out
+        -- the `undefined` an absent key reads: the key is present.
+        if BranchRefinement.excludesUndef o && optionals.any (fun (k, f) =>
+            k == slot target.mapping i && BranchRefinement.promotes G A B f)
+        then some .subset else none
     | none => subtype G pool A B
 
 
@@ -951,13 +959,13 @@ def expressionEffect [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     match j.term with
     | .readAt fld (.var i) =>
       if let some Ref := j.context[i]? then
-        if HeapExpressionRules.fieldOperand (expand G Ref) fld then
+        if HeapExpressionRules.fieldOperand (expand G Ref) fld ||
+            HeapExpressionRules.optionalOperand (expand G Ref) fld then
           choices := choices ++ [.typedRead i e]
     | .makeAt .. =>
       choices := choices ++ [.allocated e]
     | .writeAt _ (.var i) (.var v) =>
-      if let some R := HeapExpressionRules.valuesAt G j.context k v then
-        choices := choices ++ [.written i v R e]
+      choices := choices ++ [.written i v (HeapExpressionRules.valuesAt G j.context k v) e]
     | _ => pure ()
     choices := choices ++ [.created e,.pure e,.ordinary e]
   for effect in choices do
@@ -991,7 +999,8 @@ private def produceNode [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty �
   let target := fun Γ t index => match edge G pool claims Γ t with
     | some p => Except.ok p
     | none => Except.error (Failure.edge l t.label index)
-  let branchTarget := fun Γ o t index => match edge G pool claims Γ t (some (0, o)) (readFields out 0) with
+  let branchTarget := fun Γ o t index => match edge G pool claims Γ t (some (0, o)) (readFields out 0)
+      (optionalFields out 0) with
     | some p => Except.ok p
     | none => Except.error (Failure.edge l t.label index)
   let ps ← (match node.continuation with

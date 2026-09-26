@@ -65,8 +65,9 @@ export interface HeapKnowledge {
   cells: HeapFact[]; values: HeapFact[];
   /** A read link (`alias` false), a value equality (`alias` true), or, with
    * `distinct`, two fields at different locations: `cell.field` and
-   * `value.other`. */
-  links: {cell: number; value: number; alias: boolean; field: string; distinct: boolean; other: string}[];
+   * `value.other`. A read link through an `optional` key also covers the
+   * object lacking the key, where the read gave `undefined`. */
+  links: {cell: number; value: number; alias: boolean; field: string; distinct: boolean; other: string; optional: boolean}[];
 }
 
 /** A node of the certificate graph, as the failure reports it. */
@@ -383,8 +384,9 @@ function knowledge(v: unknown) {
   }
   if (!Array.isArray(k.links)) throw Error("invalid heap links");
   for (const link of k.links) {
-    const l = record(link,["cell","value","alias","field","distinct","other"]); nat(l.cell); nat(l.value);
+    const l = record(link,["cell","value","alias","field","distinct","other","optional"]); nat(l.cell); nat(l.value);
     if (typeof l.distinct !== "boolean") throw Error("invalid distinct flag");
+    if (typeof l.optional !== "boolean") throw Error("invalid optional flag");
     if (typeof l.other !== "string") throw Error("invalid link field");
     if (typeof l.field !== "string") throw Error("invalid heap link field");
     if (typeof l.alias !== "boolean") throw Error("invalid alias");

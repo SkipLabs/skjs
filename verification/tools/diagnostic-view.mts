@@ -276,7 +276,7 @@ function knowledgeRows(
         ? "." + g.other + " is a different location from " + of(g.cell) + "." + g.field
         : g.alias
           ? "is the same value as " + of(g.cell)
-          : "is a read of " + of(g.cell) + "." + g.field,
+          : "is a read of " + of(g.cell) + "." + g.field + (g.optional ? ", or undefined where the key is absent" : ""),
     });
   return rows;
 }

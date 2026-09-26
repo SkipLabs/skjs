@@ -1722,15 +1722,25 @@ Every statement entry is an exact local interface: its supplied ordinary types
 and current observations are the whole starting context. Extra derived heap/value
 facts and links are forgotten there, even on single-predecessor paths, except
 the distinct-location links the extractor states at every entry: a private
-cell is a fresh allocation, so its location differs from every field of every
-record-typed binding in scope, and the entry restates that timeless fact. The
-consumer enforces this independently of the producer. Expression-result claims
+cell is a fresh allocation, so its location differs from every field that each
+record of an older binding named when the cell was allocated (whatever a later
+test narrowed the binding to), and from every field of a later cell or of a
+constant bound to an object literal allocated after it; the entry restates
+that timeless fact. An object a later call returned may be any object, so no
+link to it is stated. The consumer enforces this independently of the
+producer. Expression-result claims
 are checked local obligations within a statement, where effect rules can derive
 postconditions. Loop heads use supplied interfaces; every backedge must establish
 them. No loop invariant is inferred.
 
 A source ternary branches in the graph like an `if` statement, so an effect in
-its condition or an arm is a node with its own knowledge. Element access reads
+its condition or an arm is a node with its own knowledge. Each arm starts in
+the condition's refinement of its context, and an immutable binding the arm
+reads before any branch of its own holds what the producer claims that read
+at: the edge from the condition checks it as it checks a statement entry's
+claims (a tag slice, a field slice, a present key). Where paths meet at a
+point that states no requirement, what each knows of one location is joined
+(`HeapKnowledge.meet`); every edge is still checked. Element access reads
 or writes the field the key's claimed string singleton names, after the
 receiver and before any right side, and the key keeps its own obligation.
 On a receiver claimed only at records (no array store, no primitive), a
@@ -1739,15 +1749,21 @@ number singleton key names the field its `ToString` spells, since
 `o["2.5"]`, and the two zeros spell `0` (`keyField`, with `numberToString`,
 JavaScript's `Number::toString`). A key of several singletons names several
 fields and is refused.
-Writes establish new contents for recorded aliases, keep facts about cells a
-distinct-location link separates from the written one, and discard other heap
-facts; two parameters carry no such link, so a write through one forgets what
-was known about the other. Ordinary calls discard heap observations and read
-links. Immutable values and
+Writes establish new contents for recorded aliases where the value written is a
+known primitive, keep facts about cells a distinct-location link separates from
+the written one whatever is written, and discard other heap facts; two
+parameters carry no such link, so a write through one forgets what was known
+about the other. Ordinary calls discard heap observations and read
+links: a callee may write any location its operands reach, a cell no closure
+captures included only if some value reaches it, and the model does not state
+which locations a value reaches (its record types admit objects with fields
+at any location, so a fresh cell cannot be shown unreachable from them). Immutable values and
 slot equalities survive. Boolean guards refine current cells through checked
 read links, including links carried through receiver temporaries; a strict
 comparison does so when the other operand's claimed type is a singleton and
-the operand is effect-free, a literal, a name or a field read, never a call. Ordinary
+the operand is effect-free, a literal, a name or a field read, never a call,
+or is a union of singletons tested one at a time
+([strict equality](#strict-equality-and-tag-narrowing)). Ordinary
 closure proofs require a supplied observation to follow uniformly from the
 storage invariant; they cannot retain temporary facts from closure creation.
 [Program typing](PROGRAM-TYPING.md#source-observation-checkpoints) owns the precise
@@ -4772,8 +4788,8 @@ allocation and the model has no key addition. A record that does not name the
 key does not cover an optional field, since it may hold the key at any type
 (SKJS agrees; TypeScript does not check this). An optional method,
 `return?(...)`, is an optional field. An `in` test is in the fragment
-([Guards](#guards)); presence narrowing, an optional field read as present
-after a passed test, is not yet.
+([Guards](#guards)); a key a passed test found present is a field of the
+object's records from then on ([a key found present](#strict-equality-and-tag-narrowing)).
 
 **Readonly optional fields.** `readonly k?: T` is a view that may be absent
 (`SkipService.externalServices`). It is not a second mechanism: an optional
@@ -4947,13 +4963,15 @@ that it did (`Observation.holds`). A passed test keeps an open record that does 
 it may own it at any type. TypeScript narrows `{ a: number } | { b: string }`
 to its first arm there, which is unsound: `{ b: "", a: "x" }` is a
 `{ b: string }` (`invalid-in-open.ts`; SKJS refuses the read too).
-*Presence narrowing* is not yet taken: after `"f" in x` with `x: { f?: number }`
-the field is present, so it holds a `number`, but the refinement filters labels
-and makes no new clause; reading the optional field as required needs a
-clause-level promotion (an optional key the object owns is a required field
-of the same contract, `optT` against `recT`), which is future work
-(`refineLiteralInRecordOpt`, `inNarrowsToBareT`, 4 units). `Closed<T>` is read
-as `T` by the environment, so its absent keys prove nothing.
+A passed test also promotes: after `"f" in x` with `x: { f?: number }` the key
+is the object's own, since an object of a record lacking one of its optional
+keys holds no prototype that could have answered (`optT`), and an object keeps
+its keys, so each record of `x` holds with `f` a field of the same contract
+(`promote`: `optT` of a present key against `recT`, or a view for a readonly
+key), and `x.f` reads a `number`
+([rule](PROGRAM-TYPING.md#refinement-under-an-observed-outcome), `present-key`).
+`Closed<T>` is read as `T` by the environment, so its absent keys prove
+nothing.
 
 **`instanceof`.** `x instanceof C` looks for `C.prototype` along `x`'s
 prototype chain, unless `C` has a `[Symbol.hasInstance]`, which it then
@@ -5368,23 +5386,32 @@ which computes a Boolean and narrows nothing.
   an object value. Two operands that may both be objects without a field (a
   function, a record of optional fields only, any value of `unknown`) carry no
   identity here and are refused with that reason: two closures with no field
-  would be the same value though JavaScript tells them apart.
+  would be the same value though JavaScript tells them apart. It narrows
+  nothing: that two slots hold one object is a slot equality, which knowledge
+  carries within a statement, and a statement entry states no equality, so
+  after `if (x.child !== narrow) return 0;` a later read of `x.child` is not
+  `narrow`'s type (TypeScript refuses that return too).
 - **Two unions of singletons narrow as their tag tests.** A condition
-  `x === y`, with `x` an immutable name all of whose labels are singletons
-  and `y` a name or a field of a name, both read without effect, is the
-  disjunction over `x`'s singletons $c$ of $x\equiv c\land y\equiv c$: the
-  graph runs the comparison as the source has it (its Boolean dropped, its
-  obligations kept), then dispatches by those tag tests, re-reading the
-  operands, which nothing between has written. Each edge refines by the one
-  mechanism of tag observations, so both operands (and `y`'s object's arms,
-  for a field) narrow where they are equal. The dispatch is exact: `x` holds
-  one of its claimed singletons (its entry claim guarantees it), strict
-  equality is transitive where it holds, and a NaN, equal to nothing, fails
-  every test and takes the unequal edge. `!==` between two such unions
-  narrows neither (either may still be anything it was), and an operand that
-  is a call, or a field compared with a field, keeps the plain operator
-  (what a field held after a test against several singletons is not observed
-  as one read).
+  `x === y`, with `x` claimed at a union of singletons, is the disjunction
+  over `x`'s singletons $c$ of $x\equiv c\land y\equiv c$. Where both
+  operands are read without effect (a name, or a field of a name; `x` a name
+  where it can be, else a field), the graph runs the comparison as the source
+  has it (its Boolean dropped, its obligations kept), then dispatches by those
+  tag tests, re-reading the operands, which nothing between has written; a
+  field read is saved and its copy tested, as a guard's saved read is, so the
+  copy states what the value is and its link what the field holds. Where `x`
+  is evaluated with effects (a call) and `y` is an immutable name, `x` is
+  evaluated once into a slot of its own and split there, the comparison's own
+  claim a supplemental obligation, and `y`, which no effect changes, is read
+  where it is (`savedSplit`). Each edge refines by the one mechanism of tag
+  observations, so both operands (and the objects' arms, for fields) narrow
+  where they are equal, and each path states what a field it tested holds:
+  where several paths meet at the true edge's target, each covers the
+  target's claim. The dispatch is exact: `x` holds one of its claimed
+  singletons (each read of it is typed at that claim), strict equality is
+  transitive where it holds, and a NaN, equal to nothing, fails every test
+  and takes the unequal edge. `!==` between two such unions narrows neither
+  (either may still be anything it was).
 - **An observation the tested type rules out** (a Boolean `x: true` found
   false, a tag no label answers) makes its edge never taken: the edge
   constrains nothing (`impossible`), so the `else` of `if (x)` may claim
@@ -5406,9 +5433,27 @@ which computes a Boolean and narrows nothing.
   (`obj.val !== null`, then `return obj.val`): the producer claims it at the
   entries that follow, as the field's `current` assertion, until a step may
   write it (a write or a call forgets it), and Lean checks it on every edge
-  ([current-content assertions](#current-content-assertions)). Only a plain
-  record's invariant field or view carries one: an optional field has no
-  location to assert about.
+  ([current-content assertions](#current-content-assertions)). A record, or a
+  union of records each naming the field, carries one: the fact names the
+  location the field is at, whichever record the object is. A family found
+  equal to one of its values is that value (`x.f === 1` with `f: number`
+  gives `x.f: 1`; equal to a zero it stays `number`, since the zeros are two
+  values, and a slot is narrowed alike, `x === 1` giving `x: 1`).
+- **A key found present.** A key some record of the object names only as
+  optional may be absent, and a fact names a location. A read that found it
+  says so: `"f" in x` passed, or a read of `x.f` whose value is observed not
+  to be `undefined` (`x.f !== undefined`, `if (x.f)` where `f`'s contract
+  excludes `undefined`), since a record lacking an optional key has no
+  prototype and reads it as `undefined`. The object keeps the key from its
+  allocation on, so its slot is promoted, each record with the key present
+  (`promote`: a writable optional key an invariant field, a readonly one a
+  view), and it stays so across writes and calls, as TypeScript narrows `x`.
+  A read through the key records an optional read link, whose observation
+  also states what the field holds ([rules](PROGRAM-TYPING.md#refinement-under-an-observed-outcome)).
+  `x.f === undefined` on such a key leaves presence open (a present key may
+  not hold `undefined`, but an absent one reads it), so no fact follows:
+  knowledge of an absent key would need a record clause whose bound excludes
+  the key and a read rule for it (`field-refinement.ts#testOptionalFieldEqualsUndefined`).
 - **`switch` case narrowing** falls out: each case is a `===` test of the
   discriminant, a `break` leaves with what its path knew, and the producer
   joins every `break` of a label (and the completion of the block's body) at

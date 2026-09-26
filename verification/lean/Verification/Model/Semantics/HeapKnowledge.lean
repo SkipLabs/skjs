@@ -34,14 +34,21 @@ theorem alloc_frames {k ρ h} (vs : List Val) (hk : Holds k ρ h) : Holds k ρ (
   obtain ⟨flds,c,l,u,he,hfd,hu,a,ha,hv⟩ := hk.1 f hf
   exact ⟨flds,c,l,u,he,hfd,HeapObservations.alloc_frames vs hu,a,ha,hv⟩
 
-/-- What every one of several states establishes: the first's assertions that
-appear verbatim in all the others. Used by the producer at a merge that is not
-a cut, where no requirement is stated; every edge is still checked. -/
+/-- What every one of several states establishes: a fact about a slot and
+field each of them states, holding what any of them says it holds; the first's
+links that appear verbatim in all the others. Used by the producer at a merge
+that is not a cut, where no requirement is stated; every edge is still
+checked, and each state's fact covers the union. -/
 def meet : List Knowledge → Knowledge
   | [] => ⟨[],[],[]⟩
   | k :: ks =>
-    ⟨k.cells.filter (fun f => ks.all (·.cells.contains f)),
-     k.values.filter (fun f => ks.all (·.values.contains f)),
+    let joined := fun (pick : Knowledge → Facts) =>
+      (pick k).filterMap fun f =>
+        let others := ks.map fun o => (pick o).filter fun g => g.slot == f.slot && g.field == f.field
+        if others.all (!·.isEmpty) then
+          some { f with contents := (f.contents ++ others.flatten.flatMap (·.contents)).eraseDups }
+        else none
+    ⟨(joined (·.cells)).eraseDups, (joined (·.values)).eraseDups,
      k.links.filter (fun g => ks.all (·.links.contains g))⟩
 
 def check (a b : Knowledge) (m : PointClaims.Mapping) : Bool :=
@@ -141,35 +148,109 @@ theorem project_checked (k : Knowledge) (m count) : check k (project k m count) 
   simp only [beq_iff_eq] at hc hv
   simp [hc.2,hv.2]
 
+/-- The facts an observed value `R` gives about the fields it was read from:
+one per current read link ending at `slot`. A read through an optional key
+also covers the object lacking the key, where it gave `undefined`; it tells
+what the field holds only where `R` rules `undefined` out, and then that the
+key is present. -/
+def linkFacts (k : Knowledge) (slot : Nat) (R : List Atom) : Facts :=
+  (k.links.filter (fun g => (!g.alias && !g.distinct) && g.value == slot &&
+    (!g.optional || !R.contains .undef))).map (fun g => ⟨g.cell,R,g.field⟩)
+
+theorem holds_undef {a : Atom} (h : a.holds .undef) : a = .undef := by
+  cases a <;> simp_all [Atom.holds]
+
+theorem linkFacts_holds {k slot R ρ h} (hk : Holds k ρ h) (hv : ∃ a ∈ R, a.holds (ρ slot)) :
+    HeapFacts.Holds (linkFacts k slot R) ρ h := by
+  intro f hf
+  obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
+  have hg := List.mem_filter.mp hg
+  have hg2 := hg.2
+  simp only [Bool.and_eq_true,Bool.not_eq_true',beq_iff_eq,Bool.or_eq_true] at hg2
+  obtain ⟨a,ha,hav⟩ := hv
+  have hl := hk.2.2 g hg.1
+  simp only [hg2.1.1.1,hg2.1.1.2,Bool.false_eq_true,ite_false] at hl
+  cases ho : g.optional
+  · simp only [ho,Bool.false_eq_true,ite_false] at hl
+    obtain ⟨flds,c,l,hl,hfd,hh⟩ := hl
+    exact ⟨flds,c,l,ρ g.value,hl,hfd,hh,a,ha,by simpa [hg2.1.2] using hav⟩
+  · simp only [ho,ite_true] at hl
+    obtain ⟨flds,c,hl,hr⟩ := hl
+    have hnu : R.contains .undef = false := by
+      rcases hg2.2 with h | h
+      · simp [ho] at h
+      · simpa using h
+    unfold HeapLinks.ReadGave at hr
+    cases hfd : flds.lookup g.field with
+    | none =>
+      rw [hfd] at hr
+      have : a = .undef := holds_undef (by rw [← hr, hg2.1.2]; exact hav)
+      subst this
+      simp at hnu
+      exact absurd ha hnu
+    | some l =>
+      rw [hfd] at hr
+      exact ⟨flds,c,l,ρ g.value,hl,hfd,hr,a,ha,by simpa [hg2.1.2] using hav⟩
+
 /-- An observed Boolean outcome refines cells only through current read links.
 The ordinary value fact is useful even when no cell link exists. -/
 def observeBoolean (k : Knowledge) (slot : Nat) (q : Bool) : Knowledge :=
   let R := [if q then HeapFacts.Atom.tru else .fls]
-  ⟨(k.links.filter (fun g => (!g.alias && !g.distinct) && g.value == slot)).map
-      (fun g => ⟨g.cell,R,g.field⟩) ++ k.cells,
-    ⟨slot,R,valueField⟩ :: k.values,k.links⟩
+  ⟨linkFacts k slot R ++ k.cells,⟨slot,R,valueField⟩ :: k.values,k.links⟩
 
 theorem observeBoolean_holds {k slot q ρ h} (hk : Holds k ρ h)
     (hq : ρ slot = if q then .tru else .fls) : Holds (observeBoolean k slot q) ρ h := by
+  have hv : ∃ a ∈ [if q then HeapFacts.Atom.tru else .fls], a.holds (ρ slot) :=
+    ⟨(if q then .tru else .fls), by simp, by cases q <;> simpa [HeapFacts.Atom.holds] using hq⟩
   refine ⟨?_,?_,hk.2.2⟩
   · intro f hf
     rcases List.mem_append.mp hf with hf | hf
-    · obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
-      have hg := List.mem_filter.mp hg
-      have hg2 := hg.2
-      simp only [Bool.and_eq_true,Bool.not_eq_true',beq_iff_eq] at hg2
-      have hs := hg2.2
-      obtain ⟨flds,c,l,hl,hfd,hh⟩ := (show ∃ flds c l, ρ g.cell = .objAt flds c ∧
-          flds.lookup g.field = some l ∧ h[l]? = some (ρ g.value) from
-        by simpa [hg2.1.1,hg2.1.2] using hk.2.2 g hg.1)
-      refine ⟨flds,c,l,ρ g.value,hl,hfd,hh,(if q then .tru else .fls),by simp,?_⟩
-      cases q <;> simpa [hs,HeapFacts.Atom.holds] using hq
+    · exact linkFacts_holds hk hv f hf
     · exact hk.1 f hf
   · intro f hf
     rcases List.mem_cons.mp hf with rfl | hf
-    · refine ⟨(if q then .tru else .fls),by simp,?_⟩
-      cases q <;> simpa [HeapFacts.Atom.holds] using hq
+    · exact hv
     · exact hk.2.1 f hf
+
+/-- What of a predicate remains where a tag answered `q`: nothing where the
+predicate's values all answer the other way; where the tag is equality with
+one number or string and holds of a value of its family, that value, a
+singleton (equality with a zero holds of both zeros, which stay the family);
+the predicate otherwise. -/
+def observeAtom (tag : Tag) (q : Bool) (a : Atom) : List Atom :=
+  if tagClause tag (a.clause (α := Ty Nat)) == some (!q) then [] else
+  match tag, q, a with
+  | .numEq b, true, .num => if b &&& 0x7fffffffffffffff == 0 then [.num] else [.numLit b]
+  | .strEq t, true, .str => [.strLit t]
+  | _, _, a => [a]
+
+theorem observeAtom_holds {tag : Tag} {q : Bool} {a : Atom} {v : Tm}
+    (hv : a.holds v) (hq : tagHolds tag v = q) : ∃ a' ∈ observeAtom tag q a, a'.holds v := by
+  unfold observeAtom
+  split
+  · rename_i hbad
+    have hanswer := tagClause_sound (S := fun (_ : Ty Nat) => nulT) (P := fun _ _ _ _ => False)
+      (n := 0) (W := ofList []) (beq_iff_eq.mp hbad) (Atom.sem.mpr hv)
+    rw [hq] at hanswer
+    cases q <;> contradiction
+  · split
+    · rename_i b _
+      split
+      · exact ⟨.num, by simp, hv⟩
+      · rename_i hb
+        obtain ⟨bits, rfl⟩ := hv
+        refine ⟨.numLit b, by simp, ?_⟩
+        simp only [tagHolds, numberEqual, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hq
+        simp only [Atom.holds]
+        rcases hq.2 with h | h
+        · rw [h]
+        · exact absurd (beq_iff_eq.mpr h.2) hb
+    · rename_i t _
+      obtain ⟨s', rfl⟩ := hv
+      refine ⟨.strLit t, by simp, ?_⟩
+      simp only [tagHolds, beq_iff_eq] at hq
+      simp [Atom.holds, hq]
+    · exact ⟨a, by simp, hv⟩
 
 /-- A tag narrows a saved primitive predicate, and its still-live read links transfer
 that observation to the heap. No link means no assertion about a mutable cell. -/
@@ -177,10 +258,8 @@ def observeTag (k : Knowledge) (slot : Nat) (tag : Tag) (q : Bool) : Knowledge :
   match k.values.find? (fun f => f.slot == slot) with
   | none => k
   | some f =>
-    let R := f.contents.filter (fun a => tagClause tag (a.clause (α := Ty Nat)) != some (!q))
-    ⟨(k.links.filter (fun g => (!g.alias && !g.distinct) && g.value == slot)).map
-        (fun g => ⟨g.cell,R,g.field⟩) ++ k.cells,
-      ⟨slot,R,valueField⟩ :: k.values,k.links⟩
+    let R := f.contents.flatMap (observeAtom tag q)
+    ⟨linkFacts k slot R ++ k.cells,⟨slot,R,valueField⟩ :: k.values,k.links⟩
 
 /-- A primitive reads no prototype. -/
 theorem atom_protoFree {a : Atom} {v : Tm} (h : a.holds v) (t : Tag) : protoFree t v = true := by
@@ -202,31 +281,17 @@ theorem observeTag_holds {k slot tag q ρ h} (hk : Holds k ρ h)
     -- A primitive reads no prototype.
     have hq : tagHolds tag (ρ slot) = q := hq'.resolve_right (by
       rw [atom_protoFree hv tag]; simp)
-    have hmem : a ∈ f.contents.filter (fun a => tagClause tag (a.clause (α := Ty Nat)) != some (!q)) := by
-      apply List.mem_filter.mpr
-      refine ⟨ha,?_⟩
-      simp only [bne_iff_ne]
-      intro hbad
-      have hanswer := tagClause_sound (S := fun (_ : Ty Nat) => nulT) (P := fun _ _ _ _ => False)
-        (n := 0) (W := ofList []) hbad (Atom.sem.mpr hv)
-      rw [hq] at hanswer
-      cases q <;> contradiction
+    obtain ⟨a',ha',hv'⟩ := observeAtom_holds hv hq
+    have hR : ∃ b ∈ f.contents.flatMap (observeAtom tag q), b.holds (ρ slot) :=
+      ⟨a', List.mem_flatMap.mpr ⟨a,ha,ha'⟩, hv'⟩
     refine ⟨?_,?_,hk.2.2⟩
     · intro f' hf'
       rcases List.mem_append.mp hf' with hf' | hf'
-      · obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf'
-        have hg := List.mem_filter.mp hg
-        have hg2 := hg.2
-        simp only [Bool.and_eq_true,Bool.not_eq_true',beq_iff_eq] at hg2
-        obtain ⟨flds,c,l,hl,hfd,hh⟩ :=
-          (show ∃ flds c l, ρ g.cell = .objAt flds c ∧
-            flds.lookup g.field = some l ∧ h[l]? = some (ρ g.value) from
-            by simpa [hg2.1.1,hg2.1.2] using hk.2.2 g hg.1)
-        exact ⟨flds,c,l,ρ g.value,hl,hfd,hh,a,hmem,by simpa [hg2.2] using hv⟩
+      · exact linkFacts_holds hk hR f' hf'
       · exact hk.1 f' hf'
     · intro f' hf'
       rcases List.mem_cons.mp hf' with rfl | hf'
-      · exact ⟨a,hmem,hv⟩
+      · exact hR
       · exact hk.2.1 f' hf'
 
 def observe (k : Knowledge) (slot : Nat) : BranchRefinement.Observation → Knowledge

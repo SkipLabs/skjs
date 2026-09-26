@@ -15,7 +15,7 @@ def copySlots (i j : Nat) : List Nat := if j = i then [0,j+1] else [j+1]
 
 def copy (k : Knowledge) (i : Nat) : Knowledge :=
   ⟨copyFacts k.cells i,copyFacts k.values i,
-    ⟨0,i+1,true,valueField,false,valueField⟩ :: HeapLinks.pull k.links (copySlots i)⟩
+    ⟨0,i+1,true,valueField,false,valueField,false⟩ :: HeapLinks.pull k.links (copySlots i)⟩
 
 theorem copy_holds {k i ρ h} (hk : HeapKnowledge.Holds k ρ h) :
     HeapKnowledge.Holds (copy k i) (push (ρ i) ρ) h := by
@@ -100,9 +100,10 @@ theorem result_holds {k R ρ h v} (hk : HeapKnowledge.Holds k (push v ρ) h)
 
 /-- An ordinary typed read preserves the heap and records which cell its result
 came from. This does not claim the cell had any particular contents beforehand. -/
-def readFrame (k : Knowledge) (i : Nat) (fld : PropKey) : Knowledge :=
+def readFrame (k : Knowledge) (i : Nat) (fld : PropKey) (optional : Bool := false) : Knowledge :=
   let out := HeapKnowledge.shift k
-  {out with links := (HeapLinks.aliases k.links i).map (fun j => ⟨j+1,0,false,fld,false,valueField⟩) ++ out.links}
+  let fresh := (HeapLinks.aliases k.links i).map fun j => (⟨j+1,0,false,fld,false,valueField,optional⟩ : HeapLinks.Link)
+  {out with links := fresh ++ out.links}
 
 /-- Reading uses a current-cell fact; its result is also an immutable value fact.
 This latter fact is what permits a subsequent result-contract check to retain
@@ -237,6 +238,93 @@ theorem typedRead_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i fld Ref A 
       exact ⟨flds,code,l,(HeapLinks.aliases_eq hk.2.2 hj).trans hl,hfd,hv⟩
     · exact hout.2.2 link hm
 
+/-- Whether every alternative is a plain record naming the field `fld`,
+required or optional: a read of it is then of a location of the object, or,
+where an optional key is absent, `undefined`, since such an object has no
+prototype. -/
+def optionalOperand (cs : List (PositiveNormalization.Clause α)) (fld : PropKey) : Bool :=
+  !cs.isEmpty && cs.all fun c => match c with
+    | .refs a _ _ os _ _ => a.any (fun p => decide (p.1 = fld)) || os.any (fun o => decide (o.key = fld))
+    | _ => false
+
+/-- What such a read finds: the object, and, where it has the key, a
+location whose contract admits only values, or else no prototype. -/
+theorem optionalOperand_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
+    (hr : optionalOperand (expand G Ref) fld = true) (hv : meaning G Ref (n+1) W v) :
+    ∃ flds, v = .objAt flds .absent ∧
+      (∀ l, flds.lookup fld = some l → ∃ c : Ctr (n+1), lookup W l = some c ∧
+        ∀ (W' : WorldT 0) (u : Val), c 0 (by omega) W' u → isVal u = true) ∧
+      (flds.lookup fld = none → flds.lookup CallArguments.protoField = none) := by
+  simp only [optionalOperand, Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
+    List.all_eq_true] at hr
+  have hp : G.plainTy Ref = true := by
+    obtain ⟨c, hc⟩ := List.exists_mem_of_ne_nil _ hr.1
+    exact plain_of_mem_expand (c := c) hc
+  obtain ⟨c,hm,hc⟩ := (expand_sem G Ref hp (n+1) W v).mp hv
+  have hb := hr.2 c hm
+  cases c with
+  | refs a bs vs os ms ks =>
+    simp only [Bool.or_eq_true, List.any_eq_true, decide_eq_true_eq] at hb
+    obtain ⟨⟨flds, hvf, hrec⟩, _⟩ := hc.1
+    subst hvf
+    refine ⟨flds, rfl, ?_, ?_⟩
+    · intro l hl
+      rcases hb with ⟨⟨g, El⟩, hmem, rfl⟩ | ⟨o, hmem, rfl⟩
+      · obtain ⟨l', c', hl', hw, hag⟩ := hrec g (meaning G El)
+          (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩)
+        rw [hl] at hl'
+        cases hl'
+        exact ⟨c', hw, fun W' u hu => meaning_valOnly G El 0 W' u ((hag 0 (by omega) W' u).mp hu)⟩
+      · obtain ⟨c', hw, hsc⟩ := optT_present (List.mem_map.mpr ⟨o, hmem, rfl⟩) hc.2.2.1 hl
+        exact ⟨c', hw, fun W' u hu => meaning_valOnly G o.type 0 W' u ((hsc 0 (by omega) W' u).1 hu)⟩
+    · intro hl
+      rcases hb with ⟨⟨g, El⟩, hmem, rfl⟩ | ⟨o, hmem, rfl⟩
+      · obtain ⟨l', c', hl', _⟩ := hrec g (meaning G El)
+          (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩)
+        rw [hl] at hl'
+        cases hl'
+      · exact optT_no_proto (List.mem_map.mpr ⟨o, hmem, rfl⟩) hc.2.2.1 hl
+  | _ => simp at hb
+
+/-- A read of a field that may be optional: it records a read link that also
+covers the absent key, where it gave `undefined`. -/
+theorem optionalRead_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i fld Ref A ρ n W h}
+    (ht : HasTy G Γ (.readAt fld (.var i)) A) (hi : Γ[i]? = some Ref)
+    (hr : optionalOperand (expand G Ref) fld = true)
+    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
+    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (meaning G A)
+      (fun h' v => HeapKnowledge.Holds (readFrame k i fld true) (push v ρ) h') n W h
+      (.readAt fld (ρ i)) := by
+  cases n with
+  | zero => trivial
+  | succ n =>
+    obtain ⟨flds, hl, hpres, habs⟩ := optionalOperand_sound hr (he.2 i Ref hi)
+    have hs : Safe (meaning G A) (n+1) W h (.readAt fld (ρ i)) := by
+      simpa [instantiate] using ht.sound (n+1) W h ρ he hw hh
+    rw [hl] at hs ⊢
+    have out : ∀ u, HeapLinks.ReadGave flds fld h u →
+        HeapKnowledge.Holds (readFrame k i fld true) (push u ρ) h := by
+      intro u hu
+      have hout := HeapKnowledge.shift_holds (v := u) hk
+      refine ⟨hout.1,hout.2.1,?_⟩
+      intro link hm
+      rcases List.mem_append.mp hm with hm | hm
+      · obtain ⟨j,hj,rfl⟩ := List.mem_map.mp hm
+        simp only [Bool.false_eq_true, ite_false, ite_true]
+        exact ⟨flds, .absent, (HeapLinks.aliases_eq hk.2.2 hj).trans hl, hu⟩
+      · exact hout.2.2 link hm
+    cases hlk : flds.lookup fld with
+    | some l =>
+      obtain ⟨c, hc, hvals⟩ := hpres l hlk
+      obtain ⟨u,hu,hmm⟩ := hh.2 l c hc
+      have hval := hvals _ u (hmm 0 (by omega))
+      apply one_step rfl hval (.readField hlk hu) _ hs
+      exact out u (by simp [HeapLinks.ReadGave, hlk, hu])
+    | none =>
+      apply one_step rfl rfl (.readMissing hlk (habs hlk)) _ hs
+      exact out .undef (by simp [HeapLinks.ReadGave, hlk])
+
 theorem value_sound {G : NormalGraph ι} {Γ k i R A ρ n W h}
     (hr : valuesAt G Γ k i = some R) (hc : includes G A R = true)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h) :
@@ -262,23 +350,26 @@ theorem ordinary_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k t A ρ n W h}
   exact ⟨holds_nil _ _,(HeapKnowledge.shift_holds (v := v) hk).2.1,HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := v) hk).2.2⟩
 
 /-- The named fields of every record-typed slot: the locations a fresh
-allocation is known to differ from, read off the context's contracts. -/
+allocation is known to differ from, read off the context's contracts. A slot
+of a union of records has the fields every one of them names. -/
 def contractFields [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) : List (Nat × PropKey) :=
-  Γ.zipIdx.flatMap fun (A, s) => match bagOperand (expand G A) with
-    | some B => B.map fun p => (s, p.1)
+  Γ.zipIdx.flatMap fun (A, s) => match (expand G A).head? >>= clauseBagOperand with
+    | some B => (B.map Prod.fst).eraseDups.filterMap fun f =>
+        if fieldOperand (expand G A) f then some (s, f) else none
     | none => []
 
 theorem contractFields_mem [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {s f}
     (hm : (s, f) ∈ contractFields G Γ) :
-    ∃ Ref B El, Γ[s]? = some Ref ∧ bagOperand (expand G Ref) = some B ∧ (f, El) ∈ B := by
+    ∃ Ref, Γ[s]? = some Ref ∧ fieldOperand (expand G Ref) f = true := by
   obtain ⟨⟨A,s'⟩,hA,hsel⟩ := List.mem_flatMap.mp hm
   simp only at hsel
   split at hsel
-  · rename_i B hB
-    obtain ⟨p,hp,hpe⟩ := List.mem_map.mp hsel
-    cases hpe
-    have hidx := List.mem_zipIdx_iff_getElem?.mp hA
-    exact ⟨A,B,p.2,hidx,hB,hp⟩
+  · obtain ⟨g,_,hg⟩ := List.mem_filterMap.mp hsel
+    split at hg
+    · rename_i hf
+      cases hg
+      exact ⟨A, List.mem_zipIdx_iff_getElem?.mp hA, hf⟩
+    · cases hg
   · simp at hsel
 
 /-- Allocation retains facts about old cells and records the fresh object: one
@@ -290,7 +381,7 @@ def allocOutput (k : Knowledge) (Rs : List (PropKey × List Atom))
     (others : List (Nat × PropKey) := []) (fields : List PropKey := Rs.map Prod.fst) : Knowledge :=
   ⟨(Rs.map fun p => (⟨0,p.2,p.1⟩ : Fact)) ++ HeapFacts.shift k.cells, HeapFacts.shift k.values,
     (fields.flatMap fun p => others.map fun q =>
-      (⟨0,q.1+1,false,p,true,q.2⟩ : HeapLinks.Link)) ++ (HeapKnowledge.shift k).links⟩
+      (⟨0,q.1+1,false,p,true,q.2,false⟩ : HeapLinks.Link)) ++ (HeapKnowledge.shift k).links⟩
 
 /-- The slots a fresh allocation's initializers stand in, with the field each
 one fills. Nothing else can frame facts: every initializer must already be a
@@ -394,8 +485,9 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
       obtain ⟨fld,hfld,hg⟩ := List.mem_flatMap.mp hg
       obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hg
       obtain ⟨i,hi,hpi⟩ := List.mem_iff_getElem.mp hfld
-      obtain ⟨Ref,B,El,hidx,hbag,hmem⟩ := contractFields_mem hq
-      obtain ⟨flds0,code0,hl0,_,hrec⟩ := bagOperand_sound hbag (he.2 q.1 Ref hidx)
+      obtain ⟨Ref,hidx,hfo⟩ := contractFields_mem hq
+      obtain ⟨B,El,hmem,hbag⟩ := fieldOperand_sound hfo (he.2 q.1 Ref hidx)
+      obtain ⟨flds0,code0,hl0,_,hrec⟩ := hbag
       obtain ⟨flds1,l1,c1,hproj,hfd1,hlookup,_⟩ :=
         recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩) hrec
       obtain ⟨u,hu,_⟩ := hh.2 l1 c1 hlookup
@@ -415,10 +507,11 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
     · exact HeapLinks.alloc_frames (parts.map fun p => ρ p.2) hshift.2.2 g hg
 
 /-- A write forgets old cell observations, except those about locations known
-to be distinct from the written one, establishes its new contents, and retains
-immutable values already read into slots. -/
-def writeOutput (k : Knowledge) (i : Nat) (fld : PropKey) (R : List Atom) : Knowledge :=
-  ⟨(HeapLinks.aliases k.links i).map (fun j => ⟨j+1,R,fld⟩) ++
+to be distinct from the written one, establishes its new contents where the
+written value is a known primitive (`R`), and retains immutable values
+already read into slots. -/
+def writeOutput (k : Knowledge) (i : Nat) (fld : PropKey) (R : Option (List Atom)) : Knowledge :=
+  ⟨(R.map fun R => (HeapLinks.aliases k.links i).map (fun j => (⟨j+1,R,fld⟩ : Fact))).getD [] ++
       (k.cells.filter fun f => (f.slot,f.field) ∈ HeapLinks.distinctFrom k.links i fld).map
         (fun f => {f with slot := f.slot + 1}),
     ⟨0,[.nul],valueField⟩ :: HeapFacts.shift k.values,
@@ -436,15 +529,15 @@ private theorem write_inv {f h a b h' t} (ha : isVal a = true) (hb : isVal b = t
 /-- The ordinary typing proof guarantees a writable location. An old observation
 is unnecessary: the postcondition depends only on the value being written. -/
 theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i j fld R A ρ n W h}
-    (ht : HasTy G Γ (.writeAt fld (.var i) (.var j)) A) (hi : i < Γ.length)
-    (hr : valuesAt G Γ k j = some R)
+    (ht : HasTy G Γ (.writeAt fld (.var i) (.var j)) A) (hi : i < Γ.length) (hj : j < Γ.length)
+    (hr : valuesAt G Γ k j = R)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (meaning G A)
       (fun h' v => HeapKnowledge.Holds (writeOutput k i fld R) (push v ρ) h')
       n W h (.writeAt fld (ρ i) (ρ j)) := by
-  obtain ⟨a,ha,hv⟩ := valuesAt_sound hr he hk
-  have hvv : isVal (ρ j) = true := Atom.isValue hv
+  have hvv : isVal (ρ j) = true :=
+    (meaning_value (he.2 j Γ[j] (List.getElem?_eq_some_iff.mpr ⟨hj,rfl⟩))).1
   have hiv := (meaning_value (he.2 i Γ[i] (List.getElem?_eq_some_iff.mpr ⟨hi,rfl⟩))).1
   have hs : Safe (meaning G A) n W h (.writeAt fld (ρ i) (ρ j)) := by
     simpa [instantiate] using ht.sound n W h ρ he hw hh
@@ -463,9 +556,14 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i j fld R A ρ n
       refine ⟨?_,?_,HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := .nul) hk).2.2⟩
       · intro f hf
         rcases List.mem_append.mp hf with hf | hf
-        · obtain ⟨slot,hs,rfl⟩ := List.mem_map.mp hf
-          have heq := HeapLinks.aliases_eq hk.2.2 hs
-          exact ⟨flds,c,l,ρ j,heq.trans hl,hfd,write_new hlt,a,ha,hv⟩
+        · cases hR : R with
+          | none => simp [hR] at hf
+          | some R' =>
+            rw [hR] at hf
+            obtain ⟨a,ha,hv⟩ := valuesAt_sound (hR ▸ hr) he hk
+            obtain ⟨slot,hs,rfl⟩ := List.mem_map.mp (by simpa using hf)
+            have heq := HeapLinks.aliases_eq hk.2.2 hs
+            exact ⟨flds,c,l,ρ j,heq.trans hl,hfd,write_new hlt,a,ha,hv⟩
         · obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
           have hg := List.mem_filter.mp hg
           obtain ⟨flds0,c0,l0,u,hs0,hfd0,hu,b,hb,hb'⟩ := hk.1 g hg.1
@@ -586,7 +684,7 @@ inductive StepEvidence (ι : Type) where
   /-- The fields, their slots and their contents are read off the term and the
   state, so this carries only the ordinary derivation it stands beside. -/
   | allocated (proof : ProgramCertificates.Evidence ι)
-  | written (receiver value : Nat) (contents : List Atom) (proof : ProgramCertificates.Evidence ι)
+  | written (receiver value : Nat) (contents : Option (List Atom)) (proof : ProgramCertificates.Evidence ι)
 
 /-- Only allocation whose initializer is an existing value slot can frame facts.
 The descriptor is not evaluated; its code obligations stay in ordinary evidence. -/
@@ -637,7 +735,10 @@ def checkStep [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι)
     | some (fld, i') =>
       if claim e = j ∧ checkTree G e = true ∧ i' = i ∧
           (j.context[i]?).any (fun Ref => fieldOperand (expand G Ref) fld)
-      then some (readFrame k i fld) else none
+      then some (readFrame k i fld)
+      else if claim e = j ∧ checkTree G e = true ∧ i' = i ∧
+          (j.context[i]?).any (fun Ref => optionalOperand (expand G Ref) fld)
+      then some (readFrame k i fld true) else none
     | none => none
   | .observedRead i R =>
     match readSlot j.term with
@@ -663,7 +764,7 @@ def checkStep [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι)
     | some (fld, i', v') =>
       if claim e = j ∧ checkTree G e = true ∧ i' = i ∧ v' = v ∧
           i < j.context.length ∧ v < j.context.length ∧
-          valuesAt G j.context k v = some R
+          valuesAt G j.context k v = R
       then some (writeOutput k i fld R) else none
     | none => none
 
@@ -726,7 +827,20 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
           cases hc
           rw [term]
           simpa [instantiate] using typedRead_sound typed hi hrep he hk hw hh
-      · contradiction
+      · split at hc
+        · rename_i hp
+          obtain ⟨hj,ht,rfl,hr⟩ := hp
+          have term := readSlot_eq hslot
+          cases hi : j.context[i']? with
+          | none => simp [hi] at hr
+          | some Ref =>
+            have hrep : optionalOperand (expand G Ref) fld = true := by simpa [hi] using hr
+            have typed := checkTree_sound e ht
+            rw [hj,term] at typed
+            cases hc
+            rw [term]
+            simpa [instantiate] using optionalRead_sound typed hi hrep he hk hw hh
+        · contradiction
     · contradiction
   | observedRead i R =>
     simp only [checkStep] at hc
@@ -776,14 +890,14 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
     · rename_i fld i' v' hslots
       split at hc
       · rename_i hp
-        obtain ⟨hj,ht,rfl,rfl,hi,_,hr⟩ := hp
+        obtain ⟨hj,ht,rfl,rfl,hi,hv,hr⟩ := hp
         have term := writeSlots_eq hslots
         have typed := checkTree_sound e ht
         rw [hj] at typed
         rw [term] at typed
         cases hc
         rw [term]
-        simpa [instantiate] using write_sound typed hi hr he hk hw hh
+        simpa [instantiate] using write_sound typed hi hv hr he hk hw hh
       · contradiction
     · contradiction
 
@@ -794,6 +908,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
 #print axioms checkStep_sound
 #print axioms fieldOperand_sound
 #print axioms typedRead_sound
+#print axioms optionalRead_sound
 #print axioms write_sound
 #print axioms read_sound
 #print axioms value_sound

@@ -18,19 +18,19 @@ private def writeProof : Evidence Nat := .node writeClaim .write
    .node ⟨writeClaim.context,.var 1,boolTy⟩ .var []]
 private def beforeWrite : Knowledge :=
   ⟨[⟨0,[.fls],valueField⟩,⟨2,[.fls],valueField⟩],[⟨1,[.tru],valueField⟩,⟨3,[.fls],valueField⟩],[]⟩
-private def afterWrite := writeOutput beforeWrite 0 valueField [.tru]
+private def afterWrite := writeOutput beforeWrite 0 valueField (some [.tru])
 
 -- The storage contract permits true; current contents are separately updated.
 #guard checkStep G writeClaim beforeWrite
-  (.written 0 1 [.tru] writeProof) == some afterWrite
+  (.written 0 1 (some [.tru]) writeProof) == some afterWrite
 -- Resetting at a source entry may leave no old observation at all.
-#guard checkStep G writeClaim ⟨[],[],[]⟩ (.written 0 1 [.tru,.fls] writeProof) ==
-  some (writeOutput ⟨[],[],[]⟩ 0 valueField [.tru,.fls])
+#guard checkStep G writeClaim ⟨[],[],[]⟩ (.written 0 1 (some [.tru,.fls]) writeProof) ==
+  some (writeOutput ⟨[],[],[]⟩ 0 valueField (some [.tru,.fls]))
 -- An old alias fact is discarded, but immutable snapshots survive the write.
 #guard afterWrite.cells == [⟨1,[.tru],valueField⟩]
 #guard afterWrite.values == [⟨0,[.nul],valueField⟩,⟨2,[.tru],valueField⟩,⟨4,[.fls],valueField⟩]
 #guard checkStep G writeClaim beforeWrite
-  (.written 0 1 [.fls] writeProof) == none
+  (.written 0 1 (some [.fls]) writeProof) == none
 
 -- Transfer selects the written cell. Its old false observation cannot survive.
 private def afterEdge := HeapKnowledge.project afterWrite (some [1]) 1
@@ -45,7 +45,7 @@ private def readProof : Evidence Nat := .node readClaim .read
   [.node ⟨readClaim.context,.var 0,refBool⟩ .var []]
 #guard checkStep G readClaim ⟨[],[],[]⟩ (.typedRead 0 readProof) ==
   some (readFrame ⟨[],[],[]⟩ 0 valueField)
-#guard (readFrame ⟨[],[],[]⟩ 0 valueField).links == [⟨1,0,false,valueField,false,valueField⟩]
+#guard (readFrame ⟨[],[],[]⟩ 0 valueField).links == [⟨1,0,false,valueField,false,valueField,false⟩]
 -- A changed read claim cannot use that proof.
 #guard checkStep G {readClaim with type := [1]} ⟨[],[],[]⟩ (.typedRead 0 readProof) == none
 private def afterRead := readOutput afterEdge 0 valueField [.tru]
@@ -74,7 +74,7 @@ private def copyProof : Evidence Nat := .node copyClaim .var []
 #guard (copy afterEdge 0).cells == [⟨0,[.tru],valueField⟩,⟨1,[.tru],valueField⟩]
 -- Tag observations refine only values with a live read link to the cell.
 private def nullableRead : Knowledge :=
-  ⟨[],[⟨0,[.nul,.tru,.fls],valueField⟩],[⟨1,0,false,valueField,false,valueField⟩]⟩
+  ⟨[],[⟨0,[.nul,.tru,.fls],valueField⟩],[⟨1,0,false,valueField,false,valueField,false⟩]⟩
 #guard (observe nullableRead 0 (.tag .isNul false)).cells == [⟨1,[.tru,.fls],valueField⟩]
 #guard (observe nullableRead 0 (.tag .isNul true)).cells == [⟨1,[.nul],valueField⟩]
 #guard (observe (ordinaryOutput nullableRead) 1 (.tag .isNul false)).cells == []
@@ -90,7 +90,7 @@ private def invalidWrite : Evidence Nat := .node narrowWrite .write
   [.node ⟨narrowWrite.context,.var 0,[5]⟩ .var [],
    .node ⟨narrowWrite.context,.var 1,boolTy⟩ .var []]
 #guard checkStep G narrowWrite beforeWrite
-  (.written 0 1 [.tru] invalidWrite) == none
+  (.written 0 1 (some [.tru]) invalidWrite) == none
 
 -- Pure computational guards frame existing facts. Function creation allocates
 -- without running its body, and therefore needs a distinct effect rule.
@@ -125,15 +125,15 @@ private def creationAt (arity : Nat) : Sequent Nat :=
 -- drops it otherwise; an allocation states such a link against every contract
 -- field of every record-typed slot in its context.
 private def apart : Knowledge :=
-  ⟨[⟨1,[.num],valueField⟩],[],[⟨0,1,false,valueField,true,valueField⟩]⟩
-#guard (writeOutput apart 0 valueField [.nul]).cells == [⟨1,[.nul],valueField⟩,⟨2,[.num],valueField⟩]
-#guard (writeOutput ⟨[⟨1,[.num],valueField⟩],[],[]⟩ 0 valueField [.nul]).cells == [⟨1,[.nul],valueField⟩]
-#guard (writeOutput ⟨[⟨1,[.num],valueField⟩],[],[⟨1,0,false,valueField,true,valueField⟩]⟩ 0 valueField [.nul]).cells
+  ⟨[⟨1,[.num],valueField⟩],[],[⟨0,1,false,valueField,true,valueField,false⟩]⟩
+#guard (writeOutput apart 0 valueField (some [.nul])).cells == [⟨1,[.nul],valueField⟩,⟨2,[.num],valueField⟩]
+#guard (writeOutput ⟨[⟨1,[.num],valueField⟩],[],[]⟩ 0 valueField (some [.nul])).cells == [⟨1,[.nul],valueField⟩]
+#guard (writeOutput ⟨[⟨1,[.num],valueField⟩],[],[⟨1,0,false,valueField,true,valueField,false⟩]⟩ 0 valueField (some [.nul])).cells
   == [⟨1,[.nul],valueField⟩,⟨2,[.num],valueField⟩]
 #guard HeapLinks.distinctFrom apart.links 1 valueField == [(0,valueField)]
 #guard HeapLinks.distinctFrom apart.links 0 "other" == []
 #guard (HeapLinks.stable apart.links) == apart.links
-#guard HeapLinks.check apart.links [⟨1,0,false,valueField,true,valueField⟩] none
-#guard !(HeapLinks.check apart.links [⟨1,0,false,valueField,true,"other"⟩] none)
+#guard HeapLinks.check apart.links [⟨1,0,false,valueField,true,valueField,false⟩] none
+#guard !(HeapLinks.check apart.links [⟨1,0,false,valueField,true,"other",false⟩] none)
 
 end Verification.Model.HeapExpressionTests

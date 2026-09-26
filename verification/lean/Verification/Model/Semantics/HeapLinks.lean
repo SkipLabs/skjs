@@ -10,7 +10,10 @@ open ProgramTyping
 slots holding the same value and ignores it. A distinct link relates a field of
 the object in `cell` to a field `other` of the object in `value`: they are
 different locations, whatever either holds. Locations never move, so a distinct
-link is timeless; it is what lets a write to one cell keep a fact about another. -/
+link is timeless; it is what lets a write to one cell keep a fact about another.
+A read link through an `optional` key also covers the object lacking the key,
+where the read gave `undefined`: which one it was is what an observation of the
+value tells. -/
 structure Link where
   cell : Nat
   value : Nat
@@ -18,7 +21,15 @@ structure Link where
   field : PropKey := valueField
   distinct : Bool := false
   other : PropKey := valueField
+  optional : Bool := false
   deriving DecidableEq, Repr
+
+/-- What a read of `field` from an object with own-field map `flds` gave:
+the contents of its location, or, where the object lacks the key, `undefined`. -/
+def ReadGave (flds : List (PropKey × Nat)) (field : PropKey) (h : Heap) (v : Tm) : Prop :=
+  match flds.lookup field with
+  | some l => h[l]? = some v
+  | none => v = .undef
 
 abbrev Links := List Link
 
@@ -28,13 +39,14 @@ def Holds (ls : Links) (ρ : Env) (h : Heap) : Prop :=
       ∀ flds c l flds' c' l', ρ g.cell = .objAt flds c → flds.lookup g.field = some l →
         ρ g.value = .objAt flds' c' → flds'.lookup g.other = some l' → l ≠ l'
     else if g.alias then ρ g.cell = ρ g.value
+    else if g.optional then ∃ flds c, ρ g.cell = .objAt flds c ∧ ReadGave flds g.field h (ρ g.value)
     else ∃ flds c l, ρ g.cell = .objAt flds c ∧ flds.lookup g.field = some l ∧
       h[l]? = some (ρ g.value)
 
 /-- Pull back through a finite selection of aliases for each old slot. -/
 def pull (ls : Links) (pre : Nat → List Nat) : Links :=
   ls.flatMap fun g => (pre g.cell).flatMap fun c => (pre g.value).map fun v =>
-    ⟨c,v,g.alias,g.field,g.distinct,g.other⟩
+    ⟨c,v,g.alias,g.field,g.distinct,g.other,g.optional⟩
 
 theorem pull_holds {ls pre ρ τ h} (hh : Holds ls ρ h)
     (he : ∀ i j, j ∈ pre i → τ j = ρ i) : Holds (pull ls pre) τ h := by
@@ -49,7 +61,7 @@ def check (a b : Links) (m : PointClaims.Mapping) : Bool :=
   b.all fun g => a.any fun f =>
     (f.cell == PointClaims.slot m g.cell &&
       (f.value == PointClaims.slot m g.value && (f.field == g.field && (f.alias == g.alias &&
-        (f.distinct == g.distinct && f.other == g.other))))) ||
+        (f.distinct == g.distinct && (f.other == g.other && f.optional == g.optional)))))) ||
     (g.distinct && f.distinct && (f.cell == PointClaims.slot m g.value &&
       (f.value == PointClaims.slot m g.cell && (f.field == g.other && f.other == g.field))))
 
@@ -60,30 +72,35 @@ theorem check_sound {a b m ρ h} (hc : check a b m = true) (hh : Holds a ρ h) :
   simp only [Bool.or_eq_true,Bool.and_eq_true,beq_iff_eq] at hfg
   rcases hfg with hfg | ⟨⟨hgd,hfd⟩,h1,h2,h3,h4⟩
   · simpa [PointClaims.mapEnv,← hfg.1,← hfg.2.1,← hfg.2.2.1,← hfg.2.2.2.1,← hfg.2.2.2.2.1,
-      ← hfg.2.2.2.2.2] using hh f hf
+      ← hfg.2.2.2.2.2.1,← hfg.2.2.2.2.2.2] using hh f hf
   · have hf := hh f hf
     simp only [hfd,ite_true] at hf
     simp only [hgd,ite_true,PointClaims.mapEnv,← h1,← h2,← h3,← h4]
     intro flds c l flds' c' l' e1 e2 e3 e4 heq
     exact hf flds' c' l' flds c l e3 e4 e1 e2 heq.symm
 
-theorem alloc_frame {ls ρ h v} (hh : Holds ls ρ h) : Holds ls ρ (h ++ [v]) := by
-  intro g hg
-  have hh := hh g hg
-  cases hd : g.distinct <;> cases ha : g.alias <;>
-    simp only [hd,ha,Bool.false_eq_true,ite_false,ite_true] at hh ⊢
-  · obtain ⟨flds,c,l,hl,hfd,hv⟩ := hh
-    exact ⟨flds,c,l,hl,hfd,HeapObservations.alloc_frame hv⟩
-  all_goals exact hh
+/-- What a read gave stays what it would give after an allocation: the
+location it read is not a fresh one. -/
+theorem ReadGave.alloc_frames {flds f h v} (vs : List Val) (hr : ReadGave flds f h v) :
+    ReadGave flds f (h ++ vs) v := by
+  unfold ReadGave at hr ⊢
+  cases hl : flds.lookup f with
+  | some l => rw [hl] at hr; exact HeapObservations.alloc_frames vs hr
+  | none => rw [hl] at hr; exact hr
 
 theorem alloc_frames {ls ρ h} (vs : List Val) (hh : Holds ls ρ h) : Holds ls ρ (h ++ vs) := by
   intro g hg
   have hh := hh g hg
-  cases hd : g.distinct <;> cases ha : g.alias <;>
-    simp only [hd,ha,Bool.false_eq_true,ite_false,ite_true] at hh ⊢
+  cases hd : g.distinct <;> cases ha : g.alias <;> cases ho : g.optional <;>
+    simp only [hd,ha,ho,Bool.false_eq_true,ite_false,ite_true] at hh ⊢
   · obtain ⟨flds,c,l,hl,hfd,hv⟩ := hh
     exact ⟨flds,c,l,hl,hfd,HeapObservations.alloc_frames vs hv⟩
+  · obtain ⟨flds,c,hl,hr⟩ := hh
+    exact ⟨flds,c,hl,hr.alloc_frames vs⟩
   all_goals exact hh
+
+theorem alloc_frame {ls ρ h v} (hh : Holds ls ρ h) : Holds ls ρ (h ++ [v]) :=
+  alloc_frames [v] hh
 
 /-- Value equalities and distinct locations survive arbitrary heap changes;
 read links do not. -/
