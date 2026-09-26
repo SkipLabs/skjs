@@ -1,10 +1,11 @@
 import Verification.Model.Tests.CallableGraphTests
+import Verification.Model.Tests.GraphCodeFixtures
 
 /-! Calls on union-typed variables use ordinary union elimination. All possible
 callables must accept the actual argument; callability alone promises no call. -/
 namespace Verification.Model.CallableUnionTests
 open PositiveNormalization PositiveGraphs PositiveRules ProgramTyping ProgramCertificates
-open CertificateProducer ControlFlow RequestJson
+open CertificateProducer ControlFlow RequestJson GraphCodeFixtures
 
 -- The two alternatives have different invariant bags and result types. No
 -- auxiliary common arrow label is provided to proof search.
@@ -38,17 +39,24 @@ theorem checked : checkTree G proof = true := by decide +kernel
 #guard !(expression G pool 8 [[2,3]] (.app (.var 0) .tru) [0]).isSome
 
 private def program (nullResult : Bool) : Program :=
-  [⟨if nullResult then .attach .nul .nul else .attach (.var 1) .tru,.bind 1,none⟩,
+  [⟨if nullResult then .makeAt (oneNode 1 .nul 0) [valueField] [.nul]
+    else .makeAt (oneNode 1 (.var 1) 0) [valueField] [.tru],.bind 1,none⟩,
    ⟨.app (.var 0) .tru,.ret,none⟩]
 private def claims : List (PointClaim Nat) := [⟨[],[2,3]⟩,⟨callClaim.context,callClaim.type⟩]
 private def request (nullResult : Bool) : Request :=
-  ⟨types,program nullResult,claims,[0,1],0,[], []⟩
+  ⟨types,program nullResult,claims,[0,1],0,[],
+   if nullResult then oneNodeCodes 1 .nul [] [([9],[[0]],[1])]
+   else oneNodeCodes 1 (.var 1) [] [([9],[[0]],[0])]⟩
+/-- The same program with the codes as terms, run by the machine. -/
+private def executed (nullResult : Bool) : Program :=
+  [⟨if nullResult then .attach .nul .nul else .attach (.var 1) .tru,.bind 1,none⟩,
+   ⟨.app (.var 0) .tru,.ret,none⟩]
 #guard [false,true].all fun nullResult => match (do
     let response ← produceJson (Lean.toJson (request nullResult)) 8
     verifyJson (Lean.toJson (request nullResult)) response) with
   | .ok _ => true | .error _ => false
 
-theorem returns_expected (nullResult : Bool) : Execution (program nullResult) 6 []
+theorem returns_expected (nullResult : Bool) : Execution (executed nullResult) 6 []
     (.at 0 (fun _ => .nul)) [if nullResult then .nul else .tru]
     (.done (if nullResult then .nul else .tru)) := by
   cases nullResult <;>

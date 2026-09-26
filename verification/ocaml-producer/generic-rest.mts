@@ -54,11 +54,13 @@ export function checkGenericRest(verifier: string, artifacts: string): void {
   assert(point && !Array.isArray(point.type) && "scheme" in point.type);
   assert.deepEqual(point.type.scheme.rest, { param: "T" });
   point.type.scheme.rest = [1, 2];
+  // The closure is graph code at its scheme row: the rest the claim names
+  // must be one its collected store meets.
   reject(
     "retyped-rest",
     retyped,
     ast,
-    /quantified claim differs from its source scheme/,
+    /claimed at a signature its store does not meet/,
   );
 
   const wrongCall = structuredClone(claims);

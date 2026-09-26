@@ -255,9 +255,9 @@ them within the same clauses ([`meetBelow`](POSITIVE-TYPES.md#core-tables)).
 Every generic unit is a graph request; there is no second checker for
 generic bodies.
 
-One older path remains, for a generic closure graph code cannot yet express
-(a rest parameter, a parameter default, a bound naming another of its
-binders): its introduction is checked under rigid binders
+One older path remains, for a generic closure whose bound names another of
+its binders, which a scheme row cannot yet be instantiated at: its
+introduction is checked under rigid binders
 (`GenericSource.closureCertificate`, `ClosureCertificate`) and its
 eliminations compiled to ordinary arrows
 ([quantified schemes](POSITIVE-TYPES.md#quantified-scheme-layer)), one such
@@ -270,12 +270,33 @@ A closure's body is a graph, as a function body is (`funGraph`,
 each signature its claim offers, entered with its receiver, parameters and
 captured slots. Mutable locals, loops, `switch`, `try` and patterns inside a
 closure are the same graph shapes as anywhere; a generic closure's code is
-checked at its scheme's signatures ([generic bodies](#generic-bodies)). Four
-kinds of closure still keep term code (`funE`, `funRest`, `ctorE`,
-`makeCallable`): one with a rest parameter, one with a parameter default, a
-class constructor, and a callable object built by `Object.assign`. A
-statement form not admitted in term code is refused there
-([next steps](#next-steps)).
+checked at its scheme's signatures ([generic bodies](#generic-bodies)). There
+is no other closure code: every kind of closure is graph code, and one rule
+creates each kind.
+
+- **A rest parameter** makes the code collect the actuals past its fixed
+  parameters into a fresh store, in slot 0 of the frame, below the receiver
+  (`CallArguments.graphEntry`). Such code offers only variadic signatures,
+  each checked from the frame with the store at its rest's store type
+  (`CodeOffers`, `restsT_of_graphRest`).
+- **A parameter default** is an entry node: a tag dispatch on `undefined` at
+  the parameter's slot, the default's evaluation on one arm, first in the
+  graph, in the order `parameterOrder` fixes, as a function's default is.
+- **A generic closure** with either is graph code at its scheme row
+  (`funScheme`), as any generic closure is.
+- **A class constructor** is construct-only graph code (`ctorGraph`), checked
+  at each construct signature from the frame with `undefined` for the
+  receiver `new` passes (`ctorsT_of_graph`). A constructor's default is its
+  entry node as a closure's is. The realm's array invariant asks nothing of
+  a class value, as of any value carrying code: its clause is no record's
+  (`realmInvariant_of_not_record`).
+- **A callable object** built by `Object.assign` allocates its bag as a
+  record's with graph code offering the advertised signatures, one code-table
+  entry per signature (`callableGraph`).
+
+A closure's code is checked in its own table entry, not inside the creating
+body, so the creating body's certificate only names the entry and the
+captures' types.
 
 ### SKJS is frozen
 
@@ -778,7 +799,7 @@ not yet taken are [next steps](#next-steps); a search failure is neither.
 | A rest parameter of a definition typed by a type parameter; one typed by an intersection, by a tuple with optional or rest elements, or by what is no array | A definition has no allocation rule for an array only an instance fixes (a function type's is a pack); the fresh array's meet has no representation; several lengths are several signatures; the collected array is no value of it. |
 | A written `let` pattern in a `for` head; a test of a written `let` holding a union of objects | Its bindings are cells, which only a statement of a block lowers them to; a cell's known contents are primitive or merely no `undefined`. |
 | An array pattern over a value that may not be an array | It would step the value's own iterator. |
-| A class method declaring `this: T`; a generic class method; a constructor parameter with a default | A method member is host-relative; a generic method would be a host-relative member with quantified signatures, which the model does not have ([next steps](#next-steps)); construct code is a term over plain parameters with no default schedule. |
+| A class method declaring `this: T`; a generic class method; a constructor's rest parameter; a constructor parameter default reading `this` | A method member is host-relative; a generic method would be a host-relative member with quantified signatures, which the model does not have ([next steps](#next-steps)); no rule constructs at a variadic construct signature ([next steps](#next-steps)); the instance is allocated at the end of the constructor. |
 | A class member with a computed key other than a method's `unique symbol` constant or a static `[Symbol.hasInstance]`; an index signature in a class; a static block reading `this`; a class extending a generic class other than at the base's own binders | A method is a binding and a prototype key named by its plain name or its symbol; instances are what construction allocates; the block's receiver is the class value, whose statics are bindings of their own; a generic base's construction is at its binders' rows ([classes](PROGRAM-TYPING.md#classes)). |
 | A class with a private name in inheritance; `#x in o` | A derived instance's base part is a copy, and a copy holds no private slot; the test asks for an own slot, where the model's key test walks the prototype chain. |
 | A loop or an array pattern over an iterable whose iterator's type states no `return` | Leaving it early, or a throw out of its body, calls whatever `return` the iterator owns, and an open record type says nothing of that property. |
@@ -889,29 +910,16 @@ specification and the host's stated types as lemmas would turn most of the
 trust surface into theorems; the expected results and their cost are in
 [ECMA-CONNECTION](ECMA-CONNECTION.md).
 
-**Closures still on term code.** Each should become graph code, so that
-`Expr.termBody` and the term closure rules go away:
+**The rigid path for generic closures.** A generic closure whose bound names
+another of its binders needs a scheme whose meet rows name several binders to
+be instantiated, which instance tables do not yet map (`meetOk` maps a meet of
+one parameter). With that, `GenericSource` and `ClosureCertificate` retire.
 
-- a rest parameter needs variadic graph code: invocation collecting the
-  actuals past the fixed parameters into a fresh store in slot 0, as
-  `variadic` does, and a `restsT` lemma for it where `restsT_of_graph` now
-  discards them;
-- a parameter default needs entry nodes, a tag dispatch on `undefined` at the
-  parameter's slot first in the graph, as a function's default already is,
-  with `parameterOrder`'s deferred closures as statements; with rest
-  parameters, it retires the rigid path for generic closures;
-- a class constructor needs construct-only graph code, a `ctorE` for graph
-  code at construct signatures with `undefined` for the receiver; constructor
-  defaults and rests follow;
-- a callable object built by `Object.assign` needs `makeCallable` over graph
-  code, one table entry per advertised overload.
-
-**The rigid path for generic closures.** A generic closure with a rest
-parameter or a default waits for those forms in graph code
-([closures on term code](#next-steps)); one whose bound names another of its
-binders needs a scheme whose meet rows name several binders to be
-instantiated, which instance tables do not yet map (`meetOk` maps a meet of
-one parameter). With both, `GenericSource` and `ClosureCertificate` retire.
+**Constructor rests.** A constructor's rest parameter is refused. The code
+could collect it as a closure's does, but no rule constructs at a variadic
+construct signature: `ctorRestsT` has neither an introduction from code nor
+an elimination by `new`, so that rule and its `construction` for code with a
+rest (whose padded actuals would reach the store) come first.
 
 **Generic methods as host-relative members.** A declaration's generic method
 is lowered to a readonly view of a scheme row whose signatures take the

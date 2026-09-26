@@ -40,12 +40,6 @@ export function numericKey(literal: string): string {
 export const METHOD_RECEIVER =
   "a method with a `this` parameter is outside the fragment: a method member's contract is relative to its host, the object it is read from, and states no receiver apart from it";
 
-/** A constructor parameter with a default. A class value's construct code
- * is a term whose parameters are plain: the constructor rule has no default
- * schedule, as a closure's has (`parameterOrder`). */
-export const CONSTRUCTOR_DEFAULT =
-  "a constructor parameter with a default is outside the fragment: construct code is a term over plain parameters, with no default schedule as a closure has";
-
 /** Why a class member of a kind the fragment has no lowering for is
  * refused. */
 export function classMemberRefusal(member: ts.ClassElement): string {
@@ -825,7 +819,6 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
       // every call, with the `undefined` an omitted argument binds.
       for (const p of member.parameters) {
         if (!p.modifiers?.length) continue;
-        if (p.initializer) scope.fail(p, CONSTRUCTOR_DEFAULT);
         if (!ts.isIdentifier(p.name) || p.dotDotDotToken)
           scope.fail(p, "a parameter property needs a plain parameter");
         const name = p.name.text;

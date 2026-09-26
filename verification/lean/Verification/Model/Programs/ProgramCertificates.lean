@@ -30,11 +30,17 @@ def namedAt (T : Tuple (Ty ι)) (b : UInt64) : Option (Ty ι) :=
 inductive Rule (ι : Type) where
   | var | nul | undef | tru | fls | truLit | flsLit | numLit | num | strLit | str
   | bigintLit | bigint
-  | funE
   /-- Graph code: its captures, each a slot of the context at the type the
   code was checked with, are the premises; the code itself is an entry of the
-  unit's checked code table. -/
-  | funGraph
+  unit's checked code table. With a rest, `arrays` are the rest-store types of
+  the variadic signatures, in their order. -/
+  | funGraph (arrays : List (Ty ι))
+  /-- A class value: construct-only graph code, checked at each construct
+  signature with `undef`, the `undefined` type, for its receiver. -/
+  | ctorGraph (undef : Ty ι)
+  /-- A callable object: the bag's fields, then the captures of its graph
+  code; `arrays` as for `funGraph`. -/
+  | callableGraph (arrays : List (Ty ι))
   | app | letE | alloc | read | readView | write | arith | test
   /-- A read through an index over `keys`. -/
   | readDict (keys : IndexKeys) (element undef : Ty ι)
@@ -56,11 +62,7 @@ inductive Rule (ι : Type) where
   | ifKnown (answer : Bool)
   | ifBoolVar (trueType falseType : Ty ι)
   | unionVar (slot : Nat)
-  | makeCallable | callCallable | readCallable | writeCallable
-  /-- The rest-store type of each signature, in the signatures' order. -/
-  | funRest (arrays : List (Ty ι))
-  /-- A callable object with variadic code: the rest-store type of each signature. -/
-  | makeCallableRest (arrays : List (Ty ι))
+  | callCallable | readCallable | writeCallable
   /-- A copy of a spread, at the element type its store holds. -/
   | arrCopy (elem : Ty ι)
   /-- How many actuals are fixed, which later ones are spreads, and the rest
@@ -74,8 +76,6 @@ inductive Rule (ι : Type) where
   each fixed signature of the result, proofs that a member signature covers it,
   one per parameter, then the result. -/
   | bindMember (proofs : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι))
-  /-- A class value: the `undefined` type its bodies' receiver has. -/
-  | ctorE (undef : Ty ι)
   /-- `new`: the constructor, then the actuals in order. -/
   | construct
   | sub (proof : PositiveCertificates.Proof ι)
@@ -89,28 +89,6 @@ inductive Evidence (ι : Type) where
 
 def claim : Evidence ι → Sequent ι
   | .node j _ _ => j
-
-/-- The body premises code of `arity` owes its signatures `(receiver,
-parameters, result)`: each offers at least `arity` parameters, and one body is
-checked per signature in `bodyFrame`. Every code-creating node owes these. -/
-abbrev BodyPremises (arity : Nat) (b : Tm) (Γ : List (Ty ι))
-    (L : List (Ty ι × List (Ty ι) × Ty ι)) (ps : List (Sequent ι)) : Prop :=
-  (∀ p ∈ L, arity ≤ p.2.1.length) ∧ ps = L.map (fun p => ⟨bodyFrame arity p Γ, b, p.2.2⟩)
-
-/-- The premises a function-creation node owes. -/
-abbrev funEPremises [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (A : Ty ι)
-    (arity : Nat) (b : Tm) (ps : List (Sequent ι)) : Prop :=
-  match expand G A with
-  | [.arrs L S] => BodyPremises arity b Γ (offerRows L S) ps
-  | _ => False
-
-/-- The premises a class-value node owes: its construct signatures, whose
-receiver is `undefined`. -/
-abbrev ctorEPremises [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (A U : Ty ι)
-    (arity : Nat) (b : Tm) (ps : List (Sequent ι)) : Prop :=
-  match expand G A with
-  | [.ctors L] => BodyPremises arity b Γ (L.map fun p => (U, p.1, p.2)) ps
-  | _ => False
 
 /-- The slots a prefix of saved variables names, when every entry is one. -/
 def varSlots : List Tm → Option (List Nat)
@@ -164,6 +142,19 @@ theorem schemeOf_plain {G : NormalGraph ι} {A : Ty ι} (h : G.plainTy A = true)
     simp [hi.1, hi.2.1]
   · rfl
 
+/-- Every signature `(L, S)` offers is a checked entry of graph code with
+captures at `Cs` (`CodeOffers`): without a rest, each offered row; with one,
+no fixed signature and each variadic signature with its store type from `As`. -/
+def offersChecked [DecidableEq ι] (G : NormalGraph ι) (codes : CodeEntry ι → Bool) (arity : Nat)
+    (E : List Tm) (K : List (ControlFlow.Continuation × Option ControlFlow.Target)) (start : Nat)
+    (Cs : List (Ty ι)) (rest : Bool) (L : List (Ty ι × List (Ty ι) × Ty ι))
+    (S : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)) (As : List (Ty ι)) : Bool :=
+  match rest with
+  | false => (offerRows L S).all fun p => codes ⟨arity, E, K, start, Cs, p, none⟩
+  | true => L.isEmpty && S.length == As.length && (S.zip As).all fun q =>
+      q.1.2.1.length == arity && decide (RestStore G q.2 q.1.2.2.1) &&
+        codes ⟨arity, E, K, start, Cs, (q.1.1, q.1.2.1, q.1.2.2.2), some q.2⟩
+
 /-- Every signature the type `A` offers is a checked entry of graph code with
 captures at `Cs`: an arrow type's signatures, or, for a generic closure, a
 scheme row's, whose captures' types then read none of its binders. A table
@@ -171,14 +162,23 @@ entry is checked at every assignment of the parameter rows
 (`CodesSound`), so at every instantiation of the scheme's binders. -/
 def graphCodesChecked [DecidableEq ι] (G : NormalGraph ι) (A : Ty ι) (codes : CodeEntry ι → Bool)
     (arity : Nat) (E : List Tm) (K : List (ControlFlow.Continuation × Option ControlFlow.Target))
-    (start : Nat) (Cs : List (Ty ι)) : Bool :=
+    (start : Nat) (Cs : List (Ty ι)) (rest : Bool) (As : List (Ty ι)) : Bool :=
   match schemeOf G A with
   | some (_, s) => capturesFree G s Cs &&
-      (offerRows s.signatures s.variadic).all fun p => codes ⟨arity, E, K, start, Cs, p⟩
+      offersChecked G codes arity E K start Cs rest s.signatures s.variadic As
   | none =>
     match expand G A with
-    | [.arrs L S] => (offerRows L S).all fun p => codes ⟨arity, E, K, start, Cs, p⟩
+    | [.arrs L S] => offersChecked G codes arity E K start Cs rest L S As
     | _ => false
+
+/-- A class value's construct signatures, each a checked entry of its graph
+code at the row whose receiver is `U`, the `undefined` type `new` passes. -/
+def ctorCodesChecked [DecidableEq ι] (G : NormalGraph ι) (A U : Ty ι) (codes : CodeEntry ι → Bool)
+    (arity : Nat) (E : List Tm) (K : List (ControlFlow.Continuation × Option ControlFlow.Target))
+    (start : Nat) (Cs : List (Ty ι)) : Bool :=
+  match expand G A with
+  | [.ctors L] => L.all fun p => codes ⟨arity, E, K, start, Cs, (U, p.1, p.2), none⟩
+  | _ => false
 
 /-- The prototype type `P` has a field or view `f` at `A`. -/
 def ProtoMember (G : NormalGraph ι) (P : Ty ι) (f : PropKey) (A : Ty ι) : Prop :=
@@ -246,17 +246,31 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
   | .str, .str _, [] => Represents G j.type .str
   | .bigintLit, .bigint i, [] => Represents G j.type (.bigintLit i)
   | .bigint, .bigint _, [] => Represents G j.type .bigint
-  -- A source function has no properties of its own; the model still gives it a
-  -- bag, so the shape of that allocation is fixed here rather than claimed.
-  | .funE, .makeAt (.closure arity b) ns inits, ps =>
-    ns = [valueField] ∧ inits = [Tm.nul] ∧ funEPremises G j.context j.type arity b ps
   -- Graph code: one premise per capture, a slot of this context, at the type
   -- the code's table entry states; every signature the type offers is an
   -- entry of the unit's checked table.
-  | .funGraph, .makeAt (.graph arity E K start caps) ns inits, ps =>
-    ns = [valueField] ∧ inits = [Tm.nul] ∧ ps.map Sequent.term = caps ∧
+  | .funGraph As, .makeAt (.graph arity E K start caps kind rest) ns inits, ps =>
+    kind = .call ∧ ns = [valueField] ∧ inits = [Tm.nul] ∧ ps.map Sequent.term = caps ∧
     (∀ q ∈ ps, q.context = j.context) ∧ capSlotsBelow caps j.context.length = true ∧
-    graphCodesChecked G j.type codes arity E K start (ps.map Sequent.type) = true
+    graphCodesChecked G j.type codes arity E K start (ps.map Sequent.type) rest As = true
+  -- A class value: as a function's code, construct-only, at its construct
+  -- signatures with `undefined` for the receiver.
+  | .ctorGraph U, .makeAt (.graph arity E K start caps kind rest) ns inits, ps =>
+    kind = .construct ∧ rest = false ∧ ns = [valueField] ∧ inits = [Tm.nul] ∧ ps.map Sequent.term = caps ∧
+    (∀ q ∈ ps, q.context = j.context) ∧ capSlotsBelow caps j.context.length = true ∧
+    Represents G U .undef ∧
+    ctorCodesChecked G j.type U codes arity E K start (ps.map Sequent.type) = true
+  -- A callable object: one premise per named field, then one per capture.
+  | .callableGraph As, .makeAt (.graph arity E K start caps kind rest) ns inits, ps =>
+    match expand G j.type with
+    | [.callable P [] L S] =>
+      kind = .call ∧ ns.Nodup ∧ ns.length = inits.length ∧
+      (ps.take ns.length).map Sequent.term = inits ∧
+      (∀ p ∈ ps, p.context = j.context) ∧
+      P = ns.zip ((ps.take ns.length).map Sequent.type) ∧
+      (ps.drop ns.length).map Sequent.term = caps ∧ capSlotsBelow caps j.context.length = true ∧
+      offersChecked G codes arity E K start ((ps.drop ns.length).map Sequent.type) rest L S As = true
+    | _ => False
   -- The callee, then the receiver at the selected signature's receiver, then
   -- the actual premises in order, then one premise per position the signature
   -- declares and this call omits. Each of those proves `undefined` at its
@@ -408,16 +422,6 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     match j.context[i]? with
     | some C => ps = C.map (fun a => ⟨j.context.set i [a], j.term, j.type⟩)
     | none => False
-  -- The bag's premises come first, one per named field, then the body's.
-  | .makeCallable, .makeAt (.closure arity b) ns inits, ps =>
-    match expand G j.type with
-    | [.callable P [] L []] =>
-      ns.Nodup ∧ ns.length = inits.length ∧
-      (ps.take ns.length).map Sequent.term = inits ∧
-      (∀ p ∈ ps.take ns.length, p.context = j.context) ∧
-      P = ns.zip ((ps.take ns.length).map Sequent.type) ∧
-      BodyPremises arity b j.context L (ps.drop ns.length)
-    | _ => False
   | .callCallable, .invoke f r args, jf :: jr :: jas =>
     jf.context = j.context ∧ jf.term = f ∧ jr.context = j.context ∧ jr.term = r ∧
     (jas.take args.length).map Sequent.term = args ∧
@@ -436,29 +440,6 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     Represents G j.type .nul ∧
     match expand G ja.type with
     | [.callable P _ _ _] => (f, jb.type) ∈ P
-    | _ => False
-  -- One body premise per signature, with the rest store in slot 0, then the
-  -- fixed parameters and the receiver.
-  | .funRest As, .makeAt (.variadic n b) ns inits, ps =>
-    ns = [valueField] ∧ inits = [Tm.nul] ∧
-    match expand G j.type with
-    | [.arrs [] L] => L.length = As.length ∧
-      (∀ p ∈ L.zip As, p.1.2.1.length = n ∧ RestStore G p.2 p.1.2.2.1) ∧
-      ps = (L.zip As).map (fun p => ⟨p.2 :: p.1.1 :: p.1.2.1 ++ j.context, b, p.1.2.2.2⟩)
-    | _ => False
-  -- The bag's premises come first, one per named field, then one body premise
-  -- per signature with its rest store in slot 0.
-  | .makeCallableRest As, .makeAt (.variadic n b) ns inits, ps =>
-    match expand G j.type with
-    | [.callable P [] [] L] =>
-      ns.Nodup ∧ ns.length = inits.length ∧
-      (ps.take ns.length).map Sequent.term = inits ∧
-      (∀ p ∈ ps.take ns.length, p.context = j.context) ∧
-      P = ns.zip ((ps.take ns.length).map Sequent.type) ∧
-      L.length = As.length ∧
-      (∀ p ∈ L.zip As, p.1.2.1.length = n ∧ RestStore G p.2 p.1.2.2.1) ∧
-      ps.drop ns.length =
-        (L.zip As).map (fun p => ⟨p.2 :: p.1.1 :: p.1.2.1 ++ j.context, b, p.1.2.2.2⟩)
     | _ => False
   -- The one premise is the store the spread reads.
   | .arrCopy E, .arrLit [.spread s], [js] =>
@@ -509,10 +490,6 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
         proofs.length = L.length ∧ (∀ qp ∈ L.zip proofs, ∃ c ∈ m.calls, CallProofs G qp.1 c qp.2) ∧
         (∀ s ∈ S, (s.2.1, s.2.2.1, s.2.2.2) ∈ m.rests)
     | _, _ => False
-  -- A class value: a function's allocation with construct-only code.
-  | .ctorE U, .makeAt (.closure arity b .construct) ns inits, ps =>
-    ns = [valueField] ∧ inits = [Tm.nul] ∧ Represents G U .undef ∧
-      ctorEPremises G j.context j.type U arity b ps
   -- The constructor, the actual premises in order, then one premise per
   -- position the signature declares and `new` omits, proving `undefined`
   -- there, as for `.app`.
@@ -536,7 +513,7 @@ instance [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (p
     (codes : CodeEntry ι → Bool) : Decidable (Local G j r ps codes) := by
   unfold Local
   split <;> try infer_instance
-  all_goals try dsimp [Represents, Answers, funEPremises, ctorEPremises]
+  all_goals try dsimp [Represents, Answers]
   all_goals first | infer_instance | (split <;> infer_instance)
 
 /-- Check evidence against the rules. `codes` answers which graph code the
@@ -573,8 +550,8 @@ def checkScope (d : Nat) : Tm → Bool
   | .setElem a b c => checkScope d a && checkScope d b && checkScope d c
   | .arrLit args => checkScopes d args
   | .ite c a b => checkScope d c && checkScope d a && checkScope d b
-  | .objAt _ (.graph _ _ _ _ caps) => checkScopes d caps
-  | .makeAt (.graph _ _ _ _ caps) _ args => checkScopes d caps && checkScopes d args
+  | .objAt _ (.graph _ _ _ _ caps _ _) => checkScopes d caps
+  | .makeAt (.graph _ _ _ _ caps _ _) _ args => checkScopes d caps && checkScopes d args
   | .goto _ _ _ L x => checkScopes d L && checkScope d x
   | .frame _ _ t L x _ _ => checkScope d t && checkScopes d L && checkScope d x
   | _ => true
@@ -607,16 +584,35 @@ def CodesSound (G : NormalGraph ι) (codes : CodeEntry ι → Bool) : Prop :=
 theorem codesSound_none (G : NormalGraph ι) : CodesSound G (fun _ => false) := by
   intro c h; cases h
 
-/-- A graph code creation whose captures are slots and whose signatures the
-table has checked is derivable. -/
-theorem funGraph_of_local [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {A : Ty ι}
-    {codes : CodeEntry ι → Bool} (hcodes : CodesSound G codes) {arity start : Nat}
-    {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
+/-- A checked offer holds at every assignment: each entry does (`CodesSound`),
+and a store type is read through the graph's rows only. -/
+theorem offersChecked_sound [DecidableEq ι] {G : NormalGraph ι} {codes : CodeEntry ι → Bool}
+    (hcodes : CodesSound G codes) {arity : Nat} {E : List Tm}
+    {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {start : Nat}
+    {Cs : List (Ty ι)} {rest : Bool} {L : List (Ty ι × List (Ty ι) × Ty ι)}
+    {S : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)} {As : List (Ty ι)}
+    (h : offersChecked G codes arity E K start Cs rest L S As = true) :
+    ∀ η, CodeOffers (reassign G η) arity E K start Cs rest L S As := by
+  intro η
+  cases rest with
+  | false =>
+    simp only [offersChecked, List.all_eq_true] at h
+    exact fun p hp => hcodes _ (h p hp) η
+  | true =>
+    simp only [offersChecked, Bool.and_eq_true, List.all_eq_true, beq_iff_eq,
+      decide_eq_true_eq, List.isEmpty_iff] at h
+    obtain ⟨⟨hL, hlen⟩, hall⟩ := h
+    exact ⟨hL, hlen, fun q hq => ⟨(hall q hq).1.1, (hall q hq).1.2, hcodes _ (hall q hq).2 η⟩⟩
+
+/-- Premises naming slots of the context are the captures of graph code: each
+a slot below the context's length, typed there. -/
+theorem caps_of_local [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)}
     {ps : List (Sequent ι)} (hctx : ∀ q ∈ ps, q.context = Γ)
     (hslots : capSlotsBelow (ps.map Sequent.term) Γ.length = true)
-    (hok : graphCodesChecked G A codes arity E K start (ps.map Sequent.type) = true)
     (hp : ∀ p ∈ ps, HasTy G p.context p.term p.type) :
-    HasTy G Γ (.make (.graph arity E K start (ps.map Sequent.term)) .nul) A := by
+    ∃ caps : List (Ty ι × Nat), caps.map (fun c => Tm.var c.2) = ps.map Sequent.term ∧
+      caps.map Prod.fst = ps.map Sequent.type ∧ (∀ c ∈ caps, c.2 < Γ.length) ∧
+      ∀ c ∈ caps, HasTy G Γ (.var c.2) c.1 := by
   unfold capSlotsBelow at hslots
   split at hslots
   · rename_i slots hvs
@@ -646,31 +642,44 @@ theorem funGraph_of_local [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
         exact this
       rw [hctx _ (List.getElem_mem hi'), ht] at hq
       simpa using hq
-    rw [← hvar]
-    unfold graphCodesChecked at hok
-    split at hok
-    · -- A generic closure: its type is a scheme row.
-      rename_i i s hs
-      simp only [Bool.and_eq_true, List.all_eq_true] at hok
-      unfold schemeOf at hs
-      split at hs
-      · rename_i i'
-        split at hs
-        · cases hs
-        · rename_i hpar
-          obtain ⟨s', hq, he⟩ := Option.map_eq_some_iff.mp hs
-          cases he
-          exact HasTy.funScheme (caps := caps) (E := E) (K := K) (start := start) (arity := arity)
-            (by simpa using hpar) hq
-            (fun q hq' η => by rw [hfst]; exact hcodes _ (hok.2 q hq') η)
-            (by rw [hfst]; exact hok.1) hlt hcap
-      · cases hs
-    · split at hok
-      · rename_i L S hL
-        exact HasTy.funGraph (caps := caps) (E := E) (K := K) (start := start) (arity := arity) hL
-          (fun q hq => by rw [hfst]; exact hcodes _ (List.all_eq_true.mp hok q hq) G.env) hlt hcap
-      · contradiction
+    exact ⟨caps, hvar, hfst, hlt, hcap⟩
   · contradiction
+
+/-- A graph code creation whose captures are slots and whose signatures the
+table has checked is derivable. -/
+theorem funGraph_of_local [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {A : Ty ι}
+    {codes : CodeEntry ι → Bool} (hcodes : CodesSound G codes) {arity start : Nat}
+    {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
+    {rest : Bool} {As : List (Ty ι)}
+    {ps : List (Sequent ι)} (hctx : ∀ q ∈ ps, q.context = Γ)
+    (hslots : capSlotsBelow (ps.map Sequent.term) Γ.length = true)
+    (hok : graphCodesChecked G A codes arity E K start (ps.map Sequent.type) rest As = true)
+    (hp : ∀ p ∈ ps, HasTy G p.context p.term p.type) :
+    HasTy G Γ (.make (.graph arity E K start (ps.map Sequent.term) .call rest) .nul) A := by
+  obtain ⟨caps, hvar, hfst, hlt, hcap⟩ := caps_of_local hctx hslots hp
+  rw [← hvar]
+  unfold graphCodesChecked at hok
+  split at hok
+  · -- A generic closure: its type is a scheme row.
+    rename_i i s hs
+    simp only [Bool.and_eq_true] at hok
+    unfold schemeOf at hs
+    split at hs
+    · rename_i i'
+      split at hs
+      · cases hs
+      · rename_i hpar
+        obtain ⟨s', hq, he⟩ := Option.map_eq_some_iff.mp hs
+        cases he
+        exact HasTy.funScheme (caps := caps) (E := E) (K := K) (start := start) (arity := arity)
+          (by simpa using hpar) hq (by rw [hfst]; exact offersChecked_sound hcodes hok.2)
+          (by rw [hfst]; exact hok.1) hlt hcap
+    · cases hs
+  · split at hok
+    · rename_i L S hL
+      exact HasTy.funGraph (caps := caps) (E := E) (K := K) (start := start) (arity := arity) hL
+        (by rw [hfst]; exact offersChecked_sound hcodes hok G.env) hlt hcap
+    · contradiction
 
 theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : CodeEntry ι → Bool}
     (hl : Local G j r ps codes) (hcodes : CodesSound G codes)
@@ -691,21 +700,68 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : Code
   · exact .str hl
   · exact .bigintLit hl
   · exact .bigint hl
-  · rename_i ps arity b ns inits
-    obtain ⟨rfl, rfl, hl⟩ := hl
-    unfold funEPremises at hl
-    split at hl
-    · rename_i L hL
-      apply HasTy.funE hL hl.1
-      intro p hmem
-      apply hp ⟨p.1 :: p.2.1.take arity ++ Γ, b, p.2.2⟩
-      rw [hl.2]
-      exact List.mem_map.mpr ⟨p, hmem, rfl⟩
-    · contradiction
-  · rename_i ps arity E K start caps ns inits
-    obtain ⟨rfl, rfl, hterms, hctx, hslots, hok⟩ := hl
+  · rename_i ps As arity E K start caps kind rest ns inits
+    obtain ⟨rfl, rfl, rfl, hterms, hctx, hslots, hok⟩ := hl
     subst caps
     exact funGraph_of_local hcodes hctx hslots hok hp
+  · rename_i ps U arity E K start caps kind rest ns inits
+    obtain ⟨rfl, rfl, rfl, rfl, hterms, hctx, hslots, hu, hok⟩ := hl
+    subst caps
+    obtain ⟨caps, hvar, hfst, hlt, hcap⟩ := caps_of_local hctx hslots hp
+    rw [← hvar]
+    unfold ctorCodesChecked at hok
+    split at hok
+    · rename_i L hL
+      simp only [List.all_eq_true] at hok
+      exact HasTy.ctorGraph hL hu (fun p hp' => by rw [hfst]; exact hcodes _ (hok p hp') G.env)
+        hlt hcap
+    · contradiction
+  · split at hl
+    · rename_i ps _ _ _ As arity E K start caps kind rest ns inits _ P L S hF
+      obtain ⟨rfl, hnd, hlen, hterms, hctx, rfl, hcaps, hslots, hok⟩ := hl
+      have hctxd : ∀ q ∈ ps.drop ns.length, q.context = Γ :=
+        fun q hq => hctx q (List.mem_of_mem_drop hq)
+      have hpd : ∀ q ∈ ps.drop ns.length, HasTy G q.context q.term q.type :=
+        fun q hq => hp q (List.mem_of_mem_drop hq)
+      obtain ⟨caps', hvar, hfst, hlt, hcap⟩ :=
+        caps_of_local hctxd (by rw [hcaps]; exact hslots) hpd
+      subst caps
+      rw [← hvar]
+      have htl : (ps.take ns.length).length = ns.length := by
+        have := congrArg List.length hterms
+        simp only [List.length_map] at this
+        omega
+      let parts := (ns.zip (ps.take ns.length)).map fun r => (r.1, r.2.type, r.2.term)
+      have hfst' : parts.map Prod.fst = ns := by
+        simp only [parts, List.map_map, Function.comp_def]
+        exact List.map_fst_zip (by omega)
+      have hsnd : parts.map (fun p => p.2.2) = inits := by
+        rw [← hterms]
+        simp only [parts, List.map_map, Function.comp_def]
+        calc (ns.zip (ps.take ns.length)).map (fun r => r.2.term)
+            = ((ns.zip (ps.take ns.length)).map Prod.snd).map Sequent.term := by
+              simp [List.map_map, Function.comp_def]
+          _ = (ps.take ns.length).map Sequent.term := by
+              rw [List.map_snd_zip (by omega)]
+      have hP : parts.map (fun p => (p.1, p.2.1)) =
+          ns.zip ((ps.take ns.length).map Sequent.type) := by
+        simp only [parts, List.map_map, Function.comp_def]
+        rw [List.zip_map_right]
+        simp [Function.comp_def]
+      have hpart : ∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1 := by
+        intro p hm
+        obtain ⟨r, hr, rfl⟩ := List.mem_map.mp hm
+        have hmem := List.of_mem_zip hr
+        have h := hp r.2 (List.mem_of_mem_take hmem.2)
+        rw [hctx r.2 (List.mem_of_mem_take hmem.2)] at h
+        exact h
+      have := HasTy.callableGraph (G := G) (Γ := Γ) (F := A) (parts := parts) (caps := caps')
+        (E := E) (K := K) (start := start) (arity := arity) (rest := rest) (As := As)
+        (by rw [hP]; exact hF) (by rw [hfst']; exact hnd) hpart
+        (by rw [hfst]; exact offersChecked_sound hcodes hok G.env) hlt hcap
+      rw [hfst', hsnd] at this
+      exact this
+    · contradiction
   · rename_i f r args jf jr jas
     rcases hl with ⟨hΓf, htf, hΓr, htr, hargs, hundef, hcontexts, hL⟩
     have hf := hp jf (by simp)
@@ -1048,59 +1104,6 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : Code
       rw [hl]
       exact List.mem_map.mpr ⟨a,ha,rfl⟩
     · contradiction
-  · rename_i ps _ _ _ arity b ns inits
-    split at hl
-    · rename_i P L hr
-      obtain ⟨hnd,hlen,hterms,hctx,rfl,harity,hbodies⟩ := hl
-      have hplen : (ps.take ns.length).length = ns.length := by
-        have : ns.length ≤ ps.length := by
-          have := congrArg List.length hterms
-          simp only [List.length_map, List.length_take] at this
-          omega
-        simp only [List.length_take]
-        omega
-      have hfst : ((ns.zip (ps.take ns.length)).map fun r => (r.1, r.2.type, r.2.term)).map
-          Prod.fst = ns := by
-        simp only [List.map_map, Function.comp_def]
-        exact List.map_fst_zip (by omega)
-      have hsnd : ((ns.zip (ps.take ns.length)).map fun r => (r.1, r.2.type, r.2.term)).map
-          (fun p => p.2.2) = inits := by
-        rw [← hterms]
-        simp only [List.map_map, Function.comp_def]
-        calc (ns.zip (ps.take ns.length)).map (fun r => r.2.term)
-            = ((ns.zip (ps.take ns.length)).map Prod.snd).map Sequent.term := by
-              simp [List.map_map, Function.comp_def]
-          _ = (ps.take ns.length).map Sequent.term := by
-              rw [List.map_snd_zip (by omega)]
-      have htyp : ((ns.zip (ps.take ns.length)).map fun r => (r.1, r.2.type, r.2.term)).map
-          (fun p => (p.1, p.2.1)) = ns.zip ((ps.take ns.length).map Sequent.type) := by
-        rw [List.zip_map_right]
-        simp only [List.map_map, Function.comp_def]
-        apply List.map_congr_left
-        intro r _
-        rfl
-      have := HasTy.makeCallable (G := G) (Γ := Γ) (F := A) (arity := arity) (b := b) (L := L)
-        (parts := (ns.zip (ps.take ns.length)).map fun r => (r.1, r.2.type, r.2.term))
-        (by rw [htyp]; exact hr)
-        (by rw [hfst]; exact hnd)
-        (by
-          intro q hq
-          obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq
-          have hmem : r.2 ∈ ps := List.mem_of_mem_take (List.of_mem_zip (by simpa using hr')).2
-          have h := hp r.2 hmem
-          rw [hctx r.2 (List.of_mem_zip (by simpa using hr')).2] at h
-          exact h)
-        harity
-        (by
-          intro q hq
-          apply hp ⟨bodyFrame arity q Γ, b, q.2.2⟩
-          have : (⟨bodyFrame arity q Γ, b, q.2.2⟩ : Sequent ι) ∈ ps.drop ns.length := by
-            rw [hbodies]
-            exact List.mem_map.mpr ⟨q, hq, rfl⟩
-          exact List.mem_of_mem_drop this)
-      rw [hfst, hsnd] at this
-      exact this
-    · contradiction
   · rename_i f r args jf jr jas
     rcases hl with ⟨hΓf, htf, hΓr, htr, hargs, hundef, hcontexts, hL⟩
     have hf := hp jf (by simp)
@@ -1150,66 +1153,6 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : Code
     split at hL
     · rename_i P Ps L he
       exact .writeCallable ha he hL hb hn
-    · contradiction
-  · rename_i ps As n b ns inits
-    obtain ⟨rfl, rfl, hl⟩ := hl
-    split at hl
-    · rename_i L hL
-      obtain ⟨hlen, hsig, rfl⟩ := hl
-      exact HasTy.funRest hL hlen hsig (fun p hm => hp _ (List.mem_map.mpr ⟨p, hm, rfl⟩))
-    · contradiction
-  · rename_i ps _ _ _ As n b ns inits
-    split at hl
-    · rename_i P L hr
-      obtain ⟨hnd,hlen,hterms,hctx,rfl,hlenA,hsig,hbodies⟩ := hl
-      have hplen : (ps.take ns.length).length = ns.length := by
-        have : ns.length ≤ ps.length := by
-          have := congrArg List.length hterms
-          simp only [List.length_map, List.length_take] at this
-          omega
-        simp only [List.length_take]
-        omega
-      have hfst : ((ns.zip (ps.take ns.length)).map fun r => (r.1, r.2.type, r.2.term)).map
-          Prod.fst = ns := by
-        simp only [List.map_map, Function.comp_def]
-        exact List.map_fst_zip (by omega)
-      have hsnd : ((ns.zip (ps.take ns.length)).map fun r => (r.1, r.2.type, r.2.term)).map
-          (fun p => p.2.2) = inits := by
-        rw [← hterms]
-        simp only [List.map_map, Function.comp_def]
-        calc (ns.zip (ps.take ns.length)).map (fun r => r.2.term)
-            = ((ns.zip (ps.take ns.length)).map Prod.snd).map Sequent.term := by
-              simp [List.map_map, Function.comp_def]
-          _ = (ps.take ns.length).map Sequent.term := by
-              rw [List.map_snd_zip (by omega)]
-      have htyp : ((ns.zip (ps.take ns.length)).map fun r => (r.1, r.2.type, r.2.term)).map
-          (fun p => (p.1, p.2.1)) = ns.zip ((ps.take ns.length).map Sequent.type) := by
-        rw [List.zip_map_right]
-        simp only [List.map_map, Function.comp_def]
-        apply List.map_congr_left
-        intro r _
-        rfl
-      have := HasTy.makeCallableRest (G := G) (Γ := Γ) (F := A) (n := n) (b := b) (L := L)
-        (As := As) (parts := (ns.zip (ps.take ns.length)).map fun r => (r.1, r.2.type, r.2.term))
-        (by rw [htyp]; exact hr)
-        (by rw [hfst]; exact hnd)
-        (by
-          intro q hq
-          obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq
-          have hmem : r.2 ∈ ps := List.mem_of_mem_take (List.of_mem_zip (by simpa using hr')).2
-          have h := hp r.2 hmem
-          rw [hctx r.2 (List.of_mem_zip (by simpa using hr')).2] at h
-          exact h)
-        hlenA hsig
-        (by
-          intro q hq
-          apply hp ⟨q.2 :: q.1.1 :: q.1.2.1 ++ Γ, b, q.1.2.2.2⟩
-          have : (⟨q.2 :: q.1.1 :: q.1.2.1 ++ Γ, b, q.1.2.2.2⟩ : Sequent ι) ∈ ps.drop ns.length := by
-            rw [hbodies]
-            exact List.mem_map.mpr ⟨q, hq, rfl⟩
-          exact List.mem_of_mem_drop this)
-      rw [hfst, hsnd] at this
-      exact this
     · contradiction
   · rename_i E s js
     rcases hl with ⟨hΓ, ht, hsp, hr⟩
@@ -1274,17 +1217,6 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : Code
         obtain ⟨pp, hpp⟩ := PositiveCertificates.exists_mem_zip hlen q hq
         obtain ⟨c, hc, hcp⟩ := hL _ hpp
         exact ⟨c, hc, hcp.covered⟩) hS
-    · contradiction
-  · rename_i ps U arity b ns inits
-    obtain ⟨rfl, rfl, hU, hl⟩ := hl
-    unfold ctorEPremises at hl
-    split at hl
-    · rename_i L hL
-      apply HasTy.ctorE hL hU (fun p hp => hl.1 _ (List.mem_map_of_mem hp))
-      intro p hmem
-      apply hp ⟨U :: p.1.take arity ++ Γ, b, p.2⟩
-      rw [hl.2]
-      exact List.mem_map.mpr ⟨(U, p.1, p.2), List.mem_map_of_mem hmem, rfl⟩
     · contradiction
   · rename_i f args jf jas
     rcases hl with ⟨hΓf, htf, hterms, hundef, hctx, hL⟩
@@ -1359,6 +1291,32 @@ theorem accepted_safe [DecidableEq ι] {G : NormalGraph ι} {t A e} {codes : Cod
     Safe (meaning G A) n W h t :=
   (check_sound he hcodes).2.closed_safe (check_sound he hcodes).1 n W h hw hh
 
+/-- Every offer graph code meets is checked when every entry is admitted. -/
+theorem offersChecked_complete [DecidableEq ι] {G : NormalGraph ι} {arity : Nat} {E : List Tm}
+    {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {start : Nat}
+    {Cs : List (Ty ι)} {rest : Bool} {L : List (Ty ι × List (Ty ι) × Ty ι)}
+    {S : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)} {As : List (Ty ι)}
+    (h : CodeOffers G arity E K start Cs rest L S As) :
+    offersChecked G (fun _ => true) arity E K start Cs rest L S As = true := by
+  cases rest with
+  | false => simp [offersChecked]
+  | true =>
+    obtain ⟨rfl, hlen, hs⟩ := h
+    simp only [offersChecked, List.isEmpty_nil, hlen, beq_self_eq_true, Bool.and_true,
+      Bool.true_and, List.all_eq_true, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq]
+    exact fun q hq => ⟨(hs q hq).1, (hs q hq).2.1⟩
+
+/-- Captures that are slots of the context name slots below its length. -/
+theorem capSlots_complete {Γ : List (Ty ι)} {caps : List (Ty ι × Nat)}
+    (hlt : ∀ c ∈ caps, c.2 < Γ.length) :
+    capSlotsBelow (caps.map fun c => Tm.var c.2) Γ.length = true := by
+  have hv : varSlots (caps.map fun c => Tm.var c.2) = some (caps.map Prod.snd) := by
+    have := varSlots_map (caps.map Prod.snd)
+    simpa [List.map_map, Function.comp_def] using this
+  simp only [capSlotsBelow, hv, List.all_eq_true, List.mem_map]
+  rintro _ ⟨c, hc, rfl⟩
+  exact decide_eq_true (hlt c hc)
+
 /-- Evidence for a sequent, with every graph code admitted: coverage of the
 rules, where which code a unit has checked is not the question. -/
 def Representable [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) : Prop :=
@@ -1404,107 +1362,84 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
   | str hr => exact node_complete (r := .str) (js := []) hr (by simp)
   | bigintLit hr => exact node_complete (r := .bigintLit) (js := []) hr (by simp)
   | bigint hr => exact node_complete (r := .bigint) (js := []) hr (by simp)
-  | @funE Γ F L S arity b hr hlen hb ih =>
-    apply node_complete (r := .funE)
-      (js := (offerRows L S).map (fun p => ⟨bodyFrame arity p Γ, b, p.2.2⟩))
-    · refine ⟨rfl, rfl, ?_⟩
-      show funEPremises G Γ F arity b _
-      simp only [funEPremises, show expand G F = [.arrs L S] from hr]
-      exact ⟨hlen, rfl⟩
-    · intro j hj
-      obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
-      exact ih p hp
-  | @funGraph Γ F L S arity start E K caps hr hspec hlt hcap ih =>
-    apply node_complete (r := .funGraph)
-      (j := ⟨Γ, .make (.graph arity E K start (caps.map fun c => .var c.2)) .nul, F⟩)
+  | @funGraph Γ F L S arity start E K caps rest As hr hspec hlt hcap ih =>
+    apply node_complete (r := .funGraph As)
+      (j := ⟨Γ, .make (.graph arity E K start (caps.map fun c => .var c.2) .call rest) .nul, F⟩)
       (js := caps.map fun c => ⟨Γ, .var c.2, c.1⟩)
-    · refine ⟨rfl, rfl, by simp, ?_, ?_, ?_⟩
+    · refine ⟨rfl, rfl, rfl, by simp, ?_, capSlots_complete hlt, ?_⟩
       · intro q hq
         obtain ⟨c, _, rfl⟩ := List.mem_map.mp hq
         rfl
-      · have hv : varSlots (caps.map fun c => Tm.var c.2) = some (caps.map Prod.snd) := by
-          have := varSlots_map (caps.map Prod.snd)
-          simpa [List.map_map, Function.comp_def] using this
-        simp only [capSlotsBelow, hv, List.all_eq_true, List.mem_map]
-        rintro _ ⟨c, hc, rfl⟩
-        exact decide_eq_true (hlt c hc)
-      · simp [graphCodesChecked, schemeOf_plain (Represents.plain hr),
-          show expand G F = [.arrs L S] from hr]
-    · intro j hj
-      obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hj
-      exact ih c hc
-  | @funScheme Γ i s arity start E K caps hp hq hspec hcf hlt hcap ih =>
-    apply node_complete (r := .funGraph)
-      (j := ⟨Γ, .make (.graph arity E K start (caps.map fun c => .var c.2)) .nul, [i]⟩)
-      (js := caps.map fun c => ⟨Γ, .var c.2, c.1⟩)
-    · refine ⟨rfl, rfl, by simp, ?_, ?_, ?_⟩
-      · intro q hq
-        obtain ⟨c, _, rfl⟩ := List.mem_map.mp hq
-        rfl
-      · have hv : varSlots (caps.map fun c => Tm.var c.2) = some (caps.map Prod.snd) := by
-          have := varSlots_map (caps.map Prod.snd)
-          simpa [List.map_map, Function.comp_def] using this
-        simp only [capSlotsBelow, hv, List.all_eq_true, List.mem_map]
-        rintro _ ⟨c, hc, rfl⟩
-        exact decide_eq_true (hlt c hc)
       · have hmap : (caps.map fun c => (⟨Γ, .var c.2, c.1⟩ : Sequent ι)).map Sequent.type =
             caps.map Prod.fst := by simp
-        simp [graphCodesChecked, schemeOf, hp, hq, hmap, hcf]
+        simp only [graphCodesChecked, schemeOf_plain (Represents.plain hr),
+          show expand G F = [.arrs L S] from hr, hmap]
+        exact offersChecked_complete hspec
     · intro j hj
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hj
       exact ih c hc
-  | @makeCallable Γ F L arity b parts hr hnd hpart hlen hb ih ihb =>
-    apply node_complete (r := .makeCallable)
-      (j := ⟨Γ, .makeAt (.closure arity b) (parts.map Prod.fst) (parts.map fun p => p.2.2), F⟩)
-      (js := (parts.map fun p => ⟨Γ, p.2.2, p.2.1⟩) ++
-        L.map (fun p => ⟨bodyFrame arity p Γ,b,p.2.2⟩))
+  | @funScheme Γ i s arity start E K caps rest As hp hq hspec hcf hlt hcap ih =>
+    apply node_complete (r := .funGraph As)
+      (j := ⟨Γ, .make (.graph arity E K start (caps.map fun c => .var c.2) .call rest) .nul, [i]⟩)
+      (js := caps.map fun c => ⟨Γ, .var c.2, c.1⟩)
+    · refine ⟨rfl, rfl, rfl, by simp, ?_, capSlots_complete hlt, ?_⟩
+      · intro q hq
+        obtain ⟨c, _, rfl⟩ := List.mem_map.mp hq
+        rfl
+      · have hmap : (caps.map fun c => (⟨Γ, .var c.2, c.1⟩ : Sequent ι)).map Sequent.type =
+            caps.map Prod.fst := by simp
+        simp only [graphCodesChecked, schemeOf, hp, hq, hmap, hcf, Bool.false_eq_true,
+          if_false, Option.map_some, Bool.true_and]
+        exact offersChecked_complete (hspec G.env)
+    · intro j hj
+      obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hj
+      exact ih c hc
+  | @ctorGraph Γ F U L arity start E K caps hr hu hspec hlt hcap ih =>
+    apply node_complete (r := .ctorGraph U)
+      (j := ⟨Γ, .make (.graph arity E K start (caps.map fun c => .var c.2) .construct) .nul, F⟩)
+      (js := caps.map fun c => ⟨Γ, .var c.2, c.1⟩)
+    · refine ⟨rfl, rfl, rfl, rfl, by simp, ?_, capSlots_complete hlt, hu, ?_⟩
+      · intro q hq
+        obtain ⟨c, _, rfl⟩ := List.mem_map.mp hq
+        rfl
+      · simp [ctorCodesChecked, show expand G F = [.ctors L] from hr]
+    · intro j hj
+      obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hj
+      exact ih c hc
+  | @callableGraph Γ F L S arity start E K caps rest As parts hr hnd hpart hspec hlt hcap ih ihc =>
+    apply node_complete (r := .callableGraph As)
+      (j := ⟨Γ, .makeAt (.graph arity E K start (caps.map fun c => .var c.2) .call rest)
+        (parts.map Prod.fst) (parts.map fun p => p.2.2), F⟩)
+      (js := (parts.map fun p => ⟨Γ, p.2.2, p.2.1⟩) ++ caps.map fun c => ⟨Γ, .var c.2, c.1⟩)
     · simp only [Local,
-        show expand G F = [.callable (parts.map fun p => (p.1, p.2.1)) [] L []] from hr]
+        show expand G F = [.callable (parts.map fun p => (p.1, p.2.1)) [] L S] from hr]
       have hlenp : (parts.map fun p => (⟨Γ, p.2.2, p.2.1⟩ : Sequent ι)).length
           = (parts.map Prod.fst).length := by simp
-      refine ⟨hnd, by simp, ?_, ?_, ?_, hlen, ?_⟩
+      refine ⟨trivial, hnd, by simp, ?_, ?_, ?_, ?_, ?_, ?_⟩
       · rw [List.take_left' hlenp]
         simp [List.map_map, Function.comp_def]
+      · intro q hq
+        rcases List.mem_append.mp hq with hq | hq
+        · obtain ⟨r, _, rfl⟩ := List.mem_map.mp hq
+          rfl
+        · obtain ⟨c, _, rfl⟩ := List.mem_map.mp hq
+          rfl
       · rw [List.take_left' hlenp]
-        intro q hq
-        obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq
-        rfl
-      · rw [List.take_left' hlenp]
-        simp only [List.map_map, Function.comp_def]
-        rw [List.zip_map']
+        simp [List.map_map, Function.comp_def, List.zip_map']
       · rw [List.drop_left' hlenp]
-    · intro j hj
-      rcases List.mem_append.mp hj with hj | hj
-      · obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hj
-        exact ih p hp
-      · obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hj
-        exact ihb p hp
-  | @makeCallableRest Γ F parts L As n b hr hnd hpart hlen hsig hb ih ihb =>
-    apply node_complete (r := .makeCallableRest As)
-      (j := ⟨Γ, .makeAt (.variadic n b) (parts.map Prod.fst) (parts.map fun p => p.2.2), F⟩)
-      (js := (parts.map fun p => ⟨Γ, p.2.2, p.2.1⟩) ++
-        (L.zip As).map (fun p => ⟨p.2 :: p.1.1 :: p.1.2.1 ++ Γ,b,p.1.2.2.2⟩))
-    · simp only [Local,
-        show expand G F = [.callable (parts.map fun p => (p.1, p.2.1)) [] [] L] from hr]
-      have hlenp : (parts.map fun p => (⟨Γ, p.2.2, p.2.1⟩ : Sequent ι)).length
-          = (parts.map Prod.fst).length := by simp
-      refine ⟨hnd, by simp, ?_, ?_, ?_, hlen, hsig, ?_⟩
-      · rw [List.take_left' hlenp]
         simp [List.map_map, Function.comp_def]
-      · rw [List.take_left' hlenp]
-        intro q hq
-        obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq
-        rfl
-      · rw [List.take_left' hlenp]
-        simp only [List.map_map, Function.comp_def]
-        rw [List.zip_map']
+      · exact capSlots_complete hlt
       · rw [List.drop_left' hlenp]
+        have hmap : (caps.map fun c => (⟨Γ, .var c.2, c.1⟩ : Sequent ι)).map Sequent.type =
+            caps.map Prod.fst := by simp
+        rw [hmap]
+        exact offersChecked_complete hspec
     · intro j hj
       rcases List.mem_append.mp hj with hj | hj
-      · obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hj
+      · obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
         exact ih p hp
-      · obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hj
-        exact ihb p hp
+      · obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hj
+        exact ihc c hc
   | @callCallable Γ f r F Rt B P Ps L S xs Us hf hr hp hrt ha hu ihf ihrt iha ihu =>
     apply node_complete (r := .callCallable)
       (js := ⟨Γ,f,F⟩ :: ⟨Γ,r,Rt⟩ :: (xs.map (fun p => ⟨Γ,p.2,p.1⟩) ++ Us.map (fun A => ⟨Γ,.undef,A⟩)))
@@ -1555,17 +1490,6 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
       rcases hj with rfl | rfl
       · exact iha
       · exact ihb
-  | @ctorE Γ F U L arity b hr hu hlen hb ih =>
-    apply node_complete (r := .ctorE U) (js := L.map (fun p => ⟨U :: p.1.take arity ++ Γ, b, p.2⟩))
-    · refine ⟨rfl, rfl, hu, ?_⟩
-      show ctorEPremises G Γ F U arity b _
-      simp only [ctorEPremises, show expand G F = [.ctors L] from hr]
-      refine ⟨fun q hq => ?_, by simp [List.map_map, Function.comp_def, bodyFrame]⟩
-      obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
-      exact hlen p hp
-    · intro j hj
-      obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
-      exact ih p hp
   | @construct Γ f F B L xs Us hf hr hp hx hu ihf ihx ihu =>
     apply node_complete (r := .construct)
       (js := ⟨Γ,f,F⟩ :: (xs.map (fun p => ⟨Γ,p.2,p.1⟩) ++ Us.map (fun A => ⟨Γ,.undef,A⟩)))
@@ -1843,15 +1767,6 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     · intro j hj
       obtain ⟨a,ha,rfl⟩ := List.mem_map.mp hj
       exact ih a ha
-  | @funRest Γ F L As k b hr hlen hsig hb ih =>
-    apply node_complete (r := .funRest As)
-      (js := (L.zip As).map fun p => ⟨p.2 :: p.1.1 :: p.1.2.1 ++ Γ, b, p.1.2.2.2⟩)
-    · refine ⟨rfl, rfl, ?_⟩
-      simp only [show expand G F = [.arrs [] L] from hr]
-      exact ⟨hlen, hsig, trivial⟩
-    · intro j hj
-      obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
-      exact ih p hp
   | @arrCopy Γ s S T E hs hsp hr ih =>
     apply node_complete (G := G) (j := ⟨Γ, .arrLit [.spread s], T⟩) (r := .arrCopy E)
       (js := [⟨Γ, s, S⟩]) ⟨rfl, rfl, hsp, hr⟩

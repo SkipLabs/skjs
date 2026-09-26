@@ -15,28 +15,42 @@ def callCaptured : Tm := .app (.var 0) .nul
 def callEvidence : Evidence (Fin 7) := .node ⟨[[3],[2]],callCaptured,[1]⟩ .app
   [leaf [[3],[2]] (.var 0) [3] .var, leaf [[3],[2]] .undef [6] .undef, leaf [[3],[2]] .nul [0] .nul]
 
+/-- The dispatching closure's graph code: one node, run from the frame of the
+receiver, the parameter, then the captured cell. -/
+def dispatchCode : CallCode :=
+  .graph 1 [.ite (.test .isNul (.var 1)) (.read (.var 2)) .nul] [(.ret, none)] 0 [.var 0]
+
 /-- The same closure survives a write through the original reference. Node 2
 is reached after closure creation and again through the back edge from node 3. -/
 def loop : Program :=
   [⟨.alloc .tru, .bind 1,none⟩,
-   ⟨dispatch, .bind 2,none⟩,
+   ⟨.make dispatchCode .nul, .bind 2,none⟩,
    ⟨callCaptured, .branch 3 4,none⟩,
    ⟨.write (.var 1) .fls, .effect 2,none⟩,
    ⟨callCaptured, .ret,none⟩]
+/-- The same program with the code as a term, run by the machine. -/
+def loopExecuted : Program := loop.set 1 ⟨dispatch, .bind 2,none⟩
+
+/-- Every code admitted: whether the code meets its signatures is its table's
+question, not its creation's. -/
+private def admitted : CodeEntry (Fin 7) → Bool := fun _ => true
 
 def loopEvidence : ControlFlow.Certificate (Fin 7) :=
   [{expression := .node ⟨[], .alloc .tru, [2]⟩ .alloc [leaf [] .tru [1] .tru], edges :=  [[.subset]]},
-   {expression := ProgramCertificateTests.dispatchEvidence, edges :=  [[.subset,.subset]]},
+   {expression := .node ⟨[[2]], .make dispatchCode .nul, [3]⟩ (.funGraph []) [leaf [[2]] (.var 0) [2] .var],
+    edges :=  [[.subset,.subset]]},
    {expression := callEvidence, edges :=  [[.subset,.subset],[.subset,.subset]]},
    {expression := .node ⟨[[3],[2]], .write (.var 1) .fls, [0]⟩ .write
      [leaf [[3],[2]] (.var 1) [2] .var, leaf [[3],[2]] .fls [1] .fls], edges :=  [[.subset,.subset]]},
    {expression := callEvidence, edges :=  []}]
 
-#guard checkClosed G [1] loop loopEvidence 0
+#guard checkEntry G [1] loop loopEvidence 0 [] admitted
+-- The creation names code the table must hold.
+#guard !checkClosed G [1] loop loopEvidence 0
 
 /-- The trace actually traverses the back edge, then returns the changed value.
 The global safety proof is independent of this terminating example's trace. -/
-theorem loop_returns_false : Execution loop 27 [] (.at 0 (fun _ => .nul)) [.fls,.nul] (.done .fls) := by
+theorem loop_returns_false : Execution loopExecuted 27 [] (.at 0 (fun _ => .nul)) [.fls,.nul] (.done .fls) := by
   apply Execution.next (.enter rfl)
   apply Execution.next (.expr (.makeV rfl))
   apply Execution.next (.bind rfl)
@@ -84,11 +98,11 @@ def diamondEvidence : ControlFlow.Certificate (Fin 7) :=
 #guard !(checkClosed G [0] diamond
   (diamondEvidence.set 3 {expression := leaf [[0]] (.var 0) [0] .var, edges :=  []}) 0)
 -- Omitted/extra node evidence, changed code and invalid entry points fail.
-#guard !(checkClosed G [1] loop loopEvidence.tail 0)
-#guard !(checkClosed G [1] loop (loopEvidence ++ loopEvidence) 0)
-#guard !(checkClosed G [1] (loop.set 3 ⟨.write (.var 1) .nul, .effect 2,none⟩) loopEvidence 0)
-#guard !(checkClosed G [1] loop loopEvidence 99)
-#guard !(checkClosed G [1] loop loopEvidence 1)
+#guard !(checkEntry G [1] loop loopEvidence.tail 0 [] admitted)
+#guard !(checkEntry G [1] loop (loopEvidence ++ loopEvidence) 0 [] admitted)
+#guard !(checkEntry G [1] (loop.set 3 ⟨.write (.var 1) .nul, .effect 2,none⟩) loopEvidence 0 [] admitted)
+#guard !(checkEntry G [1] loop loopEvidence 99 [] admitted)
+#guard !(checkEntry G [1] loop loopEvidence 1 [] admitted)
 #guard !(checkClosed G [1] [] [] 0)
 
 -- A genuinely nonterminating cycle is accepted without a return requirement.

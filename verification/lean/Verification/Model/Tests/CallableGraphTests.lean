@@ -18,30 +18,45 @@ def types : List (List (Clause (List Nat))) :=
 def G : NormalGraph Nat := .ofRows fun i => types[i]?.getD []
 def labels := List.range types.length
 
+/-- The callable's code: one node returning its parameter, frame slot 1, past
+the receiver. -/
+def code : CallCode := .graph 1 [.var 1] [(.ret, none)] 0 []
+/-- The code at each signature it offers, from the frame the signature
+describes: the receiver, then the parameter. -/
+def codes : List CodeRequest :=
+  signatures.map fun s => ⟨⟨1, [.var 1], [(.ret, none)], 0, [], s, none⟩, [⟨s.1 :: s.2.1, s.2.2⟩]⟩
 def program : Program :=
-  [⟨.attach (.var 1) .tru,.bind 1,none⟩,
+  [⟨.makeAt code [valueField] [.tru],.bind 1,none⟩,
    ⟨.var 0,.bind 2,none⟩,
    ⟨.write (.var 1) .fls,.effect 3,none⟩,
    ⟨.read (.var 0),.bind 4,none⟩,
    ⟨.app (.var 1) (.var 0),.ret,none⟩]
 def claims : List (PointClaim Nat) :=
   [⟨[],[2]⟩,⟨[[2]],[2]⟩,⟨[[2],[2]],[0]⟩,⟨[[2],[2]],[1]⟩,⟨[[1],[2],[2]],[1]⟩]
-def request : Request := ⟨types,program,claims,[1],0,[], []⟩
-def certificate : ControlFlow.Certificate Nat :=
-  match produce G labels 8 [1] program claims 0 with
-  | .ok c => c
-  | .error _ => []
-
-#guard checkClosed G [1] program certificate 0
+def request : Request := ⟨types,program,claims,[1],0,[],codes⟩
 
 private def ok (x : Except String α) : Bool := match x with | .ok _ => true | .error _ => false
-#guard ok (do
-  let r ← Json.parse (toJson request).compress
+private def roundtrip (r : Request) : Except String Unit := do
+  let r ← Json.parse (toJson r).compress
   let c ← produceJson r 8
-  verifyJson r (← Json.parse c.compress))
+  verifyJson r (← Json.parse c.compress)
+#guard ok (roundtrip request)
+-- Each advertised overload needs its own entry of the code table.
+#guard !ok (roundtrip {request with codes := codes.take 1})
+-- Unsafe code cannot acquire a table entry, whatever its creation's evidence.
+#guard !ok (roundtrip {request with codes := codes.map fun q =>
+  {q with entry := {q.entry with exprs := [.app .nul .nul]}}})
+
+/-- The same program with the code as a term, run by the machine. -/
+def executed : Program :=
+  [⟨.attach (.var 1) .tru,.bind 1,none⟩,
+   ⟨.var 0,.bind 2,none⟩,
+   ⟨.write (.var 1) .fls,.effect 3,none⟩,
+   ⟨.read (.var 0),.bind 4,none⟩,
+   ⟨.app (.var 1) (.var 0),.ret,none⟩]
 
 /-- One allocation, then an alias write, bag read, and call on the same identity. -/
-theorem returns_false : Execution program 14 [] (.at 0 (fun _ => .nul)) [.fls] (.done .fls) := by
+theorem returns_false : Execution executed 14 [] (.at 0 (fun _ => .nul)) [.fls] (.done .fls) := by
   apply Execution.next (.enter rfl)
   apply Execution.next (.expr (.makeV rfl))
   apply Execution.next (.bind rfl)
@@ -74,22 +89,24 @@ private def pool := vocabulary G labels claims []
   [.callable [(valueField, [1])] [[(valueField,[1])]] (signatures ++ signatures) []]
 #guard meet (.refs [(valueField, [1])] [] []) (.callable [(valueField, [1])] [] signatures []) == []
 
--- Unsafe code, invalid bag writes, and plain-object calls cannot acquire evidence.
-#guard !(expression G pool 8 [] (.attach (.app .nul .nul) .tru) [2]).isSome
+-- Invalid bag writes and plain-object calls cannot acquire evidence.
 #guard !(expression G pool 8 [[2]] (.write (.var 0) .nul) [0]).isSome
 #guard !(expression G pool 8 [[5]] (.app (.var 0) .tru) [1]).isSome
 
--- Direct-proof rendering reinstates the argument binder for each overload.
-private def creation := expression G pool 8 [] (.attach (.var 1) .tru) [2]
-#guard creation.isSome
+-- A creation's evidence names the bag's fields, then the code's captures; its
+-- code is the table's question, so every code is admitted here.
+private def creationTerm : Tm := .makeAt code [valueField] [.tru]
+private def creation := expression G pool 8 [] creationTerm [2]
+#guard match creation with
+  | some e => ProgramCertificates.check G creationTerm [2] e (fun _ => true)
+  | none => false
 private def creationPlan : DirectProof.Plan :=
-  .rule ⟨[],.attach (.var 1) .tru,[2]⟩ .makeCallable
-    [.rule ⟨[],.tru,[1]⟩ .tru [],
-     .rule ⟨[[7],[1]],.var 1,[1]⟩ .var [],
-     .rule ⟨[[7],[0]],.var 1,[0]⟩ .var []]
+  .rule ⟨[],creationTerm,[2]⟩ (.callableGraph []) [.rule ⟨[],.tru,[1]⟩ .tru []]
 #guard match DirectProof.render G pool [] creationPlan with
   | none => false
-  | some e => ProgramCertificates.check G (.attach (.var 1) .tru) [2] e
+  | some e => ProgramCertificates.check G creationTerm [2] e (fun _ => true)
+-- A plain object's type is no callable's, and the bag's field is claimed.
+#guard !(expression G pool 8 [] (.makeAt code [valueField] [.nul]) [2]).isSome
 
 -- Labels in the new clause's bag and arrow operands remain range checked.
 #guard !validRequest {request with types := RequestJson.rows (types ++ [[.callable [(valueField, [99])] [] signatures []]])}
@@ -137,24 +154,29 @@ private def rows : List (List (Clause (List Nat))) := types ++
   [[.arrs [([7],[[0],[0],[1]],[1]),([7],[[0],[1],[1]],[1])] []],
    [.arrs [([7],[[0],[0,1],[1]],[1])] []], [.arrs [([7],[],[0])] []]]
 private def graph : NormalGraph Nat := .ofRows fun i => rows[i]?.getD []
-private def body := Tm.make (.closure 3 (.var 3)) .nul
-private def req : Request := ⟨rows,[⟨body,.bind 1,none⟩,⟨.var 0,.ret,none⟩],[⟨[],[9]⟩,⟨[[9]],[10]⟩],[10],0,[], []⟩
-#guard ok (do
-  let r ← Json.parse (toJson req).compress
+/-- One-node code of `arity` returning `e`, and its entry at each signature of
+row 9 or of `sigs`, each from the frame the signature describes. -/
+private def oneNode (arity : Nat) (e : Tm) : CallCode := .graph arity [e] [(.ret, none)] 0 []
+private def entries (arity : Nat) (e : Tm) (sigs : List (List Nat × List (List Nat) × List Nat)) :
+    List CodeRequest :=
+  sigs.map fun s => ⟨⟨arity, [e], [(.ret, none)], 0, [], s, none⟩, [⟨s.1 :: s.2.1.take arity, s.2.2⟩]⟩
+private def overloads : List (List Nat × List (List Nat) × List Nat) :=
+  [([7],[[0],[0],[1]],[1]),([7],[[0],[1],[1]],[1])]
+private def body := Tm.make (oneNode 3 (.var 3)) .nul
+private def req : Request := ⟨rows,[⟨body,.bind 1,none⟩,⟨.var 0,.ret,none⟩],[⟨[],[9]⟩,⟨[[9]],[10]⟩],[10],0,[],
+  entries 3 (.var 3) overloads⟩
+private def roundtrip (r : Request) : Except String Unit := do
+  let r ← Json.parse (toJson r).compress
   let c ← produceJson r 8
-  verifyJson r (← Json.parse c.compress))
--- A descriptor with an extra parameter is scoped but violates creation's arity premise.
-#guard !ProgramCertificates.check graph (.make (.closure 4 (.var 3)) .nul) [9]
-  (.node ⟨[],.make (.closure 4 (.var 3)) .nul,[9]⟩ .funE
-    [.node ⟨[[7],[0],[0],[1]],.var 3,[1]⟩ .var [],
-     .node ⟨[[7],[0],[1],[1]],.var 3,[1]⟩ .var []])
--- With the right arity it is accepted: each body sees the receiver, which it
--- does not read, then its parameters.
-#guard ProgramCertificates.check graph body [9]
-  (.node ⟨[],body,[9]⟩ .funE
-    [.node ⟨[[7],[0],[0],[1]],.var 3,[1]⟩ .var [],
-     .node ⟨[[7],[0],[1],[1]],.var 3,[1]⟩ .var []])
-private def zeroReq : Request := ⟨rows,[⟨.make (.closure 0 .nul) .nul,.ret,none⟩],[⟨[],[11]⟩],[11],0,[], []⟩
+  verifyJson r (← Json.parse c.compress)
+-- Each code sees the receiver, which it does not read, then its parameters.
+#guard ok (roundtrip req)
+-- Code taking more parameters than a signature offers is no entry of it.
+private def wideProgram : Program := [⟨.make (oneNode 4 (.var 3)) .nul,.bind 1,none⟩,⟨.var 0,.ret,none⟩]
+private def wideReq : Request := ⟨rows,wideProgram,req.claims,[10],0,[],entries 4 (.var 3) overloads⟩
+#guard !ok (roundtrip wideReq)
+private def zeroReq : Request := ⟨rows,[⟨.make (oneNode 0 .nul) .nul,.ret,none⟩],[⟨[],[11]⟩],[11],0,[],
+  entries 0 .nul [([7],[],[0])]⟩
 #guard ok (do
   let r := toJson zeroReq
   verifyJson r (← produceJson r 8))
@@ -170,7 +192,7 @@ private def callReq : Request :=
   verifyJson r (← produceJson r 8))
 private def zeroCallReq : Request :=
   {zeroReq with
-    program := [⟨.call (.make (.closure 0 .nul) .nul) [],.ret,none⟩],
+    program := [⟨.call (.make (oneNode 0 .nul) .nul) [],.ret,none⟩],
     claims := [⟨[],[0]⟩], result := [0]}
 #guard ok (do
   let r := toJson zeroCallReq
@@ -181,9 +203,9 @@ private def zeroCallReq : Request :=
 private def cellRows := rows ++ RequestJson.rows [[.callable [(valueField, [1])] [] [([7],[[0],[1]],[1])] []]]
 private def cellCallReq : Request :=
   ⟨cellRows,
-   [⟨.make (.closure 2 (.var 2)) .tru,.bind 1,none⟩,
+   [⟨.make (oneNode 2 (.var 2)) .tru,.bind 1,none⟩,
     ⟨.call (.var 0) [.write (.var 0) .fls,.read (.var 0)],.ret,none⟩],
-   [⟨[],[12]⟩,⟨[[12]],[1]⟩],[1],0,[], []⟩
+   [⟨[],[12]⟩,⟨[[12]],[1]⟩],[1],0,[], entries 2 (.var 2) [([7],[[0],[1]],[1])]⟩
 #guard ok (do
   let r := toJson cellCallReq
   verifyJson r (← produceJson r 8))

@@ -593,23 +593,9 @@ inductive Expr where
   leading binders, and the call's claimed instance must agree with them. -/
   | invoke (pos : Span) (callee : Expr) (args : List Expr) (spreads : List Nat)
       (typeArgs : List Json)
-  /-- The return statement's entry environment; the expression retains its own span. -/
-  | atEnv (pos : Span) (body : Expr)
-  /-- Administrative completion and sequencing; neither invents a source expression claim. -/
-  | done (pos : Span)
-  | seqBody (pos : Span) (init body : Expr)
-  /-- Some result denotes a lowered statement conditional with an entry claim;
-  none denotes a source ternary whose own expression claim supplies its result. -/
-  | ifBody (pos : Span) (result : Option Json) (cond thn els : Expr)
-  | letBody (pos : Span) (name : String) (annot : Option Json) (init body : Expr)
-  /-- A closure body's `throw e`: it ends the body, as a return does, and has
-  every type. -/
-  | throwBody (pos : Span) (e : Expr)
-  /-- A pattern in a closure body, `const target = init; body`, one entry
-  like `letBody`: the initializer once, then the target binds it. The parser
-  also writes a closure parameter pattern as one, over the parameter's
-  hidden name. -/
-  | destructBody (pos : Span) (target : Pattern Expr) (init body : Expr)
+  /-- A source ternary, `cond ? thn : els`: its own expression claim supplies
+  its result. -/
+  | ifBody (pos : Span) (cond thn els : Expr)
   /-- A closure body written as statements, the body of a function: its
   parameters written as patterns or with defaults are destructured by its
   first statements, and a body that can complete returns `undefined` at its
@@ -698,20 +684,19 @@ mutual
 executable source form cannot bypass parameter-initialization checks. -/
 partial def Expr.freeNames : Expr → List String
   | .var _ n => [n]
-  | .lit .. | .done .. => []
+  | .lit .. => []
   | .lambda _ receiver _ ps ds _ _ b =>
     -- An ordinary function binds its own `this`; an arrow captures it.
     ((ds.flatMap fun d => d.2.freeNames) ++ b.freeNames).filter
       (fun n => !(ps.map Prod.fst).contains n && (receiver.isNone || n != "this"))
-  | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .atEnv _ e | .ctor _ e
-  | .throwBody _ e => e.freeNames
+  | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .ctor _ e => e.freeNames
   | .construct _ f args _ => f.freeNames ++ args.flatMap Expr.freeNames
   | .alloc _ _ es | .build _ _ es | .arrayLit _ es => es.flatMap Expr.freeNames
   | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b
   | .singletonTest _ _ _ _ a b | .write _ _ a b | .index _ _ a b
   | .elemAt _ a b | .arith _ _ a b | .logicalAssign _ _ a b | .comma _ a b | .inKeys _ a b
-  | .withValue _ a b _ _ | .seqBody _ a b => a.freeNames ++ b.freeNames
-  | .indexWrite _ _ a b c | .elemWrite _ a b c | .ifBody _ _ a b c =>
+  | .withValue _ a b _ _ => a.freeNames ++ b.freeNames
+  | .indexWrite _ _ a b c | .elemWrite _ a b c | .ifBody _ a b c =>
     a.freeNames ++ b.freeNames ++ c.freeNames
   | .update _ _ a b _ => a.freeNames ++ (b.map Expr.freeNames).getD []
   | .assign _ n _ e | .nullishAssign _ n _ e => n :: e.freeNames
@@ -724,9 +709,6 @@ partial def Expr.freeNames : Expr → List String
   | .applyWithReceiver _ f r list => f.freeNames ++ r.freeNames ++ (list.map Expr.freeNames).getD []
   | .call _ f args _ _ | .invoke _ f args _ _ => f.freeNames ++ args.flatMap Expr.freeNames
   | .objectAssign _ t ss => t.freeNames ++ ss.flatMap Expr.freeNames
-  | .letBody _ n _ a b => a.freeNames ++ b.freeNames.filter (· != n)
-  | .destructBody _ t a b => a.freeNames ++ t.defaults.flatMap Expr.freeNames ++
-      t.slices.map (restFromName ·.2) ++ b.freeNames.filter (!t.names.contains ·)
   | .optional _ _ r b => r.freeNames ++ b.freeNames.filter (· != chainName)
   | .block _ ss => stmtsFreeNames ss
 
@@ -734,20 +716,19 @@ partial def Expr.freeNames : Expr → List String
 span, the name, as `freeNames` binds names, and the explicit type arguments
 written on the call. -/
 partial def Expr.callees : Expr → List (Span × Span × String × List Json)
-  | .var .. | .lit .. | .done .. => []
+  | .var .. | .lit .. => []
   | .lambda _ _ _ ps ds _ _ b =>
     ((ds.flatMap fun d => d.2.callees) ++ b.callees).filter
       (fun c => !(ps.map Prod.fst).contains c.2.2.1)
-  | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .atEnv _ e | .ctor _ e
-  | .throwBody _ e => e.callees
+  | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .ctor _ e => e.callees
   | .construct p f args ts =>
     (match f with | .var q n => [(p, q, n, ts)] | _ => []) ++ f.callees ++ args.flatMap Expr.callees
   | .alloc _ _ es | .build _ _ es | .arrayLit _ es => es.flatMap Expr.callees
   | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b
   | .singletonTest _ _ _ _ a b | .write _ _ a b | .index _ _ a b
   | .elemAt _ a b | .arith _ _ a b | .logicalAssign _ _ a b | .comma _ a b | .inKeys _ a b
-  | .withValue _ a b _ _ | .seqBody _ a b => a.callees ++ b.callees
-  | .indexWrite _ _ a b c | .elemWrite _ a b c | .ifBody _ _ a b c =>
+  | .withValue _ a b _ _ => a.callees ++ b.callees
+  | .indexWrite _ _ a b c | .elemWrite _ a b c | .ifBody _ a b c =>
     a.callees ++ b.callees ++ c.callees
   | .update _ _ a b _ => a.callees ++ (b.map Expr.callees).getD []
   | .assign _ _ _ e | .nullishAssign _ _ _ e => e.callees
@@ -761,9 +742,6 @@ partial def Expr.callees : Expr → List (Span × Span × String × List Json)
     (match f with | .var q n => [(p, q, n, ts)] | _ => []) ++ f.callees ++ args.flatMap Expr.callees
   | .invoke _ f args _ _ => f.callees ++ args.flatMap Expr.callees
   | .objectAssign _ t ss => t.callees ++ ss.flatMap Expr.callees
-  | .letBody _ n _ a b => a.callees ++ b.callees.filter (·.2.2.1 != n)
-  | .destructBody _ t a b => a.callees ++ t.defaults.flatMap Expr.callees ++ sliceCallees t.slices ++
-      b.callees.filter (!t.names.contains ·.2.2.1)
   | .optional _ _ r b => r.callees ++ b.callees.filter (·.2.2.1 != chainName)
   | .block _ ss => stmtsCallees ss
 
@@ -863,8 +841,7 @@ abbrev Expr.lam (p : Span) (name : String) (arg result : Json) (body : Expr) : E
 abbrev Expr.app (p : Span) (callee arg : Expr) : Expr := .call p callee [arg] [] []
 
 def Expr.span : Expr → Span
-  | .atEnv _ body | .letBody _ _ _ _ body | .seqBody _ _ body | .destructBody _ _ _ body => body.span
-  | .ifBody p _ _ _ _ | .done p | .throwBody p _ | .equality p _ _ _ | .singletonTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
+  | .ifBody p _ _ _ | .equality p _ _ _ | .singletonTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
   | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
   | .comma p _ _ | .inKeys p _ _ | .optional p _ _ _ | .block p _ => p
   | .arrayLit p _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ _ => p
@@ -1273,7 +1250,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     return .lambda p (receiver.map Prod.fst) typeParams params defaults (!restAt.isEmpty)
       (if result == .null then none else some result) body
   | "conditional" =>
-    return .ifBody p none (← decodeExpr (← jField j "cond"))
+    return .ifBody p (← decodeExpr (← jField j "cond"))
       (← decodeExpr (← jField j "then")) (← decodeExpr (← jField j "else_"))
   | "blockBody" => do
     CellClaims.fieldsExactly j ["k","pos","body"]
@@ -1390,94 +1367,6 @@ partial def decodeStmt (j : Json) : Except String Stmt := do
   | _ => throw "statement outside the stateful fragment"
 end
 
-/-! ### Statements as an expression
-
-A closure body is statements, as a function body is, and the graph a closure
-code runs is compiled from them (`SourceExtraction`). The closures whose code
-is a term — a generic closure, one collecting a rest array, a class value's
-construct code, a callable object's function — read the statements as one
-expression instead: bindings, effects, patterns and `if`s, ending in returns,
-which is what their calculus terms can say. A statement they cannot say is
-refused with its reason. -/
-
-/-- A type annotation's JSON, for the `null` a return-free statement
-conditional yields. -/
-private def nullType (p : Span) : Json :=
-  Json.mkObj [("k", "atom"), ("name", "null"), ("span", toJson [p.1, p.2])]
-
-/-- Whether a statement list holds a `return` or `throw`, arms included. -/
-private partial def hasReturn (ss : List Stmt) : Bool :=
-  ss.any fun s => match s with
-    | .ret .. | .throw .. => true
-    | .ite _ _ t e => hasReturn t || hasReturn (e.getD [])
-    | _ => false
-
-/-- Whether a statement list ends by returning or throwing on every arm. -/
-private partial def endsInReturn (ss : List Stmt) : Bool :=
-  match ss.getLast? with
-  | some (.ret ..) | some (.throw ..) => true
-  | some (.ite _ _ t (some e)) => endsInReturn t && endsInReturn e
-  | _ => false
-
-mutual
-/-- The statements `ss`, then `tail`. With `allowReturn`, an `if` may return on
-one arm and complete on the other. -/
-private partial def prefixExpr (why : String) (result : Option Json) (constructor : Bool)
-    (ss : List Stmt) (tail : Expr) (allowReturn : Bool) : Except String Expr := do
-  let mut tail := tail
-  for st in ss.reverse do
-    match st with
-    | .loop .. | .forOf .. | .brk .. | .cont .. =>
-      throw s!"a loop in {why} is outside the fragment: its code is a term, not a graph"
-    | .block .. | .tryStmt .. | .closing .. =>
-      throw s!"a block, switch or try in {why} is outside the fragment: its code is a term, not a graph"
-    | .mutables .. =>
-      throw s!"a mutable local in {why} is outside the fragment: its code is a term, not a graph"
-    | .ite p c yes no =>
-      let no := no.getD []
-      let arm := fun (xs : List Stmt) => prefixExpr why result constructor xs (.done p) false
-      if !hasReturn yes && !hasReturn no then
-        tail := .seqBody p (.ifBody p (some (nullType p)) c (← arm yes) (← arm no)) tail
-      else if allowReturn && ((endsInReturn yes && !hasReturn no) || (endsInReturn no && !hasReturn yes)) then
-        let some r := result | throw "a closure returning from a branch needs a result annotation"
-        -- The falling arm finishes in its own scope before the continuation.
-        let resume := fun (xs : List Stmt) => do
-          if xs.isEmpty then pure tail else pure (Expr.seqBody p (← arm xs) tail)
-        tail := .ifBody p (some r) c
-          (← if endsInReturn yes then blockExpr why result constructor yes else resume yes)
-          (← if endsInReturn no then blockExpr why result constructor no else resume no)
-      else throw "closure branch needs one returning arm and one return-free arm"
-    | .destructure p target none init => tail := .destructBody p target init tail
-    | .destructure .. =>
-      throw s!"a parameter default in {why} is outside the fragment: its code is a term, not a graph"
-    | .constants p [b] => tail := .letBody p b.name b.annot b.init tail
-    | .constants .. => throw "one binding per `const` in a closure body"
-    | .effect p e => tail := .letBody p "" none e tail
-    | .ret .. | .throw .. => throw "statements after an unconditional return are outside the fragment"
-  return tail
-
-/-- Statements that return on every terminal arm, as one expression. A class
-value's construct code falls through its `return`s into the instance. -/
-private partial def blockExpr (why : String) (result : Option Json) (constructor : Bool)
-    (ss : List Stmt) : Except String Expr := do
-  let tail ← match ss.getLast? with
-    | some (.ret p e) => pure (if constructor then e else .atEnv p e)
-    | some (.throw p e) => pure (.throwBody p e)
-    | some (.ite p c t (some e)) =>
-      let some r := result | throw "a closure returning from a branch needs a result annotation"
-      pure (.ifBody p (some r) c (← blockExpr why result constructor t) (← blockExpr why result constructor e))
-    | _ => throw "closure block must return on both terminal arms"
-  prefixExpr why result constructor ss.dropLast tail true
-end
-
-/-- A closure's statements read as one expression, for a closure whose code
-is a term. `why` names that closure in a refusal; `result` is its result
-annotation. The statements' leading destructuring of hidden parameters is
-kept as patterns; a default among them is refused. -/
-def Expr.termBody (why : String) (result : Option Json) (constructor : Bool := false) :
-    Expr → Except String Expr
-  | .block _ ss => blockExpr why result constructor ss
-  | e => pure e
 
 def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
   let typeParams ← (← jArr j "typeParams").mapM decodeTypeParam

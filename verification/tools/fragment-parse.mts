@@ -39,7 +39,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { Atom } from "./claim.mts";
 import type { DeclarationIdentity, PropertyKey, TypeTerm } from "./declaration-types.mts";
-import { bigintText, CLASS_ACCESS, CONSTRUCTOR_DEFAULT, METHOD_RECEIVER, classMemberRefusal, computedForm, numericKey, optionalTerm, restPositions, restRefusal, restTerm, signature, substitute, typeTerm,
+import { bigintText, CLASS_ACCESS, METHOD_RECEIVER, classMemberRefusal, computedForm, numericKey, optionalTerm, restPositions, restRefusal, restTerm, signature, substitute, typeTerm,
   type TermScope } from "./type-term.mts";
 import type {
   Ast,
@@ -118,6 +118,20 @@ export function freeOffsets(within: Node, file: ts.SourceFile): number[] {
   for (let o = start + 1; o < to; o++)
     if (!starts.has(o) && !nested.some(([a, b]) => a <= o && o < b)) free.push(o);
   return free;
+}
+
+/** The span of an `if`'s closing parenthesis: the first character past its
+ * condition that is neither white space nor a comment. */
+export function conditionParen(node: ts.IfStatement, file: ts.SourceFile): Span {
+  const text = file.text;
+  let i = node.expression.end;
+  for (;;) {
+    if (/\s/.test(text[i] ?? "")) i++;
+    else if (text.startsWith("//", i)) i = text.indexOf("\n", i) < 0 ? text.length : text.indexOf("\n", i);
+    else if (text.startsWith("/*", i)) i = text.indexOf("*/", i) + 2;
+    else break;
+  }
+  return [i, i + 1];
 }
 
 /** The entries `protocolForOf` states in a `for...of` header, past the
@@ -767,21 +781,36 @@ class Gate {
         const keyword = heritage ? heritage.getStart(this.file) : 0;
         if (base.params.length > "extends".length)
           this.fail(node, "an implicit derived constructor forwarding more parameters than its `extends` keyword has characters has no source site for each");
-        return base.params.map((p, i) => ({ name: parameterName(i), field: parameterName(i),
-          pos: [keyword + i, keyword + i + 1] as Span, property: false, at: this.span(name), type: p.type }));
+        return base.params.map((p, i) => ({ name: parameterName(i), local: parameterName(i), field: parameterName(i),
+          pos: [keyword + i, keyword + i + 1] as Span, property: false, at: this.span(name), type: p.type,
+          fieldType: p.type, binding: null as Stmt | null }));
       };
       // An optional parameter, `x?: T`, binds `T | undefined`, as a closure's.
+      // A parameter with a default binds a hidden name, which the caller's
+      // argument initializes, and a `destructure` over it, first in the
+      // constructor's body, binds the source's name, the default replacing an
+      // undefined argument, as a closure's parameter with a default does.
       const params = constructor ? constructor.parameters.map((p, i, all) => {
-        if (p.initializer)
-          this.fail(p, CONSTRUCTOR_DEFAULT);
+        if (p.initializer && readsThis(p.initializer))
+          this.fail(p, "a constructor parameter default that reads `this` is outside the fragment: the instance is allocated at the end of the constructor");
         if (!ts.isIdentifier(p.name) || p.dotDotDotToken)
           this.fail(p, "a constructor parameter must be plain, required or optional");
-        if (!p.questionToken && i > firstOptional(all))
+        if (!p.questionToken && !p.initializer && i > firstOptional(all))
           this.fail(p, "a required parameter cannot follow an optional one");
         if (p.name.text === "undefined") this.fail(p, "shadowing undefined is outside the fragment");
         if (p.modifiers?.length && p.name.text === "then") this.fail(p, FORGED_PROMISE);
-        return { name: this.local(p.name), field: p.name.text, pos: this.span(p.name), property: !!p.modifiers?.length, at: this.span(p),
-          type: p.questionToken ? this.optionalTypeOf(p.type, p) : this.typeOf(p.type, p) };
+        const local = this.local(p.name);
+        const binding: Stmt | null = p.initializer ? {
+          k: "destructure", pos: this.span(p), target: { k: "name", name: local, pos: this.span(p.name) },
+          // The hidden name is read at the whole parameter, a site apart from
+          // its name, which a parameter property's field reads again.
+          default_: this.expr(p.initializer), init: { k: "id", pos: this.span(p), name: parameterName(i) },
+        } : null;
+        const fieldType = p.questionToken ? this.optionalTypeOf(p.type, p) : this.typeOf(p.type, p);
+        return { name: p.initializer ? parameterName(i) : local, local, field: p.name.text, pos: this.span(p.name),
+          property: !!p.modifiers?.length, at: this.span(p),
+          // A caller may pass `undefined` where there is a default.
+          type: p.initializer ? this.optionalTypeOf(p.type, p) : fieldType, fieldType, binding };
       }) : base ? implicitParams(base) : [];
       // Static members are bindings of their own, which `C.x` reads
       // (`staticReads`), after the class, as JavaScript defines them once the
@@ -901,7 +930,7 @@ class Gate {
       }
       this.selfClass = instanceMembers;
       for (const p of params)
-        if (p.property) fields.push({ name: p.field, text: p.field, e: { k: "id", pos: p.pos, name: p.name }, bind: { pos: p.at, type: p.type } });
+        if (p.property) fields.push({ name: p.field, text: p.field, e: { k: "id", pos: p.pos, name: p.local }, bind: { pos: p.at, type: p.fieldType } });
       // A class allocates its prototype object once, holding its methods, and
       // each instance holds it under the prototype key, first: the key's
       // value is a read of a constant, so its place changes nothing. A
@@ -954,7 +983,7 @@ class Gate {
       // no source binding can spell, so evaluation order is the source's. A
       // last `if` that assigns fields ends each arm with its own allocation.
       const construct = (body: readonly Statement[], before: Field[], done: Set<string>,
-          prelude: Stmt[] = []): Stmt[] => {
+          prelude: Stmt[] = [], end: Span | null = null): Stmt[] => {
         const fields = before.map((f) => ({ ...f }));
         const assigned = new Set(done);
         const statements: Stmt[] = [...prelude];
@@ -987,8 +1016,12 @@ class Gate {
               this.fail(statement, "a constructor statement that reads `this` is outside the fragment");
             // An unbraced arm, `else if` included, is the one statement a
             // block around it would hold.
+            // Each arm's allocation is its own statement, entered at the
+            // arm's last character, or, with no `else`, at the condition's
+            // closing parenthesis.
             const arm = (s: Statement | undefined): Stmt[] =>
-              construct(!s ? [] : ts.isBlock(s) ? s.statements : [s], fields, assigned);
+              construct(!s ? [] : ts.isBlock(s) ? s.statements : [s], fields, assigned, [],
+                s ? [s.end - 1, s.end] : conditionParen(statement, this.file));
             flush();
             statements.push({ k: "if", pos: this.span(statement), cond: this.expr(statement.expression),
               then: arm(statement.thenStatement), else_: arm(statement.elseStatement) });
@@ -1018,7 +1051,7 @@ class Gate {
                 ...(proto ? { proto } : {}) }
             : { k: "alloc", pos: at, fields: fields.map(({ name, e }) => ({ name, e })),
               ...(proto ? { proto } : {}) };
-          statements.push({ k: "return", pos: at, e: instanceValue });
+          statements.push({ k: "return", pos: end ?? at, e: instanceValue });
         }
         return statements;
       };
@@ -1065,7 +1098,8 @@ class Gate {
         lambda: { k: "lambda", pos: this.span(node),
         typeParams: [], receiver: null, params: params.map((p) => ({ name: p.name, type: p.type })),
         result: instance, body: { k: "blockBody", pos: this.span(constructor?.body ?? node),
-          body: construct(body, fields, new Set(), prelude) } } };
+          body: [...params.flatMap((p) => p.binding ? [p.binding] : []),
+            ...construct(body, fields, new Set(), prelude)] } } };
       const type: TypeTerm = { k: "constructor", params: params.map((p) => p.type), rest: null, result: instance,
         span: this.span(name) };
       // A class another extends is also bound, first, as its fresh

@@ -1,17 +1,30 @@
 import Verification.Model.Tests.CallableGraphTests
+import Verification.Model.Tests.GraphCodeFixtures
 
 /-! A closure mutates a captured neutral bag. Invocation invalidates current
 contents and read links while preserving immutable snapshots. -/
 namespace Verification.Model.CallableMutationTests
 open PositiveNormalization PositiveGraphs PositiveRules ProgramTyping ProgramCertificates
-open CertificateProducer ControlFlow RequestJson HeapExpressionRules
+open CertificateProducer ControlFlow RequestJson HeapExpressionRules GraphCodeFixtures
 
 private def types : List (List (Clause (List Nat))) :=
   [[.nul],[.bool],[.refs [(valueField, [1])] [] []],[.callable [(valueField, [1])] [] [] []],
    [.boolLit false],[.arrs [([6],[[0]],[0])] []],[.top],[.undef]]
 private def G : NormalGraph Nat := .ofRows fun i => types[i]?.getD []
 private def labels := List.range types.length
+/-- The mutator writes the captured bag, its frame's slot 3, past its receiver
+and parameter. -/
+private def mutator : Tm := .write (.var 3) .tru
 private def program (callable fresh : Bool) : Program :=
+  [⟨.fls,.bind 1,none⟩,
+   ⟨if callable then .makeAt (oneNode 1 (.var 0) 1) [valueField] [.var 0] else .alloc (.var 0),.bind 2,none⟩,
+   ⟨.read (.var 0),.bind 3,none⟩,
+   ⟨.make (oneNode 1 mutator 3) .nul,.bind 4,none⟩,
+   ⟨.app (.var 0) .nul,.effect 5,none⟩,
+   ⟨if fresh then .read (.var 2) else .var 1,.ret,none⟩]
+private def codes : List CodeRequest := oneNodeCodes 1 mutator [[1],[2,3],[1]] [([6],[[0]],[0])]
+/-- The same program with the codes as terms, run by the machine. -/
+private def executed (callable fresh : Bool) : Program :=
   [⟨.fls,.bind 1,none⟩,
    ⟨if callable then .attach (.var 0) (.var 0) else .alloc (.var 0),.bind 2,none⟩,
    ⟨.read (.var 0),.bind 3,none⟩,
@@ -23,9 +36,9 @@ private def claims (R : List Nat) : List (PointClaim Nat) :=
    ⟨[[1],[2,3],[1]],[5]⟩,⟨[[5],[1],[2,3],[1]],[0]⟩,
    ⟨[[5],[1],[2,3],[1]],R⟩]
 private def request (callable fresh : Bool) (R : List Nat) : Request :=
-  ⟨types,program callable fresh,claims R,R,0,[], []⟩
+  ⟨types,program callable fresh,claims R,R,0,[],codes⟩
 private def certificate (callable fresh : Bool) (R : List Nat) : ControlFlow.Certificate Nat :=
-  match produce G labels 10 R (program callable fresh) (claims R) 0 with
+  match produce G labels 10 R (program callable fresh) (claims R) 0 (codes := admitted) with
   | .ok c => c | .error _ => []
 
 -- The saved false value survives a real write, for both allocation descriptors.
@@ -53,13 +66,13 @@ private def certificate (callable fresh : Bool) (R : List Nat) : ControlFlow.Cer
   let shifted := HeapKnowledge.shift c.knowledge
   let staleCells := {c with output := {c.output with cells := shifted.cells}}
   let staleLinks := {c with output := {c.output with links := shifted.links}}
-  return checkNode G [4] P C node c &&
-    !checkNode G [4] P C node staleCells && !checkNode G [4] P C node staleLinks
+  return checkNode G [4] P C node c admitted &&
+    !checkNode G [4] P C node staleCells admitted && !checkNode G [4] P C node staleLinks admitted
 
 /-- The heap really changes to true; a saved immutable value remains false.
 Creation of the mutator accounts for the second, null-initialized heap cell. -/
 theorem returns_expected (callable fresh : Bool) :
-    Execution (program callable fresh) (if fresh then 18 else 17) []
+    Execution (executed callable fresh) (if fresh then 18 else 17) []
       (.at 0 (fun _ => .nul)) [.tru,.nul] (.done (if fresh then .tru else .fls)) := by
   cases callable <;> cases fresh <;>
     repeat first

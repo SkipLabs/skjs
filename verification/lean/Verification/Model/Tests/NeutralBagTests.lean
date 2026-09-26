@@ -1,10 +1,11 @@
 import Verification.Model.Tests.CallableGraphTests
+import Verification.Model.Tests.GraphCodeFixtures
 
 set_option maxHeartbeats 3200000
 
 namespace Verification.Model.NeutralBagTests
 open PositiveNormalization PositiveGraphs PositiveRules ProgramTyping ProgramCertificates
-open CertificateProducer ControlFlow RequestJson HeapExpressionRules
+open CertificateProducer ControlFlow RequestJson HeapExpressionRules GraphCodeFixtures
 
 -- [2,3] describes a Boolean bag without promising whether it is callable.
 private def types : List (List (Clause (List Nat))) :=
@@ -62,8 +63,10 @@ private def writeProof : Evidence Nat := .node writeClaim (.unionVar 0)
 
 -- Both allocation shapes run through one shared graph interface. The neutral
 -- view promises no call signature and does not require a runtime shape branch.
+/-- A callable bag promising no call: its code names no entry of the table. -/
+private def callableBag : Tm := .makeAt (oneNode 1 (.var 0) 0) [valueField] [.tru]
 private def program (callable : Bool) : Program :=
-  [⟨if callable then .attach (.var 0) .tru else .alloc .tru,.bind 1,none⟩,
+  [⟨if callable then callableBag else .alloc .tru,.bind 1,none⟩,
    ⟨.write (.var 0) .fls,.effect 2,none⟩,
    ⟨.read (.var 0),.ret,none⟩]
 private def claims : List (PointClaim Nat) :=
@@ -75,7 +78,11 @@ private def request (callable : Bool) : Request :=
     verifyJson (Lean.toJson (request callable)) response) with
   | .ok _ => true | .error _ => false
 
-theorem returns_false (callable : Bool) : Execution (program callable) 9 []
+/-- The same program with the code as a term, run by the machine. -/
+private def executed (callable : Bool) : Program :=
+  (program callable).set 0 ⟨if callable then .attach (.var 0) .tru else .alloc .tru,.bind 1,none⟩
+
+theorem returns_false (callable : Bool) : Execution (executed callable) 9 []
     (.at 0 (fun _ => .nul)) [.fls] (.done .fls) := by
   cases callable <;>
     repeat first
@@ -91,7 +98,7 @@ theorem returns_false (callable : Bool) : Execution (program callable) 9 []
 -- A neutral read must preserve the false fact about a different cell.
 -- Without that frame, the final Boolean read cannot establish a false singleton.
 private def framedProgram (callable : Bool) : Program :=
-  [⟨if callable then .attach (.var 0) .tru else .alloc .tru,.bind 1,none⟩,
+  [⟨if callable then callableBag else .alloc .tru,.bind 1,none⟩,
    ⟨.fls,.bind 2,none⟩,
    ⟨.alloc (.var 0),.bind 3,none⟩,
    ⟨.read (.var 2),.bind 4,none⟩,
@@ -106,7 +113,11 @@ private def framedRequest (callable : Bool) : Request :=
     verifyJson (Lean.toJson (framedRequest callable)) response) with
   | .ok _ => true | .error _ => false
 
-theorem framed_returns_false (callable : Bool) : Execution (framedProgram callable) 14 []
+/-- The same program with the code as a term, run by the machine. -/
+private def framedExecuted (callable : Bool) : Program :=
+  (framedProgram callable).set 0 ⟨if callable then .attach (.var 0) .tru else .alloc .tru,.bind 1,none⟩
+
+theorem framed_returns_false (callable : Bool) : Execution (framedExecuted callable) 14 []
     (.at 0 (fun _ => .nul)) [.tru,.fls] (.done .fls) := by
   cases callable <;>
     repeat first

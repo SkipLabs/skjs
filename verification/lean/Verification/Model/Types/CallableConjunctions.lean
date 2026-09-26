@@ -25,7 +25,8 @@ if any, has `[[Call]]`. A class constructor's has only `[[Construct]]`, so a
 class value is neither. -/
 theorem neutral_iff (A : Fields) (Bs : List Fields) (n W v) :
     unionT (ReferenceConjunctions.refsT A Bs) (objectsT A Bs []) n W v ↔
-      propsT A Bs n W v ∧ Scoped 0 v ∧ ∀ fs arity b, v ≠ .objAt fs (.closure arity b .construct) := by
+      propsT A Bs n W v ∧ Scoped 0 v ∧
+        ∀ fs c, v = .objAt fs c → c = .absent ∨ c.callable = true := by
   constructor
   · intro h
     rcases h with h | h
@@ -33,39 +34,26 @@ theorem neutral_iff (A : Fields) (Bs : List Fields) (n W v) :
       · obtain ⟨flds,rfl,_⟩ := h.1
         trivial
       · obtain ⟨flds,rfl,_⟩ := h.1
-        intro fs arity b he
+        intro fs c he
         cases he
+        exact .inl rfl
     · refine ⟨h.1,h.2.1.scoped, ?_⟩
       obtain ⟨fs', code, he, hc, -⟩ := h.2.1
-      intro fs arity b hv
+      intro fs c hv
       rw [hv] at he
       cases he
-      simp [CallCode.callable] at hc
+      exact .inr hc
   · rintro ⟨h,hs,hnc⟩
     obtain ⟨flds,code,rfl,_,hr⟩ := h.1
-    cases code with
-    | absent =>
-      left
+    rcases hnc flds code rfl with rfl | hc
+    · left
       refine ⟨hr,?_⟩
       intro B hb
       obtain ⟨flds',code,he,_,hr⟩ := h.2 B hb
       cases he
       exact hr
-    | closure arity b kind =>
-      cases kind with
-      | call =>
-        right
-        exact ⟨h,⟨flds,_,rfl,rfl,hs⟩,by simp⟩
-      | construct => exact absurd rfl (hnc flds arity b)
-    | variadic k b =>
-      right
-      exact ⟨h,⟨flds,_,rfl,rfl,hs⟩,by simp⟩
-    | bound t r pre =>
-      right
-      exact ⟨h,⟨flds,_,rfl,rfl,hs⟩,by simp⟩
-    | graph n E K st caps =>
-      right
-      exact ⟨h,⟨flds,_,rfl,rfl,hs⟩,by simp⟩
+    · right
+      exact ⟨h,⟨flds,_,rfl,hc,hs⟩,by simp⟩
 
 theorem merge (A C : Fields) (Bs Ds : List Fields) (L M : List (Fam × List Fam × Fam)) (n W v) :
     objectsT A (Bs ++ C :: Ds) (L ++ M) n W v ↔

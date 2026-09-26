@@ -131,10 +131,11 @@ export function checkDefaults(verifier: string, artifacts: string): void {
   );
 }
 
-/** Both entry points must refuse executable defaults lacking a scheme certificate. */
+/** A generic closure's default is part of its graph code, checked with the
+ * code: production fails at the default's write of `null`, located there, and
+ * consumption accepts no evidence for the program, which production cannot
+ * emit. */
 export function checkSchemeDefaults(verifier: string, artifacts: string): void {
-  // Extraction must refuse before inspecting the evidence. Production cannot
-  // emit evidence for this program, but consumption still needs a JSON file.
   writeFileSync(join(artifacts, "evidence.json"), "{}");
   for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
     const result = spawnSync(
@@ -152,14 +153,14 @@ export function checkSchemeDefaults(verifier: string, artifacts: string): void {
     assert.ifError(result.error);
     assert.equal(result.signal, null);
     assert.equal(result.status, 1);
+    if (mode === "--check-source-claims") continue;
     assert.match(
       result.stdout + result.stderr,
-      /body requires a variable, a primitive literal, an assignment, a call or a closure/,
+      /source expression obligation at \[400,419\)/,
     );
     const diagnostic = readDiagnostic(result.stdout + result.stderr);
-    assert(diagnostic?.kind === "source-refusal");
-    assert.equal(diagnostic.sourceMap.role, "generic-validation");
-    assert(diagnostic.sourceMap.pos[0] < diagnostic.sourceMap.pos[1]);
+    assert(diagnostic?.kind === "node-typing");
+    assert.deepEqual(diagnostic.source.sourceMap?.pos, [400, 419]);
   }
 }
 

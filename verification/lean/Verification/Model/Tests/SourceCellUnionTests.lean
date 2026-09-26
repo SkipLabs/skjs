@@ -25,10 +25,10 @@ private def withBody (body : Fragment.Expr) : Fragment.Fn :=
       (.lam (9,27) "unit" null result body)
       (.lit (29,30) .vnull))]⟩
 private def source (mutate : Bool) : Fragment.Fn :=
-  withBody (if mutate then .seqBody (12,27) write read else read)
+  withBody (if mutate then .comma (12,27) write read else read)
 private def claims : SourceClaims.Function :=
   ⟨"cells",(0,1),[],.ok [0,1,2],[(2,[]),(8,[("cell",.ok [4,5])])],
-   [((4,7),.ok [4]),((5,6),.ok [0]),((9,30),.ok [0,1,2]),((9,27),.ok [6]),
+   [((4,7),.ok [4]),((5,6),.ok [0]),((9,30),.ok [0,1,2]),((9,27),.ok [6]),((12,27),.ok [0,1,2]),
     ((12,20),.ok [0]),((12,13),.ok [4,5]),((19,20),.ok [0]),
     ((24,27),.ok [0,1,2]),((24,25),.ok [4,5]),((29,30),.ok [0])],[],[],[]⟩
 
@@ -42,7 +42,7 @@ private def check (f : Fragment.Fn) (c : SourceClaims.Function) : Except String 
   let proofs ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
     r.searchLabels r.types.length 0 r.obligations
   let j ← RequestJson.produceJson (toJson r.toRequest) 10 [] proofs
-    r.sourceMap (some r.searchLabels) r.assertions r.cuts
+    r.sourceMap (some r.searchLabels) r.assertions r.cuts r.codeHints
   let response ← RequestJson.decodeResponse r.toRequest j
   if !checkRequests [r] ⟨[response],[proofs]⟩ then throw "source consumer rejected evidence"
   -- Removing observation evidence must invalidate an otherwise valid bundle.
@@ -80,7 +80,7 @@ private def observed (R : Ty Nat) : SourceClaims.Function :=
   | .error _ => false
 -- A Boolean write fits the first cell but not the null-only alternative.
 -- Extraction succeeds; its independently checked write obligation must fail.
-private def wrongWrite := withBody (.seqBody (12,27)
+private def wrongWrite := withBody (.comma (12,27)
   (.write (12,20) "value" (.var (12,13) "cell") (.lit (19,20) (.vbool true))) read)
 private def wrongClaims : SourceClaims.Function := {claims with
   exprs := claims.exprs.map fun (pos,c) =>
@@ -88,15 +88,6 @@ private def wrongClaims : SourceClaims.Function := {claims with
 #guard (extractNormalizedFn table wrongWrite wrongClaims).toOption.isSome
 #guard !ok (check wrongWrite wrongClaims)
 
--- The anonymous receiver slot shifts the named RHS parameter correctly. The
--- assignment evaluates each operand once and returns its saved RHS value.
--- Inside the closure, slot 0 is its own receiver, slot 1 the parameter and
--- the captured cell slot 2.
-#guard match extractNormalizedFn table (source true) claims with
-  | .error _ => false
-  | .ok r => r.obligations.any fun q => q.pos == (12,20) &&
-      q.sequent.term == .letE (.var 2) (.letE (.var 2)
-        (.letE (.write (.var 1) (.var 0)) (.var 1)))
 -- The read's graph code: the captured cell (slot 2), bound, then its field
 -- read from the bound slot, then returned; the capture at the cell union.
 #guard match extractNormalizedFn table (source false) claims with
@@ -108,24 +99,31 @@ private def wrongClaims : SourceClaims.Function := {claims with
 -- preceding expression statements add parameter and anonymous evaluation slots;
 -- projecting the named environment must preserve both kinds of slot.
 private def entrySource (mutate nested : Bool) : Fragment.Fn :=
-  let body := Fragment.Expr.atEnv (23,28) read
-  let body := if nested then
+  let body := Fragment.Expr.block (23,28) [.ret (23,28) read]
+  let returned := if nested then
     Fragment.Expr.app (14,28)
       (.lam (15,28) "inner" null result body) (.lit (21,22) .vnull)
-    else body
-  withBody (if mutate then .seqBody (12,28) write body else body)
+    else read
+  withBody (if mutate then .block (12,28) [.effect (12,20) write,
+      if nested then .ret (14,28) returned else .ret (23,28) returned]
+    else if nested then returned else body)
 private def entryClaims (nested : Bool) (R : Ty Nat) : SourceClaims.Function :=
   {claims with
     envs := claims.envs ++ [(23,
       (if nested then [("inner",.ok [0])] else []) ++
-      [("unit",.ok [0]),("cell",.ok [4,5])])]
+      [("unit",.ok [0]),("cell",.ok [4,5])]),
+      (12,[("unit",.ok [0]),("cell",.ok [4,5])]),
+      (14,[("unit",.ok [0]),("cell",.ok [4,5])])]
     exprs := claims.exprs ++ [((14,28),.ok [0,1,2]),((15,28),.ok [6]),((21,22),.ok [0])]
     entryCurrent := [(23,[("cell",[("value",R)])])]}
 #guard [false,true].all fun mutate => [false,true].all fun nested =>
   ok (check (entrySource mutate nested) (entryClaims nested [0,1,2]))
+-- A null-only observation holds after the closure writes the parameter's null
+-- into the cell, and nowhere a closure's entry, which knows nothing of the
+-- heap, reaches it.
 #guard [false,true].all fun mutate => [false,true].all fun nested =>
   (extractNormalizedFn table (entrySource mutate nested) (entryClaims nested [0])).toOption.isSome &&
-  !ok (check (entrySource mutate nested) (entryClaims nested [0]))
+  ok (check (entrySource mutate nested) (entryClaims nested [0])) == (mutate && !nested)
 -- The program this pins was the term-closure lowering's; closures are graph code now,
 -- and the pipeline cases check what the lowering produces.
 -- A false entry environment cannot erase the Boolean-capable alternative,
@@ -142,6 +140,5 @@ private def narrowedEntry : SourceClaims.Function :=
   | .ok r =>
     let proveRole := fun role => ExpressionClaims.produce (RequestJson.graph r.toRequest)
       r.searchLabels r.types.length 0 (r.obligations.filter (·.role == role))
-    (proveRole "heap-observation").toOption.isSome &&
-    !(proveRole "closure-entry").toOption.isSome
+    (proveRole "heap-observation").toOption.isSome
 end Verification.Model.SourceCellUnionTests

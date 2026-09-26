@@ -33,23 +33,29 @@ deriving instance ToJson, FromJson for Target
 deriving instance ToJson, FromJson for Continuation
 deriving instance ToJson, FromJson for Tm, CallCode
 
-/-- A closure's kind is left out of its JSON when it is `call`, the kind of
-every arrow and method: that is the one spelling of it, so strict decoding,
-which re-encodes and compares, refuses an explicit `"call"`, and a closure
-without it reads as it always has. Closures nest anywhere in a term, so the
-spelling applies at every depth. -/
+/-- A code's kind is left out of its JSON when it is `call`, the kind of every
+arrow and method, and graph code's rest when it collects none: that is the one
+spelling of each, so strict decoding, which re-encodes and compares, refuses an
+explicit `"call"` or `false`, and a code without them reads as it always has.
+Code nests anywhere in a term, so the spelling applies at every depth. -/
 private partial def closureKinds (restore : Bool) : Json → Json
   | .arr xs => .arr (xs.map (closureKinds restore))
   | .obj kvs => Json.mkObj (kvs.toArray.toList.map fun (k, v) =>
       let v := closureKinds restore v
-      if k != "closure" then (k, v) else
+      let defaults : List (String × Json) := match k with
+        | "closure" => [("kind", toJson Invoke.call)]
+        | "graph" => [("kind", toJson Invoke.call), ("rest", toJson false)]
+        | _ => []
       match v with
       | .obj fields =>
-        if restore then
-          if fields.contains "kind" then (k, v) else (k, v.setObjVal! "kind" (toJson Invoke.call))
-        else if (v.getObjVal? "kind").toOption == some (toJson Invoke.call) then
-          (k, Json.mkObj (fields.toArray.toList.filter (·.1 != "kind")))
-        else (k, v)
+        (k, defaults.foldl (fun v (field, dflt) =>
+          if restore then
+            if fields.contains field then v else v.setObjVal! field dflt
+          else if (v.getObjVal? field).toOption == some dflt then
+            match v with
+            | .obj fs => Json.mkObj (fs.toArray.toList.filter (·.1 != field))
+            | v => v
+          else v) v)
       | _ => (k, v))
   | j => j
 
@@ -357,7 +363,8 @@ def validRequest (r : Request) : Bool :=
   r.claims.all (validClaim r.types.length) && validTy r.types.length r.result &&
   r.inputs.all (validTy r.types.length) &&
   r.codes.all fun q => q.claims.all (validClaim r.types.length) &&
-    (q.entry.row.1 :: q.entry.row.2.2 :: q.entry.row.2.1 ++ q.entry.captures).all
+    (q.entry.row.1 :: q.entry.row.2.2 :: q.entry.row.2.1 ++ q.entry.captures ++
+      q.entry.store.toList).all
       (validTy r.types.length)
 
 def arrowTypes : PositiveCertificates.ArrowCert Nat → List (Ty Nat)
@@ -399,7 +406,8 @@ def validEvidence (bound : Nat) : ProgramCertificates.Evidence Nat → Bool
       | .bindMember ps => ps.all fun p =>
           (p.1.flatMap proofTypes ++ proofTypes p.2).all (validTy bound)
       | .ifBoolVar T F => validTy bound T && validTy bound F
-      | .funRest As | .makeCallableRest As => As.all (validTy bound)
+      | .funGraph As | .callableGraph As => As.all (validTy bound)
+      | .ctorGraph U => validTy bound U
       | .callRest _ _ _ E => validTy bound E
       | .arrCopy E => validTy bound E
       | .readProto P => validTy bound P
@@ -576,7 +584,7 @@ table checked before it, not part of this request. -/
 def CodeRequest.asRequest (r : Request) (q : CodeRequest) : Request :=
   { types := r.types, program := GraphCode.program q.entry.exprs q.entry.conts, claims := q.claims,
     result := q.entry.row.2.2, start := q.entry.start,
-    inputs := bodyFrame q.entry.arity q.entry.row q.entry.captures, codes := [] }
+    inputs := codeFrame q.entry.arity q.entry.row q.entry.captures q.entry.store, codes := [] }
 
 /-- Search one graph's certificate, the codes of `table` admitted. -/
 def produceGraph (r : Request) (fuel : Nat) (labels : List Nat)

@@ -838,16 +838,6 @@ def idSig : List Nat × List (List Nat) × List Nat := ([2], [ [1] ], [1])
 
 theorem id_represents : Represents idG [0] (.arrs [idSig] []) := rfl
 
-theorem id_hasTy : HasTy idG [] (.make (.closure 1 (.var 1)) .nul) [0] :=
-  HasTy.funE id_represents
-    (fun p hp => by
-      have : p = idSig := List.mem_singleton.mp hp
-      subst this; decide)
-    (fun p hp => by
-      have : p = idSig := List.mem_singleton.mp hp
-      subst this
-      exact HasTy.var rfl)
-
 /-- Source `function fst<T>(x: T, y: T): T { return x }`. -/
 theorem fst_generic {η : Nat → Fam} (hC : ClosedAssign idP η)
     (n : Nat) (W : WorldT n) (h : Heap) (ρ : Env)

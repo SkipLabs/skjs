@@ -20,7 +20,11 @@ def succeeds (r : Except Failure α) : Bool := match r with
   | .ok _ => true
   | .error _ => false
 
-#guard succeeds (produce G labels 8 [1] ControlFlowTests.loop loopClaims 0)
+/-- Every code admitted: whether a code meets its signatures is its table's
+question, not its creation's. -/
+def admitted : CodeEntry (Fin 7) → Bool := fun _ => true
+
+#guard succeeds (produce G labels 8 [1] ControlFlowTests.loop loopClaims 0 (codes := admitted))
 #guard succeeds (produce G labels 8 [0,1] ControlFlowTests.diamond diamondClaims 0)
 
 /-- Extracted-shaped binding changes: retain an alias, insert a local, permute
@@ -29,7 +33,7 @@ Maps describe simultaneous selection from the pre-transfer environment. -/
 def mapped : Program :=
   [⟨.alloc .tru, .bind ⟨1, some [0,0]⟩,none⟩,
    ⟨.nul, .bind ⟨2, some [2,0,1]⟩,none⟩,
-   ⟨dispatch, .bind ⟨3, some [0,3,1]⟩,none⟩,
+   ⟨.make ControlFlowTests.dispatchCode .nul, .bind ⟨3, some [0,3,1]⟩,none⟩,
    ⟨.write (.var 1) .fls, .effect ⟨4, some [0,2]⟩,none⟩,
    ⟨.app (.var 0) .nul, .ret,none⟩]
 
@@ -37,11 +41,13 @@ def mappedClaims : List (PointClaim (Fin 7)) :=
   [⟨[],[2]⟩, ⟨[[2],[2]],[0]⟩, ⟨[[2],[0],[2]],[3]⟩,
    ⟨[[3],[2],[2]],[0]⟩, ⟨[[3],[2]],[1]⟩]
 
-#guard succeeds (produce G labels 8 [1] mapped mappedClaims 0)
+#guard succeeds (produce G labels 8 [1] mapped mappedClaims 0 (codes := admitted))
+-- The creation names code the table must hold.
+#guard !succeeds (produce G labels 8 [1] mapped mappedClaims 0)
 
 /-- Shared generated evidence for executable tampering checks. -/
 def mappedCertificate : ControlFlow.Certificate (Fin 7) :=
-  match produce G labels 8 [1] mapped mappedClaims 0 with
+  match produce G labels 8 [1] mapped mappedClaims 0 (codes := admitted) with
   | .ok C => C
   | .error _ => []
 
@@ -63,8 +69,9 @@ def mappedDiamondClaims : List (PointClaim (Fin 7)) :=
   (mappedDiamond.set 2 ⟨.tru, .branch ⟨3, some [1,0]⟩ ⟨4, some [1,0]⟩,none⟩)
   mappedDiamondClaims 0))
 
--- Ordinary nested lets and overload bodies also require no evidence hints.
-#guard succeeds (produce G labels 12 [0,1] [⟨program,.ret,none⟩] [⟨[],[0,1]⟩] 0)
+-- Ordinary nested lets and calls through a widened overload also require no
+-- evidence hints.
+#guard succeeds (produce G labels 12 [0,1] [⟨programBody,.ret,none⟩] [⟨[[3]],[0,1]⟩] 0 (inputs := [[3]]))
 -- Recursive references: the generated cyclic table closes through invariance.
 def recursiveG : PositiveGraphs.NormalGraph (Fin 3) := .ofRows fun i =>
   match i.val with | 0 => [.refs [(valueField, [0])] [] []] | 1 => [.refs [(valueField, [1])] [] []] | _ => [.bool]
@@ -75,26 +82,28 @@ def recursiveG : PositiveGraphs.NormalGraph (Fin 3) := .ofRows fun i =>
 #guard !(succeeds (produce G labels 8 [0] ControlFlowTests.diamond
   (diamondClaims.set 3 ⟨[[0]],[0]⟩) 0))
 #guard !(succeeds (produce G labels 8 [1] mapped
-  (mappedClaims.set 3 ⟨[[3],[1],[2]],[0]⟩) 0))
-#guard !(succeeds (produce G labels 8 [1] mapped mappedClaims.tail 0))
-#guard !(succeeds (produce G labels 8 [1] mapped mappedClaims 99))
-#guard !(succeeds (produce G labels 0 [1] mapped mappedClaims 0))
+  (mappedClaims.set 3 ⟨[[3],[1],[2]],[0]⟩) 0 (codes := admitted)))
+#guard !(succeeds (produce G labels 8 [1] mapped mappedClaims.tail 0 (codes := admitted)))
+#guard !(succeeds (produce G labels 8 [1] mapped mappedClaims 99 (codes := admitted)))
+#guard !(succeeds (produce G labels 0 [1] mapped mappedClaims 0 (codes := admitted)))
+-- The unchanged program is accepted with its certificate.
+#guard accept G [1] mapped mappedClaims mappedCertificate 0 [] admitted
 -- A map is not a certificate hint: changed maps are rechecked against the code.
 #guard !(accept G [1] (mapped.set 1 ⟨.nul, .bind ⟨2, some [0,2,1]⟩,none⟩)
-  mappedClaims mappedCertificate 0)
+  mappedClaims mappedCertificate 0 [] admitted)
 #guard !(accept G [1] (mapped.set 0 ⟨.alloc .tru, .bind ⟨1, some [0,99]⟩,none⟩)
-  mappedClaims mappedCertificate 0)
+  mappedClaims mappedCertificate 0 [] admitted)
 #guard !(accept G [1] (mapped.set 0 ⟨.alloc .tru, .bind ⟨1, some [0]⟩,none⟩)
-  mappedClaims mappedCertificate 0)
+  mappedClaims mappedCertificate 0 [] admitted)
 #guard !(accept G [1] (mapped.set 0 ⟨.alloc .tru, .bind ⟨1, some [0,0,0]⟩,none⟩)
-  mappedClaims mappedCertificate 0)
+  mappedClaims mappedCertificate 0 [] admitted)
 -- A perfectly valid certificate for a different set of claims is rejected.
-#guard !(accept G [1] mapped (mappedClaims.set 4 ⟨[[3],[2]],[0,1]⟩) mappedCertificate 0)
+#guard !(accept G [1] mapped (mappedClaims.set 4 ⟨[[3],[2]],[0,1]⟩) mappedCertificate 0 [] admitted)
 
 -- Exact evidence counts apply to explicit maps, too.
 #guard !(accept G [1] mapped mappedClaims
-  (mappedCertificate.map fun c => {c with edges := c.edges.map List.tail}) 0)
+  (mappedCertificate.map fun c => {c with edges := c.edges.map List.tail}) 0 [] admitted)
 #guard !(accept G [1] mapped mappedClaims
-  (mappedCertificate.map fun c => {c with edges := c.edges.map (fun ps => ps ++ [.subset])}) 0)
+  (mappedCertificate.map fun c => {c with edges := c.edges.map (fun ps => ps ++ [.subset])}) 0 [] admitted)
 
 end Verification.Model.CertificateProducerTests

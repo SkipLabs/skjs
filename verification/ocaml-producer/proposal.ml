@@ -1398,12 +1398,12 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
      storage contract, or the type of the field or named index, whose read is
      also the target's claim. *)
   (* A closure's statements are checked as a function body's are, by the
-     statement checker below: in a constructor or not, at a result where the
+     statement checker below: a constructor's too, at a result where the
      closure has one, collecting the types its `return`s give. *)
-  let block_statements = ref (fun (_:bool) (_:ty option) (_:ty list ref) env (_:stmt list) -> env) in
-  (* The body the statement checker is in: a constructor's or not, its
-     result, and where its `return`s' types are collected. *)
-  let block_constructor = ref false and block_result = ref (Some f.result)
+  let block_statements = ref (fun (_:ty option) (_:ty list ref) env (_:stmt list) -> env) in
+  (* The body the statement checker is in: its result, and where its
+     `return`s' types are collected. *)
+  let block_result = ref (Some f.result)
   and block_returned = ref (ref []) in
   let rec target_contract env (target:expr) = match target.node with
     | Id n ->
@@ -1934,7 +1934,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let allocated_type = match body.node with
         | BlockBody ss ->
           let returned = ref [] in
-          ignore (!block_statements true (Some result) returned inner ss);
+          ignore (!block_statements (Some result) returned inner ss);
           combine (List.rev !returned)
         | _ -> expr ~expected:result inner body in
       (* A class offered construct signatures giving other instances is
@@ -2580,7 +2580,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
        checked at the closure's result where it has one. *)
     | BlockBody ss ->
       let returned = ref [] in
-      ignore (!block_statements false expected returned env ss);
+      ignore (!block_statements expected returned env ss);
       combine (List.rev !returned) in
     (* Block wrappers correspond to statement entries, not expression sites. *)
     (match e.node with
@@ -2837,11 +2837,8 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       | ForOf _ -> forget env
       | _ -> env in
     (* A block has no entry of its own: its first statement's is. *)
-    (* In a class value's constructor, a `return` is the fall into the
-       allocation of the instance, which states no entry. *)
     (match s.statement with
      | Block _ -> ()
-     | Return _ when !block_constructor -> ()
      | _ -> entry env s.span);
     match s.statement with
     | Declare (mutable_,bs) -> List.fold_left (fun env (n,written,init) ->
@@ -3091,11 +3088,11 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         if next = head then head else go next (rounds - 1) in
     go env 5 in
   (* A closure's statements, in their own context, restored after. *)
-  block_statements := (fun constructor result returned env ss ->
-    let saved = (!block_constructor,!block_result,!block_returned) in
-    block_constructor := constructor; block_result := result; block_returned := returned;
+  block_statements := (fun result returned env ss ->
+    let saved = (!block_result,!block_returned) in
+    block_result := result; block_returned := returned;
     let restore () =
-      let (c,r,t) = saved in block_constructor := c; block_result := r; block_returned := t in
+      let (r,t) = saved in block_result := r; block_returned := t in
     match statements env ss with
     | env -> restore (); env
     | exception ex -> restore (); raise ex);

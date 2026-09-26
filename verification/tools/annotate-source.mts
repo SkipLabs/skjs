@@ -458,6 +458,12 @@ function fromSourceClaims(
   const scanner=createScanner(true,undefined,source);
   for(let k=scanner.scan();k!==ts.SyntaxKind.EndOfFile;k=scanner.scan())
     if(k===ts.SyntaxKind.SemicolonToken)semicolons.push(scanner.getTokenStart());
+  // A statement of a constructor's body, directly or through `if` arms.
+  const inConstructor=(n: ts.Node): boolean=>{
+    const p=n.parent;
+    return !!p&&(!!p.parent&&ts.isConstructorDeclaration(p.parent)&&ts.isBlock(p)||
+      (ts.isBlock(p)||ts.isIfStatement(p))&&inConstructor(p));
+  };
   const walk=(n: ts.Node)=>{
     if(ts.isStatement(n))entries.set(n.getStart(sf),n.end);
     const at=(from: number,to: number)=>{if(!entries.has(from))entries.set(from,to);};
@@ -488,6 +494,17 @@ function fromSourceClaims(
     // source forms").
     if(ts.isVariableDeclaration(n)&&(ts.isObjectBindingPattern(n.name)||ts.isArrayBindingPattern(n.name)))
       at(n.name.getStart(sf),n.name.end);
+    // A class's constructor is graph code whose allocation of the instance
+    // is its return, at the class's name; a last `if` of the constructor
+    // assigning fields allocates in each arm, at the arm's last character, or
+    // at the condition's closing parenthesis without an `else`
+    // (PROGRAM-TYPING.md, "Classes").
+    if((ts.isClassDeclaration(n)||ts.isClassExpression(n))&&n.name)at(n.name.getStart(sf),n.name.end);
+    if(ts.isIfStatement(n)&&inConstructor(n)){
+      at(n.thenStatement.end-1,n.thenStatement.end);
+      if(n.elseStatement)at(n.elseStatement.end-1,n.elseStatement.end);
+      else at(...fragmentParse.conditionParen(n,sf));
+    }
     // A derived class's implicit constructor constructs its base at the
     // `extends` clause (DESIGN.md, "Modules and code units";
     // PROGRAM-TYPING.md, "Classes").

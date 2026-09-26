@@ -114,23 +114,6 @@ theorem make_callable_rule {P : Fam} {L : List (Fam × List Fam × Fam)} (hA : A
   Safe_mono n (fun _ _ _ _ hv => ⟨hv.1, hv.2.1⟩) W h _
     (make_closure_rule (S := []) hA arity n W h b v hf (by simp) hval hadm hok hv)
 
-/-- The same, for a bag with any named fields. The call contracts survive the
-extended world exactly as they do for one field; nothing here depends on the
-arity of the bag or on what its fields are called. -/
-theorem make_callable_fields_rule {P : List Fam} {L : List (Fam × List Fam × Fam)}
-    (hA : ∀ A ∈ P, Adm A) (arity n : Nat) (W : WorldT n) (h : Heap)
-    (ns : List PropKey) (vs : List Val) (b : Tm)
-    (hnd : ns.Nodup) (hns : ns.length = vs.length) (hPs : P.length = vs.length)
-    (hf : InvocationSpec arity L n W b) (hvals : ∀ v ∈ vs, isVal v = true)
-    (hadm : WorldAdm W) (hok : HeapOk n W h) (hv : ∀ p ∈ P.zip vs, p.1 n W p.2) :
-    Safe (interT (bagT (ns.zip P)) (callsT L)) n W h
-      (.makeAt (.closure arity b) ns vs) := by
-  apply make_fields_rule hA n W h (.closure arity b) ns vs hnd hns hPs hvals hadm hok hv
-  intro j hj U hx hrec
-  have hf' := (callsT_adm L).mono j _ U hx _ ((callsT_adm L).down_le n j
-    (Nat.le_of_lt hj) W _ (callsT_of_invocationSpec (slots h.length ns) hf))
-  exact ⟨⟨_, .closure arity b, rfl, rfl, hrec⟩, hf'⟩
-
 /-- Creation checks the code and the stored value separately, then allocates a
 single fresh identity. The call contracts survive the extended world. -/
 theorem attach_rule {P : Fam} {L : List (Fam × Fam)} (hA : Adm P)

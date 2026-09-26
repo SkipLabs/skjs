@@ -94,34 +94,25 @@ $$
 Functions take ordered parameter lists and a receiver. Write $\vec A$ for a
 signature's parameter types, $|\vec A|$ for its length and $R$ for its
 receiver: the `this` a call passes, which is not a parameter. In the
-ordinary-closure creation rule below, every signature offers at least the
-descriptor's arity, and its body is typed under that signature's receiver,
-then its first $\mathit{arity}$ parameters, then the captured bindings. A
+closure creation rules below, every signature offers at least the code's
+arity, and the code runs from that signature's receiver, then its first
+$\mathit{arity}$ parameters, then the captured bindings (`bodyFrame`). A
 signature may offer more: the call binds the first $\mathit{arity}$ actuals
-and discards the rest, as JavaScript does. One lemma,
-`invocationSpec_of_instantiated`, turns a checked body into the code's
-contract for every code-creating rule (functions, callable objects, classes,
-and the parametric and generic layers), and the rules, certificates and search
-share one context (`bodyFrame`) and one check (`offersArity`). Variadic code
-keeps exact fixed parameters: its extra actuals go to the rest, not away.
-This holds of the code, not of any value at a shorter signature: a variadic
-function collects extra actuals and a bound one forwards them, so no subtyping
-rule widens an arrow's parameters. For the same reason the ordinary closure
-also meets a variadic signature $(R;\vec A,\ldots E\to B)$ whose fixed
+and discards the rest, as JavaScript does. Code with a rest keeps exact fixed
+parameters: its extra actuals go to the rest, not away.
+This holds of the code, not of any value at a shorter signature: code with a
+rest collects extra actuals and a bound function forwards them, so no
+subtyping rule widens an arrow's parameters. For the same reason code without
+a rest also meets a variadic signature $(R;\vec A,\ldots E\to B)$ whose fixed
 parameters cover its arity: a call through it writes any number of actuals,
 the code binds its first $\mathit{arity}$, all at fixed positions, and
-discards the rest (`restsT_of_invocationSpec`). Its body is checked at that
+discards the rest (`restsT_of_graph`). Its code is checked at that
 signature's fixed row $(R,\vec A,B)$, with the fixed signatures
 (`offerRows`); a closure binding a position of the rest, which a call may
 leave unwritten, is not created at it. A call passes its receiver $r$ and
 types it at the selected signature's receiver:
 
 $$
-\frac{\forall(R,\vec A,B)\in L\cup S^\flat.\;\mathit{arity}\le|\vec A|
-      \quad\forall(R,\vec A,B)\in L\cup S^\flat.\;\Gamma,\mathit{this}{:}R,\vec x{:}\vec A_{<\mathit{arity}}\vdash_G t:B}
-     {\Gamma\vdash_G \lambda\vec x.t:\bigwedge_{(R,\vec A,B)\in L}(R;\vec A\to B)
-       \land\bigwedge_{(R,\vec A,E,B)\in S}(R;\vec A,\ldots E\to B)}
-\qquad
 \frac{\Gamma\vdash_G f:\bigwedge_{(Q,\vec C,D)\in L}(Q;\vec C\to D)
       \quad(R,\vec A\,\vec U,B)\in L\quad\Gamma\vdash_G r:R\quad\forall i.\;\Gamma\vdash_G a_i:A_i
       \quad\forall U\in\vec U.\;\Gamma\vdash_G \mathsf{undefined}:U}
@@ -138,18 +129,39 @@ contravariant under subsumption like each domain
 function indifferent to its receiver, typed at $\top$, meets any receiver
 requirement, and one that reads its receiver cannot be widened to arbitrary ones.
 
-A closure whose body is a graph ([graph code](SEMANTICS.md#graph-code)) is
+Every closure's body is a graph ([graph code](SEMANTICS.md#graph-code)),
 checked where its code is, not where it is created. Code $\kappa$ of arity
 $m$ with captures at $\vec C$ meets a signature, written
 $\vec C\vdash_G\kappa:(R;\vec A\to B)$ (`GraphCodeSpec`), when $m\le|\vec A|$
 and every run of it entered from an environment meeting
-$R,\vec A_{<m},\vec C$ is safe at $B$. The
-[graph checker](#checked-control-flow-graphs) establishes it from the code's
-own certificate at the entry $[R,\vec A_{<m},\vec C]$ and the result $B$
-(`GraphCode.codeChecked_sound`). Creation then reads the captures only:
+$R,\vec A_{<m},\vec C$ is safe at $B$. Code with a rest is entered with the
+store of the further actuals first: $\vec C\vdash_G\kappa:(Q;R;\vec A\to B)$
+when every run entered from $Q,R,\vec A_{<m},\vec C$ is safe at $B$
+(`codeFrame`). The [graph checker](#checked-control-flow-graphs) establishes
+either from the code's own certificate at that entry and the result $B$
+(`GraphCode.codeChecked_sound`). What code offers depends on whether it
+collects a rest (`CodeOffers`): code without one meets each fixed signature
+and each variadic one's fixed row; code with one offers only variadic
+signatures, each taking exactly its fixed parameters, from a frame whose
+store $Q$ is one its rest's pack describes
+($\operatorname{Store}_G$, below):
 
 $$
-\frac{\forall(R,\vec A,B)\in L\cup S^\flat.\;\vec C\vdash_G\kappa:(R;\vec A\to B)
+\operatorname{Offers}_G(\kappa,\vec C,L,S)\iff
+\begin{cases}
+\forall(R,\vec A,B)\in L\cup S^\flat.\;\vec C\vdash_G\kappa:(R;\vec A\to B) & \kappa\ \text{collects no rest}\\
+L=\varnothing\ \land\ \forall\sigma=(R,\vec A,P,B)\in S.\;|\vec A|=m\land\operatorname{Store}_G(Q_\sigma,P)\land\vec C\vdash_G\kappa:(Q_\sigma;R;\vec A\to B) & \kappa\ \text{collects a rest}
+\end{cases}
+$$
+
+Soundness is `offers_sem`: code without a rest meets its signatures by
+`callsT_of_graph` and `restsT_of_graph`, code with one its variadic
+signatures by `restsT_of_graphRest`, whose invocation allocates the store
+before the run starts (`graphRest_invoke`). Creation then reads the captures
+only:
+
+$$
+\frac{\operatorname{Offers}_G(\kappa,\vec C,L,S)
       \quad\forall i.\;\Gamma\vdash_G x_i:C_i}
      {\Gamma\vdash_G \mathsf{make}(\kappa[\vec x],\mathsf{null}):\bigwedge_{(R,\vec A,B)\in L}(R;\vec A\to B)
        \land\bigwedge_{(R,\vec A,E,B)\in S}(R;\vec A,\ldots E\to B)}\ (\texttt{funGraph})
@@ -163,7 +175,9 @@ before it (`GraphCode.checkCodes`), so that every entry meets its signature
 No code check reads the graph's assignment (`Parametricity.checkEntry_reassign`),
 so an entry meets its signature in the graph reassigned at every assignment
 $\eta$ of its parameter rows, $\vec C\vdash_{G[\eta]}\kappa:\sigma$, which is
-what `CodesSound` states.
+what `CodesSound` states. For code with a rest the evidence also lists the
+store types $Q_\sigma$, in the signatures' order (`Rule.funGraph arrays`), and
+each table entry the store its frame starts with (`CodeEntry.store`).
 
 A generic closure is graph code at a scheme row $j$, $G(j)=\forall\vec p.\,(L,S)$
 with binders $\vec p$ (parameter rows) and signatures $L$ and $S$ over them
@@ -176,7 +190,7 @@ here (`meaning_assign_free`):
 
 $$
 \frac{G(j)=\forall\vec p.\,(L,S)
-      \quad\forall\eta.\;\forall(R,\vec A,B)\in L\cup S^\flat.\;\vec C\vdash_{G[\eta]}\kappa:(R;\vec A\to B)
+      \quad\forall\eta.\;\operatorname{Offers}_{G[\eta]}(\kappa,\vec C,L,S)
       \quad\mathrm{fv}(\vec C)\cap\vec p=\emptyset
       \quad\forall i.\;\Gamma\vdash_G x_i:C_i}
      {\Gamma\vdash_G \mathsf{make}(\kappa[\vec x],\mathsf{null}):j}\ (\texttt{funScheme})
@@ -200,8 +214,8 @@ admissible exactly when each omitted contract admits `undefined`: that is part
 of what the signature promises (below), and closure code keeps the promise
 because `CallArguments.parameters` pads a short actual list, so the body
 dispatched for $f(\vec a)$ is the same term as for the call that writes those
-`undefined`s out (`CallArguments.parameters_pad`, used once, in
-`callsT_of_invocationSpec`). With $\vec U$ empty this is the exact-arity rule.
+`undefined`s out (`CallArguments.parameters_pad`, in `frame_envOk`, the
+frame every code is entered with). With $\vec U$ empty this is the exact-arity rule.
 No actual is invented: the call term keeps the arguments the source writes.
 
 Optionality is therefore a property of a declared contract, not a separate
@@ -263,15 +277,15 @@ A value meets a signature when every admitted list of values invokes it safely
 at $B$, at every later world and budget (`Safety.Promise`, `callsT`, `restsT`).
 This instantiates the [common behavioral equation](SEMANTICS.md#one-meaning-for-callable-contracts),
 which also explains overload conjunction, callable fields and quantification.
-Code enters only where it is created: closure code pads a short list
-(`callsT_of_invocationSpec`), and variadic code collects the actuals past its
-$k$ fixed parameters into a fresh array, which the term invocation yields
-allocates with the ordinary steps (`RestCalls.restsT_of_restSpec`):
+Code enters only where it is created: graph code pads a short list
+(`graph_invoke`), and code with a rest collects the actuals past its $k$
+fixed parameters into a fresh store, which its entry allocates with the
+ordinary steps before the run starts (`graphRest_invoke`):
 
 $$
-\operatorname{invoke}(\langle k,t\rangle^{\ldots},\vec v)=
-\mathsf{let}\ r=\mathsf{alloc}\{[\,]:\mathsf{arr}(v_k,v_{k+1},\ldots)\}\ \mathsf{in}\ t[\vec x:=\operatorname{pad}_k(\vec v)]
-\qquad(\texttt{bindRest})
+\operatorname{invoke}(\kappa^{\ldots}[\vec c],r,\vec v)=
+\mathsf{let}\ x=\mathsf{arr}(v_k,v_{k+1},\ldots)\ \mathsf{in}\ \mathsf{goto}(E,K,s,[x,r,\operatorname{pad}_k(\vec v),\vec c])
+\qquad(\texttt{graphEntry})
 $$
 
 A pack holds its actuals at their positions only below the current level. The
@@ -284,17 +298,12 @@ $\operatorname{Store}_G(Q,P)$ when $Q$ is the store $P$'s one tuple contract
 describes, writable since the store is fresh (`RestStore`), and $\operatorname{Spreads}_G(S,E)$ when $S$ is a
 store contract every position of which is within $E$ (`SpreadsInto`); a typed
 store has no hole, so a spread yields no $\mathsf{undefined}$ its positions do
-not hold. Creation checks the body once per variadic signature, with the
-rest store in slot 0, the receiver in slot 1, then the fixed parameters
-(`funRest`; `makeCallableRest` adds a field bag as `makeCallable` does). The
-body's first step wraps the store into the array the rest parameter names, an
-ordinary allocation the extractor emits:
-
-$$
-\frac{\forall(\vec A,P,B)\in S.\;|\vec A|=k\quad\operatorname{Store}_G(Q_{\vec A,P,B},P)
-      \quad\Gamma,\vec x{:}\vec A,r{:}Q_{\vec A,P,B}\vdash_G t:B}
-     {\Gamma\vdash_G \lambda\vec x,\ldots r.\,t:\textstyle\bigwedge_{(\vec A,P,B)\in S}(\vec A,\ldots P\to B)}
-$$
+not hold. Creation checks the code once per variadic signature, from the
+frame with the rest store in slot 0, the receiver in slot 1, then the fixed
+parameters: the second case of $\operatorname{Offers}_G$ (`funGraph`;
+`callableGraph` adds a field bag). The code's entry node wraps the store into
+the array the rest parameter names, an ordinary allocation the extractor
+emits.
 
 A call writes the fixed actuals, or a prefix whose omitted positions admit
 `undefined`, then parts that fit the rest; a call that omits a fixed position
@@ -440,8 +449,8 @@ $$
      {\Gamma\vdash_G\mathsf{bound}(f,r,\vec p):(Q;\vec P_{\ge k},\ldots P'\to B)}
 $$
 
-Here $\lambda\vec x.t$ denotes source function creation, implemented as `funE t`: it
-allocates an object before any invocation. `let` has its own operational constructor, `letE a b`. It evaluates `a`,
+Here $\lambda\vec x.t$ denotes source function creation, graph code whose
+body is $t$'s graph (`funGraph`): it allocates an object before any invocation. `let` has its own operational constructor, `letE a b`. It evaluates `a`,
 then substitutes the resulting value into `b` in one nonallocating step.
 Neither a function value nor a function-type graph label is needed. The
 producer and consumer use this constructor directly; lambda application no
@@ -454,28 +463,29 @@ an arrow only the first. The calculus records which in the closure's code
 term, which evaluates `f`, then the actuals, and runs only construct code, with
 `undefined` for the receiver. A construct signature
 $\mathsf{new}(A_1,\ldots,A_n)\Rightarrow B$ (the `ctors` clause) is met by a
-class whose body, for actuals at the parameters, is safe at $B$. As for a
+class whose code, for actuals at the parameters, is safe at $B$. As for a
 function, a signature may offer more parameters than the constructor binds:
 the construct step binds its first $\mathit{arity}$ actuals and discards the
-rest, so the body is typed at the signature's first $\mathit{arity}$
-parameters:
+rest, so the code is checked at the signature's first $\mathit{arity}$
+parameters, entered with `undefined` for the receiver. Its code $\kappa^{\mathsf{new}}$ is
+construct-only graph code:
 
 $$
 \frac{L\equiv_G\mathsf{Ctors}(\ldots,(\vec A,B),\ldots)\quad
       U\equiv_G\mathsf{Undefined}\quad
-      \mathit{arity}\le|\vec A|\quad
-      U,\vec x{:}\vec A_{<\mathit{arity}},\Gamma\vdash_G b:B\ \text{for each signature}}
-     {\Gamma\vdash_G \mathsf{class}(\vec x).b : L}
+      \vec C\vdash_G\kappa^{\mathsf{new}}:(U;\vec A\to B)\ \text{for each signature}\quad
+      \forall i.\;\Gamma\vdash_G x_i:C_i}
+     {\Gamma\vdash_G \mathsf{make}(\kappa^{\mathsf{new}}[\vec x],\mathsf{null}) : L}
 \qquad
 \frac{\Gamma\vdash_G f:L\quad L\equiv_G\mathsf{Ctors}(\ldots,(\vec A\,\vec U,B),\ldots)\quad
       \Gamma\vdash_G a_i:A_i\quad\Gamma\vdash_G\mathsf{undefined}:U_j}
      {\Gamma\vdash_G \mathsf{new}\ f(\vec a):B}
 $$
 
-These are `ctorE` and `construct`. As a call may, `new` may omit trailing
-positions $\vec U$ whose contracts admit `undefined`: the construct step binds
-`undefined` there, so the body entered is the one the padded list enters
-(`bindParameters_pad`), and the source term keeps the actuals it writes. A
+These are `ctorGraph` (`ctorsT_of_graph`) and `construct`. As a call may,
+`new` may omit trailing positions $\vec U$ whose contracts admit `undefined`:
+the construct step binds `undefined` there, so the run entered is the one the
+padded list enters (`construction_pad`), and the source term keeps the actuals it writes. A
 `new` with explicit type arguments, `new C<T>()`, names the instance of a
 generic class it constructs: the producer proposes that instantiation, and it
 is checked as an inferred one is ([explicit type arguments](#explicit-type-arguments)). No arrow meets a construct signature and no
@@ -685,12 +695,22 @@ $$
 
 One object can carry both a field map and invocation code; the graph clause
 $\mathsf{Callable}(\varphi;L)$ combines them. Four rules give it the same four
-operations, and they are implemented and proved, not proposed: `makeCallable`
-allocates it, typing each field's initializer and each signature's body exactly
-as the two rules above do; `callCallable`, `readCallable` and `writeCallable`
-then invoke, read and write it under the same premises as `app`, `read` and
-`write`. Allocation and invocation remain distinct steps: creation allocates
-the object and checks the bodies, without running them.
+operations, and they are implemented and proved, not proposed:
+`callableGraph` allocates it, typing each field's initializer as `alloc` does
+and offering its graph code's signatures as `funGraph` does,
+
+$$
+\frac{\vec k\ \text{distinct}\quad\forall i.\;\Gamma\vdash_G e_i:A_i
+      \quad\operatorname{Offers}_G(\kappa,\vec C,L,S)
+      \quad\forall j.\;\Gamma\vdash_G x_j:C_j}
+     {\Gamma\vdash_G \mathsf{make}(\kappa[\vec x],\overline{k_i{=}e_i}):\mathsf{Callable}(\overline{k_i{:}A_i};L,S)}\ (\texttt{callableGraph})
+$$
+
+one code-table entry per signature; `callCallable`, `readCallable` and
+`writeCallable` then invoke, read and write it under the same premises as
+`app`, `read` and `write`. Allocation and invocation remain distinct steps:
+creation allocates the object, and its code, checked in the table, is not
+run.
 
 The clause `top` is semantic top: every closed value inhabits it, and
 membership permits nothing, since no read, call, arithmetic or shape rule has
@@ -2529,7 +2549,7 @@ $$
 $$
 
 where $B^{\circ}$ is `B`'s constructor claimed also at the fresh instance it
-allocates, its keys exact (`ctorE` checks its body at that signature too).
+allocates, its keys exact (`ctorGraph` checks its code at that signature too).
 `D` without a constructor has JavaScript's implicit one,
 `constructor(...args) { super(...args); }`: its parameters are $B$'s, at
 their types, under names no source spells, and $\vec a$ is them. A class's
@@ -2798,41 +2818,6 @@ JavaScript returns `undefined`; its body ends with $\mathsf{return}\
 unchanged, and the result claim must admit $\mathsf{Undef}$ (`void` is top). A
 bare `return` is the same literal at its keyword.
 
-A local continuation shared by multiple paths is a derived construction:
-
-$$
-\frac{\Gamma,u:N\vdash_G k:R\qquad
-      \Gamma,j:(N\to R)\vdash_G b:R}
-     {\Gamma\vdash_G
-       \mathsf{let}\ j=(\lambda u.k)\ \mathsf{in}\ b:R}.
-$$
-
-`ContinuationSharing.share_typed` proves this from lambda introduction and let.
-The body $k$ occurs once; $b$ can call $j$ from multiple branches. There is no
-new primitive jump, recursive binding or certificate rule. The binder notation
-above is named; the Lean terms use slot zero for each newly introduced binder.
-For a null argument the continuation uses captured immutable bindings and
-stable reference contracts, and reads the current heap at each call. It does
-not inherit a calling path's later refinements of captured bindings.
-The checked example has two paths calling the same reader continuation and
-one early-return path bypassing it. This is a calculus construction; source
-lowering of general partially returning nested arms remains gated.
-
-Later refinements can instead be passed as explicit continuation arguments:
-
-$$
-\frac{\Delta\vdash_G j:A\to R\qquad\Delta\vdash_G v:A}
-     {\Delta\vdash_G j(v):R}.
-$$
-
-This is ordinary application. The continuation body is checked once under its
-parameter contract $A$; each call must establish that contract in its own context
-$\Delta$. `passed_refinement_paths` checks two surviving paths into one
-`false → boolean` continuation, with explicit failures for an unrefined argument
-or the wrong slot. Passing this one refined value is established; translating
-arbitrary supplied entry environments into continuation parameters is not yet
-implemented.
-
 A keyed access `a[k]` whose key is claimed at one string $s$ is the named
 access of $\mathsf{str}(s)$, evaluated after `a` and `k`, and the read rules
 above apply. A key claimed at one number $n$ names the property
@@ -3088,7 +3073,7 @@ TypeScript gives it from its context, which the parser writes
 $A_j\sqsubseteq_G D_j$ and the closure at $\bigwedge L$ wherever it goes, the
 call offering it included. A named closure passed where a callback is offered more
 parameters, `xs.reduce(acc, null)`, is claimed where it is created at that
-signature beside its own; its body is checked at each (`offersArity`). So is
+signature beside its own; its code is checked at each (`CodeOffers`). So is
 one passed where a variadic callback is offered, `process.on(sig, shutdown)`
 at `(...args: unknown[]) => void`, when its parameters are among the
 signature's fixed ones: $L$ then holds that signature's fixed row
@@ -3105,7 +3090,7 @@ $(\vec Q\,\vec U)\to D$ while the class's method $m$ takes $\vec Q$, the method'
 closure is claimed at $(C;\vec Q\,\vec U)\to B$ beside its own $(C;\vec Q)\to B$, with
 $C$ the class's instance type, and the class value at $\mathsf{new}()\Rightarrow I$
 beside $\mathsf{new}()\Rightarrow C$. The creation rule checks the method's
-body at both, and `ctorE` the constructor's at both, so the instance it
+code at both, and `ctorGraph` the constructor's at both, so the instance it
 allocates, holding the method as a field of the longer signature, meets $I$'s
 member by `CoversByFunction`:
 
@@ -3125,7 +3110,7 @@ $\mathsf{new}(\vec P\,\vec V)\Rightarrow I$ beside
 $\mathsf{new}(\vec D)\Rightarrow C$ (a resource class constructed with the
 request's parameters it ignores: `{ add: Add }` at
 `ResourceClass<Collections, Json>`, `new (params: Json) => Resource<Collections>`).
-`ctorE` types the body at the first $|\vec x|$ parameters, $\vec P$, and the
+`ctorGraph` checks the code at the first $|\vec x|$ parameters, $\vec P$, and the
 source requires each within the constructor's annotation, as for a closure:
 
 $$
@@ -4181,12 +4166,12 @@ class constructor's `[[Call]]` always throws, and a value of TypeScript's
 
 The original [operational language](SEMANTICS.md#operational-language) separated
 lambdas from locations. The Lean runtime now has only object values for both
-plain objects (`objAt fields absent`) and functions (`objAt fields (closure
-arity b)`), where `fields` is the finite map from field names to the locations
+plain objects (`objAt fields absent`) and functions (`objAt fields code`, graph
+code for every source function), where `fields` is the finite map from field names to the locations
 they stand for, fixed at allocation. `CallCode` is a separate descriptor type;
 its body is not a runtime value. `makeAt code names inits` takes one fresh
-location per named field; `funE b` is the one-field case, giving a source
-function a null-initialized bag — a function has no properties of its own, and
+location per named field; a source function is the one-field case,
+`make code null`, a null-initialized bag — a function has no properties of its own, and
 that one location is what gives it an identity to compare. `letE` binds without
 allocation. Plain allocation and one-field function creation are abbreviations
 of `makeAt`, with one congruence rule, one allocation step, and the shared
@@ -4199,14 +4184,12 @@ The implemented semantic slice is in
 writable cell independently of its call slot; `callableT L P` combines both
 contracts on the same value. `CodeSpec` checks invocation bodies separately
 from object membership. `EnvOk.prepend` extends environments with ordered
-parameter lists, and `HasTy.invocationSpec` derives a native call
-contract from body derivations under the parameters the code takes and the
-captured bindings. The signatures of this ordinary-closure creation rule offer
-at least the descriptor's arity; optional calls and variadic creation use the
-rules in [Expressions](#expressions). Creation evidence checks the arity with
-`offersArity` and uses this general environment construction directly. Source functions and shared continuations now lower
-to `funE`, and the certificate producer and consumer use its allocating typing
-rule. A checked creation effect preserves existing heap knowledge without
+parameter lists, `frame_envOk` builds the frame graph code is entered with
+from the receiver, the parameters the code takes and the captured values, and
+`graph_invoke` and `graphRest_invoke` derive the native call contract from a
+checked code. Source functions lower to graph code, and the certificate
+producer and consumer use its allocating typing rules (`funGraph`,
+`funScheme`, `ctorGraph`, `callableGraph`). A checked creation effect preserves existing heap knowledge without
 executing the body. Allocation, application, bag reads and writes,
 and overload conjunction have safety proofs. The graph clause
 `callable first rest arrows variadic` combines a nonempty conjunction of bag
@@ -4214,7 +4197,7 @@ invariants with fixed and variadic call promises on one object. Normalization
 merges the corresponding lists; structural
 subtyping checks invariant bag coverage and arrow coverage separately, and can
 forget properties to obtain `arrs`. The producer and consumer support
-`makeCallable`, `callCallable`, `readCallable`, and `writeCallable` evidence.
+`callableGraph`, `callCallable`, `readCallable`, and `writeCallable` evidence.
 [CallableGraphTests.lean](lean/Verification/Model/Tests/CallableGraphTests.lean)
 runs an allocated overloaded object through aliasing, bag mutation, reading,
 and invocation using produced evidence and a JSON roundtrip.
@@ -4917,7 +4900,7 @@ stateful judgments are explicit additions. These are proposed rules, not claims
 about what is already implemented or proved. The four that _are_ implemented
 and proved are the ones stated above under
 [Judgments and constructor views](#judgments-and-constructor-views) —
-`makeCallable`, `callCallable`, `readCallable` and `writeCallable`, over the
+`callableGraph`, `callCallable`, `readCallable` and `writeCallable`, over the
 $\mathsf{Callable}(\varphi;L)$ clause. Nothing below is in force.
 
 The principal distinction is between checking an invocation implementation,
@@ -5486,9 +5469,9 @@ these rules as `scheme_intro` and `scheme_elim`: one callable value and one
 captured world satisfy every admissible assignment, while elimination selects a
 signature only afterwards. A generic closure is graph code at a scheme row
 (**funScheme**, [above](#judgments-and-constructor-views)), its introduction the table's
-check of its code, which holds at every assignment. A closure the graph code
-cannot yet express, one with a rest parameter, a parameter default or a bound
-naming another of its binders, keeps the rigid path: introduction by the
+check of its code, which holds at every assignment, a rest or a default
+included. A closure whose bound names another of its binders, which a scheme
+row cannot yet be instantiated at, keeps the rigid path: introduction by the
 independently reconstructed rigid-body certificate described above, and its
 checked eliminations compiled to fixed or variadic graph signatures.
 

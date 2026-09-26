@@ -221,9 +221,6 @@ def translate (names : List String) (claimed : List (Span × DirectObligation.Ty
     Fragment.Expr → M Body
   | .var pos name => pure (.var pos name)
   | .lit pos v => pure (.lit pos v)
-  -- A block body `{ return e; }` is its returned expression; the statement
-  -- entry around it is a claim site of the stateful lowering, not a value.
-  | .atEnv _ e => translate names claimed e
   | .assign pos name _ rhs => do return .assign pos name (← translate names claimed rhs)
   | .call pos callee args spreads _ => do
       if !spreads.isEmpty then
@@ -382,7 +379,6 @@ private partial def closureProof (c : Ctx) (env : List (String × GenericCertifi
     Fragment.Expr → M (Option GenericCertificate.Proof)
   | .lit _ (.vnum _) | .lit _ (.vstr _) | .lit _ (.vbigint _) => pure none
   | .lit _ v => pure (some (.lit v))
-  | .atEnv _ e => closureProof c env e
   | .var pos name => match proofLookup name env with
       | some (index, .value _) => pure (some (.var index))
       | some (index, .cell _) => pure (some (.read index))

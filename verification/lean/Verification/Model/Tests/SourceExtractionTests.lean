@@ -701,9 +701,9 @@ private def branchCaptureFn : Fragment.Fn :=
   { captureFn with body := captureFn.body.map fun st => match st with
     | .constants pos [⟨name, np, annot, .lam lp param arg ret body⟩] =>
       .constants pos [⟨name, np, annot, (.lam lp param arg ret
-        (.ifBody (40,49) (some ret) body
-          (.atEnv (41,44) (.lit (42,43) (.vbool true)))
-          (.atEnv (45,48) (.lit (46,47) (.vbool false)))))⟩]
+        (.block (40,49) [.ite (40,49) body
+          [.ret (41,44) (.lit (42,43) (.vbool true))]
+          (some [.ret (45,48) (.lit (46,47) (.vbool false))])]))⟩]
     | st => st }
 private def branchCaptureClaims : Fragment.Claims :=
   let H := [("unit",wireTy ⟨false,[.null]⟩),("cell",cellWire)]
@@ -739,16 +739,14 @@ theorem terminal_branch_trace : ControlFlow.Execution branchCaptureProgram 38 []
 -- Both arms complete before the shared read; the false arm changes the cell
 -- to true. Branch-local administrative slots cannot shift the continuation.
 private def joinedCaptureFn : Fragment.Fn :=
-  let N := wireTy ⟨false,[.null]⟩
   { captureFn with body := captureFn.body.map fun st => match st with
     | .constants pos [⟨name, np, annot, .lam lp param arg ret body⟩] =>
       .constants pos [⟨name, np, annot, (.lam lp param arg ret
-        (.seqBody (40,49)
-          (.ifBody (40,49) (some N) body (.done (41,42))
-            (.letBody (43,48) "" none
-              (.write (44,47) "value" (.var (44,45) "cell") (.lit (46,47) (.vbool true)))
-              (.done (48,49))))
-          (.atEnv (50,53) (.read (51,53) "value" (.var (51,52) "cell")))))⟩]
+        (.block (40,53)
+          [.ite (40,49) body []
+            (some [.effect (43,48)
+              (.write (44,47) "value" (.var (44,45) "cell") (.lit (46,47) (.vbool true)))]),
+           .ret (50,53) (.read (51,53) "value" (.var (51,52) "cell"))]))⟩]
     | st => st }
 private def joinedCaptureClaims : Fragment.Claims :=
   let H := [("unit",wireTy ⟨false,[.null]⟩),("cell",cellWire)]
@@ -795,13 +793,11 @@ private def earlyCaptureFn (q : Bool) : Fragment.Fn :=
   { captureFn with body := captureFn.body.map fun st => match st with
     | .constants pos [⟨name, np, annot, .lam lp param arg ret body⟩] =>
       .constants pos [⟨name, np, annot, (.lam lp param arg ret
-        (.ifBody (40,59) (some ret) body
-          (.atEnv (41,44) (.lit (42,43) (.vbool true)))
-          (.seqBody (45,59)
-            (.letBody (45,50) "" none
-              (.write (46,49) "value" (.var (46,47) "cell") (.lit (48,49) (.vbool false)))
-              (.done (50,51)))
-            (.atEnv (52,55) (.read (53,55) "value" (.var (53,54) "cell"))))))⟩]
+        (.block (40,59) [.ite (40,59) body
+          [.ret (41,44) (.lit (42,43) (.vbool true))]
+          (some [.effect (45,50)
+              (.write (46,49) "value" (.var (46,47) "cell") (.lit (48,49) (.vbool false))),
+            .ret (52,55) (.read (53,55) "value" (.var (53,54) "cell"))])]))⟩]
     | .effect pos (.write wp fld receiver (.lit lp _)) =>
       .effect pos (.write wp fld receiver (.lit lp (.vbool q)))
     | st => st }
@@ -910,7 +906,7 @@ theorem closure_write_trace : ControlFlow.Execution writerProgram 27 []
 private def blockCaptureFn : Fragment.Fn :=
   { captureFn with body := captureFn.body.map fun st => match st with
     | .constants pos [⟨name, np, annot, .lam lp param arg ret body⟩] =>
-      .constants pos [⟨name, np, annot, (.lam lp param arg ret (.atEnv (11,16) body))⟩]
+      .constants pos [⟨name, np, annot, (.lam lp param arg ret (.block (11,16) [.ret (11,16) body]))⟩]
     | st => st }
 private def blockCaptureClaims (unitTy : Json) : Fragment.Claims :=
   { captureClaims with envs := captureClaims.envs ++
@@ -921,6 +917,7 @@ private def blockObligations (unitTy : Json) : Except String Unit := do
   let r ← extractFn blockCaptureFn (blockCaptureClaims unitTy)
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
     r.searchLabels r.types.length 10 r.obligations
+  let _ ← produceSourceJson (toJson r.toRequest) 10
   pure ()
 #guard ok (blockObligations (wireTy ⟨false,[.null]⟩))
 -- Forgetting parameter precision is allowed; inventing an unused type is not.
@@ -932,11 +929,10 @@ private def localWriterFn : Fragment.Fn :=
   { writerFn with body := writerFn.body.map fun st => match st with
     | .constants pos [⟨name, np, annot, .lam lp param arg ret _⟩] =>
       .constants pos [⟨name, np, annot, (.lam lp param arg ret
-        (.letBody (30,31) "saved" (some (wireTy ⟨false,[.bool]⟩))
-          (.lit (32,33) (.vbool false))
-          (.letBody (34,35) "" none
-            (.write (36,39) "value" (.var (36,37) "cell") (.var (38,39) "saved"))
-            (.atEnv (40,43) (.read (41,43) "value" (.var (41,42) "cell"))))))⟩]
+        (.block (30,43)
+          [.constants (30,31) [⟨"saved", (30,31), some (wireTy ⟨false,[.bool]⟩), .lit (32,33) (.vbool false)⟩],
+           .effect (34,35) (.write (36,39) "value" (.var (36,37) "cell") (.var (38,39) "saved")),
+           .ret (40,43) (.read (41,43) "value" (.var (41,42) "cell"))]))⟩]
     | st => st }
 private def localWriterClaims : Fragment.Claims :=
   let N := wireTy ⟨false,[.null]⟩

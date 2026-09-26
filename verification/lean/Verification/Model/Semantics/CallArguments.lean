@@ -372,20 +372,49 @@ inductive Invoke : Frame → Tm → Prop where
   | bound : isVal r = true → Values args →
       Invoke ⟨.objAt fs (.bound target r₀ pre), r, args⟩ (.invoke target r₀ (pre ++ args))
   /-- Graph code starts its run at its entry, the receiver, the parameters and
-  the captures in its environment. -/
+  the captures in its environment, after collecting its rest (`graphEntry`). -/
   | graph : isVal r = true → Values args →
-      Invoke ⟨.objAt fs (.graph arity E K start caps), r, args⟩
-        (.goto E K start (r :: parameters arity args ++ caps) .nul)
+      Invoke ⟨.objAt fs (.graph arity E K start caps .call rest), r, args⟩
+        (graphEntry arity E K start caps rest r args)
 
 /-- The term each kind of code yields for a ready receiver and argument list. -/
 def dispatch : CallCode → Tm → List Tm → Option Tm
   | .closure arity body, r, args => some (bindParameters arity args r body)
   | .variadic fixed body, r, args => some (bindRest fixed args r body)
   | .bound target r₀ pre, _, args => some (.invoke target r₀ (pre ++ args))
-  | .graph arity E K start caps, r, args => some (.goto E K start (r :: parameters arity args ++ caps) .nul)
+  | .graph arity E K start caps .call rest, r, args => some (graphEntry arity E K start caps rest r args)
   -- A class constructor's plain call throws: nothing runs.
   | .closure _ _ .construct, _, _ => none
+  | .graph _ _ _ _ _ .construct _, _, _ => none
   | .absent, _, _ => none
+
+/-- What `new` runs for construct code without a rest, for each ready
+argument list: the code's body or graph run, with `undefined` for the
+receiver. Other code has none: `new` on call code, and on code collecting a
+rest, is not a class value here. -/
+def construction : CallCode → Option (List Tm → Tm)
+  | .closure arity body .construct => some fun args => bindParameters arity args .undef body
+  | .graph arity E K start caps .construct false =>
+      some fun args => graphEntry arity E K start caps false .undef args
+  | _ => none
+
+/-- Construction reads the parameters it binds: omitted trailing positions
+padded with `undefined` construct the same. -/
+theorem construction_pad {c : CallCode} {enter : List Tm → Tm} (h : construction c = some enter)
+    (args pad : List Tm) (hp : ∀ a ∈ pad, a = .undef) : enter (args ++ pad) = enter args := by
+  unfold construction at h
+  split at h <;> cases h
+  · exact bindParameters_pad _ _ _ _ _ hp
+  · simp only [graphEntry, parameters_pad _ _ _ hp]
+
+/-- A ready construction is one step of the machine. -/
+theorem construction_step {fs : List (PropKey × Nat)} {c : CallCode} {enter : List Tm → Tm}
+    (h : construction c = some enter) {args : List Tm} (hv : Values args) (heap : Heap) :
+    Step heap (.construct (.objAt fs c) args) heap (enter args) := by
+  unfold construction at h
+  split at h <;> cases h
+  · exact .constructV hv
+  · exact .constructGraph hv
 
 theorem invoke_ready (hi : Invoke frame body) : frame.ready := by
   cases hi with
@@ -421,7 +450,7 @@ theorem invoke_iff : Invoke frame result ↔
     | closure arity body kind => cases kind <;> cases hd; exact .closure hr hv
     | variadic fixed body => cases hd; exact .variadic hr hv
     | bound target r₀ pre => cases hd; exact .bound hr hv
-    | graph arity E K start caps => cases hd; exact .graph hr hv
+    | graph arity E K start caps kind rest => cases kind <;> cases hd; exact .graph hr hv
 
 theorem invoke_closed (hi : Invoke frame result) (hf : Scoped 0 frame.callee)
     (hr : Scoped 0 frame.recv) (ha : ∀ a ∈ frame.args, Scoped 0 a) : Scoped 0 result := by
@@ -446,14 +475,23 @@ theorem invoke_closed (hi : Invoke frame result) (hf : Scoped 0 frame.callee)
     rcases List.mem_append.mp hm with hm | hm
     · exact hf.2.2 a hm
     · exact ha a hm
-  | graph _ _ =>
-    simp only [Scoped, scopedArgs_iff] at hf ⊢
-    refine ⟨fun a hm => ?_, trivial⟩
-    rcases List.mem_cons.mp hm with rfl | hm
-    · exact hr
-    rcases List.mem_append.mp hm with hm | hm
-    · exact parameters_property (by trivial) ha a hm
-    · exact hf a hm
+  | @graph r args fs arity E K start caps rest _ _ =>
+    simp only [Scoped, scopedArgs_iff] at hf
+    have hL : ∀ a ∈ r :: parameters arity args ++ caps, Scoped 0 a := by
+      intro a hm
+      rcases List.mem_cons.mp hm with rfl | hm
+      · exact hr
+      rcases List.mem_append.mp hm with hm | hm
+      · exact parameters_property (by trivial) ha a hm
+      · exact hf a hm
+    cases rest with
+    | false => simpa [graphEntry, Scoped] using hL
+    | true =>
+      simp only [graphEntry, Scoped, scopedArgs_iff]
+      refine ⟨fun a hm => ha a (List.mem_of_mem_drop hm), fun a hm => ?_, trivial⟩
+      rcases List.mem_cons.mp hm with rfl | hm
+      · simp [Scoped]
+      · exact (hL a hm).mono (Nat.zero_le _)
 
 /-- Prepared list dispatch is a step of the maintained term machine. -/
 theorem Invoke.step (hi : Invoke frame body) (h : Heap) :

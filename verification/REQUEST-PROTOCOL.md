@@ -207,7 +207,9 @@ A descriptor `c` is `"absent"`, `{"closure":{"arity":2,"body":t}}` (with
 call-only code, an arrow's or a method's, leaves the kind out),
 `{"variadic":{"fixed":2,"body":t}}`,
 `{"bound":{"target":t,"receiver":t,"pre":[t]}}` or
-`{"graph":{"arity":1,"exprs":[t],"conts":[[k,T]],"start":0,"caps":[t]}}`. Plain allocation uses the
+`{"graph":{"arity":1,"exprs":[t],"conts":[[k,T]],"start":0,"caps":[t]}}`, with
+`"kind":"construct"` for a class's construct-only code and `"rest":true` for
+code collecting a rest, each left out otherwise. Plain allocation uses the
 absent descriptor; function creation uses a code descriptor and ordered field
 initializers. A fixed body has the receiver's binder in slot zero, then
 `arity` parameter binders in declaration order, before captures. A variadic
@@ -219,7 +221,10 @@ saved one and the prefix before the new actuals. A `graph` descriptor is code
 whose body is a control-flow graph, as a program is: its node expressions, each
 node's continuation and handler (`null` for none), the entry label and the
 captured values; invocation starts the graph at `start` with the receiver, the
-`arity` parameters, then the captures as its slots. The node expressions are
+`arity` parameters, then the captures as its slots, `new` passing `undefined`
+for the receiver. Code with a rest first allocates the store of the actuals
+past its parameters, found in slot zero, before the receiver. Every closure a
+source program creates is graph code. The node expressions are
 scoped by those slots alone. `goto` and `frame`, the terms a running graph code
 steps through, are runtime forms and are rejected in supplied syntax as object
 terms are. Creation evidence requires each overload to have
@@ -234,24 +239,27 @@ codecs, so the field names are the constructor's own; they live in
 [RequestJson.lean](lean/Verification/Model/Source/RequestJson.lean).
 
 A request may add `"codes"`: the graph code its program creates, one
-`{"entry": {"arity","exprs","conts","start","captures","row"}, "claims": [...]}`
+`{"entry": {"arity","exprs","conts","start","captures","row","store"}, "claims": [...]}`
 per code and signature, where `captures` are the captured values' types, `row`
-the signature `[receiver, parameters, result]` and `claims` one point claim per
-node of the code's graph, as `claims` is for the program. Absent means none.
+the signature `[receiver, parameters, result]`, `store`, for code with a rest,
+the rest-store type its frame starts with (`null` otherwise), and `claims` one
+point claim per node of the code's graph, as `claims` is for the program.
+Absent means none.
 
 The evidence file is an object with the field `certificate`, a list of
 `NodeEvidence` objects, and, when the request has codes, `"codes"`: one such
 list per code request, in its order. The codes are checked first, in order,
-each at its entry `[receiver, parameters…, captures…]` and its row's result,
+each at its entry `[store, receiver, parameters…, captures…]` (no store
+without a rest) and its row's result,
 each seeing the codes before it; the program is then checked seeing them all. Each node supplies its expression derivation tree and
 one subtype-evidence list per outgoing edge. A derivation node names the
 [typing rule](PROGRAM-TYPING.md#judgments-and-constructor-views) it applies:
 `var`, `nul`, `undef`, `tru`, `fls`, `truLit`, `flsLit`, `numLit`, `num`,
-`strLit`, `str`, `bigintLit`, `bigint`, `funE`, `funGraph`, `app`, `letE`, `alloc`,
+`strLit`, `str`, `bigintLit`, `bigint`, `funGraph`, `ctorGraph`, `callableGraph`, `app`, `letE`, `alloc`,
 `read`, `readOptional`, `readDict`, `indexDict`, `write`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
-`unionVar`, `makeCallable`, `callCallable`, `readCallable`, `writeCallable`, `readView`, `readProto`, `arith`, `test`,
-`arrLit`, `elem`, `elemOpt`, `elemAny`, `setElem`, `len`, `lenStr`, `elemStr`, `funRest`, `makeCallableRest`,
-`callRest`, `arrCopy`, `bindE`, `bindRestE`, `bindMember`, `ctorE`, `construct`, `sub`,
+`unionVar`, `callCallable`, `readCallable`, `writeCallable`, `readView`, `readProto`, `arith`, `test`,
+`arrLit`, `elem`, `elemOpt`, `elemAny`, `setElem`, `len`, `lenStr`, `elemStr`,
+`callRest`, `arrCopy`, `bindE`, `bindRestE`, `bindMember`, `construct`, `sub`,
 `throw`, whose one premise types the thrown operand, or `merge`, an allocation
 from parts, whose two premises type the accumulator and the source
 ([Allocation from parts](PROGRAM-TYPING.md#allocation-from-parts)).
@@ -349,19 +357,24 @@ statement, the producer derives checked facts along administrative paths. The
 source consumer additionally enforces the exact entry interfaces described below.
 See the [assertion rules](PROGRAM-TYPING.md#checked-expression-postconditions).
 
-`funE` has one body premise per row of its type's `offerRows`: each fixed
-signature, then each variadic signature's receiver, fixed parameters and
-result, in that order; each row offers at least the code's arity.
-
 `funGraph` creates graph code: its premises are the captures, each a slot of
 the node's context at the type the code was checked with, and every signature
 the created type offers must be an entry of the checked codes with those
-capture types. It checks no body: the code's own certificate did.
+capture types. It checks no body: the code's own certificate did. Code
+without a rest offers each row of its type's `offerRows`: each fixed
+signature, then each variadic signature's receiver, fixed parameters and
+result, in that order; each row offers at least the code's arity. Code with a
+rest offers the variadic signatures only, each taking exactly the code's
+parameters, and the rule's `arrays` name their rest-store types, in order:
+each is the `store` of that signature's entry. At a scheme row the signatures
+are the scheme's. `ctorGraph` creates a class value's construct-only code: an
+entry per construct signature, its receiver the rule's `undef`, the
+`undefined` type. `callableGraph` creates a callable object: one initializer
+premise per field, then the captures, its code's entries as `funGraph`'s.
 
-The callable expression rules use the existing term syntax. `makeCallable`
-checks one initializer premise followed by one body premise per advertised
-overload, each body under its argument binder. Its result has a single initial
-bag contract; subtyping can add equivalent invariant requirements. `callCallable`
+The callable expression rules use the existing term syntax. `callableGraph`
+checks the initializer premises; its code is checked in the code table, one
+entry per advertised overload. Its result has a single initial bag contract; subtyping can add equivalent invariant requirements. `callCallable`
 selects an advertised signature and, like `app`, carries one premise per
 position that signature declares and the call omits, each proving `undefined`
 at that position's contract; `readCallable` and `writeCallable` use
@@ -381,10 +394,7 @@ which reads the member `k` from the object in slot `i` and binds it to that
 same object. The object's type must have one object clause with a method of
 key `k`; each fixed signature of the result must be one of the method's, at
 any receiver, and each variadic one likewise.
-`funRest` creates variadic code: one body premise per variadic signature of
-its type, each with that signature's rest-store type, named by the rule, in
-slot 0, above the receiver and the fixed parameters; `makeCallableRest` adds a field bag's
-initializer premises first, as `makeCallable` does. `callRest` carries the
+`callRest` carries the
 callee premise, one premise per fixed actual, one `undefined` premise per fixed
 position the call omits, then one per further part: the actual at the element
 type the rule names, or, for a part the rule flags as a spread, the store the
@@ -820,8 +830,8 @@ spread followed by an argument that runs code is copied where it is written, the
 literal `{"arrLit": {"inits": [{"spread": ...}]}}`, and the call spreads the
 copy. Evidence names these calls `{"callRest": {"fixed": k, "omitted": u,
 "spreads": [flags], "rest": P}}`, with `P` the signature's rest type, copies `{"arrCopy": {"elem": E}}`, variadic
-creation `{"funRest": {"arrays": [A, ...]}}` and variadic callable objects
-`{"makeCallableRest": {"arrays": [A, ...]}}`, one rest-store type per
+creation `{"funGraph": {"arrays": [A, ...]}}` and variadic callable objects
+`{"callableGraph": {"arrays": [A, ...]}}`, one rest-store type per
 signature; the request validation range-checks every type they carry.
 Quantified rest uses the same source flag and graph rules after its universal
 certificate is checked; its compositional claim forms are defined in
@@ -952,11 +962,12 @@ code, one request of the file's `codes` per signature. The parser ends a body
 that can complete with `return undefined` at its closing brace, and a
 parameter written as a pattern or with a default binds a hidden name that a
 `destructure` statement first in the body reads. An expression body `e` is
-compiled as the statement `return e`. A generic closure, one with a rest
-parameter or a parameter default, and a class constructor keep term code: the
-consumer reads their statements as one expression (`Expr.termBody`), which
-admits constants, effects, destructuring and branches ending in `return` or
-`throw`, and refuses the rest.
+compiled as the statement `return e`. Every closure is graph code, generic
+ones, ones with a rest parameter or a parameter default, class constructors
+and `Object.assign` callables included. A rest parameter's code starts with
+the node wrapping its store into the array the parameter names; a parameter
+default is a node dispatching on `undefined` at the parameter's slot, first
+in the graph, in the order the parameters are initialized.
 
 Source ternaries use `{"k":"conditional","pos":[start,end],"cond":...,"then":...,"else_":...}`.
 Unlike the statement wrapper, this node selects its own expression claim, not a

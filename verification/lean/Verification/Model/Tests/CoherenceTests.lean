@@ -32,11 +32,11 @@ These check syntax traversal; non-singleton source calls remain gated. -/
 #guard !sourceTerm (.funE (.obj 0 .absent))
 #guard !sourceTerm (.ite .tru .nul (.obj 0 .absent))
 
-/-- Empty overloads have no body typing premises. The graph consumer must still
-reject forged identities in their bodies, independently of that typing rule. -/
+/-- Empty overloads name no code of the table. The graph consumer must still
+reject forged identities in the code's nodes, independently of that typing rule. -/
 private def G : PositiveGraphs.NormalGraph Nat := .ofRows fun _ => [.arrs [] []]
-private def forged : Tm := .funE (.obj 0 .absent)
-private def forgedEvidence : Evidence Nat := .node ⟨[],forged,[0]⟩ .funE []
+private def forged : Tm := .make (.graph 1 [.obj 0 .absent] [(.ret, none)] 0 []) .nul
+private def forgedEvidence : Evidence Nat := .node ⟨[],forged,[0]⟩ (.funGraph []) []
 private def forgedNode : Node := ⟨forged,.ret,none⟩
 private def forgedCertificate : ControlFlow.Certificate Nat :=
   [{expression := forgedEvidence, edges := []}]

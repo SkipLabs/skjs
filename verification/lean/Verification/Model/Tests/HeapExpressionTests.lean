@@ -101,19 +101,21 @@ private def invalidWrite : Evidence Nat := .node narrowWrite .write
 #guard !pureTerm (.app (.funE .nul) .nul)
 #guard !pureTerm (.alloc .tru)
 
--- A creation preserves old facts even when its uncalled body would mutate a cell.
+-- A creation preserves old facts even when its uncalled code would mutate a
+-- cell it captures.
 private def CG := SourceTypes.graph (T ++ RequestJson.rows [[.arrs [] []]])
-private def creationClaim : Sequent Nat :=
-  ⟨[refBool,boolTy,refBool,boolTy],.funE (.write (.var 1) .fls),[5]⟩
-private def creationProof : Evidence Nat := .node creationClaim .funE []
-#guard checkStep CG creationClaim beforeWrite (.created creationProof) == some (shift beforeWrite)
-#guard checkStep CG creationClaim beforeWrite (.pure creationProof) == none
--- Arity changes the body's bound variables, never the effects of creation.
+private def creationContext : List (List Nat) := [refBool,boolTy,refBool,boolTy]
+/-- Graph code of `arity` writing to its capture, the cell in slot 0 here. -/
 private def creationAt (arity : Nat) : Sequent Nat :=
-  ⟨creationClaim.context,.make (.closure arity (.write (.var arity) .fls)) .nul,[5]⟩
+  ⟨creationContext,
+    .make (.graph arity [.write (.var (arity + 1)) .fls] [(.ret, none)] 0 [.var 0]) .nul,[5]⟩
+private def creationProof (arity : Nat) : Evidence Nat :=
+  .node (creationAt arity) (.funGraph []) [.node ⟨creationContext,.var 0,refBool⟩ .var []]
+#guard checkStep CG (creationAt 1) beforeWrite (.created (creationProof 1)) == some (shift beforeWrite)
+#guard checkStep CG (creationAt 1) beforeWrite (.pure (creationProof 1)) == none
+-- Arity changes the code's frame, never the effects of creation.
 #guard [0,2].all fun arity =>
-  let j := creationAt arity
-  checkStep CG j beforeWrite (.created (.node j .funE [])) == some (shift beforeWrite)
+  checkStep CG (creationAt arity) beforeWrite (.created (creationProof arity)) == some (shift beforeWrite)
 
 -- An actual write cannot obtain the creation frame, even with a valid typing proof.
 #guard checkStep G writeClaim beforeWrite (.created writeProof) == none

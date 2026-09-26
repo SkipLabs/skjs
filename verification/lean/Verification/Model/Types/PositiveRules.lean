@@ -1841,8 +1841,9 @@ theorem Covers.sound_raw {G : NormalGraph ι} {η : MixedAssignment ι} {R known
           intro j hj U hx hu heap hh args hvals ha
           cases j with
           | zero =>
-            obtain ⟨fs, arity, b, rfl, -⟩ := hv.1
-            exact ⟨_, ⟨fs, arity, b, rfl, rfl⟩, trivial⟩
+            obtain ⟨fs, c, rfl, hc, -⟩ := hv.1
+            obtain ⟨enter, he⟩ := Option.isSome_iff_exists.mp hc
+            exact ⟨_, ⟨fs, c, enter, rfl, he, rfl⟩, trivial⟩
           | succ i =>
             obtain ⟨hlen, hfix, hpack⟩ := ha
             simp only [List.length_map] at hlen hfix hpack

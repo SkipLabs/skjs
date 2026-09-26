@@ -507,38 +507,32 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         else if checkTree G (leaf B .bigint) then coerce G pool (leaf B .bigint) A
         else none
     -- Graph code: its captures at their slots' types, the code the unit's
-    -- table checked (`Rule.funGraph`); the claim or a pool arrow type.
-    | .make (.graph _ _ _ _ caps) .nul =>
+    -- table checked; the claim or a pool type. A function's (`Rule.funGraph`)
+    -- has a fresh bag; with a rest, each variadic signature's store is at a
+    -- pool type that is its rest store. A class value's (`Rule.ctorGraph`)
+    -- has its receiver slot at a pool type that is exactly `undefined`, what
+    -- `new` passes there. A callable object's (`Rule.callableGraph`) has the
+    -- bag's initializers, then the captures.
+    | .makeAt (.graph _ _ _ _ caps kind rest) ns inits =>
       let some slots := ProgramCertificates.varSlots caps | return none
       let some ps := slots.mapM (fun i => (Γ[i]?).map fun C => leaf' i C) | return none
+      let arraysOf := fun (S : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)) =>
+        if rest then S.mapM fun p => pool.find? fun R => decide (RestStore G R p.2.2.1) else some []
+      let fresh := ns == [valueField] && inits == [.nul]
       return (A :: pool).findSome? fun F => do
-        let [.arrs _ _] := expand G F | none
-        coerce G pool (.node ⟨Γ,t,F⟩ .funGraph ps) A
-    | .make (.closure arity b) .nul =>
-      return (A :: pool).findSome? fun F => do
-        match expand G F with
-        | [.arrs L S] =>
-          let L := offerRows L S
-          if !offersArity arity L then none else do
-          let ps ← L.mapM fun p => recur (bodyFrame arity p Γ) b p.2.2
-          coerce G pool (.node ⟨Γ,t,F⟩ .funE ps) A
-        | [.callable P [] L []] =>
-          if !offersArity arity L then none else do
-          let [(_, Pv)] := P | none
-          let ea ← recur Γ .nul Pv
-          let ps ← L.mapM fun p => recur (bodyFrame arity p Γ) b p.2.2
-          coerce G pool (.node ⟨Γ,t,F⟩ .makeCallable (ea :: ps)) A
-        | _ => none
-    -- A class value: one body per construct signature, its receiver slot at
-    -- a pool type that is exactly `undefined`, what `new` passes there.
-    | .make (.closure arity b .construct) .nul =>
-      return (A :: pool).findSome? fun F => do
-        let [.ctors L] := expand G F | none
-        let U ← pool.find? fun U => decide (expand G U = [.undef])
-        let L := L.map fun p => (U, p.1, p.2)
-        if !offersArity arity L then none else do
-        let ps ← L.mapM fun p => recur (bodyFrame arity p Γ) b p.2.2
-        coerce G pool (.node ⟨Γ,t,F⟩ (.ctorE U) ps) A
+        match kind, expand G F with
+        | .call, [.arrs _ S] =>
+          if !fresh then none else do
+          coerce G pool (.node ⟨Γ,t,F⟩ (.funGraph (← arraysOf S)) ps) A
+        | .construct, [.ctors _] =>
+          if !fresh then none else do
+          let U ← pool.find? fun U => decide (expand G U = [.undef])
+          coerce G pool (.node ⟨Γ,t,F⟩ (.ctorGraph U) ps) A
+        | .call, [.callable P [] _ S] =>
+          if P.map Prod.fst != ns || inits.length != ns.length then none else do
+          let eas ← (inits.zip (P.map Prod.snd)).mapM fun (a,D) => recur Γ a D
+          coerce G pool (.node ⟨Γ,t,F⟩ (.callableGraph (← arraysOf S)) (eas ++ ps)) A
+        | _, _ => none
     -- `new f(args)`: a construct signature of the constructor's type taking at
     -- least as many parameters as there are actuals; each omitted position
     -- proves `undefined`, as a call's does.
@@ -552,34 +546,6 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           let eas ← (args.zip p.1).mapM fun (a,D) => recur Γ a D
           let eus ← (p.1.drop args.length).mapM fun D => recur Γ .undef D
           coerce G pool (.node ⟨Γ,t,p.2⟩ .construct (ef :: eas ++ eus)) A
-    -- A variadic closure: one body premise per signature, the body's slot 0
-    -- at a pool type that is that signature's rest store.
-    | .make (.variadic arity b) .nul =>
-      return (A :: pool).findSome? fun F => do
-        let [.arrs [] L] := expand G F | none
-        if !L.all (fun p => p.2.1.length == arity) then none else do
-        let arrays ← L.mapM fun p => pool.find? fun R => decide (RestStore G R p.2.2.1)
-        let ps ← (L.zip arrays).mapM fun (p, R) => recur (R :: p.1 :: p.2.1 ++ Γ) b p.2.2.2
-        coerce G pool (.node ⟨Γ,t,F⟩ (.funRest arrays) ps) A
-    -- A variadic callable object: the bag's initializers, then one body per
-    -- signature with its rest store in slot 0.
-    | .makeAt (.variadic arity b) ns inits =>
-      return (A :: pool).findSome? fun F => do
-        let [.callable P [] [] L] := expand G F | none
-        if !L.all (fun p => p.2.1.length == arity) then none else do
-        if P.map Prod.fst != ns || inits.length != ns.length then none else do
-        let eas ← (inits.zip (P.map Prod.snd)).mapM fun (a,D) => recur Γ a D
-        let arrays ← L.mapM fun p => pool.find? fun R => decide (RestStore G R p.2.2.1)
-        let ps ← (L.zip arrays).mapM fun (p, R) => recur (R :: p.1 :: p.2.1 ++ Γ) b p.2.2.2
-        coerce G pool (.node ⟨Γ,t,F⟩ (.makeCallableRest arrays) (eas ++ ps)) A
-    | .makeAt (.closure arity b) ns inits =>
-      return (A :: pool).findSome? fun F => do
-        let [.callable P [] L []] := expand G F | none
-        if !L.all (fun p => p.2.1.length == arity) then none else do
-        if P.map Prod.fst != ns || inits.length != ns.length then none else do
-        let eas ← (inits.zip (P.map Prod.snd)).mapM fun (a,D) => recur Γ a D
-        let ps ← L.mapM fun p => recur (p.1 :: p.2.1 ++ Γ) b p.2.2
-        coerce G pool (.node ⟨Γ,t,F⟩ .makeCallable (eas ++ ps)) A
     -- `.bind`'s forwarding descriptor: a leaf whose checker reads the saved
     -- slots from the context; the claimed type, or a pool type, is its result.
     | .makeAt (.bound (.var _) (.var _) _) [] [] =>

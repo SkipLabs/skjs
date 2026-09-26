@@ -75,53 +75,6 @@ def renderAt (G : NormalGraph Nat) (pool : List (Ty Nat)) :
       let ea ← renderAt G pool depth Γ a
       let eb ← renderAt G pool depth ((claim ea).type :: Γ) b
       pure (.node ⟨Γ,j.term,j.type⟩ .letE [ea,eb])
-    | .funE, .make (.closure arity _) .nul, bs =>
-      -- One body plan per signature, in the signature order the checker expects.
-      let [.arrs L S] := expand G j.type | failure
-      let L := ProgramTyping.offerRows L S
-      if L.length != bs.length || !ProgramTyping.offersArity arity L then failure else do
-        let es ← (L.zip bs).attach.mapM fun q =>
-          renderAt G pool depth (ProgramTyping.bodyFrame arity q.val.1 Γ) q.val.2
-        pure (.node ⟨Γ,j.term,j.type⟩ .funE es)
-    | .ctorE U, .make (.closure arity _ .construct) .nul, bs =>
-      -- One body per construct signature, with `undefined` in the receiver slot.
-      let [.ctors L] := expand G j.type | failure
-      let L := L.map fun p => (U, p.1, p.2)
-      if L.length != bs.length || !ProgramTyping.offersArity arity L then failure else do
-        let es ← (L.zip bs).attach.mapM fun q =>
-          renderAt G pool depth (ProgramTyping.bodyFrame arity q.val.1 Γ) q.val.2
-        pure (.node ⟨Γ,j.term,j.type⟩ (.ctorE U) es)
-    | .funRest As, .make (.variadic arity _) .nul, bs =>
-      -- One body plan per signature, with that signature's rest store in slot 0.
-      let [.arrs [] L] := expand G j.type | failure
-      if L.length != bs.length || As.length != L.length ||
-          !L.all (fun p => p.2.1.length == arity) then failure else do
-        let es ← ((L.zip As).zip bs).attach.mapM fun q =>
-          renderAt G pool depth (q.val.1.2 :: q.val.1.1.1 :: q.val.1.1.2.1 ++ Γ) q.val.2
-        pure (.node ⟨Γ,j.term,j.type⟩ (.funRest As) es)
-    | .makeCallableRest As, .makeAt (.variadic arity _) _ _, ps =>
-      let [.callable P [] [] L] := expand G j.type | failure
-      let as := ps.take P.length
-      let bs := ps.drop P.length
-      if as.length != P.length then failure else do
-      if L.length != bs.length || As.length != L.length ||
-          !L.all (fun p => p.2.1.length == arity) then failure else do
-        let eas ← (as.zip (P.map Prod.snd)).attach.mapM fun q => do
-          coerceM G pool (← renderAt G pool depth Γ q.val.1) q.val.2
-        let es ← ((L.zip As).zip bs).attach.mapM fun q =>
-          renderAt G pool depth (q.val.1.2 :: q.val.1.1.1 :: q.val.1.1.2.1 ++ Γ) q.val.2
-        pure (.node ⟨Γ,j.term,j.type⟩ (.makeCallableRest As) (eas ++ es))
-    | .makeCallable, .makeAt (.closure arity _) _ _, ps =>
-      let [.callable P [] L []] := expand G j.type | failure
-      let as := ps.take P.length
-      let bs := ps.drop P.length
-      if as.length != P.length then failure else do
-      if L.length != bs.length || !ProgramTyping.offersArity arity L then failure else do
-        let eas ← (as.zip (P.map Prod.snd)).attach.mapM fun q => do
-          coerceM G pool (← renderAt G pool depth Γ q.val.1) q.val.2
-        let es ← (L.zip bs).attach.mapM fun q =>
-          renderAt G pool depth (ProgramTyping.bodyFrame arity q.val.1 Γ) q.val.2
-        pure (.node ⟨Γ,j.term,j.type⟩ .makeCallable (eas ++ es))
     -- The member's covering proofs are searched in the actual context.
     | .bindMember _, .letE (.readAt k (.var i)) _, [] =>
       let some O := Γ[i]? | failure

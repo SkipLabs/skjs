@@ -128,7 +128,7 @@ def codeChecked [DecidableEq ι] (G : NormalGraph ι) (table : List (CodeEntry �
     (c : CodeEntry ι) (C : ControlFlow.Certificate ι) : Bool :=
   decide (c.arity ≤ c.row.2.1.length) &&
     checkEntry G c.row.2.2 (program c.exprs c.conts) C c.start
-      (bodyFrame c.arity c.row c.captures) (admits table)
+      (codeFrame c.arity c.row c.captures c.store) (admits table)
 
 /-- A checked entry meets its signature in the graph reassigned at every
 assignment: the check reads none (`Parametricity.checkEntry_reassign`). -/
@@ -138,7 +138,7 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {table c C}
   intro η
   simp only [codeChecked, Bool.and_eq_true, decide_eq_true_eq] at h
   have hc : checkEntry (reassign G η) c.row.2.2 (program c.exprs c.conts) C c.start
-      (bodyFrame c.arity c.row c.captures) (admits table) = true := by
+      (codeFrame c.arity c.row c.captures c.store) (admits table) = true := by
     exact (Parametricity.checkEntry_reassign G η _ _ _ _ _ _).trans h.2
   have ht : ProgramCertificates.CodesSound (reassign G η) (admits table) :=
     fun e he η' => htable e he η'

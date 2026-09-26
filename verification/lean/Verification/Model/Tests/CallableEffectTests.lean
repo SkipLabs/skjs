@@ -18,31 +18,37 @@ private def G : NormalGraph Nat := .ofRows fun i => types[i]?.getD []
 private def labels := List.range types.length
 private def pool := vocabulary G labels [] [[1],[2],[5],[10]]
 private def k : HeapKnowledge.Knowledge := ⟨[⟨1,[.fls],valueField⟩],[⟨0,[.tru],valueField⟩],[]⟩
-/-- The body writes the captured cell, past its parameter and receiver. -/
+/-- The code writes the captured cell, its frame's slot 2, past its receiver
+and parameter. -/
+private def writer : CallCode := .graph 1 [.write (.var 2) .tru] [(.ret, none)] 0 [.var 1]
 private def creation : Sequent Nat :=
-  ⟨[[1],[5]],.attach (.write (.var 3) .tru) (.var 0),[10]⟩
+  ⟨[[1],[5]],.makeAt writer [valueField] [.var 0],[10]⟩
 private def proof (j : Sequent Nat) : Evidence Nat :=
   (expression G pool 8 j.context j.term j.type).getD (.node j .nul [])
+/-- Every code admitted: whether the code meets its signature is the unit's
+code table's question, not the creation's. -/
+private def admitted : CodeEntry Nat → Bool := fun _ => true
 
--- The potentially mutating body is not run by creation. Both the fresh bag's
+-- The potentially mutating code is not run by creation. Both the fresh bag's
 -- initial contents and the old cell's false contents survive.
-#guard checkTree G (proof creation)
-#guard checkStep G creation k (.allocated (proof creation)) ==
+#guard checkTree G (proof creation) admitted
+#guard checkStep G creation k (.allocated (proof creation)) admitted ==
   some (allocOutput k [(valueField, [.tru])] (contractFields G creation.context))
 #guard (allocOutput k [(valueField, [.tru])]).cells == [⟨0,[.tru],valueField⟩,⟨2,[.fls],valueField⟩]
 #guard checkStep G {creation with term := .alloc (.var 0)} k
-  (.allocated (proof creation)) == none
-#guard checkStep G {creation with term := .attach .nul (.var 0)} k
-  (.allocated (proof creation)) == none
-#guard allocationSlot (.attach .nul (.write (.var 1) .tru)) == none
+  (.allocated (proof creation)) admitted == none
+#guard checkStep G {creation with term := .makeAt writer [valueField] [.nul]} k
+  (.allocated (proof creation)) admitted == none
+#guard allocationSlot (.makeAt writer [valueField] [.nul]) == none
 
 -- Empty overloads cannot hide out-of-scope captures behind allocation evidence.
 private def emptyG : NormalGraph Nat := .ofRows fun i => if i == 11 then [.callable [(valueField, [1])] [] [] []] else G i
-private def escaped : Sequent Nat := ⟨[[1]],.attach (.var 3) (.var 0),[11]⟩
-private def escapedProof : Evidence Nat := .node escaped .makeCallable
-  [.node ⟨[[1]],.var 0,[1]⟩ .var []]
-#guard checkTree emptyG escapedProof
-#guard checkStep emptyG escaped k (.allocated escapedProof) == none
+private def escaped : Sequent Nat :=
+  ⟨[[1]],.makeAt (.graph 1 [] [] 0 [.var 3]) [valueField] [.var 0],[11]⟩
+private def escapedProof : Evidence Nat := .node escaped (.callableGraph [])
+  [.node ⟨[[1]],.var 0,[1]⟩ .var [], .node ⟨[[1]],.var 3,[1]⟩ .var []]
+#guard !checkTree emptyG escapedProof admitted
+#guard checkStep emptyG escaped k (.allocated escapedProof) admitted == none
 
 -- A typed read needs no transient contents fact. Its link records the same
 -- callable value; a plain-reference view has no bag operand.
@@ -52,7 +58,7 @@ private def readClaim : Sequent Nat := ⟨[[2]],.read (.var 0),[1]⟩
 #guard bagOperand (expand G [3]) == none
 
 -- Producer selection uses the maintained allocation/read evidence constructors.
-#guard match expressionEffect G pool 8 creation k [] [] with
+#guard match expressionEffect G pool 8 creation k [] [] admitted with
   | some (_, .allocated _, out) => out == allocOutput k [(valueField, [.tru])] (contractFields G creation.context)
   | _ => false
 #guard match expressionEffect G pool 8 readClaim ⟨[],[],[]⟩ [] [] with
@@ -61,10 +67,10 @@ private def readClaim : Sequent Nat := ⟨[[2]],.read (.var 0),[1]⟩
 
 /-- The graph requires a precise false return even though the bag and its read
 have Boolean contracts. A call invalidates cell facts, but keeps the immutable
-snapshot of the preceding read. -/
+snapshot of the preceding read. The callable's code returns its parameter. -/
 private def program : Program :=
   [⟨.tru,.bind 1,none⟩,
-   ⟨.attach (.var 1) (.var 0),.bind 2,none⟩,
+   ⟨.makeAt CallableGraphTests.code [valueField] [.var 0],.bind 2,none⟩,
    ⟨.read (.var 0),.bind 3,none⟩,
    ⟨.fls,.bind 4,none⟩,
    ⟨.write (.var 2) (.var 0),.effect 5,none⟩,
@@ -75,18 +81,17 @@ private def claims : List (PointClaim Nat) :=
   [⟨[],[1]⟩,⟨[[1]],[2]⟩,⟨[[2],[1]],[1]⟩,⟨[[1],[2],[1]],[1]⟩,
    ⟨[[1],[1],[2],[1]],[0]⟩,⟨[[1],[1],[2],[1]],[1]⟩,
    ⟨[[1],[1],[1],[2],[1]],[0]⟩,⟨[[1],[1],[1],[2],[1]],[9]⟩]
-private def request : Request := ⟨types,program,claims,[9],0,[], []⟩
-private def certificate : ControlFlow.Certificate Nat :=
-  match produce G labels 10 [9] program claims 0 with | .ok c => c | .error _ => []
-
-#guard checkClosed G [9] program certificate 0
+private def request : Request := ⟨types,program,claims,[9],0,[],CallableGraphTests.codes⟩
 #guard match (do
     let response ← produceJson (Lean.toJson request) 10
     verifyJson (Lean.toJson request) response) with
   | .ok _ => true | .error _ => false
 
+/-- The same program with the code as a term, run by the machine. -/
+private def executed : Program := program.set 1 ⟨.attach (.var 1) (.var 0),.bind 2,none⟩
+
 /-- The precise return is the saved read value; invocation does not erase it. -/
-theorem returns_false : Execution program 21 [] (.at 0 (fun _ => .nul)) [.fls] (.done .fls) := by
+theorem returns_false : Execution executed 21 [] (.at 0 (fun _ => .nul)) [.fls] (.done .fls) := by
   repeat first
     | exact Execution.refl
     | apply Execution.next (.enter rfl)

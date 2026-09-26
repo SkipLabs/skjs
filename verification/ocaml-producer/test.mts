@@ -1418,8 +1418,8 @@ const repositoryPath = (file: string) =>
   const results = shown.manifest.results ?? [];
   assert.deepEqual(results.map((r) => r.status), ["not-established"]);
   assert.notEqual(results[0]?.location, undefined);
-  assert.match(JSON.stringify(results), /body requires a variable, a primitive literal, an assignment, a call or a closure/);
-  process.stdout.write("reader collection: uncertified scheme defaults visibly refused\n");
+  assert.match(JSON.stringify(results), /source expression obligation at \[400,419\)/);
+  process.stdout.write("reader collection: a scheme default's bad write visibly refused\n");
 }
 const collected = await analyse(repositoryPath("values"), "ocaml");
 assert.equal(collected.collection?.producer, "ocaml");
@@ -1490,10 +1490,11 @@ process.stdout.write("reader collection: imported Json bound verified\n");
 // throws before any obligation exists has refused, not validated, and the
 // reader can point at nothing. Ranging over the inventory is what keeps a new
 // control from escaping this.
+// A generic closure whose bound names another of its binders is the one left
+// on the rigid path, checked by the direct checker; a rest or a default makes
+// none so, its code being checked as graph code.
 const directControls = new Set([
-  "invalid-generic-rest",
-  "invalid-generic-default",
-  "invalid-rigid-default",
+  "invalid-bound-body",
 ]);
 let testedDirectProtocol = false;
 const controls = cases.filter((c) => c.kind === "negative");
@@ -1548,6 +1549,7 @@ for (const [i, control] of controls.entries()) {
     }
   }
 }
+assert(testedDirectProtocol, "no direct control reached the direct checker");
 process.stdout.write(
   `reader collection: ${cases.filter((c) => c.kind === "negative").length} negative controls failed an obligation\n`,
 );

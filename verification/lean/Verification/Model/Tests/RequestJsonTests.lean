@@ -1,5 +1,6 @@
 import Verification.Model.Source.RequestJson
 import Verification.Model.Tests.CertificateProducerTests
+import Verification.Model.Tests.GraphCodeFixtures
 
 namespace Verification.Model.RequestJsonTests
 open Lean ProgramTyping ControlFlow CertificateProducer RequestJson
@@ -13,11 +14,17 @@ def types : List (List (PositiveNormalization.Clause (List Nat))) :=
 def natClaim (c : PointClaim (Fin 7)) : PointClaim Nat :=
   ⟨c.context.map (List.map Fin.val), c.type.map Fin.val⟩
 
+/-- The dispatching closure's code at both signatures of label 3, capturing
+one cell of label 2. -/
+def dispatchCodes : List CodeRequest :=
+  GraphCodeFixtures.oneNodeCodes 1 (.ite (.test .isNul (.var 1)) (.read (.var 2)) .nul) [[2]]
+    [([6],[[0]],[1]), ([6],[[1]],[0])]
+
 def mappedRequest : Request := ⟨types, CertificateProducerTests.mapped,
-  CertificateProducerTests.mappedClaims.map natClaim, [1], 0, [], []⟩
+  CertificateProducerTests.mappedClaims.map natClaim, [1], 0, [], dispatchCodes⟩
 
 def loopRequest : Request := ⟨types, ControlFlowTests.loop,
-  CertificateProducerTests.loopClaims.map natClaim, [1], 0, [], []⟩
+  CertificateProducerTests.loopClaims.map natClaim, [1], 0, [], dispatchCodes⟩
 
 def diamondRequest : Request := ⟨types, CertificateProducerTests.mappedDiamond,
   CertificateProducerTests.mappedDiamondClaims.map natClaim, [0,1], 0, [], []⟩
@@ -25,9 +32,9 @@ def diamondRequest : Request := ⟨types, CertificateProducerTests.mappedDiamond
 /-- This request forces a structural overload subsumption certificate, including
 its cyclic relation table and union-domain arrow evidence, through JSON. -/
 def overloadRequest : Request := ⟨types,
-  [⟨.alloc .tru, .bind 1,none⟩, ⟨ProgramTypingTests.dispatch, .bind 2,none⟩,
+  [⟨.alloc .tru, .bind 1,none⟩, ⟨.make ControlFlowTests.dispatchCode .nul, .bind 2,none⟩,
    ⟨.var 0, .bind ⟨3,some [0,2]⟩,none⟩, ⟨.app (.var 0) .nul, .ret,none⟩],
-  [⟨[],[2]⟩, ⟨[[2]],[3]⟩, ⟨[[3],[2]],[4]⟩, ⟨[[4],[2]],[0,1]⟩], [0,1], 0, [], []⟩
+  [⟨[],[2]⟩, ⟨[[2]],[3]⟩, ⟨[[3],[2]],[4]⟩, ⟨[[4],[2]],[0,1]⟩], [0,1], 0, [], dispatchCodes⟩
 
 def ok (r : Except String α) : Bool := match r with
   | .ok _ => true
@@ -50,6 +57,9 @@ def roundtrip (r : Request) : Except String Unit := do
 #guard ok (roundtrip loopRequest)
 #guard ok (roundtrip diamondRequest)
 #guard ok (roundtrip overloadRequest)
+-- The created code must be in the table.
+#guard !ok (roundtrip { mappedRequest with codes := [] })
+#guard !ok (roundtrip { mappedRequest with codes := dispatchCodes.take 1 })
 
 -- A response contains evidence only: the request is supplied independently.
 def response : Json := match produceJson (toJson mappedRequest) 12 with

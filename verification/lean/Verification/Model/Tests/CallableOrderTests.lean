@@ -1,10 +1,11 @@
 import Verification.Model.Tests.CallableGraphTests
+import Verification.Model.Tests.GraphCodeFixtures
 
 /-! Effectful initialization and invocation share the ordinary left-to-right
 machine. Code creation does not run the body or skip initializer effects. -/
 namespace Verification.Model.CallableOrderTests
 open PositiveNormalization PositiveGraphs PositiveRules ProgramTyping ProgramCertificates
-open CertificateProducer ControlFlow RequestJson HeapExpressionRules
+open CertificateProducer ControlFlow RequestJson HeapExpressionRules GraphCodeFixtures
 
 private def types : List (List (Clause (List Nat))) :=
   [[.nul],[.bool],[.refs [(valueField, [1])] [] []],[.callable [(valueField, [1])] [] [] []],
@@ -15,13 +16,18 @@ private def labels := List.range types.length
 -- false for the new function's bag. Its invocation body reads the captured bag,
 -- past its parameter and receiver.
 private def initial : Tm := .letE (.write (.var 0) .tru) (.letE (.alloc .tru) .fls)
-private def callee : Tm := .attach (.read (.var 2)) initial
+private def callee : Tm := .makeAt (oneNode 1 (.read (.var 2)) 1) [valueField] [initial]
 private def argument : Tm := .letE (.write (.var 0) .fls) .nul
 private def program (callable : Bool) : Program :=
-  [⟨if callable then .attach (.var 0) .fls else .alloc .fls,.bind 1,none⟩,
+  [⟨if callable then .makeAt (oneNode 1 (.var 0) 0) [valueField] [.fls] else .alloc .fls,.bind 1,none⟩,
    ⟨.app callee argument,.ret,none⟩]
 private def claims : List (PointClaim Nat) := [⟨[],[2,3]⟩,⟨[[2,3]],[1]⟩]
-private def request (callable : Bool) : Request := ⟨types,program callable,claims,[1],0,[], []⟩
+private def request (callable : Bool) : Request :=
+  ⟨types,program callable,claims,[1],0,[],oneNodeCodes 1 (.read (.var 2)) [[2,3]] [([5],[[0]],[1])]⟩
+/-- The same program with the codes as terms, run by the machine. -/
+private def executed (callable : Bool) : Program :=
+  [⟨if callable then .attach (.var 0) .fls else .alloc .fls,.bind 1,none⟩,
+   ⟨.app (.attach (.read (.var 2)) initial) argument,.ret,none⟩]
 #guard [false,true].all fun callable => match (do
     let r := Lean.toJson (request callable)
     let response ← produceJson r 12
@@ -35,17 +41,17 @@ private def creation : Sequent Nat := ⟨[[2,3]],callee,[4]⟩
 private def evidence : Evidence Nat :=
   (expression G pool 12 creation.context creation.term creation.type).getD (.node creation .nul [])
 private def knowledge : HeapKnowledge.Knowledge := ⟨[⟨0,[.fls],valueField⟩],[],[]⟩
-#guard checkTree G evidence
+#guard checkTree G evidence admitted
 #guard allocationSlot callee == none
-#guard checkStep G creation knowledge (.allocated evidence) == none
-#guard checkStep G creation knowledge (.created evidence) == none
-#guard checkStep G creation knowledge (.pure evidence) == none
-#guard checkStep G creation knowledge (.ordinary evidence) == some (ordinaryOutput knowledge)
+#guard checkStep G creation knowledge (.allocated evidence) admitted == none
+#guard checkStep G creation knowledge (.created evidence) admitted == none
+#guard checkStep G creation knowledge (.pure evidence) admitted == none
+#guard checkStep G creation knowledge (.ordinary evidence) admitted == some (ordinaryOutput knowledge)
 
 /-- Initializer write and intermediate allocation precede function allocation;
 argument write then precedes beta and the body read. The three cells are the
 captured bag, the initializer's object, and the newly allocated callable bag. -/
-theorem returns_false (callable : Bool) : Execution (program callable) 14 []
+theorem returns_false (callable : Bool) : Execution (executed callable) 14 []
     (.at 0 (fun _ => .nul)) [.fls,.tru,.fls] (.done .fls) := by
   cases callable <;>
     repeat first

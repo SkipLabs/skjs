@@ -269,14 +269,19 @@ inductive CallCode where
   | bound (target receiver : Tm) (pre : List Tm)
   /-- Code whose body is a control-flow graph, as a function body is
   (`ControlFlow`): the node expressions, each node's continuation and
-  handler, the entry label, and the values the code captured where it was
-  created. Invocation starts the graph at `start` in the environment
-  `[this, parameter_0, …, parameter_{arity-1}] ++ captures`. The node
-  expressions are scoped by that environment alone: substitution reaches the
-  captures, never the nodes. -/
+  handler, the entry label, the values the code captured where it was
+  created, which internal method the code provides (`kind`, as for
+  `closure`), and whether it collects a rest (`rest`). Invocation starts the
+  graph at `start` in the environment
+  `[this, parameter_0, …, parameter_{arity-1}] ++ captures`; `new` on
+  construct code passes `undefined` for `this`. Code with a rest first
+  collects the actuals past its `arity` fixed parameters into one fresh store,
+  as `variadic` code does, which the run finds in slot 0, before the receiver
+  (`CallArguments.graphEntry`). The node expressions are scoped by that
+  environment alone: substitution reaches the captures, never the nodes. -/
   | graph (arity : Nat) (exprs : List Tm)
       (conts : List (ControlFlow.Continuation × Option ControlFlow.Target))
-      (start : Nat) (caps : List Tm)
+      (start : Nat) (caps : List Tm) (kind : Invoke := .call) (rest : Bool := false)
   deriving Repr
 end
 
@@ -285,6 +290,7 @@ object has none. -/
 def CallCode.callable : CallCode → Bool
   | .absent => false
   | .closure _ _ .construct => false
+  | .graph _ _ _ _ _ .construct _ => false
   | _ => true
 
 /-- Graph code's node `l`: its expression, continuation and handler. -/
@@ -886,10 +892,10 @@ def callCodeDecEq (a b : CallCode) : Decidable (a = b) := by
     haveI : Decidable (a1 = b1) := tmDecEq a1 b1
     haveI : Decidable (a2 = b2) := argsDecEq a2 b2
     exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2) (by simp only [CallCode.bound.injEq])
-  case graph.graph a0 a1 a2 a3 a4 b0 b1 b2 b3 b4 =>
+  case graph.graph a0 a1 a2 a3 a4 a5 a6 b0 b1 b2 b3 b4 b5 b6 =>
     haveI : Decidable (a1 = b1) := argsDecEq a1 b1
     haveI : Decidable (a4 = b4) := argsDecEq a4 b4
-    exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2 ∧ a3 = b3 ∧ a4 = b4)
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2 ∧ a3 = b3 ∧ a4 = b4 ∧ a5 = b5 ∧ a6 = b6)
       (by simp only [CallCode.graph.injEq])
 termination_by sizeOf a
 def argsDecEq (a b : List Tm) : Decidable (a = b) := by
@@ -1007,10 +1013,10 @@ theorem lookup_slots {ns : List PropKey} (hnd : ns.Nodup) {base i : Nat}
     (spread : ∀ a, P a → P (.spread a))
     (throw : ∀ a, P a → P (.throw a))
     (merge : ∀ d a b, P a → P b → P (.merge d a b))
-    (objGraph : ∀ fs n E K s caps, (∀ e ∈ E, P e) → (∀ a ∈ caps, P a) →
-      P (.objAt fs (.graph n E K s caps)))
-    (makeGraph : ∀ n E K s caps ns args, (∀ e ∈ E, P e) → (∀ a ∈ caps, P a) →
-      (∀ a ∈ args, P a) → P (.makeAt (.graph n E K s caps) ns args))
+    (objGraph : ∀ fs n E K s caps k r, (∀ e ∈ E, P e) → (∀ a ∈ caps, P a) →
+      P (.objAt fs (.graph n E K s caps k r)))
+    (makeGraph : ∀ n E K s caps k r ns args, (∀ e ∈ E, P e) → (∀ a ∈ caps, P a) →
+      (∀ a ∈ args, P a) → P (.makeAt (.graph n E K s caps k r) ns args))
     (goto : ∀ E K l L d, (∀ e ∈ E, P e) → (∀ a ∈ L, P a) → P d → P (.goto E K l L d))
     (frame : ∀ E K t L d k x, (∀ e ∈ E, P e) → P t → (∀ a ∈ L, P a) → P d →
       P (.frame E K t L d k x))
@@ -1019,13 +1025,13 @@ theorem lookup_slots {ns : List PropKey} (hnd : ns.Nodup) {base i : Nat}
     (motive_2 := fun c => match c with
       | .absent => True | .closure _ b _ => P b | .variadic _ b => P b
       | .bound t r pre => P t ∧ P r ∧ ∀ a ∈ pre, P a
-      | .graph _ E _ _ caps => (∀ e ∈ E, P e) ∧ ∀ a ∈ caps, P a)
+      | .graph _ E _ _ caps _ _ => (∀ e ∈ E, P e) ∧ ∀ a ∈ caps, P a)
     (motive_3 := fun args => ∀ a ∈ args, P a)
     var invoke construct letE nul undef tru fls num str bigint sym ?_ ?_ read index write test ite arith arr arrLit elemAt setElem lenOf spread throw merge
     (fun E K l L d hE hL hd => goto E K l L d hE hL hd)
     (fun E K t L d k x hE ht hL hd => frame E K t L d k x hE ht hL hd)
     True.intro (fun _ _ _ h => h) (fun _ _ h => h) (fun _ _ _ ht hr hp => ⟨ht, hr, hp⟩)
-    (fun _ _ _ _ _ hE hc => ⟨hE, hc⟩) (by simp) (by
+    (fun _ _ _ _ _ _ _ hE hc => ⟨hE, hc⟩) (by simp) (by
       intro a args ha ih v hv
       rcases List.mem_cons.mp hv with rfl | hv
       · exact ha
@@ -1036,14 +1042,14 @@ theorem lookup_slots {ns : List PropKey} (hnd : ns.Nodup) {base i : Nat}
     | closure n b k => exact objClosure fs n b k ih
     | variadic n b => exact objVariadic fs n b ih
     | bound t r pre => exact objBound fs t r pre ih.1 ih.2.1 ih.2.2
-    | graph n E K s caps => exact objGraph fs n E K s caps ih.1 ih.2
+    | graph n E K s caps k r => exact objGraph fs n E K s caps k r ih.1 ih.2
   · intro c ns args ihc iha
     cases c with
     | absent => exact alloc ns args iha
     | closure n b k => exact attach n b k ns args ihc iha
     | variadic n b => exact makeVariadic n b ns args ihc iha
     | bound t r pre => exact makeBound t r pre ns args ihc.1 ihc.2.1 ihc.2.2 iha
-    | graph n E K s caps => exact makeGraph n E K s caps ns args ihc.1 ihc.2 iha
+    | graph n E K s caps k r => exact makeGraph n E K s caps k r ns args ihc.1 ihc.2 iha
 
 
 
@@ -1189,9 +1195,9 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
   | .spread x => .spread (subst j a x)
   | .throw x => .throw (subst j a x)
   | .merge d x y => .merge d (subst j a x) (subst j a y)
-  | .objAt fs (.graph n E K s caps) => .objAt fs (.graph n E K s (substArgs j a caps))
-  | .makeAt (.graph n E K s caps) ns xs =>
-      .makeAt (.graph n E K s (substArgs j a caps)) ns (substArgs j a xs)
+  | .objAt fs (.graph n E K s caps k r) => .objAt fs (.graph n E K s (substArgs j a caps) k r)
+  | .makeAt (.graph n E K s caps k r) ns xs =>
+      .makeAt (.graph n E K s (substArgs j a caps) k r) ns (substArgs j a xs)
   | .goto E K l L d => .goto E K l (substArgs j a L) (subst j a d)
   | .frame E K t L d k x => .frame E K (subst j a t) (substArgs j a L) (subst j a d) k x
 
@@ -1247,6 +1253,20 @@ term does, when it runs. The body wraps the store into an array with the
 prototype it captured, as an array literal is allocated. -/
 def bindRest (fixed : Nat) (args : List Tm) (recv : Tm) (body : Tm) : Tm :=
   .letE (.arrLit (args.drop fixed)) (bindArgs 1 (recv :: parameters fixed args) body)
+
+/-- What invoking graph code yields: a run at its entry, the receiver in slot
+0, then the `arity` parameters `parameters` binds, then the captures. Code with
+a rest first allocates the store of the actuals past its parameters, as
+`bindRest` does, and the run finds that store in slot 0, before the receiver.
+Invocation itself allocates nothing: the store is allocated by the ordinary
+steps of the term it yields. -/
+def graphEntry (arity : Nat) (E : List Tm)
+    (K : List (ControlFlow.Continuation × Option ControlFlow.Target)) (start : Nat)
+    (caps : List Tm) (rest : Bool) (recv : Tm) (args : List Tm) : Tm :=
+  match rest with
+  | false => .goto E K start (recv :: parameters arity args ++ caps) .nul
+  | true => .letE (.arrLit (args.drop arity))
+      (.goto E K start (.var 0 :: recv :: parameters arity args ++ caps) .nul)
 
 end CallArguments
 
@@ -1506,9 +1526,9 @@ def instantiate (d : Nat) (ρ : Env) : Tm → Tm
   | .spread a => .spread (instantiate d ρ a)
   | .throw a => .throw (instantiate d ρ a)
   | .merge dr a b => .merge dr (instantiate d ρ a) (instantiate d ρ b)
-  | .objAt fs (.graph n E K s caps) => .objAt fs (.graph n E K s (instantiateArgs d ρ caps))
-  | .makeAt (.graph n E K s caps) ns args =>
-      .makeAt (.graph n E K s (instantiateArgs d ρ caps)) ns (instantiateArgs d ρ args)
+  | .objAt fs (.graph n E K s caps k r) => .objAt fs (.graph n E K s (instantiateArgs d ρ caps) k r)
+  | .makeAt (.graph n E K s caps k r) ns args =>
+      .makeAt (.graph n E K s (instantiateArgs d ρ caps) k r) ns (instantiateArgs d ρ args)
   | .goto E K l L x => .goto E K l (instantiateArgs d ρ L) (instantiate d ρ x)
   | .frame E K t L x k h => .frame E K (instantiate d ρ t) (instantiateArgs d ρ L) (instantiate d ρ x) k h
   | t => t
@@ -1742,12 +1762,18 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   allocation this steps to, which runs no code. -/
   | mergeV {ps : List (PropKey × Tm)} : isVal a = true → isVal b = true → mergeParts h d a b = some ps →
       Step h (.merge d a b) h (.makeAt .absent (ps.map Prod.fst) (ps.map Prod.snd))
-  /-- Graph code is invoked in one step, changing no heap: its run starts at
-  the entry label, the receiver in slot 0, then the parameters, then the
-  captures. -/
+  /-- Graph code with `[[Call]]` is invoked in one step, changing no heap: its
+  run starts at the entry label, the receiver in slot 0, then the parameters,
+  then the captures, after collecting the rest's store when it has one
+  (`CallArguments.graphEntry`). -/
   | callGraph : isVal r = true → (∀ a ∈ args, isVal a = true) →
-      Step h (.invoke (.objAt fs (.graph n E K s caps)) r args) h
-        (.goto E K s (r :: CallArguments.parameters n args ++ caps) .nul)
+      Step h (.invoke (.objAt fs (.graph n E K s caps .call rest)) r args) h
+        (CallArguments.graphEntry n E K s caps rest r args)
+  /-- `new` on construct-only graph code enters it as a call does, with
+  `undefined` for the receiver. -/
+  | constructGraph : (∀ a ∈ args, isVal a = true) →
+      Step h (.construct (.objAt fs (.graph n E K s caps .construct rest)) args) h
+        (CallArguments.graphEntry n E K s caps rest .undef args)
   /-- Entering a node instantiates its expression in the run's environment. -/
   | gotoEnter : E[l]? = some e → K[l]? = some (k, x) →
       Step h (.goto E K l L d) h (.frame E K (instantiate 0 (envOf L d) e) L d k x)
@@ -2035,6 +2061,7 @@ theorem raises_no_step {t v : Tm} (hr : Raises t v) : ∀ {h h' t'}, ¬ Step h t
     | constructL s => exact ih s
     | constructArg hv _ _ _ => rw [raises_not_val hf] at hv; contradiction
     | constructV => cases hf
+    | constructGraph => cases hf
   | constructArg hfv hg hb hr ih =>
     intro _ _ _ s
     cases s with
@@ -2043,6 +2070,7 @@ theorem raises_no_step {t v : Tm} (hr : Raises t v) : ∀ {h h' t'}, ¬ Step h t
       obtain ⟨rfl, rfl⟩ := first_nonval_unique hg hg' hb hb' (raises_not_val hr) (not_val_of_step s)
       exact ih s
     | constructV hvs => have := hvs _ (List.mem_of_getElem? hg); rw [raises_not_val hr] at this; contradiction
+    | constructGraph hvs => have := hvs _ (List.mem_of_getElem? hg); rw [raises_not_val hr] at this; contradiction
   | letC hr ih =>
     intro _ _ _ s
     cases s with
@@ -2305,6 +2333,7 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     | constructL s' => exact (ih s').imp id (congrArg (Tm.construct · _))
     | constructArg hv _ _ _ => exact False.elim (value_no_step hv s)
     | constructV => exact False.elim (obj_no_step s)
+    | constructGraph => exact False.elim (obj_no_step s)
   | @constructArg f args i a h h1 a1 hv hg hb s ih =>
     cases s2 with
     | constructL s' => exact False.elim (value_no_step hv s')
@@ -2322,11 +2351,17 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
       obtain ⟨rfl, rfl⟩ := ih s'
       exact ⟨rfl, rfl⟩
     | constructV hvs => exact False.elim (value_no_step (hvs a (List.mem_of_getElem? hg)) s)
+    | constructGraph hvs => exact False.elim (value_no_step (hvs a (List.mem_of_getElem? hg)) s)
   | constructV hvs =>
     cases s2 with
     | constructL s' => exact False.elim (obj_no_step s')
     | constructArg _ hg _ s' => exact False.elim (value_no_step (hvs _ (List.mem_of_getElem? hg)) s')
     | constructV _ => exact ⟨rfl, rfl⟩
+  | constructGraph hvs =>
+    cases s2 with
+    | constructL s' => exact False.elim (obj_no_step s')
+    | constructArg _ hg _ s' => exact False.elim (value_no_step (hvs _ (List.mem_of_getElem? hg)) s')
+    | constructGraph _ => exact ⟨rfl, rfl⟩
   | callL s ih =>
     cases s2 with
     | callL s' => exact (ih s').imp id (congrArg (Tm.invoke · _ _))

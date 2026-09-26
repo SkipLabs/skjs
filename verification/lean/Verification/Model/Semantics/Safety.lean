@@ -726,7 +726,10 @@ theorem Invocable.invoke {v r : Tm} {args : List Tm} (h : Invocable v) (hr : isV
     · simp [CallCode.callable] at hc
   | variadic fixed body => exact ⟨_, .variadic hr ha⟩
   | bound target r₀ pre => exact ⟨_, .bound hr ha⟩
-  | graph arity E K start caps => exact ⟨_, .graph hr ha⟩
+  | graph arity E K start caps kind rest =>
+    cases kind
+    · exact ⟨_, .graph hr ha⟩
+    · simp [CallCode.callable] at hc
 
 theorem Invocable.scoped {v : Val} (h : Invocable v) : Scoped 0 v := by
   obtain ⟨fs, code, rfl, -, hs⟩ := h; exact hs
@@ -819,15 +822,18 @@ def restsT (S : List (Fam × List Fam × ArgFam × Fam)) : Fam := fun k W v =>
 
 /-! ### Construct signatures -/
 
-/-- A class value: an object whose code is construct-only and closed. -/
+/-- A class value: an object whose code is construct-only, without a rest,
+and closed. -/
 def Constructible (v : Val) : Prop :=
-  ∃ fs arity b, v = .objAt fs (.closure arity b .construct) ∧ Scoped 0 v
+  ∃ fs c, v = .objAt fs c ∧ (CallArguments.construction c).isSome ∧ Scoped 0 v
 
 /-- What `new v(args)` runs, in one step: a class value's body, with
 `undefined` for its receiver and the actuals for its parameters. -/
 def ConstructsTo (v : Val) (args : List Tm) (result : Tm) : Prop :=
-  ∃ fs arity b, v = .objAt fs (.closure arity b .construct) ∧
-    result = CallArguments.bindParameters arity args .undef b
+  ∃ fs c enter, v = .objAt fs c ∧ CallArguments.construction c = some enter ∧ result = enter args
+
+theorem Constructible.val {v : Val} (h : Constructible v) : isVal v = true := by
+  obtain ⟨fs, c, rfl, -, -⟩ := h; rfl
 
 /-- The common constructor promise, independent of argument-list syntax. -/
 def ConstructPromise (P : ArgFam) (R : Fam) (k : Nat) (W : WorldT k) (v : Val) : Prop :=
@@ -854,8 +860,7 @@ theorem ctorsT_adm (L : List (List Fam × Fam)) : Adm (ctorsT L) :=
 
 theorem ctorsT_valOnly (L : List (List Fam × Fam)) : ValOnly (ctorsT L) := by
   intro _ _ _ h
-  obtain ⟨fs, arity, b, rfl, -⟩ := h.1
-  rfl
+  exact h.1.val
 
 /-- **A class value.** An object with construct-only code whose body, with
 `undefined` for its receiver, is safe at each signature's result for every
@@ -868,8 +873,8 @@ theorem ctorsT_of_body {L : List (List Fam × Fam)} {k : Nat} {W : WorldT k}
         ∀ args, ArgsT p.1 j U args →
           Safe p.2 j U heap (CallArguments.bindParameters arity args .undef b)) :
     ctorsT L k W (.objAt fs (.closure arity b .construct)) :=
-  ⟨⟨fs, arity, b, rfl, hs⟩, fun p hp j hj U hx hu heap hh args _ ha =>
-    ⟨_, ⟨fs, arity, b, rfl, rfl⟩, hb p hp j hj U hx hu heap hh args ha⟩⟩
+  ⟨⟨fs, _, rfl, rfl, hs⟩, fun p hp j hj U hx hu heap hh args _ ha =>
+    ⟨_, ⟨fs, _, _, rfl, rfl, rfl⟩, hb p hp j hj U hx hu heap hh args ha⟩⟩
 
 /-- The actual lists a variadic construct signature admits: its fixed
 parameters' actuals exactly, then, as one argument pack, the rest. -/

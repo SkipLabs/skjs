@@ -737,9 +737,8 @@ instance the call names, which the checker relates to the scheme by a checked
 instance (`Sub.inst`). -/
 
 /-- A generic closure of a unit's source: its span, its binders, and whether
-its code can be graph code: no rest parameter and no default (graph code has
-fixed arity and no entry schedule), and no bound naming another of its
-binders (a scheme row's bounds are read outside its binders). -/
+it is graph code at a scheme row: no bound naming another of its binders (a
+scheme row's bounds are read outside its binders). -/
 structure GenericClosure where
   span : Span
   binders : List Fragment.TypeParam
@@ -758,15 +757,12 @@ partial def genericClosures : Json → List GenericClosure
           if tps.isEmpty then [] else
           match tps.toList.mapM Fragment.decodeTypeParam with
           | .ok binders =>
-            let params := ((j.getObjVal? "params").toOption.bind (·.getArr?.toOption)).getD #[]
             let names := binders.map (·.name)
             -- A bound naming a binder of the same closure is read at the
             -- instantiation, which a scheme row's bounds are not.
             let dependent := binders.any fun b =>
               (b.bound.map SourceTypes.binderNames).getD [] |>.any names.contains
-            let plain := !dependent && params.all fun q =>
-              (q.getObjVal? "rest").toOption.isNone && (q.getObjVal? "default").toOption.isNone
-            [⟨pos, binders, plain⟩]
+            [⟨pos, binders, !dependent⟩]
           | .error _ => []
         | _, _ => []
       else []
@@ -1121,9 +1117,6 @@ private partial def exprSites : Fragment.Expr → Sites
   | .indexWrite p _ a b c => joinSites ([],[p],[]) (joinSites (exprSites a) (joinSites (exprSites b) (exprSites c)))
   | .nullishAssign p _ np e => joinSites ([],[p,np],[]) (exprSites e)
   | .assign p _ _ e => joinSites ([],[p],[]) (exprSites e)
-  | .atEnv p e => joinSites ([p.1],[],[]) (exprSites e)
-  -- A closure's `throw` states no entry: only its operand is claimed.
-  | .throwBody _ e => exprSites e
   | .bindWithReceiver p f receiver args | .callWithReceiver p f receiver args => args.foldl (fun acc a => joinSites acc (exprSites a))
       (joinSites ([],[p],[]) (joinSites (exprSites f) (exprSites receiver)))
   | .call p f args _ _ | .invoke p f args _ _ => args.foldl (fun acc a => joinSites acc (exprSites a)) (joinSites ([],[p],[]) (exprSites f))
@@ -1134,13 +1127,9 @@ private partial def exprSites : Fragment.Expr → Sites
   | .applyWithReceiver p f receiver list =>
     joinSites ([],[p],[]) (joinSites (exprSites f) (joinSites (exprSites receiver)
       ((list.map exprSites).getD ([],[],[]))))
-  | .done _ => ([],[],[])
   -- The saved receiver's read, spelled at the `?.` token, is a site of its own.
   | .optional p _ r b => joinSites ([],[p],[]) (joinSites (exprSites r) (exprSites b))
-  | .seqBody p a b | .letBody p _ _ a b => joinSites ([p.1],[],[]) (joinSites (exprSites a) (exprSites b))
-  | .destructBody p t a b => t.defaults.foldl (fun acc e => joinSites acc (exprSites e))
-      (joinSites ([p.1],restSpans t,[]) (joinSites (exprSites a) (exprSites b)))
-  | .ifBody p result a b c => joinSites (if result.isSome then ([p.1],[],[]) else ([],[p],[])) (joinSites (exprSites a) (joinSites (exprSites b) (exprSites c)))
+  | .ifBody p a b c => joinSites ([],[p],[]) (joinSites (exprSites a) (joinSites (exprSites b) (exprSites c)))
   -- A closure's statements are its body's sites, as a function's are.
   | .block _ ss => ss.foldl (fun s st => joinSites s (stmtSites st)) ([],[],[])
 private partial def stmtSites : Fragment.Stmt → Sites

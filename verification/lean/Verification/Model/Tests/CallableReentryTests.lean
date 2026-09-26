@@ -1,10 +1,11 @@
 import Verification.Model.Tests.CallableGraphTests
+import Verification.Model.Tests.GraphCodeFixtures
 
 /-! Higher-order reentry through a callback: the outer call saves a bag read,
 then its callback mutates that bag and invokes the same function again. -/
 namespace Verification.Model.CallableReentryTests
 open PositiveNormalization PositiveGraphs PositiveRules ProgramTyping ControlFlow
-open CertificateProducer RequestJson
+open CertificateProducer RequestJson GraphCodeFixtures
 
 private def types : List (List (Clause (List Nat))) :=
   [[.nul],[.bool],[.refs [(valueField, [1])] [] []],[.callable [(valueField, [1])] [] [] []],
@@ -22,38 +23,51 @@ private def body (fresh : Bool) : Tm :=
 -- nested callback returns false and performs no reentry, so the complete
 -- invocation terminates.
 private def callback : Tm :=
-  .letE (.write (.var 3) .tru) (.app (.var 3) (.funE .fls))
+  .letE (.write (.var 3) .tru) (.app (.var 3) (.make (oneNode 1 .fls 0) .nul))
 private def program (callable fresh : Bool) : Program :=
-  [⟨if callable then .attach (.var 1) .fls else .alloc .fls,.bind 1,none⟩,
-   ⟨.funE (body fresh),.bind 2,none⟩,
-   ⟨.funE callback,.bind 3,none⟩,
+  [⟨if callable then .makeAt (oneNode 1 (.var 1) 0) [valueField] [.fls] else .alloc .fls,.bind 1,none⟩,
+   ⟨.make (oneNode 1 (body fresh) 1) .nul,.bind 2,none⟩,
+   ⟨.make (oneNode 1 callback 2) .nul,.bind 3,none⟩,
    ⟨.app (.var 1) (.var 0),.ret,none⟩]
 private def claims : List (PointClaim Nat) :=
   [⟨[],[2,3]⟩,⟨[[2,3]],[5]⟩,⟨[[5],[2,3]],[4]⟩,⟨[[4],[5],[2,3]],[1]⟩]
+/-- The codes: the reentrant function's, the callback's, and the inner
+callback's, created inside the callback's code and checked before it. -/
+private def codes (fresh : Bool) : List CodeRequest :=
+  oneNodeCodes 1 .fls [] [([7],[[0]],[1])] ++
+  oneNodeCodes 1 (body fresh) [[2,3]] [([7],[[4]],[1])] ++
+  oneNodeCodes 1 callback [[5],[2,3]] [([7],[[0]],[1])]
 private def request (callable fresh : Bool) : Request :=
-  ⟨types,program callable fresh,claims,[1],0,[], []⟩
+  ⟨types,program callable fresh,claims,[1],0,[],codes fresh⟩
 
-#guard [false,true].all fun callable => [false,true].all fun fresh => match (do
-    let r := Lean.toJson (request callable fresh)
-    let response ← produceJson r 12
-    verifyJson r response) with
-  | .ok _ => true | .error _ => false
+#guard [false,true].all fun callable => [false,true].all fun fresh =>
+  ok (roundtrip (request callable fresh) 12)
 
 -- Neither an entry-time read nor the current heap becomes a permanent false
 -- result contract for the function; every invocation checks only the invariant.
-private def badG : NormalGraph Nat := .ofRows fun i =>
-  if i == 9 then [.arrs [([7],[[4]],[6])] []] else G i
-private def pool := vocabulary badG (List.range 10) claims []
-#guard [false,true].all fun fresh =>
-  !(expression badG pool 12 [[2,3]] (.funE (body fresh)) [9]).isSome
+private def badRequest (fresh : Bool) : Request :=
+  ⟨RequestJson.rows (types ++ [[Clause.arrs [([7],[[4]],[6])] []]]),
+   [⟨.alloc .fls,.bind 1,none⟩, ⟨.make (oneNode 1 (body fresh) 1) .nul,.bind 2,none⟩, ⟨.nul,.ret,none⟩],
+   [⟨[],[2,3]⟩,⟨[[2,3]],[9]⟩,⟨[[9],[2,3]],[0]⟩],[0],0,[],
+   oneNodeCodes 1 (body fresh) [[2,3]] [([7],[[4]],[6])]⟩
+#guard [false,true].all fun fresh => !ok (roundtrip (badRequest fresh) 12)
 -- The reentrant function requires a Boolean-returning callback.
-#guard !(expression G (vocabulary G labels claims []) 10 [[5]]
-  (.app (.var 0) (.funE .nul)) [1]).isSome
+private def nullCallback : Request :=
+  ⟨types,[⟨.app (.var 0) (.make (oneNode 1 .nul 0) .nul),.ret,none⟩],[⟨[[5]],[1]⟩],[1],0,[[5]],
+   oneNodeCodes 1 .nul [] [([7],[[0]],[1])]⟩
+#guard !ok (roundtrip nullCallback)
+
+/-- The same program with the codes as terms, run by the machine. -/
+private def executed (callable fresh : Bool) : Program :=
+  [⟨if callable then .attach (.var 1) .fls else .alloc .fls,.bind 1,none⟩,
+   ⟨.funE (body fresh),.bind 2,none⟩,
+   ⟨.funE (.letE (.write (.var 3) .tru) (.app (.var 3) (.funE .fls))),.bind 3,none⟩,
+   ⟨.app (.var 1) (.var 0),.ret,none⟩]
 
 /-- Reentry writes true while the outer frame retains its saved false value.
 The fourth heap cell is allocated for the terminating inner callback. -/
 theorem returns_expected (callable fresh : Bool) :
-    Execution (program callable fresh) (if fresh then 26 else 24) []
+    Execution (executed callable fresh) (if fresh then 26 else 24) []
       (.at 0 (fun _ => .nul)) [.tru,.nul,.nul,.nul]
       (.done (if fresh then .tru else .fls)) := by
   cases callable <;> cases fresh <;>

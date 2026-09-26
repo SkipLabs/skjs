@@ -276,8 +276,8 @@ def shape : Clause α → Nat
 def valueShape : Val → Nat
   | .nul => 0 | .tru | .fls => 1 | .objAt _ .absent => 2 | .undef => 4
   | .objAt _ (.closure _ _ .call) | .objAt _ (.variadic _ _) | .objAt _ (.bound _ _ _)
-  | .objAt _ (.graph ..) => 3
-  | .objAt _ (.closure _ _ .construct) => 11
+  | .objAt _ (.graph _ _ _ _ _ .call _) => 3
+  | .objAt _ (.closure _ _ .construct) | .objAt _ (.graph _ _ _ _ _ .construct _) => 11
   | .num _ => 5
   | .str _ => 6
   | .arr _ => 8
@@ -306,7 +306,7 @@ theorem semWithArgs_value {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
   | bigint => obtain ⟨i, rfl⟩ := h; exact ⟨rfl, trivial⟩
   | bigintLit i => subst v; exact ⟨rfl, trivial⟩
   | symbol => obtain ⟨i, rfl⟩ := h; exact ⟨rfl, trivial⟩
-  | ctors L S => obtain ⟨fs, a, b, rfl, hs⟩ := h.1.1; exact ⟨rfl, hs⟩
+  | ctors L S => obtain ⟨fs, c, rfl, -, hs⟩ := h.1.1; exact ⟨rfl, hs⟩
   | pack a bs => exact h.elim
 
 
@@ -327,19 +327,24 @@ theorem semWithArgs_shape {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
     obtain ⟨fs, code, rfl, hc, -⟩ := h.1.1
     cases code
     case closure kind => cases kind <;> simp_all [valueShape, shape, CallCode.callable]
+    case graph kind _ => cases kind <;> simp_all [valueShape, shape, CallCode.callable]
     all_goals simp_all [valueShape, shape, CallCode.callable]
   | undef => cases h; rfl
   | callable a bs L S =>
     obtain ⟨fs, code, rfl, hc, -⟩ := h.1.2.1
     cases code
     case closure kind => cases kind <;> simp_all [valueShape, shape, CallCode.callable]
+    case graph kind _ => cases kind <;> simp_all [valueShape, shape, CallCode.callable]
     all_goals simp_all [valueShape, shape, CallCode.callable]
   | str => obtain ⟨s, rfl⟩ := h; rfl
   | strLit s => cases h; rfl
   | bigint => obtain ⟨i, rfl⟩ := h; rfl
   | bigintLit i => cases h; rfl
   | symbol => obtain ⟨i, rfl⟩ := h; rfl
-  | ctors L S => obtain ⟨fs, a, b, rfl, -⟩ := h.1.1; rfl
+  | ctors L S =>
+    obtain ⟨fs, c, rfl, hc, -⟩ := h.1.1
+    unfold CallArguments.construction at hc
+    split at hc <;> simp_all [valueShape, shape]
   | pack a bs => exact h.elim
 
 theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : Nat) (W : WorldT n) (v : Val) :

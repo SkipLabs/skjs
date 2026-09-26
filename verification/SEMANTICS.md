@@ -26,7 +26,7 @@ the subset
 
 $$v ::= \mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}\mid\mathsf{obj}(\ell,c),$$
 
-where $c ::= \mathsf{absent}\mid\mathsf{closure}(m,t)\mid\mathsf{variadic}(m,t)\mid\mathsf{bound}(f,r,\vec p)\mid\mathsf{graph}(m,E,K,s,\vec c)$ is a separate invocation
+where $c ::= \mathsf{absent}\mid\mathsf{closure}(m,t)\mid\mathsf{variadic}(m,t)\mid\mathsf{bound}(f,r,\vec p)\mid\mathsf{graph}(m,E,K,s,\vec c,\kappa,\varrho)$ is a separate invocation
 descriptor, the first two with a declared parameter count `m`. A closure body is
 under `m + 1` binders: the receiver of the call in slot 0, then its parameters.
 A variadic body has its rest store in slot 0, the receiver in slot 1, then `m`
@@ -35,8 +35,10 @@ names. `bound` is the forwarding descriptor `.bind` creates: the target, the
 receiver and the argument prefix it saved, values that no field holds and no
 write can reach. $\mathsf{graph}$ is code whose body is a control-flow graph,
 as a program's is: node expressions $E$, each node's continuation and handler
-$K$, an entry label $s$ and the captured values $\vec c$
-([graph code](#graph-code)). An argument list is not a value: which lists a rest
+$K$, an entry label $s$ and the captured values $\vec c$, invoked by a call
+or, construct-only, by `new` ($\kappa$), collecting a rest or not
+($\varrho$) ([graph code](#graph-code)). Every closure the source creates is
+graph code; the term descriptors remain for the machine's own examples. An argument list is not a value: which lists a rest
 parameter's type admits is a separate contract on lists of values
 ([argument packs](POSITIVE-TYPES.md#argument-packs)).
 `make c a` evaluates its initializer `a`, then appends that value
@@ -401,8 +403,23 @@ node's value then leaves the run or moves along an edge, whose slot map
 $\mu$ acts on the pushed environment as a program's does:
 
 $$
-\frac{r,\vec a\ \text{values}}{h,\mathsf{invoke}(\mathsf{obj}(\mathit{fs},\mathsf{graph}(m,E,K,s,\vec c)),r,\vec a)\to h,\mathsf{goto}(E,K,s,[r,\operatorname{pad}_m(\vec a),\vec c])}\ (\texttt{callGraph})
+\frac{r,\vec a\ \text{values}}{h,\mathsf{invoke}(\mathsf{obj}(\mathit{fs},\mathsf{graph}(m,E,K,s,\vec c,\mathsf{call},\varrho)),r,\vec a)\to h,\operatorname{entry}_\varrho(r,\vec a)}\ (\texttt{callGraph})
 $$
+
+$$
+\frac{\vec a\ \text{values}}{h,\mathsf{construct}(\mathsf{obj}(\mathit{fs},\mathsf{graph}(m,E,K,s,\vec c,\mathsf{construct},\varrho)),\vec a)\to h,\operatorname{entry}_\varrho(\mathsf{undefined},\vec a)}\ (\texttt{constructGraph})
+$$
+
+where code without a rest enters at once,
+$\operatorname{entry}_{\mathsf{false}}(r,\vec a)=\mathsf{goto}(E,K,s,[r,\operatorname{pad}_m(\vec a),\vec c])$,
+and code with one first allocates the actuals past its $m$ parameters as a
+fresh store, found in slot 0, below the receiver,
+$\operatorname{entry}_{\mathsf{true}}(r,\vec a)=\mathsf{let}\ x=[\vec a_{\ge m}]\ \mathsf{in}\ \mathsf{goto}(E,K,s,[x,r,\operatorname{pad}_m(\vec a),\vec c])$
+(`CallArguments.graphEntry`). Padding never enters the store. Code with
+$\kappa=\mathsf{construct}$ has no call step: a plain call of a class value
+throws. `new` on code with a rest is not yet a construction
+(`CallArguments.construction`): padding omitted actuals would change its
+store.
 
 $$
 \frac{E_l=e\quad K_l=(k,x)}{h,\mathsf{goto}(E,K,l,\rho)\to h,\mathsf{frame}(E,K,e[\rho],\rho,k,x)}\ (\texttt{gotoEnter})

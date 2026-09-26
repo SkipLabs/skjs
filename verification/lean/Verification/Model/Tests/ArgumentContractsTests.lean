@@ -381,11 +381,11 @@ def identityConstructor : Tm := .objAt [] (.closure 1 (.var 1) .construct)
 theorem identity_constructor (A : Fam)
     (hA : ∀ n W v, A n W v → Scoped 0 v) (n W) :
     ctorsT [([A], A)] n W identityConstructor := by
-  refine ⟨⟨[], 1, .var 1, rfl, by change 1 < 2; omega⟩, ?_⟩
+  refine ⟨⟨[], _, rfl, rfl, by change 1 < 2; omega⟩, ?_⟩
   intro p hp j hj U hx hu heap hh args hv ha
   cases List.mem_singleton.mp hp
   obtain ⟨a, rfl, harg⟩ := (ArgsT_singleton A j U args).mp ha
-  refine ⟨a, ⟨[], 1, .var 1, rfl, ?_⟩, ?_⟩
+  refine ⟨a, ⟨[], _, _, rfl, rfl, ?_⟩, ?_⟩
   · change a = subst 0 .undef a
     exact (subst_above (hA j U a harg) (Nat.le_refl 0) .undef).symm
   · exact value_safe A j U heap a (hv a (by simp)) harg

@@ -45,41 +45,25 @@ def G : PositiveGraphs.NormalGraph Nat := .ofRows fun
 
 def pool : List (Ty Nat) := vocabulary G (List.range 23) [] [[0,1]]
 
-/-- Slot 0 is the collected store, slot 1 the receiver, slot 2 the fixed
-parameter. -/
-def restFn : Tm := .make (.variadic 1 (.var 2)) .nul
+/-- Graph code collecting a rest: its one node returns slot 2, the fixed
+parameter; slot 0 is the store the call collected, slot 1 the receiver. -/
+def restCode (slot : Nat) : Tm := .make (.graph 1 [.var slot] [(.ret, none)] 0 [] .call true) .nul
 
-/-- Build an array of the given store type, then call with actuals `args`,
-where slot 0 is the array and slot 1 the function. -/
-def program (store : List Tm) (args : List Tm) : Tm :=
-  .letE restFn (.letE (.makeAt .absent [CallArguments.arrayStoreField] [.arrLit store])
-    (.call (.var 1) args))
-
-def spreadArray : Tm := .spread (.readAt CallArguments.arrayStoreField (.var 0))
-
-def search (t : Tm) (A : Ty Nat) : Option (Evidence Nat) := expression G pool 40 [] t A
-
-def accepted (t : Tm) (A : Ty Nat) : Bool :=
-  match search t A with
-  | some e => check G t A e
+/-- Creation evidence, every code admitted: whether the code is checked at its
+signatures is the unit's code table's question, not the creation's. -/
+def created (t : Tm) (A : Ty Nat) : Bool :=
+  match expression G pool 40 [] t A with
+  | some e => checkTree G e (fun _ => true) && claim e == ⟨[], t, A⟩
   | none => false
 
--- Creation alone, at a signature whose rest collects `number | undefined`.
-#guard accepted restFn [4]
--- The body reads slot 2, the fixed parameter; slot 0 is the array.
-#guard !accepted (.make (.variadic 1 (.var 0)) .nul) [4]
--- Slot 1 is the receiver, which may be any value: not a number.
-#guard !accepted (.make (.variadic 1 (.var 1)) .nul) [4]
--- Fixed actual only, several plain actuals, and a spread among them.
-#guard accepted (.letE restFn (.call (.var 0) [.num 1])) [0]
-#guard accepted (.letE restFn (.call (.var 0) [.num 1, .num 2, .undef])) [0]
-#guard accepted (program [.num 3] [.num 1, spreadArray, .num 2]) [0]
-#guard accepted (program [.num 3] [.num 1, spreadArray, spreadArray]) [0]
--- The fixed parameter cannot be supplied by a spread, nor omitted.
-#guard !accepted (program [.num 3] [spreadArray]) [0]
-#guard !accepted (.letE restFn (.call (.var 0) [])) [0]
--- An element outside the element type is refused.
-#guard !accepted (.letE restFn (.call (.var 0) [.num 1, .nul])) [0]
+-- Creation at a signature whose rest collects `number | undefined`, the store
+-- of each signature at a pool type that is its rest store; not at a fixed
+-- signature, which code collecting a rest does not offer.
+#guard created (restCode 2) [4]
+#guard created (restCode 2) [7]
+#guard !created (restCode 2) [10]
+-- Code without a rest offers a variadic signature too, discarding the rest.
+#guard created (.make (.graph 1 [.var 1] [(.ret, none)] 0 []) .nul) [4]
 
 /-- Against `...r: number[]`, in a context holding such a function and an
 array: plain actuals and spreads are accepted, since every store is dense and
@@ -91,6 +75,17 @@ def searchIn (Γ : List (Ty Nat)) (t : Tm) : Bool :=
 
 def spreadAt (i : Nat) : Tm := .spread (.readAt CallArguments.arrayStoreField (.var i))
 
+-- Fixed actual only, several plain actuals, and a spread among them.
+#guard searchIn [[4]] (.call (.var 0) [.num 1])
+#guard searchIn [[4]] (.call (.var 0) [.num 1, .num 2, .undef])
+#guard searchIn [[4], [3]] (.call (.var 0) [.num 1, spreadAt 1, .num 2])
+#guard searchIn [[4], [3]] (.call (.var 0) [.num 1, spreadAt 1, spreadAt 1])
+-- The fixed parameter cannot be supplied by a spread, nor omitted.
+#guard !searchIn [[4], [3]] (.call (.var 0) [spreadAt 1])
+#guard !searchIn [[4]] (.call (.var 0) [])
+-- An element outside the element type is refused.
+#guard !searchIn [[4]] (.call (.var 0) [.num 1, .nul])
+
 #guard searchIn [[7],[8]] (.call (.var 0) [.num 1, .num 2])
 #guard searchIn [[7],[8]] (.call (.var 0) [.num 1, spreadAt 1])
 #guard searchIn [[7],[9]] (.call (.var 0) [.num 1, spreadAt 1])
@@ -100,7 +95,7 @@ def spreadAt (i : Nat) : Tm := .spread (.readAt CallArguments.arrayStoreField (.
 -- call through that fixed type is a call it already supports.
 #guard (subtype G pool [7] [10]).isSome
 #guard searchIn [[10]] (.call (.var 0) [.num 1, .num 2])
-#guard (expression G pool 40 [] (.letE restFn (.call (.var 0) [.num 1, .num 2])) [0]).isSome
+#guard searchIn [[7]] (.call (.var 0) [.num 1, .num 2])
 -- A fixed signature does not meet a variadic one with an element rest: it
 -- promises nothing past its own positions. It meets one whose rest is exactly
 -- its further positions, when those are stable, as a number is.
@@ -129,14 +124,6 @@ private def restCallEvidence (flags : List Bool) (E : Ty Nat) : Evidence Nat :=
 #guard !checkTree G (restCallEvidence [false] [14])
 #guard !checkTree G (restCallEvidence [] [13])
 
-/-- Variadic code wrapping its rest store into an array and returning it. -/
-def tupleFn : Tm :=
-  .make (.variadic 0 (.letE (.makeAt .absent [CallArguments.arrayStoreField] [.var 0]) (.var 0))) .nul
-
--- The rest store holds a tuple rest's positions; an element rest's store holds
--- any number of actuals, so it is no pair.
-#guard accepted tupleFn [19]
-#guard !accepted tupleFn [20]
 -- A call writes exactly the tuple's positions: not fewer, not more, and no
 -- spread, whose length the tuple cannot bound.
 #guard searchIn [[16]] (.call (.var 0) [.num 1, .num 2])

@@ -1,10 +1,11 @@
 import Verification.Model.Tests.CallableGraphTests
+import Verification.Model.Tests.GraphCodeFixtures
 
 /-! A recursive invocation is tied through an allocated cell, rather than a
 runtime identity embedded in source syntax. Safety permits this infinite run. -/
 namespace Verification.Model.CallableRecursionTests
 open PositiveNormalization PositiveGraphs PositiveRules ProgramTyping ControlFlow
-open CertificateProducer RequestJson ProgramCertificates
+open CertificateProducer RequestJson ProgramCertificates GraphCodeFixtures
 
 private def types : List (List (Clause (List Nat))) :=
   [[.nul],[.arrs [([3],[[0]],[0])] []], [.refs [(valueField, [0,1])] [] []], [.undef]]
@@ -13,56 +14,29 @@ private def labels := List.range types.length
 private def dispatch : Tm := .ite (.test .isFun (.var 0)) (.app (.var 0) .nul) .nul
 /-- The body reads the captured cell, past its parameter and receiver. -/
 private def body : Tm := .letE (.read (.var 2)) dispatch
-private def program : Program :=
+private def program (body : Tm) : Program :=
   [⟨.alloc .nul,.bind 1,none⟩,
-   ⟨.funE body,.bind 2,none⟩,
+   ⟨.make (oneNode 1 body 1) .nul,.bind 2,none⟩,
    ⟨.write (.var 1) (.var 0),.effect 3,none⟩,
    ⟨.app (.var 0) .nul,.ret,none⟩]
 private def claims : List (PointClaim Nat) :=
   [⟨[],[2]⟩,⟨[[2]],[1]⟩,⟨[[1],[2]],[0]⟩,⟨[[1],[2]],[0]⟩]
-private def request : Request := ⟨types,program,claims,[0],0,[], []⟩
--- Keep the small checked witness explicit: the kernel validates evidence,
--- while the separate JSON regression exercises automatic proof search.
-private def node (Γ : List (Ty Nat)) (t : Tm) (A : Ty Nat) (r : Rule Nat)
-    (ps : List (Evidence Nat) := []) : Evidence Nat := .node ⟨Γ,t,A⟩ r ps
-private def readEvidence : Evidence Nat :=
-  node [[3],[0],[2]] (.read (.var 2)) [0,1] .read [node [[3],[0],[2]] (.var 2) [2] .var]
-private def nullBranch : Evidence Nat :=
-  node [[0],[3],[0],[2]] dispatch [0] .ifFalse [node [[0],[3],[0],[2]] .nul [0] .nul]
-private def callBranch : Evidence Nat :=
-  node [[1],[3],[0],[2]] dispatch [0] .ifTrue
-    [node [[1],[3],[0],[2]] (.app (.var 0) .nul) [0] .app
-      [node [[1],[3],[0],[2]] (.var 0) [1] .var, node [[1],[3],[0],[2]] .undef [3] .undef,
-       node [[1],[3],[0],[2]] .nul [0] .nul]]
-private def closureEvidence : Evidence Nat :=
-  node [[2]] (.funE body) [1] .funE
-    [node [[3],[0],[2]] body [0] .letE
-      [readEvidence,node [[0,1],[3],[0],[2]] dispatch [0] (.unionVar 0) [nullBranch,callBranch]]]
-private def certificate : ControlFlow.Certificate Nat :=
-  [{expression := node [] (.alloc .nul) [2] .alloc
-      [node [] .nul [0,1] (.sub .subset) [node [] .nul [0] .nul]], edges := [[.subset]]},
-   {expression := closureEvidence, edges := [[.subset,.subset]]},
-   {expression := node [[1],[2]] (.write (.var 1) (.var 0)) [0] .write
-      [node [[1],[2]] (.var 1) [2] .var,
-       node [[1],[2]] (.var 0) [0,1] (.sub .subset) [node [[1],[2]] (.var 0) [1] .var]],
-    edges := [[.subset,.subset]]},
-   {expression := node [[1],[2]] (.app (.var 0) .nul) [0] .app
-      [node [[1],[2]] (.var 0) [1] .var,node [[1],[2]] .undef [3] .undef,
-       node [[1],[2]] .nul [0] .nul], edges := []}]
-
-theorem checked : checkClosed G [0] program certificate 0 = true := by decide +kernel
-#guard match (do
-    let response ← produceJson (Lean.toJson request) 10
-    verifyJson (Lean.toJson request) response) with
-  | .ok _ => true | .error _ => false
+private def request (body : Tm) : Request :=
+  ⟨types,program body,claims,[0],0,[],oneNodeCodes 1 body [[2]] [([3],[[0]],[0])]⟩
+#guard ok (roundtrip (request body))
 
 -- The nullable cell must be guarded on every invocation, and the recursive
 -- call's argument must satisfy its contract. Current contents are not captures.
-private def pool := vocabulary G labels claims []
-#guard !(expression G pool 10 [[2]] (.funE (.app (.read (.var 2)) .nul)) [1]).isSome
-#guard !(expression G pool 10 [[2]]
-  (.funE (.letE (.read (.var 2))
-    (.ite (.test .isFun (.var 0)) (.app (.var 0) .tru) .nul))) [1]).isSome
+#guard !ok (roundtrip (request (.app (.read (.var 2)) .nul)))
+#guard !ok (roundtrip (request (.letE (.read (.var 2))
+  (.ite (.test .isFun (.var 0)) (.app (.var 0) .tru) .nul))))
+
+/-- The same program with the code as a term, run by the machine. -/
+private def executed : ControlFlow.Program :=
+  [⟨.alloc .nul,.bind 1,none⟩,
+   ⟨.funE body,.bind 2,none⟩,
+   ⟨.write (.var 1) (.var 0),.effect 3,none⟩,
+   ⟨.app (.var 0) .nul,.ret,none⟩]
 
 private def cell : Tm := .obj 0 .absent
 private def fn : Tm := .fn 1 (.letE (.read cell) dispatch)
@@ -72,7 +46,7 @@ private def loopState : State :=
 
 /-- Every recursive round pays beta, a heap read, a binding, a tag test, and
 branch selection. It returns to precisely the same allocated state. -/
-theorem cycles (n : Nat) : Execution program (5*n) loopHeap loopState loopHeap loopState := by
+theorem cycles (n : Nat) : Execution executed (5*n) loopHeap loopState loopHeap loopState := by
   induction n with
   | zero => exact .refl
   | succ n ih =>
@@ -86,7 +60,7 @@ theorem cycles (n : Nat) : Execution program (5*n) loopHeap loopState loopHeap l
 
 /-- Source allocation and the self-write reach that cycle from the empty heap.
 No special recursion rule or preexisting runtime identity is assumed. -/
-theorem from_entry (n : Nat) : Execution program (5*n+10) []
+theorem from_entry (n : Nat) : Execution executed (5*n+10) []
     (.at 0 (fun _ => .nul)) loopHeap loopState := by
   apply Execution.next (.enter rfl)
   apply Execution.next (.expr (.makeV rfl))
@@ -118,21 +92,11 @@ private theorem terminal_bound {P n m h s h' s' h'' s''}
 
 /-- Determinism and arbitrarily long cycles rule out every returning run. -/
 theorem never_returns {k h v}
-    (run : Execution program k [] (.at 0 (fun _ => .nul)) h (.done v)) : False := by
+    (run : Execution executed k [] (.at 0 (fun _ => .nul)) h (.done v)) : False := by
   have bound := terminal_bound run (fun _ _ step => by cases step) (from_entry k)
   omega
 
-theorem safe (n : Nat) : SafeGraph program (meaning G [0]) n (ofList []) []
-    (.at 0 (fun _ => .nul)) := accepted_closed_safe checked n
-
-theorem coherent {k h s} (run : Execution program k [] (.at 0 (fun _ => .nul)) h s) :
-    ∃ D, ObjectCoherence.HeapOk D h ∧ GraphCoherence.StateCoherent D s :=
-  GraphCoherence.accepted_closed_coherent checked run
-
-#print axioms checked
 #print axioms cycles
 #print axioms from_entry
 #print axioms never_returns
-#print axioms safe
-#print axioms coherent
 end Verification.Model.CallableRecursionTests

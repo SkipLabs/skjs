@@ -13,21 +13,11 @@ def G : NormalGraph (Fin 7) := .ofRows fun i => match i.val with
   | 5 => [.arrs [([6], [[3]], [1])] []]
   | _ => [.undef]
 
-/-- A single closure implements both signatures. `var 0` is its receiver,
-`var 1` its parameter and `var 2` the captured cell. -/
+/-- A single closure implementing both signatures of label 3: `var 0` is its
+receiver, `var 1` its parameter and `var 2` the captured cell. Its code is a
+term here, run below by the machine; the checked closures are graph code
+(`GraphCode`), whose rules the source pipeline exercises. -/
 def dispatch : Tm := .funE (.ite (.test .isNul (.var 1)) (.read (.var 2)) .nul)
-
-theorem dispatch_typed : HasTy G [[2]] dispatch [3] := by
-  apply HasTy.funE (by rfl) (by decide)
-  intro p hp
-  simp only [offerRows, List.map_nil, List.append_nil, List.mem_cons, List.not_mem_nil, or_false] at hp
-  rcases hp with rfl | rfl
-  · apply HasTy.ifTag (q := true) (by rfl) ⟨rfl, by intro c hc; simp [expand, clausesOf, G] at hc; subst c; rfl⟩
-    · intro _; exact .read (.var rfl) (by rfl) rfl (by simp)
-    · intro h; cases h
-  · apply HasTy.ifTag (q := false) (by rfl) ⟨rfl, by intro c hc; simp [expand, clausesOf, G] at hc; subst c; rfl⟩
-    · intro h; cases h
-    · intro _; exact .nul (by rfl)
 
 /-- Genuine overload subsumption: splitting a union domain across two signatures. -/
 def widenCert : Proof (Fin 7) := .core
@@ -37,22 +27,6 @@ def widenCert : Proof (Fin 7) := .core
 
 #guard check G [3] [4] widenCert
 #guard !(check G [4] [3] widenCert)
-
-theorem dispatch_widened : HasTy G [[2]] dispatch [4] :=
-  .sub dispatch_typed (by decide : check G [3] [4] widenCert = true)
-
-/-- Lambda introduction also accepts function-valued parameters. -/
-theorem higher_order_typed : HasTy G [] (.funE (.app (.var 1) .nul)) [5] := by
-  apply HasTy.funE (by rfl) (by decide)
-  intro p hp
-  simp only [offerRows, List.map_nil, List.append_nil, List.mem_cons, List.not_mem_nil, or_false] at hp
-  subst p
-  exact .app (Rt := [6]) (xs := [([0],.nul)]) (Us := []) (.var rfl) (by rfl) (by simp) (.undef (by rfl))
-    (by intro p hp; cases List.mem_singleton.mp hp; exact .nul (by rfl)) (by simp)
-
-theorem higher_order_safe (n W h) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    Safe (meaning G [5]) n W h (.funE (.app (.var 1) .nul)) :=
-  higher_order_typed.closed_safe (by simp [Scoped]) n W h hw hh
 
 /-- A lambda with a free variable is excluded even at budget zero. Slot 0 is
 its receiver and slot 1 its parameter; slot 2 is free. -/
@@ -77,10 +51,18 @@ def program : Tm :=
         (.letE (.write (.var 0) .fls)
           (.letE (.app (.var 2) .tru) (.app (.var 3) .nul)))))
 
-theorem program_typed : HasTy G [] program [0, 1] := by
+/-- The program's body, with `f` a slot of its context at label 3: allocation,
+aliasing, a write through the alias and two calls, the second through the
+widened signature. -/
+def programBody : Tm :=
+  .letE (.alloc .tru)
+    (.letE (.var 0)
+      (.letE (.write (.var 0) .fls)
+        (.letE (.app (.var 3) .tru) (.app (.var 4) .nul))))
+
+theorem program_typed : HasTy G [[3]] programBody [0, 1] := by
   apply HasTy.letE (A := [2]) (.alloc (parts := [(valueField, [1], .tru)]) (by simp)
     (by intro p hp; cases List.mem_singleton.mp hp; exact .tru (by rfl)) (by rfl) (by simp) (by decide))
-  apply HasTy.letE (A := [3]) dispatch_typed
   apply HasTy.letE (A := [2]) (.var rfl)
   apply HasTy.letE (A := [0]) (.write (A := [1]) (.var rfl) (by rfl) (by simp) (.fls (by rfl)) (by rfl))
   apply HasTy.letE (A := [0])
@@ -91,11 +73,6 @@ theorem program_typed : HasTy G [] program [0, 1] := by
     (.undef (by rfl))
     (by intro p hp; cases List.mem_singleton.mp hp
         exact .sub (.nul (by rfl)) (by decide : check G [0] [0, 1] .subset = true)) (by simp)
-
-theorem program_safe (n W h) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    Safe (meaning G [0, 1]) n W h program :=
-  program_typed.closed_safe
-    (by simp [program, dispatch, Scoped]) n W h hw hh
 
 /-- Reflexive transitive execution, used only to check observable behavior.
 The safety theorem above does not use this trace. -/
@@ -127,8 +104,7 @@ theorem stuck_not_typable (A : Ty (Fin 7)) : ¬ HasTy G [] (.app .nul .nul) A :=
   exact stuck_not_safe (meaning G A) 0 (ofList []) []
     (ht.closed_safe (by trivial) 1 _ [] WorldAdm_nil (emptyHeapOk 1))
 
-#print axioms higher_order_safe
-#print axioms program_safe
+#print axioms program_typed
 #print axioms program_returns_false
 #print axioms stuck_not_typable
 end Verification.Model.ProgramTypingTests

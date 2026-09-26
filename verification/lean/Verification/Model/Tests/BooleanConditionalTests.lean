@@ -131,15 +131,30 @@ private def nullProof : Evidence Nat :=
   [⟨[[0]],[1]⟩],[1],0,[[0]], []⟩)
 
 -- A captured cell is read when the closure is called, after an alias write.
+-- Its code is a graph of one node, which reads the capture in its frame's
+-- slot 2, past the receiver and the parameter.
+private def readCell : Tm := .ite (.read (.var 2)) .tru .fls
+private def captureCode : CallCode := .graph 1 [readCell] [(.ret, none)] 0 [.var 0]
+private def captureEntry : CodeEntry Nat := ⟨1, [readCell], [(.ret, none)], 0, [[2]], ([4],[[1]],[0]), none⟩
+private def captureRequest (q : Bool) : Request :=
+  ⟨types,
+   [⟨.alloc .tru,.bind 1,none⟩,
+    ⟨.make captureCode .nul,.bind 2,none⟩,
+    ⟨.write (.var 1) (if q then .tru else .fls),.effect 3,none⟩,
+    ⟨.app (.var 0) .nul,.ret,none⟩],
+   [⟨[],[2]⟩,⟨[[2]],[3]⟩,⟨[[3],[2]],[1]⟩,⟨[[3],[2]],[0]⟩],[0],0,[],
+   [⟨captureEntry, [⟨[[4],[1],[2]],[0]⟩]⟩]⟩
+#guard ok (roundtrip (captureRequest true))
+#guard ok (roundtrip (captureRequest false))
+-- Without the code's entry in its table, the creation has no evidence.
+#guard !ok (roundtrip {captureRequest true with codes := []})
+
+/-- The same program with the closure's code as a term, run by the machine. -/
 private def captureProgram (q : Bool) : Program :=
   [⟨.alloc .tru,.bind 1,none⟩,
    ⟨.funE (.ite (.read (.var 2)) .tru .fls),.bind 2,none⟩,
    ⟨.write (.var 1) (if q then .tru else .fls),.effect 3,none⟩,
    ⟨.app (.var 0) .nul,.ret,none⟩]
-private def captureRequest (q : Bool) : Request :=
-  ⟨types,captureProgram q,[⟨[],[2]⟩,⟨[[2]],[3]⟩,⟨[[3],[2]],[1]⟩,⟨[[3],[2]],[0]⟩],[0],0,[], []⟩
-#guard ok (roundtrip (captureRequest true))
-#guard ok (roundtrip (captureRequest false))
 
 theorem captured_branch_reads_latest (q : Bool) : Execution (captureProgram q) 14 []
     (.at 0 (fun _ => .nul)) [if q then .tru else .fls,.nul] (.done (if q then .tru else .fls)) := by

@@ -81,10 +81,10 @@ def Names (D : Registry) : Tm → Prop
   | .arrLit args => NamesArgs D args
   | .arr ls => ∀ l ∈ ls.filterMap id, D[l]? = some .absent
   | .ite c a b => Names D c ∧ Names D a ∧ Names D b
-  | .objAt fs (.graph n E K st caps) =>
-      (∀ l ∈ locs fs, D[l]? = some (.graph n E K st caps)) ∧ ScopedArgs 0 caps ∧
+  | .objAt fs (.graph n E K st caps k r) =>
+      (∀ l ∈ locs fs, D[l]? = some (.graph n E K st caps k r)) ∧ ScopedArgs 0 caps ∧
         NamesArgs D E ∧ NamesArgs D caps
-  | .makeAt (.graph _ E _ _ caps) _ args => NamesArgs D E ∧ NamesArgs D caps ∧ NamesArgs D args
+  | .makeAt (.graph _ E _ _ caps _ _) _ args => NamesArgs D E ∧ NamesArgs D caps ∧ NamesArgs D args
   | .goto E _ _ L x => NamesArgs D E ∧ NamesArgs D L ∧ Names D x
   | .frame E _ t L x _ _ => NamesArgs D E ∧ Names D t ∧ NamesArgs D L ∧ Names D x
   | _ => True
@@ -105,7 +105,7 @@ theorem Names.mono {D E t} (ht : Names D t) (hx : Extends D E) : Names E t := by
   case objClosure fs n b ih => exact fun l hl => hx _ _ (ht.1 l hl)
   case objVariadic fs n b ih => exact fun l hl => hx _ _ (ht.1 l hl)
   case objBound fs t r pre iht ihr ihp => exact fun l hl => hx _ _ (ht.1 l hl)
-  case objGraph fs n E K st caps ihE ihc => exact fun l hl => hx _ _ (ht.1 l hl)
+  case objGraph fs n E K st caps k r ihE ihc => exact fun l hl => hx _ _ (ht.1 l hl)
 
 theorem Names.descriptor {D fs c} (ht : Names D (.objAt fs c)) :
     ∀ l ∈ locs fs, D[l]? = some c := by
@@ -114,7 +114,7 @@ theorem Names.descriptor {D fs c} (ht : Names D (.objAt fs c)) :
   | closure n b => exact ht.1
   | variadic n b => exact ht.1
   | bound t r pre => exact ht.1
-  | graph n E K st caps => exact ht.1
+  | graph n E K st caps k r => exact ht.1
 
 /-- Same identity means exactly the same descriptor, including its body. An
 identity is its fields, so this needs one of them to name. -/
@@ -134,7 +134,7 @@ theorem Names.subst {D t a} (ht : Names D t) (ha : Names D a) (j : Nat) :
         (fun x hx => subst_above ((scopedArgs_iff _ _).mp ht.2.1.2.2 x hx) (Nat.zero_le j) a))
     rw [subst_above ht.2.1.1 (Nat.zero_le j), subst_above ht.2.1.2.1 (Nat.zero_le j), hpre]
     exact ht
-  case objGraph fs n E K st caps ihE ihc =>
+  case objGraph fs n E K st caps _ _ ihE ihc =>
     have hc : caps.map (Model.subst j a) = caps := by
       simpa using (List.map_congr_left (g := id)
         (fun x hx => subst_above ((scopedArgs_iff _ _).mp ht.2.1 x hx) (Nat.zero_le j) a))
@@ -170,7 +170,7 @@ theorem Names.instantiate {D t} (ht : Names D t) (ρ : Env)
     rw [instantiate_above (ht.2.1.1.mono (Nat.zero_le d)),
       instantiate_above (ht.2.1.2.1.mono (Nat.zero_le d)), hpre]
     exact ht
-  case objGraph fs n E K st caps ihE ihc =>
+  case objGraph fs n E K st caps _ _ ihE ihc =>
     have hc : caps.map (Model.instantiate d ρ) = caps := by
       simpa using (List.map_congr_left (g := id)
         (fun x hx => instantiate_above
@@ -198,7 +198,7 @@ def sourceTerm : Tm → Bool
   | .arrLit args => sourceArgs args
   | .arr .. => false
   | .ite c a b => sourceTerm c && sourceTerm a && sourceTerm b
-  | .makeAt (.graph _ E _ _ caps) _ args => sourceArgs E && sourceArgs caps && sourceArgs args
+  | .makeAt (.graph _ E _ _ caps _ _) _ args => sourceArgs E && sourceArgs caps && sourceArgs args
   | .goto .. | .frame .. => false
   | _ => true
 
@@ -284,6 +284,38 @@ theorem raises_termOk {t v} (hr : Raises t v) {D} (ht : TermOk D t) : TermOk D v
   | setC3 _ _ _ ih => exact ih ⟨ht.1.2.2, ht.2.2.2⟩
   | throwC _ ih | spreadC _ ih | readC _ ih | testC _ ih | lenC _ ih => exact ih ht
 
+/-- The run graph code's invocation yields is coherent: its environment holds
+the receiver, the parameters and the captures, and, with a rest, the store
+the actuals past the parameters are collected into, which is not yet
+allocated. -/
+theorem termOk_graphEntry {D : Registry} {n : Nat} {E : List Tm} {K} {s : Nat} {caps : List Tm}
+    {rest : Bool} {r : Tm} {args : List Tm} (hnE : ∀ e ∈ E, Names D e)
+    (hr : TermOk D r) (ha : ∀ a ∈ args, TermOk D a) (hc : ∀ a ∈ caps, TermOk D a) :
+    TermOk D (CallArguments.graphEntry n E K s caps rest r args) := by
+  have hL : ∀ a ∈ r :: CallArguments.parameters n args ++ caps, TermOk D a := by
+    intro a hm
+    rcases List.mem_cons.mp hm with rfl | hm
+    · exact hr
+    rcases List.mem_append.mp hm with hm | hm
+    · exact CallArguments.parameters_property (P := TermOk D) ⟨trivial, trivial⟩ ha a hm
+    · exact hc a hm
+  cases rest with
+  | false =>
+    simp only [CallArguments.graphEntry, TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff]
+    exact ⟨⟨fun a hm => (hL a hm).1, trivial⟩, hnE, fun a hm => (hL a hm).2, trivial⟩
+  | true =>
+    simp only [CallArguments.graphEntry, TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff]
+    refine ⟨⟨fun a hm => (ha a (List.mem_of_mem_drop hm)).1, ?_, trivial⟩,
+      fun a hm => (ha a (List.mem_of_mem_drop hm)).2, hnE, ?_, trivial⟩
+    · intro a hm
+      rcases List.mem_cons.mp hm with rfl | hm
+      · simp [Scoped]
+      · exact (hL a hm).1.mono (Nat.zero_le _)
+    · intro a hm
+      rcases List.mem_cons.mp hm with rfl | hm
+      · simp [Names]
+      · exact (hL a hm).2
+
 /-- A graph run's next node, in an environment mapped from coherent values. -/
 theorem termOk_goto {D : Registry} {E : List Tm} {K} {l : Nat} {m : Option (List Nat)}
     {L : List Tm} {d : Tm} (hE : ∀ e ∈ E, Names D e) (hL : ∀ v ∈ L, TermOk D v)
@@ -335,6 +367,12 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
     · exact CallArguments.bound_body_closed (by simpa [Scoped, Nat.add_comm] using ht.1.1)
         (by simp [Scoped]) ht.1.2
     · exact ht.2.1.2.2.bindParameters (by simp [Names]) ht.2.2 _
+  | constructGraph hv =>
+    intro D hh ht
+    simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht
+    obtain ⟨⟨hsc, hsa⟩, ⟨_, _, hnE, hnc⟩, hna⟩ := ht
+    exact ⟨D, .refl D, hh, termOk_graphEntry hnE ⟨trivial, trivial⟩
+      (fun a hm => ⟨hsa a hm, hna a hm⟩) (fun a hm => ⟨hsc a hm, hnc a hm⟩)⟩
   | callL step ih =>
     intro D hh ht
     simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
@@ -437,7 +475,7 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
         rcases List.mem_or_eq_of_mem_set hv with hv | rfl
         · exact (ht.2.2.2.2 v hv).mono hx
         · exact hn
-    | graph n E K st caps =>
+    | graph n E K st caps k r =>
       simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
       obtain ⟨E',hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.2 _ hm,ht.2.2.2 _ hm⟩
       refine ⟨E',hx,hh',⟨ht.1.1,?_⟩,fun v hv => (ht.2.1 v hv).mono hx,
@@ -476,7 +514,7 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
       refine ⟨_,hx,hh.alloc (fun v hv' => ⟨hv v hv',ht.1.2.2.2 v hv',ht.2.2.2.2 v hv'⟩) _,
         ⟨ht.1.1,ht.1.2.1,ht.1.2.2.1⟩,hfield,⟨ht.1.1,ht.1.2.1,ht.1.2.2.1⟩,ht.2.1.mono hx,
         ht.2.2.1.mono hx,fun v hv => (ht.2.2.2.1 v hv).mono hx⟩
-    | graph n E K st caps =>
+    | graph n E K st caps k r =>
       simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
       refine ⟨_,hx,hh.alloc (fun v hv' => ⟨hv v hv',ht.1.2 v hv',ht.2.2.2 v hv'⟩) _,
         ht.1.1,hfield,ht.1.1,fun v hv => (ht.2.1 v hv).mono hx,
@@ -647,19 +685,10 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
       exact (hvs p hp').2
   | callGraph hr hv =>
     intro D hh ht
-    simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
+    simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht
     obtain ⟨⟨hsc, hsr, hsa⟩, ⟨_, _, hnE, hnc⟩, hnr, hna⟩ := ht
-    refine ⟨D, .refl D, hh, ⟨fun a hm => ?_, trivial⟩, hnE, fun a hm => ?_, trivial⟩
-    · rcases List.mem_cons.mp hm with rfl | hm
-      · exact hsr
-      rcases List.mem_append.mp hm with hm | hm
-      · exact CallArguments.parameters_property (by trivial) hsa a hm
-      · exact hsc a hm
-    · rcases List.mem_cons.mp hm with rfl | hm
-      · exact hnr
-      rcases List.mem_append.mp hm with hm | hm
-      · exact CallArguments.parameters_property (by trivial) hna a hm
-      · exact hnc a hm
+    exact ⟨D, .refl D, hh, termOk_graphEntry hnE ⟨hsr, hnr⟩ (fun a hm => ⟨hsa a hm, hna a hm⟩)
+      (fun a hm => ⟨hsc a hm, hnc a hm⟩)⟩
   | @gotoEnter E l e K k x h L d he hk =>
     intro D hh ht
     simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢

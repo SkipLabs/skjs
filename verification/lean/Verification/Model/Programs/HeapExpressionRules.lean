@@ -805,34 +805,16 @@ theorem pure_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k t A ρ n W h}
     | exact refine_value rfl (result_holds (HeapKnowledge.shift_holds hk) ⟨.fls,by simp,rfl⟩) hs
     | exact refine_value rfl (HeapKnowledge.shift_holds hk) hs
 
-/-- Creating a function allocates a fresh bag without executing its body or
-invalidating knowledge about existing cells. -/
-theorem creation_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k arity b A ρ n W h}
-    (ht : HasTy G Γ (.make (.closure arity b) .nul) A) (he : EnvOk G Γ ρ n W)
+/-- Creating graph code allocates a fresh bag without running its code or
+invalidating knowledge about existing cells: its captures are slots, already
+values. -/
+theorem graphCreation_sound [DecidableEq ι] {G : NormalGraph ι}
+    {Γ k arity E K start caps kind rest A ρ n W h}
+    (ht : HasTy G Γ (.make (.graph arity E K start caps kind rest) .nul) A) (he : EnvOk G Γ ρ n W)
     (hk : HeapKnowledge.Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (meaning G A)
       (fun h' v => HeapKnowledge.Holds (HeapKnowledge.shift k) (push v ρ) h')
-      n W h (instantiate 0 ρ (.make (.closure arity b) .nul)) := by
-  have hs := ht.sound n W h ρ he hw hh
-  cases n with
-  | zero => trivial
-  | succ n =>
-    rcases hs with (⟨hv, _⟩ | ⟨_,hr,_⟩) | ⟨U,h',t',hx,hu,step,hh',hs'⟩
-    · simp [instantiate,Tm.funE,isVal] at hv
-    · simp only [instantiate, instantiateArgs_eq_map, List.map] at hr
-      cases hr with | makeArg hg _ hr => obtain ⟨rfl, rfl⟩ := singleton_get hg; cases hr
-    · obtain ⟨rfl,rfl⟩ := make_step_inv rfl step
-      exact Or.inr ⟨U,_,_,hx,hu,step,hh',
-        refine_value rfl (HeapKnowledge.shift_holds (HeapKnowledge.alloc_frame hk)) hs'⟩
-
-/-- Creating graph code likewise allocates a fresh bag and runs nothing: its
-captures are slots, already values. -/
-theorem graphCreation_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k arity E K start caps A ρ n W h}
-    (ht : HasTy G Γ (.make (.graph arity E K start caps) .nul) A) (he : EnvOk G Γ ρ n W)
-    (hk : HeapKnowledge.Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (meaning G A)
-      (fun h' v => HeapKnowledge.Holds (HeapKnowledge.shift k) (push v ρ) h')
-      n W h (instantiate 0 ρ (.make (.graph arity E K start caps) .nul)) := by
+      n W h (instantiate 0 ρ (.make (.graph arity E K start caps kind rest) .nul)) := by
   have hs := ht.sound n W h ρ he hw hh
   cases n with
   | zero => trivial
@@ -925,8 +907,7 @@ def checkStep [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι)
   | .created e =>
     if claim e = j ∧ checkScope j.context.length j.term = true ∧ checkTree G e codes = true then
       match j.term with
-      | .make (.closure _ _ .call) .nul => some (HeapKnowledge.shift k)
-      | .make (.graph ..) .nul => some (HeapKnowledge.shift k)
+      | .make (.graph _ _ _ _ _ _ _) .nul => some (HeapKnowledge.shift k)
       | _ => none
     else none
   | .typedRead i e =>
@@ -1020,11 +1001,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
       have typed := checkTree_sound e ht hcodes
       rw [hj] at typed
       split at hc
-      · rename_i arity b hb
-        cases hc
-        rw [hb] at typed ⊢
-        exact creation_sound typed he hk hw hh
-      · rename_i arity E K start caps hb
+      · rename_i arity E K start caps kind rest hb
         cases hc
         rw [hb] at typed ⊢
         exact graphCreation_sound typed he hk hw hh
@@ -1170,7 +1147,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
 #print axioms bagOperand_sound
 #print axioms alloc_sound
 #print axioms merge_alloc_sound
-#print axioms creation_sound
+#print axioms graphCreation_sound
 #print axioms checkStep_sound
 #print axioms fieldOperand_sound
 #print axioms typedRead_sound
