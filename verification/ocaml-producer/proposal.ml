@@ -775,6 +775,16 @@ let rec source_alternatives declarations seen t = match t with
       | Named (id,args) ->
         if List.mem id seen then unsupported "unguarded spread cycle";
         source_alternatives declarations (id::seen) (definition declarations id args)
+      (* Each other operand's own enumerable properties are not what its
+         type bounds. *)
+      | Str | StrLit _ -> unsupported "a spread copies the own enumerable properties of a plain object; \
+          a string's are its characters at index keys, which no record states"
+      | Shape {elements=Some _;_} -> unsupported "a spread copies the own enumerable properties of a plain object; \
+          an array's are its indices and whatever keys it carries, which no record states"
+      | Shape _ | Callable -> unsupported "a spread copies the own enumerable properties of a plain object; \
+          a function's or an indexed object's are whatever was assigned to it, which its type does not bound"
+      | Ctors _ -> unsupported "a spread copies the own enumerable properties of a plain object; \
+          a class value's are its static fields, which its construct signatures do not state"
       | _ -> unsupported "a spread copies the own enumerable properties of a plain object; one of a string, an array, a function or a class value is outside the fragment") atoms
   | Union ts -> List.concat_map (source_alternatives declarations seen) ts
   | Meet _ | Rigid _ -> unsupported "a spread of an intersection or a type parameter is outside the fragment"
@@ -1286,7 +1296,17 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         when String.length m >= 27 && String.sub m 0 27 = "unsupported: missing field " ->
         unsupported ("a read of " ^ key_text n ^ " on a `let` holding a union of objects, some without it: \
           a test does not narrow a cell holding an object, whose known contents are primitive values"))
-    | Read (e,n) -> field_type declarations [] (expr env e) n
+    | Read (e,n) ->
+      let t = expr env e in
+      (try field_type declarations [] t n with Json.Error m
+        when String.length m >= 27 && String.sub m 0 27 = "unsupported: missing field "
+             && (match t with
+                 | Atoms atoms -> List.exists (function Shape {elements=Some _;_} -> true | _ -> false) atoms
+                 | _ -> false) ->
+        (* `Array.isArray` keeps a record arm on both outcomes: a value of
+           the record's type may be an array carrying its keys. *)
+        unsupported ("a read of " ^ key_text n ^ " on a union of an array and a record that does not state it: \
+          a test that the value is an array keeps the record, a value of which may be an array carrying its keys"))
     | Index (e,key) -> let receiver=expr env e in let key=expr env key in index_type declarations [] receiver key
     (* The right side runs after the receiver and the key: it sees what they
        assigned. *)

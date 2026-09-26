@@ -1652,7 +1652,7 @@ class Gate {
     const key = (f: Node, name: Node): string => {
       const text = ts.isIdentifier(name) || ts.isStringLiteral(name) ? name.text
         : ts.isNumericLiteral(name) ? numericKey(name.text)
-        : ts.isComputedPropertyName(name) ? this.fail(f, "a computed key in an object literal is outside the fragment")
+        : ts.isComputedPropertyName(name) ? this.fail(f, "a computed key in an object literal is outside the fragment: an allocation's keys are the property names the literal spells, and a symbol or a key computed at run time is none of them")
         : this.fail(f, "expected a plain property name");
       if (seen.has(text)) this.fail(f, "duplicate field name in a record");
       if (text === "__proto__") this.fail(f, "prototype initializers are outside the fragment");
@@ -3371,7 +3371,8 @@ export function parseFile(file: string, carriesContext = false,
     else if (ts.isEnumDeclaration(s) && !carriesContext) {
       const declared = s.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword);
       const inlined = s.modifiers?.some(m => m.kind === ts.SyntaxKind.ConstKeyword);
-      if (declared && !inlined) gate.fail(s, "an ambient enum is outside the fragment");
+      if (declared && !inlined)
+        gate.fail(s, "an ambient enum is outside the fragment: its object is the environment's, whose members a declaration need not all value, and the declaration reader has no ambient enum value");
       enumNodes.push(s);
       gate.enums.set(s.name.text, { end: s.end, members: s.members.map(m => ({
         name: ts.isIdentifier(m.name) || ts.isStringLiteral(m.name) ? m.name.text

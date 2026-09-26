@@ -245,7 +245,7 @@ def translate (names : List String) (claimed : List (Span × DirectObligation.Ty
       let declared ← lambdaResult names claimed pos inner ret
       return .lambda pos inner declared (← translate names claimed body)
   | e => throw (.refusal e.span .genericValidation
-      "body requires a variable, a primitive literal, an assignment, a call or a closure")
+      "body requires a variable, a primitive literal, an assignment, a call or a closure: a quantified closure's body is checked by the rigid checker, which reads only these")
 termination_by e => sizeOf e
 decreasing_by
   all_goals simp_wf
@@ -255,7 +255,7 @@ decreasing_by
 
 private def unsupported (pos : Span) : Failure :=
   .refusal pos .genericValidation
-    "body requires a variable, a primitive literal, an assignment, a call or a closure"
+    "body requires a variable, a primitive literal, an assignment, a call or a closure: a quantified closure's body is checked by the rigid checker, which reads only these"
 
 mutual
 
