@@ -2589,13 +2589,26 @@ chain holds. So the allocation's keys are exact, and `D`'s declared type,
 its own members and `B`'s, covers it through the prototype chain
 ([method coverage](POSITIVE-TYPES.md#clause-coverage), `CoversByProto`).
 
+A generic method `m<V>(…)` is the instance's member with quantified
+signatures ([generic methods](#generic-methods)), and its closure `D.m` a
+generic closure, checked once at a scheme received by the instance
+(`funScheme`), which the prototype holds. The two quantify over the same
+rows: the parser names the closure's binder $k$ as the declaration's lowering
+names the member's, by the member's key, the position and the bound
+(`"m"#k:null^0`, `fragment-parse`'s `lambda`), so the producer's scheme row
+for the prototype's field binds the rows the declared member binds. The
+prototype's scheme covers the member bound to the instance
+([`CoversByScheme`](POSITIVE-TYPES.md#clause-coverage)): its receivers read
+none of its binders and hold the instance, and its signatures cover the
+member's at every instance. A bounded binder is refused, since the row's
+name spells its bound.
+
 What a class declaration may not hold, each for its reason:
 
 - a method declaring `this: T`: a method member is host-relative, its
   signatures carrying no receiver ([DESIGN](DESIGN.md#method-members-are-host-relative));
-- a generic method: its closure's claim would be a quantified callable,
-  which the claim format does not encode (an interface's generic method is a
-  declared scheme and needs none);
+- a generic method with a bounded binder: the member's binder row is named by
+  its bound, which the closure's binder, named by the parser, is not;
 - a constructor parameter with a default: construct code is a term over
   plain parameters, with no default schedule as a closure's `parameterOrder`;
 - a member with a computed key (a method is a binding and a prototype key

@@ -740,10 +740,28 @@ $$
      {\Delta;\kappa;S\vdash(\Phi\,\psi;\mu;\beta)\sqsubseteq_{\mathsf{meth}}m}
 $$
 
-The second and third cover a member stating no quantified signature: a
-function's own signatures name no binder to instantiate. The third reads the
-member through the prototype chain, as the meaning does
-(`CoversByProto`, `ProtoHolds`). A prototype type $P$ holds $m$ where its
+The third reads the member through the prototype chain, as the meaning does
+(`CoversByProto`, `ProtoHolds`). The function covers a member stating no
+quantified signature as an arrow type (below), and one stating only
+quantified signatures as a **scheme received by the host**
+(`CoversByScheme`): a scheme row $F=(\vec p;\Sigma;\beta;\Sigma_\ldots)$, a
+class's generic method its prototype holds, whose receivers the source type
+$S$ is within and read none of its binders ($\vec p\cap\mathit{fv}(Q_0)=\varnothing$, a checked free map), and
+each of whose target's schemes binds the same rows, with bounds among them,
+signatures its own cover, receivers aside:
+
+$$
+\frac{\begin{array}{c}F=(\vec p;\Sigma;\beta;\Sigma_\ldots)\quad
+      \forall(Q_0;\vec P)\to B\in\Sigma\,\Sigma_\ldots.\;\Delta(S,Q_0)\land\vec p\cap\mathit{fv}(Q_0)=\varnothing\\
+      \forall[j]\in m.\mathsf{schemes}.\;j=(\vec p;\Sigma';\beta';\Sigma'_\ldots)\land\beta\subseteq\beta'\land
+      \forall(\_;\vec Q)\to D\in\Sigma'.\;\exists(\_;\vec P)\to B\in\Sigma.\;\Delta(\vec Q,\vec P)\land\Delta(B,D)\end{array}}
+     {\Delta;\kappa;S\vdash F\ni_{\mathsf{fn}}m}
+$$
+
+At an instance $\vec X$ the host is in each receiver at the instance's
+assignment, which it reads as the table's, so `.bind`'s forwarding function,
+invoked with any receiver, meets the source signature, and the target's by
+the premises read at the instance (`covers_by_scheme_sound`). A prototype type $P$ holds $m$ where its
 one record clause has $m$'s key at a function type covering it, or, where
 that clause's key bound $\beta_P$ excludes the key, its own prototype field
 does, one prototype further up (`lacksKey`):
@@ -1023,8 +1041,8 @@ with $F$'s values within $\mathsf{arrs}(L;M)$ at every level.
 Lean: `Core`, `Valid`, `Known`, `SameKind`, `Opaque`, `OpaqueWith`, `SchemeCoversWith`,
 `scheme_covers_sound`, `covers_arrs_sound`, `meetSources`, `meet_clause_of`, `splitClause`,
 `splitClause_sem`, `source_sem`, `CoversByProto`, `ProtoHolds`, `FoundOn`, `lacksKey`, `viewOf`,
-`covers_arrows_sound`, `protoHolds_sound`,
-`Core.mixed_sound`.
+`covers_arrows_sound`, `protoHolds_sound`, `CoversByScheme`, `bindersFree`,
+`covers_by_scheme_sound`, `Core.mixed_sound`.
 
 ### Structural rules
 

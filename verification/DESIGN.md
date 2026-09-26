@@ -579,6 +579,10 @@ where `A` is below `B`, by `then`'s and `catch`'s own signatures. A
 generic method's binder rows are its member's, keyed by its key, position and
 bound ([generic methods](PROGRAM-TYPING.md#generic-methods)), so members of one
 key declared alike bind the same rows: `Promise<A>` is below `PromiseLike<A>`.
+A class's generic method is such a member of its instance type, which its
+prototype's closure, a scheme received by the instance whose binders are the
+member's rows, covers bound to the instance
+([classes](PROGRAM-TYPING.md#classes)).
 
 ### Calls
 
@@ -818,7 +822,7 @@ not yet taken are [next steps](#next-steps); a search failure is neither.
 | A rest parameter of a definition typed by a type parameter; one typed by an intersection, by a tuple with optional or rest elements, or by what is no array | A definition has no allocation rule for an array only an instance fixes (a function type's is a pack); the fresh array's meet has no representation; several lengths are several signatures; the collected array is no value of it. |
 | A written `let` pattern in a `for` head; a test of a written `let` holding a union of objects | Its bindings are cells, which only a statement of a block lowers them to; a cell's known contents are primitive or merely no `undefined`. |
 | An array pattern over a value that may not be an array | It would step the value's own iterator. |
-| A class method declaring `this: T`; a generic class method; a constructor's rest parameter; a constructor parameter default reading `this` | A method member is host-relative; a generic class method's closure, on the prototype, is not yet related to the instance's quantified member ([next steps](#next-steps)); no rule constructs at a variadic construct signature ([next steps](#next-steps)); the instance is allocated at the end of the constructor. |
+| A class method declaring `this: T`; a generic class method with a bounded binder; a constructor's rest parameter; a constructor parameter default reading `this` | A method member is host-relative; a generic class method's bounded binder, whose row its bound names ([next steps](#next-steps)); no rule constructs at a variadic construct signature ([next steps](#next-steps)); the instance is allocated at the end of the constructor. |
 | A class member with a computed key other than a method's `unique symbol` constant or a static `[Symbol.hasInstance]`; an index signature in a class; a static block reading `this`; a class extending a generic class other than at the base's own binders | A method is a binding and a prototype key named by its plain name or its symbol; instances are what construction allocates; the block's receiver is the class value, whose statics are bindings of their own; a generic base's construction is at its binders' rows ([classes](PROGRAM-TYPING.md#classes)). |
 | A class with a private name in inheritance; `#x in o` | A derived instance's base part is a copy, and a copy holds no private slot; the test asks for an own slot, where the model's key test walks the prototype chain. |
 | A loop or an array pattern over an iterable whose iterator's type states no `return` | Leaving it early, or a throw out of its body, calls whatever `return` the iterator owns, and an open record type says nothing of that property. |
@@ -935,13 +939,9 @@ construct signature: `ctorRestsT` has neither an introduction from code nor
 an elimination by `new`, so that rule and its `construction` for code with a
 rest (whose padded actuals would reach the store) come first.
 
-**Generic methods left.** A class's generic method needs its prototype's
-closure, typed at a scheme whose receiver is the instance, to cover the
-instance type's quantified member: the claim format states no scheme inside a
-record (the prototype object's field), the closure's binders are the
-producer's rows where the member's are the declaration's, and the covering
-rule needs the receiver to read none of the binders, a free-variable
-certificate in the core table (`class-generic-method-refused`). Two members
+**Generic methods left.** A class's generic method with a bounded binder:
+the member's binder row is named by its bound, which the parser does not
+spell for the closure (`class-generic-method-bounded-refused`). Two members
 declared unalike (another bound, another arity) bind other rows: relating them
 needs an instance table naming each source signature's image at the target's
 binders, inside the core table. A binder a member's result accumulates

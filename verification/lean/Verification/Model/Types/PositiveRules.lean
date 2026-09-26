@@ -654,6 +654,97 @@ abbrev CoversOptional (R : List ι → List ι → Prop)
     (q.readonly = false → R q.type p.type)) ∨
     Excludes bounds q.key ∧ Excludes bounds CallArguments.protoField
 
+/-- A meet row's clauses: what its parameter is intersected with. -/
+def meetClauses (G : NormalGraph ι) (i : ι) : List (Clause (List ι)) :=
+  ((G.meets i).map (·.2)).getD []
+
+/-- The rows a row reads: a clause row its operands, a scheme row its
+signatures' rows, a meet row its clauses' operands. -/
+def reads (G : NormalGraph ι) (i : ι) : List ι :=
+  match G.schemes i with
+  | some s => s.signatures.flatMap (fun p => p.1 ++ p.2.1.flatten ++ p.2.2) ++
+      s.bounds.flatMap (·.2) ++
+      s.variadic.flatMap (fun p => p.1 ++ p.2.1.flatten ++ p.2.2.1 ++ p.2.2.2)
+  | none => (G i ++ meetClauses G i).flatMap fun c => c.operands.flatten
+
+/-- A scheme row's bound types: read at its own assignment, not under its
+binders. -/
+def boundReads (G : NormalGraph ι) (i : ι) : List ι :=
+  match G.schemes i with
+  | some s => s.bounds.flatMap (·.2)
+  | none => []
+
+/-! ### Free parameter rows -/
+
+abbrev FreeMap (ι : Type) := List (ι × List ι)
+
+/-- The parameter rows a row may depend on, as a certificate states them. -/
+def fv [DecidableEq ι] (V : FreeMap ι) (i : ι) : List ι := (V.lookup i).getD []
+
+/-- `V` over-approximates the free parameter rows of the rows of `D`, which is
+closed under what its rows read: a parameter row is free in itself, and a row
+reading another has that row's free parameters, except a scheme row's own
+binders. -/
+def FreeOk [DecidableEq ι] (G : NormalGraph ι) (D : List ι) (V : FreeMap ι) : Bool :=
+  D.all fun i =>
+    (!G.params i || (fv V i).contains i) &&
+    -- A meet row depends on its parameters.
+    (match G.meets i with | some (p, _) => (fv V i).contains p | none => true) &&
+    (G.meetParams i).all (fv V i).contains &&
+    (reads G i).all (fun l => D.contains l &&
+      (fv V l).all fun p => (fv V i).contains p ||
+        (match G.schemes i with | some s => s.binders.contains p | none => false)) &&
+    (boundReads G i).all fun l => (fv V l).all fun p => (fv V i).contains p
+
+/-- `FreeOk` with each row's free rows looked up once, not once per read: what
+the compiler runs. -/
+def FreeOkFast [DecidableEq ι] (G : NormalGraph ι) (D : List ι) (V : FreeMap ι) : Bool :=
+  D.all fun i =>
+    let fi := fv V i
+    (!G.params i || fi.contains i) &&
+    (match G.meets i with | some (p, _) => fi.contains p | none => true) &&
+    (G.meetParams i).all fi.contains &&
+    (reads G i).all (fun l => D.contains l &&
+      (fv V l).all fun p => fi.contains p ||
+        (match G.schemes i with | some s => s.binders.contains p | none => false)) &&
+    (boundReads G i).all fun l => (fv V l).all fun p => fi.contains p
+
+@[csimp] theorem FreeOk_eq_fast : @FreeOk = @FreeOkFast := rfl
+
+/-- The rows `S` reads, transitively, without repeats, in the order they are
+first reached. Only the rows added by the last step are read again: the rows
+before them have had their reads added already, so each row is read once. -/
+def readsFrom [DecidableEq ι] (G : NormalGraph ι) (fuel : Nat) (S : List ι) : List ι :=
+  let S := S.eraseDups
+  go fuel S S
+where
+  go : Nat → List ι → List ι → List ι
+  | 0, seen, _ => seen
+  | fuel + 1, seen, frontier =>
+    let fresh := (frontier.flatMap (reads G)).foldl (fun acc l =>
+      if seen.contains l || acc.contains l then acc else l :: acc) []
+    if fresh.isEmpty then seen else go fuel (seen ++ fresh.reverse) fresh.reverse
+
+/-- The free parameter rows of the rows of `D`, by iteration to a fixed point:
+a parameter row is free in itself, and a row has the free rows of what it
+reads, except a scheme row's own binders. Untrusted: `FreeOk` checks it. -/
+def freeMapOf [DecidableEq ι] (G : NormalGraph ι) (D : List ι) : Nat → FreeMap ι → FreeMap ι
+  | 0, V => V
+  | fuel + 1, V =>
+    let step (i : ι) : List ι :=
+      let bound := match G.schemes i with
+        | some s => s.binders
+        | none => []
+      ((if G.params i then [i] else []) ++
+        (match G.meets i with | some (q, _) => q :: G.meetParams i | none => []) ++ fv V i ++
+        (reads G i).flatMap fun l => (fv V l).filter (fun p => !bound.contains p)).eraseDups
+    let V' := D.map fun i => (i, step i)
+    if D.all (fun i => (fv V' i).length == (fv V i).length) then V' else freeMapOf G D fuel V'
+
+/-- How far to follow a graph's rows. -/
+def closureFuel : Nat := 4096
+
+
 /-- A method signature covers another of the same key: each fixed target
 signature is covered by a fixed source one taking as many parameters, each at
 least as wide, with a result at most as wide; each variadic target signature
@@ -679,12 +770,59 @@ def CoversArrows (G : NormalGraph ι) (R : List ι → List ι → Prop) (self :
   (∀ t ∈ q.rests, ∃ s ∈ S, R self s.1 ∧ Domains R (t.1.take s.2.1.length) s.2.1 ∧
     IntoRest (restElem G) R (t.1.drop s.2.1.length) s.2.2.1 ∧ R t.2.1 s.2.2.1 ∧ R s.2.2.2 t.2.2)
 
-/-- The same, for a function type: its one arrow clause. -/
-def CoversByFunction (G : NormalGraph ι) (R : List ι → List ι → Prop) (self : List ι)
+/-- The receivers of a scheme's signatures. -/
+def schemeReceivers (s : SchemeRow ι) : List ι :=
+  s.signatures.flatMap (·.1) ++ s.variadic.flatMap (·.1)
+
+/-- A type reads none of the rows `bs`: a checked free map of the rows it
+reaches gives none of them (`FreeOk`), so it means the same at every
+reassignment of them (`bindersFree_values`). -/
+def bindersFree [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (A : List ι) : Bool :=
+  let D := readsFrom G closureFuel A
+  let V := freeMapOf G D closureFuel []
+  FreeOk G D V && A.all fun l => D.contains l && (fv V l).all fun p => !bs.contains p
+
+/-- A target quantified signature `S'` a scheme `s` received by the host
+covers: `S'` binds `s`'s rows, each bound of `s` among `S'`'s, and each of
+`S'`'s signatures is covered by one of `s`'s, receivers aside (both are the
+host's: the bound function's is any, `s`'s is the host, which `CoversByScheme`
+checks). -/
+def SchemeBinds (G : NormalGraph ι) (R : List ι → List ι → Prop) (s : SchemeRow ι)
+    (S' : List ι) : Prop :=
+  match S' with
+  | [j] => match G.schemes j with
+    | some s' => G.params j = false ∧ s.binders = s'.binders ∧ (∀ b ∈ s.bounds, b ∈ s'.bounds) ∧
+        (∀ t ∈ s'.signatures, ∃ p ∈ s.signatures, Domains R t.2.1 p.2.1 ∧ R p.2.2 t.2.2) ∧
+        (∀ t ∈ s'.variadic, ∃ p ∈ s.variadic, Domains R (t.2.1.take p.2.1.length) p.2.1 ∧
+          IntoRest (restElem G) R (t.2.1.drop p.2.1.length) p.2.2.1 ∧ R t.2.2.1 p.2.2.1 ∧
+          R p.2.2.2 t.2.2.2)
+    | none => False
+  | _ => False
+
+/-- A generic function the source holds, a scheme received by the host (a
+class's generic method on its prototype, received by the instance), covering a
+target member of quantified signatures: the source type is within each of the
+scheme's receivers, which read none of its binders, so the host is in them at
+every instance; bound to the host, the function meets each of the target's
+schemes binding the same rows (`SchemeBinds`). -/
+def CoversByScheme [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (self : List ι)
+    (F : List ι) (q : MethodMembers.Sig (List ι)) : Prop :=
+  match F with
+  | [i] => match G.schemes i with
+    | some s => q.calls = [] ∧ q.rests = [] ∧ G.params i = false ∧
+        bindersFree G s.binders (schemeReceivers s) = true ∧
+        (∀ r ∈ s.signatures.map (·.1) ++ s.variadic.map (·.1), R self r) ∧
+        ∀ S' ∈ q.schemes, SchemeBinds G R s S'
+    | none => False
+  | _ => False
+
+/-- The same, for a function type: its one arrow clause, or a scheme received
+by the host. -/
+def CoversByFunction [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (self : List ι)
     (F : List ι) (q : MethodMembers.Sig (List ι)) : Prop :=
   match expand G F with
   | [.arrs L S] => CoversArrows G R self L S q
-  | _ => False
+  | _ => CoversByScheme G R self F q
 
 /-- The field or view a type's one record clause holds under a key. -/
 def viewOf (G : NormalGraph ι) (P : List ι) (k : PropKey) : Option (List ι) :=
@@ -704,7 +842,7 @@ covers it with the object as receiver: a known row below arrows covering it
 (typically a generic prototype member and its instance at the array's element
 type: `Array.prototype[Symbol.iterator]` at `number`), or a function type
 covering it, as `CoversByFunction`. -/
-def FoundOn (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
+def FoundOn [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
     (self : List ι) (q : MethodMembers.Sig (List ι)) (P : List ι) : Prop :=
   (∃ k ∈ known, viewOf G P q.key = some k.1 ∧ CoversArrows G R self k.2.1 k.2.2 q) ∨
     ∃ F ∈ (viewOf G P q.key).toList, CoversByFunction G R self F q
@@ -713,7 +851,7 @@ def FoundOn (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Kno
 `P`, at most `d` further prototypes up: on `P` itself (`FoundOn`), or, where
 `P`'s key bound excludes the key, along the prototype `P`'s own prototype
 field or view holds. JavaScript's lookup does the same. -/
-def ProtoHolds (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
+def ProtoHolds [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
     (self : List ι) (q : MethodMembers.Sig (List ι)) : Nat → List ι → Prop
   | 0, P => FoundOn G R known self q P
   | d + 1, P => FoundOn G R known self q P ∨ (lacksKey G P q.key ∧
@@ -727,7 +865,7 @@ def protoChainDepth : Nat := 16
 bound of the source excludes the key (`Excludes`), so the object lacks it, and
 its prototype field's type holds it, on that prototype or further up
 (`ProtoHolds`). -/
-def CoversByProto (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
+def CoversByProto [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
     (self : List ι) (fields : List (PropKey × List ι)) (bounds : List KeyBound)
     (q : MethodMembers.Sig (List ι)) : Prop :=
   Excludes bounds q.key ∧ ∃ f ∈ fields, f.1 = CallArguments.protoField ∧
@@ -736,7 +874,7 @@ def CoversByProto (G : NormalGraph ι) (R : List ι → List ι → Prop) (known
 /-- Every target method is covered by a source method of the same key, by a
 function the source holds under that key whose receiver the source's own type
 is within, or by such a function along its prototype chain. -/
-abbrev CoversMethods (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
+abbrev CoversMethods [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
     (self : List ι) (fields : List (PropKey × List ι)) (bounds : List KeyBound)
     (source target : List (MethodMembers.Sig (List ι))) : Prop :=
   ∀ q ∈ target, (∃ p ∈ source, p.key = q.key ∧ CoversSig (restElem G) R p q) ∨
@@ -951,7 +1089,7 @@ def CoversTuple (R : List ι → List ι → Prop) (p q : Tuple (List ι)) : Pro
 /-- Coverage has one definition for both derivations and certificate checking.
 Only fixed-arrow coverage needs evidence; the remaining conditions are finite
 checks over the supplied subtype relation. -/
-def CoversWith (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
+def CoversWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
     (arrows : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop)
     (self : List ι) : Clause (List ι) → Clause (List ι) → Prop
   | _, .top => True
@@ -1031,12 +1169,12 @@ def CoversWith (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : 
   | _, _ => False
 
 /-- Declarative coverage supplies derivations for the fixed-arrow obligations. -/
-abbrev Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι) :=
+abbrev Covers [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι) :=
   CoversWith G R known (fun L S M => ∀ p ∈ M,
     CallArrow (compatible G) (restElem G) R L S p.1 p.2.1 p.2.2)
 
 /-- Replacing the arrow interpreter preserves all the shared coverage conditions. -/
-theorem CoversWith.mono {G : NormalGraph ι} {R : List ι → List ι → Prop} {known : Known ι}
+theorem CoversWith.mono [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} {known : Known ι}
     {arrows arrows' : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop}
     (ha : ∀ L S M, arrows L S M → arrows' L S M) {self a b}
     (h : CoversWith G R known arrows self a b) : CoversWith G R known arrows' self a b := by
@@ -1053,7 +1191,7 @@ covering it keeps that class (`KeyBound.keeps`), unless no value meets the
 contract: no bound listing keys, which a record meets a dictionary through
 (`CoversKeys`) and an allocation owns, and no bound excluding a key the class
 may admit. -/
-theorem covers_writable_keeps {G : NormalGraph ι} {R : List ι → List ι → Prop} {known : Known ι}
+theorem covers_writable_keeps [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} {known : Known ι}
     {arrows : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop}
     {self : List ι} {c : Clause (List ι)} {a : List (PropKey × List ι)}
     {bs : List (List (PropKey × List ι))} {vs : List (PropKey × List ι)}
@@ -1077,7 +1215,7 @@ theorem Uninhabited.empty {G : NormalGraph ι} {η : MixedAssignment ι} {S : Li
 /-- So an object meeting such a clause keeps its bounds when code holding it
 at the writable index adds a key of the index's class, holding a value `u`
 that meets the index's contract. -/
-theorem covers_writable_bounds_grow {G : NormalGraph ι} {η : MixedAssignment ι}
+theorem covers_writable_bounds_grow [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignment ι}
     {R : List ι → List ι → Prop} {known : Known ι}
     {arrows : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop}
     {self : List ι} {c : Clause (List ι)} {a : List (PropKey × List ι)}
@@ -1263,6 +1401,296 @@ theorem covers_sig_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : Lis
           (by simpa using ha))
       (fun m hm U w hw => hr m hm _ _ hres U w hw)
 
+/-! ### Free parameter rows, semantically
+
+A row means the same at two assignments agreeing on its free parameter rows
+(`agree_freeWith`): what the instance tables below, `Sub.gen` and a scheme a
+prototype holds for its instances (`CoversByScheme`) rely on. -/
+
+/-- Local operand agreement for the shared value interpretation. Argument
+operands have their own agreement premise, independent of value membership. -/
+theorem semWithArgs_congr_on [DecidableEq ι] {D : List ι} {c : Clause (List ι)}
+    (hops : ∀ S ∈ c.operands, ∀ l ∈ S, l ∈ D) (X Y : ι → Fam)
+    (P Q : List ι → ArgFam) (n : Nat)
+    (h : ∀ l ∈ D, Agree (X l) (Y l) n)
+    (ha : ∀ S, (∀ l ∈ S, l ∈ D) → Agree (P S) (Q S) n) (W : WorldT n) (v : Val) :
+    semWithArgs (setSem X) P c n W v ↔ semWithArgs (setSem Y) Q c n W v := by
+  let r : List ι → List ι := fun S => S.filter fun l => decide (l ∈ D)
+  have hcr : c.map r = c := map_of_operands fun S hS =>
+    List.filter_eq_self.mpr fun l hl => by simpa using hops S hS l hl
+  rw [← hcr, semWithArgs_map, semWithArgs_map]
+  have hin : ∀ S l, l ∈ r S → l ∈ D := fun S l hl => by
+    simpa using (List.mem_filter.mp hl).2
+  apply semWithArgs_congr _ _ _ _ n (fun S m hm U u => ?_) (fun S => ha _ (hin S)) c W v
+  exact exists_congr fun l => and_congr_right fun hl => h l (hin S l hl) m hm U u
+
+/-- Local agreement for argument rows is at the current level. -/
+theorem clauseArguments_congr_on [DecidableEq ι] {D : List ι} {c : Clause (List ι)}
+    (hops : ∀ S ∈ c.operands, ∀ l ∈ S, l ∈ D) (X Y : ι → Fam) (n : Nat)
+    (h : ∀ l ∈ D, ∀ W v, X l n W v ↔ Y l n W v) (W : WorldT n) (vs : List Val) :
+    clauseArguments (setSem X) c n W vs ↔ clauseArguments (setSem Y) c n W vs := by
+  let r : List ι → List ι := fun S => S.filter fun l => decide (l ∈ D)
+  have hcr : c.map r = c := map_of_operands fun S hS =>
+    List.filter_eq_self.mpr fun l hl => by simpa using hops S hS l hl
+  rw [← hcr, clauseArguments_map, clauseArguments_map]
+  apply clauseArguments_congr _ _ c n W (fun S v => ?_) vs
+  exact exists_congr fun l => and_congr_right fun hl =>
+    h l (by simpa using (List.mem_filter.mp hl).2) W v
+
+/-- Local operand agreement for a clause read in a row: its operands; the
+realm's prototype type is read by the same family on both sides. -/
+theorem rowSem_congr_on [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {c : Clause (List ι)}
+    (hops : ∀ S ∈ c.operands, ∀ l ∈ S, l ∈ D) (A : List ι → Fam)
+    (X Y : ι → Fam) (P Q : List ι → ArgFam) (n : Nat)
+    (h : ∀ l ∈ D, Agree (X l) (Y l) n)
+    (ha : ∀ S, (∀ l ∈ S, l ∈ D) → Agree (P S) (Q S) n) (W : WorldT n) (v : Val) :
+    rowSem G A (setSem X) P c n W v ↔ rowSem G A (setSem Y) Q c n W v :=
+  and_congr (semWithArgs_congr_on hops X Y P Q n h ha W v) Iff.rfl
+
+theorem freeOk_row [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
+    (hF : FreeOk G D V = true) {i : ι} (hi : i ∈ D) :
+    (G.params i = true → i ∈ fv V i) ∧ (∀ l ∈ reads G i, l ∈ D ∧ ∀ p ∈ fv V l,
+      p ∈ fv V i ∨ (∃ s, G.schemes i = some s ∧ p ∈ s.binders)) ∧
+    ∀ l ∈ boundReads G i, ∀ p ∈ fv V l, p ∈ fv V i := by
+  have h := List.all_eq_true.mp hF i hi
+  simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true', List.all_eq_true,
+    List.contains_iff_mem] at h
+  refine ⟨fun hp => by simpa [hp] using h.1.1.1.1, fun l hl => ⟨by simpa using (h.1.2 l hl).1, fun p hp => ?_⟩,
+    fun l hl p hp => by simpa using h.2 l hl p hp⟩
+  have := (h.1.2 l hl).2 p hp
+  rcases this with h1 | h2
+  · exact .inl (by simpa using h1)
+  · right
+    cases hs : G.schemes i with
+    | none => simp [hs] at h2
+    | some s => exact ⟨s, rfl, by simpa [hs] using h2⟩
+
+/-- A meet row's parameter is free in it. -/
+theorem freeOk_meet [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
+    (hF : FreeOk G D V = true) {i : ι} (hi : i ∈ D) {p : ι} {cs : List (Clause (List ι))}
+    (hm : G.meets i = some (p, cs)) : p ∈ fv V i := by
+  have h := List.all_eq_true.mp hF i hi
+  simp only [Bool.and_eq_true, hm, List.contains_iff_mem, decide_eq_true_eq] at h
+  exact h.1.1.1.2
+
+/-- A meet row's further parameters are free in it. -/
+theorem freeOk_meetParams [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
+    (hF : FreeOk G D V = true) {i : ι} (hi : i ∈ D) {q : ι} (hq : q ∈ G.meetParams i) :
+    q ∈ fv V i := by
+  have h := List.all_eq_true.mp hF i hi
+  simp only [Bool.and_eq_true, List.all_eq_true, List.contains_iff_mem] at h
+  exact h.1.1.2 q hq
+
+/-- Free-variable independence is an invariant of the approximations, not an
+extra delay on argument-list membership. -/
+def FreeIndependent [DecidableEq ι] (D : List ι) (V : FreeMap ι) (I : ParameterInterpretation ι k)
+    (X : ParameterAssignment k ι × ι → Fam) : Prop :=
+  ∀ η θ i, i ∈ D → (∀ p ∈ fv V i, I.parameter p (η.1 p) = I.parameter p (θ.1 p)) → X (η, i) = X (θ, i)
+
+private theorem independent_set [DecidableEq ι] {D : List ι} {V : FreeMap ι}
+    {I : ParameterInterpretation ι k}
+    {X : ParameterAssignment k ι × ι → Fam} (hX : FreeIndependent D V I X)
+    (η θ : ParameterAssignment k ι) (S : List ι) (hS : ∀ i ∈ S, i ∈ D)
+    (h : ∀ i ∈ S, ∀ p ∈ fv V i, I.parameter p (η.1 p) = I.parameter p (θ.1 p)) :
+    setSem (fun i => X (η, i)) S = setSem (fun i => X (θ, i)) S := by
+  funext n W v
+  apply propext
+  exact exists_congr fun i => and_congr_right fun hi => by
+    dsimp only
+    rw [hX η θ i (hS i hi) (h i hi)]
+
+/-- An interpretation reads only the free parameters of its operand rows.
+This is proved for each interpretation; it is not a certificate assumption. -/
+structure RespectsFree [DecidableEq ι] (D : List ι) (V : FreeMap ι)
+    (I : ParameterInterpretation ι k) : Prop where
+  arguments : ∀ X, FreeIndependent D V I X → ∀ η θ S,
+    (∀ i ∈ S, i ∈ D) → (∀ i ∈ S, ∀ p ∈ fv V i, I.parameter p (η.1 p) = I.parameter p (θ.1 p)) →
+    I.arguments η (setSem fun i => X (η, i)) S =
+      I.arguments θ (setSem fun i => X (θ, i)) S
+  bound : ∀ X, FreeIndependent D V I X → ∀ η θ S,
+    (∀ i ∈ S, i ∈ D) → (∀ i ∈ S, ∀ p ∈ fv V i, I.parameter p (η.1 p) = I.parameter p (θ.1 p)) →
+    I.bound η (setSem fun i => X (η, i)) S =
+      I.bound θ (setSem fun i => X (θ, i)) S
+
+/-- Argument rows respect the same checked free-variable map as value rows.
+Tuple elements use the approximation's independence at the current level. -/
+theorem graphArguments_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
+    (hF : FreeOk G D V = true) (X : MixedAssignment ι × ι → Fam)
+    (hX : FreeIndependent D V (mixedParameters G) X) (η θ : MixedAssignment ι) (S : List ι)
+    (hS : ∀ i ∈ S, i ∈ D) (h : ∀ i ∈ S, ∀ p ∈ fv V i, (mixedParameters G).parameter p (η.1 p) = (mixedParameters G).parameter p (θ.1 p)) :
+    graphArguments G η (setSem fun i => X (η, i)) S =
+      graphArguments G θ (setSem fun i => X (θ, i)) S := by
+  funext n W vs
+  apply propext
+  apply exists_congr fun i => and_congr_right fun hi => ?_
+  have ⟨hself, hreads, _⟩ := freeOk_row hF (hS i hi)
+  by_cases hp : G.parameterKinds i = some .arguments
+  · simp only [hp, ite_true]
+    have he := congrFun (congrFun (congrFun
+      (h i hi i (hself (by simp [NormalGraph.params, hp]))) n) W) (.inr vs)
+    simpa [mixedParameters, selectParameter, hp] using iff_of_eq he
+  · simp only [hp, ite_false]
+    apply exists_congr fun c => and_congr_right fun hc => ?_
+    have hplain := NormalGraph.plain_of_clauses hc
+    have hq : G.schemes i = none := (NormalGraph.plain_iff.mp hplain).2.1
+    apply clauseArguments_congr_on (D := reads G i) (fun T hT l hl => ?_) _ _ n
+      (fun l hl U v => ?_) W vs
+    · simp only [reads, hq]
+      exact List.mem_flatMap.mpr ⟨c, List.mem_append_left _ hc, List.mem_flatten.mpr ⟨T, hT, hl⟩⟩
+    · rw [hX η θ l (hreads l hl).1 (fun p hp => ?_)]
+      rcases (hreads l hl).2 p hp with hp | ⟨s, hs, _⟩
+      · exact h i hi p hp
+      · rw [hq] at hs; cases hs
+
+theorem mixed_respectsFree [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
+    (hF : FreeOk G D V = true) : RespectsFree D V (mixedParameters G) := by
+  constructor
+  · exact graphArguments_free hF
+  · intro X hX η θ S hS h
+    have hv := independent_set hX η θ S hS h
+    have ha := graphArguments_free hF X hX η θ S hS h
+    funext n W x
+    cases x with
+    | inl v => exact congrFun (congrFun (congrFun hv n) W) v
+    | inr vs => exact congrFun (congrFun (congrFun ha n) W) vs
+
+theorem qLayer_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
+    (hF : FreeOk G D V = true) (I : ParameterInterpretation ι k) (hI : RespectsFree D V I)
+    (X : ParameterAssignment k ι × ι → Fam) (hX : FreeIndependent D V I X) :
+    FreeIndependent D V I (qLayerWithArgs G I X) := by
+  intro η η' i hi hag
+  funext n W v
+  apply propext
+  have ⟨hself, hreads, hbounds⟩ := freeOk_row hF hi
+  unfold qLayerWithArgs
+  cases hp : G.params i
+  · simp only [Bool.false_eq_true, if_false]
+    cases hq : G.schemes i with
+    | some s =>
+      refine and_congr Iff.rfl (forall_congr' fun As => forall_congr' fun hl => imp_congr ?_ ?_)
+      · -- The bounds are read at the scheme's own assignment.
+        have hbr : ∀ b ∈ s.bounds, ∀ l ∈ b.2, l ∈ reads G i ∧ l ∈ boundReads G i := by
+          intro b hb l hl'
+          refine ⟨?_, ?_⟩
+          · simp only [reads, hq]
+            exact List.mem_append_left _ (List.mem_append_right _ (List.mem_flatMap.mpr ⟨b, hb, hl'⟩))
+          · simp only [boundReads, hq]
+            exact List.mem_flatMap.mpr ⟨b, hb, hl'⟩
+        unfold Bounded
+        refine forall_congr' fun b => forall_congr' fun hbm => forall_congr' fun hbin =>
+          forall_congr' fun j => forall_congr' fun hj => forall_congr' fun U =>
+          forall_congr' fun u => ?_
+        rw [assign_mem_eq η η' s.binders As hbin hl]
+        have hb := hI.bound X hX η η' b.2
+          (fun l hl' => (hreads l (hbr b hbm l hl').1).1)
+          (fun l hl' p hp => hag p (hbounds l (hbr b hbm l hl').2 p hp))
+        dsimp only
+        rw [hb]
+      have hin : ∀ l ∈ reads G i, ∀ p ∈ fv V l,
+          I.parameter p ((assign η s.binders As).1 p) = I.parameter p ((assign η' s.binders As).1 p) := by
+        intro l hlS p hpv
+        by_cases hb : p ∈ s.binders
+        · rw [assign_mem_eq η η' s.binders As hb hl]
+        · rw [assign_nmem η s.binders As hb, assign_nmem η' s.binders As hb]
+          rcases (hreads l hlS).2 p hpv with h1 | ⟨s', hs', h2⟩
+          · exact hag p h1
+          · rw [hq] at hs'; cases hs'; exact absurd h2 hb
+      have hrow : ∀ S, (∀ l ∈ S, l ∈ reads G i) → Agree
+          (setSem (fun l => X (assign η s.binders As, l)) S)
+          (setSem (fun l => X (assign η' s.binders As, l)) S) n := by
+        intro S hS
+        rw [independent_set hX _ _ S (fun l hl => (hreads l (hS l hl)).1)
+          (fun l hl => hin l (hS l hl))]
+        exact fun _ _ _ _ => Iff.rfl
+      have hpack : ∀ S, (∀ l ∈ S, l ∈ reads G i) → Agree
+          (I.arguments (assign η s.binders As) (setSem fun l => X (assign η s.binders As, l)) S)
+          (I.arguments (assign η' s.binders As) (setSem fun l => X (assign η' s.binders As, l)) S) n := by
+        intro S hS
+        rw [hI.arguments X hX _ _ S (fun l hl => (hreads l (hS l hl)).1)
+          (fun l hl => hin l (hS l hl))]
+        exact fun _ _ _ _ => Iff.rfl
+      have hargs : ∀ Ss : List (List ι), (∀ S ∈ Ss, ∀ l ∈ S, l ∈ reads G i) → ArgsAgree n
+          (Ss.map (setSem fun l => X (assign η s.binders As, l)))
+          (Ss.map (setSem fun l => X (assign η' s.binders As, l))) := by
+        intro Ss hSs
+        induction Ss with
+        | nil => exact .nil
+        | cons S Ss ihs =>
+          exact .cons (hrow S (hSs S List.mem_cons_self))
+            (ihs fun T hT => hSs T (List.mem_cons_of_mem _ hT))
+      simp only [instanceTWithArgs, instanceSigs, instanceRestsWithArgs, interT]
+      refine and_congr (callsT_congr s.signatures _ _ (fun p hps => by
+        have hin : ∀ l ∈ p.1 ++ p.2.1.flatten ++ p.2.2, l ∈ reads G i := fun l hl => by
+          simp only [reads, hq]
+          exact List.mem_append_left _ (List.mem_append_left _ (List.mem_flatMap.mpr ⟨p, hps, hl⟩))
+        refine ⟨hrow _ fun l hl => hin l (by simp [hl]), hargs _ fun S hS l hl => hin l ?_,
+          hrow _ fun l hl => hin l (by simp [hl])⟩
+        simp only [List.mem_append, List.mem_flatten]
+        exact .inl (.inr ⟨S, hS, hl⟩)) W v) (restsT_congr s.variadic _ _ (fun p hps => by
+        have hin : ∀ l ∈ p.1 ++ p.2.1.flatten ++ p.2.2.1 ++ p.2.2.2, l ∈ reads G i :=
+          fun l hl => by
+            simp only [reads, hq]
+            exact List.mem_append_right _ (List.mem_flatMap.mpr ⟨p, hps, hl⟩)
+        refine ⟨hrow _ fun l hl => hin l (by simp [hl]), hargs _ fun S hS l hl => hin l ?_,
+          hpack _ (fun l hl => hin l (by simp [hl])), hrow _ fun l hl => hin l (by simp [hl])⟩
+        simp only [List.mem_append, List.mem_flatten]
+        exact .inl (.inl (.inr ⟨S, hS, hl⟩))) W v)
+    | none =>
+      simp only [semList, setSem]
+      have hagi := hag
+      have hag : ∀ l ∈ reads G i, ∀ p ∈ fv V l, I.parameter p (η.1 p) = I.parameter p (η'.1 p) := by
+        intro l hl p hpv
+        rcases (hreads l hl).2 p hpv with h1 | ⟨s', hs', _⟩
+        · exact hag p h1
+        · rw [hq] at hs'; cases hs'
+      have hag' : ∀ l ∈ reads G i, Agree (X (η, l)) (X (η', l)) n := by
+        intro l hl
+        rw [hX η η' l (hreads l hl).1 (hag l hl)]
+        exact fun _ _ _ _ => Iff.rfl
+      have hpack : ∀ S, (∀ l ∈ S, l ∈ reads G i) → Agree
+          (I.arguments η (setSem fun l => X (η, l)) S)
+          (I.arguments η' (setSem fun l => X (η', l)) S) n := by
+        intro S hS
+        rw [hI.arguments X hX η η' S (fun l hl => (hreads l (hS l hl)).1)
+          (fun l hl => hag l (hS l hl))]
+        exact fun _ _ _ _ => Iff.rfl
+      have hops : ∀ c ∈ G i ++ meetClauses G i, ∀ S ∈ c.operands, ∀ l ∈ S, l ∈ reads G i := by
+        intro c hc S hS l hl
+        simp only [reads, hq]
+        exact List.mem_flatMap.mpr ⟨c, hc, List.mem_flatten.mpr ⟨S, hS, hl⟩⟩
+      have cl : ∀ cs, (∀ c ∈ cs, c ∈ G i ++ meetClauses G i) →
+          (setSem (rowSem G (setSem fun l => X (I.realmAt, l)) (setSem fun l => X (η, l)) (I.arguments η (setSem fun l => X (η, l)))) cs n W v ↔
+            setSem (rowSem G (setSem fun l => X (I.realmAt, l)) (setSem fun l => X (η', l)) (I.arguments η' (setSem fun l => X (η', l)))) cs n W v) := by
+        intro cs hcs
+        constructor
+        · rintro ⟨c, hc, h⟩
+          exact ⟨c, hc, (rowSem_congr_on (hops c (hcs c hc)) _ _ _ _ _ n hag' hpack W v).mp h⟩
+        · rintro ⟨c, hc, h⟩
+          exact ⟨c, hc, (rowSem_congr_on (hops c (hcs c hc)) _ _ _ _ _ n hag' hpack W v).mpr h⟩
+      cases hm : G.meets i with
+      | none => exact cl _ fun c hc => List.mem_append_left _ hc
+      | some pc =>
+        -- A meet row: its parameter, which is free in it, and its clauses.
+        have hpv := freeOk_meet hF hi (p := pc.1) (cs := pc.2) (by rw [hm])
+        refine and_congr (and_congr ?_ ?_) (cl pc.2 fun c hc => List.mem_append_right _ (by simp [meetClauses, hm, hc]))
+        · rw [I.value_parameter pc.1 _ _ (hagi pc.1 hpv)]
+        · refine forall_congr' fun q => imp_congr_right fun hq => ?_
+          rw [I.value_parameter q _ _ (hagi q (freeOk_meetParams hF hi hq))]
+  · simp only [if_true]
+    rw [I.value_parameter i _ _ (hag i (hself hp))]
+
+
+/-- Independence for the shared recursive interpretation, including mixed pack
+parameters and bounds. It follows from one approximation invariant. -/
+theorem agree_freeWith [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
+    (hF : FreeOk G D V = true) (I : ParameterInterpretation ι k) (hI : RespectsFree D V I) :
+    FreeIndependent D V I (qDenoteWithArgs G I) := by
+  intro η θ i hi h
+  funext n W v
+  exact congrFun (congrFun (congrFun
+    (Tower.approx_inv (FreeIndependent D V I)
+      (fun _ _ _ _ _ => rfl) (qLayer_free hF I hI) (n + 1) η θ i hi h) n) W) v
+
 /-- Arrows covering a signature, with the host within their receivers below
 the level in every extending world, meet the host-relative member. -/
 theorem covers_arrows_sound {G : NormalGraph ι} {η : MixedAssignment ι}
@@ -1309,11 +1737,173 @@ theorem covers_arrows_sound {G : NormalGraph ι} {η : MixedAssignment ι}
       (fun m hm U' w hw => hr m (by omega) _ _ hres U' w hw)).weaken_recv
       (fun j' hj' U' hU' r hr' => host s.1 hsr j' hj' U' hU' r hr')
 
+/-- A row of a type reading none of `bs` means the same at every
+reassignment of them. -/
+theorem bindersFree_row [DecidableEq ι] {G : NormalGraph ι} {bs A : List ι}
+    (h : bindersFree G bs A = true) (η : MixedAssignment ι) (As : List MixedFamily)
+    {l : ι} (hl : l ∈ A) :
+    qDenoteWithArgs G (mixedParameters G) (assign η bs As, l) =
+      qDenoteWithArgs G (mixedParameters G) (η, l) := by
+  unfold bindersFree at h
+  simp only [Bool.and_eq_true, List.all_eq_true, List.contains_iff_mem, Bool.not_eq_true',
+    decide_eq_true_eq] at h
+  obtain ⟨hF, hA⟩ := h
+  exact agree_freeWith hF (mixedParameters G) (mixed_respectsFree hF) (assign η bs As) η l
+    (hA l hl).1 (fun p hp => by
+      have hnot : p ∉ bs := by simpa using (hA l hl).2 p hp
+      rw [assign_nmem η bs As hnot])
+
+/-- So a type whose rows are among such a type's. -/
+theorem bindersFree_values [DecidableEq ι] {G : NormalGraph ι} {bs A : List ι}
+    (h : bindersFree G bs A = true) (η : MixedAssignment ι) (As : List MixedFamily)
+    {r : List ι} (hr : ∀ l ∈ r, l ∈ A) :
+    mixedValues G (assign η bs As) r = mixedValues G η r := by
+  funext n W v
+  apply propext
+  show (∃ l ∈ r, _) ↔ (∃ l ∈ r, _)
+  refine exists_congr fun l => and_congr_right fun hl => ?_
+  show qDenoteWithArgs G (mixedParameters G) (assign η bs As, l) n W v ↔
+    qDenoteWithArgs G (mixedParameters G) (η, l) n W v
+  rw [bindersFree_row h η As (hr l hl)]
+
+/-- **A scheme received by the host.** A generic function the host reaches
+under a member's key, whose receivers read none of its binders and hold the
+host, meets bound to the host each target scheme binding the same rows whose
+signatures its own cover: at every instance the target admits, which the
+source admits too, the host is in the source signature's receiver (the same
+as at the table's assignment), so `.bind`'s forwarding function meets the
+source signature at any receiver (`callsT_bound`, `restsT_bound`), and the
+target's by the coverage premises read at the instance. -/
+theorem covers_by_scheme_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignment ι}
+    {R : List ι → List ι → Prop} {self F : List ι} {q : MethodMembers.Sig (List ι)}
+    (hby : CoversByScheme G R self F q) {n : Nat}
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j)
+    (hrAll : ∀ η' : MixedAssignment ι, ∀ j, j < n → ∀ S T, R S T → FamLeAt G η' S T j)
+    (hpaAll : ∀ η' : MixedAssignment ι, ArgsLeBelow G η' R n)
+    {W : WorldT n} {v : Val}
+    (hself : ∀ j (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
+      mixedValues G η self j U v)
+    {j : Nat} (hj : j < n) {U : WorldT j} (hU : WExt (trunc j (Nat.le_of_lt hj) W) U) {u : Val}
+    (hu : mixedValues G η F j U u) :
+    MethodMembers.onHost v (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η) q) j U u := by
+  unfold CoversByScheme at hby
+  split at hby
+  · rename_i i
+    split at hby
+    · rename_i s hs
+      obtain ⟨hcalls, hrests, hpi, hfree, hrecv, hschemes⟩ := hby
+      obtain ⟨i', hi', hv⟩ := hu
+      cases List.mem_singleton.mp hi'
+      rw [qDenoteWithArgs_unfold] at hv
+      simp only [qLayerWithArgs, hpi, hs, Bool.false_eq_true, if_false] at hv
+      obtain ⟨hinv, hall⟩ := hv
+      have hvself := hself j hj U hU
+      have hval : isVal v = true ∧ Scoped 0 v := by
+        obtain ⟨l, _, hl⟩ := hvself
+        exact mixedDenote_value G η l hl
+      -- The host is in every receiver of the scheme, at every instance: at
+      -- the table's assignment by the premises, and the receivers read none
+      -- of the binders.
+      have hhost : ∀ r ∈ s.signatures.map (·.1) ++ s.variadic.map (·.1), ∀ As : List MixedFamily,
+          mixedValues G (assign η s.binders As) r j U v := by
+        intro r hrm As
+        have hsub : ∀ l ∈ r, l ∈ schemeReceivers s := by
+          intro l hl
+          simp only [schemeReceivers, List.mem_append, List.mem_flatMap]
+          rcases List.mem_append.mp hrm with h | h
+          · obtain ⟨p, hp, rfl⟩ := List.mem_map.mp h
+            exact .inl ⟨p, hp, hl⟩
+          · obtain ⟨p, hp, rfl⟩ := List.mem_map.mp h
+            exact .inr ⟨p, hp, hl⟩
+        rw [bindersFree_values hfree η As hsub]
+        exact hr j hj self r (hrecv r hrm) U v hvself
+      have hinvB : Invocable (.objAt [] (.bound u v [])) :=
+        ⟨[], _, rfl, rfl, by simp only [Scoped, scopedArgs_iff]; exact ⟨hinv.scoped, hval.2, by simp⟩⟩
+      have hadm : ∀ (η' : MixedAssignment ι) (S : List ι), Adm (mixedValues G η' S) :=
+        fun η' S => setSem_adm (fun i => qDenoteWithArgs_adm G (mixedParameters G) (η', i)) S
+      have hargsAdm : ∀ (η' : MixedAssignment ι) (S : List ι), Adm (mixedArgs G η' S) :=
+        fun η' S => graphArguments_adm G η' (mixedValues G η') (hadm η') S
+      refine ⟨⟨hinv, fun p hp => ?_⟩, ⟨hinv, fun p hp => ?_⟩, fun B hB => ?_⟩
+      · simp [MethodMembers.Member.of, hcalls] at hp
+      · simp [MethodMembers.Member.of, hrests] at hp
+      obtain ⟨S', hS', rfl⟩ := List.mem_map.mp hB
+      have hb := hschemes S' hS'
+      unfold SchemeBinds at hb
+      split at hb
+      · rename_i j'
+        split at hb
+        · rename_i s' hs'
+          obtain ⟨hpj, hbs, hbnd, hsig, hvar⟩ := hb
+          refine ⟨j', List.mem_singleton_self j', ?_⟩
+          show qDenoteWithArgs G (mixedParameters G) (η, j') j U _
+          rw [qDenoteWithArgs_unfold]
+          simp only [qLayerWithArgs, hpj, hs', Bool.false_eq_true, if_false]
+          refine ⟨hinvB, fun As hl hbd => ?_⟩
+          have hb' : Bounded (fun θ S => (mixedParameters G).bound θ
+              (setSem (fun l => qDenoteWithArgs G (mixedParameters G) (θ, l))) S) η s As j := by
+            intro b hbm hbin j'' hj'' U' w hw
+            rw [hbs] at hbin hw
+            exact hbd b (hbnd b hbm) hbin j'' hj'' U' w hw
+          have hi : semWithArgs (mixedValues G (assign η s.binders As))
+              (mixedArgs G (assign η s.binders As)) (.arrs s.signatures s.variadic) j U u :=
+            hall As (by rw [hbs]; exact hl) hb'
+          show semWithArgs (mixedValues G (assign η s'.binders As)) (mixedArgs G (assign η s'.binders As))
+              (.arrs s'.signatures s'.variadic) j U (.objAt [] (.bound u v []))
+          rw [← hbs]
+          refine ⟨callsT_of_signatures hinvB fun x hx => ?_, restsT_of_signatures hinvB fun x hx => ?_⟩
+          · obtain ⟨t, ht, rfl⟩ := List.mem_map.mp hx
+            obtain ⟨p, hp, hd, hres⟩ := hsig t ht
+            have hc := callsT_select hi.1 (List.mem_map_of_mem hp)
+            have hrv := hhost p.1 (List.mem_append_left _ (List.mem_map_of_mem hp)) As
+            have hbd := callsT_bound (Ps := []) (Rc := mixedValues G (assign η s.binders As) t.1)
+              (Ds := p.2.1.map (mixedValues G (assign η s.binders As)))
+              (R := mixedValues G (assign η s.binders As) p.2.2)
+              (fs := []) (pvs := []) (hadm _ p.1) (by simp)
+              (fun A hA => by obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact hadm _ b)
+              (by simpa using hc) hval.1 hval.2 hrv trivial (by simp [CallArguments.Values]) (by simp)
+            refine ⟨hbd.1, fun y hy => ?_⟩
+            cases List.mem_singleton.mp hy
+            exact (hbd.2 _ (List.mem_singleton_self _)).weaken (fun _ _ _ r h => h)
+              (fun j'' hj'' U' args ha => by
+                simpa using Domains.short (hrAll _ j'' (by omega)) hd (by simpa using ha))
+              (fun m hm U' w hw => hrAll _ m (by omega) _ _ hres U' w hw)
+          · obtain ⟨t, ht, rfl⟩ := List.mem_map.mp hx
+            obtain ⟨p, hp, hd, hin, he, hres⟩ := hvar t ht
+            have hc := restsT_select hi.2 (List.mem_map_of_mem hp)
+            have hrv := hhost p.1 (List.mem_append_right _ (List.mem_map_of_mem hp)) As
+            have hbd := restsT_bound (Rc := mixedValues G (assign η s.binders As) t.1)
+              (Ps := p.2.1.map (mixedValues G (assign η s.binders As)))
+              (E := mixedArgs G (assign η s.binders As) p.2.2.1)
+              (R := mixedValues G (assign η s.binders As) p.2.2.2)
+              (fs := []) (pvs := []) (hadm _ p.1)
+              (fun A hA => by obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact hadm _ b)
+              (hargsAdm _ p.2.2.1) hc hval.1 hval.2 hrv
+              (by simp only [List.take_nil, List.take_zero, List.length_nil]; exact trivial)
+              (fun _ _ _ _ ys hys => by simpa using hys)
+              (by simp [CallArguments.Values]) (by simp)
+            refine ⟨hbd.1, fun y hy => ?_⟩
+            cases List.mem_singleton.mp hy
+            exact ((by simpa using hbd.2 _ (List.mem_singleton_self _)) :
+              Promise (ArgsRest (p.2.1.map (mixedValues G (assign η s.binders As)))
+                (mixedArgs G (assign η s.binders As) p.2.2.1))
+                (mixedValues G (assign η s.binders As) t.1)
+                (mixedValues G (assign η s.binders As) p.2.2.2) j U _).weaken (fun _ _ _ r h => h)
+              (fun j'' hj'' U' args ha => by
+                simpa using rest_rest (hrAll _ j'' (by omega)) (hpaAll _ j'' (by omega) _ _ he)
+                  (by simpa using hd) (by simpa using hin) (by simpa using ha))
+              (fun m hm U' w hw => hrAll _ m (by omega) _ _ hres U' w hw)
+        · exact hb.elim
+      · exact hb.elim
+    · exact hby.elim
+  · exact hby.elim
+
 /-- A function covering a signature meets the host-relative member. -/
-theorem covers_by_function_sound {G : NormalGraph ι} {η : MixedAssignment ι}
+theorem covers_by_function_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignment ι}
     {R : List ι → List ι → Prop} {self F : List ι} {q : MethodMembers.Sig (List ι)}
     (hby : CoversByFunction G R self F q) {n : Nat}
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
+    (hrAll : ∀ η' : MixedAssignment ι, ∀ j, j < n → ∀ S T, R S T → FamLeAt G η' S T j)
+    (hpaAll : ∀ η' : MixedAssignment ι, ArgsLeBelow G η' R n)
     {W : WorldT n} {v : Val}
     (hself : ∀ j (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
       mixedValues G η self j U v)
@@ -1328,7 +1918,7 @@ theorem covers_by_function_sound {G : NormalGraph ι} {η : MixedAssignment ι}
     rw [hE, List.mem_singleton] at hc'
     subst hc'
     exact covers_arrows_sound hby hr hpa hself hj hU hsem
-  · exact hby.elim
+  · exact covers_by_scheme_sound hby hr hrAll hpaAll hself hj hU hu
 
 /-- A record's invariant fields and views are at its locations, whose contracts
 imply their operands' families. -/
@@ -1449,10 +2039,12 @@ theorem lacksKey_at {G : NormalGraph ι} {η : MixedAssignment ι} {P : List ι}
 prototype type, below the level, in every world extending the host's, holds
 the key the same number of prototypes up, its contract implying the target's
 signatures invoked on the host. -/
-theorem protoHolds_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
+theorem protoHolds_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
     {known : Known ι} {self : List ι} {q : MethodMembers.Sig (List ι)}
     (hknown : ∀ k ∈ known, FamLe (mixedValues G η k.1) (mixedSem G η (.arrs k.2.1 k.2.2)))
     {n : Nat} (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
+    (hrAll : ∀ η' : MixedAssignment ι, ∀ j, j < n → ∀ S T, R S T → FamLeAt G η' S T j)
+    (hpaAll : ∀ η' : MixedAssignment ι, ArgsLeBelow G η' R n)
     {W : WorldT n} {v : Val}
     (hself : ∀ j (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
       mixedValues G η self j U v) :
@@ -1482,7 +2074,7 @@ theorem protoHolds_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : Lis
           (hknown k hk i U' u (hag i hi U' u hu))⟩
     · obtain ⟨pf, l, c, rfl, hl1, hl2, hag⟩ := viewOf_at (Option.mem_toList.mp hF) hp
       exact ⟨pf, l, c, rfl, hl1, hl2, fun i hi U' hU' u hu =>
-        covers_by_function_sound hby hr hpa hself (Nat.lt_trans hi hj) (hx i hi U' hU')
+        covers_by_function_sound hby hr hpa hrAll hpaAll hself (Nat.lt_trans hi hj) (hx i hi U' hU')
           (hag i hi U' u hu)⟩
   intro d
   induction d with
@@ -1510,12 +2102,14 @@ member of its key names, whose contract implies the target's signatures on the
 same host; or from a field or view holding a function whose receiver the host
 is in, below the level, in every extending world; or, when the object lacks
 the key, from such a function its prototype holds. -/
-theorem covers_methods_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
+theorem covers_methods_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
     {known : Known ι} {self : List ι} {fields : List (PropKey × List ι)} {bounds : List KeyBound}
     {ms ns : List (MethodMembers.Sig (List ι))} (hc : CoversMethods G R known self fields bounds ms ns)
     (hknown : ∀ k ∈ known, FamLe (mixedValues G η k.1) (mixedSem G η (.arrs k.2.1 k.2.2)))
     (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
+    (hrAll : ∀ η' : MixedAssignment ι, ∀ j, j < n → ∀ S T, R S T → FamLeAt G η' S T j)
+    (hpaAll : ∀ η' : MixedAssignment ι, ArgsLeBelow G η' R n)
     (W : WorldT n) (v : Val)
     (hself : ∀ j (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
       mixedValues G η self j U v)
@@ -1534,9 +2128,9 @@ theorem covers_methods_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R :
       (MethodMembers.methodT_at (List.mem_map_of_mem hp) hv)
   · obtain ⟨flds, l, c, hρ, hfl, hl, hag⟩ := hfields f hf
     exact ⟨0, flds, l, c, hρ, by simpa [MethodMembers.Member.of, ← hkey] using hfl, hl,
-      fun j hj U hU u hu => covers_by_function_sound hby hr hpa hself hj hU (hag j hj U u hu)⟩
+      fun j hj U hU u hu => covers_by_function_sound hby hr hpa hrAll hpaAll hself hj hU (hag j hj U u hu)⟩
   · obtain ⟨flds, lp, cp, rfl, hfl, hlp, hpag⟩ := hfields f hf
-    obtain ⟨e, he⟩ := protoHolds_sound hknown hr hpa hself protoChainDepth f.2 hview
+    obtain ⟨e, he⟩ := protoHolds_sound hknown hr hpa hrAll hpaAll hself protoChainDepth f.2 hview
     exact ⟨e + 1, flds, rfl, ownKeysT_lookup (hbounds K hK) hnot,
       flds, lp, cp, rfl, by rw [← hpk]; exact hfl, hlp,
       fun j hj U hU p hp => he j hj U hU p (hpag j hj U p hp)⟩
@@ -1784,16 +2378,18 @@ theorem covers_arguments_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R
     (fun S T h v => hr S T h W v) vs hv
 
 /-- A record clause is covered by record clauses only. -/
-theorem CoversWith.record {G : NormalGraph ι} {R known arrows self} {a b : Clause (List ι)}
+theorem CoversWith.record [DecidableEq ι] {G : NormalGraph ι} {R known arrows self} {a b : Clause (List ι)}
     (hc : CoversWith G R known arrows self a b) (hb : b.record = true) : a.record = true := by
   cases a <;> cases b <;> simp_all [CoversWith, Clause.record]
 
 /-- Coverage of the clauses themselves, the row's invariant aside. -/
-theorem Covers.sound_raw {G : NormalGraph ι} {η : MixedAssignment ι} {R known self a b}
+theorem Covers.sound_raw [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignment ι} {R known self a b}
     (hc : Covers G R known self a b)
     (hknown : ∀ k ∈ known, FamLe (mixedValues G η k.1) (mixedSem G η (.arrs k.2.1 k.2.2)))
     (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
+    (hrAll : ∀ η' : MixedAssignment ι, ∀ j, j < n → ∀ S T, R S T → FamLeAt G η' S T j)
+    (hpaAll : ∀ η' : MixedAssignment ι, ArgsLeBelow G η' R n)
     (W : WorldT n) (v : Val)
     (hself : ∀ j (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
       mixedValues G η self j U v) :
@@ -1810,14 +2406,14 @@ theorem Covers.sound_raw {G : NormalGraph ι} {η : MixedAssignment ι} {R known
     exact ⟨covers_fields_sound hc.2.1 n hr W v hv.1, covers_views_sound hc.2.2.1 n hr W v ⟨hv.1, hv.2.1⟩,
       covers_keys_sound hc.1 n hr W v hv.1 hv.2.1 hv.2.2.2.2,
       covers_optional_sound hc.2.2.2.1 n hr W v ⟨hv.1, hv.2.1, hv.2.2.1⟩ hv.2.2.2.2,
-      covers_methods_sound hc.2.2.2.2.1 hknown n hr hpa W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2
+      covers_methods_sound hc.2.2.2.2.1 hknown n hr hpa hrAll hpaAll W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2
         hv.2.2.2.1,
       covers_bounds_sound hc.2.2.2.2.2.1 (recT_obj hv.1.1) hv.2.2.2.2⟩
   case dict.refs a bs vs ix os ms ks cx c ds ws ps ns ls =>
     intro hv
     exact ⟨covers_fields_sound hc.1 n hr W v hv.1, covers_views_sound hc.2.1 n hr W v ⟨hv.1, hv.2.1⟩,
       covers_optional_sound hc.2.2.1 n hr W v ⟨hv.1, hv.2.1, hv.2.2.2.1⟩ hv.2.2.2.2.2,
-      covers_methods_sound hc.2.2.2.1 hknown n hr hpa W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2.2
+      covers_methods_sound hc.2.2.2.1 hknown n hr hpa hrAll hpaAll W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2.2
         hv.2.2.2.2.1,
       covers_bounds_sound hc.2.2.2.2 (recT_obj hv.1.1) hv.2.2.2.2.2⟩
   case ctors.ctors L S M T =>
@@ -1871,7 +2467,7 @@ theorem Covers.sound_raw {G : NormalGraph ι} {η : MixedAssignment ι} {R known
     intro hv
     exact ⟨covers_fields_sound hc.1 n hr W v hv.1, covers_views_sound hc.2.1 n hr W v ⟨hv.1, hv.2.1⟩,
       covers_optional_sound hc.2.2.1 n hr W v ⟨hv.1, hv.2.1, hv.2.2.1⟩ hv.2.2.2.2,
-      covers_methods_sound hc.2.2.2.1 hknown n hr hpa W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2
+      covers_methods_sound hc.2.2.2.1 hknown n hr hpa hrAll hpaAll W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2
         hv.2.2.2.1,
       covers_bounds_sound hc.2.2.2.2 (recT_obj hv.1.1) hv.2.2.2.2⟩
   · rename_i a bs vs ix os ms ks cx c ds ws iy ps ns ls cy
@@ -1881,7 +2477,7 @@ theorem Covers.sound_raw {G : NormalGraph ι} {η : MixedAssignment ι} {R known
       covers_optional_sound hc.2.2.2.1 n hr W v ⟨hv.1, hv.2.1, hv.2.2.2.1⟩ hv.2.2.2.2.2,
 
 
-      covers_methods_sound hc.2.2.2.2.1 hknown n hr hpa W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2.2
+      covers_methods_sound hc.2.2.2.2.1 hknown n hr hpa hrAll hpaAll W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2.2
         hv.2.2.2.2.1,
       covers_bounds_sound hc.2.2.2.2.2.1 (recT_obj hv.1.1) hv.2.2.2.2.2⟩
     · intro y hy
@@ -1957,17 +2553,19 @@ theorem Covers.sound_raw {G : NormalGraph ι} {η : MixedAssignment ι} {R known
     cases hc; exact id
 
 /-- Coverage in a row: a record target's invariant is the record source's. -/
-theorem Covers.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R known self a b}
+theorem Covers.sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignment ι} {R known self a b}
     (hc : Covers G R known self a b)
     (hknown : ∀ k ∈ known, FamLe (mixedValues G η k.1) (mixedSem G η (.arrs k.2.1 k.2.2)))
     (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
+    (hrAll : ∀ η' : MixedAssignment ι, ∀ j, j < n → ∀ S T, R S T → FamLeAt G η' S T j)
+    (hpaAll : ∀ η' : MixedAssignment ι, ArgsLeBelow G η' R n)
     (W : WorldT n) (v : Val)
     (hself : ∀ j (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
       mixedValues G η self j U v) :
     mixedSem G η a n W v → mixedSem G η b n W v := by
   rintro ⟨hv, hinv⟩
-  refine ⟨Covers.sound_raw hc hknown n hr hpa W v hself hv, ?_⟩
+  refine ⟨Covers.sound_raw hc hknown n hr hpa hrAll hpaAll W v hself hv, ?_⟩
   cases hbr : b.record
   · exact realmInvariant_of_not_record hbr n W v
   · exact (realmInvariant_record (CoversWith.record hc hbr) hbr).mp hinv
@@ -2069,7 +2667,7 @@ binders are the same, so the target's are taken rigidly and the source's are
 instantiated at them, and no bound is compared, so the check stays decidable.
 Its premises hold at the reassigned assignment, which the core table's
 induction over every assignment supplies (`Core.mixed_sound`). -/
-def SchemeCoversWith (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
+def SchemeCoversWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
     (arrows : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop)
     (i j : ι) : Prop :=
   match G.schemes i, G.schemes j with
@@ -2084,18 +2682,18 @@ meet row not in the target is below a target row by its parameters
 (`meetBelow`), or covered through its clauses (`meetSources`). A scheme row
 is below a target scheme row whose quantified signatures its own cover
 (`SchemeCoversWith`). -/
-def OpaqueWith (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
+def OpaqueWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
     (arrows : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop)
     (S T : List ι) : Prop :=
   ∀ i ∈ S, G.plain i = true ∨ i ∈ T ∨ .top ∈ clausesOf G T ∨ G.meetRow i = true ∨
     ∃ j ∈ T, SchemeCoversWith G R known arrows i j
 
 /-- The same, with declarative arrow coverage. -/
-abbrev Opaque (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι) :=
+abbrev Opaque [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι) :=
   OpaqueWith G R known (fun L S M => ∀ p ∈ M,
     CallArrow (compatible G) (restElem G) R L S p.1 p.2.1 p.2.2)
 
-theorem OpaqueWith.mono {G : NormalGraph ι} {R : List ι → List ι → Prop} {known : Known ι}
+theorem OpaqueWith.mono [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} {known : Known ι}
     {arrows arrows' : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop}
     (ha : ∀ L S M, arrows L S M → arrows' L S M) {S T : List ι}
     (h : OpaqueWith G R known arrows S T) : OpaqueWith G R known arrows' S T := by
@@ -2225,7 +2823,7 @@ theorem core_arguments_of_values [DecidableEq ι] {G : NormalGraph ι} {known : 
 
 /-- Arrow coverage alone: a callable clause's signatures, covered, give the
 target's. It reads no source type. -/
-theorem covers_arrs_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R known self}
+theorem covers_arrs_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignment ι} {R known self}
     {L : Ops ι} {S : List (List ι × List (List ι) × List ι × List ι)}
     {M : Ops ι} {T : List (List ι × List (List ι) × List ι × List ι)}
     (hc : Covers G R known self (.arrs L S) (.arrs M T)) (n : Nat)
@@ -2247,7 +2845,7 @@ theorem covers_arrs_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R know
 one its quantified signatures cover: at each instance the target admits, the
 source admits it too, and there the arrow coverage holds, its premises read
 at that instance's assignment. -/
-theorem scheme_covers_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R known i j}
+theorem scheme_covers_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignment ι} {R known i j}
     (hc : SchemeCoversWith G R known (fun L S M => ∀ p ∈ M,
       CallArrow (compatible G) (restElem G) R L S p.1 p.2.1 p.2.2) i j) (n : Nat)
     (hr : ∀ η' : MixedAssignment ι, ∀ j, j < n → ∀ S T, R S T → FamLeAt G η' S T j)
@@ -2310,7 +2908,7 @@ theorem Core.mixed_sound [DecidableEq ι] {G : NormalGraph ι} {known : Known ι
         · obtain ⟨a, ha, hv⟩ := (splitClause_row G _ _ _ c n W v).mpr hv
           obtain ⟨b, hb, hcover⟩ :=
             (hc (A, B) hab).2.2 a (List.mem_append_left _ (List.mem_flatMap.mpr ⟨c, hcm, ha⟩))
-          exact mixed_expand_mpr ⟨b, hb, Covers.sound hcover (hk η) n (hr η) (hpa η) W v hself hv⟩
+          exact mixed_expand_mpr ⟨b, hb, Covers.sound hcover (hk η) n (hr η) (hpa η) hr hpa W v hself hv⟩
         · rcases ((hc (A, B) hab).2.1 i hi).resolve_left (by simp [hp]) with
             hB | htop | hmeet | ⟨j, hj, hsc⟩
           · exact ⟨i, hB, hv⟩
@@ -2326,7 +2924,7 @@ theorem Core.mixed_sound [DecidableEq ι] {G : NormalGraph ι} {known : Known ι
               have hmem : a ∈ meetSources G A B := List.mem_flatMap.mpr ⟨c,
                 List.mem_flatMap.mpr ⟨i, List.mem_filter.mpr ⟨hi, by simp [hmeet, hB, hbelow]⟩, hcm⟩, ha⟩
               obtain ⟨b, hb, hcover⟩ := (hc (A, B) hab).2.2 a (List.mem_append_right _ hmem)
-              exact mixed_expand_mpr ⟨b, hb, Covers.sound hcover (hk η) n (hr η) (hpa η) W v hself hv⟩
+              exact mixed_expand_mpr ⟨b, hb, Covers.sound hcover (hk η) n (hr η) (hpa η) hr hpa W v hself hv⟩
           · exact ⟨j, hj, scheme_covers_sound hsc n hr hpa W v hv⟩
       exact ⟨hv, core_arguments_of_values hc η n (fun A B h W v hv' => hv A B h W v hv')⟩
   intro n W x hx
@@ -2346,347 +2944,6 @@ depend on a moved binder to itself. Dependence is by free parameter rows,
 stated by a checked certificate (`FreeOk`): a row under a scheme binding a
 parameter does not depend on it, so a receiver `Promise<number>`, whose `then`
 mentions `then`'s own binders, is its own image. -/
-
-/-- Local operand agreement for the shared value interpretation. Argument
-operands have their own agreement premise, independent of value membership. -/
-theorem semWithArgs_congr_on [DecidableEq ι] {D : List ι} {c : Clause (List ι)}
-    (hops : ∀ S ∈ c.operands, ∀ l ∈ S, l ∈ D) (X Y : ι → Fam)
-    (P Q : List ι → ArgFam) (n : Nat)
-    (h : ∀ l ∈ D, Agree (X l) (Y l) n)
-    (ha : ∀ S, (∀ l ∈ S, l ∈ D) → Agree (P S) (Q S) n) (W : WorldT n) (v : Val) :
-    semWithArgs (setSem X) P c n W v ↔ semWithArgs (setSem Y) Q c n W v := by
-  let r : List ι → List ι := fun S => S.filter fun l => decide (l ∈ D)
-  have hcr : c.map r = c := map_of_operands fun S hS =>
-    List.filter_eq_self.mpr fun l hl => by simpa using hops S hS l hl
-  rw [← hcr, semWithArgs_map, semWithArgs_map]
-  have hin : ∀ S l, l ∈ r S → l ∈ D := fun S l hl => by
-    simpa using (List.mem_filter.mp hl).2
-  apply semWithArgs_congr _ _ _ _ n (fun S m hm U u => ?_) (fun S => ha _ (hin S)) c W v
-  exact exists_congr fun l => and_congr_right fun hl => h l (hin S l hl) m hm U u
-
-/-- Local agreement for argument rows is at the current level. -/
-theorem clauseArguments_congr_on [DecidableEq ι] {D : List ι} {c : Clause (List ι)}
-    (hops : ∀ S ∈ c.operands, ∀ l ∈ S, l ∈ D) (X Y : ι → Fam) (n : Nat)
-    (h : ∀ l ∈ D, ∀ W v, X l n W v ↔ Y l n W v) (W : WorldT n) (vs : List Val) :
-    clauseArguments (setSem X) c n W vs ↔ clauseArguments (setSem Y) c n W vs := by
-  let r : List ι → List ι := fun S => S.filter fun l => decide (l ∈ D)
-  have hcr : c.map r = c := map_of_operands fun S hS =>
-    List.filter_eq_self.mpr fun l hl => by simpa using hops S hS l hl
-  rw [← hcr, clauseArguments_map, clauseArguments_map]
-  apply clauseArguments_congr _ _ c n W (fun S v => ?_) vs
-  exact exists_congr fun l => and_congr_right fun hl =>
-    h l (by simpa using (List.mem_filter.mp hl).2) W v
-
-/-- Local operand agreement for a clause read in a row: its operands; the
-realm's prototype type is read by the same family on both sides. -/
-theorem rowSem_congr_on [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {c : Clause (List ι)}
-    (hops : ∀ S ∈ c.operands, ∀ l ∈ S, l ∈ D) (A : List ι → Fam)
-    (X Y : ι → Fam) (P Q : List ι → ArgFam) (n : Nat)
-    (h : ∀ l ∈ D, Agree (X l) (Y l) n)
-    (ha : ∀ S, (∀ l ∈ S, l ∈ D) → Agree (P S) (Q S) n) (W : WorldT n) (v : Val) :
-    rowSem G A (setSem X) P c n W v ↔ rowSem G A (setSem Y) Q c n W v :=
-  and_congr (semWithArgs_congr_on hops X Y P Q n h ha W v) Iff.rfl
-
-/-- A meet row's clauses: what its parameter is intersected with. -/
-def meetClauses (G : NormalGraph ι) (i : ι) : List (Clause (List ι)) :=
-  ((G.meets i).map (·.2)).getD []
-
-/-- The rows a row reads: a clause row its operands, a scheme row its
-signatures' rows, a meet row its clauses' operands. -/
-def reads (G : NormalGraph ι) (i : ι) : List ι :=
-  match G.schemes i with
-  | some s => s.signatures.flatMap (fun p => p.1 ++ p.2.1.flatten ++ p.2.2) ++
-      s.bounds.flatMap (·.2) ++
-      s.variadic.flatMap (fun p => p.1 ++ p.2.1.flatten ++ p.2.2.1 ++ p.2.2.2)
-  | none => (G i ++ meetClauses G i).flatMap fun c => c.operands.flatten
-
-/-- A scheme row's bound types: read at its own assignment, not under its
-binders. -/
-def boundReads (G : NormalGraph ι) (i : ι) : List ι :=
-  match G.schemes i with
-  | some s => s.bounds.flatMap (·.2)
-  | none => []
-
-/-! ### Free parameter rows -/
-
-abbrev FreeMap (ι : Type) := List (ι × List ι)
-
-/-- The parameter rows a row may depend on, as a certificate states them. -/
-def fv [DecidableEq ι] (V : FreeMap ι) (i : ι) : List ι := (V.lookup i).getD []
-
-/-- `V` over-approximates the free parameter rows of the rows of `D`, which is
-closed under what its rows read: a parameter row is free in itself, and a row
-reading another has that row's free parameters, except a scheme row's own
-binders. -/
-def FreeOk [DecidableEq ι] (G : NormalGraph ι) (D : List ι) (V : FreeMap ι) : Bool :=
-  D.all fun i =>
-    (!G.params i || (fv V i).contains i) &&
-    -- A meet row depends on its parameters.
-    (match G.meets i with | some (p, _) => (fv V i).contains p | none => true) &&
-    (G.meetParams i).all (fv V i).contains &&
-    (reads G i).all (fun l => D.contains l &&
-      (fv V l).all fun p => (fv V i).contains p ||
-        (match G.schemes i with | some s => s.binders.contains p | none => false)) &&
-    (boundReads G i).all fun l => (fv V l).all fun p => (fv V i).contains p
-
-/-- `FreeOk` with each row's free rows looked up once, not once per read: what
-the compiler runs. -/
-def FreeOkFast [DecidableEq ι] (G : NormalGraph ι) (D : List ι) (V : FreeMap ι) : Bool :=
-  D.all fun i =>
-    let fi := fv V i
-    (!G.params i || fi.contains i) &&
-    (match G.meets i with | some (p, _) => fi.contains p | none => true) &&
-    (G.meetParams i).all fi.contains &&
-    (reads G i).all (fun l => D.contains l &&
-      (fv V l).all fun p => fi.contains p ||
-        (match G.schemes i with | some s => s.binders.contains p | none => false)) &&
-    (boundReads G i).all fun l => (fv V l).all fun p => fi.contains p
-
-@[csimp] theorem FreeOk_eq_fast : @FreeOk = @FreeOkFast := rfl
-
-theorem freeOk_row [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
-    (hF : FreeOk G D V = true) {i : ι} (hi : i ∈ D) :
-    (G.params i = true → i ∈ fv V i) ∧ (∀ l ∈ reads G i, l ∈ D ∧ ∀ p ∈ fv V l,
-      p ∈ fv V i ∨ (∃ s, G.schemes i = some s ∧ p ∈ s.binders)) ∧
-    ∀ l ∈ boundReads G i, ∀ p ∈ fv V l, p ∈ fv V i := by
-  have h := List.all_eq_true.mp hF i hi
-  simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true', List.all_eq_true,
-    List.contains_iff_mem] at h
-  refine ⟨fun hp => by simpa [hp] using h.1.1.1.1, fun l hl => ⟨by simpa using (h.1.2 l hl).1, fun p hp => ?_⟩,
-    fun l hl p hp => by simpa using h.2 l hl p hp⟩
-  have := (h.1.2 l hl).2 p hp
-  rcases this with h1 | h2
-  · exact .inl (by simpa using h1)
-  · right
-    cases hs : G.schemes i with
-    | none => simp [hs] at h2
-    | some s => exact ⟨s, rfl, by simpa [hs] using h2⟩
-
-/-- A meet row's parameter is free in it. -/
-theorem freeOk_meet [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
-    (hF : FreeOk G D V = true) {i : ι} (hi : i ∈ D) {p : ι} {cs : List (Clause (List ι))}
-    (hm : G.meets i = some (p, cs)) : p ∈ fv V i := by
-  have h := List.all_eq_true.mp hF i hi
-  simp only [Bool.and_eq_true, hm, List.contains_iff_mem, decide_eq_true_eq] at h
-  exact h.1.1.1.2
-
-/-- A meet row's further parameters are free in it. -/
-theorem freeOk_meetParams [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
-    (hF : FreeOk G D V = true) {i : ι} (hi : i ∈ D) {q : ι} (hq : q ∈ G.meetParams i) :
-    q ∈ fv V i := by
-  have h := List.all_eq_true.mp hF i hi
-  simp only [Bool.and_eq_true, List.all_eq_true, List.contains_iff_mem] at h
-  exact h.1.1.2 q hq
-
-/-- Free-variable independence is an invariant of the approximations, not an
-extra delay on argument-list membership. -/
-def FreeIndependent [DecidableEq ι] (D : List ι) (V : FreeMap ι) (I : ParameterInterpretation ι k)
-    (X : ParameterAssignment k ι × ι → Fam) : Prop :=
-  ∀ η θ i, i ∈ D → (∀ p ∈ fv V i, I.parameter p (η.1 p) = I.parameter p (θ.1 p)) → X (η, i) = X (θ, i)
-
-private theorem independent_set [DecidableEq ι] {D : List ι} {V : FreeMap ι}
-    {I : ParameterInterpretation ι k}
-    {X : ParameterAssignment k ι × ι → Fam} (hX : FreeIndependent D V I X)
-    (η θ : ParameterAssignment k ι) (S : List ι) (hS : ∀ i ∈ S, i ∈ D)
-    (h : ∀ i ∈ S, ∀ p ∈ fv V i, I.parameter p (η.1 p) = I.parameter p (θ.1 p)) :
-    setSem (fun i => X (η, i)) S = setSem (fun i => X (θ, i)) S := by
-  funext n W v
-  apply propext
-  exact exists_congr fun i => and_congr_right fun hi => by
-    dsimp only
-    rw [hX η θ i (hS i hi) (h i hi)]
-
-/-- An interpretation reads only the free parameters of its operand rows.
-This is proved for each interpretation; it is not a certificate assumption. -/
-structure RespectsFree [DecidableEq ι] (D : List ι) (V : FreeMap ι)
-    (I : ParameterInterpretation ι k) : Prop where
-  arguments : ∀ X, FreeIndependent D V I X → ∀ η θ S,
-    (∀ i ∈ S, i ∈ D) → (∀ i ∈ S, ∀ p ∈ fv V i, I.parameter p (η.1 p) = I.parameter p (θ.1 p)) →
-    I.arguments η (setSem fun i => X (η, i)) S =
-      I.arguments θ (setSem fun i => X (θ, i)) S
-  bound : ∀ X, FreeIndependent D V I X → ∀ η θ S,
-    (∀ i ∈ S, i ∈ D) → (∀ i ∈ S, ∀ p ∈ fv V i, I.parameter p (η.1 p) = I.parameter p (θ.1 p)) →
-    I.bound η (setSem fun i => X (η, i)) S =
-      I.bound θ (setSem fun i => X (θ, i)) S
-
-/-- Argument rows respect the same checked free-variable map as value rows.
-Tuple elements use the approximation's independence at the current level. -/
-theorem graphArguments_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
-    (hF : FreeOk G D V = true) (X : MixedAssignment ι × ι → Fam)
-    (hX : FreeIndependent D V (mixedParameters G) X) (η θ : MixedAssignment ι) (S : List ι)
-    (hS : ∀ i ∈ S, i ∈ D) (h : ∀ i ∈ S, ∀ p ∈ fv V i, (mixedParameters G).parameter p (η.1 p) = (mixedParameters G).parameter p (θ.1 p)) :
-    graphArguments G η (setSem fun i => X (η, i)) S =
-      graphArguments G θ (setSem fun i => X (θ, i)) S := by
-  funext n W vs
-  apply propext
-  apply exists_congr fun i => and_congr_right fun hi => ?_
-  have ⟨hself, hreads, _⟩ := freeOk_row hF (hS i hi)
-  by_cases hp : G.parameterKinds i = some .arguments
-  · simp only [hp, ite_true]
-    have he := congrFun (congrFun (congrFun
-      (h i hi i (hself (by simp [NormalGraph.params, hp]))) n) W) (.inr vs)
-    simpa [mixedParameters, selectParameter, hp] using iff_of_eq he
-  · simp only [hp, ite_false]
-    apply exists_congr fun c => and_congr_right fun hc => ?_
-    have hplain := NormalGraph.plain_of_clauses hc
-    have hq : G.schemes i = none := (NormalGraph.plain_iff.mp hplain).2.1
-    apply clauseArguments_congr_on (D := reads G i) (fun T hT l hl => ?_) _ _ n
-      (fun l hl U v => ?_) W vs
-    · simp only [reads, hq]
-      exact List.mem_flatMap.mpr ⟨c, List.mem_append_left _ hc, List.mem_flatten.mpr ⟨T, hT, hl⟩⟩
-    · rw [hX η θ l (hreads l hl).1 (fun p hp => ?_)]
-      rcases (hreads l hl).2 p hp with hp | ⟨s, hs, _⟩
-      · exact h i hi p hp
-      · rw [hq] at hs; cases hs
-
-theorem mixed_respectsFree [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
-    (hF : FreeOk G D V = true) : RespectsFree D V (mixedParameters G) := by
-  constructor
-  · exact graphArguments_free hF
-  · intro X hX η θ S hS h
-    have hv := independent_set hX η θ S hS h
-    have ha := graphArguments_free hF X hX η θ S hS h
-    funext n W x
-    cases x with
-    | inl v => exact congrFun (congrFun (congrFun hv n) W) v
-    | inr vs => exact congrFun (congrFun (congrFun ha n) W) vs
-
-theorem qLayer_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
-    (hF : FreeOk G D V = true) (I : ParameterInterpretation ι k) (hI : RespectsFree D V I)
-    (X : ParameterAssignment k ι × ι → Fam) (hX : FreeIndependent D V I X) :
-    FreeIndependent D V I (qLayerWithArgs G I X) := by
-  intro η η' i hi hag
-  funext n W v
-  apply propext
-  have ⟨hself, hreads, hbounds⟩ := freeOk_row hF hi
-  unfold qLayerWithArgs
-  cases hp : G.params i
-  · simp only [Bool.false_eq_true, if_false]
-    cases hq : G.schemes i with
-    | some s =>
-      refine and_congr Iff.rfl (forall_congr' fun As => forall_congr' fun hl => imp_congr ?_ ?_)
-      · -- The bounds are read at the scheme's own assignment.
-        have hbr : ∀ b ∈ s.bounds, ∀ l ∈ b.2, l ∈ reads G i ∧ l ∈ boundReads G i := by
-          intro b hb l hl'
-          refine ⟨?_, ?_⟩
-          · simp only [reads, hq]
-            exact List.mem_append_left _ (List.mem_append_right _ (List.mem_flatMap.mpr ⟨b, hb, hl'⟩))
-          · simp only [boundReads, hq]
-            exact List.mem_flatMap.mpr ⟨b, hb, hl'⟩
-        unfold Bounded
-        refine forall_congr' fun b => forall_congr' fun hbm => forall_congr' fun hbin =>
-          forall_congr' fun j => forall_congr' fun hj => forall_congr' fun U =>
-          forall_congr' fun u => ?_
-        rw [assign_mem_eq η η' s.binders As hbin hl]
-        have hb := hI.bound X hX η η' b.2
-          (fun l hl' => (hreads l (hbr b hbm l hl').1).1)
-          (fun l hl' p hp => hag p (hbounds l (hbr b hbm l hl').2 p hp))
-        dsimp only
-        rw [hb]
-      have hin : ∀ l ∈ reads G i, ∀ p ∈ fv V l,
-          I.parameter p ((assign η s.binders As).1 p) = I.parameter p ((assign η' s.binders As).1 p) := by
-        intro l hlS p hpv
-        by_cases hb : p ∈ s.binders
-        · rw [assign_mem_eq η η' s.binders As hb hl]
-        · rw [assign_nmem η s.binders As hb, assign_nmem η' s.binders As hb]
-          rcases (hreads l hlS).2 p hpv with h1 | ⟨s', hs', h2⟩
-          · exact hag p h1
-          · rw [hq] at hs'; cases hs'; exact absurd h2 hb
-      have hrow : ∀ S, (∀ l ∈ S, l ∈ reads G i) → Agree
-          (setSem (fun l => X (assign η s.binders As, l)) S)
-          (setSem (fun l => X (assign η' s.binders As, l)) S) n := by
-        intro S hS
-        rw [independent_set hX _ _ S (fun l hl => (hreads l (hS l hl)).1)
-          (fun l hl => hin l (hS l hl))]
-        exact fun _ _ _ _ => Iff.rfl
-      have hpack : ∀ S, (∀ l ∈ S, l ∈ reads G i) → Agree
-          (I.arguments (assign η s.binders As) (setSem fun l => X (assign η s.binders As, l)) S)
-          (I.arguments (assign η' s.binders As) (setSem fun l => X (assign η' s.binders As, l)) S) n := by
-        intro S hS
-        rw [hI.arguments X hX _ _ S (fun l hl => (hreads l (hS l hl)).1)
-          (fun l hl => hin l (hS l hl))]
-        exact fun _ _ _ _ => Iff.rfl
-      have hargs : ∀ Ss : List (List ι), (∀ S ∈ Ss, ∀ l ∈ S, l ∈ reads G i) → ArgsAgree n
-          (Ss.map (setSem fun l => X (assign η s.binders As, l)))
-          (Ss.map (setSem fun l => X (assign η' s.binders As, l))) := by
-        intro Ss hSs
-        induction Ss with
-        | nil => exact .nil
-        | cons S Ss ihs =>
-          exact .cons (hrow S (hSs S List.mem_cons_self))
-            (ihs fun T hT => hSs T (List.mem_cons_of_mem _ hT))
-      simp only [instanceTWithArgs, instanceSigs, instanceRestsWithArgs, interT]
-      refine and_congr (callsT_congr s.signatures _ _ (fun p hps => by
-        have hin : ∀ l ∈ p.1 ++ p.2.1.flatten ++ p.2.2, l ∈ reads G i := fun l hl => by
-          simp only [reads, hq]
-          exact List.mem_append_left _ (List.mem_append_left _ (List.mem_flatMap.mpr ⟨p, hps, hl⟩))
-        refine ⟨hrow _ fun l hl => hin l (by simp [hl]), hargs _ fun S hS l hl => hin l ?_,
-          hrow _ fun l hl => hin l (by simp [hl])⟩
-        simp only [List.mem_append, List.mem_flatten]
-        exact .inl (.inr ⟨S, hS, hl⟩)) W v) (restsT_congr s.variadic _ _ (fun p hps => by
-        have hin : ∀ l ∈ p.1 ++ p.2.1.flatten ++ p.2.2.1 ++ p.2.2.2, l ∈ reads G i :=
-          fun l hl => by
-            simp only [reads, hq]
-            exact List.mem_append_right _ (List.mem_flatMap.mpr ⟨p, hps, hl⟩)
-        refine ⟨hrow _ fun l hl => hin l (by simp [hl]), hargs _ fun S hS l hl => hin l ?_,
-          hpack _ (fun l hl => hin l (by simp [hl])), hrow _ fun l hl => hin l (by simp [hl])⟩
-        simp only [List.mem_append, List.mem_flatten]
-        exact .inl (.inl (.inr ⟨S, hS, hl⟩))) W v)
-    | none =>
-      simp only [semList, setSem]
-      have hagi := hag
-      have hag : ∀ l ∈ reads G i, ∀ p ∈ fv V l, I.parameter p (η.1 p) = I.parameter p (η'.1 p) := by
-        intro l hl p hpv
-        rcases (hreads l hl).2 p hpv with h1 | ⟨s', hs', _⟩
-        · exact hag p h1
-        · rw [hq] at hs'; cases hs'
-      have hag' : ∀ l ∈ reads G i, Agree (X (η, l)) (X (η', l)) n := by
-        intro l hl
-        rw [hX η η' l (hreads l hl).1 (hag l hl)]
-        exact fun _ _ _ _ => Iff.rfl
-      have hpack : ∀ S, (∀ l ∈ S, l ∈ reads G i) → Agree
-          (I.arguments η (setSem fun l => X (η, l)) S)
-          (I.arguments η' (setSem fun l => X (η', l)) S) n := by
-        intro S hS
-        rw [hI.arguments X hX η η' S (fun l hl => (hreads l (hS l hl)).1)
-          (fun l hl => hag l (hS l hl))]
-        exact fun _ _ _ _ => Iff.rfl
-      have hops : ∀ c ∈ G i ++ meetClauses G i, ∀ S ∈ c.operands, ∀ l ∈ S, l ∈ reads G i := by
-        intro c hc S hS l hl
-        simp only [reads, hq]
-        exact List.mem_flatMap.mpr ⟨c, hc, List.mem_flatten.mpr ⟨S, hS, hl⟩⟩
-      have cl : ∀ cs, (∀ c ∈ cs, c ∈ G i ++ meetClauses G i) →
-          (setSem (rowSem G (setSem fun l => X (I.realmAt, l)) (setSem fun l => X (η, l)) (I.arguments η (setSem fun l => X (η, l)))) cs n W v ↔
-            setSem (rowSem G (setSem fun l => X (I.realmAt, l)) (setSem fun l => X (η', l)) (I.arguments η' (setSem fun l => X (η', l)))) cs n W v) := by
-        intro cs hcs
-        constructor
-        · rintro ⟨c, hc, h⟩
-          exact ⟨c, hc, (rowSem_congr_on (hops c (hcs c hc)) _ _ _ _ _ n hag' hpack W v).mp h⟩
-        · rintro ⟨c, hc, h⟩
-          exact ⟨c, hc, (rowSem_congr_on (hops c (hcs c hc)) _ _ _ _ _ n hag' hpack W v).mpr h⟩
-      cases hm : G.meets i with
-      | none => exact cl _ fun c hc => List.mem_append_left _ hc
-      | some pc =>
-        -- A meet row: its parameter, which is free in it, and its clauses.
-        have hpv := freeOk_meet hF hi (p := pc.1) (cs := pc.2) (by rw [hm])
-        refine and_congr (and_congr ?_ ?_) (cl pc.2 fun c hc => List.mem_append_right _ (by simp [meetClauses, hm, hc]))
-        · rw [I.value_parameter pc.1 _ _ (hagi pc.1 hpv)]
-        · refine forall_congr' fun q => imp_congr_right fun hq => ?_
-          rw [I.value_parameter q _ _ (hagi q (freeOk_meetParams hF hi hq))]
-  · simp only [if_true]
-    rw [I.value_parameter i _ _ (hag i (hself hp))]
-
-
-/-- Independence for the shared recursive interpretation, including mixed pack
-parameters and bounds. It follows from one approximation invariant. -/
-theorem agree_freeWith [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
-    (hF : FreeOk G D V = true) (I : ParameterInterpretation ι k) (hI : RespectsFree D V I) :
-    FreeIndependent D V I (qDenoteWithArgs G I) := by
-  intro η θ i hi h
-  funext n W v
-  exact congrFun (congrFun (congrFun
-    (Tower.approx_inv (FreeIndependent D V I)
-      (fun _ _ _ _ _ => rfl) (qLayer_free hF I hI) (n + 1) η θ i hi h) n) W) v
 
 /-! ### Instance tables
 
@@ -4663,6 +4920,7 @@ theorem Sub.congr {G : NormalGraph ι} {S S' T T' : List ι}
 #print axioms CallArrow.sound
 #print axioms Core.mixed_sound
 #print axioms scheme_covers_sound
+#print axioms covers_by_scheme_sound
 #print axioms covers_arrs_sound
 #print axioms meetBelow_sound
 #print axioms Sub.mixed_sound

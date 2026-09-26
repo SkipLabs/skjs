@@ -130,38 +130,7 @@ def offerRows (L : List (Ty ι × List (Ty ι) × Ty ι)) (S : List (Ty ι × Li
   L ++ S.map fun s => (s.1, s.2.1, s.2.2.2)
 
 
-/-- The rows `S` reads, transitively, without repeats, in the order they are
-first reached. Only the rows added by the last step are read again: the rows
-before them have had their reads added already, so each row is read once. -/
-def readsFrom [DecidableEq ι] (G : NormalGraph ι) (fuel : Nat) (S : List ι) : List ι :=
-  let S := S.eraseDups
-  go fuel S S
-where
-  go : Nat → List ι → List ι → List ι
-  | 0, seen, _ => seen
-  | fuel + 1, seen, frontier =>
-    let fresh := (frontier.flatMap (reads G)).foldl (fun acc l =>
-      if seen.contains l || acc.contains l then acc else l :: acc) []
-    if fresh.isEmpty then seen else go fuel (seen ++ fresh.reverse) fresh.reverse
-
-/-- The free parameter rows of the rows of `D`, by iteration to a fixed point:
-a parameter row is free in itself, and a row has the free rows of what it
-reads, except a scheme row's own binders. Untrusted: `FreeOk` checks it. -/
-def freeMapOf [DecidableEq ι] (G : NormalGraph ι) (D : List ι) : Nat → FreeMap ι → FreeMap ι
-  | 0, V => V
-  | fuel + 1, V =>
-    let step (i : ι) : List ι :=
-      let bound := match G.schemes i with
-        | some s => s.binders
-        | none => []
-      ((if G.params i then [i] else []) ++
-        (match G.meets i with | some (q, _) => q :: G.meetParams i | none => []) ++ fv V i ++
-        (reads G i).flatMap fun l => (fv V l).filter (fun p => !bound.contains p)).eraseDups
-    let V' := D.map fun i => (i, step i)
-    if D.all (fun i => (fv V' i).length == (fv V i).length) then V' else freeMapOf G D fuel V'
-
-/-- How far to follow a graph's rows. -/
-def closureFuel : Nat := 4096
+export PositiveRules (readsFrom freeMapOf closureFuel)
 
 /-! ### The realm's prototype type
 

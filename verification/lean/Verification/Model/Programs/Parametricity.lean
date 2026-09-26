@@ -26,15 +26,115 @@ theorem checkArrow_reassign (table : Table ι) (L : Ops ι)
     checkArrow (reassign G η) table L S Rt As d cert = checkArrow G table L S Rt As d cert := by
   induction cert generalizing Rt As d <;> simp only [checkArrow, *] <;> rfl
 
+theorem reads_reassign : reads (reassign G η) = reads G := rfl
+
+theorem readsFrom_go_reassign : ∀ fuel (seen frontier : List ι),
+    readsFrom.go (reassign G η) fuel seen frontier = readsFrom.go G fuel seen frontier
+  | 0, _, _ => rfl
+  | fuel + 1, seen, frontier => by
+    simp only [readsFrom.go, reads_reassign, readsFrom_go_reassign fuel]
+
+theorem readsFrom_reassign (fuel : Nat) (S : List ι) :
+    readsFrom (reassign G η) fuel S = readsFrom G fuel S := by
+  simp only [readsFrom, readsFrom_go_reassign]
+
+theorem freeMapOf_reassign (D : List ι) : ∀ fuel (V : FreeMap ι),
+    freeMapOf (reassign G η) D fuel V = freeMapOf G D fuel V
+  | 0, _ => rfl
+  | fuel + 1, V => by
+    simp only [freeMapOf, reads_reassign, freeMapOf_reassign D fuel]
+    rfl
+
+/-- A scheme's receivers read none of its binders whatever the graph's
+assignment: the check follows rows, not the assignment. -/
+theorem bindersFree_reassign (bs A : List ι) :
+    bindersFree (reassign G η) bs A = bindersFree G bs A := by
+  simp only [bindersFree, readsFrom_reassign, freeMapOf_reassign]
+  rfl
+
+theorem schemes_reassign (i : ι) : (reassign G η).schemes i = G.schemes i := rfl
+theorem params_reassign (i : ι) : (reassign G η).params i = G.params i := rfl
+theorem expand_reassign (F : List ι) : expand (reassign G η) F = expand G F := rfl
+
+theorem schemeBinds_reassign (R : List ι → List ι → Prop) (s : SchemeRow ι) (S' : List ι) :
+    SchemeBinds (reassign G η) R s S' ↔ SchemeBinds G R s S' := by
+  unfold SchemeBinds
+  rcases S' with _ | ⟨j, _ | _⟩
+  · exact Iff.rfl
+  · simp only [schemes_reassign, params_reassign]
+    cases G.schemes j <;> exact Iff.rfl
+  · exact Iff.rfl
+
+theorem coversByScheme_reassign (R : List ι → List ι → Prop) (self F : List ι)
+    (q : MethodMembers.Sig (List ι)) :
+    CoversByScheme (reassign G η) R self F q ↔ CoversByScheme G R self F q := by
+  unfold CoversByScheme
+  rcases F with _ | ⟨i, _ | _⟩
+  · exact Iff.rfl
+  · simp only [schemes_reassign, params_reassign, bindersFree_reassign, schemeBinds_reassign]
+  · exact Iff.rfl
+
+theorem coversByFunction_reassign (R : List ι → List ι → Prop) (self F : List ι)
+    (q : MethodMembers.Sig (List ι)) :
+    CoversByFunction (reassign G η) R self F q ↔ CoversByFunction G R self F q := by
+  unfold CoversByFunction
+  rw [expand_reassign]
+  split
+  · exact Iff.rfl
+  · exact coversByScheme_reassign G η R self F q
+
+theorem foundOn_reassign (R : List ι → List ι → Prop) (known : Known ι) (self : List ι)
+    (q : MethodMembers.Sig (List ι)) (P : List ι) :
+    FoundOn (reassign G η) R known self q P ↔ FoundOn G R known self q P := by
+  unfold FoundOn
+  exact or_congr Iff.rfl (exists_congr fun F => and_congr Iff.rfl
+    (coversByFunction_reassign G η R self F q))
+
 /-- Method coverage along a prototype chain reads the graph's rows only. -/
 theorem protoHolds_reassign (R : List ι → List ι → Prop) (known : Known ι) (self : List ι)
     (q : MethodMembers.Sig (List ι)) :
     ∀ d P, ProtoHolds (reassign G η) R known self q d P ↔ ProtoHolds G R known self q d P
-  | 0, _ => Iff.rfl
+  | 0, P => by
+    simp only [ProtoHolds]
+    exact foundOn_reassign G η R known self q P
   | d + 1, P => by
     simp only [ProtoHolds]
-    exact or_congr Iff.rfl (and_congr Iff.rfl (exists_congr fun P' =>
+    exact or_congr (foundOn_reassign G η R known self q P) (and_congr Iff.rfl (exists_congr fun P' =>
       and_congr Iff.rfl (protoHolds_reassign R known self q d P')))
+
+theorem coversMethods_reassign (R : List ι → List ι → Prop) (known : Known ι) (self : List ι)
+    (fields : List (PropKey × List ι)) (bounds : List KeyBound)
+    (source target : List (MethodMembers.Sig (List ι))) :
+    CoversMethods (reassign G η) R known self fields bounds source target ↔
+      CoversMethods G R known self fields bounds source target := by
+  unfold CoversMethods CoversByProto
+  refine forall_congr' fun q => imp_congr_right fun _ => or_congr Iff.rfl (or_congr ?_ ?_)
+  · exact exists_congr fun f => and_congr Iff.rfl (and_congr Iff.rfl (coversByFunction_reassign G η R self f.2 q))
+  · exact and_congr Iff.rfl (exists_congr fun f => and_congr Iff.rfl (and_congr Iff.rfl
+      (protoHolds_reassign G η R known self q protoChainDepth f.2)))
+
+set_option maxHeartbeats 1000000 in
+theorem coversWith_reassign (R : List ι → List ι → Prop) (known : Known ι)
+    (arrows : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop)
+    (self : List ι) (a b : Clause (List ι)) :
+    CoversWith (reassign G η) R known arrows self a b ↔ CoversWith G R known arrows self a b := by
+  cases a <;> cases b <;> simp only [CoversWith, coversMethods_reassign] <;> exact Iff.rfl
+
+theorem schemeCoversWith_reassign (R : List ι → List ι → Prop) (known : Known ι)
+    (arrows : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop) (i j : ι) :
+    SchemeCoversWith (reassign G η) R known arrows i j ↔ SchemeCoversWith G R known arrows i j := by
+  unfold SchemeCoversWith
+  rw [schemes_reassign, schemes_reassign]
+  cases G.schemes i <;> cases G.schemes j
+  all_goals first | exact Iff.rfl | simp only [params_reassign, coversWith_reassign]
+
+theorem opaqueWith_reassign (R : List ι → List ι → Prop) (known : Known ι)
+    (arrows : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop) (S T : List ι) :
+    OpaqueWith (reassign G η) R known arrows S T ↔ OpaqueWith G R known arrows S T := by
+  unfold OpaqueWith
+  exact forall_congr' fun i => imp_congr_right fun _ => or_congr Iff.rfl (or_congr Iff.rfl
+    (or_congr Iff.rfl (or_congr Iff.rfl (exists_congr fun j => and_congr Iff.rfl
+      (schemeCoversWith_reassign G η R known arrows i j)))))
 
 theorem checkClause_reassign (table : Table ι) (known : Known ι) (proofs : PositiveCertificates.Evidence ι)
     (self : List ι) (a b : Clause (List ι)) :
@@ -44,15 +144,17 @@ theorem checkClause_reassign (table : Table ι) (known : Known ι) (proofs : Pos
   unfold checkClause
   apply decide_eq_decide.mpr
   rw [hA]
-  exact Iff.rfl
+  exact coversWith_reassign G η _ known _ self a b
 
 theorem checkCore_reassign (known : Known ι) (S T : List ι) (cert : PositiveCertificates.Certificate ι) :
     checkCore (reassign G η) known S T cert = checkCore G known S T cert := by
   have hA : ArrowsChecked (reassign G η) cert.table cert.arrows =
       ArrowsChecked G cert.table cert.arrows := by
     funext L S M; simp only [ArrowsChecked, checkArrow_reassign]
-  simp only [checkCore, checkClause_reassign, hA]
-  rfl
+  unfold checkCore
+  apply decide_eq_decide.mpr
+  simp only [checkClause_reassign, hA, opaqueWith_reassign]
+  exact Iff.rfl
 
 theorem boundOk_reassign (binders : List ι) (θs : List (List ι)) (b : ι × List ι)
     (c : Option (PositiveCertificates.Certificate ι)) :
@@ -90,25 +192,6 @@ theorem checkEdge_reassign (Γ Δ : List (List ι)) (ps : EdgeEvidence ι) :
 theorem checkMapped_reassign (Γ Δ : List (List ι)) (m : Mapping) (ps : EdgeEvidence ι) :
     checkMapped (reassign G η) Γ Δ m ps = checkMapped G Γ Δ m ps := by
   cases m <;> simp only [checkMapped, checkEdge_reassign, check_fun_reassign]
-
-theorem reads_reassign : reads (reassign G η) = reads G := rfl
-
-theorem readsFrom_go_reassign : ∀ fuel (seen frontier : List ι),
-    readsFrom.go (reassign G η) fuel seen frontier = readsFrom.go G fuel seen frontier
-  | 0, _, _ => rfl
-  | fuel + 1, seen, frontier => by
-    simp only [readsFrom.go, reads_reassign, readsFrom_go_reassign fuel]
-
-theorem readsFrom_reassign (fuel : Nat) (S : List ι) :
-    readsFrom (reassign G η) fuel S = readsFrom G fuel S := by
-  simp only [readsFrom, readsFrom_go_reassign]
-
-theorem freeMapOf_reassign (D : List ι) : ∀ fuel (V : FreeMap ι),
-    freeMapOf (reassign G η) D fuel V = freeMapOf G D fuel V
-  | 0, _ => rfl
-  | fuel + 1, V => by
-    simp only [freeMapOf, reads_reassign, freeMapOf_reassign D fuel]
-    rfl
 
 /-- The realm checks read the graph's rows only. -/
 theorem realmFree_reassign (P : List ι) : realmFree (reassign G η) P = realmFree G P := by

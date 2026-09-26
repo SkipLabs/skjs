@@ -181,6 +181,18 @@ instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop
   unfold CoversArrows; infer_instance
 
 instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R]
+    (s : SchemeRow ι) (S' : List ι) : Decidable (SchemeBinds G R s S') := by
+  unfold SchemeBinds; split
+  · split <;> infer_instance
+  · infer_instance
+
+instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R]
+    (self F : List ι) (q) : Decidable (CoversByScheme G R self F q) := by
+  unfold CoversByScheme; split
+  · split <;> infer_instance
+  · infer_instance
+
+instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R]
     (self F : List ι) (q) : Decidable (CoversByFunction G R self F q) := by
   unfold CoversByFunction; split <;> infer_instance
 

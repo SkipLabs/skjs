@@ -390,7 +390,7 @@ class Gate {
   /* Type-parameter names are resolved lexically. Keeping frames, rather than
    * one file-wide set, makes nested quantified callables representable without
    * conflating an inner binder with an outer binder of the same spelling. */
-  private readonly typeParamScopes: Set<string>[] = [];
+  private readonly typeParamScopes: Map<string, string>[] = [];
   /** Local spelling to the arity and identity of its declaration root. A
    * reference names the declaration TypeScript resolved the spelling to. */
   /** The equations of the declared aliases that name an array, a tuple or
@@ -532,14 +532,25 @@ class Gate {
     return this.typeParamScopes.some((scope) => scope.has(name));
   }
 
+  /** The name a type parameter in scope is emitted under: its spelling, or,
+   * for a class's generic method, its member's binder name (`lambda`). */
+  private typeParamName(name: string): string {
+    for (const scope of this.typeParamScopes) {
+      const emitted = scope.get(name);
+      if (emitted !== undefined) return emitted;
+    }
+    return name;
+  }
+
   private enterTypeParams(
     parameters: readonly TypeParameterDeclaration[] | undefined,
+    rename?: (parameter: TypeParameterDeclaration, index: number) => string,
   ): TypeParamAst[] {
-    const local = new Set<string>();
+    const local = new Map<string, string>();
     const result: TypeParamAst[] = [];
     this.typeParamScopes.unshift(local);
     try {
-      for (const tp of parameters ?? []) {
+      for (const [index, tp] of (parameters ?? []).entries()) {
         if (tp.defaultType)
           this.fail(tp, "type parameter defaults are outside the fragment");
         if (tp.name.kind !== ts.SyntaxKind.Identifier)
@@ -548,8 +559,9 @@ class Gate {
         // A bound is any type the fragment reads; which bounds a checker can
         // use is Lean's to say.
         const bound: TypeTerm | null = tp.constraint ? this.typeOf(tp.constraint) : null;
-        result.push({ name: tp.name.text, bound });
-        local.add(tp.name.text);
+        const name = rename ? rename(tp, index) : tp.name.text;
+        result.push({ name, bound });
+        local.set(tp.name.text, name);
       }
       return result;
     } catch (error) {
@@ -911,7 +923,7 @@ class Gate {
               this.fail(member, GENERATOR);
             const binding = `${name.text}.[symbol ${symbol}]`;
             methods.push({ name: binding, namePos: this.span(member.name), annot: null,
-              init: this.lambda(member, instance) });
+              init: this.lambda(member, instance, { symbol }) });
             prototype.push({ name: { symbol }, e: { k: "id", pos: this.span(member.name), name: binding } });
             continue;
           }
@@ -921,7 +933,7 @@ class Gate {
           if (!ts.isIdentifier(member.name) && !ts.isPrivateIdentifier(member.name))
             this.fail(member, unnamedMember(member, false));
           methods.push({ name: `${name.text}.${member.name.text}`, namePos: this.span(member.name),
-            annot: null, init: this.lambda(member, instance) });
+            annot: null, init: this.lambda(member, instance, this.memberKey(member.name)) });
           if (ts.isIdentifier(member.name))
             methodBindings.set(member.name.text, `${name.text}.${member.name.text}`);
           prototype.push({ name: this.memberKey(member.name),
@@ -1334,7 +1346,7 @@ class Gate {
         }
         if (node.typeArguments?.length) this.fail(node, "unknown type alias");
         if (!this.hasTypeParam(name)) this.fail(node, "unknown type parameter");
-        return { k: "binder", name, span };
+        return { k: "binder", name: this.typeParamName(name), span };
       },
     };
   }
@@ -2647,6 +2659,7 @@ class Gate {
   private lambda(
     node: ArrowFunction | FunctionExpression | MethodDeclaration,
     instance?: TypeTerm,
+    member?: PropertyKey,
   ): Expr {
     // A method's accessibility is TypeScript's alone (`CLASS_ACCESS`); a static
     // one is bound on its own (`classStmt`).
@@ -2726,7 +2739,18 @@ class Gate {
     if (ordinary) {
       this.receiverMode = this.strict ? "strict" : "sloppy";
     }
-    const typeParams = this.enterTypeParams(node.typeParameters);
+    // A class's generic method is the instance's member with quantified
+    // signatures: its binders are the member's rows, which the declaration's
+    // lowering names by the member's key, the binder's position and its
+    // bound, at the first colour (DeclarationGraph, `Visit.member`). Its
+    // closure binds them under those names, so the prototype's closure and
+    // the instance's member quantify over the same rows.
+    const typeParams = this.enterTypeParams(node.typeParameters, member === undefined ? undefined :
+      (tp, index) => {
+        if (tp.constraint)
+          this.fail(tp, "a bounded type parameter of a generic class method is outside the fragment: its binder row is named by its bound");
+        return `${JSON.stringify(member)}#${index}:null^0`;
+      });
     try {
       this.asyncBody = isAsync;
       const receiver = !ordinary

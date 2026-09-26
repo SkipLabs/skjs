@@ -115,6 +115,24 @@ let encode (proposal : Proposal.t) =
           Array [key_json f.name;labels f.read]) fs);"rest",Array [];"views",Array [];
         "bounds",Array [Object ["among",Bool true;
           "keys",Array (List.map (fun (f:Semantic.field) -> key_json f.name) fs)]]]]])]
+    (* A class's generic method, held by its prototype: a scheme row. Its
+       binders are the parser's names for the member's rows (`…#k:null^0`),
+       which Lean's lowering of the class's instance type binds too, so the
+       prototype's closure and the instance's member quantify over the same
+       rows. A binder the source spells is scoped, and no row states it. *)
+    | Shape {fields=[];indexes=[];elements=None;calls=[s]}
+        when s.quantified <> [] && List.for_all (fun (q:Semantic.quantifier) ->
+          String.contains q.identity.spelling '#' && q.bound = None) s.quantified ->
+      let binders = List.map (fun (q:Semantic.quantifier) -> int (parameter_label q.identity)) s.quantified in
+      let signature,variadic = match s.variadic,s.rest_pack with
+        | None,None -> [Array [labels s.receiver;Array [Array (List.map labels s.params);labels s.result]]],[]
+        | Some element,None ->
+          [],[Array [labels s.receiver;Array [Array (List.map labels s.params);
+            Array [pack_labels (Pack {required=[];optional_elements=[];rest=Some element;readonly=false});
+                   labels s.result]]]]
+        | _,Some _ -> unsupported "a pack parameter in a generic method's scheme" in
+      [intern (Object ["scheme",Object (["binders",Array binders;"signatures",Array signature]
+        @ (if variadic = [] then [] else ["variadic",Array variadic]))])]
     | Shape shape ->
       (* An optional field constrains its key only where the object has it:
          a writable one under one invariant contract, a readonly one as a

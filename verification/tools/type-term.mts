@@ -800,13 +800,36 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
       only(member, [ts.SyntaxKind.AsyncKeyword]);
       if (member.postfixToken || member.asteriskToken)
         scope.fail(member, "an optional or generator method is outside the fragment");
-      // A generic method is a host-relative member with quantified
-      // signatures, as an interface's is; its closure lives on the
-      // prototype, at a scheme received by the instance, which nothing yet
-      // relates to the instance's member (DESIGN, next steps).
-      if (member.typeParameters?.length)
-        scope.fail(member, "a generic class method is outside the fragment: its prototype's closure is not yet related to the instance's quantified member");
       const name = named(member);
+      if (member.typeParameters?.length) {
+        // A generic method is a host-relative member with quantified
+        // signatures, as an interface's is: its own type parameters are
+        // binders, named by spelling, which shadow the class's; its scheme's
+        // signatures take the instance as receiver.
+        const own = member.typeParameters.map(p => p.name.text);
+        const inner: TermScope = {
+          ...scope,
+          named(node, span, read) {
+            if (ts.isIdentifier(node.typeName) && own.includes(node.typeName.text)) {
+              if (node.typeArguments?.length) scope.fail(node, "a type parameter takes no type arguments");
+              return { k: "binder", name: node.typeName.text, span };
+            }
+            return scope.named(node, span, read);
+          },
+        };
+        const binders = member.typeParameters.map(p => ({
+          name: p.name.text,
+          bound: p.constraint ? typeTerm(inner, p.constraint, p) : null,
+          default: p.defaultType ? typeTerm(inner, p.defaultType, p) : null,
+          span: spanOf(scope, p),
+        }));
+        const method = signature(inner, member.parameters, member.type, member, memberSpan);
+        if (method.receiver) scope.fail(member, METHOD_RECEIVER);
+        fields.push({ name, optional: false, readonly: true,
+          type: { k: "scheme", binders, signatures: [{ ...method, receiver: { k: "self", span: memberSpan } }],
+            span: memberSpan }, span: memberSpan });
+        continue;
+      }
       const method = signature(scope, member.parameters, member.type, member, memberSpan);
       if (method.receiver) scope.fail(member, METHOD_RECEIVER);
       fields.push({ name, optional: false, readonly: true,
