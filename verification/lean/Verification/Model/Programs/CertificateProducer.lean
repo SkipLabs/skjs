@@ -944,7 +944,7 @@ def edge [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
       else (subtype G pool A B).orElse (fun _ => match o with
         -- An object the tested value was read from keeps the labels whose
         -- field admits the observation.
-        | .tag t q => fields.findSome? fun (k, f) =>
+        | .tag t q => (fields ++ optionals).findSome? fun (k, f) =>
             if k == slot target.mapping i then subtype G pool (BranchRefinement.fieldSlice G A f t q) B
             else none
         | .boolean _ => none) |>.orElse fun _ =>

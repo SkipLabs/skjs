@@ -233,6 +233,11 @@ export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>>
       drop: ["thisArg"] },
     { name: "has", from: "Set", signature: "has(value: T): boolean;" },
     { name: "size", from: "Set", signature: "readonly size: number;" },
+    // A host collection's tag, which its prototype holds: no object the
+    // fragment builds has one (a literal or class writes no well-known
+    // symbol key but `Symbol.iterator`), so none passes for a host `Set`,
+    // whose iteration is the host's (`%Iterate:Set%`).
+    { name: "[Symbol.toStringTag]", from: "Set", signature: "readonly [Symbol.toStringTag]: string;" },
     // As for arrays: `SetIterator<T>` is an `Iterator<T>`.
     { name: "[Symbol.iterator]", from: "Set", signature: "[Symbol.iterator](): SetIterator<T>;",
       resultAs: "Iterator" },
@@ -253,6 +258,7 @@ export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>>
     { name: "has", from: "Map", signature: "has(key: K): boolean;" },
     { name: "set", from: "Map", signature: "set(key: K, value: V): this;", resultIsReceiver: true },
     { name: "size", from: "Map", signature: "readonly size: number;" },
+    { name: "[Symbol.toStringTag]", from: "Map", signature: "readonly [Symbol.toStringTag]: string;" },
     { name: "[Symbol.iterator]", from: "Map", signature: "[Symbol.iterator](): MapIterator<[K, V]>;",
       resultAs: "Iterator" },
     { name: "keys", from: "Map", signature: "keys(): MapIterator<K>;", resultAs: "Iterator" },

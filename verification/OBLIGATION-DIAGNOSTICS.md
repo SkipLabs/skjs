@@ -38,7 +38,8 @@ it, in this order:
   the innermost, names it. The forms and their reasons: a `for...of` loop
   or a spread over a union of iterable kinds, an arm of which is no array
   (one host kind's iteration is stated, `%Iterate:K%`, where the whole
-  iterable is of it; a client's iterable is refused by the parser); an open record or `unknown` that
+  iterable is of it; an iterable the program defines, or a union with one,
+  runs the iterator protocol); an open record or `unknown` that
   `Array.isArray` or `instanceof Array` found an array, used as one (the
   object owns an array's store, not a proven array of `Array.prototype`);
   `length` on a union of an array and a record naming it, an array used as

@@ -597,6 +597,7 @@ private partial def comparisonsStmt (fc : SourceClaims.Function) (s : Fragment.S
   | .tryStmt p b h f =>
     let h ← h.mapM fun (param, c) => do return (param, ← c.mapM (comparisonsStmt fc))
     return .tryStmt p (← b.mapM (comparisonsStmt fc)) h (← f.mapM (·.mapM (comparisonsStmt fc)))
+  | .closing p c b => return .closing p (← c.mapM (comparisonsStmt fc)) (← b.mapM (comparisonsStmt fc))
   | .brk .. | .cont .. => pure s
 end
 
@@ -652,6 +653,7 @@ private partial def assignsStmt (name : String) : Fragment.Stmt → Bool
   | .loop _ c b u => assignsExpr name c || b.any (assignsStmt name) || u.any (assignsStmt name)
   | .forOf _ _ _ _ i b => assignsExpr name i || b.any (assignsStmt name)
   | .block _ _ b => b.any (assignsStmt name)
+  | .closing _ c b => c.any (assignsStmt name) || b.any (assignsStmt name)
   | .brk .. | .cont .. => false
 end
 
@@ -668,6 +670,7 @@ partial def stmtNames : Fragment.Stmt → List String
   | .loop _ c b u => c.freeNames ++ b.flatMap stmtNames ++ u.flatMap stmtNames
   | .forOf _ _ _ it i b => it :: i.freeNames ++ b.flatMap stmtNames
   | .block _ _ b => b.flatMap stmtNames
+  | .closing _ c b => c.flatMap stmtNames ++ b.flatMap stmtNames
   | .brk .. | .cont .. => []
 
 /-- A module function's value as its callers see it: an ordinary function at
@@ -1778,6 +1781,7 @@ private partial def abrupt (ss : List Fragment.Stmt) : Bool :=
   | some (.block _ none b) => abrupt b
   | some (.tryStmt _ b h f) =>
     (f.map abrupt).getD false || (abrupt b && (h.map (abrupt ·.2)).getD true)
+  | some (.closing _ _ b) => abrupt b
   | _ => false
 
 /-- Entering a loop: its targets, behind as many `finally` blocks as now. -/
@@ -1841,6 +1845,10 @@ private def traversalBudget : List Fragment.Stmt → Nat
       2 + traversalBudget b + 3 * traversalBudget f + traversalBudget rest
   | .tryStmt _ b (some (_, c)) (some f) :: rest =>
       2 + traversalBudget b + traversalBudget c + 3 * traversalBudget f + traversalBudget rest
+  -- The close is compiled after a `break`, inside the `try` that discards
+  -- its throws on a throw, and before each `return`.
+  | .closing _ c b :: rest =>
+      3 + traversalBudget b + 3 * (2 + traversalBudget c) + traversalBudget rest
   | .ite _ _ thn none :: rest => 2 + traversalBudget thn + traversalBudget rest
   | .ite _ _ thn (some els) :: rest =>
       1 + traversalBudget thn + traversalBudget els + traversalBudget rest
@@ -2472,15 +2480,15 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let [.refs B [] [] [] [] ks] := PositiveRules.expand G A
       | throw "allocation claim must name a record contract"
     if B.length != ns.length then throw "allocation claim names different fields"
-    if !ks.all (fun K => ns.all (fun n => K.admits (.str n))) then
+    if !ks.all (fun K => ns.all (fun n => K.admits n)) then
       throw "an allocation's key bound must admit every key it allocates"
-    let B ← (ns.map PropKey.str).mapM fun name => do
+    let B ← ns.mapM fun name => do
       let some D := B.lookup name | throw "allocation claim names different fields"
       pure (name,D)
     let Ref ← lower (SourceTypes.use (.refs B [] [] [] [] ks))
     -- The calculus evaluates these initializers from left to right.
     let casts := (ps.zip (B.map Prod.snd)).map fun (p,D) => DirectProof.cast Γ D p
-    pure (DirectProof.node Γ (.makeAt .absent (ns.map .str) (ps.map (·.term))) [Ref] .alloc casts)
+    pure (DirectProof.node Γ (.makeAt .absent ns (ps.map (·.term))) [Ref] .alloc casts)
   | .build _ ns es => do
     -- A chain of merges from a fresh accumulator: the fields before the
     -- first spread allocated together, each spread copied onto what is
@@ -2659,6 +2667,22 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     closureExpr fc scope Γ (.nullishAssign pos name np rhs)
   | .logicalAssign .. => throw "logical assignment inside a closed expression is outside the fragment"
   | .bindWithReceiver _ f receiver args => do
+    -- `o.m.bind(o)` of a method member of `o`: the member read from the
+    -- object, bound to that same object, is JavaScript's bound function
+    -- calling what `o.m` held with `o` (`bindMember`), however it is later
+    -- called. The object, then the member, are each read once; the second
+    -- read of `o`, the receiver, has no effect.
+    if let (.read _ fld o@(.var _ x), .var _ y, []) := (f, receiver, args) then
+      if x == y && (ProgramTyping.memberOf G (← exprType fc o) fld).isSome then
+        let r ← closureExpr fc scope Γ o
+        let _ ← closureExpr fc scope Γ receiver
+        let K := r.type :: Γ
+        let ds := held ⟨"",some o.span⟩ :: scope
+        let M ← exprType fc f
+        let method := DirectProof.node K (memberHead G r.type fld (.var 0)) M (.bindMember []) []
+        obligation f.span method.goal (some method) "expression-claim" ds
+        return DirectProof.letE Γ r
+          (DirectProof.node K (memberHead G r.type fld (.var 0)) A (.bindMember []) [])
     -- The target, the receiver and the prefix, each evaluated once and saved,
     -- then a forwarding descriptor holding the saved values: invoking it
     -- ignores its own receiver and calls the target with the saved one and the
@@ -2990,8 +3014,8 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
         | throw "initializer requires a fresh object literal"
       let .alloc _ ns _ := initial | throw "initializer requires a fresh object literal"
       if values.length != P.length then throw "initializer literal does not match its annotation"
-      let P ← (ns.map PropKey.str).mapM fun name => do
-        let some D := P.lookup name | throw s!"initializer field '{name}' is absent from its annotation"
+      let P ← ns.mapM fun name => do
+        let some D := P.lookup name | throw s!"initializer field '{repr name}' is absent from its annotation"
         pure (name,D)
       let fp := DirectProof.cast Γ F f
       let pp := DirectProof.cast Γ PRef property
@@ -3011,8 +3035,8 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     if values.length != P.length then throw "initializer literal does not match its annotation"
     -- Initializers stay in source order. An annotation may list the same fields
     -- in another order; pairing by position would silently rename their values.
-    let P ← (ns.map PropKey.str).mapM fun name => do
-      let some D := P.lookup name | throw s!"initializer field '{name}' is absent from its annotation"
+    let P ← ns.mapM fun name => do
+      let some D := P.lookup name | throw s!"initializer field '{repr name}' is absent from its annotation"
       pure (name,D)
     let fp := DirectProof.cast Γ F f
     let pp := DirectProof.cast Γ PRef property
@@ -3349,7 +3373,7 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let temporaries := (operands.map fun a => held ⟨"",some a.span⟩).reverse
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+n))⟩
-    let make ← emitAt e.span (.makeAt .absent (ns.map .str) ((List.range n).map fun i => .var (n-1-i)))
+    let make ← emitAt e.span (.makeAt .absent ns ((List.range n).map fun i => .var (n-1-i)))
       (.bind drop) (As.reverse ++ Γ) A (scope := temporaries ++ scope)
     operands.attach.zipIdx.reverse.foldlM (fun next (⟨arg,_⟩,i) =>
       compileExpr fc
@@ -4200,6 +4224,32 @@ private partial def compileCondition (fc : SourceClaims.Function) (scope : List 
   | .not _ e =>
     let _ ← closureExpr fc scope Γ cond
     compileCondition fc scope Γ e no yes
+  | .read p f (.var _ name) =>
+    -- The truthiness of a field of an immutable binding's object, where some
+    -- arm of it leaves the field optional or unnamed, so that no fact about
+    -- what the field holds is claimed (`IteratorResult` on `done`): the read,
+    -- then a truthiness dispatch on its value, whose link to the field
+    -- refines the object's arms on each edge (`fieldSlice`), as a
+    -- discriminated union's are by a singleton test.
+    match valueSlot scope name with
+    | some k =>
+      let G := SourceTypes.graph (← table)
+      let T := Γ[k]?.getD []
+      let fixes := fun (a : Nat) => (PositiveRules.expand G [a]).all fun c => match c with
+        | .refs fs _ vs .. => (fs ++ vs).any (·.1 == f)
+        | _ => false
+      let refines := [true, false].any fun q =>
+        (BranchRefinement.fieldSlice G T f .truthy q).length != T.length
+      if refines && !T.all fixes then
+        let A ← exprType fc cond
+        let width := scope.length
+        let drop := fun (t : Target) =>
+          (⟨t.label, some ((t.mapping.getD (List.range width)).map (·+2))⟩ : Target)
+        let dispatchNode ← emitAt p (.var 0) (.tagBind .truthy (drop yes) (drop no)) (A::Γ) A "tag-dispatch"
+          (scope := held ⟨"",some p⟩ :: scope)
+        emitAt p (.readAt f (.var k)) (.bind dispatchNode) Γ A "tag-dispatch" (scope := scope)
+      else simple
+    | none => simple
   | _ => simple
 /-- A read that binds: `term`, at type `R` under `Γ`, becomes the binding
 `bound` above the scope. One with a default dispatches on the read being
@@ -4569,6 +4619,46 @@ private partial def body : Nat → SourceClaims.Function → Ty Nat → List Sco
           let entry ← withHandler afterHandler (body fuel fc R (caught :: scope) C completed inner)
           pure (some (entry, n))
       withHandler bodyHandler (body fuel fc R scope tryBody completed inner)
+    | .closing pos close inner :: rest =>
+      -- The body of a `for...of` over a program's iterable, the last
+      -- statement of its loop: the `close` statements (IteratorClose) are a
+      -- `finally` that runs on some ways out only. A `break` of the loop runs
+      -- them, then leaves it; a `return` runs them as any `finally` block,
+      -- its value held (`finalizers`); a throw runs them inside a `try` whose
+      -- empty handler discards their own throws, then throws again. A
+      -- `continue` and the body's end go to the loop's head, closing
+      -- nothing. A jump past the loop to an outer target is a jump past a
+      -- `finally` (`loopDepth`).
+      let Γ ← env fc pos.1 scope
+      let continuation ← if rest.isEmpty then pure tail else do
+        let next ← body fuel fc R scope rest tail loopTargets
+        pure (some (next,scope))
+      let some (again, exit) := loopTargets.loop
+        | throw "internal extraction error: an iterator's close outside its loop"
+      let top ← lower (SourceTypes.use .top)
+      modify fun s => { s with hints := top :: s.hints }
+      let outer := (← get).handler
+      let n := scope.length
+      let closed ← withHandler outer (body fuel fc R scope close exit loopTargets)
+      let thrown : ScopeBinding := { source := ⟨s!"%thrown@{pos.1}%", some pos⟩, fixed := some [top] }
+      let tscope := thrown :: scope
+      let rethrow ← withHandler outer
+        (emitAt pos (.throw (.var 0)) .ret ([top] :: Γ) R "rethrow" (some pos.1) (scope := tscope))
+      -- A throw out of the close itself is dropped, and the first one thrown
+      -- again: the handler of the close's nodes discards its value.
+      let dropped : ScopeBinding := { source := ⟨s!"%dropped@{pos.1}%", some pos⟩, fixed := some [top] }
+      let discard ← withHandler outer
+        (emitAt pos .nul (.effect ⟨rethrow.label, some ((List.range tscope.length).map (·+1))⟩)
+          ([top] :: [top] :: Γ) [0] "rethrow" (some pos.1) (scope := dropped :: tscope))
+      let quiet ← withHandler (some (discard, tscope.length))
+        (body fuel fc R tscope close (some (rethrow, tscope)) loopTargets)
+      let fin : Finalizer := ⟨close, pos, scope, outer, loopTargets.loop, loopTargets.labels,
+        loopTargets.loopDepth, loopTargets.labelDepths⟩
+      let targets : LoopTargets := { loopTargets with
+        finalizers := fin :: loopTargets.finalizers,
+        loop := some (again, some (closed, scope)),
+        loopDepth := loopTargets.finalizers.length + 1 }
+      withHandler (some (quiet, n)) (body fuel fc R scope inner continuation targets)
     | .constants pos bindings :: rest =>
       let Γ ← env fc pos.1 scope
       constants fc pos (fun scope => body fuel fc R scope rest tail loopTargets) scope Γ bindings

@@ -6,7 +6,7 @@
  * cannot state; a refusal never drops a declaration. */
 import { realpathSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
-import { API, DiagnosticCategory, ElementFlags, SymbolFlags, TypeFlags, isTupleType, isTypeReference, isUnionType, type Checker, type Program, type Type } from "typescript/unstable/sync";
+import { API, DiagnosticCategory, ElementFlags, SignatureKind, SymbolFlags, TypeFlags, isTupleType, isTypeReference, isUnionType, type Checker, type Program, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, SourceFile, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
@@ -315,12 +315,16 @@ export function collectDeclarations(file: string, options: {
    * reported to `iterable` with the iteration intrinsic that steps it
    * (`iterationIntrinsic`), which then joins the values; one it types as an
    * object with a `[Symbol.iterator]` that is none of these nor an array,
-   * with `client`. Any other is left to `%Iterate%`. */
+   * with `client`, which runs the iterator protocol, or `client-unclosable`
+   * where the iterator's type states no `return`. Any other is left to
+   * `%Iterate%`. */
   iterables?: readonly Span[];
   /** Likewise the operands of the client's argument spreads, `f(...x)`: one
    * of these kinds is reported with its spread intrinsic (`spreadName`). */
   spreads?: readonly Span[];
-  iterable?: (span: Span, intrinsic: string) => void;
+  /** A program iterable is reported with the well-known `Symbol.iterator`'s index
+   * among the symbols, which its protocol reads the iterator method by. */
+  iterable?: (span: Span, intrinsic: string, iteratorSymbol: number | null) => void;
   /** The targets of the client's array pattern rests, each with the number of
    * positions before it: each TypeScript types as no one tuple of required
    * positions is a slice, reported to `restSlice`, and `%RestFrom:k%`
@@ -868,7 +872,8 @@ export function collectDeclarations(file: string, options: {
     // A `for...of` over a host iterable other than an array steps the
     // iteration intrinsic of its kind, picked by TypeScript's type of the
     // iterable, every part of a union alike; an object with a
-    // `[Symbol.iterator]` of none of these kinds is a client's iterable.
+    // `[Symbol.iterator]` of none of these kinds is a program's iterable,
+    // which runs the iterator protocol (`protocolForOf` in the parser).
     const collections: Record<string, string> = { Set: iterateSetName, Map: iterateMapName,
       SetIterator: iterateIteratorName, MapIterator: iterateIteratorName };
     const iterationKind = (part: Type): string => {
@@ -879,11 +884,44 @@ export function collectDeclarations(file: string, options: {
       if (named && symbol?.declarations.length &&
           symbol?.declarations.every(d => isLibraryModule(idOf(d.resolve()?.getSourceFile() ?? client))))
         return named;
-      if (part.flags & TypeFlags.Object &&
-          checker.getPropertiesOfType(part).some(p => p.name.startsWith("__@iterator@")))
-        return "client";
+      if (part.flags & TypeFlags.Object) {
+        const method = checker.getPropertiesOfType(part).find(p => p.name.startsWith("__@iterator@"));
+        if (method) {
+          // A program's iterable runs the iterator protocol, whose early exit
+          // calls the iterator's `return`: the iterator's type must state it
+          // (optional or not) for that call to have a contract.
+          const methodType = checker.getTypeOfSymbol(method);
+          const iterators = methodType ? checker.getSignaturesOfType(methodType, SignatureKind.Call)
+            .map(s => checker.getReturnTypeOfSignature(s)) : [];
+          const returns = iterators.flatMap(t => !t ? [undefined]
+            : (isUnionType(t) ? t.getTypes() : [t]).map(i => checker.getPropertyOfType(i, "return")));
+          const closable = returns.length > 0 && returns.every(r => !!r);
+          // A `return` every iterator declares a required method is a method
+          // member, read bound to its host; any other (an optional method, a
+          // property) a property the close reads and tests.
+          const bound = closable && returns.every(r => !!r && r.declarations.length > 0 &&
+            r.declarations.every(d => {
+              const node = d.resolve();
+              return !!node && ((ts.isMethodSignatureDeclaration(node) && !node.postfixToken) ||
+                (ts.isMethodDeclaration(node) && !node.postfixToken));
+            }));
+          // The protocol reads the member by its key, the well-known symbol
+          // its declaration's computed name spells: it joins the symbols.
+          for (const declaration of method.declarations) {
+            const node = declaration.resolve();
+            const name = node && (node as { name?: Node }).name;
+            if (name && ts.isComputedPropertyName(name) && (ts.isIdentifier(name.expression) ||
+                ts.isPropertyAccessExpression(name.expression))) {
+              iteratorSymbol = symbolOf(name.expression);
+              break;
+            }
+          }
+          return !closable ? "client-unclosable" : bound ? "client-method" : "client";
+        }
+      }
       return "other";
     };
+    let iteratorSymbol: number | null = null;
     const listedIterations = new Set<string>();
     const iterated = [...(options.iterables ?? []).map(span => ({ span, spread: false })),
       ...(options.spreads ?? []).map(span => ({ span, spread: true }))];
@@ -894,10 +932,14 @@ export function collectDeclarations(file: string, options: {
       const kinds = [...new Set((type && isUnionType(type) ? type.getTypes() : type ? [type] : [])
         .map(iterationKind))];
       const [kind] = kinds;
-      const picked = kinds.length === 1 && kind ? kind : kinds.includes("client") ? "client" : "other";
+      // A union with a program's iterable among its parts runs the protocol
+      // (`client`), which every part's own iterator answers.
+      const picked = kinds.length === 1 && kind ? kind : kinds.includes("client-unclosable") ? "client-unclosable"
+        : kinds.includes("client") ? "client" : kinds.includes("client-method") ? "client-method" : "other";
       if (picked === "array" || picked === "other") continue;
-      const listed = spread && picked !== "client" ? spreadName(picked) : picked;
-      if (picked !== "client" && !listedIterations.has(listed)) {
+      const program = picked.startsWith("client");
+      const listed = spread && !program ? spreadName(picked) : picked;
+      if (!program && !listedIterations.has(listed)) {
         listedIterations.add(listed);
         try {
           const intrinsic = iterationIntrinsic(listed, (name, args) => libraryReference(name, args));
@@ -909,7 +951,7 @@ export function collectDeclarations(file: string, options: {
           throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
         }
       }
-      options.iterable?.(span, listed);
+      options.iterable?.(span, listed, program ? iteratorSymbol : null);
     }
     // An array pattern's rest over what is no one tuple of required
     // positions (an array, a union of tuples, a tuple with optional or rest

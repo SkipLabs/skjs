@@ -450,6 +450,10 @@ function fromSourceClaims(
   // bound discriminant; a `for`'s initializer, its loop at the `;` after the
   // initializer, and its update. A parameter pattern's or default's is at the
   // parameter.
+  // Whether a statement's own code, outside the functions in it, holds a
+  // spread or an array pattern.
+  const collects=(n: ts.Node): boolean=>ts.isSpreadElement(n)||ts.isArrayBindingPattern(n)||
+    (!ts.isFunctionLikeDeclaration(n)&&!ts.isClassLikeDeclaration(n)&&!!n.forEachChild(c=>collects(c)||undefined));
   const semicolons: number[]=[];
   const scanner=createScanner(true,undefined,source);
   for(let k=scanner.scan();k!==ts.SyntaxKind.EndOfFile;k=scanner.scan())
@@ -457,6 +461,14 @@ function fromSourceClaims(
   const walk=(n: ts.Node)=>{
     if(ts.isStatement(n))entries.set(n.getStart(sf),n.end);
     const at=(from: number,to: number)=>{if(!entries.has(from))entries.set(from,to);};
+    // The iterator protocol of a program's iterable is statements the parser
+    // adds: in a `for...of` header (`protocolEntries`), and at the offsets no
+    // node of a statement starts at, where a spread or an array pattern over
+    // one is collected before it (`freeOffsets`) (PROGRAM-TYPING.md, "The
+    // iterator protocol").
+    if(ts.isForOfStatement(n))for(const o of fragmentParse.protocolEntries(n,sf))at(o,n.end);
+    if((ts.isExpressionStatement(n)||ts.isReturnStatement(n)||ts.isVariableStatement(n))&&collects(n))
+      for(const o of fragmentParse.freeOffsets(n,sf))at(o,n.end);
     if(ts.isCaseClause(n)){at(n.getStart(sf),n.expression.end);at(n.expression.getStart(sf),n.expression.end);}
     if(ts.isDefaultClause(n))at(n.getStart(sf),n.getStart(sf)+"default".length);
     if(ts.isCaseBlock(n))at(n.getStart(sf),n.getStart(sf)+1);
@@ -566,8 +578,20 @@ function render(
        /@verify-report\b/.test(scanner.getTokenText()))throw Error("source already contains report annotations; use the original source");
   const sf=parse(source,report.source.file), functions=new Map<string, ts.FunctionDeclaration>(),
     starts=new Set<number>(), spans=new Set<string>();
+  // The regions whose statements the iterator protocol's lowering adds, with
+  // claims at offsets and runs of tokens of its own (`protocolEntries`,
+  // `freeOffsets`): a claim there is shown at the statement's start.
+  const lowered: { from: number; to: number; entries: Set<number> }[]=[];
+  const collects=(n: ts.Node): boolean=>ts.isSpreadElement(n)||ts.isArrayBindingPattern(n)||
+    (!ts.isFunctionLikeDeclaration(n)&&!ts.isClassLikeDeclaration(n)&&!!n.forEachChild(c=>collects(c)||undefined));
   function walk(n: ts.Node) {
     starts.add(n.getStart(sf));spans.add(`${n.getStart(sf)}:${n.end}`);
+    if(ts.isForOfStatement(n))
+      lowered.push({from:n.getStart(sf),to:n.end,entries:new Set(fragmentParse.protocolEntries(n,sf))});
+    if((ts.isExpressionStatement(n)||ts.isReturnStatement(n)||ts.isVariableStatement(n))&&collects(n)){
+      const free=fragmentParse.freeOffsets(n,sf);
+      lowered.push({from:n.getStart(sf),to:Math.max(n.end,(free[free.length-1]??n.end)+1),entries:new Set(free)});
+    }
     if(ts.isFunctionDeclaration(n)&&n.name)functions.set(`${n.name.getStart(sf)}:${n.name.end}`,n);
     // The parser writes a template as the concatenation of its parts, each
     // partial concatenation spanning from the template's start to the end of
@@ -636,25 +660,31 @@ function render(
       collection:f.collection,collectionSource:f.collectionSource,
       ...(f.signature ? {signature:f.signature} : {}),
       ...(results ? {verification:results[index]} : {verification:{status:"not-run"}})});
-    const at=(kind: string, q: { pos: number[] })=> {
+    // Where a claim is shown: at its start, or, one of a lowering's own, at
+    // its statement's.
+    const at=(kind: string, q: { pos: number[] }): number=> {
       checkSpan(q.pos);
-      if(q.pos[0]<start||q.pos[1]>end||!starts.has(q.pos[0]) ||
-          (kind==="expression" && !spans.has(q.pos.join(":"))))throw Error(`cannot attach ${kind} claim at ${q.pos}`);
+      const own=q.pos[0]>=start&&q.pos[1]<=end&&starts.has(q.pos[0]) &&
+        (kind!=="expression" || spans.has(q.pos.join(":")));
+      const region=own ? undefined : lowered.find(r=>q.pos[0]>=r.from&&q.pos[1]<=r.to &&
+        (kind==="expression" || r.entries.has(q.pos[0])));
+      if(!own&&(!region||region.from<start||region.to>end))throw Error(`cannot attach ${kind} claim at ${q.pos}`);
       const k=`${key}:${kind}:${q.pos[0]}:${kind==="expression" ? q.pos[1] : ""}`;
       if(seen.has(k))throw Error("duplicate claim attachment");seen.add(k);
+      return region ? region.from : q.pos[0];
     };
     for(const [j,q] of f.entries.entries()) {
-      at("entry",q);
+      const shown=at("entry",q);
       if(!Array.isArray(q.bindings)||new Set(q.bindings.map(b=>b.name)).size!==q.bindings.length ||
          q.bindings.some(b=>typeof b.name!=="string"||typeof b.type!=="string"))throw Error("invalid entry bindings");
-      add(q.pos[0],{kind:"entry",id:idOf("entry",index,j),originalSpan:q.pos,producer:report.producer,
+      add(shown,{kind:"entry",id:idOf("entry",index,j),originalSpan:q.pos,producer:report.producer,
         quality:f.collection?.quality,bindings:q.bindings.map(({name,type})=>({name,type})),
         unsupported:q.bindings.filter(b=>isRecord(b.raw)&&b.raw.unsupported).map(b=>b.name),status:"producer-claim"});
     }
     for(const [j,q] of f.expressions.entries()) {
-      at("expression",q);
+      const shown=at("expression",q);
       if(typeof q.type!=="string")throw Error("invalid expression claim");
-      add(q.pos[0],{kind:"expression",id:idOf("expression",index,j),originalSpan:q.pos,producer:report.producer,
+      add(shown,{kind:"expression",id:idOf("expression",index,j),originalSpan:q.pos,producer:report.producer,
         quality:f.collection?.quality,type:q.type,status:"producer-claim"});
     }
   }

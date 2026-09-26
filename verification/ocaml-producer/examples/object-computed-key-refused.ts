@@ -1,6 +1,6 @@
-// A computed key in an object literal: an allocation's keys are the names
-// the literal spells, and a symbol is none of them.
-const key: unique symbol = Symbol();
-export function make(): object {
+// A computed key in an object literal that names no `unique symbol` constant:
+// an allocation's keys are the names it spells, and this one is known only at
+// run time.
+export function make(key: string): object {
   return { [key]: 1 };
 }

@@ -332,7 +332,7 @@ and expr_node =
      class's prototype object, then whether the key only that object owns is
      along the operand's prototype chain. *)
   | InstanceTest of string * expr * expr
-  | Equality of equality * expr * expr | Alloc of (string * expr) list
+  | Equality of equality * expr * expr | Alloc of (key * expr) list
   (* An object literal with spreads of values: its parts in source order, a
      named field (`Some key`) or a spread (`None`). *)
   | Build of (string option * expr) list
@@ -433,6 +433,10 @@ and stmt_node =
   (* `try body catch (param) handler finally finalizer`: the handler's
      parameter, with its position, if it names one. *)
   | Try of stmt list * ((string * Json.t) option * stmt list) option * stmt list option
+  (* The body of a `for...of` over a program's iterable, the last statement
+     of its loop: the close (IteratorClose), then the body. The close runs
+     where the body is left by a `break` of the loop, a `return` or a throw. *)
+  | Closing of stmt list * stmt list
 and fn = { quantified: quantifier list; name: string; name_pos: Json.t; params: (string * ty) list;
            rest: bool; result: ty; body: stmt list }
 type declaration = { id: string; parameters: rigid list;
@@ -490,6 +494,7 @@ and statement_children s = match s.statement with
   | ForOf (_,_,_,i,b) -> i :: List.concat_map statement_children b
   | Try (b,h,f) -> List.concat_map statement_children
       (b @ (match h with Some (_,hs) -> hs | None -> []) @ Option.value f ~default:[])
+  | Closing (c,b) -> List.concat_map statement_children (b @ c)
   | Break _ | Continue -> []
 (* Whether a name is assigned anywhere in a form, nested closures included:
    such a binding is a cell. Lean decides storage the same way, from the
@@ -512,6 +517,7 @@ let rec assigns name s = match s.statement with
   | Throw e -> assigns_expr name e
   | Try (body,handler,finalizer) -> List.exists (assigns name)
     (body @ (match handler with Some (_,h) -> h | None -> []) @ Option.value finalizer ~default:[])
+  | Closing (close,body) -> List.exists (assigns name) (body @ close)
   | Break _ | Continue -> false
 let arithmetic = function
   | "add" -> Add | "sub" -> Sub | "mul" -> Mul | "div" -> Div | "pow" -> Pow | "rem" -> Rem
@@ -556,11 +562,11 @@ let rec expr binders j =
   | "alloc" ->
     (* A class instance's prototype, under the key no source property spells. *)
     let proto = match List.assoc_opt "proto" (Json.obj j) with
-      | Some e -> ["[[proto]]",expr binders e] | None -> [] in
+      | Some e -> [Name "[[proto]]",expr binders e] | None -> [] in
     (* A prototype `instanceof` tests owns its class's key, at `undefined`. *)
     let brand = match List.assoc_opt "brand" (Json.obj j) with
-      | Some b -> [text "key" b,{pos=field "pos" b;node=Literal LUndefined}] | None -> [] in
-    Alloc (proto @ brand @ List.map (fun f -> text "name" f,expr binders (field "e" f)) (items "fields" j))
+      | Some b -> [Name (text "key" b),{pos=field "pos" b;node=Literal LUndefined}] | None -> [] in
+    Alloc (proto @ brand @ List.map (fun f -> property_key (field "name" f),expr binders (field "e" f)) (items "fields" j))
   | "build" ->
     let proto = match List.assoc_opt "proto" (Json.obj j) with
       | Some e -> [Some "[[proto]]",expr binders e] | None -> [] in
@@ -669,6 +675,7 @@ and stmt binders j =
       | Null -> None
       | xs -> Some (List.map (stmt binders) (list xs)) in
     Try (block "body",handler,finalizer)
+  | "closing" -> Closing (List.map (stmt binders) (items "close" j),List.map (stmt binders) (items "body" j))
   | "if" -> If (expr binders (field "cond" j),List.map (stmt binders) (items "then" j),
       match field "else_" j with Null -> [] | xs -> List.map (stmt binders) (list xs))
   | k -> unsupported ("statement " ^ k) in {span=field "pos" j;statement}

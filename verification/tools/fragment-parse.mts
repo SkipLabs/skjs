@@ -38,7 +38,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { Atom } from "./claim.mts";
-import type { DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
+import type { DeclarationIdentity, PropertyKey, TypeTerm } from "./declaration-types.mts";
 import { bigintText, CLASS_ACCESS, CONSTRUCTOR_DEFAULT, METHOD_RECEIVER, classMemberRefusal, computedForm, numericKey, optionalTerm, restPositions, restRefusal, restTerm, signature, substitute, typeTerm,
   type TermScope } from "./type-term.mts";
 import type {
@@ -69,6 +69,82 @@ import { collectDeclarations, DeclarationError, libraryArguments, libraryTerm, t
   type SeenDiagnostic }
   from "./declaration-graph.mts";
 import { asyncCompleteName, asyncReturnName, awaitName, forInName, iterateName } from "./intrinsics.mts";
+
+/** Why a generator is refused: its body stops at each `yield` and resumes
+ * where it stopped when `next` is called again, and no term of the calculus
+ * suspends in the middle of code. A generator is a state machine over its
+ * suspension points, as TypeScript's downlevel emit writes it; that lowering
+ * is not written. */
+const GENERATOR = "a generator function is outside the fragment: its body suspends at each `yield` and resumes there on the next call of `next`, which no term of the calculus expresses (the path is a state-machine lowering, as TypeScript's downlevel emit writes one)";
+/** The offset of `token` at or after `from` in `text`, past whitespace and
+ * comments, or null where the next token is another. */
+function tokenAt(text: string, from: number, token: string): number | null {
+  let i = from;
+  for (;;) {
+    if (/\s/.test(text[i] ?? "")) i++;
+    else if (text.startsWith("//", i)) {
+      const n = text.indexOf("\n", i);
+      i = n < 0 ? text.length : n;
+    } else if (text.startsWith("/*", i)) {
+      const n = text.indexOf("*/", i + 2);
+      i = n < 0 ? text.length : n + 2;
+    } else break;
+  }
+  return text.startsWith(token, i) ? i : null;
+}
+
+/** The offsets of a statement at which no node of it starts, that lie in no
+ * function nested in it (whose statements have their own), from its start up
+ * to the next token after it: where a lowering of the statement states the
+ * entries of the statements it adds (`sites`), and where the claim reader
+ * finds them. */
+export function freeOffsets(within: Node, file: ts.SourceFile): number[] {
+  const start = within.getStart(file);
+  const text = file.text;
+  let to = within.end;
+  while (to < text.length && /\s/.test(text[to] ?? "")) to++;
+  const starts = new Set<number>();
+  const nested: Span[] = [];
+  const visit = (n: Node): void => {
+    starts.add(n.getStart(file));
+    if (n !== within && (ts.isFunctionLikeDeclaration(n) || ts.isClassLikeDeclaration(n))) {
+      nested.push([n.getStart(file), n.end]);
+      return;
+    }
+    n.forEachChild(visit);
+  };
+  visit(within);
+  const free: number[] = [];
+  for (let o = start + 1; o < to; o++)
+    if (!starts.has(o) && !nested.some(([a, b]) => a <= o && o < b)) free.push(o);
+  return free;
+}
+
+/** The entries `protocolForOf` states in a `for...of` header, past the
+ * statement's own: the closing region's, the loop's, the step's, the done
+ * test's and its `break`'s, the element's, and the close's. */
+export function protocolEntries(node: ts.ForOfStatement, file: ts.SourceFile): number[] {
+  const s = node.getStart(file);
+  const text = file.text;
+  const p = tokenAt(text, s + "for".length, "(");
+  const o = tokenAt(text, node.initializer.end, "of");
+  const q = tokenAt(text, node.expression.end, ")");
+  const c = node.initializer.getStart(file);
+  const d = ts.isVariableDeclarationList(node.initializer) ? node.initializer.declarations[0] : undefined;
+  if (p === null || o === null || q === null || !d) return [];
+  return [s + 1, p, c, c + 1, c + 2, d.name.getStart(file), o, o + 1, q];
+}
+
+/** Why an iterable whose iterator's type states no `return` is refused where
+ * the protocol may close it: leaving the loop early, or a throw out of its
+ * body, calls the iterator's `return` if it has one, and an open record type
+ * says nothing of that property, which may hold any function. */
+const UNCLOSABLE = "an iterable whose iterator's type states no `return` is outside the fragment here: a loop left early, or a throw out of its body, calls the iterator's `return` if it owns one (IteratorClose), and the iterator's open record type says nothing of what that property holds";
+/** Why a spread of a program's iterable elsewhere is refused: collecting it
+ * runs the iterator's code, which the lowering runs before the statement the
+ * spread is in, and that is its place only where nothing the statement
+ * evaluates before the spread can be changed by it. */
+const SPREAD_POSITION = "a spread of a program's iterable is outside the fragment here: its iterator's code runs where the spread is, which the lowering places before the statement, and that is only its place for the one element of an array literal, or an argument of a call of a name after names and literals nothing assigns, as a statement's value";
 
 /** A question-mark parameter requires an optional suffix. A default may
  * precede a required parameter: callers supply undefined in that position. */
@@ -108,7 +184,7 @@ const selfName = (cls: string): string => `${cls}.[[self]]`;
 const baseName = (cls: string): string => `${cls}.[[base]]`;
 
 /** A part of an object literal: a named field, or a spread of a value. */
-type ObjectPart = { name: string; e: Expr } | { spread: Expr };
+type ObjectPart = { name: PropertyKey; e: Expr } | { spread: Expr };
 
 /** The hidden name a parameter written as a pattern or with a default
  * binds: a name no source binding can spell. The body's first statements
@@ -330,8 +406,28 @@ class Gate {
    * file's top level, by span: the class. */
   readonly classTests = new Map<string, string>();
   /** A `for...of` iterable's iteration intrinsic, where TypeScript's type of
-   * it picks one other than `%Iterate%`, or `client`, by the iterable's span. */
+   * it picks one other than `%Iterate%`, or, for a program's iterable,
+   * `client`, `client-method` (its iterator's `return` a required method) or
+   * `client-unclosable` (its iterator's type states no `return`), by the
+   * iterable's span; likewise a spread's operand and an array pattern's
+   * initializer. */
   readonly iterations = new Map<string, string>();
+  /** The well-known `Symbol.iterator`'s index among the declaration
+   * document's symbols, where a program iterable is iterated. */
+  wellKnownIterator: number | null = null;
+  /** The standard library's well-known symbols but `Symbol.iterator`
+   * (`Symbol.toStringTag`, `Symbol.hasInstance`, …), by index: keys no
+   * literal or class of the fragment writes (`writtenSymbol`). */
+  hostSymbols = new Set<number>();
+  /** The statement being lowered, where it runs a program iterable's
+   * protocol before its own code (`hoistTarget`): the spread collected, and
+   * the claim sites the lowering takes from the statement. */
+  private hoist: { stmt: Statement; spread: ts.SpreadElement | null;
+    site: { entry(): number; span(): Span } } | null = null;
+  /** The statements a lowering runs before the statement being lowered. */
+  private hoisted: Stmt[] = [];
+  /** The names the file assigns anywhere (`assignedNames`). */
+  private assigned: Set<string> | null = null;
   /** The array pattern rest targets TypeScript types as a slice, by span. */
   readonly slices = new Set<string>();
   /** Identifiers in a class's own body TypeScript binds to that class, by
@@ -659,7 +755,7 @@ class Gate {
       const staticMethods: BindingAst[] = [], statics: BindingAst[] = [];
       // The prototype's methods, in member order: every instance holds the
       // prototype object under its prototype key, and reads a method there.
-      const prototype: { name: string; e: Expr }[] = [];
+      const prototype: { name: PropertyKey; e: Expr }[] = [];
       for (const member of node.members) {
         if (ts.isSemicolonClassElement(member) || ts.isConstructorDeclaration(member)) continue;
         const memberName = (member as { name?: Node }).name;
@@ -706,6 +802,19 @@ class Gate {
               bind: { pos: this.span(member), type } });
           } else uninitialized.set(member.name.text, { type, pos: this.span(member.name) });
         } else if (ts.isMethodDeclaration(member)) {
+          // A method named by a `unique symbol` constant, `[Symbol.iterator]()`,
+          // is the prototype's property under that symbol's key, bound under
+          // a name no source spells.
+          const symbol = ts.isComputedPropertyName(member.name) ? this.writtenSymbol(member.name, member) : null;
+          if (symbol !== null) {
+            if (member.asteriskToken)
+              this.fail(member, GENERATOR);
+            const binding = `${name.text}.[symbol ${symbol}]`;
+            methods.push({ name: binding, namePos: this.span(member.name), annot: null,
+              init: this.lambda(member, instance) });
+            prototype.push({ name: { symbol }, e: { k: "id", pos: this.span(member.name), name: binding } });
+            continue;
+          }
           if (!ts.isIdentifier(member.name)) this.fail(member, unnamedMember(member, false));
           methods.push({ name: `${name.text}.${member.name.text}`, namePos: this.span(member.name),
             annot: null, init: this.lambda(member, instance) });
@@ -946,16 +1055,34 @@ class Gate {
    * collection iterator, which TypeScript's type of it decides, `...x` is
    * `...%Spread:K%(x)`: the fresh array of the elements its iterator yields
    * (`intrinsics.mts`), the call at the spread, the intrinsic read at `...`.
-   * An array is spread as it is; a client's iterable is refused. */
+   * An array is spread as it is. A program's iterable is collected into a
+   * fresh array before the statement (`collect`), where that runs its code in
+   * its place (`hoistTarget`). */
   private spreadOperand(arg: ts.SpreadElement): Expr {
-    const operand = this.expr(arg.expression);
     const intrinsic = this.iterations.get(this.span(arg.expression).join(":"));
+    if (intrinsic?.startsWith("client")) {
+      if (this.hoist?.spread !== arg) this.fail(arg, SPREAD_POSITION);
+      return this.collect(arg.expression);
+    }
+    const operand = this.expr(arg.expression);
     if (!intrinsic) return operand;
-    if (intrinsic === "client")
-      this.fail(arg, "a spread of an iterable other than an array, a string, a `Set`, a `Map` or a host " +
-        "collection iterator is outside the fragment: its own iterator runs, which the spread does not state");
     const start = arg.getStart(this.file);
     return this.intrinsic(intrinsic, this.span(arg), [start, start + "...".length], [operand]);
+  }
+
+  /** The symbol a computed key names where it is a `unique symbol` constant
+   * a literal or a class may write: `Symbol.iterator`, or one of the
+   * program's own. Another of the standard library's well-known symbols is
+   * refused: each changes how the host treats the object (`instanceof`,
+   * `Object.prototype.toString`, conversions), which the model does not
+   * state, and `Symbol.toStringTag` would let the object pass for a host
+   * `Set` or `Map`, whose iteration is trusted to be the host's. */
+  private writtenSymbol(name: ts.ComputedPropertyName, at: Node): number | null {
+    const symbol = this.symbolNames.get(this.span(name.expression).join(":"));
+    if (typeof symbol !== "number") return null;
+    if (this.hostSymbols.has(symbol))
+      this.fail(at, "a well-known symbol key other than `Symbol.iterator` is outside the fragment: it changes how the host treats the object, which the model does not state, and `Symbol.toStringTag` would let it pass for a host collection whose iteration is trusted");
+    return symbol;
   }
 
   /** `await e`: `%Await%(e)`, the intrinsic read at the keyword. Every span
@@ -1305,9 +1432,12 @@ class Gate {
     if (ts.isObjectLiteralExpression(node)) {
       const parts = this.objectFields(node, new Set<string>());
       const fields = parts.flatMap((p) => "spread" in p ? [] : [p]);
-      return fields.length === parts.length
-        ? { k: "alloc", pos: this.span(node), fields }
-        : { k: "build", pos: this.span(node), parts };
+      if (fields.length === parts.length) return { k: "alloc", pos: this.span(node), fields };
+      // Beside a spread, a key is a string: the copy's keys are compared with
+      // the written ones by name.
+      return { k: "build", pos: this.span(node), parts: parts.map((p) => "spread" in p ? p
+        : typeof p.name === "string" ? { name: p.name, e: p.e }
+        : this.fail(node, "a symbol key in an object literal with a spread is outside the fragment")) };
     }
 
     if (ts.isPropertyAccessExpression(node)) {
@@ -1327,6 +1457,16 @@ class Gate {
     }
 
     if (ts.isArrayLiteralExpression(node)) {
+      // `[...e]` over a program's iterable is the fresh array its iterator's
+      // values are collected into (`collect`).
+      const [only] = node.elements;
+      if (node.elements.length === 1 && only && ts.isSpreadElement(only)) {
+        const kind = this.iterations.get(this.span(only.expression).join(":"));
+        if (kind?.startsWith("client")) {
+          if (this.hoist?.spread !== only) this.fail(only, SPREAD_POSITION);
+          return this.collect(only.expression);
+        }
+      }
       if (
         node.elements.some(
           (e) => ts.isSpreadElement(e) || ts.isOmittedExpression(e),
@@ -1670,10 +1810,21 @@ class Gate {
    * (DESIGN.md, "Object literals"). A key is written once: a later field
    * over an earlier one is refused, as in a literal without spreads. */
   private objectFields(node: ts.ObjectLiteralExpression, seen: Set<string>): ObjectPart[] {
-    const key = (f: Node, name: Node): string => {
+    const key = (f: Node, name: Node): PropertyKey => {
+      // A computed key naming a `unique symbol` constant, such as the
+      // well-known `Symbol.iterator`, is that symbol's key: evaluating the
+      // name has no effect, and TypeScript decides which symbol it is.
+      if (ts.isComputedPropertyName(name)) {
+        const symbol = this.writtenSymbol(name, f);
+        if (symbol === null)
+          return this.fail(f, "a computed key in an object literal other than a `unique symbol` constant is outside the fragment: an allocation's keys are the property names the literal spells, and a key computed at run time is none of them");
+        const text = `[symbol ${symbol}]`;
+        if (seen.has(text)) this.fail(f, "duplicate field name in a record");
+        seen.add(text);
+        return { symbol };
+      }
       const text = ts.isIdentifier(name) || ts.isStringLiteral(name) ? name.text
         : ts.isNumericLiteral(name) ? numericKey(name.text)
-        : ts.isComputedPropertyName(name) ? this.fail(f, "a computed key in an object literal is outside the fragment: an allocation's keys are the property names the literal spells, and a symbol or a key computed at run time is none of them")
         : this.fail(f, "expected a plain property name");
       if (seen.has(text)) this.fail(f, "duplicate field name in a record");
       if (text === "__proto__") this.fail(f, "prototype initializers are outside the fragment");
@@ -2302,7 +2453,7 @@ class Gate {
     const ordinary = !ts.isArrowFunction(node);
     if (!ts.isArrowFunction(node)) {
       if (node.asteriskToken)
-        this.fail(node, "generator functions are outside the fragment");
+        this.fail(node, GENERATOR);
       // A named function expression binds its own name inside itself. A name
       // the function never refers to binds nothing it reads; one it does refer
       // to is a recursive binding, which the fragment has no frame for, as for
@@ -2528,6 +2679,12 @@ class Gate {
     const d = list.declarations[0];
     if (d.type) this.fail(d, "an annotated pattern is outside the fragment");
     if (!d.initializer) this.fail(d, "a `const` needs an initializer");
+    const kind = this.iterations.get(this.span(d.initializer).join(":"));
+    if (ts.isArrayBindingPattern(d.name) && kind?.startsWith("client")) {
+      if (kind === "client-unclosable" && !d.name.elements.some((e) => ts.isBindingElement(e) && e.dotDotDotToken))
+        this.fail(d.initializer, UNCLOSABLE);
+      return this.protocolPattern(d.name, d.initializer, node, kind === "client-method");
+    }
     const target = this.pattern(d.name, new Set());
     this.initializedBefore(d, [[target, null]]);
     return {
@@ -2537,6 +2694,239 @@ class Gate {
       default_: null,
       init: this.expr(d.initializer),
     };
+  }
+
+  /** `const [a, , b, ...r] = e` over a program's iterable, as ECMA-262's
+   * IteratorBindingInitialization runs it: GetIterator, one IteratorStepValue
+   * per element until one is done, a hole stepping too; the rest collects
+   * every value left; then, the iterator not done (no rest took it to its
+   * end), IteratorClose. In ordinary forms, the steps before the source's
+   * own declaration, which binds the names from cells no source spells:
+   *
+   *     let %v0 = undefined, %v2 = undefined;
+   *     const %rest = [], %iterator = e[Symbol.iterator](), %next = …;
+   *     %done: {
+   *       const %result0 = %next(); if (%result0.done) break %done; %v0 = %result0.value;
+   *       …
+   *       while (true) { const %resultR = %next(); if (%resultR.done) break %done; %rest.push(%resultR.value); }
+   *       // or, without a rest, the close of `protocolForOf`
+   *     }
+   *     const a = %v0, b = %v2, r = %rest;
+   *
+   * Binding a name runs nothing, so binding each after the steps is binding
+   * it at its step. A default or a nested pattern, which run code between
+   * the steps (and IteratorClose on a throw of theirs), is outside it. */
+  private protocolPattern(pattern: ts.ArrayBindingPattern, init: Expression, node: Node, method: boolean): Stmt {
+    if (this.hoist?.stmt !== node)
+      this.fail(node, "an array pattern over a program's iterable is outside the fragment here: its steps are statements, with cells, before the declaration, which a function's or a closure's body has and a module's top level or a `for` initializer does not");
+    const site = this.hoist.site;
+    const tag = `${pattern.getStart(this.file)}`;
+    const label = `%done@${tag}`;
+    const elements = pattern.elements;
+    const rest = elements.at(-1);
+    const restName = rest && ts.isBindingElement(rest) && rest.dotDotDotToken ? rest : null;
+    const named: { cell: string; name: ts.Identifier }[] = [];
+    elements.forEach((el, i) => {
+      if (!ts.isBindingElement(el) || !el.name || el === restName) return;
+      if (el.initializer || !el.name || !ts.isIdentifier(el.name) || el.dotDotDotToken)
+        this.fail(el, "a default or a nested pattern in an array pattern over a program's iterable is outside the fragment: it runs code between the iterator's steps, which the lowering does not interleave");
+      if (el.name.text === "undefined") this.fail(el, "shadowing undefined is outside the fragment");
+      named.push({ cell: `%v${i}@${tag}`, name: el.name });
+    });
+    if (restName && (!restName.name || !ts.isIdentifier(restName.name)))
+      this.fail(restName, "a nested pattern in an array pattern's rest over a program's iterable is outside the fragment");
+    const restCell = `%rest@${tag}`;
+    const statements: Stmt[] = [];
+    if (named.length) {
+      const e = site.entry();
+      statements.push({ k: "let", pos: [e, e + 1], bindings: named.map(({ cell }) => {
+        const at = site.span();
+        return { name: cell, namePos: at, annot: null, init: { k: "lit", pos: at, lit: { a: "undefined" } } };
+      }) });
+    }
+    const start = this.protocolStart(this.expr(init), site, tag, init);
+    const e0 = site.entry();
+    const restAt = site.span();
+    const restBinding: BindingAst[] = restName
+      ? [{ name: restCell, namePos: restAt, annot: null, init: { k: "arrayLit", pos: restAt, elems: [] } }] : [];
+    statements.push({ k: "const", pos: [e0, e0 + 1], bindings: [...restBinding, ...start.bindings] });
+    const leave = (): Stmt => {
+      const e = site.entry();
+      return { k: "break", pos: [e, e + 1], label };
+    };
+    const inner: Stmt[] = [];
+    elements.forEach((el, i) => {
+      if (el === restName) return;
+      const step = this.protocolStep(start.next, `%result${i}@${tag}`, leave, site);
+      inner.push(...step.stmts);
+      const cell = named.find((n) => n.cell === `%v${i}@${tag}`);
+      if (cell) {
+        const e = site.entry();
+        const at = site.span();
+        inner.push({ k: "effect", pos: [e, e + 1],
+          e: { k: "assign", pos: at, name: cell.cell, namePos: site.span(), rhs: step.value() } });
+      }
+    });
+    if (restName) {
+      const eLoop = site.entry();
+      inner.push({ k: "while", pos: [eLoop, eLoop + 1], update: [],
+        cond: { k: "lit", pos: site.span(), lit: { a: "booleanlit", v: "true" } },
+        body: this.collectStep(start.next, `%resultRest@${tag}`, restCell, leave, site) });
+    } else inner.push(...this.closeStatements(start.iteratorAt, tag, site, method));
+    statements.push({ k: "block", pos: this.span(node), label, body: inner });
+    this.hoisted.push(...statements);
+    const bindings: BindingAst[] = named.map(({ cell, name }) => ({ name: this.local(name),
+      namePos: this.span(name), annot: null, init: { k: "id", pos: this.span(name), name: cell } }));
+    if (restName && restName.name && ts.isIdentifier(restName.name))
+      bindings.push({ name: this.local(restName.name), namePos: this.span(restName.name), annot: null,
+        init: { k: "id", pos: this.span(restName.name), name: restCell } });
+    return { k: "const", pos: this.span(node), bindings };
+  }
+
+  /** One step of a collecting loop: the step, its `done` leaving by `leave`,
+   * and the value pushed onto the fresh array `items`. */
+  private collectStep(next: string, result: string, items: string, leave: () => Stmt,
+      site: { entry(): number; span(): Span }): Stmt[] {
+    const step = this.protocolStep(next, result, leave, site);
+    const e = site.entry();
+    const pushAt = site.span(), pushRead = site.span(), itemsAt = site.span();
+    return [...step.stmts, { k: "effect", pos: [e, e + 1], e: { k: "invoke", pos: pushAt, args: [step.value()],
+      callee: { k: "read", pos: pushRead, field: "push", e: { k: "id", pos: itemsAt, name: items } } } }];
+  }
+
+  /** IteratorClose where nothing is thrown: the iterator's `return`, read
+   * once, called on it where it is not `undefined`, its result an object
+   * (`protocolForOf`). A `return` the iterator's type declares a required
+   * method (`method`) is a method member, read bound to the iterator
+   * (`o.m.bind(o)`, which reads it once) and always present. */
+  private closeStatements(iteratorAt: () => Expr, tag: string, site: { entry(): number; span(): Span },
+      method: boolean): Stmt[] {
+    const member = `%return@${tag}`, closed = `%closed@${tag}`;
+    const e1 = site.entry();
+    if (method) {
+      const e2 = site.entry();
+      const boundAt = site.span(), readAt = site.span(), callAt = site.span(), memberAt = site.span(),
+        objectAt = site.span();
+      return [
+        { k: "const", pos: [e1, e1 + 1], bindings: [{ name: member, namePos: boundAt, annot: null,
+          init: { k: "bindWithReceiver", pos: boundAt, args: [],
+            callee: { k: "read", pos: readAt, field: "return", e: iteratorAt() }, receiver: iteratorAt() } }] },
+        { k: "const", pos: [e2, e2 + 1], bindings: [{ name: closed, namePos: callAt,
+          annot: { k: "atom", name: "object", span: objectAt },
+          init: { k: "apply", pos: callAt, callee: { k: "id", pos: memberAt, name: member }, args: [] } }] },
+      ];
+    }
+    const e2 = site.entry(), e3 = site.entry();
+    const readAt = site.span(), testAt = site.span(), narrowed = site.span(), callAt = site.span(),
+      objectAt = site.span();
+    return [
+      { k: "const", pos: [e1, e1 + 1], bindings: [{ name: member, namePos: readAt, annot: null,
+        init: { k: "read", pos: readAt, field: "return", e: iteratorAt() } }] },
+      { k: "if", pos: [e2, e2 + 1],
+        // The member's read and the name holding it are one value, at one
+        // claim site.
+        cond: { k: "typeofTest", pos: testAt, shape: "undefined", equal: false,
+          e: { k: "id", pos: readAt, name: member } },
+        then: [{ k: "const", pos: [e3, e3 + 1], bindings: [{ name: closed, namePos: callAt,
+          annot: { k: "atom", name: "object", span: objectAt },
+          init: { k: "callWithReceiver", pos: callAt, callee: { k: "id", pos: narrowed, name: member },
+            receiver: iteratorAt(), args: [] } }] }],
+        else_: null },
+    ];
+  }
+
+  /** A spread of a program's iterable, `...e`, collected into a fresh array
+   * before the statement it is in (`hoist`): the steps of `protocolForOf`,
+   * closing nothing (a spread steps until done), each value pushed onto the
+   * array, which the spread then stands for. */
+  private collect(operand: Expression): Expr {
+    const hoist = this.hoist;
+    if (!hoist) throw Error("internal: a spread collected outside its statement");
+    const site = hoist.site;
+    const tag = `${operand.getStart(this.file)}`;
+    const items = `%items@${tag}`;
+    const start = this.protocolStart(this.expr(operand), site, tag, operand);
+    const e0 = site.entry();
+    const itemsAt = site.span();
+    const eLoop = site.entry();
+    const leave = (): Stmt => {
+      const e = site.entry();
+      return { k: "break", pos: [e, e + 1], label: null };
+    };
+    this.hoisted.push(
+      { k: "const", pos: [e0, e0 + 1], bindings: [
+        { name: items, namePos: itemsAt, annot: null, init: { k: "arrayLit", pos: itemsAt, elems: [] } },
+        ...start.bindings] },
+      { k: "while", pos: [eLoop, eLoop + 1], update: [],
+        cond: { k: "lit", pos: site.span(), lit: { a: "booleanlit", v: "true" } },
+        body: this.collectStep(start.next, `%result@${tag}`, items, leave, site) });
+    return { k: "id", pos: site.span(), name: items };
+  }
+
+  /** The spread of a program's iterable the statement `s` runs, where the
+   * collection may run before the statement: the one element of an array
+   * literal, or an argument of a call of a name, every operand before it a
+   * name or a literal, none of them assigned anywhere in the file, so that
+   * what they hold before the iterator's code runs is what they hold after.
+   * The literal or call is the statement's value: an expression statement's,
+   * a `return`'s or a declaration's one initializer. */
+  private hoistTarget(s: Statement): ts.SpreadElement | null {
+    let e: Expression | undefined;
+    if (ts.isExpressionStatement(s)) e = s.expression;
+    else if (ts.isReturnStatement(s)) e = s.expression;
+    else if (ts.isVariableStatement(s)) {
+      const [only, ...others] = s.declarationList.declarations;
+      if (only && !others.length && ts.isIdentifier(only.name)) e = only.initializer;
+    }
+    if (!e) return null;
+    const program = (x: Node) => {
+      const kind = this.iterations.get(this.span(x).join(":"));
+      return !!kind?.startsWith("client");
+    };
+    if (ts.isArrayLiteralExpression(e)) {
+      const [only, ...others] = e.elements;
+      return only && !others.length && ts.isSpreadElement(only) && program(only.expression) ? only : null;
+    }
+    if (!ts.isCallExpression(e) || e.questionDotToken || !ts.isIdentifier(e.expression)) return null;
+    const index = e.arguments.findIndex((a) => ts.isSpreadElement(a) && program(a.expression));
+    const spread = e.arguments[index];
+    if (!spread || !ts.isSpreadElement(spread)) return null;
+    const assigned = this.assignedNames();
+    const stable = (x: Node) => ts.isIdentifier(x) ? !assigned.has(x.text)
+      : ts.isNumericLiteral(x) || ts.isStringLiteral(x) || x.kind === ts.SyntaxKind.TrueKeyword ||
+        x.kind === ts.SyntaxKind.FalseKeyword || x.kind === ts.SyntaxKind.NullKeyword;
+    return stable(e.expression) && e.arguments.slice(0, index).every(stable) ? spread : null;
+  }
+
+  /** The names the file assigns anywhere: an assignment, a compound or
+   * logical one, an update, a destructuring assignment. */
+  private assignedNames(): Set<string> {
+    if (this.assigned) return this.assigned;
+    const names = new Set<string>();
+    const targets = (e: Node): void => {
+      while (ts.isParenthesizedExpression(e)) e = e.expression;
+      if (ts.isIdentifier(e)) names.add(e.text);
+      else if (ts.isArrayLiteralExpression(e)) e.elements.forEach(targets);
+      else if (ts.isObjectLiteralExpression(e)) e.properties.forEach((p) =>
+        ts.isShorthandPropertyAssignment(p) ? (ts.isIdentifier(p.name) ? names.add(p.name.text) : undefined)
+          : ts.isPropertyAssignment(p) ? targets(p.initializer)
+          : ts.isSpreadAssignment(p) ? targets(p.expression) : undefined);
+      else if (ts.isSpreadElement(e)) targets(e.expression);
+      else if (ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.EqualsToken) targets(e.left);
+    };
+    const visit = (n: Node): void => {
+      if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+          n.operatorToken.kind <= ts.SyntaxKind.LastAssignment) targets(n.left);
+      if ((ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) &&
+          (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken))
+        targets(n.operand);
+      if ((ts.isForOfStatement(n) || ts.isForInStatement(n)) && !ts.isVariableDeclarationList(n.initializer))
+        targets(n.initializer);
+      n.forEachChild(visit);
+    };
+    visit(this.file);
+    this.assigned = names;
+    return names;
   }
 
   /* Each default of a declaration's patterns, in binding order, reads none
@@ -2671,7 +3061,26 @@ class Gate {
       if (at) this.fail(at, "a name declared only in dead code is outside the fragment");
     }
     // An empty statement, `;`, does nothing.
-    return live.filter((s) => !ts.isEmptyStatement(s)).map((s) => this.stmt(s));
+    return live.filter((s) => !ts.isEmptyStatement(s)).flatMap((s) => this.hoisting(s));
+  }
+
+  /** A statement, preceded by the statements its lowering runs before it:
+   * the collection of a spread of a program's iterable (`collect`), or the
+   * steps of an array pattern over one (`protocolPattern`). */
+  private hoisting(s: Statement): Stmt[] {
+    const savedHoist = this.hoist, savedHoisted = this.hoisted;
+    let site: { entry(): number; span(): Span } | null = null;
+    const lazy = () => site ??= this.sites(s);
+    this.hoist = { stmt: s, spread: this.hoistTarget(s),
+      site: { entry: () => lazy().entry(), span: () => lazy().span() } };
+    this.hoisted = [];
+    try {
+      const stmt = this.stmt(s);
+      return [...this.hoisted, stmt];
+    } finally {
+      this.hoist = savedHoist;
+      this.hoisted = savedHoisted;
+    }
   }
 
   /** The offset of `token` at or after `from`, past whitespace and comments:
@@ -2763,6 +3172,152 @@ class Gate {
       iterable: this.intrinsic(forInName, this.span(list), [keyword, keyword + "in".length],
         [this.expr(node.expression)]),
       body: this.block(node.statement),
+    };
+  }
+
+  /** `for (const x of e) S` over an iterable the program defines, an object
+   * with its own `[Symbol.iterator]`, as ECMA-262's ForIn/OfBodyEvaluation
+   * runs it: GetIterator, then IteratorStepValue until done, the body per
+   * value, and IteratorClose where the body is left otherwise than by
+   * completing or by a `continue` of the loop. In ordinary forms, under
+   * names no source spells:
+   *
+   *     const %iterator = e[Symbol.iterator](), %next = %iterator.next.bind(%iterator);
+   *     while (true) {
+   *       const %result = %next();
+   *       if (%result.done) break;
+   *       const x = %result.value;
+   *       closing { S } close {
+   *         const %return = %iterator.return;
+   *         if (typeof %return !== "undefined") { const %closed: object = %return.call(%iterator); }
+   *       }
+   *     }
+   *
+   * `next` is read once, as GetIterator reads it, and called on the iterator
+   * at each step (a bound function is that call). The `closing` region runs
+   * `close` before a `break` of the loop leaves it, before a `return` returns,
+   * and, its own throws discarded, before a throw out of the body resumes
+   * (IteratorClose with a throw completion); a `continue` and the body's end
+   * go to the next step, and a done result leaves without it. `return`
+   * absent (`undefined`) is not called; its result must be an object, the
+   * TypeError IteratorClose throws otherwise being then impossible. Each part
+   * has a claim site of its own: a token of the header or a run of them. */
+  private protocolForOf(node: ts.ForOfStatement, list: ts.VariableDeclarationList,
+      name: ts.Identifier, method: boolean): Stmt {
+    const s = node.getStart(this.file);
+    const p = this.token(s + "for".length, "(", node);
+    const c = list.getStart(this.file);
+    const [n0, n1] = this.span(name);
+    const o = this.token(list.end, "of", node);
+    const [e0, e1] = this.span(node.expression);
+    const q = this.token(e1, ")", node);
+    const end = node.end;
+    const iterator = `%iterator@${s}`, next = `%next@${s}`, result = `%result@${s}`;
+    const id = (pos: Span, name: string): Expr => ({ k: "id", pos, name });
+    const iteratorAt = (): Expr => id([q, q + 1], iterator);
+    const symbol = this.wellKnownIterator;
+    if (symbol === null) this.fail(node, "a program's iterable needs the well-known `Symbol.iterator`, which the declarations do not list");
+    const getIterator: Expr = { k: "invoke", pos: [o, e1], args: [],
+      callee: { k: "read", pos: [o, o + "of".length], field: { symbol }, e: this.expr(node.expression) } };
+    const bound: Expr = { k: "bindWithReceiver", pos: [s, q + 1], args: [],
+      callee: { k: "read", pos: [p, q + 1], field: "next", e: iteratorAt() }, receiver: iteratorAt() };
+    // The close's sites: the header's runs of tokens the steps do not use.
+    const entries = [o, o + 1, q];
+    const spans: Span[] = [[n0, e1], [s, end], [e0, q + 1], [o, q + 1], [c, q + 1], [p, e1]];
+    const close = this.closeStatements(iteratorAt, `${s}`, {
+      entry: () => entries.shift() ?? this.fail(node, "internal: the close's entries"),
+      span: () => spans.shift() ?? this.fail(node, "internal: the close's sites"),
+    }, method);
+    const step: Stmt[] = [
+      { k: "const", pos: [c, c + "const".length], bindings: [{ name: result, namePos: [c, c + "const".length],
+        annot: null, init: { k: "apply", pos: [s, s + "for".length], callee: id([c, e1], next), args: [] } }] },
+      { k: "if", pos: [c + 1, c + 2],
+        cond: { k: "read", pos: [c, c + "const".length], field: "done", e: id([p, p + 1], result) },
+        then: [{ k: "break", pos: [c + 2, c + 3], label: null }], else_: null },
+      { k: "const", pos: [n0, n1], bindings: [{ name: this.local(name), namePos: [n0, n1], annot: null,
+        init: { k: "read", pos: [n0, n1], field: "value", e: id([c, n1], result) } }] },
+      { k: "closing", pos: [s + 1, s + 2], close, body: this.block(node.statement) },
+    ];
+    return { k: "block", pos: this.span(node), label: null, body: [
+      { k: "const", pos: [s, s + "for".length], bindings: [
+        { name: iterator, namePos: [s, s + "for".length], annot: null, init: getIterator },
+        { name: next, namePos: [p, p + 1], annot: null, init: bound }] },
+      { k: "while", pos: [p, end], cond: { k: "lit", pos: [s, p + 1], lit: { a: "booleanlit", v: "true" } },
+        body: step, update: [] },
+    ] };
+  }
+
+  /** Claim sites for the parts a lowering adds to the statement `within`:
+   * the offsets from its start up to the next token after it at which no node
+   * of it starts and that lie in no function nested in it, whose statements
+   * have sites of their own. Each is an entry once (`entry`), and the spans
+   * from them are expression sites (`span`); none is a source node's site. */
+  private sites(within: Node): { entry(): number; span(): Span } {
+    const text = this.file.text;
+    let to = within.end;
+    while (to < text.length && /\s/.test(text[to] ?? "")) to++;
+    const free = freeOffsets(within, this.file);
+    let entries = 0, from = 0, end = 0;
+    return {
+      entry: () => {
+        const o = free[entries++];
+        if (o === undefined) return this.fail(within, "too few claim sites in the statement for the iterator protocol it runs");
+        return o;
+      },
+      span: () => {
+        for (;;) {
+          const a = free[from];
+          if (a === undefined) return this.fail(within, "too few claim sites in the statement for the iterator protocol it runs");
+          if (end === 0) end = a;
+          if (++end <= to) return [a, end];
+          from++;
+          end = 0;
+        }
+      },
+    };
+  }
+
+  /** GetIterator on a program's iterable, as `protocolForOf` does it: the
+   * declarators `%iterator = iterable[Symbol.iterator](), %next =
+   * %iterator.next.bind(%iterator)`, `next` read once and called on the
+   * iterator at each step (`protocolStep`). */
+  private protocolStart(iterable: Expr, site: { entry(): number; span(): Span }, tag: string, at: Node):
+      { bindings: BindingAst[]; iterator: string; next: string; iteratorAt: () => Expr } {
+    const iterator = `%iterator@${tag}`, next = `%next@${tag}`;
+    const symbol = this.wellKnownIterator;
+    if (symbol === null)
+      return this.fail(at, "a program's iterable needs the well-known `Symbol.iterator`, which the declarations do not list");
+    const iterAt = site.span();
+    const iteratorAt = (): Expr => ({ k: "id", pos: iterAt, name: iterator });
+    const call = site.span(), method = site.span(), bound = site.span(), nextRead = site.span();
+    return {
+      iterator, next, iteratorAt,
+      bindings: [
+        { name: iterator, namePos: call, annot: null, init: { k: "invoke", pos: call, args: [],
+          callee: { k: "read", pos: method, field: { symbol }, e: iterable } } },
+        { name: next, namePos: bound, annot: null, init: { k: "bindWithReceiver", pos: bound, args: [],
+          callee: { k: "read", pos: nextRead, field: "next", e: iteratorAt() }, receiver: iteratorAt() } },
+      ],
+    };
+  }
+
+  /** One step of the protocol, `%next()`, bound to `result`, and the test of
+   * its `done`, which leaves by `leave`: three statements, with their
+   * entries. The value is `result`'s `value`, read by the caller next. */
+  private protocolStep(next: string, result: string, leave: () => Stmt,
+      site: { entry(): number; span(): Span }): { stmts: Stmt[]; value: () => Expr } {
+    const nextAt = site.span();
+    const e1 = site.entry();
+    const call: Expr = { k: "apply", pos: site.span(), callee: { k: "id", pos: nextAt, name: next }, args: [] };
+    const e2 = site.entry();
+    const doneRead: Expr = { k: "read", pos: site.span(), field: "done", e: { k: "id", pos: site.span(), name: result } };
+    const valueAt = site.span(), resultAt = site.span();
+    return {
+      stmts: [
+        { k: "const", pos: [e1, e1 + 1], bindings: [{ name: result, namePos: call.pos, annot: null, init: call }] },
+        { k: "if", pos: [e2, e2 + 1], cond: doneRead, then: [leave()], else_: null },
+      ],
+      value: () => ({ k: "read", pos: valueAt, field: "value", e: { k: "id", pos: resultAt, name: result } }),
     };
   }
 
@@ -3085,10 +3640,10 @@ class Gate {
       if (d.name.text === "undefined")
         this.fail(d, "shadowing undefined is outside the fragment");
       const iterate = this.iterations.get(this.span(node.expression).join(":")) ?? iterateName;
-      if (iterate === "client")
-        this.fail(node.expression, "a `for...of` over an iterable other than an array, a string, a `Set`, a `Map` " +
-          "or a host collection iterator is outside the fragment: its own iterator runs, and a loop left early " +
-          "calls its `return`, which the loop does not state");
+      if (iterate === "client-unclosable")
+        this.fail(node.expression, UNCLOSABLE);
+      if (iterate === "client" || iterate === "client-method")
+        return this.protocolForOf(node, list, d.name, iterate === "client-method");
       return {
         k: "forOf",
         pos: this.span(node),
@@ -3131,7 +3686,7 @@ class Gate {
         "only the export and async modifiers are admitted on a source function",
       );
     if (node.asteriskToken)
-      this.fail(node, "generator functions are outside the fragment");
+      this.fail(node, GENERATOR);
     const isAsync = !!node.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.AsyncKeyword);
     if (!node.body) this.fail(node, "a function must have a body");
     const prologue = this.useStrict(node.body.statements);
@@ -3592,10 +4147,15 @@ export function parseFile(file: string, carriesContext = false,
   const iterableNodes: Node[] = [];
   // An argument spread likewise collects its operand's elements.
   const spreadNodes: Node[] = [];
+  // So do an array literal's spreads and an array pattern's initializer,
+  // which step the iterator of a program's iterable (`protocolForOf`).
   const findIterables = (node: Node): void => {
     if (ts.isForOfStatement(node)) iterableNodes.push(node.expression);
-    if (ts.isCallExpression(node))
-      for (const arg of node.arguments) if (ts.isSpreadElement(arg)) spreadNodes.push(arg.expression);
+    if (ts.isCallExpression(node) || ts.isArrayLiteralExpression(node))
+      for (const arg of ts.isCallExpression(node) ? node.arguments : node.elements)
+        if (ts.isSpreadElement(arg)) spreadNodes.push(arg.expression);
+    if (ts.isVariableDeclaration(node) && ts.isArrayBindingPattern(node.name) && node.initializer)
+      iterableNodes.push(node.initializer);
     node.forEachChild(findIterables);
   };
   if (!carriesContext) findIterables(source);
@@ -3692,8 +4252,11 @@ export function parseFile(file: string, carriesContext = false,
       computedNodes.push(node);
       return;
     }
+    // So does the computed key of a class method or an object literal's
+    // property or method, `[Symbol.iterator]() { … }`.
     if (ts.isComputedPropertyName(node) && node.parent &&
-        (ts.isPropertySignatureDeclaration(node.parent) || ts.isMethodSignatureDeclaration(node.parent)))
+        (ts.isPropertySignatureDeclaration(node.parent) || ts.isMethodSignatureDeclaration(node.parent) ||
+          ts.isMethodDeclaration(node.parent) || ts.isPropertyAssignment(node.parent)))
       symbolNameNodes.push(node.expression);
     // A mapped type's keys, and a global generic's arguments, which may be
     // a library mapped type's keys, `Record<K, V>`: TypeScript computes them.
@@ -3767,7 +4330,10 @@ export function parseFile(file: string, carriesContext = false,
         memberReceivers: receiverNodes.map(node => gate.span(node)),
         iterables: iterableNodes.map(node => gate.span(node)),
         spreads: spreadNodes.map(node => gate.span(node)),
-        iterable: ([start, end], intrinsic) => gate.iterations.set(`${start}:${end}`, intrinsic),
+        iterable: ([start, end], intrinsic, symbol) => {
+          gate.iterations.set(`${start}:${end}`, intrinsic);
+          if (symbol !== null) gate.wellKnownIterator = symbol;
+        },
         restTargets: restTargets.map(({ node, index }) => ({ span: gate.span(node), index })),
         restSlice: ([start, end]) => gate.slices.add(`${start}:${end}`),
         computed: computedNodes.map(node => gate.span(node)),
@@ -3803,6 +4369,9 @@ export function parseFile(file: string, carriesContext = false,
     }
     if (early[0])
       gate.fail(early[0], `a read of \`${early[0].text}\` before its declaration: JavaScript throws there (the temporal dead zone)`);
+    // The standard library's well-known symbols but `Symbol.iterator`.
+    gate.hostSymbols = new Set(declarations.symbols.flatMap((s, i) =>
+      s.module.startsWith("typescript/lib/") && s.name !== "iterator" ? [i] : []));
     for (const root of declarations.roots) {
       const identity = root.declaration;
       const definition = declarations.definitions.find(d =>

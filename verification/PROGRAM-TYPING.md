@@ -391,7 +391,10 @@ The member read from $v=\rho(i)$ meets $m$'s signatures with receiver $\{v\}$
 step later, on the object $v$'s prototype holds (`Step.readProto`,
 `member_read_safe`), as the member's meaning says. The bound descriptor, which has
 no fields and allocates nothing, forwards any call to it with receiver $v$
-(`callsT_bound`, `restsT_bound`).
+(`callsT_bound`, `restsT_bound`). The source form `o.m.bind(o)`, `o` one
+immutable name and `m` a method member of its type, is this term: `bind`
+of what `o.m` holds to `o` itself, a bound function whatever receiver it is
+later called with (`closureExpr`); the iterator protocol reads `next` so.
 
 A variadic target with an element rest (`bindRestE`, `restsT_bound`) gives
 its first fixed positions to the prefix and, past them, its element $E$; the
@@ -1343,7 +1346,8 @@ checks, not a semantic oracle. No completeness of these checks is claimed.
 tested slot $i$, it requires $\Gamma(i)\preceq_o\Delta(j)$; other selected slots
 require ordinary subtyping, or, for a slot $k$ holding an object the tested
 value was read from through field $f$ (a current read link at the dispatch,
-`readFields`), subtyping from its field slice $F^{f}_{t,q}(\Gamma(k))$
+`readFields`, or an optional one, `optionalFields`), subtyping from its field
+slice $F^{f}_{t,q}(\Gamma(k))$
 (`fieldSlice`): the labels of $\Gamma(k)$ but those every clause of which is a
 record fixing $f$, as an invariant field or a readonly view, at a type that
 answers the tag $t$ with $\lnot q$. The common environment theorem is:
@@ -1363,7 +1367,11 @@ $$
 The field slice is sound one level up (`fieldSlice_sound`): the field's
 location holds the read value, and a heap meeting the world holds at that
 location a value of the field's type one level down (`field_value`), whose tag
-answer is budget-independent. What it establishes is the object's label,
+answer is budget-independent. Through an optional link the slice is sound
+too: where the object has the key the link is a read link, and an object
+lacking it is of no label the slice drops, every clause of which names the
+field as a field or a view, a key the object has (`fieldSlice_absent`). What
+it establishes is the object's label,
 which its allocation fixes; it is not a claim about what the field holds
 later, so writes and calls after the test do not undo it. A discriminated
 union is this: `s.kind === "circle"` keeps the arms whose `kind` admits
@@ -1514,6 +1522,11 @@ kind, continuation or rule; each is a shape of ordinary nodes and edges.
   held, ending in a node that throws it again. Where neither the body nor the
   handler can complete, the normal way leads to an unreachable node that
   loops on itself and states nothing.
+- A closing region (the [iterator protocol](#the-iterator-protocol)'s
+  IteratorClose): the body's nodes name, as their handler, the close's entry
+  under a handler that drops the close's own throws, followed by a node that
+  throws the held value again; the loop's `break` goes to the close's entry
+  followed by the loop's exit, and each `return` passes it as a `finally`.
 - A declaration hiding an outer binding of its name adds no node: the parser
   has given it a name of its own ([shadowing](#derived-source-forms)), so
   the lowering never meets two bindings of one name.
@@ -2614,8 +2627,9 @@ its type or $\mathsf{Undef}$), a hole being a position no element names. The
 array's own iterator, which JavaScript steps, reads the current length and the
 next index at each step, so reading position $i$ where its element is bound,
 after any default before it ran, is that step: the trust `%Iterate%` states
-([trust surface](DESIGN.md#trust-surface)). A pattern over a value that is not an array
-is refused.
+([trust surface](DESIGN.md#trust-surface)). A pattern over a host iterable that
+is not an array is refused; one over an iterable the program defines is the
+iterator protocol's steps ([loops](#loops-and-spreads-over-iterables)).
 
 A default replaces a read that is `undefined`, and only then runs. With
 $R'$ the read's labels told apart clause by clause (`byClause`: a label that
@@ -3064,7 +3078,10 @@ k(l)=\begin{cases}l & l\ \text{an application's row, or empty}\\ G(l) & \text{ot
 $$
 
 A producer's reserved row for $D\langle\vec U\rangle$ is in $\rho$ from the
-start. Otherwise the first lowering to meet the application gives it a fresh
+start, an argument left to its default being that default (one row for
+`IteratorResult<number>` and `IteratorResult<number, unknown>`). A reserved
+row whose equation is other rows' union (an alias) is their clauses, filled
+after the reserved rows it names (`fillRows`). Otherwise the first lowering to meet the application gives it a fresh
 row, records it, and lowers $D$'s equation at $\vec U$ with that row for the
 receiver, **from an empty visit** (`groundApplication`):
 
@@ -3530,10 +3547,11 @@ $$
 `keys`, `values` and `entries` give a `SetIterator` or `MapIterator` read as
 an `Iterator` of its argument. None of these iterators has a `return`, so a
 loop left early by `break`, `return` or a throw calls nothing. An iterable of
-any other kind with a `[Symbol.iterator]` (an `Iterable<T>`, a record with
-one) is a client's, whose `return` an early exit calls, and is refused; any
-other steps `%Iterate%`, whose typing then refuses what is no array. Lean
-compiles the loop itself (`SourceExtraction.body`), $\mathit{it}$ the picked
+any other kind with a `[Symbol.iterator]` (an `Iterable<T>`, a class or a
+record with one), or a union with one, is the program's, and runs the
+[iterator protocol](#the-iterator-protocol); any other steps `%Iterate%`,
+whose typing then refuses what is no array. Lean compiles the loop over a
+host iterable itself (`SourceExtraction.body`), $\mathit{it}$ the picked
 intrinsic:
 
 $$
@@ -3567,13 +3585,86 @@ $\mathtt{\%Spread{:}K\%}:\forall\vec\alpha.\ (P)\Rightarrow E[\,]$ for each
 $\mathtt{\%Iterate{:}K\%}:\forall\vec\alpha.\ (P)\Rightarrow\mathit{Step}(E)$, the
 array of what that step yields until $\mathsf{null}$. It is an ordinary call
 of a trusted value, and the array an ordinary spread into a variadic
-callee. A spread of a client's iterable is refused.
+callee. A spread of a program's iterable is collected by the
+[protocol](#the-iterator-protocol).
 
 A tuple meets `Iterable<T>` through the readonly array of its positions: the
 producer claims a tuple expected at an iterable other than an array at
 $\mathsf{readonly}\ (A_0\cup\ldots\cup A_{n-1})[\,]$, which Lean derives from
 the tuple ($\mathsf{list}$ inclusion) and relates to the iterable through
 `Array.prototype[Symbol.iterator]`, as for any array.
+
+### The iterator protocol
+
+An iterable the program defines is iterated as
+[ECMA-262](REFERENCES.md#ecma-262)'s ForIn/OfBodyEvaluation runs it, in
+ordinary forms the parser writes (`protocolForOf`), each an ordinary call or
+read typed by the declarations TypeScript gives the iterable (`Iterable<T>`,
+`Iterator<T, TReturn, TNext>`, `IteratorResult<T, TReturn>`, or the program's
+own class or record), under names no source spells:
+
+$$
+\begin{array}{l}
+[\![\mathsf{for}\ (\mathsf{const}\ x\ \mathsf{of}\ e)\ S]\!]=
+\{\ \mathsf{const}\ i=e[@@\mathit{iterator}](),\ n=i.\mathit{next}.\mathsf{bind}(i);\\
+\quad\mathsf{while}\ (\mathsf{true})\ \{\ \mathsf{const}\ r=n();\ \mathsf{if}\ (r.\mathit{done})\ \mathsf{break};\
+  \mathsf{const}\ x=r.\mathit{value};\ \mathsf{closing}\ \{S\}\ \mathsf{close}\ C_i\ \}\ \}\\[2pt]
+C_i=\mathsf{const}\ m=i.\mathit{return};\ \mathsf{if}\ (\mathsf{typeof}\ m\ne\texttt{"undefined"})\ \{\ \mathsf{const}\ \_:\mathsf{object}=m.\mathsf{call}(i)\ \}
+\end{array}
+$$
+
+GetIterator reads `next` once, and each step calls it on the iterator: the
+bound function is that call ([`bindMember`](#judgments-and-constructor-views)). A
+`return` the iterator's type declares a required method is read bound the
+same way, $C_i=\mathsf{const}\ m=i.\mathit{return}.\mathsf{bind}(i);\ \mathsf{const}\ \_:\mathsf{object}=m()$;
+an optional one or a property is read, tested and called on the iterator, as
+GetMethod and IteratorClose do. The result must be an object, which is the
+TypeError IteratorClose throws otherwise, made impossible by the annotation's
+obligation. The test of `r.done` refines $r$ to the arms whose `done` may be
+falsy (a [field slice](#refinement-under-an-observed-outcome) through the
+read's link, optional where `IteratorYieldResult` leaves `done` optional), so
+`r.value` is read at the not-done arm's type, `T`. An iterator whose type
+states no `return` is refused where the loop could close it: an open record
+may own any `return`.
+
+The closing region is a `finally` that runs on some ways out of $S$ only,
+compiled by the machinery of `try` (`SourceExtraction.body`, `Finalizer`):
+
+$$
+\frac{\begin{array}{c}
+\Gamma\vdash_R S\ \text{with}\ \mathsf{break}\mapsto C;\mathit{exit},\quad
+  \mathsf{return}\ v\mapsto C;\mathsf{return}\ v,\quad
+  \mathsf{continue}\mapsto\mathit{head},\quad
+  \mathsf{throw}\ u\mapsto(\mathsf{try}\ C\ \mathsf{catch}\ \{\});\mathsf{throw}\ u\\
+\Gamma\vdash_R C\ \text{on each of those ways}
+\end{array}}
+     {\Gamma\vdash_R\ \mathsf{closing}\ \{S\}\ \mathsf{close}\ C}\ \textsc{closing}
+$$
+
+The close runs before a `break` of the loop leaves it, before a `return`
+returns the value held in a slot of its own (as through any `finally`), and,
+its own throws discarded by a handler that drops them, before a throw out of
+the body is thrown again: IteratorClose with a throw completion keeps the
+body's. Its end and a `continue` go to the head, and a done result leaves
+without it, as IteratorClose is not called there. A jump past the loop to an
+outer target passes it as it passes a `finally`. Every edge is checked as
+any other; the close's statement entries state each cell at its contract.
+
+A spread of a program's iterable (`collect`), the one element of an array
+literal or an argument of a call of a name after names and literals the file
+never assigns, and the statement's value, is collected before the
+statement, where nothing the statement evaluates before the spread can be
+changed by the iterator's code: $\mathsf{const}\ a=[\,],\ i,\ n;\ \mathsf{while}\
+(\mathsf{true})\ \{\ \mathsf{const}\ r=n();\ \mathsf{if}\ (r.\mathit{done})\ \mathsf{break};\
+a.\mathit{push}(r.\mathit{value})\ \}$, then $\ldots a$ (or $a$ for the literal);
+a spread steps to the end and closes nothing. An array pattern
+`const [p₀, …, ...q] = e` over one (`protocolPattern`) steps once per element,
+a hole too, into cells $v_j$ starting `undefined`, leaves a labeled block when
+a step is done, collects the rest to the end, and without a rest closes the
+iterator after the elements, as IteratorBindingInitialization does; the
+source's names are then bound from the cells, which binding names does not
+observe. A default or a nested pattern, which run code between the steps, is
+refused.
 
 ### Statement forms
 
@@ -3681,7 +3772,19 @@ $$
      {\Gamma\vdash_R\ \mathsf{if}\ (o.f\equiv k)\ S_1\ \mathsf{else}\ S_2}\ \textsc{if-field}
 $$
 
-with $F^f$ the field slice. `x === y` with `x` claimed at a union of
+with $F^f$ the field slice. The truthiness of a field of an immutable
+binding's object, where an arm of it leaves the field optional or unnamed (so
+that no fact about what the field holds is claimed, as of an
+`IteratorResult`'s `done`), narrows the object's arms the same way, the read
+dispatched on its truthiness:
+
+$$
+\frac{\Gamma[o:F^{f}_{\mathsf{truthy}}(\Gamma(o))]\vdash_R S_1\quad
+      \Gamma[o:F^{f}_{\lnot\mathsf{truthy}}(\Gamma(o))]\vdash_R S_2}
+     {\Gamma\vdash_R\ \mathsf{if}\ (o.f)\ S_1\ \mathsf{else}\ S_2}\ \textsc{if-field-truthy}
+$$
+
+`x === y` with `x` claimed at a union of
 singletons is dispatched as the disjunction over its singletons $c$ of
 $x\equiv c\land y\equiv c$ (`savedSplit` where `x` has effects). Strict
 equality without a singleton is the $\equiv$ operator of `arith`, which

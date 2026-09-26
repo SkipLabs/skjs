@@ -297,8 +297,9 @@ let iterated_hint declarations expected =
    refusal where the loop or spread steps `%Iterate%` or copies an array:
    the parser picks the intrinsic of a string, a `Set`, a `Map` or a host
    collection iterator only where TypeScript types the whole iterable as one
-   such kind, and refuses a client's iterable (PROGRAM-TYPING.md "Loops and
-   spreads over iterables"). A type parameter is left to Lean. *)
+   such kind, and lowers a program's iterable, or a union with one, to the
+   iterator protocol (PROGRAM-TYPING.md "Loops and spreads over iterables").
+   A type parameter is left to Lean. *)
 let rec non_array_arm declarations seen t = match t with
   | Rigid _ -> None
   | Union ts -> List.find_map (non_array_arm declarations seen) ts
@@ -320,8 +321,8 @@ let rec non_array_arm declarations seen t = match t with
       | _ -> None) atoms
 let iteration_reason =
   "the iteration of one host kind is stated (%Iterate:K%), picked where the whole iterable is of that \
-   kind: a union of kinds has no one intrinsic, and a client iterable runs its own code (its `next` and \
-   `return`)"
+   kind: a union of host kinds has no one intrinsic (an iterable the program defines, or a union with \
+   one, runs the iterator protocol)"
 (* The elements a slice rest from index [start] collects from an array of
    type [t]: every arm's positions from there on, an optional one with
    `undefined`, and its rest element. `%RestFrom:k%` is claimed at it. *)
@@ -449,14 +450,14 @@ let rec record_arms declarations seen = function
       | _ -> []) atoms
   | Union parts -> List.concat_map (record_arms declarations seen) parts
   | Rigid _ | Meet _ -> []
-let discriminated_record declarations expected (members:(string * expr) list) =
+let discriminated_record declarations expected (members:(key * expr) list) =
   let admits (s:shape) =
     List.for_all (fun (name,e) ->
-      match List.find_opt (fun (f:field) -> f.name = Name name && not f.host) s.fields with
+      match List.find_opt (fun (f:field) -> f.name = name && not f.host) s.fields with
       | Some f -> literal_admitted declarations e f.read
-      | None -> index_for s (Name name) <> None) members
+      | None -> index_for s name <> None) members
     && List.for_all (fun (f:field) -> f.optional || f.host
-      || (match f.name with Name n -> List.mem_assoc n members | Key _ -> false)) s.fields in
+      || List.mem_assoc f.name members) s.fields in
   match List.filter admits (record_arms declarations [] expected) with
   | [shape] -> Some shape
   | _ -> None
@@ -549,6 +550,23 @@ let discriminate declarations t key slice =
       match (try Some (field_type declarations [] (Atoms [atom]) key) with Json.Error _ -> None) with
       | Some field -> slice field <> Atoms []
       | None -> true in
+    let kept = List.filter admits atoms in
+    if List.length kept = List.length atoms then t else Atoms kept
+  | Rigid _ | Union _ | Meet _ -> t
+(* The arms of `t` whose object may still be of them once the value of its
+   field `key` answered `slice`: an arm is dropped only where it fixes the
+   field, required, at a type none of whose values does. *)
+let discriminate_fixed declarations t key slice =
+  match declared_head declarations [] t with
+  | Atoms atoms ->
+    let fixed atom = match (try Some (declared_head declarations [] (Atoms [atom])) with Json.Error _ -> None) with
+      | Some (Atoms [Shape {fields;_}]) | Some (Atoms [Exact fields]) ->
+        List.exists (fun (f:Semantic.field) -> f.name = key && not f.optional) fields
+      | _ -> false in
+    let admits atom = not (fixed atom) ||
+      (match (try Some (field_type declarations [] (Atoms [atom]) key) with Json.Error _ -> None) with
+       | Some field -> slice field <> Atoms []
+       | None -> true) in
     let kept = List.filter admits atoms in
     if List.length kept = List.length atoms then t else Atoms kept
   | Rigid _ | Union _ | Meet _ -> t
@@ -840,7 +858,16 @@ let rec branch_with ?(modules = fun _ -> None) ?(claimed = fun _ -> None) declar
   (* A name as a condition is tested for truthiness; a Boolean's slice is
      its literal. *)
   | Id name -> refine_value env name (truthy_slice truth)
-  | Read ({node=Id name;_},Name field) -> refine_field env name field (truthy_slice truth)
+  (* Where some arm leaves the field optional or unnamed, so that nothing is
+     known of what it holds, the test keeps the arms whose field may answer
+     so (Lean's `fieldSlice` through the read's link): `IteratorResult` by
+     `done`. *)
+  | Read ({node=Id name;_},Name field) ->
+    let env = match List.assoc_opt name env with
+      | Some (Value t) when not (record_field declarations t field) ->
+        refine_value env name (fun t -> discriminate_fixed declarations t (Name field) (truthy_slice truth))
+      | _ -> env in
+    refine_field env name field (truthy_slice truth)
   (* A true `&&` (a false `||`) established both operands so; the other
      answer came from either operand, the right one after the left answered
      the first way, and holds what either established. *)
@@ -1117,13 +1144,13 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | Some _,Ctor {node=Lambda (None,[],ps,[],false,Some instance,body);_} when allocated body <> None ->
       let fs = Option.get (allocated body) in
       (* An instance's methods are its prototype chain's, the nearer first. *)
-      let rec chain seen fs = match List.assoc_opt proto_key fs with
+      let rec chain seen fs = match List.assoc_opt (Name proto_key) fs with
         | Some {node=Id p;_} when not (List.mem p seen) ->
           let own = Option.value (List.assoc_opt p !objects) ~default:[] in
-          List.filter (fun (k,_) -> k <> proto_key) own
+          List.filter (fun (k,_) -> k <> Name proto_key) own
           @ List.filter (fun (k,_) -> not (List.mem_assoc k own)) (chain (p::seen) own)
         | _ -> [] in
-      let fs = if List.mem_assoc proto_key fs then chain [] fs else fs in
+      let fs = if List.mem_assoc (Name proto_key) fs then chain [] fs else fs in
       let methods = List.filter_map (fun (key,(e:expr)) -> match e.node with
         | Id m when List.mem_assoc m !closures -> Some (key,m)
         | _ -> None) fs in
@@ -1160,7 +1187,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | Atoms [Ctors signatures] ->
       List.iter (fun (s:Semantic.signature) ->
         let member key = match (try Some (declared_head declarations []
-            (field_type declarations [] s.result (Name key))) with Json.Error _ -> None) with
+            (field_type declarations [] s.result key)) with Json.Error _ -> None) with
           | Some (Atoms [Shape {calls=[m];fields=[];indexes=[];elements=None}]) -> Some m
           | _ -> None in
         let widened = List.filter (fun (key,m) -> match member key with
@@ -1319,7 +1346,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let fields = List.map (fun (name,e) -> name,const_type env e) fs in
       if List.exists (fun (_,t) -> t = None) fields then None
       else Some (record (List.map (fun (name,t) ->
-        {name=Name name;optional=false;read=Option.get t;write=None;host=false}) fields))
+        {name;optional=false;read=Option.get t;write=None;host=false}) fields))
     | _ -> None
   (* A name `Array.isArray` found an array of, where it may be an open
      record or anything, used where every array would do. *)
@@ -1602,13 +1629,13 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         | Some shape -> Some shape
         | None -> Option.bind expected (fun t -> discriminated_record declarations t fs) in
       let fields = List.map (fun (name,e) ->
-        let hint = Option.bind contract (fun s -> List.find_opt (fun (f:Semantic.field) -> f.name=Name name) s.fields) in
+        let hint = Option.bind contract (fun s -> List.find_opt (fun (f:Semantic.field) -> f.name=name) s.fields) in
         (* A key the contract names is built at its member's type; any other
            at the index. *)
         let expected = match hint,contract with
           | Some (f:Semantic.field),_ -> Some f.read
           | None,Some shape -> Option.map (fun (i:Semantic.index_signature) -> i.value)
-              (index_for shape (Name name))
+              (index_for shape name)
           | None,_ -> None in
         let inferred=expr ?expected env e in
         (* A method's closure offered further signatures is held at its own
@@ -1622,7 +1649,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         let fresh = match e.node with Id _ | Read _ -> false | _ -> true in
         let t=if widened || (expected = None && not fresh) then inferred
           else Option.value expected ~default:(widen inferred) in
-        {name=Name name;optional=false;read=t;write=Some t;host=false}) fs in
+        {name;optional=false;read=t;write=Some t;host=false}) fs in
       (* Where the contract is a dictionary, or has optional fields, the
          literal is claimed with its exact keys: that own-key bound is what
          lets it meet an index, or an optional field it leaves out. A class
@@ -1630,7 +1657,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
          too: the bound is what says a method is not its own, so a read of it
          continues at the prototype. *)
       (match contract with
-       | _ when List.mem_assoc proto_key fs || List.mem e.pos !exact_allocs -> Atoms [Exact fields]
+       | _ when List.mem_assoc (Name proto_key) fs || List.mem e.pos !exact_allocs -> Atoms [Exact fields]
        | Some {indexes=_::_;_} -> Atoms [Exact fields]
        | Some {fields=contract_fields;_}
          when List.exists (fun (f:Semantic.field) -> f.optional) contract_fields -> Atoms [Exact fields]
@@ -1918,15 +1945,22 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       (* A closure literal expected at one signature binding more parameters
          than it does, whose leading positions its own take, is offered it
          where it is created, as a named one is offered by its uses. *)
+      (* Expected at several signatures (a method whose rest is a union of
+         tuples, `next(...[value]: [] | [TNext])`), it is offered each that
+         binds more, beside its own, which takes the others. *)
+      let implements_arity (s:Semantic.signature) =
+        s.quantified=[] && s.variadic=None && List.length s.params = List.length ps in
+      let longer (s:Semantic.signature) = s.quantified=[] && s.rest_pack=None
+        && (match s.variadic with
+            | None -> List.length s.params > List.length ps
+            | Some _ -> List.length s.params >= List.length ps)
+        && List.for_all2 plausible_subtype
+             (List.filteri (fun i _ -> i < List.length ps) s.params) (List.map snd ps) in
       let from_context = match expected with
         | Some t -> (match (try declared_head declarations [] t with Json.Error _ -> t) with
-          | Atoms [Shape {calls=[s];fields=[];indexes=[];elements=None}]
-            when s.quantified=[] && s.rest_pack=None
-                 && (match s.variadic with
-                     | None -> List.length s.params > List.length ps
-                     | Some _ -> List.length s.params >= List.length ps)
-                 && List.for_all2 plausible_subtype
-                      (List.filteri (fun i _ -> i < List.length ps) s.params) (List.map snd ps) -> [s]
+          | Atoms [Shape {calls=[s];fields=[];indexes=[];elements=None}] when longer s -> [s]
+          | Atoms [Shape {calls=(_::_::_ as calls);fields=[];indexes=[];elements=None}]
+            when not (List.for_all implements_arity calls) -> List.filter longer calls
           | _ -> [])
         | None -> [] in
       let offered_here = match List.assoc_opt e.pos offered, from_context with
@@ -2336,6 +2370,15 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         | _ -> unsupported "function field construction requires a callable and a record contract")
     | Bind (callee,receiver,args) ->
       let callee=declared_head declarations [] (expr env callee) in ignore (expr env receiver);
+      (* A target of several signatures, `next(...[value]: [] | [TNext])`, is
+         bound at the first that takes the prefix: the bound function's claim
+         is one signature, which Lean selects among the target's. *)
+      let fits (s:Semantic.signature) = s.quantified=[] && s.rest_pack=None && (s.variadic<>None
+        || List.length args<=List.length s.params) in
+      let callee = match callee with
+        | Atoms [Shape ({calls=_::_::_ as calls;_} as shape)] when List.exists fits calls ->
+          Atoms [Shape {shape with calls=[List.find fits calls]}]
+        | t -> t in
       (match callee with Atoms [Shape {calls=[signature];_}]
           when signature.quantified=[] && (signature.variadic<>None
             || List.length args<=List.length signature.params) ->
@@ -2478,6 +2521,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       (returns body && (match handler with Some (_,h) -> returns h | None -> true))
     | {statement=Block (label,body);_}::_ ->
       returns body && (match label with Some l -> not (List.exists (leaves l) body) | None -> true)
+    | {statement=Closing (_,body);_}::_ -> returns body
     | _ -> false
   and leaves l s = match s.statement with
     | Break (Some l') -> l = l'
@@ -2486,6 +2530,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | ForOf (_,_,_,_,body) | Block (_,body) -> List.exists (leaves l) body
     | Try (body,handler,finalizer) -> List.exists (leaves l)
       (body @ (match handler with Some (_,h) -> h | None -> []) @ Option.value finalizer ~default:[])
+    | Closing (close,body) -> List.exists (leaves l) (body @ close)
     | Declare _ | Destructure _ | Return _ | Effect _ | Throw _ | Break _ | Continue -> false in
   let after e env = effects env e in
   (* An assignment statement writes only the cell it names. *)
@@ -2502,6 +2547,8 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | Throw e -> stirs e
     | Try (body,handler,finalizer) -> List.exists stirs_statement
       (body @ (match handler with Some (_,h) -> h | None -> []) @ Option.value finalizer ~default:[])
+    (* Closing calls the iterator's `return`. *)
+    | Closing _ -> true
     | Break _ | Continue -> false in
   (* A point reached after any part of these statements ran: a cell they
      assign, or any cell where they may write one unseen, is known there by
@@ -2568,6 +2615,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | ForOf (_,_,_,e,b) -> mentions n e || List.exists (stmt_mentions n) b
     | Try (b,h,f) -> List.exists (stmt_mentions n)
       (b @ (match h with Some (_,h) -> h | None -> []) @ Option.value f ~default:[])
+    | Closing (c,b) -> List.exists (stmt_mentions n) (b @ c)
     | Break _ | Continue -> false in
   (* The first use of an unannotated constant's fresh array, in the
      statements after its declaration: where it is the whole value expected
@@ -2763,6 +2811,21 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
        (* The `finally` block runs after a completion, a `return` or a throw,
           from any point: it knows each cell by its contract. *)
        | Some finalizer -> local (statements (forget env) finalizer))
+    (* A program iterable's loop body. Its close runs after a `break` of the
+       loop, a `return` or a throw out of the body, from any point of it: it
+       knows each cell by its contract, and a `break` leaves the loop after
+       it, knowing what a call leaves known. *)
+    | Closing (close,body) ->
+      let local after = List.filter (fun (n,_) -> List.mem_assoc n env) after in
+      let marker = match !loops with (breaks,_) :: _ -> List.length !breaks | [] -> 0 in
+      let completed = statements env body in
+      (match !loops with
+       | (breaks,_) :: _ ->
+         let fresh = List.length !breaks - marker in
+         breaks := List.mapi (fun i e -> if i < fresh then forget e else e) !breaks
+       | [] -> ());
+      ignore (statements (forget env) close);
+      local completed
     | Break (Some l) -> Hashtbl.add exits l env; env
     | Break None -> (match !loops with (breaks,_) :: _ -> breaks := env :: !breaks | [] -> ()); env
     | Continue -> (match !loops with (_,continues) :: _ -> continues := env :: !continues | [] -> ()); env)

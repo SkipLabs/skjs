@@ -388,8 +388,9 @@ properties when it is evaluated
 ([allocation from parts](PROGRAM-TYPING.md#allocation-from-parts)): a class
 instance's methods are its prototype's and are not copied, nor is an
 `Error`'s non-enumerable `message`, nor a symbol-keyed property. A numeric
-key is the property its `ToString` spells; `__proto__`, computed keys and
-accessors are refused. An object pattern's rest is the same copy less the
+key is the property its `ToString` spells, and a computed key naming a
+`unique symbol` constant (`Symbol.iterator`, or one the program makes) is that
+symbol's key; `__proto__`, any other computed key and accessors are refused. An object pattern's rest is the same copy less the
 named keys.
 
 ### Arrays
@@ -552,7 +553,9 @@ with the reason where the model would answer otherwise
 primitive kind, `Array.isArray` and `instanceof Array` (`isArray`: owns the
 store key), and `x instanceof C` for a class the file declares
 (`hasKey` of the key only `C`'s prototype owns). A test of a field of an
-immutable binding's object against a singleton narrows the object's arms; a
+immutable binding's object against a singleton, or of its truthiness where
+an arm leaves the field optional (an `IteratorResult`'s `done`), narrows the
+object's arms; a
 key found present promotes an optional field to a field, since an object
 keeps its keys. A test on a mutable cell refines the read, never the cell.
 `&&`, `||` and `??` return an operand, as JavaScript's do, by the same
@@ -560,19 +563,35 @@ tests.
 
 ### Async and iteration
 
-`await`, an async function's return and completion, `for...of`, an argument
-spread of a non-array iterable, an array pattern's slice rest and `for...in`
+`await`, an async function's return and completion, `for...of` and a
+spread over a host iterable, an array pattern's slice rest and `for...in`
 are calls of trusted **intrinsics**, values no source name spells, whose
 signatures the declaration reader states
 ([async](PROGRAM-TYPING.md#async-functions-and-await),
-[loops](PROGRAM-TYPING.md#loops-and-spreads-over-iterables)). A loop steps
-one **iteration intrinsic** family, `%Iterate:K%`, picked by TypeScript's
-type of the iterable: an array's (`%Iterate%`), a string's, a `Set`'s, a
-`Map`'s and a host collection iterator's; a spread collects the same
-iterator into a fresh array (`%Spread:K%`). None of these iterators has a
-`return`, so leaving a loop early calls nothing; a client's iterable, whose
-`return` would run, is refused. No calculus rule changes: a call's callee is
-an assumption at its declared type. An async function's
+[loops](PROGRAM-TYPING.md#loops-and-spreads-over-iterables)). A loop over a
+host iterable steps one **iteration intrinsic** family, `%Iterate:K%`, picked
+by TypeScript's type of the iterable: an array's (`%Iterate%`), a string's, a
+`Set`'s, a `Map`'s and a host collection iterator's; a spread collects the
+same iterator into a fresh array (`%Spread:K%`). None of these iterators has
+a `return`, so leaving such a loop early calls nothing. An iterable the
+program defines (an object with its own `[Symbol.iterator]`, an
+`Iterable<T>`) runs the **iterator protocol** of
+[ECMA-262](REFERENCES.md#ecma-262) as ordinary calls, each typed
+by TypeScript's `Iterable`, `Iterator` and `IteratorResult` declarations: the
+parser writes GetIterator, `next` read once and called per step, the result's
+`done` tested (a truthiness test of a field, which refines the result to its
+not-done arm) and its `value` bound. IteratorClose is a **closing region**
+around the loop's body, a `finally` that runs on some ways out only: before
+a `break` of the loop leaves it, before a `return` returns, and, its own
+throws discarded, before a throw out of the body resumes; not at the body's
+end, on a `continue`, or when the iterator is done. It calls the iterator's
+`return` where it is not `undefined`, whose result must be an object. A
+spread of such an iterable is collected before its statement, where nothing
+the statement evaluates before it can change, and an array pattern over one
+steps once per element and closes the iterator where no rest took it to its
+end. A generator is refused: its body suspends at `yield`, which no term
+expresses. No calculus rule changes: a call's callee is an assumption at its
+declared type, or code the unit checks. An async function's
 promise settles only to a primitive, the values that are never thenables
 ([nested promises](ECMA-CONNECTION.md#illustration-nested-promises)).
 The model runs a body to its end; every point where other code can intervene
@@ -591,7 +610,7 @@ text.
 
 | Assumption | Where it is stated |
 | --- | --- |
-| The parser represents the source faithfully: it admits only the fragment, and its lowerings (unbraced arms, `switch`, `for`, templates, enums, optional chains, async forms, patterns, dead code, a shadowing local's renaming by the declaration TypeScript binds each reference to, a `let` nothing writes as a `const`, a rest parameter's alias equation) preserve JavaScript's execution. | `tools/fragment-parse.mts`, `fragment.mts` |
+| The parser represents the source faithfully: it admits only the fragment, and its lowerings (unbraced arms, `switch`, `for`, templates, enums, optional chains, async forms, patterns, dead code, a shadowing local's renaming by the declaration TypeScript binds each reference to, a `let` nothing writes as a `const`, a rest parameter's alias equation, the iterator protocol of a program's iterable in a `for...of`, a spread and an array pattern, with its closing region) preserve JavaScript's execution. | `tools/fragment-parse.mts`, `fragment.mts` |
 | Source extraction preserves control flow, lexical binding, evaluation order and annotations: which program point a claim is attached to is unproved. No source-to-graph preservation theorem exists. | `Source/Fragment.lean`, `Source/SourceExtraction.lean` |
 | Decoding represents the submitted AST, declarations, claims and evidence faithfully. | `RequestJson.lean`, `SourceClaimJson.lean` |
 | TypeScript's checker resolves each name to its declaration in the file's project, whose strict `tsconfig.json` (paths, links, library set, type packages) reflects the real build; a TypeScript error in a collected declaration or on an import it passes through refuses the graph. The parser checks TypeScript read the bytes it parsed. | `tools/declaration-graph.mts` |
@@ -624,7 +643,7 @@ the model's reading of an operation relies.
 | --- | --- |
 | The caller contract: a value conforming to a structural annotation (a parameter, an import, a library result) is a plain data object, its stated string-keyed fields own enumerable data properties, not accessors or proxies, which a spread copies; a conforming function respects its contract across every future heap, callback effects included. Two such parameters may alias. `Error`'s `message` is the exception, held on a prototype the model gives it. | `RequestJson.verify_safe` quantifies over environments meeting the input types |
 | A value whose trusted declaration types it `Function` has call or construct code. | [`Function`](PROGRAM-TYPING.md#library-types) |
-| A value TypeScript types as `Set<T>`, `Map<K, V>`, `SetIterator<T>` or `MapIterator<T>` that a loop or spread iterates is the host's: its iterator is the realm's, and the prototypes it inherits (`%IteratorPrototype%` included) hold no `return` and are unmodified. Assumed of every such value a program receives; the fragment builds none but through the host (a `[Symbol.iterator]` key is refused in literals and classes). | the iteration intrinsics' pick, `iterationKind` in `tools/declaration-graph.mts` |
+| A value TypeScript types as `Set<T>`, `Map<K, V>`, `SetIterator<T>` or `MapIterator<T>` that a loop or spread iterates is the host's: its iterator is the realm's, and the prototypes it inherits (`%IteratorPrototype%` included) hold no `return` and are unmodified. Assumed of every such value a program receives; the fragment builds none but through the host: a `Set`'s and a `Map`'s type state their `[Symbol.toStringTag]`, a well-known symbol key no literal or class of the fragment writes, and no annotation of the fragment states a `SetIterator` or `MapIterator`. A host iterator a program's protocol steps (an array's, as an `Iterable<T>`) likewise has no `return` along its chain. | the iteration intrinsics' pick, `iterationKind` in `tools/declaration-graph.mts`; `writtenSymbol` in `tools/fragment-parse.mts` |
 | Every object owning the array store key is a JavaScript array: every object the model allocates, and assumed of every object a program receives. `Array.isArray` is the native test. For `instanceof Array`, every array a program receives is of its realm and no object but an array inherits from `Array.prototype`. | `isArray` ([SEMANTICS](SEMANTICS.md#operational-language)); the `Array` entries of `library-globals.mts` |
 | An array a program receives owns no key its prototype provides. | the $\mathsf{outside}\,N$ bound of the array shape |
 | The model's reserved keys (the store key `[]` and every name in double brackets) are spelled by no source key, and an object a program receives is represented with its own keys apart from them. | `Fragment.sourceKey`, `reservedSourceKey` |
@@ -662,15 +681,18 @@ not yet taken are [next steps](#next-steps); a search failure is neither.
 | Narrowing `number[] \| Foo` by `Array.isArray` to drop `Foo` | An array may carry `Foo`'s keys. |
 | `===` between two operands that may both be objects without a field (functions, records of optional fields, `unknown`); narrowing by object identity | Such values have no identity in the model; a statement entry states no slot equality. |
 | A user-defined type guard with a body (`x is T`); narrowing through a declared one | Its promise relates the result to the argument, which no function type states. |
-| An accessor (`get`/`set`), `__proto__`, a computed key in a literal, a spread of a string, a function or a class value | The heap has data properties only; the key or copy is known only at run time; the model gives a closure a field JavaScript's lacks. |
+| An accessor (`get`/`set`), `__proto__`, a computed key in a literal other than a `unique symbol` constant, a spread of a string, a function or a class value | The heap has data properties only; the key or copy is known only at run time; the model gives a closure a field JavaScript's lacks. |
+| A literal or class member keyed by a well-known symbol other than `Symbol.iterator` (`Symbol.toStringTag`, `Symbol.hasInstance`, `Symbol.toPrimitive`, …) | It changes how the host treats the object, which the model does not state; a tag would let it pass for a host collection, whose iteration is trusted. |
 | An element read past a tuple arm's length (`const [a, b] = t` with `t: [number] \| [number, string]`); a slice rest in a closure's directly checked body | The read is `undefined`, which no element rule gives; the slice's call is graph code. |
 | A rest parameter of a definition typed by a type parameter; one typed by an intersection, by a tuple with optional or rest elements, or by what is no array | A definition has no allocation rule for an array only an instance fixes (a function type's is a pack); the fresh array's meet has no representation; several lengths are several signatures; the collected array is no value of it. |
 | A `let` pattern whose bindings are written; a test of a written `let` holding a union of objects | Each binding would be a cell with its own contract; a cell's known contents are primitive. |
 | An array pattern over a value that may not be an array | It would step the value's own iterator. |
 | A class method declaring `this: T`; a generic class method; a constructor parameter with a default | A method member is host-relative; the closure's claim would be a quantified callable, which the claim format does not encode; construct code is a term over plain parameters with no default schedule. |
-| A class member with a computed key or a `#private` name; a static `[Symbol.hasInstance]`; an index signature or static block in a class; a generic class in inheritance | A method is a binding and a prototype key named by its plain name; a private name is a slot, not a property; `instanceof` becomes a call; instances are what construction allocates; a static block is code the definition runs; a generic base's construction is quantified. |
-| `for...of` or an argument spread over a client's iterable (an `Iterable<T>`, an object with its own `[Symbol.iterator]`); `for await` | Its own iterator runs, and a loop left early calls its `return`, which no step states. |
-| An array literal spread (`[...xs]`), of any iterable | No literal lowering takes a spread ([next steps](#next-steps)). |
+| A class member with a computed key other than a method's `unique symbol` constant, or a `#private` name; a static `[Symbol.hasInstance]`; an index signature or static block in a class; a generic class in inheritance | A method is a binding and a prototype key named by its plain name or its symbol; a private name is a slot, not a property; `instanceof` becomes a call; instances are what construction allocates; a static block is code the definition runs; a generic base's construction is quantified. |
+| A loop or an array pattern over an iterable whose iterator's type states no `return` | Leaving it early, or a throw out of its body, calls whatever `return` the iterator owns, and an open record type says nothing of that property. |
+| A generator function (`function*`) | Its body suspends at each `yield` and resumes there on the next `next`, which no term of the calculus expresses. |
+| `for await` | Its iterator's steps are promises the model does not adopt. |
+| An array literal spread (`[...xs]`) other than the one element over a program's iterable | No literal lowering takes a spread ([next steps](#next-steps)). |
 | An async function returning an object other than a promise of a primitive, a void async function returning a value, `await` of a non-promise object at its own type | JavaScript adopts thenables, and a record type does not rule out a `then`. |
 | `String(o)`, `o + ""`, `new Date(o)`, `new Set(it)` of a non-array iterable, `JSON.parse` with a reviver, `JSON.stringify` with a replacer, of an array or an open record | The host runs client code (`toString`, `valueOf`, an iterator, a callback, a `toJSON`). |
 | Relational comparison converting its operands (a string and a number, an object, two Booleans); `==` other than `== null`; `+` on a bigint, number–bigint arithmetic, a symbol in a concatenation | The conversion runs code or is not the primitive order; TypeScript refuses the throwing ones. |
@@ -713,9 +735,11 @@ One line each; the reason is the one the design keeps.
   their result or throw, never a wrong value.
 - **`await` is a trusted step; an async result is a primitive.** Thenable
   adoption is never modelled.
-- **Iteration is one intrinsic family, picked by the iterable's type**:
-  `%Iterate:K%` per host iterable kind, none with a `return`; a client's
-  iterable is refused.
+- **A host iterable's iteration is one intrinsic family, picked by the
+  iterable's type**: `%Iterate:K%` per host iterable kind, none with a
+  `return`. **A program's iterable runs the iterator protocol** as ordinary
+  calls, IteratorClose a closing region that the `finally` machinery
+  compiles; generators, which suspend, are not expressed.
 - **Library contracts are TypeScript's declarations through reviewed
   overlays**, each entry pinned to the declaration text; nothing is vendored.
 - **`Function` is "has call or construct code"**; `object` is every object;
@@ -814,11 +838,16 @@ units certified against each other's signatures compose.
 
 **Iteration left open.** An array literal spread needs a literal lowering
 that appends a spread's elements (the `%Spread:K%` array, or an array's
-store) after the positions before it. An array pattern over a non-array
-iterable needs the pattern's reads as steps of `%Iterate:K%`. A client's
-iterable needs its `return` called on every early exit, a `finally`-like
-edge on `break`, `return` and throws out of the loop. An element read past a
-tuple arm's length needs a rule reading `undefined` beyond an exact length.
+store) after the positions before it. An array pattern over a host
+non-array iterable needs the pattern's reads as steps of `%Iterate:K%`, or of
+the protocol. A spread of a program's iterable where the statement evaluates
+code before it, and a default or nested pattern in an array pattern over one,
+need the protocol's steps interleaved with that code, in the expression, not
+before the statement. A generator needs a state-machine lowering, as
+TypeScript's downlevel emit writes one: a closure over the suspension
+point's number and the live locals, whose `next` resumes at a `switch` on
+it. An element read past a tuple arm's length needs a rule reading
+`undefined` beyond an exact length.
 
 **Remaining source forms.** A `break`/`continue` through a `finally`; written
 `let` patterns and assignment patterns into fields; async class methods; `#private`

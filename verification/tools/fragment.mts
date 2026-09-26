@@ -44,7 +44,7 @@ export type Expr =
      class's prototype, its base's. A prototype `instanceof` tests owns its
      class's key, which no source property spells either, at `undefined`
      (`brand`, its value claimed at `pos`). */
-  | { k: "alloc"; pos: Span; fields: { name: string; e: Expr }[]; proto?: Expr;
+  | { k: "alloc"; pos: Span; fields: { name: PropertyKey; e: Expr }[]; proto?: Expr;
       brand?: { key: string; pos: Span } }
   /* An object literal with spreads of values: its parts in source order, a
      named field or a spread. Each part is evaluated where written, and a
@@ -229,6 +229,12 @@ export type Stmt =
   /** `iterate` is the iteration intrinsic stepping the iterable's iterator
    * (`intrinsics.mts`), which the parser picks by TypeScript's type of it. */
   | { k: "forOf"; pos: Span; name: string; namePos: Span; iterate: string; iterable: Expr; body: Stmt[] }
+  /* The body of a `for...of` loop over an iterable the program defines, the
+     last statement of its loop: `close` (IteratorClose) runs where `body` is
+     left otherwise than by completing or by a `continue` of the loop: before
+     a `break` of the loop leaves it, before a `return` returns, and, its own
+     throws discarded, before a throw out of `body` resumes. */
+  | { k: "closing"; pos: Span; close: Stmt[]; body: Stmt[] }
   | { k: "if"; pos: Span; cond: Expr; then: Stmt[]; else_: Stmt[] | null }
   /* `throw e`: `e`, then a throw of its value, which leaves the function
      unless an enclosing `try` catches it. */

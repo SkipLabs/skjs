@@ -906,6 +906,10 @@ private partial def stmtSites : Fragment.Stmt → Sites
       ((body ++ update).foldl (fun s st => joinSites s (stmtSites st)) ([],[],[])))
   -- A block has no entry of its own.
   | .block _ _ body => body.foldl (fun s st => joinSites s (stmtSites st)) ([],[],[])
+  -- An iterator's closing region is an entry, as a `try` is; its body's and
+  -- its close's statements have their own.
+  | .closing p close body =>
+    (body ++ close).foldl (fun s st => joinSites s (stmtSites st)) ([p.1],[],[])
   | .ite p c a b =>
     joinSites ([p.1],[],[]) (joinSites (exprSites c)
       ((a ++ b.getD []).foldl (fun s st => joinSites s (stmtSites st)) ([],[],[])))

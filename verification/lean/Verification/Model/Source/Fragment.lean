@@ -494,8 +494,10 @@ inductive Expr where
   /-- `e as T`, `e satisfies T`, `e!` or `e as const`: the operand's value. An
   annotation is an obligation the operand must meet, never a fact about it. -/
   | cast (pos : Span) (annot : Option Json) (e : Expr)
-  /-- An object literal: one named field per initializer, in source order. -/
-  | alloc (pos : Span) (names : List String) (es : List Expr)
+  /-- An object literal: one named field per initializer, in source order. A
+  key is a string, or the symbol a `unique symbol` constant names
+  (`[Symbol.iterator]`). -/
+  | alloc (pos : Span) (names : List PropKey) (es : List Expr)
   /-- An object literal with spreads of values, in source order: a named
   field (`some k`) or a spread (`none`), each part evaluated where written and
   a spread's operand copied as soon as it is evaluated (DESIGN.md, "Object
@@ -662,6 +664,13 @@ inductive Stmt where
   that way out resumes, unless the finalizer itself leaves. -/
   | tryStmt (pos : Span) (body : List Stmt)
       (handler : Option (Option (String × Span) × List Stmt)) (finalizer : Option (List Stmt))
+  /-- The body of a `for...of` loop over an iterable the program defines, the
+  last statement of its loop (the parser's lowering of the iterator
+  protocol): `close`, IteratorClose, runs where `body` is left otherwise than
+  by completing or by a `continue` of the loop: before a `break` of the loop
+  leaves it, before a `return` returns, and, its own throws discarded, before
+  a throw out of `body` resumes. -/
+  | closing (pos : Span) (close : List Stmt) (body : List Stmt)
 end
 
 /-- The intrinsic a `for...of` over an array steps (`intrinsics.mts`):
@@ -782,6 +791,7 @@ partial def Stmt.freeNames : Stmt → List String
      | some (some (name, _), hs) => (stmtsFreeNames hs).filter (· != name)
      | some (none, hs) => stmtsFreeNames hs
      | none => []) ++ stmtsFreeNames (f.getD [])
+  | .closing _ c b => stmtsFreeNames b ++ stmtsFreeNames c
   | .brk .. | .cont .. => []
 
 /-- A statement list's direct calls of named functions, less those of names
@@ -805,6 +815,7 @@ partial def Stmt.callees : Stmt → List (Span × Span × String × List Json)
   -- the `for` keyword, which is no expression and has no claim.
   | .forOf p name _ it i b => (p, (p.1, p.1 + "for".length), it, []) :: i.callees ++
     (b.flatMap Stmt.callees).filter (·.2.2.1 != name)
+  | .closing _ c b => b.flatMap Stmt.callees ++ c.flatMap Stmt.callees
   | .brk .. | .cont .. => []
 end
 
@@ -871,7 +882,7 @@ def decodeArrayElem (decodeExpr : Json → Except String Expr) (q : Json) :
 def Stmt.pos : Stmt → Span
   | .ret p _ | .constants p _ | .mutables p _ | .destructure p _ _ _
   | .ite p _ _ _ | .loop p _ _ _ | .forOf p _ _ _ _ _ | .brk p _ | .cont p | .effect p _
-  | .block p _ _ | .throw p _ | .tryStmt p _ _ _ => p
+  | .block p _ _ | .throw p _ | .tryStmt p _ _ _ | .closing p _ _ => p
 
 /-- Singleton notation for small source-adapter fixtures. -/
 abbrev Stmt.cst (p : Span) (name : String) (annot : Option Json) (init : Expr) : Stmt :=
@@ -1091,7 +1102,9 @@ partial def decodeExpr (j : Json) : Except String Expr := do
   | "alloc" =>
     let fields ← jArr j "fields"
     let parts ← fields.mapM fun f => do
-      return (← sourceKey (← jStr (← jField f "name")), ← decodeExpr (← jField f "e"))
+      let key ← PropKey.decode (← jField f "name")
+      if let .str s := key then discard <| sourceKey s
+      return (key, ← decodeExpr (← jField f "e"))
     -- A class instance holds its class's prototype object under the key no
     -- source property spells: the parser's lowering of a class states it
     -- apart from the fields, never as a key.
@@ -1103,12 +1116,12 @@ partial def decodeExpr (j : Json) : Except String Expr := do
         let key ← jStr (← jField b "key")
         unless key.startsWith "[[" && key.endsWith ".prototype]]" do
           throw s!"'{key}' is not a class's prototype key"
-        pure [(key, Expr.lit (← jSpan b "pos") .vundef)]
+        pure [(PropKey.str key, Expr.lit (← jSpan b "pos") .vundef)]
       | none => pure []
     let parts := brand ++ parts
     match (j.getObjVal? "proto").toOption with
     | some e =>
-      return .alloc p (protoKeyName :: parts.map Prod.fst) ((← decodeExpr e) :: parts.map Prod.snd)
+      return .alloc p (.str protoKeyName :: parts.map Prod.fst) ((← decodeExpr e) :: parts.map Prod.snd)
     | none => return .alloc p (parts.map Prod.fst) (parts.map Prod.snd)
   | "build" =>
     let fields ← jArr j "parts"
@@ -1346,6 +1359,9 @@ partial def decodeStmt (j : Json) : Except String Stmt := do
   | "block" =>
     CellClaims.fieldsExactly j ["k","pos","label","body"]
     return .block p (← decodeLabel j) (← (← jArr j "body").mapM decodeStmt)
+  | "closing" =>
+    CellClaims.fieldsExactly j ["k","pos","close","body"]
+    return .closing p (← (← jArr j "close").mapM decodeStmt) (← (← jArr j "body").mapM decodeStmt)
   | "forOf" =>
     CellClaims.fieldsExactly j ["k","pos","name","namePos","iterate","iterable","body"]
     let iterate ← jStr (← jField j "iterate")
@@ -1402,7 +1418,7 @@ private partial def prefixExpr (why : String) (result : Option Json) (constructo
     match st with
     | .loop .. | .forOf .. | .brk .. | .cont .. =>
       throw s!"a loop in {why} is outside the fragment: its code is a term, not a graph"
-    | .block .. | .tryStmt .. =>
+    | .block .. | .tryStmt .. | .closing .. =>
       throw s!"a block, switch or try in {why} is outside the fragment: its code is a term, not a graph"
     | .mutables .. =>
       throw s!"a mutable local in {why} is outside the fragment: its code is a term, not a graph"

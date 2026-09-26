@@ -494,6 +494,8 @@ const GROUPS: [string, RegExp][] = [
   ["in / instanceof / typeof tests", /\((in|instanceof)\)|expression typeof|TypeQuery|`in` (with|needs|on)|`instanceof`|does not narrow `unknown`/],
   ["mutable bindings: evolving let (null, undefined, []), let with neither initializer nor annotation, closure parameter assignment", /has no storage contract|a `let` needs an initializer|module constant _ has no claimed initializer|assignment to immutable binding|contract does not settle/],
   ["control-flow forms (else-if, bare return, early return in closures, dead code)", /closure block must return|`else if` and non-block|a bare `return`|statements after (an unconditional )?return|closure returning from a branch/],
+  ["iterables the program defines: an iterator whose type states no `return`, a spread or a pattern the protocol's lowering does not place, a well-known symbol key other than `Symbol.iterator`", /states no `return`|if it owns one \(IteratorClose\)|a spread of a program|array pattern over a program|well-known symbol key other than/],
+  ["generator functions (a body suspended at `yield` is not expressed; the path is a state-machine lowering)", /a generator function is outside/],
   ["loops (for, for-in, for-of forms)", /(ForStatement|ForInStatement)\)|for\.\.\.of/],
   ["exceptions (try/catch/throw)", /TryStatement|ThrowStatement|a jump out of a `try`/],
   ["void expression", /VoidExpression/],

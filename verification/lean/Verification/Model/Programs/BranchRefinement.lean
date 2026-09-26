@@ -140,6 +140,43 @@ theorem fieldSlice_sound {G : NormalGraph ι} {A : Ty ι} {f tag q n W h v flds 
       cases q <;> simp at this
     | _ => simp [fieldAnswers] at hans
 
+/-- An object lacking the key `f` is of no label every clause of which fixes
+`f` (an invariant field or a view is a key the object has): the field slice
+keeps its label, whatever the observation. This is what a read through a key
+the object may lack (an optional link) needs where the key was absent. -/
+theorem fieldSlice_absent {G : NormalGraph ι} {A : Ty ι} {f tag q n W v flds code}
+    (hv : meaning G A (n+1) W v) (hl : v = .objAt flds code) (hf : flds.lookup f = none) :
+    meaning G (fieldSlice G A f tag q) (n+1) W v := by
+  obtain ⟨a, ha, hva⟩ := hv
+  refine ⟨a, List.mem_filter.mpr ⟨ha, ?_⟩, hva⟩
+  cases hd : (G.plain a && (expand G [a]).all fun c => fieldAnswers G c f tag (!q)) with
+  | false => rfl
+  | true =>
+    exfalso
+    simp only [Bool.and_eq_true, List.all_eq_true] at hd
+    have hm : meaning G [a] (n+1) W v := ⟨a, by simp, hva⟩
+    rw [expand_sem G [a] (by simp [NormalGraph.plainTy, hd.1])] at hm
+    obtain ⟨c, hc, hcv⟩ := hm
+    have hans := hd.2 c hc
+    cases c with
+    | refs a' bs vs os ms ks =>
+      simp only [fieldAnswers, List.any_eq_true, Bool.and_eq_true, decide_eq_true_eq] at hans
+      obtain ⟨⟨g, K⟩, hp, ⟨rfl, _⟩, _⟩ := hans
+      rcases List.mem_append.mp hp with hK | hK
+      · obtain ⟨flds', hv', hall⟩ := hcv.1.1
+        rw [hl] at hv'
+        cases hv'
+        obtain ⟨l', _, hl', _⟩ := hall g (meaning G K) (ReferenceConjunctions.mem_famsOf.mpr ⟨K, hK, rfl⟩)
+        rw [hf] at hl'
+        cases hl'
+      · obtain ⟨flds', l', _, hv', hl', _⟩ :=
+          hcv.2.1 g (meaning G K) (ReferenceConjunctions.mem_famsOf.mpr ⟨K, hK, rfl⟩)
+        rw [hl] at hv'
+        cases hv'
+        rw [hf] at hl'
+        cases hl'
+    | _ => simp [fieldAnswers] at hans
+
 /-! ### Presence of an optional key
 
 An object owns its keys from its allocation on: a key found present stays
@@ -456,7 +493,7 @@ def checkObserved [DecidableEq ι] (G : NormalGraph ι) (Γ Δ : List (Ty ι))
     match Γ[slot mapping j]?, Δ[j]?, ps[j]? with
     | some A, some B, some p =>
       if slot mapping j == tested then checkObservedSub G A B o p
-      else PositiveCertificates.check G A B p || fieldRefinements o fields A B (slot mapping j) G p ||
+      else PositiveCertificates.check G A B p || fieldRefinements o (fields ++ optionals) A B (slot mapping j) G p ||
         optionalRefinements o optionals A B (slot mapping j) G p
     | _, _, _ => false))
 
@@ -466,7 +503,7 @@ def ObservedCovers [DecidableEq ι] (G : NormalGraph ι) (Γ Δ : List (Ty ι))
   (∃ A, Γ[tested]? = some A ∧ ∀ n W v, meaning G A n W v → o.holds v → False) ∨
   ∀ j B, Δ[j]? = some B → ∃ A, Γ[slot mapping j]? = some A ∧
     (if slot mapping j = tested then ObservedSub G A B o
-     else Sub G A B ∨ (∃ t q f, o = .tag t q ∧ (slot mapping j, f) ∈ fields ∧
+     else Sub G A B ∨ (∃ t q f, o = .tag t q ∧ (slot mapping j, f) ∈ fields ++ optionals ∧
        Sub G (fieldSlice G A f t q) B) ∨
        ∃ f, (slot mapping j, f) ∈ optionals ∧ excludesUndef o = true ∧ promotes G A B f = true)
 
@@ -522,7 +559,7 @@ theorem ObservedCovers.env [DecidableEq ι] {G : NormalGraph ι} {Γ Δ i o mapp
     (hl : ∀ k f, (k, f) ∈ fields → ∃ flds c l, ρ k = .objAt flds c ∧ flds.lookup f = some l ∧
       h[l]? = some (ρ i))
     (hopt : ∀ k f, (k, f) ∈ optionals → ∃ flds c, ρ k = .objAt flds c ∧
-      (flds.lookup f = none → ρ i = .undef)) :
+      (flds.lookup f = none → ρ i = .undef) ∧ (∀ l, flds.lookup f = some l → h[l]? = some (ρ i))) :
     EnvOk G Δ (mapEnv mapping ρ) (n+1) W := by
   rcases hc with ⟨A, ha, himp⟩ | hc
   · exact (himp _ _ _ (he.2 _ A ha) ho).elim
@@ -537,9 +574,17 @@ theorem ObservedCovers.env [DecidableEq ι] {G : NormalGraph ι} {Γ Δ i o mapp
   · simp only [hij,↓reduceIte] at h
     rcases h with h | ⟨t, q, f, rfl, hf, hs⟩ | ⟨f, hf, hx, hp⟩
     · exact h.sound (n+1) W _ (he.2 _ A ha)
-    · obtain ⟨flds, c, l, hv, hfl, hu⟩ := hl _ f hf
-      exact hs.sound (n+1) W _ (fieldSlice_sound (he.2 _ A ha) hh hv hfl hu ho)
-    · obtain ⟨flds, c, hv, hab⟩ := hopt _ f hf
+    · rcases List.mem_append.mp hf with hf | hf
+      · obtain ⟨flds, c, l, hv, hfl, hu⟩ := hl _ f hf
+        exact hs.sound (n+1) W _ (fieldSlice_sound (he.2 _ A ha) hh hv hfl hu ho)
+      -- Read through a key the object may lack: where it has it, the read
+      -- gave the field's value; where it lacks it, no label the slice drops
+      -- is the object's.
+      · obtain ⟨flds, c, hv, _, hpresent⟩ := hopt _ f hf
+        cases hfl : flds.lookup f with
+        | none => exact hs.sound (n+1) W _ (fieldSlice_absent (he.2 _ A ha) hv hfl)
+        | some l => exact hs.sound (n+1) W _ (fieldSlice_sound (he.2 _ A ha) hh hv hfl (hpresent l hfl) ho)
+    · obtain ⟨flds, c, hv, hab, _⟩ := hopt _ f hf
       cases hfl : flds.lookup f with
       | none => exact absurd (hab hfl) (excludesUndef_sound hx ho)
       | some l =>

@@ -871,7 +871,9 @@ equation. An intersection's reserved row `(row, operand types)` is likewise
 the intersection's from the start (`Memo.meets`): the meet of its operands, as
 the source's own `A & B` lowers (`meetRow`), filled where an equation first
 meets it, or else in row order with the applications, so the rows it names
-are filled first. -/
+are filled first. An application whose equation is a union of reserved rows
+(an alias) is their clauses: it waits for a later pass where one of them is
+not yet filled. -/
 private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table)
     (applications : List (Nat × Nat × List (List Nat)) := [])
     (arrays : List (Nat × Nat × Bool) := [])
@@ -920,37 +922,57 @@ private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table)
   -- Applications and intersections in row order: an argument or an operand
   -- names only earlier rows.
   let order := (applications.map (·.1) ++ meets.map (·.1)).mergeSort (· ≤ ·)
-  for row in order do
-    if let some (_, parts) := meets.find? (·.1 == row) then
-      -- Filled here unless an equation met it first.
-      let ((filled, grown), expanded) ← ((meetRow parts).run memo).run table
-      if filled != [row] then throw "an intersection's reserved row names a type parameter"
-      memo := grown
-      table := expanded
-      continue
-    let some (_, i, args) := applications.find? (·.1 == row) | throw "reserved row without a task"
-    let fill : Lowering (List (Clause (List Nat))) := do
-      let values ← lowerApplication ds i args.toArray {}
-      let T ← getThe SourceTypes.Table
-      -- An application given another row, one whose omitted arguments are
-      -- defaults, is that row's clauses, if it has them.
-      let earlier := ((← get).row T i values).filter (· != row)
-      if let some (RequestJson.Row.clauses cs@(_ :: _)) := earlier.bind (T[·]?) then return cs
-      if mentionsSelf ds[i]!.expression then
-        if earlier.isNone && !(← get).applications.any (·.row == row) then
-          modify fun m => m.give T i values row
-        lowerDefinitionRows ds i (values.push [row]) (Visit.enter {} i)
-      else
-        let labels ← if ds[i]!.bases.isEmpty then
-            lowerType ds i values (Visit.enter {} i) ds[i]!.expression
-          else (← lowerDefinitionRows ds i values (Visit.enter {} i)).mapM use
+  -- An application whose equation is other types' union (an alias,
+  -- `IteratorResult<T>`) is their rows' clauses: where one of them is a row
+  -- reserved later and not yet filled, it waits for a later pass, after it.
+  let mut pending := order
+  let mut done : List Nat := []
+  for _ in [:order.length + 1] do
+    if pending.isEmpty then break
+    let mut waiting : List Nat := []
+    for row in pending do
+      if let some (_, parts) := meets.find? (·.1 == row) then
+        -- Filled here unless an equation met it first.
+        let ((filled, grown), expanded) ← ((meetRow parts).run memo).run table
+        if filled != [row] then throw "an intersection's reserved row names a type parameter"
+        memo := grown
+        table := expanded
+        done := row :: done
+        continue
+      let some (_, i, args) := applications.find? (·.1 == row) | throw "reserved row without a task"
+      let finished := done
+      let fill : Lowering (Option (List (Clause (List Nat)))) := do
+        let values ← lowerApplication ds i args.toArray {}
         let T ← getThe SourceTypes.Table
-        labels.flatMapM fun l => match T[l]? with
-          | some (RequestJson.Row.clauses cs) => pure cs
-          | _ => throw "an application lowers to a row without clauses"
-    let ((filled, grown), expanded) ← (fill.run memo).run table
-    memo := grown
-    table := expanded.set row filled
+        -- An application given another row, one whose omitted arguments are
+        -- defaults, is that row's clauses, if it has them.
+        let earlier := ((← get).row T i values).filter (· != row)
+        if let some (RequestJson.Row.clauses cs@(_ :: _)) := earlier.bind (T[·]?) then return some cs
+        if mentionsSelf ds[i]!.expression then
+          if earlier.isNone && !(← get).applications.any (·.row == row) then
+            modify fun m => m.give T i values row
+          some <$> lowerDefinitionRows ds i (values.push [row]) (Visit.enter {} i)
+        else
+          let labels ← if ds[i]!.bases.isEmpty then
+              lowerType ds i values (Visit.enter {} i) ds[i]!.expression
+            else (← lowerDefinitionRows ds i values (Visit.enter {} i)).mapM use
+          let T ← getThe SourceTypes.Table
+          if labels.any fun l => l != row && order.contains l && !finished.contains l &&
+              T[l]? == some (RequestJson.Row.clauses []) then
+            return none
+          some <$> labels.flatMapM fun l => match T[l]? with
+            | some (RequestJson.Row.clauses cs) => pure cs
+            | _ => throw "an application lowers to a row without clauses"
+      match ← (fill.run memo).run table with
+      | ((some filled, grown), expanded) =>
+        memo := grown
+        table := expanded.set row filled
+        done := row :: done
+      | ((none, _), _) => waiting := waiting ++ [row]
+    if waiting.length == pending.length then
+      throw "reserved applications wait on each other's rows"
+    pending := waiting
+  if !pending.isEmpty then throw "reserved applications wait on each other's rows"
   -- Keys again, now every reserved row, a meet row among them, is filled.
   return (table, memo.rekey table)
 

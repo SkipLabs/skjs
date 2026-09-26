@@ -236,6 +236,20 @@ let encode (proposal : Proposal.t) =
         if d.id=id then
           if d.parameters=[] && args=[] then [i+4]
           else if List.length args <= List.length d.parameters then begin
+            (* An argument left to its default is that default, at the earlier
+               arguments: `IteratorResult<number>` and `IteratorResult<number,
+               unknown>` are one application, and so one row. *)
+            let rec complete previous supplied parameters defaults = match parameters,defaults with
+              | parameter::more,default::others ->
+                (match supplied,default with
+                 | value::tail,_ -> complete ((parameter,Semantic.ValueArgument value)::previous) tail more others
+                 | [],Some value ->
+                   let value = Inference.substitute (List.rev previous) value in
+                   complete ((parameter,Semantic.ValueArgument value)::previous) [] more others
+                 | [],None -> None)
+              | _ -> Some (List.rev_map (fun (_,a) -> match a with
+                  | Semantic.ValueArgument t -> t | _ -> assert false) previous) in
+            let args = Option.value (complete [] args d.parameters d.defaults) ~default:args in
             (* Keyed by the argument rows: two binders of one spelling, a
                class's and a function's, are one parameter row, so their
                applications are one. *)

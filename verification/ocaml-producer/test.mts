@@ -18,6 +18,8 @@ import { readDiagnostic } from "../tools/diagnostic.mts";
 import { checkGenericRest } from "./generic-rest.mts";
 import { checkOverloads } from "./overload-claims.mts";
 import { checkDefaults, checkSchemeDefaults, checkEarlyDefault } from "./default-parameters.mts";
+import vm from "node:vm";
+import { stripTypes } from "../tools/strip-types.mts";
 // The reader's collector, imported rather than served: `serve.mts` takes the
 // port only when it is run directly.
 import { analyse } from "../report-viewer/serve.mts";
@@ -737,6 +739,25 @@ function must<T>(value: T | null | undefined, message: string): T {
   assert.ok(value !== null && value !== undefined, message);
   return value;
 }
+/** The iterator protocol a program's iterable runs, as JavaScript runs the
+ * verified example: its iterator's `return` is called on `break`, `return`
+ * and a throw out of the body, and not at the end or on `continue`; a throw
+ * out of the body wins over one out of the close. The parser's lowering
+ * (`protocolForOf`) calls `return` exactly there. */
+function checkIteratorProtocol(): void {
+  const source = stripTypes(readFileSync(join(here, "examples", "for-of-program-iterable.ts"), "utf8"))
+    .replace(/^export /gm, "");
+  const run = (expression: string): unknown =>
+    vm.runInNewContext(`${source}\n${expression}`, {}, { timeout: 1000 });
+  const list = "new LinkedList(new Cell(1, new Cell(5, new Cell(9, null))), { closed: 0 })";
+  const closes = (call: string) => run(`const l = ${list}; const r = ${call}; JSON.stringify([r, l.log.closed])`);
+  assert.equal(closes("sum(l)"), "[15,0]");
+  assert.equal(closes("firstAbove(l, 3)"), "[5,1]");
+  assert.equal(closes("firstOver(l, 3)"), "[5,1]");
+  assert.equal(closes("skipSmall(l, 3)"), "[14,0]");
+  assert.equal(run("const log = { closed: 0 }; JSON.stringify([firstEven(new Countdowns(5, log)), log.closed])"), "[4,1]");
+  assert.equal(run("bodyThrows(new Brittle()).message"), "body");
+}
 let good = "";
 let generic = "";
 let genericClosure = "";
@@ -806,6 +827,7 @@ for (const [i, test] of cases.entries()) {
   if (test.file === "overloads") checkOverloads(verifier, result.artifacts);
   if (test.file === "values") good = result.artifacts;
   if (test.file === "default-parameter-scope") checkDefaults(verifier, result.artifacts);
+  if (test.file === "for-of-program-iterable") checkIteratorProtocol();
   if (test.file === "invalid-default-invocation") checkEarlyDefault(verifier, result.artifacts);
   if (test.file === "generic-default") checkSchemeDefaults(verifier, result.artifacts);
   if (test.file === "generic-inferred") generic = result.artifacts;
