@@ -952,7 +952,7 @@ private def overloadClaims : Fragment.Claims :=
     { overloadFn with body := [.cst (2,3) "f" (some overloadWire)
       (.lam (4,9) "x" (wireTy ⟨false,[.boolLit true]⟩) (wireTy ⟨false,[.null]⟩) (.lit (8,9) .vnull)),
       .ret (10,17) (.app (12,17) (.var (12,13) "f") (.lit (14,15) (.vbool true)))] } overloadClaims with
-  | .error e => e == "closure signature claim is outside the source annotation"
+  | .error e => e.startsWith "source refusal at [4,9): closure signature claim is outside the source annotation"
   | .ok _ => false)
 -- An argument no signature admits fails the call's claim, not silently.
 #guard !ok (do

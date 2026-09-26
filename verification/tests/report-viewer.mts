@@ -1193,7 +1193,7 @@ assert.equal(must(failedAt(absentEnv), 'a located failure').site, "unclaimed");
     [{callable:{first: [["value", [0]]],rest: [[["value", [1]]]],arrows:[[[4],[[[0],[1]],[1]]],[[4],[[],[]]]]}}],
     [{arrs:{arrows:[]}}], ["bool"], ["undef"], ["nul"],
     [{boolLit:{value:false}}], [{boolLit:{value:true}}],
-    [{dict:{first:[],rest:[],views:[],indexes:[[8]]}}],
+    [{dict:{first:[],rest:[],views:[],indexes:[["strings",[8]]]}}],
   ]);
   assert.deepEqual(parseGraph(printGraph(graph)),graph);
   const rows = graphDefinitions(graph);
