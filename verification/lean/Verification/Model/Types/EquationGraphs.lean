@@ -356,6 +356,52 @@ def Label.view (label : Label sig) : View sig :=
   apply Fin.ext
   rfl
 
+theorem Types.labels_val (ts : Types) (valid : ts.scoped sig 0 0 = true) :
+    Types.ofList ((ts.labels valid).map Subtype.val) = ts := by
+  cases ts with
+  | nil => rfl
+  | cons t ts => simp only [labels, List.map_cons, ofList,
+      labels_val ts (Bool.and_eq_true_iff.mp valid).2]
+
+private theorem Args.labels_val (args : Args) (valid : args.scoped sig 0 0 = true) :
+    Args.ofList ((args.labels valid).map fun ts => Types.ofList (ts.map Subtype.val)) = args := by
+  cases args with
+  | nil => rfl
+  | cons ts args => simp only [labels, List.map_cons, ofList, Types.labels_val,
+      labels_val args (Bool.and_eq_true_iff.mp valid).2]
+
+private theorem Scope.ofRaw_args (head : Nat) (args : Args) (ha hc) :
+    (Scope.ofRaw (sig := sig) head args ha hc).rawArgs = args := by
+  exact Args.labels_val args hc
+
+/-- Every closed label is an application or one of its owned parameters. -/
+theorem Label.cases {P : Label sig → Prop} (label : Label sig)
+    (app : ∀ scope : Scope sig, P scope.label)
+    (bound : ∀ (scope : Scope sig) slot, P (scope.bound slot)) : P label := by
+  rcases label with ⟨t, valid⟩
+  cases t with
+  | app h args =>
+    let scope := Scope.ofRaw h args (Bool.and_eq_true_iff.mp valid).1 (Bool.and_eq_true_iff.mp valid).2
+    have he : scope.label = (⟨.app h args, valid⟩ : Label sig) := by
+      apply Subtype.ext
+      simp only [scope, Scope.label, Scope.ofRaw_args]
+      rfl
+    exact he ▸ app scope
+  | bound h args i =>
+    let scope := Scope.ofRaw h args (Bool.and_eq_true_iff.mp (Bool.and_eq_true_iff.mp valid).1).1
+      (Bool.and_eq_true_iff.mp valid).2
+    have slot : i < sig[scope.head].binders.length := by
+      have hb := (Bool.and_eq_true_iff.mp (Bool.and_eq_true_iff.mp valid).1).2
+      have hh := arityOk_exists (Bool.and_eq_true_iff.mp (Bool.and_eq_true_iff.mp valid).1).1
+      simpa [binderOk, scope, Scope.ofRaw, hh] using hb
+    have he : scope.bound ⟨i, slot⟩ = (⟨.bound h args i, valid⟩ : Label sig) := by
+      apply Subtype.ext
+      simp only [scope, Scope.bound, Scope.ofRaw_args]
+      rfl
+    exact he ▸ bound scope ⟨i, slot⟩
+  | argument i => simp [Tree.scoped] at valid
+  | «local» i => simp [Tree.scoped] at valid
+
 /-- A finite list of templates presents every application at its arguments.
 There is no depth, colour or unfolding budget in the graph definition. -/
 structure Equations where

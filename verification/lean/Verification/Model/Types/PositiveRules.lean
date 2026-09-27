@@ -1513,17 +1513,35 @@ theorem freeOk_meetParams [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V
   simp only [Bool.and_eq_true, List.all_eq_true, List.contains_iff_mem] at h
   exact h.1.1.2 q hq
 
+/-- A local closure condition for free-parameter support. The domain and
+support function need not be finite: equation graphs can establish these laws
+from their templates. The existing finite certificate checks the same laws. -/
+structure FreeSupport (G : NormalGraph ι) (D : ι → Prop) (V : ι → List ι) : Prop where
+  row : ∀ {i}, D i →
+    (G.params i = true → i ∈ V i) ∧
+    (∀ l ∈ reads G i, D l ∧ ∀ p ∈ V l,
+      p ∈ V i ∨ (∃ s, G.schemes i = some s ∧ p ∈ s.binders)) ∧
+    (∀ l ∈ boundReads G i, ∀ p ∈ V l, p ∈ V i)
+  meet : ∀ {i}, D i → ∀ {p cs}, G.meets i = some (p, cs) → p ∈ V i
+  meetParams : ∀ {i}, D i → ∀ {q}, q ∈ G.meetParams i → q ∈ V i
+
+/-- The executable finite check discharges the representation-independent
+support obligation; it is not a second semantic proof. -/
+theorem freeOk_support [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
+    (hF : FreeOk G D V = true) : FreeSupport G (· ∈ D) (fv V) :=
+  ⟨freeOk_row hF, freeOk_meet hF, freeOk_meetParams hF⟩
+
 /-- Free-variable independence is an invariant of the approximations, not an
 extra delay on argument-list membership. -/
-def FreeIndependent [DecidableEq ι] (D : List ι) (V : FreeMap ι) (I : ParameterInterpretation ι k)
+def FreeIndependent [DecidableEq ι] (D : ι → Prop) (V : ι → List ι) (I : ParameterInterpretation ι k)
     (X : ParameterAssignment k ι × ι → Fam) : Prop :=
-  ∀ η θ i, i ∈ D → (∀ p ∈ fv V i, I.parameter p (η.1 p) = I.parameter p (θ.1 p)) → X (η, i) = X (θ, i)
+  ∀ η θ i, D i → (∀ p ∈ V i, I.parameter p (η.1 p) = I.parameter p (θ.1 p)) → X (η, i) = X (θ, i)
 
-private theorem independent_set [DecidableEq ι] {D : List ι} {V : FreeMap ι}
+private theorem independent_set [DecidableEq ι] {D : ι → Prop} {V : ι → List ι}
     {I : ParameterInterpretation ι k}
     {X : ParameterAssignment k ι × ι → Fam} (hX : FreeIndependent D V I X)
-    (η θ : ParameterAssignment k ι) (S : List ι) (hS : ∀ i ∈ S, i ∈ D)
-    (h : ∀ i ∈ S, ∀ p ∈ fv V i, I.parameter p (η.1 p) = I.parameter p (θ.1 p)) :
+    (η θ : ParameterAssignment k ι) (S : List ι) (hS : ∀ i ∈ S, D i)
+    (h : ∀ i ∈ S, ∀ p ∈ V i, I.parameter p (η.1 p) = I.parameter p (θ.1 p)) :
     setSem (fun i => X (η, i)) S = setSem (fun i => X (θ, i)) S := by
   funext n W v
   apply propext
@@ -1533,29 +1551,29 @@ private theorem independent_set [DecidableEq ι] {D : List ι} {V : FreeMap ι}
 
 /-- An interpretation reads only the free parameters of its operand rows.
 This is proved for each interpretation; it is not a certificate assumption. -/
-structure RespectsFree [DecidableEq ι] (D : List ι) (V : FreeMap ι)
+structure RespectsFree [DecidableEq ι] (D : ι → Prop) (V : ι → List ι)
     (I : ParameterInterpretation ι k) : Prop where
   arguments : ∀ X, FreeIndependent D V I X → ∀ η θ S,
-    (∀ i ∈ S, i ∈ D) → (∀ i ∈ S, ∀ p ∈ fv V i, I.parameter p (η.1 p) = I.parameter p (θ.1 p)) →
+    (∀ i ∈ S, D i) → (∀ i ∈ S, ∀ p ∈ V i, I.parameter p (η.1 p) = I.parameter p (θ.1 p)) →
     I.arguments η (setSem fun i => X (η, i)) S =
       I.arguments θ (setSem fun i => X (θ, i)) S
   bound : ∀ X, FreeIndependent D V I X → ∀ η θ S,
-    (∀ i ∈ S, i ∈ D) → (∀ i ∈ S, ∀ p ∈ fv V i, I.parameter p (η.1 p) = I.parameter p (θ.1 p)) →
+    (∀ i ∈ S, D i) → (∀ i ∈ S, ∀ p ∈ V i, I.parameter p (η.1 p) = I.parameter p (θ.1 p)) →
     I.bound η (setSem fun i => X (η, i)) S =
       I.bound θ (setSem fun i => X (θ, i)) S
 
 /-- Argument rows respect the same checked free-variable map as value rows.
 Tuple elements use the approximation's independence at the current level. -/
-theorem graphArguments_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
-    (hF : FreeOk G D V = true) (X : MixedAssignment ι × ι → Fam)
+theorem graphArguments_support [DecidableEq ι] {G : NormalGraph ι} {D : ι → Prop} {V : ι → List ι}
+    (hF : FreeSupport G D V) (X : MixedAssignment ι × ι → Fam)
     (hX : FreeIndependent D V (mixedParameters G) X) (η θ : MixedAssignment ι) (S : List ι)
-    (hS : ∀ i ∈ S, i ∈ D) (h : ∀ i ∈ S, ∀ p ∈ fv V i, (mixedParameters G).parameter p (η.1 p) = (mixedParameters G).parameter p (θ.1 p)) :
+    (hS : ∀ i ∈ S, D i) (h : ∀ i ∈ S, ∀ p ∈ V i, (mixedParameters G).parameter p (η.1 p) = (mixedParameters G).parameter p (θ.1 p)) :
     graphArguments G η (setSem fun i => X (η, i)) S =
       graphArguments G θ (setSem fun i => X (θ, i)) S := by
   funext n W vs
   apply propext
   apply exists_congr fun i => and_congr_right fun hi => ?_
-  have ⟨hself, hreads, _⟩ := freeOk_row hF (hS i hi)
+  have ⟨hself, hreads, _⟩ := hF.row (hS i hi)
   by_cases hp : G.parameterKinds i = some .arguments
   · simp only [hp, ite_true]
     have he := congrFun (congrFun (congrFun
@@ -1574,26 +1592,26 @@ theorem graphArguments_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} 
       · exact h i hi p hp
       · rw [hq] at hs; cases hs
 
-theorem mixed_respectsFree [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
-    (hF : FreeOk G D V = true) : RespectsFree D V (mixedParameters G) := by
+theorem mixed_respectsSupport [DecidableEq ι] {G : NormalGraph ι} {D : ι → Prop} {V : ι → List ι}
+    (hF : FreeSupport G D V) : RespectsFree D V (mixedParameters G) := by
   constructor
-  · exact graphArguments_free hF
+  · exact graphArguments_support hF
   · intro X hX η θ S hS h
     have hv := independent_set hX η θ S hS h
-    have ha := graphArguments_free hF X hX η θ S hS h
+    have ha := graphArguments_support hF X hX η θ S hS h
     funext n W x
     cases x with
     | inl v => exact congrFun (congrFun (congrFun hv n) W) v
     | inr vs => exact congrFun (congrFun (congrFun ha n) W) vs
 
-theorem qLayer_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
-    (hF : FreeOk G D V = true) (I : ParameterInterpretation ι k) (hI : RespectsFree D V I)
+theorem qLayer_support [DecidableEq ι] {G : NormalGraph ι} {D : ι → Prop} {V : ι → List ι}
+    (hF : FreeSupport G D V) (I : ParameterInterpretation ι k) (hI : RespectsFree D V I)
     (X : ParameterAssignment k ι × ι → Fam) (hX : FreeIndependent D V I X) :
     FreeIndependent D V I (qLayerWithArgs G I X) := by
   intro η η' i hi hag
   funext n W v
   apply propext
-  have ⟨hself, hreads, hbounds⟩ := freeOk_row hF hi
+  have ⟨hself, hreads, hbounds⟩ := hF.row hi
   unfold qLayerWithArgs
   cases hp : G.params i
   · simp only [Bool.false_eq_true, if_false]
@@ -1618,7 +1636,7 @@ theorem qLayer_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : Fre
           (fun l hl' p hp => hag p (hbounds l (hbr b hbm l hl').2 p hp))
         dsimp only
         rw [hb]
-      have hin : ∀ l ∈ reads G i, ∀ p ∈ fv V l,
+      have hin : ∀ l ∈ reads G i, ∀ p ∈ V l,
           I.parameter p ((assign η s.binders As).1 p) = I.parameter p ((assign η' s.binders As).1 p) := by
         intro l hlS p hpv
         by_cases hb : p ∈ s.binders
@@ -1670,7 +1688,7 @@ theorem qLayer_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : Fre
     | none =>
       simp only [semList, setSem]
       have hagi := hag
-      have hag : ∀ l ∈ reads G i, ∀ p ∈ fv V l, I.parameter p (η.1 p) = I.parameter p (η'.1 p) := by
+      have hag : ∀ l ∈ reads G i, ∀ p ∈ V l, I.parameter p (η.1 p) = I.parameter p (η'.1 p) := by
         intro l hl p hpv
         rcases (hreads l hl).2 p hpv with h1 | ⟨s', hs', _⟩
         · exact hag p h1
@@ -1703,25 +1721,46 @@ theorem qLayer_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : Fre
       | none => exact cl _ fun c hc => List.mem_append_left _ hc
       | some pc =>
         -- A meet row: its parameter, which is free in it, and its clauses.
-        have hpv := freeOk_meet hF hi (p := pc.1) (cs := pc.2) (by rw [hm])
+        have hpv := hF.meet hi (p := pc.1) (cs := pc.2) (by rw [hm])
         refine and_congr (and_congr ?_ ?_) (cl pc.2 fun c hc => List.mem_append_right _ (by simp [meetClauses, hm, hc]))
         · rw [I.value_parameter pc.1 _ _ (hagi pc.1 hpv)]
         · refine forall_congr' fun q => imp_congr_right fun hq => ?_
-          rw [I.value_parameter q _ _ (hagi q (freeOk_meetParams hF hi hq))]
+          rw [I.value_parameter q _ _ (hagi q (hF.meetParams hi hq))]
   · simp only [if_true]
     rw [I.value_parameter i _ _ (hag i (hself hp))]
 
 
 /-- Independence for the shared recursive interpretation, including mixed pack
 parameters and bounds. It follows from one approximation invariant. -/
-theorem agree_freeWith [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
-    (hF : FreeOk G D V = true) (I : ParameterInterpretation ι k) (hI : RespectsFree D V I) :
+theorem agree_supportWith [DecidableEq ι] {G : NormalGraph ι} {D : ι → Prop} {V : ι → List ι}
+    (hF : FreeSupport G D V) (I : ParameterInterpretation ι k) (hI : RespectsFree D V I) :
     FreeIndependent D V I (qDenoteWithArgs G I) := by
   intro η θ i hi h
   funext n W v
   exact congrFun (congrFun (congrFun
     (Tower.approx_inv (FreeIndependent D V I)
-      (fun _ _ _ _ _ => rfl) (qLayer_free hF I hI) (n + 1) η θ i hi h) n) W) v
+      (fun _ _ _ _ _ => rfl) (qLayer_support hF I hI) (n + 1) η θ i hi h) n) W) v
+
+/-- Finite-certificate specialization of the shared support theorem. -/
+theorem graphArguments_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
+    (hF : FreeOk G D V = true) (X : MixedAssignment ι × ι → Fam)
+    (hX : FreeIndependent (· ∈ D) (fv V) (mixedParameters G) X)
+    (η θ : MixedAssignment ι) (S : List ι) (hS : ∀ i ∈ S, i ∈ D)
+    (h : ∀ i ∈ S, ∀ p ∈ fv V i,
+      (mixedParameters G).parameter p (η.1 p) = (mixedParameters G).parameter p (θ.1 p)) :
+    graphArguments G η (setSem fun i => X (η, i)) S =
+      graphArguments G θ (setSem fun i => X (θ, i)) S :=
+  graphArguments_support (freeOk_support hF) X hX η θ S hS h
+
+theorem mixed_respectsFree [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
+    (hF : FreeOk G D V = true) : RespectsFree (· ∈ D) (fv V) (mixedParameters G) :=
+  mixed_respectsSupport (freeOk_support hF)
+
+theorem agree_freeWith [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
+    (hF : FreeOk G D V = true) (I : ParameterInterpretation ι k)
+    (hI : RespectsFree (· ∈ D) (fv V) I) :
+    FreeIndependent (· ∈ D) (fv V) I (qDenoteWithArgs G I) :=
+  agree_supportWith (freeOk_support hF) I hI
 
 /-- Arrows covering a signature, with the host within their receivers below
 the level in every extending world, meet the host-relative member. -/
@@ -5073,6 +5112,8 @@ theorem Sub.congr {G : NormalGraph ι} {S S' T T' : List ι}
 #print axioms mixed_assignment_substitution
 #print axioms mixed_parameter_image
 #print axioms mixed_enter_binder
+#print axioms agree_supportWith
+#print axioms freeOk_support
 #print axioms agree_freeWith
 #print axioms mixed_respectsFree
 #print axioms graphArguments_image

@@ -1271,14 +1271,21 @@ positive sources as the targets. The work is split by semantic obligation:
      captured arguments. Binding positions name one label; type operands can
      substitute whole unions. Templates cannot manufacture another scope's
      binders, and a scheme must quantify exactly its declared locals.
-     This is a representation foundation, not a new accepted certificate:
-     semantic free-support agreement, substitution and source integration
+     `Types/EquationSupport.lean` proves that this computed free support
+     determines the type's meaning, including argument packs. It uses the same
+     semantic independence theorem as finite certificates: `FreeSupport` states
+     local closure conditions, and `FreeOk` checks them for a finite table.
+     This is not a new accepted certificate: substitution and source integration
      remain pending. The current templates are constructor-headed; compiling
      source aliases and dependent intersections still needs normalization.
      This staging does not narrow the planned source fragment.
    - **Checked substitution:** prove that capture-avoiding instantiation commutes
      with unfolding, including scheme bounds, argument packs, effects and the
-     array realm. Use finite evidence about the equations to justify a mapping
+     array realm. The next semantic lemma is application congruence: the same
+     equation head at arguments with equal mixed meanings has equal meaning,
+     accounting for its differently named local binders. Computed support and
+     owned-binder freshness supply the independence premises; congruence itself
+     is not yet proved. Use finite evidence about the equations to justify a mapping
      of their applications. The current finite `InstTable` alone cannot certify
      an infinite family of substituted rows; reusing it without this argument
      would merely move the expansion limit into certificate checking.

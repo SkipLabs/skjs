@@ -541,9 +541,26 @@ occur inside that tree. An existing bound name is atomic when computing free
 support; its owner's arguments identify the name, not additional dependencies
 of its assigned meaning.
 
-These representation facts do **not** yet establish semantic substitution.
-The remaining proof must show agreement on computed free support implies equal
-meanings, then justify application images under capture-avoiding substitution
+`Types/EquationSupport.lean` proves that agreement on this computed free
+support implies equal meanings, for values and argument packs together. The
+support is an over-approximation: it may retain an unused captured parameter.
+
+$$
+\bigl(\forall p\in\operatorname{FV}(A).\;\eta(p)=\theta(p)\bigr)
+\quad\Longrightarrow\quad
+\llbracket A\rrbracket^\eta=\llbracket A\rrbracket^\theta.
+$$
+
+The proof reuses semantic independence for ordinary graph rows.
+`FreeSupport` gives its local closure premises over a possibly infinite domain:
+a parameter is free in itself; an operand's support belongs to its row's support
+or that row's scheme binders; bounds depend only on the outer support; meets
+retain their parameters. The existing executable `FreeOk` check establishes
+these same premises for a finite table. Equation templates establish them by
+structural induction on instantiation, so no infinite family is enumerated.
+
+These results do **not** yet establish semantic substitution. The remaining
+proof must justify application images under capture-avoiding substitution
 at the `InstanceImages` boundary. Source compilation (including alias and
 dependent-intersection normalization), finite family-subtyping evidence, and
 certificate integration are also pending. Existing finite certificates remain
@@ -1504,7 +1521,7 @@ Lean: `Types/PositiveGraphs.lean` (`schemeSemWithArgs`),
 - `Types/PositiveNormalization.lean`, `Types/PositiveGraphs.lean`,
   `Types/QuantifiedGraphs.lean`
 - `Types/PositiveRules.lean`, `Types/PositiveCertificates.lean`
-- `Types/GraphRows.lean`, `Types/EquationGraphs.lean`
+- `Types/GraphRows.lean`, `Types/EquationGraphs.lean`, `Types/EquationSupport.lean`
 - `Tests/PositiveNormalizationTests.lean`
 
 All under `lean/Verification/Model/`. Tests cover distribution, cross-shape
