@@ -2,8 +2,8 @@
 
 > **Current soundness boundary repairs:** unsupported generic contracts are
 > refused rather than erased. This reopens Promise-dependent framework cases,
-> including `sum-main`. `map`, `filter` and `slice` grant no invocation contract:
-> their unconstrained species hook can run code and return a non-array.
+> including `sum-main`. Array results rely on the explicit ordinary-construction
+> invariant, also required of external code. `map` currently promises a sparse result.
 > `find` callbacks must admit `undefined`; `join` and default `sort` require primitive
 > elements; comparator sorting supports arbitrary elements. Original sources are retained as gaps in `cases.mts`. See
 > [the current design](../DESIGN.md#exact-contracts-and-native-effects).
@@ -90,9 +90,9 @@ types, proposed at definitions and independently certified by Lean. Translating
 an ordinary TypeScript annotation does not supply such a guarantee. Calls use
 the certified type, without requiring the callback body at the call site.
 The semantic foundation exists, but producer inference, signature transport
-and source acceptance are not integrated yet. Dense-map coverage also needs a
-construction premise: callback purity cannot justify an unconstrained species
-hook. The unchanged generic examples are not sound for every admitted input.
+and source acceptance are not integrated yet. The admitted semantics now
+explicitly supplies ordinary array construction, including for external inputs;
+checked callback effects remain necessary to recover dense-map coverage.
 The [design boundary](../DESIGN.md#inferred-call-effects-elaboration-and-certification)
 owns this distinction and the [planned typing rules](../PROGRAM-TYPING.md#certifying-inferred-call-effects)
 own the definition, application and effect-forgetting obligations.
@@ -1170,10 +1170,9 @@ signature meets a rest that is one exact tuple, whatever its positions. Unsuppor
 unfolding keeps growing refuse the whole declaration. The runtime API's
 `V & DepSafe` is proposed as its parameter, which Lean lowers and checks
 whole. Arrays as library objects are implemented, but the full framework
-now stops earlier at recursive quantified contracts. Separately, `map`, `filter`
-and `slice` have no invocation contract pending species/construction modeling.
-A dense `map` result additionally needs a callback effect guarantee; that
-inference alone cannot restore the original universally quantified examples.
+now stops earlier at recursive quantified contracts. Native array construction
+is ordinary in the admitted realm; external code must preserve that invariant.
+`map` retains a sparse result until a checked callback effect establishes density.
 
 Scheme rows are the one mechanism for quantified callables: a local generic
 closure is graph code at a scheme row, with bounds, rests and defaults.

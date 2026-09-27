@@ -3269,14 +3269,12 @@ In particular, heap-preserving entails unrestricted, but the converse has no
 rule. Normalization and substitution must carry the effect per signature.
 No per-function global flag can justify a stronger effect on another overload.
 
-For native `map`, a future overload needs both a construction premise covering
-`ArraySpeciesCreate` and a heap-preserving callback to promise a dense result
-from a dense receiver. Callback purity alone supplies no construction premise.
-The former sparse-result overload has also been withdrawn: currently `map`,
-`filter` and `slice` have no invocation contract. Once justified, such overloads
-use ordinary selection and application; there is no body-inspecting `map` rule.
-An explicitly submitted stronger effect claim must fail with a located
-obligation rather than silently disappear.
+For native `map`, the realm's ordinary-construction invariant supplies the
+construction premise. An overload requiring a heap-preserving callback can
+then promise a dense result from a dense receiver; the implemented unrestricted
+overload promises a sparse result. Both use ordinary selection and application;
+there is no body-inspecting `map` rule. An explicitly submitted stronger effect
+claim must fail with a located obligation rather than silently disappear.
 
 The semantic introduction and elimination rules are now proved in
 `CallEffectCertificates.introduce` and `CallEffects.call_safe`.
@@ -3916,17 +3914,19 @@ $$
        (\mathsf{this}:R_j,\ \vec P_j)\Rightarrow Q_j}\ \textsc{proto-stated}
 $$
 
-The reviewed overlay can also restrict quantified binders (`bounds`) or state
-only callable shape (`noCallContract`), which admits no application rule.
-These specify trusted natives; source annotations are still translated in full.
-Currently `join` bounds `T` to primitives and `find`/`findIndex` pass
-`T | undefined` to their callback. `map`, `filter` and `slice` have callable
-shape only: their species hook can return a non-array and run code before any
-callback ([boundary](DESIGN.md#exact-contracts-and-native-effects)). Keeping
-the members preserves the prototype-key bounds without assuming an invocation
-promise. Reading such a member is allowed; attempting to call it is a located
-refusal. Source `U[]` still requires density, while the realm permits sparse
-stores; neither establishes safe species construction.
+The reviewed overlay can restrict quantified binders (`bounds`) and weaken a
+native's promised result (`result`). These specify trusted natives; source
+annotations are still translated in full. `join` bounds `T` to primitives,
+`find`/`findIndex` pass `T | undefined` to their callback, and `map` promises a
+sparse array of its callback's result type. Source `U[]` still requires density.
+
+Native array results rely on the ordinary-construction invariant: an array owns
+neither `constructor` nor any key declared by `ArrayProto`; the host keeps the
+standard array constructor/species behavior. The same own-key exclusion is used
+in array lowering and the realm invariant (`RequestJson.arrayExcludedKeys`).
+Thus `filter` and `slice` can promise ordinary arrays, and callback effects can
+later justify a dense `map` result. The runtime witnesses in `test.mts` violate
+the explicit external-code premise and document why it is needed.
 
 For `sort`, let A(T) be the mutable array contract, V(P) the readonly array
 view at primitive elements P, and C(T) the comparator `(T,T) → number`.

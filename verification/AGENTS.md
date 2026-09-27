@@ -188,8 +188,12 @@ separate review obligations, even when every Lean proof and suite passes.
   mutation through another alias. Establish result invariants after all such
   effects; density at entry does not imply density of `map`'s result. Callback
   effects do not constrain other native entry points. Check result construction
-  as well as traversal; `map`/`filter`/`slice` may construct a non-array. Do not
-  silently strengthen the array input contract to hide that counterexample.
+  as well as traversal. The user-approved semantics now assumes ordinary array
+  construction, also of external code: no own array `constructor`, and stable
+  standard constructor/species behavior. Preserve the formal own-key exclusion
+  through all array/record views and reject source operations violating it.
+  Custom species are outside the admitted language; their full modeling is not
+  a prerequisite for callback-effect work. Never widen this assumption silently.
 - **Test the unproved boundary independently.** A producer-side refusal needs
   a verifier test bypassing that producer when annotation interpretation is
   involved. For native-contract repairs, execute the actual negative source

@@ -83,15 +83,15 @@ view names. -/
 private def arrayProtoIdentity : Json :=
   Json.mkObj [("module", "skjs/array-prototype"), ("name", "ArrayProto"), ("span", toJson [0, 0])]
 
-/-- The keys `ArrayProto`'s declaration names, spelled as its row's are
-(`SourceTypes.arrayProtoKeys`): an array owns none of them. Read from the
+/-- The excluded array keys: `constructor` and the keys `ArrayProto`'s declaration names, spelled as its row's are
+(`SourceTypes.arrayExcludedKeys`): an array owns none of them. Read from the
 declaration, since arrays are lowered before, and while, its row is;
 `prepare` checks the row names the same keys. -/
-private def arrayProtoKeys (ds : Array Definition) : Except String (List PropKey) := do
-  let some d := ds[0]? | return []
-  if d.identity != arrayProtoIdentity then return []
+private def arrayExcludedKeys (ds : Array Definition) : Except String (List PropKey) := do
+  let some d := ds[0]? | return SourceTypes.arrayExcludedKeys.ofKeys []
+  if d.identity != arrayProtoIdentity then return SourceTypes.arrayExcludedKeys.ofKeys []
   let names ← (← arr d.expression "fields").mapM fun f => do PropKey.decode (← field f "name")
-  return SourceTypes.arrayProtoKeys.prototypeKeys names.toList
+  return SourceTypes.arrayExcludedKeys.ofKeys names.toList
 
 private def referenceIndex (ds : Array Definition) (term : Json) : Except String Nat := do
   CellClaims.fieldsExactly term ["k", "reference", "args", "span"]
@@ -763,7 +763,7 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     let element ← lowerType ds owner params seen (← field term "element")
     let readonly ← bool term "readonly"
     let store ← use (.list ⟨[], [], some element, readonly, ← bool term "dense"⟩ [])
-    return [← use (SourceTypes.arrayClause (← arrayProtoKeys ds) store readonly)]
+    return [← use (SourceTypes.arrayClause (← arrayExcludedKeys ds) store readonly)]
   | "tuple" =>
     CellClaims.fieldsExactly term ["k", "readonly", "dense", "required", "optional", "rest", "span"]
     let required ← (← arr term "required").mapM (lowerType ds owner params seen)
@@ -773,7 +773,7 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
       some <$> lowerType ds owner params seen restTerm
     let readonly ← bool term "readonly"
     let store ← use (.list ⟨required.toList, optional.toList, rest, readonly, ← bool term "dense"⟩ [])
-    return [← use (SourceTypes.arrayClause (← arrayProtoKeys ds) store readonly)]
+    return [← use (SourceTypes.arrayClause (← arrayExcludedKeys ds) store readonly)]
   | "function" =>
     CellClaims.fieldsExactly term ["k", "receiver", "params", "rest", "result", "span"]
     let recv ← field term "receiver"
@@ -1110,7 +1110,7 @@ private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table)
     if !reserved row || applications.any (·.1 == row) || table[row]! != RequestJson.Row.clauses [] then
       throw "an array's reserved row is not an empty producer row"
     if store ≥ table.length then throw "an array's store names no row"
-    table := table.set row (.clauses [SourceTypes.arrayClause (← arrayProtoKeys ds) store readonly])
+    table := table.set row (.clauses [SourceTypes.arrayClause (← arrayExcludedKeys ds) store readonly])
   -- A reserved application at all its arguments is that row from the start,
   -- for the declarations' equations too, and so is a reserved intersection.
   let mut memo : Memo := { floor := 4 + nullaryCount ds, meets := meets.map fun (r, ps) => (ps, r) }
@@ -1619,7 +1619,7 @@ def prepare (ast : Json) (candidate : SourceTypes.Table)
   -- Every array lowered from here on reads the keys it excludes from
   -- `ArrayProto`'s row, so the row must name the ones its declaration does.
   if ds[0]?.any (·.identity == arrayProtoIdentity) &&
-      SourceTypes.arrayProtoKeys (SourceTypes.graph types) != (← arrayProtoKeys ds) then
+      SourceTypes.arrayExcludedKeys (SourceTypes.graph types) != (← arrayExcludedKeys ds) then
     throw "ArrayProto's row names other keys than its declaration"
   -- Generic module functions, read from their source terms before the tree is
   -- converted.

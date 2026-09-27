@@ -779,10 +779,11 @@ for (const [file, call] of [
     "an explicit comparator never invokes the element's invalid conversion method");
 }
 // The input has Array.prototype and dense elements, with no accessors or
-// proxies. An extra own constructor is allowed by the current array contract.
-// Species construction can nevertheless replace the result with a plain object.
+// proxies. Its extra own constructor is excluded by the ordinary-construction
+// invariant. These controls explain why the external-code assumption matters;
+// they deliberately call the verified functions outside their input contracts.
 {
-  const source = stripTypes(readFileSync(join(here, "examples", "invalid-native-array-species.ts"), "utf8"))
+  const source = stripTypes(readFileSync(join(here, "examples", "ordinary-array-construction.ts"), "utf8"))
     .replace(/^export /gm, "");
   const setup = `class Result { length = "not a number"; }
     class Constructor { static [Symbol.species] = Result; }
@@ -825,11 +826,6 @@ let callback = "";
   assert.deepEqual(proto.expression.fields.map(f => keyText(f.name)), arrayOverlay.map(e => e.name));
   for (const field of proto.expression.fields) {
     const entry = arrayOverlay.find(e => e.name === keyText(field.name));
-    if (["map", "filter", "slice"].includes(keyText(field.name))) {
-      assert(field.readonly && field.type.k === "callable",
-        `${String(field.name)} must grant no invocation contract while species is unmodelled`);
-      continue;
-    }
     // The member's own binders lead; the element binder `T` is last.
     assert(field.readonly && field.type.k === "scheme" && field.type.binders.at(-1)?.name === "T");
     const receiver = field.type.signatures[0]?.receiver;

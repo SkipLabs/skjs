@@ -34,10 +34,6 @@ export type OverlayEntry = {
   /** The member's key on the prototype, as declared: a name, or a computed
    * key such as `[Symbol.iterator]`. */
   name: string;
-  /** The native exists, but no invocation contract has been justified.
-   * Retain its callable shape and prototype key; grant no call signature.
-   * This is weaker trust in a host value, not annotation translation. */
-  noCallContract?: "ArraySpeciesCreate";
   /** Where it is declared: `ReadonlyArray` for a member that only reads the
    * array, `Array` for a mutator; the primitive's own interface, or `Object`
    * for a member TypeScript reads there that the primitive's prototype owns
@@ -55,6 +51,9 @@ export type OverlayEntry = {
   /** A reviewed restriction on a quantified parameter. Required when native
    * coercion could otherwise call an arbitrary client method. */
   bounds?: Readonly<Record<string, TypeTerm>>;
+  /** A reviewed result contract replacing TypeScript's result. In particular,
+   * map may produce holes and cannot promise a dense array. */
+  result?: TypeTerm;
   /** A reviewed replacement signature: restrict implicit client hooks (e.g.
    * split on strings only), or correct explicit callback arguments (find
    * visits missing positions with undefined). The receiver is the prototype's. */
@@ -86,9 +85,10 @@ export const overlay: readonly OverlayEntry[] = [
     drop: ["thisArg"] },
   { name: "map", from: "ReadonlyArray",
     signature: "map<U>(callbackfn: (value: T, index: number, array: readonly T[]) => U, thisArg?: any): U[];",
-    // Species construction may mutate the source or return a non-array;
-    // neither callback purity nor a sparse result repairs that contract.
-    noCallContract: "ArraySpeciesCreate" },
+    // Reentrant callbacks can shrink the source; map preserves the original
+    // length but only visited positions are present in its fresh result.
+    drop: ["thisArg"], result: { k: "array", dense: false, readonly: false,
+      element: { k: "binder", name: "U", span: at }, span: at } },
   // Only the overload with an initial value. The one without, `reduce(cb)`,
   // is a second signature of the member beside the generic `reduce<U>`,
   // and a prototype member is read as one scheme with one signature
@@ -108,9 +108,8 @@ export const overlay: readonly OverlayEntry[] = [
     drop: ["thisArg"] },
   { name: "filter", from: "ReadonlyArray",
     signature: "filter(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): T[];",
-    noCallContract: "ArraySpeciesCreate" },
-  { name: "slice", from: "ReadonlyArray", signature: "slice(start?: number, end?: number): T[];",
-    noCallContract: "ArraySpeciesCreate" },
+    drop: ["thisArg"] },
+  { name: "slice", from: "ReadonlyArray", signature: "slice(start?: number, end?: number): T[];" },
   { name: "join", from: "ReadonlyArray", signature: "join(separator?: string): string;",
     bounds: { T: primitiveElements } },
   { name: "indexOf", from: "ReadonlyArray",
@@ -421,9 +420,9 @@ function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: P
     const receiver = proto.receiver(entry.from);
     const nameOf = (p: ts.ParameterDeclaration) => ts.isIdentifier(p.name) ? p.name.text : "";
     const parameters = member.parameters.filter(p => !entry.drop?.includes(nameOf(p)));
-    const stated = entry.resultAs
+    const stated = entry.result ?? (entry.resultAs
       ? library.reference(interfaceOf(entry.resultAs), [{ k: "binder", name: "T", span }], span)
-      : entry.resultIsReceiver ? receiver : undefined;
+      : entry.resultIsReceiver ? receiver : undefined);
     const forms = entry.stated
       ? entry.stated.map(f => ({ k: "function", receiver: f.receiver ?? null,
           params: f.params, rest: null, result: f.result,
@@ -431,9 +430,7 @@ function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: P
       : signatures(scope, parameters, entry.resultAs ? undefined : member.type, member, span, false, stated);
     if (!forms.length || (!binders.length && forms.length !== 1))
       throw Error(`${entry.from}.${entry.name} requires a nonempty supported signature family`);
-    const type: TypeTerm = entry.noCallContract
-      ? { k: "callable", span }
-      : binders.length
+    const type: TypeTerm = binders.length
       ? { k: "scheme", binders: binders.map(name => ({ name, bound: entry.bounds?.[name] ?? null, default: null, span })),
           signatures: forms.map(f => ({ ...f, receiver: f.receiver ?? receiver })), span }
       : { ...forms[0]!, receiver: forms[0]!.receiver ?? receiver };

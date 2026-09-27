@@ -210,17 +210,18 @@ document of a source with arrays lists it first, so its row follows the four
 fixed ones (`DeclarationGraph.prepare` checks this). -/
 def arrayProtoLabel : Nat := 4
 
-/-- One spelling of a set of prototype keys: sorted, each once, the reserved
-keys aside. -/
-def prototypeKeys (ks : List PropKey) : List PropKey :=
-  ((ks.filter fun k => !reservedKey k).eraseDups).mergeSort PropKey.before
+/-- The keys an ordinary array cannot own: its prototype's declared keys and
+`constructor`. The latter preserves the realm's standard species construction.
+Sorted, each once, with the model's reserved keys aside. -/
+def arrayExcludedKeys (ks : List PropKey) : List PropKey :=
+  (((PropKey.str "constructor" :: ks).filter fun k => !reservedKey k).eraseDups).mergeSort PropKey.before
 
-/-- The keys a prototype row provides: its fields', views', optional fields'
+/-- The excluded array keys: `constructor` and the prototype row's fields', views', optional fields'
 and methods', the reserved keys aside. -/
-def protoKeysOf : List (Clause (List Nat)) → List PropKey
+def arrayExcludedKeysOf : List (Clause (List Nat)) → List PropKey
   | [.refs a bs vs os ms _] =>
-    prototypeKeys (((a :: bs).flatten ++ vs).map (·.1) ++ os.map (·.key) ++ ms.map (·.key))
-  | _ => []
+    arrayExcludedKeys (((a :: bs).flatten ++ vs).map (·.1) ++ os.map (·.key) ++ ms.map (·.key))
+  | _ => arrayExcludedKeys []
 
 /-- An array type's clause: an object owning the store key, holding
 `ArrayProto` as a view under the prototype key. -/
@@ -236,8 +237,8 @@ arrays states none. -/
 def tableRealm (T : List Row) : Option (ArrayRealm Nat) :=
   if T.any (fun r => match r with | .clauses cs => cs.any arrayShaped | _ => false) then
     some ⟨[arrayProtoLabel], match T[arrayProtoLabel]? with
-      | some (.clauses cs) => protoKeysOf cs
-      | _ => []⟩
+      | some (.clauses cs) => arrayExcludedKeysOf cs
+      | _ => arrayExcludedKeys []⟩
   else none
 
 /-- The graph a table of rows denotes. Its rows are read by index at every

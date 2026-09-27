@@ -586,15 +586,15 @@ arguments outside the signature, such as an object passed to a numeric callback
 whose arithmetic would then invoke JavaScript conversion hooks.
 
 A native method may use such a callback contract as a premise of its own
-specification. With a separately established standard-construction guarantee,
-`map` on an initially dense ordinary array can use callback heap preservation
-to retain source presence throughout traversal and hence result density.
-Without that construction premise, `ArraySpeciesCreate` can run arbitrary code
-before the callback or return a non-array; even a sparse-array result is not
-justified. The current native overlay therefore grants `map`, `filter` and
-`slice` no invocation contract ([boundary](DESIGN.md#exact-contracts-and-native-effects)).
-That JavaScript natives meet any future qualified specifications is a separate
-review obligation, not a consequence of `PromiseWith`'s Lean proofs. The [planned typing rules](PROGRAM-TYPING.md#certifying-inferred-call-effects)
+specification. The admitted realm uses ordinary array construction: arrays own
+no `constructor`, and the host preserves the standard constructor/species
+behavior, including across external calls. Under that premise, `map` on a dense
+array can use callback heap preservation to retain source presence throughout
+traversal and hence result density. An unrestricted callback justifies only a
+sparse result. The host premise is explicit in the
+[boundary](DESIGN.md#exact-contracts-and-native-effects); custom species are
+outside this semantics. Native compliance remains a separate review obligation,
+not a consequence of `PromiseWith`'s Lean proofs. The [planned typing rules](PROGRAM-TYPING.md#certifying-inferred-call-effects)
 state where the callback guarantee is established and consumed.
 
 ## Argument-list preparation
@@ -764,7 +764,7 @@ owns no key that prototype provides. The model states it in the meaning of
 types, not in the heap premise: the tested value is in a slot, not in the heap,
 and it came from an input, a read, a call's result or an allocation, each of
 which a type describes. With $\mathcal R$ the graph's realm (`ArrayRealm`: the
-row of `ArrayProto` and the keys it provides):
+row of `ArrayProto` and its declared keys plus `constructor`):
 
 $$
 \mathsf{Arr}_{\mathcal R}{}_n(W,v)\iff\forall\mathit{flds}.\;

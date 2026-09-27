@@ -189,7 +189,7 @@ $$
   $\beta$ **excludes** $\kappa$, $\beta\nvDash\kappa$, when some $b\in\beta$
   does not admit it (`Excludes`). A fresh literal's own keys are among its
   fields'. An array owns no key its prototype provides,
-  $\mathsf{outside}\,N$ with $N$ `ArrayProto`'s keys: whatever else it owns,
+  $\mathsf{outside}\,N$ with $N$ `ArrayProto`'s keys plus `constructor`: whatever else it owns,
   a read of one of those continues at the prototype, which it holds as a
   readonly view under the reserved key. An array may own further keys, as
   Skip's runtime marks the arrays it manages with a hidden symbol key
@@ -260,7 +260,7 @@ alias's contract.
 #### The realm's array invariant
 
 A graph with arrays states its **realm** $\mathcal R$: the row of `ArrayProto`
-($P_{\mathcal R}$) and the keys it provides ($N_{\mathcal R}$)
+($P_{\mathcal R}$) and the excluded keys ($N_{\mathcal R}$): its declared keys plus `constructor`
 (`NormalGraph.realm`, set by `RequestJson.tableRealm` where the table has an
 array type). In such a graph a label's record or dictionary clause means its
 members that are also arrays of the realm where they own the store key

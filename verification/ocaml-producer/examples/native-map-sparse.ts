@@ -1,5 +1,5 @@
-// Original sparse-result target: species can return a non-array, so the
-// native contract must justify construction before it can promise a length.
+// Ordinary construction gives a sparse map result its numeric length,
+// including after callback mutation.
 export function mappedLength(xs: number[]): number {
   return xs.map((x: number): number => {
     xs.pop();

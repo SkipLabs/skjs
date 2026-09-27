@@ -478,7 +478,8 @@ An array is one store of element locations under the reserved
 store key and one object holding `Array.prototype` under `[[proto]]`, read
 through the one array shape (`arrayClauseOf`,
 [arrays](POSITIVE-TYPES.md#arrays)). Its own keys are outside $N$, the keys
-`ArrayProto` provides, so `xs.map` reaches the prototype; it may own others,
+`ArrayProto` provides plus `constructor`, so `xs.map` reaches the prototype
+and ordinary construction cannot be overridden; it may own other keys,
 as Skip's runtime tags managed arrays with a symbol key. Stores may be sparse;
 source `T[]` currently requires **density** (every index below the length is
 present). An element write preserves that contract only in bounds or appending.
@@ -606,24 +607,29 @@ shrink even an initially dense array through another reference, while these
 methods visit the original index range. `map` visits only present indices,
 but shrinking its source can leave holes in its result.
 
-More fundamentally, `map`, `filter` and `slice` use
-[`ArraySpeciesCreate`](REFERENCES.md#ecma-262). A dense array with the ordinary
-`Array.prototype` may own a `constructor` whose `[Symbol.species]` returns a
-non-array or runs code that mutates the source before the callback. Our array
-contract admits that input: `constructor` is not one of `ArrayProto`'s declared
-keys. Callback heap preservation does not cover this earlier hook. The runtime
-control `invalid-native-array-species` demonstrates a string-valued `length`
-from `map` and `filter`, and a non-array from `slice`; the existing verified
-`testTupleArrayMethod` had the same counterexample.
+**Ordinary array construction is part of the admitted semantics.** An array
+owns no `constructor` key, and the realm's `Array.prototype.constructor`,
+`Array[Symbol.species]` and relevant prototype links retain their standard
+behavior. External code must preserve the same invariant for values it supplies
+and across calls. This is an explicit host assumption, like the restrictions on
+proxies and accessors; it is not a theorem about arbitrary JavaScript.
 
-These three prototype members now retain their callable shape and key but
-**no invocation contract**. Even a sparse-array result promise was unjustified;
-returning `unknown` would not establish safety of arbitrary constructor effects.
-Restoring invocation needs a checked construction contract covering species
-lookup, construction, result shape and writes. Do not silently strengthen every
-source array to prohibit an own constructor. The unchanged generic examples are
-not universally sound for all currently admitted inputs; this is a specification
-blocker, in addition to the pending implementation of inferred effects.
+The own-key part is stated in the existing array contract and realm invariant:
+`RequestJson.arrayExcludedKeys` adds `constructor` to the prototype's declared
+keys. Arrays cannot acquire it through an invariant-preserving allocation,
+structural alias or write. The fragment also refuses custom species definitions,
+array subclass construction and the unreviewed prototype-changing APIs. It
+continues to allow an ordinary record's own `constructor` field. Standard native
+construction therefore needs no extra promise on each callback. `map` returns
+a sparse array of its callback's result type; `filter` and `slice` create ordinary
+arrays. Density after a callback is still a separate obligation.
+
+The runtime controls beside `ordinary-array-construction` deliberately violate
+the external assumption: a custom species gives `map`/`filter` a string-valued
+`length` and `slice` a non-array result. They explain why the assumption matters;
+these are not accepted executions of the admitted language. Custom species can
+be modeled later with explicit construction contracts. See
+[`ArraySpeciesCreate`](REFERENCES.md#ecma-262).
 
 `join` and default `sort` currently require primitive elements: implicit
 string conversion must not invoke an unchecked client method. `sort` with an
@@ -853,7 +859,7 @@ throw, which safety admits, but never return a wrong value.
 | An ambient declaration (`declare function`, `declare const`, `declare class`) holds of the value the environment supplies under that name; the declaration document lists it with the specifier `ambient`. | `AMBIENT`; `collectDeclarations` |
 | A global variable outside the standard library (Node's `process`) meets its declaration at the members and calls the module selects, from the project's type packages, and no code the module does not see reassigns it. | `GLOBAL`; `selectGlobal` |
 | Each standard library global meets its reviewed overlay entry: `console.log`; `BigInt`; `Symbol`, `Symbol.for`, `Symbol.keyFor` and five well-known symbols; `String` of a primitive; `Object.keys`, `Object.values`, `Object.entries` (and the generic two at a dictionary); `new Array()`; `Array.isArray` and `Array` as `instanceof`'s operand; `new Error(m)`; `new Set`, `new Map` of an array, `new Date` of nothing, a primitive or components, `Date.now`; the `Promise` statics and constructor, through the intrinsics below; `JSON.parse` of a string and `JSON.stringify` of a `JsonValue`. | `globalsOverlay` in `tools/library-globals.mts`; [rules](PROGRAM-TYPING.md#library-globals) |
-| `Array.prototype` meets `ArrayProto`: its natives `forEach`, `reduce` and `reduceRight` (with an initial value), `every`, `some`, `join`, `indexOf`, `lastIndexOf`, `includes`, `at`, `find`, `findIndex`, `sort`, `push`, `pop`, `shift`, `unshift`, `reverse` and `[Symbol.iterator]` meet the reviewed overlay contracts, at the listed receiver, without `thisArg`; `map`, `filter` and `slice` have callable shape only, with no invocation contract pending species modeling; `find`/`findIndex` admit missing callback values, and `join` and default `sort` restrict elements to primitives; comparator sorting checks the supplied callback. Units allocating arrays read it from the input slot `[[Array.prototype]]`. | `overlay` in `tools/array-prototype.mts` |
+| `Array.prototype` meets `ArrayProto`: its natives `forEach`, `map`, `reduce` and `reduceRight` (with an initial value), `every`, `some`, `filter`, `slice`, `join`, `indexOf`, `lastIndexOf`, `includes`, `at`, `find`, `findIndex`, `sort`, `push`, `pop`, `shift`, `unshift`, `reverse` and `[Symbol.iterator]` meet the reviewed overlay contracts, at the listed receiver, without `thisArg`; result construction uses the ordinary-array invariant; `map` promises a sparse result; `find`/`findIndex` admit missing callback values, and `join` and default `sort` restrict elements to primitives; comparator sorting checks the supplied callback. Units allocating arrays read it from the input slot `[[Array.prototype]]`. | `overlay` in `tools/array-prototype.mts` |
 | `String.prototype`, `Number.prototype`, `BigInt.prototype` and `Boolean.prototype` meet `StringProto`, `NumberProto`, `BigIntProto` and `BooleanProto`, each member an own property of that prototype (`split`, `replace`, `replaceAll` stated at a string pattern; `toLocaleString` without `options`), read from the slot `[[String.prototype]]` and so on. | `primitiveOverlay` in `tools/array-prototype.mts` |
 | `Set.prototype`, `Map.prototype` and `Date.prototype` hold the listed natives, unmodified (`keys`, `values` and `entries` giving a host iterator of the collection). | `interfaceOverlay` in `tools/array-prototype.mts` |
 | The intrinsics meet their signatures: `%Await%` yields what a promise settles to or throws its rejection; `%AsyncReturn%` and `%AsyncComplete%` settle an async function's promise to a primitive or `undefined` (also `Promise.resolve`); `%PromiseAll%` (`Promise.all`), `%PromiseReject%` (`Promise.reject`), `%NewPromise%` (`new Promise`, calling its executor at once); `%Iterate%` steps an array's iterator, reading the current length at each step; `%Iterate:string%` a string's, by code point; `%Iterate:Set%` a `Set`'s, in insertion order; `%Iterate:Map%` a `Map`'s, a fresh `[key, value]` array per entry; `%Iterate:Iterator%` a `SetIterator` or `MapIterator`, which is its own iterator; none of these iterators has a `return`; `%Spread:K%` is the fresh array of what `%Iterate:K%`'s step yields until it ends; `%RestFrom:k%` is the fresh array of an array's elements from `k` to its current length, as its iterator yields them after a pattern's `k` elements; `%ForIn%` gives the keys a `for...in` visits, strings; `%HasProperty%` answers `k in o` for a key TypeScript types as other than string literals, as the host's lookup does; `%ElementAt%` reads `xs[k]` of an array at a `number` key as the host does: the element at an index below the length, an own property at another numeric key, else `undefined`. The job queue and a promise that never settles are not modelled. | `tools/intrinsics.mts`; [async](PROGRAM-TYPING.md#async-functions-and-await) |
@@ -870,8 +876,8 @@ the model's reading of an operation relies.
 | A value whose trusted declaration types it `Function` has call or construct code. | [`Function`](PROGRAM-TYPING.md#library-types) |
 | A value TypeScript types as `Set<T>`, `Map<K, V>`, `SetIterator<T>` or `MapIterator<T>` that a loop or spread iterates is the host's: its iterator is the realm's, and the prototypes it inherits (`%IteratorPrototype%` included) hold no `return` and are unmodified. Assumed of every such value a program receives; the fragment builds none but through the host: a `Set`'s and a `Map`'s type state their `[Symbol.toStringTag]`, a well-known symbol key no literal or class of the fragment writes, and no annotation of the fragment states a `SetIterator` or `MapIterator`. A host iterator a program's protocol steps (an array's, as an `Iterable<T>`) likewise has no `return` along its chain. | the iteration intrinsics' pick, `iterationKind` in `tools/declaration-graph.mts`; `writtenSymbol` in `tools/fragment-parse.mts` |
 | Every object owning the array store key is a JavaScript array: every object the model allocates, and assumed of every object a program receives. `Array.isArray` is the native test. For `instanceof Array`, every array a program receives is of its realm and no object but an array inherits from `Array.prototype`. | `isArray` ([SEMANTICS](SEMANTICS.md#operational-language)); the `Array` entries of `library-globals.mts` |
-| The array invariant: every object a unit receives at a record or dictionary type that owns the array store key is an array of the realm: its store may be sparse, it holds `Array.prototype` (meeting `ArrayProto`, which reads no parameter row), and it owns none of the keys declared by `ArrayProto`. Proved of every object the unit allocates; assumed of every value it receives, as the arrays it receives at array types already are. Nothing is assumed of a value at `unknown`, and no class invariant: an object whose prototype chain holds a class's prototype need not have the class's fields. | `realmInvariant` in the meaning of record and dictionary rows, so `EnvOk` in the premise of `checkJson_safe` ([SEMANTICS](SEMANTICS.md#the-array-invariant)) |
-| An array a program receives owns none of the keys declared by `ArrayProto`; other own keys, including `constructor`, remain possible. | the $\mathsf{outside}\,N$ bound of the array shape |
+| The array invariant: every object a unit receives at a record or dictionary type that owns the array store key is an array of the realm: its store may be sparse, it holds `Array.prototype` (meeting `ArrayProto`, which reads no parameter row), and it owns neither `constructor` nor any key declared by `ArrayProto`. Proved of every object the unit allocates; assumed of every value it receives, as the arrays it receives at array types already are. Nothing is assumed of a value at `unknown`, and no class invariant: an object whose prototype chain holds a class's prototype need not have the class's fields. | `realmInvariant` in the meaning of record and dictionary rows, so `EnvOk` in the premise of `checkJson_safe` ([SEMANTICS](SEMANTICS.md#the-array-invariant)) |
+| An array a program receives owns neither `constructor` nor any key declared by `ArrayProto`. The realm keeps standard `Array.prototype.constructor`, `Array[Symbol.species]` and their prototype links; external code preserves that behavior across calls. | the $\mathsf{outside}\,N$ bound includes `constructor` (`RequestJson.arrayExcludedKeys`); standard native construction is a host assumption |
 | An array a program receives owns, at a canonical numeric key that is no index below its length, only a data property holding a value of its element type, as `Array<T>`'s declared `[n: number]: T` says; the realm's `Array.prototype` owns no numeric key. What `%ElementAt%` reads rests on it; the arrays the model allocates own no such key. | `%ElementAt%` in `tools/intrinsics.mts` |
 | The model's reserved keys (the store key `[]` and every name in double brackets) are spelled by no source key, and an object a program receives is represented with its own keys apart from them. | `Fragment.sourceKey`, `reservedSourceKey` |
 | `Object.prototype`, `Array.prototype` and `Function.prototype` own no string key but those `inKeyRefusal` lists (node's `Object.getOwnPropertyNames`); `String.prototype`, `Array.prototype` and `Object.prototype` own no numeric key; `String.prototype` owns no `[Symbol.split]` or `[Symbol.replace]`; `Object.prototype` has no `toJSON`. | `inKeyRefusal` in `Source/Fragment.lean`; the overlay comments |
@@ -973,7 +979,7 @@ One line each; the reason is the one the design keeps.
   requires density; sparse stores also exist. Iteration, spreads and `.apply`
   need density or an element type admitting `undefined`. `find` needs
   `undefined` even on dense input because callbacks can remove later elements.
-- **Arrays own none of `ArrayProto`'s keys and may own others.** An exact
+- **Arrays own neither `constructor` nor any of `ArrayProto`'s keys.** An exact
   bound would make every tagged array type empty and verify its readers
   vacuously. At a numeric key that is no index, an own property holds an
   element, as `Array<T>`'s number index declares: a read at a `number` key is
@@ -1080,10 +1086,9 @@ callback returning a promise instantiates `then`'s binder through
 `sum-sound-binding`/`sum-main` sources no longer verify: Promise's
 recursive quantified contracts exceed the budget, and the tuple-valued
 `sort()` needs a justified conversion contract. Their sources remain
-unchanged. `map`, `filter` and `slice` currently have no invocation contract
-because their species hooks are unconstrained. Restoring their guarantees needs
-an explicit construction premise; callback effects alone do not suffice.
-Green regression suites include these explicit gaps.
+unchanged. Under the ordinary-array construction invariant, `map` has a sparse
+result contract. Restoring dense-map targets requires the checked callback
+effect. Green regression suites include these explicit gaps.
 
 **Restoring useful completeness after the boundary repair.** Keep the original
 positive sources as the targets. The work is split by semantic obligation:
@@ -1104,10 +1109,9 @@ positive sources as the targets. The work is split by semantic obligation:
    a read or spread can omit `undefined`. Readonly is a separate capability,
    not a presence guarantee. The existing store contract and its proofs are
    generalized; there is no separate array calculus. The realm-wide array
-   invariant permits sparse stores. The initially added sparse native `map`
-   result contract has since been withdrawn: species may construct a non-array.
-   `testTupleArrayMethod` and `native-map-sparse` are again refused, now before
-   invocation. The store semantics remain useful independently of that native.
+   invariant permits sparse stores. Native `map` returns a sparse array under
+   the explicit ordinary-construction invariant; its length and present-element
+   types are retained. `testTupleArrayMethod` and `native-map-sparse` verify.
    One additional safe source is an explicit gap: `isarray-record-array`
    returns the result of an `Array.isArray` test as `readonly unknown[]`.
    The test establishes an array, not density, which that source annotation
@@ -1116,11 +1120,9 @@ positive sources as the targets. The work is split by semantic obligation:
    [inference/certification boundary](#inferred-call-effects-elaboration-and-certification)
    and the linked semantic and typing rules. Under the current meaning of source `T[]`
    (dense), a sparse result alone does not restore `testMapReturnsArray` or the
-   pure-map curated examples. A dense native result needs both a justified
-   species/construction contract and a checked callback effect sufficient to
-   preserve source presence during traversal. The original universally
-   quantified inputs do not impose the construction premise. Resolve that
-   specification before claiming the unchanged targets can be restored.
+   pure-map curated examples. The admitted realm supplies ordinary construction;
+   the remaining requirement is a checked callback effect sufficient to preserve
+   source presence during traversal.
    A syntax heuristic or a readonly alias is not that guarantee. Density facts
    may be lost after effects; no operation may change a location's world type.
    The same guarantee can justify pure `find` callbacks at T instead of

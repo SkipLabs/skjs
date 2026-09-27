@@ -558,7 +558,7 @@ const CLASSES: ClassEntry[] = [
   { cls: "gap", label: "a generic contract cannot be represented in full", re: /generic contract (?:at|:)/,
     why: "dependent bounds, mixed binder roles or a recursive quantified family exceed the exact lowering; the contract is refused, not replaced by unknown" },
   { cls: "gap", label: "a callable value has no admitted call signature", re: /no admitted call signature/,
-    why: "the type grants no invocation promise; map/filter/slice currently withhold theirs because species construction is unmodelled",
+    why: "the type grants callable shape without an invocation promise",
     review: "an explicit Function annotation intentionally grants no call signature; inspect the callee before treating this as a recoverable library gap" },
   // ------------------------------------------------------- unexplained
   { cls: "unexplained", label: "search: no derivation found", re: /evidence search failed|: cannot establish|No rule derives/,

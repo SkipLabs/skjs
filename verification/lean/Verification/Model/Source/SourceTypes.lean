@@ -51,7 +51,7 @@ abbrev arrayProtoLabel : Nat := RequestJson.arrayProtoLabel
 
 /-- An array type: its store at `store`, invariant or, for a readonly array, a
 view; the prototype as a view at `ArrayProto`; and none of `excluded`, the keys
-`ArrayProto` provides (`arrayProtoKeys`), among its own keys, so a read of one
+`ArrayProto` provides plus `constructor` (`arrayExcludedKeys`), among its own keys, so a read of one
 of them continues at the prototype. -/
 def arrayClause (excluded : List PropKey) (store : Nat) (readonly : Bool) : Clause (List Nat) :=
   PositiveNormalization.arrayClauseOf [store] [arrayProtoLabel] excluded readonly
@@ -64,33 +64,31 @@ def isPrimitive (i : Nat) : Bool := i < initial.length
 
 def graph (T : Table) : NormalGraph Nat := RequestJson.tableGraph T
 
-/-- The keys `Array.prototype` provides: those `ArrayProto`'s row names, its
+/-- The keys an array cannot own: `constructor` and those `ArrayProto`'s row names, its
 fields, views, optional fields and methods, the reserved keys aside. An array
 owns none of them, so reading one continues at the prototype; any other own
 key an array may have. -/
-def arrayProtoKeys (G : NormalGraph Nat) : List PropKey :=
-  RequestJson.protoKeysOf (expand G [arrayProtoLabel])
+def arrayExcludedKeys (G : NormalGraph Nat) : List PropKey :=
+  RequestJson.arrayExcludedKeysOf (expand G [arrayProtoLabel])
 where
-  /-- One spelling of a set of prototype keys (`RequestJson.prototypeKeys`). -/
-  prototypeKeys (ks : List PropKey) : List PropKey := RequestJson.prototypeKeys ks
+  /-- Canonical excluded array keys (`RequestJson.arrayExcludedKeys`). -/
+  ofKeys (ks : List PropKey) : List PropKey := RequestJson.arrayExcludedKeys ks
 
 /-- No reserved key is a prototype key: every array owns its store and its
 prototype. -/
-theorem prototypeKeys_reserved {ks : List PropKey} {k : PropKey}
-    (h : k ∈ arrayProtoKeys.prototypeKeys ks) : reservedKey k = false := by
+theorem arrayExcludedKeys_ofKeys_reserved {ks : List PropKey} {k : PropKey}
+    (h : k ∈ arrayExcludedKeys.ofKeys ks) : reservedKey k = false := by
   have := List.mem_filter.mp ((List.mem_eraseDups).mp ((List.mem_mergeSort).mp h))
   simpa using this.2
 
-theorem arrayProtoKeys_reserved {G : NormalGraph Nat} {k : PropKey} (h : k ∈ arrayProtoKeys G) :
+theorem arrayExcludedKeys_reserved {G : NormalGraph Nat} {k : PropKey} (h : k ∈ arrayExcludedKeys G) :
     reservedKey k = false := by
-  unfold arrayProtoKeys RequestJson.protoKeysOf at h
-  split at h
-  · exact prototypeKeys_reserved h
-  · simp at h
+  unfold arrayExcludedKeys RequestJson.arrayExcludedKeysOf at h
+  split at h <;> exact arrayExcludedKeys_ofKeys_reserved h
 
 /-- The array type over `store` in the table's own graph. -/
 def arrayOf (T : Table) (store : Nat) (readonly : Bool) : Clause (List Nat) :=
-  arrayClause (arrayProtoKeys (graph T)) store readonly
+  arrayClause (arrayExcludedKeys (graph T)) store readonly
 
 /-- The one user-facing rendering boundary for graph types. Label numbers are
 implementation references into `Table`, so diagnostics must call this function
