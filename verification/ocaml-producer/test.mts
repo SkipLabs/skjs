@@ -200,14 +200,15 @@ for (const [file, expected] of [
   assert.throws(() => parseFile(jsonPath), /gate:/);
   const importedAst = parseFile(jsonPath, false, upstreamConfig);
   // The client uses arrays, so the parser also lists `ArrayProto`, first, and
-  // the standard library declarations it names: `Iterator`, which
-  // `[Symbol.iterator]` returns, and what that reaches.
+  // the runtime declarations it names: the conversion equation, `Iterator`,
+  // which `[Symbol.iterator]` returns, and what that reaches.
   const [arrayProto, ...parsedDefinitions] = importedAst.declarations.definitions;
   assert.equal(arrayProto?.declaration.module, "skjs/array-prototype");
   const standard = (d: { declaration: { module: string } }) => d.declaration.module.startsWith("typescript/lib/");
   assert.ok(parsedDefinitions.some(d => standard(d) && d.declaration.name === "Iterator"));
-  assert.deepEqual(importedAst.declarations.symbols.map(s => s.name), ["iterator"]);
-  assert.deepEqual({ ...importedAst.declarations, definitions: parsedDefinitions.filter(d => !standard(d)),
+  assert.deepEqual(importedAst.declarations.symbols.map(s => s.name), ["iterator", "toPrimitive"]);
+  assert.deepEqual({ ...importedAst.declarations, definitions: parsedDefinitions.filter(d =>
+    !standard(d) && d.declaration.module !== "skjs/array-conversion"),
     symbols: [] }, pinnedDeclarationDocument);
   const exported = join(mkdtempSync(join(tmpdir(), "skjs-export-")), "client.ts");
   writeFileSync(exported, "export function own(this: undefined): undefined { return this; }\n");
@@ -785,6 +786,18 @@ for (const [file, call] of [
     .replace(/^export /gm, "");
   assert.equal(vm.runInNewContext(`${source}\nconst result = wrong([1, 2]); JSON.stringify([result.length, 0 in result, 1 in result])`, {}, { timeout: 1000 }), "[2,true,false]");
 }
+// These deliberately violate the external-array contract. Even numeric
+// tuples can run arbitrary code if their conversion hooks are replaced.
+{
+  const source = stripTypes(readFileSync(join(here, "examples", "native-array-conversion.ts"), "utf8"))
+    .replace(/^export /gm, "");
+  for (const [key, expected] of [["toString", undefined], ["Symbol.toPrimitive", "string"]]) {
+    const member = key === "toString" ? '"toString"' : "Symbol.toPrimitive";
+    assert.equal(vm.runInNewContext(`${source}\nlet seen = 0; const value = [1, 2];
+      value[${member}] = function(required) { seen = required; return "x"; };
+      tuples([value, value]); seen;`, {}, { timeout: 1000 }), expected);
+  }
+}
 // Reading a hole gives undefined, so it satisfies the input annotation. map
 // skips it even when the callback preserves the heap and returns a number.
 {
@@ -839,8 +852,13 @@ let callback = "";
   // A computed key is the symbol it names: `[Symbol.iterator]` is `Symbol.iterator`.
   const keyText = (name: string | { symbol: number }) =>
     typeof name === "string" ? name : `[Symbol.${doc.symbols[name.symbol]?.name}]`;
-  assert.deepEqual(proto.expression.fields.map(f => keyText(f.name)), arrayOverlay.map(e => e.name));
-  for (const field of proto.expression.fields) {
+  const methods = proto.expression.fields.filter(f => !f.optional);
+  assert.deepEqual(methods.map(f => keyText(f.name)), arrayOverlay.map(e => e.name));
+  const absentHooks = proto.expression.fields.filter(f => f.optional);
+  assert.equal(absentHooks.length, 1);
+  assert.equal(keyText(must(absentHooks[0], "conversion hook absence").name), "[Symbol.toPrimitive]");
+  assert(absentHooks.every(f => f.readonly && f.type.k === "atom" && f.type.name === "undefined"));
+  for (const field of methods) {
     const entry = arrayOverlay.find(e => e.name === keyText(field.name));
     // The member's own binders lead; the element binder `T` is last.
     assert(field.readonly && field.type.k === "scheme" && field.type.binders.at(-1)?.name === "T");

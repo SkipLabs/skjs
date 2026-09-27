@@ -3967,11 +3967,13 @@ $$
 
 The reviewed overlay can restrict quantified binders (`bounds`) and weaken a
 native's promised result (`result`). These specify trusted natives; source
-annotations are still translated in full. `join` bounds `T` to primitives,
+annotations are still translated in full. `join` bounds `T` to the conversion
+contract below,
 unrestricted `find`/`findIndex` callbacks receive `T | undefined`, and unrestricted
 `map` callbacks produce a sparse result. Qualified overloads require a certified
 `preservesInputHeap` callback and respectively pass `T` or promise a dense result.
-Source `U[]` still requires density.
+Source `U[]` requires readability; the fresh qualified map result may choose that
+lifetime contract even when its initial contents are physically dense.
 
 Native array results rely on the ordinary-construction invariant: an array owns
 neither `constructor` nor any key declared by `ArrayProto`; the host keeps the
@@ -3981,16 +3983,45 @@ Thus `filter` and `slice` can promise ordinary arrays, and certified callback ef
 justify the dense `map` overload. The runtime witnesses in `test.mts` violate
 the explicit external-code premise and document why it is needed.
 
-For `sort`, let A(T) be the mutable array contract, V(P) the readonly array
-view at primitive elements P, and C(T) the comparator `(T,T) → number`.
+**Standard array conversion.** Let P be the primitive types, including
+`undefined`, and define the regular recursive contract
+
+$$
+D=\mu X.\;P\;\cup\;\mathsf{ReadonlyArray}(X).
+$$
+
+This is the synthetic declaration `StringConvertible`, lowered by the ordinary
+recursive declaration mechanism. The array realm excludes own `toString`,
+`join` and `Symbol.toPrimitive`; the prototype contract states an optional
+`Symbol.toPrimitive` field whose only possible value is `undefined`. Standard
+prototype behavior is required of external code too. Thus string conversion of
+an admitted array reaches standard `toString`, which calls standard `join`,
+whose element conversions meet the same D contract. No client conversion hook
+is called. Primitives may throw (a symbol, for example); termination is not
+claimed for recursive arrays. Without a library identity for `Symbol.toPrimitive`,
+D conservatively contains primitives only.
+
+`join` and `toString` each quantify `T` with bound `T ≤ D`. For `sort`, let
+A(T) be the mutable array contract, V(D) its readonly view at D, and C(T) the
+comparator `(T,T) → number`.
 Its one scheme offers the intersection:
 
 $$
 \forall T.\quad
  ((\mathsf{this}:A(T),\ C(T))\Rightarrow A(T))
  \;\cap\;
- ((\mathsf{this}:A(T)\cap V(P),\ \mathtt{undefined})\Rightarrow A(T)).
+ ((\mathsf{this}:A(T)\cap V(D),\ \mathtt{undefined})\Rightarrow A(T)).
 $$
+
+These are audited native contracts, consumed by the existing quantified call
+and subtype rules, not new calculus axioms or a proof of ECMA-262's algorithms.
+Custom array conversion is deliberately outside the admitted language: it adds
+dispatch and alias obligations without helping the motivating framework code.
+`native-array-conversion` and the unchanged tuple-sort examples verify;
+`invalid-array-conversion-override` refuses the conflicting own-key contract.
+Runtime controls show why accepting externally overridden hooks would invalidate
+the assumption. See [ECMA-262](REFERENCES.md#ecma-262), `ToPrimitive`,
+`Array.prototype.toString` and `CompareArrayElements`.
 
 Omitting the comparator supplies `undefined`, so it needs the second receiver
 contract. A comparator on arbitrary objects needs only the first. These are

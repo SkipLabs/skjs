@@ -649,12 +649,25 @@ these are not accepted executions of the admitted language. Custom species can
 be modeled later with explicit construction contracts. See
 [`ArraySpeciesCreate`](REFERENCES.md#ecma-262).
 
-`join` and default `sort` currently require primitive elements: implicit
-string conversion must not invoke an unchecked client method. `sort` with an
-explicit comparator accepts arbitrary element types: its two call contracts
-are separate signatures of one quantified callable. The comparator is checked
-at the element type; passing `undefined` selects the conversion-requiring
-contract. No new core rule or sort-specific producer path is needed.
+**Standard array conversion is an enforced restriction.** Arrays may not own
+`toString`, `join` or `Symbol.toPrimitive`, and their standard prototype chain
+must retain those members' behavior. The same rule applies to external code.
+The existing own-key invariant enforces it; `ArrayProto` also states that
+`Symbol.toPrimitive` is absent or undefined. A recursive native contract admits
+primitives and arrays of convertible values. Default sorting and joining can
+therefore convert numeric tuples and nested arrays without calling client hooks.
+The actual route is `ToPrimitive` → standard `toString` → standard `join` →
+recursive element conversion, not an inference from numeric contents alone.
+Custom conversion on arrays is a deliberately excluded corner case; general
+objects with conversion methods still need an explicit comparator. This follows
+[the utility principle](#principles), and does not claim arbitrary JavaScript
+arrays satisfy the restriction. The equations and native signatures are in
+[prototype contracts](PROGRAM-TYPING.md#prototype-contracts).
+
+`sort` with an explicit comparator accepts arbitrary element types. Its call
+contracts are separate signatures of one quantified callable; passing undefined
+selects the conversion-requiring contract. Existing subtyping and application
+rules suffice. Native conformance remains audited, not proved against ECMA-262.
 
 The native regression sources are also executed under Node. Source-contract
 erasure is tested against both verifier entry points using a forged producer
@@ -887,7 +900,7 @@ throw, which safety admits, but never return a wrong value.
 | An ambient declaration (`declare function`, `declare const`, `declare class`) holds of the value the environment supplies under that name; the declaration document lists it with the specifier `ambient`. | `AMBIENT`; `collectDeclarations` |
 | A global variable outside the standard library (Node's `process`) meets its declaration at the members and calls the module selects, from the project's type packages, and no code the module does not see reassigns it. | `GLOBAL`; `selectGlobal` |
 | Each standard library global meets its reviewed overlay entry: `console.log`; `BigInt`; `Symbol`, `Symbol.for`, `Symbol.keyFor` and five well-known symbols; `String` of a primitive; `Object.keys`, `Object.values`, `Object.entries` (and the generic two at a dictionary); `new Array()`; `Array.isArray` and `Array` as `instanceof`'s operand; `new Error(m)`; `new Set`, `new Map` of an array, `new Date` of nothing, a primitive or components, `Date.now`; the `Promise` statics and constructor, through the intrinsics below; `JSON.parse` of a string and `JSON.stringify` of a `JsonValue`. | `globalsOverlay` in `tools/library-globals.mts`; [rules](PROGRAM-TYPING.md#library-globals) |
-| `Array.prototype` meets `ArrayProto`: its natives `forEach`, `map`, `reduce` and `reduceRight` (with an initial value), `every`, `some`, `filter`, `slice`, `join`, `indexOf`, `lastIndexOf`, `includes`, `at`, `find`, `findIndex`, `sort`, `push`, `pop`, `shift`, `unshift`, `reverse` and `[Symbol.iterator]` meet the reviewed overlay contracts, at the listed receiver, without `thisArg`; result construction uses the ordinary-array invariant; `map` promises a sparse result for unrestricted callbacks and a readable result, freshly dense, for a dense input and certified heap-preserving callbacks; `find`/`findIndex` admit missing callback values unless the callback has that guarantee, and `join` and default `sort` restrict elements to primitives; comparator sorting checks the supplied callback. Units allocating arrays read it from the input slot `[[Array.prototype]]`. | `overlay` in `tools/array-prototype.mts` |
+| `Array.prototype` meets `ArrayProto`: its natives `forEach`, `map`, `reduce` and `reduceRight` (with an initial value), `every`, `some`, `filter`, `slice`, `join`, `toString`, `indexOf`, `lastIndexOf`, `includes`, `at`, `find`, `findIndex`, `sort`, `push`, `pop`, `shift`, `unshift`, `reverse` and `[Symbol.iterator]` meet the reviewed overlay contracts, at the listed receiver, without `thisArg`; result construction uses the ordinary-array invariant; `map` promises a sparse result for unrestricted callbacks and a readable result, freshly dense, for a dense input and certified heap-preserving callbacks; `find`/`findIndex` admit missing callback values unless the callback has that guarantee, and `join`, `toString` and default `sort` restrict elements to the recursive standard-conversion contract, with own conversion hooks excluded; comparator sorting checks the supplied callback. Units allocating arrays read it from the input slot `[[Array.prototype]]`. | `overlay` in `tools/array-prototype.mts` |
 | `String.prototype`, `Number.prototype`, `BigInt.prototype` and `Boolean.prototype` meet `StringProto`, `NumberProto`, `BigIntProto` and `BooleanProto`, each member an own property of that prototype (`split`, `replace`, `replaceAll` stated at a string pattern; `toLocaleString` without `options`), read from the slot `[[String.prototype]]` and so on. | `primitiveOverlay` in `tools/array-prototype.mts` |
 | `Set.prototype`, `Map.prototype` and `Date.prototype` hold the listed natives, unmodified (`keys`, `values` and `entries` giving a host iterator of the collection). | `interfaceOverlay` in `tools/array-prototype.mts` |
 | The intrinsics meet their signatures: `%Await%` yields what a promise settles to or throws its rejection; `%AsyncReturn%` and `%AsyncComplete%` settle an async function's promise to a primitive or `undefined` (also `Promise.resolve`); `%PromiseAll%` (`Promise.all`), `%PromiseReject%` (`Promise.reject`), `%NewPromise%` (`new Promise`, calling its executor at once); `%Iterate%` steps an array's iterator, reading the current length at each step; `%Iterate:string%` a string's, by code point; `%Iterate:Set%` a `Set`'s, in insertion order; `%Iterate:Map%` a `Map`'s, a fresh `[key, value]` array per entry; `%Iterate:Iterator%` a `SetIterator` or `MapIterator`, which is its own iterator; none of these iterators has a `return`; `%Spread:K%` is the fresh array of what `%Iterate:K%`'s step yields until it ends; `%RestFrom:k%` is the fresh array of an array's elements from `k` to its current length, as its iterator yields them after a pattern's `k` elements; `%ForIn%` gives the keys a `for...in` visits, strings; `%HasProperty%` answers `k in o` for a key TypeScript types as other than string literals, as the host's lookup does; `%ElementAt%` reads `xs[k]` of an array at a `number` key as the host does: the element at an index below the length, an own property at another numeric key, else `undefined`. The job queue and a promise that never settles are not modelled. | `tools/intrinsics.mts`; [async](PROGRAM-TYPING.md#async-functions-and-await) |
@@ -1113,12 +1126,12 @@ callback returning a promise instantiates `then`'s binder through
 
 **Coverage lost to the boundary repairs.** The original framework
 `sum-sound-binding`/`sum-main` sources no longer verify: Promise's
-recursive quantified contracts exceed the budget, and the tuple-valued
-`sort()` needs a justified conversion contract. Their sources remain
+recursive quantified contracts exceed the budget. Tuple-valued default sorting
+is restored under the standard-conversion restriction. Their sources remain
 unchanged. Under the ordinary-array construction invariant, the unrestricted
 `map` contract has a sparse result; the checked callback effect restores the
-safe density-sensitive targets. Green regression suites retain the sorting and
-recursive-contract gaps explicitly.
+safe density-sensitive targets. Green regression suites retain the recursive-contract
+gaps explicitly.
 
 **Restoring useful completeness after the boundary repair.** Keep the original
 positive sources as the targets. The work is split by semantic obligation:
@@ -1129,8 +1142,7 @@ positive sources as the targets. The work is split by semantic obligation:
    proposes a signature instance; Lean checks the projection and call. Receiver
    intersections survive substitution. `native-sort-contracts` verifies objects,
    numeric tuples and explicit `undefined` on primitives; the optional-comparator
-   negative rejects objects when default coercion remains possible. This does
-   not restore the original tuple-valued **default** `sort()` examples.
+   negative rejects objects when default coercion remains possible. The original tuple-valued **default** `sort()` examples are restored by step 4.
 2. **Sparse results: implemented.** The runtime store already uses a
    list of optional locations, so holes have an operational representation.
    The contract on *present* elements is separate from the guarantee that every
@@ -1219,11 +1231,16 @@ positive sources as the targets. The work is split by semantic obligation:
    `testArrowOptional` and `testMapReturnsArray` verify unchanged in the census.
    Other call forms and nested heap expressions remain conservative effect
    inference limitations; they are not needed by these original targets.
-4. **Default object conversion.** Restore the tuple-valued default-sort examples
-   only with a contract covering actual conversion dispatch, including
-   `Symbol.toPrimitive`, `toString`, and prototype lookup. A tuple's numeric
-   elements alone do not establish that its conversion hooks cannot be replaced.
-   Explicit-comparator sorting avoids those hooks and is already covered.
+4. **Standard array conversion: original targets restored.** One recursive
+   native contract admits primitives and nested arrays. The array own-key
+   invariant and prototype contract exclude custom conversion hooks, including
+   in external code. This is the explicit engineering trade-off described
+   [above](#exact-contracts-and-native-effects). `sum-local-closure`,
+   `sum-values-tuple` and `local-closure-result` verify without source edits.
+   Ordinary objects with arbitrary hooks remain refused without a comparator;
+   the original coercion counterexamples stay negative. No new core rule is
+   needed: the existing recursive types, key bounds and quantified calls express
+   the contract.
 5. **Recursive quantified contracts.** Retain parameterized recursive equations
    with lexical binders rather than unfold each application into fresh colours
    until a budget runs out. Instantiation must commute with unfolding and be

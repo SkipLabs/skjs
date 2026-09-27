@@ -74,6 +74,11 @@ const locales: TypeTerm = { k: "union", span: at, parts: [atomOf("string"),
 const primitiveElements: TypeTerm = { k: "union", span: at, parts:
   [atomOf("string"), atomOf("number"), atomOf("boolean"), atomOf("null"),
    atomOf("undefined"), atomOf("bigint"), atomOf("symbol")] };
+/** A regular recursive native contract, not a depth-limited tree of arrays. */
+const stringConvertibleIdentity: DeclarationIdentity =
+  { module: "skjs/array-conversion", name: "StringConvertible", span: [0, 0] };
+const stringConvertible: TypeTerm = { k: "reference", args: [], span: at,
+  reference: { name: "StringConvertible", span: at, arguments: [], target: stringConvertibleIdentity } };
 const element: TypeTerm = { k: "binder", name: "T", span: at };
 const maybeElement: TypeTerm = { k: "union", parts: [element, atomOf("undefined")], span: at };
 const arrayOf = (value: TypeTerm, readonly: boolean, presence: ArrayPresence = "readable"): TypeTerm =>
@@ -124,7 +129,9 @@ export const overlay: readonly OverlayEntry[] = [
     drop: ["thisArg"] },
   { name: "slice", from: "ReadonlyArray", signature: "slice(start?: number, end?: number): T[];" },
   { name: "join", from: "ReadonlyArray", signature: "join(separator?: string): string;",
-    bounds: { T: primitiveElements } },
+    bounds: { T: stringConvertible } },
+  { name: "toString", from: "ReadonlyArray", signature: "toString(): string;",
+    bounds: { T: stringConvertible } },
   { name: "indexOf", from: "ReadonlyArray",
     signature: "indexOf(searchElement: T, fromIndex?: number): number;" },
   { name: "lastIndexOf", from: "ReadonlyArray",
@@ -145,14 +152,14 @@ export const overlay: readonly OverlayEntry[] = [
     signature: "sort(compareFn?: (a: T, b: T) => number): this;",
     // These are independent call contracts, not a restriction on every T.
     // An explicit comparator avoids element coercion. Omitted/undefined
-    // comparison instead requires a primitive read view of the receiver.
+    // comparison instead requires the recursive standard-conversion view.
     stated: [
       { params: [{ k: "function", effect: "unrestricted", receiver: null, params: [element, element], rest: null,
           result: atomOf("number"), span: at }],
         result: { k: "array", presence: "readable", readonly: false, element, span: at } },
       { receiver: { k: "intersection", parts: [
           { k: "array", presence: "readable", readonly: false, element, span: at },
-          { k: "array", presence: "readable", readonly: true, element: primitiveElements, span: at }], span: at },
+          { k: "array", presence: "readable", readonly: true, element: stringConvertible, span: at }], span: at },
         params: [atomOf("undefined")], result: { k: "array", presence: "readable", readonly: false, element, span: at } },
     ] },
   { name: "push", from: "Array", signature: "push(...items: T[]): number;" },
@@ -328,6 +335,8 @@ export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>>
  * then joins the graph. */
 export type OverlayLibrary = {
   symbol: (written: ts.PropertyAccessExpression | ts.Identifier) => number;
+  /** Identity from the standard library, never a synthetic identifier node. */
+  wellKnownSymbol: (name: string) => number | null;
   reference: (node: ts.InterfaceDeclaration, args: TypeTerm[], span: [number, number]) => TypeTerm;
 };
 
@@ -362,10 +371,22 @@ type Prototype = {
  * over the array's element binder `T` and the member's own binders, whose one
  * signature takes the array as its receiver. `at` locates a refusal. */
 export function arrayPrototype(checker: Checker, at: Node, library: OverlayLibrary,
-    entries: readonly OverlayEntry[] = overlay): TypeDefinition {
+    entries: readonly OverlayEntry[] = overlay): TypeDefinition[] {
   const element: TypeTerm = { k: "binder", name: "T", span: [0, 0] };
-  return prototype(checker, at, library, { identity: arrayProtoIdentity, binders: ["T"], entries,
+  const result = prototype(checker, at, library, { identity: arrayProtoIdentity, binders: ["T"], entries,
     receiver: from => ({ k: "array", presence: "readable", readonly: from === "ReadonlyArray", element, span: [0, 0] }) });
+  if (!entries.some(e => ["join", "toString", "sort"].includes(e.name))) return [result];
+  const hook = library.wellKnownSymbol("toPrimitive");
+  if (result.expression.k !== "object") throw Error("a prototype contract must be an object");
+  // Standard Array.prototype has no conversion hook. The optional undefined
+  // view states this, and the existing array own-key invariant prevents an
+  // array from shadowing it, toString or join. External arrays obey it too.
+  if (hook !== null) result.expression.fields.push({ name: { symbol: hook }, optional: true,
+    readonly: true, type: atomOf("undefined"), span: [0, 0] });
+  const conversion: TypeDefinition = { declaration: stringConvertibleIdentity, parameters: [], bases: [],
+    expression: hook === null ? primitiveElements : { k: "union", span: [0, 0], parts:
+      [primitiveElements, arrayOf(stringConvertible, true)] } };
+  return [result, conversion];
 }
 
 /** A primitive's prototype contract, `StringProto` for `String.prototype`: a

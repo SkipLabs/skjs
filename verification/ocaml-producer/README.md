@@ -4,8 +4,10 @@
 > refused rather than erased. This reopens Promise-dependent framework cases,
 > including `sum-main`. Array results rely on the explicit ordinary-construction
 > invariant, also required of external code. `map` promises a dense result only for a certified heap-preserving callback.
-> Unrestricted `find` callbacks must admit `undefined`; `join` and default `sort` require primitive
-> elements; comparator sorting supports arbitrary elements. Original sources are retained as gaps in `cases.mts`. See
+> Unrestricted `find` callbacks must admit `undefined`. Standard array conversion supports
+> primitives and nested arrays, with custom array conversion hooks excluded, also externally.
+> The original tuple-sort cases verify again; comparator sorting supports arbitrary elements.
+> Promise-dependent sources remain explicit gaps in `cases.mts`. See
 > [the current design](../DESIGN.md#exact-contracts-and-native-effects).
 
 An independent OCaml producer with **verified acceptance**, using the existing

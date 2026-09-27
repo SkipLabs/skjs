@@ -913,6 +913,23 @@ export function collectDeclarations(file: string, options: {
     };
     const overlayLibrary: OverlayLibrary = {
       symbol: symbolOf,
+      wellKnownSymbol: name => {
+        const symbol = checker.resolveName("SymbolConstructor", SymbolFlags.Interface, client, false);
+        const parts = (symbol?.declarations ?? []).map(d => d.resolve())
+          .filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
+        // Node may augment SymbolConstructor with unrelated keys. Validate
+        // the one declaration whose identity we need, not that whole interface.
+        const fields = parts.flatMap(part => part.members)
+          .filter(ts.isPropertySignatureDeclaration)
+          .filter(p => ts.isIdentifier(p.name) && p.name.text === name);
+        const [property, ...more] = fields;
+        if (!property) return null;
+        if (more.length || !ts.isIdentifier(property.name) ||
+            !isLibraryModule(idOf(property.getSourceFile())) ||
+            property.getText(property.getSourceFile()).trim() !== `readonly ${name}: unique symbol;`)
+          throw Error(`Symbol.${name} is not declared as reviewed`);
+        return symbolOf(property.name);
+      },
       reference: (node, args, span) => {
         valueStarts.push(node);
         const target = identityOf(node);
@@ -920,7 +937,7 @@ export function collectDeclarations(file: string, options: {
           target }, args, span };
       },
     };
-    let arrayProto: TypeDefinition | null = null;
+    let arrayProto: TypeDefinition[] = [];
     if (options.arrays) {
       try {
         arrayProto = arrayPrototype(checker, client, overlayLibrary, options.arrayOverlay ?? overlay);
@@ -1382,7 +1399,7 @@ export function collectDeclarations(file: string, options: {
     }
     definitions.push(...selections, ...primitiveProtos);
     // First, so its row follows the four fixed ones in every table.
-    if (arrayProto) definitions.unshift(arrayProto);
+    definitions.unshift(...arrayProto);
     // A trusted generic signature instantiated at a thenable type states a
     // promise of it, which a realm promise never is: each type parameter a
     // `Promise` or `PromiseLike` argument names is bounded by `nonThenable`,

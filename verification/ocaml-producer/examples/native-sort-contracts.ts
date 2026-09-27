@@ -1,4 +1,4 @@
-// Sort has two call contracts: a checked comparator, or primitive-only coercion.
+// Sort has two call contracts: a checked comparator, or standard conversion of primitives and arrays.
 export function byKey(xs: { key: number }[]): { key: number }[] {
   return xs.sort(
     (a: { key: number }, b: { key: number }): number => a.key - b.key,

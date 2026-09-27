@@ -83,6 +83,11 @@ Docker from the main checkout (`SKJS_ROOT`, `SKJS_BIN`, `DOCKER_IMAGE`,
 `--out` places the derived files (default `$TMPDIR/skjs-coverage`). The script
 is not part of `verification/run.sh`.
 
+The standard-array-conversion round also restored the unchanged upstream
+`sum-local-closure`, `sum-values-tuple` and `local-closure-result` cases.
+The full SKJS-confirmed census remained unchanged at the counts above; those
+upstream cases are in the pipeline suite, not this repair corpus.
+
 ## Method
 
 **Corpus.** Every TypeScript file the SKJS harness type-checks with a verdict:

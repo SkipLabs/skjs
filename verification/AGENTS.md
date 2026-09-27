@@ -209,6 +209,12 @@ separate review obligations, even when every Lean proof and suite passes.
   through all array/record views and reject source operations violating it.
   Custom species are outside the admitted language; their full modeling is not
   a prerequisite for callback-effect work. Never widen this assumption silently.
+  Standard array conversion additionally excludes own `toString`, `join` and
+  `Symbol.toPrimitive` and assumes their standard prototype behavior, also of
+  external code. Keep these key bounds and the prototype's undefined hook view:
+  numeric elements alone do not justify implicit conversion. The recursive
+  conversion contract and the rationale for excluding custom hooks live in
+  [prototype contracts](PROGRAM-TYPING.md#prototype-contracts).
 - **Test the unproved boundary independently.** A producer-side refusal needs
   a verifier test bypassing that producer when annotation interpretation is
   involved. For native-contract repairs, execute the actual negative source
