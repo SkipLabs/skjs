@@ -1,6 +1,9 @@
 # Reducing trust
 
-Potential future work, not a plan of record. It lists the bridges between a
+Options (2) and (3) are decided, together
+([DESIGN](DESIGN.md#next-steps)): the Fragment moves close to source, the
+rewrites move into Lean, and the Fragment semantics reads it as JavaScript
+directly, tested against node. The rest is potential future work. It lists the bridges between a
 TypeScript program and the proved theorem that rest on review rather than
 proof, the ways each could be narrowed or proved, and how they compose with
 the [ECMA-262 connection](ECMA-CONNECTION.md).

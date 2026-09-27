@@ -1261,13 +1261,16 @@ arity meets a longer signature (it discards the actuals past its parameters,
 `restsT_of_graph`), but its slot is its annotated signature: the slot would
 carry the padded promise, a claim its own unit checks.
 
-**Reducing trust.** Four bridges between source and theorem rest on review:
-the parser's rewrites, extraction, the reading of declared types, and the
-host. Structural theorems about extraction, moving the parser's rewrites into
-Lean, a Fragment semantics with a preservation theorem, a meaning for declared
-types, and host lemmas would narrow or prove them; the options, what each
-retires and how they compose with the ECMA-262 connection are in
-[TRUST-REDUCTION](TRUST-REDUCTION.md).
+**A semantics of the Fragment.** The parser's rewrites and extraction rest
+on review. The Fragment moves close to source JavaScript, the rewrites move
+into extraction, and the Fragment gets a direct semantics in Lean: an
+executable interpreter that reads it as JavaScript does, with types erased.
+Extraction is proved a simulation of it. The interpreter's faithfulness to
+JavaScript is tested against node, not proved: the target is fixed, so
+testing converges without a mechanized specification. A rewrite chosen by a
+type (`%Iterate:K%`, `%ElementAt%`) is correct under that typing premise.
+The reading of declared types and the host remain trusted; the remaining
+options are in [TRUST-REDUCTION](TRUST-REDUCTION.md).
 
 **SKJS operations.** Extend the closed operation export beyond the
 primitive, cell and arrow fragment, so a failing SKJS judgment is located at

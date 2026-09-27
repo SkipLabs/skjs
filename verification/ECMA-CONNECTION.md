@@ -1,6 +1,8 @@
 # Connecting the model to ECMAScript
 
-A sketch, not a plan of record. It states what a connection between this
+A sketch, not a plan of record; superseded for the language by the
+decision to give the Fragment a direct semantics tested against node
+([TRUST-REDUCTION](TRUST-REDUCTION.md)), which takes M's place for T1. It states what a connection between this
 development and a mechanized semantics of ECMA-262 would establish, which
 parts of the [trust surface](DESIGN.md#trust-surface) it would turn into
 theorems, which would remain assumptions, and what each piece would cost.
