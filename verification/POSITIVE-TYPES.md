@@ -603,10 +603,23 @@ needed by signatures and checks each against this structural substitution.
 `InstanceImages` obligation as the old finite closed-table checker. No recursive
 row closure or expansion cutoff is used.
 
-The equation check is not yet wired into source or CLI acceptance. Source
+`Types/EquationCertificates.lean` connects these witnesses to the shared
+`PositiveCertificates.checkUsing` proof traversal. Its `InstanceImageCheck`
+interface carries the executable image check and a Lean proof that acceptance
+establishes `InstanceImages`. This interface is supplied by verified code, not
+by certificate JSON. The finite implementation retains `TableOk`; the equation
+implementation uses structural substitution. Both use the same checks for
+bounds, kinds, fixed and variadic signatures, receivers and effects, including
+instances used as known rows by structural coverage. The shared checker is
+sound for every proved image checker. The original default checker and its
+completeness theorem for finite declarative derivations are unchanged in scope.
+
+The equation checker is not yet wired into source or CLI acceptance. Source
 compilation (including alias and dependent-intersection normalization), finite
-family-subtyping evidence, and certificate integration remain pending. Existing
-finite certificates remain the only accepted path until that integration is
+family-subtyping evidence, and program-certificate integration remain pending.
+Other proof forms still enforce their original closure/free-support checks;
+those checks have not been bypassed for recursive graphs. Existing finite
+certificates remain the only source acceptance path until the integration is
 covered by the acceptance theorem.
 
 ## Conjunction and normalization
@@ -1409,7 +1422,7 @@ All six are accepted. `CertificateProducer` never emits `trans`: that
 restricts search, not the accepted language, and a certificate written by
 another producer may use it.
 
-The checker is sound and complete for the rules:
+The default finite checker is sound and complete for the rules:
 
 $$
 G\vdash S\le T\quad\Longleftrightarrow\quad

@@ -163,19 +163,20 @@ theorem boundOk_reassign (binders : List ι) (θs : List (List ι)) (b : ι × L
 theorem checkInstArrs_reassign (S : List ι) (L : Ops ι)
     (M : List (CallEffects.RestArrow (List ι))) (c : Instance ι) :
     checkInstArrs (reassign G η) S L M c = checkInstArrs G S L M c := by
-  simp only [checkInstArrs, boundOk_reassign]
+  simp only [checkInstArrs, checkInstArrsUsing, finiteInstanceImages, boundOk_reassign]
   rfl
 
 theorem checkInst_reassign (S T : List ι) (c : Instance ι) :
     checkInst (reassign G η) S T c = checkInst G S T c := by
-  simp only [checkInst, checkInstArrs_reassign]
+  simp only [checkInst, checkInstUsing, ← checkInstArrs.eq_def, checkInstArrs_reassign]
   rfl
 
 theorem check_reassign (S T : List ι) (p : Proof ι) :
     PositiveCertificates.check (reassign G η) S T p = PositiveCertificates.check G S T p := by
+  simp only [PositiveCertificates.check]
   induction p generalizing S T <;>
-    simp only [PositiveCertificates.check, checkCore_reassign, checkInstArrs_reassign,
-      checkInst_reassign, *] <;> rfl
+    simp only [checkUsing, ← checkInstArrs.eq_def, ← checkInst.eq_def, checkCore_reassign,
+      checkInstArrs_reassign, checkInst_reassign, *] <;> rfl
 
 /-- The subtype checker as a function of its graph. -/
 theorem check_fun_reassign :

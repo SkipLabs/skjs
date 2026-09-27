@@ -1306,9 +1306,16 @@ positive sources as the targets. The work is split by semantic obligation:
      `table_instanceImages` establishes it for the current checker;
      `inst_images_sound` supplies the shared elimination proof.
      `substitutionTable_instanceImages` now establishes that obligation for
-     equation witnesses. Wiring this alternative check into source/protocol
-     compilation and the exact CLI acceptance theorem is still pending;
-     current acceptance continues to require the old finite certificate.
+     equation witnesses. `PositiveCertificates.checkUsing` is now the shared
+     proof traversal: `InstanceImageCheck` requires a proof of that obligation,
+     and the finite checker remains the default. `EquationCertificates` supplies
+     the structural substitution checker and proves its subtype checks sound.
+     Bounds, kinds, fixed/rest signatures, receivers and effects still use the
+     same checks; no new certificate-supplied trust premise is introduced.
+     The original finite certificate completeness theorem is preserved. Wiring
+     equation labels and this checker into source/protocol compilation and the
+     exact CLI acceptance theorem is still pending; current source acceptance
+     continues to require the old finite certificate.
      Structural subtyping needs the corresponding finite family argument too:
      `Promise<number> ≤ Promise<number | string>` cannot be justified by stopping an
      infinite traversal. Check the family relation against the complete

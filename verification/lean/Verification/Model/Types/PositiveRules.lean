@@ -5030,6 +5030,47 @@ theorem Inst.mixed_sound [DecidableEq ι] {G : NormalGraph ι} {S T} (h : Inst G
   | inr vs => exact (scheme_noArguments hp hq hx).elim
   | inl v => exact mixed_of_expand hT (hi.mixed_sound η n W v hx)
 
+/-- Generalization consumes semantic inclusion under every assignment. The
+free-support check ensures that entering the scheme cannot change the source;
+this rule is independent of how a subtyping certificate proves its body. -/
+theorem gen_mixed_sound [DecidableEq ι] {G : NormalGraph ι} {S : List ι}
+    {j : ι} {s : SchemeRow ι} {D U : List ι} {V : FreeMap ι}
+    (hp : G.params j = false) (hq : G.schemes j = some s)
+    (hU : expand G U = [.arrs s.signatures s.variadic])
+    (hF : FreeOk G D V = true)
+    (hS : ∀ l ∈ S, l ∈ D ∧ ∀ p ∈ fv V l, p ∉ s.binders)
+    (ih : ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η U)) :
+    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η [j]) := by
+  intro η n W x hx
+  cases x with
+  | inr vs => exact (arrs_noArguments hU (ih η n W (.inr vs) hx)).elim
+  | inl v =>
+    refine ⟨j, List.mem_singleton_self j, ?_⟩
+    change qDenoteWithArgs G (mixedParameters G) (η, j) n W v
+    rw [qDenoteWithArgs_unfold]
+    simp only [qLayerWithArgs, hp, hq, Bool.false_eq_true, if_false]
+    have hat : ∀ As : List MixedFamily,
+        mixedValues G (assign η s.binders As) U n W v := by
+      intro As
+      apply ih (assign η s.binders As) n W (.inl v)
+      obtain ⟨l, hl, h⟩ := hx
+      refine ⟨l, hl, ?_⟩
+      change qDenoteWithArgs G (mixedParameters G) (assign η s.binders As, l) n W v
+      rw [agree_freeWith hF (mixedParameters G) (mixed_respectsFree hF) _ η l (hS l hl).1
+        (fun p hp => by rw [assign_nmem η s.binders As ((hS l hl).2 p hp)])]
+      exact h
+    have hUp := plain_of_mem_expand (G := G) (S := U) (c := .arrs s.signatures s.variadic)
+      (by simp [hU])
+    have hsig : ∀ As : List MixedFamily, instanceTWithArgs
+        (fun η' S => setSem (fun l => qDenoteWithArgs G (mixedParameters G) (η', l)) S) η s As
+        (graphArguments G) n W v := by
+      intro As
+      obtain ⟨c, hc, hcv, -⟩ := (mixed_expand (assign η s.binders As) hUp n W v).mp (hat As)
+      rw [hU, List.mem_singleton] at hc
+      subst hc
+      exact hcv
+    exact ⟨(hsig []).1.1, fun As _ _ => hsig As⟩
+
 /-- Subtyping holds at every assignment, for both components: the derivation
 reads no assignment. -/
 theorem Sub.mixed_sound {G : NormalGraph ι} {S T} (h : Sub G S T) :
@@ -5047,35 +5088,7 @@ theorem Sub.mixed_sound {G : NormalGraph ι} {S T} (h : Sub G S T) :
       (fun p _ => by simp [RelKWith]) W x).mp hx
     exact mixed_subset hUT n W x hr
   | @gen S _ j s D U V hp hq hU hF hS _ ih =>
-    intro η n W x hx
-    cases x with
-    | inr vs => exact (arrs_noArguments hU (ih η n W (.inr vs) hx)).elim
-    | inl v =>
-      refine ⟨j, List.mem_singleton_self j, ?_⟩
-      change qDenoteWithArgs G (mixedParameters G) (η, j) n W v
-      rw [qDenoteWithArgs_unfold]
-      simp only [qLayerWithArgs, hp, hq, Bool.false_eq_true, if_false]
-      have hat : ∀ As : List MixedFamily,
-          mixedValues G (assign η s.binders As) U n W v := by
-        intro As
-        apply ih (assign η s.binders As) n W (.inl v)
-        obtain ⟨l, hl, h⟩ := hx
-        refine ⟨l, hl, ?_⟩
-        change qDenoteWithArgs G (mixedParameters G) (assign η s.binders As, l) n W v
-        rw [agree_freeWith hF (mixedParameters G) (mixed_respectsFree hF) _ η l (hS l hl).1
-          (fun p hp => by rw [assign_nmem η s.binders As ((hS l hl).2 p hp)])]
-        exact h
-      have hUp := plain_of_mem_expand (G := G) (S := U) (c := .arrs s.signatures s.variadic)
-        (by simp [hU])
-      have hsig : ∀ As : List MixedFamily, instanceTWithArgs
-          (fun η' S => setSem (fun l => qDenoteWithArgs G (mixedParameters G) (η', l)) S) η s As
-          (graphArguments G) n W v := by
-        intro As
-        obtain ⟨c, hc, hcv, -⟩ := (mixed_expand (assign η s.binders As) hUp n W v).mp (hat As)
-        rw [hU, List.mem_singleton] at hc
-        subst hc
-        exact hcv
-      exact ⟨(hsig []).1.1, fun As _ _ => hsig As⟩
+    exact gen_mixed_sound hp hq hU hF hS ih
 
 theorem Sub.sound {G : NormalGraph ι} {S T} (h : Sub G S T) :
     FamLe (meaning G S) (meaning G T) :=
