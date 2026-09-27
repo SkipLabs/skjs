@@ -3205,6 +3205,88 @@ refused: a class whose constructor calls its parameter's `toString` is not a
 `new (params: Json) => Resource<C>`, as a Json object may own that key at any
 Json (`invalid-sum-sound-binding-constructor.ts`).
 
+### Certifying inferred call effects
+
+**Planned rules, not current certificate constructors.** The semantic
+foundation is [the qualified arrow equation](SEMANTICS.md#effect-qualified-call-contracts).
+The existing source-closure rule above still describes current acceptance.
+The extension must strengthen definition checking and application together;
+changing only the native `map` declaration would introduce a trusted assumption
+about client code.
+
+Write $\Gamma\vdash e:B\;!\epsilon$ for safety with the entry-relative
+postcondition $Q_\epsilon$ from that equation. Semantically this quantifies over
+every eligible budget, world, heap $h$ and environment satisfying $\Gamma$, and
+requires `SafePost B (Qε h)` for the instantiated term. It is not a Boolean
+producer judgement and does not mean “no write syntax occurs.”
+For a fixed-arity closure, the intended introduction rule is schematically
+
+$$
+\frac{\Gamma_c,\mathit{this}:R_c,\vec x:\vec A
+             \vdash b:B\;!\epsilon}
+ {\Gamma_c\vdash\operatorname{closure}(\vec x,b):
+             \mathcal F_\epsilon(R_c,\operatorname{ArgsShort}(\vec A),B)}.
+$$
+
+Here $\Gamma_c$ describes the actual captured values and fixed storage
+contracts, not transient captured-cell observations. The premise ranges over
+all admitted arguments and future calls. Existing source-annotation checks,
+code arity/binding checks and the ordinary body-safety obligation remain.
+Parameter defaults execute on invocation, so their effects are included; rest
+allocation is allowed. An overload needs the premise for each claimed qualified
+signature, and a scheme needs it for every admissible binder assignment, not
+just observed instances. These are obligations on the eventual graph certificate,
+not permissions to omit those forms from its accounting.
+
+Application uses that type alone. With callee, receiver and arguments already
+values, its intended rule is
+
+$$
+\frac{\Gamma\vdash f:\mathcal F_\epsilon(R_c,\mathcal A,B)
+ \qquad\Gamma\vdash r:R_c\qquad\Gamma\vdash\vec v:\mathcal A}
+ {\Gamma\vdash\operatorname{invoke}(f,r,\vec v):B\;!\epsilon}.
+$$
+
+The effect's entry heap is the heap **after** evaluating the callee, receiver
+and actual expressions. Their evaluation may mutate state; it needs its own
+composition proof. A call-site rule must not inspect the callback body. Named,
+returned and imported callbacks are handled by the same rule whenever their
+qualified type is established. Calls inside a checked body in turn consume
+their callees' qualified types; higher-order effect requirements are types too.
+
+Forgetting an effect is valid, and manufacturing one by subsumption is not.
+The planned coverage condition, in addition to the usual domain contravariance
+and result covariance, is
+
+$$
+\frac{R'_c\le R_c\quad\mathcal A'\subseteq\mathcal A\quad B\le B'
+ \quad\forall h,h',v.\;Q_\epsilon(h)(h',v)\Rightarrow Q_{\epsilon'}(h)(h',v)}
+ {\mathcal F_\epsilon(R_c,\mathcal A,B)
+       \le\mathcal F_{\epsilon'}(R'_c,\mathcal A',B')}.
+$$
+
+In particular, heap-preserving entails unrestricted, but the converse has no
+rule. Normalization and substitution must carry the effect per signature.
+No per-function global flag can justify a stronger effect on another overload.
+
+For native `map`, an audited overload requiring a heap-preserving callback may
+promise a dense result from a dense receiver. The existing unrestricted overload
+promises a sparse result. Both use ordinary overload selection and application;
+there is no body-inspecting `map` rule. A missing effect proof leaves the weaker
+type available where sufficient; an explicitly submitted stronger claim must
+fail with a located obligation rather than silently disappear.
+
+The semantic introduction and elimination rules are now proved in
+`CallEffectCertificates.introduce` and `CallEffects.call_safe`.
+`checkDefinition_sound` connects the former to the existing graph certificate
+checker plus a conservative effect check using `Purity`: the body must already
+be safe, its signature must match, and the first checker refuses rest-collecting
+entries explicitly. This checker is not yet wired into source acceptance.
+The remaining implementation must integrate effect-aware type operations and
+one representation through producer, claims and certificates. The accepted
+plan and `SourceClaimJson.checkJson_safe` must cover any added evidence, and the
+stronger call type used by later derivations must itself have a semantic proof.
+
 ### Parameter initialization order
 
 The source adapter also performs acyclic closure conversion for literal

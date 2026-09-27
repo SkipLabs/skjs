@@ -1,3 +1,4 @@
+import Verification.Model.Semantics.Purity
 import Verification.Model.Semantics.HeapKnowledge
 
 /-! Checked expression rules with primitive state postconditions. Ordinary evidence
@@ -730,28 +731,7 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i j fld R A ρ n
         · exact ⟨.nul,by simp,rfl⟩
         · exact (HeapKnowledge.shift_holds (v := .nul) hk).2.1 f hf
 
-/-- Source lowering inserts variable copies and literal nodes between
-operations. These are pure: unlike calls they must not discard cell facts. -/
-def pureTerm : Tm → Bool
-  | .var _ => true
-  | .test _ a => pureTerm a
-  | .ite c t e => pureTerm c && pureTerm t && pureTerm e
-  | .arith _ a b => pureTerm a && pureTerm b
-  | .throw a => pureTerm a
-  /- A length reads the store it is given, or a string's code units, and
-  gives a number: it changes no heap. -/
-  | .lenOf a => pureTerm a
-  | t => isVal t
-
-/-- Purity is closed under actual reduction and rules out every heap change.
-Stored closure bodies need not be pure: observing an object does not invoke it. -/
-theorem pure_step {h t h' t'} (hs : Step h t h' t') (hp : pureTerm t = true) :
-    h' = h ∧ pureTerm t' = true := by
-  induction hs <;> simp_all [pureTerm,isVal]
-  case testV => split <;> simp [pureTerm,isVal]
-  case arithV hb =>
-    rcases (binop_result hb).2.2 with rfl | rfl | ⟨_, rfl⟩ | ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> rfl
-  case arithThrow => rfl
+export Purity (pureTerm pure_step)
 
 theorem pure_instantiate {G : NormalGraph ι} {Γ t ρ n W}
     (hp : pureTerm t = true) (hc : checkScope Γ.length t = true)

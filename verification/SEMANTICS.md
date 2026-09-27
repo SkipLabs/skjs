@@ -536,6 +536,64 @@ created, from its graph's check at each signature (`GraphCodeSpec`):
 `callsT_of_graph`, `restsT_of_graph`, `restsT_of_graphRest` and
 `ctorsT_of_graph` turn a checked code into the behavioral contracts above.
 
+### Effect-qualified call contracts
+
+**Semantic foundation; not yet integrated into source acceptance.**
+[CallEffects.lean](lean/Verification/Model/Semantics/CallEffects.lean) extends
+exactly the callable equation above. For a signature effect $\epsilon$, replace
+its conclusion `Safe` with
+
+$$
+\exists t.\;\operatorname{Invoke}(f,r,\vec v,t)\land
+\operatorname{SafePost}(R,Q_\epsilon(h),j,U,h,t).
+$$
+
+All quantifiers and premises are unchanged: the guarantee holds at every future
+world and compatible entry heap, for every receiver and actual list admitted
+by that signature. Write the resulting family
+$\mathcal F_\epsilon(R_c,\mathcal A,R)$. The two initial postconditions are
+
+$$
+Q_{\mathsf{unrestricted}}(h)(h',v)=\mathsf{True},\qquad
+Q_{\mathsf{preservesInputHeap}}(h)(h',v)=(h\preceq h'),
+$$
+
+where $h\preceq h'$ means that $h'$ extends the heap list $h$ without changing
+any existing entry. Fresh allocation is allowed. This is a guarantee at normal
+return, not a ban on intermediate writes, a termination claim, or preservation
+on an exceptional exit. A caller catching an exception cannot recover entry
+heap facts from this effect. A callback that temporarily mutates and restores
+state must still satisfy ordinary safety for all intermediate execution.
+
+`PromiseWith` formalizes this equation. `unrestricted_iff` identifies its
+unrestricted case with the existing `Promise`; `PromiseWith.erase` forgets the
+postcondition. `callsT_adm` proves admissibility for a conjunction of qualified
+fixed signatures; `restsT_adm` does the same for argument-pack rests.
+`PromiseWith.weaken` and the fixed/rest congruence and conjunction lemmas
+justify effect-aware contract operations. `call_safe` proves application from
+the qualified promise without access to the body.
+[CallEffectCertificates.lean](lean/Verification/Model/Programs/CallEffectCertificates.lean)
+checks ordinary graph evidence plus a conservative effect check;
+`checkDefinition_sound` and `introduce` establish qualified fixed-arity closures.
+The positive type graph, wire protocol and source acceptance still need integration.
+
+This remains a value type, despite mentioning heaps: membership quantifies over
+**all** eligible entry heaps. It does not store an observation about the current
+contents of one captured cell. A closure must meet the effect whenever it is
+called under the signature's contract, not just in the state where it was
+created. The effect concerns typed invocations only; it promises nothing for
+arguments outside the signature, such as an object passed to a numeric callback
+whose arithmetic would then invoke JavaScript conversion hooks.
+
+A native method may use such a callback contract as a premise of its own
+specification. For an initially dense ordinary array, `map`'s callback preserving
+the input heap on each normal return suffices to preserve source presence over
+the traversal and hence density of its fresh result. An unrestricted callback
+only supports the sparse result. That JavaScript's `map` satisfies these
+specifications is a native-contract review obligation, not a consequence of
+`PromiseWith`'s Lean proofs. The [planned typing rules](PROGRAM-TYPING.md#certifying-inferred-call-effects)
+state where the callback guarantee is established and consumed.
+
 ## Argument-list preparation
 
 Applications use `invoke f r args`: the callee, the receiver, the ordered

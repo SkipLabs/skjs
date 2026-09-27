@@ -603,8 +603,9 @@ Native contracts are reviewed separately from their TypeScript declarations.
 `find` and `findIndex` callbacks receive `T | undefined`: a prior callback can
 shrink even an initially dense array through another reference, while these
 methods visit the original index range. `map` visits only present indices,
-but shrinking its source can leave holes in its result. Until sparse arrays
-are represented, its result contract is `unknown`, not a dense `U[]`.
+but shrinking its source can leave holes in its result. Its implemented result
+contract is a sparse `U[]`, retaining the type of present elements without
+promising density. A dense result requires an additional checked effect contract.
 `join` and default `sort` currently require primitive elements: implicit
 string conversion must not invoke an unchecked client method. `sort` with an
 explicit comparator accepts arbitrary element types: its two call contracts
@@ -617,6 +618,52 @@ erasure is tested against both verifier entry points using a forged producer
 proposal. These tests exercise premises and translation that the calculus
 safety theorem does not prove. Intrinsics are collected on demand; a loop no
 longer brings in unrelated Promise declarations.
+
+### Inferred call effects: elaboration and certification
+
+**In progress, not an accepted source feature.** The semantic foundation exists
+in `CallEffects.lean`; qualified signatures are not yet connected to the type
+graph, source claims or acceptance checker. The density-sensitive targets in
+step 3 remain open. The [semantic equation](SEMANTICS.md#effect-qualified-call-contracts)
+and [planned rules](PROGRAM-TYPING.md#certifying-inferred-call-effects)
+specify the extension, including its proof obligations.
+
+This extends the language of claims beyond TypeScript annotations. Three
+operations must remain distinct:
+
+1. **Annotation translation** preserves the source contract. An ordinary
+   TypeScript arrow imposes no heap-preservation guarantee. It must never become
+   an effect-qualified arrow merely because a consumer needs one.
+2. **Inference** proposes a stronger type for a definition, including an effect
+   on each call signature. This is untrusted producer work. It can use bodies
+   and inferred contracts of callees; it need not change the source annotation.
+3. **Elaboration and verification** attach the proposal to the lowered
+   definition and discharge its additional obligation. Lowering emits proof
+   obligations; it does not establish an effect by translating syntax. Lean must
+   check both ordinary body safety and the claimed effect, with the original
+   annotation obligations retained. Only certified types may justify uses.
+
+At a call, the rule consumes the qualified type of the value. It does not
+inspect its source body or recheck it for the observed call. The guarantee
+must survive passing, returning, capturing and generic instantiation through
+ordinary type operations. An explicit annotation may forget the guarantee;
+that loses precision, not soundness. Overloads carry effects per signature.
+An imported implementation needs checked evidence or an explicitly documented
+external assumption: its TypeScript declaration supplies neither proof nor an
+implicit effect. Built-in contracts remain separately audited assumptions.
+
+The first guarantee preserves existing heap contents on normal return and
+allows fresh allocation. It is sufficient but not necessary for safe dense
+`map`: mutation of unrelated state can also be safe. Future footprint-sensitive
+effects can express that without changing the inference/certification boundary.
+The initial body checker may recognize fewer programs than the semantic
+contract allows. Record that as incompleteness, never as a source restriction.
+
+Closure conditions include forged-effect refusals at the verifier boundary,
+propagation through a named or returned callback, ordinary-effect fallback,
+and retained alias-mutation witnesses. The headline acceptance theorem must
+cover the new effect obligations; passing a producer check or proving an
+isolated semantic lemma is not integration.
 
 ### Calls
 
@@ -1043,7 +1090,9 @@ positive sources as the targets. The work is split by semantic obligation:
    returns the result of an `Array.isArray` test as `readonly unknown[]`.
    The test establishes an array, not density, which that source annotation
    currently requires. The realm invariant no longer invents that guarantee.
-3. **Density-sensitive calls.** Under the current meaning of source `T[]`
+3. **Density-sensitive calls: in progress.** Follow the
+   [inference/certification boundary](#inferred-call-effects-elaboration-and-certification)
+   and the linked semantic and typing rules. Under the current meaning of source `T[]`
    (dense), a sparse result alone does not restore `testMapReturnsArray` or the
    pure-map curated examples. Restoring those unchanged needs a checked callback
    effect guarantee sufficient to preserve source presence during traversal,
@@ -1052,6 +1101,22 @@ positive sources as the targets. The work is split by semantic obligation:
    may be lost after effects; no operation may change a location's world type.
    The same guarantee can justify pure `find` callbacks at T instead of
    `T | undefined`. Do not claim these targets closed after step 2 alone.
+   The core now has effect-aware application, weakening, congruence and overload
+   conjunction, plus `CallEffectCertificates.checkDefinition_sound` and
+   `introduce`: an ordinary graph certificate and a checked effect together
+   establish a qualified fixed-arity arrow. The executable effect check initially
+   recognizes only pure graph expressions and explicitly refuses rest-collecting
+   entries. It does not establish completeness for the semantic effect.
+   Remaining integration, in dependency order: migrate fixed and variadic
+   signatures (including scheme and method paths) to a required per-signature
+   effect carried by every map/substitution; extend normalized graph meaning,
+   coverage and certificate introduction without discarding it (every arrow
+   coverage constructor, including ones combining signatures, must justify the
+   target effect rather than copying it); infer and export
+   qualified definitions in OCaml; add the audited dense native overloads and
+   located effect obligations; exercise propagation and forged-effect rejection
+   through the pipeline, then remeasure the original targets. No source coverage
+   gain is claimed from the kernel-only implementation.
 4. **Default object conversion.** Restore the tuple-valued default-sort examples
    only with a contract covering actual conversion dispatch, including
    `Symbol.toPrimitive`, `toString`, and prototype lookup. A tuple's numeric

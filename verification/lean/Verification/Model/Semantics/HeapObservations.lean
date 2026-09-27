@@ -105,17 +105,29 @@ theorem of_value_property {T Q} (hq : ∀ n W h v, T n W v → Q h v) :
     · exact Or.inl (Or.inr hr)
     · exact Or.inr ⟨U,h',t',hx,hu,step,hh,ih hs⟩
 
+/-- Consequence at the budgets an execution can reach. This bounded form is
+what recursive call contracts need: their operands agree only below the
+caller's current approximation level. -/
+theorem consequence_below {T U : Fam} {Q R : Post} : ∀ {n},
+    (∀ j, j ≤ n → ∀ W v, T j W v → U j W v) →
+    (∀ h v, Q h v → R h v) →
+    ∀ {W h t}, SafePost T Q n W h t → SafePost U R n W h t := by
+  intro n
+  induction n with
+  | zero => intros; trivial
+  | succ n ih =>
+    intro hsub hpost W h t hs
+    rcases hs with (⟨hv, ht, hq⟩ | hth) | ⟨U, h', t', hx, hu, step, hh, hs⟩
+    · exact .inl (.inl ⟨hv, hsub _ (Nat.le_refl _) _ _ ht, hpost _ _ hq⟩)
+    · exact .inl (.inr hth)
+    · exact .inr ⟨U, h', t', hx, hu, step, hh,
+        ih (fun j hj => hsub j (by omega)) hpost hs⟩
+
 theorem consequence {T U : Fam} {Q R : Post}
     (hsub : ∀ n W v, T n W v → U n W v) (hr : ∀ h v, Q h v → R h v) :
     ∀ {n W h t}, SafePost T Q n W h t → SafePost U R n W h t := by
-  intro n; induction n with
-  | zero => intros; trivial
-  | succ n ih =>
-    intro W h t hs
-    rcases hs with (⟨hv,ht,hq⟩ | hth) | ⟨U,h',t',hx,hu,step,hh,hs⟩
-    · exact Or.inl (Or.inl ⟨hv,hsub _ _ _ ht,hr _ _ hq⟩)
-    · exact Or.inl (Or.inr hth)
-    · exact Or.inr ⟨U,h',t',hx,hu,step,hh,ih hs⟩
+  intro n W h t hs
+  exact consequence_below (fun j _ => hsub j) hr hs
 
 theorem weaken {T Q R} (hr : ∀ h v, Q h v → R h v)
     {n W h t} (hs : SafePost T Q n W h t) : SafePost T R n W h t :=

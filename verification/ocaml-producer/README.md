@@ -82,6 +82,18 @@ the claims the reader carries are the ones this producer wrote, that its
 verdicts are the verifier's, and that a source the run refuses is shown under
 that outcome, in its words.
 
+## Inferred effects: implementation in progress
+
+Callback heap-preservation guarantees will be inferred components of function
+types, proposed at definitions and independently certified by Lean. Translating
+an ordinary TypeScript annotation does not supply such a guarantee. Calls use
+the certified type, without requiring the callback body at the call site.
+The semantic foundation exists, but producer inference, signature transport
+and source acceptance are not integrated yet; dense-map coverage is still open.
+The [design boundary](../DESIGN.md#inferred-call-effects-elaboration-and-certification)
+owns this distinction and the [planned typing rules](../PROGRAM-TYPING.md#certifying-inferred-call-effects)
+own the definition, application and effect-forgetting obligations.
+
 ## Architecture, including the parts not implemented yet
 
 The scope limit is in the implemented cases, not a different account of the

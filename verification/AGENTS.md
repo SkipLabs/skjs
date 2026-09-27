@@ -35,7 +35,7 @@ make verify-census               # original SKJS repair functions (separate base
 make verify-test                 # the suites only
 make verify-examples             # the corpus only
 verification/run.sh --suite all  # every suite, SKJS's included, without rebuilding Lean
-lake -d verification/lean build  # the verifier alone
+(cd verification/lean && lake build)  # the verifier alone
 node verification/examples.mts    # the corpus alone, both producers
 make verify-examples-skjs        # one column at a time; either alone runs
 make verify-examples-tsc         # only that producer
@@ -51,7 +51,7 @@ that covers what changed, and the wider tier once before committing:
 | --- | --- | --- |
 | OCaml producer (`ocaml-producer/*.ml`) | `dune build --root verification/ocaml-producer`, then `node verification/ocaml-producer/run-cases.mts <pattern>` (cases whose file names contain the pattern; about a second for a handful) | `node verification/ocaml-producer/test.mts` (all cases, pinned imports, tampering, reader: ~45 s); `dune runtest --root verification/ocaml-producer` if `unit.ml` changed |
 | One source file | `node verification/ocaml-producer/check.mts <file.ts> [--project dir]` | — |
-| Lean | `lake -d verification/lean build`, then `run-cases.mts` for the affected cases | `verification/run.sh` |
+| Lean | `(cd verification/lean && lake build)`, then `run-cases.mts` for the affected cases | `verification/run.sh` |
 | Parser, Fragment or SourceClaims wire, shared tools | `(cd verification/tools && npx tsc -p tsconfig.json)`, `node verification/tests/json-field-names.mts` (instant: TypeScript, Lean and OCaml use the same JSON field names), then `run-cases.mts` | `verification/run.sh` |
 | Viewer | `(cd verification/report-viewer/app && npm run check)` | `test.mts` (its reader section) |
 
@@ -200,6 +200,17 @@ separate review obligations, even when every Lean proof and suite passes.
   explicitly. Changing an expected result requires inspecting its cause;
   passing tests after reclassification does not close the corresponding goal.
 
+For inferred callable effects, follow the
+[elaboration/certification boundary](DESIGN.md#inferred-call-effects-elaboration-and-certification).
+Annotation translation must not strengthen an ordinary arrow. Producer inference
+proposes a qualified signature; definition evidence must prove both safety and
+the effect before application consumes it. Never recognize callback syntax at
+native call sites as a substitute for that proof. Audit every signature mapping,
+substitution, overload and certificate path for the effect field; exhaustive
+constructor matching does not detect a discarded field. Qualified claims need
+located failures and forged-evidence controls, and imported effects require an
+explicit checked contract or documented external assumption.
+
 The September 2026 boundary audit found two shared specification mistakes:
 OCaml and Lean both treated unsupported generic methods as `unknown`, and
 native array contracts copied TypeScript signatures without accounting for
@@ -274,7 +285,10 @@ an exporter change needs a place to show, one phenomenon per file.
   outside reads them, and there is no older document to keep working.
 - Lean: no `sorry`, no project axioms; `#print axioms` on every soundness
   theorem stays in the file. Build only the module you changed while
-  iterating (`lake build Verification.Model.<Layer>.<Module>`).
+  iterating (`lake build Verification.Model.<Layer>.<Module>` from `verification/lean`).
+  Run Lake from that directory so elan selects its pinned `lean-toolchain`;
+  `lake -d` from the repository root can select a different compiler before
+  changing directories. Never run simultaneous builds against the same cache.
 - New executable fields on an existing AST constructor need an explicit audit
   of every lowering and certification path. Exhaustive constructor matching
   alone cannot detect a discarded field. Each path must check the field's
