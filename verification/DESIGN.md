@@ -1275,13 +1275,14 @@ positive sources as the targets. The work is split by semantic obligation:
      determines the type's meaning, including argument packs. It uses the same
      semantic independence theorem as finite certificates: `FreeSupport` states
      local closure conditions, and `FreeOk` checks them for a finite table.
-     This is not a new accepted certificate: substitution and source integration
+     This is not a new accepted certificate: source and certificate integration
      remain pending. The current templates are constructor-headed; compiling
      source aliases and dependent intersections still needs normalization.
      This staging does not narrow the planned source fragment.
-   - **Checked substitution:** prove that capture-avoiding instantiation commutes
-     with unfolding, including scheme bounds, argument packs, effects and the
-     array realm. Application congruence is proved: the same
+   - **Checked substitution (kernel proved; integration pending):** interpret
+     capture-avoiding instantiation over the complete equations, including
+     scheme bounds, argument packs, effects and the array realm. Application
+     congruence is proved: the same
      equation head at arguments with equal mixed meanings has equal meaning,
      accounting for its differently named local binders. Computed support and
      owned-binder freshness supply the independence premises.
@@ -1293,15 +1294,21 @@ positive sources as the targets. The work is split by semantic obligation:
      results at the current level. Quantified bounds use the outer environment;
      signatures use matching assigned locals. The `ApplicationsAgree` premise
      of the intermediate lemmas is discharged by this induction, never supplied
-     by a certificate. Use finite evidence about the equations to justify a mapping
-     of their applications. The current finite `InstTable` alone cannot certify
-     an infinite family of substituted rows; reusing it without this argument
-     would merely move the expansion limit into certificate checking.
+     by a certificate. `Types/EquationSubstitution.lean` now proves semantic
+     substitution by traversing finite argument syntax and applying congruence,
+     without unfolding recursive rows. Bound names are atomic; replacements
+     are simultaneous. Resulting applications own their local binders, keeping
+     captured parameters distinct from locally quantified ones. The existing
+     kind check is retained. `substitutionTableOk` checks each named image
+     against that structural substitution; it needs no recursive row closure.
      The semantic boundary is now factored as `InstanceImages`: every named
      image has the meaning of substitution, for values and packs together.
      `table_instanceImages` establishes it for the current checker;
-     `inst_images_sound` supplies the shared elimination proof. The equation
-     witness and its proof of `InstanceImages` are still pending.
+     `inst_images_sound` supplies the shared elimination proof.
+     `substitutionTable_instanceImages` now establishes that obligation for
+     equation witnesses. Wiring this alternative check into source/protocol
+     compilation and the exact CLI acceptance theorem is still pending;
+     current acceptance continues to require the old finite certificate.
      Structural subtyping needs the corresponding finite family argument too:
      `Promise<number> ≤ Promise<number | string>` cannot be justified by stopping an
      infinite traversal. Check the family relation against the complete

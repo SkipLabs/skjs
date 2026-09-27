@@ -582,12 +582,32 @@ packs at level $n$, whose element contracts use those current-level values.
 Induction closes the intermediate `ApplicationsAgree` premise; neither the
 producer nor the certificate supplies a semantic assumption.
 
-Semantic substitution is still pending. The remaining proof must justify
-application images under capture-avoiding substitution at the `InstanceImages`
-boundary. Source compilation (including alias and
-dependent-intersection normalization), finite family-subtyping evidence, and
-certificate integration are also pending. Existing finite certificates remain
-the only accepted path until those obligations are proved.
+`Types/EquationSubstitution.lean` uses application congruence to prove semantic
+substitution. Substitution traverses the finite argument syntax, never recursive
+rows. It replaces a bound name atomically; if the context has no replacement,
+that name stays unchanged. Replacements are simultaneous, so the context is not
+applied again inside a replacement. Application arguments are substituted, and
+the resulting application owns the locals introduced when its row is unfolded.
+Thus a captured parameter stays a capture rather than becoming a fresh universal.
+
+$$
+\llbracket A\rrbracket^{\eta[\vec b\mapsto
+  \llbracket\vec U\rrbracket^\eta]}
+=\llbracket A[\vec b:=\vec U]\rrbracket^\eta.
+$$
+
+The existing kind check is required: each replacement must have its parameter's
+value or argument-pack kind. A finite `substitutionTableOk` witness names images
+needed by signatures and checks each against this structural substitution.
+`substitutionTable_instanceImages` proves that this check discharges the same
+`InstanceImages` obligation as the old finite closed-table checker. No recursive
+row closure or expansion cutoff is used.
+
+The equation check is not yet wired into source or CLI acceptance. Source
+compilation (including alias and dependent-intersection normalization), finite
+family-subtyping evidence, and certificate integration remain pending. Existing
+finite certificates remain the only accepted path until that integration is
+covered by the acceptance theorem.
 
 ## Conjunction and normalization
 
