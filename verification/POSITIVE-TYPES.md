@@ -1234,6 +1234,28 @@ its object as the receiver. The
 premises other than $T\equiv_G\mathsf{arrs}(L;M)$ are $G\vdash\{i\}\le_{\mathsf{inst}}\mathsf{arrs}(L;M)$
 (`InstArrs`).
 
+The semantic proof of `inst` separates **image correctness** from universal
+elimination. Let $\eta_\theta$ assign each scheme binder the mixed meaning
+(value and argument-list components) of its instance type. The image
+obligation is
+
+$$
+\mathsf{image}(A)=B
+\quad\Longrightarrow\quad
+\llbracket A\rrbracket^{\eta_\theta}_{\mathrm{mixed}}
+=\llbracket B\rrbracket^\eta_{\mathrm{mixed}}.
+$$
+
+`InstanceImages` states this obligation for the images named by a witness.
+`table_instanceImages` proves it using the checked finite table, including its
+closure, free-variable and kind checks. `inst_images_sound` then proves
+elimination from those equalities and the existing bound/signature premises;
+fixed and rest arguments, effects and receiver weakening use this one proof.
+`inst_mixed_sound` composes the two. The executable rule above still requires
+the finite-table checks. A future recursive-equation witness must prove the
+same equalities for its application families before it can use the elimination
+theorem; this factorization alone admits no new source program.
+
 The same tables relate two rows of one type that differ only in which binder
 rows their schemes use. Lowering gives one row per generic application
 ([PROGRAM-TYPING.md](PROGRAM-TYPING.md#one-row-per-application)), so this is for graphs that
@@ -1261,7 +1283,8 @@ only on $\vec p$, and every rule of `Sub` holds at every assignment: the
 premise $G\vdash S\le U$, derived once, holds at each instantiation.
 
 Lean: `entryOk`, `meetOk`, `TableOk`, `instKinds`, `substitutionKind`, `InstArrs`, `Inst`,
-`mixed_assignment_substitution`, `meet_row_value`, `meet_noArguments`,
+`mixed_assignment_substitution`, `InstanceImages`, `table_instanceImages`,
+`inst_images_sound`, `inst_mixed_sound`, `meet_row_value`, `meet_noArguments`,
 `meetOk_noArguments`, `table_row_mixed`, `Sub.inst`, `Sub.table`,
 `Sub.gen`, `Sub.mixed_sound`, `Sub.sound`, `Sub.args_sound`.
 

@@ -4742,15 +4742,47 @@ theorem mixed_assignment_substitution [DecidableEq ι] (G : NormalGraph ι) (η 
       rw [hp, he, hU]
       exact mixedMeaning_selected G η U kind (by simpa [substitutionKind, hp] using hkind)
 
-/-- A member of a scheme row meets each checked instance of its signatures. -/
-theorem inst_mixed_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssignment ι) {i : ι} {s : SchemeRow ι}
-    {tbl : InstTable ι} {θs : List (List ι)} {D : List ι} {V : FreeMap ι} {L : Ops ι}
+/-- The semantic obligation of an instantiation witness: its named type
+images mean substitution, for values and argument packs together. Only images
+used by the signatures must be named. How their equality is established is
+separate: a finite closed table is one implementation, while recursive
+equations require a proof covering their application families. -/
+def InstanceImages [DecidableEq ι] (G : NormalGraph ι) (η : MixedAssignment ι)
+    (bs : List ι) (θs : List (List ι)) (tbl : InstTable ι) : Prop :=
+  ∀ S S', tyImg tbl (bs.zip θs) S = some S' →
+    mixedMeaning G (assign η bs (θs.map fun U =>
+      ⟨mixedMeaning G η U, mixedMeaning_valid G η U⟩)) S = mixedMeaning G η S'
+
+/-- The current finite-table checker discharges the shared image obligation.
+The table's closure and free-variable checks remain necessary here; separating
+this theorem does not bypass them or accept a finite truncation. -/
+theorem table_instanceImages [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssignment ι)
+    {bs : List ι} {θs : List (List ι)} {tbl : InstTable ι} {D : List ι} {V : FreeMap ι}
+    (hlen : θs.length = bs.length) (hkinds : instKinds G bs θs = true)
+    (hok : TableOk G tbl D V = true) : InstanceImages G η bs θs tbl := by
+  let As : List MixedFamily := θs.map fun U =>
+    ⟨mixedMeaning G η U, mixedMeaning_valid G η U⟩
+  have hrel : ∀ l, RelKWith G (mixedParameters G) (bs.zip θs) (fv V l)
+      (assign η bs As) η := fun l =>
+    mixed_assignment_substitution G η bs θs hlen hkinds (fv V l)
+  intro S S' hS
+  funext m W x
+  apply propext
+  rw [mixedMeaning_union]
+  exact tyImg_mixed_iff hS fun l _ T hT =>
+    table_row_mixed hok m _ η (l, _, T) (entryImg_mem hT) (hrel l) W x
+
+/-- Universal callable elimination depends on meaning-preserving images, not
+on enumerating all rows a recursive type can reach. This is the same rule for
+fixed and variadic signatures; their bounds, effects and receiver contracts
+are retained by the existing signature-image check. -/
+theorem inst_images_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssignment ι) {i : ι} {s : SchemeRow ι}
+    {tbl : InstTable ι} {θs : List (List ι)} {L : Ops ι}
     {M : List (RestArrow (List ι))}
     (hp : G.params i = false) (hq : G.schemes i = some s) (hlen : θs.length = s.binders.length)
     (hbnd : ∀ b ∈ s.bounds, ∀ U, (s.binders.zip θs).lookup b.1 = some U →
       FamLe (mixedMeaning G η U) (mixedMeaning G η b.2))
-    (hkinds : instKinds G s.binders θs = true)
-    (hok : TableOk G tbl D V = true)
+    (himages : InstanceImages G η s.binders θs tbl)
     (hL : ∀ q ∈ L, ∃ p ∈ s.signatures, instSig G tbl (s.binders.zip θs) p q = true)
     (hM : ∀ q ∈ M, ∃ p ∈ s.variadic, instRest G tbl (s.binders.zip θs) p q = true)
     : FamLe (mixedValues G η [i])
@@ -4770,18 +4802,8 @@ theorem inst_mixed_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssign
     hlen hbnd n W v hs
   change instanceTWithArgs
     (fun η' S => setSem (fun l => qDenoteWithArgs G (mixedParameters G) (η', l)) S) η s As (graphArguments G) n W v at hc
-  -- The instance's assignment is related to the graph's by the binders' images.
-  have hrel : ∀ l, RelKWith G (mixedParameters G) (s.binders.zip θs) (fv V l)
-      (assign η s.binders As) η := fun l =>
-    mixed_assignment_substitution G η s.binders θs hlen hkinds (fv V l)
   have himg : ∀ S S', tyImg tbl (s.binders.zip θs) S = some S' →
-      mixedMeaning G (assign η s.binders As) S = mixedMeaning G η S' := by
-    intro S S' hS
-    funext m W' x
-    apply propext
-    rw [mixedMeaning_union]
-    exact tyImg_mixed_iff hS fun l _ T hT =>
-      table_row_mixed hok m _ η (l, _, T) (entryImg_mem hT) (hrel l) W' x
+      mixedMeaning G (assign η s.binders As) S = mixedMeaning G η S' := himages
   have hfam : ∀ S S', tyImg tbl (s.binders.zip θs) S = some S' →
       mixedValues G (assign η s.binders As) S = mixedValues G η S' := by
     intro S S' hS
@@ -4862,6 +4884,23 @@ theorem inst_mixed_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssign
       have e2 := (hargs _ _ h2).trans (sameLabelLists_values s2)
       simp only [e2, e3, e4, he] at hpr
       exact hpr.weaken_recv (anyRecv p.receiver q.receiver hbody.1)
+
+/-- The executable finite-table path uses the same semantic elimination
+rule, after proving its image obligation by checking the whole table. -/
+theorem inst_mixed_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssignment ι) {i : ι} {s : SchemeRow ι}
+    {tbl : InstTable ι} {θs : List (List ι)} {D : List ι} {V : FreeMap ι} {L : Ops ι}
+    {M : List (RestArrow (List ι))}
+    (hp : G.params i = false) (hq : G.schemes i = some s) (hlen : θs.length = s.binders.length)
+    (hbnd : ∀ b ∈ s.bounds, ∀ U, (s.binders.zip θs).lookup b.1 = some U →
+      FamLe (mixedMeaning G η U) (mixedMeaning G η b.2))
+    (hkinds : instKinds G s.binders θs = true)
+    (hok : TableOk G tbl D V = true)
+    (hL : ∀ q ∈ L, ∃ p ∈ s.signatures, instSig G tbl (s.binders.zip θs) p q = true)
+    (hM : ∀ q ∈ M, ∃ p ∈ s.variadic, instRest G tbl (s.binders.zip θs) p q = true)
+    : FamLe (mixedValues G η [i])
+      (semWithArgs (mixedValues G η) (graphArguments G η (mixedValues G η)) (.arrs L M)) := by
+  exact inst_images_sound η hp hq hlen hbnd
+    (table_instanceImages η hlen hkinds hok) hL hM
 
 /-- **Instantiation.** A scheme row is below an arrow type whose signatures
 are images of its own under one checked instance map: the binders' instances,
@@ -5025,6 +5064,8 @@ theorem Sub.congr {G : NormalGraph ι} {S S' T T' : List ι}
 #print axioms core_arguments_of_values
 #print axioms covers_writable_keeps
 #print axioms covers_writable_bounds_grow
+#print axioms table_instanceImages
+#print axioms inst_images_sound
 #print axioms inst_mixed_sound
 #print axioms table_row_mixed
 #print axioms table_row_mixed_of_values

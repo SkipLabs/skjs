@@ -1271,6 +1271,17 @@ positive sources as the targets. The work is split by semantic obligation:
      of their applications. The current finite `InstTable` alone cannot certify
      an infinite family of substituted rows; reusing it without this argument
      would merely move the expansion limit into certificate checking.
+     The semantic boundary is now factored as `InstanceImages`: every named
+     image has the meaning of substitution, for values and packs together.
+     `table_instanceImages` establishes it for the current checker;
+     `inst_images_sound` supplies the shared elimination proof. The equation
+     witness and its proof of `InstanceImages` are still pending.
+     Structural subtyping needs the corresponding finite family argument too:
+     `Promise<number> ≤ Promise<number | string>` cannot be justified by stopping an
+     infinite traversal. Check the family relation against the complete
+     equations, preserving writable invariance; do not trust variance inferred
+     by TypeScript. Retain `promise-covariance` and its negative control as
+     closure conditions, alongside exact instantiation.
    - **One production path:** lower source equations to that representation and
      make OCaml claims, search, checking and diagnostic printing consume it.
      Retire the colour/depth/argument expansion machinery when its replacement
