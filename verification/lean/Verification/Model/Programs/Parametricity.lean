@@ -21,10 +21,9 @@ open PositiveNormalization PositiveGraphs PositiveRules ProgramTyping ProgramCer
 variable {ι : Type} [DecidableEq ι] (G : NormalGraph ι) (η : MixedAssignment ι)
 
 theorem checkArrow_reassign (table : Table ι) (L : Ops ι)
-    (S : List (List ι × List (List ι) × List ι × List ι)) (Rt : List ι) (As : List (List ι))
-    (d : List ι) (cert : ArrowCert ι) :
-    checkArrow (reassign G η) table L S Rt As d cert = checkArrow G table L S Rt As d cert := by
-  induction cert generalizing Rt As d <;> simp only [checkArrow, *] <;> rfl
+    (S : List (CallEffects.RestArrow (List ι))) (q : CallEffects.Arrow (List ι)) (cert : ArrowCert ι) :
+    checkArrow (reassign G η) table L S q cert = checkArrow G table L S q cert := by
+  induction cert generalizing q <;> simp only [checkArrow, *] <;> rfl
 
 theorem reads_reassign : reads (reassign G η) = reads G := rfl
 
@@ -115,13 +114,13 @@ theorem coversMethods_reassign (R : List ι → List ι → Prop) (known : Known
 
 set_option maxHeartbeats 1000000 in
 theorem coversWith_reassign (R : List ι → List ι → Prop) (known : Known ι)
-    (arrows : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop)
+    (arrows : Ops ι → List (CallEffects.RestArrow (List ι)) → Ops ι → Prop)
     (self : List ι) (a b : Clause (List ι)) :
     CoversWith (reassign G η) R known arrows self a b ↔ CoversWith G R known arrows self a b := by
   cases a <;> cases b <;> simp only [CoversWith, coversMethods_reassign] <;> exact Iff.rfl
 
 theorem schemeCoversWith_reassign (R : List ι → List ι → Prop) (known : Known ι)
-    (arrows : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop) (i j : ι) :
+    (arrows : Ops ι → List (CallEffects.RestArrow (List ι)) → Ops ι → Prop) (i j : ι) :
     SchemeCoversWith (reassign G η) R known arrows i j ↔ SchemeCoversWith G R known arrows i j := by
   unfold SchemeCoversWith
   rw [schemes_reassign, schemes_reassign]
@@ -129,7 +128,7 @@ theorem schemeCoversWith_reassign (R : List ι → List ι → Prop) (known : Kn
   all_goals first | exact Iff.rfl | simp only [params_reassign, coversWith_reassign]
 
 theorem opaqueWith_reassign (R : List ι → List ι → Prop) (known : Known ι)
-    (arrows : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop) (S T : List ι) :
+    (arrows : Ops ι → List (CallEffects.RestArrow (List ι)) → Ops ι → Prop) (S T : List ι) :
     OpaqueWith (reassign G η) R known arrows S T ↔ OpaqueWith G R known arrows S T := by
   unfold OpaqueWith
   exact forall_congr' fun i => imp_congr_right fun _ => or_congr Iff.rfl (or_congr Iff.rfl
@@ -162,7 +161,7 @@ theorem boundOk_reassign (binders : List ι) (θs : List (List ι)) (b : ι × L
   simp only [boundOk, checkCore_reassign]
 
 theorem checkInstArrs_reassign (S : List ι) (L : Ops ι)
-    (M : List (List ι × List (List ι) × List ι × List ι)) (c : Instance ι) :
+    (M : List (CallEffects.RestArrow (List ι))) (c : Instance ι) :
     checkInstArrs (reassign G η) S L M c = checkInstArrs G S L M c := by
   simp only [checkInstArrs, boundOk_reassign]
   rfl
@@ -238,7 +237,7 @@ theorem checkObserved_reassign (Γ Δ : List (List ι)) (tested : Nat) (o : Obse
     optionalRefinements_reassign]
   rfl
 
-theorem CallProofs_reassign (q : List ι × List (List ι) × List ι) (c : List (List ι) × List ι)
+theorem CallProofs_reassign (q : CallEffects.Arrow (List ι)) (c : CallEffects.MethodArrow (List ι))
     (ps : List (Proof ι) × Proof ι) :
     CallProofs (reassign G η) q c ps = CallProofs G q c ps := by
   simp only [CallProofs, check_reassign]

@@ -646,10 +646,11 @@ longer brings in unrelated Promise declarations.
 
 ### Inferred call effects: elaboration and certification
 
-**In progress, not an accepted source feature.** The semantic foundation exists
-in `CallEffects.lean`; qualified signatures are not yet connected to the type
-graph, source claims or acceptance checker. The density-sensitive targets in
-step 3 remain open. The [semantic equation](SEMANTICS.md#effect-qualified-call-contracts)
+**Certification integrated; inference and native overloads remain open.**
+`CallEffects.lean` supplies the semantic foundation. Qualified signatures now
+flow through the type graph, source claims and the executable acceptance checker.
+A proposed heap-preserving closure must pass both ordinary safety and the body
+effect check. The density-sensitive targets in step 3 remain open. The [semantic equation](SEMANTICS.md#effect-qualified-call-contracts)
 and [planned rules](PROGRAM-TYPING.md#certifying-inferred-call-effects)
 specify the extension, including its proof obligations.
 
@@ -1140,8 +1141,8 @@ positive sources as the targets. The work is split by semantic obligation:
    must not be silently strengthened. The safe `testMapCallback` unit also
    checks that general declaration and remains blocked by it.
    The core now has effect-aware application, weakening, congruence and overload
-   conjunction, plus `CallEffectCertificates.checkDefinition_sound` and
-   `introduce`: an ordinary graph certificate and a checked effect together
+   conjunction, plus `GraphCode.codeChecked_sound` and the graph introduction rules:
+   an ordinary graph certificate and a checked effect together
    establish a qualified arrow. Fixed and rest-collecting entries are covered;
    fresh rest-store allocation preserves the input heap. Effect-qualified
    binding handles fixed and variadic signatures through one forwarding proof.
@@ -1150,16 +1151,17 @@ positive sources as the targets. The work is split by semantic obligation:
    The executable body-effect check still recognizes only pure graph expressions:
    body allocations and qualified calls need composition rules. It does not
    establish completeness for the semantic effect.
-   Remaining integration, in dependency order: migrate fixed and variadic
-   signatures (including scheme and method paths) to a required per-signature
-   effect carried by every map/substitution; extend normalized graph meaning,
-   coverage and certificate introduction without discarding it (every arrow
-   coverage constructor, including ones combining signatures, must justify the
-   target effect rather than copying it); infer and export
-   qualified definitions in OCaml; add the audited dense native overloads and
-   located effect obligations; exercise propagation and forged-effect rejection
-   through the pipeline, then remeasure the original targets. No source coverage
-   gain is claimed from the kernel-only implementation.
+   Fixed and variadic signatures, including scheme and method paths, now use
+   one required per-signature effect. Mapping, substitution, normalization,
+   coverage and certificate checking retain and justify it. Pipeline controls
+   certify a pure callback and refuse a forged effect on a captured write,
+   both when producing evidence and when consuming old evidence. The headline
+   acceptance theorem covers this check.
+   Remaining integration: infer and export qualified definitions in OCaml;
+   add the audited dense native overloads and located effect obligations;
+   exercise propagation through named/returned callbacks, then remeasure the
+   original targets. No source coverage gain is claimed from the contract
+   migration alone.
 4. **Default object conversion.** Restore the tuple-valued default-sort examples
    only with a contract covering actual conversion dispatch, including
    `Symbol.toPrimitive`, `toString`, and prototype lookup. A tuple's numeric

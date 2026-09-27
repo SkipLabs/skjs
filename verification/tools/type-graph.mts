@@ -7,7 +7,17 @@ import type { PropertyKey } from "./declaration-types.mts";
 export type Labels = number[];
 /** A signature: the receiver a call may pass, then the parameters and the
  * result. A signature indifferent to its receiver names an unknown row. */
-export type Arrow = [receiver: Labels, [domains: Labels[], result: Labels]];
+export type CallEffect = "unrestricted" | "preservesInputHeap";
+/** One contract representation; every operand mapping must retain its effect. */
+export type CallContract<Receiver, Arguments> = {
+  receiver: Receiver;
+  arguments: Arguments;
+  result: Labels;
+  effect: CallEffect;
+};
+export type Arrow = CallContract<Labels, Labels[]>;
+export type MethodArrow = CallContract<Record<string, never>, Labels[]>;
+export type MethodRestArrow = CallContract<Record<string, never>, [Labels[], Labels]>;
 /** An object contract: one label list per named field, in the order the
  * producer wrote them. Fields a contract does not name are unconstrained. */
 export type Fields = [name: PropertyKey, labels: Labels][];
@@ -22,8 +32,8 @@ export type KeyBound = { among: boolean; keys: PropertyKey[] };
  * quantified ones, each a scheme row the member bound to its host meets. */
 export type MethodSig = {
   key: PropertyKey;
-  calls: [params: Labels[], result: Labels][];
-  rests: [params: Labels[], [rest: Labels, result: Labels]][];
+  calls: MethodArrow[];
+  rests: MethodRestArrow[];
   schemes: Labels[];
 };
 export type Tuple = {
@@ -103,10 +113,7 @@ export type Clause =
         variadic?: RestArrow[];
       };
     };
-export type RestArrow = [
-  receiver: Labels,
-  [domains: Labels[], [rest: Labels, result: Labels]],
-];
+export type RestArrow = CallContract<Labels, [Labels[], Labels]>;
 /** A producer's row: a union of clauses. */
 export type Row = Clause[];
 /** A verifier graph's row also may be a parameter, a binder a scheme
@@ -215,34 +222,25 @@ export function decodeGraph(value: unknown): TypeGraph {
       throw Error("expected an index key class and its type");
     labels(pair[1]);
   };
-  const arrows = (v: unknown) =>
-    array(v).forEach((a) => {
-      const sig = array(a);
-      if (sig.length !== 2) throw Error("expected a receiver and a signature");
-      labels(sig[0]);
-      const pair = array(sig[1]);
-      if (pair.length !== 2) throw Error("expected arrow pair");
-      array(pair[0]).forEach(labels);
-      labels(pair[1]);
-    });
+  const contract = (v: unknown, hosted: boolean, rest: boolean) => {
+    const sig = obj(v, ["receiver", "arguments", "result", "effect"]);
+    if (hosted) obj(sig.receiver, []); else labels(sig.receiver);
+    if (sig.effect !== "unrestricted" && sig.effect !== "preservesInputHeap")
+      throw Error("invalid callable effect");
+    labels(sig.result);
+    if (rest) {
+      const args = array(sig.arguments);
+      if (args.length !== 2) throw Error("expected fixed arguments and a rest contract");
+      array(args[0]).forEach(labels);
+      labels(args[1]);
+    } else array(sig.arguments).forEach(labels);
+  };
+  const arrows = (v: unknown) => array(v).forEach((s) => contract(s, false, false));
   // Left out when empty: an explicit empty list is not the canonical form.
   const variadic = (v: unknown) => {
     const sigs = array(v);
-    if (!sigs.length)
-      throw Error("an empty variadic list is written by omitting it");
-    sigs.forEach((s) => {
-      const outer = array(s);
-      if (outer.length !== 2)
-        throw Error("expected a receiver and a signature");
-      labels(outer[0]);
-      const sig = array(outer[1]);
-      if (sig.length !== 2) throw Error("expected a variadic signature");
-      array(sig[0]).forEach(labels);
-      const tail = array(sig[1]);
-      if (tail.length !== 2) throw Error("expected a rest and a result");
-      labels(tail[0]);
-      labels(tail[1]);
-    });
+    if (!sigs.length) throw Error("an empty variadic list is written by omitting it");
+    sigs.forEach((s) => contract(s, false, true));
   };
   // A key: a string, or `{"symbol": i}` for the declaration document's i-th
   // symbol.
@@ -282,21 +280,8 @@ export function decodeGraph(value: unknown): TypeGraph {
       const r = obj(m, ["key", "calls", "rests", "schemes"]);
       key(r.key, "a method key");
       array(r.schemes).forEach(labels);
-      array(r.calls).forEach((c) => {
-        const pair = array(c);
-        if (pair.length !== 2) throw Error("expected a method signature");
-        array(pair[0]).forEach(labels);
-        labels(pair[1]);
-      });
-      array(r.rests).forEach((c) => {
-        const pair = array(c);
-        if (pair.length !== 2) throw Error("expected a variadic method signature");
-        array(pair[0]).forEach(labels);
-        const tail = array(pair[1]);
-        if (tail.length !== 2) throw Error("expected a rest and a result");
-        labels(tail[0]);
-        labels(tail[1]);
-      });
+      array(r.calls).forEach((c) => contract(c, true, false));
+      array(r.rests).forEach((c) => contract(c, true, true));
     });
   const bounds = (v: unknown) =>
     array(v).forEach((b) => {
@@ -471,10 +456,11 @@ export const printLabels = (labels: Labels): string =>
 /** The receiver is shown as a `this` parameter; the graph's own rows carry no
  * name for "any receiver", so it is shown whatever it is. */
 const receiverText = (receiver: Labels) => `this: ${printLabels(receiver)}`;
-const arrowText = ([receiver, [domains, result]]: Arrow) =>
-  `(${[receiverText(receiver), ...domains.map(printLabels)].join(", ")}) => ${printLabels(result)}`;
-const restArrowText = ([receiver, [domains, [rest, result]]]: RestArrow) =>
-  `(${[receiverText(receiver), ...domains.map(printLabels), `...${printLabels(rest)}`].join(", ")}) => ${printLabels(result)}`;
+const effectText = (effect: CallEffect) => effect === "unrestricted" ? "" : " [preserves input heap]";
+const arrowText = ({receiver, arguments: domains, result, effect}: Arrow) =>
+  `(${[receiverText(receiver), ...domains.map(printLabels)].join(", ")}) => ${printLabels(result)}${effectText(effect)}`;
+const restArrowText = ({receiver, arguments: [domains, rest], result, effect}: RestArrow) =>
+  `(${[receiverText(receiver), ...domains.map(printLabels), `...${printLabels(rest)}`].join(", ")}) => ${printLabels(result)}${effectText(effect)}`;
 const printTuple = (t: Tuple) =>
   `${t.dense ? "" : "sparse "}${t.readonly ? "readonly " : ""}[${[
     ...t.required.map(printLabels),

@@ -773,7 +773,7 @@ function callRow(
   const receiver = r.receiver
     ? translateType(r.receiver, checker, types, true, fuel - 1)
     : [internRow(types, ["top"])];
-  if (!r.rest) return { arrows: [[receiver, [domains, result]]] };
+  if (!r.rest) return { arrows: [{receiver, arguments: domains, result, effect: "unrestricted"}] };
   const element = translateType(r.rest, checker, types, false, fuel - 1);
   // A rest's type is the pack of any number of actuals at its element.
   const rest = internRow(types, [
@@ -784,7 +784,7 @@ function callRow(
       },
     },
   ]);
-  return { arrows: [], variadic: [[receiver, [domains, [[rest], result]]]] };
+  return { arrows: [], variadic: [{receiver, arguments: [domains, [rest]], result, effect: "unrestricted"}] };
 }
 
 // Arrow operands can contain further arrows, with bounded recursion for

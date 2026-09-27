@@ -88,10 +88,10 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
       -- Fixed and variadic signatures of one value sit in one clause: each
       -- says which receivers and actual lists a caller may write.
       let fixed := signatures.filterMap fun (Rc, Ds, E, R) =>
-        if E.isNone then some (Rc, Ds, R) else none
+        if E.isNone then some ⟨Rc, Ds, R, .unrestricted⟩ else none
       -- A rest's type is the pack of any number of actuals at its element.
       let variadic ← signatures.filterMapM fun (Rc, Ds, E, R) => E.mapM fun E => do
-        return (Rc, Ds, [← SourceTypes.use (.pack ⟨[], [], some E, false, true⟩ [])], R)
+        return ⟨Rc, (Ds, [← SourceTypes.use (.pack ⟨[], [], some E, false, true⟩ [])]), R, .unrestricted⟩
       return [← SourceTypes.use (.arrs fixed.eraseDups variadic.eraseDups)]
     else if (← jStr (← jField atom "a")) == "constructor" then
       -- A construct signature: what a class meets and no plain function does.
@@ -250,8 +250,8 @@ private def callableObject (atom : Json) : SourceTypes.Lowering Nat := do
   if !CellUnion.invariant c then
     throw "callable field requires an invariant read/write contract"
   match E with
-  | none => SourceTypes.use (.callable (c.map fun f => (f.name, f.write)) [] [(Rc,Ds,R)] [])
-  | some E => SourceTypes.use (.callable (c.map fun f => (f.name, f.write)) [] [] [(Rc,Ds,E,R)])
+  | none => SourceTypes.use (.callable (c.map fun f => (f.name, f.write)) [] [⟨Rc,Ds,R,.unrestricted⟩] [])
+  | some E => SourceTypes.use (.callable (c.map fun f => (f.name, f.write)) [] [] [⟨Rc,(Ds,E),R,.unrestricted⟩])
 
 /-- Validate every union arm. Record alternatives may absorb a redundant
 read/write contract into an existing invariant alternative (CellUnion.normalize_exact).

@@ -9,7 +9,7 @@ open PositiveNormalization PositiveGraphs PositiveRules ProgramTyping ControlFlo
 open CertificateProducer RequestJson ProgramCertificates GraphCodeFixtures
 
 private def types : List (List (Clause (List Nat))) :=
-  [[.nul],[.arrs [([3],[[0]],[0])] []], [.refs [(valueField, [0,1])] [] []], [.undef]]
+  [[.nul],[.arrs [⟨[3], [[0]], [0], .unrestricted⟩] []], [.refs [(valueField, [0,1])] [] []], [.undef]]
 private def G : NormalGraph Nat := .ofRows fun i => types[i]?.getD []
 private def labels := List.range types.length
 private def dispatch : Tm := .ite (.test .isFun (.var 0)) (.app (.var 0) .nul) .nul
@@ -23,7 +23,7 @@ private def program (body : Tm) : Program :=
 private def claims : List (PointClaim Nat) :=
   [⟨[],[2]⟩,⟨[[2]],[1]⟩,⟨[[1],[2]],[0]⟩,⟨[[1],[2]],[0]⟩]
 private def request (body : Tm) : Request :=
-  ⟨types,program body,claims,[0],0,[],oneNodeCodes 1 body [[2]] [([3],[[0]],[0])]⟩
+  ⟨types,program body,claims,[0],0,[],oneNodeCodes 1 body [[2]] [⟨[3], [[0]], [0], .unrestricted⟩]⟩
 #guard ok (roundtrip (request body))
 
 -- The nullable cell must be guarded on every invocation, and the recursive

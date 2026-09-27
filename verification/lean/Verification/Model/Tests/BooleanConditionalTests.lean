@@ -5,7 +5,7 @@ namespace Verification.Model.BooleanConditionalTests
 open Lean ProgramTyping ProgramCertificates ControlFlow RequestJson PositiveGraphs
 
 private def types : List (List (PositiveNormalization.Clause (List Nat))) :=
-  [[.bool],[.nul],[.refs [(valueField, [0])] [] []],[.arrs [([4],[[1]],[0])] []],[.top],[.undef]]
+  [[.bool],[.nul],[.refs [(valueField, [0])] [] []],[.arrs [⟨[4], [[1]], [0], .unrestricted⟩] []],[.top],[.undef]]
 private def ok (r : Except String α) : Bool := match r with | .ok _ => true | .error _ => false
 private def roundtrip (r : Request) : Except String Unit := do
   let input ← Json.parse (toJson r).compress
@@ -135,7 +135,7 @@ private def nullProof : Evidence Nat :=
 -- slot 2, past the receiver and the parameter.
 private def readCell : Tm := .ite (.read (.var 2)) .tru .fls
 private def captureCode : CallCode := .graph 1 [readCell] [(.ret, none)] 0 [.var 0]
-private def captureEntry : CodeEntry Nat := ⟨1, [readCell], [(.ret, none)], 0, [[2]], ([4],[[1]],[0]), none⟩
+private def captureEntry : CodeEntry Nat := ⟨1, [readCell], [(.ret, none)], 0, [[2]], ⟨[4], [[1]], [0], .unrestricted⟩, none⟩
 private def captureRequest (q : Bool) : Request :=
   ⟨types,
    [⟨.alloc .tru,.bind 1,none⟩,

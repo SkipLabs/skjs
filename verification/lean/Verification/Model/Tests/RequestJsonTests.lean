@@ -18,7 +18,7 @@ def natClaim (c : PointClaim (Fin 7)) : PointClaim Nat :=
 one cell of label 2. -/
 def dispatchCodes : List CodeRequest :=
   GraphCodeFixtures.oneNodeCodes 1 (.ite (.test .isNul (.var 1)) (.read (.var 2)) .nul) [[2]]
-    [([6],[[0]],[1]), ([6],[[1]],[0])]
+    [⟨[6], [[0]], [1], .unrestricted⟩, ⟨[6], [[1]], [0], .unrestricted⟩]
 
 def mappedRequest : Request := ⟨types, CertificateProducerTests.mapped,
   CertificateProducerTests.mappedClaims.map natClaim, [1], 0, [], dispatchCodes⟩

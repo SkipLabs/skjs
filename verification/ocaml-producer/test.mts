@@ -855,6 +855,7 @@ let genericModule = "";
 let sumMapper = "";
 let sumConstructor = "";
 let localClosure = "";
+let mutatingClosure = "";
 let exactKeys = "";
 let restKeys = "";
 let variadicOffer = "";
@@ -893,6 +894,7 @@ for (const [i, test] of cases.entries()) {
   if (test.file === "sum-mapper-signature") sumMapper = result.artifacts;
   if (test.file === "sum-constructor-field") sumConstructor = result.artifacts;
   if (test.file === "closure-result-contract") localClosure = result.artifacts;
+  if (test.file === "closure-graph-captured-cell") mutatingClosure = result.artifacts;
   if (test.file === "invalid-writable-dictionary-exact-keys") exactKeys = result.artifacts;
   if (test.file === "invalid-writable-dictionary-rest-keys") restKeys = result.artifacts;
   if (test.file === "variadic-offer-sync") variadicOffer = result.artifacts;
@@ -1087,7 +1089,7 @@ for (const [artifacts, arity, refusal] of [
   // mapEntry's arrow, or AddIndex's construct signature: its last parameter.
   const domains = claims.types.flatMap((row) => row.flatMap((clause) =>
     typeof clause !== "object" ? [] :
-    "arrs" in clause ? clause.arrs.arrows.map(([, [params]]) => params) :
+    "arrs" in clause ? clause.arrs.arrows.map((s) => s.arguments) :
     "ctors" in clause ? clause.ctors.signatures.map(([params]) => params) : []));
   const params = must(domains.find((ps) => ps.length === arity), "the claimed signature");
   must(params.at(-1), "a claimed parameter").unshift(3);
@@ -1127,6 +1129,36 @@ for (const [artifacts, kind] of [[localClosure, "invoke"], [explicitCalls, "appl
     /the call's instance is not the one its explicit type arguments state/);
 process.stdout.write("an instance other than the explicit type argument, method and plain calls: refused\n");
 
+// A producer cannot manufacture heap preservation. The same ordinary
+// definition check accepts the pure callback and refuses the captured write.
+for (const [artifacts, arity, accepted] of [
+  [localClosure, 2, true], [mutatingClosure, 0, false],
+] as const) {
+  const claims: SourceClaims = JSON.parse(readFileSync(join(artifacts, "claims.json"), "utf8"));
+  const arrow = must(claims.types.flatMap(row => row.flatMap(clause =>
+    typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []))
+    .find(s => s.arguments.length === arity), "the callback contract");
+  arrow.effect = "preservesInputHeap";
+  const input = join(artifacts, "qualified-callback.json");
+  const output = join(artifacts, "qualified-callback-evidence.json");
+  writeFileSync(input, JSON.stringify(claims));
+  const produce = spawnSync(verifier, ["--produce-source-claims", join(artifacts, "fragment.json"),
+    input, join(artifacts, "source.ts"), output, "12"], {encoding: "utf8", timeout: 30_000});
+  assert.ifError(produce.error);
+  assert.equal(produce.signal, null);
+  assert.equal(produce.status, accepted ? 0 : 1, produce.stdout + produce.stderr);
+  if (accepted) {
+    const consume = spawnSync(verifier, ["--check-source-claims", join(artifacts, "fragment.json"),
+      input, join(artifacts, "source.ts"), output], {encoding: "utf8", timeout: 30_000});
+    assert.ifError(consume.error);
+    assert.equal(consume.status, 0, consume.stdout + consume.stderr);
+  } else {
+    assert.match(produce.stdout + produce.stderr, /the certificate does not justify/);
+    assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts), /does not justify/);
+  }
+  process.stdout.write(`callback heap-preservation claim: ${accepted ? "certified" : "captured write refused"}\n`);
+}
+
 // An unannotated closure's claimed result is checked against its body, not
 // taken from the producer on trust.
 {
@@ -1135,8 +1167,8 @@ process.stdout.write("an instance other than the explicit type argument, method 
   // The closure's own arrow, two parameters to a number, claimed to return null.
   const own = must(claims.types.flatMap((row) => row.flatMap((clause) =>
     typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []))
-    .find(([, [params]]) => params.length === 2), "the closure's own arrow");
-  own[1][1] = [0];
+    .find((s) => s.arguments.length === 2), "the closure's own arrow");
+  own.result = [0];
   const forged = join(localClosure, "forged-closure-result.json");
   writeFileSync(forged, JSON.stringify(claims));
   const searched = spawnSync(verifier, ["--produce-source-claims", join(localClosure, "fragment.json"),
@@ -1202,8 +1234,8 @@ for (const [artifacts, file, name, call, clause] of [
   const offered = must(claims.types.flatMap((row) => row.flatMap((clause) =>
     typeof clause === "object" && "arrs" in clause && clause.arrs.arrows.length > 0
       ? clause.arrs.variadic ?? [] : []))
-    .find(([, [fixed]]) => fixed.length === 1), "the variadic signature `named` is offered");
-  offered[1][0] = [];
+    .find((s) => s.arguments[0].length === 1), "the variadic signature `named` is offered");
+  offered.arguments[0] = [];
   const forged = join(variadicOffer, "forged-variadic-offer.json");
   writeFileSync(forged, JSON.stringify(claims));
   assert.match(invoke(forged, join(variadicOffer, "evidence.json"), variadicOffer),

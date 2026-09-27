@@ -22,25 +22,25 @@ def G : PositiveGraphs.NormalGraph Nat := .ofRows fun
   | 1 => [.undef]
   | 2 => [.list ⟨[], [], some [0,1], false, true⟩ []]
   | 3 => [.refs [(CallArguments.arrayStoreField, [2])] [] []]
-  | 4 => [.arrs [] [([12], [[0]], [13], [0])]]
+  | 4 => [.arrs [] [⟨[12], ([[0]], [13]), [0], .unrestricted⟩]]
   | 5 => [.list ⟨[[0]], [], none, false, true⟩ []]
   | 6 => [.list ⟨[], [], some [0], false, true⟩ []]
-  | 7 => [.arrs [] [([12], [[0]], [14], [0])]]
+  | 7 => [.arrs [] [⟨[12], ([[0]], [14]), [0], .unrestricted⟩]]
   | 8 => [.refs [(CallArguments.arrayStoreField, [6])] [] []]
   | 9 => [.refs [(CallArguments.arrayStoreField, [5])] [] []]
-  | 10 => [.arrs [([12], [[0], [0]], [0])] []]
-  | 11 => [.arrs [] [([12], [[0, 1]], [14], [0])]]
+  | 10 => [.arrs [⟨[12], [[0], [0]], [0], .unrestricted⟩] []]
+  | 11 => [.arrs [] [⟨[12], ([[0, 1]], [14]), [0], .unrestricted⟩]]
   | 12 => [.top]
   | 13 => [.pack ⟨[], [], some [0,1], false, true⟩ []]
   | 14 => [.pack ⟨[], [], some [0], false, true⟩ []]
   | 15 => [.pack ⟨[[0], [0]], [], none, false, true⟩ []]
-  | 16 => [.arrs [] [([12], [], [15], [0])]]
+  | 16 => [.arrs [] [⟨[12], ([], [15]), [0], .unrestricted⟩]]
   | 17 => [.list ⟨[[0], [0]], [], none, false, true⟩ []]
   | 18 => [.refs [(CallArguments.arrayStoreField, [17])] [] []]
-  | 19 => [.arrs [] [([12], [], [15], [18])]]
-  | 20 => [.arrs [] [([12], [], [14], [18])]]
+  | 19 => [.arrs [] [⟨[12], ([], [15]), [18], .unrestricted⟩]]
+  | 20 => [.arrs [] [⟨[12], ([], [14]), [18], .unrestricted⟩]]
   | 21 => [.pack ⟨[[0]], [], none, false, true⟩ []]
-  | 22 => [.arrs [] [([12], [[0]], [21], [0])]]
+  | 22 => [.arrs [] [⟨[12], ([[0]], [21]), [0], .unrestricted⟩]]
   | _ => []
 
 def pool : List (Ty Nat) := vocabulary G (List.range 23) [] [[0,1]]
@@ -113,7 +113,7 @@ def spreadAt (i : Nat) : Tm := .spread (.readAt CallArguments.arrayStoreField (.
 -- Forged evidence: a `callRest` node that claims a spread where the term has a
 -- plain actual, or the wrong element type, is refused by the checker.
 private def restCallEvidence (flags : List Bool) (E : Ty Nat) : Evidence Nat :=
-  .node ⟨[[4]], .call (.var 0) [.num 1, .num 2], [0]⟩ (.callRest 1 0 flags E)
+  .node ⟨[[4]], .call (.var 0) [.num 1, .num 2], [0]⟩ (.callRest .unrestricted 1 0 flags E)
     [.node ⟨[[4]], .var 0, [4]⟩ .var [],
      .node ⟨[[4]], .undef, [12]⟩ (.sub (.core ⟨[([1], [12])], []⟩))
        [.node ⟨[[4]], .undef, [1]⟩ .undef []],

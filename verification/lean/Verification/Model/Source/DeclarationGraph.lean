@@ -12,6 +12,7 @@ family of applications is a finite graph. Function annotations are written
 in the same source terms, and `prepare` converts each to the claim form the
 source readers take. -/
 namespace Verification.Model.DeclarationGraph
+open CallEffects (Arrow RestArrow MethodArrow MethodRestArrow Contract Effect)
 open Lean PositiveNormalization PositiveRules
 
 private def field (j : Json) (name : String) : Except String Json :=
@@ -402,8 +403,8 @@ private def reach (m : Memo) (T : SourceTypes.Table) (floor limit : Nat) (A : Li
       if l < floor then [] else match T[l]? with
         | some (.clauses cs) => cs.flatMap fun c => c.operands.flatten
         | some (.scheme _ sigs bounds rests) =>
-          sigs.flatMap (fun (r, ps, res) => r ++ ps.flatten ++ res) ++ bounds.flatMap (·.2) ++
-            rests.flatMap (fun (r, ps, p, res) => r ++ ps.flatten ++ p ++ res)
+          (sigs.flatMap Arrow.operands).flatten ++ bounds.flatMap (·.2) ++
+            (rests.flatMap RestArrow.operands).flatten
         | some (.meet p cs ps) => p :: ps ++ cs.flatMap fun c => c.operands.flatten
         | _ => []
   let rec go : Nat → List Nat → List Nat → List Nat
@@ -438,9 +439,9 @@ private def paramRow (name : String) (kind : PositiveGraphs.ParameterKind) : Low
   | none => (T.length, T ++ [.param T.length name kind])
 
 /-- A scheme row, interned. -/
-private def schemeRow (bs : List Nat) (sigs : List (List Nat × List (List Nat) × List Nat))
+private def schemeRow (bs : List Nat) (sigs : List (Arrow (List Nat)))
     (bounds : List (Nat × List Nat))
-    (rests : List (List Nat × List (List Nat) × List Nat × List Nat) := []) :
+    (rests : List (RestArrow (List Nat)) := []) :
     Lowering Nat := modifyGetThe SourceTypes.Table fun T =>
   let r := RequestJson.Row.scheme bs sigs bounds rests
   match T.idxOf? r with
@@ -703,8 +704,8 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
           some <$> lowerRest ds owner params inner restTerm
         let res ← lowerType ds owner params inner (← field f "result")
         return (recv, ps, rest, res)
-      let fixed := sigs.filterMap fun (r, ps, rest, res) => if rest.isNone then some (r, ps, res) else none
-      let rests := sigs.filterMap fun (r, ps, rest, res) => rest.map fun P => (r, ps, P, res)
+      let fixed := sigs.filterMap fun (r, ps, rest, res) => if rest.isNone then some (⟨r, ps, res, .unrestricted⟩ : Arrow (List Nat)) else none
+      let rests := sigs.filterMap fun (r, ps, rest, res) => rest.map fun P => (⟨r, (ps, P), res, .unrestricted⟩ : RestArrow (List Nat))
       return [← schemeRow rows fixed bounds rests]
   | "binder" =>
     CellClaims.fieldsExactly term ["k", "name", "span"]
@@ -785,8 +786,8 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
       some <$> lowerRest ds owner params seen restTerm
     let result ← lowerType ds owner params seen (← field term "result")
     let row : Clause (List Nat) := match rest with
-      | none => .arrs [(receiver, domains.toList, result)] []
-      | some P => .arrs [] [(receiver, domains.toList, P, result)]
+      | none => .arrs [⟨receiver, domains.toList, result, .unrestricted⟩] []
+      | some P => .arrs [] [⟨receiver, (domains.toList, P), result, .unrestricted⟩]
     return [← use row]
   | "constructor" =>
     CellClaims.fieldsExactly term ["k", "params", "rest", "result", "span"]
@@ -855,15 +856,15 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
       let optional ← bool f "optional"
       match (if optional then none else methodForms ty) with
       | some forms =>
-        let mut calls : List (List (List Nat) × List Nat) := []
-        let mut rests : List (List (List Nat) × List Nat × List Nat) := []
+        let mut calls : List (MethodArrow (List Nat)) := []
+        let mut rests : List (MethodRestArrow (List Nat)) := []
         for form in forms do
           CellClaims.fieldsExactly form ["k", "receiver", "params", "rest", "result", "span"]
           let domains ← (← arr form "params").mapM (lowerType ds owner params seen)
           let rest ← field form "rest"
           let result ← lowerType ds owner params seen (← field form "result")
-          if rest == .null then calls := calls ++ [(domains.toList, result)]
-          else rests := rests ++ [(domains.toList, ← lowerRest ds owner params seen rest, result)]
+          if rest == .null then calls := calls ++ [⟨(), domains.toList, result, .unrestricted⟩]
+          else rests := rests ++ [⟨(), (domains.toList, ← lowerRest ds owner params seen rest), result, .unrestricted⟩]
         methods := methods ++ [⟨name, calls, rests, []⟩]
       | none =>
         match (if optional then none else schemeMethod ty) with
@@ -893,8 +894,8 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
       if readonly then none else some (name, value)
     let views := fs.toList.filterMap fun (name, value, readonly) =>
       if readonly then some (name, value) else none
-    let mut fixed : List (List Nat × List (List Nat) × List Nat) := []
-    let mut variadic : List (List Nat × List (List Nat) × List Nat × List Nat) := []
+    let mut fixed : List (Arrow (List Nat)) := []
+    let mut variadic : List (RestArrow (List Nat)) := []
     for call in ← arr term "calls" do
       CellClaims.fieldsExactly call ["k", "receiver", "params", "rest", "result", "span"]
       if (← str call "k") != "function" then throw "call signature is not a function"
@@ -904,10 +905,10 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
       let domains ← (← arr call "params").mapM (lowerType ds owner params seen)
       let rest ← field call "rest"
       let result ← lowerType ds owner params seen (← field call "result")
-      if rest == .null then fixed := fixed ++ [(receiver, domains.toList, result)]
+      if rest == .null then fixed := fixed ++ [⟨receiver, domains.toList, result, .unrestricted⟩]
       else
-        variadic := variadic ++ [(receiver, domains.toList,
-          ← lowerRest ds owner params seen rest, result)]
+        variadic := variadic ++ [⟨receiver, (domains.toList,
+          ← lowerRest ds owner params seen rest), result, .unrestricted⟩]
     if hidden.isSome && (!fixed.isEmpty || !variadic.isEmpty || !indexes.isEmpty) then
       throw "a prototype of hidden members is stated of a plain record only"
     let row ← if fixed.isEmpty && variadic.isEmpty then

@@ -9,7 +9,7 @@ open CertificateProducer ControlFlow RequestJson HeapExpressionRules GraphCodeFi
 
 private def types : List (List (Clause (List Nat))) :=
   [[.nul],[.bool],[.refs [(valueField, [1])] [] []],[.callable [(valueField, [1])] [] [] []],
-   [.callable [(valueField, [1])] [] [([5],[[0]],[1])] []],[.top],[.undef]]
+   [.callable [(valueField, [1])] [] [⟨[5], [[0]], [1], .unrestricted⟩] []],[.top],[.undef]]
 private def G : NormalGraph Nat := .ofRows fun i => types[i]?.getD []
 private def labels := List.range types.length
 -- The initializer writes true, allocates an intermediate object, and returns
@@ -23,7 +23,7 @@ private def program (callable : Bool) : Program :=
    ⟨.app callee argument,.ret,none⟩]
 private def claims : List (PointClaim Nat) := [⟨[],[2,3]⟩,⟨[[2,3]],[1]⟩]
 private def request (callable : Bool) : Request :=
-  ⟨types,program callable,claims,[1],0,[],oneNodeCodes 1 (.read (.var 2)) [[2,3]] [([5],[[0]],[1])]⟩
+  ⟨types,program callable,claims,[1],0,[],oneNodeCodes 1 (.read (.var 2)) [[2,3]] [⟨[5], [[0]], [1], .unrestricted⟩]⟩
 #guard [false,true].all fun callable => match (do
     let r := Lean.toJson (request callable)
     let response ← produceJson r 12

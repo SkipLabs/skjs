@@ -9,8 +9,8 @@ open Lean PositiveNormalization PositiveGraphs ProgramTyping ControlFlow Certifi
 
 /-- Every signature here takes any receiver: label 7 is unknown, and label 8
 `undefined`, the receiver a plain call passes. -/
-private def signatures : List (List Nat × List (List Nat) × List Nat) :=
-  [([7],[[1]],[1]),([7],[[0]],[0])]
+private def signatures : List (CallEffects.Arrow (List Nat)) :=
+  [⟨[7],[[1]],[1],.unrestricted⟩,⟨[7],[[0]],[0],.unrestricted⟩]
 def types : List (List (Clause (List Nat))) :=
   [[.nul],[.bool],[.callable [(valueField, [1])] [] signatures []],[.arrs signatures []],
    [.callable [(valueField, [1])] [[(valueField,[1])]] signatures []],[.refs [(valueField, [1])] [] []],[.callable [(valueField, [0,1])] [] signatures []],
@@ -24,7 +24,7 @@ def code : CallCode := .graph 1 [.var 1] [(.ret, none)] 0 []
 /-- The code at each signature it offers, from the frame the signature
 describes: the receiver, then the parameter. -/
 def codes : List CodeRequest :=
-  signatures.map fun s => ⟨⟨1, [.var 1], [(.ret, none)], 0, [], s, none⟩, [⟨s.1 :: s.2.1, s.2.2⟩]⟩
+  signatures.map fun s => ⟨⟨1, [.var 1], [(.ret, none)], 0, [], s, none⟩, [⟨s.receiver :: s.arguments, s.result⟩]⟩
 def program : Program :=
   [⟨.makeAt code [valueField] [.tru],.bind 1,none⟩,
    ⟨.var 0,.bind 2,none⟩,
@@ -77,8 +77,8 @@ private def pool := vocabulary G labels claims []
 #guard !(subtype G pool [3] [2]).isSome
 
 -- Normalization merges property constraints and overloads without allocation.
-#guard meet (.callable [(valueField, [1])] [] signatures []) (.arrs [([7],[[1]],[1])] []) ==
-  [.callable [(valueField, [1])] [] (signatures ++ [([7],[[1]],[1])]) []]
+#guard meet (.callable [(valueField, [1])] [] signatures []) (.arrs [⟨[7], [[1]], [1], .unrestricted⟩] []) ==
+  [.callable [(valueField, [1])] [] (signatures ++ [⟨[7],[[1]],[1],.unrestricted⟩]) []]
 #guard meet (.callable [(valueField, [1])] [] signatures []) (.callable [(valueField, [1])] [] signatures []) ==
   [.callable [(valueField, [1])] [[(valueField,[1])]] (signatures ++ signatures) []]
 #guard meet (.refs [(valueField, [1])] [] []) (.callable [(valueField, [1])] [] signatures []) == []
@@ -105,57 +105,57 @@ private def creationPlan : DirectProof.Plan :=
 -- Labels in the new clause's bag and arrow operands remain range checked.
 #guard !validRequest {request with types := RequestJson.rows (types ++ [[.callable [(valueField, [99])] [] signatures []]])}
 #guard !validRequest {request with types := RequestJson.rows (types ++ [[.callable [(valueField, [1])] [[(valueField,[99])]] signatures []]])}
-#guard !validRequest {request with types := RequestJson.rows (types ++ [[.callable [(valueField, [1])] [] [([7],[[1]],[99])] []]])}
-#guard !validRequest {request with types := RequestJson.rows (types ++ [[.callable [(valueField, [1])] [] [([99],[[1]],[1])] []]])}
+#guard !validRequest {request with types := RequestJson.rows (types ++ [[.callable [(valueField, [1])] [] [⟨[7], [[1]], [99], .unrestricted⟩] []]])}
+#guard !validRequest {request with types := RequestJson.rows (types ++ [[.callable [(valueField, [1])] [] [⟨[99], [[1]], [1], .unrestricted⟩] []]])}
 
 -- Native certificates split the middle parameter while fixing both neighbors.
 -- These are certificate checks, not executions of extracted source programs.
 namespace ArgumentCertificates
 open PositiveCertificates
 private def table : PositiveRules.Table Nat := [([0],[0]),([1],[1]),([7],[7])]
-private def overloads : List (List Nat × List (List Nat) × List Nat) :=
-  [([7],[[0],[0],[1]],[1]), ([7],[[0],[1],[1]],[1])]
+private def overloads : List (CallEffects.Arrow (List Nat)) :=
+  [⟨[7],[[0],[0],[1]],[1],.unrestricted⟩, ⟨[7],[[0],[1],[1]],[1],.unrestricted⟩]
 private def split : ArrowCert Nat :=
   .union [[0]] [0] [1] [[1]]
-    (.source ([7],[[0],[0],[1]],[1])) (.source ([7],[[0],[1],[1]],[1]))
-#guard checkArrow G table overloads [] [7] [[0],[0,1],[1]] [1] split
-#guard !(checkArrow G table overloads [] [7] [[1],[0,1],[1]] [1] split)
+    (.source ⟨[7], [[0],[0],[1]], [1], .unrestricted⟩) (.source ⟨[7], [[0],[1],[1]], [1], .unrestricted⟩)
+#guard checkArrow G table overloads [] ⟨[7], [[0],[0,1],[1]], [1], .unrestricted⟩ split
+#guard !(checkArrow G table overloads [] ⟨[7], [[1],[0,1],[1]], [1], .unrestricted⟩ split)
 -- Selection cannot silently drop a target argument or ignore a source argument.
-#guard !(checkArrow G table [([7],[[0]],[1])] [] [7] [[0],[1]] [1] (.source ([7],[[0]],[1])))
-#guard !(checkArrow G table [([7],[[0],[1]],[1])] [] [7] [[0]] [1] (.source ([7],[[0],[1]],[1])))
+#guard !(checkArrow G table [⟨[7], [[0]], [1], .unrestricted⟩] [] ⟨[7], [[0],[1]], [1], .unrestricted⟩ (.source ⟨[7], [[0]], [1], .unrestricted⟩))
+#guard !(checkArrow G table [⟨[7], [[0],[1]], [1], .unrestricted⟩] [] ⟨[7], [[0]], [1], .unrestricted⟩ (.source ⟨[7], [[0],[1]], [1], .unrestricted⟩))
 -- Zero arguments have a real call obligation; a bottom parameter is uninhabited.
-#guard !(checkArrow G table [] [] [7] [] [1] .empty)
-#guard checkArrow G table [] [] [7] [[0],[]] [1] .empty
-#guard checkArrow G table [([7],[],[1])] [] [7] [] [1] (.source ([7],[],[1]))
+#guard !(checkArrow G table [] [] ⟨[7], [], [1], .unrestricted⟩ .empty)
+#guard checkArrow G table [] [] ⟨[7], [[0],[]], [1], .unrestricted⟩ .empty
+#guard checkArrow G table [⟨[7], [], [1], .unrestricted⟩] [] ⟨[7], [], [1], .unrestricted⟩ (.source ⟨[7], [], [1], .unrestricted⟩)
 -- A receiver no value meets names no call; a receiver the source does not
 -- accept is not covered.
-#guard checkArrow G table [] [] [] [[0]] [1] .emptyRecv
-#guard !(checkArrow G table [([0],[],[1])] [] [7] [] [1] (.source ([0],[],[1])))
+#guard checkArrow G table [] [] ⟨[], [[0]], [1], .unrestricted⟩ .emptyRecv
+#guard !(checkArrow G table [⟨[0], [], [1], .unrestricted⟩] [] ⟨[7], [], [1], .unrestricted⟩ (.source ⟨[0], [], [1], .unrestricted⟩))
 #guard match fromJson? (toJson split) with
   | .error _ => false
   | .ok (decoded : ArrowCert Nat) =>
-      decoded == split && checkArrow G table overloads [] [7] [[0],[0,1],[1]] [1] decoded
+      decoded == split && checkArrow G table overloads [] ⟨[7], [[0],[0,1],[1]], [1], .unrestricted⟩ decoded
 -- An out-of-range label in a preserved suffix must fail the outer evidence gate.
 private def badSuffix : ArrowCert Nat :=
   .union [[0]] [0] [1] [[99]] .empty .empty
 #guard !validEvidence types.length (.node ⟨[],.nul,[0]⟩
-  (.sub (.core ⟨table,[([], (([7],[[0]],[1]),badSuffix))]⟩)) [])
+  (.sub (.core ⟨table,[([], (⟨[7], [[0]], [1], .unrestricted⟩,badSuffix))]⟩)) [])
 end ArgumentCertificates
 
 -- Graph creation, subtype search, and JSON consumption now share native lists.
 namespace ArgumentGraphs
 private def rows : List (List (Clause (List Nat))) := types ++
-  [[.arrs [([7],[[0],[0],[1]],[1]),([7],[[0],[1],[1]],[1])] []],
-   [.arrs [([7],[[0],[0,1],[1]],[1])] []], [.arrs [([7],[],[0])] []]]
+  [[.arrs [⟨[7], [[0],[0],[1]], [1], .unrestricted⟩,⟨[7], [[0],[1],[1]], [1], .unrestricted⟩] []],
+   [.arrs [⟨[7], [[0],[0,1],[1]], [1], .unrestricted⟩] []], [.arrs [⟨[7], [], [0], .unrestricted⟩] []]]
 private def graph : NormalGraph Nat := .ofRows fun i => rows[i]?.getD []
 /-- One-node code of `arity` returning `e`, and its entry at each signature of
 row 9 or of `sigs`, each from the frame the signature describes. -/
 private def oneNode (arity : Nat) (e : Tm) : CallCode := .graph arity [e] [(.ret, none)] 0 []
-private def entries (arity : Nat) (e : Tm) (sigs : List (List Nat × List (List Nat) × List Nat)) :
+private def entries (arity : Nat) (e : Tm) (sigs : List (CallEffects.Arrow (List Nat))) :
     List CodeRequest :=
-  sigs.map fun s => ⟨⟨arity, [e], [(.ret, none)], 0, [], s, none⟩, [⟨s.1 :: s.2.1.take arity, s.2.2⟩]⟩
-private def overloads : List (List Nat × List (List Nat) × List Nat) :=
-  [([7],[[0],[0],[1]],[1]),([7],[[0],[1],[1]],[1])]
+  sigs.map fun s => ⟨⟨arity, [e], [(.ret, none)], 0, [], s, none⟩, [⟨s.receiver :: s.arguments.take arity, s.result⟩]⟩
+private def overloads : List (CallEffects.Arrow (List Nat)) :=
+  [⟨[7],[[0],[0],[1]],[1],.unrestricted⟩,⟨[7],[[0],[1],[1]],[1],.unrestricted⟩]
 private def body := Tm.make (oneNode 3 (.var 3)) .nul
 private def req : Request := ⟨rows,[⟨body,.bind 1,none⟩,⟨.var 0,.ret,none⟩],[⟨[],[9]⟩,⟨[[9]],[10]⟩],[10],0,[],
   entries 3 (.var 3) overloads⟩
@@ -170,12 +170,12 @@ private def wideProgram : Program := [⟨.make (oneNode 4 (.var 3)) .nul,.bind 1
 private def wideReq : Request := ⟨rows,wideProgram,req.claims,[10],0,[],entries 4 (.var 3) overloads⟩
 #guard !ok (roundtrip wideReq)
 private def zeroReq : Request := ⟨rows,[⟨.make (oneNode 0 .nul) .nul,.ret,none⟩],[⟨[],[11]⟩],[11],0,[],
-  entries 0 .nul [([7],[],[0])]⟩
+  entries 0 .nul [⟨[7], [], [0], .unrestricted⟩]⟩
 #guard ok (do
   let r := toJson zeroReq
   verifyJson r (← produceJson r 8))
 #guard (subtype graph (List.range rows.length |>.map fun i => [i]) [9] [11]).isNone
-#guard !validRequest {req with types := RequestJson.rows (rows ++ [[.arrs [([7],[[0],[99]],[1])] []]])}
+#guard !validRequest {req with types := RequestJson.rows (rows ++ [[.arrs [⟨[7], [[0],[99]], [1], .unrestricted⟩] []]])}
 -- Native invocation reaches the same producer/JSON consumer as unary calls.
 private def callReq : Request :=
   {req with
@@ -194,12 +194,12 @@ private def zeroCallReq : Request :=
 
 -- A callable's cell is updated by the first operand and read by the second.
 -- This exercises effectful operands through the callable-object application rule.
-private def cellRows := rows ++ RequestJson.rows [[.callable [(valueField, [1])] [] [([7],[[0],[1]],[1])] []]]
+private def cellRows := rows ++ RequestJson.rows [[.callable [(valueField, [1])] [] [⟨[7], [[0],[1]], [1], .unrestricted⟩] []]]
 private def cellCallReq : Request :=
   ⟨cellRows,
    [⟨.make (oneNode 2 (.var 2)) .tru,.bind 1,none⟩,
     ⟨.call (.var 0) [.write (.var 0) .fls,.read (.var 0)],.ret,none⟩],
-   [⟨[],[12]⟩,⟨[[12]],[1]⟩],[1],0,[], entries 2 (.var 2) [([7],[[0],[1]],[1])]⟩
+   [⟨[],[12]⟩,⟨[[12]],[1]⟩],[1],0,[], entries 2 (.var 2) [⟨[7], [[0],[1]], [1], .unrestricted⟩]⟩
 #guard ok (do
   let r := toJson cellCallReq
   verifyJson r (← produceJson r 8))
@@ -218,14 +218,14 @@ private def callPremises : List (ProgramCertificates.Evidence Nat) :=
    .node ⟨[[9]],.nul,[0]⟩ .nul [],
    .node ⟨[[9]],.tru,[1]⟩ .tru [],
    .node ⟨[[9]],.fls,[1]⟩ .fls []]
-#guard ProgramCertificates.checkTree graph (.node callClaim .app callPremises)
-#guard !ProgramCertificates.checkTree graph (.node callClaim .app (callPremises.take 4))
+#guard ProgramCertificates.checkTree graph (.node callClaim (.app .unrestricted) callPremises)
+#guard !ProgramCertificates.checkTree graph (.node callClaim (.app .unrestricted) (callPremises.take 4))
 #guard !ProgramCertificates.checkTree graph
-  (.node callClaim .app (callPremises.set 3 callPremises[4] |>.set 4 callPremises[3]))
+  (.node callClaim (.app .unrestricted) (callPremises.set 3 callPremises[4] |>.set 4 callPremises[3]))
 -- The receiver premise is not optional, and must type the receiver term.
-#guard !ProgramCertificates.checkTree graph (.node callClaim .app (callPremises.eraseIdx 1))
+#guard !ProgramCertificates.checkTree graph (.node callClaim (.app .unrestricted) (callPremises.eraseIdx 1))
 #guard !ProgramCertificates.checkTree graph
-  (.node callClaim .app (callPremises.set 1 (.node ⟨[[9]],.nul,[0]⟩ .nul [])))
+  (.node callClaim (.app .unrestricted) (callPremises.set 1 (.node ⟨[[9]],.nul,[0]⟩ .nul [])))
 
 end ArgumentGraphs
 

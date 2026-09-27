@@ -9,7 +9,7 @@ open CertificateProducer ControlFlow RequestJson HeapExpressionRules GraphCodeFi
 
 private def types : List (List (Clause (List Nat))) :=
   [[.nul],[.bool],[.refs [(valueField, [1])] [] []],[.callable [(valueField, [1])] [] [] []],
-   [.boolLit false],[.arrs [([6],[[0]],[0])] []],[.top],[.undef]]
+   [.boolLit false],[.arrs [⟨[6], [[0]], [0], .unrestricted⟩] []],[.top],[.undef]]
 private def G : NormalGraph Nat := .ofRows fun i => types[i]?.getD []
 private def labels := List.range types.length
 /-- The mutator writes the captured bag, its frame's slot 3, past its receiver
@@ -22,7 +22,7 @@ private def program (callable fresh : Bool) : Program :=
    ⟨.make (oneNode 1 mutator 3) .nul,.bind 4,none⟩,
    ⟨.app (.var 0) .nul,.effect 5,none⟩,
    ⟨if fresh then .read (.var 2) else .var 1,.ret,none⟩]
-private def codes : List CodeRequest := oneNodeCodes 1 mutator [[1],[2,3],[1]] [([6],[[0]],[0])]
+private def codes : List CodeRequest := oneNodeCodes 1 mutator [[1],[2,3],[1]] [⟨[6], [[0]], [0], .unrestricted⟩]
 private def claims (R : List Nat) : List (PointClaim Nat) :=
   [⟨[],[1]⟩,⟨[[1]],[2,3]⟩,⟨[[2,3],[1]],[1]⟩,
    ⟨[[1],[2,3],[1]],[5]⟩,⟨[[5],[1],[2,3],[1]],[0]⟩,

@@ -10,6 +10,12 @@ let key_json = function
   | Key i -> Object ["symbol",int i]
 
 let unsupported s = fail ("unsupported: " ^ s)
+(* The graph's sole callable contract shape. Effects become definition
+   obligations when a qualified signature is proposed. *)
+let call_contract receiver arguments result = Object [
+  "receiver",receiver; "arguments",arguments; "result",result;
+  "effect",String "unrestricted"]
+
 let encode (proposal : Proposal.t) =
   (* The graph is just the existing SourceClaims wire format, interned structurally. *)
   (* Empty reserved rows are references, never producer-authored equations.
@@ -150,11 +156,12 @@ let encode (proposal : Proposal.t) =
           String.contains q.identity.spelling '#' && q.bound = None) s.quantified ->
       let binders = List.map (fun (q:Semantic.quantifier) -> int (parameter_label q.identity)) s.quantified in
       let signature,variadic = match s.variadic,s.rest_pack with
-        | None,None -> [Array [labels s.receiver;Array [Array (List.map labels s.params);labels s.result]]],[]
+        | None,None -> [call_contract (labels s.receiver) (Array (List.map labels s.params)) (labels s.result)],[]
         | Some element,None ->
-          [],[Array [labels s.receiver;Array [Array (List.map labels s.params);
-            Array [pack_labels (Pack {required=[];optional_elements=[];rest=Some element;readonly=false;dense=true});
-                   labels s.result]]]]
+          [],[call_contract (labels s.receiver)
+            (Array [Array (List.map labels s.params);
+              pack_labels (Pack {required=[];optional_elements=[];rest=Some element;readonly=false;dense=true})])
+            (labels s.result)]
         | _,Some _ -> unsupported "a pack parameter in a generic method's scheme" in
       [intern (Object ["scheme",Object (["binders",Array binders;"signatures",Array signature]
         @ (if variadic = [] then [] else ["variadic",Array variadic]))])]
@@ -177,7 +184,7 @@ let encode (proposal : Proposal.t) =
               if s.quantified <> [] then unsupported "quantified method claim encoding") signatures;
             let calls = List.filter_map (fun (s:Semantic.signature) ->
               if s.variadic = None && s.rest_pack = None then
-                Some (Array [Array (List.map labels s.params);labels s.result]) else None) signatures in
+                Some (call_contract (Object []) (Array (List.map labels s.params)) (labels s.result)) else None) signatures in
             let rests = List.filter_map (fun (s:Semantic.signature) ->
               let rest = match s.variadic,s.rest_pack with
                 | Some element,None -> Some (pack_labels (Pack {
@@ -185,8 +192,8 @@ let encode (proposal : Proposal.t) =
                 | None,Some r -> Some (pack_labels r)
                 | Some _,Some _ -> unsupported "signature has both element and pack rests"
                 | None,None -> None in
-              Option.map (fun rest -> Array [Array (List.map labels s.params);
-                Array [rest;labels s.result]]) rest) signatures in
+              Option.map (fun rest -> call_contract (Object [])
+                (Array [Array (List.map labels s.params);rest]) (labels s.result)) rest) signatures in
             Object ["key",key_json f.name;"calls",Array calls;"rests",Array rests;
                     "schemes",Array []]) fs)] in
       let fields writable fs = Array (List.map (fun (f:Semantic.field) ->
@@ -214,7 +221,7 @@ let encode (proposal : Proposal.t) =
       let fixed = List.filter (fun (a:Semantic.signature) ->
         a.variadic = None && a.rest_pack = None) shape.calls in
       let arrows = Array (List.map (fun (a:Semantic.signature) ->
-        Array [labels a.receiver;Array [Array (List.map labels a.params);labels a.result]]) fixed) in
+        call_contract (labels a.receiver) (Array (List.map labels a.params)) (labels a.result)) fixed) in
       let variadic = List.filter_map (fun (a:Semantic.signature) ->
         (* A rest's type is a pack: of any number of actuals at an element, or
            the one a pack parameter's instance states. *)
@@ -224,8 +231,8 @@ let encode (proposal : Proposal.t) =
           | Some _,Some _ -> unsupported "signature has both element and pack rests"
           | None,Some r -> Some (pack_labels r)
           | None,None -> None in
-        Option.map (fun rest -> Array [labels a.receiver;Array [Array (List.map labels a.params);
-          Array [rest;labels a.result]]]) rest) shape.calls in
+        Option.map (fun rest -> call_contract (labels a.receiver)
+          (Array [Array (List.map labels a.params);rest]) (labels a.result)) rest) shape.calls in
       let calls = ("arrows",arrows) :: (if variadic = [] then [] else ["variadic",Array variadic]) in
       match shape.elements with
       | Some sequence ->

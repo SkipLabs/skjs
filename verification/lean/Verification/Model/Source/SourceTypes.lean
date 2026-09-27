@@ -459,9 +459,10 @@ theorem translate_exact {T : Table} (hT : initial <+: T) {t : Claim.Ty} {A u v}
 /-- Exact arrow interpretation, including its contravariant receiver and
 domain, over any table holding the row: the one-domain call contract, whatever
 code meets it. -/
-theorem arrow_exact {T : Table} {Rc D R : Ty Nat} (hm : Row.clauses [.arrs [(Rc,[D],R)] []] ∈ T) (n W v) :
-    meaning (graph T) [label T (.arrs [(Rc,[D],R)] [])] n W v ↔
-      callsT [(meaning (graph T) Rc, [meaning (graph T) D], meaning (graph T) R)] n W v := by
+theorem arrow_exact {T : Table} {Rc D R : Ty Nat} {effect : CallEffects.Effect}
+    (hm : Row.clauses [.arrs [⟨Rc,[D],R,effect⟩] []] ∈ T) (n W v) :
+    meaning (graph T) [label T (.arrs [⟨Rc,[D],R,effect⟩] [])] n W v ↔
+      CallEffects.callsT [⟨meaning (graph T) Rc, [meaning (graph T) D], meaning (graph T) R,effect⟩] n W v := by
   rw [label_meaning hm]
   simp only [clauseSem, rowSem, PositiveNormalization.semWithArgs, List.map_cons, List.map_nil]
   exact ⟨fun h => h.1.1, fun h => ⟨⟨h, h.1, by simp⟩, realmInvariant_of_not_record rfl _ _ _⟩⟩

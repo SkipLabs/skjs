@@ -90,17 +90,17 @@ try {
       .expressions.find((e) => e.pos[0] === pos[0] && e.pos[1] === pos[1]),
     `a claim at ${pos.join(":")}`,
   );
-  const signature = (c: SourceClaims): Arrow[1] => {
+  const signature = (c: SourceClaims): Arrow => {
     const labels = at(c, bind.pos).type;
     if (!Array.isArray(labels)) throw Error("the bind result states no labels");
     const clause = must(must(c.types[must(labels[0], "a label")], "a row")[0], "a clause");
     if (typeof clause === "string" || !("arrs" in clause))
       throw Error("the bind result is not an arrow");
-    return must(clause.arrs.arrows[0], "an arrow")[1];
+    return must(clause.arrs.arrows[0], "an arrow");
   };
   for (const [name, edit] of rows<[string, (a: Ast, c: SourceClaims) => void]>([
-    ["remaining arity", (a, c) => signature(c)[0].push([1, 2])],
-    ["bound result", (a, c) => { signature(c)[1] = [0]; }],
+    ["remaining arity", (a, c) => signature(c).arguments.push([1, 2])],
+    ["bound result", (a, c) => { signature(c).result = [0]; }],
     ["bound argument domain", (a, c) => {
       const call = bound(a);
       const first = must(call.args[0], "a bound argument");

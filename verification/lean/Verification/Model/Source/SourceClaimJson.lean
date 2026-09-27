@@ -299,13 +299,13 @@ private partial def groundIn (T : SourceTypes.Table) :
         pure (T, acc ++ [a])) (T, [])
       let (T, r) ← groundIn T r
       let (T, clause) ← match rest with
-        | none => pure (T, PositiveNormalization.Clause.arrs [(rc, ps, r)] [])
+        | none => pure (T, PositiveNormalization.Clause.arrs [⟨rc, ps, r, .unrestricted⟩] [])
         | some e => do
           -- A rest's type is the pack of any number of actuals at its element.
           let (T, E) ← groundIn T e
           let pack := PositiveNormalization.Clause.pack ⟨[], [], some E, false, true⟩ []
           let T := SourceTypes.intern T pack
-          pure (T, PositiveNormalization.Clause.arrs [] [(rc, ps, [SourceTypes.label T pack], r)])
+          pure (T, PositiveNormalization.Clause.arrs [] [⟨rc, (ps, [SourceTypes.label T pack]), r, .unrestricted⟩])
       let T := SourceTypes.intern T clause
       pure (T, [SourceTypes.label T clause])
   | .param name => throw s!"still the rigid parameter '{name}'"
@@ -495,11 +495,11 @@ private partial def groundT : ClaimType → SchemeM (List Nat)
     let ps ← ps.mapM groundT
     let r ← groundT r
     match rest with
-    | none => pure [← internS (.arrs [(rc, ps, r)] [])]
+    | none => pure [← internS (.arrs [⟨rc, ps, r, .unrestricted⟩] [])]
     | some e => do
       let E ← groundT e
       let pack ← internS (.pack ⟨[], [], some E, false, true⟩ [])
-      pure [← internS (.arrs [] [(rc, ps, [pack], r)])]
+      pure [← internS (.arrs [] [⟨rc, (ps, [pack]), r, .unrestricted⟩])]
   | .scheme tps rc ps rest r => do
     return [(← schemeRowOf (.scheme tps rc ps rest r)).1]
   | .param name => throw s!"the rigid parameter '{name}' is not in scope"
@@ -565,11 +565,11 @@ private partial def schemeRowOf (t : ClaimType) : SchemeM (Nat × List (String �
   let ps ← ps.mapM fun q => groundT (subst σ q)
   let r ← groundT (subst σ r)
   let (sigs, rests) ← match rest with
-    | none => pure ([(rc, ps, r)], [])
+    | none => pure ([⟨rc, ps, r, .unrestricted⟩], [])
     | some e => do
       let E ← groundT (subst σ e)
       let pack ← internS (.pack ⟨[], [], some E, false, true⟩ [])
-      pure ([], [(rc, ps, [pack], r)])
+      pure ([], [⟨rc, (ps, [pack]), r, .unrestricted⟩])
   let boundRows := bounds
   let (T, reg) ← get
   let label := T.length

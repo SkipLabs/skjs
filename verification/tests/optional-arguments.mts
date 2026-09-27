@@ -115,7 +115,7 @@ try {
   console.log("  SKJS refuses to export an optional parameter: OK");
 
   /** The arrow this file's closure interns, in one function's claims. */
-  const signature = (c: SourceClaims, name: string): Arrow[1] => {
+  const signature = (c: SourceClaims, name: string): Arrow => {
     const f = must(
       c.functions.find((g) => g.name === name),
       "the function's claims",
@@ -126,7 +126,7 @@ try {
       const row = c.types[must(labels[0], "a label")];
       const clause = row && row[0];
       if (clause && typeof clause !== "string" && "arrs" in clause)
-        return must(clause.arrs.arrows[0], "an arrow")[1];
+        return must(clause.arrs.arrows[0], "an arrow");
     }
     throw Error(`no arrow claim in ${name}`);
   };
@@ -137,7 +137,7 @@ try {
     [
       "omitted position no longer admits undefined",
       (c: SourceClaims) => {
-        const domains = signature(c, "omittedArgument")[0];
+        const domains = signature(c, "omittedArgument").arguments;
         domains[1] = must(domains[1], "the optional position").filter(
           (l) => l !== 3,
         );
@@ -146,7 +146,7 @@ try {
     [
       "written position no longer admits undefined",
       (c: SourceClaims) => {
-        const domains = signature(c, "writtenArgument")[0];
+        const domains = signature(c, "writtenArgument").arguments;
         domains[1] = must(domains[1], "the optional position").filter(
           (l) => l !== 3,
         );
@@ -155,7 +155,7 @@ try {
     [
       "explicit undefined actual no longer fits",
       (c: SourceClaims) => {
-        const domains = signature(c, "explicitUndefined")[0];
+        const domains = signature(c, "explicitUndefined").arguments;
         domains[1] = must(domains[1], "the optional position").filter(
           (l) => l !== 3,
         );
@@ -234,7 +234,7 @@ try {
             for (const clause of row)
               if (typeof clause !== "string" && "arrs" in clause)
                 for (const arrow of clause.arrs.arrows)
-                  arrow[1][0] = arrow[1][0].map((labels) =>
+                  arrow.arguments = arrow.arguments.map((labels) =>
                     labels.filter((l) => l !== 3),
                   );
         },

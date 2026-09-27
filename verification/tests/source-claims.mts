@@ -140,7 +140,7 @@ try {
     const scope: {name: string; type: Labels; current: null}[]=[];
     // The table: the primitives, then the cell at 4, the reader arrow at 5 and
     // its unknown receiver at 6.
-    const types: Row[]=[...primitives,[{refs:{first:[["value",[1,2]]],rest:[], views: []}}],[{arrs:{arrows:[[[6],[[[0]],[1,2]]]]}}],["top"]];
+    const types: Row[]=[...primitives,[{refs:{first:[["value",[1,2]]],rest:[], views: []}}],[{arrs:{arrows:[{receiver:[6],arguments:[[0]],result:[1,2],effect:"unrestricted"}]}}],["top"]];
     const labels: Record<string, Labels>={cell:[4],read:[5],x:[0]};
     const expr=(e: Expr): void =>{
       let type: Labels;

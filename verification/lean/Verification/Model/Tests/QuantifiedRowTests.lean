@@ -18,21 +18,21 @@ that is never read. 7 `(x: boolean) => boolean`, 8 `(x: null) => null`,
 `<U>(x: U) => U`, 18 its parameter `U`, 19 `(x: U) => U` with `U` opaque. -/
 def types : List (List (Clause (List Nat))) :=
   [[.nul], [.boolLit true], [.boolLit false], [.undef], [.nul], [.nul], [.top],
-   [.arrs [([3], [[1, 2]], [1, 2])] []], [.arrs [([3], [[0]], [0])] []],
+   [.arrs [⟨[3], [[1, 2]], [1, 2], .unrestricted⟩] []], [.arrs [⟨[3], [[0]], [0], .unrestricted⟩] []],
    [.refs [(valueField, [4])] [] []], [], [.refs [(valueField, [1, 2])] [] []],
-   [.arrs [([3], [[1, 2]], [11])] []], [.refs [(valueField, [0])] [] []],
-   [.arrs [([3], [[1, 2]], [13])] []], [.arrs [([3], [[0]], [1, 2])] []],
-   [.arrs [([3], [[4]], [4])] []], [], [], [.arrs [([3], [[18]], [18])] []],
-   [], [.arrs [([3], [[1]], [1])] []]]
+   [.arrs [⟨[3], [[1, 2]], [11], .unrestricted⟩] []], [.refs [(valueField, [0])] [] []],
+   [.arrs [⟨[3], [[1, 2]], [13], .unrestricted⟩] []], [.arrs [⟨[3], [[0]], [1, 2], .unrestricted⟩] []],
+   [.arrs [⟨[3], [[4]], [4], .unrestricted⟩] []], [], [], [.arrs [⟨[3], [[18]], [18], .unrestricted⟩] []],
+   [], [.arrs [⟨[3], [[1]], [1], .unrestricted⟩] []]]
 
 def G : NormalGraph Nat where
   rows i := types[i]?.getD []
   parameterKinds i := if i == 4 || i == 18 then some .value else none
   schemes i :=
-    if i == 5 then some ⟨[4], [([3], [[4]], [4])], [], []⟩
-    else if i == 10 then some ⟨[4], [([3], [[4]], [9])], [], []⟩
-    else if i == 17 then some ⟨[18], [([3], [[18]], [18])], [], []⟩
-    else if i == 20 then some ⟨[4], [([3], [[4]], [4])], [(4, [1, 2])], []⟩
+    if i == 5 then some ⟨[4], [⟨[3], [[4]], [4], .unrestricted⟩], [], []⟩
+    else if i == 10 then some ⟨[4], [⟨[3], [[4]], [9], .unrestricted⟩], [], []⟩
+    else if i == 17 then some ⟨[18], [⟨[3], [[18]], [18], .unrestricted⟩], [], []⟩
+    else if i == 20 then some ⟨[4], [⟨[3], [[4]], [4], .unrestricted⟩], [(4, [1, 2])], []⟩
     else none
 
 def pool : List (List Nat) :=
@@ -149,10 +149,10 @@ open RequestJson in
 def table : List Row :=
   (List.range types.length).map fun i =>
     if i == 4 then .param 4 "T" .value else if i == 18 then .param 18 "U" .value
-    else if i == 5 then .scheme [4] [([3], [[4]], [4])] [] []
-    else if i == 10 then .scheme [4] [([3], [[4]], [9])] [] []
-    else if i == 17 then .scheme [18] [([3], [[18]], [18])] [] []
-    else if i == 20 then .scheme [4] [([3], [[4]], [4])] [(4, [1, 2])] []
+    else if i == 5 then .scheme [4] [⟨[3], [[4]], [4], .unrestricted⟩] [] []
+    else if i == 10 then .scheme [4] [⟨[3], [[4]], [9], .unrestricted⟩] [] []
+    else if i == 17 then .scheme [18] [⟨[3], [[18]], [18], .unrestricted⟩] [] []
+    else if i == 20 then .scheme [4] [⟨[3], [[4]], [4], .unrestricted⟩] [(4, [1, 2])] []
     else .clauses (types[i]?.getD [])
 def wire : NormalGraph Nat := RequestJson.tableGraph table
 #guard (List.range types.length).all fun i =>
@@ -164,8 +164,8 @@ def wire : NormalGraph Nat := RequestJson.tableGraph table
 -- A parameter row names its own label, a scheme's binders are parameter rows,
 -- and a scheme's labels index the table.
 #guard !RequestJson.validRows (table.set 4 (.param 5 "T" .value))
-#guard !RequestJson.validRows (table.set 5 (.scheme [3] [([3], [[3]], [3])] [] []))
-#guard !RequestJson.validRows (table.set 5 (.scheme [4] [([3], [[4]], [25])] [] []))
+#guard !RequestJson.validRows (table.set 5 (.scheme [3] [⟨[3], [[3]], [3], .unrestricted⟩] [] []))
+#guard !RequestJson.validRows (table.set 5 (.scheme [4] [⟨[3], [[4]], [25], .unrestricted⟩] [] []))
 -- A pack binder and a value binder cannot exchange their instantiation types.
 private def sortedKinds : NormalGraph Nat := RequestJson.tableGraph [
   .param 0 "P" .arguments, .param 1 "T" .value,
@@ -198,27 +198,27 @@ namespace Colours
 def types : List (List (Clause (List Nat))) :=
   [[.nul], [.boolLit true], [.boolLit false], [.undef], [.top], [], [],
    [.refs [] [] [(valueField, [1, 2]), ("map", [8])]], [],
-   [.arrs [([4], [[1, 2]], [5])] []],
+   [.arrs [⟨[4], [[1, 2]], [5], .unrestricted⟩] []],
    [.refs [] [] [(valueField, [5]), ("map", [11])]], [],
-   [.arrs [([4], [[5]], [6])] []],
+   [.arrs [⟨[4], [[5]], [6], .unrestricted⟩] []],
    [.refs [] [] [(valueField, [6]), ("map", [14])]], [],
-   [.arrs [([4], [[6]], [5])] []],
+   [.arrs [⟨[4], [[6]], [5], .unrestricted⟩] []],
    [.refs [] [] [(valueField, [0]), ("map", [17])]], [],
-   [.arrs [([4], [[0]], [5])] []],
-   [.arrs [([7], [[20]], [16])] []],
-   [.arrs [([4], [[1, 2]], [0])] []],
-   [.arrs [([7], [[20]], [7])] []],
+   [.arrs [⟨[4], [[0]], [5], .unrestricted⟩] []],
+   [.arrs [⟨[7], [[20]], [16], .unrestricted⟩] []],
+   [.arrs [⟨[4], [[1, 2]], [0], .unrestricted⟩] []],
+   [.arrs [⟨[7], [[20]], [7], .unrestricted⟩] []],
    [.refs [] [] [(valueField, [0]), ("map", [23])]], [],
-   [.arrs [([4], [[0]], [6])] []]]
+   [.arrs [⟨[4], [[0]], [6], .unrestricted⟩] []]]
 def H : NormalGraph Nat where
   rows i := types[i]?.getD []
   parameterKinds i := if i == 5 || i == 6 then some .value else none
   schemes i :=
-    if i == 8 then some ⟨[5], [([7], [[9]], [10])], [], []⟩
-    else if i == 11 then some ⟨[6], [([10], [[12]], [13])], [], []⟩
-    else if i == 14 then some ⟨[5], [([13], [[15]], [10])], [], []⟩
-    else if i == 17 then some ⟨[5], [([16], [[18]], [10])], [], []⟩
-    else if i == 23 then some ⟨[6], [([22], [[24]], [13])], [], []⟩
+    if i == 8 then some ⟨[5], [⟨[7], [[9]], [10], .unrestricted⟩], [], []⟩
+    else if i == 11 then some ⟨[6], [⟨[10], [[12]], [13], .unrestricted⟩], [], []⟩
+    else if i == 14 then some ⟨[5], [⟨[13], [[15]], [10], .unrestricted⟩], [], []⟩
+    else if i == 17 then some ⟨[5], [⟨[16], [[18]], [10], .unrestricted⟩], [], []⟩
+    else if i == 23 then some ⟨[6], [⟨[22], [[24]], [13], .unrestricted⟩], [], []⟩
     else none
 def pool : List (List Nat) := (List.range types.length).map ([·])
 #guard match instProof H 64 [8] [19] with

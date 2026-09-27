@@ -6,6 +6,7 @@ The final consumer checks the actual program and exact supplied claims again. -/
 namespace Verification.Model.CertificateProducer
 open ProgramTyping PositiveGraphs PositiveNormalization PositiveRules
 open ProgramCertificates PointClaims ControlFlow
+open CallEffects (Arrow RestArrow Contract Effect)
 
 structure PointClaim (ι : Type) where
   context : List (Ty ι)
@@ -45,37 +46,37 @@ theorem accepted_from_inputs [DecidableEq ι] {G : NormalGraph ι} {R P claims C
 compatible codomain combination. The checker, not this search strategy,
 defines the rules. -/
 def arrowSearch [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (L : Ops ι)
-    (S : List (Ty ι × List (Ty ι) × Ty ι × Ty ι))
-    (rt : Ty ι) (c : List (Ty ι)) (d : Ty ι) : Nat → Option (PositiveCertificates.ArrowCert ι)
+    (S : List (RestArrow (Ty ι)))
+    (q : Arrow (Ty ι)) : Nat → Option (PositiveCertificates.ArrowCert ι)
   | 0 => none
   | fuel+1 => Id.run do
     let basic := PositiveCertificates.ArrowCert.empty :: .emptyRecv ::
       L.map (.source ·) ++ S.map (.rest ·)
-    if let some p := basic.find? (fun p => PositiveCertificates.checkArrow G table L S rt c d p) then
+    if let some p := basic.find? (fun p => PositiveCertificates.checkArrow G table L S q p) then
       return some p
-    if let a :: rest := rt then
+    if let a :: rest := q.receiver then
       if !rest.isEmpty then
-        if let some left := arrowSearch G table L S [a] c d fuel then
-          if let some right := arrowSearch G table L S rest c d fuel then
+        if let some left := arrowSearch G table L S {q with receiver := [a]} fuel then
+          if let some right := arrowSearch G table L S {q with receiver := rest} fuel then
             let p := PositiveCertificates.ArrowCert.recvUnion [a] rest left right
-            if PositiveCertificates.checkArrow G table L S rt c d p then return some p
-    for i in List.range c.length do
-      if let some (a :: rest) := c[i]? then
+            if PositiveCertificates.checkArrow G table L S q p then return some p
+    for i in List.range q.arguments.length do
+      if let some (a :: rest) := q.arguments[i]? then
         if !rest.isEmpty then
-          if let some left := arrowSearch G table L S rt (c.set i [a]) d fuel then
-            if let some right := arrowSearch G table L S rt (c.set i rest) d fuel then
-              let p := PositiveCertificates.ArrowCert.union (c.take i) [a] rest (c.drop (i+1)) left right
-              if PositiveCertificates.checkArrow G table L S rt c d p then return some p
+          if let some left := arrowSearch G table L S {q with arguments := q.arguments.set i [a]} fuel then
+            if let some right := arrowSearch G table L S {q with arguments := q.arguments.set i rest} fuel then
+              let p := PositiveCertificates.ArrowCert.union (q.arguments.take i) [a] rest (q.arguments.drop (i+1)) left right
+              if PositiveCertificates.checkArrow G table L S q p then return some p
     return (L.flatMap fun p => L.map fun q =>
-      PositiveCertificates.ArrowCert.combine p.2.2 q.2.2 (.source p) (.source q)).find?
-        (fun p => PositiveCertificates.checkArrow G table L S rt c d p)
+      PositiveCertificates.ArrowCert.combine p.result q.result p.effect q.effect (.source p) (.source q)).find?
+        (fun p => PositiveCertificates.checkArrow G table L S q p)
 
 def arrowEvidence [DecidableEq ι] (G : NormalGraph ι) (table : Table ι)
     (pool : List (Ty ι)) : PositiveCertificates.Evidence ι :=
   let clauses := pool.flatMap (expand G)
-  let arrows (L : Ops ι) (S : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)) (M : Ops ι) :=
+  let arrows (L : Ops ι) (S : List (RestArrow (Ty ι))) (M : Ops ι) :=
     M.filterMap fun p =>
-      (arrowSearch G table L S p.1 p.2.1 p.2.2 (p.2.1.length + p.1.length + 1)).map
+      (arrowSearch G table L S p (p.arguments.length + p.receiver.length + 1)).map
         (fun proof => (L,(p,proof)))
   -- A scheme row's signatures are compared as an arrow clause's, against
   -- those of a scheme binding the same rows that a row of the table relates
@@ -123,7 +124,7 @@ def rowFeasible [DecidableEq ι] (G : NormalGraph ι) (known : PositiveRules.Kno
 
 /-- Known rows with the instances proving them. -/
 abbrev KnownInstances (ι : Type) :=
-  List (List ι × PositiveRules.Ops ι × List (List ι × List (List ι) × List ι × List ι) ×
+  List (List ι × PositiveRules.Ops ι × List (RestArrow (List ι)) ×
     PositiveCertificates.Instance ι)
 
 /-- A core table over the pool, whose coverage may use the `known` rows. -/
@@ -150,17 +151,17 @@ signature against each source one, position by position (receivers,
 parameters contravariantly, results covariantly), and each part of a target
 parameter's union against the source's parameter, as arrow coverage splits
 it. -/
-def signaturePairs (source target : List (List ι × List (List ι) × List ι)) :
+def signaturePairs (source target : List (Arrow (List ι))) :
     List (List ι × List ι) :=
   target.flatMap fun t => source.flatMap fun s =>
-    (t.1, s.1) :: (s.2.2, t.2.2) :: (t.2.1.zip s.2.1).flatMap fun (q, p) =>
+    (t.receiver, s.receiver) :: (s.result, t.result) :: (t.arguments.zip s.arguments).flatMap fun (q, p) =>
       (q, p) :: q.map fun l => ([l], p)
 
 /-- The same, for variadic signatures: fixed parameters, rest and result. -/
-def restPairs (source target : List (List ι × List (List ι) × List ι × List ι)) :
+def restPairs (source target : List (RestArrow (List ι))) :
     List (List ι × List ι) :=
   target.flatMap fun t => source.flatMap fun s =>
-    (t.1, s.1) :: (t.2.2.1, s.2.2.1) :: (s.2.2.2, t.2.2.2) :: t.2.1.zip s.2.1
+    (t.receiver, s.receiver) :: (t.arguments.2, s.arguments.2) :: (s.result, t.result) :: t.arguments.1.zip s.arguments.1
 
 /-- The pairs a record's coverage of another compares, key by key: fields
 both ways, views and optional fields, methods signature by signature and
@@ -183,11 +184,11 @@ def recordPairs [DecidableEq ι] (G : NormalGraph ι) (self : List ι)
     let own := ms.filter (·.key == q.key)
     let targetSchemes := q.schemes.flatMap schemeSigs
     (own.flatMap fun p =>
-      signaturePairs (p.calls.map fun c => ([], c.1, c.2)) (q.calls.map fun c => ([], c.1, c.2)) ++
+      signaturePairs (p.calls.map (·.withReceiver [])) (q.calls.map (·.withReceiver [])) ++
       (q.schemes.flatMap fun S' => p.schemes.map fun S => (S, S'))) ++
     ((keyed q.key ++ proto.flatMap fun P => (PositiveRules.viewOf G P q.key).toList).flatMap fun F =>
       (schemeSigs F).flatMap fun s =>
-        (s.signatures.map fun p => (self, p.1)) ++
+        (s.signatures.map fun p => (self, p.receiver)) ++
         targetSchemes.flatMap fun s' => signaturePairs s.signatures s'.signatures ++
           restPairs s.variadic s'.variadic)
 
@@ -204,7 +205,7 @@ def clausePairs [DecidableEq ι] (G : NormalGraph ι) (self : List ι) :
   | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T | .callable _ _ L S, .callable _ _ M T =>
     signaturePairs L M ++ restPairs S T
   | .ctors L _, .ctors M _ =>
-    signaturePairs (L.map fun p => ([], p.1, p.2)) (M.map fun p => ([], p.1, p.2))
+    signaturePairs (L.map fun p => ⟨[], p.1, p.2, .unrestricted⟩) (M.map fun p => ⟨[], p.1, p.2, .unrestricted⟩)
   | .list a bs, .list c ds | .pack a bs, .pack c ds =>
     (c :: ds).flatMap fun q => (a :: bs).flatMap fun p =>
       let pos (t : PositiveNormalization.Tuple (List ι)) := t.required ++ t.optional ++ t.rest.toList
@@ -318,11 +319,10 @@ def matchRow [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap �
                 ((s.bounds.zip s2.bounds).foldlM (fun st pq =>
                   matchRow G bs V fuel st κ pq.1.2 pq.2.2) (add st p [j])).bind fun st =>
                 ((s.signatures.zip s2.signatures).foldlM (fun st pq =>
-                  pairs st κ' (pq.1.1 :: pq.1.2.2 :: pq.1.2.1) (pq.2.1 :: pq.2.2.2 :: pq.2.2.1))
+                  if pq.1.effect != pq.2.effect then none else pairs st κ' pq.1.operands pq.2.operands)
                   st).bind fun st =>
                 (s.variadic.zip s2.variadic).foldlM (fun st pq =>
-                  pairs st κ' (pq.1.1 :: pq.1.2.2.1 :: pq.1.2.2.2 :: pq.1.2.1)
-                    (pq.2.1 :: pq.2.2.2.1 :: pq.2.2.2.2 :: pq.2.2.1)) st
+                  if pq.1.effect != pq.2.effect then none else pairs st κ' pq.1.operands pq.2.operands) st
               else none
             | none => none
           | none, [j] =>
@@ -385,21 +385,21 @@ def matchRow [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap �
       positional.orElse fun _ => bySet.orElse fun _ => byParts
 
 def matchSig [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap ι) (fuel : Nat)
-    (st : InstState ι) (κ : Ctx ι) (p q : List ι × List (List ι) × List ι) :
+    (st : InstState ι) (κ : Ctx ι) (p q : Arrow (List ι)) :
     Option (InstState ι) := do
-  if p.2.1.length ≠ q.2.1.length then none
+  if p.effect != q.effect || p.arguments.length != q.arguments.length then none
   -- A scheme receiver admitting every value admits the target's
   -- (`instSig`): it is not matched.
-  let pairs := if expand G p.1 = [.top] then (p.2.2 :: p.2.1).zip (q.2.2 :: q.2.1)
-    else (p.1 :: p.2.2 :: p.2.1).zip (q.1 :: q.2.2 :: q.2.1)
+  let pairs := if expand G p.receiver = [.top] then (p.result :: p.arguments).zip (q.result :: q.arguments)
+    else (p.receiver :: p.result :: p.arguments).zip (q.receiver :: q.result :: q.arguments)
   pairs.foldlM (fun st xy => matchRow G bs V fuel st κ xy.1 xy.2) st
 
 def matchRest [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap ι) (fuel : Nat)
-    (st : InstState ι) (κ : Ctx ι) (p q : List ι × List (List ι) × List ι × List ι) :
+    (st : InstState ι) (κ : Ctx ι) (p q : RestArrow (List ι)) :
     Option (InstState ι) := do
-  if p.2.1.length ≠ q.2.1.length then none
-  let pairs := if expand G p.1 = [.top] then (p.2.2.1 :: p.2.2.2 :: p.2.1).zip (q.2.2.1 :: q.2.2.2 :: q.2.1)
-    else (p.1 :: p.2.2.1 :: p.2.2.2 :: p.2.1).zip (q.1 :: q.2.2.1 :: q.2.2.2 :: q.2.1)
+  if p.effect != q.effect || p.arguments.1.length != q.arguments.1.length then none
+  let pairs := if expand G p.receiver = [.top] then (p.arguments.2 :: p.result :: p.arguments.1).zip (q.arguments.2 :: q.result :: q.arguments.1)
+    else (p.receiver :: p.arguments.2 :: p.result :: p.arguments.1).zip (q.receiver :: q.arguments.2 :: q.result :: q.arguments.1)
   pairs.foldlM (fun st xy => matchRow G bs V fuel st κ xy.1 xy.2) st
 
 
@@ -430,13 +430,11 @@ def nearPool [DecidableEq ι] (G : NormalGraph ι) (A B : Ty ι) : List (Ty ι) 
 `L`, `M`: find the binders' instances, then build the table under the context
 giving each binder its instance. Untrusted: `checkInstArrs` validates it. -/
 def instanceFor [DecidableEq ι] (G : NormalGraph ι) (fuel : Nat) (s : SchemeRow ι)
-    (L : PositiveRules.Ops ι) (M : List (List ι × List (List ι) × List ι × List ι))
+    (L : PositiveRules.Ops ι) (M : List (RestArrow (List ι)))
     (candidates : List (Ty ι) := []) :
     Option (PositiveCertificates.Instance ι) := do
-  let roots := s.signatures.flatMap (fun p => p.1 ++ p.2.1.flatten ++ p.2.2) ++
-    s.variadic.flatMap (fun p => p.1 ++ p.2.1.flatten ++ p.2.2.1 ++ p.2.2.2) ++
-    L.flatMap (fun q => q.1 ++ q.2.1.flatten ++ q.2.2) ++
-    M.flatMap (fun q => q.1 ++ q.2.1.flatten ++ q.2.2.1 ++ q.2.2.2)
+  let roots := (s.signatures.flatMap Arrow.operands ++ s.variadic.flatMap RestArrow.operands ++
+    L.flatMap Arrow.operands ++ M.flatMap RestArrow.operands).flatten
   let D := readsFrom G closureFuel roots
   let V := freeMapOf G D closureFuel []
   -- Each target signature matched against one of the scheme's, fixed
@@ -511,8 +509,8 @@ def protoInstances [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) (
           match PositiveRules.viewOf G P q.key with
           | some [i] => match G.schemes i with
             | some s =>
-              let L := q.calls.map fun t => (A, t.1, t.2)
-              let M := q.rests.map fun t => (A, t.1, t.2.1, t.2.2)
+              let L := q.calls.map (·.withReceiver A)
+              let M := q.rests.map (·.withReceiver A)
               (instanceFor G fuel s L M).bind fun c =>
                 if PositiveCertificates.checkInstArrs G [i] L M c then some ([i], L, M, c) else none
             | none => none
@@ -577,9 +575,9 @@ def memberProofs [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) (O 
   if expand G F = [] && m.schemes.contains F then return []
   let [.arrs L _] := expand G F | none
   L.mapM fun q => m.calls.findSome? fun c => do
-    if q.2.1.length != c.1.length then none
-    let ps ← (q.2.1.zip c.1).mapM fun (D, C) => subtype G pool D C
-    let pr ← subtype G pool c.2 q.2.2
+    if q.arguments.length != c.arguments.length || !c.effect.covers q.effect then none
+    let ps ← (q.arguments.zip c.arguments).mapM fun (D, C) => subtype G pool D C
+    let pr ← subtype G pool c.result q.result
     pure (ps, pr)
 
 def coerce [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
@@ -663,8 +661,8 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     | .makeAt (.graph _ _ _ _ caps kind rest) ns inits =>
       let some slots := ProgramCertificates.varSlots caps | return none
       let some ps := slots.mapM (fun i => (Γ[i]?).map fun C => leaf' i C) | return none
-      let arraysOf := fun (S : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)) =>
-        if rest then S.mapM fun p => pool.find? fun R => decide (RestStore G R p.2.2.1) else some []
+      let arraysOf := fun (S : List (RestArrow (Ty ι))) =>
+        if rest then S.mapM fun p => pool.find? fun R => decide (RestStore G R p.arguments.2) else some []
       let fresh := ns == [valueField] && inits == [.nul]
       return (A :: pool).findSome? fun F => do
         match kind, expand G F with
@@ -733,7 +731,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
       -- at the element rest's element, or a spread of a pool store type whose
       -- elements are; without one, each at its position in the rest's tuple.
       let variadic := fun (candidates : List (Ty ι)) => candidates.findSome? fun F => do
-        (restSigs G F).findSome? fun (Rt, Ps, P, B) => do
+        (restSigs G F).findSome? fun ⟨Rt, (Ps, P), B, effect⟩ => do
           -- Fixed actuals first; a shorter call omits trailing fixed positions,
           -- each proving `undefined`, and writes no further part.
           let k := min args.length Ps.length
@@ -756,7 +754,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
               let [.pack T []] := expand G P | none
               parts.zipIdx.mapM fun (a, i) => do recur Γ a (← positionTy T i)
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,B⟩
-            (.callRest k omitted.length flags P) (ef :: er :: eas ++ eus ++ eps)
+            (.callRest effect k omitted.length flags P) (ef :: er :: eas ++ eus ++ eps)
           if checkTree G e then coerce G pool e A else none
       let direct := fun (candidates : List (Ty ι)) => candidates.findSome? fun F => do
         let (L,r) ← match expand G F with
@@ -767,14 +765,14 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           -- Require every operand before searching the premises. A signature
           -- with more positions than the call writes is usable when each
           -- remaining contract admits `undefined`, the value bound there.
-          if args.length > p.2.1.length then none else do
-            let omitted := p.2.1.drop args.length
-            let _ ← subtype G pool p.2.2 A
+          if args.length > p.arguments.length then none else do
+            let omitted := p.arguments.drop args.length
+            let _ ← subtype G pool p.result A
             let ef ← recur Γ f F
-            let er ← recur Γ recv p.1
-            let eas ← (args.zip p.2.1).mapM fun (a,D) => recur Γ a D
+            let er ← recur Γ recv p.receiver
+            let eas ← (args.zip p.arguments).mapM fun (a,D) => recur Γ a D
             let eus ← omitted.mapM fun D => recur Γ .undef D
-            coerce G pool (.node ⟨Γ,t,p.2.2⟩ r (ef :: er :: eas ++ eus)) A
+            coerce G pool (.node ⟨Γ,t,p.result⟩ (r p.effect) (ef :: er :: eas ++ eus)) A
       if let some e := variadic own <|> direct own <|> variadic pool <|> direct pool then return some e
       -- A callee or, for a method dispatched on its object, the receiver.
       return splitReceiver f <|> splitReceiver recv

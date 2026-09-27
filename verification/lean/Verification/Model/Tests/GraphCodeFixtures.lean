@@ -16,8 +16,8 @@ def oneNode (arity : Nat) (body : Tm) (context : Nat) (kind : Invoke := .call) :
 /-- Its code requests at the signatures `sigs`, created in the context `Γ`:
 one per signature, its one node claimed at the signature's frame and result. -/
 def oneNodeCodes (arity : Nat) (body : Tm) (Γ : List (Ty Nat))
-    (sigs : List (Ty Nat × List (Ty Nat) × Ty Nat)) : List CodeRequest :=
-  sigs.map fun s => ⟨⟨arity, [body], [(.ret, none)], 0, Γ, s, none⟩, [⟨s.1 :: s.2.1.take arity ++ Γ, s.2.2⟩]⟩
+    (sigs : List (CallEffects.Arrow (Ty Nat))) : List CodeRequest :=
+  sigs.map fun s => ⟨⟨arity, [body], [(.ret, none)], 0, Γ, s, none⟩, [⟨s.receiver :: s.arguments.take arity ++ Γ, s.result⟩]⟩
 
 /-- Every code admitted: whether a code meets its signatures is its table's
 question, not its creation's. -/

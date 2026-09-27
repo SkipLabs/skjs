@@ -186,8 +186,8 @@ try {
       for (const clause of row)
         if (typeof clause !== "string" && "arrs" in clause)
           for (const arrow of clause.arrs.arrows)
-            if (JSON.stringify(arrow[0]) !== JSON.stringify([topLabel])) {
-              arrow[0] = [topLabel];
+            if (JSON.stringify(arrow.receiver) !== JSON.stringify([topLabel])) {
+              arrow.receiver = [topLabel];
               changed++;
             }
     assert(changed > 0, "the fixture has a receiver-dependent signature");

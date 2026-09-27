@@ -8,9 +8,9 @@ def G : NormalGraph (Fin 7) := .ofRows fun i => match i.val with
   | 0 => [.nul]
   | 1 => [.bool]
   | 2 => [.refs [(valueField, [1])] [] []]
-  | 3 => [.arrs [([6], [[0]], [1]), ([6], [[1]], [0])] []]
-  | 4 => [.arrs [([6], [[0, 1]], [0, 1])] []]
-  | 5 => [.arrs [([6], [[3]], [1])] []]
+  | 3 => [.arrs [⟨[6], [[0]], [1], .unrestricted⟩, ⟨[6], [[1]], [0], .unrestricted⟩] []]
+  | 4 => [.arrs [⟨[6], [[0, 1]], [0, 1], .unrestricted⟩] []]
+  | 5 => [.arrs [⟨[6], [[3]], [1], .unrestricted⟩] []]
   | _ => [.undef]
 
 /-- A single closure implementing both signatures of label 3: graph code of one
@@ -22,8 +22,8 @@ def dispatch : Tm :=
 /-- Genuine overload subsumption: splitting a union domain across two signatures. -/
 def widenCert : Proof (Fin 7) := .core
   ⟨[([3], [4]), ([0], [0]), ([1], [1]), ([0], [0, 1]), ([1], [0, 1]), ([6], [6])],
-    [([([6], [[0]], [1]), ([6], [[1]], [0])], (([6], [[0, 1]], [0, 1]),
-      .union [] [0] [1] [] (.source ([6], [[0]], [1])) (.source ([6], [[1]], [0]))))]⟩
+    [([⟨[6], [[0]], [1], .unrestricted⟩, ⟨[6], [[1]], [0], .unrestricted⟩], (⟨[6], [[0, 1]], [0, 1], .unrestricted⟩,
+      .union [] [0] [1] [] (.source ⟨[6], [[0]], [1], .unrestricted⟩) (.source ⟨[6], [[1]], [0], .unrestricted⟩)))]⟩
 
 #guard check G [3] [4] widenCert
 #guard !(check G [4] [3] widenCert)
@@ -58,9 +58,9 @@ theorem program_typed : HasTy G [[3]] programBody [0, 1] := by
   apply HasTy.letE (A := [2]) (.var rfl)
   apply HasTy.letE (A := [0]) (.write (A := [1]) (.var rfl) (by rfl) (by simp) (.fls (by rfl)) (by rfl))
   apply HasTy.letE (A := [0])
-    (.app (Rt := [6]) (xs := [([1],.tru)]) (Us := []) (.var rfl) (by rfl) (by simp) (.undef (by rfl))
+    (.app (effect := .unrestricted) (Rt := [6]) (xs := [([1],.tru)]) (Us := []) (.var rfl) (by rfl) (by simp) (.undef (by rfl))
       (by intro p hp; cases List.mem_singleton.mp hp; exact .tru (by rfl)) (by simp))
-  exact .app (Rt := [6]) (xs := [([0,1],.nul)]) (Us := [])
+  exact .app (effect := .unrestricted) (Rt := [6]) (xs := [([0,1],.nul)]) (Us := [])
     (.sub (.var rfl) (by decide : check G [3] [4] widenCert = true)) (by rfl) (by simp)
     (.undef (by rfl))
     (by intro p hp; cases List.mem_singleton.mp hp

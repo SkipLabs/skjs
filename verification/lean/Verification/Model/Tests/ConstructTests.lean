@@ -11,7 +11,7 @@ Boolean, 5 a function taking and returning a Boolean, 6 unknown. -/
 def types : List (List (Clause (List Nat))) :=
   [[.nul], [.boolLit true], [.boolLit false], [.undef],
    [.ctors [([[1, 2]], [1, 2])]],
-   [.arrs [([6], [[1, 2]], [1, 2])] []], [.top]]
+   [.arrs [⟨[6], [[1, 2]], [1, 2], .unrestricted⟩] []], [.top]]
 
 def G : NormalGraph Nat := .ofRows fun i => types[i]?.getD []
 

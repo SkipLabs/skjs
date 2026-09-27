@@ -10,6 +10,7 @@ has the current shape or is refused. -/
 namespace Verification.Model.RequestJson
 open Lean ProgramTyping PositiveNormalization PositiveGraphs PositiveRules
 open ProgramCertificates PointClaims ControlFlow CertificateProducer
+open CallEffects (Arrow RestArrow Contract Effect)
 
 /-- A string key is its JSON string, so a document naming only string keys
 reads as it always has; a symbol key is `{"symbol": id}`. -/
@@ -65,6 +66,8 @@ private def derivedTmFromJson : Json → Except String Tm := fromJson?
 instance (priority := high) : ToJson Tm := ⟨fun t => closureKinds false (derivedTmToJson t)⟩
 instance (priority := high) : FromJson Tm := ⟨fun j => derivedTmFromJson (closureKinds true j)⟩
 deriving instance ToJson, FromJson for PositiveNormalization.Tuple
+deriving instance ToJson, FromJson for Effect
+deriving instance ToJson, FromJson for Contract
 deriving instance ToJson, FromJson for MethodMembers.Sig
 deriving instance ToJson, FromJson for OptionalField
 deriving instance ToJson, FromJson for KeyBound
@@ -130,9 +133,9 @@ row has clauses; the graph reads the others as scheme, parameter and meet
 rows. -/
 inductive Row where
   | clauses (union : List (Clause (List Nat)))
-  | scheme (binders : List Nat) (signatures : List (List Nat × List (List Nat) × List Nat))
+  | scheme (binders : List Nat) (signatures : List (Arrow (List Nat)))
       (bounds : List (Nat × List Nat))
-      (variadic : List (List Nat × List (List Nat) × List Nat × List Nat))
+      (variadic : List (RestArrow (List Nat)))
   /-- `name` identifies the binder the row stands for (its spelling, where it
   is declared, and its colour); it carries no meaning. -/
   | param (label : Nat) (name : String) (kind : ParameterKind)
@@ -314,22 +317,8 @@ def graph (r : Request) : NormalGraph Nat := tableGraph r.types
 
 def validTy (bound : Nat) (A : Ty Nat) : Bool := A.all (fun i => i < bound)
 
-def clauseTypes : Clause (Ty Nat) → List (Ty Nat)
-  | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .str | .strLit _ | .bigint | .bigintLit _ | .symbol
-  | .top => []
-  | .list a bs => (a :: bs).flatMap fun t => t.required ++ t.optional ++ t.rest.toList
-  | .pack a bs => (a :: bs).flatMap fun t => t.required ++ t.optional ++ t.rest.toList
-  | .refs A bs vs os ms _ => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd ++
-      os.map (·.type) ++ ms.flatMap MethodMembers.Sig.operands
-  | .dict A bs vs ds os ms _ cs => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd ++
-      ds.map Prod.snd ++ os.map (·.type) ++ ms.flatMap MethodMembers.Sig.operands ++ cs.map Prod.snd
-
-  | .arrs L S => L.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2]) ++
-      S.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2.1, p.2.2.2])
-  | .callable A bs L S =>
-      A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ L.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2]) ++
-        S.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2.1, p.2.2.2])
-  | .ctors L S => L.flatMap (fun p => p.1 ++ [p.2]) ++ S.flatMap fun p => p.1 ++ [p.2.1, p.2.2]
+/-- Use the clause language's operand traversal for boundary validation too. -/
+def clauseTypes : Clause (Ty Nat) → List (Ty Nat) := Clause.operands
 
 def validClaim (bound : Nat) (c : PointClaim Nat) : Bool :=
   (c.type :: c.context).all (validTy bound)
@@ -337,9 +326,9 @@ def validClaim (bound : Nat) (c : PointClaim Nat) : Bool :=
 /-- The labels a row names. -/
 def rowTypes : Row → List (Ty Nat)
   | .clauses cs => cs.flatMap clauseTypes
-  | .scheme bs sigs bounds rests => bs :: (sigs.flatMap fun p => p.1 :: p.2.2 :: p.2.1) ++
+  | .scheme bs sigs bounds rests => bs :: sigs.flatMap Arrow.operands ++
       bounds.map (fun b => b.1 :: b.2) ++
-      rests.flatMap fun p => p.1 :: p.2.2.1 :: p.2.2.2 :: p.2.1
+      rests.flatMap RestArrow.operands
   | .param _ _ _ => []
   | .meet p cs ps => (p :: ps) :: cs.flatMap clauseTypes
 
@@ -364,21 +353,21 @@ def validRequest (r : Request) : Bool :=
   r.claims.all (validClaim r.types.length) && validTy r.types.length r.result &&
   r.inputs.all (validTy r.types.length) &&
   r.codes.all fun q => q.claims.all (validClaim r.types.length) &&
-    (q.entry.row.1 :: q.entry.row.2.2 :: q.entry.row.2.1 ++ q.entry.captures ++
+    (q.entry.row.operands ++ q.entry.captures ++
       q.entry.store.toList).all
       (validTy r.types.length)
 
 def arrowTypes : PositiveCertificates.ArrowCert Nat → List (Ty Nat)
   | .empty | .emptyRecv => []
-  | .source p => p.1 :: p.2.1 ++ [p.2.2]
-  | .rest s => s.1 :: s.2.1 ++ [s.2.2.1, s.2.2.2]
+  | .source p => p.operands
+  | .rest s => s.operands
   | .union pre a b suffix l r => pre ++ [a,b] ++ suffix ++ arrowTypes l ++ arrowTypes r
   | .recvUnion a b l r => a :: b :: (arrowTypes l ++ arrowTypes r)
-  | .combine a b l r => a :: b :: (arrowTypes l ++ arrowTypes r)
+  | .combine a b _ _ l r => a :: b :: (arrowTypes l ++ arrowTypes r)
 
 def certificateTypes (c : PositiveCertificates.Certificate Nat) : List (Ty Nat) :=
   c.table.flatMap (fun p => [p.1,p.2]) ++ c.arrows.flatMap (fun e =>
-    e.1.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2]) ++ e.2.1.1 :: e.2.1.2.1 ++ [e.2.1.2.2] ++
+    e.1.flatMap Arrow.operands ++ e.2.1.operands ++
       arrowTypes e.2.2)
 
 def instanceTypes (c : PositiveCertificates.Instance Nat) : List (Ty Nat) :=
@@ -396,8 +385,8 @@ def proofTypes : PositiveCertificates.Proof Nat → List (Ty Nat)
   | .table tbl D V => D :: V.flatMap (fun p => [[p.1], p.2]) ++
       tbl.flatMap (fun e => [e.1] :: e.2.2 :: e.2.1.flatMap (fun p => [[p.1], p.2]))
   | .core c ks => certificateTypes c ++ ks.flatMap (fun k => k.1 ::
-      k.2.1.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2]) ++
-      k.2.2.1.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2.1, p.2.2.2]) ++ instanceTypes k.2.2.2)
+      k.2.1.flatMap Arrow.operands ++
+      k.2.2.1.flatMap RestArrow.operands ++ instanceTypes k.2.2.2)
 
 def validEvidence (bound : Nat) : ProgramCertificates.Evidence Nat → Bool
   | .node j r ps =>
@@ -409,7 +398,7 @@ def validEvidence (bound : Nat) : ProgramCertificates.Evidence Nat → Bool
       | .ifBoolVar T F => validTy bound T && validTy bound F
       | .funGraph As | .callableGraph As => As.all (validTy bound)
       | .ctorGraph U => validTy bound U
-      | .callRest _ _ _ E => validTy bound E
+      | .callRest _ _ _ _ E => validTy bound E
       | .arrCopy E => validTy bound E
       | .readProto P => validTy bound P
       | .elemOpt U | .elemAny U => validTy bound U
@@ -584,7 +573,7 @@ signature describes, at the signature's result. What it may create is the
 table checked before it, not part of this request. -/
 def CodeRequest.asRequest (r : Request) (q : CodeRequest) : Request :=
   { types := r.types, program := GraphCode.program q.entry.exprs q.entry.conts, claims := q.claims,
-    result := q.entry.row.2.2, start := q.entry.start,
+    result := q.entry.row.result, start := q.entry.start,
     inputs := codeFrame q.entry.arity q.entry.row q.entry.captures q.entry.store, codes := [] }
 
 /-- Search one graph's certificate, the codes of `table` admitted. -/

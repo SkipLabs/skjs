@@ -13,7 +13,7 @@ private def leaf (Γ : List (Ty (Fin 7))) (t : Tm) (A : Ty (Fin 7)) (r : Rule (F
 def callCaptured : Tm := .app (.var 0) .nul
 
 /-- The callee, the `undefined` receiver at label 6, the actual. -/
-def callEvidence : Evidence (Fin 7) := .node ⟨[[3],[2]],callCaptured,[1]⟩ .app
+def callEvidence : Evidence (Fin 7) := .node ⟨[[3],[2]],callCaptured,[1]⟩ (.app .unrestricted)
   [leaf [[3],[2]] (.var 0) [3] .var, leaf [[3],[2]] .undef [6] .undef, leaf [[3],[2]] .nul [0] .nul]
 
 /-- The dispatching closure's graph code: one node, run from the frame of the

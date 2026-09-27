@@ -13,8 +13,8 @@ private def checkCoreSource [DecidableEq ι] (G : PositiveGraphs.Graph ι) (S T 
 #guard normalize (Formula.inter (.atom (.refs [("value", (0 : Nat))] [] []))
   (.union (.atom (.refs [("value", 1)] [] [])) (.atom .nul)))
     = [.refs [("value", 0), ("value", 1)] [] []]
-#guard normalize (Formula.inter (.atom (.arrs [((2 : Nat), [(0 : Nat)], 1)] []))
-  (.atom (.arrs [(2, [1], 0)] []))) = [.arrs [(2, [0], 1), (2, [1], 0)] []]
+#guard normalize (Formula.inter (.atom (.arrs [⟨(2 : Nat), [(0 : Nat)], 1, .unrestricted⟩] []))
+  (.atom (.arrs [⟨2, [1], 0, .unrestricted⟩] []))) = [.arrs [⟨2, [0], 1, .unrestricted⟩, ⟨2, [1], 0, .unrestricted⟩] []]
 #guard normalize (Formula.inter (.atom (.refs [("value", (0 : Nat))] [] [])) (.atom .bool)) = []
 
 -- A dictionary constrains every present field. Normalization preserves its
@@ -42,8 +42,8 @@ def G : PositiveGraphs.Graph (Fin 12) := fun i => match i.val with
   | 6 => .inter (.atom (.refs [(valueField, [3])] [] [])) (.atom (.refs [(valueField, [7])] [] []))
   | 7 => .atom (.refs [(valueField, [1])] [] [])
   | 8 => .atom (.refs [(valueField, [3])] [] [])
-  | 9 => .inter (.atom (.arrs [([0], [[0]], [0])] [])) (.atom (.arrs [([0], [[1]], [0])] []))
-  | 10 => .atom (.arrs [([0], [[0, 1]], [0])] [])
+  | 9 => .inter (.atom (.arrs [⟨[0], [[0]], [0], .unrestricted⟩] [])) (.atom (.arrs [⟨[0], [[1]], [0], .unrestricted⟩] []))
+  | 10 => .atom (.arrs [⟨[0], [[0, 1]], [0], .unrestricted⟩] [])
   | _ => .inter (.atom .nul) (.atom .bool)
 
 -- Conjunction elimination, including nested reference constraints.
@@ -96,8 +96,8 @@ def WritableG : PositiveGraphs.Graph (Fin 8) := fun i => match i.val with
 -- Previously supported domain splitting survives the representation extension.
 def splitCert : Certificate (Fin 12) :=
   ⟨[([9], [10]), ([0], [0]), ([1], [1])],
-    [([([0], [[0]], [0]), ([0], [[1]], [0])], (([0], [[0, 1]], [0]),
-      .union [] [0] [1] [] (.source ([0], [[0]], [0])) (.source ([0], [[1]], [0]))))]⟩
+    [([⟨[0], [[0]], [0], .unrestricted⟩, ⟨[0], [[1]], [0], .unrestricted⟩], (⟨[0], [[0, 1]], [0], .unrestricted⟩,
+      .union [] [0] [1] [] (.source ⟨[0], [[0]], [0], .unrestricted⟩) (.source ⟨[0], [[1]], [0], .unrestricted⟩)))]⟩
 #guard checkCoreSource G [9] [10] splitCert
 #guard !(checkCoreSource G [10] [9] splitCert)
 
@@ -107,16 +107,16 @@ def TripleG : PositiveGraphs.Graph (Fin 5) := fun i => match i.val with
   | 0 => .atom .nul
   | 1 => .atom .bool
   | 2 => .atom (.arrs [] [])
-  | 3 => .atom (.arrs [([0], [[0]], [0, 1]), ([0], [[0]], [1, 2]), ([0], [[0]], [0, 2])] [])
-  | _ => .atom (.arrs [([0], [[0]], [])] [])
+  | 3 => .atom (.arrs [⟨[0], [[0]], [0, 1], .unrestricted⟩, ⟨[0], [[0]], [1, 2], .unrestricted⟩, ⟨[0], [[0]], [0, 2], .unrestricted⟩] [])
+  | _ => .atom (.arrs [⟨[0], [[0]], [], .unrestricted⟩] [])
 
 def tripleCert : Certificate (Fin 5) :=
   ⟨[([3], [4]), ([0], [0]), ([1], [1]), ([0, 1], [0, 1]),
     ([1, 2], [1, 2]), ([0, 2], [0, 2])],
-   [([([0], [[0]], [0, 1]), ([0], [[0]], [1, 2]), ([0], [[0]], [0, 2])], (([0], [[0]], []),
-     .combine [1] [0, 2]
-       (.combine [0, 1] [1, 2] (.source ([0], [[0]], [0, 1])) (.source ([0], [[0]], [1, 2])))
-       (.source ([0], [[0]], [0, 2]))))]⟩
+   [([⟨[0], [[0]], [0, 1], .unrestricted⟩, ⟨[0], [[0]], [1, 2], .unrestricted⟩, ⟨[0], [[0]], [0, 2], .unrestricted⟩], (⟨[0], [[0]], [], .unrestricted⟩,
+     .combine [1] [0, 2] .unrestricted .unrestricted
+       (.combine [0, 1] [1, 2] .unrestricted .unrestricted (.source ⟨[0], [[0]], [0, 1], .unrestricted⟩) (.source ⟨[0], [[0]], [1, 2], .unrestricted⟩))
+       (.source ⟨[0], [[0]], [0, 2], .unrestricted⟩)))]⟩
 #guard checkCoreSource TripleG [3] [4] tripleCert
 
 -- A `bool` source clause is covered by the pair of Boolean singleton clauses.
@@ -167,12 +167,12 @@ theorem checked_boolean_split : FamLe
 -- Operands related by label inclusion need no rows of their own.
 #guard checkCoreSource G [9] [10] ⟨[([9], [10])], splitCert.arrows⟩
 #guard !(checkArrow (normalizeGraph G) [([0], [0]), ([1], [1])]
-  [([0], [[0]], [0]), ([0], [[1]], [0])] [] [0] [[0, 1]] [0]
-  (.union [] [0] [] [] (.source ([0], [[0]], [0])) .empty))
+  [⟨[0], [[0]], [0], .unrestricted⟩, ⟨[0], [[1]], [0], .unrestricted⟩] [] ⟨[0], [[0, 1]], [0], .unrestricted⟩
+  (.union [] [0] [] [] (.source ⟨[0], [[0]], [0], .unrestricted⟩) .empty))
 -- A receiver is contravariant: a signature for `null` receivers does not
 -- meet one that promises calls with Boolean receivers.
 #guard !(checkArrow (normalizeGraph G) [([0], [0]), ([1], [1])]
-  [([0], [[0]], [0])] [] [1] [[0]] [0] (.source ([0], [[0]], [0])))
+  [⟨[0], [[0]], [0], .unrestricted⟩] [] ⟨[1], [[0]], [0], .unrestricted⟩ (.source ⟨[0], [[0]], [0], .unrestricted⟩))
 
 example : PositiveRules.Sub (normalizeGraph G) [0, 0] [1, 0] :=
   check_sound (by decide : check (normalizeGraph G) [0, 0] [1, 0]

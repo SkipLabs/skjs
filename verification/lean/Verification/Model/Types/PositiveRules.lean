@@ -3,19 +3,19 @@ import Verification.Model.Types.PositiveGraphs
 /-! Declarative subtyping for positive recursive graphs. Rules have only finite
 syntactic premises; semantic soundness is a separate theorem. -/
 namespace Verification.Model.PositiveRules
-open PositiveNormalization PositiveGraphs ReferenceConjunctions Tower
+open PositiveNormalization PositiveGraphs ReferenceConjunctions Tower CallEffects
 
 abbrev Table (ι : Type) := List (List ι × List ι)
 /-- A table's relation: its rows, and label inclusion, which needs no row: a
 type is within any type listing its labels. -/
 abbrev Rel (table : Table ι) (a b : List ι) : Prop := (a, b) ∈ table ∨ ∀ i ∈ a, i ∈ b
 
-/-- Fixed signatures `(receiver, parameters, result)`. -/
-abbrev Ops (ι : Type) := List (List ι × List (List ι) × List ι)
+/-- Fixed signatures, including their required per-call effect. -/
+abbrev Ops (ι : Type) := List (Arrow (List ι))
 
 /-- Rows known, by a proof outside a table, to be below an arrow clause: a
 scheme row, and the fixed and variadic signatures of one of its instances. -/
-abbrev Known (ι : Type) := List (List ι × Ops ι × List (List ι × List (List ι) × List ι × List ι))
+abbrev Known (ι : Type) := List (List ι × Ops ι × List (RestArrow (List ι)))
 /-- The clauses of a type's clause rows. -/
 def clausesOf (G : NormalGraph ι) (S : List ι) : List (Clause (List ι)) := S.flatMap G
 
@@ -504,41 +504,42 @@ target's first positions are within its fixed parameters, its rest is an
 element rest with its further positions within the element, and its result
 within the target's. -/
 def RestFixed (elem : List ι → Option (List ι)) (R : List ι → List ι → Prop)
-    (s : List ι × List (List ι) × List ι × List ι)
-    (Rt : List ι) (As : List (List ι)) (d : List ι) : Prop :=
-  R Rt s.1 ∧ Domains R (As.take s.2.1.length) s.2.1 ∧
-    ElemRest elem R (As.drop s.2.1.length) s.2.2.1 ∧ (s.2.2.2 = [] ∨ R s.2.2.2 d)
+    (s : RestArrow (List ι)) (q : Arrow (List ι)) : Prop :=
+  R q.receiver s.receiver ∧ Domains R (q.arguments.take s.arguments.1.length) s.arguments.1 ∧
+    ElemRest elem R (q.arguments.drop s.arguments.1.length) s.arguments.2 ∧
+    (s.result = [] ∨ R s.result q.result) ∧ s.effect.covers q.effect = true
 
-/-- One variadic signature covers another: the target's receiver is within the
-source's; the target's fixed parameters are within the source's, then taken
-into its rest; the target's rest is within the source's; results are
-covariant. -/
+/-- One variadic signature covers another: input contracts are contravariant,
+results covariant, and the source must supply the target's effect. -/
 def RestCovers (elem : List ι → Option (List ι)) (R : List ι → List ι → Prop)
-    (p q : List ι × List (List ι) × List ι × List ι) : Prop :=
-  R q.1 p.1 ∧ Domains R (q.2.1.take p.2.1.length) p.2.1 ∧
-    IntoRest elem R (q.2.1.drop p.2.1.length) p.2.2.1 ∧ R q.2.2.1 p.2.2.1 ∧ R p.2.2.2 q.2.2.2
+    (p q : RestArrow (List ι)) : Prop :=
+  R q.receiver p.receiver ∧ Domains R (q.arguments.1.take p.arguments.1.length) p.arguments.1 ∧
+    IntoRest elem R (q.arguments.1.drop p.arguments.1.length) p.arguments.2 ∧
+    R q.arguments.2 p.arguments.2 ∧ R p.result q.result ∧ p.effect.covers q.effect = true
 
-/-- Declarative overload coverage for native signatures with receivers. A
-target `(Rt, As, d)` is covered by a fixed source signature, by a variadic
-one, by splitting a union at the receiver or at a parameter position, or by
-combining two coverings. The receiver is contravariant, like a parameter. -/
+/-- Declarative overload coverage. Every recursive obligation carries the
+complete target signature, so splitting domains cannot lose its effect.
+Combining result guarantees must also establish the target effect. -/
 inductive CallArrow (compat : ι → ι → Bool) (elem : List ι → Option (List ι))
-    (R : List ι → List ι → Prop)
-    (L : List (List ι × List (List ι) × List ι))
-    (S : List (List ι × List (List ι) × List ι × List ι)) :
-    List ι → List (List ι) → List ι → Prop where
-  | emptyRecv : CallArrow compat elem R L S [] As d
-  | empty : [] ∈ As → CallArrow compat elem R L S Rt As d
-  | source : p ∈ L → R Rt p.1 → Domains R As p.2.1 → (p.2.2 = [] ∨ R p.2.2 d) →
-      CallArrow compat elem R L S Rt As d
-  | rest : s ∈ S → RestFixed elem R s Rt As d → CallArrow compat elem R L S Rt As d
-  | union : CallArrow compat elem R L S Rt (pre ++ a :: suffix) d →
-      CallArrow compat elem R L S Rt (pre ++ b :: suffix) d →
-      CallArrow compat elem R L S Rt (pre ++ (a ++ b) :: suffix) d
-  | recvUnion : CallArrow compat elem R L S a As d → CallArrow compat elem R L S b As d →
-      CallArrow compat elem R L S (a ++ b) As d
-  | combine : CallArrow compat elem R L S Rt As b → CallArrow compat elem R L S Rt As b' →
-      (∀ i ∈ b, ∀ k ∈ b', compat i k = true → R [i] d) → CallArrow compat elem R L S Rt As d
+    (R : List ι → List ι → Prop) (L : List (Arrow (List ι))) (S : List (RestArrow (List ι))) :
+    Arrow (List ι) → Prop where
+  | emptyRecv : q.receiver = [] → CallArrow compat elem R L S q
+  | empty : [] ∈ q.arguments → CallArrow compat elem R L S q
+  | source : p ∈ L → R q.receiver p.receiver → Domains R q.arguments p.arguments →
+      (p.result = [] ∨ R p.result q.result) → p.effect.covers q.effect = true →
+      CallArrow compat elem R L S q
+  | rest : s ∈ S → RestFixed elem R s q → CallArrow compat elem R L S q
+  | union : q.arguments = pre ++ (a ++ b) :: suffix →
+      CallArrow compat elem R L S { q with arguments := pre ++ a :: suffix } →
+      CallArrow compat elem R L S { q with arguments := pre ++ b :: suffix } →
+      CallArrow compat elem R L S q
+  | recvUnion : q.receiver = a ++ b →
+      CallArrow compat elem R L S { q with receiver := a } →
+      CallArrow compat elem R L S { q with receiver := b } → CallArrow compat elem R L S q
+  | combine : CallArrow compat elem R L S { q with result := b, effect := e } →
+      CallArrow compat elem R L S { q with result := b', effect := e' } →
+      (∀ i ∈ b, ∀ k ∈ b', compat i k = true → R [i] q.result) →
+      (e.meet e').covers q.effect = true → CallArrow compat elem R L S q
 
 /-- An arrow's source result within the target's, or empty. -/
 theorem arrow_result {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop} {n : Nat} {r d : List ι}
@@ -549,69 +550,69 @@ theorem arrow_result {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι
   · obtain ⟨i, hi, _⟩ := hu; simp [he] at hi
   · exact hr m hm _ _ he V u hu
 
-theorem CallArrow.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R L S Rt As d}
-    (hc : CallArrow (compatible G) (restElem G) R L S Rt As d) (n : Nat)
+theorem CallArrow.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R L S q}
+    (hc : CallArrow (compatible G) (restElem G) R L S q) (n : Nat)
     (hr : ∀ j, j < n → ∀ a b, R a b → FamLeAt G η a b j)
     (W : WorldT n) (v : Val)
-    (hv : callsT (L.map fun p => (mixedValues G η p.1, p.2.1.map (mixedValues G η), mixedValues G η p.2.2)) n W v ∧
-      restsT (S.map fun s => (mixedValues G η s.1, s.2.1.map (mixedValues G η), mixedArgs G η s.2.2.1,
-        mixedValues G η s.2.2.2)) n W v) :
-    Promise (ArgsShort (As.map (mixedValues G η))) (mixedValues G η Rt) (mixedValues G η d) n W v := by
+    (hv : CallEffects.callsT (L.map (Arrow.map (mixedValues G η))) n W v ∧
+      CallEffects.restsT (S.map (RestArrow.mapWith (mixedValues G η) (mixedArgs G η))) n W v) :
+    PromiseWith q.effect (ArgsShort (q.arguments.map (mixedValues G η)))
+      (mixedValues G η q.receiver) (mixedValues G η q.result) n W v := by
   induction hc with
-  | emptyRecv =>
+  | emptyRecv he =>
     intro j hj U hx hu heap hh r hrv hrm
     obtain ⟨i, hi, _⟩ := hrm
-    simp at hi
+    simp [he] at hi
   | empty he =>
     intro j hj U hx hu heap hh r hrv hrm args hvals ha
     exact False.elim (short_empty he ha)
-  | source hm hrecv hd hres =>
-    exact (hv.1.2 _ (List.mem_map_of_mem hm)).weaken
+  | source hm hrecv hd hres he =>
+    exact (hv.1.2 _ (List.mem_map_of_mem hm)).weaken (Effect.covers_sound he)
       (fun j hj U r hrm => hr j hj _ _ hrecv U r hrm)
       (fun j hj U args ha => Domains.short (hr j hj) hd ha) (arrow_result hr hres)
   | rest hs hrf =>
-    obtain ⟨hrecv, hd, hel, hres⟩ := hrf
+    obtain ⟨hrecv, hd, hel, hres, he⟩ := hrf
     unfold ElemRest at hel
     split at hel
     · rename_i El hE
-      exact (hv.2.2 _ (List.mem_map_of_mem hs)).weaken
+      exact (hv.2.2 _ (List.mem_map_of_mem hs)).weaken (Effect.covers_sound he)
         (fun j hj U r hrm => hr j hj _ _ hrecv U r hrm)
-        (fun j hj U args ha => rest_short (hr j hj) hE (by simpa using hd)
-          (by simpa using hel) ha) (arrow_result hr hres)
+        (fun j hj U args ha => rest_short (hr j hj) hE hd hel ha) (arrow_result hr hres)
     · exact hel.elim
-  | union _ _ hl hh =>
+  | union he _ _ hl hh =>
     intro j hj U hx hu heap hok r hrv hrm args hvals ha
+    rw [he] at ha
     rcases short_union _ _ _ _ ha with ha | ha
     · exact hl j hj U hx hu heap hok r hrv hrm args hvals ha
     · exact hh j hj U hx hu heap hok r hrv hrm args hvals ha
-  | recvUnion _ _ hl hh =>
+  | recvUnion he _ _ hl hh =>
     intro j hj U hx hu heap hok r hrv hrm args hvals ha
     obtain ⟨i, hi, hvi⟩ := hrm
+    rw [he] at hi
     rcases List.mem_append.mp hi with hi | hi
     · exact hl j hj U hx hu heap hok r hrv ⟨i, hi, hvi⟩ args hvals ha
     · exact hh j hj U hx hu heap hok r hrv ⟨i, hi, hvi⟩ args hvals ha
-  | combine _ _ hg hl hh =>
-    intro j hj U hx hu heap hok r hrv hrm args hvals ha
-    obtain ⟨r1, hi1, hs1⟩ := hl j hj U hx hu heap hok r hrv hrm args hvals ha
-    obtain ⟨r2, hi2, hs2⟩ := hh j hj U hx hu heap hok r hrv hrm args hvals ha
-    cases CallArguments.invoke_deterministic hi1 hi2
-    refine ⟨r1, hi1, safe_cross_upto j ?_ U U heap _ hok hok hs1 hs2⟩
-    rintro r hb V V' heap h1 h2 u ⟨i, hi, hv1⟩ ⟨k, hk, hv2⟩
-    exact hr r (by omega) _ _ (hg i hi k hk (mixed_compatible hv1 hv2)) V u
-      ⟨i, by simp, hv1⟩
+  | combine _ _ hg he hl hh =>
+    have combined := hl.combine hh (fun j hj r hb V V' heap h1 h2 u hv1 hv2 => by
+      obtain ⟨i, hi, hv1⟩ := hv1
+      obtain ⟨k, hk, hv2⟩ := hv2
+      exact hr r (by omega) _ _ (hg i hi k hk (mixed_compatible hv1 hv2)) V u
+        ⟨i, by simp, hv1⟩)
+    exact combined.weaken (Effect.covers_sound he)
+      (fun _ _ _ _ h => h) (fun _ _ _ _ h => h) (fun _ _ _ _ h => h)
 
 theorem rest_covers_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
-    {p q : List ι × List (List ι) × List ι × List ι} (hc : RestCovers (restElem G) R p q) (n : Nat)
+    {p q : RestArrow (List ι)} (hc : RestCovers (restElem G) R p q) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
     (W : WorldT n) (v : Val)
-    (hv : Promise (ArgsRest (p.2.1.map (mixedValues G η)) (mixedArgs G η p.2.2.1)) (mixedValues G η p.1)
-      (mixedValues G η p.2.2.2) n W v) :
-    Promise (ArgsRest (q.2.1.map (mixedValues G η)) (mixedArgs G η q.2.2.1)) (mixedValues G η q.1)
-      (mixedValues G η q.2.2.2) n W v := by
-  obtain ⟨hrecv, hd, hel, he, hres⟩ := hc
-  exact hv.weaken (fun j hj U r hrm => hr j hj _ _ hrecv U r hrm)
-    (fun j hj U args ha => rest_rest (hr j hj) (hpa j hj _ _ he) (by simpa using hd)
-    (by simpa using hel) ha) (fun m hm U u hu => hr m hm _ _ hres U u hu)
+    (hv : PromiseWith p.effect (ArgsRest (p.arguments.1.map (mixedValues G η)) (mixedArgs G η p.arguments.2))
+      (mixedValues G η p.receiver) (mixedValues G η p.result) n W v) :
+    PromiseWith q.effect (ArgsRest (q.arguments.1.map (mixedValues G η)) (mixedArgs G η q.arguments.2))
+      (mixedValues G η q.receiver) (mixedValues G η q.result) n W v := by
+  obtain ⟨hrecv, hd, hel, he, hres, heffect⟩ := hc
+  exact hv.weaken (Effect.covers_sound heffect) (fun j hj U r hrm => hr j hj _ _ hrecv U r hrm)
+    (fun j hj U args ha => rest_rest (hr j hj) (hpa j hj _ _ he) hd hel ha)
+    (fun m hm U u hu => hr m hm _ _ hres U u hu)
 
 /-- One record conjunction covers another when every field any target operand
 names is named by some source operand, with contracts that imply each other.
@@ -662,9 +663,9 @@ def meetClauses (G : NormalGraph ι) (i : ι) : List (Clause (List ι)) :=
 signatures' rows, a meet row its clauses' operands. -/
 def reads (G : NormalGraph ι) (i : ι) : List ι :=
   match G.schemes i with
-  | some s => s.signatures.flatMap (fun p => p.1 ++ p.2.1.flatten ++ p.2.2) ++
+  | some s => s.signatures.flatMap (fun p => p.operands.flatten) ++
       s.bounds.flatMap (·.2) ++
-      s.variadic.flatMap (fun p => p.1 ++ p.2.1.flatten ++ p.2.2.1 ++ p.2.2.2)
+      s.variadic.flatMap (fun p => p.operands.flatten)
   | none => (G i ++ meetClauses G i).flatMap fun c => c.operands.flatten
 
 /-- A scheme row's bound types: read at its own assignment, not under its
@@ -753,9 +754,9 @@ rest, its rest within the source's and results covariant. The receiver is the
 host on both sides, so receivers are not compared. -/
 def CoversSig (elem : List ι → Option (List ι)) (R : List ι → List ι → Prop)
     (p q : MethodMembers.Sig (List ι)) : Prop :=
-  (∀ t ∈ q.calls, ∃ s ∈ p.calls, Domains R t.1 s.1 ∧ R s.2 t.2) ∧
-  (∀ t ∈ q.rests, ∃ s ∈ p.rests, Domains R (t.1.take s.1.length) s.1 ∧
-    IntoRest elem R (t.1.drop s.1.length) s.2.1 ∧ R t.2.1 s.2.1 ∧ R s.2.2 t.2.2) ∧
+  (∀ t ∈ q.calls, ∃ s ∈ p.calls, Domains R t.arguments s.arguments ∧ R s.result t.result ∧ s.effect.covers t.effect = true) ∧
+  (∀ t ∈ q.rests, ∃ s ∈ p.rests, Domains R (t.arguments.1.take s.arguments.1.length) s.arguments.1 ∧
+    IntoRest elem R (t.arguments.1.drop s.arguments.1.length) s.arguments.2 ∧ R t.arguments.2 s.arguments.2 ∧ R s.result t.result ∧ s.effect.covers t.effect = true) ∧
   ∀ t ∈ q.schemes, ∃ s ∈ p.schemes, R s t
 
 /-- A method signature is covered by a function the source object holds in a
@@ -764,15 +765,15 @@ as wide parameters and giving an at most as wide result, whose receiver the
 object's own type `self` is within. Invoked on the object, such a function
 behaves as typed, so it meets the host-relative member. -/
 def CoversArrows (G : NormalGraph ι) (R : List ι → List ι → Prop) (self : List ι)
-    (L : Ops ι) (S : List (List ι × List (List ι) × List ι × List ι))
+    (L : Ops ι) (S : List (RestArrow (List ι)))
     (q : MethodMembers.Sig (List ι)) : Prop :=
-  q.schemes = [] ∧ (∀ t ∈ q.calls, ∃ s ∈ L, R self s.1 ∧ Domains R t.1 s.2.1 ∧ R s.2.2 t.2) ∧
-  (∀ t ∈ q.rests, ∃ s ∈ S, R self s.1 ∧ Domains R (t.1.take s.2.1.length) s.2.1 ∧
-    IntoRest (restElem G) R (t.1.drop s.2.1.length) s.2.2.1 ∧ R t.2.1 s.2.2.1 ∧ R s.2.2.2 t.2.2)
+  q.schemes = [] ∧ (∀ t ∈ q.calls, ∃ s ∈ L, R self s.receiver ∧ Domains R t.arguments s.arguments ∧ R s.result t.result ∧ s.effect.covers t.effect = true) ∧
+  (∀ t ∈ q.rests, ∃ s ∈ S, R self s.receiver ∧ Domains R (t.arguments.1.take s.arguments.1.length) s.arguments.1 ∧
+    IntoRest (restElem G) R (t.arguments.1.drop s.arguments.1.length) s.arguments.2 ∧ R t.arguments.2 s.arguments.2 ∧ R s.result t.result ∧ s.effect.covers t.effect = true)
 
 /-- The receivers of a scheme's signatures. -/
 def schemeReceivers (s : SchemeRow ι) : List ι :=
-  s.signatures.flatMap (·.1) ++ s.variadic.flatMap (·.1)
+  s.signatures.flatMap (·.receiver) ++ s.variadic.flatMap (·.receiver)
 
 /-- A type reads none of the rows `bs`: a checked free map of the rows it
 reaches gives none of them (`FreeOk`), so it means the same at every
@@ -792,10 +793,10 @@ def SchemeBinds (G : NormalGraph ι) (R : List ι → List ι → Prop) (s : Sch
   match S' with
   | [j] => match G.schemes j with
     | some s' => G.params j = false ∧ s.binders = s'.binders ∧ (∀ b ∈ s.bounds, b ∈ s'.bounds) ∧
-        (∀ t ∈ s'.signatures, ∃ p ∈ s.signatures, Domains R t.2.1 p.2.1 ∧ R p.2.2 t.2.2) ∧
-        (∀ t ∈ s'.variadic, ∃ p ∈ s.variadic, Domains R (t.2.1.take p.2.1.length) p.2.1 ∧
-          IntoRest (restElem G) R (t.2.1.drop p.2.1.length) p.2.2.1 ∧ R t.2.2.1 p.2.2.1 ∧
-          R p.2.2.2 t.2.2.2)
+        (∀ t ∈ s'.signatures, ∃ p ∈ s.signatures, Domains R t.arguments p.arguments ∧ R p.result t.result ∧ p.effect.covers t.effect = true) ∧
+        (∀ t ∈ s'.variadic, ∃ p ∈ s.variadic, Domains R (t.arguments.1.take p.arguments.1.length) p.arguments.1 ∧
+          IntoRest (restElem G) R (t.arguments.1.drop p.arguments.1.length) p.arguments.2 ∧ R t.arguments.2 p.arguments.2 ∧
+          R p.result t.result ∧ p.effect.covers t.effect = true)
     | none => False
   | _ => False
 
@@ -811,7 +812,7 @@ def CoversByScheme [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List �
   | [i] => match G.schemes i with
     | some s => q.calls = [] ∧ q.rests = [] ∧ G.params i = false ∧
         bindersFree G s.binders (schemeReceivers s) = true ∧
-        (∀ r ∈ s.signatures.map (·.1) ++ s.variadic.map (·.1), R self r) ∧
+        (∀ r ∈ s.signatures.map (·.receiver) ++ s.variadic.map (·.receiver), R self r) ∧
         ∀ S' ∈ q.schemes, SchemeBinds G R s S'
     | none => False
   | _ => False
@@ -996,27 +997,27 @@ whose rest is one exact tuple: the target's receiver is
 within the source's, its fixed parameters, then the tuple's positions, are
 within the source's parameters, and results are covariant. -/
 def FixedCallsPack (G : NormalGraph ι) (R : List ι → List ι → Prop)
-    (p : List ι × List (List ι) × List ι) (t : List ι × List (List ι) × List ι × List ι) : Prop :=
-  match expand G t.2.2.1 with
+    (p : Arrow (List ι)) (t : RestArrow (List ι)) : Prop :=
+  match expand G t.arguments.2 with
   | [.pack τ []] => τ.optional = [] ∧ τ.rest = none ∧
-      R t.1 p.1 ∧ Domains R (t.2.1 ++ τ.required) p.2.1 ∧ R p.2.2 t.2.2.2
+      R t.receiver p.receiver ∧ Domains R (t.arguments.1 ++ τ.required) p.arguments ∧ R p.result t.result ∧ p.effect.covers t.effect = true
   | _ => False
 
 /-- A fixed signature meets a variadic one whose rest is an exact tuple: at the
 current level the list's actuals are at their positions, and at level zero
 there is nothing to prove past the call. -/
 theorem fixed_calls_pack_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
-    {p : List ι × List (List ι) × List ι} {t : List ι × List (List ι) × List ι × List ι}
+    {p : Arrow (List ι)} {t : RestArrow (List ι)}
     (hc : FixedCallsPack G R p t) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (W : WorldT n) (v : Val)
     (hinv : Invocable v)
-    (hv : Promise (ArgsShort (p.2.1.map (mixedValues G η))) (mixedValues G η p.1) (mixedValues G η p.2.2) n W v) :
-    Promise (ArgsRest (t.2.1.map (mixedValues G η)) (mixedArgs G η t.2.2.1)) (mixedValues G η t.1)
-      (mixedValues G η t.2.2.2) n W v := by
+    (hv : PromiseWith p.effect (ArgsShort (p.arguments.map (mixedValues G η))) (mixedValues G η p.receiver) (mixedValues G η p.result) n W v) :
+    PromiseWith t.effect (ArgsRest (t.arguments.1.map (mixedValues G η)) (mixedArgs G η t.arguments.2)) (mixedValues G η t.receiver)
+      (mixedValues G η t.result) n W v := by
   unfold FixedCallsPack at hc
   split at hc
   · rename_i τ hP
-    obtain ⟨hopt, hrest, hrecv, hd, hres⟩ := hc
+    obtain ⟨hopt, hrest, hrecv, hd, hres, heff⟩ := hc
     intro j hj U hx hu heap hh r hrv hrm args hvals ha
     cases j with
     | zero =>
@@ -1026,8 +1027,8 @@ theorem fixed_calls_pack_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R
       obtain ⟨hshort, hpack⟩ := ha
       simp only [List.length_map] at hshort hpack
       have htup := mixed_pack_exact hP hopt hrest hpack
-      have hall : ArgsShort ((t.2.1 ++ τ.required).map (mixedValues G η)) (i + 1) U args := by
-        by_cases hl : args.length ≤ t.2.1.length
+      have hall : ArgsShort ((t.arguments.1 ++ τ.required).map (mixedValues G η)) (i + 1) U args := by
+        by_cases hl : args.length ≤ t.arguments.1.length
         · rw [List.drop_eq_nil_of_le hl] at htup
           have hreq : τ.required = [] := List.eq_nil_of_length_eq_zero (by
             have := ArgsT_length htup
@@ -1035,10 +1036,10 @@ theorem fixed_calls_pack_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R
             omega)
           rw [hreq, List.append_nil]
           rwa [List.take_of_length_le hl] at hshort
-        · have htl : (args.take t.2.1.length).length = t.2.1.length := by simp; omega
-          have hfix : ArgsT (t.2.1.map (mixedValues G η)) (i + 1) U (args.take t.2.1.length) := by
+        · have htl : (args.take t.arguments.1.length).length = t.arguments.1.length := by simp; omega
+          have hfix : ArgsT (t.arguments.1.map (mixedValues G η)) (i + 1) U (args.take t.arguments.1.length) := by
             have := hshort.2.1
-            rw [htl, show t.2.1.length = (t.2.1.map (mixedValues G η)).length by simp,
+            rw [htl, show t.arguments.1.length = (t.arguments.1.map (mixedValues G η)).length by simp,
               List.take_length] at this
             simpa using this
           have := ArgsT_append hfix htup
@@ -1046,8 +1047,8 @@ theorem fixed_calls_pack_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R
           exact ArgsShort_of_exact this
       obtain ⟨result, hi, hsafe⟩ := hv (i + 1) hj U hx hu heap hh r hrv
         (hr (i + 1) hj _ _ hrecv U r hrm) args hvals (Domains.short (hr (i + 1) hj) hd hall)
-      exact ⟨result, hi, Safe_mono (i + 1) (fun m hm V u hu => hr m (by omega) _ _ hres V u hu)
-        U heap _ hsafe⟩
+      exact ⟨result, hi, HeapObservations.consequence_below (fun m hm V u hu => hr m (by omega) _ _ hres V u hu)
+        (Effect.covers_sound heff heap) hsafe⟩
   · exact hc.elim
 
 /-- A position covered by another: a present source position needs a target
@@ -1091,7 +1092,7 @@ def CoversTuple (R : List ι → List ι → Prop) (p q : Tuple (List ι)) : Pro
 Only fixed-arrow coverage needs evidence; the remaining conditions are finite
 checks over the supplied subtype relation. -/
 def CoversWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
-    (arrows : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop)
+    (arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop)
     (self : List ι) : Clause (List ι) → Clause (List ι) → Prop
   | _, .top => True
   | .list a bs, .list c ds => ∀ q ∈ c :: ds, ∃ p ∈ a :: bs, CoversTuple R p q
@@ -1172,11 +1173,11 @@ def CoversWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι �
 /-- Declarative coverage supplies derivations for the fixed-arrow obligations. -/
 abbrev Covers [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι) :=
   CoversWith G R known (fun L S M => ∀ p ∈ M,
-    CallArrow (compatible G) (restElem G) R L S p.1 p.2.1 p.2.2)
+    CallArrow (compatible G) (restElem G) R L S p)
 
 /-- Replacing the arrow interpreter preserves all the shared coverage conditions. -/
 theorem CoversWith.mono [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} {known : Known ι}
-    {arrows arrows' : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop}
+    {arrows arrows' : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop}
     (ha : ∀ L S M, arrows L S M → arrows' L S M) {self a b}
     (h : CoversWith G R known arrows self a b) : CoversWith G R known arrows' self a b := by
   cases a <;> cases b <;> simp only [CoversWith] at *
@@ -1193,7 +1194,7 @@ contract: no bound listing keys, which a record meets a dictionary through
 (`CoversKeys`) and an allocation owns, and no bound excluding a key the class
 may admit. -/
 theorem covers_writable_keeps [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} {known : Known ι}
-    {arrows : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop}
+    {arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop}
     {self : List ι} {c : Clause (List ι)} {a : List (PropKey × List ι)}
     {bs : List (List (PropKey × List ι))} {vs : List (PropKey × List ι)}
     {ix cy : List (IndexKeys × List ι)} {os : List (OptionalField (List ι))}
@@ -1218,7 +1219,7 @@ at the writable index adds a key of the index's class, holding a value `u`
 that meets the index's contract. -/
 theorem covers_writable_bounds_grow [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignment ι}
     {R : List ι → List ι → Prop} {known : Known ι}
-    {arrows : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop}
+    {arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop}
     {self : List ι} {c : Clause (List ι)} {a : List (PropKey × List ι)}
     {bs : List (List (PropKey × List ι))} {vs : List (PropKey × List ι)}
     {ix cy : List (IndexKeys × List ι)} {os : List (OptionalField (List ι))}
@@ -1389,17 +1390,17 @@ theorem covers_sig_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : Lis
     exact hrn _ _ hst W _ (hB _ (List.mem_map_of_mem hs))
   · obtain ⟨t', ht', rfl⟩ := List.mem_map.mp hx
     obtain ⟨t, ht, rfl⟩ := List.mem_map.mp ht'
-    obtain ⟨s, hs, hd, hres⟩ := hcalls t ht
-    exact (hL _ (List.mem_map_of_mem (List.mem_map_of_mem hs))).weaken (fun _ _ _ r h => h)
-      (fun j hj U args ha => by simpa using Domains.short (hr j hj) hd (by simpa using ha))
+    obtain ⟨s, hs, hd, hres, heff⟩ := hcalls t ht
+    exact (hL _ (List.mem_map_of_mem (List.mem_map_of_mem hs))).weaken (Effect.covers_sound heff) (fun _ _ _ r h => h)
+      (fun j hj U args ha => by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using Domains.short (hr j hj) hd (by simpa [Contract.withReceiver, MethodArrow.map, MethodRestArrow.mapWith, Contract.map] using ha))
       (fun m hm U w hw => hr m hm _ _ hres U w hw)
   · obtain ⟨t', ht', rfl⟩ := List.mem_map.mp hx
     obtain ⟨t, ht, rfl⟩ := List.mem_map.mp ht'
-    obtain ⟨s, hs, hd, hin, he, hres⟩ := hrests t ht
-    exact (hS _ (List.mem_map_of_mem (List.mem_map_of_mem hs))).weaken (fun _ _ _ r h => h)
+    obtain ⟨s, hs, hd, hin, he, hres, heff⟩ := hrests t ht
+    exact (hS _ (List.mem_map_of_mem (List.mem_map_of_mem hs))).weaken (Effect.covers_sound heff) (fun _ _ _ r h => h)
       (fun j hj U args ha => by
-        simpa using rest_rest (hr j hj) (hpa j hj _ _ he) (by simpa using hd) (by simpa using hin)
-          (by simpa using ha))
+        simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using rest_rest (hr j hj) (hpa j hj _ _ he) (by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hd) (by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hin)
+          (by simpa [Contract.withReceiver, MethodArrow.map, MethodRestArrow.mapWith, Contract.map] using ha))
       (fun m hm U w hw => hr m hm _ _ hres U w hw)
 
 /-! ### Free parameter rows, semantically
@@ -1620,18 +1621,18 @@ theorem qLayer_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : Fre
           exact .cons (hrow S (hSs S List.mem_cons_self))
             (ihs fun T hT => hSs T (List.mem_cons_of_mem _ hT))
       simp only [instanceTWithArgs, instanceSigs, instanceRestsWithArgs, interT]
-      refine and_congr (callsT_congr s.signatures _ _ (fun p hps => by
-        have hin : ∀ l ∈ p.1 ++ p.2.1.flatten ++ p.2.2, l ∈ reads G i := fun l hl => by
+      refine and_congr (CallEffects.callsT_congr s.signatures (Arrow.map (setSem fun l => X (assign η s.binders As, l))) (Arrow.map (setSem fun l => X (assign η' s.binders As, l))) (fun _ _ => rfl) (fun p hps => by
+        have hin : ∀ l ∈ p.receiver ++ p.arguments.flatten ++ p.result, l ∈ reads G i := fun l hl => by
           simp only [reads, hq]
-          exact List.mem_append_left _ (List.mem_append_left _ (List.mem_flatMap.mpr ⟨p, hps, hl⟩))
+          exact List.mem_append_left _ (List.mem_append_left _ (List.mem_flatMap.mpr ⟨p, hps, by simpa [Arrow.operands, RestArrow.operands, List.append_assoc] using hl⟩))
         refine ⟨hrow _ fun l hl => hin l (by simp [hl]), hargs _ fun S hS l hl => hin l ?_,
           hrow _ fun l hl => hin l (by simp [hl])⟩
         simp only [List.mem_append, List.mem_flatten]
-        exact .inl (.inr ⟨S, hS, hl⟩)) W v) (restsT_congr s.variadic _ _ (fun p hps => by
-        have hin : ∀ l ∈ p.1 ++ p.2.1.flatten ++ p.2.2.1 ++ p.2.2.2, l ∈ reads G i :=
+        exact .inl (.inr ⟨S, hS, hl⟩)) W v) (CallEffects.restsT_congr s.variadic (RestArrow.mapWith (setSem fun l => X (assign η s.binders As, l)) (I.arguments (assign η s.binders As) (setSem fun l => X (assign η s.binders As, l)))) (RestArrow.mapWith (setSem fun l => X (assign η' s.binders As, l)) (I.arguments (assign η' s.binders As) (setSem fun l => X (assign η' s.binders As, l)))) (fun _ _ => rfl) (fun p hps => by
+        have hin : ∀ l ∈ p.receiver ++ p.arguments.1.flatten ++ p.arguments.2 ++ p.result, l ∈ reads G i :=
           fun l hl => by
             simp only [reads, hq]
-            exact List.mem_append_right _ (List.mem_flatMap.mpr ⟨p, hps, hl⟩)
+            exact List.mem_append_right _ (List.mem_flatMap.mpr ⟨p, hps, by simpa [Arrow.operands, RestArrow.operands, List.append_assoc] using hl⟩)
         refine ⟨hrow _ fun l hl => hin l (by simp [hl]), hargs _ fun S hS l hl => hin l ?_,
           hpack _ (fun l hl => hin l (by simp [hl])), hrow _ fun l hl => hin l (by simp [hl])⟩
         simp only [List.mem_append, List.mem_flatten]
@@ -1696,7 +1697,7 @@ theorem agree_freeWith [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : 
 the level in every extending world, meet the host-relative member. -/
 theorem covers_arrows_sound {G : NormalGraph ι} {η : MixedAssignment ι}
     {R : List ι → List ι → Prop} {self : List ι} {L : Ops ι}
-    {S : List (List ι × List (List ι) × List ι × List ι)} {q : MethodMembers.Sig (List ι)}
+    {S : List (RestArrow (List ι))} {q : MethodMembers.Sig (List ι)}
     (hby : CoversArrows G R self L S q) {n : Nat}
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
     {W : WorldT n} {v : Val}
@@ -1723,20 +1724,20 @@ theorem covers_arrows_sound {G : NormalGraph ι} {η : MixedAssignment ι}
   · simp [MethodMembers.Member.of, hnone] at hF
   · obtain ⟨t', ht', rfl⟩ := List.mem_map.mp hx
     obtain ⟨t, ht, rfl⟩ := List.mem_map.mp ht'
-    obtain ⟨s, hs, hsr, hd, hres⟩ := hcalls t ht
-    exact ((hsem.1.2 _ (List.mem_map_of_mem hs)).weaken (fun _ _ _ r h => h)
-      (fun j' hj' U' args ha => by simpa using Domains.short (hr j' (by omega)) hd (by simpa using ha))
+    obtain ⟨s, hs, hsr, hd, hres, heff⟩ := hcalls t ht
+    exact ((hsem.1.2 _ (List.mem_map_of_mem hs)).weaken (Effect.covers_sound heff) (fun _ _ _ r h => h)
+      (fun j' hj' U' args ha => by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using Domains.short (hr j' (by omega)) hd (by simpa [Contract.withReceiver, MethodArrow.map, MethodRestArrow.mapWith, Contract.map] using ha))
       (fun m hm U' w hw => hr m (by omega) _ _ hres U' w hw)).weaken_recv
-      (fun j' hj' U' hU' r hr' => host s.1 hsr j' hj' U' hU' r hr')
+      (fun j' hj' U' hU' r hr' => host s.receiver hsr j' hj' U' hU' r hr')
   · obtain ⟨t', ht', rfl⟩ := List.mem_map.mp hx
     obtain ⟨t, ht, rfl⟩ := List.mem_map.mp ht'
-    obtain ⟨s, hs, hsr, hd, hin, he, hres⟩ := hrests t ht
-    exact ((hsem.2.2 _ (List.mem_map_of_mem hs)).weaken (fun _ _ _ r h => h)
+    obtain ⟨s, hs, hsr, hd, hin, he, hres, heff⟩ := hrests t ht
+    exact ((hsem.2.2 _ (List.mem_map_of_mem hs)).weaken (Effect.covers_sound heff) (fun _ _ _ r h => h)
       (fun j' hj' U' args ha => by
-        simpa using rest_rest (hr j' (by omega)) (hpa j' (by omega) _ _ he) (by simpa using hd)
-          (by simpa using hin) (by simpa using ha))
+        simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using rest_rest (hr j' (by omega)) (hpa j' (by omega) _ _ he) (by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hd)
+          (by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hin) (by simpa [Contract.withReceiver, MethodArrow.map, MethodRestArrow.mapWith, Contract.map] using ha))
       (fun m hm U' w hw => hr m (by omega) _ _ hres U' w hw)).weaken_recv
-      (fun j' hj' U' hU' r hr' => host s.1 hsr j' hj' U' hU' r hr')
+      (fun j' hj' U' hU' r hr' => host s.receiver hsr j' hj' U' hU' r hr')
 
 /-- A row of a type reading none of `bs` means the same at every
 reassignment of them. -/
@@ -1805,7 +1806,7 @@ theorem covers_by_scheme_sound [DecidableEq ι] {G : NormalGraph ι} {η : Mixed
       -- The host is in every receiver of the scheme, at every instance: at
       -- the table's assignment by the premises, and the receivers read none
       -- of the binders.
-      have hhost : ∀ r ∈ s.signatures.map (·.1) ++ s.variadic.map (·.1), ∀ As : List MixedFamily,
+      have hhost : ∀ r ∈ s.signatures.map (·.receiver) ++ s.variadic.map (·.receiver), ∀ As : List MixedFamily,
           mixedValues G (assign η s.binders As) r j U v := by
         intro r hrm As
         have hsub : ∀ l ∈ r, l ∈ schemeReceivers s := by
@@ -1851,47 +1852,47 @@ theorem covers_by_scheme_sound [DecidableEq ι] {G : NormalGraph ι} {η : Mixed
           show semWithArgs (mixedValues G (assign η s'.binders As)) (mixedArgs G (assign η s'.binders As))
               (.arrs s'.signatures s'.variadic) j U (.objAt [] (.bound u v []))
           rw [← hbs]
-          refine ⟨callsT_of_signatures hinvB fun x hx => ?_, restsT_of_signatures hinvB fun x hx => ?_⟩
+          refine ⟨CallEffects.callsT_of_signatures hinvB fun x hx => ?_, CallEffects.restsT_of_signatures hinvB fun x hx => ?_⟩
           · obtain ⟨t, ht, rfl⟩ := List.mem_map.mp hx
-            obtain ⟨p, hp, hd, hres⟩ := hsig t ht
-            have hc := callsT_select hi.1 (List.mem_map_of_mem hp)
-            have hrv := hhost p.1 (List.mem_append_left _ (List.mem_map_of_mem hp)) As
-            have hbd := callsT_bound (Ps := []) (Rc := mixedValues G (assign η s.binders As) t.1)
-              (Ds := p.2.1.map (mixedValues G (assign η s.binders As)))
-              (R := mixedValues G (assign η s.binders As) p.2.2)
-              (fs := []) (pvs := []) (hadm _ p.1) (by simp)
+            obtain ⟨p, hp, hd, hres, heff⟩ := hsig t ht
+            have hc := CallEffects.callsT_select hi.1 (List.mem_map_of_mem hp)
+            have hrv := hhost p.receiver (List.mem_append_left _ (List.mem_map_of_mem hp)) As
+            have hbd := CallEffects.callsT_bound (Ps := []) (Rc := mixedValues G (assign η s.binders As) t.receiver)
+              (Ds := p.arguments.map (mixedValues G (assign η s.binders As)))
+              (R := mixedValues G (assign η s.binders As) p.result)
+              (fs := []) (pre := []) (hadm _ p.receiver) (by simp)
               (fun A hA => by obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact hadm _ b)
-              (by simpa using hc) hval.1 hval.2 hrv trivial (by simp [CallArguments.Values]) (by simp)
+              (by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hc) hval.1 hval.2 hrv trivial (by simp [CallArguments.Values]) (by simp)
             refine ⟨hbd.1, fun y hy => ?_⟩
             cases List.mem_singleton.mp hy
-            exact (hbd.2 _ (List.mem_singleton_self _)).weaken (fun _ _ _ r h => h)
+            exact (hbd.2 _ (List.mem_singleton_self _)).weaken (Effect.covers_sound heff) (fun _ _ _ r h => h)
               (fun j'' hj'' U' args ha => by
-                simpa using Domains.short (hrAll _ j'' (by omega)) hd (by simpa using ha))
+                simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using Domains.short (hrAll _ j'' (by omega)) hd (by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using ha))
               (fun m hm U' w hw => hrAll _ m (by omega) _ _ hres U' w hw)
           · obtain ⟨t, ht, rfl⟩ := List.mem_map.mp hx
-            obtain ⟨p, hp, hd, hin, he, hres⟩ := hvar t ht
-            have hc := restsT_select hi.2 (List.mem_map_of_mem hp)
-            have hrv := hhost p.1 (List.mem_append_right _ (List.mem_map_of_mem hp)) As
-            have hbd := restsT_bound (Rc := mixedValues G (assign η s.binders As) t.1)
-              (Ps := p.2.1.map (mixedValues G (assign η s.binders As)))
-              (E := mixedArgs G (assign η s.binders As) p.2.2.1)
-              (R := mixedValues G (assign η s.binders As) p.2.2.2)
-              (fs := []) (pvs := []) (hadm _ p.1)
+            obtain ⟨p, hp, hd, hin, he, hres, heff⟩ := hvar t ht
+            have hc := CallEffects.restsT_select hi.2 (List.mem_map_of_mem hp)
+            have hrv := hhost p.receiver (List.mem_append_right _ (List.mem_map_of_mem hp)) As
+            have hbd := CallEffects.restsT_bound (Rc := mixedValues G (assign η s.binders As) t.receiver)
+              (Ps := p.arguments.1.map (mixedValues G (assign η s.binders As)))
+              (E := mixedArgs G (assign η s.binders As) p.arguments.2)
+              (R := mixedValues G (assign η s.binders As) p.result)
+              (fs := []) (pre := []) (hadm _ p.receiver)
               (fun A hA => by obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact hadm _ b)
-              (hargsAdm _ p.2.2.1) hc hval.1 hval.2 hrv
+              (hargsAdm _ p.arguments.2) hc hval.1 hval.2 hrv
               (by simp only [List.take_nil, List.take_zero, List.length_nil]; exact trivial)
-              (fun _ _ _ _ ys hys => by simpa using hys)
+              (fun _ _ _ _ ys hys => by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hys)
               (by simp [CallArguments.Values]) (by simp)
             refine ⟨hbd.1, fun y hy => ?_⟩
             cases List.mem_singleton.mp hy
-            exact ((by simpa using hbd.2 _ (List.mem_singleton_self _)) :
-              Promise (ArgsRest (p.2.1.map (mixedValues G (assign η s.binders As)))
-                (mixedArgs G (assign η s.binders As) p.2.2.1))
-                (mixedValues G (assign η s.binders As) t.1)
-                (mixedValues G (assign η s.binders As) p.2.2.2) j U _).weaken (fun _ _ _ r h => h)
+            exact ((by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hbd.2 _ (List.mem_singleton_self _)) :
+              PromiseWith p.effect (ArgsRest (p.arguments.1.map (mixedValues G (assign η s.binders As)))
+                (mixedArgs G (assign η s.binders As) p.arguments.2))
+                (mixedValues G (assign η s.binders As) t.receiver)
+                (mixedValues G (assign η s.binders As) p.result) j U _).weaken (Effect.covers_sound heff) (fun _ _ _ r h => h)
               (fun j'' hj'' U' args ha => by
-                simpa using rest_rest (hrAll _ j'' (by omega)) (hpaAll _ j'' (by omega) _ _ he)
-                  (by simpa using hd) (by simpa using hin) (by simpa using ha))
+                simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using rest_rest (hrAll _ j'' (by omega)) (hpaAll _ j'' (by omega) _ _ he)
+                  (by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hd) (by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hin) (by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using ha))
               (fun m hm U' w hw => hrAll _ m (by omega) _ _ hres U' w hw)
         · exact hb.elim
       · exact hb.elim
@@ -2669,7 +2670,7 @@ instantiated at them, and no bound is compared, so the check stays decidable.
 Its premises hold at the reassigned assignment, which the core table's
 induction over every assignment supplies (`Core.mixed_sound`). -/
 def SchemeCoversWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
-    (arrows : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop)
+    (arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop)
     (i j : ι) : Prop :=
   match G.schemes i, G.schemes j with
   | some s, some s' => G.params i = false ∧ G.params j = false ∧ s.binders = s'.binders ∧
@@ -2684,7 +2685,7 @@ meet row not in the target is below a target row by its parameters
 is below a target scheme row whose quantified signatures its own cover
 (`SchemeCoversWith`). -/
 def OpaqueWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
-    (arrows : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop)
+    (arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop)
     (S T : List ι) : Prop :=
   ∀ i ∈ S, G.plain i = true ∨ i ∈ T ∨ .top ∈ clausesOf G T ∨ G.meetRow i = true ∨
     ∃ j ∈ T, SchemeCoversWith G R known arrows i j
@@ -2692,10 +2693,10 @@ def OpaqueWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι �
 /-- The same, with declarative arrow coverage. -/
 abbrev Opaque [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι) :=
   OpaqueWith G R known (fun L S M => ∀ p ∈ M,
-    CallArrow (compatible G) (restElem G) R L S p.1 p.2.1 p.2.2)
+    CallArrow (compatible G) (restElem G) R L S p)
 
 theorem OpaqueWith.mono [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} {known : Known ι}
-    {arrows arrows' : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop}
+    {arrows arrows' : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop}
     (ha : ∀ L S M, arrows L S M → arrows' L S M) {S T : List ι}
     (h : OpaqueWith G R known arrows S T) : OpaqueWith G R known arrows' S T := by
   intro i hi
@@ -2825,8 +2826,8 @@ theorem core_arguments_of_values [DecidableEq ι] {G : NormalGraph ι} {known : 
 /-- Arrow coverage alone: a callable clause's signatures, covered, give the
 target's. It reads no source type. -/
 theorem covers_arrs_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignment ι} {R known self}
-    {L : Ops ι} {S : List (List ι × List (List ι) × List ι × List ι)}
-    {M : Ops ι} {T : List (List ι × List (List ι) × List ι × List ι)}
+    {L : Ops ι} {S : List (RestArrow (List ι))}
+    {M : Ops ι} {T : List (RestArrow (List ι))}
     (hc : Covers G R known self (.arrs L S) (.arrs M T)) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
     (W : WorldT n) (v : Val) :
@@ -2848,7 +2849,7 @@ source admits it too, and there the arrow coverage holds, its premises read
 at that instance's assignment. -/
 theorem scheme_covers_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignment ι} {R known i j}
     (hc : SchemeCoversWith G R known (fun L S M => ∀ p ∈ M,
-      CallArrow (compatible G) (restElem G) R L S p.1 p.2.1 p.2.2) i j) (n : Nat)
+      CallArrow (compatible G) (restElem G) R L S p) i j) (n : Nat)
     (hr : ∀ η' : MixedAssignment ι, ∀ j, j < n → ∀ S T, R S T → FamLeAt G η' S T j)
     (hpa : ∀ η' : MixedAssignment ι, ArgsLeBelow G η' R n)
     (W : WorldT n) (v : Val)
@@ -2968,14 +2969,14 @@ def tyImg [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι) (S : List ι) : Op
   (S.mapM (entryImg tbl κ)).map List.flatten
 
 def sigImg [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
-    (p : List ι × List (List ι) × List ι) : Option (List ι × List (List ι) × List ι) := do
-  return (← tyImg tbl κ p.1, ← p.2.1.mapM (tyImg tbl κ), ← tyImg tbl κ p.2.2)
+    (p : Arrow (List ι)) : Option (Arrow (List ι)) := do
+  return ⟨← tyImg tbl κ p.receiver, ← p.arguments.mapM (tyImg tbl κ), ← tyImg tbl κ p.result, p.effect⟩
 
 def restImg [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
-    (p : List ι × List (List ι) × List ι × List ι) :
-    Option (List ι × List (List ι) × List ι × List ι) := do
-  return (← tyImg tbl κ p.1, ← p.2.1.mapM (tyImg tbl κ), ← tyImg tbl κ p.2.2.1,
-    ← tyImg tbl κ p.2.2.2)
+    (p : RestArrow (List ι)) :
+    Option (RestArrow (List ι)) := do
+  return ⟨← tyImg tbl κ p.receiver, (← p.arguments.1.mapM (tyImg tbl κ), ← tyImg tbl κ p.arguments.2),
+    ← tyImg tbl κ p.result, p.effect⟩
 
 /-- Two label lists with the same members. A type is the union of its labels,
 so their order and repetition carry no meaning. -/
@@ -2987,33 +2988,33 @@ def sameLabelLists [DecidableEq ι] (as bs : List (List ι)) : Bool :=
 
 /-- A signature is a scheme signature's image, up to the members of each type. -/
 def sigMatch [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
-    (p q : List ι × List (List ι) × List ι) : Bool :=
+    (p q : Arrow (List ι)) : Bool :=
   match sigImg tbl κ p with
-  | some q' => sameLabels q'.1 q.1 && sameLabelLists q'.2.1 q.2.1 && sameLabels q'.2.2 q.2.2
+  | some q' => sameLabels q'.receiver q.receiver && sameLabelLists q'.arguments q.arguments && sameLabels q'.result q.result && q'.effect == q.effect
   | none => false
 
 /-- A variadic signature is a scheme one's image, up to the members of each type. -/
 def restMatch [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
-    (p q : List ι × List (List ι) × List ι × List ι) : Bool :=
+    (p q : RestArrow (List ι)) : Bool :=
   match restImg tbl κ p with
-  | some q' => sameLabels q'.1 q.1 && sameLabelLists q'.2.1 q.2.1 &&
-      sameLabels q'.2.2.1 q.2.2.1 && sameLabels q'.2.2.2 q.2.2.2
+  | some q' => sameLabels q'.receiver q.receiver && sameLabelLists q'.arguments.1 q.arguments.1 &&
+      sameLabels q'.arguments.2 q.arguments.2 && sameLabels q'.result q.result && q'.effect == q.effect
   | none => false
 
 /-- A signature's parameters and result are a scheme signature's images; its
 receiver is not compared. -/
 def sigBodyMatch [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
-    (p q : List ι × List (List ι) × List ι) : Bool :=
-  match p.2.1.mapM (tyImg tbl κ), tyImg tbl κ p.2.2 with
-  | some ps, some r => sameLabelLists ps q.2.1 && sameLabels r q.2.2
+    (p q : Arrow (List ι)) : Bool :=
+  match p.arguments.mapM (tyImg tbl κ), tyImg tbl κ p.result with
+  | some ps, some r => sameLabelLists ps q.arguments && sameLabels r q.result && p.effect == q.effect
   | _, _ => false
 
 /-- A variadic signature's fixed parameters, rest and result are a scheme
 one's images; its receiver is not compared. -/
 def restBodyMatch [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
-    (p q : List ι × List (List ι) × List ι × List ι) : Bool :=
-  match p.2.1.mapM (tyImg tbl κ), tyImg tbl κ p.2.2.1, tyImg tbl κ p.2.2.2 with
-  | some ps, some e, some r => sameLabelLists ps q.2.1 && sameLabels e q.2.2.1 && sameLabels r q.2.2.2
+    (p q : RestArrow (List ι)) : Bool :=
+  match p.arguments.1.mapM (tyImg tbl κ), tyImg tbl κ p.arguments.2, tyImg tbl κ p.result with
+  | some ps, some e, some r => sameLabelLists ps q.arguments.1 && sameLabels e q.arguments.2 && sameLabels r q.result && p.effect == q.effect
   | _, _, _ => false
 
 /-- A signature an instance states: a scheme signature's image, or, where the
@@ -3023,13 +3024,13 @@ invoked safely with a narrower one, such as a generic method's scheme, which
 the member bound to its host meets whatever receiver it is given, at a call
 whose receiver is the host. -/
 def instSig [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (κ : Ctx ι)
-    (p q : List ι × List (List ι) × List ι) : Bool :=
-  sigMatch tbl κ p q || (expand G p.1 == [.top] && sigBodyMatch tbl κ p q)
+    (p q : Arrow (List ι)) : Bool :=
+  sigMatch tbl κ p q || (expand G p.receiver == [.top] && sigBodyMatch tbl κ p q)
 
 /-- The same, for a variadic signature. -/
 def instRest [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (κ : Ctx ι)
-    (p q : List ι × List (List ι) × List ι × List ι) : Bool :=
-  restMatch tbl κ p q || (expand G p.1 == [.top] && restBodyMatch tbl κ p q)
+    (p q : RestArrow (List ι)) : Bool :=
+  restMatch tbl κ p q || (expand G p.receiver == [.top] && restBodyMatch tbl κ p q)
 
 /-- The context `κ` on the rows `ps` outside `src`, in the order of `ps`. -/
 def keep [DecidableEq ι] (κ : Ctx ι) (src ps : List ι) : Ctx ι :=
@@ -3750,49 +3751,49 @@ theorem sameLabelLists_values [DecidableEq ι] {G : NormalGraph ι} {η : MixedA
     simp only [List.map_cons, sameLabels_values h.2.1, sameLabelLists_values ht]
 
 theorem sigMatch_some [DecidableEq ι] {tbl : InstTable ι} {κ : Ctx ι}
-    {p q : List ι × List (List ι) × List ι} (h : sigMatch tbl κ p q = true) :
-    ∃ q', sigImg tbl κ p = some q' ∧ sameLabels q'.1 q.1 = true ∧
-      sameLabelLists q'.2.1 q.2.1 = true ∧ sameLabels q'.2.2 q.2.2 = true := by
+    {p q : Arrow (List ι)} (h : sigMatch tbl κ p q = true) :
+    ∃ q', sigImg tbl κ p = some q' ∧ sameLabels q'.receiver q.receiver = true ∧
+      sameLabelLists q'.arguments q.arguments = true ∧ sameLabels q'.result q.result = true ∧ q'.effect = q.effect := by
   unfold sigMatch at h
   split at h
   · rename_i q' hq
-    simp only [Bool.and_eq_true] at h
-    exact ⟨q', hq, h.1.1, h.1.2, h.2⟩
-  · cases h
-
-theorem restMatch_some [DecidableEq ι] {tbl : InstTable ι} {κ : Ctx ι}
-    {p q : List ι × List (List ι) × List ι × List ι} (h : restMatch tbl κ p q = true) :
-    ∃ q', restImg tbl κ p = some q' ∧ sameLabels q'.1 q.1 = true ∧
-      sameLabelLists q'.2.1 q.2.1 = true ∧ sameLabels q'.2.2.1 q.2.2.1 = true ∧
-      sameLabels q'.2.2.2 q.2.2.2 = true := by
-  unfold restMatch at h
-  split at h
-  · rename_i q' hq
-    simp only [Bool.and_eq_true] at h
+    simp only [Bool.and_eq_true, beq_iff_eq] at h
     exact ⟨q', hq, h.1.1.1, h.1.1.2, h.1.2, h.2⟩
   · cases h
 
+theorem restMatch_some [DecidableEq ι] {tbl : InstTable ι} {κ : Ctx ι}
+    {p q : RestArrow (List ι)} (h : restMatch tbl κ p q = true) :
+    ∃ q', restImg tbl κ p = some q' ∧ sameLabels q'.receiver q.receiver = true ∧
+      sameLabelLists q'.arguments.1 q.arguments.1 = true ∧ sameLabels q'.arguments.2 q.arguments.2 = true ∧
+      sameLabels q'.result q.result = true ∧ q'.effect = q.effect := by
+  unfold restMatch at h
+  split at h
+  · rename_i q' hq
+    simp only [Bool.and_eq_true, beq_iff_eq] at h
+    exact ⟨q', hq, h.1.1.1.1, h.1.1.1.2, h.1.1.2, h.1.2, h.2⟩
+  · cases h
+
 theorem sigBodyMatch_some [DecidableEq ι] {tbl : InstTable ι} {κ : Ctx ι}
-    {p q : List ι × List (List ι) × List ι} (h : sigBodyMatch tbl κ p q = true) :
-    ∃ ps r, p.2.1.mapM (tyImg tbl κ) = some ps ∧ tyImg tbl κ p.2.2 = some r ∧
-      sameLabelLists ps q.2.1 = true ∧ sameLabels r q.2.2 = true := by
+    {p q : Arrow (List ι)} (h : sigBodyMatch tbl κ p q = true) :
+    ∃ ps r, p.arguments.mapM (tyImg tbl κ) = some ps ∧ tyImg tbl κ p.result = some r ∧
+      sameLabelLists ps q.arguments = true ∧ sameLabels r q.result = true ∧ p.effect = q.effect := by
   unfold sigBodyMatch at h
   split at h
   · rename_i ps r h1 h2
-    simp only [Bool.and_eq_true] at h
-    exact ⟨ps, r, h1, h2, h.1, h.2⟩
+    simp only [Bool.and_eq_true, beq_iff_eq] at h
+    exact ⟨ps, r, h1, h2, h.1.1, h.1.2, h.2⟩
   · cases h
 
 theorem restBodyMatch_some [DecidableEq ι] {tbl : InstTable ι} {κ : Ctx ι}
-    {p q : List ι × List (List ι) × List ι × List ι} (h : restBodyMatch tbl κ p q = true) :
-    ∃ ps e r, p.2.1.mapM (tyImg tbl κ) = some ps ∧ tyImg tbl κ p.2.2.1 = some e ∧
-      tyImg tbl κ p.2.2.2 = some r ∧ sameLabelLists ps q.2.1 = true ∧
-      sameLabels e q.2.2.1 = true ∧ sameLabels r q.2.2.2 = true := by
+    {p q : RestArrow (List ι)} (h : restBodyMatch tbl κ p q = true) :
+    ∃ ps e r, p.arguments.1.mapM (tyImg tbl κ) = some ps ∧ tyImg tbl κ p.arguments.2 = some e ∧
+      tyImg tbl κ p.result = some r ∧ sameLabelLists ps q.arguments.1 = true ∧
+      sameLabels e q.arguments.2 = true ∧ sameLabels r q.result = true ∧ p.effect = q.effect := by
   unfold restBodyMatch at h
   split at h
   · rename_i ps e r h1 h2 h3
-    simp only [Bool.and_eq_true] at h
-    exact ⟨ps, e, r, h1, h2, h3, h.1.1, h.1.2, h.2⟩
+    simp only [Bool.and_eq_true, beq_iff_eq] at h
+    exact ⟨ps, e, r, h1, h2, h3, h.1.1.1, h.1.1.2, h.1.2, h.2⟩
   · cases h
 
 /-- A type whose one clause is `top` holds every closed value. -/
@@ -3802,41 +3803,41 @@ theorem top_row_mixed {G : NormalGraph ι} {η : MixedAssignment ι} {S : List �
   mixed_of_expand h ⟨hv, realmInvariant_of_not_record rfl n W v⟩
 
 theorem sigImg_some [DecidableEq ι] {tbl : InstTable ι} {κ : Ctx ι}
-    {p q : List ι × List (List ι) × List ι} (h : sigImg tbl κ p = some q) :
-    tyImg tbl κ p.1 = some q.1 ∧ p.2.1.mapM (tyImg tbl κ) = some q.2.1 ∧
-      tyImg tbl κ p.2.2 = some q.2.2 := by
+    {p q : Arrow (List ι)} (h : sigImg tbl κ p = some q) :
+    tyImg tbl κ p.receiver = some q.receiver ∧ p.arguments.mapM (tyImg tbl κ) = some q.arguments ∧
+      tyImg tbl κ p.result = some q.result ∧ p.effect = q.effect := by
   unfold sigImg at h
-  cases h1 : tyImg tbl κ p.1 with
+  cases h1 : tyImg tbl κ p.receiver with
   | none => simp [h1] at h
   | some a =>
-    cases h2 : p.2.1.mapM (tyImg tbl κ) with
+    cases h2 : p.arguments.mapM (tyImg tbl κ) with
     | none => simp [h1, h2] at h
     | some b =>
-      cases h3 : tyImg tbl κ p.2.2 with
+      cases h3 : tyImg tbl κ p.result with
       | none => simp [h1, h2, h3] at h
       | some c =>
         simp [h1, h2, h3] at h
-        subst h; exact ⟨rfl, rfl, rfl⟩
+        subst h; exact ⟨rfl, rfl, rfl, rfl⟩
 
 theorem restImg_some [DecidableEq ι] {tbl : InstTable ι} {κ : Ctx ι}
-    {p q : List ι × List (List ι) × List ι × List ι} (h : restImg tbl κ p = some q) :
-    tyImg tbl κ p.1 = some q.1 ∧ p.2.1.mapM (tyImg tbl κ) = some q.2.1 ∧
-      tyImg tbl κ p.2.2.1 = some q.2.2.1 ∧ tyImg tbl κ p.2.2.2 = some q.2.2.2 := by
+    {p q : RestArrow (List ι)} (h : restImg tbl κ p = some q) :
+    tyImg tbl κ p.receiver = some q.receiver ∧ p.arguments.1.mapM (tyImg tbl κ) = some q.arguments.1 ∧
+      tyImg tbl κ p.arguments.2 = some q.arguments.2 ∧ tyImg tbl κ p.result = some q.result ∧ p.effect = q.effect := by
   unfold restImg at h
-  cases h1 : tyImg tbl κ p.1 with
+  cases h1 : tyImg tbl κ p.receiver with
   | none => simp [h1] at h
   | some a =>
-    cases h2 : p.2.1.mapM (tyImg tbl κ) with
+    cases h2 : p.arguments.1.mapM (tyImg tbl κ) with
     | none => simp [h1, h2] at h
     | some b =>
-      cases h3 : tyImg tbl κ p.2.2.1 with
+      cases h3 : tyImg tbl κ p.arguments.2 with
       | none => simp [h1, h2, h3] at h
       | some c =>
-        cases h4 : tyImg tbl κ p.2.2.2 with
+        cases h4 : tyImg tbl κ p.result with
         | none => simp [h1, h2, h3, h4] at h
         | some d =>
           simp [h1, h2, h3, h4] at h
-          subst h; exact ⟨rfl, rfl, rfl, rfl⟩
+          subst h; exact ⟨rfl, rfl, rfl, rfl, rfl⟩
 
 /-- A context fixing a row relates the two assignments on its free rows as
 equal parameters. -/
@@ -4351,15 +4352,19 @@ theorem table_row_mixed [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable �
               unfold instanceSigs
               rw [hmap]
               simp only [List.map_map]
-              refine callsT_congr s.signatures _ _ (fun p hps => ?_) W v
-              have hin : ∀ l ∈ p.1 ++ p.2.1.flatten ++ p.2.2, l ∈ reads G i := fun l hl => by
+              refine CallEffects.callsT_congr s.signatures _ _ (by
+                intro p hps
+                obtain ⟨_, hsome⟩ := mapM_some hsigs
+                obtain ⟨q, hq⟩ := Option.isSome_iff_exists.mp (hsome p hps)
+                simpa [Function.comp, hq, Arrow.map, Contract.map] using (sigImg_some hq).2.2.2) (fun p hps => ?_) W v
+              have hin : ∀ l ∈ p.receiver ++ p.arguments.flatten ++ p.result, l ∈ reads G i := fun l hl => by
                 simp only [reads, hsch]
                 exact List.mem_append_left _
-                  (List.mem_append_left _ (List.mem_flatMap.mpr ⟨p, hps, hl⟩))
+                  (List.mem_append_left _ (List.mem_flatMap.mpr ⟨p, hps, by simpa [Arrow.operands, RestArrow.operands, List.append_assoc] using hl⟩))
               obtain ⟨q, hq⟩ : ∃ q, sigImg tbl (enter V i κ s.binders s2.binders) p = some q := by
                 obtain ⟨_, hsome⟩ := mapM_some hsigs
                 exact Option.isSome_iff_exists.mp (hsome p hps)
-              obtain ⟨h1, h2, h3⟩ := sigImg_some hq
+              obtain ⟨h1, h2, h3, heff⟩ := sigImg_some hq
               simp only [Function.comp, hq, Option.getD_some]
               refine ⟨hty _ _ _ _ _ h1 fun l hl => hrel' l (hin l (by simp [hl])), ?_,
                 hty _ _ _ _ _ h3 fun l hl => hrel' l (hin l (by simp [hl]))⟩
@@ -4390,15 +4395,19 @@ theorem table_row_mixed [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable �
               dsimp only [mixedParameters]
               rw [hmap]
               simp only [List.map_map]
-              refine restsT_congr s.variadic _ _ (fun p hps => ?_) W v
-              have hin : ∀ l ∈ p.1 ++ p.2.1.flatten ++ p.2.2.1 ++ p.2.2.2, l ∈ reads G i :=
+              refine CallEffects.restsT_congr s.variadic _ _ (by
+                intro p hps
+                obtain ⟨_, hsome⟩ := mapM_some hrests
+                obtain ⟨q, hq⟩ := Option.isSome_iff_exists.mp (hsome p hps)
+                simpa [Function.comp, hq, RestArrow.mapWith, Contract.map] using (restImg_some hq).2.2.2.2) (fun p hps => ?_) W v
+              have hin : ∀ l ∈ p.receiver ++ p.arguments.1.flatten ++ p.arguments.2 ++ p.result, l ∈ reads G i :=
                 fun l hl => by
                   simp only [reads, hsch]
-                  exact List.mem_append_right _ (List.mem_flatMap.mpr ⟨p, hps, hl⟩)
+                  exact List.mem_append_right _ (List.mem_flatMap.mpr ⟨p, hps, by simpa [Arrow.operands, RestArrow.operands, List.append_assoc] using hl⟩)
               obtain ⟨q, hq⟩ : ∃ q, restImg tbl (enter V i κ s.binders s2.binders) p = some q := by
                 obtain ⟨_, hsome⟩ := mapM_some hrests
                 exact Option.isSome_iff_exists.mp (hsome p hps)
-              obtain ⟨h1, h2, h3, h4⟩ := restImg_some hq
+              obtain ⟨h1, h2, h3, h4, heff⟩ := restImg_some hq
               simp only [Function.comp, hq, Option.getD_some]
               refine ⟨hty _ _ _ _ _ h1 fun l hl => hrel' l (hin l (by simp [hl])), ?_,
                 hpack _ _ _ _ _ h3 fun l hl => hrel' l (hin l (by simp [hl])),
@@ -4626,7 +4635,7 @@ theorem mixed_assignment_substitution [DecidableEq ι] (G : NormalGraph ι) (η 
 /-- A member of a scheme row meets each checked instance of its signatures. -/
 theorem inst_mixed_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssignment ι) {i : ι} {s : SchemeRow ι}
     {tbl : InstTable ι} {θs : List (List ι)} {D : List ι} {V : FreeMap ι} {L : Ops ι}
-    {M : List (List ι × List (List ι) × List ι × List ι)}
+    {M : List (RestArrow (List ι))}
     (hp : G.params i = false) (hq : G.schemes i = some s) (hlen : θs.length = s.binders.length)
     (hbnd : ∀ b ∈ s.bounds, ∀ U, (s.binders.zip θs).lookup b.1 = some U →
       FamLe (mixedMeaning G η U) (mixedMeaning G η b.2))
@@ -4702,53 +4711,53 @@ theorem inst_mixed_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssign
   · obtain ⟨q, hqL, rfl⟩ := List.mem_map.mp hq'
     obtain ⟨p, hps, hsig⟩ := hL q hqL
     have hpr := hc.1.2 _ (List.mem_map_of_mem hps)
-    change Promise (ArgsShort (p.2.1.map (mixedValues G (assign η s.binders As))))
-      (mixedValues G (assign η s.binders As) p.1)
-      (mixedValues G (assign η s.binders As) p.2.2) n W v at hpr
+    change PromiseWith p.effect (ArgsShort (p.arguments.map (mixedValues G (assign η s.binders As))))
+      (mixedValues G (assign η s.binders As) p.receiver)
+      (mixedValues G (assign η s.binders As) p.result) n W v at hpr
     rcases Bool.or_eq_true_iff.mp hsig with hsig | hbody
-    · obtain ⟨q', hq', s1, s2, s3⟩ := sigMatch_some hsig
-      obtain ⟨h1, h2, h3⟩ := sigImg_some hq'
+    · obtain ⟨q', hq', s1, s2, s3, se⟩ := sigMatch_some hsig
+      obtain ⟨h1, h2, h3, he⟩ := sigImg_some hq'
       have e1 := (hfam _ _ h1).trans (sameLabels_values s1)
       have e3 := (hfam _ _ h3).trans (sameLabels_values s3)
       have e2 := (hargs _ _ h2).trans (sameLabelLists_values s2)
-      simp only [e1, e2, e3] at hpr
+      simp only [e1, e2, e3, he, se] at hpr
       exact hpr
     · simp only [Bool.and_eq_true, beq_iff_eq] at hbody
-      obtain ⟨ps, r, h2, h3, s2, s3⟩ := sigBodyMatch_some hbody.2
+      obtain ⟨ps, r, h2, h3, s2, s3, he⟩ := sigBodyMatch_some hbody.2
       have e3 := (hfam _ _ h3).trans (sameLabels_values s3)
       have e2 := (hargs _ _ h2).trans (sameLabelLists_values s2)
-      simp only [e2, e3] at hpr
-      exact hpr.weaken_recv (anyRecv p.1 q.1 hbody.1)
+      simp only [e2, e3, he] at hpr
+      exact hpr.weaken_recv (anyRecv p.receiver q.receiver hbody.1)
   · obtain ⟨q, hqM, rfl⟩ := List.mem_map.mp hr'
     obtain ⟨p, hps, hsig⟩ := hM q hqM
     have hpr := hc.2.2 _ (List.mem_map_of_mem hps)
-    change Promise (ArgsRest _ (graphArguments G (assign η s.binders As)
-      (mixedValues G (assign η s.binders As)) p.2.2.1)) _ _ n W v at hpr
-    change Promise (ArgsRest (p.2.1.map (mixedValues G (assign η s.binders As)))
-      (graphArguments G (assign η s.binders As) (mixedValues G (assign η s.binders As)) p.2.2.1))
-      (mixedValues G (assign η s.binders As) p.1) (mixedValues G (assign η s.binders As) p.2.2.2) n W v at hpr
+    change PromiseWith p.effect (ArgsRest _ (graphArguments G (assign η s.binders As)
+      (mixedValues G (assign η s.binders As)) p.arguments.2)) _ _ n W v at hpr
+    change PromiseWith p.effect (ArgsRest (p.arguments.1.map (mixedValues G (assign η s.binders As)))
+      (graphArguments G (assign η s.binders As) (mixedValues G (assign η s.binders As)) p.arguments.2))
+      (mixedValues G (assign η s.binders As) p.receiver) (mixedValues G (assign η s.binders As) p.result) n W v at hpr
     rcases Bool.or_eq_true_iff.mp hsig with hsig | hbody
-    · obtain ⟨q', hq', s1, s2, s3, s4⟩ := restMatch_some hsig
-      obtain ⟨h1, h2, h3, h4⟩ := restImg_some hq'
+    · obtain ⟨q', hq', s1, s2, s3, s4, se⟩ := restMatch_some hsig
+      obtain ⟨h1, h2, h3, h4, he⟩ := restImg_some hq'
       have e1 := (hfam _ _ h1).trans (sameLabels_values s1)
       have e3 := (hpack _ _ h3).trans (sameLabels_arguments s3)
       have e4 := (hfam _ _ h4).trans (sameLabels_values s4)
       have e2 := (hargs _ _ h2).trans (sameLabelLists_values s2)
-      simp only [e1, e2, e3, e4] at hpr
+      simp only [e1, e2, e3, e4, he, se] at hpr
       exact hpr
     · simp only [Bool.and_eq_true, beq_iff_eq] at hbody
-      obtain ⟨ps, e, r, h2, h3, h4, s2, s3, s4⟩ := restBodyMatch_some hbody.2
+      obtain ⟨ps, e, r, h2, h3, h4, s2, s3, s4, he⟩ := restBodyMatch_some hbody.2
       have e3 := (hpack _ _ h3).trans (sameLabels_arguments s3)
       have e4 := (hfam _ _ h4).trans (sameLabels_values s4)
       have e2 := (hargs _ _ h2).trans (sameLabelLists_values s2)
-      simp only [e2, e3, e4] at hpr
-      exact hpr.weaken_recv (anyRecv p.1 q.1 hbody.1)
+      simp only [e2, e3, e4, he] at hpr
+      exact hpr.weaken_recv (anyRecv p.receiver q.receiver hbody.1)
 
 /-- **Instantiation.** A scheme row is below an arrow type whose signatures
 are images of its own under one checked instance map: the binders' instances,
 each within its bound, the instance table and its domain's free rows. -/
 def InstArrs [DecidableEq ι] (G : NormalGraph ι) (S : List ι) (L : Ops ι)
-    (M : List (List ι × List (List ι) × List ι × List ι)) : Prop :=
+    (M : List (RestArrow (List ι))) : Prop :=
   ∃ (i : ι) (s : SchemeRow ι) (tbl : InstTable ι) (θs : List (List ι)) (D : List ι) (V : FreeMap ι),
     S = [i] ∧ G.params i = false ∧ G.schemes i = some s ∧ θs.length = s.binders.length ∧
     instKinds G s.binders θs = true ∧
@@ -4803,7 +4812,7 @@ private theorem scheme_noArguments {G : NormalGraph ι} {η : MixedAssignment ι
 
 /-- A type whose one clause is a callable admits no argument list. -/
 private theorem arrs_noArguments {G : NormalGraph ι} {η : MixedAssignment ι} {U : List ι}
-    {L : Ops ι} {M : List (List ι × List (List ι) × List ι × List ι)}
+    {L : Ops ι} {M : List (RestArrow (List ι))}
     (hU : expand G U = [.arrs L M]) {n W vs} : ¬ mixedMeaning G η U n W (.inr vs) := by
   intro h
   have hplain := plain_of_mem_expand (G := G) (S := U) (c := .arrs L M) (by simp [hU])

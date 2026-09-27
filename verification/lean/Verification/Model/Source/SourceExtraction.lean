@@ -16,6 +16,7 @@ Active-name shadowing is refused here: the parser gives a shadowing local a
 name of its own (PROGRAM-TYPING.md, "Shadowing"). This compiler remains a reviewed
 extraction boundary, not a proved TypeScript semantics. Its output is checked by the proved calculus consumer. -/
 namespace Verification.Model.SourceExtraction
+open CallEffects (Arrow RestArrow Contract Effect)
 open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJson
 open Fragment
 
@@ -1347,17 +1348,17 @@ is invented for an omitted position; the call term keeps the arguments the
 source writes. -/
 private def selectSignature (G : PositiveGraphs.NormalGraph Nat) (L : PositiveRules.Ops Nat) (As : List (Ty Nat))
     (Rr : Ty Nat := [3]) :
-    Except String (Ty Nat × List (Ty Nat) × Ty Nat) := do
-  let covers (p : Ty Nat × List (Ty Nat) × Ty Nat) :=
-    (As.zip p.2.1).all fun (A,D) => A.all D.contains
+    Except String (Arrow (Ty Nat)) := do
+  let covers (p : Arrow (Ty Nat)) :=
+    (As.zip p.arguments).all fun (A,D) => A.all D.contains
   -- Instances of one scheme may differ only in their receiver: prefer the
   -- signature naming the receiver passed.
-  let receives (p : Ty Nat × List (Ty Nat) × Ty Nat) := Rr.all p.1.contains
-  let pick (choices : List (Ty Nat × List (Ty Nat) × Ty Nat)) :=
+  let receives (p : Arrow (Ty Nat)) := Rr.all p.receiver.contains
+  let pick (choices : List (Arrow (Ty Nat))) :=
     (choices.find? fun p => covers p && receives p) <|> (choices.find? covers) <|> choices.head?
-  let exact := L.filter fun p => p.2.1.length == As.length
+  let exact := L.filter fun p => p.arguments.length == As.length
   let short := L.filter fun p =>
-    As.length < p.2.1.length && (p.2.1.drop As.length).all (admitsUndefined G)
+    As.length < p.arguments.length && (p.arguments.drop As.length).all (admitsUndefined G)
   let some p := pick exact <|> pick short
     | throw "callee has no signature with the actual argument count"
   return p
@@ -2125,7 +2126,7 @@ private structure LambdaSetup where
   restElements : Nat
   defaults : List (Nat × Fragment.Expr)
   order : List Nat
-  rows : List ((Ty Nat × List (Ty Nat) × Ty Nat) × Option (Ty Nat) × Ty Nat)
+  rows : List ((Arrow (Ty Nat)) × Option (Ty Nat) × Ty Nat)
   overlays : List SourceClaims.Overlay
   captures : List ScopeBinding
   capSlots : List (Ty Nat × Nat)
@@ -2207,7 +2208,7 @@ private def lambdaSetup (fc : SourceClaims.Function) (scope : List ScopeBinding)
       | some (_, s) =>
         if !s.signatures.isEmpty then
           throw "a closure collecting a rest array offers no fixed signature"
-        pure (s.variadic.map (fun (Rt, Di, P, Ri) => ((Rt, Di, Ri), some P)), A)
+        pure (s.variadic.map (fun sig => (sig.fixed, some sig.arguments.2)), A)
       | none =>
         let E ← lower (Fragment.callableType elementJson)
         let some ret := ret
@@ -2215,13 +2216,13 @@ private def lambdaSetup (fc : SourceClaims.Function) (scope : List ScopeBinding)
               "a closure collecting a rest array needs its result annotation")
         let R ← lower (Fragment.callableType ret)
         let restPack ← lower (SourceTypes.use (.pack ⟨[], [], some E, false, true⟩ []))
-        let own ← lower (SourceTypes.use (.arrs [] [(Rsource, sourceDs, [restPack], R)]))
+        let own ← lower (SourceTypes.use (.arrs [] [⟨Rsource, (sourceDs, [restPack]), R, .unrestricted⟩]))
         modify fun st => {st with hints := own :: st.hints}
-        pure ([((Rsource, sourceDs, R), some [restPack])], [own])
+        pure ([(⟨Rsource, sourceDs, R, .unrestricted⟩, some [restPack])], [own])
     | none => do
       let (L, S) ← match mode, scheme with
         | .ctor U, _ => match PositiveRules.expand G A with
-          | [.ctors L] => pure (L.map (fun (Di, Ri) => (U, Di, Ri)), [])
+          | [.ctors L] => pure (L.map (fun (Di, Ri) => ⟨U, Di, Ri, .unrestricted⟩), [])
           | _ => throw "a class value's claim must name construct signatures"
         | .annotated F, _ => match PositiveRules.expand G F with
           | [.arrs L _] => pure (L, [])
@@ -2254,14 +2255,14 @@ private def lambdaSetup (fc : SourceClaims.Function) (scope : List ScopeBinding)
   let T ← table
   -- A claim may offer more parameters than the closure takes: calls discard
   -- the actuals past them. The ones it takes are the source's.
-  if !rows.all (fun (_,Di,_) => arity ≤ Di.length &&
-      ((Di.take arity).zip sourceDs).all (fun (D,B) => within T D B)) then
+  if !rows.all (fun row => arity ≤ row.arguments.length &&
+      ((row.arguments.take arity).zip sourceDs).all (fun (D,B) => within T D B)) then
     throw (locatedRefusal T pos .bindingAnnotation (match mode with
       | .ctor _ => "construct signature claim is outside the source annotation"
       | _ => "closure signature claim is outside the source annotation"))
   -- An ordinary function may be claimed at fewer receivers than it states,
   -- never at more: its body reads the one it is given.
-  if Rsource != [top] && !rows.all (fun (Rt,_,_) => Rt.all Rsource.contains) then
+  if Rsource != [top] && !rows.all (fun row => row.receiver.all Rsource.contains) then
     throw (locatedRefusal (← table) pos .bindingAnnotation
       "closure receiver claim is outside the source annotation")
   if !overlays.isEmpty && overlays.length != rows.length then
@@ -2442,7 +2443,8 @@ private partial def lambdaCode (fc : SourceClaims.Function) (scope : List ScopeB
   let s ← lambdaSetup fc scope Γ lam A mode
   let Cs := s.capSlots.map Prod.fst
   let mut code : Option (Program × Nat) := none
-  for (((Rt, Di, Ri), store, restTy), i) in s.rows.zipIdx do
+  for ((sig, store, restTy), i) in s.rows.zipIdx do
+    let ⟨Rt, Di, Ri, _⟩ := sig
     let row := match s.overlays[i]? with
       | some o => fc.withOverlay o
       | none => fc
@@ -2463,7 +2465,7 @@ private partial def lambdaCode (fc : SourceClaims.Function) (scope : List ScopeB
         throw "a closure's body lowers differently under one of its signatures"
     | none => code := some (P, start)
     let entry : CodeEntry Nat := ⟨s.arity, P.map (·.expression), P.map fun n => (n.continuation, n.handler),
-      start, Cs, (Rt, Di, Ri), store⟩
+      start, Cs, sig, store⟩
     modify fun st => { st with codes := st.codes ++ [⟨entry, claims⟩], codeSources := st.codeSources ++ [source] }
   let some (P, start) := code | throw "closure claim must name a source arrow"
   let exprs := P.map fun n => n.expression
@@ -2894,21 +2896,21 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     -- with an element rest leaves the positions the prefix did not take, then
     -- its rest, the prefix's positions past the fixed ones at the element.
     let (Rt, prefixTys, own, rule) ← match PositiveRules.expand G A with
-      | [.arrs [(Rb,Ds,_)] []] => do
+      | [.arrs [⟨Rb,Ds,_,_⟩] []] => do
         let L ← match PositiveRules.expand G callee.type with
           | [.arrs L _] | [.callable _ _ L _] => pure L
           | _ => throw "bind target requires a single callable contract"
-        let (Rt,domains,result) ← selectSignature G L (boundTypes ++ Ds) receiverPlan.type
+        let ⟨Rt,domains,result,effect⟩ ← selectSignature G L (boundTypes ++ Ds) receiverPlan.type
         if domains.length < n then throw "bind prefix exceeds the target's parameters"
-        let own ← lower (SourceTypes.use (.arrs [(Rb, domains.drop n, result)] []))
+        let own ← lower (SourceTypes.use (.arrs [⟨Rb, domains.drop n, result, effect⟩] []))
         pure (Rt, domains.take n, own, ProgramCertificates.Rule.bindE)
-      | [.arrs [] [(Rb,_,_,_)]] => do
+      | [.arrs [] [⟨Rb,_,_,_⟩]] => do
         let sigs := ProgramTyping.restSigs G callee.type
-        let some (Rt, Ps, E, R) := (sigs.find? fun (Rt,_,_,_) => receiverPlan.type.all Rt.contains) <|> sigs.head?
+        let some ⟨Rt, (Ps, E), R, effect⟩ := (sigs.find? fun sig => receiverPlan.type.all sig.receiver.contains) <|> sigs.head?
           | throw "a variadic bound function needs a variadic target"
         let some El := PositiveRules.restElem G E
           | throw "a variadic bound function needs an element rest"
-        let own ← lower (SourceTypes.use (.arrs [] [(Rb, Ps.drop n, E, R)]))
+        let own ← lower (SourceTypes.use (.arrs [] [⟨Rb, (Ps.drop n, E), R, effect⟩]))
         pure (Rt, Ps.take n ++ List.replicate (n - Ps.length) El, own, ProgramCertificates.Rule.bindRestE)
       | _ => throw "bound function claim requires one free signature"
     -- The descriptor stores the slots as they are, so each is re-bound at the
@@ -2944,13 +2946,13 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let L ← match PositiveRules.expand G callee.type with
       | [.arrs L _] | [.callable _ _ L _] => pure L
       | _ => throw ".apply target requires a single callable contract"
-    let (Rt,Ds,R) ← selectSignature G L [] receiverPlan.type
+    let ⟨Rt,Ds,R,effect⟩ ← selectSignature G L [] receiverPlan.type
     let receiverCheck := DirectProof.cast J Rt (DirectProof.var J m receiverPlan.type)
     obligation receiver.span receiverCheck.goal (some receiverCheck) "method-receiver" dsJ
     let rule := match PositiveRules.expand G callee.type with
       | [.callable ..] => ProgramCertificates.Rule.callCallable
       | _ => .app
-    let call := DirectProof.node J (.invoke (.var (m+1)) (.var m) []) R rule
+    let call := DirectProof.node J (.invoke (.var (m+1)) (.var m) []) R (rule effect)
       (DirectProof.var J (m+1) callee.type :: receiverCheck :: omittedPremises J Ds 0)
     pure (saveOperands ([callee, receiverPlan] ++ saved) call)
   | .callWithReceiver _ f receiver args => do
@@ -2963,14 +2965,14 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let L ← match PositiveRules.expand G callee.type with
       | [.arrs L _] | [.callable _ _ L _] => pure L
       | _ => throw ".call target requires a single callable contract"
-    let (Rt,Ds,R) ← selectSignature G L (actuals.map (·.type)) receiverPlan.type
+    let ⟨Rt,Ds,R,effect⟩ ← selectSignature G L (actuals.map (·.type)) receiverPlan.type
     let rule := match PositiveRules.expand G callee.type with
       | [.callable ..] => ProgramCertificates.Rule.callCallable
       | _ => .app
     -- `.call` passes its first argument as the receiver.
     let receiverCheck := DirectProof.cast H Rt (DirectProof.var H 0 receiverPlan.type)
     obligation receiver.span receiverCheck.goal (some receiverCheck) "method-receiver" ds
-    let call := DirectProof.node H (.invoke (.var 1) (.var 0) (actuals.map (·.term))) R rule
+    let call := DirectProof.node H (.invoke (.var 1) (.var 0) (actuals.map (·.term))) R (rule effect)
       (DirectProof.var H 1 callee.type
         :: receiverCheck
         :: ((actuals.zip Ds).map fun (a,D) => DirectProof.cast H D a)
@@ -3014,7 +3016,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let dsH := held ⟨"",some callee.span⟩ :: ds
     let actuals ← args.attach.mapM fun ⟨a,_⟩ => closureExpr fc dsH H a
     let fixedFits := match PositiveRules.expand G M with
-      | [.arrs L _] | [.callable _ _ L _] => L.any fun p => args.length ≤ p.2.1.length
+      | [.arrs L _] | [.callable _ _ L _] => L.any fun p => args.length ≤ p.arguments.length
       | _ => false
     let term := Tm.invoke (.var 0) (.var (ri+1)) (actuals.map (·.term))
     let call ← match PositiveRules.expand G M, ProgramTyping.restSigs G M with
@@ -3023,7 +3025,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
         -- ones omitted as `undefined`, every further actual at its position
         -- in the rest.
         if fixedFits then throw "a call both a fixed and a variadic signature take is outside the fragment"
-        let some (Rt, Ps, E, R) := (sigs.find? fun (Rt,_,_,_) => r.type.all Rt.contains) <|> sigs.head?
+        let some ⟨Rt, (Ps, E), R, effect⟩ := (sigs.find? fun sig => r.type.all sig.receiver.contains) <|> sigs.head?
           | throw "internal variadic signature"
         let receiver := DirectProof.cast H Rt (DirectProof.var H (ri+1) r.type)
         obligation o.span receiver.goal (some receiver) "method-receiver" dsH
@@ -3033,18 +3035,18 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
           | some D => pure D
           | none => throw "an actual past the rest's positions"
         pure (DirectProof.node H term R
-          (.callRest k (Ps.length - k) (extra.map fun _ => false) E)
+          (.callRest effect k (Ps.length - k) (extra.map fun _ => false) E)
           (DirectProof.var H 0 M :: receiver ::
             ((actuals.take k).zip Ps).map (fun (a,D) => DirectProof.cast H D a)
             ++ omittedPremises H Ps k ++ (extra.zip positions).map fun (a,D) => DirectProof.cast H D a))
       | [.arrs L _], [] | [.callable _ _ L _], [] =>
-        let (Rt,Ds,R) ← selectSignature G L (actuals.map (·.type)) r.type
+        let ⟨Rt,Ds,R,effect⟩ ← selectSignature G L (actuals.map (·.type)) r.type
         let receiver := DirectProof.cast H Rt (DirectProof.var H (ri+1) r.type)
         obligation o.span receiver.goal (some receiver) "method-receiver" dsH
         let rule := match PositiveRules.expand G M with
           | [.callable ..] => ProgramCertificates.Rule.callCallable
           | _ => .app
-        pure (DirectProof.node H term R rule
+        pure (DirectProof.node H term R (rule effect)
           (DirectProof.var H 0 M :: receiver
             :: ((actuals.zip Ds).map fun (a,D) => DirectProof.cast H D a)
               ++ omittedPremises H Ds actuals.length))
@@ -3059,10 +3061,10 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     -- fixed parameters, trailing ones omitted as `undefined`, then every
     -- further actual at its position in the rest.
     let fixedFits := match PositiveRules.expand G callee.type with
-      | [.arrs L _] | [.callable _ _ L _] => L.any fun p => args.length ≤ p.2.1.length
+      | [.arrs L _] | [.callable _ _ L _] => L.any fun p => args.length ≤ p.arguments.length
       | _ => false
     match PositiveRules.expand G callee.type, ProgramTyping.restSigs G callee.type with
-    | _, (Rt, Ps, E, R) :: _ =>
+    | _, ⟨Rt, (Ps, E), R, effect⟩ :: _ =>
       if fixedFits then throw "a call both a fixed and a variadic signature take is outside the fragment"
       let actuals ← args.attach.mapM fun ⟨a,_⟩ => closureExpr fc scope Γ a
       let k := min actuals.length Ps.length
@@ -3071,7 +3073,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
         | some D => pure D
         | none => throw "an actual past the rest's positions"
       pure (DirectProof.node Γ (.call callee.term (actuals.map (·.term))) R
-        (.callRest k (Ps.length - k) (extra.map fun _ => false) E)
+        (.callRest effect k (Ps.length - k) (extra.map fun _ => false) E)
         (callee :: plainReceiver Γ Rt :: ((actuals.take k).zip Ps).map (fun (a,D) => DirectProof.cast Γ D a)
           ++ omittedPremises Γ Ps k ++ (extra.zip positions).map fun (a,D) => DirectProof.cast Γ D a))
     | [.arrs L _], [] | [.callable _ _ L _], [] =>
@@ -3079,13 +3081,13 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
         | [.callable ..] => ProgramCertificates.Rule.callCallable
         | _ => .app
       let actuals ← args.attach.mapM fun ⟨a,_⟩ => closureExpr fc scope Γ a
-      let (Rt,Ds,R) ← selectSignature G L (actuals.map (·.type))
+      let ⟨Rt,Ds,R,effect⟩ ← selectSignature G L (actuals.map (·.type))
       -- A plain call passes `undefined`: a signature that needs a receiver
       -- is a located obligation, apart from the call's own typing.
       if !admitsUndefined G Rt then
         let plan := plainReceiver Γ Rt
         obligation f.span plan.goal (some plan) "method-receiver" scope
-      pure (DirectProof.node Γ (.call callee.term (actuals.map (·.term))) R rule
+      pure (DirectProof.node Γ (.call callee.term (actuals.map (·.term))) R (rule effect)
         (callee :: plainReceiver Γ Rt :: ((actuals.zip Ds).map fun (a,D) => DirectProof.cast Γ D a)
           ++ omittedPremises Γ Ds actuals.length))
     | _, _ =>
@@ -3099,15 +3101,15 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
       let alternatives ← callee.type.mapM fun label => do
         let [.arrs L _] := PositiveRules.expand G [label]
           | throw "every callee alternative must name a source arrow"
-        let (Rt,Ds,R) ← selectSignature G L As
-        pure (label,Rt,Ds,R)
-      let R := (alternatives.flatMap fun (_,_,_,R) => R).eraseDups
+        let ⟨Rt,Ds,R,effect⟩ ← selectSignature G L As
+        pure (label, (⟨Rt,Ds,R,effect⟩ : Arrow (Ty Nat)))
+      let R := (alternatives.flatMap fun (_,sig) => sig.result).eraseDups
       let n := As.length
       let H := As.reverse ++ callee.type::Γ
       let term := Tm.call (.var n) ((List.range n).map fun i => .var (n-1-i))
-      let children := alternatives.map fun (label,Rt,Ds,result) =>
+      let children := alternatives.map fun (label,⟨Rt,Ds,result,effect⟩) =>
         let branch := As.reverse ++ [label]::Γ
-        DirectProof.cast branch R (DirectProof.node branch term result .app
+        DirectProof.cast branch R (DirectProof.node branch term result (.app effect)
           (DirectProof.var branch n [label] :: plainReceiver branch Rt ::
             ((As.zip Ds).zipIdx.map fun ((A,D),i) =>
               DirectProof.cast branch D (DirectProof.var branch (n-1-i) A))
@@ -3203,7 +3205,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let actuals ← args.attach.mapM fun ⟨a,_⟩ => closureExpr fc scope Γ a
     -- As for a call: a signature declaring exactly the actuals written, or a
     -- longer one whose remaining positions admit `undefined`.
-    let (_, Ds, R) ← selectSignature G (L.map fun (Ds, R) => ([3], Ds, R)) (actuals.map (·.type))
+    let ⟨_, Ds, R, _⟩ ← selectSignature G (L.map fun (Ds, R) => ⟨[3], Ds, R, .unrestricted⟩) (actuals.map (·.type))
     pure (DirectProof.node Γ (.construct callee.term (actuals.map (·.term))) R .construct
       (callee :: ((actuals.zip Ds).map fun (a,D) => DirectProof.cast Γ D a)
         ++ omittedPremises Γ Ds actuals.length))
@@ -3528,7 +3530,7 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
         | [.list Tp []] =>
           if Tp.optional.isEmpty && Tp.rest.isNone then pure (Tp.required, false)
           else if Tp.required.isEmpty && Tp.optional.isEmpty &&
-              (ProgramTyping.restSigs G B).any (fun (_, Ps, _, _) => Ps.isEmpty) then
+              (ProgramTyping.restSigs G B).any (fun ⟨_, (Ps, _), _, _⟩ => Ps.isEmpty) then
             pure ([], true)
           else throw (locatedRefusal (← table) e.span .bindingAnnotation
             ".apply with a list of unknown length needs a target taking only a rest parameter")
@@ -3550,15 +3552,15 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let callEnv := prepared ++ saved ++ Γ
     let callScope := List.replicate p anonymous ++ operandScope ++ scope
     let Rt ← if dynamic then
-        let sigs := (ProgramTyping.restSigs G B).filter fun (_, Ps, _, _) => Ps.isEmpty
-        match (sigs.find? fun (Rt,_,_,_) => R₀.all Rt.contains) <|> sigs.head? with
-        | some (Rt,_,_,_) => pure Rt
+        let sigs := (ProgramTyping.restSigs G B).filter fun ⟨_, (Ps, _), _, _⟩ => Ps.isEmpty
+        match (sigs.find? fun ⟨Rt,_,_,_⟩ => R₀.all Rt.contains) <|> sigs.head? with
+        | some ⟨Rt,_,_,_⟩ => pure Rt
         | none => throw ".apply target requires a rest signature"
       else do
         let L ← match PositiveRules.expand G B with
           | [.arrs L _] | [.callable _ _ L _] => pure L
           | _ => throw ".apply target requires a single callable contract"
-        let (Rt,_,_) ← selectSignature G L elements R₀
+        let ⟨Rt,_,_,_⟩ ← selectSignature G L elements R₀
         pure Rt
     let receiverIndex := p + s - 2
     let receiverCheck := DirectProof.cast callEnv Rt (DirectProof.var callEnv receiverIndex R₀)
@@ -3677,7 +3679,7 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
         if let [.list T []] := PositiveRules.expand G S then
           if T.optional.isEmpty && T.rest.isNone then
             return (i, S)
-      let some (_, _, P, _) := (ProgramTyping.restSigs G B).head? | throw "a spread needs a variadic callee"
+      let some ⟨_, (_, P), _, _⟩ := (ProgramTyping.restSigs G B).head? | throw "a spread needs a variadic callee"
       let some E := PositiveRules.restElem G P
         | throw "a spread into a rest needs an element rest"
       if !E.contains 3 then
@@ -3751,12 +3753,12 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let receiverOf (Rr : Ty Nat) (actualTys : List (Ty Nat)) : Option (Ty Nat) :=
       if variadic then
         let sigs := ProgramTyping.restSigs G B
-        ((sigs.find? fun (Rt,_,_,_) => Rr.all Rt.contains) <|> sigs.head?).map (·.1)
+        ((sigs.find? fun sig => Rr.all sig.receiver.contains) <|> sigs.head?).map (·.receiver)
       else if spread then none
       else match PositiveRules.expand G B with
         | [.arrs L _] | [.callable _ _ L _] =>
           match selectSignature G L actualTys Rr with
-          | .ok (Rt,_,_) => some Rt
+          | .ok sig => some sig.receiver
           | .error _ => none
         | _ => none
     match e, method with
@@ -4787,7 +4789,7 @@ private partial def body : Nat → SourceClaims.Function → Ty Nat → List Sco
       let N ← exprType fc (.var pos iterate)
       let T ← exprType fc (.var namePos name)
       let G := SourceTypes.graph (← table)
-      let [.arrs [(_, [], S)] _] := PositiveRules.expand G N
+      let [.arrs [⟨_, [], S, _⟩] _] := PositiveRules.expand G N
         | throw (locatedRefusal (← table) pos .bindingAnnotation
             "a for...of step is one call of no parameters")
       let present := BranchRefinement.tagSlice G S .isNul false

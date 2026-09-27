@@ -1093,6 +1093,9 @@ function liftClause(types: unknown, clause: unknown, depth: number): unknown {
   if (callable) {
     const c: Record<string, unknown> = isObject(callable) ? callable : {};
     const rest: unknown[] = Array.isArray(c.rest) ? c.rest : [];
+    if ([...(Array.isArray(c.arrows) ? c.arrows : []),
+      ...(Array.isArray(c.variadic) ? c.variadic : [])].some(
+        (s: unknown) => !isObject(s) || s.effect !== "unrestricted")) return JSON.stringify(clause);
     const signatures = liftSignatures(types, c.arrows, c.variadic, depth);
     if (rest.length || signatures.length !== 1) return JSON.stringify(clause);
     return {
@@ -1103,6 +1106,9 @@ function liftClause(types: unknown, clause: unknown, depth: number): unknown {
   }
   const arrs = body("arrs");
   if (isObject(arrs)) {
+    if ([...(Array.isArray(arrs.arrows) ? arrs.arrows : []),
+      ...(Array.isArray(arrs.variadic) ? arrs.variadic : [])].some(
+        (s: unknown) => !isObject(s) || s.effect !== "unrestricted")) return JSON.stringify(clause);
     const arrows = liftSignatures(types, arrs.arrows, arrs.variadic, depth);
     if (arrows.length) return arrows.length === 1 ? arrows[0] : shown(arrows);
   }
@@ -1142,15 +1148,15 @@ function liftSignatures(
   const sigs: unknown[] = Array.isArray(variadic) ? variadic : [];
   return [
     ...arrows.map((arrow) => {
-      const [receiver, sig]: unknown[] = Array.isArray(arrow) ? arrow : [];
-      const [domain, result]: unknown[] = Array.isArray(sig) ? sig : [];
-      return atom(receiver, domain, result);
+      if (!isObject(arrow) || arrow.effect !== "unrestricted")
+        throw new TypeSyntaxError("a qualified signature needs the exact graph editor");
+      return atom(arrow.receiver, arrow.arguments, arrow.result);
     }),
     ...sigs.map((sig) => {
-      const [receiver, signature]: unknown[] = Array.isArray(sig) ? sig : [];
-      const [domain, tail]: unknown[] = Array.isArray(signature) ? signature : [];
-      const [rest, result]: unknown[] = Array.isArray(tail) ? tail : [];
-      return atom(receiver, domain, result, restElement(types, rest));
+      if (!isObject(sig) || sig.effect !== "unrestricted")
+        throw new TypeSyntaxError("a qualified signature needs the exact graph editor");
+      const [domain, rest]: unknown[] = Array.isArray(sig.arguments) ? sig.arguments : [];
+      return atom(sig.receiver, domain, sig.result, restElement(types, rest));
     }),
   ];
 }
@@ -1432,10 +1438,10 @@ function lowerAtom(types: unknown, atom: unknown): number[] {
             first: bagFields.map((fd) => namedField(types, fd, "write")),
             rest: [],
             ...(f.rest === undefined
-              ? { arrows: [[Rt, [Ds, R]]] }
+              ? { arrows: [{receiver: Rt, arguments: Ds, result: R, effect: "unrestricted"}] }
               : {
                   arrows: [],
-                  variadic: [[Rt, [Ds, [restPack(types, lowerType(types, f.rest)), R]]]],
+                  variadic: [{receiver: Rt, arguments: [Ds, restPack(types, lowerType(types, f.rest))], result: R, effect: "unrestricted"}],
                 }),
           },
         },
@@ -1455,18 +1461,9 @@ function lowerAtom(types: unknown, atom: unknown): number[] {
           {
             arrs: {
               arrows: [],
-              variadic: [
-                [
-                  receiver,
-                  [
-                    domains,
-                    [
-                      restPack(types, lowerType(types, atom.rest)),
-                      lowerType(types, atom.result),
-                    ],
-                  ],
-                ],
-              ],
+              variadic: [{receiver,
+                arguments: [domains, restPack(types, lowerType(types, atom.rest))],
+                result: lowerType(types, atom.result), effect: "unrestricted"}],
             },
           },
         ]),
@@ -1475,7 +1472,7 @@ function lowerAtom(types: unknown, atom: unknown): number[] {
       intern(types, [
         {
           arrs: {
-            arrows: [[receiver, [domains, lowerType(types, atom.result)]]],
+            arrows: [{receiver, arguments: domains, result: lowerType(types, atom.result), effect: "unrestricted"}],
           },
         },
       ]),

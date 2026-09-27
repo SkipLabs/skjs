@@ -924,9 +924,9 @@ private def rowOf (j : Json) : Option (List (Clause (List Nat))) :=
   == some [.refs [("value", [0]),("value",[1]),("value",[1,2])] [] []]
 private def trueToNull := arrowOf ⟨false,[.boolLit true]⟩ ⟨false,[.null]⟩
 private def falseToNull := arrowOf ⟨false,[.boolLit false]⟩ ⟨false,[.null]⟩
-#guard rowOf (conjoined trueToNull [falseToNull]) == some [.arrs [([4],[[1]],[0]),([4],[[2]],[0])] []]
-#guard rowOf (conjoined falseToNull [trueToNull]) == some [.arrs [([4],[[2]],[0]),([4],[[1]],[0])] []]
-#guard rowOf (conjoined trueToNull [trueToNull]) == some [.arrs [([4],[[1]],[0])] []]
+#guard rowOf (conjoined trueToNull [falseToNull]) == some [.arrs [⟨[4], [[1]], [0], .unrestricted⟩,⟨[4], [[2]], [0], .unrestricted⟩] []]
+#guard rowOf (conjoined falseToNull [trueToNull]) == some [.arrs [⟨[4], [[2]], [0], .unrestricted⟩,⟨[4], [[1]], [0], .unrestricted⟩] []]
+#guard rowOf (conjoined trueToNull [trueToNull]) == some [.arrs [⟨[4], [[1]], [0], .unrestricted⟩] []]
 
 -- A lambda claimed at two signatures is proved once per signature; the call
 -- resolves to the first signature admitting its argument.

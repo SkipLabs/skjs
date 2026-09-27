@@ -14,7 +14,7 @@ open ControlFlow CertificateProducer RequestJson
 /-- Labels 9 and 10 extend the shared table; label 7 there is unknown, every
 signature's receiver. -/
 private def types := CallableGraphTests.types ++
-  [[PositiveNormalization.Clause.boolLit false], [.callable [(valueField, [1])] [] [([7],[[0]],[0])] []]]
+  [[PositiveNormalization.Clause.boolLit false], [.callable [(valueField, [1])] [] [⟨[7], [[0]], [0], .unrestricted⟩] []]]
 private def G : NormalGraph Nat := .ofRows fun i => types[i]?.getD []
 private def labels := List.range types.length
 private def pool := vocabulary G labels [] [[1],[2],[5],[10]]

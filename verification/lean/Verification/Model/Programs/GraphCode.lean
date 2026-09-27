@@ -122,12 +122,20 @@ first — and the unit's own graph against the whole table. -/
 def admits [DecidableEq ι] (table : List (CodeEntry ι)) (c : CodeEntry ι) : Bool :=
   table.contains c
 
+/-- A definition proposes an effect on its ordinary signature. This initial
+algorithm accepts heap preservation for operationally pure node expressions;
+the semantic contract also permits allocation and qualified calls. -/
+def effectChecked (effect : CallEffects.Effect) (expressions : List Tm) : Bool :=
+  match effect with
+  | .unrestricted => true
+  | .preservesInputHeap => expressions.all Purity.pureTerm
+
 /-- One code entry, checked at its signature from the frame the signature
 describes, against an earlier table. -/
 def codeChecked [DecidableEq ι] (G : NormalGraph ι) (table : List (CodeEntry ι))
     (c : CodeEntry ι) (C : ControlFlow.Certificate ι) : Bool :=
-  decide (c.arity ≤ c.row.2.1.length) &&
-    checkEntry G c.row.2.2 (program c.exprs c.conts) C c.start
+  decide (c.arity ≤ c.row.arguments.length) && effectChecked c.row.effect c.exprs &&
+    checkEntry G c.row.result (program c.exprs c.conts) C c.start
       (codeFrame c.arity c.row c.captures c.store) (admits table)
 
 /-- A checked entry meets its signature in the graph reassigned at every
@@ -137,13 +145,21 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {table c C}
     (h : codeChecked G table c C = true) : ∀ η, c.Spec (reassign G η) := by
   intro η
   simp only [codeChecked, Bool.and_eq_true, decide_eq_true_eq] at h
-  have hc : checkEntry (reassign G η) c.row.2.2 (program c.exprs c.conts) C c.start
+  have hc : checkEntry (reassign G η) c.row.result (program c.exprs c.conts) C c.start
       (codeFrame c.arity c.row c.captures c.store) (admits table) = true := by
     exact (Parametricity.checkEntry_reassign G η _ _ _ _ _ _).trans h.2
   have ht : ProgramCertificates.CodesSound (reassign G η) (admits table) :=
     fun e he η' => htable e he η'
-  exact ⟨h.1, fun n W heap L he hw hh =>
-    goto_safe hc ht n W heap L .nul he hw hh⟩
+  refine ⟨h.1.1, ?_⟩
+  intro n W heap L he hw hh hvalues
+  have hs := goto_safe hc ht n W heap L .nul he hw hh
+  cases heffect : c.row.effect with
+  | unrestricted =>
+    simpa [heffect, CallEffects.Effect.post] using HeapObservations.forget hs
+  | preservesInputHeap =>
+    have hp : ∀ e ∈ c.exprs, Purity.pureTerm e = true := by
+      simpa [effectChecked, heffect, List.all_eq_true] using h.1.2
+    simpa [heffect] using CallEffects.pure_safe (.goto hp hvalues rfl) hs
 
 /-- Check codes in order, each against the table of those before it. -/
 def extendTable [DecidableEq ι] (G : NormalGraph ι) :

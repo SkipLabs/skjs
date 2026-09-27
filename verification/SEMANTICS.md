@@ -572,10 +572,11 @@ fixed signatures; `restsT_adm` does the same for argument-pack rests.
 `PromiseWith.weaken` and the fixed/rest congruence and conjunction lemmas
 justify effect-aware contract operations. `call_safe` proves application from
 the qualified promise without access to the body.
-[CallEffectCertificates.lean](lean/Verification/Model/Programs/CallEffectCertificates.lean)
-checks ordinary graph evidence plus a conservative effect check;
-`checkDefinition_sound` and `introduce` establish qualified fixed-arity closures.
-The positive type graph, wire protocol and source acceptance still need integration.
+[GraphCode.lean](lean/Verification/Model/Programs/GraphCode.lean) checks ordinary
+graph evidence and the effect together in `codeChecked`; `codeChecked_sound`
+establishes the semantic contract used by fixed and variadic closure introduction.
+The positive type graph carries the effect on every signature. Source export
+and inference still need integration.
 
 This remains a value type, despite mentioning heaps: membership quantifies over
 **all** eligible entry heaps. It does not store an observation about the current

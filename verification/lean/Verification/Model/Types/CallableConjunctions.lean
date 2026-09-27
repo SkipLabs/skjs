@@ -1,16 +1,18 @@
 import Verification.Model.Types.ReferenceConjunctions
 import Verification.Model.Programs.CallableObjects
+import Verification.Model.Semantics.CallEffects
 
 /-! Nonempty bag conjunctions and overloads on one callable value. Invariant
 operands remain separate, including at budget zero; normalization must not
 replace incompatible operands by bottom. -/
 namespace Verification.Model.CallableConjunctions
+open CallEffects
 
 def propsT (A : Fields) (Bs : List Fields) : Fam := fun n W v =>
   bagT A n W v ∧ ∀ B ∈ Bs, bagT B n W v
 
-def objectsT (A : Fields) (Bs : List Fields) (L : List (Fam × List Fam × Fam)) : Fam :=
-  interT (propsT A Bs) (callsT L)
+def objectsT (A : Fields) (Bs : List Fields) (L : List (Arrow Fam)) : Fam :=
+  interT (propsT A Bs) (CallEffects.callsT L)
 
 theorem props_merge (A C : Fields) (Bs Ds : List Fields) (n W v) :
     propsT A (Bs ++ C :: Ds) n W v ↔ interT (propsT A Bs) (propsT C Ds) n W v := by
@@ -55,20 +57,20 @@ theorem neutral_iff (A : Fields) (Bs : List Fields) (n W v) :
     · right
       exact ⟨h,⟨flds,_,rfl,hc,hs⟩,by simp⟩
 
-theorem merge (A C : Fields) (Bs Ds : List Fields) (L M : List (Fam × List Fam × Fam)) (n W v) :
+theorem merge (A C : Fields) (Bs Ds : List Fields) (L M : List (Arrow Fam)) (n W v) :
     objectsT A (Bs ++ C :: Ds) (L ++ M) n W v ↔
       interT (objectsT A Bs L) (objectsT C Ds M) n W v := by
-  simp only [objectsT, interT, props_merge, TypeAlgebra.calls_append]
+  simp only [objectsT, interT, props_merge, CallEffects.callsT_append]
   exact ⟨fun h => ⟨⟨h.1.1,h.2.1⟩,h.1.2,h.2.2⟩,
     fun h => ⟨⟨h.1.1,h.2.1⟩,h.1.2,h.2.2⟩⟩
 
-theorem calls_merge (A : Fields) (Bs : List Fields) (L M : List (Fam × List Fam × Fam)) (n W v) :
-    objectsT A Bs (L ++ M) n W v ↔ interT (objectsT A Bs L) (callsT M) n W v := by
-  simp only [objectsT, interT, TypeAlgebra.calls_append]
+theorem calls_merge (A : Fields) (Bs : List Fields) (L M : List (Arrow Fam)) (n W v) :
+    objectsT A Bs (L ++ M) n W v ↔ interT (objectsT A Bs L) (CallEffects.callsT M) n W v := by
+  simp only [objectsT, interT, CallEffects.callsT_append]
   exact and_assoc.symm
 
-theorem adm (A : Fields) (Bs : List Fields) (L : List (Fam × List Fam × Fam)) : Adm (objectsT A Bs L) := by
-  apply interT_adm _ _ _ (callsT_adm L)
+theorem adm (A : Fields) (Bs : List Fields) (L : List (Arrow Fam)) : Adm (objectsT A Bs L) := by
+  apply interT_adm _ _ _ (CallEffects.callsT_adm L)
   constructor
   · intro n W v h
     exact ⟨(bagT_adm A).down n W v h.1,fun B hb => (bagT_adm B).down n W v (h.2 B hb)⟩
@@ -76,18 +78,19 @@ theorem adm (A : Fields) (Bs : List Fields) (L : List (Fam × List Fam × Fam)) 
     exact ⟨(bagT_adm A).mono n W U hx v h.1,fun B hb => (bagT_adm B).mono n W U hx v (h.2 B hb)⟩
 
 theorem congr_below {α : Type} (X Y : α → Fam) (a : List (PropKey × α))
-    (bs : List (List (PropKey × α))) (L : List (α × List α × α))
+    (bs : List (List (PropKey × α))) (L : List (Arrow α))
     (n : Nat) (h : ∀ a, Agree (X a) (Y a) n) (W : WorldT n) (v : Val) :
     objectsT (ReferenceConjunctions.famsOf X a) (bs.map (ReferenceConjunctions.famsOf X))
-        (L.map fun p => (X p.1, p.2.1.map X, X p.2.2)) n W v ↔
+        (L.map (Arrow.map X)) n W v ↔
       objectsT (ReferenceConjunctions.famsOf Y a) (bs.map (ReferenceConjunctions.famsOf Y))
-        (L.map fun p => (Y p.1, p.2.1.map Y, Y p.2.2)) n W v := by
+        (L.map (Arrow.map Y)) n W v := by
   simp only [objectsT, interT]
   have hd : ∀ As : List α, ArgsAgree n (As.map X) (As.map Y) := by
     intro As; induction As with
     | nil => exact .nil
     | cons a As ih => exact .cons (h a) ih
-  apply and_congr _ (callsT_congr L _ _ (fun p _ => ⟨h p.1,hd p.2.1,h p.2.2⟩) W v)
+  apply and_congr _ (CallEffects.callsT_congr L (Arrow.map X) (Arrow.map Y) (fun _ _ => rfl)
+    (fun p _ => ⟨h p.receiver, hd p.arguments, h p.result⟩) W v)
   simp only [propsT,List.forall_mem_map]
   apply and_congr (bagT_contractive X Y a n h W v)
   constructor <;> intro hb b hm

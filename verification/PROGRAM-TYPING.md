@@ -3207,10 +3207,10 @@ Json (`invalid-sum-sound-binding-constructor.ts`).
 
 ### Certifying inferred call effects
 
-**Planned rules, not current certificate constructors.** The semantic
-foundation is [the qualified arrow equation](SEMANTICS.md#effect-qualified-call-contracts).
-The existing source-closure rule above still describes current acceptance.
-The extension must strengthen definition checking and application together;
+**Definition certification is implemented; producer inference and native
+overloads remain in progress.** The semantic foundation is
+[the qualified arrow equation](SEMANTICS.md#effect-qualified-call-contracts).
+Definition checking and application both carry the effect;
 changing only the native `map` declaration would introduce a trusted assumption
 about client code.
 
@@ -3255,7 +3255,7 @@ qualified type is established. Calls inside a checked body in turn consume
 their callees' qualified types; higher-order effect requirements are types too.
 
 Forgetting an effect is valid, and manufacturing one by subsumption is not.
-The planned coverage condition, in addition to the usual domain contravariance
+The coverage condition, in addition to the usual domain contravariance
 and result covariance, is
 
 $$
@@ -3276,14 +3276,14 @@ overload promises a sparse result. Both use ordinary selection and application;
 there is no body-inspecting `map` rule. An explicitly submitted stronger effect
 claim must fail with a located obligation rather than silently disappear.
 
-The semantic introduction and elimination rules are now proved in
-`CallEffectCertificates.introduce` and `CallEffects.call_safe`.
-`checkDefinition_sound` connects the former to the existing graph certificate
-checker plus a conservative effect check using `Purity`: the body must already
-be safe and its signature must match. Rest-collecting entries retain their store
-contract in the checked frame; `introduceRest` proves that entry allocation
-preserves the input heap before the checked body runs. The initial checker
-still recognizes only pure expressions inside that body.
+The semantic introduction and elimination rules are proved in
+`ProgramTyping.callsT_of_graph`, `restsT_of_graphRest`, and `CallEffects.call_safe`.
+`GraphCode.codeChecked_sound` checks ordinary safety and the signature's effect
+together; a separate unqualified body check cannot introduce a qualified type.
+Rest-collecting entries retain their store contract in the checked frame, and
+the entry allocation preserves the input heap before the checked body runs.
+The initial effect algorithm still recognizes only pure expressions inside
+that body; the semantic contract permits any body meeting the guarantee.
 
 `PromiseWith.combine` retains both premises' effects when combining result
 guarantees (the effect meet, so either premise can supply heap preservation). Both promises concern the same admitted calls; determinism gives
@@ -3293,11 +3293,14 @@ unrestricted results. `PromiseWith.bound` is the common forwarding proof for
 fixed and variadic binding: saving a receiver and prefix changes the admitted
 arguments, not the forwarded call's heap guarantee.
 
-This checker is not yet wired into source acceptance.
-The remaining implementation must integrate effect-aware type operations and
-one representation through producer, claims and certificates. The accepted
-plan and `SourceClaimJson.checkJson_safe` must cover any added evidence, and the
-stronger call type used by later derivations must itself have a semantic proof.
+This checker is wired into source acceptance, including
+`SourceClaimJson.checkJson_safe`. One contract record carries receiver,
+arguments, result and required effect through graphs, claims and certificates;
+subtyping checks effect implication and substitution preserves it. Ordinary
+source annotations and current producer output remain unrestricted. Inference,
+compositional body-effect checking, native overloads and located effect-failure
+reporting are the remaining implementation work. Qualified graph claims can
+already be submitted and certified through the ordinary source pipeline.
 
 ### Parameter initialization order
 

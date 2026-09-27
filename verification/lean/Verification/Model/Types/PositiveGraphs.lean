@@ -4,6 +4,7 @@ import Verification.Model.Types.PositiveNormalization
 or allocating new labels. A label names a whole positive formula; normalized
 labels name finite unions of clauses. Operands remain lists of labels. -/
 namespace Verification.Model.PositiveGraphs
+open CallEffects
 open PositiveNormalization Tower
 
 /-! ## Rows of a normal graph
@@ -161,14 +162,14 @@ theorem selectParameter_valid (kind : Option ParameterKind) {A : WorldFamily Par
 signatures `(receiver, parameters, result)` each of its instances meets. -/
 structure SchemeRow (ι : Type) where
   binders : List ι
-  signatures : List (List ι × List (List ι) × List ι)
+  signatures : List (Arrow (List ι))
   /-- Upper bounds `(binder, type)`: an instance gives the binder a family below
   the type, read at the scheme's own assignment (a bound does not mention the
   scheme's binders). -/
   bounds : List (ι × List ι) := []
   /-- Variadic signatures `(receiver, parameters, rest, result)`, the rest an
   argument-list type; a binder may be one. -/
-  variadic : List (List ι × List (List ι) × List ι × List ι) := []
+  variadic : List (RestArrow (List ι)) := []
   deriving DecidableEq, Repr
 
 /-- What the realm's arrays are, as a graph states it: the type of
@@ -772,28 +773,28 @@ theorem graphArguments_valid (G : NormalGraph ι) (η : MixedAssignment ι)
 
 /-- One instance's signatures, their rows read at the reassignment. -/
 noncomputable def instanceSigs (D : ParameterAssignment k ι → List ι → Fam) (η : ParameterAssignment k ι)
-    (s : SchemeRow ι) (As : List (ParameterFamily k)) : List (Fam × List Fam × Fam) :=
+    (s : SchemeRow ι) (As : List (ParameterFamily k)) : List (Arrow Fam) :=
   let η' := assign η s.binders As
-  s.signatures.map fun p => (D η' p.1, p.2.1.map (D η'), D η' p.2.2)
+  s.signatures.map (Arrow.map (D η'))
 
 /-- One instance's variadic signatures, their rows read at the reassignment. -/
 noncomputable def instanceRestsWithArgs (D : ParameterAssignment k ι → List ι → Fam) (η : ParameterAssignment k ι)
     (s : SchemeRow ι) (As : List (ParameterFamily k))
-    (P : ArgumentInterpreter ι k) : List (Fam × List Fam × ArgFam × Fam) :=
+    (P : ArgumentInterpreter ι k) : List RestSignature :=
   let η' := assign η s.binders As
-  s.variadic.map fun p => (D η' p.1, p.2.1.map (D η'), P η' (D η') p.2.2.1, D η' p.2.2.2)
+  s.variadic.map (RestArrow.mapWith (D η') (P η' (D η')))
 
 /-- One instance's contract: its fixed and its variadic signatures, as a call
 clause's are. -/
 noncomputable def instanceTWithArgs (D : ParameterAssignment k ι → List ι → Fam) (η : ParameterAssignment k ι)
     (s : SchemeRow ι) (As : List (ParameterFamily k))
     (P : ArgumentInterpreter ι k) : Fam :=
-  interT (callsT (instanceSigs D η s As)) (restsT (instanceRestsWithArgs D η s As (P := P)))
+  interT (CallEffects.callsT (instanceSigs D η s As)) (CallEffects.restsT (instanceRestsWithArgs D η s As (P := P)))
 
 theorem instanceTWithArgs_adm (D : ParameterAssignment k ι → List ι → Fam) (η : ParameterAssignment k ι) (s : SchemeRow ι)
     (As : List (ParameterFamily k)) (P : ArgumentInterpreter ι k) :
     Adm (instanceTWithArgs D η s As (P := P)) :=
-  interT_adm _ _ (callsT_adm _) (restsT_adm _)
+  interT_adm _ _ (CallEffects.callsT_adm _) (CallEffects.restsT_adm _)
 
 private theorem argsAgree_of {X Y : List ι → Fam} {m : Nat} (h : ∀ S, Agree (X S) (Y S) m) :
     ∀ Ss : List (List ι), ArgsAgree m (Ss.map X) (Ss.map Y)
@@ -809,8 +810,14 @@ theorem instanceT_congrWithArgs (P : ArgumentInterpreter ι k) (hP : ArgumentNon
     instanceTWithArgs D η s As (P := P) m W v ↔ instanceTWithArgs D' η' s As' (P := P) m W v := by
   unfold instanceTWithArgs instanceSigs instanceRestsWithArgs interT
   exact and_congr
-    (callsT_congr s.signatures _ _ (fun p _ => ⟨h p.1, argsAgree_of h p.2.1, h p.2.2⟩) W v)
-    (restsT_congr s.variadic _ _ (fun p _ => ⟨h p.1, argsAgree_of h p.2.1, hP _ _ _ _ m hη h p.2.2.1, h p.2.2.2⟩) W v)
+    (CallEffects.callsT_congr s.signatures
+      (Arrow.map (D (assign η s.binders As))) (Arrow.map (D' (assign η' s.binders As')))
+      (fun _ _ => rfl) (fun p _ => ⟨h p.receiver, argsAgree_of h p.arguments, h p.result⟩) W v)
+    (CallEffects.restsT_congr s.variadic
+      (RestArrow.mapWith (D (assign η s.binders As)) (P (assign η s.binders As) (D (assign η s.binders As))))
+      (RestArrow.mapWith (D' (assign η' s.binders As')) (P (assign η' s.binders As') (D' (assign η' s.binders As'))))
+      (fun _ _ => rfl)
+      (fun p _ => ⟨h p.receiver, argsAgree_of h p.arguments.1, hP _ _ _ _ m hη h p.arguments.2, h p.result⟩) W v)
 
 /-- An instance is bounded below `n`: each bounded binder's family lies below
 its bound at every level under `n`. Only levels below `n` are read, which keeps

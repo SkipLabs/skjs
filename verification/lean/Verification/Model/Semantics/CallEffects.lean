@@ -17,27 +17,93 @@ inductive Effect where
 /-- One qualified call contract. `Args` distinguishes fixed argument lists
 from a fixed prefix followed by an argument-pack contract. Mapping the type
 operands preserves the effect by construction. -/
-structure Contract (α Args : Type) where
-  receiver : α
+structure Contract (Receiver Args Result : Type) where
+  receiver : Receiver
   arguments : Args
-  result : α
+  result : Result
   effect : Effect
   deriving Repr, DecidableEq
 
-def Contract.map (f : α → β) (g : Args → Args') (s : Contract α Args) : Contract β Args' :=
-  ⟨f s.receiver, g s.arguments, f s.result, s.effect⟩
+def Contract.map (f : Receiver → Receiver') (g : Args → Args') (h : Result → Result')
+    (s : Contract Receiver Args Result) : Contract Receiver' Args' Result' :=
+  ⟨f s.receiver, g s.arguments, h s.result, s.effect⟩
 
-abbrev Arrow (α : Type) := Contract α (List α)
-abbrev RestArrow (α : Type) := Contract α (List α × α)
+/-- A host-relative method supplies its receiver when read. All other parts
+of its signature, including its effect, are retained unchanged. -/
+def Contract.withReceiver (receiver : Receiver') (s : Contract Receiver Args Result) :
+    Contract Receiver' Args Result :=
+  ⟨receiver, s.arguments, s.result, s.effect⟩
 
-def Arrow.map (f : α → β) (s : Arrow α) : Arrow β := Contract.map f (List.map f) s
+abbrev Arrow (α : Type) := Contract α (List α) α
+abbrev RestArrow (α : Type) := Contract α (List α × α) α
+abbrev MethodArrow (α : Type) := Contract Unit (List α) α
+abbrev MethodRestArrow (α : Type) := Contract Unit (List α × α) α
+
+def Arrow.map (f : α → β) (s : Arrow α) : Arrow β := Contract.map f (List.map f) f s
 /-- Interpret fixed positions as value families and the rest as an argument
 family, preserving the same effect. Ordinary renaming uses the same map for
 both kinds of operand. -/
-def RestArrow.mapWith (f : α → β) (g : α → γ) (s : RestArrow α) : Contract β (List β × γ) :=
-  Contract.map f (fun p => (p.1.map f, g p.2)) s
+def RestArrow.mapWith (f : α → β) (g : α → γ) (s : RestArrow α) : Contract β (List β × γ) β :=
+  Contract.map f (fun p => (p.1.map f, g p.2)) f s
 
 def RestArrow.map (f : α → β) (s : RestArrow α) : RestArrow β := RestArrow.mapWith f f s
+
+def MethodArrow.map (f : α → β) (s : MethodArrow α) : MethodArrow β :=
+  Contract.map id (List.map f) f s
+
+def MethodRestArrow.mapWith (f : α → β) (g : α → γ) (s : MethodRestArrow α) :
+    Contract Unit (List β × γ) β :=
+  Contract.map id (fun p => (p.1.map f, g p.2)) f s
+
+def MethodRestArrow.map (f : α → β) (s : MethodRestArrow α) : MethodRestArrow β :=
+  MethodRestArrow.mapWith f f s
+
+/-- The body row of a rest signature keeps its effect and fixed parameters. -/
+def RestArrow.fixed (s : RestArrow α) : Arrow α :=
+  ⟨s.receiver, s.arguments.1, s.result, s.effect⟩
+
+def Arrow.operands (s : Arrow α) : List α := s.receiver :: s.arguments ++ [s.result]
+def RestArrow.operands (s : RestArrow α) : List α :=
+  s.receiver :: s.arguments.1 ++ [s.arguments.2, s.result]
+def MethodArrow.operands (s : MethodArrow α) : List α := s.arguments ++ [s.result]
+def MethodRestArrow.operands (s : MethodRestArrow α) : List α :=
+  s.arguments.1 ++ [s.arguments.2, s.result]
+
+private theorem map_fixed {f : α → α} {xs : List α} (h : ∀ x ∈ xs, f x = x) :
+    xs.map f = xs := by
+  rw [List.map_congr_left (g := id) h, List.map_id]
+
+theorem Arrow.map_of_operands {f : α → α} {s : Arrow α}
+    (h : ∀ a ∈ s.operands, f a = a) : s.map f = s := by
+  rcases s with ⟨r, args, result, effect⟩
+  have hr := h r (by simp [operands])
+  have hd := h result (by simp [operands])
+  have ha := map_fixed (xs := args) (fun x hx => h x (by simp [operands, hx]))
+  simp [map, Contract.map, hr, hd, ha]
+
+theorem RestArrow.map_of_operands {f : α → α} {s : RestArrow α}
+    (h : ∀ a ∈ s.operands, f a = a) : s.map f = s := by
+  rcases s with ⟨r, ⟨args, rest⟩, result, effect⟩
+  have hr := h r (by simp [operands])
+  have hd := h result (by simp [operands])
+  have he := h rest (by simp [operands])
+  have ha := map_fixed (xs := args) (fun x hx => h x (by simp [operands, hx]))
+  simp [map, mapWith, Contract.map, hr, hd, he, ha]
+
+theorem MethodArrow.map_of_operands {f : α → α} {s : MethodArrow α}
+    (h : ∀ a ∈ s.operands, f a = a) : s.map f = s := by
+  rcases s with ⟨r, args, result, effect⟩
+  have hd := h result (by simp [operands])
+  have ha := map_fixed (xs := args) (fun x hx => h x (by simp [operands, hx]))
+  simp [map, Contract.map, hd, ha]
+
+theorem MethodRestArrow.map_of_operands {f : α → α} {s : MethodRestArrow α}
+    (h : ∀ a ∈ s.operands, f a = a) : s.map f = s := by
+  rcases s with ⟨r, ⟨args, rest⟩, result, effect⟩
+  have hd := h result (by simp [operands])
+  have he := h rest (by simp [operands])
+  have ha := map_fixed (xs := args) (fun x hx => h x (by simp [operands, hx]))
+  simp [map, mapWith, Contract.map, hd, he, ha]
 
 /-- Deliberate forgetting, for ordinary call elimination. -/
 def Arrow.plain (s : Arrow α) : α × List α × α := (s.receiver, s.arguments, s.result)
@@ -47,6 +113,13 @@ def RestArrow.plain (s : RestArrow α) : α × List α × α × α :=
 def Effect.post : Effect → Heap → Post
   | .unrestricted, _ => fun _ _ => True
   | .preservesInputHeap, before => fun after _ => before.IsPrefix after
+
+/-- Fresh entry allocation composes with preservation of the body's input heap. -/
+theorem Effect.post_prefix (effect : Effect) {before middle after : Heap} {v : Val}
+    (hprefix : before.IsPrefix middle) : effect.post middle after v → effect.post before after v := by
+  cases effect with
+  | unrestricted => exact id
+  | preservesInputHeap => exact fun h => hprefix.trans h
 
 /-- Conjoining two guarantees for the same call retains both. This is a
 meet in the order of contracts: heap preservation is stronger than the
@@ -120,6 +193,15 @@ theorem PromiseWith.weaken {effect effect' Acc Acc' Rc Rc' R T k W v}
   obtain ⟨result, hi, hs⟩ :=
     h j hj U hx hu heap hh r hrv (hrecv j hj U r hr) args hv (hacc j hj U args ha)
   exact ⟨result, hi, consequence_below (fun m hm => hres m (by omega)) (he heap) hs⟩
+
+/-- Receiver restriction may depend on the calling world, without changing effects. -/
+theorem PromiseWith.weaken_recv {effect : Effect} {Acc : ArgFam} {Rc Rc' R : Fam}
+    {k W v}
+    (hrecv : ∀ j (hj : j < k) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
+      ∀ r, Rc' j U r → Rc j U r)
+    (h : PromiseWith effect Acc Rc R k W v) : PromiseWith effect Acc Rc' R k W v := by
+  intro j hj U hx hu heap hh r hrv hr args hv ha
+  exact h j hj U hx hu heap hh r hrv (hrecv j hj U hx r hr) args hv ha
 
 theorem PromiseWith.congr {effect Acc Acc' Rc Rc' R T n W v}
     (hrecv : Agree Rc Rc' n)
@@ -234,6 +316,11 @@ theorem pure_safe {R : Fam} {n W heap t}
 def callsT (L : List (Arrow Fam)) : Fam := fun k W v =>
   Invocable v ∧ ∀ s ∈ L, PromiseWith s.effect (ArgsShort s.arguments) s.receiver s.result k W v
 
+/-- Assemble an intersection from its individual qualified signatures. -/
+theorem callsT_of_signatures {L : List (Arrow Fam)} {n W v}
+    (hi : Invocable v) (hs : ∀ p ∈ L, callsT [p] n W v) : callsT L n W v :=
+  ⟨hi, fun p hp => (hs p hp).2 p (List.mem_singleton_self _)⟩
+
 theorem callsT_adm (L : List (Arrow Fam)) : Adm (callsT L) :=
   ⟨fun _ _ _ h => ⟨h.1, fun s hs => (h.2 s hs).down⟩,
    fun _ _ _ hx _ h => ⟨h.1, fun s hs => (h.2 s hs).mono hx⟩⟩
@@ -290,11 +377,23 @@ theorem callsT_congr {α : Type} (l : List α) (f g : α → Arrow Fam) {n : Nat
 
 /-- Fixed arguments are value families, whereas the rest is an argument-list
 family. Both are operands of the same effect-qualified contract. -/
-abbrev RestSignature := Contract Fam (List Fam × ArgFam)
+abbrev RestSignature := Contract Fam (List Fam × ArgFam) Fam
 
 def restsT (L : List RestSignature) : Fam := fun k W v =>
   Invocable v ∧ ∀ s ∈ L,
     PromiseWith s.effect (ArgsRest s.arguments.1 s.arguments.2) s.receiver s.result k W v
+
+/-- Assemble an intersection from its individual qualified signatures. -/
+theorem restsT_of_signatures {L : List (RestSignature)} {n W v}
+    (hi : Invocable v) (hs : ∀ p ∈ L, restsT [p] n W v) : restsT L n W v :=
+  ⟨hi, fun p hp => (hs p hp).2 p (List.mem_singleton_self _)⟩
+
+theorem restsT_select {L n W v p} (hf : restsT L n W v) (hp : p ∈ L) :
+    restsT [p] n W v := by
+  refine ⟨hf.1, ?_⟩
+  intro q hq
+  cases List.mem_singleton.mp hq
+  exact hf.2 p hp
 
 theorem restsT_adm (L : List RestSignature) : Adm (restsT L) :=
   ⟨fun _ _ _ h => ⟨h.1, fun s hs => (h.2 s hs).down⟩,

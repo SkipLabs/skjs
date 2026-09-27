@@ -11,7 +11,7 @@ private def subE (e : Evidence (Fin 7)) (B : Ty (Fin 7)) (p : PositiveCertificat
   .node ⟨(claim e).context, (claim e).term, B⟩ (.sub p) [e]
 /-- A plain call: the callee, the `undefined` receiver at label 6, the actual. -/
 private def appE (f a : Evidence (Fin 7)) (B : Ty (Fin 7)) : Evidence (Fin 7) :=
-  .node ⟨(claim f).context, .app (claim f).term (claim a).term, B⟩ .app
+  .node ⟨(claim f).context, .app (claim f).term (claim a).term, B⟩ (.app .unrestricted)
     [f, .node ⟨(claim f).context, .undef, [6]⟩ .undef [], a]
 private def letE (a b : Evidence (Fin 7)) : Evidence (Fin 7) :=
   .node ⟨(claim a).context, .letE (claim a).term (claim b).term, (claim b).type⟩ .letE [a,b]

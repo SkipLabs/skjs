@@ -108,15 +108,15 @@ def rows : Nat → List (Clause (List Nat))
   | 2 => [.top]
   | 4 => [.pack ⟨[], [], some [0], false, true⟩ []]
   | 6 => [.pack ⟨[[0]], [], none, false, true⟩ []]
-  | 7 => [.arrs [] [([2], [], [6], [0])]]
+  | 7 => [.arrs [] [⟨[2], ([], [6]), [0], .unrestricted⟩]]
   | 8 => [.pack ⟨[[1]], [], none, false, true⟩ []]
-  | 9 => [.arrs [] [([2], [], [8], [0])]]
+  | 9 => [.arrs [] [⟨[2], ([], [8]), [0], .unrestricted⟩]]
   | _ => []
 
 def H : NormalGraph Nat where
   rows := rows
   parameterKinds i := if i == 3 then some .arguments else none
-  schemes i := if i == 5 then some ⟨[3], [], [(3, [4])], [([2], [], [3], [0])]⟩ else none
+  schemes i := if i == 5 then some ⟨[3], [], [(3, [4])], [⟨[2], ([], [3]), [0], .unrestricted⟩]⟩ else none
 
 def hpool : List (List Nat) := vocabulary H (List.range 10) [] []
 
@@ -132,10 +132,10 @@ def hsub (A B : List Nat) : Bool :=
 
 -- A scheme row with a variadic signature reads back as itself; one without
 -- leaves the field out.
-#guard (fromJson? (toJson (RequestJson.Row.scheme [3] [] [(3, [4])] [([2], [], [3], [0])]))
+#guard (fromJson? (toJson (RequestJson.Row.scheme [3] [] [(3, [4])] [⟨[2], ([], [3]), [0], .unrestricted⟩]))
   : Except String RequestJson.Row).toOption ==
-  some (RequestJson.Row.scheme [3] [] [(3, [4])] [([2], [], [3], [0])])
-#guard !((toJson (RequestJson.Row.scheme [3] [([2], [[3]], [3])] [] [])).compress.contains
+  some (RequestJson.Row.scheme [3] [] [(3, [4])] [⟨[2], ([], [3]), [0], .unrestricted⟩])
+#guard !((toJson (RequestJson.Row.scheme [3] [⟨[2], [[3]], [3], .unrestricted⟩] [] [])).compress.contains
   "variadic")
 
 end Schemes

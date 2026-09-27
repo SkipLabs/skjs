@@ -12,15 +12,15 @@ HasTy  (Programs/ProgramTyping.lean)
   bigint : Represents G A .bigint → HasTy G Γ (.bigint i) A
   strLit : Represents G A (.strLit s) → HasTy G Γ (.str s) A
   str : Represents G A .str → HasTy G Γ (.str s) A
-  funGraph {Γ : List (Ty ι)} {F : Ty ι} {L : List (Ty ι × List (Ty ι) × Ty ι)} {S : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)} {arity start : Nat} {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {caps : List (Ty ι × Nat)} {rest : Bool} {As : List (Ty ι)} : Represents G F (.arrs L S) → CodeOffers G arity E K start (caps.map Prod.fst) rest L S As → (∀ c ∈ caps, c.2 < Γ.length) → (∀ c ∈ caps, HasTy G Γ (.var c.2) c.1) → HasTy G Γ (.make (.graph arity E K start (caps.map fun c => .var c.2) .call rest) .nul) F
+  funGraph {Γ : List (Ty ι)} {F : Ty ι} {L : List (Arrow (Ty ι))} {S : List (RestArrow (Ty ι))} {arity start : Nat} {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {caps : List (Ty ι × Nat)} {rest : Bool} {As : List (Ty ι)} : Represents G F (.arrs L S) → CodeOffers G arity E K start (caps.map Prod.fst) rest L S As → (∀ c ∈ caps, c.2 < Γ.length) → (∀ c ∈ caps, HasTy G Γ (.var c.2) c.1) → HasTy G Γ (.make (.graph arity E K start (caps.map fun c => .var c.2) .call rest) .nul) F
   funScheme {Γ : List (Ty ι)} {j : ι} {s : SchemeRow ι} {arity start : Nat} {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {caps : List (Ty ι × Nat)} {rest : Bool} {As : List (Ty ι)} : G.params j = false → G.schemes j = some s → (∀ η, CodeOffers (reassign G η) arity E K start (caps.map Prod.fst) rest s.signatures s.variadic As) → capturesFree G s (caps.map Prod.fst) = true → (∀ c ∈ caps, c.2 < Γ.length) → (∀ c ∈ caps, HasTy G Γ (.var c.2) c.1) → HasTy G Γ (.make (.graph arity E K start (caps.map fun c => .var c.2) .call rest) .nul) [j]
-  ctorGraph {Γ : List (Ty ι)} {F U : Ty ι} {L : List (List (Ty ι) × Ty ι)} {arity start : Nat} {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {caps : List (Ty ι × Nat)} : Represents G F (.ctors L) → Represents G U .undef → (∀ p ∈ L, GraphCodeSpec G arity E K start (caps.map Prod.fst) (U, p.1, p.2)) → (∀ c ∈ caps, c.2 < Γ.length) → (∀ c ∈ caps, HasTy G Γ (.var c.2) c.1) → HasTy G Γ (.make (.graph arity E K start (caps.map fun c => .var c.2) .construct) .nul) F
-  callableGraph {Γ : List (Ty ι)} {F : Ty ι} {L : List (Ty ι × List (Ty ι) × Ty ι)} {S : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)} {arity start : Nat} {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {caps : List (Ty ι × Nat)} {rest : Bool} {As : List (Ty ι)} {parts : List (PropKey × Ty ι × Tm)} : Represents G F (.callable (parts.map fun p => (p.1, p.2.1)) [] L S) → (parts.map Prod.fst).Nodup → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) → CodeOffers G arity E K start (caps.map Prod.fst) rest L S As → (∀ c ∈ caps, c.2 < Γ.length) → (∀ c ∈ caps, HasTy G Γ (.var c.2) c.1) → HasTy G Γ (.makeAt (.graph arity E K start (caps.map fun c => .var c.2) .call rest) (parts.map Prod.fst) (parts.map fun p => p.2.2)) F
+  ctorGraph {Γ : List (Ty ι)} {F U : Ty ι} {L : List (List (Ty ι) × Ty ι)} {arity start : Nat} {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {caps : List (Ty ι × Nat)} : Represents G F (.ctors L) → Represents G U .undef → (∀ p ∈ L, GraphCodeSpec G arity E K start (caps.map Prod.fst) ⟨U, p.1, p.2, .unrestricted⟩) → (∀ c ∈ caps, c.2 < Γ.length) → (∀ c ∈ caps, HasTy G Γ (.var c.2) c.1) → HasTy G Γ (.make (.graph arity E K start (caps.map fun c => .var c.2) .construct) .nul) F
+  callableGraph {Γ : List (Ty ι)} {F : Ty ι} {L : List (Arrow (Ty ι))} {S : List (RestArrow (Ty ι))} {arity start : Nat} {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {caps : List (Ty ι × Nat)} {rest : Bool} {As : List (Ty ι)} {parts : List (PropKey × Ty ι × Tm)} : Represents G F (.callable (parts.map fun p => (p.1, p.2.1)) [] L S) → (parts.map Prod.fst).Nodup → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) → CodeOffers G arity E K start (caps.map Prod.fst) rest L S As → (∀ c ∈ caps, c.2 < Γ.length) → (∀ c ∈ caps, HasTy G Γ (.var c.2) c.1) → HasTy G Γ (.makeAt (.graph arity E K start (caps.map fun c => .var c.2) .call rest) (parts.map Prod.fst) (parts.map fun p => p.2.2)) F
   construct {Γ : List (Ty ι)} {f : Tm} {F B : Ty ι} {L : List (List (Ty ι) × Ty ι)} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} : HasTy G Γ f F → Represents G F (.ctors L) → (xs.map Prod.fst ++ Us, B) ∈ L → (∀ p ∈ xs, HasTy G Γ p.2 p.1) → (∀ A ∈ Us, HasTy G Γ .undef A) → HasTy G Γ (.construct f (xs.map Prod.snd)) B
-  callCallable {Γ : List (Ty ι)} {f r : Tm} {F Rt B : Ty ι} {P : List (PropKey × Ty ι)} {Ps : List (List (PropKey × Ty ι))} {L : List (Ty ι × List (Ty ι) × Ty ι)} {S : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} : HasTy G Γ f F → Represents G F (.callable P Ps L S) → (Rt, xs.map Prod.fst ++ Us, B) ∈ L → HasTy G Γ r Rt → (∀ p ∈ xs, HasTy G Γ p.2 p.1) → (∀ A ∈ Us, HasTy G Γ .undef A) → HasTy G Γ (.invoke f r (xs.map Prod.snd)) B
+  callCallable {effect : Effect} {Γ : List (Ty ι)} {f r : Tm} {F Rt B : Ty ι} {P : List (PropKey × Ty ι)} {Ps : List (List (PropKey × Ty ι))} {L : List (Arrow (Ty ι))} {S : List (RestArrow (Ty ι))} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} : HasTy G Γ f F → Represents G F (.callable P Ps L S) → ⟨Rt, xs.map Prod.fst ++ Us, B, effect⟩ ∈ L → HasTy G Γ r Rt → (∀ p ∈ xs, HasTy G Γ p.2 p.1) → (∀ A ∈ Us, HasTy G Γ .undef A) → HasTy G Γ (.invoke f r (xs.map Prod.snd)) B
   readCallable : HasTy G Γ a F → Represents G F (.callable P Ps L S) → (f, A) ∈ P → HasTy G Γ (.readAt f a) A
   writeCallable : HasTy G Γ a F → Represents G F (.callable P Ps L S) → (f, A) ∈ P → HasTy G Γ b A → Represents G N .nul → HasTy G Γ (.writeAt f a b) N
-  app {Γ : List (Ty ι)} {f r : Tm} {F Rt B : Ty ι} {L : List (Ty ι × List (Ty ι) × Ty ι)} {S : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} : HasTy G Γ f F → Represents G F (.arrs L S) → (Rt, xs.map Prod.fst ++ Us, B) ∈ L → HasTy G Γ r Rt → (∀ p ∈ xs, HasTy G Γ p.2 p.1) → (∀ A ∈ Us, HasTy G Γ .undef A) → HasTy G Γ (.invoke f r (xs.map Prod.snd)) B
+  app {effect : Effect} {Γ : List (Ty ι)} {f r : Tm} {F Rt B : Ty ι} {L : List (Arrow (Ty ι))} {S : List (RestArrow (Ty ι))} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} : HasTy G Γ f F → Represents G F (.arrs L S) → ⟨Rt, xs.map Prod.fst ++ Us, B, effect⟩ ∈ L → HasTy G Γ r Rt → (∀ p ∈ xs, HasTy G Γ p.2 p.1) → (∀ A ∈ Us, HasTy G Γ .undef A) → HasTy G Γ (.invoke f r (xs.map Prod.snd)) B
   letE : HasTy G Γ a A → HasTy G (A :: Γ) b B → HasTy G Γ (.letE a b) B
   alloc {parts : List (PropKey × Ty ι × Tm)} {ks : List KeyBound} : (parts.map Prod.fst).Nodup → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) → Represents G Ref (.refs (parts.map fun p => (p.1, p.2.1)) [] [] [] [] ks) → (∀ K ∈ ks, ∀ p ∈ parts, K.admits p.1 = true) → allocRealm G (parts.map fun p => (p.1, p.2.1)) = true → HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
   allocDict {parts : List (PropKey × Ty ι × Tm)} {ix cs : List (IndexKeys × Ty ι)} {os : List (OptionalField (Ty ι))} : (parts.map Prod.fst).Nodup → CallArguments.protoField ∉ parts.map Prod.fst → CallArguments.arrayStoreField ∉ parts.map Prod.fst → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) → Represents G Ref (.dict (parts.map fun p => (p.1, p.2.1)) [] [] ix os [] [] cs) → (∀ p ∈ parts, ∀ y ∈ ix ++ cs, y.1.may p.1 = true → p.2.1 = y.2) → (∀ o ∈ os, o.key ∉ parts.map Prod.fst) → (∀ o ∈ os, ∀ y ∈ cs, y.1.may o.key = true → o.type = y.2 ∨ PositiveRules.Uninhabited G y.2) → HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
@@ -47,10 +47,10 @@ HasTy  (Programs/ProgramTyping.lean)
   ifTag : Γ[i]? = some A → Answers G A tag q → (q = true → HasTy G Γ u B) → (q = false → HasTy G Γ e B) → HasTy G Γ (.ite (.test tag (.var i)) u e) B
   unionVar : Γ[i]? = some C → (∀ a ∈ C, HasTy G (Γ.set i [a]) t A) → HasTy G Γ t A
   arrCopy {Γ : List (Ty ι)} {s : Tm} {S T E : Ty ι} : HasTy G Γ s S → SpreadsInto G S E → Represents G T (.list ⟨[], [], some E, false, true⟩ []) → HasTy G Γ (.arrLit [.spread s]) T
-  callRest {Γ : List (Ty ι)} {f r : Tm} {F Rt : Ty ι} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} {P B : Ty ι} {parts : List (Bool × Ty ι × Tm)} : HasTy G Γ f F → (Rt, xs.map Prod.fst ++ Us, P, B) ∈ restSigs G F → HasTy G Γ r Rt → (∀ p ∈ xs, HasTy G Γ p.2 p.1) → (∀ A ∈ Us, HasTy G Γ .undef A) → (Us = [] ∨ parts = []) → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) → RestParts G P (parts.map fun p => (p.1, p.2.1)) → HasTy G Γ (.invoke f r (xs.map Prod.snd ++ parts.map fun p => spreadTerm (p.1, p.2.2))) B
-  bindE {Γ : List (Ty ι)} {F T Rt R Rc : Ty ι} {t r : Nat} {slots : List Nat} {Ps Ds : List (Ty ι)} : Γ[t]? = some T → (Rt, Ps ++ Ds, R) ∈ callSigs G T → Γ[r]? = some Rt → slots.map (Γ[·]?) = Ps.map some → Represents G F (.arrs [(Rc, Ds, R)] []) → HasTy G Γ (.makeAt (.bound (.var t) (.var r) (slots.map .var)) [] []) F
-  bindRestE {Γ : List (Ty ι)} {F T Rt E El R Rc : Ty ι} {t r : Nat} {slots : List Nat} {Ps Qs : List (Ty ι)} : Γ[t]? = some T → (Rt, Ps, E, R) ∈ restSigs G T → restElem G E = some El → Γ[r]? = some Rt → slots.map (Γ[·]?) = Qs.map some → Qs = Ps.take slots.length ++ List.replicate (slots.length - Ps.length) El → Represents G F (.arrs [] [(Rc, Ps.drop slots.length, E, R)]) → HasTy G Γ (.makeAt (.bound (.var t) (.var r) (slots.map .var)) [] []) F
-  bindMember {Γ : List (Ty ι)} {F O : Ty ι} {i : Nat} {k : PropKey} {m : MethodMembers.Sig (Ty ι)} {L : List (Ty ι × List (Ty ι) × Ty ι)} {S : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)} : Γ[i]? = some O → memberOf G O k = some m → Represents G F (.arrs L S) → (∀ q ∈ L, ∃ c ∈ m.calls, CoveredCall G q c) → (∀ s ∈ S, (s.2.1, s.2.2.1, s.2.2.2) ∈ m.rests) → HasTy G Γ (.letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])) F
+  callRest {effect : Effect} {Γ : List (Ty ι)} {f r : Tm} {F Rt : Ty ι} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} {P B : Ty ι} {parts : List (Bool × Ty ι × Tm)} : HasTy G Γ f F → ⟨Rt, (xs.map Prod.fst ++ Us, P), B, effect⟩ ∈ restSigs G F → HasTy G Γ r Rt → (∀ p ∈ xs, HasTy G Γ p.2 p.1) → (∀ A ∈ Us, HasTy G Γ .undef A) → (Us = [] ∨ parts = []) → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) → RestParts G P (parts.map fun p => (p.1, p.2.1)) → HasTy G Γ (.invoke f r (xs.map Prod.snd ++ parts.map fun p => spreadTerm (p.1, p.2.2))) B
+  bindE {effect : Effect} {Γ : List (Ty ι)} {F T Rt R Rc : Ty ι} {t r : Nat} {slots : List Nat} {Ps Ds : List (Ty ι)} : Γ[t]? = some T → ⟨Rt, Ps ++ Ds, R, effect⟩ ∈ callSigs G T → Γ[r]? = some Rt → slots.map (Γ[·]?) = Ps.map some → Represents G F (.arrs [⟨Rc, Ds, R, effect⟩] []) → HasTy G Γ (.makeAt (.bound (.var t) (.var r) (slots.map .var)) [] []) F
+  bindRestE {effect : Effect} {Γ : List (Ty ι)} {F T Rt E El R Rc : Ty ι} {t r : Nat} {slots : List Nat} {Ps Qs : List (Ty ι)} : Γ[t]? = some T → ⟨Rt, (Ps, E), R, effect⟩ ∈ restSigs G T → restElem G E = some El → Γ[r]? = some Rt → slots.map (Γ[·]?) = Qs.map some → Qs = Ps.take slots.length ++ List.replicate (slots.length - Ps.length) El → Represents G F (.arrs [] [⟨Rc, (Ps.drop slots.length, E), R, effect⟩]) → HasTy G Γ (.makeAt (.bound (.var t) (.var r) (slots.map .var)) [] []) F
+  bindMember {Γ : List (Ty ι)} {F O : Ty ι} {i : Nat} {k : PropKey} {m : MethodMembers.Sig (Ty ι)} {L : List (Arrow (Ty ι))} {S : List (RestArrow (Ty ι))} : Γ[i]? = some O → memberOf G O k = some m → Represents G F (.arrs L S) → (∀ q ∈ L, ∃ c ∈ m.calls, CoveredCall G q c) → (∀ s ∈ S, s.withReceiver () ∈ m.rests) → HasTy G Γ (.letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])) F
   bindScheme {Γ : List (Ty ι)} {F O : Ty ι} {i : Nat} {k : PropKey} {m : MethodMembers.Sig (Ty ι)} : Γ[i]? = some O → memberOf G O k = some m → F ∈ m.schemes → expand G F = [] → HasTy G Γ (.letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])) F
   throw : HasTy G Γ a A → HasTy G Γ (.throw a) B
   merge {d : List PropKey} {a b : Tm} {A B R : Ty ι} : HasTy G Γ a A → HasTy G Γ b B → ObjectMerge.MergeOk G d A B R = true → HasTy G Γ (.merge d a b) R
@@ -73,7 +73,7 @@ Rule  (Programs/ProgramCertificates.lean)
   funGraph (arrays : List (Ty ι))
   ctorGraph (undef : Ty ι)
   callableGraph (arrays : List (Ty ι))
-  app
+  app (effect : Effect)
   letE
   alloc
   read
@@ -99,11 +99,11 @@ Rule  (Programs/ProgramCertificates.lean)
   ifKnown (answer : Bool)
   ifBoolVar (trueType falseType : Ty ι)
   unionVar (slot : Nat)
-  callCallable
+  callCallable (effect : Effect)
   readCallable
   writeCallable
   arrCopy (elem : Ty ι)
-  callRest (fixed omitted : Nat) (spreads : List Bool) (rest : Ty ι)
+  callRest (effect : Effect) (fixed omitted : Nat) (spreads : List Bool) (rest : Ty ι)
   bindE
   bindRestE
   bindMember (proofs : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι))
@@ -113,7 +113,7 @@ Rule  (Programs/ProgramCertificates.lean)
   merge
 
 Proof  (Types/PositiveCertificates.lean)
-  core (certificate : Certificate ι) (instances : List (List ι × Ops ι × List (List ι × List (List ι) × List ι × List ι) × Instance ι) := [])
+  core (certificate : Certificate ι) (instances : List (List ι × Ops ι × List (RestArrow (List ι)) × Instance ι) := [])
   subset
   trans (middle : List ι) (left right : Proof ι)
   inst (inst : Instance ι)
@@ -122,10 +122,10 @@ Proof  (Types/PositiveCertificates.lean)
 
 ArrowCert  (Types/PositiveCertificates.lean)
   empty
-  source (p : List ι × List (List ι) × List ι)
-  rest (s : List ι × List (List ι) × List ι × List ι)
+  source (p : Arrow (List ι))
+  rest (s : RestArrow (List ι))
   union (pre : List (List ι)) (a b : List ι) (suffix : List (List ι)) (left right : ArrowCert ι)
-  combine (b b' : List ι) (left right : ArrowCert ι)
+  combine (b b' : List ι) (effect other : Effect) (left right : ArrowCert ι)
   emptyRecv
   recvUnion (a b : List ι) (left right : ArrowCert ι)
 

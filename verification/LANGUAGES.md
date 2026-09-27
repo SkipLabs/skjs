@@ -52,6 +52,16 @@ is what a *mutable local's* own cell is called, an internal slot the lowering
 invents, and what a source function's property bag is called, which is what
 gives a function an identity to compare.
 
+Callable **TypeGraph** signatures use one record with required `receiver`,
+`arguments`, `result` and `effect` fields. Fixed signatures carry a list of
+argument rows; variadic signatures carry the fixed prefix and rest contract.
+Host-relative methods use the same record with an empty receiver object.
+Effects are `unrestricted` or `preservesInputHeap`; no missing-effect default or
+legacy tuple encoding is accepted. Source annotations produce unrestricted
+contracts. A qualified producer claim additionally requires checked definition
+evidence. The viewer currently preserves qualified signatures as exact editable
+JSON; the ordinary arrow text syntax cannot silently erase their effect.
+
 Defining no language, and saying so: [Decode.lean](lean/Verification/Model/Types/Decode.lean)
 (source spans and JSON accessors several decoders share) and [span.mts](tools/span.mts).
 

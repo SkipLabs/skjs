@@ -14,17 +14,17 @@ open GraphCodeFixtures
 -- R = { bag: null | R; call: Boolean → Boolean }. A second label describes
 -- the same recursive contract independently, to exercise cyclic subtyping.
 private def types : List (List (Clause (List Nat))) :=
-  [[.nul],[.bool],[.callable [(valueField, [0,2])] [] [([7],[[1]],[1])] []],
-   [.callable [(valueField, [0,3])] [] [([7],[[1]],[1])] []],
-   [.callable [(valueField, [0,2,1])] [] [([7],[[1]],[1])] []],
-   [.arrs [([7],[[2]],[2])] []], [.arrs [([7],[[1]],[0,2])] []], [.top], [.undef]]
+  [[.nul],[.bool],[.callable [(valueField, [0,2])] [] [⟨[7], [[1]], [1], .unrestricted⟩] []],
+   [.callable [(valueField, [0,3])] [] [⟨[7], [[1]], [1], .unrestricted⟩] []],
+   [.callable [(valueField, [0,2,1])] [] [⟨[7], [[1]], [1], .unrestricted⟩] []],
+   [.arrs [⟨[7], [[2]], [2], .unrestricted⟩] []], [.arrs [⟨[7], [[1]], [0,2], .unrestricted⟩] []], [.top], [.undef]]
 private def G : NormalGraph Nat := .ofRows fun i => types[i]?.getD []
 private def labels := List.range types.length
 private def pool := vocabulary G labels [] [[0,2],[0,3]]
 
 /-- The callable's identity code and its code requests: empty context. -/
 private def identity : Tm := .makeAt (oneNode 1 (.var 1) 0) [valueField] [.nul]
-private def identityCodes : List CodeRequest := oneNodeCodes 1 (.var 1) [] [([7],[[1]],[1])]
+private def identityCodes : List CodeRequest := oneNodeCodes 1 (.var 1) [] [⟨[7], [[1]], [1], .unrestricted⟩]
 private def program : Program :=
   [⟨identity,.bind 1,none⟩,
    ⟨.write (.var 0) (.var 0),.effect 2,none⟩,
@@ -75,7 +75,7 @@ private def capturedClaims : List (PointClaim Nat) :=
   [⟨[],[2]⟩,⟨[[2]],[6]⟩,⟨[[6],[2]],[0]⟩,⟨[[6],[2]],[0,2]⟩,
    ⟨[[0,2],[6],[2]],[1]⟩]
 private def capturedRequest : Request := ⟨types,capturedProgram,capturedClaims,[1],0,[],
-  identityCodes ++ oneNodeCodes 1 getter [[2]] [([7],[[1]],[0,2])]⟩
+  identityCodes ++ oneNodeCodes 1 getter [[2]] [⟨[7], [[1]], [0,2], .unrestricted⟩]⟩
 #guard match (do
     let response ← produceJson (toJson capturedRequest) 10
     verifyJson (toJson capturedRequest) response) with
@@ -84,10 +84,10 @@ private def capturedRequest : Request := ⟨types,capturedProgram,capturedClaims
 -- The capture does not freeze the initial null bag. Treating the getter as
 -- always returning null must fail its ordinary closure-body obligation.
 private def nullGetterRequest : Request :=
-  ⟨RequestJson.rows (types ++ [[Clause.arrs [([7],[[1]],[0])] []]]),
+  ⟨RequestJson.rows (types ++ [[Clause.arrs [⟨[7], [[1]], [0], .unrestricted⟩] []]]),
    [⟨identity,.bind 1,none⟩, ⟨.make (oneNode 1 getter 1) .nul,.bind 2,none⟩, ⟨.nul,.ret,none⟩],
    [⟨[],[2]⟩,⟨[[2]],[9]⟩,⟨[[9],[2]],[0]⟩],[0],0,[],
-   identityCodes ++ oneNodeCodes 1 getter [[2]] [([7],[[1]],[0])]⟩
+   identityCodes ++ oneNodeCodes 1 getter [[2]] [⟨[7], [[1]], [0], .unrestricted⟩]⟩
 #guard !ok (roundtrip nullGetterRequest)
 
 theorem captured_returns_false : Execution capturedProgram 22 [] (.at 0 (fun _ => .nul))

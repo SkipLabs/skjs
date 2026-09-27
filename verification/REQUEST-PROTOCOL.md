@@ -78,18 +78,25 @@ Each type-graph node is a union of clauses:
 | Own-key bounds: each says the object's own keys are `among` its `keys`, or, with `among` false, none of them; a key one does not admit is not the object's own and a read of it continues at the prototype; left out when there are none (also on `dict`) | `{"refs":{"first":[["[]",[2]]],"rest":[],"views":[["[[proto]]",[5]]],"bounds":[{"among":false,"keys":["map"]}]}}` |
 | Plain object with named contracts and readonly index views, each `[class, operand]` with class `"strings"` (every string key), `"numeric"` (the canonical numeric keys) or `"symbols"` (every symbol key); each constrains every present own field under a key of its class | `{"dict":{"first":[],"rest":[],"views":[],"indexes":[["strings",[1,3]],["numeric",[1]]]}}` |
 | Writable index contracts, a mutable index signature's, `[class, operand]` as above: every present own field under a key of the class holds exactly the operand; each is also listed in `indexes`; left out when there are none | `{"dict":{"first":[],"rest":[],"views":[],"indexes":[["strings",[1,3]]],"cells":[["strings",[1,3]]]}}` |
-| Intersection of arrows `[receiver, [params, result]]`, with variadic signatures `[receiver, [params, [rest, result]]]` when there are any, `rest` an argument-list type (`pack`)  | `{"arrs":{"arrows":[[[5],[[[0]],[1]]],[[5],[[[1]],[0]]]]}}`                                 |
+| Intersection of callable contracts, each with a receiver, arguments, result and required effect  | `{"arrs":{"arrows":[{"receiver":[5],"arguments":[[0]],"result":[1],"effect":"unrestricted"},{"receiver":[5],"arguments":[[1]],"result":[0],"effect":"unrestricted"}]}}`                                 |
 | Array store: simultaneous tuple contracts, each with required, optional and rest positions; readonly contracts give element read capabilities                              | `{"list":{"first":{"required":[[4]],"optional":[],"rest":[4],"readonly":false},"rest":[]}}` |
-| Callable with invariant bag requirements and overloads, fixed and variadic                                                                                                 | `{"callable":{"first":[["value",[1]]],"rest":[],"arrows":[[[5],[[[0]],[1]]]]}}`             |
+| Callable with invariant bag requirements and overloads, fixed and variadic                                                                                                 | `{"callable":{"first":[["value",[1]]],"rest":[],"arrows":[{"receiver":[5],"arguments":[[0]],"result":[1],"effect":"unrestricted"}]}}`             |
 | Class value: construct signatures `[params, result]`, which `new` meets; no call signature meets it; `"variadic": [[params, [rest, result]], ...]` when there are any      | `{"ctors":{"signatures":[[[[1,2]],[1,2]]]}}`             |
 | Argument list: simultaneous tuple contracts on the actuals a rest parameter receives, positions compared covariantly                                                  | `{"pack":{"first":{"required":[[4]],"optional":[],"rest":[0],"readonly":false},"rest":[]}}` |
 
 The arrow example contains two signatures, each with one argument and the
-receiver label 5. Every signature states its receiver: the value a call passes
+receiver label 5. Every signature carries `effect: "unrestricted"` or
+`effect: "preservesInputHeap"`; omission is refused. Host-relative method
+signatures use the same record with `receiver: {}`. Effectful contracts use
+these records in graph rows, scheme rows, code entries and subtype certificates.
+A code entry must discharge both safety and its effect, as described in
+[the definition rules](PROGRAM-TYPING.md#certifying-inferred-call-effects).
+Every signature states its receiver: the value a call passes
 as `this`, `undefined` for a plain call. A signature indifferent to it names a
 `"top"` row; there is no missing-field default. A call clause may add
-`"variadic": [[receiver, [params, [element, result]]], ...]`,
-signatures taking any number of actuals past `params`, each in `element`; the
+`"variadic": [{"receiver": R, "arguments": [params, rest], "result": B,
+"effect": effect}, ...]`, signatures taking actuals past `params` according to
+the argument-list contract `rest`; the
 field is left out when there are none, which is its one spelling, so strict
 decoding refuses an explicit empty list. Each argument type is itself a list of union labels. References and arrow
 operands may point back to the same finite graph, representing guarded regular
@@ -106,11 +113,11 @@ are one clause; two spellings a codec failed to identify would be two
 singletons, which costs completeness and never soundness.
 
 A row is a **clause row**, spelled as the array of its clauses as above; a
-**scheme row** `{"scheme": {"binders": [p, ...], "signatures": [[receiver, [params], result], ...]}}`,
+**scheme row** `{"scheme": {"binders": [p, ...], "signatures": [contract, ...]}}`,
 a generic callable $\forall\vec p.\,\Sigma$ whose signatures are types that may
 mention its binders, with `"bounds": [[p, type], ...]` when a binder is
 bounded (the bound is read outside the binders; left out when none), and
-`"variadic": [[receiver, [params], [rest, result]], ...]` when it has variadic
+`"variadic": [restContract, ...]` in the same contract-record format when it has variadic
 signatures, whose rest may be a binder, a pack parameter (left out when none);
 a **parameter row** `{"param": i, "name": n, "kind": "value" | "arguments"}`, which
 names its own label $i$ and, in `n`, the binder it stands for (the name has no meaning). Its kind is mandatory and is preserved by instantiation and binder renaming;
@@ -300,19 +307,21 @@ contexts, terms and result types. The consumer checks these against the request;
 this redundancy cannot substitute a different program or different claims.
 
 Subtype arrow certificates use ordered lists of argument types. A `source`
-certificate's `p` is `[receiver, [domains, result]]`, for example
-`{"source":{"p":[[5],[[[0],[1]],[1]]]}}` for a two-argument signature whose
+certificate's `p` is the complete contract record, for example
+`{"source":{"p":{"receiver":[5],"arguments":[[0],[1]],"result":[1],"effect":"unrestricted"}}}` for a two-argument signature whose
 receiver is label 5; the receiver is contravariant, like the domains. A `union`
 certificate contains `pre`, `a`, `b`, `suffix`, `left`, and `right`: `pre` and
 `suffix` are lists of unchanged argument types, and the selected argument splits
 from `a ++ b` into the two branches. `combine` retains its result types `b` and
-`b'` and two branches; `empty` requires an empty type at some argument position,
+`b'`, the two premise effects `effect` and `other`, and two branches. The meet of
+those effects must imply the target effect; each source/rest covering must
+also imply it. `empty` requires an empty type at some argument position,
 not merely a zero-length argument list; `emptyRecv` requires the target's
 receiver to be empty, so that no call is named; `recvUnion` splits the target's
 receiver `a ++ b` into two branches, like `union` for an argument. A `rest`
 certificate's `s` is a variadic source signature
-`[receiver, [params, [element, result]]]` covering the target arrow: its
-first positions within `params`, the rest within `element`. Every label in these fields is bounds
+with `arguments: [params, rest]` covering the target arrow: its
+first positions within `params`, the rest within the rest contract. Every label in these fields is bounds
 checked. Graph subtype search supports native argument lists and splits any
 position. Source function types, closures and calls preserve required parameter
 lists, including empty lists for zero-argument thunks. There is one accepted certificate shape.
@@ -379,7 +388,8 @@ selects an advertised signature and, like `app`, carries one premise per
 position that signature declares and the call omits, each proving `undefined`
 at that position's contract; `readCallable` and `writeCallable` use
 the first invariant bag operand. Every nested operand label is bounds checked.
-`app`, `callCallable` and `callRest` take the callee premise, then the
+`app`, `callCallable` and `callRest` carry the selected signature's `effect`
+and take the callee premise, then the
 receiver premise at the selected signature's receiver, then the actuals: the
 term is `invoke f r args`, and a plain call's receiver is `undefined`.
 `bindE` has no premises: its term is `makeAt (bound (var t) (var r) pre) [] []`

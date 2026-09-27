@@ -142,7 +142,7 @@ try {
       "a narrowed rest element",
       (c) => {
         for (const arrs of restRows(c))
-          for (const sig of arrs.variadic ?? []) sig[1][1][0] = [1];
+          for (const sig of arrs.variadic ?? []) sig.arguments[1] = [1];
       },
     ],
     [
@@ -151,10 +151,7 @@ try {
         for (const arrs of restRows(c)) {
           arrs.arrows.push(
             ...(arrs.variadic ?? []).map(
-              ([receiver, [domains, [, result]]]): Arrow => [
-                receiver,
-                [domains, result],
-              ],
+              (s): Arrow => ({...s, arguments: s.arguments[0]}),
             ),
           );
           delete arrs.variadic;

@@ -6,6 +6,7 @@ root is the requested closed program and type; evidence cannot change the task.
 No proof search or semantic observation budget is involved. -/
 namespace Verification.Model.ProgramCertificates
 open ProgramTyping PositiveNormalization PositiveGraphs PositiveRules
+open CallEffects (Arrow RestArrow MethodArrow Contract Effect)
 
 structure Sequent (ι : Type) where
   context : List (Ty ι)
@@ -41,7 +42,8 @@ inductive Rule (ι : Type) where
   /-- A callable object: the bag's fields, then the captures of its graph
   code; `arrays` as for `funGraph`. -/
   | callableGraph (arrays : List (Ty ι))
-  | app | letE | alloc | read | readView | write | arith | test
+  | app (effect : Effect)
+  | letE | alloc | read | readView | write | arith | test
   /-- A read through an index over `keys`. -/
   | readDict (keys : IndexKeys) (element undef : Ty ι)
   /-- A computed read through an index over `keys`, of a key of `keyKeys`'s
@@ -62,12 +64,13 @@ inductive Rule (ι : Type) where
   | ifKnown (answer : Bool)
   | ifBoolVar (trueType falseType : Ty ι)
   | unionVar (slot : Nat)
-  | callCallable | readCallable | writeCallable
+  | callCallable (effect : Effect)
+  | readCallable | writeCallable
   /-- A copy of a spread, at the element type its store holds. -/
   | arrCopy (elem : Ty ι)
   /-- How many actuals are fixed, which later ones are spreads, and the rest
   type the further ones fit. -/
-  | callRest (fixed omitted : Nat) (spreads : List Bool) (rest : Ty ι)
+  | callRest (effect : Effect) (fixed omitted : Nat) (spreads : List Bool) (rest : Ty ι)
   /-- A bound function: its saved slots are read from the context. -/
   | bindE
   /-- A bound variadic function, likewise. -/
@@ -148,13 +151,13 @@ captures at `Cs` (`CodeOffers`): without a rest, each offered row; with one,
 no fixed signature and each variadic signature with its store type from `As`. -/
 def offersChecked [DecidableEq ι] (G : NormalGraph ι) (codes : CodeEntry ι → Bool) (arity : Nat)
     (E : List Tm) (K : List (ControlFlow.Continuation × Option ControlFlow.Target)) (start : Nat)
-    (Cs : List (Ty ι)) (rest : Bool) (L : List (Ty ι × List (Ty ι) × Ty ι))
-    (S : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)) (As : List (Ty ι)) : Bool :=
+    (Cs : List (Ty ι)) (rest : Bool) (L : List (Arrow (Ty ι)))
+    (S : List (RestArrow (Ty ι))) (As : List (Ty ι)) : Bool :=
   match rest with
   | false => (offerRows L S).all fun p => codes ⟨arity, E, K, start, Cs, p, none⟩
   | true => L.isEmpty && S.length == As.length && (S.zip As).all fun q =>
-      q.1.2.1.length == arity && decide (RestStore G q.2 q.1.2.2.1) &&
-        codes ⟨arity, E, K, start, Cs, (q.1.1, q.1.2.1, q.1.2.2.2), some q.2⟩
+      q.1.arguments.1.length == arity && decide (RestStore G q.2 q.1.arguments.2) &&
+        codes ⟨arity, E, K, start, Cs, q.1.fixed, some q.2⟩
 
 /-- Every signature the type `A` offers is a checked entry of graph code with
 captures at `Cs`: an arrow type's signatures, or, for a generic closure, a
@@ -178,7 +181,7 @@ def ctorCodesChecked [DecidableEq ι] (G : NormalGraph ι) (A U : Ty ι) (codes 
     (arity : Nat) (E : List Tm) (K : List (ControlFlow.Continuation × Option ControlFlow.Target))
     (start : Nat) (Cs : List (Ty ι)) : Bool :=
   match expand G A with
-  | [.ctors L] => L.all fun p => codes ⟨arity, E, K, start, Cs, (U, p.1, p.2), none⟩
+  | [.ctors L] => L.all fun p => codes ⟨arity, E, K, start, Cs, ⟨U, p.1, p.2, .unrestricted⟩, none⟩
   | _ => false
 
 /-- The prototype type `P` has a field or view `f` at `A`. -/
@@ -193,21 +196,21 @@ instance [DecidableEq ι] (G : NormalGraph ι) (P : Ty ι) (f : PropKey) (A : Ty
 
 /-- Proofs that the member signature `c` covers the claimed `q`: each claimed
 parameter within the member's, then the member's result within the claimed. -/
-def CallProofs [DecidableEq ι] (G : NormalGraph ι) (q : Ty ι × List (Ty ι) × Ty ι)
-    (c : List (Ty ι) × Ty ι)
+def CallProofs [DecidableEq ι] (G : NormalGraph ι) (q : Arrow (Ty ι))
+    (c : MethodArrow (Ty ι))
     (ps : List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι) : Prop :=
-  q.2.1.length = c.1.length ∧ ps.1.length = c.1.length ∧
-    (∀ x ∈ (q.2.1.zip c.1).zip ps.1, PositiveCertificates.check G x.1.1 x.1.2 x.2 = true) ∧
-    PositiveCertificates.check G c.2 q.2.2 ps.2 = true
+  q.arguments.length = c.arguments.length ∧ ps.1.length = c.arguments.length ∧
+    (∀ x ∈ (q.arguments.zip c.arguments).zip ps.1, PositiveCertificates.check G x.1.1 x.1.2 x.2 = true) ∧
+    PositiveCertificates.check G c.result q.result ps.2 = true ∧ c.effect.covers q.effect = true
 
 instance [DecidableEq ι] (G : NormalGraph ι) (q c ps) : Decidable (CallProofs G q c ps) := by
   unfold CallProofs; infer_instance
 
 theorem CallProofs.covered [DecidableEq ι] {G : NormalGraph ι} {q c ps}
     (h : CallProofs G q c ps) : CoveredCall G q c := by
-  obtain ⟨hl, hp, hall, hr⟩ := h
-  refine ⟨hl, fun x hx => ?_, ⟨_, hr⟩⟩
-  obtain ⟨p, hxp⟩ := PositiveCertificates.exists_mem_zip (xs := q.2.1.zip c.1) (ys := ps.1)
+  obtain ⟨hl, hp, hall, hr, he⟩ := h
+  refine ⟨hl, fun x hx => ?_, ⟨_, hr⟩, he⟩
+  obtain ⟨p, hxp⟩ := PositiveCertificates.exists_mem_zip (xs := q.arguments.zip c.arguments) (ys := ps.1)
     (by rw [List.length_zip, hl, Nat.min_self, hp]) x hx
   exact ⟨p, hall _ hxp⟩
 
@@ -226,10 +229,10 @@ theorem choose_list {α β : Type} {P : α → β → Prop} :
 
 theorem CoveredCall.proofs [DecidableEq ι] {G : NormalGraph ι} {q c}
     (h : CoveredCall G q c) : ∃ ps, CallProofs G q c ps := by
-  obtain ⟨hl, hall, pr, hr⟩ := h
+  obtain ⟨hl, hall, ⟨pr, hr⟩, he⟩ := h
   obtain ⟨ps, hpl, hps⟩ := choose_list (P := fun (x : Ty ι × Ty ι) p =>
     PositiveCertificates.check G x.1 x.2 p = true) _ hall
-  exact ⟨(ps, pr), hl, by simpa [List.length_zip, hl] using hpl, hps, hr⟩
+  exact ⟨(ps, pr), hl, by simpa [List.length_zip, hl] using hpl, hps, hr, he⟩
 
 /-- Only finite, syntactic premises of one rule. -/
 def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
@@ -276,13 +279,13 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
   -- the actual premises in order, then one premise per position the signature
   -- declares and this call omits. Each of those proves `undefined` at its
   -- declared type: the value the machine binds there.
-  | .app, .invoke f r args, jf :: jr :: jas =>
+  | .app effect, .invoke f r args, jf :: jr :: jas =>
     jf.context = j.context ∧ jf.term = f ∧ jr.context = j.context ∧ jr.term = r ∧
     (jas.take args.length).map Sequent.term = args ∧
     (∀ ja ∈ jas.drop args.length, ja.term = .undef) ∧
     (∀ ja ∈ jas, ja.context = j.context) ∧
     match expand G jf.type with
-    | [.arrs L _] => (jr.type, jas.map Sequent.type, j.type) ∈ L
+    | [.arrs L _] => ⟨jr.type, jas.map Sequent.type, j.type, effect⟩ ∈ L
     | _ => False
   | .letE, .letE a b, [ja, jb] =>
     ja.context = j.context ∧ ja.term = a ∧ jb = ⟨ja.type :: j.context, b, j.type⟩
@@ -423,13 +426,13 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     match j.context[i]? with
     | some C => ps = C.map (fun a => ⟨j.context.set i [a], j.term, j.type⟩)
     | none => False
-  | .callCallable, .invoke f r args, jf :: jr :: jas =>
+  | .callCallable effect, .invoke f r args, jf :: jr :: jas =>
     jf.context = j.context ∧ jf.term = f ∧ jr.context = j.context ∧ jr.term = r ∧
     (jas.take args.length).map Sequent.term = args ∧
     (∀ ja ∈ jas.drop args.length, ja.term = .undef) ∧
     (∀ ja ∈ jas, ja.context = j.context) ∧
     match expand G jf.type with
-    | [.callable _ _ L _] => (jr.type, jas.map Sequent.type,j.type) ∈ L
+    | [.callable _ _ L _] => ⟨jr.type, jas.map Sequent.type,j.type, effect⟩ ∈ L
     | _ => False
   | .readCallable, .readAt f a, [ja] =>
     ja.context = j.context ∧ ja.term = a ∧
@@ -450,7 +453,7 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
   -- fixed position the call omits, then one premise per further part: the
   -- actual itself, or the store a spread reads. A call that omits a position
   -- writes no part.
-  | .callRest k u flags P, .invoke f r args, jf :: jr :: jas =>
+  | .callRest effect k u flags P, .invoke f r args, jf :: jr :: jas =>
     jf.context = j.context ∧ jf.term = f ∧ jr.context = j.context ∧ jr.term = r ∧
     (∀ ja ∈ jas, ja.context = j.context) ∧
     jas.length = k + u + flags.length ∧ (u = 0 ∨ flags = []) ∧
@@ -458,28 +461,28 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
       (flags.zip (jas.drop (k + u))).map (fun q => spreadTerm (q.1, q.2.term)) ∧
     (∀ ja ∈ (jas.drop k).take u, ja.term = .undef) ∧
     RestParts G P ((flags.zip (jas.drop (k + u))).map fun q => (q.1, q.2.type)) ∧
-    (jr.type, (jas.take (k + u)).map Sequent.type, P, j.type) ∈ restSigs G jf.type
+    ⟨jr.type, ((jas.take (k + u)).map Sequent.type, P), j.type, effect⟩ ∈ restSigs G jf.type
   -- `.bind`'s saved slots, with no premises: the target's selected signature
   -- starts with the prefix slots' contracts, and the result takes the rest at
   -- the one receiver it states, whatever that is.
   | .bindE, .makeAt (.bound (.var t) (.var r) pre) ns inits, [] =>
     ns = [] ∧ inits = [] ∧
     match varSlots pre, j.context[t]?, j.context[r]?, expand G j.type with
-    | some saved, some T, some Rt, [.arrs [(_, Ds, R)] []] =>
+    | some saved, some T, some Rt, [.arrs [⟨_, Ds, R, effect⟩] []] =>
       saved.map (j.context[·]?) = (saved.filterMap (j.context[·]?)).map some ∧
-      (Rt, saved.filterMap (j.context[·]?) ++ Ds, R) ∈ callSigs G T
+      ⟨Rt, saved.filterMap (j.context[·]?) ++ Ds, R, effect⟩ ∈ callSigs G T
     | _, _, _, _ => False
   -- As `bindE`, for a variadic signature of the target with an element rest:
   -- the prefix takes its first fixed positions, and past them the element.
   | .bindRestE, .makeAt (.bound (.var t) (.var r) pre) ns inits, [] =>
     ns = [] ∧ inits = [] ∧
     match varSlots pre, j.context[t]?, j.context[r]?, expand G j.type with
-    | some saved, some T, some Rt, [.arrs [] [(_, Ds, E', R)]] =>
+    | some saved, some T, some Rt, [.arrs [] [⟨_, (Ds, E'), R, effect⟩]] =>
       saved.map (j.context[·]?) = (saved.filterMap (j.context[·]?)).map some ∧
-      ∃ s ∈ restSigs G T, s.1 = Rt ∧ s.2.2.1 = E' ∧ s.2.2.2 = R ∧
-        Ds = s.2.1.drop saved.length ∧ ∃ El ∈ (restElem G E').toList,
+      ∃ s ∈ restSigs G T, s.receiver = Rt ∧ s.arguments.2 = E' ∧ s.result = R ∧ s.effect = effect ∧
+        Ds = s.arguments.1.drop saved.length ∧ ∃ El ∈ (restElem G E').toList,
         saved.filterMap (j.context[·]?) =
-          s.2.1.take saved.length ++ List.replicate (saved.length - s.2.1.length) El
+          s.arguments.1.take saved.length ++ List.replicate (saved.length - s.arguments.1.length) El
     | _, _, _, _ => False
   -- A member read from a slot's object and bound to that same object, with no
   -- premises: the result's signatures are the member's, at any receiver.
@@ -489,7 +492,7 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     match j.context[i]?, expand G j.type with
     | some O, [.arrs L S] => ∃ m ∈ (memberOf G O k).toList,
         proofs.length = L.length ∧ (∀ qp ∈ L.zip proofs, ∃ c ∈ m.calls, CallProofs G qp.1 c qp.2) ∧
-        (∀ s ∈ S, (s.2.1, s.2.2.1, s.2.2.2) ∈ m.rests)
+        (∀ s ∈ S, s.withReceiver () ∈ m.rests)
     | some O, _ => proofs = [] ∧ expand G j.type = [] ∧
         ∃ m ∈ (memberOf G O k).toList, j.type ∈ m.schemes
     | none, _ => False
@@ -588,8 +591,8 @@ and a store type is read through the graph's rows only. -/
 theorem offersChecked_sound [DecidableEq ι] {G : NormalGraph ι} {codes : CodeEntry ι → Bool}
     (hcodes : CodesSound G codes) {arity : Nat} {E : List Tm}
     {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {start : Nat}
-    {Cs : List (Ty ι)} {rest : Bool} {L : List (Ty ι × List (Ty ι) × Ty ι)}
-    {S : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)} {As : List (Ty ι)}
+    {Cs : List (Ty ι)} {rest : Bool} {L : List (Arrow (Ty ι))}
+    {S : List (RestArrow (Ty ι))} {As : List (Ty ι)}
     (h : offersChecked G codes arity E K start Cs rest L S As = true) :
     ∀ η, CodeOffers (reassign G η) arity E K start Cs rest L S As := by
   intro η
@@ -1202,9 +1205,9 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : Code
   · obtain ⟨rfl, rfl, hl⟩ := hl
     split at hl
     · rename_i hsaved hT hRt hF
-      obtain ⟨hmap, ⟨Rt', Ps, E', R'⟩, hmem, h1, h2, h3, h4, El, hEl, h5⟩ := hl
-      simp only at h1 h2 h3 h4 h5
-      subst h1 h2 h3 h4
+      obtain ⟨hmap, ⟨Rt', ⟨Ps, E'⟩, R', ef⟩, hmem, h1, h2, h3, hef, h4, El, hEl, h5⟩ := hl
+      simp only at h1 h2 h3 hef h4 h5
+      subst h1 h2 h3 hef h4
       rw [varSlots_eq hsaved]
       exact HasTy.bindRestE hT hmem (by simpa using hEl) hRt hmap h5 hF
     · contradiction
@@ -1296,8 +1299,8 @@ theorem accepted_safe [DecidableEq ι] {G : NormalGraph ι} {t A e} {codes : Cod
 /-- Every offer graph code meets is checked when every entry is admitted. -/
 theorem offersChecked_complete [DecidableEq ι] {G : NormalGraph ι} {arity : Nat} {E : List Tm}
     {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {start : Nat}
-    {Cs : List (Ty ι)} {rest : Bool} {L : List (Ty ι × List (Ty ι) × Ty ι)}
-    {S : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)} {As : List (Ty ι)}
+    {Cs : List (Ty ι)} {rest : Bool} {L : List (Arrow (Ty ι))}
+    {S : List (RestArrow (Ty ι))} {As : List (Ty ι)}
     (h : CodeOffers G arity E K start Cs rest L S As) :
     offersChecked G (fun _ => true) arity E K start Cs rest L S As = true := by
   cases rest with
@@ -1442,8 +1445,8 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
         exact ih p hp
       · obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hj
         exact ihc c hc
-  | @callCallable Γ f r F Rt B P Ps L S xs Us hf hr hp hrt ha hu ihf ihrt iha ihu =>
-    apply node_complete (r := .callCallable)
+  | @callCallable effect Γ f r F Rt B P Ps L S xs Us hf hr hp hrt ha hu ihf ihrt iha ihu =>
+    apply node_complete (r := .callCallable effect)
       (js := ⟨Γ,f,F⟩ :: ⟨Γ,r,Rt⟩ :: (xs.map (fun p => ⟨Γ,p.2,p.1⟩) ++ Us.map (fun A => ⟨Γ,.undef,A⟩)))
     · have hlenx : (xs.map (fun p => (⟨Γ,p.2,p.1⟩ : Sequent ι))).length
           = (xs.map Prod.snd).length := by simp
@@ -1525,8 +1528,8 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
           exact ihx p hp
         · obtain ⟨A, hA, rfl⟩ := List.mem_map.mp hj
           exact ihu A hA
-  | @app Γ f r F Rt B L S xs Us hf hr hp hrt ha hu ihf ihrt iha ihu =>
-    apply node_complete (r := .app)
+  | @app effect Γ f r F Rt B L S xs Us hf hr hp hrt ha hu ihf ihrt iha ihu =>
+    apply node_complete (r := .app effect)
       (js := ⟨Γ,f,F⟩ :: ⟨Γ,r,Rt⟩ :: (xs.map (fun p => ⟨Γ,p.2,p.1⟩) ++ Us.map (fun A => ⟨Γ,.undef,A⟩)))
     · have hlenx : (xs.map (fun p => (⟨Γ,p.2,p.1⟩ : Sequent ι))).length
           = (xs.map Prod.snd).length := by simp
@@ -1773,9 +1776,9 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     apply node_complete (G := G) (j := ⟨Γ, .arrLit [.spread s], T⟩) (r := .arrCopy E)
       (js := [⟨Γ, s, S⟩]) ⟨rfl, rfl, hsp, hr⟩
     simpa using ih
-  | @callRest Γ f r F Rt xs Us P B parts hf hmem hrt hx hu hshort hp hparts
+  | @callRest effect Γ f r F Rt xs Us P B parts hf hmem hrt hx hu hshort hp hparts
       ihf ihrt ihx ihu ihp =>
-    apply node_complete (r := .callRest xs.length Us.length (parts.map Prod.fst) P)
+    apply node_complete (r := .callRest effect xs.length Us.length (parts.map Prod.fst) P)
       (js := ⟨Γ,f,F⟩ :: ⟨Γ,r,Rt⟩ :: (xs.map (fun p => ⟨Γ,p.2,p.1⟩) ++ Us.map (fun A => ⟨Γ,.undef,A⟩) ++
         parts.map (fun p => ⟨Γ,p.2.2,p.2.1⟩)))
     · have hlenx : (xs.map (fun p => (⟨Γ,p.2,p.1⟩ : Sequent ι))).length = xs.length := by simp
@@ -1827,15 +1830,15 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
         · exact ihx p hp'
         · exact ihu A hA
         · exact ihp p hp'
-  | @bindE Γ F T Rt R Rc t r saved Ps Ds ht hsig hr hmap hF =>
+  | @bindE effect Γ F T Rt R Rc t r saved Ps Ds ht hsig hr hmap hF =>
     apply node_complete (r := .bindE) (js := [])
     · refine ⟨rfl, rfl, ?_⟩
       show (match varSlots (saved.map Tm.var), Γ[t]?, Γ[r]?, expand G F with
-        | some saved, some T, some Rt, [.arrs [(_, Ds, R)] []] =>
+        | some saved, some T, some Rt, [.arrs [⟨_, Ds, R, effect⟩] []] =>
           saved.map (Γ[·]?) = (saved.filterMap (Γ[·]?)).map some ∧
-          (Rt, saved.filterMap (Γ[·]?) ++ Ds, R) ∈ callSigs G T
+          ⟨Rt, saved.filterMap (Γ[·]?) ++ Ds, R, effect⟩ ∈ callSigs G T
         | _, _, _, _ => False)
-      rw [varSlots_map, ht, hr, show expand G F = [.arrs [(Rc, Ds, R)] []] from hF]
+      rw [varSlots_map, ht, hr, show expand G F = [.arrs [⟨Rc, Ds, R, effect⟩] []] from hF]
       simp only
       rw [filterMap_of_map hmap]
       exact ⟨hmap, hsig⟩
@@ -1851,7 +1854,7 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
       show (match Γ[i]?, expand G F with
         | some O, [.arrs L S] => ∃ m ∈ (memberOf G O k).toList,
             proofs.length = L.length ∧ (∀ qp ∈ L.zip proofs, ∃ c ∈ m.calls, CallProofs G qp.1 c qp.2) ∧
-            (∀ s ∈ S, (s.2.1, s.2.2.1, s.2.2.2) ∈ m.rests)
+            (∀ s ∈ S, s.withReceiver () ∈ m.rests)
         | some O, _ => proofs = [] ∧ expand G F = [] ∧ ∃ m ∈ (memberOf G O k).toList, F ∈ m.schemes
         | none, _ => False)
       rw [hi, show expand G F = [.arrs L S] from hF]
@@ -1866,28 +1869,28 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
               L.length ∧
             (∀ qp ∈ L.zip ([] : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι)),
               ∃ c ∈ m.calls, CallProofs G qp.1 c qp.2) ∧
-            (∀ s ∈ S, (s.2.1, s.2.2.1, s.2.2.2) ∈ m.rests)
+            (∀ s ∈ S, s.withReceiver () ∈ m.rests)
         | some O, _ => ([] : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι)) = [] ∧
             expand G F = [] ∧ ∃ m ∈ (memberOf G O k).toList, F ∈ m.schemes
         | none, _ => False)
       rw [hi, hE]
       exact ⟨rfl, rfl, m, by simp [hmo], hF⟩
     · simp
-  | @bindRestE Γ F T Rt E El R Rc t r saved Ps Qs ht hsig hel hr hmap hQs hF =>
+  | @bindRestE effect Γ F T Rt E El R Rc t r saved Ps Qs ht hsig hel hr hmap hQs hF =>
     apply node_complete (r := .bindRestE) (js := [])
     · refine ⟨rfl, rfl, ?_⟩
       show (match varSlots (saved.map Tm.var), Γ[t]?, Γ[r]?, expand G F with
-        | some saved, some T, some Rt, [.arrs [] [(_, Ds, E', R)]] =>
+        | some saved, some T, some Rt, [.arrs [] [⟨_, (Ds, E'), R, effect⟩]] =>
           saved.map (Γ[·]?) = (saved.filterMap (Γ[·]?)).map some ∧
-          ∃ s ∈ restSigs G T, s.1 = Rt ∧ s.2.2.1 = E' ∧ s.2.2.2 = R ∧
-            Ds = s.2.1.drop saved.length ∧ ∃ El ∈ (restElem G E').toList,
+          ∃ s ∈ restSigs G T, s.receiver = Rt ∧ s.arguments.2 = E' ∧ s.result = R ∧ s.effect = effect ∧
+            Ds = s.arguments.1.drop saved.length ∧ ∃ El ∈ (restElem G E').toList,
             saved.filterMap (Γ[·]?) =
-              s.2.1.take saved.length ++ List.replicate (saved.length - s.2.1.length) El
+              s.arguments.1.take saved.length ++ List.replicate (saved.length - s.arguments.1.length) El
         | _, _, _, _ => False)
-      rw [varSlots_map, ht, hr, show expand G F = [.arrs [] [(Rc, Ps.drop saved.length, E, R)]] from hF]
+      rw [varSlots_map, ht, hr, show expand G F = [.arrs [] [⟨Rc, (Ps.drop saved.length, E), R, effect⟩]] from hF]
       simp only
       rw [filterMap_of_map hmap]
-      exact ⟨hmap, ⟨Rt, Ps, E, R⟩, hsig, rfl, rfl, rfl, rfl, El, by simp [hel], hQs⟩
+      exact ⟨hmap, ⟨Rt, (Ps, E), R, effect⟩, hsig, rfl, rfl, rfl, rfl, rfl, El, by simp [hel], hQs⟩
     · simp
   | @sub Γ t A B cert ht hc ih =>
     apply node_complete (G := G) (j := ⟨Γ, t, B⟩) (r := .sub cert) (js := [⟨Γ,t,A⟩]) ⟨rfl,rfl,hc⟩

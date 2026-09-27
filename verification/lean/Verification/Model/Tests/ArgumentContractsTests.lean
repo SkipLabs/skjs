@@ -83,9 +83,9 @@ private def nestedImage : NormalGraph Nat := {
     | 13 => [.ctors [] [([], [11], [12])]]
     | _ => [.nul]
   schemes := fun i => match i with
-    | 0 => some { binders := [1], signatures := [], bounds := [(1,[11])], variadic := [([3], [], [1], [4])] }
-    | 4 => some { binders := [5], signatures := [([3], [[5]], [8])], bounds := [(5,[6])] }
-    | 9 => some { binders := [10], signatures := [([3], [[10]], [13])], bounds := [(10,[6])] }
+    | 0 => some { binders := [1], signatures := [], bounds := [(1,[11])], variadic := [⟨[3], ([], [1]), [4], .unrestricted⟩] }
+    | 4 => some { binders := [5], signatures := [⟨[3], [[5]], [8], .unrestricted⟩], bounds := [(5,[6])] }
+    | 9 => some { binders := [10], signatures := [⟨[3], [[10]], [13], .unrestricted⟩], bounds := [(10,[6])] }
     | _ => none
   parameterKinds := fun i => match i with
     | 1 => some .arguments
@@ -106,9 +106,9 @@ example (η : MixedAssignment Nat) :
     FamLe (PositiveRules.mixedValues nestedImage η [0])
       (semWithArgs (PositiveRules.mixedValues nestedImage η)
         (graphArguments nestedImage η (PositiveRules.mixedValues nestedImage η))
-        (.arrs [] [([3], [], [11], [9])])) := by
+        (.arrs [] [⟨[3], ([], [11]), [9], .unrestricted⟩])) := by
   refine PositiveRules.inst_mixed_sound η (i := 0)
-    (s := { binders := [1], signatures := [], bounds := [(1,[11])], variadic := [([3], [], [1], [4])] })
+    (s := { binders := [1], signatures := [], bounds := [(1,[11])], variadic := [⟨[3], ([], [1]), [4], .unrestricted⟩] })
     (θs := [[11]]) (tbl := nestedImageTable) (D := List.range 14) (V := nestedImageFree)
     (by decide) (by decide) (by decide) ?_ (by decide) nestedImageChecked ?_ ?_
   · intro b hb U hU
@@ -119,9 +119,9 @@ example (η : MixedAssignment Nat) :
     exact fun _ _ _ h => h
   · intro q hq; cases hq
   · intro q hq
-    have hq' : q = ([3], [], [11], [9]) := by simpa using hq
+    have hq' : q = ⟨[3], ([], [11]), [9], .unrestricted⟩ := by simpa using hq
     subst q
-    exact ⟨([3], [], [1], [4]), by simp, by decide⟩
+    exact ⟨⟨[3], ([], [1]), [4], .unrestricted⟩, by simp, by decide⟩
 
 /-- A nested scheme cannot rename its value binder to a pack binder. -/
 example : PositiveRules.TableOk
@@ -164,7 +164,7 @@ example (T : TupleF) (Bound : Fam)
 /-- Recursion through a real graph pack row is guarded by the callable.
 Node 0 takes a list whose single element is itself; node 1 is the result. -/
 def recursive : PositiveGraphs.NormalGraph Nat := .ofRows fun
-  | 0 => [.arrs [] [([1], [], [2], [1])]]
+  | 0 => [.arrs [] [⟨[1], ([], [2]), [1], .unrestricted⟩]]
   | 2 => [.pack ⟨[[0]], [], none, false, true⟩ []]
   | _ => [.num]
 
@@ -185,12 +185,12 @@ using real rows for both the pack parameter and its bound. -/
 def quantified : NormalGraph Nat := {
   rows := fun i => match i with
     | 1 => [.pack ⟨[[4]], [], none, false, true⟩ []]
-    | 4 => [.arrs [([3], [[0]], [3])] []]
+    | 4 => [.arrs [⟨[3], [[0]], [3], .unrestricted⟩] []]
     | _ => [.top]
   parameterKinds := fun i => if i == 2 then some .arguments else none
   schemes := fun i => if i = 0 then some {
     binders := [2], bounds := [(2, [1])], signatures := [],
-    variadic := [([3], [], [2], [3])] } else none }
+    variadic := [⟨[3], ([], [2]), [3], .unrestricted⟩] } else none }
 
 example (η : MixedAssignment Nat) :
     Adm (qDenoteWithArgs quantified (mixedParameters quantified) (η, 0)) :=
@@ -203,7 +203,7 @@ example (η : MixedAssignment Nat) (n W v) :
       schemeSemWithArgs (mixedParameters quantified)
         (fun θ S => setSem (fun i => qDenoteWithArgs quantified
           (mixedParameters quantified) (θ, i)) S)
-        η ⟨[2], [], [(2, [1])], [([3], [], [2], [3])]⟩
+        η ⟨[2], [], [(2, [1])], [⟨[3], ([], [2]), [3], .unrestricted⟩]⟩
         n W v := by
   rw [qDenoteWithArgs_unfold _ _]
   rfl
@@ -214,14 +214,14 @@ scheme depends on the captured pack; neither depends on the inner value binder. 
 private def nestedPacks : NormalGraph Nat := {
   rows := fun i => match i with
     | 1 => [.pack ⟨[[6]], [], none, false, true⟩ []]
-    | 6 => [.arrs [([3], [[0]], [3])] []]
+    | 6 => [.arrs [⟨[3], [[0]], [3], .unrestricted⟩] []]
     | _ => [.top]
   parameterKinds := fun i => if i = 2 then some .arguments else
     if i = 5 then some .value else none
   schemes := fun i => if i = 0 then some {
     binders := [2], bounds := [(2, [1])], signatures := [],
-    variadic := [([3], [], [2], [4])] } else if i = 4 then some {
-    binders := [5], signatures := [], variadic := [([3], [], [2], [5])] } else none }
+    variadic := [⟨[3], ([], [2]), [4], .unrestricted⟩] } else if i = 4 then some {
+    binders := [5], signatures := [], variadic := [⟨[3], ([], [2]), [5], .unrestricted⟩] } else none }
 
 private def nestedFree : PositiveRules.FreeMap Nat := [(2, [2]), (4, [2]), (5, [5])]
 
@@ -263,7 +263,7 @@ The same list contract appears in a constructor operand and trailing arguments;
 the same value contract is the constructor and call result. -/
 private def mixedScheme : SchemeRow Nat :=
   { binders := [0,1], signatures := [], bounds := [(0, [2]), (1, [3])],
-    variadic := [([3], [[2]], [1], [0])] }
+    variadic := [⟨[3], ([[2]], [1]), [0], .unrestricted⟩] }
 
 private def closedTop : ValueFamily :=
   ⟨topT, ⟨⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩, fun _ _ _ h => h⟩⟩
@@ -344,10 +344,10 @@ example (η : MixedAssignment Nat) (A : ValueFamily) (P : ArgumentFamily)
   have hi := PositiveRules.bounded_substitution_elim η F
     (fun θ S => (mixedBound θ S).1) mixedScheme [[4],[5]] (mixedBody η) rfl hb n W f hf
   have rest := hi.2
-  simp only [instanceRestsWithArgs, mixedScheme, List.map_cons, List.map_nil] at rest
+  simp only [instanceRestsWithArgs, mixedScheme, List.map_cons, List.map_nil, CallEffects.RestArrow.mapWith, CallEffects.Contract.map] at rest
   rw [graphArguments_parameter _ _ _ _ (by simp [mixedGraph])] at rest
   simpa [mixedValue, F, assign_cons_head, assign_cons_ne,
-    MixedFamily.ofValue, MixedFamily.ofArguments] using rest
+    MixedFamily.ofValue, MixedFamily.ofArguments] using CallEffects.restsT_erase rest
 
 /-- Wrong argument types remain rejected. -/
 example (n W) : ¬ Fits ⟨[numT], [], none, false, true⟩ n W [.nul] := by
