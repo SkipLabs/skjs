@@ -16,7 +16,7 @@ structure Tuple (α : Type) where
   optional : List α
   rest : Option α
   readonly : Bool
-  dense : Bool
+  presence : ArrayPresence
   deriving DecidableEq, Repr
 
 /-- The operand a tuple contract states for an index, as `positionFam` states
@@ -30,7 +30,7 @@ def Tuple.position (t : Tuple α) (i : Nat) : Option α :=
 
 /-- The families a tuple contract denotes, position by position. -/
 def tupleFams {α : Type} (X : α → Fam) (t : Tuple α) : TupleF :=
-  ⟨t.required.map X, t.optional.map X, t.rest.map X, t.readonly, t.dense⟩
+  ⟨t.required.map X, t.optional.map X, t.rest.map X, t.readonly, t.presence⟩
 
 inductive Clause (α : Type) where
   | nul | bool
@@ -682,6 +682,23 @@ theorem clauseArguments_congr (X Y : α → Fam) (c : Clause α) (n : Nat) (W : 
   rename_i a bs
   exact forall_congr' fun t => forall_congr' fun _ => arguments_congr X Y t n h vs
 
+theorem storePresence_congr (X Y : α → Fam) (t : Tuple α) (j : Nat)
+    (h : ∀ a (U : WorldT j), X a j U .undef ↔ Y a j U .undef) (ls : List (Option Nat)) :
+    StorePresence (tupleFams X t) ls j ↔ StorePresence (tupleFams Y t) ls j := by
+  cases ht : t.presence with
+  | dense => simp [StorePresence, tupleFams, ht]
+  | sparse => simp [StorePresence, tupleFams, ht]
+  | readable =>
+    simp only [StorePresence, show (tupleFams X t).presence = .readable from ht,
+      show (tupleFams Y t).presence = .readable from ht, positionFam_tupleFams]
+    constructor
+    · intro hp i hi A hA U
+      obtain ⟨a, ha, rfl⟩ := Option.map_eq_some_iff.mp hA
+      exact (h a U).mp (hp i hi (X a) (by simp [ha]) U)
+    · intro hp i hi A hA U
+      obtain ⟨a, ha, rfl⟩ := Option.map_eq_some_iff.mp hA
+      exact (h a U).mpr (hp i hi (Y a) (by simp [ha]) U)
+
 /-- Position by position, a tuple contract's meaning depends on its labels'
 meanings only below the budget, as a record's does. -/
 theorem list_congr_below (X Y : α → Fam) (t : Tuple α) (n : Nat)
@@ -690,7 +707,9 @@ theorem list_congr_below (X Y : α → Fam) (t : Tuple α) (n : Nat)
   constructor <;> rintro ⟨ls, rfl, hd, hlen, hbound, hreq, hopt, hrest⟩ <;>
     simp only [listT, tupleFams, List.length_map, List.getElem?_map, Option.map_eq_none_iff,
       Option.map_eq_some_iff] at hlen hbound hreq hopt hrest ⊢ <;>
-    refine ⟨ls, rfl, hd, hlen, hbound, ?_, ?_, ?_⟩
+    refine ⟨ls, rfl, ?_, hlen, hbound, ?_, ?_, ?_⟩
+  · intro j hj
+    exact (storePresence_congr X Y t j (fun a U => h a j hj U .undef) ls).mp (hd j hj)
   · rintro i A ⟨a, ha, rfl⟩
     obtain ⟨l, c, hl, hw, hag⟩ := hreq i (X a) ⟨a, ha, rfl⟩
     exact ⟨l, c, hl, hw, fun j hj W' u => (hag j hj W' u).congr (h a j hj W' u)⟩
@@ -700,6 +719,8 @@ theorem list_congr_below (X Y : α → Fam) (t : Tuple α) (n : Nat)
   · intro i l hi hl
     obtain ⟨E, c, ⟨e, he, rfl⟩, hw, hag⟩ := hrest i l hi hl
     exact ⟨Y e, c, ⟨e, he, rfl⟩, hw, fun j hj W' u => (hag j hj W' u).congr (h e j hj W' u)⟩
+  · intro j hj
+    exact (storePresence_congr X Y t j (fun a U => h a j hj U .undef) ls).mpr (hd j hj)
   · rintro i A ⟨a, ha, rfl⟩
     obtain ⟨l, c, hl, hw, hag⟩ := hreq i (Y a) ⟨a, ha, rfl⟩
     exact ⟨l, c, hl, hw, fun j hj W' u => (hag j hj W' u).congr (h a j hj W' u).symm⟩
@@ -772,7 +793,7 @@ clause read through the renaming (`semWithArgs_map`). A renaming fixing every op
 changes nothing (`map_of_operands`). -/
 
 def Tuple.map (f : α → β) (t : Tuple α) : Tuple β :=
-  ⟨t.required.map f, t.optional.map f, t.rest.map f, t.readonly, t.dense⟩
+  ⟨t.required.map f, t.optional.map f, t.rest.map f, t.readonly, t.presence⟩
 
 def Tuple.operands (t : Tuple α) : List α := t.required ++ t.optional ++ t.rest.toList
 

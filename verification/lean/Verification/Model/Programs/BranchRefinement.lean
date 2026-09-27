@@ -422,7 +422,7 @@ theorem valuesTy_sound [DecidableEq ι] {G : NormalGraph ι} {T : Ty ι} (h : va
 type every value meets. -/
 def storeOfValues [DecidableEq ι] (G : NormalGraph ι) (S : Ty ι) : Bool :=
   S.any fun s => G.plain s && (G s).any fun c => match c with
-    | .list ⟨[], [], some T, true, false⟩ [] => valuesTy G T
+    | .list ⟨[], [], some T, true, .sparse⟩ [] => valuesTy G T
     | _ => false
 
 theorem storeOfValues_sound [DecidableEq ι] {G : NormalGraph ι} {S : Ty ι}

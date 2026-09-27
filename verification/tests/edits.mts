@@ -204,8 +204,8 @@ export function sourceType(type: ClaimType): TypeTerm {
       case "param": return { k: "binder", name: a.name, span };
       case "array":
         return !a.required.length && !a.optional.length && a.rest
-          ? { k: "array", dense: a.dense, readonly: a.readonly, element: sourceType(a.rest), span }
-          : { k: "tuple", dense: a.dense, readonly: a.readonly, required: a.required.map(sourceType),
+          ? { k: "array", presence: a.presence, readonly: a.readonly, element: sourceType(a.rest), span }
+          : { k: "tuple", presence: a.presence, readonly: a.readonly, required: a.required.map(sourceType),
               optional: a.optional.map(sourceType), rest: a.rest ? sourceType(a.rest) : null, span };
       case "function":
         return { k: "function", effect: "unrestricted", receiver: a.this.top ? null : sourceType(a.this),

@@ -233,7 +233,7 @@ theorem mixed_compatible {G : NormalGraph ι} {η : MixedAssignment ι} {i k : �
 number of actuals at `E`, which is what a rest `...xs: E[]` says. -/
 def restElem (G : NormalGraph ι) (P : List ι) : Option (List ι) :=
   match expand G P with
-  | [.pack ⟨[], [], some E, false, true⟩ []] => some E
+  | [.pack ⟨[], [], some E, false, .dense⟩ []] => some E
   | _ => none
 
 
@@ -266,7 +266,7 @@ theorem mixed_pack_args {G : NormalGraph ι} {η : MixedAssignment ι} {X : List
 theorem mixed_restElem {G : NormalGraph ι} {η : MixedAssignment ι} {X : List ι → Fam}
     {E El : List ι} (hel : restElem G E = some El) {n W vs} :
     graphArguments G η X E n W vs ↔ ∀ v ∈ vs, X El n W v := by
-  have hx : expand G E = [.pack ⟨[], [], some El, false, true⟩ []] := by
+  have hx : expand G E = [.pack ⟨[], [], some El, false, .dense⟩ []] := by
     unfold restElem at hel
     split at hel <;> simp_all
   rw [mixed_pack_args hx]
@@ -1078,14 +1078,44 @@ def CoversPack (R : List ι → List ι → Prop) (p q : Tuple (List ι)) : Prop
       (q.required.length + q.optional.length) + 1),
     PositionCovers R (p.position i) (q.position i)
 
+/-- Finite, conservative tests for undefined membership. Parameter rows are
+never treated as empty merely because they have no clauses to expand. -/
+def AdmitsUndefined (G : NormalGraph ι) (A : List ι) : Prop :=
+  ∃ c ∈ expand G A, shape c = 4 ∨ shape c = 7
+
+def ExcludesUndefined (G : NormalGraph ι) (A : List ι) : Prop :=
+  G.plainTy A = true ∧ ∀ c ∈ expand G A, shape c ≠ 4 ∧ shape c ≠ 7
+
+instance (G : NormalGraph ι) (A : List ι) : Decidable (AdmitsUndefined G A) := by
+  unfold AdmitsUndefined; infer_instance
+
+instance (G : NormalGraph ι) (A : List ι) : Decidable (ExcludesUndefined G A) := by
+  unfold ExcludesUndefined; infer_instance
+
+/-- Only the hole-reading guarantee changes; element locations retain their
+separate read/write contracts. -/
+def CoversPresence (G : NormalGraph ι) (R : List ι → List ι → Prop)
+    (p q : Tuple (List ι)) : Prop :=
+  match q.presence with
+  | .sparse => True
+  | .dense => p.presence = .dense ∨
+      (p.presence = .readable ∧ ∀ A ∈ p.required ++ p.optional ++ p.rest.toList, ExcludesUndefined G A)
+  | .readable => p.presence = .dense ∨
+      (p.presence = .readable ∧ CoversPack R p q) ∨
+      (∀ A ∈ q.required ++ q.optional ++ q.rest.toList, AdmitsUndefined G A)
+
+instance (G : NormalGraph ι) {R : List ι → List ι → Prop} [DecidableRel R]
+    (p q : Tuple (List ι)) : Decidable (CoversPresence G R p q) := by
+  unfold CoversPresence; split <;> (try unfold CoversPack) <;> infer_instance
+
 /-- A tuple contract within another. A writable target needs a writable source
 of the same shape with equivalent element contracts (`CoversShape`): no
 location is retyped. A readonly target only reads the elements present, each
 at its position, so, as for an argument pack, the source's length bounds lie
 within the target's and each position's operand is within the target's
 (`CoversPack`): `[number, number]` is a `readonly (number | null)[]`. -/
-def CoversTuple (R : List ι → List ι → Prop) (p q : Tuple (List ι)) : Prop :=
-  (q.dense = true → p.dense = true) ∧
+def CoversTuple (G : NormalGraph ι) (R : List ι → List ι → Prop) (p q : Tuple (List ι)) : Prop :=
+  CoversPresence G R p q ∧
     (if q.readonly then CoversPack R p q else CoversShape R p q)
 
 /-- Coverage has one definition for both derivations and certificate checking.
@@ -1095,7 +1125,7 @@ def CoversWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι �
     (arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop)
     (self : List ι) : Clause (List ι) → Clause (List ι) → Prop
   | _, .top => True
-  | .list a bs, .list c ds => ∀ q ∈ c :: ds, ∃ p ∈ a :: bs, CoversTuple R p q
+  | .list a bs, .list c ds => ∀ q ∈ c :: ds, ∃ p ∈ a :: bs, CoversTuple G R p q
   | .nul, .nul => True
   | .undef, .undef => True
   | .bool, .bool => True
@@ -2162,10 +2192,108 @@ theorem covers_bags_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : Li
     obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hB
     exact ⟨flds, code, rfl, hval, key b (List.mem_cons_of_mem c hb)⟩⟩
 
+theorem CoversPack.position {R : List ι → List ι → Prop} {p q : Tuple (List ι)}
+    (hc : CoversPack R p q) : ∀ i a, p.position i = some a → ∃ b, q.position i = some b ∧ R a b := by
+  have hpos := hc.2.2
+  intro i a ha
+  have hcov : PositionCovers R (p.position i) (q.position i) := by
+    by_cases hiN : i ≤ max (p.required.length + p.optional.length)
+        (q.required.length + q.optional.length)
+    · exact hpos i (List.mem_range.mpr (by omega))
+    · have h := hpos _ (List.mem_range.mpr (Nat.lt_succ_self _))
+      have e1 : p.position i = p.position (max (p.required.length + p.optional.length)
+          (q.required.length + q.optional.length)) := by
+        rw [Tuple.position_beyond (by omega), Tuple.position_beyond (by omega)]
+      have e2 : q.position i = q.position (max (p.required.length + p.optional.length)
+          (q.required.length + q.optional.length)) := by
+        rw [Tuple.position_beyond (by omega), Tuple.position_beyond (by omega)]
+      rwa [e1, e2]
+  rw [ha] at hcov
+  cases hq : q.position i with
+  | none => rw [hq] at hcov; exact hcov.elim
+  | some b => rw [hq] at hcov; exact ⟨b, rfl, hcov⟩
+
+theorem Tuple.position_mem {t : Tuple α} {i : Nat} {A : α} (h : t.position i = some A) :
+    A ∈ t.required ++ t.optional ++ t.rest.toList := by
+  unfold Tuple.position at h
+  split at h
+  · rename_i a ha; cases h; simp [List.mem_of_getElem? ha]
+  · split at h
+    · rename_i a ha; cases h; simp [List.mem_of_getElem? ha]
+    · split at h
+      · simp [h]
+      · cases h
+
+theorem admitsUndefined_sound {G : NormalGraph ι} {η : MixedAssignment ι} {A : List ι}
+    (h : AdmitsUndefined G A) (j : Nat) (U : WorldT j) : mixedValues G η A j U .undef := by
+  obtain ⟨c, hc, he⟩ := h
+  have he : c = .undef ∨ c = .top := by cases c <;> simp_all [shape]
+  apply mixed_expand_mpr
+  rcases he with rfl | rfl
+  · exact ⟨.undef, expand_sub hc, ⟨rfl, realmInvariant_of_not_record rfl _ _ _⟩⟩
+  · exact ⟨.top, expand_sub hc, ⟨⟨rfl, trivial⟩, realmInvariant_of_not_record rfl _ _ _⟩⟩
+
+theorem excludesUndefined_sound {G : NormalGraph ι} {η : MixedAssignment ι} {A : List ι}
+    (h : ExcludesUndefined G A) (j : Nat) (U : WorldT j) : ¬ mixedValues G η A j U .undef := by
+  intro hv
+  obtain ⟨c, hc, hs⟩ := (mixed_expand η h.1 j U .undef).mp hv
+  have hc' := h.2 c hc
+  have hn : c ≠ .top := by intro he; subst he; exact hc'.2 rfl
+  exact hc'.1 (semWithArgs_shape hn hs.1).symm
+
+theorem covers_presence_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
+    {p q : Tuple (List ι)} (hc : CoversPresence G R p q) (n : Nat)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j)
+    (ls : List (Option Nat))
+    (hb : p.rest = none → ls.length ≤ p.required.length + p.optional.length)
+    (hd : ∀ j, j < n → StorePresence (tupleFams (mixedValues G η) p) ls j) :
+    ∀ j, j < n → StorePresence (tupleFams (mixedValues G η) q) ls j := by
+  have named : ∀ i, ls[i]? = some none → ∃ A, p.position i = some A := by
+    intro i hi
+    cases ha : p.position i with
+    | some A => exact ⟨A, rfl⟩
+    | none =>
+      obtain ⟨h1,h2⟩ := Tuple.position_none ha
+      have := hb h2
+      have := (List.getElem?_eq_some_iff.mp hi).1
+      omega
+  intro j hj
+  have hd := hd j hj
+  cases hq : q.presence with
+  | sparse => simp [StorePresence, tupleFams, hq]
+  | dense =>
+    simp only [CoversPresence, hq] at hc
+    simp only [StorePresence, tupleFams, hq]
+    rcases hc with hp | ⟨hp, hex⟩
+    · simpa [StorePresence, tupleFams, hp] using hd
+    · intro hm
+      obtain ⟨i, hi⟩ := List.mem_iff_getElem?.mp hm
+      obtain ⟨A, ha⟩ := named i hi
+      simp only [StorePresence, show (tupleFams (mixedValues G η) p).presence = .readable from hp] at hd
+      have hs := hd i hi _ (by rw [positionFam_tupleFams, ha]; rfl)
+      exact excludesUndefined_sound (hex A (Tuple.position_mem ha)) j (ofList []) (hs (ofList []))
+  | readable =>
+    simp only [CoversPresence, hq] at hc
+    rcases hc with hp | ⟨hp, hc⟩ | ha
+    · exact StorePresence.of_dense (by simpa [StorePresence, tupleFams, hp] using hd) j
+    · simp only [StorePresence, show (tupleFams (mixedValues G η) q).presence = .readable from hq]
+      intro i hi B hB U
+      obtain ⟨A, hA⟩ := named i hi
+      obtain ⟨b, hb, hab⟩ := CoversPack.position hc i A hA
+      rw [positionFam_tupleFams, hb] at hB
+      cases hB
+      simp only [StorePresence, show (tupleFams (mixedValues G η) p).presence = .readable from hp] at hd
+      exact hr j hj A b hab U .undef (hd i hi _ (by rw [positionFam_tupleFams, hA]; rfl) U)
+    · simp only [StorePresence, show (tupleFams (mixedValues G η) q).presence = .readable from hq]
+      intro i hi B hB U
+      rw [positionFam_tupleFams] at hB
+      obtain ⟨b,hb,rfl⟩ := Option.map_eq_some_iff.mp hB
+      exact admitsUndefined_sound (ha b (Tuple.position_mem hb)) j U
+
 /-- A same-shape covered tuple contract holds of the same store: every
 position's location carries a contract both families identify. -/
 theorem covers_shape_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
-    {p q : Tuple (List ι)} (hc : CoversShape R p q) (hdense : q.dense = true → p.dense = true) (n : Nat)
+    {p q : Tuple (List ι)} (hc : CoversShape R p q) (hpresence : CoversPresence G R p q) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j)
     (W : WorldT n) (v : Val) (hv : listT (tupleFams (mixedValues G η) p) n W v) :
     listT (tupleFams (mixedValues G η) q) n W v := by
@@ -2173,7 +2301,7 @@ theorem covers_shape_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : L
   obtain ⟨ls, rfl, hd, hlen, hbound, hreq, hopt, hrest⟩ := hv
   simp only [listT, tupleFams, List.length_map, List.getElem?_map, Option.map_eq_none_iff,
     Option.map_eq_some_iff] at hlen hbound hreq hopt hrest ⊢
-  refine ⟨ls, rfl, (fun h => hd (hdense h)), hreqLen ▸ hlen, ?_, ?_, ?_, ?_⟩
+  refine ⟨ls, rfl, (covers_presence_sound hpresence n hr ls hbound hd), hreqLen ▸ hlen, ?_, ?_, ?_, ?_⟩
   · intro hn
     have hpn : p.rest = none := by
       cases hp : p.rest <;> cases hq : q.rest <;> simp_all [CoversRest]
@@ -2208,7 +2336,7 @@ theorem covers_shape_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : L
 store: each element present is at a position of the source, whose contract
 reads within the target's position, and the target only reads. -/
 theorem covers_readonly_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
-    {p q : Tuple (List ι)} (hro : q.readonly = true) (hc : CoversPack R p q) (hdense : q.dense = true → p.dense = true) (n : Nat)
+    {p q : Tuple (List ι)} (hro : q.readonly = true) (hc : CoversPack R p q) (hpresence : CoversPresence G R p q) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j)
     (W : WorldT n) (v : Val) (hv : listT (tupleFams (mixedValues G η) p) n W v) :
     listT (tupleFams (mixedValues G η) q) n W v := by
@@ -2237,25 +2365,7 @@ theorem covers_readonly_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R 
         simp [Tuple.position, List.getElem?_eq_none (show p.required.length ≤ i by omega), hx]
       · obtain ⟨E, c, ⟨e, he, rfl⟩, hw, hag⟩ := hrest i l (by omega) hl
         exact ⟨e, c, by rw [Tuple.position_beyond (by omega), he], hw, hag⟩
-  -- Each source position is within the target's at that index.
-  have cov : ∀ i a, p.position i = some a → ∃ b, q.position i = some b ∧ R a b := by
-    intro i a ha
-    have hcov : PositionCovers R (p.position i) (q.position i) := by
-      by_cases hiN : i ≤ max (p.required.length + p.optional.length)
-          (q.required.length + q.optional.length)
-      · exact hpos i (List.mem_range.mpr (by omega))
-      · have h := hpos _ (List.mem_range.mpr (Nat.lt_succ_self _))
-        have e1 : p.position i = p.position (max (p.required.length + p.optional.length)
-            (q.required.length + q.optional.length)) := by
-          rw [Tuple.position_beyond (by omega), Tuple.position_beyond (by omega)]
-        have e2 : q.position i = q.position (max (p.required.length + p.optional.length)
-            (q.required.length + q.optional.length)) := by
-          rw [Tuple.position_beyond (by omega), Tuple.position_beyond (by omega)]
-        rwa [e1, e2]
-    rw [ha] at hcov
-    cases hq : q.position i with
-    | none => rw [hq] at hcov; exact hcov.elim
-    | some b => rw [hq] at hcov; exact ⟨b, rfl, hcov⟩
+  have cov := CoversPack.position (R := R) (p := p) (q := q) ⟨hreqLen, hrestB, hpos⟩
   -- A readonly target's contract only reads.
   have slot : ∀ {c : Ctr n} {a b : List ι}, R a b →
       (∀ (j : Nat) (hj : j < n) (W' : WorldT j) (u : Val),
@@ -2265,7 +2375,7 @@ theorem covers_readonly_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R 
     intro c a b hab hag j hj W' u
     exact (hag j hj W' u).weaken (fun h => by simp [hro] at h) (hr j hj _ _ hab W' u)
       (fun h => by simp [hro] at h)
-  refine ⟨ls, rfl, (fun h => hd (hdense h)), by omega, ?_, ?_, ?_, ?_⟩
+  refine ⟨ls, rfl, (covers_presence_sound hpresence n hr ls hbound hd), by omega, ?_, ?_, ?_, ?_⟩
   · intro hn
     obtain ⟨hp, hle⟩ := hrestB hn
     have := hbound hp
@@ -2296,18 +2406,18 @@ theorem covers_readonly_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R 
 
 /-- A covered tuple contract holds of the same store. -/
 theorem covers_tuple_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
-    {p q : Tuple (List ι)} (hc : CoversTuple R p q) (n : Nat)
+    {p q : Tuple (List ι)} (hc : CoversTuple G R p q) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j)
     (W : WorldT n) (v : Val) (hv : listT (tupleFams (mixedValues G η) p) n W v) :
     listT (tupleFams (mixedValues G η) q) n W v := by
-  obtain ⟨hdense, hc⟩ := hc
+  obtain ⟨hpresence, hc⟩ := hc
   cases hq : q.readonly with
-  | true => rw [hq] at hc; exact covers_readonly_sound hq hc hdense n hr W v hv
-  | false => rw [hq] at hc; exact covers_shape_sound hc hdense n hr W v hv
+  | true => rw [hq] at hc; exact covers_readonly_sound hq hc hpresence n hr W v hv
+  | false => rw [hq] at hc; exact covers_shape_sound hc hpresence n hr W v hv
 
 theorem covers_lists_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
     {a c : Tuple (List ι)} {bs ds : List (Tuple (List ι))}
-    (hc : ∀ q ∈ c :: ds, ∃ p ∈ a :: bs, CoversTuple R p q) (n : Nat)
+    (hc : ∀ q ∈ c :: ds, ∃ p ∈ a :: bs, CoversTuple G R p q) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j)
     (W : WorldT n) (v : Val)
     (hv : listT (tupleFams (mixedValues G η) a) n W v ∧ ∀ b ∈ bs, listT (tupleFams (mixedValues G η) b) n W v) :
@@ -4911,6 +5021,7 @@ theorem Sub.congr {G : NormalGraph ι} {S S' T T' : List ι}
     exact .trans (.subset (fun i hi => (hs i).mp hi))
       (.trans h (.subset (fun i hi => (ht i).mpr hi)))
 
+#print axioms covers_presence_sound
 #print axioms core_arguments_of_values
 #print axioms covers_writable_keeps
 #print axioms covers_writable_bounds_grow

@@ -1,4 +1,4 @@
-import type { CallEffect } from "./type-graph.mts";
+import type { CallEffect, ArrayPresence } from "./type-graph.mts";
 /** The declaration document shared by the source parser, the Fragment AST
  * and readers. TypeScript's checker, under the source's configured project,
  * decides which declaration each name denotes; the document records the source
@@ -45,8 +45,8 @@ export type TypeTerm =
      decimal integer; either may be negative. */
   | { k: "literal"; name: "true" | "false" | "string" | "number" | "bigint"; text: string; span: Span }
   | { k: "union" | "intersection"; parts: TypeTerm[]; span: Span }
-  | { k: "array"; dense: boolean; readonly: boolean; element: TypeTerm; span: Span }
-  | { k: "tuple"; dense: boolean; readonly: boolean; required: TypeTerm[];
+  | { k: "array"; presence: ArrayPresence; readonly: boolean; element: TypeTerm; span: Span }
+  | { k: "tuple"; presence: ArrayPresence; readonly: boolean; required: TypeTerm[];
       optional: TypeTerm[]; rest: TypeTerm | null; span: Span }
   /** `prototype`, stated by the library overlay only: members the object
    * holds as own properties that are not enumerable (an `Error`'s

@@ -79,10 +79,10 @@ Each type-graph node is a union of clauses:
 | Plain object with named contracts and readonly index views, each `[class, operand]` with class `"strings"` (every string key), `"numeric"` (the canonical numeric keys) or `"symbols"` (every symbol key); each constrains every present own field under a key of its class | `{"dict":{"first":[],"rest":[],"views":[],"indexes":[["strings",[1,3]],["numeric",[1]]]}}` |
 | Writable index contracts, a mutable index signature's, `[class, operand]` as above: every present own field under a key of the class holds exactly the operand; each is also listed in `indexes`; left out when there are none | `{"dict":{"first":[],"rest":[],"views":[],"indexes":[["strings",[1,3]]],"cells":[["strings",[1,3]]]}}` |
 | Intersection of callable contracts, each with a receiver, arguments, result and required effect  | `{"arrs":{"arrows":[{"receiver":[5],"arguments":[[0]],"result":[1],"effect":"unrestricted"},{"receiver":[5],"arguments":[[1]],"result":[0],"effect":"unrestricted"}]}}`                                 |
-| Array store: simultaneous tuple contracts, each with required, optional and rest positions; readonly contracts give element read capabilities                              | `{"list":{"first":{"required":[[4]],"optional":[],"rest":[4],"readonly":false},"rest":[]}}` |
+| Array store: simultaneous tuple contracts, each with required, optional and rest positions; readonly contracts give element read capabilities                              | `{"list":{"first":{"required":[[4]],"optional":[],"rest":[4],"readonly":false,"presence":"readable"},"rest":[]}}` |
 | Callable with invariant bag requirements and overloads, fixed and variadic                                                                                                 | `{"callable":{"first":[["value",[1]]],"rest":[],"arrows":[{"receiver":[5],"arguments":[[0]],"result":[1],"effect":"unrestricted"}]}}`             |
 | Class value: construct signatures `[params, result]`, which `new` meets; no call signature meets it; `"variadic": [[params, [rest, result]], ...]` when there are any      | `{"ctors":{"signatures":[[[[1,2]],[1,2]]]}}`             |
-| Argument list: simultaneous tuple contracts on the actuals a rest parameter receives, positions compared covariantly                                                  | `{"pack":{"first":{"required":[[4]],"optional":[],"rest":[0],"readonly":false},"rest":[]}}` |
+| Argument list: simultaneous tuple contracts on the actuals a rest parameter receives, positions compared covariantly                                                  | `{"pack":{"first":{"required":[[4]],"optional":[],"rest":[0],"readonly":false,"presence":"dense"},"rest":[]}}` |
 
 The arrow example contains two signatures, each with one argument and the
 receiver label 5. Every signature carries `effect: "unrestricted"` or
@@ -279,7 +279,7 @@ field: `arrLit` allocates one location per element under the positions of a
 tuple contract; `elem` reads a required position named by a literal index at
 its contract, `elemOpt` an optional or rest position at its contract or
 `undefined`, and `elemAny` any numeric index into a homogeneous array at the
-element contract or `undefined`; `setElem` writes a named position, into its
+element contract or `undefined`, independently of readonly and presence mode; `setElem` writes a named position, into its
 location or a fresh one the store records; `len` reads the length as a number.
 `lenStr` reads a string's length, and `elemStr` a string's code unit at any
 numeric index or `undefined`, naming the result's string and `undefined`
@@ -411,7 +411,13 @@ callee premise, one premise per fixed actual, one `undefined` premise per fixed
 position the call omits, then one per further part: the actual at the element
 type the rule names, or, for a part the rule flags as a spread, the store the
 spread reads, at a type whose elements that element type admits. `arrCopy`
-types `[...s]` with one premise, the store `s`.
+types `[...s]` with one premise, the store `s`. Its result is fresh writable
+storage, with the element contract `E` and any chosen presence mode; the copied
+values fill every position, including explicit `undefined` read from source holes.
+The result graph supplies the presence mode. Tuple contracts require `presence`
+with exactly `"dense"`, `"readable"` or `"sparse"`; there is no Boolean fallback.
+For argument packs it has no semantic effect; producers use the canonical
+`"dense"` and `readonly: false` metadata.
 These rules are available to calculus requests. The source exporter emits a
 combined callable/property type for one required `value` field on a function;
 other property shapes meet the cell refusal reasons.

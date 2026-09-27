@@ -139,7 +139,7 @@ private def instanceWithProto : Tm := .objAt [("x", 2), ("[[proto]]", 0)] .absen
 private def realmG : PositiveGraphs.NormalGraph Nat :=
   { rows := fun
       | 0 => [.top]
-      | 1 => [.list ⟨[], [], some [0], true, false⟩ []]
+      | 1 => [.list ⟨[], [], some [0], true, .sparse⟩ []]
       | 2 => [.refs [] [] [(CallArguments.arrayStoreField, [1]), (CallArguments.protoField, [3])] [] []
           [⟨false, []⟩]]
       | 3 => [.refs [] [] []]

@@ -119,7 +119,7 @@ theorem readElems_ok {E : Fam} {n : Nat} {W : WorldT n} {h : Heap} (hh : HeapOk 
     ∀ ls : List (Option Nat),
       (∀ l, some l ∈ ls → ∃ c : Ctr n, lookup W l = some c ∧
         ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u → E j U u) →
-      (none ∈ ls → ∀ j (U : WorldT j), E j U .undef) →
+      (none ∈ ls → ∀ j, j < n → ∀ (U : WorldT j), E j U .undef) →
       ∃ vs, readElems h ls = some vs ∧
         ∀ e ∈ vs, ∀ (j : Nat) (hj : j < n), E j (trunc j (Nat.le_of_lt hj) W) e
   | [], _, _ => ⟨[], rfl, by simp⟩
@@ -129,7 +129,7 @@ theorem readElems_ok {E : Fam} {n : Nat} {W : WorldT n} {h : Heap} (hh : HeapOk 
     refine ⟨.undef :: vs, by simp [readElems, hr], ?_⟩
     intro e hm j hj
     rcases List.mem_cons.mp hm with rfl | hm
-    · exact hn (by simp) j _
+    · exact hn (by simp) j hj _
     · exact he e hm j hj
   | some l :: ls, hl, hn => by
     obtain ⟨vs, hr, he⟩ := readElems_ok hh ls (fun l hm => hl l (by simp [hm]))
@@ -147,7 +147,7 @@ theorem readElems_ok {E : Fam} {n : Nat} {W : WorldT n} {h : Heap} (hh : HeapOk 
 position or among the rest. -/
 theorem listT_spreads {T : TupleF} {E : Fam}
     (hpos : ∀ i A, positionFam T i = some A → FamLe A E)
-    (hhole : T.dense = false → ∀ j (U : WorldT j), E j U .undef) :
+    (hhole : T.presence = .sparse → ∀ j (U : WorldT j), E j U .undef) :
     Spreads (listT T) E := by
   rintro n W h v hh ⟨ls, rfl, hd, hlen, hbound, hreq, hopt, hrest⟩
   have hsome : ∀ l, some l ∈ ls → ∃ c : Ctr n, lookup W l = some c ∧
@@ -171,11 +171,22 @@ theorem listT_spreads {T : TupleF} {E : Fam}
         simp [positionFam, List.getElem?_eq_none (show T.required.length ≤ i by omega),
           List.getElem?_eq_none (show T.optional.length ≤ i - T.required.length by omega),
           show T.required.length + T.optional.length ≤ i by omega, hA]
-  have hnone : none ∈ ls → ∀ j (U : WorldT j), E j U .undef := by
-    intro hm
-    cases hT : T.dense with
-    | true => exact False.elim (hd hT hm)
-    | false => exact hhole hT
+  have hnone : none ∈ ls → ∀ j, j < n → ∀ (U : WorldT j), E j U .undef := by
+    intro hm j hj U
+    cases hT : T.presence with
+    | dense => exact False.elim ((show none ∉ ls by simpa [StorePresence, hT] using hd j hj) hm)
+    | sparse => exact hhole hT j U
+    | readable =>
+      obtain ⟨i, hi⟩ := List.mem_iff_getElem?.mp hm
+      have hs : (positionFam T i).isSome = true := by
+        apply ArgumentContracts.positionFam_isSome
+        cases hr : T.rest with
+        | none => have := hbound hr; have := (List.getElem?_eq_some_iff.mp hi).1; left; omega
+        | some _ => right; rfl
+      obtain ⟨A, hA⟩ := Option.isSome_iff_exists.mp hs
+      have ha := hd j hj
+      simp only [StorePresence, hT] at ha
+      exact hpos i A hA j U .undef (ha i hi A hA U)
   obtain ⟨vs, hr, he⟩ := readElems_ok hh ls hsome hnone
   exact ⟨ls, vs, rfl, hr, he⟩
 

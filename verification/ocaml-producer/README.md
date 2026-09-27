@@ -1183,7 +1183,7 @@ unfolding keeps growing refuse the whole declaration. The runtime API's
 whole. Arrays as library objects are implemented, but the full framework
 now stops earlier at recursive quantified contracts. Native array construction
 is ordinary in the admitted realm; external code must preserve that invariant.
-`map` retains a sparse result until a checked callback effect establishes density.
+`map` retains a sparse result unless a dense input and a checked callback effect establish density. Source `T[]` requires readable elements, permitting holes only where `T` admits `undefined`; readonly is independent of presence.
 
 Scheme rows are the one mechanism for quantified callables: a local generic
 closure is graph code at a scheme row, with bounds, rests and defaults.

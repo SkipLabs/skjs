@@ -65,6 +65,7 @@ private def derivedTmFromJson : Json → Except String Tm := fromJson?
 
 instance (priority := high) : ToJson Tm := ⟨fun t => closureKinds false (derivedTmToJson t)⟩
 instance (priority := high) : FromJson Tm := ⟨fun j => derivedTmFromJson (closureKinds true j)⟩
+deriving instance ToJson, FromJson for ArrayPresence
 deriving instance ToJson, FromJson for PositiveNormalization.Tuple
 deriving instance ToJson, FromJson for Effect
 deriving instance ToJson, FromJson for Contract

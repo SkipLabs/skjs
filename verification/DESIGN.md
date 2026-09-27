@@ -491,8 +491,11 @@ through the one array shape (`arrayClauseOf`,
 `ArrayProto` provides plus `constructor`, so `xs.map` reaches the prototype
 and ordinary construction cannot be overridden; it may own other keys,
 as Skip's runtime tags managed arrays with a symbol key. Stores may be sparse;
-source `T[]` currently requires **density** (every index below the length is
-present). An element write preserves that contract only in bounds or appending.
+source `T[]` requires **readability**: every in-bounds read, including a hole's
+`undefined`, meets `T`. Density is a separate, stronger guarantee. All three
+spellings (`T[]`, `Array<T>`, `ReadonlyArray<T>`) use the same element-family
+interpretation, including generic substitution. Element writes currently require
+an in-bounds position or appending; they preserve each presence mode.
 Mutable arrays are invariant;
 `readonly T[]` reads only and is covariant. Arrays are `Iterable<T>` through
 their prototype's `[Symbol.iterator]`, a tuple through the readonly array of
@@ -501,7 +504,7 @@ in a closed expression alike. An array pattern's rest over a tuple of
 required positions is reads; any other is a slice, a call of the trusted
 `%RestFrom:k%` ([patterns](PROGRAM-TYPING.md#patterns)).
 Every record and dictionary type is of objects meeting the **array
-invariant**: one owning the store key is an array of the realm, a dense store
+invariant**: one owning the store key is an array of the realm, a possibly sparse store
 and `Array.prototype`, owning no key it provides. Allocation keeps it, since
 an allocation owning the store key is typed only as such an array and a
 merge copies no store; it is assumed of every value a unit receives at such a
@@ -617,7 +620,9 @@ shrink even an initially dense array through another reference, while these
 methods visit the original index range. `map` visits only present indices,
 but shrinking its source can leave holes in its result. Separate overloads consume
 a certified `preservesInputHeap` callback: `find`/`findIndex` can then pass `T`,
-and `map` can promise a dense result from its dense receiver. These are ordinary
+and `map` produces a dense result from its dense receiver. The fresh result
+is assigned the readable `U[]` lifetime contract, so it remains writable at
+the source type even when `U` admits holes. These are ordinary
 qualified callback types, including when the callback is returned or bound.
 
 **Ordinary array construction is part of the admitted semantics.** An array
@@ -663,7 +668,7 @@ longer brings in unrelated Promise declarations.
 `CallEffects.lean` supplies the semantic foundation. Qualified signatures now
 flow through the type graph, source claims and the executable acceptance checker.
 A proposed heap-preserving closure must pass both ordinary safety and the body
-effect check. The density-sensitive targets in step 3 remain open. The [semantic equation](SEMANTICS.md#effect-qualified-call-contracts)
+effect check. The restored targets and remaining limitations are recorded in step 3 below. The [semantic equation](SEMANTICS.md#effect-qualified-call-contracts)
 and [planned rules](PROGRAM-TYPING.md#certifying-inferred-call-effects)
 specify the extension, including its proof obligations.
 
@@ -882,7 +887,7 @@ throw, which safety admits, but never return a wrong value.
 | An ambient declaration (`declare function`, `declare const`, `declare class`) holds of the value the environment supplies under that name; the declaration document lists it with the specifier `ambient`. | `AMBIENT`; `collectDeclarations` |
 | A global variable outside the standard library (Node's `process`) meets its declaration at the members and calls the module selects, from the project's type packages, and no code the module does not see reassigns it. | `GLOBAL`; `selectGlobal` |
 | Each standard library global meets its reviewed overlay entry: `console.log`; `BigInt`; `Symbol`, `Symbol.for`, `Symbol.keyFor` and five well-known symbols; `String` of a primitive; `Object.keys`, `Object.values`, `Object.entries` (and the generic two at a dictionary); `new Array()`; `Array.isArray` and `Array` as `instanceof`'s operand; `new Error(m)`; `new Set`, `new Map` of an array, `new Date` of nothing, a primitive or components, `Date.now`; the `Promise` statics and constructor, through the intrinsics below; `JSON.parse` of a string and `JSON.stringify` of a `JsonValue`. | `globalsOverlay` in `tools/library-globals.mts`; [rules](PROGRAM-TYPING.md#library-globals) |
-| `Array.prototype` meets `ArrayProto`: its natives `forEach`, `map`, `reduce` and `reduceRight` (with an initial value), `every`, `some`, `filter`, `slice`, `join`, `indexOf`, `lastIndexOf`, `includes`, `at`, `find`, `findIndex`, `sort`, `push`, `pop`, `shift`, `unshift`, `reverse` and `[Symbol.iterator]` meet the reviewed overlay contracts, at the listed receiver, without `thisArg`; result construction uses the ordinary-array invariant; `map` promises a sparse result for unrestricted callbacks and a dense result for certified heap-preserving callbacks; `find`/`findIndex` admit missing callback values unless the callback has that guarantee, and `join` and default `sort` restrict elements to primitives; comparator sorting checks the supplied callback. Units allocating arrays read it from the input slot `[[Array.prototype]]`. | `overlay` in `tools/array-prototype.mts` |
+| `Array.prototype` meets `ArrayProto`: its natives `forEach`, `map`, `reduce` and `reduceRight` (with an initial value), `every`, `some`, `filter`, `slice`, `join`, `indexOf`, `lastIndexOf`, `includes`, `at`, `find`, `findIndex`, `sort`, `push`, `pop`, `shift`, `unshift`, `reverse` and `[Symbol.iterator]` meet the reviewed overlay contracts, at the listed receiver, without `thisArg`; result construction uses the ordinary-array invariant; `map` promises a sparse result for unrestricted callbacks and a readable result, freshly dense, for a dense input and certified heap-preserving callbacks; `find`/`findIndex` admit missing callback values unless the callback has that guarantee, and `join` and default `sort` restrict elements to primitives; comparator sorting checks the supplied callback. Units allocating arrays read it from the input slot `[[Array.prototype]]`. | `overlay` in `tools/array-prototype.mts` |
 | `String.prototype`, `Number.prototype`, `BigInt.prototype` and `Boolean.prototype` meet `StringProto`, `NumberProto`, `BigIntProto` and `BooleanProto`, each member an own property of that prototype (`split`, `replace`, `replaceAll` stated at a string pattern; `toLocaleString` without `options`), read from the slot `[[String.prototype]]` and so on. | `primitiveOverlay` in `tools/array-prototype.mts` |
 | `Set.prototype`, `Map.prototype` and `Date.prototype` hold the listed natives, unmodified (`keys`, `values` and `entries` giving a host iterator of the collection). | `interfaceOverlay` in `tools/array-prototype.mts` |
 | The intrinsics meet their signatures: `%Await%` yields what a promise settles to or throws its rejection; `%AsyncReturn%` and `%AsyncComplete%` settle an async function's promise to a primitive or `undefined` (also `Promise.resolve`); `%PromiseAll%` (`Promise.all`), `%PromiseReject%` (`Promise.reject`), `%NewPromise%` (`new Promise`, calling its executor at once); `%Iterate%` steps an array's iterator, reading the current length at each step; `%Iterate:string%` a string's, by code point; `%Iterate:Set%` a `Set`'s, in insertion order; `%Iterate:Map%` a `Map`'s, a fresh `[key, value]` array per entry; `%Iterate:Iterator%` a `SetIterator` or `MapIterator`, which is its own iterator; none of these iterators has a `return`; `%Spread:K%` is the fresh array of what `%Iterate:K%`'s step yields until it ends; `%RestFrom:k%` is the fresh array of an array's elements from `k` to its current length, as its iterator yields them after a pattern's `k` elements; `%ForIn%` gives the keys a `for...in` visits, strings; `%HasProperty%` answers `k in o` for a key TypeScript types as other than string literals, as the host's lookup does; `%ElementAt%` reads `xs[k]` of an array at a `number` key as the host does: the element at an index below the length, an own property at another numeric key, else `undefined`. The job queue and a promise that never settles are not modelled. | `tools/intrinsics.mts`; [async](PROGRAM-TYPING.md#async-functions-and-await) |
@@ -999,8 +1004,9 @@ representation cannot state it yet; the paths are in
 One line each; the reason is the one the design keeps.
 
 - **Density belongs to a contract, not the realm.** Source `T[]` currently
-  requires density; sparse stores also exist. Iteration, spreads and `.apply`
-  need density or an element type admitting `undefined`. `find` needs
+  requires readability; dense and sparse contracts also exist. Iteration, spreads
+  and `.apply` consume that read guarantee; sparse stores need a separate
+  `undefined` alternative. `find` needs
   `undefined` even on dense input because callbacks can remove later elements.
 - **Arrays own neither `constructor` nor any of `ArrayProto`'s keys.** An exact
   bound would make every tagged array type empty and verify its readers
@@ -1109,9 +1115,10 @@ callback returning a promise instantiates `then`'s binder through
 `sum-sound-binding`/`sum-main` sources no longer verify: Promise's
 recursive quantified contracts exceed the budget, and the tuple-valued
 `sort()` needs a justified conversion contract. Their sources remain
-unchanged. Under the ordinary-array construction invariant, `map` has a sparse
-result contract. Restoring dense-map targets requires the checked callback
-effect. Green regression suites include these explicit gaps.
+unchanged. Under the ordinary-array construction invariant, the unrestricted
+`map` contract has a sparse result; the checked callback effect restores the
+safe density-sensitive targets. Green regression suites retain the sorting and
+recursive-contract gaps explicitly.
 
 **Restoring useful completeness after the boundary repair.** Keep the original
 positive sources as the targets. The work is split by semantic obligation:
@@ -1128,22 +1135,25 @@ positive sources as the targets. The work is split by semantic obligation:
    list of optional locations, so holes have an operational representation.
    The contract on *present* elements is separate from the guarantee that every
    position below the length is present. Required tuple positions still require
-   presence; optional/rest positions need an explicit density guarantee before
-   a read or spread can omit `undefined`. Readonly is a separate capability,
+   presence; optional/rest positions distinguish physical density from the
+   readable contract that admits holes only where `undefined` is allowed. Readonly is a separate capability,
    not a presence guarantee. The existing store contract and its proofs are
    generalized; there is no separate array calculus. The realm-wide array
    invariant permits sparse stores. Native `map` returns a sparse array under
    the explicit ordinary-construction invariant; its length and present-element
    types are retained. `testTupleArrayMethod` and `native-map-sparse` verify.
-   One additional safe source is an explicit gap: `isarray-record-array`
-   returns the result of an `Array.isArray` test as `readonly unknown[]`.
-   The test establishes an array, not density, which that source annotation
-   currently requires. The realm invariant no longer invents that guarantee.
-3. **Density-sensitive calls: in progress.** Follow the
+   `isarray-record-array` now verifies unchanged: `Array.isArray` establishes
+   sparse unknown elements, which meet the readable `readonly unknown[]` result.
+   `CoversPresence` checks the distinction, and the meaning commutes with generic
+   substitution. `invalid-map-hole-coalescing` retains a formerly positive source
+   as a negative: its `(number | undefined)[]` input may have holes, and `map`
+   skips them even with a pure numeric callback. The runtime witness demonstrates
+   the resulting hole. The former dense-only source interpretation excluded that
+   input rather than validating the broader source contract.
+3. **Density-sensitive calls: original safe targets restored.** Follow the
    [inference/certification boundary](#inferred-call-effects-elaboration-and-certification)
-   and the linked semantic and typing rules. Under the current meaning of source `T[]`
-   (dense), a sparse result alone does not restore `testMapReturnsArray` or the
-   pure-map curated examples. The admitted realm supplies ordinary construction;
+   and the linked semantic and typing rules. A sparse numeric result alone does
+   not restore `testMapReturnsArray` or the pure-map curated examples. The admitted realm supplies ordinary construction;
    the remaining requirement is a checked callback effect sufficient to preserve
    source presence during traversal.
    A syntax heuristic or a readonly alias is not that guarantee. Density facts
@@ -1151,8 +1161,9 @@ positive sources as the targets. The work is split by semantic obligation:
    The same guarantee can justify pure `find` callbacks at T instead of
    `T | undefined`. Do not claim these targets closed after step 2 alone.
    Restore safe specializations, not false universal contracts: the census's
-   generic `mapArr` accepts an arbitrary callback and promises a dense array,
-   so source-shrinking callbacks are counterexamples. Its written callback type
+   generic `mapArr` accepts an arbitrary callback and promises readable `U[]`
+   for every `U`, so source-shrinking callbacks returning numbers are
+   counterexamples. Its written callback type
    must not be silently strengthened. The safe `testMapCallback` unit also
    checks that general declaration and remains blocked by it.
    The core now has effect-aware application, weakening, congruence and overload
@@ -1171,7 +1182,7 @@ positive sources as the targets. The work is split by semantic obligation:
    pure graphs also retain their operational proof, including pure handlers.
    Fixed calls consume the selected qualified signature, including omitted
    arguments and result weakening. Pure immutable lets compose by substitution,
-   covering coalescing callbacks; nested heap operations remain incomplete.
+   covering immutable coalescing expressions; nested heap operations remain incomplete.
    Fixed and variadic signatures, including scheme and method paths, now use
    one required per-signature effect. Mapping, substitution, normalization,
    coverage and certificate checking retain and justify it. Pipeline controls
@@ -1205,8 +1216,9 @@ positive sources as the targets. The work is split by semantic obligation:
    search table, including the effect check. A forged effect therefore fails
    at the callable's located typing obligation. Every submitted code certificate
    is retained and checked again at acceptance; search filtering cannot bypass it.
-   Remaining integration: other call forms and nested expressions, and the
-   original census measurement.
+   `testArrowOptional` and `testMapReturnsArray` verify unchanged in the census.
+   Other call forms and nested heap expressions remain conservative effect
+   inference limitations; they are not needed by these original targets.
 4. **Default object conversion.** Restore the tuple-valued default-sort examples
    only with a contract covering actual conversion dispatch, including
    `Symbol.toPrimitive`, `toString`, and prototype lookup. A tuple's numeric

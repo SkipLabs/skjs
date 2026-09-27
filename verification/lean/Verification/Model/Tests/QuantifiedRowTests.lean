@@ -169,7 +169,7 @@ def wire : NormalGraph Nat := RequestJson.tableGraph table
 -- A pack binder and a value binder cannot exchange their instantiation types.
 private def sortedKinds : NormalGraph Nat := RequestJson.tableGraph [
   .param 0 "P" .arguments, .param 1 "T" .value,
-  .clauses [.pack ⟨[[3]], [], none, false, true⟩ []], .clauses [.num]]
+  .clauses [.pack ⟨[[3]], [], none, false, .dense⟩ []], .clauses [.num]]
 #guard PositiveRules.instKinds sortedKinds [0,1] [[2],[3]]
 #guard !PositiveRules.instKinds sortedKinds [0] [[3]]
 #guard !PositiveRules.instKinds sortedKinds [1] [[2]]

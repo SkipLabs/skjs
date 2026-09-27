@@ -27,7 +27,7 @@ theorem fits_adm {T : TupleF}
 /-- Exact tuples and fixed parameters have identical membership, for arbitrary
 families: objects, callbacks and recursive types need no stability premise.
 Readonly positions admit the same lists: a list holds values, not locations. -/
-theorem fits_exact {r d : Bool} (As : List Fam) (n W vs) :
+theorem fits_exact {r : Bool} {d : ArrayPresence} (As : List Fam) (n W vs) :
     Fits ⟨As, [], none, r, d⟩ n W vs ↔ ArgsT As n W vs := by
   constructor
   · rintro ⟨hl, hb, hp⟩
@@ -49,7 +49,7 @@ theorem fits_exact {r d : Bool} (As : List Fam) (n W vs) :
 
 /-- An element rest admits exactly the lists of its element's values at this
 level. -/
-theorem fits_elem {E : Fam} {r d : Bool} {n W vs} :
+theorem fits_elem {E : Fam} {r : Bool} {d : ArrayPresence} {n W vs} :
     Fits ⟨[], [], some E, r, d⟩ n W vs ↔ ∀ v ∈ vs, E n W v := by
   constructor
   · rintro ⟨-, -, hp⟩ v hv
@@ -97,10 +97,29 @@ theorem fits_bound {T : TupleF} {E : Fam}
 Existing locations retain their write contracts; only reads are widened. -/
 theorem array_bound {T : TupleF} {E : Fam}
     (hb : ∀ i A, positionFam T i = some A → FamLe A E) :
-    FamLe (listT T) (listT ⟨[], [], some E, true, T.dense⟩) := by
+    FamLe (listT T) (listT ⟨[], [], some E, true, T.presence⟩) := by
   intro n W v h
   obtain ⟨ls, rfl, hd, hlen, hbound, hreq, hopt, hrest⟩ := h
-  refine ⟨ls, rfl, hd, by simp, by simp, by simp, by simp, ?_⟩
+  have hp : ∀ j, j < n → StorePresence ⟨[], [], some E, true, T.presence⟩ ls j := by
+    intro j hj
+    cases ht : T.presence with
+    | dense => simpa [StorePresence, ht] using hd j hj
+    | sparse => simp [StorePresence]
+    | readable =>
+      simp only [StorePresence]
+      intro i hi A hA U
+      have hs : (positionFam T i).isSome = true := by
+        apply positionFam_isSome
+        cases hr : T.rest with
+        | none => have := hbound hr; have := (List.getElem?_eq_some_iff.mp hi).1; left; omega
+        | some _ => right; rfl
+      obtain ⟨B, hB⟩ := Option.isSome_iff_exists.mp hs
+      have ha := hd j hj
+      simp only [StorePresence, ht] at ha
+      have : E = A := by simpa [positionFam] using hA
+      subst A
+      exact hb i B hB j U .undef (ha i hi B hB U)
+  refine ⟨ls, rfl, hp, by simp, by simp, by simp, by simp, ?_⟩
   intro i l _ hl
   have finish : ∀ A c, lookup W l = some c →
       positionFam T i = some A →
@@ -159,7 +178,7 @@ theorem call_safe {P : Family} {Rc R : Fam} (hP : Admissible P) (hRc : Adm Rc)
 signature, even when a fixed signature additionally allows omitted undefined
 arguments. No claim of equality is made for that optional-argument case. -/
 theorem fixed_call_covers_tuple (As : List Fam) (Rc R : Fam) :
-    FamLe (callsT [(Rc, As, R)]) (callable (Fits ⟨As, [], none, false, true⟩) Rc R) := by
+    FamLe (callsT [(Rc, As, R)]) (callable (Fits ⟨As, [], none, false, .dense⟩) Rc R) := by
   intro n W v h
   refine ⟨h.1, ?_⟩
   intro j hj U hx hu heap hh r hrv hr args hvals ha
@@ -179,7 +198,7 @@ theorem constructor_adm (P : Family) (R : Fam) : Adm (constructor P R) :=
 
 /-- The desired general equation, without a stability side condition. -/
 theorem fixed_constructor_eq_tuple (As : List Fam) (R : Fam) :
-    ctorsT [(As, R)] = constructor (Fits ⟨As, [], none, false, true⟩) R := by
+    ctorsT [(As, R)] = constructor (Fits ⟨As, [], none, false, .dense⟩) R := by
   funext n W v
   apply propext
   simp only [ctorsT, constructor, ConstructPromise, List.mem_singleton, forall_eq, fits_exact]
@@ -187,7 +206,7 @@ theorem fixed_constructor_eq_tuple (As : List Fam) (R : Fam) :
 /-- The general equality uses the production variadic constructor contract,
 with no primitive/stability premise and no encoded value standing for a list. -/
 theorem fixed_constructor_eq_rest (As : List Fam) (R : Fam) :
-    ctorsT [(As, R)] = ctorRestsT [([], Fits ⟨As, [], none, false, true⟩, R)] := by
+    ctorsT [(As, R)] = ctorRestsT [([], Fits ⟨As, [], none, false, .dense⟩, R)] := by
   funext n W v
   apply propext
   simp [ctorsT, ctorRestsT, ConstructPromise, CtorRest, ArgsT, fits_exact]

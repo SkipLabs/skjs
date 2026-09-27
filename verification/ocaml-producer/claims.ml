@@ -163,7 +163,7 @@ let encode (proposal : Proposal.t) =
         | Some element,None ->
           [],[call_contract s.call_effect (labels s.receiver)
             (Array [Array (List.map labels s.params);
-              pack_labels (Pack {required=[];optional_elements=[];rest=Some element;readonly=false;dense=true})])
+              pack_labels (Pack {required=[];optional_elements=[];rest=Some element;readonly=false;presence=Dense})])
             (labels s.result)]
         | _,Some _ -> unsupported "a pack parameter in a generic method's scheme" in
       [intern (Object ["scheme",Object (["binders",Array binders;"signatures",Array signature]
@@ -191,7 +191,7 @@ let encode (proposal : Proposal.t) =
             let rests = List.filter_map (fun (s:Semantic.signature) ->
               let rest = match s.variadic,s.rest_pack with
                 | Some element,None -> Some (pack_labels (Pack {
-                    required=[];optional_elements=[];rest=Some element;readonly=false;dense=true}))
+                    required=[];optional_elements=[];rest=Some element;readonly=false;presence=Dense}))
                 | None,Some r -> Some (pack_labels r)
                 | Some _,Some _ -> unsupported "signature has both element and pack rests"
                 | None,None -> None in
@@ -230,7 +230,7 @@ let encode (proposal : Proposal.t) =
            the one a pack parameter's instance states. *)
         let rest = match a.variadic,a.rest_pack with
           | Some element,None -> Some (pack_labels (Pack {
-              required=[];optional_elements=[];rest=Some element;readonly=false;dense=true}))
+              required=[];optional_elements=[];rest=Some element;readonly=false;presence=Dense}))
           | Some _,Some _ -> unsupported "signature has both element and pack rests"
           | None,Some r -> Some (pack_labels r)
           | None,None -> None in
@@ -247,7 +247,7 @@ let encode (proposal : Proposal.t) =
           "required",Array (List.map labels sequence.required);
           "optional",Array (List.map labels sequence.optional_elements);
           "rest",(match sequence.rest with None -> Null | Some t -> labels t);
-          "readonly",Bool sequence.readonly;"dense",Bool sequence.dense];"rest",Array []]]]) in
+          "readonly",Bool sequence.readonly;"presence",String (presence_name sequence.presence)];"rest",Array []]]]) in
         (match List.assoc_opt (store,sequence.readonly) !arrays with
          | Some label -> [label]
          | None ->
@@ -285,7 +285,7 @@ let encode (proposal : Proposal.t) =
         "required",Array (List.map labels sequence.required);
         "optional",Array (List.map labels sequence.optional_elements);
         "rest",(match sequence.rest with None -> Null | Some t -> labels t);
-        "readonly",Bool false;"dense",Bool true];"rest",Array []]]]))]
+        "readonly",Bool false;"presence",String "dense"];"rest",Array []]]]))]
   and declaration_labels id args =
     let rec find i k = function
       | [] -> unsupported ("unknown declaration " ^ id)
@@ -421,7 +421,7 @@ let encode (proposal : Proposal.t) =
         "rest",(match signature.variadic with None -> Null | Some t -> claim_type t);
         "result",claim_type signature.result]]
     | Atoms [Shape {fields=[];indexes=[];calls=[];elements=Some
-        {required=[];optional_elements=[];rest=Some element;readonly=false;dense=true}}]
+        {required=[];optional_elements=[];rest=Some element;readonly=false;presence=Readable}}]
         when contains_symbolic element -> Object ["array",claim_type element]
     | Atoms (_::_::_ as atoms) when contains_symbolic (Atoms atoms) ->
       let rigid, ground = List.partition (fun a -> contains_symbolic (Atoms [a])) atoms in

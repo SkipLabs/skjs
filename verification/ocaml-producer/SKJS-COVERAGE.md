@@ -5,13 +5,13 @@ How much of what SKJS accepts in its own test suite the pipeline
 stops the rest, and where the two disagree because SKJS is wrong.
 
 Measurement checkpoint: September 27, 2026, after certified callback effects,
-qualified-call composition and pure immutable-let composition
+qualified-call composition, pure immutable-let composition and readable array contracts
 (full census with SKJS confirmation).
 
-**2,400 of 2,674 SKJS-accepted units verify (89.8%); 1,777 of 2,026
-accepted functions (87.7%).** 286 of the 377 files with an accepted unit
+**2,407 of 2,674 SKJS-accepted units verify (90.0%); 1,784 of 2,026
+accepted functions (88.1%).** 286 of the 377 files with an accepted unit
 verify entirely. There are 73 principled refusals, 10 registered SKJS-unsound
-units, 184 gaps and 7 refusals not explained by the automatic classifier.
+units, 184 gaps and no refusals unexplained by the automatic classifier.
 
 Certified callback-effect overloads restore the curated `array-methods`,
 `array-library`, `array-generic-name` and `closure-contextual-parameters` cases.
@@ -33,7 +33,8 @@ again. No previously verified unit is lost. See the
 `mapArr` and `testMapCallback` still fail at the native call: an arbitrary
 one-argument callback supplies no contract for the three actuals `map` passes.
 There is also an independent density problem: `mapArr<T, U>(arr: T[], f: (x: T) => U): U[]`
-promises a dense result for an arbitrary callback. That contract is false.
+promises readable U[] for every U and an arbitrary callback. That contract is
+false, for example when U is number.
 Calling the unchanged function with `xs = [1, 2, 3]` and a callback that sets
 `xs.length = 0` produces length 3 with only index 0 present. Neither custom
 species nor external code is involved. Strengthening its callback parameter
@@ -42,15 +43,21 @@ would change its written contract and cannot silently repair it.
 that invalid general declaration. The current classifier still includes these
 rows among gaps; that classification is not a completeness claim.
 
-The seven automatic “unexplained” rows have inspected causes. They are
+The seven former unexplained array-refinement rows now verify unchanged:
 `testBasicArrayRefinement`, `testStringArrayRefinement`, `testMultipleUnion`,
 `testNestedRefinement`, `testEarlyReturn`, `testCombinedWithTypeof` in
 `array-isarray-refinement.ts`, and `testNarrowToArray` in
-`array-object-union-operations.ts`. They return an arbitrary array found by
-`Array.isArray` as `ReadonlyArray<unknown>`. The realm invariant correctly
-permits holes; the source annotation still requires density. This is an
-unnecessarily restrictive contract for unknown elements, not evidence that
-the programs are unsafe. The curated `isarray-record-array` records the same gap.
+`array-object-union-operations.ts`. Source `T[]` uniformly requires readable
+elements: holes are permitted precisely where T admits undefined. This commutes
+with generic substitution, so the fix is not specific to unknown. The curated
+`isarray-record-array` is positive again. No previously verified census unit is lost.
+
+One curated function, `coalescingCallback`, is intentionally moved unchanged
+from `callback-effects` to `invalid-map-hole-coalescing`: its
+`(number | undefined)[]` input admits holes and map skips them, so its numeric
+result claim is false. The earlier dense-only source interpretation excluded
+that input. A runtime witness executes the retained function on a holed array.
+
 The original boundary repair's recursive Promise contracts and the
 Promise-dependent framework target remain open; no erased contract is restored.
 
@@ -82,14 +89,14 @@ is not part of `verification/run.sh`.
 
 | Suite | Harness verdict | Files | Units | Accepted | Verified | Accepted functions | Verified functions |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,458 | 2,186 | 1,863 | 1,616 |
+| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,458 | 2,194 | 1,863 | 1,624 |
 | `tests/callgraph` | no error allowed | 25 | 59 | 59 | 56 | 51 | 48 |
 | `tests/constprop` | no error allowed | 14 | 66 | 66 | 66 | 49 | 49 |
 | `tests/deadcode` | no error allowed | 7 | 27 | 27 | 27 | 16 | 16 |
 | `tests/cfg` | no error allowed | 7 | 22 | 22 | 22 | 21 | 21 |
 | `tests/projects` | expect-error markers, under the project's tsconfig | 24 of 68 | 44 | 34 | 34 | 23 | 23 |
 | `tests/ts-conformance/cases` | lines listed in `reference/*.errors.txt` | 4 | 9 | 8 | 8 | 3 | 3 |
-| **total** | | **480** | **4,110** | **2,674** | **2,399** | **2,026** | **1,776** |
+| **total** | | **480** | **4,110** | **2,674** | **2,407** | **2,026** | **1,784** |
 
 Excluded (79 files, listed in the JSON with reasons): `ts-conformance/not-supported`
 (31) and `callgraph-unsupported` (4) assert only that SKJS reports errors;
@@ -146,10 +153,10 @@ is.
 
 | Phase of first blocker | Units |
 | --- | ---: |
-| verified | 2,399 |
+| verified | 2,407 |
 | source (gate) | 85 |
 | proposal (producer) | 32 |
-| search (Lean) | 158 |
+| search (Lean) | 150 |
 
 **Refusal classes.** The project's goal is that every accepted unit either
 verifies or is refused for a specific, principled reason. Each accepted unit
@@ -229,11 +236,11 @@ blocker's key is given (`summary.byReason` and `summary.byClass` of
 
 | Class | Units |
 | --- | ---: |
-| verified | 2,399 |
+| verified | 2,407 |
 | principled (P) | 73 |
 | SKJS unsound (S) | 10 |
 | gap (G) | 184 |
-| unexplained (U) | 8 |
+| unexplained (U) | 0 |
 | **accepted** | **2,674** |
 
 Reason definitions and justifications live in `CLASSES` in
@@ -257,8 +264,8 @@ First blocker, not every missing feature of a unit:
 | generics: constraints, explicit type arguments, rigid types, generic function types | 11 | 7 | 3 | 8 |
 | object growth: a key-adding write on an object another reference may hold, a dynamic index write | 11 | 11 | 0 | 5 |
 | object literal members (methods, accessors, spreads) | 10 | 9 | 0 | 5 |
-| calls: overloads, .call, spread arguments, Object.assign, arrow callee | 15 | 10 | 4 | 10 |
-| a named function at a signature binding more parameters, or indifferent to the receiver it requires (its type is its annotated signature) | 7 | 7 | 0 | 4 |
+| calls: overloads, .call, spread arguments, Object.assign, arrow callee | 10 | 6 | 3 | 6 |
+| a named function at a signature binding more parameters, or indifferent to the receiver it requires (its type is its annotated signature) | 9 | 8 | 1 | 5 |
 | arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's | 8 | 8 | 0 | 5 |
 | a non-null assertion on a read at a for...in key (that the object owns the key relates two values) | 8 | 8 | 0 | 1 |
 | cells read at their contract (contents known only as primitives or as no `undefined`, and forgotten across a step that may write them) | 7 | 5 | 0 | 5 |
@@ -267,22 +274,22 @@ First blocker, not every missing feature of a unit:
 | sloppy (non-strict) code | 6 | 4 | 2 | 3 |
 | iterables the program defines: an iterator whose type states no `return`, a spread or a pattern the protocol's lowering does not place, a well-known symbol key other than `Symbol.iterator` | 5 | 4 | 1 | 4 |
 | equality: objects without a field (no identity), loose equality | 4 | 4 | 0 | 2 |
-| reads on unions/primitives (field/index read on non-object, string keys) | 2 | 1 | 0 | 2 |
 | relational operators (< <= > >=) and ** | 2 | 1 | 1 | 1 |
-| search: no derivation found (evidence search failed) | 8 | 8 | 0 | 3 |
 | dictionaries: a spread of one, a key `in` found in one | 2 | 2 | 0 | 2 |
+| reads on unions/primitives (field/index read on non-object, string keys) | 2 | 1 | 0 | 2 |
 | invariance: a writable element or field at a wider one (TypeScript relates them covariantly) | 2 | 2 | 0 | 1 |
+| search: no derivation found (evidence search failed) | 1 | 1 | 0 | 1 |
 | compound and update assignments (x++, \|\|=, ??=, a[i] op=) | 1 | 1 | 0 | 1 |
 | an optional key found `undefined` (the key may be absent) | 1 | 1 | 0 | 1 |
 | other source forms | 1 | 1 | 0 | 1 |
 | type aliases and names the declaration reader cannot resolve | 1 | 0 | 1 | 1 |
 | library globals as values (Array, Symbol, Error, Promise, Set, Map, Date, JSON, …) | 1 | 1 | 0 | 1 |
-| **total** | **269** | | | |
+| **total** | **267** | | | |
 
 ## Suspected SKJS unsoundnesses
 
 Divergences: SKJS-accepted units the pipeline parses and proposes, and Lean
-then refuses (151 units in `search`, `summary.reachedButRefused`). The
+then refuses (150 units in `search`, `summary.reachedButRefused`). The
 source-form refusals Lean states explicitly are fragment boundaries. The rest
 were read obligation by obligation: all read are pipeline incompleteness
 except four families below; the fifth is refused by the producer.

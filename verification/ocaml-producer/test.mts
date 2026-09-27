@@ -785,6 +785,15 @@ for (const [file, call] of [
     .replace(/^export /gm, "");
   assert.equal(vm.runInNewContext(`${source}\nconst result = wrong([1, 2]); JSON.stringify([result.length, 0 in result, 1 in result])`, {}, { timeout: 1000 }), "[2,true,false]");
 }
+// Reading a hole gives undefined, so it satisfies the input annotation. map
+// skips it even when the callback preserves the heap and returns a number.
+{
+  const source = stripTypes(readFileSync(join(here, "examples", "invalid-map-hole-coalescing.ts"), "utf8"))
+    .replace(/^export /gm, "");
+  assert.equal(vm.runInNewContext(`${source}\nconst xs = [1, 2]; delete xs[1];
+    const result = coalescingCallback(xs); JSON.stringify([result.length, 1 in result, result[1]])`,
+    {}, { timeout: 1000 }), "[2,false,null]");
+}
 // The input has Array.prototype and dense elements, with no accessors or
 // proxies. Its extra own constructor is excluded by the ordinary-construction
 // invariant. These controls explain why the external-code assumption matters;

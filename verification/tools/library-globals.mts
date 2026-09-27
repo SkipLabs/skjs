@@ -66,8 +66,8 @@ const at: [number, number] = [0, 0];
 const binder = (name: string): TypeTerm => ({ k: "binder", name, span: at });
 const atom = (name: AtomName): TypeTerm => ({ k: "atom", name, span: at });
 const optional = (type: TypeTerm): TypeTerm => ({ k: "union", parts: [type, atom("undefined")], span: at });
-const readonlyArray = (element: TypeTerm): TypeTerm => ({ k: "array", dense: true, readonly: true, element, span: at });
-const array = (element: TypeTerm): TypeTerm => ({ k: "array", dense: true, readonly: false, element, span: at });
+const readonlyArray = (element: TypeTerm): TypeTerm => ({ k: "array", presence: "readable", readonly: true, element, span: at });
+const array = (element: TypeTerm): TypeTerm => ({ k: "array", presence: "readable", readonly: false, element, span: at });
 const dictionary = (value: TypeTerm): TypeTerm =>
   ({ k: "object", fields: [], stringIndex: { readonly: true, value, span: at }, calls: [], span: at });
 
@@ -142,7 +142,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   { global: "Object", member: "entries",
     signature: "entries<T>(o: { [s: string]: T; } | ArrayLike<T>): [string, T][];",
     stated: { binders: ["T"], params: [dictionary(binder("T"))],
-      result: array({ k: "tuple", dense: true, readonly: false, required: [atom("string"), binder("T")], optional: [],
+      result: array({ k: "tuple", presence: "dense", readonly: false, required: [atom("string"), binder("T")], optional: [],
         rest: null, span: at }) } },
   // A test of the array's identity, which the calculus makes itself
   // (`Tag.isArray`): true of exactly the objects that own an array store,
@@ -161,10 +161,10 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // `new Array()` and `new Array<T>()` are a fresh empty array, which is a
   // `T[]` at every `T`: the non-generic declaration's `any[]` states less
   // than that. An argument is refused: a single number is a length, and the
-  // array it makes has holes, which an array type here promises it has not.
+  // array it makes has holes, whose element contract would need a separate check.
   ...["new (arrayLength?: number): any[];", "new <T>(...items: T[]): T[];"].map(
     (signature): GlobalEntry => ({ global: "Array", signature,
-      stated: { binders: ["T"], params: [], result: { k: "array", dense: true, readonly: false, element: binder("T"), span: at } } })),
+      stated: { binders: ["T"], params: [], result: { k: "array", presence: "readable", readonly: false, element: binder("T"), span: at } } })),
   // `new Error(m)` with a string owns `message`, that string, as a property
   // that is not enumerable: the model holds it on a prototype it gives the
   // object, so a read and `in` find it and a spread does not copy it. Its
@@ -205,7 +205,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
     "new <K, V>(iterable?: Iterable<readonly [K, V]> | null): Map<K, V>;"]
     .map((signature): GlobalEntry => ({ global: "Map", signature,
       stated: library => ({ binders: ["K", "V"],
-        params: [optional(readonlyArray({ k: "tuple", dense: true, readonly: true, required: [binder("K"), binder("V")],
+        params: [optional(readonlyArray({ k: "tuple", presence: "dense", readonly: true, required: [binder("K"), binder("V")],
           optional: [], rest: null, span: at }))],
         result: library("Map", [binder("K"), binder("V")]) }) })),
   // `new Date()` is now; `new Date(v)` converts a number or a string without

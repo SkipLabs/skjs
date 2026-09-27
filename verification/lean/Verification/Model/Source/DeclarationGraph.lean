@@ -611,7 +611,7 @@ private partial def lowerRest (ds : Array Definition) (owner : Nat)
     | some (.value _) => throw "a value parameter used as an argument pack"
     | none => throw "a pack parameter outside its generic method"
   let element ← lowerType ds owner params seen term
-  return [← use (.pack ⟨[], [], some element, false, true⟩ [])]
+  return [← use (.pack ⟨[], [], some element, false, .dense⟩ [])]
 
 private partial def lowerType (ds : Array Definition) (owner : Nat)
     (params : Array (List Nat)) (seen : Visit) (term : Json) : Lowering (List Nat) := do
@@ -686,11 +686,11 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
         match (b.getObjValAs? String "k").toOption with
         | some "array" =>
           let element ← lowerType ds owner params seen (← field b "element")
-          return some [← use (.pack ⟨[], [], some element, false, true⟩ [])]
+          return some [← use (.pack ⟨[], [], some element, false, .dense⟩ [])]
         | some "tuple" =>
           if !(← arr b "optional").isEmpty || (← field b "rest") != .null then return none
           let required ← (← arr b "required").mapM (lowerType ds owner params seen)
-          return some [← use (.pack ⟨required.toList, [], none, false, true⟩ [])]
+          return some [← use (.pack ⟨required.toList, [], none, false, .dense⟩ [])]
         | _ => return none
       let bounds? ← (bs.toList.zip (rows.zip names)).filterMapM fun (b, row, n) => do
         let bound ← field b "bound"
@@ -777,17 +777,17 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
   | "array" =>
     let element ← lowerType ds owner params seen (← field term "element")
     let readonly ← bool term "readonly"
-    let store ← use (.list ⟨[], [], some element, readonly, ← bool term "dense"⟩ [])
+    let store ← use (.list ⟨[], [], some element, readonly, ← fromJson? (← field term "presence")⟩ [])
     return [← use (SourceTypes.arrayClause (← arrayExcludedKeys ds) store readonly)]
   | "tuple" =>
-    CellClaims.fieldsExactly term ["k", "readonly", "dense", "required", "optional", "rest", "span"]
+    CellClaims.fieldsExactly term ["k", "readonly", "presence", "required", "optional", "rest", "span"]
     let required ← (← arr term "required").mapM (lowerType ds owner params seen)
     let optional ← (← arr term "optional").mapM (lowerType ds owner params seen)
     let restTerm ← field term "rest"
     let rest ← if restTerm == .null then pure none else
       some <$> lowerType ds owner params seen restTerm
     let readonly ← bool term "readonly"
-    let store ← use (.list ⟨required.toList, optional.toList, rest, readonly, ← bool term "dense"⟩ [])
+    let store ← use (.list ⟨required.toList, optional.toList, rest, readonly, ← fromJson? (← field term "presence")⟩ [])
     return [← use (SourceTypes.arrayClause (← arrayExcludedKeys ds) store readonly)]
   | "function" =>
     CellClaims.fieldsExactly term ["k", "receiver", "params", "rest", "result", "effect", "span"]
@@ -1270,9 +1270,9 @@ private partial def rigidClaim (ds : Array Definition) (owner : Nat) (env : Arra
     let element ← rigidClaim ds owner env seen (← field term "element")
     return claimType [Json.mkObj [("a", toJson "array"), ("required", toJson ([] : List Json)),
       ("optional", toJson ([] : List Json)), ("rest", element),
-      ("readonly", toJson (← bool term "readonly")), ("dense", toJson (← bool term "dense"))]]
+      ("readonly", toJson (← bool term "readonly")), ("presence", (← field term "presence"))]]
   | "tuple" =>
-    CellClaims.fieldsExactly term ["k", "readonly", "dense", "required", "optional", "rest", "span"]
+    CellClaims.fieldsExactly term ["k", "readonly", "presence", "required", "optional", "rest", "span"]
     let required ← (← arr term "required").mapM (rigidClaim ds owner env seen)
     let optional ← (← arr term "optional").mapM (rigidClaim ds owner env seen)
     let restTerm ← field term "rest"
@@ -1280,7 +1280,7 @@ private partial def rigidClaim (ds : Array Definition) (owner : Nat) (env : Arra
       rigidClaim ds owner env seen restTerm
     return claimType [Json.mkObj [("a", toJson "array"), ("required", toJson required),
       ("optional", toJson optional), ("rest", rest),
-      ("readonly", toJson (← bool term "readonly")), ("dense", toJson (← bool term "dense"))]]
+      ("readonly", toJson (← bool term "readonly")), ("presence", (← field term "presence"))]]
   | "constructor" =>
     CellClaims.fieldsExactly term ["k", "params", "rest", "result", "span"]
     if (← field term "rest") != .null then throw "a construct signature with a rest has no claim form"
@@ -1329,9 +1329,9 @@ private partial def expandApplication (ds : Array Definition) (i : Nat)
   rigidClaim ds i values (i :: seen) d.expression
 end
 
-private def arrayClaim (required optional : List Json) (rest : Json) (readonly dense : Bool) : Json :=
+private def arrayClaim (required optional : List Json) (rest : Json) (readonly : Bool) (presence : ArrayPresence) : Json :=
   claimType [Json.mkObj [("a", toJson "array"), ("required", toJson required),
-    ("optional", toJson optional), ("rest", rest), ("readonly", toJson readonly), ("dense", toJson dense)]]
+    ("optional", toJson optional), ("rest", rest), ("readonly", toJson readonly), ("presence", toJson presence)]]
 
 /-- The source states no claim: neither a claim-shaped type nor an internal
 graph label. -/
@@ -1437,14 +1437,14 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
     return graphClaim (← meetRow (← parts.toList.mapM fun part =>
       (Fragment.translate (SourceTypes.annotationAtRows rows part) : SourceTypes.Lowering _)))
   | "array" =>
-    CellClaims.fieldsExactly term ["k", "readonly", "dense", "element", "span"]
-    return arrayClaim [] [] (← recur (← field term "element")) (← bool term "readonly") (← bool term "dense")
+    CellClaims.fieldsExactly term ["k", "readonly", "presence", "element", "span"]
+    return arrayClaim [] [] (← recur (← field term "element")) (← bool term "readonly") (← fromJson? (← field term "presence"))
   | "tuple" =>
-    CellClaims.fieldsExactly term ["k", "readonly", "dense", "required", "optional", "rest", "span"]
+    CellClaims.fieldsExactly term ["k", "readonly", "presence", "required", "optional", "rest", "span"]
     let restTerm ← field term "rest"
     let rest ← if restTerm == .null then pure Json.null else recur restTerm
     return arrayClaim (← (← arr term "required").mapM recur).toList
-      (← (← arr term "optional").mapM recur).toList rest (← bool term "readonly") (← bool term "dense")
+      (← (← arr term "optional").mapM recur).toList rest (← bool term "readonly") (← fromJson? (← field term "presence"))
   | "function" =>
     CellClaims.fieldsExactly term ["k", "receiver", "params", "rest", "result", "effect", "span"]
     if (← str term "effect") != "unrestricted" then

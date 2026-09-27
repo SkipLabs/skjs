@@ -24,24 +24,41 @@ let explaining = ref false
 let explanations : (Json.t * string) list ref = ref []
 let explain pos s = if !explaining then explanations := (pos,s) :: !explanations
 let combine = List.fold_left union (Atoms [])
+(* A conservative proposal-side test. In particular a rigid parameter is
+   not known to exclude undefined. Lean's CoversPresence proves the conversion. *)
+let rec excludes_undefined = function
+  | Atoms atoms -> List.for_all (function Undef | Top | Named _ -> false | _ -> true) atoms
+  | Union ts -> List.for_all excludes_undefined ts
+  | Meet (t,ts) -> List.exists excludes_undefined (t::ts)
+  | Rigid _ -> false
+let plausible_elements excludes a b = match a,b with
+  | None,None -> true
+  | Some p,Some q ->
+    let elements = p.required @ p.optional_elements @ Option.to_list p.rest in
+    let presence = p.presence=q.presence || p.presence=Dense || q.presence=Sparse ||
+      (p.presence=Readable && q.presence=Dense && List.for_all excludes elements) in
+    presence && (q.readonly || not p.readonly) &&
+      p.required=q.required && p.optional_elements=q.optional_elements && p.rest=q.rest
+  | _ -> false
 (* A proposal heuristic for choosing an advertised arrow. It does not
    establish subtyping: Lean checks the selected call and its arguments. *)
-let rec plausible_subtype actual expected =
+let rec plausible_subtype_with excludes actual expected =
   if actual=expected then true else match actual,expected with
   | Atoms _,Atoms [Top] -> true
   | Atoms xs,Atoms ys -> List.for_all (fun x -> List.exists (fun y ->
       x=y || match x,y with
       | NumLit _,Num | StrLit _,Str | BigintLit _,Bigint -> true
-      | Shape a,Shape b when a.fields=b.fields && a.indexes=b.indexes && a.elements=b.elements ->
+      | Shape a,Shape b when a.fields=b.fields && a.indexes=b.indexes && plausible_elements excludes a.elements b.elements ->
         List.for_all (fun (q:Semantic.signature) -> List.exists (fun (p:Semantic.signature) ->
           (p.call_effect=q.call_effect || q.call_effect=Unrestricted) &&
           {p with call_effect=q.call_effect}=q) a.calls) b.calls
       | _ -> false) ys) xs
-  | Union parts,_ -> List.for_all (fun part -> plausible_subtype part expected) parts
-  | _,Union parts -> List.exists (plausible_subtype actual) parts
+  | Union parts,_ -> List.for_all (fun part -> plausible_subtype_with excludes part expected) parts
+  | _,Union parts -> List.exists (plausible_subtype_with excludes actual) parts
   (* A value of an intersection is a value of each operand. *)
-  | Meet (t,ts),_ -> List.exists (fun part -> plausible_subtype part expected) (t::ts)
+  | Meet (t,ts),_ -> List.exists (fun part -> plausible_subtype_with excludes part expected) (t::ts)
   | Rigid _,_ | _,(Rigid _ | Meet _) -> false
+let plausible_subtype = plausible_subtype_with excludes_undefined
 let literal_type = function
   | LNull -> Atoms [Nul] | LUndefined -> Atoms [Undef]
   | LBool true -> Atoms [True] | LBool false -> Atoms [False]
@@ -872,7 +889,7 @@ let rec typeof_slice shape holds = function
    `arraySlice`). Such arms become `sparse ReadonlyArray<unknown>`; an array arm stays;
    `unknown` and a type parameter's arms, of which the invariant says nothing,
    stay as they are. *)
-let any_array = array {required=[];optional_elements=[];rest=Some top;readonly=true;dense=false}
+let any_array = array {required=[];optional_elements=[];rest=Some top;readonly=true;presence=Sparse}
 let array_slice declarations t =
   let sliced = typeof_slice "array" true t in
   let rec plain = function
@@ -1502,7 +1519,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | ArrayLiteral es ->
       let elements = List.map (const_type ~nested:true env) es in
       if List.mem None elements then None
-      else Some (array {required=List.filter_map Fun.id elements;optional_elements=[];rest=None;readonly=true;dense=true})
+      else Some (array {required=List.filter_map Fun.id elements;optional_elements=[];rest=None;readonly=true;presence=Dense})
     | Alloc fs ->
       let fields = List.map (fun (name,e) -> name,const_type ~nested:true env e) fs in
       if List.exists (fun (_,t) -> t = None) fields then None
@@ -1619,7 +1636,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       (match expected with
        | Some x ->
          let mutable_rest = function
-           | Shape {elements=Some {required=[];optional_elements=[];rest=Some r;readonly=false;dense=true};_} -> Some r
+           | Shape {elements=Some {required=[];optional_elements=[];rest=Some r;readonly=false;presence=_};_} -> Some r
            | _ -> None in
          let actual = flat_atoms declarations (resolve env n) and wanted = flat_atoms declarations x in
          let rests = List.filter_map mutable_rest actual and wanted_rests = List.filter_map mutable_rest wanted in
@@ -1722,7 +1739,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
               && (match x with Atoms [Shape {elements=Some _;_}] -> false | _ -> true)
               && iterated_hint declarations x <> None ->
          array {required=[];optional_elements=[];
-           rest=Some (combine (s.required @ s.optional_elements));readonly=true;dense=s.dense}
+           rest=Some (combine (s.required @ s.optional_elements));readonly=true;presence=(match s.presence with Dense | Readable -> Readable | Sparse -> Sparse)}
        | t,_ -> t)
     | Literal l -> literal_type l
     | Not e -> ignore (expr env e); bool
@@ -1803,7 +1820,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
               | Some t -> t | None -> Option.value s.rest ~default:Semantic.top)
            | _ -> Semantic.top)
         | None,_ -> Semantic.top) in
-      let actual = expr ~expected:(array {required;optional_elements=[];rest=None;readonly=false;dense=true}) env rhs in
+      let actual = expr ~expected:(array {required;optional_elements=[];rest=None;readonly=false;presence=Dense}) env rhs in
       List.iter (fun (_,n,d) -> Option.iter (fun d -> ignore (expr ~expected:(contract n) env d)) d) targets;
       (* The rest's fresh array is claimed at its local's contract where that
          is an array, which a fresh array meets, else at the positions it
@@ -1813,14 +1830,14 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
           (* A slice: its `%RestFrom:k%`'s fresh array, at the instance of
              the elements from the rest's index on. *)
           let element = slice_element declarations start actual in
-          expressions := {pos=span;type_=array {required=[];optional_elements=[];rest=Some element;readonly=false;dense=true};
+          expressions := {pos=span;type_=array {required=[];optional_elements=[];rest=Some element;readonly=false;presence=Readable};
             instantiation=Some ["T",ValueArgument element]} :: !expressions
         else
         let claim = match Semantic.array_element (contract n),declared_head declarations [] actual with
           | Some _,_ -> contract n
           | None,Atoms [Shape {elements=Some s;_}] when s.optional_elements=[] && s.rest=None ->
             array {required=List.filteri (fun i _ -> i >= start) s.required;
-                   optional_elements=[];rest=None;readonly=false;dense=true}
+                   optional_elements=[];rest=None;readonly=false;presence=Dense}
           | _ -> unsupported "an array rest needs one tuple of required positions: the rest of an array of unknown length is a slice" in
         expressions := {pos=span;type_=claim;instantiation=None} :: !expressions) rest;
       actual
@@ -1964,7 +1981,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         | _,_::_::_ when discriminated_array declarations arrays es <> None ->
           discriminated_array declarations arrays es
         | Some expected,_ ->
-          Option.map (fun t -> {required=[];optional_elements=[];rest=Some t;readonly=true;dense=true})
+          Option.map (fun t -> {required=[];optional_elements=[];rest=Some t;readonly=true;presence=Readable})
             (iterated_hint declarations expected)
         | None,_ -> None in
       let types = List.mapi (fun i e ->
@@ -1972,7 +1989,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
           | Some t -> Some t | None -> s.rest) in expr ?expected env e) es in
       (match contract with
         | Some s -> array s
-        | None -> array {required=[];optional_elements=[];rest=Some (widen (combine types));readonly=false;dense=true})
+        | None -> array {required=[];optional_elements=[];rest=Some (widen (combine types));readonly=false;presence=Readable})
     (* A field a guard found holding less than its type is read at that. *)
     | Read (({node=Id name;_} as o),Name field) when List.mem_assoc (field_key name field) env ->
       let known = binding_type (List.assoc (field_key name field) env) in
@@ -2485,7 +2502,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
          let actuals = List.map (expr env) args in
          let extras = List.filteri (fun i _ -> i >= fixed) actuals in
          let pack = Pack {required=List.map Semantic.widen extras;
-           optional_elements=[];rest=None;readonly=false;dense=true} in
+           optional_elements=[];rest=None;readonly=false;presence=Dense} in
          let solution = match signature.rest_pack with
            | Some (PackParameter p) when List.exists (fun (q:Semantic.quantifier) -> q.identity=p)
                signature.quantified -> [p,PackArgument pack]
@@ -2728,10 +2745,15 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
             | Some p -> plausible_subtype t (at p) || offer_to arg (at p) <> None
             | None -> false) (List.combine args actuals)) in
         let matching = List.filter matches_actuals proposals in
-        let preferred = match List.find_opt (fun ((s:Semantic.signature),substitution,_) ->
-            plausible_subtype receiver_type (Inference.substitute substitution s.receiver)) matching with
+        let receiver_matches ((s:Semantic.signature),substitution,_) =
+          plausible_subtype_with
+            (fun t -> excludes_undefined (declared_head declarations [] t))
+            receiver_type (Inference.substitute substitution s.receiver) in
+        let preferred = match List.find_opt receiver_matches matching with
           | Some p -> Some p
-          | None -> List.nth_opt matching 0 in
+          | None -> (match matching with
+            | p::_ -> Some p
+            | [] -> List.find_opt receiver_matches proposals) in
         (match preferred,proposals with
          | Some (s,substitution,result),_ | None,((s,substitution,result)::_) ->
            instance_of ~declared:(Atoms [Shape {shape with calls=[s]}]) target substitution;
@@ -2942,7 +2964,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
          (* A slice: its `%RestFrom:k%`'s fresh array, at the instance of the
             elements from the rest's index on. *)
          let element = slice_element declarations start t in
-         let rest_t = array {required=[];optional_elements=[];rest=Some element;readonly=false;dense=true} in
+         let rest_t = array {required=[];optional_elements=[];rest=Some element;readonly=false;presence=Readable} in
          expressions := {pos=span;type_=rest_t;instantiation=Some ["T",ValueArgument element]} :: !expressions;
          bind env target rest_t None
        | Some (start,span,false,target) ->
@@ -2950,7 +2972,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
            | Atoms [Shape {elements=Some s;_}] when s.optional_elements=[] && s.rest=None ->
              List.filteri (fun i _ -> i >= start) s.required
            | _ -> unsupported "an array rest needs one tuple of required positions: the rest of an array of unknown length is a slice" in
-         let rest_t = array {required=remaining;optional_elements=[];rest=None;readonly=false;dense=true} in
+         let rest_t = array {required=remaining;optional_elements=[];rest=None;readonly=false;presence=Dense} in
          expressions := {pos=span;type_=rest_t;instantiation=None} :: !expressions;
          bind env target rest_t None)
   in
@@ -3179,7 +3201,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let committed = match written,init.node with
         | None,ArrayLiteral [] ->
           evolving := (n,(init.pos,true)) :: !evolving;
-          Some (array {required=[];optional_elements=[];rest=Some (evolved init.pos);readonly=false;dense=true})
+          Some (array {required=[];optional_elements=[];rest=Some (evolved init.pos);readonly=false;presence=Readable})
         | None,Literal (LNull | LUndefined) when mutable_ ->
           evolving := (n,(init.pos,false)) :: !evolving; committed
         | _ -> committed in

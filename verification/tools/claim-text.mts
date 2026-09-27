@@ -12,6 +12,8 @@ import {
 } from "./claim.mts";
 import {
   numberOfBits,
+  isArrayPresence,
+  presencePrefix,
   type Fields,
   type ClauseKey,
   type Row,
@@ -98,7 +100,7 @@ function bareAtomText(atom: unknown, state: PrintState): string {
     const required = atom.required.map((t) => typeText(t, state));
     const optional = atom.optional.map((t) => typeText(t, state) + "?");
     const rest = atom.rest === null ? null : typeText(atom.rest, state);
-    const text = (atom.dense === false ? "sparse " : "") + (
+    const text = (isArrayPresence(atom.presence) ? presencePrefix(atom.presence) : "(invalid presence) ") + (
       required.length === 0 && optional.length === 0 && rest !== null
         ? `${atom.readonly ? "ReadonlyArray" : "Array"}<${rest}>`
         : `${atom.readonly ? "readonly " : ""}[${[...required, ...optional, ...(rest === null ? [] : [`...Array<${rest}>`])].join(", ")}]`);
@@ -294,7 +296,7 @@ function parseType(text: string): ClaimType {
         take("[");
         take("]");
         value = {
-          a: "array", dense: true,
+          a: "array", presence: "readable",
           required: [],
           optional: [],
           rest: { top: false, atoms: [value] },
@@ -345,14 +347,14 @@ function parseType(text: string): ClaimType {
       take();
       return { a: token };
     }
-    if (token === "sparse" || token === "readonly") {
+    if (token === "sparse" || token === "dense" || token === "readable" || token === "readonly") {
       take();
       let inner = atom();
       while (peek() === "[") {
         take("[");
         take("]");
         inner = {
-          a: "array", dense: true,
+          a: "array", presence: "readable",
           required: [],
           optional: [],
           rest: { top: false, atoms: [inner] },
@@ -361,7 +363,7 @@ function parseType(text: string): ClaimType {
       }
       if (inner.a !== "array")
         throw new TypeSyntaxError("readonly needs an array or tuple");
-      return token === "sparse" ? { ...inner, dense: false } : { ...inner, readonly: true };
+      return token === "readonly" ? { ...inner, readonly: true } : { ...inner, presence: token };
     }
     if (token === "[") {
       take("[");
@@ -404,7 +406,7 @@ function parseType(text: string): ClaimType {
         take();
       }
       take("]");
-      return { a: "array", dense: true, required, optional, rest, readonly: false };
+      return { a: "array", presence: "dense", required, optional, rest, readonly: false };
     }
     if (token === "true" || token === "false")
       return { a: "booleanlit", v: take() };
@@ -427,7 +429,7 @@ function parseType(text: string): ClaimType {
           if (args.length !== 1)
             throw new TypeSyntaxError("an array needs one element type");
           return {
-            a: "array", dense: true,
+            a: "array", presence: "readable",
             required: [],
             optional: [],
             rest: args[0],
@@ -502,7 +504,7 @@ function parseType(text: string): ClaimType {
         take("[");
         take("]");
         return {
-          a: "array", dense: true,
+          a: "array", presence: "readable",
           required: [],
           optional: [],
           rest: grouped,
@@ -1037,7 +1039,7 @@ function liftClause(types: unknown, clause: unknown, depth: number): unknown {
       optional: t.optional.map((a) => liftType(types, a, depth - 1)),
       rest: t.rest === null ? null : liftType(types, t.rest, depth - 1),
       readonly: t.readonly,
-      dense: t.dense,
+      presence: t.presence,
     };
   }
   const refs = body("refs");
@@ -1189,7 +1191,7 @@ function restPack(types: unknown, element: number[]): number[] {
     intern(types, [
       {
         pack: {
-          first: { dense: true, required: [], optional: [], rest: element, readonly: false },
+          first: { presence: "dense", required: [], optional: [], rest: element, readonly: false },
           rest: [],
         },
       },
@@ -1328,7 +1330,7 @@ function lowerAtom(types: unknown, atom: unknown): number[] {
     if (
       !Array.isArray(atom.required) ||
       !Array.isArray(atom.optional) ||
-      typeof atom.dense !== "boolean" || typeof atom.readonly !== "boolean"
+      !isArrayPresence(atom.presence) || typeof atom.readonly !== "boolean"
     )
       throw new TypeSyntaxError("invalid array contract");
     const t = {
@@ -1336,7 +1338,7 @@ function lowerAtom(types: unknown, atom: unknown): number[] {
       optional: atom.optional.map((a) => lowerType(types, a)),
       rest: atom.rest === null ? null : lowerType(types, atom.rest),
       readonly: atom.readonly,
-      dense: atom.dense,
+      presence: atom.presence,
     };
     const store = intern(types, [{ list: { first: t, rest: [] } }]);
     if (atom.a === "store") return [store];

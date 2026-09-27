@@ -15,21 +15,21 @@ open Lean PositiveNormalization PositiveGraphs CertificateProducer
 constructor's result is unknown. -/
 def types : List (List (Clause (List Nat))) :=
   [[.num], [.str],
-   [.pack ⟨[[0], [1]], [], none, false, true⟩ []],
-   [.pack ⟨[], [], some [0, 1], false, true⟩ []],
-   [.pack ⟨[[0]], [], none, false, true⟩ []],
-   [.pack ⟨[], [], some [0], false, true⟩ []],
-   [.pack ⟨[[0]], [[1]], none, false, true⟩ []],
+   [.pack ⟨[[0], [1]], [], none, false, .dense⟩ []],
+   [.pack ⟨[], [], some [0, 1], false, .dense⟩ []],
+   [.pack ⟨[[0]], [], none, false, .dense⟩ []],
+   [.pack ⟨[], [], some [0], false, .dense⟩ []],
+   [.pack ⟨[[0]], [[1]], none, false, .dense⟩ []],
    [.top],
    [.ctors [([[0]], [7])]],
    [.ctors [] [([], [4], [7])]],
    [.ctors [] [([], [5], [7])]],
    [.refs [(.str "a", [0])] [] []],
-   [.pack ⟨[[11]], [], none, false, true⟩ []],
+   [.pack ⟨[[11]], [], none, false, .dense⟩ []],
    [.ctors [] [([], [12], [7])]],
    [.ctors [([[11]], [7])]],
    [.ctors [([], [7])]],
-   [.pack ⟨[], [], none, false, true⟩ []],
+   [.pack ⟨[], [], none, false, .dense⟩ []],
    [.ctors [] [([], [16], [7])]],
    [.ctors [] [([], [3], [7])]]]
 
@@ -78,10 +78,10 @@ def sub (A B : List Nat) : Bool :=
 #guard sub [9] [9]
 
 -- Meeting two packs keeps every contract, on the one list.
-#guard meet (Clause.pack (⟨[[0]], [], none, false, true⟩ : Tuple (List Nat)) [])
-    (.pack ⟨[], [], some [0], false, true⟩ []) =
-  [.pack ⟨[[0]], [], none, false, true⟩ [⟨[], [], some [0], false, true⟩]]
-#guard meet (Clause.pack (⟨[[0]], [], none, false, true⟩ : Tuple (List Nat)) []) .num = []
+#guard meet (Clause.pack (⟨[[0]], [], none, false, .dense⟩ : Tuple (List Nat)) [])
+    (.pack ⟨[], [], some [0], false, .dense⟩ []) =
+  [.pack ⟨[[0]], [], none, false, .dense⟩ [⟨[], [], some [0], false, .dense⟩]]
+#guard meet (Clause.pack (⟨[[0]], [], none, false, .dense⟩ : Tuple (List Nat)) []) .num = []
 
 -- The pack clause reads back as itself.
 #guard (fromJson? (toJson (types[6]!)) : Except String (List (Clause (List Nat)))).toOption ==
@@ -106,10 +106,10 @@ def rows : Nat → List (Clause (List Nat))
   | 0 => [.num]
   | 1 => [.str]
   | 2 => [.top]
-  | 4 => [.pack ⟨[], [], some [0], false, true⟩ []]
-  | 6 => [.pack ⟨[[0]], [], none, false, true⟩ []]
+  | 4 => [.pack ⟨[], [], some [0], false, .dense⟩ []]
+  | 6 => [.pack ⟨[[0]], [], none, false, .dense⟩ []]
   | 7 => [.arrs [] [⟨[2], ([], [6]), [0], .unrestricted⟩]]
-  | 8 => [.pack ⟨[[1]], [], none, false, true⟩ []]
+  | 8 => [.pack ⟨[[1]], [], none, false, .dense⟩ []]
   | 9 => [.arrs [] [⟨[2], ([], [8]), [0], .unrestricted⟩]]
   | _ => []
 

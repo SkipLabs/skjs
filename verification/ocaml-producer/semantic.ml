@@ -2,6 +2,12 @@
    A rigid parameter remains distinct from any future inference/existential IDs. *)
 type call_effect = Unrestricted | PreservesInputHeap
 
+type array_presence = Dense | Readable | Sparse
+let presence_name = function Dense -> "dense" | Readable -> "readable" | Sparse -> "sparse"
+let presence_of_string = function
+  | "dense" -> Dense | "readable" -> Readable | "sparse" -> Sparse
+  | s -> invalid_arg ("invalid array presence: " ^ s)
+
 type ty = Atoms of atom list | Rigid of rigid | Union of ty list
          (* An intersection whose operands are known only where it is
             applied or instantiated: in a declaration's equation one is a
@@ -60,7 +66,7 @@ and quantifier = { identity: rigid; bound: type_argument option }
    concrete pack instance. At most one is set. *)
 and signature = { quantified: quantifier list; receiver: ty; params: ty list;
                   variadic: ty option; rest_pack: pack option; result: ty; call_effect: call_effect }
-and sequence = { required: ty list; optional_elements: ty list; rest: ty option; readonly: bool; dense: bool }
+and sequence = { required: ty list; optional_elements: ty list; rest: ty option; readonly: bool; presence: array_presence }
 and shape = { fields: field list; indexes: index_signature list; calls: signature list; elements: sequence option }
 (* An immutable annotated binding may retain a separately inferred effect on
    exactly the same call signature. Every other annotation component remains

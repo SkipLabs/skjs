@@ -851,22 +851,56 @@ theorem viewT_append (A B : Fields) (k : Nat) (W : WorldT k) (v : Val) :
 
 /-- A tuple contract on an array store: the required positions' families, the
 optional positions', and what any further position must hold, if any may. -/
+inductive ArrayPresence where
+  | dense | readable | sparse
+  deriving DecidableEq, Repr
+
 structure TupleF where
   required : List Fam
   optional : List Fam
   rest : Option Fam
   readonly : Bool := false
-  dense : Bool
+  presence : ArrayPresence
+
+/-- The family a tuple contract states for an index: a required position's,
+an optional position's, or the rest's where any further position may be. -/
+def positionFam (T : TupleF) (i : Nat) : Option Fam :=
+  match T.required[i]? with
+  | some A => some A
+  | none => match T.optional[i - T.required.length]? with
+    | some A => some A
+    | none => if T.required.length + T.optional.length ≤ i then T.rest else none
+
+/-- Presence is observed at the same depth as the element contract. Readable
+stores may have a hole exactly where reading `undefined` meets that contract. -/
+def StorePresence (T : TupleF) (ls : List (Option Nat)) (j : Nat) : Prop :=
+  match T.presence with
+  | .dense => none ∉ ls
+  | .sparse => True
+  | .readable => ∀ i, ls[i]? = some none → ∀ A, positionFam T i = some A →
+      ∀ U : WorldT j, A j U .undef
+
+theorem StorePresence.of_dense {T : TupleF} {ls : List (Option Nat)}
+    (h : none ∉ ls) (j : Nat) : StorePresence T ls j := by
+  cases hp : T.presence with
+  | dense => simpa [StorePresence, hp] using h
+  | sparse => simp [StorePresence, hp]
+  | readable =>
+    simp only [StorePresence, hp]
+    intro i hi
+    exact False.elim (h (List.mem_of_getElem? hi))
 
 /-- **A store under a tuple contract.** Every required position has a location
 under its family (or implying it for a readonly contract); an optional
 position is a location under the same capability; a further position exists
-only under a rest family, and holds a location under it. When `dense` is true, no position is a hole. Otherwise optional/rest
-positions may be absent: their contracts constrain present entries only.
+only under a rest family, and holds a location under it. `StorePresence`
+distinguishes physical density, safe hole reads, and unconstrained holes.
+At depth zero no element can be observed; presence is guarded at the same
+depth as the element families.
 Required positions always exist. Lengths follow: at least the required
 positions, and no more than the optional ones without a rest. -/
 def listT (T : TupleF) : Fam := fun k W v =>
-  ∃ ls : List (Option Nat), v = .arr ls ∧ (T.dense = true → none ∉ ls) ∧ T.required.length ≤ ls.length ∧
+  ∃ ls : List (Option Nat), v = .arr ls ∧ (∀ j, j < k → StorePresence T ls j) ∧ T.required.length ≤ ls.length ∧
     (T.rest = none → ls.length ≤ T.required.length + T.optional.length) ∧
     (∀ (i : Nat) (A : Fam), T.required[i]? = some A → ∃ (l : Nat) (c : Ctr k),
       ls[i]? = some (some l) ∧ lookup W l = some c ∧
@@ -881,7 +915,7 @@ def listT (T : TupleF) : Fam := fun k W v =>
 theorem listT_adm (T : TupleF) : Adm (listT T) := by
   refine ⟨?_, ?_⟩
   · rintro n W v ⟨ls, rfl, hd, hlen, hbound, hreq, hopt, hrest⟩
-    refine ⟨ls, rfl, hd, hlen, hbound, ?_, ?_, ?_⟩
+    refine ⟨ls, rfl, (fun j hj => hd j (by omega)), hlen, hbound, ?_, ?_, ?_⟩
     · intro i A hA
       obtain ⟨l, c, hl, hw, hag⟩ := hreq i A hA
       exact ⟨l, _, hl, lookup_trunc (Nat.le_succ n) W l c hw, fun j hj W' u => hag j (by omega) W' u⟩
@@ -902,15 +936,6 @@ theorem listT_adm (T : TupleF) : Adm (listT T) := by
     · intro i l hi hl
       obtain ⟨E, c, hE, hw, hag⟩ := hrest i l hi hl
       exact ⟨E, c, hE, WExt_lookup hx hw, hag⟩
-
-/-- The family a tuple contract states for an index: a required position's,
-an optional position's, or the rest's where any further position may be. -/
-def positionFam (T : TupleF) (i : Nat) : Option Fam :=
-  match T.required[i]? with
-  | some A => some A
-  | none => match T.optional[i - T.required.length]? with
-    | some A => some A
-    | none => if T.required.length + T.optional.length ≤ i then T.rest else none
 
 theorem elemSlots_getElem? (base n i : Nat) :
     (elemSlots base n)[i]? = if i < n then some (some (base + i)) else none := by
@@ -958,6 +983,23 @@ theorem placeAt_dense {ls : List (Option Nat)} {k m : Nat} (hd : none ∉ ls) (h
       · rename_i h1 h2 h3; omega
       · cases hi
 
+theorem StorePresence.grow {T : TupleF} {ls : List (Option Nat)} {k m j : Nat}
+    (h : StorePresence T ls j) (hk : k ≤ ls.length) : StorePresence T (placeAt ls k m) j := by
+  cases hp : T.presence with
+  | dense => simpa [StorePresence, hp] using placeAt_dense (m := m) (by simpa [StorePresence, hp] using h) hk
+  | sparse => simp [StorePresence, hp]
+  | readable =>
+    simp only [StorePresence, hp] at h ⊢
+    intro i hi A hA U
+    rw [placeAt_getElem?] at hi
+    split at hi
+    · cases hi
+    · split at hi
+      · exact h i hi A hA U
+      · split at hi
+        · rename_i h1 h2 h3; omega
+        · cases hi
+
 theorem elemSlots_dense (base n : Nat) : none ∉ elemSlots base n := by
   simp [elemSlots]
 
@@ -976,7 +1018,7 @@ theorem listT_alloc {n : Nat} {W : WorldT n} {T : TupleF} {As : List Fam} {base 
     listT T n W (.arr (elemSlots base As.length)) := by
   have hpos' : ∀ (i : Nat) (hi : i < As.length), positionFam T i = some (As[i]'hi) :=
     fun i hi => hpos i _ (List.getElem?_eq_some_iff.mpr ⟨hi, rfl⟩)
-  refine ⟨_, rfl, (fun _ => elemSlots_dense _ _), by simp [elemSlots, hreq],
+  refine ⟨_, rfl, (fun j _ => StorePresence.of_dense (elemSlots_dense _ _) j), by simp [elemSlots, hreq],
     fun hn => by simpa [elemSlots] using hbound hn, ?_, ?_, ?_⟩
   · intro i A hA
     have hi : i < As.length := by
@@ -1030,7 +1072,7 @@ theorem listT_grow {n : Nat} {W : WorldT n} {T : TupleF} {ls : List (Option Nat)
       · split at hpos
         · rw [hn] at hpos; cases hpos
         · cases hpos
-  refine ⟨_, rfl, (fun ht => placeAt_dense (hd ht) hk), by rw [placeAt_length]; omega,
+  refine ⟨_, rfl, (fun j hj => StorePresence.grow (hd j hj) hk), by rw [placeAt_length]; omega,
     fun hn => by rw [placeAt_length]; have := hbound hn; have := hnamed hn; omega, ?_, ?_, ?_⟩
   · intro i A' hA
     obtain ⟨l, c, hl, hw, hag⟩ := hreq i A' hA

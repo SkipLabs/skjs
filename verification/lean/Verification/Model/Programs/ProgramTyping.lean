@@ -1352,16 +1352,16 @@ theorem ArgsT_slots {G : NormalGraph ι} {Γ ρ n W} (he : EnvOk G Γ ρ n W) :
 /-- The type of the store a variadic body receives for a rest type: the rest's
 one tuple contract, as a writable store, since the store is fresh. -/
 def RestStore (G : NormalGraph ι) (S P : Ty ι) : Prop :=
-  match expand G P with
-  | [.pack T []] => Represents G S (.list { T with readonly := false } [])
-  | _ => False
+  match expand G P, expand G S with
+  | [.pack T []], [.list U []] => U = { T with readonly := false, presence := U.presence }
+  | _, _ => False
 
 /-- A store type whose elements a spread passes at `E`. -/
 def SpreadsInto (G : NormalGraph ι) (S E : Ty ι) : Prop :=
   match expand G S with
   | [.list T []] =>
       (∀ A ∈ T.required ++ T.optional ++ T.rest.toList, ∀ i ∈ A, i ∈ E) ∧
-      (T.dense = true ∨ ∃ i ∈ E, Represents G [i] .undef)
+      (T.presence ≠ .sparse ∨ ∃ i ∈ E, Represents G [i] .undef)
   | _ => False
 
 instance [DecidableEq ι] (G : NormalGraph ι) (S P : Ty ι) : Decidable (RestStore G S P) := by
@@ -1456,16 +1456,24 @@ theorem restStore_safe {G : NormalGraph ι} {S P : Ty ι} (hS : RestStore G S P)
     Safe (meaning G S) n W h (.arrLit extra) := by
   unfold RestStore at hS
   split at hS
-  · rename_i T hP
-    have hpos : ∀ i B, positionFam (tupleFams (meaning G) T) i = some B → Adm B := by
+  · rename_i T U hP hR
+    let T' := { T with presence := U.presence }
+    have hpos : ∀ i B, positionFam (tupleFams (meaning G) T') i = some B → Adm B := by
       intro i B hB
       rw [PositiveNormalization.positionFam_tupleFams] at hB
       obtain ⟨b, -, rfl⟩ := Option.map_eq_some_iff.mp hB
       exact meaning_adm G b
-    have := RestCalls.argument_alloc_safe hpos hw hh ((mixed_pack_args hP).mp he) hvals
+    have hfit : ArgumentContracts.Fits (tupleFams (meaning G) T') n W extra := by
+      exact (mixed_pack_args hP).mp he
+    have := RestCalls.argument_alloc_safe hpos hw hh hfit hvals
     apply Safe_mono n _ W h _ this
     intro k _ V v hv
-    exact (represents_back hS k V v) ⟨by simpa [tupleFams] using hv, by simp⟩
+    apply (represents_back hR k V v)
+    refine ⟨?_, by simp⟩
+    have heq : tupleFams (meaning G) U = {tupleFams (meaning G) T' with readonly := false} := by
+      rw [hS]; rfl
+    rw [heq]
+    exact hv
   · exact hS.elim
 
 /-- **Invoking graph code with a rest.** A call at a variadic signature
@@ -1779,10 +1787,10 @@ theorem pack_call_safe {Rc : Fam} {Ps Us Qs : List Fam} {R : Fam} {P : ArgFam}
 
 /-- **Copying a spread.** `[...s]` reads the store `s` evaluates to where it is
 written and allocates a fresh store of its elements, each at `E`. -/
-theorem copy_safe {S E : Fam} (hS : RestCalls.Spreads S E) (hE : Adm E) (hEv : ValOnly E)
+theorem copy_safe {S E : Fam} (presence : ArrayPresence) (hS : RestCalls.Spreads S E) (hE : Adm E) (hEv : ValOnly E)
     {n : Nat} {W : WorldT n} {h : Heap} {s : Tm} (hw : WorldAdm W) (hh : HeapOk n W h)
     (hs : Safe S n W h s) :
-    Safe (listT ⟨[], [], some E, false, true⟩) n W h (.arrLit [.spread s]) := by
+    Safe (listT ⟨[], [], some E, false, presence⟩) n W h (.arrLit [.spread s]) := by
   apply RestCalls.ctx_bind (fun t => .arrLit [.spread t])
     (fun st => .arrArg (i := 0) rfl (by intro j hj; omega) (.spreadC st))
     (fun hr => .arrArg (i := 0) rfl (by intro j hj; omega) (.spreadC hr)) n W h s hw hh hs
@@ -1807,7 +1815,7 @@ theorem copy_safe {S E : Fam} (hS : RestCalls.Spreads S E) (hE : Adm E) (hEv : V
         rw [List.eq_of_mem_replicate (List.of_mem_zip hq).1]
         exact hvs q.2 (List.of_mem_zip hq).2)
     intro k hk X hy hl
-    have := listT_alloc (n := k) (W := X) (T := ⟨[], [], some E, false, true⟩)
+    have := listT_alloc (n := k) (W := X) (T := ⟨[], [], some E, false, presence⟩)
       (As := List.replicate vs.length E) (base := heap.length)
       (by simp) (by simp)
       (by
@@ -2045,8 +2053,8 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
       Represents G U .undef → HasTy G Γ (.elemAt a i) (A ++ U)
   /-- Any numeric index into a homogeneous array reads an element or
   `undefined`; no index is in bounds by type alone. -/
-  | elemAny {Γ : List (Ty ι)} {a i : Tm} {L I E U : Ty ι} :
-      HasTy G Γ a L → Represents G L (.list ⟨[], [], some E, false, true⟩ []) → HasTy G Γ i I →
+  | elemAny {Γ : List (Ty ι)} {a i : Tm} {L I E U : Ty ι} {ro : Bool} {presence : ArrayPresence} :
+      HasTy G Γ a L → Represents G L (.list ⟨[], [], some E, ro, presence⟩ []) → HasTy G Γ i I →
       Answers G I .isNum true → Represents G U .undef → HasTy G Γ (.elemAt a i) (E ++ U)
   /-- A write at a literal index into a position the contract names keeps the
   contract: into the element's location, or a fresh one the store records.
@@ -2088,8 +2096,8 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
       (∀ a ∈ C, HasTy G (Γ.set i [a]) t A) → HasTy G Γ t A
   /-- **A copy of a spread.** `[...s]` allocates a fresh store holding the
   elements of the store `s` evaluates to, read where it is written. -/
-  | arrCopy {Γ : List (Ty ι)} {s : Tm} {S T E : Ty ι} :
-      HasTy G Γ s S → SpreadsInto G S E → Represents G T (.list ⟨[], [], some E, false, true⟩ []) →
+  | arrCopy {Γ : List (Ty ι)} {s : Tm} {S T E : Ty ι} {presence : ArrayPresence} :
+      HasTy G Γ s S → SpreadsInto G S E → Represents G T (.list ⟨[], [], some E, false, presence⟩ []) →
       HasTy G Γ (.arrLit [.spread s]) T
   /-- **A variadic call.** The fixed actuals meet the selected signature's
   parameters, less trailing ones `Us` the call omits, each admitting
@@ -2755,7 +2763,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       obtain ⟨c, hw', hag⟩ := key
       apply Safe_mono m (fun m' _ U'' u hu => (meaning_append G A U m' U'' u).mpr (Or.inl hu))
       exact elem_read_rule (meaning_valOnly G A) m V heap' l hv hok' hloc hw' (fun j hj U u => (hag j hj U u).1)
-  | @elemAny Γ a i L I E U ha hr hi hq hU iha ihi =>
+  | @elemAny Γ a i L I E U ro presence ha hr hi hq hU iha ihi =>
     intro n W h ρ he hw hh
     apply bind (fun a => .elemAt a (instantiate 0 ρ i)) Step.elemC1 Raises.elemC1 n W h _ hw hh (iha n W h ρ he hw hh)
     intro j hj U' hx hu heap av hok hav ha'
@@ -3045,10 +3053,10 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     obtain ⟨a, ha, hv⟩ := henv.2 i C hi
     apply ih a ha n W h ρ (henv.refine hi ?_) hw hh
     exact ⟨a, by simp, hv⟩
-  | @arrCopy Γ s S T E hs hsp hr ih =>
+  | @arrCopy Γ s S T E presence hs hsp hr ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_cons, List.map_nil]
-    have := copy_safe (spreadsInto_sound hsp) (meaning_adm G E) (meaning_valOnly G E) hw hh
+    have := copy_safe presence (spreadsInto_sound hsp) (meaning_adm G E) (meaning_valOnly G E) hw hh
       (ih n W h ρ he hw hh)
     apply Safe_mono n _ W h _ this
     intro k _ U v hv

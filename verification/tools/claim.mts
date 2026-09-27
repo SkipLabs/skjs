@@ -1,3 +1,4 @@
+import { isArrayPresence, type ArrayPresence } from "./type-graph.mts";
 /** Structural claim language at the producer/viewer boundary, mirroring
  * Claim.lean. Source annotations are type terms (declaration-types.mts); Lean
  * converts them to these types for its source readers. Runtime data is decoded
@@ -57,7 +58,7 @@ export type Atom =
       optional: ClaimType[];
       rest: ClaimType | null;
       readonly: boolean;
-      dense: boolean;
+      presence: ArrayPresence;
     }
   | { a: "stringlit" | "numberlit" | "booleanlit"; v: string }
   /* One bigint, `v` its canonical decimal integer: `-5`, never `-05`. */
@@ -112,11 +113,11 @@ function atom(v: unknown): void {
       break;
     case "array":
     case "store":
-      keys(o, ["a", "required", "optional", "rest", "readonly", "dense"]);
+      keys(o, ["a", "required", "optional", "rest", "readonly", "presence"]);
       for (const t of list(o.required)) decodeClaimType(t);
       for (const t of list(o.optional)) decodeClaimType(t);
       if (o.rest !== null) decodeClaimType(o.rest);
-      if (typeof o.dense !== "boolean") throw Error("invalid density flag");
+      if (!isArrayPresence(o.presence)) throw Error("invalid density flag");
       if (typeof o.readonly !== "boolean") throw Error("invalid readonly flag");
       break;
     case "booleanlit":

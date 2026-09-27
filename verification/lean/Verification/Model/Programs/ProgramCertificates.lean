@@ -379,7 +379,7 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     ja.context = j.context ∧ ja.term = a ∧ ji.context = j.context ∧ ji.term = i ∧
     Represents G U .undef ∧ Answers G ji.type .isNum true ∧
     (match expand G ja.type with
-     | [.list ⟨[], [], some E, false, true⟩ []] => j.type = E ++ U
+     | [.list ⟨[], [], some E, _, _⟩ []] => j.type = E ++ U
      | _ => False)
   | .setElem, .setElem a i v, [ja, ji, jv] =>
     ja.context = j.context ∧ ja.term = a ∧ ji.context = j.context ∧ ji.term = i ∧
@@ -448,7 +448,9 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
   -- The one premise is the store the spread reads.
   | .arrCopy E, .arrLit [.spread s], [js] =>
     js.context = j.context ∧ js.term = s ∧ SpreadsInto G js.type E ∧
-    Represents G j.type (.list ⟨[], [], some E, false, true⟩ [])
+    match expand G j.type with
+    | [.list ⟨[], [], some E', false, _⟩ []] => E = E'
+    | _ => False
   -- The callee, the receiver, the fixed actuals, one `undefined` premise per
   -- fixed position the call omits, then one premise per further part: the
   -- actual itself, or the store a spread reads. A call that omits a position
@@ -1027,7 +1029,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : Code
     rw [hΓa, hta] at ha
     rw [hΓi, hti] at hi
     split at hr
-    · rename_i E hT
+    · rename_i E ro presence hT
       rw [hr]
       exact .elemAny ha hT hi hq hU
     · contradiction
@@ -1160,7 +1162,11 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : Code
     rcases hl with ⟨hΓ, ht, hsp, hr⟩
     have h := hp js (by simp)
     rw [hΓ, ht] at h
-    exact .arrCopy h hsp hr
+    split at hr
+    · rename_i E' presence hT
+      cases hr
+      exact .arrCopy h hsp hT
+    · contradiction
   · rename_i k u flags P f r args jf jr jas
     rcases hl with ⟨hΓf, htf, hΓr, htr, hctx, hlen, hshort, rfl, hundef, hparts, hL⟩
     have hf := hp jf (by simp)
@@ -1673,10 +1679,10 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     rcases hj with rfl | rfl
     · exact iha
     · exact ihi
-  | @elemAny Γ a i L I E U ha hr hi hq hU iha ihi =>
+  | @elemAny Γ a i L I E U ro presence ha hr hi hq hU iha ihi =>
     apply node_complete (G := G) (j := ⟨Γ, .elemAt a i, E ++ U⟩) (r := .elemAny U)
       (js := [⟨Γ,a,L⟩, ⟨Γ,i,I⟩])
-      ⟨rfl,rfl,rfl,rfl,hU,hq,by simp only [show expand G L = [.list ⟨[], [], some E, false, true⟩ []] from hr]⟩
+      ⟨rfl,rfl,rfl,rfl,hU,hq,by simp only [show expand G L = [.list ⟨[], [], some E, ro, presence⟩ []] from hr]⟩
     intro j hj
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hj
     rcases hj with rfl | rfl
@@ -1772,9 +1778,10 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     · intro j hj
       obtain ⟨a,ha,rfl⟩ := List.mem_map.mp hj
       exact ih a ha
-  | @arrCopy Γ s S T E hs hsp hr ih =>
+  | @arrCopy Γ s S T E presence hs hsp hr ih =>
     apply node_complete (G := G) (j := ⟨Γ, .arrLit [.spread s], T⟩) (r := .arrCopy E)
-      (js := [⟨Γ, s, S⟩]) ⟨rfl, rfl, hsp, hr⟩
+      (js := [⟨Γ, s, S⟩]) ⟨rfl, rfl, hsp, by
+        simp only [show expand G T = [.list ⟨[], [], some E, false, presence⟩ []] from hr]⟩
     simpa using ih
   | @callRest effect Γ f r F Rt xs Us P B parts hf hmem hrt hx hu hshort hp hparts
       ihf ihrt ihx ihu ihp =>

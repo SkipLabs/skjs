@@ -249,13 +249,13 @@ export function typeTerm(scope: TermScope, node: TypeNode | undefined, at: Node 
     return { k: "union", parts: node.types.map(t => typeTerm(scope, t)), span };
   if (ts.isIntersectionTypeNode(node)) return intersection(scope, node, span);
   if (ts.isArrayTypeNode(node))
-    return { k: "array", dense: true, readonly: false, element: typeTerm(scope, node.elementType), span };
+    return { k: "array", presence: "readable", readonly: false, element: typeTerm(scope, node.elementType), span };
   if (ts.isTupleTypeNode(node)) return tuple(scope, node, false, span);
   if (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.ReadonlyKeyword) {
     // `readonly T[]` and `readonly [..]`: the same contract as a view.
     const inner = unwrap(node.type);
     if (ts.isArrayTypeNode(inner))
-      return { k: "array", dense: true, readonly: true, element: typeTerm(scope, inner.elementType), span };
+      return { k: "array", presence: "readable", readonly: true, element: typeTerm(scope, inner.elementType), span };
     if (ts.isTupleTypeNode(inner)) return tuple(scope, inner, true, span);
     return scope.fail(node, "readonly applies to an array or tuple type");
   }
@@ -467,7 +467,7 @@ function tuple(scope: TermScope, node: ts.TupleTypeNode, readonly: boolean, span
       required.push(typeTerm(scope, element));
     }
   }
-  return { k: "tuple", dense: true, readonly, required, optional, rest, span };
+  return { k: "tuple", presence: "dense", readonly, required, optional, rest, span };
 }
 
 /** Union is a list of parts; an intersection's operands are met in Lean,

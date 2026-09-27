@@ -11,12 +11,12 @@ open ArgumentContracts PositiveNormalization PositiveGraphs ModelBoundaries Towe
 conversion, whatever the element type. -/
 example (η : MixedAssignment Nat) :
     ctorsT [([refT nulT], numT)] = ctorRestsT [([], graphArguments
-      (.ofRows fun _ => [.pack ⟨[[1]], [], none, false, true⟩ []]) η
+      (.ofRows fun _ => [.pack ⟨[[1]], [], none, false, .dense⟩ []]) η
       (fun _ => refT nulT) [0], numT)] := by
   rw [graphArguments_pack _ _ _ _ _ _ rfl]
-  have shape : (fun n W vs => ∀ t ∈ [Tuple.mk [[1]] [] none false true],
+  have shape : (fun n W vs => ∀ t ∈ [Tuple.mk [[1]] [] none false .dense],
       Fits (tupleFams (fun _ => refT nulT) t) n W vs) =
-      Fits ⟨[refT nulT], [], none, false, true⟩ := by
+      Fits ⟨[refT nulT], [], none, false, .dense⟩ := by
     funext n W vs
     apply propext
     simp [tupleFams]
@@ -28,9 +28,9 @@ value parameter. Its value-row proof feeds the argument-row proof at the same
 level, so object information is retained through the checked image. -/
 private def imageGraph : NormalGraph Nat := {
   rows := fun i => match i with
-    | 0 => [.pack ⟨[[1]], [], none, false, true⟩ []]
+    | 0 => [.pack ⟨[[1]], [], none, false, .dense⟩ []]
     | 2 => [.refs [(valueField, [4])] [] []]
-    | 3 => [.pack ⟨[[2]], [], none, false, true⟩ []]
+    | 3 => [.pack ⟨[[2]], [], none, false, .dense⟩ []]
     | _ => [.nul]
   parameterKinds := fun i => if i = 1 then some .value else
     if i = 5 then some .arguments else none }
@@ -78,7 +78,7 @@ private def nestedImage : NormalGraph Nat := {
   rows := fun i => match i with
     | 6 => [.top]
     | 8 => [.ctors [] [([], [1], [12])]]
-    | 11 => [.pack ⟨[[12]], [], none, false, true⟩ []]
+    | 11 => [.pack ⟨[[12]], [], none, false, .dense⟩ []]
     | 12 => [.refs [(valueField, [3])] [] []]
     | 13 => [.ctors [] [([], [11], [12])]]
     | _ => [.nul]
@@ -132,7 +132,7 @@ example : PositiveRules.TableOk
 /-- Core edges preserve kind: value top cannot erase an argument-list bound.
 The semantic control explains why this refusal is required. -/
 private def packTop : NormalGraph Nat := .ofRows fun
-  | 0 => [.pack ⟨[], [], none, false, true⟩ []]
+  | 0 => [.pack ⟨[], [], none, false, .dense⟩ []]
   | _ => [.top]
 example : ¬ PositiveRules.Core packTop [] [0] [1] := by
   rintro ⟨table, hm, hv⟩
@@ -150,7 +150,7 @@ example (η : MixedAssignment Nat) (n : Nat) (W : WorldT n) :
 
 /-- A callback argument may itself have an arbitrary higher-order contract. -/
 example (A B R : Fam) : ctorsT [([callsT [(undefT, [A], B)]], R)] =
-    ctorRestsT [([], Fits ⟨[callsT [(undefT, [A], B)]], [], none, false, true⟩, R)] :=
+    ctorRestsT [([], Fits ⟨[callsT [(undefT, [A], B)]], [], none, false, .dense⟩, R)] :=
   fixed_constructor_eq_rest _ _
 
 /-- The array constraint and the actuals use the same element evidence.
@@ -158,14 +158,14 @@ This holds for object-valued dependencies just as for number-valued ones. -/
 example (T : TupleF) (Bound : Fam)
     (hb : ∀ i A, positionFam T i = some A → FamLe A Bound) :
     (∀ n W vs, Fits T n W vs → ∀ v ∈ vs, Bound n W v) ∧
-    FamLe (listT T) (listT ⟨[], [], some Bound, true, T.dense⟩) :=
+    FamLe (listT T) (listT ⟨[], [], some Bound, true, T.presence⟩) :=
   ⟨fun _ _ _ h => fits_bound hb h, array_bound hb⟩
 
 /-- Recursion through a real graph pack row is guarded by the callable.
 Node 0 takes a list whose single element is itself; node 1 is the result. -/
 def recursive : PositiveGraphs.NormalGraph Nat := .ofRows fun
   | 0 => [.arrs [] [⟨[1], ([], [2]), [1], .unrestricted⟩]]
-  | 2 => [.pack ⟨[[0]], [], none, false, true⟩ []]
+  | 2 => [.pack ⟨[[0]], [], none, false, .dense⟩ []]
   | _ => [.num]
 
 example (η : MixedAssignment Nat) (n W v) :
@@ -184,7 +184,7 @@ This exercises quantified restriction and recursive negative positions together,
 using real rows for both the pack parameter and its bound. -/
 def quantified : NormalGraph Nat := {
   rows := fun i => match i with
-    | 1 => [.pack ⟨[[4]], [], none, false, true⟩ []]
+    | 1 => [.pack ⟨[[4]], [], none, false, .dense⟩ []]
     | 4 => [.arrs [⟨[3], [[0]], [3], .unrestricted⟩] []]
     | _ => [.top]
   parameterKinds := fun i => if i == 2 then some .arguments else none
@@ -213,7 +213,7 @@ The pack's bound itself mentions the outer scheme recursively. Only the inner
 scheme depends on the captured pack; neither depends on the inner value binder. -/
 private def nestedPacks : NormalGraph Nat := {
   rows := fun i => match i with
-    | 1 => [.pack ⟨[[6]], [], none, false, true⟩ []]
+    | 1 => [.pack ⟨[[6]], [], none, false, .dense⟩ []]
     | 6 => [.arrs [⟨[3], [[0]], [3], .unrestricted⟩] []]
     | _ => [.top]
   parameterKinds := fun i => if i = 2 then some .arguments else
@@ -350,7 +350,7 @@ example (η : MixedAssignment Nat) (A : ValueFamily) (P : ArgumentFamily)
     MixedFamily.ofValue, MixedFamily.ofArguments] using CallEffects.restsT_erase rest
 
 /-- Wrong argument types remain rejected. -/
-example (n W) : ¬ Fits ⟨[numT], [], none, false, true⟩ n W [.nul] := by
+example (n W) : ¬ Fits ⟨[numT], [], none, false, .dense⟩ n W [.nul] := by
   rw [fits_exact]
   simp [ArgsT, numT]
 

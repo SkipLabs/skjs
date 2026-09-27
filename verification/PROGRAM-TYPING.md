@@ -343,7 +343,10 @@ the element rest admits (`restElem_args`). The second is `pack_call_safe`: the
 actuals at the positions form a list $\tau$ admits (`restParts_pack`). The
 rest store is allocated from those actuals at the current level; the
 allocation step consumes the level (`restStore_safe`,
-`RestCalls.argument_alloc_safe`).
+`RestCalls.argument_alloc_safe`). `RestStore` checks identical element positions
+and length bounds and requires a writable result. The fresh store may use any
+presence mode: all collected positions exist. Pack metadata does not impose a
+lifetime presence contract on this allocation.
 
 A spread is read by the call once every earlier actual is a value, the store's
 elements replacing it in order, `undefined` at a hole
@@ -360,8 +363,12 @@ change what it passes (`Step.arrSpread`, `copy_safe`, `arrCopy`):
 
 $$
 \frac{\Gamma\vdash_G s:S\quad\operatorname{Spreads}_G(S,E)}
-     {\Gamma\vdash_G [{\ldots}s]:\mathsf{List}([\,],[\,],E)}
+     {\Gamma\vdash_G [{\ldots}s]:\mathsf{List}_{\pi,\mathrm{writable}}([\,],[\,],E)}
 $$
+
+Here $\pi$ is any presence mode chosen for the fresh store's lifetime contract.
+No existing location is retyped. A hole read from the source becomes a present
+`undefined` value in the copy.
 
 For a required tuple, source lowering instead reads its known positions in
 order into an ordinary array literal before evaluating later actuals. The
@@ -764,10 +771,13 @@ the store is a value the object replaces when the array grows. A `list` clause
 is one or more tuple contracts on a store: required positions, each a
 location under its family; optional positions, a hole or such a location; and a
 rest family under which any further location must be, without which there is
-none. The density flag separately rules out holes below the length.
-A sparse store constrains present optional/rest entries and keeps required
-positions present. A spread must admit `undefined` unless its store is dense
-(`SpreadsInto`); `listT_spreads` proves the missing-entry case. An index in bounds and an
+none. Presence is a separate three-way contract: dense forbids holes,
+readable requires a hole's `undefined` to satisfy its position type, and sparse
+constrains only present optional/rest entries. Required positions always exist.
+Source `T[]` means readable, uniformly in `T`; see the
+[array equations](POSITIVE-TYPES.md#arrays). A spread reads at its element type
+from either a dense or readable store. A sparse store additionally needs an
+explicit `undefined` alternative (`SpreadsInto`); `listT_spreads` proves all three cases. An index in bounds and an
 arbitrary one differ, as do a mutable and a readonly array. A readonly store carries
 element read capabilities: each location invariant implies the element type.
 Writable stores require equality and are invariant; `setElem` requires a
@@ -3270,9 +3280,11 @@ rule. Normalization and substitution must carry the effect per signature.
 No per-function global flag can justify a stronger effect on another overload.
 
 For native `map`, the realm's ordinary-construction invariant supplies the
-construction premise. An overload requiring a heap-preserving callback can
-now promises a dense result from a dense receiver; the unrestricted
-overload promises a sparse result. Both use ordinary selection and application;
+construction premise. A dense receiver and a heap-preserving callback produce
+no holes, so the qualified overload can promise the source-readable result
+`U[]` at every `U`. The allocation chooses that lifetime store contract; it does
+not force the stronger dense contract onto the result's writable store location.
+The unrestricted overload promises a sparse result. Both use ordinary selection and application;
 there is no body-inspecting `map` rule. `find`/`findIndex` similarly consume a
 qualified callback accepting `T`, or an unrestricted one accepting `T | undefined`.
 An explicitly submitted stronger effect
@@ -4188,9 +4200,9 @@ $$
      {\Gamma\vdash\mathsf{for}\ (\mathsf{const}\ x\ \mathsf{of}\ e)\ S}\ \textsc{for-of}
 $$
 
-The current native iterator contract requires a dense array receiver,
-so it yields a `T` at every index below the length. A sparse receiver does
-not satisfy that contract. Array patterns read positions under the same trust
+The native iterator requires a readable array receiver, so every in-bounds
+read yields `T`, including a hole when `T` admits `undefined`. A sparse store
+needs a separate proof of readability before it satisfies that contract. Array patterns read positions under the same trust
 ([patterns](#patterns)).
 
 An argument spread `f(…, ...e, …)` over an iterable of one of the other kinds

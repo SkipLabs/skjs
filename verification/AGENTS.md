@@ -223,6 +223,15 @@ separate review obligations, even when every Lean proof and suite passes.
   explicitly. Changing an expected result requires inspecting its cause;
   passing tests after reclassification does not close the corresponding goal.
 
+Array presence is separate from read/write capability. Source `T[]` means
+readable elements uniformly in `T`, including after generic substitution; never
+special-case `unknown[]` by spelling. Dense storage and a readable contract are
+distinct when `T` admits `undefined`. Fresh allocation may choose a readable
+lifetime store contract even when its initial contents are dense. An existing
+writable store location cannot change its contract to exploit that fact.
+Preserve the presence mode through every graph/claim mapping and distinguish
+array-store metadata from argument packs, which hold values and have no holes.
+
 For inferred callable effects, follow the
 [elaboration/certification boundary](DESIGN.md#inferred-call-effects-elaboration-and-certification).
 Annotation translation must not strengthen an ordinary arrow. Producer inference

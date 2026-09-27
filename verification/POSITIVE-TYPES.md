@@ -297,23 +297,46 @@ Lean: `ArrayRealm`, `anyStoreT`, `arrayInvariant`, `realmInvariant`, `rowSem`
 An array is a value $\mathsf{arr}(\vec l)$ over a list of element locations.
 A `list` clause holds one or more **tuple contracts** $\tau$, each with
 required positions $\vec R$, optional positions $\vec O$, an optional rest
-$E$, a readonly flag, and a density flag $d$. An array meets a contract when its length is within
-the contract's bounds and each present element's location has a contract that
-agrees with the position's type, or, for a readonly contract, implies it.
-Every contract of the clause constrains the same array. Required positions
-must be present. Optional/rest positions constrain present entries; when
-$d$ is true every position below the length must also be present:
+$E$, a readonly flag, and a presence mode: **dense**, **readable**, or **sparse**.
+Length bounds and required positions are independent of this mode. Each
+present element has a location whose fixed contract agrees with its position's
+type, or implies it for a readonly view. Every contract constrains the same store.
+
+Writing $A_i$ for the family at position $i$, the additional presence condition is
 
 $$
-\mathsf{List}_\tau(W,\mathsf{arr}(\vec\ell))
-\iff \mathsf{Bounds}_\tau(\vec\ell) \land
-\mathsf{RequiredPresent}_\tau(\vec\ell) \land
-\mathsf{PresentContracts}_\tau(W,\vec\ell) \land
-(d \Rightarrow \mathsf{none}\notin\vec\ell).
+\begin{aligned}
+\mathsf{Presence}_{\rm dense}(\tau,\vec\ell,j)
+  &\iff \mathsf{none}\notin\vec\ell,\\
+\mathsf{Presence}_{\rm sparse}(\tau,\vec\ell,j)&\iff\top,\\
+\mathsf{Presence}_{\rm readable}(\tau,\vec\ell,j)
+  &\iff\forall i.\;\vec\ell[i]=\mathsf{none}
+       \Rightarrow\forall U\in\mathsf{World}_j.\;A_i(j,U,\mathsf{undefined}).
+\end{aligned}
 $$
 
-Density is independent of readonly. A sparse store cannot be strengthened to
-a dense one merely by giving up writes.
+Thus the complete store interpretation at observation depth $k$ is
+
+$$
+\mathsf{List}_\tau(k,W,\mathsf{arr}(\vec\ell))
+\iff \mathsf{Bounds}_\tau(\vec\ell)\land
+\mathsf{RequiredPresent}_\tau(\vec\ell)\land
+\mathsf{PresentContracts}_\tau(k,W,\vec\ell)\land
+\forall j<k.\;\mathsf{Presence}_{\tau.\mathsf{presence}}(\tau,\vec\ell,j).
+$$
+
+Presence is guarded at the same depth as element contracts, preserving the
+contractiveness of recursive types. At depth zero there is no element observation;
+physical density follows at every positive depth for a dense contract.
+
+Source `T[]`, `Array<T>` and their readonly forms use **readable**. A hole is
+therefore permitted by `unknown[]` or `(number | undefined)[]`, but not by
+`number[]`. This definition uses the element family, so it commutes with generic
+substitution. It is not a special case for the spelling `unknown`. Tuple source
+syntax retains dense presence; its required positions always exist in every mode.
+Fresh literals and spread copies can establish physical density. A native such as
+unrestricted `map` can promise sparse storage without promising safe reads at its
+result element type. Presence remains independent of readonly capability.
 
 Lean: `listT`, `SlotContract` (`Types/Types.lean`).
 
@@ -826,15 +849,20 @@ present at its position's type, so it is covered as a pack is, below
 (`CoversTuple`): an element's location has the contract of its source
 position, which reads within the target position's type, and the list's
 length lies within the target's bounds. Both store rules additionally require
-$d' \Rightarrow d$ (a dense target needs a dense source); argument packs
-hold values and do not use this heap-presence flag:
+$\mathsf{PresenceCovers}(\Delta,\tau,\tau')$ (`CoversPresence`): dense covers
+all modes; every mode covers sparse; readable covers readable by the element
+coverage; sparse covers readable when each target position admits `undefined`;
+readable covers dense when every source position excludes `undefined`.
+The last two are checked conservatively from actual clause rows. A rigid
+parameter is never mistaken for an empty type. Argument packs hold values
+and have no holes, so presence has no effect on their interpretation:
 
 $$
-\frac{(d'\Rightarrow d)\quad\tau'\ \text{writable}\quad\tau\ \text{writable}\quad|\vec R|=|\vec R'|\quad|\vec O|=|\vec O'|\quad
+\frac{\mathsf{PresenceCovers}(\Delta,\tau,\tau')\quad\tau'\ \text{writable}\quad\tau\ \text{writable}\quad|\vec R|=|\vec R'|\quad|\vec O|=|\vec O'|\quad
       \forall i.\;\Delta^{\pm}(\mathsf{pos}_\tau(i),\mathsf{pos}_{\tau'}(i))}
      {\Delta\vdash\tau\sqsubseteq_{\mathsf{list}}\tau'}
 \qquad
-\frac{(d'\Rightarrow d)\quad\tau'\ \text{readonly}\quad\Delta\vdash\tau\sqsubseteq_{\mathsf{pack}}\tau'}
+\frac{\mathsf{PresenceCovers}(\Delta,\tau,\tau')\quad\tau'\ \text{readonly}\quad\Delta\vdash\tau\sqsubseteq_{\mathsf{pack}}\tau'}
      {\Delta\vdash\tau\sqsubseteq_{\mathsf{list}}\tau'}
 $$
 

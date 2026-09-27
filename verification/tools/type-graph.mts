@@ -4,6 +4,14 @@
  * simultaneous requirements (including all arrows of an overload).
  */
 import type { PropertyKey } from "./declaration-types.mts";
+/** Physical density and a safe in-bounds read are distinct guarantees. */
+export type ArrayPresence = "dense" | "readable" | "sparse";
+export function isArrayPresence(value: unknown): value is ArrayPresence {
+  return value === "dense" || value === "readable" || value === "sparse";
+}
+export function presencePrefix(value: ArrayPresence): string {
+  return value === "readable" ? "" : `${value} `;
+}
 export type Labels = number[];
 /** A signature: the receiver a call may pass, then the parameters and the
  * result. A signature indifferent to its receiver names an unknown row. */
@@ -41,7 +49,7 @@ export type Tuple = {
   optional: Labels[];
   rest: Labels | null;
   readonly: boolean;
-  dense: boolean;
+  presence: ArrayPresence;
 };
 export type Clause =
   | "nul"
@@ -290,8 +298,8 @@ export function decodeGraph(value: unknown): TypeGraph {
       array(r.keys).forEach((k) => key(k, "a key in a bound"));
     });
   const tuple = (v: unknown) => {
-    const t = obj(v, ["required", "optional", "rest", "readonly", "dense"]);
-    if (typeof t.dense !== "boolean") throw Error("invalid tuple density flag");
+    const t = obj(v, ["required", "optional", "rest", "readonly", "presence"]);
+    if (!isArrayPresence(t.presence)) throw Error("invalid tuple density flag");
     if (typeof t.readonly !== "boolean")
       throw Error("invalid tuple readonly flag");
     array(t.required).forEach(labels);
@@ -462,7 +470,7 @@ const arrowText = ({receiver, arguments: domains, result, effect}: Arrow) =>
 const restArrowText = ({receiver, arguments: [domains, rest], result, effect}: RestArrow) =>
   `(${[receiverText(receiver), ...domains.map(printLabels), `...${printLabels(rest)}`].join(", ")}) => ${printLabels(result)}${effectText(effect)}`;
 const printTuple = (t: Tuple) =>
-  `${t.dense ? "" : "sparse "}${t.readonly ? "readonly " : ""}[${[
+  `${presencePrefix(t.presence)}${t.readonly ? "readonly " : ""}[${[
     ...t.required.map(printLabels),
     ...t.optional.map((l) => `${printLabels(l)}?`),
     ...(t.rest ? [`...${printLabels(t.rest)}[]`] : []),

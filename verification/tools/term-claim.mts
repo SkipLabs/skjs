@@ -33,10 +33,10 @@ export function claimOfTerm(term: TypeTerm): ClaimType {
       return one({ ...head, and: rest.filter(a => a !== undefined) });
     }
     case "array":
-      return one({ a: "array", dense: term.dense, required: [], optional: [], rest: claimOfTerm(term.element),
+      return one({ a: "array", presence: term.presence, required: [], optional: [], rest: claimOfTerm(term.element),
         readonly: term.readonly });
     case "tuple":
-      return one({ a: "array", dense: term.dense, required: term.required.map(claimOfTerm),
+      return one({ a: "array", presence: term.presence, required: term.required.map(claimOfTerm),
         optional: term.optional.map(claimOfTerm),
         rest: term.rest ? claimOfTerm(term.rest) : null, readonly: term.readonly });
     case "function":
