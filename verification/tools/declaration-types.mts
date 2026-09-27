@@ -1,3 +1,4 @@
+import type { CallEffect } from "./type-graph.mts";
 /** The declaration document shared by the source parser, the Fragment AST
  * and readers. TypeScript's checker, under the source's configured project,
  * decides which declaration each name denotes; the document records the source
@@ -60,7 +61,7 @@ export type TypeTerm =
       numberIndex?: { readonly: boolean; value: TypeTerm; span: Span };
       symbolIndex?: { readonly: boolean; value: TypeTerm; span: Span };
       calls: Extract<TypeTerm, { k: "function" }>[]; span: Span; prototype?: TypeTerm }
-  | { k: "function"; receiver: TypeTerm | null; params: TypeTerm[];
+  | { k: "function"; effect: CallEffect; receiver: TypeTerm | null; params: TypeTerm[];
       rest: TypeTerm | null; result: TypeTerm; span: Span }
   /** `new (params) => result`: a construct signature, which a class meets and
    * no plain function does; `rest` as a function's, or null. */

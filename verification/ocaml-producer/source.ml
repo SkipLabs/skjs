@@ -157,7 +157,10 @@ let rec source_type ctx j =
       | Null -> None,None
       | t when is_pack t -> None,Some (source_pack ctx (field "of" t))
       | t -> Some (recur t),None in
-    let signature = {call_effect=Unrestricted;quantified=[];receiver;
+    let call_effect = match text "effect" j with
+      | "unrestricted" -> Unrestricted | "preservesInputHeap" -> PreservesInputHeap
+      | _ -> unsupported "unknown callable effect" in
+    let signature = {call_effect;quantified=[];receiver;
       params=List.map recur (items "params" j);
       variadic;rest_pack;
       result=recur (field "result" j)} in

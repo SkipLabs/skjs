@@ -602,10 +602,13 @@ method is dropped. This matters in result and writable positions: forgetting
 a contract there would certify a value that does not satisfy its annotation.
 
 Native contracts are reviewed separately from their TypeScript declarations.
-`find` and `findIndex` callbacks receive `T | undefined`: a prior callback can
+Unrestricted `find` and `findIndex` callbacks receive `T | undefined`: a prior callback can
 shrink even an initially dense array through another reference, while these
 methods visit the original index range. `map` visits only present indices,
-but shrinking its source can leave holes in its result.
+but shrinking its source can leave holes in its result. Separate overloads consume
+a certified `preservesInputHeap` callback: `find`/`findIndex` can then pass `T`,
+and `map` can promise a dense result from its dense receiver. These are ordinary
+qualified callback types, including when the callback is returned or bound.
 
 **Ordinary array construction is part of the admitted semantics.** An array
 owns no `constructor` key, and the realm's `Array.prototype.constructor`,
@@ -621,7 +624,7 @@ structural alias or write. The fragment also refuses custom species definitions,
 array subclass construction and the unreviewed prototype-changing APIs. It
 continues to allow an ordinary record's own `constructor` field. Standard native
 construction therefore needs no extra promise on each callback. `map` returns
-a sparse array of its callback's result type; `filter` and `slice` create ordinary
+a sparse array of its unrestricted callback's result type; `filter` and `slice` create ordinary
 arrays. Density after a callback is still a separate obligation.
 
 The runtime controls beside `ordinary-array-construction` deliberately violate
@@ -646,7 +649,7 @@ longer brings in unrelated Promise declarations.
 
 ### Inferred call effects: elaboration and certification
 
-**Certification and initial inference integrated; composition and native overloads remain open.**
+**Certification, initial inference and native overloads are integrated; body composition remains open.**
 `CallEffects.lean` supplies the semantic foundation. Qualified signatures now
 flow through the type graph, source claims and the executable acceptance checker.
 A proposed heap-preserving closure must pass both ordinary safety and the body
@@ -867,7 +870,7 @@ throw, which safety admits, but never return a wrong value.
 | An ambient declaration (`declare function`, `declare const`, `declare class`) holds of the value the environment supplies under that name; the declaration document lists it with the specifier `ambient`. | `AMBIENT`; `collectDeclarations` |
 | A global variable outside the standard library (Node's `process`) meets its declaration at the members and calls the module selects, from the project's type packages, and no code the module does not see reassigns it. | `GLOBAL`; `selectGlobal` |
 | Each standard library global meets its reviewed overlay entry: `console.log`; `BigInt`; `Symbol`, `Symbol.for`, `Symbol.keyFor` and five well-known symbols; `String` of a primitive; `Object.keys`, `Object.values`, `Object.entries` (and the generic two at a dictionary); `new Array()`; `Array.isArray` and `Array` as `instanceof`'s operand; `new Error(m)`; `new Set`, `new Map` of an array, `new Date` of nothing, a primitive or components, `Date.now`; the `Promise` statics and constructor, through the intrinsics below; `JSON.parse` of a string and `JSON.stringify` of a `JsonValue`. | `globalsOverlay` in `tools/library-globals.mts`; [rules](PROGRAM-TYPING.md#library-globals) |
-| `Array.prototype` meets `ArrayProto`: its natives `forEach`, `map`, `reduce` and `reduceRight` (with an initial value), `every`, `some`, `filter`, `slice`, `join`, `indexOf`, `lastIndexOf`, `includes`, `at`, `find`, `findIndex`, `sort`, `push`, `pop`, `shift`, `unshift`, `reverse` and `[Symbol.iterator]` meet the reviewed overlay contracts, at the listed receiver, without `thisArg`; result construction uses the ordinary-array invariant; `map` promises a sparse result; `find`/`findIndex` admit missing callback values, and `join` and default `sort` restrict elements to primitives; comparator sorting checks the supplied callback. Units allocating arrays read it from the input slot `[[Array.prototype]]`. | `overlay` in `tools/array-prototype.mts` |
+| `Array.prototype` meets `ArrayProto`: its natives `forEach`, `map`, `reduce` and `reduceRight` (with an initial value), `every`, `some`, `filter`, `slice`, `join`, `indexOf`, `lastIndexOf`, `includes`, `at`, `find`, `findIndex`, `sort`, `push`, `pop`, `shift`, `unshift`, `reverse` and `[Symbol.iterator]` meet the reviewed overlay contracts, at the listed receiver, without `thisArg`; result construction uses the ordinary-array invariant; `map` promises a sparse result for unrestricted callbacks and a dense result for certified heap-preserving callbacks; `find`/`findIndex` admit missing callback values unless the callback has that guarantee, and `join` and default `sort` restrict elements to primitives; comparator sorting checks the supplied callback. Units allocating arrays read it from the input slot `[[Array.prototype]]`. | `overlay` in `tools/array-prototype.mts` |
 | `String.prototype`, `Number.prototype`, `BigInt.prototype` and `Boolean.prototype` meet `StringProto`, `NumberProto`, `BigIntProto` and `BooleanProto`, each member an own property of that prototype (`split`, `replace`, `replaceAll` stated at a string pattern; `toLocaleString` without `options`), read from the slot `[[String.prototype]]` and so on. | `primitiveOverlay` in `tools/array-prototype.mts` |
 | `Set.prototype`, `Map.prototype` and `Date.prototype` hold the listed natives, unmodified (`keys`, `values` and `entries` giving a host iterator of the collection). | `interfaceOverlay` in `tools/array-prototype.mts` |
 | The intrinsics meet their signatures: `%Await%` yields what a promise settles to or throws its rejection; `%AsyncReturn%` and `%AsyncComplete%` settle an async function's promise to a primitive or `undefined` (also `Promise.resolve`); `%PromiseAll%` (`Promise.all`), `%PromiseReject%` (`Promise.reject`), `%NewPromise%` (`new Promise`, calling its executor at once); `%Iterate%` steps an array's iterator, reading the current length at each step; `%Iterate:string%` a string's, by code point; `%Iterate:Set%` a `Set`'s, in insertion order; `%Iterate:Map%` a `Map`'s, a fresh `[key, value]` array per entry; `%Iterate:Iterator%` a `SetIterator` or `MapIterator`, which is its own iterator; none of these iterators has a `return`; `%Spread:K%` is the fresh array of what `%Iterate:K%`'s step yields until it ends; `%RestFrom:k%` is the fresh array of an array's elements from `k` to its current length, as its iterator yields them after a pattern's `k` elements; `%ForIn%` gives the keys a `for...in` visits, strings; `%HasProperty%` answers `k in o` for a key TypeScript types as other than string literals, as the host's lookup does; `%ElementAt%` reads `xs[k]` of an array at a `number` key as the host does: the element at an index below the length, an own property at another numeric key, else `undefined`. The job queue and a promise that never settles are not modelled. | `tools/intrinsics.mts`; [async](PROGRAM-TYPING.md#async-functions-and-await) |
@@ -1163,11 +1166,15 @@ positive sources as the targets. The work is split by semantic obligation:
    annotations remain unrestricted. Reads, allocation, nested calls and rest
    array wrappers still get conservative unrestricted proposals until the body
    checker supports their composition.
-   Remaining integration: extend the compositional effect checker; add the
-   audited dense native overloads and located effect obligations;
-   exercise propagation through named/returned callbacks, then remeasure the
-   original targets. No source coverage gain is claimed from the contract
-   migration alone.
+   Native `map` and `find`/`findIndex` now have qualified overloads alongside
+   their unrestricted fallbacks. `array-methods`, `array-library` and
+   `array-generic-name` verify again without source changes. `callback-effects`
+   exercises returned and bound callbacks through the same types. Instantiation
+   matches clause metadata (including effects and density), not only operands,
+   so it cannot discard the applicable fallback after matching the wrong overload.
+   Remaining integration: extend the compositional effect checker, add located
+   effect obligations, and remeasure the original census targets. The curated
+   `closure-contextual-parameters` still needs reads and qualified-call composition.
 4. **Default object conversion.** Restore the tuple-valued default-sort examples
    only with a contract covering actual conversion dispatch, including
    `Symbol.toPrimitive`, `toString`, and prototype lookup. A tuple's numeric

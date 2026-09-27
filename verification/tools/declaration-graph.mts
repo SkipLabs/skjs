@@ -1675,7 +1675,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
             if (call.arguments.length > stated.params.length || call.arguments.some(ts.isSpreadElement))
               throw Error(`${what} is read with at most ${stated.params.length} argument(s)`);
           const at = spanOf(overload);
-          const form: FunctionTerm = { k: "function", receiver: { k: "self", span: at }, params: stated.params,
+          const form: FunctionTerm = { k: "function", effect: "unrestricted", receiver: { k: "self", span: at }, params: stated.params,
             rest: null, result: stated.result, span: at };
           // A generic statement is a scheme over its binders, as a generic
           // interface method is.

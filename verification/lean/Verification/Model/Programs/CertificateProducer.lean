@@ -291,6 +291,15 @@ def matchRow [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap �
       if xs.length = ys.length then
         (xs.zip ys).foldlM (fun st xy => matchRow G bs V fuel st κ xy.1 xy.2) st
       else none
+    -- Instantiation replaces operands, not effects, density, field keys or
+    -- other clause structure. Check that structure before selecting an
+    -- overload: matching operands alone can choose a wrong first candidate
+    -- and hide a valid later signature from the independent checker.
+    let clauses (st : InstState ι) (κ : Ctx ι)
+        (a b : Clause (List ι)) : Option (InstState ι) :=
+      if a.map (fun _ => ()) == b.map (fun _ => ()) then
+        pairs st κ a.operands b.operands
+      else none
     match S with
     | [p] =>
       match entryImg st.table κ p with
@@ -342,13 +351,13 @@ def matchRow [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap �
                 let rs := r :: G.meetParams j
                 if Us.all (fun U => rs.any (U == [·])) ∧ rs.all (fun r => Us.contains [r]) ∧
                     ds.length = cs.length then
-                  (cs.zip ds).foldlM (fun st cd => pairs st κ cd.1.operands cd.2.operands)
+                  (cs.zip ds).foldlM (fun st cd => clauses st κ cd.1 cd.2)
                     (add st p [j])
                 else none
               | some _, none => fixed (add st p [j])
             | none =>
               if (G p).length = (G j).length then
-                ((G p).zip (G j)).foldlM (fun st cd => pairs st κ cd.1.operands cd.2.operands)
+                ((G p).zip (G j)).foldlM (fun st cd => clauses st κ cd.1 cd.2)
                   (add st p [j])
               else none
           | _, _ => none

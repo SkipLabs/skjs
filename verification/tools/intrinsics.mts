@@ -86,7 +86,7 @@ const binder: TypeTerm = { k: "binder", name: "T", span };
 const other: TypeTerm = { k: "binder", name: "U", span };
 const either = (...parts: TypeTerm[]): TypeTerm => ({ k: "union", span, parts });
 const fn = (params: TypeTerm[], result: TypeTerm): Signature =>
-  ({ k: "function", receiver: null, params, rest: null, result, span });
+  ({ k: "function", effect: "unrestricted", receiver: null, params, rest: null, result, span });
 /** The values no object is: a promise resolved with one settles to it. */
 const primitives: AtomName[] = ["null", "undefined", "boolean", "number", "string", "bigint", "symbol"];
 const primitive: TypeTerm = { k: "union", span, parts: primitives.map(atom) };

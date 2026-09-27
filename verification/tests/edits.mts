@@ -208,7 +208,7 @@ export function sourceType(type: ClaimType): TypeTerm {
           : { k: "tuple", dense: a.dense, readonly: a.readonly, required: a.required.map(sourceType),
               optional: a.optional.map(sourceType), rest: a.rest ? sourceType(a.rest) : null, span };
       case "function":
-        return { k: "function", receiver: a.this.top ? null : sourceType(a.this),
+        return { k: "function", effect: "unrestricted", receiver: a.this.top ? null : sourceType(a.this),
           params: a.params.map(sourceType), rest: a.rest ? sourceType(a.rest) : null,
           result: sourceType(a.result), span };
       case "record":

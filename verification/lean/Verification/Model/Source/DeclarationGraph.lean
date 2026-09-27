@@ -696,16 +696,16 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
       -- keeps growing (`Promise<T>`'s `catch<R>` returns `Promise<T | R>`),
       -- refuses the declaration: failure is never recovered as a weaker type.
       let sigs ← sigTerms.toList.mapM fun f => do
-        CellClaims.fieldsExactly f ["k", "receiver", "params", "rest", "result", "span"]
+        CellClaims.fieldsExactly f ["k", "receiver", "params", "rest", "result", "effect", "span"]
         let recv ← lowerType ds owner params inner (← field f "receiver")
         let ps ← (← arr f "params").toList.mapM (lowerType ds owner params inner)
         let restTerm ← field f "rest"
         let rest ← if restTerm == .null then pure none else
           some <$> lowerRest ds owner params inner restTerm
         let res ← lowerType ds owner params inner (← field f "result")
-        return (recv, ps, rest, res)
-      let fixed := sigs.filterMap fun (r, ps, rest, res) => if rest.isNone then some (⟨r, ps, res, .unrestricted⟩ : Arrow (List Nat)) else none
-      let rests := sigs.filterMap fun (r, ps, rest, res) => rest.map fun P => (⟨r, (ps, P), res, .unrestricted⟩ : RestArrow (List Nat))
+        return (recv, ps, rest, res, (← fromJson? (← field f "effect") : CallEffects.Effect))
+      let fixed := sigs.filterMap fun (r, ps, rest, res, effect) => if rest.isNone then some (⟨r, ps, res, effect⟩ : Arrow (List Nat)) else none
+      let rests := sigs.filterMap fun (r, ps, rest, res, effect) => rest.map fun P => (⟨r, (ps, P), res, effect⟩ : RestArrow (List Nat))
       return [← schemeRow rows fixed bounds rests]
   | "binder" =>
     CellClaims.fieldsExactly term ["k", "name", "span"]
@@ -776,7 +776,7 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     let store ← use (.list ⟨required.toList, optional.toList, rest, readonly, ← bool term "dense"⟩ [])
     return [← use (SourceTypes.arrayClause (← arrayExcludedKeys ds) store readonly)]
   | "function" =>
-    CellClaims.fieldsExactly term ["k", "receiver", "params", "rest", "result", "span"]
+    CellClaims.fieldsExactly term ["k", "receiver", "params", "rest", "result", "effect", "span"]
     let recv ← field term "receiver"
     let receiver ← if recv == .null then pure [← use .top] else
       lowerType ds owner params seen recv
@@ -785,9 +785,10 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     let rest ← if restTerm == .null then pure none else
       some <$> lowerRest ds owner params seen restTerm
     let result ← lowerType ds owner params seen (← field term "result")
+    let effect : CallEffects.Effect ← fromJson? (← field term "effect")
     let row : Clause (List Nat) := match rest with
-      | none => .arrs [⟨receiver, domains.toList, result, .unrestricted⟩] []
-      | some P => .arrs [] [⟨receiver, (domains.toList, P), result, .unrestricted⟩]
+      | none => .arrs [⟨receiver, domains.toList, result, effect⟩] []
+      | some P => .arrs [] [⟨receiver, (domains.toList, P), result, effect⟩]
     return [← use row]
   | "constructor" =>
     CellClaims.fieldsExactly term ["k", "params", "rest", "result", "span"]
@@ -859,12 +860,13 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
         let mut calls : List (MethodArrow (List Nat)) := []
         let mut rests : List (MethodRestArrow (List Nat)) := []
         for form in forms do
-          CellClaims.fieldsExactly form ["k", "receiver", "params", "rest", "result", "span"]
+          CellClaims.fieldsExactly form ["k", "receiver", "params", "rest", "result", "effect", "span"]
           let domains ← (← arr form "params").mapM (lowerType ds owner params seen)
           let rest ← field form "rest"
           let result ← lowerType ds owner params seen (← field form "result")
-          if rest == .null then calls := calls ++ [⟨(), domains.toList, result, .unrestricted⟩]
-          else rests := rests ++ [⟨(), (domains.toList, ← lowerRest ds owner params seen rest), result, .unrestricted⟩]
+          let effect : CallEffects.Effect ← fromJson? (← field form "effect")
+          if rest == .null then calls := calls ++ [⟨(), domains.toList, result, effect⟩]
+          else rests := rests ++ [⟨(), (domains.toList, ← lowerRest ds owner params seen rest), result, effect⟩]
         methods := methods ++ [⟨name, calls, rests, []⟩]
       | none =>
         match (if optional then none else schemeMethod ty) with
@@ -897,7 +899,7 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     let mut fixed : List (Arrow (List Nat)) := []
     let mut variadic : List (RestArrow (List Nat)) := []
     for call in ← arr term "calls" do
-      CellClaims.fieldsExactly call ["k", "receiver", "params", "rest", "result", "span"]
+      CellClaims.fieldsExactly call ["k", "receiver", "params", "rest", "result", "effect", "span"]
       if (← str call "k") != "function" then throw "call signature is not a function"
       let recv ← field call "receiver"
       let receiver ← if recv == .null then pure [← use .top] else
@@ -905,10 +907,11 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
       let domains ← (← arr call "params").mapM (lowerType ds owner params seen)
       let rest ← field call "rest"
       let result ← lowerType ds owner params seen (← field call "result")
-      if rest == .null then fixed := fixed ++ [⟨receiver, domains.toList, result, .unrestricted⟩]
+      let effect : CallEffects.Effect ← fromJson? (← field call "effect")
+      if rest == .null then fixed := fixed ++ [⟨receiver, domains.toList, result, effect⟩]
       else
         variadic := variadic ++ [⟨receiver, (domains.toList,
-          ← lowerRest ds owner params seen rest), result, .unrestricted⟩]
+          ← lowerRest ds owner params seen rest), result, effect⟩]
     if hidden.isSome && (!fixed.isEmpty || !variadic.isEmpty || !indexes.isEmpty) then
       throw "a prototype of hidden members is stated of a plain record only"
     let row ← if fixed.isEmpty && variadic.isEmpty then
@@ -1234,7 +1237,9 @@ private partial def rigidClaim (ds : Array Definition) (owner : Nat) (env : Arra
     if parts.any isTopClaim then return topClaim
     return claimType (parts.toList.flatMap claimAtoms)
   | "function" =>
-    CellClaims.fieldsExactly term ["k", "receiver", "params", "rest", "result", "span"]
+    CellClaims.fieldsExactly term ["k", "receiver", "params", "rest", "result", "effect", "span"]
+    if (← str term "effect") != "unrestricted" then
+      throw "a qualified callable annotation requires graph lowering"
     let recv ← field term "receiver"
     let receiver ← if recv == .null then pure topClaim else rigidClaim ds owner env seen recv
     let params ← (← arr term "params").mapM (rigidClaim ds owner env seen)
@@ -1427,7 +1432,9 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
     return arrayClaim (← (← arr term "required").mapM recur).toList
       (← (← arr term "optional").mapM recur).toList rest (← bool term "readonly") (← bool term "dense")
   | "function" =>
-    CellClaims.fieldsExactly term ["k", "receiver", "params", "rest", "result", "span"]
+    CellClaims.fieldsExactly term ["k", "receiver", "params", "rest", "result", "effect", "span"]
+    if (← str term "effect") != "unrestricted" then
+      throw "a qualified callable annotation requires graph lowering"
     let recv ← field term "receiver"
     let receiver ← if recv == .null then pure topClaim else recur recv
     let params ← (← arr term "params").mapM recur

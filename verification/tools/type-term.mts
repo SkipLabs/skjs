@@ -571,7 +571,7 @@ export function signatures(scope: TermScope, parameters: readonly ts.ParameterDe
   }
   const resultTerm = given ?? typeTerm(scope, result, at);
   return (alternatives ?? [[]]).map(positions =>
-    ({ k: "function", receiver, params: [...params, ...positions], rest, result: resultTerm, span }));
+    ({ k: "function", effect: "unrestricted", receiver, params: [...params, ...positions], rest, result: resultTerm, span }));
 }
 
 /** Several signatures as one term: their intersection, which a value meets by

@@ -13,6 +13,11 @@ accepted functions (87.7%).** 285 of the 377 files with an accepted unit
 verify entirely. There are 73 principled refusals, 10 registered SKJS-unsound
 units, 184 gaps and 8 refusals not explained by the automatic classifier.
 
+Since that measured checkpoint, certified callback-effect overloads restore the
+curated `array-methods`, `array-library` and `array-generic-name` cases. Returned
+and bound callbacks are also covered. The full census has not yet been remeasured;
+the counts and census-specific outcomes below describe the checkpoint.
+
 The user-approved semantics excludes custom array construction, including in
 external code: arrays own no `constructor`, and standard constructor/species
 behavior is preserved across calls. The array contract and realm invariant

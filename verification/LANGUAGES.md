@@ -62,6 +62,11 @@ contracts. A qualified producer claim additionally requires checked definition
 evidence. The viewer currently preserves qualified signatures as exact editable
 JSON; the ordinary arrow text syntax cannot silently erase their effect.
 
+Declaration-graph function terms also require `effect`: source TypeScript
+annotations state `unrestricted`, while the reviewed native overlay can demand
+a qualified callback. Graph lowering retains the field; conversion to the older
+unqualified `Claim` arrow refuses a stronger effect rather than forgetting it.
+
 Defining no language, and saying so: [Decode.lean](lean/Verification/Model/Types/Decode.lean)
 (source spans and JSON accessors several decoders share) and [span.mts](tools/span.mts).
 

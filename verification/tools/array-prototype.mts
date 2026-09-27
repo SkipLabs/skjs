@@ -75,9 +75,15 @@ const primitiveElements: TypeTerm = { k: "union", span: at, parts:
    atomOf("undefined"), atomOf("bigint"), atomOf("symbol")] };
 const element: TypeTerm = { k: "binder", name: "T", span: at };
 const maybeElement: TypeTerm = { k: "union", parts: [element, atomOf("undefined")], span: at };
-const findingCallback: TypeTerm = { k: "function", receiver: null, rest: null, span: at,
-  params: [maybeElement, atomOf("number"), { k: "array", dense: true, readonly: true, element, span: at }],
-  result: atomOf("unknown") };
+const arrayOf = (value: TypeTerm, readonly: boolean, dense = true): TypeTerm =>
+  ({ k: "array", dense, readonly, element: value, span: at });
+const callback = (value: TypeTerm, result: TypeTerm,
+    effect: "unrestricted" | "preservesInputHeap"): TypeTerm =>
+  ({ k: "function", effect, receiver: null, rest: null, span: at,
+     params: [value, atomOf("number"), arrayOf(element, true)], result });
+const findingCallback = callback(maybeElement, atomOf("unknown"), "unrestricted");
+const preservingFind = callback(element, atomOf("unknown"), "preservesInputHeap");
+const mappedElement: TypeTerm = { k: "binder", name: "U", span: at };
 
 export const overlay: readonly OverlayEntry[] = [
   { name: "forEach", from: "ReadonlyArray",
@@ -85,10 +91,16 @@ export const overlay: readonly OverlayEntry[] = [
     drop: ["thisArg"] },
   { name: "map", from: "ReadonlyArray",
     signature: "map<U>(callbackfn: (value: T, index: number, array: readonly T[]) => U, thisArg?: any): U[];",
-    // Reentrant callbacks can shrink the source; map preserves the original
-    // length but only visited positions are present in its fresh result.
-    drop: ["thisArg"], result: { k: "array", dense: false, readonly: false,
-      element: { k: "binder", name: "U", span: at }, span: at } },
+    // Under ordinary construction, a callback preserving the input heap
+    // leaves every original source position present throughout traversal.
+    // The unrestricted contract admits reentrancy and only promises presence
+    // at visited positions. Both are ordinary per-signature call contracts.
+    stated: [
+      { params: [callback(element, mappedElement, "preservesInputHeap")],
+        result: arrayOf(mappedElement, false) },
+      { params: [callback(element, mappedElement, "unrestricted")],
+        result: arrayOf(mappedElement, false, false) },
+    ] },
   // Only the overload with an initial value. The one without, `reduce(cb)`,
   // is a second signature of the member beside the generic `reduce<U>`,
   // and a prototype member is read as one scheme with one signature
@@ -121,10 +133,12 @@ export const overlay: readonly OverlayEntry[] = [
   { name: "at", from: "ReadonlyArray", signature: "at(index: number): T | undefined;" },
   { name: "find", from: "ReadonlyArray",
     signature: "find(predicate: (value: T, index: number, obj: readonly T[]) => unknown, thisArg?: any): T | undefined;",
-    stated: [{ params: [findingCallback], result: maybeElement }] },
+    stated: [{ params: [preservingFind], result: maybeElement },
+      { params: [findingCallback], result: maybeElement }] },
   { name: "findIndex", from: "ReadonlyArray",
     signature: "findIndex(predicate: (value: T, index: number, obj: readonly T[]) => unknown, thisArg?: any): number;",
-    stated: [{ params: [findingCallback], result: atomOf("number") }] },
+    stated: [{ params: [preservingFind], result: atomOf("number") },
+      { params: [findingCallback], result: atomOf("number") }] },
   // Mutators take a mutable array.
   { name: "sort", from: "Array",
     signature: "sort(compareFn?: (a: T, b: T) => number): this;",
@@ -132,7 +146,7 @@ export const overlay: readonly OverlayEntry[] = [
     // An explicit comparator avoids element coercion. Omitted/undefined
     // comparison instead requires a primitive read view of the receiver.
     stated: [
-      { params: [{ k: "function", receiver: null, params: [element, element], rest: null,
+      { params: [{ k: "function", effect: "unrestricted", receiver: null, params: [element, element], rest: null,
           result: atomOf("number"), span: at }],
         result: { k: "array", dense: true, readonly: false, element, span: at } },
       { receiver: { k: "intersection", parts: [
@@ -424,7 +438,7 @@ function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: P
       ? library.reference(interfaceOf(entry.resultAs), [{ k: "binder", name: "T", span }], span)
       : entry.resultIsReceiver ? receiver : undefined);
     const forms = entry.stated
-      ? entry.stated.map(f => ({ k: "function", receiver: f.receiver ?? null,
+      ? entry.stated.map(f => ({ k: "function", effect: "unrestricted", receiver: f.receiver ?? null,
           params: f.params, rest: null, result: f.result,
           span } satisfies Extract<TypeTerm, { k: "function" }>))
       : signatures(scope, parameters, entry.resultAs ? undefined : member.type, member, span, false, stated);

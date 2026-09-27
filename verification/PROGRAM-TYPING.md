@@ -3208,7 +3208,7 @@ Json (`invalid-sum-sound-binding-constructor.ts`).
 ### Certifying inferred call effects
 
 **Definition certification and initial producer inference are implemented;
-composition and native overloads remain in progress.** The semantic foundation is
+native overloads are implemented; body composition remains in progress.** The semantic foundation is
 [the qualified arrow equation](SEMANTICS.md#effect-qualified-call-contracts).
 Definition checking and application both carry the effect;
 changing only the native `map` declaration would introduce a trusted assumption
@@ -3271,9 +3271,11 @@ No per-function global flag can justify a stronger effect on another overload.
 
 For native `map`, the realm's ordinary-construction invariant supplies the
 construction premise. An overload requiring a heap-preserving callback can
-then promise a dense result from a dense receiver; the implemented unrestricted
+now promises a dense result from a dense receiver; the unrestricted
 overload promises a sparse result. Both use ordinary selection and application;
-there is no body-inspecting `map` rule. An explicitly submitted stronger effect
+there is no body-inspecting `map` rule. `find`/`findIndex` similarly consume a
+qualified callback accepting `T`, or an unrestricted one accepting `T | undefined`.
+An explicitly submitted stronger effect
 claim must fail with a located obligation rather than silently disappear.
 
 The semantic introduction and elimination rules are proved in
@@ -3299,7 +3301,7 @@ arguments, result and required effect through graphs, claims and certificates;
 subtyping checks effect implication and substitution preserves it. Ordinary
 source annotations remain unrestricted; OCaml proposes preservation for pure
 closure bodies, retaining it through symbolic claims and substitution. Broader
-compositional body-effect checking, native overloads and located effect-failure
+compositional body-effect checking and located effect-failure
 reporting are the remaining implementation work. Qualified graph claims can
 already be submitted and certified through the ordinary source pipeline.
 
@@ -3933,15 +3935,17 @@ $$
 The reviewed overlay can restrict quantified binders (`bounds`) and weaken a
 native's promised result (`result`). These specify trusted natives; source
 annotations are still translated in full. `join` bounds `T` to primitives,
-`find`/`findIndex` pass `T | undefined` to their callback, and `map` promises a
-sparse array of its callback's result type. Source `U[]` still requires density.
+unrestricted `find`/`findIndex` callbacks receive `T | undefined`, and unrestricted
+`map` callbacks produce a sparse result. Qualified overloads require a certified
+`preservesInputHeap` callback and respectively pass `T` or promise a dense result.
+Source `U[]` still requires density.
 
 Native array results rely on the ordinary-construction invariant: an array owns
 neither `constructor` nor any key declared by `ArrayProto`; the host keeps the
 standard array constructor/species behavior. The same own-key exclusion is used
 in array lowering and the realm invariant (`RequestJson.arrayExcludedKeys`).
-Thus `filter` and `slice` can promise ordinary arrays, and callback effects can
-later justify a dense `map` result. The runtime witnesses in `test.mts` violate
+Thus `filter` and `slice` can promise ordinary arrays, and certified callback effects
+justify the dense `map` overload. The runtime witnesses in `test.mts` violate
 the explicit external-code premise and document why it is needed.
 
 For `sort`, let A(T) be the mutable array contract, V(P) the readonly array

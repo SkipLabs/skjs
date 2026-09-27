@@ -3,8 +3,8 @@
 > **Current soundness boundary repairs:** unsupported generic contracts are
 > refused rather than erased. This reopens Promise-dependent framework cases,
 > including `sum-main`. Array results rely on the explicit ordinary-construction
-> invariant, also required of external code. `map` currently promises a sparse result.
-> `find` callbacks must admit `undefined`; `join` and default `sort` require primitive
+> invariant, also required of external code. `map` promises a dense result only for a certified heap-preserving callback.
+> Unrestricted `find` callbacks must admit `undefined`; `join` and default `sort` require primitive
 > elements; comparator sorting supports arbitrary elements. Original sources are retained as gaps in `cases.mts`. See
 > [the current design](../DESIGN.md#exact-contracts-and-native-effects).
 
@@ -85,14 +85,17 @@ that outcome, in its words.
 
 ## Inferred effects: implementation in progress
 
-Callback heap-preservation guarantees will be inferred components of function
-types, proposed at definitions and independently certified by Lean. Translating
-an ordinary TypeScript annotation does not supply such a guarantee. Calls use
-the certified type, without requiring the callback body at the call site.
-The semantic foundation exists, but producer inference, signature transport
-and source acceptance are not integrated yet. The admitted semantics now
-explicitly supplies ordinary array construction, including for external inputs;
-checked callback effects remain necessary to recover dense-map coverage.
+Callback heap-preservation guarantees are inferred components of function types,
+proposed at definitions and independently certified by Lean. Translating an
+ordinary TypeScript annotation does not supply such a guarantee. Calls use the
+certified type, without requiring the callback body at the call site. The current
+body check admits pure expressions; reads, allocations and nested qualified calls
+still need compositional support. Signature transport, generic substitution and
+`.bind` retain effects. Native `map` and `find`/`findIndex` consume them through
+ordinary overloads, restoring `array-methods`, `array-library` and
+`array-generic-name`. `callback-effects` exercises returned and bound callbacks.
+The admitted semantics supplies ordinary array construction, including for
+external inputs. Located effect-failure reporting and broader composition remain.
 The [design boundary](../DESIGN.md#inferred-call-effects-elaboration-and-certification)
 owns this distinction and the [planned typing rules](../PROGRAM-TYPING.md#certifying-inferred-call-effects)
 own the definition, application and effect-forgetting obligations.

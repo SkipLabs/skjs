@@ -2366,9 +2366,22 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
          take: another is not one its body could be checked at. The result is
          the action stating the offer. *)
       let offer_to (arg:expr) param =
+        (* Arity adaptation may retain a guarantee already inferred for the
+           value; adding ignored parameters cannot manufacture an effect.
+           Overload selection uses this type, never the callback's body. *)
+        let supplies_effect (offered:Semantic.signature) =
+          offered.call_effect=Unrestricted ||
+          let known = match arg.node with
+            | Id name -> quietly (fun () -> resolve env name)
+            | _ -> List.find_map (fun (p:expression) ->
+                if p.pos=arg.pos then Some p.type_ else None) !expressions in
+          match known with
+          | Some (Atoms [Shape {calls;_}]) -> List.exists (fun (s:Semantic.signature) ->
+              s.call_effect=offered.call_effect) calls
+          | _ -> false in
         let offered arity = match param with
           | Atoms [Shape {calls=[offered];fields=[];indexes=[];elements=None}] as t
-              when offered.quantified=[] && offered.rest_pack=None
+              when offered.quantified=[] && offered.rest_pack=None && supplies_effect offered
                 && (match offered.variadic with
                     | None -> List.length offered.params > arity
                     | Some _ -> List.length offered.params >= arity) -> Some (t,offered)
@@ -2379,7 +2392,8 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
             (offered (List.length ps))
         | Id n when List.mem_assoc n !closures ->
           (match param with
-           | Atoms [Shape {calls=[o];fields=[];indexes=[];elements=None}] -> closure_offer n o
+           | Atoms [Shape {calls=[o];fields=[];indexes=[];elements=None}]
+               when supplies_effect o -> closure_offer n o
            | _ -> None)
         (* A class value at a generic call's construct parameter, known only
            once the call's instance is: offered as where the parameter's type

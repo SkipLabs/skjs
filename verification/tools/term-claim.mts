@@ -40,6 +40,7 @@ export function claimOfTerm(term: TypeTerm): ClaimType {
         optional: term.optional.map(claimOfTerm),
         rest: term.rest ? claimOfTerm(term.rest) : null, readonly: term.readonly });
     case "function":
+      if (term.effect !== "unrestricted") throw Error("a qualified callable annotation requires graph lowering");
       return one({ a: "function",
         this: term.receiver ? claimOfTerm(term.receiver) : { top: true, atoms: [] },
         params: term.params.map(claimOfTerm),
