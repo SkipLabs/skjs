@@ -137,7 +137,7 @@ private theorem expressions_support (scope : Scope sig) (es : List (Expression s
   obtain ⟨e, he, hl⟩ := List.mem_flatMap.mp hl
   exact e.support scope (lexical e he) hl hp
 
-private theorem Reference.instantiate_local (scope : Scope sig) (r : Reference sig sig[scope.head])
+theorem Reference.instantiate_local (scope : Scope sig) (r : Reference sig sig[scope.head])
     (slot : Fin sig[scope.head].binders.length) (hr : r.1.1 = .local slot.val) :
     r.instantiate scope = scope.bound slot := by
   rcases r with ⟨⟨t, hv⟩, hs⟩

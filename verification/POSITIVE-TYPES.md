@@ -562,15 +562,29 @@ structural induction on instantiation, so no infinite family is enumerated.
 `Types/EquationCongruence.lean` carries this into local binding: assigning a
 scheme's locals leaves its captured arguments' meanings unchanged, and matching
 local slots receive the same family. Binder order is checked exactly, not just
-as a set. Template traversal preserves agreement under an explicit
-application-congruence induction hypothesis; the clause-row value step is also
-proved using the existing clause semantics. The quantified-row step and the
-argument-list component at the current level still have to close that induction.
-The induction hypothesis is not a certificate field or a new trusted assumption.
+as a set. Application congruence is proved for both components of the existing
+mixed meaning (values and argument packs):
 
-These results do **not** yet establish application congruence or semantic
-substitution. The remaining proof must justify application images under
-capture-avoiding substitution at the `InstanceImages` boundary. Source compilation (including alias and
+$$
+\bigl(\forall i.\;\llbracket A_i\rrbracket^\eta
+  =\llbracket B_i\rrbracket^\theta\bigr)
+\quad\Longrightarrow\quad
+\llbracket F(\vec A)\rrbracket^\eta
+  =\llbracket F(\vec B)\rrbracket^\theta.
+$$
+
+Here both applications have the same equation head and arity. The environments
+may differ: an equation receives its free parameters only through its arguments.
+The proof first compares value rows at level $n$ using operand agreement below
+$n$. Quantified bounds are compared in the outer environments; signatures are
+compared after assigning matching local families. It then compares argument
+packs at level $n$, whose element contracts use those current-level values.
+Induction closes the intermediate `ApplicationsAgree` premise; neither the
+producer nor the certificate supplies a semantic assumption.
+
+Semantic substitution is still pending. The remaining proof must justify
+application images under capture-avoiding substitution at the `InstanceImages`
+boundary. Source compilation (including alias and
 dependent-intersection normalization), finite family-subtyping evidence, and
 certificate integration are also pending. Existing finite certificates remain
 the only accepted path until those obligations are proved.

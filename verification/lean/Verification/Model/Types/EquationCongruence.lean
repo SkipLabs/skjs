@@ -332,10 +332,303 @@ theorem Equations.clauses_step (equations : Equations) (apps : equations.Applica
     obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hc'
     exact ⟨_, List.mem_map.mpr ⟨c, hc, rfl⟩, (mapped_clause_agree _ η θ _ _ exprs c W v).mpr hv⟩
 
+/-- The quantified value step compares bounds outside local assignment, then
+compares every instance at matching local families. Both fixed and variadic
+signatures use the ordinary call-clause semantics. -/
+theorem Equations.scheme_step (equations : Equations) (apps : equations.ApplicationsAgree n)
+    (head : Fin equations.signature.length)
+    (A B : List (List (Label equations.signature)))
+    (ha : A.length = equations.signature[head].parameters)
+    (hb : B.length = equations.signature[head].parameters)
+    (η θ : MixedAssignment (Label equations.signature))
+    (args : equations.ArgumentsAgree η θ A B n)
+    (bs : List (Reference equations.signature equations.signature[head]))
+    (sigs : List (Arrow (List (Expression equations.signature equations.signature[head]))))
+    (bounds : List (Reference equations.signature equations.signature[head] ×
+      List (Expression equations.signature equations.signature[head])))
+    (rests : List (RestArrow (List (Expression equations.signature equations.signature[head]))))
+    (body : (equations.body head).1 = .scheme bs sigs bounds rests) (W : WorldT n) (v : Val) :
+    qDenoteWithArgs equations.graph (mixedParameters equations.graph)
+      (η, (Scope.mk head A ha).label) n W v ↔
+    qDenoteWithArgs equations.graph (mixedParameters equations.graph)
+      (θ, (Scope.mk head B hb).label) n W v := by
+  let a : Scope equations.signature := ⟨head, A, ha⟩
+  let b : Scope equations.signature := ⟨head, B, hb⟩
+  let make (C : List (List (Label equations.signature)))
+      (hc : C.length = equations.signature[head].parameters) : SchemeRow (Label equations.signature) :=
+    let scope : Scope equations.signature := ⟨head, C, hc⟩
+    let inst := fun es => es.flatMap (Expression.instantiate scope)
+    ⟨scope.binders, sigs.map (Arrow.map inst),
+      bounds.map (fun p => (p.1.instantiate scope, inst p.2)), rests.map (RestArrow.map inst)⟩
+  have valid := (equations.body head).2
+  simp only [body, RowTemplate.wellBound, Bool.and_eq_true_iff, decide_eq_true_eq] at valid
+  have row (C) (hc : C.length = equations.signature[head].parameters) :
+      equations.graph.schemes (Scope.mk head C hc).label = some (make C hc) := by
+    simp only [Equations.graph, NormalGraph.ofRowMap, Equations.row, Scope.view_label,
+      Template.instantiate, body, GraphRow.map, make,
+      (Scope.mk head C hc).instantiate_binders bs valid.1]
+  have lengths (C) (hc : C.length = equations.signature[head].parameters) :
+      (make C hc).binders.length = equations.signature[head].binders.length := by
+    exact Scope.binders_length _
+  have in_bs : ∀ p ∈ bounds, p.1 ∈ bs := by
+    intro p hp
+    have h := (Bool.and_eq_true_iff.mp (List.all_eq_true.mp valid.2 p hp)).1
+    obtain ⟨r, hr, he⟩ := List.any_eq_true.mp h
+    have he' : r = p.1 := of_decide_eq_true he
+    exact he' ▸ hr
+  have bound_types : ∀ p ∈ bounds,
+      Agree (mixedMeaning equations.graph η (p.2.flatMap (Expression.instantiate a)))
+        (mixedMeaning equations.graph θ (p.2.flatMap (Expression.instantiate b))) n := by
+    intro p hp
+    have hlex := (Bool.and_eq_true_iff.mp (List.all_eq_true.mp valid.2 p hp)).2
+    apply mixed_flatMap_agree
+    intro e he
+    exact equations.bound_expression_agree apps a b η θ args e.1 e.2.1 e.2.1
+      (List.all_eq_true.mp hlex e he)
+  rw [qDenoteWithArgs_unfold _ _ (η, a.label), qDenoteWithArgs_unfold _ _ (θ, b.label)]
+  have hpa : equations.graph.params a.label ≠ true := by
+    simp [NormalGraph.params, equations.kind_application a]
+  have hpb : equations.graph.params b.label ≠ true := by
+    simp [NormalGraph.params, equations.kind_application b]
+  dsimp only [qLayerWithArgs]
+  rw [if_neg hpa, if_neg hpb, row A ha, row B hb]
+  simp only [schemeSemWithArgs, boundedSem, lengths]
+  refine and_congr Iff.rfl (forall_congr' fun As => forall_congr' fun hlen => imp_congr ?_ ?_)
+  · have assigned : ∀ r ∈ bs,
+        (assign η a.binders As).1 (r.instantiate a) =
+          (assign θ b.binders As).1 (r.instantiate b) := by
+      intro r hr
+      have hmem : r.1.1 ∈ (List.range equations.signature[head].binders.length).map Tree.local := by
+        rw [← valid.1]
+        exact List.mem_map.mpr ⟨r, hr, rfl⟩
+      obtain ⟨i, hi, he⟩ := List.mem_map.mp hmem
+      let slot : Fin equations.signature[head].binders.length := ⟨i, List.mem_range.mp hi⟩
+      rw [r.instantiate_local a slot he.symm, r.instantiate_local b slot he.symm,
+        a.assign_bound η As hlen, b.assign_bound θ As hlen]
+    have mem_a : ∀ p ∈ bounds, p.1.instantiate a ∈ a.binders := by
+      intro p hp
+      rw [← a.instantiate_binders bs valid.1]
+      exact List.mem_map.mpr ⟨p.1, in_bs p hp, rfl⟩
+    have mem_b : ∀ p ∈ bounds, p.1.instantiate b ∈ b.binders := by
+      intro p hp
+      rw [← b.instantiate_binders bs valid.1]
+      exact List.mem_map.mpr ⟨p.1, in_bs p hp, rfl⟩
+    change Bounded (fun ρ S => mixedMeaning equations.graph ρ S) η (make A ha) As n ↔
+      Bounded (fun ρ S => mixedMeaning equations.graph ρ S) θ (make B hb) As n
+    constructor
+    · intro h p hp _ j hj U u hu
+      obtain ⟨p, hsource, rfl⟩ := List.mem_map.mp hp
+      apply (bound_types p hsource j hj U u).mp
+      apply h _ (List.mem_map.mpr ⟨p, hsource, rfl⟩) (mem_a p hsource) j hj U u
+      rw [assigned p.1 (in_bs p hsource)]
+      exact hu
+    · intro h p hp _ j hj U u hu
+      obtain ⟨p, hsource, rfl⟩ := List.mem_map.mp hp
+      apply (bound_types p hsource j hj U u).mpr
+      apply h _ (List.mem_map.mpr ⟨p, hsource, rfl⟩) (mem_b p hsource) j hj U u
+      rw [← assigned p.1 (in_bs p hsource)]
+      exact hu
+  · have exprs : ∀ es : List (Expression equations.signature equations.signature[head]),
+        Agree (mixedMeaning equations.graph (assign η a.binders As) (es.flatMap (Expression.instantiate a)))
+          (mixedMeaning equations.graph (assign θ b.binders As) (es.flatMap (Expression.instantiate b))) n := by
+      intro es
+      apply mixed_flatMap_agree
+      intro e _
+      exact equations.signature_expression_agree apps a b rfl η θ args As hlen e.1 e.2.1 e.2.1 e.2.2
+    have h := mapped_sem_agree equations.graph (assign η a.binders As) (assign θ b.binders As)
+      _ _ exprs (.arrs sigs rests) W v
+    exact h
+
+/-- Every admissible equation head preserves value meaning at the current
+level when its arguments agree below that level. -/
+theorem Equations.values_step (equations : Equations) (apps : equations.ApplicationsAgree n)
+    (a b : Scope equations.signature) (η θ : MixedAssignment (Label equations.signature))
+    (head : a.head = b.head)
+    (args : equations.ArgumentsAgree η θ a.arguments b.arguments n)
+    (W : WorldT n) (v : Val) :
+    mixedValues equations.graph η [a.label] n W v ↔
+      mixedValues equations.graph θ [b.label] n W v := by
+  rcases a with ⟨ha, A, va⟩
+  rcases b with ⟨hb, B, vb⟩
+  cases head
+  simp only [mixedValues, Tower.setSem, List.mem_singleton, exists_eq_left]
+  cases body : (equations.body ha).1 with
+  | clauses cs => exact equations.clauses_step apps ha A B va vb η θ args cs body W v
+  | scheme bs sigs bounds rests =>
+    exact equations.scheme_step apps ha A B va vb η θ args bs sigs bounds rests body W v
+  | param label name kind =>
+    have h := (equations.body ha).2
+    simp [body, RowTemplate.wellBound] at h
+  | meet bs cs also =>
+    have h := (equations.body ha).2
+    simp [body, RowTemplate.wellBound] at h
+
+/-- Template values at the current level need argument agreement at that
+level, but nested applications consume only agreement below it. -/
+theorem Tree.instantiate_values (equations : Equations) (apps : equations.ApplicationsAgree n)
+    (a b : Scope equations.signature) (η θ : MixedAssignment (Label equations.signature))
+    (args : equations.ArgumentsAgree η θ a.arguments b.arguments (n + 1))
+    (locals : allowLocals = true → ∀ i (ha : i < equations.signature[a.head].binders.length)
+      (hb : i < equations.signature[b.head].binders.length),
+      Agree (mixedMeaning equations.graph η [a.bound ⟨i, ha⟩])
+        (mixedMeaning equations.graph θ [b.bound ⟨i, hb⟩]) (n + 1))
+    (t : Tree) (va : t.scoped equations.signature equations.signature[a.head].parameters
+      equations.signature[a.head].binders.length = true)
+    (vb : t.scoped equations.signature equations.signature[b.head].parameters
+      equations.signature[b.head].binders.length = true)
+    (lex : t.lexical allowLocals = true) (W : WorldT n) (v : Val) :
+    mixedValues equations.graph η ((Tree.instantiate a t va).1.labels (Tree.instantiate a t va).2) n W v ↔
+      mixedValues equations.graph θ ((Tree.instantiate b t vb).1.labels (Tree.instantiate b t vb).2) n W v := by
+  cases t with
+  | bound h ts slot => simp [Tree.lexical] at lex
+  | argument i =>
+    have h := args.2 i
+      (by have := of_decide_eq_true va; simpa only [a.arity] using this)
+      (by have := of_decide_eq_true vb; simpa only [b.arity] using this) n (by omega) W (.inl v)
+    change mixedValues equations.graph η _ n W v ↔
+      mixedValues equations.graph θ _ n W v at h
+    simpa only [Tree.instantiate, Types.labels_ofList] using h
+  | «local» i => exact locals lex i (of_decide_eq_true va) (of_decide_eq_true vb) n (by omega) W (.inl v)
+  | app h ts =>
+    let oa := Args.instantiate a ts (Bool.and_eq_true_iff.mp va).2
+    let ob := Args.instantiate b ts (Bool.and_eq_true_iff.mp vb).2
+    have ca : (Tree.app h oa.1).scoped equations.signature 0 0 = true := by
+      have hv := (Tree.instantiate a (.app h ts) va).2
+      simpa only [Tree.instantiate, Types.scoped, Bool.and_true] using hv
+    have cb : (Tree.app h ob.1).scoped equations.signature 0 0 = true := by
+      have hv := (Tree.instantiate b (.app h ts) vb).2
+      simpa only [Tree.instantiate, Types.scoped, Bool.and_true] using hv
+    let sa := Scope.ofRaw h oa.1 (Bool.and_eq_true_iff.mp ca).1 oa.2.1
+    let sb := Scope.ofRaw h ob.1 (Bool.and_eq_true_iff.mp cb).1 ob.2.1
+    have hr := Args.instantiate_agree equations apps a b η θ (args.mono (by omega))
+      (fun h i hi hj => PositiveGraphs.Agree.mono (locals h i hi hj) (by omega)) ts
+      (Bool.and_eq_true_iff.mp va).2 (Bool.and_eq_true_iff.mp vb).2 lex
+    have hs := equations.values_step apps sa sb η θ rfl hr W v
+    dsimp only [sa, sb] at hs
+    simp only [Scope.label, Scope.ofRaw_args] at hs
+    simpa only [Scope.ofRaw, Tree.instantiate, Types.labels, oa, ob] using hs
+
+private theorem values_flatMap_congr (G : NormalGraph ι) (η θ : MixedAssignment ι)
+    (f g : α → List ι) (es : List α) (W : WorldT n) (v : Val)
+    (h : ∀ e ∈ es, mixedValues G η (f e) n W v ↔ mixedValues G θ (g e) n W v) :
+    mixedValues G η (es.flatMap f) n W v ↔ mixedValues G θ (es.flatMap g) n W v := by
+  change mixedMeaning G η (es.flatMap f) n W (.inl v) ↔
+    mixedMeaning G θ (es.flatMap g) n W (.inl v)
+  rw [mixedMeaning_union G η (es.flatMap f), mixedMeaning_union G θ (es.flatMap g)]
+  simp only [List.mem_flatMap]
+  constructor
+  · rintro ⟨i, ⟨e, he, hi⟩, hv⟩
+    have hv' := (mixedMeaning_union G η (f e) n W (.inl v)).mpr ⟨i, hi, hv⟩
+    have hw := (h e he).mp hv'
+    obtain ⟨j, hj, hw⟩ := (mixedMeaning_union G θ (g e) n W (.inl v)).mp hw
+    exact ⟨j, ⟨e, he, hj⟩, hw⟩
+  · rintro ⟨i, ⟨e, he, hi⟩, hv⟩
+    have hv' := (mixedMeaning_union G θ (g e) n W (.inl v)).mpr ⟨i, hi, hv⟩
+    have hw := (h e he).mpr hv'
+    obtain ⟨j, hj, hw⟩ := (mixedMeaning_union G η (f e) n W (.inl v)).mp hw
+    exact ⟨j, ⟨e, he, hj⟩, hw⟩
+
+/-- Argument packs read their element values at the current level. Those
+values are handled by `values_step`, rather than assuming the conclusion of
+mixed application congruence at this level. -/
+theorem Equations.arguments_step (equations : Equations) (apps : equations.ApplicationsAgree n)
+    (a b : Scope equations.signature) (η θ : MixedAssignment (Label equations.signature))
+    (head : a.head = b.head)
+    (args : equations.ArgumentsAgree η θ a.arguments b.arguments (n + 1))
+    (W : WorldT n) (vs : List Val) :
+    mixedArgs equations.graph η [a.label] n W vs ↔
+      mixedArgs equations.graph θ [b.label] n W vs := by
+  simp only [mixedArgs, graphArguments, List.mem_singleton, exists_eq_left,
+    equations.kind_application a, equations.kind_application b, reduceCtorEq, ↓reduceIte]
+  rcases a with ⟨ha, A, va⟩
+  rcases b with ⟨hb, B, vb⟩
+  cases head
+  let a : Scope equations.signature := ⟨ha, A, va⟩
+  let b : Scope equations.signature := ⟨ha, B, vb⟩
+  cases body : (equations.body ha).1 with
+  | clauses cs =>
+    have empty : equations.signature[ha].binders = [] := by
+      have h := (equations.body ha).2
+      simpa [body, RowTemplate.wellBound] using h
+    have exprs (es : List (Expression equations.signature equations.signature[ha])) (v : Val) :
+        mixedValues equations.graph η (es.flatMap (Expression.instantiate a)) n W v ↔
+          mixedValues equations.graph θ (es.flatMap (Expression.instantiate b)) n W v := by
+      apply values_flatMap_congr
+      intro e _
+      apply Tree.instantiate_values equations apps a b η θ args _ e.1 e.2.1 e.2.1 e.2.2 W v
+      intro _ i hi hj
+      have hlen := congrArg List.length empty
+      have hi' : i < equations.signature[ha].binders.length := hi
+      simp only [List.length_nil] at hlen
+      omega
+    have row (C) (hc : C.length = equations.signature[ha].parameters) :
+        equations.graph (Scope.mk ha C hc).label =
+          cs.map (Clause.map (fun es => es.flatMap (Expression.instantiate ⟨ha, C, hc⟩))) := by
+      simp [NormalGraph.clauses, NormalGraph.plain, NormalGraph.params, Equations.graph,
+        NormalGraph.ofRowMap, Equations.row, Template.instantiate, body, GraphRow.map, GraphRow.union]
+    rw [row A va, row B vb]
+    have congr (c : Clause (List (Expression equations.signature equations.signature[ha]))) :
+        clauseArguments (mixedValues equations.graph η)
+          (c.map (fun es => es.flatMap (Expression.instantiate a))) n W vs ↔
+        clauseArguments (mixedValues equations.graph θ)
+          (c.map (fun es => es.flatMap (Expression.instantiate b))) n W vs := by
+      rw [clauseArguments_map, clauseArguments_map]
+      exact clauseArguments_congr _ _ c n W exprs vs
+    constructor
+    · rintro ⟨c', hc', hv⟩
+      obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hc'
+      exact ⟨_, List.mem_map.mpr ⟨c, hc, rfl⟩, (congr c).mp hv⟩
+    · rintro ⟨c', hc', hv⟩
+      obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hc'
+      exact ⟨_, List.mem_map.mpr ⟨c, hc, rfl⟩, (congr c).mpr hv⟩
+  | scheme bs sigs bounds rests =>
+    simp [NormalGraph.clauses, NormalGraph.plain, NormalGraph.params, Equations.graph,
+      NormalGraph.ofRowMap, Equations.row, Template.instantiate, body, GraphRow.map, GraphRow.union]
+  | param label name kind =>
+    have h := (equations.body ha).2
+    simp [body, RowTemplate.wellBound] at h
+  | meet bs cs also =>
+    have h := (equations.body ha).2
+    simp [body, RowTemplate.wellBound] at h
+
+/-- Application congruence for the existing mixed semantics. The step first
+compares values, then argument packs at that same level; no semantic hypothesis
+is admitted from a certificate or a producer. -/
+theorem Equations.applications_agree (equations : Equations) (n : Nat) :
+    equations.ApplicationsAgree n := by
+  induction n with
+  | zero => intro a b η θ head args m hm; omega
+  | succ n ih =>
+    intro a b η θ head args m hm W x
+    by_cases hmn : m < n
+    · exact ih a b η θ head (args.mono (by omega)) m hmn W x
+    · have he : m = n := by omega
+      subst m
+      cases x with
+      | inl v => exact equations.values_step ih a b η θ head (args.mono (by omega)) W v
+      | inr vs => exact equations.arguments_step ih a b η θ head args W vs
+
+/-- Equal semantic arguments give equal recursive application meanings,
+including quantified heads, effects, and argument packs. -/
+theorem Equations.application_congr (equations : Equations)
+    (a b : Scope equations.signature) (η θ : MixedAssignment (Label equations.signature))
+    (head : a.head = b.head) (lengths : a.arguments.length = b.arguments.length)
+    (args : ∀ i (ha : i < a.arguments.length) (hb : i < b.arguments.length),
+      mixedMeaning equations.graph η a.arguments[i] = mixedMeaning equations.graph θ b.arguments[i]) :
+    mixedMeaning equations.graph η [a.label] = mixedMeaning equations.graph θ [b.label] := by
+  funext n W x
+  apply propext
+  apply equations.applications_agree (n + 1) a b η θ head ?_ n (by omega) W x
+  refine ⟨lengths, ?_⟩
+  intro i hi hj m hm U u
+  rw [args i hi hj]
+
 #print axioms Equations.arguments_assign
 #print axioms Equations.locals_assign
 #print axioms Equations.signature_expression_agree
 #print axioms Equations.bound_expression_agree
 #print axioms Equations.clauses_step
+#print axioms Equations.scheme_step
+#print axioms Equations.application_congr
 
 end Verification.Model.EquationGraphs

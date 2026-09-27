@@ -1281,18 +1281,19 @@ positive sources as the targets. The work is split by semantic obligation:
      This staging does not narrow the planned source fragment.
    - **Checked substitution:** prove that capture-avoiding instantiation commutes
      with unfolding, including scheme bounds, argument packs, effects and the
-     array realm. The next semantic lemma is application congruence: the same
+     array realm. Application congruence is proved: the same
      equation head at arguments with equal mixed meanings has equal meaning,
      accounting for its differently named local binders. Computed support and
      owned-binder freshness supply the independence premises.
      `Types/EquationCongruence.lean` now proves preservation of captured arguments
      when entering a scheme, agreement of corresponding local slots, lifting
-     agreement through finite templates, and the clause-row value induction
-     step. Its `ApplicationsAgree` premise is an explicit induction hypothesis,
-     never an assumption supplied by a certificate. The quantified-row step,
-     the argument-list component at the current level, and closure of the
-     recursive induction are still pending; application congruence itself is
-     not yet proved. Use finite evidence about the equations to justify a mapping
+     agreement through finite templates, and application congruence. The
+     induction compares clause and quantified value rows using operand agreement
+     below the current level, then compares argument packs using those value
+     results at the current level. Quantified bounds use the outer environment;
+     signatures use matching assigned locals. The `ApplicationsAgree` premise
+     of the intermediate lemmas is discharged by this induction, never supplied
+     by a certificate. Use finite evidence about the equations to justify a mapping
      of their applications. The current finite `InstTable` alone cannot certify
      an infinite family of substituted rows; reusing it without this argument
      would merely move the expansion limit into certificate checking.
