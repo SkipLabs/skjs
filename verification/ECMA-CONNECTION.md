@@ -26,8 +26,9 @@ Two links between that theorem and a JavaScript run are not proved.
    native code behaves as typed.
 
 Source-to-calculus compilation is a third link. It is checked by the parser's
-gate and by Lean's re-extraction of the claims, not proved preserving; see
-[next steps](DESIGN.md#next-steps).
+gate and by Lean's re-extraction of the claims, not proved preserving; the
+options for proving it, and how they split T1 below, are in
+[TRUST-REDUCTION](TRUST-REDUCTION.md).
 
 ## The pieces of a connection
 

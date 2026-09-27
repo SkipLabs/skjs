@@ -1261,11 +1261,13 @@ arity meets a longer signature (it discards the actuals past its parameters,
 `restsT_of_graph`), but its slot is its annotated signature: the slot would
 carry the padded promise, a claim its own unit checks.
 
-**Source-to-graph preservation.** Structural properties of the lowering
-(successor validity, freshness, binding resolution) can be proved in Lean
-over the AST it already has; semantic preservation needs an execution
-semantics for the source fragment. Either moves trust from the extractor to
-definitions that are easier to review.
+**Reducing trust.** Four bridges between source and theorem rest on review:
+the parser's rewrites, extraction, the reading of declared types, and the
+host. Structural theorems about extraction, moving the parser's rewrites into
+Lean, a Fragment semantics with a preservation theorem, a meaning for declared
+types, and host lemmas would narrow or prove them; the options, what each
+retires and how they compose with the ECMA-262 connection are in
+[TRUST-REDUCTION](TRUST-REDUCTION.md).
 
 **SKJS operations.** Extend the closed operation export beyond the
 primitive, cell and arrow fragment, so a failing SKJS judgment is located at

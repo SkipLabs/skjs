@@ -188,6 +188,8 @@ owner; other documents link to them and give only the context their readers need
 | [Viewer README](report-viewer/README.md) | Viewer/editor UX, local server, implementation structure and browser integration. |
 | [Test index](tests/README.md) and linked corpus READMEs | Regression coverage, runnable witnesses, producer/runtime outcomes and exact candidate repairs. |
 | [REFERENCES](REFERENCES.md) | Every cited paper, specification, tool and issue, with what the project uses from it and where. Other documents link to its anchors. |
+| [ECMA-CONNECTION](ECMA-CONNECTION.md) | A sketch of connecting the model to a mechanized ECMA-262: expected results, what they retire, cost. |
+| [TRUST-REDUCTION](TRUST-REDUCTION.md) | Future work: the bridges between source and theorem that rest on review, and the options for narrowing or proving each. |
 | [INTERSECTIONS](INTERSECTIONS.md) | Historical design analysis from before the present Lean model. Read the current rules and proofs above for implemented behavior. |
 
 When adding a rule, put its mathematical statement and proof scope in
