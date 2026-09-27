@@ -274,6 +274,11 @@ Language Specification* as of this writing). Sections relied on by name:
   and the promise resolve functions, which older editions title *Promise
   Resolve Functions* and the 2027 draft defines in
   [CreateResolvingFunctions](https://tc39.es/ecma262/multipage/control-abstraction-objects.html#sec-promise-resolve-functions);
+- [ArraySpeciesCreate](https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-arrayspeciescreate),
+  used by [Array.prototype.map](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.map),
+  [filter](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.filter)
+  and [slice](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.slice)
+  to consult the receiver's constructor and its `Symbol.species`;
 - [Number::equal](https://tc39.es/ecma262/multipage/ecmascript-data-types-and-values.html#sec-numeric-types-number-equal),
   `IsStrictlyEqual`, `ToString`/`Number::toString`, `ToPropertyKey`,
   `ToBoolean`, `typeof`;

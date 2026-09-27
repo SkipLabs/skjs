@@ -3269,12 +3269,14 @@ In particular, heap-preserving entails unrestricted, but the converse has no
 rule. Normalization and substitution must carry the effect per signature.
 No per-function global flag can justify a stronger effect on another overload.
 
-For native `map`, an audited overload requiring a heap-preserving callback may
-promise a dense result from a dense receiver. The existing unrestricted overload
-promises a sparse result. Both use ordinary overload selection and application;
-there is no body-inspecting `map` rule. A missing effect proof leaves the weaker
-type available where sufficient; an explicitly submitted stronger claim must
-fail with a located obligation rather than silently disappear.
+For native `map`, a future overload needs both a construction premise covering
+`ArraySpeciesCreate` and a heap-preserving callback to promise a dense result
+from a dense receiver. Callback purity alone supplies no construction premise.
+The former sparse-result overload has also been withdrawn: currently `map`,
+`filter` and `slice` have no invocation contract. Once justified, such overloads
+use ordinary selection and application; there is no body-inspecting `map` rule.
+An explicitly submitted stronger effect claim must fail with a located
+obligation rather than silently disappear.
 
 The semantic introduction and elimination rules are now proved in
 `CallEffectCertificates.introduce` and `CallEffects.call_safe`.
@@ -3507,7 +3509,7 @@ signatures: the member's one scheme row, whose binders are parameter rows,
 shared by name so the unfolding closes, and whose receivers admit every value
 (the member bound to its host is what meets the scheme,
 [records](POSITIVE-TYPES.md#records)). A generic member of a library
-prototype (`ArrayProto`'s `map`, whose receiver is an array of its element
+prototype (`ArrayProto`'s `forEach`, whose receiver is an array of its element
 binder) stays a readonly view of its scheme. A method's binder rows are its
 member's: binder $k$ of the member of key $\kappa$ with declared bound $B_k$
 at colour $c$ is the row $\kappa\#k{:}B_k\,{}^c$, whichever declaration
@@ -3914,15 +3916,17 @@ $$
        (\mathsf{this}:R_j,\ \vec P_j)\Rightarrow Q_j}\ \textsc{proto-stated}
 $$
 
-The reviewed overlay can also restrict quantified binders (`bounds`) and
-weaken a native's *promised result* (`result`). This is a specification of the
-native, not an erasure of a source annotation. Currently `join` bounds
-`T` to primitives, `find`/`findIndex` pass `T | undefined` to their callback,
-and `map` promises a fresh **sparse** array of its callback result type U,
-because mutation may leave holes. Its length and present-element contracts
-remain usable. A caller still has to establish its full source result
-annotation: source `U[]` currently requires density. The realm invariant
-permits sparse stores; density comes from the particular array contract.
+The reviewed overlay can also restrict quantified binders (`bounds`) or state
+only callable shape (`noCallContract`), which admits no application rule.
+These specify trusted natives; source annotations are still translated in full.
+Currently `join` bounds `T` to primitives and `find`/`findIndex` pass
+`T | undefined` to their callback. `map`, `filter` and `slice` have callable
+shape only: their species hook can return a non-array and run code before any
+callback ([boundary](DESIGN.md#exact-contracts-and-native-effects)). Keeping
+the members preserves the prototype-key bounds without assuming an invocation
+promise. Reading such a member is allowed; attempting to call it is a located
+refusal. Source `U[]` still requires density, while the realm permits sparse
+stores; neither establishes safe species construction.
 
 For `sort`, let A(T) be the mutable array contract, V(P) the readonly array
 view at primitive elements P, and C(T) the comparator `(T,T) → number`.

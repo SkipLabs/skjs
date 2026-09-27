@@ -2,8 +2,9 @@
 
 > **Current soundness boundary repairs:** unsupported generic contracts are
 > refused rather than erased. This reopens Promise-dependent framework cases,
-> including `sum-main`. `map` returns a sparse array because it may produce
-> holes (its length and present-element types are retained); `find` callbacks must admit `undefined`; `join` and default `sort` require primitive
+> including `sum-main`. `map`, `filter` and `slice` grant no invocation contract:
+> their unconstrained species hook can run code and return a non-array.
+> `find` callbacks must admit `undefined`; `join` and default `sort` require primitive
 > elements; comparator sorting supports arbitrary elements. Original sources are retained as gaps in `cases.mts`. See
 > [the current design](../DESIGN.md#exact-contracts-and-native-effects).
 
@@ -20,7 +21,7 @@ From the repository root, with OCaml 5 and Dune 3 installed:
 ```sh
 npm ci --prefix verification/tools
 npm ci --prefix verification/ocaml-producer/upstream
-lake -d verification/lean build verifier
+(cd verification/lean && lake build verifier)
 dune build --root verification/ocaml-producer
 node verification/ocaml-producer/check.mts verification/ocaml-producer/examples/callbacks.ts
 node verification/ocaml-producer/check.mts verification/ocaml-producer/examples/recursive-json.ts \
@@ -89,7 +90,9 @@ types, proposed at definitions and independently certified by Lean. Translating
 an ordinary TypeScript annotation does not supply such a guarantee. Calls use
 the certified type, without requiring the callback body at the call site.
 The semantic foundation exists, but producer inference, signature transport
-and source acceptance are not integrated yet; dense-map coverage is still open.
+and source acceptance are not integrated yet. Dense-map coverage also needs a
+construction premise: callback purity cannot justify an unconstrained species
+hook. The unchanged generic examples are not sound for every admitted input.
 The [design boundary](../DESIGN.md#inferred-call-effects-elaboration-and-certification)
 owns this distinction and the [planned typing rules](../PROGRAM-TYPING.md#certifying-inferred-call-effects)
 own the definition, application and effect-forgetting obligations.
@@ -1167,10 +1170,10 @@ signature meets a rest that is one exact tuple, whatever its positions. Unsuppor
 unfolding keeps growing refuse the whole declaration. The runtime API's
 `V & DepSafe` is proposed as its parameter, which Lean lowers and checks
 whole. Arrays as library objects are implemented, but the full framework
-now stops earlier at recursive quantified contracts. Separately, `map` cannot
-promise a dense array after callbacks that may mutate its receiver; recovering
-that dense result needs a checked effect guarantee. Sparse results now retain
-their length and present-element type without claiming density.
+now stops earlier at recursive quantified contracts. Separately, `map`, `filter`
+and `slice` have no invocation contract pending species/construction modeling.
+A dense `map` result additionally needs a callback effect guarantee; that
+inference alone cannot restore the original universally quantified examples.
 
 Scheme rows are the one mechanism for quantified callables: a local generic
 closure is graph code at a scheme row, with bounds, rests and defaults.

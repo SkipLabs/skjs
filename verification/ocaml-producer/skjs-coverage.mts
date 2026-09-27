@@ -519,7 +519,7 @@ const GROUPS: [string, RegExp][] = [
   ["value-level && / || (non-boolean operands)", /operator (&&|\|\|)/],
   ["equality: objects without a field (no identity), loose equality", /strict equality of two operands that may both be objects without a field|loose equality converts its operands/],
   ["await of non-promises and unions (the await bound)", /quantified call does not satisfy the closure's bound: cannot establish|an await of a non-promise object|the result of an async function that may be an object/],
-  ["calls: overloads, .call, spread arguments, Object.assign, arrow callee", /overloaded call|\.(call|apply|bind) requires|spread (argument|into)|generic spread|array literal spreads|Object\.assign|single arrow the arguments can call|read off its object is not a function value|a call writes more positions than its callee/],
+  ["calls: overloads, .call, spread arguments, Object.assign, arrow callee", /overloaded call|\.(call|apply|bind) requires|spread (argument|into)|generic spread|array literal spreads|Object\.assign|single arrow the arguments can call|no admitted call signature|read off its object is not a function value|a call writes more positions than its callee/],
   ["sloppy (non-strict) code", /sloppy code|must be strict code/],
   ["other source forms", /TypeAssertionExpression|EmptyStatement|ExportDeclaration|missing type annotation|shadowing|duplicate or shadowing|body requires a variable|unannotated closure parameter/],
   ["receiver types the producer and TypeScript disagree on (a member read on a primitive TypeScript excludes)", /the producer and TypeScript disagree on the receiver/],
@@ -557,6 +557,9 @@ type ClassEntry = { cls: RefusalClass; label: string; re: RegExp; why: string; r
 const CLASSES: ClassEntry[] = [
   { cls: "gap", label: "a generic contract cannot be represented in full", re: /generic contract (?:at|:)/,
     why: "dependent bounds, mixed binder roles or a recursive quantified family exceed the exact lowering; the contract is refused, not replaced by unknown" },
+  { cls: "gap", label: "a callable value has no admitted call signature", re: /no admitted call signature/,
+    why: "the type grants no invocation promise; map/filter/slice currently withhold theirs because species construction is unmodelled",
+    review: "an explicit Function annotation intentionally grants no call signature; inspect the callee before treating this as a recoverable library gap" },
   // ------------------------------------------------------- unexplained
   { cls: "unexplained", label: "search: no derivation found", re: /evidence search failed|: cannot establish|No rule derives/,
     why: "Lean found no derivation; the obligation is named, its cause is not" },

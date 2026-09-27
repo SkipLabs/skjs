@@ -778,6 +778,29 @@ for (const [file, call] of [
   assert.equal(vm.runInNewContext(`${source}\nnoCoercion({ value: 7 })`, {}, { timeout: 1000 }), 7,
     "an explicit comparator never invokes the element's invalid conversion method");
 }
+// The input has Array.prototype and dense elements, with no accessors or
+// proxies. An extra own constructor is allowed by the current array contract.
+// Species construction can nevertheless replace the result with a plain object.
+{
+  const source = stripTypes(readFileSync(join(here, "examples", "invalid-native-array-species.ts"), "utf8"))
+    .replace(/^export /gm, "");
+  const setup = `class Result { length = "not a number"; }
+    class Constructor { static [Symbol.species] = Result; }
+    const xs = [1, 2]; xs.constructor = Constructor;
+    if (Object.getPrototypeOf(xs) !== Array.prototype || !(0 in xs) || !(1 in xs))
+      throw Error("invalid species witness input");`;
+  for (const call of ["mappedLength(xs)", "filteredLength(xs)"])
+    assert.equal(vm.runInNewContext(`${source}\n${setup}\n${call}`, {}, { timeout: 1000 }), "not a number");
+  assert.equal(vm.runInNewContext(`${source}\n${setup}\nArray.isArray(slicedArray(xs))`, {}, { timeout: 1000 }), false);
+  // Species runs before the first callback: preserving every callback's
+  // entry heap still does not preserve the traversal's original index range.
+  assert.equal(vm.runInNewContext(`const xs = [1, 2];
+    class Species { constructor(n) { xs.length = 0; return new Array(n); } }
+    class Constructor { static [Symbol.species] = Species; }
+    xs.constructor = Constructor;
+    const result = xs.map(x => x);
+    JSON.stringify([result.length, 0 in result, 1 in result]);`, {}, { timeout: 1000 }), "[2,false,false]");
+}
 let erasedContract = "";
 let good = "";
 let generic = "";
@@ -801,11 +824,16 @@ let callback = "";
     typeof name === "string" ? name : `[Symbol.${doc.symbols[name.symbol]?.name}]`;
   assert.deepEqual(proto.expression.fields.map(f => keyText(f.name)), arrayOverlay.map(e => e.name));
   for (const field of proto.expression.fields) {
+    const entry = arrayOverlay.find(e => e.name === keyText(field.name));
+    if (["map", "filter", "slice"].includes(keyText(field.name))) {
+      assert(field.readonly && field.type.k === "callable",
+        `${String(field.name)} must grant no invocation contract while species is unmodelled`);
+      continue;
+    }
     // The member's own binders lead; the element binder `T` is last.
     assert(field.readonly && field.type.k === "scheme" && field.type.binders.at(-1)?.name === "T");
     const receiver = field.type.signatures[0]?.receiver;
     assert(receiver?.k === "array" && receiver.element.k === "binder");
-    const entry = arrayOverlay.find(e => e.name === keyText(field.name));
     assert.equal(receiver.readonly, entry?.from === "ReadonlyArray", `${String(field.name)} receiver`);
   }
   const changed = arrayOverlay.map(e => e.name === "reduce"

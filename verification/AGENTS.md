@@ -182,10 +182,14 @@ separate review obligations, even when every Lean proof and suite passes.
   over-approximation safe for reading is not safe for producing a value.
 - **Native declarations are specifications to audit, not evidence.** Review
   every callback (including implicit conversion, iteration and thenable
-  callbacks), its actual arguments, alias mutation, and whether lengths or
+  callbacks, constructor lookup and `Symbol.species`), its actual arguments,
+  alias mutation, and whether lengths or
   keys are captured before callbacks run. A readonly alias does not prevent
   mutation through another alias. Establish result invariants after all such
-  effects; density at entry does not imply density of `map`'s result.
+  effects; density at entry does not imply density of `map`'s result. Callback
+  effects do not constrain other native entry points. Check result construction
+  as well as traversal; `map`/`filter`/`slice` may construct a non-array. Do not
+  silently strengthen the array input contract to hide that counterexample.
 - **Test the unproved boundary independently.** A producer-side refusal needs
   a verifier test bypassing that producer when annotation interpretation is
   involved. For native-contract repairs, execute the actual negative source

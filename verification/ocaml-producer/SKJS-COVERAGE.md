@@ -4,31 +4,40 @@ How much of what SKJS accepts in its own test suite the pipeline
 (`check.mts`: parser → OCaml producer → Lean search and check) verifies, what
 stops the rest, and where the two disagree because SKJS is wrong.
 
-Measurement checkpoint: September 27, 2026, after explicit-comparator sorting
-and sparse-array contracts (full census with SKJS confirmation).
+Measurement checkpoint: September 27, 2026, after explicit-comparator sorting,
+sparse-array contracts and withdrawal of unproved species-based native contracts
+(full census with SKJS confirmation).
 
-**2,399 of 2,674 SKJS-accepted units verify (89.7%); 1,776 of 2,026
-accepted functions (87.7%).** 285 of the 377 files with an accepted unit
+**2,397 of 2,674 SKJS-accepted units verify (89.6%); 1,774 of 2,026
+accepted functions (87.6%).** 284 of the 377 files with an accepted unit
 verify entirely. There are 73 principled refusals, 10 registered SKJS-unsound
-units, 184 gaps and 8 refusals not explained by the automatic classifier.
+units, 187 gaps and 7 refusals not explained by the automatic classifier.
 
-Compared with the boundary-repair checkpoint `5143e619` (2,405 verified),
-`testTupleArrayMethod` is restored. Seven safe functions now expose an
-additional completeness gap: `testBasicArrayRefinement`,
-`testStringArrayRefinement`, `testMultipleUnion`, `testNestedRefinement`,
-`testEarlyReturn`, `testCombinedWithTypeof` in `array-isarray-refinement.ts`,
-and `testNarrowToArray` in `array-object-union-operations.ts`. They return
-an arbitrary array found by `Array.isArray` as `ReadonlyArray<unknown>`.
-The realm invariant correctly permits holes; the source annotation still
-requires density. This is unnecessarily restrictive for unknown elements,
-not a reason to consider the programs unsafe. Their original sources remain.
-The curated `isarray-record-array` records the same gap.
+Compared with the previous sparse-array checkpoint (2,399 verified), two more
+functions are refused: `testTupleArrayMethod` in `typeof.ts` and
+`contextualSortParams` in `gap-callback-param-contextual-typing.ts`. They use
+`map` and `slice` respectively. These natives, and `filter`, consult
+`constructor[Symbol.species]`, unconstrained by the current array contract.
+A dense ordinary input can yield a non-array or run code before the callback.
+The overlay now grants those members callable shape only, with no invocation
+contract. This is a repair of an unjustified native assumption; callback
+purity alone cannot recover it. See the
+[native boundary](../DESIGN.md#exact-contracts-and-native-effects).
 
-The eight automatic “unexplained” rows have inspected causes: those seven,
-and `testMapReturnsArray`, whose callback is pure but whose native `map`
-contract conservatively returns a sparse array. A checked effect guarantee
-is still needed to recover its dense result. Sparse results now retain their
-length and present-element types, rather than becoming `unknown`.
+Three previously unverified units stop earlier for the same reason:
+`testMapReturnsArray`, `mapArr`, and `testMapCallback`. Their original sources
+remain. The classifier calls this a gap in the native contract; it does not
+assert that each original function has a sound universal type as written.
+
+The seven automatic “unexplained” rows have inspected causes:
+`testBasicArrayRefinement`, `testStringArrayRefinement`, `testMultipleUnion`,
+`testNestedRefinement`, `testEarlyReturn`, `testCombinedWithTypeof` in
+`array-isarray-refinement.ts`, and `testNarrowToArray` in
+`array-object-union-operations.ts`. They return an arbitrary array found by
+`Array.isArray` as `ReadonlyArray<unknown>`. The realm invariant correctly
+permits holes; the source annotation still requires density. This is an
+unnecessarily restrictive contract for unknown elements, not evidence that
+the programs are unsafe. The curated `isarray-record-array` records the same gap.
 The original boundary repair's recursive Promise contracts and the
 Promise-dependent framework target remain open; no erased contract is restored.
 
@@ -57,14 +66,14 @@ is not part of `verification/run.sh`.
 
 | Suite | Harness verdict | Files | Units | Accepted | Verified | Accepted functions | Verified functions |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,458 | 2,186 | 1,863 | 1,616 |
+| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,458 | 2,184 | 1,863 | 1,614 |
 | `tests/callgraph` | no error allowed | 25 | 59 | 59 | 56 | 51 | 48 |
 | `tests/constprop` | no error allowed | 14 | 66 | 66 | 66 | 49 | 49 |
 | `tests/deadcode` | no error allowed | 7 | 27 | 27 | 27 | 16 | 16 |
 | `tests/cfg` | no error allowed | 7 | 22 | 22 | 22 | 21 | 21 |
 | `tests/projects` | expect-error markers, under the project's tsconfig | 24 of 68 | 44 | 34 | 34 | 23 | 23 |
 | `tests/ts-conformance/cases` | lines listed in `reference/*.errors.txt` | 4 | 9 | 8 | 8 | 3 | 3 |
-| **total** | | **480** | **4,110** | **2,674** | **2,399** | **2,026** | **1,776** |
+| **total** | | **480** | **4,110** | **2,674** | **2,397** | **2,026** | **1,774** |
 
 Excluded (79 files, listed in the JSON with reasons): `ts-conformance/not-supported`
 (31) and `callgraph-unsupported` (4) assert only that SKJS reports errors;
@@ -232,8 +241,8 @@ First blocker, not every missing feature of a unit:
 | generics: constraints, explicit type arguments, rigid types, generic function types | 11 | 7 | 3 | 8 |
 | object growth: a key-adding write on an object another reference may hold, a dynamic index write | 11 | 11 | 0 | 5 |
 | object literal members (methods, accessors, spreads) | 10 | 9 | 0 | 5 |
-| calls: overloads, .call, spread arguments, Object.assign, arrow callee | 10 | 6 | 3 | 6 |
-| a named function at a signature binding more parameters, or indifferent to the receiver it requires (its type is its annotated signature) | 9 | 8 | 1 | 5 |
+| calls: overloads, .call, spread arguments, Object.assign, arrow callee | 15 | 10 | 4 | 10 |
+| a named function at a signature binding more parameters, or indifferent to the receiver it requires (its type is its annotated signature) | 7 | 7 | 0 | 4 |
 | arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's | 8 | 8 | 0 | 5 |
 | a non-null assertion on a read at a for...in key (that the object owns the key relates two values) | 8 | 8 | 0 | 1 |
 | cells read at their contract (contents known only as primitives or as no `undefined`, and forgotten across a step that may write them) | 7 | 5 | 0 | 5 |
@@ -244,7 +253,7 @@ First blocker, not every missing feature of a unit:
 | equality: objects without a field (no identity), loose equality | 4 | 4 | 0 | 2 |
 | reads on unions/primitives (field/index read on non-object, string keys) | 2 | 1 | 0 | 2 |
 | relational operators (< <= > >=) and ** | 2 | 1 | 1 | 1 |
-| search: no derivation found (evidence search failed) | 9 | 9 | 0 | 4 |
+| search: no derivation found (evidence search failed) | 8 | 8 | 0 | 3 |
 | dictionaries: a spread of one, a key `in` found in one | 2 | 2 | 0 | 2 |
 | invariance: a writable element or field at a wider one (TypeScript relates them covariantly) | 2 | 2 | 0 | 1 |
 | compound and update assignments (x++, \|\|=, ??=, a[i] op=) | 1 | 1 | 0 | 1 |

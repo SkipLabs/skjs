@@ -14,17 +14,17 @@
   "rejected": 2
  },
  "accepted": 2674,
- "verified": 2399,
+ "verified": 2397,
  "byStatus": {
-  "verified (check)": 2399,
-  "unverified (search)": 158,
+  "verified (check)": 2397,
+  "unverified (search)": 155,
   "unsupported (source)": 85,
-  "unsupported (proposal)": 32
+  "unsupported (proposal)": 37
  },
  "bySuite": {
   "expect-error": {
    "accepted": 2458,
-   "verified": 2186
+   "verified": 2184
   },
   "constprop": {
    "accepted": 66,
@@ -51,11 +51,11 @@
    "verified": 8
   }
  },
- "filesAllVerified": 285,
+ "filesAllVerified": 284,
  "filesWithAccepted": 377,
  "functions": {
   "accepted": 2026,
-  "verified": 1776
+  "verified": 1774
  },
  "byGroup": {
   "generic contracts requiring an unsupported exact representation": {
@@ -69,6 +69,12 @@
    "self": 30,
    "dependency": 8,
    "files": 24
+  },
+  "calls: overloads, .call, spread arguments, Object.assign, arrow callee": {
+   "units": 15,
+   "self": 10,
+   "dependency": 4,
+   "files": 10
   },
   "destructuring and rest/default parameters": {
    "units": 14,
@@ -118,23 +124,11 @@
    "dependency": 0,
    "files": 5
   },
-  "calls: overloads, .call, spread arguments, Object.assign, arrow callee": {
-   "units": 10,
-   "self": 6,
-   "dependency": 3,
-   "files": 6
-  },
   "search: no derivation found (evidence search failed)": {
-   "units": 9,
-   "self": 9,
-   "dependency": 0,
-   "files": 4
-  },
-  "a named function at a signature binding more parameters, or indifferent to the receiver it requires (its type is its annotated signature)": {
-   "units": 9,
+   "units": 8,
    "self": 8,
-   "dependency": 1,
-   "files": 5
+   "dependency": 0,
+   "files": 3
   },
   "arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's": {
    "units": 8,
@@ -155,6 +149,12 @@
    "files": 5
   },
   "tests on a value of a type parameter or `unknown` (no rule narrows a parameter row to its meet `T & number`; no object identity)": {
+   "units": 7,
+   "self": 7,
+   "dependency": 0,
+   "files": 4
+  },
+  "a named function at a signature binding more parameters, or indifferent to the receiver it requires (its type is its annotated signature)": {
    "units": 7,
    "self": 7,
    "dependency": 0,
@@ -239,15 +239,15 @@
    "files": 1
   }
  },
- "reachedButRefused": 158,
+ "reachedButRefused": 155,
  "byClass": {
-  "verified": 2399,
+  "verified": 2397,
   "principled": 73,
-  "gap": 184,
-  "unexplained": 8,
+  "gap": 187,
+  "unexplained": 7,
   "skjsUnsound": 10
  },
- "unexplainedWithObligation": 8,
+ "unexplainedWithObligation": 7,
  "byReason": {
   "a generic contract cannot be represented in full": {
    "class": "gap",
@@ -274,20 +274,10 @@
    "units": 9,
    "files": 5
   },
-  "search: no derivation found": {
-   "class": "unexplained",
-   "units": 8,
-   "files": 3
-  },
   "a read at a `for...in` key under `!`": {
    "class": "gap",
    "units": 8,
    "files": 1
-  },
-  "a named function at a longer signature": {
-   "class": "gap",
-   "units": 8,
-   "files": 4
   },
   "a key-adding write on an object another reference may hold": {
    "class": "gap",
@@ -298,6 +288,11 @@
    "class": "gap",
    "units": 8,
    "files": 3
+  },
+  "search: no derivation found": {
+   "class": "unexplained",
+   "units": 7,
+   "files": 2
   },
   "`instanceof` of a constructor from outside the file": {
    "class": "principled",
@@ -324,6 +319,11 @@
    "units": 6,
    "files": 2
   },
+  "a named function at a longer signature": {
+   "class": "gap",
+   "units": 6,
+   "files": 3
+  },
   "`this` in sloppy code": {
    "class": "gap",
    "units": 6,
@@ -338,6 +338,11 @@
    "class": "gap",
    "units": 5,
    "files": 1
+  },
+  "a callable value has no admitted call signature": {
+   "class": "gap",
+   "units": 5,
+   "files": 4
   },
   "cells after a step that may write them": {
    "class": "gap",
@@ -512,17 +517,18 @@
   "search: reject: TypeScript refuses this code too": 23,
   "search: reject: a record at an index signature: TypeScript admits a type literal whose named fields fit the index (an implicit index signature), but a value of it may c": 14,
   "source: reject: TypeScript refuses this code too": 10,
-  "search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim": 8,
   "search: reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two ": 8,
-  "search: reject: a named function where a signature binding more parameters is expected: its slot is its annotated signature, checked by its own unit, and the arity of a": 8,
   "source: a method with a `this` parameter is outside the fragment: a method member's contract is relative to its host, the object it is read from, and states no receiver": 8,
+  "search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim": 7,
   "source: `instanceof` whose right operand is not a class declared at the file's top level: nothing in the file says which prototype a constructor from elsewhere gives it": 7,
   "proposal: `x instanceof C` does not narrow `unknown` to C: an object gets C'_'s constructor running (`Object.create(C.prototype)`, `Object.setPrototypeOf`, `Reflect.const": 7,
   "source: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its ope": 6,
+  "search: reject: a named function where a signature binding more parameters is expected: its slot is its annotated signature, checked by its own unit, and the arity of a": 6,
   "source: a function that reads `this` must be strict code: sloppy code replaces an undefined or primitive receiver by the global object or a wrapper object, which the mo": 6,
   "source: a rest parameter needs a tuple of required positions or an array: one typed by a type parameter would bind the array a call collects at that parameter, which on": 6,
   "proposal: reject: TypeScript refuses this code too": 5,
   "source: a computed enum member is outside the fragment: its reverse mapping is keyed by its value at run time": 5,
+  "proposal: call at _: value has no admitted call signature": 5,
   "search: reject: source refusal at _: a write of '_', a key the object'_'s keys change: a key-adding write is typed only on a local's own fresh object that nothing else ": 5,
   "search: reject: a cell read at its contract: a cell is known by its contract after a step that may write it (a call, whose callee may write any location its operands re": 4,
   "source: extending the standard library'_'s constructor allocates, not an ordinary object a class allocates, and its members are read at the library type's meaning, not ": 4,
@@ -795,22 +801,22 @@
 {"source":"tests/expect-error/array-destructuring-rest.ts","name":"restZeroRemaining","kind":"function","line":25,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/array-destructuring-rest.ts","name":"restFromArray","kind":"function","line":33,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/array-destructuring-rest.ts","name":"restTooManyBeforeRest","kind":"function","line":42,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/array-isarray-refinement.ts","name":"testBasicArrayRefinement","kind":"function","line":20,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"x","detail":"reject: source expression obligation at [169,170): evidence search failed: no derivation of its return-contract claim — The available claim for x is { \"[[proto]]\": never = ({ forEach: never = (type 18), map: never = (type 26), reduce: never = (type 28), reduceRight: never = (type 28), every: never = (type 29), some: never = (type 29), filter: never = (type 32), slice: never = (type 33), join: never = (type 37), indexOf: never = (type 38), lastIndexOf: never = (type 38), includes: never = (type 39), at: ","class":"unexplained"},
+{"source":"tests/expect-error/array-isarray-refinement.ts","name":"testBasicArrayRefinement","kind":"function","line":20,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"x","detail":"reject: source expression obligation at [169,170): evidence search failed: no derivation of its return-contract claim — The available claim for x is { \"[[proto]]\": never = ({ forEach: never = (type 18), map: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}), reduce: never = (type 26), reduceRight: never = (type 26), every: never = (type 27), some: never = (type 27), filter: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}), slice: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"si","class":"unexplained"},
 {"source":"tests/expect-error/array-isarray-refinement.ts","name":"testNegativeArrayRefinement","kind":"function","line":31,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/array-isarray-refinement.ts","name":"testStringArrayRefinement","kind":"function","line":41,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"x","detail":"reject: source expression obligation at [170,171): evidence search failed: no derivation of its return-contract claim — The available claim for x is { \"[[proto]]\": never = ({ forEach: never = (type 19), map: never = (type 27), reduce: never = (type 29), reduceRight: never = (type 29), every: never = (type 30), some: never = (type 30), filter: never = (type 33), slice: never = (type 34), join: never = (type 37), indexOf: never = (type 38), lastIndexOf: never = (type 38), includes: never = (type 39), at: ","class":"unexplained"},
+{"source":"tests/expect-error/array-isarray-refinement.ts","name":"testStringArrayRefinement","kind":"function","line":41,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"x","detail":"reject: source expression obligation at [170,171): evidence search failed: no derivation of its return-contract claim — The available claim for x is { \"[[proto]]\": never = ({ forEach: never = (type 19), map: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}), reduce: never = (type 27), reduceRight: never = (type 27), every: never = (type 28), some: never = (type 28), filter: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}), slice: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"si","class":"unexplained"},
 {"source":"tests/expect-error/array-isarray-refinement.ts","name":"testArrayMethodsAfterRefinement","kind":"function","line":55,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/array-isarray-refinement.ts","name":"testArrayPushAfterRefinement","kind":"function","line":64,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/array-isarray-refinement.ts","name":"testMultipleUnion","kind":"function","line":77,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"x","detail":"reject: source expression obligation at [171,172): evidence search failed: no derivation of its return-contract claim — The available claim for x is { \"[[proto]]\": never = ({ forEach: never = (type 19), map: never = (type 27), reduce: never = (type 29), reduceRight: never = (type 29), every: never = (type 30), some: never = (type 30), filter: never = (type 33), slice: never = (type 34), join: never = (type 37), indexOf: never = (type 38), lastIndexOf: never = (type 38), includes: never = (type 39), at: ","class":"unexplained"},
+{"source":"tests/expect-error/array-isarray-refinement.ts","name":"testMultipleUnion","kind":"function","line":77,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"x","detail":"reject: source expression obligation at [171,172): evidence search failed: no derivation of its return-contract claim — The available claim for x is { \"[[proto]]\": never = ({ forEach: never = (type 19), map: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}), reduce: never = (type 27), reduceRight: never = (type 27), every: never = (type 28), some: never = (type 28), filter: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}), slice: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"si","class":"unexplained"},
 {"source":"tests/expect-error/array-isarray-refinement.ts","name":"testMultipleUnionElseBranch","kind":"function","line":87,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/array-isarray-refinement.ts","name":"testNestedRefinement","kind":"function","line":103,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"x","detail":"reject: source expression obligation at [214,215): evidence search failed: no derivation of its return-contract claim — The available claim for x is { \"[[proto]]\": never = ({ forEach: never = (type 18), map: never = (type 26), reduce: never = (type 28), reduceRight: never = (type 28), every: never = (type 29), some: never = (type 29), filter: never = (type 32), slice: never = (type 33), join: never = (type 37), indexOf: never = (type 38), lastIndexOf: never = (type 38), includes: never = (type 39), at: ","class":"unexplained"},
+{"source":"tests/expect-error/array-isarray-refinement.ts","name":"testNestedRefinement","kind":"function","line":103,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"x","detail":"reject: source expression obligation at [214,215): evidence search failed: no derivation of its return-contract claim — The available claim for x is { \"[[proto]]\": never = ({ forEach: never = (type 18), map: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}), reduce: never = (type 26), reduceRight: never = (type 26), every: never = (type 27), some: never = (type 27), filter: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}), slice: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"si","class":"unexplained"},
 {"source":"tests/expect-error/array-isarray-refinement.ts","name":"testComplexUnion","kind":"function","line":123,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/array-isarray-refinement.ts","name":"testArrayMethodOnNonArray","kind":"function","line":137,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/array-isarray-refinement.ts","name":"testWrongTypeInArrayBranch","kind":"function","line":147,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/array-isarray-refinement.ts","name":"testElseBranchRefined","kind":"function","line":158,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/array-isarray-refinement.ts","name":"testObjectPropOnArray","kind":"function","line":168,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/array-isarray-refinement.ts","name":"testEarlyReturn","kind":"function","line":182,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"x","detail":"reject: source expression obligation at [247,248): evidence search failed: no derivation of its return-contract claim — The available claim for x is { \"[[proto]]\": never = ({ forEach: never = (type 18), map: never = (type 26), reduce: never = (type 28), reduceRight: never = (type 28), every: never = (type 29), some: never = (type 29), filter: never = (type 32), slice: never = (type 33), join: never = (type 37), indexOf: never = (type 38), lastIndexOf: never = (type 38), includes: never = (type 39), at: ","class":"unexplained"},
+{"source":"tests/expect-error/array-isarray-refinement.ts","name":"testEarlyReturn","kind":"function","line":182,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"x","detail":"reject: source expression obligation at [247,248): evidence search failed: no derivation of its return-contract claim — The available claim for x is { \"[[proto]]\": never = ({ forEach: never = (type 18), map: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}), reduce: never = (type 26), reduceRight: never = (type 26), every: never = (type 27), some: never = (type 27), filter: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}), slice: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"si","class":"unexplained"},
 {"source":"tests/expect-error/array-isarray-refinement.ts","name":"testEarlyReturnWithLength","kind":"function","line":190,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/array-isarray-refinement.ts","name":"testCombinedWithTypeof","kind":"function","line":202,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"x","detail":"reject: source expression obligation at [229,230): evidence search failed: no derivation of its return-contract claim — The available claim for x is { \"[[proto]]\": never = ({ forEach: never = (type 19), map: never = (type 27), reduce: never = (type 29), reduceRight: never = (type 29), every: never = (type 30), some: never = (type 30), filter: never = (type 33), slice: never = (type 34), join: never = (type 37), indexOf: never = (type 38), lastIndexOf: never = (type 38), includes: never = (type 39), at: ","class":"unexplained"},
+{"source":"tests/expect-error/array-isarray-refinement.ts","name":"testCombinedWithTypeof","kind":"function","line":202,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"x","detail":"reject: source expression obligation at [229,230): evidence search failed: no derivation of its return-contract claim — The available claim for x is { \"[[proto]]\": never = ({ forEach: never = (type 19), map: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}), reduce: never = (type 27), reduceRight: never = (type 27), every: never = (type 28), some: never = (type 28), filter: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}), slice: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"si","class":"unexplained"},
 {"source":"tests/expect-error/array-isarray-refinement.ts","name":"testNegativeWithNull","kind":"function","line":218,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/array-isarray-refinement.ts","name":"testMultipleArrays","kind":"function","line":229,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/array-isarray-refinement.ts","name":"testFieldAccessAfterNegative","kind":"function","line":239,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -824,7 +830,7 @@
 {"source":"tests/expect-error/array-isarray-refinement.ts","name":"testMutableArrayStillMutable","kind":"function","line":329,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/array-isarray-refinement.ts","name":"restArrayBrand","kind":"function","line":336,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/array-isarray-refinement.ts","name":"restArrayEntries","kind":"function","line":343,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: a spread copies the own enumerable properties of a plain object; an array's are its indices and whatever keys it carries, which no record states","group":"object literal members (methods, accessors, spreads)","where":"self","detail":"unsupported: a spread copies the own enumerable properties of a plain object; an array's are its indices and whatever keys it carries, which no record states","class":"gap"},
-{"source":"tests/expect-error/array-object-union-operations.ts","name":"testCommonProperty","kind":"function","line":25,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a read of `length` on a union of an array and a record: an array keeps its length in its store, not at a location a field of a record names, and an open","group":"arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's","where":"self","at":"x.length","detail":"reject: a read of `length` on a union of an array and a record: an array keeps its length in its store, not at a location a field of a record names, and an open record may be an array carrying other keys, so no rule reads `length` on a union of an array and a record — No rule derives this readAt at number from x: { name: string, length: number } | { \"[[proto]]\": never = ({ forEach: never = (type 14), map: never = (type 22), reduce: never = (type 24), reduceRight: never = (type 24), every: never = (type 25), some: never = (type 25), filter: never = (type 28), slice: never = (type 29), join: never = (type 33), indexOf: never = (type 34), lastIndexOf: ","class":"gap"},
+{"source":"tests/expect-error/array-object-union-operations.ts","name":"testCommonProperty","kind":"function","line":25,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a read of `length` on a union of an array and a record: an array keeps its length in its store, not at a location a field of a record names, and an open","group":"arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's","where":"self","at":"x.length","detail":"reject: a read of `length` on a union of an array and a record: an array keeps its length in its store, not at a location a field of a record names, and an open record may be an array carrying other keys, so no rule reads `length` on a union of an array and a record — No rule derives this readAt at number from x: { name: string, length: number } | { \"[[proto]]\": never = ({ forEach: never = (type 14), map: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}), reduce: never = (type 22), reduceRight: never = (type 22), every: never = (type 23), some: never = (type 23), filter: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}), sl","class":"gap"},
 {"source":"tests/expect-error/array-object-union-operations.ts","name":"testArrayOnlyProperty","kind":"function","line":32,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/array-object-union-operations.ts","name":"testObjectOnlyProperty","kind":"function","line":38,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/array-object-union-operations.ts","name":"testArrayMethodOnUnion","kind":"function","line":48,"skjsMarker":"rejected-self"},
@@ -847,7 +853,7 @@
 {"source":"tests/expect-error/array-object-union-operations.ts","name":"testObjectSubtypeOfUnion","kind":"function","line":211,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/array-object-union-operations.ts","name":"testUnionNotSubtypeOfArray","kind":"function","line":217,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/array-object-union-operations.ts","name":"testUnionNotSubtypeOfObject","kind":"function","line":223,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/array-object-union-operations.ts","name":"testNarrowToArray","kind":"function","line":235,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"x","detail":"reject: source expression obligation at [164,165): evidence search failed: no derivation of its return-contract claim — The available claim for x is { \"[[proto]]\": never = ({ forEach: never = (type 18), map: never = (type 26), reduce: never = (type 28), reduceRight: never = (type 28), every: never = (type 29), some: never = (type 29), filter: never = (type 32), slice: never = (type 33), join: never = (type 37), indexOf: never = (type 38), lastIndexOf: never = (type 38), includes: never = (type 39), at: ","class":"unexplained"},
+{"source":"tests/expect-error/array-object-union-operations.ts","name":"testNarrowToArray","kind":"function","line":235,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"x","detail":"reject: source expression obligation at [164,165): evidence search failed: no derivation of its return-contract claim — The available claim for x is { \"[[proto]]\": never = ({ forEach: never = (type 18), map: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}), reduce: never = (type 26), reduceRight: never = (type 26), every: never = (type 27), some: never = (type 27), filter: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}), slice: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"si","class":"unexplained"},
 {"source":"tests/expect-error/array-object-union-operations.ts","name":"testNarrowToObject","kind":"function","line":243,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/array-object-union-operations.ts","name":"testNestedUnionsGetFirst","kind":"function","line":256,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/array-object-union-operations.ts","name":"testGenericArrayOrObject","kind":"function","line":270,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -1245,7 +1251,7 @@
 {"source":"tests/expect-error/contextual-hidden-escape.ts","name":"contextualRoot","kind":"function","line":16,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/contextual-hidden-escape.ts","name":"opaqueContextualRoot","kind":"function","line":29,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/contextual-literal-args.ts","name":"inlineLiteralKey","kind":"function","line":14,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/contextual-literal-args.ts","name":"variableLiteralKey","kind":"function","line":22,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"update<0, { value: number }>(\"counter\", entries)","detail":"reject: TypeScript refuses this code too (line 8, col 43: Argument of type '(number | { value: number; }[])[][]' is not assignable to parameter of type '[0, { value: number; }[]][]'.); the pipeline follows TypeScript's types — No rule derives this invoke at unknown from \"counter\": \"counter\", entries: { \"[[proto]]\": never = ({ forEach: never = (type 28), map: never = (type 36), reduce: never = (type 38), reduceRight: never = (type 38), every: never = (type 39), some: never = (type 39), filter: never = (type 42), slice: never = (type 43), join: never = (type 46), indexOf: never = (type 47), lastIndexOf: never ","class":"principled"},
+{"source":"tests/expect-error/contextual-literal-args.ts","name":"variableLiteralKey","kind":"function","line":22,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"update<0, { value: number }>(\"counter\", entries)","detail":"reject: TypeScript refuses this code too (line 8, col 43: Argument of type '(number | { value: number; }[])[][]' is not assignable to parameter of type '[0, { value: number; }[]][]'.); the pipeline follows TypeScript's types — No rule derives this invoke at unknown from \"counter\": \"counter\", entries: { \"[[proto]]\": never = ({ forEach: never = (type 28), map: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}), reduce: never = (type 36), reduceRight: never = (type 36), every: never = (type 37), some: never = (type 37), filter: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}), slice: n","class":"principled"},
 {"source":"tests/expect-error/contextual-literal-args.ts","name":"mismatchedLiteralKey","kind":"function","line":28,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/contextual-literal-args.ts","name":"stringElements","kind":"function","line":43,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/contextual-literal-args.ts","name":"booleanElements","kind":"function","line":46,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -1840,7 +1846,7 @@
 {"source":"tests/expect-error/function-union.ts","name":"testUnionPreservesVariance","kind":"function","line":384,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/function-union.ts","name":"wrongFn3","kind":"function","line":392,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/function-union.ts","name":"testWrongVarianceInUnion","kind":"function","line":396,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/gap-callback-param-contextual-typing.ts","name":"contextualSortParams","kind":"function","line":6,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/gap-callback-param-contextual-typing.ts","name":"contextualSortParams","kind":"function","line":6,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: call at _: value has no admitted call signature","group":"calls: overloads, .call, spread arguments, Object.assign, arrow callee","where":"self","at":"a.slice()","detail":"unsupported: call at [71,80): value has no admitted call signature","class":"gap"},
 {"source":"tests/expect-error/gap-callback-param-contextual-typing.ts","name":"contextualForEach","kind":"function","line":11,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/gap-callback-param-contextual-typing.ts","name":"contextualUserCallback","kind":"function","line":20,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/gap-continue-guard-narrowing.ts","name":"continueGuardNarrowing","kind":"function","line":7,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -2124,12 +2130,12 @@
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"genericFlow","kind":"function","line":240,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: `x instanceof C` does not narrow `unknown` to C: an object gets C'_'s constructor running (`Object.create(C.prototype)`, `Object.setPrototypeOf`, `Reflect.const","group":"in / instanceof / typeof tests","where":"unknown","detail":"unsupported: `x instanceof C` does not narrow `unknown` to C: an object gets C's prototype without C's constructor running (`Object.create(C.prototype)`, `Object.setPrototypeOf`, `Reflect.construct` with C as the new target), so C's prototype on its chain is no evidence of C's fields, and the model ","class":"principled"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"unionRoundTrip","kind":"function","line":249,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: TypeScript types this unannotated closure parameter from its context as `any`, which states no contract","group":"other source forms","where":"self","at":"const selected = x.pick((_item) => true);","detail":"gate: TypeScript types this unannotated closure parameter from its context as `any`, which states no contract (line 19, col 30)","class":"principled"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"hiddenTypeNoEscape","kind":"function","line":260,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"sharedReadOnly","kind":"function","line":273,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an ar","group":"arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's","where":"self","at":"sharedRO(u, w)","detail":"reject: `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an array, not that it is an array of `Array.prototype`: the array invariant is a fact of every record and dictionary type, and `unknown` is also  — No rule derives this invoke at number from u: unknown, w: unknown, sharedRO: ({ \"[]\": never = (Store<ReadonlyArray<unknown>>), \"[[proto]]\": never = ({ forEach: never = (type 15), map: never = (type 23), reduce: never = (type 25), reduceRight: never = (type 25), every: never = (type 26), some: never = (type 26), filter: never = (type 29), slice: never = (type 30), join: never = (type 34","class":"gap"},
+{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"sharedReadOnly","kind":"function","line":273,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an ar","group":"arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's","where":"self","at":"sharedRO(u, w)","detail":"reject: `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an array, not that it is an array of `Array.prototype`: the array invariant is a fact of every record and dictionary type, and `unknown` is also  — No rule derives this invoke at number from u: unknown, w: unknown, sharedRO: ({ \"[]\": never = (Store<ReadonlyArray<unknown>>), \"[[proto]]\": never = ({ forEach: never = (type 15), map: never = (… | …), reduce: never = (type 23), reduceRight: never = (type 23), every: never = (type 24), some: never = (type 24), filter: never = (… | …), slice: never = (… | …), join: never = (type 28), ind","class":"gap"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"arrayWrite","kind":"function","line":281,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"arrayPush","kind":"function","line":293,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"arrayRead","kind":"function","line":305,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: `unknown` used as an array after `Array.isArray`, read at an element: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the st","group":"arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's","where":"self","detail":"unsupported: `unknown` used as an array after `Array.isArray`, read at an element: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an array, not that it is an array of `Array.prototype`: the array invariant is a fact of every record and dictionary typ","class":"gap"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"typedArrayIdentity","kind":"function","line":313,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"separateArrayParams","kind":"function","line":322,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an ar","group":"arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's","where":"self","at":"eachLen(u, w)","detail":"reject: `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an array, not that it is an array of `Array.prototype`: the array invariant is a fact of every record and dictionary type, and `unknown` is also  — No rule derives this invoke at number from u: unknown, w: unknown, eachLen: ({ \"[[proto]]\": never = ({ forEach: never = (type 15), map: never = (type 23), reduce: never = (type 25), reduceRight: never = (type 25), every: never = (type 26), some: never = (type 26), filter: never = (type 29), slice: never = (type 30), join: never = (type 34), indexOf: never = (type 35), lastIndexOf: neve","class":"gap"},
+{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"separateArrayParams","kind":"function","line":322,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an ar","group":"arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's","where":"self","at":"eachLen(u, w)","detail":"reject: `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an array, not that it is an array of `Array.prototype`: the array invariant is a fact of every record and dictionary type, and `unknown` is also  — No rule derives this invoke at number from u: unknown, w: unknown, eachLen: ({ \"[[proto]]\": never = ({ forEach: never = (type 15), map: never = (… | …), reduce: never = (type 23), reduceRight: never = (type 23), every: never = (type 24), some: never = (type 24), filter: never = (… | …), slice: never = (… | …), join: never = (type 28), indexOf: never = (type 29), lastIndexOf: never = (t","class":"gap"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"rejectSharedArrayElement","kind":"function","line":332,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"multiBranchInstsWriteBefore","kind":"function","line":360,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"multiBranchInstsWriteAfter","kind":"function","line":367,"skjsMarker":"rejected-self"},
@@ -2139,7 +2145,7 @@
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"queryRejectedSetHas","kind":"function","line":410,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"queryRejectedArrayIncludes","kind":"function","line":420,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"toArrayMutable","kind":"function","line":434,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"toArrayReadonly","kind":"function","line":445,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an ar","group":"arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's","where":"self","at":"x","detail":"reject: `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an array, not that it is an array of `Array.prototype`: the array invariant is a fact of every record and dictionary type, and `unknown` is also  — The available claim for x is unknown. This return requires { \"[]\": never = (Store<ReadonlyArray<unknown>>), \"[[proto]]\": never = ({ forEach: never = (type 13), map: never = (type 21), reduce: never = (type 23), reduceRight: never = (type 23), every: never = (type 24), some: never = (type 24), filter: never = (type 27), slice: never = (type 28), join: never = (type 32), indexOf: never =","class":"gap"},
+{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"toArrayReadonly","kind":"function","line":445,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an ar","group":"arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's","where":"self","at":"x","detail":"reject: `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an array, not that it is an array of `Array.prototype`: the array invariant is a fact of every record and dictionary type, and `unknown` is also  — The available claim for x is unknown. This return requires { \"[]\": never = (Store<ReadonlyArray<unknown>>), \"[[proto]]\": never = ({ forEach: never = (type 13), map: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}), reduce: never = (type 21), reduceRight: never = (type 21), every: never = (type 22), some: never = (type 22), filter: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors","class":"gap"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"observeLocalHiddenType","kind":"function","line":463,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: `x instanceof C` does not narrow `unknown` to C: an object gets C'_'s constructor running (`Object.create(C.prototype)`, `Object.setPrototypeOf`, `Reflect.const","group":"in / instanceof / typeof tests","where":"unknown","detail":"unsupported: `x instanceof C` does not narrow `unknown` to C: an object gets C's prototype without C's constructor running (`Object.create(C.prototype)`, `Object.setPrototypeOf`, `Reflect.construct` with C as the new target), so C's prototype on its chain is no evidence of C's fields, and the model ","class":"principled"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"opaqueHiddenResult","kind":"function","line":472,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"opaqueCapturedContainer","kind":"function","line":481,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -2293,7 +2299,7 @@
 {"source":"tests/expect-error/literal-representation-lifetime.ts","name":"queryFreshLiteralDefault","kind":"function","line":3,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/literal-representation-lifetime.ts","name":"queryLiteralLengthView","kind":"function","line":10,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/literal-representation-lifetime.ts","name":"queryConditionalLiteralLengthView","kind":"function","line":19,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/literal-representation-lifetime.ts","name":"queryLiteralBroadLengthView","kind":"function","line":30,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: an array used as a record naming `length`: an array keeps its length in its store, not at a location a field of a record names, and an open record may b","group":"arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's","where":"self","at":"items","detail":"reject: an array used as a record naming `length`: an array keeps its length in its store, not at a location a field of a record names, and an open record may be an array carrying other keys, so no rule reads `length` on a union of an array and a record — The available claim for view is { \"[[proto]]\": never = ({ forEach: never = (type 16), map: never = (type 24), reduce: never = (type 26), reduceRight: never = (type 26), every: never = (type 27), some: never = (type 27), filter: never = (type 30), slice: never = (type 31), join: never = (type 35), indexOf: never = (type 36), lastIndexOf: never = (type 36), includes: never = (type 37), a","class":"gap"},
+{"source":"tests/expect-error/literal-representation-lifetime.ts","name":"queryLiteralBroadLengthView","kind":"function","line":30,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: an array used as a record naming `length`: an array keeps its length in its store, not at a location a field of a record names, and an open record may b","group":"arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's","where":"self","at":"items","detail":"reject: an array used as a record naming `length`: an array keeps its length in its store, not at a location a field of a record names, and an open record may be an array carrying other keys, so no rule reads `length` on a union of an array and a record — The available claim for view is { \"[[proto]]\": never = ({ forEach: never = (type 16), map: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}), reduce: never = (type 24), reduceRight: never = (type 24), every: never = (type 25), some: never = (type 25), filter: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}), slice: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{","class":"gap"},
 {"source":"tests/expect-error/literal-representation-lifetime.ts","name":"queryMixedAwaitedLiteralLength","kind":"function","line":38,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/literal-representation-lifetime.ts","name":"queryMixedAwaitedLiteralBroadLength","kind":"function","line":52,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source refusal at _: the declarations required by this unit cannot be interpreted: generic contract at [72738,72866]: the binder colour budget is exhaus","group":"generic contracts requiring an unsupported exact representation","where":"self","at":"queryMixedAwaitedLiteralBroadLength","detail":"reject: source refusal at [15,50): the declarations required by this unit cannot be interpreted: generic contract at [72738,72866]: the binder colour budget is exhausted; the contract cannot be erased — the declarations required by this unit cannot be interpreted: generic contract at [72738,72866]: the binder colour budget is exhausted; the contract cannot be erased","class":"gap"},
 {"source":"tests/expect-error/literal-types.ts","name":"negativeNum","kind":"variable","line":4,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -2961,7 +2967,7 @@
 {"source":"tests/expect-error/property-name-control-char-prettier-ignore.ts","name":"accessControlCharKey","kind":"function","line":8,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/qualified-name-access.ts","name":"qualifiedClassMember","kind":"function","line":6,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/qualified-name-access.ts","name":"QualifiedBase","kind":"class","line":10,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/readonly-array-pure-transform-return-array.ts","name":"testMapReturnsArray","kind":"function","line":12,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"xs.map((x: number) => x * 2)","detail":"reject: source expression obligation at [73,101): evidence search failed: no derivation of its return-contract claim — The available claim for xs.map((x: number) => x * 2) is { \"[[proto]]\": never = ({ forEach: never = (type 20), map: never = (type 28), reduce: never = (type 30), reduceRight: never = (type 30), every: never = (type 31), some: never = (type 31), filter: never = (type 34), slice: never = (type 35), join: never = (type 39), indexOf: never = (type 40), lastIndexOf: never = (type 40), includ","class":"unexplained"},
+{"source":"tests/expect-error/readonly-array-pure-transform-return-array.ts","name":"testMapReturnsArray","kind":"function","line":12,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: call at _: value has no admitted call signature","group":"calls: overloads, .call, spread arguments, Object.assign, arrow callee","where":"self","at":"xs.map((x: number) => x * 2)","detail":"unsupported: call at [73,101): value has no admitted call signature","class":"gap"},
 {"source":"tests/expect-error/readonly-hint.ts","name":"Box","kind":"class","line":7,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/readonly-hint.ts","name":"readonlyWouldHelp","kind":"function","line":17,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/readonly-hint.ts","name":"readonlyWouldNotHelp","kind":"function","line":29,"skjsMarker":"rejected-self"},
@@ -3460,8 +3466,8 @@
 {"source":"tests/expect-error/test-lambda-inline.ts","name":"testGenericReturn","kind":"function","line":13,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/test-lambda-inline.ts","name":"takesNarrow","kind":"function","line":18,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/test-lambda-inline.ts","name":"testUnionReturn","kind":"function","line":21,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/test-lambda-inline.ts","name":"mapArr","kind":"function","line":26,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a named function where a signature binding more parameters is expected: its slot is its annotated signature, checked by its own unit, and the arity of a","group":"a named function at a signature binding more parameters, or indifferent to the receiver it requires (its type is its annotated signature)","where":"self","at":"arr.map(f)","detail":"reject: a named function where a signature binding more parameters is expected: its slot is its annotated signature, checked by its own unit, and the arity of an arrow is exact; offering it more parameters would make that slot a claim (DESIGN.md, \"Method members are host-relative\") — No rule derives this invoke at { \"[[proto]]\": never = ({ forEach: never = (type 17), map: never = (type 25), reduce: never = (type 27), reduceRight: never = (type 27), every: never = (type 28), some: never = (type 28), filter: never = (type 31), slice: never = (type 32), join: never = (type 36), indexOf: never = (type 37), lastIndexOf: never = (type 37), includes: never = (type 38), at","class":"gap"},
-{"source":"tests/expect-error/test-lambda-inline.ts","name":"testMapCallback","kind":"function","line":29,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a named function where a signature binding more parameters is expected: its slot is its annotated signature, checked by its own unit, and the arity of a","group":"a named function at a signature binding more parameters, or indifferent to the receiver it requires (its type is its annotated signature)","where":"dependency","at":"arr.map(f)","detail":"reject: a named function where a signature binding more parameters is expected: its slot is its annotated signature, checked by its own unit, and the arity of an arrow is exact; offering it more parameters would make that slot a claim (DESIGN.md, \"Method members are host-relative\") — No rule derives this invoke at { \"[[proto]]\": never = ({ forEach: never = (type 24), map: never = (type 32), reduce: never = (type 34), reduceRight: never = (type 34), every: never = (type 35), some: never = (type 35), filter: never = (type 38), slice: never = (type 39), join: never = (type 43), indexOf: never = (type 44), lastIndexOf: never = (type 44), includes: never = (type 45), at","class":"gap"},
+{"source":"tests/expect-error/test-lambda-inline.ts","name":"mapArr","kind":"function","line":26,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: call at _: value has no admitted call signature","group":"calls: overloads, .call, spread arguments, Object.assign, arrow callee","where":"self","at":"arr.map(f)","detail":"unsupported: call at [74,84): value has no admitted call signature","class":"gap"},
+{"source":"tests/expect-error/test-lambda-inline.ts","name":"testMapCallback","kind":"function","line":29,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: call at _: value has no admitted call signature","group":"calls: overloads, .call, spread arguments, Object.assign, arrow callee","where":"dependency","at":"arr.map(f)","detail":"unsupported: call at [74,84): value has no admitted call signature","class":"gap"},
 {"source":"tests/expect-error/test-lambda-inline.ts","name":"compose","kind":"function","line":34,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/test-lambda-inline.ts","name":"testCompose","kind":"function","line":37,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/test-lambda-inline.ts","name":"takesObjFn","kind":"function","line":45,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -3954,7 +3960,7 @@
 {"source":"tests/expect-error/tvar-widening-ordinary-check.ts","name":"testConstCandidate","kind":"function","line":22,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/tvar-widening-ordinary-check.ts","name":"testLetCandidate","kind":"function","line":28,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/tvar-widening-ordinary-check.ts","name":"testObjectCandidate","kind":"function","line":34,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/tvar-widening-ordinary-check.ts","name":"testAdaptiveInvariant","kind":"function","line":43,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a mutable array at one of a wider element: a writable element or field is invariant, as a write through the wider view would break the narrower one; Typ","group":"invariance: a writable element or field at a wider one (TypeScript relates them covariantly)","where":"self","at":"a","detail":"reject: a mutable array at one of a wider element: a writable element or field is invariant, as a write through the wider view would break the narrower one; TypeScript relates them covariantly, which is unsound, and SKJS infers the narrower from a later use — The available claim for a is { \"[[proto]]\": never = ({ forEach: never = (type 18), map: never = (type 26), reduce: never = (type 28), reduceRight: never = (type 28), every: never = (type 29), some: never = (type 29), filter: never = (type 32), slice: never = (type 33), join: never = (type 36), indexOf: never = (type 37), lastIndexOf: never = (type 37), includes: never = (type 38), at: ","class":"principled"},
+{"source":"tests/expect-error/tvar-widening-ordinary-check.ts","name":"testAdaptiveInvariant","kind":"function","line":43,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a mutable array at one of a wider element: a writable element or field is invariant, as a write through the wider view would break the narrower one; Typ","group":"invariance: a writable element or field at a wider one (TypeScript relates them covariantly)","where":"self","at":"a","detail":"reject: a mutable array at one of a wider element: a writable element or field is invariant, as a write through the wider view would break the narrower one; TypeScript relates them covariantly, which is unsound, and SKJS infers the narrower from a later use — The available claim for a is { \"[[proto]]\": never = ({ forEach: never = (type 18), map: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}), reduce: never = (type 26), reduceRight: never = (type 26), every: never = (type 27), some: never = (type 27), filter: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}), slice: never = ({\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"si","class":"principled"},
 {"source":"tests/expect-error/tvar-widening-ordinary-check.ts","name":"testNestedCandidate","kind":"function","line":56,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: an instance at another whose writable field differs: a writable element or field is invariant, as a write through the wider view would break the narrowe","group":"invariance: a writable element or field at a wider one (TypeScript relates them covariantly)","where":"self","at":"useWideBox_oc(b)","detail":"reject: an instance at another whose writable field differs: a writable element or field is invariant, as a write through the wider view would break the narrower one; TypeScript relates them covariantly, which is unsound, and SKJS infers the narrower from a later use — No rule derives this invoke at unknown from b: { v: number }, useWideBox_oc: ({ v: number | string }) => unknown.","class":"principled"},
 {"source":"tests/expect-error/tvar-widening-ordinary-check.ts","name":"two_oc","kind":"function","line":67,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/tvar-widening-ordinary-check.ts","name":"testTwoArgUnion","kind":"function","line":70,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -4190,7 +4196,7 @@
 {"source":"tests/expect-error/typeof.ts","name":"testTupleSpread","kind":"function","line":1093,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/typeof.ts","name":"testTupleWrongIndex","kind":"function","line":1110,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/typeof.ts","name":"testTupleWrongDestructure","kind":"function","line":1123,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/typeof.ts","name":"testTupleArrayMethod","kind":"function","line":1134,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/typeof.ts","name":"testTupleArrayMethod","kind":"function","line":1134,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: call at _: value has no admitted call signature","group":"calls: overloads, .call, spread arguments, Object.assign, arrow callee","where":"self","at":"x.map((v: number | string) => v)","detail":"unsupported: call at [112,144): value has no admitted call signature","class":"gap"},
 {"source":"tests/expect-error/typeof.ts","name":"testWrongTupleElementType","kind":"function","line":1143,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/unary-as-const.ts","name":"negNumber","kind":"variable","line":4,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/unary-as-const.ts","name":"negBigInt","kind":"variable","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},

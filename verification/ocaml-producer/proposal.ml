@@ -2738,6 +2738,12 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       (* `(() => R) & { a: T }` is a function carrying fields, the model's
          callable object; the meet of an arrow and a record forms none. *)
       | Meet _ -> unsupported "a call of an intersection of a function type and a record, a callable with fields, which an annotation's meet does not form"
+      | Atoms kinds when List.mem Callable kinds && List.for_all (function
+          | Callable | Ctors [] -> true | _ -> false) kinds ->
+        let location = match site with
+          | Json.Array [Json.Number first;Json.Number last] -> "[" ^ first ^ "," ^ last ^ ")"
+          | _ -> unsupported "call has an invalid source span" in
+        unsupported ("call at " ^ location ^ ": value has no admitted call signature")
       | _ -> unsupported "call requires a single arrow the arguments can call"))
     | Apply (callee,receiver,list) ->
       (* The list is typed at its own contract; Lean reads each element's
