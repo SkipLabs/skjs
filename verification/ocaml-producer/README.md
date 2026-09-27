@@ -89,13 +89,15 @@ Callback heap-preservation guarantees are inferred components of function types,
 proposed at definitions and independently certified by Lean. Translating an
 ordinary TypeScript annotation does not supply such a guarantee. Calls use the
 certified type, without requiring the callback body at the call site. The current
-body check admits pure expressions; reads, allocations and nested qualified calls
-still need compositional support. Signature transport, generic substitution and
+body check composes pure expressions, required field reads and fresh allocations.
+Qualified calls and nested short-circuit/coalescing terms still need composition;
+the producer keeps their proposals conservative. Signature transport, generic substitution and
 `.bind` retain effects. Native `map` and `find`/`findIndex` consume them through
 ordinary overloads, restoring `array-methods`, `array-library` and
 `array-generic-name`. `callback-effects` exercises returned and bound callbacks.
 The admitted semantics supplies ordinary array construction, including for
-external inputs. Located effect-failure reporting and broader composition remain.
+external inputs. `callback-effects` also covers readonly field reads and returned
+fresh objects/arrays. Located effect-failure reporting and broader composition remain.
 The [design boundary](../DESIGN.md#inferred-call-effects-elaboration-and-certification)
 owns this distinction and the [planned typing rules](../PROGRAM-TYPING.md#certifying-inferred-call-effects)
 own the definition, application and effect-forgetting obligations.

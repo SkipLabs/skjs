@@ -18,3 +18,13 @@ export function boundCallback(xs: number[]): number[] {
   const bound = next.bind(undefined);
   return xs.map(bound);
 }
+
+// A readonly read supplies a value contract; readonly alone is not the effect.
+export function readCallback(xs: { readonly value: number }[]): number[] {
+  return xs.map((x: { readonly value: number }) => x.value);
+}
+
+// The callback allocates new locations but leaves every input location intact.
+export function allocatingCallback(xs: number[]): { values: number[] }[] {
+  return xs.map((x) => ({ values: [x] }));
+}

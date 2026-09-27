@@ -1078,7 +1078,7 @@ export const cases: Case[] = [
   negative("invalid-closure-contextual-result", "a body returning \"world\" is not claimed at the contextual \"hello\"", /source expression obligation at \[201,222\)/),
   gap("invalid-closure-contextual-async", "Blocked before its original obligation: the full recursive generic contract exceeds the lowering budget",
     "unverified", "search", /generic contract.*contract cannot be erased/),
-  gap("closure-contextual-parameters", "map may produce holes; its result cannot establish a dense array",
+  gap("closure-contextual-parameters", "doubled needs a retained callee effect and qualified-call composition; names now verifies through checked field reads",
     "unverified", "search", /evidence search failed/),
   negative("invalid-closure-contextual-parameter", "a closure contextually typed as a Dog handler stays one: method bivariance does not make it an Animal handler",
     /binding-annotation/),

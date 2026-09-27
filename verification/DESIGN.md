@@ -649,7 +649,7 @@ longer brings in unrelated Promise declarations.
 
 ### Inferred call effects: elaboration and certification
 
-**Certification, initial inference and native overloads are integrated; body composition remains open.**
+**Certification, initial inference, native overloads and graph composition are integrated; qualified-call composition remains open.**
 `CallEffects.lean` supplies the semantic foundation. Qualified signatures now
 flow through the type graph, source claims and the executable acceptance checker.
 A proposed heap-preserving closure must pass both ordinary safety and the body
@@ -686,7 +686,9 @@ allows fresh allocation. A call that throws supplies no heap postcondition.
 Consequently, a body checker cannot carry this guarantee through a caught
 exception: it must check the handler with the possibly changed heap, or have
 a separately justified guarantee for exceptional exits. The current pure-body
-checker does not admit such calls; the later compositional checker must retain
+checker does not admit such calls. Graph composition checks normal-return
+postconditions node by node and refuses handlers; the independent pure-graph
+rule can still certify pure handlers. Qualified-call composition must retain
 this distinction. No stronger external assumption is implicit here.
 
 The guarantee is sufficient but not necessary for safe dense
@@ -1151,9 +1153,13 @@ positive sources as the targets. The work is split by semantic obligation:
    binding handles fixed and variadic signatures through one forwarding proof.
    Overload result combination retains an effect established by one of its
    premises, with the existing cross-world result-compatibility requirement.
-   The executable body-effect check still recognizes only pure graph expressions:
-   body allocations and qualified calls need composition rules. It does not
-   establish completeness for the semantic effect.
+   The executable body-effect check composes pure operations, required field
+   reads (invariant and readonly views), and fresh object/array allocations.
+   Ordinary graph progress supplies the same point assertions and control-flow
+   transitions to both safety and effect proofs. Graph composition refuses
+   handlers because a throwing operation has no normal-return postcondition;
+   pure graphs also retain their operational proof, including pure handlers.
+   Qualified calls and nested expression composition remain incomplete.
    Fixed and variadic signatures, including scheme and method paths, now use
    one required per-signature effect. Mapping, substitution, normalization,
    coverage and certificate checking retain and justify it. Pipeline controls
@@ -1163,18 +1169,22 @@ positive sources as the targets. The work is split by semantic obligation:
    OCaml now infers preservation for operationally pure closure bodies and
    defaults. Its semantic signature, symbolic claims and substitution all carry
    the effect, including generic closures; `.bind` retains it. Ordinary source
-   annotations remain unrestricted. Reads, allocation, nested calls and rest
-   array wrappers still get conservative unrestricted proposals until the body
-   checker supports their composition.
+   annotations remain unrestricted. The producer proposes preservation for
+   required field reads and fresh allocation too; it checks each receiver's
+   inferred contract when proposing a read. Calls, rest wrappers, and reads or
+   allocation inside short-circuit/coalescing expressions stay conservative:
+   those expressions currently lower to nested terms, not separate graph nodes.
    Native `map` and `find`/`findIndex` now have qualified overloads alongside
    their unrestricted fallbacks. `array-methods`, `array-library` and
    `array-generic-name` verify again without source changes. `callback-effects`
    exercises returned and bound callbacks through the same types. Instantiation
    matches clause metadata (including effects and density), not only operands,
    so it cannot discard the applicable fallback after matching the wrong overload.
-   Remaining integration: extend the compositional effect checker, add located
-   effect obligations, and remeasure the original census targets. The curated
-   `closure-contextual-parameters` still needs reads and qualified-call composition.
+   Remaining integration: qualified calls and nested expressions, located
+   effect obligations, and the original census measurement. The curated
+   `closure-contextual-parameters` still stops at `doubled`: its callee's written
+   ordinary annotation loses the inferred guarantee. Required field reads no
+   longer block `names`.
 4. **Default object conversion.** Restore the tuple-valued default-sort examples
    only with a contract covering actual conversion dispatch, including
    `Symbol.toPrimitive`, `toString`, and prototype lookup. A tuple's numeric

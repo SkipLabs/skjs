@@ -3208,7 +3208,7 @@ Json (`invalid-sum-sound-binding-constructor.ts`).
 ### Certifying inferred call effects
 
 **Definition certification and initial producer inference are implemented;
-native overloads are implemented; body composition remains in progress.** The semantic foundation is
+native overloads and graph composition are implemented; qualified-call composition remains in progress.** The semantic foundation is
 [the qualified arrow equation](SEMANTICS.md#effect-qualified-call-contracts).
 Definition checking and application both carry the effect;
 changing only the native `map` declaration would introduce a trusted assumption
@@ -3284,8 +3284,16 @@ The semantic introduction and elimination rules are proved in
 together; a separate unqualified body check cannot introduce a qualified type.
 Rest-collecting entries retain their store contract in the checked frame, and
 the entry allocation preserves the input heap before the checked body runs.
-The initial effect algorithm still recognizes only pure expressions inside
-that body; the semantic contract permits any body meeting the guarantee.
+The effect algorithm composes pure computations, required field reads through
+invariant cells or readonly views, and fresh object/array allocations. Reads use
+the field contract to establish valuehood; arbitrary heap entries are not assumed
+to be values. Allocations append locations. `ControlFlow.state_progress` is shared
+with ordinary safety, so the additional graph proof has no second set of edge or
+branch rules. During expression evaluation, `GraphCode.ReturnsPost` tracks the
+normal-return postcondition independently of the safety proof's evolving world.
+A caught exception cannot use that postcondition: compositional checking refuses
+handlers, while the independent pure-graph rule still admits pure handlers.
+Qualified calls and nested expression composition are not implemented yet.
 
 `PromiseWith.combine` retains both premises' effects when combining result
 guarantees (the effect meet, so either premise can supply heap preservation). Both promises concern the same admitted calls; determinism gives
@@ -3300,8 +3308,8 @@ This checker is wired into source acceptance, including
 arguments, result and required effect through graphs, claims and certificates;
 subtyping checks effect implication and substitution preserves it. Ordinary
 source annotations remain unrestricted; OCaml proposes preservation for pure
-closure bodies, retaining it through symbolic claims and substitution. Broader
-compositional body-effect checking and located effect-failure
+closure bodies, required field reads and fresh allocations, retaining it through
+symbolic claims and substitution. Qualified-call composition and located effect-failure
 reporting are the remaining implementation work. Qualified graph claims can
 already be submitted and certified through the ordinary source pipeline.
 

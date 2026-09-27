@@ -529,39 +529,46 @@ let rec assigns name s = match s.statement with
   | Closing (close,body) -> List.exists (assigns name) (body @ close)
   | Break _ | Continue -> false
 (* A definition-level proposal, never a call-site assumption. This first
-   analysis mirrors the certificate algorithm's operationally pure terms.
-   Reads, allocations and qualified calls are semantically allowed but need
-   the later compositional check; conservatively propose Unrestricted for
-   them. Every constructor is listed so extensions require a decision here. *)
-let rec heap_preserving_expr values (e:expr) =
-  let pure = heap_preserving_expr values in
+   analysis proposes pure operations, required field reads and fresh allocations.
+   Creation does not execute a closure's code. Calls still require the later
+   qualified-call composition check. Every constructor is listed so extensions require a decision here. *)
+let rec heap_preserving_expr ?(inline=false) ~readable values (e:expr) =
+  let pure = heap_preserving_expr ~inline ~readable values in
   match e.node with
   | Id name -> List.mem name values
   | Literal _ -> true
   | Not a | TypeofTest (_,_,a) | Cast (_,_,a) -> pure a
-  | Arith (_,a,b) | Logical (_,a,b) | Coalesce (a,b) | Comma (a,b) -> pure a && pure b
+  | Arith (_,a,b) | Comma (a,b) -> pure a && pure b
+  (* These forms currently lower to a nested let expression, rather than
+     separate graph nodes. Do not propose the wider graph effect rule for it. *)
+  | Logical (_,a,b) | Coalesce (a,b) ->
+    let pure = heap_preserving_expr ~inline:true ~readable values in pure a && pure b
   | Conditional (c,a,b) -> pure c && pure a && pure b
-  | BlockBody body -> heap_preserving_stmts values body
-  | Unary _ | HasKey _ | InstanceTest _ | Equality _ | Alloc _ | Build _
-  | Read _ | Write _ | Assign _ | Update _ | LogicalAssign _ | NullishAssign _
-  | ArrayAssign _ | Lambda _ | Call _ | Invoke _ | Apply _ | Ctor _ | New _
-  | Optional _ | ArrayLiteral _ | Index _ | IndexWrite _ | Bind _ | ObjectAssign _
+  | Read (a,key) -> not inline && pure a && readable a key
+  | Alloc fields -> not inline && List.for_all (fun (_,e) -> pure e) fields
+  | ArrayLiteral es -> not inline && List.for_all pure es
+  | Lambda _ -> not inline
+  | BlockBody body -> heap_preserving_stmts ~readable values body
+  | Unary _ | HasKey _ | InstanceTest _ | Equality _ | Build _
+  | Write _ | Assign _ | Update _ | LogicalAssign _ | NullishAssign _
+  | ArrayAssign _ | Call _ | Invoke _ | Apply _ | Ctor _ | New _
+  | Optional _ | Index _ | IndexWrite _ | Bind _ | ObjectAssign _
   | WithFields _ -> false
-and heap_preserving_stmts values = function
+and heap_preserving_stmts ~readable values = function
   | [] -> true
   | s::rest ->
-    let pure = heap_preserving_expr values in
-    let unchanged () = heap_preserving_stmts values rest in
+    let pure = heap_preserving_expr ~readable values in
+    let unchanged () = heap_preserving_stmts ~readable values rest in
     match s.statement with
     | Declare (false,bindings) ->
       let rec add values = function
-        | [] -> heap_preserving_stmts values rest
-        | (name,_,init)::more -> heap_preserving_expr values init && add (name::values) more in
+        | [] -> heap_preserving_stmts ~readable values rest
+        | (name,_,init)::more -> heap_preserving_expr ~readable values init && add (name::values) more in
       add values bindings
     | Return e | Effect e | Throw e -> pure e && unchanged ()
-    | If (c,a,b) -> pure c && heap_preserving_stmts values a &&
-        heap_preserving_stmts values b && unchanged ()
-    | Block (_,body) -> heap_preserving_stmts values body && unchanged ()
+    | If (c,a,b) -> pure c && heap_preserving_stmts ~readable values a &&
+        heap_preserving_stmts ~readable values b && unchanged ()
+    | Block (_,body) -> heap_preserving_stmts ~readable values body && unchanged ()
     | Break _ | Continue -> unchanged ()
     | Declare (true,_) | Destructure _ | While _ | ForOf _ | Try _ | Closing _ -> false
 

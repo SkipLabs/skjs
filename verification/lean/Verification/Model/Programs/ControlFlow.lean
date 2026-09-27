@@ -333,6 +333,85 @@ theorem branch_target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ q l 
     (Nat.le_succ n) _ (WExt_refl _),
     HeapKnowledge.check_sound hfact (HeapKnowledge.observe_holds hf hq)⟩
 
+/-- One checked graph transition preserves the point assertions. Keeping this
+step lemma separate lets additional postconditions reuse exactly the same
+control-flow and handler reasoning as ordinary safety. -/
+theorem state_progress [DecidableEq ι] {G : NormalGraph ι} {Rty P C}
+    {codes : CodeEntry ι → Bool} (hg : checkGraph G Rty P C codes = true)
+    (hcodes : CodesSound G codes)
+    {n W h s} (hw : WorldAdm W) (hh : HeapOk (n+1) W h)
+    (hs : StateOk G Rty C (n+1) W h s) :
+    ((∃ v, s = .done v ∧ isVal v = true ∧ meaning G Rty (n+1) W v) ∨
+      (∃ v, s = .raised v ∧ Scoped 0 v)) ∨
+    ∃ U : WorldT n, ∃ h' s', WExt (trunc n (Nat.le_succ n) W) U ∧
+      WorldAdm U ∧ Transition P h s h' s' ∧ HeapOk n U h' ∧ StateOk G Rty C n U h' s' := by
+  have hw' := WorldAdm_trunc (Nat.le_succ n) hw
+  have hh' := HeapOk_trunc n W h hh
+  let U := trunc n (Nat.le_succ n) W
+  cases s with
+  | «at» l ρ =>
+    obtain ⟨c, hc, he, hf⟩ := hs
+    obtain ⟨node, hn, ht, hk, hx⟩ := graph_node hg hcodes hc
+    have he' := he.transfer n (Nat.le_succ n) U (WExt_refl _)
+    exact Or.inr ⟨U, h, _, WExt_refl _, hw', .enter hn, hh',
+      ⟨entry c, result c, c.output, he', ht n U h ρ he' hf hw' hh', hk, hx ρ h hf⟩⟩
+  | done v => exact Or.inl (Or.inl ⟨v, rfl, hs⟩)
+  | raised v => exact Or.inl (Or.inr ⟨v, rfl, hs⟩)
+  | eval t ρ k x =>
+    obtain ⟨Γ, A, out, he, ht, hk, hx⟩ := hs
+    rcases ht with (⟨hv, ha, hf⟩ | ⟨v, hr, hsc⟩) | ⟨V, h', t', hx', hu, step, hok, hsafe⟩
+    · have he' := he.transfer n (Nat.le_succ n) U (WExt_refl _)
+      have ha' := (meaning_adm G A).down n W t ha
+      cases k with
+      | ret =>
+        have heq : A = Rty := hk
+        subst A
+        exact Or.inr ⟨U, h, .done t, WExt_refl _, hw', .ret hv, hh',
+          ⟨hv, ha'⟩⟩
+      | bind l =>
+        exact Or.inr ⟨U, h, .at l.label (mapEnv l.mapping (push t ρ)), WExt_refl _, hw', .bind hv, hh',
+          (target_state hk (he'.push ha') hf)⟩
+      | effect l =>
+        exact Or.inr ⟨U, h, .at l.label (mapEnv l.mapping ρ), WExt_refl _, hw', .effect hv, hh',
+          (target_state hk he' (HeapKnowledge.dropResult_holds hf))⟩
+      | branch y no =>
+        have hb := represents_raw hk.1 (n+1) W t ha
+        rcases hb with rfl | rfl
+        · exact Or.inr ⟨U, h, .at y.label (mapEnv y.mapping ρ), WExt_refl _, hw', .yes, hh',
+            (target_state hk.2.1 he' (HeapKnowledge.dropResult_holds hf))⟩
+        · exact Or.inr ⟨U, h, .at no.label (mapEnv no.mapping ρ), WExt_refl _, hw', .no, hh',
+            (target_state hk.2.2 he' (HeapKnowledge.dropResult_holds hf))⟩
+      | branchBind y no =>
+        have hb := onlyBoolean_sound hk.1 ha
+        rcases hb with rfl | rfl
+        · exact Or.inr ⟨U, h, _, WExt_refl _, hw', .yesBind, hh',
+            (branch_target_state hk.2.1 (he.push ha) hh rfl hf)⟩
+        · exact Or.inr ⟨U, h, _, WExt_refl _, hw', .noBind, hh',
+            (branch_target_state hk.2.2 (he.push ha) hh rfl hf)⟩
+      | tagBind tag y no =>
+        cases htag : tagHoldsIn h tag t with
+        | true =>
+          exact Or.inr ⟨U, h, _, WExt_refl _, hw', .tagBind hv, hh',
+            (by
+              simpa [htag] using (branch_target_state hk.1 (he.push ha) hh (tagHolds_of_heap htag) hf))⟩
+        | false =>
+          exact Or.inr ⟨U, h, _, WExt_refl _, hw', .tagBind hv, hh',
+            (by
+              simpa [htag] using (branch_target_state hk.2 (he.push ha) hh (tagHolds_of_heap htag) hf))⟩
+    · have he' := he.transfer n (Nat.le_succ n) U (WExt_refl _)
+      cases x with
+      | none =>
+        exact Or.inr ⟨U, h, .raised v, WExt_refl _, hw', .raise hr, hh',
+          hsc⟩
+      | some l =>
+        obtain ⟨T, facts, hT, htarget, hfacts⟩ := hx
+        exact Or.inr ⟨U, h, _, WExt_refl _, hw', .handle hr, hh',
+          (target_state htarget
+            (he'.push (admitsAll_sound hT (raises_val hr) hsc)) (hfacts v h))⟩
+    · exact Or.inr ⟨V, h', .eval t' ρ k x, hx', hu, .expr step, hok,
+        ⟨Γ,A,out,he.transfer n (Nat.le_succ n) V hx',hsafe,hk,hx⟩⟩
+
+
 /-- Global safety is by execution budget, not by acyclicity or graph unfolding. -/
 theorem state_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C}
     {codes : CodeEntry ι → Bool} (hg : checkGraph G Rty P C codes = true)
@@ -344,71 +423,9 @@ theorem state_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C}
   | zero => intros; trivial
   | succ n ih =>
     intro W h s hw hh hs
-    have hw' := WorldAdm_trunc (Nat.le_succ n) hw
-    have hh' := HeapOk_trunc n W h hh
-    let U := trunc n (Nat.le_succ n) W
-    cases s with
-    | «at» l ρ =>
-      obtain ⟨c, hc, he, hf⟩ := hs
-      obtain ⟨node, hn, ht, hk, hx⟩ := graph_node hg hcodes hc
-      have he' := he.transfer n (Nat.le_succ n) U (WExt_refl _)
-      exact Or.inr ⟨U, h, _, WExt_refl _, hw', .enter hn, hh',
-        ih U h _ hw' hh' ⟨entry c, result c, c.output, he', ht n U h ρ he' hf hw' hh', hk, hx ρ h hf⟩⟩
-    | done v => exact Or.inl (Or.inl ⟨v, rfl, hs⟩)
-    | raised v => exact Or.inl (Or.inr ⟨v, rfl, hs⟩)
-    | eval t ρ k x =>
-      obtain ⟨Γ, A, out, he, ht, hk, hx⟩ := hs
-      rcases ht with (⟨hv, ha, hf⟩ | ⟨v, hr, hsc⟩) | ⟨V, h', t', hx', hu, step, hok, hsafe⟩
-      · have he' := he.transfer n (Nat.le_succ n) U (WExt_refl _)
-        have ha' := (meaning_adm G A).down n W t ha
-        cases k with
-        | ret =>
-          have heq : A = Rty := hk
-          subst A
-          exact Or.inr ⟨U, h, .done t, WExt_refl _, hw', .ret hv, hh',
-            ih U h _ hw' hh' ⟨hv, ha'⟩⟩
-        | bind l =>
-          exact Or.inr ⟨U, h, .at l.label (mapEnv l.mapping (push t ρ)), WExt_refl _, hw', .bind hv, hh',
-            ih U h _ hw' hh' (target_state hk (he'.push ha') hf)⟩
-        | effect l =>
-          exact Or.inr ⟨U, h, .at l.label (mapEnv l.mapping ρ), WExt_refl _, hw', .effect hv, hh',
-            ih U h _ hw' hh' (target_state hk he' (HeapKnowledge.dropResult_holds hf))⟩
-        | branch y no =>
-          have hb := represents_raw hk.1 (n+1) W t ha
-          rcases hb with rfl | rfl
-          · exact Or.inr ⟨U, h, .at y.label (mapEnv y.mapping ρ), WExt_refl _, hw', .yes, hh',
-              ih U h _ hw' hh' (target_state hk.2.1 he' (HeapKnowledge.dropResult_holds hf))⟩
-          · exact Or.inr ⟨U, h, .at no.label (mapEnv no.mapping ρ), WExt_refl _, hw', .no, hh',
-              ih U h _ hw' hh' (target_state hk.2.2 he' (HeapKnowledge.dropResult_holds hf))⟩
-        | branchBind y no =>
-          have hb := onlyBoolean_sound hk.1 ha
-          rcases hb with rfl | rfl
-          · exact Or.inr ⟨U, h, _, WExt_refl _, hw', .yesBind, hh',
-              ih U h _ hw' hh' (branch_target_state hk.2.1 (he.push ha) hh rfl hf)⟩
-          · exact Or.inr ⟨U, h, _, WExt_refl _, hw', .noBind, hh',
-              ih U h _ hw' hh' (branch_target_state hk.2.2 (he.push ha) hh rfl hf)⟩
-        | tagBind tag y no =>
-          cases htag : tagHoldsIn h tag t with
-          | true =>
-            exact Or.inr ⟨U, h, _, WExt_refl _, hw', .tagBind hv, hh',
-              ih U h _ hw' hh' (by
-                simpa [htag] using (branch_target_state hk.1 (he.push ha) hh (tagHolds_of_heap htag) hf))⟩
-          | false =>
-            exact Or.inr ⟨U, h, _, WExt_refl _, hw', .tagBind hv, hh',
-              ih U h _ hw' hh' (by
-                simpa [htag] using (branch_target_state hk.2 (he.push ha) hh (tagHolds_of_heap htag) hf))⟩
-      · have he' := he.transfer n (Nat.le_succ n) U (WExt_refl _)
-        cases x with
-        | none =>
-          exact Or.inr ⟨U, h, .raised v, WExt_refl _, hw', .raise hr, hh',
-            ih U h _ hw' hh' hsc⟩
-        | some l =>
-          obtain ⟨T, facts, hT, htarget, hfacts⟩ := hx
-          exact Or.inr ⟨U, h, _, WExt_refl _, hw', .handle hr, hh',
-            ih U h _ hw' hh' (target_state htarget
-              (he'.push (admitsAll_sound hT (raises_val hr) hsc)) (hfacts v h))⟩
-      · exact Or.inr ⟨V, h', .eval t' ρ k x, hx', hu, .expr step, hok,
-          ih V h' _ hu hok ⟨Γ,A,out,he.transfer n (Nat.le_succ n) V hx',hsafe,hk,hx⟩⟩
+    rcases state_progress hg hcodes hw hh hs with terminal | ⟨U,h',s',hx,hu,st,hok,hs'⟩
+    · exact .inl terminal
+    · exact .inr ⟨U,h',s',hx,hu,st,hok,ih U h' s' hu hok hs'⟩
 
 /-- Safety from any checked entry and concrete environment meeting its claim. -/
 theorem accepted_entry_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C l c}

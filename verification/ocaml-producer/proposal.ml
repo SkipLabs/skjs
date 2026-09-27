@@ -2237,11 +2237,20 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         | [] -> unsupported "a rest parameter needs a parameter" in
       let values = List.filter_map (fun (name,b) -> match b with
         | Value _ -> Some name | Storage _ -> None) inner in
-      (* Rest binding materializes a source array wrapper in the lowered
-         body. Allocation is allowed by the effect but the initial checker
-         cannot yet certify that wrapper; do not propose an unprovable effect. *)
-      let call_effect = if not rest && heap_preserving_expr values body &&
-        List.for_all (fun (_,d) -> heap_preserving_expr values d) defaults
+      let readable (a:expr) key =
+        match List.find_map (fun (p:expression) ->
+          if p.pos=a.pos then Some p.type_ else None) !expressions with
+        | Some t -> (match declared_head declarations [] t with
+          | Atoms [Shape shape] ->
+            (shape.elements <> None && key=Name "length") ||
+            List.exists (fun (f:field) -> f.name=key && not f.optional && not f.host) shape.fields
+          | Atoms [Exact fields] -> List.exists (fun (f:field) -> f.name=key && not f.optional) fields
+          | _ -> false)
+        | None -> false in
+      (* Rest entries have a separate wrapper; its signature transport remains
+         conservative until that lowering carries the inferred effect too. *)
+      let call_effect = if not rest && heap_preserving_expr ~readable values body &&
+        List.for_all (fun (_,d) -> heap_preserving_expr ~readable values d) defaults
         then PreservesInputHeap else Unrestricted in
       let own = match element with
         | Some element -> variadic_arrow ~call_effect ~quantified ~receiver params element result
