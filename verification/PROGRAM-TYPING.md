@@ -3208,7 +3208,7 @@ Json (`invalid-sum-sound-binding-constructor.ts`).
 ### Certifying inferred call effects
 
 **Definition certification and initial producer inference are implemented;
-native overloads and graph composition are implemented; qualified-call composition remains in progress.** The semantic foundation is
+native overloads and graph composition, including fixed qualified calls, are implemented.** The semantic foundation is
 [the qualified arrow equation](SEMANTICS.md#effect-qualified-call-contracts).
 Definition checking and application both carry the effect;
 changing only the native `map` declaration would introduce a trusted assumption
@@ -3293,7 +3293,12 @@ branch rules. During expression evaluation, `GraphCode.ReturnsPost` tracks the
 normal-return postcondition independently of the safety proof's evolving world.
 A caught exception cannot use that postcondition: compositional checking refuses
 handlers, while the independent pure-graph rule still admits pure handlers.
-Qualified calls and nested expression composition are not implemented yet.
+Fixed calls use `ExpressionEffects.selectedCall_sound`: the selected application
+rule must carry `preservesInputHeap`, and its operands must already be values.
+The proof consumes `CallEffects.call_safe`, including padded missing arguments;
+a result-subtyping derivation retains the same postcondition. It never inspects
+the callee's implementation. Other call forms and nested expression composition
+remain conservative.
 
 `PromiseWith.combine` retains both premises' effects when combining result
 guarantees (the effect meet, so either premise can supply heap preservation). Both promises concern the same admitted calls; determinism gives
@@ -3308,9 +3313,9 @@ This checker is wired into source acceptance, including
 arguments, result and required effect through graphs, claims and certificates;
 subtyping checks effect implication and substitution preserves it. Ordinary
 source annotations remain unrestricted; OCaml proposes preservation for pure
-closure bodies, required field reads and fresh allocations, retaining it through
-symbolic claims and substitution. Qualified-call composition and located effect-failure
-reporting are the remaining implementation work. Qualified graph claims can
+closure bodies, required field reads, fresh allocations and fixed calls to
+qualified callees, retaining it through symbolic claims and substitution.
+Broader composition and located effect-failure reporting remain implementation work. Qualified graph claims can
 already be submitted and certified through the ordinary source pipeline.
 
 ### Parameter initialization order

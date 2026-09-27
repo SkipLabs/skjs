@@ -2171,21 +2171,24 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
          not permission to invoke it during initialization. Lean independently
          schedules acyclic captures and rejects pending closure exposure. *)
       let inner = List.fold_left (fun env (i,(n,t)) ->
-        Option.iter (fun d ->
+        let initialized = Option.map (fun d ->
           let scope = match d.node with
             | Lambda _ -> List.fold_left (fun scope (n,t) ->
                 if List.mem_assoc n scope then scope else extend scope n (Value t)) env ps
             | _ -> env in
-          try ignore (expr ~expected:t scope d) with
+          try expr ~expected:t scope d with
           | Json.Error message when String.starts_with ~prefix:"unbound name " message ->
             unsupported ("parameter default may only read initialized earlier parameters and captures: " ^ message))
-          (List.assoc_opt i defaults);
+          (List.assoc_opt i defaults) in
+        let bound = match initialized with
+          | None -> t
+          | Some initial -> union (restrict Undef false t) initial in
         (* A parameter a block body assigns is a cell holding its argument,
            at its annotation, as a function's is. *)
         let assigned = match body.node with
           | BlockBody ss -> List.exists (assigns n) ss
           | _ -> false in
-        extend env n (if assigned then cell t else Value t)) env (List.mapi (fun i p -> i,p) ps) in
+        extend env n (if assigned then cell t else Value bound)) env (List.mapi (fun i p -> i,p) ps) in
       (* A closure literal without a result annotation expected at one
          signature taking at least its parameters has that signature's result
          as its contextual return type, as in TypeScript. *)
@@ -2236,7 +2239,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
            | _ -> unsupported "a rest parameter needs a tuple of required positions or an array")
         | [] -> unsupported "a rest parameter needs a parameter" in
       let values = List.filter_map (fun (name,b) -> match b with
-        | Value _ -> Some name | Storage _ -> None) inner in
+        | Value _ -> Some name | Storage _ -> None) inner @ List.map fst module_functions in
       let readable (a:expr) key =
         match List.find_map (fun (p:expression) ->
           if p.pos=a.pos then Some p.type_ else None) !expressions with
@@ -2247,10 +2250,19 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
           | Atoms [Exact fields] -> List.exists (fun (f:field) -> f.name=key && not f.optional) fields
           | _ -> false)
         | None -> false in
+      let callable (callee:expr) =
+        match List.find_map (fun (p:expression) ->
+          if p.pos=callee.pos then Some p.type_ else None) !expressions with
+        | Some t -> (match declared_head declarations [] t with
+          | Atoms [Shape {calls;fields=[];indexes=[];elements=None}] -> calls <> [] &&
+            List.for_all (fun (s:signature) -> s.call_effect=PreservesInputHeap &&
+              s.variadic=None && s.rest_pack=None) calls
+          | _ -> false)
+        | None -> false in
       (* Rest entries have a separate wrapper; its signature transport remains
          conservative until that lowering carries the inferred effect too. *)
-      let call_effect = if not rest && heap_preserving_expr ~readable values body &&
-        List.for_all (fun (_,d) -> heap_preserving_expr ~readable values d) defaults
+      let call_effect = if not rest && heap_preserving_expr ~readable ~callable values body &&
+        List.for_all (fun (_,d) -> heap_preserving_expr ~readable ~callable values d) defaults
         then PreservesInputHeap else Unrestricted in
       let own = match element with
         | Some element -> variadic_arrow ~call_effect ~quantified ~receiver params element result
@@ -3221,7 +3233,8 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
            annotation's: the binding is the closure, claimed at all of them,
            which Lean checks against the annotation. *)
         | false,Some _ when List.mem_assoc init.pos offered -> Value initial
-        | false,Some contract -> Value (assigned_arms declarations (arms declarations contract) init)
+        | false,Some contract -> Value (retain_call_effects
+            (assigned_arms declarations (arms declarations contract) init) initial)
         (* An unannotated constant of a named union is held at its arms, as
            an annotated one is: a guard then keeps or drops each. *)
         | false,None -> Value (arms declarations initial) in
@@ -3496,9 +3509,9 @@ let infer program =
     | body -> Some (infer_with (module_functions @ class_selves)
         {quantified=program.Source.init_quantified;name="";name_pos=Json.Null;params=[];rest=false;
          result=Atoms [Undef];body}) in
-  (* A function reads a module constant at its annotation or, without one, at
-     the initialization unit's claim for its initializer; that unit is what
-     establishes it. *)
+  (* The initialization unit checks both initializer and annotation. Use the
+     annotation's offered signatures, retaining effects established by a matching
+     initializer signature. Lean makes both checked contracts available. *)
   (* A generic class's constructor is quantified over the class's binders:
      a unit reading it names its instance, as for a generic function. *)
   let quantify_class t = match t with
@@ -3515,12 +3528,12 @@ let infer program =
       if mentioned = [] then t else Atoms [Ctors [{signature with quantified=mentioned}]]
     | t -> t in
   let module_constants = List.concat_map (fun (s:Source.stmt) -> match s.statement with
-    | Declare (false,bindings) -> List.map (fun (n,written,(e:expr)) -> n,lazy (match written with
-        | Some t -> quantify_class t
-        | None ->
-          match Option.bind init (fun c -> List.find_opt (fun (x:expression) -> x.pos = e.pos) c.expressions) with
-          | Some x -> x.type_
-          | None -> unsupported ("module constant " ^ n ^ " has no claimed initializer")))
+    | Declare (false,bindings) -> List.map (fun (n,written,(e:expr)) -> n,lazy (
+        match Option.bind init (fun c -> List.find_opt (fun (x:expression) -> x.pos = e.pos) c.expressions) with
+        | Some x -> quantify_class (match written with
+          | None -> x.type_
+          | Some contract -> retain_call_effects contract x.type_)
+        | None -> unsupported ("module constant " ^ n ^ " has no claimed initializer")))
       bindings
     | _ -> []) program.Source.init in
   {program;init;functions=List.map (infer_with (module_functions @ module_constants))

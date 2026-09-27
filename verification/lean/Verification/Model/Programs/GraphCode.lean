@@ -247,25 +247,28 @@ def admits [DecidableEq ι] (table : List (CodeEntry ι)) (c : CodeEntry ι) : B
 could turn a throwing call into a normal return after untracked mutation, so
 this composition rule admits only graphs without handlers. Pure graphs retain
 the independent operational rule, which also covers their handlers. -/
-def compositionalChecked (G : NormalGraph ι) (P : Program) (C : Certificate ι) : Bool :=
+def compositionalChecked [DecidableEq ι] (G : NormalGraph ι) (P : Program) (C : Certificate ι) : Bool :=
   (P.zip C).all fun (node,c) => node.handler.isNone &&
     ProgramCertificates.checkScope (entry c).length node.expression &&
-    ExpressionEffects.check G (entry c) node.expression
+    (ExpressionEffects.check G (entry c) node.expression ||
+      (decide ((ProgramCertificates.claim c.expression).term = node.expression) &&
+        ProgramCertificates.checkTree G c.expression &&
+        ExpressionEffects.selectedCallPreserves c.expression))
 
-@[simp] theorem compositionalChecked_reassign (G : NormalGraph ι) (η : MixedAssignment ι)
+@[simp] theorem compositionalChecked_reassign [DecidableEq ι] (G : NormalGraph ι) (η : MixedAssignment ι)
     (P : Program) (C : Certificate ι) :
     compositionalChecked (reassign G η) P C = compositionalChecked G P C := by
   simp only [compositionalChecked, ExpressionEffects.check, ExpressionEffects.readable,
-    Parametricity.expand_reassign]
+    Parametricity.expand_reassign, Parametricity.checkTree_reassign]
 
 /-- Definition effects supplement, rather than replace, ordinary safety. -/
-def effectChecked (G : NormalGraph ι) (c : CodeEntry ι) (C : Certificate ι) : Bool :=
+def effectChecked [DecidableEq ι] (G : NormalGraph ι) (c : CodeEntry ι) (C : Certificate ι) : Bool :=
   match c.row.effect with
   | .unrestricted => true
   | .preservesInputHeap => c.exprs.all Purity.pureTerm ||
       compositionalChecked G (program c.exprs c.conts) C
 
-@[simp] theorem effectChecked_reassign (G : NormalGraph ι) (η : MixedAssignment ι)
+@[simp] theorem effectChecked_reassign [DecidableEq ι] (G : NormalGraph ι) (η : MixedAssignment ι)
     (c : CodeEntry ι) (C : Certificate ι) :
     effectChecked (reassign G η) c C = effectChecked G c C := by
   simp only [effectChecked, compositionalChecked_reassign]
@@ -319,8 +322,15 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {table c C}
         exact hchecked.1
       obtain ⟨actual,hactual,hterm,-⟩ := graph_node hgraph ht hpoint
       cases hn.symm.trans hactual
-      exact ExpressionEffects.sound hp.2 hp.1.2 henv hheap
-        (HeapObservations.erase (hterm j V h' ρ henv hknowledge hworld hheap))
+      have hcases := hp.2
+      simp only [Bool.or_eq_true] at hcases
+      rcases hcases with hexpr | hcall
+      · exact ExpressionEffects.sound hexpr hp.1.2 henv hheap
+          (HeapObservations.erase (hterm j V h' ρ henv hknowledge hworld hheap))
+      · simp only [Bool.and_eq_true, decide_eq_true_eq] at hcall
+        have hs := ExpressionEffects.selectedCall_sound point.expression hcall.1.2 hcall.2
+          (ProgramCertificates.codesSound_none _) henv hworld hheap
+        simpa only [ControlFlow.result, hcall.1.1] using hs
 
 /-- Check codes in order, each against the table of those before it. -/
 def extendTable [DecidableEq ι] (G : NormalGraph ι) :

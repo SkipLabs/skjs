@@ -14,8 +14,9 @@ verify entirely. There are 73 principled refusals, 10 registered SKJS-unsound
 units, 184 gaps and 8 refusals not explained by the automatic classifier.
 
 Since that measured checkpoint, certified callback-effect overloads restore the
-curated `array-methods`, `array-library` and `array-generic-name` cases. Returned
-and bound callbacks are also covered. The full census has not yet been remeasured;
+curated `array-methods`, `array-library`, `array-generic-name` and
+`closure-contextual-parameters` cases. Returned, bound and forwarding callbacks
+are covered, as are required field reads and fresh allocation. The full census has not yet been remeasured;
 the counts and census-specific outcomes below describe the checkpoint.
 
 The user-approved semantics excludes custom array construction, including in
@@ -28,7 +29,8 @@ now enforce the own-key exclusion. Under that explicit host assumption,
 again. No previously verified unit is lost. See the
 [native boundary](../DESIGN.md#exact-contracts-and-native-effects).
 
-`testMapReturnsArray` remains a recoverable pure-callback density gap.
+`testMapReturnsArray` now verifies unchanged in a targeted census run (marker-selected;
+the full SKJS-confirmed census below has not yet been rerun).
 `mapArr` and `testMapCallback` also reach their original obligations again,
 but require a distinction: `mapArr<T, U>(arr: T[], f: (x: T) => U): U[]`
 promises a dense result for an arbitrary callback. That contract is false.
@@ -49,7 +51,7 @@ The eight automatic “unexplained” rows have inspected causes. Seven are
 permits holes; the source annotation still requires density. This is an
 unnecessarily restrictive contract for unknown elements, not evidence that
 the programs are unsafe. The curated `isarray-record-array` records the same gap.
-The eighth, `testMapReturnsArray`, is the pure-callback dense-map gap above.
+The eighth, `testMapReturnsArray`, is recovered by certified effects as noted above.
 The original boundary repair's recursive Promise contracts and the
 Promise-dependent framework target remain open; no erased contract is restored.
 

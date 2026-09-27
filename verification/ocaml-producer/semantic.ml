@@ -62,6 +62,19 @@ and signature = { quantified: quantifier list; receiver: ty; params: ty list;
                   variadic: ty option; rest_pack: pack option; result: ty; call_effect: call_effect }
 and sequence = { required: ty list; optional_elements: ty list; rest: ty option; readonly: bool; dense: bool }
 and shape = { fields: field list; indexes: index_signature list; calls: signature list; elements: sequence option }
+(* An immutable annotated binding may retain a separately inferred effect on
+   exactly the same call signature. Every other annotation component remains
+   unchanged; this never strengthens an ordinary input annotation by itself. *)
+let retain_call_effects declared inferred = match declared,inferred with
+  | Atoms [Shape expected],Atoms [Shape actual] ->
+    let retain (s:signature) =
+      if List.exists (fun (candidate:signature) ->
+        candidate.call_effect=PreservesInputHeap &&
+        {candidate with call_effect=Unrestricted} = {s with call_effect=Unrestricted}) actual.calls
+      then {s with call_effect=PreservesInputHeap} else s in
+    Atoms [Shape {expected with calls=List.map retain expected.calls}]
+  | _ -> declared
+
 let record fields = Atoms [Shape {fields;indexes=[];calls=[];elements=None}]
 (* Two object contracts as the one object both describe: their named members,
    which must be disjoint, and the one string index either states. `None`

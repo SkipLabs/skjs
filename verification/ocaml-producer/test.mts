@@ -778,6 +778,13 @@ for (const [file, call] of [
   assert.equal(vm.runInNewContext(`${source}\nnoCoercion({ value: 7 })`, {}, { timeout: 1000 }), 7,
     "an explicit comparator never invokes the element's invalid conversion method");
 }
+// Forwarding through an ordinarily annotated binding does not prevent the
+// callback from shortening the source; the final map position remains a hole.
+{
+  const source = stripTypes(readFileSync(join(here, "examples", "invalid-callback-effect-forwarding.ts"), "utf8"))
+    .replace(/^export /gm, "");
+  assert.equal(vm.runInNewContext(`${source}\nconst result = wrong([1, 2]); JSON.stringify([result.length, 0 in result, 1 in result])`, {}, { timeout: 1000 }), "[2,true,false]");
+}
 // The input has Array.prototype and dense elements, with no accessors or
 // proxies. Its extra own constructor is excluded by the ordinary-construction
 // invariant. These controls explain why the external-code assumption matters;

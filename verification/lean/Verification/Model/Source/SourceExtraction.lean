@@ -2,6 +2,7 @@ import Verification.Model.Source.SkjsSourceClaims
 import Verification.Model.Programs.ExpressionClaims
 import Verification.Model.Programs.DirectObligation
 import Verification.Model.Source.GenericAlias
+import Verification.Model.Source.DeclarationGraph
 
 /-! First source adapter for the stateful consumer. Names are resolved against
 initialized local bindings. Supplied expression types and source annotations
@@ -4965,12 +4966,11 @@ def SourceRequest.searchLabels (r : SourceRequest) : List Nat :=
     return known
 
 /-- The type a code unit reads a module value at: a source type (a function's
-signature, a constant's annotation), or, for an unannotated constant, the
-initialization unit's claim for its initializer, a type that unit checks the
-initializer's value against where the constant is bound. -/
+signature), or an initializer claim together with any written annotation.
+The initialization unit checks both contracts where the constant is bound. -/
 inductive ModuleType where
   | written (ty : Json)
-  | claimed (A : SourceClaims.Candidate)
+  | claimed (A : SourceClaims.Candidate) (annotation : Option Json := none)
 
 /-- A value of the module a code unit reaches: its name, its declaration's
 position, and its type, or why it has none. -/
@@ -5001,8 +5001,15 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceCl
       let (_, pos, ty) := value
       match ty with
         | Except.ok (.written ty) => lower (Fragment.translate ty)
-        | Except.ok (.claimed A) => (SourceClaims.resolve (← table).length A).mapError fun msg =>
+        | Except.ok (.claimed A annotation) => do
+          let inferred ← (SourceClaims.resolve (← table).length A).mapError fun msg =>
             s!"module constant '{value.1}': {msg}"
+          match annotation with
+          | none => pure inferred
+          | some ty =>
+            let written ← lower (Fragment.translate ty)
+            try lower (DeclarationGraph.intersectTypes [written, inferred])
+            catch reason => throw (locatedRefusal (← table) pos .bindingAnnotation reason)
         | Except.error reason => throw (locatedRefusal (← table) pos .bindingAnnotation reason)
     let siblingScope : List ScopeBinding :=
       (siblings.zip siblingTypes).map fun (pair : ModuleValue × Ty Nat) =>

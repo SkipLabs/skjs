@@ -452,7 +452,7 @@ private def schemeRow (bs : List Nat) (sigs : List (Arrow (List Nat)))
 record operands on one object, function operands as one overloaded callable.
 An operand with a row that is not a clause row has no clauses to meet, so it
 is refused rather than dropped. -/
-private def groundMeet (parts : List (List Nat)) : Lowering (List (Clause (List Nat))) := do
+private def groundMeet (parts : List (List Nat)) (allowEmpty : Bool := false) : Lowering (List (Clause (List Nat))) := do
   let table ← getThe SourceTypes.Table
   let graph := SourceTypes.graph table
   if !parts.all (graph.plainTy ·) then
@@ -460,7 +460,7 @@ private def groundMeet (parts : List (List Nat)) : Lowering (List (Clause (List 
   let rows := parts.map (·.flatMap graph)
   let some last := rows.getLast? | throw "empty declaration intersection"
   let meet ← (rows.dropLast.foldrM sourceMeetLists last : Except String _)
-  if meet.isEmpty then throw emptyMeet
+  if meet.isEmpty && !allowEmpty then throw emptyMeet
   return meet
 
 /-- A row not yet filled: a nullary declaration's, a reserved application's
@@ -581,6 +581,20 @@ private def meetRow (parts : List (List Nat)) : Lowering (List Nat) := do
         modifyThe SourceTypes.Table (·.set row r)
         return [row]
     return [← (SourceTypes.internRow r : SourceTypes.Lowering Nat)]
+
+/-- Intersect established contracts using the same lowering as source intersections.
+All operands are complete here; no declaration equations may remain pending.
+An empty ground intersection is retained as bottom: the initialization unit must
+still establish each operand. A contradictory module input must not mask that
+unit's failing obligation by preventing construction of all requests. -/
+def intersectTypes (parts : List (List Nat)) : SourceTypes.Lowering (List Nat) :=
+  (do
+    let G := SourceTypes.graph (← getThe SourceTypes.Table)
+    if parts.all G.plainTy then
+      return [← useRow (← groundMeet parts (allowEmpty := true))]
+    let result ← meetRow parts
+    complete
+    pure result).run' {}
 
 mutual
 /-- A rest's type: a pack parameter's row, or the pack of any number of

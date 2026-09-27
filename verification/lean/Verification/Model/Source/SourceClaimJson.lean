@@ -1108,20 +1108,17 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
     (if arrays then [(SourceExtraction.arrayPrototypeName, (0, 0),
       Except.ok (.written (Json.mkObj [("top", toJson false), ("atoms", toJson [Json.mkObj
         [("a", toJson "graph"), ("label", toJson SourceTypes.arrayProtoLabel)]])])))] else [])
-  -- A constant is read at its annotation or, without one, at the type the
-  -- initialization unit claims for its initializer: the type that unit's
-  -- binding checks the initializer's value against (TypeScript's declared
-  -- type for an unannotated `const`, a literal kept as its literal type).
+  -- Every immutable module value retains its initializer's checked claim and
+  -- its annotation. The initialization unit checks both contracts; an
+  -- annotation does not erase independently inferred facts such as call effects.
   -- A generic class is read at the instances its uses name, as a generic
   -- module function is (`generics`), not at its declaring unit's rows.
   let classNames := genericClassNames ((ast.getObjVal? "init").toOption.getD (.arr #[]))
   let moduleConstants : List SourceExtraction.ModuleValue := init.flatMap fun
     | .constants _ bs => (bs.filter fun b => !classNames.contains b.name).map fun b =>
-      (b.name, b.namePos, match b.annot with
-        | some ty => .ok (.written ty)
-        | none => match (d.init.map (·.expressions)).getD [] |>.find? (·.pos == b.init.span) with
-          | some e => .ok (.claimed e.type.ground)
-          | none => .error s!"module constant '{b.name}' has neither an annotation nor a claimed initializer")
+      (b.name, b.namePos, match (d.init.map (·.expressions)).getD [] |>.find? (·.pos == b.init.span) with
+        | some e => .ok (.claimed e.type.ground b.annot)
+        | none => .error s!"module constant '{b.name}' has no claimed initializer")
     | _ => []
   -- A class's instance members are closures created before the class value
   -- is bound, and run only once it is: they read it as its own binding

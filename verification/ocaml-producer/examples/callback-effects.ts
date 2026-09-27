@@ -28,3 +28,12 @@ export function readCallback(xs: { readonly value: number }[]): number[] {
 export function allocatingCallback(xs: number[]): { values: number[] }[] {
   return xs.map((x) => ({ values: [x] }));
 }
+
+// The nested call uses its selected signature, including the omitted default.
+export function callingCallback(xs: number[]): number[] {
+  const add: (n: number, delta?: number) => number = (
+    n: number,
+    delta = 1,
+  ): number => n + delta;
+  return xs.map((n: number) => add(n));
+}

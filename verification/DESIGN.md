@@ -649,7 +649,7 @@ longer brings in unrelated Promise declarations.
 
 ### Inferred call effects: elaboration and certification
 
-**Certification, initial inference, native overloads and graph composition are integrated; qualified-call composition remains open.**
+**Certification, initial inference, native overloads and graph composition, including fixed qualified calls, are integrated.**
 `CallEffects.lean` supplies the semantic foundation. Qualified signatures now
 flow through the type graph, source claims and the executable acceptance checker.
 A proposed heap-preserving closure must pass both ordinary safety and the body
@@ -688,7 +688,7 @@ exception: it must check the handler with the possibly changed heap, or have
 a separately justified guarantee for exceptional exits. The current pure-body
 checker does not admit such calls. Graph composition checks normal-return
 postconditions node by node and refuses handlers; the independent pure-graph
-rule can still certify pure handlers. Qualified-call composition must retain
+rule can still certify pure handlers. Qualified-call composition retains
 this distinction. No stronger external assumption is implicit here.
 
 The guarantee is sufficient but not necessary for safe dense
@@ -1159,7 +1159,8 @@ positive sources as the targets. The work is split by semantic obligation:
    transitions to both safety and effect proofs. Graph composition refuses
    handlers because a throwing operation has no normal-return postcondition;
    pure graphs also retain their operational proof, including pure handlers.
-   Qualified calls and nested expression composition remain incomplete.
+   Fixed calls consume the selected qualified signature, including omitted
+   arguments and result weakening. Nested expression composition remains incomplete.
    Fixed and variadic signatures, including scheme and method paths, now use
    one required per-signature effect. Mapping, substitution, normalization,
    coverage and certificate checking retain and justify it. Pipeline controls
@@ -1171,7 +1172,8 @@ positive sources as the targets. The work is split by semantic obligation:
    the effect, including generic closures; `.bind` retains it. Ordinary source
    annotations remain unrestricted. The producer proposes preservation for
    required field reads and fresh allocation too; it checks each receiver's
-   inferred contract when proposing a read. Calls, rest wrappers, and reads or
+   inferred contract when proposing a read. Fixed calls consume inferred callee
+   effects. Rest wrappers, and reads or
    allocation inside short-circuit/coalescing expressions stay conservative:
    those expressions currently lower to nested terms, not separate graph nodes.
    Native `map` and `find`/`findIndex` now have qualified overloads alongside
@@ -1180,11 +1182,16 @@ positive sources as the targets. The work is split by semantic obligation:
    exercises returned and bound callbacks through the same types. Instantiation
    matches clause metadata (including effects and density), not only operands,
    so it cannot discard the applicable fallback after matching the wrong overload.
-   Remaining integration: qualified calls and nested expressions, located
-   effect obligations, and the original census measurement. The curated
-   `closure-contextual-parameters` still stops at `doubled`: its callee's written
-   ordinary annotation loses the inferred guarantee. Required field reads no
-   longer block `names`.
+   `closure-contextual-parameters` now verifies unchanged, including `doubled`
+   and `names`. Immutable module constants retain both the initializer's checked claim
+   and the written annotation, intersected by ordinary type lowering. The
+   initialization unit must discharge both contracts. Local
+   annotations retain only effects proved for the same signature. Defaulted
+   immutable parameters use their post-initialization contents, while assigned
+   parameters retain the original fixed cell contract. A forwarding mutator
+   stays unrestricted and its sparse map result is refused at a dense result.
+   Remaining integration: other call forms and nested expressions, located
+   effect obligations, and the original census measurement.
 4. **Default object conversion.** Restore the tuple-valued default-sort examples
    only with a contract covering actual conversion dispatch, including
    `Symbol.toPrimitive`, `toString`, and prototype lookup. A tuple's numeric
