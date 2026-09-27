@@ -148,6 +148,26 @@ def Scope.bound (scope : Scope sig) (slot : Fin sig[scope.head].binders.length) 
   ⟨.bound scope.head.val scope.rawArgs slot.val, by
     simp [Tree.scoped, scope.arity_ok, scope.args_closed, binderOk]⟩
 
+/-- A scope's local parameters in their declared order. -/
+def Scope.binders (scope : Scope sig) : List (Label sig) :=
+  (List.finRange sig[scope.head].binders.length).map scope.bound
+
+@[simp] theorem Scope.binders_length (scope : Scope sig) :
+    scope.binders.length = sig[scope.head].binders.length := by simp [binders]
+
+@[simp] theorem Scope.mem_binders {scope : Scope sig} {p : Label sig} :
+    p ∈ scope.binders ↔ ∃ slot, p = scope.bound slot := by
+  simp [binders, eq_comm]
+
+theorem Scope.bound_injective (scope : Scope sig) : Function.Injective scope.bound := by
+  intro a b h
+  have he := congrArg Subtype.val h
+  simp only [bound, Tree.bound.injEq] at he
+  exact Fin.ext he.2.2
+
+theorem Scope.binders_nodup (scope : Scope sig) : scope.binders.Nodup :=
+  (List.nodup_finRange _).map scope.bound (fun _ _ h he => h (scope.bound_injective he))
+
 /-- Concatenating unions does not inspect or unfold their labels. -/
 def Types.append : Types → Types → Types
   | .nil, ys => ys
@@ -220,6 +240,15 @@ def Types.labels (ts : Types) (valid : ts.scoped sig 0 0 = true) : List (Label s
   | .nil => []
   | .cons t ts => ⟨t, (Bool.and_eq_true_iff.mp valid).1⟩ :: ts.labels (Bool.and_eq_true_iff.mp valid).2
 
+theorem Types.labels_append (xs ys : Types) (hx : xs.scoped sig 0 0 = true)
+    (hy : ys.scoped sig 0 0 = true) (hxy : (xs.append ys).scoped sig 0 0 = true) :
+    (xs.append ys).labels hxy = xs.labels hx ++ ys.labels hy := by
+  cases xs with
+  | nil => rfl
+  | cons t ts =>
+    simp only [append, labels, List.cons_append,
+      labels_append ts ys (Bool.and_eq_true_iff.mp hx).2 hy]
+
 @[simp] theorem Types.labels_length (ts : Types) (valid : ts.scoped sig 0 0 = true) :
     (ts.labels valid).length = ts.toList.length := by
   cases ts with
@@ -283,7 +312,7 @@ def Args.labels (args : Args) (valid : args.scoped sig 0 0 = true) : List (List 
   | cons ts args => simp only [labels, toList, List.length_cons,
       labels_length args (Bool.and_eq_true_iff.mp valid).2]
 
-private theorem Types.labels_ofList (ts : List (Label sig))
+theorem Types.labels_ofList (ts : List (Label sig))
     (valid : (ofList (ts.map Subtype.val)).scoped sig 0 0 = true) :
     (ofList (ts.map Subtype.val)).labels valid = ts := by
   induction ts with
@@ -370,7 +399,7 @@ private theorem Args.labels_val (args : Args) (valid : args.scoped sig 0 0 = tru
   | cons ts args => simp only [labels, List.map_cons, ofList, Types.labels_val,
       labels_val args (Bool.and_eq_true_iff.mp valid).2]
 
-private theorem Scope.ofRaw_args (head : Nat) (args : Args) (ha hc) :
+theorem Scope.ofRaw_args (head : Nat) (args : Args) (ha hc) :
     (Scope.ofRaw (sig := sig) head args ha hc).rawArgs = args := by
   exact Args.labels_val args hc
 

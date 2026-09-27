@@ -1284,8 +1284,15 @@ positive sources as the targets. The work is split by semantic obligation:
      array realm. The next semantic lemma is application congruence: the same
      equation head at arguments with equal mixed meanings has equal meaning,
      accounting for its differently named local binders. Computed support and
-     owned-binder freshness supply the independence premises; congruence itself
-     is not yet proved. Use finite evidence about the equations to justify a mapping
+     owned-binder freshness supply the independence premises.
+     `Types/EquationCongruence.lean` now proves preservation of captured arguments
+     when entering a scheme, agreement of corresponding local slots, lifting
+     agreement through finite templates, and the clause-row value induction
+     step. Its `ApplicationsAgree` premise is an explicit induction hypothesis,
+     never an assumption supplied by a certificate. The quantified-row step,
+     the argument-list component at the current level, and closure of the
+     recursive induction are still pending; application congruence itself is
+     not yet proved. Use finite evidence about the equations to justify a mapping
      of their applications. The current finite `InstTable` alone cannot certify
      an infinite family of substituted rows; reusing it without this argument
      would merely move the expansion limit into certificate checking.

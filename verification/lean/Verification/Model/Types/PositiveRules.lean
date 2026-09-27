@@ -2902,7 +2902,7 @@ private theorem argument_clause {G : NormalGraph ι} {S : List ι}
   have hh := List.all_eq_true.mp hk c hm
   cases c <;> simp_all
 
-private theorem mixedMeaning_union (G : NormalGraph ι) (η : MixedAssignment ι)
+theorem mixedMeaning_union (G : NormalGraph ι) (η : MixedAssignment ι)
     (S : List ι) (n : Nat) (W : WorldT n) (x : Val ⊕ List Val) :
     mixedMeaning G η S n W x ↔ ∃ i ∈ S, mixedMeaning G η [i] n W x := by
   cases x <;> simp [mixedMeaning, mixedParameters, graphArguments, setSem]

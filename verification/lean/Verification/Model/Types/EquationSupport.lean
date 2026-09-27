@@ -145,15 +145,25 @@ private theorem Reference.instantiate_local (scope : Scope sig) (r : Reference s
   subst t
   rfl
 
-private theorem locals_mem_binders (scope : Scope sig) (bs : List (Reference sig sig[scope.head]))
-    (hbs : bs.map (fun b => b.1.1) = (List.range sig[scope.head].binders.length).map Tree.local)
-    (slot : Fin sig[scope.head].binders.length) :
-    scope.bound slot ∈ bs.map (Reference.instantiate scope) := by
-  have hmem : Tree.local slot.val ∈ bs.map (fun b => b.1.1) := by
-    rw [hbs]
-    exact List.mem_map.mpr ⟨slot.val, List.mem_range.mpr slot.isLt, rfl⟩
-  obtain ⟨r, hr, he⟩ := List.mem_map.mp hmem
-  exact List.mem_map.mpr ⟨r, hr, r.instantiate_local scope slot he⟩
+/-- The checked source order of local references is exactly the canonical
+binder order, not merely a set containing the same names. -/
+theorem Scope.instantiate_binders (scope : Scope sig) (bs : List (Reference sig sig[scope.head]))
+    (hbs : bs.map (fun b => b.1.1) = (List.range sig[scope.head].binders.length).map Tree.local) :
+    bs.map (Reference.instantiate scope) = scope.binders := by
+  have hlen : bs.length = sig[scope.head].binders.length := by
+    simpa using congrArg List.length hbs
+  apply List.ext_getElem
+  · simp [hlen]
+  · intro i hi hj
+    have hib : i < bs.length := by simpa using hi
+    have hin : i < sig[scope.head].binders.length := by simpa [hlen] using hib
+    have hget : (bs[i]).1.1 = Tree.local i := by
+      have he := congrArg (fun xs : List Tree => xs[i]?) hbs
+      simp only [List.getElem?_map] at he
+      rw [List.getElem?_eq_getElem hib, List.getElem?_range hin] at he
+      exact Option.some.inj he
+    simpa [Scope.binders, List.getElem_map, List.getElem_finRange] using
+      (bs[i]).instantiate_local scope ⟨i, hin⟩ hget
 
 private theorem clause_reads_support (scope : Scope sig) (cs : List (Clause (List (Expression sig sig[scope.head]))))
     {l p : Label sig}
@@ -247,7 +257,8 @@ theorem Equations.free_support (equations : Equations) :
             refine ⟨_, rfl, ?_⟩
             have hp' : p = scope.bound slot := Subtype.ext he
             rw [hp']
-            exact locals_mem_binders scope bs hv.1 slot
+            rw [scope.instantiate_binders bs hv.1]
+            exact Scope.mem_binders.mpr ⟨slot, rfl⟩
         · intro l hl p hp
           have hbounds : l ∈ (bounds.map (fun b =>
               (b.1.instantiate scope, b.2.flatMap (Expression.instantiate scope)))).flatMap (·.2) := by

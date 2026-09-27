@@ -559,9 +559,18 @@ retain their parameters. The existing executable `FreeOk` check establishes
 these same premises for a finite table. Equation templates establish them by
 structural induction on instantiation, so no infinite family is enumerated.
 
-These results do **not** yet establish semantic substitution. The remaining
-proof must justify application images under capture-avoiding substitution
-at the `InstanceImages` boundary. Source compilation (including alias and
+`Types/EquationCongruence.lean` carries this into local binding: assigning a
+scheme's locals leaves its captured arguments' meanings unchanged, and matching
+local slots receive the same family. Binder order is checked exactly, not just
+as a set. Template traversal preserves agreement under an explicit
+application-congruence induction hypothesis; the clause-row value step is also
+proved using the existing clause semantics. The quantified-row step and the
+argument-list component at the current level still have to close that induction.
+The induction hypothesis is not a certificate field or a new trusted assumption.
+
+These results do **not** yet establish application congruence or semantic
+substitution. The remaining proof must justify application images under
+capture-avoiding substitution at the `InstanceImages` boundary. Source compilation (including alias and
 dependent-intersection normalization), finite family-subtyping evidence, and
 certificate integration are also pending. Existing finite certificates remain
 the only accepted path until those obligations are proved.
@@ -1522,6 +1531,7 @@ Lean: `Types/PositiveGraphs.lean` (`schemeSemWithArgs`),
   `Types/QuantifiedGraphs.lean`
 - `Types/PositiveRules.lean`, `Types/PositiveCertificates.lean`
 - `Types/GraphRows.lean`, `Types/EquationGraphs.lean`, `Types/EquationSupport.lean`
+- `Types/EquationCongruence.lean`
 - `Tests/PositiveNormalizationTests.lean`
 
 All under `lean/Verification/Model/`. Tests cover distribution, cross-shape
