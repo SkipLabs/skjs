@@ -405,7 +405,7 @@ same object. The object's type must have one object clause with a method of
 key `k`; each fixed signature of the result must be one of the method's, at
 any receiver, and each variadic one likewise. With no proofs, the result may
 instead be one of the method's quantified signatures, a scheme row
-(`HasTy.bindScheme`), which a call instantiates by `sub`.
+(`HasTyUsing.bindScheme`), which a call instantiates by `sub`.
 `callRest` carries the
 callee premise, one premise per fixed actual, one `undefined` premise per fixed
 position the call omits, then one per further part: the actual at the element

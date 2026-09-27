@@ -33,7 +33,7 @@ const DOCS = "verification";
 
 /** A rule-bearing inductive: the acceptance language the docs describe. */
 const DECLARATIONS: readonly { type: string; file: string; what: string }[] = [
-  { type: "HasTy", file: "Programs/ProgramTyping.lean", what: "typing rules" },
+  { type: "HasTyUsing", file: "Programs/ProgramTyping.lean", what: "typing rules" },
   { type: "Rule", file: "Programs/ProgramCertificates.lean", what: "evidence rules" },
   { type: "Proof", file: "Types/PositiveCertificates.lean", what: "subtype proofs" },
   {

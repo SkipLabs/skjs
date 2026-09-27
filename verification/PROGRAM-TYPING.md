@@ -51,7 +51,23 @@ it exists. This is a finite syntactic equality, not a
 semantic-equivalence oracle. Below, writing a constructor as a type abbreviates
 such a view of its graph labels.
 
-The judgment $\Gamma\vdash_G t:A$ is `HasTy`. The rules are:
+The judgment $\Gamma\vdash_G t:A$ is `HasTyUsing G images`. Its rules are
+stated once, for every proved image checker `images` (an
+[`InstanceImageCheck`](POSITIVE-TYPES.md#finite-presentations-of-application-indexed-graphs)): the checker
+decides only whether an instance table's named images are substitution images,
+and it carries the proof
+
+$$
+\operatorname{check}(\vec b,c)=\mathsf{true}\ \land\ \operatorname{kinds}(\vec b,c)
+\ \Longrightarrow\ \forall\eta.\ \operatorname{InstanceImages}_G(\eta,\vec b,c).
+$$
+
+Subtype certificates in `sub` and in member coverage are checked by
+`PositiveCertificates.checkUsing` with that checker, and every rule's soundness
+depends on it only through this implication. The proof is Lean code, never
+certificate data. `HasTy G` is `HasTyUsing G (finiteInstanceImages G)`, the
+finite closed-table checker; source requests use it. Constructor names below are
+`HasTyUsing`'s. The rules are:
 
 $$
 \frac{\Gamma(x)=A}{\Gamma\vdash_G x:A}
@@ -187,7 +203,7 @@ each table entry the store its frame starts with (`CodeEntry.store`).
 
 A generic closure is graph code at a scheme row $j$, $G(j)=\forall\vec p.\,(L,S)$
 with binders $\vec p$ (parameter rows) and signatures $L$ and $S$ over them
-(`HasTy.funScheme`). Its code is checked once, at the scheme's own signatures:
+(`HasTyUsing.funScheme`). Its code is checked once, at the scheme's own signatures:
 a table entry holds at every assignment, so at every instantiation of $\vec p$.
 Its captures' types read none of $\vec p$ (`capturesFree`: their free parameter
 rows, computed and checked by `FreeOk` as `Sub.gen` checks its source's,
@@ -1070,7 +1086,7 @@ $$
 $$
 
 Here $\mathsf{True}$ and $\mathsf{False}$ must expand to the corresponding singleton
-clauses. `HasTy.ifBoolVar` proves this rule sound: the selected branch's actual
+clauses. `HasTyUsing.ifBoolVar` proves this rule sound: the selected branch's actual
 value justifies the changed binding, and all others retain their meanings.
 It neither refines mutable heap contents nor supplies general union splitting.
 Graph edges use the common [observation-based refinement contract](#refinement-under-an-observed-outcome)
@@ -1142,7 +1158,7 @@ positive graph type is both a value and closed (`meaning_value`). Semantic
 environments retain these properties when extended, when their world grows,
 and when their observation budget decreases.
 
-`HasTy.sound` proves:
+`HasTyUsing.sound` proves, for every proved image checker:
 
 $$
 \Gamma\vdash_G t:A\ \land\ \operatorname{EnvOk}_G(\Gamma,\rho,n,W)\ \land\
@@ -1151,7 +1167,7 @@ $$
 \operatorname{Safe}(\llbracket A\rrbracket_G,n,W,h,\operatorname{close}_{\rho}(t)).
 $$
 
-`HasTy.closed_safe` specializes this to a closed program with an empty typing
+`HasTyUsing.closed_safe` specializes this to a closed program with an empty typing
 environment. It explicitly requires the term to be scoped: the total semantic environment
 must not silently supply meanings for unbound source variables. Safety is partial
 correctness and absence of stuck execution, not termination.
@@ -1212,6 +1228,12 @@ including checked subsumption. It neither asserts completeness for semantic
 membership nor supplies proof search. `accepted_safe` derives computation safety
 directly from acceptance. Checker recursion follows the finite evidence tree;
 there is no user-supplied fuel and no semantic level in the evidence.
+
+The checker is `checkUsing G images`, stated once for every proved image
+checker, and `check` is its specialization to the finite one. Both directions
+hold at each checker: `derivableUsing_iff_checked` relates it to
+`HasTyUsing G images`, and `acceptedUsing_safe` derives safety from its
+acceptance. The image checker is chosen by Lean code; evidence cannot name one.
 
 The explicit sequents keep this initial in-memory format easy to inspect, at the
 cost of repeating terms and contexts. This is not a commitment to a serialized

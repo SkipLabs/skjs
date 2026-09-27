@@ -53,11 +53,11 @@ def programBody : Tm :=
         (.letE (.app (.var 3) .tru) (.app (.var 4) .nul))))
 
 theorem program_typed : HasTy G [[3]] programBody [0, 1] := by
-  apply HasTy.letE (A := [2]) (.alloc (parts := [(valueField, [1], .tru)]) (by simp)
+  apply HasTyUsing.letE (A := [2]) (.alloc (parts := [(valueField, [1], .tru)]) (by simp)
     (by intro p hp; cases List.mem_singleton.mp hp; exact .tru (by rfl)) (by rfl) (by simp) (by decide))
-  apply HasTy.letE (A := [2]) (.var rfl)
-  apply HasTy.letE (A := [0]) (.write (A := [1]) (.var rfl) (by rfl) (by simp) (.fls (by rfl)) (by rfl))
-  apply HasTy.letE (A := [0])
+  apply HasTyUsing.letE (A := [2]) (.var rfl)
+  apply HasTyUsing.letE (A := [0]) (.write (A := [1]) (.var rfl) (by rfl) (by simp) (.fls (by rfl)) (by rfl))
+  apply HasTyUsing.letE (A := [0])
     (.app (effect := .unrestricted) (Rt := [6]) (xs := [([1],.tru)]) (Us := []) (.var rfl) (by rfl) (by simp) (.undef (by rfl))
       (by intro p hp; cases List.mem_singleton.mp hp; exact .tru (by rfl)) (by simp))
   exact .app (effect := .unrestricted) (Rt := [6]) (xs := [([0,1],.nul)]) (Us := [])

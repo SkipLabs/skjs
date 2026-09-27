@@ -802,6 +802,13 @@ theorem derivable_iff_checked [DecidableEq ι] {G : NormalGraph ι} {S T} :
     Sub G S T ↔ ∃ proof, check G S T proof = true :=
   ⟨check_complete, fun ⟨_, h⟩ => check_sound h⟩
 
+/-- A proved image checker supplies ordinary value subsumption as well as
+mixed inclusion. Program typing uses this interface. -/
+theorem acceptedUsing [DecidableEq ι] {G : NormalGraph ι}
+    {images : InstanceImageCheck G} {S T proof}
+    (h : checkUsing G images S T proof = true) : FamLe (meaning G S) (meaning G T) :=
+  fun n W v hv => checkUsing_sound h G.env n W (.inl v) hv
+
 /-- A formula graph is checked through its normalization. -/
 def checkSource [DecidableEq ι] (G : PositiveGraphs.Graph ι) (S T : List ι)
     (proof : Proof ι) : Bool := check (normalizeGraph G) S T proof

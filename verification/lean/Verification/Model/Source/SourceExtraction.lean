@@ -2622,7 +2622,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     -- those. Such a bound is what lets the literal meet a readonly dictionary
     -- or an optional field it leaves out (`CoversKeys`, `CoversOptional`).
     -- Or a dictionary the literal is allocated at directly, each field an
-    -- index may admit at exactly that index's type (`HasTy.allocDict`): a
+    -- index may admit at exactly that index's type (`HasTyUsing.allocDict`): a
     -- writable index is never met through an own-key bound.
     let clause ← match PositiveRules.expand G A with
       | [.refs B [] [] [] [] ks] => do

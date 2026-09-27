@@ -196,18 +196,20 @@ instance [DecidableEq ι] (G : NormalGraph ι) (P : Ty ι) (f : PropKey) (A : Ty
 
 /-- Proofs that the member signature `c` covers the claimed `q`: each claimed
 parameter within the member's, then the member's result within the claimed. -/
-def CallProofs [DecidableEq ι] (G : NormalGraph ι) (q : Arrow (Ty ι))
+def CallProofsUsing [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G) (q : Arrow (Ty ι))
     (c : MethodArrow (Ty ι))
     (ps : List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι) : Prop :=
   q.arguments.length = c.arguments.length ∧ ps.1.length = c.arguments.length ∧
-    (∀ x ∈ (q.arguments.zip c.arguments).zip ps.1, PositiveCertificates.check G x.1.1 x.1.2 x.2 = true) ∧
-    PositiveCertificates.check G c.result q.result ps.2 = true ∧ c.effect.covers q.effect = true
+    (∀ x ∈ (q.arguments.zip c.arguments).zip ps.1, PositiveCertificates.checkUsing G images x.1.1 x.1.2 x.2 = true) ∧
+    PositiveCertificates.checkUsing G images c.result q.result ps.2 = true ∧ c.effect.covers q.effect = true
 
-instance [DecidableEq ι] (G : NormalGraph ι) (q c ps) : Decidable (CallProofs G q c ps) := by
-  unfold CallProofs; infer_instance
+instance [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G)
+    (q c ps) : Decidable (CallProofsUsing G images q c ps) := by
+  unfold CallProofsUsing; infer_instance
 
-theorem CallProofs.covered [DecidableEq ι] {G : NormalGraph ι} {q c ps}
-    (h : CallProofs G q c ps) : CoveredCall G q c := by
+theorem CallProofsUsing.covered [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} {q c ps}
+    (h : CallProofsUsing G images q c ps) : CoveredCallUsing G images q c := by
   obtain ⟨hl, hp, hall, hr, he⟩ := h
   refine ⟨hl, fun x hx => ?_, ⟨_, hr⟩, he⟩
   obtain ⟨p, hxp⟩ := PositiveCertificates.exists_mem_zip (xs := q.arguments.zip c.arguments) (ys := ps.1)
@@ -227,15 +229,16 @@ theorem choose_list {α β : Type} {P : α → β → Prop} :
     · exact hy
     · exact hall xy hxy
 
-theorem CoveredCall.proofs [DecidableEq ι] {G : NormalGraph ι} {q c}
-    (h : CoveredCall G q c) : ∃ ps, CallProofs G q c ps := by
+theorem CoveredCallUsing.proofs [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} {q c}
+    (h : CoveredCallUsing G images q c) : ∃ ps, CallProofsUsing G images q c ps := by
   obtain ⟨hl, hall, ⟨pr, hr⟩, he⟩ := h
   obtain ⟨ps, hpl, hps⟩ := choose_list (P := fun (x : Ty ι × Ty ι) p =>
-    PositiveCertificates.check G x.1 x.2 p = true) _ hall
+    PositiveCertificates.checkUsing G images x.1 x.2 p = true) _ hall
   exact ⟨(ps, pr), hl, by simpa [List.length_zip, hl] using hpl, hps, hr, he⟩
 
 /-- Only finite, syntactic premises of one rule. -/
-def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
+def LocalUsing [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G) (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
     (codes : CodeEntry ι → Bool := fun _ => false) : Prop :=
   match r, j.term, ps with
   | .var, .var i, [] => j.context[i]? = some j.type
@@ -297,7 +300,7 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
       (∀ K ∈ ks, ∀ n ∈ ns, K.admits n = true) ∧ allocRealm G fs = true
     -- A literal allocated directly at a dictionary: each field an index's
     -- class may admit at exactly that index's type, each optional field
-    -- absent (`HasTy.allocDict`).
+    -- absent (`HasTyUsing.allocDict`).
     | [.dict fs [] [] ix os [] [] cs] =>
       ns.Nodup ∧ CallArguments.protoField ∉ ns ∧ CallArguments.arrayStoreField ∉ ns ∧
       ns.length = ps.length ∧ ps.map Sequent.term = inits ∧
@@ -493,7 +496,7 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     r = i + 1 ∧ pre = [] ∧ ns = [] ∧ inits = [] ∧
     match j.context[i]?, expand G j.type with
     | some O, [.arrs L S] => ∃ m ∈ (memberOf G O k).toList,
-        proofs.length = L.length ∧ (∀ qp ∈ L.zip proofs, ∃ c ∈ m.calls, CallProofs G qp.1 c qp.2) ∧
+        proofs.length = L.length ∧ (∀ qp ∈ L.zip proofs, ∃ c ∈ m.calls, CallProofsUsing G images qp.1 c qp.2) ∧
         (∀ s ∈ S, s.withReceiver () ∈ m.rests)
     | some O, _ => proofs = [] ∧ expand G j.type = [] ∧
         ∃ m ∈ (memberOf G O k).toList, j.type ∈ m.schemes
@@ -510,27 +513,28 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     | _ => False
   | .sub proof, _, [jt] =>
     jt.context = j.context ∧ jt.term = j.term ∧
-    PositiveCertificates.check G jt.type j.type proof = true
+    PositiveCertificates.checkUsing G images jt.type j.type proof = true
   | .throw, .throw a, [ja] => ja.context = j.context ∧ ja.term = a
   | .merge, .merge d a b, [ja, jb] =>
     ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
     ObjectMerge.MergeOk G d ja.type jb.type j.type = true
   | _, _, _ => False
 
-instance [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (ps)
-    (codes : CodeEntry ι → Bool) : Decidable (Local G j r ps codes) := by
-  unfold Local
+instance [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G)
+    (j : Sequent ι) (r : Rule ι) (ps)
+    (codes : CodeEntry ι → Bool) : Decidable (LocalUsing G images j r ps codes) := by
+  unfold LocalUsing
   split <;> try infer_instance
   all_goals try dsimp [Represents, Answers]
   all_goals first | infer_instance | (split <;> infer_instance)
 
 /-- Check evidence against the rules. `codes` answers which graph code the
 unit's certificate has checked (`Rule.funGraph`); by default, none. -/
-def checkTree [DecidableEq ι] (G : NormalGraph ι) (e : Evidence ι)
+def checkTreeUsing [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G) (e : Evidence ι)
     (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
   match e with
-  | .node j r ps => decide (Local G j r (ps.map claim) codes) &&
-      ps.attach.all (fun e => checkTree G e.val codes)
+  | .node j r ps => decide (LocalUsing G images j r (ps.map claim) codes) &&
+      ps.attach.all (fun e => checkTreeUsing G images e.val codes)
 termination_by sizeOf e
 decreasing_by
   have := List.sizeOf_lt_of_mem e.property
@@ -574,14 +578,14 @@ theorem checkScope_iff (d : Nat) (t : Tm) : checkScope d t = true ↔ Scoped d t
 
 /-- Bind evidence to the actual requested program, type and empty context.
 Scope includes unselected branches and bodies of empty overloads. -/
-def check [DecidableEq ι] (G : NormalGraph ι) (t : Tm) (A : Ty ι) (e : Evidence ι)
+def checkUsing [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G) (t : Tm) (A : Ty ι) (e : Evidence ι)
     (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
-  decide (claim e = ⟨[], t, A⟩) && checkScope 0 t && checkTree G e codes
+  decide (claim e = ⟨[], t, A⟩) && checkScope 0 t && checkTreeUsing G images e codes
 
 /-- A code table is sound when each entry's code meets its signature in the
 graph reassigned at every assignment of its parameter rows: a code check reads
 no assignment (`Parametricity`), so a checked table is sound at all of them,
-which is what a generic closure's creation needs (`HasTy.funScheme`). -/
+which is what a generic closure's creation needs (`HasTyUsing.funScheme`). -/
 def CodesSound (G : NormalGraph ι) (codes : CodeEntry ι → Bool) : Prop :=
   ∀ c, codes c = true → ∀ η, c.Spec (reassign G η)
 
@@ -610,13 +614,14 @@ theorem offersChecked_sound [DecidableEq ι] {G : NormalGraph ι} {codes : CodeE
 
 /-- Premises naming slots of the context are the captures of graph code: each
 a slot below the context's length, typed there. -/
-theorem caps_of_local [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)}
+theorem caps_of_local [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} {Γ : List (Ty ι)}
     {ps : List (Sequent ι)} (hctx : ∀ q ∈ ps, q.context = Γ)
     (hslots : capSlotsBelow (ps.map Sequent.term) Γ.length = true)
-    (hp : ∀ p ∈ ps, HasTy G p.context p.term p.type) :
+    (hp : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type) :
     ∃ caps : List (Ty ι × Nat), caps.map (fun c => Tm.var c.2) = ps.map Sequent.term ∧
       caps.map Prod.fst = ps.map Sequent.type ∧ (∀ c ∈ caps, c.2 < Γ.length) ∧
-      ∀ c ∈ caps, HasTy G Γ (.var c.2) c.1 := by
+      ∀ c ∈ caps, HasTyUsing G images Γ (.var c.2) c.1 := by
   unfold capSlotsBelow at hslots
   split at hslots
   · rename_i slots hvs
@@ -633,7 +638,7 @@ theorem caps_of_local [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)}
     have hlt : ∀ c ∈ caps, c.2 < Γ.length := fun c hc => by
       have := List.of_mem_zip hc
       exact of_decide_eq_true (List.all_eq_true.mp hslots c.2 this.2)
-    have hcap : ∀ c ∈ caps, HasTy G Γ (.var c.2) c.1 := fun c hc => by
+    have hcap : ∀ c ∈ caps, HasTyUsing G images Γ (.var c.2) c.1 := fun c hc => by
       obtain ⟨i, hi, hci⟩ := List.mem_iff_getElem.mp hc
       have hi' : i < ps.length := by simp [caps] at hi; omega
       have hsl : i < slots.length := by simp [caps] at hi; omega
@@ -651,15 +656,16 @@ theorem caps_of_local [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)}
 
 /-- A graph code creation whose captures are slots and whose signatures the
 table has checked is derivable. -/
-theorem funGraph_of_local [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {A : Ty ι}
+theorem funGraph_of_local [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} {Γ : List (Ty ι)} {A : Ty ι}
     {codes : CodeEntry ι → Bool} (hcodes : CodesSound G codes) {arity start : Nat}
     {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
     {rest : Bool} {As : List (Ty ι)}
     {ps : List (Sequent ι)} (hctx : ∀ q ∈ ps, q.context = Γ)
     (hslots : capSlotsBelow (ps.map Sequent.term) Γ.length = true)
     (hok : graphCodesChecked G A codes arity E K start (ps.map Sequent.type) rest As = true)
-    (hp : ∀ p ∈ ps, HasTy G p.context p.term p.type) :
-    HasTy G Γ (.make (.graph arity E K start (ps.map Sequent.term) .call rest) .nul) A := by
+    (hp : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type) :
+    HasTyUsing G images Γ (.make (.graph arity E K start (ps.map Sequent.term) .call rest) .nul) A := by
   obtain ⟨caps, hvar, hfst, hlt, hcap⟩ := caps_of_local hctx hslots hp
   rw [← hvar]
   unfold graphCodesChecked at hok
@@ -675,21 +681,22 @@ theorem funGraph_of_local [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
       · rename_i hpar
         obtain ⟨s', hq, he⟩ := Option.map_eq_some_iff.mp hs
         cases he
-        exact HasTy.funScheme (caps := caps) (E := E) (K := K) (start := start) (arity := arity)
+        exact HasTyUsing.funScheme (caps := caps) (E := E) (K := K) (start := start) (arity := arity)
           (by simpa using hpar) hq (by rw [hfst]; exact offersChecked_sound hcodes hok.2)
           (by rw [hfst]; exact hok.1) hlt hcap
     · cases hs
   · split at hok
     · rename_i L S hL
-      exact HasTy.funGraph (caps := caps) (E := E) (K := K) (start := start) (arity := arity) hL
+      exact HasTyUsing.funGraph (caps := caps) (E := E) (K := K) (start := start) (arity := arity) hL
         (by rw [hfst]; exact offersChecked_sound hcodes hok G.env) hlt hcap
     · contradiction
 
-theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : CodeEntry ι → Bool}
-    (hl : Local G j r ps codes) (hcodes : CodesSound G codes)
-    (hp : ∀ p ∈ ps, HasTy G p.context p.term p.type) : HasTy G j.context j.term j.type := by
+theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} {j r ps} {codes : CodeEntry ι → Bool}
+    (hl : LocalUsing G images j r ps codes) (hcodes : CodesSound G codes)
+    (hp : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type) : HasTyUsing G images j.context j.term j.type := by
   rcases j with ⟨Γ, t, A⟩
-  unfold Local at hl
+  unfold LocalUsing at hl
   split at hl <;> (try dsimp only at *) <;> (try subst t)
   · exact .var hl
   · exact .nul hl
@@ -717,7 +724,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : Code
     split at hok
     · rename_i L hL
       simp only [List.all_eq_true] at hok
-      exact HasTy.ctorGraph hL hu (fun p hp' => by rw [hfst]; exact hcodes _ (hok p hp') G.env)
+      exact HasTyUsing.ctorGraph hL hu (fun p hp' => by rw [hfst]; exact hcodes _ (hok p hp') G.env)
         hlt hcap
     · contradiction
   · split at hl
@@ -725,7 +732,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : Code
       obtain ⟨rfl, hnd, hlen, hterms, hctx, rfl, hcaps, hslots, hok⟩ := hl
       have hctxd : ∀ q ∈ ps.drop ns.length, q.context = Γ :=
         fun q hq => hctx q (List.mem_of_mem_drop hq)
-      have hpd : ∀ q ∈ ps.drop ns.length, HasTy G q.context q.term q.type :=
+      have hpd : ∀ q ∈ ps.drop ns.length, HasTyUsing G images q.context q.term q.type :=
         fun q hq => hp q (List.mem_of_mem_drop hq)
       obtain ⟨caps', hvar, hfst, hlt, hcap⟩ :=
         caps_of_local hctxd (by rw [hcaps]; exact hslots) hpd
@@ -752,14 +759,14 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : Code
         simp only [parts, List.map_map, Function.comp_def]
         rw [List.zip_map_right]
         simp [Function.comp_def]
-      have hpart : ∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1 := by
+      have hpart : ∀ p ∈ parts, HasTyUsing G images Γ p.2.2 p.2.1 := by
         intro p hm
         obtain ⟨r, hr, rfl⟩ := List.mem_map.mp hm
         have hmem := List.of_mem_zip hr
         have h := hp r.2 (List.mem_of_mem_take hmem.2)
         rw [hctx r.2 (List.mem_of_mem_take hmem.2)] at h
         exact h
-      have := HasTy.callableGraph (G := G) (Γ := Γ) (F := A) (parts := parts) (caps := caps')
+      have := HasTyUsing.callableGraph (G := G) (images := images) (Γ := Γ) (F := A) (parts := parts) (caps := caps')
         (E := E) (K := K) (start := start) (arity := arity) (rest := rest) (As := As)
         (by rw [hP]; exact hF) (by rw [hfst']; exact hnd) hpart
         (by rw [hfst]; exact offersChecked_sound hcodes hok G.env) hlt hcap
@@ -777,13 +784,13 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : Code
       -- The actual premises and the omitted-position premises are the same list,
       -- split at the number of actuals the call writes.
       have ha : ∀ p ∈ (jas.take args.length).map (fun ja => (ja.type,ja.term)),
-          HasTy G Γ p.2 p.1 := by
+          HasTyUsing G images Γ p.2 p.1 := by
         intro p hm
         obtain ⟨ja,hja,rfl⟩ := List.mem_map.mp hm
         have h := hp ja (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_of_mem_take hja)))
         rw [hcontexts ja (List.mem_of_mem_take hja)] at h
         exact h
-      have hu : ∀ A ∈ (jas.drop args.length).map Sequent.type, HasTy G Γ .undef A := by
+      have hu : ∀ A ∈ (jas.drop args.length).map Sequent.type, HasTyUsing G images Γ .undef A := by
         intro A hm
         obtain ⟨ja,hja,rfl⟩ := List.mem_map.mp hm
         have h := hp ja (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_of_mem_drop hja)))
@@ -793,7 +800,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : Code
           ++ (jas.drop args.length).map Sequent.type = jas.map Sequent.type := by
         simp only [List.map_map, Function.comp_def]
         rw [← List.map_append, List.take_append_drop]
-      have h := HasTy.app hf he (xs := (jas.take args.length).map (fun ja => (ja.type,ja.term)))
+      have h := HasTyUsing.app hf he (xs := (jas.take args.length).map (fun ja => (ja.type,ja.term)))
         (Us := (jas.drop args.length).map Sequent.type)
         (by rw [hsplit]; exact hL) hrt ha hu
       simpa only [List.map_map,Function.comp_def,hargs] using h
@@ -826,7 +833,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : Code
         apply List.map_congr_left
         intro r _
         rfl
-      have := HasTy.alloc (G := G) (Γ := Γ) (Ref := A)
+      have := HasTyUsing.alloc (G := G) (images := images) (Γ := Γ) (Ref := A)
         (parts := (ns.zip ps).map fun r => (r.1, r.2.type, r.2.term))
         (by rw [hfst]; exact hnd)
         (by
@@ -866,7 +873,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : Code
         apply List.map_congr_left
         intro r _
         rfl
-      have := HasTy.allocDict (G := G) (Γ := Γ) (Ref := A)
+      have := HasTyUsing.allocDict (G := G) (images := images) (Γ := Γ) (Ref := A)
         (parts := (ns.zip ps).map fun r => (r.1, r.2.type, r.2.term)) (ix := ix) (cs := cs) (os := os)
         (by rw [hfst]; exact hnd) (by rw [hfst]; exact hnp) (by rw [hfst]; exact hns)
         (by
@@ -981,7 +988,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : Code
       have hmap : psl.map Sequent.term = (psl.map fun p => (p.type, p.term)).map Prod.snd := by
         simp [List.map_map, Function.comp_def]
       rw [hmap]
-      refine HasTy.arrLit (xs := psl.map fun p => (p.type, p.term)) hT
+      refine HasTyUsing.arrLit (xs := psl.map fun p => (p.type, p.term)) hT
         (by simpa using hreq) (by simpa using hbound) ?_ ?_
       · intro q hq
         rw [List.zipIdx_map] at hq
@@ -1102,7 +1109,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : Code
   · rename_i t ps i
     split at hl
     · rename_i C hi
-      apply HasTy.unionVar hi
+      apply HasTyUsing.unionVar hi
       intro a ha
       apply hp ⟨Γ.set i [a], _, A⟩
       rw [hl]
@@ -1119,13 +1126,13 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : Code
       -- The actual premises and the omitted-position premises are the same list,
       -- split at the number of actuals the call writes.
       have ha : ∀ p ∈ (jas.take args.length).map (fun ja => (ja.type,ja.term)),
-          HasTy G Γ p.2 p.1 := by
+          HasTyUsing G images Γ p.2 p.1 := by
         intro p hm
         obtain ⟨ja,hja,rfl⟩ := List.mem_map.mp hm
         have h := hp ja (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_of_mem_take hja)))
         rw [hcontexts ja (List.mem_of_mem_take hja)] at h
         exact h
-      have hu : ∀ A ∈ (jas.drop args.length).map Sequent.type, HasTy G Γ .undef A := by
+      have hu : ∀ A ∈ (jas.drop args.length).map Sequent.type, HasTyUsing G images Γ .undef A := by
         intro A hm
         obtain ⟨ja,hja,rfl⟩ := List.mem_map.mp hm
         have h := hp ja (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_of_mem_drop hja)))
@@ -1135,7 +1142,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : Code
           ++ (jas.drop args.length).map Sequent.type = jas.map Sequent.type := by
         simp only [List.map_map, Function.comp_def]
         rw [← List.map_append, List.take_append_drop]
-      have h := HasTy.callCallable hf he (xs := (jas.take args.length).map (fun ja => (ja.type,ja.term)))
+      have h := HasTyUsing.callCallable hf he (xs := (jas.take args.length).map (fun ja => (ja.type,ja.term)))
         (Us := (jas.drop args.length).map Sequent.type)
         (by rw [hsplit]; exact hL) hrt ha hu
       simpa only [List.map_map,Function.comp_def,hargs] using h
@@ -1174,7 +1181,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : Code
     have hrt := hp jr (by simp)
     rw [hΓr, htr] at hrt
     have htake : jas.take (k + u) = jas.take k ++ (jas.drop k).take u := List.take_add ..
-    have := HasTy.callRest (xs := (jas.take k).map fun ja => (ja.type, ja.term))
+    have := HasTyUsing.callRest (xs := (jas.take k).map fun ja => (ja.type, ja.term))
       (Us := ((jas.drop k).take u).map Sequent.type) (P := P)
       (parts := (flags.zip (jas.drop (k + u))).map fun q => (q.1, q.2.type, q.2.term)) hf
       (by rw [htake] at hL; simpa [List.map_append, List.map_map, Function.comp_def] using hL) hrt
@@ -1206,7 +1213,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : Code
     · rename_i hsaved hT hRt hF
       obtain ⟨hmap, hsig⟩ := hl
       rw [varSlots_eq hsaved]
-      exact HasTy.bindE hT hsig hRt hmap hF
+      exact HasTyUsing.bindE hT hsig hRt hmap hF
     · contradiction
   · obtain ⟨rfl, rfl, hl⟩ := hl
     split at hl
@@ -1215,19 +1222,19 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : Code
       simp only at h1 h2 h3 hef h4 h5
       subst h1 h2 h3 hef h4
       rw [varSlots_eq hsaved]
-      exact HasTy.bindRestE hT hmem (by simpa using hEl) hRt hmap h5 hF
+      exact HasTyUsing.bindRestE hT hmem (by simpa using hEl) hRt hmap h5 hF
     · contradiction
   · obtain ⟨rfl, rfl, rfl, rfl, hl⟩ := hl
     split at hl
     · rename_i O L S hO hF
       obtain ⟨m, hm, hlen, hL, hS⟩ := hl
-      exact HasTy.bindMember hO (by simpa using hm) hF (fun q hq => by
+      exact HasTyUsing.bindMember hO (by simpa using hm) hF (fun q hq => by
         obtain ⟨pp, hpp⟩ := PositiveCertificates.exists_mem_zip hlen q hq
         obtain ⟨c, hc, hcp⟩ := hL _ hpp
         exact ⟨c, hc, hcp.covered⟩) hS
     · rename_i O hO _
       obtain ⟨-, hE, m, hm, hF⟩ := hl
-      exact HasTy.bindScheme hO (by simpa using hm) hF hE
+      exact HasTyUsing.bindScheme hO (by simpa using hm) hF hE
     · contradiction
   · rename_i f args jf jas
     rcases hl with ⟨hΓf, htf, hterms, hundef, hctx, hL⟩
@@ -1236,13 +1243,13 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : Code
     split at hL
     · rename_i L he
       have hxs : ∀ p ∈ (jas.take args.length).map (fun ja => (ja.type, ja.term)),
-          HasTy G Γ p.2 p.1 := by
+          HasTyUsing G images Γ p.2 p.1 := by
         intro p hp'
         obtain ⟨ja, hja, rfl⟩ := List.mem_map.mp hp'
         have h := hp ja (List.mem_cons_of_mem _ (List.mem_of_mem_take hja))
         rw [hctx ja (List.mem_of_mem_take hja)] at h
         exact h
-      have hu : ∀ A ∈ (jas.drop args.length).map Sequent.type, HasTy G Γ .undef A := by
+      have hu : ∀ A ∈ (jas.drop args.length).map Sequent.type, HasTyUsing G images Γ .undef A := by
         intro A hm
         obtain ⟨ja, hja, rfl⟩ := List.mem_map.mp hm
         have h := hp ja (List.mem_cons_of_mem _ (List.mem_of_mem_drop hja))
@@ -1252,7 +1259,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : Code
           ++ (jas.drop args.length).map Sequent.type = jas.map Sequent.type := by
         simp only [List.map_map, Function.comp_def]
         rw [← List.map_append, List.take_append_drop]
-      have hc := HasTy.construct (xs := (jas.take args.length).map fun ja => (ja.type, ja.term))
+      have hc := HasTyUsing.construct (xs := (jas.take args.length).map fun ja => (ja.type, ja.term))
         (Us := (jas.drop args.length).map Sequent.type) hf he
         (by rw [hsplit]; exact hL) hxs hu
       simpa only [List.map_map, Function.comp_def, hterms] using hc
@@ -1275,32 +1282,35 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps} {codes : Code
     rw [hΓb, htb] at hb
     exact .merge ha hb hm
 
-theorem checkTree_sound [DecidableEq ι] {G : NormalGraph ι} (e : Evidence ι)
-    {codes : CodeEntry ι → Bool} (he : checkTree G e codes = true)
+theorem checkTreeUsing_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} (e : Evidence ι)
+    {codes : CodeEntry ι → Bool} (he : checkTreeUsing G images e codes = true)
     (hcodes : CodesSound G codes := by exact Verification.Model.ProgramCertificates.codesSound_none _) :
-    HasTy G (claim e).context (claim e).term (claim e).type := by
+    HasTyUsing G images (claim e).context (claim e).term (claim e).type := by
   cases e with
   | node j r ps =>
-    simp only [checkTree, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at he
+    simp only [checkTreeUsing, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at he
     apply local_sound he.1 hcodes
     intro p hp
     obtain ⟨e, he', rfl⟩ := List.mem_map.mp hp
-    exact checkTree_sound e (he.2 ⟨e, he'⟩ (by simp)) hcodes
+    exact checkTreeUsing_sound e (he.2 ⟨e, he'⟩ (by simp)) hcodes
 termination_by sizeOf e
 
-theorem check_sound [DecidableEq ι] {G : NormalGraph ι} {t A e} {codes : CodeEntry ι → Bool}
-    (he : check G t A e codes = true) (hcodes : CodesSound G codes := by exact Verification.Model.ProgramCertificates.codesSound_none _) :
-    Scoped 0 t ∧ HasTy G [] t A := by
-  simp only [check, Bool.and_eq_true, decide_eq_true_eq] at he
+theorem checkUsing_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} {t A e} {codes : CodeEntry ι → Bool}
+    (he : checkUsing G images t A e codes = true) (hcodes : CodesSound G codes := by exact Verification.Model.ProgramCertificates.codesSound_none _) :
+    Scoped 0 t ∧ HasTyUsing G images [] t A := by
+  simp only [checkUsing, Bool.and_eq_true, decide_eq_true_eq] at he
   refine ⟨(checkScope_iff 0 t).mp he.1.2, ?_⟩
-  have ht := checkTree_sound e he.2 hcodes
+  have ht := checkTreeUsing_sound e he.2 hcodes
   simpa only [he.1.1] using ht
 
-theorem accepted_safe [DecidableEq ι] {G : NormalGraph ι} {t A e} {codes : CodeEntry ι → Bool}
-    (he : check G t A e codes = true) (n W h) (hw : WorldAdm W) (hh : HeapOk n W h)
+theorem acceptedUsing_safe [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} {t A e} {codes : CodeEntry ι → Bool}
+    (he : checkUsing G images t A e codes = true) (n W h) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hcodes : CodesSound G codes := by exact Verification.Model.ProgramCertificates.codesSound_none _) :
     Safe (meaning G A) n W h t :=
-  (check_sound he hcodes).2.closed_safe (check_sound he hcodes).1 n W h hw hh
+  (checkUsing_sound he hcodes).2.closed_safe (checkUsing_sound he hcodes).1 n W h hw hh
 
 /-- Every offer graph code meets is checked when every entry is admitted. -/
 theorem offersChecked_complete [DecidableEq ι] {G : NormalGraph ι} {arity : Nat} {E : List Tm}
@@ -1330,12 +1340,13 @@ theorem capSlots_complete {Γ : List (Ty ι)} {caps : List (Ty ι × Nat)}
 
 /-- Evidence for a sequent, with every graph code admitted: coverage of the
 rules, where which code a unit has checked is not the question. -/
-def Representable [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) : Prop :=
-  ∃ e, claim e = j ∧ checkTree G e (fun _ => true) = true
+def RepresentableUsing [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G) (j : Sequent ι) : Prop :=
+  ∃ e, claim e = j ∧ checkTreeUsing G images e (fun _ => true) = true
 
-private theorem gather [DecidableEq ι] {G : NormalGraph ι} (js : List (Sequent ι))
-    (h : ∀ j ∈ js, Representable G j) :
-    ∃ es : List (Evidence ι), es.map claim = js ∧ ∀ e ∈ es, checkTree G e (fun _ => true) = true := by
+private theorem gather [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} (js : List (Sequent ι))
+    (h : ∀ j ∈ js, RepresentableUsing G images j) :
+    ∃ es : List (Evidence ι), es.map claim = js ∧ ∀ e ∈ es, checkTreeUsing G images e (fun _ => true) = true := by
   induction js with
   | nil => exact ⟨[], rfl, by simp⟩
   | cons j js ih =>
@@ -1347,18 +1358,20 @@ private theorem gather [DecidableEq ι] {G : NormalGraph ι} (js : List (Sequent
     · exact hc
     · exact hcs e' hm
 
-private theorem node_complete [DecidableEq ι] {G : NormalGraph ι} {j r js}
-    (hl : Local G j r js (fun _ => true)) (h : ∀ p ∈ js, Representable G p) :
-    Representable G j := by
+private theorem node_complete [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} {j r js}
+    (hl : LocalUsing G images j r js (fun _ => true)) (h : ∀ p ∈ js, RepresentableUsing G images p) :
+    RepresentableUsing G images j := by
   obtain ⟨es, hes, hcs⟩ := gather js h
   refine ⟨.node j r es, rfl, ?_⟩
-  simp only [checkTree, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true]
+  simp only [checkTreeUsing, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true]
   exact ⟨by simpa only [hes] using hl, fun e _ => hcs e.val e.property⟩
 
 /-- Every declarative derivation has finite accepted evidence. This is coverage
 of the rules, not semantic completeness and not a proof-search algorithm. -/
-theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
-    (ht : HasTy G Γ t A) : Representable G ⟨Γ, t, A⟩ := by
+theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} {Γ t A}
+    (ht : HasTyUsing G images Γ t A) : RepresentableUsing G images ⟨Γ, t, A⟩ := by
   induction ht with
   | var hi => exact node_complete (r := .var) (js := []) hi (by simp)
   | nul hr => exact node_complete (r := .nul) (js := []) hr (by simp)
@@ -1422,7 +1435,7 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
       (j := ⟨Γ, .makeAt (.graph arity E K start (caps.map fun c => .var c.2) .call rest)
         (parts.map Prod.fst) (parts.map fun p => p.2.2), F⟩)
       (js := (parts.map fun p => ⟨Γ, p.2.2, p.2.1⟩) ++ caps.map fun c => ⟨Γ, .var c.2, c.1⟩)
-    · simp only [Local,
+    · simp only [LocalUsing,
         show expand G F = [.callable (parts.map fun p => (p.1, p.2.1)) [] L S] from hr]
       have hlenp : (parts.map fun p => (⟨Γ, p.2.2, p.2.1⟩ : Sequent ι)).length
           = (parts.map Prod.fst).length := by simp
@@ -1487,11 +1500,11 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
         · obtain ⟨A,hA,rfl⟩ := List.mem_map.mp hj
           exact ihu A hA
   | @readCallable Γ a F P Ps L S f A ha hr hm ih =>
-    apply node_complete (G := G) (j := ⟨Γ,.readAt f a,A⟩) (r := .readCallable) (js := [⟨Γ,a,F⟩])
-    · simpa [Local,show expand G F = [.callable P Ps L S] from hr] using hm
+    apply node_complete (G := G) (images := images) (j := ⟨Γ,.readAt f a,A⟩) (r := .readCallable) (js := [⟨Γ,a,F⟩])
+    · simpa [LocalUsing,show expand G F = [.callable P Ps L S] from hr] using hm
     · simpa using ih
   | @writeCallable Γ a F P Ps L S f A b N ha hr hm hb hn iha ihb =>
-    apply node_complete (G := G) (j := ⟨Γ,.writeAt f a b,N⟩) (r := .writeCallable)
+    apply node_complete (G := G) (images := images) (j := ⟨Γ,.writeAt f a b,N⟩) (r := .writeCallable)
       (js := [⟨Γ,a,F⟩,⟨Γ,b,A⟩])
     · exact ⟨rfl,rfl,rfl,rfl,hn,by
         simp only [show expand G F = [.callable P Ps L S] from hr]
@@ -1578,10 +1591,10 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
       · exact iha
       · exact ihb
   | @alloc Γ Ref parts ks hnd hpart hr hk hreal ih =>
-    apply node_complete (G := G)
+    apply node_complete (G := G) (images := images)
       (j := ⟨Γ, .makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2), Ref⟩)
       (r := .alloc) (js := parts.map fun p => ⟨Γ, p.2.2, p.2.1⟩)
-    · simp only [Local, show expand G Ref = [.refs (parts.map fun p => (p.1, p.2.1)) [] [] [] [] ks] from hr]
+    · simp only [LocalUsing, show expand G Ref = [.refs (parts.map fun p => (p.1, p.2.1)) [] [] [] [] ks] from hr]
       refine ⟨hnd, by simp, by simp [List.map_map, Function.comp_def], by
         intro q hq; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq; rfl, ?_, ?_, hreal⟩
       · simp only [List.map_map, Function.comp_def]
@@ -1593,10 +1606,10 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
       obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
       exact ih p hp
   | @allocDict Γ Ref parts ix cs os hnd hnp hns hpart hr hix habs hos ih =>
-    apply node_complete (G := G)
+    apply node_complete (G := G) (images := images)
       (j := ⟨Γ, .makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2), Ref⟩)
       (r := .alloc) (js := parts.map fun p => ⟨Γ, p.2.2, p.2.1⟩)
-    · simp only [Local, show expand G Ref =
+    · simp only [LocalUsing, show expand G Ref =
         [.dict (parts.map fun p => (p.1, p.2.1)) [] [] ix os [] [] cs] from hr]
       refine ⟨hnd, hnp, hns, by simp, by simp [List.map_map, Function.comp_def], by
         intro q hq; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq; rfl, ?_, ?_, habs, hos⟩
@@ -1609,35 +1622,35 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
       obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
       exact ih p hp
   | @read Γ a Ref c fs vs f A ha hr hc hm ih =>
-    apply node_complete (G := G) (j := ⟨Γ, .readAt f a, A⟩) (r := .read) (js := [⟨Γ,a,Ref⟩])
+    apply node_complete (G := G) (images := images) (j := ⟨Γ, .readAt f a, A⟩) (r := .read) (js := [⟨Γ,a,Ref⟩])
       ⟨rfl,rfl,by simp only [show expand G Ref = [c] from hr, hc]; exact hm⟩
     simpa using ih
   | @readView Γ a Ref c fs vs f A ha hr hc hm ih =>
-    apply node_complete (G := G) (j := ⟨Γ, .readAt f a, A⟩) (r := .readView) (js := [⟨Γ,a,Ref⟩])
+    apply node_complete (G := G) (images := images) (j := ⟨Γ, .readAt f a, A⟩) (r := .readView) (js := [⟨Γ,a,Ref⟩])
       ⟨rfl,rfl,by simp only [show expand G Ref = [c] from hr, hc]; exact hm⟩
     simpa using ih
   | @readProto Γ a Ref P fs vs os ms ks K gs ws os' ms' ks' f A ha hr hK hf hpr hP hm ih =>
-    apply node_complete (G := G) (j := ⟨Γ, .readAt f a, A⟩) (r := .readProto P) (js := [⟨Γ,a,Ref⟩])
+    apply node_complete (G := G) (images := images) (j := ⟨Γ, .readAt f a, A⟩) (r := .readProto P) (js := [⟨Γ,a,Ref⟩])
       ⟨rfl,rfl,by
         simp only [ProtoMember, show expand G Ref = [.refs fs [] vs os ms ks] from hr,
           show expand G P = [.refs gs [] ws os' ms' ks'] from hP]
         exact ⟨⟨K, hK, hf⟩, hpr, hm⟩⟩
     simpa using ih
   | @readOptional Γ a Ref fs vs os ms ks f r A U ha hr hm hUnd ih =>
-    apply node_complete (G := G) (j := ⟨Γ, .readAt f a, A ++ U⟩)
+    apply node_complete (G := G) (images := images) (j := ⟨Γ, .readAt f a, A ++ U⟩)
       (r := .readOptional A U) (js := [⟨Γ,a,Ref⟩])
       ⟨rfl,rfl,hUnd,rfl,by
         simp only [show expand G Ref = [.refs fs [] vs os ms ks] from hr]; exact ⟨_, hm, rfl, rfl⟩⟩
 
     simpa using ih
   | @readDict Γ a Ref fs vs ix os ms ks cs A U f K ha hr hm hsure hUnd ih =>
-    apply node_complete (G := G) (j := ⟨Γ, .readAt f a, A ++ U⟩)
+    apply node_complete (G := G) (images := images) (j := ⟨Γ, .readAt f a, A ++ U⟩)
       (r := .readDict K A U) (js := [⟨Γ,a,Ref⟩])
       ⟨rfl,rfl,hUnd,rfl,hsure,
         by simp only [show expand G Ref = [.dict fs [] vs ix os ms ks cs] from hr]; exact hm⟩
     simpa using ih
   | @indexDict Γ a Ref fs vs ix os ms ks cs key Kt A U K KK ha hr hk hStr hwithin hm hUnd iha ihk =>
-    apply node_complete (G := G) (j := ⟨Γ, .indexAt a key, A ++ U⟩)
+    apply node_complete (G := G) (images := images) (j := ⟨Γ, .indexAt a key, A ++ U⟩)
       (r := .indexDict K KK A U) (js := [⟨Γ,a,Ref⟩, ⟨Γ,key,Kt⟩])
       ⟨rfl,rfl,rfl,rfl,hStr,hwithin,hUnd,rfl,
         by simp only [show expand G Ref = [.dict fs [] vs ix os ms ks cs] from hr]; exact hm⟩
@@ -1647,9 +1660,9 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     · exact iha
     · exact ihk
   | @arrLit Γ L T xs hr hreq hbound hpos hx ih =>
-    apply node_complete (G := G) (j := ⟨Γ, .arrLit (xs.map Prod.snd), L⟩) (r := .arrLit)
+    apply node_complete (G := G) (images := images) (j := ⟨Γ, .arrLit (xs.map Prod.snd), L⟩) (r := .arrLit)
       (js := xs.map fun p => ⟨Γ, p.2, p.1⟩)
-    · simp only [Local, show expand G L = [.list T []] from hr]
+    · simp only [LocalUsing, show expand G L = [.list T []] from hr]
       refine ⟨by simp [List.map_map, Function.comp_def],
         by intro p hp; obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp; rfl,
         by simpa using hreq, by simpa using hbound, ?_⟩
@@ -1661,7 +1674,7 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
       obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
       exact ih p hp
   | @elem Γ a i L I A T b k ha hr hi hI hk hA iha ihi =>
-    apply node_complete (G := G) (j := ⟨Γ, .elemAt a i, A⟩) (r := .elem) (js := [⟨Γ,a,L⟩, ⟨Γ,i,I⟩])
+    apply node_complete (G := G) (images := images) (j := ⟨Γ, .elemAt a i, A⟩) (r := .elem) (js := [⟨Γ,a,L⟩, ⟨Γ,i,I⟩])
       ⟨rfl,rfl,rfl,rfl,by simp only [show expand G L = [.list T []] from hr,
         show expand G I = [.numLit b] from hI]; simp [requiredAt, hk, hA]⟩
     intro j hj
@@ -1670,7 +1683,7 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     · exact iha
     · exact ihi
   | @elemOpt Γ a i L I A U T b k ha hr hi hI hk hnone hA hU iha ihi =>
-    apply node_complete (G := G) (j := ⟨Γ, .elemAt a i, A ++ U⟩) (r := .elemOpt U)
+    apply node_complete (G := G) (images := images) (j := ⟨Γ, .elemAt a i, A ++ U⟩) (r := .elemOpt U)
       (js := [⟨Γ,a,L⟩, ⟨Γ,i,I⟩])
       ⟨rfl,rfl,rfl,rfl,hU,by simp only [show expand G L = [.list T []] from hr,
         show expand G I = [.numLit b] from hI]; simp [optionalAt, hk, hnone, hA]⟩
@@ -1680,7 +1693,7 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     · exact iha
     · exact ihi
   | @elemAny Γ a i L I E U ro presence ha hr hi hq hU iha ihi =>
-    apply node_complete (G := G) (j := ⟨Γ, .elemAt a i, E ++ U⟩) (r := .elemAny U)
+    apply node_complete (G := G) (images := images) (j := ⟨Γ, .elemAt a i, E ++ U⟩) (r := .elemAny U)
       (js := [⟨Γ,a,L⟩, ⟨Γ,i,I⟩])
       ⟨rfl,rfl,rfl,rfl,hU,hq,by simp only [show expand G L = [.list ⟨[], [], some E, ro, presence⟩ []] from hr]⟩
     intro j hj
@@ -1689,7 +1702,7 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     · exact iha
     · exact ihi
   | @setElem Γ a i v L I A T b k ha hr hi hI hk hA hkle hro hv iha ihi ihv =>
-    apply node_complete (G := G) (j := ⟨Γ, .setElem a i v, L⟩) (r := .setElem)
+    apply node_complete (G := G) (images := images) (j := ⟨Γ, .setElem a i v, L⟩) (r := .setElem)
       (js := [⟨Γ,a,L⟩, ⟨Γ,i,I⟩, ⟨Γ,v,A⟩])
       ⟨rfl,rfl,rfl,rfl,rfl,rfl,rfl,by simp only [show expand G L = [.list T []] from hr,
         show expand G I = [.numLit b] from hI]; simp [namedAt, hk, hA, hro, hkle]⟩
@@ -1700,15 +1713,15 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     · exact ihi
     · exact ihv
   | @len Γ a L N T ha hr hn ih =>
-    apply node_complete (G := G) (j := ⟨Γ, .lenOf a, N⟩) (r := .len) (js := [⟨Γ,a,L⟩])
+    apply node_complete (G := G) (images := images) (j := ⟨Γ, .lenOf a, N⟩) (r := .len) (js := [⟨Γ,a,L⟩])
       ⟨rfl,rfl,hn,by simp only [show expand G L = [.list T []] from hr]⟩
     simpa using ih
   | @lenStr Γ a S N ha hs hn ih =>
-    apply node_complete (G := G) (j := ⟨Γ, .lenOf a, N⟩) (r := .lenStr) (js := [⟨Γ,a,S⟩])
+    apply node_complete (G := G) (images := images) (j := ⟨Γ, .lenOf a, N⟩) (r := .lenStr) (js := [⟨Γ,a,S⟩])
       ⟨rfl,rfl,hn,hs⟩
     simpa using ih
   | @elemStr Γ a i S I T U ha hs hi hq hT hU iha ihi =>
-    apply node_complete (G := G) (j := ⟨Γ, .elemAt a i, T ++ U⟩) (r := .elemStr T U)
+    apply node_complete (G := G) (images := images) (j := ⟨Γ, .elemAt a i, T ++ U⟩) (r := .elemStr T U)
       (js := [⟨Γ,a,S⟩, ⟨Γ,i,I⟩]) ⟨rfl,rfl,rfl,rfl,hs,hq,hT,hU,rfl⟩
     intro j hj
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hj
@@ -1716,11 +1729,11 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     · exact iha
     · exact ihi
   | @test Γ a A B k ha ht hf ih =>
-    apply node_complete (G := G) (j := ⟨Γ, .test k a, B⟩) (r := .test) (js := [⟨Γ,a,A⟩])
+    apply node_complete (G := G) (images := images) (j := ⟨Γ, .test k a, B⟩) (r := .test) (js := [⟨Γ,a,A⟩])
       ⟨rfl,rfl,ht,hf⟩
     simpa using ih
   | @arith Γ a A b B op N ha hb hops iha ihb =>
-    apply node_complete (G := G) (j := ⟨Γ, .arith op a b, N⟩) (r := .arith)
+    apply node_complete (G := G) (images := images) (j := ⟨Γ, .arith op a b, N⟩) (r := .arith)
       (js := [⟨Γ,a,A⟩, ⟨Γ,b,B⟩]) ⟨rfl,rfl,rfl,rfl,hops⟩
     intro j hj
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hj
@@ -1728,7 +1741,7 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     · exact iha
     · exact ihb
   | @write Γ a Ref fs vs os ms ks f A b N ha hr hm hb hn iha ihb =>
-    apply node_complete (G := G) (j := ⟨Γ, .writeAt f a b, N⟩) (r := .write)
+    apply node_complete (G := G) (images := images) (j := ⟨Γ, .writeAt f a b, N⟩) (r := .write)
       (js := [⟨Γ,a,Ref⟩, ⟨Γ,b,A⟩])
       ⟨rfl,rfl,rfl,rfl,hn,by simp only [show expand G Ref = [.refs fs [] vs os ms ks] from hr]; exact hm⟩
     intro j hj
@@ -1755,7 +1768,7 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
       · exact iht
   | @ifBoolVar Γ i C T F t A e hi hb hT hF ht he iht ihe =>
     apply node_complete (r := .ifBoolVar T F) (js := [⟨Γ.set i T,t,A⟩,⟨Γ.set i F,e,A⟩])
-    · exact ⟨by simpa only [Local, hi] using hb,hT,hF,rfl,rfl⟩
+    · exact ⟨by simpa only [LocalUsing, hi] using hb,hT,hF,rfl,rfl⟩
     · intro j hj
       simp only [List.mem_cons, List.not_mem_nil, or_false] at hj
       rcases hj with rfl | rfl
@@ -1765,21 +1778,21 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     cases q with
     | true =>
       apply node_complete (r := .ifTrue) (js := [⟨Γ,u,B⟩])
-      · simpa only [Local, hi, true_and] using hq
+      · simpa only [LocalUsing, hi, true_and] using hq
       · simpa using iht rfl
     | false =>
       apply node_complete (r := .ifFalse) (js := [⟨Γ,e,B⟩])
-      · simpa only [Local, hi, true_and] using hq
+      · simpa only [LocalUsing, hi, true_and] using hq
       · simpa using ihe rfl
   | @unionVar Γ i C t A hi ht ih =>
     apply node_complete (r := .unionVar i)
       (js := C.map (fun a => ⟨Γ.set i [a], t, A⟩))
-    · simp [Local,hi]
+    · simp [LocalUsing,hi]
     · intro j hj
       obtain ⟨a,ha,rfl⟩ := List.mem_map.mp hj
       exact ih a ha
   | @arrCopy Γ s S T E presence hs hsp hr ih =>
-    apply node_complete (G := G) (j := ⟨Γ, .arrLit [.spread s], T⟩) (r := .arrCopy E)
+    apply node_complete (G := G) (images := images) (j := ⟨Γ, .arrLit [.spread s], T⟩) (r := .arrCopy E)
       (js := [⟨Γ, s, S⟩]) ⟨rfl, rfl, hsp, by
         simp only [show expand G T = [.list ⟨[], [], some E, false, presence⟩ []] from hr]⟩
     simpa using ih
@@ -1852,15 +1865,15 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     · simp
   | @bindMember Γ F O i k m L S hi hmo hF hL hS =>
     obtain ⟨proofs, hlen, hps⟩ := choose_list
-      (P := fun q ps => ∃ c ∈ m.calls, CallProofs G q c ps) L (fun q hq => by
+      (P := fun q ps => ∃ c ∈ m.calls, CallProofsUsing G images q c ps) L (fun q hq => by
         obtain ⟨c, hc, hcov⟩ := hL q hq
-        obtain ⟨ps, hps⟩ := CoveredCall.proofs hcov
+        obtain ⟨ps, hps⟩ := CoveredCallUsing.proofs hcov
         exact ⟨ps, c, hc, hps⟩)
     apply node_complete (r := .bindMember proofs) (js := [])
     · refine ⟨rfl, rfl, rfl, rfl, ?_⟩
       show (match Γ[i]?, expand G F with
         | some O, [.arrs L S] => ∃ m ∈ (memberOf G O k).toList,
-            proofs.length = L.length ∧ (∀ qp ∈ L.zip proofs, ∃ c ∈ m.calls, CallProofs G qp.1 c qp.2) ∧
+            proofs.length = L.length ∧ (∀ qp ∈ L.zip proofs, ∃ c ∈ m.calls, CallProofsUsing G images qp.1 c qp.2) ∧
             (∀ s ∈ S, s.withReceiver () ∈ m.rests)
         | some O, _ => proofs = [] ∧ expand G F = [] ∧ ∃ m ∈ (memberOf G O k).toList, F ∈ m.schemes
         | none, _ => False)
@@ -1875,7 +1888,7 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
             ([] : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι)).length =
               L.length ∧
             (∀ qp ∈ L.zip ([] : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι)),
-              ∃ c ∈ m.calls, CallProofs G qp.1 c qp.2) ∧
+              ∃ c ∈ m.calls, CallProofsUsing G images qp.1 c qp.2) ∧
             (∀ s ∈ S, s.withReceiver () ∈ m.rests)
         | some O, _ => ([] : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι)) = [] ∧
             expand G F = [] ∧ ∃ m ∈ (memberOf G O k).toList, F ∈ m.schemes
@@ -1900,13 +1913,13 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
       exact ⟨hmap, ⟨Rt, (Ps, E), R, effect⟩, hsig, rfl, rfl, rfl, rfl, rfl, El, by simp [hel], hQs⟩
     · simp
   | @sub Γ t A B cert ht hc ih =>
-    apply node_complete (G := G) (j := ⟨Γ, t, B⟩) (r := .sub cert) (js := [⟨Γ,t,A⟩]) ⟨rfl,rfl,hc⟩
+    apply node_complete (G := G) (images := images) (j := ⟨Γ, t, B⟩) (r := .sub cert) (js := [⟨Γ,t,A⟩]) ⟨rfl,rfl,hc⟩
     simpa using ih
   | @throw Γ a A B ha ih =>
-    apply node_complete (G := G) (j := ⟨Γ, .throw a, B⟩) (r := .throw) (js := [⟨Γ,a,A⟩]) ⟨rfl,rfl⟩
+    apply node_complete (G := G) (images := images) (j := ⟨Γ, .throw a, B⟩) (r := .throw) (js := [⟨Γ,a,A⟩]) ⟨rfl,rfl⟩
     simpa using ih
   | @merge Γ d a b A B R ha hb hm iha ihb =>
-    apply node_complete (G := G) (j := ⟨Γ, .merge d a b, R⟩) (r := .merge)
+    apply node_complete (G := G) (images := images) (j := ⟨Γ, .merge d a b, R⟩) (r := .merge)
       (js := [⟨Γ,a,A⟩, ⟨Γ,b,B⟩]) ⟨rfl,rfl,rfl,rfl,hm⟩
     intro j hj
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hj
@@ -1917,16 +1930,57 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
 /-- A closed derivation has evidence, with every graph code admitted, and
 evidence under a sound code table is a derivation: the checker decides the
 rules, the table answering which graph code a unit checked. -/
-theorem derivable_iff_checked [DecidableEq ι] (G : NormalGraph ι) (t : Tm) (A : Ty ι) :
-    ((Scoped 0 t ∧ HasTy G [] t A) → ∃ e, check G t A e (fun _ => true) = true) ∧
-    ∀ codes, CodesSound G codes → (∃ e, check G t A e codes = true) → Scoped 0 t ∧ HasTy G [] t A := by
+theorem derivableUsing_iff_checked [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G) (t : Tm) (A : Ty ι) :
+    ((Scoped 0 t ∧ HasTyUsing G images [] t A) → ∃ e, checkUsing G images t A e (fun _ => true) = true) ∧
+    ∀ codes, CodesSound G codes → (∃ e, checkUsing G images t A e codes = true) → Scoped 0 t ∧ HasTyUsing G images [] t A := by
   constructor
   · rintro ⟨hs, ht⟩
-    obtain ⟨e, he, hc⟩ := checkTree_complete ht
-    exact ⟨e, by simp [check, he, (checkScope_iff 0 t).mpr hs, hc]⟩
-  · rintro codes hcodes ⟨e, he⟩; exact check_sound he hcodes
+    obtain ⟨e, he, hc⟩ := checkTreeUsing_complete ht
+    exact ⟨e, by simp [checkUsing, he, (checkScope_iff 0 t).mpr hs, hc]⟩
+  · rintro codes hcodes ⟨e, he⟩; exact checkUsing_sound he hcodes
+
+/-- Finite specializations retain the existing source-facing entry points.
+There is one implementation of each rule and one evidence grammar. -/
+abbrev CallProofs [DecidableEq ι] (G : NormalGraph ι) :=
+  CallProofsUsing G (PositiveCertificates.finiteInstanceImages G)
+abbrev Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
+    (codes : CodeEntry ι → Bool := fun _ => false) : Prop :=
+  LocalUsing G (PositiveCertificates.finiteInstanceImages G) j r ps codes
+
+def checkTree [DecidableEq ι] (G : NormalGraph ι) (e : Evidence ι)
+    (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
+  checkTreeUsing G (PositiveCertificates.finiteInstanceImages G) e codes
+
+def check [DecidableEq ι] (G : NormalGraph ι) (t : Tm) (A : Ty ι) (e : Evidence ι)
+    (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
+  checkUsing G (PositiveCertificates.finiteInstanceImages G) t A e codes
+
+theorem checkTree_sound [DecidableEq ι] {G : NormalGraph ι} (e : Evidence ι)
+    {codes : CodeEntry ι → Bool} (he : checkTree G e codes = true)
+    (hcodes : CodesSound G codes := by exact Verification.Model.ProgramCertificates.codesSound_none _) :
+    HasTy G (claim e).context (claim e).term (claim e).type :=
+  checkTreeUsing_sound e he hcodes
+
+theorem check_sound [DecidableEq ι] {G : NormalGraph ι} {t A e} {codes : CodeEntry ι → Bool}
+    (he : check G t A e codes = true)
+    (hcodes : CodesSound G codes := by exact Verification.Model.ProgramCertificates.codesSound_none _) :
+    Scoped 0 t ∧ HasTy G [] t A := checkUsing_sound he hcodes
+
+theorem accepted_safe [DecidableEq ι] {G : NormalGraph ι} {t A e} {codes : CodeEntry ι → Bool}
+    (he : check G t A e codes = true) (n W h) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (hcodes : CodesSound G codes := by exact Verification.Model.ProgramCertificates.codesSound_none _) :
+    Safe (meaning G A) n W h t := acceptedUsing_safe he n W h hw hh hcodes
+
+theorem derivable_iff_checked [DecidableEq ι] (G : NormalGraph ι) (t : Tm) (A : Ty ι) :
+    ((Scoped 0 t ∧ HasTy G [] t A) → ∃ e, check G t A e (fun _ => true) = true) ∧
+    ∀ codes, CodesSound G codes → (∃ e, check G t A e codes = true) → Scoped 0 t ∧ HasTy G [] t A :=
+  derivableUsing_iff_checked G (PositiveCertificates.finiteInstanceImages G) t A
 
 #print axioms checkTree_sound
 #print axioms derivable_iff_checked
 #print axioms accepted_safe
+
+#print axioms checkTreeUsing_sound
+#print axioms derivableUsing_iff_checked
+#print axioms acceptedUsing_safe
 end Verification.Model.ProgramCertificates

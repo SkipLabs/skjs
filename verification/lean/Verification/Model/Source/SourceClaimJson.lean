@@ -422,7 +422,7 @@ private def atRows (σ : List (String × ClaimType)) (t : ClaimType) :
 
 /-! ### Generic closures as graph code
 
-A generic closure is graph code at a scheme row (`HasTy.funScheme`): its code
+A generic closure is graph code at a scheme row (`HasTyUsing.funScheme`): its code
 is checked once, at the scheme's signatures with the scheme's binders as
 parameter rows, and a table entry holds at every assignment of the parameter
 rows (`ProgramCertificates.CodesSound`), so at every instantiation. Here each

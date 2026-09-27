@@ -614,9 +614,12 @@ instances used as known rows by structural coverage. The shared checker is
 sound for every proved image checker. The original default checker and its
 completeness theorem for finite declarative derivations are unchanged in scope.
 
-The equation checker is not yet wired into source or CLI acceptance. Source
-compilation (including alias and dependent-intersection normalization), finite
-family-subtyping evidence, and program-certificate integration remain pending.
+Expression typing and program certificates are stated over the same interface
+([`HasTyUsing`, `checkUsing`](PROGRAM-TYPING.md#judgments-and-constructor-views)),
+so the equation checker reaches them with the soundness proofs unchanged. It is
+not yet wired into source or CLI acceptance. Source compilation (including alias
+and dependent-intersection normalization) and finite family-subtyping evidence
+remain pending.
 Other proof forms still enforce their original closure/free-support checks;
 those checks have not been bypassed for recursive graphs. Existing finite
 certificates remain the only source acceptance path until the integration is

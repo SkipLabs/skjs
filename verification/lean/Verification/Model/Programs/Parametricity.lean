@@ -175,7 +175,7 @@ theorem check_reassign (S T : List ι) (p : Proof ι) :
     PositiveCertificates.check (reassign G η) S T p = PositiveCertificates.check G S T p := by
   simp only [PositiveCertificates.check]
   induction p generalizing S T <;>
-    simp only [checkUsing, ← checkInstArrs.eq_def, ← checkInst.eq_def, checkCore_reassign,
+    simp only [PositiveCertificates.checkUsing, ← checkInstArrs.eq_def, ← checkInst.eq_def, checkCore_reassign,
       checkInstArrs_reassign, checkInst_reassign, *] <;> rfl
 
 /-- The subtype checker as a function of its graph. -/
@@ -241,7 +241,7 @@ theorem checkObserved_reassign (Γ Δ : List (List ι)) (tested : Nat) (o : Obse
 theorem CallProofs_reassign (q : CallEffects.Arrow (List ι)) (c : CallEffects.MethodArrow (List ι))
     (ps : List (Proof ι) × Proof ι) :
     CallProofs (reassign G η) q c ps = CallProofs G q c ps := by
-  simp only [CallProofs, check_reassign]
+  simp only [CallProofs, CallProofsUsing, ← PositiveCertificates.check.eq_def, check_reassign]
 
 /-- A generic closure's capture check reads the graph's rows only. -/
 theorem capturesFree_reassign (s : SchemeRow ι) (Cs : List (List ι)) :
@@ -261,17 +261,19 @@ theorem graphCodesChecked_reassign (A : List ι) (codes : CodeEntry ι → Bool)
 theorem Local_reassign (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
     (codes : CodeEntry ι → Bool := fun _ => false) :
     Local (reassign G η) j r ps codes = Local G j r ps codes := by
-  unfold Local
-  simp only [check_fun_reassign, CallProofs_reassign, graphCodesChecked_reassign, allocRealm_reassign]
+  unfold Local LocalUsing
+  simp only [← PositiveCertificates.check.eq_def, ← CallProofs.eq_def,
+    check_fun_reassign, CallProofs_reassign, graphCodesChecked_reassign, allocRealm_reassign]
   rfl
 
 theorem checkTree_reassign (e : ProgramCertificates.Evidence ι)
     (codes : CodeEntry ι → Bool := fun _ => false) :
     checkTree (reassign G η) e codes = checkTree G e codes := by
+  unfold checkTree
   match e with
   | .node j r ps =>
-    rw [checkTree, checkTree]
-    simp only [Local_reassign]
+    rw [checkTreeUsing, checkTreeUsing]
+    simp only [← Local.eq_def, Local_reassign]
     congr 1
     congr 1
     funext x

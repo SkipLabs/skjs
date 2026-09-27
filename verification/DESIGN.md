@@ -1328,6 +1328,21 @@ positive sources as the targets. The work is split by semantic obligation:
      reaches acceptance. Restore both growing-`Pair` examples before claiming
      the general mechanism works, then Promise/async and `sum-sound-binding`.
 
+   Expression typing and program certificates are stated once over a proved
+   image checker (`HasTyUsing`, `ProgramCertificates.checkUsing`); source
+   requests still choose the finite one. Next, in order: thread the same checker
+   through the heap, context, control-flow and certificate-production
+   boundaries; lower source and protocol labels to applications of finite
+   equations, alias and intersection normalization included; supply the finite
+   family-subtyping argument for recursive covariance, keeping writable
+   invariance; move OCaml claims, search and printing to that representation and
+   retire `DeclarationGraph`'s colour/depth/argument budgets. Acceptance is
+   measured by the unchanged `generic-growing-application(-push)`,
+   `promise-covariance` with its reverse negative, the Promise/async/framework
+   examples and `sum-sound-binding` with its original negatives, and by a
+   remeasured census that returns at least to parity with the former mechanism
+   (2,444 verified, 121 gaps).
+
    A shared polymorphic prototype may be a valid audited contract for a native,
    but it is not an equivalent translation of an arbitrary structural interface:
    an instance method can close over its declaration's type parameter. Do not

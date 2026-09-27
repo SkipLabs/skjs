@@ -266,7 +266,7 @@ semantic families do not themselves impose a global registry.
 `Val` abbreviates `Tm`, so worlds, heaps and the step relation all speak
 about the same objects. `letE a b` is an explicit binding: it evaluates `a`,
 then substitutes the resulting value into `b` in one step without changing the
-heap. Only `b` is under the new binder. `HasTy.letE`, source lowering, and the
+heap. Only `b` is under the new binder. `HasTyUsing.letE`, source lowering, and the
 certificate producer and consumer all use that constructor. `Step_det` proves
 that a term and heap have at most one successor.
 
@@ -331,7 +331,7 @@ meets none. A writable index some value meets is never met through an
 own-key bound, since code holding it may add a key the bound says is absent
 (`covers_writable_keeps`): a literal meant for one is allocated at the
 dictionary, each field an index may admit at that index's type
-(`HasTy.allocDict`, `dictCellT_of_recT`). A mutable index
+(`HasTyUsing.allocDict`, `dictCellT_of_recT`). A mutable index
 signature lowers to a writable index contract `dictCellT K A`, whose present
 fields under keys of `K` have contracts agreeing with `A` rather than implying
 it, and covering keeps it invariant. Imported recursive declarations remain outside the source fragment.
@@ -787,13 +787,13 @@ does to the heap can falsify it.
 fixed at its allocation, so only allocation creates a value the invariant is
 about:
 
-- an allocation from named fields (`HasTy.alloc`) owning $\sigma$ is typed only
+- an allocation from named fields (`HasTyUsing.alloc`) owning $\sigma$ is typed only
   as an array of the realm: its store field at a store type, its prototype
   field at $P_{\mathcal R}$, no name among $N_{\mathcal R}$ (`allocRealm`,
   `allocRealm_sound`); every other allocation owns no $\sigma$
   (`realmInvariant_of_lookup`);
 - a literal allocated at a dictionary names neither $\sigma$ nor the prototype
-  key (`HasTy.allocDict`);
+  key (`HasTyUsing.allocDict`);
 - a merge, the copy a spread or a key-adding write is, allocates the
   accumulator's fields but its store and the source's copied keys and index
   keys, never $\sigma$ (`ObjectMerge.mergeParts_store`);

@@ -136,9 +136,10 @@ def selectedCallPreserves : Evidence ι → Bool
   | .node _ (.sub _) [p] => selectedCallPreserves p
   | _ => false
 
-private theorem argument_values [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)}
+private theorem argument_values [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} {Γ : List (Ty ι)}
     {ps : List (Sequent ι)} {ρ n W h}
-    (ht : ∀ p ∈ ps, HasTy G Γ p.term p.type)
+    (ht : ∀ p ∈ ps, HasTyUsing G images Γ p.term p.type)
     (hv : ∀ p ∈ ps, isVal (instantiate 0 ρ p.term) = true)
     (he : EnvOk G Γ ρ (n+1) W) (hw : WorldAdm W) (hh : HeapOk (n+1) W h) :
     ArgsT (ps.map (fun p => meaning G p.type)) (n+1) W (ps.map (fun p => instantiate 0 ρ p.term)) := by
@@ -149,15 +150,16 @@ private theorem argument_values [DecidableEq ι] {G : NormalGraph ι} {Γ : List
       ih (fun p hp => ht p (by simp [hp])) (fun p hp => hv p (by simp [hp]))⟩
 
 private theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G}
     {j : Sequent ι} {ps : List (Sequent ι)} {codes : CodeEntry ι → Bool}
-    (hl : Local G j (.app .preservesInputHeap) ps codes)
-    (ht : ∀ p ∈ ps, HasTy G p.context p.term p.type)
+    (hl : LocalUsing G images j (.app .preservesInputHeap) ps codes)
+    (ht : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type)
     (hv : ∀ p ∈ ps, valueTerm p.term = true ∧ checkScope p.context.length p.term = true)
     {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (meaning G j.type) (CallEffects.Effect.preservesInputHeap.post h)
       n W h (instantiate 0 ρ j.term) := by
   rcases j with ⟨Γ,t,A⟩
-  simp only [Local] at hl
+  simp only [LocalUsing] at hl
   split at hl <;> try contradiction
   rename_i effect f r args jf jr jas heffect
   cases heffect
@@ -169,7 +171,7 @@ private theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
     · exact hΓf
     · exact hΓr
     · exact hcontexts p hp
-  have typed : ∀ p ∈ jf::jr::jas, HasTy G Γ p.term p.type := by
+  have typed : ∀ p ∈ jf::jr::jas, HasTyUsing G images Γ p.term p.type := by
     intro p hp
     simpa only [context p hp] using ht p hp
   have values : ∀ p ∈ jf::jr::jas, isVal (instantiate 0 ρ p.term) = true := by
@@ -217,8 +219,9 @@ private theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
         instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def] using hs
     · contradiction
 
-theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι} (e : Evidence ι)
-    {codes : CodeEntry ι → Bool} (ht : checkTree G e codes = true)
+theorem selectedCallUsing_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} (e : Evidence ι)
+    {codes : CodeEntry ι → Bool} (ht : checkTreeUsing G images e codes = true)
     (hp : selectedCallPreserves e = true) (hcodes : CodesSound G codes)
     {ρ n W h} (he : EnvOk G (claim e).context ρ n W)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
@@ -227,7 +230,7 @@ theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι} (e : Evidence �
   cases e with
   | node j r ps =>
     simp only [claim] at he ⊢
-    simp only [checkTree, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at ht
+    simp only [checkTreeUsing, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at ht
     cases r <;> try simp only [selectedCallPreserves] at hp <;> try contradiction
     case app effect =>
       cases effect with
@@ -236,7 +239,7 @@ theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι} (e : Evidence �
         apply call_local_sound ht.1 _ _ he hw hh
         · intro p hm
           obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
-          exact checkTree_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes
+          exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes
         · intro p hm
           obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
           exact by simpa only [Bool.and_eq_true] using List.all_eq_true.mp hp e heq
@@ -248,14 +251,25 @@ theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι} (e : Evidence �
         | cons _ _ => contradiction
         | nil =>
           have hlocal := ht.1
-          simp only [Local] at hlocal
+          simp only [LocalUsing] at hlocal
           obtain ⟨hctx,hterm,hsub⟩ := hlocal
-          have ih := selectedCall_sound child (ht.2 ⟨child,by simp⟩ (by simp)) hp hcodes
+          have ih := selectedCallUsing_sound child (ht.2 ⟨child,by simp⟩ (by simp)) hp hcodes
             (ρ := ρ) (n := n) (W := W) (h := h) (by rw [hctx]; exact he) hw hh
-          apply consequence (fun j W v hv => (PositiveCertificates.check_sound hsub).sound j W v hv)
+          apply consequence (fun j W v hv => PositiveCertificates.acceptedUsing hsub j W v hv)
             (fun _ _ hp => hp) (by rw [hterm] at ih; exact ih)
 termination_by sizeOf e
 
+/-- The current source path uses finite image certificates. -/
+theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι} (e : Evidence ι)
+    {codes : CodeEntry ι → Bool} (ht : checkTree G e codes = true)
+    (hp : selectedCallPreserves e = true) (hcodes : CodesSound G codes)
+    {ρ n W h} (he : EnvOk G (claim e).context ρ n W)
+    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (meaning G (claim e).type) (CallEffects.Effect.preservesInputHeap.post h)
+      n W h (instantiate 0 ρ (claim e).term) :=
+  selectedCallUsing_sound e ht hp hcodes he hw hh
+
 #print axioms sound
+#print axioms selectedCallUsing_sound
 #print axioms selectedCall_sound
 end Verification.Model.ExpressionEffects
