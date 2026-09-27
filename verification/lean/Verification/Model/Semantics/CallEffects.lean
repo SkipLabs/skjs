@@ -31,8 +31,13 @@ abbrev Arrow (α : Type) := Contract α (List α)
 abbrev RestArrow (α : Type) := Contract α (List α × α)
 
 def Arrow.map (f : α → β) (s : Arrow α) : Arrow β := Contract.map f (List.map f) s
-def RestArrow.map (f : α → β) (s : RestArrow α) : RestArrow β :=
-  Contract.map f (fun p => (p.1.map f, f p.2)) s
+/-- Interpret fixed positions as value families and the rest as an argument
+family, preserving the same effect. Ordinary renaming uses the same map for
+both kinds of operand. -/
+def RestArrow.mapWith (f : α → β) (g : α → γ) (s : RestArrow α) : Contract β (List β × γ) :=
+  Contract.map f (fun p => (p.1.map f, g p.2)) s
+
+def RestArrow.map (f : α → β) (s : RestArrow α) : RestArrow β := RestArrow.mapWith f f s
 
 /-- Deliberate forgetting, for ordinary call elimination. -/
 def Arrow.plain (s : Arrow α) : α × List α × α := (s.receiver, s.arguments, s.result)
@@ -42,6 +47,17 @@ def RestArrow.plain (s : RestArrow α) : α × List α × α × α :=
 def Effect.post : Effect → Heap → Post
   | .unrestricted, _ => fun _ _ => True
   | .preservesInputHeap, before => fun after _ => before.IsPrefix after
+
+/-- Conjoining two guarantees for the same call retains both. This is a
+meet in the order of contracts: heap preservation is stronger than the
+unrestricted guarantee. -/
+def Effect.meet : Effect → Effect → Effect
+  | .preservesInputHeap, _ => .preservesInputHeap
+  | .unrestricted, other => other
+
+theorem Effect.post_meet (a b : Effect) (before after : Heap) (value : Val) :
+    (a.meet b).post before after value ↔ a.post before after value ∧ b.post before after value := by
+  cases a <;> cases b <;> simp [Effect.meet, Effect.post]
 
 /-- The arrow equation, with a heap postcondition relative to this call's
 entry heap. The input and result contracts are exactly those of `Promise`.
@@ -120,6 +136,57 @@ theorem PromiseWith.congr {effect Acc Acc' Rc Rc' R T n W v}
       (fun j hj U args => (hacc j hj U args).mp)
       (fun j hj U u => (hres j hj U u).mpr)
 
+/-- Combining result guarantees retains the effects established for this call
+domain by either premise. World-sensitive results still require the same
+cross-world compatibility as ordinary arrows. Effects concern the shared final
+heap, so they do not depend on which result world supplies the conclusion. -/
+theorem PromiseWith.combine {effect other Acc Rc B C D k W v}
+    (hb : PromiseWith effect Acc Rc B k W v)
+    (hc : PromiseWith other Acc Rc C k W v)
+    (hcross : ∀ n, n < k → CrossCompatUpTo n B C D) :
+    PromiseWith (effect.meet other) Acc Rc D k W v := by
+  intro j hj U hx hu heap hh r hrv hr args hv ha
+  obtain ⟨b, hib, hsb⟩ := hb j hj U hx hu heap hh r hrv hr args hv ha
+  obtain ⟨c, hic, hsc⟩ := hc j hj U hx hu heap hh r hrv hr args hv ha
+  cases CallArguments.invoke_deterministic hib hic
+  exact ⟨b, hib, HeapObservations.weaken
+    (fun heap' value hpost => (Effect.post_meet effect other heap heap' value).mpr hpost)
+    (cross_upto j (hcross j hj) U U heap b hh hh hsb hsc)⟩
+
+/-- Binding saves a receiver and argument prefix, then forwards without
+changing the heap. This generic rule covers fixed and variadic signatures;
+only the argument-admission premise differs. The callee's effect is retained
+at the heap where the forwarded call actually starts. -/
+theorem PromiseWith.bound {effect : Effect} {Acc Rest : ArgFam} {Rt R Rc : Fam}
+    {k : Nat} {W : WorldT k} {fs : List (PropKey × Nat)} {tv rv : Val} {pre : List Tm}
+    (ht : PromiseWith effect Acc Rt R k W tv)
+    (hRt : Adm Rt) (hRest : Adm Rest)
+    (hrv : isVal rv = true) (hr : Rt k W rv) (hp : CallArguments.Values pre)
+    (hprefix : ∀ j (hj : j < k) U, WExt (trunc j (Nat.le_of_lt hj) W) U →
+      ∀ args, Rest j U args → Acc j U (pre ++ args)) :
+    PromiseWith effect Rest Rc R k W (.objAt fs (.bound tv rv pre)) := by
+  intro j hj U hx hu heap hh r hv _ args hargs ha
+  refine ⟨_, .bound hv hargs, ?_⟩
+  cases j with
+  | zero => trivial
+  | succ i =>
+    have hi : i < k := by omega
+    have hxU : WExt (trunc i (Nat.le_of_lt hi) W) (trunc i (Nat.le_succ i) U) := by
+      have hx' := WExt_trunc (Nat.le_succ i) hx
+      rwa [trunc_trunc] at hx'
+    have hu' := WorldAdm_trunc (Nat.le_succ i) hu
+    have hh' := HeapOk_trunc i U heap hh
+    have hr' := hRt.mono i _ _ hxU rv (hRt.down_le k i (Nat.le_of_lt hi) W rv hr)
+    have ha' := hRest.down i U args ha
+    have hall : CallArguments.Values (pre ++ args) := by
+      intro a hm
+      rcases List.mem_append.mp hm with hm | hm
+      · exact hp a hm
+      · exact hargs a hm
+    obtain ⟨res, hinv, hsafe⟩ := ht i hi _ hxU hu' heap hh' rv hrv hr'
+      (pre ++ args) hall (hprefix i hi _ hxU args ha')
+    exact .inr ⟨_, heap, res, WExt_refl _, hu', hinv.step heap, hh', hsafe⟩
+
 /-- Application consumes a qualified signature, without inspecting the
 callee's implementation. Its entry heap is after actual evaluation. -/
 theorem call_safe {effect : Effect} {P : ArgFam} {Rc R : Fam}
@@ -138,11 +205,13 @@ theorem call_safe {effect : Effect} {P : ArgFam} {Rc R : Fam}
     exact .inr ⟨U, heap, body, WExt_refl _, WorldAdm_trunc _ hw, hi.step heap,
       HeapOk_trunc n W heap hh, hs⟩
 
-/-- The conservative executable purity check enriches independently proved
-safety. It cannot manufacture safety or a return type on its own. -/
-theorem pure_safe {R : Fam} : ∀ {n W heap t},
-    Purity.PureRun t → Safe R n W heap t →
-    SafePost R (Effect.preservesInputHeap.post heap) n W heap t := by
+/-- An operational invariant that only appends fresh locations supplies
+the normal-return preservation postcondition, supplementing ordinary safety.
+The safety proof supplies the same worlds and result contract at every step. -/
+theorem prefix_safe {P : Tm → Prop} {R : Fam}
+    (hstep : ∀ {h t h' t'}, P t → Step h t h' t' → h.IsPrefix h' ∧ P t') :
+    ∀ {n W heap t}, P t → Safe R n W heap t →
+      SafePost R (Effect.preservesInputHeap.post heap) n W heap t := by
   intro n
   induction n with
   | zero => intros; trivial
@@ -151,8 +220,16 @@ theorem pure_safe {R : Fam} : ∀ {n W heap t},
     rcases hs with (⟨hv, ht⟩ | hth) | ⟨U, h', t', hx, hu, step, hh, hs⟩
     · exact .inl (.inl ⟨hv, ht, ⟨[], by simp⟩⟩)
     · exact .inl (.inr hth)
-    · obtain ⟨rfl, hp'⟩ := hp.step step
-      exact .inr ⟨U, h', t', hx, hu, step, hh, ih hp' hs⟩
+    · obtain ⟨hprefix, hp'⟩ := hstep hp step
+      exact .inr ⟨U, h', t', hx, hu, step, hh,
+        HeapObservations.weaken (fun _ _ hpost => hprefix.trans hpost) (ih hp' hs)⟩
+
+/-- The conservative executable purity check enriches independently proved
+safety. It cannot manufacture safety or a return type on its own. -/
+theorem pure_safe {R : Fam} {n W heap t}
+    (hp : Purity.PureRun t) (hs : Safe R n W heap t) :
+    SafePost R (Effect.preservesInputHeap.post heap) n W heap t :=
+  prefix_safe Purity.CollectingRun.step (.pure hp) hs
 
 def callsT (L : List (Arrow Fam)) : Fam := fun k W v =>
   Invocable v ∧ ∀ s ∈ L, PromiseWith s.effect (ArgsShort s.arguments) s.receiver s.result k W v
@@ -174,6 +251,24 @@ theorem callsT_select {L n W v p} (hf : callsT L n W v) (hp : p ∈ L) :
   intro q hq
   cases List.mem_singleton.mp hq
   exact hf.2 p hp
+
+/-- A bound fixed signature keeps its effect, with the saved prefix removed
+from its domain. -/
+theorem callsT_bound {effect : Effect} {Rt R Rc : Fam} {Ps Ds : List Fam}
+    {k : Nat} {W : WorldT k} {fs : List (PropKey × Nat)} {tv rv : Val} {pre : List Tm}
+    (hRt : Adm Rt) (hPs : ∀ A ∈ Ps, Adm A) (hDs : ∀ A ∈ Ds, Adm A)
+    (ht : callsT [⟨Rt, Ps ++ Ds, R, effect⟩] k W tv)
+    (hrv : isVal rv = true) (hsr : Scoped 0 rv) (hr : Rt k W rv)
+    (hp : ArgsT Ps k W pre) (hv : CallArguments.Values pre) (hsp : ∀ a ∈ pre, Scoped 0 a) :
+    callsT [⟨Rc, Ds, R, effect⟩] k W (.objAt fs (.bound tv rv pre)) := by
+  refine ⟨⟨fs, _, rfl, rfl, ?_⟩, ?_⟩
+  · simp only [Scoped, scopedArgs_iff]
+    exact ⟨ht.1.scoped, hsr, hsp⟩
+  · intro p hm
+    cases List.mem_singleton.mp hm
+    exact (ht.2 _ (List.mem_singleton_self _)).bound hRt
+      (Adm.of_transfer (fun ha j hj U hx => ArgsShort_transfer hDs ha j hj U hx)) hrv hr hv
+      (fun j hj U hx args ha => ArgsShort_prefix (ArgsT_transfer hPs hp j (Nat.le_of_lt hj) U hx) ha)
 
 theorem callsT_congr {α : Type} (l : List α) (f g : α → Arrow Fam) {n : Nat}
     (he : ∀ x ∈ l, (f x).effect = (g x).effect)
@@ -212,6 +307,31 @@ theorem restsT_erase {L : List RestSignature} {n W v} (h : restsT L n W v) :
   obtain ⟨s, hs, rfl⟩ := List.mem_map.mp hp
   exact (h.2 s hs).erase
 
+/-- Binding a variadic signature retains the same effect. A saved prefix
+extending into the rest requires a contract closed under prepending those
+saved values, exactly as for ordinary variadic binding. -/
+theorem restsT_bound {effect : Effect} {Rt R Rc : Fam} {E : ArgFam} {Ps : List Fam}
+    {k : Nat} {W : WorldT k} {fs : List (PropKey × Nat)} {tv rv : Val} {pre : List Tm}
+    (hRt : Adm Rt) (hPs : ∀ A ∈ Ps, Adm A) (hE : Adm E)
+    (ht : restsT [⟨Rt, (Ps, E), R, effect⟩] k W tv)
+    (hrv : isVal rv = true) (hsr : Scoped 0 rv) (hr : Rt k W rv)
+    (hp : ArgsT (Ps.take pre.length) k W (pre.take Ps.length))
+    (hext : ∀ j (hj : j ≤ k) U, WExt (trunc j hj W) U →
+      ∀ ys, E j U ys → E j U (pre.drop Ps.length ++ ys))
+    (hv : CallArguments.Values pre) (hsp : ∀ a ∈ pre, Scoped 0 a) :
+    restsT [⟨Rc, (Ps.drop pre.length, E), R, effect⟩] k W (.objAt fs (.bound tv rv pre)) := by
+  refine ⟨⟨fs, _, rfl, rfl, ?_⟩, ?_⟩
+  · simp only [Scoped, scopedArgs_iff]
+    exact ⟨ht.1.scoped, hsr, hsp⟩
+  · intro p hm
+    cases List.mem_singleton.mp hm
+    exact (ht.2 _ (List.mem_singleton_self _)).bound hRt
+      (Adm.of_transfer (fun ha j hj U hx =>
+        ArgsRest_transfer (fun A hm => hPs A (List.mem_of_mem_drop hm)) hE ha j hj U hx))
+      hrv hr hv (fun j hj U hx args ha => ArgsRest_prefix
+        (ArgsT_transfer (fun A hm => hPs A (List.mem_of_mem_take hm)) hp j (Nat.le_of_lt hj) U hx)
+        (hext j (Nat.le_of_lt hj) U hx) ha)
+
 /-- Conjunction and overload normalization preserve every signature's effect. -/
 theorem callsT_append (L M : List (Arrow Fam)) (n W v) :
     callsT (L ++ M) n W v ↔ callsT L n W v ∧ callsT M n W v := by
@@ -249,7 +369,12 @@ theorem restsT_congr {α : Type} (l : List α) (f g : α → RestSignature) {n :
       (hs (g x) (List.mem_map_of_mem hm))
 
 #print axioms call_safe
+#print axioms prefix_safe
 #print axioms pure_safe
+#print axioms PromiseWith.combine
+#print axioms PromiseWith.bound
+#print axioms callsT_bound
+#print axioms restsT_bound
 #print axioms PromiseWith.weaken
 #print axioms unrestricted_iff
 #print axioms PromiseWith.erase

@@ -678,7 +678,14 @@ external assumption: its TypeScript declaration supplies neither proof nor an
 implicit effect. Built-in contracts remain separately audited assumptions.
 
 The first guarantee preserves existing heap contents on normal return and
-allows fresh allocation. It is sufficient but not necessary for safe dense
+allows fresh allocation. A call that throws supplies no heap postcondition.
+Consequently, a body checker cannot carry this guarantee through a caught
+exception: it must check the handler with the possibly changed heap, or have
+a separately justified guarantee for exceptional exits. The current pure-body
+checker does not admit such calls; the later compositional checker must retain
+this distinction. No stronger external assumption is implicit here.
+
+The guarantee is sufficient but not necessary for safe dense
 `map`: mutation of unrelated state can also be safe. Future footprint-sensitive
 effects can express that without changing the inference/certification boundary.
 The initial body checker may recognize fewer programs than the semantic
@@ -1127,12 +1134,22 @@ positive sources as the targets. The work is split by semantic obligation:
    may be lost after effects; no operation may change a location's world type.
    The same guarantee can justify pure `find` callbacks at T instead of
    `T | undefined`. Do not claim these targets closed after step 2 alone.
+   Restore safe specializations, not false universal contracts: the census's
+   generic `mapArr` accepts an arbitrary callback and promises a dense array,
+   so source-shrinking callbacks are counterexamples. Its written callback type
+   must not be silently strengthened. The safe `testMapCallback` unit also
+   checks that general declaration and remains blocked by it.
    The core now has effect-aware application, weakening, congruence and overload
    conjunction, plus `CallEffectCertificates.checkDefinition_sound` and
    `introduce`: an ordinary graph certificate and a checked effect together
-   establish a qualified fixed-arity arrow. The executable effect check initially
-   recognizes only pure graph expressions and explicitly refuses rest-collecting
-   entries. It does not establish completeness for the semantic effect.
+   establish a qualified arrow. Fixed and rest-collecting entries are covered;
+   fresh rest-store allocation preserves the input heap. Effect-qualified
+   binding handles fixed and variadic signatures through one forwarding proof.
+   Overload result combination retains an effect established by one of its
+   premises, with the existing cross-world result-compatibility requirement.
+   The executable body-effect check still recognizes only pure graph expressions:
+   body allocations and qualified calls need composition rules. It does not
+   establish completeness for the semantic effect.
    Remaining integration, in dependency order: migrate fixed and variadic
    signatures (including scheme and method paths) to a required per-signature
    effect carried by every map/substitution; extend normalized graph meaning,

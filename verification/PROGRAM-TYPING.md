@@ -3280,8 +3280,20 @@ The semantic introduction and elimination rules are now proved in
 `CallEffectCertificates.introduce` and `CallEffects.call_safe`.
 `checkDefinition_sound` connects the former to the existing graph certificate
 checker plus a conservative effect check using `Purity`: the body must already
-be safe, its signature must match, and the first checker refuses rest-collecting
-entries explicitly. This checker is not yet wired into source acceptance.
+be safe and its signature must match. Rest-collecting entries retain their store
+contract in the checked frame; `introduceRest` proves that entry allocation
+preserves the input heap before the checked body runs. The initial checker
+still recognizes only pure expressions inside that body.
+
+`PromiseWith.combine` retains both premises' effects when combining result
+guarantees (the effect meet, so either premise can supply heap preservation). Both promises concern the same admitted calls; determinism gives
+the same resulting heap, while the ordinary cross-world compatibility premise
+still governs the result type. No effect can arise solely from combining
+unrestricted results. `PromiseWith.bound` is the common forwarding proof for
+fixed and variadic binding: saving a receiver and prefix changes the admitted
+arguments, not the forwarded call's heap guarantee.
+
+This checker is not yet wired into source acceptance.
 The remaining implementation must integrate effect-aware type operations and
 one representation through producer, claims and certificates. The accepted
 plan and `SourceClaimJson.checkJson_safe` must cover any added evidence, and the

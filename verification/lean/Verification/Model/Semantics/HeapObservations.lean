@@ -55,6 +55,34 @@ theorem erase {T Q} : ∀ {n W h t}, SafePost T Q n W h t → Safe T n W h t := 
     · exact Or.inl (Or.inr hr)
     · exact Or.inr ⟨U,h',t',hx,hu,step,hh,ih hs⟩
 
+/-- Overload combination compares two executions of the same term. The
+worlds may differ, but determinism makes the final heap and value the same.
+Both executions' postconditions survive in the first result world; the
+postconditions concern the shared heap, not either world's interpretation.
+Result compatibility alone cannot manufacture a postcondition. -/
+theorem cross_upto {B C D : Fam} {Q R : Post} : ∀ (n : Nat), CrossCompatUpTo n B C D →
+    ∀ (W W' : WorldT n) (h : Heap) (t : Tm), HeapOk n W h → HeapOk n W' h →
+      SafePost B Q n W h t → SafePost C R n W' h t →
+        SafePost D (fun heap value => Q heap value ∧ R heap value) n W h t := by
+  intro n
+  induction n with
+  | zero => intros; trivial
+  | succ p ih =>
+    intro hc W W' h t hok hok'
+    rintro ((⟨hv1, hBv, hQ⟩ | hr1) | ⟨Z, h1, t1, hz, huz, hst1, hok1, hcont1⟩)
+      ((⟨hv2, hCv, hR⟩ | hr2) | ⟨Z', h2, t2, -, -, hst2, hok2, hcont2⟩)
+    · exact .inl (.inl ⟨hv1, hc (p + 1) (Nat.le_refl _) W W' h hok hok' t hBv hCv, hQ, hR⟩)
+    · rw [hr2.not_val] at hv1; contradiction
+    · exact absurd hst2 (value_no_step hv1)
+    · rw [hr1.not_val] at hv2; contradiction
+    · exact .inl (.inr hr1)
+    · exact absurd hst2 hr1.no_step
+    · exact absurd hst1 (value_no_step hv2)
+    · exact absurd hst1 hr2.no_step
+    · obtain ⟨rfl, rfl⟩ := Step_det hst1 hst2
+      exact .inr ⟨Z, h1, t1, hz, huz, hst1, hok1,
+        ih (fun j hj => hc j (by omega)) Z Z' h1 t1 hok1 hok2 hcont1 hcont2⟩
+
 /-- Finite closure of the existing step relation, with its step count. This
 introduces no new reduction rules. -/
 inductive Steps : Nat → Heap → Tm → Heap → Tm → Prop where

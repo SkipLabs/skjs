@@ -23,10 +23,17 @@ now enforce the own-key exclusion. Under that explicit host assumption,
 again. No previously verified unit is lost. See the
 [native boundary](../DESIGN.md#exact-contracts-and-native-effects).
 
-`testMapReturnsArray`, `mapArr`, and `testMapCallback` remain unverified,
-now reaching their original density or callback obligations rather than
-stopping at the missing native contract. Checked callback effects are still
-needed; the construction assumption alone does not close those targets.
+`testMapReturnsArray` remains a recoverable pure-callback density gap.
+`mapArr` and `testMapCallback` also reach their original obligations again,
+but require a distinction: `mapArr<T, U>(arr: T[], f: (x: T) => U): U[]`
+promises a dense result for an arbitrary callback. That contract is false.
+Calling the unchanged function with `xs = [1, 2, 3]` and a callback that sets
+`xs.length = 0` produces length 3 with only index 0 present. Neither custom
+species nor external code is involved. Strengthening its callback parameter
+would change its written contract and cannot silently repair it.
+`testMapCallback` itself makes a safe call, but its extracted unit also checks
+that invalid general declaration. The current classifier still includes these
+rows among gaps; that classification is not a completeness claim.
 
 The eight automatic “unexplained” rows have inspected causes. Seven are
 `testBasicArrayRefinement`, `testStringArrayRefinement`, `testMultipleUnion`,

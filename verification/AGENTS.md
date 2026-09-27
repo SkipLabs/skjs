@@ -218,6 +218,9 @@ substitution, overload and certificate path for the effect field; exhaustive
 constructor matching does not detect a discarded field. Qualified claims need
 located failures and forged-evidence controls, and imported effects require an
 explicit checked contract or documented external assumption.
+The current effect guarantees preservation only on normal return. Do not carry
+it onto a call's exceptional edge or infer preservation for a caller that catches
+the exception without checking its handler against the changed heap.
 
 The September 2026 boundary audit found two shared specification mistakes:
 OCaml and Lean both treated unsupported generic methods as `unknown`, and

@@ -119,6 +119,39 @@ theorem PureRun.step {h t h' t'} (hp : PureRun t) (hs : Step h t h' t') :
     | frameRaise hr =>
       exact ⟨rfl, .term (by simpa [pureTerm] using pure_value (raises_val hr))⟩
 
+/-- A rest-collecting entry allocates a fresh store before running the
+body. This is compatible with preserving the input heap: fresh locations are
+allowed. Values and scope are checked separately, so substitution cannot turn
+a saved argument into executable code. -/
+inductive CollectingRun : Tm → Prop where
+  | pure : PureRun t → CollectingRun t
+  | collect : (∀ e ∈ E, pureTerm e = true) →
+      (∀ v ∈ L, isVal v = true) → (∀ v ∈ L, Scoped 0 v) →
+      (∀ v ∈ vs, isVal v = true) →
+      CollectingRun (.letE (.arrLit vs) (.goto E K start (.var 0 :: L) .nul))
+  | collected : (∀ e ∈ E, pureTerm e = true) →
+      (∀ v ∈ L, isVal v = true) → (∀ v ∈ L, Scoped 0 v) →
+      CollectingRun (.letE (.arr ls) (.goto E K start (.var 0 :: L) .nul))
+
+theorem CollectingRun.step {h t h' t'} (hp : CollectingRun t) (hs : Step h t h' t') :
+    h.IsPrefix h' ∧ CollectingRun t' := by
+  cases hp with
+  | pure hp =>
+    obtain ⟨rfl, hp'⟩ := hp.step hs
+    exact ⟨⟨[], by simp⟩, .pure hp'⟩
+  | collect hE hL hsc hvs =>
+    obtain ⟨rfl, rfl⟩ := Step_det hs (.letC (.arrAlloc hvs))
+    exact ⟨⟨_, rfl⟩, .collected hE hL hsc⟩
+  | @collected E L ls K start hE hL hsc =>
+    obtain ⟨rfl, rfl⟩ := Step_det hs (.letV (by rfl))
+    have hm : L.map (subst 0 (.arr ls)) = L := by
+      rw [List.map_congr_left (g := id) (fun v hv => subst_above (hsc v hv) (Nat.le_refl 0) _),
+        List.map_id]
+    refine ⟨⟨[], by simp⟩, ?_⟩
+    simp only [subst, substArgs_eq_map, List.map_cons, hm]
+    exact .pure (.goto hE (by simp_all [isVal]) rfl)
+
+#print axioms CollectingRun.step
 #print axioms PureRun.step
 
 end Verification.Model.Purity
