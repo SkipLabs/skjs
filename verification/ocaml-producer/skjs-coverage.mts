@@ -380,9 +380,10 @@ const environment = (derived: string) => ({
 
 /* ----------------------------------------------------------------- SKJS -- */
 /** SKJS's own verdict on every derived file, from one container invocation.
- * Returns the derived paths it reported an error in, or undefined when SKJS
- * could not be run. */
-function skjsVerdicts(files: string[]): Set<string> | undefined {
+ * Returns the derived paths it reported an error in. An explicitly requested
+ * SKJS confirmation must fail if the checker could not run; marker-only
+ * measurement is a separate mode, never a silent fallback. */
+function skjsVerdicts(files: string[]): Set<string> {
   const main = process.env.SKJS_ROOT ?? (() => {
     const r = spawnSync("git", ["worktree", "list", "--porcelain"], { cwd: repo, encoding: "utf8" });
     return /^worktree (.+)$/m.exec(r.stdout)?.[1] ?? repo;
@@ -397,10 +398,8 @@ function skjsVerdicts(files: string[]): Set<string> | undefined {
     "-v", `${outDir}:/work/corpus`, "-w", "/work/skjs", image, "sh", "-c",
     `xargs ${bin} check --import-stubs import-stubs < /work/corpus/skjs-files.txt`],
     { encoding: "utf8", maxBuffer: 256 * 1024 * 1024, timeout: 900_000 });
-  if (r.error || r.status === null) {
-    process.stderr.write(`skjs: not run: ${r.error?.message ?? r.signal}\n`);
-    return undefined;
-  }
+  if (r.error || r.status === null)
+    throw Error(`SKJS confirmation failed: ${r.error?.message ?? r.signal}`);
   const output = r.stdout + "\n" + r.stderr;
   fs.writeFileSync(path.join(outDir, "skjs-output.txt"), output);
   const rejected = new Set<string>();
@@ -409,10 +408,11 @@ function skjsVerdicts(files: string[]): Set<string> | undefined {
     if (named && /^error/m.test(block))
       rejected.add(path.join(outDir, path.relative("/work/corpus", named[1])));
   }
-  if (r.status !== 0 && rejected.size === 0) {
-    process.stderr.write(`skjs: exit ${r.status} and no error parsed:\n${output.slice(0, 2000)}\n`);
-    return undefined;
-  }
+  // xargs returns 123 for an ordinary nonzero checker exit. Its other
+  // failures (launch, signal, command not found), and Docker's failures,
+  // cannot establish acceptance of files lacking a parsed diagnostic.
+  if (r.status !== 0 && (r.status !== 123 || rejected.size === 0))
+    throw Error(`SKJS confirmation failed: exit ${r.status}, ${rejected.size} checker diagnostic files:\n${output.slice(0, 2000)}`);
   return rejected;
 }
 
