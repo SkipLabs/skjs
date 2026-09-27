@@ -1,7 +1,8 @@
 // A generic method whose result applies its own interface at arguments that
 // keep growing: Pair<number>'s push returns Pair<[number, U]>, whose push
 // returns Pair<[[number, U], U']>, ... Lowering stops where the arguments
-// pass the budget, leaving push opaque there, and the type is a finite graph.
+// pass the budget and refuses the whole contract. A faithful equation graph
+// must retain push without enumerating all those applications.
 interface Pair<T> {
   first(): T;
   push<U>(u: U): Pair<[T, U]>;

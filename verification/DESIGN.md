@@ -1250,6 +1250,39 @@ positive sources as the targets. The work is split by semantic obligation:
    `sum-sound-binding`. A larger budget or erasing unused-looking members is
    not closure. Review the acceptance theorem for any new certified plan form.
 
+   The core `NormalGraph` already permits an arbitrary label type and infinitely
+   many rows. The finite table is a source/protocol representation, not a
+   requirement of the semantic fixed point. Use that distinction rather than
+   introducing a second interpretation of generic types:
+
+   - **Shared rows (implemented):** `GraphRow` describes clauses, parameters,
+     schemes and dependent meets at any label type. `NormalGraph.ofRowMap`
+     interprets that sum, and the existing finite JSON table uses it too. This
+     preparation changes no accepted programs and does not close any Promise gap.
+   - **Finite equations, symbolic applications:** store each declaration once,
+     with lexical parameters; a label identifies an application and its argument
+     environment. Unfold one row when needed. Scheme binders must retain their
+     lexical owner, so nested instantiation cannot capture an enclosing binder.
+     Do not enumerate a growing family such as `Pair<[T, U]>`, truncate it, or
+     reinterpret a structural interface as a nominal native promise.
+   - **Checked substitution:** prove that capture-avoiding instantiation commutes
+     with unfolding, including scheme bounds, argument packs, effects and the
+     array realm. Use finite evidence about the equations to justify a mapping
+     of their applications. The current finite `InstTable` alone cannot certify
+     an infinite family of substituted rows; reusing it without this argument
+     would merely move the expansion limit into certificate checking.
+   - **One production path:** lower source equations to that representation and
+     make OCaml claims, search, checking and diagnostic printing consume it.
+     Retire the colour/depth/argument expansion machinery when its replacement
+     reaches acceptance. Restore both growing-`Pair` examples before claiming
+     the general mechanism works, then Promise/async and `sum-sound-binding`.
+
+   A shared polymorphic prototype may be a valid audited contract for a native,
+   but it is not an equivalent translation of an arbitrary structural interface:
+   an instance method can close over its declaration's type parameter. Do not
+   hoist that parameter into a universally quantified receiver merely to make
+   recursive unfolding finite.
+
 For each step: prove new core obligations, wire the producer and verifier through
 one representation, retain the original negative controls, run the viewer and
 pipeline suites, then remeasure coverage. An earlier refusal of a negative

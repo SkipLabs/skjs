@@ -70,9 +70,9 @@ private def wrongArgument : Fragment.Fn := {source with body :=
 -- One successful alternative does not excuse another incompatible domain.
 private def mixedDomain : Json := Json.mkObj [("top",toJson false),("atoms",toJson
   [arrow (primitive "null") (literal true),arrow (primitive "boolean") (literal false)])]
-#guard (extractNormalizedFn (table.set 6 (RequestJson.Row.clauses [.arrs [⟨[4], [[1,2]], [2], .unrestricted⟩] []]))
+#guard (extractNormalizedFn (table.set 6 (PositiveGraphs.GraphRow.clauses [.arrs [⟨[4], [[1,2]], [2], .unrestricted⟩] []]))
   {source with params := [⟨"f", mixedDomain, false⟩]} claims).toOption.isSome
-#guard !ok (checkWith (table.set 6 (RequestJson.Row.clauses [.arrs [⟨[4], [[1,2]], [2], .unrestricted⟩] []]))
+#guard !ok (checkWith (table.set 6 (PositiveGraphs.GraphRow.clauses [.arrs [⟨[4], [[1,2]], [2], .unrestricted⟩] []]))
   {source with params := [⟨"f", mixedDomain, false⟩]} claims)
 
 -- A source-level nullable function remains gated until a guard establishes
@@ -101,8 +101,8 @@ private def overloadUnion (missingNull : Bool := false) : Json := Json.mkObj
      if missingNull then arrow (primitive "boolean") (literal true)
      else overloaded (primitive "boolean") (literal true) (primitive "null") (literal false)])]
 private def overloadTable : SourceTypes.Table :=
-  (table.set 5 (RequestJson.Row.clauses [.arrs [⟨[4], [[0]], [1], .unrestricted⟩,⟨[4], [[1,2]], [2], .unrestricted⟩] []])).set 6
-    (RequestJson.Row.clauses [.arrs [⟨[4], [[1,2]], [1], .unrestricted⟩,⟨[4], [[0]], [2], .unrestricted⟩] []])
+  (table.set 5 (PositiveGraphs.GraphRow.clauses [.arrs [⟨[4], [[0]], [1], .unrestricted⟩,⟨[4], [[1,2]], [2], .unrestricted⟩] []])).set 6
+    (PositiveGraphs.GraphRow.clauses [.arrs [⟨[4], [[1,2]], [1], .unrestricted⟩,⟨[4], [[0]], [2], .unrestricted⟩] []])
 private def overloadSource (booleanArg : Bool) : Fragment.Fn :=
   {(if booleanArg then wrongArgument else source) with params := [⟨"f", overloadUnion, false⟩]}
 private def overloadClaims (booleanArg : Bool) : SourceClaims.Function :=
@@ -117,7 +117,7 @@ private def overloadClaims (booleanArg : Bool) : SourceClaims.Function :=
 -- A sibling's null overload cannot rescue a Boolean-only alternative.
 private def incompleteOverloadSource : Fragment.Fn :=
   {source with params := [⟨"f",overloadUnion true,false⟩]}
-private def incompleteOverloadTable := overloadTable.set 6 (RequestJson.Row.clauses [.arrs [⟨[4], [[1,2]], [1], .unrestricted⟩] []])
+private def incompleteOverloadTable := overloadTable.set 6 (PositiveGraphs.GraphRow.clauses [.arrs [⟨[4], [[1,2]], [1], .unrestricted⟩] []])
 #guard (extractNormalizedFn incompleteOverloadTable incompleteOverloadSource claims).toOption.isSome
 #guard !ok (checkWith incompleteOverloadTable incompleteOverloadSource claims)
 end Verification.Model.SourceCallableUnionTests

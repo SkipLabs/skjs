@@ -7,8 +7,9 @@ The producer reserves one empty row per nullary declaration and may refer to
 those labels in its candidate rows. This module fills them from source
 equations. Ground applications of generic declarations are lowered from their
 substituted equations; one with methods, which is how a declaration recurs, is
-one row per declaration and arguments for the module (`Memo`), so a recursive
-family of applications is a finite graph. Function annotations are written
+one row per declaration and arguments for the module (`Memo`). A recursive
+family is admitted only when that memo closes into a finite graph; a growing
+family is refused rather than truncated. Function annotations are written
 in the same source terms, and `prepare` converts each to the claim form the
 source readers take. -/
 namespace Verification.Model.DeclarationGraph
@@ -141,7 +142,7 @@ private abbrev Lowering := StateT Memo SourceTypes.Lowering
 is only its label, as is an empty row, reserved and not yet filled. -/
 private def Memo.key (m : Memo) (T : SourceTypes.Table) (A : List Nat) : List (Nat ⊕ RequestJson.Row) :=
   (A.map fun l => match T[l]? with
-    | some (RequestJson.Row.clauses []) | none => .inl l
+    | some (PositiveGraphs.GraphRow.clauses []) | none => .inl l
     | some r => if m.applications.any (·.row == l) then .inl l else .inr r).eraseDups
 
 private def sameKey (a b : List (Nat ⊕ RequestJson.Row)) : Bool :=
@@ -420,12 +421,12 @@ private def reach (m : Memo) (T : SourceTypes.Table) (floor limit : Nat) (A : Li
 name, before its colour, `mine` accepts. A binder a nested scheme binds counts
 too: the colours taken are over-approximated, never missed. Another method's
 binders are other rows whatever their colour, so they capture nothing and take
-no colour: a family of applications then closes, and is truncated, alike at
-every instance of another method's binders. -/
+no colour. A family that closes therefore does so alike at every instance
+of another method's binders; a growing family is refused, never truncated. -/
 private def freeColours (m : Memo) (T : SourceTypes.Table) (floor : Nat) (mine : String → Bool)
     (labels : List Nat) : List Nat :=
   (reach m T floor ProgramTyping.closureFuel labels).filterMap fun p => match T[p]? with
-    | some (RequestJson.Row.param _ n _) =>
+    | some (PositiveGraphs.GraphRow.param _ n _) =>
       match n.splitOn "^" with
       | [head, c] => if mine head then c.toNat? else none
       | _ => none
@@ -434,7 +435,7 @@ private def freeColours (m : Memo) (T : SourceTypes.Table) (floor : Nat) (mine :
 /-- The one row of the binder named `name`, shared by every lowering. -/
 private def paramRow (name : String) (kind : PositiveGraphs.ParameterKind) : Lowering Nat :=
   modifyGetThe SourceTypes.Table fun T =>
-  match T.findIdx? (fun r => match r with | RequestJson.Row.param _ n k => n == name && k == kind | _ => false) with
+  match T.findIdx? (fun r => match r with | PositiveGraphs.GraphRow.param _ n k => n == name && k == kind | _ => false) with
   | some i => (i, T)
   | none => (T.length, T ++ [.param T.length name kind])
 
@@ -443,7 +444,7 @@ private def schemeRow (bs : List Nat) (sigs : List (Arrow (List Nat)))
     (bounds : List (Nat × List Nat))
     (rests : List (RestArrow (List Nat)) := []) :
     Lowering Nat := modifyGetThe SourceTypes.Table fun T =>
-  let r := RequestJson.Row.scheme bs sigs bounds rests
+  let r := PositiveGraphs.GraphRow.scheme bs sigs bounds rests
   match T.idxOf? r with
   | some i => (i, T)
   | none => (T.length, T ++ [r])
@@ -466,7 +467,7 @@ private def groundMeet (parts : List (List Nat)) (allowEmpty : Bool := false) : 
 /-- A row not yet filled: a nullary declaration's, a reserved application's
 or a waiting intersection's, empty until its equation is lowered. -/
 private def unfilled (T : SourceTypes.Table) (l : Nat) : Bool :=
-  4 ≤ l && T[l]? == some (RequestJson.Row.clauses [])
+  4 ≤ l && T[l]? == some (PositiveGraphs.GraphRow.clauses [])
 
 /-- A ground intersection with an operand not yet filled: its own row, the
 same for the same operands, filled by `settle` once they are. -/
@@ -553,7 +554,7 @@ private def meetRow (parts : List (List Nat)) : Lowering (List Nat) := do
         modifyThe SourceTypes.Table (·.set row (.meet x cs))
         return [row]
     modifyGetThe SourceTypes.Table fun T =>
-      let r := RequestJson.Row.meet x cs
+      let r := PositiveGraphs.GraphRow.meet x cs
       match T.idxOf? r with
       | some i => ([i], T)
       | none => ([T.length], T ++ [r])
@@ -573,7 +574,7 @@ private def meetRow (parts : List (List Nat)) : Lowering (List Nat) := do
       | none => [.top]
       | some last => clauseSets.dropLast.foldr PositiveNormalization.meetLists last
     if cs.isEmpty then throw emptyMeet
-    let r := RequestJson.Row.meet x cs params.tail
+    let r := PositiveGraphs.GraphRow.meet x cs params.tail
     let m ← get
     let reserved := m.meets.find? fun (ps, _) => ps == parts
     if let some (_, row) := reserved then
@@ -969,7 +970,7 @@ private partial def lowerApplication (ds : Array Definition) (i : Nat)
       let T ← getThe SourceTypes.Table
       let actual := values[index]!.flatMap fun l =>
         let p := match T[l]? with
-          | some (RequestJson.Row.meet p _ _) => p
+          | some (PositiveGraphs.GraphRow.meet p _ _) => p
           | _ => l
         match binders.lookup p with
         | some declared => declared
@@ -983,7 +984,7 @@ private partial def lowerApplication (ds : Array Definition) (i : Nat)
       -- A parameter row stands for any type: a unit's binder whose bound
       -- names another binder is one (`binderRows`), without that bound.
       let paramName := fun (l : Nat) => match table[l]? with
-        | some (RequestJson.Row.param _ n _) => some n
+        | some (PositiveGraphs.GraphRow.param _ n _) => some n
         | _ => none
       let refusal := match actual.mapM paramName with
         | some (n :: ns) => s!"the type parameter {String.intercalate " | " (n :: ns)} does not establish the declared bound for {name} at {span.compress}: a type parameter whose bound names another is read as its own parameter row, which does not carry that bound"
@@ -1104,10 +1105,10 @@ private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table)
     Except String (SourceTypes.Table × Memo) := do
   if candidate.length < 4 + nullaryCount ds then throw "declaration graph rows are missing"
   for i in [:ds.size] do
-    if ds[i]!.parameters.isEmpty && candidate[rowIndex ds i]! != RequestJson.Row.clauses [] then
+    if ds[i]!.parameters.isEmpty && candidate[rowIndex ds i]! != PositiveGraphs.GraphRow.clauses [] then
       throw "producer supplied a declaration equation"
   let reserved (row : Nat) : Bool :=
-    row ≥ 4 + nullaryCount ds && row < candidate.length && candidate[row]! == RequestJson.Row.clauses []
+    row ≥ 4 + nullaryCount ds && row < candidate.length && candidate[row]! == PositiveGraphs.GraphRow.clauses []
   let applications := applications.mergeSort (fun x y => x.1 ≤ y.1)
   for (row, declaration, args) in applications do
     if !reserved row then throw "an application's reserved row is not an empty producer row"
@@ -1125,7 +1126,7 @@ private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table)
   let mut table := candidate
   -- An array row is the array shape over the store row the producer stated.
   for (row, store, readonly) in arrays do
-    if !reserved row || applications.any (·.1 == row) || table[row]! != RequestJson.Row.clauses [] then
+    if !reserved row || applications.any (·.1 == row) || table[row]! != PositiveGraphs.GraphRow.clauses [] then
       throw "an array's reserved row is not an empty producer row"
     if store ≥ table.length then throw "an array's store names no row"
     table := table.set row (.clauses [SourceTypes.arrayClause (← arrayExcludedKeys ds) store readonly])
@@ -1171,7 +1172,7 @@ private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table)
         -- An application given another row, one whose omitted arguments are
         -- defaults, is that row's clauses, if it has them.
         let earlier := ((← get).row T i values).filter (· != row)
-        if let some (RequestJson.Row.clauses cs@(_ :: _)) := earlier.bind (T[·]?) then return some cs
+        if let some (PositiveGraphs.GraphRow.clauses cs@(_ :: _)) := earlier.bind (T[·]?) then return some cs
         if mentionsSelf ds[i]!.expression then
           if earlier.isNone && !(← get).applications.any (·.row == row) then
             modify fun m => m.give T i values row
@@ -1182,10 +1183,10 @@ private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table)
             else (← lowerDefinitionRows ds i values (Visit.enter {} i)).mapM use
           let T ← getThe SourceTypes.Table
           if labels.any fun l => l != row && order.contains l && !finished.contains l &&
-              T[l]? == some (RequestJson.Row.clauses []) then
+              T[l]? == some (PositiveGraphs.GraphRow.clauses []) then
             return none
           some <$> labels.flatMapM fun l => match T[l]? with
-            | some (RequestJson.Row.clauses cs) => pure cs
+            | some (PositiveGraphs.GraphRow.clauses cs) => pure cs
             | _ => throw "an application lowers to a row without clauses"
       match ← (fill.run memo).run table with
       | ((some filled, grown), expanded) =>
@@ -1365,7 +1366,7 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
             let B ← (Fragment.translate (← annotationClaim ds b) : SourceTypes.Lowering _)
             let G := SourceTypes.graph (← getThe SourceTypes.Table)
             if B.isEmpty || !G.plainTy B then return p
-            return ← (SourceTypes.internRow (RequestJson.Row.meet p (B.flatMap G)) :
+            return ← (SourceTypes.internRow (PositiveGraphs.GraphRow.meet p (B.flatMap G)) :
               SourceTypes.Lowering Nat)
           match (b.getObjValAs? String "k").toOption, (b.getObjValAs? String "name").toOption with
           | some "binder", some m =>

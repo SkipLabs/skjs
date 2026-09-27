@@ -1,4 +1,5 @@
 import Lean.Data.Json
+import Verification.Model.Types.GraphRows
 import Verification.Model.Programs.Parametricity
 import Verification.Model.Programs.GraphCode
 
@@ -132,29 +133,13 @@ parameter row (a scheme's binder), which names its own label, or a meet row (a
 value parameter row intersected with clauses, `V & DepSafe`). Only a clause
 row has clauses; the graph reads the others as scheme, parameter and meet
 rows. -/
-inductive Row where
-  | clauses (union : List (Clause (List Nat)))
-  | scheme (binders : List Nat) (signatures : List (Arrow (List Nat)))
-      (bounds : List (Nat × List Nat))
-      (variadic : List (RestArrow (List Nat)))
-  /-- `name` identifies the binder the row stands for (its spelling, where it
-  is declared, and its colour); it carries no meaning. -/
-  | param (label : Nat) (name : String) (kind : ParameterKind)
-  /-- The parameter row `binder` within the clauses `union`, and the value
-  parameter rows `also` as well: `U ⊓ T` for `U extends T`, `T & U`. -/
-  | meet (binder : Nat) (union : List (Clause (List Nat))) (also : List Nat := [])
-  deriving DecidableEq, Repr, Inhabited
+abbrev Row := GraphRow Nat
 
 instance : Coe (List (Clause (List Nat))) Row := ⟨.clauses⟩
 instance : Coe (List (List (Clause (List Nat)))) (List Row) := ⟨List.map .clauses⟩
 
 /-- A table of clause rows. -/
 def rows (rs : List (List (Clause (List Nat)))) : List Row := rs.map .clauses
-
-/-- A row's clauses: none unless it is a clause row. -/
-def Row.union : Row → List (Clause (List Nat))
-  | .clauses cs => cs
-  | _ => []
 
 /-- A clause row is spelled as its array of clauses, as every row was before
 scheme rows; a scheme row as
@@ -174,7 +159,7 @@ instance : ToJson Row := ⟨fun
 
 instance : FromJson Row := ⟨fun j =>
   match j with
-  | .arr _ => Row.clauses <$> fromJson? j
+  | .arr _ => GraphRow.clauses <$> fromJson? j
   | _ => match j.getObjVal? "scheme", j.getObjVal? "param", j.getObjVal? "meet" with
     | .error _, .error _, .ok p => do
       return .meet (← fromJson? p) (← fromJson? (← j.getObjVal? "clauses"))
@@ -251,26 +236,11 @@ the graph is built: a lookup is then constant time, not a walk down the list.
 -/
 def tableGraph (T : List Row) : NormalGraph Nat :=
   let A := T.toArray
-  { realm := tableRealm T
-    rows i := match A[i]? with
-      | some r => r.union
-      | none => []
-    schemes i := match A[i]? with
-      | some (.scheme bs sigs bounds rests) => some ⟨bs, sigs, bounds, rests⟩
-      | _ => none
-    parameterKinds i := match A[i]? with
-      | some (.param _ _ k) => some k
-      | _ => none
-    meets i := match A[i]? with
-      | some (.meet p cs _) => some (p, cs)
-      | _ => none
-    meetParams i := match A[i]? with
-      | some (.meet _ _ ps) => ps
-      | _ => [] }
+  NormalGraph.ofRowMap (fun i => A[i]?.getD (.clauses [])) (tableRealm T)
 
 @[simp] theorem tableGraph_clauses_row {T : List Row} {i : Nat} {cs : List (Clause (List Nat))}
     (h : T[i]? = some (.clauses cs)) : (tableGraph T).plain i = true ∧ tableGraph T i = cs := by
-  simp [tableGraph, NormalGraph.params, NormalGraph.plain, NormalGraph.clauses, h, Row.union]
+  simp [tableGraph, NormalGraph.ofRowMap, NormalGraph.params, NormalGraph.plain, NormalGraph.clauses, h, GraphRow.union]
 
 deriving instance ToJson, FromJson for Node
 deriving instance ToJson, FromJson for PositiveCertificates.ArrowCert
@@ -325,13 +295,7 @@ def validClaim (bound : Nat) (c : PointClaim Nat) : Bool :=
   (c.type :: c.context).all (validTy bound)
 
 /-- The labels a row names. -/
-def rowTypes : Row → List (Ty Nat)
-  | .clauses cs => cs.flatMap clauseTypes
-  | .scheme bs sigs bounds rests => bs :: sigs.flatMap Arrow.operands ++
-      bounds.map (fun b => b.1 :: b.2) ++
-      rests.flatMap RestArrow.operands
-  | .param _ _ _ => []
-  | .meet p cs ps => (p :: ps) :: cs.flatMap clauseTypes
+def rowTypes : Row → List (Ty Nat) := GraphRow.operands
 
 /-- Every label a row names indexes the table; a parameter row names itself;
 a scheme's binders are parameter rows, and a meet row's is a value one. -/

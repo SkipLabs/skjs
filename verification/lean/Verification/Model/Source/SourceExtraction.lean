@@ -1452,7 +1452,7 @@ private def throughBound (Γ : List (Ty Nat)) (a : DirectProof.Plan) : Compiler 
   let T ← table
   let [l] := a.type | return a
   let some (.meet _ cs _) := (T[l]? : Option RequestJson.Row) | return a
-  let row := RequestJson.Row.clauses cs
+  let row := PositiveGraphs.GraphRow.clauses cs
   let m ← match T.idxOf? row with
     | some m => pure m
     | none => do
@@ -4956,10 +4956,10 @@ def SourceRequest.searchLabels (r : SourceRequest) : List Nat :=
       -- A meet row's clauses name a type the table may hold as a row of its
       -- own, a bounded binder's bound: a read through the binder is at it.
       let next := (known ++ known.flatMap (fun i =>
-        ((r.types[i]?.map RequestJson.Row.union).getD []).flatMap
+        ((r.types[i]?.map PositiveGraphs.GraphRow.union).getD []).flatMap
           (fun c => (RequestJson.clauseTypes c).flatten) ++
         (match (r.types[i]? : Option RequestJson.Row) with
-          | some (.meet _ cs _) => (r.types.idxOf? (RequestJson.Row.clauses cs)).toList
+          | some (.meet _ cs _) => (r.types.idxOf? (PositiveGraphs.GraphRow.clauses cs)).toList
           | _ => []))).eraseDups
       if next.length == known.length then break
       known := next

@@ -473,7 +473,7 @@ private def boundedRow (l : Nat) (B : List Nat) : SchemeM Nat := do
   let (T, reg) ← get
   let G := SourceTypes.graph T
   if B.isEmpty || !G.plainTy B then return l
-  let m := RequestJson.Row.meet l (B.flatMap G)
+  let m := GraphRow.meet l (B.flatMap G)
   match T.idxOf? m with
   | some i => return i
   | none => set (T ++ [m], reg); return T.length
@@ -533,7 +533,7 @@ private partial def schemeRowOf (t : ClaimType) : SchemeM (Nat × List (String �
   let names := tps.map Prod.fst
   let (T, reg) ← get
   let params := tps.zipIdx.map fun ((n, _), i) => (n, T.length + i)
-  set (T ++ params.map (fun (n, l) => RequestJson.Row.param l n .value), reg)
+  set (T ++ params.map (fun (n, l) => GraphRow.param l n .value), reg)
   let meetRow (m : RequestJson.Row) : SchemeM Nat := do
     let (T, reg) ← get
     match T.idxOf? m with
@@ -574,7 +574,7 @@ private partial def schemeRowOf (t : ClaimType) : SchemeM (Nat × List (String �
   let boundRows := bounds
   let (T, reg) ← get
   let label := T.length
-  set (T ++ [RequestJson.Row.scheme (params.map Prod.snd) sigs boundRows rests],
+  set (T ++ [GraphRow.scheme (params.map Prod.snd) sigs boundRows rests],
     reg ++ [(t, label, rows)])
   return (label, rows)
 end
@@ -656,7 +656,7 @@ def closureRows (T : SourceTypes.Table) (outer : List (String × Nat))
           if !Us.all G.plainTy then return none
           let cs := PositiveRules.meetMany (Us.map (PositiveRules.clausesOf G) ++ [cs])
           if cs.isEmpty then return none
-          let row := RequestJson.Row.clauses cs
+          let row := GraphRow.clauses cs
           match T.idxOf? row with
           | some l => return some l
           | none => set (T ++ [row], reg); return some T.length
@@ -996,7 +996,7 @@ private def binderRows (T : SourceTypes.Table) (tps : List Fragment.TypeParam) :
     let row : Nat ← match tp.bound.bind boundLabels, tp.bound.bind boundBinder with
       | some B, _ =>
         if B.isEmpty || !G.plainTy B then pure p
-        else SourceTypes.internRow (RequestJson.Row.meet p (B.flatMap G))
+        else SourceTypes.internRow (GraphRow.meet p (B.flatMap G))
       | none, some m =>
         match rows.lookup m with
         | some r => match SourceTypes.dependentMeet (← get) p r with

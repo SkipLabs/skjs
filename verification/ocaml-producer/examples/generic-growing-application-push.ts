@@ -1,7 +1,7 @@
-// Calling push: its instance relates the scheme's result, Pair<[number, U]>,
-// to Pair<[number, string]>. Both unfold without end at growing arguments,
-// and each stops where its own arguments exhaust the colours or the budget,
-// at different depths, so the two graphs are not renamings of each other.
+// Calling push substitutes string for U in the recursive result family. A
+// faithful implementation must relate the complete equations of Pair<[number,
+// U]> and Pair<[number, string]>, not compare differently truncated graphs.
+// The current lowering refuses the whole contract at its expansion limit.
 interface Pair<T> {
   first(): T;
   push<U>(u: U): Pair<[T, U]>;
