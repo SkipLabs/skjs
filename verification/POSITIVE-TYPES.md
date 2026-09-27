@@ -506,6 +506,49 @@ Lean: `qDenoteWithArgs G (mixedParameters G)`, `Bounded`, `instanceTWithArgs`,
 `Types/QuantifiedGraphs.lean`); `mixedValues`, `mixedArgs`, `meaning`,
 `argMeaning` (`Types/PositiveRules.lean`).
 
+### Finite presentations of application-indexed graphs
+
+The semantics above does not require finitely many labels. A finite collection
+of parameterized equations can present an infinite graph: unfolding
+`Pair<T>` may refer to `Pair<[T, U]>` without first enumerating every later
+application. `Types/EquationGraphs.lean` implements the scoped representation
+for this construction; it is not yet connected to source acceptance.
+
+A label is an application `h(A₁, …, Aₙ)` or a parameter owned by such an
+application, `bound(h, [A₁, …, Aₙ], j)`. Each argument is a union of labels.
+The finite signature fixes each head's arity and its local binders' kinds.
+Templates contain argument and local placeholders. Instantiation replaces an
+argument placeholder by its whole union and a local placeholder by its owned
+parameter. It visits only the finite template, leaving referenced applications
+unexpanded. Thus the defining equation is
+
+$$
+G\bigl(h(\vec A)\bigr)
+=\operatorname{instantiate}(E_h,\vec A).
+$$
+
+The resulting rows use `NormalGraph.ofRowMap`, just like finite wire tables;
+there is no second denotation or new typing rule. Scope and arity are checked
+throughout each template. A scheme must bind exactly its header's locals,
+and its bounds cannot mention those locals. Other constructor templates
+introduce no locals. Free parameters enter through arguments, never through a
+template manufacturing another application's binder.
+
+The kernel proves the row equation, preservation of binder kinds, and freshness
+of an application's binders for its captured arguments. The last fact follows
+from finite syntax: the binder's name contains its argument tree, so it cannot
+occur inside that tree. An existing bound name is atomic when computing free
+support; its owner's arguments identify the name, not additional dependencies
+of its assigned meaning.
+
+These representation facts do **not** yet establish semantic substitution.
+The remaining proof must show agreement on computed free support implies equal
+meanings, then justify application images under capture-avoiding substitution
+at the `InstanceImages` boundary. Source compilation (including alias and
+dependent-intersection normalization), finite family-subtyping evidence, and
+certificate integration are also pending. Existing finite certificates remain
+the only accepted path until those obligations are proved.
+
 ## Conjunction and normalization
 
 Normalization rewrites a body into a normal body. It is disjunctive normal
@@ -1461,6 +1504,7 @@ Lean: `Types/PositiveGraphs.lean` (`schemeSemWithArgs`),
 - `Types/PositiveNormalization.lean`, `Types/PositiveGraphs.lean`,
   `Types/QuantifiedGraphs.lean`
 - `Types/PositiveRules.lean`, `Types/PositiveCertificates.lean`
+- `Types/GraphRows.lean`, `Types/EquationGraphs.lean`
 - `Tests/PositiveNormalizationTests.lean`
 
 All under `lean/Verification/Model/`. Tests cover distribution, cross-shape

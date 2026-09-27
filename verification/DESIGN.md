@@ -1259,12 +1259,23 @@ positive sources as the targets. The work is split by semantic obligation:
      schemes and dependent meets at any label type. `NormalGraph.ofRowMap`
      interprets that sum, and the existing finite JSON table uses it too. This
      preparation changes no accepted programs and does not close any Promise gap.
-   - **Finite equations, symbolic applications:** store each declaration once,
+   - **Finite equations, symbolic applications (kernel implemented):** store each declaration once,
      with lexical parameters; a label identifies an application and its argument
      environment. Unfold one row when needed. Scheme binders must retain their
      lexical owner, so nested instantiation cannot capture an enclosing binder.
      Do not enumerate a growing family such as `Pair<[T, U]>`, truncate it, or
      reinterpret a structural interface as a nominal native promise.
+     `Types/EquationGraphs.lean` now constructs such a `NormalGraph` from
+     scoped templates. It proves exact one-step unfolding, binder-kind
+     preservation, and freshness of an application's local binders for its
+     captured arguments. Binding positions name one label; type operands can
+     substitute whole unions. Templates cannot manufacture another scope's
+     binders, and a scheme must quantify exactly its declared locals.
+     This is a representation foundation, not a new accepted certificate:
+     semantic free-support agreement, substitution and source integration
+     remain pending. The current templates are constructor-headed; compiling
+     source aliases and dependent intersections still needs normalization.
+     This staging does not narrow the planned source fragment.
    - **Checked substitution:** prove that capture-avoiding instantiation commutes
      with unfolding, including scheme bounds, argument packs, effects and the
      array realm. Use finite evidence about the equations to justify a mapping

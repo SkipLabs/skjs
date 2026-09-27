@@ -8,8 +8,9 @@
 > primitives and nested arrays, with custom array conversion hooks excluded, also externally.
 > The original tuple-sort cases verify again; comparator sorting supports arbitrary elements.
 > Promise-dependent sources remain explicit gaps in `cases.mts`. The core row
-> representation is now label-independent; recursive equation applications and
-> their substitution certificates are still pending ([execution plan](../DESIGN.md#next-steps)). See
+> representation is now label-independent. A scoped recursive-equation kernel
+> constructs graphs for the existing semantics; its semantic substitution proof,
+> certificates and source integration are still pending ([execution plan](../DESIGN.md#next-steps)). See
 > [the current design](../DESIGN.md#exact-contracts-and-native-effects).
 
 An independent OCaml producer with **verified acceptance**, using the existing

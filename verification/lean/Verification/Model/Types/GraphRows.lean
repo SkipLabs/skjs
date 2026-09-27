@@ -10,17 +10,29 @@ open CallEffects PositiveNormalization
 finite wire table uses natural-number labels; a parameterized equation can
 use symbolic applications. Names on parameter rows are diagnostic metadata.
 The four alternatives are the same in both representations. -/
-inductive GraphRow (ι : Type) where
-  | clauses (union : List (Clause (List ι)))
-  | scheme (binders : List ι) (signatures : List (Arrow (List ι)))
-      (bounds : List (ι × List ι)) (variadic : List (RestArrow (List ι)))
+inductive GraphRow (ι : Type) (Operand : Type := List ι) where
+  | clauses (union : List (Clause Operand))
+  | scheme (binders : List ι) (signatures : List (Arrow Operand))
+      (bounds : List (ι × Operand)) (variadic : List (RestArrow Operand))
   | param (label : ι) (name : String) (kind : ParameterKind)
-  | meet (binder : ι) (union : List (Clause (List ι))) (also : List ι := [])
+  | meet (binder : ι) (union : List (Clause Operand)) (also : List ι := [])
   deriving DecidableEq, Repr, Inhabited
+
+/-- Rename binding positions and type operands separately. In an equation,
+a binding position denotes one label while a type parameter can stand for a
+whole union. In a closed graph the operands are lists of labels. -/
+def GraphRow.map (binding : ι → κ) (operand : α → β) : GraphRow ι α → GraphRow κ β
+  | .clauses cs => .clauses (cs.map (Clause.map operand))
+  | .scheme bs sigs bounds rests => .scheme (bs.map binding)
+      (sigs.map (Arrow.map operand))
+      (bounds.map fun (b, T) => (binding b, operand T))
+      (rests.map (RestArrow.map operand))
+  | .param b name kind => .param (binding b) name kind
+  | .meet b cs also => .meet (binding b) (cs.map (Clause.map operand)) (also.map binding)
 
 /-- Only a clause row contributes ordinary clauses. Other row kinds have
 separate interpretations; an unsupported kind must not turn into a clause. -/
-def GraphRow.union : GraphRow ι → List (Clause (List ι))
+def GraphRow.union : GraphRow ι α → List (Clause α)
   | .clauses cs => cs
   | .scheme .. | .param .. | .meet .. => []
 

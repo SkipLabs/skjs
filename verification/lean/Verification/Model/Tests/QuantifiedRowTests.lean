@@ -180,10 +180,10 @@ private def sortedKinds : NormalGraph Nat := RequestJson.tableGraph [
 -- The wire must state a kind; there is no implicit legacy/value default.
 #guard (Lean.fromJson? (Lean.Json.mkObj [("param", Lean.toJson (0 : Nat)),
   ("name", Lean.toJson "P")]) : Except String RequestJson.Row).toOption.isNone
-#guard (Lean.fromJson? (Lean.toJson (GraphRow.param 0 "P" .arguments)) :
+#guard (Lean.fromJson? (Lean.toJson (GraphRow.param 0 "P" .arguments : RequestJson.Row)) :
   Except String RequestJson.Row).toOption == some (.param 0 "P" .arguments)
 -- A clause row is spelled as before; the other kinds read back as themselves.
-#guard Lean.toJson (GraphRow.clauses (ι := Nat) [.nul]) == Lean.toJson [Clause.nul (α := List Nat)]
+#guard Lean.toJson (GraphRow.clauses [.nul] : RequestJson.Row) == Lean.toJson [Clause.nul (α := List Nat)]
 #guard (Lean.fromJson? (Lean.toJson table) : Except String (List RequestJson.Row)).toOption == some table
 
 -- A generic method of a generic type, with coloured binders:
