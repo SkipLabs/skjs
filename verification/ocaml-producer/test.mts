@@ -1160,7 +1160,9 @@ for (const [artifacts, arity, accepted] of [
     assert.ifError(consume.error);
     assert.equal(consume.status, 0, consume.stdout + consume.stderr);
   } else {
-    assert.match(produce.stdout + produce.stderr, /the certificate does not justify/);
+    const failure = readDiagnostic(produce.stdout + produce.stderr);
+    assert.ok(failure && failure.kind === "node-typing", "a failed effect must name the callable's typing obligation");
+    assert.ok(failure.source?.sourceMap?.pos, "the failed callable must have a source location");
     assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts), /does not justify/);
   }
   process.stdout.write(`callback heap-preservation claim: ${accepted ? "certified" : "captured write refused"}\n`);

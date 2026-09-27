@@ -630,7 +630,13 @@ def produceJson (request : Json) (fuel : Nat)
     let C ← produceGraph (q.asRequest r) fuel labels suggestions known hints.sourceMap
       hints.requirements hints.cuts table
     certificates := certificates ++ [C]
-    table := table ++ [q.entry]
+    -- Search may use only definitions whose complete certificate checks,
+    -- including their effect. Otherwise the defining expression must fail at
+    -- its ordinary source obligation, rather than borrowing an unchecked code
+    -- entry and failing only at the final generic certificate check.
+    -- Retain every certificate: verifyJson still checks the entire code list.
+    if GraphCode.codeChecked (graph r) table q.entry C then
+      table := table ++ [q.entry]
   let C ← produceGraph r fuel labels suggestions known sourceMap requirements cuts table
   let response := toJson (Response.mk C certificates)
   verifyJson request response

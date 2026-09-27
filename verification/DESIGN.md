@@ -1190,8 +1190,12 @@ positive sources as the targets. The work is split by semantic obligation:
    immutable parameters use their post-initialization contents, while assigned
    parameters retain the original fixed cell contract. A forwarding mutator
    stays unrestricted and its sparse map result is refused at a dense result.
-   Remaining integration: other call forms and nested expressions, located
-   effect obligations, and the original census measurement.
+   Evidence production publishes only completely checked definitions to its
+   search table, including the effect check. A forged effect therefore fails
+   at the callable's located typing obligation. Every submitted code certificate
+   is retained and checked again at acceptance; search filtering cannot bypass it.
+   Remaining integration: other call forms and nested expressions, and the
+   original census measurement.
 4. **Default object conversion.** Restore the tuple-valued default-sort examples
    only with a contract covering actual conversion dispatch, including
    `Symbol.toPrimitive`, `toString`, and prototype lookup. A tuple's numeric

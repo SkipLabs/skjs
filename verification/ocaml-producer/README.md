@@ -101,7 +101,9 @@ external inputs. `callback-effects` also covers readonly field reads and returne
 fresh objects/arrays and calls through annotated bindings with omitted defaults.
 `closure-contextual-parameters` also verifies unchanged: module constants retain
 checked initializer claims, with source annotations still checked independently.
-Located effect-failure reporting and broader composition remain.
+Forged effects fail at the callable's located typing obligation: search uses
+only definitions whose full certificate checks. Final acceptance still checks
+every code certificate. Broader composition remains incomplete.
 The [design boundary](../DESIGN.md#inferred-call-effects-elaboration-and-certification)
 owns this distinction and the [planned typing rules](../PROGRAM-TYPING.md#certifying-inferred-call-effects)
 own the definition, application and effect-forgetting obligations.

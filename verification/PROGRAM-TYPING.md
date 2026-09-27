@@ -3315,7 +3315,11 @@ subtyping checks effect implication and substitution preserves it. Ordinary
 source annotations remain unrestricted; OCaml proposes preservation for pure
 closure bodies, required field reads, fresh allocations and fixed calls to
 qualified callees, retaining it through symbolic claims and substitution.
-Broader composition and located effect-failure reporting remain implementation work. Qualified graph claims can
+Broader composition remains implementation work. Evidence production adds a
+code entry to its search table only after the complete body/effect check passes.
+A forged effect thus fails at the defining callable's located typing obligation.
+All code certificates remain in the submitted response, and final acceptance
+independently checks every one; withholding a search hint cannot hide a failure. Qualified graph claims can
 already be submitted and certified through the ordinary source pipeline.
 
 ### Parameter initialization order
