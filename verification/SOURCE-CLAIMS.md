@@ -36,7 +36,7 @@ and every supplied callee and operand claim is checked at its source span.
 
 ## Quantified callables and their eliminations
 
-A `type` may also be `{"scheme":{"typeParams":[...],"this":...,"params":[...],"rest":null,"result":...}}`:
+A `type` may also be `{"scheme":{"typeParams":[...],"this":...,"params":[...],"rest":null,"result":...,"effect":"unrestricted"}}`:
 a callable quantified over its own binders, which a binding can hold. Binders
 shadow, so a nested scheme's own names hide an outer substitution. `this` is
 required: the receiver a call must pass, top for an arrow, and for an ordinary
@@ -62,6 +62,14 @@ exactly the scheme's binders, and each type argument must be a ground type: an
 unresolved parameter or a nested scheme is refused. The consumer re-checks the
 substitution and derives the call's arrow from the scheme's own signature, so a
 forged `instantiate` can only name another genuine instance.
+
+The required `effect` is either `unrestricted` or `preservesInputHeap`, as in
+ordinary graph signatures. Grounding a symbolic claim, substitution and scheme
+instantiation retain it; definition certification checks it. Source annotations
+remain unrestricted. OCaml currently infers preservation for operationally pure
+closure bodies and defaults; its analysis is deliberately incomplete for reads,
+allocation, calls and rest-array wrappers. Those bodies retain unrestricted
+claims until the compositional checker can certify their stronger effect.
 
 Lean reads each such scheme as a scheme row whose binders are fresh parameter
 rows ([quantified schemes](POSITIVE-TYPES.md#quantified-scheme-layer)): every

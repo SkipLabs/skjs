@@ -646,7 +646,7 @@ longer brings in unrelated Promise declarations.
 
 ### Inferred call effects: elaboration and certification
 
-**Certification integrated; inference and native overloads remain open.**
+**Certification and initial inference integrated; composition and native overloads remain open.**
 `CallEffects.lean` supplies the semantic foundation. Qualified signatures now
 flow through the type graph, source claims and the executable acceptance checker.
 A proposed heap-preserving closure must pass both ordinary safety and the body
@@ -1157,8 +1157,14 @@ positive sources as the targets. The work is split by semantic obligation:
    certify a pure callback and refuse a forged effect on a captured write,
    both when producing evidence and when consuming old evidence. The headline
    acceptance theorem covers this check.
-   Remaining integration: infer and export qualified definitions in OCaml;
-   add the audited dense native overloads and located effect obligations;
+   OCaml now infers preservation for operationally pure closure bodies and
+   defaults. Its semantic signature, symbolic claims and substitution all carry
+   the effect, including generic closures; `.bind` retains it. Ordinary source
+   annotations remain unrestricted. Reads, allocation, nested calls and rest
+   array wrappers still get conservative unrestricted proposals until the body
+   checker supports their composition.
+   Remaining integration: extend the compositional effect checker; add the
+   audited dense native overloads and located effect obligations;
    exercise propagation through named/returned callbacks, then remeasure the
    original targets. No source coverage gain is claimed from the contract
    migration alone.

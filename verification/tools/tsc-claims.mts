@@ -1971,6 +1971,7 @@ function closureSchemes(fnNode: FunctionDeclaration, checker: Checker, types: Ro
     const thisParameter = sig.getThisParameter();
     return {
       scheme: {
+        effect: "unrestricted",
         typeParams: tps.map((tp) => {
           const bound = checker.getConstraintOfTypeParameter(tp);
           return { name: binderOf(tp) as string, bound: bound ? claimOf(bound) : null };

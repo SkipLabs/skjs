@@ -32,6 +32,10 @@ let rec plausible_subtype actual expected =
   | Atoms xs,Atoms ys -> List.for_all (fun x -> List.exists (fun y ->
       x=y || match x,y with
       | NumLit _,Num | StrLit _,Str | BigintLit _,Bigint -> true
+      | Shape a,Shape b when a.fields=b.fields && a.indexes=b.indexes && a.elements=b.elements ->
+        List.for_all (fun (q:Semantic.signature) -> List.exists (fun (p:Semantic.signature) ->
+          (p.call_effect=q.call_effect || q.call_effect=Unrestricted) &&
+          {p with call_effect=q.call_effect}=q) a.calls) b.calls
       | _ -> false) ys) xs
   | Union parts,_ -> List.for_all (fun part -> plausible_subtype part expected) parts
   | _,Union parts -> List.exists (plausible_subtype actual) parts
@@ -1342,7 +1346,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         let longer = s.variadic=None && s.rest_pack=None && List.length s.params > arity
           && List.for_all2 plausible_subtype (List.filteri (fun i _ -> i < arity) s.params) params in
         if widened <> [] || longer then
-          requests := (pos,{quantified=[];receiver=top;params=if longer then s.params else params;
+          requests := (pos,{call_effect=s.call_effect;quantified=[];receiver=top;params=if longer then s.params else params;
                             variadic=None;rest_pack=None;result=s.result}) :: !requests)
         (List.filter (fun (s:Semantic.signature) -> s.quantified=[]) signatures)
     | _ -> () in
@@ -2106,7 +2110,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         | _ -> expr ~expected:result inner body in
       (* A class offered construct signatures giving other instances is
          claimed at them too, beside its own; Lean checks the body at each. *)
-      let own = {quantified=[];receiver=Semantic.top;params=List.map snd ps;variadic=None;rest_pack=None;result} in
+      let own = {call_effect=Unrestricted;quantified=[];receiver=Semantic.top;params=List.map snd ps;variadic=None;rest_pack=None;result} in
       let extra = Option.value (List.assoc_opt e.pos offered) ~default:[] in
       (* A fresh constructor gives, first, the instance it allocates. *)
       let fresh_sig = if fresh then [{own with result=allocated_type}] else [] in
@@ -2231,9 +2235,17 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
            | None,Some element -> List.rev fixed,Some element
            | _ -> unsupported "a rest parameter needs a tuple of required positions or an array")
         | [] -> unsupported "a rest parameter needs a parameter" in
+      let values = List.filter_map (fun (name,b) -> match b with
+        | Value _ -> Some name | Storage _ -> None) inner in
+      (* Rest binding materializes a source array wrapper in the lowered
+         body. Allocation is allowed by the effect but the initial checker
+         cannot yet certify that wrapper; do not propose an unprovable effect. *)
+      let call_effect = if not rest && heap_preserving_expr values body &&
+        List.for_all (fun (_,d) -> heap_preserving_expr values d) defaults
+        then PreservesInputHeap else Unrestricted in
       let own = match element with
-        | Some element -> variadic_arrow ~quantified ~receiver params element result
-        | None -> quantified_arrow ~receiver quantified params result in
+        | Some element -> variadic_arrow ~call_effect ~quantified ~receiver params element result
+        | None -> quantified_arrow ~call_effect ~receiver quantified params result in
       (* A named closure passed where more parameters are offered is claimed
          at those signatures too, beside its own: calls through it discard
          the actuals past its parameters, and Lean checks its body at each. *)
@@ -2264,7 +2276,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let own = match offered_here, own with
         | Some extra, Atoms [Shape ({calls=[call];_} as shape)] when quantified=[] && element=None ->
           Atoms [Shape {shape with calls=call :: List.filter (fun s -> s <> call)
-            (List.sort_uniq compare extra)}]
+            (List.sort_uniq compare (List.map (fun s -> {s with call_effect}) extra))}]
         | _ -> own in
       (* A contract advertising several signatures is implemented by this one
          closure. Propose that contract and state what the body claims under
@@ -2785,8 +2797,8 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
               | None -> unsupported "bind argument prefix exceeds arity") in
         let rest = prefix signature.params args in
         (match signature.variadic with
-         | Some element -> variadic_arrow rest element signature.result
-         | None -> arrow rest signature.result)
+         | Some element -> variadic_arrow ~call_effect:signature.call_effect rest element signature.result
+         | None -> arrow ~call_effect:signature.call_effect rest signature.result)
       | _ -> unsupported "bind requires a single arrow and a valid argument prefix")
     | Conditional (c,a,b) -> ignore (expr env c);
       let left = expr ?expected (branch env c true) a in

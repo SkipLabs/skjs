@@ -64,7 +64,7 @@ and substitute_signature ?meet solution signature =
      pass through the nested scheme's bounds and body. *)
   let local = List.map (fun q -> q.identity) signature.quantified in
   let solution = List.filter (fun (identity,_) -> not (List.mem identity local)) solution in
-  { quantified=List.map (fun q -> {q with bound=Option.map (substitute_argument ?meet solution) q.bound})
+  { signature with quantified=List.map (fun q -> {q with bound=Option.map (substitute_argument ?meet solution) q.bound})
       signature.quantified;
     receiver=substitute ?meet solution signature.receiver;
     params=List.map (substitute ?meet solution) signature.params;

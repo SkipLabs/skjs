@@ -1272,6 +1272,7 @@ const schemePoint = closure.expressions.find(
   (e) => !Array.isArray(e.type) && "scheme" in e.type,
 );
 assert.ok(schemePoint && !Array.isArray(schemePoint.type) && "scheme" in schemePoint.type);
+assert.equal(schemePoint.type.scheme.effect, "preservesInputHeap", "identity's inferred effect survives symbolic scheme export");
 schemePoint.type.scheme.result = [1, 2];
 const forgedScheme = join(genericClosure, "forged-scheme.json");
 writeFileSync(forgedScheme, JSON.stringify(closureClaims));

@@ -3207,8 +3207,8 @@ Json (`invalid-sum-sound-binding-constructor.ts`).
 
 ### Certifying inferred call effects
 
-**Definition certification is implemented; producer inference and native
-overloads remain in progress.** The semantic foundation is
+**Definition certification and initial producer inference are implemented;
+composition and native overloads remain in progress.** The semantic foundation is
 [the qualified arrow equation](SEMANTICS.md#effect-qualified-call-contracts).
 Definition checking and application both carry the effect;
 changing only the native `map` declaration would introduce a trusted assumption
@@ -3297,7 +3297,8 @@ This checker is wired into source acceptance, including
 `SourceClaimJson.checkJson_safe`. One contract record carries receiver,
 arguments, result and required effect through graphs, claims and certificates;
 subtyping checks effect implication and substitution preserves it. Ordinary
-source annotations and current producer output remain unrestricted. Inference,
+source annotations remain unrestricted; OCaml proposes preservation for pure
+closure bodies, retaining it through symbolic claims and substitution. Broader
 compositional body-effect checking, native overloads and located effect-failure
 reporting are the remaining implementation work. Qualified graph claims can
 already be submitted and certified through the ordinary source pipeline.

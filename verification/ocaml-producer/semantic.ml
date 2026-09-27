@@ -1,5 +1,7 @@
 (* Semantic types contain no solver state. More precise proposals do not mutate them.
    A rigid parameter remains distinct from any future inference/existential IDs. *)
+type call_effect = Unrestricted | PreservesInputHeap
+
 type ty = Atoms of atom list | Rigid of rigid | Union of ty list
          (* An intersection whose operands are known only where it is
             applied or instantiated: in a declaration's equation one is a
@@ -57,7 +59,7 @@ and quantifier = { identity: rigid; bound: type_argument option }
    of them as one argument list, for a rest typed by a pack parameter or a
    concrete pack instance. At most one is set. *)
 and signature = { quantified: quantifier list; receiver: ty; params: ty list;
-                  variadic: ty option; rest_pack: pack option; result: ty }
+                  variadic: ty option; rest_pack: pack option; result: ty; call_effect: call_effect }
 and sequence = { required: ty list; optional_elements: ty list; rest: ty option; readonly: bool; dense: bool }
 and shape = { fields: field list; indexes: index_signature list; calls: signature list; elements: sequence option }
 let record fields = Atoms [Shape {fields;indexes=[];calls=[];elements=None}]
@@ -102,12 +104,12 @@ let meet_objects a b = match a,b with
       calls=x.calls @ y.calls}])
   | _ -> None
 let top = Atoms [Top]
-let arrow params result =
-  Atoms [Shape {fields=[];indexes=[];calls=[{quantified=[];receiver=top;params;variadic=None;rest_pack=None;result}];elements=None}]
-let quantified_arrow ?(receiver=top) quantified params result =
-  Atoms [Shape {fields=[];indexes=[];calls=[{quantified;receiver;params;variadic=None;rest_pack=None;result}];elements=None}]
-let variadic_arrow ?(quantified=[]) ?(receiver=top) params element result =
-  Atoms [Shape {fields=[];indexes=[];calls=[{quantified;receiver;params;variadic=Some element;rest_pack=None;result}];elements=None}]
+let arrow ?(call_effect=Unrestricted) params result =
+  Atoms [Shape {fields=[];indexes=[];calls=[{quantified=[];receiver=top;params;variadic=None;rest_pack=None;result;call_effect}];elements=None}]
+let quantified_arrow ?(call_effect=Unrestricted) ?(receiver=top) quantified params result =
+  Atoms [Shape {fields=[];indexes=[];calls=[{quantified;receiver;params;variadic=None;rest_pack=None;result;call_effect}];elements=None}]
+let variadic_arrow ?(call_effect=Unrestricted) ?(quantified=[]) ?(receiver=top) params element result =
+  Atoms [Shape {fields=[];indexes=[];calls=[{quantified;receiver;params;variadic=Some element;rest_pack=None;result;call_effect}];elements=None}]
 let ground xs = Atoms (List.sort_uniq compare xs)
 let bool = ground [True;False]
 let union a b = match a,b with

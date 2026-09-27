@@ -10,12 +10,13 @@
  */
 
 import type { Span } from "./span.mts";
-import type { Labels, Row } from "./type-graph.mts";
+import type { CallEffect, Labels, Row } from "./type-graph.mts";
 export type { Labels, Row } from "./type-graph.mts";
 
 /** A quantified callable. Parameter references inside it are resolved
  * lexically: its binders shadow enclosing binders only within this value. */
 export interface SchemeClaim {
+  effect: CallEffect;
   typeParams: { name: string; bound: ClaimType | null }[];
   /** The receiver a call passes; an unknown row when any is accepted. */
   this: ClaimType;

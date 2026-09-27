@@ -149,7 +149,7 @@ let rec source_type ctx j =
       | Null -> None
       | t when is_pack t -> Some (source_pack ctx (field "of" t))
       | t -> Some (Pack {required=[];optional_elements=[];rest=Some (recur t);readonly=false;dense=true}) in
-    Atoms [Ctors [{quantified=[];receiver=top;params=List.map recur (items "params" j);
+    Atoms [Ctors [{call_effect=Unrestricted;quantified=[];receiver=top;params=List.map recur (items "params" j);
       variadic=None;rest_pack;result=recur (field "result" j)}]]
   | "function" ->
     let receiver = match field "receiver" j with Null -> top | source -> recur source in
@@ -157,7 +157,7 @@ let rec source_type ctx j =
       | Null -> None,None
       | t when is_pack t -> None,Some (source_pack ctx (field "of" t))
       | t -> Some (recur t),None in
-    let signature = {quantified=[];receiver;
+    let signature = {call_effect=Unrestricted;quantified=[];receiver;
       params=List.map recur (items "params" j);
       variadic;rest_pack;
       result=recur (field "result" j)} in
@@ -525,6 +525,43 @@ let rec assigns name s = match s.statement with
     (body @ (match handler with Some (_,h) -> h | None -> []) @ Option.value finalizer ~default:[])
   | Closing (close,body) -> List.exists (assigns name) (body @ close)
   | Break _ | Continue -> false
+(* A definition-level proposal, never a call-site assumption. This first
+   analysis mirrors the certificate algorithm's operationally pure terms.
+   Reads, allocations and qualified calls are semantically allowed but need
+   the later compositional check; conservatively propose Unrestricted for
+   them. Every constructor is listed so extensions require a decision here. *)
+let rec heap_preserving_expr values (e:expr) =
+  let pure = heap_preserving_expr values in
+  match e.node with
+  | Id name -> List.mem name values
+  | Literal _ -> true
+  | Not a | TypeofTest (_,_,a) | Cast (_,_,a) -> pure a
+  | Arith (_,a,b) | Logical (_,a,b) | Coalesce (a,b) | Comma (a,b) -> pure a && pure b
+  | Conditional (c,a,b) -> pure c && pure a && pure b
+  | BlockBody body -> heap_preserving_stmts values body
+  | Unary _ | HasKey _ | InstanceTest _ | Equality _ | Alloc _ | Build _
+  | Read _ | Write _ | Assign _ | Update _ | LogicalAssign _ | NullishAssign _
+  | ArrayAssign _ | Lambda _ | Call _ | Invoke _ | Apply _ | Ctor _ | New _
+  | Optional _ | ArrayLiteral _ | Index _ | IndexWrite _ | Bind _ | ObjectAssign _
+  | WithFields _ -> false
+and heap_preserving_stmts values = function
+  | [] -> true
+  | s::rest ->
+    let pure = heap_preserving_expr values in
+    let unchanged () = heap_preserving_stmts values rest in
+    match s.statement with
+    | Declare (false,bindings) ->
+      let rec add values = function
+        | [] -> heap_preserving_stmts values rest
+        | (name,_,init)::more -> heap_preserving_expr values init && add (name::values) more in
+      add values bindings
+    | Return e | Effect e | Throw e -> pure e && unchanged ()
+    | If (c,a,b) -> pure c && heap_preserving_stmts values a &&
+        heap_preserving_stmts values b && unchanged ()
+    | Block (_,body) -> heap_preserving_stmts values body && unchanged ()
+    | Break _ | Continue -> unchanged ()
+    | Declare (true,_) | Destructure _ | While _ | ForOf _ | Try _ | Closing _ -> false
+
 let arithmetic = function
   | "add" -> Add | "sub" -> Sub | "mul" -> Mul | "div" -> Div | "pow" -> Pow | "rem" -> Rem
   | "lt" -> Lt | "le" -> Le | "gt" -> Gt | "ge" -> Ge

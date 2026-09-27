@@ -17,7 +17,7 @@ let () =
   assert (a <> b);
   assert (union a b <> a);
   let identity={scope=2;index=0;spelling="T"} in
-  let signature={quantified=[{identity;bound=None}];receiver=top;params=[Rigid identity];variadic=None;rest_pack=None;result=Rigid identity} in
+  let signature={call_effect=Unrestricted;quantified=[{identity;bound=None}];receiver=top;params=[Rigid identity];variadic=None;rest_pack=None;result=Rigid identity} in
   let inferred:Inference.instantiation=Inference.infer signature [bool] in
   assert (inferred.Inference.result=bool);
   assert (inferred.Inference.substitution=[identity,ValueArgument bool]);
@@ -35,7 +35,7 @@ let () =
   (* A contradiction must still reach independent validation. *)
   assert ((infer [t;arrow [t] num] [bool;arrow [num] num]).Inference.result=bool);
   let u={scope=2;index=1;spelling="U"} and v={scope=2;index=2;spelling="V"} in
-  let chain={quantified=[{identity=u;bound=None};{identity;bound=Some (ValueArgument (Rigid u))};
+  let chain={call_effect=Unrestricted;quantified=[{identity=u;bound=None};{identity;bound=Some (ValueArgument (Rigid u))};
     {identity=v;bound=Some (ValueArgument t)}];receiver=top;params=[Rigid u;t;Rigid v];variadic=None;rest_pack=None;result=Rigid u} in
   let propagated=Inference.infer chain [tru;tru;bool] in
   assert (List.for_all (fun (_,ty) -> ty=ValueArgument bool) propagated.Inference.substitution);

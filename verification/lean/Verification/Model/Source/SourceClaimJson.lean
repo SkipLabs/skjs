@@ -17,7 +17,7 @@ inductive ClaimType where
   | array : ClaimType → ClaimType
   /-- Binders, receiver, parameters, rest element and result. -/
   | scheme : List (String × Option ClaimType) → ClaimType → List ClaimType → Option ClaimType →
-      ClaimType → ClaimType
+      ClaimType → CallEffects.Effect → ClaimType
   | unavailable : String → ClaimType
   deriving Repr, BEq, Inhabited
 instance : Coe (List Nat) ClaimType := ⟨ClaimType.labels⟩
@@ -27,13 +27,13 @@ private partial def ClaimType.toJson : ClaimType → Json
   | .union ts => Json.mkObj [("union", Lean.toJson (ts.map ClaimType.toJson))]
   | .array e => Json.mkObj [("array", e.toJson)]
   | .param name => Json.mkObj [("param", Lean.toJson name)]
-  | .scheme typeParams receiver params rest result => Json.mkObj [("scheme", Json.mkObj [
+  | .scheme typeParams receiver params rest result effect => Json.mkObj [("scheme", Json.mkObj [
       ("typeParams", Lean.toJson (typeParams.map fun p => Json.mkObj [
         ("name", Lean.toJson p.1), ("bound", p.2.map ClaimType.toJson |>.getD Json.null)])),
       ("this", ClaimType.toJson receiver),
       ("params", Lean.toJson (params.map ClaimType.toJson)),
       ("rest", rest.map ClaimType.toJson |>.getD Json.null),
-      ("result", ClaimType.toJson result)])]
+      ("result", ClaimType.toJson result), ("effect", Lean.toJson effect)])]
   | .unavailable reason => Json.mkObj [("unavailable", Lean.toJson reason)]
 
 instance : ToJson ClaimType where
@@ -55,7 +55,7 @@ private partial def ClaimType.fromJson (j : Json) : Except String ClaimType :=
       return .array (← ClaimType.fromJson e)
     if let .ok s := j.getObjVal? "scheme" then
       CellClaims.fieldsExactly j ["scheme"]
-      CellClaims.fieldsExactly s ["typeParams", "this", "params", "rest", "result"]
+      CellClaims.fieldsExactly s ["typeParams", "this", "params", "rest", "result", "effect"]
       let typeParams ← (← jArr s "typeParams").mapM fun p => do
         CellClaims.fieldsExactly p ["name", "bound"]
         let name ← jStr (← jField p "name")
@@ -68,6 +68,7 @@ private partial def ClaimType.fromJson (j : Json) : Except String ClaimType :=
       let rest ← jField s "rest"
       let rest ← if rest == .null then pure none else some <$> ClaimType.fromJson rest
       return .scheme typeParams receiver params rest (← ClaimType.fromJson (← jField s "result"))
+        (← Lean.fromJson? (← jField s "effect"))
     let name ← jStr (← jField j "param")
     if j != Json.mkObj [("param", Lean.toJson name)] || name.isEmpty then
       throw "invalid rigid parameter claim"
@@ -292,20 +293,20 @@ private partial def groundIn (T : SourceTypes.Table) :
       let array := SourceTypes.arrayOf T (SourceTypes.label T store) false
       let T := SourceTypes.intern T array
       pure (T, [SourceTypes.label T array])
-  | .scheme [] rc ps rest r => do
+  | .scheme [] rc ps rest r effect => do
       let (T, rc) ← groundIn T rc
       let (T, ps) ← ps.foldlM (fun (T, acc) p => do
         let (T, a) ← groundIn T p
         pure (T, acc ++ [a])) (T, [])
       let (T, r) ← groundIn T r
       let (T, clause) ← match rest with
-        | none => pure (T, PositiveNormalization.Clause.arrs [⟨rc, ps, r, .unrestricted⟩] [])
+        | none => pure (T, PositiveNormalization.Clause.arrs [⟨rc, ps, r, effect⟩] [])
         | some e => do
           -- A rest's type is the pack of any number of actuals at its element.
           let (T, E) ← groundIn T e
           let pack := PositiveNormalization.Clause.pack ⟨[], [], some E, false, true⟩ []
           let T := SourceTypes.intern T pack
-          pure (T, PositiveNormalization.Clause.arrs [] [⟨rc, (ps, [SourceTypes.label T pack]), r, .unrestricted⟩])
+          pure (T, PositiveNormalization.Clause.arrs [] [⟨rc, (ps, [SourceTypes.label T pack]), r, effect⟩])
       let T := SourceTypes.intern T clause
       pure (T, [SourceTypes.label T clause])
   | .param name => throw s!"still the rigid parameter '{name}'"
@@ -325,10 +326,10 @@ private partial def subst (σ : List (String × ClaimType)) : ClaimType → Clai
   | .array e => .array (subst σ e)
   | .union ts => .union (ts.map (subst σ))
   | .param name => (σ.lookup name).getD (.param name)
-  | .scheme tps rc ps rest r =>
+  | .scheme tps rc ps rest r effect =>
       let inner := σ.filter fun q => !(tps.map Prod.fst).contains q.1
       .scheme (tps.map fun q => (q.1, q.2.map (subst inner))) (subst inner rc) (ps.map (subst inner))
-        (rest.map (subst inner)) (subst inner r)
+        (rest.map (subst inner)) (subst inner r) effect
   | c => c
 
 /-- Explicit type arguments are a requirement on a call's instance: the call
@@ -490,18 +491,18 @@ private partial def groundT : ClaimType → SchemeM (List Nat)
     let store ← internS (.list ⟨[], [], some E, false, true⟩ [])
     let (T, _) ← get
     pure [← internS (SourceTypes.arrayOf T store false)]
-  | .scheme [] rc ps rest r => do
+  | .scheme [] rc ps rest r effect => do
     let rc ← groundT rc
     let ps ← ps.mapM groundT
     let r ← groundT r
     match rest with
-    | none => pure [← internS (.arrs [⟨rc, ps, r, .unrestricted⟩] [])]
+    | none => pure [← internS (.arrs [⟨rc, ps, r, effect⟩] [])]
     | some e => do
       let E ← groundT e
       let pack ← internS (.pack ⟨[], [], some E, false, true⟩ [])
-      pure [← internS (.arrs [] [⟨rc, (ps, [pack]), r, .unrestricted⟩])]
-  | .scheme tps rc ps rest r => do
-    return [(← schemeRowOf (.scheme tps rc ps rest r)).1]
+      pure [← internS (.arrs [] [⟨rc, (ps, [pack]), r, effect⟩])]
+  | .scheme tps rc ps rest r effect => do
+    return [(← schemeRowOf (.scheme tps rc ps rest r effect)).1]
   | .param name => throw s!"the rigid parameter '{name}' is not in scope"
   | .unavailable reason => throw reason
 
@@ -510,7 +511,7 @@ private partial def mentions (names : List String) : ClaimType → Bool
   | .param n => names.contains n
   | .union ts => ts.any (mentions names)
   | .array e => mentions names e
-  | .scheme tps rc ps rest r =>
+  | .scheme tps rc ps rest r effect =>
     let names := names.filter fun n => !(tps.map Prod.fst).contains n
     tps.any (fun q => q.2.any (mentions names)) || mentions names rc || ps.any (mentions names) ||
       rest.any (mentions names) || mentions names r
@@ -528,7 +529,7 @@ generic unit's is: its bound reads a binder, which the scheme's bounds do not,
 so the meet alone states it. Returns the row and what each binder is read as. -/
 private partial def schemeRowOf (t : ClaimType) : SchemeM (Nat × List (String × Nat)) := do
   if let some (_, l, rows) := (← get).2.find? (·.1 == t) then return (l, rows)
-  let .scheme tps rc ps rest r := t | throw "not a scheme"
+  let .scheme tps rc ps rest r effect := t | throw "not a scheme"
   let names := tps.map Prod.fst
   let (T, reg) ← get
   let params := tps.zipIdx.map fun ((n, _), i) => (n, T.length + i)
@@ -565,11 +566,11 @@ private partial def schemeRowOf (t : ClaimType) : SchemeM (Nat × List (String �
   let ps ← ps.mapM fun q => groundT (subst σ q)
   let r ← groundT (subst σ r)
   let (sigs, rests) ← match rest with
-    | none => pure ([⟨rc, ps, r, .unrestricted⟩], [])
+    | none => pure ([⟨rc, ps, r, effect⟩], [])
     | some e => do
       let E ← groundT (subst σ e)
       let pack ← internS (.pack ⟨[], [], some E, false, true⟩ [])
-      pure ([], [⟨rc, (ps, [pack]), r, .unrestricted⟩])
+      pure ([], [⟨rc, (ps, [pack]), r, effect⟩])
   let boundRows := bounds
   let (T, reg) ← get
   let label := T.length
@@ -607,7 +608,7 @@ def closureRows (T : SourceTypes.Table) (outer : List (String × Nat))
       let enclosing := scopeAt scopes outer gc.span
       let some e := c.expressions.find? (·.pos == gc.span)
         | throw "a generic closure has no claim"
-      let .scheme tps _ _ _ _ := e.type
+      let .scheme tps _ _ _ _ _ := e.type
         | throw "a generic closure is claimed at no scheme"
       if tps.map Prod.fst != gc.binders.map (·.name) then
         throw "a generic closure's claimed scheme names other binders than its own"
@@ -624,7 +625,7 @@ def closureRows (T : SourceTypes.Table) (outer : List (String × Nat))
       let some inst := e.instantiate | continue
       let some callee := c.expressions.find? (·.pos == q) | continue
       let σ := asClaims (scopeAt scopes outer q)
-      let .scheme tps rc ps rest r := subst σ callee.type | continue
+      let .scheme tps rc ps rest r effect := subst σ callee.type | continue
       if tps.isEmpty then continue
       let given := inst.map (·.name)
       if given.eraseDups.length != given.length || given.length != tps.length ||
@@ -636,7 +637,7 @@ def closureRows (T : SourceTypes.Table) (outer : List (String × Nat))
       -- clauses: the clause row an instance table maps the meet row to
       -- (`meetOk`), in the order it reads them.
       let args := inst.map fun i => (i.name, subst σp i.type)
-      let (sl, rows) ← schemeRowOf (.scheme tps rc ps rest r)
+      let (sl, rows) ← schemeRowOf (.scheme tps rc ps rest r effect)
       let binders := match (← get).1[sl]? with
         | some (.scheme bs ..) => bs
         | _ => []
@@ -663,7 +664,7 @@ def closureRows (T : SourceTypes.Table) (outer : List (String × Nat))
         | .ok (some l, st) => set st; pure (n, .labels [l])
         | _ => pure (n, U)
       instances := instances ++ [(q, .scheme [] (subst σi rc) (ps.map (subst σi))
-        (rest.map (subst σi)) (subst σi r))]
+        (rest.map (subst σi)) (subst σi r) effect)]
       named := named ++ [p]
     let go (at_ : Span) (t : ClaimType) : SchemeM ClaimType := do
       let t := ((instances.find? (·.1 == at_)).map (·.2)).getD t
@@ -750,7 +751,7 @@ private partial def validType (T : SourceTypes.Table) : ClaimType → Bool
   | .union ts => !ts.isEmpty && ts.all (validType T)
   | .array e => validType T e
   | .param name => !name.isEmpty
-  | .scheme typeParams receiver params rest result =>
+  | .scheme typeParams receiver params rest result effect =>
       -- With no binders of its own this is a callable that mentions an
       -- enclosing rigid parameter, such as a returned `() => T`.
       (typeParams.map Prod.fst).eraseDups.length == typeParams.length &&

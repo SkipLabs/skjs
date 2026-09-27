@@ -102,6 +102,7 @@ const claimedType = (t: unknown): boolean =>
         ("array" in t && claimedType(t.array)) ||
         (isList(t.union) && t.union.every(claimedType)) ||
         (isRecord(t.scheme) &&
+          (t.scheme.effect === "unrestricted" || t.scheme.effect === "preservesInputHeap") &&
           isList(t.scheme.typeParams) &&
           t.scheme.typeParams.every(
             (p) =>
