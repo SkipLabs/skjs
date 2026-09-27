@@ -56,6 +56,7 @@ cp target/host/dev/skjs target/host/dev/skjs.<label>
 
 ## Key Conventions
 
+- **Utility justifies complexity**: Prefer simple support for useful programs over disproportionate machinery for rarely useful corner cases. A deliberate restriction is acceptable when it is documented and enforced, including assumptions on external code. Never ignore behavior of accepted code or erase a contract to avoid the work. See the verifier's [design principles](verification/DESIGN.md#principles) for the semantic boundary.
 - **Push permission**: Always ask the user for explicit permission before each push. Commit, integration, or PR preparation requests do not authorize pushing. A readiness question such as "Ready to push?" is not permission; report readiness and ask before running the push. Do not reuse approval from an earlier push.
 - **Green commits**: Every intermediate commit must pass `make test-in-docker`
 - **SKJS is a typechecker, not a runtime**: Tests exercise type-checking only — no `console.log()` calls or function invocations

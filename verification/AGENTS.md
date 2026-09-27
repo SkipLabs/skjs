@@ -169,6 +169,21 @@ for every extracted function. Preserve this by construction:
 
 ## Source and host soundness boundaries
 
+### Engineering trade-offs
+
+Prefer a simple, useful language over support for every JavaScript corner case.
+Do not add substantial machinery for behavior rarely useful in real programs
+unless its utility justifies the cost. An explicit, enforced restriction is an
+acceptable design decision; completeness for all of TypeScript is not the goal.
+Choose the restriction by the behavior it excludes, not by a particular failing
+example. Document it in DESIGN.md, enforce it at the source/semantic boundary,
+and state the same requirement for external code where relevant. Keep a small
+control showing that excluded behavior cannot silently enter the admitted
+fragment. Do not erase a contract or ignore a possible runtime action: a
+restriction simplifies the language, not the meaning of an accepted program.
+Record a motivating ordinary program that remains blocked as unfinished work,
+not as a corner case merely because implementing it is difficult.
+
 The calculus theorem does not prove that a source annotation was interpreted
 faithfully or that a native library meets its assumed contract. These are
 separate review obligations, even when every Lean proof and suite passes.

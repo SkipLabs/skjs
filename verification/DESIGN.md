@@ -29,6 +29,16 @@ finding about SKJS or about the pipeline, never a reason to weaken a rule.
 
 ## Principles
 
+**Utility justifies complexity.** Support ordinary, useful programs well;
+support for every JavaScript corner case is not an objective. When a rarely
+useful behavior would require disproportionate machinery, prefer a simple
+semantic restriction with a clear refusal. State the restriction explicitly,
+enforce it, and require external code to respect it wherever the result relies
+on that assumption. This is a choice of admitted language, not permission to
+ignore behavior of an admitted program or erase a difficult contract. The
+ordinary-array construction restriction is one such trade-off. A motivating
+ordinary program is not a corner case merely because its implementation is hard.
+
 **Soundness is no wrong values.** An accepted unit, run in any environment
 meeting its inputs, evaluates to a value of its declared type, takes a step,
 or throws a value: it never gets stuck and never produces a value outside its
