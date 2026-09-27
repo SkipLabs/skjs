@@ -7,6 +7,7 @@ namespace Verification.Model.Purity
 operations. These are pure: unlike calls they must not discard cell facts. -/
 def pureTerm : Tm → Bool
   | .var _ => true
+  | .letE a b => pureTerm a && pureTerm b
   | .test _ a => pureTerm a
   | .ite c t e => pureTerm c && pureTerm t && pureTerm e
   | .arith _ a b => pureTerm a && pureTerm b
@@ -15,6 +16,16 @@ def pureTerm : Tm → Bool
   gives a number: it changes no heap. -/
   | .lenOf a => pureTerm a
   | t => isVal t
+
+/-- Immutable binding substitutes a pure value without introducing effects. -/
+theorem pure_subst {t a : Tm} {j : Nat}
+    (ht : pureTerm t = true) (ha : pureTerm a = true) :
+    pureTerm (subst j a t) = true := by
+  induction t using Tm.induct generalizing j <;> simp_all [pureTerm, isVal, subst]
+  case var i =>
+    split
+    · exact ha
+    · split <;> rfl
 
 /-- Purity is closed under actual reduction and rules out every heap change.
 Stored closure bodies need not be pure: observing an object does not invoke it. -/
@@ -25,16 +36,19 @@ theorem pure_step {h t h' t'} (hs : Step h t h' t') (hp : pureTerm t = true) :
   case arithV hb =>
     rcases (binop_result hb).2.2 with rfl | rfl | ⟨_, rfl⟩ | ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> rfl
   case arithThrow => rfl
+  case letV => exact pure_subst hp.2 hp.1
 
 /-- Substituting values for all free variables preserves purity. The graph
 machine's environment is total, including its default slot. -/
-theorem pure_instantiate_values {t : Tm} {ρ : Env}
+theorem pure_instantiate_values {t : Tm} {ρ : Env} {d : Nat}
     (hp : pureTerm t = true) (he : ∀ i, isVal (ρ i) = true) :
-    pureTerm (instantiate 0 ρ t) = true := by
-  induction t using Tm.induct <;> simp_all [pureTerm, isVal, instantiate]
+    pureTerm (instantiate d ρ t) = true := by
+  induction t using Tm.induct generalizing d <;> simp_all [pureTerm, isVal, instantiate]
   case var i =>
-    have hv := he i
-    cases h : ρ i <;> simp_all [pureTerm, isVal]
+    split
+    · rfl
+    · have hv := he (i-d)
+      cases h : ρ (i-d) <;> simp_all [pureTerm, isVal]
 
 theorem pure_value {v : Tm} (hv : isVal v = true) : pureTerm v = true := by
   cases v <;> simp_all [pureTerm, isVal]

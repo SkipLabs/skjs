@@ -97,7 +97,7 @@ theorem sound {G : NormalGraph ι} {Γ t A ρ n W h}
       n W h (instantiate 0 ρ t) := by
   simp only [check, Bool.or_eq_true] at hc
   rcases hc with hp | hc
-  · exact CallEffects.pure_safe (.term (HeapExpressionRules.pure_instantiate hp hscope he)) hs
+  · exact CallEffects.pure_safe (.term (HeapExpressionRules.pure_instantiate (d := 0) hp hscope he)) hs
   · split at hc
     · rename_i t fld i
       simp only [Option.any_eq_true] at hc

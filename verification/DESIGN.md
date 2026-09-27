@@ -1160,7 +1160,8 @@ positive sources as the targets. The work is split by semantic obligation:
    handlers because a throwing operation has no normal-return postcondition;
    pure graphs also retain their operational proof, including pure handlers.
    Fixed calls consume the selected qualified signature, including omitted
-   arguments and result weakening. Nested expression composition remains incomplete.
+   arguments and result weakening. Pure immutable lets compose by substitution,
+   covering coalescing callbacks; nested heap operations remain incomplete.
    Fixed and variadic signatures, including scheme and method paths, now use
    one required per-signature effect. Mapping, substitution, normalization,
    coverage and certificate checking retain and justify it. Pipeline controls

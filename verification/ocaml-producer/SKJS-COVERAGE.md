@@ -4,20 +4,20 @@ How much of what SKJS accepts in its own test suite the pipeline
 (`check.mts`: parser → OCaml producer → Lean search and check) verifies, what
 stops the rest, and where the two disagree because SKJS is wrong.
 
-Measurement checkpoint: September 27, 2026, after explicit-comparator sorting,
-sparse-array contracts and the ordinary-array construction invariant
+Measurement checkpoint: September 27, 2026, after certified callback effects,
+qualified-call composition and pure immutable-let composition
 (full census with SKJS confirmation).
 
-**2,399 of 2,674 SKJS-accepted units verify (89.7%); 1,776 of 2,026
-accepted functions (87.7%).** 285 of the 377 files with an accepted unit
+**2,400 of 2,674 SKJS-accepted units verify (89.8%); 1,777 of 2,026
+accepted functions (87.7%).** 286 of the 377 files with an accepted unit
 verify entirely. There are 73 principled refusals, 10 registered SKJS-unsound
-units, 184 gaps and 8 refusals not explained by the automatic classifier.
+units, 184 gaps and 7 refusals not explained by the automatic classifier.
 
-Since that measured checkpoint, certified callback-effect overloads restore the
-curated `array-methods`, `array-library`, `array-generic-name` and
-`closure-contextual-parameters` cases. Returned, bound and forwarding callbacks
-are covered, as are required field reads and fresh allocation. The full census has not yet been remeasured;
-the counts and census-specific outcomes below describe the checkpoint.
+Certified callback-effect overloads restore the curated `array-methods`,
+`array-library`, `array-generic-name` and `closure-contextual-parameters` cases.
+Returned, bound and forwarding callbacks are covered, as are required field
+reads, fresh allocation and pure coalescing. The census gains the unchanged
+`testMapReturnsArray`; no previously verified unit is lost.
 
 The user-approved semantics excludes custom array construction, including in
 external code: arrays own no `constructor`, and standard constructor/species
@@ -29,10 +29,10 @@ now enforce the own-key exclusion. Under that explicit host assumption,
 again. No previously verified unit is lost. See the
 [native boundary](../DESIGN.md#exact-contracts-and-native-effects).
 
-`testMapReturnsArray` now verifies unchanged in a targeted census run (marker-selected;
-the full SKJS-confirmed census below has not yet been rerun).
-`mapArr` and `testMapCallback` also reach their original obligations again,
-but require a distinction: `mapArr<T, U>(arr: T[], f: (x: T) => U): U[]`
+`testMapReturnsArray` verifies unchanged in the full census.
+`mapArr` and `testMapCallback` still fail at the native call: an arbitrary
+one-argument callback supplies no contract for the three actuals `map` passes.
+There is also an independent density problem: `mapArr<T, U>(arr: T[], f: (x: T) => U): U[]`
 promises a dense result for an arbitrary callback. That contract is false.
 Calling the unchanged function with `xs = [1, 2, 3]` and a callback that sets
 `xs.length = 0` produces length 3 with only index 0 present. Neither custom
@@ -42,7 +42,7 @@ would change its written contract and cannot silently repair it.
 that invalid general declaration. The current classifier still includes these
 rows among gaps; that classification is not a completeness claim.
 
-The eight automatic “unexplained” rows have inspected causes. Seven are
+The seven automatic “unexplained” rows have inspected causes. They are
 `testBasicArrayRefinement`, `testStringArrayRefinement`, `testMultipleUnion`,
 `testNestedRefinement`, `testEarlyReturn`, `testCombinedWithTypeof` in
 `array-isarray-refinement.ts`, and `testNarrowToArray` in
@@ -51,7 +51,6 @@ The eight automatic “unexplained” rows have inspected causes. Seven are
 permits holes; the source annotation still requires density. This is an
 unnecessarily restrictive contract for unknown elements, not evidence that
 the programs are unsafe. The curated `isarray-record-array` records the same gap.
-The eighth, `testMapReturnsArray`, is recovered by certified effects as noted above.
 The original boundary repair's recursive Promise contracts and the
 Promise-dependent framework target remain open; no erased contract is restored.
 
@@ -65,6 +64,9 @@ Rerun:
 ```sh
 node verification/ocaml-producer/skjs-coverage.mts --skjs --width 3   # about 220 s
 ```
+
+An explicitly requested `--skjs` run aborts if checker confirmation cannot run;
+it never falls back to markers or publishes an unconfirmed census.
 
 It writes [skjs-coverage.json](skjs-coverage.json) (summary, one row per unit,
 one line per row, so a rerun's movement is a line diff). `--skjs` runs SKJS in

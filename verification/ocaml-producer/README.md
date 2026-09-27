@@ -91,7 +91,7 @@ ordinary TypeScript annotation does not supply such a guarantee. Calls use the
 certified type, without requiring the callback body at the call site. The current
 body check composes pure expressions, required field reads, fresh allocations and
 fixed calls consuming qualified signatures. Other call forms and nested
-short-circuit/coalescing terms still need composition;
+short-circuit/coalescing terms with heap operations still need composition;
 the producer keeps their proposals conservative. Signature transport, generic substitution and
 `.bind` retain effects. Native `map` and `find`/`findIndex` consume them through
 ordinary overloads, restoring `array-methods`, `array-library` and

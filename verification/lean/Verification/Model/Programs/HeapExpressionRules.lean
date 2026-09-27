@@ -733,14 +733,17 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i j fld R A ρ n
 
 export Purity (pureTerm pure_step)
 
-theorem pure_instantiate {G : NormalGraph ι} {Γ t ρ n W}
-    (hp : pureTerm t = true) (hc : checkScope Γ.length t = true)
-    (he : EnvOk G Γ ρ n W) : pureTerm (instantiate 0 ρ t) = true := by
-  induction t using Tm.induct <;> simp_all [pureTerm,isVal,instantiate,checkScope]
+theorem pure_instantiate {G : NormalGraph ι} {Γ t ρ n W} {d : Nat}
+    (hp : pureTerm t = true) (hc : checkScope (Γ.length + d) t = true)
+    (he : EnvOk G Γ ρ n W) : pureTerm (instantiate d ρ t) = true := by
+  induction t using Tm.induct generalizing d <;>
+    simp_all [pureTerm,isVal,instantiate,checkScope,Nat.add_assoc]
   case var i =>
-    have hi : i < Γ.length := by omega
-    have hv := (meaning_value (he.2 i Γ[i] (List.getElem?_eq_some_iff.mpr ⟨hi,rfl⟩))).1
-    cases h : ρ i <;> simp_all [pureTerm,isVal]
+    split
+    · rfl
+    · have hi : i - d < Γ.length := by omega
+      have hv := (meaning_value (he.2 (i-d) Γ[i-d] (List.getElem?_eq_some_iff.mpr ⟨hi,rfl⟩))).1
+      cases h : ρ (i-d) <;> simp_all [pureTerm,isVal]
 
 /-- Any heap predicate can be framed across a checked pure computation. -/
 theorem pure_frame {T Q} : ∀ {n W h t}, Safe T n W h t → pureTerm t = true →
@@ -772,7 +775,7 @@ theorem pure_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k t A ρ n W h}
       (fun h' v => HeapKnowledge.Holds (pureOutput k t) (push v ρ) h')
       n W h (instantiate 0 ρ t) := by
   have hs := ht.sound n W h ρ he hw hh
-  have hpClosed := pure_instantiate hp hc he
+  have hpClosed := pure_instantiate (d := 0) hp hc he
   cases t <;> simp only [pureTerm,isVal] at hp
   all_goals try contradiction
   case var i =>

@@ -3297,8 +3297,12 @@ Fixed calls use `ExpressionEffects.selectedCall_sound`: the selected application
 rule must carry `preservesInputHeap`, and its operands must already be values.
 The proof consumes `CallEffects.call_safe`, including padded missing arguments;
 a result-subtyping derivation retains the same postcondition. It never inspects
-the callee's implementation. Other call forms and nested expression composition
-remain conservative.
+the callee's implementation. Pure immutable lets also compose: $\mathsf{Pure}(a) \land
+\mathsf{Pure}(b)$ implies $\mathsf{Pure}(\mathsf{let}\ x=a\ \mathsf{in}\ b)$.
+`Purity.pure_subst` proves preservation under the value substitution at the
+binding step; instantiation respects bound variables at every binder depth.
+This covers the nested lets introduced by pure coalescing and logical operands.
+Other call forms and nested heap operations remain conservative.
 
 `PromiseWith.combine` retains both premises' effects when combining result
 guarantees (the effect meet, so either premise can supply heap preservation). Both promises concern the same admitted calls; determinism gives

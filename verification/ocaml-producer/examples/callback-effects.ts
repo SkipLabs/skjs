@@ -37,3 +37,8 @@ export function callingCallback(xs: number[]): number[] {
   ): number => n + delta;
   return xs.map((n: number) => add(n));
 }
+
+// Coalescing introduces an immutable let in the lowered body, including its binder.
+export function coalescingCallback(xs: (number | undefined)[]): number[] {
+  return xs.map((value?: number): number => value ?? 0);
+}
