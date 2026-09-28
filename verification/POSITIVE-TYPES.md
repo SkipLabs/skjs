@@ -1029,31 +1029,31 @@ $\Delta;L,S\vdash(Q;\vec C)\Rightarrow D$:
 $$
 \frac{(Q_0;\vec A)\to B\in L\quad\Delta(Q,Q_0)\quad\Delta(\vec C,\vec A)\quad
       (B=\bot\lor\Delta(B,D))}
-     {\Delta;L,S\vdash(Q;\vec C)\Rightarrow D}\ \textsc{source}
+     {\Delta;L,S\vdash(Q;\vec C)\Rightarrow D}\ \textsf{source}
 \qquad
 \frac{s\in S\ \text{takes}\ (Q;\vec C)\ \text{into its rest, result within}\ D}
-     {\Delta;L,S\vdash(Q;\vec C)\Rightarrow D}\ \textsc{rest}
+     {\Delta;L,S\vdash(Q;\vec C)\Rightarrow D}\ \textsf{rest}
 $$
 
 $$
-\frac{}{\Delta;L,S\vdash(\bot;\vec C)\Rightarrow D}\ \textsc{emptyRecv}
+\frac{}{\Delta;L,S\vdash(\bot;\vec C)\Rightarrow D}\ \textsf{emptyRecv}
 \qquad
-\frac{\bot\in\vec C}{\Delta;L,S\vdash(Q;\vec C)\Rightarrow D}\ \textsc{empty}
+\frac{\bot\in\vec C}{\Delta;L,S\vdash(Q;\vec C)\Rightarrow D}\ \textsf{empty}
 $$
 
 $$
 \frac{\Delta;L,S\vdash(Q;\vec C\,A\,\vec C')\Rightarrow D\quad
       \Delta;L,S\vdash(Q;\vec C\,A'\,\vec C')\Rightarrow D}
-     {\Delta;L,S\vdash(Q;\vec C\,(A\lor A')\,\vec C')\Rightarrow D}\ \textsc{union}
+     {\Delta;L,S\vdash(Q;\vec C\,(A\lor A')\,\vec C')\Rightarrow D}\ \textsf{union}
 \qquad
 \frac{\Delta;L,S\vdash(Q;\vec C)\Rightarrow D\quad\Delta;L,S\vdash(Q';\vec C)\Rightarrow D}
-     {\Delta;L,S\vdash(Q\lor Q';\vec C)\Rightarrow D}\ \textsc{recvUnion}
+     {\Delta;L,S\vdash(Q\lor Q';\vec C)\Rightarrow D}\ \textsf{recvUnion}
 $$
 
 $$
 \frac{\Delta;L,S\vdash(Q;\vec C)\Rightarrow B\quad\Delta;L,S\vdash(Q;\vec C)\Rightarrow B'\quad
       \forall i\in B,k\in B'.\;\mathsf{compatible}_G(i,k)\Rightarrow\Delta(\{i\},D)}
-     {\Delta;L,S\vdash(Q;\vec C)\Rightarrow D}\ \textsc{combine}
+     {\Delta;L,S\vdash(Q;\vec C)\Rightarrow D}\ \textsf{combine}
 $$
 
 `union` splits one parameter's union, `recvUnion` the receiver's. `combine`
@@ -1165,7 +1165,7 @@ $$
 \frac{i=(\vec p;\Sigma;\beta;\Sigma_\ldots)\quad j=(\vec p;\Sigma';\beta';\Sigma'_\ldots)\quad
       \beta\subseteq\beta'\quad
       \Delta\vdash\mathsf{arrs}(\Sigma;\Sigma_\ldots)\sqsubseteq\mathsf{arrs}(\Sigma';\Sigma'_\ldots)}
-     {\Delta\vdash i\sqsubseteq_{\forall}j}\ \textsc{quantified}
+     {\Delta\vdash i\sqsubseteq_{\forall}j}\ \textsf{quantified}
 $$
 
 It is the subtyping rule for quantified signatures under the restriction of
@@ -1293,7 +1293,7 @@ $$
       G(j)\doteq\mathsf{meetLists}(G(U),\vec c[\kappa])}
      {\llbracket p\sqcap\vec c\rrbracket^{\eta_L}
       =\llbracket U\rrbracket^{\eta_R}\cap\llbracket\vec c[\kappa]\rrbracket^{\eta_R}
-      =\llbracket j\rrbracket^{\eta_R}}\ \textsc{meet-image}
+      =\llbracket j\rrbracket^{\eta_R}}\ \textsf{meet-image}
 $$
 
 Neither a meet row nor its image has argument lists (its image is of value
@@ -1337,7 +1337,7 @@ T\equiv_G\mathsf{arrs}(L;M)\quad
 \forall\tau\in L.\;\exists\sigma\in\Sigma.\;\tau\doteq\sigma[\kappa_0]\quad
 \forall\tau\in M.\;\exists\sigma\in\Sigma_\ldots.\;\tau\doteq\sigma[\kappa_0]
 \end{array}}
-     {G\vdash\{i\}\le T}\ \textsc{inst}
+     {G\vdash\{i\}\le T}\ \textsf{inst}
 $$
 
 Here $\tau\doteq\sigma'$ when the two have the same arity and each type of
@@ -1381,7 +1381,7 @@ hold copies anyway. With the empty context each row means its image:
 $$
 \frac{\text{a checked table}\quad
       \forall l\in S.\;(l,\emptyset,U_l)\ \text{its entry for}\ l\ \land\ U_l\subseteq T}
-     {G\vdash S\le T}\ \textsc{table}
+     {G\vdash S\le T}\ \textsf{table}
 $$
 
 A type below a scheme's signatures with the binders opaque is below the
@@ -1392,7 +1392,7 @@ $$
       U\equiv_G\mathsf{arrs}(\Sigma;\Sigma_\ldots)\quad
       \forall l\in S.\;l\in D\land V(l)\cap\vec p=\emptyset\quad
       G\vdash S\le U}
-     {G\vdash S\le\{j\}}\ \textsc{gen}
+     {G\vdash S\le\{j\}}\ \textsf{gen}
 $$
 
 `gen` is sound because $S$ means the same at any two assignments that differ

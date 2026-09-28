@@ -469,7 +469,7 @@ it ([`Sub.inst`](POSITIVE-TYPES.md#instances-of-a-scheme-row)):
 
 $$
 \frac{\Gamma(i)=O\quad\operatorname{member}_G(O,k)=m\quad [j]\in m.\mathsf{schemes}}
-     {\Gamma\vdash_G\mathsf{let}\ f=i.k\ \mathsf{in}\ \mathsf{bound}(f,i,[]):[j]}\ \textsc{bind-scheme}
+     {\Gamma\vdash_G\mathsf{let}\ f=i.k\ \mathsf{in}\ \mathsf{bound}(f,i,[]):[j]}\ \textsf{bind-scheme}
 $$
 
 The certificate is `bindMember` with no proofs, at a type of no clauses, the
@@ -809,7 +809,7 @@ body, a condition's operands) alike, is the length of its store:
 $$
 \frac{\Gamma\vdash_G a:A\quad \mathit{store}_G(A)=S\quad
       \Gamma\vdash_G a.\mathtt{[]}:S\quad S\equiv_G\mathsf{list}(\tau)\quad N\equiv_G\mathsf{num}}
-     {\Gamma\vdash_G\llbracket a.\mathit{length}\rrbracket=\mathsf{lenOf}\;(a.\mathtt{[]}):N}\ \textsc{len}
+     {\Gamma\vdash_G\llbracket a.\mathit{length}\rrbracket=\mathsf{lenOf}\;(a.\mathtt{[]}):N}\ \textsf{len}
 $$
 
 A write is typed only at an index no
@@ -820,7 +820,7 @@ $$
 \frac{\Gamma\vdash_G a:L\quad L\equiv_G\mathsf{list}(\tau)\quad
       \Gamma\vdash_G i:\mathsf{numLit}(k)\quad \tau(k)=A\quad
       k\le|\vec R_\tau|\quad \tau\ \text{writable}\quad \Gamma\vdash_G v:A}
-     {\Gamma\vdash_G a[i]=v:L}\ \textsc{setElem}
+     {\Gamma\vdash_G a[i]=v:L}\ \textsf{setElem}
 $$
 
 Writes at a greater index, or at one no contract names, and reads by a
@@ -849,11 +849,11 @@ end or at a key that is not an index, `undefined`, whatever the literal:
 
 $$
 \frac{\Gamma\vdash_G a:S\quad\operatorname{Answers}_G(S,\mathsf{isStr},\mathsf{true})\quad N\equiv_G\mathsf{num}}
-     {\Gamma\vdash_G\mathsf{lenOf}\;a:N}\ \textsc{lenStr}
+     {\Gamma\vdash_G\mathsf{lenOf}\;a:N}\ \textsf{lenStr}
 \qquad
 \frac{\Gamma\vdash_G a:S\quad\operatorname{Answers}_G(S,\mathsf{isStr},\mathsf{true})\quad
       \Gamma\vdash_G i:I\quad\operatorname{Answers}_G(I,\mathsf{isNum},\mathsf{true})}
-     {\Gamma\vdash_G\mathsf{elemAt}\;a\;i:\mathsf{str}\cup\mathsf{undefined}}\ \textsc{elemStr}
+     {\Gamma\vdash_G\mathsf{elemAt}\;a\;i:\mathsf{str}\cup\mathsf{undefined}}\ \textsf{elemStr}
 $$
 
 Any other member of a primitive is read through its wrapper's prototype. The
@@ -914,7 +914,7 @@ Boolean literals:
 $$
 \frac{\Gamma\vdash_G a:A\quad\Gamma\vdash_G b:B\quad
       \operatorname{Operands}_G(op,A,B,r)\quad\operatorname{covers}_G(N,r)}
-     {\Gamma\vdash_G a\mathbin{op}b:N}\ \textsc{arith}
+     {\Gamma\vdash_G a\mathbin{op}b:N}\ \textsf{arith}
 $$
 
 The result is never a singleton, since its value is not typed. `opResult_sound`
@@ -1346,7 +1346,7 @@ outcome safety admits ([Design](DESIGN.md#throws)). Its operand is typed at a
 type of its own, since it runs first:
 
 $$
-\frac{\Gamma\vdash_G a:A}{\Gamma\vdash_G\mathsf{throw}\ a:B}\ \textsc{throw}
+\frac{\Gamma\vdash_G a:A}{\Gamma\vdash_G\mathsf{throw}\ a:B}\ \textsf{throw}
 $$
 
 The soundness case composes `a`'s safety with the throw's context rule
@@ -1365,7 +1365,7 @@ pair of the operands' clauses gives ([Design](DESIGN.md#object-literals)):
 $$
 \frac{\Gamma\vdash_G a:A\quad\Gamma\vdash_G b:B\quad
       \operatorname{MergeOk}_G(\delta,A,B,R)}
-     {\Gamma\vdash_G\mathsf{merge}_\delta(a,b):R}\ \textsc{merge}
+     {\Gamma\vdash_G\mathsf{merge}_\delta(a,b):R}\ \textsf{merge}
 $$
 
 $\operatorname{MergeOk}_G(\delta,A,B,R)$ holds where $A$ and $B$ are of clause
@@ -1439,7 +1439,7 @@ $$
 with the value of $e$ at the claim of the write expression $W$, the one-key
 object at $\mathsf{Ref}(k{:}W;\ \mathsf{among}\,\{k\})$ and the merge at the
 record or dictionary `mergeResult` proposes, checked by
-[$\textsc{merge}$](#allocation-from-parts); the last node's slot map puts the
+[$\textsf{merge}$](#allocation-from-parts); the last node's slot map puts the
 merge's value in $x$'s slot. The value of the assignment is discarded: only a
 statement is lowered so. Ownership (`growSites`) is syntactic:
 
@@ -1470,7 +1470,7 @@ keys the model keeps for itself; at a number or symbol it is not lowered.
 
 `Object.assign(t, s_1, …, s_n)` copies each source onto its target as a
 spread copies, one $\mathsf{merge}_{[]}$ per source as soon as it is
-evaluated, checked by $\textsc{merge}$. Its target is a fresh literal, whose
+evaluated, checked by $\textsf{merge}$. Its target is a fresh literal, whose
 result is the call's value; or, for the statement `Object.assign(x, …);`
 with $\operatorname{Own}(x,s)$, the local, which holds the result from then
 on, as for a key-adding write (a source letting $x$ escape defeats
@@ -1532,7 +1532,7 @@ the thrown value's slot):
 $$
 \frac{\mathsf{top}\in\operatorname{expand}_G(T)\quad
       \operatorname{TargetOk}_G(C,\ T{:}\Gamma,\ \ell,\ \operatorname{handlerFacts}(K))}
-     {\operatorname{HandlerOk}_G(C,\Gamma,K,\ell)}\ \textsc{handler}
+     {\operatorname{HandlerOk}_G(C,\Gamma,K,\ell)}\ \textsf{handler}
 $$
 
 where $\Gamma$ and $K$ are the node's entry claims and facts. The machine
@@ -1719,7 +1719,7 @@ $$
 \frac{\forall a\in T_{\mathsf{isArray}}(A).\;a\in B\ \lor\ \forall c\in G(a).\;
          \mathsf{tag}(\mathsf{isArray},c)=\mathsf{false}\lor c\ \text{a record's}
        \qquad L\in B\qquad G(L)=[\mathsf{Ref}(;\sigma{:}S,\mathsf{proto}{:}P_{\mathcal R};\langle\mathsf{outside}\,N_{\mathcal R}\rangle)]}
-      {A\preceq_{\mathsf{isArray}=\mathsf{true}}B}\ \textsc{tag-array}
+      {A\preceq_{\mathsf{isArray}=\mathsf{true}}B}\ \textsf{tag-array}
 $$
 
   with $S$ a readonly store at a type holding `top`.
@@ -1738,7 +1738,7 @@ $$
 
 $$
 \frac{\mathsf{tagHolds}(t,v)=\mathsf{true}\ \Rightarrow\ v\in\llbracket c\rrbracket\quad c\in\operatorname{expand}_G(B)}
-     {A\preceq_{t=\mathsf{true}}B}\ \textsc{tag-member}
+     {A\preceq_{t=\mathsf{true}}B}\ \textsf{tag-member}
 \qquad t\in\{\mathsf{isStr},\mathsf{isNum},\mathsf{isBigint},\mathsf{isSymbol},\mathsf{isUndef},\mathsf{isNul},\mathsf{isBool},\mathsf{numEq}(b)_{b\neq\pm0},\mathsf{strEq}(s)\}
 $$
 
@@ -1749,7 +1749,7 @@ $$
 \frac{G\vdash A\ \text{plain}\quad
       \forall c\in\operatorname{expand}_G(F_{\mathsf{hasKey}(k),\mathsf{true}}(A)).\
       \exists d\in\operatorname{expand}_G(B).\ d\sqsubseteq c^{+k}}
-     {A\preceq_{\mathsf{hasKey}(k)=\mathsf{true}}B}\ \textsc{present-key}
+     {A\preceq_{\mathsf{hasKey}(k)=\mathsf{true}}B}\ \textsf{present-key}
 $$
 
 For the current primitive profile, null filtering gives:
@@ -2240,7 +2240,7 @@ read is
 $$
 \frac{\Gamma\vdash_G \mathsf{readAt}\,f\,x : C\quad x.f\mapsto R\in\Sigma\quad
       \mathsf{undefined}\notin R\quad T_{\mathsf{false}}^{\mathsf{isUndef}}(C)\le A}
-     {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow \mathsf{readAt}\,f\,x : A\dashv\Pi;\Sigma}\ \textsc{read-sliced}
+     {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow \mathsf{readAt}\,f\,x : A\dashv\Pi;\Sigma}\ \textsf{read-sliced}
 $$
 
 which is how `let x: T;` assigned an object on every path is read at $T$. None of them takes a premise about a cell's old contents, and the
@@ -2576,7 +2576,7 @@ included, reads it. This is $\alpha$-conversion, which changes no value:
 
 $$
 \frac{x\in\operatorname{dom}\Gamma\quad x'=x^{@l:c}\notin\operatorname{names}(\Gamma,S)\quad \Gamma\vdash_R\ \mathsf{const}\ x'=e;\ S[x'/x]}
-     {\Gamma\vdash_R\ \mathsf{const}\ x=e;\ S}\ \textsc{shadow}
+     {\Gamma\vdash_R\ \mathsf{const}\ x=e;\ S}\ \textsf{shadow}
 $$
 
 and likewise for `let` (a cell included), parameters, patterns, closure
@@ -2601,7 +2601,7 @@ is that value either way:
 
 $$
 \frac{\overline{x}\ \text{initialized}\quad \overline{x}\notin\operatorname{written}(S)\quad \Gamma\vdash_R\ \mathsf{const}\ \overline{x=e};\ S}
-     {\Gamma\vdash_R\ \mathsf{let}\ \overline{x=e};\ S}\ \textsc{let-const}
+     {\Gamma\vdash_R\ \mathsf{let}\ \overline{x=e};\ S}\ \textsf{let-const}
 $$
 
 So a tag test narrows such a binding as it narrows a `const`, and a `let`
@@ -3047,7 +3047,7 @@ length, claimed at the rest's span with the call's instance:
 $$
 \frac{\Gamma\vdash\_:A\quad A\le\mathsf{readonly}\ [\mathsf{unknown}?^k,\ldots T\sigma[\,]]\quad
       \Gamma\vdash p\Leftarrow(\mathtt{\%RestFrom{:}k\%}(\_){:}T\sigma[\,])\dashv\Delta}
-     {\Gamma\vdash[\ldots,\ldots p]\Leftarrow(\_{:}A)\dashv\ldots,\Delta}\ \textsc{rest-slice}
+     {\Gamma\vdash[\ldots,\ldots p]\Leftarrow(\_{:}A)\dashv\ldots,\Delta}\ \textsf{rest-slice}
 $$
 
 The parameter says nothing of the first $k$ positions, so a union of tuples
@@ -3159,7 +3159,7 @@ the way a function reads a module constant:
 
 $$
 \frac{\mathtt{const}\ C{:}K_C=\mathtt{ctor}\ldots\in I}
-     {\Gamma_I(C^{\mathit{self}})=\llbracket K_C\rrbracket}\ \textsc{class-self}
+     {\Gamma_I(C^{\mathit{self}})=\llbracket K_C\rrbracket}\ \textsf{class-self}
 $$
 
 The unit checks the class value against $K_C$ where it binds $C$, and nothing
@@ -3406,7 +3406,7 @@ $$
 \frac{\forall f\in F.\;\Gamma_M\vdash f\quad
       (I\neq[\,]\Rightarrow\Gamma_M\vdash I:\mathsf{undefined})\quad
       F\neq\emptyset\lor I\neq[\,]}
-     {\vdash M}\ \textsc{module}
+     {\vdash M}\ \textsf{module}
 $$
 
 where $\Gamma_M\vdash I:\mathsf{undefined}$ checks the initialization unit as
@@ -3453,7 +3453,7 @@ declaration states. These rules are assumptions a result is relative to:
 
 $$
 \frac{x\ \text{imported, declared at}\ T\ \text{with no binders}}
-     {\Gamma(x)=\llbracket T\rrbracket}\ \textsc{import}
+     {\Gamma(x)=\llbracket T\rrbracket}\ \textsf{import}
 \qquad
 \frac{\begin{array}{c}
 x\ \text{declared at}\ \forall\vec p\le\vec B.\,T\quad
@@ -3461,7 +3461,7 @@ x\ \text{declared at}\ \forall\vec p\le\vec B.\,T\quad
 \forall k.\;\vec U_k\ \text{ground},\ |\vec U_k|=|\vec p|,\quad
 \forall i.\;G\vdash\llbracket U_{k,i}\rrbracket\le\llbracket B_i[\vec p:=\vec U_k]\rrbracket
 \end{array}}
-{\Gamma(x)=\bigwedge_k\llbracket T[\vec p:=\vec U_k]\rrbracket}\ \textsc{instances}
+{\Gamma(x)=\bigwedge_k\llbracket T[\vec p:=\vec U_k]\rrbracket}\ \textsf{instances}
 $$
 
 where $\vec U_1,\ldots,\vec U_m$ are the type arguments the unit's calls of
@@ -3477,7 +3477,7 @@ exactly those; an implementation's own signature is not callable from outside:
 
 $$
 \frac{x\ \text{declared with overloads}\ S_1,\ldots,S_n\ (n>1),\ \text{none generic}}
-     {\Gamma(x)=\bigwedge_i\llbracket S_i\rrbracket}\ \textsc{overloads}
+     {\Gamma(x)=\bigwedge_i\llbracket S_i\rrbracket}\ \textsf{overloads}
 $$
 
 Each call is checked against the conjunction, so it is typed by any overload
@@ -3489,7 +3489,7 @@ import is. With $D$ the declarations TypeScript binds $x$ to:
 
 $$
 \frac{x\ \text{bound by ambient declarations}\ D\ \text{of the module}}
-     {\Gamma(x)=\llbracket\mathsf{type}(D)\rrbracket}\ \textsc{ambient}
+     {\Gamma(x)=\llbracket\mathsf{type}(D)\rrbracket}\ \textsf{ambient}
 $$
 
 where $\mathsf{type}(D)$ is what `import` and `overloads` read. `declare const
@@ -3513,7 +3513,7 @@ $$
       \text{every occurrence of}\ x\ \text{is some}\ x.m\ \text{or a callee}\qquad
       O_m\subseteq\mathsf{overloads}_I(m)\qquad
       C\subseteq\mathsf{calls}_I}
-     {\Gamma(x)=\llbracket\mathsf{sel}_{M,O,C}(I)\rrbracket}\ \textsc{global}
+     {\Gamma(x)=\llbracket\mathsf{sel}_{M,O,C}(I)\rrbracket}\ \textsf{global}
 \qquad
 \llbracket I\rrbracket\subseteq\llbracket\mathsf{sel}_{M,O,C}(I)\rrbracket .
 $$
@@ -3531,13 +3531,13 @@ module, and the environment file's constants are globals:
 $$
 \frac{x\ \text{imported from}\ s\ \text{bare}\qquad
       x\ \text{declared at}\ T\ \text{in}\ \mathsf{stub}(s)}
-     {\Gamma(x)=\llbracket T\rrbracket}\ \textsc{stub}
+     {\Gamma(x)=\llbracket T\rrbracket}\ \textsf{stub}
 \qquad
 \frac{\mathtt{declare\ const}\ x{:}\,I\in E}
-     {x\ \text{is a global variable annotated}\ I}\ \textsc{env}
+     {x\ \text{is a global variable annotated}\ I}\ \textsf{env}
 $$
 
-where $\textsc{env}$ feeds $\textsc{global}$.
+where $\textsf{env}$ feeds $\textsf{global}$.
 
 ### One row per application
 
@@ -3562,11 +3562,11 @@ row, records it, and lowers $D$'s equation at $\vec U$ with that row for the
 receiver, **from an empty visit** (`groundApplication`):
 
 $$
-\frac{\rho(D,\mathsf{key}(\vec U))=r}{\llbracket D\langle\vec U\rangle\rrbracket=[r]}\ \textsc{app}
+\frac{\rho(D,\mathsf{key}(\vec U))=r}{\llbracket D\langle\vec U\rangle\rrbracket=[r]}\ \textsf{app}
 \qquad
 \frac{\rho(D,\mathsf{key}(\vec U))\ \text{undefined}\quad
       |\mathsf{reach}(\vec U)|\le 32\quad r\ \text{fresh}}
-     {\rho(D,\mathsf{key}(\vec U)):=r\quad G(r):=\mathsf{lower}_\emptyset(\mathit{eq}_D[\vec U,\mathsf{self}:=r])}\ \textsc{app-new}
+     {\rho(D,\mathsf{key}(\vec U)):=r\quad G(r):=\mathsf{lower}_\emptyset(\mathit{eq}_D[\vec U,\mathsf{self}:=r])}\ \textsf{app-new}
 $$
 
 Every row of $D\langle\vec U\rangle$ is the lowering of one equation at one
@@ -3622,7 +3622,7 @@ parameter's bound $B$ through that one:
 
 $$
 \frac{p\ \text{a value binder}\quad B_p\ \text{ground}\quad G\vdash_c B_p\le B}
-     {p\ \text{establishes}\ B}\ \textsc{binder-bound}
+     {p\ \text{establishes}\ B}\ \textsf{binder-bound}
 $$
 
 #### Binders met with ground types
@@ -3635,18 +3635,18 @@ $$
 \frac{A_k=[p],\ p\ \text{a value binder}\qquad
       \forall i\ne k.\ A_i\ \text{of clause rows}}
      {\llbracket A_1\mathbin{\&}\cdots\mathbin{\&}A_n\rrbracket=
-      [\,p\sqcap\mathsf{meet}(A_{i\ne k})\,]}\ \textsc{binder-meet}
+      [\,p\sqcap\mathsf{meet}(A_{i\ne k})\,]}\ \textsf{binder-meet}
 \qquad
 \frac{\forall i.\ A_i\ \text{of clause rows}}
      {\llbracket A_1\mathbin{\&}\cdots\mathbin{\&}A_n\rrbracket=
-      [\,\mathsf{meet}(A_1,\ldots,A_n)\,]}\ \textsc{meet}
+      [\,\mathsf{meet}(A_1,\ldots,A_n)\,]}\ \textsf{meet}
 $$
 
 $$
 \frac{\vec p\ \text{the value binders among the}\ A_i\ \text{and the parameters of their meet rows},\ |\vec p|\ge 2\ \text{or a meet row among them}\qquad
       \vec c\ \text{the meet of the other operands' and those rows' clauses, or}\ \top}
      {\llbracket A_1\mathbin{\&}\cdots\mathbin{\&}A_n\rrbracket=
-      [\,p_1\sqcap p_2\cdots\sqcap\vec c\,]}\ \textsc{binders-meet}
+      [\,p_1\sqcap p_2\cdots\sqcap\vec c\,]}\ \textsf{binders-meet}
 $$
 
 where $\mathsf{meet}$ is the operands' clauses met pairwise and folded from
@@ -3852,7 +3852,7 @@ refused):
 $$
 \frac{\forall i.\ \llbracket R_i\rrbracket=\mathsf{Ref}(\varphi_i;\psi_i)}
      {\llbracket R_1\mathbin{\&}\cdots\mathbin{\&}R_n\rrbracket=
-      \mathsf{Ref}(\varphi_1\cdots\varphi_n;\,\psi_1\cdots\psi_n)}\ \textsc{record-meet}
+      \mathsf{Ref}(\varphi_1\cdots\varphi_n;\,\psi_1\cdots\psi_n)}\ \textsf{record-meet}
 $$
 
 with each list sorted and deduplicated (`Fragment.cellConjunction`); it is
@@ -3870,7 +3870,7 @@ bound:
 
 $$
 \frac{\llbracket F\rrbracket\ni\mathsf{arrs}(L;S)\quad \llbracket R\rrbracket\ni\mathsf{Ref}(\varphi)}
-     {\llbracket F\mathbin{\&}R\rrbracket\ni\mathsf{callable}(\varphi;L;S)}\ \textsc{callable-meet}
+     {\llbracket F\mathbin{\&}R\rrbracket\ni\mathsf{callable}(\varphi;L;S)}\ \textsf{callable-meet}
 \qquad
 \frac{\llbracket F\rrbracket\ni\mathsf{callable}(\psi;L;S)\quad \llbracket R\rrbracket\ni\mathsf{Ref}(\varphi)}
      {\llbracket F\mathbin{\&}R\rrbracket\ni\mathsf{callable}(\varphi\psi;L;S)}
@@ -3897,7 +3897,7 @@ node $\tau$ and $\mathsf{lits}(t)$ for $t$ as a union of literals and
 primitive families when it is exactly one:
 
 $$
-\frac{\mathsf{lits}(\mathit{ts}(\tau))=U}{\llbracket\tau\rrbracket=U}\ \textsc{computed}
+\frac{\mathsf{lits}(\mathit{ts}(\tau))=U}{\llbracket\tau\rrbracket=U}\ \textsf{computed}
 \qquad
 \frac{x\ \text{declares}\ x\colon\sigma\quad\mathit{ts}(\sigma)=\mathit{ts}(\mathtt{typeof}\ x)}
      {\llbracket\mathtt{typeof}\ x\rrbracket=\llbracket\sigma\rrbracket_{x}}
@@ -3929,7 +3929,7 @@ $$
 \qquad
 \frac{A\langle\vec X\rangle=\tau\ \text{a computed alias}\quad
       \mathsf{lits}(\mathit{ts}(A\langle\vec\sigma\rangle))\ \text{undefined}}
-     {\llbracket A\langle\vec\sigma\rangle\rrbracket=\llbracket\tau\rrbracket_{\vec X:=\llbracket\vec\sigma\rrbracket}}\ \textsc{computed-alias}
+     {\llbracket A\langle\vec\sigma\rangle\rrbracket=\llbracket\tau\rrbracket_{\vec X:=\llbracket\vec\sigma\rrbracket}}\ \textsf{computed-alias}
 $$
 
 where $\llbracket\tau\rrbracket_{\vec X:=\vec S}$ evaluates $\tau$ by the
@@ -3945,7 +3945,7 @@ from the checker (`inferredTerm`):
 $$
 \frac{\mathtt{const}\ x=e\quad \mathit{ts}(\mathtt{typeof}\ x)=\{\overline{k_i\colon t_i};\ \overline{[\theta_j]\colon u_j}\}\ \text{from}\ e\text{'s literal}\quad
       \forall i.\ \llbracket t_i\rrbracket\ \text{inferred}}
-     {\llbracket\mathtt{typeof}\ x\rrbracket=\{\overline{k_i\colon\llbracket t_i\rrbracket};\ \overline{[\theta_j]\colon\llbracket u_j\rrbracket}\}}\ \textsc{typeof-inferred}
+     {\llbracket\mathtt{typeof}\ x\rrbracket=\{\overline{k_i\colon\llbracket t_i\rrbracket};\ \overline{[\theta_j]\colon\llbracket u_j\rrbracket}\}}\ \textsf{typeof-inferred}
 $$
 
 Refused: a template literal type with a `${string}` or `${number}` hole; a
@@ -3996,7 +3996,7 @@ $$
 \frac{\omega\in\Omega_p\quad \omega.\mathit{text}=\mathsf{text}(m)\quad
       \omega.\mathit{stated}=[(R_j,\vec P_j,Q_j)]_{j=1}^n\quad n>0}
      {\llbracket m\rrbracket_\omega=\bigcap_{j=1}^n
-       (\mathsf{this}:R_j,\ \vec P_j)\Rightarrow Q_j}\ \textsc{proto-stated}
+       (\mathsf{this}:R_j,\ \vec P_j)\Rightarrow Q_j}\ \textsf{proto-stated}
 $$
 
 The reviewed overlay can restrict quantified binders (`bounds`) and weaken a
@@ -4069,7 +4069,7 @@ other signature or its receiver condition from the declared scheme.
 $$
 \frac{\mathit{lib}(I)\quad \Omega_I=[\omega_1,\ldots,\omega_n]\quad
       m_j\ \text{the member of}\ I\ \text{with}\ \mathsf{text}(m_j)=\omega_j.\mathit{text}}
-     {\llbracket I\langle\vec X\rangle\rrbracket_\Omega=\{k_1:\llbracket m_1\rrbracket_{\omega_1};\ \ldots;\ k_n:\llbracket m_n\rrbracket_{\omega_n}\}}\ \textsc{library-interface}
+     {\llbracket I\langle\vec X\rangle\rrbracket_\Omega=\{k_1:\llbracket m_1\rrbracket_{\omega_1};\ \ldots;\ k_n:\llbracket m_n\rrbracket_{\omega_n}\}}\ \textsf{library-interface}
 $$
 
 a supertype of the declared interface. $\llbracket m\rrbracket_\omega$ drops
@@ -4089,7 +4089,7 @@ $$
 \frac{\mathit{lib}(x)\quad \omega\in\Omega\quad
       \omega.\mathit{global}=x\quad \omega.\mathit{text}=\mathsf{text}(s)\quad
       \omega\ \text{admits}\ (i, S)}
-     {\llbracket s\rrbracket_\Omega=\llbracket s\rrbracket\bigl[\,p_i:=S\,\bigr]}\ \textsc{library-global}
+     {\llbracket s\rrbracket_\Omega=\llbracket s\rrbracket\bigl[\,p_i:=S\,\bigr]}\ \textsf{library-global}
 $$
 
 and an entry without `admit` reads $s$ as declared. Replacing a parameter by
@@ -4102,13 +4102,13 @@ $$
       \omega.\mathit{text}=\mathsf{text}(s)\quad
       \omega.\mathit{stated}=\forall\vec X.\ \mathsf{new}(\vec P)\Rightarrow R\quad
       |\vec a|\le|\vec P|\ \text{for each}\ \mathsf{new}\ x(\vec a)\ \text{selecting}\ s}
-     {\llbracket s\rrbracket_\Omega=\forall\vec X.\ \mathsf{new}(\vec P)\Rightarrow R}\ \textsc{library-construct}
+     {\llbracket s\rrbracket_\Omega=\forall\vec X.\ \mathsf{new}(\vec P)\Rightarrow R}\ \textsf{library-construct}
 $$
 
 $$
 \frac{\mathit{lib}(x)\quad \omega\in\Omega\quad \omega=(x,\ m,\ \mathsf{text}(s),\ \mathsf{stated}\ \forall\vec X.\ (\vec P)\Rightarrow R)\quad
       |\vec a|\le|\vec P|\ \text{for each}\ x.m(\vec a)\ \text{selecting}\ s}
-     {\llbracket s\rrbracket_\Omega=\forall\vec X.\ (\mathsf{this}:\mathsf{self},\ \vec P)\Rightarrow R}\ \textsc{library-stated}
+     {\llbracket s\rrbracket_\Omega=\forall\vec X.\ (\mathsf{this}:\mathsf{self},\ \vec P)\Rightarrow R}\ \textsf{library-stated}
 $$
 
 Overloads stated alike are one signature. A statement may name a library
@@ -4126,27 +4126,27 @@ calculus (`test`), and the variable's declaration as the right operand of
 $$
 \frac{\mathit{lib}(\mathtt{Array})\quad \omega\in\Omega\quad
       \omega=(\mathtt{Array},\ \mathtt{isArray},\ \mathsf{text}(s),\ \mathsf{test}\ \mathsf{isArray})}
-     {\llbracket\mathtt{Array.isArray}(e)\rrbracket=\mathsf{test}\ \mathsf{isArray}\ \llbracket e\rrbracket}\ \textsc{library-test}
+     {\llbracket\mathtt{Array.isArray}(e)\rrbracket=\mathsf{test}\ \mathsf{isArray}\ \llbracket e\rrbracket}\ \textsf{library-test}
 \qquad
 \frac{\mathit{lib}(\mathtt{Array})\quad \omega\in\Omega\quad
       \omega=(\mathtt{Array},\ \cdot,\ \mathsf{text}(d),\ \mathsf{test}\ \mathsf{isArray})}
-     {\llbracket e\ \mathtt{instanceof}\ \mathtt{Array}\rrbracket=\mathsf{test}\ \mathsf{isArray}\ \llbracket e\rrbracket}\ \textsc{library-instanceof}
+     {\llbracket e\ \mathtt{instanceof}\ \mathtt{Array}\rrbracket=\mathsf{test}\ \mathsf{isArray}\ \llbracket e\rrbracket}\ \textsf{library-instanceof}
 $$
 
 The branch rule is the tag rule on $\mathsf{isArray}$
 ([SEMANTICS](SEMANTICS.md#operational-language)); the declared guard `arg is
 any[]` is not read. An entry may read a member, or a construct signature, as
 a call of an [intrinsic](#async-functions-and-await) stating the same step
-(`intrinsic`), instantiated at each call by $\textsc{instances}$:
+(`intrinsic`), instantiated at each call by $\textsf{instances}$:
 
 $$
 \frac{\mathit{lib}(x)\quad \omega\in\Omega\quad
       \omega=(x,\ m,\ \mathsf{text}(s),\ \mathsf{intrinsic}\ \iota)}
-     {\llbracket x.m(\vec e)\rrbracket=\iota(\llbracket\vec e\rrbracket)}\ \textsc{library-intrinsic}
+     {\llbracket x.m(\vec e)\rrbracket=\iota(\llbracket\vec e\rrbracket)}\ \textsf{library-intrinsic}
 \qquad
 \frac{\mathit{lib}(x)\quad \omega\in\Omega\quad
       \omega=(x,\ \cdot,\ \mathsf{text}(s),\ \mathsf{intrinsic}\ \iota)\quad s\ \text{a construct signature}}
-     {\llbracket \mathsf{new}\ x(\vec e)\rrbracket=\iota(\llbracket\vec e\rrbracket)}\ \textsc{library-construct-intrinsic}
+     {\llbracket \mathsf{new}\ x(\vec e)\rrbracket=\iota(\llbracket\vec e\rrbracket)}\ \textsf{library-construct-intrinsic}
 $$
 
 `Promise.resolve(v)` is `%AsyncReturn%(v)`, `Promise.resolve()` is
@@ -4182,15 +4182,15 @@ $$
 \end{aligned}
 $$
 
-Instantiated by $\textsc{instances}$, with $R$ the async function's result
+Instantiated by $\textsf{instances}$, with $R$ the async function's result
 annotation, they derive:
 
 $$
-\frac{\Gamma\vdash e:\mathsf{Promise}\langle A\rangle\mid B\quad B\le P}{\Gamma\vdash\mathsf{await}\ e:A\mid B}\ \textsc{await}
+\frac{\Gamma\vdash e:\mathsf{Promise}\langle A\rangle\mid B\quad B\le P}{\Gamma\vdash\mathsf{await}\ e:A\mid B}\ \textsf{await}
 \qquad
-\frac{\Gamma\vdash e:A\mid\mathsf{Promise}\langle B\rangle\quad A\le P\quad B\le P\quad \mathsf{Promise}\langle A\mid B\rangle\le R}{\Gamma\vdash_R\mathsf{return}\ e}\ \textsc{async-return}
+\frac{\Gamma\vdash e:A\mid\mathsf{Promise}\langle B\rangle\quad A\le P\quad B\le P\quad \mathsf{Promise}\langle A\mid B\rangle\le R}{\Gamma\vdash_R\mathsf{return}\ e}\ \textsf{async-return}
 \qquad
-\frac{\mathsf{Promise}\langle\mathsf{void}\rangle\le R}{\Gamma\vdash_R\text{completion}}\ \textsc{async-complete}
+\frac{\mathsf{Promise}\langle\mathsf{void}\rangle\le R}{\Gamma\vdash_R\text{completion}}\ \textsf{async-complete}
 $$
 
 `Promise<void>` is `Promise<unknown>` (`void` is top), so a void async
@@ -4262,7 +4262,7 @@ $\sigma$ the call's instance:
 $$
 \frac{\Gamma\vdash e:A\quad A\le P\sigma\quad
       \Gamma_{\mathit{head}},x:E\sigma\vdash S\quad \Gamma_{\mathit{head}}\ \text{the loop's entry claims}}
-     {\Gamma\vdash\mathsf{for}\ (\mathsf{const}\ x\ \mathsf{of}\ e)\ S}\ \textsc{for-of}
+     {\Gamma\vdash\mathsf{for}\ (\mathsf{const}\ x\ \mathsf{of}\ e)\ S}\ \textsf{for-of}
 $$
 
 The native iterator requires a readable array receiver, so every in-bounds
@@ -4330,7 +4330,7 @@ $$
   \mathsf{throw}\ u\mapsto(\mathsf{try}\ C\ \mathsf{catch}\ \{\});\mathsf{throw}\ u\\
 \Gamma\vdash_R C\ \text{on each of those ways}
 \end{array}}
-     {\Gamma\vdash_R\ \mathsf{closing}\ \{S\}\ \mathsf{close}\ C}\ \textsc{closing}
+     {\Gamma\vdash_R\ \mathsf{closing}\ \{S\}\ \mathsf{close}\ C}\ \textsf{closing}
 $$
 
 The close runs before a `break` of the loop leaves it, before a `return`
@@ -4372,10 +4372,10 @@ is $R$". An unbraced arm is the block holding it and `else if (c) S` is
 does not return on every terminal arm ends with `return undefined`:
 
 $$
-\frac{\mathsf{undefined}\le R}{\Gamma\vdash_R\ \mathsf{return};}\ \textsc{return-bare}
+\frac{\mathsf{undefined}\le R}{\Gamma\vdash_R\ \mathsf{return};}\ \textsf{return-bare}
 \qquad
 \frac{\Gamma\vdash_R S_1\quad S_1\ \text{always jumps}\quad \mathit{names}(S_2)\ \text{free in no live statement, none hoisted}}
-     {\Gamma\vdash_R S_1;S_2}\ \textsc{dead}
+     {\Gamma\vdash_R S_1;S_2}\ \textsf{dead}
 $$
 
 `for (init; cond; update) S` is `{ init; loop }` with a `while (cond)` whose
@@ -4388,7 +4388,7 @@ $$
       \Gamma'\le\Gamma_h\quad \Gamma_h\vdash c:\mathsf{boolean}\quad
       \Gamma_h\wedge c\vdash_R S\ \text{with}\ \mathsf{continue}\mapsto u\quad
       \Gamma_u\vdash \mathit{update}\ \text{back to}\ \Gamma_h}
-     {\Gamma\vdash_R\ \mathsf{for}\ (\mathit{init};c;\mathit{update})\ S}\ \textsc{for}
+     {\Gamma\vdash_R\ \mathsf{for}\ (\mathit{init};c;\mathit{update})\ S}\ \textsf{for}
 $$
 
 `switch (d) { … }` is a labeled block per clause, nested in source order
@@ -4403,7 +4403,7 @@ another is refused.
 $$
 \frac{\Gamma\vdash_R S\ \text{with}\ \mathsf{break}\ \ell\mapsto\Gamma_{\mathit{after}}\quad
       \Gamma_{\mathit{after}}\vdash_R S'}
-     {\Gamma\vdash_R\ \ell:\{S\};S'}\ \textsc{labeled-block}
+     {\Gamma\vdash_R\ \ell:\{S\};S'}\ \textsf{labeled-block}
 $$
 
 `for (const k in o) S` is `for (const k of %ForIn%(o)) S` with the trusted
@@ -4425,7 +4425,7 @@ pending completion:
 $$
 \frac{\Gamma\vdash_R B\ \text{with throws}\mapsto(\mathsf{unknown},\Gamma)\vdash_R C\quad
       \Gamma\vdash_R F\ \text{on each way out}}
-     {\Gamma\vdash_R\ \mathsf{try}\ B\ \mathsf{catch}\ (e)\ C\ \mathsf{finally}\ F}\ \textsc{try}
+     {\Gamma\vdash_R\ \mathsf{try}\ B\ \mathsf{catch}\ (e)\ C\ \mathsf{finally}\ F}\ \textsf{try}
 $$
 
 The handler's and finalizer's entries state each cell at its contract, since
@@ -4442,13 +4442,13 @@ its completion, to its argument, which no function type states:
 
 $$
 \frac{\Gamma(x)=A\quad\Gamma[x:T_{\mathsf{typeofObject}}(A)]\vdash_R S_1\quad\Gamma[x:T_{\lnot\mathsf{typeofObject}}(A)]\vdash_R S_2}
-     {\Gamma\vdash_R\ \mathsf{if}\ (\texttt{typeof}\ x\equiv\texttt{"object"})\ S_1\ \mathsf{else}\ S_2}\ \textsc{if-typeof-object}
+     {\Gamma\vdash_R\ \mathsf{if}\ (\texttt{typeof}\ x\equiv\texttt{"object"})\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-typeof-object}
 $$
 
 $$
 \frac{\Gamma(x)=A\quad A\ \text{objects, no class value}\quad \kappa\notin\mathcal R\quad
       \Gamma[x:T_{\mathsf{hasKey}(\kappa)}(A)]\vdash_R S_1\quad\Gamma[x:T_{\lnot\mathsf{hasKey}(\kappa)}(A)]\vdash_R S_2}
-     {\Gamma\vdash_R\ \mathsf{if}\ (\texttt{"}\kappa\texttt{"}\ \mathtt{in}\ x)\ S_1\ \mathsf{else}\ S_2}\ \textsc{if-in}
+     {\Gamma\vdash_R\ \mathsf{if}\ (\texttt{"}\kappa\texttt{"}\ \mathtt{in}\ x)\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-in}
 $$
 
 with $\mathcal R$ the refused keys (`inKeyRefusal`: `Object.prototype`'s,
@@ -4465,12 +4465,12 @@ $$
 \frac{\Gamma\vdash a:A\quad \Gamma\vdash k:\{c\}\quad
       \Gamma[x:T_{\mathsf{eq}(c)}(\Gamma(x))]\vdash_R S_1\quad
       \Gamma[x:T_{\lnot\mathsf{eq}(c)}(\Gamma(x))]\vdash_R S_2}
-     {\Gamma\vdash_R\ \mathsf{if}\ (x\equiv k)\ S_1\ \mathsf{else}\ S_2}\ \textsc{if-singleton}
+     {\Gamma\vdash_R\ \mathsf{if}\ (x\equiv k)\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-singleton}
 \qquad
 \frac{\Gamma\vdash k:\{c\}\quad
       \Gamma[o:F^{f}_{\mathsf{eq}(c)}(\Gamma(o))]\vdash_R S_1\quad
       \Gamma[o:F^{f}_{\lnot\mathsf{eq}(c)}(\Gamma(o))]\vdash_R S_2}
-     {\Gamma\vdash_R\ \mathsf{if}\ (o.f\equiv k)\ S_1\ \mathsf{else}\ S_2}\ \textsc{if-field}
+     {\Gamma\vdash_R\ \mathsf{if}\ (o.f\equiv k)\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-field}
 $$
 
 with $F^f$ the field slice. The truthiness of a field of an immutable
@@ -4482,7 +4482,7 @@ dispatched on its truthiness:
 $$
 \frac{\Gamma[o:F^{f}_{\mathsf{truthy}}(\Gamma(o))]\vdash_R S_1\quad
       \Gamma[o:F^{f}_{\lnot\mathsf{truthy}}(\Gamma(o))]\vdash_R S_2}
-     {\Gamma\vdash_R\ \mathsf{if}\ (o.f)\ S_1\ \mathsf{else}\ S_2}\ \textsc{if-field-truthy}
+     {\Gamma\vdash_R\ \mathsf{if}\ (o.f)\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-field-truthy}
 $$
 
 `x === y` with `x` claimed at a union of
@@ -4502,7 +4502,7 @@ to the realm's `sparse ReadonlyArray<unknown>` where it holds
 $$
 \frac{\Gamma(x)=A\quad A\preceq_{\mathsf{isArray}=\mathsf{true}}B\quad \Gamma[x:B]\vdash_R S_1\quad
       \Gamma[x:T_{\lnot\mathsf{isArray}}(A)]\vdash_R S_2}
-     {\Gamma\vdash_R\ \mathsf{if}\ (\mathtt{Array.isArray}(x))\ S_1\ \mathsf{else}\ S_2}\ \textsc{if-array}
+     {\Gamma\vdash_R\ \mathsf{if}\ (\mathtt{Array.isArray}(x))\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-array}
 $$
 
 ### Enums
