@@ -312,7 +312,7 @@ i=(\vec p;\Sigma;\beta;\Sigma_\ldots)\qquad j=(\vec q;\Sigma';\beta';\Sigma'_\ld
 \beta\subseteq\beta'[\vec q:=\vec p]\qquad
 \Delta\vdash\mathsf{arrs}(\Sigma;\Sigma_\ldots)\sqsubseteq\mathsf{arrs}(\Sigma';\Sigma'_\ldots)[\vec q:=\vec p]
 \end{array}}
-{\Delta\vdash i\sqsubseteq_\forall j}\ \textsc{quantified-}\alpha
+{\Delta\vdash i\sqsubseteq_\forall j}\ \mathsf{Quantified}\text{-}\alpha
 ```
 
 The substitution is the one of section 4.3, computed by the checker, not
