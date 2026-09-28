@@ -354,6 +354,23 @@ only in their arguments. So an entry may quantify over its arguments: one
 entry states $`\mathit{Promise}(a)\le\mathit{Promise}(b)`$ for every $`a\le b`$,
 and every later pair is an instance of it.
 
+That entry is a fact about the declaration, not about any use: `Promise` is
+covariant because its body only reads `T`. The fact is established once, by
+looking inside the definition, and every use then compares arguments only.
+Entries therefore live in two places:
+
+- **Variance declarations** (7.5). Each head declares a variance per
+  parameter, and the declaration is checked once, as a family entry, when
+  the equations are accepted. A use `h(A⃗) ≤ h(B⃗)` needs only the
+  per-position argument premises and never unfolds `h`. This is the
+  ordinary case.
+- **Certificate entries** (7.1–7.4). A subtype certificate may carry its own
+  entries for what a variance cannot state: relations between different
+  heads (`Promise<T> ≤ PromiseLike<T>`), or hypotheses that are not
+  per-position.
+
+Both are checked by the same rule and justified by the same theorem (7.4).
+
 ### 7.1 Family entries
 
 A **family entry** is
@@ -450,11 +467,65 @@ A variable-free entry has no hypotheses, which recovers the existing core
 theorem. The declarative family rule, its checker and the checker's
 completeness for the rule are stated as for the core rule.
 
-### 7.5 Examples
+### 7.5 Variance declarations
 
-**`Promise<number> ≤ Promise<number | string>`.** Entry $`f`$:
-$`\mathit{Promise}(a)\le\mathit{Promise}(b)`$ with $`\Pi_f=\{a\le b\}`$.
-Its members check as follows:
+Each head $`h`$ of arity $`n`$ declares a variance
+$`v_i\in\{\mathsf{co},\mathsf{contra},\mathsf{inv},\mathsf{none}\}`$ for each
+parameter. The declaration stands for the family entry
+
+```math
+f_h=\bigl(\,h(x_1,\ldots,x_n)\le h(y_1,\ldots,y_n),\ \Pi_h,\ \Delta_h\,\bigr),
+\qquad
+\Pi_h=\{x_i\le y_i\mid v_i=\mathsf{co}\}\cup\{y_i\le x_i\mid v_i=\mathsf{contra}\},
+```
+
+where $`x_i`$ and $`y_i`$ are one shared variable when $`v_i=\mathsf{inv}`$,
+and $`\mathsf{none}`$ imposes nothing. $`\Delta_h`$ is evidence the producer
+proposes.
+
+**Checked once.** The declarations of all heads form one set of entries,
+checked together by 7.3 when the equations are accepted, before any claim
+is read. A declaration may rely on the others, and on itself: `catch`'s
+$`\mathit{Promise}(a\mid r)\le\mathit{Promise}(b\mid r)`$ is discharged by
+$`f_{\mathit{Promise}}`$. If a declaration is invalid, the request is
+refused with a located diagnostic naming the head and the parameter. The
+producer proposes variances, for example by starting from $`\mathsf{co}`$ or
+$`\mathsf{none}`$ and weakening to $`\mathsf{inv}`$ on failure. They are
+never read from TypeScript, whose measured variance treats method
+parameters bivariantly.
+
+**The rule.** For applications of one head:
+
+```math
+\frac{\forall i.\ \begin{cases}
+A_i\le B_i & v_i=\mathsf{co}\\
+B_i\le A_i & v_i=\mathsf{contra}\\
+A_i\le B_i\ \text{and}\ B_i\le A_i & v_i=\mathsf{inv}\\
+\text{nothing} & v_i=\mathsf{none}
+\end{cases}}
+{h(\vec A)\le h(\vec B)}\ \mathsf{Var}
+```
+
+As a premise case of 7.2, the per-position premises are discharged the way
+an instance's hypotheses are: a table pair, a subset or a hypothesis. As a
+structural rule of `Sub`, they are derivations. An invariant position meets
+the rule with two derivations; the entry itself shares one variable, since
+that is how 7.3 validates a writable position. Equal meanings suffice for
+the soundness step.
+
+**Soundness.** An instance of a valid $`f_h`$, by 7.4 and substitution
+(4.3). A derivation holds at every level, so `Var` is sound as a structural
+rule too.
+
+Unfolding `Promise` at a use, and carrying a family in the certificate,
+become unnecessary for same-head pairs. Certificate entries remain only for
+the cases a variance cannot state.
+
+### 7.6 Examples
+
+**`Promise<number> ≤ Promise<number | string>`.** The declaration
+$`v=(\mathsf{co})`$ is the entry $`\mathit{Promise}(a)\le\mathit{Promise}(b)`$
+with $`\Pi=\{a\le b\}`$, checked once. Its members check as follows:
 
 - **`then`** binds $`r`$ on the left and $`r'`$ on the right; the rule
   renames $`r'`$ to $`r`$. The callback parameter is contravariant: the
@@ -466,38 +537,49 @@ Its members check as follows:
   premise $`a\mid r\le b\mid r`$, which is a table pair of $`\Delta_f`$.
 
 That pair is valid: $`a`$ is opaque by hypothesis and $`r`$ is in the
-target. The use is $`f`$ at $`(\,[\mathit{number}],[\mathit{number},\mathit{string}]\,)`$,
-whose premise `number ≤ number | string` is a subset. `Promise<never> ≤
-Promise<number>` is the same entry: its premise is the empty union.
+target. The use is `Var`, whose one premise `number ≤ number | string` is a
+subset; `Promise` is not unfolded. `Promise<never> ≤ Promise<number>` is the
+same rule, with the empty union as the premise.
 
 **The negative control** `Promise<number | string> ≤ Promise<number>` fails.
-The instance premise `number | string ≤ number` is neither a subset nor a
-valid pair. Unfolding directly fails at `then`'s callback parameter. No
-certificate exists.
+The `Var` premise `number | string ≤ number` is not derivable. Unfolding
+directly fails at `then`'s callback parameter. No certificate exists.
 
 **Writable positions.** In `interface Cell<T> { v: T }`, `v` is an invariant
-field. The entry $`\mathit{Cell}(a)\le\mathit{Cell}(b)`$ with only $`a\le b`$
-fails, because the field needs $`b\le a`$ too. The entries that do check are
-$`\mathit{Cell}(a)\le\mathit{Cell}(a)`$ and the two-way-hypothesis form.
+field. The declaration $`(\mathsf{co})`$ is invalid, because the field needs
+$`b\le a`$ too, so the request is refused unless the producer declares
+$`(\mathsf{inv})`$. Then `Cell<A> ≤ Cell<B>` needs `A` and `B` to be
+equivalent.
 
 **`Pair`.** The result of `p.push("a")` is the image of `push`'s result at
 `U := string`: $`\mathit{Pair}(\mathit{Lit}(\mathit{number},\mathit{string}))`$
 by substitution. The written return type `Pair<[number, string]>` lowers to
 the same label when literal heads are shared (section 8.2), and then no
-subtyping step is needed. When they are not shared, a two-way family relates
-the two tuple heads, and a `Pair` family with shared or two-way-related
-arguments relates the results.
+subtyping step is needed. When they are not shared, a certificate entry
+relates the two tuple heads both ways, and `Var` on `Pair`, invariant
+through `push`'s tuple, relates the results.
 
-### 7.6 Required controls
+**Different heads.** `Promise<number> ≤ PromiseLike<number | string>` is not
+same-head, so it takes a certificate entry
+$`\mathit{Promise}(a)\le\mathit{PromiseLike}(b)`$ with $`a\le b`$, whose
+check may use `Var` on both heads.
 
-Each is a certificate the checker must reject:
+### 7.7 Required controls
 
+Each is a request or certificate the checker must reject:
+
+- a variance declaration its head's body contradicts (`Cell` declared
+  $`\mathsf{co}`$; a callback parameter declared $`\mathsf{co}`$);
+- a `Var` use whose premise fails;
 - an instance whose hypothesis pair is missing from the table;
 - a hypothesis that is false at the instance (`invalid-promise-covariance`);
 - a writable field with a covariant hypothesis only;
 - a family variable that also occurs in a claim;
 - two entries that share a variable;
 - quantified-α with a source binder free in the target.
+
+A `none` declaration must also be checked: a parameter declared unused and
+then read by the body is refused.
 
 ## 8. Lowering from source
 
@@ -575,7 +657,7 @@ not kept beside the new one.
   "equations": [
     {
       "name": "Promise",
-      "parameters": [{ "name": "T", "kind": "value" }],
+      "parameters": [{ "name": "T", "kind": "value", "variance": "co" }],
       "body": [{ "refs": { "views": [["then", [{ "app": 7, "args": [[{ "arg": 0 }]] }]]] } }]
     }
   ]
@@ -596,6 +678,12 @@ are lists of trees. Each tree form has exactly one spelling:
 | template placeholder (bodies only) | `{"arg": i}`, `{"local": j}` |
 | family variable (inside its entry only) | `{"var": k}` |
 
+Every parameter states its `variance` (`"co"`, `"contra"`, `"inv"` or
+`"none"`), with no default. The request also carries `variance`: the
+evidence tables $`\Delta_h`$ for the heads whose declaration needs pairs
+beyond hypotheses and subsets, as `[[h, [[A, B], …]], …]`, left out when
+empty.
+
 Claims, results and inputs are lists of closed labels. Validation checks
 scope, arity, kinds, constructor-headedness, a scheme's binders, the meet
 normal form and the variable discipline of section 7.1. Anything else is
@@ -606,16 +694,20 @@ In certificates:
 - An `inst` instance names its images and is checked by
   `substitutionTableOk`. The finite `table`, `domain` and `free` fields go.
 - `core` carries `families`, each
-  `{"source": L, "target": L, "variables": [kind, …], "hypotheses": [[x, y], …], "table": [[A, B], …]}`.
-  The present table becomes the variable-free entry.
+  `{"source": L, "target": L, "variables": [kind, …], "hypotheses": [[x, y], …], "table": [[A, B], …]}`,
+  left out when none. Same-head pairs use `Var` and need no entry. The
+  present table becomes the variable-free entry.
+- A structural proof form `var` relates two applications of one head, with
+  one proof per non-`none` position (two for `inv`).
 
 ## 10. Acceptance statement
 
 `SourceClaimJson.checkJson_safe` keeps its statement. The graph it speaks
 of becomes `Equations.graph` of the decoded equations instead of
 `RequestJson.tableGraph`. A finite table is the nullary case, so the present
-theorem is an instance of the new one. The new rules enter only through
-`Sub.sound`: quantified-α, family entries and meet labels. So the proof
+theorem is an instance of the new one. Its premise adds that the variance
+declarations were checked. The new rules enter only through `Sub.sound`:
+quantified-α, family entries, `Var` and meet labels. So the proof
 changes only at subtyping soundness and decoding. The trust surface gains
 nothing. Equations are decoded and checked, and every semantic premise a new
 rule uses is proved from the equations, never supplied by a certificate.

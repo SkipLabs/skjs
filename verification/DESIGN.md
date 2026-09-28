@@ -1147,7 +1147,7 @@ unchanged ([design](#recursive-quantified-contracts)).
 | Formal specification ([RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md)): motivation, meet labels, quantified-α, family subtyping, lowering, wire format, acceptance statement | in progress | drafted; closes when the family-subtyping rule is reviewed |
 | Thread the image checker through heap, context, control-flow and certificate-production proofs | open | proved; no finite-only premise left on the program path |
 | Lower source and protocol labels to equation applications, alias and intersection normalization included | open | Lean decodes and checks equation requests |
-| Family subtyping for recursive covariance, writable invariance kept | open | proved; `promise-covariance` and its negative behave as above |
+| Family subtyping: per-head variance declarations checked once with `Var` for same-head pairs, certificate entries for the rest; writable invariance kept ([§7](RECURSIVE-EQUATIONS.md#7-family-subtyping)) | open | proved; `promise-covariance` and its negative behave as above |
 | OCaml claims, search and printing on equations; `DeclarationGraph`'s colour/depth/argument budgets retired | open | budgets deleted; census remeasured |
 | `SourceClaimJson.checkJson_safe` covers the equation path | open | proved |
 
