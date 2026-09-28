@@ -734,3 +734,20 @@ function testWrongPromiseGeneric(x: Promise<number> | null): Promise<string> {
   // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
+
+function nonNullAliasContract(x: { value: number | null }): number {
+  if (x.value === null) return 0;
+  // @ts-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-warning This operator has no effect; the operand is never null or undefined
+  const alias: { readonly value: number } = x!;
+  x.value = null;
+  return alias.value;
+}
+
+function nonNullScalarSnapshot(x: { value: number | null }): number {
+  if (x.value === null) return 0;
+  // @skjs-expect-warning This operator has no effect; the operand is never null or undefined
+  const value = x.value!;
+  x.value = null;
+  return value;
+}

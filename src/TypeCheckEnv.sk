@@ -4,6 +4,22 @@
 
 module SKJS;
 
+// Keep symbolic roots, not their current expansion: later inference can add
+// a hidden identity through a candidate that was empty at the boundary.
+value class HiddenEscapeCheck(
+  pos: PosRange,
+  forbidden: SortedSet<Id>,
+  roots: Array<TType>,
+  message: String,
+  code: Int,
+) {
+  fun fails(subst: readonly Subst): Bool {
+    scan = mutable EscapingTypeParams(this.forbidden);
+    for (root in this.roots) _ = scan.type(subst, root);
+    !scan.found.isEmpty()
+  }
+}
+
 mutable base class TCEnvBase private {
   context: mutable SKStore.Context,
   results: mutable TCResultsAcc,
@@ -123,10 +139,24 @@ mutable class TCEnv private {
   subst: mutable Subst,
   mutable scope: mutable Scope,
   mutable callingContext: CGNode,
+  // Reserved bindings still in their temporal dead zone while initializers run.
+  // Unlike ordinary uninitialized locals, they cannot be assigned yet either.
+  mutable pendingBindings: SortedSet<PosRange> = SortedSet[],
   // exprTypes cache is keyed on (pos, mostPrecise, isLValue) triples.
   // i.e. the args of TypeChecker.expr, so that it can be used both for CFG
   // construction and as a generic cache for expression typechecking
   mutable exprTypes: SortedMap<(PosRange, Bool, Bool), TType> = SortedMap[],
+  // Successful escape checks remain obligations on later inference growth.
+  mutable hiddenEscapeChecks: mutable Vector<
+    HiddenEscapeCheck,
+  > = mutable Vector[],
+  // Observation order prevents condition replay from restoring pre-call facts.
+  mutable effectEpoch: Int = 0,
+  mutable exprEffectEpochs: SortedMap<PosRange, Int> = SortedMap[],
+  // Composed alias contracts captured while branch scopes are still available.
+  // Key by occurrence and its current type, so different precision modes do
+  // not confuse results. These are symbolic types, not subtype-result caches.
+  mutable stableExprTypes: SortedMap<(PosRange, TType), TType> = SortedMap[],
   mutable stmtTerminations: SortedMap<PosRange, StmtTermination> = SortedMap[],
   /*
    * Tracks local objects: object literals bound to variables that can grow.
@@ -160,6 +190,9 @@ mutable class TCEnv private {
   // name: a name can be reused by distinct bindings in sibling/sequential (and,
   // later, shadowing) scopes, which must not share growth state.
   localObjects: mutable Map<PosRange, LocalObjectState> = mutable Map[],
+  // First-use contents contracts survive child scopes and callback checking.
+  // Their symbolic field types remain dependencies of the live substitution.
+  localObjectContracts: mutable Map<PosRange, TType> = mutable Map[],
   mutable forInContext: ?ForInContext = None(),
   // Stack of enclosing loops/switches, innermost last; see `JumpCatcher`.
   mutable jumpCatchers: mutable Vector<mutable JumpCatcher> = mutable Vector[],
@@ -172,6 +205,11 @@ mutable class TCEnv private {
   mutable tryWriteLogs: mutable Vector<
     mutable Map<String, TType>,
   > = mutable Vector[],
+  // Scalar values possible at loop exit: seed with entry values and include
+  // every runtime write, including nested loops, closures and finally blocks.
+  mutable loopWriteBounds: mutable Vector<
+    mutable Map<String, TType>,
+  > = mutable Vector[],
   private mutable counter: Int = 0,
 } extends TCEnvBase {
   static fun mcreate(
@@ -182,6 +220,25 @@ mutable class TCEnv private {
     results = subst.results;
     scope = Scope::mcreateToplevel();
     mutable static{context, subst, scope, callingContext, results}
+  }
+
+  mutable fun registerHiddenEscape(check: HiddenEscapeCheck): void {
+    this.hiddenEscapeChecks.push(check);
+    this.validateHiddenEscapes()
+  }
+
+  // Recheck only live expression/statement results, never a speculative
+  // substitution while a subtype alternative is being tried.
+  mutable fun validateHiddenEscapes(): void {
+    checks = this.hiddenEscapeChecks;
+    this.!hiddenEscapeChecks = mutable Vector[];
+    for (check in checks) {
+      if (check.fails(this.subst)) {
+        this.error(Array[(check.pos, check.message)], SKJSCode(check.code))
+      } else {
+        this.hiddenEscapeChecks.push(check)
+      }
+    }
   }
 
   private mutable fun next(): Int {
@@ -230,11 +287,43 @@ mutable class TCEnv private {
     this.scope.bindingPos(local).flatMap(p -> this.localObjects.maybeGet(p))
   }
 
+  // Growth records initialization, not a refinement of an established object
+  // contract. In particular, resetting a constructor's unfinished this type
+  // would discard the fields it has initialized. Invalidation applies after
+  // growth has ended, or to bindings whose object type was fixed from the start.
+  mutable fun forgetObjectRefinements(tenv: TEnv): void {
+    this.scope.forgetObjectRefinements(this.subst, tenv, name ->
+      !(this.localObjectState(name) is Some(LOCanGrow _))
+    )
+  }
+
+  mutable fun invalidateCallEffects(tenv: TEnv): void {
+    this.!effectEpoch = this.effectEpoch + 1;
+    for (entry in this.scope.callWriteBounds().items()) {
+      name = Name(entry.i1.pos, entry.i0);
+      // A call cannot initialize a binding whose declaration is still pending.
+      if (
+        !this.scope.bindingPos(name)
+          .map(p -> this.pendingBindings.contains(p))
+          .default(false)
+      ) {
+        this.updateLocalType(tenv, name, entry.i1, (_, _) -> void)
+      }
+    };
+    this.forgetObjectRefinements(tenv)
+  }
+
   // Freeze the in-scope growable local object `local` (no-op if it is not one),
   // recording the use position for diagnostics.
   mutable fun markLocalObjectUsed(local: Name): void {
     this.scope.bindingPos(local) match {
     | Some(p) if (this.localObjects.containsKey(p)) ->
+      contract = this.localObjectContracts.maybeGet(p) match {
+      | Some(ty) -> ty
+      | None() -> this.scope.objectContentsContract(local)
+      };
+      this.localObjectContracts![p] = contract;
+      this.scope.establishObjectContract(local, contract);
       this.localObjects![p] = LOUsed(local.pos)
     | _ -> void
     }
@@ -277,8 +366,63 @@ mutable class TCEnv private {
     ty: TType,
     isSubType: (TType, TType) -> void,
   ): void {
+    this.scope.bindingPos(name).each(pos -> {
+      if (this.pendingBindings.contains(pos)) _ = this.scope.get(name)
+    });
+    this.scope.checkWritable(name);
+    this.updateLocalType(tenv, name, ty, isSubType, true)
+  }
+
+  // Growing an object's fields changes our view of the same reference; it
+  // does not rebind the local. Preserve the existing effect and contract
+  // tracking without requiring a mutable binding (notably constructor this).
+  mutable fun updateObjectType(
+    tenv: TEnv,
+    name: Name,
+    ty: TType,
+    isSubType: (TType, TType) -> void,
+  ): void {
+    this.updateLocalType(tenv, name, ty, isSubType)
+  }
+
+  private mutable fun updateLocalType(
+    tenv: TEnv,
+    name: Name,
+    ty: TType,
+    isSubType: (TType, TType) -> void,
+    runtimeWrite: Bool = false,
+  ): void {
+    // A callback can run after its enclosing frame replaces this binding.
+    // Its write is an observable use even if no value has been read yet.
+    if (this.scope.isThroughFunction(name)) this.markLocalObjectUsed(name);
+    this.scope.bindingPos(name)
+      .flatMap(p -> this.localObjectContracts.maybeGet(p))
+      .each(contract -> this.scope.establishObjectContract(name, contract));
     this.recordTryWrite(tenv, name, ty);
-    this.scope.set(name, ty, isSubType)
+    for (bounds in this.loopWriteBounds) {
+      bounds.maybeGet(name.value).each(previous ->
+        bounds![name.value] = TType::union(this.subst, tenv, previous, ty)
+      )
+    };
+    this.scope.set(
+      name,
+      ty,
+      (source, target) ->
+        isSubType(
+          source,
+          tenv.preserveCopyProvenance(this.subst, source, target),
+        ),
+      runtimeWrite,
+    );
+    this.scope.preserveAssignedCopyProvenance(tenv, this.subst, name, ty)
+  }
+
+  mutable fun beginLoopWrites(entryValues: SortedMap<String, TType>): void {
+    bounds = mutable Map[];
+    for (entry in entryValues.items()) {
+      bounds![entry.i0] = entry.i1
+    };
+    this.loopWriteBounds.push(bounds)
   }
 
   // Record a write for the innermost block being logged. The log is keyed
@@ -536,6 +680,14 @@ class TCResults private {
   }
 }
 
+// Restore speculative facts without discarding their diagnostics. Operand
+// evaluation precedes the call checkpoint and therefore retains its own facts.
+class TypePublicationState{
+  callCount: Int,
+  subtypingEdges: SortedSet<(CGNode, CGNode)>,
+  cfgs: SortedMap<CGNode, CFG>,
+}
+
 mutable class TCResultsAcc private {
   errorHandling: ErrorHandling,
   errors: mutable Vector<Error> = mutable Vector[],
@@ -547,6 +699,38 @@ mutable class TCResultsAcc private {
 } {
   static fun mcreate{errorHandling: ErrorHandling}: mutable this {
     mutable static{errorHandling}
+  }
+
+  readonly fun savePublication(): TypePublicationState {
+    TypePublicationState{
+      callCount => this.callgraph.size(),
+      subtypingEdges => this.subtypingEdges,
+      cfgs => this.cfgs,
+    }
+  }
+
+  mutable fun restorePublication(saved: TypePublicationState): void {
+    while (this.callgraph.size() > saved.callCount) {
+      _ = this.callgraph.pop();
+    };
+    this.!subtypingEdges = saved.subtypingEdges;
+    this.!cfgs = saved.cfgs
+  }
+
+  // Preserve diagnostics from a failed isolated proof without publishing facts.
+  mutable fun appendDiagnostics(other: TCResultsAcc): void {
+    this.errors.extend(other.errors);
+    this.warnings.extend(other.warnings)
+  }
+
+  // Facts cross the boundary only after the proof dependencies commit.
+  mutable fun appendPublication(other: TCResultsAcc): void {
+    this.callgraph.extend(other.callgraph);
+    this.classHierarchy.extend(other.classHierarchy);
+    for (edge in other.subtypingEdges) {
+      this.!subtypingEdges = this.subtypingEdges.set(edge)
+    };
+    for ((node, cfg) in other.cfgs.items()) this.!cfgs[node] = cfg
   }
 
   readonly fun chill(): this {

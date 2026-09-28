@@ -133,7 +133,9 @@ function deleteNodeHelper(root: null | node, item: number): null | node {
     let left = root.left;
     let right = root.right;
     if (left === null || right === null) {
-      let temp = null;
+      // The equality read below resolves inference before any assignment.
+      // State the shared contract for null and the replacement nodes.
+      let temp: node | null = null;
       if (temp === left) {
         temp = right;
       } else {
@@ -206,7 +208,7 @@ function preOrderHelper(node: null | node): void {
 
 //AVL Tree
 function AVLTree(): void {
-  let rroot = null;
+  let rroot: node | null = null;
   let obj = {};
 
   // insert a node

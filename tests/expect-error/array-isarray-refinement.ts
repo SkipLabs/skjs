@@ -331,3 +331,17 @@ function testMutableArrayStillMutable(x: number[] | string): void {
     x.push(1);
   }
 }
+
+// Object rest creates a plain object, even when its source is an array.
+function restArrayBrand(source: number[]): boolean {
+  const { ...copy } = source;
+  if (Array.isArray(copy)) return true;
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return copy;
+}
+
+function restArrayEntries(source: number[]): number {
+  const { ...copy } = source;
+  if (Array.isArray(copy)) return 0;
+  return copy[0] ?? 0;
+}

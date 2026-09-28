@@ -32,3 +32,17 @@ function rejectNumberOr(count: number): number {
   // @skjs-expect-error A condition is expected to be of type boolean or a type with a single falsy value
   return count || 10;
 }
+
+// && captures the branch contract and || removes only its false arm.
+function selectedAlias(x: { f: number | null }): number {
+  const y = (x.f !== null && x) || { f: 0 };
+  x.f = null;
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
+  return y.f;
+}
+
+// Object selection removes absence while preserving the stable field contract.
+function checkedSelection(x: { f: number } | undefined): number {
+  const y = x || { f: 0 };
+  return y.f;
+}

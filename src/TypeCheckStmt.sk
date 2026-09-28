@@ -29,7 +29,7 @@ extension class TypeChecker {
       };
       (epos, etype) = eOpt match {
       | None() -> (pos, TType::single(TPrimUnit(TVoid(), pos)))
-      | Some(e) -> (e.pos, this.expr(tcenv, e, true))
+      | Some(e) -> (e.pos, this.returnExprType(tcenv, e))
       };
       // In an async function the returned expression and the declared
       // return type are compared by awaited type, like tsc: `return p`
@@ -69,6 +69,16 @@ extension class TypeChecker {
         )
       };
 
+      // Every name in the declaration shadows outer names before any
+      // initializer runs. Initialize the reserved bindings in source order.
+      for (binding in bindings) {
+        this.reserveBindingNames(
+          tcenv,
+          binding.pat,
+          TType::top(binding.pat.pos),
+          !(bkind is BKConst()),
+        )
+      };
       for (binding in bindings) {
         (ty, isInitialized) = this.bindType(
           binding.pat.pos,
@@ -82,17 +92,34 @@ extension class TypeChecker {
         // before being used. See TypeCheckEnv.sk:LocalObjectState for details.
         isLocalObject =
           binding.type.isNone() &&
+          binding.pat.value is PVar _ &&
           binding.value is Some(Expr(_, Object _));
+        // Completed values retain their symbolic contents contracts regardless
+        // of initializer syntax. Object literals may still be initializing
+        // their shape; bare candidates retain their evolving-binding rule.
+        hasContentsContract =
+          !isLocalObject &&
+          !ty.isFieldFree() &&
+          ty.getSingleVar().isNone();
         tcenv.!exprTypes[(binding.pat.pos, false, true)] = ty;
         this.bind(
           tcenv,
           bkind,
           binding.pat,
           ty,
-          binding.type.isSome(),
+          binding.type.isSome() || hasContentsContract,
           isInitialized,
           isLocalObject,
-        )
+          false,
+          binding.value.map(e -> this.stableAliasExprType(tcenv, e, ty)),
+        );
+        if (binding.type.isNone()) {
+          (binding.pat.value, binding.value) match {
+          | (PVar(alias), Some(Expr(_, Var(source)))) ->
+            tcenv.scope.inheritAliasContract(alias, source)
+          | _ -> void
+          }
+        }
       };
       StmtTermination::seq(bindings, StmtTermination::binding)
 
@@ -122,7 +149,13 @@ extension class TypeChecker {
       initScope = tcenv.mcreateSubScope{isLoop => false};
       tcenv.!scope = initScope;
       initTerm = this.stmt(tcenv, initStmt);
+      firstLocalSkolem = tcenv.subst.skolemCheckpoint();
       loopScope = tcenv.mcreateSubScope{isLoop => true};
+      writes = mutable CaptureWrites{};
+      writes.expr(cond);
+      writes.expr(incr);
+      writes.stmts(block);
+      tcenv.beginLoopWrites(loopScope.widenLoopBindings(writes.result()));
       tcenv.!scope = loopScope;
       this.checkBool(tcenv, cond);
       // The loop catches the `break`/`continue` inside its body — they bind to
@@ -130,7 +163,7 @@ extension class TypeChecker {
       // jump leaves mid-body with the state at the jump, which the body's
       // end-of-block state no longer holds.
       ((loopBody, bodyTerm), catcher) = tcenv.withJumpCatcher(true, () ->
-        this.block(tcenv, block)
+        this.block(tcenv, block, Some((cond, true)))
       );
       tcenv.popScopeReplace(loopBody);
       // A `continue` runs the increment on its way back to the header, so its
@@ -143,6 +176,8 @@ extension class TypeChecker {
       for (snap in catcher.breaks) {
         loopScope.uniteSnapshot(tcenv.subst, this, snap)
       };
+      this.checkHiddenBindingEscape(tcenv, st.pos, firstLocalSkolem, initScope);
+      loopScope.limitLoopExit(tcenv.subst, this, tcenv.loopWriteBounds.pop());
       tcenv.!scope = initScope;
       tcenv.popScope(this, loopScope);
       tcenv.!scope = scopeCopy;
@@ -152,16 +187,27 @@ extension class TypeChecker {
           bodyTerm.thenk(() ~> StmtTermination::expr(incr))
         )
       )
-    | Block(stmts) ->
-      blockTerm = StmtTermination::skip;
-      for (stmt in stmts) {
-        !blockTerm = blockTerm.then(this.stmt(tcenv, stmt))
-      };
-      blockTerm
+    | Block(stmts) -> this.blockStatements(tcenv, stmts)
     | ForInOf(kind, initStmt, iterable, block) ->
       scopeCopy = tcenv.scope;
       initScope = tcenv.mcreateSubScope{isLoop => false};
       tcenv.!scope = initScope;
+
+      // The loop's lexical bindings shadow outer names even while its
+      // iterable is evaluated. Binding each iteration then initializes them.
+      initStmt.value match {
+      | Bind(bindingKind, bindings) ->
+        for (binding in bindings) {
+          this.reserveBindingNames(
+            tcenv,
+            binding.pat,
+            TType::top(binding.pat.pos),
+            !(bindingKind is BKConst()),
+          )
+        }
+      | _ ->
+        void // Invalid loop targets are diagnosed by bindLoopVar.
+      };
 
       iterableType = this.expr(tcenv, iterable, true);
       ty = kind match {
@@ -208,11 +254,15 @@ extension class TypeChecker {
         | _ -> false
         };
 
+      firstLocalSkolem = tcenv.subst.skolemCheckpoint();
       loopScope = tcenv.mcreateSubScope{isLoop => true};
       tcenv.!scope = loopScope;
       // See the `For` case: the loop catches its body's jumps and folds their
       // edges into its exit. With no condition or increment to run on the way
       // out, break and continue edges join at the same point.
+      writes = mutable CaptureWrites{};
+      writes.stmts(block);
+      tcenv.beginLoopWrites(loopScope.widenLoopBindings(writes.result()));
       ((loopBody, bodyTerm), catcher) = tcenv.withJumpCatcher(true, () ->
         this.block(tcenv, block)
       );
@@ -223,11 +273,16 @@ extension class TypeChecker {
       for (snap in catcher.breaks) {
         loopScope.uniteSnapshot(tcenv.subst, this, snap)
       };
+      this.checkHiddenBindingEscape(tcenv, st.pos, firstLocalSkolem, scopeCopy);
+      loopScope.limitLoopExit(tcenv.subst, this, tcenv.loopWriteBounds.pop());
       tcenv.!scope = initScope;
       tcenv.popScope(this, loopScope);
       tcenv.!scope = scopeCopy;
       tcenv.popScopeReplace(initScope);
 
+      // Exhaustion and IteratorClose happen after the last body observation,
+      // including an early break. Do not export that observation past the loop.
+      if (kind is ForOf()) tcenv.invalidateCallEffects(this);
       if (enteredForIn) tcenv.exitForIn();
       StmtTermination::expr(iterable).thenk(() ->
         CondTermination::any.loop_(() -> bodyTerm)
@@ -238,7 +293,12 @@ extension class TypeChecker {
       StmtTermination::expr(e).then(StmtTermination::throw_)
     | While(cond, block) ->
       scopeCopy = tcenv.scope;
+      firstLocalSkolem = tcenv.subst.skolemCheckpoint();
       loopScope = tcenv.mcreateSubScope{isLoop => true};
+      writes = mutable CaptureWrites{};
+      writes.expr(cond);
+      writes.stmts(block);
+      tcenv.beginLoopWrites(loopScope.widenLoopBindings(writes.result()));
       tcenv.!scope = loopScope;
       this.checkBool(tcenv, cond);
       // See the `For` case: the loop catches its body's jumps and folds their
@@ -255,6 +315,8 @@ extension class TypeChecker {
       for (snap in catcher.breaks) {
         loopScope.uniteSnapshot(tcenv.subst, this, snap)
       };
+      this.checkHiddenBindingEscape(tcenv, st.pos, firstLocalSkolem, scopeCopy);
+      loopScope.limitLoopExit(tcenv.subst, this, tcenv.loopWriteBounds.pop());
       tcenv.!scope = scopeCopy;
       tcenv.popScope(this, loopScope);
       StmtTermination::cond(cond).loop_(() -> bodyTerm)
@@ -272,10 +334,7 @@ extension class TypeChecker {
       (tryTerm, tryLog) = tcenv.withTryWriteLog(() -> {
         tryScope = tcenv.mcreateSubScope{isLoop => false};
         tcenv.!scope = tryScope;
-        term = StmtTermination::skip;
-        for (stmt in tryBlock) {
-          !term = term.then(this.stmt(tcenv, stmt))
-        };
+        term = this.blockStatements(tcenv, tryBlock);
         tcenv.!scope = scopeCopy;
         tcenv.popScope(this, tryScope);
         term
@@ -309,10 +368,7 @@ extension class TypeChecker {
             this.bind(tcenv, BKLet(), pat, errorType, false, true, false)
           | None() -> void
           };
-          term = StmtTermination::skip;
-          for (stmt in catchBlock) {
-            !term = term.then(this.stmt(tcenv, stmt))
-          };
+          term = this.blockStatements(tcenv, catchBlock);
           tcenv.!scope = scopeCopy;
           term
         });
@@ -344,10 +400,7 @@ extension class TypeChecker {
         );
         (finallyTerm, finallyLog) = tcenv.withTryWriteLog(() -> {
           tcenv.!scope = finallyScope;
-          term = StmtTermination::skip;
-          for (stmt in finallyStmts) {
-            !term = term.then(this.stmt(tcenv, stmt))
-          };
+          term = this.blockStatements(tcenv, finallyStmts);
           tcenv.!scope = scopeCopy;
           tcenv.popScope(this, finallyScope);
           tcenv.foldFinallyIntoJumpEdges(this, edgeMarks, finallyScope);
@@ -396,6 +449,7 @@ extension class TypeChecker {
       );
       finalTerm
     };
+    tcenv.validateHiddenEscapes();
     tcenv.!stmtTerminations[st.pos] = term;
     term
   }
@@ -477,6 +531,18 @@ extension class TypeChecker {
     // reached below: a condition can only be refined once the types of what it
     // compares are known, so a `default` could otherwise only rule out the cases
     // that happened to precede it.
+    // Case declarations share lexical visibility. Keep each direct-entry
+    // path uninitialized; declarations inside explicit blocks are excluded
+    // by reserveBlockBindings. The discriminant was evaluated outside here.
+    caseStatements = mutable Vector<Stmt>[];
+    for (branch in branches) {
+      caseStatements.extend(branch.block)
+    };
+    reservations = caseStatements.toArray();
+    savedPendingBindings = tcenv.pendingBindings;
+    labelParent = tcenv.scope;
+    tcenv.!scope = tcenv.mcreateSubScope{isLoop => false};
+    this.reserveBlockBindings(tcenv, reservations);
     noCaseMatched: ?Expr = None();
     for (branch in branches) {
       branch match {
@@ -492,6 +558,8 @@ extension class TypeChecker {
       | SwitchBranch(Default(), _, _) -> void
       }
     };
+    tcenv.!scope = labelParent;
+    tcenv.!pendingBindings = savedPendingBindings;
     // Two `default` positions, which differ only in a switch that has more
     // than one (already an error): the first names the clause a duplicate
     // conflicts with, and answers whether the switch has a `default` at all;
@@ -655,7 +723,14 @@ extension class TypeChecker {
           | Some(noCase) -> Some((noCase, true))
           }
         };
-        (scopeBranch, blockTerm) = this.block(tcenv, block, cond, fallenFrom);
+        (scopeBranch, blockTerm) = this.block(
+          tcenv,
+          block,
+          cond,
+          fallenFrom,
+          reservations,
+        );
+        tcenv.!pendingBindings = savedPendingBindings;
         // Falling *through* means running one clause's statements and then
         // running the next clause's too. An empty clause has none to run — it is
         // how several labels are given one body — and the last clause has nothing
@@ -861,6 +936,8 @@ extension class TypeChecker {
     iterableType: TType,
     iterationKind: String,
   ): TType {
+    // Runtime iteration invokes Symbol.iterator and next, even for arrays.
+    tcenv.invalidateCallEffects(this);
     result = TType::bottom(pos);
 
     stypes = iterableType.getSTypes(tcenv.subst, this, Covariant()) match {

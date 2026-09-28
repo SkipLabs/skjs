@@ -23,60 +23,129 @@
 
 module SKJS;
 
+// A call consumes either an exact tuple contract or a homogeneous rest element
+// contract. The types may stay symbolic. resolveCallRestShape establishes its
+// inspected dependencies before returning; this datatype alone is not evidence.
+base class RestCallShape {
+  children =
+  | RCSFixed(Array<TType>)
+  | RCSArray(TType)
+}
+
 class VariadicTyping() {
-  // Finds the most specific fixed-length tuple type that spreadParam is a
-  // subtype of. Returns the element types, or None.
-  //
-  // Precondition: spreadParam is normalized — all unions and
-  // intersections (TInter) have been eagerly computed during normalize().
-  // This guarantees at most one clause with a tuple after expansion.
-  //
-  // Two paths:
-  //   1. Expand to clauses (resolves type aliases and tvar bindings) and
-  //      look for a tuple in the single clause.
-  //   2. Fallback for bound tvars: expandToClauses intersects the binding
-  //      with constraints, which can hide the tuple (e.g. [string, number]
-  //      & readonly DepSafe[] loses the tuple shape). Peek the raw binding
-  //      (without constraint intersection) and retry.
-  // INVARIANT: when this function returns None, subst is unchanged.
+  // Resolve a fixed rest shape only after establishing every candidate payload
+  // inspected to obtain it. The callback receives only restricted read operations;
+  // successful reads are pinned in the owner by withCommittedReadContext before
+  // tuple elements escape. Symbolic element candidates remain available for
+  // ordinary argument inference unless the shape computation inspected them.
+  // This is an optional tuple query. A consumer that RETAINS the decision not
+  // to flatten must use resolveSubtypeRestTuple instead. Call checking uses
+  // the combined tuple/array boundary below.
+  // None leaves the owning substitution unchanged; it does not mean that the
+  // type is disjoint from every tuple, only that this operation established none.
   static fun resolveSpreadToTuple(
     subst: mutable Subst,
     tenv: TEnv,
     spreadParam: ?TType,
   ): ?Array<TType> {
-    fullType = spreadParam match {
-    | Some(ft) -> ft
-    | None() -> return None()
-    };
-    saved = subst.save();
-    // Expand (resolves type aliases, applies tvar bindings + constraints)
-    clauses = fullType.expandToClauses(subst, tenv, Contravariant());
-    clauses.getSingleTuple(subst, tenv) match {
-    | Some(tupleElts) -> return Some(tupleElts)
-    | None() -> void
-    };
-    // Fallback: for a bound tvar, expandToClauses intersects the binding
-    // with constraints, which can hide the tuple. Peek the raw binding
-    // (without constraint intersection) and try again.
-    tvar = fullType.getSingleVar() match {
-    | Some(tv) -> tv
-    | None() ->
-      subst.restore(saved);
-      return None()
-    };
-    boundType = subst.peekRaw(tvar) match {
-    | Some(bt) -> bt
-    | None() ->
-      subst.restore(saved);
-      return None()
-    };
-    boundType
-      .expandToClauses(subst, tenv, Contravariant())
-      .getSingleTuple(subst, tenv) match {
-    | Some(tupleElts) -> Some(tupleElts)
-    | None() ->
-      subst.restore(saved);
-      None()
+    spreadParam match {
+    | None() -> None()
+    | Some(fullType) ->
+      subst.withCommittedReadContext(tenv, context ->
+        context.spreadTuple(fullType)
+      ) match {
+      | TRReady(tupleElts) -> Some(tupleElts)
+      | TRUnavailable() -> None()
+      // Unknown is not evidence for the array-rest fallback: that fallback
+      // forgets exact arity. Refuse rather than silently weaken the contract.
+      | TRBlocked() -> static::blockedRestShape(fullType.pos)
+      }
+    }
+  }
+
+  // Function subtyping first decides which rests to flatten, then checks
+  // positional parameters, then projects the remaining target rest element.
+  // The "no fixed tuple" decision must survive those intervening checks.
+  // Returning None from an OPTIONAL observation would discard its read set.
+  // Here None is instead the value of a successful decision, so its inspected
+  // outer bindings are established too. This does not claim disjointness from
+  // all tuples or prove that the remaining type is an array.
+  static fun resolveSubtypeRestTuple(
+    subst: mutable Subst,
+    tenv: TEnv,
+    spreadParam: ?TType,
+  ): ?Array<TType> {
+    spreadParam match {
+    | None() -> None()
+    | Some(fullType) ->
+      subst.withCommittedReadDecision<?Array<TType>>(tenv, context ->
+        context.spreadTuple(fullType)
+      ) match {
+      | TRReady(tupleElts) -> tupleElts
+      // The callback produces a decision even when no tuple was found.
+      | TRUnavailable() ->
+        invariant_violation("A rest-layout decision cannot be unavailable")
+      | TRBlocked() -> static::blockedRestShape(fullType.pos)
+      }
+    }
+  }
+
+  // Use at the actual element-consumption point, not while choosing the tuple
+  // layout. In function subtyping, positional checks can infer a symbolic
+  // element before the target-side projection. Preserve that ordering while
+  // establishing every payload the eventual projection does inspect.
+  static fun resolveRestElementType(
+    subst: mutable Subst,
+    tenv: TEnv,
+    fullType: TType,
+    variance: Variance,
+  ): ?TType {
+    subst.withCommittedReadContext<TType>(tenv, context ->
+      context.restElement(fullType, variance)
+    ) match {
+    | TRReady(element) -> Some(element)
+    | TRUnavailable() -> None()
+    | TRBlocked() -> static::blockedRestShape(fullType.pos)
+    }
+  }
+
+  static private fun blockedRestShape<T>(pos: PosRange): T {
+    fatalError(
+      Array[
+        (
+          pos,
+          "A fixed rest-parameter shape could not be established without changing inference; add an explicit tuple or rest-parameter type annotation",
+        ),
+      ],
+      SKJSCode(9036),
+    )
+  }
+
+  // The call-side array fallback also materializes a type. Observing only the
+  // tuple attempt is insufficient: TRUnavailable intentionally commits nothing,
+  // so a subsequent unobserved element projection would lose its own read set.
+  // Select the representation and project its members in ONE transaction. A
+  // tuple result never falls through to the homogeneous-array interpretation.
+  static fun resolveCallRestShape(
+    subst: mutable Subst,
+    tenv: TEnv,
+    fullType: TType,
+  ): ?RestCallShape {
+    subst.withCommittedReadContext<RestCallShape>(tenv, context -> {
+      context.spreadTuple(fullType) match {
+      | Some(tupleElts) -> Some(RCSFixed(tupleElts))
+      | None() ->
+        // Preserve the original call-side variance. During observation candidate
+        // get reads fixed payloads without growth/sealing in either direction.
+        // Returning an element candidate does not itself inspect its payload.
+        context.restElement(fullType, Contravariant()).map(element ->
+          RCSArray(element)
+        )
+      }
+    }) match {
+    | TRReady(shape) -> Some(shape)
+    | TRUnavailable() -> None()
+    | TRBlocked() -> static::blockedRestShape(fullType.pos)
     }
   }
 
@@ -96,6 +165,7 @@ class VariadicTyping() {
   // Returns true if inference fails constraints (call is invalid).
   static fun inferRestTypeVar(
     tcenv: mutable TCEnv,
+    plan: mutable CallSubtypePlan,
     tenv: TEnv,
     pos: PosRange,
     spreadParam: ?TType,
@@ -107,7 +177,9 @@ class VariadicTyping() {
     spreadParam match {
     | Some(fullType) ->
       fullType.getSingleVar() match {
-      | Some(tvar) if (subst.isUnbound(tvar)) ->
+      | Some(tvar) ->
+        // A tracing read cannot run in a match guard.
+        if (!subst.isUnbound(tvar)) return false;
         inferred = moreArgs match {
         | Some(tailElt0) ->
           // Unknown-length tail: infer ReadonlyArray<U> where U = union of all rest args.
@@ -124,37 +196,37 @@ class VariadicTyping() {
         saved = subst.save();
         subst.grow(tenv, tvar, inferred, Contravariant());
         for (cstr in tvar.constraints) {
-          TType::isSub(subst, tenv, inferred, cstr) match {
-          | STOk() -> void
-          | stErr @ STErrorOnTType _ ->
+          plan.propose(
+            tcenv,
+            tenv,
+            inferred,
+            cstr,
+            Array[
+              (
+                pos,
+                `The inferred rest arguments ${tenv.ppType(
+                  tcenv,
+                  inferred,
+                )} do not satisfy the rest parameter's constraint`,
+              ),
+              (cstr.pos, `Constraint ${tenv.ppType(tcenv, cstr)}`),
+            ],
+            TSCode(2344),
+          );
+          if (plan.hasFailed()) {
             subst.restore(saved);
-            tcenv.subtypingError(
-              subst,
-              tenv,
-              Array[
-                (
-                  pos,
-                  `The inferred rest arguments ${tenv.ppType(
-                    tcenv,
-                    inferred,
-                  )} do not satisfy the rest parameter's constraint`,
-                ),
-                (cstr.pos, `Constraint ${tenv.ppType(tcenv, cstr)}`),
-              ],
-              stErr,
-              TSCode(2344),
-            );
             return true
           }
         };
         false
-      | _ -> false
+      | None() -> false
       }
     | None() -> false
     }
   }
 
-  // Validates rest arguments against the expected rest shape after param checking.
+  // Proposes rest arguments against the committed rest shape and retains every
+  // obligation for whole-call validation.
   //
   // For `coll.map(Two, "hello", 42)` with `...params: Params` bound to `[string, number]`:
   //   - totalSize = 1 (the `mapper` param), args = [Two, "hello", 42]
@@ -167,8 +239,9 @@ class VariadicTyping() {
   //   - `coll.map(Two, ...arr)` where arr is unknown-length => error
   //
   // For array-rest (non-tuple), checks each rest arg against the element type.
-  static fun checkRestArgs(
+  static fun proposeRestArgs(
     tcenv: mutable TCEnv,
+    plan: mutable CallSubtypePlan,
     tenv: TEnv,
     pos: PosRange,
     spreadParam: ?TType,
@@ -183,8 +256,8 @@ class VariadicTyping() {
     | Some(spreadType) ->
       knownRest = args.slice(totalSize);
 
-      static::resolveSpreadToTuple(tcenv.subst, tenv, Some(spreadType)) match {
-      | Some(tupleElts) ->
+      static::resolveCallRestShape(tcenv.subst, tenv, spreadType) match {
+      | Some(RCSFixed(tupleElts)) ->
         // Exact tuple-rest: reject unknown-length tail, enforce exact arity,
         // then element-wise subtype check.
         if (moreArgs is Some(_)) {
@@ -214,73 +287,52 @@ class VariadicTyping() {
           )
         } else {
           for (i in Range(0, tupleElts.size())) {
-            TType::isSub(tcenv.subst, tenv, knownRest[i], tupleElts[i]) match {
-            | STOk() -> void
-            | err @ STErrorOnTType _ ->
-              tcenv.subtypingError(
-                tcenv.subst,
-                tenv,
-                Array[
-                  (pos, "Argument is not assignable to the parameter's type"),
-                ],
-                err,
-                TSCode(2345),
-              )
-            }
+            plan.propose(
+              tcenv,
+              tenv,
+              knownRest[i],
+              tupleElts[i],
+              Array[
+                (pos, "Argument is not assignable to the parameter's type"),
+              ],
+              TSCode(2345),
+            );
           }
         }
+      | Some(RCSArray(eltType)) ->
+        // Projection is already committed. Proposals may infer symbolic
+        // elements; only the whole-call validator publishes acceptance.
+        for (restArg in knownRest) {
+          plan.propose(
+            tcenv,
+            tenv,
+            restArg,
+            eltType,
+            Array[(pos, "Argument is not assignable to the parameter's type")],
+            TSCode(2345),
+          );
+        };
+        moreArgs.each(ma -> {
+          plan.propose(
+            tcenv,
+            tenv,
+            ma,
+            eltType,
+            Array[(pos, "Argument is not assignable to the parameter's type")],
+            TSCode(2345),
+          );
+        })
       | None() ->
-        // Array-rest (or array-like) validation: check each rest arg against the
-        // element type.
-        maybeGetRestElementType(
-          tcenv.subst,
-          tenv,
-          spreadType,
-          Contravariant(),
-        ) match {
-        | Some(eltType) ->
-          for (restArg in knownRest) {
-            TType::isSub(tcenv.subst, tenv, restArg, eltType) match {
-            | STOk() -> void
-            | err @ STErrorOnTType _ ->
-              tcenv.subtypingError(
-                tcenv.subst,
-                tenv,
-                Array[
-                  (pos, "Argument is not assignable to the parameter's type"),
-                ],
-                err,
-                TSCode(2345),
-              )
-            }
-          };
-          moreArgs.each(ma -> {
-            TType::isSub(tcenv.subst, tenv, ma, eltType) match {
-            | STOk() -> void
-            | err @ STErrorOnTType _ ->
-              tcenv.subtypingError(
-                tcenv.subst,
-                tenv,
-                Array[
-                  (pos, "Argument is not assignable to the parameter's type"),
-                ],
-                err,
-                TSCode(2345),
-              )
-            }
-          })
-        | None() ->
-          tcenv.error(
-            Array[
-              (pos, "A spread argument ('...') must be of an array type"),
-              (
-                spreadType.pos,
-                `${tenv.ppType(tcenv, spreadType)} is not an array`,
-              ),
-            ],
-            SKJSCode(2045),
-          )
-        }
+        tcenv.error(
+          Array[
+            (pos, "A spread argument ('...') must be of an array type"),
+            (
+              spreadType.pos,
+              `${tenv.ppType(tcenv, spreadType)} is not an array`,
+            ),
+          ],
+          SKJSCode(2045),
+        )
       }
     }
   }
@@ -306,11 +358,17 @@ class VariadicTyping() {
             | TAInst(Name(_, "Array"), _) -> true
             | _ -> false
             };
-            subst = Subst::mcreate(tcenvb);
             normalizedCstr = tenv.normalize(tcenvb, cstr);
             resolvedCstr = normalizedCstr.insts.getUnique() match {
             | Some(TSInst(name, cstrTArgs)) ->
-              tenv.instantiate(subst, subst, name, cstrTArgs)
+              tenv.materializeReadContext<TType>(
+                tcenvb,
+                name.pos,
+                context -> context.instantiate(name, cstrTArgs),
+                (scratch, readEnv) ->
+                  readEnv.instantiate(scratch, scratch, name, cstrTArgs)
+                ,
+              )
             | _ -> normalizedCstr
             };
             isExpandedMutableArray = resolvedCstr.insts.getUnique() match {

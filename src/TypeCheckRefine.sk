@@ -81,25 +81,38 @@ extension class TypeChecker {
         default = None();
         this.setLocal(tcenv, local, default, filter)
       | _ ->
-        otherType = this.lookupExprType(tcenv, otherExpr);
-        // Clone subst because inter may unify type variables as a side
-        // effect; we want the exploratory narrowing not to mutate the main subst.
+        // Equality observes both values. Establish their inferred types in
+        // the live substitution before computing a branch-local refinement;
+        // resolving only in the clone loses the read and can hide a singleton.
+        // Object identity must not import transient contents from another alias.
+        otherType = this.stableAliasExprType(
+          tcenv,
+          otherExpr,
+          this.lookupExprType(tcenv, otherExpr),
+        ).expand(tcenv.subst, this, Some(Covariant()));
+        comparisonType = localType.expand(tcenv.subst, this, Some(Covariant()));
+        // Refinement reads established payloads; normalization must not propose
+        // new candidate solutions while deciding which branch remains possible.
         if (target) {
-          common = TType::inter(
-            tcenv.subst.clone(),
-            this,
-            localType,
-            otherType,
+          common = this.materializeReadContext<TType>(
+            tcenv,
+            local.pos,
+            context -> context.intersection(comparisonType, otherType),
+            (scratch, readEnv) ->
+              TType::inter(scratch, readEnv, comparisonType, otherType)
+            ,
           );
           tcenv.scope.set(local, common, (_, _) -> void)
         } else {
           otherType.getSingleConstant() match {
           | Some(c) ->
-            diffed = TType::removeConstant(
-              tcenv.subst.clone(),
-              this,
-              localType,
-              c,
+            diffed = this.materializeReadContext<TType>(
+              tcenv,
+              local.pos,
+              context -> context.removeConstant(comparisonType, c),
+              (scratch, readEnv) ->
+                TType::removeConstant(scratch, readEnv, comparisonType, c)
+              ,
             );
             tcenv.scope.set(local, diffed, (_, _) -> void)
           | None() -> void
@@ -117,7 +130,14 @@ extension class TypeChecker {
     otherExpr: Expr,
     target: Bool,
   ): void {
-    otherType = this.lookupExprType(tcenv, otherExpr);
+    // As with local equality, establish the observed operand in the live
+    // substitution before recognizing a singleton or refining on a clone.
+    // Use stable object contents: identity does not freeze the other alias.
+    otherType = this.stableAliasExprType(
+      tcenv,
+      otherExpr,
+      this.lookupExprType(tcenv, otherExpr),
+    ).expand(tcenv.subst, this, Some(Covariant()));
     this.evalFieldEqualityType(tcenv, local, fieldName, otherType, target)
   }
 
@@ -147,12 +167,25 @@ extension class TypeChecker {
             false,
           ) match {
           | None() -> Some(tFields)
-          | Some(branchFieldType) -> narrow(tFields, branchFieldType)
+          | Some(branchFieldType) ->
+            // Only established contracts can safely retain this field fact:
+            // uncontracted captures still lack a stable fallback at entry.
+            // Resolve in the live substitution so later inference respects
+            // the read that justified this refinement.
+            narrow(
+              tFields,
+              if (tcenv.scope.hasDeclaredContract(local)) {
+                branchFieldType.expand(tcenv.subst, this, Some(Covariant()))
+              } else {
+                branchFieldType
+              },
+            )
           }
         )
       | x -> Some(x)
       }
-    )
+    );
+    tcenv.scope.markFieldRefinement(local)
   }
 
   // Narrows `local` based on `(local.fieldName === <type>) === target`.
@@ -173,11 +206,13 @@ extension class TypeChecker {
       fieldName,
       local.pos,
       (tFields, branchFieldType) -> {
-        overlap = TType::inter(
-          tcenv.subst.clone(),
-          this,
-          branchFieldType,
-          otherType,
+        overlap = this.materializeReadContext<TType>(
+          tcenv,
+          local.pos,
+          context -> context.intersection(branchFieldType, otherType),
+          (scratch, readEnv) ->
+            TType::inter(scratch, readEnv, branchFieldType, otherType)
+          ,
         );
         if (overlap.isBottom()) {
           // No overlap: === eliminates the branch, !== keeps it
@@ -193,11 +228,13 @@ extension class TypeChecker {
           constant match {
           | Some(c) ->
             // !==: subtract the constant from the field type
-            narrowed = TType::removeConstant(
-              tcenv.subst.clone(),
-              this,
-              branchFieldType,
-              c,
+            narrowed = this.materializeReadContext<TType>(
+              tcenv,
+              local.pos,
+              context -> context.removeConstant(branchFieldType, c),
+              (scratch, readEnv) ->
+                TType::removeConstant(scratch, readEnv, branchFieldType, c)
+              ,
             );
             if (narrowed.isBottom()) {
               None()
@@ -273,8 +310,6 @@ extension class TypeChecker {
       default = if (target) {
         Some(
           STypes::union(
-            tcenv.subst,
-            this,
             STypes::single(TPrimUnit(TNull(), typePos)),
             STypes::single(TObject::createEmpty(typePos)),
           ),
@@ -367,10 +402,11 @@ extension class TypeChecker {
     skolemTArgs = this.makeSkolemTArgsOf(tcenv.subst, c, className);
     skolemFields = this.newFieldsOf(tcenv.subst, c, className, skolemTArgs);
     // The fields the preservation check below matches branches against, built
-    // once. Their inference variables are minted in a throwaway clone, so the
-    // real substitution never sees them and there is nothing to roll back;
-    // each branch re-clones it, so one branch's inference cannot reach another.
-    probeSubst = tcenv.subst.clone();
+    // once. Their inference variables are minted in a compatibility probe, so
+    // the real substitution never sees them and there is nothing to roll back;
+    // each branch takes its own attempt from the probe, so one branch's
+    // inference cannot reach another.
+    probeSubst = tcenv.subst.compatibilityProbe();
     probeFields = this.newFieldsOf(
       probeSubst,
       c,
@@ -394,12 +430,7 @@ extension class TypeChecker {
         rewritten = false;
         for (fields in tObj.getBranches()) {
           if (
-            TFields::isSub(
-              probeSubst.clone(),
-              this,
-              fields,
-              probeFields,
-            ) is STOk _
+            TType::probeFieldsCompatible(probeSubst, this, fields, probeFields)
           ) {
             branches.push(fields)
           } else {
@@ -474,6 +505,59 @@ extension class TypeChecker {
   // Array.isArray, `in`, &&, ||, !) and narrows `tcenv` accordingly.
   // `target === true` when the condition holds, `target === false` when it doesn't.
   fun evalCond(tcenv: mutable TCEnv, e: Expr, target: Bool): void {
+    writes = mutable CaptureWrites{};
+    writes.expr(e);
+    this.evalStableCond(tcenv, writes.result(), e, target)
+  }
+
+  private fun evalStableCond(
+    tcenv: mutable TCEnv,
+    writes: ?SortedSet<String>,
+    e: Expr,
+    target: Bool,
+  ): void {
+    // expr has already applied the condition's effects. A test mentioning a
+    // written binding may describe its earlier value, not the value now in
+    // scope. Only replay facts independent of those writes. Logical structure
+    // is traversed so an unrelated test can still contribute a stable fact.
+    observedReads = mutable CaptureWrites{trackReads => true};
+    observedReads.expr(e);
+    stale = observedReads.reads.any(read -> {
+      beforeEffect = tcenv.exprEffectEpochs
+        .maybeGet(read.pos)
+        .map(epoch -> epoch < tcenv.effectEpoch)
+        .default(false);
+      beforeEffect &&
+        (read.value match {
+        | Var(name) -> tcenv.scope.mayBeReassignedByCall(name)
+        | Dot _
+        | Get _ ->
+          true
+        | _ -> false
+        })
+    });
+    e.value match {
+    | Binop(BOLogicalAnd(), _, _)
+    | Binop(BOLogicalOr(), _, _)
+    | Unop(UOExclamationMark(), _) ->
+      void
+    | _ ->
+      if (stale) return void;
+      writes match {
+      | None() -> return void
+      | Some(names) if (!names.isEmpty()) ->
+        // At nonzero depth the capture traversal records every referenced
+        // name, conservatively including nested bodies and shadowed names.
+        reads = mutable CaptureWrites{depth => 1};
+        reads.expr(e);
+        stable = reads
+          .capturedNames()
+          .map(refs -> !refs.any(name -> names.contains(name)))
+          .default(false);
+        if (!stable) return void
+      | Some(_) -> void
+      }
+    };
     e.value match {
     | Binop(BOStrictEquality(), e1, e2) ->
       this.evalEquality(tcenv, e1, e2, target)
@@ -565,6 +649,7 @@ extension class TypeChecker {
                         get => indexField.get,
                         set => indexField.set,
                         access => indexField.access,
+                        mayBeOmittedByCopy => indexField.mayBeOmittedByCopy,
                       }
                     | None() ->
                       // Presence is runtime-confirmed by `in` but the
@@ -579,6 +664,7 @@ extension class TypeChecker {
                         get => TType::top(e.pos),
                         set => TType::bottom(e.pos),
                         access => FAPhantom(e.pos),
+                        mayBeOmittedByCopy => false,
                       }
                     };
                     Some(
@@ -614,21 +700,22 @@ extension class TypeChecker {
         };
       this.setLocalFilterMap(tcenv, local, None(), filterMapSType)
 
-    | Unop(UOExclamationMark(), subE) -> this.evalCond(tcenv, subE, !target)
+    | Unop(UOExclamationMark(), subE) ->
+      this.evalStableCond(tcenv, writes, subE, !target)
 
     | Binop(BOLogicalAnd(), e1, e2) ->
       if (target) {
-        this.evalCond(tcenv, e1, true);
-        this.evalCond(tcenv, e2, true)
+        this.evalStableCond(tcenv, writes, e1, true);
+        this.evalStableCond(tcenv, writes, e2, true)
       } else {
         savedScope = tcenv.scope;
         scope1 = tcenv.mcreateSubScope{isLoop => false};
         scope2 = tcenv.mcreateSubScope{isLoop => false};
         tcenv.!scope = scope1;
-        this.evalCond(tcenv, e1, false);
+        this.evalStableCond(tcenv, writes, e1, false);
         tcenv.!scope = scope2;
-        this.evalCond(tcenv, e1, true);
-        this.evalCond(tcenv, e2, false);
+        this.evalStableCond(tcenv, writes, e1, true);
+        this.evalStableCond(tcenv, writes, e2, false);
         tcenv.!scope = savedScope;
         tcenv.mergeScope(this, scope1, scope2)
       }
@@ -638,15 +725,15 @@ extension class TypeChecker {
         scope1 = tcenv.mcreateSubScope{isLoop => false};
         scope2 = tcenv.mcreateSubScope{isLoop => false};
         tcenv.!scope = scope1;
-        this.evalCond(tcenv, e1, true);
+        this.evalStableCond(tcenv, writes, e1, true);
         tcenv.!scope = scope2;
-        this.evalCond(tcenv, e1, false);
-        this.evalCond(tcenv, e2, true);
+        this.evalStableCond(tcenv, writes, e1, false);
+        this.evalStableCond(tcenv, writes, e2, true);
         tcenv.!scope = savedScope;
         tcenv.mergeScope(this, scope1, scope2)
       } else {
-        this.evalCond(tcenv, e1, false);
-        this.evalCond(tcenv, e2, false)
+        this.evalStableCond(tcenv, writes, e1, false);
+        this.evalStableCond(tcenv, writes, e2, false)
       }
 
     // Truthiness: if (x) treated as if (x === true)
@@ -690,10 +777,13 @@ extension class TypeChecker {
       fieldName,
       fieldPos,
       (tFields, branchFieldType) -> {
-        narrowed = branchFieldType.truthinessPart(
-          tcenv.subst.clone(),
-          this,
-          target,
+        narrowed = this.materializeReadContext<TType>(
+          tcenv,
+          fieldPos,
+          context -> context.truthinessPart(branchFieldType, target),
+          (scratch, readEnv) ->
+            branchFieldType.truthinessPart(scratch, readEnv, target)
+          ,
         );
         if (narrowed.isBottom()) {
           None()
@@ -728,12 +818,26 @@ extension class TypeChecker {
     | None() -> /* Non-local */ return void
     | Some(ty) -> ty
     };
+    // Establish the head shape before callbacks construct a retained
+    // refinement. A blocked read contributes no narrowing, never a made-up
+    // tuple/default shape or an eliminated branch.
+    tcenv.subst.withCommittedReadDecision<TType>(
+      this.forTypeReadObservation(),
+      context -> context.expand(ty, Some(Covariant())),
+    ) match {
+    | TRReady(established) -> !ty = established
+    | TRUnavailable()
+    | TRBlocked() ->
+      return void
+    };
     f = (sTypesOpt) ->
       sTypesOpt match {
       | None() -> default
       | Some(sTypes) -> Some(sTypes.filterMap(filterMap))
       };
-    !ty = ty.mapSTypes(tcenv.subst, this, Some(Covariant()), f);
+    // Head expansion was established above. Transform that data without
+    // entering inference's expansion adapter again; nested members stay symbolic.
+    !ty = ty.mapSTypesWith(_ -> None(), f);
     tcenv.scope.set(local, ty, (_, _) -> void)
   }
 

@@ -115,6 +115,8 @@ export interface Context {
 }
 
 export interface Values<T> extends Iterable<T & DepSafe> {
+  /** The only value; throws when there are several, unless `ifMany` is given. */
+  getUnique(_default?: { ifMany?: T }): T & DepSafe;
   toArray(): (T & DepSafe)[];
 }
 

@@ -23,25 +23,9 @@ extension class TypeChecker {
       }
     };
     static::checkTypeParams(tcenvl, c.tparams, OptionalTypeParamsForbidden());
-    subst = Subst::mcreate(tcenvl);
-    targs = TArgs(
-      c.tparams.map(tparam -> {
-        // invariant(tparam.default is None()); // checked in checkTypeParams
-        ttypeParam = TParamWithConstraint(
-          tparam.name.value,
-          tparam.name.pos.fileName,
-          tparam.id,
-          tparam.constraint.map(c -> this.normalize(subst, c)),
-        );
-        TType::fromTParamWithConstraint(
-          subst,
-          this,
-          tparam.name.pos,
-          ttypeParam,
-        )
-      }),
-    );
+    subst = Subst::createCheckingOwner(tcenvl);
     !this = this.addTParams(subst, c.tparams);
+    targs = TArgs(c.tparams.map(tparam -> this.bindings[tparam.name.value]));
     fileName = c.name.pos.fileName;
     thisType = TType::classThisType(subst, this, c.name, targs.targs);
     if (c.extends_.size() != 0) {
@@ -322,7 +306,8 @@ extension class TypeChecker {
               this.expr(tcenv, e, true),
               type,
               TSCode(2322),
-            )
+            );
+            tcenv.validateHiddenEscapes()
           }
         }
       | fd @ ClassFieldMethod _ ->
@@ -488,6 +473,7 @@ extension class TypeChecker {
         fullType,
         TSCode(2322),
       );
+      tcenv.validateHiddenEscapes();
       if (getConfig(tcenv.context).buildCfg) {
         cfg = CFGBuilder::build(
           cgNode.id.toString(),

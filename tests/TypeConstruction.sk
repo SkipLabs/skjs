@@ -1,0 +1,494 @@
+module SKJSTests;
+
+// Type constructors must preserve the meaning of their symbolic inputs across
+// legal inference growth. These tests call the actual constructor operations.
+@test
+fun testFrozenParameterIntersectionRetainsBothOperands(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  pos = SKJS.PosRange::none;
+  a = subst.gen(pos);
+  b = subst.gen(pos);
+  subst.grow(tenv, a, observationNumber(), SKJS.Contravariant());
+  subst.grow(tenv, b, observationString(), SKJS.Contravariant());
+  idA = SKJS.Id::createSynthetic("construction-A");
+  idB = SKJS.Id::createSynthetic("construction-B");
+  parameter = id ->
+    SKJS.TType::ofClauses(
+      pos,
+      SKJS.Clauses::single(SKJS.TParam("T", SKJS.FPath::nil, id)),
+    );
+  original = SKJS.TType::inter(subst, tenv, parameter(idA), parameter(idB));
+  subst.!freezeCandidates = true;
+  mapped = original.mapTParams(subst, tenv, p ->
+    Some(SKJS.TType::var(if (p.id == idA) a else b))
+  );
+  subst.!freezeCandidates = false;
+  subst.grow(tenv, b, observationNumber(), SKJS.Contravariant());
+  result = SKJS.TType::isSub(subst, tenv, observationNumber(), mapped);
+  // The intersection must acquire number when the second candidate grows.
+  SKTest.expectEq(true, result is SKJS.STOk());
+}
+
+fun constructionField(ty: SKJS.TType): SKJS.TField {
+  SKJS.TField::create{
+    pos => SKJS.PosRange::none,
+    name => "value",
+    isOptional => false,
+    isReadonly => None(),
+    type => ty,
+    access => SKJS.FAPublic(),
+  }
+}
+
+@test
+fun testFrozenFieldUnionRetainsWriteContract(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst) with {expandInter => true};
+  a = subst.gen(SKJS.PosRange::none);
+  b = subst.gen(SKJS.PosRange::none);
+  subst.grow(tenv, a, observationNumber(), SKJS.Contravariant());
+  subst.grow(tenv, b, observationString(), SKJS.Contravariant());
+  x = constructionField(SKJS.TType::var(a));
+  y = constructionField(SKJS.TType::var(b));
+  subst.!freezeCandidates = true;
+  named = SKJS.TField::union(subst, tenv, x, y);
+  indexed = SKJS.TField::unionIndex(subst, tenv, x, y).fromSome();
+  subst.!freezeCandidates = false;
+  subst.grow(tenv, b, observationNumber(), SKJS.Contravariant());
+  for (field in Array[named, indexed]) {
+    result = SKJS.TType::isSub(subst, tenv, observationNumber(), field.set);
+    SKTest.expectEq(true, result is SKJS.STOk());
+  }
+}
+
+fun constructionCallback(ty: SKJS.TType, id: SKJS.Id): SKJS.TFun {
+  SKJS.TFun(
+    Array[SKJS.TParamWithConstraint("T", SKJS.FPath::nil, id, Some(ty))],
+    SKJS.Explicit(ty),
+    Array[ty],
+    Array[ty],
+    None(),
+    observationNumber(),
+    SKJS.CGNodes(SortedSet[]),
+  )
+}
+
+@test
+fun testFrozenCallbackUnionRetainsInputContracts(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  a = subst.gen(SKJS.PosRange::none);
+  b = subst.gen(SKJS.PosRange::none);
+  subst.grow(tenv, a, observationNumber(), SKJS.Contravariant());
+  subst.grow(tenv, b, observationString(), SKJS.Contravariant());
+  x = constructionCallback(
+    SKJS.TType::var(a),
+    SKJS.Id::createSynthetic("call-A"),
+  );
+  y = constructionCallback(
+    SKJS.TType::var(b),
+    SKJS.Id::createSynthetic("call-B"),
+  );
+  subst.!freezeCandidates = true;
+  combined = SKJS.TFun::union(subst, tenv, x, y);
+  subst.!freezeCandidates = false;
+  subst.grow(tenv, b, observationNumber(), SKJS.Contravariant());
+  for (input in Array[
+    combined.tparams[0].cstr.fromSome(),
+    combined.thisParam.tyOpt().fromSome(),
+    combined.params[0],
+    combined.optionalParams[0],
+  ]) {
+    result = SKJS.TType::isSub(subst, tenv, observationNumber(), input);
+    SKTest.expectEq(true, result is SKJS.STOk());
+  }
+}
+
+@test
+fun testFrozenFieldIntersectionRetainsReadContract(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst) with {expandInter => true};
+  a = subst.gen(SKJS.PosRange::none);
+  b = subst.gen(SKJS.PosRange::none);
+  subst.grow(tenv, a, observationNumber(), SKJS.Contravariant());
+  subst.grow(tenv, b, observationString(), SKJS.Contravariant());
+  x = constructionField(SKJS.TType::var(a));
+  y = constructionField(SKJS.TType::var(b));
+  subst.!freezeCandidates = true;
+  named = SKJS.TField::inter(subst, tenv, x, y);
+  indexed = SKJS.TField::interIndex(subst, tenv, x, y);
+  subst.!freezeCandidates = false;
+  subst.grow(tenv, b, observationNumber(), SKJS.Contravariant());
+  for (field in Array[named, indexed]) {
+    numeric = SKJS.TType::isSub(subst, tenv, observationNumber(), field.get);
+    textual = SKJS.TType::isSub(subst, tenv, observationString(), field.get);
+    // Reads retain both operands: numbers become possible, strings do not.
+    SKTest.expectEq(true, numeric is SKJS.STOk());
+    SKTest.expectEq(false, textual is SKJS.STOk());
+  }
+}
+
+@test
+fun testFrozenGenericBoundRetainsCandidate(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  pos = SKJS.PosRange::none;
+  a = subst.gen(pos);
+  subst.grow(tenv, a, observationString(), SKJS.Contravariant());
+  id = SKJS.Id::createSynthetic("constructed-bound");
+  param = SKJS.TParamWithConstraint(
+    "T",
+    SKJS.FPath::nil,
+    id,
+    Some(SKJS.TType::var(a)),
+  );
+  subst.!freezeCandidates = true;
+  bounded = SKJS.TType::fromTParamWithConstraint(subst, tenv, pos, param);
+  subst.!freezeCandidates = false;
+  subst.grow(tenv, a, observationNumber(), SKJS.Contravariant());
+  instantiated = (mutable SKJS.Instantiate()).type_(
+    (subst, tenv, SortedMap[(id, observationNumber())]),
+    bounded,
+  );
+  result = SKJS.TType::isSub(subst, tenv, observationNumber(), instantiated);
+  // Instantiation must use the retained bound after candidate growth.
+  SKTest.expectEq(true, result is SKJS.STOk());
+}
+
+@test
+fun testUncommittedLiteralIntersectionDoesNotBecomeStale(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  file = SKJS.FPath::create(
+    SKJS.RootId::project,
+    "tests/expect-error/type-query-memo-stability.ts",
+  );
+  lexer = SKJS.Lexer::mcreate(file, "");
+  pos = SKJS.PosRange::create(lexer, SKJS.Pos(0), SKJS.Pos(0));
+  commitment = SKJS.ArrayLiteralSelector::create(subst, pos);
+  literal = SKJS.TType::arrayLit(
+    commitment,
+    Array[observationNumber()],
+    Array[None()],
+  );
+  object = SKJS.TType::single(SKJS.TObject::createEmpty(pos));
+  _ = SKJS.TType::inter(subst, tenv, literal, object);
+  SKTest.expectEq(true, commitment.peek(subst, tenv).isNone());
+  array = SKJS.TType::inst(
+    SKJS.Name(pos, "Array"),
+    SKJS.TArgs(Array[observationNumber()]),
+  );
+  commitment.commit(subst, tenv, array);
+  reused = SKJS.TType::inter(subst, tenv, literal, object);
+  // Ask the same question again with nothing remembered: a memo entry is only
+  // valid if a first-time query would compute the same answer.
+  subst.testSetSeenIntersections(SortedMap[]);
+  recomputed = SKJS.TType::inter(subst, tenv, literal, object);
+  // A later commitment must give the same result as a fresh query.
+  SKTest.expectEq(true, reused == recomputed);
+}
+
+// Representation choice is one-shot even while ordinary candidates are frozen;
+// rolling back the enclosing alternative restores the uncommitted state.
+@test
+fun testLiteralSelectorCommitmentAndRollback(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  selector = SKJS.ArrayLiteralSelector::create(subst, SKJS.PosRange::none);
+  saved = subst.save();
+  subst.!freezeCandidates = true;
+  selector.commit(subst, tenv, observationNumber());
+  selector.commit(subst, tenv, observationString());
+  SKTest.expectEq(Some(observationNumber()), selector.peek(subst, tenv));
+  subst.restore(saved);
+  SKTest.expectEq(None(), selector.peek(subst, tenv));
+}
+
+@test
+fun testSubtypeLifetimeFollowsCallbackVariance(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  pos = SKJS.PosRange::none;
+  resultSource = subst.gen(pos);
+  argumentTarget = subst.gen(pos);
+  resultTarget = subst.gen(pos);
+  for (tv in Array[resultSource, argumentTarget, resultTarget]) {
+    subst.grow(tenv, tv, observationNumber(), SKJS.Contravariant())
+  };
+  callback = (arg, ret) ->
+    SKJS.TType::single(
+      SKJS.TObject::createCall(
+        SKJS.TFuns::singleFun(
+          SKJS.TFun(
+            Array[],
+            SKJS.NoThis(),
+            Array[arg],
+            Array[],
+            None(),
+            ret,
+            SKJS.CGNodes(SortedSet[]),
+          ),
+          pos,
+        ),
+      ),
+    );
+  source = callback(observationNumber(), SKJS.TType::var(resultSource));
+  target = callback(
+    SKJS.TType::var(argumentTarget),
+    SKJS.TType::var(resultTarget),
+  );
+  SKTest.expectEq(
+    true,
+    subst.proveEstablishedSubtype(tenv, source, target) is SKJS.TRBlocked _,
+  );
+  SKTest.expectEq(true, subst.isOpen(resultSource));
+  SKTest.expectEq(
+    true,
+    subst.proveSubtype(tenv, source, target) is SKJS.TRReady _,
+  );
+  // A positive lower bound can justify the final proof, but cannot skip
+  // inference while that bound is still open.
+  SKTest.expectEq(
+    true,
+    subst.proveEstablishedSubtype(tenv, source, target) is SKJS.TRBlocked _,
+  );
+  // Contravariance makes the target's argument a source dependency.
+  SKTest.expectEq(true, subst.isClosed(argumentTarget));
+  SKTest.expectEq(true, subst.isClosed(resultSource));
+  SKTest.expectEq(true, subst.isOpen(resultTarget));
+  subst.grow(tenv, resultTarget, observationString(), SKJS.Contravariant());
+  reused = SKJS.TType::isSub(subst, tenv, source, target);
+  // Ask the same question again with nothing remembered: a memo entry is only
+  // valid if a first-time query would compute the same answer.
+  subst.testSetSeenSubtypes(SortedSet[]);
+  recomputed = SKJS.TType::isSub(subst, tenv, source, target);
+  SKTest.expectEq(true, reused is SKJS.STOk());
+  SKTest.expectEq(true, recomputed is SKJS.STOk());
+}
+
+@test
+fun testStructuralUnionPreservesUnresolvedOperands(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  pos = SKJS.PosRange::none;
+  candidate = subst.gen(pos);
+  fieldCandidate = subst.gen(pos);
+  symbolic = SKJS.TType::var(candidate.setConstraint(observationNumber()));
+  field = constructionField(SKJS.TType::var(fieldCandidate));
+  fields = SKJS.TFields::createFromSorted{
+    fields => SortedMap[].set(field.name, field),
+  };
+  object = SKJS.TType::single(
+    SKJS.TObject::createSingleBranch(fields, None(), pos),
+  );
+  pure = SKJS.TType::unionStructural(symbolic, object);
+  stamp = subst.typeMutationStamp();
+  observed = subst.testObservedDecision(scratch ->
+    SKJS.TType::union(scratch, tenv, symbolic, object)
+  );
+  SKTest.expectEq(
+    true,
+    observed match {
+    | SKJS.TRReady(result) ->
+      result == pure &&
+        result.insts == symbolic.insts &&
+        result.clauses == object.clauses
+    | _ -> false
+    },
+  );
+  SKTest.expectEq(true, subst.isUnbound(candidate));
+  SKTest.expectEq(true, subst.isUnbound(fieldCandidate));
+  SKTest.expectEq(stamp, subst.typeMutationStamp());
+}
+
+// Rejection must abandon source commitments made while comparing the types.
+// This is a publication boundary, independent of which proposal found a bound.
+@test
+fun testRejectedSubtypeDoesNotPublishSourceRead(): void {
+  owner = observationSubst();
+  tenv = observationTypeEnv(owner);
+  source = owner.gen(SKJS.PosRange::none);
+  owner.grow(tenv, source, observationNumber(), SKJS.Contravariant());
+  result = owner.proveSubtype(
+    tenv,
+    SKJS.TType::var(source),
+    observationString(),
+  );
+  SKTest.expectEq(true, result is SKJS.TRUnavailable _);
+  SKTest.expectEq(true, owner.isOpen(source));
+  SKTest.expectEq(Some(observationNumber()), owner.peekRaw(source));
+}
+
+// A successful representation proposal is not evidence that the original
+// elements inhabit it. The independent check must reject a false recursive
+// premise used while selecting a tuple, and roll the selection back.
+@test
+fun testLiteralConstructionRejectsUnprovedElement(): void {
+  owner = observationSubst();
+  tenv = observationTypeEnv(owner);
+  file = SKJS.FPath::create(
+    SKJS.RootId::project,
+    "tests/expect-error/type-query-memo-stability.ts",
+  );
+  lexer = SKJS.Lexer::mcreate(file, "");
+  pos = SKJS.PosRange::create(lexer, SKJS.Pos(0), SKJS.Pos(0));
+  num = observationNumber();
+  str = observationString();
+  selector = SKJS.ArrayLiteralSelector::create(owner, pos);
+  literal = SKJS.TType::arrayLit(selector, Array[num], Array[None()]);
+  target = SKJS.TType::tuple(pos, Array[str], false);
+  saved = owner.save();
+  // Tuple selection precedes its element checks. Attach the deliberately false
+  // premise to that state, deriving its version through the real selector API.
+  selector.commit(owner, tenv, target);
+  selectedVersion = owner.inferenceVersion();
+  owner.restore(saved);
+  assumed = tenv with {seenSub => SortedSet[(selectedVersion, num, str)]};
+  SKTest.expectEq(
+    owner.proposeSubtype(assumed, literal, target) is SKJS.SubtypeProposed(),
+    true,
+    "the proposal witness must select the incompatible tuple",
+  );
+  SKTest.expectEq(selector.peek(owner, tenv), Some(target));
+  owner.restore(saved);
+  accepted = false;
+  error = SKJS.catchError(() -> {
+    !accepted = SKJS.TType::isSub(
+      owner,
+      assumed,
+      literal,
+      target,
+    ) is SKJS.STOk()
+  });
+  SKTest.expectEq(
+    accepted,
+    false,
+    "validation must not accept the incompatible literal",
+  );
+  SKTest.expectEq(
+    error match {
+    | Some(SKJS.SubtypingError(_, _, _, stErr, _)) ->
+      stErr.ty1 == num && stErr.ty2 == str
+    | _ -> false
+    },
+    true,
+    "validation must reject the original number element against string storage",
+  );
+  SKTest.expectEq(selector.peek(owner, tenv), None());
+  valid = SKJS.TType::tuple(pos, Array[num], false);
+  SKTest.expectEq(
+    SKJS.TType::isSub(owner, tenv, literal, valid) is SKJS.STOk(),
+    true,
+  );
+}
+
+// A later failed obligation must not publish an earlier successful source read.
+// Reordering the batch changes the reported index, never the commitments.
+@test
+fun testWholeSubtypeBatchCommitsAtomically(): void {
+  owner = observationSubst();
+  tenv = observationTypeEnv(owner);
+  source = owner.gen(SKJS.PosRange::none);
+  target = owner.gen(SKJS.PosRange::none);
+  unused = owner.gen(SKJS.PosRange::none);
+  num = observationNumber();
+  str = observationString();
+  owner.grow(tenv, source, num, SKJS.Contravariant());
+  owner.grow(tenv, target, num, SKJS.Contravariant());
+  good = (SKJS.TType::var(source), num);
+  bad = (str, num);
+  for (batch in Array[Array[good, bad], Array[bad, good]]) {
+    outcome = owner.proveSubtypes(tenv, batch);
+    SKTest.expectEq(
+      outcome match {
+      | SKJS.SubtypesUnproved(i, SKJS.SVFUnproved()) -> batch[i] == bad
+      | _ -> false
+      },
+      true,
+      "report the failed original obligation",
+    );
+    SKTest.expectEq(
+      owner.isOpen(source),
+      true,
+      "a failed batch must not seal earlier reads",
+    );
+  };
+  SKTest.expectEq(
+    owner.proveSubtypes(
+      tenv,
+      Array[good, (num, SKJS.TType::var(target))],
+    ) is SKJS.SubtypesProved(),
+    true,
+  );
+  SKTest.expectEq(owner.isClosed(source), true);
+  SKTest.expectEq(
+    owner.isOpen(target),
+    true,
+    "a positive target remains growable",
+  );
+  SKTest.expectEq(
+    owner.isUnbound(unused),
+    true,
+    "uninspected symbolic results stay symbolic",
+  );
+}
+
+// The first proposal uses an unjustified premise instead of inspecting source.
+// A later proposal grows source. Validating only the last proposal would accept
+// this call; the collector must retain and reject the original first obligation.
+@test
+fun testCallPlanRetainsEarlierObligations(): void {
+  owner = observationSubst();
+  tenv = observationTypeEnv(owner);
+  file = SKJS.FPath::create(
+    SKJS.RootId::project,
+    "tests/expect-error/type-query-memo-stability.ts",
+  );
+  lexer = SKJS.Lexer::mcreate(file, "");
+  pos = SKJS.PosRange::create(lexer, SKJS.Pos(0), SKJS.Pos(0));
+  tcenv = SKJS.TCEnv::mcreate(owner, SKJS.CGNode::toplevel(file));
+  source = owner.gen(pos);
+  num = observationNumber();
+  str = observationString();
+  owner.grow(tenv, source, num, SKJS.Contravariant());
+  original = SKJS.TType::var(source);
+  assumed = tenv with {
+    seenSub => SortedSet[(owner.inferenceVersion(), original, num)],
+  };
+  plan = SKJS.CallSubtypePlan::mcreate();
+  messages = Array[(pos, "Argument is not assignable to the parameter's type")];
+  plan.propose(tcenv, assumed, original, num, messages, SKJS.TSCode(2345));
+  SKTest.expectEq(
+    owner.isOpen(source),
+    true,
+    "first proposal must use the supplied premise",
+  );
+  plan.propose(tcenv, tenv, str, original, messages, SKJS.TSCode(2345));
+  SKTest.expectEq(
+    plan.hasFailed(),
+    false,
+    "both inference proposals must succeed",
+  );
+  accepted = false;
+  error = SKJS.catchError(() -> {
+    !accepted = plan.validate(tcenv, assumed)
+  });
+  SKTest.expectEq(accepted, false);
+  SKTest.expectEq(
+    error match {
+    | Some(SKJS.SubtypingError(_, _, _, stErr, _)) ->
+      stErr.ty1 == original && stErr.ty2 == num
+    | _ -> false
+    },
+    true,
+    "report the original earlier obligation",
+  );
+  SKTest.expectEq(
+    owner.isOpen(source),
+    true,
+    "failed validation commits no reads",
+  );
+}
+
+module end;

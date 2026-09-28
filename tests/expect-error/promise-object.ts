@@ -97,8 +97,7 @@ async function testAwaitThenable(t: PromiseLike<number>): Promise<number> {
   return await t;
 }
 
-// Error: awaiting a non-thenable value. (tsc lets `await` pass non-thenables
-// through; SKJS intentionally rejects, like @typescript-eslint/await-thenable.)
+// Awaiting a non-thenable passes it through, with a lint warning in SKJS.
 async function testAwaitNumber(n: number): Promise<number> {
   // @skjs-expect-warning 'await' can only be applied to a Promise
   return await n;
@@ -108,6 +107,29 @@ async function testAwaitPlainObject(o: { a: number }): Promise<number> {
   // @skjs-expect-warning 'await' can only be applied to a Promise
   const r = await o;
   return r.a;
+}
+
+// Awaiting a plain object preserves its identity and mutable field contract.
+async function testAwaitAliasContract(x: {
+  value: number | null;
+}): Promise<number> {
+  if (x.value === null) return 0;
+  // @skjs-expect-warning 'await' can only be applied to a Promise
+  const alias = await x;
+  x.value = null;
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
+  return alias.value;
+}
+
+// A scalar read is a snapshot, so a later object write cannot invalidate it.
+async function testAwaitScalarSnapshot(x: {
+  value: number | null;
+}): Promise<number> {
+  if (x.value === null) return 0;
+  // @skjs-expect-warning 'await' can only be applied to a Promise
+  const value = await x.value;
+  x.value = null;
+  return value;
 }
 
 // `await` flattens nested thenables recursively, like tsc's Awaited<T>, and

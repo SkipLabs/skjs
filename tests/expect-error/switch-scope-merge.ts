@@ -127,3 +127,36 @@ function notAssignedInFirstBranch(x: 1 | 2 | 3, a: "a", b: "b", c: "c"): void {
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const z: "a" | "c" = y;
 }
+
+const switchSeed: number = 1;
+function switchLaterBinding(tag: number): number {
+  switch (tag) {
+    case 0:
+      return switchSeed;
+    default: {
+      const switchSeed = 2;
+      return switchSeed;
+    }
+  }
+}
+function switchSharedBinding(tag: number): number {
+  switch (tag) {
+    case 0:
+      // @ts-expect-error Variable 'switchSeed' is used before being assigned
+      return switchSeed;
+    default:
+      const switchSeed = 2;
+      return switchSeed;
+  }
+}
+
+function switchLabelBinding(tag: number): number {
+  switch (tag) {
+    // @ts-expect-error Variable 'switchSeed' is used before being assigned
+    case switchSeed:
+      return 1;
+    default:
+      const switchSeed = 2;
+      return switchSeed;
+  }
+}

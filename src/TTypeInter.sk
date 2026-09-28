@@ -87,13 +87,11 @@ extension class TType {
     }
   }
 
-  // Caching is correct for compound types that contain TVars (but not bare
-  // TVars, which are excluded below). inter_ expands TVars via
-  // expandToClauses with Covariant(), which seals them (SVOpen -> SVClosed
-  // via Subst::get). Once sealed, a TVar cannot grow, so the cached result
-  // remains valid for the rest of the computation. Bare TVars are excluded
-  // because inter_ handles them specially (adding constraints or creating
-  // unexpanded intersections) without sealing.
+  // Exact materialization reads both operands covariantly, establishing the
+  // inspected candidate payloads in the live substitution. Uninspected members
+  // remain symbolic. Frozen reads and uncommitted literal defaults are tracked
+  // as provisional and cannot publish. Bare TVars use symbolic constraint
+  // shortcuts and are excluded from this cache.
   static fun inter(
     subst: mutable Subst,
     tenv: TEnv,
@@ -101,28 +99,39 @@ extension class TType {
     ty2: TType,
   ): TType {
     if (ty1 == ty2) return ty1;
-    pair = (ty1, ty2);
     hasTVar = ty1.getSingleVar().isSome() || ty2.getSingleVar().isSome();
     if (!hasTVar) {
-      subst.seenInter.maybeGet(pair) match {
+      subst.memoizedIntersection(ty1, ty2) match {
       | Some(ty) -> return ty
       | None() -> void
       }
     };
-    result = TType::inter_(subst, tenv, ty1, ty2);
-    if (hasTVar) {
-      result
-    } else {
-      subst.seenInter.maybeGet(pair) match {
-      | Some(ty) ->
-        // Re-entrant cycle: a recursive call during inter_ already cached a
-        // result for this pair. Return the already-cached (and already-used)
-        // result for consistency with intermediate callers that consumed it.
-        ty
-      | None() ->
-        subst.!seenInter[pair] = result;
-        result
-      }
+    subst.withTypeQuery(() -> {
+      readStamp = subst.typeQueryReadStamp();
+      result = TType::inter_(subst, tenv, ty1, ty2);
+      if (!hasTVar && subst.canCacheTypeQuerySince(readStamp)) {
+        subst.memoizedIntersection(ty1, ty2) match {
+        | Some(ty) -> !result = ty
+        | None() -> subst.memoizeIntersection(ty1, ty2, result)
+        }
+      };
+      (result, true)
+    })
+  }
+
+  // A retained type must keep its symbolic operands when eager intersection
+  // inspected provisional inference or an unresolved recursive premise. Solver
+  // queries can still use inter directly for their point-specific answer.
+  static fun interForTypeConstruction(
+    subst: mutable Subst,
+    tenv: TEnv,
+    ty1: TType,
+    ty2: TType,
+  ): TType {
+    readStamp = subst.typeQueryReadStamp();
+    result = TType::inter(subst, tenv, ty1, ty2);
+    if (subst.canCacheTypeQuerySince(readStamp)) result else {
+      TType::unexpandedInter(ty1, ty2)
     }
   }
 
@@ -135,31 +144,45 @@ extension class TType {
     expandPrim = (primClassName) -> TType::inst(primClassName, TArgs(Array[]));
     if (ty2.isTop() || ty1.isBottom()) return ty1;
     if (ty1.isTop() || ty2.isBottom()) return ty2;
-    (ty1.getSingleVar(), ty2.getSingleVar()) match {
-    | (
-      Some(tvar1),
-      Some(tvar2),
-    ) if (subst.isUnbound(tvar1) && subst.isUnbound(tvar2)) ->
-      return TType::unexpandedInter(ty1, ty2)
-    | (Some(tvar), _) if (subst.isUnbound(tvar)) ->
-      return TType::var(tvar.setConstraint(ty2))
-    | (Some(tvar), _) if (subst.isOpen(tvar) && tvar.isForField()) ->
-      return TType::var(tvar.setConstraint(ty2))
-    | (_, Some(tvar)) if (subst.isUnbound(tvar)) ->
-      return TType::var(tvar.setConstraint(ty1))
-    | (_, Some(tvar)) if (subst.isOpen(tvar) && tvar.isForField()) ->
-      return TType::var(tvar.setConstraint(ty1))
+    // A match guard is a readonly context, so these binding reads -- which
+    // register an observed dependency -- run in the arm bodies instead. The
+    // order in which they are consulted is the order of the original arms.
+    var1 = ty1.getSingleVar();
+    var2 = ty2.getSingleVar();
+    (var1, var2) match {
+    | (Some(tvar1), Some(tvar2)) ->
+      if (subst.isUnbound(tvar1) && subst.isUnbound(tvar2)) {
+        return TType::unexpandedInter(ty1, ty2)
+      }
     | _ -> void
     };
+    var1 match {
+    | Some(tvar) ->
+      if (subst.isUnbound(tvar)) return TType::var(tvar.setConstraint(ty2));
+      if (subst.isOpen(tvar) && tvar.isForField()) {
+        return TType::var(tvar.setConstraint(ty2))
+      }
+    | None() -> void
+    };
+    var2 match {
+    | Some(tvar) ->
+      if (subst.isUnbound(tvar)) return TType::var(tvar.setConstraint(ty1));
+      if (subst.isOpen(tvar) && tvar.isForField()) {
+        return TType::var(tvar.setConstraint(ty1))
+      }
+    | None() -> void
+    };
     if (tenv.seenInter.contains((ty1, ty2))) {
+      subst.recordRecursiveTypeQuery(TQIntersection(ty1, ty2));
       return TType::unexpandedInter(ty1, ty2);
     };
     !tenv.seenInter = tenv.seenInter.set((ty1, ty2));
+    subst.introduceTypeQueryAssumption(TQIntersection(ty1, ty2));
     clauses1 = ty1.expandToClauses(subst, tenv, Covariant());
     clauses2 = ty2.expandToClauses(subst, tenv, Covariant());
-    // TODO: These speculative isSub checks use subst directly. They only
-    // involve concrete types (expandPrim produces e.g. Number, not TVars),
-    // so TVar growth cannot occur. If this changes, consider using clone().
+    // Returning the primitive requires a live subtype justification against
+    // the object's constraint, which may itself contain inference candidates.
+    // Keep its commitments; a discarded clone's success is not sufficient.
     (clauses1.primKind(), clauses2.getObject()) match {
     | (Some(primKind), Some(stype)) ->
       TType::isSub(
@@ -186,7 +209,9 @@ extension class TType {
       }
     | _ -> void
     };
-    clauses = Clauses::inter(subst, tenv, clauses1, clauses2);
+    clauses = Clauses::interWith(clauses1, clauses2, (left, right) ->
+      TFields::inter(subst, tenv, left, right)
+    );
     TType::fromClauses(ty1.pos, clauses);
   }
 
@@ -227,19 +252,11 @@ extension class TField {
     // The union should be processed first, it leads to better inference
     set = TType::union(subst, tenv, x.set, y.set);
     get = if (tenv.expandInter) {
-      TType::inter(subst, tenv, x.get, y.get)
+      TType::interForTypeConstruction(subst, tenv, x.get, y.get)
     } else {
       TType::unexpandedInter(x.get, y.get)
     };
-    isOptional = x.isOptional && y.isOptional;
-    TField{
-      pos => x.pos,
-      name => x.name,
-      isOptional,
-      get,
-      set,
-      access => x.access.combine(y.access),
-    }
+    TField::interContracts(x, y, get, set)
   }
 
   static fun interIndex(
@@ -248,8 +265,18 @@ extension class TField {
     x: TField,
     y: TField,
   ): TField {
-    get = TType::inter(subst, tenv, x.get, y.get);
+    get = TType::interForTypeConstruction(subst, tenv, x.get, y.get);
     set = TType::union(subst, tenv, x.set, y.set);
+    TField::interContracts(x, y, get, set)
+  }
+
+  // Assemble already-normalized read/write contracts without solver access.
+  static fun interContracts(
+    x: TField,
+    y: TField,
+    get: TType,
+    set: TType,
+  ): TField {
     isOptional = x.isOptional && y.isOptional;
     TField{
       pos => x.pos,
@@ -258,17 +285,19 @@ extension class TField {
       get,
       set,
       access => x.access.combine(y.access),
+      // Either conjunct can establish that the present property is copied.
+      mayBeOmittedByCopy => x.mayBeOmittedByCopy && y.mayBeOmittedByCopy,
     }
   }
 }
 
 extension class STypes {
-  // inter returns None when the intersection of the args is bottom
-  static fun inter(
-    subst: mutable Subst,
-    tenv: TEnv,
+  // Structural intersection delegates only object-field normalization. None
+  // denotes bottom; primitive and parameter algebra never accesses a solver.
+  static fun interWith(
     stypes1: STypes,
     stypes2: STypes,
+    meetFields: (TFields, TFields) -> ?TFields,
   ): ?STypes {
     stypes1.stypes.mapInterOption(stypes2.stypes, (sty1, sty2) -> {
       invariant(
@@ -281,7 +310,7 @@ extension class STypes {
       | (p1 @ TPrimValue _, p2 @ TPrimValue _) -> TPrimValue::inter(p1, p2)
 
       | (obj1 @ TObject _, obj2 @ TObject _) ->
-        TObject::inter(subst, tenv, obj1, obj2)
+        TObject::interWith(obj1, obj2, meetFields)
 
       | _ -> internal_error("Internal error")
       }
@@ -294,11 +323,10 @@ extension class STypes {
 
 extension class Clause {
   // Returns None if the result is bottom
-  static fun inter(
-    subst: mutable Subst,
-    tenv: TEnv,
+  static fun interWith(
     clause1: Clause,
     clause2: Clause,
+    meetFields: (TFields, TFields) -> ?TFields,
   ): ?Clause {
     vars = clause1.vars.union(clause2.vars);
     (clause1.stypes, clause2.stypes) match {
@@ -306,7 +334,7 @@ extension class Clause {
     | (stypes, None()) ->
       Some(Clause(vars, stypes))
     | (Some(stypes1), Some(stypes2)) ->
-      STypes::inter(subst, tenv, stypes1, stypes2).map(stypes ->
+      STypes::interWith(stypes1, stypes2, meetFields).map(stypes ->
         Clause(vars, Some(stypes))
       )
     }
@@ -314,27 +342,22 @@ extension class Clause {
 }
 
 extension class Clauses {
-  static fun inter(
-    subst: mutable Subst,
-    tenv: TEnv,
+  // Preserve distribution order and merge equal parameter sets structurally.
+  static fun interWith(
     clauses1: Clauses,
     clauses2: Clauses,
+    meetFields: (TFields, TFields) -> ?TFields,
   ): Clauses {
     result = SortedMap[];
     for (clause1 in clauses1) {
       for (clause2 in clauses2) {
-        Clause::inter(subst, tenv, clause1, clause2) match {
+        Clause::interWith(clause1, clause2, meetFields) match {
         | None() -> void
         | Some(inter) ->
           if (!result.containsKey(inter.vars)) {
             !result[inter.vars] = inter;
           } else {
-            !result[inter.vars] = Clause::union(
-              subst,
-              tenv,
-              result[inter.vars],
-              inter,
-            )
+            !result[inter.vars] = Clause::union(result[inter.vars], inter)
           }
         }
       }
@@ -401,33 +424,29 @@ extension base class SType {
 }
 
 extension class TIndexes {
-  static fun inter(
-    subst: mutable Subst,
-    tenv: TEnv,
+  static fun interWith(
     indexes1: TIndexesBase,
     indexes2: TIndexesBase,
+    meetIndex: (TField, TField) -> TField,
   ): TIndexes {
-    stringIndex = TFields::interOptIndex(
-      subst,
-      tenv,
+    stringIndex = TFields::interOptIndexWith(
       indexes1.stringIndex,
       indexes2.stringIndex,
+      meetIndex,
     );
-    numberIndex = TFields::interOptIndex(
-      subst,
-      tenv,
+    numberIndex = TFields::interOptIndexWith(
       indexes1.numberIndex,
       indexes2.numberIndex,
+      meetIndex,
     );
-    symbolIndex = TFields::interOptIndex(
-      subst,
-      tenv,
+    symbolIndex = TFields::interOptIndexWith(
       indexes1.symbolIndex,
       indexes2.symbolIndex,
+      meetIndex,
     );
     (stringIndex, numberIndex) match {
     | (Some(strIdx), Some(numIdx)) ->
-      !numberIndex = Some(TField::interIndex(subst, tenv, strIdx, numIdx))
+      !numberIndex = Some(meetIndex(strIdx, numIdx))
     | _ -> void
     };
     TIndexes{stringIndex, numberIndex, symbolIndex}
@@ -435,27 +454,27 @@ extension class TIndexes {
 }
 
 extension class TFields {
-  private static fun interNamedFields(
-    subst: mutable Subst,
-    tenv: TEnv,
+  private static fun interNamedFieldsWith(
     namedFields1: InternalKeyedArrayMap<FieldNameString, TField>,
     namedFields2: InternalKeyedArrayMap<FieldNameString, TField>,
     indexFor1: (FieldNameString) -> ?TField,
     indexFor2: (FieldNameString) -> ?TField,
+    meetField: (TField, TField) -> TField,
+    meetIndex: (TField, TField) -> TField,
   ): InternalKeyedArrayMap<FieldNameString, TField> {
     namedFields1.merge(namedFields2, ior ->
       ior match {
       | Left(f1) ->
         indexFor2(f1.name) match {
         | None() -> f1
-        | Some(idx) -> TField::interIndex(subst, tenv, f1, idx)
+        | Some(idx) -> meetIndex(f1, idx)
         }
       | Right(f2) ->
         indexFor1(f2.name) match {
         | None() -> f2
-        | Some(idx) -> TField::interIndex(subst, tenv, f2, idx)
+        | Some(idx) -> meetIndex(f2, idx)
         }
-      | Both(x, y) -> TField::inter(subst, tenv, x, y)
+      | Both(x, y) -> meetField(x, y)
       }
     )
   }
@@ -471,12 +490,11 @@ extension class TFields {
   // signature is kept rather than collapsing an inhabited intersection —
   // hybrid (() => void) & C types, and instanceof narrowing of a callable
   // against a class — to never.
-  private static fun interCallability(
-    subst: mutable Subst,
-    tenv: TEnv,
+  private static fun interCallabilityWith(
     m1: Callability,
     m2: Callability,
     isArray: ?Bool,
+    meetFunctions: (TFuns, TFuns) -> ?TFuns,
   ): ?Callability {
     (m1, m2) match {
     | (CUnknown(), m)
@@ -497,7 +515,7 @@ extension class TFields {
       Some(p)
     | (CFunction(), CFunction()) -> Some(CFunction())
     | (CPresent(f1), CPresent(f2)) ->
-      TFuns::inter(subst, tenv, f1, f2).map(f -> CPresent(f))
+      meetFunctions(f1, f2).map(f -> CPresent(f))
     }
   }
 
@@ -506,6 +524,25 @@ extension class TFields {
     tenv: TEnv,
     fields1: TFields,
     fields2: TFields,
+  ): ?TFields {
+    TFields::interWith(
+      fields1,
+      fields2,
+      (left, right) -> TField::inter(subst, tenv, left, right),
+      (left, right) -> TField::interIndex(subst, tenv, left, right),
+      (left, right) -> TFuns::inter(subst, tenv, left, right),
+    )
+  }
+
+  // Field/index assembly and callability brands have no solver authority.
+  // The three operations are distinct: named and indexed reads have different
+  // normalization policies, while signatures require a subtype decision.
+  static fun interWith(
+    fields1: TFields,
+    fields2: TFields,
+    meetField: (TField, TField) -> TField,
+    meetIndex: (TField, TField) -> TField,
+    meetFunctions: (TFuns, TFuns) -> ?TFuns,
   ): ?TFields {
     isArray = (fields1.isArray, fields2.isArray) match {
     | (Some(true), Some(false))
@@ -517,39 +554,37 @@ extension class TFields {
     };
     // Process fields first so that tuple index type variables are resolved
     // before call/new signatures with union types.
-    fields = TFields::interNamedFields(
-      subst,
-      tenv,
+    fields = TFields::interNamedFieldsWith(
       fields1.fields,
       fields2.fields,
       name -> fields1.indexForFieldName(name.value),
       name -> fields2.indexForFieldName(name.value),
+      meetField,
+      meetIndex,
     );
-    symbolFields = TFields::interNamedFields(
-      subst,
-      tenv,
+    symbolFields = TFields::interNamedFieldsWith(
       fields1.symbolFields,
       fields2.symbolFields,
       _ -> fields1.symbolIndex,
       _ -> fields2.symbolIndex,
+      meetField,
+      meetIndex,
     );
-    indexes = TIndexes::inter(subst, tenv, fields1, fields2);
-    call = TFields::interCallability(
-      subst,
-      tenv,
+    indexes = TIndexes::interWith(fields1, fields2, meetIndex);
+    call = TFields::interCallabilityWith(
       fields1.call,
       fields2.call,
       isArray,
+      meetFunctions,
     ) match {
     | None() -> return None()
     | Some(m) -> m
     };
-    new = TFields::interCallability(
-      subst,
-      tenv,
+    new = TFields::interCallabilityWith(
       fields1.new,
       fields2.new,
       isArray,
+      meetFunctions,
     ) match {
     | None() -> return None()
     | Some(m) -> m
@@ -575,19 +610,17 @@ extension class TFields {
     }
   }
 
-  static fun interOptIndex(
-    subst: mutable Subst,
-    tenv: TEnv,
+  static fun interOptIndexWith(
     idx1: ?TField,
     idx2: ?TField,
+    meetIndex: (TField, TField) -> TField,
   ): ?TField {
     (idx1, idx2) match {
     | (None(), None()) -> None()
     | (Some(index), None())
     | (None(), Some(index)) ->
       Some(index)
-    | (Some(index1), Some(index2)) ->
-      Some(TField::interIndex(subst, tenv, index1, index2))
+    | (Some(index1), Some(index2)) -> Some(meetIndex(index1, index2))
     }
   }
 }
@@ -599,10 +632,23 @@ extension class TObject {
     obj1: TObject,
     obj2: TObject,
   ): ?TObject {
+    TObject::interWith(obj1, obj2, (left, right) ->
+      TFields::inter(subst, tenv, left, right)
+    )
+  }
+
+  // Distribution has no checking authority. Only the supplied field meet may
+  // normalize contracts; both inference and read-only normalization can reuse
+  // this traversal without exposing a substitution to it.
+  static fun interWith(
+    obj1: TObject,
+    obj2: TObject,
+    meetFields: (TFields, TFields) -> ?TFields,
+  ): ?TObject {
     branches = mutable Vector[];
     for (fields1 in obj1.branches) {
       for (fields2 in obj2.branches) {
-        TFields::inter(subst, tenv, fields1, fields2) match {
+        meetFields(fields1, fields2) match {
         | None() -> void
         | Some(x) ->
           branches.push(x);
@@ -639,16 +685,24 @@ extension class TFun {
     f1: TFun,
     f2: TFun,
   ): ?TFun {
+    TFun::interWith(f1, f2, (left, right) ->
+      TType::absorbsFun(subst, tenv, left, right)
+    )
+  }
+
+  static fun interWith(
+    f1: TFun,
+    f2: TFun,
+    isSubtype: (TFun, TFun) -> Bool,
+  ): ?TFun {
     merged = f1.cgNodes.union(f2.cgNodes);
-    TFun::isSub(subst, tenv, f1, f2) match {
-    | STOk() -> return Some(f1 with {cgNodes => merged})
-    | STError _ -> void
-    };
-    TFun::isSub(subst, tenv, f2, f1) match {
-    | STOk() -> return Some(f2 with {cgNodes => merged})
-    | STError _ -> void
-    };
-    None()
+    if (isSubtype(f1, f2)) {
+      Some(f1 with {cgNodes => merged})
+    } else if (isSubtype(f2, f1)) {
+      Some(f2 with {cgNodes => merged})
+    } else {
+      None()
+    }
   }
 }
 

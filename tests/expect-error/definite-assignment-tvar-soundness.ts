@@ -1,11 +1,28 @@
-// Soundness pins for the #765 used-before-assigned exemption (bindType,
-// TypeCheckExpr.sk): mbouaziz's review on #908 asked whether
-// isSub(undefined, ty) could trivially succeed when `ty` is a type
-// variable -- growTVars widening it to admit undefined regardless of what
-// it actually denotes, rather than genuinely checking membership -- and
-// self-resolved that a written annotation's `ty` can't be one. Tried to
-// construct that case; it doesn't materialize. These pin the two closest
-// candidates.
+// An initialization exemption must check whether an annotation admits
+// undefined, without solving its inference variables to make that true.
+// Written annotations can contain growable variables through typeof.
+
+function typeofInferredFieldNeedsAssignment(seed: number): number {
+  const box = { value: seed };
+  let result: typeof box.value;
+  // @ts-expect-error Variable 'result' is used before being assigned
+  return result;
+}
+
+function typeofInferredFieldAfterAssignment(seed: number): number {
+  const box = { value: seed };
+  let result: typeof box.value;
+  result = seed;
+  return result;
+}
+
+function typeofUndefinedFieldAdmitsInitialValue(
+  seed: number | undefined,
+): number | undefined {
+  const box = { value: seed };
+  let result: typeof box.value;
+  return result;
+}
 
 // A generic function's own type parameter, referenced as the annotation, is
 // a rigid (skolem) type variable, not a growable one -- it must still be
@@ -32,7 +49,9 @@ declare function make<T>(): T;
 function typeofUnconstrainedCallExempted(): void {
   let a = make();
   let x: typeof a;
-  return x; // no used-before-assigned error -- typeof a is unknown, which admits undefined
+  // No used-before-assigned error: unknown admits undefined, but is not void.
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
+  return x;
 }
 
 function typeofUnconstrainedCallStillCaughtDownstream(): number {

@@ -91,7 +91,7 @@ extension class TypeChecker {
     // call-graph edges are discarded — only the CFG below is kept.
     tcResults = TCResultsAcc::mcreate{errorHandling => this.errorHandling};
     tcenvl = mutable TCEnvLight{context, results => tcResults};
-    subst = Subst::mcreate(tcenvl);
+    subst = Subst::createCheckingOwner(tcenvl);
     cgNode = CGNode::toplevel(fileName);
     tcenv = TCEnv::mcreate(subst, cgNode);
     exn = catchError(() -> {
@@ -166,12 +166,13 @@ extension class TypeChecker {
     | ExportEq _ -> tcenvl.notSupported(def.pos, "export =")
     | Module _ -> tcenvl.notSupported(def.pos, "module")
     | e @ Expr _ ->
-      subst = Subst::mcreate(tcenvl);
+      subst = Subst::createCheckingOwner(tcenvl);
       tcenv = TCEnv::mcreate(subst, CGNode::toplevel(def.pos.fileName));
       ty = this.expr(tcenv, e, true);
-      this.checkIsVoid(tcenv, e.pos, ty)
+      this.checkIsVoid(tcenv, e.pos, ty);
+      tcenv.validateHiddenEscapes()
     | fd @ TopLevelFunDef _ ->
-      subst = Subst::mcreate(tcenvl);
+      subst = Subst::createCheckingOwner(tcenvl);
       this.funDef(subst, None(), fd, fd.cgNode.fromSome())
     | Declare(VarDefs(_, varDefs))
     | ExportDeclare(VarDefs(_, varDefs)) ->
@@ -186,7 +187,7 @@ extension class TypeChecker {
       // TAInst branch). Without this, an unused ambient declaration is never
       // normalized anywhere and a constraint violation in its signature
       // (`Id<number>` for `type Id<P extends string>`) escapes detection.
-      subst = Subst::mcreate(tcenvl);
+      subst = Subst::createCheckingOwner(tcenvl);
       this.funDef(subst, None(), fd, fd.cgNode.fromSome())
     | Declare(en @ Enum _)
     | ExportDeclare(en @ Enum _) ->
@@ -199,7 +200,7 @@ extension class TypeChecker {
       // which the TopLevelFunDef arm above closes). Without this, a constraint
       // violation in a declared class member escapes whenever the class is
       // never used and normalization is never triggered lazily.
-      subst = Subst::mcreate(tcenvl);
+      subst = Subst::createCheckingOwner(tcenvl);
       static::checkTypeParams(tcenvl, c.tparams, OptionalTypeParamsForbidden());
       !this = this.addTParams(subst, c.tparams);
       for (field in this.getClassFields(tcenvl.context, c)) {
@@ -249,7 +250,7 @@ extension class TypeChecker {
     value: ?Expr,
     bindingName: ?String = None(),
   ): void {
-    subst = Subst::mcreate(tcenvl);
+    subst = Subst::createCheckingOwner(tcenvl);
 
     typeOpt = typeAnnotation.map(x ->
       this.normalize(subst, x, true, bindingName)
@@ -291,7 +292,8 @@ extension class TypeChecker {
             TSCode(2322),
           )
         }
-      }
+      };
+      tcenv.validateHiddenEscapes()
     };
 
     // Check if type is primitive
@@ -362,7 +364,7 @@ extension class TypeChecker {
     this.checkCircularTypeDef(tcenvl, typeDef);
     this.checkCircularDefault(tcenvl, typeDef);
 
-    subst = Subst::mcreate(tcenvl);
+    subst = Subst::createCheckingOwner(tcenvl);
     !this = this.addTParams(subst, typeDef.tdefParams);
     !this.inTypeDefValidation = true;
 

@@ -457,3 +457,10 @@ function testFalseLiteral(x: false): void {
     const f: false = x;
   }
 }
+
+// The other field's inferred type must be resolved to recognize its singleton.
+function inferredFieldComparison(x: { value: 0 | 1 }, zeroSeed: 0): 1 {
+  const other = { zero: zeroSeed };
+  if (x.value !== other.zero) return x.value;
+  return 1;
+}

@@ -45,3 +45,17 @@ function testForOfWithUndefined(): void {
   for (const _value of undefinedArr) {
   }
 }
+
+declare const items: number[];
+function loopSourceShadow(): number {
+  let total = 0;
+  // @ts-expect-error Variable 'items' is used before being assigned
+  for (const items of items) total += items;
+  return total;
+}
+
+function loopScopeRestoresOuter(source: number[]): number {
+  let total = 0;
+  for (const items of source) total += items;
+  return total + items.length;
+}

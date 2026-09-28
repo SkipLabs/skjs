@@ -262,7 +262,7 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
   // key is unique to one side; callers map that empty result to bottom.
   // (An empty shared key must not zero the map: e.g. intersecting
   // tag-keyed unions {str:"a", num:0} and {str:"a", num:1} must keep the
-  // str key rather than collapse to nothing — see STypes::inter.)
+  // str key rather than collapse to nothing — see STypes::interWith.)
   fun mapInterOption(that: this, f: (T, T) -> ?T): ?this {
     this.mergeOption(that, ior ->
       ior match {
