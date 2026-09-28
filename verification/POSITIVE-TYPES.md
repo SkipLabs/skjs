@@ -508,118 +508,12 @@ Lean: `qDenoteWithArgs G (mixedParameters G)`, `Bounded`, `instanceTWithArgs`,
 
 ### Finite presentations of application-indexed graphs
 
-The semantics above does not require finitely many labels. A finite collection
-of parameterized equations can present an infinite graph: unfolding
-`Pair<T>` may refer to `Pair<[T, U]>` without first enumerating every later
-application. `Types/EquationGraphs.lean` implements the scoped representation
-for this construction.
-
-A label is an application `h(A₁, …, Aₙ)` or a parameter owned by such an
-application, `bound(h, [A₁, …, Aₙ], j)`. Each argument is a union of labels.
-The finite signature fixes each head's arity and its local binders' kinds.
-Templates contain argument and local placeholders. Instantiation replaces an
-argument placeholder by its whole union and a local placeholder by its owned
-parameter. It visits only the finite template, leaving referenced applications
-unexpanded. Thus the defining equation is
-
-$$
-G\bigl(h(\vec A)\bigr)
-=\operatorname{instantiate}(E_h,\vec A).
-$$
-
-The resulting rows use `NormalGraph.ofRowMap`, just like finite wire tables;
-there is no second denotation or new typing rule. Scope and arity are checked
-throughout each template. A scheme must bind exactly its header's locals,
-and its bounds cannot mention those locals. Other constructor templates
-introduce no locals. Free parameters enter through arguments, never through a
-template manufacturing another application's binder.
-
-The kernel proves the row equation, preservation of binder kinds, and freshness
-of an application's binders for its captured arguments. The last fact follows
-from finite syntax: the binder's name contains its argument tree, so it cannot
-occur inside that tree. An existing bound name is atomic when computing free
-support; its owner's arguments identify the name, not additional dependencies
-of its assigned meaning.
-
-`Types/EquationSupport.lean` proves that agreement on this computed free
-support implies equal meanings, for values and argument packs together. The
-support is an over-approximation: it may retain an unused captured parameter.
-
-$$
-\bigl(\forall p\in\operatorname{FV}(A).\;\eta(p)=\theta(p)\bigr)
-\quad\Longrightarrow\quad
-\llbracket A\rrbracket^\eta=\llbracket A\rrbracket^\theta.
-$$
-
-The proof reuses semantic independence for ordinary graph rows.
-`FreeSupport` gives its local closure premises over a possibly infinite domain:
-a parameter is free in itself; an operand's support belongs to its row's support
-or that row's scheme binders; bounds depend only on the outer support; meets
-retain their parameters. The existing executable `FreeOk` check establishes
-these same premises for a finite table. Equation templates establish them by
-structural induction on instantiation, so no infinite family is enumerated.
-
-`Types/EquationCongruence.lean` carries this into local binding: assigning a
-scheme's locals leaves its captured arguments' meanings unchanged, and matching
-local slots receive the same family. Binder order is checked exactly, not just
-as a set. Application congruence is proved for both components of the existing
-mixed meaning (values and argument packs):
-
-$$
-\bigl(\forall i.\;\llbracket A_i\rrbracket^\eta
-  =\llbracket B_i\rrbracket^\theta\bigr)
-\quad\Longrightarrow\quad
-\llbracket F(\vec A)\rrbracket^\eta
-  =\llbracket F(\vec B)\rrbracket^\theta.
-$$
-
-Here both applications have the same equation head and arity. The environments
-may differ: an equation receives its free parameters only through its arguments.
-The proof first compares value rows at level $n$ using operand agreement below
-$n$. Quantified bounds are compared in the outer environments; signatures are
-compared after assigning matching local families. It then compares argument
-packs at level $n$, whose element contracts use those current-level values.
-Induction closes the intermediate `ApplicationsAgree` premise; neither the
-producer nor the certificate supplies a semantic assumption.
-
-`Types/EquationSubstitution.lean` uses application congruence to prove semantic
-substitution. Substitution traverses the finite argument syntax, never recursive
-rows. It replaces a bound name atomically; if the context has no replacement,
-that name stays unchanged. Replacements are simultaneous, so the context is not
-applied again inside a replacement. Application arguments are substituted, and
-the resulting application owns the locals introduced when its row is unfolded.
-Thus a captured parameter stays a capture rather than becoming a fresh universal.
-
-$$
-\llbracket A\rrbracket^{\eta[\vec b\mapsto
-  \llbracket\vec U\rrbracket^\eta]}
-=\llbracket A[\vec b:=\vec U]\rrbracket^\eta.
-$$
-
-The existing kind check is required: each replacement must have its parameter's
-value or argument-pack kind. A finite `substitutionTableOk` witness names images
-needed by signatures and checks each against this structural substitution.
-`substitutionTable_instanceImages` proves that this check discharges the same
-`InstanceImages` obligation as the old finite closed-table checker. No recursive
-row closure or expansion cutoff is used.
-
-`Types/EquationCertificates.lean` connects these witnesses to the shared
-`PositiveCertificates.checkUsing` proof traversal. Its `InstanceImageCheck`
-interface carries the executable image check and a Lean proof that acceptance
-establishes `InstanceImages`. This interface is supplied by verified code, not
-by certificate JSON. The finite implementation retains `TableOk`; the equation
-implementation uses structural substitution. Both use the same checks for
-bounds, kinds, fixed and variadic signatures, receivers and effects, including
-instances used as known rows by structural coverage. The shared checker is
-sound for every proved image checker. The original default checker and its
-completeness theorem for finite declarative derivations are unchanged in scope.
-
-Expression typing and program certificates are stated over the same interface
-([`HasTyUsing`, `checkUsing`](PROGRAM-TYPING.md#judgments-and-constructor-views)),
-so the equation checker reaches them with the soundness proofs unchanged.
-Other proof forms still enforce their original closure/free-support checks;
-those checks are not bypassed for recursive graphs. Source and CLI acceptance
-use only the finite checker.
+The semantics above does not require finitely many labels. A finite set of
+parameterized equations can present an infinite graph: unfolding `Pair<T>`
+may refer to `Pair<[T, U]>` without first enumerating every later
+application. The representation, its support, congruence and substitution
+theorems, the equation instance-image checker and the rules still to be
+built are specified in [RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md).
 
 ## Conjunction and normalization
 
@@ -1368,7 +1262,7 @@ elimination from those equalities and the existing bound/signature premises;
 fixed and rest arguments, effects and receiver weakening use this one proof.
 `inst_mixed_sound` composes the two. The default checker discharges the obligation with
 the finite-table checks; the equation checker discharges it by structural
-substitution ([finite presentations](#finite-presentations-of-application-indexed-graphs)).
+substitution ([RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md#5-instance-images)).
 
 The same tables relate two rows of one type that differ only in which binder
 rows their schemes use. Lowering gives one row per generic application

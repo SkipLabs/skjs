@@ -1144,7 +1144,7 @@ unchanged ([design](#recursive-quantified-contracts)).
 | Application congruence (`EquationCongruence`) | done | proved |
 | Checked substitution (`EquationSubstitution`, `substitutionTableOk`) | done | proved |
 | One proved image checker for subtyping, expression typing and program certificates (`checkUsing`, `HasTyUsing`) | done | proved |
-| Formal specification: motivation, lowering, family subtyping, wire format, acceptance statement | in progress | reviewed and committed |
+| Formal specification ([RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md)): motivation, meet labels, quantified-α, family subtyping, lowering, wire format, acceptance statement | in progress | drafted; closes when the family-subtyping rule is reviewed |
 | Thread the image checker through heap, context, control-flow and certificate-production proofs | open | proved; no finite-only premise left on the program path |
 | Lower source and protocol labels to equation applications, alias and intersection normalization included | open | Lean decodes and checks equation requests |
 | Family subtyping for recursive covariance, writable invariance kept | open | proved; `promise-covariance` and its negative behave as above |
@@ -1288,94 +1288,29 @@ positive sources as the targets. The work is split by semantic obligation:
    the original coercion counterexamples stay negative. No new core rule is
    needed: the existing recursive types, key bounds and quantified calls express
    the contract.
-5. <a id="recursive-quantified-contracts"></a>**Recursive quantified contracts.** Retain parameterized recursive equations
-   with lexical binders rather than unfold each application into fresh colours
-   until a budget runs out. Instantiation must commute with unfolding and be
-   capture-avoiding; finite certificates must justify uses of those equations.
-   The existing world/subtyping semantics remain the reference. Restore
-   `generic-growing-application`, ordinary Promise/async cases, then unchanged
-   `sum-sound-binding`. A larger budget or erasing unused-looking members is
-   not closure. Review the acceptance theorem for any new certified plan form.
+5. <a id="recursive-quantified-contracts"></a>**Recursive quantified contracts.** Each generic declaration
+   becomes one parameterized equation. A type is a finite application of an
+   equation, and it is unfolded one row at a time, only when read. This
+   replaces unfolding every application into fresh colours until a budget runs
+   out. The rules, their proofs and the rules still to be built are in
+   [RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md). The design constraints:
 
-   The core `NormalGraph` already permits an arbitrary label type and infinitely
-   many rows. The finite table is a source/protocol representation, not a
-   requirement of the semantic fixed point. Use that distinction rather than
-   introducing a second interpretation of generic types:
-
-   - **Shared rows:** `GraphRow` describes clauses, parameters,
-     schemes and dependent meets at any label type. `NormalGraph.ofRowMap`
-     interprets that sum, and the existing finite JSON table uses it too. This
-     preparation changes no accepted programs.
-   - **Finite equations, symbolic applications:** store each declaration once,
-     with lexical parameters; a label identifies an application and its argument
-     environment. Unfold one row when needed. Scheme binders must retain their
-     lexical owner, so nested instantiation cannot capture an enclosing binder.
-     Do not enumerate a growing family such as `Pair<[T, U]>`, truncate it, or
-     reinterpret a structural interface as a nominal native promise.
-     `Types/EquationGraphs.lean` constructs such a `NormalGraph` from
-     scoped templates. It proves exact one-step unfolding, binder-kind
-     preservation, and freshness of an application's local binders for its
-     captured arguments. Binding positions name one label; type operands can
-     substitute whole unions. Templates cannot manufacture another scope's
-     binders, and a scheme must quantify exactly its declared locals.
-     `Types/EquationSupport.lean` proves that this computed free support
-     determines the type's meaning, including argument packs. It uses the same
-     semantic independence theorem as finite certificates: `FreeSupport` states
-     local closure conditions, and `FreeOk` checks them for a finite table.
-     Templates are constructor-headed: source aliases and dependent
-     intersections are normalized when compiled, without narrowing the planned
-     source fragment.
-   - **Checked substitution:** interpret
-     capture-avoiding instantiation over the complete equations, including
-     scheme bounds, argument packs, effects and the array realm. Application
-     congruence is proved: the same
-     equation head at arguments with equal mixed meanings has equal meaning,
-     accounting for its differently named local binders. Computed support and
-     owned-binder freshness supply the independence premises.
-     `Types/EquationCongruence.lean` proves preservation of captured arguments
-     when entering a scheme, agreement of corresponding local slots, lifting
-     agreement through finite templates, and application congruence. The
-     induction compares clause and quantified value rows using operand agreement
-     below the current level, then compares argument packs using those value
-     results at the current level. Quantified bounds use the outer environment;
-     signatures use matching assigned locals. The `ApplicationsAgree` premise
-     of the intermediate lemmas is discharged by this induction, never supplied
-     by a certificate. `Types/EquationSubstitution.lean` proves semantic
-     substitution by traversing finite argument syntax and applying congruence,
-     without unfolding recursive rows. Bound names are atomic; replacements
-     are simultaneous. Resulting applications own their local binders, keeping
-     captured parameters distinct from locally quantified ones. The existing
-     kind check is retained. `substitutionTableOk` checks each named image
-     against that structural substitution; it needs no recursive row closure.
-     The semantic boundary is factored as `InstanceImages`: every named
-     image has the meaning of substitution, for values and packs together.
-     `table_instanceImages` establishes it for the current checker;
-     `inst_images_sound` supplies the shared elimination proof.
-     `substitutionTable_instanceImages` establishes that obligation for
-     equation witnesses. `PositiveCertificates.checkUsing` is the shared
-     proof traversal: `InstanceImageCheck` requires a proof of that obligation,
-     and the finite checker remains the default. `EquationCertificates` supplies
-     the structural substitution checker and proves its subtype checks sound.
-     Bounds, kinds, fixed/rest signatures, receivers and effects still use the
-     same checks; no new certificate-supplied trust premise is introduced.
-     The original finite certificate completeness theorem is preserved. Source
-     acceptance uses only the finite checker.
-     Structural subtyping needs the corresponding finite family argument too:
-     `Promise<number> ≤ Promise<number | string>` cannot be justified by stopping an
-     infinite traversal. Check the family relation against the complete
-     equations, preserving writable invariance; do not trust variance inferred
-     by TypeScript. Retain `promise-covariance` and its negative control as
-     closure conditions, alongside exact instantiation.
-   - **One production path:** lower source equations to that representation and
-     make OCaml claims, search, checking and diagnostic printing consume it.
-     Retire the colour/depth/argument expansion machinery when its replacement
-     reaches acceptance. Restore both growing-`Pair` examples before claiming
-     the general mechanism works, then Promise/async and `sum-sound-binding`.
-
-   Expression typing and program certificates are stated once over a proved
-   image checker (`HasTyUsing`, `ProgramCertificates.checkUsing`). The
-   remaining items, their order and their closing criteria are in the
-   [status](#status) table.
+   - The semantic fixed point is the reference. `NormalGraph` already allows
+     any label type; the finite table is a protocol representation, not a
+     semantic requirement. Equations present graphs to that semantics and add
+     no second interpretation.
+   - Do not enumerate a growing family such as `Pair<[T, U]>`, truncate it,
+     raise a budget, erase unused-looking members, or reinterpret a
+     structural interface as a nominal native promise.
+   - Binders are owned by their application, so nested instantiation cannot
+     capture them. Instantiation is checked substitution into finite syntax.
+     Subtyping between members of one family is a finite family argument
+     whose hypotheses the producer proposes and the checker checks. Variance
+     is never read from TypeScript, and writable positions stay invariant.
+   - There is one production path: the finite table becomes the nullary case
+     of the equations, and the colour/depth/argument machinery is deleted
+     once the equations reach acceptance.
+   - Review the acceptance theorem for every new certified form.
 
    A shared polymorphic prototype may be a valid audited contract for a native,
    but it is not an equivalent translation of an arbitrary structural interface:

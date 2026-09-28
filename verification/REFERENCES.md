@@ -209,7 +209,9 @@ for recursive types, the cycle handled by an assumption set (the Amber rule).
 It placed the removed equality-completeness result (`semantic_eq_iff`).
 **Discussed in** `50217bc1` (removed in `d54ee142`). Recursive types are
 still finite graphs checked coinductively over a table of assumed pairs
-([POSITIVE-TYPES: subtyping](POSITIVE-TYPES.md#subtyping)).
+([POSITIVE-TYPES: subtyping](POSITIVE-TYPES.md#subtyping)), and family entries
+lift those pairs to pairs with parameters
+([RECURSIVE-EQUATIONS: related work](RECURSIVE-EQUATIONS.md#2-what-is-delayed-and-related-work)).
 
 ### Brandt and Henglein 1998
 
@@ -222,6 +224,47 @@ certificate checker's table $\Delta$ follows.
 **Discussed in** `50217bc1` (removed in `d54ee142`);
 [POSITIVE-TYPES: notation](POSITIVE-TYPES.md#positive-types) states the table
 without the citation.
+
+### Solomon 1978
+
+Marvin Solomon. *Type definitions with parameters.* In Proceedings of the 5th
+ACM Symposium on Principles of Programming Languages (POPL), 31–38, 1978.
+[doi:10.1145/512760.512765](https://doi.org/10.1145/512760.512765).
+
+**Used for** the classification of generic declarations as parameterized
+type definitions, and of the non-regular ones (such as `Promise`, whose
+`catch` returns `Promise<T | R>`) as those that unfold to infinitely many
+distinct subtrees. No finite table presents a non-regular definition, which
+is why each declaration becomes one equation with symbolic applications.
+**Discussed in** [RECURSIVE-EQUATIONS: the problem](RECURSIVE-EQUATIONS.md#1-the-problem-non-regular-families),
+[related work](RECURSIVE-EQUATIONS.md#2-what-is-delayed-and-related-work).
+
+### Kennedy and Pierce 2007
+
+Andrew J. Kennedy and Benjamin C. Pierce. *On decidability of nominal
+subtyping with variance.* International Workshop on Foundations and
+Developments of Object-Oriented Languages (FOOL/WOOD), 2007.
+
+**Used for** the reason the family subtyping rule is checked, not decided:
+subtyping with variance over expanding (non-regular) definitions is
+undecidable in general, so the producer proposes the hypotheses of a family
+entry and the checker only checks them.
+**Discussed in** [RECURSIVE-EQUATIONS: related work](RECURSIVE-EQUATIONS.md#2-what-is-delayed-and-related-work),
+[family subtyping](RECURSIVE-EQUATIONS.md#7-family-subtyping).
+
+### Abadi, Cardelli, Curien and Lévy 1991
+
+Martín Abadi, Luca Cardelli, Pierre-Louis Curien and Jean-Jacques Lévy.
+*Explicit substitutions.* Journal of Functional Programming 1(4):375–416,
+1991. [doi:10.1017/S0956796800000186](https://doi.org/10.1017/S0956796800000186).
+
+**Used as the contrast** for what an equation application delays. An
+application is a closure (an equation paired with its arguments) as a
+suspended substitution is, but what it delays is unfolding a definition, not
+substitution: instantiation substitutes into the whole finite template at
+once. The type level has no β-redexes, so only the substitution lemma
+relating syntactic and semantic substitution carries over.
+**Discussed in** [RECURSIVE-EQUATIONS: related work](RECURSIVE-EQUATIONS.md#2-what-is-delayed-and-related-work).
 
 ### Milner 1984
 
