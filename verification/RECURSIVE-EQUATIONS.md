@@ -151,24 +151,34 @@ Lean: `Header`, `Tree`, `Label`, `Scope`, `Template`, `Equations.row`,
 ```math
 G\bigl(\mathsf{meet}(L_1,\ldots,L_k)\bigr)=
 \begin{cases}
-\mathrm{nf}\bigl(G(L_1)\wedge\cdots\wedge G(L_k)\bigr) & \text{no part is a parameter},\\
-p\sqcap\vec q\sqcap\mathrm{nf}\bigl(\bigwedge_{L_i\notin P}G(L_i)\bigr) & P=\{p\}\cup\vec q\ \text{the parameter parts}.
+\mathrm{smeet}\bigl(G(L_1),\ldots,G(L_k)\bigr) & \text{no part is a parameter},\\
+p\sqcap\vec q\sqcap\mathrm{smeet}\bigl(G(L_i)\mid L_i\notin P\bigr) & P=\{p\}\cup\vec q\ \text{the parameter parts}.
 \end{cases}
 ```
 
-The parts are flat (no part is a meet), distinct, at least two, and in a
-canonical order. No part is a scheme application: a meet with a generic
-callable is refused, as it is now. The row is the
+$`\mathrm{smeet}`$ is the **source meet** that lowering uses today
+(`DeclarationGraph.meetRow`, `sourceMeetLists`). It is the
 [normalized conjunction](POSITIVE-TYPES.md#conjunction-and-normalization) of
-the parts' rows. That normalization concatenates operands and never meets
-two operands, so a meet label's row names only labels its parts' rows name.
-It creates no new application, and it cannot grow a family. The meaning is
-the intersection of the parts' meanings (`normalize_sound`,
+the parts' clauses, except that a record met with a function becomes one
+`callable` clause, which is what TypeScript means by that intersection. The
+parts are flat (no part is a meet), distinct, at least two, and in a
+canonical order. No part is a scheme application: a meet with a generic
+callable is refused, as it is now. The source meet concatenates operands and
+never meets two operands. So a meet label's row names only labels its parts'
+rows name, creates no new application, and cannot grow a family.
+
+A meet label means what its row says. The checker's soundness needs nothing
+more: meanings come from rows, and support, congruence and substitution are
+proved for meet trees as for applications. Where no record is met with a
+function, the row is the model's intersection (`normalize_sound`,
 `meetLists_sound`, and the meet-row semantics for parameter parts):
 
 ```math
 ⟦\mathsf{meet}(L_1,\ldots,L_k)⟧^\eta=⟦L_1⟧^\eta\cap\cdots\cap⟦L_k⟧^\eta .
 ```
+
+That equation is a fidelity property of lowering, not a premise of any
+rule.
 
 Templates get the corresponding placeholder former. Instantiation
 distributes over unions, since intersection distributes over union:
@@ -181,7 +191,8 @@ and a single remaining part is that part. A meet whose normal form is
 $`\bot`$ is refused where it is lowered, as today. The row reads its parts'
 rows at the same level, not under a guard. This is well founded because
 parts are applications or parameters, whose rows come from templates, never
-from another meet.
+from another meet. The congruence proof (4.2) must take this step
+explicitly: a meet's row agrees at level $`n`$ when its parts' rows do.
 
 ## 4. Support, congruence and substitution
 
@@ -480,18 +491,38 @@ f_h=\bigl(\,h(x_1,\ldots,x_n)\le h(y_1,\ldots,y_n),\ \Pi_h,\ \Delta_h\,\bigr),
 ```
 
 where $`x_i`$ and $`y_i`$ are one shared variable when $`v_i=\mathsf{inv}`$,
-and $`\mathsf{none}`$ imposes nothing. $`\Delta_h`$ is evidence the producer
-proposes.
+and $`\mathsf{none}`$ imposes nothing.
+
+**Proposed by lowering, carried as evidence.** Variances and the tables
+$`\Delta_h`$ are evidence, not part of the request, so the acceptance
+premise gains nothing. In the source path, Lean's untrusted lowering
+proposes them, since it is the only component that sees the templates. It
+computes a least fixpoint over the finite head graph on the lattice
+$`\mathsf{none}<\mathsf{co},\mathsf{contra}<\mathsf{inv}`$:
+
+- a writable field, a cell, an index cell or a mutable tuple element gives
+  $`\mathsf{inv}`$;
+- a readonly view, a result or a readonly element gives $`\mathsf{co}`$;
+- a parameter or receiver gives $`\mathsf{contra}`$;
+- a nested application composes with that head's current variance;
+- a scheme bound gives $`\mathsf{inv}`$.
+
+$`\mathsf{inv}`$ shares one variable, so it is always valid, and weakening
+never fails. The untrusted certificate producer searches $`\Delta_h`$ with
+the variables as opaque parameters under the hypotheses. The OCaml producer
+proposes nothing.
 
 **Checked once.** The declarations of all heads form one set of entries,
-checked together by 7.3 when the equations are accepted, before any claim
-is read. A declaration may rely on the others, and on itself: `catch`'s
+checked together by 7.3 once per document, before any request certificate
+(`checkEquations`, called from `checkRequests`). Declaration heads are shared
+by every unit of the document. Extraction adds only arity-0 heads, which
+carry no variance obligation and do not change older heads' rows; this needs
+a signature-extension lemma. In the request protocol the check runs in
+`verify`. A declaration may rely on the others, and on itself: `catch`'s
 $`\mathit{Promise}(a\mid r)\le\mathit{Promise}(b\mid r)`$ is discharged by
 $`f_{\mathit{Promise}}`$. If a declaration is invalid, the request is
-refused with a located diagnostic naming the head and the parameter. The
-producer proposes variances, for example by starting from $`\mathsf{co}`$ or
-$`\mathsf{none}`$ and weakening to $`\mathsf{inv}`$ on failure. They are
-never read from TypeScript, whose measured variance treats method
+refused with a located diagnostic naming the head and the parameter. Variances
+are never read from TypeScript, whose measured variance treats method
 parameters bivariantly.
 
 **The rule.** For applications of one head:
@@ -552,21 +583,26 @@ $`(\mathsf{inv})`$. Then `Cell<A> ≤ Cell<B>` needs `A` and `B` to be
 equivalent.
 
 **`Pair`.** The result of `p.push("a")` is the image of `push`'s result at
-`U := string`: $`\mathit{Pair}(\mathit{Lit}(\mathit{number},\mathit{string}))`$
+`U := string`: $`\mathit{Pair}(\mathit{Lit}_{\mathit{push}}([\mathit{number}],[\mathit{string}]))`$
 by substitution. The written return type `Pair<[number, string]>` lowers to
-the same label when literal heads are shared (section 8.2), and then no
-subtyping step is needed. When they are not shared, a certificate entry
-relates the two tuple heads both ways, and `Var` on `Pair`, invariant
-through `push`'s tuple, relates the results.
+$`\mathit{Pair}(\mathit{Tup})`$, where $`\mathit{Tup}`$ is a nullary head for
+the ground tuple `[number, string]`. The two tuple heads have different
+templates, so no sharing identifies them. `Var` on `Pair`, which is
+invariant through `push`'s mutable tuple, needs the two tuples both ways.
+Each direction unfolds both tuple heads once to identical operands: a plain
+core check. So `generic-growing-application-push` closes with `Var`, not
+with lowering alone.
 
-**Different heads.** `Promise<number> ≤ PromiseLike<number | string>` is not
-same-head, so it takes a certificate entry
+**Different heads.** `Promise<number> ≤ PromiseLike<number | string>` involves two
+heads, so it takes a certificate entry
 $`\mathit{Promise}(a)\le\mathit{PromiseLike}(b)`$ with $`a\le b`$, whose
 check may use `Var` on both heads.
 
 ### 7.7 Required controls
 
-Each is a request or certificate the checker must reject:
+Each is a request or certificate the checker must reject. No source
+program reaches an invalid variance declaration, since lowering only
+proposes valid ones, so the first three are forged-evidence tamper tests:
 
 - a variance declaration its head's body contradicts (`Cell` declared
   $`\mathsf{co}`$; a callback parameter declared $`\mathsf{co}`$);
@@ -583,9 +619,14 @@ then read by the body is refused.
 
 ## 8. Lowering from source
 
-**Specification; not yet in Lean or OCaml.** Every source type becomes a
-union of labels over one equation table. Heads are created per source
-declaration and per source type-literal occurrence, never per instance. That
+**Specification; not yet in Lean.** Lowering happens in Lean. The parser
+emits a declaration document (`tools/declaration-types.mts`); today
+`Source/DeclarationGraph.lean` lowers it into a finite table, and it will
+lower it into equations instead. The OCaml producer never builds a
+declaration row: its inference already treats `Named` types as equations,
+and only its encoding touches rows. Every source type becomes a union of
+labels over one equation table. Heads are created per source declaration,
+per unit and per source type-literal occurrence, never per instance. That
 is what keeps the table finite for every family.
 
 ### 8.1 Heads
@@ -593,39 +634,68 @@ is what keeps the table finite for every family.
 | Source | Head | Parameters | Binders | Template |
 | --- | --- | --- | --- | --- |
 | Primitive, literal, non-generic declaration | nullary | none | none | its row |
-| Interface or class instance type `D<T⃗>`, merged declarations included | `D` | `T⃗` | none | clause row of its members |
+| Interface or class instance type `D<T⃗>`, merged declarations included | `D` | `T⃗` | none | clause row of its members, met with its bases (below) |
 | Generic method `m<U⃗>` of `D<T⃗>` | `D.m` | `T⃗` | `U⃗` | scheme row; `D`'s template names `D.m(arg…)` |
+| Any other scheme (a generic callable type) | hash-consed by template | the enclosing parameters it mentions | its own | scheme row |
+| Generic function, closure, class or imported generic value (a **unit head**) | `f` | none | its binders | its scheme; a rigid binder is $`\mathsf{bound}(f,[],j)`$, a bounded one $`\mathsf{meet}(\mathsf{bound}(f,[],j),B)`$ |
 | Type literal, tuple, array or function type occurring inside a template | `Lit` of that occurrence | the enclosing parameters and binders it mentions, in first-occurrence order | none | its row, with those as `arg` placeholders |
+| Arrays | `Array`, one per readonly flag | the element union | none | the array clause over `arg 0` |
+| The realm's array prototype | `ArrayProto` | none | none | `Equations.realm` |
 
-The last row lifts a literal over its free type variables, as closure
+A literal head lifts a literal over its free type variables, as closure
 conversion lifts a function over its free variables. In
-`push<U>(u: U): Pair<[T, U]>`, the tuple is $`\mathit{Lit}(\mathsf{arg}\,0,\mathsf{local}\,0)`$
-in the template of `Pair.push`. Literal heads with equal templates, up to
-parameter numbering, are shared (hash-consed). Sharing is an efficiency and
-completeness matter only: two heads with equal templates are two equations
-with equal meanings, and section 7 relates them either way.
+`push<U>(u: U): Pair<[T, U]>`, the tuple is
+$`\mathit{Lit}(\mathsf{arg}\,0,\mathsf{local}\,0)`$ in the template of
+`Pair.push`. Heads are keyed by source occurrence, and that is what makes
+recursive aliases terminate (8.3). Lifting a literal over all its operands,
+or keying it by instance, would loop. Literal heads with equal templates are
+additionally shared (hash-consed); that sharing is only an efficiency
+matter.
 
-A finite table row is the nullary case. The present `types` array is exactly
-the list of nullary heads, which is why there is one representation (section
-9).
+Parameters and binders have a kind: value or argument list (`pack`). The
+receiver `self` inside `D`'s members is $`D(\mathsf{arg}\,0,\ldots)`$.
+
+**Heritage.** `D`'s template is the source meet (3.3) of its own members
+with each base's template instantiated at the placeholder arguments `D`
+passes to it. This is finite because heritage is acyclic.
+
+**Class generic methods.** The parser spells a class generic method's
+binder as `"key"#k:null^0` (`tools/fragment-parse.mts`), a leftover of colours.
+Lowering maps it to the owned binder $`\mathsf{bound}(C.m,\vec A,k)`$ and
+the `^0` goes. Members declared in different heads then bind different
+labels, so the positives that relate them (`generic-method-instances`,
+`method-members`, `class-generic-method`) need quantified-α (section 6)
+before the cutover.
+
+A finite wire table is the nullary case of this lowering. Today's tables are
+not: they contain shared parameter rows, meet rows and scheme rows whose
+binders are shared, and templates forbid all three.
 
 ### 8.2 Type expressions
 
-Lowering $`⟦\tau⟧`$ in a scope of enclosing parameters and method binders:
+Lowering $`⟦\tau⟧`$ in a scope of enclosing parameters and binders:
 
 | Source | Lowered |
 | --- | --- |
 | a declaration's type parameter | $`\mathsf{arg}\ i`$ |
-| a method's type parameter | $`\mathsf{local}\ j`$ |
-| `D<τ⃗>` | $`D(⟦\vec\tau⟧)`$; an omitted argument is its default, and one without a default is refused |
+| a method's or unit's type parameter | $`\mathsf{local}\ j`$, or the owned binder outside a template |
+| `D<τ⃗>` | $`D(⟦\vec\tau⟧)`$; an omitted argument is its default, which may mention earlier parameters; one without a default is refused |
 | `τ₁ \| τ₂` | the concatenation of the unions |
-| `τ₁ & τ₂` | meet labels over the product of the operands' unions (3.3) |
+| `τ₁ & τ₂` | meet labels over the product of the operands' unions (3.3); an empty meet is refused |
 | a literal | its `Lit` head applied to the parameters it mentions |
 | an alias `A<τ⃗>` | its body lowered with `τ⃗` for its parameters (8.3) |
+| `object`, callable atoms, index signatures, the `prototype` overlay | as today |
 | `keyof`, indexed access, mapped, conditional, `typeof` types | refused, as today |
 
+**Declared parameter bounds** are checked where the source or a claim writes
+an application, and once per template with the parameters read as bounded
+parameter labels. Applications created by instantiation are not checked
+again: bounds carry no meaning, so an unchecked application is still
+meaningful, only possibly unintended.
+
 Library declarations (`Promise`, `PromiseLike`, `Array`, …) take the same
-path; the budgeted `DeclarationGraph` path is retired.
+path. The budgeted memo, colours and `rigidClaim` expansion of
+`DeclarationGraph.lean` are deleted.
 
 ### 8.3 Aliases and guardedness
 
@@ -643,21 +713,44 @@ $`\mathit{Lit}_1`$ inlines `Box<[T]>` to
 $`\mathit{Lit}_1(\mathit{Lit}_2(\mathsf{arg}\,0))`$, where $`\mathit{Lit}_2`$
 is the tuple `[T]`, and stops. An alias whose recursive reference is not
 under a constructor, such as `type T<X> = X | T<[X]>`, is **unguarded** and
-refused with a located diagnostic. TypeScript rejects such an alias as
-circular.
+refused (today's "unguarded alias cycle"). The diagnostic is located at the
+using unit, because a library alias's span is not a span in the checked
+file. TypeScript rejects such an alias as circular.
 
-## 9. Wire format
+## 9. Wire formats
 
-**Specification; not yet implemented.** The request's `types` field is
-replaced by `equations`. Per the protocol's rules, the old field is removed,
-not kept beside the new one.
+**Specification; not yet implemented.** There are two wires, and they
+change differently.
+
+### 9.1 Source-claims document
+
+The producer names labels in terms it can see. Lean-internal heads (method,
+literal, unit, array heads) never appear on this wire. A label is a `types`
+row index, or one of:
+
+| Label | Spelling |
+| --- | --- |
+| application of declaration `k` (its position in the declaration document's `definitions`) | `{"decl": k, "args": [[L, …], …]}`, `args` left out when nullary, arity always full with defaults completed |
+| intersection | `{"meet": [L, …]}` |
+| array | `{"array": [L, …], "readonly": b}` |
+| a binder in scope | `{"binder": "T"}` |
+
+`types` keeps only the producer's content rows. The reserved empty rows, and
+the `applications`, `arrays` and `meets` fields, are deleted, as are the
+producer's `param` rows (replaced by `binder` labels) and its `expand_rigid`
+mirror of Lean's `rigidClaim`.
+
+### 9.2 Request protocol and evidence
+
+The standalone request (`verifyJson`) decodes its graph, so there `equations`
+replaces `types`:
 
 ```json
 {
   "equations": [
     {
       "name": "Promise",
-      "parameters": [{ "name": "T", "kind": "value", "variance": "co" }],
+      "parameters": [{ "name": "T", "kind": "value" }],
       "body": [{ "refs": { "views": [["then", [{ "app": 7, "args": [[{ "arg": 0 }]] }]]] } }]
     }
   ]
@@ -678,47 +771,48 @@ are lists of trees. Each tree form has exactly one spelling:
 | template placeholder (bodies only) | `{"arg": i}`, `{"local": j}` |
 | family variable (inside its entry only) | `{"var": k}` |
 
-Every parameter states its `variance` (`"co"`, `"contra"`, `"inv"` or
-`"none"`), with no default. The request also carries `variance`: the
-evidence tables $`\Delta_h`$ for the heads whose declaration needs pairs
-beyond hypotheses and subsets, as `[[h, [[A, B], …]], …]`, left out when
-empty.
+Evidence, in both paths (the source path's evidence bundle and the protocol's
+response), uses the same tree spelling and carries:
 
-Claims, results and inputs are lists of closed labels. Validation checks
-scope, arity, kinds, constructor-headedness, a scheme's binders, the meet
-normal form and the variable discipline of section 7.1. Anything else is
-refused.
-
-In certificates:
-
-- An `inst` instance names its images and is checked by
-  `substitutionTableOk`. The finite `table`, `domain` and `free` fields go.
-- `core` carries `families`, each
+- the variance of every parameter of every head (`"co"`, `"contra"`,
+  `"inv"`, `"none"`, no default) and the tables $`\Delta_h`$, as
+  `[[h, [[A, B], …]], …]`, left out when empty;
+- `inst` instances that name their images, checked by
+  `substitutionTableOk`; the finite `table`, `domain` and `free` fields go;
+- `core` certificates with `families`, each
   `{"source": L, "target": L, "variables": [kind, …], "hypotheses": [[x, y], …], "table": [[A, B], …]}`,
-  left out when none. Same-head pairs use `Var` and need no entry. The
-  present table becomes the variable-free entry.
-- A structural proof form `var` relates two applications of one head, with
-  one proof per non-`none` position (two for `inv`).
+  left out when none; the present table becomes the variable-free entry;
+- the `var` proof form, relating two applications of one head with one
+  proof per non-`none` position (two for `inv`), citing the head's
+  checked declaration.
+
+Diagnostics show labels through a depth-bounded projection onto a finite
+table, with names for applications (`Promise<number | R>`).
 
 ## 10. Acceptance statement
 
-`SourceClaimJson.checkJson_safe` keeps its statement. The graph it speaks
-of becomes `Equations.graph` of the decoded equations instead of
-`RequestJson.tableGraph`. A finite table is the nullary case, so the present
-theorem is an instance of the new one. Its premise adds that the variance
-declarations were checked. The new rules enter only through `Sub.sound`:
-quantified-α, family entries, `Var` and meet labels. So the proof
-changes only at subtyping soundness and decoding. The trust surface gains
-nothing. Equations are decoded and checked, and every semantic premise a new
-rule uses is proved from the equations, never supplied by a certificate.
+`SourceClaimJson.checkJson_safe` keeps its premise: the exact CLI success
+condition. The variance check sits inside `checkRequests`, so it adds
+nothing to that premise. The conclusion changes from
+`RequestJson.graph r.toRequest` to `Equations.graph` of the checked
+request's equations, which are built by lowering in memory, not decoded.
+`checkRequests_safe_at` is restated the same way. The request protocol's
+`verifyJson_safe` speaks of decoded equations. A finite table is the nullary
+case, so the present theorems are instances of the new ones. The new rules
+enter only through `Sub.sound`: quantified-α, family entries, `Var` and meet
+labels. The trust surface gains nothing. Every semantic premise a new rule
+uses is proved from the equations, never supplied by evidence.
 
 ## 11. Lean files and closing tests
 
 - Proved: `Types/GraphRows.lean`, `Types/EquationGraphs.lean`,
   `Types/EquationSupport.lean`, `Types/EquationCongruence.lean`,
   `Types/EquationSubstitution.lean`, `Types/EquationCertificates.lean`.
-- Closing cases: `generic-growing-application` and
-  `generic-growing-application-push` verify unchanged; `promise-covariance`
-  verifies and `invalid-promise-covariance` is rejected at its own
-  obligation. The Promise closing cases are listed in the
+- `generic-growing-application` verifies at the cutover. `-push`,
+  `promise-covariance` and `invalid-promise-covariance` (rejected at its own
+  obligation) move with `Var`. The Promise closing cases are listed in the
   [status table](DESIGN.md#status).
+- At the cutover, every gap refused as an unsupported recursive generic
+  contract is rerun and reclassified by its new first blocker: verified,
+  blocked on `Var`, blocked on `then` through `PromiseLike` (Promise b), or
+  a new located refusal.
