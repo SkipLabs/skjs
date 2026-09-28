@@ -4,33 +4,15 @@ How much of what SKJS accepts in its own test suite the pipeline
 (`check.mts`: parser → OCaml producer → Lean search and check) verifies, what
 stops the rest, and where the two disagree because SKJS is wrong.
 
-Measurement checkpoint: September 27, 2026, after certified callback effects,
-qualified-call composition, pure immutable-let composition and readable array contracts
-(full census with SKJS confirmation).
+Measurement checkpoint: September 27, 2026 (full census with SKJS
+confirmation).
 
 **2,407 of 2,674 SKJS-accepted units verify (90.0%); 1,784 of 2,026
 accepted functions (88.1%).** 286 of the 377 files with an accepted unit
 verify entirely. There are 73 principled refusals, 10 registered SKJS-unsound
 units, 184 gaps and no refusals unexplained by the automatic classifier.
 
-Certified callback-effect overloads restore the curated `array-methods`,
-`array-library`, `array-generic-name` and `closure-contextual-parameters` cases.
-Returned, bound and forwarding callbacks are covered, as are required field
-reads, fresh allocation and pure coalescing. The census gains the unchanged
-`testMapReturnsArray`; no previously verified unit is lost.
-
-The user-approved semantics excludes custom array construction, including in
-external code: arrays own no `constructor`, and standard constructor/species
-behavior is preserved across calls. The array contract and realm invariant
-now enforce the own-key exclusion. Under that explicit host assumption,
-`map`, `filter` and `slice` have their audited invocation contracts again;
-`map` promises a sparse result. `testTupleArrayMethod` in `typeof.ts` and
-`contextualSortParams` in `gap-callback-param-contextual-typing.ts` verify
-again. No previously verified unit is lost. See the
-[native boundary](../DESIGN.md#exact-contracts-and-native-effects).
-
-`testMapReturnsArray` verifies unchanged in the full census.
-`mapArr` and `testMapCallback` still fail at the native call: an arbitrary
+`mapArr` and `testMapCallback` fail at the native call: an arbitrary
 one-argument callback supplies no contract for the three actuals `map` passes.
 There is also an independent density problem: `mapArr<T, U>(arr: T[], f: (x: T) => U): U[]`
 promises readable U[] for every U and an arbitrary callback. That contract is
@@ -42,24 +24,6 @@ would change its written contract and cannot silently repair it.
 `testMapCallback` itself makes a safe call, but its extracted unit also checks
 that invalid general declaration. The current classifier still includes these
 rows among gaps; that classification is not a completeness claim.
-
-The seven former unexplained array-refinement rows now verify unchanged:
-`testBasicArrayRefinement`, `testStringArrayRefinement`, `testMultipleUnion`,
-`testNestedRefinement`, `testEarlyReturn`, `testCombinedWithTypeof` in
-`array-isarray-refinement.ts`, and `testNarrowToArray` in
-`array-object-union-operations.ts`. Source `T[]` uniformly requires readable
-elements: holes are permitted precisely where T admits undefined. This commutes
-with generic substitution, so the fix is not specific to unknown. The curated
-`isarray-record-array` is positive again. No previously verified census unit is lost.
-
-One curated function, `coalescingCallback`, is intentionally moved unchanged
-from `callback-effects` to `invalid-map-hole-coalescing`: its
-`(number | undefined)[]` input admits holes and map skips them, so its numeric
-result claim is false. The earlier dense-only source interpretation excluded
-that input. A runtime witness executes the retained function on a holed array.
-
-The original boundary repair's recursive Promise contracts and the
-Promise-dependent framework target remain open; no erased contract is restored.
 
 The SKJS-unsound list records independent runtime witnesses ([below](#suspected-skjs-unsoundnesses)).
 Membership alone does not show that the pipeline reached the corresponding
@@ -82,11 +46,6 @@ Docker from the main checkout (`SKJS_ROOT`, `SKJS_BIN`, `DOCKER_IMAGE`,
 `--only <substring>` narrows the corpus, `--keep` keeps check artifacts,
 `--out` places the derived files (default `$TMPDIR/skjs-coverage`). The script
 is not part of `verification/run.sh`.
-
-The standard-array-conversion round also restored the unchanged upstream
-`sum-local-closure`, `sum-values-tuple` and `local-closure-result` cases.
-The full SKJS-confirmed census remained unchanged at the counts above; those
-upstream cases are in the pipeline suite, not this repair corpus.
 
 ## Method
 

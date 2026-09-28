@@ -681,7 +681,7 @@ longer brings in unrelated Promise declarations.
 `CallEffects.lean` supplies the semantic foundation. Qualified signatures now
 flow through the type graph, source claims and the executable acceptance checker.
 A proposed heap-preserving closure must pass both ordinary safety and the body
-effect check. The restored targets and remaining limitations are recorded in step 3 below. The [semantic equation](SEMANTICS.md#effect-qualified-call-contracts)
+effect check. Its targets and remaining limitations are in step 3 below. The [semantic equation](SEMANTICS.md#effect-qualified-call-contracts)
 and [planned rules](PROGRAM-TYPING.md#certifying-inferred-call-effects)
 specify the extension, including its proof obligations.
 
@@ -1099,6 +1099,60 @@ Open design work, each a known gap with the reason it is open. How many
 units each gap stops is in
 [SKJS-COVERAGE](ocaml-producer/SKJS-COVERAGE.md#refusals-by-class).
 
+### Status
+
+Progress is recorded here and nowhere else. A commit that moves an item
+updates its row. The prose below describes each item's design, not its
+progress.
+
+**Boundary-repair cleanup.** Restore the original positive sources that the
+soundness boundary repairs refused ([steps](#restoring-completeness)). Closed
+when every step is done and a full census is back to at least the former
+mechanism's 2,444 verified units and 121 gaps (current counts:
+[SKJS-COVERAGE](ocaml-producer/SKJS-COVERAGE.md)).
+
+| Step | State | Closed when |
+| --- | --- | --- |
+| 1. Explicit-comparator sorting | done | `native-sort-contracts` and the tuple-valued sorts verify; the optional-comparator negative is rejected |
+| 2. Sparse results | done | `native-map-sparse`, `testTupleArrayMethod` and `isarray-record-array` verify; `invalid-map-hole-coalescing` is rejected |
+| 3. Density-sensitive calls | done | `array-methods`, `array-library`, `array-generic-name`, `closure-contextual-parameters`, `testArrowOptional` and `testMapReturnsArray` verify; `mapArr`/`testMapCallback` stay refused, their written contract being false |
+| 4. Standard array conversion | done | `sum-local-closure`, `sum-values-tuple` and `local-closure-result` verify; the coercion counterexamples are rejected |
+| 5. Recursive quantified contracts (Promise) | open | the Promise table below is done |
+
+**Promise (step 5).** Closed when `promise-covariance` verifies and
+`invalid-promise-covariance` is rejected at its own obligation; the
+`library-promise*`, `async-await`, `promise-instance`, `class-async-method`
+and `sum-*` framework cases verify with their negatives rejected at their own
+obligations; and `sum-sound-binding` verifies unchanged. The Promise gaps are
+the `cases.mts` entries refused as unsupported recursive generic contracts.
+
+| Item | State | Closed when |
+| --- | --- | --- |
+| a. Recursive equations | open | the table below is done |
+| b. A callback returning a promise instantiates `then`'s binder through `PromiseLike<TResult>` ([generic methods left](#generic-methods-left)) | open | no case isolates it while (a) masks it; name one when (a) lands |
+| c. `await` on realm promises, forged promises refused | done | decided; `forged-promise-refused` stays refused on principle |
+
+**Recursive equations (Promise a).** Closed when
+`generic-growing-application` and `generic-growing-application-push` verify
+unchanged ([design](#recursive-quantified-contracts)).
+
+| Item | State | Closed when |
+| --- | --- | --- |
+| Shared rows (`GraphRow`, `NormalGraph.ofRowMap`) | done | proved |
+| Equation graphs, one-step unfolding (`EquationGraphs`) | done | proved |
+| Free support (`EquationSupport`) | done | proved |
+| Application congruence (`EquationCongruence`) | done | proved |
+| Checked substitution (`EquationSubstitution`, `substitutionTableOk`) | done | proved |
+| One proved image checker for subtyping, expression typing and program certificates (`checkUsing`, `HasTyUsing`) | done | proved |
+| Formal specification: motivation, lowering, family subtyping, wire format, acceptance statement | in progress | reviewed and committed |
+| Thread the image checker through heap, context, control-flow and certificate-production proofs | open | proved; no finite-only premise left on the program path |
+| Lower source and protocol labels to equation applications, alias and intersection normalization included | open | Lean decodes and checks equation requests |
+| Family subtyping for recursive covariance, writable invariance kept | open | proved; `promise-covariance` and its negative behave as above |
+| OCaml claims, search and printing on equations; `DeclarationGraph`'s colour/depth/argument budgets retired | open | budgets deleted; census remeasured |
+| `SourceClaimJson.checkJson_safe` covers the equation path | open | proved |
+
+### Open work
+
 **A connection to ECMA-262.** Proving the calculus faithful to the
 specification and the host's stated types as lemmas would turn most of the
 trust surface into theorems; the expected results and their cost are in
@@ -1110,6 +1164,7 @@ construct signature: `ctorRestsT` has neither an introduction from code nor
 an elimination by `new`, so that rule and its `construction` for code with a
 rest (whose padded actuals would reach the store) come first.
 
+<a id="generic-methods-left"></a>
 **Generic methods left.** A class's generic method with a bounded binder:
 the member's binder row is named by its bound, which the parser does not
 spell for the closure (`class-generic-method-bounded-refused`). Two members
@@ -1124,26 +1179,18 @@ family; a truncation to `unknown` is not an implementation option. A
 callback returning a promise instantiates `then`'s binder through
 `PromiseLike<TResult>`, which the producer's inference does not do.
 
-**Coverage lost to the boundary repairs.** The original framework
-`sum-sound-binding`/`sum-main` sources no longer verify: Promise's
-recursive quantified contracts exceed the budget. Tuple-valued default sorting
-is restored under the standard-conversion restriction. Their sources remain
-unchanged. Under the ordinary-array construction invariant, the unrestricted
-`map` contract has a sparse result; the checked callback effect restores the
-safe density-sensitive targets. Green regression suites retain the recursive-contract
-gaps explicitly.
-
+<a id="restoring-completeness"></a>
 **Restoring useful completeness after the boundary repair.** Keep the original
 positive sources as the targets. The work is split by semantic obligation:
 
-1. **Explicit-comparator sorting: implemented.** One universally quantified
+1. **Explicit-comparator sorting.** One universally quantified
    callable offers two signatures: arbitrary elements with a checked comparator,
    and primitive elements with an omitted/undefined comparator. The producer
    proposes a signature instance; Lean checks the projection and call. Receiver
    intersections survive substitution. `native-sort-contracts` verifies objects,
    numeric tuples and explicit `undefined` on primitives; the optional-comparator
-   negative rejects objects when default coercion remains possible. The original tuple-valued **default** `sort()` examples are restored by step 4.
-2. **Sparse results: implemented.** The runtime store already uses a
+   negative rejects objects when default coercion remains possible.
+2. **Sparse results.** The runtime store already uses a
    list of optional locations, so holes have an operational representation.
    The contract on *present* elements is separate from the guarantee that every
    position below the length is present. Required tuple positions still require
@@ -1154,7 +1201,7 @@ positive sources as the targets. The work is split by semantic obligation:
    invariant permits sparse stores. Native `map` returns a sparse array under
    the explicit ordinary-construction invariant; its length and present-element
    types are retained. `testTupleArrayMethod` and `native-map-sparse` verify.
-   `isarray-record-array` now verifies unchanged: `Array.isArray` establishes
+   `isarray-record-array` verifies unchanged: `Array.isArray` establishes
    sparse unknown elements, which meet the readable `readonly unknown[]` result.
    `CoversPresence` checks the distinction, and the meaning commutes with generic
    substitution. `invalid-map-hole-coalescing` retains a formerly positive source
@@ -1162,7 +1209,7 @@ positive sources as the targets. The work is split by semantic obligation:
    skips them even with a pure numeric callback. The runtime witness demonstrates
    the resulting hole. The former dense-only source interpretation excluded that
    input rather than validating the broader source contract.
-3. **Density-sensitive calls: original safe targets restored.** Follow the
+3. **Density-sensitive calls.** Follow the
    [inference/certification boundary](#inferred-call-effects-elaboration-and-certification)
    and the linked semantic and typing rules. A sparse numeric result alone does
    not restore `testMapReturnsArray` or the pure-map curated examples. The admitted realm supplies ordinary construction;
@@ -1171,14 +1218,14 @@ positive sources as the targets. The work is split by semantic obligation:
    A syntax heuristic or a readonly alias is not that guarantee. Density facts
    may be lost after effects; no operation may change a location's world type.
    The same guarantee can justify pure `find` callbacks at T instead of
-   `T | undefined`. Do not claim these targets closed after step 2 alone.
+   `T | undefined`.
    Restore safe specializations, not false universal contracts: the census's
    generic `mapArr` accepts an arbitrary callback and promises readable `U[]`
    for every `U`, so source-shrinking callbacks returning numbers are
    counterexamples. Its written callback type
    must not be silently strengthened. The safe `testMapCallback` unit also
    checks that general declaration and remains blocked by it.
-   The core now has effect-aware application, weakening, congruence and overload
+   The core has effect-aware application, weakening, congruence and overload
    conjunction, plus `GraphCode.codeChecked_sound` and the graph introduction rules:
    an ordinary graph certificate and a checked effect together
    establish a qualified arrow. Fixed and rest-collecting entries are covered;
@@ -1201,7 +1248,7 @@ positive sources as the targets. The work is split by semantic obligation:
    certify a pure callback and refuse a forged effect on a captured write,
    both when producing evidence and when consuming old evidence. The headline
    acceptance theorem covers this check.
-   OCaml now infers preservation for operationally pure closure bodies and
+   OCaml infers preservation for operationally pure closure bodies and
    defaults. Its semantic signature, symbolic claims and substitution all carry
    the effect, including generic closures; `.bind` retains it. Ordinary source
    annotations remain unrestricted. The producer proposes preservation for
@@ -1210,13 +1257,13 @@ positive sources as the targets. The work is split by semantic obligation:
    effects. Rest wrappers, and reads or
    allocation inside short-circuit/coalescing expressions stay conservative:
    those expressions currently lower to nested terms, not separate graph nodes.
-   Native `map` and `find`/`findIndex` now have qualified overloads alongside
+   Native `map` and `find`/`findIndex` have qualified overloads alongside
    their unrestricted fallbacks. `array-methods`, `array-library` and
-   `array-generic-name` verify again without source changes. `callback-effects`
+   `array-generic-name` verify without source changes. `callback-effects`
    exercises returned and bound callbacks through the same types. Instantiation
    matches clause metadata (including effects and density), not only operands,
    so it cannot discard the applicable fallback after matching the wrong overload.
-   `closure-contextual-parameters` now verifies unchanged, including `doubled`
+   `closure-contextual-parameters` verifies unchanged, including `doubled`
    and `names`. Immutable module constants retain both the initializer's checked claim
    and the written annotation, intersected by ordinary type lowering. The
    initialization unit must discharge both contracts. Local
@@ -1231,7 +1278,7 @@ positive sources as the targets. The work is split by semantic obligation:
    `testArrowOptional` and `testMapReturnsArray` verify unchanged in the census.
    Other call forms and nested heap expressions remain conservative effect
    inference limitations; they are not needed by these original targets.
-4. **Standard array conversion: original targets restored.** One recursive
+4. **Standard array conversion.** One recursive
    native contract admits primitives and nested arrays. The array own-key
    invariant and prototype contract exclude custom conversion hooks, including
    in external code. This is the explicit engineering trade-off described
@@ -1241,7 +1288,7 @@ positive sources as the targets. The work is split by semantic obligation:
    the original coercion counterexamples stay negative. No new core rule is
    needed: the existing recursive types, key bounds and quantified calls express
    the contract.
-5. **Recursive quantified contracts.** Retain parameterized recursive equations
+5. <a id="recursive-quantified-contracts"></a>**Recursive quantified contracts.** Retain parameterized recursive equations
    with lexical binders rather than unfold each application into fresh colours
    until a budget runs out. Instantiation must commute with unfolding and be
    capture-avoiding; finite certificates must justify uses of those equations.
@@ -1255,17 +1302,17 @@ positive sources as the targets. The work is split by semantic obligation:
    requirement of the semantic fixed point. Use that distinction rather than
    introducing a second interpretation of generic types:
 
-   - **Shared rows (implemented):** `GraphRow` describes clauses, parameters,
+   - **Shared rows:** `GraphRow` describes clauses, parameters,
      schemes and dependent meets at any label type. `NormalGraph.ofRowMap`
      interprets that sum, and the existing finite JSON table uses it too. This
-     preparation changes no accepted programs and does not close any Promise gap.
-   - **Finite equations, symbolic applications (kernel implemented):** store each declaration once,
+     preparation changes no accepted programs.
+   - **Finite equations, symbolic applications:** store each declaration once,
      with lexical parameters; a label identifies an application and its argument
      environment. Unfold one row when needed. Scheme binders must retain their
      lexical owner, so nested instantiation cannot capture an enclosing binder.
      Do not enumerate a growing family such as `Pair<[T, U]>`, truncate it, or
      reinterpret a structural interface as a nominal native promise.
-     `Types/EquationGraphs.lean` now constructs such a `NormalGraph` from
+     `Types/EquationGraphs.lean` constructs such a `NormalGraph` from
      scoped templates. It proves exact one-step unfolding, binder-kind
      preservation, and freshness of an application's local binders for its
      captured arguments. Binding positions name one label; type operands can
@@ -1275,18 +1322,17 @@ positive sources as the targets. The work is split by semantic obligation:
      determines the type's meaning, including argument packs. It uses the same
      semantic independence theorem as finite certificates: `FreeSupport` states
      local closure conditions, and `FreeOk` checks them for a finite table.
-     This is not a new accepted certificate: source and certificate integration
-     remain pending. The current templates are constructor-headed; compiling
-     source aliases and dependent intersections still needs normalization.
-     This staging does not narrow the planned source fragment.
-   - **Checked substitution (kernel proved; integration pending):** interpret
+     Templates are constructor-headed: source aliases and dependent
+     intersections are normalized when compiled, without narrowing the planned
+     source fragment.
+   - **Checked substitution:** interpret
      capture-avoiding instantiation over the complete equations, including
      scheme bounds, argument packs, effects and the array realm. Application
      congruence is proved: the same
      equation head at arguments with equal mixed meanings has equal meaning,
      accounting for its differently named local binders. Computed support and
      owned-binder freshness supply the independence premises.
-     `Types/EquationCongruence.lean` now proves preservation of captured arguments
+     `Types/EquationCongruence.lean` proves preservation of captured arguments
      when entering a scheme, agreement of corresponding local slots, lifting
      agreement through finite templates, and application congruence. The
      induction compares clause and quantified value rows using operand agreement
@@ -1294,28 +1340,26 @@ positive sources as the targets. The work is split by semantic obligation:
      results at the current level. Quantified bounds use the outer environment;
      signatures use matching assigned locals. The `ApplicationsAgree` premise
      of the intermediate lemmas is discharged by this induction, never supplied
-     by a certificate. `Types/EquationSubstitution.lean` now proves semantic
+     by a certificate. `Types/EquationSubstitution.lean` proves semantic
      substitution by traversing finite argument syntax and applying congruence,
      without unfolding recursive rows. Bound names are atomic; replacements
      are simultaneous. Resulting applications own their local binders, keeping
      captured parameters distinct from locally quantified ones. The existing
      kind check is retained. `substitutionTableOk` checks each named image
      against that structural substitution; it needs no recursive row closure.
-     The semantic boundary is now factored as `InstanceImages`: every named
+     The semantic boundary is factored as `InstanceImages`: every named
      image has the meaning of substitution, for values and packs together.
      `table_instanceImages` establishes it for the current checker;
      `inst_images_sound` supplies the shared elimination proof.
-     `substitutionTable_instanceImages` now establishes that obligation for
-     equation witnesses. `PositiveCertificates.checkUsing` is now the shared
+     `substitutionTable_instanceImages` establishes that obligation for
+     equation witnesses. `PositiveCertificates.checkUsing` is the shared
      proof traversal: `InstanceImageCheck` requires a proof of that obligation,
      and the finite checker remains the default. `EquationCertificates` supplies
      the structural substitution checker and proves its subtype checks sound.
      Bounds, kinds, fixed/rest signatures, receivers and effects still use the
      same checks; no new certificate-supplied trust premise is introduced.
-     The original finite certificate completeness theorem is preserved. Wiring
-     equation labels and this checker into source/protocol compilation and the
-     exact CLI acceptance theorem is still pending; current source acceptance
-     continues to require the old finite certificate.
+     The original finite certificate completeness theorem is preserved. Source
+     acceptance uses only the finite checker.
      Structural subtyping needs the corresponding finite family argument too:
      `Promise<number> ≤ Promise<number | string>` cannot be justified by stopping an
      infinite traversal. Check the family relation against the complete
@@ -1329,19 +1373,9 @@ positive sources as the targets. The work is split by semantic obligation:
      the general mechanism works, then Promise/async and `sum-sound-binding`.
 
    Expression typing and program certificates are stated once over a proved
-   image checker (`HasTyUsing`, `ProgramCertificates.checkUsing`); source
-   requests still choose the finite one. Next, in order: thread the same checker
-   through the heap, context, control-flow and certificate-production
-   boundaries; lower source and protocol labels to applications of finite
-   equations, alias and intersection normalization included; supply the finite
-   family-subtyping argument for recursive covariance, keeping writable
-   invariance; move OCaml claims, search and printing to that representation and
-   retire `DeclarationGraph`'s colour/depth/argument budgets. Acceptance is
-   measured by the unchanged `generic-growing-application(-push)`,
-   `promise-covariance` with its reverse negative, the Promise/async/framework
-   examples and `sum-sound-binding` with its original negatives, and by a
-   remeasured census that returns at least to parity with the former mechanism
-   (2,444 verified, 121 gaps).
+   image checker (`HasTyUsing`, `ProgramCertificates.checkUsing`). The
+   remaining items, their order and their closing criteria are in the
+   [status](#status) table.
 
    A shared polymorphic prototype may be a valid audited contract for a native,
    but it is not an equivalent translation of an arbitrary structural interface:

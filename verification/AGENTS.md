@@ -341,3 +341,11 @@ an exporter change needs a place to show, one phenomenon per file.
 - Docs: a doc-only change needs no suite run; check anchors and prose. Cite
   papers, specifications and issues by a link to an entry of
   [REFERENCES.md](REFERENCES.md), adding the entry there.
+- Status: progress is written once, in the
+  [status table](DESIGN.md#status) of DESIGN.md. A commit that moves an item
+  updates its row. Elsewhere only three status-like statements are allowed:
+  a measurement with its date (SKJS-COVERAGE), an executable expectation
+  (`cases.mts` entries) and a spec's proof scope (proved in the model versus
+  accepted at the source), changed in the same commit as the code it
+  describes. Delete any other prose that restates progress
+  ("now", "implemented", "still pending", "restored").

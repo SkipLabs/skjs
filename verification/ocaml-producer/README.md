@@ -1,19 +1,5 @@
 # OCaml producer prototype
 
-> **Current soundness boundary repairs:** unsupported generic contracts are
-> refused rather than erased. This reopens Promise-dependent framework cases,
-> including `sum-main`. Array results rely on the explicit ordinary-construction
-> invariant, also required of external code. `map` promises a dense result only for a certified heap-preserving callback.
-> Unrestricted `find` callbacks must admit `undefined`. Standard array conversion supports
-> primitives and nested arrays, with custom array conversion hooks excluded, also externally.
-> The original tuple-sort cases verify again; comparator sorting supports arbitrary elements.
-> Promise-dependent sources remain explicit gaps in `cases.mts`. The core row
-> representation is now label-independent. A scoped recursive-equation kernel
-> constructs graphs for the existing semantics, with proved free-parameter independence;
-> its semantic substitution proof,
-> certificates and source integration are still pending ([execution plan](../DESIGN.md#next-steps)). See
-> [the current design](../DESIGN.md#exact-contracts-and-native-effects).
-
 An independent OCaml producer with **verified acceptance**, using the existing
 Fragment → SourceClaims → Lean evidence pipeline. It does not invoke SKJS or
 TypeScript's type checker to infer claims. The shared TypeScript parser remains

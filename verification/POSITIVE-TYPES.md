@@ -512,7 +512,7 @@ The semantics above does not require finitely many labels. A finite collection
 of parameterized equations can present an infinite graph: unfolding
 `Pair<T>` may refer to `Pair<[T, U]>` without first enumerating every later
 application. `Types/EquationGraphs.lean` implements the scoped representation
-for this construction; it is not yet connected to source acceptance.
+for this construction.
 
 A label is an application `h(A₁, …, Aₙ)` or a parameter owned by such an
 application, `bound(h, [A₁, …, Aₙ], j)`. Each argument is a union of labels.
@@ -616,14 +616,10 @@ completeness theorem for finite declarative derivations are unchanged in scope.
 
 Expression typing and program certificates are stated over the same interface
 ([`HasTyUsing`, `checkUsing`](PROGRAM-TYPING.md#judgments-and-constructor-views)),
-so the equation checker reaches them with the soundness proofs unchanged. It is
-not yet wired into source or CLI acceptance. Source compilation (including alias
-and dependent-intersection normalization) and finite family-subtyping evidence
-remain pending.
+so the equation checker reaches them with the soundness proofs unchanged.
 Other proof forms still enforce their original closure/free-support checks;
-those checks have not been bypassed for recursive graphs. Existing finite
-certificates remain the only source acceptance path until the integration is
-covered by the acceptance theorem.
+those checks are not bypassed for recursive graphs. Source and CLI acceptance
+use only the finite checker.
 
 ## Conjunction and normalization
 
@@ -1370,10 +1366,9 @@ $$
 closure, free-variable and kind checks. `inst_images_sound` then proves
 elimination from those equalities and the existing bound/signature premises;
 fixed and rest arguments, effects and receiver weakening use this one proof.
-`inst_mixed_sound` composes the two. The executable rule above still requires
-the finite-table checks. A future recursive-equation witness must prove the
-same equalities for its application families before it can use the elimination
-theorem; this factorization alone admits no new source program.
+`inst_mixed_sound` composes the two. The default checker discharges the obligation with
+the finite-table checks; the equation checker discharges it by structural
+substitution ([finite presentations](#finite-presentations-of-application-indexed-graphs)).
 
 The same tables relate two rows of one type that differ only in which binder
 rows their schemes use. Lowering gives one row per generic application
