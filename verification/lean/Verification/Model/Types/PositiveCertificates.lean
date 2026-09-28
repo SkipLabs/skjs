@@ -523,6 +523,14 @@ def finiteInstanceImages [DecidableEq ι] (G : NormalGraph ι) : InstanceImageCh
   check := fun _ c => TableOk G c.table c.domain c.free
   sound := fun _ _ hlen hkinds hok η => table_instanceImages η hlen hkinds hok
 
+/-- The same check at a reassignment of the graph's parameter rows. Its
+obligation quantifies over every assignment and reads no `env`, so one proof
+serves every reassignment (`Parametricity`). -/
+def InstanceImageCheck.reassign [DecidableEq ι] {G : NormalGraph ι} (images : InstanceImageCheck G)
+    (η : MixedAssignment ι) : InstanceImageCheck (PositiveRules.reassign G η) where
+  check := images.check
+  sound := images.sound
+
 /-- `S` is one scheme row, and `L`, `M` arrows whose every signature is an
 image of one of the scheme's under the instance table, each instance within
 its binder's bounds. Only validation of that image table depends on its

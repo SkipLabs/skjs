@@ -7,6 +7,7 @@ namespace Verification.Model.CertificateProducer
 open ProgramTyping PositiveGraphs PositiveNormalization PositiveRules
 open ProgramCertificates PointClaims ControlFlow
 open CallEffects (Arrow RestArrow Contract Effect)
+open PositiveCertificates (InstanceImageCheck finiteInstanceImages)
 
 structure PointClaim (ι : Type) where
   context : List (Ty ι)
@@ -16,30 +17,30 @@ structure PointClaim (ι : Type) where
 def signature (c : NodeEvidence ι) : PointClaim ι := ⟨entry c, result c⟩
 
 /-- Claims are part of the request, not facts the producer may replace. -/
-def accept [DecidableEq ι] (G : NormalGraph ι) (R : Ty ι) (P : Program)
+def acceptUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (R : Ty ι) (P : Program)
     (claims : List (PointClaim ι)) (C : ControlFlow.Certificate ι) (start : Nat)
     (inputs : List (Ty ι) := []) (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
-  decide (C.map signature = claims) && checkEntry G R P C start inputs codes
+  decide (C.map signature = claims) && checkEntryUsing G images R P C start inputs codes
 
-theorem accept_claims [DecidableEq ι] {G : NormalGraph ι} {R P claims C start inputs codes}
-    (hc : accept G R P claims C start inputs codes = true) : C.map signature = claims :=
+theorem accept_claims [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {R P claims C start inputs codes}
+    (hc : acceptUsing G images R P claims C start inputs codes = true) : C.map signature = claims :=
   by
-    simp only [accept, Bool.and_eq_true, decide_eq_true_eq] at hc
+    simp only [acceptUsing, Bool.and_eq_true, decide_eq_true_eq] at hc
     exact hc.1
 
-theorem accepted_safe [DecidableEq ι] {G : NormalGraph ι} {R P claims C start}
-    (hc : accept G R P claims C start = true) (n : Nat) :
+theorem accepted_safe [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {R P claims C start}
+    (hc : acceptUsing G images R P claims C start = true) (n : Nat) :
     SafeGraph P (meaning G R) n (ofList []) [] (.at start (fun _ => .nul)) :=
   by
-    simp only [accept, Bool.and_eq_true] at hc
+    simp only [acceptUsing, Bool.and_eq_true] at hc
     exact accepted_closed_safe hc.2 n
 
-theorem accepted_from_inputs [DecidableEq ι] {G : NormalGraph ι} {R P claims C start inputs}
-    {codes : CodeEntry ι → Bool} (hc : accept G R P claims C start inputs codes = true) (n W h ρ)
+theorem accepted_from_inputs [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {R P claims C start inputs}
+    {codes : CodeEntry ι → Bool} (hc : acceptUsing G images R P claims C start inputs codes = true) (n W h ρ)
     (he : EnvOk G inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hcodes : ProgramCertificates.CodesSound G codes := by exact Verification.Model.ProgramCertificates.codesSound_none _) :
     SafeGraph P (meaning G R) n W h (.at start ρ) := by
-  simp only [accept, Bool.and_eq_true] at hc
+  simp only [acceptUsing, Bool.and_eq_true] at hc
   exact ControlFlow.accepted_inputs_safe hc.2 n W h ρ he hw hh hcodes
 
 /-- Small arrow search: source, receiver and domain union, and pairwise
@@ -128,23 +129,23 @@ abbrev KnownInstances (ι : Type) :=
     PositiveCertificates.Instance ι)
 
 /-- A core table over the pool, whose coverage may use the `known` rows. -/
-def subtypeWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
+def subtypeWith [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
     (ks : KnownInstances ι) (A B : Ty ι) : Option (PositiveCertificates.Proof ι) :=
-  if PositiveCertificates.check G A B .subset then some .subset else
+  if PositiveCertificates.checkUsing G images A B .subset then some .subset else
   -- Value top covers value types: one row, no arrow evidence.
   let toTop := PositiveCertificates.Proof.core ⟨[(A, B)], []⟩
-  if expand G B = [.top] && PositiveCertificates.check G A B toTop then some toTop else
+  if expand G B = [.top] && PositiveCertificates.checkUsing G images A B toTop then some toTop else
     let known := PositiveCertificates.knownOf ks
     if !rowFeasible G known A B then none else
     let types := (A :: B :: pool).eraseDups
     let initial := (types.flatMap fun a => types.map (a, ·)).filter fun r => rowFeasible G known r.1 r.2
     let table := prune G types known initial.length initial
     let p := PositiveCertificates.Proof.core ⟨table, arrowEvidence G table types⟩ ks
-    if PositiveCertificates.check G A B p then some p else none
+    if PositiveCertificates.checkUsing G images A B p then some p else none
 
-def subtypeBase [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
+def subtypeBase [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
     (A B : Ty ι) : Option (PositiveCertificates.Proof ι) :=
-  subtypeWith G pool [] A B
+  subtypeWith G images pool [] A B
 
 /-- The pairs one signature list's coverage of another compares: each target
 signature against each source one, position by position (receivers,
@@ -252,7 +253,7 @@ def quantifiedMembers (G : NormalGraph ι) (T : Ty ι) : Bool :=
 /-- A proof of `A ≤ B` by a table grown on demand (`demandTable`), for two
 instances of declarations with generic methods, whose unfolding together the
 tables over the types near the pair do not reach. -/
-def demandProof [DecidableEq ι] (G : NormalGraph ι) (A B : Ty ι) :
+def demandProof [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (A B : Ty ι) :
     Option (PositiveCertificates.Proof ι) := do
   if !(quantifiedMembers G A && quantifiedMembers G B) then none
   if !rowFeasible G [] A B true then none
@@ -260,7 +261,7 @@ def demandProof [DecidableEq ι] (G : NormalGraph ι) (A B : Ty ι) :
   let types := (table.flatMap fun r => [r.1, r.2]).eraseDups
   let table := prune G types [] table.length table
   let p := PositiveCertificates.Proof.core ⟨table, arrowEvidence G table types⟩ []
-  if PositiveCertificates.check G A B p then some p else none
+  if PositiveCertificates.checkUsing G images A B p then some p else none
 
 
 /-- The table built while matching, and the instances found for the
@@ -438,7 +439,7 @@ def nearPool [DecidableEq ι] (G : NormalGraph ι) (A B : Ty ι) : List (Ty ι) 
 /-- An instance of scheme row `s` whose signatures' images are the arrows
 `L`, `M`: find the binders' instances, then build the table under the context
 giving each binder its instance. Untrusted: `checkInstArrs` validates it. -/
-def instanceFor [DecidableEq ι] (G : NormalGraph ι) (fuel : Nat) (s : SchemeRow ι)
+def instanceForUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (fuel : Nat) (s : SchemeRow ι)
     (L : PositiveRules.Ops ι) (M : List (RestArrow (List ι)))
     (candidates : List (Ty ι) := []) :
     Option (PositiveCertificates.Instance ι) := do
@@ -486,19 +487,19 @@ def instanceFor [DecidableEq ι] (G : NormalGraph ι) (fuel : Nat) (s : SchemeRo
     | none => some none
     | some U =>
       if U.all (· ∈ b.2) then some none
-      else match subtypeBase G (reachablePool G U b.2) U b.2 with
+      else match subtypeBase G images (reachablePool G U b.2) U b.2 with
         | some (.core cert _) => some (some cert)
         | _ => none
   some ⟨final.table, θs, certs, D, V⟩
 
 /-- A scheme row below an arrow type. -/
-def instProof [DecidableEq ι] (G : NormalGraph ι) (fuel : Nat) (A B : Ty ι)
+def instProofUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (fuel : Nat) (A B : Ty ι)
     (candidates : List (Ty ι) := []) :
     Option (PositiveCertificates.Proof ι) :=
   match A, expand G B with
   | [i], [.arrs L M] =>
     match G.schemes i with
-    | some s => (instanceFor G fuel s L M candidates).map .inst
+    | some s => (instanceForUsing G images fuel s L M candidates).map .inst
     | none => none
   | _, _ => none
 
@@ -506,7 +507,7 @@ def instProof [DecidableEq ι] (G : NormalGraph ι) (fuel : Nat) (A B : Ty ι)
 types: for a source `A` whose prototype `P` holds, under a method's key, a
 scheme row, the instance whose signatures are the method's with `A` as
 receiver. -/
-def protoInstances [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) (fuel : Nat) :
+def protoInstances [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat) :
     KnownInstances ι :=
   let methods := pool.flatMap fun B => (expand G B).flatMap fun c => match c with
     | .refs _ _ _ _ ns _ | .dict _ _ _ _ _ ns _ _ => ns
@@ -520,8 +521,8 @@ def protoInstances [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) (
             | some s =>
               let L := q.calls.map (·.withReceiver A)
               let M := q.rests.map (·.withReceiver A)
-              (instanceFor G fuel s L M).bind fun c =>
-                if PositiveCertificates.checkInstArrs G [i] L M c then some ([i], L, M, c) else none
+              (instanceForUsing G images fuel s L M).bind fun c =>
+                if PositiveCertificates.checkInstArrsUsing G images [i] L M c then some ([i], L, M, c) else none
             | none => none
           | _ => none
       | none => []
@@ -539,14 +540,14 @@ def tableProof [DecidableEq ι] (G : NormalGraph ι) (fuel : Nat) (A B : Ty ι) 
 
 /-- A type below a scheme row: a type of the pool stating the scheme's
 signatures, and a proof of the inclusion in it. -/
-def genProof [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) (fuel : Nat) (A B : Ty ι) :
+def genProof [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat) (A B : Ty ι) :
     Option (PositiveCertificates.Proof ι) :=
   match B with
   | [j] =>
     match G.schemes j with
     | some s => do
       let U ← pool.find? fun U => expand G U == [.arrs s.signatures s.variadic]
-      let p ← subtypeBase G pool A U <|> instProof G fuel A U
+      let p ← subtypeBase G images pool A U <|> instProofUsing G images fuel A U
       let D := readsFrom G closureFuel A
       some (.gen D (freeMapOf G D closureFuel []) U p)
     | none => none
@@ -561,23 +562,23 @@ related without it. Instantiating a scheme row, which applies only when `A`
 is one, comes before prototype instances, which are sought for every array
 of the table against every method the table names: first over the types
 near the pair, then over the whole pool. -/
-def subtype [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
+def subtypeUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
     (A B : Ty ι) : Option (PositiveCertificates.Proof ι) :=
   let fuel := 64 + pool.length
-  let ok p := PositiveCertificates.check G A B p
-  let proto (P : List (Ty ι)) := match protoInstances G ((A :: B :: P).eraseDups) fuel with
+  let ok p := PositiveCertificates.checkUsing G images A B p
+  let proto (P : List (Ty ι)) := match protoInstances G images ((A :: B :: P).eraseDups) fuel with
     | [] => none
-    | ks => subtypeWith G P ks A B
+    | ks => subtypeWith G images P ks A B
   -- Every label of `A` among `B`'s: the inclusion needs no search.
   (if A.all (· ∈ B) then some .subset else none) <|>
-  (subtypeBase G [] A B) <|> ((tableProof G fuel A B).filter ok) <|>
-    (subtypeBase G (nearPool G A B) A B) <|> (demandProof G A B) <|> (subtypeBase G pool A B) <|>
-    ((instProof G fuel A B pool).filter ok) <|> proto (nearPool G A B) <|> proto pool <|>
-    ((genProof G pool fuel A B).filter ok)
+  (subtypeBase G images [] A B) <|> ((tableProof G fuel A B).filter ok) <|>
+    (subtypeBase G images (nearPool G A B) A B) <|> (demandProof G images A B) <|> (subtypeBase G images pool A B) <|>
+    ((instProofUsing G images fuel A B pool).filter ok) <|> proto (nearPool G A B) <|> proto pool <|>
+    ((genProof G images pool fuel A B).filter ok)
 /-- Proofs that the member of key `k` on `O` covers each fixed signature of
 `F`: for each, a member signature of as many parameters, each claimed
 parameter within the member's and the member's result within the claimed. -/
-def memberProofs [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) (O : Ty ι) (k : PropKey)
+def memberProofsUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (O : Ty ι) (k : PropKey)
     (F : Ty ι) : Option (List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι)) := do
   let m ← ProgramTyping.memberOf G O k
   -- At a quantified signature, the member bound to its host is the scheme.
@@ -585,14 +586,14 @@ def memberProofs [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) (O 
   let [.arrs L _] := expand G F | none
   L.mapM fun q => m.calls.findSome? fun c => do
     if q.arguments.length != c.arguments.length || !c.effect.covers q.effect then none
-    let ps ← (q.arguments.zip c.arguments).mapM fun (D, C) => subtype G pool D C
-    let pr ← subtype G pool c.result q.result
+    let ps ← (q.arguments.zip c.arguments).mapM fun (D, C) => subtypeUsing G images pool D C
+    let pr ← subtypeUsing G images pool c.result q.result
     pure (ps, pr)
 
-def coerce [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
+def coerce [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
     (e : ProgramCertificates.Evidence ι) (A : Ty ι) : Option (ProgramCertificates.Evidence ι) := do
   if (claim e).type = A then return e
-  let p ← subtype G pool (claim e).type A
+  let p ← subtypeUsing G images pool (claim e).type A
   return .node ⟨(claim e).context, (claim e).term, A⟩ (.sub p) [e]
 
 instance [DecidableEq ι] (G : NormalGraph ι) (B : Ty ι) (tag : Tag) (q : Bool) :
@@ -602,7 +603,7 @@ instance [DecidableEq ι] (G : NormalGraph ι) (B : Ty ι) (tag : Tag) (q : Bool
 search fuel, including implicit let typing. Suggestions only prioritize candidate
 types; every premise is proved in the actual context, even when the suggestion
 came from a different context. No execution budget is inspected. -/
-def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
+def expressionWithUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
     (suggestions : List (Sequent ι)) :
     Nat → List (Ty ι) → Tm → Ty ι → Option (ProgramCertificates.Evidence ι)
   | 0, _, _, _ => none
@@ -614,7 +615,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
       return some (ProgramCertificates.Evidence.node ⟨Γ,t,A⟩ (.unionVar i) [])
     let leaf := fun B r => ProgramCertificates.Evidence.node ⟨Γ,t,B⟩ r []
     let leaf' := fun (i : Nat) (C : Ty ι) => ProgramCertificates.Evidence.node ⟨Γ,.var i,C⟩ .var []
-    let recur := expressionWith G pool suggestions fuel
+    let recur := expressionWithUsing G images pool suggestions fuel
     -- A slot of the empty type holds no value: the point is unreachable, and
     -- eliminating that union leaves no premise.
     if let some i := Γ.findIdx? (·.isEmpty) then
@@ -633,13 +634,13 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
       ((match a with | .var i => (Γ[i]?).toList | _ => []) ++ pool).filter fun S =>
         decide (Answers G S .isStr true)
     match t with
-    | .var i => return (Γ[i]?).bind fun B => coerce G pool (leaf B .var) A
+    | .var i => return (Γ[i]?).bind fun B => coerce G images pool (leaf B .var) A
     | .nul | .undef | .tru | .fls =>
       let r := match t with | .nul => Rule.nul | .undef => .undef | .tru => .tru | _ => .fls
       return (A :: pool).findSome? fun B =>
         let r := if expand G B = [.boolLit true] && t == .tru then Rule.truLit
           else if expand G B = [.boolLit false] && t == .fls then Rule.flsLit else r
-        if checkTree G (leaf B r) then coerce G pool (leaf B r) A else none
+        if checkTreeUsing G images (leaf B r) then coerce G images pool (leaf B r) A else none
     -- A number has one rule: its own singleton. Reaching `number`, or any
     -- union above it, is the coercion's job, exactly as for a boolean literal.
     | .num _ =>
@@ -647,18 +648,18 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
       -- not: a literal claimed at `number` has no singleton label to coerce
       -- from, exactly as a Boolean claimed at `boolean` has none.
       return (A :: pool).findSome? fun B =>
-        if checkTree G (leaf B .numLit) then coerce G pool (leaf B .numLit) A
-        else if checkTree G (leaf B .num) then coerce G pool (leaf B .num) A
+        if checkTreeUsing G images (leaf B .numLit) then coerce G images pool (leaf B .numLit) A
+        else if checkTreeUsing G images (leaf B .num) then coerce G images pool (leaf B .num) A
         else none
     | .str _ =>
       return (A :: pool).findSome? fun B =>
-        if checkTree G (leaf B .strLit) then coerce G pool (leaf B .strLit) A
-        else if checkTree G (leaf B .str) then coerce G pool (leaf B .str) A
+        if checkTreeUsing G images (leaf B .strLit) then coerce G images pool (leaf B .strLit) A
+        else if checkTreeUsing G images (leaf B .str) then coerce G images pool (leaf B .str) A
         else none
     | .bigint _ =>
       return (A :: pool).findSome? fun B =>
-        if checkTree G (leaf B .bigintLit) then coerce G pool (leaf B .bigintLit) A
-        else if checkTree G (leaf B .bigint) then coerce G pool (leaf B .bigint) A
+        if checkTreeUsing G images (leaf B .bigintLit) then coerce G images pool (leaf B .bigintLit) A
+        else if checkTreeUsing G images (leaf B .bigint) then coerce G images pool (leaf B .bigint) A
         else none
     -- Graph code: its captures at their slots' types, the code the unit's
     -- table checked; the claim or a pool type. A function's (`Rule.funGraph`)
@@ -677,15 +678,15 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         match kind, expand G F with
         | .call, [.arrs _ S] =>
           if !fresh then none else do
-          coerce G pool (.node ⟨Γ,t,F⟩ (.funGraph (← arraysOf S)) ps) A
+          coerce G images pool (.node ⟨Γ,t,F⟩ (.funGraph (← arraysOf S)) ps) A
         | .construct, [.ctors _] =>
           if !fresh then none else do
           let U ← pool.find? fun U => decide (expand G U = [.undef])
-          coerce G pool (.node ⟨Γ,t,F⟩ (.ctorGraph U) ps) A
+          coerce G images pool (.node ⟨Γ,t,F⟩ (.ctorGraph U) ps) A
         | .call, [.callable P [] _ S] =>
           if P.map Prod.fst != ns || inits.length != ns.length then none else do
           let eas ← (inits.zip (P.map Prod.snd)).mapM fun (a,D) => recur Γ a D
-          coerce G pool (.node ⟨Γ,t,F⟩ (.callableGraph (← arraysOf S)) (eas ++ ps)) A
+          coerce G images pool (.node ⟨Γ,t,F⟩ (.callableGraph (← arraysOf S)) (eas ++ ps)) A
         | _, _ => none
     -- `new f(args)`: a construct signature of the constructor's type taking at
     -- least as many parameters as there are actuals; each omitted position
@@ -695,17 +696,17 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         let [.ctors L] := expand G F | none
         L.findSome? fun p => do
           if args.length > p.1.length then none else do
-          let _ ← subtype G pool p.2 A
+          let _ ← subtypeUsing G images pool p.2 A
           let ef ← recur Γ f F
           let eas ← (args.zip p.1).mapM fun (a,D) => recur Γ a D
           let eus ← (p.1.drop args.length).mapM fun D => recur Γ .undef D
-          coerce G pool (.node ⟨Γ,t,p.2⟩ .construct (ef :: eas ++ eus)) A
+          coerce G images pool (.node ⟨Γ,t,p.2⟩ .construct (ef :: eas ++ eus)) A
     -- `.bind`'s forwarding descriptor: a leaf whose checker reads the saved
     -- slots from the context; the claimed type, or a pool type, is its result.
     | .makeAt (.bound (.var _) (.var _) _) [] [] =>
       return (A :: pool).findSome? fun F =>
-        if checkTree G (leaf F .bindE) then coerce G pool (leaf F .bindE) A
-        else if checkTree G (leaf F .bindRestE) then coerce G pool (leaf F .bindRestE) A
+        if checkTreeUsing G images (leaf F .bindE) then coerce G images pool (leaf F .bindE) A
+        else if checkTreeUsing G images (leaf F .bindRestE) then coerce G images pool (leaf F .bindRestE) A
         else none
     -- A member bound to its host: a leaf whose checker reads the object's type
     -- from the context; the claimed type, or a pool type, is its result.
@@ -714,8 +715,8 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         | some O => ProgramTyping.memberSchemes G O k
         | none => []
       return (A :: schemes ++ pool).findSome? fun F => do
-        let ps ← memberProofs G pool (← Γ[i]?) k F
-        if checkTree G (leaf F (.bindMember ps)) then coerce G pool (leaf F (.bindMember ps)) A
+        let ps ← memberProofsUsing G images pool (← Γ[i]?) k F
+        if checkTreeUsing G images (leaf F (.bindMember ps)) then coerce G images pool (leaf F (.bindMember ps)) A
         else none
     | .letE a b =>
       let exactTypes := suggestions.reverse.filterMap fun j =>
@@ -747,7 +748,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           let omitted := Ps.drop k
           let parts := args.drop k
           if !omitted.isEmpty && !parts.isEmpty then none else do
-          let _ ← subtype G pool B A
+          let _ ← subtypeUsing G images pool B A
           let ef ← recur Γ f F
           let er ← recur Γ recv Rt
           let eas ← (args.zip Ps).mapM fun (a,D) => recur Γ a D
@@ -764,7 +765,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
               parts.zipIdx.mapM fun (a, i) => do recur Γ a (← positionTy T i)
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,B⟩
             (.callRest effect k omitted.length flags P) (ef :: er :: eas ++ eus ++ eps)
-          if checkTree G e then coerce G pool e A else none
+          if checkTreeUsing G images e then coerce G images pool e A else none
       let direct := fun (candidates : List (Ty ι)) => candidates.findSome? fun F => do
         let (L,r) ← match expand G F with
           | [.arrs L _] => some (L,Rule.app)
@@ -776,12 +777,12 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           -- remaining contract admits `undefined`, the value bound there.
           if args.length > p.arguments.length then none else do
             let omitted := p.arguments.drop args.length
-            let _ ← subtype G pool p.result A
+            let _ ← subtypeUsing G images pool p.result A
             let ef ← recur Γ f F
             let er ← recur Γ recv p.receiver
             let eas ← (args.zip p.arguments).mapM fun (a,D) => recur Γ a D
             let eus ← omitted.mapM fun D => recur Γ .undef D
-            coerce G pool (.node ⟨Γ,t,p.result⟩ (r p.effect) (ef :: er :: eas ++ eus)) A
+            coerce G images pool (.node ⟨Γ,t,p.result⟩ (r p.effect) (ef :: er :: eas ++ eus)) A
       if let some e := variadic own <|> direct own <|> variadic pool <|> direct pool then return some e
       -- A callee or, for a method dispatched on its object, the receiver.
       return splitReceiver f <|> splitReceiver recv
@@ -793,7 +794,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         | [.refs B [] [] [] [] ks] =>
           if B.map Prod.fst != ns || !ks.all (fun K => ns.all K.admits) then none else do
           let ps ← (inits.zip (B.map Prod.snd)).mapM fun (a,D) => recur Γ a D
-          coerce G pool (.node ⟨Γ,t,R⟩ .alloc ps) A
+          coerce G images pool (.node ⟨Γ,t,R⟩ .alloc ps) A
         -- A literal allocated directly at a dictionary, each field an index
         -- may admit at that index's type.
         | [.dict B [] [] ix os [] [] cs] =>
@@ -802,7 +803,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
             !os.all (fun o => !ns.contains o.key && cs.all fun y => !y.1.may o.key ||
               o.type == y.2 || (G.plainTy y.2 && (expand G y.2).isEmpty)) then none else do
           let ps ← (inits.zip (B.map Prod.snd)).mapM fun (a,D) => recur Γ a D
-          coerce G pool (.node ⟨Γ,t,R⟩ .alloc ps) A
+          coerce G images pool (.node ⟨Γ,t,R⟩ .alloc ps) A
         | _ => none
     | .indexAt a key =>
       -- A key of a class within an index's reads through it: a string
@@ -818,10 +819,10 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
             (A :: pool).findSome? fun U => do
               if expand G U != [.undef] then none else do
               let B := E ++ U
-              let _ ← subtype G pool B A
+              let _ ← subtypeUsing G images pool B A
               let ea ← recur Γ a R
               let ek ← recur Γ key K
-              coerce G pool (.node ⟨Γ,t,B⟩ (.indexDict Kx KK E U) [ea, ek]) A
+              coerce G images pool (.node ⟨Γ,t,B⟩ (.indexDict Kx KK E U) [ea, ek]) A
     | .readAt f a =>
       let direct := pool.findSome? fun R => do
         -- An invariant field reads at its contract; a view field at its bound;
@@ -847,9 +848,9 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
               pool.findSome? fun U =>
                 if expand G U == [.undef] then some (B ++ U, Rule.readDict K B U) else none
           | _ => none
-        let _ ← subtype G pool B A
+        let _ ← subtypeUsing G images pool B A
         let ea ← recur Γ a R
-        coerce G pool (.node ⟨Γ,t,B⟩ r [ea]) A
+        coerce G images pool (.node ⟨Γ,t,B⟩ r [ea]) A
       if let some e := direct then return some e
       return splitReceiver a
     | .writeAt f a b =>
@@ -863,7 +864,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         let eb ← recur Γ b B
         (A :: pool).findSome? fun N =>
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ r [ea,eb]
-          if checkTree G e then coerce G pool e A else none
+          if checkTreeUsing G images e then coerce G images pool e A else none
       if let some e := direct then return some e
       return splitReceiver a
     | .arith op a b =>
@@ -881,7 +882,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           let eb ← recur Γ b S
           (A :: pool).findSome? fun N =>
             let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ .arith [ea,eb]
-            if checkTree G e then coerce G pool e A else none
+            if checkTreeUsing G images e then coerce G images pool e A else none
     -- A copy of a spread: a store type of any length at some element type,
     -- and a pool store type whose elements it admits.
     | .arrLit [.spread src] =>
@@ -890,7 +891,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         pool.findSome? fun S => do
           if !decide (SpreadsInto G S E) then none else do
           let es ← recur Γ src S
-          coerce G pool (.node ⟨Γ,t,L⟩ (.arrCopy E) [es]) A
+          coerce G images pool (.node ⟨Γ,t,L⟩ (.arrCopy E) [es]) A
     | .arrLit inits =>
       -- The claimed type, or a pool type, names the tuple; each initializer
       -- is typed at its position's contract.
@@ -902,7 +903,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           let B ← positionTy T k
           recur Γ a B
         let e := ProgramCertificates.Evidence.node ⟨Γ,t,L⟩ .arrLit ps
-        if checkTree G e then coerce G pool e A else none
+        if checkTreeUsing G images e then coerce G images pool e A else none
     | .elemAt a i =>
       -- A store read through a union of array objects splits the receiver.
       let direct := pool.findSome? fun L => do
@@ -914,18 +915,18 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           | [.numLit b] => do
             let k ← indexOfBits b
             match T.required[k]? with
-            | some B => coerce G pool (.node ⟨Γ,t,B⟩ .elem [ea,ei]) A
+            | some B => coerce G images pool (.node ⟨Γ,t,B⟩ .elem [ea,ei]) A
             | none => do
               let B ← positionTy T k
               (A :: pool).findSome? fun U =>
                 let e := ProgramCertificates.Evidence.node ⟨Γ,t,B ++ U⟩ (.elemOpt U) [ea,ei]
-                if checkTree G e then coerce G pool e A else none
+                if checkTreeUsing G images e then coerce G images pool e A else none
           | _ =>
             match T with
             | ⟨[], [], some E, _, _⟩ =>
               (A :: pool).findSome? fun U =>
                 let e := ProgramCertificates.Evidence.node ⟨Γ,t,E ++ U⟩ (.elemAny U) [ea,ei]
-                if checkTree G e then coerce G pool e A else none
+                if checkTreeUsing G images e then coerce G images pool e A else none
             | _ => none
       if let some e := direct then return some e
       -- A string's code unit at a numeric key: a string or `undefined`.
@@ -938,7 +939,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
             if expand G T != [.str] then none else do
             (A :: pool).findSome? fun U =>
               if expand G U != [.undef] then none else
-              coerce G pool (.node ⟨Γ,t,T ++ U⟩ (.elemStr T U) [ea,ei]) A
+              coerce G images pool (.node ⟨Γ,t,T ++ U⟩ (.elemStr T U) [ea,ei]) A
       if let some e := string then return some e
       let .readAt _ receiver := a | return none
       return splitReceiver receiver
@@ -953,20 +954,20 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           let B ← positionTy T k
           let ev ← recur Γ v B
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,L⟩ .setElem [ea,ei,ev]
-          if checkTree G e then coerce G pool e A else none
+          if checkTreeUsing G images e then coerce G images pool e A else none
     | .lenOf a =>
       let store := pool.findSome? fun L => do
         let [.list _ []] := expand G L | none
         let ea ← recur Γ a L
         (A :: pool).findSome? fun N =>
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ .len [ea]
-          if checkTree G e then coerce G pool e A else none
+          if checkTreeUsing G images e then coerce G images pool e A else none
       -- A string's own `length`.
       return store <|> (stringOperands a).findSome? fun S => do
         let ea ← recur Γ a S
         (A :: pool).findSome? fun N =>
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ .lenStr [ea]
-          if checkTree G e then coerce G pool e A else none
+          if checkTreeUsing G images e then coerce G images pool e A else none
     | .merge d a b =>
       -- The accumulator and the source at their slots' types, or a pool
       -- type; the result the requested type, when every pair of their
@@ -978,7 +979,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           let eb ← recur Γ b S
           (A :: pool).findSome? fun N =>
             if ObjectMerge.MergeOk G d R S N then
-              coerce G pool (.node ⟨Γ,t,N⟩ .merge [ea,eb]) A
+              coerce G images pool (.node ⟨Γ,t,N⟩ .merge [ea,eb]) A
             else none
     | .throw a =>
       -- A throw has every type; its operand, at a type of its own.
@@ -1032,8 +1033,8 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     | _ => return none
 
 /-- Raw calculus callers need not supply source-derived search suggestions. -/
-def expression [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) :=
-  expressionWith G pool []
+def expressionUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) :=
+  expressionWithUsing G images pool []
 
 /-- Gather graph labels, every operand of their clauses and supplied union
 types. Hints may add intermediate types; they cannot change claims or bypass
@@ -1053,7 +1054,7 @@ inductive Failure where
 
 /-- Ordinary and observed edges share slot selection and coverage search. The
 observation comes from graph dispatch, never from supplied point annotations. -/
-def edge [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
+def edgeUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
     (claims : List (PointClaim ι)) (Γ : List (Ty ι)) (target : Target)
     (observed : Option (Nat × BranchRefinement.Observation) := none)
     (fields : List (Nat × PropKey) := []) (optionals : List (Nat × PropKey) := []) :
@@ -1077,18 +1078,18 @@ def edge [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           if BranchRefinement.booleanMember G B q then pure .subset else failure
         | .tag t q =>
           if BranchRefinement.tagMember G B t q then pure .subset
-          else (subtype G pool (BranchRefinement.tagSlice G A t q) B).orElse fun _ =>
+          else (subtypeUsing G images pool (BranchRefinement.tagSlice G A t q) B).orElse fun _ =>
             -- A passed `in` test: the key is present from then on.
             if BranchRefinement.presentKey t q (BranchRefinement.promotes G (BranchRefinement.tagSlice G A t q) B)
             then some .subset
             -- A passed `Array.isArray`: a record's member is an array of the realm.
             else if t == .isArray && q && BranchRefinement.arraySlice G A B then some .subset
             else none
-      else (subtype G pool A B).orElse (fun _ => match o with
+      else (subtypeUsing G images pool A B).orElse (fun _ => match o with
         -- An object the tested value was read from keeps the labels whose
         -- field admits the observation.
         | .tag t q => (fields ++ optionals).findSome? fun (k, f) =>
-            if k == slot target.mapping i then subtype G pool (BranchRefinement.fieldSlice G A f t q) B
+            if k == slot target.mapping i then subtypeUsing G images pool (BranchRefinement.fieldSlice G A f t q) B
             else none
         | .boolean _ => none) |>.orElse fun _ =>
         -- One read through an optional key, where the observation rules out
@@ -1096,12 +1097,12 @@ def edge [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         if BranchRefinement.excludesUndef o && optionals.any (fun (k, f) =>
             k == slot target.mapping i && BranchRefinement.promotes G A B f)
         then some .subset else none
-    | none => subtype G pool A B
+    | none => subtypeUsing G images pool A B
 
 
 /-- Select effect evidence without changing the requested sequent. A precise
 read/value rule may succeed when ordinary derivation search cannot. -/
-def expressionEffect [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
+def expressionEffectUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
     (fuel : Nat) (j : Sequent ι) (k : HeapKnowledge.Knowledge)
     (suggestions : List (Sequent ι)) (known : List (Evidence ι))
     (codes : CodeEntry ι → Bool := fun _ => false) :
@@ -1111,8 +1112,8 @@ def expressionEffect [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
   -- only where those leave a choice open.
   let own := (j.type :: j.context).eraseDups
   let ordinary := (known.find? fun e => claim e == j).orElse fun _ =>
-    (expressionWith G own suggestions fuel j.context j.term j.type).orElse fun _ =>
-      expressionWith G pool suggestions fuel j.context j.term j.type
+    (expressionWithUsing G images own suggestions fuel j.context j.term j.type).orElse fun _ =>
+      expressionWithUsing G images pool suggestions fuel j.context j.term j.type
   let mut choices : List (HeapExpressionRules.StepEvidence ι) := []
   match j.term with
   | .var i =>
@@ -1128,8 +1129,8 @@ def expressionEffect [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           k.cells.any (fun f => f.slot == i && f.field == fld && f.contents.all (· != .undef)) then
         if let [.refs fs _ _ _ _ _] := expand G Ref then
           if let some C := fs.lookup fld then
-            if let some e := expressionWith G (C :: own) suggestions fuel j.context j.term C then
-              if let some p := subtype G pool (BranchRefinement.tagSlice G C .isUndef false) j.type then
+            if let some e := expressionWithUsing G images (C :: own) suggestions fuel j.context j.term C then
+              if let some p := subtypeUsing G images pool (BranchRefinement.tagSlice G C .isUndef false) j.type then
                 choices := choices ++ [.slicedRead i e p]
   | _ => pure ()
   if let some e := ordinary then
@@ -1146,7 +1147,7 @@ def expressionEffect [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     | _ => pure ()
     choices := choices ++ [.created e,.pure e,.ordinary e]
   for effect in choices do
-    if let some out := HeapExpressionRules.checkStep G j k effect codes then
+    if let some out := HeapExpressionRules.checkStepUsing G images j k effect codes then
       -- Effect evidence validates this header itself; an ordinary derivation
       -- is not required for the precise read/value alternatives.
       return some (ordinary.getD (.node j .var []),effect,out)
@@ -1166,19 +1167,19 @@ def edgeKnowledge (k : HeapKnowledge.Knowledge) (cont : Continuation) (index : N
   | .tagBind t _ _ => HeapKnowledge.observe k 0 (.tag t (index == 0))
   | _ => k
 
-private def produceNode [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
+private def produceNode [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
     (fuel l : Nat) (node : Node) (claims : List (PointClaim ι))
     (k : HeapKnowledge.Knowledge) (suggestions : List (Sequent ι)) (known : List (Evidence ι))
     (codes : CodeEntry ι → Bool := fun _ => false) :
     Except Failure (NodeEvidence ι) := do
   let some c := claims[l]? | throw .claimCount
   let some (e,effect,out) :=
-    expressionEffect G pool fuel ⟨c.context,node.expression,c.type⟩ k suggestions known codes
+    expressionEffectUsing G images pool fuel ⟨c.context,node.expression,c.type⟩ k suggestions known codes
     | throw (.expression l)
-  let target := fun Γ t index => match edge G pool claims Γ t with
+  let target := fun Γ t index => match edgeUsing G images pool claims Γ t with
     | some p => Except.ok p
     | none => Except.error (Failure.edge l t.label index)
-  let branchTarget := fun Γ o t index => match edge G pool claims Γ t (some (0, o)) (readFields out 0)
+  let branchTarget := fun Γ o t index => match edgeUsing G images pool claims Γ t (some (0, o)) (readFields out 0)
       (optionalFields out 0) with
     | some p => Except.ok p
     | none => Except.error (Failure.edge l t.label index)
@@ -1201,7 +1202,7 @@ private def produceNode [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty �
         (List.range tc.context.length).filterMap fun i =>
           if PointClaims.slot t.mapping i == 0 then tc.context[i]? else none)
       match (landing ++ pool).findSome? fun T =>
-          if ControlFlow.admitsAll G T then (edge G pool claims (T :: c.context) t).map (T, ·) else none with
+          if ControlFlow.admitsAll G T then (edgeUsing G images pool claims (T :: c.context) t).map (T, ·) else none with
       | some x => pure (some x)
       | none => throw (Failure.edge l t.label (successors node.continuation).length)
     : Except Failure (Option (Ty ι × EdgeEvidence ι)))
@@ -1212,7 +1213,7 @@ starts empty; source cuts use exactly their supplied requirements, even when
 empty. Other merge points use supplied requirements. A node is checked once
 when its unique predecessor is available; this is dependency scheduling, not invariant iteration.
 Every edge is still checked by the independent consumer. -/
-def produceRaw [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
+def produceRawUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
     (fuel : Nat) (P : Program) (claims : List (PointClaim ι))
     (suggestions : List (Sequent ι) := []) (known : List (Evidence ι) := []) (start : Nat := 0)
     (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := [])
@@ -1260,7 +1261,7 @@ def produceRaw [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         | none => pure ()
       k := ⟨(k.cells ++ required.cells).eraseDups,(k.values ++ required.values).eraseDups,
         (k.links ++ required.links).eraseDups⟩
-      let evidence ← produceNode G pool fuel l node claims k suggestions known codes
+      let evidence ← produceNode G images pool fuel l node claims k suggestions known codes
       table := table.set l (some evidence)
       progress := true
     if !progress then
@@ -1283,26 +1284,42 @@ private def failedEdge (P : Program)
         return some (.edge l target.label index)
   return none
 
-def produce [DecidableEq ι] (G : NormalGraph ι) (labels : List ι)
+def produceUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (labels : List ι)
     (fuel : Nat) (R : Ty ι) (P : Program) (claims : List (PointClaim ι))
     (start : Nat) (hints : List (Ty ι) := []) (inputs : List (Ty ι) := [])
     (suggestions : List (Sequent ι) := []) (known : List (ProgramCertificates.Evidence ι) := [])
     (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := [])
     (codes : CodeEntry ι → Bool := fun _ => false) : Except Failure (ControlFlow.Certificate ι) :=
-  match produceRaw G (vocabulary G labels claims (inputs ++ hints)) fuel P claims suggestions known start requirements cuts codes with
+  match produceRawUsing G images (vocabulary G labels claims (inputs ++ hints)) fuel P claims suggestions known start requirements cuts codes with
   | .error e => .error e
-  | .ok C => if accept G R P claims C start inputs codes then .ok C
+  | .ok C => if acceptUsing G images R P claims C start inputs codes then .ok C
     else .error ((failedEdge P C).getD .rejected)
 
-theorem produce_checked [DecidableEq ι] {G : NormalGraph ι} {labels fuel R P claims start hints inputs suggestions known requirements cuts codes C}
-    (h : produce G labels fuel R P claims start hints inputs suggestions known requirements cuts codes = .ok C) :
-    accept G R P claims C start inputs codes = true := by
-  unfold produce at h
+theorem produce_checked [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {labels fuel R P claims start hints inputs suggestions known requirements cuts codes C}
+    (h : produceUsing G images labels fuel R P claims start hints inputs suggestions known requirements cuts codes = .ok C) :
+    acceptUsing G images R P claims C start inputs codes = true := by
+  unfold produceUsing at h
   split at h
   · contradiction
   · split at h
     · cases h; assumption
     · contradiction
+
+/-! Search proposes, and acceptance decides, with one proved instance image
+checker. The finite one is the default of the existing entry points. -/
+abbrev accept [DecidableEq ι] (G : NormalGraph ι) := @acceptUsing _ _ G (finiteInstanceImages G)
+abbrev instanceFor [DecidableEq ι] (G : NormalGraph ι) := @instanceForUsing _ _ G (finiteInstanceImages G)
+abbrev instProof [DecidableEq ι] (G : NormalGraph ι) := @instProofUsing _ _ G (finiteInstanceImages G)
+abbrev subtype [DecidableEq ι] (G : NormalGraph ι) := @subtypeUsing _ _ G (finiteInstanceImages G)
+abbrev memberProofs [DecidableEq ι] (G : NormalGraph ι) := @memberProofsUsing _ _ G (finiteInstanceImages G)
+abbrev expressionWith [DecidableEq ι] (G : NormalGraph ι) :=
+  @expressionWithUsing _ _ G (finiteInstanceImages G)
+abbrev expression [DecidableEq ι] (G : NormalGraph ι) := @expressionUsing _ _ G (finiteInstanceImages G)
+abbrev edge [DecidableEq ι] (G : NormalGraph ι) := @edgeUsing _ _ G (finiteInstanceImages G)
+abbrev expressionEffect [DecidableEq ι] (G : NormalGraph ι) :=
+  @expressionEffectUsing _ _ G (finiteInstanceImages G)
+abbrev produceRaw [DecidableEq ι] (G : NormalGraph ι) := @produceRawUsing _ _ G (finiteInstanceImages G)
+abbrev produce [DecidableEq ι] (G : NormalGraph ι) := @produceUsing _ _ G (finiteInstanceImages G)
 
 #print axioms accepted_from_inputs
 #print axioms accepted_safe

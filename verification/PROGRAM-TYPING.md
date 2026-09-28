@@ -1252,6 +1252,16 @@ proof in the certificate.
 A finite graph over those expressions: one term per node, an edge discipline
 that transfers bindings, and a certificate that checks every node and edge.
 
+Every checker in this section takes a proved image checker, as `checkUsing`
+does: edges (`checkEdgeUsing`, `checkMappedUsing`), branch edges
+(`checkObservedUsing`), node steps (`checkStepUsing`), graphs and entries
+(`checkGraphUsing`, `checkEntryUsing`), graph-code tables (`checkCodesUsing`)
+and acceptance (`CertificateProducer.acceptUsing`), as do the evidence
+producers. Names without the suffix are the finite specializations source
+acceptance uses. Coverage and point assertions are semantic, family inclusion
+and `EnvOk`, so each soundness theorem, parametricity (`accept_reassign`,
+`accepted_at`) included, holds for every proved image checker.
+
 ### Supplied point claims and incoming edges
 
 `PointClaims.lean` checks supplied type environments. Write $\Gamma \preceq_G \Delta$
@@ -1267,9 +1277,11 @@ $$
 $$
 
 `checkEdge` takes one subtype certificate per target slot. Lean proves that
-acceptance implies coverage and that every derivation of coverage has accepted
-evidence. Coverage also transfers semantic environments: any concrete environment
-meeting $\Gamma$ meets $\Delta$, with closed values preserved.
+acceptance implies coverage, as family inclusion per slot (`Covers`,
+`checkEdge_sound`), and that every derivation of coverage by the finite rules
+has accepted evidence (`checkEdge_complete`). Coverage also transfers semantic
+environments: any concrete environment meeting $\Gamma$ meets $\Delta$, with
+closed values preserved.
 
 `checkEdge` is the position-preserving specialization: it can widen types and
 forget a suffix. `checkMapped` additionally checks an explicit list of source

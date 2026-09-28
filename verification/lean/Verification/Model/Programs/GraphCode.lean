@@ -12,6 +12,7 @@ step for step, so the graph checker's safety theorem (`accepted_inputs_safe`)
 is safety of the term that runs the code. -/
 namespace Verification.Model.GraphCode
 open ControlFlow PointClaims ProgramTyping PositiveGraphs PositiveRules
+open PositiveCertificates (InstanceImageCheck finiteInstanceImages)
 
 /-- The graph a code's node lists describe. -/
 def program (E : List Tm) (K : List (Continuation × Option Target)) : Program :=
@@ -102,9 +103,9 @@ theorem safe_of_sim {E K T} : ∀ (n : Nat) (W : WorldT n) (h : Heap) {ts s},
       exact Or.inr ⟨U, h', ts', hx, hu, st, hh, ih U h' hs' hg⟩
 
 /-- A graph run started at an entry the checker accepted is safe. -/
-theorem goto_safe {G : NormalGraph ι} [DecidableEq ι] {Rty : Ty ι}
+theorem goto_safe {G : NormalGraph ι} [DecidableEq ι] {images : InstanceImageCheck G} {Rty : Ty ι}
     {E K C start inputs} {codes : CodeEntry ι → Bool}
-    (hc : checkEntry G Rty (program E K) C start inputs codes = true)
+    (hc : checkEntryUsing G images Rty (program E K) C start inputs codes = true)
     (hcodes : ProgramCertificates.CodesSound G codes)
     (n W h L d) (he : EnvOk G inputs (envOf L d) n W) (hw : WorldAdm W)
     (hh : HeapOk n W h) :
@@ -183,9 +184,9 @@ theorem preserving_step [DecidableEq ι] {G : NormalGraph ι} {Rty : Ty ι} {P :
 
 /-- The effect proof reuses ordinary graph progress and its point assertions.
 There is one control-flow checker, including for cycles and branch refinements. -/
-theorem preserving_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {Rty : Ty ι} {E : List Tm} {K : List (Continuation × Option Target)}
+theorem preserving_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Rty : Ty ι} {E : List Tm} {K : List (Continuation × Option Target)}
     {C : Certificate ι}
-    {codes : CodeEntry ι → Bool} (hg : checkGraph G Rty (program E K) C codes = true)
+    {codes : CodeEntry ι → Bool} (hg : checkGraphUsing G images Rty (program E K) C codes = true)
     (hcodes : ProgramCertificates.CodesSound G codes)
     (hnodes : ∀ (l : Nat) (node : Node) (c : NodeEvidence ι), (program E K)[l]? = some node → C[l]? = some c →
       node.handler = none ∧ NodePreserves G c node.expression) :
@@ -208,10 +209,10 @@ theorem preserving_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {Rty : Ty �
         ih U h' ts' s' initial sim' hu hok hs'
           (preserving_step hnodes hw hh hs hp st)⟩
 
-theorem goto_preserving [DecidableEq ι] {G : NormalGraph ι} {Rty : Ty ι} {E : List Tm} {K : List (Continuation × Option Target)}
+theorem goto_preserving [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Rty : Ty ι} {E : List Tm} {K : List (Continuation × Option Target)}
     {C : Certificate ι} {start inputs}
     {codes : CodeEntry ι → Bool}
-    (hc : checkEntry G Rty (program E K) C start inputs codes = true)
+    (hc : checkEntryUsing G images Rty (program E K) C start inputs codes = true)
     (hcodes : ProgramCertificates.CodesSound G codes)
     (hnodes : ∀ (l : Nat) (node : Node) (c : NodeEvidence ι), (program E K)[l]? = some node → C[l]? = some c →
       node.handler = none ∧ NodePreserves G c node.expression)
@@ -219,7 +220,7 @@ theorem goto_preserving [DecidableEq ι] {G : NormalGraph ι} {Rty : Ty ι} {E :
     (hh : HeapOk n W h) :
     HeapObservations.SafePost (meaning G Rty)
       (CallEffects.Effect.preservesInputHeap.post h) n W h (.goto E K start L d) := by
-  simp only [checkEntry, Bool.and_eq_true] at hc
+  simp only [checkEntryUsing, Bool.and_eq_true] at hc
   have hx := hc.2
   split at hx
   · rename_i c hstart
@@ -247,50 +248,52 @@ def admits [DecidableEq ι] (table : List (CodeEntry ι)) (c : CodeEntry ι) : B
 could turn a throwing call into a normal return after untracked mutation, so
 this composition rule admits only graphs without handlers. Pure graphs retain
 the independent operational rule, which also covers their handlers. -/
-def compositionalChecked [DecidableEq ι] (G : NormalGraph ι) (P : Program) (C : Certificate ι) : Bool :=
+def compositionalChecked [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (P : Program) (C : Certificate ι) : Bool :=
   (P.zip C).all fun (node,c) => node.handler.isNone &&
     ProgramCertificates.checkScope (entry c).length node.expression &&
     (ExpressionEffects.check G (entry c) node.expression ||
       (decide ((ProgramCertificates.claim c.expression).term = node.expression) &&
-        ProgramCertificates.checkTree G c.expression &&
+        ProgramCertificates.checkTreeUsing G images c.expression &&
         ExpressionEffects.selectedCallPreserves c.expression))
 
-@[simp] theorem compositionalChecked_reassign [DecidableEq ι] (G : NormalGraph ι) (η : MixedAssignment ι)
-    (P : Program) (C : Certificate ι) :
-    compositionalChecked (reassign G η) P C = compositionalChecked G P C := by
+@[simp] theorem compositionalChecked_reassign [DecidableEq ι] (G : NormalGraph ι)
+    (images : InstanceImageCheck G) (η : MixedAssignment ι) (P : Program) (C : Certificate ι) :
+    compositionalChecked (reassign G η) (images.reassign η) P C = compositionalChecked G images P C := by
   simp only [compositionalChecked, ExpressionEffects.check, ExpressionEffects.readable,
     Parametricity.expand_reassign, Parametricity.checkTree_reassign]
 
 /-- Definition effects supplement, rather than replace, ordinary safety. -/
-def effectChecked [DecidableEq ι] (G : NormalGraph ι) (c : CodeEntry ι) (C : Certificate ι) : Bool :=
+def effectChecked [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (c : CodeEntry ι) (C : Certificate ι) : Bool :=
   match c.row.effect with
   | .unrestricted => true
   | .preservesInputHeap => c.exprs.all Purity.pureTerm ||
-      compositionalChecked G (program c.exprs c.conts) C
+      compositionalChecked G images (program c.exprs c.conts) C
 
-@[simp] theorem effectChecked_reassign [DecidableEq ι] (G : NormalGraph ι) (η : MixedAssignment ι)
-    (c : CodeEntry ι) (C : Certificate ι) :
-    effectChecked (reassign G η) c C = effectChecked G c C := by
+@[simp] theorem effectChecked_reassign [DecidableEq ι] (G : NormalGraph ι)
+    (images : InstanceImageCheck G) (η : MixedAssignment ι) (c : CodeEntry ι) (C : Certificate ι) :
+    effectChecked (reassign G η) (images.reassign η) c C = effectChecked G images c C := by
   simp only [effectChecked, compositionalChecked_reassign]
 
 /-- One code entry, checked at its signature from the frame the signature
 describes, against an earlier table. -/
-def codeChecked [DecidableEq ι] (G : NormalGraph ι) (table : List (CodeEntry ι))
-    (c : CodeEntry ι) (C : ControlFlow.Certificate ι) : Bool :=
-  decide (c.arity ≤ c.row.arguments.length) && effectChecked G c C &&
-    checkEntry G c.row.result (program c.exprs c.conts) C c.start
+def codeCheckedUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (table : List (CodeEntry ι)) (c : CodeEntry ι) (C : ControlFlow.Certificate ι) : Bool :=
+  decide (c.arity ≤ c.row.arguments.length) && effectChecked G images c C &&
+    checkEntryUsing G images c.row.result (program c.exprs c.conts) C c.start
       (codeFrame c.arity c.row c.captures c.store) (admits table)
 
 /-- A checked entry meets its signature in the graph reassigned at every
 assignment: the check reads none (`Parametricity.checkEntry_reassign`). -/
-theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {table c C}
-    (htable : ProgramCertificates.CodesSound G (admits table))
-    (h : codeChecked G table c C = true) : ∀ η, c.Spec (reassign G η) := by
+theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {table c C} (htable : ProgramCertificates.CodesSound G (admits table))
+    (h : codeCheckedUsing G images table c C = true) : ∀ η, c.Spec (reassign G η) := by
   intro η
-  simp only [codeChecked, Bool.and_eq_true, decide_eq_true_eq] at h
-  have hc : checkEntry (reassign G η) c.row.result (program c.exprs c.conts) C c.start
+  simp only [codeCheckedUsing, Bool.and_eq_true, decide_eq_true_eq] at h
+  have hc : checkEntryUsing (reassign G η) (images.reassign η) c.row.result
+      (program c.exprs c.conts) C c.start
       (codeFrame c.arity c.row c.captures c.store) (admits table) = true := by
-    exact (Parametricity.checkEntry_reassign G η _ _ _ _ _ _).trans h.2
+    exact (Parametricity.checkEntry_reassign G η images _ _ _ _ _ _).trans h.2
   have ht : ProgramCertificates.CodesSound (reassign G η) (admits table) :=
     fun e he η' => htable e he η'
   refine ⟨h.1.1, ?_⟩
@@ -301,7 +304,7 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {table c C}
     simpa [heffect, CallEffects.Effect.post] using HeapObservations.forget hs
   | preservesInputHeap =>
     have hp : c.exprs.all Purity.pureTerm = true ∨
-        compositionalChecked (reassign G η) (program c.exprs c.conts) C = true := by
+        compositionalChecked (reassign G η) (images.reassign η) (program c.exprs c.conts) C = true := by
       simpa [effectChecked, heffect, Bool.or_eq_true] using h.1.2
     rcases hp with hp | hp
     · have hp : ∀ e ∈ c.exprs, Purity.pureTerm e = true := List.all_eq_true.mp hp
@@ -315,10 +318,10 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {table c C}
       simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hp
       refine ⟨hp.1.1, ?_⟩
       intro j V h' ρ henv hknowledge hworld hheap
-      have hgraph : checkGraph (reassign G η) c.row.result (program c.exprs c.conts) C
-          (admits table) = true := by
+      have hgraph : checkGraphUsing (reassign G η) (images.reassign η) c.row.result
+          (program c.exprs c.conts) C (admits table) = true := by
         have hchecked := hc
-        simp only [checkEntry, Bool.and_eq_true] at hchecked
+        simp only [checkEntryUsing, Bool.and_eq_true] at hchecked
         exact hchecked.1
       obtain ⟨actual,hactual,hterm,-⟩ := graph_node hgraph ht hpoint
       cases hn.symm.trans hactual
@@ -333,15 +336,15 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {table c C}
         simpa only [ControlFlow.result, hcall.1.1] using hs
 
 /-- Check codes in order, each against the table of those before it. -/
-def extendTable [DecidableEq ι] (G : NormalGraph ι) :
+def extendTable [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) :
     List (CodeEntry ι) → List (CodeEntry ι × ControlFlow.Certificate ι) → Option (List (CodeEntry ι))
   | table, [] => some table
   | table, (c, C) :: rest =>
-    if codeChecked G table c C then extendTable G (table ++ [c]) rest else none
+    if codeCheckedUsing G images table c C then extendTable G images (table ++ [c]) rest else none
 
-theorem extendTable_sound [DecidableEq ι] {G : NormalGraph ι} :
+theorem extendTable_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} :
     ∀ {table checks result}, ProgramCertificates.CodesSound G (admits table) →
-      extendTable G table checks = some result →
+      extendTable G images table checks = some result →
       ProgramCertificates.CodesSound G (admits result)
   | table, [], result, ht, h => by
     simp only [extendTable, Option.some.injEq] at h; subst h; exact ht
@@ -359,27 +362,20 @@ theorem extendTable_sound [DecidableEq ι] {G : NormalGraph ι} :
     · contradiction
 
 /-- A unit's codes, checked from the empty table. -/
-def checkCodes [DecidableEq ι] (G : NormalGraph ι) (checks : List (CodeEntry ι × ControlFlow.Certificate ι)) :
-    Option (List (CodeEntry ι)) :=
-  extendTable G [] checks
+def checkCodesUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (checks : List (CodeEntry ι × ControlFlow.Certificate ι)) : Option (List (CodeEntry ι)) :=
+  extendTable G images [] checks
 
-theorem checkCodes_sound [DecidableEq ι] {G : NormalGraph ι} {checks table}
-    (h : checkCodes G checks = some table) : ProgramCertificates.CodesSound G (admits table) :=
+/-- A checked table is sound at every reassignment of the graph's parameter
+rows, since `CodesSound` quantifies over all of them. -/
+theorem checkCodes_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {checks table} (h : checkCodesUsing G images checks = some table) :
+    ProgramCertificates.CodesSound G (admits table) :=
   extendTable_sound (fun c hc => by simp [admits] at hc) h
 
-/-- A table checks as it does at every reassignment of the graph's parameter
-rows: no code check reads the assignment (`Parametricity`). -/
-theorem extendTable_reassign [DecidableEq ι] (G : NormalGraph ι) (η : MixedAssignment ι) :
-    ∀ table checks, extendTable (reassign G η) table checks = extendTable G table checks
-  | table, [] => rfl
-  | table, (c, C) :: rest => by
-    have hc : codeChecked (reassign G η) table c C = codeChecked G table c C := by
-      simp only [codeChecked, effectChecked_reassign, Parametricity.checkEntry_reassign]
-    simp only [extendTable, hc, extendTable_reassign G η (table ++ [c]) rest]
-
-theorem checkCodes_reassign [DecidableEq ι] (G : NormalGraph ι) (η : MixedAssignment ι) (checks) :
-    checkCodes (reassign G η) checks = checkCodes G checks :=
-  extendTable_reassign G η [] checks
+/-- The finite image checker, the default. -/
+abbrev codeChecked [DecidableEq ι] (G : NormalGraph ι) := @codeCheckedUsing _ _ G (finiteInstanceImages G)
+abbrev checkCodes [DecidableEq ι] (G : NormalGraph ι) := @checkCodesUsing _ _ G (finiteInstanceImages G)
 
 #print axioms safe_of_sim
 #print axioms goto_safe

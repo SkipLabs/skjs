@@ -638,8 +638,7 @@ theorem verify_safe_at {r : Request} {c : Response} (hc : verify r c = true)
     have hsound : ProgramCertificates.CodesSound (reassign (graph r) η) (GraphCode.admits table) := by
       unfold codeTable at ht
       split at ht
-      · rw [← GraphCode.checkCodes_reassign (graph r) η] at ht
-        exact GraphCode.checkCodes_sound ht
+      · exact fun e he η' => GraphCode.checkCodes_sound ht e he η'
       · contradiction
     exact Parametricity.accepted_at hx η n W h ρ he hw hh hsound
   · contradiction

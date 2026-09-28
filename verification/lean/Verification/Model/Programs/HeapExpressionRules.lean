@@ -7,6 +7,7 @@ No fact is accepted as an ordinary reference type or captured as a permanent cal
 namespace Verification.Model.HeapExpressionRules
 open ProgramTyping PositiveRules PositiveGraphs PositiveNormalization Tower
 open HeapFacts HeapKnowledge HeapObservations ProgramCertificates
+open PositiveCertificates (InstanceImageCheck finiteInstanceImages)
 
 /-- Copy an immutable slot into the result while preserving the old slots. -/
 def copyFacts (fs : Facts) (i : Nat) : Facts :=
@@ -231,8 +232,8 @@ theorem fieldOperand_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
   · exact ⟨_, El, hmem, recT_bag hc.1.1⟩
   · exact ⟨_, El, hmem, hc.1.1.1⟩
 
-theorem typedRead_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i fld Ref A ρ n W h}
-    (ht : HasTy G Γ (.readAt fld (.var i)) A) (hi : Γ[i]? = some Ref)
+theorem typedRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ k i fld Ref A ρ n W h}
+    (ht : HasTyUsing G images Γ (.readAt fld (.var i)) A) (hi : Γ[i]? = some Ref)
     (hr : fieldOperand (expand G Ref) fld = true)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
@@ -282,8 +283,8 @@ theorem slice_value {G : NormalGraph ι} {C : Ty ι} {Q : Post} {n W h v}
 contract `C` by the ordinary rule: its result is of `C` less `undefined`.
 The fact is about the location the read finds, so the value it returns is
 one the fact describes. -/
-theorem slicedRead_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i fld Ref C R ρ n W h}
-    (ht : HasTy G Γ (.readAt fld (.var i)) C) (hi : Γ[i]? = some Ref)
+theorem slicedRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ k i fld Ref C R ρ n W h}
+    (ht : HasTyUsing G images Γ (.readAt fld (.var i)) C) (hi : Γ[i]? = some Ref)
     (hr : fieldOperand (expand G Ref) fld = true)
     (hm : Fact.mk i R fld ∈ k.cells) (hR : R.all (· != .undef) = true)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
@@ -361,8 +362,8 @@ theorem optionalOperand_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W
 
 /-- A read of a field that may be optional: it records a read link that also
 covers the absent key, where it gave `undefined`. -/
-theorem optionalRead_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i fld Ref A ρ n W h}
-    (ht : HasTy G Γ (.readAt fld (.var i)) A) (hi : Γ[i]? = some Ref)
+theorem optionalRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ k i fld Ref A ρ n W h}
+    (ht : HasTyUsing G images Γ (.readAt fld (.var i)) A) (hi : Γ[i]? = some Ref)
     (hr : optionalOperand (expand G Ref) fld = true)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
@@ -413,8 +414,8 @@ theorem value_sound {G : NormalGraph ι} {Γ k i R A ρ n W h}
 heap observation without a specific proved effect rule. -/
 def ordinaryOutput (k : Knowledge) : Knowledge := ⟨[],HeapFacts.shift k.values,HeapLinks.stable (HeapKnowledge.shift k).links⟩
 
-theorem ordinary_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k t A ρ n W h}
-    (ht : HasTy G Γ t A) (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
+theorem ordinary_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ k t A ρ n W h}
+    (ht : HasTyUsing G images Γ t A) (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (meaning G A)
       (fun h' v => HeapKnowledge.Holds (ordinaryOutput k) (push v ρ) h') n W h (instantiate 0 ρ t) := by
@@ -683,8 +684,8 @@ private theorem write_inv {f h a b h' t} (ha : isVal a = true) (hb : isVal b = t
 
 /-- The ordinary typing proof guarantees a writable location. An old observation
 is unnecessary: the postcondition depends only on the value being written. -/
-theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i j fld R A ρ n W h}
-    (ht : HasTy G Γ (.writeAt fld (.var i) (.var j)) A) (hi : i < Γ.length) (hj : j < Γ.length)
+theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ k i j fld R A ρ n W h}
+    (ht : HasTyUsing G images Γ (.writeAt fld (.var i) (.var j)) A) (hi : i < Γ.length) (hj : j < Γ.length)
     (hr : valuesAt G Γ k j = R)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
@@ -766,8 +767,8 @@ def pureOutput (k : Knowledge) : Tm → Knowledge
   | .fls => withResult (HeapKnowledge.shift k) [.fls]
   | _ => HeapKnowledge.shift k
 
-theorem pure_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k t A ρ n W h}
-    (ht : HasTy G Γ t A) (hp : pureTerm t = true)
+theorem pure_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ k t A ρ n W h}
+    (ht : HasTyUsing G images Γ t A) (hp : pureTerm t = true)
     (hc : checkScope Γ.length t = true)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
@@ -794,9 +795,9 @@ theorem pure_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k t A ρ n W h}
 /-- Creating graph code allocates a fresh bag without running its code or
 invalidating knowledge about existing cells: its captures are slots, already
 values. -/
-theorem graphCreation_sound [DecidableEq ι] {G : NormalGraph ι}
+theorem graphCreation_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {Γ k arity E K start caps kind rest A ρ n W h}
-    (ht : HasTy G Γ (.make (.graph arity E K start caps kind rest) .nul) A) (he : EnvOk G Γ ρ n W)
+    (ht : HasTyUsing G images Γ (.make (.graph arity E K start caps kind rest) .nul) A) (he : EnvOk G Γ ρ n W)
     (hk : HeapKnowledge.Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (meaning G A)
       (fun h' v => HeapKnowledge.Holds (HeapKnowledge.shift k) (push v ρ) h')
@@ -904,19 +905,19 @@ theorem writeSlots_eq {t f i v} (h : writeSlots t = some (f, i, v)) :
 /-- The successful result is the guaranteed postcondition in the result-pushed
 frame. Edge checking must entail the destination's facts from this output;
 checking a node alone does not establish its supplied input knowledge. -/
-def checkStep [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι)
+def checkStepUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Sequent ι)
     (k : Knowledge) (step : StepEvidence ι)
     (codes : CodeEntry ι → Bool := fun _ => false) : Option Knowledge :=
   match step with
   | .ordinary e =>
-    if claim e = j ∧ checkScope j.context.length j.term = true ∧ checkTree G e codes = true
+    if claim e = j ∧ checkScope j.context.length j.term = true ∧ checkTreeUsing G images e codes = true
     then some (ordinaryOutput k) else none
   | .pure e =>
     if claim e = j ∧ checkScope j.context.length j.term = true ∧
-        checkTree G e codes = true ∧ pureTerm j.term = true
+        checkTreeUsing G images e codes = true ∧ pureTerm j.term = true
     then some (pureOutput k j.term) else none
   | .created e =>
-    if claim e = j ∧ checkScope j.context.length j.term = true ∧ checkTree G e codes = true then
+    if claim e = j ∧ checkScope j.context.length j.term = true ∧ checkTreeUsing G images e codes = true then
       match j.term with
       | .make (.graph _ _ _ _ _ _ _) .nul => some (HeapKnowledge.shift k)
       | _ => none
@@ -924,10 +925,10 @@ def checkStep [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι)
   | .typedRead i e =>
     match readSlot j.term with
     | some (fld, i') =>
-      if claim e = j ∧ checkTree G e codes = true ∧ i' = i ∧
+      if claim e = j ∧ checkTreeUsing G images e codes = true ∧ i' = i ∧
           (j.context[i]?).any (fun Ref => fieldOperand (expand G Ref) fld)
       then some (readFrame k i fld)
-      else if claim e = j ∧ checkTree G e = true ∧ i' = i ∧
+      else if claim e = j ∧ checkTreeUsing G images e = true ∧ i' = i ∧
           (j.context[i]?).any (fun Ref => optionalOperand (expand G Ref) fld)
       then some (readFrame k i fld true) else none
     | none => none
@@ -941,10 +942,10 @@ def checkStep [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι)
   | .slicedRead i e p =>
     match readSlot j.term with
     | some (fld, i') =>
-      if (claim e).context = j.context ∧ (claim e).term = j.term ∧ checkTree G e codes = true ∧ i' = i ∧
+      if (claim e).context = j.context ∧ (claim e).term = j.term ∧ checkTreeUsing G images e codes = true ∧ i' = i ∧
           (j.context[i]?).any (fun Ref => fieldOperand (expand G Ref) fld) ∧
           (k.cells.any fun f => f.slot == i && f.field == fld && f.contents.all (· != .undef)) ∧
-          PositiveCertificates.check G (BranchRefinement.tagSlice G (claim e).type .isUndef false)
+          PositiveCertificates.checkUsing G images (BranchRefinement.tagSlice G (claim e).type .isUndef false)
             j.type p = true
       then some (readFrame k i fld) else none
     | none => none
@@ -955,32 +956,36 @@ def checkStep [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι)
   | .allocated e =>
     match allocationSlots j.term with
     | some slots =>
-      if claim e = j ∧ checkScope j.context.length j.term = true ∧ checkTree G e codes = true ∧
+      if claim e = j ∧ checkScope j.context.length j.term = true ∧ checkTreeUsing G images e codes = true ∧
           (slots.map Prod.fst).Nodup ∧ ∀ p ∈ slots, p.2 < j.context.length
       then some (allocOutput k (allocationFacts G j.context k slots) (contractFields G j.context)
         (slots.map Prod.fst)) else none
     | none =>
       match mergeSlots j.term with
       | some (_, a, b) =>
-        if claim e = j ∧ checkTree G e codes = true ∧ a < j.context.length ∧ b < j.context.length
+        if claim e = j ∧ checkTreeUsing G images e codes = true ∧ a < j.context.length ∧ b < j.context.length
         then some (allocOutput k [] (contractFields G j.context) (namedKeys G j.type)) else none
       | none =>
         match storeSlots j.term with
         | some slots =>
-          if claim e = j ∧ checkTree G e codes = true ∧ ∀ i ∈ slots, i < j.context.length
+          if claim e = j ∧ checkTreeUsing G images e codes = true ∧ ∀ i ∈ slots, i < j.context.length
           then some (HeapKnowledge.shift k) else none
         | none => none
   | .written i v R e =>
     match writeSlots j.term with
     | some (fld, i', v') =>
-      if claim e = j ∧ checkTree G e codes = true ∧ i' = i ∧ v' = v ∧
+      if claim e = j ∧ checkTreeUsing G images e codes = true ∧ i' = i ∧ v' = v ∧
           i < j.context.length ∧ v < j.context.length ∧
           valuesAt G j.context k v = R
       then some (writeOutput k i fld R) else none
     | none => none
 
-theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
-    {codes : CodeEntry ι → Bool} (hc : checkStep G j k e codes = some out)
+/-- The finite image checker, the default. -/
+abbrev checkStep [DecidableEq ι] (G : NormalGraph ι) :=
+  @checkStepUsing _ _ G (finiteInstanceImages G)
+
+theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {j k e out}
+    {codes : CodeEntry ι → Bool} (hc : checkStepUsing G images j k e codes = some out)
     (hcodes : CodesSound G codes := by exact Verification.Model.ProgramCertificates.codesSound_none _)
     {ρ n W h}
     (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ρ h)
@@ -990,31 +995,31 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
       n W h (instantiate 0 ρ j.term) := by
   cases e with
   | ordinary e =>
-    simp only [checkStep] at hc
+    simp only [checkStepUsing] at hc
     split at hc
     · rename_i hp
       obtain ⟨hj,_,ht⟩ := hp
-      have typed := checkTree_sound e ht hcodes
+      have typed := checkTreeUsing_sound e ht hcodes
       rw [hj] at typed
       cases hc
       exact ordinary_sound typed he hk hw hh
     · contradiction
   | pure e =>
-    simp only [checkStep] at hc
+    simp only [checkStepUsing] at hc
     split at hc
     · rename_i hp
       obtain ⟨hj,scope,ht,hpure⟩ := hp
-      have typed := checkTree_sound e ht hcodes
+      have typed := checkTreeUsing_sound e ht hcodes
       rw [hj] at typed
       cases hc
       exact pure_sound typed hpure scope he hk hw hh
     · contradiction
   | created e =>
-    simp only [checkStep] at hc
+    simp only [checkStepUsing] at hc
     split at hc
     · rename_i hp
       obtain ⟨hj,_,ht⟩ := hp
-      have typed := checkTree_sound e ht hcodes
+      have typed := checkTreeUsing_sound e ht hcodes
       rw [hj] at typed
       split at hc
       · rename_i arity E K start caps kind rest hb
@@ -1024,7 +1029,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
       · contradiction
     · contradiction
   | typedRead i e =>
-    simp only [checkStep] at hc
+    simp only [checkStepUsing] at hc
     split at hc
     · rename_i fld i' hslot
       split at hc
@@ -1035,7 +1040,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
         | none => simp [hi] at hr
         | some Ref =>
           have hrep : fieldOperand (expand G Ref) fld = true := by simpa [hi] using hr
-          have typed := checkTree_sound e ht hcodes
+          have typed := checkTreeUsing_sound e ht hcodes
           rw [hj,term] at typed
           cases hc
           rw [term]
@@ -1048,7 +1053,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
           | none => simp [hi] at hr
           | some Ref =>
             have hrep : optionalOperand (expand G Ref) fld = true := by simpa [hi] using hr
-            have typed := checkTree_sound e ht
+            have typed := checkTreeUsing_sound e ht
             rw [hj,term] at typed
             cases hc
             rw [term]
@@ -1056,7 +1061,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
         · contradiction
     · contradiction
   | observedRead i R =>
-    simp only [checkStep] at hc
+    simp only [checkStepUsing] at hc
     split at hc
     · rename_i fld i' hslot
       split at hc
@@ -1069,7 +1074,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
       · contradiction
     · contradiction
   | slicedRead i e p =>
-    simp only [checkStep] at hc
+    simp only [checkStepUsing] at hc
     split at hc
     · rename_i fld i' hslot
       split at hc
@@ -1086,7 +1091,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
           have hm : Fact.mk i' f.contents fld ∈ k.cells := by
             have : f = Fact.mk i' f.contents fld := by cases f; simp_all
             rw [← this]; exact hfm
-          have typed := checkTree_sound e ht hcodes
+          have typed := checkTreeUsing_sound e ht hcodes
           have hj : claim e = ⟨j.context,j.term,(claim e).type⟩ := by
             cases hce : claim e; simp_all
           rw [hj,term] at typed
@@ -1094,11 +1099,11 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
           rw [term]
           have hs := slicedRead_sound typed hi hrep hm hfc he hk hw hh
           simpa [instantiate] using
-            consequence (Sub.sound (PositiveCertificates.check_sound hsub)) (fun _ _ hq => hq) hs
+            consequence (PositiveCertificates.acceptedUsing hsub) (fun _ _ hq => hq) hs
       · contradiction
     · contradiction
   | knownValue i R =>
-    simp only [checkStep] at hc
+    simp only [checkStepUsing] at hc
     split at hc
     · rename_i hp
       obtain ⟨ht,_,hr,hi⟩ := hp
@@ -1107,13 +1112,13 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
       simpa [instantiate] using value_sound hr hi he hk
     · contradiction
   | allocated e =>
-    simp only [checkStep] at hc
+    simp only [checkStepUsing] at hc
     split at hc
     · rename_i slots hslots
       split at hc
       · rename_i hp
         obtain ⟨hj,_,ht,hnd,hin⟩ := hp
-        have typed := checkTree_sound e ht hcodes
+        have typed := checkTreeUsing_sound e ht hcodes
         rw [hj] at typed
         obtain ⟨code, term⟩ := allocationSlots_eq hslots
         cases hc
@@ -1130,7 +1135,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
         split at hc
         · rename_i hp
           obtain ⟨hj,ht,ha,hb⟩ := hp
-          have typed := checkTree_sound e ht hcodes
+          have typed := checkTreeUsing_sound e ht hcodes
           rw [hj] at typed
           have term := mergeSlots_eq hmerge
           cases hc
@@ -1146,7 +1151,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
           split at hc
           · rename_i hp
             obtain ⟨hj,ht,hin⟩ := hp
-            have typed := checkTree_sound e ht hcodes
+            have typed := checkTreeUsing_sound e ht hcodes
             rw [hj] at typed
             have term := storeSlots_eq hstore
             cases hc
@@ -1160,14 +1165,14 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
           · contradiction
         · contradiction
   | written i v R e =>
-    simp only [checkStep] at hc
+    simp only [checkStepUsing] at hc
     split at hc
     · rename_i fld i' v' hslots
       split at hc
       · rename_i hp
         obtain ⟨hj,ht,rfl,rfl,hi,hv,hr⟩ := hp
         have term := writeSlots_eq hslots
-        have typed := checkTree_sound e ht hcodes
+        have typed := checkTreeUsing_sound e ht hcodes
         rw [hj] at typed
         rw [term] at typed
         cases hc

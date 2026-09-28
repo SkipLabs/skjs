@@ -5,6 +5,7 @@ Heap contents are not refined: the witness concerns the tested value,
 not a retained observation about a mutable location. -/
 namespace Verification.Model.BranchRefinement
 open ProgramTyping PositiveGraphs PositiveRules PositiveNormalization PointClaims
+open PositiveCertificates (InstanceImageCheck finiteInstanceImages)
 
 def booleanMember [DecidableEq ι] (G : NormalGraph ι) (A : Ty ι) (q : Bool) : Bool :=
   (expand G A).any fun c => match c with
@@ -536,28 +537,28 @@ theorem arraySlice_sound [DecidableEq ι] {G : NormalGraph ι} {A B : Ty ι}
 
 /-- Sufficient implementations of ObservedSub. Whole-label filtering is only
 an algorithm for the tag case, not the meaning of refinement. -/
-def checkObservedSub [DecidableEq ι] (G : NormalGraph ι) (A B : Ty ι)
-    (o : Observation) (p : PositiveCertificates.Proof ι) : Bool :=
+def checkObservedSubUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (A B : Ty ι) (o : Observation) (p : PositiveCertificates.Proof ι) : Bool :=
   match o with
   | .boolean q => isSubset p && booleanMember G B q
-  | .tag t q => PositiveCertificates.check G (tagSlice G A t q) B p || (isSubset p && tagMember G B t q) ||
+  | .tag t q => PositiveCertificates.checkUsing G images (tagSlice G A t q) B p || (isSubset p && tagMember G B t q) ||
       (isSubset p && presentKey t q (promotes G (tagSlice G A t q) B)) ||
       (isSubset p && t == .isArray && q && arraySlice G A B)
 
-theorem checkObservedSub_sound [DecidableEq ι] {G : NormalGraph ι} {A B o p}
-    (hc : checkObservedSub G A B o p = true) : ObservedSub G A B o := by
+theorem checkObservedSub_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {A B o p} (hc : checkObservedSubUsing G images A B o p = true) : ObservedSub G A B o := by
   intro n W v hv ho
   cases o with
   | boolean q =>
-    simp only [checkObservedSub, Bool.and_eq_true] at hc
+    simp only [checkObservedSubUsing, Bool.and_eq_true] at hc
     have hb := hc.2
     change v = (if q then .tru else .fls) at ho
     rw [ho]
     exact booleanMember_sound hb n W
   | tag t q =>
-    simp only [checkObservedSub, Bool.or_eq_true, Bool.and_eq_true] at hc
+    simp only [checkObservedSubUsing, Bool.or_eq_true, Bool.and_eq_true] at hc
     rcases hc with ((hc | ⟨_, hm⟩) | ⟨_, hk⟩) | ⟨⟨⟨_, ht⟩, hq⟩, hs⟩
-    · exact (PositiveCertificates.check_sound hc).sound n W v (tagSlice_sound hv ho)
+    · exact PositiveCertificates.acceptedUsing hc n W v (tagSlice_sound hv ho)
     · exact tagMember_sound hm (meaning_value hv).1 (ho.resolve_right (by
         cases t <;> simp [tagMember] at hm <;> simp [protoFree]))
     · obtain ⟨k, hp, hkey⟩ := presentKey_sound hk ho
@@ -566,13 +567,19 @@ theorem checkObservedSub_sound [DecidableEq ι] {G : NormalGraph ι} {A B o p}
       subst ht; subst hq
       exact arraySlice_sound hs hv (ho.resolve_right (by simp [protoFree]))
 
+/-- The finite image checker, the default. -/
+abbrev checkObservedSub [DecidableEq ι] (G : NormalGraph ι) :=
+  @checkObservedSubUsing _ _ G (finiteInstanceImages G)
+
 /-- The field refinements a tag observation admits for other slots: each
 object a current read link says the tested value was read from, and the
 field it was read through. -/
-def fieldRefinements (o : Observation) (fields : List (Nat × PropKey)) (A B : Ty ι) (j : Nat)
-    (G : NormalGraph ι) (p : PositiveCertificates.Proof ι) [DecidableEq ι] : Bool :=
+def fieldRefinements [DecidableEq ι] (o : Observation) (fields : List (Nat × PropKey)) (A B : Ty ι)
+    (j : Nat) (G : NormalGraph ι) (images : InstanceImageCheck G) (p : PositiveCertificates.Proof ι) :
+    Bool :=
   match o with
-  | .tag t q => fields.any fun (k, f) => k == j && PositiveCertificates.check G (fieldSlice G A f t q) B p
+  | .tag t q => fields.any fun (k, f) => k == j &&
+      PositiveCertificates.checkUsing G images (fieldSlice G A f t q) B p
   | .boolean _ => false
 
 /-- Whether an observation rules out `undefined`: a Boolean is not it, and a
@@ -630,7 +637,7 @@ theorem impossible_sound [DecidableEq ι] {G : NormalGraph ι} {A o n W v}
 ordinary subtype evidence, or, for an object the tested value was read from
 (`fields`), subtype evidence from its field slice. The tested slot must
 exist, even if forgotten. -/
-def checkObserved [DecidableEq ι] (G : NormalGraph ι) (Γ Δ : List (Ty ι))
+def checkObservedUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ Δ : List (Ty ι))
     (tested : Nat) (o : Observation) (mapping : Mapping) (ps : EdgeEvidence ι)
     (fields : List (Nat × PropKey) := []) (optionals : List (Nat × PropKey) := []) : Bool :=
   Γ[tested]?.isSome &&
@@ -639,10 +646,15 @@ def checkObserved [DecidableEq ι] (G : NormalGraph ι) (Γ Δ : List (Ty ι))
   ps.length == Δ.length && (List.range Δ.length).all (fun j =>
     match Γ[slot mapping j]?, Δ[j]?, ps[j]? with
     | some A, some B, some p =>
-      if slot mapping j == tested then checkObservedSub G A B o p
-      else PositiveCertificates.check G A B p || fieldRefinements o (fields ++ optionals) A B (slot mapping j) G p ||
+      if slot mapping j == tested then checkObservedSubUsing G images A B o p
+      else PositiveCertificates.checkUsing G images A B p ||
+        fieldRefinements o (fields ++ optionals) A B (slot mapping j) G images p ||
         optionalRefinements o optionals A B (slot mapping j) G p
     | _, _, _ => false))
+
+/-- The finite image checker, the default. -/
+abbrev checkObserved [DecidableEq ι] (G : NormalGraph ι) :=
+  @checkObservedUsing _ _ G (finiteInstanceImages G)
 
 def ObservedCovers [DecidableEq ι] (G : NormalGraph ι) (Γ Δ : List (Ty ι))
     (tested : Nat) (o : Observation) (mapping : Mapping) (fields : List (Nat × PropKey) := [])
@@ -650,14 +662,16 @@ def ObservedCovers [DecidableEq ι] (G : NormalGraph ι) (Γ Δ : List (Ty ι))
   (∃ A, Γ[tested]? = some A ∧ ∀ n W v, meaning G A n W v → o.holds v → False) ∨
   ∀ j B, Δ[j]? = some B → ∃ A, Γ[slot mapping j]? = some A ∧
     (if slot mapping j = tested then ObservedSub G A B o
-     else Sub G A B ∨ (∃ t q f, o = .tag t q ∧ (slot mapping j, f) ∈ fields ++ optionals ∧
-       Sub G (fieldSlice G A f t q) B) ∨
+     else FamLe (meaning G A) (meaning G B) ∨
+       (∃ t q f, o = .tag t q ∧ (slot mapping j, f) ∈ fields ++ optionals ∧
+         FamLe (meaning G (fieldSlice G A f t q)) (meaning G B)) ∨
        ∃ f, (slot mapping j, f) ∈ optionals ∧ excludesUndef o = true ∧ promotes G A B f = true)
 
-theorem checkObserved_sound [DecidableEq ι] {G : NormalGraph ι} {Γ Δ i o mapping ps fields optionals}
-    (h : checkObserved G Γ Δ i o mapping ps fields optionals = true) :
+theorem checkObserved_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {Γ Δ i o mapping ps fields optionals}
+    (h : checkObservedUsing G images Γ Δ i o mapping ps fields optionals = true) :
     ObservedCovers G Γ Δ i o mapping fields optionals := by
-  simp only [checkObserved, Bool.and_eq_true, Bool.or_eq_true, List.all_eq_true] at h
+  simp only [checkObservedUsing, Bool.and_eq_true, Bool.or_eq_true, List.all_eq_true] at h
   rcases h.2 with hdead | h
   · left
     cases ht : Γ[i]? with
@@ -684,14 +698,14 @@ theorem checkObserved_sound [DecidableEq ι] {G : NormalGraph ι} {Γ Δ i o map
       · simp only [beq_iff_eq,he,↓reduceIte,Bool.or_eq_true] at hc
         simp only [he,↓reduceIte]
         rcases hc with (hc | hc) | hc
-        · exact .inl (PositiveCertificates.check_sound hc)
+        · exact .inl (PositiveCertificates.acceptedUsing hc)
         · right; left
           cases o with
           | boolean _ => simp [fieldRefinements] at hc
           | tag t q =>
             simp only [fieldRefinements, List.any_eq_true, Bool.and_eq_true, beq_iff_eq] at hc
             obtain ⟨⟨k, f⟩, hk, rfl, hck⟩ := hc
-            exact ⟨t, q, f, rfl, hk, PositiveCertificates.check_sound hck⟩
+            exact ⟨t, q, f, rfl, hk, PositiveCertificates.acceptedUsing hck⟩
         · right; right
           simp only [optionalRefinements, List.any_eq_true, Bool.and_eq_true, beq_iff_eq] at hc
           obtain ⟨⟨_, hx⟩, ⟨k, f⟩, hk, rfl, hp⟩ := hc
@@ -720,17 +734,17 @@ theorem ObservedCovers.env [DecidableEq ι] {G : NormalGraph ι} {Γ Δ i o mapp
     exact h (n+1) W _ (by simpa [hij] using he.2 _ A ha) ho
   · simp only [hij,↓reduceIte] at h
     rcases h with h | ⟨t, q, f, rfl, hf, hs⟩ | ⟨f, hf, hx, hp⟩
-    · exact h.sound (n+1) W _ (he.2 _ A ha)
+    · exact h (n+1) W _ (he.2 _ A ha)
     · rcases List.mem_append.mp hf with hf | hf
       · obtain ⟨flds, c, l, hv, hfl, hu⟩ := hl _ f hf
-        exact hs.sound (n+1) W _ (fieldSlice_sound (he.2 _ A ha) hh hv hfl hu ho)
+        exact hs (n+1) W _ (fieldSlice_sound (he.2 _ A ha) hh hv hfl hu ho)
       -- Read through a key the object may lack: where it has it, the read
       -- gave the field's value; where it lacks it, no label the slice drops
       -- is the object's.
       · obtain ⟨flds, c, hv, _, hpresent⟩ := hopt _ f hf
         cases hfl : flds.lookup f with
-        | none => exact hs.sound (n+1) W _ (fieldSlice_absent (he.2 _ A ha) hv hfl)
-        | some l => exact hs.sound (n+1) W _ (fieldSlice_sound (he.2 _ A ha) hh hv hfl (hpresent l hfl) ho)
+        | none => exact hs (n+1) W _ (fieldSlice_absent (he.2 _ A ha) hv hfl)
+        | some l => exact hs (n+1) W _ (fieldSlice_sound (he.2 _ A ha) hh hv hfl (hpresent l hfl) ho)
     · obtain ⟨flds, c, hv, hab, _⟩ := hopt _ f hf
       cases hfl : flds.lookup f with
       | none => exact absurd (hab hfl) (excludesUndef_sound hx ho)

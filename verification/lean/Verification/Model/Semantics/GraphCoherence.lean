@@ -29,9 +29,10 @@ theorem env_map {D ρ} (h : EnvCoherent D ρ) (m : Mapping) : EnvCoherent D (map
 
 def SourceGraph (P : Program) : Prop := ∀ node ∈ P, sourceTerm node.expression = true
 
-theorem checked_source [DecidableEq ι] {G : PositiveGraphs.NormalGraph ι} {R P C}
-    (hc : checkGraph G R P C = true) : SourceGraph P := by
-  simp only [checkGraph, Bool.and_eq_true] at hc
+theorem checked_source [DecidableEq ι] {G : PositiveGraphs.NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} {R P C}
+    (hc : checkGraphUsing G images R P C = true) : SourceGraph P := by
+  simp only [checkGraphUsing, Bool.and_eq_true] at hc
   exact List.all_eq_true.mp hc.2
 
 /-- Graph transfers only copy coherent values; expression steps use the core
@@ -73,19 +74,21 @@ theorem execution_preserves {P k h s h' s'} (hp : SourceGraph P)
 /-- Every finite run of an accepted invocation preserves input descriptors and
 keeps all newly allocated identities coherent throughout the graph state. -/
 theorem accepted_inputs_coherent [DecidableEq ι] {G : PositiveGraphs.NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G}
     {R P C start inputs k h ρ h' s' D}
-    (hc : checkEntry G R P C start inputs = true)
+    (hc : checkEntryUsing G images R P C start inputs = true)
     (hh : ObjectCoherence.HeapOk D h) (he : EnvCoherent D ρ)
     (run : Execution P k h (.at start ρ) h' s') :
     ∃ E, Extends D E ∧ ObjectCoherence.HeapOk E h' ∧ StateCoherent E s' := by
-  simp only [checkEntry, Bool.and_eq_true] at hc
+  simp only [checkEntryUsing, Bool.and_eq_true] at hc
   exact execution_preserves (checked_source hc.1) run hh he
 
 /-- No coherence assumption is needed for a closed invocation: the empty heap
 and initial null environment establish it. -/
 theorem accepted_closed_coherent [DecidableEq ι] {G : PositiveGraphs.NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G}
     {R P C start k h s}
-    (hc : checkClosed G R P C start = true)
+    (hc : checkClosedUsing G images R P C start = true)
     (run : Execution P k [] (.at start (fun _ => .nul)) h s) :
     ∃ D, ObjectCoherence.HeapOk D h ∧ StateCoherent D s := by
   obtain ⟨D,_,hh,hs⟩ := accepted_inputs_coherent hc

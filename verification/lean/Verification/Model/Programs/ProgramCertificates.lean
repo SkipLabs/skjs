@@ -1955,12 +1955,6 @@ def check [DecidableEq ι] (G : NormalGraph ι) (t : Tm) (A : Ty ι) (e : Eviden
     (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
   checkUsing G (PositiveCertificates.finiteInstanceImages G) t A e codes
 
-theorem checkTree_sound [DecidableEq ι] {G : NormalGraph ι} (e : Evidence ι)
-    {codes : CodeEntry ι → Bool} (he : checkTree G e codes = true)
-    (hcodes : CodesSound G codes := by exact Verification.Model.ProgramCertificates.codesSound_none _) :
-    HasTy G (claim e).context (claim e).term (claim e).type :=
-  checkTreeUsing_sound e he hcodes
-
 theorem check_sound [DecidableEq ι] {G : NormalGraph ι} {t A e} {codes : CodeEntry ι → Bool}
     (he : check G t A e codes = true)
     (hcodes : CodesSound G codes := by exact Verification.Model.ProgramCertificates.codesSound_none _) :
@@ -1976,7 +1970,6 @@ theorem derivable_iff_checked [DecidableEq ι] (G : NormalGraph ι) (t : Tm) (A 
     ∀ codes, CodesSound G codes → (∃ e, check G t A e codes = true) → Scoped 0 t ∧ HasTy G [] t A :=
   derivableUsing_iff_checked G (PositiveCertificates.finiteInstanceImages G) t A
 
-#print axioms checkTree_sound
 #print axioms derivable_iff_checked
 #print axioms accepted_safe
 

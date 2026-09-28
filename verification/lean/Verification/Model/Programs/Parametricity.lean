@@ -5,8 +5,9 @@ import Verification.Model.Programs.CertificateProducer
 A graph's parameter rows mean what its assignment `env` gives them, and a
 graph's `meaning` reads them there. No check reads `env`: every checker reads a
 graph through its rows, schemes, parameter kinds and meets. This file proves
-it for the whole graph checker, `CertificateProducer.accept`: acceptance of a
-graph is acceptance of every reassignment of it (`accept_reassign`). The
+it for the whole graph checker, `CertificateProducer.acceptUsing`, with any
+proved instance image checker: acceptance of a graph is acceptance of every
+reassignment of it by the same checker (`accept_reassign`). The
 safety theorem for accepted evidence then holds at every assignment
 (`accepted_at`), so a body checked once with its type parameters as opaque
 parameter rows is safe at every instantiation of them.
@@ -160,38 +161,45 @@ theorem boundOk_reassign (binders : List ι) (θs : List (List ι)) (b : ι × L
     boundOk (reassign G η) binders θs b c = boundOk G binders θs b c := by
   simp only [boundOk, checkCore_reassign]
 
+/-! Every checker below takes a proved instance image checker. Its check is
+the same function at every reassignment (`InstanceImageCheck.reassign`). -/
+variable (images : InstanceImageCheck G)
+
 theorem checkInstArrs_reassign (S : List ι) (L : Ops ι)
     (M : List (CallEffects.RestArrow (List ι))) (c : Instance ι) :
-    checkInstArrs (reassign G η) S L M c = checkInstArrs G S L M c := by
-  simp only [checkInstArrs, checkInstArrsUsing, finiteInstanceImages, boundOk_reassign]
+    checkInstArrsUsing (reassign G η) (images.reassign η) S L M c =
+      checkInstArrsUsing G images S L M c := by
+  simp only [checkInstArrsUsing, boundOk_reassign]
   rfl
 
 theorem checkInst_reassign (S T : List ι) (c : Instance ι) :
-    checkInst (reassign G η) S T c = checkInst G S T c := by
-  simp only [checkInst, checkInstUsing, ← checkInstArrs.eq_def, checkInstArrs_reassign]
+    checkInstUsing (reassign G η) (images.reassign η) S T c = checkInstUsing G images S T c := by
+  simp only [checkInstUsing, checkInstArrs_reassign]
   rfl
 
 theorem check_reassign (S T : List ι) (p : Proof ι) :
-    PositiveCertificates.check (reassign G η) S T p = PositiveCertificates.check G S T p := by
-  simp only [PositiveCertificates.check]
+    PositiveCertificates.checkUsing (reassign G η) (images.reassign η) S T p =
+      PositiveCertificates.checkUsing G images S T p := by
   induction p generalizing S T <;>
-    simp only [PositiveCertificates.checkUsing, ← checkInstArrs.eq_def, ← checkInst.eq_def, checkCore_reassign,
-      checkInstArrs_reassign, checkInst_reassign, *] <;> rfl
+    simp only [PositiveCertificates.checkUsing, checkCore_reassign, checkInstArrs_reassign,
+      checkInst_reassign, *] <;> rfl
 
 /-- The subtype checker as a function of its graph. -/
 theorem check_fun_reassign :
-    PositiveCertificates.check (reassign G η) = PositiveCertificates.check G := by
-  funext S T p; exact check_reassign G η S T p
+    PositiveCertificates.checkUsing (reassign G η) (images.reassign η) =
+      PositiveCertificates.checkUsing G images := by
+  funext S T p; exact check_reassign G η images S T p
 
 theorem checkEdge_reassign (Γ Δ : List (List ι)) (ps : EdgeEvidence ι) :
-    checkEdge (reassign G η) Γ Δ ps = checkEdge G Γ Δ ps := by
+    checkEdgeUsing (reassign G η) (images.reassign η) Γ Δ ps = checkEdgeUsing G images Γ Δ ps := by
   induction ps generalizing Γ Δ with
   | nil => cases Γ <;> cases Δ <;> rfl
-  | cons p ps ih => cases Γ <;> cases Δ <;> simp only [checkEdge, check_reassign, ih]
+  | cons p ps ih => cases Γ <;> cases Δ <;> simp only [checkEdgeUsing, check_reassign, ih]
 
 theorem checkMapped_reassign (Γ Δ : List (List ι)) (m : Mapping) (ps : EdgeEvidence ι) :
-    checkMapped (reassign G η) Γ Δ m ps = checkMapped G Γ Δ m ps := by
-  cases m <;> simp only [checkMapped, checkEdge_reassign, check_fun_reassign]
+    checkMappedUsing (reassign G η) (images.reassign η) Γ Δ m ps =
+      checkMappedUsing G images Γ Δ m ps := by
+  cases m <;> simp only [checkMappedUsing, checkEdge_reassign, check_fun_reassign]
 
 /-- The realm checks read the graph's rows only. -/
 theorem realmFree_reassign (P : List ι) : realmFree (reassign G η) P = realmFree G P := by
@@ -218,12 +226,14 @@ theorem arraySlice_reassign (A B : List ι) :
   rfl
 
 theorem checkObservedSub_reassign (A B : List ι) (o : Observation) (p : Proof ι) :
-    checkObservedSub (reassign G η) A B o p = checkObservedSub G A B o p := by
-  cases o <;> simp only [checkObservedSub, check_reassign, arraySlice_reassign] <;> rfl
+    checkObservedSubUsing (reassign G η) (images.reassign η) A B o p =
+      checkObservedSubUsing G images A B o p := by
+  cases o <;> simp only [checkObservedSubUsing, check_reassign, arraySlice_reassign] <;> rfl
 
 theorem fieldRefinements_reassign (o : Observation) (fields : List (Nat × PropKey)) (A B : List ι)
     (j : Nat) (p : Proof ι) :
-    fieldRefinements o fields A B j (reassign G η) p = fieldRefinements o fields A B j G p := by
+    fieldRefinements o fields A B j (reassign G η) (images.reassign η) p =
+      fieldRefinements o fields A B j G images p := by
   cases o <;> simp only [fieldRefinements, check_fun_reassign] <;> rfl
 
 theorem optionalRefinements_reassign (o : Observation) (optionals : List (Nat × PropKey)) (A B : List ι)
@@ -232,16 +242,16 @@ theorem optionalRefinements_reassign (o : Observation) (optionals : List (Nat ×
 
 theorem checkObserved_reassign (Γ Δ : List (List ι)) (tested : Nat) (o : Observation)
     (m : Mapping) (ps : EdgeEvidence ι) (fields optionals : List (Nat × PropKey)) :
-    checkObserved (reassign G η) Γ Δ tested o m ps fields optionals =
-      checkObserved G Γ Δ tested o m ps fields optionals := by
-  simp only [checkObserved, checkObservedSub_reassign, check_fun_reassign, fieldRefinements_reassign,
-    optionalRefinements_reassign]
+    checkObservedUsing (reassign G η) (images.reassign η) Γ Δ tested o m ps fields optionals =
+      checkObservedUsing G images Γ Δ tested o m ps fields optionals := by
+  simp only [checkObservedUsing, checkObservedSub_reassign, check_fun_reassign,
+    fieldRefinements_reassign, optionalRefinements_reassign]
   rfl
 
 theorem CallProofs_reassign (q : CallEffects.Arrow (List ι)) (c : CallEffects.MethodArrow (List ι))
     (ps : List (Proof ι) × Proof ι) :
-    CallProofs (reassign G η) q c ps = CallProofs G q c ps := by
-  simp only [CallProofs, CallProofsUsing, ← PositiveCertificates.check.eq_def, check_reassign]
+    CallProofsUsing (reassign G η) (images.reassign η) q c ps = CallProofsUsing G images q c ps := by
+  simp only [CallProofsUsing, check_reassign]
 
 /-- A generic closure's capture check reads the graph's rows only. -/
 theorem capturesFree_reassign (s : SchemeRow ι) (Cs : List (List ι)) :
@@ -260,20 +270,19 @@ theorem graphCodesChecked_reassign (A : List ι) (codes : CodeEntry ι → Bool)
 
 theorem Local_reassign (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
     (codes : CodeEntry ι → Bool := fun _ => false) :
-    Local (reassign G η) j r ps codes = Local G j r ps codes := by
-  unfold Local LocalUsing
-  simp only [← PositiveCertificates.check.eq_def, ← CallProofs.eq_def,
-    check_fun_reassign, CallProofs_reassign, graphCodesChecked_reassign, allocRealm_reassign]
+    LocalUsing (reassign G η) (images.reassign η) j r ps codes = LocalUsing G images j r ps codes := by
+  unfold LocalUsing
+  simp only [check_fun_reassign, CallProofs_reassign, graphCodesChecked_reassign,
+    allocRealm_reassign]
   rfl
 
 theorem checkTree_reassign (e : ProgramCertificates.Evidence ι)
     (codes : CodeEntry ι → Bool := fun _ => false) :
-    checkTree (reassign G η) e codes = checkTree G e codes := by
-  unfold checkTree
+    checkTreeUsing (reassign G η) (images.reassign η) e codes = checkTreeUsing G images e codes := by
   match e with
   | .node j r ps =>
     rw [checkTreeUsing, checkTreeUsing]
-    simp only [← Local.eq_def, Local_reassign]
+    simp only [Local_reassign]
     congr 1
     congr 1
     funext x
@@ -286,63 +295,72 @@ decreasing_by
 
 theorem checkStep_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge) (e : StepEvidence ι)
     (codes : CodeEntry ι → Bool := fun _ => false) :
-    checkStep (reassign G η) j k e codes = checkStep G j k e codes := by
-  cases e <;> simp only [checkStep, checkTree_reassign, check_fun_reassign] <;> rfl
+    checkStepUsing (reassign G η) (images.reassign η) j k e codes = checkStepUsing G images j k e codes := by
+  cases e <;> simp only [checkStepUsing, checkTree_reassign, check_fun_reassign] <;> rfl
 
 theorem checkTarget_reassign (P : Program) (C : ControlFlow.Certificate ι) (Γ : List (List ι)) (t : Target)
     (p : EdgeEvidence ι) (facts : HeapKnowledge.Knowledge) :
-    checkTarget (reassign G η) P C Γ t p facts = checkTarget G P C Γ t p facts := by
-  simp only [checkTarget, checkMapped_reassign]
+    checkTargetUsing (reassign G η) (images.reassign η) P C Γ t p facts =
+      checkTargetUsing G images P C Γ t p facts := by
+  simp only [checkTargetUsing, checkMapped_reassign]
 
 theorem checkBranchTarget_reassign (P : Program) (C : ControlFlow.Certificate ι) (Γ : List (List ι))
     (o : Observation) (t : Target) (p : EdgeEvidence ι) (facts : HeapKnowledge.Knowledge) :
-    checkBranchTarget (reassign G η) P C Γ o t p facts = checkBranchTarget G P C Γ o t p facts := by
-  simp only [checkBranchTarget, checkObserved_reassign]
+    checkBranchTargetUsing (reassign G η) (images.reassign η) P C Γ o t p facts =
+      checkBranchTargetUsing G images P C Γ o t p facts := by
+  simp only [checkBranchTargetUsing, checkObserved_reassign]
 
 theorem checkHandler_reassign (P : Program) (C : ControlFlow.Certificate ι) (node : Node) (c : NodeEvidence ι) :
-    checkHandler (reassign G η) P C node c = checkHandler G P C node c := by
-  simp only [checkHandler, checkTarget_reassign]
+    checkHandlerUsing (reassign G η) (images.reassign η) P C node c =
+      checkHandlerUsing G images P C node c := by
+  simp only [checkHandlerUsing, checkTarget_reassign]
   rfl
 
 theorem checkNode_reassign (Rty : List ι) (P : Program) (C : ControlFlow.Certificate ι) (node : Node)
     (c : NodeEvidence ι) (codes : CodeEntry ι → Bool := fun _ => false) :
-    checkNode (reassign G η) Rty P C node c codes = checkNode G Rty P C node c codes := by
-  simp only [checkNode, checkHandler_reassign, checkStep_reassign, checkTarget_reassign,
+    checkNodeUsing (reassign G η) (images.reassign η) Rty P C node c codes =
+      checkNodeUsing G images Rty P C node c codes := by
+  simp only [checkNodeUsing, checkHandler_reassign, checkStep_reassign, checkTarget_reassign,
     checkBranchTarget_reassign]
   rfl
 
 theorem checkGraph_reassign (Rty : List ι) (P : Program) (C : ControlFlow.Certificate ι)
     (codes : CodeEntry ι → Bool := fun _ => false) :
-    checkGraph (reassign G η) Rty P C codes = checkGraph G Rty P C codes := by
-  simp only [checkGraph, checkNode_reassign]
+    checkGraphUsing (reassign G η) (images.reassign η) Rty P C codes =
+      checkGraphUsing G images Rty P C codes := by
+  simp only [checkGraphUsing, checkNode_reassign]
 
 theorem checkEntry_reassign (Rty : List ι) (P : Program) (C : ControlFlow.Certificate ι) (start : Nat)
     (inputs : List (List ι)) (codes : CodeEntry ι → Bool := fun _ => false) :
-    checkEntry (reassign G η) Rty P C start inputs codes = checkEntry G Rty P C start inputs codes := by
-  simp only [checkEntry, checkGraph_reassign]
+    checkEntryUsing (reassign G η) (images.reassign η) Rty P C start inputs codes =
+      checkEntryUsing G images Rty P C start inputs codes := by
+  simp only [checkEntryUsing, checkGraph_reassign]
 
 /-- **Acceptance reads no assignment.** A graph's evidence is accepted exactly
-when it is accepted for every reassignment of the graph's parameter rows. -/
+when it is accepted for every reassignment of the graph's parameter rows, by
+the same image checker. -/
 theorem accept_reassign (R : List ι) (P : Program) (claims : List (CertificateProducer.PointClaim ι))
     (C : ControlFlow.Certificate ι) (start : Nat) (inputs : List (List ι))
     (codes : CodeEntry ι → Bool := fun _ => false) :
-    CertificateProducer.accept (reassign G η) R P claims C start inputs codes =
-      CertificateProducer.accept G R P claims C start inputs codes := by
-  simp only [CertificateProducer.accept, checkEntry_reassign]
+    CertificateProducer.acceptUsing (reassign G η) (images.reassign η) R P claims C start inputs codes =
+      CertificateProducer.acceptUsing G images R P claims C start inputs codes := by
+  simp only [CertificateProducer.acceptUsing, checkEntry_reassign]
 
 /-- **Parametricity.** Accepted evidence is safe at every assignment of the
 graph's parameter rows: every input environment meeting the inputs read at
 `η` runs safely to a result of the result type read at `η`. -/
-theorem accepted_at {G : NormalGraph ι} {R P claims C start inputs}
+theorem accepted_at {G : NormalGraph ι} {images : InstanceImageCheck G} {R P claims C start inputs}
     {codes : CodeEntry ι → Bool}
-    (hc : CertificateProducer.accept G R P claims C start inputs codes = true)
+    (hc : CertificateProducer.acceptUsing G images R P claims C start inputs codes = true)
     (η : MixedAssignment ι) (n W h ρ)
     (he : EnvOk (reassign G η) inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hcodes : CodesSound (reassign G η) codes := by exact Verification.Model.ProgramCertificates.codesSound_none _) :
     SafeGraph P (meaning (reassign G η) R) n W h (.at start ρ) :=
-  CertificateProducer.accepted_from_inputs ((accept_reassign G η R P claims C start inputs codes).trans hc) n W h ρ he hw hh hcodes
+  CertificateProducer.accepted_from_inputs
+    ((accept_reassign G η images R P claims C start inputs codes).trans hc) n W h ρ he hw hh hcodes
 
 #print axioms accept_reassign
 #print axioms accepted_at
 
 end Verification.Model.Parametricity
+
