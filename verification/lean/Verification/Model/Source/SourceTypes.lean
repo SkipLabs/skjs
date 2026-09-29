@@ -82,11 +82,11 @@ theorem arrayExcludedKeys_reserved {G : NormalGraph ι} {proto : ι} {k : PropKe
 section
 variable {σ ι : Type} [Labels ι] [Store σ ι]
 
-def graph (T : σ) : NormalGraph ι := Store.graph T
+def graph (T : σ) : NormalGraph ι := StoreView.graph T
 
 /-- The array type over `store` in the store's own graph. -/
 def arrayOf (T : σ) (store : ι) (readonly : Bool) : Clause (List ι) :=
-  arrayClause (arrayExcludedKeys (graph T) (Store.arrayProto T)) store (Store.arrayProto T) readonly
+  arrayClause (arrayExcludedKeys (graph T) (StoreView.arrayProto T)) store (StoreView.arrayProto T) readonly
 
 /-- The one user-facing rendering boundary for graph types. Labels are
 implementation references into the store, so diagnostics must call this
@@ -143,7 +143,7 @@ is itself a meet. `U extends T` is `U ⊓ T`, which is below `T`
 (`PositiveRules.meetBelow`): at every instantiation within the bound, the
 meet is the binder. -/
 def dependentMeet (T : σ) (r : ι) : Option (List (Clause (List ι)) × List ι) :=
-  match Store.row T r with
+  match StoreView.row T r with
   | .param _ _ .value => some ([.top], [r])
   | .meet q cs ps => some (cs, q :: ps)
   | _ => none
@@ -158,8 +158,8 @@ with identical clauses denote the same type: a declaration's row and an
 annotation's row can coincide without being the same label, for instance when
 a producer interned the annotation before the declaration row was filled. -/
 def canonical (T : σ) (A : List ι) : List ι :=
-  (A.map fun label => if Store.valid T label then
-      ((Store.labels T).find? (fun m => Store.row T m == Store.row T label)).getD label
+  (A.map fun label => if StoreView.valid T label then
+      ((StoreView.labels T).find? (fun m => StoreView.row T m == StoreView.row T label)).getD label
     else label)
     |>.eraseDups.mergeSort Labels.le
 

@@ -460,7 +460,7 @@ private def checkLiteralNegation (q : Bool) : Except String Unit := do
   let j := toJson r.toRequest
   verifyJson RequestJson.Table j (← produceSourceJson j 10)
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels (LabelStore.Store.valid r.types) (LabelStore.Store.projection r.types) 10 r.obligations
+    r.searchLabels (LabelStore.StoreView.valid r.types) (LabelStore.Store.projection r.types) 10 r.obligations
   pure ()
 #guard ok (checkLiteralNegation true)
 #guard ok (checkLiteralNegation false)
@@ -687,7 +687,7 @@ private def branchCaptureClaims : Fragment.Claims :=
 #guard ok (do
   let r ← extractFn branchCaptureFn branchCaptureClaims
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels (LabelStore.Store.valid r.types) (LabelStore.Store.projection r.types) 0 r.obligations
+    r.searchLabels (LabelStore.StoreView.valid r.types) (LabelStore.Store.projection r.types) 0 r.obligations
   pure ())
 
 
@@ -712,7 +712,7 @@ private def joinedCaptureClaims : Fragment.Claims :=
 #guard ok (do
   let r ← extractFn joinedCaptureFn joinedCaptureClaims
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels (LabelStore.Store.valid r.types) (LabelStore.Store.projection r.types) 0 r.obligations
+    r.searchLabels (LabelStore.StoreView.valid r.types) (LabelStore.Store.projection r.types) 0 r.obligations
   pure ())
 
 
@@ -740,14 +740,14 @@ private def earlyCaptureClaims (q : Bool) : Fragment.Claims :=
 #guard [true,false].all fun q => ok (do
   let r ← extractFn (earlyCaptureFn q) (earlyCaptureClaims q)
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels (LabelStore.Store.valid r.types) (LabelStore.Store.projection r.types) 0 r.obligations
+    r.searchLabels (LabelStore.StoreView.valid r.types) (LabelStore.Store.projection r.types) 0 r.obligations
   pure ())
 
 
 -- Supplemental proofs are necessary even when the whole lambda is typable.
 private def captureRequired := (extractFn captureFn captureClaims).toOption.getD ⟨captureRequest,[],[],[],[],[], [], []⟩
 #guard ok (ExpressionClaims.produce (RequestJson.graph captureRequest)
-  captureRequired.searchLabels (LabelStore.Store.valid captureRequest.types) (LabelStore.Store.projection captureRequest.types) 10 captureRequired.obligations)
+  captureRequired.searchLabels (LabelStore.StoreView.valid captureRequest.types) (LabelStore.Store.projection captureRequest.types) 10 captureRequired.obligations)
 private def narrowedCapture : Fragment.Claims :=
   { captureClaims with exprs := captureClaims.exprs.map fun (pos,ty) =>
     (pos, if pos == (12,15) then t else ty) }
@@ -772,7 +772,7 @@ private def writerClaims : Fragment.Claims :=
 #guard ok (do
   let r ← extractFn writerFn writerClaims
   let _ ← produceSourceJson (toJson r.toRequest) 10
-  ExpressionClaims.produce (RequestJson.graph r.toRequest) r.searchLabels (LabelStore.Store.valid r.types) (LabelStore.Store.projection r.types) 10 r.obligations)
+  ExpressionClaims.produce (RequestJson.graph r.toRequest) r.searchLabels (LabelStore.StoreView.valid r.types) (LabelStore.Store.projection r.types) 10 r.obligations)
 
 
 -- A single-return block has the same execution as its expression body, but
@@ -788,7 +788,7 @@ private def blockCaptureClaims (unitTy : Json) : Fragment.Claims :=
 private def blockObligations (unitTy : Json) : Except String Unit := do
   let r ← extractFn blockCaptureFn (blockCaptureClaims unitTy)
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels (LabelStore.Store.valid r.types) (LabelStore.Store.projection r.types) 10 r.obligations
+    r.searchLabels (LabelStore.StoreView.valid r.types) (LabelStore.Store.projection r.types) 10 r.obligations
   let _ ← produceSourceJson (toJson r.toRequest) 10
   pure ()
 #guard ok (blockObligations (wireTy ⟨false,[.null]⟩))
@@ -835,7 +835,7 @@ private def widenedVariable := DirectProof.var [[1,2]] 0 [1,2]
   let r ← extractFn localWriterFn localWriterClaims
   if r.obligations.any (fun q => q.plan.isNone) then throw "missing recipe"
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels (LabelStore.Store.valid r.types) (LabelStore.Store.projection r.types) 0 r.obligations
+    r.searchLabels (LabelStore.StoreView.valid r.types) (LabelStore.Store.projection r.types) 0 r.obligations
   pure ())
 
 -- A forged recipe or reused certificate is still rejected by the ordinary checker.
@@ -945,7 +945,7 @@ private def overloadClaims : Fragment.Claims :=
   let r ← extractFn overloadFn overloadClaims
   let j := toJson r.toRequest
   verifyJson RequestJson.Table j (← produceSourceJson j 10)
-  let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest) r.searchLabels (LabelStore.Store.valid r.types) (LabelStore.Store.projection r.types) 0 r.obligations
+  let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest) r.searchLabels (LabelStore.StoreView.valid r.types) (LabelStore.Store.projection r.types) 0 r.obligations
   pure ())
 -- A claimed signature outside the annotated parameter is refused.
 #guard (match extractFn

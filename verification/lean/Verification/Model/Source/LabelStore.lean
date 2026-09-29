@@ -1,5 +1,6 @@
 import Lean.Data.Json
 import Verification.Model.Types.GraphRows
+import Verification.Model.Types.PositiveCertificates
 
 /-! What the source path asks of the labels it types a program with, and of
 the store that gives them meaning. Extraction, the source claims' readers and
@@ -66,15 +67,15 @@ def shown {ι : Type} (p : Projection ι) (A : List ι) : List Nat := A.map p.po
 
 end Projection
 
-/-- A store: labels with rows, and the ways the source path adds to it. `σ`
-is the store's state, which extraction threads through a unit; `ι` its labels.
-
-Rows are read through `row` and interpreted through `graph`, which must agree
-with them; `valid` says which labels the store holds, `wellFormed` that its
-rows name only those. `labels` lists them, and `bound` bounds any closure
-over rows (the vocabulary a search is offered is such a closure). A store only
-grows: every operation keeps the labels it had and their rows. -/
-class Store (σ : Type) (ι : outParam Type) [Labels ι] extends ToJson σ, FromJson σ where
+/-- What checking reads of a store: labels with rows, their graph and the
+image check its instances use. `σ` is the store's state, `ι` its labels.
+Rows are read through `row` and interpreted through `graph`, which must
+agree with them; `valid` says which labels the store holds, `wellFormed`
+that its rows name only those. `labels` lists labels with rows of their own,
+and `bound` bounds any closure over rows (the vocabulary a search is offered
+is such a closure). A checked request reads its store through this view
+only, so a store that no longer grows (`EquationStore.Checked`) is one. -/
+class StoreView (σ : Type) (ι : outParam Type) [Labels ι] extends ToJson σ, FromJson σ where
   /-- The graph the store denotes. Built once per state: its rows are read
   at every step of search and checking. -/
   graph : σ → NormalGraph ι
@@ -85,37 +86,52 @@ class Store (σ : Type) (ι : outParam Type) [Labels ι] extends ToJson σ, From
   /-- Whether every row names only labels the store holds, and binds only
   parameters. -/
   wellFormed : σ → Bool
-  /-- Every label the store holds. -/
+  /-- The labels with rows of their own. -/
   labels : σ → List ι
   /-- A bound on the rounds of a fixpoint over rows. -/
   bound : σ → Nat
   /-- The realm's array prototype, `ArrayProto`: the prototype every array
   type names. -/
   arrayProto : σ → ι
-  /-- The label of a union of clauses, added when the store lacks it. -/
-  intern : σ → List (Clause (List ι)) → σ × ι
   /-- The label of a union of clauses, when the store has one. -/
   lookup : σ → List (Clause (List ι)) → Option ι
+  /-- What a diagnostic mentioning these labels shows of the store, rows
+  expanded `depth` references deep (`Projection`). -/
+  project : σ → List ι → Nat → Projection ι
+  /-- How an instance's images are checked in this store's graph: proved
+  sound, supplied by verified code, never by a certificate. -/
+  images : (T : σ) → PositiveCertificates.InstanceImageCheck (graph T)
+
+/-- A store the source path grows: the view, and the ways extraction adds to
+it. A store only grows: every operation keeps the labels it had and their
+rows. -/
+class Store (σ : Type) (ι : outParam Type) [Labels ι] extends StoreView σ ι where
+  /-- The label of a union of clauses, added when the store lacks it. -/
+  intern : σ → List (Clause (List ι)) → σ × ι
   /-- A generic unit's binder: the store's one value parameter of that name
   that no scheme binds, or a new one. -/
   binder : σ → String → Except String (σ × ι)
-  /-- Fresh value parameters, one per name, for a scheme's binders. -/
+  /-- Fresh value parameters, one per name, for a scheme's binders. They
+  stand for the scheme's binders until `scheme` binds them: the scheme's own
+  binders are its row's (`GraphRow.scheme`), which may be other labels. -/
   binders : σ → List String → σ × List ι
   /-- A value parameter read within clauses and further parameters,
   `p ⊓ cs ⊓ also`: a bounded binder. The same label for the same meet. -/
   bounded : σ → ι → List (Clause (List ι)) → List ι → σ × ι
-  /-- A scheme over binders: its signatures, its binders' bounds and its
-  variadic signatures. -/
+  /-- A scheme over binders from `binders`: its signatures, its binders'
+  bounds and its variadic signatures. -/
   scheme : σ → List ι → List (Arrow (List ι)) → List (ι × List ι) →
     List (RestArrow (List ι)) → σ × ι
-  /-- What a diagnostic mentioning these labels shows of the store, rows
-  expanded `depth` references deep (`Projection`). -/
-  project : σ → List ι → Nat → Projection ι
+  /-- A label with the binders named by `θ` read as their types: the source
+  spells a binder by its name, and a unit or closure decides what the name
+  stands for. The union a label becomes. -/
+  rebind : σ → List (String × List ι) → ι → List ι
+
 
 /-- What a diagnostic mentioning `mentioned` shows of the store, to the
 projection's depth. -/
-def Store.projection {σ ι : Type} [Labels ι] [Store σ ι] (T : σ) (mentioned : List ι) : Projection ι :=
-  Store.project T mentioned Projection.depth
+def Store.projection {σ ι : Type} [Labels ι] [StoreView σ ι] (T : σ) (mentioned : List ι) : Projection ι :=
+  StoreView.project T mentioned Projection.depth
 
 /-- The meet of unions, lowered as a source intersection is. Apart from
 `Store` because a store's intersections are lowered by the pass that lowers

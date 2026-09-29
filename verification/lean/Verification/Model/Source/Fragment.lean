@@ -81,7 +81,7 @@ partial def callableType (j : Json) : SourceTypes.Lowering σ (Ty ι) := do
     if (← jStr (← jField atom "a")) == "graph" then
       CellClaims.fieldsExactly atom ["a", "label"]
       let label : ι ← fromJson? (← jField atom "label")
-      if !Store.valid (← get) label then throw "graph label is absent"
+      if !StoreView.valid (← get) label then throw "graph label is absent"
       return [label]
     else if (← jStr (← jField atom "a")) == "function" then
       let signatures ← (← CellClaims.conjuncts atom).mapM fun a => do
@@ -288,7 +288,7 @@ def translate (j : Json) : SourceTypes.Lowering σ (Ty ι) := do
     | "graph" =>
       CellClaims.fieldsExactly atom ["a", "label"]
       let label : ι ← fromJson? (← jField atom "label")
-      if !Store.valid (← get) label then throw "graph label is absent"
+      if !StoreView.valid (← get) label then throw "graph label is absent"
       return [label]
     | "callable" => return [← callableObject atom]
     | "constructor" => callableType single

@@ -54,7 +54,7 @@ def Function.withOverlay (f : Function ι) (row : Overlay ι) : Function ι :=
 caller cannot turn a label the store lacks into its empty default. -/
 def resolve {σ ι : Type} [Labels ι] [Store σ ι] (T : σ) (c : Candidate ι) : Except String (Ty ι) := do
   let A ← c
-  if RequestJson.validTy (Store.valid T) A then pure A
+  if RequestJson.validTy (StoreView.valid T) A then pure A
   else throw "source claim contains an out-of-range type label"
 
 end Verification.Model.SourceClaims

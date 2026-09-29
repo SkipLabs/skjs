@@ -339,8 +339,11 @@ instance : Store Table Nat where
   -- A table is finite already and its labels are positions: a diagnostic
   -- shows all of it, as it is, since a sub-table would renumber its rows.
   project T _ _ := { rows := T, position := id }
+  images T := PositiveCertificates.finiteInstanceImages (tableGraph T)
+  -- A table names its binders by rows, never by name.
+  rebind _ _ l := [l]
 
-@[simp] theorem Table.graph_eq (T : Table) : Store.graph T = tableGraph T := rfl
+@[simp] theorem Table.graph_eq (T : Table) : StoreView.graph T = tableGraph T := rfl
 @[simp] theorem Table.nul_eq : (Labels.nul : Nat) = 0 := rfl
 @[simp] theorem Table.tru_eq : (Labels.tru : Nat) = 1 := rfl
 @[simp] theorem Table.fls_eq : (Labels.fls : Nat) = 2 := rfl
@@ -420,9 +423,9 @@ instance (priority := high) [FromJson ι] : FromJson (Response ι) :=
   ⟨fun j => derivedResponseFromJson (withEmptyCodes j)⟩
 
 section
-variable {σ ι : Type} [Labels ι] [Store σ ι]
+variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 
-def graph (r : Request σ ι) : NormalGraph ι := Store.graph r.types
+def graph (r : Request σ ι) : NormalGraph ι := StoreView.graph r.types
 
 def validTy (ok : ι → Bool) (A : Ty ι) : Bool := A.all ok
 
@@ -435,8 +438,8 @@ def validClaim (ok : ι → Bool) (c : PointClaim ι) : Bool :=
 /-- The total Lean graph's out-of-range default must not become an accidental
 meaning for an invalid serialized type reference. -/
 def validRequest (r : Request σ ι) : Bool :=
-  let ok := Store.valid r.types
-  Store.wellFormed r.types &&
+  let ok := StoreView.valid r.types
+  StoreView.wellFormed r.types &&
   r.claims.all (validClaim ok) && validTy ok r.result &&
   r.inputs.all (validTy ok) &&
   r.codes.all fun q => q.claims.all (validClaim ok) &&
@@ -511,8 +514,8 @@ def validCertificate (ok : ι → Bool) (C : ControlFlow.Certificate ι) : Bool 
     (n.edges.flatMap id |>.flatMap proofTypes).all (validTy ok))
 
 def validResponse (r : Request σ ι) (c : Response ι) : Bool :=
-  validCertificate (Store.valid r.types) c.certificate &&
-    c.codes.all (validCertificate (Store.valid r.types))
+  validCertificate (StoreView.valid r.types) c.certificate &&
+    c.codes.all (validCertificate (StoreView.valid r.types))
 
 end
 
@@ -531,10 +534,10 @@ def decodeStrict [FromJson α] [ToJson α] (j : Json) : Except String α := do
   throw "unknown fields or missing explicit fields in the calculus protocol"
 
 section
-variable {σ ι : Type} [Labels ι] [Store σ ι]
+variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 
 /-- A request over the store `σ`, which names how its table is spelled. -/
-def decodeRequest (σ : Type) [Store σ ι] (j : Json) : Except String (Request σ ι) := do
+def decodeRequest (σ : Type) [StoreView σ ι] (j : Json) : Except String (Request σ ι) := do
   let r ← decodeStrict j
   if validRequest r then return r
   throw "out-of-range type label in request"
@@ -549,18 +552,19 @@ of what was checked (`GraphCode.checkCodes`). -/
 def codeTable (r : Request σ ι) (c : Response ι) : Option (List (CodeEntry ι)) :=
   if r.codes.length == c.codes.length &&
       (r.codes.zip c.codes).all (fun (q, C) => C.map signature == q.claims) then
-    GraphCode.checkCodes (graph r) ((r.codes.map (·.entry)).zip c.codes)
+    GraphCode.checkCodesUsing (graph r) (StoreView.images r.types) ((r.codes.map (·.entry)).zip c.codes)
   else none
 
 /-- This check remains independent of the producer and its search settings. -/
 def verify (r : Request σ ι) (c : Response ι) : Bool :=
   validRequest r && validResponse r c &&
     match codeTable r c with
-    | some table => CertificateProducer.accept (graph r) r.result r.program r.claims c.certificate
+    | some table => CertificateProducer.acceptUsing (graph r) (StoreView.images r.types) r.result r.program
+        r.claims c.certificate
         r.start r.inputs (GraphCode.admits table)
     | none => false
 
-def verifyJson (σ : Type) [Store σ ι] (request evidence : Json) : Except String Unit :=
+def verifyJson (σ : Type) [StoreView σ ι] (request evidence : Json) : Except String Unit :=
   match decodeRequest σ request with
   | .error e => .error e
   | .ok r => match decodeResponse r evidence with
@@ -623,7 +627,7 @@ def withDiagnostic (message : String) (fields : List (String × Json)) : String 
   message ++ "\nobligation-diagnostic: " ++ (Json.mkObj fields).compress
 
 section
-variable {σ ι : Type} [Labels ι] [Store σ ι]
+variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 
 /-- A point claim as a diagnostic shows it, through the store's projection. -/
 def PointClaim.shown (p : Projection ι) (c : PointClaim ι) : PointClaim Nat :=
@@ -633,7 +637,7 @@ def PointClaim.shown (p : Projection ι) (c : PointClaim ι) : PointClaim Nat :=
 def PointClaim.mentions (c : PointClaim ι) : List ι := c.type ++ c.context.flatten
 
 /-- A graph failure as a diagnostic: its types are the store's projection
-(`Store.project`) onto the labels the record mentions. -/
+(`StoreView.project`) onto the labels the record mentions. -/
 def failureDiagnostic (r : Request σ ι) (fuel : Nat)
     (sourceMap : SourceMap) (e : Failure)
     (requirements : List (Nat × HeapKnowledge.Knowledge) := []) : List (String × Json) := Id.run do
@@ -696,7 +700,7 @@ def produceGraph (r : Request σ ι) (fuel : Nat) (labels : List ι)
     (suggestions : List (ProgramCertificates.Sequent ι)) (known : List (ProgramCertificates.Evidence ι))
     (sourceMap : SourceMap) (requirements : List (Nat × HeapKnowledge.Knowledge)) (cuts : List Nat)
     (table : List (CodeEntry ι)) : Except String (ControlFlow.Certificate ι) :=
-  match produce (graph r) labels fuel r.result r.program r.claims r.start [] r.inputs suggestions known
+  match CertificateProducer.produceUsing (graph r) (StoreView.images r.types) labels fuel r.result r.program r.claims r.start [] r.inputs suggestions known
       requirements cuts (GraphCode.admits table) with
   | .ok c => pure c
   | .error e =>
@@ -728,7 +732,7 @@ structure CodeHints where
 
 /-- Produce and serialize, then pass through the same independent JSON consumer.
 Fuel bounds search only; it is not part of the certified request. -/
-def produceJson (σ : Type) [Store σ ι] (request : Json) (fuel : Nat)
+def produceJson (σ : Type) [StoreView σ ι] (request : Json) (fuel : Nat)
     (suggestions : List (ProgramCertificates.Sequent ι) := [])
     (known : List (ProgramCertificates.Evidence ι) := [])
     (sourceMap : SourceMap := [])
@@ -736,7 +740,7 @@ def produceJson (σ : Type) [Store σ ι] (request : Json) (fuel : Nat)
     (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := [])
     (codeHints : List CodeHints := []) : Except String Json := do
   let r ← decodeRequest σ request
-  let labels := searchLabels.getD (Store.labels r.types)
+  let labels := searchLabels.getD (StoreView.labels r.types)
   -- Each code against the table of those before it, as `codeTable` checks.
   let mut table : List (CodeEntry ι) := []
   let mut certificates : List (ControlFlow.Certificate ι) := []
@@ -750,7 +754,7 @@ def produceJson (σ : Type) [Store σ ι] (request : Json) (fuel : Nat)
     -- its ordinary source obligation, rather than borrowing an unchecked code
     -- entry and failing only at the final generic certificate check.
     -- Retain every certificate: verifyJson still checks the entire code list.
-    if GraphCode.codeChecked (graph r) table q.entry C then
+    if GraphCode.codeCheckedUsing (graph r) (StoreView.images r.types) table q.entry C then
       table := table ++ [q.entry]
   let C ← produceGraph r fuel labels suggestions known sourceMap requirements cuts table
   let response := toJson (Response.mk C certificates)

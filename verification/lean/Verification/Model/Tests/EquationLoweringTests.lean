@@ -1,11 +1,12 @@
-import Verification.Model.Source.EquationLowering
+import Verification.Model.Source.EquationStore
 
 /-! Lowering source declarations to recursive equations (RECURSIVE-EQUATIONS
 §8), on parser output: the upstream `Promise` and `PromiseLike`, the growing
 `Pair`, the recursive alias `Box`, a class's generic methods and an upstream
 Skip runtime document. The fixtures are the parser's documents for pipeline
-cases, spans zeroed. No request reads the module yet, so these checks stand
-in for pipeline cases until S6 wires it in. -/
+cases, spans zeroed. What a pipeline case cannot show is kept here: the
+number of heads (no family is enumerated), the proposed variances, and the
+refusals no source reaches alone. -/
 namespace Verification.Model.EquationLoweringTests
 open Lean EquationGraphs EquationLowering
 
@@ -17,33 +18,41 @@ def boxDoc : Json := parse (include_str "EquationLowering/box.json")
 def classDoc : Json := parse (include_str "EquationLowering/class-generic-method.json")
 def sumDoc : Json := parse (include_str "EquationLowering/sum-collections.json")
 
-def head? (L : Lowered) (name : String) : Option Nat := L.names.toList.idxOf? name
+/-- A claims document whose one function's parameters are claimed at the
+given label lists. -/
+def claimsDoc (labels : List Json) : Json :=
+  Json.mkObj [("types", toJson SourceTypes.initial),
+    ("functions", Json.arr #[Json.mkObj [("name", "f"), ("namePos", toJson [0, 1]),
+      ("params", Json.arr (labels.zipIdx.map fun (A, i) =>
+        Json.mkObj [("name", toJson s!"x{i}"), ("type", A), ("current", .null)]).toArray),
+      ("result", toJson [3]), ("entries", Json.arr #[]), ("expressions", Json.arr #[])]])]
 
-def header? (L : Lowered) (name : String) : Option Header :=
-  (head? L name).bind (L.equations.signature[·]?)
+def head? (L : SourceLowering) (name : String) : Option Nat :=
+  (L.store.heads.toList.map (·.name)).idxOf? name
 
-def variance? (L : Lowered) (name : String) : Option (List Variance) :=
-  (header? L name).map (·.variance.map (·.2))
+def variance? (L : SourceLowering) (name : String) : Option (List Variance) :=
+  (head? L name).bind fun h => (L.store.variances[h]?).map (·.toList)
 
-def checked (L : Lowered) : Bool := match L.variances with
-  | .ok _ => true
-  | .error _ => false
+def binders? (L : SourceLowering) (name : String) : Option (List String) :=
+  (head? L name).bind fun h => (L.store.heads[h]?).map (·.binders.map (·.name))
 
-def refused (L : Lowered) : List String := match L.variances with
-  | .ok _ => []
-  | .error hs => hs
+def checked (L : SourceLowering) : Bool := L.refused.isEmpty
 
-def trees (U : List (Label sig)) : List Tree := U.map (·.1)
+def annotation? (L : SourceLowering) (path : String) : Option (List Tree) := L.annotations.lookup path
 
-def annotation? (L : Lowered) (path : String) : Option (List Tree) :=
-  (L.annotations.lookup path).map trees
+/-- The claimed parameters' labels, read back from the lowered document. -/
+def claimed (L : SourceLowering) : List (List Tree) :=
+  match (L.claims.getObjValAs? (Array Json) "functions").toOption.bind (·[0]?) with
+  | some f => ((f.getObjValAs? (Array Json) "params").toOption.getD #[]).toList.filterMap fun p =>
+      ((p.getObjValAs? (Array Json) "type").toOption.bind fun A => (A.toList.mapM Tree.fromJson).toOption)
+  | none => []
 
-def run (doc : Json) (claims : List Json := []) (f : Lowered → Bool) : Bool :=
-  match lower doc claims with
+def run (doc : Json) (claims : List Json := []) (f : SourceLowering → Bool) : Bool :=
+  match source doc (claimsDoc claims) with
   | .ok L => f L
   | .error _ => false
 
-def refusal (doc : Json) : String := match lower doc with
+def refusal (doc : Json) : String := match source doc (claimsDoc []) with
   | .ok _ => ""
   | .error e => e
 
@@ -53,10 +62,10 @@ def refusal (doc : Json) : String := match lower doc with
 -- callbacks' literal heads and primitives. `catch`'s `Promise<T | R>` is an
 -- application in the method's template, not a new head.
 #guard run promiseDoc [] fun L =>
-  L.equations.signature.length == 21 &&
+  L.store.heads.size == 21 &&
   (head? L "Promise.\"then\"").isSome && (head? L "Promise.\"catch\"").isSome &&
   (head? L "PromiseLike.\"then\"").isSome &&
-  (header? L "Promise.\"then\"").map (·.binders.map (·.name)) == some ["TResult1", "TResult2"]
+  binders? L "Promise.\"then\"" == some ["TResult1", "TResult2"]
 
 -- The proposed variances check, `Promise` and `PromiseLike` covariant.
 #guard run promiseDoc [] fun L =>
@@ -64,7 +73,7 @@ def refusal (doc : Json) : String := match lower doc with
   variance? L "Promise.\"catch\"" == some [.co]
 
 -- The primitive values' heads come first, as `LabelStore.Labels` requires.
-#guard run promiseDoc [] fun L => L.names.toList.take 4 == ["null", "true", "false", "undefined"]
+#guard run promiseDoc [] fun L => (L.store.heads.toList.map (·.name)).take 4 == ["null", "true", "false", "undefined"]
 
 -- `widen(p: Promise<number>): Promise<number | string>`: its annotations are
 -- applications of the one `Promise` head.
@@ -82,12 +91,11 @@ def promiseLikeNever : Json := Json.mkObj [("decl", 1), ("args", Json.arr #[Json
 #guard run promiseDoc [.arr #[promiseNever],
     .arr #[Json.mkObj [("meet", Json.arr #[.arr #[promiseNever], .arr #[promiseLikeNever]])]]] fun L =>
   match head? L "Promise", head? L "PromiseLike" with
-  | some p, some q =>
-    L.claims.map trees == [[mkApp p [[]]], [canonMeet [mkApp p [[]], mkApp q [[]]]]]
+  | some p, some q => claimed L == [[mkApp p [[]]], [canonMeet [mkApp p [[]], mkApp q [[]]]]]
   | _, _ => false
 
 -- A claim naming a declaration at the wrong arity is refused.
-#guard (lower promiseDoc [.arr #[Json.mkObj [("decl", 0)]]]).toOption.isNone
+#guard (source promiseDoc (claimsDoc [.arr #[Json.mkObj [("decl", 0)]]])).toOption.isNone
 
 /-! ### `Pair<[T, U]>` -/
 
@@ -96,9 +104,10 @@ def promiseLikeNever : Json := Json.mkObj [("decl", 1), ("args", Json.arr #[Json
 -- grows by application, and the heads stay finitely many. `Pair` is
 -- invariant through the mutable tuple, as its declaration checks.
 #guard run pairDoc [] fun L =>
-  L.equations.signature.length == 51 && checked L &&
+  L.store.heads.size == 51 && checked L &&
   variance? L "Pair" == some [.inv] &&
-  (header? L "Pair.\"push\"").map (fun h => (h.parameters, h.binders.map (·.name))) == some (1, ["U"])
+  (head? L "Pair.\"push\"").bind (fun h => L.store.heads[h]?.map fun d =>
+    (d.kinds.length, d.binders.map (·.name))) == some (1, ["U"])
 
 /-! ### `Box<T> = {v: T; next: Box<[T]>}` -/
 
@@ -109,8 +118,7 @@ def boxIndex : Nat := 2
 def boxNever : Json := Json.mkObj [("decl", boxIndex), ("args", Json.arr #[Json.arr #[]])]
 #guard run boxDoc [.arr #[Json.mkObj [("decl", boxIndex), ("args", Json.arr #[.arr #[boxNever]])]]] fun L =>
   match head? L "Box" with
-  | some b => checked L && variance? L "Box" == some [.inv] &&
-    L.claims.map trees == [[mkApp b [[mkApp b [[]]]]]]
+  | some b => checked L && variance? L "Box" == some [.inv] && claimed L == [[mkApp b [[mkApp b [[]]]]]]
   | none => false
 
 /-! ### Unguarded aliases -/
@@ -141,27 +149,27 @@ def unguardedDoc : Json := parse r#"{
 
 /-! ### A class's generic methods -/
 
--- `pick<V>` and `run<U>` are heads `Helper.pick` and `Helper.run`; the
--- prototype closure's binder, spelled `"pick"#0:null^0` by the parser, is
--- the owned binder `bound(Helper.pick, [], 0)`.
+-- `pick<V>` and `run<U>` are heads `Helper.pick` and `Helper.run` binding
+-- their own `V` and `U`; the prototype closure's binder, spelled
+-- `"pick"#0:null^0` by the parser, is its name's placeholder, which the
+-- closure's scheme binds when the unit is extracted.
 #guard run classDoc [] fun L =>
   match head? L "Helper.\"pick\"" with
-  | some m => checked L &&
-    annotation? L "/init/0/bindings/0/init/params/0/type" == some [mkBound m [] 0] &&
-    annotation? L "/init/0/bindings/0/init/result" == some [mkBound m [] 0]
+  | some _ => checked L && binders? L "Helper.\"pick\"" == some ["V"] &&
+    (match annotation? L "/init/0/bindings/0/init/params/0/type" with
+      | some [t] => isPlaceholder t && annotation? L "/init/0/bindings/0/init/result" == some [t]
+      | _ => false)
   | none => false
 
 /-! ### An upstream Skip runtime document -/
 
--- `sum-collections`' declarations lower, their declared bounds checked, and
--- the proposed variances check as proposed. The heads whose templates meet a
--- parameter with a type (`T & DepSafe`) relate `x & B` to `y & B` through
--- the entry's hypotheses: a meet reads its parameter parts through them
--- (`meetBelow`, `PartCovers`), in a pair and in a premise (`Prem`).
+-- `sum-collections`' declarations lower, their declared bounds checked. The
+-- variance check refuses the heads whose templates meet a parameter with a
+-- type (`T & DepSafe`): a family entry relates `meet(x, B) ≤ meet(y, B)`
+-- only through a table pair, and a meet target is read part by part without
+-- the entry's hypotheses (`MeetTarget`), so none is valid even as
+-- invariant. This is a kernel gap, not a lowering one.
 #guard run sumDoc [] fun L =>
-  checked L && variance? L "Values" == some [.inv] &&
-  variance? L "Reducer" == some [.contra, .inv] &&
-  variance? L "EagerCollection" == some [.inv, .inv] &&
-  variance? L "LazyCollection" == some [.contra, .inv]
+  !checked L && L.refused.contains "Values" && L.refused.contains "Reducer"
 
 end Verification.Model.EquationLoweringTests

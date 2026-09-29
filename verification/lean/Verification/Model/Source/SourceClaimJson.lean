@@ -603,13 +603,13 @@ def closureRows (T : σ) (outer : List (String × ι))
       -- (`meetOk`), in the order it reads them.
       let args := inst.map fun i => (i.name, subst θp i.type)
       let (sl, rows) ← schemeRowOf (.scheme tps rc ps rest r effect)
-      let binders := match Store.row (← get).1 sl with
+      let binders := match StoreView.row (← get).1 sl with
         | .scheme bs .. => bs
         | _ => []
       let nameOf := binders.zip (tps.map Prod.fst)
       let θi ← args.mapM fun (n, U) => do
         let some l := rows.lookup n | pure (n, U)
-        let .meet b cs also := Store.row (← get).1 l | pure (n, U)
+        let .meet b cs also := StoreView.row (← get).1 l | pure (n, U)
         let st ← get
         let meet : SchemeM σ ι (Option ι) := do
           let Us ← (b :: also).mapM fun q => do
@@ -723,7 +723,7 @@ private partial def validType (T : σ) : ClaimType ι → Bool
       validType T receiver && params.all (validType T) && rest.all (validType T) &&
       validType T result
   | .unavailable reason => !reason.isEmpty
-  | .labels A => validTy (Store.valid T) A && A == A.mergeSort Labels.le && A.eraseDups == A
+  | .labels A => validTy (StoreView.valid T) A && A == A.mergeSort Labels.le && A.eraseDups == A
 /-- Every asserted field is one the point's own record contract names, each at
 most once, at a type this table has. The asserted type need not be finite: a
 field the extractor cannot turn into a literal assertion becomes an obligation
@@ -1355,7 +1355,7 @@ def extractPlansWith [Meets σ ι] (front : Front σ ι) (ast claims : Json) (fi
     (imported.map fun (name, span, ty) => (name, span, .ok (.written ty))) ++
     (if arrays then [(SourceExtraction.arrayPrototypeName, (0, 0),
       Except.ok (.written (Json.mkObj [("top", toJson false), ("atoms", toJson [Json.mkObj
-        [("a", toJson "graph"), ("label", toJson (Store.arrayProto d.types))]])])))] else [])
+        [("a", toJson "graph"), ("label", toJson (StoreView.arrayProto d.types))]])])))] else [])
   -- Every immutable module value retains its initializer's checked claim and
   -- its annotation. The initialization unit checks both contracts; an
   -- annotation does not erase independently inferred facts such as call effects.
@@ -1546,11 +1546,11 @@ def produceJsonWith [Meets σ ι] (front : Front σ ι) (ast claims : Json) (fil
   let plans ← extractPlansWith front ast claims fileKey only
   let rs := FunctionPlan.requests plans
   let es ← rs.mapM fun r => ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels (Store.valid r.types)
+    r.searchLabels (StoreView.valid r.types)
     (Store.projection r.types) fuel r.obligations
   let cs ← (rs.zip es).mapM fun (r,proofs) => do
     let known := proofs ++ ExpressionClaims.renderKnown (RequestJson.graph r.toRequest)
-      r.searchLabels (Store.valid r.types) r.nodePlans
+      r.searchLabels (StoreView.valid r.types) r.nodePlans
     let j ← RequestJson.produceJson σ (toJson r.toRequest) fuel [] known r.sourceMap (some r.searchLabels) r.assertions r.cuts r.codeHints
     decodeResponse r.toRequest j
   let evidence := toJson (Bundle.mk cs es)

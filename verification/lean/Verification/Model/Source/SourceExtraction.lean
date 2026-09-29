@@ -249,7 +249,7 @@ def arrayPrototypeName : String := SourceTypes.arrayPrototypeName
 keys bounded to them, the type `alloc` gives before it is read as an array. -/
 private def arrayObject (S : Ty ι) : Compiler σ ι (Ty ι) := do
   let label ← lower (SourceTypes.use (.refs [(SourceTypes.storeField, S),
-    (SourceTypes.protoField, [Store.arrayProto (← table)])] [] [] [] []
+    (SourceTypes.protoField, [StoreView.arrayProto (← table)])] [] [] [] []
     [⟨true, [SourceTypes.storeField, SourceTypes.protoField]⟩]))
   modify fun s => {s with hints := label :: s.hints}
   return [label]
@@ -986,7 +986,7 @@ private def checkpoint (pos : Span) (Γ : List (Ty ι)) (facts : HeapFacts.Facts
 
 private def contents (A : Ty ι) : Compiler σ ι (List HeapFacts.Atom) := do
   let T ← table
-  if !RequestJson.validTy (Store.valid T) A then throw "invalid current-content type label"
+  if !RequestJson.validTy (StoreView.valid T) A then throw "invalid current-content type label"
   let some R := HeapKnowledge.atoms (SourceTypes.graph T) A
     | throw "current-content predicate must be a supported primitive predicate"
   return R
@@ -1009,7 +1009,7 @@ private def persistentObservation (d : Descriptor) (pos : Span) (A : Ty ι)
   -- The obligation below is an inclusion of types, so the observed type needs
   -- only to be one this table names. It does not need a supported primitive predicate:
   -- that is what a primitive assertion on an edge needs, and this is not one.
-  if !RequestJson.validTy (Store.valid (← table)) R then throw "invalid current-content type label"
+  if !RequestJson.validTy (StoreView.valid (← table)) R then throw "invalid current-content type label"
   let clauses := PositiveRules.expand (SourceTypes.graph (← table)) A
   if clauses.isEmpty then throw "current-content assertion requires nonempty cell contracts"
   let invariants ← clauses.mapM fun clause => do
@@ -1073,7 +1073,7 @@ private def entryFacts (fc : SourceClaims.Function ι) (pos : Nat) (scope : List
           | _ => none
         some ws.flatten.eraseDups
       for (fld, A) in asserted do
-        if !RequestJson.validTy (Store.valid T) A then throw "invalid current-content type label"
+        if !RequestJson.validTy (StoreView.valid T) A then throw "invalid current-content type label"
         match b.storage with
         | .cell .. =>
           -- Slot i is the private holder, not the object inside it. A field
@@ -1454,7 +1454,7 @@ the bound's member. Any other plan is itself. -/
 private def throughBound (Γ : List (Ty ι)) (a : DirectProof.Plan ι) : Compiler σ ι (DirectProof.Plan ι) := do
   let T ← table
   let [l] := a.type | return a
-  let .meet _ cs _ := Store.row T l | return a
+  let .meet _ cs _ := StoreView.row T l | return a
   let m ← lower (SourceTypes.useRow cs)
   modify fun s => { s with hints := m :: s.hints }
   return DirectProof.cast Γ [m] a
@@ -4921,6 +4921,11 @@ private partial def body : Nat → SourceClaims.Function ι → Ty ι → List (
       return entry
 end
 
+end
+
+section
+variable {σ ι : Type} [Labels ι] [StoreView σ ι]
+
 structure SourceRequest (σ ι : Type) extends Request σ ι where
   obligations : List (ExpressionClaims.Required ι)
   sourceMap : SourceMap := []
@@ -4952,18 +4957,23 @@ def SourceRequest.searchLabels (r : SourceRequest σ ι) : List ι :=
   -- stopping at the fixpoint: a step that adds no label changes nothing.
   Id.run do
     let mut known := roots
-    for _ in List.range (Store.bound r.types) do
+    for _ in List.range (StoreView.bound r.types) do
       -- A meet row's clauses name a type the store may hold as a row of its
       -- own, a bounded binder's bound: a read through the binder is at it.
       let next := (known ++ known.flatMap (fun i =>
-        let row := Store.row r.types i
+        let row := StoreView.row r.types i
         row.union.flatMap (fun c => (RequestJson.clauseTypes c).flatten) ++
         (match row with
-          | .meet _ cs _ => (Store.lookup r.types cs).toList
+          | .meet _ cs _ => (StoreView.lookup r.types cs).toList
           | _ => []))).eraseDups
       if next.length == known.length then break
       known := next
     return known
+
+end
+
+section
+variable {σ ι : Type} [Labels ι] [Store σ ι]
 
 /-- The type a code unit reads a module value at: a source type (a function's
 signature), or an initializer claim together with any written annotation.
@@ -5121,6 +5131,11 @@ def extractFn (f : Fragment.Fn) (fc : Fragment.Claims) : Except String (SourceRe
   let (fc, T) ← (SkjsSourceClaims.translate fc).run SourceTypes.initial
   extractNormalizedFn T f fc
 
+end
+
+section
+variable {σ ι : Type} [Labels ι] [StoreView σ ι]
+
 /-- Evidence order is source declaration order, independent of export order. -/
 structure Bundle (ι : Type) where
   functions : List (Response ι)
@@ -5168,7 +5183,8 @@ theorem checkAssertions_sound {r : (SourceRequest σ ι)} {c : (Response ι)}
 /-- A unit's obligations, checked with the graph code its certificate checked. -/
 def checkObligations (r : SourceRequest σ ι) (c : Response ι) (es : List (ProgramCertificates.Evidence ι)) : Bool :=
   match codeTable r.toRequest c with
-  | some table => ExpressionClaims.checkAll (RequestJson.graph r.toRequest) (Store.valid r.types)
+  | some table => ExpressionClaims.checkAllUsing (RequestJson.graph r.toRequest) (StoreView.images r.types)
+      (StoreView.valid r.types)
       r.obligations es (GraphCode.admits table)
   | none => false
 
@@ -5214,7 +5230,8 @@ theorem checkRequests_safe_at {rs : List (SourceRequest σ ι)} {b : (Bundle ι)
 theorem checkRequests_obligations {rs : List (SourceRequest σ ι)} {b : (Bundle ι)}
     (h : checkRequests rs b = true) {r c es} (hm : ((r,c),es) ∈ (rs.zip b.functions).zip b.obligations)
     {q e} (hq : (q,e) ∈ r.obligations.zip es) :
-    HasTy (RequestJson.graph r.toRequest) q.sequent.context q.sequent.term q.sequent.type := by
+    HasTyUsing (RequestJson.graph r.toRequest) (StoreView.images r.types) q.sequent.context q.sequent.term
+      q.sequent.type := by
   simp only [checkRequests, Bool.and_eq_true, List.all_eq_true] at h
   have ho := h.2 _ hm
   simp only [checkObligations] at ho

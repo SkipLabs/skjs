@@ -48,7 +48,7 @@ theorem checkAll_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {val
   exact check_sound (h.2 _ hm) hcodes
 
 /-- `valid` says which labels the graph's store holds, `project` what a
-diagnostic mentioning some of them shows of it (`Store.project`). -/
+diagnostic mentioning some of them shows of it (`StoreView.project`). -/
 def produceUsing [Hashable ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (labels : List ι)
     (valid : ι → Bool) (project : List ι → LabelStore.Projection ι) (fuel : Nat)
     (rs : List (Required ι)) : Except String (List (Evidence ι)) := do

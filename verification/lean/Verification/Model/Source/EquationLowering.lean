@@ -38,6 +38,9 @@ def mkBound (h : Nat) (args : List Union) (j : Nat) : Tree :=
 def normUnion (u : Union) : Union :=
   (u.mergeSort fun a b => compare a b != .gt).eraseDups
 
+/-- `normUnion`, under a name the tree traversals below read. -/
+abbrev normUnionOf (u : Union) : Union := normUnion u
+
 /-! ### Trees -/
 
 /- Whether a tree holds a template placeholder. -/
@@ -63,6 +66,23 @@ partial def treeSubst (argF : Nat → Union) (locF : Nat → Union) : Tree → U
   | .meet ps => (choices (ps.toList.map (treeSubst argF locF))).map canonMeet
 partial def argsSubst (argF : Nat → Union) (locF : Nat → Union) (args : Args) : Args :=
   Args.ofList (args.toList.map fun ts => Types.ofList (ts.toList.flatMap (treeSubst argF locF)))
+end
+
+/- Replacing closed subtrees: `f` gives the union a tree stands for, or
+`none` to keep it and look inside. A meet is distributed over its parts'
+images, each distributed meet in canonical form; each argument union is
+kept canonical. -/
+mutual
+partial def treeReplace (f : Tree → Option Union) (t : Tree) : Union :=
+  match f t with
+  | some U => U
+  | none => match t with
+    | .app h args => [.app h (argsReplace f args)]
+    | .bound h args j => [.bound h (argsReplace f args) j]
+    | .meet ps => (choices (ps.toList.map (treeReplace f))).map canonMeet
+    | t => [t]
+partial def argsReplace (f : Tree → Option Union) (args : Args) : Args :=
+  Args.ofList (args.toList.map fun ts => Types.ofList (normUnionOf (ts.toList.flatMap (treeReplace f))))
 end
 
 /- Renaming heads, meets re-canonicalized: their order depends on head
@@ -373,6 +393,10 @@ structure Ctx where
   /-- The declared bounds of the placeholders in scope (`arg i`, `local j`),
   read when a bound obligation inside the template is checked (§8.2). -/
   bounds : List (Tree × Union) := []
+  /-- Whether an application's declared bounds are checked here: where the
+  source writes it. A claim's are not: a claim is a proposal the program is
+  checked against, and bounds carry no meaning (§8.2). -/
+  checkBounds : Bool := true
   deriving Inhabited
 
 /-! ### Heads under construction -/
@@ -432,8 +456,46 @@ structure State where
   meetChecks : List (Tree × String) := []
   /-- Each generic unit's binders, by the unit's path. -/
   scopes : List (String × List (String × Binding)) := []
+  /-- The binder names the source spells, each with its kind: the slots of
+  the name placeholders (`placeholder`). -/
+  names : Array (String × ParameterKind) := #[]
+  /-- The names of the fresh placeholders `Store.binders` has made, by slot. -/
+  fresh : Array String := #[]
+  /-- The realm's array prototype head, once lowered. -/
+  proto : Option Nat := none
+  /-- Producer rows whose heads are allocated and whose rows are not yet
+  lowered: each head with its row. -/
+  pendingRows : List (Nat × Nat) := []
+  /-- The proposed variance of each head lowered from declarations; a head
+  added after them declares `inv` in every parameter (§7.5). -/
+  variances : Array (Array Variance) := #[]
 
 abbrev M := StateT State (Except String)
+
+/-- The owner of name placeholders: a binder the source spells by its name,
+`T`, is lowered as the placeholder of that name until a unit or closure
+decides what the name stands for (`EquationStore.rebind`). Placeholders are
+family-variable trees of a reserved owner, parameter rows of their kind; no
+checked request holds one (`EquationStore.freeze` refuses it). -/
+def nameOwner : Nat := 4000000000
+
+/-- The owner of fresh placeholders: a scheme's binders before its head
+binds them (`Store.binders`, `Store.scheme`). -/
+def freshOwner : Nat := 4000000001
+
+/-- Whether a tree is a placeholder. -/
+def isPlaceholder : Tree → Bool
+  | .var o _ _ => o == nameOwner || o == freshOwner
+  | _ => false
+
+/-- The name placeholder of a binder name and kind. -/
+def placeholder (name : String) (kind : ParameterKind) : M Tree := do
+  let s ← get
+  match s.names.toList.idxOf? (name, kind) with
+  | some i => return .var nameOwner i kind
+  | none =>
+    set { s with names := s.names.push (name, kind) }
+    return .var nameOwner s.names.size kind
 
 /-- The head with key `key`, allocated with `draft` and its row's job when
 new. -/
@@ -566,6 +628,131 @@ def arrayHead (readonly : Bool) (proto : Tree) : M Nat := do
   alloc s!"array|{readonly}"
     { name := if readonly then "ReadonlyArray" else "Array", kind := .array readonly, kinds := [.value],
       body := some (.clauses [arrayClauseOf [.argument 0] [proto] excluded readonly]) } fun _ => none
+
+/-! ### Heads added after the declarations
+
+What the store adds while a unit is extracted (`EquationStore`): a union of
+clauses, a scheme over fresh binders, a bounded binder's meet. A template
+holds no owned parameter or variable (§3.1: it names parameters only through
+its arguments), so each such closed subtree is lifted to an argument, as a
+literal is lifted over the binders it mentions (§8.1). The head is keyed by
+the lifted template, so equal templates share a head. -/
+
+/-- A closed subtree a template cannot hold. -/
+def Tree.rigid : Tree → Bool
+  | .bound .. | .var .. => true
+  | _ => false
+
+/-- A tree with its rigid subtrees lifted to arguments, in first-occurrence
+order: the arguments so far and the template. -/
+partial def liftTree (acc : Array Tree) : Tree → Array Tree × Tree
+  | t@(.bound ..) | t@(.var ..) =>
+    match acc.toList.idxOf? t with
+    | some i => (acc, .argument i)
+    | none => (acc.push t, .argument acc.size)
+  | .app h args =>
+    let (acc, ts) := args.toList.foldl (fun (acc, out) ts =>
+      let (acc, us) := ts.toList.foldl (fun (acc, us) u =>
+        let (acc, u) := liftTree acc u
+        (acc, us ++ [u])) (acc, [])
+      (acc, out ++ [Types.ofList us])) (acc, [])
+    (acc, .app h (Args.ofList ts))
+  | .meet ps =>
+    let (acc, us) := ps.toList.foldl (fun (acc, us) u =>
+      let (acc, u) := liftTree acc u
+      (acc, us ++ [u])) (acc, [])
+    (acc, canonMeet us)
+  | t => (acc, t)
+
+def liftUnion (acc : Array Tree) (U : Union) : Array Tree × Union :=
+  U.foldl (fun (acc, out) t => let (acc, t) := liftTree acc t; (acc, out ++ [t])) (acc, [])
+
+/-- A rigid subtree's kind: an owned parameter's is its binder's, a
+variable's its own. -/
+def rigidKindIn (heads : Array Draft) : Tree → ParameterKind
+  | .bound h _ j => ((heads[h]?.bind (·.binders[j]?)).map (·.kind)).getD .value
+  | .var _ _ k => k
+  | _ => .value
+
+/-- Clauses with their rigid subtrees lifted: the arguments and the
+template. -/
+def liftClauses (cs : List (Clause (List Tree))) : Array Tree × List (Clause (List Tree)) :=
+  cs.foldl (fun (acc, out) c =>
+    let ops := c.operands
+    let (acc, lifted) := ops.foldl (fun (acc, out) U =>
+      let (acc, U) := liftUnion acc U
+      (acc, out ++ [U])) (acc, [])
+    let table := ops.zip lifted
+    (acc, out ++ [c.map fun U => (table.lookup U).getD U])) ((#[] : Array Tree), [])
+
+/-- The key of a union of clauses' head, and what it is applied to: the key
+`ground` gives when nothing is lifted. -/
+def internKey (heads : Array Draft) (cs : List (Clause (List Tree))) : String × List Union :=
+  let (acc, cs') := liftClauses cs
+  if acc.isEmpty then (s!"ground|{reprStr cs}", [])
+  else (s!"lifted|{reprStr (acc.toList.map (rigidKindIn heads))}|{reprStr cs'}", acc.toList.map ([·]))
+
+/-- The label of a union of clauses: its head, lifted over its rigid
+subtrees, applied to them. Nullary when there are none, and then the head
+`ground` would give. -/
+def internLifted (name : String) (cs : List (Clause (List Tree))) : M Tree := do
+  let (acc, cs') := liftClauses cs
+  if acc.isEmpty then return ← ground name cs
+  let heads := (← get).heads
+  let (key, args) := internKey heads cs
+  let h ← alloc key
+    { name, kind := .literal, kinds := acc.toList.map (rigidKindIn heads), body := some (.clauses cs') }
+    fun _ => none
+  return mkApp h args
+
+/-- A fresh placeholder for a scheme's binder, until the scheme's head binds
+it (`schemeOver`). -/
+def freshBinder (name : String) : M Tree := do
+  let s ← get
+  set { s with fresh := s.fresh.push name }
+  return .var freshOwner s.fresh.size .value
+
+/-- A scheme over binders from `freshBinder`: its head's template has the
+binders as its locals, and every other rigid subtree lifted. The label is the
+head applied to what was lifted; its binders are the head's owned
+parameters, which the caller reads from the label's row. -/
+def schemeOver (binders : List Tree) (sigs : List (Arrow (List Tree))) (bounds : List (Tree × List Tree))
+    (rests : List (RestArrow (List Tree))) : M Tree := do
+  let loc (t : Tree) : Option Union := (binders.idxOf? t).map fun j => [.local j]
+  let local_ (U : Union) : Union := U.flatMap (treeReplace loc)
+  let sigs := sigs.map (Arrow.map local_)
+  let rests := rests.map (RestArrow.map local_)
+  let bounds := bounds.filterMap fun (b, U) => (binders.idxOf? b).map fun j => (Tree.local j, local_ U)
+  let liftA (acc : Array Tree) (a : Arrow (List Tree)) : Array Tree × Arrow (List Tree) :=
+    let ops := a.operands
+    let (acc, lifted) := ops.foldl (fun (acc, out) U =>
+      let (acc, U) := liftUnion acc U; (acc, out ++ [U])) (acc, [])
+    (acc, a.map fun U => ((ops.zip lifted).lookup U).getD U)
+  let liftR (acc : Array Tree) (a : RestArrow (List Tree)) : Array Tree × RestArrow (List Tree) :=
+    let ops := a.operands
+    let (acc, lifted) := ops.foldl (fun (acc, out) U =>
+      let (acc, U) := liftUnion acc U; (acc, out ++ [U])) (acc, [])
+    (acc, a.map fun U => ((ops.zip lifted).lookup U).getD U)
+  let (acc, sigs) := sigs.foldl (fun (acc, out) a => let (acc, a) := liftA acc a; (acc, out ++ [a]))
+    ((#[] : Array Tree), [])
+  let (acc, bounds) := bounds.foldl (fun (acc, out) (b, U) =>
+    let (acc, U) := liftUnion acc U; (acc, out ++ [(b, U)])) (acc, [])
+  let (acc, rests) := rests.foldl (fun (acc, out) a => let (acc, a) := liftR acc a; (acc, out ++ [a]))
+    (acc, [])
+  let kinds := acc.toList.map (rigidKindIn (← get).heads)
+  let s ← get
+  let names := binders.map fun b => match b with
+    | .var o i _ => if o == freshOwner then (s.fresh[i]?).getD "_" else "_"
+    | _ => "_"
+  let bs : List Binder := (names.zip binders).map fun (n, b) => ⟨n, match b with
+    | .var _ _ k => k
+    | _ => .value⟩
+  let row : GraphRow Tree (List Tree) :=
+    .scheme ((List.range binders.length).map Tree.local) sigs bounds rests
+  let key := s!"schemeOver|{reprStr kinds}|{reprStr bs}|{reprStr row}"
+  let h ← alloc key { name := "scheme", kind := .scheme, kinds, binders := bs, body := some row }
+    fun _ => none
+  return mkApp h (acc.toList.map ([·]))
 
 /-! ### Lowering source types -/
 
@@ -724,7 +911,7 @@ partial def application (ctx : Ctx) (i : Nat) (supplied : List Union) : M (List 
   for index in [:d.parameters.size] do
     let p := d.parameters[index]!
     let bound ← field p "bound"
-    if bound != .null then
+    if bound != .null && ctx.checkBounds then
       let upper ← lowerType { ctx with decl := some i, params := values, self := none, binders := [] } bound
       modify fun s => { s with obligations := s.obligations ++ [⟨values[index]!, upper, ctx.bounds,
         s!"{ctx.site}: the type argument for {d.name}'s {p.getObjValD "name" |>.compress} at {(p.getObjValD "span").compress}"⟩] }
@@ -1144,16 +1331,36 @@ def enterUnit (path : String) (scope : List (String × Binding)) (node : Json) (
   modify fun s => { s with scopes := (path, bindings) :: s.scopes }
   return bindings ++ scope
 
+/-- A node's binders as their name placeholders: what each name stands for
+is decided where the unit or closure is checked (`EquationStore.rebind`). A
+name used as an argument pack is a placeholder of that kind. -/
+def bindNames (scope : List (String × Binding)) (bounds : List (Tree × Union)) (node : Json)
+    (tps : Array Json) : M (List (String × Binding) × List (Tree × Union)) := do
+  let names ← tps.toList.mapM fun p => (str p "name" : Except String String)
+  let bound ← names.mapM fun n => do
+    let pack := (binderUse n node).pack
+    return (n, (⟨pack, [← placeholder n (if pack then .arguments else .value)]⟩ : Binding))
+  let inner := bound ++ scope
+  -- A value binder's declared bound, read where an application over it
+  -- checks a declaration's bound (`closeObligation`).
+  let mut out := bounds
+  for (p, (n, b)) in tps.toList.zip bound do
+    let t := p.getObjValD "bound"
+    if t == .null || b.pack then continue
+    let B ← lowerType { binders := inner, bounds := bounds, site := s!"the bound of {n}" } t
+    if let [q] := b.value then out := (q, B) :: out
+  return (inner, out)
+
 /-- Every annotation of the function tree lowered in its scope, keyed by its
-path. -/
-partial def walk (path : String) (scope : List (String × Binding)) (j : Json) :
-    M (List (String × Union)) := do
+path. A binder is its name placeholder (`bindNames`). -/
+partial def walk (path : String) (scope : List (String × Binding)) (bounds : List (Tree × Union))
+    (j : Json) : M (List (String × Union)) := do
   match j with
-  | .arr xs => return (← xs.toList.zipIdx.mapM fun (x, i) => walk s!"{path}/{i}" scope x).flatten
+  | .arr xs => return (← xs.toList.zipIdx.mapM fun (x, i) => walk s!"{path}/{i}" scope bounds x).flatten
   | .obj kvs =>
     let tps := (j.getObjValAs? (Array Json) "typeParams").toOption.getD #[]
-    let scope ← if tps.isEmpty then pure scope else enterUnit path scope j tps
-    let ctx : Ctx := { binders := scope, site := path }
+    let (scope, bounds) ← if tps.isEmpty then pure (scope, bounds) else bindNames scope bounds j tps
+    let ctx : Ctx := { binders := scope, site := path, bounds }
     let mut out := []
     for (name, value) in kvs.toList do
       let here := s!"{path}/{name}"
@@ -1163,7 +1370,7 @@ partial def walk (path : String) (scope : List (String × Binding)) (j : Json) :
         let .arr values := value | throw s!"{here}: type arguments are a list"
         for (v, i) in values.toList.zipIdx do
           out := out ++ [(s!"{here}/{i}", ← lowerType { ctx with site := s!"{here}/{i}" } v)]
-      else out := out ++ (← walk here scope value)
+      else out := out ++ (← walk here scope bounds value)
     return out
   | _ => return []
 
@@ -1189,12 +1396,14 @@ def classScope (init : Json) : M (List (String × Binding)) := do
 
 mutual
 /-- A source-claims label: a `decl` application (arity full), a `meet`, an
-`array` of its store, or a `binder` in `scope`. A `types` row index is the
-producer's row, which the caller maps (`rows`). -/
-partial def claimLabel (scope : List (String × Binding)) (rows : Nat → M Union) (j : Json) : M Union := do
+`array` of its store, or a `binder`: the binder `scope` gives the name, else
+its name placeholder. A `types` row index is the producer's row, which the
+caller maps in the same scope (`rows`). -/
+partial def claimLabel (scope : List (String × Binding)) (rows : List (String × Binding) → Nat → M Union)
+    (j : Json) : M Union := do
   let get? (name : String) : Option Json := (j.getObjVal? name).toOption
   match j with
-  | .num _ => rows (← j.getNat?)
+  | .num _ => rows scope (← j.getNat?)
   | .obj _ =>
     if let some k := get? "decl" then
       CellClaims.fieldsExactly j (if (j.getObjVal? "args").isOk then ["decl", "args"] else ["decl"])
@@ -1204,7 +1413,7 @@ partial def claimLabel (scope : List (String × Binding)) (rows : Nat → M Unio
       let args ← ((j.getObjValAs? (Array Json) "args").toOption.getD #[]).toList.mapM (claimUnion scope rows)
       if args.length != ds[i]!.parameters.size then
         throw s!"source claims: {ds[i]!.name} applied to {args.length} arguments, not its {ds[i]!.parameters.size}"
-      let ctx : Ctx := { binders := scope, site := "source claims" }
+      let ctx : Ctx := { binders := scope, site := "source claims", checkBounds := false }
       let values ← application ctx i args
       instantiateDecl ctx i values
     else if let some ps := get? "meet" then
@@ -1224,12 +1433,14 @@ partial def claimLabel (scope : List (String × Binding)) (rows : Nat → M Unio
       let n ← n.getStr?
       match scope.lookup n with
       | some ⟨false, v⟩ => return v
-      | _ => throw s!"source claims: the binder {n} is not in scope"
+      | some ⟨true, _⟩ => throw s!"source claims: the argument pack {n} used as a value type"
+      | none => return [← placeholder n .value]
     else throw s!"source claims: not a label: {j.compress}"
   | _ => throw s!"source claims: not a label: {j.compress}"
 
 /-- A union of source-claims labels. -/
-partial def claimUnion (scope : List (String × Binding)) (rows : Nat → M Union) (j : Json) : M Union := do
+partial def claimUnion (scope : List (String × Binding)) (rows : List (String × Binding) → Nat → M Union)
+    (j : Json) : M Union := do
   return normUnion ((← (← j.getArr?).toList.mapM (claimLabel scope rows)).flatten)
 end
 
@@ -1328,26 +1539,6 @@ def varianceEvidence (E : Equations) (bodies : Array (GraphRow Tree (List Tree))
   let entries := varianceEntries (sig := E.signature) { tables }
   { tables, arrows := arrowCandidates E (entries.flatMap (·.pairs)) }
 
-/-- The lowered equations with what the source names over them. -/
-structure Lowered where
-  equations : Equations
-  /-- The proposed variance declarations, checked (§7.5); or the heads whose
-  declaration is refused even as invariant. The check belongs to the
-  request (`checkRequests`), which refuses at those heads. -/
-  variances : Except (List String) (Variances equations)
-  names : Array String
-  kinds : Array HeadKind
-  /-- Each declaration's head, for the declarations that are heads. -/
-  declarations : List (Nat × Nat)
-  /-- Each generic unit's head, by its path in the function tree. -/
-  units : List (String × Nat)
-  /-- Each annotation, by its path in the function tree. -/
-  annotations : List (String × List (Label equations.signature))
-  /-- Each imported value's type, by its local name. -/
-  values : List (String × List (Label equations.signature))
-  /-- The requested source-claims labels, in order. -/
-  claims : List (List (Label equations.signature))
-
 /-- The heads' raw rows at variances `v`. -/
 def rawHeads (drafts : Array Draft) (bodies : Array (GraphRow Tree (List Tree)))
     (v : Array (Array Variance)) : List RawHead :=
@@ -1375,13 +1566,225 @@ def closeObligation (o : Obligation) : Union × Union :=
   let σ (p : Tree) : Union := match o.bounds.find? (·.1 == p) with
     | some (_, b) => meetUnions [[var p], b.flatMap (treeSubst (plain ∘ .argument) (plain ∘ .local))]
     | none => plain p
-  let close (U : Union) := U.flatMap (treeSubst (σ ∘ .argument) (σ ∘ .local))
+  -- A name placeholder in scope is its binder met with its declared bound.
+  let named (t : Tree) : Option Union :=
+    if isPlaceholder t then (o.bounds.find? (·.1 == t)).map fun (_, b) => meetUnions [[t], b] else none
+  let close (U : Union) :=
+    (U.flatMap (treeSubst (σ ∘ .argument) (σ ∘ .local))).flatMap (treeReplace named)
   (close o.actual, close o.upper)
 
-/-- Lower a function tree's declarations, units and annotations, and the
-given source-claims labels, to equations. -/
-def lowerAll (ast : Json) (claims : List Json) : M (List (String × Union) × List (String × Union) ×
-    List Union) := do
+/-! ### Producer rows (§9.1)
+
+A source-claims document's `types` rows are the producer's: clause rows, and
+the scheme rows of classes' generic methods, whose binders are binder labels.
+Each row is a head, lifted over the binder names it mentions freely (through
+the rows it names too), as a literal is lifted over its binders (§8.1): a
+row naming a binder of a unit is applied to that name's placeholder, and a
+scheme row's own binders are its locals. -/
+
+/-- The producer's rows, each with its own binders (a scheme row's) and the
+binder names it mentions freely, in first-occurrence order. -/
+structure ProducerRows where
+  rows : Array (GraphRow Json (List Json))
+  own : Array (List String)
+  free : Array (List String)
+  deriving Inhabited
+
+/-- The binder names and the rows a label mentions. A declaration's position
+is no row. -/
+partial def labelRefs (j : Json) : List String × List Nat :=
+  let many (xs : List Json) : List String × List Nat :=
+    xs.foldl (fun (ns, rs) x => let (n, r) := labelRefs x; (ns ++ n, rs ++ r)) ([], [])
+  match j with
+  | .num _ => ([], (j.getNat?).toOption.toList)
+  | .arr xs => many xs.toList
+  | .obj _ =>
+    match (j.getObjValAs? String "binder").toOption with
+    | some n => ([n], [])
+    | none =>
+      let unions (k : String) : List Json := ((j.getObjValAs? (Array Json) k).toOption.getD #[]).toList
+      many (unions "args" ++ unions "meet" ++ ((j.getObjVal? "array").toOption.toList))
+  | _ => ([], [])
+
+/-- The producer's rows, decoded, with what each binds and names freely. -/
+def producerRows (types : Array Json) : Except String ProducerRows := do
+  let rows ← types.mapM fun j => (fromJson? j : Except String (GraphRow Json (List Json)))
+  let own ← rows.mapM fun r => match r with
+    | .scheme bs .. => bs.mapM fun b => do
+      CellClaims.fieldsExactly b ["binder"]
+      str b "binder"
+    | .clauses _ => pure []
+    | _ => throw "a producer's row is a clause row or a scheme row; binders and intersections are labels"
+  let direct := rows.map fun r => r.operands.foldl (fun (ns, rs) A =>
+    let (n, r) := labelRefs (.arr A.toArray); (ns ++ n, rs ++ r)) (([] : List String), ([] : List Nat))
+  if direct.any (fun (_, rs) => rs.any (· ≥ rows.size)) then throw "a label names no row of the table"
+  -- The free names: a least fixpoint over the finitely many rows and names.
+  let step (free : Array (List String)) : Array (List String) :=
+    (Array.range rows.size).map fun n =>
+      let (ns, rs) := direct[n]!
+      ((ns ++ rs.flatMap fun m => free[m]!).filter (!own[n]!.contains ·)).eraseDups
+  let mut free : Array (List String) := rows.map fun _ => []
+  let total := (direct.toList.flatMap (·.1)).eraseDups.length * rows.size + 1
+  for _ in [0:total] do
+    let next := step free
+    if next == free then break
+    free := next
+  return { rows, own, free }
+
+/-- Producer row `n`'s head. Its row is lowered by `drainRows`. -/
+def rowHead (P : ProducerRows) (n : Nat) : M Nat := do
+  let own := P.own[n]!
+  let isNew := ((← get).keys.get? s!"row|{n}").isNone
+  let h ← alloc s!"row|{n}"
+    { name := s!"row {n}", kind := if own.isEmpty then .literal else .scheme,
+      kinds := P.free[n]!.map fun _ => .value, binders := own.map (⟨·, .value⟩) } fun _ => none
+  if isNew then modify fun s => { s with pendingRows := s.pendingRows ++ [(h, n)] }
+  return h
+
+/-- Producer row `n` as a label in `scope`: its head applied to what its free
+binder names are there, a name out of scope its placeholder. The primitive
+rows are the primitive heads. -/
+def rowLabel (P : ProducerRows) (scope : List (String × Binding)) (n : Nat) : M Union := do
+  if n < 4 then return [mkApp n []]
+  if n ≥ P.rows.size then throw s!"source claims: no row {n}"
+  let h ← rowHead P n
+  let args ← P.free[n]!.mapM fun name => do
+    match scope.lookup name with
+    | some b => pure b.value
+    | none => pure [← placeholder name .value]
+  return [mkApp h args]
+
+/-- Lower every pending producer row: its free names are its arguments, its
+own binders its locals. -/
+partial def drainRows (P : ProducerRows) : M Unit := do
+  match (← get).pendingRows with
+  | [] => return
+  | (h, n) :: rest =>
+    modify fun s => { s with pendingRows := rest }
+    let scope : List (String × Binding) :=
+      (P.own[n]!.zipIdx.map fun (name, j) => (name, (⟨false, [.local j]⟩ : Binding))) ++
+      (P.free[n]!.zipIdx.map fun (name, i) => (name, (⟨false, [.argument i]⟩ : Binding)))
+    let row := P.rows[n]!
+    let lowered ← row.operands.mapM fun A => do return (A, ← claimUnion scope (rowLabel P) (.arr A.toArray))
+    let own := P.own[n]!
+    let binder (b : Json) : Tree := match (b.getObjValAs? String "binder").toOption.bind own.idxOf? with
+      | some j => .local j
+      | none => .local 0
+    setBody h (row.map binder fun A => (lowered.lookup A).getD [])
+    drainRows P
+
+/-! ### The source-claims document's label lists -/
+
+section
+variable {m : Type → Type} [Monad m]
+
+private def update (j : Json) (k : String) (f : Json → m Json) : m Json := do
+  match j.getObjVal? k with
+  | .ok v => return j.setObjVal! k (← f v)
+  | .error _ => return j
+
+private def each (f : Json → m Json) : Json → m Json
+  | .arr xs => return .arr (← xs.mapM f)
+  | j => return j
+
+private def nullable (f : Json → m Json) : Json → m Json
+  | .null => return .null
+  | j => f j
+
+/-- A claim type with each label list rewritten by `f`: labels, or a form
+over claim types. With `pointForm`, `unitForm` and `documentForm`, the
+claims document's label lists, in every unit: a claim's labels, what a point
+asserts of each field, a call's type arguments. The traversal is the
+document's shape (SOURCE-CLAIMS). -/
+partial def claimForm (f : Json → m Json) (j : Json) : m Json := do
+  match j with
+  | .arr _ => f j
+  | _ =>
+    let j ← update j "union" (each (claimForm f))
+    let j ← update j "array" (claimForm f)
+    update j "scheme" fun s => do
+      let s ← update s "typeParams" (each fun p => update p "bound" (nullable (claimForm f)))
+      let s ← update s "this" (claimForm f)
+      let s ← update s "params" (each (claimForm f))
+      let s ← update s "rest" (nullable (claimForm f))
+      update s "result" (claimForm f)
+
+def pointForm (f : Json → m Json) (j : Json) : m Json := do
+  let j ← update j "type" (claimForm f)
+  let j ← update j "current" (nullable (each fun
+    | .arr #[k, A] => do return .arr #[k, ← f A]
+    | x => pure x))
+  update j "instantiate" (nullable (each fun i => update i "type" (claimForm f)))
+
+def unitForm (f : Json → m Json) (j : Json) : m Json := do
+  let entries := each fun e => update e "bindings" (each (pointForm f))
+  let j ← update j "params" (each (pointForm f))
+  let j ← update j "result" (claimForm f)
+  let j ← update j "entries" entries
+  let j ← update j "expressions" (each (pointForm f))
+  update j "arrows" (each fun a => update a "rows" (each fun r => do
+    let r ← update r "expressions" (each (pointForm f))
+    update r "entries" entries))
+
+def documentForm (f : Json → m Json) (claims : Json) : m Json := do
+  let claims ← update claims "functions" (each (unitForm f))
+  update claims "init" (unitForm f)
+
+end
+
+/-- A union as its spelling (§9.2). -/
+def unionJson (U : Union) : Json := .arr (U.map Tree.toJson).toArray
+
+/-! ### Lowering a source for the source path -/
+
+/-- A generic module value: a generic module function, a generic class or a
+generic imported value. Its type and its binders' bounds have the binders
+as their name placeholders; an instance substitutes them
+(`EquationStore.rebind`). -/
+structure GenericValue where
+  name : String
+  pos : Nat × Nat
+  binders : List String
+  type : Except String Union
+  bounds : List (String × Option Union)
+
+/-- A source lowered for the source path. -/
+structure SourceLowering where
+  /-- The store the units grow: the heads, hash-consed and compacted. -/
+  store : State
+  /-- Each annotation, by its path in the function tree. -/
+  annotations : List (String × Union)
+  /-- Each imported value's type, by its local name, with its span. -/
+  values : List (String × (Nat × Nat) × Union)
+  generics : List GenericValue
+  /-- Each generic unit's binders, by its path: an owned parameter of the
+  unit's head, met with its bound (`enterUnit`). -/
+  units : List (String × List (String × Union))
+  /-- The module initialization's binders: every generic class's. -/
+  initBinders : List (String × Union)
+  /-- The claims document, its label lists spelled as trees (§9.2). -/
+  claims : Json
+  /-- The heads whose variance declaration is refused even as invariant. -/
+  refused : List String
+
+/-- Lower a generic module value's pieces with its binders as placeholders. -/
+private def genericOf (name : String) (pos : Nat × Nat) (path : String) (node : Json) (tps : Array Json)
+    (type : List (String × Binding) → M Union) : M GenericValue := do
+  let (scope, _) ← bindNames [] [] node tps
+  let binders ← tps.toList.mapM fun p => (str p "name" : Except String String)
+  let t ← tryCatch (do return Except.ok (← type scope)) fun e => pure (.error e)
+  let bounds ← tps.toList.mapM fun p => do
+    let n ← (str p "name" : Except String String)
+    let b := p.getObjValD "bound"
+    if b == .null then return (n, none)
+    return (n, some (← lowerType { binders := scope, site := s!"{path}: the bound of {n}", checkBounds := false } b))
+  return { name, pos, binders, type := t, bounds }
+
+/-- Everything the source path lowers, in one run: the declarations, every
+annotation, the imported values, the generic units' binders, the producer's
+rows and the claims. -/
+def lowerSource (ast claims : Json) : M (List (String × Union) × List (String × (Nat × Nat) × Union) ×
+    List GenericValue × List (String × List (String × Union)) × List (String × Union) × Json) := do
   primitives
   let ds := (← get).doc
   let excluded ← match ds[0]? with
@@ -1395,23 +1798,79 @@ def lowerAll (ast : Json) (claims : List Json) : M (List (String × Union) × Li
   -- Every declaration: heads now, aliases where they are used.
   for i in [:ds.size] do
     if ds[i]!.isHead then let _ ← declHead i
+  -- The realm's array prototype.
+  let proto ← protoLabel
+  modify fun s => { s with proto := match proto with | .app h _ => some h | _ => none }
   drain
-  let functions ← walk "/functions" [] (ast.getObjValD "functions")
+  let functionTrees := (ast.getObjValAs? (Array Json) "functions").toOption.getD #[]
+  let annotations ← walk "/functions" [] [] (ast.getObjValD "functions")
+  -- Generic module functions: their binders, and their types at them.
+  let mut generics : List GenericValue := []
+  let mut units : List (String × List (String × Union)) := []
+  for (f, i) in functionTrees.toList.zipIdx do
+    let tps := (f.getObjValAs? (Array Json) "typeParams").toOption.getD #[]
+    if tps.isEmpty then continue
+    let path := s!"/functions/{i}"
+    let bindings ← enterUnit path [] f tps
+    units := units ++ [(path, bindings.map fun (n, b) => (n, b.value))]
+    let name ← str f "name"
+    let pos ← (fromJson? (← field f "namePos") : Except String (Nat × Nat))
+    generics := generics ++ [← genericOf name pos path f tps fun scope => do
+      match ← unitSignature { binders := scope, site := path } f with
+      | some (.inl a) => return [← internLifted name [.arrs [a] []]]
+      | some (.inr r) => return [← internLifted name [.arrs [] [r]]]
+      | none => throw s!"{path}: a generic module function's type needs every parameter's and the result's annotation"]
   let init := ast.getObjValD "init"
-  let scope ← classScope init
-  let initAnnotations ← walk "/init" scope init
+  let classes ← classScope init
+  let initBinders := classes.map fun (n, b) => (n, b.value)
+  let (initScope, initBounds) ← classes.foldlM (fun (acc : List (String × Binding) × List (Tree × Union)) (n, b) => do
+    return ((n, ⟨b.pack, [← placeholder n (if b.pack then .arguments else .value)]⟩) :: acc.1, acc.2)) ([], [])
+  let initAnnotations ← walk "/init" initScope initBounds init
+  -- Generic classes: their construct signatures at their binders.
+  let .arr sts := init | throw "the module initialization is a list"
+  for (st, si) in sts.toList.zipIdx do
+    if (st.getObjValAs? String "k").toOption != some "const" then continue
+    let .ok (.arr bs) := st.getObjVal? "bindings" | continue
+    for (b, bi) in bs.toList.zipIdx do
+      let ctor := b.getObjValD "init"
+      if (ctor.getObjValAs? String "k").toOption != some "ctor" then continue
+      let tps := (ctor.getObjValAs? (Array Json) "typeParams").toOption.getD #[]
+      if tps.isEmpty then continue
+      let path := s!"/init/{si}/bindings/{bi}"
+      let name ← str b "name"
+      let pos ← (fromJson? (← field b "namePos") : Except String (Nat × Nat))
+      generics := generics ++ [← genericOf name pos path ctor tps fun scope => do
+        lowerType { binders := scope, site := s!"{path}/annot" } (← field b "annot")]
+  -- Imported values: a generic one is instantiated at each call.
   let mut values := []
   let document := ast.getObjValD "declarations"
   for (v, vi) in ((document.getObjValAs? (Array Json) "values").toOption.getD #[]).toList.zipIdx do
     CellClaims.fieldsExactly v ["binding", "declaration", "construct", "typeParams", "type"]
-    let name ← str (← field v "binding") "local"
+    let binding ← field v "binding"
+    CellClaims.fieldsExactly binding ["local", "imported", "specifier", "span"]
+    let name ← str binding "local"
+    let span ← (fromJson? (← field binding "span") : Except String (Nat × Nat))
+    let _ ← bool v "construct"
     let path := s!"/declarations/values/{vi}"
     let tps ← arr v "typeParams"
-    let scope ← if tps.isEmpty then pure [] else enterUnit path [] v tps
-    values := values ++ [(name, ← lowerType { binders := scope, site := path } (← field v "type"))]
-  let claimLabels ← claims.mapM (claimUnion [] fun n => throw s!"source claims: row {n} is a producer row, which the caller maps")
+    if tps.isEmpty then
+      values := values ++ [(name, span, ← lowerType { site := path } (← field v "type"))]
+    else
+      let bindings ← enterUnit path [] v tps
+      units := units ++ [(path, bindings.map fun (n, b) => (n, b.value))]
+      generics := generics ++ [← genericOf name span path v tps fun scope => do
+        lowerType { binders := scope, site := path } (← field v "type")]
+  -- The producer's rows and the claims.
+  let types ← arr claims "types"
+  let P ← (producerRows types : Except String ProducerRows)
+  for (row, i) in (types.toList.take 4).zipIdx do
+    if row != toJson (SourceTypes.initial[i]!) then
+      throw "invalid source claims: the type table must start with the primitives"
+  if types.size < 4 then throw "invalid source claims: the type table must start with the primitives"
+  let claims ← documentForm (fun A => do return unionJson (← claimUnion [] (rowLabel P) A)) claims
+  drainRows P
   drain
-  return (functions ++ initAnnotations, values, claimLabels)
+  return (annotations ++ initAnnotations, values, generics, units, initBinders, claims)
 
 /-- The lowered heads, hash-consed and compacted, before validation. -/
 structure Built where
@@ -1420,20 +1879,12 @@ structure Built where
   rename : Nat → Nat
   drafts : Array Draft
   bodies : Array (GraphRow Tree (List Tree))
-  annotations : List (String × Union)
-  values : List (String × Union)
-  claims : List Union
 
 def Built.rn (b : Built) (U : Union) : Union := normUnion (U.map (treeRename b.rename))
 
-def build (ast : Json) (claims : List Json := []) : Except String Built := do
-  let document ← field ast "declarations"
-  let ds ← definitions document
-  if let some i := (List.range ds.size).find? (fun i => ds[i]!.identity == arrayProtoIdentity) then
-    if i != 0 || !ds[i]!.parameters.isEmpty then throw "ArrayProto must be the first declaration"
-  let ((annotations, values, claimLabels), s) ← (lowerAll ast claims).run { doc := ds }
-  -- Hash-consing, then compaction: the kept heads in order, so the four
-  -- primitives stay first.
+/-- Merge equal templates and compact (§8.1): the kept heads in order, so
+the four primitives stay first. -/
+def compact (s : State) : Except String Built := do
   let rep := hashCons s.heads
   let kept := (List.range s.heads.size).filter fun h => rep[h]! == h
   let index : Std.HashMap Nat Nat := kept.zipIdx.foldl (fun m (h, i) => m.insert h i) {}
@@ -1443,25 +1894,23 @@ def build (ast : Json) (claims : List Json := []) : Except String Built := do
   let bodies ← drafts.mapM fun d => match d.body with
     | some b => pure (mapRow rn b)
     | none => throw s!"{d.name}: its row was never lowered"
-  return { state := s, rename := f, drafts, bodies, annotations, values, claims := claimLabels }
+  return { state := s, rename := f, drafts, bodies }
 
 /-- Validated equations at variances `v`, with the realm. -/
 def Built.equations (b : Built) (v : Array (Array Variance)) : Except String Equations := do
   let E ← Equations.ofRaw (rawHeads b.drafts b.bodies v)
-  let proto := (List.range b.drafts.size).find? fun h => b.drafts[h]!.kind == .proto
+  let proto := b.state.proto.map b.rename
   return { E with realm := if b.state.arrays then realmOf E proto b.state.excluded else none }
 
-/-- **The lowering.** `ast` is the parser's function tree with its
-declaration document (`tools/declaration-types.mts`); `claims` are
-source-claims label unions (§9.1). -/
-def lower (ast : Json) (claims : List Json := []) : Except String Lowered := do
-  let b ← build ast claims
+/-- The checks lowering owes the source (§7.5, §8.2): the variance proposal,
+weakened to invariance at a refused head until the declarations check or a
+refused head is invariant already; every closed meet with a value; every
+declared bound where an application is written. Returns the equations, the
+variances and the heads refused. -/
+def Built.finish (b : Built) : Except String ((E : Equations) × Array (Array Variance) ×
+    Except (List String) (Variances E)) := do
   let (s, f, rn, drafts, bodies) := (b.state, b.rename, b.rn, b.drafts, b.bodies)
-  let (annotations, values, claimLabels) := (b.annotations, b.values, b.claims)
-  let ds := s.doc
   let arity := drafts.map (·.kinds.length)
-  -- The variance proposal, weakened to invariance at a refused head, until
-  -- the declarations check or a refused head is invariant already.
   let mut v ← proposeVariance bodies arity
   for _ in [0:drafts.size + 1] do
     let E ← b.equations v
@@ -1502,16 +1951,63 @@ def lower (ast : Json) (claims : List Json := []) : Except String Lowered := do
     | none => pure ()
     let names (h : Nat) : String := (drafts[h]?.map (·.name)).getD s!"{h}"
     throw s!"{o.site} does not establish its declared bound: {showUnion names (A.map (·.1))} ≤ {showUnion names (B.map (·.1))}"
-  let label (site : String) (U : Union) := closedUnion E site (rn U)
-  let declarations := (List.range ds.size).filterMap fun i =>
-    (s.keys.get? s!"decl|{i}").map fun h => (i, f h)
-  let units := s.keys.toList.filterMap fun (k, h) =>
-    if k.startsWith "unit|" then some ((k.drop 5).toString, f h) else none
-  let annotations ← annotations.mapM fun (p, U) => do return (p, ← label p U)
-  let values ← values.mapM fun (n, U) => do return (n, ← label n U)
-  let claims ← claimLabels.mapM (label "source claims")
-  return { equations := E, variances := checked, names := drafts.map (·.name),
-           kinds := drafts.map (·.kind), declarations, units, annotations, values, claims }
+  return ⟨E, v, checked⟩
+
+/-- The store the units grow, from the compacted heads: their rows, their
+keys (a key that spells a head index spelled again with the new one), the
+generic units' binders, the placeholders, the realm and the variances. -/
+def Built.store (b : Built) (v : Array (Array Variance)) : State :=
+  let (s, f) := (b.state, b.rename)
+  let drafts := (b.drafts.zip b.bodies).map fun (d, body) => { d with body := some body }
+  -- Keys that spell a head index or a tree are made again from the new rows.
+  let spelled (k : String) : Bool :=
+    k.startsWith "ground|" || k.startsWith "method|" || k.startsWith "lifted|" || k.startsWith "schemeOver|"
+  let kept := s.keys.fold (fun (m : Std.HashMap String Nat) k h =>
+    if spelled k then m else m.insert k (f h)) {}
+  let keys := (List.range drafts.size).foldl (fun (m : Std.HashMap String Nat) h =>
+    let d := drafts[h]!
+    match d.kind, d.body with
+    | .primitive, some (.clauses cs) =>
+      if d.kinds.isEmpty then m.insert s!"ground|{reprStr cs}" h else m
+    | .method o key, _ => m.insert s!"method|{f o}|{key}" h
+    | _, _ => m) kept
+  let rnB (b : Binding) : Binding := { b with value := b.value.map (treeRename f) }
+  let owned (d : Draft) : Draft := match d.kind with
+    | .method o key => { d with kind := .method (f o) key }
+    | _ => d
+  { s with heads := drafts.map owned, keys := keys, jobs := [], processing := [], obligations := [],
+           meetChecks := [], pendingRows := [],
+           scopes := s.scopes.map (fun (p, bs) => (p, bs.map fun (n, x) => (n, rnB x))),
+           proto := s.proto.map f, variances := v }
+
+/-- **The source path's lowering.** `ast` is the parser's function tree with
+its declaration document (`tools/declaration-types.mts`), `claims` the
+source-claims document (§9.1). -/
+def source (ast claims : Json) : Except String SourceLowering := do
+  let document ← field ast "declarations"
+  let ds ← definitions document
+  if let some i := (List.range ds.size).find? (fun i => ds[i]!.identity == arrayProtoIdentity) then
+    if i != 0 || !ds[i]!.parameters.isEmpty then throw "ArrayProto must be the first declaration"
+  let ((annotations, values, generics, units, initBinders, claims), s) ←
+    (lowerSource ast claims).run { doc := ds }
+  let b ← compact s
+  let ⟨_, v, checked⟩ ← b.finish
+  let rn := b.rn
+  let rename (j : Json) : Except String Json := do
+    let ts ← (← j.getArr?).toList.mapM Tree.fromJson
+    return unionJson (rn ts)
+  return {
+    store := b.store v
+    annotations := annotations.map fun (p, U) => (p, rn U)
+    values := values.map fun (n, sp, U) => (n, sp, rn U)
+    generics := generics.map fun g =>
+      { g with type := g.type.map rn, bounds := g.bounds.map fun (n, B) => (n, B.map rn) }
+    units := units.map fun (p, bs) => (p, bs.map fun (n, U) => (n, rn U))
+    initBinders := initBinders.map fun (n, U) => (n, rn U)
+    claims := ← documentForm rename claims
+    refused := match checked with
+      | .ok _ => []
+      | .error hs => hs }
 
 /-! ### The label store over equation labels
 
