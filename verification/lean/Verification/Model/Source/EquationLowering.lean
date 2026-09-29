@@ -1931,7 +1931,9 @@ def genericType (ctx : Ctx) (term : Json) : M GenericType := do
     let receiver ← if recv == .null then pure none else some <$> lowerType ctx recv
     let params ← (← arr term "params").toList.mapM (lowerType ctx)
     let restTerm ← field term "rest"
-    let rest ← if restTerm == .null then pure none else some <$> lowerRest ctx restTerm
+    -- A rest is its element's claim; a pack binder has no claim form.
+    if kindOf restTerm == some "pack" then return .other (← lowerType ctx term)
+    let rest ← if restTerm == .null then pure none else some <$> lowerType ctx restTerm
     return .function receiver params rest (← lowerType ctx (← field term "result"))
   | some "constructor" =>
     CellClaims.fieldsExactly term ["k", "params", "rest", "result", "span"]
@@ -1992,10 +1994,23 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
     let name ← str f "name"
     let pos ← (fromJson? (← field f "namePos") : Except String (Nat × Nat))
     generics := generics ++ [← genericOf name pos path f tps fun scope => do
-      match ← unitSignature { binders := scope, site := path, checkBounds := false } f with
-      | some (.inl a) => return .function none a.arguments none a.result
-      | some (.inr r) => return .function none r.arguments.1 (some r.arguments.2) r.result
-      | none => throw s!"{path}: a generic module function's type needs every parameter's and the result's annotation"]
+      -- Its signature by its parameters' annotations: a rest's element, the
+      -- claim of a rest being its element's (`Fragment.callableType`).
+      let ctx : Ctx := { binders := scope, site := path, checkBounds := false }
+      let mut params := []
+      let mut rest := none
+      for p in ← arr f "params" do
+        let ty ← field p "type"
+        if ty == .null then
+          throw s!"{path}: a generic module function's type needs every parameter's annotation"
+        if (p.getObjVal? "rest").isOk then
+          if kindOf ty != some "array" || (← bool ty "readonly") then
+            throw s!"{path}: a generic module function's rest parameter needs a mutable array contract"
+          rest := some (← lowerType ctx (← field ty "element"))
+        else params := params ++ [← lowerType ctx ty]
+      let result ← field f "retType"
+      if result == .null then throw s!"{path}: a generic module function's type needs its result's annotation"
+      return .function none params rest (← lowerType ctx result)]
   let init := ast.getObjValD "init"
   let classes ← classScope init
   let initBinders := ((← get).unitBinders.reverse.filter (·.1.startsWith "/init/")).flatMap (·.2)
