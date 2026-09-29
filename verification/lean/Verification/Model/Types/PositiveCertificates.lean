@@ -978,23 +978,228 @@ theorem accepted_subsumption [DecidableEq ι] {G : NormalGraph ι} {S T proof}
 
 /-! ## Family certificates
 
-Family entries (RECURSIVE-EQUATIONS §7) are checked by the core conditions
-with premises read in each entry, decided with checked arrow evidence. The
-checker is complete for the declarative rule (`familyValid_iff_checked`); a
-claim is a pair of a variable-free entry (`checkFamilyUsing_sound`). -/
+Family entries (RECURSIVE-EQUATIONS §4.2) are checked by the core
+conditions with premises read in each entry, decided with checked arrow
+evidence. The premise judgment is decided by `premB`, recursion on a size
+that `Inst`'s premises decrease (`prem_iff`). The checker is complete for
+the declarative rule (`familyValid_iff_checked`); a claim is a pair of a
+variable-free entry (`checkFamilyUsing_sound`). -/
 
-instance [DecidableEq ι] (f : Entry ι) (A B : List ι) : Decidable (Discharge f A B) := by
-  unfold Discharge; infer_instance
+instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {e : Entry ι}
+    {l : ι} {B : List ι} {xs : List (List ι)} : Decidable (InstanceAt G sub e l B xs) := by
+  unfold InstanceAt; infer_instance
 
-instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {F : List (Entry ι)}
-    {f : Entry ι} {l : ι} {B : List ι} {w : Nat × List (List ι)} :
-    Decidable (InstanceOk G sub F f l B w) := by
-  unfold InstanceOk; split <;> infer_instance
+/-- `Mem`, `Hyp` and `MeetHyp`, decided. -/
+def premBase [DecidableEq ι] (G : NormalGraph ι) (f : Entry ι) (l : ι) (B : List ι) : Bool :=
+  decide (l ∈ B) || f.hypotheses.any (fun h => decide (h.1 = l) && decide (h.2 ∈ B)) ||
+    (G.meetRow l && B.any fun y => meetBelow G l y f.hypotheses)
 
-instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {F : List (Entry ι)}
+/-- `Tab` and `TabRen`, decided: the renaming is the representation's own
+proposal, checked. -/
+def premTable [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (f : Entry ι)
+    (A B : List ι) : Bool :=
+  decide ((A, B) ∈ f.table) || match sub with
+    | some r => f.table.any fun p => decide (RenamesBound G r (r.rename p A B)) &&
+        A.all (fun l => decide (l ∈ r.substitute (r.rename p A B) p.1)) &&
+        (r.substitute (r.rename p A B) p.2).all (fun b => decide (b ∈ B))
+    | none => false
+
+/-- `Inst` at the instance `w`, its hypotheses decided by `prem` on strictly
+smaller types. -/
+def instanceB [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (look : Lookup ι)
+    (prem : List ι → List ι → Bool) (l : ι) (B : List ι) (w : Nat × List (List ι)) : Bool :=
+  match look w.1 with
+  | some e => decide (InstanceAt G sub e l B w.2) && e.hypotheses.all fun h =>
+      decide (typeSize sub (replace (e.variables.zip w.2) h.1) +
+        typeSize sub (replace (e.variables.zip w.2) h.2) < labelSize sub l + typeSize sub B) &&
+      prem (replace (e.variables.zip w.2) h.1) (replace (e.variables.zip w.2) h.2)
+  | none => false
+
+/-- A label's premise, decided with `k` levels of nested instances. -/
+def premLabelB [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (look : Lookup ι)
+    (gen : ι → List ι → List (Nat × List (List ι))) (f : Entry ι) : Nat → ι → List ι → Bool
+  | 0, l, B => premBase G f l B
+  | k + 1, l, B => premBase G f l B || (f.instances ++ gen l B).any fun w =>
+      instanceB G sub look (fun X Y => premTable G sub f X Y || X.all fun l' =>
+        premLabelB G sub look gen f k l' Y) l B w
+
+/-- A premise, decided with `k` levels of nested instances. -/
+def premB [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (look : Lookup ι)
+    (gen : ι → List ι → List (Nat × List (List ι))) (f : Entry ι) (k : Nat) (A B : List ι) : Bool :=
+  premTable G sub f A B || A.all fun l => premLabelB G sub look gen f k l B
+
+theorem premLabelB_succ [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
+    {look : Lookup ι} {gen : ι → List ι → List (Nat × List (List ι))} {f : Entry ι} {k : Nat}
+    {l : ι} {B : List ι} :
+    premLabelB G sub look gen f (k + 1) l B = (premBase G f l B || (f.instances ++ gen l B).any
+      fun w => instanceB G sub look (premB G sub look gen f k) l B w) := rfl
+
+theorem premBase_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
+    {look : Lookup ι} {gen : ι → List ι → List (Nat × List (List ι))} {f : Entry ι}
+    {l : ι} {B : List ι} (h : premBase G f l B = true) : PremLabel G sub look gen f l B := by
+  simp only [premBase, Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq, List.any_eq_true] at h
+  rcases h with (h | ⟨q, hq, rfl, hy⟩) | ⟨hm, y, hy, hb⟩
+  · exact .mem h
+  · exact .hyp hq hy
+  · exact .meetHyp hm hy hb
+
+theorem premTable_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
+    {look : Lookup ι} {gen : ι → List ι → List (Nat × List (List ι))} {f : Entry ι}
+    {A B : List ι} (h : premTable G sub f A B = true) : Prem G sub look gen f A B := by
+  unfold premTable at h
+  simp only [Bool.or_eq_true, decide_eq_true_eq] at h
+  rcases h with h | h
+  · exact .tab h
+  · cases sub with
+    | none => cases h
+    | some r =>
+      simp only [List.any_eq_true, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at h
+      obtain ⟨p, hp, ⟨hren, hA⟩, hB⟩ := h
+      exact .tabRen r p rfl hp hren hA hB
+
+theorem prem_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
+    {look : Lookup ι} {gen : ι → List ι → List (Nat × List (List ι))} {f : Entry ι} :
+    ∀ k, (∀ l B, premLabelB G sub look gen f k l B = true → PremLabel G sub look gen f l B) ∧
+      ∀ A B, premB G sub look gen f k A B = true → Prem G sub look gen f A B := by
+  intro k
+  induction k with
+  | zero =>
+    have hl : ∀ l B, premLabelB G sub look gen f 0 l B = true → PremLabel G sub look gen f l B :=
+      fun l B h => premBase_sound h
+    refine ⟨hl, fun A B h => ?_⟩
+    simp only [premB, Bool.or_eq_true, List.all_eq_true] at h
+    rcases h with h | h
+    · exact premTable_sound h
+    · exact .union fun l hl' => hl l B (h l hl')
+  | succ k ih =>
+    have hl : ∀ l B, premLabelB G sub look gen f (k + 1) l B = true →
+        PremLabel G sub look gen f l B := by
+      intro l B h
+      rw [premLabelB_succ] at h
+      simp only [Bool.or_eq_true, List.any_eq_true] at h
+      rcases h with h | ⟨w, hw, h⟩
+      · exact premBase_sound h
+      · unfold instanceB at h
+        split at h
+        · rename_i e he
+          simp only [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at h
+          obtain ⟨hi, hh⟩ := h
+          exact .inst w e hw he hi (fun h' hh' => (hh h' hh').1)
+            (fun h' hh' => ih.2 _ _ (hh h' hh').2)
+        · cases h
+    refine ⟨hl, fun A B h => ?_⟩
+    simp only [premB, Bool.or_eq_true, List.all_eq_true] at h
+    rcases h with h | h
+    · exact premTable_sound h
+    · exact .union fun l hl' => hl l B (h l hl')
+
+theorem le_typeSize [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {l : ι} :
+    ∀ {A : List ι}, l ∈ A → labelSize sub l ≤ typeSize sub A
+  | a :: A, h => by
+    simp only [typeSize, List.map_cons, List.sum_cons] at *
+    rcases List.mem_cons.mp h with rfl | h
+    · omega
+    · have := le_typeSize (sub := sub) h
+      simp only [typeSize] at this
+      omega
+
+theorem premBase_of_label [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
+    {look : Lookup ι} {gen : ι → List ι → List (Nat × List (List ι))} {f : Entry ι}
+    {l : ι} {B : List ι} (h : premBase G f l B = true) :
+    ∀ k, premLabelB G sub look gen f k l B = true
+  | 0 => h
+  | _ + 1 => by rw [premLabelB_succ, h, Bool.true_or]
+
+/-- **Completeness of the decision.** A derivation fits the size of its
+conclusion: each `Inst` decreases it. -/
+theorem prem_complete [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
+    {look : Lookup ι} {gen : ι → List ι → List (Nat × List (List ι))} {f : Entry ι} :
+    (∀ {A B}, Prem G sub look gen f A B →
+      ∀ k, typeSize sub A + typeSize sub B < k → premB G sub look gen f k A B = true) ∧
+    ∀ {l B}, PremLabel G sub look gen f l B →
+      ∀ k, labelSize sub l + typeSize sub B < k → premLabelB G sub look gen f k l B = true := by
+  let motive_1 := fun (A B : List ι) (_ : Prem G sub look gen f A B) =>
+    ∀ k, typeSize sub A + typeSize sub B < k → premB G sub look gen f k A B = true
+  let motive_2 := fun (l : ι) (B : List ι) (_ : PremLabel G sub look gen f l B) =>
+    ∀ k, labelSize sub l + typeSize sub B < k → premLabelB G sub look gen f k l B = true
+  have tab : ∀ {A B} (h : (A, B) ∈ f.table), motive_1 A B (.tab h) := fun h k _ => by
+    simp [premB, premTable, h]
+  have ren : ∀ {A B} r p hs hp hren hA hB, motive_1 A B (.tabRen r p hs hp hren hA hB) := by
+    intro A B r p hs hp hren hA hB k _
+    subst hs
+    have : premTable G (some r) f A B = true := by
+      simp only [premTable, Bool.or_eq_true, List.any_eq_true, Bool.and_eq_true,
+        decide_eq_true_eq, List.all_eq_true]
+      exact .inr ⟨p, hp, ⟨hren, hA⟩, hB⟩
+    simp [premB, this]
+  have union : ∀ {A B} (h : ∀ l ∈ A, PremLabel G sub look gen f l B),
+      (∀ l hl, motive_2 l B (h l hl)) → motive_1 A B (.union h) := by
+    intro A B _ ih k hk
+    simp only [premB, Bool.or_eq_true, List.all_eq_true]
+    exact .inr fun l hl => ih l hl k (by have := le_typeSize (sub := sub) hl; omega)
+  have mem : ∀ {l B} (h : l ∈ B), motive_2 l B (.mem h) := fun h k _ =>
+    premBase_of_label (by simp [premBase, h]) k
+  have hyp : ∀ {l y B} (hh : (l, y) ∈ f.hypotheses) (hy : y ∈ B), motive_2 l B (.hyp hh hy) := by
+    intro l y B hh hy k _
+    refine premBase_of_label ?_ k
+    simp only [premBase, Bool.or_eq_true, List.any_eq_true, Bool.and_eq_true, decide_eq_true_eq]
+    exact .inl (.inr ⟨(l, y), hh, rfl, hy⟩)
+  have meetHyp : ∀ {l y B} (hm : G.meetRow l = true) (hy : y ∈ B)
+      (hb : meetBelow G l y f.hypotheses = true), motive_2 l B (.meetHyp hm hy hb) := by
+    intro l y B hm hy hb k _
+    refine premBase_of_label ?_ k
+    simp only [premBase, Bool.or_eq_true, List.any_eq_true, Bool.and_eq_true]
+    exact .inr ⟨hm, y, hy, hb⟩
+  have inst : ∀ {l B} (w : Nat × List (List ι)) (e : Entry ι) hw hl hi hdec
+      (hps : ∀ h ∈ e.hypotheses, Prem G sub look gen f (replace (e.variables.zip w.2) h.1)
+        (replace (e.variables.zip w.2) h.2)),
+      (∀ h hh, motive_1 _ _ (hps h hh)) → motive_2 l B (.inst w e hw hl hi hdec hps) := by
+    intro l B w e hw hl hi hdec _ ih k hk
+    obtain ⟨k, rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+    rw [premLabelB_succ]
+    simp only [Bool.or_eq_true, List.any_eq_true]
+    refine .inr ⟨w, hw, ?_⟩
+    simp only [instanceB, hl, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true]
+    exact ⟨hi, fun h hh => ⟨hdec h hh, ih h hh k (by have := hdec h hh; omega)⟩⟩
+  exact ⟨fun h => Prem.rec (motive_1 := motive_1) (motive_2 := motive_2)
+      tab ren union mem hyp meetHyp inst h,
+    fun h => PremLabel.rec (motive_1 := motive_1) (motive_2 := motive_2)
+      tab ren union mem hyp meetHyp inst h⟩
+
+/-- The premise judgment is decided by its checker at its conclusion's size. -/
+theorem prem_iff [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
+    {look : Lookup ι} {gen : ι → List ι → List (Nat × List (List ι))} {f : Entry ι}
+    {A B : List ι} :
+    Prem G sub look gen f A B ↔
+      premB G sub look gen f (typeSize sub A + typeSize sub B + 1) A B = true :=
+  ⟨fun h => prem_complete.1 h _ (by omega), fun h => (prem_sound _).2 _ _ h⟩
+
+instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {look : Lookup ι}
     {gen : ι → List ι → List (Nat × List (List ι))} {f : Entry ι} :
-    DecidableRel (Prem G sub F gen f) := fun A B => by
-  unfold Prem; infer_instance
+    DecidableRel (Prem G sub look gen f) := fun _ _ => decidable_of_iff _ prem_iff.symm
+
+/-- Entries already sound, which instances may cite by index below `size`:
+a representation's checked variances (§4.3), or none. Supplied by verified
+code with its proof, never by a certificate. -/
+structure Base [DecidableEq ι] (G : NormalGraph ι) where
+  size : Nat := 0
+  entry : Nat → Option (Entry ι) := fun _ => none
+  sound : ∀ k e, entry k = some e → EntrySound G e ∧ HypParams G e := by
+    intro _ _ h; cases h
+
+/-- The entries a family certificate's instances cite: the base's, then its
+own after them. -/
+def Base.lookup [DecidableEq ι] {G : NormalGraph ι} (base : Base G) (F : List (Entry ι)) :
+    Lookup ι := fun k =>
+  if k < base.size then base.entry k else F[k - base.size]?
+
+theorem Base.lookup_cases [DecidableEq ι] {G : NormalGraph ι} (base : Base G) (F : List (Entry ι))
+    (k : Nat) (e : Entry ι) (h : base.lookup F k = some e) :
+    e ∈ F ∨ (EntrySound G e ∧ HypParams G e) := by
+  unfold Base.lookup at h
+  split at h
+  · exact .inr (base.sound k e h)
+  · exact .inl (List.mem_of_getElem? h)
 
 set_option synthInstance.maxSize 1024 in
 instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
@@ -1016,18 +1221,19 @@ set_option synthInstance.maxSize 1024 in
 /-- The entries' core conditions, premises read in each entry, arrows by
 checked evidence. -/
 def checkEntries [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (known : Known ι)
-    (gen : ι → List ι → List (Nat × List (List ι))) (base F : List (Entry ι))
+    (gen : ι → List ι → List (Nat × List (List ι))) (look : Lookup ι) (F : List (Entry ι))
     (arrows : Evidence ι) : Bool :=
   decide (∀ f ∈ F, ∀ p ∈ f.pairs, SameKind G p.1 p.2 = true ∧
-    OpaqueFamily G sub (Prem G sub (base ++ F) gen f) known
-      (ArrowsCheckedWith G (Prem G sub (base ++ F) gen f) arrows) f.hypotheses p.1 p.2 ∧
+    OpaqueFamily G sub (Prem G sub look gen f) known
+      (ArrowsCheckedWith G (Prem G sub look gen f) arrows) f.hypotheses p.1 p.2 ∧
     ∀ a ∈ sourceClauses G p.1 ++ meetSources G p.1 p.2 f.hypotheses, ∃ b ∈ clausesOf G p.2,
-      checkClauseWith G (Prem G sub (base ++ F) gen f) known arrows p.1 a b = true)
+      checkClauseWith G (Prem G sub look gen f) known arrows p.1 a b = true)
 
 theorem checkEntries_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
-    {known : Known ι} {gen : ι → List ι → List (Nat × List (List ι))} {base F : List (Entry ι)}
-    {arrows : Evidence ι} (h : checkEntries G sub known gen base F arrows = true) :
-    FamilyValid G sub known gen base F := by
+    {known : Known ι} {gen : ι → List ι → List (Nat × List (List ι))} {look : Lookup ι}
+    {F : List (Entry ι)}
+    {arrows : Evidence ι} (h : checkEntries G sub known gen look F arrows = true) :
+    FamilyValid G sub known gen look F := by
   simp only [checkEntries, decide_eq_true_eq] at h
   intro f hf p hp
   obtain ⟨hk, ho, hc⟩ := h f hf p hp
@@ -1107,14 +1313,15 @@ theorem opaqueFamily_complete [DecidableEq ι] {G : NormalGraph ι} {sub : Optio
   exact ⟨es, fun i hi => he i hi⟩
 
 theorem checkEntries_complete [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
-    {known : Known ι} {gen : ι → List ι → List (Nat × List (List ι))} {base F : List (Entry ι)}
-    (h : FamilyValid G sub known gen base F) : ∃ arrows, checkEntries G sub known gen base F arrows = true := by
+    {known : Known ι} {gen : ι → List ι → List (Nat × List (List ι))} {look : Lookup ι}
+    {F : List (Entry ι)}
+    (h : FamilyValid G sub known gen look F) : ∃ arrows, checkEntries G sub known gen look F arrows = true := by
   have rows : ∀ fp ∈ F.flatMap (fun f => f.pairs.map (f, ·)), ∃ es : Evidence ι,
-      OpaqueFamily G sub (Prem G sub (base ++ F) gen fp.1) known
-        (ArrowsCheckedWith G (Prem G sub (base ++ F) gen fp.1) es) fp.1.hypotheses fp.2.1 fp.2.2 ∧
+      OpaqueFamily G sub (Prem G sub look gen fp.1) known
+        (ArrowsCheckedWith G (Prem G sub look gen fp.1) es) fp.1.hypotheses fp.2.1 fp.2.2 ∧
       ∀ a ∈ sourceClauses G fp.2.1 ++ meetSources G fp.2.1 fp.2.2 fp.1.hypotheses,
         ∃ b ∈ clausesOf G fp.2.2,
-        checkClauseWith G (Prem G sub (base ++ F) gen fp.1) known es fp.2.1 a b = true := by
+        checkClauseWith G (Prem G sub look gen fp.1) known es fp.2.1 a b = true := by
     intro fp hfp
     obtain ⟨f, hf, hfp⟩ := List.mem_flatMap.mp hfp
     obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hfp
@@ -1122,7 +1329,7 @@ theorem checkEntries_complete [DecidableEq ι] {G : NormalGraph ι} {sub : Optio
     obtain ⟨es₀, ho⟩ := opaqueFamily_complete hv.2.1
     obtain ⟨es₁, hc⟩ := collect (sourceClauses G p.1 ++ meetSources G p.1 p.2 f.hypotheses)
       (fun a es => ∃ b ∈ clausesOf G p.2,
-        checkClauseWith G (Prem G sub (base ++ F) gen f) known es p.1 a b = true)
+        checkClauseWith G (Prem G sub look gen f) known es p.1 a b = true)
       (fun a es es' hm ⟨b, hb, hc⟩ => ⟨b, hb, checkClauseWith_mono hm hc⟩)
       (fun a ha => by
         obtain ⟨b, hb, hc⟩ := hv.2.2 a ha
@@ -1144,8 +1351,9 @@ theorem checkEntries_complete [DecidableEq ι] {G : NormalGraph ι} {sub : Optio
 
 /-- The checker decides the declarative family rule, given arrow evidence. -/
 theorem familyValid_iff_checked [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
-    {known : Known ι} {gen : ι → List ι → List (Nat × List (List ι))} {base F : List (Entry ι)} :
-    FamilyValid G sub known gen base F ↔ ∃ arrows, checkEntries G sub known gen base F arrows = true :=
+    {known : Known ι} {gen : ι → List ι → List (Nat × List (List ι))} {look : Lookup ι}
+    {F : List (Entry ι)} :
+    FamilyValid G sub known gen look F ↔ ∃ arrows, checkEntries G sub known gen look F arrows = true :=
   ⟨checkEntries_complete, fun ⟨_, h⟩ => checkEntries_sound h⟩
 
 /-- The variable discipline, decided. -/
@@ -1153,7 +1361,7 @@ def variablesOk [DecidableEq ι] {G : NormalGraph ι} (sub : Option (Renaming G)
     (F : List (Entry ι)) : Bool :=
   match sub with
   | some r => decide ((∀ f ∈ F, ∀ h ∈ f.hypotheses, h.1 ∈ f.variables ∧ h.2 ∈ f.variables) ∧
-      (∀ f ∈ F, ∀ x ∈ f.variables, r.familyVar x = true) ∧ (F.flatMap (·.variables)).Nodup)
+      ∀ f ∈ F, ∀ x ∈ f.variables, r.familyVar x = true)
   | none => F.all fun f => f.variables.isEmpty && f.hypotheses.isEmpty
 
 theorem variablesOk_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
@@ -1161,15 +1369,12 @@ theorem variablesOk_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (R
   cases sub with
   | some r =>
     simp only [variablesOk, decide_eq_true_eq] at h
-    exact ⟨h.1, fun f hf x hx => h.2.1 f hf x hx, h.2.2⟩
+    exact ⟨h.1, fun f hf x hx => h.2 f hf x hx⟩
   | none =>
     simp only [variablesOk, List.all_eq_true, Bool.and_eq_true, List.isEmpty_iff] at h
-    refine ⟨fun f hf p hp => ?_, fun f hf x hx => ?_, ?_⟩
+    refine ⟨fun f hf p hp => ?_, fun f hf x hx => ?_⟩
     · rw [(h f hf).2] at hp; cases hp
     · rw [(h f hf).1] at hx; cases hx
-    · have : F.flatMap (·.variables) = [] :=
-        List.flatMap_eq_nil_iff.mpr fun f hf => (h f hf).1
-      rw [this]; exact List.nodup_nil
 
 /-- A family certificate: its entries, the arrow evidence their coverage
 uses, and the known rows, each with the instance proving it. -/
@@ -1180,61 +1385,64 @@ structure FamilyCertificate (ι : Type) where
   deriving Repr
 
 /-- The claim is a pair of one of the certificate's variable-free entries,
-and mentions no family variable. -/
+and mentions none of its entries' family variables. -/
 def claimOk [DecidableEq ι] {G : NormalGraph ι} (sub : Option (Renaming G))
-    (base F : List (Entry ι)) (S T : List ι) : Bool :=
+    (F : List (Entry ι)) (S T : List ι) : Bool :=
   F.any (fun f => f.variables.isEmpty && f.hypotheses.isEmpty && f.pairs.contains (S, T)) &&
     match sub with
-    | some r => (base ++ F).all fun f => f.variables.all fun x => !r.mentions (S ++ T) x
+    | some r => F.all fun f => f.variables.all fun x => !r.mentions (S ++ T) x
     | none => true
 
 /-- **Family subtyping, checked.** Instances of the known rows by the given
 image checker, the variable discipline, the entries' conditions, and the
-claim among the certificate's variable-free entries. `base` are entries
-already proved sound, such as checked variance declarations. -/
+claim among the certificate's variable-free entries. Instances cite the
+`base` entries, already sound (such as computed variances), by index below
+`base.size`, and the certificate's own after them. -/
 def checkFamilyUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (sub : Option (Renaming G)) (gen : ι → List ι → List (Nat × List (List ι)))
-    (base : List (Entry ι)) (S T : List ι) (c : FamilyCertificate ι) : Bool :=
-  variablesOk sub (base ++ c.entries) &&
+    (base : Base G) (S T : List ι) (c : FamilyCertificate ι) : Bool :=
+  variablesOk sub c.entries &&
     c.instances.all (fun k => checkInstArrsUsing G images k.1 k.2.1 k.2.2.1 k.2.2.2) &&
-    checkEntries G sub (knownOf c.instances) gen base c.entries c.arrows &&
-    claimOk sub base c.entries S T
+    checkEntries G sub (knownOf c.instances) gen (base.lookup c.entries) c.entries c.arrows &&
+    claimOk sub c.entries S T
 
 theorem checkFamilyUsing_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {sub : Option (Renaming G)} {gen : ι → List ι → List (Nat × List (List ι))}
-    {base : List (Entry ι)} {S T : List ι} {c : FamilyCertificate ι}
-    (h : checkFamilyUsing G images sub gen base S T c = true)
-    (hbase : ∀ e ∈ base, EntrySound G e) :
+    {base : Base G} {S T : List ι} {c : FamilyCertificate ι}
+    (h : checkFamilyUsing G images sub gen base S T c = true) :
     ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
   simp only [checkFamilyUsing, claimOk, Bool.and_eq_true, List.all_eq_true, List.any_eq_true,
     List.isEmpty_iff, List.contains_iff_mem] at h
   obtain ⟨⟨⟨hvars, hinst⟩, hentries⟩, ⟨f, hf, ⟨⟨_, hhyp⟩, hp⟩⟩, -⟩ := h
-  exact family_closed_sound (checkEntries_sound hentries) (variablesOk_sound hvars) hbase
+  exact family_closed_sound (checkEntries_sound hentries) (variablesOk_sound hvars)
+    (base.lookup_cases c.entries)
     (fun η k hk => by
       obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hk
       exact checkInstArrsUsing_sound (hinst q hq) η)
     hf hhyp hp
 
-/-- Entries checked on their own, such as variance declarations, are sound. -/
+/-- Entries checked on their own, such as a component of variances citing
+the ones computed before it, are sound. -/
 theorem checkEntries_entries_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
-    {gen : ι → List ι → List (Nat × List (List ι))} {F : List (Entry ι)} {arrows : Evidence ι}
-    (h : checkEntries G sub [] gen [] F arrows = true) (hv : variablesOk sub F = true) :
+    {gen : ι → List ι → List (Nat × List (List ι))} {look : Lookup ι} {F : List (Entry ι)}
+    {arrows : Evidence ι} (h : checkEntries G sub [] gen look F arrows = true)
+    (hv : variablesOk sub F = true)
+    (hlook : ∀ k e, look k = some e → e ∈ F ∨ (EntrySound G e ∧ HypParams G e)) :
     ∀ e ∈ F, EntrySound G e :=
-  family_entries_sound (checkEntries_sound h) (by simpa using variablesOk_sound hv)
-    (fun _ h => by simp at h) (fun _ _ h => by simp at h)
+  family_entries_sound (checkEntries_sound h) (variablesOk_sound hv) hlook
+    (fun _ _ h => by simp at h)
 
-/-- **An instance of a sound entry, checked**: the entry at `w`'s index, its
-variables at `w`'s types of their kinds, the claim's source within the
+/-- **An instance of a sound entry, checked**: the base entry at `w`'s index,
+its variables at `w`'s types of their kinds, the claim's source within the
 substituted source, the substituted target within the claim's target, and one
-checked proof per hypothesis, in order, between the replacements. The
-structural `Var` rule is the case of a variance declaration. -/
+checked proof per hypothesis, in order, between the replacements. `Var` is
+the case of a variance (§4.3). -/
 def checkEntryInstanceUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (r : Renaming G) (base : List (Entry ι)) (w : Nat × List (List ι)) (S T : List ι)
+    (r : Renaming G) (base : Base G) (w : Nat × List (List ι)) (S T : List ι)
     (proofs : List (Proof ι)) : Bool :=
-  match base[w.1]? with
+  match base.entry w.1 with
   | some e =>
     w.2.length == e.variables.length && instKinds G e.variables w.2 &&
-      e.hypotheses.all (fun h => G.params h.1 && G.params h.2) &&
       S.all (fun l => decide (l ∈ r.substitute (e.variables.zip w.2) e.source)) &&
       (r.substitute (e.variables.zip w.2) e.target).all (fun l => decide (l ∈ T)) &&
       e.hypotheses.length == proofs.length &&
@@ -1244,18 +1452,17 @@ def checkEntryInstanceUsing [DecidableEq ι] (G : NormalGraph ι) (images : Inst
   | none => false
 
 theorem checkEntryInstanceUsing_sound [DecidableEq ι] {G : NormalGraph ι}
-    {images : InstanceImageCheck G} {r : Renaming G} {base : List (Entry ι)}
+    {images : InstanceImageCheck G} {r : Renaming G} {base : Base G}
     {w : Nat × List (List ι)} {S T : List ι} {proofs : List (Proof ι)}
-    (h : checkEntryInstanceUsing G images r base w S T proofs = true)
-    (hbase : ∀ e ∈ base, EntrySound G e) :
+    (h : checkEntryInstanceUsing G images r base w S T proofs = true) :
     ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
   unfold checkEntryInstanceUsing at h
   split at h
   · rename_i e he
     simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true, decide_eq_true_eq] at h
-    obtain ⟨⟨⟨⟨⟨⟨hlen, hkinds⟩, hpar⟩, hS⟩, hT⟩, hplen⟩, hproofs⟩ := h
-    have inst := entry_instance_sound r (hbase e (List.mem_of_getElem? he))
-      (fun h hh => by simpa using hpar h hh) hlen hkinds (fun h hh => by
+    obtain ⟨⟨⟨⟨⟨hlen, hkinds⟩, hS⟩, hT⟩, hplen⟩, hproofs⟩ := h
+    have hsound := base.sound _ e he
+    have inst := entry_instance_sound r hsound.1 hsound.2 hlen hkinds (fun h hh => by
         obtain ⟨p, hp⟩ := exists_mem_zip hplen.symm h hh
         exact checkUsing_sound (hproofs _ hp))
     intro η
@@ -1276,4 +1483,5 @@ theorem checkEntryInstanceUsing_sound [DecidableEq ι] {G : NormalGraph ι}
 #print axioms checkFamilyUsing_sound
 #print axioms checkEntries_entries_sound
 #print axioms checkEntryInstanceUsing_sound
+#print axioms prem_iff
 end Verification.Model.PositiveCertificates

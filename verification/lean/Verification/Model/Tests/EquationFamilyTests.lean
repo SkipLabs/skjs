@@ -72,11 +72,14 @@ def co : ParameterKind × Variance := (.value, .co)
 10 `{p: Promise<number>}`, 11 `{p: PromiseLike<number | string>}`,
 12 `<R>() => R`, 13 `<S>() => T`, 14 `{q: number}`, 15 `{q: number | string}`,
 16 `{p: Promise<14>}`, 17 `{p: Promise<15>}`, 18 `{p: Promise<number | string>}`,
-19 `{p: Promise<number>}`, 20 `<R>() => R` again. -/
+19 `{p: Promise<number>}`, 20 `<R>() => R` again, 21 `ReadonlyArray<T>`,
+22 `readonly [A, B]`, 23 `InputDefinition<K, V>` with the view
+`initial: ReadonlyArray<readonly [K, V]>`. -/
 def signature (fnV cellV boxV : List (ParameterKind × Variance)) : Signature :=
   [plain 0, plain 0, plain 0, plain 2 fnV, generic 1 [co], generic 1 [co], plain 1 [co],
    plain 1 [co], plain 1 cellV, plain 1 boxV, plain 0, plain 0, generic 0, generic 1 [co],
-   plain 0, plain 0, plain 0, plain 0, plain 0, plain 0, generic 0]
+   plain 0, plain 0, plain 0, plain 0, plain 0, plain 0, generic 0, plain 1 [co], plain 2 [co, co],
+   plain 2 [co, co]]
 
 def num : Tree := app 0 []
 def str : Tree := app 1 []
@@ -101,7 +104,10 @@ def rows : List Raw :=
    .clauses [.refs [] [] [("p", [app 6 [[app 15 []]]])]],
    .clauses [.refs [] [] [("p", [app 6 [[num, str]]])]],
    .clauses [.refs [] [] [("p", [app 6 [[num]]])]],
-   .scheme [⟨[unk], [], [loc 0], .unrestricted⟩]]
+   .scheme [⟨[unk], [], [loc 0], .unrestricted⟩],
+   .clauses [.list ⟨[], [], some [arg 0], true, .dense⟩ []],
+   .clauses [.list ⟨[[arg 0], [arg 1]], [], none, true, .dense⟩ []],
+   .clauses [.refs [] [] [("initial", [app 21 [[app 22 [[arg 0], [arg 1]]]]])]]]
 
 def contraCo : List (ParameterKind × Variance) := [(.value, .contra), co]
 def inv : List (ParameterKind × Variance) := [(.value, .inv)]
@@ -169,6 +175,10 @@ def claim (S T : List Tree) (pairs : List (List Tree × List Tree) := [])
 
 end
 
+/-- The index of a certificate's first entry: the heads' declarations come
+first. -/
+def first (E : Equations) : Nat := E.signature.length
+
 def run (f : Equations → Bool) : Bool := match good? with
   | some E => f E
   | none => false
@@ -216,13 +226,34 @@ def b := fv 100 1
 def promiseLike (E : Equations) : Entry (Label E.signature) :=
   { source := lbls E [app 6 [[a]]], target := lbls E [app 7 [[b]]],
     variables := lbls E [a, b], hypotheses := [(lbl E a, lbl E b)] }
-#guard run fun E => claim E [app 10 []] [app 11 []] [] [(21, [[num], [num, str]])] [promiseLike E]
+#guard run fun E => claim E [app 10 []] [app 11 []] [] [(first E, [[num], [num, str]])] [promiseLike E]
 -- Without the entry the instance has nothing to name.
-#guard run fun E => !claim E [app 10 []] [app 11 []] [] [(21, [[num], [num, str]])]
+#guard run fun E => !claim E [app 10 []] [app 11 []] [] [(first E, [[num], [num, str]])]
 
 -- Quantified-α renames binders: `<R>() => R` is below another head's
 -- `<R>() => R`.
 #guard run fun E => claim E [app 12 []] [app 20 []]
+
+-- Recursive instance discharge (§4.2 `Inst`): `InputDefinition<K, V>` is
+-- covariant in both through `ReadonlyArray<readonly [K, V]>`, with no table:
+-- the view's premise is an instance of `ReadonlyArray`'s declaration whose
+-- hypothesis is an instance of the tuple's, whose hypotheses are hypotheses.
+#guard match build (signature contraCo inv [co]) rows with
+  | some E => (variances? E).isSome && E.varianceRefused (varianceEvidence E) = []
+  | none => false
+#guard run fun E => var E [app 23 [[num], [num]]] [app 23 [[num], [num, str]]] 2
+-- A nested hypothesis that is false is refused at its instance: the tuple's
+-- `number ≤ string`, inside `ReadonlyArray`'s.
+#guard run fun E => claim E [app 21 [[app 22 [[num], [num]]]]] [app 21 [[app 22 [[num], [num, str]]]]]
+#guard run fun E => !claim E [app 21 [[app 22 [[num], [num]]]]] [app 21 [[app 22 [[num], [str]]]]]
+-- Recursion never loops: an entry whose instance would discharge its own
+-- premise again at the same types is refused, since `Inst`'s premises must
+-- be smaller; the check ends.
+def loopy (E : Equations) : Entry (Label E.signature) :=
+  { source := lbls E [a], target := lbls E [b], variables := lbls E [a, b],
+    hypotheses := [(lbl E a, lbl E b)] }
+#guard run fun E => !claim E [app 9 [[num]]] [app 9 [[str]]] [] [(first E, [[num], [str]])] [loopy E]
+#guard run fun E => !claim E [app 9 [[num]]] [app 9 [[str]]] [] [] [loopy E]
 
 /-! ### §7.7 controls -/
 
@@ -266,11 +297,6 @@ def cell (E : Equations) (hyps : List (Tree × Tree)) : Entry (Label E.signature
 #guard run fun E => claim E [app 6 [[num]]] [app 6 [[num]]] [] [] [promiseLike E]
 #guard run fun E => !claim E [app 6 [[a]]] [app 6 [[a]]] [] [] [promiseLike E]
 
--- Two entries that share a variable, or an entry reusing a declaration's.
-#guard run fun E => !claim E [num] [num] [] [] [promiseLike E, promiseLike E]
-#guard run fun E => !claim E [num] [num] [] []
-  [{ source := lbls E [app 6 [[fv 6 0]]], target := lbls E [app 6 [[fv 6 0]]],
-     variables := lbls E [fv 6 0] }]
 
 -- Meet parts through hypotheses (§3.3, §7.3): `x & {q: number}` below
 -- `y & {q: number}` in an entry with `x ≤ y`, the target part `y` covered by

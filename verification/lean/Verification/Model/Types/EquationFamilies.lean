@@ -27,6 +27,50 @@ def Args.subtrees : Args → List Tree
   | .cons ts args => ts.subtrees ++ args.subtrees
 end
 
+/- A tree's size: an application is larger than each of its arguments'
+labels (`Inst`'s premises decrease, RECURSIVE-EQUATIONS §4.2). -/
+mutual
+def Tree.size : Tree → Nat
+  | .app _ args => args.size + 1
+  | .bound _ args _ => args.size + 1
+  | .meet ps => ps.size + 1
+  | _ => 1
+def Types.size : Types → Nat
+  | .nil => 0
+  | .cons t ts => t.size + ts.size
+def Args.size : Args → Nat
+  | .nil => 0
+  | .cons ts args => ts.size + args.size
+end
+
+/- The bound rows of a tree matched against another's (`TabRen`): where the
+two differ at a bound row, the first's row to the second's. An application
+is matched argument by argument, a meet part by part; a bound row is atomic.
+Untrusted: the checker checks the renaming and its images. -/
+mutual
+def Tree.matchBound (sig : Signature) : Tree → Tree → List (Label sig × List (Label sig))
+  | t@(.bound ..), u@(.bound ..) =>
+    if t == u then [] else
+    if h : t.scoped sig 0 0 = true then
+      if h' : u.scoped sig 0 0 = true then [(⟨t, h⟩, [⟨u, h'⟩])] else []
+    else []
+  | .app g args, .app h args' => if g == h then Args.matchBound sig args args' else []
+  | .meet ps, .meet qs => Types.matchBound sig ps qs
+  | _, _ => []
+def Types.matchBound (sig : Signature) : Types → Types → List (Label sig × List (Label sig))
+  | .cons t ts, .cons u us => Tree.matchBound sig t u ++ Types.matchBound sig ts us
+  | _, _ => []
+def Args.matchBound (sig : Signature) : Args → Args → List (Label sig × List (Label sig))
+  | .cons ts args, .cons us args' => Types.matchBound sig ts us ++ Args.matchBound sig args args'
+  | _, _ => []
+end
+
+/-- The renaming carrying a pair's labels, position by position, onto
+another pair's. -/
+def renameBound (p : List (Label sig) × List (Label sig)) (A B : List (Label sig)) :
+    List (Label sig × List (Label sig)) :=
+  (((p.1.zip A) ++ (p.2.zip B)).flatMap fun (l, m) => Tree.matchBound sig l.1 m.1).eraseDups
+
 /-- Substitution into a type: the union of its labels' substitutions. -/
 def substituteAll (σ : List (Label sig × List (Label sig))) (A : List (Label sig)) :
     List (Label sig) :=
@@ -122,6 +166,8 @@ def Equations.renaming (equations : Equations) : Renaming equations.graph where
     have := equations.scheme_binders i s hs x hin
     rw [hx] at this
     cases this
+  size l := l.1.size
+  rename := renameBound
 
 /-! ## Variance declarations -/
 
@@ -196,12 +242,16 @@ def varGen (l : Label sig) (B : List (Label sig)) : List (Nat × List (List (Lab
 def declarationsOk (sig : Signature) : Bool :=
   (List.finRange sig.length).all fun h => sig[h].variance.length == sig[h].parameters
 
+/-- The declarations cite each other by head index. -/
+def varianceLook (ev : VarianceEvidence sig) : Lookup (Label sig) := fun k => (varianceEntries ev)[k]?
+
 /-- **The declarations, checked once**: every head's entry valid, together,
 their premises drawing on each other through `Var`. -/
 def Equations.checkVariance (equations : Equations) (ev : VarianceEvidence equations.signature) : Bool :=
   declarationsOk equations.signature &&
     variablesOk (some equations.renaming) (varianceEntries ev) &&
-    checkEntries equations.graph (some equations.renaming) [] varGen [] (varianceEntries ev) ev.arrows
+    checkEntries equations.graph (some equations.renaming) [] varGen (varianceLook ev)
+      (varianceEntries ev) ev.arrows
 
 /-- The heads whose declaration fails, each checked against all the others:
 the located refusal. -/
@@ -209,7 +259,7 @@ def Equations.varianceRefused (equations : Equations) (ev : VarianceEvidence equ
     List Nat :=
   (List.finRange equations.signature.length).filterMap fun h =>
     if equations.signature[h].variance.length == equations.signature[h].parameters &&
-        checkEntries equations.graph (some equations.renaming) [] varGen (varianceEntries ev)
+        checkEntries equations.graph (some equations.renaming) [] varGen (varianceLook ev)
           [varianceEntry ev h] ev.arrows then none
     else some h.val
 
@@ -226,10 +276,19 @@ def Variances.check? (equations : Equations) (ev : VarianceEvidence equations.si
 /-- **Checked declarations are sound**: each head's entry holds wherever its
 hypotheses do (§7.4). -/
 theorem Variances.sound {equations : Equations} (v : Variances equations) :
-    ∀ e ∈ varianceEntries v.evidence, EntrySound equations.graph e := by
+    ∀ e ∈ varianceEntries v.evidence, EntrySound equations.graph e ∧ HypParams equations.graph e := by
   have h := v.checked
   simp only [Equations.checkVariance, Bool.and_eq_true] at h
-  exact checkEntries_entries_sound h.2 h.1.2
+  intro e he
+  exact ⟨checkEntries_entries_sound h.2 h.1.2
+      (fun k e hk => .inl (List.mem_of_getElem? hk)) e he,
+    (variablesOk_sound h.1.2).params he⟩
+
+/-- The checked declarations as the entries instances cite, by head index. -/
+def Variances.base {equations : Equations} (v : Variances equations) : Base equations.graph where
+  size := equations.signature.length
+  entry k := (varianceEntries v.evidence)[k]?
+  sound k e hk := v.sound e (List.mem_of_getElem? hk)
 
 /-- **Family subtyping on equations.** A certificate's entries may use `Var`
 on every declared head; the claim is a pair of a variable-free entry. -/
@@ -237,13 +296,13 @@ def Equations.checkFamily (equations : Equations) (v : Variances equations)
     (S T : List (Label equations.signature)) (c : FamilyCertificate (Label equations.signature)) :
     Bool :=
   checkFamilyUsing equations.graph equations.instanceImageCheck (some equations.renaming) varGen
-    (varianceEntries v.evidence) S T c
+    v.base S T c
 
 theorem Equations.checkFamily_sound (equations : Equations) (v : Variances equations)
     {S T : List (Label equations.signature)} {c : FamilyCertificate (Label equations.signature)}
     (h : equations.checkFamily v S T c = true) :
     ∀ η, FamLe (mixedMeaning equations.graph η S) (mixedMeaning equations.graph η T) :=
-  checkFamilyUsing_sound h v.sound
+  checkFamilyUsing_sound h
 
 /-- **The structural `Var` rule.** `h(A⃗) ≤ h(B⃗)` by one derivation per
 hypothesis of `h`'s declaration, in order: `Aᵢ ≤ Bᵢ` for `co`, `Bᵢ ≤ Aᵢ` for
@@ -254,7 +313,7 @@ def Equations.checkVar (equations : Equations) (v : Variances equations)
   match S, T with
   | [l], [b] => match varGen l [b] with
     | [w] => checkEntryInstanceUsing equations.graph equations.instanceImageCheck
-        equations.renaming (varianceEntries v.evidence) w S T proofs
+        equations.renaming v.base w S T proofs
     | _ => false
   | _, _ => false
 
@@ -265,7 +324,7 @@ theorem Equations.checkVar_sound (equations : Equations) (v : Variances equation
   unfold Equations.checkVar at h
   split at h
   · split at h
-    · exact checkEntryInstanceUsing_sound h v.sound
+    · exact checkEntryInstanceUsing_sound h
     · cases h
   · cases h
 
