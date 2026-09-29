@@ -895,6 +895,7 @@ let exactKeys = "";
 let restKeys = "";
 let variadicOffer = "";
 let explicitCalls = "";
+let classGeneric = "";
 let verifiedFunctions = 0;
 const outcomes = await pooled(cases, runCase);
 for (const [i, test] of cases.entries()) {
@@ -934,6 +935,7 @@ for (const [i, test] of cases.entries()) {
   if (test.file === "invalid-writable-dictionary-rest-keys") restKeys = result.artifacts;
   if (test.file === "variadic-offer-sync") variadicOffer = result.artifacts;
   if (test.file === "explicit-type-arguments") explicitCalls = result.artifacts;
+  if (test.file === "class-generic-method") classGeneric = result.artifacts;
 }
 process.stdout.write(
   `${verifiedFunctions} functions verified; ${cases.filter((c) => c.kind === "negative").length} negative controls; ${cases.filter((c) => c.kind === "gap").length} named gaps\n`,
@@ -1242,6 +1244,46 @@ for (const [artifacts, arity, accepted] of [
     `source expression obligation at [${body},`), searched.stdout + searched.stderr);
   assert.match(invoke(forged, evidence, localClosure), /does not justify/);
   process.stdout.write("an unannotated closure's result claim its body does not meet: refused\n");
+}
+
+// A class's generic method, a closure the prototype holds, covers the
+// instance type's member up to renaming the member's binders to the
+// closure's: the renamed signatures must still follow from the closure's.
+// The class's declaration tampered to promise a number where the closure
+// returns its binder is refused at the construct code's return, where the
+// fresh instance meets the instance type; the untampered one is derived there.
+// `make` alone is kept, so the construct code is the first obligation.
+{
+  const source = readFileSync(join(classGeneric, "source.ts"), "utf8");
+  const claims: SourceClaims = JSON.parse(readFileSync(join(classGeneric, "claims.json"), "utf8"));
+  claims.functions = claims.functions.filter((f) => f.name === "make");
+  const makeClaims = join(classGeneric, "make-claims.json");
+  writeFileSync(makeClaims, JSON.stringify(claims));
+  const fragment: unknown = JSON.parse(readFileSync(join(classGeneric, "fragment.json"), "utf8"));
+  assert.ok(fragment && typeof fragment === "object" && "functions" in fragment &&
+    Array.isArray(fragment.functions));
+  fragment.functions = fragment.functions.filter((f: unknown) =>
+    f && typeof f === "object" && "name" in f && f.name === "make");
+  const kept = JSON.stringify(fragment);
+  const at = source.indexOf("pick<V>(a: V): V") + "pick<V>(a: V): ".length;
+  const declared = `"result":{"k":"binder","name":"V","span":[${at},${at + 1}]}`;
+  assert.ok(kept.includes(declared), "pick's declared result");
+  const search = (name: string, text: string) => {
+    const ast = join(classGeneric, `${name}.json`);
+    writeFileSync(ast, text);
+    return spawnSync(verifier, ["--produce-source-claims", ast, makeClaims, join(classGeneric, "source.ts"),
+      join(classGeneric, `${name}-evidence.json`), "12"], { encoding: "utf8", timeout: 30_000 });
+  };
+  const derived = search("make-only", kept);
+  assert.equal(derived.status, 0, derived.stdout + derived.stderr);
+  const refused = search("forged-member-result",
+    kept.replace(declared, '"result":{"k":"atom","name":"number","span":[0,0]}'));
+  assert.equal(refused.status, 1, refused.stdout + refused.stderr);
+  const ctor = source.indexOf("class Helper") + "class ".length;
+  assert.ok((refused.stdout + refused.stderr).includes(
+    `source expression obligation at [${ctor},${ctor + "Helper".length}): evidence search failed: no derivation of its return-contract claim`),
+    refused.stdout + refused.stderr);
+  process.stdout.write("a class's generic method whose closure does not cover the declared member after renaming: refused\n");
 }
 
 // A writable index is never met through an own-key bound: a callee holding

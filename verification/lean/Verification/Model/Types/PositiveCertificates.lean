@@ -180,50 +180,57 @@ instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop
   unfold CoversArrows; infer_instance
 
 instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R]
-    (s : SchemeRow ι) (S' : List ι) : Decidable (SchemeBinds G R s S') := by
+    (s : SchemeRow ι) (L : Ops ι) (M : List (RestArrow (List ι))) :
+    Decidable (BoundSigsCover G R s L M) := by
+  unfold BoundSigsCover; infer_instance
+
+instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {R : List ι → List ι → Prop} [DecidableRel R]
+    (s : SchemeRow ι) (S' : List ι) : Decidable (SchemeBinds G sub R s S') := by
   unfold SchemeBinds; split
-  · split <;> infer_instance
+  · split
+    · cases sub <;> dsimp only <;> infer_instance
+    · infer_instance
   · infer_instance
 
-instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R]
-    (self F : List ι) (q) : Decidable (CoversByScheme G R self F q) := by
+instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {R : List ι → List ι → Prop} [DecidableRel R]
+    (self F : List ι) (q) : Decidable (CoversByScheme G sub R self F q) := by
   unfold CoversByScheme; split
   · split <;> infer_instance
   · infer_instance
 
-instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R]
-    (self F : List ι) (q) : Decidable (CoversByFunction G R self F q) := by
+instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {R : List ι → List ι → Prop} [DecidableRel R]
+    (self F : List ι) (q) : Decidable (CoversByFunction G sub R self F q) := by
   unfold CoversByFunction; split <;> infer_instance
 
 instance [DecidableEq ι] {G : NormalGraph ι} (P : List ι) (k : PropKey) :
     Decidable (lacksKey G P k) := by
   unfold lacksKey; split <;> infer_instance
 
-instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R]
-    (known : Known ι) (self : List ι) (q P) : Decidable (FoundOn G R known self q P) := by
+instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {R : List ι → List ι → Prop} [DecidableRel R]
+    (known : Known ι) (self : List ι) (q P) : Decidable (FoundOn G sub R known self q P) := by
   unfold FoundOn; infer_instance
 
-instance instDecidableProtoHolds [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop}
+instance instDecidableProtoHolds [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {R : List ι → List ι → Prop}
     [DecidableRel R] (known : Known ι) (self : List ι) (q) :
-    (d : Nat) → (P : List ι) → Decidable (ProtoHolds G R known self q d P)
-  | 0, P => decidable_of_iff (FoundOn G R known self q P) (by rw [ProtoHolds])
+    (d : Nat) → (P : List ι) → Decidable (ProtoHolds G sub R known self q d P)
+  | 0, P => decidable_of_iff (FoundOn G sub R known self q P) (by rw [ProtoHolds])
   | d + 1, P =>
-    have := instDecidableProtoHolds (G := G) (R := R) known self q d
-    decidable_of_iff (FoundOn G R known self q P ∨ (lacksKey G P q.key ∧
-        ∃ P' ∈ (viewOf G P CallArguments.protoField).toList, ProtoHolds G R known self q d P'))
+    have := instDecidableProtoHolds (G := G) (sub := sub) (R := R) known self q d
+    decidable_of_iff (FoundOn G sub R known self q P ∨ (lacksKey G P q.key ∧
+        ∃ P' ∈ (viewOf G P CallArguments.protoField).toList, ProtoHolds G sub R known self q d P'))
       (by rw [ProtoHolds])
 
-instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R]
+instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {R : List ι → List ι → Prop} [DecidableRel R]
     (known : Known ι) (self : List ι) (fields bounds q) :
-    Decidable (CoversByProto G R known self fields bounds q) := by
+    Decidable (CoversByProto G sub R known self fields bounds q) := by
   unfold CoversByProto; infer_instance
 
 set_option synthInstance.maxSize 1024 in
-instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R]
+instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {R : List ι → List ι → Prop} [DecidableRel R]
     {known : Known ι}
     {arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop}
     [∀ L S M, Decidable (arrows L S M)] (self a b) :
-    Decidable (CoversWith G R known arrows self a b) := by
+    Decidable (CoversWith G sub R known arrows self a b) := by
   cases a <;> cases b <;> unfold CoversWith <;> infer_instance
 
 set_option synthInstance.maxSize 1024 in
@@ -241,24 +248,24 @@ instance [DecidableEq ι] {G : NormalGraph ι} {sc : ι → ι → Prop} [Decida
   unfold MeetOpaque MeetSource MeetTarget; infer_instance
 
 set_option synthInstance.maxSize 1024 in
-instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R]
+instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {R : List ι → List ι → Prop} [DecidableRel R]
     {known : Known ι}
     {arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop}
     [∀ L S M, Decidable (arrows L S M)] (S T : List ι) :
-    Decidable (OpaqueWith G R known arrows S T) := by
+    Decidable (OpaqueWith G sub R known arrows S T) := by
   unfold OpaqueWith; infer_instance
 
 set_option synthInstance.maxSize 1024 in
 /-- The executable checker is the shared coverage rule interpreted with checked
 arrow evidence, premises read through `R`. Adding a coverage condition changes
 the checker automatically. -/
-@[nospecialize] def checkClauseWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) [DecidableRel R]
+@[nospecialize] def checkClauseWith [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (R : List ι → List ι → Prop) [DecidableRel R]
     (known : Known ι) (proofs : Evidence ι) (self : List ι) (a b : Clause (List ι)) : Bool :=
-  decide (CoversWith G R known (ArrowsCheckedWith G R proofs) self a b)
+  decide (CoversWith G sub R known (ArrowsCheckedWith G R proofs) self a b)
 
-theorem checkClauseWith_sound [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop}
+theorem checkClauseWith_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {R : List ι → List ι → Prop}
     [DecidableRel R] {known proofs self a b}
-    (h : checkClauseWith G R known proofs self a b = true) : Covers G R known self a b := by
+    (h : checkClauseWith G sub R known proofs self a b = true) : Covers G sub R known self a b := by
   apply CoversWith.mono (h := of_decide_eq_true h)
   intro L S M hs p hp
   obtain ⟨e, _, _, _, he⟩ := hs p hp
@@ -280,10 +287,10 @@ theorem collect {α β : Type} (xs : List α) (P : α → List β → Prop)
     · subst a; exact mono x es _ (fun e he => List.mem_append_left rest he) he
     · exact mono a rest _ (fun e he => List.mem_append_right es he) (hr a hm)
 
-theorem checkClauseWith_mono [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop}
+theorem checkClauseWith_mono [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {R : List ι → List ι → Prop}
     [DecidableRel R] {known self a b es es'}
-    (hm : ∀ e ∈ es, e ∈ es') (h : checkClauseWith G R known es self a b = true) :
-    checkClauseWith G R known es' self a b = true := by
+    (hm : ∀ e ∈ es, e ∈ es') (h : checkClauseWith G sub R known es self a b = true) :
+    checkClauseWith G sub R known es' self a b = true := by
   have h := of_decide_eq_true h
   apply decide_eq_true
   apply CoversWith.mono (h := h)
@@ -307,9 +314,9 @@ private theorem arrow_evidence_complete [DecidableEq ι] {G : NormalGraph ι}
   exact ⟨es,he⟩
 
 set_option synthInstance.maxSize 1024 in
-theorem checkClauseWith_complete [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop}
+theorem checkClauseWith_complete [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {R : List ι → List ι → Prop}
     [DecidableRel R] {known self a b}
-    (h : Covers G R known self a b) : ∃ es, checkClauseWith G R known es self a b = true := by
+    (h : Covers G sub R known self a b) : ∃ es, checkClauseWith G sub R known es self a b = true := by
   simp only [checkClauseWith, decide_eq_true_eq]
   cases a <;> cases b <;> simp only [Covers, CoversWith] at *
   all_goals try contradiction
@@ -363,12 +370,12 @@ theorem schemeCoversAlpha_complete [DecidableEq ι] {G : NormalGraph ι} {sub : 
     · exact hc.elim
 
 /-- Declarative clause coverage has checked evidence. -/
-theorem coversWith_complete [DecidableEq ι] {G : NormalGraph ι}
+theorem coversWith_complete [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
     {R : List ι → List ι → Prop} [DecidableRel R] {known : Known ι} {T self : List ι}
     {a : Clause (List ι)}
-    (hc : ∃ b ∈ clausesOf G T, CoversWith G R known (fun L S M => ∀ p ∈ M,
+    (hc : ∃ b ∈ clausesOf G T, CoversWith G sub R known (fun L S M => ∀ p ∈ M,
       CallArrow (compatible G) (restElem G) R L S p) self a b) :
-    ∃ es, ∃ b ∈ clausesOf G T, CoversWith G R known (ArrowsCheckedWith G R es) self a b := by
+    ∃ es, ∃ b ∈ clausesOf G T, CoversWith G sub R known (ArrowsCheckedWith G R es) self a b := by
   obtain ⟨b, hb, hc⟩ := hc
   obtain ⟨es, he⟩ := checkClauseWith_complete (R := R) hc
   exact ⟨es, b, hb, of_decide_eq_true he⟩
@@ -638,7 +645,7 @@ checked evidence. -/
     OpaqueFamily G sub (Prem G sub look gen f) known
       (ArrowsCheckedWith G (Prem G sub look gen f) arrows) f.hypotheses p.1 p.2 ∧
     ∀ a ∈ sourceClauses G p.1 ++ meetSources G p.1 p.2 f.hypotheses, ∃ b ∈ clausesOf G p.2,
-      checkClauseWith G (Prem G sub look gen f) known arrows p.1 a b = true)
+      checkClauseWith G sub (Prem G sub look gen f) known arrows p.1 a b = true)
 
 theorem checkEntries_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
     {known : Known ι} {gen : ι → List ι → List (Nat × List (List ι))} {look : Lookup ι}
@@ -674,7 +681,7 @@ theorem opaqueFamily_complete [DecidableEq ι] {G : NormalGraph ι} {sub : Optio
     ∃ es, OpaqueFamily G sub R known (ArrowsCheckedWith G R es) hyps S T := by
   have each : ∀ i ∈ S, ∃ es : Evidence ι, G.plain i = true ∨ i ∈ T ∨ .top ∈ clausesOf G T ∨
       MeetOpaque G (PartCovers G sub R known (ArrowsCheckedWith G R es) hyps)
-        (fun a => ∃ b ∈ clausesOf G T, CoversWith G R known (ArrowsCheckedWith G R es) S a b) T i ∨
+        (fun a => ∃ b ∈ clausesOf G T, CoversWith G sub R known (ArrowsCheckedWith G R es) S a b) T i ∨
       (∃ y ∈ T, (i, y) ∈ hyps) ∨
       ∃ j ∈ T, SchemeCoversAlpha G sub R known (ArrowsCheckedWith G R es) i j := by
     intro i hi
@@ -685,7 +692,7 @@ theorem opaqueFamily_complete [DecidableEq ι] {G : NormalGraph ι} {sub : Optio
     · obtain ⟨es, he⟩ := MeetOpaque.evidence (h := h)
         (sc' := fun es => PartCovers G sub R known (ArrowsCheckedWith G R es) hyps)
         (cover' := fun es a => ∃ b ∈ clausesOf G T,
-          CoversWith G R known (ArrowsCheckedWith G R es) S a b)
+          CoversWith G sub R known (ArrowsCheckedWith G R es) S a b)
         (fun es es' hm a b h => Or.imp_left (SchemeCoversAlpha.mono (arrowsChecked_mono hm)) h)
         (fun es es' hm a ⟨b, hb, hc⟩ => ⟨b, hb, CoversWith.mono (arrowsChecked_mono hm) hc⟩)
         (fun a b h => h.elim (fun h => (schemeCoversAlpha_complete h).imp fun _ => .inl)
@@ -732,7 +739,7 @@ theorem checkEntries_complete [DecidableEq ι] {G : NormalGraph ι} {sub : Optio
         (ArrowsCheckedWith G (Prem G sub look gen fp.1) es) fp.1.hypotheses fp.2.1 fp.2.2 ∧
       ∀ a ∈ sourceClauses G fp.2.1 ++ meetSources G fp.2.1 fp.2.2 fp.1.hypotheses,
         ∃ b ∈ clausesOf G fp.2.2,
-        checkClauseWith G (Prem G sub look gen fp.1) known es fp.2.1 a b = true := by
+        checkClauseWith G sub (Prem G sub look gen fp.1) known es fp.2.1 a b = true := by
     intro fp hfp
     obtain ⟨f, hf, hfp⟩ := List.mem_flatMap.mp hfp
     obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hfp
@@ -740,7 +747,7 @@ theorem checkEntries_complete [DecidableEq ι] {G : NormalGraph ι} {sub : Optio
     obtain ⟨es₀, ho⟩ := opaqueFamily_complete hv.2.1
     obtain ⟨es₁, hc⟩ := collect (sourceClauses G p.1 ++ meetSources G p.1 p.2 f.hypotheses)
       (fun a es => ∃ b ∈ clausesOf G p.2,
-        checkClauseWith G (Prem G sub look gen f) known es p.1 a b = true)
+        checkClauseWith G sub (Prem G sub look gen f) known es p.1 a b = true)
       (fun a es es' hm ⟨b, hb, hc⟩ => ⟨b, hb, checkClauseWith_mono hm hc⟩)
       (fun a ha => by
         obtain ⟨b, hb, hc⟩ := hv.2.2 a ha
@@ -1198,7 +1205,7 @@ searched for its rows. The check decides (`fallbackWith`). -/
     decide (OpaqueFamily G images.sub R known
       (ArrowsCheckedWith G R es) [] p.1 p.2) &&
     (sourceClauses G p.1 ++ PositiveRules.meetSources G p.1 p.2).all fun a =>
-      (clausesOf G p.2).any fun b => checkClauseWith G R known es p.1 a b)
+      (clausesOf G p.2).any fun b => checkClauseWith G images.sub R known es p.1 a b)
 
 /-- Grow the table from its frontier: each row adds the pairs its coverage
 compares (`demandPairs`, and quantified members after renaming), each read
@@ -1224,7 +1231,7 @@ the limit. -/
       if premTable G images.sub f p.1 p.2 then return (tbl, fresh)
       if (reached p).isEmpty && (p.1 ++ p.2).all G.plain && !(SameKind G p.1 p.2 &&
           (sourceClauses G p.1).all fun a => (clausesOf G p.2).any fun b =>
-            checkClauseWith G (Rel []) [] [] p.1 a b) then return (tbl, fresh)
+            checkClauseWith G images.sub (Rel []) [] [] p.1 a b) then return (tbl, fresh)
       if let some r := images.sub then
         if grows r tbl p.1 p.2 then throw "growth"
       if tbl.length ≥ fallbackLimit then throw "limit"

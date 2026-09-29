@@ -266,10 +266,10 @@ giving each binder its instance. Untrusted: `checkInstArrs` validates it. -/
           M.all (fun q => s.variadic.any fun p => instRest G table κ₀ p q) then return c
       -- An operand whose image is another spelling of the target's (a
       -- result `Pair<[number, string]>` for `Pair<[T, U]>` at `string`, a
-      -- callback the target states as a definition of its own): the
-      -- target's as the image of the one label whose image is not among the
-      -- target's, which the image check accepts only when the two are
-      -- proved equal.
+      -- callback or a class value the target states as a definition of its
+      -- own), in a fixed or a variadic signature: the target's as the image
+      -- of the one label whose image is not among the target's, which the
+      -- image check accepts only when the two are proved equal.
       let respell (P Q : List ι) : InstTable ι :=
         match tyImg table κ₀ P with
         | some img =>
@@ -282,9 +282,13 @@ giving each binder its instance. Untrusted: `checkInstArrs` validates it. -/
             [(l, κ₀, Q.filter (!others.contains ·))]
           | _ => []
         | none => []
-      let patch : InstTable ι := L.flatMap fun q => s.signatures.flatMap fun p =>
+      let patch : InstTable ι := (L.flatMap fun q => s.signatures.flatMap fun p =>
         if p.arguments.length != q.arguments.length then [] else
-        ((p.result :: p.arguments).zip (q.result :: q.arguments)).flatMap fun (P, Q) => respell P Q
+        ((p.result :: p.arguments).zip (q.result :: q.arguments)).flatMap fun (P, Q) => respell P Q) ++
+        M.flatMap fun q => s.variadic.flatMap fun p =>
+          if p.arguments.1.length != q.arguments.1.length then [] else
+          ((p.arguments.2 :: p.result :: p.arguments.1).zip
+            (q.arguments.2 :: q.result :: q.arguments.1)).flatMap fun (P, Q) => respell P Q
       if !patch.isEmpty then
         let c : PositiveCertificates.Instance ι := ⟨patch.eraseDups ++ table, θs, [], []⟩
         if images.check s.binders c && L.all (fun q => s.signatures.any fun p => instSig G c.table κ₀ p q) &&

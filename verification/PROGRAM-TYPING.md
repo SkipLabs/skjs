@@ -2667,15 +2667,15 @@ its own members and `B`'s, covers it through the prototype chain
 A generic method `m<V>(…)` is the instance's member with quantified
 signatures ([generic methods](#generic-methods)), and its closure `D.m` a
 generic closure, checked once at a scheme received by the instance
-(`funScheme`), which the prototype holds. The two quantify over the same
-rows: the parser names the closure's binder $k$ as the declaration's lowering
-names the member's, by the member's key, the position and the bound
-(`"m"#k:null^0`, `fragment-parse`'s `lambda`), so the producer's scheme row
-for the prototype's field binds the rows the declared member binds. The
-prototype's scheme covers the member bound to the instance
+(`funScheme`), which the prototype holds. The parser names the closure's
+binder $k$ by the member's key and the position (`"m"#k`,
+`fragment-parse`'s `lambda`), and the producer's scheme row for the
+prototype's field binds those names; the member's scheme binds the
+declaration's. The prototype's scheme covers the member bound to the
+instance up to renaming the member's binders to its own
 ([`CoversByScheme`](POSITIVE-TYPES.md#clause-coverage)): its receivers read
 none of its binders and hold the instance, and its signatures cover the
-member's at every instance. A bounded binder is refused, since the row's
+member's renamed ones at every instance. A bounded binder is refused, since the row's
 name spells its bound.
 
 What a class declaration may not hold, each for its reason:

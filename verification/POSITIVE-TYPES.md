@@ -782,21 +782,35 @@ quantified signatures as a **scheme received by the host**
 (`CoversByScheme`): a scheme row $F=(\vec p;\Sigma;\beta;\Sigma_\ldots)$, a
 class's generic method its prototype holds, whose receivers the source type
 $S$ is within and read none of its binders ($\vec p\cap\mathit{fv}(Q_0)=\varnothing$, a checked free map), and
-each of whose target's schemes binds the same rows, with bounds among them,
-signatures its own cover, receivers aside:
+whose signatures cover, receivers aside, each of the target's schemes read at
+$F$'s binders ($\mathsf{Binds}$, `SchemeBinds`):
 
 ```math
 \frac{\begin{array}{c}F=(\vec p;\Sigma;\beta;\Sigma_\ldots)\quad
       \forall(Q_0;\vec P)\to B\in\Sigma\,\Sigma_\ldots.\;\Delta(S,Q_0)\land\vec p\cap\mathit{fv}(Q_0)=\varnothing\\
-      \forall[j]\in m.\mathsf{schemes}.\;j=(\vec p;\Sigma';\beta';\Sigma'_\ldots)\land\beta\subseteq\beta'\land
-      \forall(\_;\vec Q)\to D\in\Sigma'.\;\exists(\_;\vec P)\to B\in\Sigma.\;\Delta(\vec Q,\vec P)\land\Delta(B,D)\end{array}}
+      \forall[j]\in m.\mathsf{schemes}.\;j=(\vec q;\Sigma';\beta';\Sigma'_\ldots)\land\mathsf{Binds}_\rho(F,j)\land
+      \forall(\_;\vec Q)\to D\in\Sigma'\rho.\;\exists(\_;\vec P)\to B\in\Sigma.\;\Delta(\vec Q,\vec P)\land\Delta(B,D)\end{array}}
      {\Delta;\kappa;S\vdash F\ni_{\mathsf{fn}}m}
 ```
+
+$\mathsf{Binds}_\rho(F,j)$ holds in two ways. The target binds the same rows,
+$\vec q=\vec p$, with $\beta\subseteq\beta'$ and $\rho$ the identity. Or, up
+to renaming ([RECURSIVE-EQUATIONS §4.1](RECURSIVE-EQUATIONS.md#41-quantified-signatures)),
+$\rho=[\vec p/\vec q]$ is the checker's own substitution, $\vec p$ and
+$\vec q$ are distinct rows, as many, of pairwise equal kinds, each bound
+$(p_i,B)\in\beta$ has a bound $(q_i,B')\in\beta'$ with $\Delta(B',B)$, and
+no $p_i$ is free in $\Sigma'\,\Sigma'_\ldots$ but as a $q_k$. A class's
+generic method is the second case: its closure's scheme and the instance
+type's member bind rows of their own.
 
 At an instance $\vec X$ the host is in each receiver at the instance's
 assignment, which it reads as the table's, so `.bind`'s forwarding function,
 invoked with any receiver, meets the source signature, and the target's by
-the premises read at the instance (`covers_by_scheme_sound`). A prototype type $P$ holds $m$ where its
+the premises read at the instance (`bound_sigs_sound`). Renamed, the target's
+signatures under $\rho$ mean at the instance of $\vec p$ what the target's
+mean at the same instance of $\vec q$ (`renamed_meaning`), and the target's
+bounds at that instance give the source's, through $\Delta(B',B)$
+(`covers_by_scheme_sound`). A prototype type $P$ holds $m$ where its
 one record clause has $m$'s key at a function type covering it, or, where
 that clause's key bound $\beta_P$ excludes the key, its own prototype field
 does, one prototype further up (`lacksKey`):
@@ -1109,7 +1123,7 @@ Lean: `PairOk`, `FamilyValid`, `Known`, `SameKind`, `Opaque`, `OpaqueWith`, `Sch
 `scheme_covers_sound`, `covers_arrs_sound`, `meetSources`, `meet_clause_of`, `MeetOpaque`,
 `MeetSource`, `MeetTarget`, `meet_row_iff`, `meet_part_value`, `meet_target_value`, `splitClause`,
 `splitClause_sem`, `source_sem`, `CoversByProto`, `ProtoHolds`, `FoundOn`, `lacksKey`, `viewOf`,
-`covers_arrows_sound`, `protoHolds_sound`, `CoversByScheme`, `bindersFree`,
+`covers_arrows_sound`, `protoHolds_sound`, `CoversByScheme`, `SchemeBinds`, `bound_sigs_sound`, `bindersFree`,
 `covers_by_scheme_sound`, `family_sound`.
 
 ### Instances and free rows

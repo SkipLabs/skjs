@@ -794,20 +794,81 @@ reassignment of them (`bindersFree_values`). -/
   let V := freeMapOf G D closureFuel []
   FreeOk G D V && A.all fun l => D.contains l && (fv V l).all fun p => !bs.contains p
 
+/-- Simultaneous replacement of the parameters a context names; any other
+row stands for itself. -/
+@[nospecialize] def replace [DecidableEq ι] (σ : List (ι × List ι)) (p : ι) : List ι := (σ.lookup p).getD [p]
+
+/-- Syntactic substitution and free support for a graph's types, with the
+semantic laws that justify them, and the rows reserved for family
+variables. Supplied by verified code for a representation (equation graphs
+have one), never by a certificate; the finite graph has none, so its
+checks rename no binder and use no variable. -/
+structure Renaming [DecidableEq ι] (G : NormalGraph ι) where
+  substitute : List (ι × List ι) → List ι → List ι
+  free : List ι → List ι
+  /-- Rows that may be family variables. -/
+  familyVar : ι → Bool
+  /-- Whether a type mentions a row anywhere in its syntax. -/
+  mentions : List ι → ι → Bool
+  substitute_meaning : ∀ (η θ : MixedAssignment ι) (σ : List (ι × List ι)),
+    (∀ p, G.params p = true → mixedMeaning G η [p] = mixedMeaning G θ (replace σ p)) →
+    ∀ A, mixedMeaning G η A = mixedMeaning G θ (substitute σ A)
+  agree_free : ∀ (η θ : MixedAssignment ι) (A : List ι), (∀ p ∈ free A, η.1 p = θ.1 p) →
+    mixedMeaning G η A = mixedMeaning G θ A
+  familyVar_param : ∀ x, familyVar x = true → G.params x = true
+  /-- No scheme binds a variable, so entering one keeps the hypotheses. -/
+  familyVar_unbound : ∀ i s x, G.schemes i = some s → familyVar x = true → x ∉ s.binders
+  /-- A label's size: an application's arguments are smaller than it
+  (`Inst`'s premises decrease). No law: the checker compares sizes it computes. -/
+  size : ι → Nat
+  /-- The renaming of bound rows that carries a table pair to another pair,
+  proposed by matching (`TabRen`). No law: the checker checks what it proposes. -/
+  rename : List ι × List ι → List ι → List ι → List (ι × List ι)
+  /-- The definition a label applies, if any. Search only: evidence search
+  tells a pair recurring with growing arguments by it. -/
+  head : ι → Option Nat := fun _ => none
+
+/-- Signatures `L`, `M` a scheme's received by the host cover, receivers
+aside (both are the host's: the bound function's is any, `s`'s is the host,
+which `CoversByScheme` checks): each is covered by one of `s`'s. -/
+@[nospecialize] def BoundSigsCover (G : NormalGraph ι) (R : List ι → List ι → Prop) (s : SchemeRow ι)
+    (L : Ops ι) (M : List (RestArrow (List ι))) : Prop :=
+  (∀ t ∈ L, ∃ p ∈ s.signatures, Domains R t.arguments p.arguments ∧ R p.result t.result ∧ p.effect.covers t.effect = true) ∧
+  (∀ t ∈ M, ∃ p ∈ s.variadic, Domains R (t.arguments.1.take p.arguments.1.length) p.arguments.1 ∧
+    IntoRest (restElem G) R (t.arguments.1.drop p.arguments.1.length) p.arguments.2 ∧ R t.arguments.2 p.arguments.2 ∧
+    R p.result t.result ∧ p.effect.covers t.effect = true)
+
+/-- The renaming of a target scheme's binders `qs` to a source scheme's `ps`,
+as a substitution. -/
+@[nospecialize] def renamingOf (ps qs : List ι) : List (ι × List ι) := qs.zip (ps.map fun p => [p])
+
 /-- A target quantified signature `S'` a scheme `s` received by the host
-covers: `S'` binds `s`'s rows, each bound of `s` among `S'`'s, and each of
-`S'`'s signatures is covered by one of `s`'s, receivers aside (both are the
-host's: the bound function's is any, `s`'s is the host, which `CoversByScheme`
-checks). -/
-@[nospecialize] def SchemeBinds (G : NormalGraph ι) (R : List ι → List ι → Prop) (s : SchemeRow ι)
-    (S' : List ι) : Prop :=
+covers (`BoundSigsCover`): `S'` binds `s`'s rows, each bound of `s` among
+`S'`'s; or, up to renaming (quantified-α, RECURSIVE-EQUATIONS §4.1), `S'`
+binds as many distinct rows of the same kinds, each bound of `s` matched by
+`S'`'s bound on the renamed binder, which is within it, no binder of `s`
+free in `S'`'s signatures but as a binder of `S'`, and `s`'s signatures
+cover `S'`'s with its binders renamed to `s`'s. The renaming is the
+checker's own substitution (`sub`), never a certificate's. -/
+@[nospecialize] def SchemeBinds [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G))
+    (R : List ι → List ι → Prop) (s : SchemeRow ι) (S' : List ι) : Prop :=
   match S' with
   | [j] => match G.schemes j with
-    | some s' => G.params j = false ∧ s.binders = s'.binders ∧ (∀ b ∈ s.bounds, b ∈ s'.bounds) ∧
-        (∀ t ∈ s'.signatures, ∃ p ∈ s.signatures, Domains R t.arguments p.arguments ∧ R p.result t.result ∧ p.effect.covers t.effect = true) ∧
-        (∀ t ∈ s'.variadic, ∃ p ∈ s.variadic, Domains R (t.arguments.1.take p.arguments.1.length) p.arguments.1 ∧
-          IntoRest (restElem G) R (t.arguments.1.drop p.arguments.1.length) p.arguments.2 ∧ R t.arguments.2 p.arguments.2 ∧
-          R p.result t.result ∧ p.effect.covers t.effect = true)
+    | some s' => G.params j = false ∧
+      ((s.binders = s'.binders ∧ (∀ b ∈ s.bounds, b ∈ s'.bounds) ∧
+          BoundSigsCover G R s s'.signatures s'.variadic) ∨
+        match sub with
+        | some r =>
+          s.binders.length = s'.binders.length ∧ s.binders.Nodup ∧ s'.binders.Nodup ∧
+          (∀ pq ∈ s.binders.zip s'.binders, G.parameterKinds pq.1 = G.parameterKinds pq.2) ∧
+          (∀ b ∈ s.bounds, ∃ b' ∈ s'.bounds,
+            (s.binders.zip s'.binders).lookup b.1 = some b'.1 ∧ R b'.2 b.2) ∧
+          (∀ A ∈ (Clause.arrs s'.signatures s'.variadic).operands, ∀ x ∈ r.free A,
+            x ∈ s.binders → x ∈ s'.binders) ∧
+          BoundSigsCover G R s
+            (s'.signatures.map (Arrow.map (r.substitute (renamingOf s.binders s'.binders))))
+            (s'.variadic.map (RestArrow.map (r.substitute (renamingOf s.binders s'.binders))))
+        | none => False)
     | none => False
   | _ => False
 
@@ -816,25 +877,26 @@ class's generic method on its prototype, received by the instance), covering a
 target member of quantified signatures: the source type is within each of the
 scheme's receivers, which read none of its binders, so the host is in them at
 every instance; bound to the host, the function meets each of the target's
-schemes binding the same rows (`SchemeBinds`). -/
-@[nospecialize] def CoversByScheme [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (self : List ι)
+schemes it binds as (`SchemeBinds`). -/
+@[nospecialize] def CoversByScheme [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G))
+    (R : List ι → List ι → Prop) (self : List ι)
     (F : List ι) (q : MethodMembers.Sig (List ι)) : Prop :=
   match F with
   | [i] => match G.schemes i with
     | some s => q.calls = [] ∧ q.rests = [] ∧ G.params i = false ∧
         bindersFree G s.binders (schemeReceivers s) = true ∧
         (∀ r ∈ s.signatures.map (·.receiver) ++ s.variadic.map (·.receiver), R self r) ∧
-        ∀ S' ∈ q.schemes, SchemeBinds G R s S'
+        ∀ S' ∈ q.schemes, SchemeBinds G sub R s S'
     | none => False
   | _ => False
 
 /-- The same, for a function type: its one arrow clause, or a scheme received
 by the host. -/
-@[nospecialize] def CoversByFunction [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (self : List ι)
+@[nospecialize] def CoversByFunction [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (R : List ι → List ι → Prop) (self : List ι)
     (F : List ι) (q : MethodMembers.Sig (List ι)) : Prop :=
   match expand G F with
   | [.arrs L S] => CoversArrows G R self L S q
-  | _ => CoversByScheme G R self F q
+  | _ => CoversByScheme G sub R self F q
 
 /-- The field or view a type's one record clause holds under a key. -/
 @[nospecialize] def viewOf (G : NormalGraph ι) (P : List ι) (k : PropKey) : Option (List ι) :=
@@ -854,20 +916,20 @@ covers it with the object as receiver: a known row below arrows covering it
 (typically a generic prototype member and its instance at the array's element
 type: `Array.prototype[Symbol.iterator]` at `number`), or a function type
 covering it, as `CoversByFunction`. -/
-@[nospecialize] def FoundOn [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
+@[nospecialize] def FoundOn [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (R : List ι → List ι → Prop) (known : Known ι)
     (self : List ι) (q : MethodMembers.Sig (List ι)) (P : List ι) : Prop :=
   (∃ k ∈ known, viewOf G P q.key = some k.1 ∧ CoversArrows G R self k.2.1 k.2.2 q) ∨
-    ∃ F ∈ (viewOf G P q.key).toList, CoversByFunction G R self F q
+    ∃ F ∈ (viewOf G P q.key).toList, CoversByFunction G sub R self F q
 
 /-- A method signature is found along a prototype chain from prototype type
 `P`, at most `d` further prototypes up: on `P` itself (`FoundOn`), or, where
 `P`'s key bound excludes the key, along the prototype `P`'s own prototype
 field or view holds. JavaScript's lookup does the same. -/
-@[nospecialize] def ProtoHolds [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
+@[nospecialize] def ProtoHolds [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (R : List ι → List ι → Prop) (known : Known ι)
     (self : List ι) (q : MethodMembers.Sig (List ι)) : Nat → List ι → Prop
-  | 0, P => FoundOn G R known self q P
-  | d + 1, P => FoundOn G R known self q P ∨ (lacksKey G P q.key ∧
-      ∃ P' ∈ (viewOf G P CallArguments.protoField).toList, ProtoHolds G R known self q d P')
+  | 0, P => FoundOn G sub R known self q P
+  | d + 1, P => FoundOn G sub R known self q P ∨ (lacksKey G P q.key ∧
+      ∃ P' ∈ (viewOf G P CallArguments.protoField).toList, ProtoHolds G sub R known self q d P')
 
 /-- How many prototypes up a method is looked for: a class hierarchy deeper
 than this has its inherited methods refused, never wrongly admitted. -/
@@ -877,21 +939,21 @@ def protoChainDepth : Nat := 16
 bound of the source excludes the key (`Excludes`), so the object lacks it, and
 its prototype field's type holds it, on that prototype or further up
 (`ProtoHolds`). -/
-@[nospecialize] def CoversByProto [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
+@[nospecialize] def CoversByProto [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (R : List ι → List ι → Prop) (known : Known ι)
     (self : List ι) (fields : List (PropKey × List ι)) (bounds : List KeyBound)
     (q : MethodMembers.Sig (List ι)) : Prop :=
   Excludes bounds q.key ∧ ∃ f ∈ fields, f.1 = CallArguments.protoField ∧
-    ProtoHolds G R known self q protoChainDepth f.2
+    ProtoHolds G sub R known self q protoChainDepth f.2
 
 /-- Every target method is covered by a source method of the same key, by a
 function the source holds under that key whose receiver the source's own type
 is within, or by such a function along its prototype chain. -/
-abbrev CoversMethods [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
+abbrev CoversMethods [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (R : List ι → List ι → Prop) (known : Known ι)
     (self : List ι) (fields : List (PropKey × List ι)) (bounds : List KeyBound)
     (source target : List (MethodMembers.Sig (List ι))) : Prop :=
   ∀ q ∈ target, (∃ p ∈ source, p.key = q.key ∧ CoversSig (restElem G) R p q) ∨
-    (∃ f ∈ fields, f.1 = q.key ∧ CoversByFunction G R self f.2 q) ∨
-    CoversByProto G R known self fields bounds q
+    (∃ f ∈ fields, f.1 = q.key ∧ CoversByFunction G sub R self f.2 q) ∨
+    CoversByProto G sub R known self fields bounds q
 
 /-- Index contracts met through an own-key bound: the object's own keys are
 among `K`, which lists no prototype key, so the object has no prototype; each
@@ -1132,7 +1194,7 @@ within the target's and each position's operand is within the target's
 /-- Coverage has one definition for both derivations and certificate checking.
 Only fixed-arrow coverage needs evidence; the remaining conditions are finite
 checks over the supplied subtype relation. -/
-@[nospecialize] def CoversWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
+@[nospecialize] def CoversWith [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (R : List ι → List ι → Prop) (known : Known ι)
     (arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop)
     (self : List ι) : Clause (List ι) → Clause (List ι) → Prop
   | _, .top => True
@@ -1154,7 +1216,7 @@ checks over the supplied subtype relation. -/
   | .bigintLit a, .bigintLit b => a = b
   | .refs a bs vs os ms ks, .refs c ds ws ps ns ls => CoversFields R (a :: bs) (c :: ds) ∧
       CoversViews R (a :: bs) vs ws ∧ CoversOptional R (a :: bs) vs os ks ps ∧
-      CoversMethods G R known self ((a :: bs).flatten ++ vs) ks ms ns ∧ CoversBounds ks ls
+      CoversMethods G sub R known self ((a :: bs).flatten ++ vs) ks ms ns ∧ CoversBounds ks ls
   -- A record whose own keys are bounded meets a dictionary's index contracts
   -- through the bound (`CoversKeys`), and its named members as a record's. It
   -- meets a writable index only at an uninhabited contract: a holder of one
@@ -1163,14 +1225,14 @@ checks over the supplied subtype relation. -/
       CoversKeys R (a :: bs).flatten vs ks iy cy ∧
       CoversFields R (a :: bs) (c :: ds) ∧ CoversViews R (a :: bs) vs ws ∧
       CoversOptional R (a :: bs) vs os ks ps ∧
-      CoversMethods G R known self ((a :: bs).flatten ++ vs) ks ms ns ∧ CoversBounds ks ls ∧
+      CoversMethods G sub R known self ((a :: bs).flatten ++ vs) ks ms ns ∧ CoversBounds ks ls ∧
       ∀ y ∈ cy, Uninhabited G y.2
   -- A dictionary meets a record's members as a record does; the record has
   -- no index, so the dictionary's index contracts are forgotten.
   | .dict a bs vs _ os ms ks _, .refs c ds ws ps ns ls =>
       CoversFields R (a :: bs) (c :: ds) ∧ CoversViews R (a :: bs) vs ws ∧
       CoversOptional R (a :: bs) vs os ks ps ∧
-      CoversMethods G R known self ((a :: bs).flatten ++ vs) ks ms ns ∧ CoversBounds ks ls
+      CoversMethods G sub R known self ((a :: bs).flatten ++ vs) ks ms ns ∧ CoversBounds ks ls
   -- A target index view is within some source index view over as many keys
   -- (`IndexKeys.within`); a writable target index needs a writable source
   -- index over as many keys of an equivalent contract, as an invariant field
@@ -1189,7 +1251,7 @@ checks over the supplied subtype relation. -/
           (∀ z ∈ ix, y.1.overlaps z.1 = true → R y.2 z.2) ∧
           ∀ o ∈ os, y.1.may o.key = true → R y.2 o.type) ∧
       CoversOptional R (a :: bs) vs os ks ps ∧
-      CoversMethods G R known self ((a :: bs).flatten ++ vs) ks ms ns ∧ CoversBounds ks ls ∧
+      CoversMethods G sub R known self ((a :: bs).flatten ++ vs) ks ms ns ∧ CoversBounds ks ls ∧
       KeepsKeys G ks cy
   | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T =>
       arrows L S M ∧
@@ -1213,15 +1275,15 @@ checks over the supplied subtype relation. -/
   | _, _ => False
 
 /-- Declarative coverage supplies derivations for the fixed-arrow obligations. -/
-abbrev Covers [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι) :=
-  CoversWith G R known (fun L S M => ∀ p ∈ M,
+abbrev Covers [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (R : List ι → List ι → Prop) (known : Known ι) :=
+  CoversWith G sub R known (fun L S M => ∀ p ∈ M,
     CallArrow (compatible G) (restElem G) R L S p)
 
 /-- Replacing the arrow interpreter preserves all the shared coverage conditions. -/
-theorem CoversWith.mono [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} {known : Known ι}
+theorem CoversWith.mono [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {R : List ι → List ι → Prop} {known : Known ι}
     {arrows arrows' : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop}
     (ha : ∀ L S M, arrows L S M → arrows' L S M) {self a b}
-    (h : CoversWith G R known arrows self a b) : CoversWith G R known arrows' self a b := by
+    (h : CoversWith G sub R known arrows self a b) : CoversWith G sub R known arrows' self a b := by
   cases a <;> cases b <;> simp only [CoversWith] at *
   all_goals first
     | exact h
@@ -1235,13 +1297,13 @@ covering it keeps that class (`KeyBound.keeps`), unless no value meets the
 contract: no bound listing keys, which a record meets a dictionary through
 (`CoversKeys`) and an allocation owns, and no bound excluding a key the class
 may admit. -/
-theorem covers_writable_keeps [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} {known : Known ι}
+theorem covers_writable_keeps [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {R : List ι → List ι → Prop} {known : Known ι}
     {arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop}
     {self : List ι} {c : Clause (List ι)} {a : List (PropKey × List ι)}
     {bs : List (List (PropKey × List ι))} {vs : List (PropKey × List ι)}
     {ix cy : List (IndexKeys × List ι)} {os : List (OptionalField (List ι))}
     {ms : List (MethodMembers.Sig (List ι))} {ls : List KeyBound}
-    (h : CoversWith G R known arrows self c (.dict a bs vs ix os ms ls cy)) :
+    (h : CoversWith G sub R known arrows self c (.dict a bs vs ix os ms ls cy)) :
     ∀ y ∈ cy, Uninhabited G y.2 ∨ ∀ K ∈ c.keyBounds, K.keeps y.1 = true := by
   cases c <;> simp only [CoversWith] at h
   all_goals try exact h.elim
@@ -1259,14 +1321,14 @@ theorem Uninhabited.empty {G : NormalGraph ι} {η : MixedAssignment ι} {S : Li
 /-- So an object meeting such a clause keeps its bounds when code holding it
 at the writable index adds a key of the index's class, holding a value `u`
 that meets the index's contract. -/
-theorem covers_writable_bounds_grow [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignment ι}
+theorem covers_writable_bounds_grow [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {η : MixedAssignment ι}
     {R : List ι → List ι → Prop} {known : Known ι}
     {arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop}
     {self : List ι} {c : Clause (List ι)} {a : List (PropKey × List ι)}
     {bs : List (List (PropKey × List ι))} {vs : List (PropKey × List ι)}
     {ix cy : List (IndexKeys × List ι)} {os : List (OptionalField (List ι))}
     {ms : List (MethodMembers.Sig (List ι))} {ls : List KeyBound}
-    (h : CoversWith G R known arrows self c (.dict a bs vs ix os ms ls cy))
+    (h : CoversWith G sub R known arrows self c (.dict a bs vs ix os ms ls cy))
     {y : IndexKeys × List ι} (hy : y ∈ cy) {n : Nat} {W : WorldT n}
     {flds : List (PropKey × Nat)} (hb : ∀ K ∈ c.keyBounds, ownKeysT K n W (.objAt flds .absent))
     {f : PropKey} (hf : y.1.Admits f) (hm : modelKey f = false) (l : Nat)
@@ -1444,6 +1506,146 @@ theorem covers_sig_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : Lis
         simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using rest_rest (hr j hj) (hpa j hj _ _ he) (by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hd) (by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hin)
           (by simpa [Contract.withReceiver, MethodArrow.map, MethodRestArrow.mapWith, Contract.map] using ha))
       (fun m hm U w hw => hr m hm _ _ hres U w hw)
+
+theorem lookup_zip_none [DecidableEq ι] {src : List ι} {ys : List β} {p : ι} (hp : p ∉ src) :
+    (src.zip ys).lookup p = none := by
+  induction src generalizing ys with
+  | nil => rfl
+  | cons b src ih =>
+    cases ys with
+    | nil => rfl
+    | cons y ys =>
+      simp only [List.zip_cons_cons, List.lookup_cons]
+      have hb : p ≠ b := fun e => hp (e ▸ List.mem_cons_self)
+      rw [beq_false_of_ne hb]
+      exact ih fun h => hp (List.mem_cons_of_mem _ h)
+
+/-- An empty type has no member. -/
+theorem mixedMeaning_nil (G : NormalGraph ι) (η : MixedAssignment ι) :
+    mixedMeaning G η [] = fun _ _ _ => False := by
+  funext n W x
+  apply propext
+  cases x <;> simp [mixedMeaning, mixedParameters, graphArguments, setSem]
+
+/-- A clause whose operands are mapped to types of the same meanings means
+the same. -/
+theorem semWithArgs_map_meaning [DecidableEq ι] {G : NormalGraph ι} {η θ : MixedAssignment ι}
+    {f : List ι → List ι} {c : Clause (List ι)}
+    (h : ∀ S, S ∈ c.operands ∨ S = [] → mixedMeaning G η (f S) = mixedMeaning G θ S) :
+    semWithArgs (mixedValues G η) (mixedArgs G η) (c.map f) =
+      semWithArgs (mixedValues G θ) (mixedArgs G θ) c := by
+  let r : List ι → List ι := fun S => if S ∈ c.operands then S else []
+  have hcr : c.map r = c := map_of_operands fun S hS => by simp [r, hS]
+  rw [semWithArgs_map, ← hcr, semWithArgs_map, semWithArgs_map]
+  have hr : ∀ S, mixedMeaning G η (f (r S)) = mixedMeaning G θ (r S) := fun S => by
+    by_cases hS : S ∈ c.operands
+    · simp only [r, hS, if_true]; exact h S (.inl hS)
+    · simp only [r, hS, if_false]; exact h [] (.inr rfl)
+  have h1 : (fun a => mixedValues G η (f (r a))) = fun a => mixedValues G θ (r a) := by
+    funext a n W v
+    exact congrFun (congrFun (congrFun (hr a) n) W) (.inl v)
+  have h2 : (fun a => mixedArgs G η (f (r a))) = fun a => mixedArgs G θ (r a) := by
+    funext a n W vs
+    exact congrFun (congrFun (congrFun (hr a) n) W) (.inr vs)
+  rw [h1, h2]
+
+theorem assign_getElem (η : ParameterAssignment k ι) {bs : List ι}
+    {As : List (ParameterFamily k)} (unique : bs.Nodup) (lengths : As.length = bs.length)
+    (i : Nat) (hi : i < bs.length) :
+    (assign η bs As).1 bs[i] = (As[i]'(by omega)).1 := by
+  induction bs generalizing As i with
+  | nil => simp at hi
+  | cons b bs ih =>
+    cases As with
+    | nil => simp at lengths
+    | cons A As =>
+      cases i with
+      | zero => exact assign_cons_head η b bs A As
+      | succ i =>
+        have hb : bs[i]'(by simpa using hi) ≠ b := by
+          intro he
+          exact (List.nodup_cons.mp unique).1 (he ▸ List.getElem_mem (by simpa using hi))
+        rw [List.getElem_cons_succ, assign_cons_ne η bs A As hb]
+        exact ih (List.nodup_cons.mp unique).2 (by simpa using lengths) i (by simpa using hi)
+
+theorem lookup_zip_index [DecidableEq ι] :
+    ∀ {bs : List ι} {ys : List β} {x : ι} {y : β}, (bs.zip ys).lookup x = some y →
+      ∃ k, ∃ (h1 : k < bs.length) (h2 : k < ys.length), bs[k] = x ∧ ys[k] = y
+  | [], _, _, _, h => by simp at h
+  | _ :: _, [], _, _, h => by simp at h
+  | b :: bs, c :: ys, x, y, h => by
+    simp only [List.zip_cons_cons, List.lookup_cons] at h
+    by_cases hx : x = b
+    · subst hx
+      simp only [beq_self_eq_true] at h
+      cases h
+      exact ⟨0, by simp, by simp, rfl, rfl⟩
+    · rw [beq_false_of_ne hx] at h
+      obtain ⟨k, h1, h2, hb, hy⟩ := lookup_zip_index h
+      exact ⟨k + 1, by simpa using h1, by simpa using h2, hb, hy⟩
+
+theorem lookup_zip_getElem [DecidableEq ι] :
+    ∀ {bs : List ι} {ys : List β}, bs.Nodup → ∀ k (h1 : k < bs.length) (h2 : k < ys.length),
+      (bs.zip ys).lookup bs[k] = some ys[k]
+  | [], _, _, k, h1, _ => by simp at h1
+  | _ :: _, [], _, k, _, h2 => by simp at h2
+  | b :: bs, c :: ys, hn, k, h1, h2 => by
+    cases k with
+    | zero => simp
+    | succ k =>
+      have hne : bs[k]'(by simpa using h1) ≠ b := fun he =>
+        (List.nodup_cons.mp hn).1 (he ▸ List.getElem_mem _)
+      simp only [List.zip_cons_cons, List.lookup_cons, List.getElem_cons_succ, beq_false_of_ne hne]
+      exact lookup_zip_getElem (List.nodup_cons.mp hn).2 k _ _
+
+/-- A parameter row means its selected component of the assignment. -/
+theorem mixedMeaning_param_eq {G : NormalGraph ι} {η θ : MixedAssignment ι} {p q : ι}
+    (hk : G.parameterKinds p = G.parameterKinds q) (hp : G.params p = true)
+    (he : η.1 p = θ.1 q) : mixedMeaning G η [p] = mixedMeaning G θ [q] := by
+  obtain ⟨kind, hkind⟩ : ∃ kind, G.parameterKinds p = some kind := by
+    simpa [NormalGraph.params, Option.isSome_iff_exists] using hp
+  rw [mixedMeaning_parameter G η p kind hkind, mixedMeaning_parameter G θ q kind (hk ▸ hkind), he]
+
+/-- Renaming the target's binders to the source's: at the source's instance,
+a renamed target type means the target type at the same instance of its own
+binders, when no source binder is free in it but as a target binder. -/
+theorem renamed_meaning [DecidableEq ι] {G : NormalGraph ι} (r : Renaming G)
+    (η : MixedAssignment ι) {ps qs : List ι} {As : List MixedFamily}
+    (hlen : ps.length = qs.length) (hnp : ps.Nodup) (hnq : qs.Nodup)
+    (hkinds : ∀ pq ∈ ps.zip qs, G.parameterKinds pq.1 = G.parameterKinds pq.2)
+    (hAs : As.length = ps.length) (S : List ι)
+    (hfresh : S = [] ∨ ∀ x ∈ r.free S, x ∈ ps → x ∈ qs) :
+    mixedMeaning G (assign η ps As) (r.substitute (qs.zip (ps.map fun p => [p])) S) =
+      mixedMeaning G (assign η qs As) S := by
+  let θ := assign η ps As
+  let ζ := assign θ qs As
+  have images : ∀ x, G.params x = true →
+      mixedMeaning G ζ [x] = mixedMeaning G θ (replace (qs.zip (ps.map fun p => [p])) x) := by
+    intro x hx
+    by_cases hq : x ∈ qs
+    · obtain ⟨k, hk, rfl⟩ := List.getElem_of_mem hq
+      have hkp : k < ps.length := by omega
+      have hl := lookup_zip_getElem (ys := ps.map fun p => [p]) hnq k hk (by simpa using hkp)
+      simp only [replace, hl, List.getElem_map, Option.getD_some]
+      apply mixedMeaning_param_eq _ hx
+      · rw [assign_getElem θ hnq (by omega) k hk, assign_getElem η hnp hAs k hkp]
+      · have := hkinds (ps[k], qs[k]) (by
+          rw [List.mem_iff_getElem]
+          exact ⟨k, by simp; omega, by simp⟩)
+        exact this.symm
+    · have hl := lookup_zip_none (ys := ps.map fun p => [p]) hq
+      simp only [replace, hl, Option.getD_none]
+      exact mixedMeaning_param_eq rfl hx (assign_nmem θ qs As hq)
+  rw [← r.substitute_meaning ζ θ _ images S]
+  rcases hfresh with rfl | hfresh
+  · rw [mixedMeaning_nil, mixedMeaning_nil]
+  apply r.agree_free
+  intro x hx
+  by_cases hq : x ∈ qs
+  · obtain ⟨k, hk, rfl⟩ := List.getElem_of_mem hq
+    rw [assign_getElem θ hnq (by omega) k hk, assign_getElem η hnq (by omega) k hk]
+  · rw [assign_nmem θ qs As hq, assign_nmem η qs As hq]
+    exact assign_nmem η ps As fun hp => hq (hfresh x hx hp)
 
 /-! ### Free parameter rows, semantically
 
@@ -1913,18 +2115,83 @@ hypothesis names a binder. -/
     (∀ j, j < n → ∀ S T, R S T → FamLeAt G (assign η s.binders As) S T j) ∧
       ArgsLeBelow G (assign η s.binders As) R n
 
+/-- **Signatures a bound scheme meets.** At an assignment `θ` where a
+function `u` meets a scheme's signatures and the host `v` is in each of their
+receivers, `.bind`'s forwarding function meets, at any receiver, each
+signature the scheme's cover (`callsT_bound`, `restsT_bound`), the coverage
+premises read at `θ`. -/
+theorem bound_sigs_sound [DecidableEq ι] {G : NormalGraph ι} {θ : MixedAssignment ι}
+    {R : List ι → List ι → Prop} {s : SchemeRow ι} {L : Ops ι} {M : List (RestArrow (List ι))}
+    (hsig : BoundSigsCover G R s L M) {j : Nat}
+    (hr : ∀ k, k < j → ∀ S T, R S T → FamLeAt G θ S T k) (hpa : ArgsLeBelow G θ R j)
+    {U : WorldT j} {u v : Val}
+    (hi : semWithArgs (mixedValues G θ) (mixedArgs G θ) (.arrs s.signatures s.variadic) j U u)
+    (hval : isVal v = true ∧ Scoped 0 v)
+    (hrv : ∀ r ∈ s.signatures.map (·.receiver) ++ s.variadic.map (·.receiver), mixedValues G θ r j U v)
+    (hinvB : Invocable (.objAt [] (.bound u v []))) :
+    semWithArgs (mixedValues G θ) (mixedArgs G θ) (.arrs L M) j U (.objAt [] (.bound u v [])) := by
+  have hadm : ∀ (S : List ι), Adm (mixedValues G θ S) :=
+    fun S => setSem_adm (fun i => qDenoteWithArgs_adm G (mixedParameters G) (θ, i)) S
+  have hargsAdm : ∀ (S : List ι), Adm (mixedArgs G θ S) :=
+    fun S => graphArguments_adm G θ (mixedValues G θ) hadm S
+  obtain ⟨hsig, hvar⟩ := hsig
+  refine ⟨CallEffects.callsT_of_signatures hinvB fun x hx => ?_, CallEffects.restsT_of_signatures hinvB fun x hx => ?_⟩
+  · obtain ⟨t, ht, rfl⟩ := List.mem_map.mp hx
+    obtain ⟨p, hp, hd, hres, heff⟩ := hsig t ht
+    have hc := CallEffects.callsT_select hi.1 (List.mem_map_of_mem hp)
+    have hrv := hrv p.receiver (List.mem_append_left _ (List.mem_map_of_mem hp))
+    have hbd := CallEffects.callsT_bound (Ps := []) (Rc := mixedValues G θ t.receiver)
+      (Ds := p.arguments.map (mixedValues G θ))
+      (R := mixedValues G θ p.result)
+      (fs := []) (pre := []) (hadm p.receiver) (by simp)
+      (fun A hA => by obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact hadm b)
+      (by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hc) hval.1 hval.2 hrv trivial (by simp [CallArguments.Values]) (by simp)
+    refine ⟨hbd.1, fun y hy => ?_⟩
+    cases List.mem_singleton.mp hy
+    exact (hbd.2 _ (List.mem_singleton_self _)).weaken (Effect.covers_sound heff) (fun _ _ _ r h => h)
+      (fun j'' hj'' U' args ha => by
+        simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using Domains.short (hr j'' (by omega)) hd (by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using ha))
+      (fun m hm U' w hw => hr m (by omega) _ _ hres U' w hw)
+  · obtain ⟨t, ht, rfl⟩ := List.mem_map.mp hx
+    obtain ⟨p, hp, hd, hin, he, hres, heff⟩ := hvar t ht
+    have hc := CallEffects.restsT_select hi.2 (List.mem_map_of_mem hp)
+    have hrv := hrv p.receiver (List.mem_append_right _ (List.mem_map_of_mem hp))
+    have hbd := CallEffects.restsT_bound (Rc := mixedValues G θ t.receiver)
+      (Ps := p.arguments.1.map (mixedValues G θ))
+      (E := mixedArgs G θ p.arguments.2)
+      (R := mixedValues G θ p.result)
+      (fs := []) (pre := []) (hadm p.receiver)
+      (fun A hA => by obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact hadm b)
+      (hargsAdm p.arguments.2) hc hval.1 hval.2 hrv
+      (by simp only [List.take_nil, List.take_zero, List.length_nil]; exact trivial)
+      (fun _ _ _ _ ys hys => by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hys)
+      (by simp [CallArguments.Values]) (by simp)
+    refine ⟨hbd.1, fun y hy => ?_⟩
+    cases List.mem_singleton.mp hy
+    exact ((by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hbd.2 _ (List.mem_singleton_self _)) :
+      PromiseWith p.effect (ArgsRest (p.arguments.1.map (mixedValues G θ))
+        (mixedArgs G θ p.arguments.2))
+        (mixedValues G θ t.receiver)
+        (mixedValues G θ p.result) j U _).weaken (Effect.covers_sound heff) (fun _ _ _ r h => h)
+      (fun j'' hj'' U' args ha => by
+        simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using rest_rest (hr j'' (by omega)) (hpa j'' (by omega) _ _ he)
+          (by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hd) (by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hin) (by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using ha))
+      (fun m hm U' w hw => hr m (by omega) _ _ hres U' w hw)
+
 /-- **A scheme received by the host.** A generic function the host reaches
 under a member's key, whose receivers read none of its binders and hold the
-host, meets bound to the host each target scheme binding the same rows whose
-signatures its own cover: at every instance the target admits, which the
-source admits too, the host is in the source signature's receiver (the same
-as at the table's assignment), so `.bind`'s forwarding function meets the
-source signature at any receiver (`callsT_bound`, `restsT_bound`), and the
-target's by the coverage premises read at the instance. -/
-theorem covers_by_scheme_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignment ι}
+host, meets bound to the host each target scheme it binds as: at every
+instance the target admits, which the source admits too at its own binders,
+the host is in the source signature's receiver (the same as at the table's
+assignment), so the bound function meets the covered signatures
+(`bound_sigs_sound`). With the same rows these are the target's; renamed,
+they are the target's signatures with its binders renamed to the source's,
+which at the source's instance mean the target's at its own
+(`renamed_meaning`). -/
+theorem covers_by_scheme_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {η : MixedAssignment ι}
     {R : List ι → List ι → Prop} {self F : List ι} {q : MethodMembers.Sig (List ι)}
-    (hby : CoversByScheme G R self F q) {n : Nat}
-    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j)
+    (hby : CoversByScheme G sub R self F q) {n : Nat}
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
     (hre : ReassignSound G η R n)
     {W : WorldT n} {v : Val}
     (hself : ∀ j (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
@@ -1965,10 +2232,18 @@ theorem covers_by_scheme_sound [DecidableEq ι] {G : NormalGraph ι} {η : Mixed
         exact hr j hj self r (hrecv r hrm) U v hvself
       have hinvB : Invocable (.objAt [] (.bound u v [])) :=
         ⟨[], _, rfl, rfl, by simp only [Scoped, scopedArgs_iff]; exact ⟨hinv.scoped, hval.2, by simp⟩⟩
-      have hadm : ∀ (η' : MixedAssignment ι) (S : List ι), Adm (mixedValues G η' S) :=
-        fun η' S => setSem_adm (fun i => qDenoteWithArgs_adm G (mixedParameters G) (η', i)) S
-      have hargsAdm : ∀ (η' : MixedAssignment ι) (S : List ι), Adm (mixedArgs G η' S) :=
-        fun η' S => graphArguments_adm G η' (mixedValues G η') (hadm η') S
+      -- At each instance of the source's binders within its bounds, the
+      -- bound function meets every signature the source's cover.
+      have hat : ∀ As : List MixedFamily, As.length = s.binders.length →
+          Bounded (fun θ S => (mixedParameters G).bound θ
+            (setSem (fun l => qDenoteWithArgs G (mixedParameters G) (θ, l))) S) η s As j →
+          ∀ L M, BoundSigsCover G R s L M →
+          semWithArgs (mixedValues G (assign η s.binders As)) (mixedArgs G (assign η s.binders As))
+            (.arrs L M) j U (.objAt [] (.bound u v [])) := by
+        intro As hl hb' L M hc
+        exact bound_sigs_sound hc (fun k hk => (hre i s As hs).1 k (by omega))
+          (fun k hk => (hre i s As hs).2 k (by omega)) (hall As hl hb') hval
+          (fun r hrm => hhost r hrm As) hinvB
       refine ⟨⟨hinv, fun p hp => ?_⟩, ⟨hinv, fun p hp => ?_⟩, fun B hB => ?_⟩
       · simp [MethodMembers.Member.of, hcalls] at hp
       · simp [MethodMembers.Member.of, hrests] at hp
@@ -1979,74 +2254,58 @@ theorem covers_by_scheme_sound [DecidableEq ι] {G : NormalGraph ι} {η : Mixed
       · rename_i j'
         split at hb
         · rename_i s' hs'
-          obtain ⟨hpj, hbs, hbnd, hsig, hvar⟩ := hb
+          obtain ⟨hpj, hcase⟩ := hb
           refine ⟨j', List.mem_singleton_self j', ?_⟩
           show qDenoteWithArgs G (mixedParameters G) (η, j') j U _
           rw [qDenoteWithArgs_unfold]
           simp only [qLayerWithArgs, hpj, hs', Bool.false_eq_true, if_false]
           refine ⟨hinvB, fun As hl hbd => ?_⟩
-          have hb' : Bounded (fun θ S => (mixedParameters G).bound θ
-              (setSem (fun l => qDenoteWithArgs G (mixedParameters G) (θ, l))) S) η s As j := by
-            intro b hbm hbin j'' hj'' U' w hw
-            rw [hbs] at hbin hw
-            exact hbd b (hbnd b hbm) hbin j'' hj'' U' w hw
-          have hi : semWithArgs (mixedValues G (assign η s.binders As))
-              (mixedArgs G (assign η s.binders As)) (.arrs s.signatures s.variadic) j U u :=
-            hall As (by rw [hbs]; exact hl) hb'
           show semWithArgs (mixedValues G (assign η s'.binders As)) (mixedArgs G (assign η s'.binders As))
               (.arrs s'.signatures s'.variadic) j U (.objAt [] (.bound u v []))
-          rw [← hbs]
-          refine ⟨CallEffects.callsT_of_signatures hinvB fun x hx => ?_, CallEffects.restsT_of_signatures hinvB fun x hx => ?_⟩
-          · obtain ⟨t, ht, rfl⟩ := List.mem_map.mp hx
-            obtain ⟨p, hp, hd, hres, heff⟩ := hsig t ht
-            have hc := CallEffects.callsT_select hi.1 (List.mem_map_of_mem hp)
-            have hrv := hhost p.receiver (List.mem_append_left _ (List.mem_map_of_mem hp)) As
-            have hbd := CallEffects.callsT_bound (Ps := []) (Rc := mixedValues G (assign η s.binders As) t.receiver)
-              (Ds := p.arguments.map (mixedValues G (assign η s.binders As)))
-              (R := mixedValues G (assign η s.binders As) p.result)
-              (fs := []) (pre := []) (hadm _ p.receiver) (by simp)
-              (fun A hA => by obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact hadm _ b)
-              (by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hc) hval.1 hval.2 hrv trivial (by simp [CallArguments.Values]) (by simp)
-            refine ⟨hbd.1, fun y hy => ?_⟩
-            cases List.mem_singleton.mp hy
-            exact (hbd.2 _ (List.mem_singleton_self _)).weaken (Effect.covers_sound heff) (fun _ _ _ r h => h)
-              (fun j'' hj'' U' args ha => by
-                simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using Domains.short ((hre i s As hs).1 j'' (by omega)) hd (by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using ha))
-              (fun m hm U' w hw => (hre i s As hs).1 m (by omega) _ _ hres U' w hw)
-          · obtain ⟨t, ht, rfl⟩ := List.mem_map.mp hx
-            obtain ⟨p, hp, hd, hin, he, hres, heff⟩ := hvar t ht
-            have hc := CallEffects.restsT_select hi.2 (List.mem_map_of_mem hp)
-            have hrv := hhost p.receiver (List.mem_append_right _ (List.mem_map_of_mem hp)) As
-            have hbd := CallEffects.restsT_bound (Rc := mixedValues G (assign η s.binders As) t.receiver)
-              (Ps := p.arguments.1.map (mixedValues G (assign η s.binders As)))
-              (E := mixedArgs G (assign η s.binders As) p.arguments.2)
-              (R := mixedValues G (assign η s.binders As) p.result)
-              (fs := []) (pre := []) (hadm _ p.receiver)
-              (fun A hA => by obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact hadm _ b)
-              (hargsAdm _ p.arguments.2) hc hval.1 hval.2 hrv
-              (by simp only [List.take_nil, List.take_zero, List.length_nil]; exact trivial)
-              (fun _ _ _ _ ys hys => by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hys)
-              (by simp [CallArguments.Values]) (by simp)
-            refine ⟨hbd.1, fun y hy => ?_⟩
-            cases List.mem_singleton.mp hy
-            exact ((by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hbd.2 _ (List.mem_singleton_self _)) :
-              PromiseWith p.effect (ArgsRest (p.arguments.1.map (mixedValues G (assign η s.binders As)))
-                (mixedArgs G (assign η s.binders As) p.arguments.2))
-                (mixedValues G (assign η s.binders As) t.receiver)
-                (mixedValues G (assign η s.binders As) p.result) j U _).weaken (Effect.covers_sound heff) (fun _ _ _ r h => h)
-              (fun j'' hj'' U' args ha => by
-                simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using rest_rest ((hre i s As hs).1 j'' (by omega)) ((hre i s As hs).2 j'' (by omega) _ _ he)
-                  (by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hd) (by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hin) (by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using ha))
-              (fun m hm U' w hw => (hre i s As hs).1 m (by omega) _ _ hres U' w hw)
+          rcases hcase with ⟨hbs, hbnd, hcov⟩ | hren
+          · have hb' : Bounded (fun θ S => (mixedParameters G).bound θ
+                (setSem (fun l => qDenoteWithArgs G (mixedParameters G) (θ, l))) S) η s As j := by
+              intro b hbm hbin j'' hj'' U' w hw
+              rw [hbs] at hbin hw
+              exact hbd b (hbnd b hbm) hbin j'' hj'' U' w hw
+            rw [← hbs]
+            exact hat As (by rw [hbs]; exact hl) hb' _ _ hcov
+          · cases sub with
+            | none => exact hren.elim
+            | some r =>
+              obtain ⟨hlen, hnp, hnq, hkinds, hbnd, hfresh, hcov⟩ := hren
+              -- Each source bound holds at the instance: the target's bound on
+              -- the renamed binder does, and is within it.
+              have hb' : Bounded (fun θ S => (mixedParameters G).bound θ
+                  (setSem (fun l => qDenoteWithArgs G (mixedParameters G) (θ, l))) S) η s As j := by
+                intro b hbm hbin k hk U' w hw
+                obtain ⟨b', hb'm, hlk, hR⟩ := hbnd b hbm
+                obtain ⟨m, hm1, hm2, hpb', hqb'⟩ := lookup_zip_index hlk
+                have heq : (assign η s.binders As).1 b.1 = (assign η s'.binders As).1 b'.1 := by
+                  rw [← hpb', ← hqb', assign_getElem η hnp (by omega) m hm1,
+                    assign_getElem η hnq (by omega) m hm2]
+                have hin : b'.1 ∈ s'.binders := hqb' ▸ List.getElem_mem hm2
+                have hw' := hbd b' hb'm hin k hk U' w (heq ▸ hw)
+                cases w with
+                | inl w => exact hr k (by omega) _ _ hR U' w hw'
+                | inr ws => exact hpa k (by omega) _ _ hR U' ws hw'
+              have hsrc := hat As (by rw [hlen]; exact hl) hb' _ _ hcov
+              rw [← semWithArgs_map_meaning (η := assign η s.binders As)
+                (f := r.substitute (renamingOf s.binders s'.binders)) fun S hS => ?_]
+              · exact hsrc
+              · apply renamed_meaning r η hlen hnp hnq hkinds (by omega) S
+                rcases hS with hS | rfl
+                · exact .inr (hfresh S hS)
+                · exact .inl rfl
         · exact hb.elim
       · exact hb.elim
     · exact hby.elim
   · exact hby.elim
 
 /-- A function covering a signature meets the host-relative member. -/
-theorem covers_by_function_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignment ι}
+theorem covers_by_function_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {η : MixedAssignment ι}
     {R : List ι → List ι → Prop} {self F : List ι} {q : MethodMembers.Sig (List ι)}
-    (hby : CoversByFunction G R self F q) {n : Nat}
+    (hby : CoversByFunction G sub R self F q) {n : Nat}
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
     (hre : ReassignSound G η R n)
     {W : WorldT n} {v : Val}
@@ -2063,7 +2322,7 @@ theorem covers_by_function_sound [DecidableEq ι] {G : NormalGraph ι} {η : Mix
     rw [hE, List.mem_singleton] at hc'
     subst hc'
     exact covers_arrows_sound hby hr hpa hself hj hU hsem
-  · exact covers_by_scheme_sound hby hr hre hself hj hU hu
+  · exact covers_by_scheme_sound hby hr hpa hre hself hj hU hu
 
 /-- A record's invariant fields and views are at its locations, whose contracts
 imply their operands' families. -/
@@ -2184,7 +2443,7 @@ theorem lacksKey_at {G : NormalGraph ι} {η : MixedAssignment ι} {P : List ι}
 prototype type, below the level, in every world extending the host's, holds
 the key the same number of prototypes up, its contract implying the target's
 signatures invoked on the host. -/
-theorem protoHolds_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
+theorem protoHolds_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
     {known : Known ι} {self : List ι} {q : MethodMembers.Sig (List ι)}
     (hknown : ∀ k ∈ known, FamLe (mixedValues G η k.1) (mixedSem G η (.arrs k.2.1 k.2.2)))
     {n : Nat} (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
@@ -2192,14 +2451,14 @@ theorem protoHolds_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssign
     {W : WorldT n} {v : Val}
     (hself : ∀ j (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
       mixedValues G η self j U v) :
-    ∀ (d : Nat) (P : List ι), ProtoHolds G R known self q d P → ∃ e : Nat,
+    ∀ (d : Nat) (P : List ι), ProtoHolds G sub R known self q d P → ∃ e : Nat,
       ∀ j (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
         ∀ p, mixedValues G η P j U p →
           MethodMembers.along q.key
             (MethodMembers.onHost v (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η) q)) e j U p := by
   -- Found on the prototype itself: its field or view of the key holds a
   -- function covering the signature, as an own one would.
-  have found : ∀ P, FoundOn G R known self q P →
+  have found : ∀ P, FoundOn G sub R known self q P →
       ∀ j (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
         ∀ p, mixedValues G η P j U p →
           MethodMembers.along q.key
@@ -2246,9 +2505,9 @@ member of its key names, whose contract implies the target's signatures on the
 same host; or from a field or view holding a function whose receiver the host
 is in, below the level, in every extending world; or, when the object lacks
 the key, from such a function its prototype holds. -/
-theorem covers_methods_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
+theorem covers_methods_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
     {known : Known ι} {self : List ι} {fields : List (PropKey × List ι)} {bounds : List KeyBound}
-    {ms ns : List (MethodMembers.Sig (List ι))} (hc : CoversMethods G R known self fields bounds ms ns)
+    {ms ns : List (MethodMembers.Sig (List ι))} (hc : CoversMethods G sub R known self fields bounds ms ns)
     (hknown : ∀ k ∈ known, FamLe (mixedValues G η k.1) (mixedSem G η (.arrs k.2.1 k.2.2)))
     (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
@@ -2601,13 +2860,13 @@ theorem covers_arguments_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R
     (fun S T h v => hr S T h W v) vs hv
 
 /-- A record clause is covered by record clauses only. -/
-theorem CoversWith.record [DecidableEq ι] {G : NormalGraph ι} {R known arrows self} {a b : Clause (List ι)}
-    (hc : CoversWith G R known arrows self a b) (hb : b.record = true) : a.record = true := by
+theorem CoversWith.record [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {R known arrows self} {a b : Clause (List ι)}
+    (hc : CoversWith G sub R known arrows self a b) (hb : b.record = true) : a.record = true := by
   cases a <;> cases b <;> simp_all [CoversWith, Clause.record]
 
 /-- Coverage of the clauses themselves, the row's invariant aside. -/
-theorem Covers.sound_raw [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignment ι} {R known self a b}
-    (hc : Covers G R known self a b)
+theorem Covers.sound_raw [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {η : MixedAssignment ι} {R known self a b}
+    (hc : Covers G sub R known self a b)
     (hknown : ∀ k ∈ known, FamLe (mixedValues G η k.1) (mixedSem G η (.arrs k.2.1 k.2.2)))
     (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
@@ -2777,8 +3036,8 @@ theorem Covers.sound_raw [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssign
     cases hc; exact id
 
 /-- Coverage in a row: a record target's invariant is the record source's. -/
-theorem Covers.sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignment ι} {R known self a b}
-    (hc : Covers G R known self a b)
+theorem Covers.sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {η : MixedAssignment ι} {R known self a b}
+    (hc : Covers G sub R known self a b)
     (hknown : ∀ k ∈ known, FamLe (mixedValues G η k.1) (mixedSem G η (.arrs k.2.1 k.2.2)))
     (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
@@ -2863,7 +3122,7 @@ induction over every assignment supplies (`family_sound`). -/
   match G.schemes i, G.schemes j with
   | some s, some s' => G.params i = false ∧ G.params j = false ∧ s.binders = s'.binders ∧
       (∀ b ∈ s.bounds, b ∈ s'.bounds) ∧
-      CoversWith G R known arrows [] (.arrs s.signatures s.variadic) (.arrs s'.signatures s'.variadic)
+      CoversWith G none R known arrows [] (.arrs s.signatures s.variadic) (.arrs s'.signatures s'.variadic)
   | _, _ => False
 
 theorem SchemeCoversWith.mono [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop}
@@ -3043,23 +3302,23 @@ meet row not in the target is below a target row by its parameters
 scheme part, read through one part; a target meet is read part by part
 (`MeetOpaque`). A scheme row is below a target scheme row whose quantified
 signatures its own cover (`SchemeCoversWith`). -/
-@[nospecialize] def OpaqueWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
+@[nospecialize] def OpaqueWith [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (R : List ι → List ι → Prop) (known : Known ι)
     (arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop)
     (S T : List ι) : Prop :=
   ∀ i ∈ S, G.plain i = true ∨ i ∈ T ∨ .top ∈ clausesOf G T ∨
     MeetOpaque G (SchemeCoversWith G R known arrows)
-      (fun a => ∃ b ∈ clausesOf G T, CoversWith G R known arrows S a b) T i ∨
+      (fun a => ∃ b ∈ clausesOf G T, CoversWith G sub R known arrows S a b) T i ∨
     ∃ j ∈ T, SchemeCoversWith G R known arrows i j
 
 /-- The same, with declarative arrow coverage. -/
-abbrev Opaque [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι) :=
-  OpaqueWith G R known (fun L S M => ∀ p ∈ M,
+abbrev Opaque [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (R : List ι → List ι → Prop) (known : Known ι) :=
+  OpaqueWith G sub R known (fun L S M => ∀ p ∈ M,
     CallArrow (compatible G) (restElem G) R L S p)
 
-theorem OpaqueWith.mono [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} {known : Known ι}
+theorem OpaqueWith.mono [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {R : List ι → List ι → Prop} {known : Known ι}
     {arrows arrows' : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop}
     (ha : ∀ L S M, arrows L S M → arrows' L S M) {S T : List ι}
-    (h : OpaqueWith G R known arrows S T) : OpaqueWith G R known arrows' S T := by
+    (h : OpaqueWith G sub R known arrows S T) : OpaqueWith G sub R known arrows' S T := by
   intro i hi
   have hsc : ∀ i j, SchemeCoversWith G R known arrows i j → SchemeCoversWith G R known arrows' i j :=
     fun _ _ => SchemeCoversWith.mono ha
@@ -3114,10 +3373,10 @@ theorem mixed_subset {G : NormalGraph ι} {η : MixedAssignment ι} {S T : List 
 
 /-- Arrow coverage alone: a callable clause's signatures, covered, give the
 target's. It reads no source type. -/
-theorem covers_arrs_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignment ι} {R known self}
+theorem covers_arrs_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {η : MixedAssignment ι} {R known self}
     {L : Ops ι} {S : List (RestArrow (List ι))}
     {M : Ops ι} {T : List (RestArrow (List ι))}
-    (hc : Covers G R known self (.arrs L S) (.arrs M T)) (n : Nat)
+    (hc : Covers G sub R known self (.arrs L S) (.arrs M T)) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
     (W : WorldT n) (v : Val) :
     semWithArgs (mixedValues G η) (mixedArgs G η) (.arrs L S) n W v →
@@ -3738,19 +3997,6 @@ theorem mem_of_lookup [DecidableEq ι] {κ : List (ι × β)} {p : ι} {U : β}
     by_cases ha : p = a
     · subst ha; simp at h; subst h; exact List.mem_cons_self
     · rw [beq_false_of_ne ha] at h; exact List.mem_cons_of_mem _ (ih h)
-
-theorem lookup_zip_none [DecidableEq ι] {src : List ι} {ys : List β} {p : ι} (hp : p ∉ src) :
-    (src.zip ys).lookup p = none := by
-  induction src generalizing ys with
-  | nil => rfl
-  | cons b src ih =>
-    cases ys with
-    | nil => rfl
-    | cons y ys =>
-      simp only [List.zip_cons_cons, List.lookup_cons]
-      have hb : p ≠ b := fun e => hp (e ▸ List.mem_cons_self)
-      rw [beq_false_of_ne hb]
-      exact ih fun h => hp (List.mem_cons_of_mem _ h)
 
 theorem lookup_append_none [DecidableEq ι] {xs ys : List (ι × β)} {p : ι}
     (h : xs.lookup p = none) : (xs ++ ys).lookup p = ys.lookup p := by
@@ -5033,40 +5279,6 @@ theorem HypsHoldValues.below {G : NormalGraph ι} {η : MixedAssignment ι} {hyp
     {n : Nat} (h : HypsHoldValues G η hyps n) {j : Nat} (hj : j < n) : HypsHold G η hyps j :=
   fun p hp k hk => h.1 p hp k (by omega)
 
-/-- Simultaneous replacement of the parameters a context names; any other
-row stands for itself. -/
-@[nospecialize] def replace [DecidableEq ι] (σ : List (ι × List ι)) (p : ι) : List ι := (σ.lookup p).getD [p]
-
-/-- Syntactic substitution and free support for a graph's types, with the
-semantic laws that justify them, and the rows reserved for family
-variables. Supplied by verified code for a representation (equation graphs
-have one), never by a certificate; the finite graph has none, so its
-checks rename no binder and use no variable. -/
-structure Renaming [DecidableEq ι] (G : NormalGraph ι) where
-  substitute : List (ι × List ι) → List ι → List ι
-  free : List ι → List ι
-  /-- Rows that may be family variables. -/
-  familyVar : ι → Bool
-  /-- Whether a type mentions a row anywhere in its syntax. -/
-  mentions : List ι → ι → Bool
-  substitute_meaning : ∀ (η θ : MixedAssignment ι) (σ : List (ι × List ι)),
-    (∀ p, G.params p = true → mixedMeaning G η [p] = mixedMeaning G θ (replace σ p)) →
-    ∀ A, mixedMeaning G η A = mixedMeaning G θ (substitute σ A)
-  agree_free : ∀ (η θ : MixedAssignment ι) (A : List ι), (∀ p ∈ free A, η.1 p = θ.1 p) →
-    mixedMeaning G η A = mixedMeaning G θ A
-  familyVar_param : ∀ x, familyVar x = true → G.params x = true
-  /-- No scheme binds a variable, so entering one keeps the hypotheses. -/
-  familyVar_unbound : ∀ i s x, G.schemes i = some s → familyVar x = true → x ∉ s.binders
-  /-- A label's size: an application's arguments are smaller than it
-  (`Inst`'s premises decrease). No law: the checker compares sizes it computes. -/
-  size : ι → Nat
-  /-- The renaming of bound rows that carries a table pair to another pair,
-  proposed by matching (`TabRen`). No law: the checker checks what it proposes. -/
-  rename : List ι × List ι → List ι → List ι → List (ι × List ι)
-  /-- The definition a label applies, if any. Search only: evidence search
-  tells a pair recurring with growing arguments by it. -/
-  head : ι → Option Nat := fun _ => none
-
 /-- **Quantified-α** (RECURSIVE-EQUATIONS §6). A scheme row's quantified
 signatures cover another's up to renaming the target's binders to the
 source's: as many binders, distinct on each side, of pairwise equal kinds;
@@ -5087,7 +5299,7 @@ checker's own substitution, never a certificate's. -/
       (s.binders.zip s'.binders).lookup b.1 = some b'.1 ∧ R b'.2 b.2) ∧
     (∀ A ∈ (Clause.arrs s'.signatures s'.variadic).operands, ∀ x ∈ r.free A,
       x ∈ s.binders → x ∈ s'.binders) ∧
-    CoversWith G R known arrows [] (.arrs s.signatures s.variadic)
+    CoversWith G none R known arrows [] (.arrs s.signatures s.variadic)
       ((Clause.arrs s'.signatures s'.variadic).map
         (r.substitute (s'.binders.zip (s.binders.map fun p => [p]))))
   | _, _, _ => False
@@ -5120,7 +5332,7 @@ source part, or the source row, below it by a hypothesis. -/
     (hyps : List (ι × ι)) (S T : List ι) : Prop :=
   ∀ i ∈ S, G.plain i = true ∨ i ∈ T ∨ .top ∈ clausesOf G T ∨
     MeetOpaque G (PartCovers G sub R known arrows hyps)
-      (fun a => ∃ b ∈ clausesOf G T, CoversWith G R known arrows S a b) T i ∨
+      (fun a => ∃ b ∈ clausesOf G T, CoversWith G sub R known arrows S a b) T i ∨
     (∃ y ∈ T, (i, y) ∈ hyps) ∨ ∃ j ∈ T, SchemeCoversAlpha G sub R known arrows i j
 
 theorem SchemeCoversAlpha.mono [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
@@ -5160,7 +5372,7 @@ theorem OpaqueFamily.mono [DecidableEq ι] {G : NormalGraph ι} {sub : Option (R
 theorem OpaqueWith.family [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
     {R : List ι → List ι → Prop} {known : Known ι}
     {arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop} {hyps : List (ι × ι)}
-    {S T : List ι} (h : OpaqueWith G R known arrows S T) :
+    {S T : List ι} (h : OpaqueWith G sub R known arrows S T) :
     OpaqueFamily G sub R known arrows hyps S T := by
   intro i hi
   rcases h i hi with h | h | h | h | ⟨j, hj, hc⟩
@@ -5177,134 +5389,7 @@ RECURSIVE-EQUATIONS §7.3), premises read through `R`. -/
   SameKind G A B = true ∧
     OpaqueFamily G sub R known (fun L S M => ∀ p ∈ M,
       CallArrow (compatible G) (restElem G) R L S p) hyps A B ∧
-    ∀ a ∈ sourceClauses G A ++ meetSources G A B hyps, ∃ b ∈ clausesOf G B, Covers G R known A a b
-
-/-- An empty type has no member. -/
-theorem mixedMeaning_nil (G : NormalGraph ι) (η : MixedAssignment ι) :
-    mixedMeaning G η [] = fun _ _ _ => False := by
-  funext n W x
-  apply propext
-  cases x <;> simp [mixedMeaning, mixedParameters, graphArguments, setSem]
-
-/-- A clause whose operands are mapped to types of the same meanings means
-the same. -/
-theorem semWithArgs_map_meaning [DecidableEq ι] {G : NormalGraph ι} {η θ : MixedAssignment ι}
-    {f : List ι → List ι} {c : Clause (List ι)}
-    (h : ∀ S, S ∈ c.operands ∨ S = [] → mixedMeaning G η (f S) = mixedMeaning G θ S) :
-    semWithArgs (mixedValues G η) (mixedArgs G η) (c.map f) =
-      semWithArgs (mixedValues G θ) (mixedArgs G θ) c := by
-  let r : List ι → List ι := fun S => if S ∈ c.operands then S else []
-  have hcr : c.map r = c := map_of_operands fun S hS => by simp [r, hS]
-  rw [semWithArgs_map, ← hcr, semWithArgs_map, semWithArgs_map]
-  have hr : ∀ S, mixedMeaning G η (f (r S)) = mixedMeaning G θ (r S) := fun S => by
-    by_cases hS : S ∈ c.operands
-    · simp only [r, hS, if_true]; exact h S (.inl hS)
-    · simp only [r, hS, if_false]; exact h [] (.inr rfl)
-  have h1 : (fun a => mixedValues G η (f (r a))) = fun a => mixedValues G θ (r a) := by
-    funext a n W v
-    exact congrFun (congrFun (congrFun (hr a) n) W) (.inl v)
-  have h2 : (fun a => mixedArgs G η (f (r a))) = fun a => mixedArgs G θ (r a) := by
-    funext a n W vs
-    exact congrFun (congrFun (congrFun (hr a) n) W) (.inr vs)
-  rw [h1, h2]
-
-theorem assign_getElem (η : ParameterAssignment k ι) {bs : List ι}
-    {As : List (ParameterFamily k)} (unique : bs.Nodup) (lengths : As.length = bs.length)
-    (i : Nat) (hi : i < bs.length) :
-    (assign η bs As).1 bs[i] = (As[i]'(by omega)).1 := by
-  induction bs generalizing As i with
-  | nil => simp at hi
-  | cons b bs ih =>
-    cases As with
-    | nil => simp at lengths
-    | cons A As =>
-      cases i with
-      | zero => exact assign_cons_head η b bs A As
-      | succ i =>
-        have hb : bs[i]'(by simpa using hi) ≠ b := by
-          intro he
-          exact (List.nodup_cons.mp unique).1 (he ▸ List.getElem_mem (by simpa using hi))
-        rw [List.getElem_cons_succ, assign_cons_ne η bs A As hb]
-        exact ih (List.nodup_cons.mp unique).2 (by simpa using lengths) i (by simpa using hi)
-
-theorem lookup_zip_index [DecidableEq ι] :
-    ∀ {bs : List ι} {ys : List β} {x : ι} {y : β}, (bs.zip ys).lookup x = some y →
-      ∃ k, ∃ (h1 : k < bs.length) (h2 : k < ys.length), bs[k] = x ∧ ys[k] = y
-  | [], _, _, _, h => by simp at h
-  | _ :: _, [], _, _, h => by simp at h
-  | b :: bs, c :: ys, x, y, h => by
-    simp only [List.zip_cons_cons, List.lookup_cons] at h
-    by_cases hx : x = b
-    · subst hx
-      simp only [beq_self_eq_true] at h
-      cases h
-      exact ⟨0, by simp, by simp, rfl, rfl⟩
-    · rw [beq_false_of_ne hx] at h
-      obtain ⟨k, h1, h2, hb, hy⟩ := lookup_zip_index h
-      exact ⟨k + 1, by simpa using h1, by simpa using h2, hb, hy⟩
-
-theorem lookup_zip_getElem [DecidableEq ι] :
-    ∀ {bs : List ι} {ys : List β}, bs.Nodup → ∀ k (h1 : k < bs.length) (h2 : k < ys.length),
-      (bs.zip ys).lookup bs[k] = some ys[k]
-  | [], _, _, k, h1, _ => by simp at h1
-  | _ :: _, [], _, k, _, h2 => by simp at h2
-  | b :: bs, c :: ys, hn, k, h1, h2 => by
-    cases k with
-    | zero => simp
-    | succ k =>
-      have hne : bs[k]'(by simpa using h1) ≠ b := fun he =>
-        (List.nodup_cons.mp hn).1 (he ▸ List.getElem_mem _)
-      simp only [List.zip_cons_cons, List.lookup_cons, List.getElem_cons_succ, beq_false_of_ne hne]
-      exact lookup_zip_getElem (List.nodup_cons.mp hn).2 k _ _
-
-/-- A parameter row means its selected component of the assignment. -/
-theorem mixedMeaning_param_eq {G : NormalGraph ι} {η θ : MixedAssignment ι} {p q : ι}
-    (hk : G.parameterKinds p = G.parameterKinds q) (hp : G.params p = true)
-    (he : η.1 p = θ.1 q) : mixedMeaning G η [p] = mixedMeaning G θ [q] := by
-  obtain ⟨kind, hkind⟩ : ∃ kind, G.parameterKinds p = some kind := by
-    simpa [NormalGraph.params, Option.isSome_iff_exists] using hp
-  rw [mixedMeaning_parameter G η p kind hkind, mixedMeaning_parameter G θ q kind (hk ▸ hkind), he]
-
-/-- Renaming the target's binders to the source's: at the source's instance,
-a renamed target type means the target type at the same instance of its own
-binders, when no source binder is free in it but as a target binder. -/
-theorem renamed_meaning [DecidableEq ι] {G : NormalGraph ι} (r : Renaming G)
-    (η : MixedAssignment ι) {ps qs : List ι} {As : List MixedFamily}
-    (hlen : ps.length = qs.length) (hnp : ps.Nodup) (hnq : qs.Nodup)
-    (hkinds : ∀ pq ∈ ps.zip qs, G.parameterKinds pq.1 = G.parameterKinds pq.2)
-    (hAs : As.length = ps.length) (S : List ι)
-    (hfresh : S = [] ∨ ∀ x ∈ r.free S, x ∈ ps → x ∈ qs) :
-    mixedMeaning G (assign η ps As) (r.substitute (qs.zip (ps.map fun p => [p])) S) =
-      mixedMeaning G (assign η qs As) S := by
-  let θ := assign η ps As
-  let ζ := assign θ qs As
-  have images : ∀ x, G.params x = true →
-      mixedMeaning G ζ [x] = mixedMeaning G θ (replace (qs.zip (ps.map fun p => [p])) x) := by
-    intro x hx
-    by_cases hq : x ∈ qs
-    · obtain ⟨k, hk, rfl⟩ := List.getElem_of_mem hq
-      have hkp : k < ps.length := by omega
-      have hl := lookup_zip_getElem (ys := ps.map fun p => [p]) hnq k hk (by simpa using hkp)
-      simp only [replace, hl, List.getElem_map, Option.getD_some]
-      apply mixedMeaning_param_eq _ hx
-      · rw [assign_getElem θ hnq (by omega) k hk, assign_getElem η hnp hAs k hkp]
-      · have := hkinds (ps[k], qs[k]) (by
-          rw [List.mem_iff_getElem]
-          exact ⟨k, by simp; omega, by simp⟩)
-        exact this.symm
-    · have hl := lookup_zip_none (ys := ps.map fun p => [p]) hq
-      simp only [replace, hl, Option.getD_none]
-      exact mixedMeaning_param_eq rfl hx (assign_nmem θ qs As hq)
-  rw [← r.substitute_meaning ζ θ _ images S]
-  rcases hfresh with rfl | hfresh
-  · rw [mixedMeaning_nil, mixedMeaning_nil]
-  apply r.agree_free
-  intro x hx
-  by_cases hq : x ∈ qs
-  · obtain ⟨k, hk, rfl⟩ := List.getElem_of_mem hq
-    rw [assign_getElem θ hnq (by omega) k hk, assign_getElem η hnq (by omega) k hk]
-  · rw [assign_nmem θ qs As hq, assign_nmem η qs As hq]
-    exact assign_nmem η ps As fun hp => hq (hfresh x hx hp)
+    ∀ a ∈ sourceClauses G A ++ meetSources G A B hyps, ∃ b ∈ clausesOf G B, Covers G sub R known A a b
 
 /-- **Quantified-α, soundly.** At every instance the target admits, the
 source admits it too at its own binders (each bound is matched); there the
