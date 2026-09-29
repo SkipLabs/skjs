@@ -479,7 +479,7 @@ const GROUPS: [string, RegExp][] = [
   ["generic contracts requiring an unsupported exact representation", /generic contract (?:at|:)/],
   ["TypeScript refuses the code too (the pipeline follows TypeScript's types)", /TypeScript refuses this code too/],
   ["arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's", /after `Array\.isArray`|`length` on a union of an array|array used as a record naming `length`|`length` of a mutable tuple|past the positions of a mutable tuple/],
-  ["a non-null assertion on a read at a for...in key (that the object owns the key relates two values)", /non-null assertion on a read at a for\.\.\.in key/],
+  ["a non-null assertion on a read at a for...in key after code that may remove the key or change the object read", /non-null assertion on a read at a for\.\.\.in key/],
   ["generic methods: two declarations' instances related", /an instance of a declaration with generic methods at an instance of another/],
   ["implicit index signatures: a record at an index signature (`Closed<T>` read as `T` among them)", /a record at an index signature/],
   ["a named function at a signature binding more parameters, or indifferent to the receiver it requires (its type is its annotated signature)", /a named function where a signature binding more parameters|a function whose `this` is typed where a callback/],

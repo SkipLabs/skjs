@@ -33,6 +33,15 @@
  *   `%RestFrom:k%(xs)` (`restFromIntrinsic`).
  * - `for (const k in o)` is `for (const k of %ForIn%(o))`: the keys the loop
  *   visits, each a string, of any value (none for null or undefined).
+ * - `for (const k in P) { const x = P[k]!; … }`, where the body reads the
+ *   entry at the key before anything can change it and `P` still denotes the
+ *   enumerated object there (`forInEntryReads` in the parser), steps
+ *   `%Iterate:ForIn%(P)` instead, and the read is the step's value: over a
+ *   dictionary, which
+ *   holds no prototype, the keys the loop visits are its own, and each step
+ *   yields a fresh `[key, value]` array, the value the one the dictionary
+ *   holds under the key at the step. A plain object's prototype,
+ *   `Object.prototype`, holds no enumerable key.
  * - `k in o` whose key TypeScript types as other than string literals is
  *   `%HasProperty%(k, o)`: whether `o`, an object, has the property the key
  *   converts to, its own or an inherited one, as the host answers it. The
@@ -71,6 +80,7 @@ export const iterateSetName = "%Iterate:Set%";
 export const iterateMapName = "%Iterate:Map%";
 export const iterateIteratorName = "%Iterate:Iterator%";
 export const forInName = "%ForIn%";
+export const iterateForInName = "%Iterate:ForIn%";
 export const hasPropertyName = "%HasProperty%";
 export const elementAtName = "%ElementAt%";
 export const promiseAllName = "%PromiseAll%";
@@ -199,6 +209,13 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     [newPromiseName]: () => ({ typeParams: [{ name: "T", bound: primitive }],
       type: fn([fn([fn([binder], atom("void")), fn([atom("unknown")], atom("void"))], atom("void"))],
         promise(binder)) }),
+    // The entries a `for...in` over a dictionary visits, each read at its
+    // step: a fresh `[key, value]` array per key, then `null`.
+    [iterateForInName]: () => ({ typeParams: [{ name: "V", bound: null }],
+      type: fn([{ k: "object", span, fields: [], calls: [],
+        stringIndex: { readonly: true, value: { k: "binder", name: "V", span }, span } }],
+        stepOf({ k: "tuple", presence: "dense", readonly: false,
+          required: [atom("string"), { k: "binder", name: "V", span }], optional: [], rest: null, span })) }),
     [forInName]: () => ({ typeParams: [],
       type: fn([atom("unknown")], { k: "array", presence: "readable", readonly: true, element: atom("string"), span }) }),
     [hasPropertyName]: () => ({ typeParams: [],

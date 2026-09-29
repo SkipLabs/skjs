@@ -4399,7 +4399,31 @@ another is refused.
 \mathtt{\%ForIn\%}:(o:\mathsf{unknown})\Rightarrow\mathsf{readonly}\ \mathsf{string}[\,],
 ```
 
-the keys the loop visits: strings, for any value. `try B catch (e) C finally
+the keys the loop visits: strings, for any value. Where the body reads the
+entry at the key, `P[k]` with `P` the loop's operand spelled again (a name,
+or a chain of named reads from one), before anything that could change the
+entry runs, the loop steps the entries instead,
+`for (const e of %Iterate:ForIn%(P)) { const k = e[0]; S' }` with each such
+read in $S'$ the step's value `e[1]`:
+
+```math
+\mathtt{\%Iterate{:}ForIn\%}:\forall V.\ (o:\{\mathsf{readonly}\ [k:\mathsf{string}]:V\})\Rightarrow
+  ()\Rightarrow\{\mathsf{readonly}\ \mathsf{value}:[\mathsf{string},V]\}\mid\mathsf{null},
+```
+
+each step a fresh array of a key the loop visits and the value the object
+holds under it at the step. A dictionary holds no prototype, and a plain
+object's, `Object.prototype`, no enumerable key, so every key visited is the
+object's own, whose value the index's contract states. The reads rewritten
+are those of the statements the body starts with that run no code and write
+no property, outside the functions they define, and the whole initializer of
+the declaration after them; the operand's name is written nowhere in the
+outermost function holding the loop (the file, at the top level), and a
+chain of reads is read from a body that runs no code and writes no
+property, so each read finds the object the loop enumerates and the value
+the step read (`forInEntryReads` in `tools/fragment-parse.mts`). A read
+after a call is the dictionary's read, `V | undefined`: the call may have
+removed the key. `try B catch (e) C finally
 F` names $C$'s entry as the handler of $B$'s nodes that may throw, with `e`
 at `unknown` (the only annotation admitted), and compiles $F$ on every way
 out: after a normal completion, before each `return` with the value held,

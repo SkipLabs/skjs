@@ -768,6 +768,10 @@ for (const [file, call] of [
   ["invalid-native-map-mutation", "wrong([1, 2], { value: 0 })"],
   ["invalid-native-join-coercion", "wrong({ value: 0 })"],
   ["invalid-native-sort-coercion", "wrong({ value: 0 })"],
+  // What `%Iterate:ForIn%`'s step read is not what a later read finds.
+  ["invalid-for-in-entry-call", "wrong({ a: 1 }, (v) => { delete v.a; })"],
+  ["invalid-for-in-entry-field", "wrong({ inner: { a: 1, b: 2 } }, {})"],
+  ["invalid-for-in-entry-rebound", "wrong({ a: 1, b: 2 }, {})"],
 ]) {
   const source = stripTypes(readFileSync(join(here, "examples", `${file}.ts`), "utf8"))
     .replace(/^export /gm, "");

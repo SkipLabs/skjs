@@ -673,8 +673,9 @@ let module_arity_reason =
 (* Names a `for...in` loop binds: the keys it steps over. *)
 let for_in_keys : string list ref = ref []
 let for_in_key_reason =
-  "a read at a key the loop found may still miss, and that the object owns the key it yields relates \
-   two values, which no type and no statement entry states"
+  "the read is the entry the loop's step visited only where nothing since the step can remove the key or \
+   change the object read (a call, a construction, a write of a property or of the object's name), and \
+   here something may have run, so the read may miss"
 let generic_instances_reason =
   "the covering rule for quantified signatures relates schemes binding the same rows, which members of one \
    key declared alike (as many binders, the same bounds) do: members declared otherwise need an instance \

@@ -166,6 +166,15 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
       List.iter (fun (f:field) -> match List.find_opt (fun (g:field) -> g.name=f.name) a.fields with
         | Some g -> constrain g.read f.read
         | None -> ()) e.fields
+      (* Dictionaries: each index the expected one states, at the actual's
+         index over the same keys, read covariantly, and a writable one
+         written too. *)
+      | Atoms [Shape ({calls=[];elements=None;_} as a)],
+      Atoms [Shape ({calls=[];elements=None;fields=[];_} as e)] when e.indexes<>[] ->
+      List.iter (fun (i:index_signature) ->
+        match List.find_opt (fun (j:index_signature) -> j.keys=i.keys) a.indexes with
+        | Some j -> constrain j.value i.value; if i.writable <> None then constrain i.value j.value
+        | None -> ()) e.indexes
       | Atoms [Shape {calls=(_::_ as calls);fields=[];indexes=[];elements=None}],
       Atoms [Shape {calls=[e];fields=[];indexes=[];elements=None}]
         when e.quantified=[] && List.exists (fun (a:signature) -> a.quantified=[]

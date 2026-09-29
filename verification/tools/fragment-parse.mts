@@ -69,7 +69,8 @@ import { enclosingBinders } from "./computed-types.mts";
 import { collectDeclarations, DeclarationError, libraryArguments, libraryTerm, tsconfigOf, type LibraryType,
   type SeenDiagnostic }
   from "./declaration-graph.mts";
-import { asyncCompleteName, asyncReturnName, awaitName, elementAtName, forInName, hasPropertyName, iterateName } from "./intrinsics.mts";
+import { asyncCompleteName, asyncReturnName, awaitName, elementAtName, forInName, hasPropertyName, iterateForInName,
+  iterateName } from "./intrinsics.mts";
 
 /** Why a generator is refused: its body stops at each `yield` and resumes
  * where it stopped when `next` is called again, and no term of the calculus
@@ -448,6 +449,10 @@ class Gate {
   readonly methodTargets = new Set<string>();
   /** The element reads `%ElementAt%` answers. */
   readonly hostElements = new Set<string>();
+  /** The reads `for...in` bodies start with at their keys
+   * (`forInEntryReads`), by span: the hidden name of the entry the loop's
+   * step yields. */
+  private readonly entryReads = new Map<string, string>();
   /** The well-known `Symbol.iterator`'s index among the declaration
    * document's symbols, where a program iterable is iterated. */
   wellKnownIterator: number | null = null;
@@ -1673,6 +1678,12 @@ class Gate {
       // `xs[k]` of an array at a `number` key is the host's read of the
       // property the number names (`%ElementAt%`, `intrinsics.mts`): the
       // object, the key, then the read, as the access evaluates them.
+      // The read a `for...in` body starts with at its key is the value of
+      // the entry the loop's step yielded (`forInStmt`).
+      const entry = this.entryReads.get(this.span(node).join(":"));
+      if (entry !== undefined)
+        return { k: "index", pos: this.span(node), e: { k: "id", pos: this.span(node.expression), name: entry },
+          key: { k: "lit", pos: this.span(node.argumentExpression), lit: { a: "numberlit", v: "1" } } };
       if (this.hostElements.has(this.span(node).join(":"))) {
         const bracket = node.expression.end;
         return this.intrinsic(elementAtName, this.span(node), [bracket, bracket + 1],
@@ -3480,6 +3491,32 @@ class Gate {
     if (d.type || d.initializer) this.fail(d, "a `for...in` binding takes the key's type");
     if (d.name.text === "undefined") this.fail(d, "shadowing undefined is outside the fragment");
     const keyword = this.token(list.end, "in", node);
+    // A body reading the entry at the key before anything can change it
+    // steps the entries: the key is the step's first element, each such read
+    // its second.
+    const reads = forInEntryReads(node);
+    if (reads.length) {
+      const entry = `%for-in@${node.getStart(this.file)}%`;
+      for (const read of reads) this.entryReads.set(this.span(read).join(":"), entry);
+      // The entry is bound at the head's declaration, the key at its name
+      // from the entry's first element, read at `in`.
+      const [start] = this.span(list);
+      return {
+        k: "forOf",
+        pos: this.span(node),
+        name: entry,
+        namePos: this.span(list),
+        iterate: iterateForInName,
+        iterable: this.expr(node.expression),
+        body: [
+          { k: "const", pos: [start, start + 1], bindings: [{ name: this.local(d.name), namePos: this.span(d.name),
+            annot: null, init: { k: "index", pos: [keyword, keyword + "in".length],
+              e: { k: "id", pos: [keyword, keyword + 1], name: entry },
+              key: { k: "lit", pos: [keyword + 1, keyword + 2], lit: { a: "numberlit", v: "0" } } } }] },
+          ...this.block(node.statement),
+        ],
+      };
+    }
     return {
       k: "forOf",
       pos: this.span(node),
@@ -4145,6 +4182,148 @@ function inKey(node: ts.BinaryExpression): Expression {
   return key;
 }
 
+/** Whether `within` writes a binding spelled `name`: an assignment, a
+ * compound or logical one, an update, a destructuring assignment or a
+ * `for...of`/`for...in` head naming it. By spelling, so a binding of
+ * another scope with the same name counts too. */
+function writesName(within: Node, name: string): boolean {
+  const targets = (e: Node): boolean => {
+    while (ts.isParenthesizedExpression(e)) e = e.expression;
+    if (ts.isIdentifier(e)) return e.text === name;
+    if (ts.isArrayLiteralExpression(e)) return e.elements.some(targets);
+    if (ts.isObjectLiteralExpression(e)) return e.properties.some((p) =>
+      ts.isShorthandPropertyAssignment(p) ? ts.isIdentifier(p.name) && p.name.text === name
+        : ts.isPropertyAssignment(p) ? targets(p.initializer)
+        : ts.isSpreadAssignment(p) ? targets(p.expression) : false);
+    if (ts.isSpreadElement(e)) return targets(e.expression);
+    if (ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.EqualsToken) return targets(e.left);
+    return false;
+  };
+  const visit = (n: Node): boolean => {
+    if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+        n.operatorToken.kind <= ts.SyntaxKind.LastAssignment && targets(n.left)) return true;
+    if ((ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) &&
+        (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken) &&
+        targets(n.operand)) return true;
+    if ((ts.isForOfStatement(n) || ts.isForInStatement(n)) && !ts.isVariableDeclarationList(n.initializer) &&
+        targets(n.initializer)) return true;
+    return !!n.forEachChild((c) => visit(c) || undefined);
+  };
+  return visit(within);
+}
+
+/** Whether running `node` may run code or write a property: a call, a
+ * construction (a class's definition, whose static parts run, among them),
+ * a tagged template, `await` or `yield` (other code runs meanwhile), an
+ * iteration (a `for...of`, an array spread or pattern, which may step a
+ * program's iterator), `instanceof` (which may call a static
+ * `[Symbol.hasInstance]`), `delete`, a template (whose conversion of an
+ * object calls its `toString`), or a write other than to a binding. A
+ * function written there runs nothing until called, which is a call. The
+ * implicit conversions of an object that run its code elsewhere (`o + ""`,
+ * a relational comparison) are refused by the model (DESIGN.md, "Refused on
+ * principle"), and a read runs none: an object holds data properties only. */
+function runsCodeOrWrites(node: Node): boolean {
+  const target = (e: Node): Node => {
+    while (ts.isParenthesizedExpression(e)) e = e.expression;
+    return e;
+  };
+  const visit = (n: Node): boolean => {
+    if (ts.isFunctionExpression(n) || ts.isArrowFunction(n) || ts.isFunctionDeclaration(n)) return false;
+    if (ts.isCallExpression(n) || ts.isNewExpression(n) || ts.isTaggedTemplateExpression(n) ||
+        ts.isAwaitExpression(n) || ts.isYieldExpression(n) || ts.isForOfStatement(n) || ts.isSpreadElement(n) ||
+        ts.isArrayBindingPattern(n) || ts.isDeleteExpression(n) || ts.isTemplateExpression(n) ||
+        ts.isClassDeclaration(n) || ts.isClassExpression(n)) return true;
+    if (ts.isBinaryExpression(n) && (n.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword ||
+        (n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+         n.operatorToken.kind <= ts.SyntaxKind.LastAssignment && !ts.isIdentifier(target(n.left))))) return true;
+    if ((ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) &&
+        (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken) &&
+        !ts.isIdentifier(target(n.operand))) return true;
+    return !!n.forEachChild((c) => visit(c) || undefined);
+  };
+  return visit(node);
+}
+
+/** The reads of the entry a `for...in` step visited, `P[k]` in
+ * `for (const k in P) { … }` with `P` the loop's operand spelled again (a
+ * name, or a chain of named reads from one) and `k` its key: each such read
+ * in the statements the body starts with that run no code and write no
+ * property (`runsCodeOrWrites`), outside the functions they define, and the
+ * read that is the whole initializer, under a non-null assertion or not, of
+ * the first declarator of the declaration that follows them. Each is the
+ * entry the step visited, the value `P`'s object holds under `k` at the step:
+ * nothing that ran since the step can change it, and `P` still denotes the
+ * object the loop enumerates, since no code in the outermost function holding
+ * the loop (the file, for a loop at the top level) writes `P`'s name and,
+ * where `P` reads fields, running the loop's body runs no code and writes no
+ * property, so no iteration changes what the chain finds. No declaration in
+ * those statements, nor any of the body's own, spells the key's or `P`'s
+ * name, which a read would then name instead. Empty where there is none. */
+export function forInEntryReads(node: ts.ForInStatement): ts.ElementAccessExpression[] {
+  const list = node.initializer;
+  if (!ts.isVariableDeclarationList(list) || list.declarations.length !== 1) return [];
+  const key = list.declarations[0]?.name;
+  if (!key || !ts.isIdentifier(key) || !ts.isBlock(node.statement)) return [];
+  const samePath = (a: Expression, b: Expression): Identifier | null =>
+    ts.isIdentifier(a) && ts.isIdentifier(b) ? (a.text === b.text ? a : null)
+    : ts.isPropertyAccessExpression(a) && ts.isPropertyAccessExpression(b) && !a.questionDotToken &&
+      !b.questionDotToken && ts.isIdentifier(a.name) && ts.isIdentifier(b.name) && a.name.text === b.name.text
+      ? samePath(a.expression, b.expression) : null;
+  const rootOf = (e: Expression): Identifier | null => ts.isIdentifier(e) ? e
+    : ts.isPropertyAccessExpression(e) && !e.questionDotToken && ts.isIdentifier(e.name) ? rootOf(e.expression) : null;
+  const root = rootOf(node.expression);
+  if (!root || root.text === key.text) return [];
+  const names = new Set([key.text, root.text]);
+  const entry = (e: Node): e is ts.ElementAccessExpression =>
+    ts.isElementAccessExpression(e) && !e.questionDotToken && ts.isIdentifier(e.argumentExpression) &&
+    e.argumentExpression.text === key.text && samePath(e.expression, node.expression) !== null;
+  // A declaration spelling the key's or the root's name, outside the
+  // functions a statement defines (whose bodies run later, if at all).
+  const shadows = (n: Node): boolean => {
+    if (ts.isFunctionExpression(n) || ts.isArrowFunction(n)) return false;
+    if (ts.isFunctionDeclaration(n) || ts.isClassDeclaration(n)) return !!n.name && names.has(n.name.text);
+    if ((ts.isVariableDeclaration(n) || ts.isBindingElement(n)) && n.name && ts.isIdentifier(n.name) &&
+        names.has(n.name.text)) return true;
+    return !!n.forEachChild((c) => shadows(c) || undefined);
+  };
+  // The body's own declarations bind from its start (a `let` or `const` in
+  // its temporal dead zone until its declaration runs).
+  for (const s of node.statement.statements)
+    if ((ts.isVariableStatement(s) || ts.isFunctionDeclaration(s) || ts.isClassDeclaration(s)) && shadows(s)) return [];
+  const reads: ts.ElementAccessExpression[] = [];
+  const collect = (n: Node): void => {
+    if (ts.isFunctionExpression(n) || ts.isArrowFunction(n) || ts.isFunctionDeclaration(n)) return;
+    if (entry(n) && !writtenElement(n)) reads.push(n);
+    n.forEachChild(collect);
+  };
+  for (const s of node.statement.statements) {
+    if (!runsCodeOrWrites(s)) {
+      if (shadows(s)) return [];
+      collect(s);
+      continue;
+    }
+    const [declaration] = ts.isVariableStatement(s) ? s.declarationList.declarations : [];
+    let read: Expression | undefined = declaration?.initializer;
+    while (read && ts.isParenthesizedExpression(read)) read = read.expression;
+    if (read && ts.isNonNullExpression(read)) read = read.expression;
+    if (read && entry(read)) reads.push(read);
+    break;
+  }
+  if (!reads.length) return [];
+  // A binding declared in a function is written only there; one declared at
+  // the top level, only at the top level or in a function, all in the file.
+  let scope: Node | undefined;
+  let file: Node = node;
+  for (let at: Node | undefined = node.parent; at; at = at.parent) {
+    if (ts.isFunctionLikeDeclaration(at)) scope = at;
+    file = at;
+  }
+  if (writesName(scope ?? file, root.text)) return [];
+  if (!ts.isIdentifier(node.expression) && runsCodeOrWrites(node.statement)) return [];
+  return reads;
+}
+
 function numberText(value: number): string {
   return Object.is(value, -0) ? "-0" : String(value);
 }
@@ -4468,7 +4647,8 @@ export function parseFile(file: string, carriesContext = false,
     };
     if (ts.isAwaitExpression(node)) add(awaitName);
     if (ts.isForOfStatement(node)) add(iterateName);
-    if (ts.isForInStatement(node)) add(forInName, iterateName);
+    if (ts.isForInStatement(node))
+      add(...(forInEntryReads(node).length ? [iterateForInName] : [forInName, iterateName]));
     if (ts.isFunctionLikeDeclaration(node) &&
         node.modifiers?.some(m => m.kind === ts.SyntaxKind.AsyncKeyword))
       add(asyncReturnName, asyncCompleteName);

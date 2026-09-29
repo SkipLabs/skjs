@@ -650,12 +650,13 @@ end
 def iterateName : String := "%Iterate%"
 
 /-- The iteration intrinsics, one per kind of host iterable (`intrinsics.mts`):
-an array's, a string's (by code point), a `Set`'s, a `Map`'s and a host
-collection iterator's. Each is `() => { readonly value: E } | null` of the
-iterable at its signature; none has a `return`, so an early exit calls
-nothing. A loop names one of them and no other value. -/
+an array's, a string's (by code point), a `Set`'s, a `Map`'s, a host
+collection iterator's, and the entries a `for...in` over a dictionary visits.
+Each is `() => { readonly value: E } | null` of the iterable at its
+signature; none has a `return`, so an early exit calls nothing. A loop names
+one of them and no other value. -/
 def iterateNames : List String :=
-  [iterateName, "%Iterate:string%", "%Iterate:Set%", "%Iterate:Map%", "%Iterate:Iterator%"]
+  [iterateName, "%Iterate:string%", "%Iterate:Set%", "%Iterate:Map%", "%Iterate:Iterator%", "%Iterate:ForIn%"]
 
 /-- The name an optional chain's body reads its saved receiver by: no source
 identifier is spelled so. -/
