@@ -63,6 +63,7 @@ const expectSubset = (what: string, names: Set<string>, from: Set<string>, allow
     envs: "SKJS claims, decoded in Fragment.lean",
     exprs: "SKJS claims, decoded in Fragment.lean",
     vars: "SKJS claims, decoded in Fragment.lean",
+    decl: "a source-claims label, lowered in EquationLowering.lean",
     binder: "a source-claims label, lowered in EquationLowering.lean",
     meet: "a source-claims label, lowered in EquationLowering.lean",
     types: "the source-claims document's rows, lowered in EquationLowering.lean",

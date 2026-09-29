@@ -345,17 +345,22 @@ def Equations.polarityRound (equations : Equations) (vOf : Nat → Nat → Varia
 /-- The least fixpoint from `none`. Each round that changes something raises
 an entry of a lattice of height two, so `2 × entries + 1` rounds reach it;
 without a fixpoint the candidates are `inv`, which the check then decides. -/
-def Equations.polarity (equations : Equations) (vOf : Nat → Nat → Variance)
-    (members : List (Fin equations.signature.length)) : List (Nat × List Variance) :=
+def Equations.polarityCounted (equations : Equations) (vOf : Nat → Nat → Variance)
+    (members : List (Fin equations.signature.length)) : List (Nat × List Variance) × Nat :=
   let start := members.map fun h =>
     (h.val, (List.range equations.signature[h].parameters).map fun _ => Variance.none)
   let rounds := 2 * (start.map (·.2.length)).sum + 1
-  let rec go : Nat → List (Nat × List Variance) → List (Nat × List Variance)
-    | 0, v => v.map fun (h, vs) => (h, vs.map fun _ => .inv)
-    | n + 1, v =>
+  let rec go : Nat → Nat → List (Nat × List Variance) → List (Nat × List Variance) × Nat
+    | 0, done, v => (v.map fun (h, vs) => (h, vs.map fun _ => .inv), done)
+    | n + 1, done, v =>
       let next := equations.polarityRound vOf members v
-      if next == v then v else go n next
-  go rounds start
+      if next == v then (v, done + 1) else go n (done + 1) next
+  go rounds 0 start
+
+/-- The candidates alone. -/
+def Equations.polarity (equations : Equations) (vOf : Nat → Nat → Variance)
+    (members : List (Fin equations.signature.length)) : List (Nat × List Variance) :=
+  (equations.polarityCounted vOf members).1
 
 /-! ### The check -/
 
@@ -424,17 +429,24 @@ def Equations.validVariances (equations : Equations)
 /-- Steps 3 and 4: check each member against the candidates; a failing
 member becomes `inv` at every parameter, and one failing at `inv` is dropped
 (it has no variance, and `Var` does not apply to it). -/
-def Equations.settle (equations : Equations) (dep : Nat → Option (Entry (Label equations.signature))) :
-    Nat → List (Nat × List Variance) → List (Nat × List Variance)
-  | 0, _ => []
+def Equations.settleCounted (equations : Equations)
+    (dep : Nat → Option (Entry (Label equations.signature))) :
+    Nat → List (Nat × List Variance) → List (Nat × List Variance) × Nat × Nat × Nat
+  | 0, _ => ([], 0, 0, 0)
   | n + 1, cands =>
     let F := candidateEntries equations cands
     let failing := F.filter fun p => !equations.validVariances F dep [p.2.2]
-    if failing.isEmpty then cands else
-    equations.settle dep n (cands.filterMap fun (h, vs) =>
+    if failing.isEmpty then (cands, 1, F.length, 0) else
+    let (r, rounds, checks, weakened) := equations.settleCounted dep n (cands.filterMap fun (h, vs) =>
       if failing.any (·.1 == h) then
         if vs.all (· == .inv) then none else some (h, vs.map fun _ => .inv)
       else some (h, vs))
+    (r, rounds + 1, checks + F.length, weakened + failing.length)
+
+/-- The settled candidates alone. -/
+def Equations.settle (equations : Equations) (dep : Nat → Option (Entry (Label equations.signature)))
+    (n : Nat) (cands : List (Nat × List Variance)) : List (Nat × List Variance) :=
+  (equations.settleCounted dep n cands).1
 
 theorem componentLook_cases (equations : Equations)
     (F : List (Nat × List Variance × Entry (Label equations.signature)))
@@ -461,8 +473,13 @@ def Equations.componentVariances (equations : Equations) (members : List (Fin eq
     | some p => p.1.getD k .inv
     | none => .inv
   let generic := members.filter fun h => equations.signature[h].parameters > 0
-  let cands := equations.settle dep (2 * generic.length + 1) (equations.polarity vOf generic)
+  let (start, polarityRounds) := equations.polarityCounted vOf generic
+  let (cands, rounds, checks, weakened) := equations.settleCounted dep (2 * generic.length + 1) start
   let F := candidateEntries equations cands
+  SubtypingTrace.note (fun _ => Lean.Json.mkObj [("variances", Lean.toJson (members.map (·.val))),
+      ("generic", Lean.toJson generic.length), ("polarityRounds", Lean.toJson polarityRounds),
+      ("checkRounds", Lean.toJson rounds), ("memberChecks", Lean.toJson checks),
+      ("weakened", Lean.toJson weakened), ("kept", Lean.toJson F.length)]) <|
   if hv : variablesOk (some equations.renaming) (F.map (·.2.2)) = true ∧
       equations.validVariances F dep (F.map (·.2.2)) = true then
     { entries := F

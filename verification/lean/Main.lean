@@ -4,6 +4,13 @@ import Verification.Model.Source.RequestCli
 open Verification Lean
 
 def main (args : List String) : IO UInt32 := do
+  -- `--trace-subtyping FILE` first: the subtyping questions the run asks,
+  -- one JSON line each (`SubtypingTrace`); the run is otherwise the same.
+  let args ← match args with
+    | "--trace-subtyping" :: path :: rest => do
+      Model.SubtypingTrace.open_ path
+      pure rest
+    | _ => pure args
   match args with
   | ["--import-skjs-claims", claimsPath, fileKey, digest] =>
       Model.RequestCli.inspectSourceClaims claimsPath fileKey digest
@@ -57,4 +64,5 @@ def main (args : List String) : IO UInt32 := do
       IO.eprintln "       verifier --check-source-claims <ast.json> <source-claims.json> <file-key> <evidence.json>"
       IO.eprintln "       (each source mode also takes --function <name> <start> <end>: one function, the others its module)"
       IO.eprintln "       verifier --check-skjs-operations <claims.json>"
+      IO.eprintln "       (any mode may be preceded by --trace-subtyping <file>)"
       return 2

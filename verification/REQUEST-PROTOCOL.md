@@ -534,6 +534,26 @@ carry these fields:
 Diagnostics show labels through a projection onto a finite table, bounded by
 depth, with names for applications (`Promise<number | R>`).
 
+### Subtyping traces
+
+`verifier --trace-subtyping FILE <mode> …` runs any mode unchanged and
+writes one JSON object per line to `FILE`, each of one of three shapes, every
+field present:
+
+| Line | Fields |
+| --- | --- |
+| a checker question | `question` (`"subset"`: the premise judgment on a pair, `Var` among its rules; `"core"`: a table checked as a family entry), `source` and `target` (the types' sizes), `holds`, `instances` (`Inst` steps tried), `varSteps` (those that held), `varDepth` (the deepest nesting, for `subset`), `events` (the lines below produced while answering it) |
+| a variance component | `variances` (its heads), `generic` (those with parameters), `polarityRounds`, `checkRounds`, `memberChecks` (`Valid` checks of one member), `weakened` (members made `inv`), `kept` (members with a variance) |
+| a fallback search | `search` (`"fallback"`), `source`, `target`, `rows`, `rounds` (unfoldings of a frontier), `visited` (candidate pairs, before reuse up to renaming), `refused` (`"growth"`, `"limit"` or `null`), `proved` |
+
+The hooks that write it are, as definitions, the identity on the result they
+observe (`SubtypingTrace.question`, `noteInstance`, `note`), and every
+theorem reads those definitions; only their compiled implementations write
+the file. So a traced run accepts exactly what an untraced one does.
+`node verification/tools/subtyping-trace.mts [pattern …]` runs the pipeline
+cases with tracing (`SUBTYPING_TRACE=1` for `check.mts`) and reports the work
+per question against the size of the types compared.
+
 ## Proved boundary and validation
 
 `verifyJson_checked` proves that JSON acceptance yields the two decoded objects

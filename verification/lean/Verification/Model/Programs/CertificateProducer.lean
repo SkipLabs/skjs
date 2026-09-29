@@ -383,34 +383,53 @@ def grows [DecidableEq ι] {G : NormalGraph ι} (r : Renaming G) (table : Table 
 search only. -/
 def fallbackLimit : Nat := 200
 
-/-- Grow the fallback table from its frontier. `none` at growth or past the
+/-- How a fallback table's growth ended, with its counts: the rounds of
+unfolding, the candidate pairs visited, and the table. -/
+structure Fallback (ι : Type) where
+  table : Table ι
+  rounds : Nat := 0
+  visited : Nat := 0
+  /-- `growth`, `limit`, or none when the table closed. -/
+  refused : Option String := none
+
+/-- Grow the fallback table from its frontier; refuse at growth or past the
 limit. -/
 def fallbackTable [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (r : Renaming G) : Nat → Table ι → Table ι → Option (Table ι)
-  | 0, _, _ => none
-  | fuel + 1, table, frontier =>
+    (r : Renaming G) : Nat → Fallback ι → Table ι → Fallback ι
+  | 0, fb, _ => { fb with refused := some "limit" }
+  | fuel + 1, fb, frontier =>
     let cand := ((frontier.flatMap fun p => demandPairs G p.1 p.2 ++ renamedPairs G r p.1 p.2).flatMap
       fun p => rowsFor images varDepthDefault p.1 p.2).eraseDups
-    let step (st : Option (Table ι × Table ι)) (p : Ty ι × Ty ι) : Option (Table ι × Table ι) := do
+    let step (st : Except String (Table ι × Table ι)) (p : Ty ι × Ty ι) :
+        Except String (Table ι × Table ι) := do
       let (tbl, fresh) ← st
       let f : Entry ι := { source := [], target := [], table := tbl }
       if PositiveCertificates.premTable G (some r) f p.1 p.2 then return (tbl, fresh)
-      if grows r tbl p.1 p.2 || tbl.length ≥ fallbackLimit then none
+      if grows r tbl p.1 p.2 then throw "growth"
+      if tbl.length ≥ fallbackLimit then throw "limit"
       return (tbl ++ [p], fresh ++ [p])
-    match cand.foldl step (some (table, [])) with
-    | none => none
-    | some (tbl, fresh) => if fresh.isEmpty then some tbl else fallbackTable G images r fuel tbl fresh
+    let fb := { fb with rounds := fb.rounds + 1, visited := fb.visited + cand.length }
+    match cand.foldl step (.ok (fb.table, [])) with
+    | .error why => { fb with refused := some why }
+    | .ok (tbl, fresh) =>
+      if fresh.isEmpty then { fb with table := tbl }
+      else fallbackTable G images r fuel { fb with table := tbl } fresh
 
 /-- A proof of `A ≤ B` by fallback coinduction: the pair unfolded, its
 table grown on demand, checked as a family entry (`coreUsing`). -/
 def fallbackProof [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (A B : Ty ι) : Option (PositiveCertificates.Proof ι) := do
   let r ← images.sub
-  let table ← fallbackTable G images r fallbackLimit [] [(A, B)]
-  let p := PositiveCertificates.Proof.core ⟨table, arrowCandidatesUsing G r ((A, B) :: table)⟩ []
-  if PositiveCertificates.checkUsing G images A B p then some p else none
-
-
+  let fb := fallbackTable G images r fallbackLimit { table := [] } [(A, B)]
+  let result : Option (PositiveCertificates.Proof ι) :=
+    if fb.refused.isSome then none else
+    let p := PositiveCertificates.Proof.core ⟨fb.table, arrowCandidatesUsing G r ((A, B) :: fb.table)⟩ []
+    if PositiveCertificates.checkUsing G images A B p then some p else none
+  SubtypingTrace.note (fun _ => Lean.Json.mkObj [("search", "fallback"),
+    ("source", Lean.toJson (A.map r.size).sum), ("target", Lean.toJson (B.map r.size).sum),
+    ("rows", Lean.toJson fb.table.length), ("rounds", Lean.toJson fb.rounds),
+    ("visited", Lean.toJson fb.visited), ("refused", Lean.toJson fb.refused),
+    ("proved", Lean.toJson result.isSome)]) result
 
 /-- The table built while matching, and the instances found for the
 instantiated binders. -/

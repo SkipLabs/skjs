@@ -238,7 +238,12 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors = 
       evidence = join(artifacts, "evidence.json");
     writeFileSync(claims, proposed.out);
     phase = "search";
+    // `SUBTYPING_TRACE=1`: each verifier run records its subtyping questions
+    // beside the artifacts (`tools/subtyping-trace.mts` reads them).
+    const trace = (name: string) =>
+      process.env.SUBTYPING_TRACE ? ["--trace-subtyping", join(artifacts, name)] : [];
     const produced = run(verifier, [
+      ...trace("search-subtyping.jsonl"),
       "--produce-source-claims",
       ast,
       claims,
@@ -258,6 +263,7 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors = 
       };
     phase = "check";
     const checked = run(verifier, [
+      ...trace("check-subtyping.jsonl"),
       "--check-source-claims",
       ast,
       claims,

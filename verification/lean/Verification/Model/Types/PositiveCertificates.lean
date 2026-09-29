@@ -1,4 +1,5 @@
 import Verification.Model.Types.PositiveRules
+import Verification.Model.Types.SubtypingTrace
 
 /-! Executable certificates for PositiveRules. Completeness concerns existence
 of accepted evidence for a declarative derivation, not semantic completeness or
@@ -913,8 +914,8 @@ def premTable [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) 
 /-- `Inst` at the instance `w`, its hypotheses decided by `prem` on strictly
 smaller types. -/
 def instanceB [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (look : Lookup ι)
-    (prem : List ι → List ι → Bool) (l : ι) (B : List ι) (w : Nat × List (List ι)) : Bool :=
-  match look w.1 with
+    (fuel : Nat) (prem : List ι → List ι → Bool) (l : ι) (B : List ι) (w : Nat × List (List ι)) : Bool :=
+  SubtypingTrace.noteInstance fuel <| match look w.1 with
   | some e => decide (InstanceAt G sub e l B w.2) && e.hypotheses.all fun h =>
       decide (typeSize sub (replace (e.variables.zip w.2) h.1) +
         typeSize sub (replace (e.variables.zip w.2) h.2) < labelSize sub l + typeSize sub B) &&
@@ -926,7 +927,7 @@ def premLabelB [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G))
     (gen : ι → List ι → List (Nat × List (List ι))) (f : Entry ι) : Nat → ι → List ι → Bool
   | 0, l, B => premBase G f l B
   | k + 1, l, B => premBase G f l B || (f.instances ++ gen l B).any fun w =>
-      instanceB G sub look (fun X Y => premTable G sub f X Y || X.all fun l' =>
+      instanceB G sub look k (fun X Y => premTable G sub f X Y || X.all fun l' =>
         premLabelB G sub look gen f k l' Y) l B w
 
 /-- A premise, decided with `k` levels of nested instances. -/
@@ -938,7 +939,7 @@ theorem premLabelB_succ [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Ren
     {look : Lookup ι} {gen : ι → List ι → List (Nat × List (List ι))} {f : Entry ι} {k : Nat}
     {l : ι} {B : List ι} :
     premLabelB G sub look gen f (k + 1) l B = (premBase G f l B || (f.instances ++ gen l B).any
-      fun w => instanceB G sub look (premB G sub look gen f k) l B w) := rfl
+      fun w => instanceB G sub look k (premB G sub look gen f k) l B w) := rfl
 
 theorem premBase_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
     {look : Lookup ι} {gen : ι → List ι → List (Nat × List (List ι))} {f : Entry ι}
@@ -985,7 +986,7 @@ theorem prem_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming
       simp only [Bool.or_eq_true, List.any_eq_true] at h
       rcases h with h | ⟨w, hw, h⟩
       · exact premBase_sound h
-      · unfold instanceB at h
+      · unfold instanceB SubtypingTrace.noteInstance at h
         split at h
         · rename_i e he
           simp only [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at h
@@ -1065,7 +1066,8 @@ theorem prem_complete [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renam
     rw [premLabelB_succ]
     simp only [Bool.or_eq_true, List.any_eq_true]
     refine .inr ⟨w, hw, ?_⟩
-    simp only [instanceB, hl, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true]
+    simp only [instanceB, SubtypingTrace.noteInstance, hl, Bool.and_eq_true, decide_eq_true_eq,
+      List.all_eq_true]
     exact ⟨hi, fun h hh => ⟨hdec h hh, ih h hh k (by have := hdec h hh; omega)⟩⟩
   exact ⟨fun h => Prem.rec (motive_1 := motive_1) (motive_2 := motive_2)
       tab ren union mem hyp meetHyp inst h,
@@ -1313,8 +1315,9 @@ function of the graph at every reassignment (`Parametricity`). -/
 def checkFamilyAt [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (r : Renaming G) (S T : List ι) (c : FamilyCertificate ι) : Bool :=
   let e := ParameterAssignment.empty .mixed
-  checkFamilyUsing (PositiveRules.reassign G e) (images.reassign e) (some (r.reassign e)) images.gen
-    (images.base.reassign e) S T c
+  SubtypingTrace.question "core" (S.map r.size).sum (T.map r.size).sum 0 fun _ =>
+    checkFamilyUsing (PositiveRules.reassign G e) (images.reassign e) (some (r.reassign e)) images.gen
+      (images.base.reassign e) S T c
 
 theorem checkFamilyAt_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {r : Renaming G} {S T : List ι} {c : FamilyCertificate ι}
@@ -1335,8 +1338,10 @@ def premAt [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (S T : List ι) : Bool :=
   let e := ParameterAssignment.empty .mixed
   let sub := some (r.reassign (G := G) e)
-  premB (PositiveRules.reassign G e) sub ((images.base.reassign e).lookup []) images.gen (pairEntry S T)
-    (typeSize sub S + typeSize sub T + 1) S T
+  let fuel := typeSize sub S + typeSize sub T + 1
+  SubtypingTrace.question "subset" (typeSize sub S) (typeSize sub T) fuel fun _ =>
+    premB (PositiveRules.reassign G e) sub ((images.base.reassign e).lookup []) images.gen (pairEntry S T)
+      fuel S T
 
 /-- A premise judged in the pair's own entry, citing sound base entries only,
 holds at every assignment. -/
@@ -1344,6 +1349,7 @@ theorem premAt_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
     {r : Renaming G} {S T : List ι} (h : premAt G images r S T = true) :
     ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
   let G' := PositiveRules.reassign G (ParameterAssignment.empty .mixed)
+  unfold premAt SubtypingTrace.question at h
   have hp := (prem_sound (G := G') _).2 _ _ h
   intro η n W x hx
   have hlook := (images.base.reassign (ParameterAssignment.empty .mixed)).lookup_cases
