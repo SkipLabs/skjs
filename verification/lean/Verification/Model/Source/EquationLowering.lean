@@ -671,6 +671,7 @@ def liftedCtx (ctx : Ctx) (items : List Item) (h : Nat) : Ctx :=
       | _ => none
     owner := some h
     site := ctx.site
+    checkBounds := ctx.checkBounds
     bounds := ctx.bounds.filterMap fun (p, U) => do
       let (_, j) ← indexed.find? fun (it, _) => (ctxValue ctx it).toOption == some [p]
       let moved (q : Tree) : Option Union :=
@@ -1004,7 +1005,10 @@ partial def instantiateDecl (ctx : Ctx) (i : Nat) (values : List Union) : M Unio
   if ctx.aliases.contains i then
     throw s!"{ctx.site}: unguarded alias cycle through {d.name}: a recursive alias must reach itself through an object, array, tuple or function type"
   let inner := { ctx with decl := some i, params := values.toArray, self := none }
-  lowerType { inner with binders := [], aliases := i :: ctx.aliases } d.expression
+  -- The alias's own bounds are checked where it is applied (`application`);
+  -- its body's applications are its declaration's, well formed at every
+  -- argument within those bounds, as TypeScript checks the declaration.
+  lowerType { inner with binders := [], aliases := i :: ctx.aliases, checkBounds := false } d.expression
 
 /-- An intersection: meet labels over the product of the operands' unions
 (§3.3). On ground rows only, where TypeScript reads a record met with a
@@ -1256,61 +1260,15 @@ partial def declarationRow (h i : Nat) : M (GraphRow Tree (List Tree)) := do
     if rows.isEmpty then throw s!"{d.name}: {emptyMeet}"
   return .clauses rows
 
-/-- A unit head's row: a scheme over its binders, with the unit's call
-signature when it is a fully annotated function (§8.1). -/
-partial def unitRow (ctx : Ctx) (node : Json) : M (GraphRow Tree (List Tree)) := do
+/-- A unit head's row: a scheme binding its binders, stating no signature.
+The head owns the unit's binders (§8.1); the unit's type is read from its
+annotations and a generic value's from its lowered type
+(`GenericValue`), never from this row, so it states nothing further, and a
+bound naming another binder of the unit (`U extends T`) needs no scheme bound
+(the unit reads it as a meet, `SourceClaimJson.binderRows`). -/
+partial def unitRow (_ctx : Ctx) (node : Json) : M (GraphRow Tree (List Tree)) := do
   let tps := (node.getObjValAs? (Array Json) "typeParams").toOption.getD #[]
-  let names := tps.toList.filterMap fun p => (p.getObjValAs? String "name").toOption
-  let inner : Ctx := { ctx with binders := (names.zipIdx.map fun ((n : String), (k : Nat)) =>
-    (n, (⟨false, [.local k]⟩ : Binding))) ++ ctx.binders }
-  let mut bounds : List (Tree × List Tree) := []
-  for (p, k) in tps.toList.zipIdx do
-    let b := p.getObjValD "bound"
-    if b == .null then continue
-    -- A bound naming another binder of the unit (`U extends T`) is no bound
-    -- of the head's scheme, which reads its bounds outside its binders: the
-    -- unit reads the binder as its meet with that binder
-    -- (`SourceClaimJson.binderRows`), and a unit's type is read from its
-    -- annotations, never from its head's row.
-    if (mentions [] b).any (fun it => match it with | .binder n => names.contains n | _ => false) then
-      continue
-    bounds := bounds ++ [(.local k, ← lowerType ctx b)]
-  let inner := { inner with bounds := ctx.bounds ++ bounds }
-  let signature ← unitSignature inner node
-  let (fixed, rests) := match signature with
-    | some (.inl a) => ([a], [])
-    | some (.inr r) => ([], [r])
-    | none => ([], [])
-  return .scheme ((List.range names.length).map Tree.local) fixed bounds rests
-
-/-- A unit's call signature, when it is a fully annotated function. -/
-partial def unitSignature (ctx : Ctx) (node : Json) :
-    M (Option (Arrow (List Tree) ⊕ RestArrow (List Tree))) := do
-  if let some ty := (node.getObjVal? "type").toOption then
-    if kindOf ty != some "function" then return none
-    match ← functionClause ctx ty with
-    | .arrs [a] [] => return some (.inl a)
-    | .arrs [] [r] => return some (.inr r)
-    | _ => return none
-  let some params := (node.getObjValAs? (Array Json) "params").toOption | return none
-  let result := (node.getObjVal? "retType").toOption <|> (node.getObjVal? "result").toOption
-  let some result := result | return none
-  if result == .null then return none
-  let mut fixed : List (List Tree) := []
-  let mut rest : Option (List Tree) := none
-  for p in params do
-    let ty := p.getObjValD "type"
-    if ty == .null then return none
-    if (p.getObjVal? "rest").isOk then
-      if kindOf ty != some "array" || (← bool ty "readonly") then
-        throw s!"{ctx.site}: a generic unit's rest parameter needs a mutable array contract"
-      rest := some (← lowerRest ctx (← field ty "element"))
-    else fixed := fixed ++ [← lowerType ctx ty]
-  let res ← lowerType ctx result
-  let receiver := [← top]
-  match rest with
-  | none => return some (.inl ⟨receiver, fixed, res, .unrestricted⟩)
-  | some P => return some (.inr ⟨receiver, (fixed, P), res, .unrestricted⟩)
+  return .scheme ((List.range tps.size).map Tree.local) [] [] []
 
 /-- Producer row `n`'s head, lifted over the binder names it mentions
 freely; its row is a job. -/
@@ -2104,7 +2062,11 @@ def Built.finish (b : Built) : Except String ((E : Equations) × Array (Array Va
   let checked : Except (List String) (Variances E) :=
     match Variances.check? E (varianceEvidence E bodies v) with
     | some checked => .ok checked
-    | none => .error ((E.varianceRefused (varianceEvidence E bodies v)).map (drafts[·]!.name))
+    -- A head with no parameter declares no variance: its entry relates it
+    -- to itself, which no use reads (§7.5), so only a parameter's
+    -- declaration refuses.
+    | none => .error (((E.varianceRefused (varianceEvidence E bodies v)).filter
+        fun h => arity[h]! > 0).map (drafts[·]!.name))
   -- Closed meets: an empty one is refused where it is lowered.
   let base (t : Tree) : Option (List (Clause (List Tree))) := match t with
     | .app g args => match bodies[g]? with
@@ -2148,9 +2110,12 @@ def Built.store (b : Built) (v : Array (Array Variance)) : State :=
   let keys := (List.range drafts.size).foldl (fun (m : Std.HashMap String Nat) h =>
     let d := drafts[h]!
     match d.kind, d.body with
-    | .primitive, some (.clauses cs) =>
-      if d.kinds.isEmpty then m.insert s!"ground|{reprStr cs}" h else m
     | .method o key, _ => m.insert s!"method|{f o}|{key}" h
+    -- Every nullary head is found by its clauses, a declaration's among
+    -- them, as a finite table finds a row by its clauses.
+    | _, some (.clauses cs) =>
+      if d.kinds.isEmpty && !m.contains s!"ground|{reprStr cs}" then m.insert s!"ground|{reprStr cs}" h
+      else m
     | _, _ => m) kept
   let rnB (b : Binding) : Binding := { b with value := b.value.map (treeRename f) }
   let owned (d : Draft) : Draft := match d.kind with

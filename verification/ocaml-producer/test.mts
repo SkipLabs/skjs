@@ -396,15 +396,14 @@ for (const [file, expected] of [
   // again: a finite graph.
   const recursiveGeneric = check(genericClient, pairConfig);
   assert.equal(recursiveGeneric.status, "verified", JSON.stringify(recursiveGeneric));
-  // One at arguments that grow at each unfolding is refused: a recursive
-  // declaration's applications are rows, and these would be infinitely many.
+  // One at arguments that grow at each unfolding too: a declaration is one
+  // equation, and an application is unfolded one step when it is read
+  // (RECURSIVE-EQUATIONS §3.2), so the family is not enumerated.
   writeFileSync(genericClient,
     'import type { Grow } from "@fixture/a";\n' +
     'export function keepGrow(value: Grow<boolean>): Grow<boolean> { return value; }\n');
   const growing = check(genericClient, pairConfig);
-  assert.equal(growing.status, "unverified", JSON.stringify(growing));
-  assert.equal(growing.phase, "search");
-  assert.match(growing.detail, /recursive generic application whose arguments keep growing/);
+  assert.equal(growing.status, "verified", JSON.stringify(growing));
   // A name imported through a barrel is the declaration the barrel reexports.
   writeFileSync(genericClient,
     'import type { A } from "@fixture/barrel";\n' +

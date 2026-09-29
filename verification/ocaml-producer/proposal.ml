@@ -705,23 +705,6 @@ let wrapped_binder_reason =
   "TypeScript infers such a binder through the application and fills one left unconstrained from its \
    default, and the producer does neither: a callback whose result is itself an application (a promise) \
    instantiates the binder at its bound"
-(* Whether a signature's result applies a declaration to a union of one of
-   the signature's binders and something else, as `catch` of `Promise` does
-   (`Promise<T | TResult>`): every call's result then adds a binder. *)
-let accumulating_binder (s:Semantic.signature) =
-  let binders = List.map (fun (q:Semantic.quantifier) -> q.identity) s.quantified in
-  match s.result with
-  | Atoms atoms -> List.exists (function
-      | Named (_,args) -> List.exists (function
-          | Union ts -> List.length ts > 1 && List.exists (function
-              | Rigid r -> List.mem r binders | _ -> false) ts
-              && List.exists (function Rigid r -> not (List.mem r binders) | _ -> true) ts
-          | _ -> false) args
-      | _ -> false) atoms
-  | _ -> false
-let accumulating_binder_reason =
-  "the family of applications grows with every call, so the graph truncates it at a colour budget, and an \
-   instance of the binder is truncated one level before the type it is claimed at"
 let generic_instances_reason =
   "the covering rule for quantified signatures relates schemes binding the same rows, which members of one \
    key declared alike (as many binders, the same bounds) do: members declared otherwise need an instance \
@@ -2360,10 +2343,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let infer_explicit ~receiver ?expected (signature:Semantic.signature) actuals =
         if List.length type_args > List.length signature.quantified then
           unsupported "more explicit type arguments than the callee has binders";
-        if type_args = [] && accumulating_binder signature then
-          explain (e:expr).pos ("a call instantiating a binder its result accumulates in an application \
-            (`catch`'s `Promise<T | TResult>`): " ^ accumulating_binder_reason)
-        else if type_args = [] && wrapped_binder signature then
+        if type_args = [] && wrapped_binder signature then
           explain (e:expr).pos ("a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): "
             ^ wrapped_binder_reason);
         let fixed = List.mapi (fun i t ->
