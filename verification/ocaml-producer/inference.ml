@@ -128,12 +128,18 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
   let add xs t = List.sort_uniq compare (t::xs) in
   (* constrain left right records left <= right. Callback parameters reverse
      the direction; callback results preserve it, at every nesting depth. *)
+  let callable = function Shape {calls=_::_;_} -> true | _ -> false in
+  (* The binders of generic methods compared below: they are bound there, so
+     a bound mentioning one fixes no binder of the call. *)
+  let foreign = ref [] in
+  let alien t = !foreign <> []
+    && substitute (List.map (fun id -> id,ValueArgument (Atoms [])) !foreign) t <> t in
   let rec constrain ?(depth=0) left right =
     let constrain = constrain ~depth:(depth+1) in
     match local left,local right with
     | Some x,Some y -> edges := (x,y)::!edges
-    | None,Some y -> y.lower <- add y.lower left
-    | Some x,None -> x.upper <- add x.upper right
+    | None,Some y -> if not (alien left) then y.lower <- add y.lower left
+    | Some x,None -> if not (alien right) then x.upper <- add x.upper right
     | None,None when depth > 8 -> ()
     | None,None -> (match left,right with
       (* One declaration's applications: their arguments, both ways, as no
@@ -170,6 +176,28 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
       constrain e.receiver a.receiver;
       List.iteri (fun i p -> constrain (List.nth e.params i) p) a.params;
       constrain a.result e.result
+      (* Two generic methods binding as many parameters, `then` of
+         `Promise<number>` at `then` of `PromiseLike<T>`: compared with the
+         source's binders renamed to the target's, parameters contravariant
+         and results covariant. *)
+      | Atoms [Shape {calls=[a];fields=[];indexes=[];elements=None}],
+      Atoms [Shape {calls=[e];fields=[];indexes=[];elements=None}]
+        when a.quantified<>[] && List.length a.quantified=List.length e.quantified
+          && List.length a.params=List.length e.params ->
+      let renaming = List.map2 (fun (x:quantifier) (y:quantifier) ->
+        x.identity,ValueArgument (Rigid y.identity)) a.quantified e.quantified in
+      foreign := List.map (fun (q:quantifier) -> q.identity) e.quantified @ !foreign;
+      let a = substitute_signature renaming {a with quantified=[]} in
+      List.iter2 (fun p q -> constrain q p) a.params e.params;
+      constrain a.result e.result
+      (* Callables at a union with one callable arm, an optional callback
+         (`((reason: any) => R | PromiseLike<R>) | null | undefined`): the
+         callables are compared with that arm, as the other arms admit no
+         function. *)
+      | Atoms xs,Atoms ys
+        when (List.length xs > 1 || List.length ys > 1)
+          && List.exists callable xs && List.length (List.filter callable ys) = 1 ->
+      constrain (Atoms (List.filter callable xs)) (Atoms (List.filter callable ys))
       (* An array's elements: a readonly target reads them, so covariantly; a
          writable one also takes writes, so both ways. *)
       | Atoms [Shape {elements=Some l;fields=[];calls=[];indexes=[]}],

@@ -264,15 +264,27 @@ giving each binder its instance. Untrusted: `checkInstArrs` validates it. -/
       let κ₀ := s.binders.zip θs
       if images.check s.binders c && L.all (fun q => s.signatures.any fun p => instSig G table κ₀ p q) &&
           M.all (fun q => s.variadic.any fun p => instRest G table κ₀ p q) then return c
-      -- A result whose image is another spelling of the target's result
-      -- (`Pair<[number, string]>` for `Pair<[T, U]>` at `string`): the
-      -- target's result as the image, which the image check accepts only
-      -- when the two are proved equal.
+      -- An operand whose image is another spelling of the target's (a
+      -- result `Pair<[number, string]>` for `Pair<[T, U]>` at `string`, a
+      -- callback the target states as a definition of its own): the
+      -- target's as the image of the one label whose image is not among the
+      -- target's, which the image check accepts only when the two are
+      -- proved equal.
+      let respell (P Q : List ι) : InstTable ι :=
+        match tyImg table κ₀ P with
+        | some img =>
+          if PositiveRules.sameLabels img Q then [] else
+          let open_ := if P.length == 1 then P
+            else P.filter fun l => !((entryImg table κ₀ l).getD []).all (· ∈ Q)
+          match open_ with
+          | [l] =>
+            let others := (P.filter (· != l)).flatMap fun m => (entryImg table κ₀ m).getD []
+            [(l, κ₀, Q.filter (!others.contains ·))]
+          | _ => []
+        | none => []
       let patch : InstTable ι := L.flatMap fun q => s.signatures.flatMap fun p =>
         if p.arguments.length != q.arguments.length then [] else
-        match p.result with
-          | [l] => if tyImg table κ₀ [l] == some q.result then [] else [(l, κ₀, q.result)]
-          | _ => []
+        ((p.result :: p.arguments).zip (q.result :: q.arguments)).flatMap fun (P, Q) => respell P Q
       if !patch.isEmpty then
         let c : PositiveCertificates.Instance ι := ⟨patch.eraseDups ++ table, θs, [], []⟩
         if images.check s.binders c && L.all (fun q => s.signatures.any fun p => instSig G c.table κ₀ p q) &&

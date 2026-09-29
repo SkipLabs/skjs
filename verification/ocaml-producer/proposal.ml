@@ -675,36 +675,6 @@ let for_in_keys : string list ref = ref []
 let for_in_key_reason =
   "a read at a key the loop found may still miss, and that the object owns the key it yields relates \
    two values, which no type and no statement entry states"
-(* Whether a signature's parameters, or its callbacks' results, write a
-   binder beside an application mentioning it, as `then` and `catch` of
-   `Promise` do (`TResult | PromiseLike<TResult>`). *)
-let wrapped_binder (s:Semantic.signature) =
-  let rec mentions r = function
-    | Rigid q -> q = r
-    | Union ts -> List.exists (mentions r) ts
-    | Meet (t,ts) -> List.exists (mentions r) (t::ts)
-    | Atoms atoms -> List.exists (function
-        | Named (_,args) -> List.exists (mentions r) args
-        | Shape sh -> List.exists (fun (c:Semantic.signature) ->
-            List.exists (mentions r) (c.result :: c.params)) sh.calls
-        | _ -> false) atoms in
-  let binders = List.map (fun (q:Semantic.quantifier) -> q.identity) s.quantified in
-  let rec wraps = function
-    | Union ts ->
-      List.exists (function
-        | Rigid r when List.mem r binders -> List.exists (function
-            | Atoms atoms -> List.exists (function Named _ as a -> mentions r (Atoms [a]) | _ -> false) atoms
-            | _ -> false) ts
-        | _ -> false) ts || List.exists wraps ts
-    | Atoms atoms -> List.exists (function
-        | Shape sh -> List.exists (fun (c:Semantic.signature) -> List.exists wraps (c.result :: c.params)) sh.calls
-        | _ -> false) atoms
-    | Rigid _ | Meet _ -> false in
-  List.exists wraps s.params
-let wrapped_binder_reason =
-  "TypeScript infers such a binder through the application and fills one left unconstrained from its \
-   default, and the producer does neither: a callback whose result is itself an application (a promise) \
-   instantiates the binder at its bound"
 let generic_instances_reason =
   "the covering rule for quantified signatures relates schemes binding the same rows, which members of one \
    key declared alike (as many binders, the same bounds) do: members declared otherwise need an instance \
@@ -2343,9 +2313,6 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let infer_explicit ~receiver ?expected (signature:Semantic.signature) actuals =
         if List.length type_args > List.length signature.quantified then
           unsupported "more explicit type arguments than the callee has binders";
-        if type_args = [] && wrapped_binder signature then
-          explain (e:expr).pos ("a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): "
-            ^ wrapped_binder_reason);
         let fixed = List.mapi (fun i t ->
           (List.nth signature.quantified i).identity,ValueArgument t) type_args in
         let partial = Inference.substitute_signature fixed

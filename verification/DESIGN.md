@@ -1090,7 +1090,7 @@ the `cases.mts` entries refused as unsupported recursive generic contracts.
 | Item | State | Closed when |
 | --- | --- | --- |
 | a. Recursive equations | open | the table below is done |
-| b. A callback returning a promise instantiates `then`'s binder through `PromiseLike<TResult>` ([generic methods left](#generic-methods-left)) | open: `promise-then` and `named-promise-catch` isolate it | those two verify |
+| b. A callback returning a promise instantiates `then`'s binder through `PromiseLike<TResult>` | done | `promise-then`, `named-promise-catch` and `promise-then-promise` verify; `invalid-promise-then`, `invalid-promise-then-promise` and `invalid-promise-catch-promise` are rejected at their return contracts |
 | c. `await` on realm promises, forged promises refused | done | decided; `forged-promise-refused` stays refused on principle |
 
 **Recursive equations (Promise a).** Closed when
@@ -1160,9 +1160,7 @@ each is an application of the one equation, unfolded only when read
 ([RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md)), never truncated. Members of
 two declarations, or of two instances of one, bind different parameters, so
 relating them needs quantified coverage up to renaming, which the request
-path does not yet reach. A
-callback returning a promise instantiates `then`'s binder through
-`PromiseLike<TResult>`, which the producer's inference does not do.
+path does not yet reach.
 
 <a id="restoring-completeness"></a>
 **Restoring useful completeness after the boundary repair.** Keep the original

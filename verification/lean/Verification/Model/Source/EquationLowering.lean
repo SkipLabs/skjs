@@ -1507,11 +1507,19 @@ partial def mentionsAny (bs : List Tree) (t : Tree) : Bool :=
 
 private def sameSet (a b : List Tree) : Bool := a.all (b.contains ·) && b.all (a.contains ·)
 
+/-- One step of a label's unfolding, as trees: the clauses the equations
+give it. -/
+abbrev Unfold := Tree → Option (List (Clause (List Tree)))
+
+/-- How many unfoldings deep two applications of different heads are
+compared. -/
+def unfoldDepth : Nat := 4
+
 mutual
 /-- Extend `θ` so that the union `S`, its binders `bs` read as `θ` gives
 them, is `T`. -/
-partial def unifyUnion (bs : List Tree) (θ : List (Tree × List Tree)) (S T : List Tree) :
-    Option (List (Tree × List Tree)) :=
+partial def unifyUnion (unfold : Unfold) (fuel : Nat) (bs : List Tree) (θ : List (Tree × List Tree))
+    (S T : List Tree) : Option (List (Tree × List Tree)) :=
   match S with
   | [b] =>
     if bs.contains b then
@@ -1519,7 +1527,7 @@ partial def unifyUnion (bs : List Tree) (θ : List (Tree × List Tree)) (S T : L
       | some U => if sameSet U T then some θ else none
       | none => some (θ ++ [(b, T)])
     else match T with
-      | [t] => unifyTree bs θ b t
+      | [t] => unifyTree unfold fuel bs θ b t
       | _ => none
   | _ =>
     -- The union's labels mentioning no binder are themselves; the one that
@@ -1528,32 +1536,66 @@ partial def unifyUnion (bs : List Tree) (θ : List (Tree × List Tree)) (S T : L
     if !fixed.all (T.contains ·) then none else
     match S.filter (mentionsAny bs ·) with
     | [] => if sameSet S T then some θ else none
-    | [x] => unifyUnion bs θ [x] (T.filter (!fixed.contains ·))
-    | _ => none
-/-- Extend `θ` so that the tree `s` is `t`. -/
-partial def unifyTree (bs : List Tree) (θ : List (Tree × List Tree)) (s t : Tree) :
-    Option (List (Tree × List Tree)) :=
+    | [x] =>
+      match θ.lookup x with
+      -- A binder already found: with the fixed labels, its instance is `T`.
+      | some U => if bs.contains x && sameSet (fixed ++ U) T then some θ else
+          unifyUnion unfold fuel bs θ [x] (T.filter (!fixed.contains ·))
+      | none => unifyUnion unfold fuel bs θ [x] (T.filter (!fixed.contains ·))
+    | xs => do
+      -- A binder beside labels mentioning it (`R | PromiseLike<R>` against
+      -- `string | PromiseLike<string>`): each such label is one of `T`'s,
+      -- which may find the binder; a binder then found is its instance, and
+      -- one still unfound takes the rest of `T`. Several unfound binders
+      -- (`T1 | T2` against `string`) are left to the other operands.
+      let (θ, img) ← (xs.filter (!bs.contains ·)).foldlM (fun (acc : List (Tree × List Tree) × List Tree) x =>
+        T.findSome? fun t => (unifyTree unfold fuel bs acc.1 x t).map fun θ => (θ, acc.2 ++ [t]))
+        (θ, fixed)
+      let bare := xs.filter (bs.contains ·)
+      let img := img ++ (bare.filterMap fun b => θ.lookup b).flatten
+      if !img.all (T.contains ·) then none
+      match bare.filter (fun b => (θ.lookup b).isNone) with
+      | [] => if T.all (img.contains ·) then some θ else none
+      | [b] => some (θ ++ [(b, T.filter (!img.contains ·))])
+      | _ => some θ
+/-- Extend `θ` so that the tree `s` is `t`. Two applications of different
+heads are compared by one step of their unfoldings (a literal the target
+spells as a row of its own), at most `fuel` steps deep. -/
+partial def unifyTree (unfold : Unfold) (fuel : Nat) (bs : List Tree) (θ : List (Tree × List Tree))
+    (s t : Tree) : Option (List (Tree × List Tree)) :=
   if !mentionsAny bs s then (if s == t then some θ else none) else
   match s, t with
-  | .app h a, .app h' a' | .bound h a _, .bound h' a' _ =>
+  | .app h a, .app h' a' =>
+    if h == h' && a.toList.length == a'.toList.length then
+      (a.toList.zip a'.toList).foldlM (fun θ (x, y) => unifyUnion unfold fuel bs θ x.toList y.toList) θ
+    else match fuel, unfold s, unfold t with
+      | fuel + 1, some cs, some ds =>
+        if cs.length == ds.length && (cs.zip ds).all (fun (c, d) => c.map (fun _ => ()) == d.map (fun _ => ())) then
+          (cs.zip ds).foldlM (fun θ (c, d) =>
+            (c.operands.zip d.operands).foldlM (fun θ (x, y) => unifyUnion unfold fuel bs θ x y) θ) θ
+        else none
+      | _, _, _ => none
+  | .bound h a _, .bound h' a' _ =>
     if h != h' || a.toList.length != a'.toList.length then none
-    else (a.toList.zip a'.toList).foldlM (fun θ (x, y) => unifyUnion bs θ x.toList y.toList) θ
+    else (a.toList.zip a'.toList).foldlM (fun θ (x, y) => unifyUnion unfold fuel bs θ x.toList y.toList) θ
   | .meet ps, .meet qs =>
     if ps.toList.length != qs.toList.length then none
-    else (ps.toList.zip qs.toList).foldlM (fun θ (x, y) => unifyTree bs θ x y) θ
+    else (ps.toList.zip qs.toList).foldlM (fun θ (x, y) => unifyTree unfold fuel bs θ x y) θ
   | _, _ => none
 end
 
 /-- The binders' instances making a scheme's signatures cover the target
 arrows, each target matched against one of the scheme's; unmatched binders
 stand for themselves. -/
-def unifyScheme (s : SchemeRow Tree) (L : PositiveRules.Ops Tree) (M : List (RestArrow (List Tree))) :
+def unifyScheme (unfold : Unfold) (s : SchemeRow Tree) (L : PositiveRules.Ops Tree) (M : List (RestArrow (List Tree))) :
     Option (List (Tree × List Tree)) := do
   let unifyArrow (θ : List (Tree × List Tree)) (p q : List (List Tree)) : Option (List (Tree × List Tree)) :=
     if p.length != q.length then none
-    else (p.zip q).foldlM (fun θ (x, y) => unifyUnion s.binders θ x y) θ
+    else (p.zip q).foldlM (fun θ (x, y) => unifyUnion unfold unfoldDepth s.binders θ x y) θ
   -- A receiver a scheme states as every value admits any: it is not matched.
-  let body (a : Arrow (List Tree)) := a.result :: a.arguments
+  -- The arguments come first, as TypeScript infers from them: the result
+  -- (`Promise<T | TResult>` at `Promise<number>`) then checks their choice.
+  let body (a : Arrow (List Tree)) := a.arguments ++ [a.result]
   let θ ← L.foldlM (fun θ q => s.signatures.findSome? fun p =>
     if p.effect != q.effect then none else unifyArrow θ (body p) (body q)) []
   M.foldlM (fun θ q => s.variadic.findSome? fun p =>
@@ -1562,18 +1604,18 @@ def unifyScheme (s : SchemeRow Tree) (L : PositiveRules.Ops Tree) (M : List (Res
 
 /-- An equation graph's proposal: instances by matching, images by
 structural substitution. -/
-def proposeLabels {sig : Signature} (s : SchemeRow (Label sig)) (L : PositiveRules.Ops (Label sig))
+def proposeLabels {sig : Signature} (unfold : Unfold) (s : SchemeRow (Label sig)) (L : PositiveRules.Ops (Label sig))
     (M : List (RestArrow (List (Label sig)))) : Option (List (List (Label sig)) × InstTable (Label sig)) := do
   let tree (U : List (Label sig)) : List Tree := U.map (·.1)
   let s' : SchemeRow Tree := ⟨tree s.binders, s.signatures.map (Arrow.map tree),
     s.bounds.map (fun (b, U) => (b.1, tree U)), s.variadic.map (RestArrow.map tree)⟩
-  let θ ← unifyScheme s' (L.map (Arrow.map tree)) (M.map (RestArrow.map tree))
+  let θ ← unifyScheme unfold s' (L.map (Arrow.map tree)) (M.map (RestArrow.map tree))
   let θs ← s.binders.mapM fun b => ((θ.lookup b.1).getD [b.1]).mapM Label.ofTree?
   let κ : PositiveRules.Ctx (Label sig) := s.binders.zip θs
   let operands := (s.signatures.flatMap Arrow.operands ++ s.variadic.flatMap RestArrow.operands).flatten.eraseDups
   return (θs, operands.map fun l => (l, κ, l.substitute (parameterReplacement κ)))
 
-instance {sig : Signature} : CertificateProducer.Instantiates (Label sig) := ⟨proposeLabels⟩
+instance {sig : Signature} : CertificateProducer.Instantiates (Label sig) := ⟨proposeLabels fun _ => none⟩
 
 /-- The heads' raw rows. -/
 def rawHeads (drafts : Array Draft) (bodies : Array (GraphRow Tree (List Tree))) : List RawHead :=

@@ -434,9 +434,15 @@ Untrusted code proposes and a small checker decides, as everywhere in the
 verifier.
 
 - **Proposed:** the definitions, and every certificate with its
-  assumptions between different definitions, tables and instances.
+  assumptions between different definitions, tables and instances. An
+  instance is found by matching the scheme's signatures against the
+  target's terms, two applications of different heads through one step of
+  each unfolding; an image the target spells otherwise (a callback literal
+  the claim states as a definition of its own) is proposed as that
+  spelling.
 - **Checked:** the definitions' well-formedness (scoping, arity,
-  contractiveness), every instantiation by substitution, and every
+  contractiveness), every instantiation by substitution, each image being
+  the substitution or proved equal to it by subtyping both ways, and every
   assumption by the conditions of Theorem 1.
 - **Computed by the checker:** variances (4.3).
 

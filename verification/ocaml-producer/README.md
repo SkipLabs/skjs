@@ -163,7 +163,12 @@ language. The boundaries are:
    is known), into a declaration's equation when an application meets another
    shape, and field by field into records, so a class value passed to a generic
    method (`b.map(Show)`, `EagerCollection.map`) fixes the method's binders from
-   the class's instance. A variable whose lower and upper bounds share a type,
+   the class's instance. Two generic methods binding as many parameters are
+   related with the source's binders renamed to the target's (`then` of
+   `Promise<number>` at `then` of `PromiseLike<T>` gives `T := number`); a
+   bound mentioning one of those binders fixes nothing. A callable at a union
+   with one callable arm (an optional callback) is related to that arm. A
+   variable whose lower and upper bounds share a type,
    as an invariant position makes them, is that type; otherwise a declared
    graph bound is preferred. Candidate types join lower bounds;
    upper-only candidates intersect primitive bounds when representable; a
