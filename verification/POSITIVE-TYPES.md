@@ -449,7 +449,9 @@ A label is one of four kinds of **row**:
   `U extends T`, whose clauses are then `T`'s, or every value.
   [Instances](#instances-of-a-scheme-row) give it its meaning at each
   instance, and [PROGRAM-TYPING.md](PROGRAM-TYPING.md#binders-met-with-ground-types) says how
-  it is lowered.
+  it is lowered. In an equation graph a part $`p`$ or $`q`$ may also be a
+  scheme row, whose members the meet's are too
+  ([RECURSIVE-EQUATIONS §3.3](RECURSIVE-EQUATIONS.md#33-meet-labels)).
 
 With $\eta$ an assignment and
 $\llbracket A\rrbracket^\eta=\bigcup_{i\in A}\llbracket i\rrbracket^\eta$, the
@@ -477,7 +479,11 @@ scheme's own $\eta$. A variadic signature's rest may be a binder: a **pack
 parameter**, instantiated at a pack type and bounded by one. A meet row reads
 its parameter as a parameter row does and its clauses' operands under their
 guards as a clause row does, so it keeps the fixed point contractive; a pack
-parameter's value component is empty, so a meet row names a value one.
+parameter's value component is empty, so a meet row names a value one. A
+scheme part is read by the scheme case at the meet's own level, in place of
+$`\eta(p)`$: that is one unfolding, not a recursion, since a part is never a
+meet row, and the scheme case reads its own operands under guards
+(`partSemWithArgs`, `qLayer_part`).
 
 Reading bounds below $n$ keeps the fixed point contractive; the
 approximations are non-expansive in the assignment (`QInv`), which gives
@@ -1110,11 +1116,14 @@ $(S,T)$ in which every entry $(A,B)$ satisfies three conditions:
    value meaning is empty.
 2. **Opaque rows.** Every parameter or scheme row of $A$ appears in $B$, or
    $B$ holds `top`; a meet row of $A$ may instead be below a row of $B$ by its
-   parameters, or be covered through its clauses; a scheme row of $A$ may
-   instead have its quantified signatures covered by a scheme row of $B$.
+   parameters, or be covered through its clauses, and one with a scheme part
+   may be read through any one part; any of these rows may be below a meet
+   row of $B$ read part by part; a scheme row of $A$ may instead have its
+   quantified signatures covered by a scheme row of $B$.
 3. **Coverage.** Every split part of every clause of $A$ is covered by some
    clause of $B$, with $A$ as the source type; so is every split part of the
-   clauses of each meet row of $A$ that $B$ does not name.
+   clauses of each meet row of $A$ without a scheme part that $B$ does not
+   name.
 
 $$
 \frac{(S,T)\in\Delta\qquad
@@ -1127,7 +1136,8 @@ $$
 
 Here $\mathsf{cl}_G(A)$ lists the clauses of $A$'s clause rows, and
 $\mathsf{mcl}_G(A,B)$ the clauses $\vec c$ of each meet row $p\sqcap\vec c$ of
-$A$ not in $B$ and below no row of $B$ by its parameters (`meetSources`). A
+$A$ not in $B$, with no scheme part and below no row of $B$ by its parameters
+(`meetSources`). A
 member of $p\sqcap\vec c$ is in one of $\vec c$, so covering them puts it in
 $B$: a meet row is below its clauses (`meet_clause_of`). A meet row is below a
 row **by its parameters** (`meetBelow`, sound by `meetBelow_sound`) when the
@@ -1140,6 +1150,27 @@ $$
 \frac{\{p'\}\cup\vec q'\subseteq\{p\}\cup\vec q\qquad\vec c'=\vec c}
      {p\sqcap\vec q\sqcap\vec c\ \sqsubseteq_{\mathsf{par}}\ p'\sqcap\vec q'\sqcap\vec c'}
 $$
+
+A meet row $`i`$ with a scheme part, the case equation graphs add
+([RECURSIVE-EQUATIONS §3.3](RECURSIVE-EQUATIONS.md#33-meet-labels)), is read
+through any one part: its parameters as above, a scheme part $`s`$ covered by
+a scheme row $`j`$ of $`B`$ ($`s\sqsubseteq_\forall j`$, below), or its clauses
+each covered. A row $`i`$ is below a meet row $`j`$ of $`B`$ **part by part**
+when each part of $`j`$ is $`i`$, a part of the meet $`i`$, or a scheme that
+$`i`$ or one of its scheme parts covers, and $`j`$'s clauses are $`\top`$ or
+$`i`$'s own (`MeetOpaque`, sound by `meet_part_value` and
+`meet_target_value`):
+
+```math
+\frac{\forall q\in\mathsf{parts}(j).\;
+      q=i\ \lor\ q\in\mathsf{parts}(i)\ \lor\ i\sqsubseteq_\forall q\ \lor\
+      \exists s\in\mathsf{parts}(i).\ s\sqsubseteq_\forall q
+      \qquad \vec c_j=\top\ \lor\ \vec c_j=\vec c_i}
+     {i\ \sqsubseteq_{\mathsf{meet}}\ j}
+```
+
+Without scheme parts, a meet row is read as before, so finite tables check
+exactly what they did.
 
 This is how a binder bounded by another is below it: `U extends T` is
 $p_U\sqcap p_T\sqcap\top$, below $p_T$, and with `T extends B` it is
@@ -1199,7 +1230,8 @@ for everything those contracts reach.
 with $F$'s values within $\mathsf{arrs}(L;M)$ at every level.
 
 Lean: `Core`, `Valid`, `Known`, `SameKind`, `Opaque`, `OpaqueWith`, `SchemeCoversWith`,
-`scheme_covers_sound`, `covers_arrs_sound`, `meetSources`, `meet_clause_of`, `splitClause`,
+`scheme_covers_sound`, `covers_arrs_sound`, `meetSources`, `meet_clause_of`, `MeetOpaque`,
+`MeetSource`, `MeetTarget`, `meet_row_iff`, `meet_part_value`, `meet_target_value`, `splitClause`,
 `splitClause_sem`, `source_sem`, `CoversByProto`, `ProtoHolds`, `FoundOn`, `lacksKey`, `viewOf`,
 `covers_arrows_sound`, `protoHolds_sound`, `CoversByScheme`, `bindersFree`,
 `covers_by_scheme_sound`, `Core.mixed_sound`.

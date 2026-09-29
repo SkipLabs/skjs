@@ -17,11 +17,12 @@ The meaning of a type is the one in [SEMANTICS](SEMANTICS.md) and
 [POSITIVE-TYPES](POSITIVE-TYPES.md). Equations present graphs to that
 semantics; they add no second interpretation of types.
 
-**Proof scope.** Sections 3 to 7 are proved in Lean, meet labels (3.3)
-excepted. Meet labels and sections 8 to 10 are specifications: each rule
-there needs its soundness lemma before any source program depends on it.
-Source and CLI acceptance use only the finite checker; the rules of sections
-6 and 7 are reached from the kernel's own checkers and tests. How far the work has
+**Proof scope.** Sections 3 to 7 are proved in Lean. Sections 8 to 10 are
+specifications: each rule there needs its soundness lemma before any source
+program depends on it. Source and CLI acceptance use only the finite checker;
+the rules of sections 3.3, 6 and 7 are reached from the kernel's own checkers
+and tests. The equation validator (3.1) and the tree spelling (9.2) exist in
+Lean, but no request reads them. How far the work has
 got is recorded in [DESIGN: status](DESIGN.md#status).
 
 ## 1. The problem: non-regular families
@@ -147,7 +148,7 @@ Lean: `Header`, `Tree`, `Label`, `Scope`, `Template`, `Equations.row`,
 
 ### 3.3 Meet labels
 
-**Specification; not yet in Lean.** An intersection is a label of its own,
+An intersection is a label of its own,
 $`\mathsf{meet}(L_1,\ldots,L_k)`$, and it means exactly the intersection of
 its parts:
 
@@ -155,9 +156,12 @@ its parts:
 ⟦\mathsf{meet}(L_1,\ldots,L_k)⟧^\eta=⟦L_1⟧^\eta\cap\cdots\cap⟦L_k⟧^\eta .
 ```
 
-The parts are flat (no part is a meet), distinct, at least two, and in a
-canonical order. They split into value parameters $`P`$, scheme applications
-$`S`$ and clause-row applications $`C`$. The row generalizes today's meet row
+The parts are flat (no part is a meet), at least two, and in a canonical
+order (`Tree.cmp`). Equal parts are kept: the kernel does not know a part's
+kind, and replacing $`\mathsf{meet}(L,L)`$ by $`L`$ would add $`L`$'s
+argument lists, since a meet admits none. The parts split into value
+parameters $`P`$, scheme applications $`S`$ and clause-row applications
+$`C`$. The row generalizes today's meet row
 $`p\sqcap\vec q\sqcap\vec c`$ with scheme parts:
 
 ```math
@@ -169,8 +173,11 @@ P\sqcap S\sqcap\mathrm{meetLists}\bigl(G(C_1),\ldots,G(C_m)\bigr) & \text{otherw
 ```
 
 with $`\mathrm{meetLists}`$ the [normalized conjunction](POSITIVE-TYPES.md#conjunction-and-normalization)
-(exact: `normalize_sound`, `meetLists_sound`), and the second row meaning
+(exact: `meetLists_row`), of no clause lists $`\top`$, and the second row
+meaning
 $`\bigcap_{p\in P}\eta(p)\cap\bigcap_{s\in S}⟦s⟧\cap⟦\mathrm{meetLists}(\ldots)⟧`$.
+A meet means values only: the first row leaves out argument-list clauses, and
+neither row admits an argument list.
 Normalization concatenates operands and never meets two operands, so a meet
 label's row names only labels its parts' rows name. It creates no new
 application and cannot grow a family.
@@ -200,15 +207,23 @@ distributes over unions, since intersection distributes over union:
 \mathsf{meet}(A_1,\ldots,A_k)=\textstyle\bigvee\{\,\mathsf{meet}(L_1,\ldots,L_k)\mid L_i\in A_i\,\},
 ```
 
-and a single remaining part is that part; a part that is itself a meet is
-flattened. A meet whose normal form is $`\bot`$ is refused where it is
+with each $`\mathsf{meet}(L_1,\ldots,L_k)`$ in canonical form: a part that is
+itself a meet is flattened, and the parts sorted. Substitution distributes
+the same way. A meet whose normal form is $`\bot`$ is refused where it is
 lowered, as today. The row reads scheme parts' meanings at the same level,
 not under a guard. This is well founded because parts are never meets. The
 congruence proof (4.2) takes this step explicitly: a meet agrees at level
 $`n`$ when its parts do. The subtype checker reads a meet source through
 any one part (a clause part through $`\mathrm{meetLists}`$ coverage as today,
 a parameter by its row, a scheme through quantified coverage), and a meet
-target part by part.
+target part by part ([core tables](POSITIVE-TYPES.md#core-tables)).
+
+Lean: `Tree.meet`, `canonMeet`, `Label.meetOf`, `meetRowOf`, `choices`,
+`Equations.meet_denote`, `Equations.meet_noArguments`,
+`Equations.meetOf_denote`, `Equations.distribute_values`,
+`Equations.distribute_meaning` (`Types/EquationGraphs.lean`,
+`Types/EquationMeets.lean`); `partSemWithArgs`, `qLayer_part`
+(`Types/PositiveGraphs.lean`).
 
 ## 4. Support, congruence and substitution
 
@@ -233,14 +248,15 @@ domain:
 - an operand's support belongs to its row's support or to that row's scheme
   binders;
 - bounds depend only on the outer support;
-- meets retain their parameters.
+- a meet's parameter parts are free in it, and its other parts' support is
+  its own (`MeetPartSupport`); a meet reads its clause parts' operands.
 
 For a finite table, the executable `FreeOk` establishes these conditions.
 For equation templates they hold by structural induction on instantiation,
 so no family is enumerated.
 
-Lean: `Label.free`, `FreeSupport`, `Equations.free_support`,
-`Equations.agree_free` (`Types/EquationSupport.lean`).
+Lean: `Label.free`, `FreeSupport`, `MeetPartSupport`, `meetAll_operands`,
+`Equations.free_support`, `Equations.agree_free` (`Types/EquationSupport.lean`).
 
 ### 4.2 Application congruence
 
@@ -263,11 +279,17 @@ The proof is by induction on the level $`n`$:
 2. Argument packs are compared at $`n`$. Their element contracts use the
    current-level values from step 1.
 
+A meet in a template is compared through its parts at the same level: the
+meets distributed over the instantiated parts mean the intersection of the
+parts' unions (`Equations.distribute_meaning`), which agree by induction on
+the template.
+
 The induction closes the intermediate `ApplicationsAgree` premise. Neither
 the producer nor a certificate supplies a semantic assumption.
 
 Lean: `Equations.applications_agree`, `Equations.application_congr`,
-`Equations.clauses_step`, `Equations.scheme_step`, `Equations.arguments_step`
+`Equations.clauses_step`, `Equations.scheme_step`, `Equations.arguments_step`,
+`Types.instantiateParts_agree`, `Types.instantiateParts_values`
 (`Types/EquationCongruence.lean`).
 
 ### 4.3 Checked substitution
@@ -287,13 +309,16 @@ recursive row:
 ⟦A⟧^{\eta[\vec b\mapsto⟦\vec U⟧^\eta]}=⟦A[\vec b:=\vec U]⟧^\eta .
 ```
 
-Each replacement must have its parameter's kind (value or argument list).
+A meet is substituted part by part and distributed over the parts' images,
+each distributed meet in canonical form. Each replacement must have its
+parameter's kind (value or argument list).
 Substituting a label into itself is allowed: $`a:=a\mid r`$ is a
 simultaneous substitution and the theorem covers it. Section 7 relies on
 this.
 
-Lean: `Tree.substitute`, `Label.substitute`, `Label.substitute_meaning`,
-`Equations.assignment_parameterImages` (`Types/EquationSubstitution.lean`).
+Lean: `Tree.substitute`, `Types.substituteParts`, `Label.substitute`,
+`Label.substitute_meaning`, `Equations.assignment_parameterImages`
+(`Types/EquationSubstitution.lean`).
 
 ## 5. Instance images
 
@@ -911,7 +936,16 @@ are lists of trees. Each tree form has exactly one spelling:
 | owned parameter | `{"bound": h, "args": [[…], …], "slot": j}`, `args` left out when empty |
 | meet | `{"meet": [L, …]}`: flat, at least two parts, canonical order |
 | template placeholder (bodies only) | `{"arg": i}`, `{"local": j}` |
-| family variable (inside its entry only) | `{"var": k}` |
+| family variable (inside its entry only) | `{"var": k, "owner": o, "kind": "value" \| "arguments"}` |
+
+Decoding refuses an unknown or missing field and a second spelling of one
+tree, such as `{"app": h, "args": []}` for `h`. The spelling is implemented,
+but no request reads it: `Tree.toJson`, `Tree.fromJson`
+(`Types/EquationJson.lean`). Decoded heads become equations only through the
+validator, which checks scope, arity and lexicality, constructor-headed
+templates binding exactly their locals, meet normal form, and a kind and
+variance per parameter, and names the head and position of a refusal:
+`Equations.ofRaw`, `Label.ofTree?` (`Types/EquationValidator.lean`).
 
 Evidence, in both paths (the source path's evidence bundle and the protocol's
 response), uses the same tree spelling and carries:
@@ -948,11 +982,13 @@ uses is proved from the equations, never supplied by evidence.
 ## 11. Lean files and closing tests
 
 - Proved: `Types/GraphRows.lean`, `Types/EquationGraphs.lean`,
-  `Types/EquationSupport.lean`, `Types/EquationCongruence.lean`,
+  `Types/EquationMeets.lean`, `Types/EquationSupport.lean`,
+  `Types/EquationCongruence.lean`,
   `Types/EquationSubstitution.lean`, `Types/EquationCertificates.lean`,
   `Types/EquationFamilies.lean`; the generic rules of sections 6 and 7 in
   `Types/PositiveRules.lean` and `Types/PositiveCertificates.lean`.
-- Kernel tests: `Tests/EquationFamilyTests.lean`.
+- Checked, unwired: `Types/EquationValidator.lean`, `Types/EquationJson.lean`.
+- Kernel tests: `Tests/EquationFamilyTests.lean`, `Tests/EquationTreeTests.lean`.
 - `generic-growing-application` verifies at the cutover. `-push`,
   `promise-covariance` and `invalid-promise-covariance` (rejected at its own
   obligation) move with `Var`. The Promise closing cases are listed in the
