@@ -79,7 +79,7 @@ exhibits a function in both `(x: null) => Ref(null)` and `(x: null) => Ref(null 
 conjunction of the two, because each call allocates and the
 two contracts are invariant. `Safe` at a conjunction of result families is not
 safety at each when the result is allocated. What does hold is the overload law,
-`TypeAlgebra.calls_append`: an intersection of signatures is exactly the call
+`calls_append` ([TypeAlgebra.lean](lean/Verification/Model/Types/TypeAlgebra.lean)): an intersection of signatures is exactly the call
 family over the concatenated signature list, with no distribution into the
 result.
 
