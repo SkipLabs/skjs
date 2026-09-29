@@ -1,7 +1,7 @@
 # Program typing over positive recursive types
 
-[ProgramTyping.lean](lean/Verification/Model/Programs/ProgramTyping.lean) gives
-syntactic program-typing rules for the stateful language. Its fundamental theorem
+[ProgramTyping.lean](lean/Verification/Model/Programs/ProgramTyping.lean) gives syntactic program-typing rules for the stateful language.
+Its fundamental theorem
 connects those rules to the model in [SEMANTICS.md](SEMANTICS.md). Subsumption uses
 the certificate checker specified in [POSITIVE-TYPES.md](POSITIVE-TYPES.md).
 The ordinary and graph rules below are used by the current verifier, as are the
@@ -331,6 +331,9 @@ parameters: the second case of $\mathrm{Offers}_G$ (`funGraph`;
 the array the rest parameter names, an ordinary allocation the extractor
 emits.
 
+[RestCalls.lean](lean/Verification/Model/Programs/RestCalls.lean) proves variadic calls: eliminating a variadic signature, allocating the rest store, spreading actuals.
+[RestCallsTests.lean](lean/Verification/Model/Tests/RestCallsTests.lean) guards variadic creation and calls, with and without spreads, and the spreads the checker refuses.
+
 A call writes the fixed actuals, or a prefix whose omitted positions admit
 `undefined`, then parts that fit the rest; a call that omits a fixed position
 writes no part (`callRest`). With a spread among the parts, the rest is an
@@ -504,6 +507,7 @@ then substitutes the resulting value into `b` in one nonallocating step.
 Neither a function value nor a function-type graph label is needed. The
 producer and consumer use this constructor directly; lambda application no
 longer has a special binding-certificate route.
+[LetTests.lean](lean/Verification/Model/Tests/LetTests.lean) guards the let rule: binding is nonallocating, scopes only its body, and has its own certificate rule.
 
 A class value is construct-only code: JavaScript gives a function object
 `[[Call]]` and `[[Construct]]` separately, and a class has only the second,
@@ -530,6 +534,8 @@ construct-only graph code:
       \Gamma\vdash_G a_i:A_i\quad\Gamma\vdash_G\mathsf{undefined}:U_j}
      {\Gamma\vdash_G \mathsf{new}\ f(\vec a):B}
 ```
+
+[ConstructTests.lean](lean/Verification/Model/Tests/ConstructTests.lean) guards the split: `new` runs a class and not an arrow, and a plain call runs no class.
 
 These are `ctorGraph` (`ctorsT_of_graph`) and `construct`. As a call may,
 `new` may omit trailing positions $\vec U$ whose contracts admit `undefined`:
@@ -1142,7 +1148,7 @@ so no step can tell the orders apart.
 
 ### Binding and soundness
 
-`Bindings.lean` defines de Bruijn scope, simultaneous closing substitution, and
+[Bindings.lean](lean/Verification/Model/Semantics/Bindings.lean) defines de Bruijn scope, simultaneous closing substitution, and
 its application law:
 
 ```math
@@ -1178,7 +1184,7 @@ none of its constructor rules has a semantic safety premise.
 
 ### Integration example
 
-`ProgramTypingTests.lean` derives safety for a program equivalent to:
+[ProgramTypingTests.lean](lean/Verification/Model/Tests/ProgramTypingTests.lean) derives safety for a program equivalent to:
 
 ```text
 let r = alloc true;
@@ -1198,7 +1204,7 @@ rules out any typing derivation for applying null as a function.
 
 ### Executable program evidence
 
-`ProgramCertificates.lean` checks finite evidence trees. Each node contains a
+[ProgramCertificates.lean](lean/Verification/Model/Programs/ProgramCertificates.lean) checks finite evidence trees. Each node contains a
 sequent (context, term, result type), a rule name, and its premise trees.
 Subsumption nodes carry the existing positive subtype certificate. Lambda nodes
 must supply precisely one body derivation per overload entry, in order. The two
@@ -1240,7 +1246,7 @@ cost of repeating terms and contexts. This is not a commitment to a serialized
 format. The in-memory producer below uses this interface; a decoder or compact
 representation can be developed against it.
 
-`ProgramCertificateTests.lean` supplies concrete executable evidence for the
+[ProgramCertificateTests.lean](lean/Verification/Model/Tests/ProgramCertificateTests.lean) supplies concrete executable evidence for the
 stateful overload program above. Tests reject altered programs/result types,
 missing overload premises, changed captured contexts, unjustified branch choices,
 incorrect writes, malformed subtype evidence, extra premises and unbound variables.
@@ -1264,7 +1270,7 @@ and `EnvOk`, so each soundness theorem, parametricity (`accept_reassign`,
 
 ### Supplied point claims and incoming edges
 
-`PointClaims.lean` checks supplied type environments. Write $\Gamma \preceq_G \Delta$
+[PointClaims.lean](lean/Verification/Model/Programs/PointClaims.lean) checks supplied type environments. Write $\Gamma \preceq_G \Delta$
 when every slot in the target claim $\Delta$ has a source slot at the same
 position in the incoming environment $\Gamma$, with a proved subtype relation:
 
@@ -1331,7 +1337,8 @@ $A :: \Gamma \preceq_G \Delta$ into a continuation checked under $\Delta$:
 The conclusion assumes that $\rho$ meets $\Gamma$ at budget $n$ and world $W$,
 that $W$ is admissible, and that $h$ satisfies $W$. This is a semantic composition
 theorem with checked evidence at both ends; its proof accommodates heap changes
-and world extension. Tests cover two predecessors merging into `Null | Bool`,
+and world extension.
+[PointClaimTests.lean](lean/Verification/Model/Tests/PointClaimTests.lean) covers two predecessors merging into `Null | Bool`,
 rejected narrowing and slot invention or reordering, and a checked write followed
 by a supplied claim and a read through the retained reference.
 
@@ -1356,6 +1363,8 @@ rule `throw` with the operand's derivation as its one premise; the producer
 types a slot operand at the slot's type.
 
 ### Allocation from parts
+
+[ObjectMerge.lean](lean/Verification/Model/Programs/ObjectMerge.lean) states and proves what a merge's result holds, clause by clause.
 
 $\mathsf{merge}_\delta(a,b)$ allocates the fields $a$'s object owns and, over
 them, the own enumerable data properties $b$ has, less $\delta$
@@ -1485,7 +1494,7 @@ not copied.
 
 ### Checked control-flow graphs
 
-`ControlFlow.lean` adds a finite control-flow graph over the existing expression
+[ControlFlow.lean](lean/Verification/Model/Programs/ControlFlow.lean) adds a finite control-flow graph over the existing expression
 language. A program is a finite list of nodes indexed by label; each node is one
 [term](SEMANTICS.md#operational-language), one of these six continuations,
 and an optional handler (below):
@@ -1595,7 +1604,7 @@ that any returned value meets the declared result type at every positive
 remaining budget, in an admissible world satisfied by the final heap. These
 are safety and partial-correctness theorems, not termination guarantees.
 
-`ControlFlowTests.lean` checks a cyclic program that creates an overloaded
+[ControlFlowTests.lean](lean/Verification/Model/Tests/ControlFlowTests.lean) checks a cyclic program that creates an overloaded
 closure over a Boolean cell, calls it, writes through the original reference,
 traverses a back edge, calls the same closure again and returns `false`. Its
 operational trace traverses the back edge; its safety theorem does not depend
@@ -1615,8 +1624,8 @@ stated scope.
 
 #### Refinement under an observed outcome
 
-[BranchRefinement.lean](lean/Verification/Model/Programs/BranchRefinement.lean)
-uses one contract for Boolean equality and tag observations. An observation $o$
+[BranchRefinement.lean](lean/Verification/Model/Programs/BranchRefinement.lean) uses one contract for Boolean equality and tag observations.
+An observation $o$
 is either equality to a Boolean value or the result of a runtime tag test.
 Define the semantic obligation:
 
@@ -1809,6 +1818,8 @@ closure control-flow slice. It does not retain observations of mutable propertie
 The finite-label split is a source-profile strategy, not a new semantic rule for
 arbitrary mixed-shape type labels.
 
+[BranchRefinementTests.lean](lean/Verification/Model/Tests/BranchRefinementTests.lean) guards tag slices and observed refinement: mixed labels stay intact, and only an existing slot is refined.
+
 #### Statement forms as graphs
 
 The [statement forms](#statement-forms) add no node
@@ -1845,6 +1856,9 @@ kind, continuation or rule; each is a shape of ordinary nodes and edges.
   has given it a name of its own ([shadowing](#derived-source-forms)), so
   the lowering never meets two bindings of one name.
 
+[WhileSourceTests.lean](lean/Verification/Model/Tests/WhileSourceTests.lean) traces a lowered `while` loop: the back edge drops the alias local and keeps the closure and cell in place.
+[LoopTransferTests.lean](lean/Verification/Model/Tests/LoopTransferTests.lean) traces lowered `break` and `continue`: the nearest loop's exit, and the retest after the body's write.
+
 ## State
 
 What is known about the heap and the environment as execution proceeds, layered
@@ -1858,9 +1872,9 @@ The finite [type and assertion syntax](POSITIVE-TYPES.md#state-assertion-grammar
 is defined alongside the ordinary type grammar. This section owns its rules.
 
 These rules are proved in [HeapObservations.lean](lean/Verification/Model/Semantics/HeapObservations.lean)
-and [HeapFacts.lean](lean/Verification/Model/Semantics/HeapFacts.lean).
-[HeapExpressionRules.lean](lean/Verification/Model/Programs/HeapExpressionRules.lean)
-checks finite expression evidence against them. They are not additional `HasTy`
+and, for finite current-content assertions, in [HeapFacts.lean](lean/Verification/Model/Semantics/HeapFacts.lean).
+[HeapExpressionRules.lean](lean/Verification/Model/Programs/HeapExpressionRules.lean) checks finite expression evidence against them.
+They are not additional `HasTy`
 constructors. The maintained graph checker now accepts the checked effect forms;
 the source adapter binds supplied observations to checked graph checkpoints.
 The producer can also derive facts through supported operations.
@@ -1928,10 +1942,11 @@ pushes a result. The finite `read` rule preserves facts. `write` conservatively
 drops all old facts and establishes the written value's predicate. `alloc` preserves shifted
 old facts and adds the fresh cell at the result slot. These are semantic rules;
 source compilation must still supply and check their graph-level use.
+[HeapFactsTests.lean](lean/Verification/Model/Tests/HeapFactsTests.lean) guards this check: contents widen and never narrow, and aliases agree.
 
 #### Checked expression postconditions
 
-`HeapKnowledge.Knowledge` pairs the cell facts above with immutable slot facts
+`Knowledge` in [HeapKnowledge.lean](lean/Verification/Model/Semantics/HeapKnowledge.lean) pairs the cell facts above with immutable slot facts
 $V$, interpreted as $\forall(i,R)\in V.\;\rho(i)\in R$. This distinction is
 necessary when the producer claims a wide type for a read: the ordinary type
 remains unchanged, while a proved fact about the returned value can justify a
@@ -2264,28 +2279,24 @@ so the read is of a location of the object whichever arm it has, and its link
 names that location.
 The same allocation proof frames old facts and records the fresh bag, and the
 read proof records links with the object's actual descriptor.
-[CallableEffectTests.lean](lean/Verification/Model/Tests/CallableEffectTests.lean)
-checks that code with a delayed write preserves old contents during creation,
+[CallableEffectTests.lean](lean/Verification/Model/Tests/CallableEffectTests.lean) checks that code with a delayed write preserves old contents during creation,
 that descriptor changes and out-of-scope captures cannot reuse its evidence,
 and that a saved read value remains precise across a subsequent call.
-[CallableMutationTests.lean](lean/Verification/Model/Tests/CallableMutationTests.lean)
-adds an actual mutating invocation: a closure captures a neutral bag and writes
+[CallableMutationTests.lean](lean/Verification/Model/Tests/CallableMutationTests.lean) adds an actual mutating invocation: a closure captures a neutral bag and writes
 `true` after a `false` read has been saved. The saved value still verifies as
 `false`; a fresh read verifies as Boolean and executes to `true`, while a
 requested `false` contract fails. Both plain and callable allocations follow
 this path. Forged call outputs retaining old cell facts or read links are
 rejected by the consumer. Exact execution proofs distinguish the changed heap
 from the unchanged saved value.
-[CallableReentryTests.lean](lean/Verification/Model/Tests/CallableReentryTests.lean)
-checks an active function calling a callback that mutates its bag and reenters
+[CallableReentryTests.lean](lean/Verification/Model/Tests/CallableReentryTests.lean) checks an active function calling a callback that mutates its bag and reenters
 that same function. A terminating inner callback ends the nesting. The outer
 frame can return its saved `false` or reread the changed `true`; exact execution
 proofs cover both choices and both bag descriptors. The graph producer and JSON
 consumer accept the Boolean contracts and reject incompatible callbacks and
 unjustified singleton contracts. Nested invocation uses the existing closure,
 let-binding, and heap rules without a separate reentry mechanism.
-[CallableOrderTests.lean](lean/Verification/Model/Tests/CallableOrderTests.lean)
-checks effectful creation followed by invocation. The initializer writes a
+[CallableOrderTests.lean](lean/Verification/Model/Tests/CallableOrderTests.lean) checks effectful creation followed by invocation. The initializer writes a
 captured bag and allocates an intermediate object before the callable is
 allocated; the argument then overwrites the bag before the body reads it.
 The exact execution and heap order are proved for both captured-object
@@ -2318,14 +2329,13 @@ Primitive result predicates are finite lists of null/undefined/Boolean
 singletons, numeric singletons and the number family. `HeapKnowledge.check_sound` and `project_checked`
 justify transfer and alias-preserving projection along executable slot maps.
 
-[HeapExpressionTests.lean](lean/Verification/Model/Tests/HeapExpressionTests.lean)
-uses the actual source type graph to check allocation, write, mapped transfer,
+[HeapExpressionTests.lean](lean/Verification/Model/Tests/HeapExpressionTests.lean) uses the actual source type graph to check allocation, write, mapped transfer,
 wide read and precise return, with negative tests for stale contents, invalid
 storage writes, fabricated facts and changed expressions. The maintained graph checker carries the same postconditions in its state
 invariant and checks every incoming edge, including back edges. External entry
 requires empty knowledge; effect-only continuations drop result-slot facts.
-[HeapGraphTests.lean](lean/Verification/Model/Tests/HeapGraphTests.lean) proves
-a complete graph safe, checks its JSON evidence, and rejects fabricated entry
+[HeapGraphTests.lean](lean/Verification/Model/Tests/HeapGraphTests.lean) proves a complete graph safe,
+checks its JSON evidence, and rejects fabricated entry
 facts, stale write postconditions and altered maps. Source observations use the
 same checked graph facts, through the checkpoints below.
 
@@ -2356,8 +2366,10 @@ the key is present (`linkFacts_holds`):
 \qquad
 \frac{y=\mathsf{string}\quad y\equiv s}{y=\{s\}}.
 ```
-`HeapGuardTests.lean` proves a
-complete two-branch graph safe and checks that discarding the link prevents this
+[NumericEqualityTests.lean](lean/Verification/Model/Tests/NumericEqualityTests.lean) guards numeric equality: IEEE zeros and NaN, and the number family kept on both edges.
+[StringEqualityTests.lean](lean/Verification/Model/Tests/StringEqualityTests.lean) guards string equality: a string family found equal to a string is that string.
+[HeapGuardTests.lean](lean/Verification/Model/Tests/HeapGuardTests.lean) proves a complete two-branch graph safe
+and checks that discarding the link prevents this
 refinement. A slot equality $x=y$ permits a checked write through either alias to
 establish the new contents for both, as the
 [write rule](#the-reference-operations) above states; every other cell
@@ -2461,11 +2473,12 @@ There is no iteration to infer a loop invariant. The independent source consumer
 enforces the reset, so supplying a graph-safe certificate with extra facts at a
 statement entry still fails source verification.
 
-`CertificateProducer.lean` accepts an actual graph, its declared result type and
+[CertificateProducer.lean](lean/Verification/Model/Programs/CertificateProducer.lean) accepts an actual graph, its declared result type and
 start label, and one `PointClaim` per node. Each claim fixes both the entry
 context and the expression result type. These are annotations in this Lean
 interface, not SKJS claim types. The source adapter supplies them for the supported
 fragment; new source forms require the corresponding extraction obligations.
+[DirectProof.lean](lean/Verification/Model/Programs/DirectProof.lean) holds the recipes for source closures: untrusted plans fixing rule structure and intermediate types.
 
 `produce` builds expression derivation trees and per-slot subtype evidence for
 every actual edge. It does not infer or repair point invariants. Its inputs also
@@ -2532,7 +2545,7 @@ and destination, or final consumer rejection. Failure means unsupported or
 unjustified within this search, not a proof that the program is untypable.
 No evidence is returned as successful unless the consumer accepts it.
 
-`CertificateProducerTests.lean` runs the full path without hand-built evidence:
+[CertificateProducerTests.lean](lean/Verification/Model/Tests/CertificateProducerTests.lean) runs the full path without hand-built evidence:
 
 - The stateful loop and shared union merge from `ControlFlowTests.lean`.
 - A graph that duplicates a reference slot, inserts a local, reorders bindings,
@@ -2553,7 +2566,7 @@ results.
 
 ### Derived source forms
 
-`BooleanConditionalTests.lean` checks the ordinary conditional through serialized
+[BooleanConditionalTests.lean](lean/Verification/Model/Tests/BooleanConditionalTests.lean) checks the ordinary conditional through serialized
 requests and direct recipes. Its execution traces cover both outcomes after an
 alias write and a condition that writes then reads a cell. Invalid condition
 types, invalid arms, omitted premises and exchanged arms are rejected. This is
@@ -3080,6 +3093,8 @@ where $h_i$'s type admits $\mathsf{Undef}$ when there is a default, so a
 caller may omit it. A closure parameter's default stays the closure's own
 (`parameterOrder`), and its pattern is a `destructure` first in the body.
 
+[ObjectPatternTests.lean](lean/Verification/Model/Tests/ObjectPatternTests.lean) traces a lowered object pattern: the initializer held once, properties read in order, defaults run in pattern order.
+
 ### Mutable bindings and module constants
 
 A `let` binding and an assigned parameter lower to a private cell
@@ -3333,7 +3348,7 @@ The semantic introduction and elimination rules are proved in
 together; a separate unqualified body check cannot introduce a qualified type.
 Rest-collecting entries retain their store contract in the checked frame, and
 the entry allocation preserves the input heap before the checked body runs.
-The effect algorithm composes pure computations, required field reads through
+The effect algorithm ([ExpressionEffects.lean](lean/Verification/Model/Programs/ExpressionEffects.lean)) composes pure computations, required field reads through
 invariant cells or readonly views, and fresh object/array allocations. Reads use
 the field contract to establish valuehood; arbitrary heap entries are not assumed
 to be values. Allocations append locations. `ControlFlow.state_progress` is shared
@@ -3348,7 +3363,7 @@ The proof consumes `CallEffects.call_safe`, including padded missing arguments;
 a result-subtyping derivation retains the same postcondition. It never inspects
 the callee's implementation. Pure immutable lets also compose: $\mathsf{Pure}(a) \land
 \mathsf{Pure}(b)$ implies $\mathsf{Pure}(\mathsf{let}\ x=a\ \mathsf{in}\ b)$.
-`Purity.pure_subst` proves preservation under the value substitution at the
+[Purity.lean](lean/Verification/Model/Semantics/Purity.lean) checks purity; its `pure_subst` proves preservation under the value substitution at the
 binding step; instantiation respects bound variables at every binder depth.
 This covers the nested lets introduced by pure coalescing and logical operands.
 Other call forms and nested heap operations remain conservative.
@@ -3558,7 +3573,7 @@ a constructor is refused as unguarded, and everything else terminates
 because heads are keyed by source occurrence.
 
 The store a unit is extracted over is the lowering's heads, and extraction
-grows it (`EquationStore`): a union of clauses, a scheme over a closure's
+grows it ([EquationStore.lean](lean/Verification/Model/Source/EquationStore.lean)): a union of clauses, a scheme over a closure's
 binders and a bounded binder's meet each become a head whose template lifts
 the owned parameters it names to arguments. Every unit of a file grows the
 one store in turn, and once extraction is done the heads are validated
@@ -4552,8 +4567,7 @@ of `makeAt`, with one congruence rule, one allocation step, and the shared
 semantic proofs `make_rule` and `make_fields_rule`. `isFun` recognizes function objects and
 `isRef` recognizes plain objects, both independently of the heap.
 
-The implemented semantic slice is in
-[CallableObjects.lean](lean/Verification/Model/Programs/CallableObjects.lean).
+The implemented semantic slice is in [CallableObjects.lean](lean/Verification/Model/Programs/CallableObjects.lean).
 `bagT P` describes an object's writable fields independently of its call code,
 read and written as a record's (`bag_read`, `bag_write`); the call contracts
 (`callsT`, `restsT`) hold of the same value. `EnvOk.prepend` extends environments with ordered
@@ -4571,8 +4585,7 @@ merges the corresponding lists; structural
 subtyping checks invariant bag coverage and arrow coverage separately, and can
 forget properties to obtain `arrs`. The producer and consumer support
 `callableGraph`, `callCallable`, `readCallable`, and `writeCallable` evidence.
-[CallableGraphTests.lean](lean/Verification/Model/Tests/CallableGraphTests.lean)
-runs an allocated overloaded object through aliasing, bag mutation, reading,
+[CallableGraphTests.lean](lean/Verification/Model/Tests/CallableGraphTests.lean) runs an allocated overloaded object through aliasing, bag mutation, reading,
 and invocation using produced evidence and a JSON roundtrip.
 
 Receivers are implemented along the same lines. Every signature carries its
@@ -4591,8 +4604,7 @@ fields. A quantified ordinary function may name its binder as its receiver; its
 body is checked once under the binder and each call is an instance at the
 receiver it passes. The witnesses are `tests/callables/methods.ts`,
 `call-objects.ts`, `apply.ts` and `generic-receivers.ts`.
-[CallableRecursiveTests.lean](lean/Verification/Model/Tests/CallableRecursiveTests.lean)
-checks the recursive contract `R = callable(null | R; Boolean → Boolean)`:
+[CallableRecursiveTests.lean](lean/Verification/Model/Tests/CallableRecursiveTests.lean) checks the recursive contract `R = callable(null | R; Boolean → Boolean)`:
 a function is written into its own bag, read back, narrowed, and invoked.
 A second graph captures the object before that write and calls the getter
 afterward, exercising a higher-order result and a delayed heap read. Both graphs
@@ -4602,8 +4614,7 @@ finite run, and an exact terminating execution. Independent recursive labels
 can be related by cyclic subtype evidence, while invariant widening and an
 unguarded nullable call are rejected. These are regressions over the existing
 rules; no recursive-callable special case or additional semantic axiom is needed.
-[CallableRecursionTests.lean](lean/Verification/Model/Tests/CallableRecursionTests.lean)
-separately checks recursive invocation: a closure reads itself from a captured,
+[CallableRecursionTests.lean](lean/Verification/Model/Tests/CallableRecursionTests.lean) separately checks recursive invocation: a closure reads itself from a captured,
 nullable cell and calls it after a function test. Allocation and a self-write
 reach a five-step cycle from the empty heap. The test proves arbitrarily many
 cycles, nontermination by determinism, safety at every budget, and descriptor
@@ -4616,22 +4627,20 @@ The existing
 bag view can be expressed as `refs P Ps | callable P Ps []` using two graph
 labels. `CallableConjunctions.neutral_iff` proves that this union is precisely
 the bag conjunction on scoped values, whatever code they carry; it forgets
-invocation promises without changing the object. `NeutralBagTests` supplies checked `unionVar` derivations
+invocation promises without changing the object. [NeutralBagTests.lean](lean/Verification/Model/Tests/NeutralBagTests.lean) supplies checked `unionVar` derivations
 for reads and writes through this view. Proof search first tries a single
 constructor view, then splits an explicitly union-typed receiver variable for
 reads, writes, and calls, using the existing `unionVar` evidence. Every alternative
 must check; a null alternative cannot be ignored. Both allocation shapes run
 through the same read/write graph and JSON protocol without a runtime tag
 branch. The view makes no invocation promise.
-[CallableUnionTests.lean](lean/Verification/Model/Tests/CallableUnionTests.lean)
-checks calls through unions of known signatures with different bags and result
+[CallableUnionTests.lean](lean/Verification/Model/Tests/CallableUnionTests.lean) checks calls through unions of known signatures with different bags and result
 types, including erased property views. Every alternative must accept the
 actual argument and produce a result covered by the requested type. This does
 not invent a signature from `typeof`, pick a successful alternative, or require
 a common arrow label in the graph. The producer emits ordinary `unionVar`
 evidence; the consumer and wire format are unchanged.
-[SourceCallableUnionTests.lean](lean/Verification/Model/Tests/SourceCallableUnionTests.lean)
-checks the corresponding source-closure path for unions of primitive-only
+[SourceCallableUnionTests.lean](lean/Verification/Model/Tests/SourceCallableUnionTests.lean) checks the corresponding source-closure path for unions of primitive-only
 function signatures. Its direct recipe saves the callee and argument in order,
 then checks each alternative at the saved callee slot and joins the signature
 results. Expression obligations require no expression-search fuel. The complete
@@ -4692,8 +4701,7 @@ RHS at the shifted position, writes once, and returns that saved RHS. Corrupting
 the evidence to use the Boolean seed capture instead of the Boolean parameter
 fails, even though their types agree. Wrong receiver and narrowed RHS/result
 claims also fail production and independent consumption.
-[SourceCellUnionTests.lean](lean/Verification/Model/Tests/SourceCellUnionTests.lean)
-checks reads and writes through unions of locally allocated invariant cells
+[SourceCellUnionTests.lean](lean/Verification/Model/Tests/SourceCellUnionTests.lean) checks reads and writes through unions of locally allocated invariant cells
 inside source closures. Reads join possible contents. Writes check the saved
 RHS against every alternative, evaluate each operand once, and return that RHS
 as the source assignment value. Direct recipes need no expression-search fuel.
@@ -5639,7 +5647,7 @@ bounded by another included.
 **Generic bodies.** A generic function's body is a graph request whose
 binders are parameter rows $\vec p$: rows the graph's assignment interprets,
 which no rule reads (a type holding one has no expansion). Acceptance does not
-read the assignment (`Parametricity.accept_reassign`), so the rule
+read the assignment (`accept_reassign` in [Parametricity.lean](lean/Verification/Model/Programs/Parametricity.lean)), so the rule
 **Generic-Body** is the ordinary safety theorem at every reassignment:
 
 ```math
