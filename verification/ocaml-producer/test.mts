@@ -1414,8 +1414,20 @@ const returnedClaims: SourceClaims = JSON.parse(
   g.type.scheme.result = [1, 2];
   const groundedFile = join(returned, "forged-nested-claim.json");
   writeFileSync(groundedFile, JSON.stringify(grounded));
+  // The body `value` is a `T`, and the return-contract obligation at it asks
+  // for a boolean: no derivation exists.
+  const searched = spawnSync(verifier, ["--produce-source-claims", join(returned, "fragment.json"),
+    groundedFile, join(returned, "source.ts"), join(returned, "forged-nested-evidence.json"), "12"],
+    { encoding: "utf8", timeout: 30_000 });
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  const body = readFileSync(join(returned, "source.ts"), "utf8").indexOf("value;");
+  assert.ok((searched.stdout + searched.stderr).includes(
+    `source expression obligation at [${body},${body + "value".length}): evidence search failed: no derivation of its return-contract claim`),
+    searched.stdout + searched.stderr);
+  // The original evidence's labels are read against the forged claims'
+  // equations, whose heads differ, so the evidence does not decode.
   assert.match(invoke(groundedFile, join(returned, "evidence.json"), returned),
-    /does not justify|evidence search failed/);
+    /NodeEvidence.*head \d+ takes \d+ arguments/);
   process.stdout.write("tampered nested closure claim: refused\n");
 
   const escaped = structuredClone(returnedClaims);
@@ -1630,19 +1642,6 @@ process.stdout.write(
   `reader collection: ${collected.manifest.functions.length} functions, producer's own claims verified\n`,
 );
 
-// A declaration failure must surface in the reader, even before a graph can
-// be built. In particular an unsupported Promise contract is not a green
-// async body and must not crash report collection as an unlocated failure.
-{
-  const shown = await analyse(repositoryPath("async-await"), "ocaml");
-  assert(shown.outcome?.status !== "verified");
-  const results = shown.manifest.results ?? [];
-  assert(results.length > 0);
-  assert(results.every(r => r.status === "not-established" &&
-    r.obligation?.kind === "source-refusal" && /contract cannot be erased/.test(r.detail ?? "")));
-  process.stdout.write("reader collection: unsupported declaration contracts visibly refused\n");
-}
-
 const collectedGeneric = await analyse(
   repositoryPath("generic-closure"),
   "ocaml",
@@ -1751,6 +1750,18 @@ for (const [i, control] of controls.entries()) {
   }
 }
 assert(testedDirectProtocol, "no direct control reached the direct checker");
+// A refusal the verifier makes while validating the source, before a graph
+// exists, is shown as a located source refusal.
+{
+  const i = controls.findIndex((c) => c.file === "invalid-default-invocation");
+  const settled = shownControls[i];
+  assert(settled?.status === "fulfilled");
+  const [refused] = settled.value.manifest.results ?? [];
+  assert.equal(refused?.obligation?.kind, "source-refusal");
+  assert.equal(refused?.location?.kind, "source-limitation");
+  assert.match(refused?.detail ?? "", /pending closure cannot be invoked or exposed/);
+  process.stdout.write("reader collection: a source refusal shown at its span\n");
+}
 process.stdout.write(
   `reader collection: ${cases.filter((c) => c.kind === "negative").length} negative controls refused at their expected boundaries\n`,
 );
