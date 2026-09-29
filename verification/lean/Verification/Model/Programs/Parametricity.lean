@@ -133,12 +133,28 @@ theorem schemeCoversWith_reassign (R : List ι → List ι → Prop) (known : Kn
   cases G.schemes i <;> cases G.schemes j
   all_goals first | exact Iff.rfl | simp only [params_reassign, coversWith_reassign]
 
+/-- An opaque meet reads the graph's rows only. -/
+theorem meetOpaque_reassign (R : List ι → List ι → Prop) (known : Known ι)
+    (arrows : Ops ι → List (CallEffects.RestArrow (List ι)) → Ops ι → Prop) (S T : List ι) (i : ι) :
+    MeetOpaque (reassign G η) (SchemeCoversWith (reassign G η) R known arrows)
+      (fun a => ∃ b ∈ clausesOf (reassign G η) T, CoversWith (reassign G η) R known arrows S a b) T i ↔
+    MeetOpaque G (SchemeCoversWith G R known arrows)
+      (fun a => ∃ b ∈ clausesOf G T, CoversWith G R known arrows S a b) T i := by
+  have hs := schemeCoversWith_reassign G η R known arrows
+  have hc : ∀ a, (∃ b ∈ clausesOf (reassign G η) T, CoversWith (reassign G η) R known arrows S a b) ↔
+      ∃ b ∈ clausesOf G T, CoversWith G R known arrows S a b := fun a =>
+    exists_congr fun b => and_congr Iff.rfl (coversWith_reassign G η R known arrows S a b)
+  change MeetOpaque G _ _ T i ↔ _
+  exact ⟨fun h => MeetOpaque.mono (fun a b => (hs a b).mp) (fun a => (hc a).mp) h,
+    fun h => MeetOpaque.mono (fun a b => (hs a b).mpr) (fun a => (hc a).mpr) h⟩
+
 theorem opaqueWith_reassign (R : List ι → List ι → Prop) (known : Known ι)
     (arrows : Ops ι → List (CallEffects.RestArrow (List ι)) → Ops ι → Prop) (S T : List ι) :
     OpaqueWith (reassign G η) R known arrows S T ↔ OpaqueWith G R known arrows S T := by
   unfold OpaqueWith
   exact forall_congr' fun i => imp_congr_right fun _ => or_congr Iff.rfl (or_congr Iff.rfl
-    (or_congr Iff.rfl (or_congr Iff.rfl (exists_congr fun j => and_congr Iff.rfl
+    (or_congr Iff.rfl (or_congr (meetOpaque_reassign G η R known arrows S T i)
+      (exists_congr fun j => and_congr Iff.rfl
       (schemeCoversWith_reassign G η R known arrows i j)))))
 
 theorem checkClause_reassign (table : Table ι) (known : Known ι) (proofs : PositiveCertificates.Evidence ι)

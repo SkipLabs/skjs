@@ -250,6 +250,12 @@ instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop
   unfold SchemeCoversWith; split <;> infer_instance
 
 set_option synthInstance.maxSize 1024 in
+instance [DecidableEq ι] {G : NormalGraph ι} {sc : ι → ι → Prop} [DecidableRel sc]
+    {cover : Clause (List ι) → Prop} [DecidablePred cover] (T : List ι) (i : ι) :
+    Decidable (MeetOpaque G sc cover T i) := by
+  unfold MeetOpaque MeetSource MeetTarget; infer_instance
+
+set_option synthInstance.maxSize 1024 in
 instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R]
     {known : Known ι}
     {arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop}
@@ -345,6 +351,95 @@ theorem checkClause_complete [DecidableEq ι] {G : NormalGraph ι} {table known 
     (h : Covers G (Rel table) known self a b) : ∃ es, checkClause G table known es self a b = true :=
   checkClauseWith_complete h
 
+/-- Checked arrows stay checked with more evidence. -/
+theorem arrowsChecked_mono [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop}
+    [DecidableRel R] {es es' : Evidence ι} (hm : ∀ e ∈ es, e ∈ es') :
+    ∀ L S M, ArrowsCheckedWith G R es L S M → ArrowsCheckedWith G R es' L S M := by
+  intro L S M hs p hp
+  obtain ⟨e, he, hL, hP, hc⟩ := hs p hp
+  exact ⟨e, hm e he, hL, hP, hc⟩
+
+/-- Declarative quantified coverage has checked evidence. -/
+theorem schemeCoversWith_complete [DecidableEq ι] {G : NormalGraph ι}
+    {R : List ι → List ι → Prop} [DecidableRel R] {known : Known ι} {i j : ι}
+    (hc : SchemeCoversWith G R known (fun L S M => ∀ p ∈ M,
+      CallArrow (compatible G) (restElem G) R L S p) i j) :
+    ∃ es, SchemeCoversWith G R known (ArrowsCheckedWith G R es) i j := by
+  unfold SchemeCoversWith at hc
+  split at hc
+  · rename_i s s' hs hs'
+    obtain ⟨es, he⟩ := checkClauseWith_complete (R := R) (self := []) hc.2.2.2.2
+    refine ⟨es, ?_⟩
+    simp only [SchemeCoversWith, hs, hs']
+    exact ⟨hc.1, hc.2.1, hc.2.2.1, hc.2.2.2.1, of_decide_eq_true he⟩
+  · exact hc.elim
+
+/-- Declarative quantified coverage up to renaming has checked evidence. -/
+theorem schemeCoversAlpha_complete [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
+    {R : List ι → List ι → Prop} [DecidableRel R] {known : Known ι} {i j : ι}
+    (hc : SchemeCoversAlpha G sub R known (fun L S M => ∀ p ∈ M,
+      CallArrow (compatible G) (restElem G) R L S p) i j) :
+    ∃ es, SchemeCoversAlpha G sub R known (ArrowsCheckedWith G R es) i j := by
+  rcases hc with hc | hc
+  · obtain ⟨es, he⟩ := schemeCoversWith_complete hc
+    exact ⟨es, .inl he⟩
+  · unfold SchemeRenames at hc
+    split at hc
+    · rename_i r s s' hs hs'
+      obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9⟩ := hc
+      obtain ⟨es, he⟩ := checkClauseWith_complete (R := R) (self := []) h9
+      refine ⟨es, .inr ?_⟩
+      simp only [SchemeRenames, hs, hs']
+      exact ⟨h1, h2, h3, h4, h5, h6, h7, h8, of_decide_eq_true he⟩
+    · exact hc.elim
+
+/-- Declarative clause coverage has checked evidence. -/
+theorem coversWith_complete [DecidableEq ι] {G : NormalGraph ι}
+    {R : List ι → List ι → Prop} [DecidableRel R] {known : Known ι} {T self : List ι}
+    {a : Clause (List ι)}
+    (hc : ∃ b ∈ clausesOf G T, CoversWith G R known (fun L S M => ∀ p ∈ M,
+      CallArrow (compatible G) (restElem G) R L S p) self a b) :
+    ∃ es, ∃ b ∈ clausesOf G T, CoversWith G R known (ArrowsCheckedWith G R es) self a b := by
+  obtain ⟨b, hb, hc⟩ := hc
+  obtain ⟨es, he⟩ := checkClauseWith_complete (R := R) hc
+  exact ⟨es, b, hb, of_decide_eq_true he⟩
+
+/-- An opaque meet read with one relation has evidence for another, given
+evidence for each premise the rule reads. -/
+theorem MeetOpaque.evidence [DecidableEq ι] {G : NormalGraph ι} {E : Type} {T : List ι} {i : ι}
+    {sc : ι → ι → Prop} {cover : Clause (List ι) → Prop}
+    {sc' : List E → ι → ι → Prop} {cover' : List E → Clause (List ι) → Prop}
+    (msc : ∀ es es', (∀ e ∈ es, e ∈ es') → ∀ a b, sc' es a b → sc' es' a b)
+    (mcov : ∀ es es', (∀ e ∈ es, e ∈ es') → ∀ a, cover' es a → cover' es' a)
+    (hsc : ∀ a b, sc a b → ∃ es, sc' es a b) (hcov : ∀ a, cover a → ∃ es, cover' es a)
+    (h : MeetOpaque G sc cover T i) : ∃ es, MeetOpaque G (sc' es) (cover' es) T i := by
+  rcases h with ⟨hm, h | h | ⟨q, hq, hp, j, hj, h⟩ | h⟩ | ⟨j, hj, hm, hq, hcl⟩
+  · exact ⟨[], .inl ⟨hm, .inl h⟩⟩
+  · exact ⟨[], .inl ⟨hm, .inr (.inl h)⟩⟩
+  · obtain ⟨es, he⟩ := hsc q j h
+    exact ⟨es, .inl ⟨hm, .inr (.inr (.inl ⟨q, hq, hp, j, hj, he⟩))⟩⟩
+  · obtain ⟨es, he⟩ := collect _ (fun a es => cover' es a) (fun a es es' hm h => mcov es es' hm a h)
+      (fun a ha => hcov a (h a ha))
+    exact ⟨es, .inl ⟨hm, .inr (.inr (.inr he))⟩⟩
+  · obtain ⟨es, he⟩ := collect (meetParts G j) (fun q es => G.partRow q = true ∧
+        (q = i ∨ (G.meetRow i = true ∧ q ∈ meetParts G i) ∨ sc' es i q ∨
+          (G.meetRow i = true ∧ ∃ s ∈ meetParts G i, G.partRow s = true ∧ sc' es s q)))
+      (fun q es es' hm ⟨hp, h⟩ => ⟨hp, by
+        rcases h with h | h | h | ⟨hi, s, hs, hsp, h⟩
+        · exact .inl h
+        · exact .inr (.inl h)
+        · exact .inr (.inr (.inl (msc es es' hm _ _ h)))
+        · exact .inr (.inr (.inr ⟨hi, s, hs, hsp, msc es es' hm _ _ h⟩))⟩)
+      (fun q hqm => by
+        obtain ⟨hp, h | h | h | ⟨hi, s, hs, hsp, h⟩⟩ := hq q hqm
+        · exact ⟨[], hp, .inl h⟩
+        · exact ⟨[], hp, .inr (.inl h)⟩
+        · obtain ⟨es, he⟩ := hsc i q h
+          exact ⟨es, hp, .inr (.inr (.inl he))⟩
+        · obtain ⟨es, he⟩ := hsc s q h
+          exact ⟨es, hp, .inr (.inr (.inr ⟨hi, s, hs, hsp, he⟩))⟩)
+    exact ⟨es, .inr ⟨j, hj, hm, he, hcl⟩⟩
+
 structure Certificate (ι : Type) where
   table : Table ι
   arrows : Evidence ι
@@ -386,13 +481,22 @@ theorem opaque_complete [DecidableEq ι] {G : NormalGraph ι} {table known S T}
     (h : Opaque G (Rel table) known S T) :
     ∃ es, OpaqueWith G (Rel table) known (ArrowsChecked G table es) S T := by
   have each : ∀ i ∈ S, ∃ es : Evidence ι, G.plain i = true ∨ i ∈ T ∨ .top ∈ clausesOf G T ∨
-      G.meetRow i = true ∨ ∃ j ∈ T, SchemeCoversWith G (Rel table) known (ArrowsChecked G table es) i j := by
+      MeetOpaque G (SchemeCoversWith G (Rel table) known (ArrowsChecked G table es))
+        (fun a => ∃ b ∈ clausesOf G T, CoversWith G (Rel table) known (ArrowsChecked G table es) S a b) T i ∨
+      ∃ j ∈ T, SchemeCoversWith G (Rel table) known (ArrowsChecked G table es) i j := by
     intro i hi
     rcases h i hi with h | h | h | h | ⟨j, hj, hc⟩
     · exact ⟨[], .inl h⟩
     · exact ⟨[], .inr (.inl h)⟩
     · exact ⟨[], .inr (.inr (.inl h))⟩
-    · exact ⟨[], .inr (.inr (.inr (.inl h)))⟩
+    · obtain ⟨es, he⟩ := MeetOpaque.evidence (h := h)
+        (sc' := fun es => SchemeCoversWith G (Rel table) known (ArrowsChecked G table es))
+        (cover' := fun es a => ∃ b ∈ clausesOf G T,
+          CoversWith G (Rel table) known (ArrowsChecked G table es) S a b)
+        (fun es es' hm a b h => SchemeCoversWith.mono (arrowsChecked_mono hm) h)
+        (fun es es' hm a ⟨b, hb, hc⟩ => ⟨b, hb, CoversWith.mono (arrowsChecked_mono hm) hc⟩)
+        (fun a b h => schemeCoversWith_complete h) (fun a h => coversWith_complete h)
+      exact ⟨es, .inr (.inr (.inr (.inl he)))⟩
     · unfold SchemeCoversWith at hc
       split at hc
       · rename_i s s' hs hs'
@@ -406,7 +510,8 @@ theorem opaque_complete [DecidableEq ι] {G : NormalGraph ι} {table known S T}
     · exact .inl h
     · exact .inr (.inl h)
     · exact .inr (.inr (.inl h))
-    · exact .inr (.inr (.inr (.inl h)))
+    · exact .inr (.inr (.inr (.inl (h.mono (fun _ _ => SchemeCoversWith.mono (arrowsChecked_mono hm))
+        fun a ⟨b, hb, hc⟩ => ⟨b, hb, CoversWith.mono (arrowsChecked_mono hm) hc⟩))))
     · refine .inr (.inr (.inr (.inr ⟨j, hj, ?_⟩)))
       unfold SchemeCoversWith at hc ⊢
       split at hc
@@ -951,14 +1056,23 @@ theorem opaqueFamily_complete [DecidableEq ι] {G : NormalGraph ι} {sub : Optio
       CallArrow (compatible G) (restElem G) R L S p) hyps S T) :
     ∃ es, OpaqueFamily G sub R known (ArrowsCheckedWith G R es) hyps S T := by
   have each : ∀ i ∈ S, ∃ es : Evidence ι, G.plain i = true ∨ i ∈ T ∨ .top ∈ clausesOf G T ∨
-      G.meetRow i = true ∨ (∃ y ∈ T, (i, y) ∈ hyps) ∨
+      MeetOpaque G (SchemeCoversAlpha G sub R known (ArrowsCheckedWith G R es))
+        (fun a => ∃ b ∈ clausesOf G T, CoversWith G R known (ArrowsCheckedWith G R es) S a b) T i ∨
+      (∃ y ∈ T, (i, y) ∈ hyps) ∨
       ∃ j ∈ T, SchemeCoversAlpha G sub R known (ArrowsCheckedWith G R es) i j := by
     intro i hi
     rcases h i hi with h | h | h | h | h | ⟨j, hj, hc | hc⟩
     · exact ⟨[], .inl h⟩
     · exact ⟨[], .inr (.inl h)⟩
     · exact ⟨[], .inr (.inr (.inl h))⟩
-    · exact ⟨[], .inr (.inr (.inr (.inl h)))⟩
+    · obtain ⟨es, he⟩ := MeetOpaque.evidence (h := h)
+        (sc' := fun es => SchemeCoversAlpha G sub R known (ArrowsCheckedWith G R es))
+        (cover' := fun es a => ∃ b ∈ clausesOf G T,
+          CoversWith G R known (ArrowsCheckedWith G R es) S a b)
+        (fun es es' hm a b h => SchemeCoversAlpha.mono (arrowsChecked_mono hm) h)
+        (fun es es' hm a ⟨b, hb, hc⟩ => ⟨b, hb, CoversWith.mono (arrowsChecked_mono hm) hc⟩)
+        (fun a b h => schemeCoversAlpha_complete h) (fun a h => coversWith_complete h)
+      exact ⟨es, .inr (.inr (.inr (.inl he)))⟩
     · exact ⟨[], .inr (.inr (.inr (.inr (.inl h))))⟩
     · unfold SchemeCoversWith at hc
       split at hc
@@ -982,7 +1096,8 @@ theorem opaqueFamily_complete [DecidableEq ι] {G : NormalGraph ι} {sub : Optio
     · exact .inl h
     · exact .inr (.inl h)
     · exact .inr (.inr (.inl h))
-    · exact .inr (.inr (.inr (.inl h)))
+    · exact .inr (.inr (.inr (.inl (h.mono (fun _ _ => SchemeCoversAlpha.mono (arrowsChecked_mono hm))
+        fun a ⟨b, hb, hc⟩ => ⟨b, hb, CoversWith.mono (arrowsChecked_mono hm) hc⟩))))
     · exact .inr (.inr (.inr (.inr (.inl h))))
     · refine .inr (.inr (.inr (.inr (.inr ⟨j, hj, SchemeCoversAlpha.mono (fun L S M hs p hp => ?_) hc⟩))))
       obtain ⟨e, he, hL, hP, hc⟩ := hs p hp
