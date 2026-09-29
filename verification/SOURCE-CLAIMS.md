@@ -88,8 +88,8 @@ is read there, below the scheme by a checked instance table (`Sub.inst`).
 Nested generic closures, generic closures in generic bodies, rests, defaults
 and receivers over a binder are all graph code the same way.
 
-Both producers feed this format into `SourceClaimJson`. The native SKJS CLI
-entry points first run `SourceClaimExport`; they do not have another verifier.
+Both producers feed this format into [SourceClaimJson.lean](lean/Verification/Model/Source/SourceClaimJson.lean), its strict decoder and checked consumer.
+The native SKJS CLI entry points first run `SourceClaimExport`; they do not have another verifier.
 The viewer collects and edits this format for both producers. Original native
 claims are retained only as import provenance or accepted by legacy import tools.
 When source parsing is outside the fragment, import still permits inspection in
@@ -372,7 +372,7 @@ located proof obligation, not an unavailable-type or unsupported-format result.
 
 ## Record alternative absorption
 
-Before ordinary invariant-cell translation, `CellUnion.translate` validates every
+Before ordinary invariant-cell translation, `translate` in [CellUnion.lean](lean/Verification/Model/Types/CellUnion.lean) validates every
 record alternative. It may absorb an arm only into an existing invariant arm,
 with a weaker read requirement and **the same** write invariant. Writing `C(R,W)`
 for the schema's read/write requirements, the sufficient rule is:
@@ -436,7 +436,8 @@ node verification/tools/export-source-claims.mts input.ts --claims skjs-claims.j
   --diagnostics diagnostics.txt --out source-claims.json
 ```
 
-The command uses the current source parser and Lean's existing SKJS type decoder.
+The command uses the current source parser and Lean's existing SKJS type decoder,
+through [SourceClaimExport.lean](lean/Verification/Model/Source/SourceClaimExport.lean), the untrusted candidate conversion.
 It never invokes SKJS or enables recovery. `--diagnostics` is optional; use
 `--file-key` if the raw export identifies the file differently from the input
 path. `--verifier` selects the executable implementing conversion.
