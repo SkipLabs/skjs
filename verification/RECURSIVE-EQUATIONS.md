@@ -156,14 +156,14 @@ Two quantified signatures are compared up to renaming of bound variables,
 with the target's quantifiers rigid and bounds compared contravariantly:
 
 ```math
-\frac{\vec\rho\,'\le\vec\rho\qquad \sigma\le\sigma'[\vec\alpha/\vec\beta]\qquad \vec\alpha\notin\mathrm{fv}(\forall\vec\beta.\,\sigma')}
-{\forall\vec\alpha\le\vec\rho.\,\sigma\ \le\ \forall\vec\beta\le\vec\rho\,'.\,\sigma'}
+\frac{\vec{\rho}'\le\vec\rho\qquad \sigma\le\sigma'[\vec\alpha/\vec\beta]\qquad \vec\alpha\notin\mathrm{fv}(\forall\vec\beta.\,\sigma')}
+{\forall\vec\alpha\le\vec\rho.\,\sigma\ \le\ \forall\vec\beta\le\vec{\rho}'.\,\sigma'}
 ```
 
 This is the kernel rule of F<: restricted to one fixed pairing of
 quantifiers, which keeps it a check
 ([Pierce 1994](REFERENCES.md#pierce-1994)). Soundness is Lemma 3: an instance
-of the source at $`\vec X`$ within $`\vec\rho\,'`$ is an instance of the
+of the source at $`\vec X`$ within $`\vec{\rho}'`$ is an instance of the
 target at the same $`\vec X`$.
 
 ### 4.2 Parametric assumptions
