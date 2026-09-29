@@ -110,21 +110,21 @@ own the definition, application and effect-forgetting obligations.
 The scope limit is in the implemented cases, not a different account of the
 language. The boundaries are:
 
-1. `source.ml` decodes the shared Fragment into typed OCaml data. It preserves
+1. [source.ml](source.ml) decodes the shared Fragment into typed OCaml data. It preserves
    source positions, declared contracts, and quantified parameters with bounds.
    Local alias substitution uses a fresh parameter environment, retaining the scoped
    identities of its actual arguments. Imported recursive aliases retain named
    declaration identities; the producer never expands their equations.
    Unsupported constructs fail explicitly. It does not lower JavaScript into a
    second calculus; existing Lean lowering owns that step.
-2. `semantic.ml` describes immutable semantic types. Rigid binder identity
+2. [semantic.ml](semantic.ml) describes immutable semantic types. Rigid binder identity
    includes scope and binder index; spelling is only for export. Object shapes
    contain both field capabilities and call signatures. Fields distinguish
    presence, reads and writes; function objects will not require a second
    type universe. Required invariant fields, readonly views and array/tuple
    contracts are implemented. Optional field presence remains separate from
    present-undefined, and is blocked by the shared source/proof interface.
-3. `environment.ml` distinguishes immutable value snapshots from mutable
+3. [environment.ml](environment.ml) distinguishes immutable value snapshots from mutable
    storage contracts. A cell carries its fixed contract and what it is
    proposed to hold at a point: the contract, or a narrower primitive type
    after an assignment statement, a guard, or where two arms meet, which Lean
@@ -148,8 +148,9 @@ language. The boundaries are:
    a type parameter to that family where it holds, as one of `unknown`. A
    labeled block (a lowered `switch`) is left with what each `break` of its
    label knew, joined at its end.
-4. `proposal.ml` infers immutable candidate claims. It neither validates nor
-   publishes acceptance. For a call to a quantified callable, `inference.ml`
+4. [proposal.ml](proposal.ml) infers immutable candidate claims. It neither validates nor
+   publishes acceptance.
+   [inference.ml](inference.ml) infers the instance of a quantified callable at a call: it
    accumulates directional lower/upper constraints through callable shapes,
    reversing direction at each callback parameter and preserving it at results.
    Two applications of one declaration relate their arguments both ways, and
@@ -204,7 +205,7 @@ language. The boundaries are:
    fixed contracts as candidate invariants; `break` and `continue` edges are
    validated by the existing control-flow checker. Declared types are candidates to prove, not proof that their bodies satisfy
    them. There is no second, approximate subtype relation used for acceptance.
-5. `claims.ml` serializes those candidates into the existing producer-neutral
+5. [claims.ml](claims.ml) serializes those candidates into the existing producer-neutral
    SourceClaims protocol. Its table holds only its own clause rows; it names
    what only Lean builds rows for by
    [label trees](../SOURCE-CLAIMS.md#encoding): a declaration's
@@ -265,6 +266,12 @@ alike.
 
 Missing: fresh inference variables. An unquantified returned closure may
 retain an outer binder; that is not a nested quantified scheme.
+
+Modules outside these stages:
+
+- [json.ml](json.ml): the dependency-free JSON codec the stages read and write documents with.
+- [producer.ml](producer.ml): the executable; it emits proposals, never an acceptance decision, and with `--explain` the causes of failure it met.
+- [unit.ml](unit.ml): the Dune unit tests of the codec and the inference.
 
 ## Extending the producer
 
