@@ -914,15 +914,15 @@ terms, which shadow the declaration's. A rest typed by one of them,
 parameter**, whose actuals past the fixed ones are, as one argument list, at
 `P`; every other rest term is its element. Lean lowers it to a host-relative
 member with quantified signatures, `{"key","calls":[],"rests":[],"schemes":[[row]]}`
-in the clause's `methods`: a scheme row whose binders are the member's
-coloured parameter rows (see [generic methods](PROGRAM-TYPING.md#generic-methods)), whose receivers admit every value, and whose bounds are the binders' bounds, lowered where the
+in the clause's `methods`: a scheme row whose binders are its application's
+owned parameters (see [generic methods](PROGRAM-TYPING.md#generic-methods)), whose receivers admit every value, and whose bounds are the binders' bounds, lowered where the
 method is declared, a pack parameter's array or tuple bound as the argument
-lists it admits; a bound naming the method's own binders (an F-bound), a pack
-parameter used as a value's type, or unfolding past the budget keeps the
-member an opaque `unknown` field. A class's generic method is stated the same
-way in its instance type; its closure's binders are the member's rows, which
-the parser names `"m"#k:null^0`, and the producer states the prototype's field
-as a scheme row over them (`{"scheme":{"binders","signatures"}}` in `types`). At a call the OCaml producer takes a pack
+lists it admits; a bound naming the method's own binders (an F-bound) and a pack
+parameter used as a value's type are refused, never read as an opaque
+`unknown` field. A class's generic method is stated the same
+way in its instance type; its closure's binders, which the parser names
+`"m"#k`, are its claimed scheme's, and the producer states the prototype's
+field as a scheme row over them (`{"scheme":{"binders","signatures"}}` in `types`). At a call the OCaml producer takes a pack
 parameter's instance to be the tuple of the actuals past the fixed ones. The OCaml producer
 reads it as a callable quantifying its binders; at a call it infers the
 instance from the receiver and the actuals, and claims the method's read at

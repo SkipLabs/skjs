@@ -3539,98 +3539,66 @@ $$
 
 where $\textsf{env}$ feeds $\textsf{global}$.
 
-### One row per application
+### One equation per declaration
 
-A generic application with methods, $D\langle\vec U\rangle$ where $D$'s
-equation mentions its receiver, is one row for the whole module: the memo
-$\rho$ (`Memo.applications`) maps a declaration and its arguments' key to the
-row. Arguments are compared by $\mathsf{key}$, each label its row's clauses,
-except an application's row or an empty row, reserved and not yet filled,
-which is its label:
+A declaration is one equation, and a type a unit names is a finite term over
+the equations ([RECURSIVE-EQUATIONS §8](RECURSIVE-EQUATIONS.md#8-lowering-from-source)).
+Lowering (`EquationLowering.source`) makes a head per declaration whose
+equation is an object type or has bases, per generic method of such a head,
+per source type literal and per generic unit, never per instance: a
+generic application $`D\langle\vec U\rangle`$ is the label $`D(\vec U)`$,
+and its row is $`D`$'s template instantiated at $`\vec U`$ when a check reads
+it, which leaves every application inside unexpanded. So a recursive family
+of applications, `Pair<[T, U]>` or `Promise`'s `catch`, is finitely many
+heads, and there is no budget, colour or depth: an alias reached again before
+a constructor is refused as unguarded, and everything else terminates
+because heads are keyed by source occurrence.
 
-$$
-\mathsf{key}(\vec U)=\bigl(\{\,k(l)\mid l\in U_i\,\}\bigr)_i,\qquad
-k(l)=\begin{cases}l & l\ \text{an application's row, or empty}\\ G(l) & \text{otherwise.}\end{cases}
-$$
-
-The row a producer's label names for $D\langle\vec U\rangle$ (an
-[application label](SOURCE-CLAIMS.md#encoding)) is in $\rho$ from the
-start, an argument left to its default being that default (one row for
-`IteratorResult<number>` and `IteratorResult<number, unknown>`). A reserved
-row whose equation is other rows' union (an alias) is their clauses, filled
-after the reserved rows it names (`fillRows`). Otherwise the first lowering to meet the application gives it a fresh
-row, records it, and lowers $D$'s equation at $\vec U$ with that row for the
-receiver, **from an empty visit** (`groundApplication`):
-
-$$
-\frac{\rho(D,\mathsf{key}(\vec U))=r}{\llbracket D\langle\vec U\rangle\rrbracket=[r]}\ \textsf{app}
-\qquad
-\frac{\rho(D,\mathsf{key}(\vec U))\ \text{undefined}\quad
-      |\mathsf{reach}(\vec U)|\le 32\quad r\ \text{fresh}}
-     {\rho(D,\mathsf{key}(\vec U)):=r\quad G(r):=\mathsf{lower}_\emptyset(\mathit{eq}_D[\vec U,\mathsf{self}:=r])}\ \textsf{app-new}
-$$
-
-Every row of $D\langle\vec U\rangle$ is the lowering of one equation at one
-argument list, a function of the application and the memo, never of the path
-that met it first, so a recursive family of applications closes into a finite
-graph; two applications that differ by a renaming of binder rows are related
-by an [instance table](POSITIVE-TYPES.md#instances-of-a-scheme-row).
-$\mathsf{reach}(\vec U)$ is the rows the arguments reach (an application's
-row reaching its arguments, not its equation): arguments that keep growing
-pass the bound and the entire declaration is refused. A
-declaration without methods is expanded inline unless it reaches itself
-(`recursiveDeclaration`), when its application is a row of its own as well;
-any other recursion through declarations is refused after three expansions
-(`applicationDepth`). A declaration's row is a name, not a representative: the
-row for a type is the first row with exactly its clauses that is not a
-declaration's (`useRow`).
+The store a unit is extracted over is the lowering's heads, and extraction
+grows it (`EquationStore`): a union of clauses, a scheme over a closure's
+binders and a bounded binder's meet each become a head whose template lifts
+the owned parameters it names to arguments. Every unit of a file grows the
+one store in turn, and once extraction is done the heads are validated
+(`Equations.ofRaw`) and every request is checked over their
+`Equations.graph` (`SourceClaimJson.freezePlans`).
 
 #### Generic methods
 
-A declaration's generic method, a scheme whose signatures take the
-declaration as receiver, lowers to a host-relative member with quantified
-signatures: the member's one scheme row, whose binders are parameter rows,
-shared by name so the unfolding closes, and whose receivers admit every value
-(the member bound to its host is what meets the scheme,
-[records](POSITIVE-TYPES.md#records)). A generic member of a library
-prototype (`ArrayProto`'s `forEach`, whose receiver is an array of its element
-binder) stays a readonly view of its scheme. A method's binder rows are its
-member's: binder $k$ of the member of key $\kappa$ with declared bound $B_k$
-at colour $c$ is the row $\kappa\#k{:}B_k\,{}^c$, whichever declaration
-states the member, so members of one key declared alike (as many binders, the
-same bounds) quantify over the same rows, and the [covering rule for
-quantified signatures](POSITIVE-TYPES.md#core-tables) relates them
-(`Promise`'s `then` and `PromiseLike`'s). Any other scheme's rows are its own.
-The binders take the least **colour** at which none of the member's own rows
-is free in the arguments of the application it belongs to:
+A declaration's generic method `m<U⃗>` is a head `D.m` of its own, taking
+`D`'s parameters and binding `U⃗`: a scheme whose signatures take the
+declaration as receiver, lowered as a host-relative member with quantified
+signatures whose receivers admit every value (the member bound to its host
+is what meets the scheme, [records](POSITIVE-TYPES.md#records)). Its binders
+are owned by its application, $`\mathsf{bound}(D.m,\vec A,j)`$, so two
+applications of `D` at different arguments bind different labels, and two
+members of different declarations do too: relating them needs quantified
+coverage up to renaming ([RECURSIVE-EQUATIONS §6](RECURSIVE-EQUATIONS.md#6-quantified-coverage-modulo-binder-renaming)),
+which the request path does not yet reach (DESIGN, "Status"). A generic
+member of a library prototype (`ArrayProto`'s `forEach`, whose receiver is an
+array of its element binder) stays a readonly view of its scheme. A rest
+typed by one of the method's binders makes it a pack parameter, bounded by
+its element pack. A value binder $`p`$ with a declared bound $`B_p`$
+establishes a parameter's bound $`B`$ through that one:
 
-$$
-\mathsf{colour}(m, \vec A)=\min\{\,c<\mathit{budget}\;\mid\;c\notin\mathsf{colours}_m(\mathit{fv}(\vec A))\,\},
-$$
-
-where $\mathsf{colours}_m$ reads only the rows of $m$'s key. A binder captures
-only its own row, so another member's binders take no colour: a family of
-applications closes when a finite set of instances suffices. Past the colour
-budget, at growing arguments, and for unsupported dependent bounds, lowering
-refuses the entire declaration. It never weakens the member to an opaque
-`unknown` view. In particular, `catch`'s accumulating `Promise<T | TResult>`
-currently prevents interpreting the full Promise declaration. Budget limits
-are operational refusal conditions, not changes to the type's meaning.
-A rest typed by one of
-the method's binders makes it a pack parameter, bounded by its element pack.
-A value binder $p$ with a ground declared bound $B_p$ establishes a
-parameter's bound $B$ through that one:
-
-$$
-\frac{p\ \text{a value binder}\quad B_p\ \text{ground}\quad G\vdash_c B_p\le B}
+```math
+\frac{p\ \text{a value binder}\quad G\vdash_c B_p\le B}
      {p\ \text{establishes}\ B}\ \textsf{binder-bound}
-$$
+```
+
+A binder the source spells by its name, in an annotation or a claim, is its
+name's placeholder until the unit or closure that binds it is extracted: a
+generic unit's binders are the owned parameters of its head
+(`EquationLowering.enterUnit`), a generic closure's those of the scheme its
+claim states (`Scheme.schemeRowOf`), and each annotation and claim inside
+reads the name as that parameter (`Store.rebind`).
 
 #### Binders met with ground types
 
 An intersection of a value binder with ground types, `V & DepSafe`, is a
-[meet row](POSITIVE-TYPES.md#parameter-and-scheme-rows) $p\sqcap\vec c$
-(`RequestJson.Row.meet`). Lowering an intersection (`meetRow`):
+meet label ([RECURSIVE-EQUATIONS §3.3](RECURSIVE-EQUATIONS.md#33-meet-labels)),
+whose row is the [meet row](POSITIVE-TYPES.md#parameter-and-scheme-rows)
+$p\sqcap\vec c$. Lowering an intersection (`meetOf`) distributes it over its
+operands' unions, one meet label per choice; on ground operands:
 
 $$
 \frac{A_k=[p],\ p\ \text{a value binder}\qquad

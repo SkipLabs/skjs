@@ -1297,8 +1297,8 @@ the finite-table checks; the equation checker discharges it by structural
 substitution ([RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md#3-metatheory)).
 
 The same tables relate two rows of one type that differ only in which binder
-rows their schemes use. Lowering gives one row per generic application
-([PROGRAM-TYPING.md](PROGRAM-TYPING.md#one-row-per-application)), so this is for graphs that
+rows their schemes use. Lowering gives one equation per declaration
+([PROGRAM-TYPING.md](PROGRAM-TYPING.md#one-equation-per-declaration)), so this is for graphs that
 hold copies anyway. With the empty context each row means its image:
 
 $$

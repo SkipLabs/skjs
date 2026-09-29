@@ -71,11 +71,13 @@ closure bodies and defaults; its analysis is deliberately incomplete for reads,
 allocation, calls and rest-array wrappers. Those bodies retain unrestricted
 claims until the compositional checker can certify their stronger effect.
 
-Lean reads each such scheme as a scheme row whose binders are fresh parameter
-rows ([quantified schemes](POSITIVE-TYPES.md#quantified-scheme-layer)): every
-claim and annotation inside the closure reads the closure's binders as those
-rows, a bounded one as the meet of its row and its bound, one bounded by
-another of the closure's binders as the meet of the two parameter rows. The
+Lean reads each such scheme as a scheme head of its own, whose binders are
+its application's owned parameters
+([RECURSIVE-EQUATIONS §8.1](RECURSIVE-EQUATIONS.md#81-heads)): every claim
+and annotation inside the closure reads the closure's binders, spelled by
+their names, as those parameters, a bounded one as the meet of its parameter
+and its bound, one bounded by another of the closure's binders as the meet of
+the two parameters. The
 closure is graph code at the row (`funScheme`), checked once at the row's
 signatures, so at every instantiation and never at the observed calls alone: a
 closure that satisfies each observed call but cannot produce an arbitrary
@@ -192,7 +194,11 @@ spelling and no other field. So a producer never writes a declaration's
 equation, an array's shape, an intersection's row or a binder's row: its
 `types` are the four primitives, then its own clause rows and the scheme rows
 of classes' generic methods, whose binders are binder labels. The verifier
-gives each tree the row its lowering fills before it reads the claims. The
+lowers the claims with the source's declarations to recursive equations
+([RECURSIVE-EQUATIONS §8](RECURSIVE-EQUATIONS.md#8-lowering-from-source)):
+a row is a head of its own, lifted over the binder names it mentions, and a
+binder label is its name, read as the unit or closure that binds it gives
+it. The
 source decoder also accepts unions
 mixing supported cell and function atoms with primitives. Existing limits on
 external cell parameters and nested record operands remain in force; fields

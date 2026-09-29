@@ -131,18 +131,20 @@ program or weaker requirements.
   claims of each cell is stable. Each is a construction hint Lean checks, and
   adds no trust.
 - **Lean** (`lean/Verification/Model/`) reads the AST and declarations,
-  lowers every annotation once to claim form (`DeclarationGraph.prepare`),
-  lowers each code unit to a graph request (`SourceExtraction`), searches for
-  evidence (`--produce-source-claims`) and checks it
-  (`--check-source-claims`). Only the check is part of acceptance.
+  lowers the declarations, every annotation and the claims once to recursive
+  equations (`EquationLowering.source`), lowers each code unit to a graph
+  request over them (`SourceExtraction`), searches for evidence
+  (`--produce-source-claims`) and checks it (`--check-source-claims`). Only
+  the check is part of acceptance.
 
 ### Claims and the claim reader
 
 A claim is a type at a source site, in one claim form shared by producers,
-annotations and the declaration graph: rows of the request's type table,
-built from clauses. Annotations become claims in `DeclarationGraph.prepare`,
-so there is one reader of types, not one per producer; a claim-shaped
-annotation in the source tree is refused. Claims are per unit, keyed by
+annotations and declarations: labels of the recursive equations the source
+lowers to. Annotations become claims in the same lowering run as the
+producer's claims (`SourceClaimJson.equationFront`), so there is one reader
+of types, not one per producer; a claim-shaped annotation in the source tree
+is refused. Claims are per unit, keyed by
 source identity; each site has at most one, a required site without one is
 refused, and extra or duplicate claims are refused. A producer's claim is
 compared with the source's annotation by meaning, not by label: a function's
@@ -198,9 +200,11 @@ producers on its own.
 
 `SourceClaimJson.checkJson_safe` is the headline theorem. Its premise is the
 exact CLI success condition; its conclusion is that every extracted plan was
-certified, and that for every accepted unit's request, every assignment
-$\eta$ of its parameter rows, and every environment meeting the unit's
-inputs at $\eta$ in an admissible world with a satisfying heap, the graph is
+certified over the recursive equations the extracted store presents,
+validated once extraction is done (`freezePlans`), and that for every
+accepted unit's request, every assignment $\eta$ of its parameter rows, and
+every environment meeting the unit's inputs at $\eta$ in an admissible world
+with a satisfying heap, the graph, `Equations.graph` of those equations, is
 safe at its declared result read at $\eta$ (`SafeGraph`). Every plan is a
 graph request: a generic unit and a generic closure are checked by the same
 checker, their binders parameter rows. The inputs are the unit's
@@ -598,19 +602,20 @@ covered with its binders opaque, so decidable
 both sides, it is never compared, and a declaration whose generic methods take
 its argument only covariantly is covariant: `Promise<A>` is below `Promise<B>`
 where `A` is below `B`, by `then`'s and `catch`'s own signatures. A
-generic method's binder rows are its member's, keyed by its key, position and
-bound ([generic methods](PROGRAM-TYPING.md#generic-methods)), so members of one
-key declared alike bind the same rows: `Promise<A>` is below `PromiseLike<A>`.
+generic method's binders are owned by its application
+([generic methods](PROGRAM-TYPING.md#generic-methods)), so two instances of a
+declaration, and members of two declarations, bind different parameters:
+relating them needs the covering rule up to renaming the target's binders
+([quantified-α](RECURSIVE-EQUATIONS.md#6-quantified-coverage-modulo-binder-renaming)).
 A class's generic method is such a member of its instance type, which its
-prototype's closure, a scheme received by the instance whose binders are the
-member's rows, covers bound to the instance
-([classes](PROGRAM-TYPING.md#classes)).
+prototype's closure, a scheme received by the instance, covers bound to the
+instance ([classes](PROGRAM-TYPING.md#classes)).
 
 ### Exact contracts and native effects
 
 A source declaration is lowered in full or refused. Unsupported generic
-bounds, mixed value/argument-pack binders, and exhaustion of the binder-colour
-or application budget are refusals. No such failure denotes `unknown`, and no
+bounds, mixed value/argument-pack binders and an unguarded alias cycle are
+refusals. No such failure denotes `unknown`, and no
 method is dropped. This matters in result and writable positions: forgetting
 a contract there would certify a value that does not satisfy its annotation.
 
@@ -775,14 +780,14 @@ receiver a later `.bind` or `.call` cannot replace (`callsT_bound`).
 
 ### Generic types
 
-A generic application with methods is one row per
-declaration and arguments for the module, lowered from an empty visit, so a
-recursive family of applications is a finite graph
-([one row per application](PROGRAM-TYPING.md#one-row-per-application)). A
-generic method is a [member with quantified signatures](#method-members-are-host-relative),
-a scheme row whose binders are parameter rows coloured per member; a
-binder intersected with ground types is a meet row
-([rows](POSITIVE-TYPES.md#parameter-and-scheme-rows)).
+A declaration is one equation, and a generic application a finite term over
+the equations, unfolded one step when a check reads it, so a recursive family
+of applications, however it grows, is finitely many heads
+([one equation per declaration](PROGRAM-TYPING.md#one-equation-per-declaration),
+[RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md)). A generic method is a
+[member with quantified signatures](#method-members-are-host-relative), a
+scheme whose binders its application owns; a binder intersected with ground
+types is a meet label ([RECURSIVE-EQUATIONS §3.3](RECURSIVE-EQUATIONS.md#33-meet-labels)).
 
 ### Graphs
 
@@ -1129,7 +1134,7 @@ the `cases.mts` entries refused as unsupported recursive generic contracts.
 | Item | State | Closed when |
 | --- | --- | --- |
 | a. Recursive equations | open | the table below is done |
-| b. A callback returning a promise instantiates `then`'s binder through `PromiseLike<TResult>` ([generic methods left](#generic-methods-left)) | open | no case isolates it while (a) masks it; name one when (a) lands |
+| b. A callback returning a promise instantiates `then`'s binder through `PromiseLike<TResult>` ([generic methods left](#generic-methods-left)) | open: `promise-then` and `named-promise-catch` isolate it | those two verify |
 | c. `await` on realm promises, forged promises refused | done | decided; `forged-promise-refused` stays refused on principle |
 
 **Recursive equations (Promise a).** Closed when
@@ -1154,7 +1159,7 @@ unchanged ([design](#recursive-quantified-contracts)).
 | S5. Equation lowering module ([§5](RECURSIVE-EQUATIONS.md#5-from-source)), not yet wired | done | lowers `Promise`, `PromiseLike`, `Pair` and the upstream declarations with no budget |
 | K2. Kernel: family hypotheses reach meet parts, so `meet(x,B) ≤ meet(y,B)` holds under `x ≤ y` (the framework's `T & DepSafe` heads, [§4.3](RECURSIVE-EQUATIONS.md#43-variance)) | done | proved; the `sum-collections` heads' variances check |
 | K3. Lowering: a unit bound naming another binder of the unit (`U extends T`) | open | lowered as a meet of owned binders; its lowering test passes |
-| S6. Cutover: lowering wired, `DeclarationGraph`, its budgets and the adapter deleted, `checkJson_safe` over `Equations.graph` | open | `generic-growing-application` verifies; every recursive-generic gap reclassified by its new blocker |
+| S6. Cutover: lowering wired, `DeclarationGraph`, its budgets and the adapter deleted, `checkJson_safe` over `Equations.graph` | open: wired, finite path deleted, gaps reclassified; lost until quantified-α reaches request certificates: `class-generic-method`, `generic-method-instances`; until calls are claimed at their structural images: `class-value-generic-method`, `library-object-values-dictionary`; the standalone protocol is still finite | `generic-growing-application` verifies; every recursive-generic gap reclassified by its new blocker |
 | S7. Variance proposals, `Var` and family entries in the certificate producer; `checkEquations` | open | `promise-covariance`, `-push` verify; `invalid-promise-covariance` rejected at its own obligation |
 | S8. Census and performance | open | census remeasured; evidence size and decode time recorded |
 
@@ -1183,11 +1188,12 @@ spell for the closure (`class-generic-method-bounded-refused`). Two members
 declared unalike (another bound, another arity) bind other rows: relating them
 needs an instance table naming each source signature's image at the target's
 binders, inside the core table. A binder a member's result accumulates
-(`catch`'s `Promise<T | TResult>`) grows its family by one binder per call,
-which exceeds the finite graph's colour budget. The entire declaration is
-refused, including ordinary `Promise` uses that reach it. Supporting these
-contracts again needs a faithful representation of the recursive quantified
-family; a truncation to `unknown` is not an implementation option. A
+(`catch`'s `Promise<T | TResult>`) grows its family by one binder per call:
+each is an application of the one equation, unfolded only when read
+([RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md)), never truncated. Members of
+two declarations, or of two instances of one, bind different parameters, so
+relating them needs quantified coverage up to renaming, which the request
+path does not yet reach. A
 callback returning a promise instantiates `then`'s binder through
 `PromiseLike<TResult>`, which the producer's inference does not do.
 
@@ -1319,9 +1325,8 @@ positive sources as the targets. The work is split by semantic obligation:
      Subtyping between members of one family is a finite family argument
      whose hypotheses the producer proposes and the checker checks. Variance
      is never read from TypeScript, and writable positions stay invariant.
-   - There is one production path: the finite table becomes the nullary case
-     of the equations, and the colour/depth/argument machinery is deleted
-     once the equations reach acceptance.
+   - There is one production path: the source path's requests are over the
+     equations, and the colour/depth/argument machinery is deleted.
    - Review the acceptance theorem for every new certified form.
 
    A shared polymorphic prototype may be a valid audited contract for a native,
