@@ -57,7 +57,7 @@ private def continueProgram : Program := [
   ⟨.var 0,.effect 0,none⟩,
   ⟨.makeAt (.graph 1 [.var 0, .read (.var 0), .var 2]
       [(.ret, none), (.bind ⟨0, some [0, 2, 3, 4]⟩, none), (.bind ⟨1, none⟩, none)] 2 [.var 0])
-      [valueField] [.nul],.bind 15,none⟩,
+      [codeField] [.nul],.bind 15,none⟩,
   ⟨.var 0,.effect 16,none⟩,
   ⟨.alloc (.var 0),.bind ⟨17,some [0]⟩,none⟩,
   ⟨.tru,.bind 18,none⟩,

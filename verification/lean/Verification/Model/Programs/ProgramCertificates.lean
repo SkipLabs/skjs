@@ -291,13 +291,13 @@ theorem CoveredRestUsing.proofs [DecidableEq ι] {G : NormalGraph ι}
   -- the code's table entry states; every signature the type offers is an
   -- entry of the unit's checked table.
   | .funGraph As, .makeAt (.graph arity E K start caps kind rest) ns inits, ps =>
-    kind = .call ∧ ns = [valueField] ∧ inits = [Tm.nul] ∧ ps.map Sequent.term = caps ∧
+    kind = .call ∧ ns = [codeField] ∧ inits = [Tm.nul] ∧ ps.map Sequent.term = caps ∧
     (∀ q ∈ ps, q.context = j.context) ∧ capSlotsBelow caps j.context.length = true ∧
     graphCodesChecked G j.type codes arity E K start (ps.map Sequent.type) rest As = true
   -- A class value: as a function's code, construct-only, at its construct
   -- signatures with `undefined` for the receiver.
   | .ctorGraph U, .makeAt (.graph arity E K start caps kind rest) ns inits, ps =>
-    kind = .construct ∧ rest = false ∧ ns = [valueField] ∧ inits = [Tm.nul] ∧ ps.map Sequent.term = caps ∧
+    kind = .construct ∧ rest = false ∧ ns = [codeField] ∧ inits = [Tm.nul] ∧ ps.map Sequent.term = caps ∧
     (∀ q ∈ ps, q.context = j.context) ∧ capSlotsBelow caps j.context.length = true ∧
     Represents G U .undef ∧
     ctorCodesChecked G j.type U codes arity E K start (ps.map Sequent.type) = true
@@ -699,7 +699,7 @@ theorem funGraph_of_local [DecidableEq ι] {G : NormalGraph ι}
     (hslots : capSlotsBelow (ps.map Sequent.term) Γ.length = true)
     (hok : graphCodesChecked G A codes arity E K start (ps.map Sequent.type) rest As = true)
     (hp : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type) :
-    HasTyUsing G images Γ (.make (.graph arity E K start (ps.map Sequent.term) .call rest) .nul) A := by
+    HasTyUsing G images Γ (.makeFn (.graph arity E K start (ps.map Sequent.term) .call rest) .nul) A := by
   obtain ⟨caps, hvar, hfst, hlt, hcap⟩ := caps_of_local hctx hslots hp
   rw [← hvar]
   unfold graphCodesChecked at hok
@@ -1425,7 +1425,7 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
   | bigint hr => exact node_complete (r := .bigint) (js := []) hr (by simp)
   | @funGraph Γ F L S arity start E K caps rest As hr hspec hlt hcap ih =>
     apply node_complete (r := .funGraph As)
-      (j := ⟨Γ, .make (.graph arity E K start (caps.map fun c => .var c.2) .call rest) .nul, F⟩)
+      (j := ⟨Γ, .makeFn (.graph arity E K start (caps.map fun c => .var c.2) .call rest) .nul, F⟩)
       (js := caps.map fun c => ⟨Γ, .var c.2, c.1⟩)
     · refine ⟨rfl, rfl, rfl, by simp, ?_, capSlots_complete hlt, ?_⟩
       · intro q hq
@@ -1441,7 +1441,7 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
       exact ih c hc
   | @funScheme Γ i s arity start E K caps rest As hp hq hspec hcf hlt hcap ih =>
     apply node_complete (r := .funGraph As)
-      (j := ⟨Γ, .make (.graph arity E K start (caps.map fun c => .var c.2) .call rest) .nul, [i]⟩)
+      (j := ⟨Γ, .makeFn (.graph arity E K start (caps.map fun c => .var c.2) .call rest) .nul, [i]⟩)
       (js := caps.map fun c => ⟨Γ, .var c.2, c.1⟩)
     · refine ⟨rfl, rfl, rfl, by simp, ?_, capSlots_complete hlt, ?_⟩
       · intro q hq
@@ -1457,7 +1457,7 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
       exact ih c hc
   | @ctorGraph Γ F U L arity start E K caps hr hu hspec hlt hcap ih =>
     apply node_complete (r := .ctorGraph U)
-      (j := ⟨Γ, .make (.graph arity E K start (caps.map fun c => .var c.2) .construct) .nul, F⟩)
+      (j := ⟨Γ, .makeFn (.graph arity E K start (caps.map fun c => .var c.2) .construct) .nul, F⟩)
       (js := caps.map fun c => ⟨Γ, .var c.2, c.1⟩)
     · refine ⟨rfl, rfl, rfl, rfl, by simp, ?_, capSlots_complete hlt, hu, ?_⟩
       · intro q hq

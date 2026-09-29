@@ -1388,7 +1388,10 @@ pair of the operands' clauses gives ([Design](DESIGN.md#object-literals)):
 $\mathrm{MergeOk}_G(\delta,A,B,R)$ holds where $A$ and $B$ are of clause
 rows and, for each clause $c_a$ of $A$ and $c_b$ of $B$, some clause
 $\mathsf{Ref}(\varphi;\omega;\beta)$ of $R$ is given by them
-(`ObjectMerge.MergeClause`): $c_a$ a record or dictionary, $c_b$ one too or a
+(`ObjectMerge.MergeClause`): $c_a$ a record or dictionary, $c_b$ one too, a
+function clause (a function, or a callable object, whose own enumerable
+properties are the fields its bag states and whatever else was assigned to
+it, so it states no bound; `codeOf`), or a
 clause of values owning no enumerable property (`null`, `undefined`,
 Booleans, numbers, bigints, symbols); each field $(k{:}T)\in\varphi$ surely
 given within $T$ by $c_b$, or by $c_a$ where whatever $c_b$ gives under $k$ is
@@ -4587,11 +4590,13 @@ code for every source function), where `fields` is the finite map from field nam
 they stand for, fixed at allocation. `CallCode` is a separate descriptor type;
 its body is not a runtime value. `makeAt code names inits` takes one fresh
 location per named field; a source function is the one-field case,
-`make code null`, a null-initialized bag — a function has no properties of its own, and
-that one location is what gives it an identity to compare. `letE` binds without
-allocation. Plain allocation and one-field function creation are abbreviations
-of `makeAt`, with one congruence rule, one allocation step, and the shared
-semantic proofs `make_rule` and `make_fields_rule`. `isFun` recognizes function objects and
+`makeFn code null`, a null-initialized bag under the key `[[code]]`, which no
+source key spells and a copy does not take — a function has no properties of
+its own, and that one location is what gives it an identity to compare.
+`letE` binds without allocation. Plain allocation and one-field function
+creation are abbreviations of `makeAt`, with one congruence rule, one
+allocation step, and the shared semantic proofs `make_rule`, `makeFn_rule`
+and `make_fields_rule`. `isFun` recognizes function objects and
 `isRef` recognizes plain objects, both independently of the heap.
 
 [CallableObjects.lean](lean/Verification/Model/Programs/CallableObjects.lean) proves that a callable object's fields are read and written as a record's.

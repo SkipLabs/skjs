@@ -360,6 +360,21 @@ theorem make_fields_rule {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
       rw [this]
       simp [List.getElem?_map, List.getElem?_eq_getElem (show i < As.length by omega)]
 
+/-- **Creating a function object.** Its one field, which gives it a location
+and so an identity, holds the value; the result obligation supplies the view
+of the fresh object its code gives. -/
+theorem makeFn_rule {A Q : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (code : CallCode) (v : Tm)
+    (hval : isVal v = true) (hadm : WorldAdm W) (hok : HeapOk n W h) (hv : A n W v)
+    (result : ∀ j (hj : j < n) (U : WorldT j),
+      WExt (trunc j (Nat.le_of_lt hj) W) U → Q j U (.fnObj h.length code)) :
+    Safe Q n W h (.makeFn code v) :=
+  make_fields_rule (As := [A]) (by intro B hB; rw [List.mem_singleton.mp hB]; exact hA) n W h code
+    [codeField] [v] (by simp) rfl rfl
+    (by intro u hu; rw [List.mem_singleton.mp hu]; exact hval) hadm hok
+    (by intro p hp; simp only [List.zip_cons_cons, List.zip_nil_right, List.mem_singleton] at hp
+        subst hp; exact hv)
+    (fun j hj U hx _ => result j hj U hx)
+
 /-- **A literal allocates a store.** One fresh location per element, each
 under its family, and the store meets the claimed tuple contract by
 `listT_alloc`; the continuation sees it at the extended world. The allocation

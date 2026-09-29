@@ -2476,7 +2476,7 @@ code (`lambdaCode`) with the captured slots. -/
 @[nospecialize] private partial def graphClosure (fc : SourceClaims.Function ι) (scope : List (ScopeBinding ι))
     (Γ : List (Ty ι)) (lam : Fragment.Expr) (A : Ty ι) : Compiler σ ι (DirectProof.Plan ι) := do
   let c ← lambdaCode fc scope Γ lam A .fn
-  pure (DirectProof.node Γ (Tm.make (c.code .call) .nul) c.type (.funGraph c.arrays) (c.capturePlans Γ))
+  pure (DirectProof.node Γ (Tm.makeFn (c.code .call) .nul) c.type (.funGraph c.arrays) (c.capturePlans Γ))
 
 
 /-- Build compositional proofs for lambda bodies and source ternaries without
@@ -3194,7 +3194,7 @@ slots are introduced only after the operand supplying their type is checked. -/
     let .lambda _ none [] _ [] false (some _) _ := lam
       | throw "a class value is a constructor lambda with plain parameters"
     let code ← lambdaCode fc scope Γ lam A (.ctor [Labels.undef])
-    pure (DirectProof.node Γ (Tm.make (code.code .construct) .nul) A (.ctorGraph [Labels.undef])
+    pure (DirectProof.node Γ (Tm.makeFn (code.code .construct) .nul) A (.ctorGraph [Labels.undef])
       (code.capturePlans Γ))
   | .construct _ f args _ => do
     let callee ← closureExpr fc scope Γ f

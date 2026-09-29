@@ -17,11 +17,11 @@ private def body (fresh : Bool) : Tm :=
 -- nested callback returns false and performs no reentry, so the complete
 -- invocation terminates.
 private def callback : Tm :=
-  .letE (.write (.var 3) .tru) (.app (.var 3) (.make (oneNode 1 .fls 0) .nul))
+  .letE (.write (.var 3) .tru) (.app (.var 3) (.makeFn (oneNode 1 .fls 0) .nul))
 private def program (callable fresh : Bool) : Program :=
   [⟨if callable then .makeAt (oneNode 1 (.var 1) 0) [valueField] [.fls] else .alloc .fls,.bind 1,none⟩,
-   ⟨.make (oneNode 1 (body fresh) 1) .nul,.bind 2,none⟩,
-   ⟨.make (oneNode 1 callback 2) .nul,.bind 3,none⟩,
+   ⟨.makeFn (oneNode 1 (body fresh) 1) .nul,.bind 2,none⟩,
+   ⟨.makeFn (oneNode 1 callback 2) .nul,.bind 3,none⟩,
    ⟨.app (.var 1) (.var 0),.ret,none⟩]
 /-- Reentry writes true while the outer frame retains its saved false value.
 The fourth heap cell is allocated for the terminating inner callback. -/

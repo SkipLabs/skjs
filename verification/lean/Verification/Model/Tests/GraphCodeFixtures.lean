@@ -26,6 +26,7 @@ syntax "machine_step" : tactic
 macro_rules
   | `(tactic| machine_step) => `(tactic| first
     | exact .makeV rfl
+    | exact .makeFnV rfl
     | exact .readV rfl
     | exact .writeV rfl (by decide)
     | exact .letV rfl
@@ -43,6 +44,7 @@ macro_rules
     | (apply Verification.Model.Step.letC; machine_step)
     | (apply Verification.Model.Step.iteC; machine_step)
     | (apply Verification.Model.Step.makeC; machine_step)
+    | (apply Verification.Model.Step.makeFnC; machine_step)
     | (apply Verification.Model.Step.appR rfl; machine_step)
     | (apply Verification.Model.Step.callL; machine_step))
 

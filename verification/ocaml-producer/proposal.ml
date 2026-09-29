@@ -1126,8 +1126,13 @@ let rec source_alternatives declarations seen t = match t with
           a string's are its characters at index keys, which no record states"
       | Shape {elements=Some _;_} -> unsupported "a spread copies the own enumerable properties of a plain object; \
           an array's are its indices and whatever keys it carries, which no record states"
+      (* A function's own enumerable properties are whatever was assigned to
+         it: its type states its fields, and no other key. *)
+      | Shape {fields;indexes=[];calls=_::_;elements=None} ->
+        [{afields=List.filter (fun (f:Semantic.field) ->
+            not (method_field f) && f.name <> Name proto_key && string_key f) fields;exact=false;index=None}]
       | Shape _ | Callable -> unsupported "a spread copies the own enumerable properties of a plain object; \
-          a function's or an indexed object's are whatever was assigned to it, which its type does not bound"
+          a value that may be a class, or a function with an index signature, owns what its type does not state"
       | Ctors _ -> unsupported "a spread copies the own enumerable properties of a plain object; \
           a class value's are its static fields, which its construct signatures do not state"
       | _ -> unsupported "a spread copies the own enumerable properties of a plain object; one of a string, an array, a function or a class value is outside the fragment") atoms

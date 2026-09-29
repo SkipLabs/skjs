@@ -768,6 +768,12 @@ for (const [file, call] of [
   ["invalid-native-map-mutation", "wrong([1, 2], { value: 0 })"],
   ["invalid-native-join-coercion", "wrong({ value: 0 })"],
   ["invalid-native-sort-coercion", "wrong({ value: 0 })"],
+  // What `%Iterate:ForIn%`'s step read is not what a later read finds.
+  ["invalid-for-in-entry-call", "wrong({ a: 1 }, (v) => { delete v.a; })"],
+  ["invalid-for-in-entry-field", "wrong({ inner: { a: 1, b: 2 } }, {})"],
+  ["invalid-for-in-entry-rebound", "wrong({ a: 1, b: 2 }, {})"],
+  // A function's `length` is not enumerable: its copy lacks it.
+  ["invalid-spread-function-length", "arity((a, b) => a + b)"],
 ]) {
   const source = stripTypes(readFileSync(join(here, "examples", `${file}.ts`), "utf8"))
     .replace(/^export /gm, "");
@@ -779,6 +785,12 @@ for (const [file, call] of [
     .replace(/^export /gm, "");
   assert.equal(vm.runInNewContext(`${source}\nnoCoercion({ value: 7 })`, {}, { timeout: 1000 }), 7,
     "an explicit comparator never invokes the element's invalid conversion method");
+}
+// Object.assign writes a function's `name`, which is not writable: it throws.
+{
+  const source = stripTypes(readFileSync(join(here, "examples", "invalid-function-fields-inferred.ts"), "utf8"))
+    .replace(/^export /gm, "");
+  assert.throws(() => vm.runInNewContext(`${source}\nnamed()`, {}, { timeout: 1000 }), /read only property 'name'/);
 }
 // A rest typed by an intersection: TypeScript accepts the call at an instance
 // where the declared contract holds no array, and the result is no boolean.

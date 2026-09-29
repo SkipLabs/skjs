@@ -97,10 +97,10 @@ private def invalidWrite : Evidence Nat := .node narrowWrite .write
 -- Pure computational guards frame existing facts. Function creation allocates
 -- without running its body, and therefore needs a distinct effect rule.
 #guard pureTerm (.ite (.test .isNul (.var 0)) .tru .fls)
-#guard !pureTerm (.make (.graph 1 [.write (.var 0) .fls] [(.ret, none)] 0 []) .nul)
+#guard !pureTerm (.makeFn (.graph 1 [.write (.var 0) .fls] [(.ret, none)] 0 []) .nul)
 #guard !pureTerm (.ite .tru .nul (.write (.var 0) .fls))
 #guard !pureTerm (.test .isNul (.read (.var 0)))
-#guard !pureTerm (.app (.make (.graph 1 [.nul] [(.ret, none)] 0 []) .nul) .nul)
+#guard !pureTerm (.app (.makeFn (.graph 1 [.nul] [(.ret, none)] 0 []) .nul) .nul)
 #guard !pureTerm (.alloc .tru)
 
 -- A creation preserves old facts even when its uncalled code would mutate a
@@ -110,7 +110,7 @@ private def creationContext : List (List Nat) := [refBool,boolTy,refBool,boolTy]
 /-- Graph code of `arity` writing to its capture, the cell in slot 0 here. -/
 private def creationAt (arity : Nat) : Sequent Nat :=
   ⟨creationContext,
-    .make (.graph arity [.write (.var (arity + 1)) .fls] [(.ret, none)] 0 [.var 0]) .nul,[5]⟩
+    .makeFn (.graph arity [.write (.var (arity + 1)) .fls] [(.ret, none)] 0 [.var 0]) .nul,[5]⟩
 private def creationProof (arity : Nat) : Evidence Nat :=
   .node (creationAt arity) (.funGraph []) [.node ⟨creationContext,.var 0,refBool⟩ .var []]
 #guard checkStep CG (creationAt 1) beforeWrite (.created (creationProof 1)) == some (shift beforeWrite)

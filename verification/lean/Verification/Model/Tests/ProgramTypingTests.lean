@@ -20,7 +20,7 @@ def G : NormalGraph (Fin 7) := .ofRows fun i => match i.val with
 node, run from the frame of its receiver (`var 0`), its parameter (`var 1`) and
 the captured cell (`var 2`). -/
 def dispatch : Tm :=
-  .make (.graph 1 [.ite (.test .isNul (.var 1)) (.read (.var 2)) .nul] [(.ret, none)] 0 [.var 0]) .nul
+  .makeFn (.graph 1 [.ite (.test .isNul (.var 1)) (.read (.var 2)) .nul] [(.ret, none)] 0 [.var 0]) .nul
 
 /-- Genuine overload subsumption, splitting a union domain across two
 signatures, decided by the checker. -/

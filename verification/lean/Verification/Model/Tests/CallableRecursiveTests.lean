@@ -44,7 +44,7 @@ private def certificate : ControlFlow.Certificate Nat :=
 #guard !(expression G pool 10 [[0,2]] (.app (.var 0) .fls) [1]).isSome
 
 -- Recursive callable values can be higher-order arguments and results.
-#guard match expression G pool 10 [] (.make (oneNode 1 (.var 1) 0) .nul) [5] with
+#guard match expression G pool 10 [] (.makeFn (oneNode 1 (.var 1) 0) .nul) [5] with
   | some e => ProgramCertificates.checkTree G e admitted
   | none => false
 #guard (expression G pool 10 [[5],[2]] (.app (.var 0) (.var 1)) [2]).isSome
@@ -60,7 +60,7 @@ it after the self-write observes the updated heap and returns a callable value. 
 private def getter : Tm := .read (.var 2)
 private def capturedProgram : Program :=
   [⟨identity,.bind 1,none⟩,
-   ⟨.make (oneNode 1 getter 1) .nul,.bind 2,none⟩,
+   ⟨.makeFn (oneNode 1 getter 1) .nul,.bind 2,none⟩,
    ⟨.write (.var 1) (.var 1),.effect 3,none⟩,
    ⟨.app (.var 0) .tru,.bind 4,none⟩,
    ⟨.ite (.test .isFun (.var 0)) (.app (.var 0) .fls) .tru,.ret,none⟩]

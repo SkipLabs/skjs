@@ -128,15 +128,19 @@ the allocation of both, $b$'s over $a$'s:
 
 where $\mathsf{own}_h(\mathsf{obj}(\mathit{fs},\mathsf{absent}))$ is each key of
 $\mathit{fs}$ but $\sigma$ at its value (the first entry of a key, as a read
-finds it); $\mathsf{data}_h(\mathsf{obj}(\mathit{fs},\mathsf{absent}))$ is each
-string key of $\mathit{fs}$ but $\sigma$ and $\pi$ at its value, then, for an
-array, each element under its index's decimal spelling; $\mathsf{data}_h$ of
+finds it); $\mathsf{data}_h(\mathsf{obj}(\mathit{fs},c))$, of an object with
+any call code $c$, is each string key of $\mathit{fs}$ but $\sigma$, $\pi$ and
+the code field $\kappa_{\mathsf{code}}$ at its value, then, for an array, each
+element under its index's decimal spelling; $\mathsf{data}_h$ of
 $\mathsf{null}$, $\mathsf{undefined}$, a Boolean, a number, a bigint or a symbol
 is empty; and $P\lhd Q$ keeps $P$'s entries whose key $Q$ lacks, then $Q$'s
-(`mergeParts`, `ownAll`, `ownData`, `mergeData`). A value the heap lacks, or a
-term that is not a value there, reads as `undefined`, so the step never
-depends on one (`heapVal`). The step is stuck on any other value, a string
-or a function. It allocates nothing itself; the `makeAt` it steps to does, as
+(`mergeParts`, `ownAll`, `ownData`, `mergeData`). A function the program
+creates holds one field, under $\kappa_{\mathsf{code}}$ (`codeField`, spelled
+`[[code]]`, which no source key spells), which gives it a location; a copy
+takes none of it, as JavaScript's function owns no enumerable property. A
+value the heap lacks, or a term that is not a value there, reads as
+`undefined`, so the step never depends on one (`heapVal`). The step is stuck
+on a string. It allocates nothing itself; the `makeAt` it steps to does, as
 a literal's. Symbol-keyed fields are not read ([DESIGN](DESIGN.md#object-literals)).
 
 **Binary operators.** $a\mathbin{op}b$ (`Tm.arith`) evaluates $a$, then $b$

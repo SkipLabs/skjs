@@ -36,7 +36,7 @@ Maps describe simultaneous selection from the pre-transfer environment. -/
 def mapped : Program :=
   [⟨.alloc .tru, .bind ⟨1, some [0,0]⟩,none⟩,
    ⟨.nul, .bind ⟨2, some [2,0,1]⟩,none⟩,
-   ⟨.make ControlFlowTests.dispatchCode .nul, .bind ⟨3, some [0,3,1]⟩,none⟩,
+   ⟨.makeFn ControlFlowTests.dispatchCode .nul, .bind ⟨3, some [0,3,1]⟩,none⟩,
    ⟨.write (.var 1) .fls, .effect ⟨4, some [0,2]⟩,none⟩,
    ⟨.app (.var 0) .nul, .ret,none⟩]
 

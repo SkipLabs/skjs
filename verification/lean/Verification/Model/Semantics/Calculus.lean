@@ -922,6 +922,19 @@ or `write` is speaking about that one field. -/
 /-- Plain-object allocation is the absent-descriptor case of `make`. -/
 @[match_pattern] abbrev Tm.alloc (a : Tm) : Tm := .make .absent a
 
+/-- The one field of a function object the program creates, which gives it a
+location and so an identity: a key no source property spells, which a copy
+does not take, as JavaScript's function owns no enumerable property. -/
+def codeField : PropKey := "[[code]]"
+
+/-- An already allocated function object the program created. -/
+@[match_pattern] abbrev Tm.fnObj (l : Nat) (call : CallCode) : Tm :=
+  .objAt [(codeField, l)] call
+
+/-- The creation of a function object: its code, with its one field. -/
+@[match_pattern] abbrev Tm.makeFn (call : CallCode) (a : Tm) : Tm :=
+  .makeAt call [codeField] [a]
+
 
 /-- The locations a fresh allocation gives its fields, in declaration order. -/
 def slots (base : Nat) : List PropKey → List (PropKey × Nat)
@@ -1277,12 +1290,13 @@ theorem tagHolds_of_heap {h : List Tm} {t : Tag} {v : Tm} {q : Bool} (hq : tagHo
   · exact .inr rfl
   · exact .inl ((tagHoldsIn_of_protoFree hp).symm.trans hq)
 
-/-- A key a spread copies: a string key the model does not keep for itself.
-A symbol-keyed field is never copied: the model's are the library's, whose
+/-- A key a spread copies: a string key the model does not keep for itself
+(the prototype, the array store, a function object's code field). A
+symbol-keyed field is never copied: the model's are the library's, whose
 enumerability it does not record (Skip's `sk_managed` is not enumerable), and
 no allocation of the fragment makes one. -/
 def copiedKey : PropKey → Bool
-  | .str s => s != "[[proto]]" && s != "[]"
+  | .str s => s != "[[proto]]" && s != "[]" && s != "[[code]]"
   | .sym _ => false
 
 /-- The first entry of each key, which is the one `List.lookup` finds. -/
@@ -1299,13 +1313,13 @@ def storeData (h : List Tm) (fs : List (PropKey × Nat)) : List (PropKey × Tm) 
     | _ => []
   | none => []
 
-/-- The own enumerable data properties a spread copies from a value: a plain
-object's copied fields, then an array's elements; nothing from `null`,
-`undefined`, a Boolean, a number, a bigint or a symbol, whose wrappers own no
-enumerable property. A string (its code units) and a function are not
-copied here: the copy is stuck, and no typing rule admits them. -/
+/-- The own enumerable data properties a spread copies from a value: an
+object's copied fields, a function's included, then an array's elements;
+nothing from `null`, `undefined`, a Boolean, a number, a bigint or a symbol,
+whose wrappers own no enumerable property. A string (its code units) is not
+copied here: the copy is stuck, and no typing rule admits one. -/
 def ownData (h : List Tm) : Tm → Option (List (PropKey × Tm))
-  | .objAt fs .absent => some (firstKeys
+  | .objAt fs _ => some (firstKeys
       ((fs.filter (copiedKey ·.1)).map (fun p => (p.1, heapVal h p.2)) ++ storeData h fs))
   | .nul | .undef | .tru | .fls | .num _ | .bigint _ | .sym _ => some []
   | _ => none
@@ -1751,6 +1765,13 @@ theorem Step.makeC (hs : Step h a h' a') : Step h (.make c a) h' (.make c a') :=
 
 theorem Step.makeV (hv : isVal v = true) :
     Step h (.make c v) (h ++ [v]) (.obj h.length c) :=
+  .makeFields (by simpa using hv) rfl
+
+theorem Step.makeFnC (hs : Step h a h' a') : Step h (.makeFn c a) h' (.makeFn c a') :=
+  .makeArg (i := 0) rfl (by intro j hj; omega) hs
+
+theorem Step.makeFnV (hv : isVal v = true) :
+    Step h (.makeFn c v) (h ++ [v]) (.fnObj h.length c) :=
   .makeFields (by simpa using hv) rfl
 
 theorem Step.readV (he : h[l]? = some v) : Step h (.read (.obj l c)) h v :=
@@ -2727,6 +2748,14 @@ theorem Raises.appL {f a v : Tm} (h : Raises f v) : Raises (.app f a) v := .call
 
 theorem make_step_inv {c : CallCode} {v : Val} (hv : isVal v = true) {h h' t}
     (hs : Step h (.make c v) h' t) : h' = h ++ [v] ∧ t = .obj h.length c := by
+  cases hs with
+  | makeArg hg _ hs =>
+    obtain ⟨rfl, rfl⟩ := singleton_get hg
+    exact False.elim (value_no_step hv hs)
+  | makeFields => exact ⟨rfl, rfl⟩
+
+theorem makeFn_step_inv {c : CallCode} {v : Val} (hv : isVal v = true) {h h' t}
+    (hs : Step h (.makeFn c v) h' t) : h' = h ++ [v] ∧ t = .fnObj h.length c := by
   cases hs with
   | makeArg hg _ hs =>
     obtain ⟨rfl, rfl⟩ := singleton_get hg

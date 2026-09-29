@@ -432,7 +432,11 @@ allocation from parts, copying the value's own enumerable string-keyed data
 properties when it is evaluated
 ([allocation from parts](PROGRAM-TYPING.md#allocation-from-parts)): a class
 instance's methods are its prototype's and are not copied, nor is an
-`Error`'s non-enumerable `message`, nor a symbol-keyed property. A numeric
+`Error`'s non-enumerable `message`, nor a symbol-keyed property. A
+function's own enumerable properties are the fields its type states (a
+callable object's) and whatever else was assigned to it, which the copy's
+type leaves open; a function the program creates owns none, its one field,
+which gives it an identity, being under a key no source spells. A numeric
 key is the property its `ToString` spells, and a computed key naming a
 `unique symbol` constant (`Symbol.iterator`, or one the program makes) is that
 symbol's key; `__proto__`, any other computed key and accessors are refused. An object pattern's rest is the same copy less the
@@ -964,7 +968,7 @@ representation cannot state it yet; the paths are in
 | `key in o` for a string literal key the realm's prototypes hold (another key is the host's `%HasProperty%`, a Boolean narrowing nothing); a class value as the operand of `in` | The model holds no key of the realm's prototypes and would answer otherwise than JavaScript; a class's statics are bound apart. |
 | A user-defined type guard (`x is T`) or assertion function (`asserts x is T`), with a body or declared | Its promise relates the result, or the completion, to the argument, which no function type states. |
 | An array assignment pattern writing a field (`[o.f] = e`) | Its target's reference is evaluated before its position is read and defaulted; the lowering writes locals only. |
-| An accessor (`get`/`set`), `__proto__`, a computed key in a literal other than a `unique symbol` constant, a spread of a string, a function or a class value | The heap has data properties only; the key or copy is known only at run time; the model gives a closure a field JavaScript's lacks. |
+| An accessor (`get`/`set`), `__proto__`, a computed key in a literal other than a `unique symbol` constant, a spread of a string or of a value that may be a class | The heap has data properties only; the key or copy is known only at run time (a string's characters); a class's static fields are bindings of the model, not properties of the class value a copy reads. |
 | A literal or class member keyed by a well-known symbol other than `Symbol.iterator` (`Symbol.toStringTag`, `Symbol.toPrimitive`, …), but a class's static `[Symbol.hasInstance]` method, which `instanceof` calls | It changes how the host treats the object, which the model does not state; a tag would let it pass for a host collection, whose iteration is trusted. |
 | An element read past a readonly tuple arm's length (`const [a, b] = t` with `t: readonly [number] \| readonly [number, string]`); a slice rest in a closure's directly checked body | No element rule reads `undefined` beyond an exact length; the slice's call is graph code. |
 | A rest parameter of a definition typed by a type parameter; one typed by a tuple with optional or rest elements | A definition has no allocation rule for an array only an instance fixes (a function type's is a pack); several lengths are several signatures. |

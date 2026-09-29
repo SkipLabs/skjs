@@ -19,10 +19,10 @@ def pool : List (List Nat) := vocabulary G (List.range types.length) [] [[1, 2]]
 
 /-- A class whose code returns its parameter: slot 0 is the receiver `new`
 passes, `undefined`, and slot 1 the parameter. -/
-def classValue : Tm := .make (.graph 1 [.var 1] [(.ret, none)] 0 [] .construct) .nul
+def classValue : Tm := .makeFn (.graph 1 [.var 1] [(.ret, none)] 0 [] .construct) .nul
 
 /-- The same code as an arrow's call-only code. -/
-def arrowValue : Tm := .make (.graph 1 [.var 1] [(.ret, none)] 0 []) .nul
+def arrowValue : Tm := .makeFn (.graph 1 [.var 1] [(.ret, none)] 0 []) .nul
 
 /-- Evidence found and checked, every code admitted: whether the code meets its
 signatures is the unit's code table's question, not the creation's. -/

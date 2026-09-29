@@ -19,7 +19,7 @@ private def program (callable fresh : Bool) : Program :=
   [⟨.fls,.bind 1,none⟩,
    ⟨if callable then .makeAt (oneNode 1 (.var 0) 1) [valueField] [.var 0] else .alloc (.var 0),.bind 2,none⟩,
    ⟨.read (.var 0),.bind 3,none⟩,
-   ⟨.make (oneNode 1 mutator 3) .nul,.bind 4,none⟩,
+   ⟨.makeFn (oneNode 1 mutator 3) .nul,.bind 4,none⟩,
    ⟨.app (.var 0) .nul,.effect 5,none⟩,
    ⟨if fresh then .read (.var 2) else .var 1,.ret,none⟩]
 private def claims (R : List Nat) : List (PointClaim Nat) :=
@@ -55,6 +55,7 @@ theorem returns_expected (callable fresh : Bool) :
       | exact Execution.refl
       | apply Execution.next (.enter rfl)
       | apply Execution.next (.expr (.makeV rfl))
+      | apply Execution.next (.expr (.makeFnV rfl))
       | apply Execution.next (.expr (.readV rfl))
       | apply Execution.next (.expr (.writeV rfl (by decide)))
       | apply Execution.next (.expr (.callGraph rfl (by decide)))

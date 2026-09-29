@@ -25,7 +25,7 @@ def dispatchCode : CallCode :=
 is reached after closure creation and again through the back edge from node 3. -/
 def loop : Program :=
   [⟨.alloc .tru, .bind 1,none⟩,
-   ⟨.make dispatchCode .nul, .bind 2,none⟩,
+   ⟨.makeFn dispatchCode .nul, .bind 2,none⟩,
    ⟨callCaptured, .branch 3 4,none⟩,
    ⟨.write (.var 1) .fls, .effect 2,none⟩,
    ⟨callCaptured, .ret,none⟩]
@@ -36,7 +36,7 @@ private def admitted : CodeEntry (Fin 7) → Bool := fun _ => true
 
 def loopEvidence : ControlFlow.Certificate (Fin 7) :=
   [{expression := .node ⟨[], .alloc .tru, [2]⟩ .alloc [leaf [] .tru [1] .tru], edges :=  [[.subset]]},
-   {expression := .node ⟨[[2]], .make dispatchCode .nul, [3]⟩ (.funGraph []) [leaf [[2]] (.var 0) [2] .var],
+   {expression := .node ⟨[[2]], .makeFn dispatchCode .nul, [3]⟩ (.funGraph []) [leaf [[2]] (.var 0) [2] .var],
     edges :=  [[.subset,.subset]]},
    {expression := callEvidence, edges :=  [[.subset,.subset],[.subset,.subset]]},
    {expression := .node ⟨[[3],[2]], .write (.var 1) .fls, [0]⟩ .write

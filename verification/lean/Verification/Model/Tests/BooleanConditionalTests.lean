@@ -74,6 +74,7 @@ theorem known_condition_effects_preserved : Execution knownEffectProgram 8 []
     | exact Execution.refl
     | apply Execution.next (.enter rfl)
     | apply Execution.next (.expr (.makeV rfl))
+    | apply Execution.next (.expr (.makeFnV rfl))
     | apply Execution.next (.expr (.iteC (.letC (.writeV rfl (by decide)))))
     | apply Execution.next (.expr (.iteC (.letV rfl)))
     | apply Execution.next (.expr .iteT)
@@ -112,7 +113,7 @@ private def captureCode : CallCode := .graph 1 [readCell] [(.ret, none)] 0 [.var
 /-- The same program, run by the machine. -/
 private def captureProgram (q : Bool) : Program :=
   [⟨.alloc .tru,.bind 1,none⟩,
-   ⟨.make captureCode .nul,.bind 2,none⟩,
+   ⟨.makeFn captureCode .nul,.bind 2,none⟩,
    ⟨.write (.var 1) (if q then .tru else .fls),.effect 3,none⟩,
    ⟨.app (.var 0) .nul,.ret,none⟩]
 
@@ -122,6 +123,7 @@ theorem captured_branch_reads_latest (q : Bool) : Execution (captureProgram q) 1
     | exact Execution.refl
     | apply Execution.next (.enter rfl)
     | apply Execution.next (.expr (.makeV rfl))
+    | apply Execution.next (.expr (.makeFnV rfl))
     | apply Execution.next (.expr (.writeV rfl (by decide)))
     | apply Execution.next (.expr (.callGraph rfl (by decide)))
     | apply Execution.next (.expr (.gotoEnter rfl rfl))
@@ -146,6 +148,7 @@ theorem condition_effects_preserved : Execution effectfulProgram 9 []
     | exact Execution.refl
     | apply Execution.next (.enter rfl)
     | apply Execution.next (.expr (.makeV rfl))
+    | apply Execution.next (.expr (.makeFnV rfl))
     | apply Execution.next (.expr (.iteC (.letC (.writeV rfl (by decide)))))
     | apply Execution.next (.expr (.iteC (.letV rfl)))
     | apply Execution.next (.expr (.iteC (.readV rfl)))

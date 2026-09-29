@@ -232,7 +232,7 @@ theorem storeData_lookup_none {h : List Tm} {fs : List (PropKey × Nat)} {k : Pr
 /-- What the source's copy gives under a key: its own field's value if it has
 one the copy takes, else an array element. -/
 theorem ownData_lookup {h : List Tm} {fs : List (PropKey × Nat)} {qs : List (PropKey × Tm)}
-    (hq : ownData h (.objAt fs .absent) = some qs) (k : PropKey) :
+    {cb : CallCode} (hq : ownData h (.objAt fs cb) = some qs) (k : PropKey) :
     qs.lookup k = ((if copiedKey k then fs.lookup k else none).map (heapVal h)).or
       ((storeData h fs).lookup k) := by
   simp only [ownData, Option.some.injEq] at hq
@@ -388,14 +388,57 @@ theorem emptyClause_ownData {G : NormalGraph ι} {c : Clause (List ι)} (he : em
   · subst hv; exact ⟨rfl, rfl⟩
 
 
-/-- The source side of a merge: values owning no enumerable property, or a
-plain object. -/
+/-- The part of a function clause a merge's source reads: a function's own
+enumerable properties are whatever was assigned to it, of which its type
+states the bag's fields, if any, and no bound. -/
+def codeOf : Clause (List ι) → Option (Obj ι)
+  | .arrs _ _ => some ⟨[], [], [], [], false⟩
+  | .callable a bs _ _ => some ⟨(a :: bs).flatten, [], [], [], false⟩
+  | _ => none
+
+/-- What the semantics of a function clause gives a merge's source: an object
+with code, whose bag's fields hold their contracts. -/
+theorem codeFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {o : Obj ι} (ho : codeOf c = some o)
+    {n : Nat} {W : WorldT n} {v : Val} (hv : clauseSem G c n W v) :
+    ∃ fs code, v = .objAt fs code ∧ ObjFacts G o n W fs := by
+  obtain ⟨hv, -⟩ := hv
+  unfold codeOf at ho
+  split at ho
+  · cases ho
+    obtain ⟨⟨⟨fs, code, rfl, -, -⟩, -⟩, -⟩ := hv
+    exact ⟨fs, code, rfl, ⟨fun p hp => by simp at hp, fun q hq => by simp at hq,
+      fun x hx => by simp at hx, fun K hK => by simp at hK, fun hp => by simp at hp⟩⟩
+  · rename_i a bs L S
+    cases ho
+    obtain ⟨⟨⟨⟨fs, code, rfl, -, ha⟩, hbs⟩, -⟩, -⟩ := hv
+    refine ⟨fs, code, rfl, ⟨fun p hp => ?_, fun q hq => by simp at hq,
+      fun x hx => by simp at hx, fun K hK => by simp at hK, fun hp => by simp at hp⟩⟩
+    -- The field is one of an operand's, whose bag is over the same fields.
+    have hrec : ∀ B ∈ a :: bs, recT (ReferenceConjunctions.famsOf (meaning G) B) n W (.objAt fs .absent) := by
+      intro B hB
+      rcases List.mem_cons.mp hB with rfl | hB
+      · exact ha
+      · obtain ⟨fs', code', he, -, hr⟩ := hbs _ (List.mem_map_of_mem hB)
+        cases he
+        exact hr
+    obtain ⟨B, hB, hpB⟩ := List.mem_flatten.mp hp
+    obtain ⟨flds, l, c, he, hl, hc, hag⟩ :=
+      recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨p.2, hpB, rfl⟩) (hrec B hB)
+    cases he
+    exact ⟨l, c, hl, hc, fun j hj U u hu => (hag j hj U u).mp hu⟩
+  · cases ho
+
+/-- The source side of a merge: values owning no enumerable property, or an
+object, a plain one or a function. -/
 inductive Src (ι : Type) where
   | prim
   | obj (o : Obj ι)
 
 def srcOf (c : Clause (List ι)) : Option (Src ι) :=
-  if emptyClause c then some .prim else (objOf c).map .obj
+  if emptyClause c then some .prim else
+    match objOf c with
+    | some o => some (.obj o)
+    | none => (codeOf c).map .obj
 
 /-- The source never gives the key: it is dropped or reserved, or a bound
 excludes it and, if an array could give it as an index, the store too. -/
@@ -521,7 +564,7 @@ theorem heap_contract_within {G : NormalGraph ι} {p : Nat} {W : WorldT (p + 1)}
 
 /-- The source's copy under a key, less the dropped keys. -/
 theorem srcData_lookup {h : List Tm} {fs : List (PropKey × Nat)} {qs : List (PropKey × Tm)}
-    (hq : ownData h (.objAt fs .absent) = some qs) (d : List PropKey) (k : PropKey) :
+    {cb : CallCode} (hq : ownData h (.objAt fs cb) = some qs) (d : List PropKey) (k : PropKey) :
     (qs.filter fun e => !d.contains e.1).lookup k =
       if d.contains k then none else
         ((if copiedKey k then fs.lookup k else none).map (heapVal h)).or ((storeData h fs).lookup k) := by
@@ -541,11 +584,11 @@ theorem indexKey_of_not_copied {k : PropKey} (h : copiedKey k = false) : indexKe
   | sym => rfl
   | str s =>
     simp only [copiedKey, Bool.and_eq_false_iff, bne_eq_false_iff_eq] at h
-    rcases h with rfl | rfl <;> decide
+    rcases h with (rfl | rfl) | rfl <;> decide
 
 theorem src_never {G : NormalGraph ι} {o : Obj ι} {n : Nat} {W : WorldT n} {fs : List (PropKey × Nat)}
     (hf : ObjFacts G o n W fs) {h : List Tm} {qs : List (PropKey × Tm)}
-    (hq : ownData h (.objAt fs .absent) = some qs) {d : List PropKey} {k : PropKey}
+    {cb : CallCode} (hq : ownData h (.objAt fs cb) = some qs) {d : List PropKey} {k : PropKey}
     (hn : (Src.obj o).never d k = true) : (qs.filter fun e => !d.contains e.1).lookup k = none := by
   rw [srcData_lookup hq]
   simp only [Src.never, Bool.or_eq_true, Bool.not_eq_true', Bool.and_eq_true] at hn
@@ -568,7 +611,7 @@ abbrev below {p : Nat} (W : WorldT (p + 1)) : WorldT p := trunc p (Nat.le_succ p
 
 theorem src_sure {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 1)}
     {fs : List (PropKey × Nat)} (hf : ObjFacts G o (p + 1) W fs) {h : Heap} (hok : HeapOk (p + 1) W h)
-    {qs : List (PropKey × Tm)} (hq : ownData h (.objAt fs .absent) = some qs) {d : List PropKey}
+    {qs : List (PropKey × Tm)} {cb : CallCode} (hq : ownData h (.objAt fs cb) = some qs) {d : List PropKey}
     {k : PropKey} {T : List ι} (hs : (Src.obj o).sure d k T = true) :
     ∃ v, (qs.filter fun e => !d.contains e.1).lookup k = some v ∧ meaning G T p (below W) v := by
   simp only [Src.sure, Bool.and_eq_true, Bool.not_eq_true'] at hs
@@ -581,7 +624,7 @@ theorem src_sure {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 1)
 
 theorem src_within {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 1)}
     {fs : List (PropKey × Nat)} (hf : ObjFacts G o (p + 1) W fs) {h : Heap} (hok : HeapOk (p + 1) W h)
-    {qs : List (PropKey × Tm)} (hq : ownData h (.objAt fs .absent) = some qs) {d : List PropKey}
+    {qs : List (PropKey × Tm)} {cb : CallCode} (hq : ownData h (.objAt fs cb) = some qs) {d : List PropKey}
     {k : PropKey} {T : List ι} (hs : (Src.obj o).within d k T = true) {v : Tm}
     (hv : (qs.filter fun e => !d.contains e.1).lookup k = some v) : meaning G T p (below W) v := by
   simp only [Src.within, Bool.or_eq_true, Bool.and_eq_true] at hs
@@ -723,7 +766,7 @@ theorem strings_admit_store : IndexKeys.strings.Admits arrayStoreKey := trivial
 `classWithin`. -/
 theorem src_class {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 1)}
     {fs : List (PropKey × Nat)} (hf : ObjFacts G o (p + 1) W fs) {h : Heap} (hok : HeapOk (p + 1) W h)
-    {qs : List (PropKey × Tm)} (hq : ownData h (.objAt fs .absent) = some qs) {d : List PropKey}
+    {qs : List (PropKey × Tm)} {cb : CallCode} (hq : ownData h (.objAt fs cb) = some qs) {d : List PropKey}
     {K : IndexKeys} {T : List ι} (hc : (Src.obj o).classWithin G d K T = true) {k : PropKey}
     (hk : K.Admits k) {v : Tm} (hv : (qs.filter fun e => !d.contains e.1).lookup k = some v) :
     meaning G T p (below W) v := by
@@ -931,7 +974,7 @@ theorem proto_not_index : indexKey CallArguments.protoField = false := by decide
 theorem sides_obj {G : NormalGraph ι} {d : List PropKey} {oa ob : Obj ι} {p : Nat} {W : WorldT (p + 1)}
     {fa fb : List (PropKey × Nat)} (hfa : ObjFacts G oa (p + 1) W fa) (hfb : ObjFacts G ob (p + 1) W fb)
     {h : Heap} (hok : HeapOk (p + 1) W h) {pa qs : List (PropKey × Tm)}
-    (hp : ownAll h (.objAt fa .absent) = some pa) (hq : ownData h (.objAt fb .absent) = some qs) :
+    (hp : ownAll h (.objAt fa .absent) = some pa) {cb : CallCode} (hq : ownData h (.objAt fb cb) = some qs) :
     Sides G d oa (.obj ob) p W pa (qs.filter fun e => !d.contains e.1) where
   neverA _ hn := acc_never hfa hp hn
   sureA _ _ hs := acc_sure hfa hok hp hs
@@ -1392,9 +1435,18 @@ theorem merge_sides {G : NormalGraph ι} {d : List PropKey} {ca cb : Clause (Lis
     obtain ⟨hq, hvb⟩ := emptyClause_ownData hempty hsb h
     exact ⟨_, [], ownAll_nodup hp, by simp, rfl, hvb, by simp [mergeParts, hp, hq],
       sides_prim hfa hok hp⟩
-  · obtain ⟨ob, hob, rfl⟩ := Option.map_eq_some_iff.mp hsrc
-    obtain ⟨fb, rfl, hfb⟩ := objFacts_of_sem hob hsb
-    have hq : ownData h (.objAt fb .absent) = some (firstKeys
+  · -- A plain object or a function: an object whose own fields the copy reads.
+    have hfacts : ∃ ob fb code, sb = .obj ob ∧ vb = .objAt fb code ∧ ObjFacts G ob (p + 1) W fb := by
+      split at hsrc
+      · rename_i ob hob
+        cases hsrc
+        obtain ⟨fb, rfl, hfb⟩ := objFacts_of_sem hob hsb
+        exact ⟨ob, fb, .absent, rfl, rfl, hfb⟩
+      · obtain ⟨ob, hob, rfl⟩ := Option.map_eq_some_iff.mp hsrc
+        obtain ⟨fb, code, rfl, hfb⟩ := codeFacts_of_sem hob hsb
+        exact ⟨ob, fb, code, rfl, rfl, hfb⟩
+    obtain ⟨ob, fb, code, rfl, rfl, hfb⟩ := hfacts
+    have hq : ownData h (.objAt fb code) = some (firstKeys
         ((fb.filter (copiedKey ·.1)).map (fun p => (p.1, heapVal h p.2)) ++ storeData h fb)) := rfl
     exact ⟨_, _, ownAll_nodup hp,
       (ownData_nodup hq).sublist (List.Sublist.map _ List.filter_sublist), rfl, rfl,

@@ -797,11 +797,11 @@ invalidating knowledge about existing cells: its captures are slots, already
 values. -/
 theorem graphCreation_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {Γ k arity E K start caps kind rest A ρ n W h}
-    (ht : HasTyUsing G images Γ (.make (.graph arity E K start caps kind rest) .nul) A) (he : EnvOk G Γ ρ n W)
+    (ht : HasTyUsing G images Γ (.makeFn (.graph arity E K start caps kind rest) .nul) A) (he : EnvOk G Γ ρ n W)
     (hk : HeapKnowledge.Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (meaning G A)
       (fun h' v => HeapKnowledge.Holds (HeapKnowledge.shift k) (push v ρ) h')
-      n W h (instantiate 0 ρ (.make (.graph arity E K start caps kind rest) .nul)) := by
+      n W h (instantiate 0 ρ (.makeFn (.graph arity E K start caps kind rest) .nul)) := by
   have hs := ht.sound n W h ρ he hw hh
   cases n with
   | zero => trivial
@@ -811,7 +811,7 @@ theorem graphCreation_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
     · simp only [instantiate, instantiateArgs_eq_map, List.map] at hr
       cases hr with | makeArg hg _ hr => obtain ⟨rfl, rfl⟩ := singleton_get hg; cases hr
     · simp only [instantiate, instantiateArgs_eq_map, List.map] at step hs' ⊢
-      obtain ⟨rfl,rfl⟩ := make_step_inv rfl step
+      obtain ⟨rfl,rfl⟩ := makeFn_step_inv rfl step
       exact Or.inr ⟨U,_,_,hx,hu,step,hh',
         refine_value rfl (HeapKnowledge.shift_holds (HeapKnowledge.alloc_frame hk)) hs'⟩
 
@@ -919,7 +919,7 @@ def checkStepUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImage
   | .created e =>
     if claim e = j ∧ checkScope j.context.length j.term = true ∧ checkTreeUsing G images e codes = true then
       match j.term with
-      | .make (.graph _ _ _ _ _ _ _) .nul => some (HeapKnowledge.shift k)
+      | .makeFn (.graph _ _ _ _ _ _ _) .nul => some (HeapKnowledge.shift k)
       | _ => none
     else none
   | .typedRead i e =>

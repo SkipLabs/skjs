@@ -56,11 +56,11 @@ private def writeEvidence : Evidence (Fin 7) :=
 -- The empty overload names no code of the table, but its captures cannot
 -- bypass scope: each is a slot of the context.
 private def EmptyG : PositiveGraphs.NormalGraph (Fin 1) := .ofRows fun _ => [.arrs [] []]
-private def openCode : Tm := .make (.graph 1 [] [] 0 [.var 2]) .nul
+private def openCode : Tm := .makeFn (.graph 1 [] [] 0 [.var 2]) .nul
 private def openEvidence : Evidence (Fin 1) :=
   .node ⟨[], openCode, [0]⟩ (.funGraph []) [.node ⟨[], .var 2, [0]⟩ .var []]
 #guard !checkTree EmptyG openEvidence
 #guard !(check EmptyG openCode [0] openEvidence)
-#guard checkTree EmptyG (.node ⟨[], .make (.graph 1 [] [] 0 []) .nul, [0]⟩ (.funGraph []) [])
+#guard checkTree EmptyG (.node ⟨[], .makeFn (.graph 1 [] [] 0 []) .nul, [0]⟩ (.funGraph []) [])
 
 end Verification.Model.ProgramCertificateTests

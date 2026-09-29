@@ -32,14 +32,14 @@ These check syntax traversal; non-singleton source calls remain gated. -/
 #guard !sourceTerm (.call .nul [.tru, .obj 0 .absent])
 
 /- Source functions may capture variables, but may not spell allocated identities. -/
-#guard sourceTerm (.make (code [.var 1]) .nul)
-#guard !sourceTerm (.make (code [.obj 0 .absent]) .nul)
+#guard sourceTerm (.makeFn (code [.var 1]) .nul)
+#guard !sourceTerm (.makeFn (code [.obj 0 .absent]) .nul)
 #guard !sourceTerm (.ite .tru .nul (.obj 0 .absent))
 
 /-- Empty overloads name no code of the table. The graph consumer must still
 reject forged identities in the code's nodes, independently of that typing rule. -/
 private def G : PositiveGraphs.NormalGraph Nat := .ofRows fun _ => [.arrs [] []]
-private def forged : Tm := .make (.graph 1 [.obj 0 .absent] [(.ret, none)] 0 []) .nul
+private def forged : Tm := .makeFn (.graph 1 [.obj 0 .absent] [(.ret, none)] 0 []) .nul
 private def forgedEvidence : Evidence Nat := .node ⟨[],forged,[0]⟩ (.funGraph []) []
 private def forgedNode : Node := ⟨forged,.ret,none⟩
 private def forgedCertificate : ControlFlow.Certificate Nat :=
@@ -57,9 +57,9 @@ private theorem initial_ok : ObjectCoherence.HeapOk initial [.tru] := by
   simp [ObjectCoherence.HeapOk,initial,TermOk,Scoped,Names,locs,isVal]
 
 example : ∃ D, Extends initial D ∧ ObjectCoherence.HeapOk D [.tru,.nul] ∧
-    TermOk D (.obj 1 (code [captured])) :=
-  step_preserves (.makeV rfl : Step [.tru] (.make (code [captured]) .nul) [.tru,.nul]
-      (.obj 1 (code [captured])))
+    TermOk D (.fnObj 1 (code [captured])) :=
+  step_preserves (.makeFnV rfl : Step [.tru] (.makeFn (code [captured]) .nul) [.tru,.nul]
+      (.fnObj 1 (code [captured])))
     initial initial_ok (by simp [TermOk,Scoped,Names,locs,captured,initial,code])
 
 /-- A write can create a heap cycle through captured code while retaining both

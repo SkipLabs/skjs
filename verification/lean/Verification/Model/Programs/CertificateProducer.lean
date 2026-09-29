@@ -496,7 +496,7 @@ came from a different context. No execution budget is inspected. -/
       let some ps := slots.mapM (fun i => (Γ[i]?).map fun C => leaf' i C) | return none
       let arraysOf := fun (S : List (RestArrow (Ty ι))) =>
         if rest then S.mapM fun p => pool.find? fun R => decide (RestStore G R p.arguments.2) else some []
-      let fresh := ns == [valueField] && inits == [.nul]
+      let fresh := ns == [codeField] && inits == [.nul]
       return (A :: pool).findSome? fun F => do
         match kind, expand G F with
         | .call, [.arrs _ S] =>
