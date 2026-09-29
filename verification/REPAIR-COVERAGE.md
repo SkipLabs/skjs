@@ -111,7 +111,7 @@ scope the earlier bindings extend; the Fragment statement now carries a
 silently reading one declarator. Inside closure bodies a list stays gated.
 `tests/declaration-list.mts` checks both producers, forged entries, reversed
 and dropped declarators, cross-cell contents, the gates and source executions;
-`DeclarationListTests.lean` traces the lowered program of the separate-cell
+[DeclarationListTests.lean](lean/Verification/Model/Tests/DeclarationListTests.lean) traces the lowered program of the separate-cell
 case, since source executions alone do not show what the lowering does. While
 building it, one boundary was recorded, not fixed: a TS entry claim narrower
 than a cell's contract (`second: boolean` after `let second: boolean | null =
@@ -180,7 +180,9 @@ the precision witness lives in `tests/skjs-unsound/`.
 
 Type assertions (`e as T`, `e satisfies T`, `e!`) lower to a node returning
 the operand unchanged at the assertion's own claim, with `T` an obligation on
-the operand; a downcast with nothing known is refused. The TS producer's entry
+the operand; a downcast with nothing known is refused.
+[CastTests.lean](lean/Verification/Model/Tests/CastTests.lean) traces the lowered assertion: a node returning its operand, no operation, no effect.
+The TS producer's entry
 field observation now looks through an assertion to the read beneath it. The
 census also hands the verifier only the censused function's claims: carried
 class methods are claimed by SKJS but have no body in the extracted source.
