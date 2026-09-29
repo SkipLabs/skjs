@@ -275,8 +275,8 @@ function type and a declared function alike, as TypeScript reads it:
 
 A rest typed by anything else is refused by its form: by a type parameter
 (a function definition has no allocation rule for an array only an instance
-fixes; a function type's is a pack), by an intersection (the fresh array's
-meet with the other operands has no representation), by a tuple with
+fixes; a function type's is a pack), by an intersection (its contract can be empty
+at an instance TypeScript admits, [refused on principle](DESIGN.md#refused-on-principle)), by a tuple with
 optional or rest elements (several lengths), or by what is no array.
 
 A function type is a promise about the actual lists a caller may write, not

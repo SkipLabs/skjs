@@ -14,17 +14,17 @@
   "rejected": 2
  },
  "accepted": 2674,
- "verified": 2441,
+ "verified": 2444,
  "byStatus": {
-  "verified (check)": 2441,
-  "unverified (search)": 116,
+  "verified (check)": 2444,
+  "unverified (search)": 113,
   "unsupported (source)": 85,
   "unsupported (proposal)": 32
  },
  "bySuite": {
   "expect-error": {
    "accepted": 2458,
-   "verified": 2227
+   "verified": 2230
   },
   "constprop": {
    "accepted": 66,
@@ -55,7 +55,7 @@
  "filesWithAccepted": 377,
  "functions": {
   "accepted": 2026,
-  "verified": 1819
+  "verified": 1821
  },
  "byGroup": {
   "TypeScript refuses the code too (the pipeline follows TypeScript's types)": {
@@ -178,12 +178,6 @@
    "dependency": 0,
    "files": 4
   },
-  "search: no derivation found (evidence search failed)": {
-   "units": 3,
-   "self": 2,
-   "dependency": 1,
-   "files": 2
-  },
   "relational operators (< <= > >=) and **": {
    "units": 2,
    "self": 1,
@@ -205,6 +199,12 @@
   "invariance: a writable element or field at a wider one (TypeScript relates them covariantly)": {
    "units": 2,
    "self": 2,
+   "dependency": 0,
+   "files": 1
+  },
+  "search: no derivation found (evidence search failed)": {
+   "units": 1,
+   "self": 1,
    "dependency": 0,
    "files": 1
   },
@@ -238,12 +238,6 @@
    "dependency": 1,
    "files": 1
   },
-  "type-parameter defaults: a binder nothing constrains, which TypeScript fills from its declared default": {
-   "units": 1,
-   "self": 1,
-   "dependency": 0,
-   "files": 1
-  },
   "type aliases and names the declaration reader cannot resolve": {
    "units": 1,
    "self": 0,
@@ -257,15 +251,15 @@
    "files": 1
   }
  },
- "reachedButRefused": 116,
+ "reachedButRefused": 113,
  "byClass": {
-  "verified": 2441,
-  "principled": 79,
-  "gap": 142,
-  "unexplained": 2,
+  "verified": 2444,
+  "principled": 85,
+  "gap": 135,
+  "unexplained": 0,
   "skjsUnsound": 10
  },
- "unexplainedWithObligation": 2,
+ "unexplainedWithObligation": 0,
  "byReason": {
   "TypeScript refuses the code": {
    "class": "principled",
@@ -276,11 +270,6 @@
    "class": "gap",
    "units": 15,
    "files": 9
-  },
-  "rest parameters (intersection, type parameter, declaration binder)": {
-   "class": "gap",
-   "units": 14,
-   "files": 5
   },
   "object identity without fields": {
    "class": "gap",
@@ -296,6 +285,11 @@
    "class": "gap",
    "units": 8,
    "files": 4
+  },
+  "rest parameters (type parameter, declaration binder)": {
+   "class": "gap",
+   "units": 8,
+   "files": 3
   },
   "a key-adding write on an object another reference may hold": {
    "class": "gap",
@@ -331,6 +325,11 @@
    "class": "gap",
    "units": 6,
    "files": 4
+  },
+  "a rest typed by an intersection": {
+   "class": "principled",
+   "units": 6,
+   "files": 2
   },
   "`this` in sloppy code": {
    "class": "gap",
@@ -404,11 +403,6 @@
   },
   "relational comparison of operands not both numbers or both strings": {
    "class": "gap",
-   "units": 2,
-   "files": 1
-  },
-  "search: no derivation found": {
-   "class": "unexplained",
    "units": 2,
    "files": 1
   },
@@ -507,11 +501,6 @@
    "units": 1,
    "files": 1
   },
-  "unmatched: search: reject: a call instantiating a binder nothing constrains: no actual, receiver or expected type fixes it, so the producer instantiates it at its bound, where Typ": {
-   "class": "gap",
-   "units": 1,
-   "files": 1
-  },
   "SKJS unsoundness: `await` passes a record through": {
    "class": "skjs-unsound",
    "units": 1,
@@ -545,7 +534,6 @@
  },
  "unmatchedReasons": [
   "search: reject",
-  "search: reject: a call instantiating a binder nothing constrains: no actual, receiver or expected type fixes it, so the producer instantiates it at its bound, where Typ",
   "search: reject: source refusal at _: the declarations required by this unit cannot be interpreted: GraphCollections: the type argument for EagerCollection's \"_\" at [117",
   "search: reject: source refusal at _: the declarations required by this unit cannot be interpreted: ViaInter: a base that is a type parameter or an intersection is outsi"
  ],
@@ -579,7 +567,6 @@
   "source: an iterable whose iterator'_'s `return` if it owns one (IteratorClose), and the iterator's open record type says nothing of what that property holds": 3,
   "search: reject: source refusal at _: the declarations required by this unit cannot be interpreted: /functions/0/params/0/type: the intersection is empty: its operands h": 2,
   "search: reject: a relational comparison of operands that may not both be numbers or both strings: `<` converts such an operand to a number or a string first (`undefined": 2,
-  "search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim": 2,
   "search: reject: strict equality with a value of a type parameter: the value may be an object without a field, and the model states no object identity": 2,
   "search: reject: a `typeof x === \"_\"` test on a value of a type parameter or `unknown`: the values of that shape are the meet of the type parameter with it (`T & number`": 2,
   "proposal: field read on rigid parameter": 2,
@@ -616,7 +603,6 @@
   "source: an object type with construct signatures and other members: a class value's statics are not members of its type": 1,
   "source: generic function types are outside the fragment": 1,
   "proposal: a spread copies the own enumerable properties of a plain object; a string's are its characters at index keys, which no record states": 1,
-  "search: reject: a call instantiating a binder nothing constrains: no actual, receiver or expected type fixes it, so the producer instantiates it at its bound, where Typ": 1,
   "proposal: quantified callable claim encoding": 1,
   "source: keyof is keyof Promise<number>, whose part unique symbol is a unique symbol, which no type of the fragment names": 1,
   "source: an index signature in a class is outside the fragment: a class's instances are the objects its construction allocates, with the keys it names in a declaration o": 1,
@@ -956,10 +942,10 @@
 {"source":"tests/expect-error/array_literal_no_widening.ts","name":"literalSubtypeOfLiteralUnionArray","kind":"function","line":24,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/array_literal_no_widening.ts","name":"committedAsStringArrayNotLiteralArray","kind":"function","line":32,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/array_literal_no_widening.ts","name":"committedAsLiteralArrayNotStringArray","kind":"function","line":40,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/arraysAreInvariant.ts","name":"interWithTop","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its ope","group":"destructuring and rest/default parameters","where":"self","at":"function interWithTop<T>(...x: T[] & arrayNumberOrArrayString): T {","detail":"gate: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its operands, which has no representation (line 3, col 26)","class":"gap"},
-{"source":"tests/expect-error/arraysAreInvariant.ts","name":"checkIntersectionWithTopIsNotBottom","kind":"function","line":11,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its ope","group":"destructuring and rest/default parameters","where":"dependency","at":"function interWithTop<T>(...x: T[] & arrayNumberOrArrayString): T {","detail":"gate: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its operands, which has no representation (line 3, col 26)","class":"gap"},
-{"source":"tests/expect-error/arraysAreInvariant.ts","name":"interWithTopS","kind":"function","line":16,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its ope","group":"destructuring and rest/default parameters","where":"self","at":"function interWithTopS<S>(...x: S[] & arrayNumberOrArrayString): S {","detail":"gate: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its operands, which has no representation (line 3, col 27)","class":"gap"},
-{"source":"tests/expect-error/arraysAreInvariant.ts","name":"checkIntersectionWithTopSIsNotBottom","kind":"function","line":22,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its ope","group":"destructuring and rest/default parameters","where":"dependency","at":"function interWithTopS<S>(...x: S[] & arrayNumberOrArrayString): S {","detail":"gate: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its operands, which has no representation (line 3, col 27)","class":"gap"},
+{"source":"tests/expect-error/arraysAreInvariant.ts","name":"interWithTop","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its ope","group":"destructuring and rest/default parameters","where":"self","at":"function interWithTop<T>(...x: T[] & arrayNumberOrArrayString): T {","detail":"gate: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its operands, which has no representation (line 3, col 26)","class":"principled"},
+{"source":"tests/expect-error/arraysAreInvariant.ts","name":"checkIntersectionWithTopIsNotBottom","kind":"function","line":11,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its ope","group":"destructuring and rest/default parameters","where":"dependency","at":"function interWithTop<T>(...x: T[] & arrayNumberOrArrayString): T {","detail":"gate: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its operands, which has no representation (line 3, col 26)","class":"principled"},
+{"source":"tests/expect-error/arraysAreInvariant.ts","name":"interWithTopS","kind":"function","line":16,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its ope","group":"destructuring and rest/default parameters","where":"self","at":"function interWithTopS<S>(...x: S[] & arrayNumberOrArrayString): S {","detail":"gate: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its operands, which has no representation (line 3, col 27)","class":"principled"},
+{"source":"tests/expect-error/arraysAreInvariant.ts","name":"checkIntersectionWithTopSIsNotBottom","kind":"function","line":22,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its ope","group":"destructuring and rest/default parameters","where":"dependency","at":"function interWithTopS<S>(...x: S[] & arrayNumberOrArrayString): S {","detail":"gate: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its operands, which has no representation (line 3, col 27)","class":"principled"},
 {"source":"tests/expect-error/arraysAreInvariant.ts","name":"readonlyArrayIsCovariant","kind":"function","line":35,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/arraysAreInvariant.ts","name":"readonlyArrayIsNotContravariant","kind":"function","line":40,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/arraysAreInvariant.ts","name":"arrayIsSubtypeOfReadonlyArray","kind":"function","line":48,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -1213,8 +1199,8 @@
 {"source":"tests/expect-error/classes.ts","name":"TwoConstructors","kind":"class","line":9,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/classes.ts","name":"ClassWithParameterProperty","kind":"class","line":16,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/classes.ts","name":"ClassWithPrivateParameterProperty","kind":"class","line":24,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/clauses-diff-subset.ts","name":"Helper","kind":"class","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"Helper","detail":"reject: source expression obligation at [6,12): evidence search failed: no derivation of its return-contract claim — The available claim for Helper is row 6<T>. This return requires Helper<T>.","class":"unexplained"},
-{"source":"tests/expect-error/clauses-diff-subset.ts","name":"testExplicit","kind":"function","line":12,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim","group":"search: no derivation found (evidence search failed)","where":"dependency","at":"Helper","detail":"reject: source expression obligation at [6,12): evidence search failed: no derivation of its return-contract claim — The available claim for Helper is row 8<T>. This return requires Helper<T>.","class":"unexplained"},
+{"source":"tests/expect-error/clauses-diff-subset.ts","name":"Helper","kind":"class","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/clauses-diff-subset.ts","name":"testExplicit","kind":"function","line":12,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/clauses-diff-subset.ts","name":"testInference","kind":"function","line":18,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"h.f(x, \"hello\")","detail":"reject: TypeScript refuses this code too (line 8, col 3: Type 'T & U' is not assignable to type 'string'.); the pipeline follows TypeScript's types","class":"principled"},
 {"source":"tests/expect-error/closed-type-in-narrowing.ts","name":"testInAbsentKeyAlwaysFalse","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"x","detail":"reject: TypeScript refuses this code too (line 5, col 11: Type '{ a: number; } & Record<\"b\", unknown>' is not assignable to type 'never'.); the pipeline follows TypeScript's types — The available claim for n is { a: number }. This obligation requires never.","class":"principled"},
 {"source":"tests/expect-error/closed-type-in-narrowing.ts","name":"testInPresentKeyAlwaysTrue","kind":"function","line":15,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -2962,7 +2948,7 @@
 {"source":"tests/expect-error/private-fields.ts","name":"symKey","kind":"variable","line":198,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/private-fields.ts","name":"WithPrivateSymbolMethod","kind":"class","line":199,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/promise-object.ts","name":"testThen","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/promise-object.ts","name":"testThenChained","kind":"function","line":10,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a call instantiating a binder nothing constrains: no actual, receiver or expected type fixes it, so the producer instantiates it at its bound, where Typ","group":"type-parameter defaults: a binder nothing constrains, which TypeScript fills from its declared default","where":"self","at":"p.then((n: number) => p.then((m: number) => m.toString()))","detail":"reject: a call instantiating a binder nothing constrains: no actual, receiver or expected type fixes it, so the producer instantiates it at its bound, where TypeScript takes the binder's declared default (`then`'s `TResult2 = never`), which the declarations read do not carry — The available claim for p.then((n: number) => p.then((m: number) => m.toString())) is Promise<null | true | false | undefined | string | number | bigint | symbol | ReadonlyArray<literal array at [0,0]> | row 10>. This return requires Promise<string>.","class":"gap"},
+{"source":"tests/expect-error/promise-object.ts","name":"testThenChained","kind":"function","line":10,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/promise-object.ts","name":"testCatch","kind":"function","line":14,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/promise-object.ts","name":"testFinally","kind":"function","line":18,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/promise-object.ts","name":"testCovariantNever","kind":"function","line":23,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -4523,9 +4509,9 @@
 {"source":"tests/expect-error/variadic-rest-corner-cases.ts","name":"testTypeAliasTupleSpread","kind":"function","line":205,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/variadic-rest-corner-cases.ts","name":"testGenericTupleConstraint","kind":"function","line":217,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: generic function types are outside the fragment in identity","group":"generics: constraints, explicit type arguments, rigid types, generic function types","where":"dependency","at":"declare const identity: <U extends [string, number]>(a: string, b: number) => U;","detail":"gate: generic function types are outside the fragment in identity (line 1, col 1)","class":"gap"},
 {"source":"tests/expect-error/variadic-rest-corner-cases.ts","name":"testTupleRestToPositional","kind":"function","line":227,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/variance.ts","name":"interWithTop","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its ope","group":"destructuring and rest/default parameters","where":"self","at":"function interWithTop<T>(...x: T[] & arrayBooleanOrArrayString): T {","detail":"gate: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its operands, which has no representation (line 3, col 26)","class":"gap"},
+{"source":"tests/expect-error/variance.ts","name":"interWithTop","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its ope","group":"destructuring and rest/default parameters","where":"self","at":"function interWithTop<T>(...x: T[] & arrayBooleanOrArrayString): T {","detail":"gate: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its operands, which has no representation (line 3, col 26)","class":"principled"},
 {"source":"tests/expect-error/variance.ts","name":"checkIntersectionWithTopIsNotBottom","kind":"function","line":12,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/variance.ts","name":"interWithTopS","kind":"function","line":18,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its ope","group":"destructuring and rest/default parameters","where":"self","at":"function interWithTopS<S>(...x: S[] & arrayBooleanOrArrayString): S {","detail":"gate: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its operands, which has no representation (line 3, col 27)","class":"gap"},
+{"source":"tests/expect-error/variance.ts","name":"interWithTopS","kind":"function","line":18,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its ope","group":"destructuring and rest/default parameters","where":"self","at":"function interWithTopS<S>(...x: S[] & arrayBooleanOrArrayString): S {","detail":"gate: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its operands, which has no representation (line 3, col 27)","class":"principled"},
 {"source":"tests/expect-error/variance.ts","name":"checkIntersectionWithTopSIsNotBottom","kind":"function","line":24,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/void-operator.ts","name":"testVoid","kind":"function","line":2,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/void-operator.ts","name":"testVoidExpr","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},

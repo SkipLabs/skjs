@@ -1097,6 +1097,8 @@ export const cases: Case[] = [
     "unsupported", "proposal", /a read of name on a `let` holding a union of objects, some without it/),
   positive("rest-generic-alias", "a rest parameter typed by a generic alias of an array or tuple, in a function type, a declared function and a definition"),
   negative("invalid-rest-generic-alias", "the alias's tuple at its arguments keeps its positions", /source expression obligation at \[230,231\)/),
+  { file: "invalid-rest-intersection", area: "a rest typed by an intersection is refused on principle: its contract can be empty at an instance TypeScript admits, and the source's call then returns a number as a boolean",
+    kind: "negative", status: "unsupported", phase: "source", diagnostic: /a rest parameter needs a tuple of required positions or an array: one typed by an intersection/ },
   gap("rest-type-parameter-refused", "a function definition's rest typed by a type parameter: no allocation rule for its array",
     "unsupported", "source", /a rest parameter needs a tuple of required positions or an array: one typed by a type parameter/),
   gap("class-generic-method", "Blocked on the generic method's closure at its return (DESIGN status R3): a class's generic methods: the prototype's closures, schemes received by the instance, cover its quantified members; a method reading `this`, calls at two instances",

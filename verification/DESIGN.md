@@ -936,6 +936,7 @@ obstacle named. A search failure is neither.
 | A catch binding annotated other than `unknown`, or destructured | Anything may be thrown; TypeScript's alternative is `any`. |
 | TypeScript's `any` in the checked module's own annotations; a contextual closure parameter TypeScript types `any` | It states no contract. |
 | A rest parameter typed by what is no array | TypeScript rejects it (TS2370). |
+| A rest parameter typed by an intersection (`...xs: T[] & (number[] \| string[])`) | Its declared contract can be empty at an instance TypeScript admits: at `T := boolean` no array is both a writable `boolean[]` and a `number[]`, writable storage being invariant, yet TypeScript accepts `f<boolean>()`, and a body writing through one operand's view returns a number as a `boolean` (`invalid-rest-intersection`, executed under Node by `test.mts`). |
 | An intersection that normalizes to nothing (`string & { a: number }`, `(() => void) & number[]`, `number[] & { map: number }`) | No value of the model inhabits it (TypeScript keeps a branded primitive); it is refused rather than verified vacuously. |
 | An empty module (no function, no initialization code) | Accepting it would check nothing. |
 
@@ -966,7 +967,7 @@ representation cannot state it yet; the paths are in
 | An accessor (`get`/`set`), `__proto__`, a computed key in a literal other than a `unique symbol` constant, a spread of a string, a function or a class value | The heap has data properties only; the key or copy is known only at run time; the model gives a closure a field JavaScript's lacks. |
 | A literal or class member keyed by a well-known symbol other than `Symbol.iterator` (`Symbol.toStringTag`, `Symbol.toPrimitive`, …), but a class's static `[Symbol.hasInstance]` method, which `instanceof` calls | It changes how the host treats the object, which the model does not state; a tag would let it pass for a host collection, whose iteration is trusted. |
 | An element read past a readonly tuple arm's length (`const [a, b] = t` with `t: readonly [number] \| readonly [number, string]`); a slice rest in a closure's directly checked body | No element rule reads `undefined` beyond an exact length; the slice's call is graph code. |
-| A rest parameter of a definition typed by a type parameter; one typed by an intersection or by a tuple with optional or rest elements | A definition has no allocation rule for an array only an instance fixes (a function type's is a pack); the fresh array's meet has no representation; several lengths are several signatures. |
+| A rest parameter of a definition typed by a type parameter; one typed by a tuple with optional or rest elements | A definition has no allocation rule for an array only an instance fixes (a function type's is a pack); several lengths are several signatures. |
 | A written `let` pattern in a `for` head; a test of a written `let` holding a union of objects; a `let` captured by a closure in a `for` loop | Its bindings are cells, which only a statement of a block lowers them to; a cell's known contents are primitive or merely no `undefined`; JavaScript copies the binding per iteration, which the lowering does not. |
 | An array pattern over a value that may not be an array | The pattern reads an array's positions; over a host non-array iterable it would step `%Iterate:K%`, which the lowering does not place. |
 | A class method declaring `this: T`; a generic class method with a bounded binder; a constructor's rest parameter; a constructor parameter default, or a statement, reading `this` before the instance is complete | A method member is host-relative, its contract states no other receiver; a generic class method's bounded binder, whose row its bound names; no rule constructs at a variadic construct signature; the instance is allocated at the end of the constructor. |
@@ -1085,6 +1086,7 @@ mechanism's 2,444 verified units and 121 gaps (current counts:
 | 3. Density-sensitive calls | done | `array-methods`, `array-library`, `array-generic-name`, `closure-contextual-parameters`, `testArrowOptional` and `testMapReturnsArray` verify; `mapArr`/`testMapCallback` stay refused, their written contract being false |
 | 4. Standard array conversion | done | `sum-local-closure`, `sum-values-tuple` and `local-closure-result` verify; the coercion counterexamples are rejected |
 | 5. Recursive quantified contracts (Promise) | open | the Promise table below is done |
+| Census group "destructuring and rest/default parameters" (14 gaps) | done: 6 principled, 8 gaps | a rest typed by an intersection refused on principle ([row](#refused-on-principle), `invalid-rest-intersection`): `arraysAreInvariant` and `variance`'s `interWithTop`/`interWithTopS` units; census 2,444 verified (2,444), 135 gaps (141), 85 principled (79). The 8 left are a binder used both as a pack and as an array value , whose design is in [remaining source forms](#next-steps) |
 
 **Promise (step 5).** Closed when `promise-covariance` verifies and
 `invalid-promise-covariance` is rejected at its own obligation; the
@@ -1351,7 +1353,9 @@ element's target reference (receiver, computed key) evaluated into slots
 before the position is read and defaulted, then a field write, where
 `arrayAssigns` writes locals only. A method call on a union of primitives,
 which needs one callee contract its receiver meets. A source binder used both
-as a pack and as an array value. Explicit type arguments on an element call,
+as a pack and as an array value (`...args: T`, `args: T`): a binder whose instances are
+arrays or tuples of required positions, its pack meaning that tuple contract's lists, so an
+entry collects the fresh store at it and a spread of its value gives a list in the pack. Explicit type arguments on an element call,
 which reach an element only as a generic closure's quantified claim.
 User guards and assertion functions: the promise is a contract a
 conjunction of arrows states, `(x: A) => boolean` with
