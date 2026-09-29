@@ -675,6 +675,10 @@ let for_in_keys : string list ref = ref []
 let for_in_key_reason =
   "a read at a key the loop found may still miss, and that the object owns the key it yields relates \
    two values, which no type and no statement entry states"
+let unconstrained_binder_reason =
+  "no actual, receiver or expected type fixes it, so the producer instantiates it at its bound, where \
+   TypeScript takes the binder's declared default (`then`'s `TResult2 = never`), which the declarations \
+   read do not carry"
 let generic_instances_reason =
   "the covering rule for quantified signatures relates schemes binding the same rows, which members of one \
    key declared alike (as many binders, the same bounds) do: members declared otherwise need an instance \
@@ -2321,6 +2325,8 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         if partial.quantified = [] then fixed,partial.result
         else
           let inferred = Inference.infer ~expand:(expand_named declarations) ~receiver ?expected partial actuals in
+          if inferred.unconstrained <> [] then
+            explain (e:expr).pos ("a call instantiating a binder nothing constrains: " ^ unconstrained_binder_reason);
           fixed @ inferred.substitution,inferred.result in
       let no_type_arguments () = if type_args <> [] then
         unsupported "explicit type arguments on a callee without binders" in

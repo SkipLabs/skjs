@@ -4,9 +4,12 @@ open Semantic
    signature's quantified rigid identities; it is never embedded in [ty]. *)
 type substitution = (rigid * type_argument) list
 
+(* [unconstrained]: the binders no actual, receiver or expected type
+   constrains, instantiated from their bounds alone. *)
 type instantiation = {
   substitution: substitution;
   result: ty;
+  unconstrained: rigid list;
 }
 
 let unsupported s = Json.fail ("unsupported: " ^ s)
@@ -314,6 +317,11 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
   (* Where the call's value is expected at a type, its result must fit it, as
      TypeScript infers from the return position too. *)
   Option.iter (fun t -> constrain signature.result t) expected;
+  let unconstrained = List.filter_map (fun (v:variable) ->
+    if v.lower = [] && v.upper = []
+       && not (List.exists (fun ((a:variable),(b:variable)) ->
+         a.identity = v.identity || b.identity = v.identity) !edges)
+    then Some v.identity else None) variables in
   List.iter (fun (q:quantifier) ->
     Option.iter (function
       | ValueArgument t -> constrain (Rigid q.identity) t
@@ -429,4 +437,4 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
     (* With no candidate at all, TypeScript infers `unknown`. *)
     v.identity,ValueArgument (Option.value candidate ~default:top)) variables in
   let result = substitute substitution signature.result in
-  {substitution;result}
+  {substitution;result;unconstrained}

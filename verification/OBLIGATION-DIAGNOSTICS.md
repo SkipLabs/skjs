@@ -48,7 +48,9 @@ it, in this order:
   parameters, or indifferent to the receiver it requires, is expected (its
   type is its annotated signature); an instance of a declaration with
   generic methods at an instance of another declaring them otherwise
-  (quantified signatures are related binding the same rows); a record at
+  (quantified signatures are related binding the same rows); a call
+  instantiating a binder nothing constrains (TypeScript takes its declared
+  default, `then`'s `TResult2 = never`); a record at
   an index signature (TypeScript's implicit index signature; `Closed<T>` is
   read as `T`); a mutable array or a writable field at a wider one
   (invariance); a `typeof` test, `??` or strict

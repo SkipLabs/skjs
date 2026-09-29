@@ -481,6 +481,7 @@ const GROUPS: [string, RegExp][] = [
   ["arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's", /after `Array\.isArray`|`length` on a union of an array|array used as a record naming `length`|`length` of a mutable tuple|past the positions of a mutable tuple/],
   ["a non-null assertion on a read at a for...in key (that the object owns the key relates two values)", /non-null assertion on a read at a for\.\.\.in key/],
   ["generic methods: two declarations' instances related", /an instance of a declaration with generic methods at an instance of another/],
+  ["type-parameter defaults: a binder nothing constrains, which TypeScript fills from its declared default", /a call instantiating a binder nothing constrains/],
   ["implicit index signatures: a record at an index signature (`Closed<T>` read as `T` among them)", /a record at an index signature/],
   ["a named function at a signature binding more parameters, or indifferent to the receiver it requires (its type is its annotated signature)", /a named function where a signature binding more parameters|a function whose `this` is typed where a callback/],
   ["invariance: a writable element or field at a wider one (TypeScript relates them covariantly)", /a mutable array at one of a wider element|an instance at another whose writable field differs/],
