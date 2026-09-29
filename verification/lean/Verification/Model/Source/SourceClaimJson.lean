@@ -626,7 +626,12 @@ def closureRows (T : σ) (outer : List (String × ι))
         throw "a generic closure's claimed scheme names other binders than its own"
       if gc.binders.any fun b => (enclosing.lookup b.name).isSome then
         throw "a generic closure's binder hides an enclosing binder of its name"
-      let (_, rows) ← schemeRowOf (subst (asClaims enclosing) e.type)
+      -- The enclosing binders read as the claims inside the closure read
+      -- them (`go` below), in graph labels too: the same scheme, the same
+      -- row, so the closure's annotations read its binders as its claim's.
+      let t := subst (asClaims enclosing)
+        (rebindClaim (← get).1 (enclosing.map fun (n, l) => (n, [l])) e.type)
+      let (_, rows) ← schemeRowOf t
       scopes := scopes ++ [(gc.span, rows ++ enclosing)]
     -- A call of a local whose claim is a scheme: its callee is claimed at the
     -- instance the call names.

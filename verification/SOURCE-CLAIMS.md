@@ -171,7 +171,7 @@ the verifier builds, from the declaration document the parser emits:
 | application | `{"decl": k, "args": [A, ...]}` | declaration `k`, its position in the declaration document's `definitions`, applied to one union per parameter, an omitted argument written as its default at the earlier arguments; `args` is left out for a nullary declaration, and never written empty |
 | intersection | `{"meet": [A, ...]}` | the intersection of at least two unions, as the source's own `A & B` lowers (`EquationLowering.meetOf`) |
 | array | `{"array": [s], "readonly": b}` | the array whose store has the tuple contract of row `s`, with `Array.prototype` as a view at `ArrayProto` and the own-key bound excluding `ArrayProto`'s keys (`PositiveNormalization.arrayClauseOf`) |
-| binder | `{"binder": "T"}` | the binder `T` in scope, as its unit, closure or class's generic method binds it; a bounded binder is written as the intersection of the binder and its bound |
+| binder | `{"binder": "T"}` | the binder `T` in scope, as its unit, closure or class's generic method binds it, a bounded one within its bound: the label alone states the bound, which a claim does not restate |
 
 ```math
 \begin{aligned}

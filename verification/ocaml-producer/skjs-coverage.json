@@ -14,17 +14,17 @@
   "rejected": 2
  },
  "accepted": 2674,
- "verified": 2432,
+ "verified": 2438,
  "byStatus": {
-  "verified (check)": 2432,
-  "unverified (search)": 125,
+  "verified (check)": 2438,
+  "unverified (search)": 119,
   "unsupported (source)": 85,
   "unsupported (proposal)": 32
  },
  "bySuite": {
   "expect-error": {
    "accepted": 2458,
-   "verified": 2218
+   "verified": 2224
   },
   "constprop": {
    "accepted": 66,
@@ -51,18 +51,18 @@
    "verified": 8
   }
  },
- "filesAllVerified": 287,
+ "filesAllVerified": 289,
  "filesWithAccepted": 377,
  "functions": {
   "accepted": 2026,
-  "verified": 1813
+  "verified": 1816
  },
  "byGroup": {
   "TypeScript refuses the code too (the pipeline follows TypeScript's types)": {
-   "units": 38,
-   "self": 30,
+   "units": 39,
+   "self": 31,
    "dependency": 8,
-   "files": 23
+   "files": 24
   },
   "destructuring and rest/default parameters": {
    "units": 14,
@@ -130,12 +130,6 @@
    "dependency": 0,
    "files": 5
   },
-  "unclassified: search: reject: source refusal at _: construct signature claim is outside the source annotation": {
-   "units": 8,
-   "self": 3,
-   "dependency": 5,
-   "files": 2
-  },
   "a non-null assertion on a read at a for...in key (that the object owns the key relates two values)": {
    "units": 8,
    "self": 8,
@@ -184,10 +178,16 @@
    "dependency": 0,
    "files": 4
   },
-  "unclassified: search: reject: source refusal at _: closure signature claim is outside the source annotation": {
+  "search: no derivation found (evidence search failed)": {
+   "units": 4,
+   "self": 3,
+   "dependency": 1,
+   "files": 3
+  },
+  "generic methods: two declarations' instances related, a binder inferred beside an application of it or accumulated in one (Promise)": {
    "units": 3,
-   "self": 1,
-   "dependency": 2,
+   "self": 3,
+   "dependency": 0,
    "files": 1
   },
   "relational operators (< <= > >=) and **": {
@@ -195,12 +195,6 @@
    "self": 1,
    "dependency": 1,
    "files": 1
-  },
-  "search: no derivation found (evidence search failed)": {
-   "units": 2,
-   "self": 2,
-   "dependency": 0,
-   "files": 2
   },
   "dictionaries: a spread of one, a key `in` found in one": {
    "units": 2,
@@ -250,12 +244,6 @@
    "dependency": 1,
    "files": 1
   },
-  "type-parameter defaults: a binder nothing constrains, which TypeScript fills from its declared default": {
-   "units": 1,
-   "self": 1,
-   "dependency": 0,
-   "files": 1
-  },
   "type aliases and names the declaration reader cannot resolve": {
    "units": 1,
    "self": 0,
@@ -269,20 +257,20 @@
    "files": 1
   }
  },
- "reachedButRefused": 125,
+ "reachedButRefused": 119,
  "byClass": {
-  "verified": 2432,
-  "principled": 78,
-  "gap": 153,
-  "unexplained": 1,
+  "verified": 2438,
+  "principled": 79,
+  "gap": 144,
+  "unexplained": 3,
   "skjsUnsound": 10
  },
- "unexplainedWithObligation": 1,
+ "unexplainedWithObligation": 3,
  "byReason": {
   "TypeScript refuses the code": {
    "class": "principled",
-   "units": 37,
-   "files": 22
+   "units": 38,
+   "files": 23
   },
   "generics: generic closures, methods, function types, dependent bounds": {
    "class": "gap",
@@ -293,11 +281,6 @@
    "class": "gap",
    "units": 14,
    "files": 5
-  },
-  "unmatched: search: reject: source refusal at _: construct signature claim is outside the source annotation": {
-   "class": "gap",
-   "units": 8,
-   "files": 2
   },
   "object identity without fields": {
    "class": "gap",
@@ -384,15 +367,20 @@
    "units": 4,
    "files": 1
   },
-  "unmatched: search: reject: source refusal at _: closure signature claim is outside the source annotation": {
-   "class": "gap",
+  "search: no derivation found": {
+   "class": "unexplained",
    "units": 3,
-   "files": 1
+   "files": 2
   },
   "a guard finding an object where a field or cell holds one beside a primitive": {
    "class": "gap",
    "units": 3,
    "files": 2
+  },
+  "generic methods: `then` through a callback returning a promise, `catch`": {
+   "class": "gap",
+   "units": 3,
+   "files": 1
   },
   "a spread argument to `new`": {
    "class": "gap",
@@ -479,11 +467,6 @@
    "units": 1,
    "files": 1
   },
-  "search: no derivation found": {
-   "class": "unexplained",
-   "units": 1,
-   "files": 1
-  },
   "an ambient enum": {
    "class": "gap",
    "units": 1,
@@ -529,11 +512,6 @@
    "units": 1,
    "files": 1
   },
-  "unmatched: search: reject: a call instantiating a binder nothing constrains: no actual, receiver or expected type fixes it, so the producer instantiates it at its bound, where Typ": {
-   "class": "gap",
-   "units": 1,
-   "files": 1
-  },
   "SKJS unsoundness: `await` passes a record through": {
    "class": "skjs-unsound",
    "units": 1,
@@ -567,18 +545,14 @@
  },
  "unmatchedReasons": [
   "search: reject",
-  "search: reject: a call instantiating a binder nothing constrains: no actual, receiver or expected type fixes it, so the producer instantiates it at its bound, where Typ",
-  "search: reject: source refusal at _: closure signature claim is outside the source annotation",
-  "search: reject: source refusal at _: construct signature claim is outside the source annotation",
   "search: reject: source refusal at _: the declarations required by this unit cannot be interpreted: GraphCollections: the type argument for EagerCollection's \"_\" at [117",
   "search: reject: source refusal at _: the declarations required by this unit cannot be interpreted: ViaInter: a base that is a type parameter or an intersection is outsi"
  ],
  "skjsUnsoundVerified": [],
  "byKey": {
-  "search: reject: TypeScript refuses this code too": 23,
+  "search: reject: TypeScript refuses this code too": 24,
   "search: reject: a record at an index signature: TypeScript admits a type literal whose named fields fit the index (an implicit index signature), but a value of it may c": 14,
   "source: reject: TypeScript refuses this code too": 10,
-  "search: reject: source refusal at _: construct signature claim is outside the source annotation": 8,
   "search: reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two ": 8,
   "search: reject: a named function where a signature binding more parameters is expected: its slot is its annotated signature, checked by its own unit, and the arity of a": 8,
   "source: a method with a `this` parameter is outside the fragment: a method member's contract is relative to its host, the object it is read from, and states no receiver": 8,
@@ -594,17 +568,18 @@
   "search: reject: a cell read at its contract: a cell is known by its contract after a step that may write it (a call, whose callee may write any location its operands re": 4,
   "source: extending the standard library'_'s constructor allocates, not an ordinary object a class allocates, and its members are read at the library type's meaning, not ": 4,
   "proposal: a spread copies the own enumerable properties of a plain object; a function'_'s are whatever was assigned to it, which its type does not bound": 4,
-  "search: reject: source refusal at _: closure signature claim is outside the source annotation": 3,
   "search: reject: source refusal at _: a write at a key known only at run time may add the key to an object another reference holds, which would see the object'_'s own fr": 3,
   "search: reject: `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an ar": 3,
   "source: keyof is keyof [number], whose part unique symbol is a unique symbol, which no type of the fragment names": 3,
   "search: reject: an await of a non-promise object, or of a value of a type parameter or `unknown`: JavaScript adopts a thenable, calling its `then`, instead of settling ": 3,
   "search: reject: `??` on a value of a type parameter: its values other than null and undefined are the meet `T & {}`, but no rule narrows a parameter row to its meet wit": 3,
   "proposal: a type parameter types both a value and a rest parameter's argument list: an argument list is not a runtime value": 3,
+  "search: reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills ": 3,
   "source: a spread argument to `new` is outside the fragment": 3,
   "source: an iterable whose iterator'_'s `return` if it owns one (IteratorClose), and the iterator's open record type says nothing of what that property holds": 3,
   "search: reject: source refusal at _: the declarations required by this unit cannot be interpreted: /functions/0/params/0/type: the intersection is empty: its operands h": 2,
   "search: reject: a relational comparison of operands that may not both be numbers or both strings: `<` converts such an operand to a number or a string first (`undefined": 2,
+  "search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim": 2,
   "search: reject: strict equality with a value of a type parameter: the value may be an object without a field, and the model states no object identity": 2,
   "search: reject: a `typeof x === \"_\"` test on a value of a type parameter or `unknown`: the values of that shape are the meet of the type parameter with it (`T & number`": 2,
   "proposal: field read on rigid parameter": 2,
@@ -642,7 +617,6 @@
   "source: an object type with construct signatures and other members: a class value's statics are not members of its type": 1,
   "source: generic function types are outside the fragment": 1,
   "proposal: a spread copies the own enumerable properties of a plain object; a string's are its characters at index keys, which no record states": 1,
-  "search: reject: a call instantiating a binder nothing constrains: no actual, receiver or expected type fixes it, so the producer instantiates it at its bound, where Typ": 1,
   "proposal: quantified callable claim encoding": 1,
   "source: keyof is keyof Promise<number>, whose part unique symbol is a unique symbol, which no type of the fragment names": 1,
   "source: an index signature in a class is outside the fragment: a class's instances are the objects its construction allocates, with the keys it names in a declaration o": 1,
@@ -1194,11 +1168,11 @@
 {"source":"tests/expect-error/class-anonymous-method-prettier-ignore.ts","name":"statement@5","kind":"statement","line":5,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/class-ctor-tparam-unsound.ts","name":"Holder","kind":"class","line":3,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/class-ctor-tparam-unsound.ts","name":"getNumber","kind":"function","line":9,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/class-ctor-tparam-unsound.ts","name":"Wrapper","kind":"class","line":19,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source refusal at _: construct signature claim is outside the source annotation","group":"unclassified: search: reject: source refusal at _: construct signature claim is outside the source annotation","where":"self","at":"class Wrapper<T extends { required: string }> { item: T; constructor(item: T) { this.item = item; } getItem(): T { retur","detail":"reject: source refusal at [0,155): construct signature claim is outside the source annotation — construct signature claim is outside the source annotation","class":"gap"},
-{"source":"tests/expect-error/class-ctor-tparam-unsound.ts","name":"testConstrainedInference","kind":"function","line":30,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source refusal at _: construct signature claim is outside the source annotation","group":"unclassified: search: reject: source refusal at _: construct signature claim is outside the source annotation","where":"dependency","at":"class Wrapper<T extends { required: string }> { item: T; constructor(item: T) { this.item = item; } getItem(): T { retur","detail":"reject: source refusal at [0,155): construct signature claim is outside the source annotation — construct signature claim is outside the source annotation","class":"gap"},
-{"source":"tests/expect-error/class-ctor-tparam-unsound.ts","name":"testExplicitTypeArgs","kind":"function","line":46,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source refusal at _: construct signature claim is outside the source annotation","group":"unclassified: search: reject: source refusal at _: construct signature claim is outside the source annotation","where":"dependency","at":"class Wrapper<T extends { required: string }> { item: T; constructor(item: T) { this.item = item; } getItem(): T { retur","detail":"reject: source refusal at [0,155): construct signature claim is outside the source annotation — construct signature claim is outside the source annotation","class":"gap"},
-{"source":"tests/expect-error/class-ctor-tparam-unsound.ts","name":"Container","kind":"class","line":57,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source refusal at _: construct signature claim is outside the source annotation","group":"unclassified: search: reject: source refusal at _: construct signature claim is outside the source annotation","where":"self","at":"class Container<T extends { id: number; name: string }> { data: T; constructor(d: T) { this.data = d; } }","detail":"reject: source refusal at [0,115): construct signature claim is outside the source annotation — construct signature claim is outside the source annotation","class":"gap"},
-{"source":"tests/expect-error/class-ctor-tparam-unsound.ts","name":"testMultipleFields","kind":"function","line":64,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source refusal at _: construct signature claim is outside the source annotation","group":"unclassified: search: reject: source refusal at _: construct signature claim is outside the source annotation","where":"dependency","at":"class Container<T extends { id: number; name: string }> { data: T; constructor(d: T) { this.data = d; } }","detail":"reject: source refusal at [0,115): construct signature claim is outside the source annotation — construct signature claim is outside the source annotation","class":"gap"},
+{"source":"tests/expect-error/class-ctor-tparam-unsound.ts","name":"Wrapper","kind":"class","line":19,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/class-ctor-tparam-unsound.ts","name":"testConstrainedInference","kind":"function","line":30,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/class-ctor-tparam-unsound.ts","name":"testExplicitTypeArgs","kind":"function","line":46,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/class-ctor-tparam-unsound.ts","name":"Container","kind":"class","line":57,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/class-ctor-tparam-unsound.ts","name":"testMultipleFields","kind":"function","line":64,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/class-extends-generic-constructor.ts","name":"StringArray","kind":"class","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: extending the standard library'_'s constructor allocates, not an ordinary object a class allocates, and its members are read at the library type's meaning, not ","group":"classes: modifiers, inheritance, fields, parameter properties, receivers","where":"self","at":"class StringArray extends Array<string> {}","detail":"gate: extending the standard library's Array is outside the fragment: its instances are what the library's constructor allocates, not an ordinary object a class allocates, and its members are read at the library type's meaning, not inherited (line 1, col 1)","class":"gap"},
 {"source":"tests/expect-error/class-extends-generic-constructor.ts","name":"testInheritedConstructor","kind":"function","line":7,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: extending the standard library'_'s constructor allocates, not an ordinary object a class allocates, and its members are read at the library type's meaning, not ","group":"classes: modifiers, inheritance, fields, parameter properties, receivers","where":"dependency","at":"class StringArray extends Array<string> {}","detail":"gate: extending the standard library's Array is outside the fragment: its instances are what the library's constructor allocates, not an ordinary object a class allocates, and its members are read at the library type's meaning, not inherited (line 1, col 1)","class":"gap"},
 {"source":"tests/expect-error/class-extends-generic-constructor.ts","name":"NumberArray","kind":"class","line":11,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: extending the standard library'_'s constructor allocates, not an ordinary object a class allocates, and its members are read at the library type's meaning, not ","group":"classes: modifiers, inheritance, fields, parameter properties, receivers","where":"self","at":"class NumberArray extends Array<number> {}","detail":"gate: extending the standard library's Array is outside the fragment: its instances are what the library's constructor allocates, not an ordinary object a class allocates, and its members are read at the library type's meaning, not inherited (line 1, col 1)","class":"gap"},
@@ -1239,9 +1213,9 @@
 {"source":"tests/expect-error/classes.ts","name":"TwoConstructors","kind":"class","line":9,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/classes.ts","name":"ClassWithParameterProperty","kind":"class","line":16,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/classes.ts","name":"ClassWithPrivateParameterProperty","kind":"class","line":24,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/clauses-diff-subset.ts","name":"Helper","kind":"class","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source refusal at _: closure signature claim is outside the source annotation","group":"unclassified: search: reject: source refusal at _: closure signature claim is outside the source annotation","where":"self","at":"f<V>(a: T | V, b: V): V { return b; }","detail":"reject: source refusal at [20,63): closure signature claim is outside the source annotation — closure signature claim is outside the source annotation","class":"gap"},
-{"source":"tests/expect-error/clauses-diff-subset.ts","name":"testExplicit","kind":"function","line":12,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source refusal at _: closure signature claim is outside the source annotation","group":"unclassified: search: reject: source refusal at _: closure signature claim is outside the source annotation","where":"dependency","at":"f<V>(a: T | V, b: V): V { return b; }","detail":"reject: source refusal at [20,63): closure signature claim is outside the source annotation — closure signature claim is outside the source annotation","class":"gap"},
-{"source":"tests/expect-error/clauses-diff-subset.ts","name":"testInference","kind":"function","line":18,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source refusal at _: closure signature claim is outside the source annotation","group":"unclassified: search: reject: source refusal at _: closure signature claim is outside the source annotation","where":"dependency","at":"f<V>(a: T | V, b: V): V { return b; }","detail":"reject: source refusal at [20,63): closure signature claim is outside the source annotation — closure signature claim is outside the source annotation","class":"gap"},
+{"source":"tests/expect-error/clauses-diff-subset.ts","name":"Helper","kind":"class","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"Helper","detail":"reject: source expression obligation at [6,12): evidence search failed: no derivation of its return-contract claim — The available claim for Helper is row 6<T>. This return requires Helper<T>.","class":"unexplained"},
+{"source":"tests/expect-error/clauses-diff-subset.ts","name":"testExplicit","kind":"function","line":12,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim","group":"search: no derivation found (evidence search failed)","where":"dependency","at":"Helper","detail":"reject: source expression obligation at [6,12): evidence search failed: no derivation of its return-contract claim — The available claim for Helper is row 8<T>. This return requires Helper<T>.","class":"unexplained"},
+{"source":"tests/expect-error/clauses-diff-subset.ts","name":"testInference","kind":"function","line":18,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"h.f(x, \"hello\")","detail":"reject: TypeScript refuses this code too (line 8, col 3: Type 'T & U' is not assignable to type 'string'.); the pipeline follows TypeScript's types","class":"principled"},
 {"source":"tests/expect-error/closed-type-in-narrowing.ts","name":"testInAbsentKeyAlwaysFalse","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"x","detail":"reject: TypeScript refuses this code too (line 5, col 11: Type '{ a: number; } & Record<\"b\", unknown>' is not assignable to type 'never'.); the pipeline follows TypeScript's types — The available claim for n is { a: number }. This obligation requires never.","class":"principled"},
 {"source":"tests/expect-error/closed-type-in-narrowing.ts","name":"testInPresentKeyAlwaysTrue","kind":"function","line":15,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/closed-type-in-narrowing.ts","name":"testInOptionalKeyNarrows","kind":"function","line":24,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -1919,9 +1893,9 @@
 {"source":"tests/expect-error/gap-definite-assignment-union-undefined.ts","name":"definiteAssignmentUnionUndefined","kind":"function","line":8,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/gap-type-predicate-narrowing.ts","name":"typePredicateNarrowing","kind":"function","line":8,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/generic-bound-typeof-narrowing.ts","name":"adHocEq","kind":"function","line":4,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/generic-class-union-constraint.ts","name":"Wrapper","kind":"class","line":8,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source refusal at _: construct signature claim is outside the source annotation","group":"unclassified: search: reject: source refusal at _: construct signature claim is outside the source annotation","where":"self","at":"class Wrapper<V extends Json> { items: Array<V>; constructor(items: Array<V>) { this.items = items; } }","detail":"reject: source refusal at [43,156): construct signature claim is outside the source annotation — construct signature claim is outside the source annotation","class":"gap"},
-{"source":"tests/expect-error/generic-class-union-constraint.ts","name":"testString","kind":"function","line":16,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source refusal at _: construct signature claim is outside the source annotation","group":"unclassified: search: reject: source refusal at _: construct signature claim is outside the source annotation","where":"dependency","at":"class Wrapper<V extends Json> { items: Array<V>; constructor(items: Array<V>) { this.items = items; } }","detail":"reject: source refusal at [43,156): construct signature claim is outside the source annotation — construct signature claim is outside the source annotation","class":"gap"},
-{"source":"tests/expect-error/generic-class-union-constraint.ts","name":"testNumber","kind":"function","line":21,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source refusal at _: construct signature claim is outside the source annotation","group":"unclassified: search: reject: source refusal at _: construct signature claim is outside the source annotation","where":"dependency","at":"class Wrapper<V extends Json> { items: Array<V>; constructor(items: Array<V>) { this.items = items; } }","detail":"reject: source refusal at [43,156): construct signature claim is outside the source annotation — construct signature claim is outside the source annotation","class":"gap"},
+{"source":"tests/expect-error/generic-class-union-constraint.ts","name":"Wrapper","kind":"class","line":8,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/generic-class-union-constraint.ts","name":"testString","kind":"function","line":16,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/generic-class-union-constraint.ts","name":"testNumber","kind":"function","line":21,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/generic-class-union-constraint.ts","name":"testExtendsJson","kind":"function","line":25,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/generic-class-union-constraint.ts","name":"callTestObject","kind":"function","line":30,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/generic-class-union-constraint.ts","name":"callTestArray","kind":"function","line":35,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -2987,9 +2961,9 @@
 {"source":"tests/expect-error/private-fields.ts","name":"destructureFromOutside","kind":"function","line":188,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/private-fields.ts","name":"symKey","kind":"variable","line":198,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/private-fields.ts","name":"WithPrivateSymbolMethod","kind":"class","line":199,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/promise-object.ts","name":"testThen","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/promise-object.ts","name":"testThenChained","kind":"function","line":10,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a call instantiating a binder nothing constrains: no actual, receiver or expected type fixes it, so the producer instantiates it at its bound, where Typ","group":"type-parameter defaults: a binder nothing constrains, which TypeScript fills from its declared default","where":"self","at":"p.then((n: number) => p.then((m: number) => m.toString()))","detail":"reject: a call instantiating a binder nothing constrains: no actual, receiver or expected type fixes it, so the producer instantiates it at its bound, where TypeScript takes the binder's declared default (`then`'s `TResult2 = never`), which the declarations read do not carry — The available claim for p.then((n: number) => p.then((m: number) => m.toString())) is Promise<null | true | false | undefined | string | number | bigint | symbol | ReadonlyArray<literal array at [0,0]> | row 10>. This return requires Promise<string>.","class":"gap"},
-{"source":"tests/expect-error/promise-object.ts","name":"testCatch","kind":"function","line":14,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/promise-object.ts","name":"testThen","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills ","group":"generic methods: two declarations' instances related, a binder inferred beside an application of it or accumulated in one (Promise)","where":"self","at":"p.then","detail":"reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills one left unconstrained from its default, and the producer does neither: a callback whose result is itself an application (a promise) instant — No rule derives this letE at (this: Promise<number>, null | undefined | ((number) => PromiseLike<string> | string), null | undefined | ((unknown) => PromiseLike<string> | string)) => Promise<string> from p: Promise<number>.","class":"gap"},
+{"source":"tests/expect-error/promise-object.ts","name":"testThenChained","kind":"function","line":10,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills ","group":"generic methods: two declarations' instances related, a binder inferred beside an application of it or accumulated in one (Promise)","where":"self","at":"p.then","detail":"reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills one left unconstrained from its default, and the producer does neither: a callback whose result is itself an application (a promise) instant — No rule derives this letE at (this: Promise<number>, null | undefined | ((number) => null | boolean | undefined | PromiseLike<null | true | false | undefined | string | number | bigint | symbol | ReadonlyArray<literal array at [0,0]> | row 13> | string | number | bigint | symbol | ReadonlyArray<literal array at [0,0]> | {  }), null | undefined | ((unknown) => null | boolean | undefined","class":"gap"},
+{"source":"tests/expect-error/promise-object.ts","name":"testCatch","kind":"function","line":14,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills ","group":"generic methods: two declarations' instances related, a binder inferred beside an application of it or accumulated in one (Promise)","where":"self","at":"p.catch","detail":"reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills one left unconstrained from its default, and the producer does neither: a callback whose result is itself an application (a promise) instant — No rule derives this letE at (this: Promise<number>, null | undefined | ((unknown) => PromiseLike<never>)) => Promise<number> from p: Promise<number>.","class":"gap"},
 {"source":"tests/expect-error/promise-object.ts","name":"testFinally","kind":"function","line":18,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/promise-object.ts","name":"testCovariantNever","kind":"function","line":23,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/promise-object.ts","name":"testCovariantWiden","kind":"function","line":27,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -3000,14 +2974,14 @@
 {"source":"tests/expect-error/promise-object.ts","name":"testAwaitPartialPromiseMismatch","kind":"function","line":64,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/promise-object.ts","name":"testAwaitPartialThenableObject","kind":"function","line":77,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/promise-object.ts","name":"testPromiseIsPromiseLike","kind":"function","line":90,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/promise-object.ts","name":"testAwaitThenable","kind":"function","line":96,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: an await of a non-promise object, or of a value of a type parameter or `unknown`: JavaScript adopts a thenable, calling its `then`, instead of settling ","group":"await of non-promises and unions (the await bound)","where":"self","at":"await t","detail":"reject: an await of a non-promise object, or of a value of a type parameter or `unknown`: JavaScript adopts a thenable, calling its `then`, instead of settling to it, and a record type does not rule out a `then`, its own or one on its prototype (a `PromiseLike` is one), so the model admits only a re — No rule derives this invoke at number from t: PromiseLike<number>, await: (Promise<number>) => number.","class":"principled"},
+{"source":"tests/expect-error/promise-object.ts","name":"testAwaitThenable","kind":"function","line":96,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: an await of a non-promise object, or of a value of a type parameter or `unknown`: JavaScript adopts a thenable, calling its `then`, instead of settling ","group":"await of non-promises and unions (the await bound)","where":"self","at":"return await t;","detail":"reject: an await of a non-promise object, or of a value of a type parameter or `unknown`: JavaScript adopts a thenable, calling its `then`, instead of settling to it, and a record type does not rule out a `then`, its own or one on its prototype (a `PromiseLike` is one), so the model admits only a re — The call's type argument is not shown within its bound: unknown ≤ null | boolean | undefined | string | number | bigint | symbol.","class":"principled"},
 {"source":"tests/expect-error/promise-object.ts","name":"testAwaitNumber","kind":"function","line":101,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/promise-object.ts","name":"testAwaitPlainObject","kind":"function","line":106,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: field read on non-object","group":"reads on unions/primitives (field/index read on non-object, string keys)","where":"self","detail":"unsupported: field read on non-object","class":"skjs-unsound"},
 {"source":"tests/expect-error/promise-object.ts","name":"testAwaitAliasContract","kind":"function","line":113,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/promise-object.ts","name":"testAwaitScalarSnapshot","kind":"function","line":125,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/promise-object.ts","name":"testAwaitNested","kind":"function","line":138,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: quantified callable claim encoding","group":"generics: constraints, explicit type arguments, rigid types, generic function types","where":"self","detail":"unsupported: quantified callable claim encoding","class":"gap"},
 {"source":"tests/expect-error/promise-object.ts","name":"testAwaitNestedFlat","kind":"function","line":144,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/promise-object.ts","name":"testAwaitThenableNested","kind":"function","line":150,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: an await of a non-promise object, or of a value of a type parameter or `unknown`: JavaScript adopts a thenable, calling its `then`, instead of settling ","group":"await of non-promises and unions (the await bound)","where":"self","at":"await t","detail":"reject: an await of a non-promise object, or of a value of a type parameter or `unknown`: JavaScript adopts a thenable, calling its `then`, instead of settling to it, and a record type does not rule out a `then`, its own or one on its prototype (a `PromiseLike` is one), so the model admits only a re — No rule derives this invoke at Promise<number> from t: PromiseLike<Promise<number>>, await: (Promise<Promise<number>>) => Promise<number>.","class":"principled"},
+{"source":"tests/expect-error/promise-object.ts","name":"testAwaitThenableNested","kind":"function","line":150,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: an await of a non-promise object, or of a value of a type parameter or `unknown`: JavaScript adopts a thenable, calling its `then`, instead of settling ","group":"await of non-promises and unions (the await bound)","where":"self","at":"return await t;","detail":"reject: an await of a non-promise object, or of a value of a type parameter or `unknown`: JavaScript adopts a thenable, calling its `then`, instead of settling to it, and a record type does not rule out a `then`, its own or one on its prototype (a `PromiseLike` is one), so the model admits only a re — The call's type argument is not shown within its bound: unknown ≤ null | boolean | undefined | string | number | bigint | symbol.","class":"principled"},
 {"source":"tests/expect-error/promise-object.ts","name":"testAwaitSelfThenable","kind":"function","line":164,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/promise-object.ts","name":"testAsyncReturnSelfThenable","kind":"function","line":170,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/promise-object.ts","name":"testAwaitIndirectSelfThenable","kind":"function","line":175,"skjsMarker":"rejected-self"},

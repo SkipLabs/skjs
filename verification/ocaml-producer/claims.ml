@@ -51,15 +51,6 @@ let encode (proposal : Proposal.t) =
     let rec find n = function [] -> rows := !rows @ [row]; n
       | r::rs -> if r=row then n else find (n+1) rs in find 0 !rows
   in
-  (* A binder's ground bound, from the signature that declares it: such a
-     binder is the meet of the binder and the bound. *)
-  (* A binder bounded by another binder, `U extends T`, is the meet of the
-     two, `U ⊓ T`. *)
-  let bounds = List.concat_map (fun (f : Proposal.function_claim) ->
-    List.filter_map (fun (q:Semantic.quantifier) -> match q.bound with
-      | Some (ValueArgument b) when not (Semantic.mentions_rigid b) -> Some (q.identity,b)
-      | Some (ValueArgument (Rigid t)) when t <> q.identity -> Some (q.identity,Rigid t)
-      | _ -> None) f.source.quantified) (Option.to_list proposal.init @ proposal.functions) in
   (* The operand lists an intersection distributes into over its operands'
      union arms, each a choice of one arm per operand (at most 16 are
      written; more stay one meet, as before). *)
@@ -72,9 +63,9 @@ let encode (proposal : Proposal.t) =
       List.concat_map (fun arm -> List.map (fun rest -> arm :: rest) acc) (arms part)) parts [[]] in
   let rec labels t = labels_json (label_list t)
   and label_list = function
-    | Rigid r -> (match List.assoc_opt r bounds with
-      | None -> [Binder r.spelling]
-      | Some b -> [Meet [[Binder r.spelling]; label_list b]])
+    (* A binder is its name: Lean reads it as its unit or closure binds it,
+       a bounded one within its bound. *)
+    | Rigid r -> [Binder r.spelling]
     | Union ts -> List.sort_uniq compare (List.concat_map label_list ts)
     | Meet (t,ts) when (let n = List.length (distributed (t::ts)) in n > 1 && n <= 16) ->
       (* An intersection with a union operand is the union of the
