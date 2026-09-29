@@ -1092,7 +1092,7 @@ the `cases.mts` entries refused as unsupported recursive generic contracts.
 | a. Recursive equations | open | the table below is done |
 | b. A callback returning a promise instantiates `then`'s binder through `PromiseLike<TResult>` | done | `promise-then`, `named-promise-catch` and `promise-then-promise` verify; `invalid-promise-then`, `invalid-promise-then-promise` and `invalid-promise-catch-promise` are rejected at their return contracts |
 | c. `await` on realm promises, forged promises refused | done | decided; `forged-promise-refused` stays refused on principle |
-| d. A binder no actual, receiver or expected type constrains takes its declared default (`then`'s `TResult2 = never`), which the declarations read do not carry; the producer instantiates it at its bound | open: `promise-then-chained` isolates it | it verifies |
+| d. A binder no actual, receiver or expected type constrains takes its declared default (`then`'s `TResult2 = never`), which the declaration document states for each scheme binder | done | `promise-then-chained` verifies; `invalid-promise-then-chained` is rejected at its return contract |
 
 **Recursive equations (Promise a).** Closed when
 `generic-growing-application` and `generic-growing-application-push` verify

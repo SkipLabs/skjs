@@ -7,12 +7,15 @@ stops the rest, and where the two disagree because SKJS is wrong.
 Measurement checkpoint: September 29, 2026 (full census with SKJS
 confirmation).
 
-**2,443 of 2,674 SKJS-accepted units verify (91.4%); 1,820 of 2,026
-accepted functions (89.8%).** 290 of the 377 files with an accepted unit
+**2,441 of 2,674 SKJS-accepted units verify (91.3%); 1,819 of 2,026
+accepted functions (89.8%).** 289 of the 377 files with an accepted unit
 verify entirely. There are 79 principled refusals, 10 registered SKJS-unsound
-units and 142 gaps (4 of them under reasons no class entry matches,
-`summary.unmatchedReasons`); no refusal is unexplained by the automatic
-classifier.
+units, 141 gaps (3 of them under reasons no class entry matches,
+`summary.unmatchedReasons`) and 3 refusals unexplained by the automatic
+classifier (`eagercollection-deep-value-no-oom.ts#build`: evidence search
+found no derivation of a node-typing claim; `clauses-diff-subset.ts#Helper`
+and `#testExplicit`: none of a return-contract claim, a class's generic
+method at the class's instance type).
 
 `mapArr` and `testMapCallback` fail at the native call: an arbitrary
 one-argument callback supplies no contract for the three actuals `map` passes.
@@ -55,14 +58,14 @@ is not part of `verification/run.sh`.
 
 | Suite | Harness verdict | Files | Units | Accepted | Verified | Accepted functions | Verified functions |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,458 | 2,229 | 1,863 | 1,659 |
+| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,458 | 2,227 | 1,863 | 1,658 |
 | `tests/callgraph` | no error allowed | 25 | 59 | 59 | 57 | 51 | 49 |
 | `tests/constprop` | no error allowed | 14 | 66 | 66 | 66 | 49 | 49 |
 | `tests/deadcode` | no error allowed | 7 | 27 | 27 | 27 | 16 | 16 |
 | `tests/cfg` | no error allowed | 7 | 22 | 22 | 22 | 21 | 21 |
 | `tests/projects` | expect-error markers, under the project's tsconfig | 24 of 68 | 44 | 34 | 34 | 23 | 23 |
 | `tests/ts-conformance/cases` | lines listed in `reference/*.errors.txt` | 4 | 9 | 8 | 8 | 3 | 3 |
-| **total** | | **480** | **4,110** | **2,674** | **2,443** | **2,026** | **1,820** |
+| **total** | | **480** | **4,110** | **2,674** | **2,441** | **2,026** | **1,819** |
 
 Excluded (79 files, listed in the JSON with reasons): `ts-conformance/not-supported`
 (31) and `callgraph-unsupported` (4) assert only that SKJS reports errors;
@@ -119,10 +122,10 @@ is.
 
 | Phase of first blocker | Units |
 | --- | ---: |
-| verified | 2,443 |
+| verified | 2,441 |
 | source (gate) | 85 |
 | proposal (producer) | 32 |
-| search (Lean) | 114 |
+| search (Lean) | 116 |
 
 **Refusal classes.** The project's goal is that every accepted unit either
 verifies or is refused for a specific, principled reason. Each accepted unit
@@ -202,11 +205,11 @@ blocker's key is given (`summary.byReason` and `summary.byClass` of
 
 | Class | Units |
 | --- | ---: |
-| verified | 2,443 |
+| verified | 2,441 |
 | principled (P) | 79 |
 | SKJS unsound (S) | 10 |
-| gap (G) | 142 |
-| unexplained (U) | 0 |
+| gap (G) | 141 |
+| unexplained (U) | 3 |
 | **accepted** | **2,674** |
 
 Reason definitions and justifications live in `CLASSES` in
@@ -240,20 +243,19 @@ First blocker, not every missing feature of a unit:
 | sloppy (non-strict) code | 6 | 4 | 2 | 3 |
 | iterables the program defines: an iterator whose type states no `return`, a spread or a pattern the protocol's lowering does not place, a well-known symbol key other than `Symbol.iterator` | 5 | 4 | 1 | 4 |
 | await of non-promises and unions (the await bound) | 5 | 5 | 0 | 4 |
+| search: no derivation found (evidence search failed) | 4 | 3 | 1 | 3 |
 | relational operators (< <= > >=) and ** | 2 | 1 | 1 | 1 |
 | dictionaries: a spread of one, a key `in` found in one | 2 | 2 | 0 | 2 |
 | reads on unions/primitives (field/index read on non-object, string keys) | 2 | 1 | 0 | 2 |
 | invariance: a writable element or field at a wider one (TypeScript relates them covariantly) | 2 | 2 | 0 | 1 |
-| search: no derivation found (evidence search failed) | 1 | 1 | 0 | 1 |
 | compound and update assignments (x++, \|\|=, ??=, a[i] op=) | 1 | 1 | 0 | 1 |
 | an optional key found `undefined` (the key may be absent) | 1 | 1 | 0 | 1 |
 | unclassified: search: reject | 1 | 0 | 0 | 1 |
 | other source forms | 1 | 1 | 0 | 1 |
 | unclassified: search: reject: source refusal at _: the declarations required by this unit cannot be interpreted: GraphCollections: the type argument for EagerCollection's "_" at [117 | 1 | 0 | 1 | 1 |
-| type-parameter defaults: a binder nothing constrains, which TypeScript fills from its declared default | 1 | 1 | 0 | 1 |
 | type aliases and names the declaration reader cannot resolve | 1 | 0 | 1 | 1 |
 | library globals as values (Array, Symbol, Error, Promise, Set, Map, Date, JSON, …) | 1 | 1 | 0 | 1 |
-| **total** | **231** | | | |
+| **total** | **233** | | | |
 
 ## Performance on the pipeline cases
 
