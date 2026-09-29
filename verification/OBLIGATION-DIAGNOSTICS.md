@@ -113,7 +113,8 @@ is untrusted display data; it cannot establish verification status.
 
 A record does not embed the label store; it embeds what the store's projection
 shows of the labels the record mentions (`Store.project`, `Projection` in
-`Source/LabelStore.lean`). A projection is a finite table of rows over its own
+[Source/LabelStore.lean](lean/Verification/Model/Source/LabelStore.lean), the label and store interfaces of the source path).
+A projection is a finite table of rows over its own
 positions, the position each mentioned label is shown at, and the `names`
 entries. The record's type lists are those positions, so a reader renders
 every record the same way, whatever store built it:
@@ -157,6 +158,8 @@ role `scheme-elimination`. They must not be disguised as graph sequents. Lean
 diagnostics render ground types only through `SourceTypes.render`; numeric
 labels remain references inside the graph document and never become type names
 in user-facing judgments.
+
+[DirectObligation.lean](lean/Verification/Model/Programs/DirectObligation.lean) represents this closed judgment form, with no prose field.
 
 The decoder checks the record rather than trusting it: the labels lie in the
 record's graph, and the source map has exactly the judgment's span and no
