@@ -1149,6 +1149,7 @@ def CoversWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι �
   | .strLit _, .str => True
   | .strLit a, .strLit b => a = b
   | .bigint, .bigint => True
+  | .symbol, .symbol => True
   | .bigintLit _, .bigint => True
   | .bigintLit a, .bigintLit b => a = b
   | .refs a bs vs os ms ks, .refs c ds ws ps ns ls => CoversFields R (a :: bs) (c :: ds) ∧
@@ -2766,6 +2767,8 @@ theorem Covers.sound_raw [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssign
     intro hv
     exact covers_lists_sound hc n hr W v hv
   · -- bigint ≤ bigint
+    exact id
+  · -- symbol ≤ symbol
     exact id
   · -- bigintLit ≤ bigint: the singleton inhabits the family
     rename_i i
