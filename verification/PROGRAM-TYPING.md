@@ -1148,7 +1148,7 @@ so no step can tell the orders apart.
 
 ### Binding and soundness
 
-[Bindings.lean](lean/Verification/Model/Semantics/Bindings.lean) defines de Bruijn scope, simultaneous closing substitution, and
+[Bindings.lean](lean/Verification/Model/Semantics/Bindings.lean) defines de Bruijn scope and simultaneous closing substitution, and proves
 its application law:
 
 ```math
@@ -4563,7 +4563,7 @@ of `makeAt`, with one congruence rule, one allocation step, and the shared
 semantic proofs `make_rule` and `make_fields_rule`. `isFun` recognizes function objects and
 `isRef` recognizes plain objects, both independently of the heap.
 
-The implemented semantic slice is in [CallableObjects.lean](lean/Verification/Model/Programs/CallableObjects.lean).
+[CallableObjects.lean](lean/Verification/Model/Programs/CallableObjects.lean) proves that a callable object's fields are read and written as a record's.
 `bagT P` describes an object's writable fields independently of its call code,
 read and written as a record's (`bag_read`, `bag_write`); the call contracts
 (`callsT`, `restsT`) hold of the same value. `EnvOk.prepend` extends environments with ordered

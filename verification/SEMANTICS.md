@@ -612,7 +612,7 @@ actuals. `call f args` abbreviates `invoke f undefined args`, and `app f a` the
 singleton call; neither is a second form of call. Substitution, scope checking,
 capture instantiation and object-name traversal visit the receiver, the entire
 list and every code descriptor, including a `bound` descriptor's saved values.
-[CallArguments.lean](lean/Verification/Model/Semantics/CallArguments.lean) prepares calls: its `Frame` keeps the callee, the receiver and
+[CallArguments.lean](lean/Verification/Model/Semantics/CallArguments.lean) defines call preparation and proves the laws below: its `Frame` keeps the callee, the receiver and
 ordered arguments separate from invocation.
 
 `Prepare` evaluates the callee, then the receiver, then processes arguments from
@@ -655,7 +655,7 @@ index in order with the ordinary store operations, then invokes the target with
 those elements. It never iterates the list, so it shares the prepared actual
 list with ordinary calls but not the spread's operation.
 
-[ArgumentContracts.lean](lean/Verification/Model/Semantics/ArgumentContracts.lean) states same-level contracts on argument lists;
+[ArgumentContracts.lean](lean/Verification/Model/Semantics/ArgumentContracts.lean) states same-level contracts on argument lists and proves dispatch under them safe;
 its `call_safe` obtains safe dispatch from a behavioral promise.
 `ProgramTyping.call_safe` first evaluates the callee and composes effectful
 arguments using `bind_list` and `FutureSafe`. `ArgsT_transfer` preserves saved
@@ -689,10 +689,10 @@ none is thrown ([Design](DESIGN.md#throws)). The model is step-indexed
 ([Appel and McAllester 2001](REFERENCES.md#appel-and-mcallester-2001)) with worlds for mutable state ([Ahmed 2004](REFERENCES.md#ahmed-2004)); the
 safety shape is that of [Wright and Felleisen 1994](REFERENCES.md#wright-and-felleisen-1994).
 
-[Worlds.lean](lean/Verification/Model/Semantics/Worlds.lean) defines stratified worlds: the contract each location is for.
-[Heaps.lean](lean/Verification/Model/Semantics/Heaps.lean) defines the heap invariant `HeapOk`: every location holds a value meeting its contract.
+[Worlds.lean](lean/Verification/Model/Semantics/Worlds.lean) defines stratified worlds, the contract each location is for, and proves world extension a preorder preserved by truncation (`WExt_trans`, `WExt_trunc`).
+[Heaps.lean](lean/Verification/Model/Semantics/Heaps.lean) defines the heap invariant `HeapOk`, every location holding a value meeting its contract, and proves reads, writes and allocation sound for it (`read_sound`, `write_sound`, `heap_alloc`).
 [Types.lean](lean/Verification/Model/Types/Types.lean) defines semantic types: budget-indexed families judged against a world.
-[Safety.lean](lean/Verification/Model/Semantics/Safety.lean) defines the safety predicate `Safe` and function types.
+[Safety.lean](lean/Verification/Model/Semantics/Safety.lean) defines the safety predicate `Safe` and function types, and proves `Safe` monotone in its result type (`Safe_mono`) and the function types admissible (`callsT_adm`, `restsT_adm`).
 
 **Throws.** `throw a` (`Tm.throw`) evaluates `a` (`throwC`), then throws its
 value. A term *throws* $v$ (`Raises t v`) when `throw v`, $v$ a value, is in
@@ -958,7 +958,7 @@ the operation and composition rules using this predicate;
 
 ## What the checked development establishes
 
-- [Rules.lean](lean/Verification/Model/Semantics/Rules.lean) gives the operational rules for calls, heap operations, shape
+- [Rules.lean](lean/Verification/Model/Semantics/Rules.lean) proves the semantic typing rules for calls, heap operations, shape
   testing and branching, including an application-context composition rule.
 - `ProgramTyping.lean` proves safety by induction on syntactic typing derivations.
   `ProgramTypingTests.lean` combines overload dispatch, captured state, an alias
@@ -988,7 +988,7 @@ already contain all necessary subtype evidence.
 
 ## Two retained design constraints
 
-[ModelBoundaries.lean](lean/Verification/Model/Semantics/ModelBoundaries.lean) preserves counterexamples that constrain future rules.
+[ModelBoundaries.lean](lean/Verification/Model/Semantics/ModelBoundaries.lean) proves the two counterexamples below, which constrain future rules.
 
 First, unrestricted arrow-result distribution fails:
 

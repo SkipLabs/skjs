@@ -1481,9 +1481,9 @@ Lean: `Types/PositiveGraphs.lean` (`schemeSemWithArgs`), `Source/GenericAlias.le
 
 ## Lean files and validation
 
-- [Types/ReferenceConjunctions.lean](lean/Verification/Model/Types/ReferenceConjunctions.lean): nonempty conjunctions of record contracts
+- [Types/ReferenceConjunctions.lean](lean/Verification/Model/Types/ReferenceConjunctions.lean): proves that a read of a nonempty conjunction of record contracts meets every operand, and a write at the first operand preserves every alias's contract
 - [Types/MethodMembers.lean](lean/Verification/Model/Types/MethodMembers.lean): host-relative method members
-- [Types/CallableConjunctions.lean](lean/Verification/Model/Types/CallableConjunctions.lean): bag conjunctions and overloads on one callable value
+- [Types/CallableConjunctions.lean](lean/Verification/Model/Types/CallableConjunctions.lean): proves that bag conjunctions and overloads on one callable value merge into one contract (`merge`, `calls_merge`)
 - [Types/PositiveNormalization.lean](lean/Verification/Model/Types/PositiveNormalization.lean): the clause language and its finite normalization
 - [Types/PositiveGraphs.lean](lean/Verification/Model/Types/PositiveGraphs.lean): normalization of recursive graphs and the rows' denotation
 - [Types/PositiveRules.lean](lean/Verification/Model/Types/PositiveRules.lean): the declarative subtyping rules and their soundness

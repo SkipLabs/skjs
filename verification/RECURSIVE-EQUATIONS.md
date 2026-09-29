@@ -460,13 +460,13 @@ to parameters and quantified variables by position.
 | Concept | Lean |
 | --- | --- |
 | Definitions, types and unfolding (2) | [Types/EquationGraphs.lean](lean/Verification/Model/Types/EquationGraphs.lean) |
-| Intersection, meet labels (2, 3.3) | [Types/EquationMeets.lean](lean/Verification/Model/Types/EquationMeets.lean) |
+| A meet label means the intersection of its parts (2, 3.3) | [Types/EquationMeets.lean](lean/Verification/Model/Types/EquationMeets.lean) |
 | Lemma 1, support | [Types/EquationSupport.lean](lean/Verification/Model/Types/EquationSupport.lean) |
 | Lemma 2, congruence of applications | [Types/EquationCongruence.lean](lean/Verification/Model/Types/EquationCongruence.lean) |
 | Lemma 3, substitution | [Types/EquationSubstitution.lean](lean/Verification/Model/Types/EquationSubstitution.lean) |
 | Instantiation by substitution in the subtyping checker | [Types/EquationCertificates.lean](lean/Verification/Model/Types/EquationCertificates.lean) |
 | Quantified signatures (4.1), assumptions and Theorem 1 (4.2) | `Types/PositiveRules.lean`, `Types/PositiveCertificates.lean` |
-| Variance and `Var` (4.3) | [Types/EquationFamilies.lean](lean/Verification/Model/Types/EquationFamilies.lean) |
+| Soundness of the computed variances and of `Var` (4.3) | [Types/EquationFamilies.lean](lean/Verification/Model/Types/EquationFamilies.lean) |
 | Well-formedness of equations | [Types/EquationValidator.lean](lean/Verification/Model/Types/EquationValidator.lean) |
 | Term spelling of trees | [Types/EquationJson.lean](lean/Verification/Model/Types/EquationJson.lean) |
 | Lowering source declarations (5) | [Source/EquationLowering.lean](lean/Verification/Model/Source/EquationLowering.lean) |
