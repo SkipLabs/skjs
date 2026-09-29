@@ -128,7 +128,8 @@ $`\square`$
 
 Lemma 3 makes instantiation checkable: a call instantiates a generic
 signature by substituting into its finite syntax, and the checker recomputes
-that substitution. The checker and its soundness proofs, expression typing
+that substitution, or checks a proof that a named image is equal to it. The
+checker and its soundness proofs, expression typing
 and control flow included, are stated over an interface: an image check with
 a proof that it computes correct images. Substitution is one instance of it,
 and the closure check of a finite table another.
@@ -343,8 +344,9 @@ definition on no cycle takes one traversal of its body.
 
 **Other pairs.** A pair $`D\langle\vec\tau\rangle\le E\langle\vec\sigma\rangle`$
 that $`\textsf{Var}`$ does not derive is covered by unfolding, with the pair
-added to the table and reused by $`\textsf{TabRen}`$. A pair that recurs with
-growing arguments is refused. `Promise<number> ≤ PromiseLike<number>` closes
+added to the table and reused by $`\textsf{TabRen}`$. A pair of definitions
+that recurs, other than by a renaming, is refused at its third occurrence
+when its arguments are larger than at both earlier ones. `Promise<number> ≤ PromiseLike<number>` closes
 with two pairs: itself, and $`\mathit{Promise}\langle\rho\rangle\le\mathit{PromiseLike}\langle\rho\rangle`$
 for the bound $`\rho`$ of `then`, which recurs renamed.
 
