@@ -82,7 +82,11 @@ def convert (ast claims : Json) (fileKey : String) : Except String Json := do
   -- Conversion is not an acceptance path, but it must share the source gate:
   -- raw source must not smuggle an internal graph label into its output.
   let aliases ← GenericAlias.decodeAliases ast
-  let (ast, _, _, _) ← DeclarationGraph.prepare ast SourceTypes.initial
+  sourceGate (ast.getObjValD "functions")
+  sourceGate (ast.getObjValD "init")
+  -- Only the functions' identities and sites are read here, not their types.
+  let ast := ast.setObjVal! "declarations" (Json.mkObj [("roots", Json.arr #[]),
+    ("definitions", Json.arr #[]), ("values", Json.arr #[]), ("symbols", Json.arr #[])])
   let selected ← (← claims.getArr?).toList.filterM fun f => do
     return (← jStr (← jField f "file")) == fileKey
   if selected.length != 1 then throw "expected exactly one matching claim file"
@@ -114,7 +118,7 @@ def convert (ast claims : Json) (fileKey : String) : Except String Json := do
     functions := functions ++ [converted]
   let d : Document SourceTypes.Table Nat := ⟨fileKey,← jStr (← jField ast "sourceSha256"),types,functions,none⟩
   -- Enforce the destination schema, without requiring the claims to be complete.
-  let _ ← SourceClaimJson.decode (toJson d)
+  let _ ← (decodeDocument d.types (toJson d) : Except String (Document SourceTypes.Table Nat))
   return Json.mkObj [("claims",toJson d),("omissions",toJson omissions)]
 /-- Import for inspection when source lowering is unavailable. No source AST is
 fabricated and no proof is attempted; verification still requires the real parser.
@@ -131,7 +135,7 @@ def inspect (claims : Json) (fileKey digest : String) : Except String Json := do
     issues := issues ++ notes
     types := grown
   let d : Document SourceTypes.Table Nat := ⟨fileKey,digest,types,functions,none⟩
-  let _ ← SourceClaimJson.decode (toJson d)
+  let _ ← (decodeDocument d.types (toJson d) : Except String (Document SourceTypes.Table Nat))
   return Json.mkObj [("claims",toJson d),("omissions",toJson issues)]
 
 end Verification.Model.SourceClaimExport

@@ -259,6 +259,7 @@ instance : Store State Tree where
   bounded := bounded
   scheme s bs sigs bounds rests := grow s (schemeOver bs sigs bounds rests)
   rebind := rebind
+  substitute _ σ t := normUnion (treeReplace (fun u => (σ.lookup u).map ([·])) t)
 
 /-! ### Checked requests: the equations, frozen -/
 

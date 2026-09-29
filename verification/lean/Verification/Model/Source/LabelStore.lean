@@ -126,6 +126,10 @@ class Store (σ : Type) (ι : outParam Type) [Labels ι] extends StoreView σ ι
   spells a binder by its name, and a unit or closure decides what the name
   stands for. The union a label becomes. -/
   rebind : σ → List (String × List ι) → ι → List ι
+  /-- A label with labels `σ` names read as the labels it pairs them with:
+  a scheme's fresh binders read as its own (`scheme`). The union a label
+  becomes. -/
+  substitute : σ → List (ι × ι) → ι → List ι
 
 
 /-- What a diagnostic mentioning `mentioned` shows of the store, to the

@@ -342,6 +342,7 @@ instance : Store Table Nat where
   images T := PositiveCertificates.finiteInstanceImages (tableGraph T)
   -- A table names its binders by rows, never by name.
   rebind _ _ l := [l]
+  substitute _ σ l := [(σ.lookup l).getD l]
 
 @[simp] theorem Table.graph_eq (T : Table) : StoreView.graph T = tableGraph T := rfl
 @[simp] theorem Table.nul_eq : (Labels.nul : Nat) = 0 := rfl
@@ -730,16 +731,16 @@ structure CodeHints where
   requirements : List (Nat × HeapKnowledge.Knowledge) := []
   cuts : List Nat := []
 
-/-- Produce and serialize, then pass through the same independent JSON consumer.
-Fuel bounds search only; it is not part of the certified request. -/
-def produceJson (σ : Type) [StoreView σ ι] (request : Json) (fuel : Nat)
+/-- Search a request's evidence: each code's certificate, then the graph's,
+checked as the consumer checks them. Fuel bounds search only; it is not
+part of the certified request. -/
+def produceResponse (r : Request σ ι) (fuel : Nat)
     (suggestions : List (ProgramCertificates.Sequent ι) := [])
     (known : List (ProgramCertificates.Evidence ι) := [])
     (sourceMap : SourceMap := [])
     (searchLabels : Option (List ι) := none)
     (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := [])
-    (codeHints : List CodeHints := []) : Except String Json := do
-  let r ← decodeRequest σ request
+    (codeHints : List CodeHints := []) : Except String (Response ι) := do
   let labels := searchLabels.getD (StoreView.labels r.types)
   -- Each code against the table of those before it, as `codeTable` checks.
   let mut table : List (CodeEntry ι) := []
@@ -757,7 +758,21 @@ def produceJson (σ : Type) [StoreView σ ι] (request : Json) (fuel : Nat)
     if GraphCode.codeCheckedUsing (graph r) (StoreView.images r.types) table q.entry C then
       table := table ++ [q.entry]
   let C ← produceGraph r fuel labels suggestions known sourceMap requirements cuts table
-  let response := toJson (Response.mk C certificates)
+  let response := Response.mk C certificates
+  if verify r response then return response
+  throw "the certificate does not justify the actual program and supplied claims"
+
+/-- Produce and serialize, then pass through the same independent JSON consumer. -/
+def produceJson (σ : Type) [StoreView σ ι] (request : Json) (fuel : Nat)
+    (suggestions : List (ProgramCertificates.Sequent ι) := [])
+    (known : List (ProgramCertificates.Evidence ι) := [])
+    (sourceMap : SourceMap := [])
+    (searchLabels : Option (List ι) := none)
+    (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := [])
+    (codeHints : List CodeHints := []) : Except String Json := do
+  let r ← decodeRequest σ request
+  let response := toJson (← produceResponse r fuel suggestions known sourceMap searchLabels requirements
+    cuts codeHints)
   verifyJson σ request response
   return response
 
