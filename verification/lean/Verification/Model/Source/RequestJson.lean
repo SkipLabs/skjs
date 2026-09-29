@@ -260,6 +260,7 @@ instance : Labels Nat where
   toToJson := inferInstance
   toFromJson := inferInstance
   toRepr := inferInstance
+  toInstantiates := inferInstance
   decEq := inferInstance
   nul := 0
   tru := 1

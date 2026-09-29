@@ -19,7 +19,7 @@ structure Required (ι : Type) where
   context : List Descriptor := []
 
 section
-variable [DecidableEq ι]
+variable [DecidableEq ι] [CertificateProducer.Instantiates ι]
 
 /-- `valid` says which labels the graph's store holds. -/
 def checkUsing (G : NormalGraph ι) (images : InstanceImageCheck G) (valid : ι → Bool) (j : Sequent ι) (e : Evidence ι)
@@ -102,10 +102,10 @@ def renderKnownUsing [Hashable ι] (G : NormalGraph ι) (images : InstanceImageC
   return es.toList
 
 /-- The finite image checker, the default of the source path. -/
-abbrev check (G : NormalGraph ι) := @checkUsing ι _ G (finiteInstanceImages G)
-abbrev checkAll (G : NormalGraph ι) := @checkAllUsing ι _ G (finiteInstanceImages G)
-abbrev produce [Hashable ι] (G : NormalGraph ι) := @produceUsing ι _ _ G (finiteInstanceImages G)
-abbrev renderKnown [Hashable ι] (G : NormalGraph ι) := @renderKnownUsing ι _ _ G (finiteInstanceImages G)
+abbrev check (G : NormalGraph ι) := checkUsing G (finiteInstanceImages G)
+abbrev checkAll (G : NormalGraph ι) := checkAllUsing G (finiteInstanceImages G)
+abbrev produce [Hashable ι] (G : NormalGraph ι) := produceUsing G (finiteInstanceImages G)
+abbrev renderKnown [Hashable ι] (G : NormalGraph ι) := renderKnownUsing G (finiteInstanceImages G)
 
 end
 

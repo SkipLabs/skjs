@@ -45,7 +45,7 @@ abbrev SubtypeCache (ι : Type) [BEq ι] [Hashable ι] :=
   Std.HashMap (Ty ι × Ty ι) (Option (PositiveCertificates.Proof ι))
 
 section
-variable [DecidableEq ι] [Hashable ι]
+variable [DecidableEq ι] [Hashable ι] [CertificateProducer.Instantiates ι]
 
 /-- Rendering fails, or rebuilds evidence, with the searches done so far. -/
 abbrev RenderM (ι : Type) [DecidableEq ι] [Hashable ι] := OptionT (StateM (SubtypeCache ι))
@@ -122,7 +122,7 @@ def renderUsing (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : Lis
   (renderWith G images pool Γ p {}).1
 
 /-- The finite image checker, the default. -/
-abbrev render (G : NormalGraph ι) := @renderUsing ι _ _ G (finiteInstanceImages G)
+abbrev render (G : NormalGraph ι) := renderUsing G (finiteInstanceImages G)
 
 end
 end Verification.Model.DirectProof

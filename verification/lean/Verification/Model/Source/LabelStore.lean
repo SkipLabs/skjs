@@ -1,6 +1,7 @@
 import Lean.Data.Json
 import Verification.Model.Types.GraphRows
 import Verification.Model.Types.PositiveCertificates
+import Verification.Model.Programs.CertificateProducer
 
 /-! What the source path asks of the labels it types a program with, and of
 the store that gives them meaning. Extraction, the source claims' readers and
@@ -16,7 +17,8 @@ open Lean PositiveGraphs PositiveNormalization CallEffects
 caches are keyed by types), a total order for the canonical order of unions,
 its JSON spelling, and the four primitive values' labels, which every store
 holds as they are. -/
-class Labels (ι : Type) extends Hashable ι, Ord ι, ToJson ι, FromJson ι, Repr ι where
+class Labels (ι : Type) extends Hashable ι, Ord ι, ToJson ι, FromJson ι, Repr ι,
+    CertificateProducer.Instantiates ι where
   decEq : DecidableEq ι
   nul : ι
   tru : ι

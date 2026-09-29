@@ -676,8 +676,10 @@ def liftedCtx (ctx : Ctx) (items : List Item) (h : Nat) : Ctx :=
       let (_, j) ← indexed.find? fun (it, _) => (ctxValue ctx it).toOption == some [p]
       let moved (q : Tree) : Option Union :=
         (indexed.find? fun (it, _) => (ctxValue ctx it).toOption == some [q]).map fun (_, k) => [.argument k]
-      let U' ← U.mapM fun t => if treeOpen t then
-          (match t with | .argument _ | .local _ => moved t | _ => none) else some [t]
+      -- A bound naming what the head is lifted over names its argument.
+      let U' ← U.mapM fun t => match moved t with
+        | some m => some m
+        | none => if treeOpen t then none else some [t]
       return (.argument j, U'.flatten) }
 
 def literalName (term : Json) : String :=
@@ -1679,6 +1681,91 @@ def varianceEvidence (E : Equations) (bodies : Array (GraphRow Tree (List Tree))
   let entries := varianceEntries (sig := E.signature) { tables }
   { tables, arrows := arrowCandidates E (entries.flatMap (·.pairs)) }
 
+/-! ### Instances by substitution (§4.3, §9.2)
+
+What an equation label proposes for an instance of a scheme row
+(`CertificateProducer.Instantiates`): the binders' instances found by
+matching the scheme's signatures against the target's trees, and each
+operand's image its structural substitution (`Label.substitute`), which
+`substitutionTableOk` checks. Untrusted. -/
+
+/-- Whether a tree mentions one of `bs`. -/
+partial def mentionsAny (bs : List Tree) (t : Tree) : Bool :=
+  bs.contains t || match t with
+    | .app _ args | .bound _ args _ => args.toList.any fun ts => ts.toList.any (mentionsAny bs)
+    | .meet ps => ps.toList.any (mentionsAny bs)
+    | _ => false
+
+private def sameSet (a b : List Tree) : Bool := a.all (b.contains ·) && b.all (a.contains ·)
+
+mutual
+/-- Extend `θ` so that the union `S`, its binders `bs` read as `θ` gives
+them, is `T`. -/
+partial def unifyUnion (bs : List Tree) (θ : List (Tree × List Tree)) (S T : List Tree) :
+    Option (List (Tree × List Tree)) :=
+  match S with
+  | [b] =>
+    if bs.contains b then
+      match θ.lookup b with
+      | some U => if sameSet U T then some θ else none
+      | none => some (θ ++ [(b, T)])
+    else match T with
+      | [t] => unifyTree bs θ b t
+      | _ => none
+  | _ =>
+    -- The union's labels mentioning no binder are themselves; the one that
+    -- does takes the rest of `T`.
+    let fixed := S.filter fun t => !mentionsAny bs t
+    if !fixed.all (T.contains ·) then none else
+    match S.filter (mentionsAny bs ·) with
+    | [] => if sameSet S T then some θ else none
+    | [x] => unifyUnion bs θ [x] (T.filter (!fixed.contains ·))
+    | _ => none
+/-- Extend `θ` so that the tree `s` is `t`. -/
+partial def unifyTree (bs : List Tree) (θ : List (Tree × List Tree)) (s t : Tree) :
+    Option (List (Tree × List Tree)) :=
+  if !mentionsAny bs s then (if s == t then some θ else none) else
+  match s, t with
+  | .app h a, .app h' a' | .bound h a _, .bound h' a' _ =>
+    if h != h' || a.toList.length != a'.toList.length then none
+    else (a.toList.zip a'.toList).foldlM (fun θ (x, y) => unifyUnion bs θ x.toList y.toList) θ
+  | .meet ps, .meet qs =>
+    if ps.toList.length != qs.toList.length then none
+    else (ps.toList.zip qs.toList).foldlM (fun θ (x, y) => unifyTree bs θ x y) θ
+  | _, _ => none
+end
+
+/-- The binders' instances making a scheme's signatures cover the target
+arrows, each target matched against one of the scheme's; unmatched binders
+stand for themselves. -/
+def unifyScheme (s : SchemeRow Tree) (L : PositiveRules.Ops Tree) (M : List (RestArrow (List Tree))) :
+    Option (List (Tree × List Tree)) := do
+  let unifyArrow (θ : List (Tree × List Tree)) (p q : List (List Tree)) : Option (List (Tree × List Tree)) :=
+    if p.length != q.length then none
+    else (p.zip q).foldlM (fun θ (x, y) => unifyUnion s.binders θ x y) θ
+  -- A receiver a scheme states as every value admits any: it is not matched.
+  let body (a : Arrow (List Tree)) := a.result :: a.arguments
+  let θ ← L.foldlM (fun θ q => s.signatures.findSome? fun p =>
+    if p.effect != q.effect then none else unifyArrow θ (body p) (body q)) []
+  M.foldlM (fun θ q => s.variadic.findSome? fun p =>
+    if p.effect != q.effect then none
+    else unifyArrow θ (p.arguments.2 :: p.result :: p.arguments.1) (q.arguments.2 :: q.result :: q.arguments.1)) θ
+
+/-- An equation graph's proposal: instances by matching, images by
+structural substitution. -/
+def proposeLabels {sig : Signature} (s : SchemeRow (Label sig)) (L : PositiveRules.Ops (Label sig))
+    (M : List (RestArrow (List (Label sig)))) : Option (List (List (Label sig)) × InstTable (Label sig)) := do
+  let tree (U : List (Label sig)) : List Tree := U.map (·.1)
+  let s' : SchemeRow Tree := ⟨tree s.binders, s.signatures.map (Arrow.map tree),
+    s.bounds.map (fun (b, U) => (b.1, tree U)), s.variadic.map (RestArrow.map tree)⟩
+  let θ ← unifyScheme s' (L.map (Arrow.map tree)) (M.map (RestArrow.map tree))
+  let θs ← s.binders.mapM fun b => ((θ.lookup b.1).getD [b.1]).mapM Label.ofTree?
+  let κ : PositiveRules.Ctx (Label sig) := s.binders.zip θs
+  let operands := (s.signatures.flatMap Arrow.operands ++ s.variadic.flatMap RestArrow.operands).flatten.eraseDups
+  return (θs, operands.map fun l => (l, κ, l.substitute (parameterReplacement κ)))
+
+instance {sig : Signature} : CertificateProducer.Instantiates (Label sig) := ⟨proposeLabels⟩
+
 /-- The heads' raw rows at variances `v`. -/
 def rawHeads (drafts : Array Draft) (bodies : Array (GraphRow Tree (List Tree)))
     (v : Array (Array Variance)) : List RawHead :=
@@ -1853,7 +1940,9 @@ def genericType (ctx : Ctx) (term : Json) : M GenericType := do
     return .construct params (← lowerType ctx (← field term "result"))
   | _ => return .other (← lowerType ctx term)
 
-/-- Lower a generic module value's pieces with its binders as placeholders. -/
+/-- Lower a generic module value's pieces with its binders as placeholders.
+Its declared bounds are checked at each instance a call names
+(`Scheme.moduleInstances`), not here. -/
 private def genericOf (name : String) (pos : Nat × Nat) (path : String) (node : Json) (tps : Array Json)
     (type : List (String × Binding) → M GenericType) : M GenericValue := do
   let (scope, _) ← bindNames [] [] node tps
@@ -1903,7 +1992,7 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
     let name ← str f "name"
     let pos ← (fromJson? (← field f "namePos") : Except String (Nat × Nat))
     generics := generics ++ [← genericOf name pos path f tps fun scope => do
-      match ← unitSignature { binders := scope, site := path } f with
+      match ← unitSignature { binders := scope, site := path, checkBounds := false } f with
       | some (.inl a) => return .function none a.arguments none a.result
       | some (.inr r) => return .function none r.arguments.1 (some r.arguments.2) r.result
       | none => throw s!"{path}: a generic module function's type needs every parameter's and the result's annotation"]
@@ -1912,8 +2001,21 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
   let initBinders := ((← get).unitBinders.reverse.filter (·.1.startsWith "/init/")).flatMap (·.2)
     |>.foldl (fun (acc : List (String × Tree × Option Union)) (n, t, B) =>
       if (acc.lookup n).isSome then acc else acc ++ [(n, t, B)]) []
-  let (initScope, initBounds) ← classes.foldlM (fun (acc : List (String × Binding) × List (Tree × Union)) (n, b) => do
-    return ((n, ⟨b.pack, [← placeholder n (if b.pack then .arguments else .value)]⟩) :: acc.1, acc.2)) ([], [])
+  -- The top-level code reads every generic class's binders by name, each
+  -- with its declared bound, as a class's own code does.
+  let ctors : List Json := match init with
+    | .arr sts => sts.toList.flatMap fun st => match st.getObjVal? "bindings" with
+      | .ok (.arr bs) => bs.toList.filterMap fun b =>
+        let c := b.getObjValD "init"
+        if (c.getObjValAs? String "k").toOption == some "ctor" &&
+            ((c.getObjValAs? (Array Json) "typeParams").toOption.getD #[]).size > 0 then some c else none
+      | _ => []
+    | _ => []
+  let (initScope, initBounds) ← ctors.foldlM (fun (acc : List (String × Binding) × List (Tree × Union)) c => do
+    let tps := (c.getObjValAs? (Array Json) "typeParams").toOption.getD #[]
+    let (scope, bounds) ← bindNames [] [] c tps
+    let fresh := scope.filter fun (n, _) => (acc.1.lookup n).isNone
+    return (acc.1 ++ fresh, acc.2 ++ bounds.filter fun (q, _) => !acc.2.any (·.1 == q))) ([], [])
   let initAnnotations ← walk "/init" initScope initBounds init
   -- Generic classes: their construct signatures at their binders.
   let .arr sts := init | throw "the module initialization is a list"
@@ -1929,7 +2031,7 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
       let name ← str b "name"
       let pos ← (fromJson? (← field b "namePos") : Except String (Nat × Nat))
       generics := generics ++ [← genericOf name pos path ctor tps fun scope => do
-        genericType { binders := scope, site := s!"{path}/annot" } (← field b "annot")]
+        genericType { binders := scope, site := s!"{path}/annot", checkBounds := false } (← field b "annot")]
   -- Imported values: a generic one is instantiated at each call.
   let mut values := []
   let document := ast.getObjValD "declarations"
@@ -1948,7 +2050,7 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
       let _ ← enterUnit path [] v tps
       units := units ++ [(path, (((← get).unitBinders.lookup path).getD []))]
       generics := generics ++ [← genericOf name span path v tps fun scope => do
-        genericType { binders := scope, site := path } (← field v "type")]
+        genericType { binders := scope, site := path, checkBounds := false } (← field v "type")]
   -- The producer's rows and the claims.
   let types ← arr claims "types"
   let P ← (producerRows types : Except String ProducerRows)
@@ -2130,6 +2232,9 @@ instance : LabelStore.Meets State Tree where
     return meetUnions parts
 
 instance : LabelStore.Labels Tree where
+  -- An extracted label's store still grows: instances are proposed over the
+  -- frozen equations (`EquationStore.Checked`).
+  propose _ _ _ := none
   toJson := Tree.toJson
   fromJson? j := Tree.fromJson j
   decEq := inferInstance

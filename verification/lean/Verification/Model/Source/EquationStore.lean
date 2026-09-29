@@ -244,7 +244,8 @@ instance : Store State Tree where
   wellFormed s := s.heads.all (·.body.isSome)
   labels s := (List.range s.heads.size).filterMap fun h =>
     if s.heads[h]!.kinds.isEmpty then some (mkApp h []) else none
-  bound s := s.heads.size
+  -- Rows reach infinitely many labels: a closure over them is search's.
+  bound _ := CertificateProducer.searchLimit
   arrayProto s := match s.proto with
     | some p => mkApp p []
     | none => mkApp 0 []
@@ -303,6 +304,7 @@ instance : Labels (CheckedLabel E p) where
     let l : Label E.signature ← Label.ofTree E.signature t
     return l⟩
   toRepr := ⟨fun l n => reprPrec l.tree n⟩
+  toInstantiates := ⟨fun s L M => (proposeLabels (sig := E.signature) s L M)⟩
   decEq := inferInstanceAs (DecidableEq (Label E.signature))
   nul := (⟨.app 0 .nil, p.nul⟩ : Label E.signature)
   tru := (⟨.app 1 .nil, p.tru⟩ : Label E.signature)
@@ -342,7 +344,7 @@ instance : StoreView (Checked E p) (CheckedLabel E p) where
   valid _ _ := true
   wellFormed _ := true
   labels _ := (List.range E.signature.length).filterMap fun h => Checked.label? (mkApp h [])
-  bound _ := E.signature.length
+  bound _ := CertificateProducer.searchLimit
   arrayProto _ := ((E.realm.bind (·.proto.head?)) : Option (Label E.signature)).getD
     (Labels.nul : CheckedLabel E p)
   lookup c cs := (lookup c.heads (cs.map (Clause.map (·.map Subtype.val)))).bind Checked.label?

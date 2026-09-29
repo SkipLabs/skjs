@@ -156,7 +156,7 @@ def within (T : σ) (C A : List ι) : Bool :=
   (SourceTypes.canonical T C).all (SourceTypes.canonical T A).contains ||
     (let G := SourceTypes.graph T
      let pool := CertificateProducer.vocabulary G
-       (ProgramTyping.readsFrom G ProgramTyping.closureFuel (C ++ A)) [] [C, A]
+       (CertificateProducer.searchReads G (C ++ A)) [] [C, A]
      match CertificateProducer.subtype G pool C A with
        | some proof => PositiveCertificates.check G C A proof
        | none => false)
@@ -4953,11 +4953,13 @@ def SourceRequest.searchLabels (r : SourceRequest σ ι) : List ι :=
     r.codes.flatMap (fun (q : RequestJson.CodeRequest ι) => q.claims.flatMap (fun (c : PointClaim ι) => c.type ++ c.context.flatten)) ++
     r.obligations.flatMap (fun (o : ExpressionClaims.Required ι) => o.sequent.type ++ o.sequent.context.flatten)).eraseDups
   -- Readonly array coercions depend on the store's element unions two levels
-  -- below the object. Close the vocabulary over the finite reachable graph,
-  -- stopping at the fixpoint: a step that adds no label changes nothing.
+  -- below the object. Close the vocabulary over the reachable graph,
+  -- stopping at the fixpoint, where a step adds no label, or at the store's
+  -- bound on labels: an equation graph's rows reach infinitely many.
   Id.run do
     let mut known := roots
     for _ in List.range (StoreView.bound r.types) do
+      if known.length ≥ StoreView.bound r.types then break
       -- A meet row's clauses name a type the store may hold as a row of its
       -- own, a bounded binder's bound: a read through the binder is at it.
       let next := (known ++ known.flatMap (fun i =>

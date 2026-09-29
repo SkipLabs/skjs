@@ -7,6 +7,9 @@ set_option maxRecDepth 10000
 namespace Verification.Model.CertificateProducerTests
 open ProgramTyping ProgramTypingTests ControlFlow CertificateProducer
 
+/-- A finite graph's labels have no syntax to substitute into. -/
+instance : Instantiates (Fin n) := ⟨fun _ _ _ => none⟩
+
 def labels : List (Fin 7) := [0,1,2,3,4,5,6]
 
 def loopClaims : List (PointClaim (Fin 7)) :=
