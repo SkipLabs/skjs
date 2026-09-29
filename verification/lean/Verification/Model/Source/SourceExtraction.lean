@@ -27,7 +27,7 @@ private def distinct [BEq α] (xs : List α) : Bool := xs.eraseDups.length == xs
 
 /-- The type of the `i`-th actual past a variadic signature's fixed ones: its
 position in the rest's one tuple contract. -/
-private def restPosition (G : PositiveGraphs.NormalGraph ι) (P : List ι) (i : Nat) :
+@[nospecialize] private def restPosition (G : PositiveGraphs.NormalGraph ι) (P : List ι) (i : Nat) :
     Option (List ι) :=
   match PositiveRules.expand G P with
   | [.pack T []] => ProgramTyping.positionTy T i
@@ -67,24 +67,24 @@ private structure ScopeBinding (ι : Type) where
   param : Bool := false
   deriving Repr
 
-private def held (d : Descriptor) : ScopeBinding ι := { source := d }
+@[nospecialize] private def held (d : Descriptor) : ScopeBinding ι := { source := d }
 
 /-- Explanatory projection: what a reader is shown, with the storage dropped. -/
-private def sources (scope : List (ScopeBinding ι)) : List Descriptor := scope.map (·.source)
+@[nospecialize] private def sources (scope : List (ScopeBinding ι)) : List Descriptor := scope.map (·.source)
 
 /-- Name lookup is unchanged: descriptors carry the same names in the same
 order, and an unnamed one can never match a source identifier. -/
-private def names (scope : List (ScopeBinding ι)) : List String := scope.map (·.source.name)
+@[nospecialize] private def names (scope : List (ScopeBinding ι)) : List String := scope.map (·.source.name)
 
 /-- The one place a source name becomes a slot, so no site can decide for
 itself whether a name denotes a value or a location. -/
-private def resolve (scope : List (ScopeBinding ι)) (name : String) : Option (Nat × (Storage ι)) := do
+@[nospecialize] private def resolve (scope : List (ScopeBinding ι)) (name : String) : Option (Nat × (Storage ι)) := do
   let i ← (names scope).idxOf? name
   let b ← scope[i]?
   return (i, b.storage)
 
 /-- Only immutable value slots may be substituted by a guard's saved value. -/
-private def valueSlot (scope : List (ScopeBinding ι)) (name : String) : Option Nat := do
+@[nospecialize] private def valueSlot (scope : List (ScopeBinding ι)) (name : String) : Option Nat := do
   let (i,.value) ← resolve scope name | none
   return i
 
@@ -137,9 +137,9 @@ private def locatedRefusal (T : σ) (pos : Span)
 
 private abbrev Compiler (σ ι : Type) := StateT (Built σ ι) (Except String)
 
-private def table : Compiler σ ι σ := do return (← get).types
+@[nospecialize] private def table : Compiler σ ι σ := do return (← get).types
 
-private def lower (m : SourceTypes.Lowering σ α) : Compiler σ ι α := do
+@[nospecialize] private def lower (m : SourceTypes.Lowering σ α) : Compiler σ ι α := do
   let s ← get
   let (a, T) ← m.run s.types
   set { s with types := T }
@@ -151,7 +151,7 @@ by a certificate the proved checker accepts. A generic application with
 methods is one row for the module, the producer's `Values<number>` and the one
 a method annotation names alike, so the first rule relates them; the proof is
 for a claim narrower than its annotation. -/
-def within (T : σ) (C A : List ι) : Bool :=
+@[nospecialize] def within (T : σ) (C A : List ι) : Bool :=
   (SourceTypes.canonical T C).all (SourceTypes.canonical T A).contains ||
     (let G := SourceTypes.graph T
      let pool := CertificateProducer.vocabulary G
@@ -161,10 +161,10 @@ def within (T : σ) (C A : List ι) : Bool :=
        | none => false)
 
 /-- Whether two label lists denote the same type: each within the other. -/
-def sameMeaning (T : σ) (A B : List ι) : Bool :=
+@[nospecialize] def sameMeaning (T : σ) (A B : List ι) : Bool :=
   within T A B && within T B A
 
-private def envCore (T : σ) (fc : SourceClaims.Function ι) (pos : Nat) (scope : List (ScopeBinding ι)) :
+@[nospecialize] private def envCore (T : σ) (fc : SourceClaims.Function ι) (pos : Nat) (scope : List (ScopeBinding ι)) :
     Except String (List (Ty ι)) := do
   let vars ← match fc.envs.lookup pos with
     | some vars => pure vars
@@ -184,7 +184,7 @@ private def envCore (T : σ) (fc : SourceClaims.Function ι) (pos : Nat) (scope 
     | .value => return A
     | .cell _ reference => return reference
 
-private def env (fc : SourceClaims.Function ι) (pos : Nat) (scope : List (ScopeBinding ι)) :
+@[nospecialize] private def env (fc : SourceClaims.Function ι) (pos : Nat) (scope : List (ScopeBinding ι)) :
     Compiler σ ι (List (Ty ι)) := do
   (envCore (← table) fc pos scope).mapError fun msg =>
     s!"source environment obligation at {pos}: {msg}"
@@ -192,7 +192,7 @@ private def env (fc : SourceClaims.Function ι) (pos : Nat) (scope : List (Scope
 /-- A pattern reads fields, never a method: a method is a member of its object,
 called with it as receiver (`MethodMembers`); read off it, it is no function
 value. -/
-private def noMethodRead (G : PositiveGraphs.NormalGraph ι) (A : Ty ι) (fld : String) :
+@[nospecialize] private def noMethodRead (G : PositiveGraphs.NormalGraph ι) (A : Ty ι) (fld : String) :
     Except String Unit :=
   if (PositiveRules.expand G A).any fun c => match c with
       | .refs _ _ _ _ ms _ => ms.any (·.key == fld) | _ => false then
@@ -207,24 +207,24 @@ private def restOfUnknownLength : String :=
 
 /-- The type claimed at a site: a source expression, or an array pattern's
 rest. -/
-private def claimAt (fc : SourceClaims.Function ι) (span : Span) : Compiler σ ι (Ty ι) := do
+@[nospecialize] private def claimAt (fc : SourceClaims.Function ι) (span : Span) : Compiler σ ι (Ty ι) := do
   match fc.exprs.lookup span with
   | some t => (SourceClaims.resolve (← table) t).mapError fun msg =>
       s!"source expression obligation at [{span.1},{span.2}): {msg}"
   | none => throw s!"no claimed type for the expression at {spanStr span}"
 
-private def exprType (fc : SourceClaims.Function ι) (e : Fragment.Expr) : Compiler σ ι (Ty ι) :=
+@[nospecialize] private def exprType (fc : SourceClaims.Function ι) (e : Fragment.Expr) : Compiler σ ι (Ty ι) :=
   claimAt fc e.span
 
 /-- The store type of an array claim: the type of its store field, held
 invariantly or as a view. -/
-private def storeOf (G : PositiveGraphs.NormalGraph ι) (A : Ty ι) : Option (Ty ι) :=
+@[nospecialize] private def storeOf (G : PositiveGraphs.NormalGraph ι) (A : Ty ι) : Option (Ty ι) :=
   match PositiveRules.expand G A with
   | [.refs fs [] vs _ _ _] => fs.lookup SourceTypes.storeField <|> vs.lookup SourceTypes.storeField
   | _ => none
 
 /-- A union of arrays: every clause of the type holds a store. -/
-private def arraysOnly (G : PositiveGraphs.NormalGraph ι) (A : Ty ι) : Bool :=
+@[nospecialize] private def arraysOnly (G : PositiveGraphs.NormalGraph ι) (A : Ty ι) : Bool :=
   let cs := PositiveRules.expand G A
   !cs.isEmpty && cs.all fun c => match c with
     | .refs fs [] vs _ _ _ => (fs.lookup SourceTypes.storeField <|> vs.lookup SourceTypes.storeField).isSome
@@ -232,7 +232,7 @@ private def arraysOnly (G : PositiveGraphs.NormalGraph ι) (A : Ty ι) : Bool :=
 
 /-- A source numeric key must denote one valid array index. The two runtime
 zeros name the same property although their numeric values remain distinct. -/
-private def arrayIndex (G : PositiveGraphs.NormalGraph ι) (K : Ty ι) : Except String Nat := do
+@[nospecialize] private def arrayIndex (G : PositiveGraphs.NormalGraph ι) (K : Ty ι) : Except String Nat := do
   let cs := PositiveRules.expand G K
   let .numLit b :: _ := cs
     | throw "a numeric array key needs a proved array-index singleton; ordinary numeric properties are not modeled"
@@ -246,7 +246,7 @@ def arrayPrototypeName : String := SourceTypes.arrayPrototypeName
 
 /-- A fresh array object's type: its store and prototype as fields, and its own
 keys bounded to them, the type `alloc` gives before it is read as an array. -/
-private def arrayObject (S : Ty ι) : Compiler σ ι (Ty ι) := do
+@[nospecialize] private def arrayObject (S : Ty ι) : Compiler σ ι (Ty ι) := do
   let label ← lower (SourceTypes.use (.refs [(SourceTypes.storeField, S),
     (SourceTypes.protoField, [StoreView.arrayProto (← table)])] [] [] [] []
     [⟨true, [SourceTypes.storeField, SourceTypes.protoField]⟩]))
@@ -254,7 +254,7 @@ private def arrayObject (S : Ty ι) : Compiler σ ι (Ty ι) := do
   return [label]
 
 /-- The slot holding `Array.prototype` in a scope. -/
-private def prototypeSlot (scope : List (ScopeBinding ι)) : Except String Nat :=
+@[nospecialize] private def prototypeSlot (scope : List (ScopeBinding ι)) : Except String Nat :=
   match resolve scope arrayPrototypeName with
   | some (i, .value) => pure i
   | _ => throw "an array needs Array.prototype, which this unit does not see"
@@ -266,13 +266,13 @@ private def arrayTerm (proto : Nat) : Tm :=
 
 /-- The literal index of one position, interned like any other number the
 program mentions. -/
-private def indexTerm (j : Nat) : Compiler σ ι Tm := do
+@[nospecialize] private def indexTerm (j : Nat) : Compiler σ ι Tm := do
   let b := bitsOfNat j
   let label ← lower (SourceTypes.use (.numLit b))
   modify fun s => {s with hints := label :: s.hints}
   return .num b
 
-private def arrayKeyTerm (K : Ty ι) : Compiler σ ι Tm := do
+@[nospecialize] private def arrayKeyTerm (K : Ty ι) : Compiler σ ι Tm := do
   let k ← arrayIndex (SourceTypes.graph (← table)) K
   let b := bitsOfNat k
   let label ← lower (SourceTypes.use (.numLit b))
@@ -282,7 +282,7 @@ private def arrayKeyTerm (K : Ty ι) : Compiler σ ι Tm := do
 /-- The type a binary operator's value is claimed at before it meets the
 expression's claim: both Booleans for a comparison, strings for `+` with a
 string operand, else the numeric family of its operands. -/
-private def operatorResult (op : Arith) (A B : Ty ι) : Compiler σ ι (Ty ι) := do
+@[nospecialize] private def operatorResult (op : Arith) (A B : Ty ι) : Compiler σ ι (Ty ι) := do
   if op.relational || op == .eq then return [Labels.tru, Labels.fls]
   let G := SourceTypes.graph (← table)
   let strings := fun (T : Ty ι) =>
@@ -299,7 +299,7 @@ with a constant right operand: `-x` is `x * -1`, `+x` is `x * 1` and `~x` is
 operand's claimed one, which its own obligation establishes. `+` on a bigint
 throws a `TypeError`, and an operand of both families has no one constant, so
 each is refused. The constant's singleton is interned and offered to search. -/
-private def unaryOperation (p : Span) (op : Fragment.UnaryOp) (B : Ty ι) :
+@[nospecialize] private def unaryOperation (p : Span) (op : Fragment.UnaryOp) (B : Ty ι) :
     Compiler σ ι (Arith × Tm × Ty ι × ProgramCertificates.Rule ι) := do
   let cs := PositiveRules.expand (SourceTypes.graph (← table)) B
   let located := s!"unsupported source expression at [{p.1},{p.2}): "
@@ -326,7 +326,7 @@ refused: its static members are bound apart (`static C.x`), so it lacks keys
 JavaScript's has. On the other objects of the fragment own keys are
 JavaScript's, and the key names nothing a prototype holds
 (`Fragment.inKeyRefusal`). -/
-private def inOperand (p : Span) (tag : Tag) (B : Ty ι) : Compiler σ ι Unit := do
+@[nospecialize] private def inOperand (p : Span) (tag : Tag) (B : Ty ι) : Compiler σ ι Unit := do
   let .hasKey _ := tag | return
   let G := SourceTypes.graph (← table)
   let cs := PositiveRules.expand G B
@@ -340,7 +340,7 @@ private def inOperand (p : Span) (tag : Tag) (B : Ty ι) : Compiler σ ι Unit :
 
 /-- The keys `key in o` may test, from the key's claim: a union of string
 singletons, each a key `in` answers as JavaScript does (`inKeyRefusal`). -/
-private def inKeyList (p : Span) (K : Ty ι) : Compiler σ ι (List String) := do
+@[nospecialize] private def inKeyList (p : Span) (K : Ty ι) : Compiler σ ι (List String) := do
   let G := SourceTypes.graph (← table)
   let located := s!"unsupported source expression at [{p.1},{p.2}): "
   let keys := (PositiveRules.expand G K).filterMap fun
@@ -402,7 +402,7 @@ private inductive KeyKind where
 array store, no primitive, nothing else. Such an object's property named by a
 number is the field its `ToString` spells; an array's is its store's
 element. -/
-private def recordReceiver (fc : SourceClaims.Function ι) (e : Fragment.Expr) : Compiler σ ι Bool := do
+@[nospecialize] private def recordReceiver (fc : SourceClaims.Function ι) (e : Fragment.Expr) : Compiler σ ι Bool := do
   let G := SourceTypes.graph (← table)
   let R ← exprType fc e
   let cs := PositiveRules.expand G R
@@ -411,7 +411,7 @@ private def recordReceiver (fc : SourceClaims.Function ι) (e : Fragment.Expr) :
 
 /-- Whether an expression is claimed only at dictionaries, whose indexes a
 broad key reads through. -/
-private def dictReceiver (fc : SourceClaims.Function ι) (e : Fragment.Expr) : Compiler σ ι Bool := do
+@[nospecialize] private def dictReceiver (fc : SourceClaims.Function ι) (e : Fragment.Expr) : Compiler σ ι Bool := do
   let cs := PositiveRules.expand (SourceTypes.graph (← table)) (← exprType fc e)
   return !cs.isEmpty && cs.all fun | .dict .. => true | _ => false
 
@@ -419,7 +419,7 @@ private def dictReceiver (fc : SourceClaims.Function ι) (e : Fragment.Expr) : C
 it and the property key it converts to (`ToPropertyKey`: a number's is the
 key its `ToString` spells). `none` unless every clause is a string or number
 singleton; NaN, which no equality test finds, is not one. -/
-def keySingletons (G : PositiveGraphs.NormalGraph ι) (K : Ty ι) : Option (List (Tag × PropKey)) :=
+@[nospecialize] def keySingletons (G : PositiveGraphs.NormalGraph ι) (K : Ty ι) : Option (List (Tag × PropKey)) :=
   let cs := PositiveRules.expand G K
   if !G.plainTy K || cs.isEmpty then none else
   cs.mapM fun c => match c with
@@ -427,7 +427,7 @@ def keySingletons (G : PositiveGraphs.NormalGraph ι) (K : Ty ι) : Option (List
     | .numLit b => if numberEqual b b then some (.numEq b, .str (numberToString b)) else none
     | _ => none
 
-private def keyField (fc : SourceClaims.Function ι) (key : Fragment.Expr)
+@[nospecialize] private def keyField (fc : SourceClaims.Function ι) (key : Fragment.Expr)
     (string : Bool := false) (record : Bool := false) (dict : Bool := false) : Compiler σ ι KeyKind := do
   let K ← exprType fc key
   let G := SourceTypes.graph (← table)
@@ -468,7 +468,7 @@ private def keyField (fc : SourceClaims.Function ι) (key : Fragment.Expr)
 /-- The tag testing equality with the one value every member of `A` is:
 null, undefined, a number (both zeros are one), a string, a Boolean or a
 bigint. -/
-private def singletonTag (G : PositiveGraphs.NormalGraph ι) (A : Ty ι) : Option Tag :=
+@[nospecialize] private def singletonTag (G : PositiveGraphs.NormalGraph ι) (A : Ty ι) : Option Tag :=
   if A == [Labels.nul] then some Tag.isNul else if A == [Labels.undef] then some Tag.isUndef else
     match PositiveRules.expand G A with
     | .numLit bits :: cs =>
@@ -487,7 +487,7 @@ obligations must establish the singleton used by this translation. Without
 one, the comparison is the strict-equality operator (`Arith.eq`), which the
 operator rule admits where either operand is a primitive; `!==` is its
 negation. -/
-private partial def comparisonsExpr (fc : SourceClaims.Function ι) (e : Fragment.Expr) :
+@[nospecialize] private partial def comparisonsExpr (fc : SourceClaims.Function ι) (e : Fragment.Expr) :
     Compiler σ ι Fragment.Expr := do
   match e with
   | .var .. | .lit .. => pure e
@@ -594,7 +594,7 @@ private partial def comparisonsExpr (fc : SourceClaims.Function ι) (e : Fragmen
   | .ifBody p c t e => return .ifBody p (← comparisonsExpr fc c) (← comparisonsExpr fc t) (← comparisonsExpr fc e)
   | .block p ss => return .block p (← ss.mapM (comparisonsStmt fc))
 
-private partial def comparisonsStmt (fc : SourceClaims.Function ι) (s : Fragment.Stmt) :
+@[nospecialize] private partial def comparisonsStmt (fc : SourceClaims.Function ι) (s : Fragment.Stmt) :
     Compiler σ ι Fragment.Stmt := do
   match s with
   | .ret p e => return .ret p (← comparisonsExpr fc e)
@@ -866,7 +866,7 @@ def moduleArrow (g : Fragment.Fn) : Except String Json := do
 /-- The same values with each label that is a union row, a declaration such as
 `type Maybe = number | undefined`, replaced by one label per clause: a tag
 slice tells the values apart clause by clause, never inside one label. -/
-private def byClause (R : Ty ι) : Compiler σ ι (Ty ι) := do
+@[nospecialize] private def byClause (R : Ty ι) : Compiler σ ι (Ty ι) := do
   let G := SourceTypes.graph (← table)
   let parts ← R.mapM fun a =>
     let cs := PositiveRules.expand G [a]
@@ -874,7 +874,7 @@ private def byClause (R : Ty ι) : Compiler σ ι (Ty ι) := do
   pure parts.flatten.eraseDups
 
 /-- The type claimed at an expression a closure plan is built for. -/
-private def closureType (fc : SourceClaims.Function ι) (e : Fragment.Expr) : Compiler σ ι (Ty ι) :=
+@[nospecialize] private def closureType (fc : SourceClaims.Function ι) (e : Fragment.Expr) : Compiler σ ι (Ty ι) :=
   exprType fc e
 
 /-- A term that cannot throw: a value, or a slot, which holds one. Every other
@@ -886,7 +886,7 @@ private def cannotThrow : Tm → Bool
 /-- The handler a node emitted now names: the current one, its target's slots
 read from the thrown value's (0) and from the `try`'s scope, which the node's
 scope ends with, past the node's own `Γ.length - n` inner slots. -/
-private def nodeHandler (Γ : List (Ty ι)) (t : Tm) : Compiler σ ι (Option Target) := do
+@[nospecialize] private def nodeHandler (Γ : List (Ty ι)) (t : Tm) : Compiler σ ι (Option Target) := do
   match (← get).handler with
   | none => return none
   | some (entry, n) =>
@@ -897,7 +897,7 @@ private def nodeHandler (Γ : List (Ty ι)) (t : Tm) : Compiler σ ι (Option Ta
     return some ⟨entry.label, some ((entry.mapping.getD (List.range (n+1))).map
       fun i => if i == 0 then 0 else i + inner)⟩
 
-private def emit (t : Tm) (k : Continuation) (Γ : List (Ty ι)) (A : Ty ι) :
+@[nospecialize] private def emit (t : Tm) (k : Continuation) (Γ : List (Ty ι)) (A : Ty ι) :
     Compiler σ ι Target := do
   let handler ← nodeHandler Γ t
   let s : Built σ ι ← get
@@ -910,7 +910,7 @@ private def emit (t : Tm) (k : Continuation) (Γ : List (Ty ι)) (A : Ty ι) :
 certified request. The context must be describable binding for binding: a
 context this cannot name is an extraction bug, not a slot number for a reader,
 so it fails here rather than reaching a message. -/
-private def emitAt (pos : Span) (t : Tm) (k : Continuation) (Γ : List (Ty ι)) (A : Ty ι)
+@[nospecialize] private def emitAt (pos : Span) (t : Tm) (k : Continuation) (Γ : List (Ty ι)) (A : Ty ι)
     (role : String := "node-typing") (environmentStart : Option Nat := none)
     (scope : List (ScopeBinding ι) := []) : Compiler σ ι Target := do
   let target ← emit t k Γ A
@@ -924,7 +924,7 @@ private def emitAt (pos : Span) (t : Tm) (k : Continuation) (Γ : List (Ty ι)) 
 
 /-- The fields every record of a type names: where each of its clauses is a
 record naming them, the locations of an object of the type. -/
-private def commonFields (G : Verification.Model.PositiveGraphs.NormalGraph ι) (A : Ty ι) : List PropKey :=
+@[nospecialize] private def commonFields (G : Verification.Model.PositiveGraphs.NormalGraph ι) (A : Ty ι) : List PropKey :=
   match PositiveRules.expand G A with
   | .refs fs _ _ _ _ _ :: _ =>
     (fs.map Prod.fst).eraseDups.filter (HeapExpressionRules.fieldOperand (PositiveRules.expand G A))
@@ -932,7 +932,7 @@ private def commonFields (G : Verification.Model.PositiveGraphs.NormalGraph ι) 
 
 /-- A node whose derivation the lowering knows: its plan, cast to the node's
 claim, joins the search's known evidence, so the node is not searched. -/
-private def emitPlanned (pos : Span) (plan : DirectProof.Plan ι) (k : Continuation)
+@[nospecialize] private def emitPlanned (pos : Span) (plan : DirectProof.Plan ι) (k : Continuation)
     (Γ : List (Ty ι)) (A : Ty ι) (role : String := "node-typing")
     (scope : List (ScopeBinding ι) := []) : Compiler σ ι Target := do
   modify fun s => { s with nodePlans := s.nodePlans ++ [DirectProof.cast Γ A plan] }
@@ -947,7 +947,7 @@ about the fields the older slots' records named then (`apart`), whatever a
 later test narrowed them to, and about the objects allocated after it, other
 cells and fresh constants; an object a later call returned may be any
 object. -/
-private def distinctLinks (G : Verification.Model.PositiveGraphs.NormalGraph ι) (scope : List (ScopeBinding ι))
+@[nospecialize] private def distinctLinks (G : Verification.Model.PositiveGraphs.NormalGraph ι) (scope : List (ScopeBinding ι))
     (Γ : List (Ty ι)) : HeapLinks.Links :=
   scope.zipIdx.flatMap fun (b,i) =>
     match b.storage with
@@ -973,7 +973,7 @@ private def distinctLinks (G : Verification.Model.PositiveGraphs.NormalGraph ι)
 
 /-- A checkpoint is an actual no-op graph node. Every incoming edge must
 justify its supplied current-heap assertion, including backedges. -/
-private def checkpoint (pos : Span) (Γ : List (Ty ι)) (facts : HeapFacts.Facts)
+@[nospecialize] private def checkpoint (pos : Span) (Γ : List (Ty ι)) (facts : HeapFacts.Facts)
     (next : Target) (entry : Option Nat := none) (scope : List (ScopeBinding ι) := []) :
     Compiler σ ι Target := do
   let G := SourceTypes.graph (← table)
@@ -983,7 +983,7 @@ private def checkpoint (pos : Span) (Γ : List (Ty ι)) (facts : HeapFacts.Facts
   modify fun s => { s with assertions := s.assertions ++ [(t.label,⟨facts,[],links⟩)] }
   return t
 
-private def contents (A : Ty ι) : Compiler σ ι (List HeapFacts.Atom) := do
+@[nospecialize] private def contents (A : Ty ι) : Compiler σ ι (List HeapFacts.Atom) := do
   let T ← table
   if !RequestJson.validTy (StoreView.valid T) A then throw "invalid current-content type label"
   let some R := HeapKnowledge.atoms (SourceTypes.graph T) A
@@ -992,7 +992,7 @@ private def contents (A : Ty ι) : Compiler σ ι (List HeapFacts.Atom) := do
 
 /-- Record a source obligation with its source map, under the same invariant as
 `emitAt`: every context binding must be describable in the words of the source. -/
-private def obligation (pos : Span) (j : ProgramCertificates.Sequent ι) (plan : Option (DirectProof.Plan ι))
+@[nospecialize] private def obligation (pos : Span) (j : ProgramCertificates.Sequent ι) (plan : Option (DirectProof.Plan ι))
     (role : String) (scope : List (ScopeBinding ι)) : Compiler σ ι Unit := do
   if scope.length != j.context.length then
     throw s!"internal extraction error: source map covers {scope.length} of {j.context.length} bindings at {pos.1}"
@@ -1003,7 +1003,7 @@ private def obligation (pos : Span) (j : ProgramCertificates.Sequent ι) (plan :
 /-- Ordinary lambda proofs cannot retain transient heap observations across
 calls. Require their declared storage contract to imply such an observation
 uniformly; this is a located proof obligation, never a discarded assertion. -/
-private def persistentObservation (d : Descriptor) (pos : Span) (A : Ty ι)
+@[nospecialize] private def persistentObservation (d : Descriptor) (pos : Span) (A : Ty ι)
     (fld : PropKey) (R : Ty ι) : Compiler σ ι Unit := do
   -- The obligation below is an inclusion of types, so the observed type needs
   -- only to be one this table names. It does not need a supported primitive predicate:
@@ -1024,7 +1024,7 @@ private def persistentObservation (d : Descriptor) (pos : Span) (A : Ty ι)
 /-- Mutable entry types are assertions about contents, not reference types.
 Supported primitive assertions are checked on every incoming edge. Other claims
 must follow from the stable storage contract; no claim is silently dropped. -/
-private def entryFacts (fc : SourceClaims.Function ι) (pos : Nat) (scope : List (ScopeBinding ι)) :
+@[nospecialize] private def entryFacts (fc : SourceClaims.Function ι) (pos : Nat) (scope : List (ScopeBinding ι)) :
     Compiler σ ι HeapFacts.Facts := do
   let cs := (fc.entryCurrent.lookup pos).getD []
   let vars := (fc.envs.lookup pos).getD []
@@ -1105,7 +1105,7 @@ private def stringKey : PropKey → Except String String
 private def localSnapshotName (name : String) : String := ".local:" ++ name
 private def isSnapshot (name : String) : Bool := name.any (· == '.')
 
-private def observed (scope : List (ScopeBinding ι)) (Γ : List (Ty ι))
+@[nospecialize] private def observed (scope : List (ScopeBinding ι)) (Γ : List (Ty ι))
     (snapshot : String) (d : Descriptor) (pos : Span) (A : Ty ι)
     (fld : PropKey) (R : Ty ι) : Compiler σ ι Unit := do
   if let some i := (names scope).idxOf? snapshot then
@@ -1116,7 +1116,7 @@ private def observed (scope : List (ScopeBinding ι)) (Γ : List (Ty ι))
 
 /-- The record a group of an object literal's fields allocates: exactly their
 keys, each at its initializer's type, which its own obligation establishes. -/
-private def groupType (ns : List String) (As : List (Ty ι)) : Compiler σ ι (Ty ι) := do
+@[nospecialize] private def groupType (ns : List String) (As : List (Ty ι)) : Compiler σ ι (Ty ι) := do
   let keys := ns.map PropKey.str
   let label ← lower (SourceTypes.use (.refs (keys.zip As) [] [] [] [] [⟨true, keys⟩]))
   -- A type the search may need at a node it types on its own.
@@ -1126,7 +1126,7 @@ private def groupType (ns : List String) (As : List (Ty ι)) : Compiler σ ι (T
 /-- The type an object literal's claim states for each key it names, where
 its records agree on it: a field initializer is built at it, as a literal's
 fields are at its claim's. -/
-private def claimedFields (A : Ty ι) : Compiler σ ι (List (String × Ty ι)) := do
+@[nospecialize] private def claimedFields (A : Ty ι) : Compiler σ ι (List (String × Ty ι)) := do
   let G := SourceTypes.graph (← table)
   let keyed := fun (ps : List (PropKey × Ty ι)) => ps.filterMap fun (k, T) => match k with
     | .str s => some (s, T) | .sym _ => none
@@ -1140,7 +1140,7 @@ private def claimedFields (A : Ty ι) : Compiler σ ι (List (String × Ty ι)) 
 /-- The type a merge of a source of type `B` onto an accumulator of type `A`
 is given, less the dropped keys: one record per pair of their clauses
 (`ObjectMerge.mergeResult`), which the merge rule checks. -/
-private def mergeType (A B : Ty ι) (drop : List PropKey := []) : Compiler σ ι (Ty ι) := do
+@[nospecialize] private def mergeType (A B : Ty ι) (drop : List PropKey := []) : Compiler σ ι (Ty ι) := do
   let G := SourceTypes.graph (← table)
   let ca := PositiveRules.expand G A
   let cb := PositiveRules.expand G B
@@ -1180,7 +1180,7 @@ private def pureOperand : Fragment.Expr → Bool
 
 /-- Save the plain read in a singleton comparison. The other operand is
 effect-free; moving it across the read has no effect. -/
-private def readGuard (scope : List (ScopeBinding ι)) :
+@[nospecialize] private def readGuard (scope : List (ScopeBinding ι)) :
     Fragment.Expr → Option (String × Fragment.Expr × Fragment.Expr)
   | .not pos e => (readGuard scope e).map fun (snapshot,r,c) => (snapshot,r,.not pos c)
   | .singletonTest pos tag equal testLeft left right => do
@@ -1201,14 +1201,14 @@ private def readGuard (scope : List (ScopeBinding ι)) :
 
 /-- Negations of an immutable variable retain its identity and reverse the
 branch polarity. Arbitrary expressions deliberately carry no alias refinement. -/
-private def conditionVariable (scope : List (ScopeBinding ι)) : Fragment.Expr → Option (Nat × Bool)
+@[nospecialize] private def conditionVariable (scope : List (ScopeBinding ι)) : Fragment.Expr → Option (Nat × Bool)
   | .var _ name => (valueSlot scope name).map (·, false)
   | .not _ e => (conditionVariable scope e).map fun (i, reversed) => (i, !reversed)
   | _ => none
 
 /-- Only a syntactic immutable variable retains an alias to the observed value.
 Reads and calls deliberately do not qualify, even if their types look stable. -/
-private def tagConditionVariable (scope : List (ScopeBinding ι)) : Fragment.Expr → Option (Nat × Tag × Bool)
+@[nospecialize] private def tagConditionVariable (scope : List (ScopeBinding ι)) : Fragment.Expr → Option (Nat × Tag × Bool)
   | .not _ e => (tagConditionVariable scope e).map fun (i, tag, equal) => (i, tag, !equal)
   | .shapeTest _ tag equal (.var _ name) =>
     (valueSlot scope name).map (·, tag, equal)
@@ -1221,7 +1221,7 @@ private def tagConditionVariable (scope : List (ScopeBinding ι)) : Fragment.Exp
 /-- The tag a condition tests on an immutable variable: its own shape or
 singleton test, or, for a variable that is not a Boolean, its truthiness
 (`ToBoolean`), which is how JavaScript reads any other value as a condition. -/
-private def conditionTag (G : PositiveGraphs.NormalGraph ι) (scope : List (ScopeBinding ι))
+@[nospecialize] private def conditionTag (G : PositiveGraphs.NormalGraph ι) (scope : List (ScopeBinding ι))
     (Γ : List (Ty ι)) : Fragment.Expr → Option (Nat × Tag × Bool)
   | .not _ e => (conditionTag G scope Γ e).map fun (i, tag, equal) => (i, tag, !equal)
   | .var _ name => do
@@ -1235,7 +1235,7 @@ private def tagTestTerm (tag : Tag) (equal : Bool) (slot : Nat) : Tm :=
 
 /-- Split an explicit union and require a known test outcome for each arm.
 A broad numeric arm is not silently treated as unequal to the singleton. -/
-private def tagTestPlan (G : PositiveGraphs.NormalGraph ι) (tag : Tag) (Γ : List (Ty ι)) (slot : Nat)
+@[nospecialize] private def tagTestPlan (G : PositiveGraphs.NormalGraph ι) (tag : Tag) (Γ : List (Ty ι)) (slot : Nat)
     (equal : Bool) (A : Ty ι) : Except String (DirectProof.Plan ι) := do
   let some C := Γ[slot]? | throw "internal tag-test slot mismatch"
   let term := tagTestTerm tag equal slot
@@ -1264,7 +1264,7 @@ label the tag answers selects its arm, and a mixed label (a number's
 truthiness, or an unknown one) needs a real Boolean branch, where both arms
 must establish `B`. `??`, a default parameter and `&&`/`||` are this shape, on
 the nullish, `undefined` and truthiness tags. -/
-private def selectPlan (G : PositiveGraphs.NormalGraph ι) (Γ : List (Ty ι))
+@[nospecialize] private def selectPlan (G : PositiveGraphs.NormalGraph ι) (Γ : List (Ty ι))
     (slot : Nat) (B : Ty ι) (tag : Tag) (yes no : DirectProof.Plan ι) :
     Except String (DirectProof.Plan ι) := do
   let some C := Γ[slot]? | throw "internal selection slot mismatch"
@@ -1284,7 +1284,7 @@ private def selectPlan (G : PositiveGraphs.NormalGraph ι) (Γ : List (Ty ι))
 /-- Shared conditional proof construction for statement branches, ternaries and
 short-circuit operators. Branch builders retain their own source claims; a
 logical operator's constant arm is administrative and needs no invented claim. -/
-private def conditionalPlan (scope : List (ScopeBinding ι)) (H : List (Ty ι)) (A : Ty ι)
+@[nospecialize] private def conditionalPlan (scope : List (ScopeBinding ι)) (H : List (Ty ι)) (A : Ty ι)
     (cond : Fragment.Expr) (c : DirectProof.Plan ι)
     (yesBranch noBranch : List (ScopeBinding ι) → List (Ty ι) → Compiler σ ι (DirectProof.Plan ι)) :
     Compiler σ ι (DirectProof.Plan ι) := do
@@ -1327,7 +1327,7 @@ private def conditionalPlan (scope : List (ScopeBinding ι)) (H : List (Ty ι)) 
 operand is identical to the saved value: its name moves to that slot, so what
 follows sees the refinement a test of the saved value establishes. No mutable
 read is given an alias. -/
-private def savedOperandScope (scope : List (ScopeBinding ι)) (operand : Fragment.Expr) :
+@[nospecialize] private def savedOperandScope (scope : List (ScopeBinding ι)) (operand : Fragment.Expr) :
     List (ScopeBinding ι) :=
   match operand with
   | .var _ name =>
@@ -1339,7 +1339,7 @@ private def savedOperandScope (scope : List (ScopeBinding ι)) (operand : Fragme
 /-- Label 3 is `undefined`: see `SourceTypes.initial`. A position a call may
 omit is one whose declared contract admits that value, because `undefined` is
 what the machine binds there. -/
-private def admitsUndefined (G : PositiveGraphs.NormalGraph ι) (A : Ty ι) : Bool :=
+@[nospecialize] private def admitsUndefined (G : PositiveGraphs.NormalGraph ι) (A : Ty ι) : Bool :=
   (PositiveRules.expand G A).any fun
     | .undef | .top => true
     | _ => false
@@ -1349,7 +1349,7 @@ arguments written, or a longer one whose remaining positions admit `undefined`.
 An exact signature is preferred, then one covering every actual type. No actual
 is invented for an omitted position; the call term keeps the arguments the
 source writes. -/
-private def selectSignature (G : PositiveGraphs.NormalGraph ι) (L : PositiveRules.Ops ι) (As : List (Ty ι))
+@[nospecialize] private def selectSignature (G : PositiveGraphs.NormalGraph ι) (L : PositiveRules.Ops ι) (As : List (Ty ι))
     (Rr : Ty ι := [Labels.undef]) :
     Except String (Arrow (Ty ι)) := do
   let covers (p : Arrow (Ty ι)) :=
@@ -1367,28 +1367,28 @@ private def selectSignature (G : PositiveGraphs.NormalGraph ι) (L : PositiveRul
   return p
 
 /-- A list `.apply` reads no element of: every member null or undefined. -/
-private def nullishList (G : PositiveGraphs.NormalGraph ι) (T : Ty ι) : Bool :=
+@[nospecialize] private def nullishList (G : PositiveGraphs.NormalGraph ι) (T : Ty ι) : Bool :=
   !T.isEmpty && (PositiveRules.expand G T).all fun
     | .nul | .undef => true
     | _ => false
 
 /-- A plain call passes `undefined` as its receiver: the premise proves it at
 the selected signature's receiver contract. -/
-private def plainReceiver (Γ : List (Ty ι)) (Rt : Ty ι) : DirectProof.Plan ι :=
+@[nospecialize] private def plainReceiver (Γ : List (Ty ι)) (Rt : Ty ι) : DirectProof.Plan ι :=
   DirectProof.cast Γ Rt (DirectProof.node Γ .undef [Labels.undef] .undef)
 
 /-- One premise per position the selected signature declares and the call
 omits, each proving `undefined` at that position's contract. -/
-private def omittedPremises (Γ : List (Ty ι)) (Ds : List (Ty ι)) (supplied : Nat) :
+@[nospecialize] private def omittedPremises (Γ : List (Ty ι)) (Ds : List (Ty ι)) (supplied : Nat) :
     List (DirectProof.Plan ι) :=
   (Ds.drop supplied).map fun D =>
     DirectProof.cast Γ D (DirectProof.node Γ .undef [Labels.undef] .undef)
 
 /-- Nest saved operand plans in their original evaluation order. -/
-private def saveOperands (ps : List (DirectProof.Plan ι)) (body : DirectProof.Plan ι) : DirectProof.Plan ι :=
+@[nospecialize] private def saveOperands (ps : List (DirectProof.Plan ι)) (body : DirectProof.Plan ι) : DirectProof.Plan ι :=
   ps.foldr (fun p b => DirectProof.letE p.goal.context p b) body
 
-private def allocationChildren : DirectProof.Plan ι → Option (List (DirectProof.Plan ι))
+@[nospecialize] private def allocationChildren : DirectProof.Plan ι → Option (List (DirectProof.Plan ι))
   | .cast _ p => allocationChildren p
   | .rule _ .alloc ps => some ps
   | _ => none
@@ -1396,7 +1396,7 @@ private def allocationChildren : DirectProof.Plan ι → Option (List (DirectPro
 /-- A method call's head: a host-relative member is read from the object in a
 slot and bound to that same object (`bindMember`), before any actual runs; any
 other member is read as a field. -/
-def memberHead (G : PositiveGraphs.NormalGraph ι) (O : Ty ι) (fld : PropKey) (obj : Tm) : Tm :=
+@[nospecialize] def memberHead (G : PositiveGraphs.NormalGraph ι) (O : Ty ι) (fld : PropKey) (obj : Tm) : Tm :=
   match obj, (ProgramTyping.memberOf G O fld).isSome with
   | .var i, true => .letE (.readAt fld (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])
   | _, _ => .readAt fld obj
@@ -1404,7 +1404,7 @@ def memberHead (G : PositiveGraphs.NormalGraph ι) (O : Ty ι) (fld : PropKey) (
 /-- The row a field read gives before any claim replaces it: the object's own
 field or view, or, for a key an own-key bound does not admit, its prototype's, as
 `readCell` and the top level's search read it. -/
-private def fieldRow (G : PositiveGraphs.NormalGraph ι) (O : Ty ι) (fld : PropKey) :
+@[nospecialize] private def fieldRow (G : PositiveGraphs.NormalGraph ι) (O : Ty ι) (fld : PropKey) :
     Option (Ty ι) :=
   match PositiveRules.expand G O with
   | [.refs fs [] vs _ _ ks] => fs.lookup fld <|> vs.lookup fld <|> do
@@ -1423,7 +1423,7 @@ of the same meaning as `A₁,…,Aₖ`. The binders past them are the ones the
 call's receiver and actuals fix, as for a call without type arguments. The
 check only refuses: acceptance still rests on the read's own `inst` proof and
 the call's typing. -/
-private def explicitInstance (pos : Span) (O M : Ty ι) (fld : PropKey) (typeArgs : List Json) :
+@[nospecialize] private def explicitInstance (pos : Span) (O M : Ty ι) (fld : PropKey) (typeArgs : List Json) :
     Compiler σ ι Unit := do
   if typeArgs.isEmpty then return
   let args ← typeArgs.mapM fun t => lower (Fragment.translate t)
@@ -1450,7 +1450,7 @@ private def explicitInstance (pos : Span) (O M : Ty ι) (fld : PropKey) (typeArg
 cast to the bound: the row holding exactly the meet's clauses, which the meet
 is below (`PositiveRules.meetSources`). A member read through the binder reads
 the bound's member. Any other plan is itself. -/
-private def throughBound (Γ : List (Ty ι)) (a : DirectProof.Plan ι) : Compiler σ ι (DirectProof.Plan ι) := do
+@[nospecialize] private def throughBound (Γ : List (Ty ι)) (a : DirectProof.Plan ι) : Compiler σ ι (DirectProof.Plan ι) := do
   let T ← table
   let [l] := a.type | return a
   let .meet _ cs _ := StoreView.row T l | return a
@@ -1460,7 +1460,7 @@ private def throughBound (Γ : List (Ty ι)) (a : DirectProof.Plan ι) : Compile
 
 /-- Read a field from a cell plan under context `Γ`: one contract, a callable
 bag, or an explicit union of cell contracts each naming the field. -/
-private partial def readCell (G : PositiveGraphs.NormalGraph ι) (Γ : List (Ty ι)) (fld : PropKey)
+@[nospecialize] private partial def readCell (G : PositiveGraphs.NormalGraph ι) (Γ : List (Ty ι)) (fld : PropKey)
     (a : DirectProof.Plan ι) : Compiler σ ι (DirectProof.Plan ι) := do
   match PositiveRules.expand G a.type with
   | [.refs fs [] vs os _ ks] =>
@@ -1517,7 +1517,7 @@ private inductive PrimitiveArm (ι : Type) where
 /-- The shapes a member read of `O` dispatches on: each primitive shape among
 `O`'s clauses, with the arm that reads it (`ToObject`'s wrapper, whose
 prototype is the realm's). An object shape needs none. -/
-private def primitiveArms (scope : List (ScopeBinding ι)) (K : List (Ty ι)) (O : Ty ι)
+@[nospecialize] private def primitiveArms (scope : List (ScopeBinding ι)) (K : List (Ty ι)) (O : Ty ι)
     (fld : PropKey) : Compiler σ ι (List (Tag × (PrimitiveArm ι))) := do
   let G := SourceTypes.graph (← table)
   let shapeOf (c : PositiveNormalization.Clause (Ty ι)) : Option Tag := match c with
@@ -1539,7 +1539,7 @@ private def primitiveArms (scope : List (ScopeBinding ι)) (K : List (Ty ι)) (O
     return (tag, .proto p P [R])
 
 /-- One arm's read of slot `o`. -/
-private def PrimitiveArm.term (fld : PropKey) (o : Nat) : PrimitiveArm ι → Tm
+@[nospecialize] private def PrimitiveArm.term (fld : PropKey) (o : Nat) : PrimitiveArm ι → Tm
   | .length => .lenOf (.var o)
   | .proto p _ _ => .readAt fld (.makeAt .absent [SourceTypes.protoField] [.var p])
 
@@ -1548,7 +1548,7 @@ shape selecting its arm, then the object read. Each arm is JavaScript's read
 for values of its shape, and the object read is its read for an object; a
 value of a shape no arm names reaches the object read, where a primitive is
 stuck, never misread. -/
-private def dispatchTerm (arms : List (Tag × (PrimitiveArm ι))) (fld : PropKey) (o : Nat) (object : Tm) : Tm :=
+@[nospecialize] private def dispatchTerm (arms : List (Tag × (PrimitiveArm ι))) (fld : PropKey) (o : Nat) (object : Tm) : Tm :=
   arms.foldr (fun (tag, arm) rest => .ite (.test tag (.var o)) (arm.term fld o) rest) object
 
 /-- `x.k(a…)` with `x` in slot `o` of a union type and the actuals `args`
@@ -1556,7 +1556,7 @@ already evaluated: per shape of `x`, as `dispatchTerm` reads it, the member
 that shape reads, invoked with `x` as its receiver. An object's member is
 bound to it (`memberHead`) where every object alternative holds `k` as a
 member, and read as a field otherwise. -/
-private def dispatchCallTerm (G : PositiveGraphs.NormalGraph ι) (O : Ty ι)
+@[nospecialize] private def dispatchCallTerm (G : PositiveGraphs.NormalGraph ι) (O : Ty ι)
     (arms : List (Tag × (PrimitiveArm ι))) (fld : PropKey) (o : Nat) (args : List Tm) : Tm :=
   let objects := O.filter fun l => arms.all fun (tag, _) => !decide (Answers G [l] tag true)
   let member := !objects.isEmpty &&
@@ -1571,7 +1571,7 @@ private def dispatchCallTerm (G : PositiveGraphs.NormalGraph ι) (O : Ty ι)
 /-- The member read of slot `o` of `K` at `A`, planned per label of the slot:
 a primitive's label selects its arm by its known shape answers, and any other
 is read as an object (`readCell`). -/
-private def memberReadPlan (G : PositiveGraphs.NormalGraph ι) (K : List (Ty ι)) (o : Nat)
+@[nospecialize] private def memberReadPlan (G : PositiveGraphs.NormalGraph ι) (K : List (Ty ι)) (o : Nat)
     (fld : PropKey) (A : Ty ι) (arms : List (Tag × (PrimitiveArm ι))) : Compiler σ ι (DirectProof.Plan ι) := do
   let some O := K[o]? | throw "internal member receiver slot mismatch"
   let N : Ty ι := [← lower (SourceTypes.use .num)]
@@ -1601,7 +1601,7 @@ private def memberReadPlan (G : PositiveGraphs.NormalGraph ι) (K : List (Ty ι)
 
 /-- The write node under context `H`, with the value in slot 0 and the
 receiver, claimed at `B`, in slot `ri`. -/
-private def writeCell (G : PositiveGraphs.NormalGraph ι) (H : List (Ty ι)) (fld : PropKey)
+@[nospecialize] private def writeCell (G : PositiveGraphs.NormalGraph ι) (H : List (Ty ι)) (fld : PropKey)
     (B C : Ty ι) (ri : Nat) : Compiler σ ι (DirectProof.Plan ι) := do
   let term := Tm.writeAt fld (.var ri) (.var 0)
   match PositiveRules.expand G B with
@@ -1628,7 +1628,7 @@ private def writeCell (G : PositiveGraphs.NormalGraph ι) (H : List (Ty ι)) (fl
 /-- Whether a write of `fld` to an object of type `B` may add the key: some
 plain-object clause states it neither as a field, a view nor a method, and
 none as a readonly optional field, which grants no write. -/
-private def mayLack (G : PositiveGraphs.NormalGraph ι) (B : Ty ι) (fld : PropKey) : Bool :=
+@[nospecialize] private def mayLack (G : PositiveGraphs.NormalGraph ι) (B : Ty ι) (fld : PropKey) : Bool :=
   let cs := PositiveRules.expand G B
   let optionalView := fun (os : List (OptionalField (Ty ι))) => os.any fun o => o.key == fld && o.readonly
   cs.any (fun c => match c with
@@ -1643,7 +1643,7 @@ private def mayLack (G : PositiveGraphs.NormalGraph ι) (B : Ty ι) (fld : PropK
 source's `__proto__` on its target through the prototype's setter, which
 replaces the prototype rather than adds the key a copy would. Each clause
 gives no key (`srcOf`), or a key bound excludes it. -/
-private def ownsNoProto (G : PositiveGraphs.NormalGraph ι) (S : Ty ι) : Bool :=
+@[nospecialize] private def ownsNoProto (G : PositiveGraphs.NormalGraph ι) (S : Ty ι) : Bool :=
   (PositiveRules.expand G S).all fun c => match ObjectMerge.srcOf c with
     | some sb => sb.never [] (.str "__proto__")
     | none => false
@@ -1653,7 +1653,7 @@ receiver's claimed type may lack `k`. On an owned local (`growSites`) it is
 the copy of the object with the key, rebound to the local's slot, returned
 with the parts the write evaluates; any other such write is refused, since
 another reference may hold the object and see its keys change. -/
-private def growingWrite (fc : SourceClaims.Function ι) (scope : List (ScopeBinding ι)) (e : Fragment.Expr) :
+@[nospecialize] private def growingWrite (fc : SourceClaims.Function ι) (scope : List (ScopeBinding ι)) (e : Fragment.Expr) :
     Compiler σ ι (Option (Nat × Fragment.Expr × PropKey × Option Fragment.Expr × Fragment.Expr)) := do
   let (receiver, fld, key, rhs) ← match e with
     | .write _ fld receiver rhs => pure (receiver, fld, none, rhs)
@@ -1680,7 +1680,7 @@ private def growingWrite (fc : SourceClaims.Function ι) (scope : List (ScopeBin
 /-- The element at literal index `b` of the array `r` reads under `H`, from
 its store: a required position at its type, an optional or rest position at
 its type or `undefined`. -/
-private def elemReadPlan (G : PositiveGraphs.NormalGraph ι) (H : List (Ty ι))
+@[nospecialize] private def elemReadPlan (G : PositiveGraphs.NormalGraph ι) (H : List (Ty ι))
     (r : DirectProof.Plan ι) (b : UInt64) : Compiler σ ι (DirectProof.Plan ι) := do
   let I : Ty ι := [← lower (SourceTypes.use (.numLit b))]
   let store ← readCell G H SourceTypes.storeField r
@@ -1698,7 +1698,7 @@ is gated until the export can identify hidden bindings independently. With no
 continuation the body completes rather than returns, producing `undefined`; that
 is emitted as an exit claiming the declared result, attributed to the function
 because an empty body has no statement to point at. -/
-private def leave (pos : Span) (R : Ty ι) (scope : List (ScopeBinding ι))
+@[nospecialize] private def leave (pos : Span) (R : Ty ι) (scope : List (ScopeBinding ι))
     (tail : Option (Target × List (ScopeBinding ι))) : Compiler σ ι Target := do
   match tail with
   | none =>
@@ -1723,7 +1723,7 @@ private def branchMapping (width : Nat) (tested : Option Nat) (target : Target) 
 /-- Keep a pre-existing singleton fact rather than replacing it with the
 branch witness. In particular, an impossible opposite edge must not force a
 contradictory replacement of an otherwise valid immutable binding. -/
-private def testedSlot (scope : List (ScopeBinding ι)) (Γ : List (Ty ι)) (cond : Fragment.Expr) : Option Nat :=
+@[nospecialize] private def testedSlot (scope : List (ScopeBinding ι)) (Γ : List (Ty ι)) (cond : Fragment.Expr) : Option Nat :=
   do
     let (i, _) ← conditionVariable scope cond
     if Γ[i]? == some [Labels.tru] || Γ[i]? == some [Labels.fls] then none else some i
@@ -1731,7 +1731,7 @@ private def testedSlot (scope : List (ScopeBinding ι)) (Γ : List (Ty ι)) (con
 /-- Share polarity handling between conditionals and loop heads. The saved
 condition is in slot zero. Only a syntactically identified immutable variable
 may be replaced by the recovered Boolean witness. -/
-private def emitBranch (scope : List (ScopeBinding ι)) (Γ : List (Ty ι)) (cond : Fragment.Expr)
+@[nospecialize] private def emitBranch (scope : List (ScopeBinding ι)) (Γ : List (Ty ι)) (cond : Fragment.Expr)
     (A : Ty ι) (yes no : Target) : Compiler σ ι Target := do
   let G := SourceTypes.graph (← table)
   if let some (i, tag, equal) := conditionTag G scope Γ cond then
@@ -1765,7 +1765,7 @@ private def emitBranch (scope : List (ScopeBinding ι)) (Γ : List (Ty ι)) (con
 source bindings are refined; every generated edge checks this candidate context.
 A true conjunction / false disjunction establishes both operand outcomes. The
 other outcomes deliberately retain the input context rather than compute a join. -/
-private def conditionContext (G : PositiveGraphs.NormalGraph ι) (scope : List (ScopeBinding ι)) (Γ : List (Ty ι))
+@[nospecialize] private def conditionContext (G : PositiveGraphs.NormalGraph ι) (scope : List (ScopeBinding ι)) (Γ : List (Ty ι))
     (cond : Fragment.Expr) (answer : Bool) : List (Ty ι) :=
   match cond with
   | .not _ e => conditionContext G scope Γ e (!answer)
@@ -1804,7 +1804,7 @@ checks a statement entry's claims (a slice by the test, a field slice, a
 present key); the others, the condition's own refinement. A binding at a
 scheme row keeps it: no test narrows a scheme, and a call reads it at the
 instance it names, not the binding. -/
-private def armContext (fc : SourceClaims.Function ι) (scope : List (ScopeBinding ι))
+@[nospecialize] private def armContext (fc : SourceClaims.Function ι) (scope : List (ScopeBinding ι))
     (Γ : List (Ty ι)) (arm : Fragment.Expr) : Compiler σ ι (List (Ty ι)) := do
   let G := SourceTypes.graph (← table)
   scope.zipIdx.foldlM (fun Δ (b,i) => do
@@ -1824,7 +1824,7 @@ length is exact (`listT`); an array of any other length has a slice of
 unknown length for its rest, which no list of reads is. The array is claimed
 at the rest's span, like an array literal. The store's term, the store's
 type and the array's claimed type. -/
-private def restArray (fc : SourceClaims.Function ι) (A : Ty ι) (obj start : Nat) (restPos : Span) :
+@[nospecialize] private def restArray (fc : SourceClaims.Function ι) (A : Ty ι) (obj start : Nat) (restPos : Span) :
     Compiler σ ι (Tm × Ty ι × Ty ι) := do
   let G := SourceTypes.graph (← table)
   let some S := storeOf G A | throw "an array rest needs one array contract: over a union of arrays of different lengths its rest is a slice of a length known only at run time"
@@ -1841,7 +1841,7 @@ private def restArray (fc : SourceClaims.Function ι) (A : Ty ι) (obj start : N
 rest's index, on the array at slot `obj`, after the pattern's reads and
 defaults (`Fragment.restFromName`). The array is claimed at the rest's span
 with the call's instance. -/
-private def sliceCall (scope : List (ScopeBinding ι)) (obj k : Nat) : Except String Tm := do
+@[nospecialize] private def sliceCall (scope : List (ScopeBinding ι)) (obj k : Nat) : Except String Tm := do
   let some (i, _) := resolve scope (Fragment.restFromName k)
     | throw "internal extraction error: a slice rest without its intrinsic"
   return Tm.call (.var i) [.var obj]
@@ -1850,7 +1850,7 @@ private def sliceCall (scope : List (ScopeBinding ι)) (obj k : Nat) : Except St
 required position reads at its type, an optional or rest position at its type
 or `undefined`, and a position no contract names is refused. A union of
 array contracts reads at the union of their positions. -/
-private def positionRead (G : PositiveGraphs.NormalGraph ι) (A : Ty ι) (i : Nat) :
+@[nospecialize] private def positionRead (G : PositiveGraphs.NormalGraph ι) (A : Ty ι) (i : Nat) :
     Compiler σ ι (Ty ι) := do
   -- The index is a literal of the read, typed at its singleton; the producer
   -- finds that singleton among the request's types.
@@ -1883,7 +1883,7 @@ read without effect (a name, or a field of a name), one of them claimed at a
 union of singletons, dispatches as the tag tests it amounts to: the split
 operand, the other operand, and the split operand's singletons. An immutable
 name is split first, as before; otherwise a field read. -/
-private def equalitySplit (fc : SourceClaims.Function ι) (scope : List (ScopeBinding ι)) (Γ : List (Ty ι))
+@[nospecialize] private def equalitySplit (fc : SourceClaims.Function ι) (scope : List (ScopeBinding ι)) (Γ : List (Ty ι))
     (l r : Fragment.Expr) :
     Compiler σ ι (Option (SplitOperand × SplitOperand × List Tag)) := do
   let G := SourceTypes.graph (← table)
@@ -1910,7 +1910,7 @@ private def equalitySplit (fc : SourceClaims.Function ι) (scope : List (ScopeBi
 without effect (a call, say) claimed at a union of singletons: the operand is
 evaluated once, into a slot of its own, and split there; the name, which no
 effect changes, is the other operand. -/
-private def savedSplit (fc : SourceClaims.Function ι) (scope : List (ScopeBinding ι))
+@[nospecialize] private def savedSplit (fc : SourceClaims.Function ι) (scope : List (ScopeBinding ι))
     (l r : Fragment.Expr) : Compiler σ ι (Option (Nat × Fragment.Expr × Fragment.Expr × List Tag)) := do
   let G := SourceTypes.graph (← table)
   let attempt := fun (n e : Fragment.Expr) => do
@@ -1970,18 +1970,18 @@ private partial def abrupt (ss : List Fragment.Stmt) : Bool :=
   | _ => false
 
 /-- Entering a loop: its targets, behind as many `finally` blocks as now. -/
-private def LoopTargets.enterLoop (t : LoopTargets ι)
+@[nospecialize] private def LoopTargets.enterLoop (t : LoopTargets ι)
     (l : (Target × List (ScopeBinding ι)) × Option (Target × List (ScopeBinding ι))) : LoopTargets ι :=
   { t with loop := some l, loopDepth := t.finalizers.length }
 
 /-- Entering a labeled block, likewise. -/
-private def LoopTargets.enterLabel (t : LoopTargets ι) (label : String)
+@[nospecialize] private def LoopTargets.enterLabel (t : LoopTargets ι) (label : String)
     (done : Option (Target × List (ScopeBinding ι))) : LoopTargets ι :=
   { t with labels := (label, done) :: t.labels,
            labelDepths := (label, t.finalizers.length) :: t.labelDepths }
 
 /-- Compile with `h` as the handler of every node emitted. -/
-private def withHandler (h : Option (Target × Nat)) (act : Compiler σ ι α) : Compiler σ ι α := do
+@[nospecialize] private def withHandler (h : Option (Target × Nat)) (act : Compiler σ ι α) : Compiler σ ι α := do
   let saved := (← get).handler
   modify fun s => { s with handler := h }
   let r ← act
@@ -1991,7 +1991,7 @@ private def withHandler (h : Option (Target × Nat)) (act : Compiler σ ι α) :
 /-- A jump from `scope` to a target over `targetScope`: the target's slots,
 read through its own mapping, found in `scope` by descriptor, else by name
 (an anonymous slot has no name of its own to be found by). -/
-private def jumpTo (scope : List (ScopeBinding ι)) (target : Target) (targetScope : List (ScopeBinding ι)) :
+@[nospecialize] private def jumpTo (scope : List (ScopeBinding ι)) (target : Target) (targetScope : List (ScopeBinding ι)) :
     Compiler σ ι Target := do
   let slots ← targetScope.mapM fun b =>
     match (sources scope).idxOf? b.source, (names scope).idxOf? b.source.name with
@@ -2009,7 +2009,7 @@ private partial def firstEntry : List Fragment.Stmt → Option Nat
 
 /-- The same continuation with slot `k` of its scope and context removed:
 what follows a pattern no longer holds the value it destructured. -/
-private def dropSlot (k : Nat) (after : List (ScopeBinding ι) → List (Ty ι) → Compiler σ ι Target)
+@[nospecialize] private def dropSlot (k : Nat) (after : List (ScopeBinding ι) → List (Ty ι) → Compiler σ ι Target)
     (scope : List (ScopeBinding ι)) (Γ : List (Ty ι)) : Compiler σ ι Target := do
   let next ← after (scope.eraseIdx k) (Γ.eraseIdx k)
   pure ⟨next.label, some ((next.mapping.getD (List.range (Γ.length-1))).map
@@ -2051,7 +2051,7 @@ private inductive RestEntry (ι : Type) where
   as parameters at `elements`: the store of them at `S`, the array at `array`. -/
   | tuple (elements : List (Ty ι)) (S array : Ty ι)
 
-private def RestEntry.array : RestEntry ι → Ty ι
+@[nospecialize] private def RestEntry.array : RestEntry ι → Ty ι
   | .store _ a | .tuple _ _ a => a
 
 /-- Which signatures a lambda's code is checked at (`lambdaCode`): a
@@ -2075,14 +2075,14 @@ private structure LambdaCode (ι : Type) where
   arrays : List (Ty ι)
   type : Ty ι
 
-private def LambdaCode.code (c : LambdaCode ι) (kind : Verification.Model.Invoke) : CallCode :=
+@[nospecialize] private def LambdaCode.code (c : LambdaCode ι) (kind : Verification.Model.Invoke) : CallCode :=
   .graph c.arity c.exprs c.conts c.start (c.captures.map fun (_, i) => .var i) kind c.rest
 
-private def LambdaCode.capturePlans (c : LambdaCode ι) (Γ : List (Ty ι)) : List (DirectProof.Plan ι) :=
+@[nospecialize] private def LambdaCode.capturePlans (c : LambdaCode ι) (Γ : List (Ty ι)) : List (DirectProof.Plan ι) :=
   c.captures.map fun (C, i) => DirectProof.var Γ i C
 
 /-- A source-level refusal from a pure pass, in the compiler. -/
-private def liftSource (x : Except String α) : Compiler σ ι α :=
+@[nospecialize] private def liftSource (x : Except String α) : Compiler σ ι α :=
   match x with
   | .ok a => pure a
   | .error e => throw e
@@ -2094,7 +2094,7 @@ read and the `return`'s span. The saved read can stand for the returned one:
 between the two nothing runs (the other operand is a literal, a name or a
 field read), so both read the same value. Only a tag test, which refines the
 saved slot on its edge, and a slice within the returned read's own claim. -/
-private def guardedReturn (fc : SourceClaims.Function ι) (scope : List (ScopeBinding ι))
+@[nospecialize] private def guardedReturn (fc : SourceClaims.Function ι) (scope : List (ScopeBinding ι))
     (Γ : List (Ty ι)) (cond : Fragment.Expr) (thn : List Fragment.Stmt) (loopTargets : LoopTargets ι) :
     Compiler σ ι (Option (List (ScopeBinding ι) × List (Ty ι) × Fragment.Expr × Fragment.Expr ×
       Fragment.Expr × Span)) := do
@@ -2144,7 +2144,7 @@ passes (`ctor`); or an annotation's arrows, a callable object's (`annotated`).
 Code collecting an array rest offers its own variadic signature, at the
 source's annotations, which the claim is reached from by subtyping; or a
 scheme row's variadic signatures. -/
-private def lambdaSetup (fc : SourceClaims.Function ι) (scope : List (ScopeBinding ι))
+@[nospecialize] private def lambdaSetup (fc : SourceClaims.Function ι) (scope : List (ScopeBinding ι))
     (Γ : List (Ty ι)) (lam : Fragment.Expr) (A : Ty ι) (mode : CodeMode ι) :
     Compiler σ ι (LambdaSetup ι) := do
   let .lambda pos receiverAnnot typeParams params defaults hasRest ret body := lam
@@ -2307,7 +2307,7 @@ slot where the schedule reaches it; a defaulted one's slot is read, tested for
 that the parameter names (`readWithDefault`), as a function's default is.
 `pushed` counts the slots the schedule has bound so far, above the layout. `k`
 compiles the body. -/
-private partial def defaultEntry (fc : SourceClaims.Function ι) (pos : Span)
+@[nospecialize] private partial def defaultEntry (fc : SourceClaims.Function ι) (pos : Span)
     (params : List (String × Ty ι)) (defaults : List (Nat × Fragment.Expr))
     (k : List (ScopeBinding ι) → List (Ty ι) → Compiler σ ι Target) :
     List Nat → Nat → List (ScopeBinding ι) → List (Ty ι) → Compiler σ ι Target
@@ -2336,7 +2336,7 @@ function's rest array is at its entry; an expression body's defaults
 (`defaultEntry`; a block body's are its first statements already); and a
 private cell for each parameter the body assigns. The unit's program and its
 state resume afterwards. -/
-private partial def closureCode (fc : SourceClaims.Function ι) (pos : Span) (receiver : ScopeBinding ι)
+@[nospecialize] private partial def closureCode (fc : SourceClaims.Function ι) (pos : Span) (receiver : ScopeBinding ι)
     (params : List (String × Ty ι)) (rest : Option (String × (RestEntry ι)))
     (defaults : List (Nat × Fragment.Expr)) (order : List Nat)
     (captures : List (ScopeBinding ι)) (Cs : List (Ty ι)) (Rt R : Ty ι) (bodyExpr : Fragment.Expr) :
@@ -2437,7 +2437,7 @@ private partial def closureCode (fc : SourceClaims.Function ι) (pos : Span) (re
 /-- **A lambda's graph code**, checked at each signature `lambdaSetup` finds:
 one code request per signature, the graph `closureCode` compiles from that
 signature's frame, whose certificate the unit's code table records. -/
-private partial def lambdaCode (fc : SourceClaims.Function ι) (scope : List (ScopeBinding ι))
+@[nospecialize] private partial def lambdaCode (fc : SourceClaims.Function ι) (scope : List (ScopeBinding ι))
     (Γ : List (Ty ι)) (lam : Fragment.Expr) (A : Ty ι) (mode : CodeMode ι) :
     Compiler σ ι (LambdaCode ι) := do
   let s ← lambdaSetup fc scope Γ lam A mode
@@ -2475,7 +2475,7 @@ private partial def lambdaCode (fc : SourceClaims.Function ι) (scope : List (Sc
 
 /-- **A closure whose body is a graph** (`Rule.funGraph`): the allocation of its
 code (`lambdaCode`) with the captured slots. -/
-private partial def graphClosure (fc : SourceClaims.Function ι) (scope : List (ScopeBinding ι))
+@[nospecialize] private partial def graphClosure (fc : SourceClaims.Function ι) (scope : List (ScopeBinding ι))
     (Γ : List (Ty ι)) (lam : Fragment.Expr) (A : Ty ι) : Compiler σ ι (DirectProof.Plan ι) := do
   let c ← lambdaCode fc scope Γ lam A .fn
   pure (DirectProof.node Γ (Tm.make (c.code .call) .nul) c.type (.funGraph c.arrays) (c.capturePlans Γ))
@@ -2484,7 +2484,7 @@ private partial def graphClosure (fc : SourceClaims.Function ι) (scope : List (
 /-- Build compositional proofs for lambda bodies and source ternaries without
 losing their individual claims. Requirements use the lexical context at the occurrence; synthetic let
 slots are introduced only after the operand supplying their type is checked. -/
-private partial def closureExpr (fc : SourceClaims.Function ι) (scope : List (ScopeBinding ι)) (Γ : List (Ty ι))
+@[nospecialize] private partial def closureExpr (fc : SourceClaims.Function ι) (scope : List (ScopeBinding ι)) (Γ : List (Ty ι))
     (e : Fragment.Expr) : Compiler σ ι (DirectProof.Plan ι) := do
   -- `(a && b) && c` is `a && (b && c)`, and `||` likewise: JavaScript
   -- evaluates the operands in the same order and yields the same value either
@@ -3225,7 +3225,7 @@ private partial def closureExpr (fc : SourceClaims.Function ι) (scope : List (S
 /-- Each expression leaves its result in slot zero and preserves the original
 slots after it. Anonymous temporary slots cannot be named by source identifiers.
 Mappings discard only the temporaries introduced by this expression. -/
-private partial def compileExpr (fc : SourceClaims.Function ι) (scope : List (ScopeBinding ι)) (Γ : List (Ty ι))
+@[nospecialize] private partial def compileExpr (fc : SourceClaims.Function ι) (scope : List (ScopeBinding ι)) (Γ : List (Ty ι))
     (e : Fragment.Expr) (next : Target) : Compiler σ ι Target := do
   let A ← exprType fc e
   let next ← match fc.exprCurrent.lookup e.span with
@@ -4150,7 +4150,7 @@ then each source, each copied onto what is built so far as soon as it is
 evaluated (`Tm.merge`), as an object literal's spreads are; a source that may
 own `__proto__` is refused. `finish` continues from the context holding the
 result first. -/
-private partial def compileAssign (fc : SourceClaims.Function ι) (scope : List (ScopeBinding ι))
+@[nospecialize] private partial def compileAssign (fc : SourceClaims.Function ι) (scope : List (ScopeBinding ι))
     (Γ : List (Ty ι)) (pos : Span) (target : Fragment.Expr) (sources : List Fragment.Expr)
     (finish : List (Ty ι) → List (ScopeBinding ι) → Compiler σ ι Target) : Compiler σ ι Target := do
   let G := SourceTypes.graph (← table)
@@ -4179,7 +4179,7 @@ private partial def compileAssign (fc : SourceClaims.Function ι) (scope : List 
 /-- Compile compound conditions as short-circuit edges. The full source
 expression still has an independent claimed typing obligation; the runtime
 traverses its operands once instead of evaluating it and then replaying it. -/
-private partial def compileCondition (fc : SourceClaims.Function ι) (scope : List (ScopeBinding ι))
+@[nospecialize] private partial def compileCondition (fc : SourceClaims.Function ι) (scope : List (ScopeBinding ι))
     (Γ : List (Ty ι)) (cond : Fragment.Expr) (yes no : Target) : Compiler σ ι Target := do
   let simple := do
     let A ← exprType fc cond
@@ -4309,7 +4309,7 @@ undefined: the default is compiled only on that arm, the defined slice of the
 read is the other, and both arms join at a node typed by their union, which
 every incoming edge must establish. `next` compiles what follows, given the
 type the binding holds. -/
-private partial def readWithDefault (fc : SourceClaims.Function ι) (pos namePos : Span) (term : Tm)
+@[nospecialize] private partial def readWithDefault (fc : SourceClaims.Function ι) (pos namePos : Span) (term : Tm)
     (R : Ty ι) (default_ : Option Fragment.Expr) (bound : ScopeBinding ι)
     (scope : List (ScopeBinding ι)) (Γ : List (Ty ι)) (next : Ty ι → Compiler σ ι Target) :
     Compiler σ ι Target := do
@@ -4343,7 +4343,7 @@ private partial def readWithDefault (fc : SourceClaims.Function ι) (pos namePos
 side held at slot `obj`: each position is read, defaulted, and written to its
 mutable local, whose storage contract the write must meet. `after` compiles
 what follows, under the environment the reads started from. -/
-private partial def arrayAssigns (fc : SourceClaims.Function ι) (pos : Span) (A : Ty ι)
+@[nospecialize] private partial def arrayAssigns (fc : SourceClaims.Function ι) (pos : Span) (A : Ty ι)
     (rest : Option (Span × Bool × Fragment.ArrayElem Fragment.Expr)) (after : Target) :
     List (ScopeBinding ι) → List (Ty ι) → Nat → List (Fragment.ArrayElem Fragment.Expr) → Compiler σ ι Target
   | scope, Γ, obj, [] => do
@@ -4389,7 +4389,7 @@ replacing it where it is undefined (`readWithDefault`): a name binds it; a
 nested pattern holds it in an anonymous slot, destructures it, and drops it.
 `after` compiles what follows, given the scope and context with the
 pattern's bindings added, innermost first. -/
-private partial def bindTarget (fc : SourceClaims.Function ι) (pos : Span)
+@[nospecialize] private partial def bindTarget (fc : SourceClaims.Function ι) (pos : Span)
     (target : Fragment.Pattern Fragment.Expr) (term : Tm) (R : Ty ι) (default_ : Option Fragment.Expr)
     (scope : List (ScopeBinding ι)) (Γ : List (Ty ι))
     (after : List (ScopeBinding ι) → List (Ty ι) → Compiler σ ι Target) : Compiler σ ι Target := do
@@ -4415,7 +4415,7 @@ here. A rest collects the positions after the elements into a fresh array,
 where the source is a tuple of required positions: that array is a literal of
 reads, claimed at the rest's span like an array literal. `after` compiles what
 follows, the value's slot still held below the new bindings. -/
-private partial def destructureAt (fc : SourceClaims.Function ι) (pos : Span)
+@[nospecialize] private partial def destructureAt (fc : SourceClaims.Function ι) (pos : Span)
     (target : Fragment.Pattern Fragment.Expr) (scope : List (ScopeBinding ι)) (Γ : List (Ty ι)) (obj : Nat)
     (after : List (ScopeBinding ι) → List (Ty ι) → Compiler σ ι Target) : Compiler σ ι Target := do
   let some A := Γ[obj]? | throw "internal pattern slot mismatch"
@@ -4475,7 +4475,7 @@ private partial def destructureAt (fc : SourceClaims.Function ι) (pos : Span)
 the producer states for the statement: each initializer is compiled in the
 scope the earlier bindings extend, and no cut separates them, because the
 producer states none. `after` compiles what follows the whole statement. -/
-private partial def constants (fc : SourceClaims.Function ι) (pos : Span)
+@[nospecialize] private partial def constants (fc : SourceClaims.Function ι) (pos : Span)
     (after : List (ScopeBinding ι) → Compiler σ ι Target) :
     List (ScopeBinding ι) → List (Ty ι) → List Fragment.Binding → Compiler σ ι Target
   | scope, _, [] => after scope
@@ -4495,7 +4495,7 @@ private partial def constants (fc : SourceClaims.Function ι) (pos : Span)
 same left-to-right order under the statement's one entry. An unannotated
 binding's contract is read at `next`, the entry of the statement that follows
 the whole list: the first place every binding of the list stands in scope. -/
-private partial def mutables (fc : SourceClaims.Function ι) (pos : Span) (next : Option Nat)
+@[nospecialize] private partial def mutables (fc : SourceClaims.Function ι) (pos : Span) (next : Option Nat)
     (after : List (ScopeBinding ι) → Compiler σ ι Target) :
     List (ScopeBinding ι) → List (Ty ι) → List Fragment.Binding → Compiler σ ι Target
   | scope, _, [] => after scope
@@ -4542,7 +4542,7 @@ private partial def mutables (fc : SourceClaims.Function ι) (pos : Span) (next 
 /-- Compile the continuation once, then point both arms at it. Allocation order
 is intentionally independent of source order; `start` records the real entry.
 Fuel bounds structural traversal, not execution or certificate search. -/
-private partial def body : Nat → SourceClaims.Function ι → Ty ι → List (ScopeBinding ι) → List Fragment.Stmt →
+@[nospecialize] private partial def body : Nat → SourceClaims.Function ι → Ty ι → List (ScopeBinding ι) → List Fragment.Stmt →
     Option (Target × List (ScopeBinding ι)) → LoopTargets ι → Compiler σ ι Target
   | 0, _, _, _, _, _, _ => throw "internal extraction error: exhausted structural traversal"
   | fuel+1, fc, R, scope, stmts, tail, loopTargets => do
@@ -4938,13 +4938,13 @@ structure SourceRequest (σ ι : Type) extends Request σ ι where
   /-- Plans for nodes the lowering knows how to derive: search hints only. -/
   nodePlans : List (DirectProof.Plan ι) := []
 
-def SourceRequest.codeHints (r : SourceRequest σ ι) : List RequestJson.CodeHints :=
+@[nospecialize] def SourceRequest.codeHints (r : SourceRequest σ ι) : List RequestJson.CodeHints :=
   r.codeSources.map fun c => ⟨c.sourceMap, c.assertions, c.cuts⟩
 
 /-- Search hints only: the primitives and the labels the request mentions, so
 a coercion does not consider every unrelated signature in the table. The
 consumer still checks against the complete graph and the exact request. -/
-def SourceRequest.searchLabels (r : SourceRequest σ ι) : List ι :=
+@[nospecialize] def SourceRequest.searchLabels (r : SourceRequest σ ι) : List ι :=
   let roots := ([Labels.nul,Labels.tru,Labels.fls,Labels.undef] ++ r.result ++ r.inputs.flatten ++ r.hints ++
     r.claims.flatMap (fun (c : PointClaim ι) => c.type ++ c.context.flatten) ++
     -- A closure's code is searched with the request's vocabulary: what its
@@ -4989,7 +4989,7 @@ abbrev ModuleValue (ι : Type) := String × Span × Except String (ModuleType ι
 
 /-- The table is the one the claims were lowered into; annotations the claims
 did not mention grow it, and the request carries the result. -/
-def extractNormalizedFn [Meets σ ι] (T : σ) (f : Fragment.Fn) (fc : SourceClaims.Function ι)
+@[nospecialize] def extractNormalizedFn [Meets σ ι] (T : σ) (f : Fragment.Fn) (fc : SourceClaims.Function ι)
     (module : List (ModuleValue ι) := []) : Except String (SourceRequest σ ι) := do
   if f.name != fc.name || f.namePos != fc.namePos then throw "function claim identity mismatch"
   let scope : List (ScopeBinding ι) := f.params.map (fun p => held ⟨p.name,none⟩)
@@ -5149,7 +5149,7 @@ def checkGraphAssertions (cuts : List Nat) (assertions : List (Nat × HeapKnowle
     | none => false
     | some n => HeapKnowledge.check n.knowledge k none)
 
-def checkAssertions (r : SourceRequest σ ι) (c : Response ι) : Bool :=
+@[nospecialize] def checkAssertions (r : SourceRequest σ ι) (c : Response ι) : Bool :=
   checkGraphAssertions r.cuts r.assertions c.certificate &&
   r.codeSources.length == c.codes.length &&
   (r.codeSources.zip c.codes).all fun (q, C) => checkGraphAssertions q.cuts q.assertions C
@@ -5176,14 +5176,14 @@ theorem checkAssertions_sound {r : (SourceRequest σ ι)} {c : (Response ι)}
   exact HeapKnowledge.check_sound (m := none) h hk
 
 /-- A unit's obligations, checked with the graph code its certificate checked. -/
-def checkObligations (r : SourceRequest σ ι) (c : Response ι) (es : List (ProgramCertificates.Evidence ι)) : Bool :=
+@[nospecialize] def checkObligations (r : SourceRequest σ ι) (c : Response ι) (es : List (ProgramCertificates.Evidence ι)) : Bool :=
   match codeTable r.toRequest c with
   | some table => ExpressionClaims.checkAllUsing (RequestJson.graph r.toRequest) (StoreView.images r.types)
       (StoreView.valid r.types)
       r.obligations es (GraphCode.admits table)
   | none => false
 
-def checkRequests (rs : List (SourceRequest σ ι)) (b : Bundle ι) : Bool :=
+@[nospecialize] def checkRequests (rs : List (SourceRequest σ ι)) (b : Bundle ι) : Bool :=
   rs.length == b.functions.length && rs.length == b.obligations.length &&
     (rs.zip b.functions).all (fun (r,c) => verify r.toRequest c && checkAssertions r c) &&
     ((rs.zip b.functions).zip b.obligations).all (fun ((r,c),es) => checkObligations r c es)

@@ -288,6 +288,12 @@ fragment; do not restore acceptance by increasing trust silently.
   Run Lake from that directory so elan selects its pinned `lean-toolchain`;
   `lake -d` from the repository root can select a different compiler before
   changing directories. Never run simultaneous builds against the same cache.
+- Lean: a definition generic in its labels or store (`ι` and its type-class
+  instances) carries `@[nospecialize]`. Lean's code generator otherwise copies
+  the whole generic call graph into the first module that uses it at a concrete
+  type: `SourceClaimJson` held 4,159 such copies, 24 MB of C, and cost about
+  100 s per upstream edit; with the attribute it costs about 11 s, and the case
+  run is as fast (65 s either way).
 - New executable fields on an existing AST constructor need an explicit audit
   of every lowering and certification path. Exhaustive constructor matching
   alone cannot detect a discarded field. Each path must check the field's

@@ -17,12 +17,12 @@ abbrev Ops (ι : Type) := List (Arrow (List ι))
 scheme row, and the fixed and variadic signatures of one of its instances. -/
 abbrev Known (ι : Type) := List (List ι × Ops ι × List (RestArrow (List ι)))
 /-- The clauses of a type's clause rows. -/
-def clausesOf (G : NormalGraph ι) (S : List ι) : List (Clause (List ι)) := S.flatMap G
+@[nospecialize] def clausesOf (G : NormalGraph ι) (S : List ι) : List (Clause (List ι)) := S.flatMap G
 
 /-- A type's clauses, when every label is a clause row, and none otherwise. A
 rule reading a type's clauses reads them here, so a type with a parameter or
 scheme row has none to read: its members are not described by clauses. -/
-def expand (G : NormalGraph ι) (S : List ι) : List (Clause (List ι)) :=
+@[nospecialize] def expand (G : NormalGraph ι) (S : List ι) : List (Clause (List ι)) :=
   if G.plainTy S then clausesOf G S else []
 
 theorem expand_of_plain {G : NormalGraph ι} {S : List ι} (h : G.plainTy S = true) :
@@ -51,7 +51,7 @@ def splitClause : Clause α → List (Clause α)
 source, rather than searching the target for a matching pair, keeps `Covers`
 clause-to-clause while letting one source clause be covered by several target
 clauses. -/
-def sourceClauses (G : NormalGraph ι) (S : List ι) : List (Clause (List ι)) :=
+@[nospecialize] def sourceClauses (G : NormalGraph ι) (S : List ι) : List (Clause (List ι)) :=
   (clausesOf G S).flatMap splitClause
 
 
@@ -67,7 +67,7 @@ def overlaps (a b : Clause α) : Bool :=
 /-- A conservative compatibility check: two union labels can share a value
 only if some pair of their clauses has the same outer shape. A parameter or
 scheme row has no clauses to compare, so it may share a value with anything. -/
-def compatible (G : NormalGraph ι) (i k : ι) : Bool :=
+@[nospecialize] def compatible (G : NormalGraph ι) (i k : ι) : Bool :=
   !G.plain i || !G.plain k || (G i).any fun a => (G k).any fun b => overlaps a b
 
 theorem normal_congr (G : NormalGraph ι) : LayerCongr (normalLayer G) := normalLayer_congr G
@@ -231,7 +231,7 @@ theorem mixed_compatible {G : NormalGraph ι} {η : MixedAssignment ι} {i k : �
 
 /-- The element of an element rest: a type whose one clause is the pack of any
 number of actuals at `E`, which is what a rest `...xs: E[]` says. -/
-def restElem (G : NormalGraph ι) (P : List ι) : Option (List ι) :=
+@[nospecialize] def restElem (G : NormalGraph ι) (P : List ι) : Option (List ι) :=
   match expand G P with
   | [.pack ⟨[], [], some E, false, .dense⟩ []] => some E
   | _ => none
@@ -295,17 +295,17 @@ theorem mixed_pack_exact {G : NormalGraph ι} {η : MixedAssignment ι} {X : Lis
   subst hopt hrest
   exact (ArgumentContracts.fits_exact _ _ _ _).mp hf
 
-def FamLeAt (G : NormalGraph ι) (η : MixedAssignment ι) (a b : List ι) (n : Nat) : Prop :=
+@[nospecialize] def FamLeAt (G : NormalGraph ι) (η : MixedAssignment ι) (a b : List ι) (n : Nat) : Prop :=
   ∀ (W : WorldT n) (v : Val), mixedValues G η a n W v → mixedValues G η b n W v
 
 /-- Argument lists within, below a level, along a relation. -/
-def ArgsLeBelow (G : NormalGraph ι) (η : MixedAssignment ι) (R : List ι → List ι → Prop)
+@[nospecialize] def ArgsLeBelow (G : NormalGraph ι) (η : MixedAssignment ι) (R : List ι → List ι → Prop)
     (n : Nat) : Prop :=
   ∀ j, j < n → ∀ S T, R S T → ∀ (W : WorldT j) vs, mixedArgs G η S j W vs → mixedArgs G η T j W vs
 
 
 /-- Pointwise domain inclusion requires the same number of actual arguments. -/
-def Domains (R : List ι → List ι → Prop) : List (List ι) → List (List ι) → Prop
+@[nospecialize] def Domains (R : List ι → List ι → Prop) : List (List ι) → List (List ι) → Prop
   | [], [] => True
   | a :: As, b :: Bs => R a b ∧ Domains R As Bs
   | _, _ => False
@@ -414,7 +414,7 @@ theorem short_union {G : NormalGraph ι} {η : MixedAssignment ι} (a b : List �
 
 /-- Fixed positions within an element rest's element: the rest is an element
 rest, and each position is within its element. -/
-def ElemRest (elem : List ι → Option (List ι)) (R : List ι → List ι → Prop)
+@[nospecialize] def ElemRest (elem : List ι → Option (List ι)) (R : List ι → List ι → Prop)
     (As : List (List ι)) (E : List ι) : Prop :=
   match elem E with
   | some El => ∀ A ∈ As, R A El
@@ -422,7 +422,7 @@ def ElemRest (elem : List ι → Option (List ι)) (R : List ι → List ι → 
 
 /-- Fixed positions a variadic signature takes into its rest: none, or
 positions within its element rest's element. -/
-def IntoRest (elem : List ι → Option (List ι)) (R : List ι → List ι → Prop)
+@[nospecialize] def IntoRest (elem : List ι → Option (List ι)) (R : List ι → List ι → Prop)
     (As : List (List ι)) (E : List ι) : Prop :=
   As = [] ∨ ElemRest elem R As E
 
@@ -503,7 +503,7 @@ target `(Rt, As, d)` when the target's receiver is within its receiver, the
 target's first positions are within its fixed parameters, its rest is an
 element rest with its further positions within the element, and its result
 within the target's. -/
-def RestFixed (elem : List ι → Option (List ι)) (R : List ι → List ι → Prop)
+@[nospecialize] def RestFixed (elem : List ι → Option (List ι)) (R : List ι → List ι → Prop)
     (s : RestArrow (List ι)) (q : Arrow (List ι)) : Prop :=
   R q.receiver s.receiver ∧ Domains R (q.arguments.take s.arguments.1.length) s.arguments.1 ∧
     ElemRest elem R (q.arguments.drop s.arguments.1.length) s.arguments.2 ∧
@@ -511,7 +511,7 @@ def RestFixed (elem : List ι → Option (List ι)) (R : List ι → List ι →
 
 /-- One variadic signature covers another: input contracts are contravariant,
 results covariant, and the source must supply the target's effect. -/
-def RestCovers (elem : List ι → Option (List ι)) (R : List ι → List ι → Prop)
+@[nospecialize] def RestCovers (elem : List ι → Option (List ι)) (R : List ι → List ι → Prop)
     (p q : RestArrow (List ι)) : Prop :=
   R q.receiver p.receiver ∧ Domains R (q.arguments.1.take p.arguments.1.length) p.arguments.1 ∧
     IntoRest elem R (q.arguments.1.drop p.arguments.1.length) p.arguments.2 ∧
@@ -633,7 +633,7 @@ abbrev Excludes (bounds : List KeyBound) (k : PropKey) : Prop := ∃ K ∈ bound
 
 /-- The source slots that can cover an optional field: invariant fields,
 views, which are readonly, and optional fields with their own flag. -/
-def optionalSources (source : List (List (PropKey × List ι))) (views : List (PropKey × List ι))
+@[nospecialize] def optionalSources (source : List (List (PropKey × List ι))) (views : List (PropKey × List ι))
     (optional : List (OptionalField (List ι))) : List (OptionalField (List ι)) :=
   source.flatten.map (fun p => ⟨p.1, false, p.2⟩) ++ views.map (fun p => ⟨p.1, true, p.2⟩) ++ optional
 
@@ -656,12 +656,12 @@ abbrev CoversOptional (R : List ι → List ι → Prop)
     Excludes bounds q.key ∧ Excludes bounds CallArguments.protoField
 
 /-- A meet row's clauses: what its parameter is intersected with. -/
-def meetClauses (G : NormalGraph ι) (i : ι) : List (Clause (List ι)) :=
+@[nospecialize] def meetClauses (G : NormalGraph ι) (i : ι) : List (Clause (List ι)) :=
   ((G.meets i).map (·.2)).getD []
 
 /-- A meet row's parts other than its clauses: its parameters and, in an
 equation graph, its scheme parts (RECURSIVE-EQUATIONS §3.3). -/
-def meetParts (G : NormalGraph ι) (i : ι) : List ι :=
+@[nospecialize] def meetParts (G : NormalGraph ι) (i : ι) : List ι :=
   match G.meets i with
   | some (p, _) => p :: G.meetParams i
   | none => []
@@ -672,7 +672,7 @@ theorem meetParts_of {G : NormalGraph ι} {i p : ι} {cs : List (Clause (List ι
 
 /-- The rows a row reads: a clause row its operands, a scheme row its
 signatures' rows, a meet row its clauses' operands. -/
-def reads (G : NormalGraph ι) (i : ι) : List ι :=
+@[nospecialize] def reads (G : NormalGraph ι) (i : ι) : List ι :=
   match G.schemes i with
   | some s => s.signatures.flatMap (fun p => p.operands.flatten) ++
       s.bounds.flatMap (·.2) ++
@@ -681,7 +681,7 @@ def reads (G : NormalGraph ι) (i : ι) : List ι :=
 
 /-- A scheme row's bound types: read at its own assignment, not under its
 binders. -/
-def boundReads (G : NormalGraph ι) (i : ι) : List ι :=
+@[nospecialize] def boundReads (G : NormalGraph ι) (i : ι) : List ι :=
   match G.schemes i with
   | some s => s.bounds.flatMap (·.2)
   | none => []
@@ -691,14 +691,14 @@ def boundReads (G : NormalGraph ι) (i : ι) : List ι :=
 abbrev FreeMap (ι : Type) := List (ι × List ι)
 
 /-- The parameter rows a row may depend on, as a certificate states them. -/
-def fv [DecidableEq ι] (V : FreeMap ι) (i : ι) : List ι := (V.lookup i).getD []
+@[nospecialize] def fv [DecidableEq ι] (V : FreeMap ι) (i : ι) : List ι := (V.lookup i).getD []
 
 /-- `V` over-approximates the free parameter rows of the rows of `D`, which is
 closed under what its rows read: a parameter row is free in itself, and a row
 reading another has that row's free parameters, except a scheme row's own
 binders. A meet row depends on its parameter parts, and on its other parts'
 free rows. -/
-def FreeOk [DecidableEq ι] (G : NormalGraph ι) (D : List ι) (V : FreeMap ι) : Bool :=
+@[nospecialize] def FreeOk [DecidableEq ι] (G : NormalGraph ι) (D : List ι) (V : FreeMap ι) : Bool :=
   D.all fun i =>
     (!G.params i || (fv V i).contains i) &&
     (meetParts G i).all (fun q => if G.params q then (fv V i).contains q else
@@ -710,7 +710,7 @@ def FreeOk [DecidableEq ι] (G : NormalGraph ι) (D : List ι) (V : FreeMap ι) 
 
 /-- `FreeOk` with each row's free rows looked up once, not once per read: what
 the compiler runs. -/
-def FreeOkFast [DecidableEq ι] (G : NormalGraph ι) (D : List ι) (V : FreeMap ι) : Bool :=
+@[nospecialize] def FreeOkFast [DecidableEq ι] (G : NormalGraph ι) (D : List ι) (V : FreeMap ι) : Bool :=
   D.all fun i =>
     let fi := fv V i
     (!G.params i || fi.contains i) &&
@@ -726,7 +726,7 @@ def FreeOkFast [DecidableEq ι] (G : NormalGraph ι) (D : List ι) (V : FreeMap 
 /-- The rows `S` reads, transitively, without repeats, in the order they are
 first reached. Only the rows added by the last step are read again: the rows
 before them have had their reads added already, so each row is read once. -/
-def readsFrom [DecidableEq ι] (G : NormalGraph ι) (fuel : Nat) (S : List ι) : List ι :=
+@[nospecialize] def readsFrom [DecidableEq ι] (G : NormalGraph ι) (fuel : Nat) (S : List ι) : List ι :=
   let S := S.eraseDups
   go fuel S S
 where
@@ -740,7 +740,7 @@ where
 /-- The free parameter rows of the rows of `D`, by iteration to a fixed point:
 a parameter row is free in itself, and a row has the free rows of what it
 reads, except a scheme row's own binders. Untrusted: `FreeOk` checks it. -/
-def freeMapOf [DecidableEq ι] (G : NormalGraph ι) (D : List ι) : Nat → FreeMap ι → FreeMap ι
+@[nospecialize] def freeMapOf [DecidableEq ι] (G : NormalGraph ι) (D : List ι) : Nat → FreeMap ι → FreeMap ι
   | 0, V => V
   | fuel + 1, V =>
     let step (i : ι) : List ι :=
@@ -763,7 +763,7 @@ least as wide, with a result at most as wide; each variadic target signature
 by a variadic source one, its further fixed parameters taken into the source's
 rest, its rest within the source's and results covariant. The receiver is the
 host on both sides, so receivers are not compared. -/
-def CoversSig (elem : List ι → Option (List ι)) (R : List ι → List ι → Prop)
+@[nospecialize] def CoversSig (elem : List ι → Option (List ι)) (R : List ι → List ι → Prop)
     (p q : MethodMembers.Sig (List ι)) : Prop :=
   (∀ t ∈ q.calls, ∃ s ∈ p.calls, Domains R t.arguments s.arguments ∧ R s.result t.result ∧ s.effect.covers t.effect = true) ∧
   (∀ t ∈ q.rests, ∃ s ∈ p.rests, Domains R (t.arguments.1.take s.arguments.1.length) s.arguments.1 ∧
@@ -775,7 +775,7 @@ field or view: each target signature by one of the function's taking at least
 as wide parameters and giving an at most as wide result, whose receiver the
 object's own type `self` is within. Invoked on the object, such a function
 behaves as typed, so it meets the host-relative member. -/
-def CoversArrows (G : NormalGraph ι) (R : List ι → List ι → Prop) (self : List ι)
+@[nospecialize] def CoversArrows (G : NormalGraph ι) (R : List ι → List ι → Prop) (self : List ι)
     (L : Ops ι) (S : List (RestArrow (List ι)))
     (q : MethodMembers.Sig (List ι)) : Prop :=
   q.schemes = [] ∧ (∀ t ∈ q.calls, ∃ s ∈ L, R self s.receiver ∧ Domains R t.arguments s.arguments ∧ R s.result t.result ∧ s.effect.covers t.effect = true) ∧
@@ -783,13 +783,13 @@ def CoversArrows (G : NormalGraph ι) (R : List ι → List ι → Prop) (self :
     IntoRest (restElem G) R (t.arguments.1.drop s.arguments.1.length) s.arguments.2 ∧ R t.arguments.2 s.arguments.2 ∧ R s.result t.result ∧ s.effect.covers t.effect = true)
 
 /-- The receivers of a scheme's signatures. -/
-def schemeReceivers (s : SchemeRow ι) : List ι :=
+@[nospecialize] def schemeReceivers (s : SchemeRow ι) : List ι :=
   s.signatures.flatMap (·.receiver) ++ s.variadic.flatMap (·.receiver)
 
 /-- A type reads none of the rows `bs`: a checked free map of the rows it
 reaches gives none of them (`FreeOk`), so it means the same at every
 reassignment of them (`bindersFree_values`). -/
-def bindersFree [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (A : List ι) : Bool :=
+@[nospecialize] def bindersFree [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (A : List ι) : Bool :=
   let D := readsFrom G closureFuel A
   let V := freeMapOf G D closureFuel []
   FreeOk G D V && A.all fun l => D.contains l && (fv V l).all fun p => !bs.contains p
@@ -799,7 +799,7 @@ covers: `S'` binds `s`'s rows, each bound of `s` among `S'`'s, and each of
 `S'`'s signatures is covered by one of `s`'s, receivers aside (both are the
 host's: the bound function's is any, `s`'s is the host, which `CoversByScheme`
 checks). -/
-def SchemeBinds (G : NormalGraph ι) (R : List ι → List ι → Prop) (s : SchemeRow ι)
+@[nospecialize] def SchemeBinds (G : NormalGraph ι) (R : List ι → List ι → Prop) (s : SchemeRow ι)
     (S' : List ι) : Prop :=
   match S' with
   | [j] => match G.schemes j with
@@ -817,7 +817,7 @@ target member of quantified signatures: the source type is within each of the
 scheme's receivers, which read none of its binders, so the host is in them at
 every instance; bound to the host, the function meets each of the target's
 schemes binding the same rows (`SchemeBinds`). -/
-def CoversByScheme [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (self : List ι)
+@[nospecialize] def CoversByScheme [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (self : List ι)
     (F : List ι) (q : MethodMembers.Sig (List ι)) : Prop :=
   match F with
   | [i] => match G.schemes i with
@@ -830,21 +830,21 @@ def CoversByScheme [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List �
 
 /-- The same, for a function type: its one arrow clause, or a scheme received
 by the host. -/
-def CoversByFunction [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (self : List ι)
+@[nospecialize] def CoversByFunction [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (self : List ι)
     (F : List ι) (q : MethodMembers.Sig (List ι)) : Prop :=
   match expand G F with
   | [.arrs L S] => CoversArrows G R self L S q
   | _ => CoversByScheme G R self F q
 
 /-- The field or view a type's one record clause holds under a key. -/
-def viewOf (G : NormalGraph ι) (P : List ι) (k : PropKey) : Option (List ι) :=
+@[nospecialize] def viewOf (G : NormalGraph ι) (P : List ι) (k : PropKey) : Option (List ι) :=
   match expand G P with
   | [.refs a bs vs _ _ _] => (((a :: bs).flatten ++ vs).find? (·.1 == k)).map (·.2)
   | _ => none
 
 /-- Whether a type's one record clause has an own-key bound excluding a key:
 its members lack it. -/
-def lacksKey (G : NormalGraph ι) (P : List ι) (k : PropKey) : Prop :=
+@[nospecialize] def lacksKey (G : NormalGraph ι) (P : List ι) (k : PropKey) : Prop :=
   match expand G P with
   | [.refs _ _ _ _ _ ks] => Excludes ks k
   | _ => False
@@ -854,7 +854,7 @@ covers it with the object as receiver: a known row below arrows covering it
 (typically a generic prototype member and its instance at the array's element
 type: `Array.prototype[Symbol.iterator]` at `number`), or a function type
 covering it, as `CoversByFunction`. -/
-def FoundOn [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
+@[nospecialize] def FoundOn [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
     (self : List ι) (q : MethodMembers.Sig (List ι)) (P : List ι) : Prop :=
   (∃ k ∈ known, viewOf G P q.key = some k.1 ∧ CoversArrows G R self k.2.1 k.2.2 q) ∨
     ∃ F ∈ (viewOf G P q.key).toList, CoversByFunction G R self F q
@@ -863,7 +863,7 @@ def FoundOn [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → P
 `P`, at most `d` further prototypes up: on `P` itself (`FoundOn`), or, where
 `P`'s key bound excludes the key, along the prototype `P`'s own prototype
 field or view holds. JavaScript's lookup does the same. -/
-def ProtoHolds [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
+@[nospecialize] def ProtoHolds [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
     (self : List ι) (q : MethodMembers.Sig (List ι)) : Nat → List ι → Prop
   | 0, P => FoundOn G R known self q P
   | d + 1, P => FoundOn G R known self q P ∨ (lacksKey G P q.key ∧
@@ -877,7 +877,7 @@ def protoChainDepth : Nat := 16
 bound of the source excludes the key (`Excludes`), so the object lacks it, and
 its prototype field's type holds it, on that prototype or further up
 (`ProtoHolds`). -/
-def CoversByProto [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
+@[nospecialize] def CoversByProto [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
     (self : List ι) (fields : List (PropKey × List ι)) (bounds : List KeyBound)
     (q : MethodMembers.Sig (List ι)) : Prop :=
   Excludes bounds q.key ∧ ∃ f ∈ fields, f.1 = CallArguments.protoField ∧
@@ -977,7 +977,7 @@ theorem covers_bounds_sound {source target : List KeyBound} (hc : CoversBounds s
     · exact absurd rfl (excluded (hc p.1 (by simpa using hm)) p hp)
 
 /-- Two rest contracts agree: both absent, or both present and equivalent. -/
-def CoversRest (R : List ι → List ι → Prop) (readonly : Bool) : Option (List ι) → Option (List ι) → Prop
+@[nospecialize] def CoversRest (R : List ι → List ι → Prop) (readonly : Bool) : Option (List ι) → Option (List ι) → Prop
   | none, none => True
   | some x, some y => R x y ∧ (readonly = false → R y x)
   | _, _ => False
@@ -985,7 +985,7 @@ def CoversRest (R : List ι → List ι → Prop) (readonly : Bool) : Option (Li
 /-- Same-shape tuple contracts compare element read types covariantly for a
 readonly target. A writable target needs a writable source and equivalent
 element contracts; no location is retyped. -/
-def CoversShape (R : List ι → List ι → Prop) (p q : Tuple (List ι)) : Prop :=
+@[nospecialize] def CoversShape (R : List ι → List ι → Prop) (p q : Tuple (List ι)) : Prop :=
   p.required.length = q.required.length ∧ p.optional.length = q.optional.length ∧
   (∀ x ∈ p.required.zip q.required, R x.1 x.2 ∧ (q.readonly = false → R x.2 x.1)) ∧
   (∀ x ∈ p.optional.zip q.optional, R x.1 x.2 ∧ (q.readonly = false → R x.2 x.1)) ∧
@@ -996,7 +996,7 @@ whose rest is one exact tuple: its fixed parameters, then the tuple's
 positions, are within the source's parameters, and the source's result is
 within the target's. An exact tuple holds its actuals at their positions at the
 current level, whatever the positions' types. -/
-def FixedCoversPack (G : NormalGraph ι) (R : List ι → List ι → Prop)
+@[nospecialize] def FixedCoversPack (G : NormalGraph ι) (R : List ι → List ι → Prop)
     (p : List (List ι) × List ι) (t : List (List ι) × List ι × List ι) : Prop :=
   match expand G t.2.1 with
   | [.pack τ []] => τ.optional = [] ∧ τ.rest = none ∧
@@ -1007,7 +1007,7 @@ def FixedCoversPack (G : NormalGraph ι) (R : List ι → List ι → Prop)
 whose rest is one exact tuple: the target's receiver is
 within the source's, its fixed parameters, then the tuple's positions, are
 within the source's parameters, and results are covariant. -/
-def FixedCallsPack (G : NormalGraph ι) (R : List ι → List ι → Prop)
+@[nospecialize] def FixedCallsPack (G : NormalGraph ι) (R : List ι → List ι → Prop)
     (p : Arrow (List ι)) (t : RestArrow (List ι)) : Prop :=
   match expand G t.arguments.2 with
   | [.pack τ []] => τ.optional = [] ∧ τ.rest = none ∧
@@ -1064,7 +1064,7 @@ theorem fixed_calls_pack_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R
 
 /-- A position covered by another: a present source position needs a target
 position whose operand it is within. -/
-def PositionCovers (R : List ι → List ι → Prop) : Option (List ι) → Option (List ι) → Prop
+@[nospecialize] def PositionCovers (R : List ι → List ι → Prop) : Option (List ι) → Option (List ι) → Prop
   | some a, some b => R a b
   | some _, none => False
   | none, _ => True
@@ -1081,7 +1081,7 @@ without a rest bounds the source's length; and each position's operand is
 within the target's, covariantly, since a pack holds values rather than
 locations. Past both contracts' fixed positions every index has the rests, so
 checking the positions up to that bound checks all. -/
-def CoversPack (R : List ι → List ι → Prop) (p q : Tuple (List ι)) : Prop :=
+@[nospecialize] def CoversPack (R : List ι → List ι → Prop) (p q : Tuple (List ι)) : Prop :=
   q.required.length ≤ p.required.length ∧
   (q.rest = none → p.rest = none ∧
     p.required.length + p.optional.length ≤ q.required.length + q.optional.length) ∧
@@ -1091,10 +1091,10 @@ def CoversPack (R : List ι → List ι → Prop) (p q : Tuple (List ι)) : Prop
 
 /-- Finite, conservative tests for undefined membership. Parameter rows are
 never treated as empty merely because they have no clauses to expand. -/
-def AdmitsUndefined (G : NormalGraph ι) (A : List ι) : Prop :=
+@[nospecialize] def AdmitsUndefined (G : NormalGraph ι) (A : List ι) : Prop :=
   ∃ c ∈ expand G A, shape c = 4 ∨ shape c = 7
 
-def ExcludesUndefined (G : NormalGraph ι) (A : List ι) : Prop :=
+@[nospecialize] def ExcludesUndefined (G : NormalGraph ι) (A : List ι) : Prop :=
   G.plainTy A = true ∧ ∀ c ∈ expand G A, shape c ≠ 4 ∧ shape c ≠ 7
 
 instance (G : NormalGraph ι) (A : List ι) : Decidable (AdmitsUndefined G A) := by
@@ -1105,7 +1105,7 @@ instance (G : NormalGraph ι) (A : List ι) : Decidable (ExcludesUndefined G A) 
 
 /-- Only the hole-reading guarantee changes; element locations retain their
 separate read/write contracts. -/
-def CoversPresence (G : NormalGraph ι) (R : List ι → List ι → Prop)
+@[nospecialize] def CoversPresence (G : NormalGraph ι) (R : List ι → List ι → Prop)
     (p q : Tuple (List ι)) : Prop :=
   match q.presence with
   | .sparse => True
@@ -1125,14 +1125,14 @@ location is retyped. A readonly target only reads the elements present, each
 at its position, so, as for an argument pack, the source's length bounds lie
 within the target's and each position's operand is within the target's
 (`CoversPack`): `[number, number]` is a `readonly (number | null)[]`. -/
-def CoversTuple (G : NormalGraph ι) (R : List ι → List ι → Prop) (p q : Tuple (List ι)) : Prop :=
+@[nospecialize] def CoversTuple (G : NormalGraph ι) (R : List ι → List ι → Prop) (p q : Tuple (List ι)) : Prop :=
   CoversPresence G R p q ∧
     (if q.readonly then CoversPack R p q else CoversShape R p q)
 
 /-- Coverage has one definition for both derivations and certificate checking.
 Only fixed-arrow coverage needs evidence; the remaining conditions are finite
 checks over the supplied subtype relation. -/
-def CoversWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
+@[nospecialize] def CoversWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
     (arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop)
     (self : List ι) : Clause (List ι) → Clause (List ι) → Prop
   | _, .top => True
@@ -1511,7 +1511,7 @@ theorem freeOk_row [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : Free
 
 /-- A meet row's part supports it: a parameter part is free in it, and any
 other part is in the domain with its free rows among the meet's. -/
-def MeetPartSupport (G : NormalGraph ι) (D : ι → Prop) (V : ι → List ι) (i q : ι) : Prop :=
+@[nospecialize] def MeetPartSupport (G : NormalGraph ι) (D : ι → Prop) (V : ι → List ι) (i q : ι) : Prop :=
   (G.params q = true → q ∈ V i) ∧ (G.params q = false → D q ∧ ∀ r ∈ V q, r ∈ V i)
 
 /-- Each part of a meet row supports it. -/
@@ -1548,7 +1548,7 @@ theorem freeOk_support [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : 
 
 /-- Free-variable independence is an invariant of the approximations, not an
 extra delay on argument-list membership. -/
-def FreeIndependent [DecidableEq ι] (D : ι → Prop) (V : ι → List ι) (I : ParameterInterpretation ι k)
+@[nospecialize] def FreeIndependent [DecidableEq ι] (D : ι → Prop) (V : ι → List ι) (I : ParameterInterpretation ι k)
     (X : ParameterAssignment k ι × ι → Fam) : Prop :=
   ∀ η θ i, D i → (∀ p ∈ V i, I.parameter p (η.1 p) = I.parameter p (θ.1 p)) → X (η, i) = X (θ, i)
 
@@ -1907,7 +1907,7 @@ binders: what entering a quantified signature reads. A checked table holds
 at every assignment, so it gives this at any `η`; a family entry's premises
 hold where its hypotheses do, which such a reassignment preserves when no
 hypothesis names a binder. -/
-def ReassignSound (G : NormalGraph ι) (η : MixedAssignment ι) (R : List ι → List ι → Prop)
+@[nospecialize] def ReassignSound (G : NormalGraph ι) (η : MixedAssignment ι) (R : List ι → List ι → Prop)
     (n : Nat) : Prop :=
   ∀ (i : ι) (s : SchemeRow ι) (As : List MixedFamily), G.schemes i = some s →
     (∀ j, j < n → ∀ S T, R S T → FamLeAt G (assign η s.binders As) S T j) ∧
@@ -2810,7 +2810,7 @@ theorem meaning_below {G : NormalGraph ι} {S : List ι} {k : Nat} {W : WorldT k
     ((meaning_valueFam G S).1.down_le k j (Nat.le_of_lt hj) W u h)
 
 /-- A meet row, `p ⊓ cs`: neither a parameter nor a scheme row, with a meet. -/
-def _root_.Verification.Model.PositiveGraphs.NormalGraph.meetRow (G : NormalGraph ι) (i : ι) : Bool :=
+@[nospecialize] def _root_.Verification.Model.PositiveGraphs.NormalGraph.meetRow (G : NormalGraph ι) (i : ι) : Bool :=
   !G.params i && (G.schemes i).isNone && (G.meets i).isSome
 
 /-- A member of a meet row is in one of its clauses. -/
@@ -2834,7 +2834,7 @@ what the assignment gives each of its parameters, within its clauses. In a
 family pair a target parameter may instead be above one of the meet's
 parameters by a hypothesis (RECURSIVE-EQUATIONS §3.3, §7.3): `x ⊓ B` is below
 `y ⊓ B`, and below `y`, when `x ≤ y`. -/
-def meetBelow [DecidableEq ι] (G : NormalGraph ι) (i j : ι) (hyps : List (ι × ι) := []) : Bool :=
+@[nospecialize] def meetBelow [DecidableEq ι] (G : NormalGraph ι) (i j : ι) (hyps : List (ι × ι) := []) : Bool :=
   match G.meets i with
   | some (p, cs) =>
     let ps := p :: G.meetParams i
@@ -2857,7 +2857,7 @@ binders are the same, so the target's are taken rigidly and the source's are
 instantiated at them, and no bound is compared, so the check stays decidable.
 Its premises hold at the reassigned assignment, which the core table's
 induction over every assignment supplies (`Core.mixed_sound`). -/
-def SchemeCoversWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
+@[nospecialize] def SchemeCoversWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
     (arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop)
     (i j : ι) : Prop :=
   match G.schemes i, G.schemes j with
@@ -2876,17 +2876,17 @@ theorem SchemeCoversWith.mono [DecidableEq ι] {G : NormalGraph ι} {R : List ι
   · exact hc.elim
 
 /-- A row read as a meet part: not a meet row (RECURSIVE-EQUATIONS §3.3). -/
-def _root_.Verification.Model.PositiveGraphs.NormalGraph.partRow (G : NormalGraph ι) (q : ι) : Bool :=
+@[nospecialize] def _root_.Verification.Model.PositiveGraphs.NormalGraph.partRow (G : NormalGraph ι) (q : ι) : Bool :=
   G.params q || (G.schemes q).isSome || (G.meets q).isNone
 
 /-- A meet row with a scheme part. A finite table has none. -/
-def schemeMeet (G : NormalGraph ι) (i : ι) : Bool :=
+@[nospecialize] def schemeMeet (G : NormalGraph ι) (i : ι) : Bool :=
   (meetParts G i).any fun q => (G.schemes q).isSome
 
 /-- **A meet source, read through one part** (RECURSIVE-EQUATIONS §3.3): a
 parameter part below a target row (`meetBelow`), a scheme part covered by a
 target scheme (`sc`), or its clauses each covered (`cover`). -/
-def MeetSource [DecidableEq ι] (G : NormalGraph ι) (sc : ι → ι → Prop)
+@[nospecialize] def MeetSource [DecidableEq ι] (G : NormalGraph ι) (sc : ι → ι → Prop)
     (cover : Clause (List ι) → Prop) (T : List ι) (i : ι) : Prop :=
   T.any (meetBelow G i ·) = true ∨
     (∃ q ∈ meetParts G i, G.partRow q = true ∧ ∃ j ∈ T, sc q j) ∨
@@ -2896,7 +2896,7 @@ def MeetSource [DecidableEq ι] (G : NormalGraph ι) (sc : ι → ι → Prop)
 the source row, one of the source meet's parts, or a scheme the source row or
 one of its scheme parts covers; its clauses admit every value or are the
 source meet's own. -/
-def MeetTarget [DecidableEq ι] (G : NormalGraph ι) (sc : ι → ι → Prop) (T : List ι) (i : ι) : Prop :=
+@[nospecialize] def MeetTarget [DecidableEq ι] (G : NormalGraph ι) (sc : ι → ι → Prop) (T : List ι) (i : ι) : Prop :=
   ∃ j ∈ T, G.meetRow j = true ∧
     (∀ q ∈ meetParts G j, G.partRow q = true ∧
       (q = i ∨ (G.meetRow i = true ∧ q ∈ meetParts G i) ∨ sc i q ∨
@@ -2906,7 +2906,7 @@ def MeetTarget [DecidableEq ι] (G : NormalGraph ι) (sc : ι → ι → Prop) (
 /-- An opaque meet: a source meet row, whose clauses `meetSources` lists
 unless it has a scheme part, which is then read through one part; or a
 target meet read part by part. -/
-def MeetOpaque [DecidableEq ι] (G : NormalGraph ι) (sc : ι → ι → Prop)
+@[nospecialize] def MeetOpaque [DecidableEq ι] (G : NormalGraph ι) (sc : ι → ι → Prop)
     (cover : Clause (List ι) → Prop) (T : List ι) (i : ι) : Prop :=
   (G.meetRow i = true ∧ (schemeMeet G i = false ∨ MeetSource G sc cover T i)) ∨
     MeetTarget G sc T i
@@ -3043,7 +3043,7 @@ meet row not in the target is below a target row by its parameters
 scheme part, read through one part; a target meet is read part by part
 (`MeetOpaque`). A scheme row is below a target scheme row whose quantified
 signatures its own cover (`SchemeCoversWith`). -/
-def OpaqueWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
+@[nospecialize] def OpaqueWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
     (arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop)
     (S T : List ι) : Prop :=
   ∀ i ∈ S, G.plain i = true ∨ i ∈ T ∨ .top ∈ clausesOf G T ∨
@@ -3074,7 +3074,7 @@ theorem OpaqueWith.mono [DecidableEq ι] {G : NormalGraph ι} {R : List ι → L
 source clauses are: a member of a meet row `p ⊓ cs` is in one of `cs`, so the
 row is below a target covering each of them. A bounded binder read as its
 meet with its bound is below the bound this way. -/
-def meetSources [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) (hyps : List (ι × ι) := []) :
+@[nospecialize] def meetSources [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) (hyps : List (ι × ι) := []) :
     List (Clause (List ι)) :=
   ((S.filter fun i => G.meetRow i && !schemeMeet G i && decide (i ∉ T) &&
       !T.any (meetBelow G i · hyps)).flatMap
@@ -3082,7 +3082,7 @@ def meetSources [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) (hyps : Li
 
 /-- A subtype edge relates two value types or two argument-list types.
 The empty type is admissible at either sort; a runtime top is not a list top. -/
-def SameKind (G : NormalGraph ι) (S T : List ι) : Bool :=
+@[nospecialize] def SameKind (G : NormalGraph ι) (S T : List ι) : Bool :=
   (G.hasKind .value S && G.hasKind .value T) ||
     (G.hasKind .arguments S && G.hasKind .arguments T)
 
@@ -3090,13 +3090,13 @@ def SameKind (G : NormalGraph ι) (S T : List ι) : Bool :=
 clause. A `bool` source is therefore discharged by the pair of Boolean singleton
 clauses, or by a single `bool` clause, or by any target containing both.
 Coverage may also use the `known` rows, proved elsewhere. -/
-def Valid [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (table : Table ι) : Prop :=
+@[nospecialize] def Valid [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (table : Table ι) : Prop :=
   ∀ p ∈ table, SameKind G p.1 p.2 = true ∧ Opaque G (Rel table) known p.1 p.2 ∧
     ∀ a ∈ sourceClauses G p.1 ++ meetSources G p.1 p.2, ∃ b ∈ clausesOf G p.2,
       Covers G (Rel table) known p.1 a b
 
 /-- A checked table holding `S ≤ T`, whose coverage may use the `known` rows. -/
-def Core [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (S T : List ι) : Prop :=
+@[nospecialize] def Core [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (S T : List ι) : Prop :=
   ∃ table, (S, T) ∈ table ∧ Valid G known table
 
 /-- Sorted argument types contribute pack clauses only. -/
@@ -3172,18 +3172,18 @@ abbrev Ctx (ι : Type) := List (ι × List ι)
 /-- Entries `(row, context, image)`. -/
 abbrev InstTable (ι : Type) := List (ι × Ctx ι × List ι)
 
-def entryImg [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι) (l : ι) : Option (List ι) :=
+@[nospecialize] def entryImg [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι) (l : ι) : Option (List ι) :=
   (tbl.find? fun e => e.1 == l && e.2.1 == κ).map (·.2.2)
 
 /-- A type's image: its rows' images, each an entry. -/
-def tyImg [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι) (S : List ι) : Option (List ι) :=
+@[nospecialize] def tyImg [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι) (S : List ι) : Option (List ι) :=
   (S.mapM (entryImg tbl κ)).map List.flatten
 
-def sigImg [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
+@[nospecialize] def sigImg [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
     (p : Arrow (List ι)) : Option (Arrow (List ι)) := do
   return ⟨← tyImg tbl κ p.receiver, ← p.arguments.mapM (tyImg tbl κ), ← tyImg tbl κ p.result, p.effect⟩
 
-def restImg [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
+@[nospecialize] def restImg [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
     (p : RestArrow (List ι)) :
     Option (RestArrow (List ι)) := do
   return ⟨← tyImg tbl κ p.receiver, (← p.arguments.1.mapM (tyImg tbl κ), ← tyImg tbl κ p.arguments.2),
@@ -3191,21 +3191,21 @@ def restImg [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
 
 /-- Two label lists with the same members. A type is the union of its labels,
 so their order and repetition carry no meaning. -/
-def sameLabels [DecidableEq ι] (a b : List ι) : Bool := a.all (· ∈ b) && b.all (· ∈ a)
+@[nospecialize] def sameLabels [DecidableEq ι] (a b : List ι) : Bool := a.all (· ∈ b) && b.all (· ∈ a)
 
 /-- Two lists of types, position by position with the same members. -/
-def sameLabelLists [DecidableEq ι] (as bs : List (List ι)) : Bool :=
+@[nospecialize] def sameLabelLists [DecidableEq ι] (as bs : List (List ι)) : Bool :=
   as.length == bs.length && (as.zip bs).all fun ab => sameLabels ab.1 ab.2
 
 /-- A signature is a scheme signature's image, up to the members of each type. -/
-def sigMatch [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
+@[nospecialize] def sigMatch [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
     (p q : Arrow (List ι)) : Bool :=
   match sigImg tbl κ p with
   | some q' => sameLabels q'.receiver q.receiver && sameLabelLists q'.arguments q.arguments && sameLabels q'.result q.result && q'.effect == q.effect
   | none => false
 
 /-- A variadic signature is a scheme one's image, up to the members of each type. -/
-def restMatch [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
+@[nospecialize] def restMatch [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
     (p q : RestArrow (List ι)) : Bool :=
   match restImg tbl κ p with
   | some q' => sameLabels q'.receiver q.receiver && sameLabelLists q'.arguments.1 q.arguments.1 &&
@@ -3214,7 +3214,7 @@ def restMatch [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
 
 /-- A signature's parameters and result are a scheme signature's images; its
 receiver is not compared. -/
-def sigBodyMatch [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
+@[nospecialize] def sigBodyMatch [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
     (p q : Arrow (List ι)) : Bool :=
   match p.arguments.mapM (tyImg tbl κ), tyImg tbl κ p.result with
   | some ps, some r => sameLabelLists ps q.arguments && sameLabels r q.result && p.effect == q.effect
@@ -3222,7 +3222,7 @@ def sigBodyMatch [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
 
 /-- A variadic signature's fixed parameters, rest and result are a scheme
 one's images; its receiver is not compared. -/
-def restBodyMatch [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
+@[nospecialize] def restBodyMatch [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
     (p q : RestArrow (List ι)) : Bool :=
   match p.arguments.1.mapM (tyImg tbl κ), tyImg tbl κ p.arguments.2, tyImg tbl κ p.result with
   | some ps, some e, some r => sameLabelLists ps q.arguments.1 && sameLabels e q.arguments.2 && sameLabels r q.result && p.effect == q.effect
@@ -3234,17 +3234,17 @@ images at any receiver. A callable invoked safely with every receiver is
 invoked safely with a narrower one, such as a generic method's scheme, which
 the member bound to its host meets whatever receiver it is given, at a call
 whose receiver is the host. -/
-def instSig [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (κ : Ctx ι)
+@[nospecialize] def instSig [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (κ : Ctx ι)
     (p q : Arrow (List ι)) : Bool :=
   sigMatch tbl κ p q || (expand G p.receiver == [.top] && sigBodyMatch tbl κ p q)
 
 /-- The same, for a variadic signature. -/
-def instRest [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (κ : Ctx ι)
+@[nospecialize] def instRest [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (κ : Ctx ι)
     (p q : RestArrow (List ι)) : Bool :=
   restMatch tbl κ p q || (expand G p.receiver == [.top] && restBodyMatch tbl κ p q)
 
 /-- The context `κ` on the rows `ps` outside `src`, in the order of `ps`. -/
-def keep [DecidableEq ι] (κ : Ctx ι) (src ps : List ι) : Ctx ι :=
+@[nospecialize] def keep [DecidableEq ι] (κ : Ctx ι) (src ps : List ι) : Ctx ι :=
   ps.filterMap fun p => if src.contains p then none else (κ.lookup p).map (p, ·)
 
 /-- Entering scheme row `i` mapped to another: its binders stand for the
@@ -3252,11 +3252,11 @@ other's, and of the outer context only the free rows of `i` are kept, in the
 order `V` lists them. Nothing inside reads another, and the contexts met while
 relating recursive types, whose schemes nest without end, are then finitely
 many, so their entries recur. -/
-def enter [DecidableEq ι] (V : FreeMap ι) (i : ι) (κ : Ctx ι) (src tgt : List ι) : Ctx ι :=
+@[nospecialize] def enter [DecidableEq ι] (V : FreeMap ι) (i : ι) (κ : Ctx ι) (src tgt : List ι) : Ctx ι :=
   src.zip (tgt.map ([·])) ++ keep κ src (fv V i)
 
 /-- A clause with every operand replaced by its image. -/
-def clauseImg [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι) (c : Clause (List ι)) :
+@[nospecialize] def clauseImg [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι) (c : Clause (List ι)) :
     Clause (List ι) :=
   c.map fun S => (tyImg tbl κ S).getD []
 
@@ -3314,7 +3314,7 @@ theorem clauseImg_arguments [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
   · simpa [r, hS, tyImg] using he v
 
 /-- A label list's members, in the order of `U`. -/
-def canonIn [DecidableEq ι] (U S : List ι) : List ι := U.filter fun l => decide (l ∈ S)
+@[nospecialize] def canonIn [DecidableEq ι] (U S : List ι) : List ι := U.filter fun l => decide (l ∈ S)
 
 theorem canonIn_same [DecidableEq ι] {U S : List ι} (h : ∀ l ∈ S, l ∈ U) :
     sameLabels (canonIn U S) S = true := by
@@ -3324,7 +3324,7 @@ theorem canonIn_same [DecidableEq ι] {U S : List ι} (h : ∀ l ∈ S, l ∈ U)
 
 /-- Two clause lists that are the same up to each operand's members: compared
 with every operand listed in one order of all their labels. -/
-def sameClauses [DecidableEq ι] (Cs Ds : List (Clause (List ι))) : Bool :=
+@[nospecialize] def sameClauses [DecidableEq ι] (Cs Ds : List (Clause (List ι))) : Bool :=
   let U := (Cs ++ Ds).flatMap fun c => c.operands.flatten
   Cs.map (·.map (canonIn U)) == Ds.map (·.map (canonIn U))
 
@@ -3420,33 +3420,33 @@ theorem graphArguments_image [DecidableEq ι] (G : NormalGraph ι)
 /-- A bound's image: the target binder at the bound binder's position, and the
 bound type's image under the outer context (a bound is read at the scheme's
 own assignment, not under its binders). -/
-def boundImg [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι) (src tgt : List ι)
+@[nospecialize] def boundImg [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι) (src tgt : List ι)
     (b : ι × List ι) : Option (ι × List ι) :=
   match (src.zip (tgt.map ([·]))).lookup b.1 with
   | some [q] => (tyImg tbl κ b.2).map (q, ·)
   | _ => none
 
 /-- The image of a parameter must have its declared sort. -/
-def substitutionKind (G : NormalGraph ι) (b : ι) (U : List ι) : Bool :=
+@[nospecialize] def substitutionKind (G : NormalGraph ι) (b : ι) (U : List ι) : Bool :=
   match G.parameterKinds b with
   | some k => G.hasKind k U
   | none => false
 
 /-- One kind check is shared by instantiation and table substitution. -/
-def instKinds (G : NormalGraph ι) (bs : List ι) (θs : List (List ι)) : Bool :=
+@[nospecialize] def instKinds (G : NormalGraph ι) (bs : List ι) (θs : List (List ι)) : Bool :=
   (bs.zip θs).all fun (b, U) => substitutionKind G b U
 
 /-- The context fixes row `i`: it gives each free row of `i` nothing, or that
 parameter row itself (inside a scheme matched against itself, its binders
 stand for themselves). -/
-def fixedBy [DecidableEq ι] (G : NormalGraph ι) (κ : Ctx ι) (V : FreeMap ι) (i : ι) : Bool :=
+@[nospecialize] def fixedBy [DecidableEq ι] (G : NormalGraph ι) (κ : Ctx ι) (V : FreeMap ι) (i : ι) : Bool :=
   (fv V i).all fun p => match κ.lookup p with
     | none => true
     | some U => U == [p] && G.params p
 
 /-- The clause lists a meet row's image meets: each parameter's image's
 clauses, then the clauses mapped. -/
-def meetOperands [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (κ : Ctx ι)
+@[nospecialize] def meetOperands [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (κ : Ctx ι)
     (ps : List ι) (cs : List (Clause (List ι))) : List (List (Clause (List ι))) :=
   ps.map (fun p => clausesOf G ((κ.lookup p).getD [])) ++ [cs.map (clauseImg tbl κ)]
 
@@ -3461,7 +3461,7 @@ parameters, either a meet row whose parameters are the ones `κ` gives `ps`
 every one of `ps` a type of clause rows, a value clause row holding the meet
 of those types' clauses with `cs` mapped, in the order `ps` then `cs`, or the
 reverse. -/
-def meetOk [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (κ : Ctx ι)
+@[nospecialize] def meetOk [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (κ : Ctx ι)
     (ps : List ι) (cs : List (Clause (List ι))) (j : ι) : Bool :=
   ps.all (fun p => G.parameterKinds p == some .value) &&
     cs.all (fun c => c.operands.all fun S => (tyImg tbl κ S).isSome) &&
@@ -3486,7 +3486,7 @@ row's image is a clause row holding its clauses mapped. A meet row's is
 a scheme row with as many binders, distinct parameter rows, whose signatures
 are its own mapped with its binders standing for them, provided no free row of
 the source, nor any row of a free row's image, is one of those binders. -/
-def entryOk [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (V : FreeMap ι)
+@[nospecialize] def entryOk [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (V : FreeMap ι)
     (e : ι × Ctx ι × List ι) : Bool :=
   if G.params e.1 then
     e.2.2 == (e.2.1.lookup e.1).getD [e.1] && substitutionKind G e.1 e.2.2
@@ -3515,12 +3515,12 @@ def entryOk [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (V : Free
     | _, _ => false
 
 /-- The rows a table mentions. -/
-def tableRows (tbl : InstTable ι) : List ι :=
+@[nospecialize] def tableRows (tbl : InstTable ι) : List ι :=
   tbl.flatMap fun e => e.1 :: e.2.2 ++ e.2.1.flatMap (·.2)
 
 /-- A checked table: its rows lie in a domain with a sound free-variable
 certificate, and every entry is one of `entryOk`'s. -/
-def TableOk [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (D : List ι)
+@[nospecialize] def TableOk [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (D : List ι)
     (V : FreeMap ι) : Bool :=
   FreeOk G D V && (tableRows tbl).all (D.contains ·) && tbl.all (entryOk G tbl V)
 
@@ -3535,7 +3535,7 @@ entries only. `TableOk_eq_fast` proves the two equal; `csimp` makes the
 compiler run the grouped one. What is checked is unchanged. -/
 
 /-- The entries under context `κ`. -/
-def ctxEntries [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι) : InstTable ι :=
+@[nospecialize] def ctxEntries [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι) : InstTable ι :=
   tbl.filter (·.2.1 == κ)
 
 theorem entryImg_ctxEntries [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι) :
@@ -3548,10 +3548,10 @@ theorem entryImg_ctxEntries [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι) 
   cases e.1 == l <;> cases e.2.1 == κ <;> rfl
 
 /-- The contexts the table uses. -/
-def ctxsOf [DecidableEq ι] (tbl : InstTable ι) : List (Ctx ι) := (tbl.map (·.2.1)).eraseDups
+@[nospecialize] def ctxsOf [DecidableEq ι] (tbl : InstTable ι) : List (Ctx ι) := (tbl.map (·.2.1)).eraseDups
 
 /-- The entries of each context the table uses, grouped once. -/
-def ctxGroups [DecidableEq ι] (tbl : InstTable ι) : List (Ctx ι × InstTable ι) :=
+@[nospecialize] def ctxGroups [DecidableEq ι] (tbl : InstTable ι) : List (Ctx ι × InstTable ι) :=
   (ctxsOf tbl).map fun κ => (κ, ctxEntries tbl κ)
 
 /-- A table's rows lie in `D`: each entry's row and image, and the rows of each
@@ -3572,7 +3572,7 @@ theorem tableRows_all [DecidableEq ι] (tbl : InstTable ι) (D : List ι) :
     · exact h2 e.2.1 ⟨e, he, rfl⟩ x ⟨b, hb, hx⟩
 
 /-- The entries to look an image under `κ` up in: its group, or the whole table. -/
-def ctxTable [DecidableEq ι] (groups : List (Ctx ι × InstTable ι)) (tbl : InstTable ι)
+@[nospecialize] def ctxTable [DecidableEq ι] (groups : List (Ctx ι × InstTable ι)) (tbl : InstTable ι)
     (κ : Ctx ι) : InstTable ι :=
   match groups.find? (·.1 == κ) with
   | some g => g.2
@@ -3617,7 +3617,7 @@ theorem meetOk_congr (G : NormalGraph ι) (h : entryImg t κ = entryImg u κ) :
 end
 
 /-- `entryOk`, each lookup under context `κ` made in `look κ`. -/
-def entryOkIn [DecidableEq ι] (G : NormalGraph ι) (look : Ctx ι → InstTable ι) (V : FreeMap ι)
+@[nospecialize] def entryOkIn [DecidableEq ι] (G : NormalGraph ι) (look : Ctx ι → InstTable ι) (V : FreeMap ι)
     (e : ι × Ctx ι × List ι) : Bool :=
   if G.params e.1 then
     e.2.2 == (e.2.1.lookup e.1).getD [e.1] && substitutionKind G e.1 e.2.2
@@ -3655,7 +3655,7 @@ theorem entryOkIn_eq [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι)
     meetOk_congr G (h _), tyImg_congr (h _), clauseImg_congr (h _)]
 
 /-- `TableOk`, grouped by context: what the compiler runs. -/
-def TableOkFast [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (D : List ι)
+@[nospecialize] def TableOkFast [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (D : List ι)
     (V : FreeMap ι) : Bool :=
   let ctxs := ctxsOf tbl
   let groups := ctxs.map fun κ => (κ, ctxEntries tbl κ)
@@ -3674,7 +3674,7 @@ def TableOkFast [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (D : 
 /-- A context relates the component a binder actually observes to its image.
 The two-component image retains list bounds; the selected parameter side does
 not constrain an unused component of a mixed assignment. -/
-def RelKWith [DecidableEq ι] (G : NormalGraph ι) (I : ParameterInterpretation ι k)
+@[nospecialize] def RelKWith [DecidableEq ι] (G : NormalGraph ι) (I : ParameterInterpretation ι k)
     (κ : Ctx ι) (S : List ι) (ηL ηR : ParameterAssignment k ι) : Prop :=
   ∀ p ∈ S, match κ.lookup p with
     | some U => I.parameter p (ηL.1 p) =
@@ -4856,7 +4856,7 @@ images mean substitution, for values and argument packs together. Only images
 used by the signatures must be named. How their equality is established is
 separate: a finite closed table is one implementation, while recursive
 equations require a proof covering their application families. -/
-def InstanceImages [DecidableEq ι] (G : NormalGraph ι) (η : MixedAssignment ι)
+@[nospecialize] def InstanceImages [DecidableEq ι] (G : NormalGraph ι) (η : MixedAssignment ι)
     (bs : List ι) (θs : List (List ι)) (tbl : InstTable ι) : Prop :=
   ∀ S S', tyImg tbl (bs.zip θs) S = some S' →
     mixedMeaning G (assign η bs (θs.map fun U =>
@@ -5022,19 +5022,19 @@ is the case without hypotheses (`Core.mixed_sound`), a family the case whose
 premises may be instances of its entries (`family_sound`). -/
 
 /-- Both components of one type within another's, at one level. -/
-def MixedLe (G : NormalGraph ι) (η : MixedAssignment ι) (A B : List ι) (n : Nat) : Prop :=
+@[nospecialize] def MixedLe (G : NormalGraph ι) (η : MixedAssignment ι) (A B : List ι) (n : Nat) : Prop :=
   ∀ (W : WorldT n) x, mixedMeaning G η A n W x → mixedMeaning G η B n W x
 
 theorem MixedLe.values {G : NormalGraph ι} {η : MixedAssignment ι} {A B : List ι} {n : Nat}
     (h : MixedLe G η A B n) : FamLeAt G η A B n := fun W v hv => h W (.inl v) hv
 
 /-- Hypotheses hold at every level up to `n`, in both components. -/
-def HypsHold (G : NormalGraph ι) (η : MixedAssignment ι) (hyps : List (ι × ι)) (n : Nat) : Prop :=
+@[nospecialize] def HypsHold (G : NormalGraph ι) (η : MixedAssignment ι) (hyps : List (ι × ι)) (n : Nat) : Prop :=
   ∀ h ∈ hyps, ∀ j, j ≤ n → MixedLe G η [h.1] [h.2] j
 
 /-- Hypotheses hold below `n`, and for values at `n`: what proving values at
 `n` reads. -/
-def HypsHoldValues (G : NormalGraph ι) (η : MixedAssignment ι) (hyps : List (ι × ι))
+@[nospecialize] def HypsHoldValues (G : NormalGraph ι) (η : MixedAssignment ι) (hyps : List (ι × ι))
     (n : Nat) : Prop :=
   (∀ h ∈ hyps, ∀ j, j < n → MixedLe G η [h.1] [h.2] j) ∧ ∀ h ∈ hyps, FamLeAt G η [h.1] [h.2] n
 
@@ -5048,7 +5048,7 @@ theorem HypsHoldValues.below {G : NormalGraph ι} {η : MixedAssignment ι} {hyp
 
 /-- Simultaneous replacement of the parameters a context names; any other
 row stands for itself. -/
-def replace [DecidableEq ι] (σ : List (ι × List ι)) (p : ι) : List ι := (σ.lookup p).getD [p]
+@[nospecialize] def replace [DecidableEq ι] (σ : List (ι × List ι)) (p : ι) : List ι := (σ.lookup p).getD [p]
 
 /-- Syntactic substitution and free support for a graph's types, with the
 semantic laws that justify them, and the rows reserved for family
@@ -5088,7 +5088,7 @@ binder, which is within it (read outside both schemes); no source binder free
 in the target's signatures unless it is also a target binder; and the
 source's signatures cover the target's renamed. The renaming is the
 checker's own substitution, never a certificate's. -/
-def SchemeRenames [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G))
+@[nospecialize] def SchemeRenames [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G))
     (R : List ι → List ι → Prop) (known : Known ι)
     (arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop) (i j : ι) : Prop :=
   match sub, G.schemes i, G.schemes j with
@@ -5107,7 +5107,7 @@ def SchemeRenames [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming 
 
 /-- The quantified rule: the same binders (`SchemeCoversWith`), of which
 renaming is the general case. -/
-def SchemeCoversAlpha [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G))
+@[nospecialize] def SchemeCoversAlpha [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G))
     (R : List ι → List ι → Prop) (known : Known ι)
     (arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop) (i j : ι) : Prop :=
   SchemeCoversWith G R known arrows i j ∨ SchemeRenames G sub R known arrows i j
@@ -5116,7 +5116,7 @@ def SchemeCoversAlpha [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renam
 §7.3): a scheme whose signatures cover the other's up to renaming, or a
 variable below the other by a hypothesis. Without hypotheses it is
 quantified coverage alone. -/
-def PartCovers [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G))
+@[nospecialize] def PartCovers [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G))
     (R : List ι → List ι → Prop) (known : Known ι)
     (arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop)
     (hyps : List (ι × ι)) (a b : ι) : Prop :=
@@ -5127,7 +5127,7 @@ row may also be below a target row by a hypothesis, and a scheme row below
 one whose signatures its own cover up to renaming. A meet reads its parts
 the same way (`PartCovers`): a target meet's variable part is covered by a
 source part, or the source row, below it by a hypothesis. -/
-def OpaqueFamily [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G))
+@[nospecialize] def OpaqueFamily [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G))
     (R : List ι → List ι → Prop) (known : Known ι)
     (arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop)
     (hyps : List (ι × ι)) (S T : List ι) : Prop :=
@@ -5185,7 +5185,7 @@ theorem OpaqueWith.family [DecidableEq ι] {G : NormalGraph ι} {sub : Option (R
 
 /-- The three core conditions for one pair (POSITIVE-TYPES "Core tables",
 RECURSIVE-EQUATIONS §7.3), premises read through `R`. -/
-def PairOk [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (known : Known ι)
+@[nospecialize] def PairOk [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (known : Known ι)
     (R : List ι → List ι → Prop) (hyps : List (ι × ι)) (A B : List ι) : Prop :=
   SameKind G A B = true ∧
     OpaqueFamily G sub R known (fun L S M => ∀ p ∈ M,
@@ -5707,10 +5707,10 @@ structure Entry (ι : Type) where
   deriving DecidableEq, Repr
 
 /-- The goal, then the table. -/
-def Entry.pairs (e : Entry ι) : List (List ι × List ι) := (e.source, e.target) :: e.table
+@[nospecialize] def Entry.pairs (e : Entry ι) : List (List ι × List ι) := (e.source, e.target) :: e.table
 
 /-- A type at an instance: its variables replaced, when a renaming exists. -/
-def image [DecidableEq ι] {G : NormalGraph ι} (sub : Option (Renaming G))
+@[nospecialize] def image [DecidableEq ι] {G : NormalGraph ι} (sub : Option (Renaming G))
     (σ : List (ι × List ι)) (A : List ι) : List ι :=
   match sub with
   | some r => r.substitute σ A
@@ -5720,13 +5720,13 @@ def image [DecidableEq ι] {G : NormalGraph ι} (sub : Option (Renaming G))
 abbrev Lookup (ι : Type) := Nat → Option (Entry ι)
 
 /-- An entry's hypotheses relate parameter rows. -/
-def HypParams (G : NormalGraph ι) (e : Entry ι) : Prop :=
+@[nospecialize] def HypParams (G : NormalGraph ι) (e : Entry ι) : Prop :=
   ∀ h ∈ e.hypotheses, G.params h.1 = true ∧ G.params h.2 = true
 
 /-- The instance of entry `e` at the types `xs` relates the label `l` to
 `B`: `xs` of `e`'s variables' kinds, `e`'s substituted source holding `l`,
 its substituted target within `B`. -/
-def InstanceAt [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (e : Entry ι)
+@[nospecialize] def InstanceAt [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (e : Entry ι)
     (l : ι) (B : List ι) (xs : List (List ι)) : Prop :=
   xs.length = e.variables.length ∧ instKinds G e.variables xs = true ∧
     (sub.isNone = true → e.variables = []) ∧
@@ -5735,22 +5735,22 @@ def InstanceAt [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G))
 
 /-- A label's size, by which `Inst`'s premises decrease: the renaming's, and
 nothing without one (no instance then has a hypothesis). -/
-def labelSize [DecidableEq ι] {G : NormalGraph ι} (sub : Option (Renaming G)) (l : ι) : Nat :=
+@[nospecialize] def labelSize [DecidableEq ι] {G : NormalGraph ι} (sub : Option (Renaming G)) (l : ι) : Nat :=
   match sub with
   | some r => r.size l
   | none => 0
 
 /-- A union's size: its labels'. -/
-def typeSize [DecidableEq ι] {G : NormalGraph ι} (sub : Option (Renaming G)) (A : List ι) : Nat :=
+@[nospecialize] def typeSize [DecidableEq ι] {G : NormalGraph ι} (sub : Option (Renaming G)) (A : List ι) : Nat :=
   (A.map (labelSize sub)).sum
 
 /-- A renaming of bound rows (`TabRen`): each renamed row a parameter row
 and no family variable, given one such row of its kind. Hypotheses relate
 family variables only, so a renaming leaves them in place. -/
-def boundRow [DecidableEq ι] {G : NormalGraph ι} (r : Renaming G) (x : ι) : Bool :=
+@[nospecialize] def boundRow [DecidableEq ι] {G : NormalGraph ι} (r : Renaming G) (x : ι) : Bool :=
   G.params x && !r.familyVar x
 
-def RenamesBound [DecidableEq ι] (G : NormalGraph ι) (r : Renaming G) (σ : List (ι × List ι)) : Prop :=
+@[nospecialize] def RenamesBound [DecidableEq ι] (G : NormalGraph ι) (r : Renaming G) (σ : List (ι × List ι)) : Prop :=
   instKinds G σ.unzip.1 σ.unzip.2 = true ∧
     ∀ q ∈ σ, boundRow r q.1 = true ∧ q.2.length = 1 ∧ ∀ y ∈ q.2, boundRow r y = true
 
@@ -5815,14 +5815,14 @@ theorem meetBelow_mixed [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignm
 /-- **Valid entries** (`Valid`, §4.2): every pair of every entry of `F`
 meets the core conditions, its premises read in its entry, instances citing
 the entries `look` names. -/
-def FamilyValid [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (known : Known ι)
+@[nospecialize] def FamilyValid [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (known : Known ι)
     (gen : ι → List ι → List (Nat × List (List ι))) (look : Lookup ι) (F : List (Entry ι)) : Prop :=
   ∀ f ∈ F, ∀ p ∈ f.pairs, PairOk G sub known (Prem G sub look gen f) f.hypotheses p.1 p.2
 
 /-- The variable discipline: hypotheses relate an entry's own variables, and
 variables are rows the representation reserves for them, parameter rows no
 scheme binds (none without a renaming). -/
-def VariablesOk [DecidableEq ι] {G : NormalGraph ι} (sub : Option (Renaming G))
+@[nospecialize] def VariablesOk [DecidableEq ι] {G : NormalGraph ι} (sub : Option (Renaming G))
     (F : List (Entry ι)) : Prop :=
   (∀ f ∈ F, ∀ h ∈ f.hypotheses, h.1 ∈ f.variables ∧ h.2 ∈ f.variables) ∧
     ∀ f ∈ F, ∀ x ∈ f.variables, match sub with
@@ -5830,7 +5830,7 @@ def VariablesOk [DecidableEq ι] {G : NormalGraph ι} (sub : Option (Renaming G)
       | none => False
 
 /-- An entry's goal holds wherever its hypotheses do. -/
-def EntrySound (G : NormalGraph ι) (e : Entry ι) : Prop :=
+@[nospecialize] def EntrySound (G : NormalGraph ι) (e : Entry ι) : Prop :=
   (∀ n η, HypsHold G η e.hypotheses n → MixedLe G η e.source e.target n) ∧
     ∀ n η, HypsHoldValues G η e.hypotheses n → FamLeAt G η e.source e.target n
 
@@ -6148,7 +6148,7 @@ theorem entry_instance_sound [DecidableEq ι] {G : NormalGraph ι} (r : Renaming
 /-- **Instantiation.** A scheme row is below an arrow type whose signatures
 are images of its own under one checked instance map: the binders' instances,
 each within its bound, the instance table and its domain's free rows. -/
-def InstArrs [DecidableEq ι] (G : NormalGraph ι) (S : List ι) (L : Ops ι)
+@[nospecialize] def InstArrs [DecidableEq ι] (G : NormalGraph ι) (S : List ι) (L : Ops ι)
     (M : List (RestArrow (List ι))) : Prop :=
   ∃ (i : ι) (s : SchemeRow ι) (tbl : InstTable ι) (θs : List (List ι)) (D : List ι) (V : FreeMap ι),
     S = [i] ∧ G.params i = false ∧ G.schemes i = some s ∧ θs.length = s.binders.length ∧
@@ -6160,7 +6160,7 @@ def InstArrs [DecidableEq ι] (G : NormalGraph ι) (S : List ι) (L : Ops ι)
     (∀ q ∈ M, ∃ p ∈ s.variadic, instRest G tbl (s.binders.zip θs) p q = true)
 
 /-- An instance below an arrow type. -/
-def Inst [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) : Prop :=
+@[nospecialize] def Inst [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) : Prop :=
   ∃ L M, InstArrs G S L M ∧ expand G T = [.arrs L M]
 
 /-- Structural rules compose completed proofs. They cannot bypass the guarded
@@ -6190,7 +6190,7 @@ inductive Sub (G : NormalGraph ι) : List ι → List ι → Prop where
 
 /-- The graph whose parameter rows mean `η`. No check reads the assignment, so
 every derivation over `G` is one over each reassignment. -/
-def reassign (G : NormalGraph ι) (η : MixedAssignment ι) : NormalGraph ι := { G with env := η }
+@[nospecialize] def reassign (G : NormalGraph ι) (η : MixedAssignment ι) : NormalGraph ι := { G with env := η }
 
 /-- A scheme row admits no argument list. -/
 private theorem scheme_noArguments {G : NormalGraph ι} {η : MixedAssignment ι} {i : ι}

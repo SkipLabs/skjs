@@ -18,7 +18,7 @@ def searchLimit : Nat := 120
 
 /-- The types the rows of `S` reach, breadth first: every one when they are
 fewer than `searchLimit`, as `readsFrom` gives them, else the nearest. -/
-def searchReads [DecidableEq ι] (G : NormalGraph ι) (S : List ι) : List ι := Id.run do
+@[nospecialize] def searchReads [DecidableEq ι] (G : NormalGraph ι) (S : List ι) : List ι := Id.run do
   let mut seen := S.eraseDups
   let mut frontier := seen
   for _ in [0:searchLimit] do
@@ -30,7 +30,7 @@ def searchReads [DecidableEq ι] (G : NormalGraph ι) (S : List ι) : List ι :=
   return seen
 
 /-- A free map over `D`, iterated to its fixed point. -/
-def searchFree [DecidableEq ι] (G : NormalGraph ι) (D : List ι) : FreeMap ι :=
+@[nospecialize] def searchFree [DecidableEq ι] (G : NormalGraph ι) (D : List ι) : FreeMap ι :=
   freeMapOf G D (D.length + 1) []
 
 /-- What a label representation proposes for an instance of a scheme row at
@@ -53,10 +53,10 @@ structure PointClaim (ι : Type) where
   type : Ty ι
   deriving DecidableEq, Repr
 
-def signature (c : NodeEvidence ι) : PointClaim ι := ⟨entry c, result c⟩
+@[nospecialize] def signature (c : NodeEvidence ι) : PointClaim ι := ⟨entry c, result c⟩
 
 /-- Claims are part of the request, not facts the producer may replace. -/
-def acceptUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (R : Ty ι) (P : Program)
+@[nospecialize] def acceptUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (R : Ty ι) (P : Program)
     (claims : List (PointClaim ι)) (C : ControlFlow.Certificate ι) (start : Nat)
     (inputs : List (Ty ι) := []) (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
   decide (C.map signature = claims) && checkEntryUsing G images R P C start inputs codes
@@ -87,7 +87,7 @@ a lookup where the list asks for a scan: `RelIn` holds exactly when `Rel`
 does. Search only: the checker reads the table's list. -/
 abbrev RowSet (ι : Type) [DecidableEq ι] [Hashable ι] := Std.HashSet (Ty ι × Ty ι)
 
-def rowSet [DecidableEq ι] [Hashable ι] (table : Table ι) : RowSet ι := Std.HashSet.ofList table
+@[nospecialize] def rowSet [DecidableEq ι] [Hashable ι] (table : Table ι) : RowSet ι := Std.HashSet.ofList table
 
 /-- `PositiveRules.Rel`, the table's membership read through its row set. -/
 abbrev RelIn [DecidableEq ι] [Hashable ι] (rows : RowSet ι) (a b : List ι) : Prop :=
@@ -96,7 +96,7 @@ abbrev RelIn [DecidableEq ι] [Hashable ι] (rows : RowSet ι) (a b : List ι) :
 /-- Small arrow search: source, receiver and domain union, and pairwise
 compatible codomain combination. The checker, not this search strategy,
 defines the rules. -/
-def arrowSearch [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (rows : RowSet ι) (L : Ops ι)
+@[nospecialize] def arrowSearch [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (rows : RowSet ι) (L : Ops ι)
     (S : List (RestArrow (Ty ι)))
     (q : Arrow (Ty ι)) : Nat → Option (PositiveCertificates.ArrowCert ι)
   | 0 => none
@@ -122,7 +122,7 @@ def arrowSearch [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGrap
       PositiveCertificates.ArrowCert.combine p.result q.result p.effect q.effect (.source p) (.source q)).find?
         (fun p => PositiveCertificates.checkArrowWith G (RelIn rows) L S q p)
 
-def arrowEvidence [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (table : Table ι)
+@[nospecialize] def arrowEvidence [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (table : Table ι)
     (pool : List (Ty ι)) : PositiveCertificates.Evidence ι :=
   let rows := rowSet table
   let clauses := pool.flatMap (expand G)
@@ -148,7 +148,7 @@ def arrowEvidence [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGr
 
 /-- Delete unsupported rows of a finite candidate relation. A surviving cyclic
 relation is only proposed evidence; checkCore validates every row. -/
-def prune [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (pool : List (Ty ι)) (known : PositiveRules.Known ι) :
+@[nospecialize] def prune [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (pool : List (Ty ι)) (known : PositiveRules.Known ι) :
     Nat → Table ι → Table ι
   | 0, table => table
   | fuel+1, table =>
@@ -169,7 +169,7 @@ Coverage is monotone in both, so a row failing this fails under every table:
 it is left out of a table's candidates, which leaves the pruned table as it
 was, and a pair failing it is refused before any table is built. Untrusted:
 `checkCore` decides. -/
-def rowFeasible [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (known : PositiveRules.Known ι)
+@[nospecialize] def rowFeasible [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (known : PositiveRules.Known ι)
     (A B : Ty ι) (schemes : Bool := false) : Bool :=
   PositiveRules.SameKind G A B &&
     decide (PositiveRules.OpaqueWith G (fun _ _ => True) known (fun _ _ _ => schemes) A B) &&
@@ -182,7 +182,7 @@ abbrev KnownInstances (ι : Type) :=
     PositiveCertificates.Instance ι)
 
 /-- A core table over the pool, whose coverage may use the `known` rows. -/
-def subtypeWith [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
+@[nospecialize] def subtypeWith [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
     (ks : KnownInstances ι) (A B : Ty ι) : Option (PositiveCertificates.Proof ι) :=
   if PositiveCertificates.checkUsing G images A B .subset then some .subset else
   -- Value top covers value types: one row, no arrow evidence.
@@ -196,7 +196,7 @@ def subtypeWith [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGrap
     let p := PositiveCertificates.Proof.core ⟨table, arrowEvidence G table types⟩ ks
     if PositiveCertificates.checkUsing G images A B p then some p else none
 
-def subtypeBase [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
+@[nospecialize] def subtypeBase [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
     (A B : Ty ι) : Option (PositiveCertificates.Proof ι) :=
   subtypeWith G images pool [] A B
 
@@ -205,14 +205,14 @@ signature against each source one, position by position (receivers,
 parameters contravariantly, results covariantly), and each part of a target
 parameter's union against the source's parameter, as arrow coverage splits
 it. -/
-def signaturePairs (source target : List (Arrow (List ι))) :
+@[nospecialize] def signaturePairs (source target : List (Arrow (List ι))) :
     List (List ι × List ι) :=
   target.flatMap fun t => source.flatMap fun s =>
     (t.receiver, s.receiver) :: (s.result, t.result) :: (t.arguments.zip s.arguments).flatMap fun (q, p) =>
       (q, p) :: q.map fun l => ([l], p)
 
 /-- The same, for variadic signatures: fixed parameters, rest and result. -/
-def restPairs (source target : List (RestArrow (List ι))) :
+@[nospecialize] def restPairs (source target : List (RestArrow (List ι))) :
     List (List ι × List ι) :=
   target.flatMap fun t => source.flatMap fun s =>
     (t.receiver, s.receiver) :: (t.arguments.2, s.arguments.2) :: (s.result, t.result) :: t.arguments.1.zip s.arguments.1
@@ -222,7 +222,7 @@ both ways, views and optional fields, methods signature by signature and
 scheme by scheme, and a method the source's prototype holds under the key
 (its receiver against the source, its signatures against the target's
 schemes'). -/
-def recordPairs [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (self : List ι)
+@[nospecialize] def recordPairs [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (self : List ι)
     (fs vs : List (PropKey × List ι)) (os : List (OptionalField (List ι)))
     (ms : List (MethodMembers.Sig (List ι)))
     (fs' vs' : List (PropKey × List ι)) (os' : List (OptionalField (List ι)))
@@ -247,7 +247,7 @@ def recordPairs [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (self : 
           restPairs s.variadic s'.variadic)
 
 /-- The pairs one clause's coverage of another compares. -/
-def clausePairs [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (self : List ι) :
+@[nospecialize] def clausePairs [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (self : List ι) :
     Clause (List ι) → Clause (List ι) → List (List ι × List ι)
   | .refs a bs vs os ms _, .refs c ds ws ps ns _
   | .refs a bs vs os ms _, .dict c ds ws _ ps ns _ _
@@ -268,7 +268,7 @@ def clausePairs [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (self : 
 
 /-- The pairs a row's coverage compares: its clauses' against the target's,
 and a scheme's signatures against a target scheme's binding the same rows. -/
-def demandPairs [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (X Y : Ty ι) : List (List ι × List ι) :=
+@[nospecialize] def demandPairs [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (X Y : Ty ι) : List (List ι × List ι) :=
   (clausesOf G X).flatMap (fun a => (clausesOf G Y).flatMap (clausePairs G X a)) ++
   X.flatMap fun i => Y.flatMap fun j => match G.schemes i, G.schemes j with
     | some s, some s' => if s.binders = s'.binders then
@@ -286,7 +286,7 @@ inclusions. A recursive family of types (`Promise<A>` and `Promise<B>`, whose
 table of the pairs the two unfold into together, without a table over every
 type the unit names. `none` past `demandLimit` rows. Untrusted: `checkCore`
 decides. -/
-def demandTable [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (known : PositiveRules.Known ι) :
+@[nospecialize] def demandTable [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (known : PositiveRules.Known ι) :
     Nat → Table ι → Table ι → Option (Table ι)
   | 0, _, _ => none
   | fuel + 1, table, frontier =>
@@ -298,7 +298,7 @@ def demandTable [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (known :
 
 /-- Whether a type is of objects with a member of quantified signatures: an
 instance of a declaration with generic methods. -/
-def quantifiedMembers (G : NormalGraph ι) (T : Ty ι) : Bool :=
+@[nospecialize] def quantifiedMembers (G : NormalGraph ι) (T : Ty ι) : Bool :=
   (expand G T).any fun c => match c with
     | .refs _ _ _ _ ms _ | .dict _ _ _ _ _ ms _ _ => ms.any (!·.schemes.isEmpty)
     | _ => false
@@ -306,7 +306,7 @@ def quantifiedMembers (G : NormalGraph ι) (T : Ty ι) : Bool :=
 /-- A proof of `A ≤ B` by a table grown on demand (`demandTable`), for two
 instances of declarations with generic methods, whose unfolding together the
 tables over the types near the pair do not reach. -/
-def demandProof [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (A B : Ty ι) :
+@[nospecialize] def demandProof [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (A B : Ty ι) :
     Option (PositiveCertificates.Proof ι) := do
   if !(quantifiedMembers G A && quantifiedMembers G B) then none
   if !rowFeasible G [] A B true then none
@@ -334,7 +334,7 @@ growth: the search refuses there. Untrusted: the checker decides
 
 /-- `Var`'s per-position pairs for two applications of one head whose
 variance the checker computed. -/
-def varPairs [DecidableEq ι] {G : NormalGraph ι} (images : InstanceImageCheck G) (A B : Ty ι) :
+@[nospecialize] def varPairs [DecidableEq ι] {G : NormalGraph ι} (images : InstanceImageCheck G) (A B : Ty ι) :
     Option (List (Ty ι × Ty ι)) :=
   match A, B with
   | [l], [b] => match images.gen l [b] with
@@ -345,7 +345,7 @@ def varPairs [DecidableEq ι] {G : NormalGraph ι} (images : InstanceImageCheck 
 
 /-- The rows a pair needs: none for an inclusion, its per-position pairs'
 through `Var`, else the pair itself. -/
-def rowsFor [DecidableEq ι] {G : NormalGraph ι} (images : InstanceImageCheck G) :
+@[nospecialize] def rowsFor [DecidableEq ι] {G : NormalGraph ι} (images : InstanceImageCheck G) :
     Nat → Ty ι → Ty ι → List (Ty ι × Ty ι)
   | 0, A, B => [(A, B)]
   | d + 1, A, B => if A.all (· ∈ B) then [] else match varPairs images A B with
@@ -354,7 +354,7 @@ def rowsFor [DecidableEq ι] {G : NormalGraph ι} (images : InstanceImageCheck G
 
 /-- Quantified members declared alike, their signatures compared after
 renaming the target's binders to the source's. -/
-def renamedPairs [DecidableEq ι] (G : NormalGraph ι) (r : Renaming G) (X Y : Ty ι) :
+@[nospecialize] def renamedPairs [DecidableEq ι] (G : NormalGraph ι) (r : Renaming G) (X Y : Ty ι) :
     List (Ty ι × Ty ι) :=
   X.flatMap fun i => Y.flatMap fun j => match G.schemes i, G.schemes j with
     | some s, some s' =>
@@ -366,7 +366,7 @@ def renamedPairs [DecidableEq ι] (G : NormalGraph ι) (r : Renaming G) (X Y : T
 
 /-- Arrow evidence proposed for a family's pairs: every source signature for
 every target signature, the target's renamed to the source's binders. -/
-def arrowCandidatesUsing [DecidableEq ι] (G : NormalGraph ι) (r : Renaming G)
+@[nospecialize] def arrowCandidatesUsing [DecidableEq ι] (G : NormalGraph ι) (r : Renaming G)
     (pairs : List (Ty ι × Ty ι)) : PositiveCertificates.Evidence ι :=
   pairs.flatMap fun (A, B) =>
     ((sourceClauses G A).flatMap fun a => (clausesOf G B).flatMap fun b =>
@@ -383,7 +383,7 @@ def arrowCandidatesUsing [DecidableEq ι] (G : NormalGraph ι) (r : Renaming G)
 
 /-- A head pair recurring with larger arguments than each of its two or more
 earlier occurrences, none of which it renames: growth. -/
-def grows [DecidableEq ι] {G : NormalGraph ι} (r : Renaming G) (table : Table ι) (A B : Ty ι) : Bool :=
+@[nospecialize] def grows [DecidableEq ι] {G : NormalGraph ι} (r : Renaming G) (table : Table ι) (A B : Ty ι) : Bool :=
   let heads (X Y : Ty ι) : Option (Nat × Nat) := match X, Y with
     | [a], [b] => do some (← r.head a, ← r.head b)
     | _, _ => none
@@ -409,7 +409,7 @@ structure Fallback (ι : Type) where
 
 /-- Grow the fallback table from its frontier; refuse at growth or past the
 limit. -/
-def fallbackTable [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+@[nospecialize] def fallbackTable [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (r : Renaming G) : Nat → Fallback ι → Table ι → Fallback ι
   | 0, fb, _ => { fb with refused := some "limit" }
   | fuel + 1, fb, frontier =>
@@ -432,7 +432,7 @@ def fallbackTable [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (image
 
 /-- A proof of `A ≤ B` by fallback coinduction: the pair unfolded, its
 table grown on demand, checked as a family entry (`coreUsing`). -/
-def fallbackProof [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+@[nospecialize] def fallbackProof [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (A B : Ty ι) : Option (PositiveCertificates.Proof ι) := do
   let r ← images.sub
   let fb := fallbackTable G images r fallbackLimit { table := [] } [(A, B)]
@@ -464,7 +464,7 @@ clause row to a clause row matched operand by operand, a meet row to the meet
 row or clause row its binder's image makes it, and a scheme row to a
 scheme row, its binders standing for the other's. Untrusted: `checkInst`
 validates the table. -/
-def matchRow [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap ι) :
+@[nospecialize] def matchRow [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap ι) :
     Nat → InstState ι → Ctx ι → List ι → List ι → Option (InstState ι)
   | 0, _, _, _, _ => none
   | fuel + 1, st, κ, S, T =>
@@ -576,7 +576,7 @@ def matchRow [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (bs : List 
         if deferred || (img.all (· ∈ T) && T.all (· ∈ img)) then some st else none
       positional.orElse fun _ => bySet.orElse fun _ => byParts
 
-def matchSig [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap ι) (fuel : Nat)
+@[nospecialize] def matchSig [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap ι) (fuel : Nat)
     (st : InstState ι) (κ : Ctx ι) (p q : Arrow (List ι)) :
     Option (InstState ι) := do
   if p.effect != q.effect || p.arguments.length != q.arguments.length then none
@@ -586,7 +586,7 @@ def matchSig [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (bs : List 
     else (p.receiver :: p.result :: p.arguments).zip (q.receiver :: q.result :: q.arguments)
   pairs.foldlM (fun st xy => matchRow G bs V fuel st κ xy.1 xy.2) st
 
-def matchRest [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap ι) (fuel : Nat)
+@[nospecialize] def matchRest [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap ι) (fuel : Nat)
     (st : InstState ι) (κ : Ctx ι) (p q : RestArrow (List ι)) :
     Option (InstState ι) := do
   if p.effect != q.effect || p.arguments.1.length != q.arguments.1.length then none
@@ -599,7 +599,7 @@ def matchRest [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (bs : List
 and every operand of those rows' clauses, a union such as an index contract
 `A | B` included. A certificate's table relates operands of their clauses,
 which these are, so a pool of the whole table adds nothing but search. -/
-def reachablePool [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (A B : Ty ι) : List (Ty ι) :=
+@[nospecialize] def reachablePool [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (A B : Ty ι) : List (Ty ι) :=
   let D := searchReads G (A ++ B)
   (A :: B :: D.map ([·]) ++ D.flatMap fun i => (G i).flatMap Clause.operands).eraseDups
 
@@ -607,7 +607,7 @@ def reachablePool [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (A B :
 operands' clauses' operands. A table over them relates a record to the
 contracts its fields and methods name, and those to theirs, without a table
 over the whole pool; label inclusion (`Rel`) relates what lies further. -/
-def nearPool [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (A B : Ty ι) : List (Ty ι) :=
+@[nospecialize] def nearPool [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (A B : Ty ι) : List (Ty ι) :=
   let step (T : Ty ι) : List (Ty ι) := T.flatMap fun i => (G i).flatMap Clause.operands
   -- A prototype's members are the object's methods: its operands are one
   -- step away, as an own field's are.
@@ -621,7 +621,7 @@ def nearPool [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (A B : Ty �
 /-- An instance of scheme row `s` whose signatures' images are the arrows
 `L`, `M`: find the binders' instances, then build the table under the context
 giving each binder its instance. Untrusted: `checkInstArrs` validates it. -/
-def instanceForUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (fuel : Nat) (s : SchemeRow ι)
+@[nospecialize] def instanceForUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (fuel : Nat) (s : SchemeRow ι)
     (L : PositiveRules.Ops ι) (M : List (RestArrow (List ι)))
     (candidates : List (Ty ι) := []) :
     Option (PositiveCertificates.Instance ι) := do
@@ -712,7 +712,7 @@ def instanceForUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : Norma
   some ⟨final.table, θs, certs, D, V⟩
 
 /-- A scheme row below an arrow type. -/
-def instProofUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (fuel : Nat) (A B : Ty ι)
+@[nospecialize] def instProofUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (fuel : Nat) (A B : Ty ι)
     (candidates : List (Ty ι) := []) :
     Option (PositiveCertificates.Proof ι) :=
   match A, expand G B with
@@ -726,7 +726,7 @@ def instProofUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalG
 types: for a source `A` whose prototype `P` holds, under a method's key, a
 scheme row, the instance whose signatures are the method's with `A` as
 receiver. -/
-def protoInstances [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat) :
+@[nospecialize] def protoInstances [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat) :
     KnownInstances ι :=
   let methods := pool.flatMap fun B => (expand G B).flatMap fun c => match c with
     | .refs _ _ _ _ ns _ | .dict _ _ _ _ _ ns _ _ => ns
@@ -749,7 +749,7 @@ def protoInstances [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalG
 
 /-- A type below another holding its rows' copies: each row matched, under
 the empty context, against a row of the other. -/
-def tableProof [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (fuel : Nat) (A B : Ty ι) :
+@[nospecialize] def tableProof [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (fuel : Nat) (A B : Ty ι) :
     Option (PositiveCertificates.Proof ι) := do
   let D := searchReads G (A ++ B)
   let V := searchFree G D
@@ -759,7 +759,7 @@ def tableProof [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (fuel : N
 
 /-- A type below a scheme row: a type of the pool stating the scheme's
 signatures, and a proof of the inclusion in it. -/
-def genProof [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat) (A B : Ty ι) :
+@[nospecialize] def genProof [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat) (A B : Ty ι) :
     Option (PositiveCertificates.Proof ι) :=
   match B with
   | [j] =>
@@ -781,7 +781,7 @@ related without it. Instantiating a scheme row, which applies only when `A`
 is one, comes before prototype instances, which are sought for every array
 of the table against every method the table names: first over the types
 near the pair, then over the whole pool. -/
-def subtypeUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
+@[nospecialize] def subtypeUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
     (A B : Ty ι) : Option (PositiveCertificates.Proof ι) :=
   let fuel := 64 + pool.length
   let ok p := PositiveCertificates.checkUsing G images A B p
@@ -798,7 +798,7 @@ def subtypeUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGra
 /-- Proofs that the member of key `k` on `O` covers each fixed signature of
 `F`: for each, a member signature of as many parameters, each claimed
 parameter within the member's and the member's result within the claimed. -/
-def memberProofsUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (O : Ty ι) (k : PropKey)
+@[nospecialize] def memberProofsUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (O : Ty ι) (k : PropKey)
     (F : Ty ι) : Option (List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι)) := do
   let m ← ProgramTyping.memberOf G O k
   -- At a quantified signature, the member bound to its host is the scheme.
@@ -810,7 +810,7 @@ def memberProofsUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : Norm
     let pr ← subtypeUsing G images pool c.result q.result
     pure (ps, pr)
 
-def coerce [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
+@[nospecialize] def coerce [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
     (e : ProgramCertificates.Evidence ι) (A : Ty ι) : Option (ProgramCertificates.Evidence ι) := do
   if (claim e).type = A then return e
   let p ← subtypeUsing G images pool (claim e).type A
@@ -823,7 +823,7 @@ instance [DecidableEq ι] (G : NormalGraph ι) (B : Ty ι) (tag : Tag) (q : Bool
 search fuel, including implicit let typing. Suggestions only prioritize candidate
 types; every premise is proved in the actual context, even when the suggestion
 came from a different context. No execution budget is inspected. -/
-def expressionWithUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
+@[nospecialize] def expressionWithUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
     (suggestions : List (Sequent ι)) :
     Nat → List (Ty ι) → Tm → Ty ι → Option (ProgramCertificates.Evidence ι)
   | 0, _, _, _ => none
@@ -1253,13 +1253,13 @@ def expressionWithUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : No
     | _ => return none
 
 /-- Raw calculus callers need not supply source-derived search suggestions. -/
-def expressionUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) :=
+@[nospecialize] def expressionUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) :=
   expressionWithUsing G images pool []
 
 /-- Gather graph labels, every operand of their clauses and supplied union
 types. Hints may add intermediate types; they cannot change claims or bypass
 evidence checking. -/
-def vocabulary [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (labels : List ι)
+@[nospecialize] def vocabulary [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (labels : List ι)
     (claims : List (PointClaim ι)) (hints : List (Ty ι)) : List (Ty ι) :=
   ([] :: (labels.map fun i => [i]) ++ hints ++
     claims.flatMap (fun c => c.type :: c.context) ++
@@ -1274,7 +1274,7 @@ inductive Failure where
 
 /-- Ordinary and observed edges share slot selection and coverage search. The
 observation comes from graph dispatch, never from supplied point annotations. -/
-def edgeUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
+@[nospecialize] def edgeUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
     (claims : List (PointClaim ι)) (Γ : List (Ty ι)) (target : Target)
     (observed : Option (Nat × BranchRefinement.Observation) := none)
     (fields : List (Nat × PropKey) := []) (optionals : List (Nat × PropKey) := []) :
@@ -1322,7 +1322,7 @@ def edgeUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph 
 
 /-- Select effect evidence without changing the requested sequent. A precise
 read/value rule may succeed when ordinary derivation search cannot. -/
-def expressionEffectUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
+@[nospecialize] def expressionEffectUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
     (fuel : Nat) (j : Sequent ι) (k : HeapKnowledge.Knowledge)
     (suggestions : List (Sequent ι)) (known : List (Evidence ι))
     (codes : CodeEntry ι → Bool := fun _ => false) :
@@ -1387,7 +1387,7 @@ def edgeKnowledge (k : HeapKnowledge.Knowledge) (cont : Continuation) (index : N
   | .tagBind t _ _ => HeapKnowledge.observe k 0 (.tag t (index == 0))
   | _ => k
 
-private def produceNode [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
+@[nospecialize] private def produceNode [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
     (fuel l : Nat) (node : Node) (claims : List (PointClaim ι))
     (k : HeapKnowledge.Knowledge) (suggestions : List (Sequent ι)) (known : List (Evidence ι))
     (codes : CodeEntry ι → Bool := fun _ => false) :
@@ -1433,7 +1433,7 @@ starts empty; source cuts use exactly their supplied requirements, even when
 empty. Other merge points use supplied requirements. A node is checked once
 when its unique predecessor is available; this is dependency scheduling, not invariant iteration.
 Every edge is still checked by the independent consumer. -/
-def produceRawUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
+@[nospecialize] def produceRawUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
     (fuel : Nat) (P : Program) (claims : List (PointClaim ι))
     (suggestions : List (Sequent ι) := []) (known : List (Evidence ι) := []) (start : Nat := 0)
     (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := [])
@@ -1504,7 +1504,7 @@ private def failedEdge (P : Program)
         return some (.edge l target.label index)
   return none
 
-def produceUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (labels : List ι)
+@[nospecialize] def produceUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (labels : List ι)
     (fuel : Nat) (R : Ty ι) (P : Program) (claims : List (PointClaim ι))
     (start : Nat) (hints : List (Ty ι) := []) (inputs : List (Ty ι) := [])
     (suggestions : List (Sequent ι) := []) (known : List (ProgramCertificates.Evidence ι) := [])

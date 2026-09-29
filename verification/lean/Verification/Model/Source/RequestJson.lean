@@ -168,7 +168,7 @@ instance [FromJson ι] [FromJson α] : FromJson (GraphRow ι α) := ⟨fun j =>
     | _, _, _ => .error "expected a clause array, a scheme row, a parameter row or a meet row"⟩
 
 /-- A diagnostic's `types` field, and its `names` field when there are any. -/
-def _root_.Verification.Model.LabelStore.Projection.fields {ι : Type} (p : Projection ι) :
+@[nospecialize] def _root_.Verification.Model.LabelStore.Projection.fields {ι : Type} (p : Projection ι) :
     List (String × Json) :=
   ("types", toJson p.rows) :: (if p.names.isEmpty then [] else [("names", toJson p.names)])
 
@@ -194,7 +194,7 @@ def arrayExcludedKeys (ks : List PropKey) : List PropKey :=
 
 /-- The excluded array keys: `constructor` and the prototype row's fields', views', optional fields'
 and methods', the reserved keys aside. -/
-def arrayExcludedKeysOf : List (Clause (List ι)) → List PropKey
+@[nospecialize] def arrayExcludedKeysOf : List (Clause (List ι)) → List PropKey
   | [.refs a bs vs os ms _] =>
     arrayExcludedKeys (((a :: bs).flatten ++ vs).map (·.1) ++ os.map (·.key) ++ ms.map (·.key))
   | _ => arrayExcludedKeys []
@@ -257,11 +257,11 @@ private def withEmptyCodes (j : Json) : Json :=
   | .obj _, .error _ => j.setObjVal! "codes" (.arr #[])
   | _, _ => j
 
-private def derivedRequestToJson [ToJson σ] [ToJson ι] : Request σ ι → Json := toJson
-private def derivedRequestFromJson [FromJson σ] [FromJson ι] : Json → Except String (Request σ ι) :=
+@[nospecialize] private def derivedRequestToJson [ToJson σ] [ToJson ι] : Request σ ι → Json := toJson
+@[nospecialize] private def derivedRequestFromJson [FromJson σ] [FromJson ι] : Json → Except String (Request σ ι) :=
   fromJson?
-private def derivedResponseToJson [ToJson ι] : Response ι → Json := toJson
-private def derivedResponseFromJson [FromJson ι] : Json → Except String (Response ι) := fromJson?
+@[nospecialize] private def derivedResponseToJson [ToJson ι] : Response ι → Json := toJson
+@[nospecialize] private def derivedResponseFromJson [FromJson ι] : Json → Except String (Response ι) := fromJson?
 
 instance (priority := high) [ToJson σ] [ToJson ι] : ToJson (Request σ ι) :=
   ⟨fun r => withoutEmptyCodes (derivedRequestToJson r)⟩
@@ -275,19 +275,19 @@ instance (priority := high) [FromJson ι] : FromJson (Response ι) :=
 section
 variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 
-def graph (r : Request σ ι) : NormalGraph ι := StoreView.graph r.types
+@[nospecialize] def graph (r : Request σ ι) : NormalGraph ι := StoreView.graph r.types
 
-def validTy (ok : ι → Bool) (A : Ty ι) : Bool := A.all ok
+@[nospecialize] def validTy (ok : ι → Bool) (A : Ty ι) : Bool := A.all ok
 
 /-- Use the clause language's operand traversal for boundary validation too. -/
-def clauseTypes : Clause (Ty ι) → List (Ty ι) := Clause.operands
+@[nospecialize] def clauseTypes : Clause (Ty ι) → List (Ty ι) := Clause.operands
 
-def validClaim (ok : ι → Bool) (c : PointClaim ι) : Bool :=
+@[nospecialize] def validClaim (ok : ι → Bool) (c : PointClaim ι) : Bool :=
   (c.type :: c.context).all (validTy ok)
 
 /-- The total Lean graph's out-of-range default must not become an accidental
 meaning for an invalid serialized type reference. -/
-def validRequest (r : Request σ ι) : Bool :=
+@[nospecialize] def validRequest (r : Request σ ι) : Bool :=
   let ok := StoreView.valid r.types
   StoreView.wellFormed r.types &&
   r.claims.all (validClaim ok) && validTy ok r.result &&
@@ -297,7 +297,7 @@ def validRequest (r : Request σ ι) : Bool :=
       q.entry.store.toList).all
       (validTy ok)
 
-def arrowTypes : PositiveCertificates.ArrowCert ι → List (Ty ι)
+@[nospecialize] def arrowTypes : PositiveCertificates.ArrowCert ι → List (Ty ι)
   | .empty | .emptyRecv => []
   | .source p => p.operands
   | .rest s => s.operands
@@ -305,19 +305,19 @@ def arrowTypes : PositiveCertificates.ArrowCert ι → List (Ty ι)
   | .recvUnion a b l r => a :: b :: (arrowTypes l ++ arrowTypes r)
   | .combine a b _ _ l r => a :: b :: (arrowTypes l ++ arrowTypes r)
 
-def certificateTypes (c : PositiveCertificates.Certificate ι) : List (Ty ι) :=
+@[nospecialize] def certificateTypes (c : PositiveCertificates.Certificate ι) : List (Ty ι) :=
   c.table.flatMap (fun p => [p.1,p.2]) ++ c.arrows.flatMap (fun e =>
     e.1.flatMap Arrow.operands ++ e.2.1.operands ++
       arrowTypes e.2.2)
 
-def instanceTypes (c : PositiveCertificates.Instance ι) : List (Ty ι) :=
+@[nospecialize] def instanceTypes (c : PositiveCertificates.Instance ι) : List (Ty ι) :=
   c.domain :: c.instances ++ c.free.flatMap (fun p => [[p.1], p.2]) ++
     c.bounds.flatMap (fun c => match c with
       | some cert => certificateTypes cert
       | none => []) ++
     c.table.flatMap (fun e => [e.1] :: e.2.2 :: e.2.1.flatMap (fun p => [[p.1], p.2]))
 
-def proofTypes : PositiveCertificates.Proof ι → List (Ty ι)
+@[nospecialize] def proofTypes : PositiveCertificates.Proof ι → List (Ty ι)
   | .subset => []
   | .trans middle l r => middle :: (proofTypes l ++ proofTypes r)
   | .inst c => instanceTypes c
@@ -328,7 +328,7 @@ def proofTypes : PositiveCertificates.Proof ι → List (Ty ι)
       k.2.1.flatMap Arrow.operands ++
       k.2.2.1.flatMap RestArrow.operands ++ instanceTypes k.2.2.2)
 
-def validEvidence (ok : ι → Bool) : ProgramCertificates.Evidence ι → Bool
+@[nospecialize] def validEvidence (ok : ι → Bool) : ProgramCertificates.Evidence ι → Bool
   | .node j r ps =>
     (j.type :: j.context).all (validTy ok) &&
     (match r with
@@ -351,19 +351,19 @@ decreasing_by
   simp only [ProgramCertificates.Evidence.node.sizeOf_spec]
   omega
 
-def validEffect (ok : ι → Bool) : HeapExpressionRules.StepEvidence ι → Bool
+@[nospecialize] def validEffect (ok : ι → Bool) : HeapExpressionRules.StepEvidence ι → Bool
   | .ordinary e | .pure e | .created e | .allocated e | .typedRead _ e | .written _ _ _ e =>
     validEvidence ok e
   | .slicedRead _ e p => validEvidence ok e && (proofTypes p).all (validTy ok)
   | .observedRead _ _ | .knownValue _ _ => true
 
-def validCertificate (ok : ι → Bool) (C : ControlFlow.Certificate ι) : Bool :=
+@[nospecialize] def validCertificate (ok : ι → Bool) (C : ControlFlow.Certificate ι) : Bool :=
   C.all (fun n =>
     validEvidence ok n.expression &&
     (n.effect.map (validEffect ok)).getD true &&
     (n.edges.flatMap id |>.flatMap proofTypes).all (validTy ok))
 
-def validResponse (r : Request σ ι) (c : Response ι) : Bool :=
+@[nospecialize] def validResponse (r : Request σ ι) (c : Response ι) : Bool :=
   validCertificate (StoreView.valid r.types) c.certificate &&
     c.codes.all (validCertificate (StoreView.valid r.types))
 
@@ -387,26 +387,26 @@ section
 variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 
 /-- A request over the store `σ`, which names how its table is spelled. -/
-def decodeRequest (σ : Type) [StoreView σ ι] (j : Json) : Except String (Request σ ι) := do
+@[nospecialize] def decodeRequest (σ : Type) [StoreView σ ι] (j : Json) : Except String (Request σ ι) := do
   let r ← decodeStrict j
   if validRequest r then return r
   throw "out-of-range type label in request"
 
-def decodeResponse (r : Request σ ι) (j : Json) : Except String (Response ι) := do
+@[nospecialize] def decodeResponse (r : Request σ ι) (j : Json) : Except String (Response ι) := do
   let c ← decodeStrict j
   if validResponse r c then return c
   throw "out-of-range type label in evidence"
 
 /-- The request's graph code, checked in order against its claims, as a table
 of what was checked (`GraphCode.checkCodes`). -/
-def codeTable (r : Request σ ι) (c : Response ι) : Option (List (CodeEntry ι)) :=
+@[nospecialize] def codeTable (r : Request σ ι) (c : Response ι) : Option (List (CodeEntry ι)) :=
   if r.codes.length == c.codes.length &&
       (r.codes.zip c.codes).all (fun (q, C) => C.map signature == q.claims) then
     GraphCode.checkCodesUsing (graph r) (StoreView.images r.types) ((r.codes.map (·.entry)).zip c.codes)
   else none
 
 /-- This check remains independent of the producer and its search settings. -/
-def verify (r : Request σ ι) (c : Response ι) : Bool :=
+@[nospecialize] def verify (r : Request σ ι) (c : Response ι) : Bool :=
   validRequest r && validResponse r c &&
     match codeTable r c with
     | some table => CertificateProducer.acceptUsing (graph r) (StoreView.images r.types) r.result r.program
@@ -414,7 +414,7 @@ def verify (r : Request σ ι) (c : Response ι) : Bool :=
         r.start r.inputs (GraphCode.admits table)
     | none => false
 
-def verifyJson (σ : Type) [StoreView σ ι] (request evidence : Json) : Except String Unit :=
+@[nospecialize] def verifyJson (σ : Type) [StoreView σ ι] (request evidence : Json) : Except String Unit :=
   match decodeRequest σ request with
   | .error e => .error e
   | .ok r => match decodeResponse r evidence with
@@ -480,15 +480,15 @@ section
 variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 
 /-- A point claim as a diagnostic shows it, through the store's projection. -/
-def PointClaim.shown (p : Projection ι) (c : PointClaim ι) : PointClaim Nat :=
+@[nospecialize] def PointClaim.shown (p : Projection ι) (c : PointClaim ι) : PointClaim Nat :=
   ⟨c.context.map p.shown, p.shown c.type⟩
 
 /-- The labels a point claim mentions. -/
-def PointClaim.mentions (c : PointClaim ι) : List ι := c.type ++ c.context.flatten
+@[nospecialize] def PointClaim.mentions (c : PointClaim ι) : List ι := c.type ++ c.context.flatten
 
 /-- A graph failure as a diagnostic: its types are the store's projection
 (`StoreView.project`) onto the labels the record mentions. -/
-def failureDiagnostic (r : Request σ ι) (fuel : Nat)
+@[nospecialize] def failureDiagnostic (r : Request σ ι) (fuel : Nat)
     (sourceMap : SourceMap) (e : Failure)
     (requirements : List (Nat × HeapKnowledge.Knowledge) := []) : List (String × Json) := Id.run do
   let claimAt := fun l => (r.claims[l]? : Option (PointClaim ι))
@@ -540,13 +540,13 @@ def failureDiagnostic (r : Request σ ι) (fuel : Nat)
 /-- A code request as a request of its own: its graph, from the frame its
 signature describes, at the signature's result. What it may create is the
 table checked before it, not part of this request. -/
-def CodeRequest.asRequest (r : Request σ ι) (q : CodeRequest ι) : Request σ ι :=
+@[nospecialize] def CodeRequest.asRequest (r : Request σ ι) (q : CodeRequest ι) : Request σ ι :=
   { types := r.types, program := GraphCode.program q.entry.exprs q.entry.conts, claims := q.claims,
     result := q.entry.row.result, start := q.entry.start,
     inputs := codeFrame q.entry.arity q.entry.row q.entry.captures q.entry.store, codes := [] }
 
 /-- Search one graph's certificate, the codes of `table` admitted. -/
-def produceGraph (r : Request σ ι) (fuel : Nat) (labels : List ι)
+@[nospecialize] def produceGraph (r : Request σ ι) (fuel : Nat) (labels : List ι)
     (suggestions : List (ProgramCertificates.Sequent ι)) (known : List (ProgramCertificates.Evidence ι))
     (sourceMap : SourceMap) (requirements : List (Nat × HeapKnowledge.Knowledge)) (cuts : List Nat)
     (table : List (CodeEntry ι)) : Except String (ControlFlow.Certificate ι) :=
@@ -583,7 +583,7 @@ structure CodeHints where
 /-- Search a request's evidence: each code's certificate, then the graph's,
 checked as the consumer checks them. Fuel bounds search only; it is not
 part of the certified request. -/
-def produceResponse (r : Request σ ι) (fuel : Nat)
+@[nospecialize] def produceResponse (r : Request σ ι) (fuel : Nat)
     (suggestions : List (ProgramCertificates.Sequent ι) := [])
     (known : List (ProgramCertificates.Evidence ι) := [])
     (sourceMap : SourceMap := [])
@@ -612,7 +612,7 @@ def produceResponse (r : Request σ ι) (fuel : Nat)
   throw "the certificate does not justify the actual program and supplied claims"
 
 /-- Produce and serialize, then pass through the same independent JSON consumer. -/
-def produceJson (σ : Type) [StoreView σ ι] (request : Json) (fuel : Nat)
+@[nospecialize] def produceJson (σ : Type) [StoreView σ ι] (request : Json) (fuel : Nat)
     (suggestions : List (ProgramCertificates.Sequent ι) := [])
     (known : List (ProgramCertificates.Evidence ι) := [])
     (sourceMap : SourceMap := [])

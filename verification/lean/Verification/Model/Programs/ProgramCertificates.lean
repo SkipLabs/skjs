@@ -17,15 +17,15 @@ structure Sequent (ι : Type) where
 /-- What a literal index names in a tuple contract, as the checker reads it: a
 required position's type; an optional or rest position's type with `undefined`;
 any named position's type. -/
-def requiredAt (T : Tuple (Ty ι)) (b : UInt64) : Option (Ty ι) :=
+@[nospecialize] def requiredAt (T : Tuple (Ty ι)) (b : UInt64) : Option (Ty ι) :=
   (indexOfBits b).bind fun k => T.required[k]?
 
-def optionalAt (T : Tuple (Ty ι)) (b : UInt64) (U : Ty ι) : Option (Ty ι) :=
+@[nospecialize] def optionalAt (T : Tuple (Ty ι)) (b : UInt64) (U : Ty ι) : Option (Ty ι) :=
   (indexOfBits b).bind fun k => match T.required[k]? with
     | some _ => none
     | none => (positionTy T k).map (· ++ U)
 
-def namedAt (T : Tuple (Ty ι)) (b : UInt64) : Option (Ty ι) :=
+@[nospecialize] def namedAt (T : Tuple (Ty ι)) (b : UInt64) : Option (Ty ι) :=
   (indexOfBits b).bind fun k => positionTy T k
 
 inductive Rule (ι : Type) where
@@ -91,7 +91,7 @@ inductive Rule (ι : Type) where
 inductive Evidence (ι : Type) where
   | node (claim : Sequent ι) (rule : Rule ι) (premises : List (Evidence ι))
 
-def claim : Evidence ι → Sequent ι
+@[nospecialize] def claim : Evidence ι → Sequent ι
   | .node j _ _ => j
 
 /-- The slots a prefix of saved variables names, when every entry is one. -/
@@ -133,7 +133,7 @@ def capSlotsBelow (caps : List Tm) (n : Nat) : Bool :=
   | none => false
 
 /-- The scheme row a type is, if it is one. -/
-def schemeOf (G : NormalGraph ι) : Ty ι → Option (ι × SchemeRow ι)
+@[nospecialize] def schemeOf (G : NormalGraph ι) : Ty ι → Option (ι × SchemeRow ι)
   | [i] => if G.params i then none else (G.schemes i).map (i, ·)
   | _ => none
 
@@ -149,7 +149,7 @@ theorem schemeOf_plain {G : NormalGraph ι} {A : Ty ι} (h : G.plainTy A = true)
 /-- Every signature `(L, S)` offers is a checked entry of graph code with
 captures at `Cs` (`CodeOffers`): without a rest, each offered row; with one,
 no fixed signature and each variadic signature with its store type from `As`. -/
-def offersChecked [DecidableEq ι] (G : NormalGraph ι) (codes : CodeEntry ι → Bool) (arity : Nat)
+@[nospecialize] def offersChecked [DecidableEq ι] (G : NormalGraph ι) (codes : CodeEntry ι → Bool) (arity : Nat)
     (E : List Tm) (K : List (ControlFlow.Continuation × Option ControlFlow.Target)) (start : Nat)
     (Cs : List (Ty ι)) (rest : Bool) (L : List (Arrow (Ty ι)))
     (S : List (RestArrow (Ty ι))) (As : List (Ty ι)) : Bool :=
@@ -164,7 +164,7 @@ captures at `Cs`: an arrow type's signatures, or, for a generic closure, a
 scheme row's, whose captures' types then read none of its binders. A table
 entry is checked at every assignment of the parameter rows
 (`CodesSound`), so at every instantiation of the scheme's binders. -/
-def graphCodesChecked [DecidableEq ι] (G : NormalGraph ι) (A : Ty ι) (codes : CodeEntry ι → Bool)
+@[nospecialize] def graphCodesChecked [DecidableEq ι] (G : NormalGraph ι) (A : Ty ι) (codes : CodeEntry ι → Bool)
     (arity : Nat) (E : List Tm) (K : List (ControlFlow.Continuation × Option ControlFlow.Target))
     (start : Nat) (Cs : List (Ty ι)) (rest : Bool) (As : List (Ty ι)) : Bool :=
   match schemeOf G A with
@@ -177,7 +177,7 @@ def graphCodesChecked [DecidableEq ι] (G : NormalGraph ι) (A : Ty ι) (codes :
 
 /-- A class value's construct signatures, each a checked entry of its graph
 code at the row whose receiver is `U`, the `undefined` type `new` passes. -/
-def ctorCodesChecked [DecidableEq ι] (G : NormalGraph ι) (A U : Ty ι) (codes : CodeEntry ι → Bool)
+@[nospecialize] def ctorCodesChecked [DecidableEq ι] (G : NormalGraph ι) (A U : Ty ι) (codes : CodeEntry ι → Bool)
     (arity : Nat) (E : List Tm) (K : List (ControlFlow.Continuation × Option ControlFlow.Target))
     (start : Nat) (Cs : List (Ty ι)) : Bool :=
   match expand G A with
@@ -185,7 +185,7 @@ def ctorCodesChecked [DecidableEq ι] (G : NormalGraph ι) (A U : Ty ι) (codes 
   | _ => false
 
 /-- The prototype type `P` has a field or view `f` at `A`. -/
-def ProtoMember (G : NormalGraph ι) (P : Ty ι) (f : PropKey) (A : Ty ι) : Prop :=
+@[nospecialize] def ProtoMember (G : NormalGraph ι) (P : Ty ι) (f : PropKey) (A : Ty ι) : Prop :=
   match expand G P with
   | [.refs gs [] ws _ _ _] => (f, A) ∈ gs ++ ws
   | _ => False
@@ -196,7 +196,7 @@ instance [DecidableEq ι] (G : NormalGraph ι) (P : Ty ι) (f : PropKey) (A : Ty
 
 /-- Proofs that the member signature `c` covers the claimed `q`: each claimed
 parameter within the member's, then the member's result within the claimed. -/
-def CallProofsUsing [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G) (q : Arrow (Ty ι))
+@[nospecialize] def CallProofsUsing [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G) (q : Arrow (Ty ι))
     (c : MethodArrow (Ty ι))
     (ps : List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι) : Prop :=
   q.arguments.length = c.arguments.length ∧ ps.1.length = c.arguments.length ∧
@@ -238,7 +238,7 @@ theorem CoveredCallUsing.proofs [DecidableEq ι] {G : NormalGraph ι}
   exact ⟨(ps, pr), hl, by simpa [List.length_zip, hl] using hpl, hps, hr, he⟩
 
 /-- Only finite, syntactic premises of one rule. -/
-def LocalUsing [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G) (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
+@[nospecialize] def LocalUsing [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G) (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
     (codes : CodeEntry ι → Bool := fun _ => false) : Prop :=
   match r, j.term, ps with
   | .var, .var i, [] => j.context[i]? = some j.type
@@ -530,7 +530,7 @@ instance [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.In
 
 /-- Check evidence against the rules. `codes` answers which graph code the
 unit's certificate has checked (`Rule.funGraph`); by default, none. -/
-def checkTreeUsing [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G) (e : Evidence ι)
+@[nospecialize] def checkTreeUsing [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G) (e : Evidence ι)
     (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
   match e with
   | .node j r ps => decide (LocalUsing G images j r (ps.map claim) codes) &&
@@ -578,7 +578,7 @@ theorem checkScope_iff (d : Nat) (t : Tm) : checkScope d t = true ↔ Scoped d t
 
 /-- Bind evidence to the actual requested program, type and empty context.
 Scope includes unselected branches and bodies of empty overloads. -/
-def checkUsing [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G) (t : Tm) (A : Ty ι) (e : Evidence ι)
+@[nospecialize] def checkUsing [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G) (t : Tm) (A : Ty ι) (e : Evidence ι)
     (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
   decide (claim e = ⟨[], t, A⟩) && checkScope 0 t && checkTreeUsing G images e codes
 
@@ -586,7 +586,7 @@ def checkUsing [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertifica
 graph reassigned at every assignment of its parameter rows: a code check reads
 no assignment (`Parametricity`), so a checked table is sound at all of them,
 which is what a generic closure's creation needs (`HasTyUsing.funScheme`). -/
-def CodesSound (G : NormalGraph ι) (codes : CodeEntry ι → Bool) : Prop :=
+@[nospecialize] def CodesSound (G : NormalGraph ι) (codes : CodeEntry ι → Bool) : Prop :=
   ∀ c, codes c = true → ∀ η, c.Spec (reassign G η)
 
 theorem codesSound_none (G : NormalGraph ι) : CodesSound G (fun _ => false) := by
@@ -1340,7 +1340,7 @@ theorem capSlots_complete {Γ : List (Ty ι)} {caps : List (Ty ι × Nat)}
 
 /-- Evidence for a sequent, with every graph code admitted: coverage of the
 rules, where which code a unit has checked is not the question. -/
-def RepresentableUsing [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G) (j : Sequent ι) : Prop :=
+@[nospecialize] def RepresentableUsing [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G) (j : Sequent ι) : Prop :=
   ∃ e, claim e = j ∧ checkTreeUsing G images e (fun _ => true) = true
 
 private theorem gather [DecidableEq ι] {G : NormalGraph ι}
@@ -1947,11 +1947,11 @@ abbrev Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι
     (codes : CodeEntry ι → Bool := fun _ => false) : Prop :=
   LocalUsing G (PositiveCertificates.finiteInstanceImages G) j r ps codes
 
-def checkTree [DecidableEq ι] (G : NormalGraph ι) (e : Evidence ι)
+@[nospecialize] def checkTree [DecidableEq ι] (G : NormalGraph ι) (e : Evidence ι)
     (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
   checkTreeUsing G (PositiveCertificates.finiteInstanceImages G) e codes
 
-def check [DecidableEq ι] (G : NormalGraph ι) (t : Tm) (A : Ty ι) (e : Evidence ι)
+@[nospecialize] def check [DecidableEq ι] (G : NormalGraph ι) (t : Tm) (A : Ty ι) (e : Evidence ι)
     (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
   checkUsing G (PositiveCertificates.finiteInstanceImages G) t A e codes
 

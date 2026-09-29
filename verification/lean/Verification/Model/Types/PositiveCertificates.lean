@@ -21,7 +21,7 @@ inductive ArrowCert (ι : Type) where
   | recvUnion (a b : List ι) (left right : ArrowCert ι)
   deriving Repr, DecidableEq
 
-def checkDomainsWith (R : List ι → List ι → Prop) [DecidableRel R] : List (List ι) → List (List ι) → Bool
+@[nospecialize] def checkDomainsWith (R : List ι → List ι → Prop) [DecidableRel R] : List (List ι) → List (List ι) → Bool
   | [], [] => true
   | a :: As, b :: Bs => decide (R a b) && checkDomainsWith R As Bs
   | _, _ => false
@@ -41,7 +41,7 @@ instance [DecidableEq ι] {elem : List ι → Option (List ι)} {R : List ι →
   unfold IntoRest; infer_instance
 
 /-- A variadic source signature covering a fixed arrow, decided. -/
-def checkRestFixedWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) [DecidableRel R]
+@[nospecialize] def checkRestFixedWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) [DecidableRel R]
     (s : RestArrow (List ι)) (q : Arrow (List ι)) : Bool :=
   decide (R q.receiver s.receiver) &&
     checkDomainsWith R (q.arguments.take s.arguments.1.length) s.arguments.1 &&
@@ -54,7 +54,7 @@ theorem checkRestFixedWith_iff [DecidableEq ι] {G : NormalGraph ι} {R : List �
 
 /-- Every recursive premise retains the target contract. Splitting a domain
 changes only that domain; combining results states and checks both effects. -/
-def checkArrowWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) [DecidableRel R]
+@[nospecialize] def checkArrowWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) [DecidableRel R]
     (L : Ops ι) (S : List (RestArrow (List ι))) (q : Arrow (List ι)) : ArrowCert ι → Bool
   | .empty => decide ([] ∈ q.arguments)
   | .emptyRecv => decide (q.receiver = [])
@@ -268,7 +268,7 @@ set_option synthInstance.maxSize 1024 in
 /-- The executable checker is the shared coverage rule interpreted with checked
 arrow evidence, premises read through `R`. Adding a coverage condition changes
 the checker automatically. -/
-def checkClauseWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) [DecidableRel R]
+@[nospecialize] def checkClauseWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) [DecidableRel R]
     (known : Known ι) (proofs : Evidence ι) (self : List ι) (a b : Clause (List ι)) : Bool :=
   decide (CoversWith G R known (ArrowsCheckedWith G R proofs) self a b)
 
@@ -447,7 +447,7 @@ structure Certificate (ι : Type) where
   deriving Repr
 
 set_option synthInstance.maxSize 1024 in
-def checkCore [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (S T : List ι)
+@[nospecialize] def checkCore [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (S T : List ι)
     (cert : Certificate ι) : Bool :=
   decide ((S, T) ∈ cert.table ∧ ∀ p ∈ cert.table, SameKind G p.1 p.2 = true ∧
     OpaqueWith G (Rel cert.table) known (ArrowsChecked G cert.table cert.arrows) p.1 p.2 ∧
@@ -587,7 +587,7 @@ inductive Proof (ι : Type) where
   deriving Repr
 
 /-- The syntactic conditions of `Sub.gen`, other than its subproof. -/
-def genOk [DecidableEq ι] (G : NormalGraph ι) (S T D : List ι) (V : FreeMap ι) (U : List ι) :
+@[nospecialize] def genOk [DecidableEq ι] (G : NormalGraph ι) (S T D : List ι) (V : FreeMap ι) (U : List ι) :
     Bool :=
   match T with
   | [j] =>
@@ -612,7 +612,7 @@ theorem genOk_sound [DecidableEq ι] {G : NormalGraph ι} {S T D V U}
 
 /-- An instance type within one bound: plain inclusion (no certificate) or a
 core certificate. A bound whose binder has no instance is vacuous. -/
-def boundOk [DecidableEq ι] (G : NormalGraph ι) (binders : List ι) (θs : List (List ι))
+@[nospecialize] def boundOk [DecidableEq ι] (G : NormalGraph ι) (binders : List ι) (θs : List (List ι))
     (b : ι × List ι) (c : Option (Certificate ι)) : Bool :=
   match (binders.zip θs).lookup b.1 with
   | none => true
@@ -674,7 +674,7 @@ structure Base [DecidableEq ι] (G : NormalGraph ι) where
 
 /-- The entries a family certificate's instances cite: the base's, then its
 own after them. -/
-def Base.lookup [DecidableEq ι] {G : NormalGraph ι} (base : Base G) (F : List (Entry ι)) :
+@[nospecialize] def Base.lookup [DecidableEq ι] {G : NormalGraph ι} (base : Base G) (F : List (Entry ι)) :
     Lookup ι := fun k =>
   if k < base.size then base.entry k else F[k - base.size]?
 
@@ -688,7 +688,7 @@ theorem Base.lookup_cases [DecidableEq ι] {G : NormalGraph ι} (base : Base G) 
 
 /-- A renaming at a reassignment of the graph's parameter rows: its laws
 quantify over every assignment and read no `env`. -/
-def _root_.Verification.Model.PositiveRules.Renaming.reassign [DecidableEq ι] {G : NormalGraph ι} (r : Renaming G) (η : MixedAssignment ι) :
+@[nospecialize] def _root_.Verification.Model.PositiveRules.Renaming.reassign [DecidableEq ι] {G : NormalGraph ι} (r : Renaming G) (η : MixedAssignment ι) :
     Renaming (PositiveRules.reassign G η) where
   substitute := r.substitute
   free := r.free
@@ -704,7 +704,7 @@ def _root_.Verification.Model.PositiveRules.Renaming.reassign [DecidableEq ι] {
 
 /-- Sound entries at a reassignment: soundness quantifies over every
 assignment and reads no `env`. -/
-def Base.reassign [DecidableEq ι] {G : NormalGraph ι} (b : Base G) (η : MixedAssignment ι) :
+@[nospecialize] def Base.reassign [DecidableEq ι] {G : NormalGraph ι} (b : Base G) (η : MixedAssignment ι) :
     Base (PositiveRules.reassign G η) where
   size := b.size
   entry := b.entry
@@ -725,14 +725,14 @@ structure InstanceImageCheck [DecidableEq ι] (G : NormalGraph ι) where
   gen : ι → List ι → List (Nat × List (List ι)) := fun _ _ => []
 
 /-- The original finite closed-table implementation. -/
-def finiteInstanceImages [DecidableEq ι] (G : NormalGraph ι) : InstanceImageCheck G where
+@[nospecialize] def finiteInstanceImages [DecidableEq ι] (G : NormalGraph ι) : InstanceImageCheck G where
   check := fun _ c => TableOk G c.table c.domain c.free
   sound := fun _ _ hlen hkinds hok η => table_instanceImages η hlen hkinds hok
 
 /-- The same check at a reassignment of the graph's parameter rows. Its
 obligation quantifies over every assignment and reads no `env`, so one proof
 serves every reassignment (`Parametricity`). -/
-def InstanceImageCheck.reassign [DecidableEq ι] {G : NormalGraph ι} (images : InstanceImageCheck G)
+@[nospecialize] def InstanceImageCheck.reassign [DecidableEq ι] {G : NormalGraph ι} (images : InstanceImageCheck G)
     (η : MixedAssignment ι) : InstanceImageCheck (PositiveRules.reassign G η) where
   check := images.check
   sound := images.sound
@@ -744,7 +744,7 @@ def InstanceImageCheck.reassign [DecidableEq ι] {G : NormalGraph ι} (images : 
 image of one of the scheme's under the instance table, each instance within
 its binder's bounds. Only validation of that image table depends on its
 representation; every other obligation is shared. -/
-def checkInstArrsUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+@[nospecialize] def checkInstArrsUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (S : List ι) (L : Ops ι) (M : List (RestArrow (List ι))) (c : Instance ι) : Bool :=
   match S with
   | [i] =>
@@ -760,7 +760,7 @@ def checkInstArrsUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceI
   | _ => false
 
 /-- Keep the finite checker as the existing default, with identical checks. -/
-def checkInstArrs [DecidableEq ι] (G : NormalGraph ι) (S : List ι) (L : Ops ι)
+@[nospecialize] def checkInstArrs [DecidableEq ι] (G : NormalGraph ι) (S : List ι) (L : Ops ι)
     (M : List (RestArrow (List ι))) (c : Instance ι) : Bool :=
   checkInstArrsUsing G (finiteInstanceImages G) S L M c
 
@@ -817,7 +817,7 @@ theorem checkInstArrs_complete [DecidableEq ι] {G : NormalGraph ι} {S L M}
   exact ⟨fun q hq => hL q hq, fun q hq => hM q hq⟩
 
 /-- The shared instance rule against an explicit target arrow type. -/
-def checkInstUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+@[nospecialize] def checkInstUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (S T : List ι) (c : Instance ι) : Bool :=
   match expand G T with
   | [.arrs L M] => checkInstArrsUsing G images S L M c
@@ -851,7 +851,7 @@ theorem checkInstUsing_sound [DecidableEq ι] {G : NormalGraph ι}
   · cases h
 
 /-- `T` is one arrow clause, an instance of the scheme row `S`. -/
-def checkInst [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) (c : Instance ι) : Bool :=
+@[nospecialize] def checkInst [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) (c : Instance ι) : Bool :=
   checkInstUsing G (finiteInstanceImages G) S T c
 
 theorem checkInst_sound [DecidableEq ι] {G : NormalGraph ι} {S T c}
@@ -870,7 +870,7 @@ theorem checkInst_complete [DecidableEq ι] {G : NormalGraph ι} {S T}
   exact ⟨c, by simp only [checkInst, checkInstUsing, hT, hc]⟩
 
 /-- The rows a core certificate's instances prove. -/
-def knownOf (ks : List (List ι × Ops ι × List (RestArrow (List ι)) × Instance ι)) :
+@[nospecialize] def knownOf (ks : List (List ι × Ops ι × List (RestArrow (List ι)) × Instance ι)) :
     Known ι := ks.map fun k => (k.1, k.2.1, k.2.2.1)
 
 theorem instances_complete [DecidableEq ι] {G : NormalGraph ι} :
@@ -897,13 +897,13 @@ instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {e : 
   unfold InstanceAt; infer_instance
 
 /-- `Mem`, `Hyp` and `MeetHyp`, decided. -/
-def premBase [DecidableEq ι] (G : NormalGraph ι) (f : Entry ι) (l : ι) (B : List ι) : Bool :=
+@[nospecialize] def premBase [DecidableEq ι] (G : NormalGraph ι) (f : Entry ι) (l : ι) (B : List ι) : Bool :=
   decide (l ∈ B) || f.hypotheses.any (fun h => decide (h.1 = l) && decide (h.2 ∈ B)) ||
     (G.meetRow l && B.any fun y => meetBelow G l y f.hypotheses)
 
 /-- `Tab` and `TabRen`, decided: the renaming is the representation's own
 proposal, checked. -/
-def premTable [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (f : Entry ι)
+@[nospecialize] def premTable [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (f : Entry ι)
     (A B : List ι) : Bool :=
   decide ((A, B) ∈ f.table) || match sub with
     | some r => f.table.any fun p => decide (RenamesBound G r (r.rename p A B)) &&
@@ -913,7 +913,7 @@ def premTable [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) 
 
 /-- `Inst` at the instance `w`, its hypotheses decided by `prem` on strictly
 smaller types. -/
-def instanceB [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (look : Lookup ι)
+@[nospecialize] def instanceB [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (look : Lookup ι)
     (fuel : Nat) (prem : List ι → List ι → Bool) (l : ι) (B : List ι) (w : Nat × List (List ι)) : Bool :=
   SubtypingTrace.noteInstance fuel <| match look w.1 with
   | some e => decide (InstanceAt G sub e l B w.2) && e.hypotheses.all fun h =>
@@ -923,7 +923,7 @@ def instanceB [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) 
   | none => false
 
 /-- A label's premise, decided with `k` levels of nested instances. -/
-def premLabelB [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (look : Lookup ι)
+@[nospecialize] def premLabelB [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (look : Lookup ι)
     (gen : ι → List ι → List (Nat × List (List ι))) (f : Entry ι) : Nat → ι → List ι → Bool
   | 0, l, B => premBase G f l B
   | k + 1, l, B => premBase G f l B || (f.instances ++ gen l B).any fun w =>
@@ -931,7 +931,7 @@ def premLabelB [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G))
         premLabelB G sub look gen f k l' Y) l B w
 
 /-- A premise, decided with `k` levels of nested instances. -/
-def premB [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (look : Lookup ι)
+@[nospecialize] def premB [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (look : Lookup ι)
     (gen : ι → List ι → List (Nat × List (List ι))) (f : Entry ι) (k : Nat) (A B : List ι) : Bool :=
   premTable G sub f A B || A.all fun l => premLabelB G sub look gen f k l B
 
@@ -1105,7 +1105,7 @@ instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
 set_option synthInstance.maxSize 1024 in
 /-- The entries' core conditions, premises read in each entry, arrows by
 checked evidence. -/
-def checkEntries [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (known : Known ι)
+@[nospecialize] def checkEntries [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (known : Known ι)
     (gen : ι → List ι → List (Nat × List (List ι))) (look : Lookup ι) (F : List (Entry ι))
     (arrows : Evidence ι) : Bool :=
   decide (∀ f ∈ F, ∀ p ∈ f.pairs, SameKind G p.1 p.2 = true ∧
@@ -1242,7 +1242,7 @@ theorem familyValid_iff_checked [DecidableEq ι] {G : NormalGraph ι} {sub : Opt
   ⟨checkEntries_complete, fun ⟨_, h⟩ => checkEntries_sound h⟩
 
 /-- The variable discipline, decided. -/
-def variablesOk [DecidableEq ι] {G : NormalGraph ι} (sub : Option (Renaming G))
+@[nospecialize] def variablesOk [DecidableEq ι] {G : NormalGraph ι} (sub : Option (Renaming G))
     (F : List (Entry ι)) : Bool :=
   match sub with
   | some r => decide ((∀ f ∈ F, ∀ h ∈ f.hypotheses, h.1 ∈ f.variables ∧ h.2 ∈ f.variables) ∧
@@ -1263,7 +1263,7 @@ theorem variablesOk_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (R
 
 /-- The claim is a pair of one of the certificate's variable-free entries,
 and mentions none of its entries' family variables. -/
-def claimOk [DecidableEq ι] {G : NormalGraph ι} (sub : Option (Renaming G))
+@[nospecialize] def claimOk [DecidableEq ι] {G : NormalGraph ι} (sub : Option (Renaming G))
     (F : List (Entry ι)) (S T : List ι) : Bool :=
   F.any (fun f => f.variables.isEmpty && f.hypotheses.isEmpty && f.pairs.contains (S, T)) &&
     match sub with
@@ -1275,7 +1275,7 @@ image checker, the variable discipline, the entries' conditions, and the
 claim among the certificate's variable-free entries. Instances cite the
 `base` entries, already sound (such as computed variances), by index below
 `base.size`, and the certificate's own after them. -/
-def checkFamilyUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+@[nospecialize] def checkFamilyUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (sub : Option (Renaming G)) (gen : ι → List ι → List (Nat × List (List ι)))
     (base : Base G) (S T : List ι) (c : FamilyCertificate ι) : Bool :=
   variablesOk sub c.entries &&
@@ -1312,7 +1312,7 @@ theorem checkEntries_entries_sound [DecidableEq ι] {G : NormalGraph ι} {sub : 
 /-- A family certificate checked at the graph with its assignment fixed:
 no check reads the assignment, and fixing it makes the check the same
 function of the graph at every reassignment (`Parametricity`). -/
-def checkFamilyAt [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+@[nospecialize] def checkFamilyAt [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (r : Renaming G) (S T : List ι) (c : FamilyCertificate ι) : Bool :=
   let e := ParameterAssignment.empty .mixed
   SubtypingTrace.question "core" (S.map r.size).sum (T.map r.size).sum 0 fun _ =>
@@ -1327,14 +1327,14 @@ theorem checkFamilyAt_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
 
 /-- The entry a pair is checked in when no certificate names one: the pair
 itself, with no hypothesis and no table. -/
-def pairEntry (S T : List ι) : Entry ι := { source := S, target := T }
+@[nospecialize] def pairEntry (S T : List ι) : Entry ι := { source := S, target := T }
 
 /-- **The premise judgment on a pair** (RECURSIVE-EQUATIONS §4.2–4.3): each
 label of `S` in `T`, or below it by `Inst` of a base entry, which is `Var`
 with a computed variance, its per-position premises discharged recursively
 the same way. Checked at the graph with its assignment fixed, as
 `checkFamilyAt`. -/
-def premAt [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (r : Renaming G)
+@[nospecialize] def premAt [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (r : Renaming G)
     (S T : List ι) : Bool :=
   let e := ParameterAssignment.empty .mixed
   let sub := some (r.reassign (G := G) e)
@@ -1363,7 +1363,7 @@ theorem premAt_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
 
 /-- `subset`: each label of `S` among `T`'s, or, with a renaming, the
 premise judgment on the pair (`Var` for two applications of one head). -/
-def subsetUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+@[nospecialize] def subsetUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (S T : List ι) : Bool :=
   decide (∀ i ∈ S, i ∈ T) || match images.sub with
     | some r => premAt G images r S T
@@ -1373,7 +1373,7 @@ def subsetUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageChe
 (`checkCore`), or, with a renaming, as the one variable-free entry of a
 family certificate, whose premises may also be `Var` and table pairs at
 renamed bound rows. -/
-def coreUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (S T : List ι)
+@[nospecialize] def coreUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (S T : List ι)
     (cert : Certificate ι) (ks : List (List ι × Ops ι × List (RestArrow (List ι)) × Instance ι)) :
     Bool :=
   (checkCore G (knownOf ks) S T cert &&
@@ -1389,7 +1389,7 @@ rules retain their original checks, including closure and free-variable
 checks. Where the representation has a renaming, `subset` and `core` also
 read premises by `Var` (`subsetUsing`, `coreUsing`); the proof forms are
 the same. -/
-def checkUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+@[nospecialize] def checkUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (S T : List ι) : Proof ι → Bool
   | .core cert ks => coreUsing G images S T cert ks
   | .subset => subsetUsing G images S T
@@ -1402,7 +1402,7 @@ def checkUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageChec
         | none => false
 
 /-- Existing certificates use the finite image checker. -/
-def check [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) (proof : Proof ι) : Bool :=
+@[nospecialize] def check [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) (proof : Proof ι) : Bool :=
   checkUsing G (finiteInstanceImages G) S T proof
 
 /-- The shared proof traversal is sound for any proved image checker. This is
@@ -1546,7 +1546,7 @@ theorem acceptedUsing [DecidableEq ι] {G : NormalGraph ι}
   fun n W v hv => checkUsing_sound h G.env n W (.inl v) hv
 
 /-- A formula graph is checked through its normalization. -/
-def checkSource [DecidableEq ι] (G : PositiveGraphs.Graph ι) (S T : List ι)
+@[nospecialize] def checkSource [DecidableEq ι] (G : PositiveGraphs.Graph ι) (S T : List ι)
     (proof : Proof ι) : Bool := check (normalizeGraph G) S T proof
 
 theorem accepted [DecidableEq ι] {G : NormalGraph ι} {S T proof}

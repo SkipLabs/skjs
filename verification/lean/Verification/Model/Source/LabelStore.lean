@@ -31,12 +31,12 @@ namespace Labels
 variable {ι : Type} [Labels ι]
 
 /-- The order of a canonical union: sorted by `compare`, each label once. -/
-def le (a b : ι) : Bool := compare a b != .gt
+@[nospecialize] def le (a b : ι) : Bool := compare a b != .gt
 
-def lt (a b : ι) : Bool := compare a b == .lt
+@[nospecialize] def lt (a b : ι) : Bool := compare a b == .lt
 
 /-- Lexicographic order on unions, for the canonical order of their lists. -/
-def before : List ι → List ι → Bool
+@[nospecialize] def before : List ι → List ι → Bool
   | [], _ => true
   | _ :: _, [] => false
   | a :: as, b :: bs => lt a b || (a == b && before as bs)
@@ -65,7 +65,7 @@ namespace Projection
 def depth : Nat := 3
 
 /-- A union as a diagnostic shows it. -/
-def shown {ι : Type} (p : Projection ι) (A : List ι) : List Nat := A.map p.position
+@[nospecialize] def shown {ι : Type} (p : Projection ι) (A : List ι) : List Nat := A.map p.position
 
 end Projection
 
@@ -136,7 +136,7 @@ class Store (σ : Type) (ι : outParam Type) [Labels ι] extends StoreView σ ι
 
 /-- What a diagnostic mentioning `mentioned` shows of the store, to the
 projection's depth. -/
-def Store.projection {σ ι : Type} [Labels ι] [StoreView σ ι] (T : σ) (mentioned : List ι) : Projection ι :=
+@[nospecialize] def Store.projection {σ ι : Type} [Labels ι] [StoreView σ ι] (T : σ) (mentioned : List ι) : Projection ι :=
   StoreView.project T mentioned Projection.depth
 
 /-- The meet of unions, lowered as a source intersection is. Apart from

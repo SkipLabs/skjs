@@ -22,7 +22,7 @@ section
 variable [DecidableEq ι] [CertificateProducer.Instantiates ι]
 
 /-- `valid` says which labels the graph's store holds. -/
-def checkUsing (G : NormalGraph ι) (images : InstanceImageCheck G) (valid : ι → Bool) (j : Sequent ι) (e : Evidence ι)
+@[nospecialize] def checkUsing (G : NormalGraph ι) (images : InstanceImageCheck G) (valid : ι → Bool) (j : Sequent ι) (e : Evidence ι)
     (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
   validEvidence valid e && decide (claim e = j) &&
     checkScope j.context.length j.term && checkTreeUsing G images e codes
@@ -35,7 +35,7 @@ theorem check_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {valid 
   rw [h.1.1.2] at ht
   exact ht
 
-def checkAllUsing (G : NormalGraph ι) (images : InstanceImageCheck G) (valid : ι → Bool) (rs : List (Required ι)) (es : List (Evidence ι))
+@[nospecialize] def checkAllUsing (G : NormalGraph ι) (images : InstanceImageCheck G) (valid : ι → Bool) (rs : List (Required ι)) (es : List (Evidence ι))
     (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
   rs.length == es.length && (rs.zip es).all (fun (r,e) => checkUsing G images valid r.sequent e codes)
 
@@ -49,7 +49,7 @@ theorem checkAll_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {val
 
 /-- `valid` says which labels the graph's store holds, `project` what a
 diagnostic mentioning some of them shows of it (`StoreView.project`). -/
-def produceUsing [Hashable ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (labels : List ι)
+@[nospecialize] def produceUsing [Hashable ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (labels : List ι)
     (valid : ι → Bool) (project : List ι → LabelStore.Projection ι) (fuel : Nat)
     (rs : List (Required ι)) : Except String (List (Evidence ι)) := do
   let pool := CertificateProducer.vocabulary G labels []
@@ -90,7 +90,7 @@ def produceUsing [Hashable ι] (G : NormalGraph ι) (images : InstanceImageCheck
 
 /-- Node plans rendered where they can be: search hints, never obligations.
 A plan that does not render is dropped; its node is searched as any other. -/
-def renderKnownUsing [Hashable ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (labels : List ι) (valid : ι → Bool)
+@[nospecialize] def renderKnownUsing [Hashable ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (labels : List ι) (valid : ι → Bool)
     (plans : List (DirectProof.Plan ι)) : List (Evidence ι) := Id.run do
   let pool := CertificateProducer.vocabulary G labels [] (plans.flatMap fun p => p.goal.type :: p.goal.context)
   let mut cache : DirectProof.SubtypeCache ι := {}
