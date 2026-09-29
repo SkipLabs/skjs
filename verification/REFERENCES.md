@@ -280,6 +280,18 @@ arguments encode it, since on readonly records inclusion is simulation of
 the unfoldings.
 **Discussed in** [RECURSIVE-EQUATIONS: subtyping](RECURSIVE-EQUATIONS.md#4-subtyping).
 
+### Kučera and Mayr 2010
+
+Antonín Kučera and Richard Mayr. *On the complexity of checking semantic
+equivalences between pushdown processes and finite-state processes.*
+Information and Computation 208(7):772–796, 2010.
+[doi:10.1016/j.ic.2010.01.003](https://doi.org/10.1016/j.ic.2010.01.003).
+
+**Used for** the conjectured lower bound on deciding subtyping when one side
+is regular: simulation between a pushdown process and a finite-state
+process, which reduces to that question, is EXPTIME-complete.
+**Discussed in** [RECURSIVE-EQUATIONS: subtyping](RECURSIVE-EQUATIONS.md#4-subtyping).
+
 ### Milner 1984
 
 Robin Milner. *A complete inference system for a class of regular

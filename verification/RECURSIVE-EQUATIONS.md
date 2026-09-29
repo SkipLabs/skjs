@@ -164,6 +164,12 @@ abstracts each argument of the other side by the set of the regular side's
 types it is below, which leaves finitely many states for a greatest
 fixpoint; it rests on inclusion being simulation. It is on paper, and its
 extension to functions and writable fields is open.
+We conjecture the fragment is EXPTIME-complete in the size of the program
+and of the regular side's unfolding: that procedure is exponential in it,
+and simulation between pushdown and finite-state processes
+([Kučera and Mayr 2010](REFERENCES.md#kučera-and-mayr-2010)) reduces to it.
+The checker therefore decides these questions by $`\textsf{Var}`$ and the
+coinductive fallback, which close every question the examples pose.
 
 ### 4.1 Quantified signatures
 
