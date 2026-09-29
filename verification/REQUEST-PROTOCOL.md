@@ -243,7 +243,7 @@ Tests are `isNul`, `isUndef`, `isNullish`, `isBool`, `isRef` and `isFun`.
 `isNullish` accepts null and undefined; false takes its negative branch. A location never appears
 in a supplied program: it arises only during execution. These are Lean's derived
 codecs, so the field names are the constructor's own; they live in
-[RequestJson.lean](lean/Verification/Model/Source/RequestJson.lean).
+[RequestJson.lean](lean/Verification/Model/Source/RequestJson.lean), the JSON boundary of the stateful consumer.
 
 A request may add `"codes"`: the graph code its program creates, one
 `{"entry": {"arity","exprs","conts","start","captures","row","store"}, "claims": [...]}`
@@ -538,13 +538,16 @@ safety, including cycles, heap changes and explicit slot maps.
 consumer before returning it. The safety theorem does not require using this
 producer. Search is incomplete; failure is not a proof of untypability.
 
-`RequestJsonTests.lean` exercises serialize/parse/produce/serialize/parse/check
+[RequestJsonTests.lean](lean/Verification/Model/Tests/RequestJsonTests.lean) exercises serialize/parse/produce/serialize/parse/check
 on a loop, a mapped diamond, a closure over a mutated cell, and a program forcing
 structural overload-subtyping evidence. Negative cases alter code, claims,
 requirements, maps and type labels, or add unknown fields and omit
 required data. They also check that object field order does not matter.
 
 ## Source mode
+
+[SourceExtraction.lean](lean/Verification/Model/Source/SourceExtraction.lean) is the source adapter: it rebuilds the calculus request from the Fragment tree and the claims.
+[SourceExtractionTests.lean](lean/Verification/Model/Tests/SourceExtractionTests.lean) guards it: name resolution, slot order, shared continuations, closure obligations, and primitive operations against node.
 
 The adapter accepts primitive or bounded callable parameters, initialized
 `const` and `let` declarations, assignment to a `let` as an expression, nested boolean branches and returns, using variable
@@ -605,6 +608,7 @@ constrain it. In SKJS's claims,
 `type Id<T> = T` and `type Box<T> = { value: T }` are the admitted
 substitution schemes, and a one-argument named instantiation is an `alias`
 atom `{ "a": "alias", "name": "Id", "args": [A] }`.
+[GenericAlias.lean](lean/Verification/Model/Source/GenericAlias.lean) expands these alias atoms at the claim level.
 A generic unit is an ordinary graph request: each binder is read as its
 parameter row, a bounded one as the meet of its row and its bound, a binder
 bounded by another as the meet of the two parameter rows, and the request is
@@ -627,6 +631,8 @@ verifier --produce-stateful-source ast.json claims.json path/to/input.ts evidenc
 verifier --check-stateful-source ast.json claims.json path/to/input.ts evidence.json
 ```
 
+[RequestCli.lean](lean/Verification/Model/Source/RequestCli.lean) implements these commands and the raw-request ones: it reads the files and hands them on.
+
 The file key must match both inputs. Evidence is a strict object
 `{"functions":[...],"obligations":[...]}`, containing responses in source
 function order. `obligations` has one list per function,
@@ -643,8 +649,9 @@ with source-graph label bounds checks. Generic functions are graph requests
 over their binders' parameter rows. See [the source-claim interface](SOURCE-CLAIMS.md).
 
 The adapter represents boolean as the union of exact true and false labels.
-[SourceTypes.lean](lean/Verification/Model/Source/SourceTypes.lean) proves
-this primitive translation exact. Unsupported types are rejected. Each source
+[SourceTypes.lean](lean/Verification/Model/Source/SourceTypes.lean) proves this primitive translation exact.
+[UndefinedTests.lean](lean/Verification/Model/Tests/UndefinedTests.lean) guards the exact undefined contracts: interning never lets undefined collapse into a smaller operand.
+Unsupported types are rejected. Each source
 expression's exported type remains its result claim; source annotations and
 return requirements are separate synthetic-node obligations. Statement claims
 supply entry contexts, and every initialized local slot requires a claimed type.
@@ -797,7 +804,7 @@ the same write invariant. Remaining arms must satisfy the invariant-cell check;
 exact normalization law and its proof scope. This is not a widening
 of a standalone refined cell claim.
 
-`CellClaims.decodeShape` validates each single-record shape. `Fragment`
+[CellClaims.lean](lean/Verification/Model/Programs/CellClaims.lean) validates each single-record shape (`decodeShape`). `Fragment`
 lowers read and write operands, including callables, to the same graph table and
 requires equal invariant label lists after union absorption. Unknown fields and
 unsupported operands reject the whole contract. `CellClaims.translate` retains
@@ -806,7 +813,7 @@ for primitive current-content observations. The reference-label theorem applies
 to arbitrary graph operands; neither theorem establishes TypeScript
 record-to-reference correspondence or excludes accessor-backed runtime objects.
 
-`cell_claim_tests` exercises real SKJS exports and corrupted contracts as part
+`cell_claim_tests` ([CellClaimIntegration.lean](lean/Verification/Model/Tests/CellClaimIntegration.lean)) exercises real SKJS exports and corrupted contracts as part
 of `make verify`. Allocation probes check Boolean, singleton and contextually
 widened field bounds; the alias-write probe retains both named cell contracts.
 Source cells now reach certificate production and independent consumption.
@@ -1131,7 +1138,7 @@ chosen by the certificate. See
 
 The source bundle carries these supplemental proofs alongside the graph
 certificates. The consumer checks their syntax, scope, exact root judgment and
-rule derivation using `ExpressionClaims.checkAll`. Dropping a proof, adding a
+rule derivation using `checkAll` in [ExpressionClaims.lean](lean/Verification/Model/Programs/ExpressionClaims.lean). Dropping a proof, adding a
 proof or substituting a valid proof of a different judgment is rejected.
 The whole lambda is also checked by the ordinary program certificate.
 Callable parameters are admitted at their source annotations; named top-level
