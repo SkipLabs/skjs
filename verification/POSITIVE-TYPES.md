@@ -1266,8 +1266,9 @@ fixed and rest arguments, effects and receiver weakening use this one proof.
 the finite-table checks; the equation checker discharges it by structural
 substitution ([RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md#3-metatheory)).
 
-A bound $(p,B)$ is met by inclusion or by the pairs $\Delta_p$ reachable from
-$(\theta_p,B)$, each covered in $\Delta_p$ (`checkPairs`, `boundOk`).
+The checker decides each bound $(p,B)$ itself: by inclusion, or by the pairs
+$\Delta_p$ reachable from $(\theta_p,B)$ without a renaming, the uncovered
+ones deleted, each covered in $\Delta_p$ (`boundOk`, `checkPairs`).
 
 Lean: `entryOk`, `meetOk`, `TableOk`, `instKinds`, `substitutionKind`, `InstArrs`,
 `mixed_assignment_substitution`, `InstanceImages`, `table_instanceImages`,
@@ -1277,15 +1278,16 @@ Lean: `entryOk`, `meetOk`, `TableOk`, `instKinds`, `substitutionKind`, `InstArrs
 
 ## Certificates
 
-A certificate is checked without a semantic oracle or unbounded search. It
-has three forms, the judgments of
-[RECURSIVE-EQUATIONS §4](RECURSIVE-EQUATIONS.md#4-subtyping) and instantiation:
+A certificate is checked without a semantic oracle or unbounded search, and
+holds no table: the checker decides the pairs a pair reaches. It has three
+forms, the judgments of
+[RECURSIVE-EQUATIONS §4](RECURSIVE-EQUATIONS.md#4-subtyping):
 
 | Form | Carries |
 | --- | --- |
 | `subset` | nothing: union inclusion, or with a renaming the premise judgment on the pair (`Var`), is decided |
-| `inst` | the instance: its table, the instance types, per bound the pairs proving it or none, the table's domain and free-variable certificate |
-| `family` | a family certificate holding the pair among its variable-free entries: the entries' tables, the arrow evidence, and the known rows with their instances |
+| `inst` | the instance: its image table, the instance types, the table's domain and free-variable certificate; each bound is decided |
+| `fallback` | the instances of prototype members the reached pairs' coverage uses as known rows; the checker finds the pairs reachable from the pair, deletes the uncovered ones and checks the rest as one variable-free family entry, with arrow evidence it searches itself (`fallbackWith`) |
 
 A checked certificate is a semantic inclusion:
 
@@ -1300,8 +1302,12 @@ A checked certificate is a semantic inclusion:
 for both components. The typing theorem that uses it is in
 [PROGRAM-TYPING.md](PROGRAM-TYPING.md).
 
-Lean: `checkClauseWith`, `checkPairs`, `checkFamilyWith`, `checkUsing`,
-`checkUsing_sound`, `acceptedUsing` (`Types/PositiveCertificates.lean`).
+The search (`growTable`, `gfp`, `fallbackPairs`) decides nothing: soundness
+rests on the check of what it finds.
+
+Lean: `checkClauseWith`, `checkPairs`, `checkFamilyWith`, `fallbackWith`,
+`fallbackWith_sound`, `checkUsing`, `checkUsing_sound`, `acceptedUsing`
+(`Types/PositiveCertificates.lean`).
 
 ## State-assertion grammar
 

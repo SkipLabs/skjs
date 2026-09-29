@@ -156,10 +156,9 @@ theorem opaqueWith_reassign (R : List ι → List ι → Prop) (known : Known ι
 theorem checkPairs_reassign (S T : List ι) (table : Table ι) (arrows : PositiveCertificates.Evidence ι) :
     checkPairs (reassign G η) S T table arrows = checkPairs G S T table arrows := rfl
 
-theorem boundOk_reassign (binders : List ι) (θs : List (List ι)) (b : ι × List ι)
-    (c : Option (Table ι × PositiveCertificates.Evidence ι)) :
-    boundOk (reassign G η) binders θs b c = boundOk G binders θs b c := by
-  simp only [boundOk, checkPairs_reassign]
+/-- A bound is decided at the graph with its assignment fixed. -/
+theorem boundOk_reassign (binders : List ι) (θs : List (List ι)) (b : ι × List ι) :
+    boundOk (reassign G η) binders θs b = boundOk G binders θs b := rfl
 
 /-! Every checker below takes a proved instance image checker. Its check is
 the same function at every reassignment (`InstanceImageCheck.reassign`). -/
@@ -189,10 +188,17 @@ theorem checkFamilyWith_reassign (sub : Option (Renaming G)) (S T : List ι) (c 
       checkFamilyWith G images sub S T c := by
   cases sub <;> rfl
 
-theorem checkFamilyAt_reassign (S T : List ι) (c : FamilyCertificate ι) :
-    checkFamilyAt (reassign G η) (images.reassign η) S T c = checkFamilyAt G images S T c := by
-  unfold checkFamilyAt
-  rw [sub_reassign, checkFamilyWith_reassign]
+/-- The fallback searches and checks at the graph with its assignment fixed. -/
+theorem fallbackWith_reassign (sub : Option (Renaming G)) (S T : List ι)
+    (ks : List (KnownInstance ι)) :
+    fallbackWith (reassign G η) (images.reassign η) (sub.map (·.reassign η)) S T ks =
+      fallbackWith G images sub S T ks := by
+  cases sub <;> rfl
+
+theorem fallbackAt_reassign (S T : List ι) (ks : List (KnownInstance ι)) :
+    fallbackAt (reassign G η) (images.reassign η) S T ks = fallbackAt G images S T ks := by
+  unfold fallbackAt
+  rw [sub_reassign, fallbackWith_reassign]
 
 theorem subsetUsing_reassign (S T : List ι) :
     subsetUsing (reassign G η) (images.reassign η) S T = subsetUsing G images S T := by
@@ -206,7 +212,7 @@ theorem check_reassign (S T : List ι) (p : Proof ι) :
       PositiveCertificates.checkUsing G images S T p := by
   cases p <;>
     simp only [PositiveCertificates.checkUsing, subsetUsing_reassign, checkInst_reassign,
-      checkFamilyAt_reassign]
+      fallbackAt_reassign]
 
 /-- The subtype checker as a function of its graph. -/
 theorem check_fun_reassign :

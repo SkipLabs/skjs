@@ -11,9 +11,9 @@ import { cases } from "../ocaml-producer/cases.mts";
 import { pooled, runCase } from "../ocaml-producer/run-cases.mts";
 
 /** One checker question: `subset` (the premise judgment on a pair, `Var`)
- * or `core` (a table checked as a family entry). */
+ * or `family` (the fallback's pairs checked as a family entry). */
 interface Question {
-  question: "subset" | "core";
+  question: "subset" | "family";
   source: number;
   target: number;
   holds: boolean;
@@ -55,7 +55,7 @@ const exactly = (o: Record<string, unknown>, keys: string[]) =>
 function decode(text: string): Line {
   const o = record(JSON.parse(text));
   if (o === undefined) throw new Error(`not an object: ${text}`);
-  if ((o.question === "subset" || o.question === "core") &&
+  if ((o.question === "subset" || o.question === "family") &&
       exactly(o, ["question", "source", "target", "holds", "instances", "varSteps", "varDepth", "events"]) &&
       [o.source, o.target, o.instances, o.varSteps, o.varDepth].every(isNat) &&
       typeof o.holds === "boolean" && Array.isArray(o.events))
@@ -118,7 +118,7 @@ const ratios = questions.map((q) => work(q) / Math.max(1, size(q)));
 const worst = [...questions].sort((a, b) => work(b) / Math.max(1, size(b)) - work(a) / Math.max(1, size(a)))[0];
 
 console.log(`cases: ${selected.length}, questions checked: ${questions.length} ` +
-  `(subset ${questions.filter((q) => q.question === "subset").length}, core ${questions.filter((q) => q.question === "core").length})`);
+  `(subset ${questions.filter((q) => q.question === "subset").length}, family ${questions.filter((q) => q.question === "family").length})`);
 console.log(`work per question (Inst steps tried + 1) over size (source + target): ` +
   `median ${quantile(ratios, 0.5).toFixed(3)}, p90 ${quantile(ratios, 0.9).toFixed(3)}, ` +
   `p99 ${quantile(ratios, 0.99).toFixed(3)}, max ${Math.max(0, ...ratios).toFixed(3)}`);

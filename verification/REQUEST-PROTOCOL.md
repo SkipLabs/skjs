@@ -480,9 +480,9 @@ target spells otherwise, the target's result as its image.
 with no proof form of their own. Over the equations, a `subset` step holds
 when every source label is a target label or below one by `Var` with the
 head's computed variance, each per-position premise discharged the same way
-(a label, `Var` again, or an instance), and a `family` step's premises may
-also be `Var` and its table pairs reused at renamed bound rows
-(`subsetUsing`, `checkFamilyAt`,
+(a label, `Var` again, or an instance), and a `fallback` step's premises may
+also be `Var` and its pairs reused at renamed bound rows
+(`subsetUsing`, `fallbackAt`,
 [RECURSIVE-EQUATIONS §4.2–4.3](RECURSIVE-EQUATIONS.md#42-parametric-assumptions)).
 
 Diagnostics show labels through a projection onto a finite table, bounded by
@@ -496,7 +496,7 @@ field present:
 
 | Line | Fields |
 | --- | --- |
-| a checker question | `question` (`"subset"`: the premise judgment on a pair, `Var` among its rules; `"core"`: a table checked as a family entry), `source` and `target` (the types' sizes), `holds`, `instances` (`Inst` steps tried), `varSteps` (those that held), `varDepth` (the deepest nesting, for `subset`), `events` (the lines below produced while answering it) |
+| a checker question | `question` (`"subset"`: the premise judgment on a pair, `Var` among its rules; `"family"`: the fallback's pairs checked as a family entry), `source` and `target` (the types' sizes), `holds`, `instances` (`Inst` steps tried), `varSteps` (those that held), `varDepth` (the deepest nesting, for `subset`), `events` (the lines below produced while answering it) |
 | a variance component | `variances` (its heads), `generic` (those with parameters), `polarityRounds`, `checkRounds`, `memberChecks` (`Valid` checks of one member), `weakened` (members made `inv`), `kept` (members with a variance) |
 | a fallback search | `search` (`"fallback"`), `source`, `target`, `rows`, `rounds` (unfoldings of a frontier), `visited` (candidate pairs, before reuse up to renaming), `refused` (`"growth"`, `"limit"` or `null`), `proved` |
 

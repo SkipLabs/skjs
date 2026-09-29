@@ -161,12 +161,12 @@ rendered, not searched; elsewhere search tries a sequent's own types before
 the vocabulary, which is only what the file's request mentions. Subtype
 search follows [RECURSIVE-EQUATIONS §4](RECURSIVE-EQUATIONS.md#4-subtyping)
 from the pair only: the premise judgment on it, an instance of a quantified
-signature, or the pairs reachable from it (each adding the pairs its coverage
-compares, read through `Var` and renamed rows, until they close: how two
-instances of a recursive declaration unfold together), the uncovered ones
-deleted, with the arrow certificates and prototype-member instances those
-pairs ask for. None of this changes what is checked: the checker validates
-every family certificate
+signature, or the fallback, which the checker itself decides from the pair:
+the pairs reachable from it (each adding the pairs its coverage compares,
+read through `Var` and renamed rows, until they close: how two instances of
+a recursive declaration unfold together), the uncovered ones deleted. The
+producer supplies only the prototype-member instances those pairs ask for,
+and the checker validates each
 ([producing evidence](PROGRAM-TYPING.md#producing-evidence-from-supplied-claims)).
 A failed search is refused by name for display only: `producer --explain`
 lists the forms with a known reason and their spans, the innermost one that
@@ -1127,7 +1127,7 @@ unchanged ([design](#recursive-quantified-contracts)).
 | C. Delete the SKJS claim path, manual claim editing and the finite-table label store | done | no verifier mode, suite, tool, corpus column, viewer feature or Lean module consumes SKJS's exported claims, edits claims, or uses the finite table as a label store; every `cases.mts` outcome unchanged |
 | C2. Write the source layer directly over its one store: `Store`, `Meets` and `Front` have one instance each; the modules written over them precede `EquationStore`/`EquationLowering` in the import order, which must be inverted first | open | the three classes deleted; `lake build` green |
 | P. Fix: evidence production on `sum-sound-binding` and `reactive-sum-sound` costs 15 s at any search depth. Their one failing coercion (`Array<row 53>` to its meet with a readonly array) exhausts every search strategy, two of which prune a core table over the whole vocabulary (199 types, about 4600 candidate rows, 5–6 rounds), each table membership a scan of the row list. Search reads the table through a hash set of its rows (`CertificateProducer.RelIn`); the checker reads the list | done | both cases reach their expected refusal in under 5 s alone; every other `cases.mts` outcome unchanged |
-| Q. The producer's subtyping search is §4's algorithm; the strategy cascade and pool-wide tables deleted. The search starts from the pair only: the premise judgment, an instance of a quantified signature (binder instances read through a meet among the matched row and the target's operands), or the fallback's pairs reachable from the pair, the uncovered ones deleted, emitted as one family entry with its arrow evidence and prototype-member instances. The checker's `core`, `trans`, `table` and `gen` forms, `checkCore`, `Core`, `Valid` and `Sub` are deleted; bounds are checked by `checkPairs`. Next: the checker decides the fallback itself, so no table is evidence | open | this stage: `lake build` green, every `cases.mts` outcome unchanged but the two gap cases blocked on the meet `Array<row 53> & ReadonlyArray<…>`, which is now proved and moves their block to a later obligation; the case run 58 s |
+| Q. The producer's subtyping search is §4's algorithm; the strategy cascade and pool-wide tables deleted. The search starts from the pair only: the premise judgment, an instance of a quantified signature (binder instances read through a meet among the matched row and the target's operands), or the fallback, which the checker decides itself: the pairs reachable from the pair, the uncovered ones deleted, the producer supplying only prototype-member instances. No certificate holds a table: `core`, `trans`, `table` and `gen` are deleted with `checkCore`, `Core`, `Valid` and `Sub`, and an instance's bounds are decided | done | `lake build` green, every `cases.mts` outcome unchanged but the two gap cases blocked on the meet `Array<row 53> & ReadonlyArray<…>`, which is now proved and moves their block to a later obligation; the case run 55 s (104–144 s before, loaded machine), `sum-sound-binding` 1.2–1.4 s alone (5.5–7.0 s before) |
 
 The stages' order and dependencies: S1, S3 and the kernel rows may run in
 parallel; S4 follows S1; S5 follows S3 and S4's interface; S6 needs all of

@@ -65,7 +65,7 @@ equations, or types proved equal to them), and it carries the proof
 Subtype certificates in `sub` and in member coverage are checked by
 `PositiveCertificates.checkUsing` with that checker, and every rule's soundness
 depends on it only through this implication. Over equations the checker also
-carries the renaming and the computed variances, with which `subset` and `family`
+carries the renaming and the computed variances, with which `subset` and `fallback`
 steps apply `Var` ([RECURSIVE-EQUATIONS §4.3](RECURSIVE-EQUATIONS.md#43-variance)),
 each proved sound. The proof is Lean code, never certificate data. `HasTy G` is `HasTyUsing G (finiteInstanceImages G)`, the
 finite closed-table checker; source requests use it. Constructor names below are

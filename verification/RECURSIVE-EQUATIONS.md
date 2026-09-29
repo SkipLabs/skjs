@@ -491,6 +491,7 @@ to parameters and quantified variables by position.
 | Lemma 3, substitution | [Types/EquationSubstitution.lean](lean/Verification/Model/Types/EquationSubstitution.lean) |
 | Instantiation by substitution in the subtyping checker | [Types/EquationCertificates.lean](lean/Verification/Model/Types/EquationCertificates.lean) |
 | Quantified signatures (4.1), assumptions and Theorem 1 (4.2) | `Types/PositiveRules.lean`, `Types/PositiveCertificates.lean` |
+| The fallback's pairs, decided by the checker from the pair (4.2–4.3) | `Types/PositiveCertificates.lean` (`fallbackPairs`, `fallbackWith`) |
 | Soundness of the computed variances and of `Var` (4.3) | [Types/EquationFamilies.lean](lean/Verification/Model/Types/EquationFamilies.lean) |
 | Well-formedness of equations | [Types/EquationValidator.lean](lean/Verification/Model/Types/EquationValidator.lean) |
 | Term spelling of trees | [Types/EquationJson.lean](lean/Verification/Model/Types/EquationJson.lean) |

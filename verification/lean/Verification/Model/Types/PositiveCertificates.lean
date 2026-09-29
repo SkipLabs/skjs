@@ -808,13 +808,11 @@ theorem checkPairs_sound [DecidableEq ι] {G : NormalGraph ι} {S T : List ι} {
     List.mem_cons_self rfl List.mem_cons_self
 
 /-- A checked instance of a scheme row's signatures: the instance table, the
-types the binders are instantiated at, per bound the pairs and arrow evidence
-proving the instance within it (`checkPairs`) or none for an inclusion, the
-table's domain and the domain's free parameter rows. -/
+types the binders are instantiated at, the table's domain and the domain's
+free parameter rows. Each bound is decided by the checker (`boundOk`). -/
 structure Instance (ι : Type) where
   table : InstTable ι
   instances : List (List ι)
-  bounds : List (Option (Table ι × Evidence ι))
   domain : List ι
   free : FreeMap ι
   deriving Repr
@@ -827,42 +825,24 @@ structure FamilyCertificate (ι : Type) where
   instances : List (List ι × Ops ι × List (RestArrow (List ι)) × Instance ι) := []
   deriving Repr
 
+/-- A known row with the instance proving it: a scheme row, the arrows it is
+below, and the instance. -/
+abbrev KnownInstance (ι : Type) := List ι × Ops ι × List (RestArrow (List ι)) × Instance ι
+
 /-- Evidence of `S ≤ T` (RECURSIVE-EQUATIONS §4): the premise judgment on the
-pair, an instance of a quantified signature, or a family certificate whose
-variable-free entry holds the pair. -/
+pair, an instance of a quantified signature, or the fallback, decided by the
+checker from the pair. -/
 inductive Proof (ι : Type) where
   /-- Each label of `S` in `T`, or, with a renaming, the premise judgment on
   the pair (`Var` for two applications of one head). -/
   | subset
   /-- A scheme row below a checked instance of its signatures. -/
   | inst (inst : Instance ι)
-  /-- A family certificate holding the pair among its variable-free entries:
-  the fallback's pairs reachable from it, with the instances its coverage
-  uses as known rows. -/
-  | family (certificate : FamilyCertificate ι)
+  /-- The fallback: the pairs reachable from the pair, each covered, decided
+  by the checker (`fallbackAt`); the evidence is the instances their
+  coverage uses as known rows. -/
+  | fallback (instances : List (KnownInstance ι))
   deriving Repr
-
-/-- An instance type within one bound: plain inclusion (no pairs) or the
-fallback's pairs (`checkPairs`). A bound whose binder has no instance is
-vacuous. -/
-@[nospecialize] def boundOk [DecidableEq ι] (G : NormalGraph ι) (binders : List ι) (θs : List (List ι))
-    (b : ι × List ι) (c : Option (Table ι × Evidence ι)) : Bool :=
-  match (binders.zip θs).lookup b.1 with
-  | none => true
-  | some U => match c with
-    | none => decide (∀ l ∈ U, l ∈ b.2)
-    | some (table, arrows) => checkPairs G U b.2 table arrows
-
-theorem boundOk_sound [DecidableEq ι] {G : NormalGraph ι} {binders θs b c}
-    (h : boundOk G binders θs b c = true) :
-    ∀ U, (binders.zip θs).lookup b.1 = some U →
-      ∀ η, FamLe (mixedMeaning G η U) (mixedMeaning G η b.2) := by
-  intro U hU
-  unfold boundOk at h
-  rw [hU] at h
-  cases c with
-  | none => exact fun _ => mixed_subset (by simpa using h)
-  | some c => exact checkPairs_sound h
 
 theorem exists_mem_zip {xs : List α} {ys : List β} (hl : ys.length = xs.length) :
     ∀ x ∈ xs, ∃ y, (x, y) ∈ xs.zip ys := by
@@ -955,6 +935,363 @@ serves every reassignment (`Parametricity`). -/
   base := images.base.reassign η
   gen := images.gen
 
+/-! ### The fallback's search (RECURSIVE-EQUATIONS §4.2–4.3)
+
+The pairs reachable from a pair, grown on demand, and the uncovered ones
+deleted. The search decides nothing: the pairs it finds are checked
+(`checkPairs`, `fallbackWith`). -/
+
+/-- Small arrow search: source, receiver and domain union, and pairwise
+compatible codomain combination, with operand premises decided by `rel`.
+The checker, not this search strategy, defines the rules. -/
+@[nospecialize] def arrowSearch [DecidableEq ι] (G : NormalGraph ι) (rel : List ι → List ι → Bool) (L : Ops ι)
+    (S : List (RestArrow (List ι)))
+    (q : Arrow (List ι)) : Nat → Option (ArrowCert ι)
+  | 0 => none
+  | fuel+1 => Id.run do
+    let R : List ι → List ι → Prop := fun a b => rel a b = true
+    let basic := ArrowCert.empty :: .emptyRecv ::
+      L.map (.source ·) ++ S.map (.rest ·)
+    if let some p := basic.find? (fun p => checkArrowWith G R L S q p) then
+      return some p
+    if let a :: rest := q.receiver then
+      if !rest.isEmpty then
+        if let some left := arrowSearch G rel L S {q with receiver := [a]} fuel then
+          if let some right := arrowSearch G rel L S {q with receiver := rest} fuel then
+            let p := ArrowCert.recvUnion [a] rest left right
+            if checkArrowWith G R L S q p then return some p
+    for i in List.range q.arguments.length do
+      if let some (a :: rest) := q.arguments[i]? then
+        if !rest.isEmpty then
+          if let some left := arrowSearch G rel L S {q with arguments := q.arguments.set i [a]} fuel then
+            if let some right := arrowSearch G rel L S {q with arguments := q.arguments.set i rest} fuel then
+              let p := ArrowCert.union (q.arguments.take i) [a] rest (q.arguments.drop (i+1)) left right
+              if checkArrowWith G R L S q p then return some p
+    return (L.flatMap fun p => L.map fun q =>
+      ArrowCert.combine p.result q.result p.effect q.effect (.source p) (.source q)).find?
+        (fun p => checkArrowWith G R L S q p)
+
+/-- The pairs one signature list's coverage of another compares: each target
+signature against each source one, position by position (receivers,
+parameters contravariantly, results covariantly), and each part of a target
+parameter's union against the source's parameter, as arrow coverage splits
+it. -/
+@[nospecialize] def signaturePairs (source target : List (Arrow (List ι))) :
+    List (List ι × List ι) :=
+  target.flatMap fun t => source.flatMap fun s =>
+    (t.receiver, s.receiver) :: (s.result, t.result) :: (t.arguments.zip s.arguments).flatMap fun (q, p) =>
+      (q, p) :: q.map fun l => ([l], p)
+
+/-- The same, for variadic signatures: fixed parameters, rest and result. -/
+@[nospecialize] def restPairs (source target : List (RestArrow (List ι))) :
+    List (List ι × List ι) :=
+  target.flatMap fun t => source.flatMap fun s =>
+    (t.receiver, s.receiver) :: (t.arguments.2, s.arguments.2) :: (s.result, t.result) :: t.arguments.1.zip s.arguments.1
+
+/-- The pairs a variadic signature's coverage reads past the source's fixed
+parameters: each further target parameter against the source rest's
+element. -/
+@[nospecialize] def elemPairs (G : NormalGraph ι) (source target : List (RestArrow (List ι))) :
+    List (List ι × List ι) :=
+  target.flatMap fun t => source.flatMap fun s => match PositiveRules.restElem G s.arguments.2 with
+    | some E => (t.arguments.1.drop s.arguments.1.length).map (·, E)
+    | none => []
+
+/-- The pairs a fixed signature's coverage of a variadic one whose rest is one
+exact tuple compares: receivers, the fixed parameters and then the tuple's
+positions against the source's parameters, and results. -/
+@[nospecialize] def packPairs (G : NormalGraph ι) (source : List (Arrow (List ι))) (target : List (RestArrow (List ι))) :
+    List (List ι × List ι) :=
+  target.flatMap fun t => match expand G t.arguments.2 with
+    | [.pack τ []] => source.flatMap fun p =>
+        (t.receiver, p.receiver) :: (p.result, t.result) :: (t.arguments.1 ++ τ.required).zip p.arguments
+    | _ => []
+
+/-- The pairs a record's coverage of another compares, key by key: fields
+both ways, views and optional fields, methods signature by signature and
+scheme by scheme, and a method the source's prototype holds under the key
+(its receiver against the source, its signatures against the target's
+schemes'). -/
+@[nospecialize] def protoChain (G : NormalGraph ι) : Nat → List ι → List (List ι)
+  | 0, P => [P]
+  | d + 1, P => P :: ((PositiveRules.viewOf G P CallArguments.protoField).toList.flatMap (protoChain G d))
+
+@[nospecialize] def recordPairs [DecidableEq ι] (G : NormalGraph ι) (self : List ι)
+    (fs vs : List (PropKey × List ι)) (os : List (OptionalField (List ι)))
+    (ms : List (MethodMembers.Sig (List ι)))
+    (fs' vs' : List (PropKey × List ι)) (os' : List (OptionalField (List ι)))
+    (ms' : List (MethodMembers.Sig (List ι))) : List (List ι × List ι) :=
+  let slots := fs ++ vs ++ os.map fun o => (o.key, o.type)
+  let keyed (k : PropKey) : List (List ι) := (slots.filter (·.1 == k)).map (·.2)
+  let proto : List (List ι) := (fs ++ vs).filter (·.1 == CallArguments.protoField) |>.map (·.2)
+  let schemeSigs (F : List ι) := F.filterMap G.schemes
+  (fs'.flatMap fun f => (keyed f.1).flatMap fun A => [(A, f.2), (f.2, A)]) ++
+  (vs'.flatMap fun f => (keyed f.1).map fun A => (A, f.2)) ++
+  (os'.flatMap fun o => (keyed o.key).flatMap fun A => [(A, o.type), (o.type, A)]) ++
+  ms'.flatMap fun q =>
+    let own := ms.filter (·.key == q.key)
+    let targetSchemes := q.schemes.flatMap schemeSigs
+    (own.flatMap fun p =>
+      signaturePairs (p.calls.map (·.withReceiver [])) (q.calls.map (·.withReceiver [])) ++
+      (q.schemes.flatMap fun S' => p.schemes.map fun S => (S, S'))) ++
+    ((keyed q.key ++ (proto.flatMap (protoChain G PositiveRules.protoChainDepth)).flatMap fun P =>
+        (PositiveRules.viewOf G P q.key).toList).flatMap fun F =>
+      (match expand G F with
+        | [.arrs L S] =>
+          (L.map fun s => (self, s.receiver)) ++ (S.map fun s => (self, s.receiver)) ++
+          signaturePairs (L.map (·.withReceiver [])) (q.calls.map (·.withReceiver [])) ++
+          restPairs (S.map (·.withReceiver [])) (q.rests.map (·.withReceiver []))
+        | _ => []) ++
+      (schemeSigs F).flatMap fun s =>
+        (s.signatures.map fun p => (self, p.receiver)) ++
+        targetSchemes.flatMap fun s' => signaturePairs s.signatures s'.signatures ++
+          restPairs s.variadic s'.variadic)
+
+/-- The pairs one clause's coverage of another compares. -/
+@[nospecialize] def clausePairs [DecidableEq ι] (G : NormalGraph ι) (self : List ι) :
+    Clause (List ι) → Clause (List ι) → List (List ι × List ι)
+  | .refs a bs vs os ms _, .refs c ds ws ps ns _
+  | .dict a bs vs _ os ms _ _, .refs c ds ws ps ns _ =>
+    recordPairs G self (a :: bs).flatten vs os ms (c :: ds).flatten ws ps ns
+  | .refs a bs vs os ms _, .dict c ds ws iy ps ns _ cy =>
+    recordPairs G self (a :: bs).flatten vs os ms (c :: ds).flatten ws ps ns ++
+      (iy.flatMap fun y => ((a :: bs).flatten ++ vs).map fun p => (p.2, y.2)) ++
+      (cy.flatMap fun y => (a :: bs).flatten.flatMap fun p => [(p.2, y.2), (y.2, p.2)])
+  | .dict a bs vs ix os ms _ cx, .dict c ds ws iy ps ns _ cy =>
+    recordPairs G self (a :: bs).flatten vs os ms (c :: ds).flatten ws ps ns ++
+      ((iy ++ cy).flatMap fun y => (ix ++ cx).flatMap fun x => [(x.2, y.2), (y.2, x.2)]) ++
+      (cy.flatMap fun y => os.map fun o => (y.2, o.type))
+  | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T =>
+    signaturePairs L M ++ restPairs S T ++ elemPairs G S T ++ packPairs G L T
+  | .callable a bs L S, .callable c ds M T =>
+    recordPairs G self (a :: bs).flatten [] [] [] (c :: ds).flatten [] [] [] ++
+    signaturePairs L M ++ restPairs S T ++ elemPairs G S T ++ packPairs G L T
+  | .ctors L S, .ctors M T =>
+    let fixed (p : List (List ι) × List ι) : Arrow (List ι) := ⟨[], p.1, p.2, .unrestricted⟩
+    let rest (p : List (List ι) × List ι × List ι) : RestArrow (List ι) := ⟨[], (p.1, p.2.1), p.2.2, .unrestricted⟩
+    signaturePairs (L.map fixed) (M.map fixed) ++ restPairs (S.map rest) (T.map rest) ++
+      packPairs G (L.map fixed) (T.map rest)
+  | .list a bs, .list c ds | .pack a bs, .pack c ds =>
+    (c :: ds).flatMap fun q => (a :: bs).flatMap fun p =>
+      let pos (t : PositiveNormalization.Tuple (List ι)) := t.required ++ t.optional ++ t.rest.toList
+      (pos p).flatMap fun x => (pos q).flatMap fun y => [(x, y), (y, x)]
+  | _, _ => []
+
+/-- The pairs a row's coverage compares: its clauses' against the target's,
+and a scheme's signatures against a target scheme's binding the same rows. -/
+@[nospecialize] def demandPairs [DecidableEq ι] (G : NormalGraph ι) (X Y : List ι) : List (List ι × List ι) :=
+  (clausesOf G X).flatMap (fun a => (clausesOf G Y).flatMap (clausePairs G X a)) ++
+  X.flatMap fun i => Y.flatMap fun j => match G.schemes i, G.schemes j with
+    | some s, some s' => if s.binders = s'.binders then
+        signaturePairs s.signatures s'.signatures ++ restPairs s.variadic s'.variadic else []
+    | _, _ => []
+
+/-- How deep a pair's rows follow `Var`: search only. -/
+def varDepthDefault : Nat := 8
+
+/-! ### Fallback coinduction up to renaming (RECURSIVE-EQUATIONS §4.3)
+
+A pair `Var` does not decide is unfolded into a table grown on demand. Two
+applications of one head with a computed variance add no row: `Var` covers
+them, and their per-position pairs are what the table needs. A pair that is
+a table pair at renamed bound rows adds none either: `TabRen` reuses it.
+Quantified members declared alike in two declarations are compared after
+renaming the target's binders to the source's. A head pair recurring,
+neither renamed nor smaller, with larger arguments than every earlier one is
+growth: the search refuses there. Untrusted: the checker decides
+(`checkFamilyAt`). -/
+
+/-- `Var`'s per-position pairs for two applications of one head whose
+variance the checker computed. -/
+@[nospecialize] def varPairs [DecidableEq ι] {G : NormalGraph ι} (images : InstanceImageCheck G) (A B : List ι) :
+    Option (List (List ι × List ι)) :=
+  match A, B with
+  | [l], [b] => match images.gen l [b] with
+    | [w] => (images.base.entry w.1).map fun e => e.hypotheses.map fun h =>
+        (replace (e.variables.zip w.2) h.1, replace (e.variables.zip w.2) h.2)
+    | _ => none
+  | _, _ => none
+
+/-- The rows a pair needs: none for an inclusion, its per-position pairs'
+through `Var`, else the pair itself. -/
+@[nospecialize] def rowsFor [DecidableEq ι] {G : NormalGraph ι} (images : InstanceImageCheck G) :
+    Nat → List ι → List ι → List (List ι × List ι)
+  | 0, A, B => [(A, B)]
+  | d + 1, A, B => if A.all (· ∈ B) then [] else match varPairs images A B with
+    | some ps => ps.flatMap fun (X, Y) => rowsFor images d X Y
+    | none => [(A, B)]
+
+/-- Quantified members declared alike, their signatures compared after
+renaming the target's binders to the source's. -/
+@[nospecialize] def renamedPairs [DecidableEq ι] (G : NormalGraph ι) (r : Renaming G) (X Y : List ι) :
+    List (List ι × List ι) :=
+  X.flatMap fun i => Y.flatMap fun j => match G.schemes i, G.schemes j with
+    | some s, some s' =>
+      if s.binders = s'.binders || s.binders.length != s'.binders.length then [] else
+      let σ := s'.binders.zip (s.binders.map fun p => [p])
+      signaturePairs s.signatures (s'.signatures.map (Arrow.map (r.substitute σ))) ++
+        restPairs s.variadic (s'.variadic.map (RestArrow.map (r.substitute σ)))
+    | _, _ => []
+
+/-- A head pair recurring with larger arguments than each of its two or more
+earlier occurrences, none of which it renames: growth. -/
+@[nospecialize] def grows [DecidableEq ι] {G : NormalGraph ι} (r : Renaming G) (table : Table ι) (A B : List ι) : Bool :=
+  let heads (X Y : List ι) : Option (Nat × Nat) := match X, Y with
+    | [a], [b] => do some (← r.head a, ← r.head b)
+    | _, _ => none
+  let size (X Y : List ι) : Nat := ((X ++ Y).map r.size).sum
+  match heads A B with
+  | some hs =>
+    let same := table.filter fun p => heads p.1 p.2 == some hs
+    same.length ≥ 2 && same.all fun p => size p.1 p.2 < size A B
+  | none => false
+
+/-- The most rows the table may hold: search only. -/
+def fallbackLimit : Nat := 200
+
+/-- How a table's growth ended, with its counts: the rounds of unfolding, the
+candidate pairs visited, and the table. -/
+structure Fallback (ι : Type) where
+  table : Table ι
+  rounds : Nat := 0
+  visited : Nat := 0
+  /-- `growth`, `limit`, or none when the table closed. -/
+  refused : Option String := none
+
+/-- The arrow evidence a table's rows ask for, premises decided by `rel`:
+each row's arrow clauses against its target's, and each quantified member
+against the target's, as declared and with the target's binders renamed to
+the source's. -/
+@[nospecialize] def rowArrows [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G))
+    (rel : List ι → List ι → Bool) (table : Table ι) : Evidence ι :=
+  let arrows (L : Ops ι) (S : List (RestArrow (List ι))) (M : Ops ι) :=
+    M.filterMap fun q =>
+      (arrowSearch G rel L S q (q.arguments.length + q.receiver.length + 1)).map (L, q, ·)
+  table.flatMap fun (X, Y) =>
+    let sources := (sourceClauses G X ++ PositiveRules.meetSources G X Y ++ expand G X).eraseDups
+    (sources.flatMap fun a => (clausesOf G Y ++ expand G Y).eraseDups.flatMap fun b => match a, b with
+      | .arrs L S, .arrs M _ | .callable _ _ L S, .arrs M _ | .callable _ _ L S, .callable _ _ M _ =>
+        arrows L S M
+      | _, _ => []) ++
+    (X.flatMap fun i => Y.flatMap fun j => match G.schemes i, G.schemes j with
+      | some s, some s' =>
+        let renamed := match sub with
+          | some r =>
+            let σ := s'.binders.zip (s.binders.map fun p => [p])
+            s'.signatures.map (Arrow.map (r.substitute σ))
+          | none => []
+        arrows s.signatures s.variadic (s'.signatures ++ renamed)
+      | _, _ => [])
+
+/-- Whether the table covers the pair `p`, premises read in the entry of
+`(A, B)` with the table (RECURSIVE-EQUATIONS §4.2), arrows by the evidence
+searched for its rows. The check decides (`fallbackWith`). -/
+@[nospecialize] def coveredIn [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (A B : List ι)
+    (known : PositiveRules.Known ι) (table : Table ι) : Evidence ι × (List ι × List ι → Bool) :=
+  let f : Entry ι := { source := A, target := B, table }
+  let look := images.base.lookup [f]
+  let rel : List ι → List ι → Bool := fun X Y => decide (Prem G images.sub look images.gen f X Y)
+  let R : List ι → List ι → Prop := fun X Y => rel X Y = true
+  let es := rowArrows G images.sub rel (f.pairs)
+  (es, fun p =>
+    PositiveRules.SameKind G p.1 p.2 &&
+    decide (OpaqueFamily G images.sub R known
+      (ArrowsCheckedWith G R es) [] p.1 p.2) &&
+    (sourceClauses G p.1 ++ PositiveRules.meetSources G p.1 p.2).all fun a =>
+      (clausesOf G p.2).any fun b => checkClauseWith G R known es p.1 a b)
+
+/-- Grow the table from its frontier: each row adds the pairs its coverage
+compares (`demandPairs`, and quantified members after renaming), each read
+through `Var` where it applies, that no inclusion, row or renamed row already
+answers. A pair that reaches no further pair and is not covered by itself
+alone is left out: the deletion would remove it. Refuse at growth or past
+the limit. -/
+@[nospecialize] def growTable [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    : Nat → Fallback ι → Table ι → Fallback ι
+  | 0, fb, _ => { fb with refused := some "limit" }
+  | fuel + 1, fb, frontier =>
+    let reached (p : List ι × List ι) := demandPairs G p.1 p.2 ++ (match images.sub with
+        | some r => renamedPairs G r p.1 p.2
+        | none => [])
+    let cand := (frontier.flatMap fun p =>
+      (reached p).flatMap fun p => match images.sub with
+          | some _ => rowsFor images varDepthDefault p.1 p.2
+          | none => if p.1.all (· ∈ p.2) then [] else [p])
+    let step (st : Except String (Table ι × Table ι)) (p : List ι × List ι) :
+        Except String (Table ι × Table ι) := do
+      let (tbl, fresh) ← st
+      let f : Entry ι := { source := [], target := [], table := tbl }
+      if premTable G images.sub f p.1 p.2 then return (tbl, fresh)
+      if (reached p).isEmpty && (p.1 ++ p.2).all G.plain && !(SameKind G p.1 p.2 &&
+          (sourceClauses G p.1).all fun a => (clausesOf G p.2).any fun b =>
+            checkClauseWith G (Rel []) [] [] p.1 a b) then return (tbl, fresh)
+      if let some r := images.sub then
+        if grows r tbl p.1 p.2 then throw "growth"
+      if tbl.length ≥ fallbackLimit then throw "limit"
+      return (tbl ++ [p], fresh ++ [p])
+    let fb := { fb with rounds := fb.rounds + 1, visited := fb.visited + cand.length }
+    match cand.foldl step (.ok (fb.table, [])) with
+    | .error why => { fb with refused := some why }
+    | .ok (tbl, fresh) =>
+      if fresh.isEmpty then { fb with table := tbl }
+      else growTable G images fuel { fb with table := tbl } fresh
+
+/-- Delete the rows a table does not cover, premises read in the table
+itself, until every row is covered: the greatest fixed point below the
+reachable pairs. With a renaming a premise is the judgment of §4.2 in the
+entry of `(A, B)` (`Var`, `Inst`, `TabRen`); without one, a row or an
+inclusion. The check decides (`fallbackWith`). -/
+@[nospecialize] def gfp [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (A B : List ι)
+    (known : PositiveRules.Known ι) : Nat → Table ι → Table ι × Evidence ι
+  | 0, table => (table, [])
+  | fuel + 1, table =>
+    let (es, covered) := coveredIn G images A B known table
+    let next := table.filter covered
+    if next.length = table.length then (table, es) else gfp G images A B known fuel next
+
+/-- The fallback's pairs for `A ≤ B` (RECURSIVE-EQUATIONS §4.2–4.3): the pairs
+reachable from it, grown on demand (`growTable`), the uncovered ones deleted
+(`gfp`), with the arrow evidence their coverage uses. The search decides
+nothing: `fallbackWith` checks what it finds. -/
+@[nospecialize] def fallbackPairs [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (A B : List ι) (known : Known ι) : Option (Table ι × Evidence ι) :=
+  let fb := growTable G images fallbackLimit { table := [(A, B)] } [(A, B)]
+  let result := if fb.refused.isSome then none else
+    let (table, es) := gfp G images A B known (fb.table.length + 1) fb.table
+    if table.contains (A, B) then some (table, es) else none
+  SubtypingTrace.note (fun _ => Lean.Json.mkObj [("search", "fallback"),
+    ("source", Lean.toJson (typeSize images.sub A)), ("target", Lean.toJson (typeSize images.sub B)),
+    ("rows", Lean.toJson fb.table.length), ("rounds", Lean.toJson fb.rounds),
+    ("visited", Lean.toJson fb.visited), ("refused", Lean.toJson fb.refused),
+    ("proved", Lean.toJson result.isSome)]) result
+
+/-- An instance type within one bound: inclusion, or the fallback's pairs
+reachable from the two without a renaming, each covered (`checkPairs`). A
+bound whose binder has no instance is vacuous. -/
+@[nospecialize] def boundOk [DecidableEq ι] (G : NormalGraph ι) (binders : List ι) (θs : List (List ι))
+    (b : ι × List ι) : Bool :=
+  match (binders.zip θs).lookup b.1 with
+  | none => true
+  | some U => decide (∀ l ∈ U, l ∈ b.2) ||
+    let G' := PositiveRules.reassign G (ParameterAssignment.empty .mixed)
+    match fallbackPairs G' (finiteInstanceImages G') U b.2 [] with
+    | some (table, arrows) => checkPairs G U b.2 table arrows
+    | none => false
+
+theorem boundOk_sound [DecidableEq ι] {G : NormalGraph ι} {binders θs b}
+    (h : boundOk G binders θs b = true) :
+    ∀ U, (binders.zip θs).lookup b.1 = some U →
+      ∀ η, FamLe (mixedMeaning G η U) (mixedMeaning G η b.2) := by
+  intro U hU
+  unfold boundOk at h
+  rw [hU] at h
+  simp only [Bool.or_eq_true] at h
+  rcases h with h | h
+  · exact fun _ => mixed_subset (by simpa using h)
+  · split at h
+    · exact checkPairs_sound h
+    · cases h
+
 /-- `S` is one scheme row, and `L`, `M` arrows whose every signature is an
 image of one of the scheme's under the instance table, each instance within
 its binder's bounds. Only validation of that image table depends on its
@@ -966,8 +1303,7 @@ representation; every other obligation is shared. -/
     match G.schemes i with
     | some s => !G.params i && c.instances.length == s.binders.length &&
         instKinds G s.binders c.instances &&
-        c.bounds.length == s.bounds.length &&
-        (s.bounds.zip c.bounds).all (fun bc => boundOk G s.binders c.instances bc.1 bc.2) &&
+        s.bounds.all (fun b => boundOk G s.binders c.instances b) &&
         images.check s.binders c &&
         (L.all fun q => s.signatures.any fun p => instSig G c.table (s.binders.zip c.instances) p q) &&
         M.all fun q => s.variadic.any fun p => instRest G c.table (s.binders.zip c.instances) p q
@@ -991,20 +1327,19 @@ theorem checkInstArrsUsing_sound [DecidableEq ι] {G : NormalGraph ι}
     · rename_i s hs
       simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true, List.any_eq_true,
         beq_iff_eq] at h
-      obtain ⟨⟨⟨⟨⟨⟨⟨hp, hlen⟩, hkinds⟩, hcl⟩, hbs⟩, hok⟩, hL⟩, hM⟩ := h
+      obtain ⟨⟨⟨⟨⟨⟨hp, hlen⟩, hkinds⟩, hbs⟩, hok⟩, hL⟩, hM⟩ := h
       intro η n W v hv
       refine ⟨inst_images_sound η hp hs hlen ?_
         (images.sound s.binders c hlen hkinds hok η) hL hM n W v hv,
         realmInvariant_of_not_record rfl n W v⟩
       intro b hb U hU
-      obtain ⟨cert, hc⟩ := exists_mem_zip hcl b hb
-      exact boundOk_sound (hbs _ hc) U hU η
+      exact boundOk_sound (hbs b hb) U hU η
     · cases h
   · cases h
 
 theorem checkInstArrs_sound [DecidableEq ι] {G : NormalGraph ι} {S L M c}
     (h : checkInstArrs G S L M c = true) : InstArrs G S L M := by
-  obtain ⟨tbl, θs, certs, D, V⟩ := c
+  obtain ⟨tbl, θs, D, V⟩ := c
   unfold checkInstArrs checkInstArrsUsing finiteInstanceImages at h
   split at h
   · rename_i i
@@ -1012,10 +1347,9 @@ theorem checkInstArrs_sound [DecidableEq ι] {G : NormalGraph ι} {S L M c}
     · rename_i s hs
       simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true, List.any_eq_true,
         beq_iff_eq] at h
-      obtain ⟨⟨⟨⟨⟨⟨⟨hp, hlen⟩, hkinds⟩, hcl⟩, hbs⟩, hok⟩, hL⟩, hM⟩ := h
-      refine ⟨i, s, tbl, θs, D, V, rfl, hp, hs, hlen, hkinds, fun b hb => ?_, hok, hL, hM⟩
-      obtain ⟨c, hc⟩ := exists_mem_zip hcl b hb
-      exact boundOk_sound (hbs _ hc)
+      obtain ⟨⟨⟨⟨⟨⟨hp, hlen⟩, hkinds⟩, hbs⟩, hok⟩, hL⟩, hM⟩ := h
+      exact ⟨i, s, tbl, θs, D, V, rfl, hp, hs, hlen, hkinds, fun b hb => boundOk_sound (hbs b hb),
+        hok, hL, hM⟩
     · cases h
   · cases h
 
@@ -1041,7 +1375,7 @@ theorem checkInstUsing_sound [DecidableEq ι] {G : NormalGraph ι}
       · rename_i s hs
         have hp : G.params i = false := by
           simp only [Bool.and_eq_true, Bool.not_eq_true'] at h
-          exact h.1.1.1.1.1.1.1
+          exact h.1.1.1.1.1.1
         intro η n W x hx
         cases x with
         | inl v => exact mixed_of_expand hT (values η n W v hx)
@@ -1054,7 +1388,7 @@ theorem checkInstUsing_sound [DecidableEq ι] {G : NormalGraph ι}
   · cases h
 
 /-- The rows a family certificate's instances prove. -/
-@[nospecialize] def knownOf (ks : List (List ι × Ops ι × List (RestArrow (List ι)) × Instance ι)) :
+@[nospecialize] def knownOf (ks : List (KnownInstance ι)) :
     Known ι := ks.map fun k => (k.1, k.2.1, k.2.2.1)
 
 /-- The claim is a pair of one of the certificate's variable-free entries,
@@ -1123,16 +1457,35 @@ theorem checkFamilyWith_sound [DecidableEq ι] {G : NormalGraph ι} {images : In
     ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) :=
   checkFamilyUsing_sound (G := PositiveRules.reassign G (ParameterAssignment.empty .mixed)) h
 
-/-- A family certificate, premises read with the representation's renaming. -/
-@[nospecialize] def checkFamilyAt [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (S T : List ι) (c : FamilyCertificate ι) : Bool :=
-  checkFamilyWith G images images.sub S T c
+/-- **The fallback, decided** (RECURSIVE-EQUATIONS §4.2–4.3): the pairs
+reachable from `(S, T)`, the uncovered ones deleted (`fallbackPairs`), with
+the known rows `ks`, checked as the one variable-free entry of a family
+certificate, premises read with the renaming `sub`. Search and check run at
+the graph with its assignment fixed. -/
+@[nospecialize] def fallbackWith [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (sub : Option (Renaming G)) (S T : List ι) (ks : List (KnownInstance ι)) : Bool :=
+  let e := ParameterAssignment.empty .mixed
+  let images' : InstanceImageCheck (PositiveRules.reassign G e) :=
+    { images.reassign e with sub := sub.map fun r => r.reassign (G := G) e }
+  match fallbackPairs (PositiveRules.reassign G e) images' S T (knownOf ks) with
+  | some (table, arrows) => checkFamilyWith G images sub S T
+      { entries := [{ source := S, target := T, table }], arrows, instances := ks }
+  | none => false
 
-theorem checkFamilyAt_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
-    {S T : List ι} {c : FamilyCertificate ι}
-    (h : checkFamilyAt G images S T c = true) :
-    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) :=
-  checkFamilyWith_sound h
+theorem fallbackWith_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {sub : Option (Renaming G)} {S T : List ι} {ks : List (KnownInstance ι)}
+    (h : fallbackWith G images sub S T ks = true) :
+    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
+  unfold fallbackWith at h
+  simp only at h
+  split at h
+  · exact checkFamilyWith_sound h
+  · cases h
+
+/-- The fallback, premises read with the representation's renaming. -/
+@[nospecialize] def fallbackAt [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (S T : List ι) (ks : List (KnownInstance ι)) : Bool :=
+  fallbackWith G images images.sub S T ks
 
 /-- The entry a pair is checked in when no certificate names one: the pair
 itself, with no hypothesis and no table. -/
@@ -1179,13 +1532,13 @@ premise judgment on the pair (`Var` for two applications of one head). -/
     | none => false
 
 /-- One proof traversal for every proved image-check implementation. Where
-the representation has a renaming, `subset` and `family` read premises by
-`Var` and pairs at renamed bound rows (`subsetUsing`, `checkFamilyAt`). -/
+the representation has a renaming, `subset` and `fallback` read premises by
+`Var` and pairs at renamed bound rows (`subsetUsing`, `fallbackAt`). -/
 @[nospecialize] def checkUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (S T : List ι) : Proof ι → Bool
   | .subset => subsetUsing G images S T
   | .inst c => checkInstUsing G images S T c
-  | .family c => checkFamilyAt G images S T c
+  | .fallback ks => fallbackAt G images S T ks
 
 /-- The shared proof traversal is sound for any proved image checker. -/
 theorem checkUsing_sound [DecidableEq ι] {G : NormalGraph ι}
@@ -1201,7 +1554,7 @@ theorem checkUsing_sound [DecidableEq ι] {G : NormalGraph ι}
       · exact premAt_sound h
       · cases h
   | inst c => exact checkInstUsing_sound h
-  | family c => exact checkFamilyAt_sound h
+  | fallback ks => exact fallbackWith_sound h
 
 /-- The traversal with the finite image checker. -/
 abbrev check [DecidableEq ι] (G : NormalGraph ι) := checkUsing G (finiteInstanceImages G)
@@ -1222,7 +1575,7 @@ theorem acceptedUsing [DecidableEq ι] {G : NormalGraph ι}
 #print axioms checkEntries_entries_sound
 #print axioms prem_iff
 #print axioms premAt_sound
-#print axioms checkFamilyAt_sound
+#print axioms fallbackWith_sound
 #print axioms checkPairs_sound
 #print axioms boundOk_sound
 end Verification.Model.PositiveCertificates

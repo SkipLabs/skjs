@@ -22,11 +22,9 @@ the captured cell (`var 2`). -/
 def dispatch : Tm :=
   .make (.graph 1 [.ite (.test .isNul (.var 1)) (.read (.var 2)) .nul] [(.ret, none)] 0 [.var 0]) .nul
 
-/-- Genuine overload subsumption: splitting a union domain across two signatures. -/
-def widenCert : Proof (Fin 7) := .family
-  { entries := [{ source := [3], target := [4], table := [([3], [4]), ([0], [0, 1]), ([1], [0, 1])] }],
-    arrows := [([⟨[6], [[0]], [1], .unrestricted⟩, ⟨[6], [[1]], [0], .unrestricted⟩], (⟨[6], [[0, 1]], [0, 1], .unrestricted⟩,
-      .union [] [0] [1] [] (.source ⟨[6], [[0]], [1], .unrestricted⟩) (.source ⟨[6], [[1]], [0], .unrestricted⟩)))] }
+/-- Genuine overload subsumption, splitting a union domain across two
+signatures, decided by the checker. -/
+def widenCert : Proof (Fin 7) := .fallback []
 
 /--
 let r = alloc true;
