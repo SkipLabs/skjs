@@ -402,7 +402,10 @@ Lowering turns the parser's declarations into definitions:
   becomes a definition over its type parameters. Its bases are met into
   its body.
 - **Generic members:** a generic method becomes a quantified signature in
-  that body.
+  that body. A binder's declared default is no part of the signature: it
+  names the instance a producer proposes where nothing constrains the
+  binder, and a claim states every instance, which the checker checks
+  against the bounds.
 - **Units:** a generic function, closure, class or imported generic value
   is typed by a quantified signature of its own.
 - **Literals:** each occurrence of an object, function, tuple or array type

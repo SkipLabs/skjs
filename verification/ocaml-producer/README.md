@@ -172,7 +172,10 @@ language. The boundaries are:
    as an invariant position makes them, is that type; otherwise a declared
    graph bound is preferred. Candidate types join lower bounds;
    upper-only candidates intersect primitive bounds when representable; a
-   binder with no candidate is `unknown`, as in TypeScript. A literal
+   binder with no candidate is `unknown`, as in TypeScript. A binder no
+   actual, receiver or expected type constrains takes its declared default
+   at the other binders' instances, as TypeScript does: `p.then(f)` with no
+   expected type instantiates `then`'s `TResult2 = never` at `never`. A literal
    candidate of an unbounded binder the result does not return bare widens,
    as TypeScript widens it (`box(42)` is a `Box<number>`, `id(42)` is `42`),
    where every upper bound admits the widened type. A record at a

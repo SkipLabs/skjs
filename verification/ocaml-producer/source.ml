@@ -132,10 +132,17 @@ let rec source_type ctx j =
             optional_elements=[];rest=None;readonly=false;presence=Dense}
         | _ -> unsupported "a pack parameter's bound is an array or a tuple" in
       let quantified = List.map2 (fun identity b ->
+        let pack = List.mem identity.spelling packs in
         {identity;bound=(match field "bound" b with
           | Null -> None
-          | t when List.mem identity.spelling packs -> Some (PackArgument (pack_bound t))
-          | t -> Some (ValueArgument (source_type ctx t)))})
+          | t when pack -> Some (PackArgument (pack_bound t))
+          | t -> Some (ValueArgument (source_type ctx t)));
+         (* A default sees the method's binders, as TypeScript reads it. A
+            pack binder's instance is its argument list, never a default. *)
+         default=(match field "default" b with
+          | Null -> None
+          | _ when pack -> None
+          | t -> Some (source_type inner t))})
         identities binders in
       let calls = List.map (fun f -> match source_type inner f with
         | Atoms [Shape {fields=[];indexes=[];calls=[s];elements=None}] -> {s with quantified}
@@ -307,7 +314,7 @@ let quantify binders scope parameters =
       then Json.fail "duplicate type parameter";
       let identity={scope;index;spelling} in
       let quantified={identity;bound=Option.map (fun t -> ValueArgument t)
-        (optional_type binders (field "bound" p))} in
+        (optional_type binders (field "bound" p));default=None} in
       let binders={binders with bindings=(spelling,ValueArgument (Rigid identity))::binders.bindings} in
       loop (index+1) binders (quantified::accumulated) rest in
   loop 0 binders [] parameters

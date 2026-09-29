@@ -17,7 +17,7 @@ let () =
   assert (a <> b);
   assert (union a b <> a);
   let identity={scope=2;index=0;spelling="T"} in
-  let signature={call_effect=Unrestricted;quantified=[{identity;bound=None}];receiver=top;params=[Rigid identity];variadic=None;rest_pack=None;result=Rigid identity} in
+  let signature={call_effect=Unrestricted;quantified=[{identity;bound=None;default=None}];receiver=top;params=[Rigid identity];variadic=None;rest_pack=None;result=Rigid identity} in
   let inferred:Inference.instantiation=Inference.infer signature [bool] in
   assert (inferred.Inference.result=bool);
   assert (inferred.Inference.substitution=[identity,ValueArgument bool]);
@@ -35,17 +35,17 @@ let () =
   (* A contradiction must still reach independent validation. *)
   assert ((infer [t;arrow [t] num] [bool;arrow [num] num]).Inference.result=bool);
   let u={scope=2;index=1;spelling="U"} and v={scope=2;index=2;spelling="V"} in
-  let chain={call_effect=Unrestricted;quantified=[{identity=u;bound=None};{identity;bound=Some (ValueArgument (Rigid u))};
-    {identity=v;bound=Some (ValueArgument t)}];receiver=top;params=[Rigid u;t;Rigid v];variadic=None;rest_pack=None;result=Rigid u} in
+  let chain={call_effect=Unrestricted;quantified=[{identity=u;bound=None;default=None};{identity;bound=Some (ValueArgument (Rigid u));default=None};
+    {identity=v;bound=Some (ValueArgument t);default=None}];receiver=top;params=[Rigid u;t;Rigid v];variadic=None;rest_pack=None;result=Rigid u} in
   let propagated=Inference.infer chain [tru;tru;bool] in
   assert (List.for_all (fun (_,ty) -> ty=ValueArgument bool) propagated.Inference.substitution);
-  let boundedUpper={signature with quantified=[{identity=u;bound=None};
-    {identity;bound=Some (ValueArgument (Rigid u))}];params=[Rigid u;arrow [t] bool]} in
+  let boundedUpper={signature with quantified=[{identity=u;bound=None;default=None};
+    {identity;bound=Some (ValueArgument (Rigid u));default=None}];params=[Rigid u;arrow [t] bool]} in
   assert ((Inference.infer boundedUpper [tru;arrow [bool] bool]).Inference.substitution=
     [u,ValueArgument tru;identity,ValueArgument tru]);
   (* Cyclic proposal dependencies terminate; they cannot create semantic types. *)
-  let cyclic={signature with quantified=[{identity;bound=Some (ValueArgument (Rigid u))};
-    {identity=u;bound=Some (ValueArgument t)}];params=[t;Rigid u]} in
+  let cyclic={signature with quantified=[{identity;bound=Some (ValueArgument (Rigid u));default=None};
+    {identity=u;bound=Some (ValueArgument t);default=None}];params=[t;Rigid u]} in
   assert ((Inference.infer cyclic [tru;bool]).Inference.substitution=[identity,ValueArgument bool;u,ValueArgument bool]);
   (* Equal spellings from a different scope are rigid, not solver variables. *)
   assert ((infer [t] [a]).Inference.substitution=[identity,ValueArgument a]);
@@ -58,7 +58,7 @@ let () =
     rest_pack=Some (PackParameter p);result=t} in
   let generic={constructor with
     quantified=[{identity=p;bound=Some (PackArgument (Pack {
-      required=[];optional_elements=[];rest=Some t;readonly=false;presence=Dense}))}];
+      required=[];optional_elements=[];rest=Some t;readonly=false;presence=Dense}));default=None}];
     params=[Atoms [Ctors [constructor]]]} in
   let solution=[p,PackArgument pack;identity,ValueArgument num] in
   let instance=Inference.substitute_signature solution {generic with quantified=[]} in
@@ -71,7 +71,7 @@ let () =
   assert (nested.rest_pack=Some (PackParameter p));
   assert (nested.params=[Atoms [Ctors [{constructor with result=num}]]]);
   assert (nested.quantified=[{identity=p;bound=Some (PackArgument (Pack {
-    required=[];optional_elements=[];rest=Some num;readonly=false;presence=Dense}))}]);
+    required=[];optional_elements=[];rest=Some num;readonly=false;presence=Dense}));default=None}]);
   let refuses expected f = match f () with
     | _ -> failwith ("expected substitution refusal: " ^ expected)
     | exception Json.Error message -> assert (message="unsupported: " ^ expected) in

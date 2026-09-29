@@ -4,12 +4,9 @@ open Semantic
    signature's quantified rigid identities; it is never embedded in [ty]. *)
 type substitution = (rigid * type_argument) list
 
-(* [unconstrained]: the binders no actual, receiver or expected type
-   constrains, instantiated from their bounds alone. *)
 type instantiation = {
   substitution: substitution;
   result: ty;
-  unconstrained: rigid list;
 }
 
 let unsupported s = Json.fail ("unsupported: " ^ s)
@@ -67,7 +64,9 @@ and substitute_signature ?meet solution signature =
      pass through the nested scheme's bounds and body. *)
   let local = List.map (fun q -> q.identity) signature.quantified in
   let solution = List.filter (fun (identity,_) -> not (List.mem identity local)) solution in
-  { signature with quantified=List.map (fun q -> {q with bound=Option.map (substitute_argument ?meet solution) q.bound})
+  { signature with quantified=List.map (fun q -> {q with
+      bound=Option.map (substitute_argument ?meet solution) q.bound;
+      default=Option.map (substitute ?meet solution) q.default})
       signature.quantified;
     receiver=substitute ?meet solution signature.receiver;
     params=List.map (substitute ?meet solution) signature.params;
@@ -436,5 +435,16 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
       | c -> c in
     (* With no candidate at all, TypeScript infers `unknown`. *)
     v.identity,ValueArgument (Option.value candidate ~default:top)) variables in
+  (* A binder no actual, receiver or expected type constrains takes its
+     declared default, at the other binders' instances, as TypeScript does
+     (`then`'s `TResult2 = never`). A default names only earlier binders, so
+     one pass in declaration order instantiates each. *)
+  let substitution = List.fold_left (fun substitution (q:quantifier) ->
+    match q.default with
+    | Some default when List.mem q.identity unconstrained ->
+      List.map (fun (identity,argument) ->
+        if identity = q.identity then identity,ValueArgument (substitute substitution default)
+        else identity,argument) substitution
+    | _ -> substitution) substitution signature.quantified in
   let result = substitute substitution signature.result in
-  {substitution;result;unconstrained}
+  {substitution;result}

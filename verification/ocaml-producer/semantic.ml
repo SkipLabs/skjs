@@ -58,7 +58,10 @@ and index_signature = { keys: index_keys; value: ty; writable: ty option }
    travel through their own substitution projection, never through [ty]. *)
 and pack = PackParameter of rigid | Pack of sequence
 and type_argument = ValueArgument of ty | PackArgument of pack
-and quantifier = { identity: rigid; bound: type_argument option }
+(* [default]: the value binder's declared default (`TResult2 = never`), the
+   instance a call takes where nothing constrains the binder. It is inference
+   input, not part of the signature's type: claims state the instance. *)
+and quantifier = { identity: rigid; bound: type_argument option; default: ty option }
 (* `receiver` is the `this` value a call may pass: `Top` for a signature
    indifferent to it. `variadic` is the contract of each actual after `params`,
    for a signature that takes any number of them; `rest_pack` the type of all
