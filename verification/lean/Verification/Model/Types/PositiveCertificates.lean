@@ -1010,7 +1010,7 @@ instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
     {arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop}
     [∀ L S M, Decidable (arrows L S M)] (hyps : List (ι × ι)) (S T : List ι) :
     Decidable (OpaqueFamily G sub R known arrows hyps S T) := by
-  unfold OpaqueFamily SchemeCoversAlpha; infer_instance
+  unfold OpaqueFamily PartCovers SchemeCoversAlpha; infer_instance
 
 set_option synthInstance.maxSize 1024 in
 /-- The entries' core conditions, premises read in each entry, arrows by
@@ -1021,7 +1021,7 @@ def checkEntries [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G
   decide (∀ f ∈ F, ∀ p ∈ f.pairs, SameKind G p.1 p.2 = true ∧
     OpaqueFamily G sub (Prem G sub (base ++ F) gen f) known
       (ArrowsCheckedWith G (Prem G sub (base ++ F) gen f) arrows) f.hypotheses p.1 p.2 ∧
-    ∀ a ∈ sourceClauses G p.1 ++ meetSources G p.1 p.2, ∃ b ∈ clausesOf G p.2,
+    ∀ a ∈ sourceClauses G p.1 ++ meetSources G p.1 p.2 f.hypotheses, ∃ b ∈ clausesOf G p.2,
       checkClauseWith G (Prem G sub (base ++ F) gen f) known arrows p.1 a b = true)
 
 theorem checkEntries_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
@@ -1056,7 +1056,7 @@ theorem opaqueFamily_complete [DecidableEq ι] {G : NormalGraph ι} {sub : Optio
       CallArrow (compatible G) (restElem G) R L S p) hyps S T) :
     ∃ es, OpaqueFamily G sub R known (ArrowsCheckedWith G R es) hyps S T := by
   have each : ∀ i ∈ S, ∃ es : Evidence ι, G.plain i = true ∨ i ∈ T ∨ .top ∈ clausesOf G T ∨
-      MeetOpaque G (SchemeCoversAlpha G sub R known (ArrowsCheckedWith G R es))
+      MeetOpaque G (PartCovers G sub R known (ArrowsCheckedWith G R es) hyps)
         (fun a => ∃ b ∈ clausesOf G T, CoversWith G R known (ArrowsCheckedWith G R es) S a b) T i ∨
       (∃ y ∈ T, (i, y) ∈ hyps) ∨
       ∃ j ∈ T, SchemeCoversAlpha G sub R known (ArrowsCheckedWith G R es) i j := by
@@ -1066,12 +1066,13 @@ theorem opaqueFamily_complete [DecidableEq ι] {G : NormalGraph ι} {sub : Optio
     · exact ⟨[], .inr (.inl h)⟩
     · exact ⟨[], .inr (.inr (.inl h))⟩
     · obtain ⟨es, he⟩ := MeetOpaque.evidence (h := h)
-        (sc' := fun es => SchemeCoversAlpha G sub R known (ArrowsCheckedWith G R es))
+        (sc' := fun es => PartCovers G sub R known (ArrowsCheckedWith G R es) hyps)
         (cover' := fun es a => ∃ b ∈ clausesOf G T,
           CoversWith G R known (ArrowsCheckedWith G R es) S a b)
-        (fun es es' hm a b h => SchemeCoversAlpha.mono (arrowsChecked_mono hm) h)
+        (fun es es' hm a b h => Or.imp_left (SchemeCoversAlpha.mono (arrowsChecked_mono hm)) h)
         (fun es es' hm a ⟨b, hb, hc⟩ => ⟨b, hb, CoversWith.mono (arrowsChecked_mono hm) hc⟩)
-        (fun a b h => schemeCoversAlpha_complete h) (fun a h => coversWith_complete h)
+        (fun a b h => h.elim (fun h => (schemeCoversAlpha_complete h).imp fun _ => .inl)
+          fun h => ⟨[], .inr h⟩) (fun a h => coversWith_complete h)
       exact ⟨es, .inr (.inr (.inr (.inl he)))⟩
     · exact ⟨[], .inr (.inr (.inr (.inr (.inl h))))⟩
     · unfold SchemeCoversWith at hc
@@ -1096,7 +1097,8 @@ theorem opaqueFamily_complete [DecidableEq ι] {G : NormalGraph ι} {sub : Optio
     · exact .inl h
     · exact .inr (.inl h)
     · exact .inr (.inr (.inl h))
-    · exact .inr (.inr (.inr (.inl (h.mono (fun _ _ => SchemeCoversAlpha.mono (arrowsChecked_mono hm))
+    · exact .inr (.inr (.inr (.inl (h.mono
+        (fun _ _ => Or.imp_left (SchemeCoversAlpha.mono (arrowsChecked_mono hm)))
         fun a ⟨b, hb, hc⟩ => ⟨b, hb, CoversWith.mono (arrowsChecked_mono hm) hc⟩))))
     · exact .inr (.inr (.inr (.inr (.inl h))))
     · refine .inr (.inr (.inr (.inr (.inr ⟨j, hj, SchemeCoversAlpha.mono (fun L S M hs p hp => ?_) hc⟩))))
@@ -1110,14 +1112,15 @@ theorem checkEntries_complete [DecidableEq ι] {G : NormalGraph ι} {sub : Optio
   have rows : ∀ fp ∈ F.flatMap (fun f => f.pairs.map (f, ·)), ∃ es : Evidence ι,
       OpaqueFamily G sub (Prem G sub (base ++ F) gen fp.1) known
         (ArrowsCheckedWith G (Prem G sub (base ++ F) gen fp.1) es) fp.1.hypotheses fp.2.1 fp.2.2 ∧
-      ∀ a ∈ sourceClauses G fp.2.1 ++ meetSources G fp.2.1 fp.2.2, ∃ b ∈ clausesOf G fp.2.2,
+      ∀ a ∈ sourceClauses G fp.2.1 ++ meetSources G fp.2.1 fp.2.2 fp.1.hypotheses,
+        ∃ b ∈ clausesOf G fp.2.2,
         checkClauseWith G (Prem G sub (base ++ F) gen fp.1) known es fp.2.1 a b = true := by
     intro fp hfp
     obtain ⟨f, hf, hfp⟩ := List.mem_flatMap.mp hfp
     obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hfp
     have hv := h f hf p hp
     obtain ⟨es₀, ho⟩ := opaqueFamily_complete hv.2.1
-    obtain ⟨es₁, hc⟩ := collect (sourceClauses G p.1 ++ meetSources G p.1 p.2)
+    obtain ⟨es₁, hc⟩ := collect (sourceClauses G p.1 ++ meetSources G p.1 p.2 f.hypotheses)
       (fun a es => ∃ b ∈ clausesOf G p.2,
         checkClauseWith G (Prem G sub (base ++ F) gen f) known es p.1 a b = true)
       (fun a es es' hm ⟨b, hb, hc⟩ => ⟨b, hb, checkClauseWith_mono hm hc⟩)

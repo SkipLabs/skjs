@@ -1151,8 +1151,8 @@ unchanged ([design](#recursive-quantified-contracts)).
 | S2. Diagnostics show labels through a finite projection | done | identical diagnostics on every case |
 | S3. Kernel: meet labels, equation validator, tree codec and hashing | done | proved; no pipeline change |
 | S4. Source layer generic in its label type, still over the finite table | done | bit-identical evidence on the corpus |
-| S5. Equation lowering module ([§8](RECURSIVE-EQUATIONS.md#8-lowering-from-source)), not yet wired | done; upstream `T & B` heads' variances refused ([§8.4](RECURSIVE-EQUATIONS.md#84-variance-proposal-and-its-evidence)) | lowers `Promise`, `PromiseLike`, `Pair` and the upstream declarations with no budget |
-| K2. Kernel: family hypotheses reach meet parts, so `meet(x,B) ≤ meet(y,B)` holds under `x ≤ y` (the framework's `T & DepSafe` heads, [§8.4](RECURSIVE-EQUATIONS.md#84-variance-proposal-and-its-evidence)) | open | proved; the `sum-collections` heads' variances check |
+| S5. Equation lowering module ([§8](RECURSIVE-EQUATIONS.md#8-lowering-from-source)), not yet wired | done | lowers `Promise`, `PromiseLike`, `Pair` and the upstream declarations with no budget |
+| K2. Kernel: family hypotheses reach meet parts, so `meet(x,B) ≤ meet(y,B)` holds under `x ≤ y` (the framework's `T & DepSafe` heads, [§8.4](RECURSIVE-EQUATIONS.md#84-variance-proposal-and-its-evidence)) | done | proved; the `sum-collections` heads' variances check |
 | K3. Lowering: a unit bound naming another binder of the unit (`U extends T`) | open | lowered as a meet of owned binders; its lowering test passes |
 | S6. Cutover: lowering wired, `DeclarationGraph`, its budgets and the adapter deleted, `checkJson_safe` over `Equations.graph` | open | `generic-growing-application` verifies; every recursive-generic gap reclassified by its new blocker |
 | S7. Variance proposals, `Var` and family entries in the certificate producer; `checkEquations` | open | `promise-covariance`, `-push` verify; `invalid-promise-covariance` rejected at its own obligation |

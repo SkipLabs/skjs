@@ -272,6 +272,33 @@ def cell (E : Equations) (hyps : List (Tree × Tree)) : Entry (Label E.signature
   [{ source := lbls E [app 6 [[fv 6 0]]], target := lbls E [app 6 [[fv 6 0]]],
      variables := lbls E [fv 6 0] }]
 
+-- Meet parts through hypotheses (§3.3, §7.3): `x & {q: number}` below
+-- `y & {q: number}` in an entry with `x ≤ y`, the target part `y` covered by
+-- the source part `x`. Without the hypothesis, or with only `y ≤ x`, `y` is
+-- covered by nothing. A meet with a scheme part is read part by part the
+-- same way.
+def meetEntry (E : Equations) (S T : Tree) (hyps : List (Tree × Tree)) : Entry (Label E.signature) :=
+  { source := lbls E [S], target := lbls E [T], variables := lbls E [c, d],
+    hypotheses := hyps.map (fun h => (lbl E h.1, lbl E h.2)) }
+def cq := canonMeet [c, app 14 []]
+def dq := canonMeet [d, app 14 []]
+#guard run fun E => claim E [num] [num] [] [] [meetEntry E cq dq [(c, d)]]
+#guard run fun E => !claim E [num] [num] [] [] [meetEntry E cq dq []]
+#guard run fun E => !claim E [num] [num] [] [] [meetEntry E cq dq [(d, c)]]
+def cs := canonMeet [c, app 12 []]
+def ds := canonMeet [d, app 12 []]
+#guard run fun E => claim E [num] [num] [] [] [meetEntry E cs ds [(c, d)]]
+#guard run fun E => !claim E [num] [num] [] [] [meetEntry E cs ds []]
+#guard run fun E => !claim E [num] [num] [] [] [meetEntry E cs ds [(d, c)]]
+-- A premise reads meets the same way: `Box<x & {q: number}>` below
+-- `Box<y & {q: number}>` by its readonly view, with no table pair.
+#guard run fun E => claim E [num] [num] [] [] [meetEntry E (app 9 [[cq]]) (app 9 [[dq]]) [(c, d)]]
+#guard run fun E => !claim E [num] [num] [] [] [meetEntry E (app 9 [[cq]]) (app 9 [[dq]]) [(d, c)]]
+-- A clause part is not covered by a hypothesis: `x ≤ y & {q: number}` and
+-- `x & {q: number | string} ≤ y & {q: number}` stay refused under `x ≤ y`.
+#guard run fun E => !claim E [num] [num] [] [] [meetEntry E c dq [(c, d)]]
+#guard run fun E => !claim E [num] [num] [] [] [meetEntry E (canonMeet [c, app 15 []]) dq [(c, d)]]
+
 -- Quantified-α with a source binder free in the target: `<R>() => R` is not
 -- related to `<S>() => R` for the source's own `R`, though the renamed
 -- signatures would cover.

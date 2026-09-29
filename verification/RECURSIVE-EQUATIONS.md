@@ -216,14 +216,18 @@ congruence proof (4.2) takes this step explicitly: a meet agrees at level
 $`n`$ when its parts do. The subtype checker reads a meet source through
 any one part (a clause part through $`\mathrm{meetLists}`$ coverage as today,
 a parameter by its row, a scheme through quantified coverage), and a meet
-target part by part ([core tables](POSITIVE-TYPES.md#core-tables)).
+target part by part ([core tables](POSITIVE-TYPES.md#core-tables)). Inside a
+family entry a parameter part is also read through the entry's hypotheses
+(7.3): with $`x\le y`$ in $`\Pi_f`$, $`\mathsf{meet}(x,B)`$ is below
+$`\mathsf{meet}(y,B)`$ and below $`y`$.
 
 Lean: `Tree.meet`, `canonMeet`, `Label.meetOf`, `meetRowOf`, `choices`,
 `Equations.meet_denote`, `Equations.meet_noArguments`,
 `Equations.meetOf_denote`, `Equations.distribute_values`,
 `Equations.distribute_meaning` (`Types/EquationGraphs.lean`,
 `Types/EquationMeets.lean`); `partSemWithArgs`, `qLayer_part`
-(`Types/PositiveGraphs.lean`).
+(`Types/PositiveGraphs.lean`); `meetBelow`, `PartCovers`
+(`Types/PositiveRules.lean`).
 
 ## 4. Support, congruence and substitution
 
@@ -505,6 +509,8 @@ $`f`$ by the relation $`\Delta_f\Vdash A\sqsubseteq B`$. It holds when either:
 2. every label $`l`$ of $`A`$ satisfies one of:
    - $`l\in B`$;
    - $`l`$ is a variable with $`(l\le y)\in\Pi_f`$ and $`y\in B`$;
+   - $`l`$ is a meet with $`\Pi_f\vdash l\sqsubseteq_{\mathsf{par}}y`$ for
+     some $`y\in B`$ (7.3);
    - $`l=g(\vec X)`$, some $`g'(\vec Y)\in B`$, and an entry
      $`f'\in F`$ relates $`g(\vec x)\le g'(\vec y)`$ such that every
      hypothesis $`(x_s\le y_t)\in\Pi_{f'}`$ is met at the instance: the pair
@@ -527,12 +533,41 @@ Lean: `Discharge`, `InstanceOk`, `Prem` (`Types/PositiveRules.lean`).
 ### 7.3 Checking an entry
 
 Entry $`f`$ is **valid** when its goal and every pair of $`\Delta_f`$ meet
-the three [core conditions](POSITIVE-TYPES.md#core-tables), with two changes:
+the three [core conditions](POSITIVE-TYPES.md#core-tables), with three changes:
 
 - **Opaque rows.** A variable $`x`$ of the source may instead be covered by a
   hypothesis $`(x\le y)\in\Pi_f`$ with $`y`$ in the target.
+- **Meet parts.** A meet's parameter parts are read through the hypotheses
+  too, below.
 - **Coverage** reads operand premises through $`\Delta_f\Vdash\cdot`$, and
   scheme rows are related by quantified-α.
+
+A meet row $`i`$ reaches its parts and every variable above one of its
+parameter parts by a hypothesis,
+
+```math
+\mathrm{reach}_{\Pi}(i)=\mathrm{parts}(i)\cup\{\,y\mid x\in\mathrm{parts}(i),\ (x\le y)\in\Pi\,\},
+```
+
+and is below a row by its parameters under $`\Pi`$ (`meetBelow`), which
+with $`\Pi=\emptyset`$ is the [core relation](POSITIVE-TYPES.md#core-tables):
+
+```math
+\frac{j\in\mathrm{reach}_{\Pi}(i)\quad j\ \text{a value parameter}}
+     {\Pi\vdash i\sqsubseteq_{\mathsf{par}}j}
+\qquad
+\frac{j\ \text{a meet}\quad \mathrm{parts}(j)\subseteq\mathrm{reach}_{\Pi}(i)\quad \mathrm{cl}(j)=\mathrm{cl}(i)}
+     {\Pi\vdash i\sqsubseteq_{\mathsf{par}}j}
+```
+
+In a pair of $`f`$, a source meet below a target row this way is opaque and
+its clauses are not listed for coverage. A target meet read part by part
+covers a part $`y`$ by a source part, or by the source row, $`x`$ with
+$`(x\le y)\in\Pi_f`$, as it covers a scheme part by quantified-α
+(`PartCovers`). A clause part is never covered by a hypothesis: the target's
+clauses are still the source meet's or $`\top`$. So
+$`\mathsf{meet}(x,B)\le\mathsf{meet}(y,B)`$ holds under $`x\le y`$ alone,
+and not under $`y\le x`$.
 
 Everything else is unchanged: the same kinds, clause coverage, known rows
 and instance checks. The three conditions are one definition for a core
@@ -545,7 +580,7 @@ $`b\le a`$. Variance is never read from TypeScript. The producer proposes
 $`\Pi_f`$ (for example by trying covariance and weakening to invariance on
 failure), and the checker checks it.
 
-Lean: `PairOk`, `OpaqueFamily`, `FamilyValid`, `checkEntries`,
+Lean: `PairOk`, `OpaqueFamily`, `meetBelow`, `PartCovers`, `FamilyValid`, `checkEntries`,
 `checkEntries_complete`, `familyValid_iff_checked`
 (`Types/PositiveRules.lean`, `Types/PositiveCertificates.lean`).
 
@@ -574,6 +609,12 @@ At each level it proves values first, then argument lists:
   induction, since the hypotheses hold at every $`j<n`$. A subset holds
   outright. A variable of the source that is opaque by hypothesis holds at
   $`n`$ because $`\eta\models^{\mathsf v}_n\Pi_f`$.
+- **Meets by hypothesis.** A value of a meet is in each of its parts, so in
+  each variable of $`\mathrm{reach}_{\Pi}`$ at any level where the
+  hypotheses hold for values; a meet admits no argument list. So
+  $`\Pi\vdash i\sqsubseteq_{\mathsf{par}}j`$ and a target part covered by
+  hypothesis hold at $`n`$ in a pair, and a premise read through them holds
+  wherever the variable case does (`meetBelow_sound`, `meetBelow_mixed`).
 - **Argument lists** at $`n`$ read the element contracts of packs, value
   premises at $`n`$ itself. They follow from the values just proved, for
   every entry and every assignment.
@@ -604,7 +645,8 @@ variance declarations (7.5). A claim is a pair of a variable-free entry of
 the certificate, sound at every assignment.
 
 Lean: `MixedLe`, `HypsHold`, `HypsHoldValues`, `pair_values_sound`,
-`pair_arguments_sound`, `pairs_sound`, `Core.mixed_sound`,
+`pair_arguments_sound`, `pairs_sound`, `meetBelow_sound`, `meetBelow_mixed`,
+`Core.mixed_sound`,
 `assignment_images`, `InstanceOk.transport`, `EntrySound`, `family_sound`,
 `family_entries_sound`, `family_closed_sound` (`Types/PositiveRules.lean`);
 `checkFamilyUsing`, `checkFamilyUsing_sound` (`Types/PositiveCertificates.lean`).
@@ -938,13 +980,10 @@ is invariant already. The result, checked variances or the heads refused, is
 part of the lowering's output: the refusal belongs to the request
 (`checkRequests`), located at those heads.
 
-**Known gap.** A head whose template meets a parameter with a type (the Skip
-runtime's `T & DepSafe` in `Values`, `Reducer`, `EagerCollection`) is refused
-even as invariant: its table holds
-$`\mathsf{meet}(x,B)\le\mathsf{meet}(y,B)`$, and a meet target is read part
-by part without the entry's hypotheses (`MeetTarget`), so $`y`$ is covered by
-nothing. Closing it needs a kernel rule relating meets through the family's
-hypotheses.
+A head whose template meets a parameter with a type (the Skip runtime's
+`T & DepSafe` in `Values`, `Reducer`, `EagerCollection`, `LazyCollection`)
+relates the meets over its variables through the hypotheses (7.3), in its
+table's pairs and in the premises its clauses read.
 
 ## 9. Wire formats
 

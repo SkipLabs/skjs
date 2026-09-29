@@ -153,13 +153,15 @@ def unguardedDoc : Json := parse r#"{
 
 /-! ### An upstream Skip runtime document -/
 
--- `sum-collections`' declarations lower, their declared bounds checked. The
--- variance check refuses the heads whose templates meet a parameter with a
--- type (`T & DepSafe`): a family entry relates `meet(x, B) ≤ meet(y, B)`
--- only through a table pair, and a meet target is read part by part without
--- the entry's hypotheses (`MeetTarget`), so none is valid even as
--- invariant. This is a kernel gap, not a lowering one.
+-- `sum-collections`' declarations lower, their declared bounds checked, and
+-- the proposed variances check as proposed. The heads whose templates meet a
+-- parameter with a type (`T & DepSafe`) relate `x & B` to `y & B` through
+-- the entry's hypotheses: a meet reads its parameter parts through them
+-- (`meetBelow`, `PartCovers`), in a pair and in a premise (`Prem`).
 #guard run sumDoc [] fun L =>
-  !checked L && (refused L).contains "Values" && (refused L).contains "Reducer"
+  checked L && variance? L "Values" == some [.inv] &&
+  variance? L "Reducer" == some [.contra, .inv] &&
+  variance? L "EagerCollection" == some [.inv, .inv] &&
+  variance? L "LazyCollection" == some [.contra, .inv]
 
 end Verification.Model.EquationLoweringTests

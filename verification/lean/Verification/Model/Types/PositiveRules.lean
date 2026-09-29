@@ -2830,56 +2830,22 @@ theorem meet_clause_of {G : NormalGraph ι} {η : MixedAssignment ι} {i : ι}
 /-- A meet row below a row by its parameters: the row is one of the meet's
 value parameters, or a meet row of some of them within the same clauses.
 `U ⊓ T` is below `T`, and `U ⊓ T ⊓ B` below `T ⊓ B`: a value of the meet is
-what the assignment gives each of its parameters, within its clauses. -/
-def meetBelow [DecidableEq ι] (G : NormalGraph ι) (i j : ι) : Bool :=
+what the assignment gives each of its parameters, within its clauses. In a
+family pair a target parameter may instead be above one of the meet's
+parameters by a hypothesis (RECURSIVE-EQUATIONS §3.3, §7.3): `x ⊓ B` is below
+`y ⊓ B`, and below `y`, when `x ≤ y`. -/
+def meetBelow [DecidableEq ι] (G : NormalGraph ι) (i j : ι) (hyps : List (ι × ι) := []) : Bool :=
   match G.meets i with
   | some (p, cs) =>
     let ps := p :: G.meetParams i
-    (G.parameterKinds j == some .value && ps.contains j) ||
+    let reach := fun q => ps.contains q ||
+      (G.params q && ps.any fun r => G.params r && hyps.contains (r, q))
+    (G.parameterKinds j == some .value && reach j) ||
     (match G.meets j with
-      | some (q, ds) => !G.params j && (G.schemes j).isNone && ps.contains q &&
-          (G.meetParams j).all ps.contains && ds == cs
+      | some (q, ds) => !G.params j && (G.schemes j).isNone && reach q &&
+          (G.meetParams j).all reach && ds == cs
       | none => false)
   | none => false
-
-/-- A value of a meet row is a value of a row it is below. -/
-theorem meetBelow_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignment ι} {i j : ι}
-    (hi : G.meetRow i = true) (h : meetBelow G i j = true) {n W v}
-    (hv : qDenoteWithArgs G (mixedParameters G) (η, i) n W v) :
-    qDenoteWithArgs G (mixedParameters G) (η, j) n W v := by
-  simp only [NormalGraph.meetRow, Bool.and_eq_true, Bool.not_eq_true',
-    Option.isNone_iff_eq_none] at hi
-  obtain ⟨⟨hp, hs⟩, hm⟩ := hi
-  obtain ⟨⟨p, cs⟩, hm⟩ := Option.isSome_iff_exists.mp hm
-  rw [qDenoteWithArgs_unfold] at hv
-  simp only [qLayerWithArgs, hp, hs, hm, Bool.false_eq_true, ite_false] at hv
-  obtain ⟨⟨hvp, hvq⟩, hvc⟩ := hv
-  -- Each of the meet's parameters holds the value.
-  have hpar : ∀ r, r ∈ p :: G.meetParams i →
-      partSemWithArgs G (mixedParameters G) (qDenoteWithArgs G (mixedParameters G)) η r n W v := by
-    intro r hr
-    rcases List.mem_cons.mp hr with rfl | hr
-    · exact hvp
-    · exact hvq r hr
-  unfold meetBelow at h
-  simp only [hm, Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem] at h
-  rcases h with ⟨hk, hj⟩ | h
-  · -- A parameter of the meet.
-    have hjp : G.params j = true := by simp [NormalGraph.params, hk]
-    rw [qDenoteWithArgs_unfold]
-    simp only [qLayerWithArgs, hjp, ite_true]
-    simpa [partSemWithArgs_param hjp] using hpar j hj
-  · -- A meet row of some of its parameters within the same clauses.
-    cases hmj : G.meets j with
-    | none => simp [hmj] at h
-    | some qd =>
-      obtain ⟨q, ds⟩ := qd
-      simp only [hmj, Bool.and_eq_true, Bool.not_eq_true', Option.isNone_iff_eq_none,
-        List.all_eq_true, List.contains_iff_mem, beq_iff_eq] at h
-      obtain ⟨⟨⟨⟨hjp, hjs⟩, hq⟩, hqs⟩, rfl⟩ := h
-      rw [qDenoteWithArgs_unfold]
-      simp only [qLayerWithArgs, hjp, hjs, hmj, Bool.false_eq_true, ite_false]
-      exact ⟨⟨hpar q hq, fun r hr => hpar r (hqs r hr)⟩, hvc⟩
 
 /-- **Quantified signatures.** A scheme row is covered by another binding the
 same parameter rows, each source bound among the target's, whose signatures,
@@ -2922,7 +2888,7 @@ parameter part below a target row (`meetBelow`), a scheme part covered by a
 target scheme (`sc`), or its clauses each covered (`cover`). -/
 def MeetSource [DecidableEq ι] (G : NormalGraph ι) (sc : ι → ι → Prop)
     (cover : Clause (List ι) → Prop) (T : List ι) (i : ι) : Prop :=
-  T.any (meetBelow G i) = true ∨
+  T.any (meetBelow G i ·) = true ∨
     (∃ q ∈ meetParts G i, G.partRow q = true ∧ ∃ j ∈ T, sc q j) ∨
     ∀ a ∈ (meetClauses G i).flatMap splitClause, cover a
 
@@ -2968,6 +2934,59 @@ theorem part_denote {G : NormalGraph ι} {η : MixedAssignment ι} {q : ι}
       partSemWithArgs G (mixedParameters G) (qDenoteWithArgs G (mixedParameters G)) η q n W v := by
   rw [qDenoteWithArgs_unfold, qLayer_part]
   simpa [NormalGraph.partRow, Bool.or_eq_true, Option.isNone_iff_eq_none, or_assoc] using hq
+
+/-- A value of a meet row is a value of a row it is below, given the
+hypotheses at the value's level. -/
+theorem meetBelow_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignment ι} {i j : ι}
+    {hyps : List (ι × ι)} (hi : G.meetRow i = true) (h : meetBelow G i j hyps = true) {n W v}
+    (hh : ∀ h ∈ hyps, FamLeAt G η [h.1] [h.2] n)
+    (hv : qDenoteWithArgs G (mixedParameters G) (η, i) n W v) :
+    qDenoteWithArgs G (mixedParameters G) (η, j) n W v := by
+  simp only [NormalGraph.meetRow, Bool.and_eq_true, Bool.not_eq_true',
+    Option.isNone_iff_eq_none] at hi
+  obtain ⟨⟨hp, hs⟩, hm⟩ := hi
+  obtain ⟨⟨p, cs⟩, hm⟩ := Option.isSome_iff_exists.mp hm
+  rw [qDenoteWithArgs_unfold] at hv
+  simp only [qLayerWithArgs, hp, hs, hm, Bool.false_eq_true, ite_false] at hv
+  obtain ⟨⟨hvp, hvq⟩, hvc⟩ := hv
+  -- Each of the meet's parameters holds the value.
+  have hpar : ∀ r, r ∈ p :: G.meetParams i →
+      partSemWithArgs G (mixedParameters G) (qDenoteWithArgs G (mixedParameters G)) η r n W v := by
+    intro r hr
+    rcases List.mem_cons.mp hr with rfl | hr
+    · exact hvp
+    · exact hvq r hr
+  -- So does each parameter above one of them by a hypothesis.
+  have hreach : ∀ q, (q ∈ p :: G.meetParams i ∨ G.params q = true ∧
+      ∃ r ∈ p :: G.meetParams i, G.params r = true ∧ (r, q) ∈ hyps) →
+      partSemWithArgs G (mixedParameters G) (qDenoteWithArgs G (mixedParameters G)) η q n W v := by
+    rintro q (hq | ⟨hq, r, hr, hrp, hrq⟩)
+    · exact hpar q hq
+    · have hrv := (part_denote (by simp [NormalGraph.partRow, hrp])).mpr (hpar r hr)
+      obtain ⟨q', hq', hqv⟩ := hh (r, q) hrq W v ⟨r, List.mem_singleton_self r, hrv⟩
+      cases List.mem_singleton.mp hq'
+      exact (part_denote (by simp [NormalGraph.partRow, hq])).mp hqv
+  unfold meetBelow at h
+  simp only [hm, Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem,
+    List.any_eq_true] at h
+  rcases h with ⟨hk, hj⟩ | h
+  · -- A parameter of the meet, or above one by a hypothesis.
+    have hjp : G.params j = true := by simp [NormalGraph.params, hk]
+    rw [qDenoteWithArgs_unfold]
+    simp only [qLayerWithArgs, hjp, ite_true]
+    simpa [partSemWithArgs_param hjp] using hreach j hj
+  · -- A meet row of such parameters within the same clauses.
+    cases hmj : G.meets j with
+    | none => simp [hmj] at h
+    | some qd =>
+      obtain ⟨q, ds⟩ := qd
+      simp only [hmj, Bool.and_eq_true, Bool.not_eq_true', Option.isNone_iff_eq_none,
+        beq_iff_eq, Bool.or_eq_true, List.contains_iff_mem, List.any_eq_true,
+        List.all_eq_true] at h
+      obtain ⟨⟨⟨⟨hjp, hjs⟩, hq⟩, hqs⟩, rfl⟩ := h
+      rw [qDenoteWithArgs_unfold]
+      simp only [qLayerWithArgs, hjp, hjs, hmj, Bool.false_eq_true, ite_false]
+      exact ⟨⟨hreach q hq, fun r hr => hreach r (hqs r hr)⟩, hvc⟩
 
 /-- **A meet row means its parts and its clauses**, each read at the meet's
 own level. -/
@@ -3055,9 +3074,10 @@ theorem OpaqueWith.mono [DecidableEq ι] {G : NormalGraph ι} {R : List ι → L
 source clauses are: a member of a meet row `p ⊓ cs` is in one of `cs`, so the
 row is below a target covering each of them. A bounded binder read as its
 meet with its bound is below the bound this way. -/
-def meetSources [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) : List (Clause (List ι)) :=
+def meetSources [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) (hyps : List (ι × ι) := []) :
+    List (Clause (List ι)) :=
   ((S.filter fun i => G.meetRow i && !schemeMeet G i && decide (i ∉ T) &&
-      !T.any (meetBelow G i)).flatMap
+      !T.any (meetBelow G i · hyps)).flatMap
     fun i => ((G.meets i).map (·.2)).getD []).flatMap splitClause
 
 /-- A subtype edge relates two value types or two argument-list types.
@@ -5083,15 +5103,27 @@ def SchemeCoversAlpha [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renam
     (arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop) (i j : ι) : Prop :=
   SchemeCoversWith G R known arrows i j ∨ SchemeRenames G sub R known arrows i j
 
+/-- A meet part of a family pair below another (RECURSIVE-EQUATIONS §3.3,
+§7.3): a scheme whose signatures cover the other's up to renaming, or a
+variable below the other by a hypothesis. Without hypotheses it is
+quantified coverage alone. -/
+def PartCovers [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G))
+    (R : List ι → List ι → Prop) (known : Known ι)
+    (arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop)
+    (hyps : List (ι × ι)) (a b : ι) : Prop :=
+  SchemeCoversAlpha G sub R known arrows a b ∨ (a, b) ∈ hyps
+
 /-- Opaque rows of a family pair: as for a core table (`OpaqueWith`), and a
 row may also be below a target row by a hypothesis, and a scheme row below
-one whose signatures its own cover up to renaming. -/
+one whose signatures its own cover up to renaming. A meet reads its parts
+the same way (`PartCovers`): a target meet's variable part is covered by a
+source part, or the source row, below it by a hypothesis. -/
 def OpaqueFamily [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G))
     (R : List ι → List ι → Prop) (known : Known ι)
     (arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop)
     (hyps : List (ι × ι)) (S T : List ι) : Prop :=
   ∀ i ∈ S, G.plain i = true ∨ i ∈ T ∨ .top ∈ clausesOf G T ∨
-    MeetOpaque G (SchemeCoversAlpha G sub R known arrows)
+    MeetOpaque G (PartCovers G sub R known arrows hyps)
       (fun a => ∃ b ∈ clausesOf G T, CoversWith G R known arrows S a b) T i ∨
     (∃ y ∈ T, (i, y) ∈ hyps) ∨ ∃ j ∈ T, SchemeCoversAlpha G sub R known arrows i j
 
@@ -5123,7 +5155,7 @@ theorem OpaqueFamily.mono [DecidableEq ι] {G : NormalGraph ι} {sub : Option (R
   · exact .inl h
   · exact .inr (.inl h)
   · exact .inr (.inr (.inl h))
-  · exact .inr (.inr (.inr (.inl (h.mono (fun _ _ => SchemeCoversAlpha.mono ha)
+  · exact .inr (.inr (.inr (.inl (h.mono (fun _ _ => Or.imp_left (SchemeCoversAlpha.mono ha))
       fun a ⟨b, hb, hc⟩ => ⟨b, hb, CoversWith.mono ha hc⟩))))
   · exact .inr (.inr (.inr (.inr (.inl h))))
   · exact .inr (.inr (.inr (.inr (.inr ⟨j, hj, SchemeCoversAlpha.mono ha hc⟩))))
@@ -5139,7 +5171,7 @@ theorem OpaqueWith.family [DecidableEq ι] {G : NormalGraph ι} {sub : Option (R
   · exact .inl h
   · exact .inr (.inl h)
   · exact .inr (.inr (.inl h))
-  · exact .inr (.inr (.inr (.inl (h.mono (fun _ _ hc => .inl hc) fun _ h => h))))
+  · exact .inr (.inr (.inr (.inl (h.mono (fun _ _ hc => .inl (.inl hc)) fun _ h => h))))
   · exact .inr (.inr (.inr (.inr (.inr ⟨j, hj, .inl hc⟩))))
 
 /-- The three core conditions for one pair (POSITIVE-TYPES "Core tables",
@@ -5149,7 +5181,7 @@ def PairOk [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (kn
   SameKind G A B = true ∧
     OpaqueFamily G sub R known (fun L S M => ∀ p ∈ M,
       CallArrow (compatible G) (restElem G) R L S p) hyps A B ∧
-    ∀ a ∈ sourceClauses G A ++ meetSources G A B, ∃ b ∈ clausesOf G B, Covers G R known A a b
+    ∀ a ∈ sourceClauses G A ++ meetSources G A B hyps, ∃ b ∈ clausesOf G B, Covers G R known A a b
 
 theorem Valid.pairOk [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
     {known : Known ι} {table : Table ι} (h : Valid G known table) :
@@ -5404,6 +5436,18 @@ theorem pair_values_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (R
       mixedValues G η A j U v := fun j hj U hU =>
     (setSem_adm (fun i => qDenoteWithArgs_adm G (mixedParameters G) (η, i)) A).transfer
       hv j (Nat.le_of_lt hj) U hU
+  -- A meet part below another holds the value: by quantified coverage, or by
+  -- a hypothesis, which holds at `n` for values.
+  have hpart : ∀ a b, PartCovers G sub R known (fun L S M => ∀ p ∈ M,
+      CallArrow (compatible G) (restElem G) R L S p) hyps a b →
+      qDenoteWithArgs G (mixedParameters G) (η, a) n W v →
+      qDenoteWithArgs G (mixedParameters G) (η, b) n W v := by
+    intro a b h hv
+    rcases h with h | h
+    · exact alpha_sound h n hr hpa hre W v hv
+    · obtain ⟨b', hb', hv'⟩ := hhyp (a, b) h W v ⟨a, List.mem_singleton_self a, hv⟩
+      cases List.mem_singleton.mp hb'
+      exact hv'
   rcases mixed_cases hv with ⟨c, hcm, hv⟩ | ⟨i, hi, hp, hv⟩
   · obtain ⟨a, ha, hv⟩ := (splitClause_row G _ _ _ c n W v).mpr hv
     obtain ⟨b, hb, hcover⟩ :=
@@ -5417,26 +5461,25 @@ theorem pair_values_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (R
     · rcases hmeet with ⟨hmeet, hsm | hsrc⟩ | ⟨j, hj, hjm, hparts, hcl⟩
       · by_cases hB : i ∈ B
         · exact ⟨i, hB, hv⟩
-        · by_cases hbelow : B.any (meetBelow G i) = true
+        · by_cases hbelow : B.any (meetBelow G i · hyps) = true
           · obtain ⟨j, hj, hij⟩ := List.any_eq_true.mp hbelow
-            exact ⟨j, hj, meetBelow_sound hmeet hij hv⟩
+            exact ⟨j, hj, meetBelow_sound hmeet hij hhyp hv⟩
           obtain ⟨c, hcm, hv⟩ := meet_clause_of hmeet hv
           obtain ⟨a, ha, hv⟩ := (splitClause_row G _ _ _ c n W v).mpr hv
-          have hmem : a ∈ meetSources G A B := List.mem_flatMap.mpr ⟨c,
+          have hmem : a ∈ meetSources G A B hyps := List.mem_flatMap.mpr ⟨c,
             List.mem_flatMap.mpr ⟨i, List.mem_filter.mpr ⟨hi, by simp [hmeet, hB, hbelow, hsm]⟩,
               hcm⟩, ha⟩
           obtain ⟨b, hb, hcover⟩ := hc.2.2 a (List.mem_append_right _ hmem)
           exact mixed_expand_mpr ⟨b, hb, Covers.sound hcover hknown n hr hpa hre W v hself hv⟩
       · rcases hsrc with hbelow | ⟨q, hq, hqp, j, hj, hsc⟩ | hcov
         · obtain ⟨j, hj, hij⟩ := List.any_eq_true.mp hbelow
-          exact ⟨j, hj, meetBelow_sound hmeet hij hv⟩
-        · exact ⟨j, hj, alpha_sound hsc n hr hpa hre W v (meet_part_value hmeet hq hqp hv)⟩
+          exact ⟨j, hj, meetBelow_sound hmeet hij (by simp) hv⟩
+        · exact ⟨j, hj, hpart _ _ hsc (meet_part_value hmeet hq hqp hv)⟩
         · obtain ⟨c, hcm, hv⟩ := meet_clause_of hmeet hv
           obtain ⟨a, ha, hv⟩ := (splitClause_row G _ _ _ c n W v).mpr hv
           obtain ⟨b, hb, hcover⟩ := hcov a (List.mem_flatMap.mpr ⟨c, hcm, ha⟩)
           exact mixed_expand_mpr ⟨b, hb, Covers.sound hcover hknown n hr hpa hre W v hself hv⟩
-      · exact ⟨j, hj, meet_target_value (sc := SchemeCoversAlpha G sub R known _) hjm
-          (fun a b h hv => alpha_sound h _ hr hpa hre _ _ hv) hparts hcl hv⟩
+      · exact ⟨j, hj, meet_target_value hjm hpart hparts hcl hv⟩
     · obtain ⟨y', hy', hv'⟩ := hhyp (i, y) hh W v ⟨i, List.mem_singleton_self i, hv⟩
       cases List.mem_singleton.mp hy'
       exact ⟨y, hy, hv'⟩
@@ -5687,14 +5730,36 @@ def InstanceOk [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G))
   | none => False
 
 /-- **Premises in an entry** (§7.2): a table pair, or each label of the source
-in the target, below a target label by a hypothesis, or below the target by
+in the target, below a target label by a hypothesis, a meet below a target
+label by its parts and the hypotheses (`meetBelow`), or below the target by
 an instance the entry names or `gen` proposes. `gen` is verified code (the
 `Var` rule proposes same-head instances); what it proposes is checked like
 any other instance. -/
 def Prem [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (F : List (Entry ι))
     (gen : ι → List ι → List (Nat × List (List ι))) (f : Entry ι) (A B : List ι) : Prop :=
   (A, B) ∈ f.table ∨ ∀ l ∈ A, l ∈ B ∨ (∃ y ∈ B, (l, y) ∈ f.hypotheses) ∨
+    (G.meetRow l = true ∧ ∃ y ∈ B, meetBelow G l y f.hypotheses = true) ∨
     ∃ w ∈ f.instances ++ gen l B, InstanceOk G sub F f l B w
+
+/-- A meet label below a target label by its parts holds where the
+hypotheses do, for values; it admits no argument list. -/
+theorem meetBelow_mixed [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignment ι} {l : ι}
+    {B : List ι} {hyps : List (ι × ι)} {m : Nat} (hl : G.meetRow l = true)
+    (hb : ∃ y ∈ B, meetBelow G l y hyps = true) (hh : ∀ h ∈ hyps, FamLeAt G η [h.1] [h.2] m) :
+    MixedLe G η [l] B m := by
+  obtain ⟨y, hy, hly⟩ := hb
+  intro W x hx
+  cases x with
+  | inl v =>
+    obtain ⟨i, hi, hv⟩ := hx
+    cases List.mem_singleton.mp hi
+    exact ⟨y, hy, meetBelow_sound hl hly hh hv⟩
+  | inr vs =>
+    refine (mixedMeaning_noArguments G η [l] ?_ m W vs hx).elim
+    simp only [NormalGraph.meetRow, Bool.and_eq_true, Bool.not_eq_true'] at hl
+    simp [NormalGraph.hasKind, NormalGraph.params, Option.isNone_iff_eq_none] at hl ⊢
+    obtain ⟨⟨hp, _⟩, hm⟩ := hl
+    simp [hp, hm]
 
 /-- **Valid entries** (§7.3): every pair of every entry of `F` meets the core
 conditions, premises read in its entry, instances drawn from `base ++ F`. -/
@@ -5828,9 +5893,10 @@ theorem family_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renami
       · exact lower j hj e η (hη.below hj) (S, T) (List.mem_cons_of_mem _ h)
       apply MixedLe.of_labels
       intro l hl
-      rcases h l hl with h | ⟨y, hy, hh⟩ | ⟨w, -, hw⟩
+      rcases h l hl with h | ⟨y, hy, hh⟩ | ⟨hm, hb⟩ | ⟨w, -, hw⟩
       · exact MixedLe.of_mem h
       · exact fun W x hx => MixedLe.of_mem hy W x (hη.1 _ hh j hj W x hx)
+      · exact meetBelow_mixed hm hb fun h hh => (hη.1 h hh j hj).values
       · obtain ⟨e', he', η', himg, hsrc, htgt⟩ := hw.transport hvars η
         have hyps' : HypsHold G η' e'.hypotheses j := by
           intro h hh k hk
@@ -5849,10 +5915,11 @@ theorem family_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renami
       · exact values e η hη.values (S, T) (List.mem_cons_of_mem _ h)
       apply FamLeAt.of_labels
       intro l hl
-      rcases h l hl with h | ⟨y, hy, hh⟩ | ⟨w, -, hw⟩
+      rcases h l hl with h | ⟨y, hy, hh⟩ | ⟨hm, hb⟩ | ⟨w, -, hw⟩
       · exact (MixedLe.of_mem h).values
       · exact fun W v hv => (MixedLe.of_mem hy).values W v
           ((hη _ hh n (Nat.le_refl n)).values W v hv)
+      · exact (meetBelow_mixed hm hb fun h hh => (hη h hh n (Nat.le_refl n)).values).values
       · obtain ⟨e', he', η', himg, hsrc, htgt⟩ := hw.transport hvars η
         have hyps' : HypsHoldValues G η' e'.hypotheses n := by
           refine ⟨fun h hh k hk => ?_, fun h hh => ?_⟩
@@ -6127,6 +6194,7 @@ theorem Sub.congr {G : NormalGraph ι} {S S' T T' : List ι}
 #print axioms covers_by_scheme_sound
 #print axioms covers_arrs_sound
 #print axioms meetBelow_sound
+#print axioms meetBelow_mixed
 #print axioms Sub.mixed_sound
 #print axioms Sub.sound
 end Verification.Model.PositiveRules
