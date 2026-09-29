@@ -302,6 +302,116 @@ def demandProof [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (images 
   if PositiveCertificates.checkUsing G images A B p then some p else none
 
 
+/-- How deep a pair's rows follow `Var`: search only. -/
+def varDepthDefault : Nat := 8
+
+/-! ### Fallback coinduction up to renaming (RECURSIVE-EQUATIONS §4.3)
+
+A pair `Var` does not decide is unfolded into a table grown on demand. Two
+applications of one head with a computed variance add no row: `Var` covers
+them, and their per-position pairs are what the table needs. A pair that is
+a table pair at renamed bound rows adds none either: `TabRen` reuses it.
+Quantified members declared alike in two declarations are compared after
+renaming the target's binders to the source's. A head pair recurring,
+neither renamed nor smaller, with larger arguments than every earlier one is
+growth: the search refuses there. Untrusted: the checker decides
+(`coreUsing`). -/
+
+/-- `Var`'s per-position pairs for two applications of one head whose
+variance the checker computed. -/
+def varPairs [DecidableEq ι] {G : NormalGraph ι} (images : InstanceImageCheck G) (A B : Ty ι) :
+    Option (List (Ty ι × Ty ι)) :=
+  match A, B with
+  | [l], [b] => match images.gen l [b] with
+    | [w] => (images.base.entry w.1).map fun e => e.hypotheses.map fun h =>
+        (replace (e.variables.zip w.2) h.1, replace (e.variables.zip w.2) h.2)
+    | _ => none
+  | _, _ => none
+
+/-- The rows a pair needs: none for an inclusion, its per-position pairs'
+through `Var`, else the pair itself. -/
+def rowsFor [DecidableEq ι] {G : NormalGraph ι} (images : InstanceImageCheck G) :
+    Nat → Ty ι → Ty ι → List (Ty ι × Ty ι)
+  | 0, A, B => [(A, B)]
+  | d + 1, A, B => if A.all (· ∈ B) then [] else match varPairs images A B with
+    | some ps => ps.flatMap fun (X, Y) => rowsFor images d X Y
+    | none => [(A, B)]
+
+/-- Quantified members declared alike, their signatures compared after
+renaming the target's binders to the source's. -/
+def renamedPairs [DecidableEq ι] (G : NormalGraph ι) (r : Renaming G) (X Y : Ty ι) :
+    List (Ty ι × Ty ι) :=
+  X.flatMap fun i => Y.flatMap fun j => match G.schemes i, G.schemes j with
+    | some s, some s' =>
+      if s.binders = s'.binders || s.binders.length != s'.binders.length then [] else
+      let σ := s'.binders.zip (s.binders.map fun p => [p])
+      signaturePairs s.signatures (s'.signatures.map (Arrow.map (r.substitute σ))) ++
+        restPairs s.variadic (s'.variadic.map (RestArrow.map (r.substitute σ)))
+    | _, _ => []
+
+/-- Arrow evidence proposed for a family's pairs: every source signature for
+every target signature, the target's renamed to the source's binders. -/
+def arrowCandidatesUsing [DecidableEq ι] (G : NormalGraph ι) (r : Renaming G)
+    (pairs : List (Ty ι × Ty ι)) : PositiveCertificates.Evidence ι :=
+  pairs.flatMap fun (A, B) =>
+    ((sourceClauses G A).flatMap fun a => (clausesOf G B).flatMap fun b =>
+      match a, b with
+      | .arrs L _, .arrs M _ | .callable _ _ L _, .arrs M _ | .callable _ _ L _, .callable _ _ M _ =>
+        M.flatMap fun q => L.map fun p => (L, (q, PositiveCertificates.ArrowCert.source p))
+      | _, _ => []) ++
+    (A.flatMap fun i => B.flatMap fun j => match G.schemes i, G.schemes j with
+      | some s, some s' =>
+        let σ := s'.binders.zip (s.binders.map fun p => [p])
+        (s'.signatures.map (Arrow.map (r.substitute σ)) ++ s'.signatures).flatMap fun q =>
+          s.signatures.map fun p => (s.signatures, (q, PositiveCertificates.ArrowCert.source p))
+      | _, _ => [])
+
+/-- A head pair recurring with larger arguments than each of its two or more
+earlier occurrences, none of which it renames: growth. -/
+def grows [DecidableEq ι] {G : NormalGraph ι} (r : Renaming G) (table : Table ι) (A B : Ty ι) : Bool :=
+  let heads (X Y : Ty ι) : Option (Nat × Nat) := match X, Y with
+    | [a], [b] => do some (← r.head a, ← r.head b)
+    | _, _ => none
+  let size (X Y : Ty ι) : Nat := ((X ++ Y).map r.size).sum
+  match heads A B with
+  | some hs =>
+    let same := table.filter fun p => heads p.1 p.2 == some hs
+    same.length ≥ 2 && same.all fun p => size p.1 p.2 < size A B
+  | none => false
+
+/-- The most rows the fallback table may hold, and the rounds it may grow:
+search only. -/
+def fallbackLimit : Nat := 200
+
+/-- Grow the fallback table from its frontier. `none` at growth or past the
+limit. -/
+def fallbackTable [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (r : Renaming G) : Nat → Table ι → Table ι → Option (Table ι)
+  | 0, _, _ => none
+  | fuel + 1, table, frontier =>
+    let cand := ((frontier.flatMap fun p => demandPairs G p.1 p.2 ++ renamedPairs G r p.1 p.2).flatMap
+      fun p => rowsFor images varDepthDefault p.1 p.2).eraseDups
+    let step (st : Option (Table ι × Table ι)) (p : Ty ι × Ty ι) : Option (Table ι × Table ι) := do
+      let (tbl, fresh) ← st
+      let f : Entry ι := { source := [], target := [], table := tbl }
+      if PositiveCertificates.premTable G (some r) f p.1 p.2 then return (tbl, fresh)
+      if grows r tbl p.1 p.2 || tbl.length ≥ fallbackLimit then none
+      return (tbl ++ [p], fresh ++ [p])
+    match cand.foldl step (some (table, [])) with
+    | none => none
+    | some (tbl, fresh) => if fresh.isEmpty then some tbl else fallbackTable G images r fuel tbl fresh
+
+/-- A proof of `A ≤ B` by fallback coinduction: the pair unfolded, its
+table grown on demand, checked as a family entry (`coreUsing`). -/
+def fallbackProof [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (A B : Ty ι) : Option (PositiveCertificates.Proof ι) := do
+  let r ← images.sub
+  let table ← fallbackTable G images r fallbackLimit [] [(A, B)]
+  let p := PositiveCertificates.Proof.core ⟨table, arrowCandidatesUsing G r ((A, B) :: table)⟩ []
+  if PositiveCertificates.checkUsing G images A B p then some p else none
+
+
+
 /-- The table built while matching, and the instances found for the
 instantiated binders. -/
 structure InstState (ι : Type) where
@@ -491,14 +601,41 @@ def instanceForUsing [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (im
         else match subtypeBase G images (reachablePool G U b.2) U b.2 with
           | some (.core cert _) => some (some cert)
           | _ => none
+  -- Where the target's operands are other spellings of the instance's (a
+  -- result `Pair<[number, string]>` for `Pair<[T, U]>`), the binders are
+  -- found from the signatures without their results, and the instance's own
+  -- signatures, by the renaming's substitution, are proposed instead.
+  let exact : Option (PositiveRules.Ops ι) := do
+    let r ← images.sub
+    let noResult (a : Arrow (List ι)) : Arrow (List ι) := { a with result := [] }
+    let (θs, _) ← Instantiates.propose { s with signatures := s.signatures.map noResult }
+      (L.map noResult) []
+    some (s.signatures.map (Arrow.map (r.substitute (s.binders.zip θs))))
+  let proposal := (Instantiates.propose s L M).orElse fun _ => do
+    let L' ← exact
+    let (θs, table) ← Instantiates.propose s L' M
+    some (θs, table)
   -- The representation's own proposal first: images by its syntax need no
   -- table closed under rows, which a recursive family has none of.
-  if let some (θs, table) := Instantiates.propose s L M then
+  if let some (θs, table) := proposal then
     if let some certs := boundCerts (s.binders.zip θs) then
       let c : PositiveCertificates.Instance ι := ⟨table, θs, certs, [], []⟩
       let κ₀ := s.binders.zip θs
       if images.check s.binders c && L.all (fun q => s.signatures.any fun p => instSig G table κ₀ p q) &&
           M.all (fun q => s.variadic.any fun p => instRest G table κ₀ p q) then return c
+      -- A result whose image is another spelling of the target's result
+      -- (`Pair<[number, string]>` for `Pair<[T, U]>` at `string`): the
+      -- target's result as the image, which the image check accepts only
+      -- when the two are proved equal.
+      let patch : InstTable ι := L.flatMap fun q => s.signatures.flatMap fun p =>
+        if p.arguments.length != q.arguments.length then [] else
+        match p.result with
+          | [l] => if tyImg table κ₀ [l] == some q.result then [] else [(l, κ₀, q.result)]
+          | _ => []
+      if !patch.isEmpty then
+        let c : PositiveCertificates.Instance ι := ⟨patch.eraseDups ++ table, θs, certs, [], []⟩
+        if images.check s.binders c && L.all (fun q => s.signatures.any fun p => instSig G c.table κ₀ p q) &&
+            M.all (fun q => s.variadic.any fun p => instRest G c.table κ₀ p q) then return c
   let roots := (s.signatures.flatMap Arrow.operands ++ s.variadic.flatMap RestArrow.operands ++
     L.flatMap Arrow.operands ++ M.flatMap RestArrow.operands).flatten
   let D := searchReads G roots
@@ -620,7 +757,8 @@ def subtypeUsing [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (images
   -- Every label of `A` among `B`'s: the inclusion needs no search.
   (if A.all (· ∈ B) then some .subset else none) <|>
   (subtypeBase G images [] A B) <|> ((tableProof G fuel A B).filter ok) <|>
-    (subtypeBase G images (nearPool G A B) A B) <|> (demandProof G images A B) <|> (subtypeBase G images pool A B) <|>
+    (subtypeBase G images (nearPool G A B) A B) <|> (demandProof G images A B) <|>
+    (fallbackProof G images A B) <|> (subtypeBase G images pool A B) <|>
     ((instProofUsing G images fuel A B pool).filter ok) <|> proto (nearPool G A B) <|> proto pool <|>
     ((genProof G images pool fuel A B).filter ok)
 /-- Proofs that the member of key `k` on `O` covers each fixed signature of

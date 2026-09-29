@@ -329,6 +329,42 @@ def eitherImages {ι : Type} [DecidableEq ι] {G : NormalGraph ι} (a b : Instan
   base := b.base
   gen := b.gen
 
+/-- Two types proved to mean the same: each below the other by a proof the
+checker accepts, with the equations' checks and variances. The proofs are
+searched here, and checked. -/
+def equivalent (E : Equations) (v : Variances E) (X Y : List (Label E.signature)) : Bool :=
+  let I := E.images v
+  let pool := CertificateProducer.reachablePool E.graph X Y
+  match CertificateProducer.subtypeUsing E.graph I pool X Y,
+      CertificateProducer.subtypeUsing E.graph I pool Y X with
+  | some p, some q => checkUsing E.graph I X Y p && checkUsing E.graph I Y X q
+  | _, _ => false
+
+theorem equivalent_sound {E : Equations} {v : Variances E} {X Y : List (Label E.signature)}
+    (h : equivalent E v X Y = true) :
+    ∀ η, mixedMeaning E.graph η X = mixedMeaning E.graph η Y := by
+  unfold equivalent at h
+  simp only at h
+  split at h
+  · simp only [Bool.and_eq_true] at h
+    have l := checkUsing_sound h.1
+    have r := checkUsing_sound h.2
+    intro η
+    funext n W x
+    exact propext ⟨l η n W x, r η n W x⟩
+  · cases h
+
+/-- The equations' checks, an instance's images accepted up to proved
+equivalence: a scheme's result at an instance may be named by an equal type
+of another spelling (`Pair<[number, string]>` for the instance of
+`Pair<[T, U]>`). -/
+def imagesUpTo (E : Equations) (v : Variances E) : InstanceImageCheck E.graph :=
+  { E.images v with
+    check := fun _ c => substitutionTableOkUpTo (equivalent E v) c.table
+    sound := fun bs c hlen hkinds checked η =>
+      E.substitutionTableUpTo_instanceImages (equivalent E v) (fun _ _ h => equivalent_sound h)
+        η bs c.instances c.table hlen hkinds checked }
+
 /-- The store of a checked request: the extracted heads, whose validated
 equations are `E`, and their variances, computed as checks ask for them and
 shared by every request over the store. It no longer grows. -/
@@ -361,7 +397,7 @@ instance : StoreView (Checked E p) (CheckedLabel E p) where
         | none => .clauses []) (spell c.heads)
       (mentioned.map CheckedLabel.tree) depth
     { rows := pr.rows, position := fun l => pr.position l.tree, names := pr.names }
-  images c := eitherImages (finiteInstanceImages E.graph) (E.images c.variances)
+  images c := eitherImages (finiteInstanceImages E.graph) (imagesUpTo E c.variances)
 
 @[simp] theorem Checked.graph_eq (c : Checked E p) :
     (StoreView.graph c : NormalGraph (CheckedLabel E p)) = E.graph := rfl
@@ -430,5 +466,7 @@ def SourceRequest.over (F : Frozen) (r : SourceExtraction.SourceRequest State Tr
   return { toRequest := request, obligations := obligations, sourceMap := r.sourceMap,
            assertions := r.assertions, cuts := r.cuts, hints := hints, codeSources := r.codeSources,
            nodePlans := nodePlans }
+
+#print axioms equivalent_sound
 
 end Verification.Model.EquationStore

@@ -5076,6 +5076,9 @@ structure Renaming [DecidableEq ι] (G : NormalGraph ι) where
   /-- The renaming of bound rows that carries a table pair to another pair,
   proposed by matching (`TabRen`). No law: the checker checks what it proposes. -/
   rename : List ι × List ι → List ι → List ι → List (ι × List ι)
+  /-- The definition a label applies, if any. Search only: evidence search
+  tells a pair recurring with growing arguments by it. -/
+  head : ι → Option Nat := fun _ => none
 
 /-- **Quantified-α** (RECURSIVE-EQUATIONS §6). A scheme row's quantified
 signatures cover another's up to renaming the target's binders to the

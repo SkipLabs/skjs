@@ -487,9 +487,12 @@ applications of one head (`Equations.variances`,
 **Instances.** An `inst` step still carries its finite `domain`, `table` and
 `free`. The source path accepts the step when either proved image check
 holds: the finite table check, or the substitution check
-`E.instanceImageCheck`, which requires every claimed image to be the
-structural substitution image (`EquationStore.eitherImages`). Search
-proposes the substitution images first (`CertificateProducer.Instantiates`).
+`EquationStore.imagesUpTo`, which requires every claimed image to be the
+structural substitution image or a type proved equal to it, each below the
+other by a subtype proof the checker searches for and checks
+(`EquationStore.eitherImages`). Search proposes the substitution images
+first (`CertificateProducer.Instantiates`), and, for a scheme's result the
+target spells otherwise, the target's result as its image.
 
 **`Var`.** Two applications of one head are related by the checker itself,
 with no proof form of their own. Over the equations, a `subset` step holds

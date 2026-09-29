@@ -699,6 +699,7 @@ def _root_.Verification.Model.PositiveRules.Renaming.reassign [DecidableEq ι] {
   familyVar_unbound := r.familyVar_unbound
   size := r.size
   rename := r.rename
+  head := r.head
 
 /-- Sound entries at a reassignment: soundness quantifies over every
 assignment and reads no `env`. -/

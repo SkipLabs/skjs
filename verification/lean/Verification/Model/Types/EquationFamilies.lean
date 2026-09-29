@@ -169,6 +169,9 @@ def Equations.renaming (equations : Equations) : Renaming equations.graph where
     cases this
   size l := l.1.size
   rename := renameBound
+  head l := match l.1 with
+    | .app h _ => some h
+    | _ => none
 
 /-! ## Variance, computed by the checker (RECURSIVE-EQUATIONS §4.3)
 
