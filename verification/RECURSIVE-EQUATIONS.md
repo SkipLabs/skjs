@@ -21,8 +21,8 @@ semantics; they add no second interpretation of types.
 specifications: each rule there needs its soundness lemma before any source
 program depends on it. Source and CLI acceptance use only the finite checker;
 the rules of sections 3.3, 6 and 7 are reached from the kernel's own checkers
-and tests. The equation validator (3.1) and the tree spelling (9.2) exist in
-Lean, but no request reads them. How far the work has
+and tests. The equation validator (3.1), the lowering (8) and the tree
+spelling (9.2) exist in Lean, but no request reads them. How far the work has
 got is recorded in [DESIGN: status](DESIGN.md#status).
 
 ## 1. The problem: non-regular families
@@ -756,7 +756,8 @@ check may use `Var` on both heads.
 
 These examples, `Pair` aside, are concrete checks in
 `Tests/EquationFamilyTests.lean`, together with the controls of 7.7.
-`Pair` turns on lowering (section 8.2), which is not in Lean.
+`Pair` turns on lowering (section 8): its heads and its declaration, `inv`,
+are checked in `Tests/EquationLoweringTests.lean`.
 
 ### 7.7 Required controls
 
@@ -781,53 +782,83 @@ head (`Equations.varianceRefused`).
 
 ## 8. Lowering from source
 
-**Specification; not yet in Lean.** Lowering happens in Lean. The parser
-emits a declaration document (`tools/declaration-types.mts`); today
-`Source/DeclarationGraph.lean` lowers it into a finite table, and it will
-lower it into equations instead. The OCaml producer never builds a
-declaration row: its inference already treats `Named` types as equations,
-and only its encoding touches rows. Every source type becomes a union of
-labels over one equation table. Heads are created per source declaration,
-per unit and per source type-literal occurrence, never per instance. That
-is what keeps the table finite for every family.
+Lowering happens in Lean, in `Source/EquationLowering.lean` (`lower`), which
+no request reads yet. It takes the parser's function tree with its
+declaration document (`tools/declaration-types.mts`) and source-claims labels
+(9.1), and returns `Equations` validated by `Equations.ofRaw`, the proposed
+variances with their check (7.5), and each annotation, imported value and
+claim label as a union of closed labels. `Source/DeclarationGraph.lean` still
+lowers the same document into the finite table the requests read. The OCaml
+producer never builds a declaration row: its inference already treats
+`Named` types as equations, and only its encoding touches rows. Heads are
+created per source declaration, per unit and per source type-occurrence, never
+per instance. That is what keeps the table finite for every family; nothing
+in lowering has a budget, a colour or a depth limit.
 
 ### 8.1 Heads
 
 | Source | Head | Parameters | Binders | Template |
 | --- | --- | --- | --- | --- |
-| Primitive, literal, non-generic declaration | nullary | none | none | its row |
-| Interface or class instance type `D<T⃗>`, merged declarations included | `D` | `T⃗` | none | clause row of its members, met with its bases (below) |
-| Generic method `m<U⃗>` of `D<T⃗>` | `D.m` | `T⃗` | `U⃗` | scheme row; `D`'s template names `D.m(arg…)` |
-| Any other scheme (a generic callable type) | hash-consed by template | the enclosing parameters it mentions | its own | scheme row |
-| Generic function, closure, class or imported generic value (a **unit head**) | `f` | none | its binders | its scheme; a rigid binder is $`\mathsf{bound}(f,[],j)`$, a bounded one $`\mathsf{meet}(\mathsf{bound}(f,[],j),B)`$ |
-| Type literal, tuple, array or function type occurring inside a template | `Lit` of that occurrence | the enclosing parameters and binders it mentions, in first-occurrence order | none | its row, with those as `arg` placeholders |
-| Arrays | `Array`, one per readonly flag | the element union | none | the array clause over `arg 0` |
-| The realm's array prototype | `ArrayProto` | none | none | `Equations.realm` |
+| The values `null`, `true`, `false`, `undefined` | heads 0 to 3, nullary | none | none | their clause |
+| Other primitives and literals | nullary, hash-consed by clause | none | none | their clause |
+| Declaration whose equation is an object type (interface, class instance type, object alias), or with bases | `D` | all of `D`'s | none | clause row of its members, met with its bases (below) |
+| Generic method `m<U⃗>` of a head `D` | `D.m` | `D`'s | `U⃗` | scheme row; `D`'s template names `D.m(arg…)` |
+| Object, function or construct type, generic callable type (scheme), array or tuple store, rest pack, occurring anywhere | `Lit` of that occurrence | the enclosing parameters and binders it mentions, in first-occurrence order | a scheme's own | its row, with those as `arg` placeholders |
+| Generic function, closure, class or imported generic value (a **unit head**) | `f` | the enclosing binders its scheme mentions | its binders | a scheme over them (below) |
+| Arrays | `Array`, `ReadonlyArray` | the store | none | the array clause over `arg 0` |
+| The realm's array prototype | `ArrayProto` | none | none | its declaration's row; `Equations.realm` names it |
 
 A literal head lifts a literal over its free type variables, as closure
 conversion lifts a function over its free variables. In
-`push<U>(u: U): Pair<[T, U]>`, the tuple is
-$`\mathit{Lit}(\mathsf{arg}\,0,\mathsf{local}\,0)`$ in the template of
-`Pair.push`. Heads are keyed by source occurrence, and that is what makes
-recursive aliases terminate (8.3). Lifting a literal over all its operands,
-or keying it by instance, would loop. Literal heads with equal templates are
-additionally shared (hash-consed); that sharing is only an efficiency
-matter.
+`push<U>(u: U): Pair<[T, U]>`, the tuple `[T, U]` is
+$`\mathit{Array}(\mathit{Lit}(\mathsf{arg}\,0,\mathsf{local}\,0))`$ in the
+template of `Pair.push`, `Lit` the head of the tuple's store. A literal head
+is keyed by the occurrence's text and the kinds of what it mentions, so equal
+keys lower to equal templates, and that is what makes recursive aliases
+terminate (8.3). Lifting a literal over all its operands, or keying it by
+instance, would loop. Once every row is lowered, literal and scheme heads
+with equal templates are merged until no two are equal (hash-consing), and
+the heads are renumbered with the four primitive values first; that sharing
+is only an efficiency matter.
+
+An array names its store, as on the wire (9.1): `T[]` is
+$`\mathit{Array}(\mathit{Lit}(\ldots))`$ with the literal head's row the
+store's tuple contract, so a tuple is an array too. A document with arrays but
+no `ArrayProto` declaration (a library bound naming an array, in a source
+with none) gets an `ArrayProto` head of which nothing is known, an object
+with no member.
 
 Parameters and binders have a kind: value or argument list (`pack`). The
-receiver `self` inside `D`'s members is $`D(\mathsf{arg}\,0,\ldots)`$.
+receiver `self` inside a head's members is the head applied to its
+placeholders.
 
-**Heritage.** `D`'s template is the source meet (3.3) of its own members
-with each base's template instantiated at the placeholder arguments `D`
-passes to it. This is finite because heritage is acyclic.
+**Heritage.** `D`'s template is the source meet of its own members with each
+base's template instantiated at the placeholder arguments `D` passes to it:
+DeclarationGraph's `sourceMeetLists` on the two clause rows, where a record
+of invariant fields met with a function type is one `callable`, as
+TypeScript reads it. It reads rows, never unfolds a label, and is finite
+because heritage is acyclic; a base whose row is being lowered is a cyclic
+heritage, refused.
+
+**Unit heads.** A generic unit's binders are the owned parameters
+$`\mathsf{bound}(f,\vec A,j)`$ of its head, $`\vec A`$ the enclosing binders
+its scheme names, and a bounded one is read as
+$`\mathsf{meet}(\mathsf{bound}(f,\vec A,j),B)`$, distributed over $`B`$'s
+labels. The head's template states the unit's call signature when it is a
+fully annotated function; a class's head, and a generic value's whose type
+is no function, bind their binders with no signature, so a unit's type is
+read from its annotations, never from its head's row. A bound naming another
+binder of the same unit is refused there, since a scheme's bounds are read
+outside its binders.
 
 **Class generic methods.** The parser spells a class generic method's
-binder as `"key"#k:null^0` (`tools/fragment-parse.mts`), a leftover of colours.
-Lowering maps it to the owned binder $`\mathsf{bound}(C.m,\vec A,k)`$ and
-the `^0` goes. Members declared in different heads then bind different
-labels, so the positives that relate them (`generic-method-instances`,
-`method-members`, `class-generic-method`) need quantified-α (section 6)
-before the cutover.
+binder as `"key"#k:null^0` (`tools/fragment-parse.mts`), a leftover of
+colours. Lowering reads the closure's receiver type, `C<A⃗>`, and maps the
+binder to the owned binder $`\mathsf{bound}(C.\mathit{key},\vec A,k)`$ of
+the class's method head; the `^0` goes. Members declared in different heads
+then bind different labels, so the positives that relate them
+(`generic-method-instances`, `method-members`, `class-generic-method`) need
+quantified-α (section 6) before the cutover.
 
 A finite wire table is the nullary case of this lowering. Today's tables are
 not: they contain shared parameter rows, meet rows and scheme rows whose
@@ -839,45 +870,81 @@ Lowering $`⟦\tau⟧`$ in a scope of enclosing parameters and binders:
 
 | Source | Lowered |
 | --- | --- |
-| a declaration's type parameter | $`\mathsf{arg}\ i`$ |
-| a method's or unit's type parameter | $`\mathsf{local}\ j`$, or the owned binder outside a template |
-| `D<τ⃗>` | $`D(⟦\vec\tau⟧)`$; an omitted argument is its default, which may mention earlier parameters; one without a default is refused |
-| `τ₁ \| τ₂` | the concatenation of the unions |
-| `τ₁ & τ₂` | meet labels over the product of the operands' unions (3.3); on ground rows only, a record met with a function becomes one `callable` literal head, as TypeScript reads it; an empty meet is refused |
-| a literal | its `Lit` head applied to the parameters it mentions |
-| an alias `A<τ⃗>` | its body lowered with `τ⃗` for its parameters (8.3) |
-| `object`, callable atoms, index signatures, the `prototype` overlay | as today |
+| a declaration's type parameter | $`\mathsf{arg}\ i`$, or its argument when the declaration is an alias being inlined |
+| a method's or unit's type parameter | $`\mathsf{local}\ j`$ in its own template, a lifted $`\mathsf{arg}`$ in a literal's, the owned binder outside a template |
+| `D<τ⃗>` | $`D(⟦\vec\tau⟧)`$ for a head, its body inlined for an alias (8.3); an omitted argument is its default, which may mention earlier parameters; one without a default is refused |
+| `τ₁ \| τ₂` | the union, canonically ordered |
+| `τ₁ & τ₂` | meet labels over the product of the operands' unions (3.3); an empty operand is refused |
+| a ground `τ₁ & τ₂` (naming no parameter or binder) whose operands' rows are clause rows | the source meet of the rows: a literal head of the occurrence when a record met with a function becomes one `callable`, as TypeScript reads it, else the meet labels; empty, refused |
+| an object, function or construct type, a generic callable type, an array or tuple | its `Lit` head applied to what it mentions (8.1) |
+| `object`, `Function`, literals, index signatures, the `prototype` overlay | as `DeclarationGraph` lowers them |
 | `keyof`, indexed access, mapped, conditional, `typeof` types | refused, as today |
 
+Every closed meet label is checked once all rows are lowered: one whose
+parts are clause rows and whose meet has no value is refused where it was
+written.
+
 **Declared parameter bounds** are checked where the source or a claim writes
-an application, and once per template with the parameters read as bounded
-parameter labels. Applications created by instantiation are not checked
-again: bounds carry no meaning, so an unchecked application is still
-meaningful, only possibly unintended.
+an application, defaults included, the bound read at all the application's
+arguments (so an F-bounded parameter checks). Inside a template the
+application's arguments hold placeholders; each is read as a bounded
+parameter label, a family variable met with its own declared bound, carried
+through the literal heads it is lifted into. The producer's search proposes
+a proof and `Equations.checkSubtype` checks it; a failure is refused with the
+application, the parameter and both sides. Applications created by
+instantiation are not checked again: bounds carry no meaning, so an
+unchecked application is still meaningful, only possibly unintended.
 
 Library declarations (`Promise`, `PromiseLike`, `Array`, …) take the same
-path. The budgeted memo, colours and `rigidClaim` expansion of
+path. At the cutover the budgeted memo, colours and `rigidClaim` expansion of
 `DeclarationGraph.lean` are deleted.
 
 ### 8.3 Aliases and guardedness
 
-An alias is inlined at each use: its body is lowered in place with the
-arguments substituted. Inlining terminates when every cycle through aliases
-passes through a constructor (a literal head or a declaration head), because
-a literal head is keyed by its source occurrence, not by its instance. In
+A declaration that is not a head is an alias, inlined at each use: its body
+is lowered in place with the arguments for its parameters. A nullary alias
+with a union body, such as `Json`, is inlined too; a union has no one row.
+Inlining terminates when every cycle through aliases passes through a
+constructor (a literal head or a declaration head), because a literal head
+is keyed by its source occurrence, not by its instance. In
 
 ```ts
 type Box<T> = { v: T; next: Box<[T]> };
 ```
 
-`Box<number>` is $`\mathit{Lit}_1(\mathit{number})`$. The template of
-$`\mathit{Lit}_1`$ inlines `Box<[T]>` to
-$`\mathit{Lit}_1(\mathit{Lit}_2(\mathsf{arg}\,0))`$, where $`\mathit{Lit}_2`$
-is the tuple `[T]`, and stops. An alias whose recursive reference is not
-under a constructor, such as `type T<X> = X | T<[X]>`, is **unguarded** and
-refused (today's "unguarded alias cycle"). The diagnostic is located at the
-using unit, because a library alias's span is not a span in the checked
+the body is an object type, so `Box` is a declaration head: `Box<number>`
+is $`\mathit{Box}(\mathit{number})`$, and its template's `next` is
+$`\mathit{Box}(\mathit{Array}(\mathit{Lit}(\mathsf{arg}\,0)))`$, the store of
+`[T]` lifted over `T`. An alias whose recursive reference is not under a
+constructor, such as `type T<X> = X | T<[X]>`, is **unguarded**: meeting an
+alias already being inlined since the last constructor is refused
+("unguarded alias cycle"). The diagnostic is located at the using unit's
+annotation, because a library alias's span is not a span in the checked
 file. TypeScript rejects such an alias as circular.
+
+### 8.4 Variance proposal and its evidence
+
+Lowering proposes each head's variances as the least fixpoint of 7.5 over the
+heads' templates. The proposal is checked with evidence the lowering also
+proposes: arrow candidates for every entry's pairs, and for each head a table
+$`\Delta_h`$ of the pairs its premises cannot discharge by themselves (7.2,
+case 2 is not recursive). These are each argument of a nested application at a
+position it varies in, and each meet over the parameters, on the entry's two
+sides and oriented by the position (both ways where invariant), with the
+head's own binders the source side's on both, as quantified-α renames them. A
+head whose declaration is refused is weakened to `inv` in each parameter it
+reads, and the check repeated, until the declarations check or a refused head
+is invariant already. The result, checked variances or the heads refused, is
+part of the lowering's output: the refusal belongs to the request
+(`checkRequests`), located at those heads.
+
+**Known gap.** A head whose template meets a parameter with a type (the Skip
+runtime's `T & DepSafe` in `Values`, `Reducer`, `EagerCollection`) is refused
+even as invariant: its table holds
+$`\mathsf{meet}(x,B)\le\mathsf{meet}(y,B)`$, and a meet target is read part
+by part without the entry's hypotheses (`MeetTarget`), so $`y`$ is covered by
+nothing. Closing it needs a kernel rule relating meets through the family's
+hypotheses.
 
 ## 9. Wire formats
 
@@ -988,7 +1055,9 @@ uses is proved from the equations, never supplied by evidence.
   `Types/EquationFamilies.lean`; the generic rules of sections 6 and 7 in
   `Types/PositiveRules.lean` and `Types/PositiveCertificates.lean`.
 - Checked, unwired: `Types/EquationValidator.lean`, `Types/EquationJson.lean`.
-- Kernel tests: `Tests/EquationFamilyTests.lean`, `Tests/EquationTreeTests.lean`.
+- Unwired, untrusted in its proposals: `Source/EquationLowering.lean`.
+- Kernel tests: `Tests/EquationFamilyTests.lean`, `Tests/EquationTreeTests.lean`;
+  lowering tests: `Tests/EquationLoweringTests.lean`.
 - `generic-growing-application` verifies at the cutover. `-push`,
   `promise-covariance` and `invalid-promise-covariance` (rejected at its own
   obligation) move with `Var`. The Promise closing cases are listed in the
