@@ -251,7 +251,7 @@ per code and signature, where `captures` are the captured values' types, `row`
 the signature `[receiver, parameters, result]`, `store`, for code with a rest,
 the rest-store type its frame starts with (`null` otherwise), and `claims` one
 point claim per node of the code's graph, as `claims` is for the program.
-Absent means none.
+Absent means none, its one spelling: an explicit empty list is refused.
 
 The evidence file is an object with the field `certificate`, a list of
 `NodeEvidence` objects, and, when the request has codes, `"codes"`: one such

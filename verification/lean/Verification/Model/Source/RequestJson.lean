@@ -390,6 +390,35 @@ structure Response (ι : Type) where
   codes : List (ControlFlow.Certificate ι) := []
   deriving ToJson, FromJson
 
+/-- A request's and a response's `codes` are left out when empty. Absence is
+the one spelling of none, so strict decoding, which re-encodes and compares,
+refuses an explicit empty list, and a request without code reads as none. -/
+private def withoutEmptyCodes (j : Json) : Json :=
+  match j.getObjVal? "codes", j with
+  | .ok (.arr xs), .obj kvs =>
+    if xs.isEmpty then Json.mkObj (kvs.toArray.toList.filter (·.1 != "codes")) else j
+  | _, _ => j
+
+private def withEmptyCodes (j : Json) : Json :=
+  match j, j.getObjVal? "codes" with
+  | .obj _, .error _ => j.setObjVal! "codes" (.arr #[])
+  | _, _ => j
+
+private def derivedRequestToJson [ToJson σ] [ToJson ι] : Request σ ι → Json := toJson
+private def derivedRequestFromJson [FromJson σ] [FromJson ι] : Json → Except String (Request σ ι) :=
+  fromJson?
+private def derivedResponseToJson [ToJson ι] : Response ι → Json := toJson
+private def derivedResponseFromJson [FromJson ι] : Json → Except String (Response ι) := fromJson?
+
+instance (priority := high) [ToJson σ] [ToJson ι] : ToJson (Request σ ι) :=
+  ⟨fun r => withoutEmptyCodes (derivedRequestToJson r)⟩
+instance (priority := high) [FromJson σ] [FromJson ι] : FromJson (Request σ ι) :=
+  ⟨fun j => derivedRequestFromJson (withEmptyCodes j)⟩
+instance (priority := high) [ToJson ι] : ToJson (Response ι) :=
+  ⟨fun r => withoutEmptyCodes (derivedResponseToJson r)⟩
+instance (priority := high) [FromJson ι] : FromJson (Response ι) :=
+  ⟨fun j => derivedResponseFromJson (withEmptyCodes j)⟩
+
 section
 variable {σ ι : Type} [Labels ι] [Store σ ι]
 

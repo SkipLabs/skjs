@@ -196,8 +196,9 @@ try {
               no: { label: 1, mapping: [2] },
             },
           },
+          handler: null,
         },
-        { expression: { var: { i: 0 } }, continuation: "ret" },
+        { expression: { var: { i: 0 } }, continuation: "ret", handler: null },
       ],
       claims: [
         { context: [[0], [2]], type: [2] },

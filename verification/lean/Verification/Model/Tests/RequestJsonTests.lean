@@ -60,6 +60,11 @@ def roundtrip (r : Request RequestJson.Table Nat) : Except String Unit := do
 -- The created code must be in the table.
 #guard !ok (roundtrip { mappedRequest with codes := [] })
 #guard !ok (roundtrip { mappedRequest with codes := dispatchCodes.take 1 })
+-- `codes` is left out when empty: absence decodes as none, and an explicit
+-- empty list, a second spelling, is refused.
+#guard ((toJson diamondRequest).getObjVal? "codes").toOption.isNone
+#guard ok (decodeRequest RequestJson.Table (toJson diamondRequest))
+#guard !ok (decodeRequest RequestJson.Table ((toJson diamondRequest).setObjVal! "codes" (Json.arr #[])))
 
 -- A response contains evidence only: the request is supplied independently.
 def response : Json := match produceJson RequestJson.Table (toJson mappedRequest) 12 with
