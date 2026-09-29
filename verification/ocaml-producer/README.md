@@ -200,17 +200,18 @@ language. The boundaries are:
    validated by the existing control-flow checker. Declared types are candidates to prove, not proof that their bodies satisfy
    them. There is no second, approximate subtype relation used for acceptance.
 5. `claims.ml` serializes those candidates into the existing producer-neutral
-   SourceClaims protocol. It reserves empty rows for imported declarations
-   without parameters and for generic applications, listing the applications
-   with their declaration and argument rows (`"applications"`), for array
-   types, listing each with its store row (`"arrays"`), and for
-   intersections, which the producer keeps as their operands (`Meet`),
-   listing each with its operands' rows (`"meets"`); an intersection with
-   a union operand is written as the union of the intersections with each
-   arm, the same values, so a read splits on them. Lean fills the
-   reserved rows from the source equations, the one array shape and its own
-   lowering of an intersection: every declaration, array and intersection
-   has one lowering, and OCaml cannot supply a competing interpretation. A
+   SourceClaims protocol. Its table holds only its own clause rows; it names
+   what only Lean builds rows for by
+   [label trees](../SOURCE-CLAIMS.md#encoding): a declaration's
+   application by the declaration's position and its arguments, defaults
+   completed, an array type by its store row, an intersection, which the
+   producer keeps as its operands (`Meet`), by its operands, and a binder by
+   its name; an intersection with a union operand is written as the union
+   of the intersections with each arm, the same values, so a read splits on
+   them. Lean builds those rows from the source equations, the one array
+   shape and its own lowering of an intersection: every declaration, array
+   and intersection has one lowering, and OCaml cannot supply a competing
+   interpretation. A
    read of an intersection is proposed at the first operand that has the
    member, which Lean checks. Graph interning is local to one
    document. Graph labels are an export detail, not type-variable identities.
@@ -1038,7 +1039,7 @@ first milestone, in order of how much each gates:
      method's value binder, a meet row whose instance is the meet of the
      binder's instance with the ground operands
      ([binders met with ground types](../PROGRAM-TYPING.md#binders-met-with-ground-types)), which the producer proposes as `Meet` operands and
-     Lean fills (`"meets"`); a generic unit's own binder met with ground
+     names by an intersection label, whose row Lean fills; a generic unit's own binder met with ground
      types is a meet row the same way
      ([binders met](../PROGRAM-TYPING.md#binders-met-with-ground-types)).
 5. **Library contracts**, read from TypeScript's own standard library
@@ -1047,7 +1048,7 @@ first milestone, in order of how much each gates:
    roots; an interface declared several times is merged, as TypeScript
    merges it; well-known symbol keys (`[Symbol.iterator]`) are symbol keys; a
    declaration's `any` is `unknown`; a recursive generic application at the
-   same arguments is its reserved row. `Promise<T>` is collected this way, but its full recursive generic contract
+   same arguments is its application label's row. `Promise<T>` is collected this way, but its full recursive generic contract
    currently exceeds the lowering budget and is refused, not erased.
    `Iterable`/`Iterator` are read too: `next(...[value]: [] | [TNext])` is
    one signature per tuple, and `return?`/`throw?` are optional fields.
@@ -1348,7 +1349,7 @@ completed.
   claimed at its exact record, which meets the index by its keys
   (`CoversKeys`). Outside a declaration, record operands of an intersection
   merge the same way; any other ground operands, such as an array with a
-  record's members, are kept as a `Meet` whose reserved row Lean fills.
+  record's members, are kept as a `Meet`, an intersection label whose row Lean fills.
 
 *Witnesses.* `sum-serializable` (a literal at `Serializable<{ … }>`, passed as
 `Json`, read at its named fields, and passed as the plain record);

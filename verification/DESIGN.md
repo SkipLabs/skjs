@@ -1146,10 +1146,19 @@ unchanged ([design](#recursive-quantified-contracts)).
 | One proved image checker for subtyping, expression typing and program certificates (`checkUsing`, `HasTyUsing`) | done | proved |
 | Formal specification ([RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md)): motivation, meet labels, quantified-α, family subtyping, lowering, wire format, acceptance statement | in progress | drafted; closes when the family-subtyping rule is reviewed |
 | Thread the image checker through heap, context, control-flow and certificate-production proofs | open | proved; no finite-only premise left on the program path |
-| Lower source and protocol labels to equation applications, alias and intersection normalization included | open | Lean decodes and checks equation requests |
-| Family subtyping: per-head variance declarations checked once with `Var` for same-head pairs, certificate entries for the rest; writable invariance kept ([§7](RECURSIVE-EQUATIONS.md#7-family-subtyping)) | done in the kernel | kernel proved with its §7.7 controls; `promise-covariance` and its negative move with the lowering row |
-| OCaml claims, search and printing on equations; `DeclarationGraph`'s colour/depth/argument budgets retired | open | budgets deleted; census remeasured |
-| `SourceClaimJson.checkJson_safe` covers the equation path | open | proved |
+| Kernel: quantified-α, family entries, per-head variance declarations and `Var`, writable invariance kept ([§6–7](RECURSIVE-EQUATIONS.md#7-family-subtyping)) | open | proved, with the §7.7 controls as tests |
+| S1. Source-claims wire with tree labels ([§9.1](RECURSIVE-EQUATIONS.md#91-source-claims-document)); a temporary Lean adapter keeps the finite path | done | every `cases.mts` outcome unchanged; tamper and field-name tests pass |
+| S2. Diagnostics show labels through a finite projection | open | identical diagnostics on every case |
+| S3. Kernel: meet labels, equation validator, tree codec and hashing | open | proved; no pipeline change |
+| S4. Source layer generic in its label type, still over the finite table | open | bit-identical evidence on the corpus |
+| S5. Equation lowering module ([§8](RECURSIVE-EQUATIONS.md#8-lowering-from-source)), not yet wired | open | lowers `Promise`, `PromiseLike`, `Pair` and the upstream declarations with no budget |
+| S6. Cutover: lowering wired, `DeclarationGraph`, its budgets and the adapter deleted, `checkJson_safe` over `Equations.graph` | open | `generic-growing-application` verifies; every recursive-generic gap reclassified by its new blocker |
+| S7. Variance proposals, `Var` and family entries in the certificate producer; `checkEquations` | open | `promise-covariance`, `-push` verify; `invalid-promise-covariance` rejected at its own obligation |
+| S8. Census and performance | open | census remeasured; evidence size and decode time recorded |
+
+The stages' order and dependencies: S1, S3 and the kernel rows may run in
+parallel; S4 follows S1; S5 follows S3 and S4's interface; S6 needs all of
+them and the image-checker row; S7 follows S6; S8 follows S7.
 
 ### Open work
 

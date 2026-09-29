@@ -856,8 +856,10 @@ file. TypeScript rejects such an alias as circular.
 
 ## 9. Wire formats
 
-**Specification; not yet implemented.** There are two wires, and they
-change differently.
+There are two wires, and they change differently. The source-claims
+document (9.1) is specified in full, canonical order included, by
+[SOURCE-CLAIMS](SOURCE-CLAIMS.md#encoding); the request protocol (9.2) is
+specification, not yet implemented.
 
 ### 9.1 Source-claims document
 
@@ -867,15 +869,18 @@ row index, or one of:
 
 | Label | Spelling |
 | --- | --- |
-| application of declaration `k` (its position in the declaration document's `definitions`) | `{"decl": k, "args": [[L, …], …]}`, `args` left out when nullary, arity always full with defaults completed |
-| intersection | `{"meet": [L, …]}` |
-| array | `{"array": [L, …], "readonly": b}` |
+| application of declaration `k` (its position in the declaration document's `definitions`) | `{"decl": k, "args": [A, …]}`, `args` left out when nullary, arity always full with defaults completed |
+| intersection | `{"meet": [A, …]}`, at least two parts |
+| array | `{"array": [s], "readonly": b}`, `s` the row of its store's tuple contract |
 | a binder in scope | `{"binder": "T"}` |
 
-`types` keeps only the producer's content rows. The reserved empty rows, and
-the `applications`, `arrays` and `meets` fields, are deleted, as are the
-producer's `param` rows (replaced by `binder` labels) and its `expand_rigid`
-mirror of Lean's `rigidClaim`.
+Each `A` is a union, a label list. An intersection's parts are unions
+because the producer keeps an intersection it does not distribute (more than
+16 arms), and a bounded binder, `{"meet": [[{"binder": "T"}], B]}`, has its
+bound `B` whole; the lowering distributes them over their arms (3.3). An
+array names its store rather than its element, so a tuple is one too. `types`
+holds only the producer's rows: its clause rows, and the scheme rows of
+classes' generic methods, whose binders are binder labels.
 
 ### 9.2 Request protocol and evidence
 

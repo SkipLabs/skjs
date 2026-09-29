@@ -153,33 +153,6 @@ which no claim states, and an unannotated constant at the `"init"` claim for
 its initializer's expression, which the initialization unit checks. See
 [Modules and code units](DESIGN.md#modules-and-code-units).
 
-A document whose types use a generic declaration's application has one more
-field, `"applications"`: `[{"row": r, "declaration": d, "args": [[...], ...]}]`,
-left out when there are none. Row `r` is an empty row the producer reserved;
-`d` is the declaration's position among the declaration document's
-`definitions`, and `args` its argument types, which name only earlier rows.
-Lean fills each such row from the declaration's source terms, in row order,
-exactly as it fills a nullary declaration's reserved row, so every declaration
-has one lowering, Lean's, whatever producer names it.
-
-Array types are reserved the same way, in `"arrays"`:
-`[{"row": r, "store": s, "readonly": b}]`, left out when there are none. Row
-`r` is an empty row the producer reserved and `s` the row of the store's tuple
-contract, which the producer states. Lean fills the row with the one array
-shape (`PositiveNormalization.arrayClauseOf`): the store, `Array.prototype` as
-a view at `ArrayProto`, and the own-key bound excluding `ArrayProto`'s keys.
-No producer spells that shape.
-
-Intersections are reserved the same way, in `"meets"`:
-`[{"row": r, "parts": [[...], ...]}]`, left out when there are none. Row `r`
-is an empty row the producer reserved and `parts` its operands' types, which
-name only earlier rows. Lean fills the row with their meet as the source's own
-`A & B` lowers (`DeclarationGraph.meetRow`), in row order with the
-applications: `values.getUnique()` at `Values<[number, number]>` is
-`[number, number] & DepSafe`, a row no producer spells. An operand holding a
-type parameter is refused there; the producer proposes such an intersection
-as its parameter, which Lean's reading of the declaration decides.
-
 Function identity is its name and name span. Parameter names and order must match
 the source signature. Entry claims use statement start offsets, and expression
 claims use complete spans. Sites must occur in the named function's decoded
@@ -191,9 +164,36 @@ the call, so it keeps the type its function's receiver gives it, and a `this`
 expression is an ordinary expression site claimed like a variable.
 Declaration IDs are not part of this interface.
 
-Type references are sorted, duplicate-free lists of labels into the document's
-`types` table, read as a union: `[]` denotes `never`, `[1,2]` denotes `boolean`,
-and `[0,1,2]` denotes `null | boolean`. The source decoder also accepts unions
+Type references are lists of labels, read as a union: `[]` denotes `never`,
+`[1,2]` denotes `boolean`, and `[0,1,2]` denotes `null | boolean`. A label is
+a row of the document's `types` table, or a tree naming a type whose row only
+the verifier builds, from the declaration document the parser emits:
+
+| Label | Spelling | Denotes |
+| --- | --- | --- |
+| row | `i` | the clauses of row `i` of `types` |
+| application | `{"decl": k, "args": [A, ...]}` | declaration `k`, its position in the declaration document's `definitions`, applied to one union per parameter, an omitted argument written as its default at the earlier arguments; `args` is left out for a nullary declaration, and never written empty |
+| intersection | `{"meet": [A, ...]}` | the intersection of at least two unions, as the source's own `A & B` lowers (`DeclarationGraph.meetRow`) |
+| array | `{"array": [s], "readonly": b}` | the array whose store has the tuple contract of row `s`, with `Array.prototype` as a view at `ArrayProto` and the own-key bound excluding `ArrayProto`'s keys (`PositiveNormalization.arrayClauseOf`) |
+| binder | `{"binder": "T"}` | the binder `T` in scope, as its unit, closure or class's generic method binds it; a bounded binder is written as the intersection of the binder and its bound |
+
+```math
+\begin{aligned}
+L &::= i \;\mid\; \mathsf{decl}(k, A_1, \ldots, A_n) \;\mid\; \mathsf{meet}(A_1, \ldots, A_m) \;\mid\; \mathsf{array}(s, b) \;\mid\; \mathsf{binder}(T)
+\qquad n = \mathrm{arity}(k),\ m \ge 2\\
+A &::= [L_1, \ldots, L_p] \qquad L_1 < \cdots < L_p
+\end{aligned}
+```
+
+A label list is in canonical order, each label once: rows ascending, then
+applications, intersections, arrays and binders, each ordered by its fields in
+turn, lists lexicographically with a prefix first. Each tree has this one
+spelling and no other field. So a producer never writes a declaration's
+equation, an array's shape, an intersection's row or a binder's row: its
+`types` are the four primitives, then its own clause rows and the scheme rows
+of classes' generic methods, whose binders are binder labels. The verifier
+gives each tree the row its lowering fills before it reads the claims. The
+source decoder also accepts unions
 mixing supported cell and function atoms with primitives. Existing limits on
 external cell parameters and nested record operands remain in force; fields
 and arrow operands admit bounded primitive/callable contracts, and an arrow parameter is assumed at its annotation.

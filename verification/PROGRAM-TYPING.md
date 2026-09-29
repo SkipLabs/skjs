@@ -3553,7 +3553,8 @@ $$
 k(l)=\begin{cases}l & l\ \text{an application's row, or empty}\\ G(l) & \text{otherwise.}\end{cases}
 $$
 
-A producer's reserved row for $D\langle\vec U\rangle$ is in $\rho$ from the
+The row a producer's label names for $D\langle\vec U\rangle$ (an
+[application label](SOURCE-CLAIMS.md#encoding)) is in $\rho$ from the
 start, an argument left to its default being that default (one row for
 `IteratorResult<number>` and `IteratorResult<number, unknown>`). A reserved
 row whose equation is other rows' union (an alias) is their clauses, filled
@@ -3670,7 +3671,8 @@ it establishes what each does. At an instance $p_1:=U_1,\ldots,p_k:=U_k$ it
 means $\mathsf{meetLists}(G(U_1),\ldots,G(U_k),\vec c)$ (`meetOk`, the meet
 folded left to right, or in the reverse order), which is exactly what lowering
 the intersection at $\vec U$ gives. A producer names a meet it does not compute by
-a reserved row in the claims' `"meets"`, which Lean fills with `meetRow`.
+an intersection label in its claims ([`{"meet": ...}`](SOURCE-CLAIMS.md#encoding)),
+whose row Lean fills with `meetRow`.
 
 A generic body's bounded binder is read the same way, as the meet of its
 parameter row and its bound, and a binder bounded by another, `U extends T`,
