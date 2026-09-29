@@ -1,14 +1,12 @@
-import Verification.Model.Source.SourceClaims
-import Verification.Model.Source.Fragment
+import Verification.Model.Source.SourceExtraction
 
-/-! Decode SKJS type candidates once, before the source compiler consumes them.
-The compiler's claim interface itself does not depend on this wire encoding.
-Every candidate is attempted on its own: a rejected one is kept as its failure
-and leaves no rows in the table. -/
-namespace Verification.Model.SkjsSourceClaims
+/-! Test fixture. The extraction tests state their claims in SKJS's wire
+types; `translate` decodes those into the extractor's claim form, one
+candidate at a time, and `extractFn` extracts one function from them. -/
+namespace Verification.Model.SourceExtraction
 open SourceTypes LabelStore
 
-def translate {σ ι : Type} [Labels ι] [Store σ ι] (c : Fragment.Claims) :
+def skjsClaims {σ ι : Type} [Labels ι] [Store σ ι] (c : Fragment.Claims) :
     Lowering σ (SourceClaims.Function ι) := do
   let candidate := fun ty => attempt (Fragment.translate ty)
   let point := fun ty => attempt (Fragment.translatePoint ty)
@@ -27,4 +25,10 @@ def translate {σ ι : Type} [Labels ι] [Store σ ι] (c : Fragment.Claims) :
     -- SKJS emits no quantified claims, so it compiles no scheme arrows.
     []⟩
 
-end Verification.Model.SkjsSourceClaims
+
+/-- One function's wire claims, lowered into a fresh table. -/
+def extractFn (f : Fragment.Fn) (fc : Fragment.Claims) : Except String (SourceRequest SourceTypes.Table Nat) := do
+  let (fc, T) ← (skjsClaims fc).run SourceTypes.initial
+  extractNormalizedFn T f fc
+
+end Verification.Model.SourceExtraction

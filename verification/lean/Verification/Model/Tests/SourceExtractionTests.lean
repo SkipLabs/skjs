@@ -1,3 +1,4 @@
+import Verification.Model.Tests.SkjsClaimsFixture
 import Verification.Model.Source.SourceExtraction
 
 namespace Verification.Model.SourceExtractionTests

@@ -1,7 +1,7 @@
-import Verification.Model.Source.SkjsSourceClaims
 import Verification.Model.Programs.ExpressionClaims
 import Verification.Model.Programs.DirectObligation
 import Verification.Model.Source.GenericAlias
+import Verification.Model.Source.SourceClaims
 
 /-! First source adapter for the stateful consumer. Names are resolved against
 initialized local bindings. Supplied expression types and source annotations
@@ -5125,12 +5125,6 @@ def extractNormalizedFn [Meets σ ι] (T : σ) (f : Fragment.Fn) (fc : SourceCla
   return ⟨⟨built.types, built.program, built.claims, R, entry.label, inputs, built.codes⟩,
     built.obligations, built.sourceMap, built.assertions, built.cuts, built.hints, built.codeSources,
     built.nodePlans⟩
-
-/-- One function's wire claims, lowered into a fresh table. Other producers can
-supply normalized candidates directly to extractNormalizedFn. -/
-def extractFn (f : Fragment.Fn) (fc : Fragment.Claims) : Except String (SourceRequest SourceTypes.Table Nat) := do
-  let (fc, T) ← (SkjsSourceClaims.translate fc).run SourceTypes.initial
-  extractNormalizedFn T f fc
 
 end
 

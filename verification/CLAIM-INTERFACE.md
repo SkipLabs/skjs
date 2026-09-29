@@ -5,8 +5,7 @@ there is no implemented comment frontend yet. A strict, bounded
 [calculus-label sidecar](SOURCE-CLAIMS.md) is now implemented separately from the
 arbitrary-graph proposal below. The in-memory consumption boundary
 is now separated: `SourceClaims.Function` contains calculus type candidates, and
-`translate` in [SkjsSourceClaims.lean](lean/Verification/Model/Source/SkjsSourceClaims.lean) adapts SKJS exports before source extraction.
-`extractNormalizedFn` accepts those candidates directly. The source CLI accepts SKJS exports and, through separate modes, the bounded
+`extractNormalizedFn` accepts them directly. The source CLI accepts SKJS exports and, through separate modes, the bounded
 producer-independent sidecar. The independent calculus request and
 certificate checker already exist; this proposal changes how source claims reach
 that boundary, not which semantic rules establish acceptance.
