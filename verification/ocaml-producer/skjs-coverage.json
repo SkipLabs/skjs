@@ -51,7 +51,7 @@
    "verified": 8
   }
  },
- "filesAllVerified": 289,
+ "filesAllVerified": 290,
  "filesWithAccepted": 377,
  "functions": {
   "accepted": 2026,
@@ -179,10 +179,10 @@
    "files": 4
   },
   "search: no derivation found (evidence search failed)": {
-   "units": 4,
-   "self": 3,
+   "units": 3,
+   "self": 2,
    "dependency": 1,
-   "files": 3
+   "files": 2
   },
   "relational operators (< <= > >=) and **": {
    "units": 2,
@@ -238,6 +238,12 @@
    "dependency": 1,
    "files": 1
   },
+  "type-parameter defaults: a binder nothing constrains, which TypeScript fills from its declared default": {
+   "units": 1,
+   "self": 1,
+   "dependency": 0,
+   "files": 1
+  },
   "type aliases and names the declaration reader cannot resolve": {
    "units": 1,
    "self": 0,
@@ -255,11 +261,11 @@
  "byClass": {
   "verified": 2441,
   "principled": 79,
-  "gap": 141,
-  "unexplained": 3,
+  "gap": 142,
+  "unexplained": 2,
   "skjsUnsound": 10
  },
- "unexplainedWithObligation": 3,
+ "unexplainedWithObligation": 2,
  "byReason": {
   "TypeScript refuses the code": {
    "class": "principled",
@@ -361,11 +367,6 @@
    "units": 4,
    "files": 1
   },
-  "search: no derivation found": {
-   "class": "unexplained",
-   "units": 3,
-   "files": 2
-  },
   "a guard finding an object where a field or cell holds one beside a primitive": {
    "class": "gap",
    "units": 3,
@@ -403,6 +404,11 @@
   },
   "relational comparison of operands not both numbers or both strings": {
    "class": "gap",
+   "units": 2,
+   "files": 1
+  },
+  "search: no derivation found": {
+   "class": "unexplained",
    "units": 2,
    "files": 1
   },
@@ -501,6 +507,11 @@
    "units": 1,
    "files": 1
   },
+  "unmatched: search: reject: a call instantiating a binder nothing constrains: no actual, receiver or expected type fixes it, so the producer instantiates it at its bound, where Typ": {
+   "class": "gap",
+   "units": 1,
+   "files": 1
+  },
   "SKJS unsoundness: `await` passes a record through": {
    "class": "skjs-unsound",
    "units": 1,
@@ -534,6 +545,7 @@
  },
  "unmatchedReasons": [
   "search: reject",
+  "search: reject: a call instantiating a binder nothing constrains: no actual, receiver or expected type fixes it, so the producer instantiates it at its bound, where Typ",
   "search: reject: source refusal at _: the declarations required by this unit cannot be interpreted: GraphCollections: the type argument for EagerCollection's \"_\" at [117",
   "search: reject: source refusal at _: the declarations required by this unit cannot be interpreted: ViaInter: a base that is a type parameter or an intersection is outsi"
  ],
@@ -588,7 +600,6 @@
   "source: an array assignment pattern writing other than a local is outside the fragment: a field target's reference is evaluated before its position is read and defaulte": 1,
   "search: reject: position 1 is past the positions of a mutable tuple, which `push` may have extended with a value its type does not state there (TypeScript reads it as `": 1,
   "proposal: a field read at its contract: a nested pattern's read of a through a field holding an object beside null or undefined, which a test does not narrow: what a fiel": 1,
-  "search: reject: source expression obligation at _: evidence search failed: no derivation of its node-typing claim": 1,
   "source: an ambient enum is outside the fragment: its object is the environment's, whose members a declaration need not all value, and the declaration reader has no ambi": 1,
   "search: reject: an optional key found `undefined`, read at `undefined`: the key may be absent, and a read of an absent key is stated by no clause the model reads": 1,
   "source: generic function types are outside the fragment in a declaration of the source": 1,
@@ -605,6 +616,7 @@
   "source: an object type with construct signatures and other members: a class value's statics are not members of its type": 1,
   "source: generic function types are outside the fragment": 1,
   "proposal: a spread copies the own enumerable properties of a plain object; a string's are its characters at index keys, which no record states": 1,
+  "search: reject: a call instantiating a binder nothing constrains: no actual, receiver or expected type fixes it, so the producer instantiates it at its bound, where Typ": 1,
   "proposal: quantified callable claim encoding": 1,
   "source: keyof is keyof Promise<number>, whose part unique symbol is a unique symbol, which no type of the fragment names": 1,
   "source: an index signature in a class is outside the fragment: a class's instances are the objects its construction allocates, with the keys it names in a declaration o": 1,
@@ -1430,7 +1442,7 @@
 {"source":"tests/expect-error/duplicate-def.ts","name":"Ef","kind":"function","line":84,"skjsMarker":"rejected-dependency"},
 {"source":"tests/expect-error/duplicate-def.ts","name":"Ec","kind":"variable","line":90,"skjsMarker":"rejected-dependency"},
 {"source":"tests/expect-error/eagercollection-deep-value-no-oom.ts","name":"M","kind":"class","line":21,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/eagercollection-deep-value-no-oom.ts","name":"build","kind":"function","line":32,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its node-typing claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"c.map","detail":"reject: source expression obligation at [622,627): evidence search failed: no derivation of its node-typing claim — No rule derives this letE at (this: EagerCollection<string, literal object at [112,219] & literal object at [222,261]>, {\"ctors\":{\"signatures\":[],\"variadic\":[[[],[[21],[58]]]]}}, ...Array<{\"pack\":{\"first\":{\"optional\":[],\"presence\":\"dense\",\"readonly\":false,\"required\":[],\"rest\":null},\"rest\":[]}}>) => EagerCollection<string, literal object at [112,219] & literal object at [222,261]> from ","class":"unexplained"},
+{"source":"tests/expect-error/eagercollection-deep-value-no-oom.ts","name":"build","kind":"function","line":32,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/empty-if-else-blocks.ts","name":"testIfElse","kind":"function","line":3,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/empty-if-else-blocks.ts","name":"testWhile","kind":"function","line":41,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/empty-if-else-blocks.ts","name":"testFor","kind":"function","line":59,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -2950,7 +2962,7 @@
 {"source":"tests/expect-error/private-fields.ts","name":"symKey","kind":"variable","line":198,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/private-fields.ts","name":"WithPrivateSymbolMethod","kind":"class","line":199,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/promise-object.ts","name":"testThen","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/promise-object.ts","name":"testThenChained","kind":"function","line":10,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/promise-object.ts","name":"testThenChained","kind":"function","line":10,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a call instantiating a binder nothing constrains: no actual, receiver or expected type fixes it, so the producer instantiates it at its bound, where Typ","group":"type-parameter defaults: a binder nothing constrains, which TypeScript fills from its declared default","where":"self","at":"p.then((n: number) => p.then((m: number) => m.toString()))","detail":"reject: a call instantiating a binder nothing constrains: no actual, receiver or expected type fixes it, so the producer instantiates it at its bound, where TypeScript takes the binder's declared default (`then`'s `TResult2 = never`), which the declarations read do not carry — The available claim for p.then((n: number) => p.then((m: number) => m.toString())) is Promise<null | true | false | undefined | string | number | bigint | symbol | ReadonlyArray<literal array at [0,0]> | row 10>. This return requires Promise<string>.","class":"gap"},
 {"source":"tests/expect-error/promise-object.ts","name":"testCatch","kind":"function","line":14,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/promise-object.ts","name":"testFinally","kind":"function","line":18,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/promise-object.ts","name":"testCovariantNever","kind":"function","line":23,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},

@@ -50,7 +50,7 @@ HasTyUsing  (Programs/ProgramTyping.lean)
   callRest {effect : Effect} {Γ : List (Ty ι)} {f r : Tm} {F Rt : Ty ι} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} {P B : Ty ι} {parts : List (Bool × Ty ι × Tm)} : HasTyUsing G images Γ f F → ⟨Rt, (xs.map Prod.fst ++ Us, P), B, effect⟩ ∈ restSigs G F → HasTyUsing G images Γ r Rt → (∀ p ∈ xs, HasTyUsing G images Γ p.2 p.1) → (∀ A ∈ Us, HasTyUsing G images Γ .undef A) → (Us = [] ∨ parts = []) → (∀ p ∈ parts, HasTyUsing G images Γ p.2.2 p.2.1) → RestParts G P (parts.map fun p => (p.1, p.2.1)) → HasTyUsing G images Γ (.invoke f r (xs.map Prod.snd ++ parts.map fun p => spreadTerm (p.1, p.2.2))) B
   bindE {effect : Effect} {Γ : List (Ty ι)} {F T Rt R Rc : Ty ι} {t r : Nat} {slots : List Nat} {Ps Ds : List (Ty ι)} : Γ[t]? = some T → ⟨Rt, Ps ++ Ds, R, effect⟩ ∈ callSigs G T → Γ[r]? = some Rt → slots.map (Γ[·]?) = Ps.map some → Represents G F (.arrs [⟨Rc, Ds, R, effect⟩] []) → HasTyUsing G images Γ (.makeAt (.bound (.var t) (.var r) (slots.map .var)) [] []) F
   bindRestE {effect : Effect} {Γ : List (Ty ι)} {F T Rt E El R Rc : Ty ι} {t r : Nat} {slots : List Nat} {Ps Qs : List (Ty ι)} : Γ[t]? = some T → ⟨Rt, (Ps, E), R, effect⟩ ∈ restSigs G T → restElem G E = some El → Γ[r]? = some Rt → slots.map (Γ[·]?) = Qs.map some → Qs = Ps.take slots.length ++ List.replicate (slots.length - Ps.length) El → Represents G F (.arrs [] [⟨Rc, (Ps.drop slots.length, E), R, effect⟩]) → HasTyUsing G images Γ (.makeAt (.bound (.var t) (.var r) (slots.map .var)) [] []) F
-  bindMember {Γ : List (Ty ι)} {F O : Ty ι} {i : Nat} {k : PropKey} {m : MethodMembers.Sig (Ty ι)} {L : List (Arrow (Ty ι))} {S : List (RestArrow (Ty ι))} : Γ[i]? = some O → memberOf G O k = some m → Represents G F (.arrs L S) → (∀ q ∈ L, ∃ c ∈ m.calls, CoveredCallUsing G images q c) → (∀ s ∈ S, s.withReceiver () ∈ m.rests) → HasTyUsing G images Γ (.letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])) F
+  bindMember {Γ : List (Ty ι)} {F O : Ty ι} {i : Nat} {k : PropKey} {m : MethodMembers.Sig (Ty ι)} {L : List (Arrow (Ty ι))} {S : List (RestArrow (Ty ι))} : Γ[i]? = some O → memberOf G O k = some m → Represents G F (.arrs L S) → (∀ q ∈ L, ∃ c ∈ m.calls, CoveredCallUsing G images q c) → (∀ s ∈ S, ∃ c ∈ m.rests, CoveredRestUsing G images s c) → HasTyUsing G images Γ (.letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])) F
   bindScheme {Γ : List (Ty ι)} {F O : Ty ι} {i : Nat} {k : PropKey} {m : MethodMembers.Sig (Ty ι)} : Γ[i]? = some O → memberOf G O k = some m → F ∈ m.schemes → expand G F = [] → HasTyUsing G images Γ (.letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])) F
   throw : HasTyUsing G images Γ a A → HasTyUsing G images Γ (.throw a) B
   merge {d : List PropKey} {a b : Tm} {A B R : Ty ι} : HasTyUsing G images Γ a A → HasTyUsing G images Γ b B → ObjectMerge.MergeOk G d A B R = true → HasTyUsing G images Γ (.merge d a b) R
@@ -106,7 +106,7 @@ Rule  (Programs/ProgramCertificates.lean)
   callRest (effect : Effect) (fixed omitted : Nat) (spreads : List Bool) (rest : Ty ι)
   bindE
   bindRestE
-  bindMember (proofs : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι))
+  bindMember (proofs : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι)) (rests : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι × PositiveCertificates.Proof ι))
   construct
   sub (proof : PositiveCertificates.Proof ι)
   throw

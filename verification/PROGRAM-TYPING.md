@@ -449,11 +449,15 @@ the object it is read from ([DESIGN.md](DESIGN.md#method-members-are-host-relati
 A member bound to its host (`bindMember`) is read from the object in slot $i$
 and bound to that same object in one term, so the member is read before any
 actual runs, as JavaScript reads it, and the bound function meets the member's
-signatures at any receiver, and every fixed signature one of them covers:
-each claimed parameter within the member's, and the member's result within
-the claimed one, by checked subtyping proofs the certificate carries
-(`CoveredCall`, `CallProofs`). A claim may so name another row for the same
-type, as a producer's own row for a declared `[number, number]`. With
+signatures at any receiver, and every signature one of them covers: each
+claimed parameter within the member's, for a variadic signature of as many
+fixed parameters the claimed rest within the member's too, and the member's
+result within the claimed one, by checked subtyping proofs the certificate
+carries (`CoveredCall`, `CallProofs`, `CoveredRestUsing`, `RestProofsUsing`).
+A claim may so name another label for the same type, as a producer's own row
+for a declared `[number, number]`, or for a declared rest
+`EagerCollection<K, V>[]` at its instance, which the declaration's literal
+head applied to the instance's arguments names too. With
 $\mathrm{member}_G(O,k)=m$ the method of key $k$ in $O$'s one object
 clause (`memberOf`):
 
@@ -461,9 +465,16 @@ clause (`memberOf`):
 \frac{\Gamma(i)=O\quad\mathrm{member}_G(O,k)=m
       \quad\forall(Q,\vec D,B)\in L.\;\exists(\vec C,B')\in m.\mathsf{calls}.\;
         G\vdash\vec D\le\vec C\land G\vdash B'\le B
-      \quad\forall(Q,\vec D,P,B)\in S.\;(\vec D,P,B)\in m.\mathsf{rests}}
+      \quad\forall(Q,\vec D,P,B)\in S.\;\exists(\vec C,P',B')\in m.\mathsf{rests}.\;
+        G\vdash\vec D\le\vec C\land G\vdash P\le P'\land G\vdash B'\le B}
      {\Gamma\vdash_G\mathsf{let}\ f=i.k\ \mathsf{in}\ \mathsf{bound}(f,i,[]):\mathsf{arrs}(L;S)}
 ```
+
+Both $\vec D$ and $\vec C$ are the fixed parameters, of equal length, and the
+effects are covered as for a call. The rest premise is an inclusion of
+argument lists: a checked proof relates the argument-list component of the
+two types' meanings as it relates their values (`argsAcceptedUsing`), and a
+variadic signature admits every list a narrower one does (`ArgsRest_mono`).
 
 A generic method's member states its signatures as schemes, quantified
 signatures the member bound to its host meets

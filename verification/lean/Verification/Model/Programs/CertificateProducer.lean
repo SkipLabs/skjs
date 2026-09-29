@@ -266,10 +266,10 @@ giving each binder its instance. Untrusted: `checkInstArrs` validates it. -/
           M.all (fun q => s.variadic.any fun p => instRest G table κ₀ p q) then return c
       -- An operand whose image is another spelling of the target's (a
       -- result `Pair<[number, string]>` for `Pair<[T, U]>` at `string`, a
-      -- callback or a class value the target states as a definition of its
-      -- own), in a fixed or a variadic signature: the target's as the image
-      -- of the one label whose image is not among the target's, which the
-      -- image check accepts only when the two are proved equal.
+      -- callback the target states as a definition of its own): the
+      -- target's as the image of the one label whose image is not among the
+      -- target's, which the image check accepts only when the two are
+      -- proved equal.
       let respell (P Q : List ι) : InstTable ι :=
         match tyImg table κ₀ P with
         | some img =>
@@ -282,13 +282,13 @@ giving each binder its instance. Untrusted: `checkInstArrs` validates it. -/
             [(l, κ₀, Q.filter (!others.contains ·))]
           | _ => []
         | none => []
-      let patch : InstTable ι := (L.flatMap fun q => s.signatures.flatMap fun p =>
+      let patch : InstTable ι := L.flatMap fun q => s.signatures.flatMap fun p =>
         if p.arguments.length != q.arguments.length then [] else
-        ((p.result :: p.arguments).zip (q.result :: q.arguments)).flatMap fun (P, Q) => respell P Q) ++
-        M.flatMap fun q => s.variadic.flatMap fun p =>
-          if p.arguments.1.length != q.arguments.1.length then [] else
-          ((p.arguments.2 :: p.result :: p.arguments.1).zip
-            (q.arguments.2 :: q.result :: q.arguments.1)).flatMap fun (P, Q) => respell P Q
+        ((p.result :: p.arguments).zip (q.result :: q.arguments)).flatMap fun (P, Q) => respell P Q
+      let patch := patch ++ M.flatMap fun q => s.variadic.flatMap fun p =>
+        if p.arguments.1.length != q.arguments.1.length then [] else
+        ((p.arguments.2 :: p.result :: p.arguments.1).zip (q.arguments.2 :: q.result :: q.arguments.1)).flatMap
+          fun (P, Q) => respell P Q
       if !patch.isEmpty then
         let c : PositiveCertificates.Instance ι := ⟨patch.eraseDups ++ table, θs, [], []⟩
         if images.check s.binders c && L.all (fun q => s.signatures.any fun p => instSig G c.table κ₀ p q) &&
@@ -388,20 +388,30 @@ proposal is checked. -/
      let p := .fallback (rowInstances G images instanceFuel fb.table)
      if ok p then some p else none)
 
-/-- Proofs that the member of key `k` on `O` covers each fixed signature of
-`F`: for each, a member signature of as many parameters, each claimed
-parameter within the member's and the member's result within the claimed. -/
+/-- Proofs that the member of key `k` on `O` covers each signature of `F`:
+for each fixed one, a member signature of as many parameters, each claimed
+parameter within the member's and the member's result within the claimed;
+for each variadic one, a member's of as many fixed parameters, likewise, the
+claimed rest within the member's too. -/
 @[nospecialize] def memberProofsUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (O : Ty ι) (k : PropKey)
-    (F : Ty ι) : Option (List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι)) := do
+    (F : Ty ι) : Option (List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι) ×
+      List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι × PositiveCertificates.Proof ι)) := do
   let m ← ProgramTyping.memberOf G O k
   -- At a quantified signature, the member bound to its host is the scheme.
-  if expand G F = [] && m.schemes.contains F then return []
-  let [.arrs L _] := expand G F | none
-  L.mapM fun q => m.calls.findSome? fun c => do
+  if expand G F = [] && m.schemes.contains F then return ([], [])
+  let [.arrs L S] := expand G F | none
+  let calls ← L.mapM fun q => m.calls.findSome? fun c => do
     if q.arguments.length != c.arguments.length || !c.effect.covers q.effect then none
     let ps ← (q.arguments.zip c.arguments).mapM fun (D, C) => subtypeUsing G images D C
     let pr ← subtypeUsing G images c.result q.result
     pure (ps, pr)
+  let rests ← S.mapM fun s => m.rests.findSome? fun c => do
+    if s.arguments.1.length != c.arguments.1.length || !c.effect.covers s.effect then none
+    let ps ← (s.arguments.1.zip c.arguments.1).mapM fun (D, C) => subtypeUsing G images D C
+    let pe ← subtypeUsing G images s.arguments.2 c.arguments.2
+    let pr ← subtypeUsing G images c.result s.result
+    pure (ps, pe, pr)
+  pure (calls, rests)
 
 @[nospecialize] def coerce [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (e : ProgramCertificates.Evidence ι) (A : Ty ι) : Option (ProgramCertificates.Evidence ι) := do
@@ -528,8 +538,8 @@ came from a different context. No execution budget is inspected. -/
         | some O => ProgramTyping.memberSchemes G O k
         | none => []
       return (A :: schemes ++ pool).findSome? fun F => do
-        let ps ← memberProofsUsing G images (← Γ[i]?) k F
-        if checkTreeUsing G images (leaf F (.bindMember ps)) then coerce G images (leaf F (.bindMember ps)) A
+        let (ps, rs) ← memberProofsUsing G images (← Γ[i]?) k F
+        if checkTreeUsing G images (leaf F (.bindMember ps rs)) then coerce G images (leaf F (.bindMember ps rs)) A
         else none
     | .letE a b =>
       let exactTypes := suggestions.reverse.filterMap fun j =>

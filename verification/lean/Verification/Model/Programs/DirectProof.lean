@@ -84,10 +84,10 @@ def renderAt (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (
       let eb ← renderAt G images pool depth ((claim ea).type :: Γ) b
       pure (.node ⟨Γ,j.term,j.type⟩ .letE [ea,eb])
     -- The member's covering proofs are searched in the actual context.
-    | .bindMember _, .letE (.readAt k (.var i)) _, [] =>
+    | .bindMember _ _, .letE (.readAt k (.var i)) _, [] =>
       let some O := Γ[i]? | failure
-      let some ps := memberProofsUsing G images O k j.type | failure
-      pure (.node ⟨Γ,j.term,j.type⟩ (.bindMember ps) [])
+      let some (ps, rs) := memberProofsUsing G images O k j.type | failure
+      pure (.node ⟨Γ,j.term,j.type⟩ (.bindMember ps rs) [])
     | .ifBoolVar T F, .ite (.var i) _ _, [t,e] =>
       let pt ← renderAt G images pool depth (Γ.set i T) t
       let pe ← renderAt G images pool depth (Γ.set i F) e

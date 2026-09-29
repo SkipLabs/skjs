@@ -889,6 +889,7 @@ let moduleInit = "";
 let genericModule = "";
 let sumMapper = "";
 let sumConstructor = "";
+let sumCollections = "";
 let localClosure = "";
 let mutatingClosure = "";
 let exactKeys = "";
@@ -929,6 +930,7 @@ for (const [i, test] of cases.entries()) {
   if (test.file === "index-signature") indexed = result.artifacts;
   if (test.file === "sum-mapper-signature") sumMapper = result.artifacts;
   if (test.file === "sum-constructor-field") sumConstructor = result.artifacts;
+  if (test.file === "sum-collections") sumCollections = result.artifacts;
   if (test.file === "closure-result-contract") localClosure = result.artifacts;
   if (test.file === "closure-graph-captured-cell") mutatingClosure = result.artifacts;
   if (test.file === "invalid-writable-dictionary-exact-keys") exactKeys = result.artifacts;
@@ -1157,6 +1159,31 @@ for (const [artifacts, arity, refusal] of [
   writeFileSync(forged, JSON.stringify(claims));
   assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), refusal);
   process.stdout.write(`a signature claim wider than its annotation (arity ${arity}): refused\n`);
+}
+
+// A bound method's variadic signature is covered by the member's when the
+// claimed rest is within the member's (`CoveredRestUsing`): `merge`'s rest,
+// the producer's own row for `EagerCollection<string, number>[]`, admits the
+// declared rest's lists. Widened to admit strings too, the claim is refused
+// at the bound member, by search and by the checker.
+{
+  const claims: SourceClaims = JSON.parse(readFileSync(join(sumCollections, "claims.json"), "utf8"));
+  const rest = must(claims.types.flatMap((row) => row.flatMap((clause) =>
+    typeof clause === "object" && "pack" in clause ? [clause.pack.first] : []))
+    .find((t) => t.rest !== null), "merge's claimed rest").rest;
+  must(rest, "the rest's labels").unshift(4);
+  const forged = join(sumCollections, "forged-wider-rest.json");
+  writeFileSync(forged, JSON.stringify(claims));
+  const searched = spawnSync(verifier, ["--produce-source-claims", join(sumCollections, "fragment.json"),
+    forged, join(sumCollections, "source.ts"), join(sumCollections, "forged-evidence.json"), "12"],
+    { encoding: "utf8", timeout: 30_000 });
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  const member = readFileSync(join(sumCollections, "source.ts"), "utf8").indexOf("cs.input1.merge");
+  assert.ok((searched.stdout + searched.stderr).includes(
+    `source expression obligation at [${member},${member + "cs.input1.merge".length})`),
+    searched.stdout + searched.stderr);
+  assert.match(invoke(forged, join(sumCollections, "evidence.json"), sumCollections), /does not justify/);
+  process.stdout.write("a bound method's rest claim wider than the member's: refused\n");
 }
 
 // Explicit type arguments, written as another type than the one the claimed

@@ -385,8 +385,10 @@ at any receiver.
 `letE (readAt k (var i)) (makeAt (bound (var 0) (var (i + 1)) []) [] [])`,
 which reads the member `k` from the object in slot `i` and binds it to that
 same object. The object's type must have one object clause with a method of
-key `k`; each fixed signature of the result must be one of the method's, at
-any receiver, and each variadic one likewise. With no proofs, the result may
+key `k`; each fixed signature of the result must be covered by one of the
+method's, at any receiver, by the subtyping proofs the rule carries, one per
+parameter, then the result; each variadic one likewise, one per fixed
+parameter, then the rest, then the result. With no proofs, the result may
 instead be one of the method's quantified signatures, a scheme row
 (`HasTyUsing.bindScheme`), which a call instantiates by `sub`.
 `callRest` carries the

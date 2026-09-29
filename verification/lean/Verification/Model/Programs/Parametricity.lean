@@ -178,6 +178,11 @@ theorem CallProofs_reassign (q : CallEffects.Arrow (List ι)) (c : CallEffects.M
     CallProofsUsing (reassign G η) (images.reassign η) q c ps = CallProofsUsing G images q c ps := by
   simp only [CallProofsUsing, check_reassign]
 
+theorem RestProofs_reassign (q : CallEffects.RestArrow (List ι)) (c : CallEffects.MethodRestArrow (List ι))
+    (ps : List (Proof ι) × Proof ι × Proof ι) :
+    RestProofsUsing (reassign G η) (images.reassign η) q c ps = RestProofsUsing G images q c ps := by
+  simp only [RestProofsUsing, check_reassign]
+
 /-- A generic closure's capture check reads the graph's rows only. -/
 theorem capturesFree_reassign (s : SchemeRow ι) (Cs : List (List ι)) :
     capturesFree (reassign G η) s Cs = capturesFree G s Cs := by
@@ -197,7 +202,7 @@ theorem Local_reassign (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
     (codes : CodeEntry ι → Bool := fun _ => false) :
     LocalUsing (reassign G η) (images.reassign η) j r ps codes = LocalUsing G images j r ps codes := by
   unfold LocalUsing
-  simp only [check_fun_reassign, CallProofs_reassign, graphCodesChecked_reassign,
+  simp only [check_fun_reassign, CallProofs_reassign, RestProofs_reassign, graphCodesChecked_reassign,
     allocRealm_reassign]
   rfl
 

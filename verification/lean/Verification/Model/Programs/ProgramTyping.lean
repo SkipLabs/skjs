@@ -1278,6 +1278,37 @@ theorem CoveredCallUsing.params [DecidableEq ι] {G : NormalGraph ι}
 abbrev CoveredCall [DecidableEq ι] (G : NormalGraph ι) :=
   CoveredCallUsing G (PositiveCertificates.finiteInstanceImages G)
 
+/-- A variadic signature covered by one of a member's with as many fixed
+parameters: each claimed fixed parameter within the member's, the claimed
+rest within the member's, and the member's result within the claimed one, by
+checked proofs. As for `CoveredCallUsing`, the claimed types may be other
+rows for the same types, such as a producer's copy of a declared array type
+at the rest. -/
+def CoveredRestUsing [DecidableEq ι] (G : NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) (q : RestArrow (Ty ι))
+    (c : MethodRestArrow (Ty ι)) : Prop :=
+  q.arguments.1.length = c.arguments.1.length ∧
+    (∀ x ∈ q.arguments.1.zip c.arguments.1, ∃ p, PositiveCertificates.checkUsing G images x.1 x.2 p = true) ∧
+    (∃ p, PositiveCertificates.checkUsing G images q.arguments.2 c.arguments.2 p = true) ∧
+    (∃ p, PositiveCertificates.checkUsing G images c.result q.result p = true) ∧ c.effect.covers q.effect = true
+
+/-- A checked proof is an inclusion of argument lists too: the argument
+component of the two types' meanings. -/
+theorem argsAcceptedUsing [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} {S T proof}
+    (h : PositiveCertificates.checkUsing G images S T proof = true) (n W vs)
+    (hv : argMeaning G S n W vs) : argMeaning G T n W vs :=
+  PositiveCertificates.checkUsing_sound h G.env n W (.inr vs) hv
+
+/-- Pointwise wider fixed parameters and a wider rest admit every list the
+narrower ones do. -/
+theorem ArgsRest_mono {Qs Ps : List Fam} {E E' : ArgFam} {j : Nat} {W : WorldT j} (h : ArgsLe Qs Ps)
+    (he : ∀ vs, E j W vs → E' j W vs) {args : List Tm}
+    (ha : ArgsRest Qs E j W args) : ArgsRest Ps E' j W args := by
+  obtain ⟨hs, hr⟩ := ha
+  rw [ArgsLe_length h] at hs hr
+  exact ⟨ArgsShort_mono h hs, he _ hr⟩
+
 /-- A member of a host's type is found by the member's key on the host, whose
 contract implies the member's signatures invoked on that host. -/
 theorem memberOf_at {G : NormalGraph ι} {O : Ty ι} {k : PropKey} {m : MethodMembers.Sig (Ty ι)}
@@ -2144,15 +2175,15 @@ inductive HasTyUsing (G : NormalGraph ι) (images : PositiveCertificates.Instanc
   /-- **A member bound to its host.** The member is read from the object in a
   slot, before anything else runs, and bound to that same object: the bound
   function meets the member's signatures whatever receiver it is later given,
-  and each fixed signature one of them covers. This is how a method call
-  `o.m(args)` keeps JavaScript's order, reading the member before the actuals,
-  while the member's contract stays host-relative. -/
+  and each fixed or variadic signature one of them covers. This is how a
+  method call `o.m(args)` keeps JavaScript's order, reading the member before
+  the actuals, while the member's contract stays host-relative. -/
   | bindMember {Γ : List (Ty ι)} {F O : Ty ι} {i : Nat} {k : PropKey}
       {m : MethodMembers.Sig (Ty ι)} {L : List (Arrow (Ty ι))}
       {S : List (RestArrow (Ty ι))} :
       Γ[i]? = some O → memberOf G O k = some m → Represents G F (.arrs L S) →
       (∀ q ∈ L, ∃ c ∈ m.calls, CoveredCallUsing G images q c) →
-      (∀ s ∈ S, s.withReceiver () ∈ m.rests) →
+      (∀ s ∈ S, ∃ c ∈ m.rests, CoveredRestUsing G images s c) →
       HasTyUsing G images Γ (.letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])) F
   /-- **A member bound to its host, at its quantified signatures.** As
   `bindMember`, the member is read from the object in a slot and bound to that
@@ -3298,7 +3329,16 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         have hrests : CallEffects.restsT (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) (q + 2) U (.objAt [] (.bound u (ρ i) [])) := by
           refine CallEffects.restsT_of_signatures hinv fun x hx => ?_
           obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx
-          have ht := CallEffects.restsT_select hon.2.1 (List.mem_map_of_mem (List.mem_map_of_mem (hS y hy)))
+          obtain ⟨c, hc, hlen, hps, ⟨pe, hpe⟩, ⟨pr, hpr⟩, heff⟩ := hS y hy
+          have hc' := CallEffects.restsT_select hon.2.1 (List.mem_map_of_mem (List.mem_map_of_mem hc))
+          have hle := CoveredCallUsing.params hlen hps
+          have ht : CallEffects.restsT [⟨MethodMembers.hostT (ρ i), (y.arguments.1.map (meaning G), argMeaning G y.arguments.2),
+              meaning G y.result, y.effect⟩] (q + 2) U u :=
+            ⟨hc'.1, fun p hp => by
+              cases List.mem_singleton.mp hp
+              exact (hc'.2 _ (List.mem_singleton_self _)).weaken (Effect.covers_sound heff) (fun _ _ _ r h => h)
+                (fun _ _ _ args ha => ArgsRest_mono hle (fun vs hv => argsAcceptedUsing hpe _ _ vs hv) ha)
+                (fun m _ V w hw => PositiveCertificates.acceptedUsing hpr m V w hw)⟩
           have hb := CallEffects.restsT_bound (Rc := meaning G y.receiver) (pre := []) (fs := [])
             (MethodMembers.hostT_adm _)
             (fun A hA => by obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G b)
