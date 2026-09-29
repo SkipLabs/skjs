@@ -3,7 +3,7 @@
 // its anchor points at, that math renders with KaTeX and avoids the forms
 // GitHub cannot render.
 //   node verification/tests/docs.mts
-import { readdirSync, readFileSync, existsSync } from "node:fs";
+import { readdirSync, readFileSync, existsSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 
@@ -16,10 +16,14 @@ const katex = createRequire(join(root, "tools", "package.json"))("katex") as {
  * the vendored upstream sources the producer's cases import. */
 const excluded = new Set(["node_modules", ".lake", "_build", "upstream", "upstream-sound"]);
 
+/** A symbolic link to a document is that document under another name: it is
+ * checked only as a link, whose target must be a document checked here. */
+const links: string[] = [];
 function markdownFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     if (excluded.has(entry.name)) return [];
     const path = join(dir, entry.name);
+    if (entry.isSymbolicLink()) { if (entry.name.endsWith(".md")) links.push(path); return []; }
     if (entry.isDirectory()) return markdownFiles(path);
     return entry.name.endsWith(".md") ? [path] : [];
   });
@@ -103,6 +107,11 @@ const unrenderable: [RegExp, string][] = [
 
 const files = markdownFiles(root);
 const problems: string[] = [];
+for (const link of links) {
+  const target = existsSync(link) ? realpathSync(link) : undefined;
+  if (!target || !files.includes(target))
+    problems.push(`${relative(root, link)}: symbolic link to a document this check does not cover`);
+}
 const fail = (file: string, message: string) => problems.push(`${relative(root, file)}: ${message}`);
 
 for (const file of files) {
