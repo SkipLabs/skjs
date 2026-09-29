@@ -39,7 +39,7 @@ set_option maxHeartbeats 1000000 in
 private def checkWith (T : SourceTypes.Table) (f : Fragment.Fn) (c : SourceClaims.Function Nat) : Except String Unit := do
   let r ← extractNormalizedFn T f c
   let proofs ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels (LabelStore.Store.valid r.types) (LabelStore.Store.labels r.types) 0 r.obligations
+    r.searchLabels (LabelStore.Store.valid r.types) (LabelStore.Store.projection r.types) 0 r.obligations
   let evidence ← RequestJson.produceJson RequestJson.Table (toJson r.toRequest) 8 [] proofs
     r.sourceMap (some r.searchLabels) r.assertions r.cuts
   let response ← RequestJson.decodeResponse r.toRequest evidence

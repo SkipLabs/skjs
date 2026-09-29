@@ -896,7 +896,7 @@ interface Shown {
  * refines the read side of the fields it names; a field it does not name
  * reads at its own invariant. */
 const cell = (
-  types: unknown,
+  types: Table,
   contract: unknown,
   current: unknown,
   depth: number,
@@ -974,15 +974,23 @@ const _handled = {
 } satisfies Record<StringClause | ClauseKey, 1>;
 void _handled;
 
+// A table being lifted from: its rows, and the source-like name of each row
+// that stands for an application (a diagnostic's `names`). A named label is
+// shown by its name, not expanded.
+interface Table {
+  rows: unknown;
+  names: ReadonlyMap<number, string>;
+}
+
 // A row, where the table has one under that label. Both arrive from the
 // document, so neither is trusted to be there.
-const rowAt = (types: unknown, label: unknown): unknown =>
-  Array.isArray(types) &&
+const rowAt = (types: Table, label: unknown): unknown =>
+  Array.isArray(types.rows) &&
   (typeof label === "number" || typeof label === "string")
-    ? Object.getOwnPropertyDescriptor(types, label)?.value
+    ? Object.getOwnPropertyDescriptor(types.rows, label)?.value
     : undefined;
 
-function liftClause(types: unknown, clause: unknown, depth: number): unknown {
+function liftClause(types: Table, clause: unknown, depth: number): unknown {
   if (clause === "nul") return { a: "null" };
   if (clause === "bool") return { a: "boolean" };
   if (clause === "undef") return { a: "undefined" };
@@ -1122,7 +1130,7 @@ function liftClause(types: unknown, clause: unknown, depth: number): unknown {
 variadic ones, whose further actuals are at `rest`: an element rest's element,
 or the rest type itself when it is no element rest. */
 function liftSignatures(
-  types: unknown,
+  types: Table,
   fixed: unknown,
   variadic: unknown,
   depth: number,
@@ -1165,7 +1173,7 @@ function liftSignatures(
 
 /** The element of an element rest: a type whose one clause is the pack of
 any number of actuals at it. Any other rest type is shown as itself. */
-function restElement(types: unknown, rest: unknown): unknown {
+function restElement(types: Table, rest: unknown): unknown {
   if (!Array.isArray(rest) || rest.length !== 1) return rest;
   const row = rowAt(types, rest[0]);
   const clause = Array.isArray(row) && row.length === 1 ? row[0] : undefined;
@@ -1199,7 +1207,7 @@ function restPack(types: unknown, element: number[]): number[] {
   ];
 }
 
-function liftType(types: unknown, labels: unknown, depth: number): Shown {
+function liftType(types: Table, labels: unknown, depth: number): Shown {
   if (!Array.isArray(labels))
     return { top: false, atoms: ["(no type recorded)"] };
   if (
@@ -1226,6 +1234,8 @@ function liftType(types: unknown, labels: unknown, depth: number): Shown {
     if (both && label === falseLabel) return [];
     if (both && label === trueLabel) return [{ a: "boolean" }];
     if (isObject(label)) return [treeAtom(types, label, depth)];
+    const name = typeof label === "number" ? types.names.get(label) : undefined;
+    if (name !== undefined) return [name];
     const row = rowAt(types, label);
     if (!Array.isArray(row)) return ["type " + String(label)];
     return row.map((clause: unknown) => liftClause(types, clause, depth));
@@ -1237,7 +1247,7 @@ function liftType(types: unknown, labels: unknown, depth: number): Shown {
 // shown by what it names: a binder by its name, an array over its store, an
 // application by its declaration's position and its arguments, and an
 // intersection as text, as an intersection of contracts is.
-function treeAtom(types: unknown, label: Record<string, unknown>, depth: number): unknown {
+function treeAtom(types: Table, label: Record<string, unknown>, depth: number): unknown {
   const text = (labels: unknown) => printType(liftType(types, labels, depth - 1)).text;
   if (typeof label.binder === "string") return { a: "param", name: label.binder };
   if (Array.isArray(label.array)) {
@@ -1253,13 +1263,16 @@ function treeAtom(types: unknown, label: Record<string, unknown>, depth: number)
 
 // A point, lifted: its type, with the assertion about what the cell holds as
 // the read side. Null where an assertion is made over a type that cannot
-// carry one — only a single-contract cell holds anything.
+// carry one — only a single-contract cell holds anything. `names` spells the
+// table's application rows, as a diagnostic's `names` does.
 function lift(
-  types: unknown,
+  rows: unknown,
   labels: unknown,
   current: unknown = null,
   depth = 3,
+  names: readonly (readonly [number, string])[] = [],
 ): Shown | null {
+  const types: Table = { rows, names: new Map(names) };
   if (current == null) return liftType(types, labels, depth);
   const row =
     Array.isArray(labels) && labels.length === 1

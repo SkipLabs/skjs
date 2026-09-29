@@ -131,10 +131,10 @@ here prevents an adapter check from degrading into an unlocated exception. -/
 private def locatedRefusal (T : σ) (pos : Span)
     (role : DirectObligation.SourceRole) (reason : String) : String :=
   RequestJson.withDiagnostic s!"source refusal at [{pos.1},{pos.2}): {reason}"
-    [("kind",toJson "source-refusal"),("phase",toJson "request-validation"),
+    ([("kind",toJson "source-refusal"),("phase",toJson "request-validation"),
      ("outcome",toJson "not-established"),("id",toJson s!"refusal:{pos.1}"),
      ("sourceMap",toJson (SourceMapEntry.mk pos role.wire none [])),
-     ("reason",toJson reason),("fuel",toJson 0),("types",toJson T)]
+     ("reason",toJson reason),("fuel",toJson 0)] ++ (Store.projection T []).fields)
 
 private abbrev Compiler (σ ι : Type) := StateT (Built σ ι) (Except String)
 

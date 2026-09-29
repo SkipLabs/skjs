@@ -98,7 +98,15 @@ interface Common {
   outcome: "not-established";
   /** The proof budget the search was given. */
   fuel: number;
+  /** The store's labels the record mentions, projected onto a finite table. */
   types: TypeGraph;
+  /**
+   * A source-like spelling of each row of `types` that stands for an
+   * application, `Promise<number | R>`, by row, in row order. Such a label is
+   * shown by its name; a named row with no clauses is past the projection's
+   * depth bound, an opaque reference. Absent when no row is named.
+   */
+  names?: [number, string][];
   /**
    * The result type the request asked for. Absent from a closure expression
    * claim, which is produced without a request and so has none — not an
@@ -283,10 +291,21 @@ export function readDiagnostic(
       "edge-coverage":["id","edgeIndex","source","destination","transfer"], "production-failure":["failure"],
     };
     if (typeof d.kind !== "string" || !variants[d.kind]) return undefined;
-    record(d,["phase","outcome","fuel","types","kind",...variants[d.kind]],["requiredResult"]);
+    record(d,["phase","outcome","fuel","types","kind",...variants[d.kind]],["requiredResult","names"]);
     // The graph decides how many labels there are, so it is decoded first and
     // everything after counts against what it returned.
     const types = decodeGraph(d.types);
+    if (d.names !== undefined) {
+      if (!Array.isArray(d.names) || !d.names.length) return undefined;
+      let previous = -1;
+      for (const entry of d.names) {
+        if (!Array.isArray(entry) || entry.length !== 2 || typeof entry[1] !== "string" || !entry[1]) return undefined;
+        const [row] = entry;
+        nat(row);
+        if (row <= previous || row >= types.length) return undefined;
+        previous = row;
+      }
+    }
     if (d.source !== undefined) diagnosticNode(d.source,types.length);
     if (d.destination !== undefined) diagnosticNode(d.destination,types.length);
     if (d.sourceMap !== undefined) sourceMap(d.sourceMap);

@@ -221,22 +221,26 @@ diagnostic channel. The viewer consumes this record structurally and derives
 all prose from it. A type argument outside its binder's bound belongs to the
 scheme the call eliminates, and says so. -/
 private def directFailure (T : σ) (failure : DirectObligation.Located ι) : String :=
+  let judgment := failure.judgment
+  let p := Store.projection T (match judgment with
+    | .subtyping _ actual expected => (actual ++ expected).eraseDups)
+  let shown : DirectObligation.Judgment Nat := match judgment with
+    | .subtyping subject actual expected => .subtyping subject (p.shown actual) (p.shown expected)
   let message :=
     s!"quantified call does not satisfy the closure's bound: cannot establish {failure.judgment.render T}"
   RequestJson.withDiagnostic s!"source direct obligation at [{failure.pos.1},{failure.pos.2}): {message}"
-    [("kind",toJson "direct-obligation"),("phase",toJson "request-validation"),
+    ([("kind",toJson "direct-obligation"),("phase",toJson "request-validation"),
      ("outcome",toJson "not-established"),("id",toJson s!"scheme:{failure.pos.1}"),
      ("sourceMap",toJson (SourceMapEntry.mk failure.pos failure.role.wire none [])),
-     ("judgment",failure.judgment.toJson),
-     ("fuel",toJson 0),("types",toJson T)]
+     ("judgment",shown.toJson),("fuel",toJson 0)] ++ p.fields)
 
 private def sourceRefusal (T : σ) (pos : Span)
     (role : DirectObligation.SourceRole) (reason : String) : String :=
   RequestJson.withDiagnostic s!"source refusal at [{pos.1},{pos.2}): {reason}"
-    [("kind",toJson "source-refusal"),("phase",toJson "request-validation"),
+    ([("kind",toJson "source-refusal"),("phase",toJson "request-validation"),
      ("outcome",toJson "not-established"),("id",toJson s!"refusal:{pos.1}"),
      ("sourceMap",toJson (SourceMapEntry.mk pos role.wire none [])),
-     ("reason",toJson reason),("fuel",toJson 0),("types",toJson T)]
+     ("reason",toJson reason),("fuel",toJson 0)] ++ (Store.projection T []).fields)
 
 namespace Scheme
 
@@ -1542,7 +1546,8 @@ def produceJsonWith [Meets σ ι] (front : Front σ ι) (ast claims : Json) (fil
   let plans ← extractPlansWith front ast claims fileKey only
   let rs := FunctionPlan.requests plans
   let es ← rs.mapM fun r => ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels (Store.valid r.types) (Store.labels r.types) fuel r.obligations
+    r.searchLabels (Store.valid r.types)
+    (Store.projection r.types) fuel r.obligations
   let cs ← (rs.zip es).mapM fun (r,proofs) => do
     let known := proofs ++ ExpressionClaims.renderKnown (RequestJson.graph r.toRequest)
       r.searchLabels (Store.valid r.types) r.nodePlans

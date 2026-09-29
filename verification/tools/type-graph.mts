@@ -540,12 +540,23 @@ export interface GraphDefinition {
   label: string;
   definition: string;
 }
-/** Every row, exactly once. No fixed-label heuristics or depth limit. */
-export const graphDefinitions = (graph: TypeGraph): GraphDefinition[] =>
-  graph.map((row, i) => ({
-    label: `#${i}`,
-    definition: rowText(row),
-  }));
+/** Every row, exactly once. No fixed-label heuristics or depth limit. A
+ * named row (a diagnostic's `names`) is shown by its name, and a named row
+ * with no clauses, past the projection's depth bound, by its name alone. */
+export const graphDefinitions = (
+  graph: TypeGraph,
+  names: readonly (readonly [number, string])[] = [],
+): GraphDefinition[] => {
+  const named = new Map(names);
+  return graph.map((row, i) => {
+    const name = named.get(i);
+    const opaque = Array.isArray(row) && !row.length;
+    return {
+      label: `#${i}`,
+      definition: name === undefined ? rowText(row) : opaque ? name : `${name} = ${rowText(row)}`,
+    };
+  });
+};
 export function rowText(row: GraphRow): string {
   if ("param" in row) return `binder ${row.name}`;
   if ("meet" in row)

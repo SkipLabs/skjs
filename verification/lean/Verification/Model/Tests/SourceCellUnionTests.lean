@@ -42,7 +42,7 @@ set_option maxHeartbeats 1000000 in
 private def check (f : Fragment.Fn) (c : SourceClaims.Function Nat) : Except String Unit := do
   let r ← extractNormalizedFn table f c
   let proofs ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels (LabelStore.Store.valid r.types) (LabelStore.Store.labels r.types) 0 r.obligations
+    r.searchLabels (LabelStore.Store.valid r.types) (LabelStore.Store.projection r.types) 0 r.obligations
   let j ← RequestJson.produceJson RequestJson.Table (toJson r.toRequest) 10 [] proofs
     r.sourceMap (some r.searchLabels) r.assertions r.cuts r.codeHints
   let response ← RequestJson.decodeResponse r.toRequest j
@@ -141,6 +141,6 @@ private def narrowedEntry : SourceClaims.Function Nat :=
   | .error _ => false
   | .ok r =>
     let proveRole := fun role => ExpressionClaims.produce (RequestJson.graph r.toRequest)
-      r.searchLabels (LabelStore.Store.valid r.types) (LabelStore.Store.labels r.types) 0 (r.obligations.filter (·.role == role))
+      r.searchLabels (LabelStore.Store.valid r.types) (LabelStore.Store.projection r.types) 0 (r.obligations.filter (·.role == role))
     (proveRole "heap-observation").toOption.isSome
 end Verification.Model.SourceCellUnionTests

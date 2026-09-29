@@ -47,9 +47,10 @@ theorem checkAll_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {val
   simp only [checkAllUsing, Bool.and_eq_true, List.all_eq_true] at h
   exact check_sound (h.2 _ hm) hcodes
 
-/-- `valid` says which labels the graph's store holds, `all` lists them. -/
-def produceUsing [Hashable ι] [ToJson ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (labels : List ι)
-    (valid : ι → Bool) (all : List ι) (fuel : Nat)
+/-- `valid` says which labels the graph's store holds, `project` what a
+diagnostic mentioning some of them shows of it (`Store.project`). -/
+def produceUsing [Hashable ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (labels : List ι)
+    (valid : ι → Bool) (project : List ι → LabelStore.Projection ι) (fuel : Nat)
     (rs : List (Required ι)) : Except String (List (Evidence ι)) := do
   let pool := CertificateProducer.vocabulary G labels []
     (rs.flatMap (fun r => r.sequent.type :: r.sequent.context))
@@ -71,12 +72,16 @@ def produceUsing [Hashable ι] [ToJson ι] (G : NormalGraph ι) (images : Instan
     -- rendered: here every code is admitted, and acceptance checks the
     -- obligation again against the table its certificate checked.
     let some e := candidate.filter (fun e => checkUsing G images valid j e (fun _ => true))
-      | throw (withDiagnostic s!"closure expression claim at [{r.pos.1},{r.pos.2}): evidence search failed"
-          [("kind",toJson "expression-claim"),("phase",toJson "proof-search"),
+      | let p := project (j.type ++ j.context.flatten).eraseDups
+        -- This record's table shows each row's clauses alone: a parameter,
+        -- scheme or meet row as no clauses.
+        throw (withDiagnostic s!"closure expression claim at [{r.pos.1},{r.pos.2}): evidence search failed"
+          ([("kind",toJson "expression-claim"),("phase",toJson "proof-search"),
            ("outcome",toJson "not-established"),("id",toJson s!"expression:{index}"),
            ("sourceMap",toJson (SourceMapEntry.mk r.pos r.role none r.context)),
-           ("sequent",toJson j),("fuel",toJson fuel),
-           ("types",toJson (all.map G))])
+           ("sequent",toJson (Sequent.mk (j.context.map p.shown) j.term (p.shown j.type))),
+           ("fuel",toJson fuel),("types",toJson (p.rows.map GraphRow.union))] ++
+           (if p.names.isEmpty then [] else [("names",toJson p.names)])))
     es := es.push e
   -- Each item passed `check` against its own obligation above, so no final
   -- aggregate check is repeated here; acceptance (`checkRequests`) checks
@@ -99,7 +104,7 @@ def renderKnownUsing [Hashable ι] (G : NormalGraph ι) (images : InstanceImageC
 /-- The finite image checker, the default of the source path. -/
 abbrev check (G : NormalGraph ι) := @checkUsing ι _ G (finiteInstanceImages G)
 abbrev checkAll (G : NormalGraph ι) := @checkAllUsing ι _ G (finiteInstanceImages G)
-abbrev produce [Hashable ι] [ToJson ι] (G : NormalGraph ι) := @produceUsing ι _ _ _ G (finiteInstanceImages G)
+abbrev produce [Hashable ι] (G : NormalGraph ι) := @produceUsing ι _ _ G (finiteInstanceImages G)
 abbrev renderKnown [Hashable ι] (G : NormalGraph ι) := @renderKnownUsing ι _ _ G (finiteInstanceImages G)
 
 end

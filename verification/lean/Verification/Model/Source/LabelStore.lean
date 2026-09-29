@@ -40,6 +40,32 @@ def before : List ι → List ι → Bool
 
 end Labels
 
+/-- What a diagnostic shows of a store: a finite table of rows over its own
+positions, the position each label the diagnostic mentions is shown at, and a
+source-like spelling of the positions that stand for applications
+(`Promise<number | R>`). The table holds the mentioned labels and what their
+rows name, to a depth bound; past it, an application is an opaque named
+reference: a `names` entry whose row has no clauses. A diagnostic is display
+data: nothing checks or trusts a projection. -/
+structure Projection (ι : Type) where
+  /-- The table under `types`, rows naming positions in it. -/
+  rows : List (GraphRow Nat)
+  /-- Where a mentioned label is shown: its position in `rows`. -/
+  position : ι → Nat
+  /-- An application's spelling by position, in position order, each once;
+  `names`, left out when empty. -/
+  names : List (Nat × String) := []
+
+namespace Projection
+
+/-- How many row references below a mentioned label a projection expands. -/
+def depth : Nat := 3
+
+/-- A union as a diagnostic shows it. -/
+def shown {ι : Type} (p : Projection ι) (A : List ι) : List Nat := A.map p.position
+
+end Projection
+
 /-- A store: labels with rows, and the ways the source path adds to it. `σ`
 is the store's state, which extraction threads through a unit; `ι` its labels.
 
@@ -82,6 +108,14 @@ class Store (σ : Type) (ι : outParam Type) [Labels ι] extends ToJson σ, From
   variadic signatures. -/
   scheme : σ → List ι → List (Arrow (List ι)) → List (ι × List ι) →
     List (RestArrow (List ι)) → σ × ι
+  /-- What a diagnostic mentioning these labels shows of the store, rows
+  expanded `depth` references deep (`Projection`). -/
+  project : σ → List ι → Nat → Projection ι
+
+/-- What a diagnostic mentioning `mentioned` shows of the store, to the
+projection's depth. -/
+def Store.projection {σ ι : Type} [Labels ι] [Store σ ι] (T : σ) (mentioned : List ι) : Projection ι :=
+  Store.project T mentioned Projection.depth
 
 /-- The meet of unions, lowered as a source intersection is. Apart from
 `Store` because a store's intersections are lowered by the pass that lowers

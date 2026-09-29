@@ -182,6 +182,11 @@ instance [FromJson ι] [FromJson α] : FromJson (GraphRow ι α) := ⟨fun j =>
         (← fromJson? (← j.getObjVal? "kind"))
     | _, _, _ => .error "expected a clause array, a scheme row, a parameter row or a meet row"⟩
 
+/-- A diagnostic's `types` field, and its `names` field when there are any. -/
+def _root_.Verification.Model.LabelStore.Projection.fields {ι : Type} (p : Projection ι) :
+    List (String × Json) :=
+  ("types", toJson p.rows) :: (if p.names.isEmpty then [] else [("names", toJson p.names)])
+
 /-! ### The realm's arrays -/
 
 /-- A name in double brackets, which the model keeps for itself: the
@@ -331,6 +336,9 @@ instance : Store Table Nat where
   binders := Table.binders
   bounded T p cs also := Table.internRow T (.meet p cs also)
   scheme T bs sigs bounds rests := (T ++ [GraphRow.scheme bs sigs bounds rests], T.length)
+  -- A table is finite already and its labels are positions: a diagnostic
+  -- shows all of it, as it is, since a sub-table would renumber its rows.
+  project T _ _ := { rows := T, position := id }
 
 @[simp] theorem Table.graph_eq (T : Table) : Store.graph T = tableGraph T := rfl
 @[simp] theorem Table.nul_eq : (Labels.nul : Nat) = 0 := rfl
@@ -588,31 +596,47 @@ def withDiagnostic (message : String) (fields : List (String × Json)) : String 
 section
 variable {σ ι : Type} [Labels ι] [Store σ ι]
 
+/-- A point claim as a diagnostic shows it, through the store's projection. -/
+def PointClaim.shown (p : Projection ι) (c : PointClaim ι) : PointClaim Nat :=
+  ⟨c.context.map p.shown, p.shown c.type⟩
+
+/-- The labels a point claim mentions. -/
+def PointClaim.mentions (c : PointClaim ι) : List ι := c.type ++ c.context.flatten
+
+/-- A graph failure as a diagnostic: its types are the store's projection
+(`Store.project`) onto the labels the record mentions. -/
 def failureDiagnostic (r : Request σ ι) (fuel : Nat)
     (sourceMap : SourceMap) (e : Failure)
     (requirements : List (Nat × HeapKnowledge.Knowledge) := []) : List (String × Json) := Id.run do
+  let claimAt := fun l => (r.claims[l]? : Option (PointClaim ι))
+  let mentionedAt := fun l => ((claimAt l).map PointClaim.mentions).getD []
+  let mentioned := match e with
+    | .expression label => mentionedAt label
+    | .edge source destination _ => mentionedAt source ++ mentionedAt destination
+    | _ => []
+  let p := Store.projection r.types (r.result ++ mentioned).eraseDups
   let atNode := fun l => Json.mkObj [
     ("label",toJson l), ("sourceMap",toJson ((sourceMap[l]?).bind id)),
-    ("node",toJson r.program[l]?), ("claim",toJson r.claims[l]?),
+    ("node",toJson r.program[l]?), ("claim",toJson ((claimAt l).map (PointClaim.shown p))),
     ("requiredKnowledge",toJson (requirements.lookup l))]
   let phase := match e with
     | .rejected => "certificate-check"
     | .claimCount => "request-validation"
     | _ => "proof-search"
   let common := [("phase",toJson phase),("outcome",toJson "not-established"),
-    ("fuel",toJson fuel),("types",toJson r.types),("requiredResult",toJson r.result)]
+    ("fuel",toJson fuel),("requiredResult",toJson (p.shown r.result))] ++ p.fields
   match e with
   | .expression label =>
     let goal := do
       let node ← r.program[label]?
-      let c ← r.claims[label]?
-      pure (Sequent.mk c.context node.expression c.type)
+      let c ← claimAt label
+      pure (Sequent.mk (c.context.map p.shown) node.expression (p.shown c.type))
     return common ++ [("kind",toJson "node-typing"),("id",toJson s!"node:{label}"),
       ("source",atNode label),("sequent",toJson goal)]
   | .edge source destination index =>
     let transfer := do
       let node ← r.program[source]?
-      let c ← r.claims[source]?
+      let c := PointClaim.shown p (← claimAt source)
       let (available, target, observation) ← (match node.continuation with
         | .bind t => some (c.type :: c.context, t, (none : Option Bool))
         | .effect t => some (c.context, t, none)

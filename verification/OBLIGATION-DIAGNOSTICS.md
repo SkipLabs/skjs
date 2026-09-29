@@ -104,9 +104,41 @@ is untrusted display data; it cannot establish verification status.
 | `phase` | `proof-search`, `certificate-check`, or `request-validation`. |
 | `outcome` | `not-established`. |
 | `fuel` | Search depth used for this attempt, not a semantic bound or a diagnosis of exhaustion. |
-| `types` | Exact finite graph table; type lists in the record index this table. |
+| `types` | Finite table of rows, the store's projection onto the labels the record mentions (below); type lists in the record index this table. |
+| `names` | `[[row, spelling], …]`: a source-like spelling of each row that stands for an application, such as `Promise<number \| R>`, in row order, each row once. Absent when no row is named. |
 | `requiredResult` | Whole-function result type on graph diagnostics; absent on standalone expression obligations. |
 | `id` | Local obligation identity, where available. |
+
+### The label projection
+
+A record does not embed the label store; it embeds what the store's projection
+shows of the labels the record mentions (`Store.project`, `Projection` in
+`Source/LabelStore.lean`). A projection is a finite table of rows over its own
+positions, the position each mentioned label is shown at, and the `names`
+entries. The record's type lists are those positions, so a reader renders
+every record the same way, whatever store built it:
+
+```math
+\mathrm{project}(S, M, d) = (\mathit{rows}, \mathit{position} : M \to \mathbb{N}, \mathit{names})
+```
+
+for a store $`S`$, the labels $`M`$ the record mentions and the depth bound
+$`d`$ (`Projection.depth`, 3). The rows hold $`M`$ and what their rows name, to
+$`d`$ row references below $`M`$. An application past the bound is an opaque
+named reference: a `names` entry whose row has no clauses. A reader shows a
+named row by its name and never expands it.
+
+- **The finite table.** Its labels are row positions already, so the
+  projection is the identity: every row, in order, positions unchanged, and no
+  `names`. A sub-table would renumber rows.
+- **Equation labels** ([RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md#92-request-protocol-and-evidence)).
+  A label is a tree over infinitely many applications, so the projection
+  chooses positions for $`M`$ and for the rows below them up to $`d`$, and
+  names each application.
+
+A `source-refusal` mentions no label. A closure `expression-claim` record's
+table shows each row's clauses alone: a parameter, scheme or meet row as no
+clauses.
 
 The exact calculus term and type graph use the encodings in
 [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md). Sequents have `context`, `term`, and `type`.

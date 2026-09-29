@@ -164,6 +164,20 @@ try {
   });
   test("strengthening both claims verifies independently", () =>
     assert.equal(verify([1], [1]).status, "verified"));
+  // No finite table names a row: a projection of recursive labels does
+  // (OBLIGATION-DIAGNOSTICS.md, Common fields). The reader shows a named row
+  // by its name, and refuses a names list it cannot place.
+  test("named rows are shown by their names; malformed names are refused", () => {
+    const {input, ...rawDiagnostic} = obligationOf(verify([1, 2], [1, 2]));
+    const named = readDiagnostic("obligation-diagnostic: " + JSON.stringify({...rawDiagnostic, names: [[1, "Yes"]]}));
+    assert(named);
+    const shown = presentObligation(named, "");
+    assert.match(must(shown.conclusion, "a conclusion"), /Yes/);
+    assert.match(must(shown.graph[1], "row 1").definition, /^Yes = /);
+    for (const names of [[], [[1, "A"], [1, "B"]], [[2, "A"], [1, "B"]], [[99, "A"]], [[1, ""]], [[1, 2]], [["1", "A"]]])
+      assert.equal(readDiagnostic("obligation-diagnostic: " + JSON.stringify({...rawDiagnostic, names})), undefined,
+        JSON.stringify(names));
+  });
   test("an edge diagnostic identifies the selected mapping even with a shared destination", () => {
     // A calculus request, which no TypeScript file declares: the verifier is
     // its only reader, and this one is written to be read by it alone.

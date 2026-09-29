@@ -1148,8 +1148,8 @@ unchanged ([design](#recursive-quantified-contracts)).
 | Thread the image checker through heap, context, control-flow and certificate-production proofs | done | proved; no finite-only premise left on the program path |
 | Kernel: quantified-α, family entries, per-head variance declarations and `Var`, writable invariance kept ([§6–7](RECURSIVE-EQUATIONS.md#7-family-subtyping)) | done | proved, with the §7.7 controls as tests; `promise-covariance` and its negative move with S7 |
 | S1. Source-claims wire with tree labels ([§9.1](RECURSIVE-EQUATIONS.md#91-source-claims-document)); a temporary Lean adapter keeps the finite path | done | every `cases.mts` outcome unchanged; tamper and field-name tests pass |
-| S2. Diagnostics show labels through a finite projection | open | identical diagnostics on every case |
-| S3. Kernel: meet labels, equation validator, tree codec and hashing | open | proved; no pipeline change |
+| S2. Diagnostics show labels through a finite projection | done | identical diagnostics on every case |
+| S3. Kernel: meet labels, equation validator, tree codec and hashing | done | proved; no pipeline change |
 | S4. Source layer generic in its label type, still over the finite table | done | bit-identical evidence on the corpus |
 | S5. Equation lowering module ([§8](RECURSIVE-EQUATIONS.md#8-lowering-from-source)), not yet wired | open | lowers `Promise`, `PromiseLike`, `Pair` and the upstream declarations with no budget |
 | S6. Cutover: lowering wired, `DeclarationGraph`, its budgets and the adapter deleted, `checkJson_safe` over `Equations.graph` | open | `generic-growing-application` verifies; every recursive-generic gap reclassified by its new blocker |

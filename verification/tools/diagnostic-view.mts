@@ -162,14 +162,22 @@ const KIND_LABEL: Record<string, string> = {
 /* ---------- types ---------- */
 // A type is a list of labels into the record's own table, read as their union
 // and printed in the one surface syntax every claim is shown in: lifted into
-// the structural encoding and printed from there.
-function typeText(types: unknown, labels: unknown, depth = 3): string {
+// the structural encoding and printed from there. A row the table names (a
+// diagnostic's `names`) is shown by its name.
+function typeText(types: unknown, labels: unknown, depth = 3,
+    names: readonly (readonly [number, string])[] = []): string {
   if (!isList(labels)) return "(no type recorded)";
-  return surface.printType(surface.lift(types, labels, null, depth)).text;
+  return surface.printType(surface.lift(types, labels, null, depth, names)).text;
 }
+/** A type a record mentions, through the record's table and names. */
+interface Table {
+  types: unknown;
+  names?: readonly (readonly [number, string])[];
+}
+const recordType = (table: Table, labels: unknown) => typeText(table.types, labels, 3, table.names);
 
-function directView(types: unknown, judgment: DirectJudgment) {
-  const conclusion = `${typeText(types,judgment.actual)} ≤ ${typeText(types,judgment.expected)}`;
+function directView(ob: Table, judgment: DirectJudgment) {
+  const conclusion = `${recordType(ob,judgment.actual)} ≤ ${recordType(ob,judgment.expected)}`;
   return {title:"Generic instance obligation", assumptions:[] as string[], conclusion,
     summary:`The call's type argument is not shown within its bound: ${conclusion}.`};
 }
@@ -268,7 +276,6 @@ function mapContext(available: Labels[], mapping: number[] | null): Labels[] {
 }
 
 function obligationView(ob: ObligationDiagnostic, source = ""): ObligationView {
-  const types = ob.types;
   // An edge fails at what its destination required, so a destination role that
   // names something specific describes it. A generic destination leaves the
   // source end to describe it, which is where a dispatch role sits. A
@@ -296,7 +303,7 @@ function obligationView(ob: ObligationDiagnostic, source = ""): ObligationView {
     pos: sourceMap?.pos || null,
     environmentStart: sourceMap?.environmentStart ?? null,
     requiredResult: ob.requiredResult
-      ? typeText(types, ob.requiredResult)
+      ? recordType(ob, ob.requiredResult)
       : "",
     rows: [],
     graph: [],
@@ -317,8 +324,8 @@ function obligationView(ob: ObligationDiagnostic, source = ""): ObligationView {
     view.rows = required.map((need, slot) => ({
       slot,
       binding: names[slot] || "slot " + slot,
-      have: typeText(types, mapped[slot]),
-      need: typeText(types, need),
+      have: recordType(ob, mapped[slot]),
+      need: recordType(ob, need),
       differs: !sameType(mapped[slot], need),
     }));
     view.conclusion = "";
@@ -371,7 +378,7 @@ function obligationView(ob: ObligationDiagnostic, source = ""): ObligationView {
   // Nothing was attempted at a point: a production failure is about the
   // certificate as a whole, and `presentObligation` says what it was.
   if (ob.kind === "production-failure") {
-    view.conclusion = typeText(types, null);
+    view.conclusion = recordType(ob, null);
     return view;
   }
   if (ob.kind === "source-refusal") {
@@ -381,7 +388,7 @@ function obligationView(ob: ObligationDiagnostic, source = ""): ObligationView {
     return view;
   }
   if (ob.kind === "direct-obligation") {
-    const direct = directView(types,ob.judgment);
+    const direct = directView(ob,ob.judgment);
     view.title = direct.title;
     view.what = "A generic value's instance could not be shown within its binder's bound.";
     view.summary = direct.summary;
@@ -394,7 +401,7 @@ function obligationView(ob: ObligationDiagnostic, source = ""): ObligationView {
   view.rows = sequent.context.map((entry, slot) => ({
     slot,
     binding: names[slot] || "slot " + slot,
-    have: typeText(types, entry),
+    have: recordType(ob, entry),
     // The source map names the saved result by the expression it came from; the
     // role is what says that this one is the value being returned.
     note:
@@ -403,7 +410,7 @@ function obligationView(ob: ObligationDiagnostic, source = ""): ObligationView {
         : "",
   }));
   view.term = termText(sequent.term);
-  view.conclusion = typeText(types, sequent.type);
+  view.conclusion = recordType(ob, sequent.type);
   // A node obligation records its own required facts, when it has any. A
   // closure's expression claim is raised away from the graph and has no node to
   // carry them.
@@ -432,7 +439,7 @@ export default obligationReader;
  */
 export function presentObligation(ob: ObligationDiagnostic, source: string): ObligationView {
   const view = obligationReader.obligationView(ob,source);
-  view.graph = graphDefinitions(decodeGraph(ob.types));
+  view.graph = graphDefinitions(decodeGraph(ob.types), ob.names);
   if (ob.kind === "production-failure") {
     view.title = "Certificate production stopped";
     view.what = ob.failure;
@@ -468,7 +475,7 @@ export function presentObligation(ob: ObligationDiagnostic, source: string): Obl
     const slot = typeof q.term === "object" && "var" in q.term ? q.term.var.i : undefined;
     const row = slot === undefined ? undefined : view.rows.find(r => r.slot === slot);
     if (row) {
-      const required = typeText(ob.types,q.type);
+      const required = recordType(ob,q.type);
       const isReturn = view.role === "return-contract" || view.role === "closure-result";
       view.focus = {subject:row.binding,available:row.have,required,
         requiredLabel:isReturn ? "Required return type" : "Required type"};
@@ -492,7 +499,7 @@ export function presentObligation(ob: ObligationDiagnostic, source: string): Obl
         const r = view.rows.find((r) => r.slot === s);
         return r ? [`${r.binding}: ${r.have}`] : [];
       });
-      view.summary = `No rule derives this ${form}${op} at ${typeText(ob.types,q.type)}` +
+      view.summary = `No rule derives this ${form}${op} at ${recordType(ob,q.type)}` +
         (operands.length ? ` from ${operands.join(", ")}.` : ".");
     }
     assumptions = context(q.context);
