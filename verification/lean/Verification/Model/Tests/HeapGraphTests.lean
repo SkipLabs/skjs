@@ -77,11 +77,11 @@ private def cycleCertificate := certificate.set 5
   {cycleCertificate[5] with effect := some (.ordinary cycleValue), output := ordinaryOutput readResult}) 0)
 
 -- The external checker consumes the same facts and effects through strict JSON.
-private def request : RequestJson.Request :=
+private def request : RequestJson.Request RequestJson.Table Nat :=
   ⟨T,program,certificate.map CertificateProducer.signature,[1],0,[], []⟩
-private def response : RequestJson.Response := ⟨certificate, []⟩
+private def response : RequestJson.Response Nat := ⟨certificate, []⟩
 #guard RequestJson.verify request response
-#guard match RequestJson.verifyJson (Lean.toJson request) (Lean.toJson response) with
+#guard match RequestJson.verifyJson RequestJson.Table (Lean.toJson request) (Lean.toJson response) with
   | .ok _ => true
   | .error _ => false
 -- All nested effect evidence is bounds checked, not only the root header.

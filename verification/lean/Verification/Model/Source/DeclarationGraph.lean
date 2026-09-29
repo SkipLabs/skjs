@@ -135,7 +135,7 @@ private structure Memo where
   its operands' clauses, filled once they are (`settle`). -/
   pending : List (Nat × List (List Nat)) := []
 
-private abbrev Lowering := StateT Memo SourceTypes.Lowering
+private abbrev Lowering := StateT Memo (SourceTypes.Lowering SourceTypes.Table)
 
 /-- A type up to rows with identical clauses, which denote the same type
 (`SourceTypes.canonical`): each label is its row, a producer's row for
@@ -582,14 +582,14 @@ private def meetRow (parts : List (List Nat)) : Lowering (List Nat) := do
       if table[row]? == some (.clauses []) then
         modifyThe SourceTypes.Table (·.set row r)
         return [row]
-    return [← (SourceTypes.internRow r : SourceTypes.Lowering Nat)]
+    return [← (SourceTypes.bounded x cs params.tail : SourceTypes.Lowering SourceTypes.Table Nat)]
 
 /-- Intersect established contracts using the same lowering as source intersections.
 All operands are complete here; no declaration equations may remain pending.
 An empty ground intersection is retained as bottom: the initialization unit must
 still establish each operand. A contradictory module input must not mask that
 unit's failing obligation by preventing construction of all requests. -/
-def intersectTypes (parts : List (List Nat)) : SourceTypes.Lowering (List Nat) :=
+def intersectTypes (parts : List (List Nat)) : SourceTypes.Lowering SourceTypes.Table (List Nat) :=
   (do
     let G := SourceTypes.graph (← getThe SourceTypes.Table)
     if parts.all G.plainTy then
@@ -597,6 +597,9 @@ def intersectTypes (parts : List (List Nat)) : SourceTypes.Lowering (List Nat) :
     let result ← meetRow parts
     complete
     pure result).run' {}
+
+/-- The finite table's intersections are lowered as its declarations' are. -/
+instance : LabelStore.Meets SourceTypes.Table Nat := ⟨intersectTypes⟩
 
 mutual
 /-- A rest's type: a pack parameter's row, or the pack of any number of
@@ -730,7 +733,8 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     | some (.pack _) => throw "an argument pack used as a value type"
     | none => throw "a type parameter outside its generic method"
   | "literal" =>
-    Fragment.translate (Json.mkObj [("top", toJson false), ("atoms", toJson [← literalAtom term])])
+    (Fragment.translate (Json.mkObj [("top", toJson false), ("atoms", toJson [← literalAtom term])]) :
+      SourceTypes.Lowering SourceTypes.Table _)
   | "union" =>
     let parts ← arr term "parts"
     let arms ← parts.mapM (lowerType ds owner params seen)
@@ -780,7 +784,7 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     let element ← lowerType ds owner params seen (← field term "element")
     let readonly ← bool term "readonly"
     let store ← use (.list ⟨[], [], some element, readonly, ← fromJson? (← field term "presence")⟩ [])
-    return [← use (SourceTypes.arrayClause (← arrayExcludedKeys ds) store readonly)]
+    return [← use (SourceTypes.arrayClause (← arrayExcludedKeys ds) store RequestJson.arrayProtoLabel readonly)]
   | "tuple" =>
     CellClaims.fieldsExactly term ["k", "readonly", "presence", "required", "optional", "rest", "span"]
     let required ← (← arr term "required").mapM (lowerType ds owner params seen)
@@ -790,7 +794,7 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
       some <$> lowerType ds owner params seen restTerm
     let readonly ← bool term "readonly"
     let store ← use (.list ⟨required.toList, optional.toList, rest, readonly, ← fromJson? (← field term "presence")⟩ [])
-    return [← use (SourceTypes.arrayClause (← arrayExcludedKeys ds) store readonly)]
+    return [← use (SourceTypes.arrayClause (← arrayExcludedKeys ds) store RequestJson.arrayProtoLabel readonly)]
   | "function" =>
     CellClaims.fieldsExactly term ["k", "receiver", "params", "rest", "result", "effect", "span"]
     let recv ← field term "receiver"
@@ -1130,7 +1134,7 @@ private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table)
     if !reserved row || applications.any (·.1 == row) || table[row]! != PositiveGraphs.GraphRow.clauses [] then
       throw "an array's reserved row is not an empty producer row"
     if store ≥ table.length then throw "an array's store names no row"
-    table := table.set row (.clauses [SourceTypes.arrayClause (← arrayExcludedKeys ds) store readonly])
+    table := table.set row (.clauses [SourceTypes.arrayClause (← arrayExcludedKeys ds) store RequestJson.arrayProtoLabel readonly])
   -- A reserved application at all its arguments is that row from the start,
   -- for the declarations' equations too, and so is a reserved intersection.
   let mut memo : Memo := { floor := 4 + nullaryCount ds, meets := meets.map fun (r, ps) => (ps, r) }
@@ -1357,24 +1361,23 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
   -- (`dependentMeet`).
   let binderRows (names : List String) : Lowering (List (String × Nat)) := do
     let rec rowOf : Nat → String → Lowering Nat
-      | 0, n => (SourceTypes.binderRow n : SourceTypes.Lowering Nat)
+      | 0, n => (SourceTypes.binderRow n : SourceTypes.Lowering SourceTypes.Table Nat)
       | fuel + 1, n => do
-        let p ← (SourceTypes.binderRow n : SourceTypes.Lowering Nat)
+        let p ← (SourceTypes.binderRow n : SourceTypes.Lowering SourceTypes.Table Nat)
         match scope.lookup n with
         | some b =>
           if b == .null then return p
           if groundTerm b then
-            let B ← (Fragment.translate (← annotationClaim ds b) : SourceTypes.Lowering _)
+            let B ← (Fragment.translate (← annotationClaim ds b) : SourceTypes.Lowering SourceTypes.Table _)
             let G := SourceTypes.graph (← getThe SourceTypes.Table)
             if B.isEmpty || !G.plainTy B then return p
-            return ← (SourceTypes.internRow (PositiveGraphs.GraphRow.meet p (B.flatMap G)) :
-              SourceTypes.Lowering Nat)
+            return ← (SourceTypes.bounded p (B.flatMap G) : SourceTypes.Lowering SourceTypes.Table Nat)
           match (b.getObjValAs? String "k").toOption, (b.getObjValAs? String "name").toOption with
           | some "binder", some m =>
             if m == n || (scope.lookup m).isNone then return p
             let r ← rowOf fuel m
-            match SourceTypes.dependentMeet (← getThe SourceTypes.Table) p r with
-            | some meet => (SourceTypes.internRow meet : SourceTypes.Lowering Nat)
+            match SourceTypes.dependentMeet (← getThe SourceTypes.Table) r with
+            | some (cs, also) => (SourceTypes.bounded p cs also : SourceTypes.Lowering SourceTypes.Table Nat)
             | none => return p
           | _, _ => return p
         | none => return p
@@ -1437,7 +1440,7 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
     if parts.isEmpty then throw "empty intersection"
     let rows ← binderRows (parts.toList.flatMap SourceTypes.binderNames).eraseDups
     return graphClaim (← meetRow (← parts.toList.mapM fun part =>
-      (Fragment.translate (SourceTypes.annotationAtRows rows part) : SourceTypes.Lowering _)))
+      (Fragment.translate (SourceTypes.annotationAtRows rows part) : SourceTypes.Lowering SourceTypes.Table _)))
   | "array" =>
     CellClaims.fieldsExactly term ["k", "readonly", "presence", "element", "span"]
     return arrayClaim [] [] (← recur (← field term "element")) (← bool term "readonly") (← fromJson? (← field term "presence"))
@@ -1480,7 +1483,7 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
     let asGraph (refusal : String) : Lowering Json := do
       let rows ← (sourceBinderNames term).mapM fun n => do
         let some claim := bound.lookup n | throw refusal
-        let labels ← (Fragment.translate claim : SourceTypes.Lowering _)
+        let labels ← (Fragment.translate claim : SourceTypes.Lowering SourceTypes.Table _)
         let G := SourceTypes.graph (← getThe SourceTypes.Table)
         match labels with
         | [l] => pure (n, BinderBinding.value l)
@@ -1539,7 +1542,7 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
       let atRows : Lowering Json := do
         let rows ← binderRows (args.toList.flatMap SourceTypes.binderNames).eraseDups
         let values ← args.mapM fun a =>
-          (Fragment.translate (SourceTypes.annotationAtRows rows a) : SourceTypes.Lowering _)
+          (Fragment.translate (SourceTypes.annotationAtRows rows a) : SourceTypes.Lowering SourceTypes.Table _)
         let values ← lowerApplication ds index values {}
         let labels ← groundApplication ds index values {}
         if labels.isEmpty then throw "generic application has no inhabited graph clause"
@@ -1559,7 +1562,7 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
     -- application is the one they name; an argument an instantiation fixes
     -- is read from its claim.
     let values ← (terms.zip args).mapM fun (t, a) =>
-      if mentionsKind "binder" t then (Fragment.translate a : SourceTypes.Lowering _)
+      if mentionsKind "binder" t then (Fragment.translate a : SourceTypes.Lowering SourceTypes.Table _)
       else lowerType ds ds.size #[] {} t
     let values ← lowerApplication ds index values {}
     -- An application given a row, a producer's reserved one among them, is
@@ -1591,7 +1594,8 @@ private partial def rewrite (ds : Array Definition) (j : Json)
       -- A ground type-parameter bound is its graph rows, whatever its form:
       -- the bound is only ever read as a type.
       if name == "bound" && value != .null && groundTerm value then
-        return (name, graphClaim (← Fragment.translate (← annotationClaim ds value)))
+        return (name, graphClaim (← (Fragment.translate (← annotationClaim ds value) :
+          SourceTypes.Lowering SourceTypes.Table _)))
       if annotationFields.contains name && value != .null then
         return (name, ← annotationClaim ds value [] scope)
       -- A method call's explicit type arguments: a list of annotations.
@@ -1607,11 +1611,11 @@ value. `instantiate` gives, for ground arguments in claim form, the callable
 at those arguments and each binder's bound at them, converted from the source
 terms with the binders fixed, so a declaration applied to a binder is an
 ordinary ground application. -/
-structure Instantiable where
+structure Instantiable (σ : Type) where
   name : String
   pos : Span
   binders : List String
-  instantiate : List (String × Json) → SourceTypes.Lowering (Json × List (String × Option Json))
+  instantiate : List (String × Json) → SourceTypes.Lowering σ (Json × List (String × Option Json))
 
 /-- Replace only the producer's empty reserved rows with equations derived
 from source declarations. The AST copy contains internal graph atoms only after
@@ -1620,7 +1624,7 @@ def prepare (ast : Json) (candidate : SourceTypes.Table)
     (applications : List (Nat × Nat × List (List Nat)) := [])
     (arrays : List (Nat × Nat × Bool) := [])
     (meets : List (Nat × List (List Nat)) := []) :
-    Except String (Json × SourceTypes.Table × List (String × Span × Json) × List Instantiable) := do
+    Except String (Json × SourceTypes.Table × List (String × Span × Json) × List (Instantiable SourceTypes.Table)) := do
   let document ← field ast "declarations"
   CellClaims.fieldsExactly document ["roots", "definitions", "values", "symbols"]
   -- A symbol key `{"symbol": i}` is the i-th listed `unique symbol` constant.
@@ -1643,7 +1647,7 @@ def prepare (ast : Json) (candidate : SourceTypes.Table)
   -- Every array lowered from here on reads the keys it excludes from
   -- `ArrayProto`'s row, so the row must name the ones its declaration does.
   if ds[0]?.any (·.identity == arrayProtoIdentity) &&
-      SourceTypes.arrayExcludedKeys (SourceTypes.graph types) != (← arrayExcludedKeys ds) then
+      SourceTypes.arrayExcludedKeys (SourceTypes.graph types) RequestJson.arrayProtoLabel != (← arrayExcludedKeys ds) then
     throw "ArrayProto's row names other keys than its declaration"
   -- Generic module functions, read from their source terms before the tree is
   -- converted.

@@ -11,7 +11,7 @@ Raw claims travel alongside the tree. Types remain JSON until consumed, so
 unsupported unused claims do not become invented types. Cell annotations and
 claims use the same bounded contract decoder. -/
 namespace Verification.Model.Fragment
-open Lean ProgramTyping PositiveRules
+open Lean ProgramTyping PositiveRules LabelStore
 
 /-- Validate a free required-parameter signature without projecting away object
 requirements: the receiver contract, the parameters, the result, and the
@@ -68,17 +68,20 @@ private def hasOptional (atom : Json) : Bool :=
   | .ok (.arr fs) => fs.any fun f => (f.getObjVal? "optional").toOption == some (.bool true)
   | _ => false
 
+section
+variable {σ ι : Type} [Labels ι] [Store σ ι]
+
 mutual
 /-- Callable operands recursively use the same value contracts as receivers
 and record fields. Every union and overload arm is checked. -/
-partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
+partial def callableType (j : Json) : SourceTypes.Lowering σ (Ty ι) := do
   CellClaims.fieldsExactly j ["top","atoms"]
   if ← (← jField j "top").getBool? then return [← SourceTypes.use .top]
   let arms ← (← jArr j "atoms").mapM fun atom => do
     if (← jStr (← jField atom "a")) == "graph" then
       CellClaims.fieldsExactly atom ["a", "label"]
-      let label ← (← jField atom "label").getNat?
-      if label >= (← get).length then throw "graph label is absent"
+      let label : ι ← fromJson? (← jField atom "label")
+      if !Store.valid (← get) label then throw "graph label is absent"
       return [label]
     else if (← jStr (← jField atom "a")) == "function" then
       let signatures ← (← CellClaims.conjuncts atom).mapM fun a => do
@@ -168,12 +171,12 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
       -- result is interned rather than refused for being outside the four
       -- fixed labels.
       SourceTypes.translateArm (← CellClaims.primitive single)
-  return arms.flatten.mergeSort (· ≤ ·) |>.eraseDups
+  return arms.flatten.mergeSort Labels.le |>.eraseDups
 
 /-- An array type: a tuple contract on a store, held by an object in its store
 field, invariantly or, for a readonly array, as a view. Element types are
 lowered as callable operands are. -/
-partial def arrayType (atom : Json) : SourceTypes.Lowering Nat := do
+partial def arrayType (atom : Json) : SourceTypes.Lowering σ ι := do
   CellClaims.fieldsExactly atom ["a","required","optional","rest","readonly","presence"]
   let required ← (← jArr atom "required").mapM callableType
   let optional ← (← jArr atom "optional").mapM callableType
@@ -190,7 +193,7 @@ writable under that one contract; any other is readonly, read at its read
 type, as in a plain record. A required field is an invariant field or a view;
 an optional one constrains its key only where the object has it, writable or
 readonly. Absorption does not apply to these records. -/
-partial def optionalRecord (atom : Json) : SourceTypes.Lowering Nat := do
+partial def optionalRecord (atom : Json) : SourceTypes.Lowering σ ι := do
   let fields ← CellClaims.decodeFields
     (Json.mkObj [("top",toJson false),("atoms",toJson [atom])])
   let lowered ← fields.mapM fun (name, read, write, optional) => do
@@ -199,14 +202,14 @@ partial def optionalRecord (atom : Json) : SourceTypes.Lowering Nat := do
   let invariant := lowered.filterMap fun (n, t, ro, o) => if o || ro then none else some (n, t)
   let views := lowered.filterMap fun (n, t, ro, o) => if !o && ro then some (n, t) else none
   let optional := lowered.filterMap fun (n, t, ro, o) =>
-    if o then some (⟨n, ro, t⟩ : OptionalField (Ty Nat)) else none
+    if o then some (⟨n, ro, t⟩ : OptionalField (Ty ι)) else none
   SourceTypes.use (.refs invariant [] views optional)
 
 end
 
 /-- Required record fields recursively admit value contracts. Decode both
 capabilities through the same table before checking invariance, field by field. -/
-private def cellContract (atom : Json) : SourceTypes.Lowering CellUnion.Contract := do
+private def cellContract (atom : Json) : SourceTypes.Lowering σ (CellUnion.Contract ι) := do
   let fields ← CellClaims.decodeShapes
     (Json.mkObj [("top",toJson false),("atoms",toJson [atom])])
   fields.mapM fun (name, read, write) => do
@@ -214,7 +217,7 @@ private def cellContract (atom : Json) : SourceTypes.Lowering CellUnion.Contract
 
 /-- Fields in canonical order, each once: conjunction is commutative and
 idempotent, so two spellings of one contract intern as one label. -/
-private def canonicalFields (fs : List (PropKey × Ty Nat)) : List (PropKey × Ty Nat) :=
+private def canonicalFields (fs : List (PropKey × Ty ι)) : List (PropKey × Ty ι) :=
   (fs.mergeSort fun a b => CellClaims.beforeFields [a] [b]).eraseDups
 
 /-- One object under every conjunct. Each conjunct is a record with views, as
@@ -223,14 +226,14 @@ readonly fields as views. The conjunction is their meet, the one a
 declaration's intersection gets (`PositiveNormalization.meetLists`, POSITIVE-TYPES.md
 "Conjunction and normalization"): one record operand holding every conjunct's invariant fields, and
 every conjunct's views. -/
-private def cellConjunction (atom : Json) : SourceTypes.Lowering Nat := do
+private def cellConjunction (atom : Json) : SourceTypes.Lowering σ ι := do
   let clauses ← (← CellClaims.conjuncts atom).mapM fun part => do
     let c ← cellContract part
     if !CellUnion.viewed c then
       throw "cell read and write types do not describe the same invariant"
     let fields := (c.filter fun f => !CellUnion.readonly f).map fun f => (f.name, f.read)
     let views := (c.filter CellUnion.readonly).map fun f => (f.name, f.read)
-    return [(.refs fields [] views : PositiveNormalization.Clause (Ty Nat))]
+    return [(.refs fields [] views : PositiveNormalization.Clause (Ty ι))]
   let some last := clauses.getLast? | throw "an empty conjunction is not a contract"
   match clauses.dropLast.foldr PositiveNormalization.meetLists last with
   | [.refs fields [] views [] [] []] =>
@@ -238,7 +241,7 @@ private def cellConjunction (atom : Json) : SourceTypes.Lowering Nat := do
   | _ => throw "a record conjunction meets as one record"
 
 /-- A callable bag is one value satisfying both contracts, never a union. -/
-private def callableObject (atom : Json) : SourceTypes.Lowering Nat := do
+private def callableObject (atom : Json) : SourceTypes.Lowering σ ι := do
   CellClaims.fieldsExactly atom ["a","function","bag"]
   let fn ← jField atom "function"
   let (recv,args,result,rest) ← callableShape fn
@@ -257,7 +260,7 @@ private def callableObject (atom : Json) : SourceTypes.Lowering Nat := do
 read/write contract into an existing invariant alternative (CellUnion.normalize_exact).
 Other unsupported arms reject the whole type; no projection is allowed.
 Record fields and arrow operands use the same recursive contract decoder. -/
-def translate (j : Json) : SourceTypes.Lowering (Ty Nat) := do
+def translate (j : Json) : SourceTypes.Lowering σ (Ty ι) := do
   if j == Json.mkObj [("unsupported", toJson true)] then
     throw "type claim unavailable from producer"
   CellClaims.fieldsExactly j ["top","atoms"]
@@ -284,8 +287,8 @@ def translate (j : Json) : SourceTypes.Lowering (Ty Nat) := do
     match ← jStr (← jField atom "a") with
     | "graph" =>
       CellClaims.fieldsExactly atom ["a", "label"]
-      let label ← (← jField atom "label").getNat?
-      if label >= (← get).length then throw "graph label is absent"
+      let label : ι ← fromJson? (← jField atom "label")
+      if !Store.valid (← get) label then throw "graph label is absent"
       return [label]
     | "callable" => return [← callableObject atom]
     | "constructor" => callableType single
@@ -296,18 +299,18 @@ def translate (j : Json) : SourceTypes.Lowering (Ty Nat) := do
     | "number" | "numberlit" | "string" | "stringlit" | "void" | "bigint" | "bigintlit" | "symbol" =>
       SourceTypes.numberLabels (← CellClaims.primitive single)
     | _ => SourceTypes.translate (← CellClaims.primitive single)
-  return (records ++ optionals ++ dictionaries ++ conjunctions ++ arms).flatten.mergeSort (· ≤ ·) |>.eraseDups
+  return (records ++ optionals ++ dictionaries ++ conjunctions ++ arms).flatten.mergeSort Labels.le |>.eraseDups
 
 /-- A point assertion separates the persistent reference type from a current
 contents predicate. It is never accepted by erasing `current`. Ordinary function
 signatures and nested function operands continue to use `translate`. -/
-structure PointType where
-  type : Ty Nat
+structure PointType (ι : Type) where
+  type : Ty ι
   /-- What the point's record currently holds, field by field, for the fields
   whose read and write contracts differ. A point naming no record has none. -/
-  current : Option (List (PropKey × Ty Nat)) := none
+  current : Option (List (PropKey × Ty ι)) := none
 
-def translatePoint (j : Json) : SourceTypes.Lowering PointType := do
+def translatePoint (j : Json) : SourceTypes.Lowering σ (PointType ι) := do
   -- Preserve the existing exact union translation when it succeeds.
   match ← SourceTypes.attempt (translate j) with
   | .ok A => return ⟨A,none⟩
@@ -321,6 +324,8 @@ def translatePoint (j : Json) : SourceTypes.Lowering PointType := do
     let current := (read.zip write).filterMap fun (r,w) => if r.2 == w.2 then none else some r
     if current.isEmpty then throw original
     return ⟨[← CellClaims.reference write],some current⟩
+
+end
 
 /-- Whether the model reserves a key for itself: an array's store, an
 object's prototype and a class's prototype object's own key (`classKeyOf`)

@@ -23,7 +23,7 @@ the receiver. -/
 def code : CallCode := .graph 1 [.var 1] [(.ret, none)] 0 []
 /-- The code at each signature it offers, from the frame the signature
 describes: the receiver, then the parameter. -/
-def codes : List CodeRequest :=
+def codes : List (CodeRequest Nat) :=
   signatures.map fun s => ⟨⟨1, [.var 1], [(.ret, none)], 0, [], s, none⟩, [⟨s.receiver :: s.arguments, s.result⟩]⟩
 def program : Program :=
   [⟨.makeAt code [valueField] [.tru],.bind 1,none⟩,
@@ -33,13 +33,13 @@ def program : Program :=
    ⟨.app (.var 1) (.var 0),.ret,none⟩]
 def claims : List (PointClaim Nat) :=
   [⟨[],[2]⟩,⟨[[2]],[2]⟩,⟨[[2],[2]],[0]⟩,⟨[[2],[2]],[1]⟩,⟨[[1],[2],[2]],[1]⟩]
-def request : Request := ⟨types,program,claims,[1],0,[],codes⟩
+def request : Request RequestJson.Table Nat := ⟨types,program,claims,[1],0,[],codes⟩
 
 private def ok (x : Except String α) : Bool := match x with | .ok _ => true | .error _ => false
-private def roundtrip (r : Request) : Except String Unit := do
+private def roundtrip (r : Request RequestJson.Table Nat) : Except String Unit := do
   let r ← Json.parse (toJson r).compress
-  let c ← produceJson r 8
-  verifyJson r (← Json.parse c.compress)
+  let c ← produceJson RequestJson.Table r 8
+  verifyJson RequestJson.Table r (← Json.parse c.compress)
 #guard ok (roundtrip request)
 -- Each advertised overload needs its own entry of the code table.
 #guard !ok (roundtrip {request with codes := codes.take 1})
@@ -94,7 +94,7 @@ private def creation := expression G pool 8 [] creationTerm [2]
 #guard match creation with
   | some e => ProgramCertificates.check G creationTerm [2] e (fun _ => true)
   | none => false
-private def creationPlan : DirectProof.Plan :=
+private def creationPlan : DirectProof.Plan Nat :=
   .rule ⟨[],creationTerm,[2]⟩ (.callableGraph []) [.rule ⟨[],.tru,[1]⟩ .tru []]
 #guard match DirectProof.render G pool [] creationPlan with
   | none => false
@@ -138,7 +138,7 @@ private def split : ArrowCert Nat :=
 -- An out-of-range label in a preserved suffix must fail the outer evidence gate.
 private def badSuffix : ArrowCert Nat :=
   .union [[0]] [0] [1] [[99]] .empty .empty
-#guard !validEvidence types.length (.node ⟨[],.nul,[0]⟩
+#guard !validEvidence (· < types.length) (.node ⟨[],.nul,[0]⟩
   (.sub (.core ⟨table,[([], (⟨[7], [[0]], [1], .unrestricted⟩,badSuffix))]⟩)) [])
 end ArgumentCertificates
 
@@ -152,57 +152,57 @@ private def graph : NormalGraph Nat := .ofRows fun i => rows[i]?.getD []
 row 9 or of `sigs`, each from the frame the signature describes. -/
 private def oneNode (arity : Nat) (e : Tm) : CallCode := .graph arity [e] [(.ret, none)] 0 []
 private def entries (arity : Nat) (e : Tm) (sigs : List (CallEffects.Arrow (List Nat))) :
-    List CodeRequest :=
+    List (CodeRequest Nat) :=
   sigs.map fun s => ⟨⟨arity, [e], [(.ret, none)], 0, [], s, none⟩, [⟨s.receiver :: s.arguments.take arity, s.result⟩]⟩
 private def overloads : List (CallEffects.Arrow (List Nat)) :=
   [⟨[7],[[0],[0],[1]],[1],.unrestricted⟩,⟨[7],[[0],[1],[1]],[1],.unrestricted⟩]
 private def body := Tm.make (oneNode 3 (.var 3)) .nul
-private def req : Request := ⟨rows,[⟨body,.bind 1,none⟩,⟨.var 0,.ret,none⟩],[⟨[],[9]⟩,⟨[[9]],[10]⟩],[10],0,[],
+private def req : Request RequestJson.Table Nat := ⟨rows,[⟨body,.bind 1,none⟩,⟨.var 0,.ret,none⟩],[⟨[],[9]⟩,⟨[[9]],[10]⟩],[10],0,[],
   entries 3 (.var 3) overloads⟩
-private def roundtrip (r : Request) : Except String Unit := do
+private def roundtrip (r : Request RequestJson.Table Nat) : Except String Unit := do
   let r ← Json.parse (toJson r).compress
-  let c ← produceJson r 8
-  verifyJson r (← Json.parse c.compress)
+  let c ← produceJson RequestJson.Table r 8
+  verifyJson RequestJson.Table r (← Json.parse c.compress)
 -- Each code sees the receiver, which it does not read, then its parameters.
 #guard ok (roundtrip req)
 -- Code taking more parameters than a signature offers is no entry of it.
 private def wideProgram : Program := [⟨.make (oneNode 4 (.var 3)) .nul,.bind 1,none⟩,⟨.var 0,.ret,none⟩]
-private def wideReq : Request := ⟨rows,wideProgram,req.claims,[10],0,[],entries 4 (.var 3) overloads⟩
+private def wideReq : Request RequestJson.Table Nat := ⟨rows,wideProgram,req.claims,[10],0,[],entries 4 (.var 3) overloads⟩
 #guard !ok (roundtrip wideReq)
-private def zeroReq : Request := ⟨rows,[⟨.make (oneNode 0 .nul) .nul,.ret,none⟩],[⟨[],[11]⟩],[11],0,[],
+private def zeroReq : Request RequestJson.Table Nat := ⟨rows,[⟨.make (oneNode 0 .nul) .nul,.ret,none⟩],[⟨[],[11]⟩],[11],0,[],
   entries 0 .nul [⟨[7], [], [0], .unrestricted⟩]⟩
 #guard ok (do
   let r := toJson zeroReq
-  verifyJson r (← produceJson r 8))
+  verifyJson RequestJson.Table r (← produceJson RequestJson.Table r 8))
 #guard (subtype graph (List.range rows.length |>.map fun i => [i]) [9] [11]).isNone
 #guard !validRequest {req with types := RequestJson.rows (rows ++ [[.arrs [⟨[7], [[0],[99]], [1], .unrestricted⟩] []]])}
 -- Native invocation reaches the same producer/JSON consumer as unary calls.
-private def callReq : Request :=
+private def callReq : Request RequestJson.Table Nat :=
   {req with
     program := [⟨body,.bind 1,none⟩,⟨.call (.var 0) [.nul,.tru,.fls],.ret,none⟩],
     claims := [⟨[],[9]⟩,⟨[[9]],[1]⟩], result := [1]}
 #guard ok (do
   let r := toJson callReq
-  verifyJson r (← produceJson r 8))
-private def zeroCallReq : Request :=
+  verifyJson RequestJson.Table r (← produceJson RequestJson.Table r 8))
+private def zeroCallReq : Request RequestJson.Table Nat :=
   {zeroReq with
     program := [⟨.call (.make (oneNode 0 .nul) .nul) [],.ret,none⟩],
     claims := [⟨[],[0]⟩], result := [0]}
 #guard ok (do
   let r := toJson zeroCallReq
-  verifyJson r (← produceJson r 8))
+  verifyJson RequestJson.Table r (← produceJson RequestJson.Table r 8))
 
 -- A callable's cell is updated by the first operand and read by the second.
 -- This exercises effectful operands through the callable-object application rule.
 private def cellRows := rows ++ RequestJson.rows [[.callable [(valueField, [1])] [] [⟨[7], [[0],[1]], [1], .unrestricted⟩] []]]
-private def cellCallReq : Request :=
+private def cellCallReq : Request RequestJson.Table Nat :=
   ⟨cellRows,
    [⟨.make (oneNode 2 (.var 2)) .tru,.bind 1,none⟩,
     ⟨.call (.var 0) [.write (.var 0) .fls,.read (.var 0)],.ret,none⟩],
    [⟨[],[12]⟩,⟨[[12]],[1]⟩],[1],0,[], entries 2 (.var 2) [⟨[7], [[0],[1]], [1], .unrestricted⟩]⟩
 #guard ok (do
   let r := toJson cellCallReq
-  verifyJson r (← produceJson r 8))
+  verifyJson RequestJson.Table r (← produceJson RequestJson.Table r 8))
 
 private def argPool := List.range rows.length |>.map fun i => [i]
 -- Search may neither truncate extra actuals nor supply missing ones silently.

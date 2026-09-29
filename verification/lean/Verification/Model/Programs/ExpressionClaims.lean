@@ -8,20 +8,26 @@ namespace Verification.Model.ExpressionClaims
 open Lean ProgramTyping ProgramCertificates PositiveRules PositiveGraphs PositiveNormalization RequestJson
 open PositiveCertificates (InstanceImageCheck finiteInstanceImages)
 
-structure Required where
+variable {ι : Type}
+
+structure Required (ι : Type) where
   pos : Nat × Nat
-  sequent : Sequent Nat
-  plan : Option DirectProof.Plan := none
+  sequent : Sequent ι
+  plan : Option (DirectProof.Plan ι) := none
   role : String := "expression-claim"
   /-- This obligation's source map: one descriptor per context binding. -/
   context : List Descriptor := []
 
-def checkUsing (G : NormalGraph Nat) (images : InstanceImageCheck G) (bound : Nat) (j : Sequent Nat) (e : Evidence Nat)
-    (codes : CodeEntry Nat → Bool := fun _ => false) : Bool :=
-  validEvidence bound e && decide (claim e = j) &&
+section
+variable [DecidableEq ι]
+
+/-- `valid` says which labels the graph's store holds. -/
+def checkUsing (G : NormalGraph ι) (images : InstanceImageCheck G) (valid : ι → Bool) (j : Sequent ι) (e : Evidence ι)
+    (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
+  validEvidence valid e && decide (claim e = j) &&
     checkScope j.context.length j.term && checkTreeUsing G images e codes
 
-theorem check_sound {G : NormalGraph Nat} {images : InstanceImageCheck G} {bound j e} {codes : CodeEntry Nat → Bool} (h : checkUsing G images bound j e codes = true)
+theorem check_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {valid j e} {codes : CodeEntry ι → Bool} (h : checkUsing G images valid j e codes = true)
     (hcodes : CodesSound G codes := by exact Verification.Model.ProgramCertificates.codesSound_none _) :
     HasTyUsing G images j.context j.term j.type := by
   simp only [checkUsing, Bool.and_eq_true, decide_eq_true_eq] at h
@@ -29,29 +35,31 @@ theorem check_sound {G : NormalGraph Nat} {images : InstanceImageCheck G} {bound
   rw [h.1.1.2] at ht
   exact ht
 
-def checkAllUsing (G : NormalGraph Nat) (images : InstanceImageCheck G) (bound : Nat) (rs : List Required) (es : List (Evidence Nat))
-    (codes : CodeEntry Nat → Bool := fun _ => false) : Bool :=
-  rs.length == es.length && (rs.zip es).all (fun (r,e) => checkUsing G images bound r.sequent e codes)
+def checkAllUsing (G : NormalGraph ι) (images : InstanceImageCheck G) (valid : ι → Bool) (rs : List (Required ι)) (es : List (Evidence ι))
+    (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
+  rs.length == es.length && (rs.zip es).all (fun (r,e) => checkUsing G images valid r.sequent e codes)
 
-theorem checkAll_sound {G : NormalGraph Nat} {images : InstanceImageCheck G} {bound rs es} {codes : CodeEntry Nat → Bool}
-    (h : checkAllUsing G images bound rs es codes = true)
+theorem checkAll_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {valid rs es} {codes : CodeEntry ι → Bool}
+    (h : checkAllUsing G images valid rs es codes = true)
     (hcodes : CodesSound G codes := by exact Verification.Model.ProgramCertificates.codesSound_none _)
     {r e} (hm : (r,e) ∈ rs.zip es) :
     HasTyUsing G images r.sequent.context r.sequent.term r.sequent.type := by
   simp only [checkAllUsing, Bool.and_eq_true, List.all_eq_true] at h
   exact check_sound (h.2 _ hm) hcodes
 
-def produceUsing (G : NormalGraph Nat) (images : InstanceImageCheck G) (labels : List Nat) (bound fuel : Nat)
-    (rs : List Required) : Except String (List (Evidence Nat)) := do
+/-- `valid` says which labels the graph's store holds, `all` lists them. -/
+def produceUsing [Hashable ι] [ToJson ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (labels : List ι)
+    (valid : ι → Bool) (all : List ι) (fuel : Nat)
+    (rs : List (Required ι)) : Except String (List (Evidence ι)) := do
   let pool := CertificateProducer.vocabulary G labels []
     (rs.flatMap (fun r => r.sequent.type :: r.sequent.context))
   -- Nested obligations render the same coercions again: one search cache
   -- serves them all, the graph and the pool being fixed here.
-  let mut cache : DirectProof.SubtypeCache := {}
+  let mut cache : DirectProof.SubtypeCache ι := {}
   let mut es := #[]
   for (r,index) in rs.zipIdx do
     let j := r.sequent
-    let candidate : Option (Evidence Nat) ← match r.plan with
+    let candidate : Option (Evidence ι) ← match r.plan with
       | some plan => do
         let (e, next) := DirectProof.renderWith G images pool j.context plan cache
         cache := next
@@ -62,13 +70,13 @@ def produceUsing (G : NormalGraph Nat) (images : InstanceImageCheck G) (labels :
     -- The graph code a unit creates is checked after its obligations are
     -- rendered: here every code is admitted, and acceptance checks the
     -- obligation again against the table its certificate checked.
-    let some e := candidate.filter (fun e => checkUsing G images bound j e (fun _ => true))
+    let some e := candidate.filter (fun e => checkUsing G images valid j e (fun _ => true))
       | throw (withDiagnostic s!"closure expression claim at [{r.pos.1},{r.pos.2}): evidence search failed"
           [("kind",toJson "expression-claim"),("phase",toJson "proof-search"),
            ("outcome",toJson "not-established"),("id",toJson s!"expression:{index}"),
            ("sourceMap",toJson (SourceMapEntry.mk r.pos r.role none r.context)),
            ("sequent",toJson j),("fuel",toJson fuel),
-           ("types",toJson ((List.range bound).map G))])
+           ("types",toJson (all.map G))])
     es := es.push e
   -- Each item passed `check` against its own obligation above, so no final
   -- aggregate check is repeated here; acceptance (`checkRequests`) checks
@@ -77,22 +85,24 @@ def produceUsing (G : NormalGraph Nat) (images : InstanceImageCheck G) (labels :
 
 /-- Node plans rendered where they can be: search hints, never obligations.
 A plan that does not render is dropped; its node is searched as any other. -/
-def renderKnownUsing (G : NormalGraph Nat) (images : InstanceImageCheck G) (labels : List Nat) (bound : Nat)
-    (plans : List DirectProof.Plan) : List (Evidence Nat) := Id.run do
+def renderKnownUsing [Hashable ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (labels : List ι) (valid : ι → Bool)
+    (plans : List (DirectProof.Plan ι)) : List (Evidence ι) := Id.run do
   let pool := CertificateProducer.vocabulary G labels [] (plans.flatMap fun p => p.goal.type :: p.goal.context)
-  let mut cache : DirectProof.SubtypeCache := {}
+  let mut cache : DirectProof.SubtypeCache ι := {}
   let mut es := #[]
   for plan in plans do
     let (e, next) := DirectProof.renderWith G images pool plan.goal.context plan cache
     cache := next
-    if let some e := e.filter (fun e => checkUsing G images bound plan.goal e (fun _ => true)) then es := es.push e
+    if let some e := e.filter (fun e => checkUsing G images valid plan.goal e (fun _ => true)) then es := es.push e
   return es.toList
 
 /-- The finite image checker, the default of the source path. -/
-abbrev check (G : NormalGraph Nat) := @checkUsing G (finiteInstanceImages G)
-abbrev checkAll (G : NormalGraph Nat) := @checkAllUsing G (finiteInstanceImages G)
-abbrev produce (G : NormalGraph Nat) := @produceUsing G (finiteInstanceImages G)
-abbrev renderKnown (G : NormalGraph Nat) := @renderKnownUsing G (finiteInstanceImages G)
+abbrev check (G : NormalGraph ι) := @checkUsing ι _ G (finiteInstanceImages G)
+abbrev checkAll (G : NormalGraph ι) := @checkAllUsing ι _ G (finiteInstanceImages G)
+abbrev produce [Hashable ι] [ToJson ι] (G : NormalGraph ι) := @produceUsing ι _ _ _ G (finiteInstanceImages G)
+abbrev renderKnown [Hashable ι] (G : NormalGraph ι) := @renderKnownUsing ι _ _ G (finiteInstanceImages G)
+
+end
 
 #print axioms checkAll_sound
 end Verification.Model.ExpressionClaims

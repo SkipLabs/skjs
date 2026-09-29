@@ -15,9 +15,9 @@ private def is [BEq α] (r : Except String α) (expected : α) : Bool :=
 private def produceSourceJson (j : Json) (fuel : Nat)
     (suggestions : List (ProgramCertificates.Sequent Nat) := [])
     (known : List (ProgramCertificates.Evidence Nat) := []) : Except String Json := do
-  let r ← decodeRequest j
-  let source : SourceRequest := ⟨r,[],[],[],[],[], [], []⟩
-  RequestJson.produceJson j fuel suggestions known [] (some source.searchLabels)
+  let r ← decodeRequest RequestJson.Table j
+  let source : SourceRequest SourceTypes.Table Nat := ⟨r,[],[],[],[],[], [], []⟩
+  RequestJson.produceJson RequestJson.Table j fuel suggestions known [] (some source.searchLabels)
 
 -- Runtime numeric operations retain signed zero. This is the same expression
 -- executed by the JS arithmetic suite: merging its zeros changes false to true.
@@ -421,14 +421,14 @@ private def numberStrings : List (UInt64 × String) := [
 #guard is (SourceTypes.translate ⟨false,[.boolLit true]⟩) ([1])
 #guard is (SourceTypes.translate ⟨false,[.boolLit false]⟩) ([2])
 #guard is (SourceTypes.translate ⟨false,[.boolLit false,.null,.boolLit true,.null]⟩) ([0,1,2])
-#guard is (SourceTypes.translate ⟨false,[]⟩) ([])
-#guard !ok (SourceTypes.translate ⟨true,[]⟩)
-#guard !ok (SourceTypes.translate ⟨false,[.str]⟩)
+#guard is (SourceTypes.translate ⟨false,[]⟩) ([] : List Nat)
+#guard !ok (SourceTypes.translate (ι := Nat) ⟨true,[]⟩)
+#guard !ok (SourceTypes.translate (ι := Nat) ⟨false,[.str]⟩)
 #guard (meet (.boolLit true) (.boolLit false) : List (Clause (List Nat))) == []
 #guard (meet .bool (.boolLit true) : List (Clause (List Nat))) == [.boolLit true]
 
 private def G0 := SourceTypes.graph SourceTypes.initial
-private def request (t : Tm) (A : Ty Nat) : Request :=
+private def request (t : Tm) (A : Ty Nat) : Request RequestJson.Table Nat :=
   ⟨SourceTypes.initial, [⟨t,.ret,none⟩], [⟨[],A⟩], A, 0, [], []⟩
 #guard ok (produceSourceJson (toJson (request .tru [1])) 5)
 #guard ok (produceSourceJson (toJson (request .fls [2])) 5)
@@ -458,9 +458,9 @@ private def checkLiteralNegation (q : Bool) : Except String Unit := do
     [((3,6),result),((4,6),wireTy ⟨false,[.boolLit q]⟩)]⟩
   let r ← extractFn fn claims
   let j := toJson r.toRequest
-  verifyJson j (← produceSourceJson j 10)
+  verifyJson RequestJson.Table j (← produceSourceJson j 10)
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels r.types.length 10 r.obligations
+    r.searchLabels (LabelStore.Store.valid r.types) (LabelStore.Store.labels r.types) 10 r.obligations
   pure ()
 #guard ok (checkLiteralNegation true)
 #guard ok (checkLiteralNegation false)
@@ -499,7 +499,7 @@ private def runPrimitive : Nat → ControlFlow.Program → Nat → Env → Optio
         let target := if tagHolds tag v then yes else no
         runPrimitive fuel P target.label (PointClaims.mapEnv target.mapping (push v ρ))
 
-private def runRequest (r : SourceRequest) : Option Tm := runPrimitive 100 r.program r.start (fun _ => .nul)
+private def runRequest (r : SourceRequest SourceTypes.Table Nat) : Option Tm := runPrimitive 100 r.program r.start (fun _ => .nul)
 
 private def branchFn (q : Bool) : Fragment.Fn :=
   ⟨"branch",(0,1),[],t,
@@ -577,7 +577,7 @@ private def parameterClaims : Fragment.Claims :=
     (wireTy ⟨false,[.bool]⟩),
     [(2,[("second",(wireTy ⟨false,[.bool]⟩)),("first",(wireTy ⟨false,[.null]⟩))])],
     [((4,5),(wireTy ⟨false,[.bool]⟩))]⟩
-private def runArguments (r : SourceRequest) (vs : List Tm) :=
+private def runArguments (r : SourceRequest SourceTypes.Table Nat) (vs : List Tm) :=
   runPrimitive 100 r.program r.start (fun i => vs[i]?.getD .nul)
 #guard is ((extractFn parameterFn parameterClaims).map (·.inputs)) [[0],[1,2]]
 #guard is ((extractFn parameterFn parameterClaims).map (fun r => runArguments r [.nul,.tru])) (some .tru)
@@ -610,7 +610,7 @@ private def cellClaims : Fragment.Claims :=
    [(2,[]),(8,[("cell",cellWire)]),(12,[("cell",cellWire),("alias",cellWire)])],
    [((4,7),cellWire),((5,6),t),((10,11),cellWire),
     ((14,19),b),((14,15),cellWire),((18,19),b)]⟩
-private def cellRequest : Request :=
+private def cellRequest : Request RequestJson.Table Nat :=
   (SourceExtraction.extractFn cellFn cellClaims).map (·.toRequest) |>.toOption.getD (request .nul [0])
 #guard ok (SourceExtraction.extractFn cellFn cellClaims)
 #guard ok (produceSourceJson (toJson cellRequest) 8)
@@ -662,7 +662,7 @@ private def captureClaims : Fragment.Claims :=
    [((4,7),cellWire),((5,6),t),((10,15),functionWire),((12,15),B),((12,13),cellWire),
     ((18,19),cellWire),((20,25),b),((20,21),cellWire),((24,25),b),
     ((28,33),B),((28,29),functionWire),((32,33),wireTy ⟨false,[.null]⟩)]⟩
-private def captureRequest : Request :=
+private def captureRequest : Request RequestJson.Table Nat :=
   (SourceExtraction.extractFn captureFn captureClaims).map (·.toRequest) |>.toOption.getD (request .nul [0])
 #guard ok (SourceExtraction.extractFn captureFn captureClaims)
 #guard ok (produceSourceJson (toJson captureRequest) 10)
@@ -687,7 +687,7 @@ private def branchCaptureClaims : Fragment.Claims :=
 #guard ok (do
   let r ← extractFn branchCaptureFn branchCaptureClaims
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels r.types.length 0 r.obligations
+    r.searchLabels (LabelStore.Store.valid r.types) (LabelStore.Store.labels r.types) 0 r.obligations
   pure ())
 
 
@@ -712,7 +712,7 @@ private def joinedCaptureClaims : Fragment.Claims :=
 #guard ok (do
   let r ← extractFn joinedCaptureFn joinedCaptureClaims
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels r.types.length 0 r.obligations
+    r.searchLabels (LabelStore.Store.valid r.types) (LabelStore.Store.labels r.types) 0 r.obligations
   pure ())
 
 
@@ -740,14 +740,14 @@ private def earlyCaptureClaims (q : Bool) : Fragment.Claims :=
 #guard [true,false].all fun q => ok (do
   let r ← extractFn (earlyCaptureFn q) (earlyCaptureClaims q)
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels r.types.length 0 r.obligations
+    r.searchLabels (LabelStore.Store.valid r.types) (LabelStore.Store.labels r.types) 0 r.obligations
   pure ())
 
 
 -- Supplemental proofs are necessary even when the whole lambda is typable.
 private def captureRequired := (extractFn captureFn captureClaims).toOption.getD ⟨captureRequest,[],[],[],[],[], [], []⟩
 #guard ok (ExpressionClaims.produce (RequestJson.graph captureRequest)
-  captureRequired.searchLabels captureRequest.types.length 10 captureRequired.obligations)
+  captureRequired.searchLabels (LabelStore.Store.valid captureRequest.types) (LabelStore.Store.labels captureRequest.types) 10 captureRequired.obligations)
 private def narrowedCapture : Fragment.Claims :=
   { captureClaims with exprs := captureClaims.exprs.map fun (pos,ty) =>
     (pos, if pos == (12,15) then t else ty) }
@@ -772,7 +772,7 @@ private def writerClaims : Fragment.Claims :=
 #guard ok (do
   let r ← extractFn writerFn writerClaims
   let _ ← produceSourceJson (toJson r.toRequest) 10
-  ExpressionClaims.produce (RequestJson.graph r.toRequest) r.searchLabels r.types.length 10 r.obligations)
+  ExpressionClaims.produce (RequestJson.graph r.toRequest) r.searchLabels (LabelStore.Store.valid r.types) (LabelStore.Store.labels r.types) 10 r.obligations)
 
 
 -- A single-return block has the same execution as its expression body, but
@@ -788,7 +788,7 @@ private def blockCaptureClaims (unitTy : Json) : Fragment.Claims :=
 private def blockObligations (unitTy : Json) : Except String Unit := do
   let r ← extractFn blockCaptureFn (blockCaptureClaims unitTy)
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels r.types.length 10 r.obligations
+    r.searchLabels (LabelStore.Store.valid r.types) (LabelStore.Store.labels r.types) 10 r.obligations
   let _ ← produceSourceJson (toJson r.toRequest) 10
   pure ()
 #guard ok (blockObligations (wireTy ⟨false,[.null]⟩))
@@ -835,14 +835,14 @@ private def widenedVariable := DirectProof.var [[1,2]] 0 [1,2]
   let r ← extractFn localWriterFn localWriterClaims
   if r.obligations.any (fun q => q.plan.isNone) then throw "missing recipe"
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels r.types.length 0 r.obligations
+    r.searchLabels (LabelStore.Store.valid r.types) (LabelStore.Store.labels r.types) 0 r.obligations
   pure ())
 
 -- A forged recipe or reused certificate is still rejected by the ordinary checker.
 private def forged : ProgramCertificates.Evidence Nat :=
   .node ⟨[],.fls,[1]⟩ .truLit []
 #guard !ok (produceSourceJson (toJson (request .fls [1])) 4 [] [forged])
-#guard !ok (ExpressionClaims.produce G0 [0,1,2,3] SourceTypes.initial.length 4
+#guard !ok (ExpressionClaims.produce G0 [0,1,2,3] (· < SourceTypes.initial.length) (List.range SourceTypes.initial.length) 4
   [⟨(0,1),⟨[],.fls,[1]⟩,some (DirectProof.node [] .fls [1] .truLit),"expression-claim",[]⟩])
 
 -- Source unions compose already-supported atoms, preserving every arm's checks.
@@ -880,7 +880,7 @@ private def localFn : Fragment.Fn :=
   ⟨"local",(0,1),[],wireTy ⟨false,[.boolLit true]⟩,
     [.cst (2,3) "x" (some (wireTy ⟨false,[.bool]⟩)) (.lit (4,5) (.vbool true)),
      .ret (6,9) (.var (8,9) "x")]⟩
-private def localClaims : SourceClaims.Function := {
+private def localClaims : SourceClaims.Function Nat := {
   name := "local", namePos := (0,1), params := [], ret := .ok [1]
   envs := [(2,[]),(6,[("x",.ok [1,2])])]
   exprs := [((4,5),.ok [1]),((8,9),.ok [1,2])] }
@@ -895,7 +895,7 @@ private def globalCertificate := (localCertificate []).toOption.get!
 #guard (localCertificate localRequest.cuts).toOption.isNone
 private def repairedLocal := (extractNormalizedFn SourceTypes.initial localFn
   {localClaims with envs := [(2,[]),(6,[("x",.ok [1])])]}).toOption.getD ⟨request .nul [0],[],[],[],[],[], [], []⟩
-#guard ok (RequestJson.produceJson (toJson repairedLocal.toRequest) 8 [] []
+#guard ok (RequestJson.produceJson RequestJson.Table (toJson repairedLocal.toRequest) 8 [] []
   repairedLocal.sourceMap (some repairedLocal.searchLabels) repairedLocal.assertions repairedLocal.cuts)
 
 -- Conjunction is one row whatever its arity. Record conjuncts meet as one
@@ -944,8 +944,8 @@ private def overloadClaims : Fragment.Claims :=
 #guard ok (do
   let r ← extractFn overloadFn overloadClaims
   let j := toJson r.toRequest
-  verifyJson j (← produceSourceJson j 10)
-  let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest) r.searchLabels r.types.length 0 r.obligations
+  verifyJson RequestJson.Table j (← produceSourceJson j 10)
+  let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest) r.searchLabels (LabelStore.Store.valid r.types) (LabelStore.Store.labels r.types) 0 r.obligations
   pure ())
 -- A claimed signature outside the annotated parameter is refused.
 #guard (match extractFn
@@ -976,7 +976,7 @@ private def callerClaims : Fragment.Claims :=
 #guard ok (do
   let r ← extractFn callerFn callerClaims
   let j := toJson r.toRequest
-  verifyJson j (← produceSourceJson j 8))
+  verifyJson RequestJson.Table j (← produceSourceJson j 8))
 #guard (match extractFn callerFn { callerClaims with params := [("a",wireTy ⟨false,[]⟩)] } with
   | .error e => e == "claimed parameter type differs from the source annotation for 'a'"
   | .ok _ => false)

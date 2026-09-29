@@ -9,14 +9,14 @@ private def source : Fragment.Fn :=
   ⟨"identity",(0,1),[⟨"flag",boolean,false⟩],boolean,
    [.ret (2,5) (.var (3,4) "flag")]⟩
 -- These claims have no SKJS type atoms, implicit bindings or function modes.
-private def claims : SourceClaims.Function :=
+private def claims : SourceClaims.Function Nat :=
   ⟨"identity",(0,1),[("flag",.ok [1,2])],.ok [1,2],
    [(2,[("flag",.ok [1,2])])],[((3,4),.ok [1,2])],[],[],[]⟩
-private def check (c : SourceClaims.Function) : Except String Unit := do
+private def check (c : SourceClaims.Function Nat) : Except String Unit := do
   let r ← extractNormalizedFn SourceTypes.initial source c
   let wire := toJson r.toRequest
-  let evidence ← RequestJson.produceJson wire 6 [] [] [] (some r.searchLabels)
-  RequestJson.verifyJson wire evidence
+  let evidence ← RequestJson.produceJson RequestJson.Table wire 6 [] [] [] (some r.searchLabels)
+  RequestJson.verifyJson RequestJson.Table wire evidence
 private def ok (x : Except String α) : Bool := match x with | .ok _ => true | .error _ => false
 #guard ok (check claims)
 #guard !ok (check { claims with envs := [(2,[("flag",.ok [2])])] })
@@ -32,11 +32,11 @@ private def ok (x : Except String α) : Bool := match x with | .ok _ => true | .
 #guard !ok (check { claims with envs := [(2,[("flag",.error "unsupported")])] })
 
 -- Existing evidence cannot justify a different normalized environment or type.
-private def checkAgainst (c : SourceClaims.Function) : Except String Unit := do
+private def checkAgainst (c : SourceClaims.Function Nat) : Except String Unit := do
   let original ← extractNormalizedFn SourceTypes.initial source claims
-  let evidence ← RequestJson.produceJson (toJson original.toRequest) 6 [] [] [] (some original.searchLabels)
+  let evidence ← RequestJson.produceJson RequestJson.Table (toJson original.toRequest) 6 [] [] [] (some original.searchLabels)
   let changed ← extractNormalizedFn SourceTypes.initial source c
-  RequestJson.verifyJson (toJson changed.toRequest) evidence
+  RequestJson.verifyJson RequestJson.Table (toJson changed.toRequest) evidence
 #guard !ok (checkAgainst { claims with envs := [(2,[("flag",.ok [2])])] })
 #guard !ok (checkAgainst { claims with exprs := [((3,4),.ok [2])] })
 

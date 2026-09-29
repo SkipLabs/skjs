@@ -22,7 +22,7 @@ private def program (body : Tm) : Program :=
    ⟨.app (.var 0) .nul,.ret,none⟩]
 private def claims : List (PointClaim Nat) :=
   [⟨[],[2]⟩,⟨[[2]],[1]⟩,⟨[[1],[2]],[0]⟩,⟨[[1],[2]],[0]⟩]
-private def request (body : Tm) : Request :=
+private def request (body : Tm) : Request RequestJson.Table Nat :=
   ⟨types,program body,claims,[0],0,[],oneNodeCodes 1 body [[2]] [⟨[3], [[0]], [0], .unrestricted⟩]⟩
 #guard ok (roundtrip (request body))
 

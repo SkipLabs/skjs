@@ -15,10 +15,10 @@ private def bindingSite (kind name : String) (start : Nat := 0) : Json :=
 /-- Native encoding ends here. Unavailable candidates remain at their original
 sites, so conversion cannot make a failed claim disappear. -/
 private def convertFunction (f : Fragment.Fn) (c : Fragment.Claims) (generic : Bool) (modeled : Bool := true) :
-    SourceTypes.Lowering (Function × List Json) := do
+    SourceTypes.Lowering SourceTypes.Table ((Function Nat) × List Json) := do
   let mut issues : List Json := []
   let candidate := fun (raw : Json) (point : Bool) => do
-    let rigid : Except String ClaimType := do
+    let rigid : Except String (ClaimType Nat) := do
       if (← raw.getObjValAs? Bool "top") then throw "not a rigid parameter"
       let atoms ← raw.getObjValAs? (List Json) "atoms"
       match atoms with
@@ -36,7 +36,7 @@ private def convertFunction (f : Fragment.Fn) (c : Fragment.Claims) (generic : B
       match p with
       | .ok p => return (.labels p.type,p.current)
       | .error e => return (.unavailable e,none)
-  let note := fun (site raw : Json) (A : ClaimType) => match A with
+  let note := fun (site raw : Json) (A : ClaimType Nat) => match A with
     | .unavailable reason => [issue f site raw reason]
     | _ => []
   let mut params := []
@@ -96,7 +96,7 @@ def convert (ast claims : Json) (fileKey : String) : Except String Json := do
     throw "duplicate function identity"
   if !cs.all (fun c => fs.any (fun f => f.name == c.name && f.namePos == c.namePos)) then
     throw "claim function identity is absent from source"
-  let mut functions : List Function := []
+  let mut functions : List (Function Nat) := []
   let mut omissions : List Json := []
   let mut types := SourceTypes.initial
   for f in fs do
@@ -112,7 +112,7 @@ def convert (ast claims : Json) (fileKey : String) : Except String Json := do
     types := grown
     omissions := omissions ++ omitted
     functions := functions ++ [converted]
-  let d : Document := ⟨fileKey,← jStr (← jField ast "sourceSha256"),types,functions,none⟩
+  let d : Document SourceTypes.Table Nat := ⟨fileKey,← jStr (← jField ast "sourceSha256"),types,functions,none⟩
   -- Enforce the destination schema, without requiring the claims to be complete.
   let _ ← SourceClaimJson.decode (toJson d)
   return Json.mkObj [("claims",toJson d),("omissions",toJson omissions)]
@@ -130,7 +130,7 @@ def inspect (claims : Json) (fileKey digest : String) : Except String Json := do
     functions := functions ++ [f]
     issues := issues ++ notes
     types := grown
-  let d : Document := ⟨fileKey,digest,types,functions,none⟩
+  let d : Document SourceTypes.Table Nat := ⟨fileKey,digest,types,functions,none⟩
   let _ ← SourceClaimJson.decode (toJson d)
   return Json.mkObj [("claims",toJson d),("omissions",toJson issues)]
 

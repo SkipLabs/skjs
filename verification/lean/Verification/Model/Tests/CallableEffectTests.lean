@@ -82,10 +82,10 @@ private def claims : List (PointClaim Nat) :=
   [⟨[],[1]⟩,⟨[[1]],[2]⟩,⟨[[2],[1]],[1]⟩,⟨[[1],[2],[1]],[1]⟩,
    ⟨[[1],[1],[2],[1]],[0]⟩,⟨[[1],[1],[2],[1]],[1]⟩,
    ⟨[[1],[1],[1],[2],[1]],[0]⟩,⟨[[1],[1],[1],[2],[1]],[9]⟩]
-private def request : Request := ⟨types,program,claims,[9],0,[],CallableGraphTests.codes⟩
+private def request : Request RequestJson.Table Nat := ⟨types,program,claims,[9],0,[],CallableGraphTests.codes⟩
 #guard match (do
-    let response ← produceJson (Lean.toJson request) 10
-    verifyJson (Lean.toJson request) response) with
+    let response ← produceJson RequestJson.Table (Lean.toJson request) 10
+    verifyJson RequestJson.Table (Lean.toJson request) response) with
   | .ok _ => true | .error _ => false
 
 /-- The precise return is the saved read value; invocation does not erase it. -/

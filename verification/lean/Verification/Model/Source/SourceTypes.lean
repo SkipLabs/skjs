@@ -1,19 +1,20 @@
 import Verification.Model.Types.Claim
 import Verification.Model.Source.RequestJson
 
-/-! Source types and the graph they are checked against. A program's graph is a
-table of clause rows in label order. It starts with the four primitive values
-and grows by interning each compound type the program mentions, so a label
-exists only because something used it, and a clause the table lacks has no
-label rather than a wrong one. Primitive unions translate exactly into the
-fixed first four labels. -/
+/-! Source types and the graph they are checked against. A program's types
+are labels of a store (`LabelStore.Store`): extraction interns each compound
+type the program mentions, so a label exists only because something used it,
+and a clause the store lacks has no label rather than a wrong one. Primitive
+unions translate exactly into the four primitive labels. The finite table of
+clause rows in label order, which starts with the four primitive values, is
+the store the pipeline runs on (`RequestJson.Table`). -/
 namespace Verification.Model.SourceTypes
-open ProgramTyping PositiveNormalization PositiveGraphs PositiveRules
+open ProgramTyping PositiveNormalization PositiveGraphs PositiveRules LabelStore
 open RequestJson (Row)
 
 /-- A table of rows in label order: clause rows, and the scheme and parameter
 rows generic methods need. -/
-abbrev Table := List RequestJson.Row
+abbrev Table := RequestJson.Table
 
 /-- The field an array object holds its store in. No source name spells it. -/
 def storeField : PropKey := CallArguments.arrayStoreField
@@ -45,31 +46,23 @@ def primitivePrototypes : List (Tag × String) :=
 /-- Every realm prototype a unit may read through, whether or not it names it. -/
 def prototypeNames : List String := arrayPrototypeName :: primitivePrototypes.map (·.2)
 
-/-- The row of `ArrayProto`, `Array.prototype`'s contract
-(`RequestJson.arrayProtoLabel`). -/
-abbrev arrayProtoLabel : Nat := RequestJson.arrayProtoLabel
-
 /-- An array type: its store at `store`, invariant or, for a readonly array, a
-view; the prototype as a view at `ArrayProto`; and none of `excluded`, the keys
-`ArrayProto` provides plus `constructor` (`arrayExcludedKeys`), among its own keys, so a read of one
-of them continues at the prototype. -/
-def arrayClause (excluded : List PropKey) (store : Nat) (readonly : Bool) : Clause (List Nat) :=
-  PositiveNormalization.arrayClauseOf [store] [arrayProtoLabel] excluded readonly
+view; the prototype as a view at `proto`, `ArrayProto`; and none of `excluded`,
+the keys `ArrayProto` provides plus `constructor` (`arrayExcludedKeys`), among
+its own keys, so a read of one of them continues at the prototype. -/
+def arrayClause (excluded : List PropKey) (store proto : ι) (readonly : Bool) : Clause (List ι) :=
+  PositiveNormalization.arrayClauseOf [store] [proto] excluded readonly
 
 /-- Labels 0 to 3: null, true, false, undefined. -/
 def initial : Table := [.clauses [.nul], .clauses [.boolLit true], .clauses [.boolLit false],
   .clauses [.undef]]
 
-def isPrimitive (i : Nat) : Bool := i < initial.length
-
-def graph (T : Table) : NormalGraph Nat := RequestJson.tableGraph T
-
-/-- The keys an array cannot own: `constructor` and those `ArrayProto`'s row names, its
-fields, views, optional fields and methods, the reserved keys aside. An array
-owns none of them, so reading one continues at the prototype; any other own
-key an array may have. -/
-def arrayExcludedKeys (G : NormalGraph Nat) : List PropKey :=
-  RequestJson.arrayExcludedKeysOf (expand G [arrayProtoLabel])
+/-- The keys an array cannot own: `constructor` and those `ArrayProto`'s row
+(`proto`) names, its fields, views, optional fields and methods, the reserved
+keys aside. An array owns none of them, so reading one continues at the
+prototype; any other own key an array may have. -/
+def arrayExcludedKeys (G : NormalGraph ι) (proto : ι) : List PropKey :=
+  RequestJson.arrayExcludedKeysOf (expand G [proto])
 where
   /-- Canonical excluded array keys (`RequestJson.arrayExcludedKeys`). -/
   ofKeys (ks : List PropKey) : List PropKey := RequestJson.arrayExcludedKeys ks
@@ -81,20 +74,25 @@ theorem arrayExcludedKeys_ofKeys_reserved {ks : List PropKey} {k : PropKey}
   have := List.mem_filter.mp ((List.mem_eraseDups).mp ((List.mem_mergeSort).mp h))
   simpa using this.2
 
-theorem arrayExcludedKeys_reserved {G : NormalGraph Nat} {k : PropKey} (h : k ∈ arrayExcludedKeys G) :
-    reservedKey k = false := by
+theorem arrayExcludedKeys_reserved {G : NormalGraph ι} {proto : ι} {k : PropKey}
+    (h : k ∈ arrayExcludedKeys G proto) : reservedKey k = false := by
   unfold arrayExcludedKeys RequestJson.arrayExcludedKeysOf at h
   split at h <;> exact arrayExcludedKeys_ofKeys_reserved h
 
-/-- The array type over `store` in the table's own graph. -/
-def arrayOf (T : Table) (store : Nat) (readonly : Bool) : Clause (List Nat) :=
-  arrayClause (arrayExcludedKeys (graph T)) store readonly
+section
+variable {σ ι : Type} [Labels ι] [Store σ ι]
 
-/-- The one user-facing rendering boundary for graph types. Label numbers are
-implementation references into `Table`, so diagnostics must call this function
-rather than interpolate a `Ty Nat`. The fallback names the semantic kind and
-never exposes its row indices. -/
-private def clauseName : Clause (List Nat) → String
+def graph (T : σ) : NormalGraph ι := Store.graph T
+
+/-- The array type over `store` in the store's own graph. -/
+def arrayOf (T : σ) (store : ι) (readonly : Bool) : Clause (List ι) :=
+  arrayClause (arrayExcludedKeys (graph T) (Store.arrayProto T)) store (Store.arrayProto T) readonly
+
+/-- The one user-facing rendering boundary for graph types. Labels are
+implementation references into the store, so diagnostics must call this
+function rather than interpolate a `Ty ι`. The fallback names the semantic
+kind and never exposes a label. -/
+private def clauseName : Clause (List ι) → String
   | .nul => "null"
   | .bool => "boolean"
   | .refs .. => "object"
@@ -116,66 +114,67 @@ private def clauseName : Clause (List Nat) → String
   | .symbol => "symbol"
   | .ctors .. => "constructor"
 
-def render (T : Table) (A : Ty Nat) : String :=
+def render (T : σ) (A : Ty ι) : String :=
   match expand (graph T) A with
   | [] => "never"
   | [.boolLit true, .boolLit false] | [.boolLit false, .boolLit true] => "boolean"
   | cs => String.intercalate " | " (cs.map clauseName).eraseDups
 
-#guard render initial [1, 2] == "boolean"
+/-- Translation grows the store as it goes. -/
+abbrev Lowering (σ : Type) := StateT σ (Except String)
 
-/-- A missing clause gets the table length, never a different contract. -/
-def label (T : Table) (c : Clause (List Nat)) : Nat := T.idxOf (GraphRow.clauses [c])
+/-- A union of clauses' label, interning it if the store lacks it. It
+remains a union of its clauses; this does not make it an intersection or
+assert a producer equation. -/
+def useRow (row : List (Clause (List ι))) : Lowering σ ι :=
+  modifyGet fun T => let (T, l) := Store.intern T row; (l, T)
 
-/-- Give a clause a row if it lacks one. Appending keeps every existing label. -/
-def intern (T : Table) (c : Clause (List Nat)) : Table :=
-  if GraphRow.clauses [c] ∈ T then T else T ++ [GraphRow.clauses [c]]
+def use (c : Clause (List ι)) : Lowering σ ι := useRow [c]
 
-/-- Translation grows the table as it goes. -/
-abbrev Lowering := StateT Table (Except String)
+/-- The parameter that stands for a generic unit's binder `name`
+(`Store.binder`). -/
+def binderRow (name : String) : Lowering σ ι := fun T => do
+  let (T, l) ← Store.binder T name
+  return (l, T)
 
-def use (c : Clause (List Nat)) : Lowering Nat :=
-  modifyGet fun T => let T' := intern T c; (label T' c, T')
-
-/-- The value parameter row that stands for a generic unit's binder `name`:
-the table's one value parameter row of that name that no scheme binds, or a
-new one. The row carries no meaning of its own: a unit over it is certified at
-every assignment of it (`Parametricity.accepted_at`). -/
-def binderRow (name : String) : Lowering Nat := do
-  let T ← get
-  let schemeBinders := T.flatMap fun
-    | .scheme bs .. => bs
-    | _ => []
-  let named := (List.range T.length).filter fun i => match (T[i]? : Option Row) with
-    | some (.param l n .value) => l == i && n == name && !schemeBinders.contains i
-    | _ => false
-  match named with
-  | [l] => return l
-  | [] =>
-    set (T ++ [GraphRow.param T.length name .value])
-    return T.length
-  | _ => throw s!"two parameter rows stand for the binder '{name}'"
-
-/-- The meet row a binder's parameter row `p` is read as when its bound is
-another binder, read as the row `r`: `p ⊓ r`, the meet of the two parameters,
-within `r`'s clauses when `r` is itself a meet. `U extends T` is `U ⊓ T`,
-which is below `T` (`PositiveRules.meetBelow`): at every instantiation within
-the bound, the meet is the binder. -/
-def dependentMeet (T : Table) (p r : Nat) : Option Row :=
-  match (T[r]? : Option Row) with
-  | some (.param _ _ .value) => some (.meet p [.top] [r])
-  | some (.meet q cs ps) => some (.meet p cs (q :: ps))
+/-- What a binder's parameter is met with when its bound is another binder,
+read as `r`: the parameter `r`, within `r`'s clauses and parameters when `r`
+is itself a meet. `U extends T` is `U ⊓ T`, which is below `T`
+(`PositiveRules.meetBelow`): at every instantiation within the bound, the
+meet is the binder. -/
+def dependentMeet (T : σ) (r : ι) : Option (List (Clause (List ι)) × List ι) :=
+  match Store.row T r with
+  | .param _ _ .value => some ([.top], [r])
+  | .meet q cs ps => some (cs, q :: ps)
   | _ => none
 
-/-- A row's label, interning it if the table lacks it. -/
-def internRow (r : Row) : Lowering Nat :=
-  modifyGet fun T => match T.idxOf? r with
-    | some i => (i, T)
-    | none => (T.length, T ++ [r])
+/-- A bounded binder's label: the parameter `p` within `cs` and the
+parameters `also` (`Store.bounded`). -/
+def bounded (p : ι) (cs : List (Clause (List ι))) (also : List ι := []) : Lowering σ ι :=
+  modifyGet fun T => let (T, l) := Store.bounded T p cs also; (l, T)
+
+/-- A type with each label replaced by the first label of the same row. Rows
+with identical clauses denote the same type: a declaration's row and an
+annotation's row can coincide without being the same label, for instance when
+a producer interned the annotation before the declaration row was filled. -/
+def canonical (T : σ) (A : List ι) : List ι :=
+  (A.map fun label => if Store.valid T label then
+      ((Store.labels T).find? (fun m => Store.row T m == Store.row T label)).getD label
+    else label)
+    |>.eraseDups.mergeSort Labels.le
+
+/-- Keep the store as it was when a translation fails, so a rejected candidate
+leaves no rows behind. -/
+def attempt (m : Lowering σ α) : Lowering σ (Except String α) := fun T =>
+  match m.run T with
+  | .ok (a, T') => .ok (.ok a, T')
+  | .error e => .ok (.error e, T)
+
+end
 
 /-- A source annotation in claim form with the named binders read as their
 parameter rows: each binder atom becomes the graph atom of its row. -/
-partial def annotationAtRows (rows : List (String × Nat)) : Lean.Json → Lean.Json
+partial def annotationAtRows [Lean.ToJson ι] (rows : List (String × ι)) : Lean.Json → Lean.Json
   | .arr xs => .arr (xs.map (annotationAtRows rows))
   | .obj kvs =>
     let j := Lean.Json.obj kvs
@@ -198,45 +197,35 @@ partial def binderNames : Lean.Json → List String
     | _, _ => (kvs.toList.flatMap fun (_, v) => binderNames v).eraseDups
   | _ => []
 
-/-- A type with each label replaced by the first row of the same content.
-Rows with identical clauses denote the same type: a declaration's row and an
-annotation's row can coincide without being the same label, for instance when
-a producer interned the annotation before the declaration row was filled. -/
-def canonical (T : Table) (A : List Nat) : List Nat :=
-  (A.map fun label => (List.range T.length).find? (fun m => T[m]? == T[label]?) |>.getD label)
-    |>.eraseDups.mergeSort (· ≤ ·)
+/-! ### The finite table
 
-/-- Intern a finite union as one graph row. It remains a union of its clauses;
-this does not make it an intersection or assert a producer equation. -/
-def useRow (row : List (Clause (List Nat))) : Lowering Nat :=
-  modifyGet fun T =>
-    let T' := if GraphRow.clauses row ∈ T then T else T ++ [GraphRow.clauses row]
-    (T'.idxOf (GraphRow.clauses row), T')
+What the finite table's labels mean, row by row: a label interned for a
+clause means exactly that clause, and the four primitive labels the four
+primitive values. -/
 
-/-- Keep the table as it was when a translation fails, so a rejected candidate
-leaves no rows behind. -/
-def attempt (m : Lowering α) : Lowering (Except String α) := fun T =>
-  match m.run T with
-  | .ok (a, T') => .ok (.ok a, T')
-  | .error e => .ok (.error e, T)
+/-- A missing clause gets the table length, never a different contract. -/
+def label (T : Table) (c : Clause (List Nat)) : Nat := T.idxOf (GraphRow.clauses [c])
+
+/-- Give a clause a row if it lacks one. Appending keeps every existing label. -/
+def intern (T : Table) (c : Clause (List Nat)) : Table := (RequestJson.Table.intern T [c]).1
 
 theorem use_run (c : Clause (List Nat)) (T : Table) :
     (use c).run T = .ok (label (intern T c) c, intern T c) := rfl
 
-theorem attempt_run (m : Lowering α) (T : Table) :
+theorem attempt_run (m : Lowering Table α) (T : Table) :
     (attempt m).run T = .ok (match m.run T with
       | .ok (a, T') => (.ok a, T') | .error e => (.error e, T)) := by
   unfold attempt StateT.run
   split <;> simp_all
 
 theorem mem_intern (T : Table) (c : Clause (List Nat)) : GraphRow.clauses [c] ∈ intern T c := by
-  unfold intern
+  unfold intern RequestJson.Table.intern
   split
   · assumption
   · exact List.mem_append_right _ (List.mem_singleton.mpr rfl)
 
 theorem intern_prefix (T : Table) (c : Clause (List Nat)) : T <+: intern T c := by
-  unfold intern
+  unfold intern RequestJson.Table.intern
   split
   · exact List.prefix_rfl
   · exact List.prefix_append _ _
@@ -297,17 +286,20 @@ theorem initial_plain {T : Table} (h : initial <+: T) {i : Nat} (hi : i < initia
 
 def admits (t : Claim.Ty) (v : Claim.Val) : Bool := t.atoms.any (Claim.inhabits v)
 
-def encode (t : Claim.Ty) : Ty Nat :=
-  (if admits t .vnull then [0] else []) ++
-  (if admits t (.vbool true) then [1] else []) ++
-  (if admits t (.vbool false) then [2] else []) ++
-  (if admits t .vundef then [3] else [])
+section
+variable {σ ι : Type} [Labels ι] [Store σ ι]
+
+def encode (t : Claim.Ty) : Ty ι :=
+  (if admits t .vnull then [Labels.nul] else []) ++
+  (if admits t (.vbool true) then [Labels.tru] else []) ++
+  (if admits t (.vbool false) then [Labels.fls] else []) ++
+  (if admits t .vundef then [Labels.undef] else [])
 
 def supportedAtom : Claim.Atom → Bool
   | .null | .undef | .bool | .boolLit _ => true
   | _ => false
 
-def translate (t : Claim.Ty) : Except String (Ty Nat) :=
+def translate (t : Claim.Ty) : Except String (Ty ι) :=
   if !t.top && t.atoms.all supportedAtom then .ok (encode t)
   else .error "source type outside the null/undefined/boolean/singleton fragment"
 
@@ -323,7 +315,7 @@ def value : Claim.Val → Except String Tm
 /-- Numbers are interned rather than given fixed rows, because the singletons
 are unbounded: the first four labels stay exactly the four primitive values,
 so every existing label and every proof about them is untouched. -/
-def numberLabels (t : Claim.Ty) : Lowering (Ty Nat) := do
+def numberLabels (t : Claim.Ty) : Lowering σ (Ty ι) := do
   let mut out := []
   for a in t.atoms do
     match a with
@@ -353,14 +345,16 @@ def isNumberAtom : Claim.Atom → Bool
 interned and its fixed primitives translate exactly as before. `translate` is
 the pure path and names only the four fixed labels, which is what a table that
 cannot grow needs; wherever one can grow, a number belongs in it. -/
-def translateArm (t : Claim.Ty) : Lowering (Ty Nat) := do
+def translateArm (t : Claim.Ty) : Lowering σ (Ty ι) := do
   -- `unknown` is semantic top: every value, and no operation through it.
   if t.top then return [← use .top]
   let numbers ← numberLabels ⟨t.top, t.atoms.filter isNumberAtom⟩
   let others ← match translate ⟨t.top, t.atoms.filter (fun a => !isNumberAtom a)⟩ with
     | .ok A => pure A
     | .error e => throw e
-  return (numbers ++ others).mergeSort (· ≤ ·) |>.eraseDups
+  return (numbers ++ others).mergeSort Labels.le |>.eraseDups
+
+end
 
 /-- This characterization also rules out extra nonprimitive modeled values. -/
 theorem encode_meaning {T : Table} (h : initial <+: T) (t : Claim.Ty) (n W v) :

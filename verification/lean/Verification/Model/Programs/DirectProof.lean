@@ -7,30 +7,32 @@ namespace Verification.Model.DirectProof
 open PositiveGraphs ProgramTyping ProgramCertificates PositiveNormalization PositiveRules CertificateProducer
 open PositiveCertificates (InstanceImageCheck finiteInstanceImages)
 
-inductive Plan where
-  | rule (goal : Sequent Nat) (rule : Rule Nat) (children : List Plan)
-  | cast (goal : Sequent Nat) (child : Plan)
+variable {ι : Type}
 
-def Plan.goal : Plan → Sequent Nat
+inductive Plan (ι : Type) where
+  | rule (goal : Sequent ι) (rule : Rule ι) (children : List (Plan ι))
+  | cast (goal : Sequent ι) (child : Plan ι)
+
+def Plan.goal : Plan ι → Sequent ι
   | .rule j _ _ | .cast j _ => j
 
-def Plan.term (p : Plan) : Tm := p.goal.term
-def Plan.type (p : Plan) : Ty Nat := p.goal.type
+def Plan.term (p : Plan ι) : Tm := p.goal.term
+def Plan.type (p : Plan ι) : Ty ι := p.goal.type
 
-def cast (Γ : List (Ty Nat)) (A : Ty Nat) (p : Plan) : Plan :=
+def cast (Γ : List (Ty ι)) (A : Ty ι) (p : Plan ι) : Plan ι :=
   .cast ⟨Γ,p.term,A⟩ p
 
-def node (Γ : List (Ty Nat)) (t : Tm) (A : Ty Nat) (r : Rule Nat)
-    (ps : List Plan := []) : Plan := .rule ⟨Γ,t,A⟩ r ps
+def node (Γ : List (Ty ι)) (t : Tm) (A : Ty ι) (r : Rule ι)
+    (ps : List (Plan ι) := []) : Plan ι := .rule ⟨Γ,t,A⟩ r ps
 
-def var (Γ : List (Ty Nat)) (i : Nat) (A : Ty Nat) : Plan := node Γ (.var i) A .var
+def var (Γ : List (Ty ι)) (i : Nat) (A : Ty ι) : Plan ι := node Γ (.var i) A .var
 
-def letE (Γ : List (Ty Nat)) (a b : Plan) : Plan :=
+def letE (Γ : List (Ty ι)) (a b : Plan ι) : Plan ι :=
   node Γ (.letE a.term b.term) b.type .letE [a,b]
 
 /-- A known Boolean still evaluates its condition; only its reachable arm
 needs the requested result type. The consumer checks the singleton premise. -/
-def ifE (G : NormalGraph Nat) (Γ : List (Ty Nat)) (A : Ty Nat) (c t e : Plan) : Plan :=
+def ifE [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (A : Ty ι) (c t e : Plan ι) : Plan ι :=
   match expand G c.type with
   | [.boolLit q] => node Γ (.ite c.term t.term e.term) A (.ifKnown q)
       [c, cast Γ A (if q then t else e)]
@@ -39,15 +41,19 @@ def ifE (G : NormalGraph Nat) (Γ : List (Ty Nat)) (A : Ty Nat) (c t e : Plan) :
 /-- Subtype search results already found, by source and target type. The graph,
 its image checker and the pool are fixed for one cache's life, so the two
 types are the key. -/
-abbrev SubtypeCache := Std.HashMap (Ty Nat × Ty Nat) (Option (PositiveCertificates.Proof Nat))
+abbrev SubtypeCache (ι : Type) [BEq ι] [Hashable ι] :=
+  Std.HashMap (Ty ι × Ty ι) (Option (PositiveCertificates.Proof ι))
+
+section
+variable [DecidableEq ι] [Hashable ι]
 
 /-- Rendering fails, or rebuilds evidence, with the searches done so far. -/
-abbrev RenderM := OptionT (StateM SubtypeCache)
+abbrev RenderM (ι : Type) [DecidableEq ι] [Hashable ι] := OptionT (StateM (SubtypeCache ι))
 
 /-- `coerce`, each search done once per cache: the same search again returns
 what it did the first time. -/
-def coerceM (G : NormalGraph Nat) (images : InstanceImageCheck G) (pool : List (Ty Nat)) (e : Evidence Nat) (A : Ty Nat) :
-    RenderM (Evidence Nat) := do
+def coerceM (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (e : Evidence ι) (A : Ty ι) :
+    RenderM ι (Evidence ι) := do
   if (claim e).type = A then return e
   let key := ((claim e).type, A)
   let found ← match (← get).get? key with
@@ -62,8 +68,8 @@ def coerceM (G : NormalGraph Nat) (images : InstanceImageCheck G) (pool : List (
 /-- Rebuild the recipe in the actual context. Variable leaves explicitly coerce
 from that context to the planned type. This handles justified changes of supplied
 statement environments without assuming the planned context holds. -/
-def renderAt (G : NormalGraph Nat) (images : InstanceImageCheck G) (pool : List (Ty Nat)) :
-    Nat → List (Ty Nat) → Plan → RenderM (Evidence Nat)
+def renderAt (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) :
+    Nat → List (Ty ι) → Plan ι → RenderM ι (Evidence ι)
   | 0, _, _ => failure
   | depth+1, Γ, p => do
    match p with
@@ -102,19 +108,21 @@ def renderAt (G : NormalGraph Nat) (images : InstanceImageCheck G) (pool : List 
       let es ← children.attach.mapM fun q => renderAt G images pool depth Γ q.val
       pure (.node ⟨Γ,j.term,j.type⟩ r es)
 
-def Plan.depth : Plan → Nat
+def Plan.depth : Plan ι → Nat
   | .cast _ p => 1 + p.depth
   | .rule _ _ ps => 1 + (ps.map Plan.depth).foldl max 0
 
 /-- Render with the searches of earlier renders over the same graph and pool. -/
-def renderWith (G : NormalGraph Nat) (images : InstanceImageCheck G) (pool : List (Ty Nat)) (Γ : List (Ty Nat)) (p : Plan)
-    (cache : SubtypeCache) : Option (Evidence Nat) × SubtypeCache :=
+def renderWith (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (Γ : List (Ty ι)) (p : Plan ι)
+    (cache : SubtypeCache ι) : Option (Evidence ι) × SubtypeCache ι :=
   (renderAt G images pool p.depth Γ p).run.run cache
 
-def renderUsing (G : NormalGraph Nat) (images : InstanceImageCheck G) (pool : List (Ty Nat)) (Γ : List (Ty Nat)) (p : Plan) :
-    Option (Evidence Nat) :=
+def renderUsing (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (Γ : List (Ty ι)) (p : Plan ι) :
+    Option (Evidence ι) :=
   (renderWith G images pool Γ p {}).1
 
 /-- The finite image checker, the default. -/
-abbrev render (G : NormalGraph Nat) := @renderUsing G (finiteInstanceImages G)
+abbrev render (G : NormalGraph ι) := @renderUsing ι _ _ G (finiteInstanceImages G)
+
+end
 end Verification.Model.DirectProof

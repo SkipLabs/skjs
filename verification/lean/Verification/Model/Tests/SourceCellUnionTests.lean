@@ -26,7 +26,7 @@ private def withBody (body : Fragment.Expr) : Fragment.Fn :=
       (.lit (29,30) .vnull))]⟩
 private def source (mutate : Bool) : Fragment.Fn :=
   withBody (if mutate then .comma (12,27) write read else read)
-private def claims : SourceClaims.Function :=
+private def claims : SourceClaims.Function Nat :=
   ⟨"cells",(0,1),[],.ok [0,1,2],[(2,[]),(8,[("cell",.ok [4,5])])],
    [((4,7),.ok [4]),((5,6),.ok [0]),((9,30),.ok [0,1,2]),((9,27),.ok [6]),((12,27),.ok [0,1,2]),
     ((12,20),.ok [0]),((12,13),.ok [4,5]),((19,20),.ok [0]),
@@ -37,11 +37,13 @@ private def claims : SourceClaims.Function :=
 #guard ((Fragment.translate union).run' SourceTypes.initial).toOption == some [4,5]
 #guard [false,true].all fun mutate => (extractNormalizedFn table (source mutate) claims).toOption.isSome
 
-private def check (f : Fragment.Fn) (c : SourceClaims.Function) : Except String Unit := do
+-- Compiling this specializes the extraction at the finite table.
+set_option maxHeartbeats 1000000 in
+private def check (f : Fragment.Fn) (c : SourceClaims.Function Nat) : Except String Unit := do
   let r ← extractNormalizedFn table f c
   let proofs ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels r.types.length 0 r.obligations
-  let j ← RequestJson.produceJson (toJson r.toRequest) 10 [] proofs
+    r.searchLabels (LabelStore.Store.valid r.types) (LabelStore.Store.labels r.types) 0 r.obligations
+  let j ← RequestJson.produceJson RequestJson.Table (toJson r.toRequest) 10 [] proofs
     r.sourceMap (some r.searchLabels) r.assertions r.cuts r.codeHints
   let response ← RequestJson.decodeResponse r.toRequest j
   if !checkRequests [r] ⟨[response],[proofs]⟩ then throw "source consumer rejected evidence"
@@ -55,7 +57,7 @@ private def ok (x : Except String α) : Bool := match x with | .ok _ => true | .
 #guard [false,true].all fun mutate => ok (check (source mutate) claims)
 -- An observation implied by every invariant survives capture, with a located
 -- obligation over the union of possible stored values.
-private def observed (R : Ty Nat) : SourceClaims.Function :=
+private def observed (R : Ty Nat) : SourceClaims.Function Nat :=
   {claims with exprCurrent := [((24,25),[("value",R)])]}
 #guard [false,true].all fun mutate =>
   ok (check (source mutate) (observed [0,1,2]))
@@ -82,7 +84,7 @@ private def observed (R : Ty Nat) : SourceClaims.Function :=
 -- Extraction succeeds; its independently checked write obligation must fail.
 private def wrongWrite := withBody (.comma (12,27)
   (.write (12,20) "value" (.var (12,13) "cell") (.lit (19,20) (.vbool true))) read)
-private def wrongClaims : SourceClaims.Function := {claims with
+private def wrongClaims : SourceClaims.Function Nat := {claims with
   exprs := claims.exprs.map fun (pos,c) =>
     if pos == (12,20) || pos == (19,20) then (pos,.ok [1]) else (pos,c)}
 #guard (extractNormalizedFn table wrongWrite wrongClaims).toOption.isSome
@@ -92,7 +94,7 @@ private def wrongClaims : SourceClaims.Function := {claims with
 -- read from the bound slot, then returned; the capture at the cell union.
 #guard match extractNormalizedFn table (source false) claims with
   | .error _ => false
-  | .ok r => r.codes.any fun (q : RequestJson.CodeRequest) =>
+  | .ok r => r.codes.any fun (q : RequestJson.CodeRequest Nat) =>
       q.entry.exprs == [.var 0, .readAt valueField (.var 0), .var 2] && q.entry.captures == [[4,5]]
 
 -- Statement-entry observations name the captured binding. Nested closures and
@@ -107,7 +109,7 @@ private def entrySource (mutate nested : Bool) : Fragment.Fn :=
   withBody (if mutate then .block (12,28) [.effect (12,20) write,
       if nested then .ret (14,28) returned else .ret (23,28) returned]
     else if nested then returned else body)
-private def entryClaims (nested : Bool) (R : Ty Nat) : SourceClaims.Function :=
+private def entryClaims (nested : Bool) (R : Ty Nat) : SourceClaims.Function Nat :=
   {claims with
     envs := claims.envs ++ [(23,
       (if nested then [("inner",.ok [0])] else []) ++
@@ -128,7 +130,7 @@ private def entryClaims (nested : Bool) (R : Ty Nat) : SourceClaims.Function :=
 -- and the pipeline cases check what the lowering produces.
 -- A false entry environment cannot erase the Boolean-capable alternative,
 -- even when its separate contents observation is valid for the narrowed type.
-private def narrowedEntry : SourceClaims.Function :=
+private def narrowedEntry : SourceClaims.Function Nat :=
   let c := entryClaims true [0]
   {c with envs := c.envs.map fun (pos,env) =>
     (pos, if pos == 23 then env.map (fun (name,A) =>
@@ -139,6 +141,6 @@ private def narrowedEntry : SourceClaims.Function :=
   | .error _ => false
   | .ok r =>
     let proveRole := fun role => ExpressionClaims.produce (RequestJson.graph r.toRequest)
-      r.searchLabels r.types.length 0 (r.obligations.filter (·.role == role))
+      r.searchLabels (LabelStore.Store.valid r.types) (LabelStore.Store.labels r.types) 0 (r.obligations.filter (·.role == role))
     (proveRole "heap-observation").toOption.isSome
 end Verification.Model.SourceCellUnionTests

@@ -7,12 +7,12 @@ open Lean ProgramTyping ProgramCertificates ControlFlow RequestJson PositiveGrap
 private def types : List (List (PositiveNormalization.Clause (List Nat))) :=
   [[.bool],[.nul],[.refs [(valueField, [0])] [] []],[.arrs [⟨[4], [[1]], [0], .unrestricted⟩] []],[.top],[.undef]]
 private def ok (r : Except String α) : Bool := match r with | .ok _ => true | .error _ => false
-private def roundtrip (r : Request) : Except String Unit := do
+private def roundtrip (r : Request RequestJson.Table Nat) : Except String Unit := do
   let input ← Json.parse (toJson r).compress
-  let evidence ← produceJson input 10
-  verifyJson input (← Json.parse evidence.compress)
+  let evidence ← produceJson RequestJson.Table input 10
+  verifyJson RequestJson.Table input (← Json.parse evidence.compress)
 
-private def branch (c t e : Tm) : Request :=
+private def branch (c t e : Tm) : Request RequestJson.Table Nat :=
   ⟨types,[⟨.ite c t e,.ret,none⟩],[⟨[[0]],[0]⟩],[0],0,[[0]], []⟩
 #guard ok (roundtrip (branch (.var 0) .tru .fls))
 #guard !ok (roundtrip (branch .nul .tru .fls))
@@ -62,7 +62,7 @@ private def refinedProof : Evidence Nat :=
 #guard !checkTree RG (.node ⟨[[0,1],[0,1]],.ite (.var 0) (.var 1) .tru,[0]⟩
   (.ifBoolVar [0] [1]) [.node ⟨[[0],[0]],.var 1,[0]⟩ .var [],
     .node ⟨[[1],[0,1]],.tru,[0]⟩ .truLit []])
-#guard !validEvidence 3 (.node ⟨[[0,1]],.ite (.var 0) (.var 0) .tru,[0]⟩
+#guard !validEvidence (· < 3) (.node ⟨[[0,1]],.ite (.var 0) (.var 0) .tru,[0]⟩
   (.ifBoolVar [3] [1]) [refinedYes,refinedNo])
 private def refinedRecipe := DirectProof.node [[0,1]] (.ite (.var 0) (.var 0) .tru) [0]
   (.ifBoolVar [0] [1]) [DirectProof.var [[0]] 0 [0],DirectProof.node [[1]] .tru [0] .truLit]
@@ -136,7 +136,7 @@ private def nullProof : Evidence Nat :=
 private def readCell : Tm := .ite (.read (.var 2)) .tru .fls
 private def captureCode : CallCode := .graph 1 [readCell] [(.ret, none)] 0 [.var 0]
 private def captureEntry : CodeEntry Nat := ⟨1, [readCell], [(.ret, none)], 0, [[2]], ⟨[4], [[1]], [0], .unrestricted⟩, none⟩
-private def captureRequest (q : Bool) : Request :=
+private def captureRequest (q : Bool) : Request RequestJson.Table Nat :=
   ⟨types,
    [⟨.alloc .tru,.bind 1,none⟩,
     ⟨.make captureCode .nul,.bind 2,none⟩,

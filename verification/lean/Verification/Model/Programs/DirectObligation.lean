@@ -8,12 +8,12 @@ There is deliberately no prose field in this representation. A check either
 returns this closed judgment form or refuses the source for a separate reason.
 Readers derive every displayed sentence from these fields. -/
 namespace Verification.Model.DirectObligation
-open Lean
+open Lean LabelStore
 
 /-- `actual ≤ expected` between two ground types, at the source span
 `subject`. -/
-inductive Judgment where
-  | subtyping (subject : Span) (actual expected : List Nat)
+inductive Judgment (ι : Type) where
+  | subtyping (subject : Span) (actual expected : List ι)
   deriving BEq, Repr
 
 inductive SourceRole where
@@ -27,15 +27,15 @@ inductive SourceRole where
   | initializationOrder
   deriving BEq, Repr
 
-structure Located where
+structure Located (ι : Type) where
   pos : Span
   role : SourceRole
-  judgment : Judgment
+  judgment : Judgment ι
   deriving BEq, Repr
 
-inductive Failure where
+inductive Failure (ι : Type) where
   | refusal (pos : Span) (role : SourceRole) (reason : String)
-  | obligation (located : Located)
+  | obligation (located : Located ι)
   deriving BEq, Repr
 
 def SourceRole.wire : SourceRole → String
@@ -50,12 +50,12 @@ def SourceRole.wire : SourceRole → String
   | .callArgument => "call-argument"
   | .initializationOrder => "initialization-order"
 
-def Judgment.toJson : Judgment → Json
+def Judgment.toJson [ToJson ι] : Judgment ι → Json
   | .subtyping subject actual expected => Json.mkObj
       [("kind", Lean.toJson "subtyping"), ("subject", Lean.toJson subject),
        ("actual", Lean.toJson actual), ("expected", Lean.toJson expected)]
 
-def Judgment.render (T : SourceTypes.Table) : Judgment → String
+def Judgment.render {σ ι : Type} [Labels ι] [Store σ ι] (T : σ) : Judgment ι → String
   | .subtyping _ actual expected =>
       s!"{SourceTypes.render T actual} ≤ {SourceTypes.render T expected}"
 

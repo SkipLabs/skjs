@@ -71,11 +71,11 @@ private def program (callable : Bool) : Program :=
    ⟨.read (.var 0),.ret,none⟩]
 private def claims : List (PointClaim Nat) :=
   [⟨[],[2,3]⟩,⟨[[2,3]],[0]⟩,⟨[[2,3]],[1]⟩]
-private def request (callable : Bool) : Request :=
+private def request (callable : Bool) : Request RequestJson.Table Nat :=
   ⟨types,program callable,claims,[1],0,[], []⟩
 #guard [false,true].all fun callable => match (do
-    let response ← produceJson (Lean.toJson (request callable)) 8
-    verifyJson (Lean.toJson (request callable)) response) with
+    let response ← produceJson RequestJson.Table (Lean.toJson (request callable)) 8
+    verifyJson RequestJson.Table (Lean.toJson (request callable)) response) with
   | .ok _ => true | .error _ => false
 
 theorem returns_false (callable : Bool) : Execution (program callable) 9 []
@@ -102,11 +102,11 @@ private def framedProgram (callable : Bool) : Program :=
 private def framedClaims : List (PointClaim Nat) :=
   [⟨[],[2,3]⟩,⟨[[2,3]],[1]⟩,⟨[[1],[2,3]],[2]⟩,
    ⟨[[2],[1],[2,3]],[1]⟩,⟨[[1],[2],[1],[2,3]],[5]⟩]
-private def framedRequest (callable : Bool) : Request :=
+private def framedRequest (callable : Bool) : Request RequestJson.Table Nat :=
   ⟨types,framedProgram callable,framedClaims,[5],0,[], []⟩
 #guard [false,true].all fun callable => match (do
-    let response ← produceJson (Lean.toJson (framedRequest callable)) 8
-    verifyJson (Lean.toJson (framedRequest callable)) response) with
+    let response ← produceJson RequestJson.Table (Lean.toJson (framedRequest callable)) 8
+    verifyJson RequestJson.Table (Lean.toJson (framedRequest callable)) response) with
   | .ok _ => true | .error _ => false
 
 theorem framed_returns_false (callable : Bool) : Execution (framedProgram callable) 14 []

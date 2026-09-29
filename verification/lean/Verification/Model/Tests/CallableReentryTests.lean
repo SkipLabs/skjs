@@ -33,11 +33,11 @@ private def claims : List (PointClaim Nat) :=
   [⟨[],[2,3]⟩,⟨[[2,3]],[5]⟩,⟨[[5],[2,3]],[4]⟩,⟨[[4],[5],[2,3]],[1]⟩]
 /-- The codes: the reentrant function's, the callback's, and the inner
 callback's, created inside the callback's code and checked before it. -/
-private def codes (fresh : Bool) : List CodeRequest :=
+private def codes (fresh : Bool) : List (CodeRequest Nat) :=
   oneNodeCodes 1 .fls [] [⟨[7], [[0]], [1], .unrestricted⟩] ++
   oneNodeCodes 1 (body fresh) [[2,3]] [⟨[7], [[4]], [1], .unrestricted⟩] ++
   oneNodeCodes 1 callback [[5],[2,3]] [⟨[7], [[0]], [1], .unrestricted⟩]
-private def request (callable fresh : Bool) : Request :=
+private def request (callable fresh : Bool) : Request RequestJson.Table Nat :=
   ⟨types,program callable fresh,claims,[1],0,[],codes fresh⟩
 
 #guard [false,true].all fun callable => [false,true].all fun fresh =>
@@ -45,14 +45,14 @@ private def request (callable fresh : Bool) : Request :=
 
 -- Neither an entry-time read nor the current heap becomes a permanent false
 -- result contract for the function; every invocation checks only the invariant.
-private def badRequest (fresh : Bool) : Request :=
+private def badRequest (fresh : Bool) : Request RequestJson.Table Nat :=
   ⟨RequestJson.rows (types ++ [[Clause.arrs [⟨[7], [[4]], [6], .unrestricted⟩] []]]),
    [⟨.alloc .fls,.bind 1,none⟩, ⟨.make (oneNode 1 (body fresh) 1) .nul,.bind 2,none⟩, ⟨.nul,.ret,none⟩],
    [⟨[],[2,3]⟩,⟨[[2,3]],[9]⟩,⟨[[9],[2,3]],[0]⟩],[0],0,[],
    oneNodeCodes 1 (body fresh) [[2,3]] [⟨[7], [[4]], [6], .unrestricted⟩]⟩
 #guard [false,true].all fun fresh => !ok (roundtrip (badRequest fresh) 12)
 -- The reentrant function requires a Boolean-returning callback.
-private def nullCallback : Request :=
+private def nullCallback : Request RequestJson.Table Nat :=
   ⟨types,[⟨.app (.var 0) (.make (oneNode 1 .nul 0) .nul),.ret,none⟩],[⟨[[5]],[1]⟩],[1],0,[[5]],
    oneNodeCodes 1 .nul [] [⟨[7], [[0]], [1], .unrestricted⟩]⟩
 #guard !ok (roundtrip nullCallback)

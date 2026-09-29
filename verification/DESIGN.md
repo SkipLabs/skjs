@@ -255,7 +255,7 @@ claimed scheme becomes a row whose binders are fresh parameter rows, every
 claim and annotation inside it reads its binders as those rows (a bounded one
 as its meet with the bound), and its code is checked once, at the scheme's
 signatures. A code table entry holds at every assignment of the parameter
-rows (`CodesSound`, `checkCodes_reassign`), so at every instantiation; the
+rows (`CodesSound`, `codeChecked_sound`), so at every instantiation; the
 captures' types read none of the binders, so they mean the same at each.
 Generic closures nest, in function bodies and in generic ones alike. A call
 names its instance: the callee is read at the instance's signature, below the
@@ -1144,13 +1144,13 @@ unchanged ([design](#recursive-quantified-contracts)).
 | Application congruence (`EquationCongruence`) | done | proved |
 | Checked substitution (`EquationSubstitution`, `substitutionTableOk`) | done | proved |
 | One proved image checker for subtyping, expression typing and program certificates (`checkUsing`, `HasTyUsing`) | done | proved |
-| Formal specification ([RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md)): motivation, meet labels, quantified-α, family subtyping, lowering, wire format, acceptance statement | in progress | drafted; closes when the family-subtyping rule is reviewed |
-| Thread the image checker through heap, context, control-flow and certificate-production proofs | open | proved; no finite-only premise left on the program path |
-| Kernel: quantified-α, family entries, per-head variance declarations and `Var`, writable invariance kept ([§6–7](RECURSIVE-EQUATIONS.md#7-family-subtyping)) | open | proved, with the §7.7 controls as tests |
+| Formal specification ([RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md)): motivation, meet labels, quantified-α, family subtyping, lowering, wire format, acceptance statement | done | reviewed; corrected to the pipeline |
+| Thread the image checker through heap, context, control-flow and certificate-production proofs | done | proved; no finite-only premise left on the program path |
+| Kernel: quantified-α, family entries, per-head variance declarations and `Var`, writable invariance kept ([§6–7](RECURSIVE-EQUATIONS.md#7-family-subtyping)) | done | proved, with the §7.7 controls as tests; `promise-covariance` and its negative move with S7 |
 | S1. Source-claims wire with tree labels ([§9.1](RECURSIVE-EQUATIONS.md#91-source-claims-document)); a temporary Lean adapter keeps the finite path | done | every `cases.mts` outcome unchanged; tamper and field-name tests pass |
 | S2. Diagnostics show labels through a finite projection | open | identical diagnostics on every case |
-| S3. Kernel: meet labels, equation validator, tree codec and hashing | done | proved; no pipeline change |
-| S4. Source layer generic in its label type, still over the finite table | open | bit-identical evidence on the corpus |
+| S3. Kernel: meet labels, equation validator, tree codec and hashing | open | proved; no pipeline change |
+| S4. Source layer generic in its label type, still over the finite table | done | bit-identical evidence on the corpus |
 | S5. Equation lowering module ([§8](RECURSIVE-EQUATIONS.md#8-lowering-from-source)), not yet wired | open | lowers `Promise`, `PromiseLike`, `Pair` and the upstream declarations with no budget |
 | S6. Cutover: lowering wired, `DeclarationGraph`, its budgets and the adapter deleted, `checkJson_safe` over `Equations.graph` | open | `generic-growing-application` verifies; every recursive-generic gap reclassified by its new blocker |
 | S7. Variance proposals, `Var` and family entries in the certificate producer; `checkEquations` | open | `promise-covariance`, `-push` verify; `invalid-promise-covariance` rejected at its own obligation |

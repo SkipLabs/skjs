@@ -5,7 +5,7 @@ not lower TypeScript objects. It validates a bounded export and refuses to pick
 one side when SKJS's read and write types differ. The plain-cell interpretation
 excludes arrays, callable objects, accessors and hidden object behavior. -/
 namespace Verification.Model.CellClaims
-open Lean ProgramTyping PositiveRules SourceTypes
+open Lean ProgramTyping PositiveRules SourceTypes LabelStore
 
 def fieldsExactly (j : Json) (keys : List String) : Except String Unit := do
   let fields ← j.getObj?
@@ -96,20 +96,20 @@ def decode (j : Json) : Except String (List FieldClaim) := do
 
 /-- Equality is after exact primitive normalization. No widening of either side
 is allowed; readonly fields and different read/write contracts are rejected. -/
-def agreeContract (read write : Claim.Ty) : Except String (Ty Nat) := do
+def agreeContract [Labels ι] (read write : Claim.Ty) : Except String (Ty ι) := do
   let A ← SourceTypes.translate read
   let B ← SourceTypes.translate write
   if A = B then return A
   throw "cell read and write types do not describe the same invariant"
 
-theorem agreeContract_checked {read write : Claim.Ty} {A}
+theorem agreeContract_checked [Labels ι] {read write : Claim.Ty} {A : Ty ι}
     (h : agreeContract read write = .ok A) :
     SourceTypes.translate read = .ok A ∧ SourceTypes.translate write = .ok A := by
   unfold agreeContract at h
-  cases hr : SourceTypes.translate read with
+  cases hr : SourceTypes.translate (ι := ι) read with
   | error e => simp only [hr] at h; contradiction
   | ok R =>
-    cases hw : SourceTypes.translate write with
+    cases hw : SourceTypes.translate (ι := ι) write with
     | error e => simp only [hr,hw] at h; contradiction
     | ok W =>
       simp only [hr,hw] at h
@@ -122,7 +122,7 @@ theorem agreeContract_checked {read write : Claim.Ty} {A}
       · contradiction
 
 /-- A record's fields, each under the one contract its read and write agree on. -/
-def translateFields : List FieldClaim → Except String (List (PropKey × Ty Nat))
+def translateFields [Labels ι] : List FieldClaim → Except String (List (PropKey × Ty ι))
   | [] => .ok []
   | c :: cs =>
     match agreeContract c.read c.write, translateFields cs with
@@ -130,10 +130,10 @@ def translateFields : List FieldClaim → Except String (List (PropKey × Ty Nat
     | .error e, _ => .error e
     | _, .error e => .error e
 
-def translate (j : Json) : Except String (List (PropKey × Ty Nat)) := do
+def translate [Labels ι] (j : Json) : Except String (List (PropKey × Ty ι)) := do
   translateFields (← decode j)
 
-theorem translateFields_spec : ∀ {cs fs}, translateFields cs = .ok fs →
+theorem translateFields_spec [Labels ι] : ∀ {cs} {fs : List (PropKey × Ty ι)}, translateFields cs = .ok fs →
     cs.map FieldClaim.name = fs.map Prod.fst ∧
     ∀ p ∈ cs.zip fs, agreeContract p.1.read p.1.write = .ok p.2.2 := by
   intro cs
@@ -158,7 +158,7 @@ theorem translateFields_spec : ∀ {cs fs}, translateFields cs = .ok fs →
     · contradiction
     · contradiction
 
-theorem translate_checked {j : Json} {fs} (h : translate j = .ok fs) :
+theorem translate_checked [Labels ι] {j : Json} {fs : List (PropKey × Ty ι)} (h : translate j = .ok fs) :
     ∃ cs, decode j = .ok cs ∧ cs.map FieldClaim.name = fs.map Prod.fst ∧
       ∀ p ∈ cs.zip fs, agreeContract p.1.read p.1.write = .ok p.2.2 := by
   unfold translate at h
@@ -213,39 +213,38 @@ def conjuncts (atom : Json) : Except String (List Json) := do
         throw "nested conjunction in a cell contract"
     return plain :: others.toList
 
+section
+variable {σ ι : Type} [Labels ι] [Store σ ι]
+
 /-- The label of a location under one record contract. -/
-def reference (fs : List (PropKey × Ty Nat)) : Lowering Nat := use (.refs fs [] [])
+def reference (fs : List (PropKey × Ty ι)) : Lowering σ ι := use (.refs fs [] [])
 
 /-- The label of a location under one record contract with readonly views:
 the invariant fields and, separately, the fields read through a capability. -/
-def viewReference (fs vs : List (PropKey × Ty Nat)) : Lowering Nat := use (.refs fs [] vs)
+def viewReference (fs vs : List (PropKey × Ty ι)) : Lowering σ ι := use (.refs fs [] vs)
 
 /-- The one-field spelling, for the places that still speak of a single cell. -/
-def cellReference (A : Ty Nat) : Lowering Nat := reference [(valueField, A)]
-
-/-- Lexicographic order on label lists, for canonical operand order. -/
-def before : List Nat → List Nat → Bool
-  | [], _ => true
-  | _ :: _, [] => false
-  | a :: as, b :: bs => a < b || (a == b && before as bs)
+def cellReference (A : Ty ι) : Lowering σ ι := reference [(valueField, A)]
 
 /-- Field maps compare by name first, then by the labels their contracts got. -/
-def beforeFields : List (PropKey × Ty Nat) → List (PropKey × Ty Nat) → Bool
+def beforeFields : List (PropKey × Ty ι) → List (PropKey × Ty ι) → Bool
   | [], _ => true
   | _ :: _, [] => false
   | a :: as, b :: bs =>
-    a.1.before b.1 || (a.1 == b.1 && (before a.2 b.2 || (a.2 == b.2 && beforeFields as bs)))
+    a.1.before b.1 || (a.1 == b.1 && (Labels.before a.2 b.2 || (a.2 == b.2 && beforeFields as bs)))
 
 /-- A location under every contract in the conjunction. Conjunction is
 commutative and idempotent, so the operands are sorted and deduplicated, and a
 conjunction of one contract is the plain cell. -/
-def conjunction (atom : Json) : Lowering Nat := do
+def conjunction (atom : Json) : Lowering σ ι := do
   let parts ← conjuncts atom
   let types ← parts.mapM fun part =>
     translate (Json.mkObj [("top",toJson false),("atoms",toJson [part])])
   let first :: rest := (types.mergeSort beforeFields).eraseDups
     | throw "an empty conjunction is not a contract"
   use (.refs first rest [])
+
+end
 
 /-- The reference label denotes exactly the cell invariant, over any table
 holding its row, at every world and budget. -/
@@ -260,7 +259,7 @@ theorem reference_exact {T : Table} {fs : List (PropKey × Ty Nat)}
   exact fun h => ⟨recT_optT_nil h, MethodMembers.methodT_nil _ _ _⟩
 
 /-- Interning a reference yields a table holding its row and its label there. -/
-theorem reference_run {fs : List (PropKey × Ty Nat)} {T T' : Table} {l}
+theorem reference_run {fs : List (PropKey × Ty Nat)} {T T' : Table} {l : Nat}
     (h : (reference fs).run T = .ok (l, T')) :
     PositiveGraphs.GraphRow.clauses [.refs fs [] []] ∈ T' ∧ l = label T' (.refs fs [] []) ∧ T <+: T' :=
   use_spec h

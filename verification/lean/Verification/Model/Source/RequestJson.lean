@@ -2,6 +2,7 @@ import Lean.Data.Json
 import Verification.Model.Types.GraphRows
 import Verification.Model.Programs.Parametricity
 import Verification.Model.Programs.GraphCode
+import Verification.Model.Source.LabelStore
 
 /-! In-memory JSON boundary for the stateful consumer. A request and its
 evidence are separate inputs. This is a calculus protocol, not a decoder for
@@ -12,6 +13,7 @@ namespace Verification.Model.RequestJson
 open Lean ProgramTyping PositiveNormalization PositiveGraphs PositiveRules
 open ProgramCertificates PointClaims ControlFlow CertificateProducer
 open CallEffects (Arrow RestArrow Contract Effect)
+open LabelStore
 
 /-- A string key is its JSON string, so a document naming only string keys
 reads as it always has; a symbol key is `{"symbol": id}`. -/
@@ -207,7 +209,7 @@ def arrayExcludedKeys (ks : List PropKey) : List PropKey :=
 
 /-- The excluded array keys: `constructor` and the prototype row's fields', views', optional fields'
 and methods', the reserved keys aside. -/
-def arrayExcludedKeysOf : List (Clause (List Nat)) → List PropKey
+def arrayExcludedKeysOf : List (Clause (List ι)) → List PropKey
   | [.refs a bs vs os ms _] =>
     arrayExcludedKeys (((a :: bs).flatten ++ vs).map (·.1) ++ os.map (·.key) ++ ms.map (·.key))
   | _ => arrayExcludedKeys []
@@ -242,6 +244,100 @@ def tableGraph (T : List Row) : NormalGraph Nat :=
     (h : T[i]? = some (.clauses cs)) : (tableGraph T).plain i = true ∧ tableGraph T i = cs := by
   simp [tableGraph, NormalGraph.ofRowMap, NormalGraph.params, NormalGraph.plain, NormalGraph.clauses, h, GraphRow.union]
 
+/-! ### The finite table as a store
+
+A finite table's labels are its row positions, and its first four rows are
+the primitives: null, true, false, undefined (`SourceTypes.initial`). -/
+
+instance : Labels Nat where
+  toHashable := inferInstance
+  toOrd := inferInstance
+  toToJson := inferInstance
+  toFromJson := inferInstance
+  toRepr := inferInstance
+  decEq := inferInstance
+  nul := 0
+  tru := 1
+  fls := 2
+  undef := 3
+
+/-- A table of rows in label order. -/
+abbrev Table := List Row
+
+/-- Every label a row names indexes the table; a parameter row names itself;
+a scheme's binders are parameter rows, and a meet row's are value ones. -/
+def validRows (T : Table) : Bool :=
+  (T.flatMap GraphRow.operands).all (·.all (· < T.length)) &&
+  (List.range T.length).all fun i => match T[i]? with
+    | some (.param l _ _) => l == i
+    | some (.scheme bs _ _ _) => bs.all fun b => match T[b]? with
+      | some (.param _ _ _) => true
+      | _ => false
+    | some (.meet p _ ps) => (p :: ps).all fun q => match T[q]? with
+      | some (.param _ _ .value) => true
+      | _ => false
+    | _ => true
+
+namespace Table
+
+/-- A clause row's label: the first row with exactly these clauses, appended
+if there is none. Appending keeps every existing label. -/
+def intern (T : Table) (cs : List (Clause (List Nat))) : Table × Nat :=
+  let T' := if GraphRow.clauses cs ∈ T then T else T ++ [GraphRow.clauses cs]
+  (T', T'.idxOf (GraphRow.clauses cs))
+
+/-- Any row's label: its first occurrence, appended if there is none. -/
+def internRow (T : Table) (r : Row) : Table × Nat :=
+  match T.idxOf? r with
+  | some i => (T, i)
+  | none => (T ++ [r], T.length)
+
+/-- The value parameter row that stands for a generic unit's binder `name`:
+the table's one value parameter row of that name that no scheme binds, or a
+new one. The row carries no meaning of its own: a unit over it is certified at
+every assignment of it (`Parametricity.accepted_at`). -/
+def binder (T : Table) (name : String) : Except String (Table × Nat) := do
+  let schemeBinders := T.flatMap fun
+    | .scheme bs .. => bs
+    | _ => []
+  let named := (List.range T.length).filter fun i => match (T[i]? : Option Row) with
+    | some (.param l n .value) => l == i && n == name && !schemeBinders.contains i
+    | _ => false
+  match named with
+  | [l] => return (T, l)
+  | [] => return (T ++ [GraphRow.param T.length name .value], T.length)
+  | _ => throw s!"two parameter rows stand for the binder '{name}'"
+
+/-- A fresh value parameter row per name, in order. -/
+def binders (T : Table) (names : List String) : Table × List Nat :=
+  let params := names.zipIdx.map fun (n, i) => (n, T.length + i)
+  (T ++ params.map (fun (n, l) => GraphRow.param l n .value), params.map Prod.snd)
+
+end Table
+
+instance : Store Table Nat where
+  toToJson := inferInstance
+  toFromJson := inferInstance
+  graph := tableGraph
+  row T i := T[i]?.getD (.clauses [])
+  valid T i := i < T.length
+  wellFormed := validRows
+  labels T := List.range T.length
+  bound T := T.length
+  arrayProto _ := arrayProtoLabel
+  intern := Table.intern
+  lookup T cs := T.idxOf? (GraphRow.clauses cs)
+  binder := Table.binder
+  binders := Table.binders
+  bounded T p cs also := Table.internRow T (.meet p cs also)
+  scheme T bs sigs bounds rests := (T ++ [GraphRow.scheme bs sigs bounds rests], T.length)
+
+@[simp] theorem Table.graph_eq (T : Table) : Store.graph T = tableGraph T := rfl
+@[simp] theorem Table.nul_eq : (Labels.nul : Nat) = 0 := rfl
+@[simp] theorem Table.tru_eq : (Labels.tru : Nat) = 1 := rfl
+@[simp] theorem Table.fls_eq : (Labels.fls : Nat) = 2 := rfl
+@[simp] theorem Table.undef_eq : (Labels.undef : Nat) = 3 := rfl
+
 deriving instance ToJson, FromJson for Node
 deriving instance ToJson, FromJson for PositiveCertificates.ArrowCert
 deriving instance ToJson, FromJson for PositiveCertificates.Certificate
@@ -261,68 +357,57 @@ deriving instance ToJson, FromJson for CodeEntry
 
 /-- Graph code a request creates, at one signature it offers, with the point
 claims of its graph. Nested code comes before the code creating it. -/
-structure CodeRequest where
-  entry : CodeEntry Nat
-  claims : List (PointClaim Nat)
+structure CodeRequest (ι : Type) where
+  entry : CodeEntry ι
+  claims : List (PointClaim ι)
   deriving ToJson, FromJson
 
-structure Request where
-  types : List Row
+/-- A request over a store `σ` of labels `ι`: its program, point claims,
+result and inputs are typed by the store's labels. -/
+structure Request (σ ι : Type) where
+  types : σ
   program : Program
-  claims : List (PointClaim Nat)
-  result : Ty Nat
+  claims : List (PointClaim ι)
+  result : Ty ι
   start : Nat
   /-- External argument contract, in slot order; independent of point claims. -/
-  inputs : List (Ty Nat)
+  inputs : List (Ty ι)
   /-- The graph code the program creates, each at each signature it offers. -/
-  codes : List CodeRequest := []
+  codes : List (CodeRequest ι) := []
   deriving ToJson, FromJson
 
-structure Response where
-  certificate : ControlFlow.Certificate Nat
+structure Response (ι : Type) where
+  certificate : ControlFlow.Certificate ι
   /-- One certificate per code request, in its order. -/
-  codes : List (ControlFlow.Certificate Nat) := []
+  codes : List (ControlFlow.Certificate ι) := []
   deriving ToJson, FromJson
 
-def graph (r : Request) : NormalGraph Nat := tableGraph r.types
+section
+variable {σ ι : Type} [Labels ι] [Store σ ι]
 
-def validTy (bound : Nat) (A : Ty Nat) : Bool := A.all (fun i => i < bound)
+def graph (r : Request σ ι) : NormalGraph ι := Store.graph r.types
+
+def validTy (ok : ι → Bool) (A : Ty ι) : Bool := A.all ok
 
 /-- Use the clause language's operand traversal for boundary validation too. -/
-def clauseTypes : Clause (Ty Nat) → List (Ty Nat) := Clause.operands
+def clauseTypes : Clause (Ty ι) → List (Ty ι) := Clause.operands
 
-def validClaim (bound : Nat) (c : PointClaim Nat) : Bool :=
-  (c.type :: c.context).all (validTy bound)
-
-/-- The labels a row names. -/
-def rowTypes : Row → List (Ty Nat) := GraphRow.operands
-
-/-- Every label a row names indexes the table; a parameter row names itself;
-a scheme's binders are parameter rows, and a meet row's is a value one. -/
-def validRows (T : List Row) : Bool :=
-  (T.flatMap rowTypes).all (validTy T.length) &&
-  (List.range T.length).all fun i => match T[i]? with
-    | some (.param l _ _) => l == i
-    | some (.scheme bs _ _ _) => bs.all fun b => match T[b]? with
-      | some (.param _ _ _) => true
-      | _ => false
-    | some (.meet p _ ps) => (p :: ps).all fun q => match T[q]? with
-      | some (.param _ _ .value) => true
-      | _ => false
-    | _ => true
+def validClaim (ok : ι → Bool) (c : PointClaim ι) : Bool :=
+  (c.type :: c.context).all (validTy ok)
 
 /-- The total Lean graph's out-of-range default must not become an accidental
 meaning for an invalid serialized type reference. -/
-def validRequest (r : Request) : Bool :=
-  validRows r.types &&
-  r.claims.all (validClaim r.types.length) && validTy r.types.length r.result &&
-  r.inputs.all (validTy r.types.length) &&
-  r.codes.all fun q => q.claims.all (validClaim r.types.length) &&
+def validRequest (r : Request σ ι) : Bool :=
+  let ok := Store.valid r.types
+  Store.wellFormed r.types &&
+  r.claims.all (validClaim ok) && validTy ok r.result &&
+  r.inputs.all (validTy ok) &&
+  r.codes.all fun q => q.claims.all (validClaim ok) &&
     (q.entry.row.operands ++ q.entry.captures ++
       q.entry.store.toList).all
-      (validTy r.types.length)
+      (validTy ok)
 
-def arrowTypes : PositiveCertificates.ArrowCert Nat → List (Ty Nat)
+def arrowTypes : PositiveCertificates.ArrowCert ι → List (Ty ι)
   | .empty | .emptyRecv => []
   | .source p => p.operands
   | .rest s => s.operands
@@ -330,19 +415,19 @@ def arrowTypes : PositiveCertificates.ArrowCert Nat → List (Ty Nat)
   | .recvUnion a b l r => a :: b :: (arrowTypes l ++ arrowTypes r)
   | .combine a b _ _ l r => a :: b :: (arrowTypes l ++ arrowTypes r)
 
-def certificateTypes (c : PositiveCertificates.Certificate Nat) : List (Ty Nat) :=
+def certificateTypes (c : PositiveCertificates.Certificate ι) : List (Ty ι) :=
   c.table.flatMap (fun p => [p.1,p.2]) ++ c.arrows.flatMap (fun e =>
     e.1.flatMap Arrow.operands ++ e.2.1.operands ++
       arrowTypes e.2.2)
 
-def instanceTypes (c : PositiveCertificates.Instance Nat) : List (Ty Nat) :=
+def instanceTypes (c : PositiveCertificates.Instance ι) : List (Ty ι) :=
   c.domain :: c.instances ++ c.free.flatMap (fun p => [[p.1], p.2]) ++
     c.bounds.flatMap (fun c => match c with
       | some cert => certificateTypes cert
       | none => []) ++
     c.table.flatMap (fun e => [e.1] :: e.2.2 :: e.2.1.flatMap (fun p => [[p.1], p.2]))
 
-def proofTypes : PositiveCertificates.Proof Nat → List (Ty Nat)
+def proofTypes : PositiveCertificates.Proof ι → List (Ty ι)
   | .subset => []
   | .trans middle l r => middle :: (proofTypes l ++ proofTypes r)
   | .inst c => instanceTypes c
@@ -353,43 +438,46 @@ def proofTypes : PositiveCertificates.Proof Nat → List (Ty Nat)
       k.2.1.flatMap Arrow.operands ++
       k.2.2.1.flatMap RestArrow.operands ++ instanceTypes k.2.2.2)
 
-def validEvidence (bound : Nat) : ProgramCertificates.Evidence Nat → Bool
+def validEvidence (ok : ι → Bool) : ProgramCertificates.Evidence ι → Bool
   | .node j r ps =>
-    (j.type :: j.context).all (validTy bound) &&
+    (j.type :: j.context).all (validTy ok) &&
     (match r with
-      | .sub p => (proofTypes p).all (validTy bound)
+      | .sub p => (proofTypes p).all (validTy ok)
       | .bindMember ps => ps.all fun p =>
-          (p.1.flatMap proofTypes ++ proofTypes p.2).all (validTy bound)
-      | .ifBoolVar T F => validTy bound T && validTy bound F
-      | .funGraph As | .callableGraph As => As.all (validTy bound)
-      | .ctorGraph U => validTy bound U
-      | .callRest _ _ _ _ E => validTy bound E
-      | .arrCopy E => validTy bound E
-      | .readProto P => validTy bound P
-      | .elemOpt U | .elemAny U => validTy bound U
-      | .elemStr T U => validTy bound T && validTy bound U
+          (p.1.flatMap proofTypes ++ proofTypes p.2).all (validTy ok)
+      | .ifBoolVar T F => validTy ok T && validTy ok F
+      | .funGraph As | .callableGraph As => As.all (validTy ok)
+      | .ctorGraph U => validTy ok U
+      | .callRest _ _ _ _ E => validTy ok E
+      | .arrCopy E => validTy ok E
+      | .readProto P => validTy ok P
+      | .elemOpt U | .elemAny U => validTy ok U
+      | .elemStr T U => validTy ok T && validTy ok U
       | _ => true) &&
-    ps.attach.all (fun p => validEvidence bound p.val)
+    ps.attach.all (fun p => validEvidence ok p.val)
 termination_by e => sizeOf e
 decreasing_by
   have := List.sizeOf_lt_of_mem p.property
   simp only [ProgramCertificates.Evidence.node.sizeOf_spec]
   omega
 
-def validEffect (bound : Nat) : HeapExpressionRules.StepEvidence Nat → Bool
+def validEffect (ok : ι → Bool) : HeapExpressionRules.StepEvidence ι → Bool
   | .ordinary e | .pure e | .created e | .allocated e | .typedRead _ e | .written _ _ _ e =>
-    validEvidence bound e
-  | .slicedRead _ e p => validEvidence bound e && (proofTypes p).all (validTy bound)
+    validEvidence ok e
+  | .slicedRead _ e p => validEvidence ok e && (proofTypes p).all (validTy ok)
   | .observedRead _ _ | .knownValue _ _ => true
 
-def validCertificate (bound : Nat) (C : ControlFlow.Certificate Nat) : Bool :=
+def validCertificate (ok : ι → Bool) (C : ControlFlow.Certificate ι) : Bool :=
   C.all (fun n =>
-    validEvidence bound n.expression &&
-    (n.effect.map (validEffect bound)).getD true &&
-    (n.edges.flatMap id |>.flatMap proofTypes).all (validTy bound))
+    validEvidence ok n.expression &&
+    (n.effect.map (validEffect ok)).getD true &&
+    (n.edges.flatMap id |>.flatMap proofTypes).all (validTy ok))
 
-def validResponse (r : Request) (c : Response) : Bool :=
-  validCertificate r.types.length c.certificate && c.codes.all (validCertificate r.types.length)
+def validResponse (r : Request σ ι) (c : Response ι) : Bool :=
+  validCertificate (Store.valid r.types) c.certificate &&
+    c.codes.all (validCertificate (Store.valid r.types))
+
+end
 
 /-- Semantic JSON equality for strict field checking, independent of object
 field order. Re-encoding rejects unknown fields and defaulted omissions. -/
@@ -405,34 +493,38 @@ def decodeStrict [FromJson α] [ToJson α] (j : Json) : Except String α := do
   if sameJson j (toJson a) then return a
   throw "unknown fields or missing explicit fields in the calculus protocol"
 
-def decodeRequest (j : Json) : Except String Request := do
+section
+variable {σ ι : Type} [Labels ι] [Store σ ι]
+
+/-- A request over the store `σ`, which names how its table is spelled. -/
+def decodeRequest (σ : Type) [Store σ ι] (j : Json) : Except String (Request σ ι) := do
   let r ← decodeStrict j
   if validRequest r then return r
   throw "out-of-range type label in request"
 
-def decodeResponse (r : Request) (j : Json) : Except String Response := do
+def decodeResponse (r : Request σ ι) (j : Json) : Except String (Response ι) := do
   let c ← decodeStrict j
   if validResponse r c then return c
   throw "out-of-range type label in evidence"
 
 /-- The request's graph code, checked in order against its claims, as a table
 of what was checked (`GraphCode.checkCodes`). -/
-def codeTable (r : Request) (c : Response) : Option (List (CodeEntry Nat)) :=
+def codeTable (r : Request σ ι) (c : Response ι) : Option (List (CodeEntry ι)) :=
   if r.codes.length == c.codes.length &&
       (r.codes.zip c.codes).all (fun (q, C) => C.map signature == q.claims) then
     GraphCode.checkCodes (graph r) ((r.codes.map (·.entry)).zip c.codes)
   else none
 
 /-- This check remains independent of the producer and its search settings. -/
-def verify (r : Request) (c : Response) : Bool :=
+def verify (r : Request σ ι) (c : Response ι) : Bool :=
   validRequest r && validResponse r c &&
     match codeTable r c with
     | some table => CertificateProducer.accept (graph r) r.result r.program r.claims c.certificate
         r.start r.inputs (GraphCode.admits table)
     | none => false
 
-def verifyJson (request evidence : Json) : Except String Unit :=
-  match decodeRequest request with
+def verifyJson (σ : Type) [Store σ ι] (request evidence : Json) : Except String Unit :=
+  match decodeRequest σ request with
   | .error e => .error e
   | .ok r => match decodeResponse r evidence with
     | .error e => .error e
@@ -441,8 +533,8 @@ def verifyJson (request evidence : Json) : Except String Unit :=
 
 /-- Acceptance of JSON binds the theorem to the two decoded input objects. -/
 theorem verifyJson_checked {request evidence : Json}
-    (h : verifyJson request evidence = .ok ()) :
-    ∃ r c, decodeRequest request = .ok r ∧ decodeResponse r evidence = .ok c ∧ verify r c = true := by
+    (h : verifyJson (ι := ι) σ request evidence = .ok ()) :
+    ∃ r c, decodeRequest σ request = .ok r ∧ decodeResponse r evidence = .ok c ∧ verify r c = true := by
   unfold verifyJson at h
   split at h
   · contradiction
@@ -451,6 +543,8 @@ theorem verifyJson_checked {request evidence : Json}
     · split at h
       · exact ⟨_,_,by assumption,by assumption,by assumption⟩
       · contradiction
+
+end
 
 /-! ## Source maps
 
@@ -491,7 +585,10 @@ This transport leaves successful evidence JSON and the proof protocol unchanged.
 def withDiagnostic (message : String) (fields : List (String × Json)) : String :=
   message ++ "\nobligation-diagnostic: " ++ (Json.mkObj fields).compress
 
-def failureDiagnostic (r : Request) (fuel : Nat)
+section
+variable {σ ι : Type} [Labels ι] [Store σ ι]
+
+def failureDiagnostic (r : Request σ ι) (fuel : Nat)
     (sourceMap : SourceMap) (e : Failure)
     (requirements : List (Nat × HeapKnowledge.Knowledge) := []) : List (String × Json) := Id.run do
   let atNode := fun l => Json.mkObj [
@@ -536,16 +633,16 @@ def failureDiagnostic (r : Request) (fuel : Nat)
 /-- A code request as a request of its own: its graph, from the frame its
 signature describes, at the signature's result. What it may create is the
 table checked before it, not part of this request. -/
-def CodeRequest.asRequest (r : Request) (q : CodeRequest) : Request :=
+def CodeRequest.asRequest (r : Request σ ι) (q : CodeRequest ι) : Request σ ι :=
   { types := r.types, program := GraphCode.program q.entry.exprs q.entry.conts, claims := q.claims,
     result := q.entry.row.result, start := q.entry.start,
     inputs := codeFrame q.entry.arity q.entry.row q.entry.captures q.entry.store, codes := [] }
 
 /-- Search one graph's certificate, the codes of `table` admitted. -/
-def produceGraph (r : Request) (fuel : Nat) (labels : List Nat)
-    (suggestions : List (ProgramCertificates.Sequent Nat)) (known : List (ProgramCertificates.Evidence Nat))
+def produceGraph (r : Request σ ι) (fuel : Nat) (labels : List ι)
+    (suggestions : List (ProgramCertificates.Sequent ι)) (known : List (ProgramCertificates.Evidence ι))
     (sourceMap : SourceMap) (requirements : List (Nat × HeapKnowledge.Knowledge)) (cuts : List Nat)
-    (table : List (CodeEntry Nat)) : Except String (ControlFlow.Certificate Nat) :=
+    (table : List (CodeEntry ι)) : Except String (ControlFlow.Certificate ι) :=
   match produce (graph r) labels fuel r.result r.program r.claims r.start [] r.inputs suggestions known
       requirements cuts (GraphCode.admits table) with
   | .ok c => pure c
@@ -578,18 +675,18 @@ structure CodeHints where
 
 /-- Produce and serialize, then pass through the same independent JSON consumer.
 Fuel bounds search only; it is not part of the certified request. -/
-def produceJson (request : Json) (fuel : Nat)
-    (suggestions : List (ProgramCertificates.Sequent Nat) := [])
-    (known : List (ProgramCertificates.Evidence Nat) := [])
+def produceJson (σ : Type) [Store σ ι] (request : Json) (fuel : Nat)
+    (suggestions : List (ProgramCertificates.Sequent ι) := [])
+    (known : List (ProgramCertificates.Evidence ι) := [])
     (sourceMap : SourceMap := [])
-    (searchLabels : Option (List Nat) := none)
+    (searchLabels : Option (List ι) := none)
     (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := [])
     (codeHints : List CodeHints := []) : Except String Json := do
-  let r ← decodeRequest request
-  let labels := searchLabels.getD (List.range r.types.length)
+  let r ← decodeRequest σ request
+  let labels := searchLabels.getD (Store.labels r.types)
   -- Each code against the table of those before it, as `codeTable` checks.
-  let mut table : List (CodeEntry Nat) := []
-  let mut certificates : List (ControlFlow.Certificate Nat) := []
+  let mut table : List (CodeEntry ι) := []
+  let mut certificates : List (ControlFlow.Certificate ι) := []
   for (q, i) in r.codes.zipIdx do
     let hints := (codeHints[i]?).getD {}
     let C ← produceGraph (q.asRequest r) fuel labels suggestions known hints.sourceMap
@@ -604,10 +701,10 @@ def produceJson (request : Json) (fuel : Nat)
       table := table ++ [q.entry]
   let C ← produceGraph r fuel labels suggestions known sourceMap requirements cuts table
   let response := toJson (Response.mk C certificates)
-  verifyJson request response
+  verifyJson σ request response
   return response
 
-theorem verify_safe {r : Request} {c : Response} (hc : verify r c = true) (n W h ρ)
+theorem verify_safe {r : Request σ ι} {c : Response ι} (hc : verify r c = true) (n W h ρ)
     (he : EnvOk (graph r) r.inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafeGraph r.program (meaning (graph r) r.result) n W h (.at r.start ρ) := by
   simp only [verify, Bool.and_eq_true] at hc
@@ -627,8 +724,8 @@ parameter rows (`Parametricity.accepted_at`): a request whose inputs and
 result mention a generic body's binders, read as parameter rows, is safe at
 every instantiation of them. At the graph's own assignment this is
 `verify_safe`. -/
-theorem verify_safe_at {r : Request} {c : Response} (hc : verify r c = true)
-    (η : MixedAssignment Nat) (n W h ρ)
+theorem verify_safe_at {r : Request σ ι} {c : Response ι} (hc : verify r c = true)
+    (η : MixedAssignment ι) (n W h ρ)
     (he : EnvOk (reassign (graph r) η) r.inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafeGraph r.program (meaning (reassign (graph r) η) r.result) n W h (.at r.start ρ) := by
   simp only [verify, Bool.and_eq_true] at hc
@@ -644,7 +741,7 @@ theorem verify_safe_at {r : Request} {c : Response} (hc : verify r c = true)
   · contradiction
 
 /-- Empty input contracts retain the closed-invocation corollary. -/
-theorem verify_closed_safe {r : Request} {c : Response}
+theorem verify_closed_safe {r : Request σ ι} {c : Response ι}
     (hc : verify r c = true) (hi : r.inputs = []) (n : Nat) :
     SafeGraph r.program (meaning (graph r) r.result) n (ofList []) []
       (.at r.start (fun _ => .nul)) := by
@@ -652,7 +749,7 @@ theorem verify_closed_safe {r : Request} {c : Response}
   rw [hi]
   exact ⟨fun _ => trivial, by simp⟩
 
-theorem verify_claims {r : Request} {c : Response} (hc : verify r c = true) :
+theorem verify_claims {r : Request σ ι} {c : Response ι} (hc : verify r c = true) :
     c.certificate.map signature = r.claims := by
   simp only [verify, Bool.and_eq_true] at hc
   have hx := hc.2
@@ -663,13 +760,15 @@ theorem verify_claims {r : Request} {c : Response} (hc : verify r c = true) :
 /-- The JSON entry point certifies its decoded request at every budget, while
 retaining exact claim identity. Source meaning is a separate extraction obligation. -/
 theorem verifyJson_safe {request evidence : Json}
-    (h : verifyJson request evidence = .ok ()) :
-    ∃ r c, decodeRequest request = .ok r ∧ decodeResponse r evidence = .ok c ∧
+    (h : verifyJson (ι := ι) σ request evidence = .ok ()) :
+    ∃ r c, decodeRequest σ request = .ok r ∧ decodeResponse r evidence = .ok c ∧
       c.certificate.map signature = r.claims ∧
       ∀ n W h ρ, EnvOk (graph r) r.inputs ρ n W → WorldAdm W → HeapOk n W h →
         SafeGraph r.program (meaning (graph r) r.result) n W h (.at r.start ρ) := by
   obtain ⟨r,c,hr,hc,hv⟩ := verifyJson_checked h
   exact ⟨r,c,hr,hc,verify_claims hv,verify_safe hv⟩
+
+end
 
 #print axioms verifyJson_safe
 #print axioms verifyJson_checked

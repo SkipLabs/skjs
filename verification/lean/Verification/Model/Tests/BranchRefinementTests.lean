@@ -73,20 +73,20 @@ example : ObservedSub mixedWithNull [0] [1] (.tag .isNul true) := by
 #guard !checkObserved G [[1,2]] [[1]] 0 (.boolean true) (some [0]) []
 #guard !checkObserved G [[1,2]] [[1]] 0 (.boolean true) (some [0,0]) [.subset]
 
-private def request (v : Tm) : Request :=
+private def request (v : Tm) : Request RequestJson.Table Nat :=
   ⟨T,
     [⟨v,.bind 1,none⟩, ⟨.var 0,.branchBind ⟨2,some [0,1]⟩ ⟨3,some [0,1]⟩,none⟩,
      ⟨.var 0,.ret,none⟩, ⟨.var 0,.ret,none⟩],
     [⟨[],[1,2]⟩,⟨[[1,2]],[1,2]⟩,⟨[[1],[1,2]],[1,2]⟩,⟨[[2],[1,2]],[1,2]⟩],
     [1,2],0,[], []⟩
 
-private def roundtrip (r : Request) : Except String Unit := do
+private def roundtrip (r : Request RequestJson.Table Nat) : Except String Unit := do
   let input ← Json.parse (toJson r).compress
   -- Search only the types the request mentions.
   let labels := ([0,1,2,3] ++ r.result ++ r.inputs.flatten ++
     r.claims.flatMap (fun (c : CertificateProducer.PointClaim Nat) => c.type ++ c.context.flatten)).eraseDups
-  let evidence ← RequestJson.produceJson input 8 [] [] [] (some labels)
-  verifyJson input (← Json.parse evidence.compress)
+  let evidence ← RequestJson.produceJson RequestJson.Table input 8 [] [] [] (some labels)
+  verifyJson RequestJson.Table input (← Json.parse evidence.compress)
 
 #guard ok (roundtrip (request .tru))
 #guard ok (roundtrip (request .fls))
@@ -106,7 +106,7 @@ private def roundtrip (r : Request) : Except String Unit := do
   [⟨.tru,.bind 1,none⟩,⟨.var 0,.branchBind ⟨1,some [0]⟩ ⟨2,some [0]⟩,none⟩,⟨.var 0,.ret,none⟩],
   [⟨[],[1,2]⟩,⟨[[1,2]],[1,2]⟩,⟨[[2]],[1,2]⟩],[1,2],0,[], []⟩)
 -- Tag dispatch uses the same observed edge checker and retains the value itself.
-private def tagRequest : Request :=
+private def tagRequest : Request RequestJson.Table Nat :=
   ⟨T,
     [⟨.var 0,.tagBind .isNul ⟨1,some [0]⟩ ⟨2,some [0]⟩,none⟩,
      ⟨.fls,.ret,none⟩,⟨.var 0,.ret,none⟩],

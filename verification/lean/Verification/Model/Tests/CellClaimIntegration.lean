@@ -25,11 +25,11 @@ private def expect (label : String) (test : Bool) : Except String String :=
   if test then .ok s!"  {label}: OK" else .error s!"{label}: unexpected cell-contract result"
 
 private def is (j : Json) (expected : List Nat) : Bool :=
-  match CellClaims.translate j with
+  match (CellClaims.translate j : Except String (List (PropKey × ProgramTyping.Ty Nat))) with
   | .ok [(_, A)] => A == expected
   | _ => false
 private def rejects (j : Json) : Bool :=
-  match CellClaims.translate j with | .ok _ => false | .error _ => true
+  match (CellClaims.translate j : Except String (List (PropKey × ProgramTyping.Ty Nat))) with | .ok _ => false | .error _ => true
 
 private def checks (claims : Json) (fileKey : String) : Except String (List String) := do
   let file ← ((← claims.getArr?).toList.find? (fun f => (f.getObjValAs? String "file").toOption == some fileKey)).toExcept "missing fixture file"
@@ -49,7 +49,7 @@ private def checks (claims : Json) (fileKey : String) : Except String (List Stri
   let ro ← CellClaims.decode readonlyCell
   let some rof := ro.head? | .error "readonly cell has no field"
   log := log ++ [← expect "readonly exports empty write type"
-    (SourceTypes.encode rof.read == [1,2] && SourceTypes.encode rof.write == [])]
+    (SourceTypes.encode (ι := Nat) rof.read == [1,2] && SourceTypes.encode (ι := Nat) rof.write == [])]
   log := log ++ [← expect "readonly is not a mutable invariant" (rejects readonlyCell)]
   log := log ++ [← expect "optional is not a required cell" (rejects optionalCell)]
   log := log ++ [← expect "non-value field exported"

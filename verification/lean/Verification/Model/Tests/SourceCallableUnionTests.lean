@@ -23,7 +23,7 @@ private def source : Fragment.Fn :=
      (.lam (3,12) "unit" (primitive "null") (primitive "boolean")
        (.app (7,12) (.var (7,8) "f") (.var (9,10) "unit")))
      (.lit (14,15) .vnull))]⟩
-private def claims : SourceClaims.Function :=
+private def claims : SourceClaims.Function Nat :=
   ⟨"invoke",(0,1),[("f",.ok [5,6])],.ok [1,2],
    [(2,[("f",.ok [5,6])])],
    [((3,16),.ok [1,2]),((3,12),.ok [7]),((7,12),.ok [1,2]),
@@ -34,11 +34,13 @@ private def claims : SourceClaims.Function :=
 #guard ((Fragment.translate union).run' SourceTypes.initial).toOption == some [5,6]
 #guard (extractNormalizedFn table source claims).toOption.isSome
 
-private def checkWith (T : SourceTypes.Table) (f : Fragment.Fn) (c : SourceClaims.Function) : Except String Unit := do
+-- Compiling this specializes the extraction at the finite table.
+set_option maxHeartbeats 1000000 in
+private def checkWith (T : SourceTypes.Table) (f : Fragment.Fn) (c : SourceClaims.Function Nat) : Except String Unit := do
   let r ← extractNormalizedFn T f c
   let proofs ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels r.types.length 0 r.obligations
-  let evidence ← RequestJson.produceJson (toJson r.toRequest) 8 [] proofs
+    r.searchLabels (LabelStore.Store.valid r.types) (LabelStore.Store.labels r.types) 0 r.obligations
+  let evidence ← RequestJson.produceJson RequestJson.Table (toJson r.toRequest) 8 [] proofs
     r.sourceMap (some r.searchLabels) r.assertions r.cuts
   let response ← RequestJson.decodeResponse r.toRequest evidence
   if !checkRequests [r] ⟨[response],[proofs]⟩ then throw "source consumer rejected evidence"
@@ -63,7 +65,7 @@ private def wrongArgument : Fragment.Fn := {source with body :=
 -- each bound, then the call of the saved callee on the saved actual.
 #guard match extractNormalizedFn table source claims with
   | .error _ => false
-  | .ok r => r.codes.any fun (q : RequestJson.CodeRequest) =>
+  | .ok r => r.codes.any fun (q : RequestJson.CodeRequest Nat) =>
       q.entry.exprs == [.var 0, .invoke (.var 1) .undef [.var 0], .var 2, .var 2] &&
         q.entry.captures == [[5,6]]
 
@@ -105,7 +107,7 @@ private def overloadTable : SourceTypes.Table :=
     (PositiveGraphs.GraphRow.clauses [.arrs [⟨[4], [[1,2]], [1], .unrestricted⟩,⟨[4], [[0]], [2], .unrestricted⟩] []])
 private def overloadSource (booleanArg : Bool) : Fragment.Fn :=
   {(if booleanArg then wrongArgument else source) with params := [⟨"f", overloadUnion, false⟩]}
-private def overloadClaims (booleanArg : Bool) : SourceClaims.Function :=
+private def overloadClaims (booleanArg : Bool) : SourceClaims.Function Nat :=
   {claims with exprs := claims.exprs.map fun (pos,c) =>
     if booleanArg && pos == (9,10) then (pos,.ok [1]) else (pos,c)}
 #guard [false,true].all fun booleanArg =>
