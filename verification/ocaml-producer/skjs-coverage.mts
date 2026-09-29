@@ -771,6 +771,11 @@ async function main() {
   let skjs: Set<string> | undefined;
   if (flag("--skjs")) skjs = skjsVerdicts(candidates.map((u) => u.derived!));
 
+  // The pipeline runs the producer's built executable: build it from this
+  // checkout's sources, so the census measures them.
+  const dune = spawnSync("dune", ["build", "--root", here], { stdio: "inherit" });
+  if (dune.status !== 0) throw new Error("dune build of the OCaml producer failed");
+
   const started = Date.now();
   let done = 0;
   const attempt = async (u: Unit) => {

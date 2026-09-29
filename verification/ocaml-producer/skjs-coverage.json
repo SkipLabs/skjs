@@ -14,17 +14,17 @@
   "rejected": 2
  },
  "accepted": 2674,
- "verified": 2430,
+ "verified": 2432,
  "byStatus": {
-  "verified (check)": 2430,
-  "unverified (search)": 127,
+  "verified (check)": 2432,
+  "unverified (search)": 125,
   "unsupported (source)": 85,
   "unsupported (proposal)": 32
  },
  "bySuite": {
   "expect-error": {
    "accepted": 2458,
-   "verified": 2216
+   "verified": 2218
   },
   "constprop": {
    "accepted": 66,
@@ -55,7 +55,7 @@
  "filesWithAccepted": 377,
  "functions": {
   "accepted": 2026,
-  "verified": 1811
+  "verified": 1813
  },
  "byGroup": {
   "TypeScript refuses the code too (the pipeline follows TypeScript's types)": {
@@ -190,12 +190,6 @@
    "dependency": 2,
    "files": 1
   },
-  "generic methods: two declarations' instances related, a binder inferred beside an application of it or accumulated in one (Promise)": {
-   "units": 3,
-   "self": 3,
-   "dependency": 0,
-   "files": 1
-  },
   "relational operators (< <= > >=) and **": {
    "units": 2,
    "self": 1,
@@ -256,6 +250,12 @@
    "dependency": 1,
    "files": 1
   },
+  "type-parameter defaults: a binder nothing constrains, which TypeScript fills from its declared default": {
+   "units": 1,
+   "self": 1,
+   "dependency": 0,
+   "files": 1
+  },
   "type aliases and names the declaration reader cannot resolve": {
    "units": 1,
    "self": 0,
@@ -269,11 +269,11 @@
    "files": 1
   }
  },
- "reachedButRefused": 127,
+ "reachedButRefused": 125,
  "byClass": {
-  "verified": 2430,
+  "verified": 2432,
   "principled": 78,
-  "gap": 155,
+  "gap": 153,
   "unexplained": 1,
   "skjsUnsound": 10
  },
@@ -393,11 +393,6 @@
    "class": "gap",
    "units": 3,
    "files": 2
-  },
-  "generic methods: `then` through a callback returning a promise, `catch`": {
-   "class": "gap",
-   "units": 3,
-   "files": 1
   },
   "a spread argument to `new`": {
    "class": "gap",
@@ -534,6 +529,11 @@
    "units": 1,
    "files": 1
   },
+  "unmatched: search: reject: a call instantiating a binder nothing constrains: no actual, receiver or expected type fixes it, so the producer instantiates it at its bound, where Typ": {
+   "class": "gap",
+   "units": 1,
+   "files": 1
+  },
   "SKJS unsoundness: `await` passes a record through": {
    "class": "skjs-unsound",
    "units": 1,
@@ -567,6 +567,7 @@
  },
  "unmatchedReasons": [
   "search: reject",
+  "search: reject: a call instantiating a binder nothing constrains: no actual, receiver or expected type fixes it, so the producer instantiates it at its bound, where Typ",
   "search: reject: source refusal at _: closure signature claim is outside the source annotation",
   "search: reject: source refusal at _: construct signature claim is outside the source annotation",
   "search: reject: source refusal at _: the declarations required by this unit cannot be interpreted: GraphCollections: the type argument for EagerCollection's \"_\" at [117",
@@ -600,7 +601,6 @@
   "search: reject: an await of a non-promise object, or of a value of a type parameter or `unknown`: JavaScript adopts a thenable, calling its `then`, instead of settling ": 3,
   "search: reject: `??` on a value of a type parameter: its values other than null and undefined are the meet `T & {}`, but no rule narrows a parameter row to its meet wit": 3,
   "proposal: a type parameter types both a value and a rest parameter's argument list: an argument list is not a runtime value": 3,
-  "search: reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills ": 3,
   "source: a spread argument to `new` is outside the fragment": 3,
   "source: an iterable whose iterator'_'s `return` if it owns one (IteratorClose), and the iterator's open record type says nothing of what that property holds": 3,
   "search: reject: source refusal at _: the declarations required by this unit cannot be interpreted: /functions/0/params/0/type: the intersection is empty: its operands h": 2,
@@ -642,6 +642,7 @@
   "source: an object type with construct signatures and other members: a class value's statics are not members of its type": 1,
   "source: generic function types are outside the fragment": 1,
   "proposal: a spread copies the own enumerable properties of a plain object; a string's are its characters at index keys, which no record states": 1,
+  "search: reject: a call instantiating a binder nothing constrains: no actual, receiver or expected type fixes it, so the producer instantiates it at its bound, where Typ": 1,
   "proposal: quantified callable claim encoding": 1,
   "source: keyof is keyof Promise<number>, whose part unique symbol is a unique symbol, which no type of the fragment names": 1,
   "source: an index signature in a class is outside the fragment: a class's instances are the objects its construction allocates, with the keys it names in a declaration o": 1,
@@ -2986,9 +2987,9 @@
 {"source":"tests/expect-error/private-fields.ts","name":"destructureFromOutside","kind":"function","line":188,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/private-fields.ts","name":"symKey","kind":"variable","line":198,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/private-fields.ts","name":"WithPrivateSymbolMethod","kind":"class","line":199,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/promise-object.ts","name":"testThen","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills ","group":"generic methods: two declarations' instances related, a binder inferred beside an application of it or accumulated in one (Promise)","where":"self","at":"p.then","detail":"reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills one left unconstrained from its default, and the producer does neither: a callback whose result is itself an application (a promise) instant — No rule derives this letE at (this: Promise<number>, null | undefined | ((number) => PromiseLike<string> | string), null | undefined | ((unknown) => PromiseLike<string> | string)) => Promise<string> from p: Promise<number>.","class":"gap"},
-{"source":"tests/expect-error/promise-object.ts","name":"testThenChained","kind":"function","line":10,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills ","group":"generic methods: two declarations' instances related, a binder inferred beside an application of it or accumulated in one (Promise)","where":"self","at":"p.then","detail":"reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills one left unconstrained from its default, and the producer does neither: a callback whose result is itself an application (a promise) instant — No rule derives this letE at (this: Promise<number>, null | undefined | ((number) => null | boolean | undefined | PromiseLike<null | true | false | undefined | string | number | bigint | symbol | ReadonlyArray<literal array at [0,0]> | row 13> | string | number | bigint | symbol | ReadonlyArray<literal array at [0,0]> | {  }), null | undefined | ((unknown) => null | boolean | undefined","class":"gap"},
-{"source":"tests/expect-error/promise-object.ts","name":"testCatch","kind":"function","line":14,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills ","group":"generic methods: two declarations' instances related, a binder inferred beside an application of it or accumulated in one (Promise)","where":"self","at":"p.catch","detail":"reject: a call inferring a binder written beside an application of it (`R | PromiseLike<R>`): TypeScript infers such a binder through the application and fills one left unconstrained from its default, and the producer does neither: a callback whose result is itself an application (a promise) instant — No rule derives this letE at (this: Promise<number>, null | undefined | ((unknown) => PromiseLike<never>)) => Promise<number> from p: Promise<number>.","class":"gap"},
+{"source":"tests/expect-error/promise-object.ts","name":"testThen","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/promise-object.ts","name":"testThenChained","kind":"function","line":10,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a call instantiating a binder nothing constrains: no actual, receiver or expected type fixes it, so the producer instantiates it at its bound, where Typ","group":"type-parameter defaults: a binder nothing constrains, which TypeScript fills from its declared default","where":"self","at":"p.then((n: number) => p.then((m: number) => m.toString()))","detail":"reject: a call instantiating a binder nothing constrains: no actual, receiver or expected type fixes it, so the producer instantiates it at its bound, where TypeScript takes the binder's declared default (`then`'s `TResult2 = never`), which the declarations read do not carry — The available claim for p.then((n: number) => p.then((m: number) => m.toString())) is Promise<null | true | false | undefined | string | number | bigint | symbol | ReadonlyArray<literal array at [0,0]> | row 10>. This return requires Promise<string>.","class":"gap"},
+{"source":"tests/expect-error/promise-object.ts","name":"testCatch","kind":"function","line":14,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/promise-object.ts","name":"testFinally","kind":"function","line":18,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/promise-object.ts","name":"testCovariantNever","kind":"function","line":23,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/promise-object.ts","name":"testCovariantWiden","kind":"function","line":27,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -2999,14 +3000,14 @@
 {"source":"tests/expect-error/promise-object.ts","name":"testAwaitPartialPromiseMismatch","kind":"function","line":64,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/promise-object.ts","name":"testAwaitPartialThenableObject","kind":"function","line":77,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/promise-object.ts","name":"testPromiseIsPromiseLike","kind":"function","line":90,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/promise-object.ts","name":"testAwaitThenable","kind":"function","line":96,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: an await of a non-promise object, or of a value of a type parameter or `unknown`: JavaScript adopts a thenable, calling its `then`, instead of settling ","group":"await of non-promises and unions (the await bound)","where":"self","at":"return await t;","detail":"reject: an await of a non-promise object, or of a value of a type parameter or `unknown`: JavaScript adopts a thenable, calling its `then`, instead of settling to it, and a record type does not rule out a `then`, its own or one on its prototype (a `PromiseLike` is one), so the model admits only a re — The call's type argument is not shown within its bound: unknown ≤ null | boolean | undefined | string | number | bigint | symbol.","class":"principled"},
+{"source":"tests/expect-error/promise-object.ts","name":"testAwaitThenable","kind":"function","line":96,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: an await of a non-promise object, or of a value of a type parameter or `unknown`: JavaScript adopts a thenable, calling its `then`, instead of settling ","group":"await of non-promises and unions (the await bound)","where":"self","at":"await t","detail":"reject: an await of a non-promise object, or of a value of a type parameter or `unknown`: JavaScript adopts a thenable, calling its `then`, instead of settling to it, and a record type does not rule out a `then`, its own or one on its prototype (a `PromiseLike` is one), so the model admits only a re — No rule derives this invoke at number from t: PromiseLike<number>, await: (Promise<number>) => number.","class":"principled"},
 {"source":"tests/expect-error/promise-object.ts","name":"testAwaitNumber","kind":"function","line":101,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/promise-object.ts","name":"testAwaitPlainObject","kind":"function","line":106,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: field read on non-object","group":"reads on unions/primitives (field/index read on non-object, string keys)","where":"self","detail":"unsupported: field read on non-object","class":"skjs-unsound"},
 {"source":"tests/expect-error/promise-object.ts","name":"testAwaitAliasContract","kind":"function","line":113,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/promise-object.ts","name":"testAwaitScalarSnapshot","kind":"function","line":125,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/promise-object.ts","name":"testAwaitNested","kind":"function","line":138,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: quantified callable claim encoding","group":"generics: constraints, explicit type arguments, rigid types, generic function types","where":"self","detail":"unsupported: quantified callable claim encoding","class":"gap"},
 {"source":"tests/expect-error/promise-object.ts","name":"testAwaitNestedFlat","kind":"function","line":144,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/promise-object.ts","name":"testAwaitThenableNested","kind":"function","line":150,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: an await of a non-promise object, or of a value of a type parameter or `unknown`: JavaScript adopts a thenable, calling its `then`, instead of settling ","group":"await of non-promises and unions (the await bound)","where":"self","at":"return await t;","detail":"reject: an await of a non-promise object, or of a value of a type parameter or `unknown`: JavaScript adopts a thenable, calling its `then`, instead of settling to it, and a record type does not rule out a `then`, its own or one on its prototype (a `PromiseLike` is one), so the model admits only a re — The call's type argument is not shown within its bound: unknown ≤ null | boolean | undefined | string | number | bigint | symbol.","class":"principled"},
+{"source":"tests/expect-error/promise-object.ts","name":"testAwaitThenableNested","kind":"function","line":150,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: an await of a non-promise object, or of a value of a type parameter or `unknown`: JavaScript adopts a thenable, calling its `then`, instead of settling ","group":"await of non-promises and unions (the await bound)","where":"self","at":"await t","detail":"reject: an await of a non-promise object, or of a value of a type parameter or `unknown`: JavaScript adopts a thenable, calling its `then`, instead of settling to it, and a record type does not rule out a `then`, its own or one on its prototype (a `PromiseLike` is one), so the model admits only a re — No rule derives this invoke at Promise<number> from t: PromiseLike<Promise<number>>, await: (Promise<Promise<number>>) => Promise<number>.","class":"principled"},
 {"source":"tests/expect-error/promise-object.ts","name":"testAwaitSelfThenable","kind":"function","line":164,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/promise-object.ts","name":"testAsyncReturnSelfThenable","kind":"function","line":170,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/promise-object.ts","name":"testAwaitIndirectSelfThenable","kind":"function","line":175,"skjsMarker":"rejected-self"},
