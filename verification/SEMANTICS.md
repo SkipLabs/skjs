@@ -212,7 +212,7 @@ and $\sim x=x\mathbin{\hat{}}(-1)$, exact on doubles (a sign flip, the identity,
 `bigintArith`, `doubleIntOrder`, `utf16Units`, `primString`, `numberToString`
 (`Semantics/Calculus.lean`); the values it gives are checked against node's for
 the edge cases, and `numberToString` for 300 pseudo-random doubles and short
-decimals besides, in `Tests/SourceExtractionTests.lean`.
+decimals besides, by the corpus cases that run them under node.
 
 **Strings.** A string owns its `length` and its index properties, and
 `lenOf` and `elemAt` read them as they read a store's:
@@ -665,8 +665,6 @@ a spread's elements at its evaluation point when later operands run code.
 The copy preserves element values, including object references, rather than
 merely saving the source array's identity.
 
-[ArgumentContractsTests.lean](lean/Verification/Model/Tests/ArgumentContractsTests.lean) guards that these contracts remove a semantic restriction, not only a search one.
-
 `callsT_adm`, `restsT_adm` and the corresponding congruence lemmas establish
 world monotonicity and guardedness of both domains and results. The
 source/calculus correspondence remains the documented trusted-adapter
@@ -961,8 +959,6 @@ the operation and composition rules using this predicate;
 - [Rules.lean](lean/Verification/Model/Semantics/Rules.lean) proves the semantic typing rules for calls, heap operations, shape
   testing and branching, including an application-context composition rule.
 - `ProgramTyping.lean` proves safety by induction on syntactic typing derivations.
-  `ProgramTypingTests.lean` combines overload dispatch, captured state, an alias
-  write and checked overload subsumption in one program.
 - `ProgramCertificates.lean` checks finite program evidence and proves acceptance
   equivalent to closed-program derivability. The same example has executable
   evidence and obtains safety from its successful check.

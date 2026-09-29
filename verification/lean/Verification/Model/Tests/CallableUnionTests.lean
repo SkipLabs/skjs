@@ -20,7 +20,7 @@ private def callClaim : Sequent Nat := ⟨[[2,3]],.app (.var 0) .tru,[0,1]⟩
 private def branchProof (F R : Ty Nat) : Evidence Nat :=
   let e := Evidence.node ⟨[F],callClaim.term,R⟩ (.callCallable .unrestricted)
     [.node ⟨[F],.var 0,F⟩ .var [],
-     .node ⟨[F],.undef,[9]⟩ (.sub (.core ⟨[([10],[9])],[]⟩)) [.node ⟨[F],.undef,[10]⟩ .undef []],
+     .node ⟨[F],.undef,[9]⟩ (.sub (.family { entries := [{ source := [10], target := [9] }] })) [.node ⟨[F],.undef,[10]⟩ .undef []],
      .node ⟨[F],.tru,[0]⟩ .tru []]
   .node ⟨[F],callClaim.term,[0,1]⟩ (.sub .subset) [e]
 private def proof : Evidence Nat :=

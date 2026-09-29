@@ -82,7 +82,7 @@ closure that satisfies each observed call but cannot produce an arbitrary
 binder's value fails its own code's check, whatever its calls. A call of a
 local holding one is claimed at the instance its `instantiate` names, a bounded
 binder's instance the meet of its type argument with the bound, and the callee
-is read there, below the scheme by a checked instance table (`Sub.inst`).
+is read there, below the scheme by a checked instance table (`InstArrs`).
 Nested generic closures, generic closures in generic bodies, rests, defaults
 and receivers over a binder are all graph code the same way.
 

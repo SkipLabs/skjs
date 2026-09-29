@@ -65,7 +65,7 @@ equations, or types proved equal to them), and it carries the proof
 Subtype certificates in `sub` and in member coverage are checked by
 `PositiveCertificates.checkUsing` with that checker, and every rule's soundness
 depends on it only through this implication. Over equations the checker also
-carries the renaming and the computed variances, with which `subset` and `core`
+carries the renaming and the computed variances, with which `subset` and `family`
 steps apply `Var` ([RECURSIVE-EQUATIONS §4.3](RECURSIVE-EQUATIONS.md#43-variance)),
 each proved sound. The proof is Lean code, never certificate data. `HasTy G` is `HasTyUsing G (finiteInstanceImages G)`, the
 finite closed-table checker; source requests use it. Constructor names below are
@@ -208,7 +208,7 @@ with binders $\vec p$ (parameter rows) and signatures $L$ and $S$ over them
 (`HasTyUsing.funScheme`). Its code is checked once, at the scheme's own signatures:
 a table entry holds at every assignment, so at every instantiation of $\vec p$.
 Its captures' types read none of $\vec p$ (`capturesFree`: their free parameter
-rows, computed and checked by `FreeOk` as `Sub.gen` checks its source's,
+rows, computed and checked by `FreeOk`,
 exclude the binders), so a capture means at every instantiation what it means
 here (`meaning_assign_free`):
 
@@ -232,7 +232,7 @@ parameter rows, $p_U\sqcap p_T$ within $T$'s clauses if it has any
 (`dependentMeet`): its bound reads a binder, which a scheme row's bounds, read
 outside its binders, cannot, so the meet alone states it. A call of a binding
 at the scheme row names its instance: the callee is read at the instance's
-signature, below the scheme by a checked instance (`Sub.inst`), a meet row
+signature, below the scheme by a checked instance (`InstArrs`), a meet row
 mapped to the meet of its parameters' type arguments with its clauses
 (`meetOk`).
 
@@ -334,7 +334,6 @@ the array the rest parameter names, an ordinary allocation the extractor
 emits.
 
 [RestCalls.lean](lean/Verification/Model/Programs/RestCalls.lean) proves variadic calls: eliminating a variadic signature, allocating the rest store, spreading actuals.
-[RestCallsTests.lean](lean/Verification/Model/Tests/RestCallsTests.lean) guards variadic creation and calls, with and without spreads, and the spreads the checker refuses.
 
 A call writes the fixed actuals, or a prefix whose omitted positions admit
 `undefined`, then parts that fit the rest; a call that omits a fixed position
@@ -470,7 +469,7 @@ A generic method's member states its signatures as schemes, quantified
 signatures the member bound to its host meets
 ([records](POSITIVE-TYPES.md#records)). The same term, bound to its host, is
 then one of those schemes (`bindScheme`), and a call names its instance below
-it ([`Sub.inst`](POSITIVE-TYPES.md#instances-of-a-scheme-row)):
+it ([`InstArrs`](POSITIVE-TYPES.md#instances-of-a-scheme-row)):
 
 ```math
 \frac{\Gamma(i)=O\quad\mathrm{member}_G(O,k)=m\quad [j]\in m.\mathsf{schemes}}
@@ -1186,7 +1185,7 @@ none of its constructor rules has a semantic safety premise.
 
 ### Integration example
 
-[ProgramTypingTests.lean](lean/Verification/Model/Tests/ProgramTypingTests.lean) derives safety for a program equivalent to:
+[ProgramCertificateTests.lean](lean/Verification/Model/Tests/ProgramCertificateTests.lean) checks evidence for a program equivalent to:
 
 ```text
 let r = alloc true;
@@ -1199,10 +1198,7 @@ f(null)
 
 One closure has both `Null → Bool` and `Bool → Null`. Before the final call, a
 checked certificate widens that overload to `(Null | Bool) → (Null | Bool)` by
-splitting the union domain. The program is safe in every admissible world and
-satisfying heap. A separate execution theorem confirms it returns `false` from
-an empty heap; the safety proof does not depend on that trace. A negative theorem
-rules out any typing derivation for applying null as a function.
+splitting the union domain.
 
 ### Executable program evidence
 
@@ -1286,8 +1282,7 @@ position in the incoming environment $\Gamma$, with a proved subtype relation:
 
 `checkEdge` takes one subtype certificate per target slot. Lean proves that
 acceptance implies coverage, as family inclusion per slot (`Covers`,
-`checkEdge_sound`), and that every derivation of coverage by the finite rules
-has accepted evidence (`checkEdge_complete`). Coverage also transfers semantic
+`checkEdge_sound`). Coverage also transfers semantic
 environments: any concrete environment meeting $\Gamma$ meets $\Delta$, with
 closed values preserved.
 
@@ -2334,9 +2329,7 @@ wide read and precise return, with negative tests for stale contents, invalid
 storage writes, fabricated facts and changed expressions. The maintained graph checker carries the same postconditions in its state
 invariant and checks every incoming edge, including back edges. External entry
 requires empty knowledge; effect-only continuations drop result-slot facts.
-[HeapGraphTests.lean](lean/Verification/Model/Tests/HeapGraphTests.lean) proves a complete graph safe,
-checks its JSON evidence, and rejects fabricated entry
-facts, stale write postconditions and altered maps. Source observations use the
+Source observations use the
 same checked graph facts, through the checkpoints below.
 
 Boolean guards use the following rule, proved by `observeBoolean_holds`:
@@ -3659,7 +3652,7 @@ A generic body's bounded binder is read the same way, as the meet of its
 parameter row and its bound, and a binder bounded by another, `U extends T`,
 as the meet of the two, $p_U\sqcap p_T\sqcap\vec c$ with $T$'s clauses or
 $\top$ (`SourceTypes.dependentMeet`), which is below $T$ by its parameters
-([`meetBelow`](POSITIVE-TYPES.md#core-tables); [generic
+([`meetBelow`](POSITIVE-TYPES.md#covered-pairs); [generic
 bodies](#overloads-polymorphism-and-binding)). Any other bound naming a binder
 leaves the parameter row alone.
 
@@ -4580,8 +4573,6 @@ merges the corresponding lists; structural
 subtyping checks invariant bag coverage and arrow coverage separately, and can
 forget properties to obtain `arrs`. The producer and consumer support
 `callableGraph`, `callCallable`, `readCallable`, and `writeCallable` evidence.
-[CallableGraphTests.lean](lean/Verification/Model/Tests/CallableGraphTests.lean) runs an allocated overloaded object through aliasing, bag mutation, reading,
-and invocation using produced evidence and a JSON roundtrip.
 
 Receivers are implemented along the same lines. Every signature carries its
 receiver, and every call its receiver premise; an ordinary function expression
@@ -5617,7 +5608,7 @@ signatures, $\mathsf{Rests}(\mathsf{RestSig}_{G,P,\eta}(S),n,W,v)$, from the
 same premises: an instance's contract is both (`instanceTWithArgs`).
 
 A call names its instance: the callee is read at the instance's signatures,
-below the scheme by a checked instance table (`Sub.inst`), which constructs one
+below the scheme by a checked instance table (`InstArrs`), which constructs one
 such $\eta$ after the type arguments' bounds are checked. It selects a
 signature of the same callable; it neither allocates a new value nor changes
 the outer assignment. These are rules for quantified invocation contracts, not

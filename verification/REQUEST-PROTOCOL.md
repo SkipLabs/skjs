@@ -128,8 +128,8 @@ with the meaning given in [Parameter and scheme rows](POSITIVE-TYPES.md#paramete
 Validation (`validRows`) requires every label a row names to index `types`, a
 parameter row to name its own label and explicitly state its kind, a scheme's binders to be parameter
 rows, and a meet row's parameters to be value parameter rows. A parameter row is therefore never the same row as another, so two
-distinct binders are never identified by content. The subtype proofs `inst`
-and `gen` read these rows; on a table without scheme rows they are refused.
+distinct binders are never identified by content. The subtype proof `inst`
+reads these rows; on a table without scheme rows it is refused.
 
 Current-content assertions use a finite list of primitive predicates, including
 `num` for any numeric value and `numLit` for an exact bit pattern, `str` for
@@ -480,11 +480,10 @@ target spells otherwise, the target's result as its image.
 with no proof form of their own. Over the equations, a `subset` step holds
 when every source label is a target label or below one by `Var` with the
 head's computed variance, each per-position premise discharged the same way
-(a label, `Var` again, or an instance), and a `core` step's premises may
-also be `Var` and its table pairs reused at renamed bound rows, as family
-entries' are (`subsetUsing`, `coreUsing`,
+(a label, `Var` again, or an instance), and a `family` step's premises may
+also be `Var` and its table pairs reused at renamed bound rows
+(`subsetUsing`, `checkFamilyAt`,
 [RECURSIVE-EQUATIONS §4.2–4.3](RECURSIVE-EQUATIONS.md#42-parametric-assumptions)).
-The spellings of both steps are unchanged.
 
 Diagnostics show labels through a projection onto a finite table, bounded by
 depth, with names for applications (`Promise<number | R>`).
@@ -530,7 +529,6 @@ document missing a field.
 ## Source mode
 
 [SourceExtraction.lean](lean/Verification/Model/Source/SourceExtraction.lean) is the source adapter: it rebuilds the calculus request from the Fragment tree and the claims.
-[SourceExtractionTests.lean](lean/Verification/Model/Tests/SourceExtractionTests.lean) guards it on pipeline fixtures: name resolution, slot order, forged claims refused for their reasons, and primitive operations against node.
 
 The adapter accepts primitive or bounded callable parameters, initialized
 `const` and `let` declarations, assignment to a `let` as an expression, nested boolean branches and returns, using variable
@@ -595,7 +593,7 @@ checked at every assignment of those rows
 becomes a scheme row whose binders are fresh parameter rows, read so too; its
 code is graph code checked at the row's signatures (`funScheme`), and a call
 of it names its instance, below the scheme by a checked instance
-(`Sub.inst`). A call of a generic module value names its instance: each type
+(`InstArrs`). A call of a generic module value names its instance: each type
 argument must lie within its binder's bound by the graph's certified
 subtyping, a failure being a located direct obligation. The neutral source
 sidecar's function-scoped `{ "param": "T" }` claims are read the same way,
@@ -930,7 +928,7 @@ parameter's instance to be the tuple of the actuals past the fixed ones. The OCa
 reads it as a callable quantifying its binders; at a call it infers the
 instance from the receiver and the actuals, and claims the method's read at
 that instance's ground arrow, which Lean relates to the method's scheme row by
-`Sub.inst`. A method call carries no `instantiate` list: its instance is its
+`InstArrs`. A method call carries no `instantiate` list: its instance is its
 callee's claim. Explicit type arguments, `o.m<A>(…)`, are the invoke node's
 `"typeArgs":[terms]`, written only where the source has them; they instantiate
 the member's leading binders, and Lean requires the callee's claimed instance

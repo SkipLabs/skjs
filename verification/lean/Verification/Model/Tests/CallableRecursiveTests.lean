@@ -37,9 +37,9 @@ private def certificate : ControlFlow.Certificate Nat :=
 #guard checkEntry G [1] program certificate 0 [] admitted
 -- Independent recursive labels may be equivalent; adding Boolean to the
 -- invariant bag is unsafe even though it widens a read result.
-#guard (subtype G pool [2] [3]).isSome
-#guard (subtype G pool [3] [2]).isSome
-#guard !(subtype G pool [2] [4]).isSome
+#guard (subtype G [2] [3]).isSome
+#guard (subtype G [3] [2]).isSome
+#guard !(subtype G [2] [4]).isSome
 #guard !(expression G pool 10 [[2]] (.write (.var 0) .tru) [0]).isSome
 #guard !(expression G pool 10 [[0,2]] (.app (.var 0) .fls) [1]).isSome
 

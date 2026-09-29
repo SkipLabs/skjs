@@ -260,7 +260,7 @@ preserves its scheme in SourceClaims; Lean reads the scheme as a scheme row
 whose binders are fresh parameter rows, and the closure is graph code at that
 row (`funScheme`), checked once at its signatures, so acceptance does not
 depend on which calls the program makes. A call names its instance, checked
-against the scheme (`Sub.inst`). An unannotated immutable local retains its
+against the scheme (`InstArrs`). An unannotated immutable local retains its
 checked initializer type, through dependent bounds and sequential declarators
 alike.
 
@@ -368,7 +368,7 @@ row (`funScheme`): its code is checked once, at the row's signatures over the
 binders' parameter rows, and a code table entry holds at every assignment of
 them, so at every instantiation, with one unchanged capture environment. A
 call names its instance: the callee is read at the instance's signatures,
-below the scheme by a checked instance table (`Sub.inst`). A bounded binder is
+below the scheme by a checked instance table (`InstArrs`). A bounded binder is
 read as the meet of its row and its bound, one bounded by another binder as
 the meet of the two rows, and an instance maps a meet row to the meet of its
 parameters' instances (`meetOk`). There is one checker for generic bodies.
@@ -464,10 +464,8 @@ Callable overloads, imported recursive aliases and named type-only imports
 have narrower implemented slices; this is breadth across the current
 calculus's major mechanisms, not the full language.
 
-Decision completeness is stated and proved for the certificate checkers:
-every derivable subtyping has an accepted certificate
-(`PositiveCertificates.check_complete`), and program evidence is accepted
-exactly when the program is derivable. Each is stated by rules, without proof
+Decision completeness is stated and proved for the program checker:
+program evidence is accepted exactly when the program is derivable. Each is stated by rules, without proof
 terms or fuel, and each theorem gives both directions. This is completeness
 for the declared rules,
 not for every inclusion that happens to hold in the semantic model, and it is
@@ -1124,13 +1122,13 @@ This is what the introduction rule uses, so the soundness proofs are not
 redone for it. Parameter and scheme rows are opaque to every check:
 they have no clauses (`expand` of a type holding one is empty, so
 `Represents` and `Answers` fail), a parameter is below itself, a union holding
-it, and `unknown` (`Opaque` in `Valid`), and test refinement keeps it
-(`Tests/QuantifiedRowTests.lean`). The graphs the pipeline builds have only
-clause rows, so every verified result is unchanged.
+it, and `unknown` (`OpaqueFamily` in a covered pair), and test refinement
+keeps it. The graphs the pipeline builds have only clause rows, so every
+verified result is unchanged.
 
 Stage 3 is done: subtyping over scheme rows, with certificates
-(`PositiveRules`, `Proof.inst` and `Proof.gen`).
-- *Elimination* (`Sub.inst`): a scheme row is below an arrow type whose
+(`PositiveRules`, `Proof.inst`).
+- *Elimination* (`InstArrs`): a scheme row is below an arrow type whose
   signatures are instances of its own. The instance is checked by a table of
   entries (row, context, image): the context says what each binder in scope
   stands for, an instance type or, under a scheme mapped to another, that
@@ -1143,19 +1141,12 @@ Stage 3 is done: subtyping over scheme rows, with certificates
   row serves several scopes. A call
   through a generic function is then the existing call rule after
   subsumption: `id(true)` is typed a Boolean, `wrap(true)` a `Box<boolean>`.
-- *Coverage* (`Sub.gen`): a type is below a scheme when it is below the
-  scheme's signatures with the binders opaque and none of its free parameter
-  rows is a binder (a checked free-variable certificate);
-  it then means the same at every instantiation (`agree_freeWith`). So
-  `<T>(x: T) => T` is below `<U>(x: U) => U`, and `(x: T) => T` at one `T` is
-  not below `<T>(x: T) => T`.
-- Subtyping is proved at every assignment, for both components (`Sub.mixed_sound`). This is where "no
+- Subtyping is proved at every assignment, for both components (`checkUsing_sound`). This is where "no
   check reads `env`" became a theorem: the one judgment that was indexed by
   the graph beyond its rows, overload coverage, is now indexed by the graph's
   compatibility test.
 - The Lean producer proposes instance maps by matching a signature against
-  the target (`matchInst`), and generalizations from a type of the pool that
-  states the scheme's signatures. Tests: `Tests/QuantifiedRowTests.lean`.
+  the target (`matchRow`).
 
 Stage 4 is done for unbounded generic methods. The TypeScript reader reads a
 generic method as a scheme term. Lean lowers it to a scheme row with coloured
@@ -1168,7 +1159,8 @@ negative's instance returns a Boolean where a number is declared). Stage 5 adds 
 instances within its bounds, read where the method is declared and below the
 current level, which keeps the fixed point contractive; the approximations are
 non-expansive in the assignment, which gives admissibility. An instance's
-types must lie within the bounds (inclusion or a core certificate per bound);
+types must lie within the bounds (inclusion, or the pairs reachable from the
+instance and the bound, covered, per bound);
 `bounded-generic-method-value-import` and its negative exercise it.
 Pack parameters, as `EagerCollection.map`'s `...params: Params`, are a rest
 typed by a binder: an argument-list type (the `pack` clause, a contract on

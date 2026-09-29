@@ -50,7 +50,7 @@ private def writeEvidence : Evidence (Fin 7) :=
 -- An invented write or subtype fact cannot be supplied as evidence.
 #guard !(checkTree G (.node ⟨[[2]], .write (.var 0) .nul, [0]⟩ .write
   [varE [[2]] 0 [2], leaf [[2]] .nul [0] .nul]))
-#guard !(checkTree G (subE (varE [[3]] 0 [3]) [4] (.core ⟨[],[]⟩)))
+#guard !(checkTree G (subE (varE [[3]] 0 [3]) [4] (.family { entries := [] })))
 #guard !(checkTree G (.node ⟨[[0]], .var 0, [0]⟩ .var [varE [[0]] 0 [0]]))
 
 -- The empty overload names no code of the table, but its captures cannot

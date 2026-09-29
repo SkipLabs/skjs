@@ -1203,6 +1203,9 @@ theorem checkUsing_sound [DecidableEq ι] {G : NormalGraph ι}
   | inst c => exact checkInstUsing_sound h
   | family c => exact checkFamilyAt_sound h
 
+/-- The traversal with the finite image checker. -/
+abbrev check [DecidableEq ι] (G : NormalGraph ι) := checkUsing G (finiteInstanceImages G)
+
 /-- A proved image checker supplies ordinary value subsumption as well as
 mixed inclusion. Program typing uses this interface. -/
 theorem acceptedUsing [DecidableEq ι] {G : NormalGraph ι}

@@ -142,7 +142,7 @@ pair's structure is covered, reading the pairs themselves for the operands,
 one step lower
 ([Amadio and Cardelli 1993](REFERENCES.md#amadio-and-cardelli-1993),
 [Brandt and Henglein 1998](REFERENCES.md#brandt-and-henglein-1998),
-[POSITIVE-TYPES](POSITIVE-TYPES.md#core-tables)). For a non-regular family
+[POSITIVE-TYPES](POSITIVE-TYPES.md#covered-pairs)). For a non-regular family
 the needed set is infinite, since
 `Promise<number> ≤ Promise<number | string>` needs
 `Promise<number | β> ≤ Promise<number | string | β>` for `catch`, then a
@@ -356,7 +356,24 @@ when its arguments are larger than at both earlier ones. `Promise<number> ≤ Pr
 with two pairs: itself, and $`\mathit{Promise}\langle\rho\rangle\le\mathit{PromiseLike}\langle\rho\rangle`$
 for the bound $`\rho`$ of `then`, which recurs renamed.
 
-### 4.4 Example
+### 4.4 Instantiation
+
+The judgment has one more rule, standard in F<:
+([Pierce 1994](REFERENCES.md#pierce-1994)): a quantified signature is below
+each instance of it within its bounds,
+
+```math
+\frac{\vec\tau\le\vec\rho[\vec\tau/\vec\alpha]\qquad \sigma[\vec\tau/\vec\alpha]\doteq\sigma'}
+{\forall\vec\alpha\le\vec\rho.\,\sigma\ \le\ \sigma'}\ \textsf{Inst}_\forall
+```
+
+where $`\doteq`$ is equality up to the order of union members. Each bound
+premise is decided by the judgment itself. A table's coverage may use such an
+instance as a known row: a prototype's quantified member, at the object as
+receiver, covering a target's method. Soundness is Lemma 3 with the bound
+premises ([POSITIVE-TYPES](POSITIVE-TYPES.md#instances-of-a-scheme-row)).
+
+### 4.5 Example
 
 The polarity equations give `Promise` the candidate $`\mathsf{co}`$: its
 parameter occurs in `then`'s callback parameter, a parameter of a parameter,
@@ -478,7 +495,6 @@ to parameters and quantified variables by position.
 | Well-formedness of equations | [Types/EquationValidator.lean](lean/Verification/Model/Types/EquationValidator.lean) |
 | Term spelling of trees | [Types/EquationJson.lean](lean/Verification/Model/Types/EquationJson.lean) |
 | Lowering source declarations (5) | [Source/EquationLowering.lean](lean/Verification/Model/Source/EquationLowering.lean) |
-| Examples and controls of family subtyping (4) | [Tests/EquationFamilyTests.lean](lean/Verification/Model/Tests/EquationFamilyTests.lean) |
 | Validator refusals and tree round trips | [Tests/EquationTreeTests.lean](lean/Verification/Model/Tests/EquationTreeTests.lean) |
 | Lowering on parser output, with its controls (5) | [Tests/EquationLoweringTests.lean](lean/Verification/Model/Tests/EquationLoweringTests.lean) |
 | Binder roles in lowering (5) | [Tests/DeclarationBinderTests.lean](lean/Verification/Model/Tests/DeclarationBinderTests.lean) |

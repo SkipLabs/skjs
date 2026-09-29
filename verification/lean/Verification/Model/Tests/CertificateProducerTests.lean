@@ -55,8 +55,8 @@ def mappedCertificate : ControlFlow.Certificate (Fin 7) :=
   | .error _ => []
 
 -- Structural subtype search must build a union-of-domains arrow certificate.
-#guard (subtype G [[],[0],[1],[0,1],[2],[3],[4],[5],[6]] [3] [4]).isSome
-#guard !(subtype G [[],[0],[1],[0,1],[2],[3],[4],[5]] [2] [1]).isSome
+#guard (subtype G [3] [4]).isSome
+#guard !(subtype G [2] [1]).isSome
 
 /-- Both branch targets independently select their input slots. -/
 def mappedDiamond : Program :=
@@ -78,8 +78,8 @@ def mappedDiamondClaims : List (PointClaim (Fin 7)) :=
 -- Recursive references: the generated cyclic table closes through invariance.
 def recursiveG : PositiveGraphs.NormalGraph (Fin 3) := .ofRows fun i =>
   match i.val with | 0 => [.refs [(valueField, [0])] [] []] | 1 => [.refs [(valueField, [1])] [] []] | _ => [.bool]
-#guard (subtype recursiveG [[],[0],[1],[2]] [0] [1]).isSome
-#guard !(subtype recursiveG [[],[0],[1],[2]] [0] [2]).isSome
+#guard (subtype recursiveG [0] [1]).isSome
+#guard !(subtype recursiveG [0] [2]).isSome
 
 -- Bad claims, including an unreachable boolean predecessor, cannot be repaired.
 #guard !(succeeds (produce G labels 8 [0] ControlFlowTests.diamond

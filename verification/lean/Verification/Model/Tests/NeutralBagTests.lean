@@ -17,9 +17,9 @@ private def readClaim : Sequent Nat := ⟨[[2,3]],.read (.var 0),[1]⟩
 private def writeClaim : Sequent Nat := ⟨[[2,3]],.write (.var 0) .fls,[0]⟩
 
 -- Both shapes forget into the same bag view; forgetting never changes identity.
-#guard (subtype G pool [2] [2,3]).isSome
-#guard (subtype G pool [4] [2,3]).isSome
-#guard !(subtype G pool [2,3] [4]).isSome
+#guard (subtype G [2] [2,3]).isSome
+#guard (subtype G [4] [2,3]).isSome
+#guard !(subtype G [2,3] [4]).isSome
 
 -- The existing consumer can check both branches of ordinary union elimination.
 private def readProof : Evidence Nat := .node readClaim (.unionVar 0)

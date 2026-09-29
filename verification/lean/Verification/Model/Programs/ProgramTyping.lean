@@ -1896,7 +1896,7 @@ inductive HasTyUsing (G : NormalGraph ι) (images : PositiveCertificates.Instanc
   signature the scheme offers in the graph reassigned at every assignment of
   its parameter rows, so at every instantiation of the scheme's binders. Its
   captures are slots whose types read none of those binders (`FreeOk`, as
-  `Sub.gen` states it), so they mean the same at every instantiation. -/
+  a free-variable certificate states it), so they mean the same at every instantiation. -/
   | funScheme {Γ : List (Ty ι)} {j : ι} {s : SchemeRow ι} {arity start : Nat} {E : List Tm}
       {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
       {caps : List (Ty ι × Nat)} {rest : Bool} {As : List (Ty ι)} :
@@ -2158,7 +2158,7 @@ inductive HasTyUsing (G : NormalGraph ι) (images : PositiveCertificates.Instanc
   `bindMember`, the member is read from the object in a slot and bound to that
   same object; a generic method's signatures are a scheme the bound function
   meets, whatever receiver it is later given. A call names its instance below
-  the scheme (`Sub.inst`). -/
+  the scheme (`InstArrs`). -/
   | bindScheme {Γ : List (Ty ι)} {F O : Ty ι} {i : Nat} {k : PropKey}
       {m : MethodMembers.Sig (Ty ι)} :
       Γ[i]? = some O → memberOf G O k = some m → F ∈ m.schemes → expand G F = [] →
@@ -2182,7 +2182,7 @@ are defined once, in `HasTyUsing`, for every proved image checker. -/
 abbrev HasTy (G : NormalGraph ι) := HasTyUsing G (PositiveCertificates.finiteInstanceImages G)
 
 /-- A type reading none of a scheme's binders means the same at every
-instantiation of them (`agree_freeWith`), as `Sub.gen` reads its source. -/
+instantiation of them (`agree_freeWith`). -/
 theorem meaning_assign_free {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
     (hF : FreeOk G D V = true) {bs : List ι} {A : Ty ι}
     (hA : ∀ l ∈ A, l ∈ D ∧ ∀ p ∈ fv V l, p ∉ bs) (As : List MixedFamily) {n W v}

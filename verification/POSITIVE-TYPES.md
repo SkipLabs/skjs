@@ -488,8 +488,8 @@ the definition of scheme membership.
 Only clause rows have clauses. A type holding a parameter, scheme or meet row
 has no expansion, so no rule that reads a clause (`Represents`, `Answers`, the
 atoms of heap knowledge) applies to it. A meet row is below its parameter and
-below its clauses; a core table reads it through its clauses
-([Core tables](#core-tables)), and instance tables relate it to other types, at
+below its clauses; a covered pair reads it through its clauses
+([covered pairs](#covered-pairs)), and instance tables relate it to other types, at
 an instance of which it is a clause row.
 
 Lean: `qDenoteWithArgs G (mixedParameters G)`, `Bounded`, `instanceTWithArgs`,
@@ -753,7 +753,7 @@ type $S$ is within, or, when a key bound of the source excludes the key, by
 such a function along its prototype chain. A quantified signature is covered
 by one of the source member's, the two related as types: both are met by the
 same bound function, so the coverage of two schemes is subtyping between them
-(below, [quantified signatures](#core-tables)):
+(below, [quantified signatures](#covered-pairs)):
 
 ```math
 \frac{m'\in\mu\quad m'.\mathsf{key}=m.\mathsf{key}\quad
@@ -981,10 +981,13 @@ Lean: `CallArrow`, `CallArrow.sound`, `Domains`, `RestFixed`, `RestCovers`,
 `FixedCallsPack`, `FixedCoversPack`, `mixed_pack_exact`, `fits_exact`,
 `compatible`.
 
-### Core tables
+### Covered pairs
 
-A core judgment $G\vdash_c S\le T$ needs a finite table $\Delta$ containing
-$(S,T)$ in which every entry $(A,B)$ satisfies three conditions:
+Subtyping is decided by the algorithm of
+[RECURSIVE-EQUATIONS §4](RECURSIVE-EQUATIONS.md#4-subtyping): the premise
+judgment on the pair, and otherwise the pairs reachable from it, each
+covered with premises read in their table. A pair $(A,B)$ of a table $\Delta$
+is **covered** when it satisfies three conditions:
 
 1. **Same kind.** $A$ and $B$ are both value types or both argument-list
    types. A pack clause has argument kind, every other clause and every scheme
@@ -1003,12 +1006,10 @@ $(S,T)$ in which every entry $(A,B)$ satisfies three conditions:
    name.
 
 ```math
-\frac{(S,T)\in\Delta\qquad
-      \forall(A,B)\in\Delta.\;
-      \mathsf{SameKind}(A,B)\land\mathsf{Opaque}(A,B)
-      \land\forall a\in\mathsf{split}(\mathsf{cl}_G(A)\mathbin{+\!\!+}\mathsf{mcl}_G(A,B)).\;\exists b\in\mathsf{cl}_G(B).\;
+\frac{\mathsf{SameKind}(A,B)\qquad\mathsf{Opaque}(A,B)\qquad
+      \forall a\in\mathsf{split}(\mathsf{cl}_G(A)\mathbin{+\!\!+}\mathsf{mcl}_G(A,B)).\;\exists b\in\mathsf{cl}_G(B).\;
       \Delta;\kappa;A\vdash a\sqsubseteq b}
-     {G;\kappa\vdash_c S\le T}
+     {\Delta;\kappa\vdash(A,B)\ \mathsf{covered}}
 ```
 
 Here $\mathsf{cl}_G(A)$ lists the clauses of $A$'s clause rows, and
@@ -1046,9 +1047,6 @@ $`i`$'s own (`MeetOpaque`, sound by `meet_part_value` and
      {i\ \sqsubseteq_{\mathsf{meet}}\ j}
 ```
 
-Without scheme parts, a meet row is read as before, so finite tables check
-exactly what they did.
-
 This is how a binder bounded by another is below it: `U extends T` is
 $p_U\sqcap p_T\sqcap\top$, below $p_T$, and with `T extends B` it is
 $p_U\sqcap p_T\sqcap B$, below $T$'s $p_T\sqcap B$. This is how a bounded binder, read as the meet of its
@@ -1085,7 +1083,7 @@ $\vec X$ within $\beta'$, which is within $\beta$, $\Sigma$ read at
 $\eta[\vec p\mapsto\vec X]$; the arrow coverage, whose premises are table
 entries, gives $\Sigma'$ there (`scheme_covers_sound`). The premises are read
 at the instance's assignment, not the table's own, so the table's induction
-is over every assignment at once (`Core.mixed_sound`): every derivation holds
+is over every assignment at once (`family_sound`): every derivation holds
 at every assignment, since none reads it. So `Promise<number>` is below
 `Promise<number | string>`: their `then` members bind the same rows, and the
 target's callback, which takes `number | string`, is one the source's may be
@@ -1103,39 +1101,25 @@ induction needs no step for it (`mixed_subset`). A record below an interface
 then needs no row relating each of its fields' contracts to itself, and no row
 for everything those contracts reach.
 
-`Core.mixed_sound` holds wherever the known rows do: each $(F,L,M)\in\kappa$
-with $F$'s values within $\mathsf{arrs}(L;M)$ at every level.
+The table holds wherever the known rows do: each $(F,L,M)\in\kappa$
+with $F$'s values within $\mathsf{arrs}(L;M)$ at every level
+(`family_sound`).
 
-Lean: `Core`, `Valid`, `Known`, `SameKind`, `Opaque`, `OpaqueWith`, `SchemeCoversWith`,
+Lean: `PairOk`, `FamilyValid`, `Known`, `SameKind`, `Opaque`, `OpaqueWith`, `SchemeCoversWith`,
 `scheme_covers_sound`, `covers_arrs_sound`, `meetSources`, `meet_clause_of`, `MeetOpaque`,
 `MeetSource`, `MeetTarget`, `meet_row_iff`, `meet_part_value`, `meet_target_value`, `splitClause`,
 `splitClause_sem`, `source_sem`, `CoversByProto`, `ProtoHolds`, `FoundOn`, `lacksKey`, `viewOf`,
 `covers_arrows_sound`, `protoHolds_sound`, `CoversByScheme`, `bindersFree`,
-`covers_by_scheme_sound`, `Core.mixed_sound`.
+`covers_by_scheme_sound`, `family_sound`.
 
-### Structural rules
+### Instances and free rows
 
-`Sub` closes the core judgment under union inclusion and transitivity:
-
-```math
-\frac{G;\kappa\vdash_c S\le T\qquad\forall(F,L,M)\in\kappa.\;G\vdash F\le_{\mathsf{inst}}\mathsf{arrs}(L;M)}
-     {G\vdash S\le T}
-\qquad
-\frac{\forall i\in S.\ i\in T}{G\vdash S\le T}
-\qquad
-\frac{G\vdash S\le U\quad G\vdash U\le T}{G\vdash S\le T}.
-```
-
-The core rule's known rows are instances of scheme rows, each checked as
+The known rows of a table are instances of scheme rows, each checked as
 `inst` checks one (below, $\le_{\mathsf{inst}}$), against its arrows given
 inline rather than as a type of the graph: an array's instance of a prototype
 member has no row of its own.
 
-Reflexivity and invariance under reordering or duplicating union labels
-follow (`Sub.refl`, `Sub.congr`). Transitivity composes completed proofs, not
-unchecked back-references in a table.
-
-Three more rules read scheme rows. They turn on which **parameter rows a row
+Instances turn on which **parameter rows a row
 depends on**. A free-variable certificate $V$ on a domain $D$ assigns each
 $i\in D$ a set $V(i)$ of parameter rows, with $D$ closed under what its rows
 read (a clause row its operands, a scheme row its signature types, a meet row
@@ -1240,7 +1224,7 @@ construction:
 i\ \text{a scheme row}\ (\vec p;\Sigma;\beta;\Sigma_\ldots)\quad
 |\vec\theta|=|\vec p|\quad
 \forall p.\;\theta_p:\mathsf{kind}(p)\quad
-\forall(p,B)\in\beta.\;\theta_p\subseteq B\lor G\vdash_c\theta_p\le B\\
+\forall(p,B)\in\beta.\;\theta_p\subseteq B\lor\Delta_p\vdash(\theta_p,B)\ \mathsf{covered}\\
 \text{a checked table}\quad
 T\equiv_G\mathsf{arrs}(L;M)\quad
 \forall\tau\in L.\;\exists\sigma\in\Sigma.\;\tau\doteq\sigma[\kappa_0]\quad
@@ -1282,81 +1266,42 @@ fixed and rest arguments, effects and receiver weakening use this one proof.
 the finite-table checks; the equation checker discharges it by structural
 substitution ([RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md#3-metatheory)).
 
-The same tables relate two rows of one type that differ only in which binder
-rows their schemes use. Lowering gives one equation per declaration
-([PROGRAM-TYPING.md](PROGRAM-TYPING.md#one-equation-per-declaration)), so this is for graphs that
-hold copies anyway. With the empty context each row means its image:
+A bound $(p,B)$ is met by inclusion or by the pairs $\Delta_p$ reachable from
+$(\theta_p,B)$, each covered in $\Delta_p$ (`checkPairs`, `boundOk`).
 
-```math
-\frac{\text{a checked table}\quad
-      \forall l\in S.\;(l,\emptyset,U_l)\ \text{its entry for}\ l\ \land\ U_l\subseteq T}
-     {G\vdash S\le T}\ \textsf{table}
-```
-
-A type below a scheme's signatures with the binders opaque is below the
-scheme, provided none of its free parameter rows is a binder:
-
-```math
-\frac{j\ \text{a scheme row}\ (\vec p;\Sigma;\beta;\Sigma_\ldots)\quad
-      U\equiv_G\mathsf{arrs}(\Sigma;\Sigma_\ldots)\quad
-      \forall l\in S.\;l\in D\land V(l)\cap\vec p=\emptyset\quad
-      G\vdash S\le U}
-     {G\vdash S\le\{j\}}\ \textsf{gen}
-```
-
-`gen` is sound because $S$ means the same at any two assignments that differ
-only on $\vec p$, and every rule of `Sub` holds at every assignment: the
-premise $G\vdash S\le U$, derived once, holds at each instantiation.
-
-Lean: `entryOk`, `meetOk`, `TableOk`, `instKinds`, `substitutionKind`, `InstArrs`, `Inst`,
+Lean: `entryOk`, `meetOk`, `TableOk`, `instKinds`, `substitutionKind`, `InstArrs`,
 `mixed_assignment_substitution`, `InstanceImages`, `table_instanceImages`,
 `inst_images_sound`, `inst_mixed_sound`, `meet_row_value`, `meet_noArguments`,
-`meetOk_noArguments`, `table_row_mixed`, `Sub.inst`, `Sub.table`,
-`Sub.gen`, `Sub.mixed_sound`, `Sub.sound`, `Sub.args_sound`.
+`meetOk_noArguments`, `table_row_mixed`, `InstArrs.mixed_sound`, `checkPairs_sound`,
+`boundOk_sound`.
 
 ## Certificates
 
-A certificate is an explicit proof tree, checked without a semantic oracle or
-unbounded search. It has six forms, one per `Sub` rule:
+A certificate is checked without a semantic oracle or unbounded search. It
+has three forms, the judgments of
+[RECURSIVE-EQUATIONS §4](RECURSIVE-EQUATIONS.md#4-subtyping) and instantiation:
 
 | Form | Carries |
 | --- | --- |
-| `core` | the finite table, for each fixed signature to derive its derivation, and its known rows, each with its instance |
-| `subset` | nothing: union inclusion is decided |
-| `trans` | an intermediate type and a proof on each side |
-| `inst` | the instance: its table, the instance types, a certificate per bound, the table's domain and free-variable certificate |
-| `table` | the table, its domain and free-variable certificate |
-| `gen` | a domain holding the type, its free-variable certificate, the type stating the scheme's signatures, and a proof of inclusion in it |
+| `subset` | nothing: union inclusion, or with a renaming the premise judgment on the pair (`Var`), is decided |
+| `inst` | the instance: its table, the instance types, per bound the pairs proving it or none, the table's domain and free-variable certificate |
+| `family` | a family certificate holding the pair among its variable-free entries: the entries' tables, the arrow evidence, and the known rows with their instances |
 
-All six are accepted. `CertificateProducer` never emits `trans`: that
-restricts search, not the accepted language, and a certificate written by
-another producer may use it.
-
-The default finite checker is sound and complete for the rules:
+A checked certificate is a semantic inclusion:
 
 ```math
-G\vdash S\le T\quad\Longleftrightarrow\quad
-\exists p.\;\mathrm{check}(G,S,T,p)=\mathsf{true}.
-```
-
-This is not completeness for every inclusion true in the model. Composed with
-rule soundness, a checked certificate is a semantic inclusion:
-
-```math
-\mathrm{check}(G,S,T,p)=\mathsf{true}
+\mathrm{checkUsing}(G,I,S,T,p)=\mathsf{true}
 \Longrightarrow
-\forall n,W,v.\;
-⟦S⟧_G(n,W,v)\Rightarrow
-⟦T⟧_G(n,W,v),
+\forall\eta,n,W,x.\;
+⟦S⟧^\eta_G(n,W,x)\Rightarrow
+⟦T⟧^\eta_G(n,W,x),
 ```
 
-and likewise for argument lists. `accepted_subsumption` transports a
-computation-safety judgment from $S$ to $T$; the typing theorem that uses it
-is in [PROGRAM-TYPING.md](PROGRAM-TYPING.md).
+for both components. The typing theorem that uses it is in
+[PROGRAM-TYPING.md](PROGRAM-TYPING.md).
 
-Lean: `checkClause`, `checkCore`, `check_sound`, `check_complete`,
-`derivable_iff_checked`, `accepted`, `accepted_subsumption`
-(`Types/PositiveCertificates.lean`).
+Lean: `checkClauseWith`, `checkPairs`, `checkFamilyWith`, `checkUsing`,
+`checkUsing_sound`, `acceptedUsing` (`Types/PositiveCertificates.lean`).
 
 ## State-assertion grammar
 
@@ -1487,17 +1432,10 @@ Lean: `Types/PositiveGraphs.lean` (`schemeSemWithArgs`), `Source/GenericAlias.le
 - [Types/PositiveNormalization.lean](lean/Verification/Model/Types/PositiveNormalization.lean): the clause language and its finite normalization
 - [Types/PositiveGraphs.lean](lean/Verification/Model/Types/PositiveGraphs.lean): normalization of recursive graphs and the rows' denotation
 - [Types/PositiveRules.lean](lean/Verification/Model/Types/PositiveRules.lean): the declarative subtyping rules and their soundness
-- [Types/PositiveCertificates.lean](lean/Verification/Model/Types/PositiveCertificates.lean): the certificate checker, sound and complete for those rules
+- [Types/PositiveCertificates.lean](lean/Verification/Model/Types/PositiveCertificates.lean): the certificate checker and its soundness
 - [Types/GraphRows.lean](lean/Verification/Model/Types/GraphRows.lean): the label-independent row representation
 - `Types/EquationGraphs.lean`, `Types/EquationSupport.lean`, `Types/EquationCongruence.lean`
-- [Tests/PositiveNormalizationTests.lean](lean/Verification/Model/Tests/PositiveNormalizationTests.lean): the normalization and checking cases below
-- [Tests/PackTests.lean](lean/Verification/Model/Tests/PackTests.lean): argument packs covering one another ([argument packs](#argument-packs))
-- [Tests/QuantifiedRowTests.lean](lean/Verification/Model/Tests/QuantifiedRowTests.lean): parameter and scheme rows opaque to every check ([parameter and scheme rows](#parameter-and-scheme-rows))
 
-All under `lean/Verification/Model/`. Tests cover distribution, cross-shape
-elimination, retained incompatible contracts, nested constraints, cyclic
-normalization and checking, domain splitting, three-signature combination, and
-rejection of invented constraints and false bottom claims. `lake -d
-verification/lean build` checks the whole library; it contains no `sorry` or
-custom axioms. `check_sound` uses `propext`; `check_complete` uses `propext`
-and `Quot.sound`; semantic soundness also uses `Classical.choice`.
+All under `lean/Verification/Model/`. `lake -d verification/lean build`
+checks the whole library; it contains no `sorry` or custom axioms. Semantic
+soundness uses `propext`, `Quot.sound` and `Classical.choice`.

@@ -1448,7 +1448,7 @@ theorem covers_sig_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : Lis
 /-! ### Free parameter rows, semantically
 
 A row means the same at two assignments agreeing on its free parameter rows
-(`agree_freeWith`): what the instance tables below, `Sub.gen` and a scheme a
+(`agree_freeWith`): what the instance tables below and a scheme a
 prototype holds for its instances (`CoversByScheme`) rely on. -/
 
 /-- Local operand agreement for the shared value interpretation. Argument
@@ -2855,8 +2855,8 @@ the source's by the ordinary arrow coverage. This is the subtyping rule for
 quantified signatures restricted as F<:'s kernel rule is (Pierce 1994): the
 binders are the same, so the target's are taken rigidly and the source's are
 instantiated at them, and no bound is compared, so the check stays decidable.
-Its premises hold at the reassigned assignment, which the core table's
-induction over every assignment supplies (`Core.mixed_sound`). -/
+Its premises hold at the reassigned assignment, which the family's
+induction over every assignment supplies (`family_sound`). -/
 @[nospecialize] def SchemeCoversWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
     (arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop)
     (i j : ι) : Prop :=
@@ -5000,12 +5000,12 @@ theorem inst_mixed_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssign
 
 /-! ## Families of pairs
 
-A core table holds its pairs at every assignment. A family entry
+A family entry
 (RECURSIVE-EQUATIONS §7) holds its pairs where its hypotheses hold: its
 variables are parameter rows, and one entry stands for every pair that is
 an instance of it. One level induction justifies both (`pairs_sound`),
 parameterized by the relation premises are read through: an ordinary table
-is the case without hypotheses (`Core.mixed_sound`), a family the case whose
+is the case without hypotheses, a family the case whose
 premises may be instances of its entries (`family_sound`). -/
 
 /-- Both components of one type within another's, at one level. -/
@@ -5109,7 +5109,7 @@ quantified coverage alone. -/
     (hyps : List (ι × ι)) (a b : ι) : Prop :=
   SchemeCoversAlpha G sub R known arrows a b ∨ (a, b) ∈ hyps
 
-/-- Opaque rows of a family pair: as for a core table (`OpaqueWith`), and a
+/-- Opaque rows of a family pair: as for a pair without hypotheses (`OpaqueWith`), and a
 row may also be below a target row by a hypothesis, and a scheme row below
 one whose signatures its own cover up to renaming. A meet reads its parts
 the same way (`PartCovers`): a target meet's variable part is covered by a
@@ -5156,7 +5156,7 @@ theorem OpaqueFamily.mono [DecidableEq ι] {G : NormalGraph ι} {sub : Option (R
   · exact .inr (.inr (.inr (.inr (.inl h))))
   · exact .inr (.inr (.inr (.inr (.inr ⟨j, hj, SchemeCoversAlpha.mono ha hc⟩))))
 
-/-- A core table's opaque rows are a family pair's without hypotheses. -/
+/-- Opaque rows read with `OpaqueWith` are a family pair's without hypotheses. -/
 theorem OpaqueWith.family [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
     {R : List ι → List ι → Prop} {known : Known ι}
     {arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop} {hyps : List (ι × ι)}

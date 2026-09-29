@@ -432,7 +432,7 @@ generic closure's claimed scheme becomes a scheme row whose binders are fresh
 value parameter rows; every claim and annotation inside the closure reads its
 binders as those rows; and a call of a scheme-typed local is claimed at the
 instance the call names, which the checker relates to the scheme by a checked
-instance (`Sub.inst`). -/
+instance (`InstArrs`). -/
 
 /-- A generic closure of a unit's source: its span and its binders. -/
 structure GenericClosure where

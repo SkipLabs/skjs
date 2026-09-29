@@ -325,7 +325,7 @@ undecidable, so the rule relating two generic methods instantiates the
 target's binders rigidly and the source's at them only where the binder
 counts are equal and the bounds identical, a decidable check.
 **Discussed in** [DESIGN: method members are host-relative](DESIGN.md#method-members-are-host-relative),
-[POSITIVE-TYPES: core tables](POSITIVE-TYPES.md#core-tables),
+[POSITIVE-TYPES: covered pairs](POSITIVE-TYPES.md#covered-pairs),
 `lean/Verification/Model/Types/PositiveRules.lean`.
 
 ## JavaScript and ECMAScript

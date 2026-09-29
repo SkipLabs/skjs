@@ -245,7 +245,7 @@ Quantified members declared alike in two declarations are compared after
 renaming the target's binders to the source's. A head pair recurring,
 neither renamed nor smaller, with larger arguments than every earlier one is
 growth: the search refuses there. Untrusted: the checker decides
-(`coreUsing`). -/
+(`checkFamilyAt`). -/
 
 /-- `Var`'s per-position pairs for two applications of one head whose
 variance the checker computed. -/
@@ -304,36 +304,6 @@ structure Fallback (ι : Type) where
   /-- `growth`, `limit`, or none when the table closed. -/
   refused : Option String := none
 
-/-- Grow the table from its frontier: each row adds the pairs its coverage
-compares (`demandPairs`, and quantified members after renaming), each read
-through `Var` where it applies, that no inclusion, row or renamed row already
-answers. Refuse at growth or past the limit. -/
-@[nospecialize] def growTable [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    : Nat → Fallback ι → Table ι → Fallback ι
-  | 0, fb, _ => { fb with refused := some "limit" }
-  | fuel + 1, fb, frontier =>
-    let cand := (frontier.flatMap fun p =>
-      (demandPairs G p.1 p.2 ++ (match images.sub with
-        | some r => renamedPairs G r p.1 p.2
-        | none => [])).flatMap fun p => match images.sub with
-          | some _ => rowsFor images varDepthDefault p.1 p.2
-          | none => if p.1.all (· ∈ p.2) then [] else [p]).eraseDups
-    let step (st : Except String (Table ι × Table ι)) (p : Ty ι × Ty ι) :
-        Except String (Table ι × Table ι) := do
-      let (tbl, fresh) ← st
-      let f : Entry ι := { source := [], target := [], table := tbl }
-      if PositiveCertificates.premTable G images.sub f p.1 p.2 then return (tbl, fresh)
-      if let some r := images.sub then
-        if grows r tbl p.1 p.2 then throw "growth"
-      if tbl.length ≥ fallbackLimit then throw "limit"
-      return (tbl ++ [p], fresh ++ [p])
-    let fb := { fb with rounds := fb.rounds + 1, visited := fb.visited + cand.length }
-    match cand.foldl step (.ok (fb.table, [])) with
-    | .error why => { fb with refused := some why }
-    | .ok (tbl, fresh) =>
-      if fresh.isEmpty then { fb with table := tbl }
-      else growTable G images fuel { fb with table := tbl } fresh
-
 /-- The arrow evidence a table's rows ask for, premises decided by `rel`:
 each row's arrow clauses against its target's, and each quantified member
 against the target's, as declared and with the target's binders renamed to
@@ -359,6 +329,57 @@ the source's. -/
         arrows s.signatures s.variadic (s'.signatures ++ renamed)
       | _, _ => [])
 
+/-- Whether the table covers the pair `p`, premises read in the entry of
+`(A, B)` with the table (RECURSIVE-EQUATIONS §4.2), arrows by the evidence
+searched for its rows. Untrusted: the checker decides. -/
+@[nospecialize] def coveredIn [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (A B : Ty ι)
+    (known : PositiveRules.Known ι) (table : Table ι) : PositiveCertificates.Evidence ι × (Ty ι × Ty ι → Bool) :=
+  let f : Entry ι := { source := A, target := B, table }
+  let look := images.base.lookup [f]
+  let rel : List ι → List ι → Bool := fun X Y => decide (Prem G images.sub look images.gen f X Y)
+  let R : List ι → List ι → Prop := fun X Y => rel X Y = true
+  let es := rowArrows G images.sub rel (f.pairs)
+  (es, fun p =>
+    PositiveRules.SameKind G p.1 p.2 &&
+    decide (OpaqueFamily G images.sub R known
+      (PositiveCertificates.ArrowsCheckedWith G R es) [] p.1 p.2) &&
+    (sourceClauses G p.1 ++ PositiveRules.meetSources G p.1 p.2).all fun a =>
+      (clausesOf G p.2).any fun b => PositiveCertificates.checkClauseWith G R known es p.1 a b)
+
+/-- Grow the table from its frontier: each row adds the pairs its coverage
+compares (`demandPairs`, and quantified members after renaming), each read
+through `Var` where it applies, that no inclusion, row or renamed row already
+answers. A pair that reaches no further pair and is not covered by itself
+alone is left out: the deletion would remove it. Refuse at growth or past
+the limit. -/
+@[nospecialize] def growTable [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    : Nat → Fallback ι → Table ι → Fallback ι
+  | 0, fb, _ => { fb with refused := some "limit" }
+  | fuel + 1, fb, frontier =>
+    let reached (p : Ty ι × Ty ι) := demandPairs G p.1 p.2 ++ (match images.sub with
+        | some r => renamedPairs G r p.1 p.2
+        | none => [])
+    let cand := (frontier.flatMap fun p =>
+      (reached p).flatMap fun p => match images.sub with
+          | some _ => rowsFor images varDepthDefault p.1 p.2
+          | none => if p.1.all (· ∈ p.2) then [] else [p]).eraseDups
+    let step (st : Except String (Table ι × Table ι)) (p : Ty ι × Ty ι) :
+        Except String (Table ι × Table ι) := do
+      let (tbl, fresh) ← st
+      let f : Entry ι := { source := [], target := [], table := tbl }
+      if PositiveCertificates.premTable G images.sub f p.1 p.2 then return (tbl, fresh)
+      if (reached p).isEmpty && !(coveredIn G images p.1 p.2 [] [p]).2 p then return (tbl, fresh)
+      if let some r := images.sub then
+        if grows r tbl p.1 p.2 then throw "growth"
+      if tbl.length ≥ fallbackLimit then throw "limit"
+      return (tbl ++ [p], fresh ++ [p])
+    let fb := { fb with rounds := fb.rounds + 1, visited := fb.visited + cand.length }
+    match cand.foldl step (.ok (fb.table, [])) with
+    | .error why => { fb with refused := some why }
+    | .ok (tbl, fresh) =>
+      if fresh.isEmpty then { fb with table := tbl }
+      else growTable G images fuel { fb with table := tbl } fresh
+
 /-- Delete the rows a table does not cover, premises read in the table
 itself, until every row is covered: the greatest fixed point below the
 reachable pairs. With a renaming a premise is the judgment of §4.2 in the
@@ -368,17 +389,7 @@ inclusion. Untrusted: the checker decides. -/
     (known : PositiveRules.Known ι) : Nat → Table ι → Table ι × PositiveCertificates.Evidence ι
   | 0, table => (table, [])
   | fuel + 1, table =>
-    let f : Entry ι := { source := A, target := B, table }
-    let look := images.base.lookup [f]
-    let rel : List ι → List ι → Bool := fun X Y => decide (Prem G images.sub look images.gen f X Y)
-    let R : List ι → List ι → Prop := fun X Y => rel X Y = true
-    let es := rowArrows G images.sub rel (f.pairs)
-    let covered (p : Ty ι × Ty ι) : Bool :=
-      PositiveRules.SameKind G p.1 p.2 &&
-      decide (OpaqueFamily G images.sub R known
-        (PositiveCertificates.ArrowsCheckedWith G R es) [] p.1 p.2) &&
-      (sourceClauses G p.1 ++ PositiveRules.meetSources G p.1 p.2).all fun a =>
-        (clausesOf G p.2).any fun b => PositiveCertificates.checkClauseWith G R known es p.1 a b
+    let (es, covered) := coveredIn G images A B known table
     let next := table.filter covered
     if next.length = table.length then (table, es) else gfp G images A B known fuel next
 
@@ -554,7 +565,7 @@ giving each binder its instance. Untrusted: `checkInstArrs` validates it. -/
 @[nospecialize] def instanceForUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (fuel : Nat) (s : SchemeRow ι)
     (L : PositiveRules.Ops ι) (M : List (RestArrow (List ι))) :
     Option (PositiveCertificates.Instance ι) := do
-  -- Each instance within its binder's bounds: inclusion, or a core table.
+  -- Each instance within its binder's bounds: inclusion, or the pairs reachable from the pair (`checkPairs`).
   let boundCerts (κ₀ : Ctx ι) :
       Option (List (Option (Table ι × PositiveCertificates.Evidence ι))) :=
     s.bounds.mapM fun b =>
