@@ -2,7 +2,6 @@ import Verification.Model.Source.SkjsSourceClaims
 import Verification.Model.Programs.ExpressionClaims
 import Verification.Model.Programs.DirectObligation
 import Verification.Model.Source.GenericAlias
-import Verification.Model.Source.DeclarationGraph
 
 /-! First source adapter for the stateful consumer. Names are resolved against
 initialized local bindings. Supplied expression types and source annotations

@@ -201,9 +201,8 @@ every other name in double brackets. -/
 def reservedKey (k : PropKey) : Bool :=
   k == CallArguments.arrayStoreField || k == CallArguments.protoField || bracketed k
 
-/-- The row of `ArrayProto`, `Array.prototype`'s contract: the declaration
-document of a source with arrays lists it first, so its row follows the four
-fixed ones (`DeclarationGraph.prepare` checks this). -/
+/-- The row of `ArrayProto`, `Array.prototype`'s contract, in a finite table:
+the row after the four fixed ones. -/
 def arrayProtoLabel : Nat := 4
 
 /-- The keys an ordinary array cannot own: its prototype's declared keys and

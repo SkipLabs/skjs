@@ -5,7 +5,7 @@ import Verification.Model.Programs.CellClaims
 
 SKJS writes a single-argument named instantiation as an alias atom. The
 converter expands `type Id<T> = T` and `type Box<T> = { value: T }` here, at the
-claim level. Source annotations do not use this module: `DeclarationGraph` interprets
+claim level. Source annotations do not use this module: `EquationLowering` interprets
 every declaration application from its source equation. -/
 namespace Verification.Model.GenericAlias
 open Lean

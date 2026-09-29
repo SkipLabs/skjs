@@ -1,9 +1,9 @@
-import Verification.Model.Source.DeclarationGraph
+import Verification.Model.Source.EquationLowering
 
 /-! Binder-role classification is structural and lexical. Inner binders must
 not turn an outer pack into a mixed value/pack parameter. -/
 namespace Verification.Model.DeclarationBinderTests
-open Lean DeclarationGraph
+open Lean EquationLowering
 
 private def binder (name : String) : Json :=
   Json.mkObj [("k", .str "binder"), ("name", .str name)]

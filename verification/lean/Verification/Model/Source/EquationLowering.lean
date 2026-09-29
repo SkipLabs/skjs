@@ -18,9 +18,9 @@ terminates because heads are keyed by source occurrence.
 
 Lowering is untrusted in what it proposes (the variance declarations, the
 hash-consing of literal heads) and trusted in what it states: the equations
-are the meaning of the source, as the finite table is today. It is not yet
-read by any request (`SourceClaimJson` still takes `DeclarationGraph`'s
-table); S6 wires it in. -/
+are the meaning of the source. The source path reads it through
+`EquationLowering.source` (`SourceClaimJson.equationFront`), and the store
+extraction grows is its state (`EquationStore`). -/
 namespace Verification.Model.EquationLowering
 open Lean EquationGraphs PositiveGraphs PositiveNormalization PositiveRules PositiveCertificates
   CallEffects
@@ -284,7 +284,7 @@ scheme binding the same name shadows it. -/
 structure BinderUse where
   value : Bool := false
   pack : Bool := false
-  deriving Inhabited
+  deriving Inhabited, BEq
 
 private def BinderUse.merge (a b : BinderUse) : BinderUse := ⟨a.value || b.value, a.pack || b.pack⟩
 
@@ -610,14 +610,13 @@ def primitives : M Unit := do
 
 def top : M Tree := prim "unknown" .top
 
-/-- The empty intersection's refusal (as `DeclarationGraph`). -/
+/-- The empty intersection's refusal. -/
 def emptyMeet : String :=
   "the intersection is empty: its operands have no value in common (no value has two shapes, and an array owns no key its prototype provides), and an empty intersection is refused rather than verified vacuously"
 
 /-- Two operands' clauses as TypeScript meets them: the model's meet, except
 that a record of invariant fields met with a function type is the function
-carrying those fields, a `callable` (`DeclarationGraph.sourceMeetLists`, over
-any operands). -/
+carrying those fields, a `callable`. -/
 def sourceMeetLists [BEq α] (A B : List (Clause α)) : Except String (List (Clause α)) := do
   let plainRecord (c : Clause α) : Bool := match c with
     | .refs .. => !c.presentKeys.contains CallArguments.arrayStoreField
@@ -1075,7 +1074,7 @@ partial def heritage (ctx : Ctx) (base : Json) : M (List (Clause (List Tree))) :
       | _ => throw s!"{ctx.site}: a base whose row is not a clause row"
     | _ => throw s!"{ctx.site}: a base that is a type parameter or an intersection is outside heritage"
 
-/-- An object type's clause (`DeclarationGraph`'s object arm, over trees). A
+/-- An object type's clause. A
 generic method is a head of its own, owned by the head whose row this is. -/
 partial def objectClause (ctx : Ctx) (term : Json) : M (Clause (List Tree)) := do
   CellClaims.fieldsExactly term (objectMembers term)
@@ -1437,8 +1436,7 @@ partial def drain : M Unit := do
 
 /-! ### Units and annotations -/
 
-/-- The fields of the function tree that hold a source annotation
-(`DeclarationGraph.annotationFields`). -/
+/-- The fields of the function tree that hold a source annotation. -/
 def annotationFields : List String :=
   ["annot", "functionType", "bagType", "type", "result", "bound", "retType"]
 
@@ -1567,7 +1565,7 @@ partial def walk (path : String) (scope : List (String × Binding)) (bounds : Li
   | _ => return []
 
 /-- The top-level code's scope: every generic class's binders, one per
-spelling (`DeclarationGraph.prepare`'s `classScope`). -/
+spelling. -/
 def classScope (init : Json) : M (List (String × Binding)) := do
   let mut scope := []
   let .arr sts := init | return []

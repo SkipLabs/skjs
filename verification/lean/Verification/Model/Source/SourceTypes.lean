@@ -203,6 +203,20 @@ What the finite table's labels mean, row by row: a label interned for a
 clause means exactly that clause, and the four primitive labels the four
 primitive values. -/
 
+/-- A finite table's intersections, for the SKJS export's tables: the
+normalized conjunction of clause rows (`meetMany`), interned; an empty one is
+refused, and so is an operand that is no clause row, which only the source
+path's equations state (`EquationLowering.meetOf`). -/
+instance : Meets Table Nat where
+  meet parts := fun T => do
+    let G := graph T
+    if parts.any (fun A => A.isEmpty || !G.plainTy A) then
+      throw "an intersection in a finite table is of clause rows"
+    let cs := meetMany (parts.map (clausesOf G))
+    if cs.isEmpty then throw "the intersection is empty: its operands have no value in common"
+    let (T, l) := RequestJson.Table.intern T cs
+    return ([l], T)
+
 /-- A missing clause gets the table length, never a different contract. -/
 def label (T : Table) (c : Clause (List Nat)) : Nat := T.idxOf (GraphRow.clauses [c])
 
