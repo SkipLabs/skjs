@@ -54,8 +54,8 @@ such a view of its graph labels.
 The judgment $\Gamma\vdash_G t:A$ is `HasTyUsing G images`. Its rules are
 stated once, for every proved image checker `images` (an
 [`InstanceImageCheck`](RECURSIVE-EQUATIONS.md#3-metatheory)): the checker
-decides only whether an instance table's named images are substitution images,
-and it carries the proof
+decides whether an instance table's named images are substitution images (over
+equations, or types proved equal to them), and it carries the proof
 
 ```math
 \mathrm{check}(\vec b,c)=\mathsf{true}\ \land\ \mathrm{kinds}(\vec b,c)
@@ -64,8 +64,10 @@ and it carries the proof
 
 Subtype certificates in `sub` and in member coverage are checked by
 `PositiveCertificates.checkUsing` with that checker, and every rule's soundness
-depends on it only through this implication. The proof is Lean code, never
-certificate data. `HasTy G` is `HasTyUsing G (finiteInstanceImages G)`, the
+depends on it only through this implication. Over equations the checker also
+carries the renaming and the computed variances, with which `subset` and `core`
+steps apply `Var` ([RECURSIVE-EQUATIONS §4.3](RECURSIVE-EQUATIONS.md#43-variance)),
+each proved sound. The proof is Lean code, never certificate data. `HasTy G` is `HasTyUsing G (finiteInstanceImages G)`, the
 finite closed-table checker; source requests use it. Constructor names below are
 `HasTyUsing`'s. The rules are:
 
