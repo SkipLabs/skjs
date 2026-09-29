@@ -23,8 +23,19 @@ def Tree.substitute (σ : Label sig → List (Label sig)) (t : Tree)
       exact (Args.labels_length ts _).symm.trans scope.arity)).label]
   | .bound h ts i => σ ⟨.bound h ts i, valid⟩
   | .var o i k => σ ⟨.var o i k, valid⟩
+  | .meet ps =>
+    -- Intersection distributes over each part's substituted union.
+    (choices (Types.substituteParts σ ps (Bool.and_eq_true_iff.mp valid).1)).map Label.meetOf
   | .argument i => False.elim (by simp [Tree.scoped] at valid)
   | .local i => False.elim (by simp [Tree.scoped] at valid)
+
+/-- Each part of a meet substituted to a union. -/
+def Types.substituteParts (σ : Label sig → List (Label sig)) (ts : Types)
+    (valid : ts.scoped sig 0 0 = true) : List (List (Label sig)) :=
+  match ts with
+  | .nil => []
+  | .cons t ts => Tree.substitute σ t (Bool.and_eq_true_iff.mp valid).1 ::
+    Types.substituteParts σ ts (Bool.and_eq_true_iff.mp valid).2
 
 def Types.substitute (σ : Label sig → List (Label sig)) (ts : Types)
     (valid : ts.scoped sig 0 0 = true) : List (Label sig) :=
@@ -72,10 +83,10 @@ theorem Tree.substitute_meaning (equations : Equations)
   cases t with
   | bound h ts i =>
     apply images
-    simp [NormalGraph.params, Equations.graph, NormalGraph.ofRowMap, Equations.row, Label.view]
+    simp [NormalGraph.params, Equations.graph, NormalGraph.ofRowMap, Equations.row, Equations.baseRow, Label.view]
   | var o i k =>
     apply images
-    simp [NormalGraph.params, Equations.graph, NormalGraph.ofRowMap, Equations.row, Label.view]
+    simp [NormalGraph.params, Equations.graph, NormalGraph.ofRowMap, Equations.row, Equations.baseRow, Label.view]
   | argument i => simp [Tree.scoped] at valid
   | «local» i => simp [Tree.scoped] at valid
   | app h ts =>
@@ -93,6 +104,54 @@ theorem Tree.substitute_meaning (equations : Equations)
       rfl
     rw [source] at he
     exact he
+  | meet ps =>
+    have hp := Types.substituteParts_meaning equations η θ σ images ps (Bool.and_eq_true_iff.mp valid).1
+    funext n W x
+    apply propext
+    cases x with
+    | inr vs =>
+      exact iff_of_false (equations.meet_noArguments η ps valid)
+        (equations.distribute_noArguments θ _)
+    | inl v =>
+      rw [mixedMeaning_single_value, equations.meet_denote]
+      change _ ↔ mixedValues _ θ _ n W v
+      simp only [Tree.substitute]
+      rw [equations.distribute_values]
+      refine and_congr_right fun _ => ⟨fun h A hA => ?_, fun h q hq => ?_⟩
+      · obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hA
+        have hl : i < (ps.labels (Bool.and_eq_true_iff.mp valid).1).length := by omega
+        have he := congrFun (congrFun (congrFun (hp.2 i hl hi) n) W) (.inl v)
+        change _ = mixedValues _ θ _ n W v at he
+        rw [← he, mixedMeaning_single_value]
+        exact h _ (List.getElem_mem hl)
+      · obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hq
+        have hj : i < (Types.substituteParts σ ps (Bool.and_eq_true_iff.mp valid).1).length := by omega
+        have he := congrFun (congrFun (congrFun (hp.2 i hi hj) n) W) (.inl v)
+        change _ = mixedValues _ θ _ n W v at he
+        rw [← mixedMeaning_single_value, he]
+        exact h _ (List.getElem_mem hj)
+
+theorem Types.substituteParts_meaning (equations : Equations)
+    (η θ : MixedAssignment (Label equations.signature)) (σ)
+    (images : equations.ParameterImages η θ σ)
+    (ts : Types) (valid : ts.scoped equations.signature 0 0 = true) :
+    (ts.labels valid).length = (Types.substituteParts σ ts valid).length ∧
+    ∀ i (ha : i < (ts.labels valid).length) (hb : i < (Types.substituteParts σ ts valid).length),
+      mixedMeaning equations.graph η [(ts.labels valid)[i]] =
+        mixedMeaning equations.graph θ (Types.substituteParts σ ts valid)[i] := by
+  cases ts with
+  | nil => exact ⟨rfl, fun i hi _ => by simp [Types.labels] at hi⟩
+  | cons t ts =>
+    have hh := Tree.substitute_meaning equations η θ σ images t (Bool.and_eq_true_iff.mp valid).1
+    have ht := Types.substituteParts_meaning equations η θ σ images ts (Bool.and_eq_true_iff.mp valid).2
+    refine ⟨by simp only [Types.labels, Types.substituteParts, List.length_cons, ht.1], ?_⟩
+    intro i hi hj
+    cases i with
+    | zero => exact hh
+    | succ i =>
+      exact ht.2 i
+        (by simpa only [Types.labels, List.length_cons, Nat.succ_lt_succ_iff] using hi)
+        (by simpa only [Types.substituteParts, List.length_cons, Nat.succ_lt_succ_iff] using hj)
 
 theorem Types.substitute_meaning (equations : Equations)
     (η θ : MixedAssignment (Label equations.signature)) (σ)

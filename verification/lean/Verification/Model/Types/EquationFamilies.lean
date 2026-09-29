@@ -17,6 +17,7 @@ mutual
 def Tree.subtrees : Tree → List Tree
   | .app h args => .app h args :: args.subtrees
   | .bound h args i => .bound h args i :: args.subtrees
+  | .meet ps => .meet ps :: ps.subtrees
   | t => [t]
 def Types.subtrees : Types → List Tree
   | .nil => []
@@ -73,7 +74,7 @@ theorem Equations.scheme_binders (equations : Equations) (i : Label equations.si
     cases hb : (equations.body scope.head).1 with
     | scheme bs sigs bounds rests =>
       simp only [hb, RowTemplate.wellBound, Bool.and_eq_true_iff, decide_eq_true_eq] at hv
-      simp only [Equations.graph, NormalGraph.ofRowMap, Equations.row, Scope.view_label,
+      simp only [Equations.graph, NormalGraph.ofRowMap, Equations.row, Equations.baseRow, Scope.view_label,
         Template.instantiate, hb, GraphRow.map, Option.some.injEq] at hs
       subst hs
       intro x hx
@@ -81,18 +82,21 @@ theorem Equations.scheme_binders (equations : Equations) (i : Label equations.si
       obtain ⟨slot, rfl⟩ := Scope.mem_binders.mp hx
       rfl
     | clauses cs =>
-      simp [Equations.graph, NormalGraph.ofRowMap, Equations.row, Template.instantiate, hb,
+      simp [Equations.graph, NormalGraph.ofRowMap, Equations.row, Equations.baseRow, Template.instantiate, hb,
         GraphRow.map] at hs
     | param p name kind =>
-      simp [Equations.graph, NormalGraph.ofRowMap, Equations.row, Template.instantiate, hb,
+      simp [Equations.graph, NormalGraph.ofRowMap, Equations.row, Equations.baseRow, Template.instantiate, hb,
         GraphRow.map] at hs
     | meet p cs ps =>
-      simp [Equations.graph, NormalGraph.ofRowMap, Equations.row, Template.instantiate, hb,
+      simp [Equations.graph, NormalGraph.ofRowMap, Equations.row, Equations.baseRow, Template.instantiate, hb,
         GraphRow.map] at hs
   · intro scope slot hs
-    simp [Equations.graph, NormalGraph.ofRowMap, Equations.row] at hs
+    simp [Equations.graph, NormalGraph.ofRowMap, Equations.row, Equations.baseRow] at hs
   · intro o i k hs
-    simp [Equations.graph, NormalGraph.ofRowMap, Equations.row] at hs
+    simp [Equations.graph, NormalGraph.ofRowMap, Equations.row, Equations.baseRow] at hs
+  · intro ps valid hs
+    rw [(equations.meet_rigid ps valid).1] at hs
+    cases hs
 
 /-- A family variable is a parameter row. -/
 theorem Equations.variable_param (equations : Equations) (x : Label equations.signature)
@@ -100,7 +104,7 @@ theorem Equations.variable_param (equations : Equations) (x : Label equations.si
   obtain ⟨t, valid⟩ := x
   cases t with
   | var o i k =>
-    simp [NormalGraph.params, Equations.graph, NormalGraph.ofRowMap, Equations.row, Label.view]
+    simp [NormalGraph.params, Equations.graph, NormalGraph.ofRowMap, Equations.row, Equations.baseRow, Label.view]
   | _ => simp [Label.isVariable] at hx
 
 /-- **The equation graph's renaming.** Substitution is `Label.substitute`,

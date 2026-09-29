@@ -92,6 +92,16 @@ private theorem mixed_append_agree (G : NormalGraph ι) (η θ : MixedAssignment
   rw [happ, happ]
   exact or_congr (h1 m hm W x) (h2 m hm W x)
 
+/-- A meet template instantiates to the canonical meets of every choice of a
+label from each part's union. -/
+theorem Tree.instantiate_meet_labels (scope : Scope sig) (ps : Types)
+    (valid : (Tree.meet ps).scoped sig sig[scope.head].parameters sig[scope.head].binders.length = true)
+    (closed : (Tree.instantiate scope (.meet ps) valid).1.scoped sig 0 0 = true) :
+    (Tree.instantiate scope (.meet ps) valid).1.labels closed =
+      (choices (Types.instantiateParts scope ps (Bool.and_eq_true_iff.mp valid).1)).map Label.meetOf := by
+  simp only [Tree.instantiate]
+  exact Types.labels_ofList _ _
+
 mutual
 /-- Finite template traversal preserves semantic agreement, assuming it for
 applications at the same step index. Captures and locals are separate premises. -/
@@ -134,6 +144,45 @@ theorem Tree.instantiate_agree (equations : Equations) (apps : equations.Applica
     dsimp only [sa, sb] at hs
     simp only [Scope.label, Scope.ofRaw_args] at hs
     simpa only [Scope.ofRaw, Tree.instantiate, Types.labels, oa, ob] using hs
+  | meet ps =>
+    rw [Tree.instantiate_meet_labels, Tree.instantiate_meet_labels]
+    have hp := Types.instantiateParts_agree equations apps a b η θ args locals ps
+      (Bool.and_eq_true_iff.mp va).1 (Bool.and_eq_true_iff.mp vb).1 lex
+    exact equations.distribute_meaning η θ _ _ hp.1 fun i ha hb m hm W v =>
+      hp.2 i ha hb m hm W (.inl v)
+
+theorem Types.instantiateParts_agree (equations : Equations) (apps : equations.ApplicationsAgree n)
+    (a b : Scope equations.signature) (η θ : MixedAssignment (Label equations.signature))
+    (args : equations.ArgumentsAgree η θ a.arguments b.arguments n)
+    (locals : allowLocals = true → ∀ i (ha : i < equations.signature[a.head].binders.length)
+      (hb : i < equations.signature[b.head].binders.length),
+      Agree (mixedMeaning equations.graph η [a.bound ⟨i, ha⟩])
+        (mixedMeaning equations.graph θ [b.bound ⟨i, hb⟩]) n)
+    (ts : Types) (va : ts.scoped equations.signature equations.signature[a.head].parameters
+      equations.signature[a.head].binders.length = true)
+    (vb : ts.scoped equations.signature equations.signature[b.head].parameters
+      equations.signature[b.head].binders.length = true)
+    (lex : ts.lexical allowLocals = true) :
+    (Types.instantiateParts a ts va).length = (Types.instantiateParts b ts vb).length ∧
+    ∀ i (ha : i < (Types.instantiateParts a ts va).length)
+      (hb : i < (Types.instantiateParts b ts vb).length),
+      Agree (mixedMeaning equations.graph η (Types.instantiateParts a ts va)[i])
+        (mixedMeaning equations.graph θ (Types.instantiateParts b ts vb)[i]) n := by
+  cases ts with
+  | nil => exact ⟨rfl, fun i hi _ => by simp [Types.instantiateParts] at hi⟩
+  | cons t ts =>
+    have hh := Tree.instantiate_agree equations apps a b η θ args locals t
+      (Bool.and_eq_true_iff.mp va).1 (Bool.and_eq_true_iff.mp vb).1 (Bool.and_eq_true_iff.mp lex).1
+    have ht := Types.instantiateParts_agree equations apps a b η θ args locals ts
+      (Bool.and_eq_true_iff.mp va).2 (Bool.and_eq_true_iff.mp vb).2 (Bool.and_eq_true_iff.mp lex).2
+    refine ⟨by simp only [Types.instantiateParts, List.length_cons, ht.1], ?_⟩
+    intro i hi hj
+    cases i with
+    | zero => exact hh
+    | succ i =>
+      exact ht.2 i
+        (by simpa only [Types.instantiateParts, List.length_cons, Nat.succ_lt_succ_iff] using hi)
+        (by simpa only [Types.instantiateParts, List.length_cons, Nat.succ_lt_succ_iff] using hj)
 
 theorem Types.instantiate_agree (equations : Equations) (apps : equations.ApplicationsAgree n)
     (a b : Scope equations.signature) (η θ : MixedAssignment (Label equations.signature))
@@ -318,12 +367,12 @@ theorem Equations.clauses_step (equations : Equations) (apps : equations.Applica
   have plain (C) (hc : C.length = equations.signature[head].parameters) :
       equations.graph.plain (Scope.mk head C hc).label = true := by
     simp [NormalGraph.plain, NormalGraph.params, Equations.graph, NormalGraph.ofRowMap,
-      Equations.row, Template.instantiate, body, GraphRow.map]
+      Equations.row, Equations.baseRow, Template.instantiate, body, GraphRow.map]
   have row (C) (hc : C.length = equations.signature[head].parameters) :
       equations.graph (Scope.mk head C hc).label =
         cs.map (Clause.map (fun es => es.flatMap (Expression.instantiate ⟨head, C, hc⟩))) := by
     simp [NormalGraph.clauses, NormalGraph.plain, NormalGraph.params, Equations.graph,
-      NormalGraph.ofRowMap, Equations.row, Template.instantiate, body, GraphRow.map, GraphRow.union]
+      NormalGraph.ofRowMap, Equations.row, Equations.baseRow, Template.instantiate, body, GraphRow.map, GraphRow.union]
   rw [mixed_unfold_plain η (plain A ha), mixed_unfold_plain θ (plain B hb), row A ha, row B hb]
   constructor
   · rintro ⟨c', hc', hv⟩
@@ -365,7 +414,7 @@ theorem Equations.scheme_step (equations : Equations) (apps : equations.Applicat
   simp only [body, RowTemplate.wellBound, Bool.and_eq_true_iff, decide_eq_true_eq] at valid
   have row (C) (hc : C.length = equations.signature[head].parameters) :
       equations.graph.schemes (Scope.mk head C hc).label = some (make C hc) := by
-    simp only [Equations.graph, NormalGraph.ofRowMap, Equations.row, Scope.view_label,
+    simp only [Equations.graph, NormalGraph.ofRowMap, Equations.row, Equations.baseRow, Scope.view_label,
       Template.instantiate, body, GraphRow.map, make,
       (Scope.mk head C hc).instantiate_binders bs valid.1]
   have lengths (C) (hc : C.length = equations.signature[head].parameters) :
@@ -464,8 +513,10 @@ theorem Equations.values_step (equations : Equations) (apps : equations.Applicat
     have h := (equations.body ha).2
     simp [body, RowTemplate.wellBound] at h
 
+mutual
 /-- Template values at the current level need argument agreement at that
-level, but nested applications consume only agreement below it. -/
+level, but nested applications consume only agreement below it. A meet reads
+its parts' values at the same level. -/
 theorem Tree.instantiate_values (equations : Equations) (apps : equations.ApplicationsAgree n)
     (a b : Scope equations.signature) (η θ : MixedAssignment (Label equations.signature))
     (args : equations.ArgumentsAgree η θ a.arguments b.arguments (n + 1))
@@ -509,6 +560,50 @@ theorem Tree.instantiate_values (equations : Equations) (apps : equations.Applic
     dsimp only [sa, sb] at hs
     simp only [Scope.label, Scope.ofRaw_args] at hs
     simpa only [Scope.ofRaw, Tree.instantiate, Types.labels, oa, ob] using hs
+  | meet ps =>
+    rw [Tree.instantiate_meet_labels, Tree.instantiate_meet_labels, equations.distribute_values,
+      equations.distribute_values]
+    have hp := Types.instantiateParts_values equations apps a b η θ args locals ps
+      (Bool.and_eq_true_iff.mp va).1 (Bool.and_eq_true_iff.mp vb).1 lex W v
+    refine and_congr_right fun _ => ⟨fun h B hB => ?_, fun h A hA => ?_⟩
+    · obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hB
+      exact (hp.2 i (by omega) hi).mp (h _ (List.getElem_mem (by omega)))
+    · obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hA
+      exact (hp.2 i hi (by omega)).mpr (h _ (List.getElem_mem (by omega)))
+
+theorem Types.instantiateParts_values (equations : Equations) (apps : equations.ApplicationsAgree n)
+    (a b : Scope equations.signature) (η θ : MixedAssignment (Label equations.signature))
+    (args : equations.ArgumentsAgree η θ a.arguments b.arguments (n + 1))
+    (locals : allowLocals = true → ∀ i (ha : i < equations.signature[a.head].binders.length)
+      (hb : i < equations.signature[b.head].binders.length),
+      Agree (mixedMeaning equations.graph η [a.bound ⟨i, ha⟩])
+        (mixedMeaning equations.graph θ [b.bound ⟨i, hb⟩]) (n + 1))
+    (ts : Types) (va : ts.scoped equations.signature equations.signature[a.head].parameters
+      equations.signature[a.head].binders.length = true)
+    (vb : ts.scoped equations.signature equations.signature[b.head].parameters
+      equations.signature[b.head].binders.length = true)
+    (lex : ts.lexical allowLocals = true) (W : WorldT n) (v : Val) :
+    (Types.instantiateParts a ts va).length = (Types.instantiateParts b ts vb).length ∧
+    ∀ i (ha : i < (Types.instantiateParts a ts va).length)
+      (hb : i < (Types.instantiateParts b ts vb).length),
+      (mixedValues equations.graph η (Types.instantiateParts a ts va)[i] n W v ↔
+        mixedValues equations.graph θ (Types.instantiateParts b ts vb)[i] n W v) := by
+  cases ts with
+  | nil => exact ⟨rfl, fun i hi _ => by simp [Types.instantiateParts] at hi⟩
+  | cons t ts =>
+    have hh := Tree.instantiate_values equations apps a b η θ args locals t
+      (Bool.and_eq_true_iff.mp va).1 (Bool.and_eq_true_iff.mp vb).1 (Bool.and_eq_true_iff.mp lex).1 W v
+    have ht := Types.instantiateParts_values equations apps a b η θ args locals ts
+      (Bool.and_eq_true_iff.mp va).2 (Bool.and_eq_true_iff.mp vb).2 (Bool.and_eq_true_iff.mp lex).2 W v
+    refine ⟨by simp only [Types.instantiateParts, List.length_cons, ht.1], ?_⟩
+    intro i hi hj
+    cases i with
+    | zero => exact hh
+    | succ i =>
+      exact ht.2 i
+        (by simpa only [Types.instantiateParts, List.length_cons, Nat.succ_lt_succ_iff] using hi)
+        (by simpa only [Types.instantiateParts, List.length_cons, Nat.succ_lt_succ_iff] using hj)
+end
 
 private theorem values_flatMap_congr (G : NormalGraph ι) (η θ : MixedAssignment ι)
     (f g : α → List ι) (es : List α) (W : WorldT n) (v : Val)
@@ -567,7 +662,7 @@ theorem Equations.arguments_step (equations : Equations) (apps : equations.Appli
         equations.graph (Scope.mk ha C hc).label =
           cs.map (Clause.map (fun es => es.flatMap (Expression.instantiate ⟨ha, C, hc⟩))) := by
       simp [NormalGraph.clauses, NormalGraph.plain, NormalGraph.params, Equations.graph,
-        NormalGraph.ofRowMap, Equations.row, Template.instantiate, body, GraphRow.map, GraphRow.union]
+        NormalGraph.ofRowMap, Equations.row, Equations.baseRow, Template.instantiate, body, GraphRow.map, GraphRow.union]
     rw [row A va, row B vb]
     have congr (c : Clause (List (Expression equations.signature equations.signature[ha]))) :
         clauseArguments (mixedValues equations.graph η)
@@ -585,7 +680,7 @@ theorem Equations.arguments_step (equations : Equations) (apps : equations.Appli
       exact ⟨_, List.mem_map.mpr ⟨c, hc, rfl⟩, (congr c).mpr hv⟩
   | scheme bs sigs bounds rests =>
     simp [NormalGraph.clauses, NormalGraph.plain, NormalGraph.params, Equations.graph,
-      NormalGraph.ofRowMap, Equations.row, Template.instantiate, body, GraphRow.map, GraphRow.union]
+      NormalGraph.ofRowMap, Equations.row, Equations.baseRow, Template.instantiate, body, GraphRow.map, GraphRow.union]
   | param label name kind =>
     have h := (equations.body ha).2
     simp [body, RowTemplate.wellBound] at h

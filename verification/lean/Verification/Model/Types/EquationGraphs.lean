@@ -34,6 +34,8 @@ structure Header where
 
 abbrev Signature := List Header
 
+deriving instance Hashable for ParameterKind
+
 -- Explicit mutually recursive spines let Lean derive executable equality.
 -- They represent ordinary lists, not additional type-language constructs.
 mutual
@@ -46,20 +48,90 @@ inductive Tree where
   application, so no scheme binds it (RECURSIVE-EQUATIONS §7.1). It carries
   its kind. Templates cannot contain one. -/
   | var (owner : Nat) (slot : Nat) (kind : ParameterKind)
-  deriving Repr, DecidableEq
+  /-- An intersection (RECURSIVE-EQUATIONS §3.3): it means exactly the
+  intersection of its parts' values. No part is itself a meet. -/
+  | meet (parts : Types)
+  deriving Repr, DecidableEq, Hashable
 inductive Types where
   | nil
   | cons (head : Tree) (tail : Types)
-  deriving Repr, DecidableEq
+  deriving Repr, DecidableEq, Hashable
 inductive Args where
   | nil
   | cons (head : Types) (tail : Args)
-  deriving Repr, DecidableEq
+  deriving Repr, DecidableEq, Hashable
 end
 
 def Types.toList : Types → List Tree
   | .nil => []
   | .cons t ts => t :: ts.toList
+
+@[simp] theorem Types.toList_nil : Types.nil.toList = [] := rfl
+@[simp] theorem Types.toList_cons (t : Tree) (ts : Types) : (Types.cons t ts).toList = t :: ts.toList := rfl
+
+private def kindOrder : ParameterKind → Nat
+  | .value => 0
+  | .arguments => 1
+
+/- A total order on trees, lexicographic on constructors and fields. It fixes
+the canonical order of a meet's parts. -/
+mutual
+def Tree.cmp : Tree → Tree → Ordering
+  | .app h a, .app h' a' => (compare h h').then (Args.cmp a a')
+  | .app .., _ => .lt
+  | _, .app .. => .gt
+  | .bound h a i, .bound h' a' i' => (compare h h').then ((Args.cmp a a').then (compare i i'))
+  | .bound .., _ => .lt
+  | _, .bound .. => .gt
+  | .meet ps, .meet ps' => Types.cmp ps ps'
+  | .meet _, _ => .lt
+  | _, .meet _ => .gt
+  | .var o i k, .var o' i' k' =>
+    (compare o o').then ((compare i i').then (compare (kindOrder k) (kindOrder k')))
+  | .var .., _ => .lt
+  | _, .var .. => .gt
+  | .argument i, .argument i' => compare i i'
+  | .argument _, _ => .lt
+  | _, .argument _ => .gt
+  | .local i, .local i' => compare i i'
+def Types.cmp : Types → Types → Ordering
+  | .nil, .nil => .eq
+  | .nil, .cons .. => .lt
+  | .cons .., .nil => .gt
+  | .cons t ts, .cons t' ts' => (Tree.cmp t t').then (Types.cmp ts ts')
+def Args.cmp : Args → Args → Ordering
+  | .nil, .nil => .eq
+  | .nil, .cons .. => .lt
+  | .cons .., .nil => .gt
+  | .cons t ts, .cons t' ts' => (Types.cmp t t').then (Args.cmp ts ts')
+end
+
+instance : Ord Tree := ⟨Tree.cmp⟩
+
+/-- Tree equality with a pointer-equality fast path: shared subtrees compare
+in constant time. Extensionally it is the derived equality (`Tree.beq_eq`);
+`withPtrEq` is the standard `ptrEq` pattern and adds no axiom. -/
+def Tree.beq (a b : Tree) : Bool :=
+  withPtrEq a b (fun _ => decide (a = b)) (fun h => decide_eq_true h)
+
+@[simp] theorem Tree.beq_eq (a b : Tree) : Tree.beq a b = decide (a = b) := rfl
+
+instance : BEq Tree := ⟨Tree.beq⟩
+
+instance : LawfulBEq Tree where
+  eq_of_beq h := of_decide_eq_true h
+  rfl := decide_eq_true rfl
+
+/-- Whether a tree is a meet. -/
+def Tree.isMeet : Tree → Bool
+  | .meet _ => true
+  | _ => false
+
+/-- A meet's parts, or the tree itself: flattening one level. -/
+def Tree.meetParts : Tree → List Tree
+  | .meet ps => ps.toList
+  | t => [t]
+
 
 def Args.toList : Args → List Types
   | .nil => []
@@ -94,6 +166,7 @@ def Tree.scoped (sig : Signature) (parameters locals : Nat) : Tree → Bool
   | .argument i => i < parameters
   | .local i => i < locals
   | .var .. => true
+  | .meet ps => ps.scoped sig parameters locals && ps.toList.all fun t => !t.isMeet
 def Types.scoped (sig : Signature) (parameters locals : Nat) : Types → Bool
   | .nil => true
   | .cons t ts => t.scoped sig parameters locals && ts.scoped sig parameters locals
@@ -111,6 +184,7 @@ def Tree.lexical (locals : Bool) : Tree → Bool
   | .argument _ => true
   | .local _ => locals
   | .var .. => false
+  | .meet ps => ps.lexical locals
 def Types.lexical (locals : Bool) : Types → Bool
   | .nil => true
   | .cons t ts => t.lexical locals && ts.lexical locals
@@ -125,7 +199,7 @@ abbrev Expression (sig : Signature) (h : Header) :=
 
 /-- Unlike a type operand, a binding position cannot name a parameter's union. -/
 def Tree.single : Tree → Bool
-  | .argument _ | .var .. => false
+  | .argument _ | .var .. | .meet _ => false
   | .app .. | .bound .. | .local .. => true
 
 abbrev Reference (sig : Signature) (h : Header) :=
@@ -200,7 +274,106 @@ theorem Types.scoped_append (xs ys : Types)
     obtain ⟨h1, h2⟩ := Bool.and_eq_true_iff.mp hx
     exact Bool.and_eq_true_iff.mpr ⟨h1, scoped_append xs ys h2 hy⟩
 
+/-- The canonical meet of trees (RECURSIVE-EQUATIONS §3.3): a part that is
+itself a meet is flattened, and the parts are sorted. Equal parts are kept:
+the kernel does not know a part's kind, and dropping a repeated part would
+turn `meet(L, L)` into `L`, which also admits `L`'s argument lists. -/
+def canonMeet (ts : List Tree) : Tree :=
+  .meet (Types.ofList ((ts.flatMap Tree.meetParts).mergeSort fun a b => compare a b != .gt))
+
+/-- Every choice of one member from each list, in order: distribution of a
+meet over unions. -/
+def choices : List (List α) → List (List α)
+  | [] => [[]]
+  | A :: rest => A.flatMap fun a => (choices rest).map (a :: ·)
+
+theorem mem_choices {As : List (List α)} {c : List α} :
+    c ∈ choices As ↔ c.length = As.length ∧ ∀ i (hc : i < c.length) (hA : i < As.length), c[i] ∈ As[i] := by
+  induction As generalizing c with
+  | nil => cases c <;> simp [choices]
+  | cons A rest ih =>
+    cases c with
+    | nil => simp [choices]
+    | cons a c =>
+      simp only [choices, List.mem_flatMap, List.mem_map, List.cons.injEq, List.length_cons,
+        Nat.add_right_cancel_iff]
+      constructor
+      · rintro ⟨a', ha', c', hc', rfl, rfl⟩
+        obtain ⟨hl, hc⟩ := ih.mp hc'
+        refine ⟨hl, fun i hi hj => ?_⟩
+        cases i with
+        | zero => simpa using ha'
+        | succ i =>
+          have := hc i (by simpa using hi) (by simpa using hj)
+          simpa only [List.getElem_cons_succ] using this
+      · rintro ⟨hl, hc⟩
+        refine ⟨a, by simpa using hc 0 (by simp) (by simp), c, ih.mpr ⟨hl, fun i hi hj => ?_⟩, rfl, rfl⟩
+        have := hc (i + 1) (by simpa using hi) (by simpa using hj)
+        simpa only [List.getElem_cons_succ] using this
+
+/-- A property holds of some choice's members exactly when each list has a
+member with it. -/
+theorem exists_choice {As : List (List α)} {P : α → Prop} :
+    (∃ c ∈ choices As, ∀ x ∈ c, P x) ↔ ∀ A ∈ As, ∃ x ∈ A, P x := by
+  induction As with
+  | nil => simp [choices]
+  | cons A rest ih =>
+    simp only [choices, List.mem_flatMap, List.mem_map, List.forall_mem_cons]
+    constructor
+    · rintro ⟨_, ⟨a, ha, c, hc, rfl⟩, hp⟩
+      simp only [List.forall_mem_cons] at hp
+      exact ⟨⟨a, ha, hp.1⟩, ih.mp ⟨c, hc, hp.2⟩⟩
+    · rintro ⟨⟨a, ha, hpa⟩, hr⟩
+      obtain ⟨c, hc, hp⟩ := ih.mpr hr
+      refine ⟨a :: c, ⟨a, ha, c, hc, rfl⟩, fun x hx => ?_⟩
+      rcases List.mem_cons.mp hx with rfl | hx
+      · exact hpa
+      · exact hp x hx
+
+theorem Types.scoped_iff : ∀ {ts : Types},
+    ts.scoped sig p l = true ↔ ∀ t ∈ ts.toList, t.scoped sig p l = true
+  | .nil => by simp [Types.scoped]
+  | .cons t ts => by simp [Types.scoped, Types.scoped_iff (ts := ts)]
+
+theorem Types.scoped_ofList' {ts : List Tree} :
+    (Types.ofList ts).scoped sig p l = true ↔ ∀ t ∈ ts, t.scoped sig p l = true := by
+  rw [Types.scoped_iff, Types.toList_ofList]
+
+/-- A canonical meet of scoped trees is scoped: its parts are scoped and none
+is a meet. -/
+theorem Tree.scoped_canonMeet (ts : List Tree) (h : ∀ t ∈ ts, t.scoped sig p l = true) :
+    (canonMeet ts).scoped sig p l = true := by
+  have parts : ∀ t ∈ ts, ∀ u ∈ t.meetParts, u.scoped sig p l = true ∧ u.isMeet = false := by
+    intro t ht u hu
+    cases t with
+    | meet ps =>
+      have hv := h _ ht
+      simp only [Tree.scoped, Bool.and_eq_true, List.all_eq_true, Bool.not_eq_true'] at hv
+      exact ⟨Types.scoped_iff.mp hv.1 u hu, hv.2 u hu⟩
+    | _ =>
+      simp only [Tree.meetParts, List.mem_singleton] at hu
+      subst hu
+      exact ⟨h _ ht, rfl⟩
+  simp only [canonMeet, Tree.scoped, Bool.and_eq_true, Types.toList_ofList, List.all_eq_true,
+    List.mem_mergeSort, Bool.not_eq_true']
+  refine ⟨Types.scoped_ofList'.mpr fun u hu => ?_, fun u hu => ?_⟩
+  all_goals
+    obtain ⟨t, ht, hu⟩ := List.mem_flatMap.mp (by simpa only [List.mem_mergeSort] using hu)
+    first | exact (parts t ht u hu).1 | exact (parts t ht u hu).2
+
 abbrev ClosedTypes (sig : Signature) := { ts : Types // ts.scoped sig 0 0 = true }
+
+/-- The canonical meet of closed labels, itself a closed label. -/
+def Label.meetOf (c : List (Label sig)) : Label sig :=
+  ⟨canonMeet (c.map Subtype.val), Tree.scoped_canonMeet _ fun u hu => by
+    obtain ⟨l, _, rfl⟩ := List.mem_map.mp hu
+    exact l.2⟩
+
+/-- Recover the closed labels of a union, retaining each scope proof. -/
+def Types.labels (ts : Types) (valid : ts.scoped sig 0 0 = true) : List (Label sig) :=
+  match ts with
+  | .nil => []
+  | .cons t ts => ⟨t, (Bool.and_eq_true_iff.mp valid).1⟩ :: ts.labels (Bool.and_eq_true_iff.mp valid).2
 
 /- Instantiation traverses the finite expression, never its referenced
 rows. The result is closed by construction; missing arguments are impossible
@@ -232,6 +405,23 @@ def Tree.instantiate (scope : Scope sig) (t : Tree)
     let b := scope.bound ⟨i, of_decide_eq_true valid⟩
     ⟨.cons b.1 .nil, by simp [Types.scoped, b.2]⟩
   | .var o i k => ⟨.cons (.var o i k) .nil, by simp [Types.scoped, Tree.scoped]⟩
+  | .meet parts =>
+    -- Intersection distributes over the parts' unions: one canonical meet
+    -- per choice of a label from each part.
+    let ps := Types.instantiateParts scope parts (Bool.and_eq_true_iff.mp valid).1
+    ⟨Types.ofList (((choices ps).map Label.meetOf).map Subtype.val),
+      Types.scoped_ofList'.mpr fun t ht => by
+        obtain ⟨l, _, rfl⟩ := List.mem_map.mp ht
+        exact l.2⟩
+/-- Each part of a meet instantiated to its union of closed labels. -/
+def Types.instantiateParts (scope : Scope sig) (ts : Types)
+    (valid : ts.scoped sig sig[scope.head].parameters sig[scope.head].binders.length = true) :
+    List (List (Label sig)) :=
+  match ts with
+  | .nil => []
+  | .cons t ts =>
+    let a := Tree.instantiate scope t (Bool.and_eq_true_iff.mp valid).1
+    a.1.labels a.2 :: Types.instantiateParts scope ts (Bool.and_eq_true_iff.mp valid).2
 def Types.instantiate (scope : Scope sig) (ts : Types)
     (valid : ts.scoped sig sig[scope.head].parameters sig[scope.head].binders.length = true) :
     ClosedTypes sig :=
@@ -252,12 +442,6 @@ def Args.instantiate (scope : Scope sig) (args : Args)
     ⟨.cons a.1 b.1, by
       simp [Args.scoped, Args.toList, a.2, b.2.1, b.2.2]⟩
 end
-
-/-- Recover the closed labels of a union, retaining each scope proof. -/
-def Types.labels (ts : Types) (valid : ts.scoped sig 0 0 = true) : List (Label sig) :=
-  match ts with
-  | .nil => []
-  | .cons t ts => ⟨t, (Bool.and_eq_true_iff.mp valid).1⟩ :: ts.labels (Bool.and_eq_true_iff.mp valid).2
 
 theorem Types.labels_append (xs ys : Types) (hx : xs.scoped sig 0 0 = true)
     (hy : ys.scoped sig 0 0 = true) (hxy : (xs.append ys).scoped sig 0 0 = true) :
@@ -393,6 +577,7 @@ inductive View (sig : Signature) where
   | application (scope : Scope sig)
   | parameter (scope : Scope sig) (slot : Fin sig[scope.head].binders.length)
   | familyVar (owner slot : Nat) (kind : ParameterKind)
+  | meet (parts : List (Label sig))
 
 def Label.view (label : Label sig) : View sig :=
   match label with
@@ -404,6 +589,7 @@ def Label.view (label : Label sig) : View sig :=
     let scope := Scope.ofRaw h args ha (Bool.and_eq_true_iff.mp valid).2
     .parameter scope ⟨i, by simpa [binderOk, scope, Scope.ofRaw, arityOk_exists ha] using hb⟩
   | ⟨.var o i k, _⟩ => .familyVar o i k
+  | ⟨.meet ps, valid⟩ => .meet (ps.labels (Bool.and_eq_true_iff.mp valid).1)
   | ⟨.argument _, valid⟩ => False.elim (by simp [Tree.scoped] at valid)
   | ⟨.local _, valid⟩ => False.elim (by simp [Tree.scoped] at valid)
 
@@ -437,11 +623,13 @@ theorem Scope.ofRaw_args (head : Nat) (args : Args) (ha hc) :
     (Scope.ofRaw (sig := sig) head args ha hc).rawArgs = args := by
   exact Args.labels_val args hc
 
-/-- Every closed label is an application or one of its owned parameters. -/
+/-- Every closed label is an application, one of its owned parameters, a
+family variable or a meet. -/
 theorem Label.cases {P : Label sig → Prop} (label : Label sig)
     (app : ∀ scope : Scope sig, P scope.label)
     (bound : ∀ (scope : Scope sig) slot, P (scope.bound slot))
-    (family : ∀ owner slot kind, P (Label.familyVar owner slot kind)) : P label := by
+    (family : ∀ owner slot kind, P (Label.familyVar owner slot kind))
+    (meet : ∀ parts valid, P ⟨.meet parts, valid⟩) : P label := by
   rcases label with ⟨t, valid⟩
   cases t with
   | app h args =>
@@ -464,6 +652,7 @@ theorem Label.cases {P : Label sig → Prop} (label : Label sig)
       rfl
     exact he ▸ bound scope ⟨i, slot⟩
   | var o i k => exact family o i k
+  | meet ps => exact meet ps valid
   | argument i => simp [Tree.scoped] at valid
   | «local» i => simp [Tree.scoped] at valid
 
@@ -474,7 +663,8 @@ structure Equations where
   body : (head : Fin signature.length) → Template signature head
   realm : Option (ArrayRealm (Label signature)) := none
 
-def Equations.row (equations : Equations) (label : Label equations.signature) :
+/-- The row of a label that is not a meet. -/
+def Equations.baseRow (equations : Equations) (label : Label equations.signature) :
     GraphRow (Label equations.signature) :=
   match label.view with
   | .application scope => (equations.body scope.head).instantiate scope
@@ -482,6 +672,66 @@ def Equations.row (equations : Equations) (label : Label equations.signature) :
     let b := equations.signature[scope.head].binders[slot]
     .param label b.name b.kind
   | .familyVar _ _ kind => .param label "var" kind
+  | .meet _ => .clauses []
+
+/-- Whether a clause can hold a value: an argument-list clause cannot. -/
+def Clause.isValue : Clause α → Bool
+  | .pack .. => false
+  | _ => true
+
+/-- The normalized conjunction of clause lists (`meetLists`); of none, every
+value. -/
+def meetAll : List (List (Clause α)) → List (Clause α)
+  | [] => [.top]
+  | A :: rest => meetLists A (meetAll rest)
+
+/-- A meet's parts whose rows are not clause rows: parameters and schemes. -/
+def meetRigid : List (ι × GraphRow ι) → List ι
+  | [] => []
+  | (_, .clauses _) :: rest => meetRigid rest
+  | (q, _) :: rest => q :: meetRigid rest
+
+/-- A meet's clause parts' clauses. -/
+def meetClauseLists : List (ι × GraphRow ι) → List (List (Clause (List ι)))
+  | [] => []
+  | (_, .clauses cs) :: rest => cs :: meetClauseLists rest
+  | _ :: rest => meetClauseLists rest
+
+/-- A property of a meet part: `Q` of a clause part's clauses, `P` of any
+other part. -/
+def partCase (P : ι → Prop) (Q : List (Clause (List ι)) → Prop) : ι × GraphRow ι → Prop
+  | (_, .clauses cs) => Q cs
+  | (q, _) => P q
+
+/-- Reading a meet's parts is reading its rigid parts and its clause parts. -/
+theorem meet_partition (parts : List (ι × GraphRow ι)) (P : ι → Prop)
+    (Q : List (Clause (List ι)) → Prop) :
+    ((∀ q ∈ meetRigid parts, P q) ∧ ∀ C ∈ meetClauseLists parts, Q C) ↔
+      ∀ x ∈ parts, partCase P Q x := by
+  induction parts with
+  | nil => simp [meetRigid, meetClauseLists]
+  | cons x rest ih =>
+    obtain ⟨q, r⟩ := x
+    rw [List.forall_mem_cons, ← ih]
+    cases r <;> simp only [meetRigid, meetClauseLists, partCase, List.forall_mem_cons, and_assoc,
+      and_left_comm]
+
+/-- A meet label's row from its parts' rows (RECURSIVE-EQUATIONS §3.3): the
+normalized conjunction of its clause parts' clauses, within its parameter and
+scheme parts when it has any. A meet means values only: without such parts,
+argument-list clauses are left out. -/
+def meetRowOf (parts : List (ι × GraphRow ι)) : GraphRow ι :=
+  match meetRigid parts with
+  | [] => .clauses ((meetAll (meetClauseLists parts)).filter Clause.isValue)
+  | p :: ps => .meet p (meetAll (meetClauseLists parts)) ps
+
+/-- A label's row: a meet's is computed from its parts' rows, read at the
+same level; no part is a meet, so this is one step, not a recursion. -/
+def Equations.row (equations : Equations) (label : Label equations.signature) :
+    GraphRow (Label equations.signature) :=
+  match label.view with
+  | .meet parts => meetRowOf (parts.map fun q => (q, equations.baseRow q))
+  | _ => equations.baseRow label
 
 def Equations.graph (equations : Equations) : NormalGraph (Label equations.signature) :=
   NormalGraph.ofRowMap equations.row equations.realm
@@ -489,20 +739,20 @@ def Equations.graph (equations : Equations) : NormalGraph (Label equations.signa
 /-- Unfolding an application substitutes into its one finite template. -/
 @[simp] theorem Equations.row_application (equations : Equations) (scope : Scope equations.signature) :
     equations.row scope.label = (equations.body scope.head).instantiate scope := by
-  simp [row]
+  simp [row, baseRow]
 
 /-- A bound parameter has the kind declared at its own lexical owner. -/
 @[simp] theorem Equations.kind_bound (equations : Equations) (scope : Scope equations.signature)
     (slot : Fin equations.signature[scope.head].binders.length) :
     equations.graph.parameterKinds (scope.bound slot) =
       some equations.signature[scope.head].binders[slot].kind := by
-  simp [graph, NormalGraph.ofRowMap, row]
+  simp [graph, NormalGraph.ofRowMap, row, baseRow]
 
 /-- A family variable is a parameter row of the kind it carries. -/
 @[simp] theorem Equations.kind_familyVar (equations : Equations) (owner slot : Nat)
     (kind : ParameterKind) :
     equations.graph.parameterKinds (Label.familyVar owner slot kind) = some kind := by
-  simp [graph, NormalGraph.ofRowMap, row, Label.view, Label.familyVar]
+  simp [graph, NormalGraph.ofRowMap, row, baseRow, Label.view, Label.familyVar]
 
 /- An application's free parameter names are those carried by its arguments.
 A parameter name is atomic: its owner identifies it, but changing an assignment
@@ -512,6 +762,7 @@ def Tree.free : Tree → List Tree
   | .app _ args => args.free
   | t@(.bound ..) | t@(.var ..) => [t]
   | .argument _ | .local _ => []
+  | .meet ps => ps.free
 def Types.free : Types → List Tree
   | .nil => []
   | .cons t ts => t.free ++ ts.free
@@ -537,6 +788,10 @@ private theorem Tree.free_size (t p : Tree) (h : p ∈ t.free) : sizeOf p ≤ si
     exact Nat.le_refl _
   | argument _ => simp [Tree.free] at h
   | «local» _ => simp [Tree.free] at h
+  | meet ps =>
+    have hs := Types.free_size ps p h
+    have he : sizeOf (Tree.meet ps) = 1 + sizeOf ps := rfl
+    omega
 private theorem Types.free_size (ts : Types) (p : Tree) (h : p ∈ ts.free) :
     sizeOf p < sizeOf ts := by
   cases ts with
@@ -572,7 +827,7 @@ theorem Scope.bound_fresh (scope : Scope sig) (slot : Fin sig[scope.head].binder
 parameter. Only an owned bound label has a parameter kind. -/
 theorem Equations.kind_application (equations : Equations) (scope : Scope equations.signature) :
     equations.graph.parameterKinds scope.label = none := by
-  simp only [graph, NormalGraph.ofRowMap, row, Scope.view_label, Template.instantiate]
+  simp only [graph, NormalGraph.ofRowMap, row, baseRow, Scope.view_label, Template.instantiate]
   have hv := (equations.body scope.head).2
   cases h : (equations.body scope.head).1 <;>
     simp_all [RowTemplate.wellBound, GraphRow.map]
