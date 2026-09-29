@@ -367,7 +367,9 @@ an exporter change needs a place to show, one phenomenon per file.
   [REFERENCES.md](REFERENCES.md), adding the entry there.
 - Status: progress is written once, in the
   [status table](DESIGN.md#status) of DESIGN.md. A commit that moves an item
-  updates its row. Elsewhere only three status-like statements are allowed:
+  updates its row. A row states the nature of its work: an investigation whose cause is
+  unknown is its own row, named as one, never a leftover of a finished
+  stage; a fix gets a row once its cause is established. Elsewhere only three status-like statements are allowed:
   a measurement with its date (SKJS-COVERAGE), an executable expectation
   (`cases.mts` entries) and a spec's proof scope (proved in the model versus
   accepted at the source), changed in the same commit as the code it

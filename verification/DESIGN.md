@@ -1160,7 +1160,9 @@ unchanged ([design](#recursive-quantified-contracts)).
 | K2. Kernel: family hypotheses reach meet parts, so `meet(x,B) ≤ meet(y,B)` holds under `x ≤ y` (the framework's `T & DepSafe` heads, [§4.3](RECURSIVE-EQUATIONS.md#43-variance)) | done | proved; the `sum-collections` heads' variances check |
 | K3. Lowering: a unit bound naming another binder of the unit (`U extends T`) | open | lowered as a meet of owned binders; its lowering test passes |
 | S6. Cutover: lowering wired, `DeclarationGraph`, its budgets and the adapter deleted, `checkJson_safe` over `Equations.graph` | done | `generic-growing-application`, the Promise/async core, `sum-main` and `sum-run-service` verify; no negative verifies |
-| S6b. Recover the positives lost at the cutover. No derivation at framework calls (`EagerCollection.map`): `sum-collections`, `sum-resource`, `sum-serializable-map`, `sum-map-array`, `sum-add-index`. Claimed type differs from the annotation: `generic-graph-bounds`. Quantified-α not reached from request certificates, or calls claimed at the producer's rows: `class-generic-method`, `class-value-generic-method`. `cases.mts` still expects these to verify | open | each lost case verifies again; `cases.mts` states every current outcome |
+| R1. Investigate, cause unknown: five cases verified before the cutover and are refused after it, with no rule deriving a call to `EagerCollection`'s methods (`sum-collections`, `sum-resource`, `sum-serializable-map`, `sum-map-array`, `sum-add-index`) | open | cause established at the level of the failing judgment and the component that decides it |
+| R2. Investigate, cause unknown: `generic-graph-bounds` verified before the cutover and is refused after it: the claimed parameter type differs from the source annotation | open | cause established |
+| R3. Investigate, cause unknown: `class-generic-method` and `class-value-generic-method` verified before the cutover and are refused after it, with no derivation at a generic method call | open | cause established |
 | S7. Variance by the checker ([§4.2–4.3](RECURSIVE-EQUATIONS.md#43-variance)): recursive instance discharge, variances computed per definition (traversal; guarded self-assumption on cycles), `Var` in request certificates, fallback coinduction up to renaming of bound variables; lowering's variance proposal and the front's variance gate removed | done | proved; tracing (`--trace-subtyping`) and the measurement script (`tools/subtyping-trace.mts`) in place; `promise-covariance`, `generic-growing-application-push`, `promise-like`, `framework-binding-sound`, `framework-binding-unsound` verify; `invalid-promise-covariance` and `invalid-framework-binding-sound` rejected at their own obligations |
 | D. Decidability of subtyping in this model, studied in mathematics before any Lean | open | a note stating the problems precisely, what is proved, and what is open |
 | T. Audit the tests: keep each one that guards something likely to break and important, and is not a restatement of the implementation; record what each guards | open | every test's reason recorded; the rest deleted |
@@ -1168,7 +1170,8 @@ unchanged ([design](#recursive-quantified-contracts)).
 
 The stages' order and dependencies: S1, S3 and the kernel rows may run in
 parallel; S4 follows S1; S5 follows S3 and S4's interface; S6 needs all of
-them and the image-checker row; S7 follows S6; S8 follows S7. K2 and K3
+them and the image-checker row; S7 follows S6; S8 follows S7. R1 to R3 are investigations: each gets a fix
+row once its cause is established. K2 and K3
 block the framework cases, not the cutover.
 
 ### Open work
