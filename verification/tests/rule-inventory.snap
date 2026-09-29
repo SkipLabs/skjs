@@ -113,12 +113,9 @@ Rule  (Programs/ProgramCertificates.lean)
   merge
 
 Proof  (Types/PositiveCertificates.lean)
-  core (certificate : Certificate ι) (instances : List (List ι × Ops ι × List (RestArrow (List ι)) × Instance ι) := [])
   subset
-  trans (middle : List ι) (left right : Proof ι)
   inst (inst : Instance ι)
-  table (table : InstTable ι) (domain : List ι) (free : FreeMap ι)
-  gen (domain : List ι) (free : FreeMap ι) (body : List ι) (proof : Proof ι)
+  fallback (instances : List (KnownInstance ι))
 
 ArrowCert  (Types/PositiveCertificates.lean)
   empty
