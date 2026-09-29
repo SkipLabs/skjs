@@ -68,10 +68,10 @@ lookup and `instanceof`.
 
 **T2. Host specifications as lemmas.** For every intrinsic and overlay entry
 $x : \tau$ in the trust surface, the corresponding M built-in $b_x$ is in the
-M-level meaning of $\tau$: $b_x \in \llbracket \tau \rrbracket_M$. The meaning
-$\llbracket \cdot \rrbracket_M$ is the calculus's type meaning transported
+M-level meaning of $\tau$: $b_x \in ⟦\tau⟧_M$. The meaning
+$⟦\cdot⟧_M$ is the calculus's type meaning transported
 along R, with one extension: a `Promise<X>` is a realm promise whose
-fulfillment value is in $\llbracket X \rrbracket_M$. T2 retires most of link 2:
+fulfillment value is in $⟦X⟧_M$. T2 retires most of link 2:
 every row of the trust surface that names ECMA behaviour, such as `%Await%`,
 `%Iterate%`, `%ForIn%`, `Array.prototype`'s members, `JSON`, `BigInt` and
 `Set`/`Map`/`Date`, becomes a proof obligation.
@@ -100,7 +100,7 @@ promise, but at run time it is a `number`. Every proof went through. The
 false statement was an assumption, so nothing failed.
 
 **What T2 would have exposed.** Take the lemma
-$b_{\mathtt{Await}} \in \llbracket \forall T.\ \mathsf{Promise}\langle T\rangle \Rightarrow T \rrbracket_M$.
+$b_{\mathtt{Await}} \in ⟦\forall T.\ \mathsf{Promise}\langle T\rangle \Rightarrow T⟧_M$.
 It is false at any thenable $T$, and the specification gives the
 counterexample directly:
 - a promise's resolve function, called with a value that has a callable
@@ -110,12 +110,12 @@ counterexample directly:
 - `Await` of a realm promise yields its fulfillment value
   (*Await*, *PromiseResolve*).
 
-Hence $\llbracket \mathsf{Promise}\langle \mathsf{Promise}\langle \mathsf{number}\rangle\rangle \rrbracket_M = \emptyset$
+Hence $⟦\mathsf{Promise}\langle \mathsf{Promise}\langle \mathsf{number}\rangle\rangle⟧_M = \emptyset$
 among realm promises. Any type claiming such a value is empty, so the lemma
 cannot be proved.
 
 **What T3 would have exposed.** The declaration `wrap<T>` enters T3 as a
-premise: `wrap` is in $\llbracket \forall T.\ T \Rightarrow \mathsf{Promise}\langle T\rangle\rrbracket_M$.
+premise: `wrap` is in $⟦\forall T.\ T \Rightarrow \mathsf{Promise}\langle T\rangle⟧_M$.
 At $T = \mathsf{Promise}\langle\mathsf{number}\rangle$ the result type is
 empty, so no implementation meets the premise, and T3's conclusion is vacuous
 for every program that uses `wrap` there. T3 needs no premise to be

@@ -102,7 +102,7 @@ const unrenderable: [RegExp, string][] = [
   [/\$\$/g, "`$$` display math: use a ```math fence"],
   [/\\operatorname/g, "`\\operatorname`: use `\\mathrm`"],
   [/\\llbracket|\\rrbracket/g, "`\\llbracket`: use ⟦ ⟧"],
-  [/\\\(|\\\[/g, "`\\(` or `\\[`: use $`…`$ or a ```math fence"],
+  [/(?<!\\)\\\(|(?<!\\)\\\[/g, "`\\(` or `\\[`: use $`…`$ or a ```math fence"],
 ];
 
 const files = markdownFiles(root);

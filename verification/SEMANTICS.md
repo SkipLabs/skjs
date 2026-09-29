@@ -13,10 +13,12 @@ distinguishes the supported source fragment from model-only features.
 The following is the original one-field kernel notation, not an exhaustive
 constructor inventory (see `Tm` in `Calculus.lean` for the maintained syntax):
 
-$$t ::= x_i\mid t\,t\mid\mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}
+```math
+t ::= x_i\mid t\,t\mid\mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}
 \mid\mathsf{obj}(\ell,c)\mid\mathsf{make}(c,t)\mid\mathsf{let}(t,t)
 \mid\mathsf{read}(t)\mid\mathsf{write}(t,t)
-\mid\mathsf{test}_k(t)\mid\mathsf{if}\;t\;t\;t.$$
+\mid\mathsf{test}_k(t)\mid\mathsf{if}\;t\;t\;t.
+```
 
 Here $x_i$ is a variable, given as a de Bruijn position, $\ell$ a heap location,
 and $k$ a shape test
@@ -24,7 +26,9 @@ drawn from $\{\mathsf{isNul},\mathsf{isUndef},\mathsf{isNullish},\mathsf{isBool}
 The nullish test accepts null or undefined; the others recognize individual value shapes. Values are
 the subset
 
-$$v ::= \mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}\mid\mathsf{obj}(\ell,c),$$
+```math
+v ::= \mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}\mid\mathsf{obj}(\ell,c),
+```
 
 where $c ::= \mathsf{absent}\mid\mathsf{bound}(f,r,\vec p)\mid\mathsf{graph}(m,E,K,s,\vec c,\kappa,\varrho)$ is a separate invocation
 descriptor, the call code. `bound` is the forwarding descriptor `.bind`
@@ -55,17 +59,17 @@ $\mathsf{isArray}$, $\mathsf{typeofObject}$, $\mathsf{hasKey}(\kappa)$, the sing
 ($\mathsf{numEq}(b)$ by `Number::equal`, $\mathsf{strEq}(s)$, $\mathsf{boolEq}(q)$,
 $\mathsf{bigintEq}(i)$, each false on every other kind) and $\mathsf{truthy}$, JavaScript's `ToBoolean`:
 
-$$
+```math
 \mathsf{truthy}(v)=\mathsf{false}\iff v\in\{\mathsf{null},\mathsf{undefined},\mathsf{false},
 \mathsf{num}(\pm0),\mathsf{num}(\mathrm{NaN}),\mathsf{str}(\texttt{""}),\mathsf{bigint}(0)\}
-$$
+```
 
 (`numberTruthy`: a number is falsy where it equals zero or is not equal to
 itself); every object, function, class, symbol and store is truthy. $\mathsf{isArray}$ holds of a
 plain object owning the array store key $\sigma$, which no source property
 names, so it holds of exactly the arrays, as `Array.isArray` does of
 JavaScript's Array exotic objects:
-$\mathsf{isArray}(\mathsf{obj}(\mathit{fs},\mathsf{absent}))\iff\sigma\in\operatorname{dom}\mathit{fs}$,
+$\mathsf{isArray}(\mathsf{obj}(\mathit{fs},\mathsf{absent}))\iff\sigma\in\mathrm{dom}\mathit{fs}$,
 and false of every other value. $\mathsf{typeofObject}$ holds of
 $\mathsf{null}$ and of an object without call code, which is where `typeof`
 answers `"object"`: $\mathsf{typeofObject}(v)\iff v=\mathsf{null}\lor v=\mathsf{obj}(\mathit{fs},\mathsf{absent})$.
@@ -74,10 +78,10 @@ $\kappa$, whatever its code, or lacking it and holding under the prototype key
 $\pi$ an object of which it holds, as far as the heap reaches, and of no other
 value. It is the one test that reads the heap (`tagHoldsIn`, `keyInChain`):
 
-$$
-\mathsf{hasKey}_h(\kappa)(\mathsf{obj}(\mathit{fs},c))\iff\kappa\in\operatorname{dom}\mathit{fs}\ \lor\
+```math
+\mathsf{hasKey}_h(\kappa)(\mathsf{obj}(\mathit{fs},c))\iff\kappa\in\mathrm{dom}\mathit{fs}\ \lor\
   (\mathit{fs}(\pi)=\ell\land\mathsf{hasKey}_h(\kappa)(h(\ell)))
-$$
+```
 
 bounded by the heap's length, so a chain the heap makes cyclic, which no
 JavaScript object has, answers false. Keys are fixed at allocation and no
@@ -87,7 +91,7 @@ throws on a primitive. For $\kappa_C$, the key only class `C`'s prototype
 object owns, it is `instanceof C`: an object along whose chain that
 prototype is, and `false` of a primitive, as JavaScript's `instanceof`
 answers. Where the object owns the key or holds no prototype
-(`protoFree`) the answer is the heap-free $\kappa\in\operatorname{dom}\mathit{fs}$
+(`protoFree`) the answer is the heap-free $\kappa\in\mathrm{dom}\mathit{fs}$
 (`tagHoldsIn_of_protoFree`), which is what a type's answer states. Graph code
 records which invocation it admits, $\kappa\in\{\mathsf{call},\mathsf{construct}\}$:
 JavaScript gives a function object `[[Call]]` and `[[Construct]]` separately,
@@ -97,12 +101,12 @@ $\mathsf{new}\,f(\vec a)$ is its own term, which evaluates the callee, then
 the actuals left to right, and runs only construct code, with `undefined` for
 the receiver:
 
-$$
+```math
 \frac{h,f\to h',f'}{h,\mathsf{new}\,f(\vec a)\to h',\mathsf{new}\,f'(\vec a)}
 \qquad
 \frac{f\ \text{a value}\quad a_1,\ldots,a_{i-1}\ \text{values}\quad h,a_i\to h',a_i'}
      {h,\mathsf{new}\,f(\vec a)\to h',\mathsf{new}\,f(\vec a[i:=a_i'])}
-$$
+```
 
 (`constructL`, `constructArg`), then enters the code as a call does
 ([`constructGraph`](#graph-code)), missing actuals `undefined`. The step
@@ -117,10 +121,10 @@ is, the fields $a$'s object owns but the array store $\sigma$, and the own
 enumerable data properties $b$ has, less the keys in $\delta$, and steps to
 the allocation of both, $b$'s over $a$'s:
 
-$$
+```math
 \frac{\mathsf{own}_h(v_a)=P\quad\mathsf{data}_h(v_b)=Q}
      {h,\ \mathsf{merge}_\delta(v_a,v_b)\to h,\ \mathsf{makeAt}(\mathsf{absent},\ P\lhd(Q\setminus\delta))}\ (\texttt{mergeV})
-$$
+```
 
 where $\mathsf{own}_h(\mathsf{obj}(\mathit{fs},\mathsf{absent}))$ is each key of
 $\mathit{fs}$ but $\sigma$ at its value (the first entry of a key, as a read
@@ -139,12 +143,12 @@ a literal's. Symbol-keyed fields are not read ([DESIGN](DESIGN.md#object-literal
 (`arithC1`, `arithC2`), then takes one step where the operator answers for the
 two values, or throws where JavaScript throws, and is stuck otherwise:
 
-$$
+```math
 \frac{\mathsf{binop}(op,v_1,v_2)=v}{h,\ v_1\mathbin{op}v_2\to h,\ v}\ (\texttt{arithV})
 \qquad
 \frac{\mathsf{binopThrows}(op,v_1,v_2)}{h,\ v_1\mathbin{op}v_2\to h,\ \mathsf{throw}\ \mathit{err}}\ (\texttt{arithThrow})
 \qquad op\in\{+,-,*,/,\%,{*}{*},\mathbin{\hat{}},<,\le,>,\ge,\equiv\}.
-$$
+```
 
 $\mathsf{binop}$ is JavaScript's operation on the operand kinds it models;
 $\mathsf{binopThrows}$ is where JavaScript throws with no code of the
@@ -166,13 +170,13 @@ coercions the calculus does not have:
 Strict equality $\equiv$ (`===`, `Arith.eq`; `strictEquals`) answers a Boolean
 where JavaScript's `IsStrictlyEqual` needs no identity the model lacks:
 
-$$
+```math
 v_1\equiv v_2=\begin{cases}
 \mathsf{sameValue}(v_1,v_2) & v_1\ \text{or}\ v_2\ \text{a primitive}\\
 \mathit{fs}_1=\mathit{fs}_2 & v_i=\mathsf{objAt}(\mathit{fs}_i,c_i),\ \mathit{fs}_1\neq[\,]\ \text{or}\ \mathit{fs}_2\neq[\,]\\
 \text{none} & \text{two objects without fields, two stores}
 \end{cases}
-$$
+```
 
 $\mathsf{sameValue}$ is false across kinds, `Number::equal` on two numbers
 (NaN equals nothing, the zeros each other), and equality of the string, the
@@ -213,11 +217,11 @@ decimals besides, in `Tests/SourceExtractionTests.lean`.
 **Strings.** A string owns its `length` and its index properties, and
 `lenOf` and `elemAt` read them as they read a store's:
 
-$$
+```math
 \frac{}{h,\ \mathsf{lenOf}\;\mathsf{str}(s)\ \to\ h,\ \mathsf{num}(|\mathit{units}(s)|)}\ (\texttt{lenStr})
 \qquad
 \frac{}{h,\ \mathsf{elemAt}\;\mathsf{str}(s)\;\mathsf{num}(b)\ \to\ h,\ \mathit{codeUnitAt}(s,b)}\ (\texttt{elemStr})
-$$
+```
 
 where $\mathit{units}(s)$ is $s$'s UTF-16 code units (`utf16Units`) and
 $\mathit{codeUnitAt}(s,b)$ is the one-unit string at the array index $b$
@@ -281,25 +285,25 @@ its own key, a symbol its identity, and a number the key its `ToString`
 spells, so `o[1]` reads `o["1"]` (`propertyKey`); `indexAt` on any other key
 is stuck:
 
-$$
+```math
 \mathsf{key}(\mathsf{str}\,s)=\mathsf{str}(s)\qquad
 \mathsf{key}(\mathsf{sym}\,i)=\mathsf{sym}(i)\qquad
 \mathsf{key}(\mathsf{num}\,x)=\mathsf{str}(\mathsf{ToString}(x))
 \qquad
 \frac{\mathsf{key}(v)=k\quad\mathit{fs}(k)=l\quad h(l)=u}
      {h,\ \mathsf{indexAt}\;(\mathsf{obj}(\mathit{fs},c))\;v\ \to\ h,\ u}
-$$
+```
 
 and `indexProto`, `indexMissing` as `readProto`, `readMissing` at
 $\mathsf{key}(v)$:
 
-$$
+```math
 \frac{\mathit{fs}(k)=\varnothing\quad\mathit{fs}(\mathsf{proto})=l\quad h(l)=p}
      {h,\ \mathsf{readAt}\;k\;(\mathsf{obj}(\mathit{fs},c))\ \to\ h,\ \mathsf{readAt}\;k\;p}
 \qquad
 \frac{\mathit{fs}(k)=\varnothing\quad\mathit{fs}(\mathsf{proto})=\varnothing}
      {h,\ \mathsf{readAt}\;k\;(\mathsf{obj}(\mathit{fs},c))\ \to\ h,\ \mathsf{undefined}}
-$$
+```
 
 The semantic index view `dictViewT K A` requires the object to have no
 prototype and every *present* field under a key the class `K` admits (every
@@ -394,42 +398,42 @@ captures; entering a node instantiates its expression in the environment; the
 node's value then leaves the run or moves along an edge, whose slot map
 $\mu$ acts on the pushed environment as a program's does:
 
-$$
-\frac{r,\vec a\ \text{values}}{h,\mathsf{invoke}(\mathsf{obj}(\mathit{fs},\mathsf{graph}(m,E,K,s,\vec c,\mathsf{call},\varrho)),r,\vec a)\to h,\operatorname{entry}_\varrho(r,\vec a)}\ (\texttt{callGraph})
-$$
+```math
+\frac{r,\vec a\ \text{values}}{h,\mathsf{invoke}(\mathsf{obj}(\mathit{fs},\mathsf{graph}(m,E,K,s,\vec c,\mathsf{call},\varrho)),r,\vec a)\to h,\mathrm{entry}_\varrho(r,\vec a)}\ (\texttt{callGraph})
+```
 
-$$
-\frac{\vec a\ \text{values}}{h,\mathsf{construct}(\mathsf{obj}(\mathit{fs},\mathsf{graph}(m,E,K,s,\vec c,\mathsf{construct},\varrho)),\vec a)\to h,\operatorname{entry}_\varrho(\mathsf{undefined},\vec a)}\ (\texttt{constructGraph})
-$$
+```math
+\frac{\vec a\ \text{values}}{h,\mathsf{construct}(\mathsf{obj}(\mathit{fs},\mathsf{graph}(m,E,K,s,\vec c,\mathsf{construct},\varrho)),\vec a)\to h,\mathrm{entry}_\varrho(\mathsf{undefined},\vec a)}\ (\texttt{constructGraph})
+```
 
 where code without a rest enters at once,
-$\operatorname{entry}_{\mathsf{false}}(r,\vec a)=\mathsf{goto}(E,K,s,[r,\operatorname{pad}_m(\vec a),\vec c])$,
+$\mathrm{entry}_{\mathsf{false}}(r,\vec a)=\mathsf{goto}(E,K,s,[r,\mathrm{pad}_m(\vec a),\vec c])$,
 and code with one first allocates the actuals past its $m$ parameters as a
 fresh store, found in slot 0, below the receiver,
-$\operatorname{entry}_{\mathsf{true}}(r,\vec a)=\mathsf{let}\ x=[\vec a_{\ge m}]\ \mathsf{in}\ \mathsf{goto}(E,K,s,[x,r,\operatorname{pad}_m(\vec a),\vec c])$
+$\mathrm{entry}_{\mathsf{true}}(r,\vec a)=\mathsf{let}\ x=[\vec a_{\ge m}]\ \mathsf{in}\ \mathsf{goto}(E,K,s,[x,r,\mathrm{pad}_m(\vec a),\vec c])$
 (`CallArguments.graphEntry`). Padding never enters the store. Code with
 $\kappa=\mathsf{construct}$ has no call step: a plain call of a class value
 throws. `new` on code with a rest is not yet a construction
 (`CallArguments.construction`): padding omitted actuals would change its
 store.
 
-$$
+```math
 \frac{E_l=e\quad K_l=(k,x)}{h,\mathsf{goto}(E,K,l,\rho)\to h,\mathsf{frame}(E,K,e[\rho],\rho,k,x)}\ (\texttt{gotoEnter})
 \qquad
 \frac{h,t\to h',t'}{h,\mathsf{frame}(E,K,t,\rho,k,x)\to h',\mathsf{frame}(E,K,t',\rho,k,x)}\ (\texttt{frameC})
-$$
+```
 
-$$
+```math
 \frac{v\ \text{a value}}{h,\mathsf{frame}(E,K,v,\rho,\mathsf{ret},x)\to h,v}\ (\texttt{frameRet})
 \qquad
 \frac{v\ \text{a value}}{h,\mathsf{frame}(E,K,v,\rho,\mathsf{bind}(l,\mu),x)\to h,\mathsf{goto}(E,K,l,\mu(v::\rho))}\ (\texttt{frameBind})
-$$
+```
 
-$$
+```math
 \frac{t\ \text{raises}\ v}{h,\mathsf{frame}(E,K,t,\rho,k,(l,\mu))\to h,\mathsf{goto}(E,K,l,\mu(v::\rho))}\ (\texttt{frameHandle})
 \qquad
 \frac{t\ \text{raises}\ v}{h,\mathsf{frame}(E,K,t,\rho,k,\mathsf{none})\to h,\mathsf{throw}\ v}\ (\texttt{frameRaise})
-$$
+```
 
 and `effect`, `branch`, `branchBind` and `tagBind` move as their program
 continuations do (`frameEffect`, `frameYes`, `frameNo`, `frameYesBind`,
@@ -449,17 +453,17 @@ signatures, overloads and callable objects. Let $R_c$ be the receiver family,
 $\mathcal A$ describe the admitted lists of actual values and $R$ the result
 family. Then
 
-$$
+```math
 f\in\mathcal F(R_c,\mathcal A,R)(n,W)\iff
-\operatorname{Invocable}(f)\ \land\
+\mathrm{Invocable}(f)\ \land\
 \forall j<n,\ U\succeq W{\downarrow}j,\ h,r,\vec v.\;
 \begin{aligned}
-&\operatorname{WorldAdm}(U)\land\operatorname{HeapOk}(j,U,h)
- \land r\in R_c(j,U)\land\operatorname{Values}(\vec v)\land\mathcal A(j,U,\vec v)\\
+&\mathrm{WorldAdm}(U)\land\mathrm{HeapOk}(j,U,h)
+ \land r\in R_c(j,U)\land\mathrm{Values}(\vec v)\land\mathcal A(j,U,\vec v)\\
 &\quad\Longrightarrow\exists t.\;
- \operatorname{Invoke}(f,r,\vec v,t)\land\operatorname{Safe}(R,j,U,h,t).
+ \mathrm{Invoke}(f,r,\vec v,t)\land\mathrm{Safe}(R,j,U,h,t).
 \end{aligned}
-$$
+```
 
 This is `Invocable` together with `Safety.Promise`. The receiver is not an
 actual: it changes no arity, optional position or rest, and $\mathcal A$
@@ -489,10 +493,10 @@ claimed to inhabit the interface.
 This supplies the call component of the existing
 [callable-object equation](PROGRAM-TYPING.md#types-describe-behaviour-not-internal-storage):
 
-$$
+```math
 \mathsf{Callable}(L;P)=\mathsf{Fun}\cap\mathsf{Props}(P)
   \cap\bigcap_{\sigma\in L}\mathsf{CallSpec}(\sigma).
-$$
+```
 
 Here `Invocable` supplies function shape, `propsT` supplies the field
 requirements, and `Promise` supplies each call specification. The same value
@@ -543,20 +547,20 @@ created, from its graph's check at each signature (`GraphCodeSpec`):
 exactly the callable equation above. For a signature effect $\epsilon$, replace
 its conclusion `Safe` with
 
-$$
-\exists t.\;\operatorname{Invoke}(f,r,\vec v,t)\land
-\operatorname{SafePost}(R,Q_\epsilon(h),j,U,h,t).
-$$
+```math
+\exists t.\;\mathrm{Invoke}(f,r,\vec v,t)\land
+\mathrm{SafePost}(R,Q_\epsilon(h),j,U,h,t).
+```
 
 All quantifiers and premises are unchanged: the guarantee holds at every future
 world and compatible entry heap, for every receiver and actual list admitted
 by that signature. Write the resulting family
 $\mathcal F_\epsilon(R_c,\mathcal A,R)$. The two initial postconditions are
 
-$$
+```math
 Q_{\mathsf{unrestricted}}(h)(h',v)=\mathsf{True},\qquad
 Q_{\mathsf{preservesInputHeap}}(h)(h',v)=(h\preceq h'),
-$$
+```
 
 where $h\preceq h'$ means that $h'$ extends the heap list $h$ without changing
 any existing entry. Fresh allocation is allowed. This is a guarantee at normal
@@ -684,13 +688,13 @@ value. A term *throws* $v$ (`Raises t v`) when `throw v`, $v$ a value, is in
 evaluation position: under exactly the contexts the step relation evaluates
 in, one constructor per congruence rule of `Step`:
 
-$$
+```math
 \frac{v\ \text{a value}}{\mathsf{throw}\ v\ \text{raises}\ v}
 \qquad
 \frac{t\ \text{raises}\ v}{E[t]\ \text{raises}\ v}
 \qquad
 E ::= [\,]\ a\mid f\,[\,]\mid\mathsf{let}([\,],b)\mid\mathsf{read}([\,])\mid v\mathbin{op}[\,]\mid\cdots
-$$
+```
 
 A throwing term is not a value, does not step, and throws one value
 (`raises_not_val`, `raises_no_step`, `Raises_det`), so evaluation stays
@@ -699,11 +703,11 @@ predicate, and a handler, where there is one, catches it
 ([graphs](PROGRAM-TYPING.md#checked-control-flow-graphs)). The safety
 predicate:
 
-$$
+```math
 \mathit{Safe}(A)(n{+}1,W,h,t)\iff
 \bigl(t\in A(n{+}1,W)\ \lor\ \exists v\ \text{closed}.\ t\ \text{raises}\ v\bigr)\ \lor\
 \exists W',h',t'.\ h,t\to h',t'\land\ldots\land\mathit{Safe}(A)(n,W',h',t')
-$$
+```
 
 Every composition lemma takes, beside its context's step rule, the context's
 throw rule (`bind`, `bind_list` with `ArgRaises`, `ctx_bind`,
@@ -714,7 +718,9 @@ states describe the heap a value is produced in.
 `SafeGraph` is the same predicate one level up, for the machine that runs a
 control-flow graph rather than a single term. Its states are
 
-$$s ::= \mathsf{at}(p,\rho)\mid\mathsf{eval}(t,\rho,k,x)\mid\mathsf{done}(v)\mid\mathsf{raised}(v),$$
+```math
+s ::= \mathsf{at}(p,\rho)\mid\mathsf{eval}(t,\rho,k,x)\mid\mathsf{done}(v)\mid\mathsf{raised}(v),
+```
 
 where $p$ is a program point (a node label, not a location), $\rho$ an
 environment of closed values, $k$ a
@@ -767,12 +773,12 @@ and it came from an input, a read, a call's result or an allocation, each of
 which a type describes. With $\mathcal R$ the graph's realm (`ArrayRealm`: the
 row of `ArrayProto` and its declared keys plus `constructor`):
 
-$$
+```math
 \mathsf{Arr}_{\mathcal R}{}_n(W,v)\iff\forall\mathit{flds}.\;
 v=\mathsf{obj}(\mathit{flds},\mathsf{absent})\land\sigma\in\mathrm{dom}(\mathit{flds})\Rightarrow
-\mathsf{view}(\sigma{:}\mathsf{AnyStore},\mathsf{proto}{:}\llbracket P_{\mathcal R}\rrbracket)_n(W,v)
+\mathsf{view}(\sigma{:}\mathsf{AnyStore},\mathsf{proto}{:}⟦P_{\mathcal R}⟧)_n(W,v)
 \land\mathsf{own}(\mathsf{outside}\,N_{\mathcal R})_n(W,v)
-$$
+```
 
 (`PositiveGraphs.arrayInvariant`), and every record or dictionary clause of a
 row means its members meeting it (`realmInvariant`, `rowSem`;
@@ -834,13 +840,13 @@ its current contents. Both a true heap and a false heap can satisfy the same
 Boolean world. A point claim `{ value: B = R }` combines the invariant reference
 with a current-content predicate:
 
-$$
-\operatorname{Obs}(h,\ell,R)
+```math
+\mathrm{Obs}(h,\ell,R)
 \equiv \exists v.\ h(\ell)=v \land R(v),
 \qquad
-\operatorname{ObservedRef}(B,R,n,W,h,\ell)
-\equiv \operatorname{Ref}(B)(n,W,\ell)\land\operatorname{Obs}(h,\ell,R).
-$$
+\mathrm{ObservedRef}(B,R,n,W,h,\ell)
+\equiv \mathrm{Ref}(B)(n,W,\ell)\land\mathrm{Obs}(h,\ell,R).
+```
 
 `ObservedRef` in [HeapObservations.lean](lean/Verification/Model/Semantics/HeapObservations.lean)
 is used with `HeapOk(n,W,h)`. For primitive predicates this requires the contents
@@ -863,7 +869,7 @@ SKJS's internal types with heap assertions.
 The finite assertion layer records three forms, and they divide on one question:
 does the form mention the heap?
 
-$$
+```math
 \begin{aligned}
 x=R&\equiv\rho(x)\in R,
   &&\text{a variable satisfies a primitive predicate}\\
@@ -877,10 +883,10 @@ x\mapsto y&\equiv
   &&\text{that cell holds the value of }y\\
 x.f\mapsto^{?}y&\equiv
   \bigl(\exists\ell.\;\rho(x).f=\ell\land h(\ell)=\rho(y)\bigr)\lor
-  \bigl(f\notin\operatorname{keys}\rho(x)\land\rho(y)=\mathsf{undefined}\bigr),
+  \bigl(f\notin\mathrm{keys}\rho(x)\land\rho(y)=\mathsf{undefined}\bigr),
   &&\text{a read of }f\text{ that may have found no key gave }y
 \end{aligned}
-$$
+```
 
 Two relations, each taking a finite primitive-predicate disjunction or a variable on the right.
 The last form is the read link of a read through an optional key

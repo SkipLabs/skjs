@@ -161,7 +161,7 @@ justification; the first entry matching the key decides:
 For an accepted unit $u$ with first blocker key $k(u)$, and `CLASSES` the
 list $(c_1, r_1), \dots, (c_n, r_n)$ of a class and a pattern:
 
-$$
+```math
 \mathrm{class}(u)=
 \begin{cases}
 \mathsf{verified} & \text{if } u \text{ verifies}\\
@@ -170,7 +170,7 @@ $$
 c_i & \text{else if } i=\min\{\, j \mid r_j \text{ matches } k(u) \,\}\\
 \mathsf{G} & \text{otherwise}
 \end{cases}
-$$
+```
 
 The script also prints $V + P + S$ as “done”, out of
 $N = V + P + S + G + U$. This is bookkeeping, not evidence that every known

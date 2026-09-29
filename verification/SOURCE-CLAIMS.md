@@ -377,12 +377,12 @@ record alternative. It may absorb an arm only into an existing invariant arm,
 with a weaker read requirement and **the same** write invariant. Writing `C(R,W)`
 for the schema's read/write requirements, the sufficient rule is:
 
-$$
+```math
 \frac{R_1 \subseteq R_2 \qquad W_1 = W_2}
      {C(R_1,W_1) \preceq C(R_2,W_2)},
 \qquad
 C(R_1,W) \lor C(R_2,W) \equiv C(R_2,W).
-$$
+```
 
 The equality uses the premise on the left. `covers_sound` and `normalize_exact`
 prove the implication and union preservation for the capability schema. This is

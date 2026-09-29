@@ -25,7 +25,7 @@ rule statements, side conditions, soundness scope and evidence construction;
 | $k$                      | one of the tests in [the operational language](SEMANTICS.md#operational-language)                     |
 | $A$, $B$, $C$            | types, each a finite list of graph labels read as their union                                         |
 | $R$                      | a finite disjunction of primitive predicates                                                          |
-| $\operatorname{pred}(A)$ | the predicate disjunction $A$ denotes, defined for supported primitives (`HeapKnowledge.atoms`)       |
+| $\mathrm{pred}(A)$ | the predicate disjunction $A$ denotes, defined for supported primitives (`HeapKnowledge.atoms`)       |
 | $G$                      | the normalized positive graph                                                                         |
 | $\Gamma$                 | a typing context, one type per variable                                                               |
 | $\Pi$, $\Sigma$          | the [equality and heap parts](#checked-expression-postconditions) of the assertion state              |
@@ -57,10 +57,10 @@ stated once, for every proved image checker `images` (an
 decides only whether an instance table's named images are substitution images,
 and it carries the proof
 
-$$
-\operatorname{check}(\vec b,c)=\mathsf{true}\ \land\ \operatorname{kinds}(\vec b,c)
-\ \Longrightarrow\ \forall\eta.\ \operatorname{InstanceImages}_G(\eta,\vec b,c).
-$$
+```math
+\mathrm{check}(\vec b,c)=\mathsf{true}\ \land\ \mathrm{kinds}(\vec b,c)
+\ \Longrightarrow\ \forall\eta.\ \mathrm{InstanceImages}_G(\eta,\vec b,c).
+```
 
 Subtype certificates in `sub` and in member coverage are checked by
 `PositiveCertificates.checkUsing` with that checker, and every rule's soundness
@@ -69,7 +69,7 @@ certificate data. `HasTy G` is `HasTyUsing G (finiteInstanceImages G)`, the
 finite closed-table checker; source requests use it. Constructor names below are
 `HasTyUsing`'s. The rules are:
 
-$$
+```math
 \frac{\Gamma(x)=A}{\Gamma\vdash_G x:A}
 \qquad
 \frac{}{\Gamma\vdash_G \mathsf{null}:\mathsf{Null}}
@@ -77,15 +77,15 @@ $$
 \frac{}{\Gamma\vdash_G \mathsf{undefined}:\mathsf{Undefined}}
 \qquad
 \frac{}{\Gamma\vdash_G \mathsf{true},\mathsf{false}:\mathsf{Bool}}
-$$
+```
 
 Singleton introduction is also available, retaining the ordinary Boolean rules:
 
-$$
+```math
 \frac{}{\Gamma\vdash_G \mathsf{true}:\mathsf{boolLit}(\mathsf{true})}
 \qquad
 \frac{}{\Gamma\vdash_G \mathsf{false}:\mathsf{boolLit}(\mathsf{false})}.
-$$
+```
 
 A numeric literal has the same pair and only that pair: `numLit` gives it its
 own singleton, and `num` gives it the family. Neither reaches a union above
@@ -93,11 +93,11 @@ either one; that is the subsumption rule's work, exactly as for a Boolean. A
 literal claimed at $\mathsf{Number}$ need not have a singleton label in the graph to be coerced from,
 which is why the family rule is separate rather than derived.
 
-$$
+```math
 \frac{}{\Gamma\vdash_G n:\mathsf{numLit}(n)}
 \qquad
 \frac{}{\Gamma\vdash_G n:\mathsf{Number}}.
-$$
+```
 
 A literal's $n$ is the double its decimal lexeme rounds to: TypeScript's
 decimal spelling of a hexadecimal, octal or binary literal or of one with
@@ -107,11 +107,11 @@ of it name the infinity alike (`numericLexeme`).
 
 A bigint literal has the same pair, `bigintLit` and `bigint`:
 
-$$
+```math
 \frac{}{\Gamma\vdash_G i\mathtt{n}:\mathsf{bigintLit}(i)}
 \qquad
 \frac{}{\Gamma\vdash_G i\mathtt{n}:\mathsf{BigInt}}.
-$$
+```
 
 Functions take ordered parameter lists and a receiver. Write $\vec A$ for a
 signature's parameter types, $|\vec A|$ for its length and $R$ for its
@@ -134,12 +134,12 @@ signature's fixed row $(R,\vec A,B)$, with the fixed signatures
 leave unwritten, is not created at it. A call passes its receiver $r$ and
 types it at the selected signature's receiver:
 
-$$
+```math
 \frac{\Gamma\vdash_G f:\bigwedge_{(Q,\vec C,D)\in L}(Q;\vec C\to D)
       \quad(R,\vec A\,\vec U,B)\in L\quad\Gamma\vdash_G r:R\quad\forall i.\;\Gamma\vdash_G a_i:A_i
       \quad\forall U\in\vec U.\;\Gamma\vdash_G \mathsf{undefined}:U}
      {\Gamma\vdash_G \mathsf{invoke}(f,r,\vec a):B}
-$$
+```
 
 with $S^\flat=\{(R,\vec A,B)\mid(R,\vec A,E,B)\in S\}$. A plain call $f(\vec a)$ is $\mathsf{invoke}(f,\mathsf{undefined},\vec a)$. In
 de Bruijn form the receiver's slot precedes the parameters, $\mathit{this}$
@@ -166,15 +166,15 @@ collects a rest (`CodeOffers`): code without one meets each fixed signature
 and each variadic one's fixed row; code with one offers only variadic
 signatures, each taking exactly its fixed parameters, from a frame whose
 store $Q$ is one its rest's pack describes
-($\operatorname{Store}_G$, below):
+($\mathrm{Store}_G$, below):
 
-$$
-\operatorname{Offers}_G(\kappa,\vec C,L,S)\iff
+```math
+\mathrm{Offers}_G(\kappa,\vec C,L,S)\iff
 \begin{cases}
 \forall(R,\vec A,B)\in L\cup S^\flat.\;\vec C\vdash_G\kappa:(R;\vec A\to B) & \kappa\ \text{collects no rest}\\
-L=\varnothing\ \land\ \forall\sigma=(R,\vec A,P,B)\in S.\;|\vec A|=m\land\operatorname{Store}_G(Q_\sigma,P)\land\vec C\vdash_G\kappa:(Q_\sigma;R;\vec A\to B) & \kappa\ \text{collects a rest}
+L=\varnothing\ \land\ \forall\sigma=(R,\vec A,P,B)\in S.\;|\vec A|=m\land\mathrm{Store}_G(Q_\sigma,P)\land\vec C\vdash_G\kappa:(Q_\sigma;R;\vec A\to B) & \kappa\ \text{collects a rest}
 \end{cases}
-$$
+```
 
 Soundness is `offers_sem`: code without a rest meets its signatures by
 `callsT_of_graph` and `restsT_of_graph`, code with one its variadic
@@ -182,12 +182,12 @@ signatures by `restsT_of_graphRest`, whose invocation allocates the store
 before the run starts (`graphRest_invoke`). Creation then reads the captures
 only:
 
-$$
-\frac{\operatorname{Offers}_G(\kappa,\vec C,L,S)
+```math
+\frac{\mathrm{Offers}_G(\kappa,\vec C,L,S)
       \quad\forall i.\;\Gamma\vdash_G x_i:C_i}
      {\Gamma\vdash_G \mathsf{make}(\kappa[\vec x],\mathsf{null}):\bigwedge_{(R,\vec A,B)\in L}(R;\vec A\to B)
        \land\bigwedge_{(R,\vec A,E,B)\in S}(R;\vec A,\ldots E\to B)}\ (\texttt{funGraph})
-$$
+```
 
 where $\kappa[\vec x]$ is $\kappa$ capturing the slots $\vec x$. Its evidence
 (`Rule.funGraph`) names each signature as an entry of the unit's code table:
@@ -210,13 +210,13 @@ rows, computed and checked by `FreeOk` as `Sub.gen` checks its source's,
 exclude the binders), so a capture means at every instantiation what it means
 here (`meaning_assign_free`):
 
-$$
+```math
 \frac{G(j)=\forall\vec p.\,(L,S)
-      \quad\forall\eta.\;\operatorname{Offers}_{G[\eta]}(\kappa,\vec C,L,S)
+      \quad\forall\eta.\;\mathrm{Offers}_{G[\eta]}(\kappa,\vec C,L,S)
       \quad\mathrm{fv}(\vec C)\cap\vec p=\emptyset
       \quad\forall i.\;\Gamma\vdash_G x_i:C_i}
      {\Gamma\vdash_G \mathsf{make}(\kappa[\vec x],\mathsf{null}):j}\ (\texttt{funScheme})
-$$
+```
 
 Soundness is **Call-Scheme-I** ([below](#overloads-polymorphism-and-binding))
 with each instance's signatures read in the graph reassigned at that instance.
@@ -266,10 +266,10 @@ generic alias is read through its equation at the reference's arguments,
 $\mathit{Alias}\langle\vec A\rangle = E[\vec A/\vec X]$, in a definition, a
 function type and a declared function alike, as TypeScript reads it:
 
-$$
+```math
 \frac{\mathsf{type}\ \mathit{Alias}\langle\vec X\rangle = E\quad E[\vec A/\vec X]\ \text{an array or a tuple of required positions}}
      {\ldots x : \mathit{Alias}\langle\vec A\rangle\ \text{collects into}\ E[\vec A/\vec X]}
-$$
+```
 
 A rest typed by anything else is refused by its form: by a type parameter
 (a function definition has no allocation rule for an array only an instance
@@ -287,14 +287,14 @@ at the current level (`argMeaning`). An element rest `...xs: E[]` admits any
 number of actuals in $E$, $\mathsf{Pack}([\,],[\,],E)$ (`restElem_args`); a
 tuple rest `...xs: [A, B]` exactly those positions:
 
-$$
-\operatorname{Adm}(\vec A)=\{\vec v\mid |\vec v|\le|\vec A|,\ \forall i<|\vec v|.\,v_i\in A_i,\ \forall |\vec v|\le i<|\vec A|.\,\mathsf{undefined}\in A_i\}
-$$
+```math
+\mathrm{Adm}(\vec A)=\{\vec v\mid |\vec v|\le|\vec A|,\ \forall i<|\vec v|.\,v_i\in A_i,\ \forall |\vec v|\le i<|\vec A|.\,\mathsf{undefined}\in A_i\}
+```
 
-$$
-\operatorname{Adm}(\vec A;P)=\{\vec v\mid \vec v_{<|\vec A|}\in\operatorname{Adm}(\vec A),\ \mathsf{args}(\vec v_{\ge|\vec A|})\in P\}
+```math
+\mathrm{Adm}(\vec A;P)=\{\vec v\mid \vec v_{<|\vec A|}\in\mathrm{Adm}(\vec A),\ \mathsf{args}(\vec v_{\ge|\vec A|})\in P\}
 \qquad(\texttt{ArgsRest}).
-$$
+```
 
 A list shorter than $\vec A$ passes the empty pack, which an element rest
 admits and a tuple rest with required positions does not.
@@ -308,11 +308,11 @@ Code enters only where it is created: graph code pads a short list
 fixed parameters into a fresh store, which its entry allocates with the
 ordinary steps before the run starts (`graphRest_invoke`):
 
-$$
-\operatorname{invoke}(\kappa^{\ldots}[\vec c],r,\vec v)=
-\mathsf{let}\ x=\mathsf{arr}(v_k,v_{k+1},\ldots)\ \mathsf{in}\ \mathsf{goto}(E,K,s,[x,r,\operatorname{pad}_k(\vec v),\vec c])
+```math
+\mathrm{invoke}(\kappa^{\ldots}[\vec c],r,\vec v)=
+\mathsf{let}\ x=\mathsf{arr}(v_k,v_{k+1},\ldots)\ \mathsf{in}\ \mathsf{goto}(E,K,s,[x,r,\mathrm{pad}_k(\vec v),\vec c])
 \qquad(\texttt{graphEntry})
-$$
+```
 
 A pack holds its actuals at their positions only below the current level. The
 allocation is a step, after which the budget is one lower, so that is all the
@@ -320,13 +320,13 @@ fresh store's contracts need (`arr_alloc_rule_below`, `pack_alloc_safe`).
 
 So one value may meet fixed and variadic signatures at once, and a graph call
 clause carries both: `arrs L S`, `callable P Ps L S`. Write
-$\operatorname{Store}_G(Q,P)$ when $Q$ is the store $P$'s one tuple contract
-describes, writable since the store is fresh (`RestStore`), and $\operatorname{Spreads}_G(S,E)$ when $S$ is a
+$\mathrm{Store}_G(Q,P)$ when $Q$ is the store $P$'s one tuple contract
+describes, writable since the store is fresh (`RestStore`), and $\mathrm{Spreads}_G(S,E)$ when $S$ is a
 store contract every position of which is within $E$, and either it is
 dense or $E$ includes `undefined` (`SpreadsInto`). A hole yields
 $\mathsf{undefined}$ and must therefore be admitted by $E$. Creation checks the code once per variadic signature, from the
 frame with the rest store in slot 0, the receiver in slot 1, then the fixed
-parameters: the second case of $\operatorname{Offers}_G$ (`funGraph`;
+parameters: the second case of $\mathrm{Offers}_G$ (`funGraph`;
 `callableGraph` adds a field bag). The code's entry node wraps the store into
 the array the rest parameter names, an ordinary allocation the extractor
 emits.
@@ -334,25 +334,25 @@ emits.
 A call writes the fixed actuals, or a prefix whose omitted positions admit
 `undefined`, then parts that fit the rest; a call that omits a fixed position
 writes no part (`callRest`). With a spread among the parts, the rest is an
-element rest $\mathsf{Pack}([\,],[\,],E)$ ($\operatorname{elem}_G(P)=E$,
+element rest $\mathsf{Pack}([\,],[\,],E)$ ($\mathrm{elem}_G(P)=E$,
 `restElem`), and each part is an actual in $E$ or a spread of a store whose
 elements are. Without one, $P$ is one tuple contract $\tau$, and the parts are
 at its positions within its length bounds (`RestParts`):
 
-$$
-\frac{\begin{array}{c}\Gamma\vdash_G f:F\quad(\vec A\,\vec U,P,B)\in\operatorname{restSigs}_G(F)
+```math
+\frac{\begin{array}{c}\Gamma\vdash_G f:F\quad(\vec A\,\vec U,P,B)\in\mathrm{restSigs}_G(F)
       \quad\forall i.\;\Gamma\vdash_G a_i:A_i\quad\forall U\in\vec U.\;\Gamma\vdash_G\mathsf{undefined}:U\\
-      \vec U=\varepsilon\lor\vec p=\varepsilon\qquad\operatorname{Parts}_G(P,\vec p)\end{array}}
+      \vec U=\varepsilon\lor\vec p=\varepsilon\qquad\mathrm{Parts}_G(P,\vec p)\end{array}}
      {\Gamma\vdash_G f(\vec a,\vec p):B}
-$$
+```
 
-$$
-\operatorname{Parts}_G(P,\vec p)\iff
+```math
+\mathrm{Parts}_G(P,\vec p)\iff
 \begin{cases}
-\operatorname{elem}_G(P)=E\ \land\ \forall p\in\vec p.\;\Gamma\vdash_G p:E\ \lor\ (p={\ldots}s\land\Gamma\vdash_G s:S\land\operatorname{Spreads}_G(S,E)) & \text{a spread in }\vec p\\
+\mathrm{elem}_G(P)=E\ \land\ \forall p\in\vec p.\;\Gamma\vdash_G p:E\ \lor\ (p={\ldots}s\land\Gamma\vdash_G s:S\land\mathrm{Spreads}_G(S,E)) & \text{a spread in }\vec p\\
 P=\mathsf{Pack}(\tau)\ \land\ |\tau.R|\le|\vec p|\ \land\ (\tau.E=\varnothing\Rightarrow|\vec p|\le|\tau.R|+|\tau.O|)\ \land\ \forall i.\;\Gamma\vdash_G p_i:\mathsf{pos}_\tau(i) & \text{otherwise}
 \end{cases}
-$$
+```
 
 The first case is `rest_call_safe`: the actuals collected at $E$ form a list
 the element rest admits (`restElem_args`). The second is `pack_call_safe`: the
@@ -368,19 +368,19 @@ A spread is read by the call once every earlier actual is a value, the store's
 elements replacing it in order, `undefined` at a hole
 (`Step.callSpread`, `spread_parts_safe`):
 
-$$
+```math
 (h,\ f(\vec v,\ {\ldots}\mathsf{arr}(\vec\ell),\ \vec p))\longrightarrow
 (h,\ f(\vec v,\ h(\ell_1),\ldots,h(\ell_m),\ \vec p))
-$$
+```
 
 A spread followed by an actual that runs code is copied where it is written,
 `[...s]`, a fresh store the call then spreads, so the later actual cannot
 change what it passes (`Step.arrSpread`, `copy_safe`, `arrCopy`):
 
-$$
-\frac{\Gamma\vdash_G s:S\quad\operatorname{Spreads}_G(S,E)}
+```math
+\frac{\Gamma\vdash_G s:S\quad\mathrm{Spreads}_G(S,E)}
      {\Gamma\vdash_G [{\ldots}s]:\mathsf{List}_{\pi,\mathrm{writable}}([\,],[\,],E)}
-$$
+```
 
 Here $\pi$ is any presence mode chosen for the fresh store's lifetime contract.
 No existing location is retyped. A hole read from the source becomes a present
@@ -406,27 +406,27 @@ source's first and the tuple's positions within the rest
 [POSITIVE-TYPES.md](POSITIVE-TYPES.md#function-and-class-coverage));
 at level zero the call exists and nothing past it is owed.
 
-$$
-\frac{k=|\vec P|\le|\vec A|\quad\forall i<k.\;A_i\le P_i\quad\operatorname{elem}_G(P')=E\quad\forall k\le i<|\vec A|.\;A_i\le E\quad B\le D}
+```math
+\frac{k=|\vec P|\le|\vec A|\quad\forall i<k.\;A_i\le P_i\quad\mathrm{elem}_G(P')=E\quad\forall k\le i<|\vec A|.\;A_i\le E\quad B\le D}
      {(\vec P,\ldots P'\to B)\le(\vec A\to D)}
-$$
+```
 
-$$
+```math
 \frac{k=|\vec P|\le|\vec Q|\quad\forall i<k.\;Q_i\le P_i\quad
-      (k=|\vec Q|\ \lor\ \operatorname{elem}_G(P')=E\land\forall k\le i<|\vec Q|.\;Q_i\le E)\quad Q'\le P'\quad B\le D}
+      (k=|\vec Q|\ \lor\ \mathrm{elem}_G(P')=E\land\forall k\le i<|\vec Q|.\;Q_i\le E)\quad Q'\le P'\quad B\le D}
      {(\vec P,\ldots P'\to B)\le(\vec Q,\ldots Q'\to D)}
-$$
+```
 
-$$
+```math
 \frac{Q'=\mathsf{Pack}(\vec E)\ \text{exact}\quad\forall E\in\vec E.\,\mathsf{stable}(E)\quad
       |\vec P|=|\vec Q\vec E|\quad\forall i.\;(\vec Q\vec E)_i\le P_i\quad B\le D}
      {(\vec P\to B)\le(\vec Q,\ldots Q'\to D)}
-$$
+```
 
-$$
+```math
 \frac{\Gamma\vdash_G a:A\quad\Gamma,x:A\vdash_G b:B}
      {\Gamma\vdash_G \mathsf{let}\ x=a\ \mathsf{in}\ b:B}
-$$
+```
 
 A bound function (`bindE`) is allocated from saved slots: the target $f$, the
 receiver $r$ and the prefix $\vec p$, whose types the rule reads from the
@@ -434,11 +434,11 @@ context. The target's selected signature starts with the prefix's types; the
 result takes the rest, at any receiver, since invoking it drops the receiver it
 is given (`CallCode.bound`, `callsT_bound`):
 
-$$
-\frac{\Gamma(f)=F\quad(R,\vec P\,\vec D,B)\in\operatorname{callSigs}_G(F)
+```math
+\frac{\Gamma(f)=F\quad(R,\vec P\,\vec D,B)\in\mathrm{callSigs}_G(F)
       \quad\Gamma(r)=R\quad\Gamma(\vec p)=\vec P}
      {\Gamma\vdash_G\mathsf{bound}(f,r,\vec p):(Q;\vec D\to B)}
-$$
+```
 
 A method member is host-relative: its contract holds when it is invoked on
 the object it is read from ([DESIGN.md](DESIGN.md#method-members-are-host-relative)).
@@ -450,16 +450,16 @@ each claimed parameter within the member's, and the member's result within
 the claimed one, by checked subtyping proofs the certificate carries
 (`CoveredCall`, `CallProofs`). A claim may so name another row for the same
 type, as a producer's own row for a declared `[number, number]`. With
-$\operatorname{member}_G(O,k)=m$ the method of key $k$ in $O$'s one object
+$\mathrm{member}_G(O,k)=m$ the method of key $k$ in $O$'s one object
 clause (`memberOf`):
 
-$$
-\frac{\Gamma(i)=O\quad\operatorname{member}_G(O,k)=m
+```math
+\frac{\Gamma(i)=O\quad\mathrm{member}_G(O,k)=m
       \quad\forall(Q,\vec D,B)\in L.\;\exists(\vec C,B')\in m.\mathsf{calls}.\;
         G\vdash\vec D\le\vec C\land G\vdash B'\le B
       \quad\forall(Q,\vec D,P,B)\in S.\;(\vec D,P,B)\in m.\mathsf{rests}}
      {\Gamma\vdash_G\mathsf{let}\ f=i.k\ \mathsf{in}\ \mathsf{bound}(f,i,[]):\mathsf{arrs}(L;S)}
-$$
+```
 
 A generic method's member states its signatures as schemes, quantified
 signatures the member bound to its host meets
@@ -467,10 +467,10 @@ signatures the member bound to its host meets
 then one of those schemes (`bindScheme`), and a call names its instance below
 it ([`Sub.inst`](POSITIVE-TYPES.md#instances-of-a-scheme-row)):
 
-$$
-\frac{\Gamma(i)=O\quad\operatorname{member}_G(O,k)=m\quad [j]\in m.\mathsf{schemes}}
+```math
+\frac{\Gamma(i)=O\quad\mathrm{member}_G(O,k)=m\quad [j]\in m.\mathsf{schemes}}
      {\Gamma\vdash_G\mathsf{let}\ f=i.k\ \mathsf{in}\ \mathsf{bound}(f,i,[]):[j]}\ \textsf{bind-scheme}
-$$
+```
 
 The certificate is `bindMember` with no proofs, at a type of no clauses, the
 scheme row. A scheme's own receivers are the forwarding function's, which
@@ -492,11 +492,11 @@ its first fixed positions to the prefix and, past them, its element $E$; the
 result keeps the positions left and the rest $P$, which admits the prefix's
 values past the fixed positions in front of any list it admits:
 
-$$
-\frac{\Gamma(f)=F\quad(R,\vec P,P',B)\in\operatorname{restSigs}_G(F)\quad\operatorname{elem}_G(P')=E
+```math
+\frac{\Gamma(f)=F\quad(R,\vec P,P',B)\in\mathrm{restSigs}_G(F)\quad\mathrm{elem}_G(P')=E
       \quad\Gamma(r)=R\quad\Gamma(\vec p)=\vec P_{<k}\,E^{\,k-|\vec P|}\quad k=|\vec p|}
      {\Gamma\vdash_G\mathsf{bound}(f,r,\vec p):(Q;\vec P_{\ge k},\ldots P'\to B)}
-$$
+```
 
 Here $\lambda\vec x.t$ denotes source function creation, graph code whose
 body is $t$'s graph (`funGraph`): it allocates an object before any invocation. `let` has its own operational constructor, `letE a b`. It evaluates `a`,
@@ -519,7 +519,7 @@ rest, so the code is checked at the signature's first $\mathit{arity}$
 parameters, entered with `undefined` for the receiver. Its code $\kappa^{\mathsf{new}}$ is
 construct-only graph code:
 
-$$
+```math
 \frac{L\equiv_G\mathsf{Ctors}(\ldots,(\vec A,B),\ldots)\quad
       U\equiv_G\mathsf{Undefined}\quad
       \vec C\vdash_G\kappa^{\mathsf{new}}:(U;\vec A\to B)\ \text{for each signature}\quad
@@ -529,7 +529,7 @@ $$
 \frac{\Gamma\vdash_G f:L\quad L\equiv_G\mathsf{Ctors}(\ldots,(\vec A\,\vec U,B),\ldots)\quad
       \Gamma\vdash_G a_i:A_i\quad\Gamma\vdash_G\mathsf{undefined}:U_j}
      {\Gamma\vdash_G \mathsf{new}\ f(\vec a):B}
-$$
+```
 
 These are `ctorGraph` (`ctorsT_of_graph`) and `construct`. As a call may,
 `new` may omit trailing positions $\vec U$ whose contracts admit `undefined`:
@@ -564,18 +564,18 @@ same at the assignment the invariant reads it at, `realmFree_meaning`), and
 none of its names a key that prototype provides ($N_{\mathcal R}$). An
 allocation without $\sigma$, or in a graph stating no realm, meets it at once:
 
-$$
+```math
 \frac{\overline{f}\ \text{distinct}\qquad\forall i.\;\Gamma\vdash_G a_i:A_i
       \qquad\forall b\in\beta.\;\forall f\in\overline{f}.\;b\vDash f
       \qquad\mathsf{realm}\vDash\overline{f{:}A}}
      {\Gamma\vdash_G\{\overline{f=a}\}:\mathsf{Ref}(\overline{f{:}A};\beta)}
-$$
+```
 
-$$
+```math
 \mathsf{realm}\vDash\overline{f{:}A}\iff
 \sigma\notin\overline{f}\ \lor\ \bigl(\overline{f}\cap N_{\mathcal R}=\varnothing\land
   (\sigma{:}S)\in\overline{f{:}A}\ \text{with}\ S\ \text{a store type}\land(\mathsf{proto}{:}P_{\mathcal R})\in\overline{f{:}A}\bigr)
-$$
+```
 
 `read` and `write` name the field they act on and require it of the receiver's
 contract. A contract constrains only the fields it names, so a receiver may
@@ -585,20 +585,20 @@ the invariant fields $\varphi$ and readonly views $\psi$ of a clause with one
 record operand, a record's or a dictionary's, whose named members hold beside
 its index views (`namedMembers`):
 
-$$
+```math
 \mathsf{named}(\mathsf{Ref}(\varphi;\psi;\ldots))=(\varphi;\psi)
 \qquad
 \mathsf{named}(\mathsf{Dict}(\varphi;\psi;\overline{D};\ldots))=(\varphi;\psi)
-$$
+```
 
-$$
+```math
 \frac{\Gamma\vdash_G a:R\quad R\equiv_G c\quad\mathsf{named}(c)=(\varphi;\psi)\quad(f{:}A)\in\varphi}
      {\Gamma\vdash_G a.f:A}
 \qquad
 \frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Ref}(\varphi)
       \quad(f{:}A)\in\varphi\quad\Gamma\vdash_G a':A}
      {\Gamma\vdash_G a.f\leftarrow a':\mathsf{Null}}
-$$
+```
 
 Both rules read $\varphi$ off a single reference clause. Eliminating a
 conjunction of record contracts to such a view can be justified by subsumption;
@@ -618,12 +618,12 @@ $\mathsf{key}(\mathsf{symbols})=\mathsf{Symbol}$; $\theta_k\sqsubseteq\theta$),
 so a number reads a number index or a string one. Because that key can be
 absent, the proved `indexDict` rule includes `undefined` in the result:
 
-$$
+```math
 \frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Dict}(\theta{:}A)\quad
       \Gamma\vdash_G k:K\quad K\equiv_G\mathsf{key}(\theta_k)\quad\theta_k\sqsubseteq\theta\quad
       U\equiv_G\mathsf{Undefined}}
      {\Gamma\vdash_G a[k]:A\cup U}
-$$
+```
 
 The separate `readDict` rule covers a fixed key $\kappa$ with the same result
 contract, through an index whose class surely admits it ($\theta\ni_!\kappa$,
@@ -638,20 +638,20 @@ readonly field (`optT`), and where it does not, the read is `undefined`
 invariant fields, readonly views and optional fields $\kappa{:}^{r}A$ of mode
 $r$, and $\kappa$ a [property key](POSITIVE-TYPES.md#records):
 
-$$
+```math
 \frac{\Gamma\vdash_G a:R\quad R\equiv_G c\quad\mathsf{named}(c)=(\varphi;\psi)\quad(\kappa{:}A)\in\psi}
      {\Gamma\vdash_G a.\kappa:A}
 \qquad
 \frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Ref}(\varphi;\psi;\omega)\quad(\kappa{:}^{r}A)\in\omega
       \quad U\equiv_G\mathsf{Undefined}}
      {\Gamma\vdash_G a.\kappa:A\cup U}
-$$
+```
 
-$$
+```math
 \frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Dict}(\varphi;\psi;\overline{D};\omega)\quad (\theta{:}A)\in\overline{D}
       \quad\theta\ni_!\kappa\quad U\equiv_G\mathsf{Undefined}}
      {\Gamma\vdash_G a.\kappa:A\cup U}
-$$
+```
 
 A key one of the record's own-key bounds $b$ does not admit is not the
 object's own, so its read continues at the prototype, which the record holds
@@ -659,12 +659,12 @@ under the reserved key at $P$ (`readProto`). For an array, $b$ excludes
 `ArrayProto`'s keys, so every prototype member is read this way, whatever
 further keys the array owns:
 
-$$
+```math
 \frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Ref}(\varphi;\psi;\omega;\beta)\quad b\in\beta\quad b\nvDash\kappa\quad
       (\mathsf{proto}{:}P)\in\varphi\,\psi\quad P\equiv_G\mathsf{Ref}(\varphi';\psi';\ldots)\quad
       (\kappa{:}A)\in\varphi'\,\psi'}
      {\Gamma\vdash_G a.\kappa:A}
-$$
+```
 
 The delegation is one step (`Step.readProto`), and the prototype's field or
 view is read one level down (`read_proto_rule`).
@@ -694,11 +694,11 @@ prototype, lacks every key it does not write, and each field's contract need
 only be within each index view. The literal may be empty, `{}`, and may write
 members the dictionary names:
 
-$$
+```math
 \frac{\vec k\ \text{distinct}\quad\Gamma\vdash_G e_i:A_i\quad
       G\vdash\mathsf{Ref}(\overline{k_i{:}A_i};\{\vec k\})\le D}
      {\Gamma\vdash_G\{\overline{k_i{:}e_i}\}:D}
-$$
+```
 
 which is `alloc` followed by subsumption; the producer states the bounded
 record as the literal's claim wherever its contract has a readonly index or
@@ -723,7 +723,7 @@ it lacks every optional field (no prototype), and no bound is claimed that a
 key added later would falsify. With $\overline{D}$ the index views and
 $\overline{C}$ the writable indexes:
 
-$$
+```math
 \frac{\begin{array}{c}
       \vec k\ \text{distinct}\quad\mathsf{proto},\sigma\notin\vec k\quad
       \Gamma\vdash_G e_i:A_i\quad
@@ -732,15 +732,15 @@ $$
       \forall(\theta{:}V)\in\overline{C}.\;\theta\ni_?\kappa\Rightarrow B=V\lor\varnothing(V)
       \end{array}}
      {\Gamma\vdash_G\{\overline{k_i{:}e_i}\}:\mathsf{Dict}(\overline{k_i{:}A_i};\overline{D};\overline{C};\omega)}
-$$
+```
 
 Its evidence is `alloc` at a dictionary type. The producer claims the literal
 so wherever its contract has a writable index.
 
-$$
-\frac{\Gamma\vdash_G t:A\quad\operatorname{check}(G,A,B,p)=\mathsf{true}}
+```math
+\frac{\Gamma\vdash_G t:A\quad\mathrm{check}(G,A,B,p)=\mathsf{true}}
      {\Gamma\vdash_G t:B}
-$$
+```
 
 One object can carry both a field map and invocation code; the graph clause
 $\mathsf{Callable}(\varphi;L)$ combines them. Four rules give it the same four
@@ -748,12 +748,12 @@ operations, and they are implemented and proved, not proposed:
 `callableGraph` allocates it, typing each field's initializer as `alloc` does
 and offering its graph code's signatures as `funGraph` does,
 
-$$
+```math
 \frac{\vec k\ \text{distinct}\quad\forall i.\;\Gamma\vdash_G e_i:A_i
-      \quad\operatorname{Offers}_G(\kappa,\vec C,L,S)
+      \quad\mathrm{Offers}_G(\kappa,\vec C,L,S)
       \quad\forall j.\;\Gamma\vdash_G x_j:C_j}
      {\Gamma\vdash_G \mathsf{make}(\kappa[\vec x],\overline{k_i{=}e_i}):\mathsf{Callable}(\overline{k_i{:}A_i};L,S)}\ (\texttt{callableGraph})
-$$
+```
 
 one code-table entry per signature; `callCallable`, `readCallable` and
 `writeCallable` then invoke, read and write it under the same premises as
@@ -806,22 +806,22 @@ every alias; `len` reads the length. The source read `a.length` of an
 array, in a statement and in a closed expression (an arrow's expression
 body, a condition's operands) alike, is the length of its store:
 
-$$
+```math
 \frac{\Gamma\vdash_G a:A\quad \mathit{store}_G(A)=S\quad
       \Gamma\vdash_G a.\mathtt{[]}:S\quad S\equiv_G\mathsf{list}(\tau)\quad N\equiv_G\mathsf{num}}
-     {\Gamma\vdash_G\llbracket a.\mathit{length}\rrbracket=\mathsf{lenOf}\;(a.\mathtt{[]}):N}\ \textsf{len}
-$$
+     {\Gamma\vdash_G⟦a.\mathit{length}⟧=\mathsf{lenOf}\;(a.\mathtt{[]}):N}\ \textsf{len}
+```
 
 A write is typed only at an index no
 greater than the required length, so it lands in bounds or appends and never
 leaves a hole:
 
-$$
+```math
 \frac{\Gamma\vdash_G a:L\quad L\equiv_G\mathsf{list}(\tau)\quad
       \Gamma\vdash_G i:\mathsf{numLit}(k)\quad \tau(k)=A\quad
       k\le|\vec R_\tau|\quad \tau\ \text{writable}\quad \Gamma\vdash_G v:A}
      {\Gamma\vdash_G a[i]=v:L}\ \textsf{setElem}
-$$
+```
 
 Writes at a greater index, or at one no contract names, and reads by a
 non-literal index into a tuple, have no rule; a program appends with `push`.
@@ -830,11 +830,11 @@ no literal, is the host's read of the property the number names, a call of
 the intrinsic $\%\mathsf{ElementAt}\%$ (`intrinsics.mts`), which the parser
 writes where TypeScript's types of the object and the key are these:
 
-$$
+```math
 \mathit{xs}[k]\;\equiv\;\%\mathsf{ElementAt}\%(\mathit{xs},\ k)
 \qquad
 \%\mathsf{ElementAt}\%:\forall T.\ (\mathtt{readonly}\ T[\,],\ \mathtt{number})\Rightarrow T\mid\mathtt{undefined}
-$$
+```
 
 The element at an index below the length, an own property at another
 numeric key, which `Array<T>`'s `[n: number]: T` says holds a `T`, else
@@ -847,26 +847,26 @@ A string owns its `length` and its code units ([semantics](SEMANTICS.md#operatio
 string, and `elemStr` a code unit at any numeric index, a string or, past the
 end or at a key that is not an index, `undefined`, whatever the literal:
 
-$$
-\frac{\Gamma\vdash_G a:S\quad\operatorname{Answers}_G(S,\mathsf{isStr},\mathsf{true})\quad N\equiv_G\mathsf{num}}
+```math
+\frac{\Gamma\vdash_G a:S\quad\mathrm{Answers}_G(S,\mathsf{isStr},\mathsf{true})\quad N\equiv_G\mathsf{num}}
      {\Gamma\vdash_G\mathsf{lenOf}\;a:N}\ \textsf{lenStr}
 \qquad
-\frac{\Gamma\vdash_G a:S\quad\operatorname{Answers}_G(S,\mathsf{isStr},\mathsf{true})\quad
-      \Gamma\vdash_G i:I\quad\operatorname{Answers}_G(I,\mathsf{isNum},\mathsf{true})}
+\frac{\Gamma\vdash_G a:S\quad\mathrm{Answers}_G(S,\mathsf{isStr},\mathsf{true})\quad
+      \Gamma\vdash_G i:I\quad\mathrm{Answers}_G(I,\mathsf{isNum},\mathsf{true})}
      {\Gamma\vdash_G\mathsf{elemAt}\;a\;i:\mathsf{str}\cup\mathsf{undefined}}\ \textsf{elemStr}
-$$
+```
 
 Any other member of a primitive is read through its wrapper's prototype. The
 source read `x.k`, with `x` saved in a slot, lowers to a test of each
 primitive shape its type holds, selecting that shape's read, and the object
 read last (`dispatchTerm`):
 
-$$
+```math
 \mathsf{if}\ \mathsf{isStr}(x)\ \mathsf{then}\ r_{\mathsf{str}}\ \mathsf{else}\
 \mathsf{if}\ \mathsf{isNum}(x)\ \mathsf{then}\ r_{\mathsf{num}}\ \mathsf{else}\ \cdots\ \mathsf{readAt}\;k\;x,
 \qquad
 r_s=\mathsf{readAt}\;k\;(\mathsf{makeAt}\;\mathsf{absent}\;[\mathsf{proto}]\;[P_s])
-$$
+```
 
 with $P_s$ the slot holding the realm's prototype for shape $s$, and a
 string's `length` read by `lenStr`. Every arm is JavaScript's read for values
@@ -882,7 +882,7 @@ the member's signature names (`this: string`).
 Every binary operator has one rule, `arith`, for arithmetic on numbers and on
 bigints, for string concatenation, relational comparison and strict equality alike ([its
 meaning](SEMANTICS.md#operational-language), `binop`). A clause pair
-classifies the operation, $\operatorname{op}(op,c,d)$ (`opResult`), where
+classifies the operation, $\mathrm{op}(op,c,d)$ (`opResult`), where
 $\mathsf{N}$ is `num` or `numLit`, $\mathsf{Z}$ is `bigint` or `bigintLit`,
 $\mathsf{S}$ is `str` or `strLit`, and $\mathsf{P}$, the printable clauses
 (`printableClause`), is $\mathsf N\cup\mathsf Z\cup\mathsf S$ with `bool`,
@@ -892,8 +892,8 @@ $\mathsf{S}$ is `str` or `strLit`, and $\mathsf{P}$, the printable clauses
 field: their members are objects with a field location, whose identity
 strict equality compares:
 
-$$
-\operatorname{op}(op,c,d)=\begin{cases}
+```math
+\mathrm{op}(op,c,d)=\begin{cases}
 \mathsf{bool} & op={\equiv},\ c\in\mathsf{Pr}\cup\mathsf O\ \text{or}\ d\in\mathsf{Pr}\cup\mathsf O\\
 \mathsf{bool} & op\ \text{relational},\ c,d\in\mathsf N\cup\mathsf Z\ \text{or}\ c,d\in\mathsf S\\
 \mathsf{str} & op={+},\ c\in\mathsf S,\ d\in\mathsf P\ \text{or}\ c\in\mathsf P,\ d\in\mathsf S\\
@@ -901,21 +901,21 @@ $$
 \mathsf{bigint} & op\ \text{arithmetic},\ c,d\in\mathsf Z\\
 \text{none} & \text{otherwise}
 \end{cases}
-$$
+```
 
 A bigint divisor, of `/` or `%`, that may be zero, or an exponent that may be negative, is
 admitted: the operation then throws a `RangeError`, an outcome safety admits
-([Design](DESIGN.md#throws)). $\operatorname{Operands}_G(op,A,B,r)$
+([Design](DESIGN.md#throws)). $\mathrm{Operands}_G(op,A,B,r)$
 requires both types of clause rows and every clause pair of $A$ and $B$ to
 classify as $r$, and the result type must hold every value of the kind
-($\operatorname{covers}$): the number, bigint or string family exactly, or both
+($\mathrm{covers}$): the number, bigint or string family exactly, or both
 Boolean literals:
 
-$$
+```math
 \frac{\Gamma\vdash_G a:A\quad\Gamma\vdash_G b:B\quad
-      \operatorname{Operands}_G(op,A,B,r)\quad\operatorname{covers}_G(N,r)}
+      \mathrm{Operands}_G(op,A,B,r)\quad\mathrm{covers}_G(N,r)}
      {\Gamma\vdash_G a\mathbin{op}b:N}\ \textsf{arith}
-$$
+```
 
 The result is never a singleton, since its value is not typed. `opResult_sound`
 proves the classification: on members of the two clauses $\mathsf{binop}$
@@ -969,15 +969,15 @@ whose answer the operand's type does not settle is typed by `test` as a Boolean
 holding both literals, so `ifBool` can branch on it; a settled answer still
 uses `ifTag`.
 
-For branching, $\operatorname{Answers}_G(A,k,q)$ checks that every expanded
+For branching, $\mathrm{Answers}_G(A,k,q)$ checks that every expanded
 clause of $A$ gives the same known Boolean answer $q$ to test $k$, and that
 $A$ is of clause rows, since a parameter row's members could be anything:
 
-$$
-\operatorname{Answers}_G(A,k,q)\iff
+```math
+\mathrm{Answers}_G(A,k,q)\iff
 \forall i\in A.\;\mathsf{plain}_G(i)\ \land\
-\forall\gamma\in\operatorname{expand}_G(A).\;\operatorname{tag}(k,\gamma)=q.
-$$
+\forall\gamma\in\mathrm{expand}_G(A).\;\mathrm{tag}(k,\gamma)=q.
+```
 
 A shape test's answer on a clause is read off its shape: $\mathsf{isBigint}$
 and $\mathsf{isSymbol}$ answer true exactly on the $\mathsf{bigint}$ and
@@ -1003,29 +1003,29 @@ dictionary clause (`arrayAnswer`), true where the clause says its object owns
 $\sigma$, as every array type's does, and false on every other clause but
 $\mathsf{top}$:
 
-$$
-\operatorname{keys}(\kappa,\gamma)=
+```math
+\mathrm{keys}(\kappa,\gamma)=
 \begin{cases}
-\mathsf{true} & \kappa\in\operatorname{present}(\gamma)\\
-\mathsf{false} & \kappa\notin\operatorname{present}(\gamma),\ \exists K\in\operatorname{bounds}(\gamma).\ \neg K\ \text{admits}\ \kappa\\
+\mathsf{true} & \kappa\in\mathrm{present}(\gamma)\\
+\mathsf{false} & \kappa\notin\mathrm{present}(\gamma),\ \exists K\in\mathrm{bounds}(\gamma).\ \neg K\ \text{admits}\ \kappa\\
 \text{none} & \text{otherwise}
 \end{cases}
 \qquad
-\operatorname{tag}(\mathsf{isArray},\gamma)=
+\mathrm{tag}(\mathsf{isArray},\gamma)=
 \begin{cases}
-\operatorname{keys}(\sigma,\gamma) & \gamma\ \text{a record or dictionary clause}\\
+\mathrm{keys}(\sigma,\gamma) & \gamma\ \text{a record or dictionary clause}\\
 \mathsf{false} & \text{otherwise},\ \gamma\neq\mathsf{top}
 \end{cases}
-$$
+```
 
-$$
-\operatorname{tag}(\mathsf{hasKey}(\kappa),\gamma)=
+```math
+\mathrm{tag}(\mathsf{hasKey}(\kappa),\gamma)=
 \begin{cases}
-\operatorname{keys}(\kappa,\gamma) & \gamma\ \text{a record or dictionary clause}\\
+\mathrm{keys}(\kappa,\gamma) & \gamma\ \text{a record or dictionary clause}\\
 \text{none} & \gamma\ \text{an arrow, callable or construct-signature clause}\\
 \mathsf{false} & \text{otherwise},\ \gamma\neq\mathsf{top}
 \end{cases}
-$$
+```
 
 `keyAnswer_sound` gives each answer from the clause's meaning: a present key
 is owned (`semWithArgs_owns`), and a bound's excluded key is not
@@ -1036,35 +1036,35 @@ tests have an answer determined by the clause's shape; numeric singleton
 equality also examines its bits. A broad number clause has no fixed answer
 to that equality, so it establishes neither outcome:
 
-$$
-\frac{\Gamma(x)=A\quad\operatorname{Answers}_G(A,k,q)
+```math
+\frac{\Gamma(x)=A\quad\mathrm{Answers}_G(A,k,q)
       \quad(q=\mathsf{true}\Rightarrow\Gamma\vdash_G t_1:B)
       \quad(q=\mathsf{false}\Rightarrow\Gamma\vdash_G t_2:B)}
      {\Gamma\vdash_G\mathsf{if}\ k(x)\ \mathsf{then}\ t_1\ \mathsf{else}\ t_2:B}.
-$$
+```
 
 The shape-test rule checks each overload body under its own argument type. It
 handles shape dispatch between overloads.
 
 Ordinary Boolean conditionals use a separate rule. Define
-$\operatorname{Boolean}_G(C)$ as
-$\operatorname{Answers}_G(C,\mathsf{isBool},\mathsf{true})$; this accepts Boolean
+$\mathrm{Boolean}_G(C)$ as
+$\mathrm{Answers}_G(C,\mathsf{isBool},\mathsf{true})$; this accepts Boolean
 singleton unions as well as the Boolean clause.
 
-$$
-\frac{\Gamma\vdash_G c:C\quad\operatorname{Boolean}_G(C)
+```math
+\frac{\Gamma\vdash_G c:C\quad\mathrm{Boolean}_G(C)
       \quad\Gamma\vdash_G t_1:A\quad\Gamma\vdash_G t_2:A}
      {\Gamma\vdash_G\mathsf{if}\ c\ \mathsf{then}\ t_1\ \mathsf{else}\ t_2:A}.
-$$
+```
 
 A condition with a proved singleton type needs only its reachable arm. For
 $q\in\{\mathsf{true},\mathsf{false}\}$, write $B_q$ for a type represented by
 $\mathsf{boolLit}(q)$, and let $t_q$ select the arm that $q$ reaches:
 
-$$
+```math
 \frac{\Gamma\vdash_G c:B_q\qquad\Gamma\vdash_G t_q:A}
      {\Gamma\vdash_G\mathsf{if}\ c\ \mathsf{then}\ t_1\ \mathsf{else}\ t_2:A}.
-$$
+```
 
 `ifKnown q` carries two proofs: one for the condition at its singleton type,
 and one for the selected arm. This is a typing rule, not constant folding:
@@ -1078,12 +1078,12 @@ $A$. No least-upper-bound is computed. Both use the same context: that rule
 does not justify narrowed branch environments. Another rule handles a directly
 tested immutable variable. Write $\Gamma[x:=T]$ for replacing $x$'s type:
 
-$$
-\frac{\Gamma(x)=C\quad\operatorname{Boolean}_G(C)
+```math
+\frac{\Gamma(x)=C\quad\mathrm{Boolean}_G(C)
       \quad\Gamma[x:=\mathsf{True}]\vdash_G t_1:A
       \quad\Gamma[x:=\mathsf{False}]\vdash_G t_2:A}
      {\Gamma\vdash_G\mathsf{if}\ x\ \mathsf{then}\ t_1\ \mathsf{else}\ t_2:A}.
-$$
+```
 
 Here $\mathsf{True}$ and $\mathsf{False}$ must expand to the corresponding singleton
 clauses. `HasTyUsing.ifBoolVar` proves this rule sound: the selected branch's actual
@@ -1098,11 +1098,11 @@ A finite union can be split in one immutable binding. Write $[a]$ for
 one graph label viewed as a type. Every member must establish the same term and
 result; all other bindings retain their original types:
 
-$$
+```math
 \frac{\Gamma(x)=C\qquad
       \forall a\in C.\;\Gamma[x:=[a]]\vdash_G t:A}
      {\Gamma\vdash_G t:A}.
-$$
+```
 
 `unionVar i` carries one premise for each label in $C$, in list order. The checker
 rejects missing alternatives, changed terms/results, and changes to unrelated
@@ -1123,7 +1123,7 @@ $\vec y$ already in slots, the source call `x.k(y…)` lowers to one term that
 reads the member and invokes it, dispatched as a member read is
 (`dispatchCallTerm`, over `dispatchTerm`'s tests):
 
-$$
+```math
 \mathsf{if}\ \mathsf{isStr}(x)\ \mathsf{then}\ \mathsf{invoke}\;r_{\mathsf{str}}\;x\;\vec y\ \mathsf{else}\ \cdots\
 \mathsf{invoke}\;o\;x\;\vec y,
 \qquad
@@ -1131,7 +1131,7 @@ o=\begin{cases}
 \mathsf{let}\ m=\mathsf{readAt}\;k\;x\ \mathsf{in}\ \mathsf{bound}(m,x) & \text{every object alternative holds $k$ as a member}\\
 \mathsf{readAt}\;k\;x & \text{otherwise}
 \end{cases}
-$$
+```
 
 with $r_s$ a primitive shape's read through its wrapper. `unionVar` splits
 $x$, `ifTag` selects the arm, and each arm is an ordinary call (`app`, with
@@ -1145,10 +1145,10 @@ so no step can tell the orders apart.
 `Bindings.lean` defines de Bruijn scope, simultaneous closing substitution, and
 its application law:
 
-$$
-\mathsf{invoke}(\mathsf{obj}(\ell,\mathsf{closure}(1,\operatorname{close}^{2}_{\rho}(b))),r,[a])
-\longrightarrow \operatorname{close}_{r::a::\rho}(b).
-$$
+```math
+\mathsf{invoke}(\mathsf{obj}(\ell,\mathsf{closure}(1,\mathrm{close}^{2}_{\rho}(b))),r,[a])
+\longrightarrow \mathrm{close}_{r::a::\rho}(b).
+```
 
 The formal statement is `instantiate_beta`; environment entries must be closed.
 This is the invocation step for an already allocated function object;
@@ -1160,12 +1160,12 @@ and when their observation budget decreases.
 
 `HasTyUsing.sound` proves, for every proved image checker:
 
-$$
-\Gamma\vdash_G t:A\ \land\ \operatorname{EnvOk}_G(\Gamma,\rho,n,W)\ \land\
-\operatorname{WorldAdm}(W)\ \land\ \operatorname{HeapOk}(n,W,h)
+```math
+\Gamma\vdash_G t:A\ \land\ \mathrm{EnvOk}_G(\Gamma,\rho,n,W)\ \land\
+\mathrm{WorldAdm}(W)\ \land\ \mathrm{HeapOk}(n,W,h)
 \ \Longrightarrow\
-\operatorname{Safe}(\llbracket A\rrbracket_G,n,W,h,\operatorname{close}_{\rho}(t)).
-$$
+\mathrm{Safe}(⟦A⟧_G,n,W,h,\mathrm{close}_{\rho}(t)).
+```
 
 `HasTyUsing.closed_safe` specializes this to a closed program with an empty typing
 environment. It explicitly requires the term to be scoped: the total semantic environment
@@ -1214,11 +1214,11 @@ free variables.
 
 Lean proves both directions:
 
-$$
-\operatorname{Scoped}(0,t) \land ([] \vdash_G t : A)
+```math
+\mathrm{Scoped}(0,t) \land ([] \vdash_G t : A)
 \quad\Longleftrightarrow\quad
-\exists p.\; \operatorname{check}(G,t,A,p)=\mathsf{true}.
-$$
+\exists p.\; \mathrm{check}(G,t,A,p)=\mathsf{true}.
+```
 
 In words: the program is closed and has a typing derivation exactly when some
 finite evidence is accepted for that program and result type.
@@ -1268,13 +1268,13 @@ and `EnvOk`, so each soundness theorem, parametricity (`accept_reassign`,
 when every slot in the target claim $\Delta$ has a source slot at the same
 position in the incoming environment $\Gamma$, with a proved subtype relation:
 
-$$
+```math
 \Gamma \preceq_G \Delta
 \quad\Longleftrightarrow\quad
 |\Delta| \leq |\Gamma|
 \;\land\;
 \forall i < |\Delta|.\; \Gamma_i \leq_G \Delta_i.
-$$
+```
 
 `checkEdge` takes one subtype certificate per target slot. Lean proves that
 acceptance implies coverage, as family inclusion per slot (`Covers`,
@@ -1292,7 +1292,7 @@ the total environment's default value.
 
 For a supplied map $m$, the rule and its semantic action are:
 
-$$
+```math
 \frac{
   |m|=|\Delta|
   \qquad
@@ -1301,8 +1301,8 @@ $$
   \Gamma\preceq_G^{m}\Delta
 }
 \qquad
-\operatorname{mapEnv}(m,\rho)(i)=\rho(m_i).
-$$
+\mathrm{mapEnv}(m,\rho)(i)=\rho(m_i).
+```
 
 `checkMapped_sound` proves mapped coverage, and `MappedCovers.env` proves that
 this simultaneous selection preserves the target semantic environment in the
@@ -1314,19 +1314,19 @@ claim independently. No join is computed. When a computation binds a new result,
 `checked_bind_claim` proves composition through the edge
 $A :: \Gamma \preceq_G \Delta$ into a continuation checked under $\Delta$:
 
-$$
+```math
 \frac{
   \Gamma \vdash_G a : A
   \qquad A :: \Gamma \preceq_G \Delta
   \qquad \Delta \vdash_G b : B
 }{
-  \operatorname{Safe}\!\left(
-    \llbracket B \rrbracket_G,n,W,h,
-    \operatorname{close}_{\rho}
+  \mathrm{Safe}\!\left(
+    ⟦B⟧_G,n,W,h,
+    \mathrm{close}_{\rho}
       (\mathsf{let}\;x=a\;\mathsf{in}\;b)
   \right)
 }.
-$$
+```
 
 The conclusion assumes that $\rho$ meets $\Gamma$ at budget $n$ and world $W$,
 that $W$ is admissible, and that $h$ satisfies $W$. This is a semantic composition
@@ -1345,9 +1345,9 @@ The graph checker below discharges that enumeration obligation.
 outcome safety admits ([Design](DESIGN.md#throws)). Its operand is typed at a
 type of its own, since it runs first:
 
-$$
+```math
 \frac{\Gamma\vdash_G a:A}{\Gamma\vdash_G\mathsf{throw}\ a:B}\ \textsf{throw}
-$$
+```
 
 The soundness case composes `a`'s safety with the throw's context rule
 (`bind` over `Tm.throw`) and closes with `thrown_safe`: the value `a` produces
@@ -1362,13 +1362,13 @@ them, the own enumerable data properties $b$ has, less $\delta$
 ([SEMANTICS](SEMANTICS.md#operational-language)). Its type is a record every
 pair of the operands' clauses gives ([Design](DESIGN.md#object-literals)):
 
-$$
+```math
 \frac{\Gamma\vdash_G a:A\quad\Gamma\vdash_G b:B\quad
-      \operatorname{MergeOk}_G(\delta,A,B,R)}
+      \mathrm{MergeOk}_G(\delta,A,B,R)}
      {\Gamma\vdash_G\mathsf{merge}_\delta(a,b):R}\ \textsf{merge}
-$$
+```
 
-$\operatorname{MergeOk}_G(\delta,A,B,R)$ holds where $A$ and $B$ are of clause
+$\mathrm{MergeOk}_G(\delta,A,B,R)$ holds where $A$ and $B$ are of clause
 rows and, for each clause $c_a$ of $A$ and $c_b$ of $B$, some clause
 $\mathsf{Ref}(\varphi;\omega;\beta)$ of $R$ is given by them
 (`ObjectMerge.MergeClause`): $c_a$ a record or dictionary, $c_b$ one too or a
@@ -1388,14 +1388,14 @@ $c_a$ holds no prototype ($\neg\pi$ among its keys, by a bound or by an index
 of its own, which `dictViewT` states); and for each class $K$ of an entry,
 whatever either side gives under a key $K$ admits is within $V$:
 
-$$
-\operatorname{given}_K(c,V)\iff
+```math
+\mathrm{given}_K(c,V)\iff
   \forall (k{:}T)\in\varphi_c\cup\omega_c.\ K\ \text{may admit}\ k\Rightarrow T\subseteq V
   \ \land\ \big(\exists (K'{:}T')\in\iota_c.\ K\subseteq K'\land T'\subseteq V
-  \ \lor\ \exists\,\mathsf{among}\,N\in\beta_c.\ \forall k\in N.\ K\ \text{may admit}\ k\Rightarrow k\in\operatorname{dom}(\varphi_c\cup\omega_c)\big)
-$$
+  \ \lor\ \exists\,\mathsf{among}\,N\in\beta_c.\ \forall k\in N.\ K\ \text{may admit}\ k\Rightarrow k\in\mathrm{dom}(\varphi_c\cup\omega_c)\big)
+```
 
-($\operatorname{given}_K(c_a,V)$ is `classWithinA`). For the source it is
+($\mathrm{given}_K(c_a,V)$ is `classWithinA`). For the source it is
 `classWithin`, over the keys a copy takes, less $\delta$, and also no array
 store whose elements a copy would give under index keys: a bound excluding the
 store key, or a string index at a type no member of which is a list
@@ -1432,9 +1432,9 @@ where some plain-object clause of $x$'s claimed type states $k$ neither as a
 field, a view nor a method, nor as a readonly optional field (`mayLack`),
 lowers, when $x$ **owns** its object at the statement, to
 
-$$
+```math
 x;\ e;\ o\leftarrow\mathsf{makeAt}(\{k\mapsto v\});\ x\leftarrow\mathsf{merge}_{[]}(x,o)
-$$
+```
 
 with the value of $e$ at the claim of the write expression $W$, the one-key
 object at $\mathsf{Ref}(k{:}W;\ \mathsf{among}\,\{k\})$ and the merge at the
@@ -1443,14 +1443,14 @@ record or dictionary `mergeResult` proposes, checked by
 merge's value in $x$'s slot. The value of the assignment is discarded: only a
 statement is lowered so. Ownership (`growSites`) is syntactic:
 
-$$
-\operatorname{Own}(x,s)\iff
+```math
+\mathrm{Own}(x,s)\iff
   \begin{cases}
   x\ \text{is declared}\ \mathtt{const}\ x = o\ \text{with}\ o\ \text{an object literal, not at module level;}\\
   s\ \text{is at the loop depth of the declaration, in the same body;}\\
   \text{no statement from the declaration through}\ s\ \text{lets}\ x\ \text{escape.}
   \end{cases}
-$$
+```
 
 An expression lets $x$ escape (`escapesExpr`) when $x$ occurs in it other
 than as the receiver of a member read, index read, write, index write, `in`
@@ -1459,7 +1459,7 @@ call's receiver, in a binding's or field's value, a result, a spread, a
 comparison, and anywhere in a closure, which holds the object. In textual
 order every path from the declaration to $s$ passes only earlier statements,
 since $s$ is in no loop the declaration is outside; a module constant is read
-by the module's functions. With $\operatorname{Own}(x,s)$ no reference but
+by the module's functions. With $\mathrm{Own}(x,s)$ no reference but
 $x$'s slot holds the object, so JavaScript's write in place, which every
 reference would see, and the copy, which only $x$ sees, agree. Any other
 write adding a key is refused, located at the write, as is a write of
@@ -1472,7 +1472,7 @@ keys the model keeps for itself; at a number or symbol it is not lowered.
 spread copies, one $\mathsf{merge}_{[]}$ per source as soon as it is
 evaluated, checked by $\textsf{merge}$. Its target is a fresh literal, whose
 result is the call's value; or, for the statement `Object.assign(x, …);`
-with $\operatorname{Own}(x,s)$, the local, which holds the result from then
+with $\mathrm{Own}(x,s)$, the local, which holds the result from then
 on, as for a key-adding write (a source letting $x$ escape defeats
 ownership). Any other target is refused: the call's value is the target, one
 more reference to it. JavaScript sets each key through the target's `[[Set]]`,
@@ -1515,11 +1515,11 @@ A node's **handler** is a target too: where a throw out of its expression
 goes, the thrown value pushed as a `bind` pushes a value. A node without one
 lets the throw end the run, in the state $\mathsf{raised}(v)$. The machine:
 
-$$
+```math
 \frac{h,t\ \text{raises}\ v}{h,\ \mathsf{eval}(t,\rho,k,\ell)\to h,\ \mathsf{at}(\ell,\mathsf{push}(v,\rho))}\ (\texttt{handle})
 \qquad
 \frac{h,t\ \text{raises}\ v}{h,\ \mathsf{eval}(t,\rho,k,\varnothing)\to h,\ \mathsf{raised}(v)}\ (\texttt{raise})
-$$
+```
 
 Node evidence for a node with a handler supplies the type $T$ the thrown value
 is bound at and the handler edge's certificate. `checkHandler` requires $T$ to
@@ -1529,11 +1529,11 @@ expression throws, which are those of the node's entry that do not mention the
 heap (`handlerFacts`: immutable values, alias and distinct links, shifted past
 the thrown value's slot):
 
-$$
-\frac{\mathsf{top}\in\operatorname{expand}_G(T)\quad
-      \operatorname{TargetOk}_G(C,\ T{:}\Gamma,\ \ell,\ \operatorname{handlerFacts}(K))}
-     {\operatorname{HandlerOk}_G(C,\Gamma,K,\ell)}\ \textsf{handler}
-$$
+```math
+\frac{\mathsf{top}\in\mathrm{expand}_G(T)\quad
+      \mathrm{TargetOk}_G(C,\ T{:}\Gamma,\ \ell,\ \mathrm{handlerFacts}(K))}
+     {\mathrm{HandlerOk}_G(C,\Gamma,K,\ell)}\ \textsf{handler}
+```
 
 where $\Gamma$ and $K$ are the node's entry claims and facts. The machine
 state after a throw is safe by that edge, `admitsAll_sound` giving the thrown
@@ -1559,20 +1559,20 @@ are checked too. Omitting a predecessor list cannot bypass these obligations.
 supplied input context $\Gamma_0$, with an empty input fact context.
 `accepted_inputs_safe` proves:
 
-$$
+```math
 \begin{gathered}
-\operatorname{checkEntry}(G,R,P,C,p,\Gamma_0)=\mathsf{true}
+\mathrm{checkEntry}(G,R,P,C,p,\Gamma_0)=\mathsf{true}
 \\
-\land\;\operatorname{EnvOk}_G(\Gamma_0,\rho,n,W)
-\land\;\operatorname{WorldAdm}(W)
-\land\;\operatorname{HeapOk}(n,W,h)
+\land\;\mathrm{EnvOk}_G(\Gamma_0,\rho,n,W)
+\land\;\mathrm{WorldAdm}(W)
+\land\;\mathrm{HeapOk}(n,W,h)
 \\
 \Longrightarrow\quad
-\operatorname{SafeGraph}_P(\llbracket R\rrbracket_G,n,W,h,\operatorname{at}(p,\rho)).
+\mathrm{SafeGraph}_P(⟦R⟧_G,n,W,h,\mathrm{at}(p,\rho)).
 \end{gathered}
-$$
+```
 
-[`SafeGraph` and the machine state $\operatorname{at}(p,\rho)$](SEMANTICS.md#computations-and-recursive-types)
+[`SafeGraph` and the machine state $\mathrm{at}(p,\rho)$](SEMANTICS.md#computations-and-recursive-types)
 are the graph-level analogues of `Safe`: the run starts at the entry label with
 the input environment, and stays safe through every transition.
 The arguments, world, heap and budget are arbitrary subject to these premises.
@@ -1620,13 +1620,13 @@ uses one contract for Boolean equality and tag observations. An observation $o$
 is either equality to a Boolean value or the result of a runtime tag test.
 Define the semantic obligation:
 
-$$
+```math
 A\preceq_o B
 \quad\Longleftrightarrow\quad
 \forall n,W,v.\;
-\bigl(v\in\llbracket A\rrbracket_{n,W}\land o(v)\bigr)
-\Longrightarrow v\in\llbracket B\rrbracket_{n,W}.
-$$
+\bigl(v\in⟦A⟧_{n,W}\land o(v)\bigr)
+\Longrightarrow v\in⟦B⟧_{n,W}.
+```
 
 This is `ObservedSub`. The destination type $B$ is supplied. The contract does
 not require computing a canonical intersection, difference, or filtered type.
@@ -1643,17 +1643,17 @@ slice $F^{f}_{t,q}(\Gamma(k))$
 record fixing $f$, as an invariant field or a readonly view, at a type that
 answers the tag $t$ with $\lnot q$. The common environment theorem is:
 
-$$
+```math
 \frac{
- \operatorname{EnvOk}_G(\Gamma,\rho,n{+}1,W)
- \quad \operatorname{HeapOk}(n{+}1,W,h)
+ \mathrm{EnvOk}_G(\Gamma,\rho,n{+}1,W)
+ \quad \mathrm{HeapOk}(n{+}1,W,h)
  \quad o(\rho(i))
  \quad \forall (k,f)\in\mathit{fs}.\ h(\rho(k).f)=\rho(i)
- \quad \operatorname{ObservedCovers}_G(\Gamma,\Delta,i,o,m,\mathit{fs})
+ \quad \mathrm{ObservedCovers}_G(\Gamma,\Delta,i,o,m,\mathit{fs})
 }{
- \operatorname{EnvOk}_G(\Delta,\operatorname{mapEnv}(m,\rho),n{+}1,W)
+ \mathrm{EnvOk}_G(\Delta,\mathrm{mapEnv}(m,\rho),n{+}1,W)
 }.
-$$
+```
 
 The field slice is sound one level up (`fieldSlice_sound`): the field's
 location holds the read value, and a heap meeting the world holds at that
@@ -1674,7 +1674,7 @@ the observation rules `undefined` out (`excludesUndef`): the read then found
 the key, which the object keeps from its allocation on, so its type is its
 records with $f$ present (`promotes`, below). The environment theorem takes the
 optional links' meaning as one more premise, $\forall(k,f)\in\mathit{os}.\
-f\notin\operatorname{keys}\rho(k)\Rightarrow\rho(i)=\mathsf{undefined}$
+f\notin\mathrm{keys}\rho(k)\Rightarrow\rho(i)=\mathsf{undefined}$
 (`ObservedCovers.env`).
 
 An observation the tested slot's type rules out (`impossible`: a tag answer
@@ -1715,12 +1715,12 @@ Four implementations discharge the tested-slot obligation:
   `top`, and a parameter row, is no record's: `unknown` and a type parameter
   are not narrowed so:
 
-$$
+```math
 \frac{\forall a\in T_{\mathsf{isArray}}(A).\;a\in B\ \lor\ \forall c\in G(a).\;
          \mathsf{tag}(\mathsf{isArray},c)=\mathsf{false}\lor c\ \text{a record's}
        \qquad L\in B\qquad G(L)=[\mathsf{Ref}(;\sigma{:}S,\mathsf{proto}{:}P_{\mathcal R};\langle\mathsf{outside}\,N_{\mathcal R}\rangle)]}
       {A\preceq_{\mathsf{isArray}=\mathsf{true}}B}\ \textsf{tag-array}
-$$
+```
 
   with $S$ a readonly store at a type holding `top`.
 
@@ -1736,29 +1736,29 @@ $$
   one of $c^{+k}$'s; every part of a record clause's meaning is a statement
   about each operand) (`promotes_sound`, with the marker `subset`):
 
-$$
-\frac{\mathsf{tagHolds}(t,v)=\mathsf{true}\ \Rightarrow\ v\in\llbracket c\rrbracket\quad c\in\operatorname{expand}_G(B)}
+```math
+\frac{\mathsf{tagHolds}(t,v)=\mathsf{true}\ \Rightarrow\ v\in⟦c⟧\quad c\in\mathrm{expand}_G(B)}
      {A\preceq_{t=\mathsf{true}}B}\ \textsf{tag-member}
 \qquad t\in\{\mathsf{isStr},\mathsf{isNum},\mathsf{isBigint},\mathsf{isSymbol},\mathsf{isUndef},\mathsf{isNul},\mathsf{isBool},\mathsf{numEq}(b)_{b\neq\pm0},\mathsf{strEq}(s)\}
-$$
+```
 
-$$
-\frac{v\in\llbracket c\rrbracket\quad k\notin\operatorname{keys}(v)\Rightarrow v\ \text{holds a prototype}}
-     {v\in\llbracket c^{+k}\rrbracket}
+```math
+\frac{v\in⟦c⟧\quad k\notin\mathrm{keys}(v)\Rightarrow v\ \text{holds a prototype}}
+     {v\in⟦c^{+k}⟧}
 \qquad
 \frac{G\vdash A\ \text{plain}\quad
-      \forall c\in\operatorname{expand}_G(F_{\mathsf{hasKey}(k),\mathsf{true}}(A)).\
-      \exists d\in\operatorname{expand}_G(B).\ d\sqsubseteq c^{+k}}
+      \forall c\in\mathrm{expand}_G(F_{\mathsf{hasKey}(k),\mathsf{true}}(A)).\
+      \exists d\in\mathrm{expand}_G(B).\ d\sqsubseteq c^{+k}}
      {A\preceq_{\mathsf{hasKey}(k)=\mathsf{true}}B}\ \textsf{present-key}
-$$
+```
 
 For the current primitive profile, null filtering gives:
 
-$$
+```math
 F_{\mathrm{null},\mathrm{true}}(\mathrm{null}\lor\mathrm{bool})=\mathrm{null},
 \qquad
 F_{\mathrm{null},\mathrm{false}}(\mathrm{null}\lor\mathrm{bool})=\mathrm{bool}.
-$$
+```
 
 A regression also proves a semantic refinement of a mixed label that the current
 filtering checker cannot establish. This records the precision boundary explicitly.
@@ -1780,12 +1780,12 @@ value and preserves the other slot identities. Negations swap branch polarity.
 The `tagBind` continuation tests the actual returned value, pushes that value,
 and selects the matching edge. Its schematic rule is:
 
-$$
+```math
 \frac{\Gamma\vdash_G t:A
-\quad\operatorname{ObservedCovers}_G(A::\Gamma,\Delta_y,0,\operatorname{tag}(k,\mathsf{true}),m_y)
-\quad\operatorname{ObservedCovers}_G(A::\Gamma,\Delta_n,0,\operatorname{tag}(k,\mathsf{false}),m_n)}
-{\operatorname{NodeOk}_G(\Gamma,t,\operatorname{tagBind}(k;y,m_y;n,m_n))}.
-$$
+\quad\mathrm{ObservedCovers}_G(A::\Gamma,\Delta_y,0,\mathrm{tag}(k,\mathsf{true}),m_y)
+\quad\mathrm{ObservedCovers}_G(A::\Gamma,\Delta_n,0,\mathrm{tag}(k,\mathsf{false}),m_n)}
+{\mathrm{NodeOk}_G(\Gamma,t,\mathrm{tagBind}(k;y,m_y;n,m_n))}.
+```
 
 Both edges are checked. Unlike Boolean dispatch, tag dispatch accepts any typed
 value. Safety and deterministic execution use the actual `tagHolds` outcome;
@@ -1872,21 +1872,21 @@ All rules below assume an admissible world and satisfying initial heap. Write
 $\widehat R(n,W,v)=R(v)$ for a heap-independent content predicate, and require
 $R(v)$ to imply that $v$ is a value. The observed-read rule is:
 
-$$
-\frac{\operatorname{Obs}(h,\ell,R)}
- {\operatorname{SafePost}(\widehat R,Q,n,W,h,\mathsf{read}(\ell))},
+```math
+\frac{\mathrm{Obs}(h,\ell,R)}
+ {\mathrm{SafePost}(\widehat R,Q,n,W,h,\mathsf{read}(\ell))},
 \qquad Q(h',v)\equiv h'=h\land h'(\ell)=v.
-$$
+```
 
 `read_contents` proves this: its result type gives $R(v)$, and its postcondition
 preserves the entire heap, hence other observations. For a value $v$ permitted by
 the invariant $B$, the write rule is:
 
-$$
-\frac{\operatorname{Ref}(B)(n,W,\ell)\quad B(n,W,v)\quad\operatorname{isVal}(v)}
- {\operatorname{SafePost}(\mathsf{Null},Q,n,W,h,\mathsf{write}(\ell,v))},
+```math
+\frac{\mathrm{Ref}(B)(n,W,\ell)\quad B(n,W,v)\quad\mathrm{isVal}(v)}
+ {\mathrm{SafePost}(\mathsf{Null},Q,n,W,h,\mathsf{write}(\ell,v))},
 \qquad Q(h',u)\equiv h'=h[\ell:=v]\land u=\mathsf{null}.
-$$
+```
 
 `write_observed` requires `Adm B`. It needs no old-content premise. `write_new`
 establishes the new observation; `write_frame` preserves a fact at another
@@ -1908,19 +1908,19 @@ an $R$ from the [primitive predicate grammar](POSITIVE-TYPES.md#state-assertion-
 Write $v\in R$ for satisfying one of those predicates. In the one-field
 abbreviation its meaning is:
 
-$$
-\operatorname{Holds}(\Delta,\rho,h)
+```math
+\mathrm{Holds}(\Delta,\rho,h)
 \equiv \forall(i,R)\in\Delta.\;
 \exists\ell,v.\ \rho(i)=\ell\land h(\ell)=v\land v\in R.
-$$
+```
 
 For a slot map $m$, the executable entailment check uses this sufficient rule:
 
-$$
+```math
 \frac{\forall(i,R)\in\Sigma'.\;\exists(j,S)\in\Sigma.\ j=m(i)\land S\subseteq R}
- {\operatorname{Holds}(\Sigma,\rho,h)\Longrightarrow
-  \operatorname{Holds}(\Sigma',\operatorname{mapEnv}(m,\rho),h)}.
-$$
+ {\mathrm{Holds}(\Sigma,\rho,h)\Longrightarrow
+  \mathrm{Holds}(\Sigma',\mathrm{mapEnv}(m,\rho),h)}.
+```
 
 `HeapFacts.check_sound` proves it. Repeated slot mappings retain aliases; different
 slots do not prove disjoint locations. `shift_holds` transports facts when a bind
@@ -1960,7 +1960,9 @@ whichever field its term names; nothing in them is specific to a field name.
 Checking an expression is then a **Hoare typing**: an ordinary typing carrying a
 precondition and a postcondition. Write
 
-$$\Gamma;\Pi;\Sigma\vdash_G r\leftarrow t:A\dashv \Pi';\Sigma'$$
+```math
+\Gamma;\Pi;\Sigma\vdash_G r\leftarrow t:A\dashv \Pi';\Sigma'
+```
 
 for: with variables typed by $\Gamma$, in an environment satisfying $\Pi$ and a
 heap satisfying $\Sigma$, evaluating $t$ is safe, its value has type $A$, and
@@ -2020,7 +2022,7 @@ the layering: $\Gamma\vdash_G t:A$ is the
 [judgment of the ordinary rules](#judgments-and-constructor-views), `HasTy`, and
 it knows nothing about state; the conclusion adds what evaluating $t$ does to
 $\Pi$ and $\Sigma$. So an operation is admitted only if it already types, and
-these rules say what it then establishes. $\operatorname{Ref}A$ and
+these rules say what it then establishes. $\mathrm{Ref}A$ and
 $\mathsf{Null}$ are [constructor views](#judgments-and-constructor-views): a type
 whose labels expand to exactly that clause.
 
@@ -2041,17 +2043,17 @@ a reference whose contents are whatever $x$ was known to equal. Nothing already
 known is disturbed: a cell that did not exist cannot be one an existing atom
 names, so all of $\Sigma$ survives.
 
-$$
-\frac{\Gamma\vdash_G\operatorname{alloc}(x):\operatorname{Ref}A
+```math
+\frac{\Gamma\vdash_G\mathrm{alloc}(x):\mathrm{Ref}A
       \qquad(\Gamma;\Pi)(x)=R}
-{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow\operatorname{alloc}(x):\operatorname{Ref}A
+{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow\mathrm{alloc}(x):\mathrm{Ref}A
   \dashv \Pi\;;\;\Sigma,\;r\mapsto R}
 \qquad
-\frac{\Gamma\vdash_G\operatorname{alloc}(x):\operatorname{Ref}A
-      \qquad(\Gamma;\Pi)(x)\ \text{undefined}\qquad x\in\operatorname{dom}\Gamma}
-{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow\operatorname{alloc}(x):\operatorname{Ref}A
+\frac{\Gamma\vdash_G\mathrm{alloc}(x):\mathrm{Ref}A
+      \qquad(\Gamma;\Pi)(x)\ \text{undefined}\qquad x\in\mathrm{dom}\Gamma}
+{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow\mathrm{alloc}(x):\mathrm{Ref}A
   \dashv \Pi\;;\;\Sigma}
-$$
+```
 
 Either way the fresh cell's field is a location distinct from every contract
 field of every record-typed slot (the distinct links of `allocOutput`), whether
@@ -2069,22 +2071,22 @@ The second applies when $\Sigma$ already holds an atom for $x$ and the result ty
 is primitive. It consumes that atom and returns it as an equality on the result.
 It needs no typing derivation: the atom and its premise establish the result type
 between them, which is why its first premise is a membership in $\Sigma$ rather
-than a judgment. Writing $\operatorname{pred}(A)$ for the primitive predicates a type
+than a judgment. Writing $\mathrm{pred}(A)$ for the primitive predicates a type
 denotes — defined only when $A$ is primitive, so the premise also fails for a
 reference or an arrow result:
 
-$$
-\frac{\Gamma\vdash_G\operatorname{read}(x):A\qquad\Gamma(x)=\operatorname{Ref}B}
-{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow\operatorname{read}(x):A
+```math
+\frac{\Gamma\vdash_G\mathrm{read}(x):A\qquad\Gamma(x)=\mathrm{Ref}B}
+{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow\mathrm{read}(x):A
   \dashv \Pi\;;\;\Sigma,\{y\mapsto r\mid y\approx_\Pi x\}}
-$$
+```
 
-$$
-\frac{(x\mapsto R)\in\Sigma\qquad R\subseteq\operatorname{pred}(A)}
-{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow\operatorname{read}(x):A
+```math
+\frac{(x\mapsto R)\in\Sigma\qquad R\subseteq\mathrm{pred}(A)}
+{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow\mathrm{read}(x):A
   \dashv \Pi,\;r=R\;;\;
    \Sigma,\{y\mapsto r\mid y\approx_\Pi x\}}
-$$
+```
 
 A read of a key some record of $x$'s type names only as optional has no
 location to link where the object lacks the key; there the read gave
@@ -2093,12 +2095,12 @@ optional one, $x.f\mapsto^{?}r$ ([its meaning](SEMANTICS.md#what-is-asserted-and
 written for every record of $\Gamma(x)$ naming $f$, as a field or an optional
 key (`optionalOperand`, `optionalRead_sound`):
 
-$$
-\frac{\Gamma\vdash_G\operatorname{read}_f(x):A\qquad
-      \forall c\in\operatorname{expand}_G(\Gamma(x)).\ f\in\operatorname{fields}(c)\cup\operatorname{optional}(c)}
-{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow\operatorname{read}_f(x):A
+```math
+\frac{\Gamma\vdash_G\mathrm{read}_f(x):A\qquad
+      \forall c\in\mathrm{expand}_G(\Gamma(x)).\ f\in\mathrm{fields}(c)\cup\mathrm{optional}(c)}
+{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow\mathrm{read}_f(x):A
   \dashv \Pi\;;\;\Sigma,\{y.f\mapsto^{?} r\mid y\approx_\Pi x\}}
-$$
+```
 
 Two fixtures show the difference. In
 [`write-refined-read.ts`](tests/skjs-incomplete/write-refined-read.ts),
@@ -2129,7 +2131,7 @@ applies: the read is well typed and records where its value came from, but
 establishes nothing about the contents. Nothing about what `cell` holds is
 provable at that point, whatever the claimed type says.
 
-Each covers cases the other does not. Reading a $\operatorname{Ref}(\operatorname{Ref}B)$
+Each covers cases the other does not. Reading a $\mathrm{Ref}(\mathrm{Ref}B)$
 has no primitive result, so only the first applies; a variable whose type is a
 union of references does not meet the first rule's plain-reference premise, so
 where an atom exists only the second does. Where both apply the second yields
@@ -2144,18 +2146,18 @@ it destroys the rest of $\Sigma$ — including atoms about cells that may or may
 not be this one. Writing a value that is not a known primitive, an object say,
 establishes no new contents and keeps the separated atoms all the same:
 
-$$
-\frac{\Gamma\vdash_G\operatorname{write}_f(x,y):\mathsf{Null}
+```math
+\frac{\Gamma\vdash_G\mathrm{write}_f(x,y):\mathsf{Null}
       \qquad(\Gamma;\Pi)(y)=R}
-{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow\operatorname{write}_f(x,y):\mathsf{Null}
+{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow\mathrm{write}_f(x,y):\mathsf{Null}
   \dashv \Pi,\;r=\mathsf{null}\;;\;
    \{z.f\mapsto R\mid z\approx_\Pi x\},\;\Sigma_{\neq x.f}}
 \qquad
-\frac{\Gamma\vdash_G\operatorname{write}_f(x,y):\mathsf{Null}
+\frac{\Gamma\vdash_G\mathrm{write}_f(x,y):\mathsf{Null}
       \qquad(\Gamma;\Pi)(y)\ \text{undefined}}
-{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow\operatorname{write}_f(x,y):\mathsf{Null}
+{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow\mathrm{write}_f(x,y):\mathsf{Null}
   \dashv \Pi,\;r=\mathsf{null}\;;\;\Sigma_{\neq x.f}}
-$$
+```
 
 where $\Sigma_{\neq x.f}=\{z.g\mapsto S\in\Sigma\mid z.g\neq x.f\}$ (`writeOutput`,
 `write_sound`).
@@ -2163,10 +2165,10 @@ where $\Sigma_{\neq x.f}=\{z.g\mapsto S\in\Sigma\mid z.g\neq x.f\}$ (`writeOutpu
 **Every other expression**, calls included, empties the heap part and leaves the
 equalities untouched:
 
-$$
+```math
 \frac{\Gamma\vdash_G t:A}
 {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow t:A\dashv \Pi\;;\;\emptyset}
-$$
+```
 
 $\Pi$ and $\Sigma$ are finite lists of atoms, read as their conjunction and
 extended with a comma, exactly as $\Gamma$ is. $\emptyset$ is the empty heap
@@ -2209,12 +2211,12 @@ write $K$ for that pair and $K(\rho,h)$ for the conjunction of everything in it.
 A successful `checkStep` is a derivation of this judgment, and `checkStep_sound`
 is its soundness:
 
-$$
-\frac{\operatorname{checkStep}(G,(\Gamma,t,A),K,e)=\operatorname{some}(K')
-\quad\operatorname{EnvOk}_G(\Gamma,\rho,n,W)\quad K(\rho,h)}
-{\operatorname{SafePost}(\llbracket A\rrbracket,
-  \lambda(h',v).\,K'(v::\rho,h'),n,W,h,\operatorname{close}_{\rho}(t))}.
-$$
+```math
+\frac{\mathrm{checkStep}(G,(\Gamma,t,A),K,e)=\mathrm{some}(K')
+\quad\mathrm{EnvOk}_G(\Gamma,\rho,n,W)\quad K(\rho,h)}
+{\mathrm{SafePost}(⟦A⟧,
+  \lambda(h',v).\,K'(v::\rho,h'),n,W,h,\mathrm{close}_{\rho}(t))}.
+```
 
 As above, the initial world must be admissible and the heap must satisfy it.
 The checker binds evidence to the requested expression and type and checks scope.
@@ -2237,11 +2239,11 @@ It computes a guaranteed output, not an assumed postcondition:
 `write_sound` prove the read, allocation and write rules above. The sliced
 read is
 
-$$
+```math
 \frac{\Gamma\vdash_G \mathsf{readAt}\,f\,x : C\quad x.f\mapsto R\in\Sigma\quad
       \mathsf{undefined}\notin R\quad T_{\mathsf{false}}^{\mathsf{isUndef}}(C)\le A}
      {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow \mathsf{readAt}\,f\,x : A\dashv\Pi;\Sigma}\ \textsf{read-sliced}
-$$
+```
 
 which is how `let x: T;` assigned an object on every path is read at $T$. None of them takes a premise about a cell's old contents, and the
 checker's write evidence carries none either. These are operation rules within a
@@ -2298,13 +2300,13 @@ allocation, including function creation. A checked creation effect separately
 preserves old facts while allocating the function's bag; the body may have
 effects because creation does not run it. `pure_step` and `pure_frame` prove:
 
-$$
-\frac{\operatorname{Pure}(t)\quad(h,t)\longrightarrow(h',t')}
- {h'=h\quad\land\quad\operatorname{Pure}(t')},
+```math
+\frac{\mathrm{Pure}(t)\quad(h,t)\longrightarrow(h',t')}
+ {h'=h\quad\land\quad\mathrm{Pure}(t')},
 \qquad
-\frac{\operatorname{Pure}(t)\quad\operatorname{Safe}(A,n,W,h,t)\quad\forall v.\,Q(h,v)}
- {\operatorname{SafePost}(A,Q,n,W,h,t)}.
-$$
+\frac{\mathrm{Pure}(t)\quad\mathrm{Safe}(A,n,W,h,t)\quad\forall v.\,Q(h,v)}
+ {\mathrm{SafePost}(A,Q,n,W,h,t)}.
+```
 
 This extends the existing pure-effect evidence; it does not add another typing
 rule or certificate constructor. It retains heap observations through null
@@ -2329,13 +2331,13 @@ same checked graph facts, through the checkpoints below.
 
 Boolean guards use the following rule, proved by `observeBoolean_holds`:
 
-$$
+```math
 \frac{x\mapsto y\quad y=b}
  {x\mapsto\{b\}},\qquad b\in\{\mathsf{true},\mathsf{false}\}.
-$$
+```
 
 The points-to atom must hold in the current heap. Note that
-$\operatorname{read}(x)$ is the language's read expression; the assertion that
+$\mathrm{read}(x)$ is the language's read expression; the assertion that
 used to share its name is now $x\mapsto y$. A tag observation does the same with
 what it leaves of $y$'s predicate (`observeTag_holds`): each atom whose clause
 answers the other way is dropped, and a family found equal to one of its
@@ -2345,7 +2347,7 @@ zero it stays `number`, the zeros being two values). An optional read link
 gives the fact only where what remains rules `undefined` out, which then says
 the key is present (`linkFacts_holds`):
 
-$$
+```math
 \frac{x.f\mapsto y\quad y=R}{x.f\mapsto R}
 \qquad
 \frac{x.f\mapsto^{?}y\quad y=R\quad \mathsf{undefined}\notin R}{x.f\mapsto R}
@@ -2353,7 +2355,8 @@ $$
 \frac{y=\mathsf{number}\quad y\equiv b\quad b\neq\pm0}{y=\{b\}}
 \qquad
 \frac{y=\mathsf{string}\quad y\equiv s}{y=\{s\}}.
-$$ `HeapGuardTests.lean` proves a
+```
+`HeapGuardTests.lean` proves a
 complete two-branch graph safe and checks that discarding the link prevents this
 refinement. A slot equality $x=y$ permits a checked write through either alias to
 establish the new contents for both, as the
@@ -2384,18 +2387,18 @@ $\Gamma_l$; the calculus always assumes environment and heap well-formedness.
 
 For certificate input $K_c$, source acceptance requires:
 
-$$
+```math
 K_c=K_l.
-$$
+```
 
 `SourceExtraction.checkAssertions_cut` proves this equality from acceptance.
 Each incoming edge separately establishes the supplied heap interface (ordinary
 context coverage is checked alongside it):
 
-$$
-\frac{\operatorname{checkKnowledge}(K_{\mathrm{out}},K_l,m)=\mathsf{true}
-\qquad K_{\mathrm{out}}(\rho,h)}{K_l(\operatorname{mapEnv}(m,\rho),h)}.
-$$
+```math
+\frac{\mathrm{checkKnowledge}(K_{\mathrm{out}},K_l,m)=\mathsf{true}
+\qquad K_{\mathrm{out}}(\rho,h)}{K_l(\mathrm{mapEnv}(m,\rho),h)}.
+```
 
 The next statement is checked from $(\Gamma_l,K_l)$, independently of any
 stronger facts proved by predecessors. Loop heads use the same interface on both
@@ -2416,18 +2419,18 @@ an explicit entry observation; it does not license recovering an observation
 forgotten at an earlier statement boundary.
 
 At an expression checkpoint, required knowledge is checked by entailment,
-$\operatorname{checkKnowledge}(K_c,K_r,\mathrm{id})=\mathsf{true}$.
+$\mathrm{checkKnowledge}(K_c,K_r,\mathrm{id})=\mathsf{true}$.
 `checkAssertions_sound` proves the implication. The independent source consumer
 reconstructs both kinds of boundary and checks them alongside graph acceptance
 and supplemental expression proofs; these are not producer-selected policies.
 
 Ordinary compositional expression proofs, including lambda bodies, do not carry
-heap contexts. For a point assertion $\operatorname{ObservedRef}(B,R)$ there,
+heap contexts. For a point assertion $\mathrm{ObservedRef}(B,R)$ there,
 the adapter conservatively requires the ordinary sequent:
 
-$$
+```math
 x:B\ \vdash\ x:R.
-$$
+```
 
 Here $x$ is an arbitrary **stored value**, not the reference. This checks that
 the invariant implies the observation uniformly. For a union of cell contracts,
@@ -2499,21 +2502,21 @@ The final `accept` check binds the evidence to **all the requested point claims*
 as well as calling `checkEntry` on the actual program and external input context. Thus a valid certificate
 for different annotations is rejected. Lean proves:
 
-$$
+```math
 \begin{gathered}
-\operatorname{produce}(G,I,f,R,P,Q,\ell,H,\Gamma_0)=\operatorname{ok}(C)
+\mathrm{produce}(G,I,f,R,P,Q,\ell,H,\Gamma_0)=\mathrm{ok}(C)
 \\
 \Longrightarrow\quad
-\operatorname{accept}(G,R,P,Q,C,p,\Gamma_0)=\mathsf{true},
+\mathrm{accept}(G,R,P,Q,C,p,\Gamma_0)=\mathsf{true},
 \\
-\operatorname{accept}(G,R,P,Q,C,p,\Gamma_0)=\mathsf{true}
+\mathrm{accept}(G,R,P,Q,C,p,\Gamma_0)=\mathsf{true}
 \\
 \Longrightarrow\quad
-\operatorname{claims}(C)=Q
+\mathrm{claims}(C)=Q
 \;\land\;
-\operatorname{checkEntry}(G,R,P,C,p,\Gamma_0)=\mathsf{true}.
+\mathrm{checkEntry}(G,R,P,C,p,\Gamma_0)=\mathsf{true}.
 \end{gathered}
-$$
+```
 
 Here $I$ enumerates labels, $f$ bounds expression search depth, $Q$ contains the
 supplied point annotations, $\Sigma$ contains optional type hints, and $\Gamma_0$ is
@@ -2574,10 +2577,10 @@ $x^{@l:c}$, its spelling and its declaration's line and column
 TypeScript binds to that declaration, a shorthand property `{ x }`
 included, reads it. This is $\alpha$-conversion, which changes no value:
 
-$$
-\frac{x\in\operatorname{dom}\Gamma\quad x'=x^{@l:c}\notin\operatorname{names}(\Gamma,S)\quad \Gamma\vdash_R\ \mathsf{const}\ x'=e;\ S[x'/x]}
+```math
+\frac{x\in\mathrm{dom}\Gamma\quad x'=x^{@l:c}\notin\mathrm{names}(\Gamma,S)\quad \Gamma\vdash_R\ \mathsf{const}\ x'=e;\ S[x'/x]}
      {\Gamma\vdash_R\ \mathsf{const}\ x=e;\ S}\ \textsf{shadow}
-$$
+```
 
 and likewise for `let` (a cell included), parameters, patterns, closure
 parameters, `for...of` and `catch` bindings, in function and closure bodies
@@ -2587,10 +2590,10 @@ included, or in its own initializer is refused by the parser (the temporal
 dead zone: JavaScript throws there, and the outer binding is not what it
 reads); a pattern element may name one bound before it in the pattern:
 
-$$
+```math
 \frac{x'\ \text{renames}\ x\ \text{declared at}\ d\quad \text{a mention}\ m\ \text{of}\ x'\quad m<d\ \lor\ m\in\mathit{init}(d)}
      {\text{refused (temporal dead zone)}}
-$$
+```
 
 **A `let` nothing assigns.** A `let` statement whose bindings are all
 initialized and which no assignment, compound or logical assignment, update,
@@ -2599,10 +2602,10 @@ included, found by the name the parser gives each binding) is the `const`
 statement: each binding holds its initial value throughout, so a read of it
 is that value either way:
 
-$$
-\frac{\overline{x}\ \text{initialized}\quad \overline{x}\notin\operatorname{written}(S)\quad \Gamma\vdash_R\ \mathsf{const}\ \overline{x=e};\ S}
+```math
+\frac{\overline{x}\ \text{initialized}\quad \overline{x}\notin\mathrm{written}(S)\quad \Gamma\vdash_R\ \mathsf{const}\ \overline{x=e};\ S}
      {\Gamma\vdash_R\ \mathsf{let}\ \overline{x=e};\ S}\ \textsf{let-const}
-$$
+```
 
 So a tag test narrows such a binding as it narrows a `const`, and a `let`
 pattern binds. A `let` pattern whose bindings are written binds names no
@@ -2610,9 +2613,9 @@ source spells, as a `const` pattern does, then a `let` of each source name
 at its value: a cell of its own, whose contract is an unannotated `let`'s,
 its initial value's type widened:
 
-$$
+```math
 \mathsf{let}\ p = e\;\equiv\;\mathsf{const}\ p[\overline{x\mapsto x^{\circ}}] = e\,;\ \mathsf{let}\ \overline{x = x^{\circ}}
-$$
+```
 
 JavaScript reads and defaults the pattern's positions, then initializes the
 bindings, in that order either way; each cell is claimed at its name, where
@@ -2632,12 +2635,12 @@ bound to a name no source spells, then the class constructor's lowering
 ([classes](#classes)) whose
 allocation is the allocation from parts copying it:
 
-$$
+```math
 \mathsf{class}(\vec x).\ \vec s_1\,;\ \mathsf{const}\ \textit{base} = \mathsf{new}\ B^{\circ}(\vec a)\,;\
   \mathcal{C}(\vec s_2,\ \varphi_0,\ \varnothing)
   \quad\text{with}\quad
   \mathcal{C}(\varepsilon,\varphi,A) = \{\texttt{[[proto]]}{:}\,D.\texttt{[[prototype]]},\ \ldots\textit{base},\ \varphi,\ \overline{f{:}\,\mathsf{undefined}}\}
-$$
+```
 
 where $B^{\circ}$ is `B`'s constructor claimed also at the fresh instance it
 allocates, its keys exact (`ctorGraph` checks its code at that signature too).
@@ -2646,9 +2649,9 @@ allocates, its keys exact (`ctorGraph` checks its code at that signature too).
 their types, under names no source spells, and $\vec a$ is them. A class's
 prototype object is allocated once, at its definition:
 
-$$
+```math
 D.\texttt{[[prototype]]} = \{\texttt{[[proto]]}{:}\,B.\texttt{[[prototype]]},\ \kappa_D{:}\,\mathsf{undefined},\ m{:}\,D.m,\ \ldots\}
-$$
+```
 
 its own methods, linked to its base's under the prototype key, as
 JavaScript's `D.prototype` is; $\kappa_D$, the class's key, is there where
@@ -2704,12 +2707,12 @@ prototype object, which the class statement binds with it), then looks for
 $\kappa_C = \texttt{[[}C\texttt{.prototype]]}$, the key only
 $C.\texttt{[[prototype]]}$ owns, along $e$'s prototype chain:
 
-$$
+```math
 e\ \mathtt{instanceof}\ C\;\equiv\;\mathsf{let}\ x=e\ \mathsf{in}\ \mathsf{let}\ p=C.\texttt{[[prototype]]}\ \mathsf{in}\ \mathsf{hasKey}(\kappa_C)(x)
 \qquad
 \frac{\Gamma\vdash e:A\quad \Gamma\vdash C.\texttt{[[prototype]]}:P}
      {\Gamma\vdash e\ \mathtt{instanceof}\ C:\mathsf{boolean}}
-$$
+```
 
 Any operand is admitted: $\mathsf{hasKey}$ answers `false` on a primitive,
 as `instanceof` does (it throws only on its right operand). A tested
@@ -2725,12 +2728,12 @@ method is, reading no `this`, so its receiver is unobservable and it is
 called plainly; a derived class reads its nearest base's, which its
 constructor inherits:
 
-$$
+```math
 e\ \mathtt{instanceof}\ C\;\equiv\;\mathord{!}\,\mathord{!}\,\big(C.\texttt{[Symbol.hasInstance]}(e)\big)
 \qquad
 \frac{\Gamma\vdash C.\texttt{[Symbol.hasInstance]}(e):B}
      {\Gamma\vdash e\ \mathtt{instanceof}\ C:\mathsf{boolean}}
-$$
+```
 
 The operand must meet the method's parameter, as any actual's, and the
 test refines nothing: the method's answer says nothing of the operand's
@@ -2744,12 +2747,12 @@ identifier is), so a nullish receiver skips the rest of the chain, as
 JavaScript's short-circuit does; a second `?.` in a chain tests the chain so
 far, which is `undefined` where an earlier one skipped:
 
-$$
+```math
 r\,?.\,b\;\equiv\;\mathsf{let}\ \mathsf{chain}=r\ \mathsf{in}\ \mathsf{if}\ \mathsf{nullish}(\mathsf{chain})\ \mathsf{then}\ \mathsf{undefined}\ \mathsf{else}\ b,
 \qquad
 \frac{\Gamma\vdash r:A\quad T_{\mathsf{false}}(A)::\Gamma\vdash b:B}
      {\Gamma\vdash r\,?.\,b:\{\mathsf{undefined}\mid T_{\mathsf{true}}(A)\neq\emptyset\}\cup B}
-$$
+```
 
 with $T_q$ the nullish tag's slices. The body is checked where the saved
 receiver holds its present slice, so a method called through the chain
@@ -2763,12 +2766,12 @@ body never runs.
 test per answer in turn, the operand evaluated once (`typeofTerm`); a value no
 test holds of has call code, which `typeof` names `"function"`:
 
-$$
+```math
 \mathsf{typeof}\ e\;\equiv\;\mathsf{let}\ x=e\ \mathsf{in}\
 \mathsf{if}\ \mathsf{isUndef}(x)\ \mathsf{then}\ \texttt{"undefined"}\ \mathsf{else}\
 \mathsf{if}\ \mathsf{typeofObject}(x)\ \mathsf{then}\ \texttt{"object"}\ \mathsf{else}\ \cdots\
 \mathsf{if}\ \mathsf{isSymbol}(x)\ \mathsf{then}\ \texttt{"symbol"}\ \mathsf{else}\ \texttt{"function"}
-$$
+```
 
 in the order undefined, object, boolean, number, string, bigint, symbol. It
 splits $x$ by `unionVar` as `??` does (`selectPlan`), so a label whose shape
@@ -2782,15 +2785,15 @@ A key whose claim is a union of string singletons $\kappa_1\mid\cdots\mid\kappa_
 dispatches on them, the last needing no test since the key is one of them
 (`inKeysTerm`):
 
-$$
+```math
 k\ \mathtt{in}\ o\;\equiv\;\mathsf{let}\ y=k\ \mathsf{in}\ \mathsf{let}\ x=o\ \mathsf{in}\mathsf{if}\ \mathsf{strEq}(\kappa_1)(y)\ \mathsf{then}\ \mathsf{hasKey}(\kappa_1)(x)\ \mathsf{else}\ \cdots\mathsf{hasKey}(\kappa_n)(x)
-$$
+```
 
-$$
-\frac{\Gamma\vdash o:A\quad \forall\gamma\in\operatorname{expand}_G(A).\ \gamma\ \text{a record, dictionary, arrow or callable clause}
+```math
+\frac{\Gamma\vdash o:A\quad \forall\gamma\in\mathrm{expand}_G(A).\ \gamma\ \text{a record, dictionary, arrow or callable clause}
       \quad \kappa_i\notin\mathcal R}
      {\Gamma\vdash k\ \mathtt{in}\ o:\mathsf{boolean}}
-$$
+```
 
 where $\mathcal R$ is the keys the model does not answer as JavaScript does
 (`inKeyRefusal`, [guards](#guards)). The operand's clauses are
@@ -2804,11 +2807,11 @@ holds rather than a key. Such a test is the host's, a call of the intrinsic
 $\%\mathsf{HasProperty}\%$ (`intrinsics.mts`), which the parser writes where
 TypeScript's type of the key has another part, and which narrows nothing:
 
-$$
+```math
 k\ \mathtt{in}\ o\;\equiv\;\%\mathsf{HasProperty}\%(k,\ o)
 \qquad
 \%\mathsf{HasProperty}\%:(\mathtt{string}\mid\mathtt{number}\mid\mathtt{symbol},\ \mathtt{object})\Rightarrow\mathtt{boolean}
-$$
+```
 
 The call evaluates the key, then the object, then the lookup, as `in` does;
 converting the key runs no code, and neither does the lookup on the objects
@@ -2820,11 +2823,11 @@ singleton selecting the read of the key it converts to (a number's, the key
 its `ToString` spells), as a literal key's read is (`keySingletons`,
 `keyedReadTerm`):
 
-$$
+```math
 o[k]\;\equiv\;\mathsf{let}\ x=o\ \mathsf{in}\ \mathsf{let}\ y=k\ \mathsf{in}\
 \mathsf{if}\ \mathsf{eq}(\kappa_1)(y)\ \mathsf{then}\ \mathsf{readAt}\;\kappa_1\;x\ \mathsf{else}\ \cdots\
 \mathsf{readAt}\;\kappa_n\;x
-$$
+```
 
 with $\mathsf{eq}$ the tag `strEq` or `numEq`. It is typed by `unionVar`,
 `ifTag` and the read rules alone. NaN is no singleton here, since no equality
@@ -2834,24 +2837,24 @@ Logical AND and OR return an operand, as in JavaScript: the left one where its
 truthiness decides, the right one elsewhere. For a left operand that is not a
 Boolean they are the same derived form on the truthiness test:
 
-$$
+```math
 a\mathbin{\&\&}b\;\equiv\;\mathsf{let}\ x=a\ \mathsf{in}\ \mathsf{if}\ \mathsf{truthy}(x)\ \mathsf{then}\ b\ \mathsf{else}\ x,
 \qquad
 a\mathbin{\Vert}b\;\equiv\;\mathsf{let}\ x=a\ \mathsf{in}\ \mathsf{if}\ \mathsf{truthy}(x)\ \mathsf{then}\ x\ \mathsf{else}\ b,
-$$
+```
 
 split by `unionVar` on $x$ (`selectPlan`, which `??` and default parameters
 share): a label whose truthiness is settled selects its arm by `ifTag`, and
 one that is not (a number, a string) takes both arms by `ifBool` on the test.
 Writing $T_q(A)$ for the labels of $A$ that may answer $q$ (`tagSlice`):
 
-$$
+```math
 \frac{\Gamma\vdash a:A\quad T_{\mathsf{true}}(A)::\Gamma\vdash b:B}
      {\Gamma\vdash a\mathbin{\&\&}b:T_{\mathsf{false}}(A)\cup B}
 \qquad
 \frac{\Gamma\vdash a:A\quad T_{\mathsf{false}}(A)::\Gamma\vdash b:B}
      {\Gamma\vdash a\mathbin{\Vert}b:T_{\mathsf{true}}(A)\cup B}
-$$
+```
 
 The right operand is checked where the saved left operand holds the slice
 that reaches it; a named immutable left operand moves to that slot, as for
@@ -2868,11 +2871,11 @@ under its own refinement.
 
 For Boolean left operands, logical AND and OR use the derived forms:
 
-$$
+```math
 a\mathbin{\&\&}b\;\equiv\;\mathsf{if}\ a\ \mathsf{then}\ b\ \mathsf{else}\ \mathsf{false},
 \qquad
 a\mathbin{\Vert}b\;\equiv\;\mathsf{if}\ a\ \mathsf{then}\ \mathsf{true}\ \mathsf{else}\ b.
-$$
+```
 
 They share the source conditional proof builder, including null refinement within
 the right operand;
@@ -2885,11 +2888,11 @@ Thus graph decomposition cannot silently discard the producer's condition type.
 A chain of one operator is read right-nested, the parser's left nesting
 reassociated:
 
-$$
+```math
 (a\mathbin{\&\&}b)\mathbin{\&\&}c\;\equiv\;a\mathbin{\&\&}(b\mathbin{\&\&}c),
 \qquad
 (a\mathbin{\Vert}b)\mathbin{\Vert}c\;\equiv\;a\mathbin{\Vert}(b\mathbin{\Vert}c),
-$$
+```
 
 which JavaScript evaluates in the same order to the same value (a falsy
 $a$ is the result either way, and so on). Read so, $c$ is checked where $a$
@@ -2901,10 +2904,10 @@ of the labels the outer one left.
 Closure branches whose two arms fall through require no additional typing rule.
 Their extracted shape is:
 
-$$
+```math
 \mathsf{let}\ z = (\mathsf{if}\ c\ \mathsf{then}\ t\ \mathsf{else}\ e)
 \ \mathsf{in}\ k.
-$$
+```
 
 Both $t$ and $e$ finish with an administrative null after their effects.
 The existing conditional rules check them at $\mathsf{Null}$, and the let rule
@@ -2920,10 +2923,10 @@ An early-return branch with one fully returning arm and one return-free arm
 uses the same conditional rules. For example, `if (c) { return r; } else { s; } k`
 has the extracted shape
 
-$$
+```math
 \mathsf{if}\ c\ \mathsf{then}\ r\ \mathsf{else}\quad
 (\mathsf{let}\ z=s\ \mathsf{in}\ k).
-$$
+```
 
 Here $s$ completes with administrative null, and its local bindings stay inside
 $s$. Both $r$ and the surviving sequence check at the supplied function result
@@ -2946,11 +2949,11 @@ $\mathsf{ToString}(n)$ (`numberToString`), as JavaScript's `ToPropertyKey`
 converts it, where `a` is claimed only at records owning no array store
 (`recordReceiver`); an array's number key is its store's element (`elemAt`):
 
-$$
+```math
 \frac{\Gamma\vdash_G a:R\quad R\equiv_G c_1\cup\cdots\cup c_m\ \text{records without a store}\quad
       \Gamma\vdash_G k:\mathsf{Num}(n)}
      {a[k]\ \leadsto\ \mathsf{let}\ x=a\ \mathsf{in}\ \mathsf{let}\ \_=k\ \mathsf{in}\ x.\mathsf{str}(\mathsf{ToString}(n))}
-$$
+```
 
 ([index signatures](#index-signatures)).
 
@@ -2959,11 +2962,11 @@ tests returns that read's saved value, in a function body and in a closure's
 alike (`guardedReturn`). With $c$ a literal, a name or a field read, nothing
 runs between the two reads of $x.f$, so they read the same value:
 
-$$
+```math
 \mathsf{if}\;(x.f \bowtie c)\;\mathsf{return}\;x.f
 \;\leadsto\;
 \mathsf{let}\ s=x.f\ \mathsf{in}\ \mathsf{if}\;(s \bowtie c)\;\mathsf{return}\;s
-$$
+```
 
 and the test's tag edge refines $s$ to the slice of its type the arm admits,
 which must lie within the returned read's claim. A call or a write in the arm
@@ -2979,13 +2982,13 @@ value term $t$ reads at $R$ under $\Gamma$ extends the scope by $\Delta$
 binds the read; a nested pattern holds it in an anonymous slot and binds its
 own elements over it:
 
-$$
+```math
 \frac{\Gamma\vdash t:R}{\Gamma\vdash x\Leftarrow(t{:}R)\dashv x{:}R}
 \qquad
 \frac{\Gamma\vdash t:A\quad
       \Gamma,\_{:}A,\Delta_{<i}\vdash p_i\Leftarrow(\mathsf{read}_{f_i}(\_){:}R_i)\dashv\Delta_i\ \ (i\le n)}
      {\Gamma\vdash\{f_1{:}p_1,\ldots,f_n{:}p_n\}\Leftarrow(t{:}A)\dashv\Delta_1,\ldots,\Delta_n}
-$$
+```
 
 where $R_i$ is the type the ordinary read rules give $f_i$ of $A$ (`readCell`:
 an invariant field at its contract, a view at its bound, an optional field at
@@ -3007,11 +3010,11 @@ $R'$ the read's labels told apart clause by clause (`byClause`: a label that
 is a union row, such as a declared alias, is replaced by one label per
 clause, the same values) and $T_q$ the tag slice:
 
-$$
+```math
 \frac{\Gamma\vdash t:R'\quad \Gamma,\_{:}R'\vdash d:D\quad
       \Gamma,\_{:}R'\vdash p\Leftarrow(\mathsf{if}\ \mathsf{isUndef}(\_)\ \mathsf{then}\ d\ \mathsf{else}\ \_\ {:}\ T_{\mathsf{false}}(R')\cup D)\dashv\Delta}
      {\Gamma\vdash (p=d)\Leftarrow(t{:}R)\dashv\Delta}
-$$
+```
 
 (`tagBind` in a graph, `selectPlan` in a closure). The default is checked
 where the earlier bindings are in scope and the later ones are not; a default
@@ -3024,31 +3027,31 @@ $n$ required positions, whose length is exact (`listT`), is the fresh array of
 the positions from $s$ on, claimed at the rest's span $C$ like an array
 literal:
 
-$$
-\frac{\operatorname{Store}(A)=[A_0,\ldots,A_{n-1}]\quad
+```math
+\frac{\mathrm{Store}(A)=[A_0,\ldots,A_{n-1}]\quad
       \Gamma\vdash\mathsf{alloc}\{[\,]{:}\mathsf{arr}(\mathsf{elem}(\_,s),\ldots,\mathsf{elem}(\_,n{-}1))\}:C\quad
       \Gamma\vdash p\Leftarrow(\cdot{:}C)\dashv\Delta}
      {\Gamma\vdash[\ldots,\ldots p]\Leftarrow(\_{:}A)\dashv\ldots,\Delta}
-$$
+```
 
 A rest TypeScript types as no one tuple of required positions (an array, a
 union of tuples, a tuple with optional or rest positions) is a **slice**,
 marked so by the parser, whose length only the run knows. It is a call of the
 trusted intrinsic
 
-$$
+```math
 \mathtt{\%RestFrom{:}k\%}:\forall T.\ (\mathsf{readonly}\ [\underbrace{\mathsf{unknown}?,\ldots,\mathsf{unknown}?}_{k},\ \ldots T[\,]])\Rightarrow T[\,]
-$$
+```
 
 on the source, $k$ the rest's index, made after the pattern's reads and
 defaults: the fresh array of the source's elements from $k$ to its current
 length, claimed at the rest's span with the call's instance:
 
-$$
+```math
 \frac{\Gamma\vdash\_:A\quad A\le\mathsf{readonly}\ [\mathsf{unknown}?^k,\ldots T\sigma[\,]]\quad
       \Gamma\vdash p\Leftarrow(\mathtt{\%RestFrom{:}k\%}(\_){:}T\sigma[\,])\dashv\Delta}
      {\Gamma\vdash[\ldots,\ldots p]\Leftarrow(\_{:}A)\dashv\ldots,\Delta}\ \textsf{rest-slice}
-$$
+```
 
 The parameter says nothing of the first $k$ positions, so a union of tuples
 of different lengths meets it arm by arm: `[number] | [number, string]` from
@@ -3068,10 +3071,10 @@ written as a pattern or with a default binds a hidden name $h$, which the
 caller's argument initializes, and the body starts with the pattern over it,
 in parameter order:
 
-$$
+```math
 \mathsf{function}\ f(\ldots,p_i=d_i,\ldots)\,\{S\}\;\equiv\;
 \mathsf{function}\ f(\ldots,h_i,\ldots)\,\{\ldots;\ \mathsf{const}\ p_i=h_i\ (\mathsf{default}\ d_i);\ \ldots;\ S\}
-$$
+```
 
 where $h_i$'s type admits $\mathsf{Undef}$ when there is a default, so a
 caller may omit it. A closure parameter's default stays the closure's own
@@ -3087,15 +3090,15 @@ describes the cell's current contents, which the
 [current-content rules](#current-content-rules-semantic-layer) justify on every
 incoming edge. The contract is:
 
-$$
-\operatorname{contract}(\mathtt{let}\ x{:}T=e)=T
+```math
+\mathrm{contract}(\mathtt{let}\ x{:}T=e)=T
 \qquad
-\operatorname{contract}(\mathtt{let}\ x=e)=
+\mathrm{contract}(\mathtt{let}\ x=e)=
 \begin{cases}
 Q_{\mathit{next}}(x) & \text{the claim for } x \text{ at the entry of the next statement}\\
 Q(e) & \text{no statement follows in its block}
 \end{cases}
-$$
+```
 
 with $Q(e)$ the claimed type of the initializer. A declaration ending its block
 has no statement after it to read the binding, and the initializer meets its
@@ -3105,10 +3108,10 @@ proposes TypeScript's declared type, the initializer's type widened
 has no declared type in TypeScript (an evolving `any`): the producer proposes
 the union of what is written into the binding, its evolved type,
 
-$$
-\operatorname{contract}(\mathtt{let}\ x=e_0)=\bigcup_{x=e_i}\operatorname{widen}(Q(e_i))
+```math
+\mathrm{contract}(\mathtt{let}\ x=e_0)=\bigcup_{x=e_i}\mathrm{widen}(Q(e_i))
 \qquad e_0\in\{\mathtt{null},\mathtt{undefined}\},
-$$
+```
 
 over the initializer and every assignment of $x$ in its scope, closures
 included, each read at the contract where it reads $x$; the proposal is
@@ -3121,9 +3124,9 @@ contract $D$, the caller's value its initial contents.
 A `let` without an initializer binds `undefined` where its declaration runs,
 which is the derived form
 
-$$
+```math
 \mathtt{let}\ x{:}T;\quad\equiv\quad\mathtt{let}\ x{:}T\cup\mathsf{Undefined}=\mathtt{undefined}.
-$$
+```
 
 Definite assignment is not an extra rule: a read at $T$ types only where the
 cell's current contents are known to be in $T$, a fact a write of a $T$ value
@@ -3139,11 +3142,11 @@ refuses it.
 A module constant $c$ bound to $e_c$ by the initialization unit is read by
 the module's functions at
 
-$$
-\operatorname{type}(\mathtt{const}\ c{:}T=e_c)=T
+```math
+\mathrm{type}(\mathtt{const}\ c{:}T=e_c)=T
 \qquad
-\operatorname{type}(\mathtt{const}\ c=e_c)=Q_{\mathit{init}}(e_c),
-$$
+\mathrm{type}(\mathtt{const}\ c=e_c)=Q_{\mathit{init}}(e_c),
+```
 
 the initialization unit's claim for its initializer. That unit checks
 $\Gamma\vdash e_c:Q_{\mathit{init}}(e_c)$ where it binds $c$, exactly as it
@@ -3157,10 +3160,10 @@ that unit creates before it binds $C$, as the class's own binding
 $C^{\mathit{self}}$ (`C.[[self]]`), which the initialization unit $I$ reads
 the way a function reads a module constant:
 
-$$
+```math
 \frac{\mathtt{const}\ C{:}K_C=\mathtt{ctor}\ldots\in I}
-     {\Gamma_I(C^{\mathit{self}})=\llbracket K_C\rrbracket}\ \textsf{class-self}
-$$
+     {\Gamma_I(C^{\mathit{self}})=⟦K_C⟧}\ \textsf{class-self}
+```
 
 The unit checks the class value against $K_C$ where it binds $C$, and nothing
 reaches $C^{\mathit{self}}$ before: only those closures read it, and none
@@ -3176,13 +3179,13 @@ parameter is within the annotation's, $A_j\sqsubseteq_G D_j$ for $j\le n$
 (`within`), and, where the source states a result, the body meets it at the
 annotated signature (the `closure-result` obligation):
 
-$$
+```math
 \frac{\forall(R,\vec A,B)\in L.\;\bigl(\forall j\le n.\;A_j\sqsubseteq_G D_j\bigr)
         \land\;\Gamma,\mathit{this}{:}R,\vec x{:}\vec A_{\le n}\vdash_G t:B
       \qquad
       R_s\neq\bot\;\Rightarrow\;\Gamma,\mathit{this}{:}Q_s,\vec x{:}\vec D\vdash_G t:R_s}
      {\Gamma\vdash_G \bigl(\vec x{:}\vec D\bigr)\colon R_s\Rightarrow t\;:\;\bigwedge L}
-$$
+```
 
 with $R_s=\bot$ for a closure whose result the source leaves out (the
 Fragment's `result` is `null`) and $Q_s$ the receiver the source states (`top`
@@ -3215,11 +3218,11 @@ code at both, and `ctorGraph` the constructor's at both, so the instance it
 allocates, holding the method as a field of the longer signature, meets $I$'s
 member by `CoversByFunction`:
 
-$$
+```math
 \frac{\Gamma\vdash_G \lambda\vec x.t:\bigl((C;\vec Q\to B)\land(C;\vec Q\,\vec U\to B)\bigr)
       \quad\Gamma,m{:}F\vdash_G \{m{=}m\}:C\quad\Gamma,m{:}F\vdash_G \{m{=}m\}:I}
      {\Gamma\vdash_G \mathsf{class}\{m(\vec x)\{t\}\}:\mathsf{new}()\Rightarrow C\land\mathsf{new}()\Rightarrow I}
-$$
+```
 
 with $F$ the method's claimed type. Nothing here is a new rule: the premises
 are the creation rule, `alloc` and subsumption under each construct signature.
@@ -3234,13 +3237,13 @@ request's parameters it ignores: `{ add: Add }` at
 `ctorGraph` checks the code at the first $|\vec x|$ parameters, $\vec P$, and the
 source requires each within the constructor's annotation, as for a closure:
 
-$$
+```math
 \frac{\forall(\vec A,B)\in L.\;|\vec x|\le|\vec A|\;\land\;
         \bigl(\forall j\le|\vec x|.\;A_j\sqsubseteq_G D_j\bigr)\;\land\;
         U,\vec x{:}\vec A_{<|\vec x|},\Gamma\vdash_G b:B
       \qquad U,\vec x{:}\vec D,\Gamma\vdash_G b:C}
      {\Gamma\vdash_G \mathsf{class}(\vec x{:}\vec D)\{b\}:\bigwedge L}
-$$
+```
 
 with $C$ the class's instance type, its own signature
 $\mathsf{new}(\vec D)\Rightarrow C$ among $L$. A constructor needing more than
@@ -3265,12 +3268,12 @@ requires `SafePost B (Qε h)` for the instantiated term. It is not a Boolean
 producer judgement and does not mean “no write syntax occurs.”
 For a fixed-arity closure, the intended introduction rule is schematically
 
-$$
+```math
 \frac{\Gamma_c,\mathit{this}:R_c,\vec x:\vec A
              \vdash b:B\;!\epsilon}
- {\Gamma_c\vdash\operatorname{closure}(\vec x,b):
-             \mathcal F_\epsilon(R_c,\operatorname{ArgsShort}(\vec A),B)}.
-$$
+ {\Gamma_c\vdash\mathrm{closure}(\vec x,b):
+             \mathcal F_\epsilon(R_c,\mathrm{ArgsShort}(\vec A),B)}.
+```
 
 Here $\Gamma_c$ describes the actual captured values and fixed storage
 contracts, not transient captured-cell observations. The premise ranges over
@@ -3285,11 +3288,11 @@ not permissions to omit those forms from its accounting.
 Application uses that type alone. With callee, receiver and arguments already
 values, its intended rule is
 
-$$
+```math
 \frac{\Gamma\vdash f:\mathcal F_\epsilon(R_c,\mathcal A,B)
  \qquad\Gamma\vdash r:R_c\qquad\Gamma\vdash\vec v:\mathcal A}
- {\Gamma\vdash\operatorname{invoke}(f,r,\vec v):B\;!\epsilon}.
-$$
+ {\Gamma\vdash\mathrm{invoke}(f,r,\vec v):B\;!\epsilon}.
+```
 
 The effect's entry heap is the heap **after** evaluating the callee, receiver
 and actual expressions. Their evaluation may mutate state; it needs its own
@@ -3302,12 +3305,12 @@ Forgetting an effect is valid, and manufacturing one by subsumption is not.
 The coverage condition, in addition to the usual domain contravariance
 and result covariance, is
 
-$$
+```math
 \frac{R'_c\le R_c\quad\mathcal A'\subseteq\mathcal A\quad B\le B'
  \quad\forall h,h',v.\;Q_\epsilon(h)(h',v)\Rightarrow Q_{\epsilon'}(h)(h',v)}
  {\mathcal F_\epsilon(R_c,\mathcal A,B)
        \le\mathcal F_{\epsilon'}(R'_c,\mathcal A',B')}.
-$$
+```
 
 In particular, heap-preserving entails unrestricted, but the converse has no
 rule. Normalization and substitution must carry the effect per signature.
@@ -3391,7 +3394,7 @@ them. No heap location changes its fixed world type.
 How the trusted front end reads a module, its declarations and the standard
 library into the forms above, and the source rules that reading derives. The
 decisions and trust behind each are in [DESIGN.md](DESIGN.md); this section
-states the rules. Throughout, $\llbracket T\rrbracket$ is the graph type a
+states the rules. Throughout, $⟦T⟧$ is the graph type a
 declared or written term lowers to, and $T[\vec p:=\vec U]$ the term with its
 binders fixed to ground types.
 
@@ -3402,12 +3405,12 @@ its other top-level code (constants, classes, enums, expression statements)
 is the initialization unit $I$, run once, in order. With $F$ the module's
 functions and $\Gamma_M$ the module's scope:
 
-$$
+```math
 \frac{\forall f\in F.\;\Gamma_M\vdash f\quad
       (I\neq[\,]\Rightarrow\Gamma_M\vdash I:\mathsf{undefined})\quad
       F\neq\emptyset\lor I\neq[\,]}
      {\vdash M}\ \textsf{module}
-$$
+```
 
 where $\Gamma_M\vdash I:\mathsf{undefined}$ checks the initialization unit as
 a body with no parameters that completes with `undefined`. A module with
@@ -3423,20 +3426,20 @@ can read a constant not yet initialized (`checkInitializationOrder`).
 **Claims against annotations.** A claimed type $C$ is within the
 annotation's $A$ (`within`) when
 
-$$
-\frac{\operatorname{canon}_G(C)\subseteq\operatorname{canon}_G(A)}{C\sqsubseteq_G A}
+```math
+\frac{\mathrm{canon}_G(C)\subseteq\mathrm{canon}_G(A)}{C\sqsubseteq_G A}
 \qquad
-\frac{\operatorname{check}(G,C,A,p)=\mathsf{true}}{C\sqsubseteq_G A},
-$$
+\frac{\mathrm{check}(G,C,A,p)=\mathsf{true}}{C\sqsubseteq_G A},
+```
 
-and $C\sqsubseteq_G A$ implies $\llbracket C\rrbracket_G\subseteq\llbracket A\rrbracket_G$
+and $C\sqsubseteq_G A$ implies $⟦C⟧_G\subseteq⟦A⟧_G$
 (by `check_sound`; the first rule compares rows with identical clauses). A
 top-level function's claimed parameter and result types are the
 annotation's (`sameMeaning`):
 
-$$
+```math
 \frac{C\sqsubseteq_G A\quad A\sqsubseteq_G C}{A\simeq_G C},
-$$
+```
 
 so the claim may replace the annotation. A closure's claimed signatures, a
 method's among them, and a class's claimed construct signatures need only be
@@ -3451,18 +3454,18 @@ not state.
 A value the module does not define joins its scope at the type its
 declaration states. These rules are assumptions a result is relative to:
 
-$$
+```math
 \frac{x\ \text{imported, declared at}\ T\ \text{with no binders}}
-     {\Gamma(x)=\llbracket T\rrbracket}\ \textsf{import}
+     {\Gamma(x)=⟦T⟧}\ \textsf{import}
 \qquad
 \frac{\begin{array}{c}
 x\ \text{declared at}\ \forall\vec p\le\vec B.\,T\quad
 \text{(certified by its own unit, or imported)}\\
 \forall k.\;\vec U_k\ \text{ground},\ |\vec U_k|=|\vec p|,\quad
-\forall i.\;G\vdash\llbracket U_{k,i}\rrbracket\le\llbracket B_i[\vec p:=\vec U_k]\rrbracket
+\forall i.\;G\vdash⟦U_{k,i}⟧\le⟦B_i[\vec p:=\vec U_k]⟧
 \end{array}}
-{\Gamma(x)=\bigwedge_k\llbracket T[\vec p:=\vec U_k]\rrbracket}\ \textsf{instances}
-$$
+{\Gamma(x)=\bigwedge_k⟦T[\vec p:=\vec U_k]⟧}\ \textsf{instances}
+```
 
 where $\vec U_1,\ldots,\vec U_m$ are the type arguments the unit's calls of
 $x$ name and the conjunction is one callable carrying every instance's
@@ -3475,10 +3478,10 @@ class is read at its construct signature, which `new` meets.
 A function declared with overloads $S_1,\ldots,S_n$ ($n>1$) is callable at
 exactly those; an implementation's own signature is not callable from outside:
 
-$$
+```math
 \frac{x\ \text{declared with overloads}\ S_1,\ldots,S_n\ (n>1),\ \text{none generic}}
-     {\Gamma(x)=\bigwedge_i\llbracket S_i\rrbracket}\ \textsf{overloads}
-$$
+     {\Gamma(x)=\bigwedge_i⟦S_i⟧}\ \textsf{overloads}
+```
 
 Each call is checked against the conjunction, so it is typed by any overload
 whose parameters admit its actuals. A generic overload is refused.
@@ -3487,10 +3490,10 @@ An ambient declaration the module writes (`declare function`, `declare
 const`, `declare class`) runs nothing and is in scope everywhere, read as an
 import is. With $D$ the declarations TypeScript binds $x$ to:
 
-$$
+```math
 \frac{x\ \text{bound by ambient declarations}\ D\ \text{of the module}}
-     {\Gamma(x)=\llbracket\mathsf{type}(D)\rrbracket}\ \textsf{ambient}
-$$
+     {\Gamma(x)=⟦\mathsf{type}(D)⟧}\ \textsf{ambient}
+```
 
 where $\mathsf{type}(D)$ is what `import` and `overloads` read. `declare const
 k: unique symbol` names a symbol and binds no value. A name that is also an
@@ -3507,16 +3510,16 @@ With $I$ the annotated interface, $M$ the names read, $O_m$ the overloads
 TypeScript resolves the calls of method $m$ to, and $C$ the call signatures
 it resolves the calls $x(\ldots)$ to:
 
-$$
+```math
 \frac{x\ \text{a global variable annotated}\ I\qquad
       M=\{m\mid x.m\ \text{occurs}\}\qquad
       \text{every occurrence of}\ x\ \text{is some}\ x.m\ \text{or a callee}\qquad
       O_m\subseteq\mathsf{overloads}_I(m)\qquad
       C\subseteq\mathsf{calls}_I}
-     {\Gamma(x)=\llbracket\mathsf{sel}_{M,O,C}(I)\rrbracket}\ \textsf{global}
+     {\Gamma(x)=⟦\mathsf{sel}_{M,O,C}(I)⟧}\ \textsf{global}
 \qquad
-\llbracket I\rrbracket\subseteq\llbracket\mathsf{sel}_{M,O,C}(I)\rrbracket .
-$$
+⟦I⟧\subseteq⟦\mathsf{sel}_{M,O,C}(I)⟧ .
+```
 
 The inclusion is why the rule assumes no more than the declaration: a record
 says nothing of keys it does not name, a method's receiver is its host, and a
@@ -3528,14 +3531,14 @@ read through the reviewed overlay ([Library globals](#library-globals)).
 In the SKJS test environment a bare import specifier resolves to SKJS's stub
 module, and the environment file's constants are globals:
 
-$$
+```math
 \frac{x\ \text{imported from}\ s\ \text{bare}\qquad
       x\ \text{declared at}\ T\ \text{in}\ \mathsf{stub}(s)}
-     {\Gamma(x)=\llbracket T\rrbracket}\ \textsf{stub}
+     {\Gamma(x)=⟦T⟧}\ \textsf{stub}
 \qquad
 \frac{\mathtt{declare\ const}\ x{:}\,I\in E}
      {x\ \text{is a global variable annotated}\ I}\ \textsf{env}
-$$
+```
 
 where $\textsf{env}$ feeds $\textsf{global}$.
 
@@ -3600,23 +3603,23 @@ whose row is the [meet row](POSITIVE-TYPES.md#parameter-and-scheme-rows)
 $p\sqcap\vec c$. Lowering an intersection (`meetOf`) distributes it over its
 operands' unions, one meet label per choice; on ground operands:
 
-$$
+```math
 \frac{A_k=[p],\ p\ \text{a value binder}\qquad
       \forall i\ne k.\ A_i\ \text{of clause rows}}
-     {\llbracket A_1\mathbin{\&}\cdots\mathbin{\&}A_n\rrbracket=
+     {⟦A_1\mathbin{\&}\cdots\mathbin{\&}A_n⟧=
       [\,p\sqcap\mathsf{meet}(A_{i\ne k})\,]}\ \textsf{binder-meet}
 \qquad
 \frac{\forall i.\ A_i\ \text{of clause rows}}
-     {\llbracket A_1\mathbin{\&}\cdots\mathbin{\&}A_n\rrbracket=
+     {⟦A_1\mathbin{\&}\cdots\mathbin{\&}A_n⟧=
       [\,\mathsf{meet}(A_1,\ldots,A_n)\,]}\ \textsf{meet}
-$$
+```
 
-$$
+```math
 \frac{\vec p\ \text{the value binders among the}\ A_i\ \text{and the parameters of their meet rows},\ |\vec p|\ge 2\ \text{or a meet row among them}\qquad
       \vec c\ \text{the meet of the other operands' and those rows' clauses, or}\ \top}
-     {\llbracket A_1\mathbin{\&}\cdots\mathbin{\&}A_n\rrbracket=
+     {⟦A_1\mathbin{\&}\cdots\mathbin{\&}A_n⟧=
       [\,p_1\sqcap p_2\cdots\sqcap\vec c\,]}\ \textsf{binders-meet}
-$$
+```
 
 where $\mathsf{meet}$ is the operands' clauses met pairwise and folded from
 the right: `meetLists` ([conjunction](POSITIVE-TYPES.md#conjunction-and-normalization)),
@@ -3660,23 +3663,23 @@ contract (a quantified member's scheme, or a view's), finds the instance map $\t
 arrows $M$, checks it (`checkInstArrs`, sound by `Inst.mixed_sound`) and
 requires each explicit argument to mean what $\theta$ gives its binder:
 
-$$
+```math
 \frac{o:O\quad \mathsf{field}_G(O,m)=S=[\forall\vec p.\Sigma]\quad
       \mathsf{checkInstArrs}(G,S,M,\theta)=\mathsf{true}\quad
       \forall i\le k.\;\theta(p_i)\simeq_G A_i}
      {o.m\langle A_1,\ldots,A_k\rangle(\vec a)\ \text{is called at its stated instance }M}.
-$$
+```
 
 A plain call or `new` of a generic module value, or a local quantified
 closure, states its instance alike (`Scheme.explicitInstance`):
 
-$$
+```math
 \frac{f\ \text{generic over}\ p_1,\ldots,p_n\quad
       \text{the call's claimed instance}\ \sigma\quad
       k\le n\quad
-      \forall i\le k.\;\sigma(p_i)\simeq_G\llbracket A_i\rrbracket}
+      \forall i\le k.\;\sigma(p_i)\simeq_G⟦A_i⟧}
      {f\langle A_1,\ldots,A_k\rangle(\vec a)\ \text{is called at its stated instance}\ \sigma},
-$$
+```
 
 with $\simeq_G$ inclusion both ways by certified subtyping. Both rules only
 refuse: acceptance rests on the call's typing, so safety does not depend on
@@ -3696,9 +3699,9 @@ module bindings of their own, `static C.x`, after the class; a static read
 A static block runs where it stands among the static fields, as the closure
 of its statements called at once, reading no `this`:
 
-$$
+```math
 \mathtt{static}\ \{\ \vec s\ \}\;\equiv\;\mathsf{const}\ \textit{b} = (()\Rightarrow\{\ \vec s\ \})()
-$$
+```
 
 with $\textit{b}$ a binding no source spells. An `async` method is a method
 whose body reads as an async function's, its returns and `await`s the
@@ -3731,7 +3734,7 @@ parameter properties ($p\mapsto p$), $U$ the fields without an initializer
 and $T_f$ each field's annotation, `constructor(x̄) { s̄ }` is
 $\mathsf{class}(\vec x).\,\mathcal{C}(\vec s,\varphi_0,\varnothing)$ where
 
-$$
+```math
 \begin{aligned}
 \mathcal{C}(\varepsilon,\varphi,A) &= \mathsf{alloc}(\varphi,\ \overline{f\mapsto\mathsf{undefined}}^{\,f\in U\setminus A})\\
 \mathcal{C}(\texttt{this.}f\texttt{ = }e;\ \vec s,\varphi,A) &= \mathcal{C}(\vec s,\ \varphi,f\mapsto e,\ A\cup\{f\})
@@ -3742,7 +3745,7 @@ $$
 \mathcal{C}(s;\ \vec s,\varphi,A) &= \beta(\varphi)\,;\ s\,;\ \mathcal{C}(\vec s,\varphi',A)
   && \text{otherwise}
 \end{aligned}
-$$
+```
 
 and `this` occurs in no $e$, $c$ or $s$. $\beta(\varphi)$ binds each entry
 $f\mapsto e$ that is not a literal or already bound as `const this.f: T_f =
@@ -3768,19 +3771,19 @@ to be instantiated there.
 
 ### Library types
 
-Write $\llbracket\tau\rrbracket$ for the source term the declaration reader
+Write $⟦\tau⟧$ for the source term the declaration reader
 gives type syntax $\tau$ (`typeTerm`), and $\mathit{lib}(N)$ when every
 declaration TypeScript binds $N$ to is in a standard library file:
 
-$$
+```math
 \frac{\mathit{lib}(\mathtt{Array})}
-     {\llbracket\mathtt{Array}\langle T\rangle\rrbracket=\llbracket T[\,]\rrbracket}
+     {⟦\mathtt{Array}\langle T\rangle⟧=⟦T[\,]⟧}
 \qquad
 \frac{\mathit{lib}(\mathtt{ReadonlyArray})}
-     {\llbracket\mathtt{ReadonlyArray}\langle T\rangle\rrbracket=\llbracket\mathtt{readonly}\;T[\,]\rrbracket}
+     {⟦\mathtt{ReadonlyArray}\langle T\rangle⟧=⟦\mathtt{readonly}\;T[\,]⟧}
 \qquad
-\frac{\mathit{lib}(\mathtt{Function})}{\llbracket\mathtt{Function}\rrbracket=\mathsf{callable}}
-$$
+\frac{\mathit{lib}(\mathtt{Function})}{⟦\mathtt{Function}⟧=\mathsf{callable}}
+```
 
 with $\mathsf{callable}$ the union of `arrs [] []` and `ctors [] []`
 ([functions and classes](POSITIVE-TYPES.md#functions-and-classes)); `object`
@@ -3789,13 +3792,13 @@ is `refs [] [] []` with $\mathsf{callable}$, and `{}` adds every primitive but
 expanded where its key is known, with $\mathsf{key}(\texttt{"}s\texttt{"})=s$,
 $\mathsf{key}(n)=\mathsf{ToString}(n)$ and $m$ its modifiers:
 
-$$
-\frac{P\notin\mathrm{fv}(V)\quad\llbracket K\rrbracket=\lambda_1\mid\cdots\mid\lambda_n\ \text{literals}\quad(n\ge0)}
-     {\llbracket\{[P\ \mathtt{in}\ K]^m\colon V\}\rrbracket=\{\mathsf{key}(\lambda_1)^m\colon\llbracket V\rrbracket;\ \ldots;\ \mathsf{key}(\lambda_n)^m\colon\llbracket V\rrbracket\}}
+```math
+\frac{P\notin\mathrm{fv}(V)\quad⟦K⟧=\lambda_1\mid\cdots\mid\lambda_n\ \text{literals}\quad(n\ge0)}
+     {⟦\{[P\ \mathtt{in}\ K]^m\colon V\}⟧=\{\mathsf{key}(\lambda_1)^m\colon⟦V⟧;\ \ldots;\ \mathsf{key}(\lambda_n)^m\colon⟦V⟧\}}
 \qquad
-\frac{P\notin\mathrm{fv}(V)\quad\mathtt{string}\in\llbracket K\rrbracket\subseteq\mathtt{string}\cup\mathtt{number}\cup\text{literals}\quad\mathtt{?}\notin m}
-     {\llbracket\{[P\ \mathtt{in}\ K]^m\colon V\}\rrbracket=\{[k\colon\mathtt{string}]^m\colon\llbracket V\rrbracket\}}
-$$
+\frac{P\notin\mathrm{fv}(V)\quad\mathtt{string}\in⟦K⟧\subseteq\mathtt{string}\cup\mathtt{number}\cup\text{literals}\quad\mathtt{?}\notin m}
+     {⟦\{[P\ \mathtt{in}\ K]^m\colon V\}⟧=\{[k\colon\mathtt{string}]^m\colon⟦V⟧\}}
+```
 
 `number` without `string` is a number index and `symbol` a symbol index
 beside the remaining literals' fields; an optional one, a type parameter or
@@ -3803,11 +3806,11 @@ any other key is refused. The keys are the union TypeScript computes for $K$
 ([computed types](#computed-types)). A library alias whose equation is a
 mapped type is that type at the reference's arguments:
 
-$$
+```math
 \frac{\mathit{lib}(L)\quad L\langle\vec X\rangle=\{[P\ \mathtt{in}\ K]^m\colon V\}}
-     {\llbracket L\langle\vec A\rangle\rrbracket=
-      \llbracket\{[P\ \mathtt{in}\ K[\vec A/\vec X]]^m\colon V[\vec A/\vec X]\}\rrbracket}
-$$
+     {⟦L\langle\vec A\rangle⟧=
+      ⟦\{[P\ \mathtt{in}\ K[\vec A/\vec X]]^m\colon V[\vec A/\vec X]\}⟧}
+```
 
 so `Record<"a" | "b", V>` has both fields required and `Record<string, V>` is
 the writable string index. An interface's `extends` clauses are the meet of
@@ -3819,11 +3822,11 @@ An annotation's intersection of records is the one meet, with $\varphi_i$
 the invariant and $\psi_i$ the readonly fields of $R_i$ (any other field is
 refused):
 
-$$
-\frac{\forall i.\ \llbracket R_i\rrbracket=\mathsf{Ref}(\varphi_i;\psi_i)}
-     {\llbracket R_1\mathbin{\&}\cdots\mathbin{\&}R_n\rrbracket=
+```math
+\frac{\forall i.\ ⟦R_i⟧=\mathsf{Ref}(\varphi_i;\psi_i)}
+     {⟦R_1\mathbin{\&}\cdots\mathbin{\&}R_n⟧=
       \mathsf{Ref}(\varphi_1\cdots\varphi_n;\,\psi_1\cdots\psi_n)}\ \textsf{record-meet}
-$$
+```
 
 with each list sorted and deduplicated (`Fragment.cellConjunction`); it is
 exact by `recT_append`.
@@ -3838,13 +3841,13 @@ fields (`sourceMeetLists`), as an interface with a call signature and fields
 is. With $\varphi$ invariant fields and no view, optional field, method or
 bound:
 
-$$
-\frac{\llbracket F\rrbracket\ni\mathsf{arrs}(L;S)\quad \llbracket R\rrbracket\ni\mathsf{Ref}(\varphi)}
-     {\llbracket F\mathbin{\&}R\rrbracket\ni\mathsf{callable}(\varphi;L;S)}\ \textsf{callable-meet}
+```math
+\frac{⟦F⟧\ni\mathsf{arrs}(L;S)\quad ⟦R⟧\ni\mathsf{Ref}(\varphi)}
+     {⟦F\mathbin{\&}R⟧\ni\mathsf{callable}(\varphi;L;S)}\ \textsf{callable-meet}
 \qquad
-\frac{\llbracket F\rrbracket\ni\mathsf{callable}(\psi;L;S)\quad \llbracket R\rrbracket\ni\mathsf{Ref}(\varphi)}
-     {\llbracket F\mathbin{\&}R\rrbracket\ni\mathsf{callable}(\varphi\psi;L;S)}
-$$
+\frac{⟦F⟧\ni\mathsf{callable}(\psi;L;S)\quad ⟦R⟧\ni\mathsf{Ref}(\varphi)}
+     {⟦F\mathbin{\&}R⟧\ni\mathsf{callable}(\varphi\psi;L;S)}
+```
 
 An interface's `extends` clauses meet so too. A record with a readonly or
 optional field, a method or an index met with a function type has no clause:
@@ -3866,19 +3869,19 @@ primitives and literals mean the type TypeScript's checker computes
 node $\tau$ and $\mathsf{lits}(t)$ for $t$ as a union of literals and
 primitive families when it is exactly one:
 
-$$
-\frac{\mathsf{lits}(\mathit{ts}(\tau))=U}{\llbracket\tau\rrbracket=U}\ \textsf{computed}
+```math
+\frac{\mathsf{lits}(\mathit{ts}(\tau))=U}{⟦\tau⟧=U}\ \textsf{computed}
 \qquad
 \frac{x\ \text{declares}\ x\colon\sigma\quad\mathit{ts}(\sigma)=\mathit{ts}(\mathtt{typeof}\ x)}
-     {\llbracket\mathtt{typeof}\ x\rrbracket=\llbracket\sigma\rrbracket_{x}}
+     {⟦\mathtt{typeof}\ x⟧=⟦\sigma⟧_{x}}
 \qquad
 \frac{x\ \text{a function or class value, not generic, no statics}}
-     {\llbracket\mathtt{typeof}\ x\rrbracket=\mathsf{type}(x)}
-$$
+     {⟦\mathtt{typeof}\ x⟧=\mathsf{type}(x)}
+```
 
-where $\llbracket\sigma\rrbracket_x$ reads $\sigma$ where $x$ is declared and
+where $⟦\sigma⟧_x$ reads $\sigma$ where $x$ is declared and
 $\mathsf{type}(x)$ is what an import of $x$ reads. An indexed access projects
-$\llbracket T\rrbracket$ at each key of $\mathsf{lits}(\mathit{ts}(K))$: a
+$⟦T⟧$ at each key of $\mathsf{lits}(\mathit{ts}(K))$: a
 record's field (with `| undefined` where optional), an array's element at
 `number`, a tuple's position, a union's parts, an intersection's operands'
 members met, an alias through its equation (a generic one's at the
@@ -3892,17 +3895,17 @@ is known only at an application, so it has no equation of its own, and an
 application of it is a computed type, evaluated where it is written, its
 equation read with the parameters as the arguments:
 
-$$
+```math
 \frac{A\langle\vec X\rangle=\tau\ \text{a computed alias}\quad
       \mathsf{lits}(\mathit{ts}(A\langle\vec\sigma\rangle))=U}
-     {\llbracket A\langle\vec\sigma\rangle\rrbracket=U}
+     {⟦A\langle\vec\sigma\rangle⟧=U}
 \qquad
 \frac{A\langle\vec X\rangle=\tau\ \text{a computed alias}\quad
       \mathsf{lits}(\mathit{ts}(A\langle\vec\sigma\rangle))\ \text{undefined}}
-     {\llbracket A\langle\vec\sigma\rangle\rrbracket=\llbracket\tau\rrbracket_{\vec X:=\llbracket\vec\sigma\rrbracket}}\ \textsf{computed-alias}
-$$
+     {⟦A\langle\vec\sigma\rangle⟧=⟦\tau⟧_{\vec X:=⟦\vec\sigma⟧}}\ \textsf{computed-alias}
+```
 
-where $\llbracket\tau\rrbracket_{\vec X:=\vec S}$ evaluates $\tau$ by the
+where $⟦\tau⟧_{\vec X:=\vec S}$ evaluates $\tau$ by the
 rules here with each $X_i$ read as $S_i$: an indexed access projects its
 argument, and `keyof` of a type literal is the union of its property names'
 string literals (`keysOf`), so `ElementOf<readonly E[]>` is `E` and
@@ -3912,11 +3915,11 @@ union of literals and primitives or an object literal's record of such
 types, each property a writable field and each index a spread copied, read
 from the checker (`inferredTerm`):
 
-$$
+```math
 \frac{\mathtt{const}\ x=e\quad \mathit{ts}(\mathtt{typeof}\ x)=\{\overline{k_i\colon t_i};\ \overline{[\theta_j]\colon u_j}\}\ \text{from}\ e\text{'s literal}\quad
-      \forall i.\ \llbracket t_i\rrbracket\ \text{inferred}}
-     {\llbracket\mathtt{typeof}\ x\rrbracket=\{\overline{k_i\colon\llbracket t_i\rrbracket};\ \overline{[\theta_j]\colon\llbracket u_j\rrbracket}\}}\ \textsf{typeof-inferred}
-$$
+      \forall i.\ ⟦t_i⟧\ \text{inferred}}
+     {⟦\mathtt{typeof}\ x⟧=\{\overline{k_i\colon⟦t_i⟧};\ \overline{[\theta_j]\colon⟦u_j⟧}\}}\ \textsf{typeof-inferred}
+```
 
 Refused: a template literal type with a `${string}` or `${number}` hole; a
 form over a function's own type parameter (`keyof T`, `T[number]` with `T`
@@ -3931,14 +3934,14 @@ TypeScript infers another type for (a `let`, a method, a `const` assertion);
 An index signature is a view (and, mutable, a writable contract) over a
 [key class](POSITIVE-TYPES.md#records). The reader states:
 
-$$
-\llbracket\{[k\colon\mathtt{number}]^m\colon V\}\rrbracket=\mathsf{Dict}(\mathsf{numeric}{:}V)
+```math
+⟦\{[k\colon\mathtt{number}]^m\colon V\}⟧=\mathsf{Dict}(\mathsf{numeric}{:}V)
 \qquad
-\llbracket\{[k\colon\mathtt{symbol}]^m\colon V\}\rrbracket=\mathsf{Dict}(\mathsf{symbols}{:}V)
+⟦\{[k\colon\mathtt{symbol}]^m\colon V\}⟧=\mathsf{Dict}(\mathsf{symbols}{:}V)
 \qquad
-\llbracket\{[k\colon\mathtt{string}]^m\colon S;\ [k\colon\mathtt{number}]^m\colon N\}\rrbracket=
+⟦\{[k\colon\mathtt{string}]^m\colon S;\ [k\colon\mathtt{number}]^m\colon N\}⟧=
   \mathsf{Dict}(\mathsf{strings}{:}S,\ \mathsf{numeric}{:}N)
-$$
+```
 
 An index over a union of key types is one per member; one over `string |
 number`, or a number index at the string index's contract, is the string
@@ -3962,12 +3965,12 @@ primitive's member), without dropped parameters. An entry may state its
 signature family instead, with $\omega$ the entry of member $m$ of prototype
 $p$, and $R_j$ its reviewed receiver (defaulting to $p$):
 
-$$
+```math
 \frac{\omega\in\Omega_p\quad \omega.\mathit{text}=\mathsf{text}(m)\quad
       \omega.\mathit{stated}=[(R_j,\vec P_j,Q_j)]_{j=1}^n\quad n>0}
-     {\llbracket m\rrbracket_\omega=\bigcap_{j=1}^n
+     {⟦m⟧_\omega=\bigcap_{j=1}^n
        (\mathsf{this}:R_j,\ \vec P_j)\Rightarrow Q_j}\ \textsf{proto-stated}
-$$
+```
 
 The reviewed overlay can restrict quantified binders (`bounds`) and weaken a
 native's promised result (`result`). These specify trusted natives; source
@@ -3990,9 +3993,9 @@ the explicit external-code premise and document why it is needed.
 **Standard array conversion.** Let P be the primitive types, including
 `undefined`, and define the regular recursive contract
 
-$$
+```math
 D=\mu X.\;P\;\cup\;\mathsf{ReadonlyArray}(X).
-$$
+```
 
 This is the synthetic declaration `StringConvertible`, lowered by the ordinary
 recursive declaration mechanism. The array realm excludes own `toString`,
@@ -4010,12 +4013,12 @@ A(T) be the mutable array contract, V(D) its readonly view at D, and C(T) the
 comparator `(T,T) → number`.
 Its one scheme offers the intersection:
 
-$$
+```math
 \forall T.\quad
  ((\mathsf{this}:A(T),\ C(T))\Rightarrow A(T))
  \;\cap\;
  ((\mathsf{this}:A(T)\cap V(D),\ \mathtt{undefined})\Rightarrow A(T)).
-$$
+```
 
 These are audited native contracts, consumed by the existing quantified call
 and subtype rules, not new calculus axioms or a proof of ECMA-262's algorithms.
@@ -4036,13 +4039,13 @@ other signature or its receiver condition from the declared scheme.
 `Set<T>`, `Map<K, V>` and `Date` are read through the same mechanism
 (`interfaceOverlay`), as an interface with only its listed members:
 
-$$
+```math
 \frac{\mathit{lib}(I)\quad \Omega_I=[\omega_1,\ldots,\omega_n]\quad
       m_j\ \text{the member of}\ I\ \text{with}\ \mathsf{text}(m_j)=\omega_j.\mathit{text}}
-     {\llbracket I\langle\vec X\rangle\rrbracket_\Omega=\{k_1:\llbracket m_1\rrbracket_{\omega_1};\ \ldots;\ k_n:\llbracket m_n\rrbracket_{\omega_n}\}}\ \textsf{library-interface}
-$$
+     {⟦I\langle\vec X\rangle⟧_\Omega=\{k_1:⟦m_1⟧_{\omega_1};\ \ldots;\ k_n:⟦m_n⟧_{\omega_n}\}}\ \textsf{library-interface}
+```
 
-a supertype of the declared interface. $\llbracket m\rrbracket_\omega$ drops
+a supertype of the declared interface. $⟦m⟧_\omega$ drops
 `thisArg`, reads a `this` result as the receiver, and reads a declared
 iterator result as `Iterator<T>`, which it extends. A property is a readonly
 view. A string's own `length` and indices are the calculus's `lenStr` and
@@ -4055,53 +4058,53 @@ A standard library global is read only through the reviewed overlay
 declaration text it was reviewed against. With $s$ a selected signature,
 $\Omega$ the overlay and $\omega$ an entry:
 
-$$
+```math
 \frac{\mathit{lib}(x)\quad \omega\in\Omega\quad
       \omega.\mathit{global}=x\quad \omega.\mathit{text}=\mathsf{text}(s)\quad
       \omega\ \text{admits}\ (i, S)}
-     {\llbracket s\rrbracket_\Omega=\llbracket s\rrbracket\bigl[\,p_i:=S\,\bigr]}\ \textsf{library-global}
-$$
+     {⟦s⟧_\Omega=⟦s⟧\bigl[\,p_i:=S\,\bigr]}\ \textsf{library-global}
+```
 
 and an entry without `admit` reads $s$ as declared. Replacing a parameter by
 a subset gives a supertype of the declared signature. An entry may state the
 signature the host meets (`stated`), for a construct signature, a method (a
 scheme over its binders, host-relative) or a property (its type the result):
 
-$$
+```math
 \frac{\mathit{lib}(x)\quad \omega\in\Omega\quad \omega.\mathit{global}=x\quad
       \omega.\mathit{text}=\mathsf{text}(s)\quad
       \omega.\mathit{stated}=\forall\vec X.\ \mathsf{new}(\vec P)\Rightarrow R\quad
       |\vec a|\le|\vec P|\ \text{for each}\ \mathsf{new}\ x(\vec a)\ \text{selecting}\ s}
-     {\llbracket s\rrbracket_\Omega=\forall\vec X.\ \mathsf{new}(\vec P)\Rightarrow R}\ \textsf{library-construct}
-$$
+     {⟦s⟧_\Omega=\forall\vec X.\ \mathsf{new}(\vec P)\Rightarrow R}\ \textsf{library-construct}
+```
 
-$$
+```math
 \frac{\mathit{lib}(x)\quad \omega\in\Omega\quad \omega=(x,\ m,\ \mathsf{text}(s),\ \mathsf{stated}\ \forall\vec X.\ (\vec P)\Rightarrow R)\quad
       |\vec a|\le|\vec P|\ \text{for each}\ x.m(\vec a)\ \text{selecting}\ s}
-     {\llbracket s\rrbracket_\Omega=\forall\vec X.\ (\mathsf{this}:\mathsf{self},\ \vec P)\Rightarrow R}\ \textsf{library-stated}
-$$
+     {⟦s⟧_\Omega=\forall\vec X.\ (\mathsf{this}:\mathsf{self},\ \vec P)\Rightarrow R}\ \textsf{library-stated}
+```
 
 Overloads stated alike are one signature. A statement may name a library
 interface (`Set<T>`, read through [its overlay](#prototype-contracts)) or a
 declaration no library has, which joins the document with the entry:
 
-$$
+```math
 \mathsf{JsonValue}=\mathsf{null}\mid\mathsf{boolean}\mid\mathsf{number}\mid\mathsf{string}\mid\{\mathsf{readonly}\ [k:\mathsf{string}]:\mathsf{JsonValue}\}
-$$
+```
 
 (`JSON.stringify`'s parameter). An entry may read a member as a test of the
 calculus (`test`), and the variable's declaration as the right operand of
 `instanceof`:
 
-$$
+```math
 \frac{\mathit{lib}(\mathtt{Array})\quad \omega\in\Omega\quad
       \omega=(\mathtt{Array},\ \mathtt{isArray},\ \mathsf{text}(s),\ \mathsf{test}\ \mathsf{isArray})}
-     {\llbracket\mathtt{Array.isArray}(e)\rrbracket=\mathsf{test}\ \mathsf{isArray}\ \llbracket e\rrbracket}\ \textsf{library-test}
+     {⟦\mathtt{Array.isArray}(e)⟧=\mathsf{test}\ \mathsf{isArray}\ ⟦e⟧}\ \textsf{library-test}
 \qquad
 \frac{\mathit{lib}(\mathtt{Array})\quad \omega\in\Omega\quad
       \omega=(\mathtt{Array},\ \cdot,\ \mathsf{text}(d),\ \mathsf{test}\ \mathsf{isArray})}
-     {\llbracket e\ \mathtt{instanceof}\ \mathtt{Array}\rrbracket=\mathsf{test}\ \mathsf{isArray}\ \llbracket e\rrbracket}\ \textsf{library-instanceof}
-$$
+     {⟦e\ \mathtt{instanceof}\ \mathtt{Array}⟧=\mathsf{test}\ \mathsf{isArray}\ ⟦e⟧}\ \textsf{library-instanceof}
+```
 
 The branch rule is the tag rule on $\mathsf{isArray}$
 ([SEMANTICS](SEMANTICS.md#operational-language)); the declared guard `arg is
@@ -4109,15 +4112,15 @@ any[]` is not read. An entry may read a member, or a construct signature, as
 a call of an [intrinsic](#async-functions-and-await) stating the same step
 (`intrinsic`), instantiated at each call by $\textsf{instances}$:
 
-$$
+```math
 \frac{\mathit{lib}(x)\quad \omega\in\Omega\quad
       \omega=(x,\ m,\ \mathsf{text}(s),\ \mathsf{intrinsic}\ \iota)}
-     {\llbracket x.m(\vec e)\rrbracket=\iota(\llbracket\vec e\rrbracket)}\ \textsf{library-intrinsic}
+     {⟦x.m(\vec e)⟧=\iota(⟦\vec e⟧)}\ \textsf{library-intrinsic}
 \qquad
 \frac{\mathit{lib}(x)\quad \omega\in\Omega\quad
       \omega=(x,\ \cdot,\ \mathsf{text}(s),\ \mathsf{intrinsic}\ \iota)\quad s\ \text{a construct signature}}
-     {\llbracket \mathsf{new}\ x(\vec e)\rrbracket=\iota(\llbracket\vec e\rrbracket)}\ \textsf{library-construct-intrinsic}
-$$
+     {⟦\mathsf{new}\ x(\vec e)⟧=\iota(⟦\vec e⟧)}\ \textsf{library-construct-intrinsic}
+```
 
 `Promise.resolve(v)` is `%AsyncReturn%(v)`, `Promise.resolve()` is
 `%AsyncComplete%()`, `Promise.all` is `%PromiseAll%`, `Promise.reject` is
@@ -4128,19 +4131,19 @@ $$
 The parser writes each async form as a call of an intrinsic, a value named
 `%…%` that no source identifier spells (`intrinsics.mts`):
 
-$$
+```math
 \begin{aligned}
-\llbracket\mathsf{await}\ e\rrbracket&=\mathtt{\%Await\%}(\llbracket e\rrbracket)\\
-\llbracket\mathsf{return}\ e\rrbracket_{\mathsf{async}}&=\mathsf{return}\ \mathtt{\%AsyncReturn\%}(\llbracket e\rrbracket)\\
-\llbracket\text{completion}\rrbracket_{\mathsf{async}}&=\mathsf{return}\ \mathtt{\%AsyncComplete\%}()
+⟦\mathsf{await}\ e⟧&=\mathtt{\%Await\%}(⟦e⟧)\\
+⟦\mathsf{return}\ e⟧_{\mathsf{async}}&=\mathsf{return}\ \mathtt{\%AsyncReturn\%}(⟦e⟧)\\
+⟦\text{completion}⟧_{\mathsf{async}}&=\mathsf{return}\ \mathtt{\%AsyncComplete\%}()
 \end{aligned}
-$$
+```
 
 in an async function, arrow or function expression's own body. The
 declaration reader lists the intrinsics among the module's values, with $P$
 the primitives (the values that are never thenables):
 
-$$
+```math
 \begin{aligned}
 \mathtt{\%Await\%}&:\forall T,\,U\le P.\ (\mathit{value}:\mathsf{Promise}\langle T\rangle\mid U)\Rightarrow T\mid U\\
 \mathtt{\%AsyncReturn\%}&:\forall T\le P,\,U\le P.\ (\mathit{value}:T\mid\mathsf{Promise}\langle U\rangle)\Rightarrow\mathsf{Promise}\langle T\mid U\rangle
@@ -4150,18 +4153,18 @@ $$
 \mathtt{\%PromiseReject\%}&:\forall T.\ (\mathit{reason}:\mathsf{unknown})\Rightarrow\mathsf{Promise}\langle T\rangle\\
 \mathtt{\%NewPromise\%}&:\forall T\le P.\ (\mathit{executor}:(\mathit{resolve}:(T)\Rightarrow\mathsf{void},\ \mathit{reject}:(\mathsf{unknown})\Rightarrow\mathsf{void})\Rightarrow\mathsf{void})\Rightarrow\mathsf{Promise}\langle T\rangle
 \end{aligned}
-$$
+```
 
 Instantiated by $\textsf{instances}$, with $R$ the async function's result
 annotation, they derive:
 
-$$
+```math
 \frac{\Gamma\vdash e:\mathsf{Promise}\langle A\rangle\mid B\quad B\le P}{\Gamma\vdash\mathsf{await}\ e:A\mid B}\ \textsf{await}
 \qquad
 \frac{\Gamma\vdash e:A\mid\mathsf{Promise}\langle B\rangle\quad A\le P\quad B\le P\quad \mathsf{Promise}\langle A\mid B\rangle\le R}{\Gamma\vdash_R\mathsf{return}\ e}\ \textsf{async-return}
 \qquad
 \frac{\mathsf{Promise}\langle\mathsf{void}\rangle\le R}{\Gamma\vdash_R\text{completion}}\ \textsf{async-complete}
-$$
+```
 
 `Promise<void>` is `Promise<unknown>` (`void` is top), so a void async
 function may only complete. A throw in an async body leaves it as a throw.
@@ -4177,9 +4180,9 @@ pass for a promise. A trusted generic signature instantiated at a thenable
 the thenable), so each binder a `Promise` or `PromiseLike` argument of an
 imported, ambient or library signature or method names is bounded by
 
-$$
+```math
 N=P\mid\{\,\mathtt{readonly\ then?}:P\,\}\mid\mathsf{readonly\ unknown[]}
-$$
+```
 
 the types no thenable inhabits (`promisedBinders`); the client's own generic
 bodies are checked at every instantiation instead. The producer infers $T$ and $U$ as TypeScript infers a
@@ -4194,7 +4197,7 @@ of host iterable, which the parser picks by TypeScript's type of $e$
 (`iterationKind` in `declaration-graph.mts`, every part of a union alike).
 With $\mathit{Step}(E)=()\Rightarrow\{\mathsf{readonly}\ \mathit{value}:E\}\mid\mathsf{null}$:
 
-$$
+```math
 \begin{array}{ll}
 \mathtt{\%Iterate\%}:\forall T.\ (\mathsf{readonly}\ T[\,])\Rightarrow\mathit{Step}(T) & \text{an array or tuple}\\
 \mathtt{\%Iterate{:}string\%}:(\mathsf{string})\Rightarrow\mathit{Step}(\mathsf{string}) & \text{a string, by code point}\\
@@ -4202,7 +4205,7 @@ $$
 \mathtt{\%Iterate{:}Map\%}:\forall K\,V.\ (\mathsf{Map}\langle K,V\rangle)\Rightarrow\mathit{Step}([K,V]) & \text{a fresh entry per step}\\
 \mathtt{\%Iterate{:}Iterator\%}:\forall T.\ (\mathsf{Iterator}\langle T\rangle)\Rightarrow\mathit{Step}(T) & \text{a SetIterator or MapIterator}
 \end{array}
-$$
+```
 
 `Set` and `Map` are the [interface overlay](#library-types)'s, whose
 `keys`, `values` and `entries` give a `SetIterator` or `MapIterator` read as
@@ -4215,13 +4218,13 @@ whose typing then refuses what is no array. Lean compiles the loop over a
 host iterable itself (`SourceExtraction.body`), $\mathit{it}$ the picked
 intrinsic:
 
-$$
-\llbracket\mathsf{for}\ (\mathsf{const}\ x\ \mathsf{of}\ e)\ S\rrbracket=
-n\leftarrow\mathit{it}(\llbracket e\rrbracket);\
+```math
+⟦\mathsf{for}\ (\mathsf{const}\ x\ \mathsf{of}\ e)\ S⟧=
+n\leftarrow\mathit{it}(⟦e⟧);\
 \mathit{head}:\ r\leftarrow n();\
 \mathsf{if}\ r\ \mathsf{is\ null}\ \mathsf{then}\ \mathit{exit}\
-\mathsf{else}\ x\leftarrow r.\mathit{value};\ \llbracket S\rrbracket;\ \mathsf{goto}\ \mathit{head}
-$$
+\mathsf{else}\ x\leftarrow r.\mathit{value};\ ⟦S⟧;\ \mathsf{goto}\ \mathit{head}
+```
 
 `n` is a slot at the call's claimed type, the head a cut stated by the loop's
 entry claims, `continue` and the body's end go to the head and `break` to the
@@ -4229,11 +4232,11 @@ exit; the tag dispatch refines `r` on each arm (`tagBind isNul`). The derived
 rule, with $\mathit{it}:\forall\vec\alpha.\ (P)\Rightarrow\mathit{Step}(E)$ and
 $\sigma$ the call's instance:
 
-$$
+```math
 \frac{\Gamma\vdash e:A\quad A\le P\sigma\quad
       \Gamma_{\mathit{head}},x:E\sigma\vdash S\quad \Gamma_{\mathit{head}}\ \text{the loop's entry claims}}
      {\Gamma\vdash\mathsf{for}\ (\mathsf{const}\ x\ \mathsf{of}\ e)\ S}\ \textsf{for-of}
-$$
+```
 
 The native iterator requires a readable array receiver, so every in-bounds
 read yields `T`, including a hole when `T` admits `undefined`. A sparse store
@@ -4265,7 +4268,7 @@ read typed by the declarations TypeScript gives the iterable (`Iterable<T>`,
 `Iterator<T, TReturn, TNext>`, `IteratorResult<T, TReturn>`, or the program's
 own class or record), under names no source spells:
 
-$$
+```math
 \begin{array}{l}
 [\![\mathsf{for}\ (\mathsf{const}\ x\ \mathsf{of}\ e)\ S]\!]=
 \{\ \mathsf{const}\ i=e[@@\mathit{iterator}](),\ n=i.\mathit{next}.\mathsf{bind}(i);\\
@@ -4273,7 +4276,7 @@ $$
   \mathsf{const}\ x=r.\mathit{value};\ \mathsf{closing}\ \{S\}\ \mathsf{close}\ C_i\ \}\ \}\\[2pt]
 C_i=\mathsf{const}\ m=i.\mathit{return};\ \mathsf{if}\ (\mathsf{typeof}\ m\ne\texttt{"undefined"})\ \{\ \mathsf{const}\ \_:\mathsf{object}=m.\mathsf{call}(i)\ \}
 \end{array}
-$$
+```
 
 GetIterator reads `next` once, and each step calls it on the iterator: the
 bound function is that call ([`bindMember`](#judgments-and-constructor-views)). A
@@ -4292,7 +4295,7 @@ may own any `return`.
 The closing region is a `finally` that runs on some ways out of $S$ only,
 compiled by the machinery of `try` (`SourceExtraction.body`, `Finalizer`):
 
-$$
+```math
 \frac{\begin{array}{c}
 \Gamma\vdash_R S\ \text{with}\ \mathsf{break}\mapsto C;\mathit{exit},\quad
   \mathsf{return}\ v\mapsto C;\mathsf{return}\ v,\quad
@@ -4301,7 +4304,7 @@ $$
 \Gamma\vdash_R C\ \text{on each of those ways}
 \end{array}}
      {\Gamma\vdash_R\ \mathsf{closing}\ \{S\}\ \mathsf{close}\ C}\ \textsf{closing}
-$$
+```
 
 The close runs before a `break` of the loop leaves it, before a `return`
 returns the value held in a slot of its own (as through any `finally`), and,
@@ -4341,25 +4344,25 @@ is $R$". An unbraced arm is the block holding it and `else if (c) S` is
 `else { if (c) S }`; `return;` is `return undefined`, and a block closure that
 does not return on every terminal arm ends with `return undefined`:
 
-$$
+```math
 \frac{\mathsf{undefined}\le R}{\Gamma\vdash_R\ \mathsf{return};}\ \textsf{return-bare}
 \qquad
 \frac{\Gamma\vdash_R S_1\quad S_1\ \text{always jumps}\quad \mathit{names}(S_2)\ \text{free in no live statement, none hoisted}}
      {\Gamma\vdash_R S_1;S_2}\ \textsf{dead}
-$$
+```
 
 `for (init; cond; update) S` is `{ init; loop }` with a `while (cond)` whose
 body's end and every `continue` run `update`, then go to the head (a closure
 capturing a `for` loop's `let` is refused, since JavaScript copies it per
 iteration):
 
-$$
+```math
 \frac{\Gamma\vdash_R \mathit{init}:\Gamma'\quad \Gamma_h\ \text{the head's entry claims}\quad
       \Gamma'\le\Gamma_h\quad \Gamma_h\vdash c:\mathsf{boolean}\quad
       \Gamma_h\wedge c\vdash_R S\ \text{with}\ \mathsf{continue}\mapsto u\quad
       \Gamma_u\vdash \mathit{update}\ \text{back to}\ \Gamma_h}
      {\Gamma\vdash_R\ \mathsf{for}\ (\mathit{init};c;\mathit{update})\ S}\ \textsf{for}
-$$
+```
 
 `switch (d) { … }` is a labeled block per clause, nested in source order
 inside one for the whole switch: the innermost holds the dispatch, each case
@@ -4370,17 +4373,17 @@ unless it is a name or a field of a name and every label a literal or a name,
 when it is re-read at each test. A name declared in one clause and read in
 another is refused.
 
-$$
+```math
 \frac{\Gamma\vdash_R S\ \text{with}\ \mathsf{break}\ \ell\mapsto\Gamma_{\mathit{after}}\quad
       \Gamma_{\mathit{after}}\vdash_R S'}
      {\Gamma\vdash_R\ \ell:\{S\};S'}\ \textsf{labeled-block}
-$$
+```
 
 `for (const k in o) S` is `for (const k of %ForIn%(o)) S` with the trusted
 
-$$
+```math
 \mathtt{\%ForIn\%}:(o:\mathsf{unknown})\Rightarrow\mathsf{readonly}\ \mathsf{string}[\,],
-$$
+```
 
 the keys the loop visits: strings, for any value. `try B catch (e) C finally
 F` names $C$'s entry as the handler of $B$'s nodes that may throw, with `e`
@@ -4392,11 +4395,11 @@ throw with the thrown value held and rethrown. A `return`, `throw`, `break`
 or `continue` in $F$ leaves by its own way, as JavaScript's replaces the
 pending completion:
 
-$$
+```math
 \frac{\Gamma\vdash_R B\ \text{with throws}\mapsto(\mathsf{unknown},\Gamma)\vdash_R C\quad
       \Gamma\vdash_R F\ \text{on each way out}}
      {\Gamma\vdash_R\ \mathsf{try}\ B\ \mathsf{catch}\ (e)\ C\ \mathsf{finally}\ F}\ \textsf{try}
-$$
+```
 
 The handler's and finalizer's entries state each cell at its contract, since
 a throw may leave after any part of the body ran.
@@ -4410,16 +4413,16 @@ user-defined type guard (`x is T`) or assertion function (`asserts x is T`)
 is refused where its type is written: its promise ties the call's result, or
 its completion, to its argument, which no function type states:
 
-$$
+```math
 \frac{\Gamma(x)=A\quad\Gamma[x:T_{\mathsf{typeofObject}}(A)]\vdash_R S_1\quad\Gamma[x:T_{\lnot\mathsf{typeofObject}}(A)]\vdash_R S_2}
      {\Gamma\vdash_R\ \mathsf{if}\ (\texttt{typeof}\ x\equiv\texttt{"object"})\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-typeof-object}
-$$
+```
 
-$$
+```math
 \frac{\Gamma(x)=A\quad A\ \text{objects, no class value}\quad \kappa\notin\mathcal R\quad
       \Gamma[x:T_{\mathsf{hasKey}(\kappa)}(A)]\vdash_R S_1\quad\Gamma[x:T_{\lnot\mathsf{hasKey}(\kappa)}(A)]\vdash_R S_2}
      {\Gamma\vdash_R\ \mathsf{if}\ (\texttt{"}\kappa\texttt{"}\ \mathtt{in}\ x)\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-in}
-$$
+```
 
 with $\mathcal R$ the refused keys (`inKeyRefusal`: `Object.prototype`'s,
 `Array.prototype`'s and `Function.prototype`'s own string keys, array
@@ -4431,7 +4434,7 @@ test against a claimed singleton $c$ of any primitive kind, and against a
 field of an immutable binding's object, narrows the binding or the object's
 arms:
 
-$$
+```math
 \frac{\Gamma\vdash a:A\quad \Gamma\vdash k:\{c\}\quad
       \Gamma[x:T_{\mathsf{eq}(c)}(\Gamma(x))]\vdash_R S_1\quad
       \Gamma[x:T_{\lnot\mathsf{eq}(c)}(\Gamma(x))]\vdash_R S_2}
@@ -4441,7 +4444,7 @@ $$
       \Gamma[o:F^{f}_{\mathsf{eq}(c)}(\Gamma(o))]\vdash_R S_1\quad
       \Gamma[o:F^{f}_{\lnot\mathsf{eq}(c)}(\Gamma(o))]\vdash_R S_2}
      {\Gamma\vdash_R\ \mathsf{if}\ (o.f\equiv k)\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-field}
-$$
+```
 
 with $F^f$ the field slice. The truthiness of a field of an immutable
 binding's object, where an arm of it leaves the field optional or unnamed (so
@@ -4449,11 +4452,11 @@ that no fact about what the field holds is claimed, as of an
 `IteratorResult`'s `done`), narrows the object's arms the same way, the read
 dispatched on its truthiness:
 
-$$
+```math
 \frac{\Gamma[o:F^{f}_{\mathsf{truthy}}(\Gamma(o))]\vdash_R S_1\quad
       \Gamma[o:F^{f}_{\lnot\mathsf{truthy}}(\Gamma(o))]\vdash_R S_2}
      {\Gamma\vdash_R\ \mathsf{if}\ (o.f)\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-field-truthy}
-$$
+```
 
 `x === y` with `x` claimed at a union of
 singletons is dispatched as the disjunction over its singletons $c$ of
@@ -4469,22 +4472,22 @@ to the realm's `sparse ReadonlyArray<unknown>` where it holds
 ([**tag-array**](#refinement-under-an-observed-outcome)), and keeps
 `unknown`, which the array invariant says nothing of:
 
-$$
+```math
 \frac{\Gamma(x)=A\quad A\preceq_{\mathsf{isArray}=\mathsf{true}}B\quad \Gamma[x:B]\vdash_R S_1\quad
       \Gamma[x:T_{\lnot\mathsf{isArray}}(A)]\vdash_R S_2}
      {\Gamma\vdash_R\ \mathsf{if}\ (\mathtt{Array.isArray}(x))\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-array}
-$$
+```
 
 ### Enums
 
 With $m_1,\ldots,m_n$ an enum's members and $v_i$ the value TypeScript
 computes for $m_i$ (`getConstantValue`):
 
-$$
+```math
 \frac{\forall i.\ v_i\ \text{computed by TypeScript, finite if a number}\quad
       \text{no reverse key names a member}}
      {\texttt{enum E}\{\vec m\}\ \leadsto\ \texttt{const E}:\mathcal O(E)=\{\overline{m_i:v_i},\ \overline{\mathrm{str}(v_j):\text{"}m_j\text{"}}^{\,v_j\in\mathbb R}\}}
-$$
+```
 
 with $\mathcal O(E)$ the object type of those fields, each readonly at its
 value's literal type, in JavaScript's key order where the declaration is. The
@@ -4496,15 +4499,15 @@ type `E` is $\bigcup_i\{v_i\}$, `E.A` the literal type of `A`'s value, and
 
 `e as const` returns its operand, claimed at the operand's *const type*:
 
-$$
+```math
 \mathsf{const}(\ell)=\{\ell\},\qquad
 \mathsf{const}([e_1,\ldots,e_k])=\mathsf{readonly}\;[\mathsf{const}(e_1),\ldots,\mathsf{const}(e_k)],
-$$
-$$
+```
+```math
 \mathsf{const}(\{f_1:e_1,\ldots\})=\{\mathsf{readonly}\;f_1:\mathsf{const}(e_1),\ldots\},\qquad
 \mathsf{const}(x)=\Gamma(x),\qquad
 \mathsf{const}(e\;\texttt{as const})=\mathsf{const}(e),
-$$
+```
 
 for a literal $\ell$; any other operand is refused. An element or field of a
 literal that is none of these (`[x.f] as const`) keeps its own type,
@@ -4766,20 +4769,20 @@ special cases, and the sentences that say so name it as the first proposal.
 Every source-level object, including every function, has an identity.
 Represent an object value schematically as
 
-$$
+```math
 \mathsf{object}(\ell,\delta),
-$$
+```
 
 where $\ell$ is its identity and $\delta$ is an internal operation descriptor:
 
-$$
+```math
 \delta =
 \left\langle
   \mathsf{properties}:\pi,\quad
-  \mathsf{call}:\operatorname{Option}(\kappa),\quad
-  \mathsf{construct}:\operatorname{Option}(\eta)
+  \mathsf{call}:\mathrm{Option}(\kappa),\quad
+  \mathsf{construct}:\mathrm{Option}(\eta)
 \right\rangle.
-$$
+```
 
 The descriptor determines **how operations are dispatched**. The heap contains
 the mutable state those operations use. Neither the descriptor nor its
@@ -4795,21 +4798,21 @@ is stable. Their behaviour need not be independent of mutable state.
 
 In this representation,
 
-$$
+```math
 \mathsf{isFun}(\mathsf{object}(\ell,\delta))
 \iff
 \delta.\mathsf{call}\ne\mathsf{None},
-$$
+```
 
 and source-level object equality compares identities:
 
-$$
+```math
 \mathsf{object}(\ell,\delta)
   ===
 \mathsf{object}(\ell',\delta')
 \iff
 \ell=\ell'.
-$$
+```
 
 Well-formedness requires a unique descriptor for each identity. Thus
 function-shape tests can remain heap-independent without making function
@@ -4826,14 +4829,14 @@ That is the principal coherence requirement.
 
 The operational interface contains
 
-$$
+```math
 \begin{aligned}
-&\operatorname{Call}(f,r,\bar a),\\
-&\operatorname{Construct}(f,\bar a,n),\\
-&\operatorname{Get}(o,k,r),\\
-&\operatorname{Set}(o,k,v,r).
+&\mathrm{Call}(f,r,\bar a),\\
+&\mathrm{Construct}(f,\bar a,n),\\
+&\mathrm{Get}(o,k,r),\\
+&\mathrm{Set}(o,k,v,r).
 \end{aligned}
-$$
+```
 
 Here $r$ is the receiver, $\bar a$ is the actual argument list, and $n$ is
 `new.target`.
@@ -4875,9 +4878,9 @@ type. ([TypeScript][c5])
 
 For the complete account, the property component cannot be specified solely by
 
-$$
-\operatorname{Get}(o,k)=H(o)[k].
-$$
+```math
+\mathrm{Get}(o,k)=H(o)[k].
+```
 
 An object may have data properties, accessors, inherited properties, and
 symbol-keyed properties. Property operations can invoke code; proxies can
@@ -4886,15 +4889,15 @@ internal property operations separately from a simple field store. ([TC39][c1])
 
 C\* should therefore distinguish two semantic assertions:
 
-$$
+```math
 \mathsf{OwnData}(o,k,A)
-$$
+```
 
 for a particular kind of stored property, and
 
-$$
+```math
 \mathsf{Readable}(o,k,A)
-$$
+```
 
 for an appropriate contract on reading the property.
 
@@ -4917,9 +4920,9 @@ Keep shape, properties, calls, and construction as separate predicates.
 
 For shape,
 
-$$
+```math
 \mathsf{Ctor}<:\mathsf{Fun}<:\mathsf{Obj}.
-$$
+```
 
 The first inclusion reflects the ECMAScript invariant that an object with
 `[[Construct]]` also has `[[Call]]`; it does **not** assert that ordinary
@@ -4927,13 +4930,13 @@ invocation succeeds. ([TC39][c6])
 
 For callable contracts,
 
-$$
+```math
 \mathsf{Callable}(L;P)
 =
 \mathsf{Fun}
 \cap \mathsf{Props}(P)
 \cap \bigcap_{\sigma\in L}\mathsf{CallSpec}(\sigma).
-$$
+```
 
 This is also the organizing equation of the implemented model, not just the
 future object design. [SEMANTICS.md](SEMANTICS.md#one-meaning-for-callable-contracts)
@@ -4945,12 +4948,12 @@ and instantiated call promises as fixed signatures.
 
 For construction contracts,
 
-$$
+```math
 \mathsf{Constructible}(M)
 =
 \mathsf{Ctor}
 \cap \bigcap_{\nu\in M}\mathsf{ConstructSpec}(\nu).
-$$
+```
 
 A value usable both ways has their intersection. A property-only view drops the
 call and construction requirements without asserting their absence.
@@ -4958,11 +4961,11 @@ call and construction requirements without asserting their absence.
 The empty call family still means function shape with no supplied call
 contract:
 
-$$
+```math
 \mathsf{Callable}([];P)
 =
 \mathsf{Fun}\cap\mathsf{Props}(P).
-$$
+```
 
 This preserves the distinction between `CFunction` and `CUnknown` above:
 knowing that a value is a function is different from merely not excluding
@@ -4971,13 +4974,13 @@ functions.
 **Overloads.** Several call contracts are conjunctions of behavioural
 obligations:
 
-$$
+```math
 \mathsf{CallSpec}(L)
 \cap
 \mathsf{CallSpec}(M)
 =
 \mathsf{CallSpec}(L\mathbin{+\!+}M).
-$$
+```
 
 They are **not** assertions that a writable internal cell has two different
 invariant content types. This is the law `TypeAlgebra.calls_append` proves for
@@ -4992,10 +4995,10 @@ source-level mutation.
 **Generics and argument lists.** A call contract must be able to express a
 quantified relationship, schematically
 
-$$
+```math
 \forall\bar X.\;
 (R;\alpha)\Rightarrow B,
-$$
+```
 
 where $R$ describes the receiver and $\alpha$ describes an argument list.
 
@@ -5019,12 +5022,12 @@ checker for generic bodies.
 **Effects and state.** The behavioural obligation must use the computation
 semantics, not just a relation between input and output values. Schematically,
 
-$$
+```math
 \{\mathcal P\}\;
-\operatorname{Call}(f,r,\bar a)
+\mathrm{Call}(f,r,\bar a)
 \;\{\mathsf{return}\ v.\mathcal Q;\;
     \mathsf{throw}\ e.\mathcal E\}.
-$$
+```
 
 An ordinary arrow can abbreviate a suitable special case. Contracts for promises
 and generators additionally describe subsequent interactions with the returned
@@ -5069,9 +5072,9 @@ object through a contract.
 
 Write
 
-$$
+```math
 \Gamma\vdash_G t:A\;!E
-$$
+```
 
 for a computation whose normal results have type $A$ and whose thrown values
 have type $E$. This is a safety judgment, not a termination guarantee. The
@@ -5083,27 +5086,27 @@ about current contents belong in the state judgment introduced below.
 
 Call and construction signatures are, respectively,
 
-$$
+```math
 \sigma=(R;\alpha)\xrightarrow{E}B,
 \qquad
 \nu=(N;\alpha)\xRightarrow{E}B.
-$$
+```
 
 Here $R$ constrains the supplied receiver, $\alpha$ constrains the actual
 argument list, and $N$ constrains `new.target`. Construction signatures require
 
-$$
+```math
 N<:\mathsf{Ctor},
 \qquad
 B<:\mathsf{Obj}(\top_p).
-$$
+```
 
 Argument-list contracts need not specify an exact arity. Parameter binding,
 defaults, and destructuring are computations in the function's entry program.
 
 Define the constructor views
 
-$$
+```math
 \begin{aligned}
 \mathsf{Calls}(L)
 &=
@@ -5117,14 +5120,14 @@ $$
 \mathsf{Ctor}\cap\mathsf{Obj}(P)\cap
 \bigcap_{\nu\in M}\mathsf{ConstructSpec}(\nu).
 \end{aligned}
-$$
+```
 
 $P$ is a property contract; $\top_p$ imposes no property requirement. In
 particular,
 
-$$
+```math
 \mathsf{Calls}([])=\mathsf{Fun}.
-$$
+```
 
 An empty family supplies shape but no invocation contract.
 
@@ -5141,27 +5144,27 @@ sequencing.
 **Forget-Properties** and **Forget-Calls** are the two essential forgetful
 rules:
 
-$$
+```math
 \frac{\Gamma\vdash_G f:\mathsf{Callable}(L;P)}
 {\Gamma\vdash_G f:\mathsf{Calls}(L)}
 \qquad
 \frac{\Gamma\vdash_G f:\mathsf{Callable}(L;P)}
 {\Gamma\vdash_G f:\mathsf{Obj}(P)}.
-$$
+```
 
 These change the available view, not the value. Neither allocates nor wraps.
 
 **Constructor-Shape.** Construction implies function shape, but supplies no
 successful ordinary-call contract:
 
-$$
+```math
 \frac{\Gamma\vdash_G f:\mathsf{Constructor}(M;P)}
 {\Gamma\vdash_G f:\mathsf{Callable}([];P)}.
-$$
+```
 
 **Sub.** The ordinary subsumption rule is
 
-$$
+```math
 \frac{
 \Gamma\vdash_G t:A\;!E
 \qquad G\vdash A<:B
@@ -5169,11 +5172,11 @@ $$
 }{
 \Gamma\vdash_G t:B\;!F
 }.
-$$
+```
 
 **Call-Sub.** For unconditional call signatures,
 
-$$
+```math
 \frac{
 \begin{gathered}
 G\vdash R_2<:R_1
@@ -5187,34 +5190,34 @@ G\vdash
 <:
 (R_2;\alpha_2)\xrightarrow{E_2}B_2
 }.
-$$
+```
 
 Construction signatures have the corresponding variance in `new.target`,
 arguments, normal results, and exceptions.
 
 The intended intersection laws are
 
-$$
+```math
 \mathsf{Calls}(L)\cap\mathsf{Obj}(P)
 =
 \mathsf{Callable}(L;P),
-$$
+```
 
-$$
+```math
 \mathsf{Callable}(L;P)\cap\mathsf{Callable}(M;Q)
 =
 \mathsf{Callable}(L{+\!\!+}M;P\wedge Q).
-$$
+```
 
 Here $P\wedge Q$ is a conjunction of property contracts. It is not a pointwise
 intersection of writable-cell content types.
 
 **Value-Meet.** Intersection introduction on an already obtained value is
 
-$$
+```math
 \frac{\Gamma\vdash_G v:A\qquad\Gamma\vdash_G v:B}
 {\Gamma\vdash_G v:A\cap B}.
-$$
+```
 
 Both premises concern the same value under compatible heap invariants.
 Independently checking two allocations does not establish an intersection on
@@ -5225,13 +5228,13 @@ one allocated object.
 Internal invocation descriptors are not source-level function values. Introduce
 auxiliary judgments
 
-$$
+```math
 \Gamma\vdash_G^{\mathsf{call}}\kappa:L,
 \qquad
 \Gamma\vdash_G^{\mathsf{construct}}\eta:M,
 \qquad
 \Gamma\vdash_G^{\mathsf{init}}d:P.
-$$
+```
 
 The first two check invocation programs. The third checks an initial property
 layout and the invariants it establishes. Initializer expressions have already
@@ -5240,7 +5243,7 @@ been evaluated.
 **Ordinary functions: a dynamic receiver.** For strict ordinary-function code,
 the rule **Dynamic** is
 
-$$
+```math
 \frac{
 \left(
 \Gamma,\mathsf{this}:R_i,\mathsf{argv}:\alpha_i
@@ -5251,7 +5254,7 @@ $$
 \mathsf{dyn}(\mathsf{this},\mathsf{argv}.t):
 \left[(R_i;\alpha_i)\xrightarrow{E_i}B_i\right]_{i\in I}
 }.
-$$
+```
 
 The entry program $t$ includes parameter initialization and the normal-return
 convention.
@@ -5263,7 +5266,7 @@ receiver binding.
 
 **Arrow functions: a lexical receiver.** The rule **Lexical** is
 
-$$
+```math
 \frac{
 \left(
 \Gamma,\mathsf{argv}:\alpha_i
@@ -5274,7 +5277,7 @@ $$
 \mathsf{lex}(\mathsf{argv}.t):
 \left[(\top;\alpha_i)\xrightarrow{E_i}B_i\right]_{i\in I}
 }.
-$$
+```
 
 The enclosing lexical environment in $\Gamma$ is captured. The rule introduces
 no new source binding for `this`, `arguments`, `super`, or `new.target`;
@@ -5292,7 +5295,7 @@ require pretending that it was read at function creation.
 **Allocation.** A callable without construction behaviour is introduced by
 **Make-Function**,
 
-$$
+```math
 \frac{
 \Gamma\vdash_G^{\mathsf{call}}\kappa:L
 \qquad
@@ -5302,11 +5305,11 @@ $$
 \mathsf{make}(\kappa,\mathsf{none},d):
 \mathsf{Callable}(L;P)\cap\mathsf{NoCtor}
 }.
-$$
+```
 
 A callable with construction behaviour is introduced by **Make-Constructor**,
 
-$$
+```math
 \frac{
 \begin{gathered}
 \Gamma\vdash_G^{\mathsf{call}}\kappa:L
@@ -5320,16 +5323,16 @@ $$
 \mathsf{Callable}(L;P)\cap
 \mathsf{Constructor}(M;\top_p)
 }.
-$$
+```
 
 An ordinary non-callable object is introduced by **Make-Object**,
 
-$$
+```math
 \frac{\Gamma\vdash_G^{\mathsf{init}}d:P}
 {\Gamma\vdash_G
 \mathsf{make}(\mathsf{none},\mathsf{none},d):
 \mathsf{Plain}(P)}.
-$$
+```
 
 Every application of a make rule allocates one fresh object identity. There is
 no rule with a construction descriptor but no call descriptor.
@@ -5342,7 +5345,7 @@ already exists.
 
 **Call.** The ordinary application rule is
 
-$$
+```math
 \frac{
 \begin{gathered}
 \Gamma\vdash_G f:\mathsf{Callable}(L;P)
@@ -5353,11 +5356,11 @@ $$
 }{
 \Gamma\vdash_G\mathsf{invoke}(f,r,\bar a):B\;!E
 }.
-$$
+```
 
 **Bare-Call.** For a bare call in the strict/module fragment,
 
-$$
+```math
 \frac{
 \begin{gathered}
 \Gamma\vdash_G f:\mathsf{Calls}(L)
@@ -5368,11 +5371,11 @@ G\vdash\mathsf{Undefined}<:R
 }{
 \Gamma\vdash_G f(\bar a):B\;!E
 }.
-$$
+```
 
 **Method-Call.** A method call is lookup followed by invocation:
 
-$$
+```math
 \frac{
 \begin{gathered}
 \Gamma\vdash_G\mathsf{get}(o,k,o):
@@ -5384,7 +5387,7 @@ $$
 }{
 \Gamma\vdash_G o[k](\bar a):B\;!(E_g\vee E_c)
 }.
-$$
+```
 
 For effectful source expressions, the elaboration evaluates the base and key,
 performs lookup, evaluates the arguments, and invokes the retrieved function
@@ -5399,16 +5402,16 @@ contract into a bound-function contract.
 
 Property contracts expose operation signatures. For example,
 
-$$
+```math
 P\vdash_G\mathsf{get}(k):(R;[])\xrightarrow{E}A
-$$
+```
 
 states a contract for lookup at $k$, starting from an object satisfying $P$,
 with a receiver in $R$.
 
 The general rules are **Get** and **Set**:
 
-$$
+```math
 \frac{
 \begin{gathered}
 \Gamma\vdash_G o:\mathsf{Obj}(P)
@@ -5418,9 +5421,9 @@ P\vdash_G\mathsf{get}(k):(R;[])\xrightarrow{E}A
 }{
 \Gamma\vdash_G\mathsf{get}(o,k,r):A\;!E
 },
-$$
+```
 
-$$
+```math
 \frac{
 \begin{gathered}
 \Gamma\vdash_G o:\mathsf{Obj}(P)
@@ -5433,7 +5436,7 @@ P\vdash_G\mathsf{set}(k):(R;[A])
 \Gamma\vdash_G\mathsf{set}(o,k,a,r):
 \mathsf{Bool}\;!E
 }.
-$$
+```
 
 Set returns an internal success flag. A strict source assignment throws on
 failure and returns the assigned value on success. That differs from the
@@ -5443,7 +5446,7 @@ calculus's `write`, which returns $\mathsf{Null}$.
 invariant, the reference-style rules are recovered as **Read-Cell** and
 **Write-Cell**:
 
-$$
+```math
 \frac{
 \Gamma\vdash_G o:\mathsf{Obj}(\{k:\mathsf{cell}(A)\})
 }{
@@ -5456,7 +5459,7 @@ $$
 }{
 \Gamma\vdash_G\mathsf{write}_k(o,a):\mathsf{Null}
 }.
-$$
+```
 
 These apply to callables through Forget-Calls. The cell contract is invariant
 and also protects the descriptor assumptions against unchecked deletion or
@@ -5464,16 +5467,16 @@ redefinition.
 
 For a fresh property layout, **Init-Data** is
 
-$$
+```math
 \frac{\Gamma\vdash_G v:A}
 {\Gamma\vdash_G^{\mathsf{init}}
 [k\mapsto\mathsf{data}(v)]:
 \{k:\mathsf{cell}(A)\}}.
-$$
+```
 
 **Accessors.** An own getter is checked by **Init-Getter**:
 
-$$
+```math
 \frac{
 \Gamma\vdash_G g:
 \mathsf{Calls}([(R;[])\xrightarrow{E}A])
@@ -5482,13 +5485,13 @@ $$
 [k\mapsto\mathsf{accessor}(g,\mathsf{none})]:
 \{\mathsf{get}(k):(R;[])\xrightarrow{E}A\}
 }.
-$$
+```
 
 Dually, a setter with call contract
 
-$$
+```math
 (R;[A])\xrightarrow{E}\top
-$$
+```
 
 supplies a set contract returning $\mathsf{True}$ on normal completion: the
 setter's returned value is discarded. These rules assume the corresponding
@@ -5503,7 +5506,7 @@ An ordinary property named `call` or `apply` supplies no premise for Call.
 
 **Construct.**
 
-$$
+```math
 \frac{
 \begin{gathered}
 \Gamma\vdash_G f:\mathsf{Constructor}(M;P)
@@ -5515,11 +5518,11 @@ $$
 \Gamma\vdash_G
 \mathsf{construct}(f,\bar a,n):B\;!E
 }.
-$$
+```
 
 **New.** Ordinary `new` uses the constructor itself as `new.target`:
 
-$$
+```math
 \frac{
 \begin{gathered}
 \Gamma\vdash_G f:\mathsf{Constructor}(M;P)
@@ -5530,12 +5533,12 @@ $$
 }{
 \Gamma\vdash_G\mathsf{new}\ f(\bar a):B\;!E
 }.
-$$
+```
 
 **Construction-Code.** The introduction rule checks the complete construction
 program:
 
-$$
+```math
 \frac{
 \begin{gathered}
 \left(
@@ -5551,7 +5554,7 @@ $$
 \mathsf{constructCode}(\mathsf{newTarget},\mathsf{argv}.t_\eta):
 [(N_i;\alpha_i)\xRightarrow{E_i}B_i]_{i\in I}
 }.
-$$
+```
 
 This program includes receiver allocation, prototype lookup, instance
 initialization, and explicit-return handling. Derived constructors additionally
@@ -5564,10 +5567,10 @@ own identity. It must not silently become a guarantee for arbitrary
 
 A class's ordinary-call descriptor can have the exception-aware signature
 
-$$
+```math
 (\top;\mathsf{Args})
 \xrightarrow{\mathsf{TypeError}}\bot.
-$$
+```
 
 Thus it has function shape without a successful ordinary-call contract.
 
@@ -5586,7 +5589,7 @@ them (`Bounded`), as
 introduction rule **Call-Scheme-I**, implemented by
 `QuantifiedGraphs.scheme_intro`, is
 
-$$
+```math
 \frac{
 \mathsf{Invocable}(v)
 \qquad
@@ -5596,9 +5599,9 @@ $$
 (\mathsf{Calls}(\mathsf{Sig}_{G,P,\eta}(S),n,W,v)
 \land\mathsf{Rests}(\mathsf{RestSig}_{G,P,\eta}(S),n,W,v))
 }{
-\llbracket S\rrbracket^{\mathsf{scheme}}_{G,P,\eta_0}(n,W,v)
+⟦S⟧^{\mathsf{scheme}}_{G,P,\eta_0}(n,W,v)
 }.
-$$
+```
 
 The value $v$, step index $n$, world $W$, and outer assignment $\eta_0$ are
 outside the quantifier. The proof is therefore uniform in the binders, and
@@ -5606,15 +5609,15 @@ captured mutable cells retain the same invariant at every instantiation.
 Fixed-signature elimination **Call-Scheme-E**, implemented by
 `QuantifiedGraphs.scheme_elim`, is
 
-$$
+```math
 \frac{
-\llbracket S\rrbracket^{\mathsf{scheme}}_{G,P,\eta_0}(n,W,v)
+⟦S⟧^{\mathsf{scheme}}_{G,P,\eta_0}(n,W,v)
 \qquad
 \mathsf{Instance}_{G,P}(\eta_0,S,\eta)
 }{
 \mathsf{Calls}(\mathsf{Sig}_{G,P,\eta}(S),n,W,v)
 }.
-$$
+```
 
 The same `scheme_elim` gives the corresponding conclusion for the rest
 signatures, $\mathsf{Rests}(\mathsf{RestSig}_{G,P,\eta}(S),n,W,v)$, from the
@@ -5639,17 +5642,17 @@ which no rule reads (a type holding one has no expansion). Acceptance does not
 read the assignment (`Parametricity.accept_reassign`), so the rule
 **Generic-Body** is the ordinary safety theorem at every reassignment:
 
-$$
+```math
 \frac{
 \mathsf{accept}(G,R,P,\mathit{claims},C,s,\vec I)=\mathsf{true}
 \qquad
 \mathsf{EnvOk}_{G[\mathit{env}:=\eta]}(\vec I,\rho,n,W)
 \qquad \mathsf{WorldAdm}(W)\qquad \mathsf{HeapOk}(n,W,h)
 }{
-\mathsf{SafeGraph}\bigl(P,\llbracket R\rrbracket^{\eta},n,W,h,\mathsf{at}(s,\rho)\bigr)
+\mathsf{SafeGraph}\bigl(P,⟦R⟧^{\eta},n,W,h,\mathsf{at}(s,\rho)\bigr)
 }
 \quad\text{for every }\eta .
-$$
+```
 
 One derivation, checked once, covers every instantiation of the binders: the
 inputs and the result are read at the same $\eta$. A bounded binder is read as
@@ -5666,7 +5669,7 @@ every instantiation the same way. Lean:
 **Bound functions.** The internal bound-call descriptor has the rule
 **Bound-Code**:
 
-$$
+```math
 \frac{
 \begin{gathered}
 \Gamma\vdash_G f:
@@ -5680,14 +5683,14 @@ $$
 \mathsf{bound}(f,r,\bar p):
 [(\top;\beta)\xrightarrow{E}B]
 }.
-$$
+```
 
 Allocation gives this descriptor a fresh identity and its own properties. The
 target's property contract is not copied.
 
 For construction, a bound object $g$ forwards as
 
-$$
+```math
 \begin{aligned}
 &\mathsf{construct}(g,\bar a,n)\\
 &\quad\rightsquigarrow
@@ -5698,7 +5701,7 @@ f,\bar p{+\!\!+}\bar a,\,
 \mathsf{else}\ n
 \right).
 \end{aligned}
-$$
+```
 
 Its construction contracts must be checked against this program; the bound
 receiver is not used as the constructed receiver.
@@ -5713,11 +5716,11 @@ is not a blanket no-effect rule for `.bind`.
 
 Use the additional judgment
 
-$$
+```math
 \Gamma\vdash_G
 \{\Phi\}\ t\
 \{z:B.\Psi\mid e:E.\Xi\}.
-$$
+```
 
 It specifies normal and exceptional postconditions. The ordinary judgment is the
 special case with no additional precondition or postcondition beyond type
@@ -5727,19 +5730,19 @@ $\Sigma$ are one way of writing $\Phi$ and $\Psi$.
 
 A stateful call signature is
 
-$$
+```math
 \sigma=
 (r:R;\mathsf{argv}:\alpha)
 \{\Phi\}
 \Rightarrow
 \{z:B.\Psi\mid e:E.\Xi\}.
-$$
+```
 
 Contracts may refer to a distinguished $\mathsf{self}$ denoting the callable.
 Let $\theta$ substitute the actual callable, receiver, and argument list for
 these formal names. **Call-State** is
 
-$$
+```math
 \frac{
 \begin{gathered}
 \Gamma\vdash_G f:\mathsf{Callable}(L;P)
@@ -5753,7 +5756,7 @@ $$
 \{\Phi_0\}\mathsf{invoke}(f,r,\bar a)
 \{z:B.\Psi\theta\mid e:E.\Xi\theta\}
 }.
-$$
+```
 
 The corresponding introduction rule checks the entry body under $\Phi$ and
 establishes $\Psi,\Xi$. Construction, lookup, and update have the same stateful
@@ -5765,7 +5768,7 @@ callable or property type.
 
 **Decoration.** A representative strong property-addition rule is
 
-$$
+```math
 \frac{
 \begin{gathered}
 \Gamma\vdash_G f:\mathsf{Callable}(L;P)
@@ -5781,7 +5784,7 @@ $$
 \mid e:\bot.\bot\}
 \end{gathered}
 }.
-$$
+```
 
 Here `defineOwn` is a core operation returning its target.
 
@@ -5798,14 +5801,14 @@ wrapping.
 
 **Proxies and revocation.** The shape-only creation rule, **Proxy-Shape**, is
 
-$$
+```math
 \frac{
 \Gamma\vdash_G f:\mathsf{Fun}
 \qquad\Gamma\vdash_G h:\mathsf{Obj}(\top_p)
 }{
 \Gamma\vdash_G\mathsf{proxy}(f,h):\mathsf{Fun}
 }.
-$$
+```
 
 There is no rule automatically copying the target's signatures. A stronger
 contract requires checking the dispatch program: revocation check, handler
@@ -5814,19 +5817,19 @@ behaviour relative to the target.
 
 For a callable revocable proxy $q$, the state rules include
 
-$$
+```math
 \Gamma\vdash_G
 \{\mathsf{Revocable}(q)\}\mathsf{revoke}(q)
 \{z:\mathsf{Undefined}.\mathsf{Revoked}(q)
 \mid e:\bot.\bot\},
-$$
+```
 
-$$
+```math
 \Gamma\vdash_G
 \{\mathsf{Revoked}(q)\}\mathsf{invoke}(q,r,\bar a)
 \{z:\bot.\bot
 \mid e:\mathsf{TypeError}.\top\}.
-$$
+```
 
 The core revocation operation requires the associated revocation capability.
 The stable fact $q:\mathsf{Fun}$ survives. Liveness alone does not establish a
@@ -5848,7 +5851,7 @@ callability, while supplying the structural object view.
 
 **Function-Test.** For an unknown-callability object,
 
-$$
+```math
 \frac{
 \begin{gathered}
 \Gamma,x:\mathsf{Callable}([];P)
@@ -5863,14 +5866,14 @@ $$
 \mathsf{else}\ u
 :B\;!(E_t\vee E_u)
 }.
-$$
+```
 
 The true branch gains shape, not an arbitrary signature. Graph slicing must
 represent or safely approximate the refined views.
 
 **Identity.** Object identity has the rule
 
-$$
+```math
 \frac{
 \Gamma\vdash_G f:\mathsf{Obj}(\top_p)
 \qquad
@@ -5878,13 +5881,13 @@ $$
 }{
 \Gamma\vdash_G\mathsf{same}(f,g):\mathsf{Bool}
 }.
-$$
+```
 
 Its refinement postcondition is
 
-$$
-b\iff\operatorname{id}(f)=\operatorname{id}(g).
-$$
+```math
+b\iff\mathrm{id}(f)=\mathrm{id}(g).
+```
 
 Allocation additionally establishes freshness relative to identities existing
 at entry. Subsumption establishes neither allocation nor freshness.
@@ -5902,11 +5905,11 @@ The judgments below remain the target that would discharge that trust.
 
 An asynchronous entry judgment
 
-$$
+```math
 \Gamma,\mathsf{this}:R,\mathsf{argv}:\alpha
 \vdash_G^{\mathsf{async}}
 t:\mathsf{PromiseSpec}(B,E)
-$$
+```
 
 must check entry and resumption, including parameter initialization, promise
 resolution, thenable assimilation, rejection, and state invariants across
@@ -5914,7 +5917,7 @@ suspension. These are obligations of the asynchronous execution semantics.
 
 Its introduction schema, **Async-Code**, is
 
-$$
+```math
 \frac{
 \Gamma,\mathsf{this}:R,\mathsf{argv}:\alpha
 \vdash_G^{\mathsf{async}}
@@ -5925,7 +5928,7 @@ t:\mathsf{PromiseSpec}(B,E)
 [(R;\alpha)\xrightarrow{\bot}
 \mathsf{PromiseSpec}(B,E)]
 }.
-$$
+```
 
 This schema assumes the entry proof accounts for ordinary entry failures as
 rejections; other synchronous failure paths must be advertised separately.
@@ -5935,7 +5938,7 @@ settlement.
 For generators, let $\Pi$ be a protocol describing operations and transitions,
 including `next`, `throw`, and `return`. Then **Generator-Code** is
 
-$$
+```math
 \frac{
 \Gamma,\mathsf{this}:R,\mathsf{argv}:\alpha
 \vdash_G^{\mathsf{generator}}
@@ -5946,7 +5949,7 @@ t:\Pi\;!E_{\mathrm{entry}}
 [(R;\alpha)\xrightarrow{E_{\mathrm{entry}}}
 \mathsf{Generator}(\Pi)]
 }.
-$$
+```
 
 A protocol transition supplies a stateful contract for the corresponding
 method. It must account for suspension, completion, and subsequent operations
@@ -5960,40 +5963,40 @@ provide that logic.
 
 Let
 
-$$
+```math
 D=\mathsf{Obj}(\{n:\mathsf{cell}(\mathsf{Number})\}),
-$$
+```
 
-$$
+```math
 M=(D;[])\to\mathsf{Number},
 \qquad
 A=(\top;[])\to\mathsf{Number}.
-$$
+```
 
 For a checked incrementing body, Dynamic gives $M$ to an ordinary method.
 Lexical gives $A$ to an arrow capturing an instance of $D$.
 
 After allocation, suppose
 
-$$
+```math
 m:\mathsf{Calls}([M]),
 \qquad
 a:\mathsf{Calls}([A]),
 \qquad
 o:D.
-$$
+```
 
 Then
 
-$$
+```math
 \Gamma\vdash_G
 \mathsf{invoke}(m,o,[]):\mathsf{Number},
-$$
+```
 
-$$
+```math
 \Gamma\vdash_G
 \mathsf{invoke}(a,\mathsf{undefined},[]):\mathsf{Number}.
-$$
+```
 
 The available contract for $m$ does not justify supplying `undefined` instead
 of $o$. Binding $m$ to $o$ produces a fresh function with a top-receiver

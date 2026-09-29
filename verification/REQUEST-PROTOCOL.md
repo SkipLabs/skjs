@@ -127,7 +127,7 @@ rows `also` as well (`U ⊓ T` for `U extends T`; left out when none). Only a
 clause row has clauses. The graph of a table $T$
 (`RequestJson.tableGraph`) is
 
-$$
+```math
 G.\mathit{rows}(i)=\begin{cases}\vec c & T[i]=\vec c\\ [\,] & \text{otherwise}\end{cases}
 \qquad
 G.\mathit{schemes}(i)=(\vec p;\Sigma)\iff T[i]=\mathsf{scheme}(\vec p,\Sigma)
@@ -137,7 +137,7 @@ G.\mathit{parameterKinds}(i)=\mathsf{some}(k)\iff T[i]=\mathsf{param}(i,n,k),
 G.\mathit{params}(i)\iff G.\mathit{parameterKinds}(i)\ne\mathsf{none},
 \qquad
 G.\mathit{meets}(i)=(p;\vec c)\land G.\mathit{meetParams}(i)=\vec q\iff T[i]=\mathsf{meet}(p,\vec c,\vec q).
-$$
+```
 
 with the meaning given in [Parameter and scheme rows](POSITIVE-TYPES.md#parameter-and-scheme-rows).
 Validation (`validRows`) requires every label a row names to index `types`, a
