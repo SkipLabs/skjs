@@ -4,7 +4,7 @@ dist/
 .vscode/
 !.vscode/extensions.json
 .devcontainer
-node_modules/
+node_modules
 _build/
 .generated-examples-check/
 .project-survey/
