@@ -445,7 +445,7 @@ boundary; round-trip tests are not a proof of fidelity to external source text.
 ## Equations and tree labels
 
 A type can also be read from recursive equations
-([RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md#2-equations)), whose labels
+([RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md#2-type-definitions)), whose labels
 are trees over the equations' heads. The source path (source mode below)
 already checks every request over them. The standalone request still reads
 `types`; the `equations` field below is specified, not implemented.

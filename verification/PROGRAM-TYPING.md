@@ -3572,7 +3572,7 @@ is what meets the scheme, [records](POSITIVE-TYPES.md#records)). Its binders
 are owned by its application, $`\mathsf{bound}(D.m,\vec A,j)`$, so two
 applications of `D` at different arguments bind different labels, and two
 members of different declarations do too: relating them needs quantified
-coverage up to renaming ([RECURSIVE-EQUATIONS §4.1](RECURSIVE-EQUATIONS.md#41-renaming-binders)),
+coverage up to renaming ([RECURSIVE-EQUATIONS §4.1](RECURSIVE-EQUATIONS.md#41-quantified-signatures)),
 which the request path does not yet reach (DESIGN, "Status"). A generic
 member of a library prototype (`ArrayProto`'s `forEach`, whose receiver is an
 array of its element binder) stays a readonly view of its scheme. A rest

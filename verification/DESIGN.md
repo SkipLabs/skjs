@@ -606,7 +606,7 @@ generic method's binders are owned by its application
 ([generic methods](PROGRAM-TYPING.md#generic-methods)), so two instances of a
 declaration, and members of two declarations, bind different parameters:
 relating them needs the covering rule up to renaming the target's binders
-([quantified-α](RECURSIVE-EQUATIONS.md#41-renaming-binders)).
+([quantified-α](RECURSIVE-EQUATIONS.md#41-quantified-signatures)).
 A class's generic method is such a member of its instance type, which its
 prototype's closure, a scheme received by the instance, covers bound to the
 instance ([classes](PROGRAM-TYPING.md#classes)).
