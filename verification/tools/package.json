@@ -6,6 +6,7 @@
     "typescript": "7.0.2"
   },
   "devDependencies": {
-    "@types/node": "22.20.2"
+    "@types/node": "22.20.2",
+    "katex": "0.16.47"
   }
 }

@@ -360,8 +360,10 @@ an exporter change needs a place to show, one phenomenon per file.
   must exercise source evaluation order and binding scope, including forged
   producer claims against both evidence production and consumption; calculus
   safety alone does not prove correspondence with JavaScript execution.
-- Docs: a doc-only change needs no suite run; check anchors and prose. Cite
-  papers, specifications and issues by a link to an entry of
+- Docs: `node verification/tests/docs.mts` checks every link and anchor, section
+  numbers in link texts, KaTeX rendering, and the math forms GitHub cannot
+  render. A doc-only change runs that check and no suite. Cite papers,
+  specifications and issues by a link to an entry of
   [REFERENCES.md](REFERENCES.md), adding the entry there.
 - Status: progress is written once, in the
   [status table](DESIGN.md#status) of DESIGN.md. A commit that moves an item

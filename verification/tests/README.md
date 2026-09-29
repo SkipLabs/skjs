@@ -90,6 +90,12 @@ Producer examples are separated by the direction of the failure:
 - [`skjs-unsound/`](skjs-unsound/README.md): SKJS accepts a program with a runtime type counterexample.
 - [`skjs-incomplete/`](skjs-incomplete/README.md): SKJS rejects a safe program; each entry distinguishes accepted repaired claims from model-only proofs or remaining verifier limits.
 
+Other corpus directories:
+
+- [`export-snapshots/`](export-snapshots/README.md): probe programs, each with SKJS's exported claims printed as the viewer shows them.
+- [`tsc-claims/`](tsc-claims/README.md): TypeScript's own checker as a second claim producer, checked by the same verifier.
+- [`unsupported/`](unsupported/README.md): source boundary cases, each rejected for its stated limitation.
+
 `partial-claims.ts` remains a separate collection/repair exercise; a producer
 rejection alone does not establish incompleteness.
 
