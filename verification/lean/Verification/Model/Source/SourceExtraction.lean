@@ -3436,6 +3436,14 @@ Mappings discard only the temporaries introduced by this expression. -/
       let R ← mergeType temps[temps.length - 1 - x]! T
       steps := steps ++ [(none, .merge [] (at_ x temps.length) (.var 0), R, temps, tscope)]
       temps := R :: temps; tscope := mark :: tscope
+    -- The last merge is at the literal's claim where the merge rule gives it:
+    -- each pair of the operands' clauses may give a record of its own, as a
+    -- union's arms may state a field written after a spread at types of
+    -- their own, which a writable field's invariance tells apart.
+    if let some (none, t@(.merge [] (.var a) (.var 0)), _, before, bscope) := steps.getLast? then
+      if ObjectMerge.MergeOk (SourceTypes.graph (← table)) [] before[a]! before[0]! A then
+        steps := steps.dropLast ++ [(none, t, A, before, bscope)]
+        temps := A :: temps.drop 1
     -- The result, the newest slot, at the literal's claim.
     let k := temps.length
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map

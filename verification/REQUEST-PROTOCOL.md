@@ -1115,7 +1115,10 @@ The initialization AST is
 `{"k":"withValue","pos":[start,end],"fn":arrow,"initial":objectLiteral,"functionType":F,"bagType":B}`.
 Here the annotation fields are source type terms, as every annotation is. The parser emits this only
 for standard `Object.assign<F, B>(freshArrow, {value: initializer})`, with no
-shadowed `Object`, extra arguments, spread or accessors. Both explicit type
+shadowed `Object`, extra arguments, spread or accessors; written without type
+arguments, `F` and `B` are the two TypeScript infers, the arrow's one call
+signature and the literal's record, stated as terms by the declaration reader
+(`assignTypes`) or refused. Both type
 arguments and both source expression claims are independently checked before
 constructing the initialized callable. Any other call of the standard
 `Object.assign`, its arguments written without a spread, is

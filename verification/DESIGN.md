@@ -302,7 +302,8 @@ code is graph code, `.bind`'s forwarding descriptor, or none
   (`realmInvariant_of_not_record`).
 - **A callable object** built by `Object.assign` allocates its bag as a
   record's with graph code offering the advertised signatures, one code-table
-  entry per signature (`callableGraph`).
+  entry per signature (`callableGraph`), at its two type arguments, written or
+  the two TypeScript infers, which the arrow and the literal are checked at.
 
 A closure's code is checked in its own table entry, not inside the creating
 body, so the creating body's certificate only names the entry and the

@@ -1434,7 +1434,11 @@ at the slot's type and tries the requested type, then the pool's, for the
 result, coercing; extraction proposes the clauses (`ObjectMerge.mergeResult`:
 where a side states an index, the dictionary over the sides' classes at the
 union of their index types and the admitted fields' types, if the rule
-admits it, else the record) and states them as hints.
+admits it, else the record) and states them as hints. The last merge of an
+object literal is at the literal's claim where the rule admits it: each pair
+of clauses may give a record of the claim's own, so a field written after a
+spread is allocated at the type of the arm each pair gives, as TypeScript
+types the literal per arm of the contextual union.
 
 For heap knowledge a merge is an allocation, as a literal is
 (`HeapExpressionRules.merge_alloc_sound`): it reads the heap and writes no

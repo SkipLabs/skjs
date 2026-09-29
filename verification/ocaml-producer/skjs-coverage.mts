@@ -574,8 +574,8 @@ const CLASSES: ClassEntry[] = [
     why: "needs a dispatch on the key" },
   { cls: "gap", label: "a key-adding write of a symbol key, a spread of a symbol-keyed property", re: /a key-adding write of a symbol key|a spread of an object with a symbol-keyed property/,
     why: "the copy step copies string keys only (Trust surface: JavaScript also copies an own enumerable symbol-keyed property)" },
-  { cls: "gap", label: "a spread's written field typed per arm of the expected union", re: /a spread with a written field that the arms/,
-    why: "a copy's field is allocated at one type for every arm of its operand; a copy per arm, at that arm's contract, is not lowered" },
+  { cls: "gap", label: "a spread's written field typed apart by several arms of the expected union with the copy's keys", re: /a spread with a written field that the arms/,
+    why: "the copy is allocated per pair of its operands' clauses at the one record the claim gives for it; several arms with the copy's keys typing a written field apart leave no one record" },
   // -------------------------------------------------------- principled
   { cls: "principled", label: "TypeScript refuses the code", re: /TypeScript refuses this code too|TypeScript reports an error in a declaration|which TypeScript rejects|TypeScript computes no type for this typeof: it is not valid TypeScript/,
     why: "TypeScript itself rejects the program or a declaration it depends on" },

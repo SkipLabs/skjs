@@ -784,6 +784,12 @@ for (const [file, call] of [
   assert.equal(vm.runInNewContext(`${source}\nnoCoercion({ value: 7 })`, {}, { timeout: 1000 }), 7,
     "an explicit comparator never invokes the element's invalid conversion method");
 }
+// Object.assign writes a function's `name`, which is not writable: it throws.
+{
+  const source = stripTypes(readFileSync(join(here, "examples", "invalid-function-fields-inferred.ts"), "utf8"))
+    .replace(/^export /gm, "");
+  assert.throws(() => vm.runInNewContext(`${source}\nnamed()`, {}, { timeout: 1000 }), /read only property 'name'/);
+}
 // Forwarding through an ordinarily annotated binding does not prevent the
 // callback from shortening the source; the final map position remains a hole.
 {

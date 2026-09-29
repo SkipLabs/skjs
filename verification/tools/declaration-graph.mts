@@ -17,7 +17,7 @@ import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePro
 import { intrinsics, intrinsicModule, iterateIteratorName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName } from "./intrinsics.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
-import { computedType, enclosingBinders, literalUnion, type ComputedContext } from "./computed-types.mts";
+import { computedType, enclosingBinders, inferredTerm, literalUnion, type ComputedContext } from "./computed-types.mts";
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
 export type { DeclarationIdentity, DeclarationDocument, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
 
@@ -365,6 +365,12 @@ export function collectDeclarations(file: string, options: {
    * states it. */
   contextualParams?: readonly Span[];
   contextualParam?: (span: Span, result: TypeTerm | { refused: string }) => void;
+  /** The client's calls `Object.assign(arrow, literal)` written without type
+   * arguments: each is reported to `assignTypes` with the two TypeScript
+   * infers, the arrow's function type and the literal's record, as the
+   * callable form's annotations, or the reason no term states them. */
+  assignCalls?: readonly Span[];
+  assignTypes?: (span: Span, result: { functionType: TypeTerm; bagType: TypeTerm } | { refused: string }) => void;
   /** The client's top-level enum declarations: each must be one TypeScript
    * accepts, and each member, by its span, is reported to `enumMember` with
    * the value TypeScript computes for it, which is the value its emit writes
@@ -1318,6 +1324,44 @@ export function collectDeclarations(file: string, options: {
         options.contextualParam?.(span, contextualTerm(type, span));
       } catch (error) {
         options.contextualParam?.(span, { refused: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    // `Object.assign(arrow, literal)` without type arguments: the two
+    // TypeScript infers, `T` the arrow's type, one call signature of terms
+    // `contextualTerm` states, and `U` the literal's record (`inferredTerm`).
+    // Both are annotations the callable form checks the arrow and the
+    // literal at.
+    for (const span of options.assignCalls ?? []) {
+      const call = expressionAt(client, span);
+      if (!call || !ts.isCallExpression(call)) throw new DeclarationError(span, "TypeScript Object.assign call missing");
+      try {
+        const resolved = checker.getResolvedSignature(call);
+        const target = resolved && checker.getParameterType(resolved, 0);
+        const source = resolved && checker.getParameterType(resolved, 1);
+        if (!target || !source) throw Error("TypeScript resolves no signature of this Object.assign call");
+        const [signature, ...others] = checker.getSignaturesOfType(target, SignatureKind.Call);
+        const arrow = call.arguments[0];
+        if (!signature || others.length || signature.getTypeParameters().length || !arrow ||
+            !ts.isArrowFunction(arrow) || arrow.parameters.some(p => p.dotDotDotToken || p.questionToken || p.initializer))
+          throw Error(`TypeScript infers Object.assign's target as ${checker.typeToString(target)}, not one ` +
+            "call signature of required parameters");
+        const params = signature.getParameters().map(p => {
+          const type = checker.getTypeOfSymbol(p);
+          if (!type) throw Error("TypeScript gives an Object.assign target's parameter no type");
+          return contextualTerm(type, span);
+        });
+        const returned = checker.getReturnTypeOfSignature(signature);
+        if (!returned) throw Error("TypeScript gives an Object.assign target no result type");
+        const bagType = inferredTerm(checker, source, span);
+        if (!bagType || bagType.k !== "object")
+          throw Error(`TypeScript infers Object.assign's source as ${checker.typeToString(source)}, not an object ` +
+            "literal's record of literals and primitives");
+        options.assignTypes?.(span, { bagType, functionType: { k: "function", effect: "unrestricted", receiver: null,
+          params, rest: null, result: contextualTerm(returned, span), span } });
+      } catch (error) {
+        if (error instanceof DeclarationError) throw error;
+        options.assignTypes?.(span, { refused: "the type arguments TypeScript infers for this Object.assign: " +
+          (error instanceof Error ? error.message : String(error)) });
       }
     }
     for (const span of options.enums ?? []) {

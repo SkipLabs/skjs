@@ -477,6 +477,10 @@ class Gate {
   /** Closure parameters written without a type, by the span of their name:
    * the type TypeScript gives each from its context, or why none states it. */
   readonly contextualParams = new Map<string, TypeTerm | { refused: string }>();
+  /** The callable form's annotations TypeScript infers for an
+   * `Object.assign(arrow, literal)` written without type arguments, by the
+   * call's span, or why none. */
+  readonly assignTypes = new Map<string, { functionType: TypeTerm; bagType: TypeTerm } | { refused: string }>();
   /** Local bindings that shadow a binding of an enclosing scope, and every
    * reference TypeScript resolves to one, by the span of the identifier: the
    * name the fragment gives the binding instead (`shadowName`). */
@@ -1796,11 +1800,9 @@ class Gate {
       ) {
         if (node.questionDotToken || node.expression.questionDotToken)
           this.fail(node, "an optional call of Object.assign is outside the fragment");
-        const callable =
-          node.typeArguments?.length === 2 &&
-          node.arguments.length === 2 &&
-          ts.isArrowFunction(node.arguments[0]) &&
-          ts.isObjectLiteralExpression(node.arguments[1]);
+        // The callable form: an arrow and an object literal, at the two type
+        // arguments written, or else at the two TypeScript infers.
+        const callable = callableAssign(node) && (!node.typeArguments || node.typeArguments.length === 2);
         // The fragment cannot assign to Object.assign or pass Object as a value.
         // Reject any local declaration that could shadow the standard builtin.
         const checkBinding = (n: Node): void => {
@@ -1835,8 +1837,13 @@ class Gate {
         }
         const initial = node.arguments[1];
         const typeArguments = node.typeArguments;
-        if (!ts.isObjectLiteralExpression(initial) || typeArguments?.length !== 2)
-          this.fail(node, "Object.assign's callable form needs an object literal and two explicit type arguments");
+        if (!ts.isObjectLiteralExpression(initial))
+          this.fail(node, "Object.assign's callable form needs an object literal");
+        const inferred = typeArguments ? null : this.assignTypes.get(this.span(node).join(":"));
+        if (inferred && "refused" in inferred) this.fail(node, inferred.refused);
+        const [functionType, bagType] = inferred ? [inferred.functionType, inferred.bagType]
+          : typeArguments?.length === 2 ? [this.typeOf(typeArguments[0]), this.typeOf(typeArguments[1])]
+          : this.fail(node, "Object.assign's callable form needs its two type arguments");
         // These names either replace an intrinsic used by the lowering or
         // encounter special/non-writable properties on JavaScript functions.
         for (const property of initial.properties) {
@@ -1864,8 +1871,8 @@ class Gate {
           pos: this.span(node),
           fn: this.expr(node.arguments[0]),
           initial: this.expr(initial),
-          functionType: this.typeOf(typeArguments[0]),
-          bagType: this.typeOf(typeArguments[1]),
+          functionType,
+          bagType,
         };
       }
       if (
@@ -4175,6 +4182,15 @@ function writtenElement(node: ts.ElementAccessExpression): boolean {
   return ts.isDeleteExpression(parent);
 }
 
+/** `Object.assign(arrow, literal)`: the callable form, a function with
+ * properties. */
+function callableAssign(node: Node): node is ts.CallExpression {
+  return ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
+    ts.isIdentifier(node.expression.expression) && node.expression.expression.text === "Object" &&
+    node.expression.name.text === "assign" && node.arguments.length === 2 &&
+    ts.isArrowFunction(node.arguments[0]) && ts.isObjectLiteralExpression(node.arguments[1]);
+}
+
 /** The key of `k in o`, its parentheses dropped. */
 function inKey(node: ts.BinaryExpression): Expression {
   let key: Expression = node.left;
@@ -4799,6 +4815,14 @@ export function parseFile(file: string, carriesContext = false,
     node.forEachChild(findContextual);
   };
   if (!carriesContext) findContextual(source);
+  // `Object.assign(arrow, literal)` without type arguments is the callable
+  // form at the two TypeScript infers.
+  const assignNodes: Node[] = [];
+  const findAssign = (node: Node): void => {
+    if (callableAssign(node) && !node.typeArguments) assignNodes.push(node);
+    node.forEachChild(findAssign);
+  };
+  if (!carriesContext) findAssign(source);
   // A read `X.y` or `X["y"]` of a `const enum` is its member's value:
   // TypeScript decides which reads are.
   const inlined = new Set(enumNodes.filter(e => e.modifiers?.some(m => m.kind === ts.SyntaxKind.ConstKeyword))
@@ -4851,12 +4875,12 @@ export function parseFile(file: string, carriesContext = false,
   if (!carriesContext) findComputed(source);
   if (importNodes.length || localNodes.length || globalNodes.length || globalValueNodes.length ||
       firstArray || firstAsync || keyNodes.length || ambientNames.length || staticNodes.length ||
-      classTestNodes.length || classReadNodes.length || contextualNodes.length ||
+      classTestNodes.length || classReadNodes.length || contextualNodes.length || assignNodes.length ||
       receiverNodes.length || enumNodes.length || computedNodes.length || symbolNameNodes.length ||
       keyTypeNodes.length || bindingNodes.length || iterableNodes.length || spreadNodes.length ||
       restTargets.length || privateNodes.length || inKeyNodes.length || receiverTargetNodes.length || elementReadNodes.length) {
     const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
-      firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? classTestNodes[0] ?? classReadNodes[0] ?? contextualNodes[0] ??
+      firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? classTestNodes[0] ?? classReadNodes[0] ?? contextualNodes[0] ?? assignNodes[0] ??
       receiverNodes[0] ?? enumNodes[0] ??
       computedNodes[0] ?? symbolNameNodes[0] ?? keyTypeNodes[0] ?? bindingNodes[0] ?? iterableNodes[0] ??
       spreadNodes[0] ?? restTargets[0]?.node ?? privateNodes[0] ?? inKeyNodes[0] ?? receiverTargetNodes[0] ?? elementReadNodes[0];
@@ -4911,6 +4935,8 @@ export function parseFile(file: string, carriesContext = false,
         },
         contextualParams: contextualNodes.map(node => gate.span(node)),
         contextualParam: ([start, end], result) => gate.contextualParams.set(`${start}:${end}`, result),
+        assignCalls: assignNodes.map(node => gate.span(node)),
+        assignTypes: ([start, end], result) => gate.assignTypes.set(`${start}:${end}`, result),
         memberReceivers: receiverNodes.map(node => gate.span(node)),
         iterables: iterableNodes.map(node => gate.span(node)),
         spreads: spreadNodes.map(node => gate.span(node)),
@@ -4951,7 +4977,7 @@ export function parseFile(file: string, carriesContext = false,
       const at = error instanceof DeclarationError
         ? [...importNodes, ...localNodes, ...globalNodes, ...globalValueNodes, ...(firstArray ? [firstArray] : []),
             ...(firstAsync ? [firstAsync] : []), ...keyNodes, ...ambientNames.map(topStatement), ...staticNodes,
-            ...classTestNodes, ...classReadNodes, ...contextualNodes,
+            ...classTestNodes, ...classReadNodes, ...contextualNodes, ...assignNodes,
             ...receiverNodes, ...enumNodes, ...constEnumNodes, ...computedNodes, ...symbolNameNodes,
             ...keyTypeNodes, ...bindingNodes, ...privateNodes].find(node =>
             node.getStart(source) === error.at[0]) ?? first

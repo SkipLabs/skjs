@@ -754,9 +754,9 @@ let symbol_copy_reason =
   "the copy is stated at its string keys only, and JavaScript also copies an own enumerable \
    symbol-keyed property, so the result states no symbol key"
 let copy_field_reason =
-  "a field of the copy is allocated at the one type its value is claimed at, for every arm of the operand, \
-   and a writable field is invariant, so the arms requiring it at different types (TypeScript types the \
-   literal per arm of the contextual union) are not all met"
+  "the copy is allocated per pair of its operands' clauses at one record, and several arms of the expected \
+   union with the copy's keys type a written field apart (TypeScript types the literal per arm of the \
+   contextual union), so no one record meets them all, a writable field being invariant"
 let extraction_reason =
   "a method is a member of its object, called with it as receiver, and read off it the function loses \
    that receiver; TypeScript types the read as a function, which is unsound"
@@ -1888,22 +1888,35 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         | None -> [group fields]
         | Some alts -> if fields = [] then alts else merge alts [group fields] in
       (* Expected at a union of records, an alternative whose keys are one
-         arm's, with a written field that arm types otherwise than the field
-         is built, is refused by name. *)
-      (match expected,contract with
-       | Some t,None when List.exists (fun (n,_) -> n = None) parts ->
-         let arms = record_arms declarations [] t in
-         let names fs = List.sort compare (List.map (fun (f:Semantic.field) -> f.name) fs) in
-         let written = List.filter_map (fun (n,_) -> Option.map (fun n -> Name n) n) parts in
-         if List.exists (fun (a:alternative) ->
-             match List.filter (fun (s:shape) -> s.indexes = [] && names s.fields = names a.afields
-                                  && List.for_all (fun (f:Semantic.field) -> not f.optional) s.fields) arms with
-             | [arm] -> List.exists (fun (f:Semantic.field) -> List.mem f.name written &&
-                 List.exists (fun (g:Semantic.field) -> g.name = f.name && g.read <> f.read) arm.fields) a.afields
-             | _ -> false) alts
-         then explain site ("a spread with a written field that the arms of the expected union type \
-           differently: " ^ copy_field_reason)
-       | _ -> ());
+         arm's has each written field at that arm's type: the last merge
+         allocates the copy per pair of its operands' clauses, each field at
+         the type of the record that pair gives, so each arm is met with its
+         own, as TypeScript types the literal per arm of the contextual
+         union. An alternative whose keys several arms have, typing a written
+         field apart, is refused by name. *)
+      let alts = match expected,contract with
+        | Some t,None when List.exists (fun (n,_) -> n = None) parts ->
+          let arms = record_arms declarations [] t in
+          let names fs = List.sort compare (List.map (fun (f:Semantic.field) -> f.name) fs) in
+          let written = List.filter_map (fun (n,_) -> Option.map (fun n -> Name n) n) parts in
+          let arms_of (a:alternative) = List.filter (fun (s:shape) -> s.indexes = [] && names s.fields = names a.afields
+            && List.for_all (fun (f:Semantic.field) -> not f.optional) s.fields) arms in
+          let alts = List.map (fun (a:alternative) -> match arms_of a with
+            | [arm] -> {a with afields=List.map (fun (f:Semantic.field) ->
+                match List.find_opt (fun (g:Semantic.field) -> g.name = f.name) arm.fields with
+                | Some g when List.mem f.name written -> {f with read=g.read; write=Some g.read}
+                | _ -> f) a.afields}
+            | _ -> a) alts in
+          let typed (s:shape) k = List.find_map (fun (g:Semantic.field) ->
+            if g.name = k then Some g.read else None) s.fields in
+          if List.exists (fun (a:alternative) -> match arms_of a with
+              | first :: (_ :: _ as others) -> List.exists (fun k ->
+                  List.exists (fun s -> typed s k <> typed first k) others) written
+              | _ -> false) alts
+          then explain site ("a spread with a written field that the arms of the expected union type \
+            differently: " ^ copy_field_reason);
+          alts
+        | _ -> alts in
       combine (List.map alternative_type alts)
     (* `Object.assign(t, ...sources)`: each source copied over what the
        target and the sources before it give, as a spread is; a literal
