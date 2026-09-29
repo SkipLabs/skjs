@@ -154,10 +154,8 @@ for a claim narrower than its annotation. -/
 @[nospecialize] def within (T : σ) (C A : List ι) : Bool :=
   (SourceTypes.canonical T C).all (SourceTypes.canonical T A).contains ||
     (let G := SourceTypes.graph T
-     let pool := CertificateProducer.vocabulary G
-       (CertificateProducer.searchReads G (C ++ A)) [] [C, A]
-     match CertificateProducer.subtype G pool C A with
-       | some proof => PositiveCertificates.check G C A proof
+     match CertificateProducer.subtype G C A with
+       | some proof => PositiveCertificates.checkUsing G (PositiveCertificates.finiteInstanceImages G) C A proof
        | none => false)
 
 /-- Whether two label lists denote the same type: each within the other. -/

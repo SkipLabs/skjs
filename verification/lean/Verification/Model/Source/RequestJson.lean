@@ -201,8 +201,9 @@ and methods', the reserved keys aside. -/
 
 deriving instance ToJson, FromJson for Node
 deriving instance ToJson, FromJson for PositiveCertificates.ArrowCert
-deriving instance ToJson, FromJson for PositiveCertificates.Certificate
 deriving instance ToJson, FromJson for PositiveCertificates.Instance
+deriving instance ToJson, FromJson for PositiveRules.Entry
+deriving instance ToJson, FromJson for PositiveCertificates.FamilyCertificate
 deriving instance ToJson, FromJson for PositiveCertificates.Proof
 deriving instance ToJson, FromJson for Sequent
 deriving instance ToJson, FromJson for Rule
@@ -305,28 +306,29 @@ meaning for an invalid serialized type reference. -/
   | .recvUnion a b l r => a :: b :: (arrowTypes l ++ arrowTypes r)
   | .combine a b _ _ l r => a :: b :: (arrowTypes l ++ arrowTypes r)
 
-@[nospecialize] def certificateTypes (c : PositiveCertificates.Certificate ι) : List (Ty ι) :=
-  c.table.flatMap (fun p => [p.1,p.2]) ++ c.arrows.flatMap (fun e =>
+@[nospecialize] def pairsTypes (table : Table ι) (arrows : PositiveCertificates.Evidence ι) : List (Ty ι) :=
+  table.flatMap (fun p => [p.1,p.2]) ++ arrows.flatMap (fun e =>
     e.1.flatMap Arrow.operands ++ e.2.1.operands ++
       arrowTypes e.2.2)
 
 @[nospecialize] def instanceTypes (c : PositiveCertificates.Instance ι) : List (Ty ι) :=
   c.domain :: c.instances ++ c.free.flatMap (fun p => [[p.1], p.2]) ++
     c.bounds.flatMap (fun c => match c with
-      | some cert => certificateTypes cert
+      | some (table, arrows) => pairsTypes table arrows
       | none => []) ++
     c.table.flatMap (fun e => [e.1] :: e.2.2 :: e.2.1.flatMap (fun p => [[p.1], p.2]))
 
+@[nospecialize] def entryTypes (e : PositiveRules.Entry ι) : List (Ty ι) :=
+  e.source :: e.target :: e.variables.map ([·]) ++ e.hypotheses.flatMap (fun h => [[h.1], [h.2]]) ++
+    e.table.flatMap (fun p => [p.1, p.2]) ++ e.instances.flatMap (·.2)
+
 @[nospecialize] def proofTypes : PositiveCertificates.Proof ι → List (Ty ι)
   | .subset => []
-  | .trans middle l r => middle :: (proofTypes l ++ proofTypes r)
   | .inst c => instanceTypes c
-  | .gen D V U p => D :: U :: V.flatMap (fun p => [[p.1], p.2]) ++ proofTypes p
-  | .table tbl D V => D :: V.flatMap (fun p => [[p.1], p.2]) ++
-      tbl.flatMap (fun e => [e.1] :: e.2.2 :: e.2.1.flatMap (fun p => [[p.1], p.2]))
-  | .core c ks => certificateTypes c ++ ks.flatMap (fun k => k.1 ::
-      k.2.1.flatMap Arrow.operands ++
-      k.2.2.1.flatMap RestArrow.operands ++ instanceTypes k.2.2.2)
+  | .family c => c.entries.flatMap entryTypes ++ pairsTypes [] c.arrows ++
+      c.instances.flatMap (fun k => k.1 ::
+        k.2.1.flatMap Arrow.operands ++
+        k.2.2.1.flatMap RestArrow.operands ++ instanceTypes k.2.2.2)
 
 @[nospecialize] def validEvidence (ok : ι → Bool) : ProgramCertificates.Evidence ι → Bool
   | .node j r ps =>

@@ -122,18 +122,6 @@ theorem checkArrowWith_complete [DecidableEq ι] {G : NormalGraph ι} {R : List 
     simp only [checkArrowWith, Bool.and_eq_true, decide_eq_true_eq]
     exact ⟨⟨⟨hl, hr⟩, hg⟩, he⟩
 
-/-- The finite checker reads premises through a table. -/
-abbrev checkArrow [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) :=
-  checkArrowWith G (Rel table)
-
-theorem checkArrow_sound [DecidableEq ι] {G : NormalGraph ι} {table L S q cert}
-    (h : checkArrow G table L S q cert = true) :
-    CallArrow (compatible G) (restElem G) (Rel table) L S q := checkArrowWith_sound h
-
-theorem checkArrow_complete [DecidableEq ι] {G : NormalGraph ι} {table L S q}
-    (h : CallArrow (compatible G) (restElem G) (Rel table) L S q) :
-    ∃ cert, checkArrow G table L S q cert = true := checkArrowWith_complete h
-
 abbrev Evidence (ι : Type) := List (Ops ι × ((Arrow (List ι)) × ArrowCert ι))
 
 instance {R : List ι → List ι → Prop} [DecidableRel R] (a b : Option (List ι)) :
@@ -168,10 +156,6 @@ abbrev ArrowsCheckedWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → 
     (L : Ops ι) (S : List (RestArrow (List ι))) (M : Ops ι) : Prop :=
   ∀ p ∈ M, ∃ e ∈ proofs, e.1 = L ∧ e.2.1 = p ∧
     checkArrowWith G R L S p e.2.2 = true
-
-/-- Premises read through a table. -/
-abbrev ArrowsChecked [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (proofs : Evidence ι) :=
-  ArrowsCheckedWith G (Rel table) proofs
 
 set_option synthInstance.maxSize 1024 in
 instance [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) [DecidableRel R]
@@ -336,22 +320,6 @@ theorem checkClauseWith_complete [DecidableEq ι] {G : NormalGraph ι} {R : List
     | (obtain ⟨es, he⟩ := arrow_evidence_complete h.2.1
        exact ⟨es, h.1, he, h.2.2⟩)
 
-/-- Premises read through a table. -/
-abbrev checkClause [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) :=
-  checkClauseWith G (Rel table)
-
-theorem checkClause_sound [DecidableEq ι] {G : NormalGraph ι} {table known proofs self a b}
-    (h : checkClause G table known proofs self a b = true) : Covers G (Rel table) known self a b :=
-  checkClauseWith_sound h
-
-theorem checkClause_mono [DecidableEq ι] {G : NormalGraph ι} {table known self a b es es'}
-    (hm : ∀ e ∈ es, e ∈ es') (h : checkClause G table known es self a b = true) :
-    checkClause G table known es' self a b = true := checkClauseWith_mono hm h
-
-theorem checkClause_complete [DecidableEq ι] {G : NormalGraph ι} {table known self a b}
-    (h : Covers G (Rel table) known self a b) : ∃ es, checkClause G table known es self a b = true :=
-  checkClauseWith_complete h
-
 /-- Checked arrows stay checked with more evidence. -/
 theorem arrowsChecked_mono [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop}
     [DecidableRel R] {es es' : Evidence ι} (hm : ∀ e ∈ es, e ∈ es') :
@@ -440,448 +408,6 @@ theorem MeetOpaque.evidence [DecidableEq ι] {G : NormalGraph ι} {E : Type} {T 
         · obtain ⟨es, he⟩ := hsc s q h
           exact ⟨es, hp, .inr (.inr (.inr ⟨hi, s, hs, hsp, he⟩))⟩)
     exact ⟨es, .inr ⟨j, hj, hm, he, hcl⟩⟩
-
-structure Certificate (ι : Type) where
-  table : Table ι
-  arrows : Evidence ι
-  deriving Repr
-
-set_option synthInstance.maxSize 1024 in
-@[nospecialize] def checkCore [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (S T : List ι)
-    (cert : Certificate ι) : Bool :=
-  decide ((S, T) ∈ cert.table ∧ ∀ p ∈ cert.table, SameKind G p.1 p.2 = true ∧
-    OpaqueWith G (Rel cert.table) known (ArrowsChecked G cert.table cert.arrows) p.1 p.2 ∧
-    ∀ a ∈ sourceClauses G p.1 ++ meetSources G p.1 p.2, ∃ b ∈ clausesOf G p.2,
-      checkClause G cert.table known cert.arrows p.1 a b = true)
-
-
-theorem checkCore_sound [DecidableEq ι] {G : NormalGraph ι} {known S T cert}
-    (h : checkCore G known S T cert = true) : Core G known S T := by
-  simp only [checkCore, decide_eq_true_eq] at h
-  refine ⟨cert.table, h.1, ?_⟩
-  intro p hp
-  refine ⟨(h.2 p hp).1, OpaqueWith.mono (fun L S M hs q hq => ?_) (h.2 p hp).2.1, fun a ha => ?_⟩
-  · obtain ⟨e, _, _, _, he⟩ := hs q hq
-    exact checkArrow_sound he
-  obtain ⟨b, hb, hc⟩ := (h.2 p hp).2.2 a ha
-  exact ⟨b, hb, checkClause_sound hc⟩
-
-/-- Opaque rows checked with one evidence list stay checked with a larger one. -/
-theorem opaque_mono [DecidableEq ι] {G : NormalGraph ι} {table known S T es es'}
-    (hm : ∀ e ∈ es, e ∈ es')
-    (h : OpaqueWith G (Rel table) known (ArrowsChecked G table es) S T) :
-    OpaqueWith G (Rel table) known (ArrowsChecked G table es') S T :=
-  OpaqueWith.mono (fun L S M hs p hp => by
-    obtain ⟨e, he, hL, hP, hc⟩ := hs p hp
-    exact ⟨e, hm e he, hL, hP, hc⟩) h
-
-set_option synthInstance.maxSize 1024 in
-/-- Declarative opaque rows have checked evidence: each quantified signature
-coverage is an arrow coverage, whose evidence `checkClause_complete` finds. -/
-theorem opaque_complete [DecidableEq ι] {G : NormalGraph ι} {table known S T}
-    (h : Opaque G (Rel table) known S T) :
-    ∃ es, OpaqueWith G (Rel table) known (ArrowsChecked G table es) S T := by
-  have each : ∀ i ∈ S, ∃ es : Evidence ι, G.plain i = true ∨ i ∈ T ∨ .top ∈ clausesOf G T ∨
-      MeetOpaque G (SchemeCoversWith G (Rel table) known (ArrowsChecked G table es))
-        (fun a => ∃ b ∈ clausesOf G T, CoversWith G (Rel table) known (ArrowsChecked G table es) S a b) T i ∨
-      ∃ j ∈ T, SchemeCoversWith G (Rel table) known (ArrowsChecked G table es) i j := by
-    intro i hi
-    rcases h i hi with h | h | h | h | ⟨j, hj, hc⟩
-    · exact ⟨[], .inl h⟩
-    · exact ⟨[], .inr (.inl h)⟩
-    · exact ⟨[], .inr (.inr (.inl h))⟩
-    · obtain ⟨es, he⟩ := MeetOpaque.evidence (h := h)
-        (sc' := fun es => SchemeCoversWith G (Rel table) known (ArrowsChecked G table es))
-        (cover' := fun es a => ∃ b ∈ clausesOf G T,
-          CoversWith G (Rel table) known (ArrowsChecked G table es) S a b)
-        (fun es es' hm a b h => SchemeCoversWith.mono (arrowsChecked_mono hm) h)
-        (fun es es' hm a ⟨b, hb, hc⟩ => ⟨b, hb, CoversWith.mono (arrowsChecked_mono hm) hc⟩)
-        (fun a b h => schemeCoversWith_complete h) (fun a h => coversWith_complete h)
-      exact ⟨es, .inr (.inr (.inr (.inl he)))⟩
-    · unfold SchemeCoversWith at hc
-      split at hc
-      · rename_i s s' hs hs'
-        obtain ⟨es, he⟩ := checkClause_complete (self := []) hc.2.2.2.2
-        refine ⟨es, .inr (.inr (.inr (.inr ⟨j, hj, ?_⟩)))⟩
-        simp only [SchemeCoversWith, hs, hs']
-        exact ⟨hc.1, hc.2.1, hc.2.2.1, hc.2.2.2.1, of_decide_eq_true he⟩
-      · exact hc.elim
-  obtain ⟨es, he⟩ := collect S _ (fun i es es' hm h => by
-    rcases h with h | h | h | h | ⟨j, hj, hc⟩
-    · exact .inl h
-    · exact .inr (.inl h)
-    · exact .inr (.inr (.inl h))
-    · exact .inr (.inr (.inr (.inl (h.mono (fun _ _ => SchemeCoversWith.mono (arrowsChecked_mono hm))
-        fun a ⟨b, hb, hc⟩ => ⟨b, hb, CoversWith.mono (arrowsChecked_mono hm) hc⟩))))
-    · refine .inr (.inr (.inr (.inr ⟨j, hj, ?_⟩)))
-      unfold SchemeCoversWith at hc ⊢
-      split at hc
-      · exact ⟨hc.1, hc.2.1, hc.2.2.1, hc.2.2.2.1, of_decide_eq_true
-          (checkClause_mono hm (decide_eq_true hc.2.2.2.2))⟩
-      · exact hc.elim) each
-  exact ⟨es, fun i hi => he i hi⟩
-
-theorem checkCore_complete [DecidableEq ι] {G : NormalGraph ι} {known S T}
-    (h : Core G known S T) : ∃ cert, checkCore G known S T cert = true := by
-  obtain ⟨table, hm, hv⟩ := h
-  have rows : ∀ p ∈ table, ∃ es : Evidence ι,
-      OpaqueWith G (Rel table) known (ArrowsChecked G table es) p.1 p.2 ∧
-      ∀ a ∈ sourceClauses G p.1 ++ meetSources G p.1 p.2, ∃ b ∈ clausesOf G p.2,
-        checkClause G table known es p.1 a b = true := by
-    intro p hp
-    obtain ⟨es₀, ho⟩ := opaque_complete (hv p hp).2.1
-    obtain ⟨es₁, hc⟩ := collect (sourceClauses G p.1 ++ meetSources G p.1 p.2)
-      (fun a es => ∃ b ∈ clausesOf G p.2, checkClause G table known es p.1 a b = true)
-      (fun a es es' hm ⟨b, hb, hc⟩ => ⟨b, hb, checkClause_mono hm hc⟩)
-      (fun a ha => by
-        obtain ⟨b, hb, hc⟩ := (hv p hp).2.2 a ha
-        obtain ⟨es, he⟩ := checkClause_complete hc
-        exact ⟨es, b, hb, he⟩)
-    refine ⟨es₀ ++ es₁, opaque_mono (fun e he => List.mem_append_left _ he) ho, fun a ha => ?_⟩
-    obtain ⟨b, hb, hc⟩ := hc a ha
-    exact ⟨b, hb, checkClause_mono (fun e he => List.mem_append_right _ he) hc⟩
-  obtain ⟨es, he⟩ := collect table _ (fun p es es' hm h => by
-    refine ⟨opaque_mono hm h.1, fun a ha => ?_⟩
-    obtain ⟨b, hb, hc⟩ := h.2 a ha
-    exact ⟨b, hb, checkClause_mono hm hc⟩) rows
-  exact ⟨⟨table, es⟩, by
-    simp only [checkCore, decide_eq_true_eq]
-    exact ⟨hm, fun p hp => ⟨(hv p hp).1, (he p hp).1, (he p hp).2⟩⟩⟩
-
-/-- A checked instance of a scheme row's signatures: the instance table, the
-types the binders are instantiated at, a certificate per bound, the table's
-domain and the domain's free parameter rows. -/
-structure Instance (ι : Type) where
-  table : InstTable ι
-  instances : List (List ι)
-  bounds : List (Option (Certificate ι))
-  domain : List ι
-  free : FreeMap ι
-  deriving Repr
-
-/-- A family certificate: its entries, the arrow evidence their coverage
-uses, and the known rows, each with the instance proving it. -/
-structure FamilyCertificate (ι : Type) where
-  entries : List (Entry ι)
-  arrows : Evidence ι := []
-  instances : List (List ι × Ops ι × List (RestArrow (List ι)) × Instance ι) := []
-  deriving Repr
-
-inductive Proof (ι : Type) where
-  /-- A checked table, and the instances its coverage uses as known rows:
-  each a scheme row, the arrows it is below and the instance proving it. -/
-  | core (certificate : Certificate ι)
-      (instances : List (List ι × Ops ι × List (RestArrow (List ι)) ×
-        Instance ι) := [])
-  | subset
-  | trans (middle : List ι) (left right : Proof ι)
-  /-- A scheme row below a checked instance of its signatures. -/
-  | inst (inst : Instance ι)
-  /-- A type below one holding its rows' images under an instance table with
-  the empty context: the table, its domain and its free-variable certificate. -/
-  | table (table : InstTable ι) (domain : List ι) (free : FreeMap ι)
-  /-- A type below a scheme: a domain holding it, the domain's free parameter
-  rows, none of them a binder of the type, the type stating the scheme's
-  signatures with its binders opaque, and the proof of the inclusion in it. -/
-  | gen (domain : List ι) (free : FreeMap ι) (body : List ι) (proof : Proof ι)
-  deriving Repr
-
-/-- The syntactic conditions of `Sub.gen`, other than its subproof. -/
-@[nospecialize] def genOk [DecidableEq ι] (G : NormalGraph ι) (S T D : List ι) (V : FreeMap ι) (U : List ι) :
-    Bool :=
-  match T with
-  | [j] =>
-    match G.schemes j with
-    | some s => !G.params j && expand G U == [.arrs s.signatures s.variadic] && FreeOk G D V &&
-        S.all (fun l => decide (l ∈ D ∧ ∀ p ∈ fv V l, p ∉ s.binders))
-    | none => false
-  | _ => false
-
-theorem genOk_sound [DecidableEq ι] {G : NormalGraph ι} {S T D V U}
-    (h : genOk G S T D V U = true) (hs : Sub G S U) : Sub G S T := by
-  unfold genOk at h
-  split at h
-  · rename_i j
-    split at h
-    · rename_i s hq
-      simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, List.all_eq_true,
-        decide_eq_true_eq] at h
-      exact .gen h.1.1.1 hq h.1.1.2 h.1.2 h.2 hs
-    · cases h
-  · cases h
-
-/-- An instance type within one bound: plain inclusion (no certificate) or a
-core certificate. A bound whose binder has no instance is vacuous. -/
-@[nospecialize] def boundOk [DecidableEq ι] (G : NormalGraph ι) (binders : List ι) (θs : List (List ι))
-    (b : ι × List ι) (c : Option (Certificate ι)) : Bool :=
-  match (binders.zip θs).lookup b.1 with
-  | none => true
-  | some U => match c with
-    | none => decide (∀ l ∈ U, l ∈ b.2)
-    | some cert => checkCore G [] U b.2 cert
-
-theorem boundOk_sound [DecidableEq ι] {G : NormalGraph ι} {binders θs b c}
-    (h : boundOk G binders θs b c = true) :
-    ∀ U, (binders.zip θs).lookup b.1 = some U → Core G [] U b.2 ∨ ∀ l ∈ U, l ∈ b.2 := by
-  intro U hU
-  unfold boundOk at h
-  rw [hU] at h
-  cases c with
-  | none => exact .inr (by simpa using h)
-  | some cert => exact .inl (checkCore_sound h)
-
-theorem exists_mem_zip {xs : List α} {ys : List β} (hl : ys.length = xs.length) :
-    ∀ x ∈ xs, ∃ y, (x, y) ∈ xs.zip ys := by
-  induction xs generalizing ys with
-  | nil => intro x hx; cases hx
-  | cons a xs ih =>
-    cases ys with
-    | nil => simp at hl
-    | cons b ys =>
-      intro x hx
-      rcases List.mem_cons.mp hx with rfl | hx
-      · exact ⟨b, by simp⟩
-      · obtain ⟨y, hy⟩ := ih (by simpa using hl) x hx
-        exact ⟨y, by simp [hy]⟩
-
-theorem bound_certs [DecidableEq ι] {G : NormalGraph ι} {binders : List ι} {θs : List (List ι)} :
-    ∀ bs : List (ι × List ι), (∀ b ∈ bs, ∀ U, (binders.zip θs).lookup b.1 = some U →
-      Core G [] U b.2 ∨ ∀ l ∈ U, l ∈ b.2) →
-    ∃ certs : List (Option (Certificate ι)), certs.length = bs.length ∧
-      (bs.zip certs).all (fun bc => boundOk G binders θs bc.1 bc.2) = true
-  | [], _ => ⟨[], rfl, rfl⟩
-  | b :: bs, h => by
-    obtain ⟨certs, hl, hall⟩ := bound_certs bs fun b' hb' => h b' (List.mem_cons_of_mem _ hb')
-    have : ∃ c, boundOk G binders θs b c = true := by
-      cases hk : (binders.zip θs).lookup b.1 with
-      | none => exact ⟨none, by simp [boundOk, hk]⟩
-      | some U =>
-        rcases h b List.mem_cons_self U hk with hc | hsub
-        · obtain ⟨cert, hcert⟩ := checkCore_complete hc
-          exact ⟨some cert, by simp [boundOk, hk, hcert]⟩
-        · exact ⟨none, by simpa [boundOk, hk] using hsub⟩
-    obtain ⟨c, hc⟩ := this
-    exact ⟨c :: certs, by simp [hl], by simp [hc, hall]⟩
-
-/-- Entries already sound, which instances may cite by index below `size`:
-a representation's checked variances (§4.3), or none. Supplied by verified
-code with its proof, never by a certificate. -/
-structure Base [DecidableEq ι] (G : NormalGraph ι) where
-  size : Nat := 0
-  entry : Nat → Option (Entry ι) := fun _ => none
-  sound : ∀ k e, entry k = some e → EntrySound G e ∧ HypParams G e := by
-    intro _ _ h; cases h
-
-/-- The entries a family certificate's instances cite: the base's, then its
-own after them. -/
-@[nospecialize] def Base.lookup [DecidableEq ι] {G : NormalGraph ι} (base : Base G) (F : List (Entry ι)) :
-    Lookup ι := fun k =>
-  if k < base.size then base.entry k else F[k - base.size]?
-
-theorem Base.lookup_cases [DecidableEq ι] {G : NormalGraph ι} (base : Base G) (F : List (Entry ι))
-    (k : Nat) (e : Entry ι) (h : base.lookup F k = some e) :
-    e ∈ F ∨ (EntrySound G e ∧ HypParams G e) := by
-  unfold Base.lookup at h
-  split at h
-  · exact .inr (base.sound k e h)
-  · exact .inl (List.mem_of_getElem? h)
-
-/-- A renaming at a reassignment of the graph's parameter rows: its laws
-quantify over every assignment and read no `env`. -/
-@[nospecialize] def _root_.Verification.Model.PositiveRules.Renaming.reassign [DecidableEq ι] {G : NormalGraph ι} (r : Renaming G) (η : MixedAssignment ι) :
-    Renaming (PositiveRules.reassign G η) where
-  substitute := r.substitute
-  free := r.free
-  familyVar := r.familyVar
-  mentions := r.mentions
-  substitute_meaning := r.substitute_meaning
-  agree_free := r.agree_free
-  familyVar_param := r.familyVar_param
-  familyVar_unbound := r.familyVar_unbound
-  size := r.size
-  rename := r.rename
-  head := r.head
-
-/-- Sound entries at a reassignment: soundness quantifies over every
-assignment and reads no `env`. -/
-@[nospecialize] def Base.reassign [DecidableEq ι] {G : NormalGraph ι} (b : Base G) (η : MixedAssignment ι) :
-    Base (PositiveRules.reassign G η) where
-  size := b.size
-  entry := b.entry
-  sound := b.sound
-
-/-- The representation-specific checks, with their semantic obligations:
-the image check of instances, and, for a representation with one, the
-renaming, the sound entries instances may cite (a representation's computed
-variances) and the verified proposal of `Var` instances. Supplied by
-verified code, never read from a certificate. Bound, kind, signature and
-effect checks remain in the shared instance checker. -/
-structure InstanceImageCheck [DecidableEq ι] (G : NormalGraph ι) where
-  check : List ι → Instance ι → Bool
-  sound : ∀ bs c, c.instances.length = bs.length → instKinds G bs c.instances = true →
-    check bs c = true → ∀ η, InstanceImages G η bs c.instances c.table
-  sub : Option (Renaming G) := none
-  base : Base G := {}
-  gen : ι → List ι → List (Nat × List (List ι)) := fun _ _ => []
-
-/-- The original finite closed-table implementation. -/
-@[nospecialize] def finiteInstanceImages [DecidableEq ι] (G : NormalGraph ι) : InstanceImageCheck G where
-  check := fun _ c => TableOk G c.table c.domain c.free
-  sound := fun _ _ hlen hkinds hok η => table_instanceImages η hlen hkinds hok
-
-/-- The same check at a reassignment of the graph's parameter rows. Its
-obligation quantifies over every assignment and reads no `env`, so one proof
-serves every reassignment (`Parametricity`). -/
-@[nospecialize] def InstanceImageCheck.reassign [DecidableEq ι] {G : NormalGraph ι} (images : InstanceImageCheck G)
-    (η : MixedAssignment ι) : InstanceImageCheck (PositiveRules.reassign G η) where
-  check := images.check
-  sound := images.sound
-  sub := images.sub.map fun r => r.reassign η
-  base := images.base.reassign η
-  gen := images.gen
-
-/-- `S` is one scheme row, and `L`, `M` arrows whose every signature is an
-image of one of the scheme's under the instance table, each instance within
-its binder's bounds. Only validation of that image table depends on its
-representation; every other obligation is shared. -/
-@[nospecialize] def checkInstArrsUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (S : List ι) (L : Ops ι) (M : List (RestArrow (List ι))) (c : Instance ι) : Bool :=
-  match S with
-  | [i] =>
-    match G.schemes i with
-    | some s => !G.params i && c.instances.length == s.binders.length &&
-        instKinds G s.binders c.instances &&
-        c.bounds.length == s.bounds.length &&
-        (s.bounds.zip c.bounds).all (fun bc => boundOk G s.binders c.instances bc.1 bc.2) &&
-        images.check s.binders c &&
-        (L.all fun q => s.signatures.any fun p => instSig G c.table (s.binders.zip c.instances) p q) &&
-        M.all fun q => s.variadic.any fun p => instRest G c.table (s.binders.zip c.instances) p q
-    | none => false
-  | _ => false
-
-/-- Keep the finite checker as the existing default, with identical checks. -/
-@[nospecialize] def checkInstArrs [DecidableEq ι] (G : NormalGraph ι) (S : List ι) (L : Ops ι)
-    (M : List (RestArrow (List ι))) (c : Instance ι) : Bool :=
-  checkInstArrsUsing G (finiteInstanceImages G) S L M c
-
-/-- Every representation discharges the same semantic elimination rule. -/
-theorem checkInstArrsUsing_sound [DecidableEq ι] {G : NormalGraph ι}
-    {images : InstanceImageCheck G} {S L M c}
-    (h : checkInstArrsUsing G images S L M c = true) :
-    ∀ η, FamLe (mixedValues G η S) (mixedSem G η (.arrs L M)) := by
-  unfold checkInstArrsUsing at h
-  split at h
-  · rename_i i
-    split at h
-    · rename_i s hs
-      simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true, List.any_eq_true,
-        beq_iff_eq] at h
-      obtain ⟨⟨⟨⟨⟨⟨⟨hp, hlen⟩, hkinds⟩, hcl⟩, hbs⟩, hok⟩, hL⟩, hM⟩ := h
-      intro η n W v hv
-      refine ⟨inst_images_sound η hp hs hlen ?_
-        (images.sound s.binders c hlen hkinds hok η) hL hM n W v hv,
-        realmInvariant_of_not_record rfl n W v⟩
-      intro b hb U hU
-      obtain ⟨cert, hc⟩ := exists_mem_zip hcl b hb
-      rcases boundOk_sound (hbs _ hc) U hU with hcore | hsubset
-      · exact Core.mixed_sound hcore (fun _ => by simp) η
-      · exact (Sub.subset hsubset).mixed_sound η
-    · cases h
-  · cases h
-
-theorem checkInstArrs_sound [DecidableEq ι] {G : NormalGraph ι} {S L M c}
-    (h : checkInstArrs G S L M c = true) : InstArrs G S L M := by
-  obtain ⟨tbl, θs, certs, D, V⟩ := c
-  unfold checkInstArrs checkInstArrsUsing finiteInstanceImages at h
-  split at h
-  · rename_i i
-    split at h
-    · rename_i s hs
-      simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true, List.any_eq_true,
-        beq_iff_eq] at h
-      obtain ⟨⟨⟨⟨⟨⟨⟨hp, hlen⟩, hkinds⟩, hcl⟩, hbs⟩, hok⟩, hL⟩, hM⟩ := h
-      refine ⟨i, s, tbl, θs, D, V, rfl, hp, hs, hlen, hkinds, fun b hb => ?_, hok, hL, hM⟩
-      obtain ⟨c, hc⟩ := exists_mem_zip hcl b hb
-      exact boundOk_sound (hbs _ hc)
-    · cases h
-  · cases h
-
-theorem checkInstArrs_complete [DecidableEq ι] {G : NormalGraph ι} {S L M}
-    (h : InstArrs G S L M) : ∃ c, checkInstArrs G S L M c = true := by
-  obtain ⟨i, s, tbl, θs, D, V, rfl, hp, hq, hlen, hkinds, hbnd, hok, hL, hM⟩ := h
-  obtain ⟨certs, hcl, hcs⟩ := bound_certs s.bounds hbnd
-  refine ⟨⟨tbl, θs, certs, D, V⟩, ?_⟩
-  simp only [checkInstArrs, checkInstArrsUsing, finiteInstanceImages, hq, hp, hok, hlen, hkinds,
-    hcl, hcs, Bool.not_false, Bool.true_and, beq_self_eq_true, List.all_eq_true,
-    List.any_eq_true, Bool.and_eq_true]
-  exact ⟨fun q hq => hL q hq, fun q hq => hM q hq⟩
-
-/-- The shared instance rule against an explicit target arrow type. -/
-@[nospecialize] def checkInstUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (S T : List ι) (c : Instance ι) : Bool :=
-  match expand G T with
-  | [.arrs L M] => checkInstArrsUsing G images S L M c
-  | _ => false
-
-theorem checkInstUsing_sound [DecidableEq ι] {G : NormalGraph ι}
-    {images : InstanceImageCheck G} {S T c}
-    (h : checkInstUsing G images S T c = true) :
-    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
-  unfold checkInstUsing at h
-  split at h
-  · rename_i L M hT
-    have values := checkInstArrsUsing_sound h
-    unfold checkInstArrsUsing at h
-    split at h
-    · rename_i i
-      split at h
-      · rename_i s hs
-        have hp : G.params i = false := by
-          simp only [Bool.and_eq_true, Bool.not_eq_true'] at h
-          exact h.1.1.1.1.1.1.1
-        intro η n W x hx
-        cases x with
-        | inl v => exact mixed_of_expand hT (values η n W v hx)
-        | inr vs =>
-          have hk : G.parameterKinds i = none := by simpa [NormalGraph.params] using hp
-          have hc : G i = [] := by simp [NormalGraph.clauses, NormalGraph.plain, hs]
-          simp [mixedMeaning, mixedParameters, graphArguments, hk, hc] at hx
-      · cases h
-    · cases h
-  · cases h
-
-/-- `T` is one arrow clause, an instance of the scheme row `S`. -/
-@[nospecialize] def checkInst [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) (c : Instance ι) : Bool :=
-  checkInstUsing G (finiteInstanceImages G) S T c
-
-theorem checkInst_sound [DecidableEq ι] {G : NormalGraph ι} {S T c}
-    (h : checkInst G S T c = true) : Inst G S T := by
-  unfold checkInst checkInstUsing at h
-  split at h
-  · rename_i L M hT
-    exact ⟨L, M, checkInstArrs_sound h, hT⟩
-  · cases h
-
-theorem checkInst_complete [DecidableEq ι] {G : NormalGraph ι} {S T}
-    (h : Inst G S T) : ∃ c, checkInst G S T c = true := by
-  obtain ⟨L, M, hi, hT⟩ := h
-  obtain ⟨c, hc⟩ := checkInstArrs_complete hi
-  change checkInstArrsUsing G (finiteInstanceImages G) S L M c = true at hc
-  exact ⟨c, by simp only [checkInst, checkInstUsing, hT, hc]⟩
-
-/-- The rows a core certificate's instances prove. -/
-@[nospecialize] def knownOf (ks : List (List ι × Ops ι × List (RestArrow (List ι)) × Instance ι)) :
-    Known ι := ks.map fun k => (k.1, k.2.1, k.2.2.1)
-
-theorem instances_complete [DecidableEq ι] {G : NormalGraph ι} :
-    ∀ known : Known ι, (∀ k ∈ known, InstArrs G k.1 k.2.1 k.2.2) →
-      ∃ ks, knownOf ks = known ∧
-        ks.all (fun k => checkInstArrs G k.1 k.2.1 k.2.2.1 k.2.2.2) = true
-  | [], _ => ⟨[], rfl, rfl⟩
-  | k :: known, h => by
-    obtain ⟨ks, hr, ha⟩ := instances_complete known fun q hq => h q (List.mem_cons_of_mem _ hq)
-    obtain ⟨c, hc⟩ := checkInstArrs_complete (h k List.mem_cons_self)
-    exact ⟨(k.1, k.2.1, k.2.2, c) :: ks, by simp [knownOf] at hr ⊢; exact hr, by simp [hc, ha]⟩
 
 /-! ## Family certificates
 
@@ -1261,6 +787,276 @@ theorem variablesOk_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (R
     · rw [(h f hf).2] at hp; cases hp
     · rw [(h f hf).1] at hx; cases hx
 
+/-- **The fallback's pairs, without a renaming** (RECURSIVE-EQUATIONS §4.2):
+`S ≤ T` as the one variable-free entry of a family, its table the pairs
+reachable from it, each covered with premises read in the entry, arrows by
+the evidence. Checked at the graph with its assignment fixed, as
+`checkFamilyAt`. -/
+@[nospecialize] def checkPairs [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) (table : Table ι)
+    (arrows : Evidence ι) : Bool :=
+  checkEntries (PositiveRules.reassign G (ParameterAssignment.empty .mixed)) none [] (fun _ _ => [])
+    (fun _ => none) [{ source := S, target := T, table }] arrows
+
+theorem checkPairs_sound [DecidableEq ι] {G : NormalGraph ι} {S T : List ι} {table : Table ι}
+    {arrows : Evidence ι} (h : checkPairs G S T table arrows = true) :
+    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) :=
+  family_closed_sound (G := PositiveRules.reassign G (ParameterAssignment.empty .mixed))
+    (checkEntries_sound h)
+    ⟨fun f hf => by simp only [List.mem_singleton] at hf; subst hf; simp,
+      fun f hf => by simp only [List.mem_singleton] at hf; subst hf; simp⟩
+    (fun _ _ h => by simp at h) (fun _ _ h => by simp at h)
+    List.mem_cons_self rfl List.mem_cons_self
+
+/-- A checked instance of a scheme row's signatures: the instance table, the
+types the binders are instantiated at, per bound the pairs and arrow evidence
+proving the instance within it (`checkPairs`) or none for an inclusion, the
+table's domain and the domain's free parameter rows. -/
+structure Instance (ι : Type) where
+  table : InstTable ι
+  instances : List (List ι)
+  bounds : List (Option (Table ι × Evidence ι))
+  domain : List ι
+  free : FreeMap ι
+  deriving Repr
+
+/-- A family certificate: its entries, the arrow evidence their coverage
+uses, and the known rows, each with the instance proving it. -/
+structure FamilyCertificate (ι : Type) where
+  entries : List (Entry ι)
+  arrows : Evidence ι := []
+  instances : List (List ι × Ops ι × List (RestArrow (List ι)) × Instance ι) := []
+  deriving Repr
+
+/-- Evidence of `S ≤ T` (RECURSIVE-EQUATIONS §4): the premise judgment on the
+pair, an instance of a quantified signature, or a family certificate whose
+variable-free entry holds the pair. -/
+inductive Proof (ι : Type) where
+  /-- Each label of `S` in `T`, or, with a renaming, the premise judgment on
+  the pair (`Var` for two applications of one head). -/
+  | subset
+  /-- A scheme row below a checked instance of its signatures. -/
+  | inst (inst : Instance ι)
+  /-- A family certificate holding the pair among its variable-free entries:
+  the fallback's pairs reachable from it, with the instances its coverage
+  uses as known rows. -/
+  | family (certificate : FamilyCertificate ι)
+  deriving Repr
+
+/-- An instance type within one bound: plain inclusion (no pairs) or the
+fallback's pairs (`checkPairs`). A bound whose binder has no instance is
+vacuous. -/
+@[nospecialize] def boundOk [DecidableEq ι] (G : NormalGraph ι) (binders : List ι) (θs : List (List ι))
+    (b : ι × List ι) (c : Option (Table ι × Evidence ι)) : Bool :=
+  match (binders.zip θs).lookup b.1 with
+  | none => true
+  | some U => match c with
+    | none => decide (∀ l ∈ U, l ∈ b.2)
+    | some (table, arrows) => checkPairs G U b.2 table arrows
+
+theorem boundOk_sound [DecidableEq ι] {G : NormalGraph ι} {binders θs b c}
+    (h : boundOk G binders θs b c = true) :
+    ∀ U, (binders.zip θs).lookup b.1 = some U →
+      ∀ η, FamLe (mixedMeaning G η U) (mixedMeaning G η b.2) := by
+  intro U hU
+  unfold boundOk at h
+  rw [hU] at h
+  cases c with
+  | none => exact fun _ => mixed_subset (by simpa using h)
+  | some c => exact checkPairs_sound h
+
+theorem exists_mem_zip {xs : List α} {ys : List β} (hl : ys.length = xs.length) :
+    ∀ x ∈ xs, ∃ y, (x, y) ∈ xs.zip ys := by
+  induction xs generalizing ys with
+  | nil => intro x hx; cases hx
+  | cons a xs ih =>
+    cases ys with
+    | nil => simp at hl
+    | cons b ys =>
+      intro x hx
+      rcases List.mem_cons.mp hx with rfl | hx
+      · exact ⟨b, by simp⟩
+      · obtain ⟨y, hy⟩ := ih (by simpa using hl) x hx
+        exact ⟨y, by simp [hy]⟩
+
+/-- Entries already sound, which instances may cite by index below `size`:
+a representation's checked variances (§4.3), or none. Supplied by verified
+code with its proof, never by a certificate. -/
+structure Base [DecidableEq ι] (G : NormalGraph ι) where
+  size : Nat := 0
+  entry : Nat → Option (Entry ι) := fun _ => none
+  sound : ∀ k e, entry k = some e → EntrySound G e ∧ HypParams G e := by
+    intro _ _ h; cases h
+
+/-- The entries a family certificate's instances cite: the base's, then its
+own after them. -/
+@[nospecialize] def Base.lookup [DecidableEq ι] {G : NormalGraph ι} (base : Base G) (F : List (Entry ι)) :
+    Lookup ι := fun k =>
+  if k < base.size then base.entry k else F[k - base.size]?
+
+theorem Base.lookup_cases [DecidableEq ι] {G : NormalGraph ι} (base : Base G) (F : List (Entry ι))
+    (k : Nat) (e : Entry ι) (h : base.lookup F k = some e) :
+    e ∈ F ∨ (EntrySound G e ∧ HypParams G e) := by
+  unfold Base.lookup at h
+  split at h
+  · exact .inr (base.sound k e h)
+  · exact .inl (List.mem_of_getElem? h)
+
+/-- A renaming at a reassignment of the graph's parameter rows: its laws
+quantify over every assignment and read no `env`. -/
+@[nospecialize] def _root_.Verification.Model.PositiveRules.Renaming.reassign [DecidableEq ι] {G : NormalGraph ι} (r : Renaming G) (η : MixedAssignment ι) :
+    Renaming (PositiveRules.reassign G η) where
+  substitute := r.substitute
+  free := r.free
+  familyVar := r.familyVar
+  mentions := r.mentions
+  substitute_meaning := r.substitute_meaning
+  agree_free := r.agree_free
+  familyVar_param := r.familyVar_param
+  familyVar_unbound := r.familyVar_unbound
+  size := r.size
+  rename := r.rename
+  head := r.head
+
+/-- Sound entries at a reassignment: soundness quantifies over every
+assignment and reads no `env`. -/
+@[nospecialize] def Base.reassign [DecidableEq ι] {G : NormalGraph ι} (b : Base G) (η : MixedAssignment ι) :
+    Base (PositiveRules.reassign G η) where
+  size := b.size
+  entry := b.entry
+  sound := b.sound
+
+/-- The representation-specific checks, with their semantic obligations:
+the image check of instances, and, for a representation with one, the
+renaming, the sound entries instances may cite (a representation's computed
+variances) and the verified proposal of `Var` instances. Supplied by
+verified code, never read from a certificate. Bound, kind, signature and
+effect checks remain in the shared instance checker. -/
+structure InstanceImageCheck [DecidableEq ι] (G : NormalGraph ι) where
+  check : List ι → Instance ι → Bool
+  sound : ∀ bs c, c.instances.length = bs.length → instKinds G bs c.instances = true →
+    check bs c = true → ∀ η, InstanceImages G η bs c.instances c.table
+  sub : Option (Renaming G) := none
+  base : Base G := {}
+  gen : ι → List ι → List (Nat × List (List ι)) := fun _ _ => []
+
+/-- The original finite closed-table implementation. -/
+@[nospecialize] def finiteInstanceImages [DecidableEq ι] (G : NormalGraph ι) : InstanceImageCheck G where
+  check := fun _ c => TableOk G c.table c.domain c.free
+  sound := fun _ _ hlen hkinds hok η => table_instanceImages η hlen hkinds hok
+
+/-- The same check at a reassignment of the graph's parameter rows. Its
+obligation quantifies over every assignment and reads no `env`, so one proof
+serves every reassignment (`Parametricity`). -/
+@[nospecialize] def InstanceImageCheck.reassign [DecidableEq ι] {G : NormalGraph ι} (images : InstanceImageCheck G)
+    (η : MixedAssignment ι) : InstanceImageCheck (PositiveRules.reassign G η) where
+  check := images.check
+  sound := images.sound
+  sub := images.sub.map fun r => r.reassign η
+  base := images.base.reassign η
+  gen := images.gen
+
+/-- `S` is one scheme row, and `L`, `M` arrows whose every signature is an
+image of one of the scheme's under the instance table, each instance within
+its binder's bounds. Only validation of that image table depends on its
+representation; every other obligation is shared. -/
+@[nospecialize] def checkInstArrsUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (S : List ι) (L : Ops ι) (M : List (RestArrow (List ι))) (c : Instance ι) : Bool :=
+  match S with
+  | [i] =>
+    match G.schemes i with
+    | some s => !G.params i && c.instances.length == s.binders.length &&
+        instKinds G s.binders c.instances &&
+        c.bounds.length == s.bounds.length &&
+        (s.bounds.zip c.bounds).all (fun bc => boundOk G s.binders c.instances bc.1 bc.2) &&
+        images.check s.binders c &&
+        (L.all fun q => s.signatures.any fun p => instSig G c.table (s.binders.zip c.instances) p q) &&
+        M.all fun q => s.variadic.any fun p => instRest G c.table (s.binders.zip c.instances) p q
+    | none => false
+  | _ => false
+
+/-- Keep the finite checker as the existing default, with identical checks. -/
+@[nospecialize] def checkInstArrs [DecidableEq ι] (G : NormalGraph ι) (S : List ι) (L : Ops ι)
+    (M : List (RestArrow (List ι))) (c : Instance ι) : Bool :=
+  checkInstArrsUsing G (finiteInstanceImages G) S L M c
+
+/-- Every representation discharges the same semantic elimination rule. -/
+theorem checkInstArrsUsing_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : InstanceImageCheck G} {S L M c}
+    (h : checkInstArrsUsing G images S L M c = true) :
+    ∀ η, FamLe (mixedValues G η S) (mixedSem G η (.arrs L M)) := by
+  unfold checkInstArrsUsing at h
+  split at h
+  · rename_i i
+    split at h
+    · rename_i s hs
+      simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true, List.any_eq_true,
+        beq_iff_eq] at h
+      obtain ⟨⟨⟨⟨⟨⟨⟨hp, hlen⟩, hkinds⟩, hcl⟩, hbs⟩, hok⟩, hL⟩, hM⟩ := h
+      intro η n W v hv
+      refine ⟨inst_images_sound η hp hs hlen ?_
+        (images.sound s.binders c hlen hkinds hok η) hL hM n W v hv,
+        realmInvariant_of_not_record rfl n W v⟩
+      intro b hb U hU
+      obtain ⟨cert, hc⟩ := exists_mem_zip hcl b hb
+      exact boundOk_sound (hbs _ hc) U hU η
+    · cases h
+  · cases h
+
+theorem checkInstArrs_sound [DecidableEq ι] {G : NormalGraph ι} {S L M c}
+    (h : checkInstArrs G S L M c = true) : InstArrs G S L M := by
+  obtain ⟨tbl, θs, certs, D, V⟩ := c
+  unfold checkInstArrs checkInstArrsUsing finiteInstanceImages at h
+  split at h
+  · rename_i i
+    split at h
+    · rename_i s hs
+      simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true, List.any_eq_true,
+        beq_iff_eq] at h
+      obtain ⟨⟨⟨⟨⟨⟨⟨hp, hlen⟩, hkinds⟩, hcl⟩, hbs⟩, hok⟩, hL⟩, hM⟩ := h
+      refine ⟨i, s, tbl, θs, D, V, rfl, hp, hs, hlen, hkinds, fun b hb => ?_, hok, hL, hM⟩
+      obtain ⟨c, hc⟩ := exists_mem_zip hcl b hb
+      exact boundOk_sound (hbs _ hc)
+    · cases h
+  · cases h
+
+/-- The shared instance rule against an explicit target arrow type. -/
+@[nospecialize] def checkInstUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (S T : List ι) (c : Instance ι) : Bool :=
+  match expand G T with
+  | [.arrs L M] => checkInstArrsUsing G images S L M c
+  | _ => false
+
+theorem checkInstUsing_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : InstanceImageCheck G} {S T c}
+    (h : checkInstUsing G images S T c = true) :
+    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
+  unfold checkInstUsing at h
+  split at h
+  · rename_i L M hT
+    have values := checkInstArrsUsing_sound h
+    unfold checkInstArrsUsing at h
+    split at h
+    · rename_i i
+      split at h
+      · rename_i s hs
+        have hp : G.params i = false := by
+          simp only [Bool.and_eq_true, Bool.not_eq_true'] at h
+          exact h.1.1.1.1.1.1.1
+        intro η n W x hx
+        cases x with
+        | inl v => exact mixed_of_expand hT (values η n W v hx)
+        | inr vs =>
+          have hk : G.parameterKinds i = none := by simpa [NormalGraph.params] using hp
+          have hc : G i = [] := by simp [NormalGraph.clauses, NormalGraph.plain, hs]
+          simp [mixedMeaning, mixedParameters, graphArguments, hk, hc] at hx
+      · cases h
+    · cases h
+  · cases h
+
+/-- The rows a family certificate's instances prove. -/
+@[nospecialize] def knownOf (ks : List (List ι × Ops ι × List (RestArrow (List ι)) × Instance ι)) :
+    Known ι := ks.map fun k => (k.1, k.2.1, k.2.2.1)
+
 /-- The claim is a pair of one of the certificate's variable-free entries,
 and mentions none of its entries' family variables. -/
 @[nospecialize] def claimOk [DecidableEq ι] {G : NormalGraph ι} (sub : Option (Renaming G))
@@ -1309,21 +1105,34 @@ theorem checkEntries_entries_sound [DecidableEq ι] {G : NormalGraph ι} {sub : 
   family_entries_sound (checkEntries_sound h) (variablesOk_sound hv) hlook
     (fun _ _ h => by simp at h)
 
-/-- A family certificate checked at the graph with its assignment fixed:
-no check reads the assignment, and fixing it makes the check the same
-function of the graph at every reassignment (`Parametricity`). -/
-@[nospecialize] def checkFamilyAt [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (r : Renaming G) (S T : List ι) (c : FamilyCertificate ι) : Bool :=
+/-- A family certificate checked at the graph with its assignment fixed,
+premises read with the renaming `sub`: no check reads the assignment, and
+fixing it makes the check the same function of the graph at every
+reassignment (`Parametricity`). -/
+@[nospecialize] def checkFamilyWith [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (sub : Option (Renaming G)) (S T : List ι) (c : FamilyCertificate ι) : Bool :=
   let e := ParameterAssignment.empty .mixed
-  SubtypingTrace.question "core" (S.map r.size).sum (T.map r.size).sum 0 fun _ =>
-    checkFamilyUsing (PositiveRules.reassign G e) (images.reassign e) (some (r.reassign e)) images.gen
+  let sub' := sub.map fun r => r.reassign (G := G) e
+  SubtypingTrace.question "family" (typeSize sub' S) (typeSize sub' T) 0 fun _ =>
+    checkFamilyUsing (PositiveRules.reassign G e) (images.reassign e) sub' images.gen
       (images.base.reassign e) S T c
 
-theorem checkFamilyAt_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
-    {r : Renaming G} {S T : List ι} {c : FamilyCertificate ι}
-    (h : checkFamilyAt G images r S T c = true) :
+theorem checkFamilyWith_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {sub : Option (Renaming G)} {S T : List ι} {c : FamilyCertificate ι}
+    (h : checkFamilyWith G images sub S T c = true) :
     ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) :=
   checkFamilyUsing_sound (G := PositiveRules.reassign G (ParameterAssignment.empty .mixed)) h
+
+/-- A family certificate, premises read with the representation's renaming. -/
+@[nospecialize] def checkFamilyAt [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (S T : List ι) (c : FamilyCertificate ι) : Bool :=
+  checkFamilyWith G images images.sub S T c
+
+theorem checkFamilyAt_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {S T : List ι} {c : FamilyCertificate ι}
+    (h : checkFamilyAt G images S T c = true) :
+    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) :=
+  checkFamilyWith_sound h
 
 /-- The entry a pair is checked in when no certificate names one: the pair
 itself, with no hypothesis and no table. -/
@@ -1369,174 +1178,30 @@ premise judgment on the pair (`Var` for two applications of one head). -/
     | some r => premAt G images r S T
     | none => false
 
-/-- A core certificate: its table checked with label inclusions for premises
-(`checkCore`), or, with a renaming, as the one variable-free entry of a
-family certificate, whose premises may also be `Var` and table pairs at
-renamed bound rows. -/
-@[nospecialize] def coreUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (S T : List ι)
-    (cert : Certificate ι) (ks : List (List ι × Ops ι × List (RestArrow (List ι)) × Instance ι)) :
-    Bool :=
-  (checkCore G (knownOf ks) S T cert &&
-      ks.all fun k => checkInstArrsUsing G images k.1 k.2.1 k.2.2.1 k.2.2.2) ||
-    match images.sub with
-    | some r => checkFamilyAt G images r S T
-        { entries := [{ source := S, target := T, table := cert.table }], arrows := cert.arrows,
-          instances := ks }
-    | none => false
-
-/-- One proof traversal for every proved image-check implementation. Other
-rules retain their original checks, including closure and free-variable
-checks. Where the representation has a renaming, `subset` and `core` also
-read premises by `Var` (`subsetUsing`, `coreUsing`); the proof forms are
-the same. -/
+/-- One proof traversal for every proved image-check implementation. Where
+the representation has a renaming, `subset` and `family` read premises by
+`Var` and pairs at renamed bound rows (`subsetUsing`, `checkFamilyAt`). -/
 @[nospecialize] def checkUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (S T : List ι) : Proof ι → Bool
-  | .core cert ks => coreUsing G images S T cert ks
   | .subset => subsetUsing G images S T
-  | .trans middle left right => checkUsing G images S middle left && checkUsing G images middle T right
   | .inst c => checkInstUsing G images S T c
-  | .gen D V U p => genOk G S T D V U && checkUsing G images S U p
-  | .table tbl D V => TableOk G tbl D V &&
-      S.all fun l => match entryImg tbl [] l with
-        | some U => U.all (· ∈ T)
-        | none => false
+  | .family c => checkFamilyAt G images S T c
 
-/-- Existing certificates use the finite image checker. -/
-@[nospecialize] def check [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) (proof : Proof ι) : Bool :=
-  checkUsing G (finiteInstanceImages G) S T proof
-
-/-- The shared proof traversal is sound for any proved image checker. This is
-semantic soundness; completeness for the original finite declarative rules is
-still stated separately by `derivable_iff_checked`. -/
+/-- The shared proof traversal is sound for any proved image checker. -/
 theorem checkUsing_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : InstanceImageCheck G} {S T proof}
     (h : checkUsing G images S T proof = true) :
     ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
-  induction proof generalizing S T with
-  | core cert ks =>
-    simp only [checkUsing, coreUsing, Bool.or_eq_true, Bool.and_eq_true, List.all_eq_true] at h
-    rcases h with h | h
-    · apply Core.mixed_sound (checkCore_sound h.1)
-      intro η k hk
-      obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hk
-      exact checkInstArrsUsing_sound (h.2 q hq) η
-    · split at h
-      · exact checkFamilyAt_sound h
-      · cases h
+  cases proof with
   | subset =>
     simp only [checkUsing, subsetUsing, Bool.or_eq_true] at h
     rcases h with h | h
-    · exact (Sub.subset (of_decide_eq_true h)).mixed_sound
+    · exact fun _ => mixed_subset (of_decide_eq_true h)
     · split at h
       · exact premAt_sound h
       · cases h
-  | trans middle left right ih ih' =>
-    simp only [checkUsing, Bool.and_eq_true] at h
-    exact fun η n W x hx => ih' h.2 η n W x (ih h.1 η n W x hx)
   | inst c => exact checkInstUsing_sound h
-  | gen D V U p ih =>
-    simp only [checkUsing, Bool.and_eq_true] at h
-    have body := ih h.2
-    have valid := h.1
-    unfold genOk at valid
-    split at valid
-    · rename_i j
-      split at valid
-      · rename_i s hq
-        simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, List.all_eq_true,
-          decide_eq_true_eq] at valid
-        exact gen_mixed_sound valid.1.1.1 hq valid.1.1.2 valid.1.2 valid.2 body
-      · cases valid
-    · cases valid
-  | table tbl D V =>
-    simp only [checkUsing, Bool.and_eq_true, List.all_eq_true] at h
-    apply (Sub.table h.1 ?_).mixed_sound
-    intro l hl
-    have hl' := h.2 l hl
-    cases hU : entryImg tbl [] l with
-    | none => simp [hU] at hl'
-    | some U =>
-      simp only [hU, List.all_eq_true, decide_eq_true_eq] at hl'
-      exact ⟨U, rfl, hl'⟩
-
-theorem check_sound [DecidableEq ι] {G : NormalGraph ι} {S T proof}
-    (h : check G S T proof = true) : Sub G S T := by
-  induction proof generalizing S T with
-  | core cert ks =>
-    simp only [check, checkUsing, coreUsing, finiteInstanceImages, Bool.or_false, Bool.and_eq_true,
-      List.all_eq_true] at h
-    refine .core (fun p hp => ?_) (checkCore_sound h.1)
-    obtain ⟨k, hk, rfl⟩ := List.mem_map.mp hp
-    exact checkInstArrs_sound (h.2 k hk)
-  | subset =>
-    simp only [check, checkUsing, subsetUsing, finiteInstanceImages, Bool.or_false] at h
-    exact .subset (of_decide_eq_true h)
-  | trans middle left right ih ih' =>
-    simp only [check, checkUsing, Bool.and_eq_true] at h
-    exact .trans (ih h.1) (ih' h.2)
-  | inst c => exact .inst (checkInst_sound h)
-  | gen D V U p ih =>
-    simp only [check, checkUsing, Bool.and_eq_true] at h
-    exact genOk_sound h.1 (ih h.2)
-  | table tbl D V =>
-    simp only [check, checkUsing, Bool.and_eq_true, List.all_eq_true] at h
-    refine .table h.1 fun l hl => ?_
-    have hl' := h.2 l hl
-    cases hU : entryImg tbl [] l with
-    | none => simp [hU] at hl'
-    | some U =>
-      simp only [hU, List.all_eq_true, decide_eq_true_eq] at hl'
-      exact ⟨U, rfl, hl'⟩
-
-theorem check_complete [dec : DecidableEq ι] {G : NormalGraph ι} {S T}
-    (h : Sub G S T) : ∃ proof, check G S T proof = true := by
-  induction h with
-  | @core S T inst known hk h =>
-    have he : inst = dec := Subsingleton.elim _ _
-    subst he
-    obtain ⟨ks, hr, ha⟩ := instances_complete known hk
-    simp only [checkInstArrs] at ha
-    obtain ⟨cert, hc⟩ := checkCore_complete h
-    exact ⟨.core cert ks, by simp only [check, checkUsing, coreUsing, hr, hc, ha, Bool.and_self,
-      Bool.true_or]⟩
-  | subset h => exact ⟨.subset, by
-      simp only [check, checkUsing, subsetUsing, Bool.or_eq_true, decide_eq_true_eq]
-      exact .inl h⟩
-  | trans h1 h2 ih ih' =>
-    rename_i S U T
-    obtain ⟨left, hl⟩ := ih
-    obtain ⟨right, hr⟩ := ih'
-    simp only [check] at hl hr
-    exact ⟨.trans U left right, by simp [check, checkUsing, hl, hr]⟩
-  | @inst S T inst h =>
-    have he : inst = dec := Subsingleton.elim _ _
-    subst he
-    obtain ⟨c, hc⟩ := checkInst_complete h
-    exact ⟨.inst c, hc⟩
-  | @table S T inst tbl D V hok hS =>
-    have he : inst = dec := Subsingleton.elim _ _
-    subst he
-    refine ⟨.table tbl D V, ?_⟩
-    simp only [check, checkUsing, hok, Bool.true_and, List.all_eq_true]
-    intro l hl
-    obtain ⟨U, hU, hUT⟩ := hS l hl
-    simp only [hU, List.all_eq_true, decide_eq_true_eq]
-    exact hUT
-  | @gen S inst j s D U V hp hq hU hF hS _ ih =>
-    have he : inst = dec := Subsingleton.elim _ _
-    subst he
-    obtain ⟨p, hpc⟩ := ih
-    simp only [check] at hpc
-    refine ⟨.gen D V U p, ?_⟩
-    simp only [check, checkUsing, genOk, hq, hp, hU, hF, hpc, Bool.not_false, Bool.true_and, Bool.and_true,
-      beq_self_eq_true, List.all_eq_true, decide_eq_true_eq]
-    exact hS
-
-/-- Certificate completeness for the independent declarative rules. No claim
-of completeness with respect to arbitrary semantic inclusion is made. -/
-theorem derivable_iff_checked [DecidableEq ι] {G : NormalGraph ι} {S T} :
-    Sub G S T ↔ ∃ proof, check G S T proof = true :=
-  ⟨check_complete, fun ⟨_, h⟩ => check_sound h⟩
+  | family c => exact checkFamilyAt_sound h
 
 /-- A proved image checker supplies ordinary value subsumption as well as
 mixed inclusion. Program typing uses this interface. -/
@@ -1545,28 +1210,8 @@ theorem acceptedUsing [DecidableEq ι] {G : NormalGraph ι}
     (h : checkUsing G images S T proof = true) : FamLe (meaning G S) (meaning G T) :=
   fun n W v hv => checkUsing_sound h G.env n W (.inl v) hv
 
-/-- A formula graph is checked through its normalization. -/
-@[nospecialize] def checkSource [DecidableEq ι] (G : PositiveGraphs.Graph ι) (S T : List ι)
-    (proof : Proof ι) : Bool := check (normalizeGraph G) S T proof
-
-theorem accepted [DecidableEq ι] {G : NormalGraph ι} {S T proof}
-    (h : check G S T proof = true) : FamLe (meaning G S) (meaning G T) :=
-  (check_sound h).sound
-
-theorem accepted_subsumption [DecidableEq ι] {G : NormalGraph ι} {S T proof}
-    (h : check G S T proof = true) (n : Nat) (W : WorldT n) (heap : Heap) (t : Tm)
-    (hs : Safe (meaning G S) n W heap t) : Safe (meaning G T) n W heap t := by
-  apply Safe_mono n _ W heap t hs
-  intro j _ U v hv
-  exact accepted h j U v hv
-
-#print axioms checkArrow_sound
-#print axioms checkArrow_complete
 #print axioms checkInstUsing_sound
 #print axioms checkUsing_sound
-#print axioms check_sound
-#print axioms check_complete
-#print axioms accepted
 #print axioms checkEntries_sound
 #print axioms checkEntries_complete
 #print axioms familyValid_iff_checked
@@ -1575,4 +1220,6 @@ theorem accepted_subsumption [DecidableEq ι] {G : NormalGraph ι} {S T proof}
 #print axioms prem_iff
 #print axioms premAt_sound
 #print axioms checkFamilyAt_sound
+#print axioms checkPairs_sound
+#print axioms boundOk_sound
 end Verification.Model.PositiveCertificates

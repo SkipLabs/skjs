@@ -82,123 +82,40 @@ theorem accepted_from_inputs [DecidableEq ι] {G : NormalGraph ι} {images : Ins
   simp only [acceptUsing, Bool.and_eq_true] at hc
   exact ControlFlow.accepted_inputs_safe hc.2 n W h ρ he hw hh hcodes
 
-/-- A table's rows as a hash set, for search to decide `Rel` of the table by
-a lookup where the list asks for a scan: `RelIn` holds exactly when `Rel`
-does. Search only: the checker reads the table's list. -/
-abbrev RowSet (ι : Type) [DecidableEq ι] [Hashable ι] := Std.HashSet (Ty ι × Ty ι)
-
-@[nospecialize] def rowSet [DecidableEq ι] [Hashable ι] (table : Table ι) : RowSet ι := Std.HashSet.ofList table
-
-/-- `PositiveRules.Rel`, the table's membership read through its row set. -/
-abbrev RelIn [DecidableEq ι] [Hashable ι] (rows : RowSet ι) (a b : List ι) : Prop :=
-  rows.contains (a, b) = true ∨ ∀ i ∈ a, i ∈ b
-
 /-- Small arrow search: source, receiver and domain union, and pairwise
-compatible codomain combination. The checker, not this search strategy,
-defines the rules. -/
-@[nospecialize] def arrowSearch [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (rows : RowSet ι) (L : Ops ι)
+compatible codomain combination, with operand premises decided by `rel`.
+The checker, not this search strategy, defines the rules. -/
+@[nospecialize] def arrowSearch [DecidableEq ι] (G : NormalGraph ι) (rel : List ι → List ι → Bool) (L : Ops ι)
     (S : List (RestArrow (Ty ι)))
     (q : Arrow (Ty ι)) : Nat → Option (PositiveCertificates.ArrowCert ι)
   | 0 => none
   | fuel+1 => Id.run do
+    let R : List ι → List ι → Prop := fun a b => rel a b = true
     let basic := PositiveCertificates.ArrowCert.empty :: .emptyRecv ::
       L.map (.source ·) ++ S.map (.rest ·)
-    if let some p := basic.find? (fun p => PositiveCertificates.checkArrowWith G (RelIn rows) L S q p) then
+    if let some p := basic.find? (fun p => PositiveCertificates.checkArrowWith G R L S q p) then
       return some p
     if let a :: rest := q.receiver then
       if !rest.isEmpty then
-        if let some left := arrowSearch G rows L S {q with receiver := [a]} fuel then
-          if let some right := arrowSearch G rows L S {q with receiver := rest} fuel then
+        if let some left := arrowSearch G rel L S {q with receiver := [a]} fuel then
+          if let some right := arrowSearch G rel L S {q with receiver := rest} fuel then
             let p := PositiveCertificates.ArrowCert.recvUnion [a] rest left right
-            if PositiveCertificates.checkArrowWith G (RelIn rows) L S q p then return some p
+            if PositiveCertificates.checkArrowWith G R L S q p then return some p
     for i in List.range q.arguments.length do
       if let some (a :: rest) := q.arguments[i]? then
         if !rest.isEmpty then
-          if let some left := arrowSearch G rows L S {q with arguments := q.arguments.set i [a]} fuel then
-            if let some right := arrowSearch G rows L S {q with arguments := q.arguments.set i rest} fuel then
+          if let some left := arrowSearch G rel L S {q with arguments := q.arguments.set i [a]} fuel then
+            if let some right := arrowSearch G rel L S {q with arguments := q.arguments.set i rest} fuel then
               let p := PositiveCertificates.ArrowCert.union (q.arguments.take i) [a] rest (q.arguments.drop (i+1)) left right
-              if PositiveCertificates.checkArrowWith G (RelIn rows) L S q p then return some p
+              if PositiveCertificates.checkArrowWith G R L S q p then return some p
     return (L.flatMap fun p => L.map fun q =>
       PositiveCertificates.ArrowCert.combine p.result q.result p.effect q.effect (.source p) (.source q)).find?
-        (fun p => PositiveCertificates.checkArrowWith G (RelIn rows) L S q p)
-
-@[nospecialize] def arrowEvidence [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (table : Table ι)
-    (pool : List (Ty ι)) : PositiveCertificates.Evidence ι :=
-  let rows := rowSet table
-  let clauses := pool.flatMap (expand G)
-  let arrows (L : Ops ι) (S : List (RestArrow (Ty ι))) (M : Ops ι) :=
-    M.filterMap fun p =>
-      (arrowSearch G rows L S p (p.arguments.length + p.receiver.length + 1)).map
-        (fun proof => (L,(p,proof)))
-  -- A scheme row's signatures are compared as an arrow clause's, against
-  -- those of a scheme binding the same rows that a row of the table relates
-  -- it to (`SchemeCoversWith`).
-  let schemeRow (i : ι) : Bool := (G.schemes i).isSome
-  let schemes := ((table.filter fun r => r.1.any schemeRow && r.2.any schemeRow).flatMap fun r =>
-    r.1.flatMap fun i => r.2.filterMap fun j =>
-      if i ∈ r.2 then none else match G.schemes i, G.schemes j with
-        | some s, some s' => if s.binders = s'.binders then some (s, s') else none
-        | _, _ => none).eraseDups
-  (clauses.flatMap fun a => match a with
-    | .arrs L S | .callable _ _ L S => clauses.flatMap fun b => match b with
-      | .arrs M _ | .callable _ _ M _ => arrows L S M
-      | _ => []
-    | _ => []) ++
-  schemes.flatMap fun (s, s') => arrows s.signatures s.variadic s'.signatures
-
-/-- Delete unsupported rows of a finite candidate relation. A surviving cyclic
-relation is only proposed evidence; checkCore validates every row. -/
-@[nospecialize] def prune [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (pool : List (Ty ι)) (known : PositiveRules.Known ι) :
-    Nat → Table ι → Table ι
-  | 0, table => table
-  | fuel+1, table =>
-    let es := arrowEvidence G table pool
-    let rows := rowSet table
-    let next := table.filter fun p => PositiveRules.SameKind G p.1 p.2 &&
-      decide (PositiveRules.OpaqueWith G (RelIn rows) known
-        (PositiveCertificates.ArrowsCheckedWith G (RelIn rows) es) p.1 p.2) &&
-      (sourceClauses G p.1 ++ PositiveRules.meetSources G p.1 p.2).all fun a =>
-      (clausesOf G p.2).any fun b => PositiveCertificates.checkClauseWith G (RelIn rows) known es p.1 a b
-    -- A filter keeps the table exactly when it keeps every row.
-    if next.length = table.length then table else prune G pool known fuel next
-
-/-- Whether a core table could hold the row `(A, B)`: the conditions a row
-must meet that no relation or arrow evidence decides, each source clause
-covered by some target clause with every subtype and arrow premise granted.
-Coverage is monotone in both, so a row failing this fails under every table:
-it is left out of a table's candidates, which leaves the pruned table as it
-was, and a pair failing it is refused before any table is built. Untrusted:
-`checkCore` decides. -/
-@[nospecialize] def rowFeasible [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (known : PositiveRules.Known ι)
-    (A B : Ty ι) (schemes : Bool := false) : Bool :=
-  PositiveRules.SameKind G A B &&
-    decide (PositiveRules.OpaqueWith G (fun _ _ => True) known (fun _ _ _ => schemes) A B) &&
-    (sourceClauses G A ++ PositiveRules.meetSources G A B).all fun a => (clausesOf G B).any fun b =>
-      decide (CoversWith G (fun _ _ => True) known (fun _ _ _ => True) A a b)
+        (fun p => PositiveCertificates.checkArrowWith G R L S q p)
 
 /-- Known rows with the instances proving them. -/
 abbrev KnownInstances (ι : Type) :=
   List (List ι × PositiveRules.Ops ι × List (RestArrow (List ι)) ×
     PositiveCertificates.Instance ι)
-
-/-- A core table over the pool, whose coverage may use the `known` rows. -/
-@[nospecialize] def subtypeWith [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
-    (ks : KnownInstances ι) (A B : Ty ι) : Option (PositiveCertificates.Proof ι) :=
-  if PositiveCertificates.checkUsing G images A B .subset then some .subset else
-  -- Value top covers value types: one row, no arrow evidence.
-  let toTop := PositiveCertificates.Proof.core ⟨[(A, B)], []⟩
-  if expand G B = [.top] && PositiveCertificates.checkUsing G images A B toTop then some toTop else
-    let known := PositiveCertificates.knownOf ks
-    if !rowFeasible G known A B then none else
-    let types := (A :: B :: pool).eraseDups
-    let initial := (types.flatMap fun a => types.map (a, ·)).filter fun r => rowFeasible G known r.1 r.2
-    let table := prune G types known initial.length initial
-    let p := PositiveCertificates.Proof.core ⟨table, arrowEvidence G table types⟩ ks
-    if PositiveCertificates.checkUsing G images A B p then some p else none
-
-@[nospecialize] def subtypeBase [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
-    (A B : Ty ι) : Option (PositiveCertificates.Proof ι) :=
-  subtypeWith G images pool [] A B
 
 /-- The pairs one signature list's coverage of another compares: each target
 signature against each source one, position by position (receivers,
@@ -217,11 +134,34 @@ it. -/
   target.flatMap fun t => source.flatMap fun s =>
     (t.receiver, s.receiver) :: (t.arguments.2, s.arguments.2) :: (s.result, t.result) :: t.arguments.1.zip s.arguments.1
 
+/-- The pairs a variadic signature's coverage reads past the source's fixed
+parameters: each further target parameter against the source rest's
+element. -/
+@[nospecialize] def elemPairs (G : NormalGraph ι) (source target : List (RestArrow (List ι))) :
+    List (List ι × List ι) :=
+  target.flatMap fun t => source.flatMap fun s => match PositiveRules.restElem G s.arguments.2 with
+    | some E => (t.arguments.1.drop s.arguments.1.length).map (·, E)
+    | none => []
+
+/-- The pairs a fixed signature's coverage of a variadic one whose rest is one
+exact tuple compares: receivers, the fixed parameters and then the tuple's
+positions against the source's parameters, and results. -/
+@[nospecialize] def packPairs (G : NormalGraph ι) (source : List (Arrow (List ι))) (target : List (RestArrow (List ι))) :
+    List (List ι × List ι) :=
+  target.flatMap fun t => match expand G t.arguments.2 with
+    | [.pack τ []] => source.flatMap fun p =>
+        (t.receiver, p.receiver) :: (p.result, t.result) :: (t.arguments.1 ++ τ.required).zip p.arguments
+    | _ => []
+
 /-- The pairs a record's coverage of another compares, key by key: fields
 both ways, views and optional fields, methods signature by signature and
 scheme by scheme, and a method the source's prototype holds under the key
 (its receiver against the source, its signatures against the target's
 schemes'). -/
+@[nospecialize] def protoChain (G : NormalGraph ι) : Nat → List ι → List (List ι)
+  | 0, P => [P]
+  | d + 1, P => P :: ((PositiveRules.viewOf G P CallArguments.protoField).toList.flatMap (protoChain G d))
+
 @[nospecialize] def recordPairs [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (self : List ι)
     (fs vs : List (PropKey × List ι)) (os : List (OptionalField (List ι)))
     (ms : List (MethodMembers.Sig (List ι)))
@@ -240,7 +180,14 @@ schemes'). -/
     (own.flatMap fun p =>
       signaturePairs (p.calls.map (·.withReceiver [])) (q.calls.map (·.withReceiver [])) ++
       (q.schemes.flatMap fun S' => p.schemes.map fun S => (S, S'))) ++
-    ((keyed q.key ++ proto.flatMap fun P => (PositiveRules.viewOf G P q.key).toList).flatMap fun F =>
+    ((keyed q.key ++ (proto.flatMap (protoChain G PositiveRules.protoChainDepth)).flatMap fun P =>
+        (PositiveRules.viewOf G P q.key).toList).flatMap fun F =>
+      (match expand G F with
+        | [.arrs L S] =>
+          (L.map fun s => (self, s.receiver)) ++ (S.map fun s => (self, s.receiver)) ++
+          signaturePairs (L.map (·.withReceiver [])) (q.calls.map (·.withReceiver [])) ++
+          restPairs (S.map (·.withReceiver [])) (q.rests.map (·.withReceiver []))
+        | _ => []) ++
       (schemeSigs F).flatMap fun s =>
         (s.signatures.map fun p => (self, p.receiver)) ++
         targetSchemes.flatMap fun s' => signaturePairs s.signatures s'.signatures ++
@@ -250,16 +197,26 @@ schemes'). -/
 @[nospecialize] def clausePairs [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (self : List ι) :
     Clause (List ι) → Clause (List ι) → List (List ι × List ι)
   | .refs a bs vs os ms _, .refs c ds ws ps ns _
-  | .refs a bs vs os ms _, .dict c ds ws _ ps ns _ _
   | .dict a bs vs _ os ms _ _, .refs c ds ws ps ns _ =>
     recordPairs G self (a :: bs).flatten vs os ms (c :: ds).flatten ws ps ns
+  | .refs a bs vs os ms _, .dict c ds ws iy ps ns _ cy =>
+    recordPairs G self (a :: bs).flatten vs os ms (c :: ds).flatten ws ps ns ++
+      (iy.flatMap fun y => ((a :: bs).flatten ++ vs).map fun p => (p.2, y.2)) ++
+      (cy.flatMap fun y => (a :: bs).flatten.flatMap fun p => [(p.2, y.2), (y.2, p.2)])
   | .dict a bs vs ix os ms _ cx, .dict c ds ws iy ps ns _ cy =>
     recordPairs G self (a :: bs).flatten vs os ms (c :: ds).flatten ws ps ns ++
-      (iy ++ cy).flatMap fun y => (ix ++ cx).flatMap fun x => [(x.2, y.2), (y.2, x.2)]
-  | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T | .callable _ _ L S, .callable _ _ M T =>
-    signaturePairs L M ++ restPairs S T
-  | .ctors L _, .ctors M _ =>
-    signaturePairs (L.map fun p => ⟨[], p.1, p.2, .unrestricted⟩) (M.map fun p => ⟨[], p.1, p.2, .unrestricted⟩)
+      ((iy ++ cy).flatMap fun y => (ix ++ cx).flatMap fun x => [(x.2, y.2), (y.2, x.2)]) ++
+      (cy.flatMap fun y => os.map fun o => (y.2, o.type))
+  | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T =>
+    signaturePairs L M ++ restPairs S T ++ elemPairs G S T ++ packPairs G L T
+  | .callable a bs L S, .callable c ds M T =>
+    recordPairs G self (a :: bs).flatten [] [] [] (c :: ds).flatten [] [] [] ++
+    signaturePairs L M ++ restPairs S T ++ elemPairs G S T ++ packPairs G L T
+  | .ctors L S, .ctors M T =>
+    let fixed (p : List (List ι) × List ι) : Arrow (List ι) := ⟨[], p.1, p.2, .unrestricted⟩
+    let rest (p : List (List ι) × List ι × List ι) : RestArrow (List ι) := ⟨[], (p.1, p.2.1), p.2.2, .unrestricted⟩
+    signaturePairs (L.map fixed) (M.map fixed) ++ restPairs (S.map rest) (T.map rest) ++
+      packPairs G (L.map fixed) (T.map rest)
   | .list a bs, .list c ds | .pack a bs, .pack c ds =>
     (c :: ds).flatMap fun q => (a :: bs).flatMap fun p =>
       let pos (t : PositiveNormalization.Tuple (List ι)) := t.required ++ t.optional ++ t.rest.toList
@@ -274,48 +231,6 @@ and a scheme's signatures against a target scheme's binding the same rows. -/
     | some s, some s' => if s.binders = s'.binders then
         signaturePairs s.signatures s'.signatures ++ restPairs s.variadic s'.variadic else []
     | _, _ => []
-
-/-- The most rows a table grown on demand may hold before the search gives
-up on it. -/
-def demandLimit : Nat := 400
-
-/-- A core table grown from a pair on demand: each row adds the rows relating
-what its coverage compares (`demandPairs`), that could hold and are not label
-inclusions. A recursive family of types (`Promise<A>` and `Promise<B>`, whose
-`catch` returns `Promise<A | R>` and `Promise<B | R>`) closes into a finite
-table of the pairs the two unfold into together, without a table over every
-type the unit names. `none` past `demandLimit` rows. Untrusted: `checkCore`
-decides. -/
-@[nospecialize] def demandTable [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (known : PositiveRules.Known ι) :
-    Nat → Table ι → Table ι → Option (Table ι)
-  | 0, _, _ => none
-  | fuel + 1, table, frontier =>
-    let next := (frontier.flatMap fun r => demandPairs G r.1 r.2).eraseDups.filter fun r =>
-      !(r.1.all (· ∈ r.2)) && !table.contains r && rowFeasible G known r.1 r.2 true
-    if next.isEmpty then some table
-    else if table.length + next.length > demandLimit then none
-    else demandTable G known fuel (table ++ next) next
-
-/-- Whether a type is of objects with a member of quantified signatures: an
-instance of a declaration with generic methods. -/
-@[nospecialize] def quantifiedMembers (G : NormalGraph ι) (T : Ty ι) : Bool :=
-  (expand G T).any fun c => match c with
-    | .refs _ _ _ _ ms _ | .dict _ _ _ _ _ ms _ _ => ms.any (!·.schemes.isEmpty)
-    | _ => false
-
-/-- A proof of `A ≤ B` by a table grown on demand (`demandTable`), for two
-instances of declarations with generic methods, whose unfolding together the
-tables over the types near the pair do not reach. -/
-@[nospecialize] def demandProof [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (A B : Ty ι) :
-    Option (PositiveCertificates.Proof ι) := do
-  if !(quantifiedMembers G A && quantifiedMembers G B) then none
-  if !rowFeasible G [] A B true then none
-  let table ← demandTable G [] demandLimit [(A, B)] [(A, B)]
-  let types := (table.flatMap fun r => [r.1, r.2]).eraseDups
-  let table := prune G types [] table.length table
-  let p := PositiveCertificates.Proof.core ⟨table, arrowEvidence G table types⟩ []
-  if PositiveCertificates.checkUsing G images A B p then some p else none
-
 
 /-- How deep a pair's rows follow `Var`: search only. -/
 def varDepthDefault : Nat := 8
@@ -364,23 +279,6 @@ renaming the target's binders to the source's. -/
         restPairs s.variadic (s'.variadic.map (RestArrow.map (r.substitute σ)))
     | _, _ => []
 
-/-- Arrow evidence proposed for a family's pairs: every source signature for
-every target signature, the target's renamed to the source's binders. -/
-@[nospecialize] def arrowCandidatesUsing [DecidableEq ι] (G : NormalGraph ι) (r : Renaming G)
-    (pairs : List (Ty ι × Ty ι)) : PositiveCertificates.Evidence ι :=
-  pairs.flatMap fun (A, B) =>
-    ((sourceClauses G A).flatMap fun a => (clausesOf G B).flatMap fun b =>
-      match a, b with
-      | .arrs L _, .arrs M _ | .callable _ _ L _, .arrs M _ | .callable _ _ L _, .callable _ _ M _ =>
-        M.flatMap fun q => L.map fun p => (L, (q, PositiveCertificates.ArrowCert.source p))
-      | _, _ => []) ++
-    (A.flatMap fun i => B.flatMap fun j => match G.schemes i, G.schemes j with
-      | some s, some s' =>
-        let σ := s'.binders.zip (s.binders.map fun p => [p])
-        (s'.signatures.map (Arrow.map (r.substitute σ)) ++ s'.signatures).flatMap fun q =>
-          s.signatures.map fun p => (s.signatures, (q, PositiveCertificates.ArrowCert.source p))
-      | _, _ => [])
-
 /-- A head pair recurring with larger arguments than each of its two or more
 earlier occurrences, none of which it renames: growth. -/
 @[nospecialize] def grows [DecidableEq ι] {G : NormalGraph ι} (r : Renaming G) (table : Table ι) (A B : Ty ι) : Bool :=
@@ -394,12 +292,11 @@ earlier occurrences, none of which it renames: growth. -/
     same.length ≥ 2 && same.all fun p => size p.1 p.2 < size A B
   | none => false
 
-/-- The most rows the fallback table may hold, and the rounds it may grow:
-search only. -/
+/-- The most rows the table may hold: search only. -/
 def fallbackLimit : Nat := 200
 
-/-- How a fallback table's growth ended, with its counts: the rounds of
-unfolding, the candidate pairs visited, and the table. -/
+/-- How a table's growth ended, with its counts: the rounds of unfolding, the
+candidate pairs visited, and the table. -/
 structure Fallback (ι : Type) where
   table : Table ι
   rounds : Nat := 0
@@ -407,20 +304,27 @@ structure Fallback (ι : Type) where
   /-- `growth`, `limit`, or none when the table closed. -/
   refused : Option String := none
 
-/-- Grow the fallback table from its frontier; refuse at growth or past the
-limit. -/
-@[nospecialize] def fallbackTable [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (r : Renaming G) : Nat → Fallback ι → Table ι → Fallback ι
+/-- Grow the table from its frontier: each row adds the pairs its coverage
+compares (`demandPairs`, and quantified members after renaming), each read
+through `Var` where it applies, that no inclusion, row or renamed row already
+answers. Refuse at growth or past the limit. -/
+@[nospecialize] def growTable [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    : Nat → Fallback ι → Table ι → Fallback ι
   | 0, fb, _ => { fb with refused := some "limit" }
   | fuel + 1, fb, frontier =>
-    let cand := ((frontier.flatMap fun p => demandPairs G p.1 p.2 ++ renamedPairs G r p.1 p.2).flatMap
-      fun p => rowsFor images varDepthDefault p.1 p.2).eraseDups
+    let cand := (frontier.flatMap fun p =>
+      (demandPairs G p.1 p.2 ++ (match images.sub with
+        | some r => renamedPairs G r p.1 p.2
+        | none => [])).flatMap fun p => match images.sub with
+          | some _ => rowsFor images varDepthDefault p.1 p.2
+          | none => if p.1.all (· ∈ p.2) then [] else [p]).eraseDups
     let step (st : Except String (Table ι × Table ι)) (p : Ty ι × Ty ι) :
         Except String (Table ι × Table ι) := do
       let (tbl, fresh) ← st
       let f : Entry ι := { source := [], target := [], table := tbl }
-      if PositiveCertificates.premTable G (some r) f p.1 p.2 then return (tbl, fresh)
-      if grows r tbl p.1 p.2 then throw "growth"
+      if PositiveCertificates.premTable G images.sub f p.1 p.2 then return (tbl, fresh)
+      if let some r := images.sub then
+        if grows r tbl p.1 p.2 then throw "growth"
       if tbl.length ≥ fallbackLimit then throw "limit"
       return (tbl ++ [p], fresh ++ [p])
     let fb := { fb with rounds := fb.rounds + 1, visited := fb.visited + cand.length }
@@ -428,23 +332,72 @@ limit. -/
     | .error why => { fb with refused := some why }
     | .ok (tbl, fresh) =>
       if fresh.isEmpty then { fb with table := tbl }
-      else fallbackTable G images r fuel { fb with table := tbl } fresh
+      else growTable G images fuel { fb with table := tbl } fresh
 
-/-- A proof of `A ≤ B` by fallback coinduction: the pair unfolded, its
-table grown on demand, checked as a family entry (`coreUsing`). -/
-@[nospecialize] def fallbackProof [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (A B : Ty ι) : Option (PositiveCertificates.Proof ι) := do
-  let r ← images.sub
-  let fb := fallbackTable G images r fallbackLimit { table := [] } [(A, B)]
-  let result : Option (PositiveCertificates.Proof ι) :=
-    if fb.refused.isSome then none else
-    let p := PositiveCertificates.Proof.core ⟨fb.table, arrowCandidatesUsing G r ((A, B) :: fb.table)⟩ []
-    if PositiveCertificates.checkUsing G images A B p then some p else none
+/-- The arrow evidence a table's rows ask for, premises decided by `rel`:
+each row's arrow clauses against its target's, and each quantified member
+against the target's, as declared and with the target's binders renamed to
+the source's. -/
+@[nospecialize] def rowArrows [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G))
+    (rel : List ι → List ι → Bool) (table : Table ι) : PositiveCertificates.Evidence ι :=
+  let arrows (L : Ops ι) (S : List (RestArrow (Ty ι))) (M : Ops ι) :=
+    M.filterMap fun q =>
+      (arrowSearch G rel L S q (q.arguments.length + q.receiver.length + 1)).map (L, q, ·)
+  table.flatMap fun (X, Y) =>
+    let sources := (sourceClauses G X ++ PositiveRules.meetSources G X Y ++ expand G X).eraseDups
+    (sources.flatMap fun a => (clausesOf G Y ++ expand G Y).eraseDups.flatMap fun b => match a, b with
+      | .arrs L S, .arrs M _ | .callable _ _ L S, .arrs M _ | .callable _ _ L S, .callable _ _ M _ =>
+        arrows L S M
+      | _, _ => []) ++
+    (X.flatMap fun i => Y.flatMap fun j => match G.schemes i, G.schemes j with
+      | some s, some s' =>
+        let renamed := match sub with
+          | some r =>
+            let σ := s'.binders.zip (s.binders.map fun p => [p])
+            s'.signatures.map (Arrow.map (r.substitute σ))
+          | none => []
+        arrows s.signatures s.variadic (s'.signatures ++ renamed)
+      | _, _ => [])
+
+/-- Delete the rows a table does not cover, premises read in the table
+itself, until every row is covered: the greatest fixed point below the
+reachable pairs. With a renaming a premise is the judgment of §4.2 in the
+entry of `(A, B)` (`Var`, `Inst`, `TabRen`); without one, a row or an
+inclusion. Untrusted: the checker decides. -/
+@[nospecialize] def gfp [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (A B : Ty ι)
+    (known : PositiveRules.Known ι) : Nat → Table ι → Table ι × PositiveCertificates.Evidence ι
+  | 0, table => (table, [])
+  | fuel + 1, table =>
+    let f : Entry ι := { source := A, target := B, table }
+    let look := images.base.lookup [f]
+    let rel : List ι → List ι → Bool := fun X Y => decide (Prem G images.sub look images.gen f X Y)
+    let R : List ι → List ι → Prop := fun X Y => rel X Y = true
+    let es := rowArrows G images.sub rel (f.pairs)
+    let covered (p : Ty ι × Ty ι) : Bool :=
+      PositiveRules.SameKind G p.1 p.2 &&
+      decide (OpaqueFamily G images.sub R known
+        (PositiveCertificates.ArrowsCheckedWith G R es) [] p.1 p.2) &&
+      (sourceClauses G p.1 ++ PositiveRules.meetSources G p.1 p.2).all fun a =>
+        (clausesOf G p.2).any fun b => PositiveCertificates.checkClauseWith G R known es p.1 a b
+    let next := table.filter covered
+    if next.length = table.length then (table, es) else gfp G images A B known fuel next
+
+/-- The fallback's pairs for `A ≤ B` (RECURSIVE-EQUATIONS §4.2–4.3): the pairs
+reachable from it, grown on demand (`growTable`), the uncovered ones deleted
+(`gfp`), with the arrow evidence and the instances their coverage uses.
+Untrusted: the checker decides. -/
+@[nospecialize] def fallbackPairs [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (A B : Ty ι) (instances : Table ι → KnownInstances ι := fun _ => []) :
+    Option (Table ι × PositiveCertificates.Evidence ι × KnownInstances ι) :=
+  let fb := growTable G images fallbackLimit { table := [(A, B)] } [(A, B)]
+  let result := if fb.refused.isSome then none else
+    let ks := instances fb.table
+    let (table, es) := gfp G images A B (PositiveCertificates.knownOf ks) (fb.table.length + 1) fb.table
+    if table.contains (A, B) then some (table, es, ks) else none
   SubtypingTrace.note (fun _ => Lean.Json.mkObj [("search", "fallback"),
-    ("source", Lean.toJson (A.map r.size).sum), ("target", Lean.toJson (B.map r.size).sum),
     ("rows", Lean.toJson fb.table.length), ("rounds", Lean.toJson fb.rounds),
     ("visited", Lean.toJson fb.visited), ("refused", Lean.toJson fb.refused),
-    ("proved", Lean.toJson result.isSome)]) result
+    ("kept", Lean.toJson (result.map (·.1.length)))]) result
 
 /-- The table built while matching, and the instances found for the
 instantiated binders. -/
@@ -595,46 +548,25 @@ validates the table. -/
   pairs.foldlM (fun st xy => matchRow G bs V fuel st κ xy.1 xy.2) st
 
 
-/-- The types a proof of `A ≤ B` may relate: the two, every row they reach,
-and every operand of those rows' clauses, a union such as an index contract
-`A | B` included. A certificate's table relates operands of their clauses,
-which these are, so a pool of the whole table adds nothing but search. -/
-@[nospecialize] def reachablePool [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (A B : Ty ι) : List (Ty ι) :=
-  let D := searchReads G (A ++ B)
-  (A :: B :: D.map ([·]) ++ D.flatMap fun i => (G i).flatMap Clause.operands).eraseDups
-
-/-- The types two steps from `A` and `B`: their clauses' operands, and those
-operands' clauses' operands. A table over them relates a record to the
-contracts its fields and methods name, and those to theirs, without a table
-over the whole pool; label inclusion (`Rel`) relates what lies further. -/
-@[nospecialize] def nearPool [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (A B : Ty ι) : List (Ty ι) :=
-  let step (T : Ty ι) : List (Ty ι) := T.flatMap fun i => (G i).flatMap Clause.operands
-  -- A prototype's members are the object's methods: its operands are one
-  -- step away, as an own field's are.
-  let proto (T : Ty ι) : List (Ty ι) := T.flatMap fun i => (G i).flatMap fun c => match c with
-    | .refs a bs vs _ _ _ =>
-      (((a :: bs).flatten ++ vs).filter (·.1 == CallArguments.protoField)).map (·.2)
-    | _ => []
-  let one := step A ++ step B ++ (proto A ++ proto B).flatMap step
-  (A :: B :: one ++ one.flatMap step).eraseDups
-
 /-- An instance of scheme row `s` whose signatures' images are the arrows
 `L`, `M`: find the binders' instances, then build the table under the context
 giving each binder its instance. Untrusted: `checkInstArrs` validates it. -/
 @[nospecialize] def instanceForUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (fuel : Nat) (s : SchemeRow ι)
-    (L : PositiveRules.Ops ι) (M : List (RestArrow (List ι)))
-    (candidates : List (Ty ι) := []) :
+    (L : PositiveRules.Ops ι) (M : List (RestArrow (List ι))) :
     Option (PositiveCertificates.Instance ι) := do
   -- Each instance within its binder's bounds: inclusion, or a core table.
-  let boundCerts (κ₀ : Ctx ι) : Option (List (Option (PositiveCertificates.Certificate ι))) :=
+  let boundCerts (κ₀ : Ctx ι) :
+      Option (List (Option (Table ι × PositiveCertificates.Evidence ι))) :=
     s.bounds.mapM fun b =>
       match κ₀.lookup b.1 with
       | none => some none
       | some U =>
         if U.all (· ∈ b.2) then some none
-        else match subtypeBase G images (reachablePool G U b.2) U b.2 with
-          | some (.core cert _) => some (some cert)
-          | _ => none
+        else match fallbackPairs G (finiteInstanceImages G) U b.2 with
+          | none => none
+          | some (table, arrows, _) =>
+            if PositiveCertificates.checkPairs G U b.2 table arrows then some (some (table, arrows))
+            else none
   -- Where the target's operands are other spellings of the instance's (a
   -- result `Pair<[number, string]>` for `Pair<[T, U]>`), the binders are
   -- found from the signatures without their results, and the instance's own
@@ -682,18 +614,19 @@ giving each binder its instance. Untrusted: `checkInstArrs` validates it. -/
     M.foldlM (fun st q =>
       s.variadic.findSome? fun p => matchRest G s.binders V fuel st κ p q) st
   let first ← each [] {}
-  -- A binder read only through meet rows: an instance among the candidates
-  -- whose meet with the other parameters' instances and the row's clauses is
-  -- the clause row it was matched to.
+  -- A binder read only through meet rows: an instance whose meet with the
+  -- other parameters' instances and the row's clauses is the clause row it
+  -- was matched to, among that row and the target's operands.
+  let targetOps := (L.flatMap Arrow.operands ++ M.flatMap RestArrow.operands).eraseDups
   let throughMeet (b : ι) : Option (Ty ι) := first.meets.findSome? fun (qs, cs, j) =>
-    if !qs.contains b then none else candidates.find? fun U =>
+    if !qs.contains b then none else ([j] :: targetOps).find? fun U =>
       match qs.mapM (fun q => if q == b then some U else
           (first.found.lookup q).orElse fun _ => if s.binders.contains q then none else some [q]) with
       | some Us =>
         let Ls := Us.map (PositiveRules.clausesOf G) ++ [cs]
         Us.all G.plainTy &&
           (PositiveRules.sameClauses (G j) (PositiveRules.meetMany Ls) ||
-            PositiveRules.sameClauses (G j) (PositiveRules.meetMany Ls.reverse))
+            PositiveRules.sameClauses (G j) (PositiveRules.meetMany Ls.reverse) || U == [j])
       | none => false
   let θs := s.binders.map fun b => ((first.found.lookup b).orElse fun _ => throughMeet b).getD [b]
   let κ₀ := s.binders.zip θs
@@ -711,94 +644,61 @@ giving each binder its instance. Untrusted: `checkInstArrs` validates it. -/
   let certs ← boundCerts κ₀
   some ⟨final.table, θs, certs, D, V⟩
 
+/-- How deep instance matching follows a type's rows: search only. -/
+def instanceFuel : Nat := 64
+
 /-- A scheme row below an arrow type. -/
-@[nospecialize] def instProofUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (fuel : Nat) (A B : Ty ι)
-    (candidates : List (Ty ι) := []) :
+@[nospecialize] def instProofUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (fuel : Nat) (A B : Ty ι) :
     Option (PositiveCertificates.Proof ι) :=
   match A, expand G B with
   | [i], [.arrs L M] =>
     match G.schemes i with
-    | some s => (instanceForUsing G images fuel s L M candidates).map .inst
+    | some s => (instanceForUsing G images fuel s L M).map .inst
     | none => none
   | _, _ => none
 
-/-- Instances of prototype members covering the method members of the pool's
-types: for a source `A` whose prototype `P` holds, under a method's key, a
-scheme row, the instance whose signatures are the method's with `A` as
-receiver. -/
-@[nospecialize] def protoInstances [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat) :
-    KnownInstances ι :=
-  let methods := pool.flatMap fun B => (expand G B).flatMap fun c => match c with
-    | .refs _ _ _ _ ns _ | .dict _ _ _ _ _ ns _ _ => ns
-    | _ => []
-  pool.flatMap fun A => (expand G A).flatMap fun c => match c with
-    | .refs a bs vs _ _ _ =>
-      match ((a :: bs).flatten ++ vs).lookup CallArguments.protoField with
-      | some P => methods.filterMap fun q =>
-          match PositiveRules.viewOf G P q.key with
-          | some [i] => match G.schemes i with
-            | some s =>
-              let L := q.calls.map (·.withReceiver A)
-              let M := q.rests.map (·.withReceiver A)
-              (instanceForUsing G images fuel s L M).bind fun c =>
-                if PositiveCertificates.checkInstArrsUsing G images [i] L M c then some ([i], L, M, c) else none
-            | none => none
-          | _ => none
-      | none => []
-    | _ => []
+/-- Instances of prototype members a table's rows ask for: for a row whose
+source's prototype chain holds, under a target method's key, a scheme row,
+the instance whose signatures are the method's with the source as receiver. -/
+@[nospecialize] def rowInstances [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (fuel : Nat) (table : Table ι) : KnownInstances ι :=
+  (table.flatMap fun (A, B) =>
+    let methods := (expand G B).flatMap fun c => match c with
+      | .refs _ _ _ _ ns _ | .dict _ _ _ _ _ ns _ _ => ns
+      | _ => []
+    (expand G A).flatMap fun c => match c with
+      | .refs a bs vs _ _ _ =>
+        match ((a :: bs).flatten ++ vs).lookup CallArguments.protoField with
+        | some P => (protoChain G PositiveRules.protoChainDepth P).flatMap fun P => methods.filterMap fun q =>
+            match PositiveRules.viewOf G P q.key with
+            | some [i] => match G.schemes i with
+              | some s =>
+                let L := q.calls.map (·.withReceiver A)
+                let M := q.rests.map (·.withReceiver A)
+                (instanceForUsing G images fuel s L M).bind fun c =>
+                  if PositiveCertificates.checkInstArrsUsing G images [i] L M c then some ([i], L, M, c) else none
+              | none => none
+            | _ => none
+        | none => []
+      | _ => [])
 
-/-- A type below another holding its rows' copies: each row matched, under
-the empty context, against a row of the other. -/
-@[nospecialize] def tableProof [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (fuel : Nat) (A B : Ty ι) :
-    Option (PositiveCertificates.Proof ι) := do
-  let D := searchReads G (A ++ B)
-  let V := searchFree G D
-  let st ← A.foldlM (fun st l =>
-    B.findSome? fun j => matchRow G [] V fuel st [] [l] [j]) {}
-  some (.table st.table D V)
-
-/-- A type below a scheme row: a type of the pool stating the scheme's
-signatures, and a proof of the inclusion in it. -/
-@[nospecialize] def genProof [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat) (A B : Ty ι) :
-    Option (PositiveCertificates.Proof ι) :=
-  match B with
-  | [j] =>
-    match G.schemes j with
-    | some s => do
-      let U ← pool.find? fun U => expand G U == [.arrs s.signatures s.variadic]
-      let p ← subtypeBase G images pool A U <|> instProofUsing G images fuel A U
-      let D := searchReads G A
-      some (.gen D (searchFree G D) U p)
-    | none => none
-  | _ => none
-
-/-- A proof of `A ≤ B`: structural, by instantiating a scheme row, or by
-generalizing to one. Every proposal is checked. A core table over the two
-types alone, then a renaming table, are tried before one over the whole pool,
-whose size the search pays for squared: a row interned twice (`string` in a
-type argument and in a bound) and two lowerings of one generic instance are
-related without it. Instantiating a scheme row, which applies only when `A`
-is one, comes before prototype instances, which are sought for every array
-of the table against every method the table names: first over the types
-near the pair, then over the whole pool. -/
-@[nospecialize] def subtypeUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
+/-- A proof of `A ≤ B` by the algorithm of RECURSIVE-EQUATIONS §4: the
+premise judgment on the pair (label inclusion, `Var`), an instance of a
+quantified signature, or the fallback's pairs reachable from it, as the
+variable-free entry of a family certificate. Every proposal is checked. -/
+@[nospecialize] def subtypeUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (A B : Ty ι) : Option (PositiveCertificates.Proof ι) :=
-  let fuel := 64 + pool.length
   let ok p := PositiveCertificates.checkUsing G images A B p
-  let proto (P : List (Ty ι)) := match protoInstances G images ((A :: B :: P).eraseDups) fuel with
-    | [] => none
-    | ks => subtypeWith G images P ks A B
-  -- Every label of `A` among `B`'s: the inclusion needs no search.
-  (if A.all (· ∈ B) then some .subset else none) <|>
-  (subtypeBase G images [] A B) <|> ((tableProof G fuel A B).filter ok) <|>
-    (subtypeBase G images (nearPool G A B) A B) <|> (demandProof G images A B) <|>
-    (fallbackProof G images A B) <|> (subtypeBase G images pool A B) <|>
-    ((instProofUsing G images fuel A B pool).filter ok) <|> proto (nearPool G A B) <|> proto pool <|>
-    ((genProof G images pool fuel A B).filter ok)
+  (if ok .subset then some .subset else none) <|>
+    ((instProofUsing G images instanceFuel A B).filter ok) <|>
+    (fallbackPairs G images A B (rowInstances G images instanceFuel)).bind fun (table, arrows, ks) =>
+      let p := .family { entries := [{ source := A, target := B, table }], arrows, instances := ks }
+      if ok p then some p else none
+
 /-- Proofs that the member of key `k` on `O` covers each fixed signature of
 `F`: for each, a member signature of as many parameters, each claimed
 parameter within the member's and the member's result within the claimed. -/
-@[nospecialize] def memberProofsUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (O : Ty ι) (k : PropKey)
+@[nospecialize] def memberProofsUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (O : Ty ι) (k : PropKey)
     (F : Ty ι) : Option (List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι)) := do
   let m ← ProgramTyping.memberOf G O k
   -- At a quantified signature, the member bound to its host is the scheme.
@@ -806,14 +706,14 @@ parameter within the member's and the member's result within the claimed. -/
   let [.arrs L _] := expand G F | none
   L.mapM fun q => m.calls.findSome? fun c => do
     if q.arguments.length != c.arguments.length || !c.effect.covers q.effect then none
-    let ps ← (q.arguments.zip c.arguments).mapM fun (D, C) => subtypeUsing G images pool D C
-    let pr ← subtypeUsing G images pool c.result q.result
+    let ps ← (q.arguments.zip c.arguments).mapM fun (D, C) => subtypeUsing G images D C
+    let pr ← subtypeUsing G images c.result q.result
     pure (ps, pr)
 
-@[nospecialize] def coerce [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
+@[nospecialize] def coerce [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (e : ProgramCertificates.Evidence ι) (A : Ty ι) : Option (ProgramCertificates.Evidence ι) := do
   if (claim e).type = A then return e
-  let p ← subtypeUsing G images pool (claim e).type A
+  let p ← subtypeUsing G images (claim e).type A
   return .node ⟨(claim e).context, (claim e).term, A⟩ (.sub p) [e]
 
 instance [DecidableEq ι] (G : NormalGraph ι) (B : Ty ι) (tag : Tag) (q : Bool) :
@@ -854,13 +754,13 @@ came from a different context. No execution budget is inspected. -/
       ((match a with | .var i => (Γ[i]?).toList | _ => []) ++ pool).filter fun S =>
         decide (Answers G S .isStr true)
     match t with
-    | .var i => return (Γ[i]?).bind fun B => coerce G images pool (leaf B .var) A
+    | .var i => return (Γ[i]?).bind fun B => coerce G images (leaf B .var) A
     | .nul | .undef | .tru | .fls =>
       let r := match t with | .nul => Rule.nul | .undef => .undef | .tru => .tru | _ => .fls
       return (A :: pool).findSome? fun B =>
         let r := if expand G B = [.boolLit true] && t == .tru then Rule.truLit
           else if expand G B = [.boolLit false] && t == .fls then Rule.flsLit else r
-        if checkTreeUsing G images (leaf B r) then coerce G images pool (leaf B r) A else none
+        if checkTreeUsing G images (leaf B r) then coerce G images (leaf B r) A else none
     -- A number has one rule: its own singleton. Reaching `number`, or any
     -- union above it, is the coercion's job, exactly as for a boolean literal.
     | .num _ =>
@@ -868,18 +768,18 @@ came from a different context. No execution budget is inspected. -/
       -- not: a literal claimed at `number` has no singleton label to coerce
       -- from, exactly as a Boolean claimed at `boolean` has none.
       return (A :: pool).findSome? fun B =>
-        if checkTreeUsing G images (leaf B .numLit) then coerce G images pool (leaf B .numLit) A
-        else if checkTreeUsing G images (leaf B .num) then coerce G images pool (leaf B .num) A
+        if checkTreeUsing G images (leaf B .numLit) then coerce G images (leaf B .numLit) A
+        else if checkTreeUsing G images (leaf B .num) then coerce G images (leaf B .num) A
         else none
     | .str _ =>
       return (A :: pool).findSome? fun B =>
-        if checkTreeUsing G images (leaf B .strLit) then coerce G images pool (leaf B .strLit) A
-        else if checkTreeUsing G images (leaf B .str) then coerce G images pool (leaf B .str) A
+        if checkTreeUsing G images (leaf B .strLit) then coerce G images (leaf B .strLit) A
+        else if checkTreeUsing G images (leaf B .str) then coerce G images (leaf B .str) A
         else none
     | .bigint _ =>
       return (A :: pool).findSome? fun B =>
-        if checkTreeUsing G images (leaf B .bigintLit) then coerce G images pool (leaf B .bigintLit) A
-        else if checkTreeUsing G images (leaf B .bigint) then coerce G images pool (leaf B .bigint) A
+        if checkTreeUsing G images (leaf B .bigintLit) then coerce G images (leaf B .bigintLit) A
+        else if checkTreeUsing G images (leaf B .bigint) then coerce G images (leaf B .bigint) A
         else none
     -- Graph code: its captures at their slots' types, the code the unit's
     -- table checked; the claim or a pool type. A function's (`Rule.funGraph`)
@@ -898,15 +798,15 @@ came from a different context. No execution budget is inspected. -/
         match kind, expand G F with
         | .call, [.arrs _ S] =>
           if !fresh then none else do
-          coerce G images pool (.node ⟨Γ,t,F⟩ (.funGraph (← arraysOf S)) ps) A
+          coerce G images (.node ⟨Γ,t,F⟩ (.funGraph (← arraysOf S)) ps) A
         | .construct, [.ctors _] =>
           if !fresh then none else do
           let U ← pool.find? fun U => decide (expand G U = [.undef])
-          coerce G images pool (.node ⟨Γ,t,F⟩ (.ctorGraph U) ps) A
+          coerce G images (.node ⟨Γ,t,F⟩ (.ctorGraph U) ps) A
         | .call, [.callable P [] _ S] =>
           if P.map Prod.fst != ns || inits.length != ns.length then none else do
           let eas ← (inits.zip (P.map Prod.snd)).mapM fun (a,D) => recur Γ a D
-          coerce G images pool (.node ⟨Γ,t,F⟩ (.callableGraph (← arraysOf S)) (eas ++ ps)) A
+          coerce G images (.node ⟨Γ,t,F⟩ (.callableGraph (← arraysOf S)) (eas ++ ps)) A
         | _, _ => none
     -- `new f(args)`: a construct signature of the constructor's type taking at
     -- least as many parameters as there are actuals; each omitted position
@@ -916,17 +816,17 @@ came from a different context. No execution budget is inspected. -/
         let [.ctors L] := expand G F | none
         L.findSome? fun p => do
           if args.length > p.1.length then none else do
-          let _ ← subtypeUsing G images pool p.2 A
+          let _ ← subtypeUsing G images p.2 A
           let ef ← recur Γ f F
           let eas ← (args.zip p.1).mapM fun (a,D) => recur Γ a D
           let eus ← (p.1.drop args.length).mapM fun D => recur Γ .undef D
-          coerce G images pool (.node ⟨Γ,t,p.2⟩ .construct (ef :: eas ++ eus)) A
+          coerce G images (.node ⟨Γ,t,p.2⟩ .construct (ef :: eas ++ eus)) A
     -- `.bind`'s forwarding descriptor: a leaf whose checker reads the saved
     -- slots from the context; the claimed type, or a pool type, is its result.
     | .makeAt (.bound (.var _) (.var _) _) [] [] =>
       return (A :: pool).findSome? fun F =>
-        if checkTreeUsing G images (leaf F .bindE) then coerce G images pool (leaf F .bindE) A
-        else if checkTreeUsing G images (leaf F .bindRestE) then coerce G images pool (leaf F .bindRestE) A
+        if checkTreeUsing G images (leaf F .bindE) then coerce G images (leaf F .bindE) A
+        else if checkTreeUsing G images (leaf F .bindRestE) then coerce G images (leaf F .bindRestE) A
         else none
     -- A member bound to its host: a leaf whose checker reads the object's type
     -- from the context; the claimed type, or a pool type, is its result.
@@ -935,8 +835,8 @@ came from a different context. No execution budget is inspected. -/
         | some O => ProgramTyping.memberSchemes G O k
         | none => []
       return (A :: schemes ++ pool).findSome? fun F => do
-        let ps ← memberProofsUsing G images pool (← Γ[i]?) k F
-        if checkTreeUsing G images (leaf F (.bindMember ps)) then coerce G images pool (leaf F (.bindMember ps)) A
+        let ps ← memberProofsUsing G images (← Γ[i]?) k F
+        if checkTreeUsing G images (leaf F (.bindMember ps)) then coerce G images (leaf F (.bindMember ps)) A
         else none
     | .letE a b =>
       let exactTypes := suggestions.reverse.filterMap fun j =>
@@ -968,7 +868,7 @@ came from a different context. No execution budget is inspected. -/
           let omitted := Ps.drop k
           let parts := args.drop k
           if !omitted.isEmpty && !parts.isEmpty then none else do
-          let _ ← subtypeUsing G images pool B A
+          let _ ← subtypeUsing G images B A
           let ef ← recur Γ f F
           let er ← recur Γ recv Rt
           let eas ← (args.zip Ps).mapM fun (a,D) => recur Γ a D
@@ -985,7 +885,7 @@ came from a different context. No execution budget is inspected. -/
               parts.zipIdx.mapM fun (a, i) => do recur Γ a (← positionTy T i)
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,B⟩
             (.callRest effect k omitted.length flags P) (ef :: er :: eas ++ eus ++ eps)
-          if checkTreeUsing G images e then coerce G images pool e A else none
+          if checkTreeUsing G images e then coerce G images e A else none
       let direct := fun (candidates : List (Ty ι)) => candidates.findSome? fun F => do
         let (L,r) ← match expand G F with
           | [.arrs L _] => some (L,Rule.app)
@@ -997,12 +897,12 @@ came from a different context. No execution budget is inspected. -/
           -- remaining contract admits `undefined`, the value bound there.
           if args.length > p.arguments.length then none else do
             let omitted := p.arguments.drop args.length
-            let _ ← subtypeUsing G images pool p.result A
+            let _ ← subtypeUsing G images p.result A
             let ef ← recur Γ f F
             let er ← recur Γ recv p.receiver
             let eas ← (args.zip p.arguments).mapM fun (a,D) => recur Γ a D
             let eus ← omitted.mapM fun D => recur Γ .undef D
-            coerce G images pool (.node ⟨Γ,t,p.result⟩ (r p.effect) (ef :: er :: eas ++ eus)) A
+            coerce G images (.node ⟨Γ,t,p.result⟩ (r p.effect) (ef :: er :: eas ++ eus)) A
       if let some e := variadic own <|> direct own <|> variadic pool <|> direct pool then return some e
       -- A callee or, for a method dispatched on its object, the receiver.
       return splitReceiver f <|> splitReceiver recv
@@ -1014,7 +914,7 @@ came from a different context. No execution budget is inspected. -/
         | [.refs B [] [] [] [] ks] =>
           if B.map Prod.fst != ns || !ks.all (fun K => ns.all K.admits) then none else do
           let ps ← (inits.zip (B.map Prod.snd)).mapM fun (a,D) => recur Γ a D
-          coerce G images pool (.node ⟨Γ,t,R⟩ .alloc ps) A
+          coerce G images (.node ⟨Γ,t,R⟩ .alloc ps) A
         -- A literal allocated directly at a dictionary, each field an index
         -- may admit at that index's type.
         | [.dict B [] [] ix os [] [] cs] =>
@@ -1023,7 +923,7 @@ came from a different context. No execution budget is inspected. -/
             !os.all (fun o => !ns.contains o.key && cs.all fun y => !y.1.may o.key ||
               o.type == y.2 || (G.plainTy y.2 && (expand G y.2).isEmpty)) then none else do
           let ps ← (inits.zip (B.map Prod.snd)).mapM fun (a,D) => recur Γ a D
-          coerce G images pool (.node ⟨Γ,t,R⟩ .alloc ps) A
+          coerce G images (.node ⟨Γ,t,R⟩ .alloc ps) A
         | _ => none
     | .indexAt a key =>
       -- A key of a class within an index's reads through it: a string
@@ -1039,10 +939,10 @@ came from a different context. No execution budget is inspected. -/
             (A :: pool).findSome? fun U => do
               if expand G U != [.undef] then none else do
               let B := E ++ U
-              let _ ← subtypeUsing G images pool B A
+              let _ ← subtypeUsing G images B A
               let ea ← recur Γ a R
               let ek ← recur Γ key K
-              coerce G images pool (.node ⟨Γ,t,B⟩ (.indexDict Kx KK E U) [ea, ek]) A
+              coerce G images (.node ⟨Γ,t,B⟩ (.indexDict Kx KK E U) [ea, ek]) A
     | .readAt f a =>
       let direct := pool.findSome? fun R => do
         -- An invariant field reads at its contract; a view field at its bound;
@@ -1068,9 +968,9 @@ came from a different context. No execution budget is inspected. -/
               pool.findSome? fun U =>
                 if expand G U == [.undef] then some (B ++ U, Rule.readDict K B U) else none
           | _ => none
-        let _ ← subtypeUsing G images pool B A
+        let _ ← subtypeUsing G images B A
         let ea ← recur Γ a R
-        coerce G images pool (.node ⟨Γ,t,B⟩ r [ea]) A
+        coerce G images (.node ⟨Γ,t,B⟩ r [ea]) A
       if let some e := direct then return some e
       return splitReceiver a
     | .writeAt f a b =>
@@ -1084,7 +984,7 @@ came from a different context. No execution budget is inspected. -/
         let eb ← recur Γ b B
         (A :: pool).findSome? fun N =>
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ r [ea,eb]
-          if checkTreeUsing G images e then coerce G images pool e A else none
+          if checkTreeUsing G images e then coerce G images e A else none
       if let some e := direct then return some e
       return splitReceiver a
     | .arith op a b =>
@@ -1102,7 +1002,7 @@ came from a different context. No execution budget is inspected. -/
           let eb ← recur Γ b S
           (A :: pool).findSome? fun N =>
             let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ .arith [ea,eb]
-            if checkTreeUsing G images e then coerce G images pool e A else none
+            if checkTreeUsing G images e then coerce G images e A else none
     -- A copy of a spread: a store type of any length at some element type,
     -- and a pool store type whose elements it admits.
     | .arrLit [.spread src] =>
@@ -1111,7 +1011,7 @@ came from a different context. No execution budget is inspected. -/
         pool.findSome? fun S => do
           if !decide (SpreadsInto G S E) then none else do
           let es ← recur Γ src S
-          coerce G images pool (.node ⟨Γ,t,L⟩ (.arrCopy E) [es]) A
+          coerce G images (.node ⟨Γ,t,L⟩ (.arrCopy E) [es]) A
     | .arrLit inits =>
       -- The claimed type, or a pool type, names the tuple; each initializer
       -- is typed at its position's contract.
@@ -1123,7 +1023,7 @@ came from a different context. No execution budget is inspected. -/
           let B ← positionTy T k
           recur Γ a B
         let e := ProgramCertificates.Evidence.node ⟨Γ,t,L⟩ .arrLit ps
-        if checkTreeUsing G images e then coerce G images pool e A else none
+        if checkTreeUsing G images e then coerce G images e A else none
     | .elemAt a i =>
       -- A store read through a union of array objects splits the receiver.
       let direct := pool.findSome? fun L => do
@@ -1135,18 +1035,18 @@ came from a different context. No execution budget is inspected. -/
           | [.numLit b] => do
             let k ← indexOfBits b
             match T.required[k]? with
-            | some B => coerce G images pool (.node ⟨Γ,t,B⟩ .elem [ea,ei]) A
+            | some B => coerce G images (.node ⟨Γ,t,B⟩ .elem [ea,ei]) A
             | none => do
               let B ← positionTy T k
               (A :: pool).findSome? fun U =>
                 let e := ProgramCertificates.Evidence.node ⟨Γ,t,B ++ U⟩ (.elemOpt U) [ea,ei]
-                if checkTreeUsing G images e then coerce G images pool e A else none
+                if checkTreeUsing G images e then coerce G images e A else none
           | _ =>
             match T with
             | ⟨[], [], some E, _, _⟩ =>
               (A :: pool).findSome? fun U =>
                 let e := ProgramCertificates.Evidence.node ⟨Γ,t,E ++ U⟩ (.elemAny U) [ea,ei]
-                if checkTreeUsing G images e then coerce G images pool e A else none
+                if checkTreeUsing G images e then coerce G images e A else none
             | _ => none
       if let some e := direct then return some e
       -- A string's code unit at a numeric key: a string or `undefined`.
@@ -1159,7 +1059,7 @@ came from a different context. No execution budget is inspected. -/
             if expand G T != [.str] then none else do
             (A :: pool).findSome? fun U =>
               if expand G U != [.undef] then none else
-              coerce G images pool (.node ⟨Γ,t,T ++ U⟩ (.elemStr T U) [ea,ei]) A
+              coerce G images (.node ⟨Γ,t,T ++ U⟩ (.elemStr T U) [ea,ei]) A
       if let some e := string then return some e
       let .readAt _ receiver := a | return none
       return splitReceiver receiver
@@ -1174,20 +1074,20 @@ came from a different context. No execution budget is inspected. -/
           let B ← positionTy T k
           let ev ← recur Γ v B
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,L⟩ .setElem [ea,ei,ev]
-          if checkTreeUsing G images e then coerce G images pool e A else none
+          if checkTreeUsing G images e then coerce G images e A else none
     | .lenOf a =>
       let store := pool.findSome? fun L => do
         let [.list _ []] := expand G L | none
         let ea ← recur Γ a L
         (A :: pool).findSome? fun N =>
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ .len [ea]
-          if checkTreeUsing G images e then coerce G images pool e A else none
+          if checkTreeUsing G images e then coerce G images e A else none
       -- A string's own `length`.
       return store <|> (stringOperands a).findSome? fun S => do
         let ea ← recur Γ a S
         (A :: pool).findSome? fun N =>
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ .lenStr [ea]
-          if checkTreeUsing G images e then coerce G images pool e A else none
+          if checkTreeUsing G images e then coerce G images e A else none
     | .merge d a b =>
       -- The accumulator and the source at their slots' types, or a pool
       -- type; the result the requested type, when every pair of their
@@ -1199,7 +1099,7 @@ came from a different context. No execution budget is inspected. -/
           let eb ← recur Γ b S
           (A :: pool).findSome? fun N =>
             if ObjectMerge.MergeOk G d R S N then
-              coerce G images pool (.node ⟨Γ,t,N⟩ .merge [ea,eb]) A
+              coerce G images (.node ⟨Γ,t,N⟩ .merge [ea,eb]) A
             else none
     | .throw a =>
       -- A throw has every type; its operand, at a type of its own.
@@ -1298,18 +1198,18 @@ observation comes from graph dispatch, never from supplied point annotations. -/
           if BranchRefinement.booleanMember G B q then pure .subset else failure
         | .tag t q =>
           if BranchRefinement.tagMember G B t q then pure .subset
-          else (subtypeUsing G images pool (BranchRefinement.tagSlice G A t q) B).orElse fun _ =>
+          else (subtypeUsing G images (BranchRefinement.tagSlice G A t q) B).orElse fun _ =>
             -- A passed `in` test: the key is present from then on.
             if BranchRefinement.presentKey t q (BranchRefinement.promotes G (BranchRefinement.tagSlice G A t q) B)
             then some .subset
             -- A passed `Array.isArray`: a record's member is an array of the realm.
             else if t == .isArray && q && BranchRefinement.arraySlice G A B then some .subset
             else none
-      else (subtypeUsing G images pool A B).orElse (fun _ => match o with
+      else (subtypeUsing G images A B).orElse (fun _ => match o with
         -- An object the tested value was read from keeps the labels whose
         -- field admits the observation.
         | .tag t q => (fields ++ optionals).findSome? fun (k, f) =>
-            if k == slot target.mapping i then subtypeUsing G images pool (BranchRefinement.fieldSlice G A f t q) B
+            if k == slot target.mapping i then subtypeUsing G images (BranchRefinement.fieldSlice G A f t q) B
             else none
         | .boolean _ => none) |>.orElse fun _ =>
         -- One read through an optional key, where the observation rules out
@@ -1317,7 +1217,7 @@ observation comes from graph dispatch, never from supplied point annotations. -/
         if BranchRefinement.excludesUndef o && optionals.any (fun (k, f) =>
             k == slot target.mapping i && BranchRefinement.promotes G A B f)
         then some .subset else none
-    | none => subtypeUsing G images pool A B
+    | none => subtypeUsing G images A B
 
 
 /-- Select effect evidence without changing the requested sequent. A precise
@@ -1350,7 +1250,7 @@ read/value rule may succeed when ordinary derivation search cannot. -/
         if let [.refs fs _ _ _ _ _] := expand G Ref then
           if let some C := fs.lookup fld then
             if let some e := expressionWithUsing G images (C :: own) suggestions fuel j.context j.term C then
-              if let some p := subtypeUsing G images pool (BranchRefinement.tagSlice G C .isUndef false) j.type then
+              if let some p := subtypeUsing G images (BranchRefinement.tagSlice G C .isUndef false) j.type then
                 choices := choices ++ [.slicedRead i e p]
   | _ => pure ()
   if let some e := ordinary then

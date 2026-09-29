@@ -26,11 +26,6 @@ theorem checkArrowWith_reassign (R : List ι → List ι → Prop) [DecidableRel
     checkArrowWith (reassign G η) R L S q cert = checkArrowWith G R L S q cert := by
   induction cert generalizing q <;> simp only [checkArrowWith, *] <;> rfl
 
-theorem checkArrow_reassign (table : Table ι) (L : Ops ι)
-    (S : List (CallEffects.RestArrow (List ι))) (q : CallEffects.Arrow (List ι)) (cert : ArrowCert ι) :
-    checkArrow (reassign G η) table L S q cert = checkArrow G table L S q cert :=
-  checkArrowWith_reassign G η (Rel table) L S q cert
-
 theorem reads_reassign : reads (reassign G η) = reads G := rfl
 
 theorem readsFrom_go_reassign : ∀ fuel (seen frontier : List ι),
@@ -157,31 +152,14 @@ theorem opaqueWith_reassign (R : List ι → List ι → Prop) (known : Known ι
       (exists_congr fun j => and_congr Iff.rfl
       (schemeCoversWith_reassign G η R known arrows i j)))))
 
-theorem checkClause_reassign (table : Table ι) (known : Known ι) (proofs : PositiveCertificates.Evidence ι)
-    (self : List ι) (a b : Clause (List ι)) :
-    checkClause (reassign G η) table known proofs self a b = checkClause G table known proofs self a b := by
-  have hA : ArrowsCheckedWith (reassign G η) (Rel table) proofs =
-      ArrowsCheckedWith G (Rel table) proofs := by
-    funext L S M; simp only [ArrowsCheckedWith, checkArrowWith_reassign]
-  unfold checkClause checkClauseWith
-  apply decide_eq_decide.mpr
-  rw [hA]
-  exact coversWith_reassign G η _ known _ self a b
-
-theorem checkCore_reassign (known : Known ι) (S T : List ι) (cert : PositiveCertificates.Certificate ι) :
-    checkCore (reassign G η) known S T cert = checkCore G known S T cert := by
-  have hA : ArrowsCheckedWith (reassign G η) (Rel cert.table) cert.arrows =
-      ArrowsCheckedWith G (Rel cert.table) cert.arrows := by
-    funext L S M; simp only [ArrowsCheckedWith, checkArrowWith_reassign]
-  unfold checkCore
-  apply decide_eq_decide.mpr
-  simp only [checkClause_reassign, hA, opaqueWith_reassign]
-  exact Iff.rfl
+/-- The fallback's pairs of a bound are checked at a fixed assignment. -/
+theorem checkPairs_reassign (S T : List ι) (table : Table ι) (arrows : PositiveCertificates.Evidence ι) :
+    checkPairs (reassign G η) S T table arrows = checkPairs G S T table arrows := rfl
 
 theorem boundOk_reassign (binders : List ι) (θs : List (List ι)) (b : ι × List ι)
-    (c : Option (PositiveCertificates.Certificate ι)) :
+    (c : Option (Table ι × PositiveCertificates.Evidence ι)) :
     boundOk (reassign G η) binders θs b c = boundOk G binders θs b c := by
-  simp only [boundOk, checkCore_reassign]
+  simp only [boundOk, checkPairs_reassign]
 
 /-! Every checker below takes a proved instance image checker. Its check is
 the same function at every reassignment (`InstanceImageCheck.reassign`). -/
@@ -206,9 +184,15 @@ assignment, the same for the graph and its reassignments. -/
 theorem premAt_reassign (r : Renaming G) (S T : List ι) :
     premAt (reassign G η) (images.reassign η) (r.reassign η) S T = premAt G images r S T := rfl
 
-theorem checkFamilyAt_reassign (r : Renaming G) (S T : List ι) (c : FamilyCertificate ι) :
-    checkFamilyAt (reassign G η) (images.reassign η) (r.reassign η) S T c =
-      checkFamilyAt G images r S T c := rfl
+theorem checkFamilyWith_reassign (sub : Option (Renaming G)) (S T : List ι) (c : FamilyCertificate ι) :
+    checkFamilyWith (reassign G η) (images.reassign η) (sub.map (·.reassign η)) S T c =
+      checkFamilyWith G images sub S T c := by
+  cases sub <;> rfl
+
+theorem checkFamilyAt_reassign (S T : List ι) (c : FamilyCertificate ι) :
+    checkFamilyAt (reassign G η) (images.reassign η) S T c = checkFamilyAt G images S T c := by
+  unfold checkFamilyAt
+  rw [sub_reassign, checkFamilyWith_reassign]
 
 theorem subsetUsing_reassign (S T : List ι) :
     subsetUsing (reassign G η) (images.reassign η) S T = subsetUsing G images S T := by
@@ -217,21 +201,12 @@ theorem subsetUsing_reassign (S T : List ι) :
   | none => simp only [sub_reassign, hr, Option.map_none]
   | some r => simp only [sub_reassign, hr, Option.map_some, premAt_reassign]
 
-theorem coreUsing_reassign (S T : List ι) (cert : PositiveCertificates.Certificate ι)
-    (ks : List (List ι × Ops ι × List (CallEffects.RestArrow (List ι)) × Instance ι)) :
-    coreUsing (reassign G η) (images.reassign η) S T cert ks = coreUsing G images S T cert ks := by
-  unfold coreUsing
-  simp only [checkCore_reassign, checkInstArrs_reassign]
-  cases hr : images.sub with
-  | none => simp only [sub_reassign, hr, Option.map_none]
-  | some r => simp only [sub_reassign, hr, Option.map_some, checkFamilyAt_reassign]
-
 theorem check_reassign (S T : List ι) (p : Proof ι) :
     PositiveCertificates.checkUsing (reassign G η) (images.reassign η) S T p =
       PositiveCertificates.checkUsing G images S T p := by
-  induction p generalizing S T <;>
-    simp only [PositiveCertificates.checkUsing, coreUsing_reassign, subsetUsing_reassign,
-      checkInst_reassign, *] <;> rfl
+  cases p <;>
+    simp only [PositiveCertificates.checkUsing, subsetUsing_reassign, checkInst_reassign,
+      checkFamilyAt_reassign]
 
 /-- The subtype checker as a function of its graph. -/
 theorem check_fun_reassign :

@@ -50,26 +50,6 @@ theorem checkEdge_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
           obtain ⟨D, hd, hs⟩ := ih hc.2 i C hi
           exact ⟨D, hd, hs⟩
 
-/-- Declarative completeness of the finite default: slots related by the
-finite subtyping rules have edge evidence. -/
-theorem checkEdge_complete [DecidableEq ι] {G : NormalGraph ι} {Γ Δ}
-    (hc : ∀ (i : Nat) B, Δ[i]? = some B → ∃ A, Γ[i]? = some A ∧ Sub G A B) :
-    ∃ ps, checkEdge G Γ Δ ps = true := by
-  induction Δ generalizing Γ with
-  | nil => exact ⟨[], by cases Γ <;> rfl⟩
-  | cons B Δ ih =>
-    obtain ⟨A, ha, hab⟩ := hc 0 B rfl
-    cases Γ with
-    | nil => simp at ha
-    | cons D Γ =>
-      simp only [List.getElem?_cons_zero, Option.some.injEq] at ha
-      subst D
-      obtain ⟨p, hp⟩ := PositiveCertificates.check_complete hab
-      obtain ⟨ps, hps⟩ := ih (fun i C hi => hc (i+1) C hi)
-      exact ⟨p :: ps, by
-        simp only [PositiveCertificates.check] at hp
-        simp [checkEdgeUsing, hp, hps]⟩
-
 /-- Every concrete environment meeting the incoming claim meets the supplied
 outgoing claim, in the same world. Heap contents are not refinements of slots. -/
 theorem Covers.env {G : NormalGraph ι} {Γ Δ ρ n W}
@@ -188,6 +168,5 @@ theorem checked_bind_claim [DecidableEq ι] {G : NormalGraph ι} {images : Insta
   · simpa only [hjb] using ProgramCertificates.checkTreeUsing_sound eb hb
 
 #print axioms checkEdge_sound
-#print axioms checkEdge_complete
 #print axioms checked_bind_claim
 end Verification.Model.PointClaims

@@ -334,9 +334,8 @@ checker accepts, with the equations' checks and variances. The proofs are
 searched here, and checked. -/
 def equivalent (E : Equations) (v : Variances E) (X Y : List (Label E.signature)) : Bool :=
   let I := E.images v
-  let pool := CertificateProducer.reachablePool E.graph X Y
-  match CertificateProducer.subtypeUsing E.graph I pool X Y,
-      CertificateProducer.subtypeUsing E.graph I pool Y X with
+  match CertificateProducer.subtypeUsing E.graph I X Y,
+      CertificateProducer.subtypeUsing E.graph I Y X with
   | some p, some q => checkUsing E.graph I X Y p && checkUsing E.graph I Y X q
   | _, _ => false
 

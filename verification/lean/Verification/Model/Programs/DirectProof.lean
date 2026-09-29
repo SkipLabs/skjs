@@ -59,7 +59,7 @@ def coerceM (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (T
   let found ← match (← get).get? key with
     | some found => pure found
     | none =>
-      let found := subtypeUsing G images pool (claim e).type A
+      let found := subtypeUsing G images (claim e).type A
       modify (·.insert key found)
       pure found
   let some p := found | failure
@@ -86,7 +86,7 @@ def renderAt (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (
     -- The member's covering proofs are searched in the actual context.
     | .bindMember _, .letE (.readAt k (.var i)) _, [] =>
       let some O := Γ[i]? | failure
-      let some ps := memberProofsUsing G images pool O k j.type | failure
+      let some ps := memberProofsUsing G images O k j.type | failure
       pure (.node ⟨Γ,j.term,j.type⟩ (.bindMember ps) [])
     | .ifBoolVar T F, .ite (.var i) _ _, [t,e] =>
       let pt ← renderAt G images pool depth (Γ.set i T) t

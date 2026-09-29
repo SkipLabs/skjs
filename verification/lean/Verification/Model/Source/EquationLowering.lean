@@ -1940,8 +1940,7 @@ def Built.finish (b : Built) : Except String Equations := do
     let (A, B) := closeObligation o
     let A ← closedUnion E o.site A
     let B ← closedUnion E o.site B
-    let pool := CertificateProducer.reachablePool E.graph A B
-    match CertificateProducer.subtypeUsing E.graph E.instanceImageCheck pool A B with
+    match CertificateProducer.subtypeUsing E.graph E.instanceImageCheck A B with
     | some proof => if E.checkSubtype A B proof then continue
     | none => pure ()
     let names (h : Nat) : String := (drafts[h]?.map (·.name)).getD s!"{h}"

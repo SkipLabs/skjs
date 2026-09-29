@@ -3086,19 +3086,6 @@ The empty type is admissible at either sort; a runtime top is not a list top. -/
   (G.hasKind .value S && G.hasKind .value T) ||
     (G.hasKind .arguments S && G.hasKind .arguments T)
 
-/-- Each split part of each source clause must be covered by some single target
-clause. A `bool` source is therefore discharged by the pair of Boolean singleton
-clauses, or by a single `bool` clause, or by any target containing both.
-Coverage may also use the `known` rows, proved elsewhere. -/
-@[nospecialize] def Valid [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (table : Table ι) : Prop :=
-  ∀ p ∈ table, SameKind G p.1 p.2 = true ∧ Opaque G (Rel table) known p.1 p.2 ∧
-    ∀ a ∈ sourceClauses G p.1 ++ meetSources G p.1 p.2, ∃ b ∈ clausesOf G p.2,
-      Covers G (Rel table) known p.1 a b
-
-/-- A checked table holding `S ≤ T`, whose coverage may use the `known` rows. -/
-@[nospecialize] def Core [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (S T : List ι) : Prop :=
-  ∃ table, (S, T) ∈ table ∧ Valid G known table
-
 /-- Sorted argument types contribute pack clauses only. -/
 private theorem argument_clause {G : NormalGraph ι} {S : List ι}
     (hs : G.hasKind .arguments S = true) {c : Clause (List ι)} (hc : c ∈ clausesOf G S) :
@@ -3119,7 +3106,7 @@ theorem mixedMeaning_union (G : NormalGraph ι) (η : MixedAssignment ι)
     mixedMeaning G η S n W x ↔ ∃ i ∈ S, mixedMeaning G η [i] n W x := by
   cases x <;> simp [mixedMeaning, mixedParameters, graphArguments, setSem]
 
-private theorem mixed_subset {G : NormalGraph ι} {η : MixedAssignment ι} {S T : List ι}
+theorem mixed_subset {G : NormalGraph ι} {η : MixedAssignment ι} {S T : List ι}
     (h : ∀ i ∈ S, i ∈ T) : FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
   intro n W x hx
   obtain ⟨i, hi, hx⟩ := (mixedMeaning_union G η S n W x).mp hx
@@ -5192,11 +5179,6 @@ RECURSIVE-EQUATIONS §7.3), premises read through `R`. -/
       CallArrow (compatible G) (restElem G) R L S p) hyps A B ∧
     ∀ a ∈ sourceClauses G A ++ meetSources G A B hyps, ∃ b ∈ clausesOf G B, Covers G R known A a b
 
-theorem Valid.pairOk [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
-    {known : Known ι} {table : Table ι} (h : Valid G known table) :
-    ∀ p ∈ table, PairOk G sub known (Rel table) [] p.1 p.2 :=
-  fun p hp => ⟨(h p hp).1, OpaqueWith.family (h p hp).2.1, (h p hp).2.2⟩
-
 /-- An empty type has no member. -/
 theorem mixedMeaning_nil (G : NormalGraph ι) (η : MixedAssignment ι) :
     mixedMeaning G η [] = fun _ _ _ => False := by
@@ -5601,31 +5583,6 @@ theorem pairs_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renamin
     | inr vs =>
       exact pair_arguments_sound (hvalid e p hp) (same n lower values e η hη)
         (fun h hh W vs hvs => hη h hh n (Nat.le_refl n) W (.inr vs) hvs) W vs hx
-
-/-- **Core.** A checked table relates both components of the meaning, at every
-assignment where its known rows do: the family of pairs without hypotheses,
-whose premises are its own rows or label inclusions. -/
-theorem Core.mixed_sound [DecidableEq ι] {G : NormalGraph ι} {known : Known ι} {S T} (hc : Core G known S T)
-    (hk : ∀ η : MixedAssignment ι,
-      ∀ k ∈ known, FamLe (mixedValues G η k.1) (mixedSem G η (.arrs k.2.1 k.2.2)))
-    (η : MixedAssignment ι) :
-    FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
-  obtain ⟨table, hm, hv⟩ := hc
-  have free : ∀ (η : MixedAssignment ι) n, HypsHold G η [] n := fun _ _ _ h => by simp at h
-  have hs := pairs_sound (G := G) (sub := none) (known := known) (E := Unit)
-    (fun _ => Rel table) (fun _ => []) (fun _ => table)
-    (fun _ => Valid.pairOk hv) hk
-    (fun _ _ _ _ _ _ _ _ => (free _ _).values)
-    (fun _ lower _ η _ S T h j hj => by
-      rcases h with h | hsub
-      · exact lower j hj () η (free η j) (S, T) h
-      · exact fun W x hx => mixed_subset hsub j W x hx)
-    (fun n _ values _ η _ S T h => by
-      rcases h with h | hsub
-      · exact values () η (free η n).values (S, T) h
-      · exact fun W v hv => mixed_subset hsub n W (.inl v) hv)
-  intro n W x hx
-  exact (hs n).2 () η (free η n) (S, T) hm W x hx
 
 /-! ### Family entries
 
@@ -6154,167 +6111,22 @@ each within its bound, the instance table and its domain's free rows. -/
     S = [i] ∧ G.params i = false ∧ G.schemes i = some s ∧ θs.length = s.binders.length ∧
     instKinds G s.binders θs = true ∧
     (∀ b ∈ s.bounds, ∀ U, (s.binders.zip θs).lookup b.1 = some U →
-      Core G [] U b.2 ∨ ∀ l ∈ U, l ∈ b.2) ∧
+      ∀ η, FamLe (mixedMeaning G η U) (mixedMeaning G η b.2)) ∧
     TableOk G tbl D V = true ∧
     (∀ q ∈ L, ∃ p ∈ s.signatures, instSig G tbl (s.binders.zip θs) p q = true) ∧
     (∀ q ∈ M, ∃ p ∈ s.variadic, instRest G tbl (s.binders.zip θs) p q = true)
 
-/-- An instance below an arrow type. -/
-@[nospecialize] def Inst [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) : Prop :=
-  ∃ L M, InstArrs G S L M ∧ expand G T = [.arrs L M]
-
-/-- Structural rules compose completed proofs. They cannot bypass the guarded
-coverage obligation for any row of a recursive table. -/
-inductive Sub (G : NormalGraph ι) : List ι → List ι → Prop where
-  /-- A checked table, whose coverage may use known rows that are instances
-  of scheme rows: a prototype's generic member covering a target's member. -/
-  | core [DecidableEq ι] {known : Known ι} :
-      (∀ k ∈ known, InstArrs G k.1 k.2.1 k.2.2) → Core G known S T → Sub G S T
-  | subset : (∀ i ∈ S, i ∈ T) → Sub G S T
-  | trans : Sub G S U → Sub G U T → Sub G S T
-  | inst [DecidableEq ι] : Inst G S T → Sub G S T
-  /-- **Renaming.** A type is below one holding its rows' images under a checked
-  instance table with the empty context: the same rows up to renaming the
-  binders of the schemes they reach. -/
-  | table [DecidableEq ι] {tbl : InstTable ι} {D : List ι} {V : FreeMap ι} :
-      TableOk G tbl D V = true →
-      (∀ l ∈ S, ∃ U, entryImg tbl [] l = some U ∧ ∀ x ∈ U, x ∈ T) → Sub G S T
-  /-- **Generalization.** A type below a scheme's signatures, with its binders
-  opaque, is below the scheme: it is so at every instantiation, since none of
-  its free parameter rows is a binder (`agree_free`). -/
-  | gen [DecidableEq ι] {j : ι} {s : SchemeRow ι} {D U : List ι} {V : FreeMap ι} :
-      G.params j = false → G.schemes j = some s →
-      expand G U = [.arrs s.signatures s.variadic] →
-      FreeOk G D V = true → (∀ l ∈ S, l ∈ D ∧ ∀ p ∈ fv V l, p ∉ s.binders) →
-      Sub G S U → Sub G S [j]
-
 /-- The graph whose parameter rows mean `η`. No check reads the assignment, so
 every derivation over `G` is one over each reassignment. -/
 @[nospecialize] def reassign (G : NormalGraph ι) (η : MixedAssignment ι) : NormalGraph ι := { G with env := η }
-
-/-- A scheme row admits no argument list. -/
-private theorem scheme_noArguments {G : NormalGraph ι} {η : MixedAssignment ι} {i : ι}
-    (hp : G.params i = false) {s : SchemeRow ι} (hq : G.schemes i = some s) {n W vs} :
-    ¬ mixedMeaning G η [i] n W (.inr vs) := by
-  rintro ⟨j, hj, h⟩
-  cases List.mem_singleton.mp hj
-  have hk : G.parameterKinds i = none := by simpa [NormalGraph.params] using hp
-  have hc : G i = [] := by simp [NormalGraph.clauses, NormalGraph.plain, hq]
-  simp [hk, hc] at h
-
-/-- A type whose one clause is a callable admits no argument list. -/
-private theorem arrs_noArguments {G : NormalGraph ι} {η : MixedAssignment ι} {U : List ι}
-    {L : Ops ι} {M : List (RestArrow (List ι))}
-    (hU : expand G U = [.arrs L M]) {n W vs} : ¬ mixedMeaning G η U n W (.inr vs) := by
-  intro h
-  have hplain := plain_of_mem_expand (G := G) (S := U) (c := .arrs L M) (by simp [hU])
-  obtain ⟨c, hc, h⟩ := (graphArguments_plain hplain).mp h
-  rw [← expand_of_plain hplain, hU, List.mem_singleton] at hc
-  subst hc
-  exact h
 
 /-- A checked instance's values meet its arrows, at every assignment. -/
 theorem InstArrs.mixed_sound [DecidableEq ι] {G : NormalGraph ι} {S L M} (h : InstArrs G S L M) :
     ∀ η, FamLe (mixedValues G η S) (mixedSem G η (.arrs L M)) := by
   obtain ⟨i, s, tbl, θs, D, V, rfl, hp, hq, hlen, hkinds, hbnd, hok, hL, hM⟩ := h
   intro η n W v hv
-  exact ⟨inst_mixed_sound η hp hq hlen (fun b hb U hU => by
-    rcases hbnd b hb U hU with hc | hsub
-    · exact Core.mixed_sound hc (fun _ => by simp) η
-    · exact mixed_subset hsub) hkinds hok hL hM n W v hv, realmInvariant_of_not_record rfl n W v⟩
-
-/-- A checked instance holds at every assignment, for both components. -/
-theorem Inst.mixed_sound [DecidableEq ι] {G : NormalGraph ι} {S T} (h : Inst G S T) :
-    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
-  obtain ⟨L, M, hi, hT⟩ := h
-  have hs := hi
-  obtain ⟨i, s, tbl, θs, D, V, rfl, hp, hq, -⟩ := hs
-  intro η n W x hx
-  cases x with
-  | inr vs => exact (scheme_noArguments hp hq hx).elim
-  | inl v => exact mixed_of_expand hT (hi.mixed_sound η n W v hx)
-
-/-- Generalization consumes semantic inclusion under every assignment. The
-free-support check ensures that entering the scheme cannot change the source;
-this rule is independent of how a subtyping certificate proves its body. -/
-theorem gen_mixed_sound [DecidableEq ι] {G : NormalGraph ι} {S : List ι}
-    {j : ι} {s : SchemeRow ι} {D U : List ι} {V : FreeMap ι}
-    (hp : G.params j = false) (hq : G.schemes j = some s)
-    (hU : expand G U = [.arrs s.signatures s.variadic])
-    (hF : FreeOk G D V = true)
-    (hS : ∀ l ∈ S, l ∈ D ∧ ∀ p ∈ fv V l, p ∉ s.binders)
-    (ih : ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η U)) :
-    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η [j]) := by
-  intro η n W x hx
-  cases x with
-  | inr vs => exact (arrs_noArguments hU (ih η n W (.inr vs) hx)).elim
-  | inl v =>
-    refine ⟨j, List.mem_singleton_self j, ?_⟩
-    change qDenoteWithArgs G (mixedParameters G) (η, j) n W v
-    rw [qDenoteWithArgs_unfold]
-    simp only [qLayerWithArgs, hp, hq, Bool.false_eq_true, if_false]
-    have hat : ∀ As : List MixedFamily,
-        mixedValues G (assign η s.binders As) U n W v := by
-      intro As
-      apply ih (assign η s.binders As) n W (.inl v)
-      obtain ⟨l, hl, h⟩ := hx
-      refine ⟨l, hl, ?_⟩
-      change qDenoteWithArgs G (mixedParameters G) (assign η s.binders As, l) n W v
-      rw [agree_freeWith hF (mixedParameters G) (mixed_respectsFree hF) _ η l (hS l hl).1
-        (fun p hp => by rw [assign_nmem η s.binders As ((hS l hl).2 p hp)])]
-      exact h
-    have hUp := plain_of_mem_expand (G := G) (S := U) (c := .arrs s.signatures s.variadic)
-      (by simp [hU])
-    have hsig : ∀ As : List MixedFamily, instanceTWithArgs
-        (fun η' S => setSem (fun l => qDenoteWithArgs G (mixedParameters G) (η', l)) S) η s As
-        (graphArguments G) n W v := by
-      intro As
-      obtain ⟨c, hc, hcv, -⟩ := (mixed_expand (assign η s.binders As) hUp n W v).mp (hat As)
-      rw [hU, List.mem_singleton] at hc
-      subst hc
-      exact hcv
-    exact ⟨(hsig []).1.1, fun As _ _ => hsig As⟩
-
-/-- Subtyping holds at every assignment, for both components: the derivation
-reads no assignment. -/
-theorem Sub.mixed_sound {G : NormalGraph ι} {S T} (h : Sub G S T) :
-    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
-  induction h with
-  | core hk h => exact Core.mixed_sound h fun η k hk' => (hk k hk').mixed_sound η
-  | subset h => exact fun _ => mixed_subset h
-  | trans _ _ ih ih' => exact fun η n W x hx => ih' η n W x (ih η n W x (hx))
-  | inst h => exact h.mixed_sound
-  | table hok hS =>
-    intro η n W x hx
-    obtain ⟨l, hl, hx⟩ := (mixedMeaning_union G η _ n W x).mp hx
-    obtain ⟨U, hU, hUT⟩ := hS l hl
-    have hr := (table_row_mixed hok n η η (l, [], U) (entryImg_mem hU)
-      (fun p _ => by simp [RelKWith]) W x).mp hx
-    exact mixed_subset hUT n W x hr
-  | @gen S _ j s D U V hp hq hU hF hS _ ih =>
-    exact gen_mixed_sound hp hq hU hF hS ih
-
-theorem Sub.sound {G : NormalGraph ι} {S T} (h : Sub G S T) :
-    FamLe (meaning G S) (meaning G T) :=
-  fun n W v hv => h.mixed_sound G.env n W (.inl v) hv
-
-/-- Argument lists of a derived subtype are within the supertype's. -/
-theorem Sub.args_sound {G : NormalGraph ι} {S T} (h : Sub G S T) :
-    FamLe (argMeaning G S) (argMeaning G T) :=
-  fun n W vs hv => h.mixed_sound G.env n W (.inr vs) hv
-
-theorem Sub.refl (G : NormalGraph ι) (S : List ι) : Sub G S S := .subset (fun _ h => h)
-
-theorem Sub.congr {G : NormalGraph ι} {S S' T T' : List ι}
-    (hs : ∀ i, i ∈ S ↔ i ∈ S') (ht : ∀ i, i ∈ T ↔ i ∈ T') :
-    Sub G S T ↔ Sub G S' T' := by
-  constructor
-  · intro h
-    exact .trans (.subset (fun i hi => (hs i).mpr hi))
-      (.trans h (.subset (fun i hi => (ht i).mp hi)))
-  · intro h
-    exact .trans (.subset (fun i hi => (hs i).mp hi))
-      (.trans h (.subset (fun i hi => (ht i).mpr hi)))
+  exact ⟨inst_mixed_sound η hp hq hlen (fun b hb U hU => hbnd b hb U hU η) hkinds hok hL hM n W v hv,
+    realmInvariant_of_not_record rfl n W v⟩
 
 #print axioms covers_presence_sound
 #print axioms pair_arguments_sound
@@ -6350,12 +6162,9 @@ theorem Sub.congr {G : NormalGraph ι} {S S' T T' : List ι}
 #print axioms covers_arguments_sound
 #print axioms Domains.sound
 #print axioms CallArrow.sound
-#print axioms Core.mixed_sound
 #print axioms scheme_covers_sound
 #print axioms covers_by_scheme_sound
 #print axioms covers_arrs_sound
 #print axioms meetBelow_sound
 #print axioms meetBelow_mixed
-#print axioms Sub.mixed_sound
-#print axioms Sub.sound
 end Verification.Model.PositiveRules

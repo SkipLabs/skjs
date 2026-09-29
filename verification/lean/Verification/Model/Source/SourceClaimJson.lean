@@ -395,9 +395,9 @@ def moduleInstances (T : σ) (g : Instantiable σ)
         let (required, grown) ← ((Fragment.translate upper).run T).mapError (refuse pos)
         T := grown
         let G := SourceTypes.graph T
-        let pool := CertificateProducer.reachablePool G actual required
-        let proved := match CertificateProducer.subtype G pool actual required with
-          | some proof => PositiveCertificates.check G actual required proof
+        let proved := match CertificateProducer.subtype G actual required with
+          | some proof => PositiveCertificates.checkUsing G (PositiveCertificates.finiteInstanceImages G)
+              actual required proof
           | none => false
         unless proved do
           throw (.obligation ⟨pos, .schemeElimination,
