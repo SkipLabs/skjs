@@ -8,15 +8,16 @@ import type { Ast, Expr, Stmt } from "../tools/fragment.mts";
 import type { ClaimType } from "../tools/claim.mts";
 import type { Labels } from "../tools/type-graph.mts";
 import type { Span } from "../tools/span.mts";
-import type {
-  ClaimType as SidecarClaim,
-  EntryClaim,
-  ExpressionClaim,
-  NamedPoint,
-  Point,
-  SourceClaims,
-} from "../tools/source-claims.mts";
+import type * as Sidecar from "../tools/source-claims.mts";
 import { expr, must, at as nth, sole, stmt } from "./edits.mts";
+
+// This fixture's sidecar names only rows of its own table.
+type SidecarClaim = Sidecar.ClaimType<number>;
+type EntryClaim = Sidecar.EntryClaim<number>;
+type ExpressionClaim = Sidecar.ExpressionClaim<number>;
+type NamedPoint = Sidecar.NamedPoint<number>;
+type Point = Sidecar.Point<number>;
+type SourceClaims = Sidecar.SourceClaims<number>;
 
 /** The labels a claim states, where this fixture only ever states labels. */
 const labelsOf = (type: SidecarClaim): Labels => {

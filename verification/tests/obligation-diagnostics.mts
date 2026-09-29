@@ -66,7 +66,7 @@ try {
     pos = f.body[0].e.pos;
   // Typed as the format itself, so an edit that stops being a valid sidecar
   // is an error here rather than a verifier rejection with a confusing message.
-  const base: SourceClaims = {
+  const base: SourceClaims<number> = {
     types: [
       ["nul"],
       [{ boolLit: { value: true } }],
@@ -92,7 +92,7 @@ try {
     ],
   };
   const verify = (entry: Labels, expression: Labels) => {
-    const d: SourceClaims = structuredClone(base);
+    const d: SourceClaims<number> = structuredClone(base);
     d.functions[0].entries[0].bindings[0].type = entry;
     d.functions[0].expressions[0].type = expression;
     return verifySkjs(

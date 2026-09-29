@@ -146,8 +146,8 @@ scheme rows; a scheme row as
 `{"scheme": {"binders", "signatures", "bounds", "variadic"}}`, its bounds and
 its variadic signatures left out when there are none, a parameter row as
 `{"param": label, "name": name, "kind": "value" | "arguments"}`, and a meet
-row as `{"meet": binder, "clauses": [...]}`. -/
-instance : ToJson Row := ⟨fun
+row as `{"meet": binder, "clauses": [...]}`, whatever the labels are. -/
+instance [ToJson ι] [ToJson α] : ToJson (GraphRow ι α) := ⟨fun
   | .clauses cs => toJson cs
   | .scheme bs sigs bounds rests => Json.mkObj [("scheme",
       Json.mkObj ([("binders", toJson bs), ("signatures", toJson sigs)] ++
@@ -157,7 +157,7 @@ instance : ToJson Row := ⟨fun
   | .meet p cs ps => Json.mkObj ([("meet", toJson p), ("clauses", toJson cs)] ++
       (if ps.isEmpty then [] else [("also", toJson ps)]))⟩
 
-instance : FromJson Row := ⟨fun j =>
+instance [FromJson ι] [FromJson α] : FromJson (GraphRow ι α) := ⟨fun j =>
   match j with
   | .arr _ => GraphRow.clauses <$> fromJson? j
   | _ => match j.getObjVal? "scheme", j.getObjVal? "param", j.getObjVal? "meet" with

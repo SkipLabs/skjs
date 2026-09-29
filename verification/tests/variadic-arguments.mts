@@ -105,12 +105,12 @@ try {
   passed++;
   console.log("  a spread passes undefined at a hole, read where written: OK");
 
-  const tsc: SourceClaims = JSON.parse(fs.readFileSync(tscPath, "utf8"));
+  const tsc: SourceClaims<number> = JSON.parse(fs.readFileSync(tscPath, "utf8"));
   const astText = fs.readFileSync(astPath, "utf8");
   const input = path.join(work, "ast"),
     contract = path.join(work, "claims"),
     evidence = path.join(work, "evidence");
-  const check = (mode: string, ast: string, c: SourceClaims, key = file) => {
+  const check = (mode: string, ast: string, c: SourceClaims<number>, key = file) => {
     fs.writeFileSync(input, ast);
     fs.writeFileSync(contract, JSON.stringify(c));
     const args = [mode, input, contract, key, evidence];
@@ -129,7 +129,7 @@ try {
   // What a variadic signature says is checked, never assumed: narrow the
   // element type of a rest, or state a fixed arrow in its place, and the
   // same program fails.
-  const restRows = (c: SourceClaims) =>
+  const restRows = (c: SourceClaims<number>) =>
     c.types.flatMap((row) =>
       row.flatMap((clause) =>
         typeof clause !== "string" && "arrs" in clause && clause.arrs.variadic
@@ -137,7 +137,7 @@ try {
           : [],
       ),
     );
-  const mutations: [string, (c: SourceClaims) => void][] = [
+  const mutations: [string, (c: SourceClaims<number>) => void][] = [
     [
       "a narrowed rest element",
       (c) => {
@@ -189,7 +189,7 @@ try {
     for (const [file, fn] of holeWitnesses)
       if (file === source)
         assert.deepEqual(accepted, { [fn]: true }, "TypeScript accepts the unsound witness");
-    const c: SourceClaims = JSON.parse(fs.readFileSync(out, "utf8"));
+    const c: SourceClaims<number> = JSON.parse(fs.readFileSync(out, "utf8"));
     return { ast: ast.stdout, claims: c };
   };
 

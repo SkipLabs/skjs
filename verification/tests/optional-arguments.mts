@@ -59,11 +59,11 @@ try {
 
   const ast: Ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
   const skjs: SkjsClaims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
-  const claims: SourceClaims = JSON.parse(fs.readFileSync(tscPath, "utf8"));
+  const claims: SourceClaims<number> = JSON.parse(fs.readFileSync(tscPath, "utf8"));
   const input = path.join(work, "ast"),
     contract = path.join(work, "claims"),
     evidence = path.join(work, "evidence");
-  const check = (mode: string, a: Ast, c: SourceClaims) => {
+  const check = (mode: string, a: Ast, c: SourceClaims<number>) => {
     fs.writeFileSync(input, JSON.stringify(a));
     fs.writeFileSync(contract, JSON.stringify(c));
     const args = [
@@ -115,7 +115,7 @@ try {
   console.log("  SKJS refuses to export an optional parameter: OK");
 
   /** The arrow this file's closure interns, in one function's claims. */
-  const signature = (c: SourceClaims, name: string): Arrow => {
+  const signature = (c: SourceClaims<number>, name: string): Arrow => {
     const f = must(
       c.functions.find((g) => g.name === name),
       "the function's claims",
@@ -133,10 +133,10 @@ try {
   // Label 3 is `undefined`. Removing it from the optional position leaves a
   // contract no omitted argument can meet, and the call that omits it must
   // fail rather than have an actual supplied for it.
-  for (const [name, edit] of new Map<string, (c: SourceClaims) => void>([
+  for (const [name, edit] of new Map<string, (c: SourceClaims<number>) => void>([
     [
       "omitted position no longer admits undefined",
-      (c: SourceClaims) => {
+      (c: SourceClaims<number>) => {
         const domains = signature(c, "omittedArgument").arguments;
         domains[1] = must(domains[1], "the optional position").filter(
           (l) => l !== 3,
@@ -145,7 +145,7 @@ try {
     ],
     [
       "written position no longer admits undefined",
-      (c: SourceClaims) => {
+      (c: SourceClaims<number>) => {
         const domains = signature(c, "writtenArgument").arguments;
         domains[1] = must(domains[1], "the optional position").filter(
           (l) => l !== 3,
@@ -154,7 +154,7 @@ try {
     ],
     [
       "explicit undefined actual no longer fits",
-      (c: SourceClaims) => {
+      (c: SourceClaims<number>) => {
         const domains = signature(c, "explicitUndefined").arguments;
         domains[1] = must(domains[1], "the optional position").filter(
           (l) => l !== 3,
@@ -187,10 +187,10 @@ try {
   console.log("  a default replaces the omitted argument at run time: OK");
 
   const defaultAst: Ast = JSON.parse(fs.readFileSync(defaultAstPath, "utf8"));
-  const defaultClaims: SourceClaims = JSON.parse(
+  const defaultClaims: SourceClaims<number> = JSON.parse(
     fs.readFileSync(defaultTscPath, "utf8"),
   );
-  const checkDefault = (mode: string, a: Ast, c: SourceClaims) => {
+  const checkDefault = (mode: string, a: Ast, c: SourceClaims<number>) => {
     fs.writeFileSync(input, JSON.stringify(a));
     fs.writeFileSync(contract, JSON.stringify(c));
     const args = [
@@ -215,7 +215,7 @@ try {
   // The default is an obligation against the type the body reads, and the
   // position it fills is the one a call may omit. Break either and the same
   // closure must fail.
-  for (const [name, edit] of new Map<string, (a: Ast, c: SourceClaims) => void>(
+  for (const [name, edit] of new Map<string, (a: Ast, c: SourceClaims<number>) => void>(
     [
       [
         "default outside its parameter's contract",
@@ -229,7 +229,7 @@ try {
       ],
       [
         "defaulted position no longer admits undefined",
-        (_a: Ast, c: SourceClaims) => {
+        (_a: Ast, c: SourceClaims<number>) => {
           for (const row of c.types)
             for (const clause of row)
               if (typeof clause !== "string" && "arrs" in clause)

@@ -3,8 +3,9 @@ import Verification.Model.Programs.CertificateProducer
 
 /-! Type declarations, local or imported, are source equations, not rows supplied
 by a producer.
-The producer reserves one empty row per nullary declaration and may refer to
-those labels in its candidate rows. This module fills them from source
+The claims' finite layout (`SourceClaimJson.FiniteLayout`) reserves one empty
+row per nullary declaration, and one per application, array and
+intersection the claims name. This module fills them from source
 equations. Ground applications of generic declarations are lowered from their
 substituted equations; one with methods, which is how a declaration recurs, is
 one row per declaration and arguments for the module (`Memo`). A recursive

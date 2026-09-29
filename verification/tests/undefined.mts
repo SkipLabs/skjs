@@ -42,11 +42,11 @@ const evidence = path.join(tmp, "evidence.json");
 const normalized = path.join(tmp, "claims.json");
 let passed = 0;
 /** One normalized function, one of its entries, one binding of that entry. */
-const stated = (d: SourceClaims, name: string) =>
+const stated = (d: SourceClaims<number>, name: string) =>
   must(d.functions.find((f) => f.name === name), `claims for ${name}`);
-const entryOf = (f: FunctionClaims, start: number) =>
+const entryOf = (f: FunctionClaims<number>, start: number) =>
   must(f.entries.find((e) => e.start === start), `an entry at ${start}`);
-const bindingOf = (f: FunctionClaims, start: number, name: string) =>
+const bindingOf = (f: FunctionClaims<number>, start: number, name: string) =>
   must(entryOf(f, start).bindings.find((b) => b.name === name), `a claim for ${name}`);
 const run = (exe: string, args: string[], cwd?: string) => {
   const r = spawnSync(exe, args, {
@@ -101,7 +101,7 @@ try {
       verifier,
     ]);
     accepted(r);
-    const doc: SourceClaims = JSON.parse(fs.readFileSync(normalized, "utf8"));
+    const doc: SourceClaims<number> = JSON.parse(fs.readFileSync(normalized, "utf8"));
     // The table starts with the primitives and holds one row per compound
     // type the fixture mentions, each a single clause over earlier labels.
     assert.deepEqual(doc.types.slice(0, 4), [
@@ -148,9 +148,9 @@ try {
   });
   function candidate(
     name: string,
-    edit: (f: FunctionClaims, a: FunctionAst) => void,
+    edit: (f: FunctionClaims<number>, a: FunctionAst) => void,
   ) {
-    const doc: SourceClaims = JSON.parse(fs.readFileSync(normalized, "utf8"));
+    const doc: SourceClaims<number> = JSON.parse(fs.readFileSync(normalized, "utf8"));
     doc.functions = doc.functions.filter((f) => f.name === name);
     const a = {
       ...ast,
@@ -227,7 +227,7 @@ try {
         verifier,
       ]),
     );
-    const doc: SourceClaims = JSON.parse(fs.readFileSync(out, "utf8"));
+    const doc: SourceClaims<number> = JSON.parse(fs.readFileSync(out, "utf8"));
     const b = bindingOf(stated(doc, "undefinedCurrent"), ret.pos[0], "cell");
     assert.deepEqual(b.current, [["value", [3]]]);
     const labels = b.type;

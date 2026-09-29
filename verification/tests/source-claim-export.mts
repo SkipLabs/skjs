@@ -21,7 +21,7 @@ const results=(m: Manifest): Result[]=>must(m.results,"results");
 const resultFor=(m: Manifest,name: string): Result=>
   results(m)[m.functions.findIndex((f) =>f.name===name)];
 /** One normalized function's claims, by name. */
-const normalized=(d: SourceClaims,name: string)=>
+const normalized=(d: SourceClaims<number>,name: string)=>
   must(d.functions.find((f) =>f.name===name),`claims for ${name}`);
 const __dirname = path.dirname(import.meta.filename);
 const [claimsPath,file,partialPath,partialFile,recoveryPath,verifier,diagnostics]=process.argv.slice(2);
@@ -65,7 +65,7 @@ try {
     const cp=path.join(tmp,"current.raw.json"),op=path.join(tmp,"current.json");
     fs.writeFileSync(cp,JSON.stringify(raw));
     const r=convert(file,cp,op);assert.equal(r.status,0,r.stderr);
-    const d: SourceClaims=JSON.parse(fs.readFileSync(op, "utf8"));
+    const d: SourceClaims<number>=JSON.parse(fs.readFileSync(op, "utf8"));
     const point=must(normalized(d,changed.name).expressions
       .find((e) =>JSON.stringify(e.pos)===JSON.stringify(changed.pos)),"the changed point");
     const labels=point.type;
@@ -106,7 +106,7 @@ try {
   const partial=path.join(tmp,"partial.json"),pa=path.join(tmp,"partial.ast.json");
   test("normal first-error snapshot converts without recovery",()=>{const r=convert(partialFile,partialPath,partial,["--diagnostics",diagnostics]);assert.equal(r.status,0,r.stderr);});
   const pm: ConversionManifest=JSON.parse(fs.readFileSync(partial+".conversion.json", "utf8"));
-  const pc: SourceClaims=JSON.parse(fs.readFileSync(partial, "utf8"));
+  const pc: SourceClaims<number>=JSON.parse(fs.readFileSync(partial, "utf8"));
   test("aborted collection and diagnostics preserved",()=>{assert(pm.functions.some((f) =>f.collection?.completion==="aborted"&&f.collection.mode==="normal"));assert.equal(pm.diagnostics,fs.readFileSync(diagnostics,"utf8"));assert.deepEqual(pm.originalClaims,JSON.parse(fs.readFileSync(partialPath, "utf8")));});
   parse(partialFile,pa);
   test("partial conversion does not complete missing obligations",()=>assert.notEqual(run(verifier,["--produce-source-claims",pa,partial,partialFile,ep,"10"]).status,0));
@@ -116,13 +116,13 @@ try {
     const oa=path.join(tmp,"one.ast.json"),oc=path.join(tmp,"one.json");fs.writeFileSync(oa,JSON.stringify(ast));fs.writeFileSync(oc,JSON.stringify(one));
     const r=run(verifier,["--produce-source-claims",oa,oc,partialFile,ep,"10"]);assert.equal(r.status,0,r.stderr);
   });
-  test("optional recovery provenance retained separately",()=>{const rp=path.join(tmp,"recovery.json"),r=convert(partialFile,recoveryPath,rp);assert.equal(r.status,0,r.stderr);const m: ConversionManifest=JSON.parse(fs.readFileSync(rp+".conversion.json", "utf8"));assert(m.functions.some((f) =>f.collection?.quality==="recovery"));const converted: SourceClaims=JSON.parse(fs.readFileSync(rp, "utf8"));assert(!("collection" in must(converted.functions[0],"the first function")));});
+  test("optional recovery provenance retained separately",()=>{const rp=path.join(tmp,"recovery.json"),r=convert(partialFile,recoveryPath,rp);assert.equal(r.status,0,r.stderr);const m: ConversionManifest=JSON.parse(fs.readFileSync(rp+".conversion.json", "utf8"));assert(m.functions.some((f) =>f.collection?.quality==="recovery"));const converted: SourceClaims<number>=JSON.parse(fs.readFileSync(rp, "utf8"));assert(!("collection" in must(converted.functions[0],"the first function")));});
   test("unavailable required type is preserved at its site",()=>{
     const raw: SkjsClaims=JSON.parse(fs.readFileSync(partialPath, "utf8"));
     const f=functionOf(raw,partialFile,"complete");
     must(f.exprs[0],"a claim").type={unsupported:true};const cp=path.join(tmp,"unsupported.raw.json"),op=path.join(tmp,"unsupported.json");fs.writeFileSync(cp,JSON.stringify(raw));
     const r=convert(partialFile,cp,op);assert.equal(r.status,0,r.stderr);
-    const d: SourceClaims=JSON.parse(fs.readFileSync(op, "utf8"));
+    const d: SourceClaims<number>=JSON.parse(fs.readFileSync(op, "utf8"));
     const m: ConversionManifest=JSON.parse(fs.readFileSync(op+".conversion.json", "utf8"));
     assert.equal(normalized(d,"complete").expressions.length,1);
     assert(unavailable(must(normalized(d,"complete").expressions[0],"a claim").type));
@@ -135,7 +135,7 @@ try {
   test("unavailable signatures preserve the function explicitly",()=>{
     const raw: SkjsClaims=JSON.parse(fs.readFileSync(partialPath, "utf8"));functionOf(raw,partialFile,"complete").retType={unsupported:true};
     const cp=path.join(tmp,"signature.raw.json"),op=path.join(tmp,"signature.json");fs.writeFileSync(cp,JSON.stringify(raw));const r=convert(partialFile,cp,op);assert.equal(r.status,0,r.stderr);
-    const converted: SourceClaims=JSON.parse(fs.readFileSync(op, "utf8"));
+    const converted: SourceClaims<number>=JSON.parse(fs.readFileSync(op, "utf8"));
     assert(unavailable(normalized(converted,"complete").result));
     const m: ConversionManifest=JSON.parse(fs.readFileSync(op+".conversion.json", "utf8"));
     assert(m.omissions.some((o) =>o.site==="result"));

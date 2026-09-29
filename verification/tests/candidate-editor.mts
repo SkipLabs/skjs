@@ -33,7 +33,7 @@ const exported = (c: Candidate): SkjsClaims => {
   if (c.format !== "skjs") throw Error("expected a producer candidate");
   return c.claims;
 };
-const normalizedClaims = (c: Candidate): SourceClaims => {
+const normalizedClaims = (c: Candidate): SourceClaims<number> => {
   if (c.format !== "source-claims")
     throw Error("expected a normalized candidate");
   return c.claims;

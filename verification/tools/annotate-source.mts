@@ -411,7 +411,13 @@ function fromSourceClaims(
       if(Object.keys(A).join()!=="param" || typeof A.param!=="string" || !A.param)throw Error("invalid rigid parameter claim");
       return A.param;
     }
-    if(!Array.isArray(A)||A.some((i,k)=>!Number.isInteger(i)||i<0||i>=types.length||(k&&A[k-1]>=i)))throw Error("invalid source type labels");
+    // Rows of the table, ascending, then label trees, which the verifier
+    // checks and the reader shows by what they name.
+    if(!Array.isArray(A)||A.some((i,k)=>{
+      if(typeof i!=="number")return !i||typeof i!=="object";
+      const previous=A[k-1];
+      return !Number.isInteger(i)||i<0||i>=types.length||(k>0&&(typeof previous!=="number"||previous>=i));
+    }))throw Error("invalid source type labels");
     return obligationReader.typeText(types,A);
   };
   // Each function's own parameters, so a claim of `T` is drawn with what the
@@ -427,7 +433,7 @@ function fromSourceClaims(
     if(b.current==null)return {type:ordinary,raw:b.type,...rigid(b)};
     if(!Array.isArray(b.current)||!b.current.length||b.current.some((f)=>
         !Array.isArray(f)||f.length!==2||typeof f[0]!=="string"||
-        !Array.isArray(f[1])||f[1].some((i)=>!Number.isInteger(i)||i<0)))
+        !Array.isArray(f[1])||f[1].some((i)=>typeof i==="number"?!Number.isInteger(i)||i<0:!i||typeof i!=="object")))
       throw Error("invalid current-content assertion");
     if(!Array.isArray(b.type))throw Error("rigid parameters cannot carry current contents");
     const lifted=surface.lift(types,b.type,b.current);

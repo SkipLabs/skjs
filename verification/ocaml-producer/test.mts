@@ -990,18 +990,41 @@ assert.ok("file" in fragment && typeof fragment.file === "string");
 const forgedImport = join(good, "forged-import.json");
 writeFileSync(forgedImport, JSON.stringify({ ...fragment,
   declarations: must(pinnedDeclarationDocument, "the pinned Json import document") }));
+// The claims name declarations by their position in the fragment's
+// document: under another import closure they are other types, which the
+// evidence does not justify.
 assert.match(invoke(join(good, "claims.json"), join(good, "evidence.json"), good,
-  forgedImport), /declaration graph rows are missing/);
+  forgedImport), /source evidence does not justify/);
 process.stdout.write("forged import closure: refused\n");
+// Each label tree has one spelling and names a declaration of the fragment's
+// document; a binder is a label, never a row the producer writes.
 {
-  const claims: SourceClaims = JSON.parse(readFileSync(join(recursiveJson, "claims.json"), "utf8"));
-  assert.deepEqual(claims.types[4], []);
-  claims.types[4] = ["top"];
-  const forged = join(recursiveJson, "forged-imported-row.json");
-  writeFileSync(forged, JSON.stringify(claims));
-  assert.match(invoke(forged, join(recursiveJson, "evidence.json"), recursiveJson),
-    /producer supplied a declaration equation/);
-  process.stdout.write("producer-authored imported equation: refused\n");
+  const path = join(recursiveJson, "claims.json");
+  const claims: SourceClaims = JSON.parse(readFileSync(path, "utf8"));
+  const nullary = Number(must(/\{"decl":(\d+)\}/.exec(readFileSync(path, "utf8")),
+    "a nullary declaration's label")[1]);
+  const param = must(claims.functions[0]?.params[0], "a parameter's claim");
+  const forge = (name: string, type: unknown, row: unknown[] = []) => {
+    const forged = join(recursiveJson, `forged-label-${name}.json`);
+    writeFileSync(forged, JSON.stringify({ ...claims, types: [...claims.types, ...row] },
+      (_key, value: unknown) => value === param.type ? type : value));
+    return invoke(forged, join(recursiveJson, "evidence.json"), recursiveJson);
+  };
+  for (const [name, type, refusal] of [
+    ["unknown-field", [{ decl: nullary, span: [0, 0] }], /unexpected fields/],
+    ["nullary-arguments", [{ decl: nullary, args: [] }], /a nullary declaration's label leaves its arguments out/],
+    ["missing-declaration", [{ decl: 1000 }], /a declaration's label names no declaration/],
+    ["missing-arguments", [{ decl: nullary, args: [[3]] }], /one argument per parameter/],
+    ["order", [{ binder: "T" }, 3], /canonical order/],
+    ["one-part-meet", [{ meet: [[3]] }], /at least two parts/],
+  ] as const) {
+    assert.match(forge(name, type), refusal);
+    process.stdout.write(`label tree (${name}): refused\n`);
+  }
+  assert.match(forge("parameter-row", [claims.types.length],
+    [{ param: claims.types.length, name: "T", kind: "value" }]),
+    /a producer's row is a clause row or a scheme row/);
+  process.stdout.write("a binder written as a producer row: refused\n");
 }
 {
   const ast: Ast = JSON.parse(readFileSync(join(recursiveJson, "fragment.json"), "utf8"));

@@ -287,7 +287,8 @@ export interface CollectionRun {
 /** An editable copy of the producer's claims, kept beside the original. The
  * format says which document the copy is, and each is declared where it is
  * owned: the producer's own export in tools/skjs-claims.mts, the normalized
- * sidecar in tools/source-claims.mts. A candidate arriving from outside is
+ * sidecar in tools/source-claims.mts, which names only rows of its own
+ * table, as SKJS's export does. A candidate arriving from outside is
  * checked for its source identity, not its shape; what actually validates the
  * document is the verifier the report is built by. */
 export type Candidate =
@@ -296,7 +297,7 @@ export type Candidate =
       format: "source-claims";
       file: string;
       sourceSha256: string;
-      claims: SourceClaims;
+      claims: SourceClaims<number>;
     };
 
 /** What a pipeline run decided (`ocaml-producer/check.mts`), as the page shows

@@ -38,9 +38,9 @@ try {
 
   const ast: Ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
   const original: SkjsClaims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
-  const claims: SourceClaims = JSON.parse(fs.readFileSync(tscPath, "utf8"));
+  const claims: SourceClaims<number> = JSON.parse(fs.readFileSync(tscPath, "utf8"));
   const input = path.join(work, "ast"), contract = path.join(work, "claims"), evidence = path.join(work, "evidence");
-  const check = (mode: string, a: Ast, c: SkjsClaims | SourceClaims) => {
+  const check = (mode: string, a: Ast, c: SkjsClaims | SourceClaims<number>) => {
     fs.writeFileSync(input, JSON.stringify(a));
     fs.writeFileSync(contract, JSON.stringify(c));
     const command = Array.isArray(c) ? mode : mode.replace("stateful-source", "source-claims");
@@ -85,12 +85,12 @@ try {
   const bind = bound(ast);
   /** The normalized claim at one span, and the arrow the type table interns
    * for the bind result. */
-  const at = (c: SourceClaims, pos: Span) => must(
+  const at = (c: SourceClaims<number>, pos: Span) => must(
     must(c.functions.find((f) => f.name === "boundArguments"), "the function's claims")
       .expressions.find((e) => e.pos[0] === pos[0] && e.pos[1] === pos[1]),
     `a claim at ${pos.join(":")}`,
   );
-  const signature = (c: SourceClaims): Arrow => {
+  const signature = (c: SourceClaims<number>): Arrow => {
     const labels = at(c, bind.pos).type;
     if (!Array.isArray(labels)) throw Error("the bind result states no labels");
     const clause = must(must(c.types[must(labels[0], "a label")], "a row")[0], "a clause");
@@ -98,7 +98,7 @@ try {
       throw Error("the bind result is not an arrow");
     return must(clause.arrs.arrows[0], "an arrow");
   };
-  for (const [name, edit] of rows<[string, (a: Ast, c: SourceClaims) => void]>([
+  for (const [name, edit] of rows<[string, (a: Ast, c: SourceClaims<number>) => void]>([
     ["remaining arity", (a, c) => signature(c).arguments.push([1, 2])],
     ["bound result", (a, c) => { signature(c).result = [0]; }],
     ["bound argument domain", (a, c) => {

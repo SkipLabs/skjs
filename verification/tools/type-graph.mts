@@ -12,46 +12,49 @@ export function isArrayPresence(value: unknown): value is ArrayPresence {
 export function presencePrefix(value: ArrayPresence): string {
   return value === "readable" ? "" : `${value} `;
 }
-export type Labels = number[];
+/** A union of labels. A table's labels are its row indices; the source
+ * claims wire also writes label trees (`source-claims.mts`), so each row
+ * type below is generic in its label. */
+export type Labels<L = number> = L[];
 /** A signature: the receiver a call may pass, then the parameters and the
  * result. A signature indifferent to its receiver names an unknown row. */
 export type CallEffect = "unrestricted" | "preservesInputHeap";
 /** One contract representation; every operand mapping must retain its effect. */
-export type CallContract<Receiver, Arguments> = {
+export type CallContract<Receiver, Arguments, L = number> = {
   receiver: Receiver;
   arguments: Arguments;
-  result: Labels;
+  result: Labels<L>;
   effect: CallEffect;
 };
-export type Arrow = CallContract<Labels, Labels[]>;
-export type MethodArrow = CallContract<Record<string, never>, Labels[]>;
-export type MethodRestArrow = CallContract<Record<string, never>, [Labels[], Labels]>;
+export type Arrow<L = number> = CallContract<Labels<L>, Labels<L>[], L>;
+export type MethodArrow<L = number> = CallContract<Record<string, never>, Labels<L>[], L>;
+export type MethodRestArrow<L = number> = CallContract<Record<string, never>, [Labels<L>[], Labels<L>], L>;
 /** An object contract: one label list per named field, in the order the
  * producer wrote them. Fields a contract does not name are unconstrained. */
-export type Fields = [name: PropertyKey, labels: Labels][];
+export type Fields<L = number> = [name: PropertyKey, labels: Labels<L>][];
 /** An optional field: constrains its key only where the object has it; a
  * readonly one is a view there. */
-export type OptionalField = { key: PropertyKey; readonly: boolean; type: Labels };
+export type OptionalField<L = number> = { key: PropertyKey; readonly: boolean; type: Labels<L> };
 /** An own-key bound: the object's own keys are among `keys` (`among`), or
  * none of them is (an array owns no key its prototype provides). */
 export type KeyBound = { among: boolean; keys: PropertyKey[] };
 /** A host-relative method member: its key, its fixed signatures
  * `[params, result]`, its variadic ones `[params, [rest, result]]`, and its
  * quantified ones, each a scheme row the member bound to its host meets. */
-export type MethodSig = {
+export type MethodSig<L = number> = {
   key: PropertyKey;
-  calls: MethodArrow[];
-  rests: MethodRestArrow[];
-  schemes: Labels[];
+  calls: MethodArrow<L>[];
+  rests: MethodRestArrow<L>[];
+  schemes: Labels<L>[];
 };
-export type Tuple = {
-  required: Labels[];
-  optional: Labels[];
-  rest: Labels | null;
+export type Tuple<L = number> = {
+  required: Labels<L>[];
+  optional: Labels<L>[];
+  rest: Labels<L> | null;
   readonly: boolean;
   presence: ArrayPresence;
 };
-export type Clause =
+export type Clause<L = number> =
   | "nul"
   | "bool"
   | "undef"
@@ -76,62 +79,62 @@ export type Clause =
    * when readonly; `methods` are
    * host-relative members; each of `bounds` says which keys the object may
    * own. Each is left out when there are none. */
-  | { refs: { first: Fields; rest: Fields[]; views: Fields; optional?: OptionalField[];
-      methods?: MethodSig[]; bounds?: KeyBound[] } }
+  | { refs: { first: Fields<L>; rest: Fields<L>[]; views: Fields<L>; optional?: OptionalField<L>[];
+      methods?: MethodSig<L>[]; bounds?: KeyBound[] } }
   /** Readonly index views apply to every present own field their key class
    * admits; each of `cells`, a mutable index signature's, is also one every
    * such field holds exactly. Left out when there are none. */
   | {
       dict: {
-        first: Fields;
-        rest: Fields[];
-        views: Fields;
-        indexes: IndexEntry[];
-        optional?: OptionalField[];
-        methods?: MethodSig[];
+        first: Fields<L>;
+        rest: Fields<L>[];
+        views: Fields<L>;
+        indexes: IndexEntry<L>[];
+        optional?: OptionalField<L>[];
+        methods?: MethodSig<L>[];
         bounds?: KeyBound[];
-        cells?: IndexEntry[];
+        cells?: IndexEntry<L>[];
       };
     }
   /** A tuple contract on an array store: required positions, optional
    * positions, and the rest, or null when no further position may exist. */
-  | { list: { first: Tuple; rest: Tuple[] } }
+  | { list: { first: Tuple<L>; rest: Tuple<L>[] } }
   /** An argument list under tuple contracts: what a rest parameter's type
    * says of the actuals past the fixed ones. */
-  | { pack: { first: Tuple; rest: Tuple[] } }
+  | { pack: { first: Tuple<L>; rest: Tuple<L>[] } }
   /** `variadic` signatures take actuals past their fixed parameters that, as
    * one argument list, are at the rest type, a `pack`; the field is left out
    * when there are none. */
-  | { arrs: { arrows: Arrow[]; variadic?: RestArrow[] } }
+  | { arrs: { arrows: Arrow<L>[]; variadic?: RestArrow<L>[] } }
   /** Construct signatures `[parameters, result]`: what a class meets; and
    * variadic ones `[parameters, [rest, result]]`, whose actuals past the
    * parameters are, as one argument list, at the rest type; the field is left
    * out when there are none. */
   | {
       ctors: {
-        signatures: [Labels[], Labels][];
-        variadic?: [Labels[], [Labels, Labels]][];
+        signatures: [Labels<L>[], Labels<L>][];
+        variadic?: [Labels<L>[], [Labels<L>, Labels<L>]][];
       };
     }
   | {
       callable: {
-        first: Fields;
-        rest: Fields[];
-        arrows: Arrow[];
-        variadic?: RestArrow[];
+        first: Fields<L>;
+        rest: Fields<L>[];
+        arrows: Arrow<L>[];
+        variadic?: RestArrow<L>[];
       };
     };
-export type RestArrow = CallContract<Labels, [Labels[], Labels]>;
+export type RestArrow<L = number> = CallContract<Labels<L>, [Labels<L>[], Labels<L>], L>;
 /** A producer's row: a union of clauses. */
-export type Row = Clause[];
+export type Row<L = number> = Clause<L>[];
 /** A verifier graph's row also may be a parameter, a binder a scheme
  * quantifies or a graph's assignment gives a family, a scheme, one
  * callable meeting its signatures at every instance of its binders, or a
  * meet, a value parameter within clauses (`V & DepSafe`)
  * (`POSITIVE-TYPES.md`, "Parameter and scheme rows"). */
 export type ParamRow = { kind: "value" | "arguments"; name: string; param: number };
-export type SchemeRow = { scheme: { binders: number[]; signatures: Arrow[];
-  bounds?: [binder: number, bound: Labels][]; variadic?: RestArrow[] } };
+export type SchemeRow<L = number> = { scheme: { binders: L[]; signatures: Arrow<L>[];
+  bounds?: [binder: L, bound: Labels<L>][]; variadic?: RestArrow<L>[] } };
 export type MeetRow = { meet: number; clauses: Row };
 export type GraphRow = Row | ParamRow | SchemeRow | MeetRow;
 export type TypeGraph = GraphRow[];
@@ -213,7 +216,7 @@ export function decodeLabels(v: unknown, size: number): Labels {
  * numeric ones, or every symbol key (Lean's `IndexKeys`). */
 export type IndexClass = "strings" | "numeric" | "symbols";
 /** An index contract: its key class and the type of each present key. */
-export type IndexEntry = [IndexClass, Labels];
+export type IndexEntry<L = number> = [IndexClass, Labels<L>];
 function isIndexClass(v: unknown): v is IndexClass {
   return v === "strings" || v === "numeric" || v === "symbols";
 }

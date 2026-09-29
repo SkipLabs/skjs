@@ -1225,11 +1225,30 @@ function liftType(types: unknown, labels: unknown, depth: number): Shown {
   const atoms = labels.flatMap((label: unknown) => {
     if (both && label === falseLabel) return [];
     if (both && label === trueLabel) return [{ a: "boolean" }];
+    if (isObject(label)) return [treeAtom(types, label, depth)];
     const row = rowAt(types, label);
     if (!Array.isArray(row)) return ["type " + String(label)];
     return row.map((clause: unknown) => liftClause(types, clause, depth));
   });
   return { top: false, atoms };
+}
+
+// A source-claims label tree names a row only the verifier builds, so it is
+// shown by what it names: a binder by its name, an array over its store, an
+// application by its declaration's position and its arguments, and an
+// intersection as text, as an intersection of contracts is.
+function treeAtom(types: unknown, label: Record<string, unknown>, depth: number): unknown {
+  const text = (labels: unknown) => printType(liftType(types, labels, depth - 1)).text;
+  if (typeof label.binder === "string") return { a: "param", name: label.binder };
+  if (Array.isArray(label.array)) {
+    const store = liftType(types, label.array, depth).atoms[0];
+    if (isObject(store) && store.a === "store") return { ...store, a: "array" };
+  }
+  if (typeof label.decl === "number")
+    return `declaration ${label.decl}` +
+      (Array.isArray(label.args) ? `<${label.args.map(text).join(", ")}>` : "");
+  if (Array.isArray(label.meet)) return label.meet.map((part) => `(${text(part)})`).join(" & ");
+  return "type " + JSON.stringify(label);
 }
 
 // A point, lifted: its type, with the assertion about what the cell holds as

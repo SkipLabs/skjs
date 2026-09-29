@@ -13,26 +13,46 @@ import type { Span } from "./span.mts";
 import type { CallEffect, Labels, Row } from "./type-graph.mts";
 export type { Labels, Row } from "./type-graph.mts";
 
+/** A label: a row of the document's own `types`, or a tree naming a row
+ * the producer does not build, which Lean builds from the declaration
+ * document. An application names its declaration by position in
+ * `definitions`, with one argument per parameter, `args` left out for a
+ * nullary one; an intersection has at least two parts; an array names its
+ * store's one row; a binder is one in scope, by name. A label list is in
+ * canonical order (SOURCE-CLAIMS.md, "Encoding"). */
+export type Label =
+  | number
+  | { decl: number; args?: Label[][] }
+  | { meet: Label[][] }
+  | { array: Label[]; readonly: boolean }
+  | { binder: string };
+/*
+ * Every type below is generic in its label, the wire's `Label` by default. A
+ * producer that names only rows of its own table, as the tsc producer and
+ * SKJS's export do, writes the `number` instance, and a reader of such a
+ * document reads that instance.
+ */
+
 /** A quantified callable. Parameter references inside it are resolved
  * lexically: its binders shadow enclosing binders only within this value. */
-export interface SchemeClaim {
+export interface SchemeClaim<L = Label> {
   effect: CallEffect;
-  typeParams: { name: string; bound: ClaimType | null }[];
+  typeParams: { name: string; bound: ClaimType<L> | null }[];
   /** The receiver a call passes; an unknown row when any is accepted. */
-  this: ClaimType;
-  params: ClaimType[];
-  rest: ClaimType | null;
-  result: ClaimType;
+  this: ClaimType<L>;
+  params: ClaimType<L>[];
+  rest: ClaimType<L> | null;
+  result: ClaimType<L>;
 }
 
 /** Ground graph labels, a lexically scoped rigid parameter, their union, or a quantified
  * callable. This is the one type language shared by every producer. */
-export type ClaimType =
-  | Labels
+export type ClaimType<L = Label> =
+  | Labels<L>
   | { param: string }
-  | { array: ClaimType }
-  | { union: ClaimType[] }
-  | { scheme: SchemeClaim }
+  | { array: ClaimType<L> }
+  | { union: ClaimType<L>[] }
+  | { scheme: SchemeClaim<L> }
   | { unavailable: string };
 
 /**
@@ -43,67 +63,59 @@ export type ClaimType =
  * `null` where no such assertion is made, so silence is stated rather than
  * inferred.
  */
-export type CurrentFields = [name: string, labels: Labels][];
+export type CurrentFields<L = Label> = [name: string, labels: Labels<L>][];
 
-export interface Point {
-  type: ClaimType;
-  current: CurrentFields | null;
+export interface Point<L = Label> {
+  type: ClaimType<L>;
+  current: CurrentFields<L> | null;
 }
 
 /** A named point: a parameter, or a binding visible at a statement entry. */
-export interface NamedPoint extends Point {
+export interface NamedPoint<L = Label> extends Point<L> {
   name: string;
 }
 
 /** The environment at one statement entry, keyed by the statement's start. */
-export interface EntryClaim {
+export interface EntryClaim<L = Label> {
   start: number;
-  bindings: NamedPoint[];
+  bindings: NamedPoint<L>[];
 }
 
 /** The type arguments one call supplies for a scheme's binders. It records the
  * elimination a producer proposes; the verifier re-checks it against the
  * scheme's signature and never infers one of its own. Absent at every site that
  * is not a call to a quantified callable. */
-export interface TypeArgument {
+export interface TypeArgument<L = Label> {
   name: string;
-  type: ClaimType;
+  type: ClaimType<L>;
 }
 
-export interface ExpressionClaim extends Point {
+export interface ExpressionClaim<L = Label> extends Point<L> {
   pos: Span;
-  instantiate?: TypeArgument[] | null;
+  instantiate?: TypeArgument<L>[] | null;
 }
 
-export interface FunctionClaims {
+export interface FunctionClaims<L = Label> {
   name: string;
   namePos: Span;
-  params: NamedPoint[];
-  result: ClaimType;
-  entries: EntryClaim[];
-  expressions: ExpressionClaim[];
+  params: NamedPoint<L>[];
+  result: ClaimType<L>;
+  entries: EntryClaim<L>[];
+  expressions: ExpressionClaim<L>[];
   /** One interior claim set per advertised signature of the closure at pos. */
   arrows?: {
     pos: Span;
-    rows: { expressions: ExpressionClaim[]; entries: EntryClaim[] }[];
+    rows: { expressions: ExpressionClaim<L>[]; entries: EntryClaim<L>[] }[];
   }[];
 }
 
-export interface SourceClaims {
+export interface SourceClaims<L = Label> {
   file: string;
   sourceSha256: string;
-  types: Row[];
-  functions: FunctionClaims[];
+  /** The producer's rows: the four primitives, then its own clause rows. */
+  types: Row<L>[];
+  functions: FunctionClaims<L>[];
   /** The module initialization unit, present exactly when the source has
    * top-level code: its entries and expressions, with no parameters. */
-  init?: Pick<FunctionClaims, "entries" | "expressions" | "arrows">;
-  /** Generic applications the producer reserved empty rows for, which Lean
-   * fills from the declarations: row, declaration position, argument rows. */
-  applications?: { row: number; declaration: number; args: number[][] }[];
-  /** Array types the producer reserved empty rows for, which Lean fills with
-   * the array shape over the store row; absent when none. */
-  arrays?: { row: number; store: number; readonly: boolean }[];
-  /** Intersections the producer reserved empty rows for, which Lean fills
-   * with the meet of the operand rows; absent when none. */
-  meets?: { row: number; parts: number[][] }[];
+  init?: Pick<FunctionClaims<L>, "entries" | "expressions" | "arrows">;
 }

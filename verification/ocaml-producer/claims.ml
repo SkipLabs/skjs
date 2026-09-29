@@ -19,51 +19,42 @@ let call_contract call_effect receiver arguments result = Object [
   "receiver",receiver; "arguments",arguments; "result",result;
   "effect",effect_json call_effect]
 
+(* A label on the wire (SOURCE-CLAIMS.md, "Encoding"): a row of the document's
+   own table, or a term naming what only Lean builds rows for, a declaration's
+   application, an intersection, an array or a binder in scope. The
+   constructors are in the canonical order, and OCaml's structural order on
+   this type is the order a label list is written in. *)
+type label =
+  | Row of int
+  | Decl of int * label list list
+  | Meet of label list list
+  | Arr of label list * bool
+  | Binder of string
+
+let rec label_json = function
+  | Row n -> int n
+  | Decl (k,[]) -> Object ["decl",int k]
+  | Decl (k,args) -> Object ["decl",int k;"args",Array (List.map labels_json args)]
+  | Meet parts -> Object ["meet",Array (List.map labels_json parts)]
+  | Arr (store,readonly) -> Object ["array",labels_json store;"readonly",Bool readonly]
+  | Binder name -> Object ["binder",String name]
+and labels_json ls = Array (List.map label_json ls)
+
 let encode (proposal : Proposal.t) =
-  (* The graph is just the existing SourceClaims wire format, interned structurally. *)
-  (* Empty reserved rows are references, never producer-authored equations.
-     Lean replaces them from the snapshotted declarations before extraction. *)
+  (* The table holds the producer's own rows: the four primitives, then each
+     clause row it states, interned structurally. *)
   let declarations = proposal.program.declarations in
-  let rows = ref ([Array [String "nul"]; Array [Object ["boolLit",Object ["value",Bool true]]];
-                   Array [Object ["boolLit",Object ["value",Bool false]]]; Array [String "undef"]]
-                  @ List.filter_map (fun (d:Source.declaration) ->
-                    if d.parameters=[] then Some (Array []) else None) declarations)
+  let rows = ref [Array [String "nul"]; Array [Object ["boolLit",Object ["value",Bool true]]];
+                  Array [Object ["boolLit",Object ["value",Bool false]]]; Array [String "undef"]]
   in
-  (* Applications reserved for Lean to fill: row, declaration position and
-     argument rows. *)
-  let reserved = ref [] in
-  (* The row reserved for an application of a declaration whose equation has
-     methods: their receiver is that application, so it needs its label
-     before its equation is expanded, as Lean reserves it. *)
-  let applications = ref [] in
-  (* Array types, each an empty row Lean fills with the array shape over the
-     store row: the producer states the store's contract, never the shape. *)
-  let arrays = ref [] in
-  (* Intersections of ground types, each an empty row Lean fills with the meet
-     of its operands: the producer names the operands, never the meet. *)
-  let meets = ref [] in
   let intern row =
     let rec find n = function [] -> rows := !rows @ [row]; n
       | r::rs -> if r=row then n else find (n+1) rs in find 0 !rows
   in
-  (* A generic body's binder is a value parameter row, one per spelling,
-     which names its own label. Lean reads the unit's binders as these rows
-     and certifies the body at every assignment of them; a claim over a
-     binder, however nested, is then an ordinary graph type. *)
-  let parameters = ref [] in
-  let parameter_label (r:Semantic.rigid) =
-    match List.assoc_opt r.spelling !parameters with
-    | Some label -> label
-    | None ->
-      let label = List.length !rows in
-      rows := !rows @ [Object ["param",int label;"name",String r.spelling;"kind",String "value"]];
-      parameters := (r.spelling,label) :: !parameters;
-      label
-  in
   (* A binder's ground bound, from the signature that declares it: such a
-     binder is the meet of its row and the bound, which Lean fills. *)
+     binder is the meet of the binder and the bound. *)
   (* A binder bounded by another binder, `U extends T`, is the meet of the
-     two, which Lean fills as `U ⊓ T`. *)
+     two, `U ⊓ T`. *)
   let bounds = List.concat_map (fun (f : Proposal.function_claim) ->
     List.filter_map (fun (q:Semantic.quantifier) -> match q.bound with
       | Some (ValueArgument b) when not (Semantic.mentions_rigid b) -> Some (q.identity,b)
@@ -79,19 +70,11 @@ let encode (proposal : Proposal.t) =
       | t -> [t] in
     List.fold_right (fun part acc ->
       List.concat_map (fun arm -> List.map (fun rest -> arm :: rest) acc) (arms part)) parts [[]] in
-  let rec labels t = Array (List.map int (label_list t))
+  let rec labels t = labels_json (label_list t)
   and label_list = function
     | Rigid r -> (match List.assoc_opt r bounds with
-      | None -> [parameter_label r]
-      | Some b ->
-        let parts = Array [Array [int (parameter_label r)]; labels b] in
-        (match List.assoc_opt parts !meets with
-         | Some label -> [label]
-         | None ->
-           let label = List.length !rows in
-           rows := !rows @ [Array []];
-           meets := !meets @ [(parts,label)];
-           [label]))
+      | None -> [Binder r.spelling]
+      | Some b -> [Meet [[Binder r.spelling]; label_list b]])
     | Union ts -> List.sort_uniq compare (List.concat_map label_list ts)
     | Meet (t,ts) when (let n = List.length (distributed (t::ts)) in n > 1 && n <= 16) ->
       (* An intersection with a union operand is the union of the
@@ -107,27 +90,18 @@ let encode (proposal : Proposal.t) =
         | _ when empty parts -> []
         | p::ps -> label_list (Meet (p,ps))
         | [] -> []) (distributed (t::ts)))
-    (* A meet row, filled by Lean from its operands' rows: a binder's is its
-       parameter row, and the meet of a binder with others is a meet row. *)
-    | Meet (t,ts) ->
-      let parts = Array (List.map labels (t::ts)) in
-      (match List.assoc_opt parts !meets with
-       | Some label -> [label]
-       | None ->
-         let label = List.length !rows in
-         rows := !rows @ [Array []];
-         meets := !meets @ [(parts,label)];
-         [label])
+    (* An intersection, whose row Lean builds from its operands'. *)
+    | Meet (t,ts) -> [Meet (List.map label_list (t::ts))]
     | Atoms atoms -> List.sort_uniq compare (List.concat_map atom_labels atoms)
   and atom_labels = function
-    | Nul -> [0] | True -> [1] | False -> [2] | Undef -> [3]
-    | Num -> [intern (Array [String "num"])] | Str -> [intern (Array [String "str"])]
-    | Bigint -> [intern (Array [String "bigint"])] | Symbol -> [intern (Array [String "symbol"])]
-    | NumLit bits -> [intern (Array [Object ["numLit",Object ["bits",String (Printf.sprintf "%Lu" bits)]]])]
-    | StrLit value -> [intern (Array [Object ["strLit",Object ["value",String value]]])]
-    | BigintLit value -> [intern (Array [Object ["bigintLit",Object ["value",Number value]]])]
-    | Top -> [intern (Array [String "top"])]
-    | Callable -> [intern (Array [Object ["arrs",Object ["arrows",Array []]]])]
+    | Nul -> [Row 0] | True -> [Row 1] | False -> [Row 2] | Undef -> [Row 3]
+    | Num -> [Row (intern (Array [String "num"]))] | Str -> [Row (intern (Array [String "str"]))]
+    | Bigint -> [Row (intern (Array [String "bigint"]))] | Symbol -> [Row (intern (Array [String "symbol"]))]
+    | NumLit bits -> [Row (intern (Array [Object ["numLit",Object ["bits",String (Printf.sprintf "%Lu" bits)]]]))]
+    | StrLit value -> [Row (intern (Array [Object ["strLit",Object ["value",String value]]]))]
+    | BigintLit value -> [Row (intern (Array [Object ["bigintLit",Object ["value",Number value]]]))]
+    | Top -> [Row (intern (Array [String "top"]))]
+    | Callable -> [Row (intern (Array [Object ["arrs",Object ["arrows",Array []]]]))]
     | Ctors signatures ->
       List.iter (fun (s:Semantic.signature) ->
         if s.quantified <> [] then unsupported "quantified construct signature claim encoding") signatures;
@@ -138,17 +112,17 @@ let encode (proposal : Proposal.t) =
         | Some _ -> None) signatures in
       let rests = List.filter_map (fun (s:Semantic.signature) -> Option.map (fun r ->
         Array [Array (List.map labels s.params);Array [pack_labels r;labels s.result]]) s.rest_pack) signatures in
-      [intern (Array [Object ["ctors",Object (("signatures",Array fixed) ::
-        (if rests = [] then [] else ["variadic",Array rests]))]])]
+      [Row (intern (Array [Object ["ctors",Object (("signatures",Array fixed) ::
+        (if rests = [] then [] else ["variadic",Array rests]))]]))]
     | Named (id,args) -> declaration_labels id args
     | Exact fs ->
       (* Invariant fields, and one own-key bound: its own keys are among
          exactly theirs. *)
-      [intern (Array [Object ["refs",Object ["first",Array (List.map (fun (f:Semantic.field) ->
+      [Row (intern (Array [Object ["refs",Object ["first",Array (List.map (fun (f:Semantic.field) ->
           if f.optional || f.write <> Some f.read then unsupported "an exact record's fields are invariant";
           Array [key_json f.name;labels f.read]) fs);"rest",Array [];"views",Array [];
         "bounds",Array [Object ["among",Bool true;
-          "keys",Array (List.map (fun (f:Semantic.field) -> key_json f.name) fs)]]]]])]
+          "keys",Array (List.map (fun (f:Semantic.field) -> key_json f.name) fs)]]]]]))]
     (* A class's generic method, held by its prototype: a scheme row. Its
        binders are the parser's names for the member's rows (`…#k:null^0`),
        which Lean's lowering of the class's instance type binds too, so the
@@ -157,7 +131,7 @@ let encode (proposal : Proposal.t) =
     | Shape {fields=[];indexes=[];elements=None;calls=[s]}
         when s.quantified <> [] && List.for_all (fun (q:Semantic.quantifier) ->
           String.contains q.identity.spelling '#' && q.bound = None) s.quantified ->
-      let binders = List.map (fun (q:Semantic.quantifier) -> int (parameter_label q.identity)) s.quantified in
+      let binders = List.map (fun (q:Semantic.quantifier) -> label_json (Binder q.identity.spelling)) s.quantified in
       let signature,variadic = match s.variadic,s.rest_pack with
         | None,None -> [call_contract s.call_effect (labels s.receiver) (Array (List.map labels s.params)) (labels s.result)],[]
         | Some element,None ->
@@ -166,8 +140,8 @@ let encode (proposal : Proposal.t) =
               pack_labels (Pack {required=[];optional_elements=[];rest=Some element;readonly=false;presence=Dense})])
             (labels s.result)]
         | _,Some _ -> unsupported "a pack parameter in a generic method's scheme" in
-      [intern (Object ["scheme",Object (["binders",Array binders;"signatures",Array signature]
-        @ (if variadic = [] then [] else ["variadic",Array variadic]))])]
+      [Row (intern (Object ["scheme",Object (["binders",Array binders;"signatures",Array signature]
+        @ (if variadic = [] then [] else ["variadic",Array variadic]))]))]
     | Shape shape ->
       (* An optional field constrains its key only where the object has it:
          a writable one under one invariant contract, a readonly one as a
@@ -242,19 +216,13 @@ let encode (proposal : Proposal.t) =
         if shape.fields <> [] || shape.calls <> [] || shape.indexes <> []
         then unsupported "array with additional fields, indexes or calls";
         (* The store's contract is the producer's; the array holding it, with
-           its prototype, is a row Lean fills with the one array shape. *)
+           its prototype, is Lean's, over that store. *)
         let store = intern (Array [Object ["list",Object ["first",Object [
           "required",Array (List.map labels sequence.required);
           "optional",Array (List.map labels sequence.optional_elements);
           "rest",(match sequence.rest with None -> Null | Some t -> labels t);
           "readonly",Bool sequence.readonly;"presence",String (presence_name sequence.presence)];"rest",Array []]]]) in
-        (match List.assoc_opt (store,sequence.readonly) !arrays with
-         | Some label -> [label]
-         | None ->
-           let label = List.length !rows in
-           rows := !rows @ [Array []];
-           arrays := !arrays @ [((store,sequence.readonly),label)];
-           [label])
+        [Arr ([Row store],sequence.readonly)]
       | None ->
         let clause = match shape.fields,shape.indexes,shape.calls with
         | _,(_::_ as indexes),[] ->
@@ -277,55 +245,42 @@ let encode (proposal : Proposal.t) =
           if optional <> [] then unsupported "callable with optional fields";
           if reads <> [] then unsupported "callable with readonly fields";
           Object ["callable",Object (["first",fields;"rest",Array []] @ calls)] in
-        [intern (Array [clause])]
+        [Row (intern (Array [clause]))]
 
   and pack_labels = function
     | PackParameter _ -> unsupported "rigid pack nested in a graph type"
-    | Pack sequence -> Array [int (intern (Array [Object ["pack",Object ["first",Object [
+    | Pack sequence -> labels_json [Row (intern (Array [Object ["pack",Object ["first",Object [
         "required",Array (List.map labels sequence.required);
         "optional",Array (List.map labels sequence.optional_elements);
         "rest",(match sequence.rest with None -> Null | Some t -> labels t);
         "readonly",Bool false;"presence",String "dense"];"rest",Array []]]]))]
+  (* An application names its declaration by position, with every argument:
+     one left to its default is that default, at the earlier arguments, so
+     `IteratorResult<number>` and `IteratorResult<number, unknown>` are one
+     label. A nullary declaration's label has no arguments. *)
   and declaration_labels id args =
-    let rec find i k = function
+    let rec find k = function
       | [] -> unsupported ("unknown declaration " ^ id)
       | (d:Source.declaration)::rest ->
-        if d.id=id then
-          if d.parameters=[] && args=[] then [i+4]
-          else if List.length args <= List.length d.parameters then begin
-            (* An argument left to its default is that default, at the earlier
-               arguments: `IteratorResult<number>` and `IteratorResult<number,
-               unknown>` are one application, and so one row. *)
-            let rec complete previous supplied parameters defaults = match parameters,defaults with
-              | parameter::more,default::others ->
-                (match supplied,default with
-                 | value::tail,_ -> complete ((parameter,Semantic.ValueArgument value)::previous) tail more others
-                 | [],Some value ->
-                   let value = Inference.substitute (List.rev previous) value in
-                   complete ((parameter,Semantic.ValueArgument value)::previous) [] more others
-                 | [],None -> None)
-              | _ -> Some (List.rev_map (fun (_,a) -> match a with
-                  | Semantic.ValueArgument t -> t | _ -> assert false) previous) in
-            let args = Option.value (complete [] args d.parameters d.defaults) ~default:args in
-            (* Keyed by the argument rows: two binders of one spelling, a
-               class's and a function's, are one parameter row, so their
-               applications are one. *)
-            let arg_labels = List.map labels args in
-            match List.assoc_opt (id,arg_labels) !applications with
-            | Some label -> [label]
-            | None ->
-              (* One lowering of every declaration: the row is reserved here,
-                 after its arguments' rows, and Lean fills it from the
-                 declaration's source terms. *)
-              let label = List.length !rows in
-              rows := !rows @ [Array []];
-              applications := ((id,arg_labels),label) :: !applications;
-              reserved := !reserved @ [Object ["row",int label;"declaration",int k;
-                "args",Array arg_labels]];
-              [label]
-          end else unsupported "type application has wrong arity"
-        else find (i + if d.parameters=[] then 1 else 0) (k + 1) rest in
-    find 0 0 declarations
+        if d.id<>id then find (k + 1) rest
+        else if d.parameters=[] && args=[] then [Decl (k,[])]
+        else begin
+          let rec complete previous supplied parameters defaults = match parameters,defaults with
+            | parameter::more,default::others ->
+              (match supplied,default with
+               | value::tail,_ -> complete ((parameter,Semantic.ValueArgument value)::previous) tail more others
+               | [],Some value ->
+                 let value = Inference.substitute (List.rev previous) value in
+                 complete ((parameter,Semantic.ValueArgument value)::previous) [] more others
+               | [],None -> None)
+            | [],[] when supplied=[] -> Some (List.rev_map (fun (_,a) -> match a with
+                | Semantic.ValueArgument t -> t | _ -> assert false) previous)
+            | _ -> None in
+          match complete [] args d.parameters d.defaults with
+          | Some args -> [Decl (k,List.map label_list args)]
+          | None -> unsupported "type application has wrong arity"
+        end in
+    find 0 declarations
   in
   (* A callable whose signature mentions a rigid parameter has no graph row:
      it is exported in the scheme form, with its own binders (possibly none),
@@ -361,50 +316,7 @@ let encode (proposal : Proposal.t) =
     | ValueArgument t -> contains_symbolic t
     | PackArgument p -> pack_contains_symbolic p
   in
-  (* A declaration applied to a rigid argument has no graph row of its own:
-     its definition, with the argument substituted, is the claim, exactly as
-     Lean expands the source equation. Ground applications keep their rows. *)
-  (* A declaration that reaches itself, a class's instance type through its
-     methods' receiver or a recursive alias, has no finite expansion: applied
-     to a binder, it is its application row at the binder's parameter row, as
-     Lean reads its source annotation. *)
-  let rec named_in = function
-    | Atoms atoms -> List.concat_map (function
-        | Named (id,args) -> id :: List.concat_map named_in args
-        | Shape s -> List.concat_map (fun (f:Semantic.field) -> named_in f.read
-            @ Option.fold ~none:[] ~some:named_in f.write) s.fields
-          @ List.concat_map (fun (c:Semantic.signature) ->
-              List.concat_map named_in (c.receiver :: c.result :: c.params @ Option.to_list c.variadic)) s.calls
-          @ List.concat_map (fun (i:Semantic.index_signature) -> named_in i.value) s.indexes
-          @ Option.fold ~none:[] ~some:(fun (q:Semantic.sequence) ->
-              List.concat_map named_in (q.required @ q.optional_elements @ Option.to_list q.rest)) s.elements
-        | Exact fs -> List.concat_map (fun (f:Semantic.field) -> named_in f.read) fs
-        | Ctors cs -> List.concat_map (fun (c:Semantic.signature) ->
-            List.concat_map named_in (c.receiver :: c.result :: c.params)) cs
-        | _ -> []) atoms
-    | Union ts -> List.concat_map named_in ts
-    | Meet (t,ts) -> List.concat_map named_in (t::ts)
-    | Rigid _ -> [] in
-  let references id = match List.find_opt (fun (d:Source.declaration) -> d.id=id) declarations with
-    | Some d -> List.concat_map named_in (d.expression :: d.bases)
-    | None -> [] in
-  let self_referential id =
-    let rec reach seen = function
-      | [] -> false
-      | x :: rest -> x = id || (if List.mem x seen then reach seen rest
-                                else reach (x::seen) (references x @ rest)) in
-    reach [] (references id) in
-  let rec expand_rigid = function
-    | Atoms atoms when List.exists (function
-        | Named (id,args) -> List.exists contains_symbolic args && not (self_referential id)
-        | _ -> false) atoms ->
-      List.fold_left (fun acc atom -> union acc (match atom with
-        | Named (id,args) when List.exists contains_symbolic args && not (self_referential id) ->
-          expand_rigid (Proposal.definition declarations id args)
-        | atom -> Atoms [atom])) (Atoms []) atoms
-    | t -> t
-  in
-  let rec claim_type t = match expand_rigid t with
+  let rec claim_type t = match t with
     | Rigid n -> Object ["param",String n.spelling]
     | Atoms [Shape {fields=[];indexes=[];calls=[signature];elements=None}]
         when signature.quantified <> [] || List.exists contains_symbolic
@@ -497,9 +409,4 @@ let encode (proposal : Proposal.t) =
     | None -> []
     | Some f -> ["init",Object (interior f)] in
   Object (["file",proposal.program.file; "sourceSha256",proposal.program.digest;
-    "types",Array !rows; "functions",Array functions] @ init @
-    (if !reserved = [] then [] else ["applications",Array !reserved]) @
-    (if !arrays = [] then [] else ["arrays",Array (List.map (fun ((store,readonly),row) ->
-      Object ["row",int row;"store",int store;"readonly",Bool readonly]) !arrays)]) @
-    (if !meets = [] then [] else ["meets",Array (List.map (fun (parts,row) ->
-      Object ["row",int row;"parts",parts]) !meets)]))
+    "types",Array !rows; "functions",Array functions] @ init)

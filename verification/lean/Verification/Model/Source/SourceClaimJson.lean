@@ -2,7 +2,8 @@ import Verification.Model.Source.SourceExtraction
 import Verification.Model.Source.DeclarationGraph
 
 /-! Strict producer-independent sidecars. A document carries its own type table,
-which its labels index; the primitives are its first four rows. The external
+which its row labels index, and label trees name the rows only the verifier
+builds (`Label`); the primitives are the table's first four rows. The external
 parser supplies the source fingerprint; this module checks agreement, not hashing
 or the parser's semantic correctness. Saved statuses are not part of the schema. -/
 namespace Verification.Model.SourceClaimJson
@@ -169,32 +170,8 @@ instance : ToJson InitClaims where
     (match i.arrows with
      | none | some [] => []
      | some rows => [("arrows", toJson rows)]))
-/-- A generic declaration's application the producer reserved an empty row
-for: the row, the declaration's position among the definitions, and the
-argument types. Lean fills the row. -/
-structure Application where
-  row : Nat
-  declaration : Nat
-  args : List (List Nat)
-  deriving ToJson, FromJson, Repr
-
-/-- An array type the producer reserved an empty row for: the row, the row of
-its store's tuple contract, and whether it is readonly. Lean fills the row
-with the array shape (`SourceTypes.arrayClause`), so no producer spells it. -/
-structure ArrayRow where
-  row : Nat
-  store : Nat
-  readonly : Bool
-  deriving ToJson, FromJson, Repr
-
-/-- An intersection the producer reserved an empty row for: the row and its
-operands' types. Lean fills the row with their meet (`DeclarationGraph.meetRow`),
-so no producer spells it. -/
-structure MeetRow where
-  row : Nat
-  parts : List (List Nat)
-  deriving ToJson, FromJson, Repr
-
+/-- A document with every label a row: the wire's once `FiniteLayout.finite`
+has given its label trees rows, or one whose producer names only rows. -/
 structure Document where
   file : String
   sourceSha256 : String
@@ -202,12 +179,6 @@ structure Document where
   functions : List Function
   /-- Present exactly when the source has module initialization code. -/
   init : Option InitClaims := none
-  /-- Generic applications the producer reserved rows for; absent when none. -/
-  applications : Option (List Application) := none
-  /-- Array types the producer reserved rows for; absent when none. -/
-  arrays : Option (List ArrayRow) := none
-  /-- Intersections the producer reserved rows for; absent when none. -/
-  meets : Option (List MeetRow) := none
   deriving FromJson
 
 /-- Absence asserts nothing: a source with no initialization code has no
@@ -217,17 +188,7 @@ instance : ToJson Document where
     ("types", toJson d.types), ("functions", toJson d.functions)] ++
     (match d.init with
      | none => []
-     | some i => [("init", toJson i)]) ++
-    (match d.applications with
-     | none | some [] => []
-     | some a => [("applications", toJson a)]) ++
-    (match d.arrays with
-     | none | some [] => []
-     | some a => [("arrays", toJson a)]) ++
-    (match d.meets with
-     | none | some [] => []
-     | some a => [("meets", toJson a)]))
-
+     | some i => [("init", toJson i)]))
 
 def Function.normalized (f : Function) : SourceClaims.Function :=
   ⟨f.name,f.namePos,f.params.map (fun b => (b.name,b.type.ground)),f.result.ground,
@@ -814,6 +775,288 @@ def decode (j : Json) : Except String Document := do
       throw "invalid source claims: duplicate identity, span, binding or type labels"
   return d
 
+/-! ### Labels
+
+A label on the wire is a row of the document's own table or a tree naming a
+row the producer does not build: an application of the declaration at a
+position of the declaration document's `definitions`, with every argument
+(none for a nullary one), an intersection of its parts, an array over its
+store's row, or a binder in scope (SOURCE-CLAIMS.md, "Encoding"). Each
+form has one spelling, and a label list is in canonical order. -/
+
+inductive Label where
+  | row (index : Nat)
+  | decl (position : Nat) (args : List (List Label))
+  | meet (parts : List (List Label))
+  | array (store : List Label) (readonly : Bool)
+  | binder (name : String)
+  deriving Inhabited
+
+namespace Label
+
+private def rank : Label → Nat
+  | .row _ => 0
+  | .decl .. => 1
+  | .meet _ => 2
+  | .array .. => 3
+  | .binder _ => 4
+
+private def lex : Ordering → Ordering → Ordering
+  | .eq, o => o
+  | o, _ => o
+
+mutual
+/-- The canonical order: rows by index, then declarations, intersections,
+arrays and binders, each by its fields in order, lists lexicographically. -/
+partial def cmp : Label → Label → Ordering
+  | .row a, .row b => compare a b
+  | .decl k A, .decl k' A' => lex (compare k k') (cmpLists A A')
+  | .meet P, .meet P' => cmpLists P P'
+  | .array S r, .array S' r' => lex (cmpList S S') (compare r r')
+  | .binder a, .binder b => compare a b
+  | a, b => compare a.rank b.rank
+partial def cmpList : List Label → List Label → Ordering
+  | [], [] => .eq
+  | [], _ :: _ => .lt
+  | _ :: _, [] => .gt
+  | a :: as, b :: bs => lex (cmp a b) (cmpList as bs)
+partial def cmpLists : List (List Label) → List (List Label) → Ordering
+  | [], [] => .eq
+  | [], _ :: _ => .lt
+  | _ :: _, [] => .gt
+  | a :: as, b :: bs => lex (cmpList a b) (cmpLists as bs)
+end
+
+instance : BEq Label := ⟨fun a b => a.cmp b == .eq⟩
+
+/-- Whether a label list is in canonical order, each label once. -/
+def canonical (ls : List Label) : Bool := (ls.zip ls.tail).all fun (a, b) => a.cmp b == .lt
+
+partial def toJson : Label → Json
+  | .row n => Lean.toJson n
+  | .decl k [] => Json.mkObj [("decl", Lean.toJson k)]
+  | .decl k args => Json.mkObj [("decl", Lean.toJson k),
+      ("args", Json.arr (args.map fun A => Json.arr (A.map toJson).toArray).toArray)]
+  | .meet parts => Json.mkObj [("meet", Json.arr (parts.map fun A => Json.arr (A.map toJson).toArray).toArray)]
+  | .array store readonly => Json.mkObj [("array", Json.arr (store.map toJson).toArray),
+      ("readonly", Lean.toJson readonly)]
+  | .binder name => Json.mkObj [("binder", Lean.toJson name)]
+
+mutual
+partial def fromJson (j : Json) : Except String Label := do
+  match j with
+  | .num _ => return .row (← j.getNat?)
+  | .obj _ =>
+    if let .ok k := j.getObjVal? "decl" then
+      let k ← k.getNat?
+      match j.getObjVal? "args" with
+      | .ok args =>
+        CellClaims.fieldsExactly j ["decl", "args"]
+        let args ← (← args.getArr?).toList.mapM listFromJson
+        if args.isEmpty then throw "a nullary declaration's label leaves its arguments out"
+        return .decl k args
+      | .error _ =>
+        CellClaims.fieldsExactly j ["decl"]
+        return .decl k []
+    if let .ok parts := j.getObjVal? "meet" then
+      CellClaims.fieldsExactly j ["meet"]
+      let parts ← (← parts.getArr?).toList.mapM listFromJson
+      if parts.length < 2 then throw "an intersection's label has at least two parts"
+      return .meet parts
+    if let .ok store := j.getObjVal? "array" then
+      CellClaims.fieldsExactly j ["array", "readonly"]
+      return .array (← listFromJson store) (← (← j.getObjVal? "readonly").getBool?)
+    if let .ok name := j.getObjVal? "binder" then
+      CellClaims.fieldsExactly j ["binder"]
+      let name ← name.getStr?
+      if name.isEmpty then throw "a binder's label names it"
+      return .binder name
+    throw "a label tree is a declaration's application, an intersection, an array or a binder"
+  | _ => throw "a label is a row index or a label tree"
+/-- A label list, in canonical order. -/
+partial def listFromJson (j : Json) : Except String (List Label) := do
+  let ls ← (← j.getArr?).toList.mapM fromJson
+  if !canonical ls then throw "a label list is in canonical order, each label once"
+  return ls
+end
+
+instance : ToJson Label := ⟨toJson⟩
+instance : FromJson Label := ⟨fromJson⟩
+
+end Label
+
+/-! ### The finite layout: a temporary adapter
+
+TEMPORARY: deleted at the cutover, stage S6 of "Recursive equations" in
+[DESIGN](DESIGN.md#status), when lowering builds equations over tree labels.
+Until then `DeclarationGraph.prepare` and everything after it read the finite
+layout the wire had before tree labels, and this is the only place that knows
+it: the four primitives, an empty row per nullary declaration, the
+producer's other rows, then, as the labels first name them, an empty row per
+application, array and intersection, listed for `prepare` to fill, and a
+parameter row per binder name. Every label is rewritten as its row. -/
+namespace FiniteLayout
+
+structure State where
+  /-- The producer's rows, the primitives included. -/
+  size : Nat
+  /-- Each definition's parameter count, by position. -/
+  arities : Array Nat
+  /-- The positions of the nullary definitions, in order. -/
+  nullary : List Nat
+  /-- Each tree label given a row, with the row. -/
+  given : List (Label × Nat) := []
+  /-- The rows given, in order, after the producer's. -/
+  rows : List Json := []
+  applications : List (Nat × Nat × List (List Nat)) := []
+  arrays : List (Nat × Nat × Bool) := []
+  meets : List (Nat × List (List Nat)) := []
+
+abbrev M := StateT State (Except String)
+
+private def give (l : Label) (row : Nat → Json) (record : Nat → State → State) : M Nat :=
+  modifyGet fun s =>
+    let r := s.size + s.nullary.length + s.rows.length
+    (r, record r { s with given := s.given ++ [(l, r)], rows := s.rows ++ [row r] })
+
+private def emptyRow : Nat → Json := fun _ => Json.arr #[]
+
+mutual
+/-- A label's row, giving a tree label one when it first occurs, after its
+arguments' or parts' rows. -/
+partial def resolve (l : Label) : M Nat := do
+  let s ← get
+  match l with
+  | .row n =>
+    if n ≥ s.size then throw "a label names no row of the table"
+    return if n < 4 then n else n + s.nullary.length
+  | .decl k [] =>
+    match s.arities[k]? with
+    | none => throw "a declaration's label names no declaration"
+    | some 0 => return 4 + (s.nullary.filter (· < k)).length
+    | some _ => throw "a generic declaration's label states its arguments"
+  | _ =>
+    if let some r := s.given.lookup l then return r
+    match l with
+    | .decl k args =>
+      match s.arities[k]? with
+      | none => throw "a declaration's label names no declaration"
+      | some n =>
+        if n != args.length then
+          throw "a declaration's label states one argument per parameter"
+        let args ← args.mapM resolveList
+        give l emptyRow fun row s => { s with applications := s.applications ++ [(row, k, args)] }
+    | .meet parts =>
+      let parts ← parts.mapM resolveList
+      give l emptyRow fun row s => { s with meets := s.meets ++ [(row, parts)] }
+    | .array store readonly =>
+      let [store] ← resolveList store | throw "an array's label names its store's one row"
+      give l emptyRow fun row s => { s with arrays := s.arrays ++ [(row, store, readonly)] }
+    | .binder name =>
+      give l (fun row => Lean.toJson (PositiveGraphs.GraphRow.param row name .value : Row)) fun _ s => s
+    | .row _ => throw "a row label has no tree"
+/-- A union's rows, sorted. -/
+partial def resolveList (ls : List Label) : M (List Nat) := do
+  return ((← ls.mapM resolve).mergeSort (· ≤ ·)).eraseDups
+end
+
+/-- One of the producer's rows: a clause row or a scheme row. A binder and
+an intersection are labels, never rows the producer writes. -/
+private def row (j : Json) : M Json := do
+  let r : PositiveGraphs.GraphRow Label (List Label) ← decodeStrict j
+  let unions := match r with
+    | .clauses cs => cs.flatMap PositiveNormalization.Clause.operands
+    | .scheme _ sigs bounds rests => sigs.flatMap CallEffects.Arrow.operands ++
+        bounds.map (fun (b : Label × List Label) => b.2) ++ rests.flatMap CallEffects.RestArrow.operands
+    | .param .. | .meet .. => []
+  match r with
+  | .param .. | .meet .. =>
+    throw "a producer's row is a clause row or a scheme row; binders and intersections are labels"
+  | _ => pure ()
+  if !unions.all Label.canonical then throw "a label list is in canonical order, each label once"
+  for A in r.operands do
+    for l in A do discard (resolve l)
+  let s ← get
+  let at_ (l : Label) : Nat := ((resolve l).run' s).toOption.getD 0
+  return Lean.toJson (r.map at_ (fun A => ((A.map at_).mergeSort (· ≤ ·)).eraseDups) : Row)
+
+private def labels (j : Json) : M Json := do
+  return Lean.toJson (← resolveList (← Label.listFromJson j))
+
+/-- `j` with field `k`, where it has one, rewritten by `f`. -/
+private def update (j : Json) (k : String) (f : Json → M Json) : M Json := do
+  match j.getObjVal? k with
+  | .ok v => return j.setObjVal! k (← f v)
+  | .error _ => return j
+
+private def each (f : Json → M Json) : Json → M Json
+  | .arr xs => return .arr (← xs.mapM f)
+  | j => return j
+
+private def nullable (f : Json → M Json) : Json → M Json
+  | .null => return .null
+  | j => f j
+
+/-- A claim type: labels, or a form over claim types. -/
+private partial def claim (j : Json) : M Json := do
+  match j with
+  | .arr _ => labels j
+  | _ =>
+    let j ← update j "union" (each claim)
+    let j ← update j "array" claim
+    update j "scheme" fun s => do
+      let s ← update s "typeParams" (each fun p => update p "bound" (nullable claim))
+      let s ← update s "this" claim
+      let s ← update s "params" (each claim)
+      let s ← update s "rest" (nullable claim)
+      update s "result" claim
+
+/-- A point: its type, what it asserts of each field, and the type arguments
+of the call it is. -/
+private def point (j : Json) : M Json := do
+  let j ← update j "type" claim
+  let j ← update j "current" (nullable (each fun
+    | .arr #[k, A] => return .arr #[k, ← labels A]
+    | f => return f))
+  update j "instantiate" (nullable (each fun i => update i "type" claim))
+
+/-- A unit's claims: a function's, or the initialization's. -/
+private def unit (j : Json) : M Json := do
+  let entries := each fun e => update e "bindings" (each point)
+  let j ← update j "params" (each point)
+  let j ← update j "result" claim
+  let j ← update j "entries" entries
+  let j ← update j "expressions" (each point)
+  update j "arrows" (each fun a => update a "rows" (each fun r => do
+    let r ← update r "expressions" (each point)
+    update r "entries" entries))
+
+/-- The document in the finite layout, and the rows `prepare` fills: each
+application's `(row, declaration position, arguments)`, each array's
+`(row, store, readonly)` and each intersection's `(row, parts)`. -/
+def finite (ast claims : Json) : Except String
+    (Json × List (Nat × Nat × List (List Nat)) × List (Nat × Nat × Bool) × List (Nat × List (List Nat))) := do
+  let definitions := (((ast.getObjVal? "declarations").toOption.bind
+    fun d => (d.getObjVal? "definitions").toOption).bind (·.getArr?.toOption)).getD #[]
+  let arities := definitions.map fun d =>
+    (((d.getObjVal? "parameters").toOption.bind (·.getArr?.toOption)).map (·.size)).getD 0
+  let types ← (← claims.getObjVal? "types").getArr?
+  let run : M Json := do
+    let rows ← types.toList.mapM row
+    let claims ← update claims "functions" (each unit)
+    let claims ← update claims "init" unit
+    let s ← get
+    let table := rows.take 4 ++ s.nullary.map (fun _ => Json.arr #[]) ++ rows.drop 4 ++ s.rows
+    return claims.setObjVal! "types" (.arr table.toArray)
+  let start : State := {
+    size := types.size
+    arities := arities
+    nullary := (List.range arities.size).filter fun k => arities[k]? == some 0 }
+  let (j, s) ← run.run start
+  return (j, s.applications, s.arrays, s.meets)
+
+end FiniteLayout
+
 private abbrev Sites := List Nat × List Span × List Span
 private def joinSites (a b : Sites) : Sites := (a.1 ++ b.1,a.2.1 ++ b.2.1,a.2.2 ++ b.2.2)
 /-- The spans of a pattern's array rests: each is a fresh array, claimed like
@@ -1064,6 +1307,8 @@ private def classBinders (j : Json) : Except String (List Fragment.TypeParam) :=
 others remain its module, reachable at their signatures, and need no claims. -/
 def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String × Span) := none) :
     Except String (List FunctionPlan) := do
+  let (claims, applications, arrayRows, meets) ←
+    (FiniteLayout.finite ast claims).mapError (s!"invalid source claims: {·}")
   let d ← decode claims
   if d.file != fileKey || (← jStr (← jField ast "file")) != fileKey then throw "source claim file identity mismatch"
   if (← jStr (← jField ast "sourceSha256")) != d.sourceSha256 then throw "source claim fingerprint mismatch"
@@ -1082,9 +1327,7 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
   let contractSite := only.map Prod.snd |>.getD
     ((d.functions.head?.map (·.namePos)).getD (0, 0))
   let (ast, types, imported, generics) ← (DeclarationGraph.prepare ast d.types
-    ((d.applications.getD []).map fun a => (a.row, a.declaration, a.args))
-    ((d.arrays.getD []).map fun a => (a.row, a.store, a.readonly))
-    ((d.meets.getD []).map fun m => (m.row, m.parts))).mapError fun reason =>
+    applications arrayRows meets).mapError fun reason =>
       sourceRefusal d.types contractSite .bindingAnnotation
         s!"the declarations required by this unit cannot be interpreted: {reason}"
   let d := { d with types }

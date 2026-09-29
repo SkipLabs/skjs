@@ -7,17 +7,17 @@ import type {
   SkjsExpression,
   SkjsNamedPoint,
 } from "../tools/skjs-claims.mts";
-import type {
-  ClaimType,
-  CurrentFields,
-  EntryClaim,
-  ExpressionClaim,
-  Labels,
-  NamedPoint,
-  Point,
-  Row,
-} from "../tools/source-claims.mts";
+import type * as Sidecar from "../tools/source-claims.mts";
+import type { Labels, Row } from "../tools/source-claims.mts";
 import { decodeLabels } from "../tools/type-graph.mts";
+
+// A candidate's sidecar names only rows of its own table (`Candidate`).
+type ClaimType = Sidecar.ClaimType<number>;
+type CurrentFields = Sidecar.CurrentFields<number>;
+type EntryClaim = Sidecar.EntryClaim<number>;
+type ExpressionClaim = Sidecar.ExpressionClaim<number>;
+type NamedPoint = Sidecar.NamedPoint<number>;
+type Point = Sidecar.Point<number>;
 
 /** Where a claim sits, in the terms the candidate is addressed by. */
 export interface ClaimSite {
