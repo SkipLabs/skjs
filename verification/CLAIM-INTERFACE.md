@@ -5,7 +5,7 @@ there is no implemented comment frontend yet. A strict, bounded
 [calculus-label sidecar](SOURCE-CLAIMS.md) is now implemented separately from the
 arbitrary-graph proposal below. The in-memory consumption boundary
 is now separated: `SourceClaims.Function` contains calculus type candidates, and
-`SkjsSourceClaims.translate` adapts SKJS exports before source extraction.
+`translate` in [SkjsSourceClaims.lean](lean/Verification/Model/Source/SkjsSourceClaims.lean) adapts SKJS exports before source extraction.
 `extractNormalizedFn` accepts those candidates directly. The source CLI accepts SKJS exports and, through separate modes, the bounded
 producer-independent sidecar. The independent calculus request and
 certificate checker already exist; this proposal changes how source claims reach
@@ -66,7 +66,7 @@ against the source graph's bounds. The future strict comment frontend must rejec
 unconsumed directives; preserving the existing export policy does not change
 that proposed requirement.
 
-`SourceClaimsTests.lean` supplies claims without SKJS type JSON, checks their
+[SourceClaimsTests.lean](lean/Verification/Model/Tests/SourceClaimsTests.lean) supplies claims without SKJS type JSON, checks their
 certificates, compares the resulting request with the SKJS-adapted equivalent,
 and rejects narrowing, missing claims, invalid labels and reused evidence for
 changed judgments. The existing real-export suite exercises the same normalized
