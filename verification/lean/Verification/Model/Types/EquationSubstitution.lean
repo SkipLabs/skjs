@@ -22,6 +22,7 @@ def Tree.substitute (σ : Label sig → List (Label sig)) (t : Tree)
       rw [args.2]
       exact (Args.labels_length ts _).symm.trans scope.arity)).label]
   | .bound h ts i => σ ⟨.bound h ts i, valid⟩
+  | .var o i k => σ ⟨.var o i k, valid⟩
   | .argument i => False.elim (by simp [Tree.scoped] at valid)
   | .local i => False.elim (by simp [Tree.scoped] at valid)
 
@@ -70,6 +71,9 @@ theorem Tree.substitute_meaning (equations : Equations)
       mixedMeaning equations.graph θ (Tree.substitute σ t valid) := by
   cases t with
   | bound h ts i =>
+    apply images
+    simp [NormalGraph.params, Equations.graph, NormalGraph.ofRowMap, Equations.row, Label.view]
+  | var o i k =>
     apply images
     simp [NormalGraph.params, Equations.graph, NormalGraph.ofRowMap, Equations.row, Label.view]
   | argument i => simp [Tree.scoped] at valid

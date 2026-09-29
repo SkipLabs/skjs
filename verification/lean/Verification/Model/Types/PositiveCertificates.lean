@@ -20,16 +20,16 @@ inductive ArrowCert (ι : Type) where
   | recvUnion (a b : List ι) (left right : ArrowCert ι)
   deriving Repr, DecidableEq
 
-def checkDomains [DecidableEq ι] (table : Table ι) : List (List ι) → List (List ι) → Bool
+def checkDomainsWith (R : List ι → List ι → Prop) [DecidableRel R] : List (List ι) → List (List ι) → Bool
   | [], [] => true
-  | a :: As, b :: Bs => decide (Rel table a b) && checkDomains table As Bs
+  | a :: As, b :: Bs => decide (R a b) && checkDomainsWith R As Bs
   | _, _ => false
 
-theorem checkDomains_iff [DecidableEq ι] {table} (As Bs : List (List ι)) :
-    checkDomains table As Bs = true ↔ Domains (Rel table) As Bs := by
+theorem checkDomainsWith_iff {R : List ι → List ι → Prop} [DecidableRel R] (As Bs : List (List ι)) :
+    checkDomainsWith R As Bs = true ↔ Domains R As Bs := by
   induction As generalizing Bs with
-  | nil => cases Bs <;> simp [checkDomains, Domains]
-  | cons a As ih => cases Bs <;> simp [checkDomains, Domains, ih]
+  | nil => cases Bs <;> simp [checkDomainsWith, Domains]
+  | cons a As ih => cases Bs <;> simp [checkDomainsWith, Domains, ih]
 
 instance {elem : List ι → Option (List ι)} {R : List ι → List ι → Prop} [DecidableRel R]
     (As : List (List ι)) (E : List ι) : Decidable (ElemRest elem R As E) := by
@@ -40,86 +40,98 @@ instance [DecidableEq ι] {elem : List ι → Option (List ι)} {R : List ι →
   unfold IntoRest; infer_instance
 
 /-- A variadic source signature covering a fixed arrow, decided. -/
-def checkRestFixed [DecidableEq ι] (G : NormalGraph ι) (table : Table ι)
+def checkRestFixedWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) [DecidableRel R]
     (s : RestArrow (List ι)) (q : Arrow (List ι)) : Bool :=
-  decide (Rel table q.receiver s.receiver) &&
-    checkDomains table (q.arguments.take s.arguments.1.length) s.arguments.1 &&
-    decide (ElemRest (restElem G) (Rel table) (q.arguments.drop s.arguments.1.length) s.arguments.2 ∧
-      (s.result = [] ∨ Rel table s.result q.result)) && s.effect.covers q.effect
+  decide (R q.receiver s.receiver) &&
+    checkDomainsWith R (q.arguments.take s.arguments.1.length) s.arguments.1 &&
+    decide (ElemRest (restElem G) (R) (q.arguments.drop s.arguments.1.length) s.arguments.2 ∧
+      (s.result = [] ∨ R s.result q.result)) && s.effect.covers q.effect
 
-theorem checkRestFixed_iff [DecidableEq ι] {G : NormalGraph ι} {table : Table ι} {s q} :
-    checkRestFixed G table s q = true ↔ RestFixed (restElem G) (Rel table) s q := by
-  simp [checkRestFixed, RestFixed, checkDomains_iff, and_assoc]
+theorem checkRestFixedWith_iff [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R] {s q} :
+    checkRestFixedWith G R s q = true ↔ RestFixed (restElem G) R s q := by
+  simp [checkRestFixedWith, RestFixed, checkDomainsWith_iff, and_assoc]
 
 /-- Every recursive premise retains the target contract. Splitting a domain
 changes only that domain; combining results states and checks both effects. -/
-def checkArrow [DecidableEq ι] (G : NormalGraph ι) (table : Table ι)
+def checkArrowWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) [DecidableRel R]
     (L : Ops ι) (S : List (RestArrow (List ι))) (q : Arrow (List ι)) : ArrowCert ι → Bool
   | .empty => decide ([] ∈ q.arguments)
   | .emptyRecv => decide (q.receiver = [])
-  | .source p => decide (p ∈ L ∧ Rel table q.receiver p.receiver ∧
-      (p.result = [] ∨ Rel table p.result q.result)) &&
-      checkDomains table q.arguments p.arguments && p.effect.covers q.effect
-  | .rest s => decide (s ∈ S) && checkRestFixed G table s q
+  | .source p => decide (p ∈ L ∧ R q.receiver p.receiver ∧
+      (p.result = [] ∨ R p.result q.result)) &&
+      checkDomainsWith R q.arguments p.arguments && p.effect.covers q.effect
+  | .rest s => decide (s ∈ S) && checkRestFixedWith G R s q
   | .union pre a b suffix left right => decide (q.arguments = pre ++ (a ++ b) :: suffix) &&
-      checkArrow G table L S { q with arguments := pre ++ a :: suffix } left &&
-      checkArrow G table L S { q with arguments := pre ++ b :: suffix } right
+      checkArrowWith G R L S { q with arguments := pre ++ a :: suffix } left &&
+      checkArrowWith G R L S { q with arguments := pre ++ b :: suffix } right
   | .recvUnion a b left right => decide (q.receiver = a ++ b) &&
-      checkArrow G table L S { q with receiver := a } left &&
-      checkArrow G table L S { q with receiver := b } right
+      checkArrowWith G R L S { q with receiver := a } left &&
+      checkArrowWith G R L S { q with receiver := b } right
   | .combine b b' effect other left right =>
-      checkArrow G table L S { q with result := b, effect := effect } left &&
-      checkArrow G table L S { q with result := b', effect := other } right &&
-      decide (∀ i ∈ b, ∀ k ∈ b', compatible G i k = true → Rel table [i] q.result) &&
+      checkArrowWith G R L S { q with result := b, effect := effect } left &&
+      checkArrowWith G R L S { q with result := b', effect := other } right &&
+      decide (∀ i ∈ b, ∀ k ∈ b', compatible G i k = true → R [i] q.result) &&
       (effect.meet other).covers q.effect
 
-theorem checkArrow_sound [DecidableEq ι] {G : NormalGraph ι} {table L S q cert}
-    (h : checkArrow G table L S q cert = true) :
-    CallArrow (compatible G) (restElem G) (Rel table) L S q := by
+theorem checkArrowWith_sound [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R] {L S q cert}
+    (h : checkArrowWith G R L S q cert = true) :
+    CallArrow (compatible G) (restElem G) R L S q := by
   induction cert generalizing q with
   | empty => exact .empty (of_decide_eq_true h)
   | emptyRecv => exact .emptyRecv (of_decide_eq_true h)
   | source p =>
-    simp only [checkArrow, Bool.and_eq_true, decide_eq_true_eq, checkDomains_iff] at h
+    simp only [checkArrowWith, Bool.and_eq_true, decide_eq_true_eq, checkDomainsWith_iff] at h
     exact .source h.1.1.1 h.1.1.2.1 h.1.2 h.1.1.2.2 h.2
   | rest s =>
-    simp only [checkArrow, Bool.and_eq_true, decide_eq_true_eq, checkRestFixed_iff] at h
+    simp only [checkArrowWith, Bool.and_eq_true, decide_eq_true_eq, checkRestFixedWith_iff] at h
     exact .rest h.1 h.2
   | union pre a b suffix left right ih ih' =>
-    simp only [checkArrow, Bool.and_eq_true, decide_eq_true_eq] at h
+    simp only [checkArrowWith, Bool.and_eq_true, decide_eq_true_eq] at h
     exact .union h.1.1 (ih h.1.2) (ih' h.2)
   | recvUnion a b left right ih ih' =>
-    simp only [checkArrow, Bool.and_eq_true, decide_eq_true_eq] at h
+    simp only [checkArrowWith, Bool.and_eq_true, decide_eq_true_eq] at h
     exact .recvUnion h.1.1 (ih h.1.2) (ih' h.2)
   | combine b b' effect other left right ih ih' =>
-    simp only [checkArrow, Bool.and_eq_true, decide_eq_true_eq] at h
+    simp only [checkArrowWith, Bool.and_eq_true, decide_eq_true_eq] at h
     exact .combine (ih h.1.1.1) (ih' h.1.1.2) h.1.2 h.2
 
-theorem checkArrow_complete [DecidableEq ι] {G : NormalGraph ι} {table L S q}
-    (h : CallArrow (compatible G) (restElem G) (Rel table) L S q) :
-    ∃ cert, checkArrow G table L S q cert = true := by
+theorem checkArrowWith_complete [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R] {L S q}
+    (h : CallArrow (compatible G) (restElem G) R L S q) :
+    ∃ cert, checkArrowWith G R L S q cert = true := by
   induction h with
-  | emptyRecv he => exact ⟨.emptyRecv, by simpa [checkArrow] using he⟩
-  | empty he => exact ⟨.empty, by simpa [checkArrow] using he⟩
+  | emptyRecv he => exact ⟨.emptyRecv, by simpa [checkArrowWith] using he⟩
+  | empty he => exact ⟨.empty, by simpa [checkArrowWith] using he⟩
   | @source p q hp hrecv hd hc he =>
-    exact ⟨.source p, by simp [checkArrow, hp, hrecv, hd, hc, he, checkDomains_iff]⟩
+    exact ⟨.source p, by simp [checkArrowWith, hp, hrecv, hd, hc, he, checkDomainsWith_iff]⟩
   | @rest s q hs hr =>
-    exact ⟨.rest s, by simp only [checkArrow, Bool.and_eq_true, decide_eq_true_eq,
-      checkRestFixed_iff]; exact ⟨hs, hr⟩⟩
+    exact ⟨.rest s, by simp only [checkArrowWith, Bool.and_eq_true, decide_eq_true_eq,
+      checkRestFixedWith_iff]; exact ⟨hs, hr⟩⟩
   | @union pre a b suffix q he ha hb ih ih' =>
     obtain ⟨left, hl⟩ := ih
     obtain ⟨right, hr⟩ := ih'
-    exact ⟨.union pre a b suffix left right, by simp [checkArrow, he, hl, hr]⟩
+    exact ⟨.union pre a b suffix left right, by simp [checkArrowWith, he, hl, hr]⟩
   | @recvUnion a b q he ha hb ih ih' =>
     obtain ⟨left, hl⟩ := ih
     obtain ⟨right, hr⟩ := ih'
-    exact ⟨.recvUnion a b left right, by simp [checkArrow, he, hl, hr]⟩
+    exact ⟨.recvUnion a b left right, by simp [checkArrowWith, he, hl, hr]⟩
   | @combine q b b' e e' ha hb hg he ih ih' =>
     obtain ⟨left, hl⟩ := ih
     obtain ⟨right, hr⟩ := ih'
     refine ⟨.combine b b' e e' left right, ?_⟩
-    simp only [checkArrow, Bool.and_eq_true, decide_eq_true_eq]
+    simp only [checkArrowWith, Bool.and_eq_true, decide_eq_true_eq]
     exact ⟨⟨⟨hl, hr⟩, hg⟩, he⟩
+
+/-- The finite checker reads premises through a table. -/
+abbrev checkArrow [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) :=
+  checkArrowWith G (Rel table)
+
+theorem checkArrow_sound [DecidableEq ι] {G : NormalGraph ι} {table L S q cert}
+    (h : checkArrow G table L S q cert = true) :
+    CallArrow (compatible G) (restElem G) (Rel table) L S q := checkArrowWith_sound h
+
+theorem checkArrow_complete [DecidableEq ι] {G : NormalGraph ι} {table L S q}
+    (h : CallArrow (compatible G) (restElem G) (Rel table) L S q) :
+    ∃ cert, checkArrow G table L S q cert = true := checkArrowWith_complete h
 
 abbrev Evidence (ι : Type) := List (Ops ι × ((Arrow (List ι)) × ArrowCert ι))
 
@@ -150,16 +162,22 @@ instance {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R
   unfold FixedCallsPack; split <;> infer_instance
 
 /-- Every target arrow has checked evidence from the source's signatures. -/
-abbrev ArrowsChecked [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (proofs : Evidence ι)
+abbrev ArrowsCheckedWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop)
+    [DecidableRel R] (proofs : Evidence ι)
     (L : Ops ι) (S : List (RestArrow (List ι))) (M : Ops ι) : Prop :=
   ∀ p ∈ M, ∃ e ∈ proofs, e.1 = L ∧ e.2.1 = p ∧
-    checkArrow G table L S p e.2.2 = true
+    checkArrowWith G R L S p e.2.2 = true
+
+/-- Premises read through a table. -/
+abbrev ArrowsChecked [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (proofs : Evidence ι) :=
+  ArrowsCheckedWith G (Rel table) proofs
 
 set_option synthInstance.maxSize 1024 in
-instance [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (proofs : Evidence ι) :
-    ∀ L S M, Decidable (ArrowsChecked G table proofs L S M) := by
+instance [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) [DecidableRel R]
+    (proofs : Evidence ι) :
+    ∀ L S M, Decidable (ArrowsCheckedWith G R proofs L S M) := by
   intro L S M
-  unfold ArrowsChecked
+  unfold ArrowsCheckedWith
   infer_instance
 
 instance {R : List ι → List ι → Prop} [DecidableRel R]
@@ -241,21 +259,23 @@ instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop
 
 set_option synthInstance.maxSize 1024 in
 /-- The executable checker is the shared coverage rule interpreted with checked
-arrow evidence. Adding a coverage condition changes the checker automatically. -/
-def checkClause [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (known : Known ι)
-    (proofs : Evidence ι) (self : List ι) (a b : Clause (List ι)) : Bool :=
-  decide (CoversWith G (Rel table) known (ArrowsChecked G table proofs) self a b)
+arrow evidence, premises read through `R`. Adding a coverage condition changes
+the checker automatically. -/
+def checkClauseWith [DecidableEq ι] (G : NormalGraph ι) (R : List ι → List ι → Prop) [DecidableRel R]
+    (known : Known ι) (proofs : Evidence ι) (self : List ι) (a b : Clause (List ι)) : Bool :=
+  decide (CoversWith G R known (ArrowsCheckedWith G R proofs) self a b)
 
-theorem checkClause_sound [DecidableEq ι] {G : NormalGraph ι} {table known proofs self a b}
-    (h : checkClause G table known proofs self a b = true) : Covers G (Rel table) known self a b := by
+theorem checkClauseWith_sound [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop}
+    [DecidableRel R] {known proofs self a b}
+    (h : checkClauseWith G R known proofs self a b = true) : Covers G R known self a b := by
   apply CoversWith.mono (h := of_decide_eq_true h)
   intro L S M hs p hp
   obtain ⟨e, _, _, _, he⟩ := hs p hp
-  exact checkArrow_sound he
+  exact checkArrowWith_sound he
 
 /-- Finite evidence collection is proof-only; the checker itself makes no
 classical choices. Monotonicity allows witnesses to share one evidence list. -/
-private theorem collect {α β : Type} (xs : List α) (P : α → List β → Prop)
+theorem collect {α β : Type} (xs : List α) (P : α → List β → Prop)
     (mono : ∀ x es es', (∀ e ∈ es, e ∈ es') → P x es → P x es')
     (h : ∀ x ∈ xs, ∃ es, P x es) : ∃ es, ∀ x ∈ xs, P x es := by
   induction xs with
@@ -269,9 +289,10 @@ private theorem collect {α β : Type} (xs : List α) (P : α → List β → Pr
     · subst a; exact mono x es _ (fun e he => List.mem_append_left rest he) he
     · exact mono a rest _ (fun e he => List.mem_append_right es he) (hr a hm)
 
-theorem checkClause_mono [DecidableEq ι] {G : NormalGraph ι} {table known self a b es es'}
-    (hm : ∀ e ∈ es, e ∈ es') (h : checkClause G table known es self a b = true) :
-    checkClause G table known es' self a b = true := by
+theorem checkClauseWith_mono [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop}
+    [DecidableRel R] {known self a b es es'}
+    (hm : ∀ e ∈ es, e ∈ es') (h : checkClauseWith G R known es self a b = true) :
+    checkClauseWith G R known es' self a b = true := by
   have h := of_decide_eq_true h
   apply decide_eq_true
   apply CoversWith.mono (h := h)
@@ -279,24 +300,26 @@ theorem checkClause_mono [DecidableEq ι] {G : NormalGraph ι} {table known self
   obtain ⟨e, he, hL, hP, hc⟩ := hs p hp
   exact ⟨e, hm e he, hL, hP, hc⟩
 
-private theorem arrow_evidence_complete [DecidableEq ι] {G : NormalGraph ι} {table} {L M : Ops ι}
+private theorem arrow_evidence_complete [DecidableEq ι] {G : NormalGraph ι}
+    {R : List ι → List ι → Prop} [DecidableRel R] {L M : Ops ι}
     {S : List (RestArrow (List ι))}
-    (h : ∀ p ∈ M, CallArrow (compatible G) (restElem G) (Rel table) L S p) :
+    (h : ∀ p ∈ M, CallArrow (compatible G) (restElem G) R L S p) :
     ∃ es : Evidence ι, ∀ p ∈ M, ∃ e ∈ es,
-      e.1 = L ∧ e.2.1 = p ∧ checkArrow G table L S p e.2.2 = true := by
+      e.1 = L ∧ e.2.1 = p ∧ checkArrowWith G R L S p e.2.2 = true := by
   have hx : ∀ p ∈ M, ∃ es : Evidence ι, ∃ e ∈ es,
-      e.1 = L ∧ e.2.1 = p ∧ checkArrow G table L S p e.2.2 = true := by
+      e.1 = L ∧ e.2.1 = p ∧ checkArrowWith G R L S p e.2.2 = true := by
     intro p hp
-    obtain ⟨pc, hc⟩ := checkArrow_complete (h p hp)
+    obtain ⟨pc, hc⟩ := checkArrowWith_complete (h p hp)
     exact ⟨[(L, (p, pc))], (L, (p, pc)), by simp, rfl, rfl, hc⟩
   obtain ⟨es, he⟩ := collect M _ (fun p es es' hm ⟨e, he, hL, hp, hc⟩ =>
     ⟨e, hm e he, hL, hp, hc⟩) hx
   exact ⟨es,he⟩
 
 set_option synthInstance.maxSize 1024 in
-theorem checkClause_complete [DecidableEq ι] {G : NormalGraph ι} {table known self a b}
-    (h : Covers G (Rel table) known self a b) : ∃ es, checkClause G table known es self a b = true := by
-  simp only [checkClause, decide_eq_true_eq]
+theorem checkClauseWith_complete [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop}
+    [DecidableRel R] {known self a b}
+    (h : Covers G R known self a b) : ∃ es, checkClauseWith G R known es self a b = true := by
+  simp only [checkClauseWith, decide_eq_true_eq]
   cases a <;> cases b <;> simp only [Covers, CoversWith] at *
   all_goals try contradiction
   all_goals first
@@ -305,6 +328,22 @@ theorem checkClause_complete [DecidableEq ι] {G : NormalGraph ι} {table known 
        exact ⟨es, he, h.2⟩)
     | (obtain ⟨es, he⟩ := arrow_evidence_complete h.2.1
        exact ⟨es, h.1, he, h.2.2⟩)
+
+/-- Premises read through a table. -/
+abbrev checkClause [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) :=
+  checkClauseWith G (Rel table)
+
+theorem checkClause_sound [DecidableEq ι] {G : NormalGraph ι} {table known proofs self a b}
+    (h : checkClause G table known proofs self a b = true) : Covers G (Rel table) known self a b :=
+  checkClauseWith_sound h
+
+theorem checkClause_mono [DecidableEq ι] {G : NormalGraph ι} {table known self a b es es'}
+    (hm : ∀ e ∈ es, e ∈ es') (h : checkClause G table known es self a b = true) :
+    checkClause G table known es' self a b = true := checkClauseWith_mono hm h
+
+theorem checkClause_complete [DecidableEq ι] {G : NormalGraph ι} {table known self a b}
+    (h : Covers G (Rel table) known self a b) : ∃ es, checkClause G table known es self a b = true :=
+  checkClauseWith_complete h
 
 structure Certificate (ι : Type) where
   table : Table ι
@@ -832,6 +871,280 @@ theorem accepted_subsumption [DecidableEq ι] {G : NormalGraph ι} {S T proof}
   intro j _ U v hv
   exact accepted h j U v hv
 
+/-! ## Family certificates
+
+Family entries (RECURSIVE-EQUATIONS §7) are checked by the core conditions
+with premises read in each entry, decided with checked arrow evidence. The
+checker is complete for the declarative rule (`familyValid_iff_checked`); a
+claim is a pair of a variable-free entry (`checkFamilyUsing_sound`). -/
+
+instance [DecidableEq ι] (f : Entry ι) (A B : List ι) : Decidable (Discharge f A B) := by
+  unfold Discharge; infer_instance
+
+instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {F : List (Entry ι)}
+    {f : Entry ι} {l : ι} {B : List ι} {w : Nat × List (List ι)} :
+    Decidable (InstanceOk G sub F f l B w) := by
+  unfold InstanceOk; split <;> infer_instance
+
+instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {F : List (Entry ι)}
+    {gen : ι → List ι → List (Nat × List (List ι))} {f : Entry ι} :
+    DecidableRel (Prem G sub F gen f) := fun A B => by
+  unfold Prem; infer_instance
+
+set_option synthInstance.maxSize 1024 in
+instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
+    {R : List ι → List ι → Prop} [DecidableRel R] {known : Known ι}
+    {arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop}
+    [∀ L S M, Decidable (arrows L S M)] (i j : ι) :
+    Decidable (SchemeRenames G sub R known arrows i j) := by
+  unfold SchemeRenames; split <;> infer_instance
+
+set_option synthInstance.maxSize 1024 in
+instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
+    {R : List ι → List ι → Prop} [DecidableRel R] {known : Known ι}
+    {arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop}
+    [∀ L S M, Decidable (arrows L S M)] (hyps : List (ι × ι)) (S T : List ι) :
+    Decidable (OpaqueFamily G sub R known arrows hyps S T) := by
+  unfold OpaqueFamily SchemeCoversAlpha; infer_instance
+
+set_option synthInstance.maxSize 1024 in
+/-- The entries' core conditions, premises read in each entry, arrows by
+checked evidence. -/
+def checkEntries [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (known : Known ι)
+    (gen : ι → List ι → List (Nat × List (List ι))) (base F : List (Entry ι))
+    (arrows : Evidence ι) : Bool :=
+  decide (∀ f ∈ F, ∀ p ∈ f.pairs, SameKind G p.1 p.2 = true ∧
+    OpaqueFamily G sub (Prem G sub (base ++ F) gen f) known
+      (ArrowsCheckedWith G (Prem G sub (base ++ F) gen f) arrows) f.hypotheses p.1 p.2 ∧
+    ∀ a ∈ sourceClauses G p.1 ++ meetSources G p.1 p.2, ∃ b ∈ clausesOf G p.2,
+      checkClauseWith G (Prem G sub (base ++ F) gen f) known arrows p.1 a b = true)
+
+theorem checkEntries_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
+    {known : Known ι} {gen : ι → List ι → List (Nat × List (List ι))} {base F : List (Entry ι)}
+    {arrows : Evidence ι} (h : checkEntries G sub known gen base F arrows = true) :
+    FamilyValid G sub known gen base F := by
+  simp only [checkEntries, decide_eq_true_eq] at h
+  intro f hf p hp
+  obtain ⟨hk, ho, hc⟩ := h f hf p hp
+  refine ⟨hk, OpaqueFamily.mono (fun L S M hs q hq => ?_) ho, fun a ha => ?_⟩
+  · obtain ⟨e, _, _, _, he⟩ := hs q hq
+    exact checkArrowWith_sound he
+  · obtain ⟨b, hb, hcb⟩ := hc a ha
+    exact ⟨b, hb, checkClauseWith_sound hcb⟩
+
+theorem opaqueFamily_mono [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
+    {R : List ι → List ι → Prop} [DecidableRel R] {known : Known ι} {hyps : List (ι × ι)}
+    {S T : List ι} {es es' : Evidence ι} (hm : ∀ e ∈ es, e ∈ es')
+    (h : OpaqueFamily G sub R known (ArrowsCheckedWith G R es) hyps S T) :
+    OpaqueFamily G sub R known (ArrowsCheckedWith G R es') hyps S T :=
+  OpaqueFamily.mono (fun L S M hs p hp => by
+    obtain ⟨e, he, hL, hP, hc⟩ := hs p hp
+    exact ⟨e, hm e he, hL, hP, hc⟩) h
+
+set_option synthInstance.maxSize 1024 in
+/-- Declarative opaque rows of a family pair have checked evidence: each
+quantified coverage, renamed or not, is an arrow coverage. -/
+theorem opaqueFamily_complete [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
+    {R : List ι → List ι → Prop} [DecidableRel R] {known : Known ι} {hyps : List (ι × ι)}
+    {S T : List ι}
+    (h : OpaqueFamily G sub R known (fun L S M => ∀ p ∈ M,
+      CallArrow (compatible G) (restElem G) R L S p) hyps S T) :
+    ∃ es, OpaqueFamily G sub R known (ArrowsCheckedWith G R es) hyps S T := by
+  have each : ∀ i ∈ S, ∃ es : Evidence ι, G.plain i = true ∨ i ∈ T ∨ .top ∈ clausesOf G T ∨
+      G.meetRow i = true ∨ (∃ y ∈ T, (i, y) ∈ hyps) ∨
+      ∃ j ∈ T, SchemeCoversAlpha G sub R known (ArrowsCheckedWith G R es) i j := by
+    intro i hi
+    rcases h i hi with h | h | h | h | h | ⟨j, hj, hc | hc⟩
+    · exact ⟨[], .inl h⟩
+    · exact ⟨[], .inr (.inl h)⟩
+    · exact ⟨[], .inr (.inr (.inl h))⟩
+    · exact ⟨[], .inr (.inr (.inr (.inl h)))⟩
+    · exact ⟨[], .inr (.inr (.inr (.inr (.inl h))))⟩
+    · unfold SchemeCoversWith at hc
+      split at hc
+      · rename_i s s' hs hs'
+        obtain ⟨es, he⟩ := checkClauseWith_complete (R := R) (self := []) hc.2.2.2.2
+        refine ⟨es, .inr (.inr (.inr (.inr (.inr ⟨j, hj, .inl ?_⟩))))⟩
+        simp only [SchemeCoversWith, hs, hs']
+        exact ⟨hc.1, hc.2.1, hc.2.2.1, hc.2.2.2.1, of_decide_eq_true he⟩
+      · exact hc.elim
+    · unfold SchemeRenames at hc
+      split at hc
+      · rename_i r s s' hs hs'
+        obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9⟩ := hc
+        obtain ⟨es, he⟩ := checkClauseWith_complete (R := R) (self := []) h9
+        refine ⟨es, .inr (.inr (.inr (.inr (.inr ⟨j, hj, .inr ?_⟩))))⟩
+        simp only [SchemeRenames, hs, hs']
+        exact ⟨h1, h2, h3, h4, h5, h6, h7, h8, of_decide_eq_true he⟩
+      · exact hc.elim
+  obtain ⟨es, he⟩ := collect S _ (fun i es es' hm h => by
+    rcases h with h | h | h | h | h | ⟨j, hj, hc⟩
+    · exact .inl h
+    · exact .inr (.inl h)
+    · exact .inr (.inr (.inl h))
+    · exact .inr (.inr (.inr (.inl h)))
+    · exact .inr (.inr (.inr (.inr (.inl h))))
+    · refine .inr (.inr (.inr (.inr (.inr ⟨j, hj, SchemeCoversAlpha.mono (fun L S M hs p hp => ?_) hc⟩))))
+      obtain ⟨e, he, hL, hP, hc⟩ := hs p hp
+      exact ⟨e, hm e he, hL, hP, hc⟩) each
+  exact ⟨es, fun i hi => he i hi⟩
+
+theorem checkEntries_complete [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
+    {known : Known ι} {gen : ι → List ι → List (Nat × List (List ι))} {base F : List (Entry ι)}
+    (h : FamilyValid G sub known gen base F) : ∃ arrows, checkEntries G sub known gen base F arrows = true := by
+  have rows : ∀ fp ∈ F.flatMap (fun f => f.pairs.map (f, ·)), ∃ es : Evidence ι,
+      OpaqueFamily G sub (Prem G sub (base ++ F) gen fp.1) known
+        (ArrowsCheckedWith G (Prem G sub (base ++ F) gen fp.1) es) fp.1.hypotheses fp.2.1 fp.2.2 ∧
+      ∀ a ∈ sourceClauses G fp.2.1 ++ meetSources G fp.2.1 fp.2.2, ∃ b ∈ clausesOf G fp.2.2,
+        checkClauseWith G (Prem G sub (base ++ F) gen fp.1) known es fp.2.1 a b = true := by
+    intro fp hfp
+    obtain ⟨f, hf, hfp⟩ := List.mem_flatMap.mp hfp
+    obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hfp
+    have hv := h f hf p hp
+    obtain ⟨es₀, ho⟩ := opaqueFamily_complete hv.2.1
+    obtain ⟨es₁, hc⟩ := collect (sourceClauses G p.1 ++ meetSources G p.1 p.2)
+      (fun a es => ∃ b ∈ clausesOf G p.2,
+        checkClauseWith G (Prem G sub (base ++ F) gen f) known es p.1 a b = true)
+      (fun a es es' hm ⟨b, hb, hc⟩ => ⟨b, hb, checkClauseWith_mono hm hc⟩)
+      (fun a ha => by
+        obtain ⟨b, hb, hc⟩ := hv.2.2 a ha
+        obtain ⟨es, he⟩ := checkClauseWith_complete hc
+        exact ⟨es, b, hb, he⟩)
+    refine ⟨es₀ ++ es₁, opaqueFamily_mono (fun e he => List.mem_append_left _ he) ho, fun a ha => ?_⟩
+    obtain ⟨b, hb, hc⟩ := hc a ha
+    exact ⟨b, hb, checkClauseWith_mono (fun e he => List.mem_append_right _ he) hc⟩
+  obtain ⟨es, he⟩ := collect _ _ (fun fp es es' hm h => by
+    refine ⟨opaqueFamily_mono hm h.1, fun a ha => ?_⟩
+    obtain ⟨b, hb, hc⟩ := h.2 a ha
+    exact ⟨b, hb, checkClauseWith_mono hm hc⟩) rows
+  refine ⟨es, ?_⟩
+  simp only [checkEntries, decide_eq_true_eq]
+  intro f hf p hp
+  have hfp : (f, p) ∈ F.flatMap (fun f => f.pairs.map (f, ·)) :=
+    List.mem_flatMap.mpr ⟨f, hf, List.mem_map.mpr ⟨p, hp, rfl⟩⟩
+  exact ⟨(h f hf p hp).1, (he _ hfp).1, (he _ hfp).2⟩
+
+/-- The checker decides the declarative family rule, given arrow evidence. -/
+theorem familyValid_iff_checked [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
+    {known : Known ι} {gen : ι → List ι → List (Nat × List (List ι))} {base F : List (Entry ι)} :
+    FamilyValid G sub known gen base F ↔ ∃ arrows, checkEntries G sub known gen base F arrows = true :=
+  ⟨checkEntries_complete, fun ⟨_, h⟩ => checkEntries_sound h⟩
+
+/-- The variable discipline, decided. -/
+def variablesOk [DecidableEq ι] {G : NormalGraph ι} (sub : Option (Renaming G))
+    (F : List (Entry ι)) : Bool :=
+  match sub with
+  | some r => decide ((∀ f ∈ F, ∀ h ∈ f.hypotheses, h.1 ∈ f.variables ∧ h.2 ∈ f.variables) ∧
+      (∀ f ∈ F, ∀ x ∈ f.variables, r.familyVar x = true) ∧ (F.flatMap (·.variables)).Nodup)
+  | none => F.all fun f => f.variables.isEmpty && f.hypotheses.isEmpty
+
+theorem variablesOk_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
+    {F : List (Entry ι)} (h : variablesOk sub F = true) : VariablesOk sub F := by
+  cases sub with
+  | some r =>
+    simp only [variablesOk, decide_eq_true_eq] at h
+    exact ⟨h.1, fun f hf x hx => h.2.1 f hf x hx, h.2.2⟩
+  | none =>
+    simp only [variablesOk, List.all_eq_true, Bool.and_eq_true, List.isEmpty_iff] at h
+    refine ⟨fun f hf p hp => ?_, fun f hf x hx => ?_, ?_⟩
+    · rw [(h f hf).2] at hp; cases hp
+    · rw [(h f hf).1] at hx; cases hx
+    · have : F.flatMap (·.variables) = [] :=
+        List.flatMap_eq_nil_iff.mpr fun f hf => (h f hf).1
+      rw [this]; exact List.nodup_nil
+
+/-- A family certificate: its entries, the arrow evidence their coverage
+uses, and the known rows, each with the instance proving it. -/
+structure FamilyCertificate (ι : Type) where
+  entries : List (Entry ι)
+  arrows : Evidence ι := []
+  instances : List (List ι × Ops ι × List (RestArrow (List ι)) × Instance ι) := []
+  deriving Repr
+
+/-- The claim is a pair of one of the certificate's variable-free entries,
+and mentions no family variable. -/
+def claimOk [DecidableEq ι] {G : NormalGraph ι} (sub : Option (Renaming G))
+    (base F : List (Entry ι)) (S T : List ι) : Bool :=
+  F.any (fun f => f.variables.isEmpty && f.hypotheses.isEmpty && f.pairs.contains (S, T)) &&
+    match sub with
+    | some r => (base ++ F).all fun f => f.variables.all fun x => !r.mentions (S ++ T) x
+    | none => true
+
+/-- **Family subtyping, checked.** Instances of the known rows by the given
+image checker, the variable discipline, the entries' conditions, and the
+claim among the certificate's variable-free entries. `base` are entries
+already proved sound, such as checked variance declarations. -/
+def checkFamilyUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (sub : Option (Renaming G)) (gen : ι → List ι → List (Nat × List (List ι)))
+    (base : List (Entry ι)) (S T : List ι) (c : FamilyCertificate ι) : Bool :=
+  variablesOk sub (base ++ c.entries) &&
+    c.instances.all (fun k => checkInstArrsUsing G images k.1 k.2.1 k.2.2.1 k.2.2.2) &&
+    checkEntries G sub (knownOf c.instances) gen base c.entries c.arrows &&
+    claimOk sub base c.entries S T
+
+theorem checkFamilyUsing_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {sub : Option (Renaming G)} {gen : ι → List ι → List (Nat × List (List ι))}
+    {base : List (Entry ι)} {S T : List ι} {c : FamilyCertificate ι}
+    (h : checkFamilyUsing G images sub gen base S T c = true)
+    (hbase : ∀ e ∈ base, EntrySound G e) :
+    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
+  simp only [checkFamilyUsing, claimOk, Bool.and_eq_true, List.all_eq_true, List.any_eq_true,
+    List.isEmpty_iff, List.contains_iff_mem] at h
+  obtain ⟨⟨⟨hvars, hinst⟩, hentries⟩, ⟨f, hf, ⟨⟨_, hhyp⟩, hp⟩⟩, -⟩ := h
+  exact family_closed_sound (checkEntries_sound hentries) (variablesOk_sound hvars) hbase
+    (fun η k hk => by
+      obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hk
+      exact checkInstArrsUsing_sound (hinst q hq) η)
+    hf hhyp hp
+
+/-- Entries checked on their own, such as variance declarations, are sound. -/
+theorem checkEntries_entries_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
+    {gen : ι → List ι → List (Nat × List (List ι))} {F : List (Entry ι)} {arrows : Evidence ι}
+    (h : checkEntries G sub [] gen [] F arrows = true) (hv : variablesOk sub F = true) :
+    ∀ e ∈ F, EntrySound G e :=
+  family_entries_sound (checkEntries_sound h) (by simpa using variablesOk_sound hv)
+    (fun _ h => by simp at h) (fun _ _ h => by simp at h)
+
+/-- **An instance of a sound entry, checked**: the entry at `w`'s index, its
+variables at `w`'s types of their kinds, the claim's source within the
+substituted source, the substituted target within the claim's target, and one
+checked proof per hypothesis, in order, between the replacements. The
+structural `Var` rule is the case of a variance declaration. -/
+def checkEntryInstanceUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (r : Renaming G) (base : List (Entry ι)) (w : Nat × List (List ι)) (S T : List ι)
+    (proofs : List (Proof ι)) : Bool :=
+  match base[w.1]? with
+  | some e =>
+    w.2.length == e.variables.length && instKinds G e.variables w.2 &&
+      e.hypotheses.all (fun h => G.params h.1 && G.params h.2) &&
+      S.all (fun l => decide (l ∈ r.substitute (e.variables.zip w.2) e.source)) &&
+      (r.substitute (e.variables.zip w.2) e.target).all (fun l => decide (l ∈ T)) &&
+      e.hypotheses.length == proofs.length &&
+      (e.hypotheses.zip proofs).all fun hp =>
+        checkUsing G images (replace (e.variables.zip w.2) hp.1.1)
+          (replace (e.variables.zip w.2) hp.1.2) hp.2
+  | none => false
+
+theorem checkEntryInstanceUsing_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : InstanceImageCheck G} {r : Renaming G} {base : List (Entry ι)}
+    {w : Nat × List (List ι)} {S T : List ι} {proofs : List (Proof ι)}
+    (h : checkEntryInstanceUsing G images r base w S T proofs = true)
+    (hbase : ∀ e ∈ base, EntrySound G e) :
+    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
+  unfold checkEntryInstanceUsing at h
+  split at h
+  · rename_i e he
+    simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true, decide_eq_true_eq] at h
+    obtain ⟨⟨⟨⟨⟨⟨hlen, hkinds⟩, hpar⟩, hS⟩, hT⟩, hplen⟩, hproofs⟩ := h
+    have inst := entry_instance_sound r (hbase e (List.mem_of_getElem? he))
+      (fun h hh => by simpa using hpar h hh) hlen hkinds (fun h hh => by
+        obtain ⟨p, hp⟩ := exists_mem_zip hplen.symm h hh
+        exact checkUsing_sound (hproofs _ hp))
+    intro η
+    exact fun n W x hx => (Sub.subset hT).mixed_sound η n W x
+      (inst η n W x ((Sub.subset hS).mixed_sound η n W x hx))
+  · cases h
+
 #print axioms checkArrow_sound
 #print axioms checkArrow_complete
 #print axioms checkInstUsing_sound
@@ -839,4 +1152,10 @@ theorem accepted_subsumption [DecidableEq ι] {G : NormalGraph ι} {S T proof}
 #print axioms check_sound
 #print axioms check_complete
 #print axioms accepted
+#print axioms checkEntries_sound
+#print axioms checkEntries_complete
+#print axioms familyValid_iff_checked
+#print axioms checkFamilyUsing_sound
+#print axioms checkEntries_entries_sound
+#print axioms checkEntryInstanceUsing_sound
 end Verification.Model.PositiveCertificates

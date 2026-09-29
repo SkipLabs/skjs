@@ -13,11 +13,23 @@ structure Binder where
   kind : ParameterKind
   deriving Repr, DecidableEq
 
+/-- How an application may vary in one parameter (RECURSIVE-EQUATIONS §7.5):
+covariantly, contravariantly, invariantly, or not at all because the body
+does not read it. A declaration is checked, never assumed. -/
+inductive Variance where
+  | co
+  | contra
+  | inv
+  | none
+  deriving Repr, DecidableEq
+
 /-- The finite signature fixes both application arity and local binder kinds.
-Binder names are only diagnostic metadata. -/
+Binder names are only diagnostic metadata. `variance` declares each
+parameter's kind and variance; `Variances` checks the declarations once. -/
 structure Header where
   parameters : Nat
   binders : List Binder
+  variance : List (ParameterKind × Variance) := []
   deriving Repr, DecidableEq
 
 abbrev Signature := List Header
@@ -30,6 +42,10 @@ inductive Tree where
   | bound (head : Nat) (args : Args) (slot : Nat)
   | argument (slot : Nat)
   | local (slot : Nat)
+  /-- A family variable: a parameter owned by a family entry, not by an
+  application, so no scheme binds it (RECURSIVE-EQUATIONS §7.1). It carries
+  its kind. Templates cannot contain one. -/
+  | var (owner : Nat) (slot : Nat) (kind : ParameterKind)
   deriving Repr, DecidableEq
 inductive Types where
   | nil
@@ -77,6 +93,7 @@ def Tree.scoped (sig : Signature) (parameters locals : Nat) : Tree → Bool
   | .bound h args i => arityOk sig h args && binderOk sig h i && args.scoped sig parameters locals
   | .argument i => i < parameters
   | .local i => i < locals
+  | .var .. => true
 def Types.scoped (sig : Signature) (parameters locals : Nat) : Types → Bool
   | .nil => true
   | .cons t ts => t.scoped sig parameters locals && ts.scoped sig parameters locals
@@ -93,6 +110,7 @@ def Tree.lexical (locals : Bool) : Tree → Bool
   | .bound .. => false
   | .argument _ => true
   | .local _ => locals
+  | .var .. => false
 def Types.lexical (locals : Bool) : Types → Bool
   | .nil => true
   | .cons t ts => t.lexical locals && ts.lexical locals
@@ -107,7 +125,7 @@ abbrev Expression (sig : Signature) (h : Header) :=
 
 /-- Unlike a type operand, a binding position cannot name a parameter's union. -/
 def Tree.single : Tree → Bool
-  | .argument _ => false
+  | .argument _ | .var .. => false
   | .app .. | .bound .. | .local .. => true
 
 abbrev Reference (sig : Signature) (h : Header) :=
@@ -213,6 +231,7 @@ def Tree.instantiate (scope : Scope sig) (t : Tree)
   | .local i =>
     let b := scope.bound ⟨i, of_decide_eq_true valid⟩
     ⟨.cons b.1 .nil, by simp [Types.scoped, b.2]⟩
+  | .var o i k => ⟨.cons (.var o i k) .nil, by simp [Types.scoped, Tree.scoped]⟩
 def Types.instantiate (scope : Scope sig) (ts : Types)
     (valid : ts.scoped sig sig[scope.head].parameters sig[scope.head].binders.length = true) :
     ClosedTypes sig :=
@@ -360,9 +379,20 @@ def Scope.ofRaw (head : Nat) (args : Args) (arity : arityOk sig head args = true
   · apply Fin.ext; rfl
   · exact scope.labels_rawArgs hc
 
+/-- A family variable as a closed label. -/
+def Label.familyVar (owner slot : Nat) (kind : ParameterKind) : Label sig :=
+  ⟨.var owner slot kind, rfl⟩
+
+/-- Whether a label is a family variable. -/
+def Label.isVariable (label : Label sig) : Bool :=
+  match label.1 with
+  | .var .. => true
+  | _ => false
+
 inductive View (sig : Signature) where
   | application (scope : Scope sig)
   | parameter (scope : Scope sig) (slot : Fin sig[scope.head].binders.length)
+  | familyVar (owner slot : Nat) (kind : ParameterKind)
 
 def Label.view (label : Label sig) : View sig :=
   match label with
@@ -373,6 +403,7 @@ def Label.view (label : Label sig) : View sig :=
     let hb := (Bool.and_eq_true_iff.mp (Bool.and_eq_true_iff.mp valid).1).2
     let scope := Scope.ofRaw h args ha (Bool.and_eq_true_iff.mp valid).2
     .parameter scope ⟨i, by simpa [binderOk, scope, Scope.ofRaw, arityOk_exists ha] using hb⟩
+  | ⟨.var o i k, _⟩ => .familyVar o i k
   | ⟨.argument _, valid⟩ => False.elim (by simp [Tree.scoped] at valid)
   | ⟨.local _, valid⟩ => False.elim (by simp [Tree.scoped] at valid)
 
@@ -384,6 +415,9 @@ def Label.view (label : Label sig) : View sig :=
   simp [bound, Label.view, Scope.ofRaw, Scope.labels_rawArgs]
   apply Fin.ext
   rfl
+
+@[simp] theorem Label.view_familyVar (owner slot : Nat) (kind : ParameterKind) :
+    (Label.familyVar owner slot kind : Label sig).view = .familyVar owner slot kind := rfl
 
 theorem Types.labels_val (ts : Types) (valid : ts.scoped sig 0 0 = true) :
     Types.ofList ((ts.labels valid).map Subtype.val) = ts := by
@@ -406,7 +440,8 @@ theorem Scope.ofRaw_args (head : Nat) (args : Args) (ha hc) :
 /-- Every closed label is an application or one of its owned parameters. -/
 theorem Label.cases {P : Label sig → Prop} (label : Label sig)
     (app : ∀ scope : Scope sig, P scope.label)
-    (bound : ∀ (scope : Scope sig) slot, P (scope.bound slot)) : P label := by
+    (bound : ∀ (scope : Scope sig) slot, P (scope.bound slot))
+    (family : ∀ owner slot kind, P (Label.familyVar owner slot kind)) : P label := by
   rcases label with ⟨t, valid⟩
   cases t with
   | app h args =>
@@ -428,6 +463,7 @@ theorem Label.cases {P : Label sig → Prop} (label : Label sig)
       simp only [scope, Scope.bound, Scope.ofRaw_args]
       rfl
     exact he ▸ bound scope ⟨i, slot⟩
+  | var o i k => exact family o i k
   | argument i => simp [Tree.scoped] at valid
   | «local» i => simp [Tree.scoped] at valid
 
@@ -445,6 +481,7 @@ def Equations.row (equations : Equations) (label : Label equations.signature) :
   | .parameter scope slot =>
     let b := equations.signature[scope.head].binders[slot]
     .param label b.name b.kind
+  | .familyVar _ _ kind => .param label "var" kind
 
 def Equations.graph (equations : Equations) : NormalGraph (Label equations.signature) :=
   NormalGraph.ofRowMap equations.row equations.realm
@@ -461,13 +498,19 @@ def Equations.graph (equations : Equations) : NormalGraph (Label equations.signa
       some equations.signature[scope.head].binders[slot].kind := by
   simp [graph, NormalGraph.ofRowMap, row]
 
+/-- A family variable is a parameter row of the kind it carries. -/
+@[simp] theorem Equations.kind_familyVar (equations : Equations) (owner slot : Nat)
+    (kind : ParameterKind) :
+    equations.graph.parameterKinds (Label.familyVar owner slot kind) = some kind := by
+  simp [graph, NormalGraph.ofRowMap, row, Label.view, Label.familyVar]
+
 /- An application's free parameter names are those carried by its arguments.
 A parameter name is atomic: its owner identifies it, but changing an assignment
 at a name occurring inside that owner does not change the parameter's value. -/
 mutual
 def Tree.free : Tree → List Tree
   | .app _ args => args.free
-  | t@(.bound ..) => [t]
+  | t@(.bound ..) | t@(.var ..) => [t]
   | .argument _ | .local _ => []
 def Types.free : Types → List Tree
   | .nil => []
@@ -486,6 +529,10 @@ private theorem Tree.free_size (t p : Tree) (h : p ∈ t.free) : sizeOf p ≤ si
     omega
   | bound head args slot =>
     have : p = Tree.bound head args slot := List.mem_singleton.mp h
+    subst this
+    exact Nat.le_refl _
+  | var o i k =>
+    have : p = Tree.var o i k := List.mem_singleton.mp h
     subst this
     exact Nat.le_refl _
   | argument _ => simp [Tree.free] at h
@@ -532,6 +579,7 @@ theorem Equations.kind_application (equations : Equations) (scope : Scope equati
 
 #print axioms Equations.row_application
 #print axioms Equations.kind_bound
+#print axioms Equations.kind_familyVar
 #print axioms Equations.kind_application
 #print axioms Scope.bound_fresh
 

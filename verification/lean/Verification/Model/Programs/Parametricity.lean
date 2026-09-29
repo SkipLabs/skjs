@@ -21,10 +21,15 @@ open PositiveNormalization PositiveGraphs PositiveRules ProgramTyping ProgramCer
 
 variable {ι : Type} [DecidableEq ι] (G : NormalGraph ι) (η : MixedAssignment ι)
 
+theorem checkArrowWith_reassign (R : List ι → List ι → Prop) [DecidableRel R] (L : Ops ι)
+    (S : List (CallEffects.RestArrow (List ι))) (q : CallEffects.Arrow (List ι)) (cert : ArrowCert ι) :
+    checkArrowWith (reassign G η) R L S q cert = checkArrowWith G R L S q cert := by
+  induction cert generalizing q <;> simp only [checkArrowWith, *] <;> rfl
+
 theorem checkArrow_reassign (table : Table ι) (L : Ops ι)
     (S : List (CallEffects.RestArrow (List ι))) (q : CallEffects.Arrow (List ι)) (cert : ArrowCert ι) :
-    checkArrow (reassign G η) table L S q cert = checkArrow G table L S q cert := by
-  induction cert generalizing q <;> simp only [checkArrow, *] <;> rfl
+    checkArrow (reassign G η) table L S q cert = checkArrow G table L S q cert :=
+  checkArrowWith_reassign G η (Rel table) L S q cert
 
 theorem reads_reassign : reads (reassign G η) = reads G := rfl
 
@@ -139,18 +144,19 @@ theorem opaqueWith_reassign (R : List ι → List ι → Prop) (known : Known ι
 theorem checkClause_reassign (table : Table ι) (known : Known ι) (proofs : PositiveCertificates.Evidence ι)
     (self : List ι) (a b : Clause (List ι)) :
     checkClause (reassign G η) table known proofs self a b = checkClause G table known proofs self a b := by
-  have hA : ArrowsChecked (reassign G η) table proofs = ArrowsChecked G table proofs := by
-    funext L S M; simp only [ArrowsChecked, checkArrow_reassign]
-  unfold checkClause
+  have hA : ArrowsCheckedWith (reassign G η) (Rel table) proofs =
+      ArrowsCheckedWith G (Rel table) proofs := by
+    funext L S M; simp only [ArrowsCheckedWith, checkArrowWith_reassign]
+  unfold checkClause checkClauseWith
   apply decide_eq_decide.mpr
   rw [hA]
   exact coversWith_reassign G η _ known _ self a b
 
 theorem checkCore_reassign (known : Known ι) (S T : List ι) (cert : PositiveCertificates.Certificate ι) :
     checkCore (reassign G η) known S T cert = checkCore G known S T cert := by
-  have hA : ArrowsChecked (reassign G η) cert.table cert.arrows =
-      ArrowsChecked G cert.table cert.arrows := by
-    funext L S M; simp only [ArrowsChecked, checkArrow_reassign]
+  have hA : ArrowsCheckedWith (reassign G η) (Rel cert.table) cert.arrows =
+      ArrowsCheckedWith G (Rel cert.table) cert.arrows := by
+    funext L S M; simp only [ArrowsCheckedWith, checkArrowWith_reassign]
   unfold checkCore
   apply decide_eq_decide.mpr
   simp only [checkClause_reassign, hA, opaqueWith_reassign]

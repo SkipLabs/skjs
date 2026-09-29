@@ -111,6 +111,7 @@ theorem Tree.instantiate_agree (equations : Equations) (apps : equations.Applica
       (mixedMeaning equations.graph θ ((Tree.instantiate b t vb).1.labels (Tree.instantiate b t vb).2)) n := by
   cases t with
   | bound h ts slot => simp [Tree.lexical] at lex
+  | var o i k => simp [Tree.lexical] at lex
   | argument i =>
     simpa only [Tree.instantiate, Types.labels_ofList] using args.2 i
       (by have := of_decide_eq_true va; simpa only [a.arity] using this)
@@ -481,6 +482,7 @@ theorem Tree.instantiate_values (equations : Equations) (apps : equations.Applic
       mixedValues equations.graph θ ((Tree.instantiate b t vb).1.labels (Tree.instantiate b t vb).2) n W v := by
   cases t with
   | bound h ts slot => simp [Tree.lexical] at lex
+  | var o i k => simp [Tree.lexical] at lex
   | argument i =>
     have h := args.2 i
       (by have := of_decide_eq_true va; simpa only [a.arity] using this)

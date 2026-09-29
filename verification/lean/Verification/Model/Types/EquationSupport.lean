@@ -12,6 +12,7 @@ private theorem Tree.free_closed (t : Tree) (valid : t.scoped sig 0 0 = true)
   cases t with
   | app h args => exact Args.free_closed args (Bool.and_eq_true_iff.mp valid).2 p hp
   | bound h args i => simpa [Tree.free] using List.mem_singleton.mp hp ▸ valid
+  | var o i k => simpa [Tree.free] using List.mem_singleton.mp hp ▸ valid
   | argument i => simp [Tree.free] at hp
   | «local» i => simp [Tree.free] at hp
 private theorem Types.free_closed (ts : Types) (valid : ts.scoped sig 0 0 = true)
@@ -76,6 +77,7 @@ theorem Tree.instantiate_support (scope : Scope sig) (t : Tree)
     apply Args.instantiate_support scope args (Bool.and_eq_true_iff.mp valid).2 lexical p
     simpa [Tree.instantiate, Types.free, Tree.free, Scope.bound] using hp
   | bound h args i => simp [Tree.lexical] at lexical
+  | var o i k => simp [Tree.lexical] at lexical
   | argument i =>
     left
     exact scope.argument_support i _ p hp
@@ -186,6 +188,8 @@ private theorem Equations.no_meets (equations : Equations) (label : Label equati
         RowTemplate.wellBound, GraphRow.map]
   · intro scope slot
     simp [Equations.graph, NormalGraph.ofRowMap, Equations.row]
+  · intro o i k
+    simp [Equations.graph, NormalGraph.ofRowMap, Equations.row]
 
 /-- Computed syntax support satisfies the local closure conditions used by
 both finite-table and equation-graph semantics. -/
@@ -275,6 +279,10 @@ theorem Equations.free_support (equations : Equations) :
       simp only [Equations.graph, NormalGraph.ofRowMap, Equations.row, Scope.view_bound,
         NormalGraph.params, reads, boundReads, meetClauses, NormalGraph.clauses, NormalGraph.plain]
       simp [Scope.bound, Tree.free]
+    · intro o i k
+      simp only [Equations.graph, NormalGraph.ofRowMap, Equations.row, Label.view_familyVar,
+        NormalGraph.params, reads, boundReads, meetClauses, NormalGraph.clauses, NormalGraph.plain]
+      simp [Label.familyVar, Label.free, Tree.free]
   · intro label _ p cs hm
     rw [(equations.no_meets label).1] at hm
     cases hm
