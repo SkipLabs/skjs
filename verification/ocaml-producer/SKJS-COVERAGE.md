@@ -7,10 +7,10 @@ stops the rest, and where the two disagree because SKJS is wrong.
 Measurement checkpoint: September 29, 2026 (full census with SKJS
 confirmation).
 
-**2,452 of 2,674 SKJS-accepted units verify (91.7%); 1,822 of 2,026
-accepted functions (89.9%).** 293 of the 377 files with an accepted unit
-verify entirely. There are 89 principled refusals, 10 registered SKJS-unsound
-units and 123 gaps (3 of them under reasons no class entry matches,
+**2,466 of 2,674 SKJS-accepted units verify (92.2%); 1,836 of 2,026
+accepted functions (90.6%).** 295 of the 377 files with an accepted unit
+verify entirely. There are 88 principled refusals, 10 registered SKJS-unsound
+units and 110 gaps (3 of them under reasons no class entry matches,
 `summary.unmatchedReasons`); no refusal is unexplained by the automatic
 classifier.
 
@@ -55,14 +55,14 @@ is not part of `verification/run.sh`.
 
 | Suite | Harness verdict | Files | Units | Accepted | Verified | Accepted functions | Verified functions |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,458 | 2,238 | 1,863 | 1,661 |
+| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,458 | 2,252 | 1,863 | 1,675 |
 | `tests/callgraph` | no error allowed | 25 | 59 | 59 | 57 | 51 | 49 |
 | `tests/constprop` | no error allowed | 14 | 66 | 66 | 66 | 49 | 49 |
 | `tests/deadcode` | no error allowed | 7 | 27 | 27 | 27 | 16 | 16 |
 | `tests/cfg` | no error allowed | 7 | 22 | 22 | 22 | 21 | 21 |
 | `tests/projects` | expect-error markers, under the project's tsconfig | 24 of 68 | 44 | 34 | 34 | 23 | 23 |
 | `tests/ts-conformance/cases` | lines listed in `reference/*.errors.txt` | 4 | 9 | 8 | 8 | 3 | 3 |
-| **total** | | **480** | **4,110** | **2,674** | **2,452** | **2,026** | **1,822** |
+| **total** | | **480** | **4,110** | **2,674** | **2,466** | **2,026** | **1,836** |
 
 Excluded (79 files, listed in the JSON with reasons): `ts-conformance/not-supported`
 (31) and `callgraph-unsupported` (4) assert only that SKJS reports errors;
@@ -119,10 +119,10 @@ is.
 
 | Phase of first blocker | Units |
 | --- | ---: |
-| verified | 2,452 |
+| verified | 2,466 |
 | source (gate) | 77 |
-| proposal (producer) | 32 |
-| search (Lean) | 113 |
+| proposal (producer) | 27 |
+| search (Lean) | 104 |
 
 **Refusal classes.** The project's goal is that every accepted unit either
 verifies or is refused for a specific, principled reason. Each accepted unit
@@ -202,10 +202,10 @@ blocker's key is given (`summary.byReason` and `summary.byClass` of
 
 | Class | Units |
 | --- | ---: |
-| verified | 2,452 |
-| principled (P) | 89 |
+| verified | 2,466 |
+| principled (P) | 88 |
 | SKJS unsound (S) | 10 |
-| gap (G) | 123 |
+| gap (G) | 110 |
 | unexplained (U) | 0 |
 | **accepted** | **2,674** |
 
@@ -220,24 +220,23 @@ First blocker, not every missing feature of a unit:
 
 | Group | Units | Self | Dependency | Files |
 | --- | ---: | ---: | ---: | ---: |
-| TypeScript refuses the code too (the pipeline follows TypeScript's types) | 39 | 31 | 8 | 24 |
+| TypeScript refuses the code too (the pipeline follows TypeScript's types) | 38 | 30 | 8 | 24 |
 | destructuring and rest/default parameters | 14 | 9 | 5 | 5 |
 | in / instanceof / typeof tests | 14 | 7 | 0 | 6 |
 | implicit index signatures: a record at an index signature (`Closed<T>` read as `T` among them) | 14 | 14 | 0 | 3 |
 | type forms: literal types, keyof, indexed access, mapped, object, index signatures, intersections, method signatures | 11 | 10 | 1 | 7 |
 | object growth: a key-adding write on an object another reference may hold, a dynamic index write | 11 | 11 | 0 | 5 |
-| object literal members (methods, accessors, spreads) | 10 | 9 | 0 | 5 |
 | generics: constraints, explicit type arguments, rigid types, generic function types | 10 | 7 | 2 | 7 |
 | calls: overloads, .call, spread arguments, Object.assign, arrow callee | 10 | 6 | 3 | 6 |
 | a named function at a signature binding more parameters, or indifferent to the receiver it requires (its type is its annotated signature) | 9 | 8 | 1 | 5 |
 | arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's | 8 | 8 | 0 | 5 |
-| a non-null assertion on a read at a for...in key (that the object owns the key relates two values) | 8 | 8 | 0 | 1 |
 | cells read at their contract (contents known only as primitives or as no `undefined`, and forgotten across a step that may write them) | 7 | 5 | 0 | 5 |
 | tests on a value of a type parameter or `unknown` (no rule narrows a parameter row to its meet `T & number`; no object identity) | 7 | 7 | 0 | 4 |
 | classes: modifiers, inheritance, fields, parameter properties, receivers | 6 | 3 | 3 | 3 |
 | enums | 6 | 0 | 6 | 1 |
 | equality: objects without a field (no identity), loose equality | 6 | 6 | 0 | 2 |
 | sloppy (non-strict) code | 6 | 4 | 2 | 3 |
+| object literal members (methods, accessors, spreads) | 5 | 4 | 0 | 4 |
 | iterables the program defines: an iterator whose type states no `return`, a spread or a pattern the protocol's lowering does not place, a well-known symbol key other than `Symbol.iterator` | 5 | 4 | 1 | 4 |
 | await of non-promises and unions (the await bound) | 5 | 5 | 0 | 4 |
 | relational operators (< <= > >=) and ** | 2 | 1 | 1 | 1 |
@@ -252,7 +251,7 @@ First blocker, not every missing feature of a unit:
 | unclassified: search: reject: source refusal at _: the declarations required by this unit cannot be interpreted: GraphCollections: the type argument for EagerCollection's "_" at [117 | 1 | 0 | 1 | 1 |
 | type aliases and names the declaration reader cannot resolve | 1 | 0 | 1 | 1 |
 | library globals as values (Array, Symbol, Error, Promise, Set, Map, Date, JSON, …) | 1 | 1 | 0 | 1 |
-| **total** | **222** | | | |
+| **total** | **208** | | | |
 
 ## Performance on the pipeline cases
 

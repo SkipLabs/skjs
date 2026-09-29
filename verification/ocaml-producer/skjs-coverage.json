@@ -14,17 +14,17 @@
   "rejected": 2
  },
  "accepted": 2674,
- "verified": 2452,
+ "verified": 2466,
  "byStatus": {
-  "verified (check)": 2452,
-  "unverified (search)": 113,
+  "verified (check)": 2466,
+  "unverified (search)": 104,
   "unsupported (source)": 77,
-  "unsupported (proposal)": 32
+  "unsupported (proposal)": 27
  },
  "bySuite": {
   "expect-error": {
    "accepted": 2458,
-   "verified": 2238
+   "verified": 2252
   },
   "constprop": {
    "accepted": 66,
@@ -51,16 +51,16 @@
    "verified": 8
   }
  },
- "filesAllVerified": 293,
+ "filesAllVerified": 295,
  "filesWithAccepted": 377,
  "functions": {
   "accepted": 2026,
-  "verified": 1822
+  "verified": 1836
  },
  "byGroup": {
   "TypeScript refuses the code too (the pipeline follows TypeScript's types)": {
-   "units": 39,
-   "self": 31,
+   "units": 38,
+   "self": 30,
    "dependency": 8,
    "files": 24
   },
@@ -94,12 +94,6 @@
    "dependency": 0,
    "files": 5
   },
-  "object literal members (methods, accessors, spreads)": {
-   "units": 10,
-   "self": 9,
-   "dependency": 0,
-   "files": 5
-  },
   "generics: constraints, explicit type arguments, rigid types, generic function types": {
    "units": 10,
    "self": 7,
@@ -123,12 +117,6 @@
    "self": 8,
    "dependency": 0,
    "files": 5
-  },
-  "a non-null assertion on a read at a for...in key (that the object owns the key relates two values)": {
-   "units": 8,
-   "self": 8,
-   "dependency": 0,
-   "files": 1
   },
   "cells read at their contract (contents known only as primitives or as no `undefined`, and forgotten across a step that may write them)": {
    "units": 7,
@@ -165,6 +153,12 @@
    "self": 4,
    "dependency": 2,
    "files": 3
+  },
+  "object literal members (methods, accessors, spreads)": {
+   "units": 5,
+   "self": 4,
+   "dependency": 0,
+   "files": 4
   },
   "iterables the program defines: an iterator whose type states no `return`, a spread or a pattern the protocol's lowering does not place, a well-known symbol key other than `Symbol.iterator`": {
    "units": 5,
@@ -251,11 +245,11 @@
    "files": 1
   }
  },
- "reachedButRefused": 113,
+ "reachedButRefused": 104,
  "byClass": {
-  "verified": 2452,
-  "principled": 89,
-  "gap": 123,
+  "verified": 2466,
+  "principled": 88,
+  "gap": 110,
   "unexplained": 0,
   "skjsUnsound": 10
  },
@@ -263,7 +257,7 @@
  "byReason": {
   "TypeScript refuses the code": {
    "class": "principled",
-   "units": 38,
+   "units": 37,
    "files": 23
   },
   "generics: generic closures, methods, function types, dependent bounds": {
@@ -275,11 +269,6 @@
    "class": "gap",
    "units": 8,
    "files": 2
-  },
-  "a read at a `for...in` key under `!`": {
-   "class": "gap",
-   "units": 8,
-   "files": 1
   },
   "a named function at a longer signature": {
    "class": "gap",
@@ -315,11 +304,6 @@
    "class": "principled",
    "units": 7,
    "files": 3
-  },
-  "object literal spreads of functions, class values, arrays, strings": {
-   "class": "gap",
-   "units": 6,
-   "files": 4
   },
   "a rest typed by an intersection": {
    "class": "principled",
@@ -384,6 +368,11 @@
   "method extraction": {
    "class": "principled",
    "units": 3,
+   "files": 2
+  },
+  "object literal spreads of class values, arrays, strings": {
+   "class": "gap",
+   "units": 2,
    "files": 2
   },
   "`length` over an array-or-record union": {
@@ -501,11 +490,6 @@
    "units": 1,
    "files": 1
   },
-  "a spread's written field typed per arm of the expected union": {
-   "class": "gap",
-   "units": 1,
-   "files": 1
-  },
   "library globals not reviewed": {
    "class": "gap",
    "units": 1,
@@ -537,7 +521,6 @@
   "search: reject: TypeScript refuses this code too": 24,
   "search: reject: a record at an index signature: TypeScript admits a type literal whose named fields fit the index (an implicit index signature), but a value of it may c": 14,
   "source: reject: TypeScript refuses this code too": 10,
-  "search: reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two ": 8,
   "search: reject: a named function where a signature binding more parameters is expected: its slot is its annotated signature, checked by its own unit, and the arity of a": 8,
   "source: `instanceof` whose right operand is not a class declared at the file's top level: nothing in the file says which prototype a constructor from elsewhere gives it": 7,
   "proposal: `x instanceof C` does not narrow `unknown` to C: an object gets C's prototype without C's constructor running (`Object.create(C.prototype)`, `Object.setPrototyp": 7,
@@ -545,12 +528,11 @@
   "search: reject: unsupported source expression at _: strict equality of two operands that may both be objects without a field compares identities, which such objects do ": 6,
   "source: a function that reads `this` must be strict code: sloppy code replaces an undefined or primitive receiver by the global object or a wrapper object, which the mo": 6,
   "source: a rest parameter needs a tuple of required positions or an array: one typed by a type parameter would bind the array a call collects at that parameter, which on": 6,
-  "proposal: reject: TypeScript refuses this code too": 5,
   "source: a computed enum member is outside the fragment: its reverse mapping is keyed by its value at run time": 5,
   "search: reject: source refusal at _: a write of '_', a key the object's type does not state, may add it to an object another reference holds, which would see the object": 5,
   "search: reject: a cell read at its contract: a cell is known by its contract after a step that may write it (a call, whose callee may write any location its operands re": 4,
   "source: extending the standard library's Array is outside the fragment: its instances are what the library's constructor allocates, not an ordinary object a class alloc": 4,
-  "proposal: a spread copies the own enumerable properties of a plain object; a function's or an indexed object's are whatever was assigned to it, which its type does not bo": 4,
+  "proposal: reject: TypeScript refuses this code too": 4,
   "search: reject: source refusal at _: a write at a key known only at run time may add the key to an object another reference holds, which would see the object's keys cha": 3,
   "search: reject: `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an ar": 3,
   "source: keyof is keyof [number], whose part unique symbol is a unique symbol, which no type of the fragment names": 3,
@@ -601,7 +583,6 @@
   "source: keyof is keyof Promise<number>, whose part unique symbol is a unique symbol, which no type of the fragment names": 1,
   "source: an index signature in a class is outside the fragment: a class's instances are the objects its construction allocates, with the keys it names in a declaration o": 1,
   "search: reject: a spread of an object with a symbol-keyed property: the copy is stated at its string keys only, and JavaScript also copies an own enumerable symbol-keye": 1,
-  "search: reject: a spread with a written field that the arms of the expected union type differently: a field of the copy is allocated at the one type its value is claime": 1,
   "source: unresolved type reference _": 1,
   "search: reject: source refusal at _: the declarations required by this unit cannot be interpreted: Symbol: a callable object with methods needs a combined clause": 1,
   "search: reject: source refusal at _: a key-adding write of a symbol key: the copy that adds the key copies string keys only": 1,
@@ -1046,7 +1027,7 @@
 {"source":"tests/expect-error/callability.ts","name":"testReadonlyArrayTypeofFunction","kind":"function","line":243,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/callability.ts","name":"testTupleTypeofFunction","kind":"function","line":249,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/callability.ts","name":"testLiteralTypeofFunction","kind":"function","line":257,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/callability.ts","name":"testSpreadTypeofFunction","kind":"function","line":264,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"const n: never = o;","detail":"reject: TypeScript refuses this code too (line 7, col 11: Type 'Function' is not assignable to type 'never'.); the pipeline follows TypeScript's types","class":"principled"},
+{"source":"tests/expect-error/callability.ts","name":"testSpreadTypeofFunction","kind":"function","line":264,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/callability.ts","name":"testEnumObjectTypeofFunction","kind":"function","line":280,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/callability.ts","name":"testFnToEmptyClass","kind":"function","line":297,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/callability.ts","name":"testStructuralToClass","kind":"function","line":304,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -1654,10 +1635,10 @@
 {"source":"tests/expect-error/for_in_for_of_tests.ts","name":"testForLoopsWithControlFlow","kind":"function","line":121,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/for_in_for_of_tests.ts","name":"testForLoopsWithDifferentDeclarations","kind":"function","line":141,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/for_in_for_of_tests.ts","name":"statement@164","kind":"statement","line":164,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/forin-exclamation.ts","name":"testForInBasic","kind":"function","line":9,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two ","group":"a non-null assertion on a read at a for...in key (that the object owns the key relates two values)","where":"self","at":"v[k]!","detail":"reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two values, which no type and no statement entry states — The available claim for v[k] is undefined | number. This obligation requires number.","class":"gap"},
-{"source":"tests/expect-error/forin-exclamation.ts","name":"testForInDotAccess","kind":"function","line":15,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two ","group":"a non-null assertion on a read at a for...in key (that the object owns the key relates two values)","where":"self","at":"obj.field[k]!","detail":"reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two values, which no type and no statement entry states — The available claim for obj.field[k] is undefined | number. This obligation requires number.","class":"gap"},
-{"source":"tests/expect-error/forin-exclamation.ts","name":"testForInDeepDotAccess","kind":"function","line":21,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two ","group":"a non-null assertion on a read at a for...in key (that the object owns the key relates two values)","where":"self","at":"a.b.c[k]!","detail":"reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two values, which no type and no statement entry states — The available claim for a.b.c[k] is undefined | number. This obligation requires number.","class":"gap"},
-{"source":"tests/expect-error/forin-exclamation.ts","name":"testForInThenCall","kind":"function","line":29,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two ","group":"a non-null assertion on a read at a for...in key (that the object owns the key relates two values)","where":"self","at":"v[k]!","detail":"reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two values, which no type and no statement entry states — The available claim for v[k] is undefined | number. This obligation requires number.","class":"gap"},
+{"source":"tests/expect-error/forin-exclamation.ts","name":"testForInBasic","kind":"function","line":9,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/forin-exclamation.ts","name":"testForInDotAccess","kind":"function","line":15,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/forin-exclamation.ts","name":"testForInDeepDotAccess","kind":"function","line":21,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/forin-exclamation.ts","name":"testForInThenCall","kind":"function","line":29,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/forin-exclamation.ts","name":"testForInAfterCall","kind":"function","line":40,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/forin-exclamation.ts","name":"testForInAfterNew","kind":"function","line":48,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/forin-exclamation.ts","name":"testForInDotAccessAfterCall","kind":"function","line":56,"skjsMarker":"rejected-self"},
@@ -1665,12 +1646,12 @@
 {"source":"tests/expect-error/forin-exclamation.ts","name":"testForInObjectMismatch","kind":"function","line":80,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/forin-exclamation.ts","name":"testRegularExclamation","kind":"function","line":90,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/forin-exclamation.ts","name":"testForOfExclamation","kind":"function","line":95,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/forin-exclamation.ts","name":"testNestedSafe","kind":"function","line":107,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two ","group":"a non-null assertion on a read at a for...in key (that the object owns the key relates two values)","where":"self","at":"v2[x2]!","detail":"reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two values, which no type and no statement entry states — The available claim for v2[x2] is undefined | number. This obligation requires number.","class":"gap"},
+{"source":"tests/expect-error/forin-exclamation.ts","name":"testNestedSafe","kind":"function","line":107,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/forin-exclamation.ts","name":"testNestedInnerCallTaintsOuter","kind":"function","line":119,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/forin-exclamation.ts","name":"testNestedInnerCallInnerStillSafe","kind":"function","line":132,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two ","group":"a non-null assertion on a read at a for...in key (that the object owns the key relates two values)","where":"self","at":"v2[x2]!","detail":"reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two values, which no type and no statement entry states — The available claim for v2[x2] is undefined | number. This obligation requires number.","class":"gap"},
+{"source":"tests/expect-error/forin-exclamation.ts","name":"testNestedInnerCallInnerStillSafe","kind":"function","line":132,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/forin-exclamation.ts","name":"testForInCallWithIterable","kind":"function","line":148,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/forin-exclamation.ts","name":"testForInCallWithIterableThenSafe","kind":"function","line":156,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two ","group":"a non-null assertion on a read at a for...in key (that the object owns the key relates two values)","where":"self","at":"v[k]!","detail":"reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two values, which no type and no statement entry states — The available claim for v[k] is undefined | number. This obligation requires number.","class":"gap"},
-{"source":"tests/expect-error/forin-exclamation.ts","name":"testForInUnrelatedAssignment","kind":"function","line":167,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two ","group":"a non-null assertion on a read at a for...in key (that the object owns the key relates two values)","where":"self","at":"v[k]!","detail":"reject: a non-null assertion on a read at a for...in key: a read at a key the loop found may still miss, and that the object owns the key it yields relates two values, which no type and no statement entry states — The available claim for v[k] is undefined | number. This obligation requires number.","class":"gap"},
+{"source":"tests/expect-error/forin-exclamation.ts","name":"testForInCallWithIterableThenSafe","kind":"function","line":156,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/forin-exclamation.ts","name":"testForInUnrelatedAssignment","kind":"function","line":167,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/forin-exclamation.ts","name":"testForInUnrelatedAssignment2","kind":"function","line":175,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/forin-exclamation.ts","name":"testForInReassignIterable","kind":"function","line":185,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/forin-exclamation.ts","name":"testForInAssignToIterableProperty","kind":"function","line":196,"skjsMarker":"rejected-self"},
@@ -2118,7 +2099,7 @@
 {"source":"tests/expect-error/index-signatures.ts","name":"symGeneralWriteRejected","kind":"function","line":712,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/index-signatures.ts","name":"symGeneralNoIndex","kind":"function","line":721,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/index-signatures.ts","name":"reuseCopiedIndexContract","kind":"function","line":729,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/index-signatures.ts","name":"satisfyCopiedIndexContract","kind":"function","line":737,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a spread of a dictionary: the copy owns the keys the dictionary holds when it runs, which no type states: the result is a dictionary only where every pa","group":"dictionaries: a spread of one, a key `in` found in one","where":"self","at":"{ ...alias }","detail":"reject: a spread of a dictionary: the copy owns the keys the dictionary holds when it runs, which no type states: the result is a dictionary only where every part says what it gives under the index's keys, by an index or its exact keys — The available claim for { ...alias } is {\"dict\":{\"bounds\":[{\"among\":false,\"keys\":[\"[[proto]]\"]}],\"cells\":[[\"strings\",[0,6]],[\"symbols\",[0,6]]],\"first\":[],\"indexes\":[[\"strings\",[0,6]],[\"symbols\",[0,6]]],\"rest\":[],\"views\":[]}}. This obligation requires { readonly [key: string]: number }.","class":"gap"},
+{"source":"tests/expect-error/index-signatures.ts","name":"satisfyCopiedIndexContract","kind":"function","line":737,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a spread of a dictionary: the copy owns the keys the dictionary holds when it runs, which no type states: the result is a dictionary only where every pa","group":"dictionaries: a spread of one, a key `in` found in one","where":"self","at":"{ ...source }","detail":"reject: a spread of a dictionary: the copy owns the keys the dictionary holds when it runs, which no type states: the result is a dictionary only where every part says what it gives under the index's keys, by an index or its exact keys — The available claim for alias is { readonly [key: string]: number }. This obligation requires {\"dict\":{\"cells\":[[\"strings\",[0]],[\"symbols\",[4]]],\"first\":[],\"indexes\":[[\"strings\",[0]],[\"symbols\",[4]]],\"rest\":[],\"views\":[]}}.","class":"gap"},
 {"source":"tests/expect-error/inferred-binding-contract.ts","name":"inferredPrimitiveContract","kind":"function","line":3,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/inferred-binding-contract.ts","name":"inferredCallableContract","kind":"function","line":10,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/inferred-binding-contract.ts","name":"unionContractStillNarrows","kind":"function","line":19,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -3131,8 +3112,8 @@
 {"source":"tests/expect-error/spread-boolean-object.ts","name":"testVoid","kind":"function","line":24,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/spread-boolean-object.ts","name":"testString","kind":"function","line":33,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/spread-boolean-object.ts","name":"testWidenObjectArm","kind":"function","line":45,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/spread-callable.ts","name":"spreadCallableWithProp","kind":"function","line":8,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: a spread copies the own enumerable properties of a plain object; a function's or an indexed object's are whatever was assigned to it, which its type does not bo","group":"object literal members (methods, accessors, spreads)","where":"self","detail":"unsupported: a spread copies the own enumerable properties of a plain object; a function's or an indexed object's are whatever was assigned to it, which its type does not bound","class":"gap"},
-{"source":"tests/expect-error/spread-callable.ts","name":"spreadPlainFunction","kind":"function","line":15,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: a spread copies the own enumerable properties of a plain object; a function's or an indexed object's are whatever was assigned to it, which its type does not bo","group":"object literal members (methods, accessors, spreads)","where":"self","detail":"unsupported: a spread copies the own enumerable properties of a plain object; a function's or an indexed object's are whatever was assigned to it, which its type does not bound","class":"gap"},
+{"source":"tests/expect-error/spread-callable.ts","name":"spreadCallableWithProp","kind":"function","line":8,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/spread-callable.ts","name":"spreadPlainFunction","kind":"function","line":15,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/spread-callable.ts","name":"spreadConstructor","kind":"function","line":20,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: a spread copies the own enumerable properties of a plain object; a class value's are its static fields, which its construct signatures do not state","group":"object literal members (methods, accessors, spreads)","where":"self","detail":"unsupported: a spread copies the own enumerable properties of a plain object; a class value's are its static fields, which its construct signatures do not state","class":"gap"},
 {"source":"tests/expect-error/spread-callable.ts","name":"PrototypeReader","kind":"class","line":24,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/spread-callable.ts","name":"spreadPrototypeMethod","kind":"function","line":31,"skjsMarker":"rejected-self"},
@@ -3158,7 +3139,7 @@
 {"source":"tests/expect-error/spread-callable.ts","name":"indexedOwnCopy","kind":"function","line":192,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: an index signature in a class is outside the fragment: a class's instances are the objects its construction allocates, with the keys it names in a declaration o","group":"classes: modifiers, inheritance, fields, parameter properties, receivers","where":"dependency","at":"declare class IndexedReader {","detail":"gate: an index signature in a class is outside the fragment: a class's instances are the objects its construction allocates, with the keys it names in /ocaml-producer-unit/source.ts#IndexedReader (line 1, col 1)","class":"gap"},
 {"source":"tests/expect-error/spread-callable.ts","name":"restCallable","kind":"function","line":203,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/spread-callable.ts","name":"restConstructor","kind":"function","line":208,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/spread-callable.ts","name":"restOwnCallable","kind":"function","line":213,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: a spread copies the own enumerable properties of a plain object; a function's or an indexed object's are whatever was assigned to it, which its type does not bo","group":"object literal members (methods, accessors, spreads)","where":"self","detail":"unsupported: a spread copies the own enumerable properties of a plain object; a function's or an indexed object's are whatever was assigned to it, which its type does not bound","class":"gap"},
+{"source":"tests/expect-error/spread-callable.ts","name":"restOwnCallable","kind":"function","line":213,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/spread-in-function-calls.ts","name":"takesThreeNumbers","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/spread-in-function-calls.ts","name":"takesTwoStrings","kind":"function","line":6,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/spread-in-function-calls.ts","name":"takesNumberAndString","kind":"function","line":7,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -3204,7 +3185,7 @@
 {"source":"tests/expect-error/spread-union-distribute.ts","name":"fieldBefore","kind":"function","line":53,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/spread-union-distribute.ts","name":"tooManyUnionSpreads","kind":"function","line":66,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/spread-union-distribute.ts","name":"capDegradeDropsCommonSourceField","kind":"function","line":110,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/spread-union-distribute.ts","name":"sharedTvarCorrelatedTarget","kind":"function","line":158,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a spread with a written field that the arms of the expected union type differently: a field of the copy is allocated at the one type its value is claime","group":"object literal members (methods, accessors, spreads)","where":"self","at":"{ ...x, k: true }","detail":"reject: a spread with a written field that the arms of the expected union type differently: a field of the copy is allocated at the one type its value is claimed at, for every arm of the operand, and a writable field is invariant, so the arms requiring it at different types (TypeScript types the lit — The available claim for { ...x, k: true } is { a: number, k: boolean } | { b: string, k: boolean }. This return requires { a: number, k: boolean } | { b: string, k: true }.","class":"gap"},
+{"source":"tests/expect-error/spread-union-distribute.ts","name":"sharedTvarCorrelatedTarget","kind":"function","line":158,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/spread-union-distribute.ts","name":"inlineUnionTarget","kind":"function","line":166,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/spread-union-distribute.ts","name":"nestedSeedInlineUnion","kind":"function","line":174,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/spread-union-distribute.ts","name":"inlineUnionNoMemberMatches","kind":"function","line":182,"skjsMarker":"rejected-self"},
@@ -4144,7 +4125,7 @@
 {"source":"tests/expect-error/typeof.ts","name":"testFunctionRefinement","kind":"function","line":182,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/typeof.ts","name":"testFunctionVsObject","kind":"function","line":194,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/typeof.ts","name":"testFunctionUnion","kind":"function","line":204,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/typeof.ts","name":"testCallableObject","kind":"function","line":224,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: a spread copies the own enumerable properties of a plain object; a function's or an indexed object's are whatever was assigned to it, which its type does not bo","group":"object literal members (methods, accessors, spreads)","where":"self","detail":"unsupported: a spread copies the own enumerable properties of a plain object; a function's or an indexed object's are whatever was assigned to it, which its type does not bound","class":"gap"},
+{"source":"tests/expect-error/typeof.ts","name":"testCallableObject","kind":"function","line":224,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/typeof.ts","name":"testCallableVsObject","kind":"function","line":238,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/typeof.ts","name":"testComplexUnion","kind":"function","line":253,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/typeof.ts","name":"testComplexUnion2","kind":"function","line":274,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
