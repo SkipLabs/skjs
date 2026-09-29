@@ -1,7 +1,8 @@
 // Checks the Markdown documents under verification/: that every relative link
 // and anchor resolves, that a link naming a section number names the section
 // its anchor points at, that math renders with KaTeX and avoids the forms
-// GitHub cannot render.
+// GitHub cannot render, and that cited authors are named only inside links to
+// REFERENCES.md.
 //   node verification/tests/docs.mts
 import { readdirSync, readFileSync, existsSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -141,6 +142,24 @@ for (const file of files) {
     const count = words.match(pattern)?.length ?? 0;
     if (count) fail(file, `${count}× ${remedy}`);
   }
+}
+
+// Citations: an author of a paper in REFERENCES.md (an entry whose heading
+// carries a year) is named only inside a link to that document.
+const references = join(root, "REFERENCES.md");
+const authors = new Set([...readFileSync(references, "utf8").matchAll(/^### (.+?) (?:19|20)\d\d\b/gm)]
+  .flatMap((m) => (m[1] ?? "").replace(/\bet al\.?/g, "").split(/,| and /))
+  .flatMap((part) => [...part.matchAll(/\p{Lu}[\p{L}'’-]+/gu)].map((w) => w[0]).slice(-1)));
+for (const file of files) {
+  if (file === references) continue;
+  const text = prose(withoutCode(readFileSync(file, "utf8")));
+  const links = [...text.matchAll(/\[[^\]]*\]\(([^)\s]*)\)/g)]
+    .filter((m) => resolve(dirname(file), (m[1] ?? "").split("#")[0] ?? "") === references)
+    .map((m) => [m.index ?? 0, (m.index ?? 0) + m[0].length]);
+  for (const author of authors)
+    for (const m of text.matchAll(new RegExp(`(?<![\\p{L}])${author}(?![\\p{L}])`, "gu")))
+      if (!links.some(([a = 0, b = 0]) => a <= (m.index ?? 0) && (m.index ?? 0) < b))
+        fail(file, `names ${author} outside a link to REFERENCES.md`);
 }
 
 for (const p of problems) process.stdout.write(`${p}\n`);

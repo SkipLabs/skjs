@@ -407,8 +407,8 @@ reading of declared types.
 
 ## 7. Related work
 
-The families are Solomon's parameterized type definitions
-([Solomon 1978](REFERENCES.md#solomon-1978)), whose equivalence he related to
+The families are the parameterized type definitions of
+[Solomon 1978](REFERENCES.md#solomon-1978), whose equivalence he related to
 that of deterministic pushdown automata. Here a checker validates
 certificates and computes variances.
 
@@ -416,9 +416,9 @@ Coinductive subtyping over assumed pairs
 ([Amadio and Cardelli 1993](REFERENCES.md#amadio-and-cardelli-1993),
 [Brandt and Henglein 1998](REFERENCES.md#brandt-and-henglein-1998)) handles
 regular types. Parametric assumptions extend it with variables and
-hypotheses, so that one assumption covers a non-regular family. Kennedy
-and Pierce prove nominal subtyping with variance undecidable under expansive
-inheritance ([Kennedy and Pierce 2007](REFERENCES.md#kennedy-and-pierce-2007));
+hypotheses, so that one assumption covers a non-regular family. [Kennedy
+and Pierce 2007](REFERENCES.md#kennedy-and-pierce-2007) prove nominal
+subtyping with variance undecidable under expansive inheritance;
 the definitions here are structural, and section 4 relates an expanding
 definition to itself only through per-position variance.
 
