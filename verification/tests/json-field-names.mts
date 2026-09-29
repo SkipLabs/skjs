@@ -31,7 +31,7 @@ const lean = (files: string[], structures = false) => new Set(files.flatMap((fil
     ...s.matchAll(/\b(?:jField|field|str|arr|bool|jArr|jStr|jNat|jBool)\s+\([^()]*\)\s+"(\w+)"/g),
     ...s.matchAll(/getObjVal\?\s+"(\w+)"/g),
     ...s.matchAll(/getObjValAs\?\s+\S+\s+"(\w+)"/g)].map((m) => m[1] as string);
-  const fields = !structures ? [] : [...s.matchAll(/^structure\s+\w+\s+where\n((?:[ \t]+.*\n|\n)+?)(?=\S)/gm)]
+  const fields = !structures ? [] : [...s.matchAll(/^structure\s+\w+[^\n]*?\s+where\n((?:[ \t]+.*\n|\n)+?)(?=\S)/gm)]
     .flatMap((m) => [...(m[1] ?? "").matchAll(/^[ \t]+(\w+)\s*:/gm)].map((n) => n[1] as string));
   return [...exact, ...reads, ...fields];
 }));
