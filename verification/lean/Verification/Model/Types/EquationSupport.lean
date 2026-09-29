@@ -195,7 +195,7 @@ private theorem Equations.no_meets (equations : Equations) (label : Label equati
 both finite-table and equation-graph semantics. -/
 theorem Equations.free_support (equations : Equations) :
     FreeSupport equations.graph (fun _ => True) Label.free := by
-  refine ⟨?_, ?_, ?_⟩
+  refine ⟨?_, ?_⟩
   · intro label _
     apply label.cases
     · intro scope
@@ -283,12 +283,8 @@ theorem Equations.free_support (equations : Equations) :
       simp only [Equations.graph, NormalGraph.ofRowMap, Equations.row, Label.view_familyVar,
         NormalGraph.params, reads, boundReads, meetClauses, NormalGraph.clauses, NormalGraph.plain]
       simp [Label.familyVar, Label.free, Tree.free]
-  · intro label _ p cs hm
-    rw [(equations.no_meets label).1] at hm
-    cases hm
-  · intro label _ p hp
-    rw [(equations.no_meets label).2] at hp
-    cases hp
+  · intro label _ q hq
+    simp [meetParts, (equations.no_meets label).1] at hq
 
 /-- An equation type depends only on the free parameters carried by its
 application arguments. This covers both values and argument packs. -/

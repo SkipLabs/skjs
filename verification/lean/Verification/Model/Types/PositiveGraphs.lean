@@ -902,6 +902,18 @@ noncomputable def schemeSemWithArgs (I : ParameterInterpretation ι k) (D : Para
     (s : SchemeRow ι) : Fam :=
   boundedSem (fun θ S => I.bound θ (D θ) S) η s (fun As => instanceTWithArgs D η s As I.arguments)
 
+/-- A meet row's part, read at the meet's own level (RECURSIVE-EQUATIONS §3.3):
+a parameter's family, a scheme row's instances, or a clause row's clauses. It
+is the step's reading of a row that is not a meet row, so a meet reads its
+parts by one unfolding: a part is never itself a meet row. -/
+noncomputable def partSemWithArgs (G : NormalGraph ι) (I : ParameterInterpretation ι k)
+    (X : ParameterAssignment k ι × ι → Fam) (η : ParameterAssignment k ι) (q : ι) : Fam :=
+  if G.params q then I.value q (η.1 q) else
+  match G.schemes q with
+  | some s => schemeSemWithArgs I (fun η' S => setSem (fun l => X (η', l)) S) η s
+  | none => setSem (rowSem G (setSem fun l => X (I.realmAt, l)) (setSem fun l => X (η, l))
+      (I.arguments η (setSem fun l => X (η, l)))) (G q)
+
 /-- One step of the assignment-indexed denotation. -/
 noncomputable def qLayerWithArgs (G : NormalGraph ι) (I : ParameterInterpretation ι k) (X : ParameterAssignment k ι × ι → Fam) :
     ParameterAssignment k ι × ι → Fam := fun ηi =>
@@ -910,13 +922,35 @@ noncomputable def qLayerWithArgs (G : NormalGraph ι) (I : ParameterInterpretati
   | some s => schemeSemWithArgs I (fun η' S => setSem (fun l => X (η', l)) S) ηi.1 s
   | none =>
     match G.meets ηi.2 with
-    -- A meet row: the parameter's values within the clauses.
+    -- A meet row: each part's values, within the clauses.
     | some (p, cs) => fun n W v =>
-        (I.value p (ηi.1.1 p) n W v ∧ ∀ q ∈ G.meetParams ηi.2, I.value q (ηi.1.1 q) n W v) ∧
+        (partSemWithArgs G I X ηi.1 p n W v ∧
+          ∀ q ∈ G.meetParams ηi.2, partSemWithArgs G I X ηi.1 q n W v) ∧
         setSem (rowSem G (setSem fun l => X (I.realmAt, l)) (setSem fun l => X (ηi.1, l))
           (I.arguments ηi.1 (setSem fun l => X (ηi.1, l)))) cs n W v
     | none => setSem (rowSem G (setSem fun l => X (I.realmAt, l)) (setSem fun l => X (ηi.1, l))
         (I.arguments ηi.1 (setSem fun l => X (ηi.1, l)))) (G ηi.2)
+
+/-- A parameter part is its assigned family, as in a meet row of parameters. -/
+@[simp] theorem partSemWithArgs_param {G : NormalGraph ι} {I : ParameterInterpretation ι k}
+    {X : ParameterAssignment k ι × ι → Fam} {η : ParameterAssignment k ι} {q : ι}
+    (h : G.params q = true) : partSemWithArgs G I X η q = I.value q (η.1 q) := by
+  simp [partSemWithArgs, h]
+
+/-- Outside a meet row, the step reads a row as a part. -/
+theorem qLayer_part {G : NormalGraph ι} {I : ParameterInterpretation ι k}
+    {X : ParameterAssignment k ι × ι → Fam} {η : ParameterAssignment k ι} {i : ι}
+    (h : G.params i = true ∨ (G.schemes i).isSome = true ∨ G.meets i = none) :
+    qLayerWithArgs G I X (η, i) = partSemWithArgs G I X η i := by
+  unfold qLayerWithArgs partSemWithArgs
+  by_cases hp : G.params i = true
+  · simp [hp]
+  · simp only [hp, Bool.false_eq_true, ite_false]
+    cases hs : G.schemes i with
+    | some s => rfl
+    | none =>
+      have hm : G.meets i = none := by simpa [hp, hs] using h
+      simp only [hm]
 
 theorem plainArguments_congr (G : NormalGraph ι) {X Y : List ι → Fam} {n : Nat}
     (h : ∀ S, Agree (X S) (Y S) n) (S : List ι) :
@@ -941,11 +975,12 @@ theorem argsAgree_mono {As Bs : List Fam} {n m : Nat} (h : ArgsAgree n As Bs) (h
   | nil => exact .nil
   | cons hA _ ih => exact .cons (Agree.mono hA hm) ih
 
-theorem qLayer_congrWithArgs (G : NormalGraph ι) (I : ParameterInterpretation ι k)
-    : LayerCongr (fun X => qLayerWithArgs G I X) := by
-  intro X Y n h ηi W v
-  obtain ⟨η, i⟩ := ηi
-  unfold qLayerWithArgs
+/-- A part reads its operands below the level. -/
+theorem partSem_congrWithArgs (G : NormalGraph ι) (I : ParameterInterpretation ι k)
+    {X Y : ParameterAssignment k ι × ι → Fam} {n : Nat} (h : ∀ ηi, Agree (X ηi) (Y ηi) n)
+    (η : ParameterAssignment k ι) (i : ι) (W : WorldT n) (v : Val) :
+    partSemWithArgs G I X η i n W v ↔ partSemWithArgs G I Y η i n W v := by
+  unfold partSemWithArgs
   by_cases hp : G.params i = true
   · simp [hp]
   · simp only [hp]
@@ -953,16 +988,9 @@ theorem qLayer_congrWithArgs (G : NormalGraph ι) (I : ParameterInterpretation �
     | none =>
       have hS := fun S => setSem_congr n (fun l => h (η, l)) S
       have hE := fun S => setSem_congr n (fun l => h (I.realmAt, l)) S
-      have cl : ∀ cs : List (Clause (List ι)),
-          setSem (rowSem G (setSem fun l => X (I.realmAt, l)) (setSem fun l => X (η, l)) (I.arguments η (setSem fun l => X (η, l)))) cs n W v ↔
-            setSem (rowSem G (setSem fun l => Y (I.realmAt, l)) (setSem fun l => Y (η, l)) (I.arguments η (setSem fun l => Y (η, l)))) cs n W v := by
-        intro cs
-        constructor <;> rintro ⟨c, hc, hv⟩ <;> refine ⟨c, hc, ?_⟩
-        · exact (rowSem_congr G _ _ _ _ _ _ n hE hS (I.arguments_nonexp η η _ _ n (fun _ _ _ _ _ => Iff.rfl) hS) c W v).mp hv
-        · exact (rowSem_congr G _ _ _ _ _ _ n hE hS (I.arguments_nonexp η η _ _ n (fun _ _ _ _ _ => Iff.rfl) hS) c W v).mpr hv
-      cases hm : G.meets i with
-      | none => exact cl _
-      | some pc => exact and_congr Iff.rfl (cl pc.2)
+      constructor <;> rintro ⟨c, hc, hv⟩ <;> refine ⟨c, hc, ?_⟩
+      · exact (rowSem_congr G _ _ _ _ _ _ n hE hS (I.arguments_nonexp η η _ _ n (fun _ _ _ _ _ => Iff.rfl) hS) c W v).mp hv
+      · exact (rowSem_congr G _ _ _ _ _ _ n hE hS (I.arguments_nonexp η η _ _ n (fun _ _ _ _ _ => Iff.rfl) hS) c W v).mpr hv
     | some s =>
       refine and_congr Iff.rfl (forall_congr' fun As => forall_congr' fun _ => ?_)
       refine imp_congr ?_ ?_
@@ -973,6 +1001,27 @@ theorem qLayer_congrWithArgs (G : NormalGraph ι) (I : ParameterInterpretation �
         exact I.bound_congr _ _ _ _ n (fun _ _ _ _ _ => Iff.rfl)
           (fun S => setSem_congr n (fun l => h (_, l)) S) b.2 j hj U u
       · exact instanceT_congrWithArgs I.arguments I.arguments_nonexp (fun _ _ _ _ _ => Iff.rfl) (fun S => setSem_congr n (fun l => h (_, l)) S) W v
+
+theorem qLayer_congrWithArgs (G : NormalGraph ι) (I : ParameterInterpretation ι k)
+    : LayerCongr (fun X => qLayerWithArgs G I X) := by
+  intro X Y n h ηi W v
+  obtain ⟨η, i⟩ := ηi
+  by_cases hmeet : G.params i = true ∨ (G.schemes i).isSome = true ∨ G.meets i = none
+  · dsimp only
+    rw [qLayer_part hmeet, qLayer_part hmeet]
+    exact partSem_congrWithArgs G I h η i W v
+  · simp only [not_or, Bool.not_eq_true, Option.isSome_eq_false_iff, Option.isNone_iff_eq_none] at hmeet
+    obtain ⟨hp, hq, hm⟩ := hmeet
+    obtain ⟨⟨p, cs⟩, hm⟩ := Option.ne_none_iff_exists'.mp hm
+    unfold qLayerWithArgs
+    simp only [hp, hq, hm, Bool.false_eq_true, ite_false]
+    have hS := fun S => setSem_congr n (fun l => h (η, l)) S
+    have hE := fun S => setSem_congr n (fun l => h (I.realmAt, l)) S
+    refine and_congr (and_congr (partSem_congrWithArgs G I h η p W v)
+      (forall_congr' fun q => imp_congr_right fun _ => partSem_congrWithArgs G I h η q W v)) ?_
+    constructor <;> rintro ⟨c, hc, hv⟩ <;> refine ⟨c, hc, ?_⟩
+    · exact (rowSem_congr G _ _ _ _ _ _ n hE hS (I.arguments_nonexp η η _ _ n (fun _ _ _ _ _ => Iff.rfl) hS) c W v).mp hv
+    · exact (rowSem_congr G _ _ _ _ _ _ n hE hS (I.arguments_nonexp η η _ _ n (fun _ _ _ _ _ => Iff.rfl) hS) c W v).mpr hv
 
 /-! ### Non-expansiveness in the assignment
 
@@ -1063,9 +1112,12 @@ theorem boundedSem_adm
   · intro n W W' hx v h
     exact ⟨h.1, fun As hl hb => (hbody As).mono n W W' hx v (h.2 As hl hb)⟩
 
-theorem qLayer_invWithArgs (G : NormalGraph ι) (I : ParameterInterpretation ι k)
+/-- A part is admissible, and non-expansive in the assignment. -/
+theorem partSem_invWithArgs (G : NormalGraph ι) (I : ParameterInterpretation ι k)
     (X : ParameterAssignment k ι × ι → Fam) (hX : QInv X) :
-    QInv (qLayerWithArgs G I X) := by
+    (∀ η i, Adm (partSemWithArgs G I X η i)) ∧
+    ∀ η η' i m, (∀ p, Agree (η.1 p) (η'.1 p) m) →
+      Agree (partSemWithArgs G I X η i) (partSemWithArgs G I X η' i) m := by
   obtain ⟨hadm, hne⟩ := hX
   have hD : ∀ (η : ParameterAssignment k ι) S, Adm (setSem (fun l => X (η, l)) S) :=
     fun η S => setSem_adm (fun l => hadm (η, l)) S
@@ -1083,30 +1135,21 @@ theorem qLayer_invWithArgs (G : NormalGraph ι) (I : ParameterInterpretation ι 
     split
     · exact fun j _ W v => Iff.rfl
     · exact h p
-  refine ⟨fun ηi => ?_, fun η η' i m h => ?_⟩
+  refine ⟨fun η i => ?_, fun η η' i m h => ?_⟩
   · -- admissible
-    obtain ⟨η, i⟩ := ηi
-    unfold qLayerWithArgs
+    unfold partSemWithArgs
     by_cases hp : G.params i = true
     · simpa [hp] using I.value_adm i (η.1 i) (η.2 i).1
     · simp only [hp]
       cases hq : G.schemes i with
-      | none =>
-        cases hm : G.meets i with
-        | none => exact setSem_adm (fun c => rowSem_adm G _ _ _ c) (G i)
-        | some pc =>
-          have hq : Adm (fun n W v => ∀ q ∈ G.meetParams i, I.value q (η.1 q) n W v) :=
-            ⟨fun n W v h q hq => (I.value_adm q _ (η.2 q).1).down n W v (h q hq),
-             fun n W U hx v h q hq => (I.value_adm q _ (η.2 q).1).mono n W U hx v (h q hq)⟩
-          exact interT_adm _ _ (interT_adm _ _ (I.value_adm pc.1 _ (η.2 pc.1).1) hq)
-            (setSem_adm (fun c => rowSem_adm G _ _ _ c) pc.2)
+      | none => exact setSem_adm (fun c => rowSem_adm G _ _ _ c) (G i)
       | some s =>
         exact boundedSem_adm _ η s _ (I.bound_adm η _ (hD η))
           (fun As => instanceTWithArgs_adm _ η s As I.arguments)
           (fun As Bs m h W v => instanceT_congrWithArgs I.arguments I.arguments_nonexp h (fun S => sets _ _ m h S) W v)
   · -- non-expansive
     intro k hk W v
-    unfold qLayerWithArgs
+    unfold partSemWithArgs
     by_cases hp : G.params i = true
     · simp only [hp, if_true]; exact I.value_congr i _ _ m (h i) k hk W v
     · simp only [hp]
@@ -1125,10 +1168,7 @@ theorem qLayer_invWithArgs (G : NormalGraph ι) (I : ParameterInterpretation ι 
             exact ⟨c, hc, (rowSem_congr G _ _ _ _ _ _ k (fun _ _ _ _ _ => Iff.rfl)
               (fun a => Agree.mono (sets η η' m h a) (by omega))
               (I.arguments_nonexp η η' _ _ k (fun p => Agree.mono (h p) (by omega)) (fun a => Agree.mono (sets η η' m h a) (by omega))) c W v).mpr hv⟩
-        cases hm : G.meets i with
-        | none => exact cl _
-        | some pc => exact and_congr (and_congr (I.value_congr pc.1 _ _ m (h pc.1) k hk W v)
-            (forall_congr' fun q => imp_congr_right fun _ => I.value_congr q _ _ m (h q) k hk W v)) (cl pc.2)
+        exact cl _
       | some s =>
         refine and_congr Iff.rfl (forall_congr' fun As => forall_congr' fun _ => ?_)
         have hre := reassign η η' s.binders As m h
@@ -1139,6 +1179,48 @@ theorem qLayer_invWithArgs (G : NormalGraph ι) (I : ParameterInterpretation ι 
             forall_congr' fun u => imp_congr (hre b.1 j (by omega) U u)
               (I.bound_congr η η' _ _ m h (sets η η' m h) b.2 j (by omega) U u)
         · exact instanceT_congrWithArgs I.arguments I.arguments_nonexp (fun p => Agree.mono (hre p) (by omega)) (fun S => Agree.mono (sets _ _ m hre S) (by omega)) W v
+
+theorem qLayer_invWithArgs (G : NormalGraph ι) (I : ParameterInterpretation ι k)
+    (X : ParameterAssignment k ι × ι → Fam) (hX : QInv X) :
+    QInv (qLayerWithArgs G I X) := by
+  obtain ⟨hpa, hpn⟩ := partSem_invWithArgs G I X hX
+  obtain ⟨hadm, hne⟩ := hX
+  have sets : ∀ (η η' : ParameterAssignment k ι) m, (∀ p, Agree (η.1 p) (η'.1 p) m) → ∀ S,
+      Agree (setSem (fun l => X (η, l)) S) (setSem (fun l => X (η', l)) S) m :=
+    fun η η' m h S => setSem_congr m (fun l => hne η η' l m h) S
+  refine ⟨fun ηi => ?_, fun η η' i m h => ?_⟩
+  · obtain ⟨η, i⟩ := ηi
+    by_cases hmeet : G.params i = true ∨ (G.schemes i).isSome = true ∨ G.meets i = none
+    · rw [qLayer_part hmeet]; exact hpa η i
+    · simp only [not_or, Bool.not_eq_true, Option.isSome_eq_false_iff, Option.isNone_iff_eq_none] at hmeet
+      obtain ⟨hp, hq, hm⟩ := hmeet
+      obtain ⟨⟨p, cs⟩, hm⟩ := Option.ne_none_iff_exists'.mp hm
+      unfold qLayerWithArgs
+      simp only [hp, hq, hm, Bool.false_eq_true, ite_false]
+      have hqs : Adm (fun n W v => ∀ q ∈ G.meetParams i, partSemWithArgs G I X η q n W v) :=
+        ⟨fun n W v h q hq => (hpa η q).down n W v (h q hq),
+         fun n W U hx v h q hq => (hpa η q).mono n W U hx v (h q hq)⟩
+      exact interT_adm _ _ (interT_adm _ _ (hpa η p) hqs)
+        (setSem_adm (fun c => rowSem_adm G _ _ _ c) cs)
+  · intro k hk W v
+    by_cases hmeet : G.params i = true ∨ (G.schemes i).isSome = true ∨ G.meets i = none
+    · rw [qLayer_part hmeet, qLayer_part hmeet]; exact hpn η η' i m h k hk W v
+    · simp only [not_or, Bool.not_eq_true, Option.isSome_eq_false_iff, Option.isNone_iff_eq_none] at hmeet
+      obtain ⟨hp, hq, hm⟩ := hmeet
+      obtain ⟨⟨p, cs⟩, hm⟩ := Option.ne_none_iff_exists'.mp hm
+      unfold qLayerWithArgs
+      simp only [hp, hq, hm, Bool.false_eq_true, ite_false]
+      refine and_congr (and_congr (hpn η η' p m h k hk W v)
+        (forall_congr' fun q => imp_congr_right fun _ => hpn η η' q m h k hk W v)) ?_
+      constructor
+      · rintro ⟨c, hc, hv⟩
+        exact ⟨c, hc, (rowSem_congr G _ _ _ _ _ _ k (fun _ _ _ _ _ => Iff.rfl)
+          (fun a => Agree.mono (sets η η' m h a) (by omega))
+          (I.arguments_nonexp η η' _ _ k (fun p => Agree.mono (h p) (by omega)) (fun a => Agree.mono (sets η η' m h a) (by omega))) c W v).mp hv⟩
+      · rintro ⟨c, hc, hv⟩
+        exact ⟨c, hc, (rowSem_congr G _ _ _ _ _ _ k (fun _ _ _ _ _ => Iff.rfl)
+          (fun a => Agree.mono (sets η η' m h a) (by omega))
+          (I.arguments_nonexp η η' _ _ k (fun p => Agree.mono (h p) (by omega)) (fun a => Agree.mono (sets η η' m h a) (by omega))) c W v).mpr hv⟩
 
 /-- One assignment-indexed fixed point for both value and argument
 interpretations. The latter's agreement law supplies no extra delay. -/
