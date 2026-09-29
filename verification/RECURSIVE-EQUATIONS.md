@@ -35,8 +35,8 @@ subtrees. Such definitions are *non-regular*
 instances must stop somewhere. Past a budget it can only refuse the
 declaration, since reading the tail as `unknown` would be unsound.
 
-The semantics does not need finiteness. A type graph may have any set of
-nodes, and a type's meaning is a guarded fixed point, not an enumeration.
+The semantics admits infinitely many nodes: a type's meaning is a guarded
+fixed point.
 What must be finite is what a check inspects. So each member is named by a
 finite term, its structure is computed on demand, and members are related
 by rules that inspect finitely many unfoldings.
@@ -66,7 +66,7 @@ D\langle\alpha_1,\ldots,\alpha_n\rangle \;=\; \tau_D ,
 
 one for each name $`D`$, where $`\mathrm{fv}(\tau_D)\subseteq\{\vec\alpha\}`$
 and $`\tau_D`$ is *contractive*: a constructor $`c(\ldots)`$, a union of
-constructors, or a quantified signature, never a variable or an application.
+constructors, or a quantified signature.
 Definitions may refer to each other and to themselves, at any arguments.
 `Promise` is
 
@@ -123,7 +123,7 @@ for simultaneous, capture-avoiding substitution at matching kinds.
 
 *Proof sketch.* By structural induction on the finite term $`\tau`$: an
 application is handled by Lemma 2, and intersection distributes over the
-unions substituted into it. Substitution never unfolds a definition.
+unions substituted into it. Substitution traverses only the finite term.
 $`\square`$
 
 Lemma 3 is what makes instantiation checkable. A call instantiates a
@@ -242,13 +242,13 @@ tables.
 
 ### 4.3 Variance
 
-That `Promise` is covariant is a fact about its definition, not about any
-use, so it is established once. A **variance** assigns each parameter of a
+That `Promise` is covariant is a fact about its definition, so it is
+established once. A **variance** assigns each parameter of a
 definition one of $`\mathsf{co},\mathsf{contra},\mathsf{inv},\mathsf{none}`$.
 It stands for the assumption
 $`\forall\vec\alpha\vec\beta.\ \Pi_D\Rightarrow D\langle\vec\alpha\rangle\le D\langle\vec\beta\rangle`$,
 with $`\alpha_i\le\beta_i`$ in $`\Pi_D`$ when $`v_i`$ is co or inv, and
-$`\beta_i\le\alpha_i`$ when it is contra or inv, and no table. A use then
+$`\beta_i\le\alpha_i`$ when it is contra or inv. A use then
 compares arguments only:
 
 ```math
@@ -259,8 +259,7 @@ compares arguments only:
 `Var` is sound as an instance of a valid variance, by Theorem 1 and Lemma 3.
 
 **Computing variances.** The checker computes each definition's variance
-from the definitions alone. Nothing is proposed, and nothing is read from
-TypeScript, whose method parameters are bivariant. Definitions are taken
+from the definitions alone. Definitions are taken
 in dependency order, one strongly connected component of the reference
 graph at a time.
 - *A definition on no cycle* is checked by one traversal of its body: an
@@ -325,22 +324,21 @@ Lowering turns the parser's declarations into definitions:
 
 Every other declaration is an alias, inlined at its uses. Inlining
 terminates when every cycle through aliases passes through a definition:
-lifted literals are keyed by their occurrence, not their instance. An alias
+lifted literals are keyed by their occurrence. An alias
 such as `type T<X> = X | T<[X]>` recurs under no constructor, so it is
 refused as unguarded.
 
-Definitions are created per source construct, never per instance, so their
+Definitions are created per source construct, so their
 number is bounded by the size of the source, whatever families it defines.
 `Pair<T>`'s `push<U>(): Pair<[T, U]>` has the result type
 $`\mathit{Pair}\langle\mathit{Array}\langle L\langle T,U\rangle\rangle\rangle`$
 with $`L\langle\gamma,\delta\rangle=[\gamma,\delta]`$. The family grows by
-application, never by new definitions.
+application, over a fixed set of definitions.
 
 TypeScript reads a record met with a function as one callable object, which
 the model's exact intersection would make empty. Lowering applies that
-reading only to ground intersections, producing a literal definition, never
-an intersection a substitution could later reach. Lowering proposes no
-variances: the checker computes them (4.3).
+reading only to ground intersections, producing a literal definition, out
+of reach of substitution.
 
 ## 6. Trust and acceptance
 
@@ -352,11 +350,10 @@ verifier.
   certificate.
 - **Checked:** the definitions' well-formedness (scoping, arity,
   contractiveness), every instantiation by substitution, every assumption
-  by the conditions of Theorem 1. Variances are computed by the checker,
-  not checked against a proposal.
+  by the conditions of Theorem 1. Variances are computed by the checker.
 
-No rule takes a semantic premise from a certificate: each is discharged by
-Lemmas 1–3 and Theorem 1 from the definitions themselves.
+Every semantic premise of a rule is discharged by Lemmas 1–3 and Theorem 1
+from the definitions themselves.
 
 The acceptance theorem keeps its premise: the exact success condition of
 the command-line checker. Its conclusion, safety of every accepted unit, is
@@ -369,8 +366,8 @@ declared types remain the trusted boundary.
 
 The families are Solomon's parameterized type definitions
 ([Solomon 1978](REFERENCES.md#solomon-1978)), whose equivalence he related to
-that of deterministic pushdown automata. Here nothing is decided: a checker
-validates certificates.
+that of deterministic pushdown automata. Here a checker validates
+certificates and computes variances.
 
 Coinductive subtyping over assumed pairs
 ([Amadio and Cardelli 1993](REFERENCES.md#amadio-and-cardelli-1993),
@@ -385,7 +382,8 @@ definition to itself only through per-position variance.
 An application is a closure, a definition with its arguments, like a
 suspended substitution in calculi of explicit substitutions
 ([Abadi et al. 1991](REFERENCES.md#abadi-cardelli-curien-and-lévy-1991)).
-What it delays is unfolding a definition, not substitution. The type level
+What it delays is the unfolding of a definition; substitution is carried
+out in full. The type level
 has no β-redexes, so only the substitution lemma carries over.
 
 ## 8. Mechanization
