@@ -185,59 +185,85 @@ target at the same $`\vec X`$.
 
 ### 4.2 Parametric assumptions
 
-An **assumption** is a constrained judgment
+An **assumption** $`a`$ is a constrained judgment with a finite table
+$`T_a`$ of pairs over its variables:
 
 ```math
-\forall\vec\alpha\vec\beta.\ \Pi\ \Rightarrow\ D\langle\vec\alpha\rangle\le D'\langle\vec\beta\rangle ,
+a\;=\;\forall\vec\alpha\vec\beta.\ \Pi_a\Rightarrow D\langle\vec\alpha\rangle\le D'\langle\vec\beta\rangle ,
 ```
 
-where $`\Pi`$ is a finite set of hypotheses $`\gamma\le\delta`$ between its
-variables, together with a finite table of auxiliary pairs over those
-variables. A plain pair is the assumption without variables. When a
-covering step needs $`A\le B`$ for operands, it may use:
-- a pair of the table;
-- a hypothesis of $`\Pi`$, for a variable of $`A`$;
-- an **instance** of an assumption: $`D\langle\vec\tau\rangle\le D'\langle\vec\sigma\rangle`$
-  for a member of $`A`$ and a member of $`B`$, provided every hypothesis of
-  that assumption, instantiated at $`\vec\tau,\vec\sigma`$, is again a
-  premise: a pair of the table, a subset, a hypothesis, or itself an
-  instance.
+where $`\Pi_a`$ is a finite set of hypotheses $`\gamma\le\delta`$ between
+its variables. A plain pair is an assumption without variables. Fix a set
+$`\mathcal A`$ of assumptions. Types are unions of labels; $`l`$ ranges over
+labels, $`A,B`$ over unions.
 
-Instances may discharge their hypotheses by further instances. The
-recursion is on the arguments: an instance's hypotheses compare
-$`\vec\tau`$ and $`\vec\sigma`$, strict subterms of the pair it discharges,
-so it ends. A derivation built this way holds at every step where its
-leaves hold, and its leaves are table pairs, subsets and hypotheses. An assumption is **valid** when its conclusion and its table's
-pairs are covered under these premises. Within it, an intersection
-$`\gamma\land\rho`$ is below $`\delta\land\rho`$ when $`\gamma\le\delta`$ is
-a hypothesis.
+**Premises.** An operand comparison is read by the judgment
+$`\Pi;T\vdash A\sqsubseteq B`$:
 
-**Theorem 1.** Let a set of assumptions be valid, and write
-$`\eta\models_n\Pi`$ if every hypothesis of $`\Pi`$ holds at $`\eta`$ at
-every step up to $`n`$. Then for every $`n`$, every assumption and every
-$`\eta\models_n\Pi`$, its conclusion and every pair of its table hold at
-$`\eta`$ at step $`n`$.
+```math
+\frac{(A,B)\in T}{\Pi;T\vdash A\sqsubseteq B}\ \textsf{Tab}
+\qquad
+\frac{\forall l\in A.\ \ \Pi;T\vdash l\sqsubseteq B}{\Pi;T\vdash A\sqsubseteq B}\ \textsf{Union}
+\qquad
+\frac{l\in B}{\Pi;T\vdash l\sqsubseteq B}\ \textsf{Mem}
+```
 
-*Proof sketch.* By strong induction on $`n`$, first for values, then for
-argument lists.
-- **Value premises** are read below $`n`$: table pairs hold there by
-  induction, and hypotheses hold by assumption.
-- **An instance** is the conclusion of its assumption under
+```math
+\frac{(\gamma\le\delta)\in\Pi\qquad \delta\in B}{\Pi;T\vdash\gamma\sqsubseteq B}\ \textsf{Hyp}
+\qquad
+\frac{(\gamma\le\delta)\in\Pi\qquad \delta\land\rho\in B}{\Pi;T\vdash\gamma\land\rho\sqsubseteq B}\ \textsf{MeetHyp}
+```
+
+```math
+\frac{\forall\vec\alpha\vec\beta.\ \Pi_a\Rightarrow D\langle\vec\alpha\rangle\le D'\langle\vec\beta\rangle\ \in\mathcal A\qquad D'\langle\vec\sigma\rangle\in B\qquad \forall(\gamma\le\delta)\in\Pi_a.\ \ \Pi;T\vdash\gamma\theta\sqsubseteq\delta\theta}
+{\Pi;T\vdash D\langle\vec\tau\rangle\sqsubseteq B}\ \textsf{Inst}
+```
+
+where $`\theta=[\vec\tau/\vec\alpha,\vec\sigma/\vec\beta]`$. The premises of
+$`\textsf{Inst}`$ compare $`\vec\tau`$ and $`\vec\sigma`$, strict subterms of
+its conclusion, so derivations are finite and the judgment is decidable.
+
+**Covering.** A pair is covered, $`\Pi;T\vdash A\le B`$, when every clause
+of $`A`$'s one-step unfolding is covered by a clause of $`B`$'s, under the
+[clause coverage rules](POSITIVE-TYPES.md#clause-coverage) with their
+operand premises read by $`\sqsubseteq`$, and every variable of $`A`$ is in
+$`B`$ or below a member of $`B`$ by a hypothesis. Quantified signatures are
+compared by 4.1.
+
+**Validity.**
+
+```math
+\frac{\forall(A,B)\in T_a\cup\{(D\langle\vec\alpha\rangle,D'\langle\vec\beta\rangle)\}.\ \ \Pi_a;T_a\vdash A\le B}
+{\vdash a\ \mathsf{valid}}\ \textsf{Valid}
+```
+
+**Theorem 1.** Let every assumption of $`\mathcal A`$ be valid. Write
+$`\eta\models_n\Pi`$ when every hypothesis of $`\Pi`$ holds at $`\eta`$ at
+every step up to $`n`$. For every $`a\in\mathcal A`$, every $`n`$ and every
+$`\eta\models_n\Pi_a`$, the conclusion of $`a`$ and every pair of $`T_a`$
+hold at $`\eta`$ at step $`n`$.
+
+*Proof sketch.* By strong induction on $`n`$, values before argument lists,
+with an inner induction on the derivation of each premise.
+- A premise is read below $`n`$. $`\textsf{Tab}`$ holds there by the outer
+  induction, $`\textsf{Mem}`$ outright, and $`\textsf{Hyp}`$ and
+  $`\textsf{MeetHyp}`$ by $`\eta\models_n\Pi`$.
+- $`\textsf{Inst}`$ is the conclusion of its assumption at
   $`\eta'=\eta[\vec\alpha\mapsto⟦\vec\tau⟧^\eta,\vec\beta\mapsto⟦\vec\sigma⟧^\eta]`$.
-  Its hypotheses hold there because they mean their discharging premises,
-  which hold by induction on the step, or, for nested instances, by an inner
-  induction on the arguments; so the outer induction applies, and Lemma 3 turns the conclusion at $`\eta'`$ into
+  Its hypotheses hold there because their instances are premises, which
+  hold by the inner induction. So the outer induction applies at
+  $`\eta'`$, and Lemma 3 turns the conclusion into
   $`D\langle\vec\tau\rangle\le D'\langle\vec\sigma\rangle`$ at $`\eta`$.
-  An assumption may be used at its own variables (`catch` does this):
-  substitution is simultaneous.
-- **Quantified signatures** reassign bound variables only, and hypotheses
-  mention none, so they survive.
-- **Argument lists** read element contracts at step $`n`$ itself. An
-  instance used there has its hypotheses discharged at $`n`$ only for
-  values, so the theorem is proved together with a variant whose
-  hypotheses hold below $`n`$ and, at $`n`$, for values.
+  Substitution is simultaneous, so an assumption may be used at its own
+  variables, as `catch` does.
+- Quantified signatures reassign bound variables only, and hypotheses
+  mention none.
+- Argument lists read element contracts at step $`n`$ itself. An instance
+  there has its hypotheses only for values at $`n`$, so the theorem is
+  proved together with a variant whose hypotheses hold below $`n`$ and, at
+  $`n`$, for values.
 
-$`\square`$ Without variables this is the existing theorem for finite
+$`\square`$ With no variables this is the existing theorem for finite
 tables.
 
 ### 4.3 Variance
