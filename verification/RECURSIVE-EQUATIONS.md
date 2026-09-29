@@ -2,22 +2,22 @@
 
 Generic declarations such as TypeScript's `Promise` define infinite families
 of types that no finite type graph can present. This section describes how
-the verifier represents them: each declaration is a parameterized equation,
-each type is a finite term applying an equation to arguments, and a check
-unfolds a term one step, only when it reads it. The meaning of types is
-unchanged: equations present graphs to the step-indexed semantics of
-[SEMANTICS](SEMANTICS.md) and [POSITIVE-TYPES](POSITIVE-TYPES.md). What they
-add is a finite syntax for the checks that relate members of a family:
-substitution for instantiation, and parametric entries for subtyping.
+the verifier handles them. Each declaration is a parameterized type
+definition. A type is a finite term that may apply a definition to
+arguments, and a check unfolds an application one step, only when it reads
+it. The meaning of types is unchanged: it is the step-indexed semantics of
+[SEMANTICS](SEMANTICS.md) and [POSITIVE-TYPES](POSITIVE-TYPES.md). What is
+new is a finite syntax for the checks that relate members of a family:
+substitution for instantiation, and parametric assumptions for subtyping.
 
-Sections 2 to 4 are mechanized in Lean (section 8). The lowering of section 5
-is untrusted: the checker validates everything it proposes.
+Sections 2 to 4 are mechanized in Lean (section 8). The lowering of section
+5 is untrusted: the checker validates everything it proposes.
 
 ## 1. The problem
 
-A finite type graph presents a *regular* type: finitely many distinct types,
-recursion by reference back to a row. Many generic types are regular at each
-instance: the rows of `List<number>` mention only `List<number>` and
+A finite type graph presents a *regular* type: finitely many distinct
+types, recursion by reference back to a node. Many generic types are
+regular at each instance: `List<number>` mentions only `List<number>` and
 `number`. Others are not:
 
 ```ts
@@ -29,370 +29,346 @@ interface Promise<T> {
 
 Unfolding `Promise<number>` reaches `Promise<number | R>` through `catch`,
 whose own `catch` reaches `Promise<number | R | R′>`, and so on. Every member
-mentions a larger one; the unfolding has infinitely many distinct subtrees.
-Such definitions are *non-regular* ([Solomon 1978](REFERENCES.md#solomon-1978)).
-A presentation that enumerates instances can only stop somewhere: past a
-budget it must refuse the declaration, since reading the tail as `unknown`
-would be unsound.
+mentions a larger one, so the unfolding has infinitely many distinct
+subtrees. Such definitions are *non-regular*
+([Solomon 1978](REFERENCES.md#solomon-1978)). A presentation that enumerates
+instances must stop somewhere. Past a budget it can only refuse the
+declaration, since reading the tail as `unknown` would be unsound.
 
 The semantics does not need finiteness. A type graph may have any set of
-labels, and a type's meaning is a guarded fixed point, not an enumeration of
-rows. What must be finite is what a check inspects. The design follows:
-name each member by a finite term, compute its row on demand, and relate
-members by rules that inspect finitely many rows.
+nodes, and a type's meaning is a guarded fixed point, not an enumeration.
+What must be finite is what a check inspects. So each member is named by a
+finite term, its structure is computed on demand, and members are related
+by rules that inspect finitely many unfoldings.
 
-## 2. Equations
+## 2. Type definitions
 
 ### 2.1 Syntax
 
-A **signature** assigns each head $`h`$ an arity $`n_h`$ and a list of local
-binders with their kinds, value or argument list. A **template** $`E_h`$ is a
-row (a union of clauses, or a scheme) whose operands are trees over
-applications, owned parameters, and the placeholders
-$`\mathsf{arg}\,i`$ ($`i<n_h`$) and $`\mathsf{local}\,j`$. Only a scheme
-template has locals, and it quantifies exactly them. A **label** is a closed
-tree:
+Types are the positive types of [POSITIVE-TYPES](POSITIVE-TYPES.md), with
+type variables $`\alpha,\beta`$, applications of definitions, and
+intersections:
 
 ```math
-\begin{aligned}
-L &::= h(A_1,\ldots,A_{n_h}) \;\mid\; \mathsf{bound}(h,\vec A,j) \;\mid\; \mathsf{meet}(L_1,\ldots,L_k)\\
-A &::= \{L_1,\ldots,L_m\}\qquad\text{a union}
-\end{aligned}
+\tau \;::=\; \alpha \;\mid\; D\langle\tau_1,\ldots,\tau_n\rangle \;\mid\; c(\tau_1,\ldots,\tau_k) \;\mid\; \tau\lor\tau \;\mid\; \tau\land\tau \;\mid\; \bot
 ```
 
-An application's arguments are unions. A binder of a scheme is not a free
-name but a parameter **owned** by the application that introduces it:
-$`\mathsf{bound}(h,\vec A,j)`$ contains its owner's arguments, so it cannot
-occur in them.
+Here $`c`$ ranges over the constructors of the positive language: records,
+arrays, functions with their signatures, primitives. A signature may be
+quantified, $`\forall\vec\beta\le\vec\rho.\,\sigma`$, which binds
+$`\vec\beta`$ in $`\sigma`$.
+
+A **program of definitions** is a finite set of equations
+
+```math
+D\langle\alpha_1,\ldots,\alpha_n\rangle \;=\; \tau_D ,
+```
+
+one for each name $`D`$, where $`\mathrm{fv}(\tau_D)\subseteq\{\vec\alpha\}`$
+and $`\tau_D`$ is *contractive*: a constructor $`c(\ldots)`$, a union of
+constructors, or a quantified signature, never a variable or an application.
+Definitions may refer to each other and to themselves, at any arguments.
+`Promise` is
+
+```math
+\mathit{Promise}\langle\alpha\rangle=\{\ \mathit{then}:\forall\beta.\,(\alpha\to\beta)\to\mathit{Promise}\langle\beta\rangle,\ \ \mathit{catch}:\forall\beta.\,(\top\to\beta)\to\mathit{Promise}\langle\alpha\lor\beta\rangle\ \}.
+```
 
 ### 2.2 Meaning
 
-Equations present the graph
+An application unfolds to its definition's body at its arguments:
 
 ```math
-G\bigl(h(\vec A)\bigr)=E_h[\vec A/\mathsf{arg},\ \mathsf{bound}(h,\vec A,\cdot)/\mathsf{local}],
-\qquad
-G\bigl(\mathsf{bound}(h,\vec A,j)\bigr)=\mathsf{param}_{\mathrm{kind}_h(j)} .
+⟦D\langle\vec\tau\rangle⟧^\eta \;=\; ⟦\tau_D[\vec\tau/\vec\alpha]⟧^\eta ,
 ```
 
-Instantiation replaces placeholders throughout the finite template and
-leaves every application in it unexpanded, so a row is computed in time
-linear in its template. The meaning $`⟦L⟧^\eta`$ at a parameter assignment
-$`\eta`$ is the existing guarded fixed point over $`G`$. Because binders are
-owned, nested instantiation never captures: an application's binders are
-fresh for its arguments by construction, and no renaming is ever needed.
+with capture-avoiding substitution, and $`\eta`$ assigning meanings to free
+variables. Contractiveness makes this a guarded definition: an application
+in the body sits under a constructor, whose operands are read at a lower
+step. So the step-indexed fixed point exists, and it is the meaning the rest
+of the verifier already uses. One unfolding substitutes into a finite body
+and leaves the applications in it unexpanded, so a check pays only for the
+unfoldings it performs. The family `Promise` has infinitely many members,
+but every member a check reaches is a finite term.
 
-A meet means the intersection of its parts:
-
-```math
-⟦\mathsf{meet}(L_1,\ldots,L_k)⟧^\eta=⟦L_1⟧^\eta\cap\cdots\cap⟦L_k⟧^\eta .
-```
-
-Its row is the exact normalized conjunction of its parts' clauses, with its
-parameter and scheme parts kept as parts, read at the meet's own level. This
-is well founded because a part is never a meet. The meet must be exact.
-Instantiating $`\mathsf{meet}(\mathsf{arg}\,0,M)`$, or substituting for a
-parameter part, turns a meet over a parameter into a meet over whatever
-replaces it. The lemmas of section 3 hold only if a meet's meaning is a
-function of its parts' meanings, and the parameter case fixes that function
-as intersection. Instantiation distributes over unions:
-$`\mathsf{meet}(A_1,\ldots,A_k)=\bigcup\{\mathsf{meet}(L_1,\ldots,L_k)\mid L_i\in A_i\}`$.
+An intersection means exactly the intersection of its operands,
+$`⟦\tau\land\sigma⟧^\eta=⟦\tau⟧^\eta\cap⟦\sigma⟧^\eta`$. It must: once
+$`\alpha\land\rho`$ appears in a body, substitution can put any type for
+$`\alpha`$. The lemmas of section 3 require meaning to commute with
+substitution, which fixes the intersection of the operands as the only
+admissible reading.
 
 ## 3. Metatheory
 
-Three lemmas let a check work on finite syntax while the meaning is a fixed
-point over infinitely many rows. Each is proved for values and argument
-lists together.
+Three lemmas let a check work on finite terms while the meaning is a fixed
+point over infinitely many unfoldings. Each holds for values and argument
+lists alike.
 
-**Lemma 1 (support).** Let $`\mathrm{FV}(L)`$ be the owned parameters
-occurring in $`L`$, computed on the tree. If $`\eta`$ and $`\theta`$ agree on
-$`\mathrm{FV}(L)`$, then $`⟦L⟧^\eta=⟦L⟧^\theta`$.
+**Lemma 1 (support).** If $`\eta`$ and $`\theta`$ agree on
+$`\mathrm{fv}(\tau)`$, then $`⟦\tau⟧^\eta=⟦\tau⟧^\theta`$.
 
-*Proof sketch.* The graph semantics already has an independence theorem
-parameterized by local closure conditions on a support map. For equation
-graphs these conditions hold by induction on the template, so no family is
-enumerated. $`\square`$
+**Lemma 2 (congruence).** If $`⟦\tau_i⟧^\eta=⟦\sigma_i⟧^\theta`$ for every
+$`i`$, then $`⟦D\langle\vec\tau\rangle⟧^\eta=⟦D\langle\vec\sigma\rangle⟧^\theta`$.
 
-**Lemma 2 (congruence).** If $`⟦A_i⟧^\eta=⟦B_i⟧^\theta`$ for every $`i`$, then
-$`⟦h(\vec A)⟧^\eta=⟦h(\vec B)⟧^\theta`$.
+*Proof sketch.* By induction on the step index $`n`$. Constructors read
+their operands below $`n`$, and the operands are the body's subterms at the
+two argument lists, equal by the induction hypothesis. Quantified signatures
+compare their instances pairwise; argument lists at $`n`$ use the values
+just established at $`n`$. The two environments may differ, which is what
+lets the lemma relate two applications that bind their quantifiers
+separately. $`\square`$
 
-*Proof sketch.* By induction on the level $`n`$:
-- *Value rows* at $`n`$ read their operands below $`n`$. Operands are
-  instantiated templates, so they agree by an inner induction on the
-  template, and meets agree part by part at the same level.
-- *Quantified signatures* compare after assigning matching families to the
-  two applications' owned binders.
-- *Argument lists* at $`n`$ use the values at $`n`$ just established.
+**Lemma 3 (substitution).** $`⟦\tau⟧^{\eta[\vec\alpha\mapsto⟦\vec\sigma⟧^\eta]}=⟦\tau[\vec\sigma/\vec\alpha]⟧^\eta`$
+for simultaneous, capture-avoiding substitution at matching kinds.
 
-The statement is about arbitrary environments, which is what lets the two
-applications own different binders. $`\square`$
+*Proof sketch.* By structural induction on the finite term $`\tau`$: an
+application is handled by Lemma 2, and intersection distributes over the
+unions substituted into it. Substitution never unfolds a definition.
+$`\square`$
 
-**Lemma 3 (substitution).** For simultaneous substitution of unions
-$`\vec U`$ for parameters $`\vec b`$ of matching kinds,
-
-```math
-⟦L⟧^{\eta[\vec b\mapsto⟦\vec U⟧^\eta]}=⟦L[\vec b:=\vec U]⟧^\eta .
-```
-
-*Proof sketch.* Substitution traverses the finite argument syntax and never a
-row. An application's meaning depends on its arguments' meanings only
-(Lemma 2), so the statement follows by structural induction on $`L`$; meets
-distribute. Simultaneity matters: the case $`a:=a\cup r`$ is covered, and
-section 4.2 uses it. $`\square`$
-
-The lemmas replace enumeration where the checker needs it. Instantiating a
-generic member at a call is checked by recomputing the substitution of
-Lemma 3 on the signature's syntax; the image is correct by that lemma. The
-checker is stated once over an interface, an image check plus a proof that
-it yields correct images, of which this and the former finite-closure check
-are two instances. The proofs of expression typing, control flow and
-evidence search are stated over that interface too.
+Lemma 3 is what makes instantiation checkable. A call instantiates a
+generic signature by substituting into its finite syntax, and the checker
+recomputes that substitution rather than trusting a table of instances.
+Before, a finite presentation had to close the table of instances. The
+checker and its soundness proofs, expression typing and control flow
+included, are stated once over an interface: an image check with a proof
+that it computes correct images. The old closure check and substitution are
+two instances of that interface.
 
 ## 4. Subtyping
 
-Subtyping between recursive types is checked coinductively: a certificate
-supplies a finite table of pairs, and the checker verifies that each pair's
-clauses are covered, assuming the pairs themselves for the operands, which
-are read one level lower
+Subtyping between recursive types is checked coinductively. A certificate
+supplies a finite set of assumed pairs. The checker verifies that each
+pair's structure is covered, reading the pairs themselves for the operands,
+one step lower
 ([Amadio and Cardelli 1993](REFERENCES.md#amadio-and-cardelli-1993),
 [Brandt and Henglein 1998](REFERENCES.md#brandt-and-henglein-1998),
-[POSITIVE-TYPES: core tables](POSITIVE-TYPES.md#core-tables)). Two things
-break this for non-regular families: binders differ between members, and
-the table needed is infinite.
+[POSITIVE-TYPES](POSITIVE-TYPES.md#core-tables)). For a non-regular family
+the needed set is infinite, since
+`Promise<number> ≤ Promise<number | string>` needs
+`Promise<number | β> ≤ Promise<number | string | β>` for `catch`, then a
+pair with one more bound variable, without end. The pairs differ only in
+their arguments, so the assumptions are made parametric.
 
-### 4.1 Renaming binders
+### 4.1 Quantified signatures
 
-Two applications of one head own different binders. The `then` of
-`Promise<number>` binds another label than the `then` of
-`Promise<number | string>`. Scheme coverage therefore renames the target's
-binders to the source's with the substitution of Lemma 3:
+Two quantified signatures are compared up to renaming of bound variables,
+with the target's quantifiers rigid and bounds compared contravariantly:
 
 ```math
-\frac{\begin{array}{c}
-i=\forall\vec p{\le}\beta.\ \Sigma\qquad j=\forall\vec q{\le}\beta'.\ \Sigma'\qquad
-|\vec p|=|\vec q|,\ \text{kinds equal}\\
-\forall k.\ \beta'_k\le\beta_k\qquad
-\vec p\cap\bigl(\mathrm{FV}(\Sigma')\setminus\vec q\bigr)=\emptyset\qquad
-\Delta\vdash\Sigma\sqsubseteq\Sigma'[\vec q:=\vec p]
-\end{array}}
-{\Delta\vdash i\sqsubseteq_\forall j}
+\frac{\vec\rho\,'\le\vec\rho\qquad \sigma\le\sigma'[\vec\alpha/\vec\beta]\qquad \vec\alpha\notin\mathrm{fv}(\forall\vec\beta.\,\sigma')}
+{\forall\vec\alpha\le\vec\rho.\,\sigma\ \le\ \forall\vec\beta\le\vec\rho\,'.\,\sigma'}
 ```
 
-*Soundness.* Take a member of $`i`$ and $`\vec X`$ within $`\beta'`$, hence
-within $`\beta`$. The member meets $`\Sigma`$ at $`\eta[\vec p:=\vec X]`$,
-and hence $`\Sigma'[\vec q:=\vec p]`$ there. By Lemma 3 and the freshness
-premise, that is $`\Sigma'`$ at $`\eta[\vec q:=\vec X]`$, which is membership
-in $`j`$. Target binders are rigid and bounds compared by a premise on one
-fixed pairing, which keeps the rule a check
-([Pierce 1994](REFERENCES.md#pierce-1994)).
+This is the kernel rule of F<: restricted to one fixed pairing of
+quantifiers, which keeps it a check
+([Pierce 1994](REFERENCES.md#pierce-1994)). Soundness is Lemma 3: an instance
+of the source at $`\vec X`$ within $`\vec\rho\,'`$ is an instance of the
+target at the same $`\vec X`$.
 
-### 4.2 Parametric entries
+### 4.2 Parametric assumptions
 
-With renaming, `Promise<number> ≤ Promise<number | string>` still needs
-`Promise<number | r> ≤ Promise<number | string | r>` for `catch`'s result,
-then a pair with one more binder, without end. These pairs differ only in
-their arguments. So an entry of the table may quantify over them.
+An **assumption** is a constrained judgment
 
-A **parametric entry** is $`f=(h(\vec x)\le h'(\vec y),\ \Pi_f,\ \Delta_f)`$:
-- $`\vec x,\vec y`$ are *variables*, parameter labels that no equation, claim
-  or other entry mentions and no scheme binds;
-- $`\Pi_f`$ is a finite set of *hypotheses* $`u\le v`$ between variables;
-- $`\Delta_f`$ is a finite table of pairs over the variables and the binders
-  reached by unfolding.
+```math
+\forall\vec\alpha\vec\beta.\ \Pi\ \Rightarrow\ D\langle\vec\alpha\rangle\le D'\langle\vec\beta\rangle ,
+```
 
-An ordinary table is the entry without variables. Inside $`f`$, an operand
-premise $`A\sqsubseteq B`$ holds if it is a pair of $`\Delta_f`$, or if every
-label of $`A`$ is:
-- in $`B`$; or
-- a variable below a member of $`B`$ by a hypothesis; or
-- an **instance** $`g(\vec X)`$ of an entry $`g(\vec x')\le g'(\vec y')`$ with
-  $`g'(\vec Y)\in B`$, each hypothesis of that entry, at $`\vec X,\vec Y`$,
-  being a pair of $`\Delta_f`$, a subset, or a hypothesis of $`\Pi_f`$.
+where $`\Pi`$ is a finite set of hypotheses $`\gamma\le\delta`$ between its
+variables, together with a finite table of auxiliary pairs over those
+variables. A plain pair is the assumption without variables. When a
+covering step needs $`A\le B`$ for operands, it may use:
+- a pair of the table;
+- a hypothesis of $`\Pi`$, for a variable of $`A`$;
+- an **instance** of an assumption: $`D\langle\vec\tau\rangle\le D'\langle\vec\sigma\rangle`$
+  for a member of $`A`$ and a member of $`B`$, provided every hypothesis of
+  that assumption, instantiated at $`\vec\tau,\vec\sigma`$, is a pair of the
+  table, a subset, or a hypothesis.
 
-Discharging an instance is not recursive: its hypotheses are table pairs, not
-derivations. An entry is **valid** when its goal and its pairs satisfy the
-core conditions under these premises, with a variable of the source also
-covered by a hypothesis. A meet's parameter parts are read through the
-hypotheses as well: under $`x\le y`$, $`\mathsf{meet}(x,B)`$ is below $`y`$
-and below $`\mathsf{meet}(y,B)`$, while a clause part is never covered by a
-hypothesis.
+Instances are not derived recursively: their hypotheses must already be in
+the table. An assumption is **valid** when its conclusion and its table's
+pairs are covered under these premises. Within it, an intersection
+$`\gamma\land\rho`$ is below $`\delta\land\rho`$ when $`\gamma\le\delta`$ is
+a hypothesis.
 
-**Theorem 1 (soundness of entries).** Let $`\eta\models_n\Pi`$ mean that
-every hypothesis holds at $`\eta`$ at every level $`j\le n`$. For a set of
-valid entries, for every $`n`$, every entry $`f`$ and every $`\eta`$ with
-$`\eta\models_n\Pi_f`$, every pair $`(A,B)`$ of $`\Delta_f`$ and the goal of
-$`f`$ satisfy $`⟦A⟧^\eta_n\subseteq⟦B⟧^\eta_n`$.
+**Theorem 1.** Let a set of assumptions be valid, and write
+$`\eta\models_n\Pi`$ if every hypothesis of $`\Pi`$ holds at $`\eta`$ at
+every step up to $`n`$. Then for every $`n`$, every assumption and every
+$`\eta\models_n\Pi`$, its conclusion and every pair of its table hold at
+$`\eta`$ at step $`n`$.
 
-*Proof sketch.* By strong induction on $`n`$; at each level, values first,
-then argument lists.
+*Proof sketch.* By strong induction on $`n`$, first for values, then for
+argument lists.
 - **Value premises** are read below $`n`$: table pairs hold there by
-  induction, and hypotheses by assumption.
-- **An instance** is the goal of its entry at
-  $`\eta'=\eta[\vec x':=⟦\vec X⟧^\eta,\vec y':=⟦\vec Y⟧^\eta]`$. Its hypotheses
-  mean their discharging pairs there, so $`\eta'\models\Pi`$ and induction
-  applies; Lemma 3 turns the goal at $`\eta'`$ back into
-  $`⟦g(\vec X)⟧^\eta\subseteq⟦g'(\vec Y)⟧^\eta`$. An entry may use itself,
-  with $`\vec X`$ mentioning its own variables, since substitution is
-  simultaneous.
-- **Renaming** reassigns scheme binders only, and no scheme binds a
-  variable, so the hypotheses survive.
-- **Argument lists** at $`n`$ read element contracts, which are value
-  premises at $`n`$ itself. An instance used there has its hypotheses
-  discharged at $`n`$ only for values. The theorem is therefore proved
-  together with a second form whose hypotheses hold below $`n`$ and, at
-  $`n`$, for values; this refinement is what the bookkeeping needs.
+  induction, and hypotheses hold by assumption.
+- **An instance** is the conclusion of its assumption under
+  $`\eta'=\eta[\vec\alpha\mapsto⟦\vec\tau⟧^\eta,\vec\beta\mapsto⟦\vec\sigma⟧^\eta]`$.
+  Its hypotheses hold there because they mean the discharging pairs, so
+  induction applies, and Lemma 3 turns the conclusion at $`\eta'`$ into
+  $`D\langle\vec\tau\rangle\le D'\langle\vec\sigma\rangle`$ at $`\eta`$.
+  An assumption may be used at its own variables (`catch` does this):
+  substitution is simultaneous.
+- **Quantified signatures** reassign bound variables only, and hypotheses
+  mention none, so they survive.
+- **Argument lists** read element contracts at step $`n`$ itself. An
+  instance used there has its hypotheses discharged at $`n`$ only for
+  values, so the theorem is proved together with a variant whose
+  hypotheses hold below $`n`$ and, at $`n`$, for values.
 
-$`\square`$ Without variables this is the existing core theorem.
+$`\square`$ Without variables this is the existing theorem for finite
+tables.
 
 ### 4.3 Variance
 
-Covariance of `Promise` is a fact about its declaration, not about any use,
-so it is established once. Each head declares a variance per parameter,
-$`v_i\in\{\mathsf{co},\mathsf{contra},\mathsf{inv},\mathsf{none}\}`$, which
-stands for the entry
+That `Promise` is covariant is a fact about its definition, not about any
+use, so it is established once. Each definition declares a variance for
+each parameter, $`v_i\in\{\mathsf{co},\mathsf{contra},\mathsf{inv},\mathsf{none}\}`$,
+which stands for the assumption
+$`\forall\vec\alpha\vec\beta.\ \Pi_D\Rightarrow D\langle\vec\alpha\rangle\le D\langle\vec\beta\rangle`$
+with $`\alpha_i\le\beta_i`$ in $`\Pi_D`$ when $`v_i`$ is co or inv, and
+$`\beta_i\le\alpha_i`$ when it is contra or inv. The declarations of all
+definitions are checked together, once, and may rely on one another. A use
+then compares arguments only:
 
 ```math
-h(\vec x)\le h(\vec y),\qquad
-\Pi_h=\{x_i\le y_i\mid v_i\in\{\mathsf{co},\mathsf{inv}\}\}\cup\{y_i\le x_i\mid v_i\in\{\mathsf{contra},\mathsf{inv}\}\}.
+\frac{\forall i.\ \ \tau_i\le\sigma_i\ \ (v_i\in\{\mathsf{co},\mathsf{inv}\})\qquad \sigma_i\le\tau_i\ \ (v_i\in\{\mathsf{contra},\mathsf{inv}\})}
+{D\langle\vec\tau\rangle\le D\langle\vec\sigma\rangle}\ \textsf{Var}
 ```
 
-The declarations of all heads are checked together, once per document, and
-may use one another and themselves. A use then needs no unfolding:
-
-```math
-\frac{\forall i.\ \ A_i\le B_i\ \text{if}\ v_i\in\{\mathsf{co},\mathsf{inv}\}\qquad B_i\le A_i\ \text{if}\ v_i\in\{\mathsf{contra},\mathsf{inv}\}}
-{h(\vec A)\le h(\vec B)}\ \mathsf{Var}
-```
-
-`Var` is sound as an instance of a valid declaration (Theorem 1, Lemma 3).
-An invariant position uses two variables related both ways, not one shared
-variable. Sharing would need Lemma 2 inside the induction, at the level being
-proved. Variance is never read from TypeScript, whose method parameters are
-bivariant. A writable field needs both directions, so a head with one is
-valid only when declared invariant there.
-
-Relations between different heads, such as `Promise<T> ≤ PromiseLike<T>`,
-are the certificate's own parametric entries, checked by the same rule.
+`Var` is sound as an instance of a valid declaration, by Theorem 1 and
+Lemma 3. Variance is never read from TypeScript, whose method parameters
+are bivariant. A writable field needs both directions, so a definition with
+one is valid only when invariant there. An invariant position is stated
+with two variables related both ways. A single shared variable would need
+Lemma 2 inside the induction of Theorem 1, at the step being proved.
+Relations between different definitions, such as
+`Promise<T> ≤ PromiseLike<T>`, remain parametric assumptions of the
+certificate, checked by the same rule.
 
 ### 4.4 Example
 
-`Promise` is declared $`(\mathsf{co})`$. Its entry
-$`\mathit{Promise}(a)\le\mathit{Promise}(b)`$ under $`a\le b`$ checks as
-follows:
-- **`then`:** its binders are renamed. The callback `(x: b) => r` must be
-  within `(x: a) => r`, which is the hypothesis. Both results are
-  $`\mathit{Promise}(r)`$.
-- **`catch`:** its results are $`\mathit{Promise}(a\cup r)`$ and
-  $`\mathit{Promise}(b\cup r)`$, an instance of the entry itself whose
-  hypothesis $`a\cup r\le b\cup r`$ is a table pair. That pair is valid
-  because $`a`$ is below $`b`$ by the hypothesis and $`r`$ is shared.
+`Promise` is declared covariant. Its assumption
+$`\forall\alpha\beta.\ \alpha\le\beta\Rightarrow\mathit{Promise}\langle\alpha\rangle\le\mathit{Promise}\langle\beta\rangle`$
+checks member by member:
+- **`then`:** after renaming the quantifiers, the callback
+  $`\beta\to\gamma`$ must be within $`\alpha\to\gamma`$, which is the
+  hypothesis. Both results are $`\mathit{Promise}\langle\gamma\rangle`$.
+- **`catch`:** the results $`\mathit{Promise}\langle\alpha\lor\gamma\rangle`$
+  and $`\mathit{Promise}\langle\beta\lor\gamma\rangle`$ are an instance of
+  the assumption itself. Its hypothesis $`\alpha\lor\gamma\le\beta\lor\gamma`$
+  is a table pair, covered by the hypothesis and by $`\gamma`$ on both
+  sides.
 
 `Promise<number> ≤ Promise<number | string>` is then `Var` with the premise
-`number ≤ number | string`. The converse fails at its premise, and unfolding
-fails at `then`'s callback, so no certificate exists. For
+`number ≤ number | string`. The converse fails at its premise, and so does
+the definition's unfolding, at `then`'s callback. For
 `interface Cell<T> { v: T }` the covariant declaration is invalid, and
 `Cell<A> ≤ Cell<B>` requires `A` and `B` equivalent.
 
 ## 5. From source
 
-Lowering turns the parser's declaration document into equations. It creates
-heads per source construct, never per instance:
-- **Declarations:** a declaration whose type is an object type, or that has
-  bases, is a head with its type parameters as parameters.
-- **Methods:** each generic method is a head owning the method's binders.
-- **Units:** each generic function, closure, class or imported generic value
-  is a head whose binders are the unit's.
+Lowering turns the parser's declarations into definitions:
+- **Declarations:** an interface, a class instance type or an object alias
+  becomes a definition over its type parameters. Its bases are met into
+  its body.
+- **Generic members:** a generic method becomes a quantified signature in
+  that body.
+- **Units:** a generic function, closure, class or imported generic value
+  is typed by a quantified signature of its own.
 - **Literals:** each occurrence of an object, function, tuple or array type
-  inside a template is a head lifted over the enclosing parameters and
-  binders it mentions, as closure conversion lifts a function over its free
-  variables.
+  inside a definition becomes a definition of its own, over the variables
+  it mentions: $`L\langle\vec\gamma\rangle=\text{the literal}`$ with
+  $`\vec\gamma`$ its free variables. This is λ-lifting of type literals.
 
-Primitives are nullary heads, and equal literal templates are shared. The
-number of heads is therefore bounded by the size of the source, whatever the
-families it defines. `Pair<T>`'s `push<U>(): Pair<[T, U]>` lowers its result
-to $`\mathit{Pair}(\mathit{Array}(\mathit{Lit}(\mathsf{arg}\,0,\mathsf{local}\,0)))`$:
-the family grows by application, never by new heads.
+Every other declaration is an alias, inlined at its uses. Inlining
+terminates when every cycle through aliases passes through a definition:
+lifted literals are keyed by their occurrence, not their instance. An alias
+such as `type T<X> = X | T<[X]>` recurs under no constructor, so it is
+refused as unguarded.
 
-Every other declaration is an alias, inlined at its uses. Inlining terminates
-when every cycle through aliases passes through a head, because a literal
-head is keyed by its occurrence. An alias such as `type T<X> = X | T<[X]>`,
-whose recursive reference is under no constructor, is refused as unguarded.
+Definitions are created per source construct, never per instance, so their
+number is bounded by the size of the source, whatever families it defines.
+`Pair<T>`'s `push<U>(): Pair<[T, U]>` has the result type
+$`\mathit{Pair}\langle\mathit{Array}\langle L\langle T,U\rangle\rangle\rangle`$
+with $`L\langle\gamma,\delta\rangle=[\gamma,\delta]`$. The family grows by
+application, never by new definitions.
+
 TypeScript reads a record met with a function as one callable object, which
-the model's exact meet would make empty. Lowering applies that reading only
-to ground intersections it can resolve to rows, producing a literal head,
-never a meet label.
-
-Lowering also proposes each head's variances, as the least fixpoint over the
-head graph on $`\mathsf{none}<\mathsf{co},\mathsf{contra}<\mathsf{inv}`$:
-writable positions give $`\mathsf{inv}`$, results and readonly positions
-$`\mathsf{co}`$, parameters $`\mathsf{contra}`$, and nested applications
-compose. It proposes the tables the declarations need along with them. A
-declaration that fails its check is weakened to $`\mathsf{inv}`$, which is
+the model's exact intersection would make empty. Lowering applies that
+reading only to ground intersections, producing a literal definition, never
+an intersection a substitution could later reach. Lowering also proposes
+the variances: the least fixpoint over the definitions on
+$`\mathsf{none}<\mathsf{co},\mathsf{contra}<\mathsf{inv}`$. Writable
+positions give inv, results give co, parameters give contra, and nested
+applications compose. It proposes the tables the declarations need along
+with them. A declaration that fails its check is weakened to inv, which is
 always valid.
 
 ## 6. Trust and acceptance
 
-The division of labour is the one the verifier uses throughout: untrusted
-code proposes, a small checker decides. Proposed and never trusted:
-- the lowering;
-- variances and entry tables;
-- instances and their images;
-- renamings;
-- every certificate.
+Untrusted code proposes and a small checker decides, as everywhere in the
+verifier.
 
-Checked:
-- the equations' well-formedness (scope, arity, owned binders, meet normal
-  form);
-- every image, by substitution;
-- every entry, by Theorem 1's conditions;
-- every declaration, once per document.
+- **Proposed:** the definitions, variances, assumptions and their tables,
+  instances, and every certificate.
+- **Checked:** the definitions' well-formedness (scoping, arity,
+  contractiveness), every instantiation by substitution, every assumption
+  by the conditions of Theorem 1, and every variance declaration, once per
+  document.
 
 No rule takes a semantic premise from a certificate: each is discharged by
-Lemmas 1–3 and Theorem 1 from the equations themselves.
+Lemmas 1–3 and Theorem 1 from the definitions themselves.
 
-The acceptance theorem keeps its premise, the exact success condition of the
-command-line checker. Its conclusion, safety of every accepted unit, is
-stated over the graph of the unit's equations. A finite table is the case
-where every head is nullary, so the theorem for finite tables is an instance.
-The trust surface is unchanged: the parser and the reading of declared types
-remain the trusted boundary, as before.
+The acceptance theorem keeps its premise: the exact success condition of
+the command-line checker. Its conclusion, safety of every accepted unit, is
+stated over the unit's definitions. A finite type graph is the case where
+every definition has no parameters, so the theorem for finite graphs is an
+instance. The trust surface is unchanged: the parser and the reading of
+declared types remain the trusted boundary.
 
 ## 7. Related work
 
 The families are Solomon's parameterized type definitions
 ([Solomon 1978](REFERENCES.md#solomon-1978)), whose equivalence he related to
-that of deterministic pushdown automata. Here no equivalence is decided: a
-checker validates certificates.
+that of deterministic pushdown automata. Here nothing is decided: a checker
+validates certificates.
 
 Coinductive subtyping over assumed pairs
 ([Amadio and Cardelli 1993](REFERENCES.md#amadio-and-cardelli-1993),
-[Brandt and Henglein 1998](REFERENCES.md#brandt-and-henglein-1998))
-handles regular types. Parametric entries extend the assumptions with
-variables and hypotheses, so that one entry covers a non-regular family.
-Subtyping with variance over expanding definitions is undecidable in general
-([Kennedy and Pierce 2007](REFERENCES.md#kennedy-and-pierce-2007)), which is
-why variance is proposed and checked rather than inferred by the checker.
+[Brandt and Henglein 1998](REFERENCES.md#brandt-and-henglein-1998)) handles
+regular types. Parametric assumptions extend it with variables and
+hypotheses, so that one assumption covers a non-regular family. Subtyping
+with variance over expanding definitions is undecidable in general
+([Kennedy and Pierce 2007](REFERENCES.md#kennedy-and-pierce-2007)). This is
+why variance is proposed and checked here, not inferred by the checker.
 
-An application is a closure, an equation with its arguments, as a suspended
-substitution is in calculi of explicit substitutions
-([Abadi et al. 1991](REFERENCES.md#abadi-cardelli-curien-and-lévy-1991)). But
-what is delayed here is unfolding a definition, not substitution itself, and
-the type level has no β-redexes; only the substitution lemma carries over.
+An application is a closure, a definition with its arguments, like a
+suspended substitution in calculi of explicit substitutions
+([Abadi et al. 1991](REFERENCES.md#abadi-cardelli-curien-and-lévy-1991)).
+What it delays is unfolding a definition, not substitution. The type level
+has no β-redexes, so only the substitution lemma carries over.
 
 ## 8. Mechanization
 
+The Lean development represents a bound variable by the application that
+introduces it. The `β` of the `then` of `Promise⟨number⟩` is a distinct term
+from the `β` of the `then` of `Promise⟨string⟩`, so capture-avoidance holds
+by construction, and comparing quantifiers from two applications is an
+explicit renaming (section 4.1). Definitions are numbered, and bodies refer
+to parameters and quantified variables by position.
+
 | Concept | Lean |
 | --- | --- |
-| Signatures, templates, labels, the graph (2) | `Types/EquationGraphs.lean`, `Types/EquationMeets.lean` |
+| Definitions, types, unfolding, intersection (2) | `Types/EquationGraphs.lean`, `Types/EquationMeets.lean` |
 | Lemma 1 | `Types/EquationSupport.lean` |
 | Lemma 2 | `Types/EquationCongruence.lean` |
-| Lemma 3; images by substitution | `Types/EquationSubstitution.lean`, `Types/EquationCertificates.lean` |
-| Renaming (4.1), entries and Theorem 1 (4.2) | `Types/PositiveRules.lean`, `Types/PositiveCertificates.lean` |
+| Lemma 3; instantiation by substitution | `Types/EquationSubstitution.lean`, `Types/EquationCertificates.lean` |
+| Quantified signatures (4.1), assumptions and Theorem 1 (4.2) | `Types/PositiveRules.lean`, `Types/PositiveCertificates.lean` |
 | Variance and `Var` (4.3) | `Types/EquationFamilies.lean` |
-| Well-formedness, tree spelling | `Types/EquationValidator.lean`, `Types/EquationJson.lean` |
+| Well-formedness, term spelling | `Types/EquationValidator.lean`, `Types/EquationJson.lean` |
 | Lowering (5) | `Source/EquationLowering.lean` |
 | Tests, controls | `Tests/EquationFamilyTests.lean`, `Tests/EquationTreeTests.lean`, `Tests/EquationLoweringTests.lean` |
 
-The wire spellings of labels are in [SOURCE-CLAIMS](SOURCE-CLAIMS.md#encoding)
-and [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md). Progress is recorded in
+The wire spellings are in [SOURCE-CLAIMS](SOURCE-CLAIMS.md#encoding) and
+[REQUEST-PROTOCOL](REQUEST-PROTOCOL.md). Progress is recorded in
 [DESIGN: status](DESIGN.md#status).
