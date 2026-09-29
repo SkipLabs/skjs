@@ -85,8 +85,8 @@ partial def argsReplace (f : Tree → Option Union) (args : Args) : Args :=
   Args.ofList (args.toList.map fun ts => Types.ofList (normUnionOf (ts.toList.flatMap (treeReplace f))))
 end
 
-/- Renaming heads, meets re-canonicalized: their order depends on head
-indices. -/
+/- Renaming heads, meets and argument unions re-canonicalized: their order
+depends on head indices, and one type has one spelling. -/
 mutual
 partial def treeRename (f : Nat → Nat) : Tree → Tree
   | .app h args => .app (f h) (argsRename f args)
@@ -94,7 +94,7 @@ partial def treeRename (f : Nat → Nat) : Tree → Tree
   | .meet ps => canonMeet (ps.toList.map (treeRename f))
   | t => t
 partial def argsRename (f : Nat → Nat) (args : Args) : Args :=
-  Args.ofList (args.toList.map fun ts => Types.ofList (ts.toList.map (treeRename f)))
+  Args.ofList (args.toList.map fun ts => Types.ofList (normUnion (ts.toList.map (treeRename f))))
 end
 
 /-- Whether a tree holds an owned parameter or a variable. -/

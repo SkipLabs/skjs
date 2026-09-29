@@ -491,6 +491,16 @@ holds: the finite table check, or the substitution check
 structural substitution image (`EquationStore.eitherImages`). Search
 proposes the substitution images first (`CertificateProducer.Instantiates`).
 
+**`Var`.** Two applications of one head are related by the checker itself,
+with no proof form of their own. Over the equations, a `subset` step holds
+when every source label is a target label or below one by `Var` with the
+head's computed variance, each per-position premise discharged the same way
+(a label, `Var` again, or an instance), and a `core` step's premises may
+also be `Var` and its table pairs reused at renamed bound rows, as family
+entries' are (`subsetUsing`, `coreUsing`,
+[RECURSIVE-EQUATIONS §4.2–4.3](RECURSIVE-EQUATIONS.md#42-parametric-assumptions)).
+The spellings of both steps are unchanged.
+
 **Specified, not implemented.** The standalone request (`verifyJson`) is to
 decode its graph, with `equations` replacing `types`:
 
@@ -516,9 +526,7 @@ carry these fields:
 - `core` certificates with `families`, each
   `{"source": L, "target": L, "variables": [kind, …], "hypotheses": [[x, y], …], "table": [[A, B], …]}`,
   left out when none, with the present table as the variable-free entry;
-- the `var` proof form, relating two applications of one head with one
-  proof per non-`none` position (two for `inv`), citing the head's computed
-  variance.
+- nothing for `Var`: no proof form names it (below).
 
 Diagnostics show labels through a projection onto a finite table, bounded by
 depth, with names for applications (`Promise<number | R>`).

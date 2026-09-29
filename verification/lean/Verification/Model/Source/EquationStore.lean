@@ -323,17 +323,24 @@ def eitherImages {ι : Type} [DecidableEq ι] {G : NormalGraph ι} (a b : Instan
     · simp only [ha, Bool.false_or] at h
       exact b.sound bs c hlen hkinds h η
     · exact a.sound bs c hlen hkinds ha η
+  -- The second's renaming, variances and `Var` proposal: the finite check
+  -- has none.
+  sub := b.sub
+  base := b.base
+  gen := b.gen
 
 /-- The store of a checked request: the extracted heads, whose validated
-equations are `E`. It no longer grows. -/
+equations are `E`, and their variances, computed as checks ask for them and
+shared by every request over the store. It no longer grows. -/
 structure Checked (E : Equations) (p : Primitive E) where
   heads : State
+  variances : Variances E := E.variances
 
 section
 variable {E : Equations} {p : Primitive E}
 
 instance : ToJson (Checked E p) := ⟨fun c => toJson c.heads⟩
-instance : FromJson (Checked E p) := ⟨fun j => do return ⟨← fromJson? j⟩⟩
+instance : FromJson (Checked E p) := ⟨fun j => do return { heads := ← fromJson? j }⟩
 
 /-- A tree as a label of `E`, if it is one. -/
 def Checked.label? (t : Tree) : Option (CheckedLabel E p) := Label.ofTree? t
@@ -354,7 +361,7 @@ instance : StoreView (Checked E p) (CheckedLabel E p) where
         | none => .clauses []) (spell c.heads)
       (mentioned.map CheckedLabel.tree) depth
     { rows := pr.rows, position := fun l => pr.position l.tree, names := pr.names }
-  images _ := eitherImages (finiteInstanceImages E.graph) E.instanceImageCheck
+  images c := eitherImages (finiteInstanceImages E.graph) (E.images c.variances)
 
 @[simp] theorem Checked.graph_eq (c : Checked E p) :
     (StoreView.graph c : NormalGraph (CheckedLabel E p)) = E.graph := rfl
@@ -391,7 +398,7 @@ def freeze (s : State) : Except String Frozen := do
   let E := { E with realm := if s.arrays then realmOf E s.proto s.excluded else none }
   let E := E.memo
   let ⟨p⟩ ← primitive E
-  return ⟨E, p, ⟨s⟩⟩
+  return ⟨E, p, { heads := s }⟩
 
 /-! ### Requests over the frozen equations -/
 

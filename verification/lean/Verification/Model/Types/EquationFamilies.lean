@@ -598,30 +598,27 @@ theorem Equations.checkFamily_sound (equations : Equations) (v : Variances equat
     ∀ η, FamLe (mixedMeaning equations.graph η S) (mixedMeaning equations.graph η T) :=
   checkFamilyUsing_sound h
 
-/-- **The structural `Var` rule.** `h(A⃗) ≤ h(B⃗)` by one derivation per
-hypothesis of `h`'s computed variance, in order: `Aᵢ ≤ Bᵢ` for `co`,
-`Bᵢ ≤ Aᵢ` for `contra`, both for `inv`, none for `none`. `h` is not
-unfolded. -/
+/-- The equations' checks with their variances: substitution images, the
+renaming, the computed variances as the entries `Var` cites, and `Var`'s
+proposal. Every request certificate over the equations reads these. -/
+def Equations.images (equations : Equations) (v : Variances equations) :
+    InstanceImageCheck equations.graph :=
+  { equations.instanceImageCheck with sub := some equations.renaming, base := v.base, gen := varGen }
+
+/-- **The structural `Var` rule**, as the checker applies it: `h(A⃗) ≤ h(B⃗)`
+by the premise judgment on the pair, which relates two applications of one
+head by `Var` with its computed variance, each per-position premise
+(`Aᵢ ≤ Bᵢ` for `co`, `Bᵢ ≤ Aᵢ` for `contra`, both for `inv`, none for
+`none`) discharged the same way. `h` is not unfolded, and no certificate
+names the step. -/
 def Equations.checkVar (equations : Equations) (v : Variances equations)
-    (S T : List (Label equations.signature)) (proofs : List (Proof (Label equations.signature))) :
-    Bool :=
-  match S, T with
-  | [l], [b] => match varGen l [b] with
-    | [w] => checkEntryInstanceUsing equations.graph equations.instanceImageCheck
-        equations.renaming v.base w S T proofs
-    | _ => false
-  | _, _ => false
+    (S T : List (Label equations.signature)) : Bool :=
+  checkUsing equations.graph (equations.images v) S T .subset
 
 theorem Equations.checkVar_sound (equations : Equations) (v : Variances equations)
-    {S T : List (Label equations.signature)} {proofs : List (Proof (Label equations.signature))}
-    (h : equations.checkVar v S T proofs = true) :
-    ∀ η, FamLe (mixedMeaning equations.graph η S) (mixedMeaning equations.graph η T) := by
-  unfold Equations.checkVar at h
-  split at h
-  · split at h
-    · exact checkEntryInstanceUsing_sound h
-    · cases h
-  · cases h
+    {S T : List (Label equations.signature)} (h : equations.checkVar v S T = true) :
+    ∀ η, FamLe (mixedMeaning equations.graph η S) (mixedMeaning equations.graph η T) :=
+  checkUsing_sound h
 
 #print axioms Equations.substituteAll_meaning
 #print axioms Equations.scheme_binders

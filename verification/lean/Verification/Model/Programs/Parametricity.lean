@@ -199,11 +199,38 @@ theorem checkInst_reassign (S T : List ι) (c : Instance ι) :
   simp only [checkInstUsing, checkInstArrs_reassign]
   rfl
 
+theorem sub_reassign : (images.reassign η).sub = images.sub.map (·.reassign η) := rfl
+
+/-- The premise judgment and family certificates are checked at a fixed
+assignment, the same for the graph and its reassignments. -/
+theorem premAt_reassign (r : Renaming G) (S T : List ι) :
+    premAt (reassign G η) (images.reassign η) (r.reassign η) S T = premAt G images r S T := rfl
+
+theorem checkFamilyAt_reassign (r : Renaming G) (S T : List ι) (c : FamilyCertificate ι) :
+    checkFamilyAt (reassign G η) (images.reassign η) (r.reassign η) S T c =
+      checkFamilyAt G images r S T c := rfl
+
+theorem subsetUsing_reassign (S T : List ι) :
+    subsetUsing (reassign G η) (images.reassign η) S T = subsetUsing G images S T := by
+  unfold subsetUsing
+  cases hr : images.sub with
+  | none => simp only [sub_reassign, hr, Option.map_none]
+  | some r => simp only [sub_reassign, hr, Option.map_some, premAt_reassign]
+
+theorem coreUsing_reassign (S T : List ι) (cert : PositiveCertificates.Certificate ι)
+    (ks : List (List ι × Ops ι × List (CallEffects.RestArrow (List ι)) × Instance ι)) :
+    coreUsing (reassign G η) (images.reassign η) S T cert ks = coreUsing G images S T cert ks := by
+  unfold coreUsing
+  simp only [checkCore_reassign, checkInstArrs_reassign]
+  cases hr : images.sub with
+  | none => simp only [sub_reassign, hr, Option.map_none]
+  | some r => simp only [sub_reassign, hr, Option.map_some, checkFamilyAt_reassign]
+
 theorem check_reassign (S T : List ι) (p : Proof ι) :
     PositiveCertificates.checkUsing (reassign G η) (images.reassign η) S T p =
       PositiveCertificates.checkUsing G images S T p := by
   induction p generalizing S T <;>
-    simp only [PositiveCertificates.checkUsing, checkCore_reassign, checkInstArrs_reassign,
+    simp only [PositiveCertificates.checkUsing, coreUsing_reassign, subsetUsing_reassign,
       checkInst_reassign, *] <;> rfl
 
 /-- The subtype checker as a function of its graph. -/

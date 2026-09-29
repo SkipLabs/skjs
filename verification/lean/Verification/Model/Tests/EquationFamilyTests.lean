@@ -117,9 +117,9 @@ def lbl (t : Tree) : Label E.signature :=
 
 def lbls (ts : List Tree) : List (Label E.signature) := ts.map (lbl E)
 
-/-- `Var` on two labels with one subset proof per hypothesis. -/
-def var (S T : List Tree) (hyps : Nat) : Bool :=
-  E.checkVar E.variances (lbls E S) (lbls E T) (List.replicate hyps .subset)
+/-- `Var` on two labels, as the checker applies it to a `subset` step. -/
+def var (S T : List Tree) : Bool :=
+  E.checkVar E.variances (lbls E S) (lbls E T)
 
 /-- A family certificate: its arrow evidence proposed for its pairs. -/
 def family (entries : List (Entry (Label E.signature))) (S T : List Tree) : Bool :=
@@ -181,11 +181,11 @@ def run (f : Equations → Bool) : Bool := match good? with
 
 -- `Promise<number> ≤ Promise<number | string>` by `Var`, whose one premise
 -- is a subset: `Promise` is not unfolded.
-#guard run fun E => var E [app 6 [[num]]] [app 6 [[num, str]]] 1
+#guard run fun E => var E [app 6 [[num]]] [app 6 [[num, str]]]
 -- `Promise<never> ≤ Promise<number>`: the premise is the empty union.
-#guard run fun E => var E [app 6 [[]]] [app 6 [[num]]] 1
+#guard run fun E => var E [app 6 [[]]] [app 6 [[num]]]
 -- The negative control: the premise `number | string ≤ number` fails.
-#guard run fun E => !var E [app 6 [[num, str]]] [app 6 [[num]]] 1
+#guard run fun E => !var E [app 6 [[num, str]]] [app 6 [[num]]]
 -- Unfolding with an ordinary core table cannot relate `then` members, whose
 -- binders differ; the finite rule needs the same binder rows.
 #guard run fun E => !E.checkSubtype (lbls E [app 6 [[num]]]) (lbls E [app 6 [[num, str]]])
@@ -195,8 +195,8 @@ def run (f : Equations → Bool) : Bool := match good? with
 -- Writable positions: `Cell` declared invariant checks; its `Var` needs both
 -- directions, so `Cell<number>` is below itself and not below
 -- `Cell<number | string>`.
-#guard run fun E => var E [app 8 [[num]]] [app 8 [[num]]] 2
-#guard run fun E => !var E [app 8 [[num]]] [app 8 [[num, str]]] 2
+#guard run fun E => var E [app 8 [[num]]] [app 8 [[num]]]
+#guard run fun E => !var E [app 8 [[num]]] [app 8 [[num, str]]]
 
 -- Different heads: a certificate entry `Promise(a) ≤ PromiseLike(b)` with
 -- `a ≤ b`, checked by `Var` on `then`; the claim
@@ -219,7 +219,7 @@ def promiseLike (E : Equations) : Entry (Label E.signature) :=
 -- covariant in both through `ReadonlyArray<readonly [K, V]>`, with no table:
 -- the view's premise is an instance of `ReadonlyArray`'s variance whose
 -- hypothesis is an instance of the tuple's, whose hypotheses are hypotheses.
-#guard run fun E => var E [app 23 [[num], [num]]] [app 23 [[num], [num, str]]] 2
+#guard run fun E => var E [app 23 [[num], [num]]] [app 23 [[num], [num, str]]]
 -- A nested hypothesis that is false is refused at its instance: the tuple's
 -- `number ≤ string`, inside `ReadonlyArray`'s.
 #guard run fun E => claim E [app 21 [[app 22 [[num], [num]]]]] [app 21 [[app 22 [[num], [num, str]]]]]
