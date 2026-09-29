@@ -2119,8 +2119,7 @@ key (`optionalOperand`, `optionalRead_sound`):
   \dashv \Pi\;;\;\Sigma,\{y.f\mapsto^{?} r\mid y\approx_\Pi x\}}
 ```
 
-Two fixtures show the difference. In
-[`write-refined-read.ts`](tests/skjs-incomplete/write-refined-read.ts),
+Two programs show the difference. In the first,
 
 ```ts
 const cell: { value: boolean } = { value: false };
@@ -2135,8 +2134,7 @@ include $\mathsf{true}$, so the second rule applies and returns
 $r=\mathsf{true}$ — a fact the wider claimed type does not carry, and enough for
 a return contract demanding exactly $\mathsf{true}$.
 
-In [`captured-refinement.ts`](tests/skjs-unsound/captured-refinement.ts) the same
-read follows a call:
+In the second the same read follows a call:
 
 ```ts
 const done: null = reset(false);
@@ -2379,10 +2377,9 @@ observation is discarded. Read links are invalidated by writes and calls, while
 slot equalities survive. Together these let source lowering discard a receiver
 temporary without losing a write to its original cell.
 
-The pipeline verifies the allocate-false/write-true/read fixture
-`write-refined-read.ts` with an explicit current-true claim at the return entry;
-[the fixture notes](tests/skjs-incomplete/README.md) explain why the original
-broad entry claim is insufficient.
+An allocate-false/write-true/read program verifies with an explicit
+current-true claim at the return entry; a broad entry claim naming only the
+storage contract is insufficient.
 
 #### Source observation checkpoints
 
@@ -2474,7 +2471,7 @@ statement entry still fails source verification.
 [CertificateProducer.lean](lean/Verification/Model/Programs/CertificateProducer.lean) accepts an actual graph, its declared result type and
 start label, and one `PointClaim` per node. Each claim fixes both the entry
 context and the expression result type. These are annotations in this Lean
-interface, not SKJS claim types. The source adapter supplies them for the supported
+interface. The source adapter supplies them for the supported
 fragment; new source forms require the corresponding extraction obligations.
 [DirectProof.lean](lean/Verification/Model/Programs/DirectProof.lean) holds the recipes for source closures: untrusted plans fixing rule structure and intermediate types.
 
@@ -2564,8 +2561,8 @@ results.
 
 ### Derived source forms
 
-[BooleanConditionalTests.lean](lean/Verification/Model/Tests/BooleanConditionalTests.lean) checks the ordinary conditional through serialized
-requests and direct recipes. Its execution traces cover both outcomes after an
+[BooleanConditionalTests.lean](lean/Verification/Model/Tests/BooleanConditionalTests.lean) checks the ordinary conditional through direct
+recipes. Its execution traces cover both outcomes after an
 alias write and a condition that writes then reads a cell. Invalid condition
 types, invalid arms, omitted premises and exchanged arms are rejected. This is
 calculus coverage. Source closure blocks now support terminal branches with both
@@ -4612,14 +4609,7 @@ finite run, and an exact terminating execution. Independent recursive labels
 can be related by cyclic subtype evidence, while invariant widening and an
 unguarded nullable call are rejected. These are regressions over the existing
 rules; no recursive-callable special case or additional semantic axiom is needed.
-[CallableRecursionTests.lean](lean/Verification/Model/Tests/CallableRecursionTests.lean) separately checks recursive invocation: a closure reads itself from a captured,
-nullable cell and calls it after a function test. Allocation and a self-write
-reach a five-step cycle from the empty heap. The test proves arbitrarily many
-cycles, nontermination by determinism, safety at every budget, and descriptor
-coherence. A small explicit certificate is checked in the kernel; a separate
-JSON roundtrip exercises automatic production. An unguarded nullable call and
-a recursive call with an incompatible argument are rejected. The safety
-contract guarantees progress, not termination.
+The safety contract guarantees progress, not termination.
 The existing
 `refT` and graph reference clauses still mean plain objects. A callability-neutral
 bag view can be expressed as `refs P Ps | callable P Ps []` using two graph
@@ -4639,24 +4629,21 @@ not invent a signature from `typeof`, pick a successful alternative, or require
 a common arrow label in the graph. The producer emits ordinary `unionVar`
 evidence; the consumer and wire format are unchanged.
 [SourceCallableUnionTests.lean](lean/Verification/Model/Tests/SourceCallableUnionTests.lean) checks the corresponding source-closure path for unions of primitive-only
-function signatures. Its direct recipe saves the callee and argument in order,
-then checks each alternative at the saved callee slot and joins the signature
-results. Expression obligations require no expression-search fuel. The complete
-source consumer still checks supplied result claims, rejects an incompatible
-alternative or nullable callee, and retains the external-object boundary.
+function signatures, on the pipeline case `callable-union-capture`. The direct
+recipe saves the callee and argument in order, then checks each alternative at
+the saved callee slot and joins the signature results. The source consumer
+checks supplied result claims and refuses a narrowed one.
 Single-arrow call recipes keep their existing form.
 Explicit normalized source claims also exercise unions of overloaded functions:
 the applicable signature occurs at different positions in the two alternatives,
 and changing from a null to a Boolean argument reverses those positions. Both
 calls verify; discarding a possible result or omitting one alternative's applicable
-signature fails. This validates the source adapter and independent consumer,
-while SKJS's documented collapse of incomparable arrow intersections to `never`
-still prevents these contracts from arriving as valid SKJS exports.
+signature fails. This validates the source adapter and independent consumer.
 Null-guard regressions retain every callable alternative on the non-null arm
 for both comparison polarities and operand orders. Calls on the null arm and
 unjustifiably narrow results fail. The `guardedCallableUnion` TypeScript fixture
-also runs through the parser, SKJS claim exporter, independent source consumer,
-and annotated report pipeline. Report syntax groups arrow alternatives and
+also runs through the parser, a claim producer, the independent source
+consumer, and the annotated report pipeline. Report syntax groups arrow alternatives and
 preserves each alternative's hidden metadata when reading the union back.
 The `coalescedCallable` fixture selects between a null/undefined-or-callable
 input and a fallback before invocation. Both distinct return contracts survive
@@ -4699,8 +4686,9 @@ RHS at the shifted position, writes once, and returns that saved RHS. Corrupting
 the evidence to use the Boolean seed capture instead of the Boolean parameter
 fails, even though their types agree. Wrong receiver and narrowed RHS/result
 claims also fail production and independent consumption.
-[SourceCellUnionTests.lean](lean/Verification/Model/Tests/SourceCellUnionTests.lean) checks reads and writes through unions of locally allocated invariant cells
-inside source closures. Reads join possible contents. Writes check the saved
+[SourceCellUnionTests.lean](lean/Verification/Model/Tests/SourceCellUnionTests.lean), on the pipeline cases `cell-union-capture` and
+`invalid-cell-union-write`, checks reads and writes through unions of locally
+allocated invariant cells inside source closures. Reads join possible contents. Writes check the saved
 RHS against every alternative, evaluate each operand once, and return that RHS
 as the source assignment value. Direct recipes need no expression-search fuel.
 A write accepted by only one alternative and an unjustifiably narrow read

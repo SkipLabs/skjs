@@ -133,7 +133,7 @@ def hsub (A B : List Nat) : Bool :=
 -- A scheme row with a variadic signature reads back as itself; one without
 -- leaves the field out.
 #guard (fromJson? (toJson (GraphRow.scheme [3] [] [(3, [4])] [⟨[2], ([], [3]), [0], .unrestricted⟩]))
-  : Except String RequestJson.Row).toOption ==
+  : Except String (GraphRow Nat)).toOption ==
   some (GraphRow.scheme [3] [] [(3, [4])] [⟨[2], ([], [3]), [0], .unrestricted⟩])
 #guard !((toJson (GraphRow.scheme [3] [⟨[2], [[3]], [3], .unrestricted⟩] [] [])).compress.contains
   "variadic")

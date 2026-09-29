@@ -23,6 +23,8 @@ import { stripTypes } from "../tools/strip-types.mts";
 // The reader's collector, imported rather than served: `serve.mts` takes the
 // port only when it is run directly.
 import { analyse } from "../report-viewer/serve.mts";
+import { fromBundle, parseReport } from "../report-viewer/model.mts";
+import type { Bundle } from "../report-viewer/types.ts";
 const here = import.meta.dirname;
 /** Inspect the source equations used by Lean, rather than a second edge list. */
 function referencesIn(term: TypeTerm): Reference[] {
@@ -969,22 +971,22 @@ assert.ok("file" in fragment && typeof fragment.file === "string");
   assert.ok("functions" in forged && Array.isArray(forged.functions));
   const first: unknown = forged.functions[0];
   assert.ok(first && typeof first === "object" && "retType" in first);
-  const ast = join(good, "raw-graph-conversion.json");
-  const claims = join(good, "empty-native-claims.json");
-  writeFileSync(claims, "[]");
-  // The source states type terms: neither a graph label nor a claim.
+  const ast = join(good, "raw-graph-annotation.json");
+  // The source states type terms: neither a graph label nor a claim. The
+  // producer's own claims are offered, so the refusal is the annotation's.
   for (const [retType, refusal] of [
     [{ a: "graph", label: 4 }, /source cannot state an internal graph label/],
     [{ top: false, atoms: [{ a: "boolean" }] }, /a source annotation is a type term, not a claim/],
   ] as const) {
     Object.assign(first, { retType });
     writeFileSync(ast, JSON.stringify(forged));
-    const converted: SpawnSyncReturns<string> = spawnSync(verifier,
-      ["--export-source-claims", ast, claims, fragment.file], { encoding: "utf8" });
-    assert.equal(converted.status, 1);
-    assert.match(converted.stderr, refusal);
+    const produced: SpawnSyncReturns<string> = spawnSync(verifier,
+      ["--produce-source-claims", ast, join(good, "claims.json"), fragment.file,
+        join(good, "raw-graph-evidence.json"), "10"], { encoding: "utf8" });
+    assert.equal(produced.status, 1);
+    assert.match(produced.stderr, refusal);
   }
-  process.stdout.write("raw graph label and claim-shaped annotation at native conversion: refused\n");
+  process.stdout.write("raw graph label and claim-shaped annotation as a source annotation: refused\n");
 }
 const forgedImport = join(good, "forged-import.json");
 writeFileSync(forgedImport, JSON.stringify({ ...fragment,
@@ -1579,6 +1581,24 @@ for (const site of ["initializer", "binding"] as const) {
  */
 const repositoryPath = (file: string) =>
   `verification/ocaml-producer/examples/${file}.ts`;
+/** The page a bundle becomes. The annotated source reads back as the exact
+ * source, and the page shows every function the manifest reports, with its
+ * verdict and every expression claim at its span. */
+const pageOf = (bundle: Bundle) => {
+  assert.equal(parseReport(must(bundle.annotated, "the annotated source")).source, bundle.source);
+  const page = fromBundle(bundle);
+  assert.equal(page.source, bundle.source);
+  assert.deepEqual(page.functions.map((f) => f.name), bundle.manifest.functions.map((f) => f.name));
+  bundle.manifest.functions.forEach((f, i) => {
+    const shown = must(page.functions[i], f.name);
+    assert.equal(shown.status, bundle.manifest.results?.[i]?.status ?? "not-run");
+    const spans = (ps: number[][]) => ps.map((p) => p.join(":")).sort();
+    assert.deepEqual(
+      spans(shown.sites.filter((s) => s.kind === "expression").map((s) => s.pos)),
+      spans(f.expressions.map((e) => e.pos)));
+  });
+  return page;
+};
 {
   const shown = await analyse(repositoryPath("generic-default"), "ocaml");
   const results = shown.manifest.results ?? [];
@@ -1586,18 +1606,22 @@ const repositoryPath = (file: string) =>
   assert.notEqual(results[0]?.location, undefined);
   assert.match(JSON.stringify(results), /source expression obligation at \[400,419\)/);
   process.stdout.write("reader collection: a scheme default's bad write visibly refused\n");
+  // The page shows the failure at the claim whose obligation stopped.
+  const failed = must(pageOf(shown).functions[0], "the refused function");
+  assert.equal(failed.status, "not-established");
+  assert.equal(failed.failure?.kind, "expression-obligation");
+  assert.deepEqual(failed.sites[failed.failure?.at ?? -1]?.pos, [400, 419]);
 }
 const collected = await analyse(repositoryPath("values"), "ocaml");
+pageOf(collected);
 assert.equal(collected.collection?.producer, "ocaml");
 assert.equal(collected.collection?.producerRun, true);
 assert.equal(collected.collection?.verified, true);
-assert.equal(collected.candidate?.format, "source-claims");
-// The document the reader offers for editing is the producer's own, not a
-// display shape derived from it: the same bytes `check` wrote beside `values`.
-assert.deepEqual(collected.candidate?.claims, {
-  ...original,
-  file: repositoryPath("values"),
-});
+// The claims the report is built from are the producer's own, not a display
+// shape derived from them: the document `check` wrote beside `values`, named by
+// the file it is about.
+assert.equal(collected.manifest.claimsSha256, createHash("sha256")
+  .update(JSON.stringify({ ...original, file: repositoryPath("values") })).digest("hex"));
 assert.deepEqual(
   (collected.manifest.results ?? []).map((r) => r.status),
   ["verified", "verified"],
@@ -1624,7 +1648,7 @@ const collectedGeneric = await analyse(
   "ocaml",
 );
 assert.equal(collectedGeneric.collection?.verified, true);
-assert.equal(collectedGeneric.candidate?.format, "source-claims");
+pageOf(collectedGeneric);
 assert.match(
   collectedGeneric.manifest.functions[0]?.expressions.find((e) =>
     e.type.startsWith("<"),

@@ -60,9 +60,6 @@ const expectSubset = (what: string, names: Set<string>, from: Set<string>, allow
   const leanNames = lean(["lean/Verification/Model/Source/Fragment.lean",
     "lean/Verification/Model/Source/EquationLowering.lean"]);
   expectSubset("Lean reads of the Fragment", leanNames, ts, {
-    envs: "SKJS claims, decoded in Fragment.lean",
-    exprs: "SKJS claims, decoded in Fragment.lean",
-    vars: "SKJS claims, decoded in Fragment.lean",
     decl: "a source-claims label, lowered in EquationLowering.lean",
     binder: "a source-claims label, lowered in EquationLowering.lean",
     meet: "a source-claims label, lowered in EquationLowering.lean",

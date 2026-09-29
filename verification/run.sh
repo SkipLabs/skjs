@@ -1,35 +1,23 @@
 #!/usr/bin/env bash
-# Build and exercise the current source adapter, certificate consumer and reports.
-# Usage: verification/run.sh [--build] [--verbose] [--skjs BIN] [--suite ocaml|stateful-source|all]
-#
-# `ocaml` (the default) runs the parser -> OCaml producer -> Lean pipeline and
-# the checks that need no SKJS: the SKJS producer and the suites built on its
-# fixtures are frozen at the tag `skjs-frozen` (DESIGN.md, "SKJS is frozen")
-# and run only with `--suite all` or `stateful-source`.
+# Build and exercise the parser -> OCaml producer -> Lean pipeline and the
+# checks around it: front-end types, JSON field names, documents, the rule
+# inventory and the source boundaries.
+# Usage: verification/run.sh [--build] [--verbose]
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO" || exit 1
 
-SKJS_BIN="${SKJS_BIN:-target/host/dev/skjs}"
 BUILD=0
 VERBOSE=0
-SUITE=ocaml
 while [ $# -gt 0 ]; do
   case "$1" in
     --build) BUILD=1; shift ;;
     --verbose) VERBOSE=1; shift ;;
-    --suite) SUITE="${2:-}"; shift; [ $# -eq 0 ] || shift ;;
-    --skjs) SKJS_BIN="$2"; shift 2 ;;
     *) echo "Unknown argument: $1"; exit 2 ;;
   esac
 done
-case "$SUITE" in
-  ocaml|stateful-source|all) ;;
-  *) echo "Unknown suite '$SUITE': use ocaml, stateful-source or all"; exit 2 ;;
-esac
 
-VERIFIER="$REPO/verification/lean/.lake/build/bin/verifier"
 WORK="$(mktemp -d)"
 passed=0
 failed=0
@@ -64,7 +52,6 @@ finish() {
     status_line 33 "  ⚠ Run stopped early; remaining suites were not run."
   fi
   echo "  Elapsed: $((SECONDS - started_at))s"
-  skjs_shutdown
   rm -rf "$WORK"
 }
 trap finish EXIT
@@ -117,49 +104,6 @@ if [ "$BUILD" -eq 1 ]; then
   fi
 fi
 
-source "$REPO/verification/skjs.sh"
-# One container for the whole run, started before anything forks; the OCaml
-# pipeline needs none.
-if [ "$SUITE" != ocaml ]; then
-  skjs_start || echo "warning: no shared container; each check will start its own"
-fi
-
-# A fixture is a parsed source and the producer's claims for it, under one name.
-# Building one is a precondition rather than a test: with no fixture there is
-# nothing to run, so a failure here stops the run instead of being counted.
-fixture() { # name source-path
-  local name="$1" path="$2"
-  if ! { node verification/tools/fragment-parse.mts "$path" > "$WORK/$name.ast" &&
-         skjs_check "$path" > "$WORK/$name.claims"; } 2> "$WORK/$name.err"; then
-    echo "FAIL: fixture setup for $path"
-    cat "$WORK/$name.err"
-    exit 1
-  fi
-}
-
-# Some witnesses exist because SKJS rejects them, so the rejection is the
-# fixture and an acceptance is the failure. A status may be named where the
-# kind of rejection is itself the point.
-rejected_fixture() { # name source-path [expected status]
-  local name="$1" path="$2" want="${3:-}"
-  node verification/tools/fragment-parse.mts "$path" > "$WORK/$name.ast" || exit 1
-  skjs_check "$path" > "$WORK/$name.claims" 2> "$WORK/$name.err"
-  local got=$?
-  if [ "$got" -eq 0 ] || { [ -n "$want" ] && [ "$got" -ne "$want" ]; }; then
-    echo "FAIL: expected SKJS to reject $path${want:+ with status $want}, got $got"
-    cat "$WORK/$name.err"
-    exit 1
-  fi
-}
-
-# The exporter's own probes, exported together. Some are rejected on purpose
-# and their claims are still exported, so the status is not the fixture; and
-# they may use any TypeScript, so they do not go through the source parser.
-SNAPSHOTS=verification/tests/export-snapshots
-snapshot_probes() {
-  skjs_check "$SNAPSHOTS"/*.ts > "$WORK/snapshots.claims" 2> "$WORK/snapshots.err" || true
-}
-
 # The front end is TypeScript and is checked as such: `tsc` over the trusted
 # tools and over the reader's own types, under the same strictness the corpus
 # is claimed at. A silently-renamed compiler API reads as `undefined` at
@@ -174,335 +118,8 @@ run_test "JSON field names agree (TS, Lean, OCaml)" node verification/tests/json
 run_test "Documents: links, math" node verification/tests/docs.mts
 run_test "OCaml producer" bash -c 'dune build --root verification/ocaml-producer && dune runtest --root verification/ocaml-producer && node verification/ocaml-producer/test.mts'
 run_test "Rule inventory" node verification/tests/rule-inventory.mts
-run_test "Source boundaries" node verification/tests/unsupported.mts "$VERIFIER"
+run_test "Source boundaries" node verification/tests/unsupported.mts
 
-if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
-
-  BASE=verification/tests/stateful-source/basic.ts
-  CELL_SOURCE=verification/tests/stateful-source/cells.ts
-  UNDEFINED_SOURCE=verification/tests/stateful-source/undefined.ts
-  CLOSURES=verification/tests/stateful-source/closures.ts
-  CALLABLES=verification/tests/callables/unions.ts
-  FACTORIES=verification/tests/callables/factories.ts
-  CALLABLE_THUNKS=verification/tests/callables/thunks.ts
-  CALLABLE_CELLS=verification/tests/callables/cells.ts
-  BOUND_ARGUMENTS=verification/tests/skjs-incomplete/bound-arguments.ts
-  RECEIVER_CALL=verification/tests/callables/receiver-call.ts
-  OPTIONAL_ARGUMENTS=verification/tests/callables/optional-arguments.ts
-  DEFAULT_ARGUMENTS=verification/tests/callables/default-arguments.ts
-  REST_ARGUMENTS=verification/tests/callables/rest-arguments.ts
-  VARIADIC_ARGUMENTS=verification/tests/callables/variadic-arguments.ts
-  CALLABLE_FIELD=verification/tests/callables/function-field.ts
-  CALLABLE_GUARDS=verification/tests/callables/guards.ts
-  CALLABLE_ARITY=verification/tests/callables/arity.ts
-  CALLABLE_ARGUMENTS=verification/tests/callables/arguments.ts
-  CALLBACKS=verification/tests/stateful-source/primitive-callbacks.ts
-  COUNTEREXAMPLE=verification/tests/skjs-unsound/captured-refinement.ts
-  NEGATION=verification/tests/stateful-source/negation.ts
-  LOOP_EXIT=verification/tests/skjs-incomplete/negated-loop-exit.ts
-  SINGLETON=verification/tests/skjs-incomplete/singleton-negation.ts
-  NULL_TESTS=verification/tests/stateful-source/null-tests.ts
-  NULL_GUARD=verification/tests/stateful-source/null-guards.ts
-  NULL_EXIT=verification/tests/skjs-incomplete/null-loop-exit.ts
-  COMPOUND_STALE=verification/tests/skjs-unsound/compound-write-refinement.ts
-  CONTROLS=verification/tests/refinement-controls.ts
-  WRITE_REFINED=verification/tests/skjs-incomplete/write-refined-read.ts
-  LOOPS=verification/tests/stateful-source/loops.ts
-  TRANSFERS=verification/tests/stateful-source/loop-transfers.ts
-  PARTIAL=verification/tests/partial-claims.ts
-  CELLS=verification/tests/stateful-source/cell-contracts.ts
-  GENERIC_ID=verification/tests/stateful-source/generic-identity.ts
-  GENERIC_ALIASES=verification/tests/stateful-source/generic-aliases.ts
-  GENERIC_EXTENDS=verification/tests/stateful-source/generic-extends.ts
-  GENERIC_BODIES=verification/tests/stateful-source/generic-bodies.ts
-  NUMBERS=verification/tests/stateful-source/numbers.ts
-  MUTABLE_LOCALS=verification/tests/stateful-source/mutable-locals.ts
-
-  # Fixtures are independent and each is dominated by a container start, so
-  # they are built at once rather than in turn. Every one writes under its own
-  # name, and a failure inside a background build still stops the run.
-  building=()
-  build() { "$@" & building+=($!); }
-  build fixture source "$BASE"
-  build fixture cells "$CELL_SOURCE"
-  build fixture undefined "$UNDEFINED_SOURCE"
-  build fixture closures "$CLOSURES"
-  build fixture callables "$CALLABLES"
-  build fixture factories "$FACTORIES"
-  build fixture callable_thunks "$CALLABLE_THUNKS"
-  build fixture callable_cells "$CALLABLE_CELLS"
-  optional_arguments_fixture() {
-    fixture optional_arguments "$OPTIONAL_ARGUMENTS" &&
-      node verification/tools/tsc-claims.mts "$OPTIONAL_ARGUMENTS" --out "$WORK/optional_arguments.tsc"
-  }
-  build optional_arguments_fixture
-  default_arguments_fixture() {
-    fixture default_arguments "$DEFAULT_ARGUMENTS" &&
-      node verification/tools/tsc-claims.mts "$DEFAULT_ARGUMENTS" --out "$WORK/default_arguments.tsc"
-  }
-  build default_arguments_fixture
-  rest_arguments_fixture() {
-    fixture rest_arguments "$REST_ARGUMENTS" &&
-      node verification/tools/tsc-claims.mts "$REST_ARGUMENTS" --out "$WORK/rest_arguments.tsc"
-  }
-  build rest_arguments_fixture
-  # SKJS reads a rest parameter as a readonly array and rejects these; the
-  # rejection is the fixture, and TypeScript's claims carry the verification.
-  variadic_arguments_fixture() {
-    rejected_fixture variadic_arguments "$VARIADIC_ARGUMENTS" 2 &&
-      node verification/tools/tsc-claims.mts "$VARIADIC_ARGUMENTS" --out "$WORK/variadic_arguments.tsc"
-  }
-  build variadic_arguments_fixture
-  bound_arguments_fixture() {
-    rejected_fixture bound_arguments "$BOUND_ARGUMENTS" 2 &&
-      node verification/tools/tsc-claims.mts "$BOUND_ARGUMENTS" --out "$WORK/bound_arguments.tsc"
-  }
-  build bound_arguments_fixture
-  build fixture receiver_call "$RECEIVER_CALL"
-  build fixture callable_field "$CALLABLE_FIELD"
-  build fixture callable_guards "$CALLABLE_GUARDS"
-  build fixture callable_arity "$CALLABLE_ARITY"
-  build fixture callable_arguments "$CALLABLE_ARGUMENTS"
-  build fixture callbacks "$CALLBACKS"
-  build rejected_fixture counterexample "$COUNTEREXAMPLE" 2
-  build fixture negation "$NEGATION"
-  build fixture null-tests "$NULL_TESTS"
-  build fixture null-guard "$NULL_GUARD"
-  build rejected_fixture compound-stale "$COMPOUND_STALE" 2
-  build fixture refinement-controls "$CONTROLS"
-  build fixture loops "$LOOPS"
-  build fixture transfers "$TRANSFERS"
-  build fixture generic_id "$GENERIC_ID"
-  build fixture generic_aliases "$GENERIC_ALIASES"
-  build fixture generic_extends "$GENERIC_EXTENDS"
-  build fixture generic_bodies "$GENERIC_BODIES"
-  build fixture numbers "$NUMBERS"
-  build rejected_fixture mutable_locals "$MUTABLE_LOCALS"
-  build rejected_fixture loop-exit "$LOOP_EXIT"
-  build rejected_fixture singleton "$SINGLETON"
-  build rejected_fixture null-exit "$NULL_EXIT"
-  build rejected_fixture write-refined "$WRITE_REFINED" 2
-  records_fixture() {
-    node verification/tools/fragment-parse.mts verification/tests/stateful-source/records.ts > "$WORK/records.ast" &&
-      node verification/tools/tsc-claims.mts verification/tests/stateful-source/records.ts --out "$WORK/records.claims"
-  }
-  skjs_records_fixture() {
-    fixture records_skjs verification/tests/stateful-source/records.ts &&
-      node verification/tools/export-source-claims.mts verification/tests/stateful-source/records.ts --claims "$WORK/records_skjs.claims" --out "$WORK/records_skjs.normalized" --verifier "$VERIFIER"
-  }
-  mutable_guard_fixture() {
-    fixture mutable_guard verification/tests/stateful-source/captured-local-guards.ts &&
-      node verification/tools/fragment-parse.mts verification/tests/stateful-source/mutable-guard-effects.ts > "$WORK/mutable_guard_effects.ast" &&
-      node verification/tools/tsc-claims.mts verification/tests/stateful-source/mutable-guard-effects.ts --out "$WORK/mutable_guard_effects.claims"
-  }
-  named_units_fixture() {
-    fixture named_units verification/tests/stateful-source/named-unit-comparisons.ts &&
-      node verification/tools/tsc-claims.mts verification/tests/stateful-source/named-unit-comparisons.ts --out "$WORK/named_units.tsc"
-  }
-  mutable_params_fixture() {
-    fixture mutable_params verification/tests/stateful-source/mutable-parameters.ts &&
-      node verification/tools/tsc-claims.mts verification/tests/stateful-source/mutable-parameters.ts --out "$WORK/mutable_params.tsc"
-  }
-  build mutable_params_fixture
-  numeric_comparisons_fixture() {
-    fixture numeric_comparisons verification/tests/stateful-source/numeric-comparisons.ts &&
-      node verification/tools/tsc-claims.mts verification/tests/stateful-source/numeric-comparisons.ts --out "$WORK/numeric_comparisons.tsc" &&
-      node verification/tools/fragment-parse.mts verification/tests/stateful-source/numeric-comparison-boundary.ts > "$WORK/numeric_boundary.ast" &&
-      node verification/tools/tsc-claims.mts verification/tests/stateful-source/numeric-comparison-boundary.ts --out "$WORK/numeric_boundary.tsc"
-  }
-  numeric_heap_fixture() {
-    fixture numeric_heap verification/tests/stateful-source/mutable-locals-numeric.ts &&
-      node verification/tools/tsc-claims.mts verification/tests/stateful-source/mutable-locals-numeric.ts --out "$WORK/numeric_heap.tsc"
-  }
-  nullish_assignment_fixture() {
-    fixture nullish_assignment verification/tests/stateful-source/nullish-assignment.ts &&
-      node verification/tools/tsc-claims.mts verification/tests/stateful-source/nullish-assignment.ts --out "$WORK/nullish_assignment.tsc"
-  }
-  build nullish_assignment_fixture
-  build numeric_heap_fixture
-  build numeric_comparisons_fixture
-  build named_units_fixture
-  build mutable_guard_fixture
-  build records_fixture
-  build skjs_records_fixture
-  inferred_replacement_fixture() {
-    node verification/tools/fragment-parse.mts "$SNAPSHOTS/inferred-replacement.ts" > "$WORK/inferred_replacement.ast" &&
-      node verification/tools/tsc-claims.mts "$SNAPSHOTS/inferred-replacement.ts" --out "$WORK/inferred_replacement.tsc"
-  }
-  build inferred_replacement_fixture
-  DECLARATION_LIST=verification/tests/stateful-source/declaration-list.ts
-  declaration_list_fixture() {
-    fixture declaration_list "$DECLARATION_LIST" &&
-      node verification/tools/tsc-claims.mts "$DECLARATION_LIST" --out "$WORK/declaration_list.tsc"
-  }
-  build declaration_list_fixture
-  OBJECT_PATTERNS=verification/tests/stateful-source/object-patterns.ts
-  object_patterns_fixture() {
-    fixture object_patterns "$OBJECT_PATTERNS" &&
-      node verification/tools/tsc-claims.mts "$OBJECT_PATTERNS" --out "$WORK/object_patterns.tsc"
-  }
-  build object_patterns_fixture
-  CASTS=verification/tests/stateful-source/casts.ts
-  casts_fixture() {
-    fixture casts "$CASTS" &&
-      node verification/tools/tsc-claims.mts "$CASTS" --out "$WORK/casts.tsc"
-  }
-  build casts_fixture
-  STRINGS=verification/tests/stateful-source/strings.ts
-  strings_fixture() {
-    fixture strings "$STRINGS" &&
-      node verification/tools/tsc-claims.mts "$STRINGS" --out "$WORK/strings.tsc"
-  }
-  build strings_fixture
-  DISTINCT=verification/tests/stateful-source/distinct-cells.ts
-  DISTINCT_ALIASED=verification/tests/stateful-source/distinct-cells-aliased.ts
-  distinct_fixture() {
-    fixture distinct "$DISTINCT" &&
-      node verification/tools/tsc-claims.mts "$DISTINCT" --out "$WORK/distinct.tsc" &&
-      rejected_fixture distinct_aliased "$DISTINCT_ALIASED" 2 &&
-      node verification/tools/tsc-claims.mts "$DISTINCT_ALIASED" --out "$WORK/distinct_aliased.tsc"
-  }
-  build distinct_fixture
-  SINGLETON_OPERANDS=verification/tests/stateful-source/singleton-operands.ts
-  SINGLETON_CALL=verification/tests/stateful-source/singleton-operands-call.ts
-  singleton_fixture() {
-    fixture singleton_operands "$SINGLETON_OPERANDS" &&
-      node verification/tools/tsc-claims.mts "$SINGLETON_OPERANDS" --out "$WORK/singleton_operands.tsc" &&
-      rejected_fixture singleton_call "$SINGLETON_CALL" 2 &&
-      node verification/tools/tsc-claims.mts "$SINGLETON_CALL" --out "$WORK/singleton_call.tsc"
-  }
-  build singleton_fixture
-  COMPUTED_KEYS=verification/tests/stateful-source/computed-keys.ts
-  computed_keys_fixture() {
-    fixture computed_keys "$COMPUTED_KEYS" &&
-      node verification/tools/tsc-claims.mts "$COMPUTED_KEYS" --out "$WORK/computed_keys.tsc"
-  }
-  build computed_keys_fixture
-  ARITHMETIC=verification/tests/stateful-source/arithmetic.ts
-  ARITHMETIC_STRINGS=verification/tests/stateful-source/arithmetic-strings.ts
-  arithmetic_fixture() {
-    fixture arithmetic "$ARITHMETIC" &&
-      node verification/tools/tsc-claims.mts "$ARITHMETIC" --out "$WORK/arithmetic.tsc" &&
-      fixture arithmetic_strings "$ARITHMETIC_STRINGS"
-  }
-  build arithmetic_fixture
-  LOGICAL=verification/tests/stateful-source/logical-assignments.ts
-  LOGICAL_NUMBER=verification/tests/stateful-source/logical-assignments-number.ts
-  logical_fixture() {
-    fixture logical "$LOGICAL" &&
-      node verification/tools/tsc-claims.mts "$LOGICAL" --out "$WORK/logical.tsc" &&
-      rejected_fixture logical_number "$LOGICAL_NUMBER" 2 &&
-      node verification/tools/tsc-claims.mts "$LOGICAL_NUMBER" --out "$WORK/logical_number.tsc"
-  }
-  build logical_fixture
-  VOID_RESULTS=verification/tests/stateful-source/void-results.ts
-  void_fixture() {
-    fixture void_results "$VOID_RESULTS" &&
-      node verification/tools/tsc-claims.mts "$VOID_RESULTS" --out "$WORK/void_results.tsc"
-  }
-  build void_fixture
-  READONLY=verification/tests/stateful-source/readonly-views.ts
-  readonly_fixture() {
-    fixture readonly "$READONLY" &&
-      node verification/tools/tsc-claims.mts "$READONLY" --out "$WORK/readonly.tsc"
-  }
-  build readonly_fixture
-  ARRAYS=verification/tests/stateful-source/arrays.ts
-  arrays_fixture() {
-    fixture arrays "$ARRAYS" &&
-      node verification/tools/tsc-claims.mts "$ARRAYS" --out "$WORK/arrays.tsc"
-  }
-  build arrays_fixture
-  build snapshot_probes
-  for pid in "${building[@]}"; do wait "$pid" || exit 1; done
-
-  # The partial export must not change what ordinary checking reports: same
-  # status, same diagnostics, with claims recovered only under --keep-going.
-  skjs_run "$PARTIAL" > "$WORK/partial.plain" 2> "$WORK/partial.plain.err"
-  plain_status=$?
-  skjs_check "$PARTIAL" > "$WORK/partial.claims" 2> "$WORK/partial.err"
-  partial_status=$?
-  skjs_run --emit-skjs-type-claims --keep-going "$PARTIAL" > "$WORK/recovery.claims" 2> "$WORK/recovery.err"
-  recovery_status=$?
-  if [ "$plain_status" -eq 0 ] || [ "$plain_status" -ne "$partial_status" ] || [ "$recovery_status" -eq 0 ] ||
-     ! cmp -s "$WORK/partial.plain.err" "$WORK/partial.err"; then
-    echo "FAIL: partial export changed ordinary diagnostics or exit status"; exit 1
-  fi
-  if ! skjs_check "$CELLS" > "$WORK/cell.claims" 2> "$WORK/cell.err"; then
-    echo "FAIL: cell contract export setup"; cat "$WORK/cell.err"; exit 1
-  fi
-
-  run_test "Source claims and certificates" node verification/tests/stateful-source.mts        "$WORK/source.ast" "$WORK/source.claims" "$BASE" "$VERIFIER"
-  run_test "Mutable cells" node verification/tests/stateful-cells.mts        "$WORK/cells.ast" "$WORK/cells.claims" "$CELL_SOURCE" "$VERIFIER"
-  run_test "Undefined values and contracts" node verification/tests/undefined.mts        "$WORK/undefined.ast" "$WORK/undefined.claims" "$UNDEFINED_SOURCE" "$VERIFIER"
-  run_test "Closures" node verification/tests/stateful-closures.mts        "$WORK/closures.ast" "$WORK/closures.claims" "$CLOSURES" "$VERIFIER"
-  run_test "Callables" node verification/tests/callables.mts "$WORK/callables.ast" "$WORK/callables.claims" "$CALLABLES" "$VERIFIER"
-  run_test "Rest and spread arguments" node verification/tests/rest-arguments.mts "$WORK/rest_arguments.ast" "$WORK/rest_arguments.claims" "$REST_ARGUMENTS" "$VERIFIER" "$WORK/rest_arguments.tsc"
-  run_test "Variadic arguments" node verification/tests/variadic-arguments.mts "$WORK/variadic_arguments.ast" "$WORK/variadic_arguments.claims" "$VARIADIC_ARGUMENTS" "$VERIFIER" "$WORK/variadic_arguments.tsc" verification/tests/callables/variadic-holes.ts verification/tests/callables/variadic-order.ts verification/tests/callables/variadic-copy-element.ts
-  run_test "Omitted arguments" node verification/tests/optional-arguments.mts "$WORK/optional_arguments.ast" "$WORK/optional_arguments.claims" "$OPTIONAL_ARGUMENTS" "$VERIFIER" "$WORK/optional_arguments.tsc" "$WORK/default_arguments.ast" "$WORK/default_arguments.claims" "$DEFAULT_ARGUMENTS" "$WORK/default_arguments.tsc"
-  run_test "Bound arrow arguments" node verification/tests/bound-arguments.mts "$WORK/bound_arguments.ast" "$WORK/bound_arguments.claims" "$BOUND_ARGUMENTS" "$VERIFIER" "$WORK/bound_arguments.tsc"
-  run_test "Local arrow receiver calls" node verification/tests/receiver-call.mts "$WORK/receiver_call.ast" "$WORK/receiver_call.claims" "$RECEIVER_CALL" "$VERIFIER"
-  run_test "Initialized callable field" node verification/tests/function-field.mts "$WORK/callable_field.ast" "$WORK/callable_field.claims" "$CALLABLE_FIELD" "$VERIFIER"
-  run_test "Callable shape guards" node verification/tests/callable-guards.mts "$WORK/callable_guards.ast" "$WORK/callable_guards.claims" "$CALLABLE_GUARDS" "$VERIFIER"
-  run_test "Function/object receivers" node verification/tests/call-objects.mts "$VERIFIER"
-  run_test "Receivers and methods" node verification/tests/methods.mts "$VERIFIER"
-  run_test "Apply argument lists" node verification/tests/apply.mts "$VERIFIER"
-  run_test "Generic receivers" node verification/tests/generic-receivers.mts "$VERIFIER"
-  run_test "Call argument order" node verification/tests/callable-arity.mts "$WORK/callable_arity.ast" "$WORK/callable_arity.claims" "$CALLABLE_ARITY" "$VERIFIER"
-  run_test "Callable thunks" node verification/tests/callable-thunks.mts "$WORK/callable_thunks.ast" "$WORK/callable_thunks.claims" "$CALLABLE_THUNKS" "$VERIFIER"
-  run_test "Callable cells" node verification/tests/callable-cells.mts "$WORK/callable_cells.ast" "$WORK/callable_cells.claims" "$CALLABLE_CELLS" "$VERIFIER"
-  run_test "Callable arguments" node verification/tests/callable-arguments.mts "$WORK/callable_arguments.ast" "$WORK/callable_arguments.claims" "$CALLABLE_ARGUMENTS" "$VERIFIER"
-  run_test "Callable factories" node verification/tests/callable-factories.mts "$WORK/factories.ast" "$WORK/factories.claims" "$FACTORIES" "$VERIFIER"
-  run_test "Primitive callbacks and unsoundness witness" node verification/tests/primitive-callbacks.mts        "$WORK/callbacks.ast" "$WORK/callbacks.claims" "$CALLBACKS" "$VERIFIER"        "$WORK/counterexample.ast" "$WORK/counterexample.claims" "$COUNTEREXAMPLE"
-  run_test "Negation and claim repair" node verification/tests/negation.mts        "$WORK/negation.ast" "$WORK/negation.claims" "$NEGATION" "$VERIFIER"        "$WORK/loop-exit.ast" "$WORK/loop-exit.claims" "$LOOP_EXIT"        "$WORK/singleton.ast" "$WORK/singleton.claims" "$SINGLETON"
-  run_test "Null predicates" node verification/tests/null-tests.mts        "$WORK/null-tests.ast" "$WORK/null-tests.claims" "$NULL_TESTS" "$VERIFIER"        "$WORK/null-guard.ast" "$WORK/null-guard.claims" "$NULL_GUARD"        "$WORK/null-exit.ast" "$WORK/null-exit.claims" "$NULL_EXIT"        "$WORK/compound-stale.ast" "$WORK/compound-stale.claims" "$COMPOUND_STALE"
-  run_test "Refinement witness audit" node verification/tests/refinement-witnesses.mts "$VERIFIER"        "$WORK/counterexample.ast" "$WORK/counterexample.claims" "$COUNTEREXAMPLE"        "$WORK/compound-stale.ast" "$WORK/compound-stale.claims" "$COMPOUND_STALE"        "$WORK/refinement-controls.ast" "$WORK/refinement-controls.claims" "$CONTROLS"
-  run_test "Write observations and producer witnesses" node verification/tests/write-observations.mts        "$WORK/write-refined.ast" "$WORK/write-refined.claims" "$WRITE_REFINED"        "$WORK/compound-stale.ast" "$WORK/compound-stale.claims" "$COMPOUND_STALE" "$VERIFIER"
-  run_test "While loops" node verification/tests/stateful-loops.mts        "$WORK/loops.ast" "$WORK/loops.claims" "$LOOPS" "$VERIFIER"
-  run_test "Break and continue" node verification/tests/stateful-loop-transfers.mts        "$WORK/transfers.ast" "$WORK/transfers.claims" "$TRANSFERS" "$VERIFIER"
-  run_test "Producer-neutral claims" node verification/tests/source-claims.mts "$VERIFIER"
-  run_test "Source heap assertions" node verification/tests/source-heap-claims.mts "$VERIFIER"
-  run_test "Claim export" node verification/tests/source-claim-export.mts        "$WORK/closures.claims" "$CLOSURES" "$WORK/partial.claims" "$PARTIAL"        "$WORK/recovery.claims" "$VERIFIER" "$WORK/partial.err"
-  run_test "Partial collection" node verification/tests/partial-claims.mts        "$WORK/partial.claims" "$WORK/recovery.claims" "$PARTIAL" "$VERIFIER" "$WORK/partial.err"
-  run_test "Annotated source reports" node verification/tests/annotated-source.mts        "$WORK/closures.claims" "$CLOSURES" "$VERIFIER"
-  run_test "Obligation diagnostics" node verification/tests/obligation-diagnostics.mts "$VERIFIER"
-  run_test "Report viewer" node verification/tests/report-viewer.mts
-  run_test "Candidate editing" node verification/tests/candidate-editor.mts "$WORK/closures.claims"
-  run_test "Inferred replacement" node verification/tests/inferred-replacement.mts "$WORK/inferred_replacement.ast" "$WORK/snapshots.claims" "$WORK/inferred_replacement.tsc" "$SNAPSHOTS/inferred-replacement.ts" "$VERIFIER"
-  run_test "Export snapshots" node verification/tests/export-snapshots.mts "$WORK/snapshots.claims" "$SNAPSHOTS"
-  run_test "Declaration lists" node verification/tests/declaration-list.mts "$WORK/declaration_list.ast" "$WORK/declaration_list.claims" "$WORK/declaration_list.tsc" "$DECLARATION_LIST" "$VERIFIER"
-  run_test "Object patterns" node verification/tests/object-patterns.mts "$WORK/object_patterns.ast" "$WORK/object_patterns.claims" "$WORK/object_patterns.tsc" "$OBJECT_PATTERNS" "$VERIFIER"
-  run_test "Casts" node verification/tests/casts.mts "$WORK/casts.ast" "$WORK/casts.claims" "$WORK/casts.tsc" "$CASTS" "$VERIFIER"
-  run_test "Strings" node verification/tests/strings.mts "$WORK/strings.ast" "$WORK/strings.claims" "$WORK/strings.tsc" "$STRINGS" "$VERIFIER"
-  run_test "Distinct cells" node verification/tests/distinct-cells.mts "$WORK/distinct.ast" "$WORK/distinct.claims" "$WORK/distinct.tsc" "$DISTINCT" "$WORK/distinct_aliased.ast" "$WORK/distinct_aliased.tsc" "$DISTINCT_ALIASED" "$VERIFIER"
-  run_test "Singleton operands" node verification/tests/singleton-operands.mts "$WORK/singleton_operands.ast" "$WORK/singleton_operands.claims" "$WORK/singleton_operands.tsc" "$SINGLETON_OPERANDS" "$WORK/singleton_call.ast" "$WORK/singleton_call.tsc" "$SINGLETON_CALL" "$VERIFIER"
-  run_test "Computed keys" node verification/tests/computed-keys.mts "$WORK/computed_keys.ast" "$WORK/computed_keys.claims" "$WORK/computed_keys.tsc" "$COMPUTED_KEYS" "$VERIFIER"
-  run_test "Arithmetic" node verification/tests/arithmetic.mts "$WORK/arithmetic.ast" "$WORK/arithmetic.claims" "$WORK/arithmetic.tsc" "$ARITHMETIC" "$WORK/arithmetic_strings.ast" "$WORK/arithmetic_strings.claims" "$ARITHMETIC_STRINGS" "$VERIFIER"
-  run_test "Logical assignments" node verification/tests/logical-assignments.mts "$WORK/logical.ast" "$WORK/logical.claims" "$WORK/logical.tsc" "$LOGICAL" "$WORK/logical_number.ast" "$WORK/logical_number.tsc" "$LOGICAL_NUMBER" "$VERIFIER"
-  run_test "Void results" node verification/tests/void-results.mts "$WORK/void_results.ast" "$WORK/void_results.claims" "$WORK/void_results.tsc" "$VOID_RESULTS" "$VERIFIER"
-  run_test "Readonly views" node verification/tests/readonly-views.mts "$WORK/readonly.ast" "$WORK/readonly.claims" "$WORK/readonly.tsc" "$READONLY" "$VERIFIER"
-  run_test "Arrays" node verification/tests/arrays.mts "$WORK/arrays.ast" "$WORK/arrays.claims" "$WORK/arrays.tsc" "$ARRAYS" "$VERIFIER"
-  run_test "Closed SKJS operations" node verification/tests/skjs-operations.mts "$WORK/source.claims" "$BASE" "$VERIFIER"
-  run_test "Generic identity source" node verification/tests/generic-source.mts "$WORK/generic_id.ast" "$WORK/generic_id.claims" "$GENERIC_ID" "$VERIFIER"
-  run_test "Generic alias source" node verification/tests/generic-aliases.mts "$WORK/generic_aliases.ast" "$WORK/generic_aliases.claims" "$GENERIC_ALIASES" "$VERIFIER"
-  run_test "Generic extends source" node verification/tests/generic-extends.mts "$WORK/generic_extends.ast" "$WORK/generic_extends.claims" "$GENERIC_EXTENDS" "$VERIFIER"
-  run_test "Multi-field records · SKJS" node verification/tests/records.mts "$WORK/records_skjs.ast" "$WORK/records_skjs.normalized" verification/tests/stateful-source/records.ts "$VERIFIER" "$WORK/records_skjs.claims"
-  run_test "Multi-field records · TypeScript" node verification/tests/records.mts "$WORK/records.ast" "$WORK/records.claims" verification/tests/stateful-source/records.ts "$VERIFIER"
-  run_test "Mutable parameters" node verification/tests/mutable-parameters.mts "$WORK/mutable_params.ast" "$WORK/mutable_params.claims" "$WORK/mutable_params.tsc" verification/tests/stateful-source/mutable-parameters.ts "$VERIFIER"
-  run_test "Nullish assignment" node verification/tests/nullish-assignment.mts "$WORK/nullish_assignment.ast" "$WORK/nullish_assignment.claims" "$WORK/nullish_assignment.tsc" verification/tests/stateful-source/nullish-assignment.ts "$VERIFIER"
-  run_test "Numeric heap facts" node verification/tests/numeric-heap-facts.mts "$WORK/numeric_heap.ast" "$WORK/numeric_heap.claims" "$WORK/numeric_heap.tsc" verification/tests/stateful-source/mutable-locals-numeric.ts "$VERIFIER"
-  run_test "Numeric singleton comparisons" node verification/tests/numeric-comparisons.mts "$WORK/numeric_comparisons.ast" "$WORK/numeric_comparisons.claims" "$WORK/numeric_comparisons.tsc" verification/tests/stateful-source/numeric-comparisons.ts "$VERIFIER" "$WORK/numeric_boundary.ast" "$WORK/numeric_boundary.tsc" verification/tests/stateful-source/numeric-comparison-boundary.ts
-  run_test "Named unit comparisons" node verification/tests/named-unit-comparisons.mts "$WORK/named_units.ast" "$WORK/named_units.claims" "$WORK/named_units.tsc" verification/tests/stateful-source/named-unit-comparisons.ts "$VERIFIER"
-  run_test "Captured mutable guards" node verification/tests/mutable-guards.mts "$WORK/mutable_guard.ast" "$WORK/mutable_guard.claims" verification/tests/stateful-source/captured-local-guards.ts "$WORK/mutable_guard_effects.ast" "$WORK/mutable_guard_effects.claims" verification/tests/stateful-source/mutable-guard-effects.ts "$VERIFIER"
-  run_test "Mutable locals" node verification/tests/mutable-locals.mts "$WORK/mutable_locals.ast" "$WORK/mutable_locals.claims" "$MUTABLE_LOCALS" "$VERIFIER"
-  run_test "Numbers" node verification/tests/numbers.mts "$WORK/numbers.ast" "$WORK/numbers.claims" "$NUMBERS" "$VERIFIER"
-  run_test "Generic body source" node verification/tests/generic-bodies.mts "$WORK/generic_bodies.ast" "$WORK/generic_bodies.claims" "$GENERIC_BODIES" "$VERIFIER"
-  run_test "TypeScript claims" node verification/tests/tsc-claims.mts "$VERIFIER"
-  # The drafts kept beside corpus sources: still about those sources, and still
-  # verifying. A stale one is ignored by the reader and would go unnoticed here.
-  run_test "Kept drafts" node verification/tests/kept-drafts.mts
-  run_test "Cell contract export" "$REPO/verification/lean/.lake/build/bin/cell_claim_tests"        "$WORK/cell.claims" "$CELLS"
-fi
 report_tests
 
 completed=1

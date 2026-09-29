@@ -457,11 +457,6 @@ export function decodeGraph(value: unknown): TypeGraph {
   // Checked field by field above: this is where that becomes a type.
   return value as TypeGraph;
 }
-/** JSON is the complete editable graph syntax; decoding is strict and lossless. */
-export const parseGraph = (text: string): TypeGraph =>
-  decodeGraph(JSON.parse(text));
-export const printGraph = (graph: TypeGraph): string =>
-  JSON.stringify(decodeGraph(graph), null, 2);
 export const printLabels = (labels: Labels): string =>
   labels.length ? labels.map((l) => `#${l}`).join(" | ") : "never";
 /** The receiver is shown as a `this` parameter; the graph's own rows carry no

@@ -1,7 +1,5 @@
 import type { ObligationView } from "../tools/diagnostic-view.mts";
 import type { ObligationDiagnostic } from "../tools/diagnostic.mts";
-import type { SkjsClaims } from "../tools/skjs-claims.mts";
-import type { SourceClaims } from "../tools/source-claims.mts";
 import type { Span } from "../tools/span.mts";
 import type { RigidParameter } from "../tools/rigid.mts";
 /* Declared where it is computed: the reader prints the bound, it does not
@@ -28,9 +26,8 @@ export interface GroupFile {
   about: string;
 }
 
-/** A named set of sources the picker offers, with what the set is. The label
- * carries a claim — "unsafe programs accepted" is about SKJS — so the note
- * says whose claim it is rather than leaving the heading to imply it. */
+/** A named set of sources the picker offers, with a note saying what the set
+ * is. */
 export interface ExampleGroup {
   label: string;
   note?: string;
@@ -38,7 +35,7 @@ export interface ExampleGroup {
 }
 
 /** Which checker supplied the claims a report displays. */
-export type Producer = "skjs" | "tsc" | "ocaml" | "manual" | "edited candidate";
+export type Producer = "tsc" | "ocaml";
 
 /** How a code unit is named to a reader: a function by its name, the module's
  * top-level code, which has none, as its initialization. */
@@ -133,7 +130,7 @@ export interface Entry {
 export interface MissingSite {
   kind: "expression" | "environment";
   pos: Span;
-  /** The syntax kind at that site, for a reader choosing what to write. */
+  /** The syntax kind at that site. */
   syntax?: string;
 }
 
@@ -182,38 +179,17 @@ export interface ReportFunction {
 }
 
 /**
- * A function the source declares that the producer said nothing about. The
- * reader offers to write its contract, so the manifest carries what writing
- * one needs: where the declaration is, its parameter names in source order,
- * and the sites a claim would have to be added at.
+ * A function the source declares that the producer said nothing about: where
+ * the declaration is, and the sites a claim attaches to.
  */
 export interface MissingFunction {
   name: string;
   namePos: Span;
   pos: Span;
-  parameters: string[];
   missingSites: MissingSite[];
 }
 
-/**
- * What changed against a baseline report, where one was compared. Each entry
- * is one site, in the same vocabulary the sites themselves use; the reader
- * shows it as a gap, because an edited claim is a place to look rather than a
- * result. `before` and `after` are the claims as they were written.
- */
-export interface Comparison {
-  baselineProducer: Producer | string;
-  changes: {
-    kind: string;
-    function: string;
-    span: Span;
-    status: "added" | "removed" | "changed";
-    before?: unknown;
-    after?: unknown;
-  }[];
-}
-
-/** A span the producer did not visit, or an edit recorded against a baseline. */
+/** A span the producer did not visit. */
 export interface Gap {
   id: string;
   pos: Span;
@@ -262,9 +238,6 @@ export interface Manifest {
   /** The producer's own stderr for this file, kept verbatim for display. */
   diagnostics?: string;
   missingFunctions?: MissingFunction[];
-  /** Present when the report was compared against a baseline. */
-  comparison?: Comparison;
-  baselinePath?: string;
   /** Fingerprints of what produced this report, for provenance only. */
   claimsSha256?: string;
   verifierSha256?: string;
@@ -283,22 +256,6 @@ export interface CollectionRun {
   durationMs: number;
   verified: boolean;
 }
-
-/** An editable copy of the producer's claims, kept beside the original. The
- * format says which document the copy is, and each is declared where it is
- * owned: the producer's own export in tools/skjs-claims.mts, the normalized
- * sidecar in tools/source-claims.mts, which names only rows of its own
- * table, as SKJS's export does. A candidate arriving from outside is
- * checked for its source identity, not its shape; what actually validates the
- * document is the verifier the report is built by. */
-export type Candidate =
-  | { format: "skjs"; file: string; sourceSha256: string; claims: SkjsClaims }
-  | {
-      format: "source-claims";
-      file: string;
-      sourceSha256: string;
-      claims: SourceClaims<number>;
-    };
 
 /** What a pipeline run decided (`ocaml-producer/check.mts`), as the page shows
  * it: the outcome and the phase that reached it, with the functions a verified
@@ -320,17 +277,4 @@ export interface Bundle {
   manifest: Manifest;
   annotated?: string;
   collection?: CollectionRun;
-  /** The producer's own claims, as an editable copy. */
-  candidate?: Candidate;
-  /**
-   * A draft kept beside the source, where one exists and is about this exact
-   * source. It is a record of an edit, never a result: what it claims is
-   * checked before anything is displayed.
-   */
-  draft?: Candidate;
-  /**
-   * Why a draft beside the source was not used. A file that silently does
-   * nothing is worse than one that says what is wrong with it.
-   */
-  stale?: string;
 }

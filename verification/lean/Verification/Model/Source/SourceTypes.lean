@@ -5,16 +5,9 @@ import Verification.Model.Source.RequestJson
 are labels of a store (`LabelStore.Store`): extraction interns each compound
 type the program mentions, so a label exists only because something used it,
 and a clause the store lacks has no label rather than a wrong one. Primitive
-unions translate exactly into the four primitive labels. The finite table of
-clause rows in label order, which starts with the four primitive values, is
-the store the pipeline runs on (`RequestJson.Table`). -/
+unions translate into the four primitive labels. -/
 namespace Verification.Model.SourceTypes
 open ProgramTyping PositiveNormalization PositiveGraphs PositiveRules LabelStore
-open RequestJson (Row)
-
-/-- A table of rows in label order: clause rows, and the scheme and parameter
-rows generic methods need. -/
-abbrev Table := RequestJson.Table
 
 /-- The field an array object holds its store in. No source name spells it. -/
 def storeField : PropKey := CallArguments.arrayStoreField
@@ -52,10 +45,6 @@ the keys `ArrayProto` provides plus `constructor` (`arrayExcludedKeys`), among
 its own keys, so a read of one of them continues at the prototype. -/
 def arrayClause (excluded : List PropKey) (store proto : ι) (readonly : Bool) : Clause (List ι) :=
   PositiveNormalization.arrayClauseOf [store] [proto] excluded readonly
-
-/-- Labels 0 to 3: null, true, false, undefined. -/
-def initial : Table := [.clauses [.nul], .clauses [.boolLit true], .clauses [.boolLit false],
-  .clauses [.undef]]
 
 /-- The keys an array cannot own: `constructor` and those `ArrayProto`'s row
 (`proto`) names, its fields, views, optional fields and methods, the reserved
@@ -163,13 +152,6 @@ def canonical (T : σ) (A : List ι) : List ι :=
     else label)
     |>.eraseDups.mergeSort Labels.le
 
-/-- Keep the store as it was when a translation fails, so a rejected candidate
-leaves no rows behind. -/
-def attempt (m : Lowering σ α) : Lowering σ (Except String α) := fun T =>
-  match m.run T with
-  | .ok (a, T') => .ok (.ok a, T')
-  | .error e => .ok (.error e, T)
-
 end
 
 /-- A source annotation in claim form with the named binders read as their
@@ -196,107 +178,6 @@ partial def binderNames : Lean.Json → List String
     | some "param", some name => [name]
     | _, _ => (kvs.toList.flatMap fun (_, v) => binderNames v).eraseDups
   | _ => []
-
-/-! ### The finite table
-
-What the finite table's labels mean, row by row: a label interned for a
-clause means exactly that clause, and the four primitive labels the four
-primitive values. -/
-
-/-- A finite table's intersections, for the SKJS export's tables: the
-normalized conjunction of clause rows (`meetMany`), interned; an empty one is
-refused, and so is an operand that is no clause row, which only the source
-path's equations state (`EquationLowering.meetOf`). -/
-instance : Meets Table Nat where
-  meet parts := fun T => do
-    let G := graph T
-    if parts.any (fun A => A.isEmpty || !G.plainTy A) then
-      throw "an intersection in a finite table is of clause rows"
-    let cs := meetMany (parts.map (clausesOf G))
-    if cs.isEmpty then throw "the intersection is empty: its operands have no value in common"
-    let (T, l) := RequestJson.Table.intern T cs
-    return ([l], T)
-
-/-- A missing clause gets the table length, never a different contract. -/
-def label (T : Table) (c : Clause (List Nat)) : Nat := T.idxOf (GraphRow.clauses [c])
-
-/-- Give a clause a row if it lacks one. Appending keeps every existing label. -/
-def intern (T : Table) (c : Clause (List Nat)) : Table := (RequestJson.Table.intern T [c]).1
-
-theorem use_run (c : Clause (List Nat)) (T : Table) :
-    (use c).run T = .ok (label (intern T c) c, intern T c) := rfl
-
-theorem attempt_run (m : Lowering Table α) (T : Table) :
-    (attempt m).run T = .ok (match m.run T with
-      | .ok (a, T') => (.ok a, T') | .error e => (.error e, T)) := by
-  unfold attempt StateT.run
-  split <;> simp_all
-
-theorem mem_intern (T : Table) (c : Clause (List Nat)) : GraphRow.clauses [c] ∈ intern T c := by
-  unfold intern RequestJson.Table.intern
-  split
-  · assumption
-  · exact List.mem_append_right _ (List.mem_singleton.mpr rfl)
-
-theorem intern_prefix (T : Table) (c : Clause (List Nat)) : T <+: intern T c := by
-  unfold intern RequestJson.Table.intern
-  split
-  · exact List.prefix_rfl
-  · exact List.prefix_append _ _
-
-theorem mem_of_prefix {T T' : Table} {d : Clause (List Nat)} (h : T <+: T') (hd : GraphRow.clauses [d] ∈ T) :
-    GraphRow.clauses [d] ∈ T' := h.subset hd
-
-/-- Labels already in use keep their index in every later table. -/
-theorem label_of_prefix {T T' : Table} {d : Clause (List Nat)} (h : T <+: T') (hd : GraphRow.clauses [d] ∈ T) :
-    label T' d = label T d := by
-  obtain ⟨l, rfl⟩ := h
-  simp [label, List.idxOf_append, hd]
-
-theorem use_spec {c : Clause (List Nat)} {T T' : Table} {l : Nat}
-    (h : (use c).run T = .ok (l, T')) : GraphRow.clauses [c] ∈ T' ∧ l = label T' c ∧ T <+: T' := by
-  rw [use_run] at h
-  cases h
-  exact ⟨mem_intern T c, rfl, intern_prefix T c⟩
-
-theorem label_exact {T : Table} {c : Clause (List Nat)} (hc : GraphRow.clauses [c] ∈ T) :
-    expand (graph T) [label T c] = [c] := by
-  have hi := List.idxOf_lt_length_iff.mpr hc
-  have hx := List.getElem?_eq_some_iff.mpr ⟨hi,List.getElem_idxOf hi⟩
-  have hp := RequestJson.tableGraph_clauses_row hx
-  simp [expand, clausesOf, graph, label, NormalGraph.plainTy, hp.1, hp.2]
-
-/-- A labelled clause means exactly that clause, read over the same table. -/
-theorem label_meaning {T : Table} {c : Clause (List Nat)} (hc : GraphRow.clauses [c] ∈ T) (n W v) :
-    meaning (graph T) [label T c] n W v ↔ clauseSem (graph T) c n W v := by
-  have hp : (graph T).plainTy [label T c] = true := by
-    have h := label_exact hc
-    exact plain_of_mem_expand (c := c) (by simp [h])
-  rw [expand_sem _ _ hp, label_exact hc]
-  simp [semList, Tower.setSem]
-
-theorem graph_initial {T : Table} (h : initial <+: T) {i : Nat} (hi : i < initial.length) :
-    graph T i = initial[i].union := by
-  obtain ⟨l, rfl⟩ := h
-  have hx : (initial ++ l)[i]? = some initial[i] := by
-    rw [List.getElem?_append_left hi, List.getElem?_eq_getElem hi]
-  have hr : ∀ j (hj : j < initial.length), ∃ cs, initial[j] = .clauses cs := by
-    intro j hj
-    match j, hj with
-    | 0, _ => exact ⟨_, rfl⟩ | 1, _ => exact ⟨_, rfl⟩
-    | 2, _ => exact ⟨_, rfl⟩ | 3, _ => exact ⟨_, rfl⟩
-  obtain ⟨cs, hcs⟩ := hr i hi
-  rw [hcs] at hx ⊢
-  exact (RequestJson.tableGraph_clauses_row hx).2
-
-theorem initial_plain {T : Table} (h : initial <+: T) {i : Nat} (hi : i < initial.length) :
-    (graph T).plain i = true := by
-  have hc := graph_initial h hi
-  match i, hi with
-  | 0, _ => exact NormalGraph.plain_of_clauses (c := .nul) (by rw [hc]; simp [initial, GraphRow.union])
-  | 1, _ => exact NormalGraph.plain_of_clauses (c := .boolLit true) (by rw [hc]; simp [initial, GraphRow.union])
-  | 2, _ => exact NormalGraph.plain_of_clauses (c := .boolLit false) (by rw [hc]; simp [initial, GraphRow.union])
-  | 3, _ => exact NormalGraph.plain_of_clauses (c := .undef) (by rw [hc]; simp [initial, GraphRow.union])
 
 def admits (t : Claim.Ty) (v : Claim.Val) : Bool := t.atoms.any (Claim.inhabits v)
 
@@ -326,9 +207,9 @@ def value : Claim.Val → Except String Tm
   | .vstr s => .ok (.str s)
   | .vbigint i => .ok (.bigint i)
 
-/-- Numbers are interned rather than given fixed rows, because the singletons
-are unbounded: the first four labels stay exactly the four primitive values,
-so every existing label and every proof about them is untouched. -/
+/-- Numbers, strings, bigints and symbols are interned rather than given fixed
+labels, because their singletons are unbounded; the four fixed labels are the
+primitive values. -/
 def numberLabels (t : Claim.Ty) : Lowering σ (Ty ι) := do
   let mut out := []
   for a in t.atoms do
@@ -355,10 +236,8 @@ def isNumberAtom : Claim.Atom → Bool
   | .num | .numLit _ | .str | .strLit _ | .void | .bigint | .bigintLit _ | .symbol => true
   | _ => false
 
-/-- One arm of a union, translated where the table can grow: its numbers are
-interned and its fixed primitives translate exactly as before. `translate` is
-the pure path and names only the four fixed labels, which is what a table that
-cannot grow needs; wherever one can grow, a number belongs in it. -/
+/-- One arm of a union: its numbers and strings interned, its fixed
+primitives translated to the four fixed labels (`translate`). -/
 def translateArm (t : Claim.Ty) : Lowering σ (Ty ι) := do
   -- `unknown` is semantic top: every value, and no operation through it.
   if t.top then return [← use .top]
@@ -370,112 +249,4 @@ def translateArm (t : Claim.Ty) : Lowering σ (Ty ι) := do
 
 end
 
-/-- This characterization also rules out extra nonprimitive modeled values. -/
-theorem encode_meaning {T : Table} (h : initial <+: T) (t : Claim.Ty) (n W v) :
-    meaning (graph T) (encode t) n W v ↔
-      (admits t .vnull = true ∧ v = .nul) ∨
-      (admits t (.vbool true) = true ∧ v = .tru) ∨
-      (admits t (.vbool false) = true ∧ v = .fls) ∨
-      (admits t .vundef = true ∧ v = .undef) := by
-  have h0 : graph T 0 = [.nul] := graph_initial h (by decide)
-  have h1 : graph T 1 = [.boolLit true] := graph_initial h (by decide)
-  have h2 : graph T 2 = [.boolLit false] := graph_initial h (by decide)
-  have h3 : graph T 3 = [.undef] := graph_initial h (by decide)
-  have hp : (graph T).plainTy (encode t) = true := by
-    simp only [NormalGraph.plainTy, List.all_eq_true]
-    intro i hi
-    have : i < initial.length := by
-      simp only [encode, List.mem_append] at hi
-      simp [initial]
-      rcases hi with ((hi | hi) | hi) | hi <;> split at hi <;> simp_all
-    exact initial_plain h this
-  rw [expand_sem _ _ hp, expand_of_plain hp]
-  cases hn : admits t .vnull <;> cases ht : admits t (.vbool true) <;>
-    cases hf : admits t (.vbool false) <;> cases hu : admits t .vundef <;>
-    simp [encode, hn, ht, hf, hu, clausesOf, h0, h1, h2, h3, Tower.setSem, rowSem,
-      realmInvariant_iff_of_not_record (show (Clause.nul : Clause (List Nat)).record = false from rfl),
-      realmInvariant_iff_of_not_record (show (Clause.undef : Clause (List Nat)).record = false from rfl),
-      realmInvariant_iff_of_not_record (show (Clause.boolLit true : Clause (List Nat)).record = false from rfl),
-      realmInvariant_iff_of_not_record (show (Clause.boolLit false : Clause (List Nat)).record = false from rfl),
-      semWithArgs, nulT, undefT]
-
-/-- No atom of the primitive fragment admits a number, so a numeric value is
-outside every type that fragment can state. `value` decodes one because the
-number labels are interned elsewhere; this keeps the pure path exact. -/
-theorem supported_not_num {a : Claim.Atom} (h : supportedAtom a = true) (b : UInt64) :
-    Claim.inhabits (.vnum b) a = false := by
-  cases a <;> simp_all [supportedAtom, Claim.inhabits]
-
-/-- Likewise no atom of the primitive fragment admits a string. -/
-theorem supported_not_str {a : Claim.Atom} (h : supportedAtom a = true) (s : String) :
-    Claim.inhabits (.vstr s) a = false := by
-  cases a <;> simp_all [supportedAtom, Claim.inhabits]
-
-/-- Likewise no atom of the primitive fragment admits a bigint. -/
-theorem supported_not_bigint {a : Claim.Atom} (h : supportedAtom a = true) (i : Int) :
-    Claim.inhabits (.vbigint i) a = false := by
-  cases a <;> simp_all [supportedAtom, Claim.inhabits]
-
-/-- Supported claim-value membership is preserved in both directions. -/
-theorem translate_exact {T : Table} (hT : initial <+: T) {t : Claim.Ty} {A u v}
-    (ht : translate t = .ok A) (hv : value u = .ok v) (n W) :
-    Claim.mem u t ↔ meaning (graph T) A n W v := by
-  unfold translate at ht
-  split at ht
-  · rename_i h
-    simp only [Bool.and_eq_true] at h
-    have htop : t.top = false := by simpa using h.1
-    cases ht
-    rw [encode_meaning hT]
-    cases u <;> simp only [value] at hv
-    all_goals try contradiction
-    · cases hv
-      simp [Claim.mem, htop, admits, List.any_eq_true]
-    · cases hv
-      simp [Claim.mem, htop, admits, List.any_eq_true]
-    · -- A number: neither side holds, for the same reason.
-      rename_i b
-      cases hv
-      have hall := List.all_eq_true.mp h.2
-      have hno : ∀ a ∈ t.atoms, Claim.inhabits (.vnum b) a = false :=
-        fun a ha => supported_not_num (hall a ha) b
-      simp only [Claim.mem, htop, admits, List.any_eq_true, Bool.false_eq_true,
-        false_or, encode, not_exists]
-      simpa using hno
-    · -- A string: neither side holds, for the same reason.
-      rename_i s
-      cases hv
-      have hall := List.all_eq_true.mp h.2
-      have hno : ∀ a ∈ t.atoms, Claim.inhabits (.vstr s) a = false :=
-        fun a ha => supported_not_str (hall a ha) s
-      simp only [Claim.mem, htop, admits, List.any_eq_true, Bool.false_eq_true,
-        false_or, encode, not_exists]
-      simpa using hno
-    · rename_i b
-      cases b <;> cases hv <;> simp [Claim.mem, htop, admits, List.any_eq_true]
-    · -- A bigint: neither side holds, for the same reason.
-      rename_i i
-      cases hv
-      have hall := List.all_eq_true.mp h.2
-      have hno : ∀ a ∈ t.atoms, Claim.inhabits (.vbigint i) a = false :=
-        fun a ha => supported_not_bigint (hall a ha) i
-      simp only [Claim.mem, htop, admits, List.any_eq_true, Bool.false_eq_true,
-        false_or, encode, not_exists]
-      simpa using hno
-  · contradiction
-
-/-- Exact arrow interpretation, including its contravariant receiver and
-domain, over any table holding the row: the one-domain call contract, whatever
-code meets it. -/
-theorem arrow_exact {T : Table} {Rc D R : Ty Nat} {effect : CallEffects.Effect}
-    (hm : GraphRow.clauses [.arrs [⟨Rc,[D],R,effect⟩] []] ∈ T) (n W v) :
-    meaning (graph T) [label T (.arrs [⟨Rc,[D],R,effect⟩] [])] n W v ↔
-      CallEffects.callsT [⟨meaning (graph T) Rc, [meaning (graph T) D], meaning (graph T) R,effect⟩] n W v := by
-  rw [label_meaning hm]
-  simp only [clauseSem, rowSem, PositiveNormalization.semWithArgs, List.map_cons, List.map_nil]
-  exact ⟨fun h => h.1.1, fun h => ⟨⟨h, h.1, by simp⟩, realmInvariant_of_not_record rfl _ _ _⟩⟩
-
-#print axioms arrow_exact
-#print axioms translate_exact
-#print axioms label_meaning
 end Verification.Model.SourceTypes

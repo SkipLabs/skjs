@@ -108,17 +108,6 @@ survive and what each one shares, and the checks that remain dynamic because
 Skip cannot express them statically. Keep any further progress in that
 document; do not create handoff files.
 
-## Measuring checker repair tests
-
-When adding or regrouping repair regressions, run `make verify-census` in the
-checkout containing their commits. It selects the repair arc's committed
-TypeScript functions; `make verify-examples` only measures the curated viewer
-examples, and native Skip tests are outside the source corpus. Review changed
-producer outcomes and refusal reasons before recording `UPDATE=1`. Keep an
-independent regression family in its own file when unrelated top-level aliases
-would otherwise prevent meaningful extraction; do not simplify a witness to
-make it verify. Report rejected, gated and verified outcomes separately.
-
 ## Detailed Guides
 
 Read these before starting the relevant task:

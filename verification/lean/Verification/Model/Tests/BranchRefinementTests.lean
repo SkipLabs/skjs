@@ -3,11 +3,10 @@ import Verification.Model.Source.SourceTypes
 namespace Verification.Model.BranchRefinementTests
 open Lean ProgramTyping ControlFlow RequestJson BranchRefinement
 
-private def ok (r : Except String α) : Bool := match r with
-  | .ok _ => true
-  | .error _ => false
-private def T : SourceTypes.Table := SourceTypes.initial ++ RequestJson.rows [[.refs [(valueField, [1,2])] [] []]]
-private def G := SourceTypes.graph T
+/-- 0 null, 1 true, 2 false, 3 undefined, 4 a cell holding a Boolean. -/
+private def types : List (List (PositiveNormalization.Clause (List Nat))) :=
+  [[.nul], [.boolLit true], [.boolLit false], [.undef], [.refs [(valueField, [1,2])] [] []]]
+private def G : PositiveGraphs.NormalGraph Nat := .ofRows fun i => types[i]?.getD []
 
 -- Tag observations split explicit unions without inventing a new type label.
 #guard tagSlice G [0,1,2] .isNul true == [0]
@@ -73,52 +72,6 @@ example : ObservedSub mixedWithNull [0] [1] (.tag .isNul true) := by
 #guard !checkObserved G [[1,2]] [[1]] 0 (.boolean true) (some [0]) []
 #guard !checkObserved G [[1,2]] [[1]] 0 (.boolean true) (some [0,0]) [.subset]
 
-private def request (v : Tm) : Request RequestJson.Table Nat :=
-  ⟨T,
-    [⟨v,.bind 1,none⟩, ⟨.var 0,.branchBind ⟨2,some [0,1]⟩ ⟨3,some [0,1]⟩,none⟩,
-     ⟨.var 0,.ret,none⟩, ⟨.var 0,.ret,none⟩],
-    [⟨[],[1,2]⟩,⟨[[1,2]],[1,2]⟩,⟨[[1],[1,2]],[1,2]⟩,⟨[[2],[1,2]],[1,2]⟩],
-    [1,2],0,[], []⟩
-
-private def roundtrip (r : Request RequestJson.Table Nat) : Except String Unit := do
-  let input ← Json.parse (toJson r).compress
-  -- Search only the types the request mentions.
-  let labels := ([0,1,2,3] ++ r.result ++ r.inputs.flatten ++
-    r.claims.flatMap (fun (c : CertificateProducer.PointClaim Nat) => c.type ++ c.context.flatten)).eraseDups
-  let evidence ← RequestJson.produceJson RequestJson.Table input 8 [] [] [] (some labels)
-  verifyJson RequestJson.Table input (← Json.parse evidence.compress)
-
-#guard ok (roundtrip (request .tru))
-#guard ok (roundtrip (request .fls))
-#guard !ok (roundtrip { request .tru with program := ((request .tru).program.set 1
-  ⟨.var 0,.branchBind ⟨3,some [0,1]⟩ ⟨2,some [0,1]⟩,none⟩) })
-#guard !ok (roundtrip { request .tru with claims := (request .tru).claims.set 3 ⟨[[1],[1,2]],[1,2]⟩ })
-#guard !ok (roundtrip { request .tru with claims := (request .tru).claims.set 2 ⟨[[1],[1]],[1,2]⟩ })
-#guard !ok (roundtrip { request .tru with program := ((request .tru).program.set 1
-  ⟨.var 0,.branchBind ⟨2,some [1,0]⟩ ⟨3,some [0,1]⟩,none⟩) })
-#guard !ok (roundtrip { request .tru with program := ((request .tru).program.set 1
-  ⟨.var 0,.branchBind ⟨2,some [0,1]⟩ 99,none⟩) })
--- A possibly-null result is not accepted as a Boolean dispatch, even when this
--- particular source expression happens to evaluate to true.
-#guard !ok (roundtrip { request .tru with claims := (request .tru).claims.set 1 ⟨[[1,2]],[0,1,2]⟩ })
--- Refining transfers also participate in cycles; checking requires no iteration.
-#guard ok (roundtrip ⟨T,
-  [⟨.tru,.bind 1,none⟩,⟨.var 0,.branchBind ⟨1,some [0]⟩ ⟨2,some [0]⟩,none⟩,⟨.var 0,.ret,none⟩],
-  [⟨[],[1,2]⟩,⟨[[1,2]],[1,2]⟩,⟨[[2]],[1,2]⟩],[1,2],0,[], []⟩)
--- Tag dispatch uses the same observed edge checker and retains the value itself.
-private def tagRequest : Request RequestJson.Table Nat :=
-  ⟨T,
-    [⟨.var 0,.tagBind .isNul ⟨1,some [0]⟩ ⟨2,some [0]⟩,none⟩,
-     ⟨.fls,.ret,none⟩,⟨.var 0,.ret,none⟩],
-    [⟨[[0,1,2]],[0,1,2]⟩,⟨[[0]],[1,2]⟩,⟨[[1,2]],[1,2]⟩],
-    [1,2],0,[[0,1,2]], []⟩
-#guard ok (roundtrip tagRequest)
-#guard !ok (roundtrip { tagRequest with program := (tagRequest.program.set 0
-  ⟨.var 0,.tagBind .isBool ⟨1,some [0]⟩ ⟨2,some [0]⟩,none⟩) })
-#guard !ok (roundtrip { tagRequest with program := (tagRequest.program.set 0
-  ⟨.var 0,.tagBind .isNul ⟨1,some [1]⟩ ⟨2,some [0]⟩,none⟩) })
-#guard !ok (roundtrip { tagRequest with program := (tagRequest.program.set 0
-  ⟨.var 0,.tagBind .isNul 99 ⟨2,some [0]⟩,none⟩) })
 -- Dispatch operates on the value, even at an empty heap or without an alias map.
 example : Transition [] [] (.eval .nul (fun _ => .nul) (.tagBind .isNul 1 2) none) []
     (.at 1 (PointClaims.mapEnv none (push .nul (fun _ => .nul)))) := .tagBind rfl

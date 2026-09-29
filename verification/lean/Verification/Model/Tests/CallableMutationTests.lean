@@ -22,29 +22,13 @@ private def program (callable fresh : Bool) : Program :=
    ⟨.make (oneNode 1 mutator 3) .nul,.bind 4,none⟩,
    ⟨.app (.var 0) .nul,.effect 5,none⟩,
    ⟨if fresh then .read (.var 2) else .var 1,.ret,none⟩]
-private def codes : List (CodeRequest Nat) := oneNodeCodes 1 mutator [[1],[2,3],[1]] [⟨[6], [[0]], [0], .unrestricted⟩]
 private def claims (R : List Nat) : List (PointClaim Nat) :=
   [⟨[],[1]⟩,⟨[[1]],[2,3]⟩,⟨[[2,3],[1]],[1]⟩,
    ⟨[[1],[2,3],[1]],[5]⟩,⟨[[5],[1],[2,3],[1]],[0]⟩,
    ⟨[[5],[1],[2,3],[1]],R⟩]
-private def request (callable fresh : Bool) (R : List Nat) : Request RequestJson.Table Nat :=
-  ⟨types,program callable fresh,claims R,R,0,[],codes⟩
 private def certificate (callable fresh : Bool) (R : List Nat) : ControlFlow.Certificate Nat :=
   match produce G labels 10 R (program callable fresh) (claims R) 0 (codes := admitted) with
   | .ok c => c | .error _ => []
-
--- The saved false value survives a real write, for both allocation descriptors.
--- Fresh reads still have their invariant Boolean type after the call.
-#guard [false,true].all fun callable => [false,true].all fun fresh => match (do
-    let r := Lean.toJson (request callable fresh (if fresh then [1] else [4]))
-    let response ← produceJson RequestJson.Table r 10
-    verifyJson RequestJson.Table r response) with
-  | .ok _ => true | .error _ => false
-
--- A fresh read cannot reuse the old false fact after the mutating invocation.
-#guard [false,true].all fun callable => match
-    produceJson RequestJson.Table (Lean.toJson (request callable true [4])) 10 with
-  | .ok _ => false | .error _ => true
 
 -- Ordinary call evidence discards actual nonempty contents/read-link inputs.
 -- Forge those stale outputs to ensure the consumer checks the effect frame.

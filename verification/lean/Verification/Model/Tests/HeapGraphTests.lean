@@ -10,8 +10,10 @@ set_option maxHeartbeats 2000000
 namespace Verification.Model.HeapGraphTests
 open ProgramTyping ProgramCertificates ControlFlow HeapKnowledge HeapExpressionRules
 
-private def T : SourceTypes.Table := SourceTypes.initial ++ RequestJson.rows [[.refs [(valueField, [1,2])] [] []]]
-private def G := SourceTypes.graph T
+/-- 0 null, 1 true, 2 false, 3 undefined, 4 a cell holding a Boolean. -/
+private def types : List (List (PositiveNormalization.Clause (List Nat))) :=
+  [[.nul], [.boolLit true], [.boolLit false], [.undef], [.refs [(valueField, [1,2])] [] []]]
+private def G : PositiveGraphs.NormalGraph Nat := .ofRows fun i => types[i]?.getD []
 private def leaf (Γ : List (List Nat)) (t : Tm) (A : List Nat) (r : Rule Nat) : Evidence Nat :=
   .node ⟨Γ,t,A⟩ r []
 private def widen (e : Evidence Nat) : Evidence Nat :=
@@ -76,18 +78,12 @@ private def cycleCertificate := certificate.set 5
 #guard !(checkClosed G [1] cycleProgram (cycleCertificate.set 5
   {cycleCertificate[5] with effect := some (.ordinary cycleValue), output := ordinaryOutput readResult}) 0)
 
--- The external checker consumes the same facts and effects through strict JSON.
-private def request : RequestJson.Request RequestJson.Table Nat :=
-  ⟨T,program,certificate.map CertificateProducer.signature,[1],0,[], []⟩
-private def response : RequestJson.Response Nat := ⟨certificate, []⟩
-#guard RequestJson.verify request response
-#guard match RequestJson.verifyJson RequestJson.Table (Lean.toJson request) (Lean.toJson response) with
-  | .ok _ => true
-  | .error _ => false
 -- All nested effect evidence is bounds checked, not only the root header.
 private def badEffect : HeapExpressionRules.StepEvidence Nat := .ordinary
   (.node ⟨[],.nul,[0]⟩ (.sub (.trans [999] .subset .subset)) [])
-#guard !(RequestJson.validResponse request {response with certificate := certificate.set 0 {certificate[0] with effect := some badEffect}})
+#guard RequestJson.validCertificate (· < types.length) certificate
+#guard !RequestJson.validCertificate (· < types.length)
+  (certificate.set 0 {certificate[0] with effect := some badEffect})
 
 #print axioms safe
 end Verification.Model.HeapGraphTests

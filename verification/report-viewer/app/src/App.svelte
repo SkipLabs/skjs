@@ -18,7 +18,6 @@
   import type { Producer } from "../../types.ts";
 
   const PRODUCERS: { value: Producer; label: string }[] = [
-    { value: "skjs", label: "SKJS claims" },
     { value: "tsc", label: "TypeScript claims" },
     { value: "ocaml", label: "OCaml claims" },
   ];
@@ -34,7 +33,7 @@
     // an unknown name reads as the default rather than as something to run.
     const asked = params.get("producer");
     const producer =
-      PRODUCERS.find((p) => p.value === asked)?.value ?? "skjs";
+      PRODUCERS.find((p) => p.value === asked)?.value ?? "ocaml";
     // A link that names a file opens it; one that does not shows what there
     // is, rather than opening whichever source happens to be listed first.
     if (wanted) await reader.open(wanted, producer);
@@ -70,11 +69,9 @@
   });
 
   /*
-   * Selecting a claim puts the cursor in its editor, so stepping between claims
-   * needs a key the editor will not take: Alt with the arrows, or with j and k,
-   * works while typing and leaves the next claim ready to type into. The
-   * letters are matched by physical key, because Option composes characters on
-   * macOS and would otherwise arrive as ∆ and ˚.
+   * Stepping between claims also works from inside a field: Alt with the
+   * arrows, or with j and k. The letters are matched by physical key, because
+   * Option composes characters on macOS and would otherwise arrive as ∆ and ˚.
    */
   function onkeydown(event: KeyboardEvent) {
     if (!reader.report) return;
@@ -171,39 +168,6 @@
         {#if !reader.collection.verified}· not checked{/if}
       </span>
     {/if}
-    {#if reader.kept && !reader.showingKept}
-      <!-- A repair kept beside this source. Opening a file shows what the
-           producer said, because that is the finding; this is the answer. -->
-      <button
-        class="plain"
-        onclick={() => reader.showKept()}
-        disabled={reader.busy}>show the kept repair</button
-      >
-    {/if}
-    {#if reader.edited}
-      <button
-        class="plain"
-        onclick={() => reader.keep()}
-        disabled={reader.busy}
-        title="writes the candidate beside the source, for the CLI to read too"
-        >keep this draft</button
-      >
-    {/if}
-    {#if reader.edited || reader.showingKept}
-      <button
-        class="plain"
-        onclick={() => reader.restore()}
-        disabled={reader.busy}>show the producer's claims</button
-      >
-    {/if}
-    {#if reader.showingKept}
-      <button
-        class="plain"
-        onclick={() => reader.discard()}
-        disabled={reader.busy}
-        title="deletes {reader.draftPath}">discard the repair</button
-      >
-    {/if}
     {#if !reader.hasVerifier}
       <span class="warn">no verifier built — nothing can be checked</span>
     {/if}
@@ -237,9 +201,6 @@
 
   {#if reader.error}
     <p class="error" role="status">{reader.error}</p>
-  {/if}
-  {#if reader.staleDraft}
-    <p class="stale" role="status">{reader.staleDraft}</p>
   {/if}
 
   {#if reader.browsing}
@@ -275,11 +236,6 @@
             {report}
             {fn}
             site={reader.selection?.site ?? null}
-            candidate={reader.candidate}
-            busy={reader.busy}
-            onapply={(site, value) => reader.apply(fn, site, value)}
-            onadd={(site, value) => reader.add(fn, site, value)}
-            oncontract={(contract) => reader.addContract(fn, contract)}
           />
           <Obligation
             {fn}
@@ -382,11 +338,6 @@
     padding: 8px 14px;
     background: var(--bad-bg);
     color: var(--bad);
-  }
-  .stale {
-    margin: 0;
-    padding: 8px 14px;
-    color: var(--warn);
   }
   .body {
     display: grid;

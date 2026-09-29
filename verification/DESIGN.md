@@ -1,13 +1,12 @@
-# Independent verification of SKJS results
+# Independent verification of type claims
 
 The pipeline checks type claims about TypeScript programs with a small,
 independently justified consumer. A producer proposes the types of a
 module's expressions and the environments at its program points; Lean checks
 that those claims are derivable in a calculus whose rules are proved sound
 against an execution model. The OCaml producer, which reads TypeScript's own
-declarations, is the one that moves; SKJS's exporter and the older
-TypeScript-checker exporter are frozen ([below](#skjs-is-frozen)). No
-producer is trusted.
+declarations, is the pipeline's producer; the TypeScript-checker exporter
+states claims for the corpus. No producer is trusted.
 
 This document states the current design and what comes next: the principles,
 the architecture, the model in brief, the trust surface, the fragment's
@@ -20,12 +19,6 @@ subtyping to [POSITIVE-TYPES](POSITIVE-TYPES.md), program and source rules to
 How much of SKJS's own test suite verifies, and what stops the rest, is
 [SKJS-COVERAGE](ocaml-producer/SKJS-COVERAGE.md). Works the design draws on
 are cited from [REFERENCES](REFERENCES.md).
-
-**The experiment's boundary.** The pipeline checks SKJS; it does not change
-it. SKJS's acceptance, inference and diagnostics stay as they are, and only
-extraction that preserves them belongs here. A safe program SKJS rejects is
-an incompleteness finding to keep, and a claim the verifier refuses is a
-finding about SKJS or about the pipeline, never a reason to weaken a rule.
 
 ## Principles
 
@@ -151,8 +144,6 @@ compared with the source's annotation by meaning, not by label: a function's
 claimed signature must mean its annotation, a closure's claimed signatures
 must lie within it, and the body is checked at each claimed signature
 ([claims against annotations](PROGRAM-TYPING.md#modules-and-code-units)).
-SKJS's exports are imported into the same sidecar form
-([SOURCE-CLAIMS](SOURCE-CLAIMS.md)) and read by the same consumer.
 
 Positions associate claims with syntax; they authorize no edit and establish
 no truth. Alongside the graph, the extractor records a **source map**: how to
@@ -193,8 +184,7 @@ limit (`stepTimeoutMs`). The outcome is `verified` (the check accepted),
 failed or timed out; never a verdict). `--project` names the TypeScript
 project the file belongs to, whose `tsconfig.json` must be strict.
 `run-cases.mts`, `test.mts` and the coverage run (`skjs-coverage.mts`) go
-through it; only the frozen corpus (`examples.mts`) runs the SKJS and tsc
-producers on its own.
+through it; only the corpus (`examples.mts`) runs the tsc producer on its own.
 
 ### What "verified" means
 
@@ -315,42 +305,6 @@ code is graph code, `.bind`'s forwarding descriptor, or none
 A closure's code is checked in its own table entry, not inside the creating
 body, so the creating body's certificate only names the entry and the
 captures' types.
-
-### SKJS is frozen
-
-Past the tag `skjs-frozen`, the parser → OCaml producer → Lean pipeline is
-the one that moves. The SKJS producer, the claims converted from it and the
-suites built on its fixtures stay as they were at the tag;
-`verification/run.sh` runs them only with `--suite all`, and they may fail on
-arrays, which past the tag hold `Array.prototype`.
-
-### SKJS operation contracts
-
-Beyond checking SKJS's conclusions, the model can give its individual
-operations semantic contracts, so a repair is judged against meaning rather
-than the current implementation. `--check-skjs-operations` checks closed
-subtype and expansion judgments SKJS exports under the substitution in force
-at each ([closed operation export](REQUEST-PROTOCOL.md#closed-operation-export)).
-The contracts:
-
-1. **Substitution preserves meaning.** Substituting type arguments into
-   syntax means the same as interpreting the syntax under the corresponding
-   assignment.
-2. **Expansion and normalization have explicit guarantees.** An exact
-   expansion preserves denotation; an approximation establishes the
-   appropriate inclusion; a cache preserves that guarantee in the state it is
-   reused in.
-3. **Successful subtyping establishes semantic inclusion**, `Δ ⊢ A ≤ B`
-   implying `⟦A⟧η ⊆ ⟦B⟧η` for every `η` satisfying `Δ`, as the calculus's
-   own `Sub.sound` does.
-4. **Inference cannot invalidate earlier checks**: commitments are stable,
-   preserved across state changes, or revalidated.
-
-A generic parameter (every admissible `T`), an inference variable (a `T`
-the checker may choose) and an object's hidden type argument (a fixed `T` it
-may not choose) are different obligations and must not be confused. SKJS
-repair progress is tracked in
-[docs/skjs-improvement.md](../docs/skjs-improvement.md).
 
 ## The model in brief
 
@@ -1167,6 +1121,7 @@ unchanged ([design](#recursive-quantified-contracts)).
 | D. Decidability of subtyping in this model, studied in mathematics before any Lean | done | a note stating the problems precisely, what is proved, and what is open |
 | T. Audit the tests: keep each one that guards something likely to break and important, and is not a restatement of the implementation; record what each guards | open | every test's reason recorded; the rest deleted |
 | S8. Census and performance, including the subtyping trace: work per question against type size ([§4](RECURSIVE-EQUATIONS.md#4-subtyping), linear-work conjecture) | open | census remeasured; evidence size and decode time recorded; the conjecture confirmed or refuted on the examples, with the trace's counts |
+| C. Delete the SKJS claim path, manual claim editing and the finite-table label store | done | no verifier mode, suite, tool, corpus column, viewer feature or Lean module consumes SKJS's exported claims, edits claims, or uses the finite table as a label store; every `cases.mts` outcome unchanged |
 
 The stages' order and dependencies: S1, S3 and the kernel rows may run in
 parallel; S4 follows S1; S5 follows S3 and S4's interface; S6 needs all of
@@ -1439,7 +1394,3 @@ testing converges without a mechanized specification. A rewrite chosen by a
 type (`%Iterate:K%`, `%ElementAt%`) is correct under that typing premise.
 The reading of declared types and the host remain trusted; the remaining
 options are in [TRUST-REDUCTION](TRUST-REDUCTION.md).
-
-**SKJS operations.** Extend the closed operation export beyond the
-primitive, cell and arrow fragment, so a failing SKJS judgment is located at
-the operation rather than at a later program-point claim.

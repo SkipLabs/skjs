@@ -15,7 +15,6 @@ import { readDiagnostic } from "./diagnostic.mts";
 // The source annotation encoding has exactly one implementation; a second
 // would be a second opinion about what a source type means.
 import * as fragmentParse from "./fragment-parse.mts";
-import { claimOfTerm } from "./term-claim.mts";
 import { tsconfigOf } from "./declaration-graph.mts";
 import type {
   Labels,
@@ -25,8 +24,6 @@ import type {
 } from "./source-claims.mts";
 import type { Span } from "./span.mts";
 import type { Failure, Result } from "../report-viewer/types.ts";
-import type { SkjsFile, SkjsFunction } from "./skjs-claims.mts";
-import type { ConversionManifest } from "./export-source-claims.mts";
 import { messageOf } from "./thrown.mts";
 import { rigidOf, rigidScopes, scopeOf } from "./rigid.mts";
 import type { RigidParameter, RigidScopes } from "./rigid.mts";
@@ -41,11 +38,9 @@ const __dirname = path.dirname(new URL(import.meta.url).pathname);
 const require = createRequire(import.meta.url);
 /* --------------------------------------------------------- reading a value -- */
 // Claims, manifests and reports arrive as JSON, so what a value is has to be
-// tested before it is read. `Array.isArray` alone widens `unknown` to `any[]`,
-// which is how the elements stop being checked; `isList` keeps them unknown.
+// tested before it is read.
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === "object";
-const isList = (v: unknown): v is unknown[] => Array.isArray(v);
 /* ------------------------------------------------------------- the shapes -- */
 // A report is built in two steps: a converter turns a producer's claims into
 // the fields below, and `main` attaches the positional ids and declaration
@@ -74,18 +69,10 @@ interface DraftEntry {
   pos: number[];
   bindings: DraftBinding[];
 }
-/** A type the producer could not state, addressed to the exact claim it covers. */
-interface Unavailable {
-  kind: "parameter" | "result" | "entry" | "expression";
-  pos?: Span;
-  binding?: string;
-  reason: string;
-}
 /**
  * Collection metadata as a report document carries it, which is not yet
  * checked: `Collection` in report-viewer/types.ts names the same fields once a
- * report has been read back, and `SkjsCollection` names them as the producer's
- * own export carries them.
+ * report has been read back.
  */
 interface DraftCollection {
   completion: string;
@@ -109,16 +96,8 @@ interface InputFunction {
   };
   entries: DraftEntry[];
   expressions: DraftClaim[];
-  unavailableTypes?: Unavailable[];
   /** How complete the producer's own collection was; absent if it said nothing. */
   collection?: DraftCollection;
-  /** Attached by `attachConversion`, which carries the original's history over. */
-  collectionSource?: string;
-  collectionSnapshot?: {
-    entries: { pos: number[] }[];
-    expressions: { pos: number[] }[];
-  };
-  conversionGaps?: { pos: number[]; status: string }[];
 }
 interface ReportInput {
   source: { file: string; sha256: string };
@@ -140,30 +119,11 @@ interface DraftReport extends ReportInput {
   functions: DraftFunction[];
 }
 
-
-
-/** One site where a candidate's claim differs from its baseline. */
-interface ClaimChange {
-  kind: string;
-  function: string;
-  span: number[];
-  status: "added" | "removed" | "changed";
-  before?: unknown;
-  after?: unknown;
-}
-
-/**
- * The report-level fingerprints and edit records `render` carries into the
- * header comment and, where present, into the gap annotations.
- */
+/** The report-level fingerprints `render` carries into the header comment. */
 interface ReportIdentity {
   claimsSha256?: string;
-  conversionSha256?: string;
-  baselineSha256?: string;
   verifierSha256?: string;
   diagnosticsSha256?: string;
-  claimChanges?: ClaimChange[];
-  conversionOmissions?: ConversionManifest["omissions"];
 }
 
 /* -------------------------------------------------------- the annotations -- */
@@ -190,7 +150,6 @@ interface FunctionAnnotation extends AnnotationBase {
   producer: string;
   signature?: InputFunction["signature"];
   collection?: DraftCollection;
-  collectionSource?: string;
   verification: { status: string; detail?: string };
 }
 interface EntryAnnotation extends AnnotationBase {
@@ -231,8 +190,7 @@ const reasons: Record<string, string> = {
   "expression entered without a type result":"expression-without-type",
   "claims unavailable; verification not established":"claims-unavailable"};
 const reasonSlug = (detail: string) => reasons[detail] ||
-  (/^claim edit:/.test(detail) ? "claim-edit"
-   : detail.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").split("-").slice(0,4).join("-"));
+  detail.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").split("-").slice(0,4).join("-");
 function fields(x: Annotation) {
   const parts=["kind="+x.kind];
   if(x.kind === "gap")parts.push("reason="+reasonSlug(x.detail));
@@ -246,8 +204,6 @@ function comment(x: Annotation) {
       "annotation-fields=kind,reason,id,unsupported",`producer=${x.producer}`,
       `source=${x.source.file}`,`source-sha256=${x.source.sha256}`,
       ...Object.entries(x).filter(([k])=>k.endsWith("Sha256")).map(([k,v])=>`${k}=${v}`),
-      ...(x.claimChanges ? [`Claim edits against baseline: ${x.claimChanges.length}; before/after values are in the manifest.`] : []),
-      ...(x.conversionOmissions ? [`Conversion omissions: ${x.conversionOmissions.length}; original payloads and reasons are in the manifest.`] : []),
       "Function results cover modeled obligations, not every exported claim.",
       "Original spans are before annotation. Full details are in the companion JSON manifest."];
     return "/* @verify-report\n * "+lines.map(safeText).join("\n * ")+"\n */\n";
@@ -256,7 +212,7 @@ function comment(x: Annotation) {
   if(x.kind === "function") {
     const signature=x.signature ? `; claimed (${x.signature.params.map(p=>`${p.name}: ${typeText(p.type)}`).join(", ")}) => ${typeText(x.signature.retType)}` : "";
     text=`function ${x.name}; producer=${x.producer}${signature}; verification=${x.verification.status}`;
-    if(x.collection)text+=`; ${x.collectionSource||""}collection=${x.collection.completion}; quality=${x.collection.quality}; mode=${x.collection.mode}`;
+    if(x.collection)text+=`; collection=${x.collection.completion}; quality=${x.collection.quality}; mode=${x.collection.mode}`;
     if(x.verification.detail)text+=`; ${x.verification.detail}`;
   } else if(x.kind === "entry") {
     text=`entry { ${x.bindings.map(b=>`${b.name}: ${b.type}`).join(", ")} }`;
@@ -299,55 +255,6 @@ function typeText(t: unknown) {
     if(names.every((x: unknown)=>x!==null))return names.length ? names.join(" | ") : "never";
   }
   return JSON.stringify(t);
-}
-
-// Advisory exporter metadata is bound to an exact claim address. Ignore stale,
-// malformed and ambiguous entries; none can turn an unavailable type into evidence.
-const isRefusalKind=(k: unknown): k is Unavailable["kind"]=>
-  k==="parameter"||k==="result"||k==="entry"||k==="expression";
-function unavailableTypes(f: SkjsFunction): Unavailable[] {
-  const missing=(t: unknown)=>isRecord(t) && t.unsupported===true && Object.keys(t).length===1;
-  const key=(kind: unknown, pos: unknown, binding: unknown)=>JSON.stringify([kind,pos,binding]);
-  // Each address is kept with the claim that owns it, so a reason is attached
-  // to the span this file read rather than to the one the metadata repeats.
-  const claims=new Map<string, {count: number, at: Partial<Unavailable>}>(),
-    reasons=new Map<string, Unavailable|null>();
-  const add=(d: Partial<Unavailable>, t: unknown)=>{
-    if(!missing(t))return;
-    const k=key(d.kind,d.pos,d.binding);
-    claims.set(k,{count:(claims.get(k)?.count||0)+1,at:d});
-  };
-  for(const p of f.params)add({kind:"parameter",binding:p.name},p.type);
-  add({kind:"result"},f.retType);
-  for(const e of f.envs)for(const v of e.vars)add({kind:"entry",pos:e.pos,binding:v.name},v.type);
-  for(const e of f.exprs)add({kind:"expression",pos:e.pos},e.type);
-  for(const d of isList(f.unavailableTypes)?f.unavailableTypes:[]) {
-    if(!isRecord(d) || typeof d.reason!=="string" || !/^[a-z][a-z0-9-]{0,79}$/.test(d.reason))continue;
-    if(!isRefusalKind(d.kind))continue;
-    const k=key(d.kind,["entry","expression"].includes(d.kind)?d.pos:undefined,
-      ["entry","parameter"].includes(d.kind)?d.binding:undefined);
-    const claim=claims.get(k);
-    if(claim?.count===1)reasons.set(k,reasons.has(k)?null:{...claim.at,kind:d.kind,reason:d.reason});
-  }
-  return [...reasons.values()].filter(d=>d!==null);
-}
-
-function fromSkjs(
-  source: string,
-  file: string,
-  claims: SkjsFile[],
-  producer: string,
-): DraftReport {
-  if(!Array.isArray(claims))throw Error("expected SKJS file claims");
-  const files=claims.filter(f=>f.file === file);
-  if(files.length!==1)throw Error("expected exactly one matching claim file");
-  return {source:{file,sha256:hash(source)},producer,
-    functions:files[0].functions.map(f=>({name:f.name,namePos:f.namePos,
-      ...(f.collection ? {collection:f.collection} : {}),
-      unavailableTypes:unavailableTypes(f),
-      signature:{params:f.params,retType:f.retType},
-      entries:f.envs.map(e=>({pos:e.pos,bindings:e.vars.map(v=>({name:v.name,type:typeText(v.type),raw:v.type}))})),
-      expressions:f.exprs.map(e=>({pos:e.pos,type:typeText(e.type),raw:e.type}))}))};
 }
 
 // Labels index the document's own type table; the first four rows are the
@@ -548,41 +455,6 @@ function fromSourceClaims(
     })};
 }
 
-function attachConversion(
-  source: string,
-  report: ReportInput,
-  sidecarBytes: string,
-  conversion: ConversionManifest,
-): ReportInput {
-  if(conversion.kind!=="skjs-source-claim-conversion")throw Error("unsupported conversion manifest");
-  if(conversion.source?.file!==report.source.file||conversion.source?.sha256!==hash(source))throw Error("conversion source identity mismatch");
-  if(conversion.sidecarSha256!==hash(sidecarBytes))throw Error("conversion manifest does not match the exact sidecar; use a baseline for edited claims");
-  if(!Array.isArray(conversion.omissions))throw Error("invalid conversion omissions");
-  const original=fromSkjs(source,report.source.file,conversion.originalClaims,"skjs");
-  render(source,original); // Validate original spans before using them for collection history.
-  const result=clone(report);
-  for(const f of result.functions) {
-    const old=original.functions.find(g=>g.name===f.name&&g.namePos.join(":")===f.namePos.join(":"));
-    if(!old)throw Error("conversion is missing the original function snapshot");
-    if(old.collection) {
-      f.collection=old.collection;f.collectionSource="original SKJS ";
-      f.collectionSnapshot={entries:old.entries.map(e=>({pos:e.pos})),expressions:old.expressions.map(e=>({pos:e.pos}))};
-    }
-    f.conversionGaps=[];
-    for(const omission of conversion.omissions) {
-      if(omission.function!==f.name||JSON.stringify(omission.namePos)!==JSON.stringify(f.namePos))continue;
-      const site=omission.site;
-      if(typeof site!=="object" || site.kind!=="expression" || !site.pos)continue;
-      const pos=site.pos;
-      if(old.expressions.some(e=>JSON.stringify(e.pos)===JSON.stringify(pos)) &&
-          !f.expressions.some(e=>JSON.stringify(e.pos)===JSON.stringify(pos))) {
-        f.conversionGaps.push({pos,status:`expression claim omitted during conversion: ${omission.reason}`});
-      }
-    }
-  }
-  return result;
-}
-
 // The tree of the text the caller is holding, read as the file it names. A
 // report is rendered over a source in memory — the original, or an annotated
 // rendering of it — and its spans have to be spans of that text.
@@ -692,7 +564,7 @@ function render(
     seen.add(`fn:${key}`);
     if(!Array.isArray(f.entries)||!Array.isArray(f.expressions))throw Error("invalid function claims");
     add(start,{kind:"function",id:idOf("function",index),name:f.name,producer:report.producer,
-      collection:f.collection,collectionSource:f.collectionSource,
+      collection:f.collection,
       ...(f.signature ? {signature:f.signature} : {}),
       ...(results ? {verification:results[index]} : {verification:{status:"not-run"}})});
     // Where a claim is shown: at its start, or, one of a lowering's own, at
@@ -725,9 +597,6 @@ function render(
   }
   const gaps=coverage(source,report);
   for(const gap of gaps)add(gap.pos[0],{kind:"gap",id:gap.id,originalSpan:gap.pos,detail:gap.status});
-  for(const [i,change] of (identity.claimChanges||[]).entries())add(change.span[0],
-    {kind:"gap",id:idOf("gap",gaps.length+i),originalSpan:change.span,
-     detail:`claim edit: ${change.status} ${change.kind}; see manifest for before/after`});
   // No new line terminators: preserve return/throw/async automatic-semicolon behavior.
   // Hashbang and BOM, when present, must remain at the beginning of the file.
   const headerAt=source.startsWith("#!") ? (source.indexOf("\n")<0 ? source.length : source.indexOf("\n")+1)
@@ -781,11 +650,9 @@ function coverage(source: string, report: ReportInput) {
     const named=node.name;
     const f=report.functions.find(f=>f.namePos[0]===named.getStart(sf)&&f.namePos[1]===named.end);
     if(!f){gaps.push({pos:[node.getStart(sf),node.end],status:"claims unavailable; verification not established"});continue;}
-    const snapshot=f.collectionSnapshot||f;
-    for(const gap of f.conversionGaps||[])gaps.push(gap);
     if(!f.collection)continue;
     for(const pos of f.collection.visitedExpressions||[]) {
-      if(!snapshot.expressions.some(e=>e.pos[0]===pos[0]&&e.pos[1]===pos[1])) {
+      if(!f.expressions.some(e=>e.pos[0]===pos[0]&&e.pos[1]===pos[1])) {
         if(!Array.isArray(pos)||pos.length!==2||!pos.every(Number.isSafeInteger)||pos[0]<node.getStart(sf)||pos[1]>node.end||pos[0]>=pos[1])throw Error("invalid expression visit span");
         const matches=(n: ts.Node): boolean|undefined=>(n.getStart(sf)===pos[0]&&n.end===pos[1])||n.forEachChild(matches);
         if(!matches(node))throw Error("cannot attach expression visit");
@@ -796,7 +663,7 @@ function coverage(source: string, report: ReportInput) {
       const walk=(n: ts.Node)=> {
         if(ts.isFunctionDeclaration(n))return;
         if((ts.isVariableStatement(n)||ts.isReturnStatement(n)||ts.isIfStatement(n)||ts.isWhileStatement(n)||ts.isForOfStatement(n)||ts.isExpressionStatement(n)) &&
-           !snapshot.entries.some(e=>e.pos[0]===n.getStart(sf)))gaps.push({pos:[n.getStart(sf),n.end],status:"statement not visited"});
+           !f.entries.some(e=>e.pos[0]===n.getStart(sf)))gaps.push({pos:[n.getStart(sf),n.end],status:"statement not visited"});
         n.forEachChild(walk);
       };
       walk(node.body);
@@ -804,40 +671,6 @@ function coverage(source: string, report: ReportInput) {
   }
   // One id per gap, assigned in one place so every gap kind is joinable to the manifest.
   return gaps.map((g,i)=>({id:`g${i}`,...g}));
-}
-
-// Compare candidates, never saved proof results. Object property order is immaterial.
-const canonical = (x: unknown) => JSON.stringify(normalize(x));
-function normalize(x: unknown): unknown {
-  if(isList(x))return x.map(normalize);
-  if(isRecord(x))return Object.fromEntries(Object.keys(x).sort().map(k=>[k,normalize(x[k])]));
-  return x;
-}
-function compareClaims(source: string, baseline: ReportInput, current: ReportInput) {
-  if(baseline.source?.file!==current.source?.file)throw Error("baseline source identity mismatch");
-  render(source,baseline);render(source,current); // Includes exact source digest and attachment validation.
-  const sites=(report: ReportInput)=> {
-    const out=new Map();
-    for(const f of report.functions) {
-      const put=(kind: string, span: number[], value: unknown)=>out.set(`${f.namePos.join(":")}:${kind}:${kind==="entry"?span[0]:span.join(":")}`,
-        {kind,function:f.name,span,value});
-      put("function",f.namePos,f.signature||null);
-      for(const e of f.entries)put("entry",e.pos,
-        e.bindings.map(b=>({name:b.name,type:b.raw??b.type})).sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0));
-      for(const e of f.expressions)put("expression",e.pos,e.raw??e.type);
-    }
-    return out;
-  };
-  const before=sites(baseline),after=sites(current),changes=[];
-  for(const key of new Set([...before.keys(),...after.keys()])) {
-    const a=before.get(key),b=after.get(key);
-    if(a&&b&&canonical(a.value)===canonical(b.value))continue;
-    const {value,...site}=b||a;
-    changes.push({...site,status:!a?"added":!b?"removed":"changed",
-      ...(a?{before:a.value}:{}),...(b?{after:b.value}:{})});
-  }
-  changes.sort((a,b)=>a.span[0]-b.span[0]||a.kind.localeCompare(b.kind));
-  return {baselineProducer:baseline.producer,changes};
 }
 
 /** The declaration a reported function names. `render` above matched every one
@@ -854,14 +687,12 @@ function run(executable: string, args: string[]) {
   return r;
 }
 
-// `--format source-claims` hands one normalized sidecar; SKJS hands the list of
-// files this run selects from. `fromSkjs` and `fromSourceClaims` have already
-// rejected a document that is not the shape its format names.
-const isFileList=(d: SkjsFile[] | SourceClaims): d is SkjsFile[] => Array.isArray(d);
-function verifySkjs(
+// The claims are one source-claims document, which `fromSourceClaims` has
+// already read.
+function verifyClaims(
   sourcePath: string,
   source: string,
-  claims: SkjsFile[] | SourceClaims,
+  claims: SourceClaims,
   file: string,
   // Only the function identities are read here. Writing that types the results
   // this returns as the reader's own `Result`, minus the `function` id `main`
@@ -869,7 +700,6 @@ function verifySkjs(
   report: { functions: { name: string; namePos: number[] }[] },
   verifier: string,
   depth: number,
-  normalized = false,
   tsconfigPath?: string,
   // A pipeline run this report is built from: the Fragment it parsed, read
   // instead of parsing again, and — where it verified the whole file — the
@@ -902,18 +732,12 @@ function verifySkjs(
     const whole=pipeline?.evidence ? ((certificateSha256: string)=>
       report.functions.map((): FunctionResult=>({status:"verified",scope:"modeled function and required claims",certificateSha256})))(
       hash(fs.readFileSync(pipeline.evidence))) : pipeline ? null : (()=>{
-      const document=clone(claims);
-      const c=isFileList(document) ? document.filter(g=>g.file===file) : document;
-      if(isFileList(c)) {
-        const selected=c[0];
-        if(!selected)return null;
-        for(const g of selected.functions)delete g.unavailableTypes;
-      }
+      const c=clone(claims);
       const ap=path.join(temp,"whole.ast.json"), cp=path.join(temp,"whole.claims.json"), ep=path.join(temp,"whole.evidence.json");
       fs.writeFileSync(ap,JSON.stringify(ast));fs.writeFileSync(cp,JSON.stringify(c));
-      const produced=run(verifier,[normalized?"--produce-source-claims":"--produce-stateful-source",ap,cp,file,ep,String(depth)]);
+      const produced=run(verifier,["--produce-source-claims",ap,cp,file,ep,String(depth)]);
       if(produced.status!==0)return null;
-      const checked=run(verifier,[normalized?"--check-source-claims":"--check-stateful-source",ap,cp,file,ep]);
+      const checked=run(verifier,["--check-source-claims",ap,cp,file,ep]);
       if(checked.status!==0)return null;
       const certificateSha256=hash(fs.readFileSync(ep));
       return report.functions.map((): FunctionResult=>({status:"verified",scope:"modeled function and required claims",certificateSha256}));
@@ -931,19 +755,11 @@ function verifySkjs(
       if(f.name==="" ? !a.init?.length : a.functions.filter(named).length!==1)
         throw Error("function identity mismatch during verification");
       const only=["--function",f.name,String(f.namePos[0]),String(f.namePos[1])];
-      const document=clone(claims);
-      const c=isFileList(document) ? document.filter(g=>g.file===file) : document;
-      let refusals: Unavailable[]=[];
-      if(isFileList(c)) {
-        const selected=c[0];
-        selected.functions=selected.functions.filter(named);
-        refusals=unavailableTypes(selected.functions[0]);
-        // Metadata is for reporting only, excluded from verifier input and its digest.
-        for(const g of selected.functions)delete g.unavailableTypes;
-      } else c.functions=c.functions.filter(named);
+      const c=clone(claims);
+      c.functions=c.functions.filter(named);
       const ap=path.join(temp,"ast.json"), cp=path.join(temp,"claims.json"), ep=path.join(temp,"evidence.json");
       fs.writeFileSync(ap,JSON.stringify(a));fs.writeFileSync(cp,JSON.stringify(c));
-      const produced=run(verifier,[normalized?"--produce-source-claims":"--produce-stateful-source",ap,cp,file,ep,String(depth),...only]);
+      const produced=run(verifier,["--produce-source-claims",ap,cp,file,ep,String(depth),...only]);
       if(produced.status!==0) {
         const rawDetail=(produced.stderr||produced.stdout).trim();
         const diagnostic=readDiagnostic(rawDetail);
@@ -980,16 +796,6 @@ function verifySkjs(
           environment ? {kind:"environment-obligation",start:Number(environment[1])} :
           outsideFragment ? {kind:"source-limitation"} : null;
 
-        // One shape for every branch above, which is the reader's own
-        // `Failure`: a place (a span or an entry start), the binding it
-        // concerns where there is one, and the producer's own reason where the
-        // refusals below match it.
-        if(unavailableType && location) {
-          const matches=refusals.filter(d=>unavailableBinding ?
-            d.kind==="entry"&&d.pos?.[0]===location.start&&d.binding===location.binding :
-            located ? d.kind==="expression"&&JSON.stringify(d.pos)===JSON.stringify(location.pos) : false);
-          if(matches.length===1)location.reason=matches[0].reason;
-        }
         // Bind node-local IDs to this exact function, source, and selected
         // claims. A span in a diagnostic's request is a pair, which `render`
         // has already checked this one to be.
@@ -1000,7 +806,7 @@ function verifySkjs(
         return {status:"not-established",detail,...((sourceRefusal || unavailableType || nonInvariant) ? {stage:"source-extraction"} : {}),location,
           ...(obligation ? {obligation, obligationView: presentObligation(obligation, source)} : {})};
       }
-      const checked=run(verifier,[normalized?"--check-source-claims":"--check-stateful-source",ap,cp,file,ep,...only]);
+      const checked=run(verifier,["--check-source-claims",ap,cp,file,ep,...only]);
       if(checked.status!==0) {
         // Evidence production may expose proved graph consequences while final
         // acceptance still refuses a source-plan variant whose semantic
@@ -1028,8 +834,6 @@ function verifySkjs(
 function checkFresh(output: string) {
   const m=JSON.parse(fs.readFileSync(output+".json","utf8"));
   const checks=[[output,m.annotatedSha256],[m.sourcePath,m.source.sha256],[m.claimsPath,m.claimsSha256]];
-  if(m.conversionPath)checks.push([m.conversionPath,m.conversionSha256]);
-  if(m.baselinePath)checks.push([m.baselinePath,m.baselineSha256]);
   if(m.diagnosticsPath)checks.push([m.diagnosticsPath,m.diagnosticsSha256]);
   if(m.verifierPath)checks.push([m.verifierPath,m.verifierSha256]);
   for(const [file,digest] of checks)if(hash(fs.readFileSync(file))!==digest)throw Error(`stale report: ${file}`);
@@ -1038,25 +842,6 @@ function checkFresh(output: string) {
 
 // These are possible attachment sites, not obligations inferred by this reader.
 // The existing source adapter and verifier decide which claims are required.
-// An environment claim must bind every name in scope, so a reader authoring one
-// needs to know what those names are. Their source annotations come with them:
-// the surface reader cannot write a function or record type without a template,
-// since inventing the fields the surface does not name is what it refuses to do.
-// A type outside the source fragment translates to null, which the reader shows
-// as undecoded rather than guessing at.
-const namedBinding=(name: string, typeNode: ts.TypeNode | undefined)=>{
-  let type=null;
-  try{type=typeNode?claimOfTerm(fragmentParse.typeOf(typeNode)):null;}catch(e){type=null;}
-  return {name,type};
-};
-// A declaration the surface names with a plain identifier; a binding pattern
-// binds no single name a claim could be about.
-const namedDeclaration=<T extends { name: ts.BindingName }>(p: T): p is T & { name: ts.Identifier }=>
-  ts.isIdentifier(p.name);
-const identifiers=(nodes: readonly (ts.ParameterDeclaration|ts.VariableDeclaration)[] | undefined): [string, ts.TypeNode|undefined][]=>
-  (nodes||[]).filter(namedDeclaration).map(p=>[p.name.text,p.type]);
-const declaredBy=(n: ts.Node)=>ts.isVariableStatement(n)?identifiers(n.declarationList.declarations):[];
-
 // TypeScript's own "is this node in expression position" test is not part of
 // the public surface, and kind alone is not it: the name a declaration binds
 // is an Identifier like any other. The name a node *declares* is always its
@@ -1069,38 +854,23 @@ const isDeclaredName = (n: ts.Node) => {
 };
 const isExpressionNode = (n: ts.Node) => ts.isExpression(n) && !isDeclaredName(n);
 
-/** The claim sites a unit's claims leave out: a function's body under its
- * parameters, or the module's top-level code, read in order under nothing. */
+/** The claim sites a unit's claims leave out: a function's body, or the
+ * module's top-level code. */
 function missingClaimSites(unit: ts.FunctionDeclaration | readonly ts.Statement[], f: { entries: { pos: number[] }[]; expressions: { pos: number[] }[] }) {
-  const sites: { kind: string; pos: number[]; syntax: string; bindings?: unknown[] }[]=[];
-  const walk=(n: ts.Node, scope: [string, ts.TypeNode|undefined][])=> {
+  const sites: { kind: string; pos: number[]; syntax: string }[]=[];
+  const walk=(n: ts.Node)=> {
     if(ts.isFunctionDeclaration(n)||ts.isTypeNode(n))return;
     const pos=[n.getStart(),n.end];
     if(ts.isStatement(n) && !ts.isBlock(n) && !f.entries.some(e=>e.pos[0]===pos[0]))
-      sites.push({kind:"environment",pos,syntax:ts.isVariableStatement(n)?"VariableStatement":ts.SyntaxKind[n.kind],
-        bindings:scope.map(([name,typeNode])=>namedBinding(name,typeNode))});
+      sites.push({kind:"environment",pos,syntax:ts.isVariableStatement(n)?"VariableStatement":ts.SyntaxKind[n.kind]});
     if(isExpressionNode(n) && !f.expressions.some(e=>e.pos[0]===pos[0]&&e.pos[1]===pos[1]))
       sites.push({kind:"expression",pos,syntax:ts.SyntaxKind[n.kind]});
-    // A block is walked in order so that each statement sees only what precedes
-    // it; a lambda adds its own parameter for its body.
-    if(ts.isBlock(n)) {
-      let inner=scope;
-      for(const st of n.statements) { walk(st,inner); inner=inner.concat(declaredBy(st)); }
-      return;
-    }
-    if(ts.isArrowFunction(n)||ts.isFunctionExpression(n)) {
-      const inner=scope.concat(identifiers(n.parameters));
-      n.forEachChild(c=>walk(c,inner));
-      return;
-    }
-    n.forEachChild(c=>walk(c,scope));
+    n.forEachChild(walk);
   };
-  if(Array.isArray(unit)) {
-    let inner: [string, ts.TypeNode|undefined][]=[];
-    for(const st of unit as readonly ts.Statement[]) { walk(st,inner); inner=inner.concat(declaredBy(st)); }
-  } else {
+  if(Array.isArray(unit)) for(const st of unit as readonly ts.Statement[]) walk(st);
+  else {
     const node=unit as ts.FunctionDeclaration;
-    if(node.body) walk(node.body,identifiers(node.parameters));
+    if(node.body) walk(node.body);
   }
   return sites.sort((a,b)=>a.pos[0]-b.pos[0]||a.pos[1]-b.pos[1]);
 }
@@ -1112,11 +882,11 @@ export function main(args: string[]) {
   // rather than growing a property at a time.
   const options: {
     format:string, depth:string|number, claims?:string, out?:string, verify?:string,
-    producer?:string, "file-key"?:string, diagnostics?:string, baseline?:string,
-    conversion?:string, stdout?:string, project?:string, fragment?:string, evidence?:string,
-  } = {format:"skjs",depth:10};
+    producer?:string, "file-key"?:string, diagnostics?:string,
+    stdout?:string, project?:string, fragment?:string, evidence?:string,
+  } = {format:"source-claims",depth:10};
   if(!sourcePath)throw Error("usage: annotate-source.mts source.ts --claims claims.json [--out annotated.ts] [--verify verifier] [--format report --producer name]");
-  const allowed=new Set(["claims","out","verify","format","producer","file-key","depth","diagnostics","baseline","conversion","stdout","project","fragment","evidence"]);
+  const allowed=new Set(["claims","out","verify","format","producer","file-key","depth","diagnostics","stdout","project","fragment","evidence"]);
   // The switch names a field of the record above; nothing else can be written.
   const isOption=(k: string): k is keyof typeof options => allowed.has(k);
   while(args.length) {
@@ -1125,8 +895,8 @@ export function main(args: string[]) {
     if(!key||!isOption(key)||value===undefined)throw Error(`invalid option ${key}`);
     options[key]=value;
   }
-  options.producer ??= options.conversion ? "skjs (converted)" : options.format==="skjs" ? "skjs" : "unspecified";
-  if(!options.claims || !["skjs","report","source-claims"].includes(options.format))throw Error("expected --claims and a supported format");
+  options.producer ??= "unspecified";
+  if(!options.claims || !["report","source-claims"].includes(options.format))throw Error("expected --claims and a supported format");
   if(!/^\d+$/.test(String(options.depth))||!Number.isSafeInteger(Number(options.depth)))throw Error("invalid proof depth");
   if(options.format==="report"&&options.verify)throw Error("verification of generic report inputs needs a producer adapter; stored statuses are never trusted");
   if(options.evidence&&!(options.fragment&&options.verify))throw Error("--evidence is a pipeline's, and needs its --fragment and --verify");
@@ -1135,20 +905,7 @@ export function main(args: string[]) {
   // Nothing is written in stdout mode, so an existing report there is not a conflict.
   if(options.stdout!=="json" && (fs.existsSync(output)||fs.existsSync(manifest)))throw Error("output already exists; choose a new --out path");
   const source=fs.readFileSync(sourcePath,"utf8"), bytes=fs.readFileSync(options.claims,"utf8");
-  const read=JSON.parse(bytes);
-  // A kept draft is a candidate: the claims with the format and the source they
-  // are about wrapped around them. The reader writes one beside its source, and
-  // it names everything `--format` would have had to be told, so it is taken
-  // from the file rather than asked for again.
-  const wrapped=read && !Array.isArray(read) && typeof read.format==="string" && "claims" in read;
-  if(wrapped) {
-    if(read.file!==sourcePath && read.file!==options["file-key"])
-      throw Error(`that candidate is about ${read.file}`);
-    if(read.sourceSha256!==hash(source))
-      throw Error("that candidate is about this source as it was before it changed");
-    options.format=read.format;
-  }
-  const input=wrapped ? read.claims : read;
+  const input=JSON.parse(bytes);
   const file=options["file-key"] || sourcePath;
   const tsconfigPath=options.project ? tsconfigOf(options.project) : undefined;
   // The bound of a rigid parameter is written in the source and nowhere in the
@@ -1160,43 +917,27 @@ export function main(args: string[]) {
   let scopes: RigidScopes=new Map();
   try {scopes=rigidScopes(fragment ?? fragmentParse.parseFile(sourcePath,false,tsconfigPath));}
   catch {scopes=new Map();}
-  let report: ReportInput=options.format==="skjs" ? fromSkjs(source,file,input,options.producer) : options.format==="source-claims" ? fromSourceClaims(source,file,input,options.producer,scopes) : input;
-  let conversion: ConversionManifest|null=null,conversionBytes=null;
-  if(options.conversion) {
-    if(options.format!=="source-claims")throw Error("--conversion requires --format source-claims");
-    conversionBytes=fs.readFileSync(options.conversion,"utf8");
-    const manifest: ConversionManifest=JSON.parse(conversionBytes);
-    conversion=manifest;
-    report=attachConversion(source,report,bytes,manifest);
-  }
+  const report: ReportInput=options.format==="source-claims" ? fromSourceClaims(source,file,input,options.producer,scopes) : input;
   // Validate attachment before running any expensive proof generation.
   render(source,report);
   // The fields this file reads of a verifier result; the manifest carries
   // whatever else the verifier recorded, unchanged.
-  let results: { status: string; detail?: string }[]|null=null, comparison=null;
+  let results: { status: string; detail?: string }[]|null=null;
   let identity: ReportIdentity = {claimsSha256:hash(bytes)};
-  if(conversion&&conversionBytes!==null)identity.conversionSha256=hash(conversionBytes);
-  if(options.baseline) {
-    const baselineBytes=fs.readFileSync(options.baseline,"utf8");
-    comparison=compareClaims(source,JSON.parse(baselineBytes),report);
-    identity.baselineSha256=hash(baselineBytes);
-  }
   if(options.verify) {
-    const verified=verifySkjs(sourcePath,source,input,file,report,path.resolve(options.verify),Number(options.depth),options.format==="source-claims",tsconfigPath,
+    const verified=verifyClaims(sourcePath,source,input,file,report,path.resolve(options.verify),Number(options.depth),tsconfigPath,
       fragment ? {fragment,...(options.evidence ? {evidence:options.evidence} : {})} : undefined);
     results=verified.results;identity={...identity,...verified.identity};
   }
   const diagnostics=options.diagnostics ? fs.readFileSync(options.diagnostics,"utf8") : null;
   if(diagnostics!==null)identity.diagnosticsSha256=hash(diagnostics);
-  const annotated=render(source,report,results,{...identity,...(comparison?{claimChanges:comparison.changes}:{}),...(conversion?{conversionOmissions:conversion.omissions}:{})});
+  const annotated=render(source,report,results,identity);
   const sourceFile=parse(source,report.source.file);
   const functionNodes=sourceFile.statements.filter(ts.isFunctionDeclaration);
   const data={sourcePath:path.resolve(sourcePath),claimsPath:path.resolve(options.claims),
     ...(options.verify ? {verifierPath:path.resolve(options.verify)} : {}),
     ...identity,source:report.source,annotatedSha256:hash(annotated),producer:report.producer,
     ...(options.diagnostics ? {diagnosticsPath:path.resolve(options.diagnostics),diagnostics} : {}),
-    ...(conversion&&options.conversion?{conversionPath:path.resolve(options.conversion),conversion}:{}),
-    ...(comparison&&options.baseline?{baselinePath:path.resolve(options.baseline),comparison}:{}),
     // A declaration the report says nothing about: named, so the reader can
     // offer its contract. One without a name or a body is not a declaration
     // this report is about.
@@ -1204,7 +945,7 @@ export function main(args: string[]) {
       const name=n.name;
       if(!name||!n.body||report.functions.some(f=>f.namePos[0]===name.getStart()))return [];
       return [{name:name.text,namePos:[name.getStart(),name.end],pos:[n.getStart(),n.end],
-        parameters:n.parameters.map(p=>p.name.getText()),missingSites:missingClaimSites(n,{entries:[],expressions:[]})}];
+        missingSites:missingClaimSites(n,{entries:[],expressions:[]})}];
     }),
     gaps:coverage(source,report),
     functions:report.functions.map((f,i)=>({id:`f${i}`,...f,
@@ -1229,10 +970,5 @@ export function main(args: string[]) {
   catch(e){fs.unlinkSync(output);throw e;}
   console.log(`Annotated source: ${output}\nReport manifest: ${manifest}`);
 }
-export {hash,typeText,fromSkjs,fromSourceClaims,attachConversion,render,coverage,compareClaims,verifySkjs};
-/* The intermediate a converter builds and `render` writes out. It is this
- * file's own shape rather than a language of its own, and is exported so a
- * suite that alters one says which document it is altering. */
-export type {DraftReport, ReportInput};
 if(process.argv[1] && import.meta.filename===path.resolve(process.argv[1]))
   try {main(process.argv.slice(2));}catch(e){console.error(messageOf(e));process.exitCode=1;}

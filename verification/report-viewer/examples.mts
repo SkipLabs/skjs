@@ -120,12 +120,6 @@ const stateful = [
       "Read through covariant views without granting write access.",
     ],
   ]),
-  ...examples("verification/tests/export-snapshots", [
-    [
-      "inferred-replacement",
-      "Export the inferred storage contract across a replacement write.",
-    ],
-  ]),
 ];
 const callables = examples("verification/tests/callables", [
   [
@@ -205,34 +199,18 @@ const supported = [...stateful, ...callables, ...generics].map(
 );
 
 // The producer inventory owns each fixture's description and expected boundary.
-// Comparison groups reuse it rather than maintaining another description.
+// The viewer groups reuse it rather than maintaining another description.
 const ocamlExample = (c: Case): GroupFile => ({
   path: `verification/ocaml-producer/examples/${c.file}.ts`,
   about: c.area,
 });
 const ocamlExamples = (kinds: Case["kind"][]): GroupFile[] =>
   cases.filter((c) => kinds.includes(c.kind)).map(ocamlExample);
-const ocamlWitnesses = [
-  "overloads",
-  "objects",
-  "blocks-bind",
-  "top-void",
-  "generic-closure",
-  "generic-two-calls",
-  "generic-bounded",
-  "generic-captured-store",
-  "generic-callback",
-  "generic-dependent-inference",
-].map((name) => {
-  const c = cases.find((c) => c.file === name);
-  if (!c) throw Error(`Unknown OCaml comparison example: ${name}`);
-  return ocamlExample(c);
-});
 
 const corpusGroups: ExampleGroup[] = [
   {
     label: "Current verifier examples",
-    note: "the source suites `make verify` runs",
+    note: "sources the corpus's tsc column checks",
     files: stateful,
   },
   {
@@ -244,91 +222,6 @@ const corpusGroups: ExampleGroup[] = [
     label: "Generics · rigid parameters and bounds",
     note: "type parameters under the source generic rules",
     files: generics,
-  },
-  {
-    label: "Claim repair · producer rejects",
-    note: "a partial collection, rejected on purpose, to edit back into shape",
-    files: examples("verification/tests", [
-      [
-        "partial-claims",
-        "Repair missing and invalid claims in a partially checked source.",
-      ],
-    ]),
-  },
-  {
-    label: "SKJS incomplete · safe programs rejected",
-    note: "findings about SKJS, kept as they are — not bugs to fix here",
-    files: examples("verification/tests/skjs-incomplete", [
-      [
-        "negated-loop-exit",
-        "Recover the Boolean refinement established when a negated loop exits.",
-      ],
-      [
-        "singleton-negation",
-        "Negating true produces false rather than an arbitrary Boolean.",
-      ],
-      [
-        "null-loop-exit",
-        "A loop's exit excludes null even when the null path never terminates.",
-      ],
-      [
-        "write-refined-read",
-        "A write establishes precise contents within a fixed Boolean contract.",
-      ],
-      [
-        "empty-domain-escape",
-        "A callable with an empty domain has a vacuous result contract.",
-      ],
-      [
-        "undefined-completes",
-        "Normal completion satisfies an undefined return contract.",
-      ],
-      [
-        "arrow-intersection",
-        "Incomparable callable signatures can have an inhabited intersection.",
-      ],
-      [
-        "bound-arguments",
-        "Partial .bind saves argument values while retaining live captures.",
-      ],
-    ]),
-  },
-  {
-    label: "SKJS unsound · unsafe programs accepted",
-    note: "findings about SKJS, kept as they are — do not make one verify",
-    files: examples("verification/tests/skjs-unsound", [
-      [
-        "captured-refinement",
-        "A callback invalidates a captured field's singleton refinement.",
-      ],
-      [
-        "never-completes",
-        "Normal completion contradicts a never return contract.",
-      ],
-      [
-        "arrow-intersection",
-        "Collapsing an inhabited arrow intersection to never permits an invalid result.",
-      ],
-      [
-        "beyond-precision",
-        "Distinct numeric spellings can denote the same runtime number.",
-      ],
-    ]),
-  },
-  {
-    label: "SKJS repaired · unsafe programs rejected",
-    note: "an unsoundness since repaired",
-    files: examples("verification/tests/skjs-unsound", [
-      [
-        "compound-write-refinement",
-        "A direct write invalidates the refinement established by a compound guard.",
-      ],
-    ]),
-  },
-  {
-    label: "Producer gaps · OCaml witnesses under SKJS and tsc",
-    note: "programs the OCaml producer verifies and another producer cannot claim or establish — findings, kept as they are",
-    files: ocamlWitnesses,
   },
   {
     label: "Unsupported examples · expected limitations",

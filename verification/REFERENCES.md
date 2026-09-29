@@ -559,13 +559,12 @@ merged 2021-09-10.
 SkipLabs. *SKJS*, a checker for a sound subset of TypeScript, this
 repository ([github.com/SkipLabs/skjs](https://github.com/SkipLabs/skjs)).
 
-**Used as** the claim producer whose results the pipeline checks, frozen at
-the tag `skjs-frozen`. Its soundness corpus and ledger (the issue reports
+**Used as** the source of the test suite the pipeline's coverage is measured
+on. Its soundness corpus and ledger (the issue reports
 under `docs/deep-dives/issues/` and `docs/ledger.yaml` at `bf20814b`, and the
 mathematical audit `docs/skjs-type-soundness.tex`) supplied the witnesses the
 calculus reproduces.
-**Discussed in** [DESIGN: SKJS is frozen](DESIGN.md#skjs-is-frozen),
-[SKJS-COVERAGE](ocaml-producer/SKJS-COVERAGE.md),
+**Discussed in** [SKJS-COVERAGE](ocaml-producer/SKJS-COVERAGE.md),
 [INTERSECTIONS](INTERSECTIONS.md), [skjs-improvement](../docs/skjs-improvement.md),
 [TypeScript soundness holes](../docs/typescript-soundness-holes.md); the
 corpus table in DESIGN before `6ee739f8` (`355a9ecb`).

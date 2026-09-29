@@ -1,49 +1,34 @@
 # Stateful calculus request protocol
 
-The verifier accepts a JSON request for the
-stateful calculus, separately from its derivation certificate. This is a
-consumer boundary for extracted programs. It is **not** a decoder for SKJS's
-source-associated claims, and it does not certify TypeScript text by itself.
+The verifier reconstructs, from a source's Fragment tree and a producer's
+claims, one request of the stateful calculus per code unit, and checks it
+against its derivation certificate. This is a consumer boundary for extracted
+programs; it does not certify TypeScript text by itself.
 
-Raw requests and the source modes below use the same executable and consumer.
-This document owns calculus request/evidence formats and SKJS source AST/export
-encoding. [SOURCE-CLAIMS](SOURCE-CLAIMS.md) owns independent sidecar schemas,
-conversion and repairs; [diagnostics](OBLIGATION-DIAGNOSTICS.md) owns failure metadata.
+This document owns the request/evidence formats, the verifier's command line
+and the source AST encoding. [SOURCE-CLAIMS](SOURCE-CLAIMS.md) owns the
+producer-independent claim schemas;
+[diagnostics](OBLIGATION-DIAGNOSTICS.md) owns failure metadata.
 
-## Run a request
+## Run the verifier
 
-Build from `verification/lean`:
-
-```sh
-lake build
-```
-
-Save this minimal request as `request.json`:
-
-```json
-{
-  "types": [["nul"]],
-  "program": [{ "expression": "nul", "continuation": "ret", "handler": null }],
-  "claims": [{ "context": [], "type": [0] }],
-  "result": [0],
-  "start": 0,
-  "inputs": []
-}
-```
-
-Then produce evidence and check it independently:
+Build from `verification/lean` with `lake build`, then produce evidence and
+check it independently:
 
 ```sh
-.lake/build/bin/verifier --produce-stateful request.json evidence.json 12
-.lake/build/bin/verifier --check-stateful request.json evidence.json
+.lake/build/bin/verifier --produce-source-claims ast.json source-claims.json input.ts evidence.json 12
+.lake/build/bin/verifier --check-source-claims ast.json source-claims.json input.ts evidence.json
 ```
 
 `12` limits expression proof-search depth. It is not an execution budget and
 is not part of the request, evidence or safety theorem. Production reports
 failure if evidence cannot be found and checked. The checking command never
 invokes the producer; exit zero means the submitted certificate passed for the
-submitted request. Read, parse, validation, checking and output-write failures
-return nonzero.
+requests reconstructed from the submitted source and claims. Read, parse,
+validation, checking and output-write failures return nonzero. Either mode
+also takes `--function <name> <start> <end>`, checking one function with the
+others its module, and may be preceded by `--trace-subtyping <file>`
+([subtyping traces](#subtyping-traces)).
 
 ## Request fields
 
@@ -344,9 +329,7 @@ facts about another. These are finite state assertions, not extra type labels.
 `effect: null` selects ordinary expression evidence; a non-null effect selects
 one of the checked `StepEvidence` constructors (`ordinary`, `pure`,
 `typedRead`, `observedRead`, `slicedRead`, `knownValue`, `created`, `allocated`, `written`). Constructor payloads use
-Lean's derived JSON encoding, with strict decode/re-encode checking; the
-[graph regression](lean/Verification/Model/Tests/HeapGraphTests.lean) tests a
-round trip with nonempty facts and effect evidence.
+Lean's derived JSON encoding, with strict decode/re-encode checking.
 
 The effect checker binds to the root expression sequent and must establish exactly
 `output`. Each actual outgoing edge checks fact entailment against the destination's
@@ -447,8 +430,7 @@ boundary; round-trip tests are not a proof of fidelity to external source text.
 A type can also be read from recursive equations
 ([RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md#2-type-definitions)), whose labels
 are trees over the equations' heads. The source path (source mode below)
-already checks every request over them. The standalone request still reads
-`types`; the `equations` field below is specified, not implemented.
+checks every request over them.
 
 **Source path.** `--check-source-claims` and `--produce-source-claims` never
 read equations from the wire. Lean lowers the declarations and the claims to
@@ -504,33 +486,6 @@ entries' are (`subsetUsing`, `coreUsing`,
 [RECURSIVE-EQUATIONS §4.2–4.3](RECURSIVE-EQUATIONS.md#42-parametric-assumptions)).
 The spellings of both steps are unchanged.
 
-**Specified, not implemented.** The standalone request (`verifyJson`) is to
-decode its graph, with `equations` replacing `types`:
-
-```json
-{
-  "equations": [
-    {
-      "name": "Promise",
-      "parameters": [{ "name": "T", "kind": "value" }],
-      "body": [{ "refs": { "views": [["then", [{ "app": 7, "args": [[{ "arg": 0 }]] }]]] } }]
-    }
-  ]
-}
-```
-
-Each entry has a `name` (diagnostic only), `parameters`, `binders` (left out
-when none) and a `body` in the row format of [request fields](#request-fields).
-A body's operands are lists of trees. The evidence, in both paths, is to
-carry these fields:
-
-- `inst` instances that name only their images, with the finite `table`,
-  `domain` and `free` fields removed;
-- `core` certificates with `families`, each
-  `{"source": L, "target": L, "variables": [kind, …], "hypotheses": [[x, y], …], "table": [[A, B], …]}`,
-  left out when none, with the present table as the variable-free entry;
-- nothing for `Var`: no proof form names it (below).
-
 Diagnostics show labels through a projection onto a finite table, bounded by
 depth, with names for applications (`Promise<number | R>`).
 
@@ -561,7 +516,7 @@ and a successful `verify` check. `verify_claims` proves equality of the requeste
 point annotations and the certificate's annotations. `verify_safe` establishes
 global modeled safety at every observation budget, for **any** argument
 environment satisfying `inputs`, admissible world and satisfying heap. The input
-contract is a premise, not inferred from SKJS's point claims. `verify_closed_safe`
+contract is a premise, not inferred from a producer's point claims. `verify_closed_safe`
 specializes this to `inputs: []` and the empty heap. The theorem reuses graph
 safety, including cycles, heap changes and explicit slot maps.
 
@@ -569,16 +524,13 @@ safety, including cycles, heap changes and explicit slot maps.
 consumer before returning it. The safety theorem does not require using this
 producer. Search is incomplete; failure is not a proof of untypability.
 
-[RequestJsonTests.lean](lean/Verification/Model/Tests/RequestJsonTests.lean) exercises serialize/parse/produce/serialize/parse/check
-on a loop, a mapped diamond, a closure over a mutated cell, and a program forcing
-structural overload-subtyping evidence. Negative cases alter code, claims,
-requirements, maps and type labels, or add unknown fields and omit
-required data. They also check that object field order does not matter.
+[RequestJsonTests.lean](lean/Verification/Model/Tests/RequestJsonTests.lean) checks the property-key spelling and that strict decoding refuses a
+document missing a field.
 
 ## Source mode
 
 [SourceExtraction.lean](lean/Verification/Model/Source/SourceExtraction.lean) is the source adapter: it rebuilds the calculus request from the Fragment tree and the claims.
-[SourceExtractionTests.lean](lean/Verification/Model/Tests/SourceExtractionTests.lean) guards it: name resolution, slot order, shared continuations, closure obligations, and primitive operations against node.
+[SourceExtractionTests.lean](lean/Verification/Model/Tests/SourceExtractionTests.lean) guards it on pipeline fixtures: name resolution, slot order, forged claims refused for their reasons, and primitive operations against node.
 
 The adapter accepts primitive or bounded callable parameters, initialized
 `const` and `let` declarations, assignment to a `let` as an expression, nested boolean branches and returns, using variable
@@ -635,12 +587,7 @@ computed keys `[x]` or its functions read as element keys `e[x]`. A field name, 
 claim's record fields, is a string key as a JSON string, or a symbol key
 `{"symbol": i}` naming the i-th of those declarations. A symbol key is never a
 string key: no string names it, and a string index signature does not
-constrain it. In SKJS's claims,
-`type Id<T> = T` and `type Box<T> = { value: T }` are the admitted
-substitution schemes, and a one-argument named instantiation is an `alias`
-atom `{ "a": "alias", "name": "Id", "args": [A] }`.
-[GenericAlias.lean](lean/Verification/Model/Source/GenericAlias.lean) expands these alias atoms at the claim level.
-A generic unit is an ordinary graph request: each binder is read as its
+constrain it. A generic unit is an ordinary graph request: each binder is read as its
 parameter row, a bounded one as the meet of its row and its bound, a binder
 bounded by another as the meet of the two parameter rows, and the request is
 checked at every assignment of those rows
@@ -654,15 +601,10 @@ subtyping, a failure being a located direct obligation. The neutral source
 sidecar's function-scoped `{ "param": "T" }` claims are read the same way,
 each binder as its row.
 
-Generate an AST with `tools/fragment-parse.mts`, and claims with SKJS's
-`--emit-skjs-type-claims`. Then run:
-
-```sh
-verifier --produce-stateful-source ast.json claims.json path/to/input.ts evidence.json 8
-verifier --check-stateful-source ast.json claims.json path/to/input.ts evidence.json
-```
-
-[RequestCli.lean](lean/Verification/Model/Source/RequestCli.lean) implements these commands and the raw-request ones: it reads the files and hands them on.
+Generate an AST with `tools/fragment-parse.mts` and claims with a producer,
+then run the two commands of [Run the verifier](#run-the-verifier).
+[RequestCli.lean](lean/Verification/Model/Source/RequestCli.lean) implements
+them: it reads the files and hands them on.
 
 The file key must match both inputs. Evidence is a strict object
 `{"functions":[...],"obligations":[...]}`, containing responses in source
@@ -672,16 +614,12 @@ or annotation judgment. Counts and root judgments must match exactly. Exported
 function order does not matter. The checking command reconstructs both the
 requests and required judgments itself and does not run the producer.
 
-Native SKJS source commands first import through `SourceClaimExport` into the
-same `SourceClaimJson` document and consumer used by TS. Unavailable claims stay
-explicit and do not denote types. There is no separate native whole-file checker.
-Ground functions lower to `SourceClaims.Function`; used candidates are resolved
+Every producer's claims are one `SourceClaimJson` document, read by one
+consumer. Unavailable claims stay explicit and do not denote types. Ground functions lower to `SourceClaims.Function`; used candidates are resolved
 with source-graph label bounds checks. Generic functions are graph requests
 over their binders' parameter rows. See [the source-claim interface](SOURCE-CLAIMS.md).
 
 The adapter represents boolean as the union of exact true and false labels.
-[SourceTypes.lean](lean/Verification/Model/Source/SourceTypes.lean) proves this primitive translation exact.
-[UndefinedTests.lean](lean/Verification/Model/Tests/UndefinedTests.lean) guards the exact undefined contracts: interning never lets undefined collapse into a smaller operand.
 Unsupported types are rejected. Each source
 expression's exported type remains its result claim; source annotations and
 return requirements are separate synthetic-node obligations. Statement claims
@@ -733,23 +671,14 @@ graph, not directly to TypeScript execution. The parser is still the existing
 independent parser; its format and the claim export can change as the broader
 stateful fragment requires. There is no compatibility obligation to a retired fragment.
 
-`make verify` runs the real-export integration suite. To run only that suite:
-
-```sh
-verification/run.sh --build --suite stateful-source
-```
-
-The suite checks production and independent consumption, then corrupts expression
-claims, incoming environments, source annotations and input identities. Source
-`while` loops now use supplied head environments with independently checked
+Source `while` loops use supplied head environments with independently checked
 initial and back edges. Unlabeled break/continue compile to checked mapped
-transfers to the nearest loop exit/head. Tests also cover repeated condition
-calls, dropping body locals and rejected transfer evidence. Mutable declarations, loops inside
-closures and general partially returning nested closure arms remain gated.
+transfers to the nearest loop exit/head. Loops inside closures and general
+partially returning nested closure arms remain gated.
 
 ## Record-contract export boundary
 
-The SKJS claim exporter additionally supports this bounded record atom:
+The claim format supports this bounded record atom:
 
 ```json
 {
@@ -769,59 +698,23 @@ The SKJS claim exporter additionally supports this bounded record atom:
 }
 ```
 
-This is an SKJS export atom, **not** a new calculus type-graph clause. It records
-permissions rather than choosing a heap invariant. The bounded exporter rejects
-extra fields, symbols, real index signatures, positive callable/array requirements
-and nested record or unresolved field types. Field read/write operands may
-contain bounded callable contracts. The `indexes` object distinguishes `absent`
-from `synthetic` for each key kind. Synthetic indexes are SKJS inference artifacts
-excluded from runtime field lookup, not index permissions; their internal type
-variables are not exported. It preserves readonly setters as `never` and marks
-optional fields explicitly. `unknown` and `absent` object modes are distinct
-exports, though both are compatible with the future plain-cell interpretation.
+This is a claim atom, **not** a new calculus type-graph clause. It records
+permissions rather than choosing a heap invariant. Field read/write operands
+may contain bounded callable contracts. The `indexes` object distinguishes
+`absent` from `synthetic` for each key kind; a synthetic index is excluded
+from runtime field lookup and grants no index permission. A readonly field's
+write is `never`, and optional fields are marked explicitly. `unknown` and
+`absent` object modes are distinct, though both are compatible with the
+plain-cell interpretation.
 
 The shared source claim format also has an optional `indexSignature` on a
 record atom, with separate `read` and `write` types. It describes an actual
 string index permission, unlike the synthetic `indexes` markers above. The
 source fragment and OCaml producer emit readonly signatures (`write: never`)
-and mutable ones (`write` equal to `read`); the SKJS bounded exporter still
-rejects real index signatures. An index lowers to a dictionary graph clause, a
+and mutable ones (`write` equal to `read`). An index lowers to a dictionary graph clause, a
 mutable one with its contract also in `cells`. A number or symbol index has no
 claim atom: a type literal holding one is claimed as its graph rows
 (`{"a": "graph", ...}`), over the `"numeric"` or `"symbols"` class.
-
-Function claims retain the substitution snapshot taken after checking the body.
-Serialization follows only isolated, bound inference variables without
-constraints, up to a fixed recursion limit. It reads both open and closed
-existing bounds without solving, sealing or growing them. Unbound variables,
-constraints, named instances and cycles remain unsupported. This exposes the
-field bounds of fresh object literals without replacing their expression claims
-with declaration annotations. Faithfulness of this bounded export to SKJS's
-internal types is not a Lean theorem.
-
-### Closed operation export
-
-Each function also exports `operations`: the closed subtype and expansion
-judgments SKJS accepted while checking that body. Types are serialized under
-the substitution in force at the judgment, not the function's final snapshot.
-Live inference variables, named instances, `unknown`, and anything outside the
-fragment are omitted rather than approximated. Speculative checks on a cloned
-substitution are not recorded. The independent consumer
-(`--check-skjs-operations`) translates those that lower into the source
-fragment and asks the existing subtype checker for a derivation. A skipped
-operation is outside the fragment; an unproved one is a failed search, not a
-semantic disproof. This export does not change SKJS acceptance.
-
-```json
-{
-  "kind": "subtype",
-  "source": { "top": false, "atoms": [{ "a": "booleanlit", "v": "true" }] },
-  "target": { "top": false, "atoms": [{ "a": "boolean" }] }
-}
-```
-
-`expand` uses the same two fields: `source` is the type before expansion,
-`target` the clause view. Exact expansion is checked in both directions.
 
 A supported multi-branch object is serialized as multiple `record` or `function`
 atoms in the same `atoms` list. Every branch must export successfully; one
@@ -839,16 +732,12 @@ of a standalone refined cell claim.
 lowers read and write operands, including callables, to the same graph table and
 requires equal invariant label lists after union absorption. Unknown fields and
 unsupported operands reject the whole contract. `CellClaims.translate` retains
-the primitive specialization and its exact claim-membership theorem, also used
-for primitive current-content observations. The reference-label theorem applies
-to arbitrary graph operands; neither theorem establishes TypeScript
-record-to-reference correspondence or excludes accessor-backed runtime objects.
+the primitive specialization, also used for primitive current-content
+observations. TypeScript record-to-reference correspondence, and the exclusion
+of accessor-backed runtime objects, are review obligations.
 
-`cell_claim_tests` ([CellClaimIntegration.lean](lean/Verification/Model/Tests/CellClaimIntegration.lean)) exercises real SKJS exports and corrupted contracts as part
-of `make verify`. Allocation probes check Boolean, singleton and contextually
-widened field bounds; the alias-write probe retains both named cell contracts.
-Source cells now reach certificate production and independent consumption.
-Their source correspondence remains a reviewed compilation obligation.
+Source cells reach certificate production and independent consumption. Their
+source correspondence is a reviewed compilation obligation.
 
 ## Cell source lowering
 
@@ -861,9 +750,7 @@ also rejected until a plain-data boundary for external objects is supplied.
 
 The stateful input decoder keeps types separate from the earlier primitive AST.
 Every initializer, receiver, RHS, read and assignment expression consumes its
-own claimed type. The request graph uses the four primitive labels and sixteen
-reference labels, one for each primitive invariant. `CellClaims.reference_exact`
-proves that the selected label has exactly the accepted invariant's meaning.
+own claimed type.
 
 Expression nodes bind evaluated values into temporary slots. The compiler
 executes the receiver before the RHS and executes each once. A calculus write
@@ -895,10 +782,8 @@ may be a record, lowered with its readonly members as views, so a method that
 writes through its receiver needs the field's write capability. There is no
 missing-field default. The exporter preserves the ordered list of free
 parameters and the result, an optional parameter appearing as the union its
-contract admits. SKJS refuses `this` requirements
-(`function-this-parameter`), generics, unsupported fields, indexes, positive
-construct requirements and record-valued operands; the TypeScript producer
-states a `this` parameter as the receiver. A rest parameter with a
+contract admits. The TypeScript producer states a `this` parameter as the
+receiver. A rest parameter with a
 tuple contract of required positions is exported as those positions, which is
 what the signature has. A rest parameter whose contract is a mutable `T[]` is
 exported as `"rest": T` beside `"params"`, the contract of each further actual;
@@ -906,8 +791,7 @@ it lowers to a variadic signature of the call clause, beside any fixed arrows
 of the same value, and a callable object may carry it. Arrow arguments and
 results
 may recursively union bounded function contracts with the
-supported primitives null, undefined, true and false, and semantic top (`unknown`). The SKJS exporter uses
-bounded recursion, and the tsc producer applies a depth limit when translating
+supported primitives null, undefined, true and false, and semantic top (`unknown`). The tsc producer applies a depth limit when translating
 nested operands. No unsupported union alternative is discarded.
 
 `Fragment.callableType` lowers every supported operand to graph labels.

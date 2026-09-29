@@ -122,7 +122,6 @@ const PROOF_LABEL: Record<string, string> = {
   "not-established": "proof search failed",
   unsupported: "unsupported source",
   "not-run": "not run",
-  stale: "stale after an edit",
 };
 const proofLabel = (status: string) => PROOF_LABEL[status] || status;
 
@@ -165,8 +164,6 @@ function proofMark(f: Judged): [string, string] {
           "checking could not proceed: a claim it needed is missing, or the source is outside the fragment",
         ]
       : ["✗", "proof search failed; that is not a disproof of the claim"];
-  if (f.status === "stale")
-    return ["·", "stale: the candidate changed after this result"];
   return ["·", "no verifier was available when this ran"];
 }
 
@@ -190,8 +187,8 @@ const PRODUCER_MARK: Record<string, string[]> = {
   aborted: ["✗", "Producer rejected this function"],
 };
 
-// Both outcomes, and whether they disagree. SKJS reads only the source, so its
-// outcome holds for as long as the source does; proof search reads the claims,
+// Both outcomes, and whether they disagree. The producer's verdict reads only
+// the source, so it holds for as long as the source does; proof search reads the claims,
 // so an edit can change it. Where proof search reached no verdict there is no
 // disagreement to report.
 function outcome(
@@ -220,14 +217,15 @@ function outcome(
           ? "fresh"
           : "recorded"
         : null,
-    // SKJS accepted it and proof search failed outright: worth an eye.
+    // The producer accepted it and proof search failed outright: worth an eye.
     attention:
       f.status === "not-established" && f.collection === "complete" && concluded,
   };
 }
 
 /* ---------- the producer's own diagnostics ---------- */
-// SKJS reports against the source with 1-based columns and an exclusive end.
+// A producer's diagnostics name the source with 1-based columns and an
+// exclusive end.
 // These are its diagnostics shown where they point: not claims, not results.
 function producerMarks(rep: MarkedReport): ProducerMark[] {
   const marks: ProducerMark[] = [];

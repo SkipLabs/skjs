@@ -4,11 +4,10 @@ import Verification.Model.Programs.Parametricity
 import Verification.Model.Programs.GraphCode
 import Verification.Model.Source.LabelStore
 
-/-! In-memory JSON boundary for the stateful consumer. A request and its
-evidence are separate inputs. This is a calculus protocol, not a decoder for
-SKJS types or a TypeScript extractor. No unsupported type is approximated.
-`decodeStrict` requires every field and rejects any other, so a document either
-has the current shape or is refused. -/
+/-! In-memory JSON boundary for the stateful consumer: a unit's request, over
+the labels of a store, and its evidence, as separate inputs. No unsupported
+type is approximated. `decodeStrict` requires every field and rejects any
+other, so a document either has the current shape or is refused. -/
 namespace Verification.Model.RequestJson
 open Lean ProgramTyping PositiveNormalization PositiveGraphs PositiveRules
 open ProgramCertificates PointClaims ControlFlow CertificateProducer
@@ -129,20 +128,6 @@ instance : FromJson ParameterKind := ⟨fun j => do
   | "arguments" => return .arguments
   | _ => throw "expected parameter kind value or arguments"⟩
 
-/-- A row of a type table: a union of clauses, a scheme row (a generic
-callable: its binders and its signatures `(receiver, parameters, result)`), a
-parameter row (a scheme's binder), which names its own label, or a meet row (a
-value parameter row intersected with clauses, `V & DepSafe`). Only a clause
-row has clauses; the graph reads the others as scheme, parameter and meet
-rows. -/
-abbrev Row := GraphRow Nat
-
-instance : Coe (List (Clause (List Nat))) Row := ⟨.clauses⟩
-instance : Coe (List (List (Clause (List Nat)))) (List Row) := ⟨List.map .clauses⟩
-
-/-- A table of clause rows. -/
-def rows (rs : List (List (Clause (List Nat)))) : List Row := rs.map .clauses
-
 /-- A clause row is spelled as its array of clauses, as every row was before
 scheme rows; a scheme row as
 `{"scheme": {"binders", "signatures", "bounds", "variadic"}}`, its bounds and
@@ -201,10 +186,6 @@ every other name in double brackets. -/
 def reservedKey (k : PropKey) : Bool :=
   k == CallArguments.arrayStoreField || k == CallArguments.protoField || bracketed k
 
-/-- The row of `ArrayProto`, `Array.prototype`'s contract, in a finite table:
-the row after the four fixed ones. -/
-def arrayProtoLabel : Nat := 4
-
 /-- The keys an ordinary array cannot own: its prototype's declared keys and
 `constructor`. The latter preserves the realm's standard species construction.
 Sorted, each once, with the model's reserved keys aside. -/
@@ -217,138 +198,6 @@ def arrayExcludedKeysOf : List (Clause (List ι)) → List PropKey
   | [.refs a bs vs os ms _] =>
     arrayExcludedKeys (((a :: bs).flatten ++ vs).map (·.1) ++ os.map (·.key) ++ ms.map (·.key))
   | _ => arrayExcludedKeys []
-
-/-- An array type's clause: an object owning the store key, holding
-`ArrayProto` as a view under the prototype key. -/
-def arrayShaped : Clause (List Nat) → Bool
-  | .refs a bs vs _ _ _ =>
-    ((a :: bs).flatten ++ vs).any (·.1 == CallArguments.arrayStoreField) &&
-      vs.any (· == (CallArguments.protoField, [arrayProtoLabel]))
-  | _ => false
-
-/-- The realm a table states: where it has an array type, `ArrayProto` is its
-row `arrayProtoLabel`, and the keys it provides are that row's. A table without
-arrays states none. -/
-def tableRealm (T : List Row) : Option (ArrayRealm Nat) :=
-  if T.any (fun r => match r with | .clauses cs => cs.any arrayShaped | _ => false) then
-    some ⟨[arrayProtoLabel], match T[arrayProtoLabel]? with
-      | some (.clauses cs) => arrayExcludedKeysOf cs
-      | _ => arrayExcludedKeys []⟩
-  else none
-
-/-- The graph a table of rows denotes. Its rows are read by index at every
-step of search and checking, so the table is copied into an array once, when
-the graph is built: a lookup is then constant time, not a walk down the list.
--/
-def tableGraph (T : List Row) : NormalGraph Nat :=
-  let A := T.toArray
-  NormalGraph.ofRowMap (fun i => A[i]?.getD (.clauses [])) (tableRealm T)
-
-@[simp] theorem tableGraph_clauses_row {T : List Row} {i : Nat} {cs : List (Clause (List Nat))}
-    (h : T[i]? = some (.clauses cs)) : (tableGraph T).plain i = true ∧ tableGraph T i = cs := by
-  simp [tableGraph, NormalGraph.ofRowMap, NormalGraph.params, NormalGraph.plain, NormalGraph.clauses, h, GraphRow.union]
-
-/-! ### The finite table as a store
-
-A finite table's labels are its row positions, and its first four rows are
-the primitives: null, true, false, undefined (`SourceTypes.initial`). -/
-
-instance : Labels Nat where
-  toHashable := inferInstance
-  toOrd := inferInstance
-  toToJson := inferInstance
-  toFromJson := inferInstance
-  toRepr := inferInstance
-  toInstantiates := inferInstance
-  decEq := inferInstance
-  nul := 0
-  tru := 1
-  fls := 2
-  undef := 3
-
-/-- A table of rows in label order. -/
-abbrev Table := List Row
-
-/-- Every label a row names indexes the table; a parameter row names itself;
-a scheme's binders are parameter rows, and a meet row's are value ones. -/
-def validRows (T : Table) : Bool :=
-  (T.flatMap GraphRow.operands).all (·.all (· < T.length)) &&
-  (List.range T.length).all fun i => match T[i]? with
-    | some (.param l _ _) => l == i
-    | some (.scheme bs _ _ _) => bs.all fun b => match T[b]? with
-      | some (.param _ _ _) => true
-      | _ => false
-    | some (.meet p _ ps) => (p :: ps).all fun q => match T[q]? with
-      | some (.param _ _ .value) => true
-      | _ => false
-    | _ => true
-
-namespace Table
-
-/-- A clause row's label: the first row with exactly these clauses, appended
-if there is none. Appending keeps every existing label. -/
-def intern (T : Table) (cs : List (Clause (List Nat))) : Table × Nat :=
-  let T' := if GraphRow.clauses cs ∈ T then T else T ++ [GraphRow.clauses cs]
-  (T', T'.idxOf (GraphRow.clauses cs))
-
-/-- Any row's label: its first occurrence, appended if there is none. -/
-def internRow (T : Table) (r : Row) : Table × Nat :=
-  match T.idxOf? r with
-  | some i => (T, i)
-  | none => (T ++ [r], T.length)
-
-/-- The value parameter row that stands for a generic unit's binder `name`:
-the table's one value parameter row of that name that no scheme binds, or a
-new one. The row carries no meaning of its own: a unit over it is certified at
-every assignment of it (`Parametricity.accepted_at`). -/
-def binder (T : Table) (name : String) : Except String (Table × Nat) := do
-  let schemeBinders := T.flatMap fun
-    | .scheme bs .. => bs
-    | _ => []
-  let named := (List.range T.length).filter fun i => match (T[i]? : Option Row) with
-    | some (.param l n .value) => l == i && n == name && !schemeBinders.contains i
-    | _ => false
-  match named with
-  | [l] => return (T, l)
-  | [] => return (T ++ [GraphRow.param T.length name .value], T.length)
-  | _ => throw s!"two parameter rows stand for the binder '{name}'"
-
-/-- A fresh value parameter row per name, in order. -/
-def binders (T : Table) (names : List String) : Table × List Nat :=
-  let params := names.zipIdx.map fun (n, i) => (n, T.length + i)
-  (T ++ params.map (fun (n, l) => GraphRow.param l n .value), params.map Prod.snd)
-
-end Table
-
-instance : Store Table Nat where
-  toToJson := inferInstance
-  toFromJson := inferInstance
-  graph := tableGraph
-  row T i := T[i]?.getD (.clauses [])
-  valid T i := i < T.length
-  wellFormed := validRows
-  labels T := List.range T.length
-  bound T := T.length
-  arrayProto _ := arrayProtoLabel
-  intern := Table.intern
-  lookup T cs := T.idxOf? (GraphRow.clauses cs)
-  binder := Table.binder
-  binders := Table.binders
-  bounded T p cs also := Table.internRow T (.meet p cs also)
-  scheme T bs sigs bounds rests := (T ++ [GraphRow.scheme bs sigs bounds rests], T.length)
-  -- A table is finite already and its labels are positions: a diagnostic
-  -- shows all of it, as it is, since a sub-table would renumber its rows.
-  project T _ _ := { rows := T, position := id }
-  images T := PositiveCertificates.finiteInstanceImages (tableGraph T)
-  -- A table names its binders by rows, never by name.
-  rebind _ _ l := [l]
-  substitute _ σ l := [(σ.lookup l).getD l]
-
-@[simp] theorem Table.graph_eq (T : Table) : StoreView.graph T = tableGraph T := rfl
-@[simp] theorem Table.nul_eq : (Labels.nul : Nat) = 0 := rfl
-@[simp] theorem Table.tru_eq : (Labels.tru : Nat) = 1 := rfl
-@[simp] theorem Table.fls_eq : (Labels.fls : Nat) = 2 := rfl
-@[simp] theorem Table.undef_eq : (Labels.undef : Nat) = 3 := rfl
 
 deriving instance ToJson, FromJson for Node
 deriving instance ToJson, FromJson for PositiveCertificates.ArrowCert

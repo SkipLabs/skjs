@@ -7,7 +7,7 @@
  * an outcome in a bundle was reached by the verifier, and a bundle that carries
  * none says so rather than being filled in.
  */
-import type { Bundle, Candidate, ExampleGroup, Producer } from "../../types.ts";
+import type { Bundle, ExampleGroup, Producer } from "../../types.ts";
 
 /* What the picker lists, declared where the reader's other documents are so
  * the server and the page cannot drift apart over it. */
@@ -49,46 +49,6 @@ export function files() {
 /** Repository sources matching a query, for the path field's suggestions. */
 export function sources(query: string) {
   return get<{ files: string[]; total: number }>("/api/sources", { q: query });
-}
-
-/**
- * Check an edited candidate against unchanged source. The producer is not run:
- * this is the reader's own draft, and what comes back is a report of what the
- * verifier made of it — an unchecked candidate is never displayed as a result.
- */
-export async function checkCandidate(candidate: Candidate) {
-  const response = await fetch("/api/candidate", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ candidate }),
-  });
-  const body = await response.json().catch(() => null);
-  if (!response.ok)
-    throw new ApiError(
-      response.status,
-      (body as { error?: string })?.error ?? "the candidate was not accepted",
-    );
-  return body as Bundle;
-}
-
-/**
- * Keep the draft beside the source it is about, or discard it. This writes into
- * the working tree, so it happens only when asked; what is written is the
- * candidate itself, so the same file can be handed to `annotate-source.mts`.
- */
-export async function keepDraft(candidate: Candidate, remove = false) {
-  const response = await fetch("/api/draft", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ candidate, file: candidate.file, remove }),
-  });
-  const body = await response.json().catch(() => null);
-  if (!response.ok)
-    throw new ApiError(
-      response.status,
-      (body as { error?: string })?.error ?? "the draft was not kept",
-    );
-  return body as { path: string; kept: boolean };
 }
 
 /**

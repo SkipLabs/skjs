@@ -1,5 +1,4 @@
-import Verification.Model.Tests.SkjsClaimsFixture
-import Verification.Model.Source.SourceExtraction
+import Verification.Model.Source.SourceClaimJson
 
 namespace Verification.Model.SourceExtractionTests
 open Lean PositiveNormalization ProgramTyping RequestJson SourceExtraction
@@ -10,15 +9,6 @@ private def ok (r : Except String α) : Bool := match r with
 
 private def is [BEq α] (r : Except String α) (expected : α) : Bool :=
   match r with | .ok a => a == expected | .error _ => false
-
--- Exercise the source-specific vocabulary, not every unrelated signature in
--- the whole type table. The independent checker still receives the full graph.
-private def produceSourceJson (j : Json) (fuel : Nat)
-    (suggestions : List (ProgramCertificates.Sequent Nat) := [])
-    (known : List (ProgramCertificates.Evidence Nat) := []) : Except String Json := do
-  let r ← decodeRequest RequestJson.Table j
-  let source : SourceRequest SourceTypes.Table Nat := ⟨r,[],[],[],[],[], [], []⟩
-  RequestJson.produceJson RequestJson.Table j fuel suggestions known [] (some source.searchLabels)
 
 -- Runtime numeric operations retain signed zero. This is the same expression
 -- executed by the JS arithmetic suite: merging its zeros changes false to true.
@@ -417,66 +407,49 @@ private def numberStrings : List (UInt64 × String) := [
 #guard binop .sub (.str "1") (.str "1") == none
 #guard binop .add .tru (dbl 1.0) == none
 
--- Exact finite-set translation, including normalization of unions.
-#guard is (SourceTypes.translate ⟨false,[.bool]⟩) ([1,2])
-#guard is (SourceTypes.translate ⟨false,[.boolLit true]⟩) ([1])
-#guard is (SourceTypes.translate ⟨false,[.boolLit false]⟩) ([2])
-#guard is (SourceTypes.translate ⟨false,[.boolLit false,.null,.boolLit true,.null]⟩) ([0,1,2])
-#guard is (SourceTypes.translate ⟨false,[]⟩) ([] : List Nat)
-#guard !ok (SourceTypes.translate (ι := Nat) ⟨true,[]⟩)
-#guard !ok (SourceTypes.translate (ι := Nat) ⟨false,[.str]⟩)
 #guard (meet (.boolLit true) (.boolLit false) : List (Clause (List Nat))) == []
 #guard (meet .bool (.boolLit true) : List (Clause (List Nat))) == [.boolLit true]
 
-private def G0 := SourceTypes.graph SourceTypes.initial
-private def request (t : Tm) (A : Ty Nat) : Request RequestJson.Table Nat :=
-  ⟨SourceTypes.initial, [⟨t,.ret,none⟩], [⟨[],A⟩], A, 0, [], []⟩
-#guard ok (produceSourceJson (toJson (request .tru [1])) 5)
-#guard ok (produceSourceJson (toJson (request .fls [2])) 5)
-#guard ok (produceSourceJson (toJson (request .tru [1,2])) 5)
-#guard !ok (produceSourceJson (toJson (request .tru [2])) 5)
-#guard !ok (produceSourceJson (toJson (request .fls [1])) 5)
-
+/-- The four primitive values, labels 0 to 3. -/
+private def G0 : PositiveGraphs.NormalGraph Nat :=
+  .ofRows fun i => ([[.nul], [.boolLit true], [.boolLit false], [.undef]] :
+    List (List (Clause (List Nat))))[i]?.getD []
 #guard PositiveCertificates.checkClause G0 [] [] [] [] (.boolLit true) .bool
 #guard !PositiveCertificates.checkClause G0 [] [] [] [] .bool (.boolLit true)
 #guard !PositiveCertificates.checkClause G0 [] [] [] [] (.boolLit true) (.boolLit false)
 
--- Primitive fixture types use the same JSON schema as real source claims.
-private def wireTy (t : Claim.Ty) : Json := Json.mkObj [("top", toJson t.top),
-  ("atoms", toJson (t.atoms.map fun a => match a with
-    | .null => Json.mkObj [("a",toJson "null")]
-    | .bool => Json.mkObj [("a",toJson "boolean")]
-    | .boolLit b => Json.mkObj [("a",toJson "booleanlit"),("v",toJson (if b then "true" else "false"))]
-    | _ => Json.mkObj [("a",toJson "unsupported")]))]
--- Name resolution after a second binding must select the older slot.
--- Complete producer-neutral claims for literal negation. SKJS may constant-fold
--- these literals without exporting their operand claims; that is an export gap.
-private def checkLiteralNegation (q : Bool) : Except String Unit := do
-  let result := wireTy ⟨false,[.boolLit (!q)]⟩
-  let fn : Fragment.Fn := ⟨"negate",(0,1),[],result,
-    [.ret (2,6) (.not (3,6) (.lit (4,6) (.vbool q)))]⟩
-  let claims : Fragment.Claims := ⟨"negate",(0,1),[],result,[(2,[])],
-    [((3,6),result),((4,6),wireTy ⟨false,[.boolLit q]⟩)]⟩
-  let r ← extractFn fn claims
-  let j := toJson r.toRequest
-  verifyJson RequestJson.Table j (← produceSourceJson j 10)
-  let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels (LabelStore.StoreView.valid r.types) (LabelStore.Store.projection r.types) 10 r.obligations
-  pure ()
-#guard ok (checkLiteralNegation true)
-#guard ok (checkLiteralNegation false)
+-- A suggested intermediate type cannot turn false into true.
+#guard !(CertificateProducer.expressionWith G0 [[1],[2],[1,2]]
+  [⟨[],.fls,[1]⟩] 4 [] (.letE .fls (.var 0)) [1]).isSome
 
-private def f : Fragment.Fn := ⟨"f",(0,1),[],(wireTy ⟨false,[.boolLit true]⟩),
-  [.cst (2,3) "x" none (.lit (4,5) (.vbool true)),
-   .cst (6,7) "y" none (.lit (8,9) (.vbool false)),
-   .ret (10,11) (.var (12,13) "x")]⟩
-private def t : Json := (wireTy ⟨false,[.boolLit true]⟩)
-private def b : Json := (wireTy ⟨false,[.boolLit false]⟩)
-private def fc : Fragment.Claims := ⟨"f",(0,1),[],t,
-  [(2,[]),(6,[("x",t)]),(10,[("x",t),("y",b)])],
-  [((4,5),t),((8,9),b),((12,13),t)]⟩
-#guard is ((extractFn f fc).map (fun r => r.program[1]?.map ControlFlow.Node.expression)) ((some (.var 1)))
-#guard ok (do produceSourceJson (toJson (← extractFn f fc).toRequest) 6)
+-- Direct recipes preserve supplied types while rebuilding proofs in the actual context.
+private def widenedVariable := DirectProof.var [[1,2]] 0 [1,2]
+#guard ((DirectProof.render G0 [[1],[2],[1,2]] [[2]] widenedVariable).map
+  (fun e => ProgramCertificates.checkTree G0 e)) == some true
+#guard !(DirectProof.render G0 [[1],[2],[1,2]] [[2]]
+  (DirectProof.var [[1]] 0 [1])).isSome
+
+-- Delaying literal-closure allocations must preserve the order of executing
+-- defaults. Two forward captures become available between the effects, and
+-- each parameter occurs exactly once in the resulting schedule.
+private def scheduledParameters : List (String × Json) :=
+  ["first", "second", "before", "later", "after"].map (·, Json.null)
+private def scheduledDefaults : List (Nat × Fragment.Expr) :=
+  [(0, .lambda (1,2) none [] [] [] false Json.null (.var (1,2) "second")),
+   (1, .lambda (3,4) none [] [] [] false Json.null (.var (3,4) "later")),
+   (2, .write (5,6) "value" (.var (5,6) "cell") (.lit (5,6) (.vbool false))),
+   (3, .read (7,8) "value" (.var (7,8) "cell")),
+   (4, .write (9,10) "value" (.var (9,10) "cell") (.lit (9,10) (.vbool true)))]
+#guard is (Fragment.parameterOrder scheduledParameters scheduledDefaults) [2,3,1,0,4]
+-- Reading, invoking or exposing a pending closure must fail even though its
+-- eventual function type is valid. Capture cycles cannot be scheduled either.
+#guard !ok (Fragment.parameterOrder scheduledParameters
+  (scheduledDefaults.map fun (i,e) => (i, if i == 3 then
+    .call (7,8) (.var (7,8) "first") [] [] [] else e)))
+#guard !ok (Fragment.parameterOrder scheduledParameters
+  (scheduledDefaults.map fun (i,e) => (i, if i == 1 then
+    .lambda (3,4) none [] [] [] false Json.null (.var (3,4) "first") else e)))
+
 -- Test execution of this primitive subset uses the calculus's substitution and
 -- simultaneous environment transfer. It is a compiler regression, not a source
 -- preservation proof or a second maintained evaluator.
@@ -500,518 +473,58 @@ private def runPrimitive : Nat → ControlFlow.Program → Nat → Env → Optio
         let target := if tagHolds tag v then yes else no
         runPrimitive fuel P target.label (PointClaims.mapEnv target.mapping (push v ρ))
 
-private def runRequest (r : SourceRequest SourceTypes.Table Nat) : Option Tm := runPrimitive 100 r.program r.start (fun _ => .nul)
 
-private def branchFn (q : Bool) : Fragment.Fn :=
-  ⟨"branch",(0,1),[],t,
-    [.cst (2,3) "outer" none (.lit (4,5) (.vbool true)),
-     .ite (6,17) (.lit (8,9) (.vbool q))
-       [.cst (10,11) "local" none (.lit (12,13) (.vbool false))]
-       (some [.cst (14,15) "local" none (.lit (16,17) .vnull)]),
-     .ret (18,21) (.var (20,21) "outer")]⟩
-private def branchClaims (q : Bool) : Fragment.Claims :=
-  ⟨"branch",(0,1),[],t,
-    [(2,[]),(6,[("outer",t)]),(10,[("outer",t)]),
-     (14,[("outer",t)]),(18,[("outer",t)])],
-    [((4,5),t),((8,9),(wireTy ⟨false,[.boolLit q]⟩)),
-     ((12,13),b),((16,17),(wireTy ⟨false,[.null]⟩)),((20,21),t)]⟩
+/-! ### Lowering, on the pipeline's own documents
 
-#guard is ((extractFn (branchFn true) (branchClaims true)).map runRequest) (some .tru)
-#guard is ((extractFn (branchFn false) (branchClaims false)).map runRequest) (some .tru)
-#guard ok (do produceSourceJson (toJson (← extractFn (branchFn true) (branchClaims true)).toRequest) 8)
-#guard ok (do produceSourceJson (toJson (← extractFn (branchFn false) (branchClaims false)).toRequest) 8)
+`SourceExtraction/lowering-slots.*.json` are the parser's fragment and the
+OCaml producer's claims for `ocaml-producer/examples/lowering-slots.ts`, whose
+pipeline case verifies them. The guards below run the programs extraction
+lowers from them, check the shape of what no type observes, and refuse claims
+no producer writes. -/
 
--- A shared continuation has exactly one return node, with two predecessors
--- reaching its source-expression node. Continuation duplication fails this test.
-private def targets : ControlFlow.Continuation → List Nat
-  | .ret => []
-  | .bind t | .effect t => [t.label]
-  | .branch y n | .branchBind y n | .tagBind _ y n => [y.label,n.label]
-#guard is ((extractFn (branchFn true) (branchClaims true)).map fun r =>
-  (r.program.filter (fun n => n.continuation == .ret)).length) 1
-#guard is ((extractFn (branchFn true) (branchClaims true)).map fun r =>
-  (r.program.flatMap (fun n => targets n.continuation)).count 1) 2
+private def slotsFile : String := "verification/ocaml-producer/examples/lowering-slots.ts"
+private def slotsAst : Json :=
+  (Json.parse (include_str "SourceExtraction/lowering-slots.fragment.json")).toOption.getD .null
+private def slotsClaims : Json :=
+  (Json.parse (include_str "SourceExtraction/lowering-slots.claims.json")).toOption.getD .null
 
-private def choiceFn (q : Bool) : Fragment.Fn :=
-  ⟨"choice",(0,1),[],(wireTy ⟨false,[.bool]⟩),
-    [.ite (2,11) (.lit (4,5) (.vbool q))
-      [.ret (6,9) (.lit (8,9) (.vbool true))]
-      (some [.ret (10,13) (.lit (12,13) (.vbool false))])]⟩
-private def choiceClaims (q : Bool) : Fragment.Claims :=
-  ⟨"choice",(0,1),[],(wireTy ⟨false,[.bool]⟩),[(2,[]),(6,[]),(10,[])],
-    [((4,5),(wireTy ⟨false,[.boolLit q]⟩)),((8,9),t),((12,13),b)]⟩
-#guard is ((extractFn (choiceFn true) (choiceClaims true)).map runRequest) (some .tru)
-#guard is ((extractFn (choiceFn false) (choiceClaims false)).map runRequest) (some .fls)
-#guard ok (do produceSourceJson (toJson (← extractFn (choiceFn true) (choiceClaims true)).toRequest) 8)
-#guard ok (do produceSourceJson (toJson (← extractFn (choiceFn false) (choiceClaims false)).toRequest) 8)
+/-- The request extracted for the function of that name. -/
+private def unit (name : String) : Option (SourceRequest EquationStore.State EquationGraphs.Tree) := do
+  let rs ← (SourceClaimJson.extractGraphRequests slotsAst slotsClaims slotsFile).toOption
+  let fs ← (slotsAst.getObjValAs? (List Json) "functions").toOption
+  let i ← fs.findIdx? fun f => (f.getObjValAs? String "name").toOption == some name
+  rs[i]?
 
--- The tested binding is older than another local, so the refinement map must
--- select its copied value rather than refine whichever slot happens to be first.
-private def variableFn (q : Bool) : Fragment.Fn :=
-  ⟨"variable",(0,1),[],(wireTy ⟨false,[.bool]⟩),
-    [.cst (2,3) "tested" (some (wireTy ⟨false,[.bool]⟩)) (.lit (4,5) (.vbool q)),
-     .cst (6,7) "other" (some (wireTy ⟨false,[.bool]⟩)) (.lit (8,9) (.vbool false)),
-     .ite (10,21) (.var (12,13) "tested")
-       [.ret (14,17) (.var (16,17) "tested")]
-       (some [.ret (18,21) (.var (20,21) "tested")])]⟩
-private def variableClaims (q : Bool) : Fragment.Claims :=
-  let bool : Json := (wireTy ⟨false,[.bool]⟩)
-  ⟨"variable",(0,1),[],bool,
-    [(2,[]),(6,[("tested",bool)]),
-     (10,[("tested",bool),("other",bool)]),
-     (14,[("tested",t),("other",bool)]),
-     (18,[("tested",b),("other",bool)])],
-    [((4,5),(wireTy ⟨false,[.boolLit q]⟩)),((8,9),b),
-     ((12,13),bool),((16,17),t),((20,21),b)]⟩
-#guard is ((extractFn (variableFn true) (variableClaims true)).map runRequest) (some .tru)
-#guard is ((extractFn (variableFn false) (variableClaims false)).map runRequest) (some .fls)
-#guard ok (do produceSourceJson (toJson (← extractFn (variableFn true) (variableClaims true)).toRequest) 8)
-#guard ok (do produceSourceJson (toJson (← extractFn (variableFn false) (variableClaims false)).toRequest) 8)
+/-- The value a lowered function returns on these arguments. -/
+private def runs (name : String) (args : List Tm) : Option Tm := do
+  let r ← unit name
+  runPrimitive 100 r.program r.start (fun i => args[i]?.getD .nul)
 
--- Source input slots follow declaration order, independently of export order
--- inside each environment. Newly declared locals still push ahead of them.
-private def parameterFn : Fragment.Fn :=
-  ⟨"parameters",(0,1),[⟨"first",(wireTy ⟨false,[.null]⟩),false⟩,⟨"second",(wireTy ⟨false,[.bool]⟩),false⟩],
-    (wireTy ⟨false,[.bool]⟩),[.ret (2,5) (.var (4,5) "second")]⟩
-private def parameterClaims : Fragment.Claims :=
-  ⟨"parameters",(0,1),[("first",(wireTy ⟨false,[.null]⟩)),("second",(wireTy ⟨false,[.bool]⟩))],
-    (wireTy ⟨false,[.bool]⟩),
-    [(2,[("second",(wireTy ⟨false,[.bool]⟩)),("first",(wireTy ⟨false,[.null]⟩))])],
-    [((4,5),(wireTy ⟨false,[.bool]⟩))]⟩
-private def runArguments (r : SourceRequest SourceTypes.Table Nat) (vs : List Tm) :=
-  runPrimitive 100 r.program r.start (fun i => vs[i]?.getD .nul)
-#guard is ((extractFn parameterFn parameterClaims).map (·.inputs)) [[0],[1,2]]
-#guard is ((extractFn parameterFn parameterClaims).map (fun r => runArguments r [.nul,.tru])) (some .tru)
-#guard is ((extractFn parameterFn parameterClaims).map (fun r => runArguments r [.nul,.fls])) (some .fls)
-#guard ok (do produceSourceJson (toJson (← extractFn parameterFn parameterClaims).toRequest) 8)
-
--- Even if all internal claims consistently narrow the parameter to true,
--- the separate source-signature entry edge must reject that narrowing.
-private def narrowedEntry : Fragment.Claims := { parameterClaims with
-  envs := [(2,[("first",(wireTy ⟨false,[.null]⟩)),("second",t)])]
-  exprs := [((4,5),t)] }
-#guard !ok (do produceSourceJson (toJson (← extractFn parameterFn narrowedEntry).toRequest) 8)
-
-private def cellWire : Json := Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj
-  [("a",toJson "record"),("fields",toJson [Json.mkObj [("name",toJson "value"),
-    ("optional",toJson false),("read",wireTy ⟨false,[.bool]⟩),("write",wireTy ⟨false,[.bool]⟩)]]),
-   ("indexes",Json.mkObj [("string",toJson "absent"),("number",toJson "absent"),("symbol",toJson "absent")]),
-   ("call",toJson "unknown"),("construct",toJson "unknown"),("array",toJson "unknown")]])]
-
--- Trace the actual extracted graph: allocate, alias, assign through the alias.
--- Check both the assignment's value and the mutated heap using the existing
--- calculus transitions, without introducing a second evaluator.
-private def cellFn : Fragment.Fn :=
-  ⟨"cell",(0,1),[],wireTy ⟨false,[.bool]⟩,
-    [.cst (2,3) "cell" (some cellWire) (.alloc (4,7) ["value"] [(.lit (5,6) (.vbool true))]),
-     .cst (8,9) "alias" (some cellWire) (.var (10,11) "cell"),
-     .ret (12,19) (.write (14,19) "value" (.var (14,15) "alias") (.lit (18,19) (.vbool false))) ]⟩
-private def cellClaims : Fragment.Claims :=
-  ⟨"cell",(0,1),[],wireTy ⟨false,[.bool]⟩,
-   [(2,[]),(8,[("cell",cellWire)]),(12,[("cell",cellWire),("alias",cellWire)])],
-   [((4,7),cellWire),((5,6),t),((10,11),cellWire),
-    ((14,19),b),((14,15),cellWire),((18,19),b)]⟩
-private def cellRequest : Request RequestJson.Table Nat :=
-  (SourceExtraction.extractFn cellFn cellClaims).map (·.toRequest) |>.toOption.getD (request .nul [0])
-#guard ok (SourceExtraction.extractFn cellFn cellClaims)
-#guard ok (produceSourceJson (toJson cellRequest) 8)
-
-private def cellProgram : ControlFlow.Program :=
-  [⟨.var 0,.ret,none⟩,
-   ⟨.var 0,.bind ⟨0,some [0,3,4]⟩,none⟩,
-   ⟨.write (.var 1) (.var 0),.effect 1,none⟩,
-   ⟨.fls,.bind 2,none⟩, ⟨.var 0,.bind 3,none⟩,
-   ⟨.var 0,.effect 4,none⟩, ⟨.var 0,.bind 5,none⟩,
-   ⟨.var 0,.effect 6,none⟩, ⟨.alloc (.var 0),.bind ⟨7,some [0]⟩,none⟩,
-   ⟨.tru,.bind 8,none⟩, ⟨.nul,.effect 9,none⟩]
-#guard cellRequest.program == cellProgram
-#guard cellRequest.start == 10
-
-theorem cell_assignment_trace : ControlFlow.Execution cellProgram 24 []
-    (.at 10 (fun _ => .nul)) [.fls] (.done .fls) := by
-  repeat first
-    | exact ControlFlow.Execution.refl
-    | apply ControlFlow.Execution.next (.enter rfl)
-    | apply ControlFlow.Execution.next (.expr (.makeV rfl))
-    | apply ControlFlow.Execution.next (.expr (.writeV rfl (by decide)))
-    | apply ControlFlow.Execution.next (.bind rfl)
-    | apply ControlFlow.Execution.next (.effect rfl)
-    | apply ControlFlow.Execution.next (.ret rfl)
-
-#print axioms cell_assignment_trace
-
-/-- A signature indifferent to its receiver states `unknown` for it. -/
-private def unknownWire : Json := Json.mkObj [("top",toJson true),("atoms",toJson ([] : List Json))]
-private def functionWire : Json := Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj
-  [("a",toJson "function"),("this",unknownWire),("params",toJson [wireTy ⟨false,[.null]⟩]),
-   ("result",wireTy ⟨false,[.bool]⟩),("construct",toJson "unknown"),("array",toJson "unknown")]])]
-private def captureFn : Fragment.Fn :=
-  ⟨"capture",(0,1),[],wireTy ⟨false,[.bool]⟩,
-    [.cst (2,3) "cell" (some cellWire) (.alloc (4,7) ["value"] [(.lit (5,6) (.vbool true))]),
-     .cst (8,9) "reader" (some functionWire)
-       (.lam (10,15) "unit" (wireTy ⟨false,[.null]⟩) (wireTy ⟨false,[.bool]⟩)
-         (.read (12,15) "value" (.var (12,13) "cell"))),
-     .cst (16,17) "alias" (some cellWire) (.var (18,19) "cell"),
-     .effect (20,25) (.write (20,25) "value" (.var (20,21) "alias") (.lit (24,25) (.vbool false))),
-     .ret (26,33) (.app (28,33) (.var (28,29) "reader") (.lit (32,33) .vnull))]⟩
-private def captureClaims : Fragment.Claims :=
-  let B := wireTy ⟨false,[.bool]⟩
-  ⟨"capture",(0,1),[],B,
-   [(2,[]),(8,[("cell",cellWire)]),(16,[("cell",cellWire),("reader",functionWire)]),
-    (20,[("cell",cellWire),("reader",functionWire),("alias",cellWire)]),
-    (26,[("cell",cellWire),("reader",functionWire),("alias",cellWire)])],
-   [((4,7),cellWire),((5,6),t),((10,15),functionWire),((12,15),B),((12,13),cellWire),
-    ((18,19),cellWire),((20,25),b),((20,21),cellWire),((24,25),b),
-    ((28,33),B),((28,29),functionWire),((32,33),wireTy ⟨false,[.null]⟩)]⟩
-private def captureRequest : Request RequestJson.Table Nat :=
-  (SourceExtraction.extractFn captureFn captureClaims).map (·.toRequest) |>.toOption.getD (request .nul [0])
-#guard ok (SourceExtraction.extractFn captureFn captureClaims)
-#guard ok (produceSourceJson (toJson captureRequest) 10)
-#guard captureRequest.start == 15
-
-
--- A terminal closure branch adds one conditional step, with each arm occurring
--- once. The condition reads the heap at call time, after the alias write.
-private def branchCaptureFn : Fragment.Fn :=
-  { captureFn with body := captureFn.body.map fun st => match st with
-    | .constants pos [⟨name, np, annot, .lam lp param arg ret body⟩] =>
-      .constants pos [⟨name, np, annot, (.lam lp param arg ret
-        (.block (40,49) [.ite (40,49) body
-          [.ret (41,44) (.lit (42,43) (.vbool true))]
-          (some [.ret (45,48) (.lit (46,47) (.vbool false))])]))⟩]
-    | st => st }
-private def branchCaptureClaims : Fragment.Claims :=
-  let H := [("unit",wireTy ⟨false,[.null]⟩),("cell",cellWire)]
-  { captureClaims with
-    envs := captureClaims.envs ++ [(40,H),(41,H),(45,H)]
-    exprs := captureClaims.exprs ++ [((42,43),t),((46,47),b)] }
-#guard ok (do
-  let r ← extractFn branchCaptureFn branchCaptureClaims
-  let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels (LabelStore.StoreView.valid r.types) (LabelStore.Store.projection r.types) 0 r.obligations
-  pure ())
-
-
--- Both arms complete before the shared read; the false arm changes the cell
--- to true. Branch-local administrative slots cannot shift the continuation.
-private def joinedCaptureFn : Fragment.Fn :=
-  { captureFn with body := captureFn.body.map fun st => match st with
-    | .constants pos [⟨name, np, annot, .lam lp param arg ret body⟩] =>
-      .constants pos [⟨name, np, annot, (.lam lp param arg ret
-        (.block (40,53)
-          [.ite (40,49) body []
-            (some [.effect (43,48)
-              (.write (44,47) "value" (.var (44,45) "cell") (.lit (46,47) (.vbool true)))]),
-           .ret (50,53) (.read (51,53) "value" (.var (51,52) "cell"))]))⟩]
-    | st => st }
-private def joinedCaptureClaims : Fragment.Claims :=
-  let H := [("unit",wireTy ⟨false,[.null]⟩),("cell",cellWire)]
-  { captureClaims with
-    envs := captureClaims.envs ++ [(40,H),(43,H),(50,H)]
-    exprs := captureClaims.exprs ++ [((44,47),t),((44,45),cellWire),((46,47),t),
-      ((51,53),wireTy ⟨false,[.bool]⟩),((51,52),cellWire)] }
-#guard ok (do
-  let r ← extractFn joinedCaptureFn joinedCaptureClaims
-  let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels (LabelStore.StoreView.valid r.types) (LabelStore.Store.projection r.types) 0 r.obligations
-  pure ())
-
-
--- The same extracted conditional must skip its continuation on early return.
-private def earlyCaptureFn (q : Bool) : Fragment.Fn :=
-  { captureFn with body := captureFn.body.map fun st => match st with
-    | .constants pos [⟨name, np, annot, .lam lp param arg ret body⟩] =>
-      .constants pos [⟨name, np, annot, (.lam lp param arg ret
-        (.block (40,59) [.ite (40,59) body
-          [.ret (41,44) (.lit (42,43) (.vbool true))]
-          (some [.effect (45,50)
-              (.write (46,49) "value" (.var (46,47) "cell") (.lit (48,49) (.vbool false))),
-            .ret (52,55) (.read (53,55) "value" (.var (53,54) "cell"))])]))⟩]
-    | .effect pos (.write wp fld receiver (.lit lp _)) =>
-      .effect pos (.write wp fld receiver (.lit lp (.vbool q)))
-    | st => st }
-private def earlyCaptureClaims (q : Bool) : Fragment.Claims :=
-  let H := [("unit",wireTy ⟨false,[.null]⟩),("cell",cellWire)]
-  { captureClaims with
-    envs := captureClaims.envs ++ [(40,H),(41,H),(45,H),(52,H)]
-    exprs := (captureClaims.exprs.map fun (pos,A) =>
-      (pos,if pos == (24,25) || pos == (20,25) then (if q then t else b) else A)) ++
-      [((42,43),t),((46,49),b),((46,47),cellWire),((48,49),b),
-       ((53,55),wireTy ⟨false,[.bool]⟩),((53,54),cellWire)] }
-#guard [true,false].all fun q => ok (do
-  let r ← extractFn (earlyCaptureFn q) (earlyCaptureClaims q)
-  let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels (LabelStore.StoreView.valid r.types) (LabelStore.Store.projection r.types) 0 r.obligations
-  pure ())
-
-
--- Supplemental proofs are necessary even when the whole lambda is typable.
-private def captureRequired := (extractFn captureFn captureClaims).toOption.getD ⟨captureRequest,[],[],[],[],[], [], []⟩
-#guard ok (ExpressionClaims.produce (RequestJson.graph captureRequest)
-  captureRequired.searchLabels (LabelStore.StoreView.valid captureRequest.types) (LabelStore.Store.projection captureRequest.types) 10 captureRequired.obligations)
-private def narrowedCapture : Fragment.Claims :=
-  { captureClaims with exprs := captureClaims.exprs.map fun (pos,ty) =>
-    (pos, if pos == (12,15) then t else ty) }
--- The narrowed claim is a node of the closure's graph code: its search, not
--- a supplemental proof, rejects it.
-#guard !ok (do produceSourceJson (toJson (← extractFn captureFn narrowedCapture).toRequest) 10)
-
-private def writerFn : Fragment.Fn :=
-  ⟨"writer",(0,1),[],wireTy ⟨false,[.bool]⟩,
-    [.cst (2,3) "cell" (some cellWire) (.alloc (4,7) ["value"] [(.lit (5,6) (.vbool true))]),
-     .cst (8,9) "writer" (some functionWire)
-       (.lam (10,19) "unit" (wireTy ⟨false,[.null]⟩) (wireTy ⟨false,[.bool]⟩)
-         (.write (12,19) "value" (.var (12,13) "cell") (.lit (18,19) (.vbool false)))),
-     .ret (20,27) (.app (22,27) (.var (22,23) "writer") (.lit (26,27) .vnull))]⟩
-private def writerClaims : Fragment.Claims :=
-  ⟨"writer",(0,1),[],wireTy ⟨false,[.bool]⟩,
-   [(2,[]),(8,[("cell",cellWire)]),(20,[("cell",cellWire),("writer",functionWire)])],
-   [((4,7),cellWire),((5,6),t),((10,19),functionWire),((12,19),b),
-    ((12,13),cellWire),((18,19),b),((22,27),wireTy ⟨false,[.bool]⟩),
-    ((22,23),functionWire),((26,27),wireTy ⟨false,[.null]⟩)]⟩
-#guard is ((extractFn writerFn writerClaims).map (·.start)) 9
-#guard ok (do
-  let r ← extractFn writerFn writerClaims
-  let _ ← produceSourceJson (toJson r.toRequest) 10
-  ExpressionClaims.produce (RequestJson.graph r.toRequest) r.searchLabels (LabelStore.StoreView.valid r.types) (LabelStore.Store.projection r.types) 10 r.obligations)
-
-
--- A single-return block has the same execution as its expression body, but
--- adds proof obligations for the supplied statement environment.
-private def blockCaptureFn : Fragment.Fn :=
-  { captureFn with body := captureFn.body.map fun st => match st with
-    | .constants pos [⟨name, np, annot, .lam lp param arg ret body⟩] =>
-      .constants pos [⟨name, np, annot, (.lam lp param arg ret (.block (11,16) [.ret (11,16) body]))⟩]
-    | st => st }
-private def blockCaptureClaims (unitTy : Json) : Fragment.Claims :=
-  { captureClaims with envs := captureClaims.envs ++
-    [(11,[("unit",unitTy),("cell",cellWire)])] }
-private def blockObligations (unitTy : Json) : Except String Unit := do
-  let r ← extractFn blockCaptureFn (blockCaptureClaims unitTy)
-  let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels (LabelStore.StoreView.valid r.types) (LabelStore.Store.projection r.types) 10 r.obligations
-  let _ ← produceSourceJson (toJson r.toRequest) 10
-  pure ()
-#guard ok (blockObligations (wireTy ⟨false,[.null]⟩))
--- Forgetting parameter precision is allowed; inventing an unused type is not.
-#guard ok (blockObligations (wireTy ⟨false,[.null,.bool]⟩))
-#guard !ok (blockObligations t)
-#guard !ok (extractFn blockCaptureFn captureClaims)
-
-private def localWriterFn : Fragment.Fn :=
-  { writerFn with body := writerFn.body.map fun st => match st with
-    | .constants pos [⟨name, np, annot, .lam lp param arg ret _⟩] =>
-      .constants pos [⟨name, np, annot, (.lam lp param arg ret
-        (.block (30,43)
-          [.constants (30,31) [⟨"saved", (30,31), some (wireTy ⟨false,[.bool]⟩), .lit (32,33) (.vbool false)⟩],
-           .effect (34,35) (.write (36,39) "value" (.var (36,37) "cell") (.var (38,39) "saved")),
-           .ret (40,43) (.read (41,43) "value" (.var (41,42) "cell"))]))⟩]
-    | st => st }
-private def localWriterClaims : Fragment.Claims :=
-  let N := wireTy ⟨false,[.null]⟩
-  let B := wireTy ⟨false,[.bool]⟩
-  { writerClaims with
-    envs := writerClaims.envs ++
-      [(30,[("unit",N),("cell",cellWire)]),
-       (34,[("unit",N),("cell",cellWire),("saved",B)]),
-       (40,[("unit",N),("cell",cellWire),("saved",B)])]
-    exprs := writerClaims.exprs ++
-      [((32,33),b),((36,39),B),((36,37),cellWire),((38,39),B),
-       ((41,43),B),((41,42),cellWire)] }
-
-
--- A suggested intermediate type cannot turn false into true.
-#guard !(CertificateProducer.expressionWith G0 [[1],[2],[1,2]]
-  [⟨[],.fls,[1]⟩] 4 [] (.letE .fls (.var 0)) [1]).isSome
-
--- Direct recipes preserve supplied types while rebuilding proofs in the actual context.
-private def widenedVariable := DirectProof.var [[1,2]] 0 [1,2]
-#guard ((DirectProof.render G0 [[1],[2],[1,2]] [[2]] widenedVariable).map
-  (fun e => ProgramCertificates.checkTree G0 e)) == some true
-#guard !(DirectProof.render G0 [[1],[2],[1,2]] [[2]]
-  (DirectProof.var [[1]] 0 [1])).isSome
-
--- All supported closure obligations now have recipes and require no expression-search fuel.
-#guard ok (do
-  let r ← extractFn localWriterFn localWriterClaims
-  if r.obligations.any (fun q => q.plan.isNone) then throw "missing recipe"
-  let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels (LabelStore.StoreView.valid r.types) (LabelStore.Store.projection r.types) 0 r.obligations
-  pure ())
-
--- A forged recipe or reused certificate is still rejected by the ordinary checker.
-private def forged : ProgramCertificates.Evidence Nat :=
-  .node ⟨[],.fls,[1]⟩ .truLit []
-#guard !ok (produceSourceJson (toJson (request .fls [1])) 4 [] [forged])
-#guard !ok (ExpressionClaims.produce G0 [0,1,2,3] (· < SourceTypes.initial.length) (LabelStore.Store.projection SourceTypes.initial) 4
-  [⟨(0,1),⟨[],.fls,[1]⟩,some (DirectProof.node [] .fls [1] .truLit),"expression-claim",[]⟩])
-
--- Source unions compose already-supported atoms, preserving every arm's checks.
--- Each compound arm is interned once, at the first free label.
-private def joined (types : List Json) : Json := Json.mkObj [
-  ("top",toJson false), ("atoms",toJson (types.flatMap fun j =>
-    ((jArr j "atoms").toOption.getD [])))]
-private def lowered (j : Json) : Except String (Ty Nat) :=
-  (Fragment.translate j).run' SourceTypes.initial
-#guard is (lowered (joined [wireTy ⟨false,[.null]⟩,cellWire])) [0,4]
-#guard is (lowered (joined [cellWire,wireTy ⟨false,[.null]⟩,cellWire])) [0,4]
--- A function type's receiver is interned before its signature.
-#guard is (lowered (joined [wireTy ⟨false,[.null]⟩,functionWire])) [0,5]
-#guard is (lowered (joined [cellWire,functionWire])) [4,6]
-#guard !ok (lowered (joined [cellWire,wireTy ⟨false,[.str]⟩]))
--- `unknown` is semantic top: one interned label, past the four fixed ones.
-#guard is (lowered (Json.mkObj [("top",toJson true),("atoms",toJson ([] : List Json))])) [4]
-
--- An input is assumed at its annotation whatever its type: a nullable cell
--- parameter is admitted like a primitive or an arrow.
-private def nullableCell : Json := joined [wireTy ⟨false,[.null]⟩,cellWire]
-private def externalFn : Fragment.Fn :=
-  { branchFn true with params := [⟨"external",nullableCell,false⟩] }
-private def externalEnvs : List (Nat × List (String × Json)) :=
-  (branchClaims true).envs.map fun pv => (pv.1,("external",nullableCell) :: pv.2)
-private def externalClaims : Fragment.Claims :=
-  { branchClaims true with params := [("external",nullableCell)], envs := externalEnvs }
-#guard ok (extractFn externalFn externalClaims)
-#guard ok (do produceSourceJson (toJson (← extractFn externalFn externalClaims).toRequest) 8)
-#guard !ok (lowered (joined [wireTy ⟨false,[.str]⟩,cellWire]))
-
--- A graph-safe certificate can still violate the source's local interfaces.
--- This specifically tests the consumer, independently of producer scheduling.
-private def localFn : Fragment.Fn :=
-  ⟨"local",(0,1),[],wireTy ⟨false,[.boolLit true]⟩,
-    [.cst (2,3) "x" (some (wireTy ⟨false,[.bool]⟩)) (.lit (4,5) (.vbool true)),
-     .ret (6,9) (.var (8,9) "x")]⟩
-private def localClaims : SourceClaims.Function Nat := {
-  name := "local", namePos := (0,1), params := [], ret := .ok [1]
-  envs := [(2,[]),(6,[("x",.ok [1,2])])]
-  exprs := [((4,5),.ok [1]),((8,9),.ok [1,2])] }
-private def localRequest := (extractNormalizedFn SourceTypes.initial localFn localClaims).toOption.getD ⟨request .nul [0],[],[],[],[],[], [], []⟩
-private def localCertificate (cuts : List Nat) :=
-  CertificateProducer.produce (RequestJson.graph localRequest.toRequest)
-    localRequest.searchLabels 8 localRequest.result localRequest.program localRequest.claims
-    localRequest.start [] localRequest.inputs [] [] localRequest.assertions cuts
-private def globalCertificate := (localCertificate []).toOption.get!
-#guard RequestJson.verify localRequest.toRequest ⟨globalCertificate, []⟩
-#guard !checkAssertions localRequest ⟨globalCertificate, []⟩
-#guard (localCertificate localRequest.cuts).toOption.isNone
-private def repairedLocal := (extractNormalizedFn SourceTypes.initial localFn
-  {localClaims with envs := [(2,[]),(6,[("x",.ok [1])])]}).toOption.getD ⟨request .nul [0],[],[],[],[],[], [], []⟩
-#guard ok (RequestJson.produceJson RequestJson.Table (toJson repairedLocal.toRequest) 8 [] []
-  repairedLocal.sourceMap (some repairedLocal.searchLabels) repairedLocal.assertions repairedLocal.cuts)
-
--- Conjunction is one row whatever its arity. Record conjuncts meet as one
--- record whose fields are sorted and deduplicated, so a repeated contract is
--- the plain cell; overload order is kept, so the two spellings of an arrow
--- pair are two rows.
-private def conjoined (j : Json) (others : List Json) : Json :=
-  let atom := ((jArr j "atoms").toOption.getD []).headD .null
-  let more := others.map fun o => ((jArr o "atoms").toOption.getD []).headD .null
-  Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj
-    (((atom.getObj?).toOption.map (·.toList)).getD [] ++ [("and",toJson more)])])]
-private def cellOf (A : Claim.Ty) : Json := Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj
-  [("a",toJson "record"),("fields",toJson [Json.mkObj [("name",toJson "value"),
-    ("optional",toJson false),("read",wireTy A),("write",wireTy A)]]),
-   ("indexes",Json.mkObj [("string",toJson "absent"),("number",toJson "absent"),("symbol",toJson "absent")]),
-   ("call",toJson "unknown"),("construct",toJson "unknown"),("array",toJson "unknown")]])]
-private def arrowOf (D R : Claim.Ty) : Json := Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj
-  [("a",toJson "function"),("this",unknownWire),("params",toJson [wireTy D]),
-   ("result",wireTy R),("construct",toJson "unknown"),("array",toJson "unknown")]])]
-private def rowOf (j : Json) : Option (List (Clause (List Nat))) :=
-  ((Fragment.translate j).run SourceTypes.initial).toOption.bind fun (A,T) => A.head?.bind fun i => (T[i]?).map PositiveGraphs.GraphRow.union
-#guard rowOf (conjoined cellWire [cellWire,cellWire]) == some [.refs [("value", [1,2])] [] []]
-#guard rowOf (conjoined (cellOf ⟨false,[.boolLit true]⟩) [cellOf ⟨false,[.null]⟩,cellOf ⟨false,[.bool]⟩])
-  == some [.refs [("value", [0]),("value",[1]),("value",[1,2])] [] []]
-#guard rowOf (conjoined (cellOf ⟨false,[.bool]⟩) [cellOf ⟨false,[.null]⟩,cellOf ⟨false,[.boolLit true]⟩])
-  == some [.refs [("value", [0]),("value",[1]),("value",[1,2])] [] []]
-private def trueToNull := arrowOf ⟨false,[.boolLit true]⟩ ⟨false,[.null]⟩
-private def falseToNull := arrowOf ⟨false,[.boolLit false]⟩ ⟨false,[.null]⟩
-#guard rowOf (conjoined trueToNull [falseToNull]) == some [.arrs [⟨[4], [[1]], [0], .unrestricted⟩,⟨[4], [[2]], [0], .unrestricted⟩] []]
-#guard rowOf (conjoined falseToNull [trueToNull]) == some [.arrs [⟨[4], [[2]], [0], .unrestricted⟩,⟨[4], [[1]], [0], .unrestricted⟩] []]
-#guard rowOf (conjoined trueToNull [trueToNull]) == some [.arrs [⟨[4], [[1]], [0], .unrestricted⟩] []]
-
--- A lambda claimed at two signatures is proved once per signature; the call
--- resolves to the first signature admitting its argument.
-private def overloadWire := conjoined trueToNull [falseToNull]
-private def overloadFn : Fragment.Fn :=
-  ⟨"overload",(0,1),[],wireTy ⟨false,[.null]⟩,
-    [.cst (2,3) "f" (some overloadWire)
-      (.lam (4,9) "x" (wireTy ⟨false,[.bool]⟩) (wireTy ⟨false,[.null]⟩) (.lit (8,9) .vnull)),
-     .ret (10,17) (.app (12,17) (.var (12,13) "f") (.lit (14,15) (.vbool true)))]⟩
-private def overloadClaims : Fragment.Claims :=
-  ⟨"overload",(0,1),[],wireTy ⟨false,[.null]⟩,[(2,[]),(10,[("f",overloadWire)])],
-   [((4,9),overloadWire),((8,9),wireTy ⟨false,[.null]⟩),((12,17),wireTy ⟨false,[.null]⟩),
-    ((12,13),overloadWire),((14,15),t)]⟩
-#guard ok (extractFn overloadFn overloadClaims)
-#guard ok (do
-  let r ← extractFn overloadFn overloadClaims
-  let j := toJson r.toRequest
-  verifyJson RequestJson.Table j (← produceSourceJson j 10)
-  let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest) r.searchLabels (LabelStore.StoreView.valid r.types) (LabelStore.Store.projection r.types) 0 r.obligations
-  pure ())
--- A claimed signature outside the annotated parameter is refused.
-#guard (match extractFn
-    { overloadFn with body := [.cst (2,3) "f" (some overloadWire)
-      (.lam (4,9) "x" (wireTy ⟨false,[.boolLit true]⟩) (wireTy ⟨false,[.null]⟩) (.lit (8,9) .vnull)),
-      .ret (10,17) (.app (12,17) (.var (12,13) "f") (.lit (14,15) (.vbool true)))] } overloadClaims with
-  | .error e => e.startsWith "source refusal at [4,9): closure signature claim is outside the source annotation"
-  | .ok _ => false)
--- An argument no signature admits fails the call's claim, not silently.
-#guard !ok (do
-  let r ← extractFn { overloadFn with body := [.cst (2,3) "f" (some overloadWire)
-      (.lam (4,9) "x" (wireTy ⟨false,[.bool]⟩) (wireTy ⟨false,[.null]⟩) (.lit (8,9) .vnull)),
-      .ret (10,17) (.app (12,17) (.var (12,13) "f") (.lit (14,15) .vnull))] }
-    { overloadClaims with exprs := overloadClaims.exprs.map fun (pos,ty) =>
-      (pos, if pos == (14,15) then wireTy ⟨false,[.null]⟩ else ty) }
-  produceSourceJson (toJson r.toRequest) 8)
-
--- An arrow parameter is assumed at its annotation and may be called; a claim
--- that contradicts the annotation is refused by name, and a cell parameter
--- claimed as an arrow where it is called is refused by proof search.
-private def callerFn : Fragment.Fn :=
-  ⟨"caller",(0,1),[⟨"a",trueToNull,false⟩],wireTy ⟨false,[.null]⟩,
-    [.ret (2,9) (.app (4,9) (.var (4,5) "a") (.lit (6,7) (.vbool true)))]⟩
-private def callerClaims : Fragment.Claims :=
-  ⟨"caller",(0,1),[("a",trueToNull)],wireTy ⟨false,[.null]⟩,[(2,[("a",trueToNull)])],
-   [((4,9),wireTy ⟨false,[.null]⟩),((4,5),trueToNull),((6,7),t)]⟩
-#guard is ((extractFn callerFn callerClaims).map (·.inputs.length)) 1
-#guard ok (do
-  let r ← extractFn callerFn callerClaims
-  let j := toJson r.toRequest
-  verifyJson RequestJson.Table j (← produceSourceJson j 8))
-#guard (match extractFn callerFn { callerClaims with params := [("a",wireTy ⟨false,[]⟩)] } with
-  | .error e => e == "claimed parameter type differs from the source annotation for 'a'"
-  | .ok _ => false)
-#guard !ok (do
-  let r ← extractFn { callerFn with params := [⟨"a",cellWire,false⟩] } { callerClaims with params := [("a",cellWire)] }
-  produceSourceJson (toJson r.toRequest) 8)
+-- A name resolves to its own slot past a later binding; an arm's binding of
+-- one name stays in its arm; a guard refines the binding it tests, older than
+-- a later local; parameters take their slots in declaration order.
+#guard runs "olderSlot" [] == some .tru
+#guard runs "branchLocals" [.tru] == some .tru
+#guard runs "branchLocals" [.fls] == some .tru
+#guard runs "refinesOlder" [.tru] == some .tru
+#guard runs "refinesOlder" [.fls] == some .fls
+#guard runs "parameterSlots" [.nul, .tru] == some .tru
+#guard runs "parameterSlots" [.nul, .fls] == some .fls
 
 -- Entry allocation replaces exactly the assigned parameter slots. The middle
 -- parameter stays a value; both private cells start with their own argument.
-private def assignedParametersFn : Fragment.Fn :=
-  let B := wireTy ⟨false,[.bool]⟩
-  ⟨"parameters",(0,1),[⟨"x",B,false⟩,⟨"keep",B,false⟩,⟨"z",B,false⟩],B,
-    [.effect (2,5) (.assign (2,5) "x" (2,3) (.var (4,5) "z")),
-     .effect (6,9) (.assign (6,9) "z" (6,7) (.lit (8,9) (.vbool false))),
-     .ret (10,13) (.var (12,13) "x")]⟩
-private def assignedParametersClaims : Fragment.Claims :=
-  let B := wireTy ⟨false,[.bool]⟩
-  let H := [("x",B),("keep",B),("z",B)]
-  ⟨"parameters",(0,1),H,B,[(2,H),(6,H),(10,H)],
-    [((2,5),B),((4,5),B),((6,9),B),((8,9),b),((12,13),B)]⟩
-#guard ok (do
-  let r ← extractFn assignedParametersFn assignedParametersClaims
-  if r.inputs != [[1,2],[1,2],[1,2]] then throw "changed public parameter contract"
-  match r.program.reverse with
-  | ⟨.nul,.effect entry,none⟩ ::
-    ⟨.makeAt .absent ["value"] [.var 0],.bind first,none⟩ ::
-    ⟨.makeAt .absent ["value"] [.var 2],.bind second,none⟩ :: _ =>
-    if entry.label != r.start-1 || first.label != r.start-2 ||
-       first.mapping != some [0,2,3] || second.mapping != some [1,2,0] then
-      throw "parameter allocation permuted or aliased the source bindings"
-  | _ => throw "parameter allocation did not initialize the assigned slots")
+#guard match unit "assignedParameters" with
+  | some r => match r.program.reverse with
+    | ⟨.nul, .effect entry, none⟩ ::
+      ⟨.makeAt .absent ["value"] [.var 0], .bind first, none⟩ ::
+      ⟨.makeAt .absent ["value"] [.var 2], .bind second, none⟩ :: _ =>
+      entry.label == r.start - 1 && first.label == r.start - 2 &&
+        first.mapping == some [0, 2, 3] && second.mapping == some [1, 2, 0]
+    | _ => false
+  | none => false
 
--- A short-circuit lowering can remain well typed even if its branches are
--- accidentally reversed. Check the extracted graph's evaluation shape too.
+-- `??=` reads its target once, dispatches on nullishness keeping the read and
+-- dropping the older one, and evaluates the assignment on the nullish arm only.
 private def reachesWrite (P : ControlFlow.Program) : Nat → Nat → Bool
   | 0, _ => false
   | fuel+1, label => match P[label]? with
@@ -1020,49 +533,77 @@ private def reachesWrite (P : ControlFlow.Program) : Nat → Nat → Bool
       | .writeAt .. => true
       | _ => (CertificateProducer.successors node.continuation).any
           (fun target => reachesWrite P fuel target.label)
+#guard match unit "nullishFallback" with
+  | some r =>
+    let reads := r.program.filter fun n => match n.expression with | .readAt .. => true | _ => false
+    let dispatch := r.program.filterMap fun n => match n.continuation with
+      | .tagBind .isNullish yes no => some (yes, no)
+      | _ => none
+    match dispatch with
+    | [(yes, no)] =>
+      reads.length == 1 && yes.mapping == some [0, 2] && no.mapping == some [0, 2] &&
+        reachesWrite r.program r.program.length yes.label &&
+        !reachesWrite r.program r.program.length no.label
+    | _ => false
+  | none => false
 
-private def nullishAssignmentFn : Fragment.Fn :=
-  let B := wireTy ⟨false,[.bool,.null]⟩
-  ⟨"fallback",(0,1),[⟨"x",B,false⟩],wireTy ⟨false,[.bool]⟩,
-    [.ret (2,7) (.nullishAssign (3,7) "x" (3,4) (.lit (6,7) (.vbool true)))]⟩
-private def nullishAssignmentClaims : Fragment.Claims :=
-  let B := wireTy ⟨false,[.bool,.null]⟩
-  let R := wireTy ⟨false,[.bool]⟩
-  ⟨"fallback",(0,1),[("x",B)],R,[(2,[("x",B)])],
-    [((3,7),R),((3,4),B),((6,7),t)]⟩
-#guard ok (do
-  let r ← extractFn nullishAssignmentFn nullishAssignmentClaims
-  if (r.program.filter fun n => match n.expression with | .readAt .. => true | _ => false).length != 1 then
-    throw "nullish assignment must read its target once"
-  let dispatch := r.program.filterMap fun n => match n.continuation with
-    | .tagBind .isNullish yes no => some (yes,no)
-    | _ => none
-  let [(yes,no)] := dispatch | throw "expected one nullish dispatch"
-  if yes.mapping != some [0,2] || no.mapping != some [0,2] then
-    throw "nullish dispatch must keep the witness and discard the older read"
-  if !reachesWrite r.program r.program.length yes.label ||
-     reachesWrite r.program r.program.length no.label then
-    throw "only the nullish arm may evaluate the assignment")
+/-! Claims no producer writes, on `identity(flag: boolean): boolean`: each
+is refused, and evidence for the producer's claims justifies no other. -/
 
--- Delaying literal-closure allocations must preserve the order of executing
--- defaults. Two forward captures become available between the effects, and
--- each parameter occurs exactly once in the resulting schedule.
-private def scheduledParameters : List (String × Json) :=
-  ["first", "second", "before", "later", "after"].map (·, Json.null)
-private def scheduledDefaults : List (Nat × Fragment.Expr) :=
-  [(0, .lambda (1,2) none [] [] [] false Json.null (.var (1,2) "second")),
-   (1, .lambda (3,4) none [] [] [] false Json.null (.var (3,4) "later")),
-   (2, .write (5,6) "value" (.var (5,6) "cell") (.lit (5,6) (.vbool false))),
-   (3, .read (7,8) "value" (.var (7,8) "cell")),
-   (4, .write (9,10) "value" (.var (9,10) "cell") (.lit (9,10) (.vbool true)))]
-#guard is (Fragment.parameterOrder scheduledParameters scheduledDefaults) [2,3,1,0,4]
--- Reading, invoking or exposing a pending closure must fail even though its
--- eventual function type is valid. Capture cycles cannot be scheduled either.
-#guard !ok (Fragment.parameterOrder scheduledParameters
-  (scheduledDefaults.map fun (i,e) => (i, if i == 3 then
-    .call (7,8) (.var (7,8) "first") [] [] [] else e)))
-#guard !ok (Fragment.parameterOrder scheduledParameters
-  (scheduledDefaults.map fun (i,e) => (i, if i == 1 then
-    .lambda (3,4) none [] [] [] false Json.null (.var (3,4) "first") else e)))
+private def withFunction (name : String) (f : Json → Json) (claims : Json) : Json :=
+  match claims.getObjValD "functions" with
+  | .arr fs => claims.setObjVal! "functions" (.arr (fs.map fun g =>
+      if g.getObjValD "name" == Json.str name then f g else g))
+  | _ => claims
+private def mapEach (key : String) (f : Json → Json) (j : Json) : Json :=
+  match j.getObjValD key with
+  | .arr xs => j.setObjVal! key (.arr (xs.map f))
+  | _ => j
+private def typed (labels : List Nat) (j : Json) : Json := j.setObjVal! "type" (toJson labels)
+private def forged (f : Json → Json) : Json := withFunction "identity" f slotsClaims
+/-- Refused, for the reason named. -/
+private def refuses (r : Except String α) (reason : String) : Bool := match r with
+  | .ok _ => false
+  | .error e => (e.splitOn reason).length > 1
+
+#guard ok (SourceClaimJson.produceJson slotsAst slotsClaims slotsFile 10)
+-- The entry environment narrower than the parameter's annotation, alone or
+-- with every claim inside the body narrowed with it: the edge from the
+-- signature's inputs refuses it.
+#guard refuses (SourceClaimJson.produceJson slotsAst
+  (forged (mapEach "entries" (mapEach "bindings" (typed [2])))) slotsFile 10)
+  "the edge from node 2 does not establish the claims at this point"
+#guard refuses (SourceClaimJson.produceJson slotsAst
+  (forged (fun f => mapEach "expressions" (typed [1])
+    (mapEach "entries" (mapEach "bindings" (typed [1])) f))) slotsFile 10)
+  "the edge from node 2 does not establish the claims at this point"
+-- A parameter, result or expression claim other than the source's.
+#guard refuses (SourceClaimJson.produceJson slotsAst (forged (mapEach "params" (typed [2]))) slotsFile 10)
+  "claimed parameter type differs from the source annotation for 'flag'"
+#guard refuses (SourceClaimJson.produceJson slotsAst (forged (·.setObjVal! "result" (toJson [2]))) slotsFile 10)
+  "claimed return type differs from the source annotation"
+#guard refuses (SourceClaimJson.produceJson slotsAst (forged (mapEach "expressions" (typed [2]))) slotsFile 10)
+  "no derivation of its node-typing claim"
+-- A label outside the claims' type table, a missing environment, a binding
+-- claimed twice.
+#guard refuses (SourceClaimJson.produceJson slotsAst (forged (mapEach "expressions" (typed [4]))) slotsFile 10)
+  "no row 4"
+#guard refuses (SourceClaimJson.produceJson slotsAst (forged (·.setObjVal! "entries" (Json.arr #[]))) slotsFile 10)
+  "missing statement environment at 432"
+private def twice (e : Json) : Json := match e.getObjValD "bindings" with
+  | .arr bs => e.setObjVal! "bindings" (.arr (bs ++ bs))
+  | _ => e
+#guard refuses (SourceClaimJson.produceJson slotsAst (forged (mapEach "entries" twice)) slotsFile 10)
+  "duplicate identity, span, binding or type labels"
+
+-- The evidence checks the claims it was produced for, and no other: a
+-- certificate cannot be reused for a narrower environment or expression.
+private def evidence : Json := (SourceClaimJson.produceJson slotsAst slotsClaims slotsFile 10).toOption.getD .null
+#guard ok (SourceClaimJson.checkJson slotsAst slotsClaims slotsFile evidence)
+#guard refuses (SourceClaimJson.checkJson slotsAst
+  (forged (mapEach "entries" (mapEach "bindings" (typed [2])))) slotsFile evidence)
+  "source evidence does not justify"
+#guard refuses (SourceClaimJson.checkJson slotsAst (forged (mapEach "expressions" (typed [2]))) slotsFile evidence)
+  "source evidence does not justify"
 
 end Verification.Model.SourceExtractionTests

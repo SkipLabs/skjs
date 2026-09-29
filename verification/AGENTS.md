@@ -1,44 +1,22 @@
 # Working in `verification/`
 
-An independent verifier for SKJS's type claims: a calculus with a semantic
-model and soundness proofs in Lean, a checker that validates certificates, and
-a pipeline that lowers a TypeScript function, has SKJS export its claims, and
-asks whether they are derivable. [README.md](README.md) is the entry point;
-[DESIGN.md](DESIGN.md) holds the decisions. Everything below is what an agent
-needs to change things here without breaking the suite's shape.
-
-Preserve SKJS acceptance, inference and diagnostics while doing this experiment.
-Keep rejected safe programs as incompleteness findings; only behavior-preserving
-claim extraction changes belong here. An explicit user request to repair SKJS
-changes that task scope; keep the repair separate from pipeline extensions.
-[DESIGN.md](DESIGN.md) owns the experiment boundary. Follow the root
-[checker/verifier disagreement rules](../AGENTS.md#resolving-checkerverifier-disagreements):
-a fixed location contract is distinct from current contents, and faithful export
-must not invent a justification the checker never established. Before attributing
-a refusal to an exported field, trace the actual consumer of that field.
-
-For repair-coverage work, start with [REPAIR-COVERAGE.md](REPAIR-COVERAGE.md):
-measurement, current checkpoint, inspected blockers and extension pitfalls.
+An independent verifier for type claims about TypeScript programs: a calculus
+with a semantic model and soundness proofs in Lean, a checker that validates
+certificates, and a pipeline that parses a TypeScript source, has the OCaml
+producer propose its claims, and asks whether they are derivable.
+[README.md](README.md) is the entry point; [DESIGN.md](DESIGN.md) holds the
+decisions. Everything below is what an agent needs to change things here
+without breaking the suite's shape.
 
 ## Commands
 
-SKJS is frozen at the tag `skjs-frozen` ([DESIGN.md](DESIGN.md#skjs-is-frozen)):
-work iterates on the parser → OCaml producer → Lean pipeline, and
-`verification/run.sh` runs only that pipeline's suites by default. The SKJS
-producer, the suites built on its fixtures and the corpus (`examples.mts`)
-run only when asked, and may fail on arrays past the tag.
-
 ```sh
-verification/run.sh              # the OCaml pipeline's suites (~25 s)
+verification/run.sh              # the pipeline's suites
 make verify                      # from the repo root: build, suites, then the corpus
-make verify-census               # original SKJS repair functions (separate baseline)
 make verify-test                 # the suites only
 make verify-examples             # the corpus only
-verification/run.sh --suite all  # every suite, SKJS's included, without rebuilding Lean
 (cd verification/lean && lake build)  # the verifier alone
-node verification/examples.mts    # the corpus alone, both producers
-make verify-examples-skjs        # one column at a time; either alone runs
-make verify-examples-tsc         # only that producer
+node verification/examples.mts    # the corpus alone
 make viewer                      # the claim report reader on http://localhost:8731
 ```
 
@@ -88,14 +66,12 @@ tree. Install OCaml and Dune as described in
 One file end to end, with `$F` a repository-relative path:
 
 ```sh
-node verification/tools/fragment-parse.mts $F > ast.json
-bash verification/skjs.sh --emit-skjs-type-claims $F > claims.json
-verification/lean/.lake/build/bin/verifier --produce-stateful-source ast.json claims.json $F evidence.json 10
-verification/lean/.lake/build/bin/verifier --check-skjs-operations claims.json
+node verification/ocaml-producer/check.mts $F
 ```
 
-`skjs.sh` runs SKJS in the `skiplabs/skip` container; inside a devcontainer it
-runs the binary directly. Never invoke `target/host/dev/skjs` yourself.
+It prints the outcome and the directory holding what the run wrote: the
+source snapshot, the parser's `fragment.json`, the producer's `claims.json`
+and the verifier's `evidence.json`.
 
 ## Which tests to keep
 
@@ -121,31 +97,17 @@ extraction, producer, wire), and what Lean proves needs no test.
 
 ## The suite's shape, and the rules that keep it
 
-`run.sh` keeps the suites fast through four decisions. Each is a rule for
-anything added; the runner summary reports the current suite count.
+`run.sh` keeps the suites fast by one decision, a rule for anything added; the
+runner summary reports the current suite count.
 
-- **One container for the run.** `skjs_start` brings it up before anything
-  forks; `skjs_run` and `skjs_check` exec into it. A suite never starts its
-  own container and never calls docker.
-- **One SKJS call per batch.** `skjs check` takes many paths and names each
-  file in its output, and a container exec costs more than checking a small
-  file. Export several sources in one call, never in a loop.
-- **Setup is backgrounded, together.** A fixture is a parsed source plus its
-  claims, built by `fixture` (or `rejected_fixture` when SKJS rejecting the
-  program is the point). Every build goes through `build …`, which forks it,
-  and the script waits for all of them once. Setup placed after that wait is
-  serial and lands on the critical path: put new setup before it, in the
-  batch. Sources that must not go through the source parser, because they
-  use TypeScript outside the fragment, get their own helper, as
-  `snapshot_probes` does.
 - **Suites start together.** A suite is `run_test "Name" command args…`; its
   output is buffered and reported in order, and a failure is counted, never
-  fatal. A suite reads the fixtures the script built and runs the verifier
-  binary; it does not build Lean, does not run SKJS, and does not run the
-  corpus. The OCaml suite also builds its Dune executable before its tests.
+  fatal. A suite runs the verifier binary; it does not build Lean and does not
+  run the corpus. The OCaml suite also builds its Dune executable before its
+  tests.
 
-`examples.mts` follows the same rules on its own: one producer run for every
-corpus file, one worker per core, and colour decided once in the parent.
+`examples.mts` spreads the corpus over one worker per core, and decides colour
+once in the parent.
 
 ## What a result means
 
@@ -172,22 +134,10 @@ for every extracted function. Preserve this by construction:
   intermediate artifacts. The runner and viewer must not label them verified
   before the corresponding plan reaches `CertifiedPlan`.
 
-- The corpus prints a pair per producer, `SKJS ✓→✓ · tsc ✓→✗`: the producer's
-  own verdict on the program, then whether the verifier derives the claims it
-  made. `✗` on the right means proof search found no derivation; it is never a
-  disproof. `?` means the check could not be attempted. `⚠` marks an SKJS
-  acceptance its own claims do not establish; the tsc column carries none,
-  because exporter coverage and proof-search limits still need to be separated
-  from unsoundness findings. TS now states primitive field-content assertions
-  for direct reads at statement entry.
-- Expected outcomes are policy, in `expectedVerified` in `examples.mts`: a
-  witness fixture is expected _not_ to verify, and a run fails when any
-  function's outcome contradicts the policy, in either direction.
-- Fixtures under `tests/skjs-unsound/` and `tests/skjs-incomplete/` are
-  findings about SKJS and carry their own comment; the group README says what
-  each tool does with them. Do not "fix" one so that it verifies.
-- A repair is a hand-written candidate edit kept beside the original export,
-  never an automatic widening of SKJS's claims.
+- The corpus prints, per function, `tsc ✓→✗`: TypeScript's own verdict on the
+  program, then whether the verifier derives the claims it made. `✗` on the
+  right means proof search found no derivation; it is never a disproof. `·`
+  means no verdict or no claim was stated. The corpus asserts no outcome.
 
 ## Source and host soundness boundaries
 
@@ -280,20 +230,6 @@ native array contracts copied TypeScript signatures without accounting for
 reentrancy and coercion. Agreement between independent implementations did not
 catch a shared mistake. Keep these mechanisms and controls when extending the
 fragment; do not restore acceptance by increasing trust silently.
-
-## Snapshots of the exporter
-
-`tests/export-snapshots/` holds small probes with SKJS's exported claims
-printed beside them. They may use any TypeScript; some supported probes are also shared with
-the pipeline suites and viewer corpus. A change to what the exporter says is a diff in a `.snap` file;
-read it, then regenerate:
-
-```sh
-UPDATE_EXPECT=1 node verification/tests/export-snapshots.mts claims.json verification/tests/export-snapshots
-```
-
-where `claims.json` is one `skjs_check` over the directory. Add a probe when
-an exporter change needs a place to show, one phenomenon per file.
 
 ## Conventions
 

@@ -19,23 +19,6 @@ the tests, and keep the “done when” criterion true. `make test-in-docker` mu
 stay green.
 
 Put a repair's regressions in [`tests/expect-error/`](../tests/expect-error).
-The verification corpus is the functions that arc introduced in that directory,
-so a test placed there is measured and one placed elsewhere is not. Appending a
-case to an older file adds that case, not the file's existing contents.
-`make verify-census` reports how many of its functions the pipeline can verify
-and why the rest are refused; adding tests moves the recorded baseline, which
-`make verify-census UPDATE=1` accepts. It counts against the functions SKJS
-accepts, not against every function: a regression SKJS rejects is stating
-nothing to check, and is reported separately rather than as a shortfall. The census is a measurement, not a gate:
-a refusal names a boundary of the verified fragment and says nothing about
-whether SKJS is right.
-
-It extracts each top-level function with the file's non-function context,
-including ambient declarations, aliases, classes and top-level variables. Other
-named function implementations are omitted; it is not a dependency resolver.
-Do not distort a regression to suit the census. For the pipeline continuation
-checkpoint, inspected blockers and safe extension workflow, see
-[Repair coverage](../verification/REPAIR-COVERAGE.md).
 
 ## Spec
 
@@ -65,12 +48,19 @@ is private, separate from rollback state, and exposes only a scope checkpoint.
 Uses preserve rigidity, scope and witness identity through the retained escape
 roots described below; origin tagging alone would not establish that lifetime.
 
-Contracts (full text in [DESIGN](../verification/DESIGN.md#skjs-operation-contracts)):
+Contracts:
 
-1. Substitution preserves meaning.
-2. Expansion and normalization have explicit exact / approx / cache guarantees.
-3. Successful subtyping is semantic inclusion under every assignment satisfying `Δ`.
-4. Inference cannot invalidate previous checks.
+1. **Substitution preserves meaning.** Substituting type arguments into
+   syntax means the same as interpreting the syntax under the corresponding
+   assignment.
+2. **Expansion and normalization have explicit guarantees.** An exact
+   expansion preserves denotation; an approximation establishes the
+   appropriate inclusion; a cache preserves that guarantee in the state it is
+   reused in.
+3. **Successful subtyping establishes semantic inclusion**, `Δ ⊢ A ≤ B`
+   implying `⟦A⟧η ⊆ ⟦B⟧η` for every `η` satisfying `Δ`.
+4. **Inference cannot invalidate earlier checks**: commitments are stable,
+   preserved across state changes, or revalidated.
 
 Target architecture: inference **proposes**; validation is against an
 **immutable, explicit** representation. The current implementation enforces parts
@@ -711,9 +701,8 @@ update error annotations or snapshots until the actual difference is understood.
 At coherent checkpoints, and on the final A4 code, run:
 
 ```sh
-verification/run.sh --suite all
+verification/run.sh
 node verification/examples.mts
-make verify-census
 make check-fmt
 ```
 
@@ -728,15 +717,10 @@ Make exports those settings to its recipes; the direct commands above need them
 in their environment explicitly. Do not run host binaries built for the container
 directly on macOS.
 
-The A3 baseline is 226 checker tests, 65 verifier suites, and curated results
-278 verified / 9 search failures / 18 unavailable. The repair census has 393
-functions: 242 producer-rejected; of 151 accepted, 41 verified, 87 gated and
-23 unproved. New independent tests may increase counts. Existing source outcomes
-should remain stable unless a separately demonstrated repair explains the change.
-Review both acceptance and rejection changes, including newly accepted functions.
-Do not use `UPDATE=1` to bless unexplained differences. Re-run the census after
-committing new/regrouped source functions so commit-based selection includes them.
-Native tests are outside that census. Curated examples are not the repair corpus.
+The A3 baseline is 226 checker tests. New independent tests may increase
+counts. Existing source outcomes should remain stable unless a separately
+demonstrated repair explains the change. Review both acceptance and rejection
+changes, including newly accepted functions.
 
 Performance qualification must keep the three existing controls:
 
@@ -1164,8 +1148,7 @@ Validation: 211 checker tests, 65 verifier suites and the existing 278 example
 proofs pass with zero unexpected outcomes. Three bounded timing rounds retained
 identical diagnostics; median before/after seconds were 0.743/0.750 (arrays),
 1.070/1.065 (generic membership), and 5.202/5.264 (deep collection). These are
-regression controls, not a whole-corpus complexity guarantee. The repair census is reported in
-[Repair coverage](../verification/REPAIR-COVERAGE.md). Unsupported language
+regression controls, not a whole-corpus complexity guarantee. Unsupported language
 features and general type-rule completeness are not implied complete by these
 lifecycle audits.
 
@@ -1395,9 +1378,6 @@ the answers mean. Separate work remains:
 - Accessor/proxy interoperability and precise custom iteration protocols, beyond
   the checked data-object/effect interpretation above. Ordinary call invalidation
   is conservative and can also reject safe pure-helper programs.
-- Independent repair-corpus coverage. See [Repair coverage](../verification/REPAIR-COVERAGE.md)
-  for measurements, inspected fragment blockers and the safe extension workflow.
-  This is a separate deliverable from repairing checker acceptance.
 
 Do not rewrite SKJS into the independent calculus, weaken a location contract,
 follow an unsound tsc acceptance, or change checker behavior incidentally while

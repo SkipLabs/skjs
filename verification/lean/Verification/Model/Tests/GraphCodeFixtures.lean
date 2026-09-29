@@ -13,23 +13,10 @@ the context it is created in. -/
 def oneNode (arity : Nat) (body : Tm) (context : Nat) (kind : Invoke := .call) : CallCode :=
   .graph arity [body] [(.ret, none)] 0 ((List.range context).map .var) kind
 
-/-- Its code requests at the signatures `sigs`, created in the context `Γ`:
-one per signature, its one node claimed at the signature's frame and result. -/
-def oneNodeCodes (arity : Nat) (body : Tm) (Γ : List (Ty Nat))
-    (sigs : List (CallEffects.Arrow (Ty Nat))) : List (CodeRequest Nat) :=
-  sigs.map fun s => ⟨⟨arity, [body], [(.ret, none)], 0, Γ, s, none⟩, [⟨s.receiver :: s.arguments.take arity ++ Γ, s.result⟩]⟩
-
 /-- Every code admitted: whether a code meets its signatures is its table's
 question, not its creation's. -/
 def admitted : CodeEntry Nat → Bool := fun _ => true
 
-/-- Produce evidence for a request, then check it through the JSON consumer. -/
-def roundtrip (r : Request Table Nat) (fuel : Nat := 10) : Except String Unit := do
-  let r ← Json.parse (toJson r).compress
-  let c ← produceJson Table r fuel
-  verifyJson Table r (← Json.parse c.compress)
-
-def ok (x : Except String α) : Bool := match x with | .ok _ => true | .error _ => false
 end Verification.Model.GraphCodeFixtures
 
 /-- One step of the machine on a test program's ground term: the step rules a

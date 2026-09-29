@@ -278,6 +278,5 @@ export function decodeTerm(value: unknown): Term {
   // Checked field by field above: this is where that becomes a type.
   return value as Term;
 }
-export const parseTerm = (text: string): Term => decodeTerm(JSON.parse(text));
 export const printTerm = (term: Term): string =>
   JSON.stringify(decodeTerm(term));

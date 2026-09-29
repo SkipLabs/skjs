@@ -9,20 +9,11 @@ import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
-import type { Bundle, Candidate, PipelineOutcome } from "./types.ts";
+import type { Bundle, PipelineOutcome } from "./types.ts";
 import { fieldOf, messageOf, outputOf } from "../tools/thrown.mts";
 import { cases } from "../ocaml-producer/cases.mts";
 import { checkApart, searchDepth } from "../ocaml-producer/check.mts";
 import type { SeenDiagnostic } from "../tools/declaration-graph.mts";
-
-/** What the page posts: the candidate to check or keep, and — for a draft —
- * what to do with it. Discarding one names the source alone, and everything
- * here arrives from a browser, so nothing is assumed of it. */
-interface CandidateRequest {
-  candidate?: Candidate;
-  file?: string;
-  remove?: boolean;
-}
 
 /** What the child processes below are run with, decided once. */
 interface RunOptions {
@@ -101,51 +92,14 @@ async function repositoryPath(relative: string) {
   return resolved;
 }
 
-/*
- * A draft lives beside the source it is about, named after it, the way the
- * command-line tools already name what they write. It is meaningful for that
- * file and no other — its `sourceSha256` must match — so there is nothing to
- * choose and nothing to find: opening the source finds its draft.
- *
- * What is written is the candidate itself, not a display bundle, so the same
- * file can be handed to `annotate-source.mts --claims`.
- */
-const draftPath = (source: string) => source.replace(/\.tsx?$/, "") + ".candidate.json";
-
-/**
- * The draft beside a source. A draft is about one exact source, so one written
- * before that source changed describes text that is no longer there and cannot
- * be shown — but saying nothing would leave a file in the tree that silently
- * does nothing, so what is wrong with it is reported instead.
- */
-async function readDraft(absolute: string, sourceSha256: string) {
-  const at = draftPath(absolute);
-  const text = await fs.readFile(at, "utf8").catch(() => null);
-  if (text === null) return null;
-  const named = path.relative(REPO, at);
-  let draft;
-  try {
-    draft = JSON.parse(text);
-  } catch {
-    return { stale: `${named} is not readable as a candidate` };
-  }
-  if (draft?.sourceSha256 !== sourceSha256)
-    return {
-      stale:
-        `${named} was written before this source changed, ` +
-        `so it is not shown`,
-    };
-  return { draft };
-}
-
 /**
  * The producers the reader can ask for, each a collector below. A query string
  * arrives from a browser, so a name that is not one of these names nothing to
  * run and reads as the default rather than being passed on.
  */
-const PRODUCERS = new Set(["skjs", "tsc", "ocaml"]);
+const PRODUCERS = new Set(["tsc", "ocaml"]);
 const producerAsked = (asked: string | null) =>
-  asked && PRODUCERS.has(asked) ? asked : "skjs";
+  asked && PRODUCERS.has(asked) ? asked : "ocaml";
 
 async function hasVerifier() {
   return fs.access(path.join(REPO, VERIFIER)).then(
@@ -156,7 +110,7 @@ async function hasVerifier() {
 
 // Verification is not an option the caller turns on: if a verifier is present it
 // runs, so what is displayed is always checked against the claims on screen.
-// The other producer: what TypeScript's own checker claims at the same sites,
+// One producer: what TypeScript's own checker claims at the source's sites,
 // through the same verifier, including primitive field assertions at direct
 // statement-entry reads. tests/tsc-claims/README.md records its limits.
 async function tscAnalyse(
@@ -215,12 +169,6 @@ async function tscAnalyse(
         durationMs: Date.now() - startedAt,
         verified: Boolean(verify),
       },
-      candidate: {
-        format: "source-claims",
-        file: relative,
-        sourceSha256: digest,
-        claims: JSON.parse(await fs.readFile(claims, "utf8")),
-      },
     };
   } finally {
     await fs.rm(tmp, { recursive: true, force: true });
@@ -228,7 +176,7 @@ async function tscAnalyse(
 }
 
 /*
- * The third producer: an independent OCaml implementation of claim inference.
+ * The other producer: an independent OCaml implementation of claim inference.
  * What the reader shows for it is one run of the pipeline, `check.mts`, the
  * same run its own suites judge: its outcome, and the page built from what that
  * run left in its artifacts — the source snapshot, the Fragment the shared
@@ -376,12 +324,6 @@ async function ocamlAnalyse(
       ...bundle,
       collection: collection(Boolean(verify)),
       outcome: shown,
-      candidate: {
-        format: "source-claims",
-        file: relative,
-        sourceSha256: digest,
-        claims,
-      },
     };
   } finally {
     await fs.rm(outcome.artifacts, { recursive: true, force: true });
@@ -389,216 +331,12 @@ async function ocamlAnalyse(
   }
 }
 
-async function analyse(relative: string, producer = "skjs"): Promise<Bundle> {
-  const bundle = await collect(relative, producer);
-  // The draft, where one is beside the source and is about this source. The
-  // reader decides what to do with it; the server only reports that it exists.
-  const kept = await readDraft(
-    await repositoryPath(relative),
-    bundle.manifest?.source?.sha256,
-  );
-  return kept ? { ...bundle, ...kept } : bundle;
-}
-
-async function collect(relative: string, producer = "skjs"): Promise<Bundle> {
-  const sourcePath = await repositoryPath(relative);
-  const source = await fs.readFile(sourcePath, "utf8");
+async function analyse(relative: string, producer = "ocaml"): Promise<Bundle> {
+  const source = await fs.readFile(await repositoryPath(relative), "utf8");
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "claim-report-"));
   const options = { cwd: REPO, timeout: 120000, maxBuffer: 32 * 1024 * 1024 };
   if (producer === "tsc") return tscAnalyse(relative, source, tmp, options);
-  if (producer === "ocaml")
-    return ocamlAnalyse(relative, source, tmp, options);
-  // Every request runs the producer: nothing here is cached or reused. The
-  // reader shows when it ran, so a displayed report is never mistaken for an
-  // older one.
-  const startedAt = Date.now();
-  try {
-    let run: { stdout: string; stderr?: string };
-    try {
-      run = await execFile(
-        "docker",
-        [
-          "run",
-          "--rm",
-          "-v",
-          REPO + ":/work/skjs",
-          "-v",
-          path.resolve(REPO, "../skip") + ":/work/skip",
-          "-w",
-          "/work/skjs",
-          process.env.SKJS_IMAGE || "skiplabs/skip:latest",
-          process.env.SKJS_BIN || "target/host/dev/skjs",
-          "check",
-          "--import-stubs",
-          "import-stubs",
-          "--truthiness",
-          "boolean",
-          "--emit-skjs-type-claims",
-          relative,
-        ],
-        options,
-      );
-    } catch (thrown) {
-      // Normal rejection can still yield a partial collection. Operational
-      // errors cannot, and a thrown value is unknown until something checks it.
-      if (
-        fieldOf(thrown, "killed") ||
-        typeof fieldOf(thrown, "code") !== "number" ||
-        !outputOf(thrown, "stdout").trim().startsWith("[")
-      )
-        throw thrown;
-      // The producer refused the program and still wrote its claims.
-      run = { stdout: outputOf(thrown, "stdout"), stderr: outputOf(thrown, "stderr") };
-    }
-    const nativeClaims = path.join(tmp, "native-claims.json");
-    await fs.writeFile(nativeClaims, run.stdout);
-    const claims = path.join(tmp, "claims.json");
-    await execFile(process.execPath,["verification/tools/export-source-claims.mts",
-      relative,"--claims",nativeClaims,"--out",claims],options);
-    const args = [
-      "verification/tools/annotate-source.mts",
-      relative,
-      "--claims",
-      claims,
-      "--producer",
-      "skjs",
-      "--format",
-      "source-claims",
-      "--conversion",
-      claims + ".conversion.json",
-      "--stdout",
-      "json",
-    ];
-    if ((run.stderr ?? "").trim()) {
-      const diagnostics = path.join(tmp, "diagnostics.txt");
-      await fs.writeFile(diagnostics, (run.stderr ?? ""));
-      args.push("--diagnostics", diagnostics);
-    }
-    const verify = await hasVerifier();
-    if (verify) args.push("--verify", VERIFIER);
-    const result = await execFile(process.execPath, args, options);
-    const bundle = JSON.parse(result.stdout);
-    if (source !== (await fs.readFile(sourcePath, "utf8")))
-      throw new Error("Source changed during collection; run again");
-    const digest = crypto
-      .createHash("sha256")
-      .update(source)
-      .digest("hex");
-    if (bundle.manifest.source.sha256 !== digest)
-      throw new Error("Report source identity mismatch");
-    return {
-      source,
-      ...bundle,
-      collection: {
-        producer: "skjs",
-        producerRun: true,
-        command:
-          (process.env.SKJS_BIN || "target/host/dev/skjs") +
-          " check --emit-skjs-type-claims " +
-          relative,
-        ranAt: new Date(startedAt).toISOString(),
-        durationMs: Date.now() - startedAt,
-        verified: Boolean(verify),
-      },
-      candidate: {
-        format: "source-claims",
-        file: relative,
-        sourceSha256: digest,
-        claims: JSON.parse(await fs.readFile(claims,"utf8")),
-      },
-    };
-  } finally {
-    await fs.rm(tmp, { recursive: true, force: true });
-  }
-}
-
-// `verify` exists for callers that want attachment validation on its own; the
-// HTTP route never passes it, so nothing a browser asks for skips checking.
-async function candidateReport(
-  candidate: Candidate | undefined,
-  verify = true,
-): Promise<Bundle> {
-  const startedAt = Date.now();
-  if (
-    !candidate ||
-    !["skjs", "source-claims"].includes(candidate.format) ||
-    typeof candidate.file !== "string"
-  )
-    throw new Error("Unsupported candidate format");
-  const sourcePath = await repositoryPath(candidate.file);
-  const source = await fs.readFile(sourcePath, "utf8");
-  const digest = crypto
-    .createHash("sha256")
-    .update(source)
-    .digest("hex");
-  if (digest !== candidate.sourceSha256)
-    throw new Error(
-      "Source changed since this candidate was collected; reload before editing",
-    );
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "claim-candidate-"));
-  try {
-    const claims = path.join(tmp, "candidate.json");
-    await fs.writeFile(claims, JSON.stringify(candidate.claims));
-    const args = [
-      "verification/tools/annotate-source.mts",
-      candidate.file,
-      "--claims",
-      claims,
-      "--format",
-      candidate.format,
-      "--producer",
-      "manual candidate",
-      "--stdout",
-      "json",
-    ];
-    if (verify) {
-      if (!(await hasVerifier())) throw new Error("Verifier unavailable");
-      args.push("--verify", VERIFIER);
-    }
-    const result = await execFile(process.execPath, args, {
-      cwd: REPO,
-      timeout: 120000,
-      maxBuffer: 32 * 1024 * 1024,
-    });
-    if (source !== (await fs.readFile(sourcePath, "utf8")))
-      throw new Error("Source changed while checking candidate");
-    // The producer is not run here: this report is the edited candidate.
-    return {
-      source,
-      ...JSON.parse(result.stdout),
-      collection: {
-        producer: "edited candidate",
-        producerRun: false,
-        ranAt: new Date(startedAt).toISOString(),
-        durationMs: Date.now() - startedAt,
-        verified: Boolean(verify),
-      },
-      candidate,
-    };
-  } finally {
-    await fs.rm(tmp, { recursive: true, force: true });
-  }
-}
-
-async function readCandidate(
-  req: http.IncomingMessage,
-): Promise<CandidateRequest> {
-  if (
-    req.method !== "POST" ||
-    !req.headers["content-type"]?.startsWith("application/json")
-  )
-    throw new Error("Candidate checks require a JSON POST");
-  const origin = req.headers.origin;
-  if (origin && origin !== `http://${req.headers.host}`)
-    throw new Error("Cross-origin candidate requests are not allowed");
-  const chunks = [];
-  let size = 0;
-  for await (const chunk of req) {
-    size += chunk.length;
-    if (size > 16 * 1024 * 1024) throw new Error("Candidate exceeds 16 MiB");
-    chunks.push(chunk);
-  }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  return ocamlAnalyse(relative, source, tmp, options);
 }
 
 // The reader is a built bundle in `app/dist`, which exists only after
@@ -668,60 +406,6 @@ const server = http.createServer(async (req, res) => {
         analysing = false;
       }
     }
-    /*
-     * Keeping a draft, or discarding it. This writes into the working tree, so
-     * it happens only when asked: applying an edit checks it and writes
-     * nothing. What is written is the candidate itself, beside the source and
-     * named after it, so the same file can be passed to `annotate-source.mts`.
-     */
-    if (url.pathname === "/api/draft") {
-      const input = await readCandidate(req);
-      const file = input.candidate?.file ?? input.file;
-      if (typeof file !== "string")
-        return send(res, 400, { error: "A draft names the source it is about" });
-      const at = draftPath(await repositoryPath(file));
-      if (input.remove) {
-        await fs.rm(at, { force: true });
-        return send(res, 200, { path: path.relative(REPO, at), kept: false });
-      }
-      const candidate = input.candidate;
-      if (
-        !candidate ||
-        !["skjs", "source-claims"].includes(candidate.format) ||
-        typeof candidate.sourceSha256 !== "string"
-      )
-        return send(res, 400, { error: "Unsupported candidate" });
-      const source = await fs.readFile(await repositoryPath(file), "utf8");
-      const digest = crypto
-        .createHash("sha256")
-        .update(source)
-        .digest("hex");
-      // A draft about a source that has since changed would be stale the moment
-      // it landed, so it is refused rather than written.
-      if (candidate.sourceSha256 !== digest)
-        return send(res, 409, {
-          error: "The source changed; collect it again before keeping a draft",
-        });
-      await fs.writeFile(at, JSON.stringify(candidate, null, 2) + "\n");
-      return send(res, 200, { path: path.relative(REPO, at), kept: true });
-    }
-    if (url.pathname === "/api/candidate") {
-      const input = await readCandidate(req);
-      if (analysing)
-        return send(res, 409, {
-          error: "Another operation is running; try again shortly",
-        });
-      analysing = true;
-      try {
-        return send(
-          res,
-          200,
-          await candidateReport(input.candidate),
-        );
-      } finally {
-        analysing = false;
-      }
-    }
     const asset = assets.get(url.pathname);
     if (!asset) return send(res, 404, { error: "Not found" });
     return send(
@@ -736,8 +420,8 @@ const server = http.createServer(async (req, res) => {
     });
   }
 });
-// Only a direct run serves: importing this module for `candidateReport` must
-// not take the port.
+// Only a direct run serves: importing this module for `analyse` must not take
+// the port.
 if (process.argv[1] && import.meta.filename === path.resolve(process.argv[1])) {
   // A port already taken usually means a reader is up from an earlier run.
   // Say so, with what to do about it, rather than a stack trace.
@@ -774,4 +458,4 @@ if (process.argv[1] && import.meta.filename === path.resolve(process.argv[1])) {
   });
 }
 
-export { candidateReport, analyse };
+export { analyse };

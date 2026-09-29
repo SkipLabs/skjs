@@ -133,13 +133,11 @@ export interface ShownFunction {
   /** The obligation record, kept as recorded for the panel; never evidence. */
   obligation?: ObligationDiagnostic | null;
   obligationView?: ObligationView;
-  /** True for a source function the candidate says nothing about at all. */
-  candidateMissing?: boolean;
+  /** True for a source function the producer says nothing about at all. */
+  claimsMissing?: boolean;
   /** Every rigid parameter the source declares for it, printed with its
    * bound. The scope a claim of `T` is read in. */
   typeParams?: RigidParameter[];
-  /** Its parameter names, in source order, for the contract it needs. */
-  parameters?: string[];
 }
 
 /** Sites in source order, an environment before the claims of its statement. */
@@ -349,8 +347,8 @@ function parseReport(annotated: string): ParsedReport {
       if (cur && pos)
         cur.sites.push({ kind: "expression", pos, type: ty.text, raw: ty.raw, recovery });
     } else if (pos && cur) {
-      // a gap is a place the producer entered but did not claim, or an edit
-      // against a baseline. Its reason is a slug; the prose is the long form.
+      // a gap is a place the producer entered but did not claim. Its reason is
+      // a slug; the prose is the long form.
       cur.sites.push({ kind: "unclaimed", pos, detail: core, reason: fld.reason || "" });
     }
   }
@@ -408,13 +406,7 @@ function fromBundle(bundle: Bundle): ShownReport {
     const printed = printSurface(encoding);
     return printed.printable ? printed.text : fallback;
   };
-  const gaps = [
-    ...(m.gaps || []),
-    ...(m.comparison?.changes || []).map((c) => ({
-      pos: c.span,
-      status: `claim edit: ${c.status} ${c.kind}`,
-    })),
-  ];
+  const gaps = m.gaps || [];
   // A gap and a site the lowering attaches a claim to can be the same place:
   // "the producer did not visit this statement" and "this statement has no
   // environment claim" are one fact in two vocabularies, so it is one site,
@@ -608,22 +600,16 @@ function fromBundle(bundle: Bundle): ShownReport {
       functions.some((existing) => existing.namePos?.[0] === f.namePos[0])
     )
       throw new Error("Invalid missing function identity");
-    if (
-      !Array.isArray(f.parameters) ||
-      f.parameters.some((p) => typeof p !== "string")
-    )
-      throw new Error("Invalid missing function parameters");
     functions.push({
       id: `missing-${f.namePos[0]}`,
       name: f.name,
       namePos: f.namePos,
       pos,
       sites: ordered(unclaimed(f, pos)),
-      candidateMissing: true,
-      parameters: f.parameters,
+      claimsMissing: true,
       status: "not-established",
       detail:
-        "No function candidate supplied. Add its contract before adding point claims.",
+        "The producer supplied no claims for this function.",
     });
   }
   functions.sort((a, b) => a.pos[0] - b.pos[0]);

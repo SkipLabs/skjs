@@ -24,7 +24,6 @@ private def pool := vocabulary G labels [] [[0,2],[0,3]]
 
 /-- The callable's identity code and its code requests: empty context. -/
 private def identity : Tm := .makeAt (oneNode 1 (.var 1) 0) [valueField] [.nul]
-private def identityCodes : List (CodeRequest Nat) := oneNodeCodes 1 (.var 1) [] [⟨[7], [[1]], [1], .unrestricted⟩]
 private def program : Program :=
   [⟨identity,.bind 1,none⟩,
    ⟨.write (.var 0) (.var 0),.effect 2,none⟩,
@@ -32,16 +31,10 @@ private def program : Program :=
    ⟨.ite (.test .isFun (.var 0)) (.app (.var 0) .fls) .tru,.ret,none⟩]
 private def claims : List (PointClaim Nat) :=
   [⟨[],[2]⟩,⟨[[2]],[0]⟩,⟨[[2]],[0,2]⟩,⟨[[0,2],[2]],[1]⟩]
-private def request : Request RequestJson.Table Nat := ⟨types,program,claims,[1],0,[],identityCodes⟩
 private def certificate : ControlFlow.Certificate Nat :=
   match produce G labels 10 [1] program claims 0 (codes := admitted) with | .ok c => c | .error _ => []
 
 #guard checkEntry G [1] program certificate 0 [] admitted
-#guard match (do
-    let response ← produceJson RequestJson.Table (toJson request) 10
-    verifyJson RequestJson.Table (toJson request) response) with
-  | .ok _ => true | .error _ => false
-
 -- Independent recursive labels may be equivalent; adding Boolean to the
 -- invariant bag is unsafe even though it widens a read result.
 #guard (subtype G pool [2] [3]).isSome
@@ -71,25 +64,6 @@ private def capturedProgram : Program :=
    ⟨.write (.var 1) (.var 1),.effect 3,none⟩,
    ⟨.app (.var 0) .tru,.bind 4,none⟩,
    ⟨.ite (.test .isFun (.var 0)) (.app (.var 0) .fls) .tru,.ret,none⟩]
-private def capturedClaims : List (PointClaim Nat) :=
-  [⟨[],[2]⟩,⟨[[2]],[6]⟩,⟨[[6],[2]],[0]⟩,⟨[[6],[2]],[0,2]⟩,
-   ⟨[[0,2],[6],[2]],[1]⟩]
-private def capturedRequest : Request RequestJson.Table Nat := ⟨types,capturedProgram,capturedClaims,[1],0,[],
-  identityCodes ++ oneNodeCodes 1 getter [[2]] [⟨[7], [[1]], [0,2], .unrestricted⟩]⟩
-#guard match (do
-    let response ← produceJson RequestJson.Table (toJson capturedRequest) 10
-    verifyJson RequestJson.Table (toJson capturedRequest) response) with
-  | .ok _ => true | .error _ => false
-
--- The capture does not freeze the initial null bag. Treating the getter as
--- always returning null must fail its ordinary closure-body obligation.
-private def nullGetterRequest : Request RequestJson.Table Nat :=
-  ⟨RequestJson.rows (types ++ [[Clause.arrs [⟨[7], [[1]], [0], .unrestricted⟩] []]]),
-   [⟨identity,.bind 1,none⟩, ⟨.make (oneNode 1 getter 1) .nul,.bind 2,none⟩, ⟨.nul,.ret,none⟩],
-   [⟨[],[2]⟩,⟨[[2]],[9]⟩,⟨[[9],[2]],[0]⟩],[0],0,[],
-   identityCodes ++ oneNodeCodes 1 getter [[2]] [⟨[7], [[1]], [0], .unrestricted⟩]⟩
-#guard !ok (roundtrip nullGetterRequest)
-
 theorem captured_returns_false : Execution capturedProgram 22 [] (.at 0 (fun _ => .nul))
     [.obj 0 (oneNode 1 (.var 1) 0),.nul] (.done .fls) := by
   run_machine

@@ -11,9 +11,9 @@ make viewer                                # builds and opens it
 node verification/report-viewer/serve.mts  # http://localhost:8731, without opening
 ```
 
-The producer selector chooses whose claims are read — **SKJS claims**,
-**TypeScript claims** from `tools/tsc-claims.mts`, or **OCaml claims** from
-[`ocaml-producer/`](../ocaml-producer/README.md). They answer for the same
+The producer selector chooses whose claims are read — **OCaml claims** from
+[`ocaml-producer/`](../ocaml-producer/README.md), the default, or **TypeScript
+claims** from `tools/tsc-claims.mts`. They answer for the same
 sites and the same verifier adjudicates any of them, so switching re-reads the
 open file through another one. Each implements its own fragment of the
 language, and one that does not implement the open file says so in its own
@@ -65,8 +65,7 @@ questions about the producer's run rather than about what it claims: **producer
 diagnostics** opens the recorded messages and puts located errors under the
 spans they name. An empty report explicitly says no diagnostics were recorded;
 messages without a usable source span remain visible in the panel. TS checker
-messages travel with its claims, and SKJS rejection preserves stderr as well
-as the partial claims. **Undecoded
+messages travel with its claims. **Undecoded
 bindings** shows the bindings whose types it could not state.
 
 **The selected claim**, docked beneath the source rather than in a rail away
@@ -90,79 +89,12 @@ whether the independent consumer ran, and the fingerprints of the inputs.
 Keyboard: <kbd>j</kbd>/<kbd>k</kbd> or the arrows step through the marks in
 source order, <kbd>[</kbd>/<kbd>]</kbd> change function, <kbd>Esc</kbd> clears
 the mark. Those are ignored while typing, so <kbd>⌥</kbd>/<kbd>Alt</kbd> with
-the same keys steps from inside the editor, leaving the next claim ready to
-type into. The letters match by physical key, since Option composes characters.
+the same keys steps from inside a field. The letters match by physical key,
+since Option composes characters.
 
-## Editing a claim
-
-There is no workspace panel: a claim is edited at the claim. Selecting one
-opens its editor holding the same surface syntax it is read in — `{ value:
-boolean }`, `(boolean) => null`, `true | null`. The text is parsed on every
-keystroke and applying is refused until it reads back into an encoding, so a
-typo cannot be saved.
-
-Reading back edits the claim it came from: what the surface names is replaced,
-and what it cannot name — index signatures, call and construct shapes — is the
-original's, never invented here. An encoding with no exact surface syntax is
-edited as the producer's own JSON, which the editor switches to itself and says
-why.
-
-**Adding** a claim is different, and the difference is forced. There is no
-original to resolve against, so the surface can only name what it says in full:
-primitives and unions. An object or function type, and any environment, is
-written as the encoding.
-
-A candidate in the normalized encoding is edited the same way, in the same
-editor. Its claims index the document's own type table, so a claim is shown
-lifted into the syntax above and lowered back on apply, with any row the edit
-needs interned into that table as the producer would have on first use. A claim
-with no surface form there — an intersection of contracts, a type that refers
-to itself — is edited as the encoding, as a list of labels.
-
-A place the producer visited and claimed nothing at is selectable, and offers
-the claim that belongs there. A function the candidate says nothing about asks
-for its contract first, since every point claim is checked against it;
-parameter names and their order come from the source. An attachment site is not
-necessarily a required proof obligation.
-
-Applying sends the candidate to the verifier against unchanged source; the
-producer is not rerun. A refused candidate stays available for correction and
-what was last displayed keeps saying what it said, because nothing unchecked is
-shown as a result. A check that succeeds establishes that function's modeled
-obligations; it does not make the producer's original claims true.
-
-## Keeping a draft
-
-A draft is meaningful for one file — its `sourceSha256` must match, and every
-span is checked against the source it carries — so there is nothing to choose
-and nothing to find. **Keep this draft** writes it beside the source, named
-after it, the way the command-line tools already name what they write:
-
-```
-verification/tests/stateful-source/closures.ts
-verification/tests/stateful-source/closures.candidate.json
-```
-
-Opening that source finds the draft, checks it, and shows what the verifier
-made of it — a kept draft is a record of an edit, never a result. A draft about
-a source that has since changed is stale and is not shown.
-
-Keeping is explicit: applying an edit checks it and writes nothing, so
-experiments leave no trace. The file is tracked, so a repair is something that
-can be reviewed and kept. **Restore the producer's claims** puts them back and
-discards the draft, because leaving it would resurrect it on the next open.
-
-What is written is the candidate itself, so the same file is what the
-command-line tool reads:
-
-```sh
-node verification/tools/annotate-source.mts closures.ts \
-  --claims closures.candidate.json --verify verification/lean/.lake/build/bin/verifier
-```
-
-It names its own format and the source it is about, so `--format` is not needed
-and a draft about a different file, or the same one before it changed, is
-refused.
+A place the producer visited and claimed nothing at is selectable too; an
+attachment site is not necessarily a required proof obligation. A function the
+producer says nothing about is listed with no claims.
 
 ## How it is built
 
@@ -182,7 +114,8 @@ unaffected and builds against 7 alone.
 
 The view is the only part that is Svelte. Everything it reasons with is a
 module beside it, checked by `tools/tsconfig.json` like the rest of the front
-end and exercised by `tests/report-viewer.mts` without a browser:
+end and exercised by the reader section of `ocaml-producer/test.mts` without a
+browser:
 
 - `model.mts` — what a bundle means, as the reader displays it: for each
   function, its sites in source order — an expression claim, an environment, or
@@ -191,16 +124,11 @@ end and exercised by `tests/report-viewer.mts` without a browser:
 - `marks.mts` — what the source view draws: which claims at what position, the
   outcome symbols, how marks pack onto rows without overlapping.
 - `../tools/diagnostic-view.mts` — builds a typed obligation presentation when the report is generated; the panel renders it.
-- `candidate.mts` — immutable candidate edits. Candidate inputs and stored
-  results are never trusted proof evidence.
-- `../tools/claim-text.mts` — claim types in surface syntax, printed and read
-  back, and the lift and lowering between the normalized encoding and the
-  structural one the surface reads. `report-viewer.mts` checks that printing
-  and reading back returns the same encoding for every shape, and
-  `annotated-source.mts` checks it over every claim in a real export.
-- `serve.mts` — runs the producer and the report writer, and writes drafts. A
-  producer is one collector here — SKJS in its container, `tsc-claims.mts`, or
-  a `check.mts` run — each ending at the same
+- `../tools/claim-text.mts` — claim types in surface syntax, and the lift from
+  the normalized encoding into the structural one the surface prints.
+- `serve.mts` — runs the producer and the report writer. A
+  producer is one collector here — a `check.mts` run or `tsc-claims.mts` —
+  each ending at the same
   `annotate-source.mts --format source-claims --verify` (for a `check.mts`
   run, over its Fragment and, where it verified, its evidence, with
   `--fragment` and `--evidence`), and a producer the
@@ -208,8 +136,8 @@ end and exercised by `tests/report-viewer.mts` without a browser:
   as something to run. It
   binds to loopback, runs one collection at a time, applies a 120-second
   timeout to each subprocess, rejects source changes detected during
-  collection, and cleans temporary reports up either way. `SKJS_REPO`,
-  `SKJS_BIN`, `SKJS_IMAGE` and `PORT` configure the local runner.
+  collection, and cleans temporary reports up either way. `SKJS_REPO` (the
+  repository root) and `PORT` configure the local runner.
 
 Function `pos` ranges in manifests use the same original UTF-16 offsets as
 expression claims.
@@ -223,28 +151,24 @@ and a file is never hidden behind a control — the same reason the source view
 draws every claim.
 
 A group says what it is, because a label states an outcome and a heading read
-as a promise is worse than no heading: **SKJS unsound** carries "findings about
-SKJS, kept as they are — do not make one verify", and **Unsupported examples**
-carries "listing one never implies it verifies". **Current verifier examples**
-is tested by the same source suites as `make verify`; **Claim repair** is the
-deliberately rejected partial-collection exercise; the two **OCaml producer**
-groups are that producer's own fixtures, its negative controls and named gaps
+as a promise is worse than no heading: **Unsupported examples** carries
+"listing one never implies it verifies". **Current verifier examples** are the
+sources the corpus's tsc column checks; the two **OCaml producer** groups are that producer's own fixtures, its negative controls and named gaps
 listed beside its verified ones.
 
 A file always says what it demonstrates — `callbacks.ts ·
 higher-order calls / variance / capture`. Those come from the `area` field of
 `ocaml-producer/cases.mts`, the inventory that already decides what each case
 must do; writing them again here would be a second opinion about the same
-fixture, including when it appears in the producer-comparison group. Other
+fixture. Other
 examples pair their paths with descriptions in the catalogue. `GroupFile.about`
 is required, and catalogue construction rejects empty or multiline text, even
 when loaded by Node without type checking. The page renders it unconditionally.
 
 The groups come from `examples.mts`, re-read for each page load, so adding an
 example needs no restart. It exports two lists, because they answer different
-questions: `groups` is corpus policy, which `verification/examples.mts` runs
-SKJS and tsc over and holds to `expectedVerified`, reading its `files` as
-paths; `viewerGroups` is what the reader lists, carrying the notes and
+questions: `groups` is the corpus, which `verification/examples.mts` runs the
+tsc producer over, reading its `files` as paths; `viewerGroups` is what the reader lists, carrying the notes and
 descriptions and reaching another producer's fixtures. `ExampleGroup` in
 `types.ts` declares that shape for both the server and the page.
 
@@ -253,23 +177,13 @@ is load-bearing: flowing columns given a fixed height make further columns off
 to the side instead of balancing, and a container that scrolls only downwards
 then clips them — which hid two whole groups while this was being built.
 
-## Source editing direction (not implemented)
-
-Source editing should use an editor document with decorations, not embedded
-report comments. Decorations can move with edits while remaining visibly stale.
-Changed or ambiguous attachments must be invalidated. Initially any source edit
-should invalidate the file's verification result; finer dependency tracking can
-follow. During syntax errors, retain only unambiguous stale decorations. Accept
-asynchronous results only for the exact source revision and candidate revision
-analysed.
+## Report identity
 
 Report ids identify records within one snapshot. They are not stable identities
-across edits; reattachment requires syntax and binding identity as well as
-offset mapping. Moving an annotation is not evidence that its claim remains
-valid.
+across source changes; reattachment would need syntax and binding identity as
+well as offset mapping.
 
-Both producer collection paths supply `source-claims` candidates. Rigid parameters
-use the same function-scoped references, and unavailable claims retain their sites.
-SKJS native JSON is an import artifact, retained in provenance; editing and checking
-new collections use the shared format. Sources outside the modeled fragment still
-have an inspectable normalized report, with verification unavailable.
+Both producers supply `source-claims` documents. Rigid parameters use the same
+function-scoped references, and unavailable claims retain their sites. Sources
+outside the modeled fragment still have an inspectable normalized report, with
+verification unavailable.

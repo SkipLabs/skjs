@@ -22,14 +22,6 @@ private def program (callable : Bool) : Program :=
   [⟨if callable then .makeAt (oneNode 1 (.var 0) 0) [valueField] [.fls] else .alloc .fls,.bind 1,none⟩,
    ⟨.app callee argument,.ret,none⟩]
 private def claims : List (PointClaim Nat) := [⟨[],[2,3]⟩,⟨[[2,3]],[1]⟩]
-private def request (callable : Bool) : Request RequestJson.Table Nat :=
-  ⟨types,program callable,claims,[1],0,[],oneNodeCodes 1 (.read (.var 2)) [[2,3]] [⟨[5], [[0]], [1], .unrestricted⟩]⟩
-#guard [false,true].all fun callable => match (do
-    let r := Lean.toJson (request callable)
-    let response ← produceJson RequestJson.Table r 12
-    verifyJson RequestJson.Table r response) with
-  | .ok _ => true | .error _ => false
-
 -- An effectful initializer cannot use the allocation/creation shortcuts to
 -- retain the pre-initialization false fact about the captured cell.
 private def pool := vocabulary G labels claims []

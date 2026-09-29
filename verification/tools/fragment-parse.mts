@@ -303,7 +303,7 @@ let compiler: API | null = null;
 
 // The text this process is working with, per absolute path. The compiler runs
 // in another process with its own view of the disk, and a tool that holds a
-// source in memory — an annotated rendering, a candidate edit, a fixture it
+// source in memory — an annotated rendering, or a fixture it
 // just wrote — needs the tree to be the tree of *that* text, not of whatever
 // the disk happens to hold. An entry here is what the compiler reads; a path
 // with no entry falls through to the real file.

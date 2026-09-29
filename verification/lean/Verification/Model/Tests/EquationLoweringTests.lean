@@ -21,7 +21,8 @@ def sumDoc : Json := parse (include_str "EquationLowering/sum-collections.json")
 /-- A claims document whose one function's parameters are claimed at the
 given label lists. -/
 def claimsDoc (labels : List Json) : Json :=
-  Json.mkObj [("types", toJson SourceTypes.initial),
+  Json.mkObj [("types", toJson ([[.nul], [.boolLit true], [.boolLit false], [.undef]] :
+      List (List (PositiveNormalization.Clause (List Nat))))),
     ("functions", Json.arr #[Json.mkObj [("name", "f"), ("namePos", toJson [0, 1]),
       ("params", Json.arr (labels.zipIdx.map fun (A, i) =>
         Json.mkObj [("name", toJson s!"x{i}"), ("type", A), ("current", .null)]).toArray),

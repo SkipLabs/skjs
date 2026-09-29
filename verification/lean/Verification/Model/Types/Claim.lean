@@ -127,7 +127,7 @@ def decodeVal (j : Json) : Except String Val := do
   | "bigintlit" => return .vbigint (← decodeBigint (← jStr (← jField j "v")))
   | other => .error s!"'{other}' is not a literal value"
 
-/-- A type SKJS could not express in the supported fragment decodes as `none`; the
+/-- A type a producer could not express in the supported fragment decodes as `none`; the
 checker then rejects wherever that type is actually needed. -/
 def decodeTyOpt (j : Json) : Except String (Option Ty) := do
   match j.getObjVal? "unsupported" with

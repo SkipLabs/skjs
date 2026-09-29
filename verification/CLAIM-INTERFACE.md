@@ -5,25 +5,25 @@ there is no implemented comment frontend yet. A strict, bounded
 [calculus-label sidecar](SOURCE-CLAIMS.md) is now implemented separately from the
 arbitrary-graph proposal below. The in-memory consumption boundary
 is now separated: `SourceClaims.Function` contains calculus type candidates, and
-`extractNormalizedFn` accepts them directly. The source CLI accepts SKJS exports and, through separate modes, the bounded
+`extractNormalizedFn` accepts them directly. The source CLI accepts the bounded
 producer-independent sidecar. The independent calculus request and
 certificate checker already exist; this proposal changes how source claims reach
 that boundary, not which semantic rules establish acceptance.
 
 A [display-only annotated report generator](ANNOTATED-SOURCE.md) is now available.
-It accepts SKJS exports or an independent display-claim document and can freshly
-verify SKJS-backed functions. Its `@verify-report` comments are output, not the
+It accepts the sidecar or an independent display-claim document and can
+freshly verify sidecar-backed functions. Its `@verify-report` comments are output, not the
 claim-input notation proposed here. Stored report statuses never supply evidence.
 
 ## One claim model, multiple representations
 
 A source-claim document associates candidate types with source expressions and
-statement entries. A human, SKJS, or another analyzer can supply those candidates.
+statement entries. A human or an analyzer can supply those candidates.
 Comments and a sidecar file are two representations of the same information.
 Neither representation contains trusted assertions or proof evidence.
 
 The normalized interface should reuse the existing positive type graph from
-[REQUEST-PROTOCOL](REQUEST-PROTOCOL.md), rather than store SKJS atoms or introduce
+[REQUEST-PROTOCOL](REQUEST-PROTOCOL.md), rather than store producer-specific atoms or introduce
 a second semantic type language. Source attachment is a separate layer: graph
 labels identify types, and source binding IDs identify values. Source extraction
 resolves those bindings to calculus slots and produces the ordinary requests and
@@ -51,25 +51,17 @@ operation still needs a supported translation and its required checks.
 
 ### Implemented first step
 
-The current in-memory interface is bounded by `SourceTypes.graph` (75 labels);
+The current in-memory interface is bounded by the source store's graph;
 it is not yet the arbitrary-graph document described above. Names and positions
 also retain the current source adapter's scope restrictions. It removes producer
 type JSON from claim consumption through the implemented bounded sidecar format.
 Source annotations still use the current source AST type decoder.
 
 A candidate carries either a decoded calculus type or an explicit decoding
-failure. SKJS can export unrelated unsupported bindings, including implicit
-`this`; their failures remain unavailable rather than becoming invented types.
-Using such a candidate is an error. Directly supplied type labels are checked
+failure. An unsupported binding's failure remains unavailable rather than
+becoming an invented type; using such a candidate is an error. Directly supplied type labels are checked
 against the source graph's bounds. The future strict comment frontend must reject
-unconsumed directives; preserving the existing export policy does not change
-that proposed requirement.
-
-[SourceClaimsTests.lean](lean/Verification/Model/Tests/SourceClaimsTests.lean) supplies claims without SKJS type JSON, checks their
-certificates, compares the resulting request with the SKJS-adapted equivalent,
-and rejects narrowing, missing claims, invalid labels and reused evidence for
-changed judgments. The existing real-export suite exercises the same normalized
-consumer through the SKJS adapter.
+unconsumed directives.
 
 ## Suggested comment notation
 
@@ -173,10 +165,8 @@ point interface. Source comments do not replace checks on synthetic operations.
 
 ## Implementation order and trust boundary
 
-1. The in-memory normalized source-claim structure and SKJS adapter are implemented.
-   Keep the existing corpus and malformed-claim checks green. Separate decoding
-   SKJS types from consuming source claims; do not have the comment frontend
-   manufacture SKJS JSON.
+1. The in-memory normalized source-claim structure is implemented. Keep the
+   existing corpus and malformed-claim checks green.
 2. Give source attachment and bindings explicit snapshot-relative identities.
    Test nested scopes, parenthesized expressions, non-ASCII offsets, duplicate
    sites and stale sidecars. The source compiler's feature gates remain explicit.
@@ -194,9 +184,3 @@ interpretation would not verify the written claim. Moving claims into comments
 neither enlarges the allowed assumptions nor proves these source-boundary steps.
 The independent evidence consumer and semantic soundness theorems remain the
 foundation for the resulting calculus judgments.
-
-SKJS also exports partial function snapshots on normal first-error body failures.
-The optional `collection` metadata records completion, checking mode, recovery
-quality and expression visits. It is provenance only, ignored by proof checking;
-missing required claims remain missing obligations. See
-[partial reports and repair](ANNOTATED-SOURCE.md#rejected-programs-and-partial-collection).

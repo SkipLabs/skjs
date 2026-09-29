@@ -5,10 +5,10 @@ import Verification.Model.Programs.CertificateProducer
 
 /-! What the source path asks of the labels it types a program with, and of
 the store that gives them meaning. Extraction, the source claims' readers and
-the checked requests are written against these two interfaces, not against a
-representation: the finite table of rows, indexed by position, is one store
-(`SourceTypes`), and the equation labels of RECURSIVE-EQUATIONS §8 are to be
-another. Neither interface carries a proof obligation: a store's graph is
+the checked requests are written against these two interfaces: extraction
+grows a store over the lowering's heads (`EquationStore.State`, labels `Tree`),
+and a checked request reads the equations those heads present, frozen
+(`EquationStore.Checked`, labels `CheckedLabel`). Neither interface carries a proof obligation: a store's graph is
 what the checked requests are proved safe over, whatever store built it. -/
 namespace Verification.Model.LabelStore
 open Lean PositiveGraphs PositiveNormalization CallEffects

@@ -7,8 +7,10 @@ premises. Full source/CFG acceptance still requires checked edge integration. -/
 namespace Verification.Model.HeapExpressionTests
 open ProgramCertificates HeapExpressionRules HeapKnowledge
 
-private def T : SourceTypes.Table := SourceTypes.initial ++ RequestJson.rows [[.refs [(valueField, [1,2])] [] []]]
-private def G := SourceTypes.graph T
+/-- 0 null, 1 true, 2 false, 3 undefined, 4 a cell holding a Boolean. -/
+private def types : List (List (PositiveNormalization.Clause (List Nat))) :=
+  [[.nul], [.boolLit true], [.boolLit false], [.undef], [.refs [(valueField, [1,2])] [] []]]
+private def G : PositiveGraphs.NormalGraph Nat := .ofRows fun i => types[i]?.getD []
 private def boolTy : List Nat := [1,2]
 private def refBool : List Nat := [4]
 private def writeClaim : Sequent Nat :=
@@ -103,7 +105,7 @@ private def invalidWrite : Evidence Nat := .node narrowWrite .write
 
 -- A creation preserves old facts even when its uncalled code would mutate a
 -- cell it captures.
-private def CG := SourceTypes.graph (T ++ RequestJson.rows [[.arrs [] []]])
+private def CG : PositiveGraphs.NormalGraph Nat := .ofRows fun i => (types ++ [[.arrs [] []]])[i]?.getD []
 private def creationContext : List (List Nat) := [refBool,boolTy,refBool,boolTy]
 /-- Graph code of `arity` writing to its capture, the cell in slot 0 here. -/
 private def creationAt (arity : Nat) : Sequent Nat :=

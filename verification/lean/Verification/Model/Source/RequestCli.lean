@@ -1,8 +1,7 @@
-import Verification.Model.Source.SourceClaimExport
-import Verification.Model.Source.SkjsOperations
+import Verification.Model.Source.SourceClaimJson
 
-/-! File interfaces to raw calculus requests and to the supported source adapter.
-Source parsing remains external; source-mode checking reconstructs its request. -/
+/-! File interface to the source adapter. Source parsing remains external;
+checking reconstructs each unit's request from the fragment and its claims. -/
 namespace Verification.Model.RequestCli
 open Lean RequestJson
 
@@ -11,56 +10,13 @@ def readJson (path : String) : IO (Except String Json) := do
     return Json.parse (← IO.FS.readFile path)
   catch e => return .error s!"cannot read {path}: {e}"
 
-def checkFiles (requestPath evidencePath : String) : IO UInt32 := do
-  let request ← readJson requestPath
-  let evidence ← readJson evidencePath
-  let checked := do verifyJson RequestJson.Table (← request) (← evidence)
-  match checked with
-  | .ok () => IO.println s!"accept: stateful calculus request {requestPath}"; return 0
-  | .error e => IO.eprintln s!"reject: {e}"; return 1
-
-def produceFile (requestPath evidencePath : String) (fuel : Nat) : IO UInt32 := do
-  if requestPath == evidencePath then
-    IO.eprintln "reject: evidence output must differ from the request file"
-    return 1
-  let request ← readJson requestPath
-  match request.bind (fun j => produceJson RequestJson.Table j fuel) with
-  | .error e => IO.eprintln s!"reject: {e}"; return 1
-  | .ok evidence =>
-    try
-      IO.FS.writeFile evidencePath (evidence.compress ++ "\n")
-      IO.println s!"checked evidence written: {evidencePath}"
-      return 0
-    catch e => IO.eprintln s!"reject: cannot write {evidencePath}: {e}"; return 1
-
-/-- Conversion writes JSON to stdout; callers decide where to save the two artifacts. -/
-def exportSourceClaims (astPath claimsPath fileKey : String) : IO UInt32 := do
-  let ast ← readJson astPath
-  let claims ← readJson claimsPath
-  match (do SourceClaimExport.convert (← ast) (← claims) fileKey) with
-  | .ok converted => IO.println converted.compress; return 0
-  | .error e => IO.eprintln s!"reject: {e}"; return 1
-
-/-- Native import only; its output is the same neutral document used by both producers. -/
-def inspectSourceClaims (claimsPath fileKey digest : String) : IO UInt32 := do
-  let claims ← readJson claimsPath
-  match claims.bind (fun c => SourceClaimExport.inspect c fileKey digest) with
-  | .ok converted => IO.println converted.compress; return 0
-  | .error e => IO.eprintln s!"reject: {e}"; return 1
-
 def sourceFiles (astPath claimsPath fileKey evidencePath : String)
-    (fuel : Option Nat) (normalized : Bool := false)
-    (only : Option (String × Span) := none) : IO UInt32 := do
+    (fuel : Option Nat) (only : Option (String × Span) := none) : IO UInt32 := do
   if fuel.isSome && (evidencePath == astPath || evidencePath == claimsPath) then
     IO.eprintln "reject: evidence output must differ from the input files"
     return 1
   let ast ← readJson astPath
   let claims ← readJson claimsPath
-  let claims := do
-    let c ← claims
-    if normalized then return c
-    let converted ← SourceClaimExport.convert (← ast) c fileKey
-    jField converted "claims"
   match fuel with
   | none =>
     let evidence ← readJson evidencePath
@@ -80,13 +36,5 @@ def sourceFiles (astPath claimsPath fileKey evidencePath : String)
         IO.println s!"checked source evidence written: {evidencePath}"
         return 0
       catch e => IO.eprintln s!"reject: cannot write {evidencePath}: {e}"; return 1
-
-def checkOperations (claimsPath : String) : IO UInt32 := do
-  let claims ← readJson claimsPath
-  match claims.bind SkjsOperations.checkJson with
-  | .ok r =>
-    IO.println s!"accept: {r.checked} closed operations, {r.skipped} skipped"
-    return 0
-  | .error e => IO.eprintln s!"reject: {e}"; return 1
 
 end Verification.Model.RequestCli

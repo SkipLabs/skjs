@@ -1,9 +1,10 @@
 # Independent claim verification
 
 This pipeline checks supplied types and program-point invariants against an
-independent calculus. SKJS is one claim producer; producer-independent candidates
-use the same source adapter and independently checked certificates. We do not
-assume SKJS or proof search is sound.
+independent calculus. A producer proposes the claims: the OCaml producer, or
+TypeScript's own checker for the corpus. Every producer's claims go through the
+same source adapter and independently checked certificates. Neither a producer
+nor proof search is assumed sound.
 
 There is one maintained calculus and verifier. Its implementation lives in
 `lean/Verification/Model/`, organized by semantics, types, program rules,
@@ -27,13 +28,13 @@ The TypeScript the pipeline reads is summarised under
 
 ## Run
 
-Prerequisites: Node, the pinned [Lean toolchain](lean/lean-toolchain), and Docker
-(or a devcontainer). Install tools and build SKJS once:
+Prerequisites: Node, the pinned [Lean toolchain](lean/lean-toolchain), OCaml
+and Dune ([the producer guide](ocaml-producer/README.md#try-it)). Install the
+tools once:
 
 ```sh
 (cd verification/tools && npm install)
 npm ci --prefix verification/ocaml-producer/upstream   # the fixture's @types/node
-make build-in-docker
 make verify
 ```
 
@@ -44,41 +45,28 @@ while researching a feature retire once a pipeline case covers it
 
 The commands separate regression testing from inspecting example outcomes:
 
-- `make verify-test` builds Lean and runs named pipeline suites: source integration,
-  altered claims and certificates, source boundaries, partial exports and report/editor
-  tests. Its summary counts test executables, not functions or assertions, and marks
-  an incomplete run after an early failure.
-- `make verify-examples` builds Lean and checks fresh SKJS and tsc claims for the
-  viewer's example corpus. Each function has a producer-to-proof pair, for example
-  `SKJS ✓→✓ · tsc ✓→✗`. Proof `✓` means independently verified, `✗` means proof
-  search failed (not a disproof), and `?` means unsupported source or missing claims.
-  `⚠` highlights SKJS acceptance not established by its claims; it is not itself
-  evidence of an SKJS bug.
-  No repair is applied; repair demonstrations belong to the regression suites.
-- `make verify-census` measures original SKJS repair regressions against a separate
-  baseline. See [Repair coverage](REPAIR-COVERAGE.md) for the denominator,
-  inspected blockers and continuation workflow.
+- `make verify-test` builds Lean and runs the pipeline's suites: the OCaml
+  producer's cases, front-end types, JSON field names, documents, the rule
+  inventory and the source boundaries. Its summary counts test executables,
+  not functions or assertions, and marks an incomplete run after an early
+  failure.
+- `make verify-examples` builds Lean and checks TypeScript's own claims for
+  the viewer's example corpus ([tsc claims](tests/tsc-claims/README.md)).
+  Each function shows TypeScript's verdict and whether the verifier derives
+  its claims: proof `✓` means independently verified, `✗` means proof search
+  failed (not a disproof), and `·` means no claim was stated.
 - `make verify` runs both, building Lean once and keeping their summaries separate.
 
-The example summary counts functions by producer and proof outcome. A separate
-expectation check fails the command on unexpected verification outcomes or runner
-errors. Matching expectations does not mean every example verifies. Both commands
-use some of the same source fixtures, for these different purposes.
 Terminal output uses green for success, red for rejection or failed proof search,
-and amber for unavailable checks or differing outcomes. Symbols and words remain
-visible without color. Redirected output, `TERM=dumb`, and a nonempty `NO_COLOR`
-disable colors.
-Use `VERBOSE=1` for build details and example diagnostics. Without rebuilding Lean:
+and amber for unavailable checks. Symbols and words remain visible without
+color. Redirected output, `TERM=dumb`, and a nonempty `NO_COLOR` disable
+colors. Use `VERBOSE=1` for build details and example diagnostics. Without
+rebuilding Lean:
 
 ```sh
 verification/run.sh
-verification/run.sh --skjs target/host/dev/skjs.some-variant
 node verification/examples.mts
-node verification/examples.mts --skjs target/host/dev/skjs.some-variant
 ```
-
-Rebuild SKJS when its implementation changes. Repository-wide `make test` checks
-SKJS itself; it is not required for changes confined to the verifier or reports.
 
 ## Current source fragment
 
@@ -133,8 +121,7 @@ is refused and why, and [PROGRAM-TYPING](PROGRAM-TYPING.md#reading-the-source)
 how the source is read; [the protocol](REQUEST-PROTOCOL.md#source-mode) owns
 the source-mode commands, the type and claim encodings, and their exact
 restrictions. Worked examples of each construct live in
-[the corpus](tests/README.md), including the [Callables coverage map](tests/callables/README.md)
-and [producer counterexamples](tests/skjs-unsound/README.md). The
+[the corpus](tests/README.md), including the [Callables coverage map](tests/callables/README.md). The
 [callable surface](tests/callables/README.md#the-callable-surface) states which
 TypeScript callable forms are supported, where each unsupported one stops, and
 the order in which they are to be taken.
@@ -147,9 +134,8 @@ Start the local viewer with:
 node verification/report-viewer/serve.mts
 ```
 
-Open the printed URL. The default group contains current-verifier examples.
-Separate groups contain claim-repair exercises, SKJS unsoundness examples, SKJS incompleteness examples, and
-explicitly unsupported examples. Arbitrary repository source can be selected with `?file=relative/path.ts`.
+Open the printed URL. The groups hold the corpus examples, the OCaml
+producer's fixtures and explicitly unsupported examples. Arbitrary repository source can be selected with `?file=relative/path.ts`.
 See the [reader guide](report-viewer/README.md) and
 [annotated report format](ANNOTATED-SOURCE.md).
 
@@ -174,21 +160,20 @@ owner; other documents link to them and give only the context their readers need
 | Document | Owns |
 | --- | --- |
 | This README | Commands, a concise supported-fragment overview, and navigation. |
-| [REPAIR-COVERAGE](REPAIR-COVERAGE.md) | Repair measurement, continuation checkpoint, inspected blockers and safe extension workflow. |
 | [DESIGN](DESIGN.md) | Principles, architecture, the model in brief, the trust surface, the fragment boundary, lasting decisions and next steps. |
 | [SEMANTICS](SEMANTICS.md) | The term and value grammar, execution, worlds, heap satisfaction, membership and safety predicates. |
 | [POSITIVE-TYPES](POSITIVE-TYPES.md) | Type and state-assertion grammars, normalization, declarative subtyping and subtype certificates. |
 | [RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md) | Generic declarations as parameterized equations: labels, unfolding, substitution, family subtyping, lowering, wire format and acceptance statement. |
 | [PROGRAM-TYPING](PROGRAM-TYPING.md) | The graph program syntax, program/graph rules and their mathematics, side conditions, soundness, derived forms and evidence construction. Semantic rules awaiting integration are marked separately. |
-| [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md) | Calculus request/evidence JSON, verifier CLI, and SKJS source AST/export encoding. |
-| [SOURCE-CLAIMS](SOURCE-CLAIMS.md) | Implemented independent sidecar schemas, conversion, source identity and repair workflow. |
+| [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md) | Request/evidence JSON, the verifier CLI, and the source AST encoding. |
+| [SOURCE-CLAIMS](SOURCE-CLAIMS.md) | Implemented independent sidecar schemas and source identity. |
 | [CLAIM-INTERFACE](CLAIM-INTERFACE.md) | Explicitly unimplemented arbitrary-graph and comment-input proposals; links to implemented subsets. |
 | [LANGUAGES](LANGUAGES.md) | Every representation data crosses, which file owns each on both sides, the naming convention, and where it does not hold. |
 | [ANNOTATED-SOURCE](ANNOTATED-SOURCE.md) | Report output, manifest, annotations, provenance and freshness. |
 | [OBLIGATION-DIAGNOSTICS](OBLIGATION-DIAGNOSTICS.md) | Failure records, source maps, outcome classification and reason vocabulary. |
 | [VIEWER-LANGUAGE](VIEWER-LANGUAGE.md) | The viewer's claim language and its boundaries: what it displays and its two typed representations. |
 | [Viewer README](report-viewer/README.md) | Viewer/editor UX, local server, implementation structure and browser integration. |
-| [Test index](tests/README.md) and linked corpus READMEs | Regression coverage, runnable witnesses, producer/runtime outcomes and exact candidate repairs. |
+| [Test index](tests/README.md) and linked corpus READMEs | Regression coverage, the corpus and its runnable witnesses. |
 | [REFERENCES](REFERENCES.md) | Every cited paper, specification, tool and issue, with what the project uses from it and where. Other documents link to its anchors. |
 | [ECMA-CONNECTION](ECMA-CONNECTION.md) | A sketch of connecting the model to a mechanized ECMA-262: expected results, what they retire, cost. |
 | [TRUST-REDUCTION](TRUST-REDUCTION.md) | Future work: the bridges between source and theorem that rest on review, and the options for narrowing or proving each. |
@@ -231,11 +216,8 @@ The main Lean entry points are:
 | Source boundary and CLI | [Fragment](lean/Verification/Model/Source/Fragment.lean), [SourceExtraction](lean/Verification/Model/Source/SourceExtraction.lean), [SourceClaimJson](lean/Verification/Model/Source/SourceClaimJson.lean), [RequestCli](lean/Verification/Model/Source/RequestCli.lean) |
 | Other code and tests | [OCaml producer](ocaml-producer/README.md), [Node tools](tools/), [report viewer](report-viewer/README.md), [regression index](tests/README.md) |
 
-`tools/export-source-claims.mts` converts an existing SKJS export into editable
-calculus-label claims. Conversion records unsupported candidates and provenance;
-it does not itself establish verification. Sidecars also preserve
-current-content assertions such as `{ value: boolean = (true) }`, separately from
-the storage invariant. Supplied observations are checked obligations: every
-incoming edge, including loop backedges, must establish the assertions claimed at
-a statement entry. See
+Sidecars preserve current-content assertions such as
+`{ value: boolean = (true) }`, separately from the storage invariant. Supplied
+observations are checked obligations: every incoming edge, including loop
+backedges, must establish the assertions claimed at a statement entry. See
 [Current-content assertions](DESIGN.md#current-content-assertions).

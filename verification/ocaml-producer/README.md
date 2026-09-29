@@ -59,7 +59,7 @@ Its successful exit is never a type-checking verdict.
 
 ## Reading its claims
 
-`make viewer` offers this producer beside SKJS and `tsc`: select **OCaml
+`make viewer` offers this producer beside `tsc`: select **OCaml
 claims**, and the reader runs `check.mts` on the file — the same run as the
 command line, in a process of its own — and builds its page from that run's
 outcome and artifacts: the Fragment, this producer's own claims, and the
@@ -310,8 +310,7 @@ applies; this file records only what is specific to this producer.
    run `node verification/ocaml-producer/test.mts`, plus
    `dune runtest --root verification/ocaml-producer` for unit tests, and the
    wider tiers in [AGENTS.md](../AGENTS.md#iterating-run-what-the-change-touches)
-   when Lean, the parser or a wire format changed. SKJS suites are
-   unnecessary unless a `.sk` file changes.
+   when Lean, the parser or a wire format changed.
 7. Update the documents that own what changed, per
    [documentation ownership](../README.md#documentation-ownership) — wire
    fields in the protocol documents, the notation in the viewer language, the

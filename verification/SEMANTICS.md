@@ -873,7 +873,7 @@ including the whole number family and exact numeric singletons, and
 $\mathsf{defined}(v)\equiv v\neq\mathsf{undefined}$, a value of any other
 shape. These assertions are duplicable facts, not exclusive write
 permissions. This is a chosen plain-cell interpretation, not a theorem equating
-SKJS's internal types with heap assertions.
+a producer's internal types with heap assertions.
 
 ### What is asserted, and what a heap change can touch
 

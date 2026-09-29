@@ -1874,10 +1874,11 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
   let types ← arr claims "types"
   let P ← (producerRows types : Except String ProducerRows)
   modify fun s => { s with rows := P }
-  for (row, i) in (types.toList.take 4).zipIdx do
-    if row != toJson (SourceTypes.initial[i]!) then
-      throw "invalid source claims: the type table must start with the primitives"
-  if types.size < 4 then throw "invalid source claims: the type table must start with the primitives"
+  -- Rows 0 to 3 are the primitive values: null, true, false, undefined.
+  let primitives : List (GraphRow Nat) := [.clauses [.nul], .clauses [.boolLit true],
+    .clauses [.boolLit false], .clauses [.undef]]
+  if types.toList.take 4 != primitives.map toJson then
+    throw "invalid source claims: the type table must start with the primitives"
   let claims ← documentForm (fun A => do return unionJson (← claimUnion [] A)) claims
   drain
   return (annotations ++ initAnnotations, values, generics, units, initBinders, claims)

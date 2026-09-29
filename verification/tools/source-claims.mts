@@ -28,8 +28,8 @@ export type Label =
   | { binder: string };
 /*
  * Every type below is generic in its label, the wire's `Label` by default. A
- * producer that names only rows of its own table, as the tsc producer and
- * SKJS's export do, writes the `number` instance, and a reader of such a
+ * producer that names only rows of its own table, as the tsc producer does,
+ * writes the `number` instance, and a reader of such a
  * document reads that instance.
  */
 

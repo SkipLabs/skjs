@@ -11,8 +11,8 @@ namespace Verification.Model.CallableEffectTests
 open ProgramTyping ProgramCertificates PositiveGraphs PositiveRules HeapExpressionRules
 open ControlFlow CertificateProducer RequestJson
 
-/-- Labels 9 and 10 extend the shared table; label 7 there is unknown, every
-signature's receiver. -/
+/-- Labels 9 and 10 extend `CallableGraphTests.types`; label 7 there is
+unknown, every signature's receiver. -/
 private def types := CallableGraphTests.types ++
   [[PositiveNormalization.Clause.boolLit false], [.callable [(valueField, [1])] [] [⟨[7], [[0]], [0], .unrestricted⟩] []]]
 private def G : NormalGraph Nat := .ofRows fun i => types[i]?.getD []
@@ -78,16 +78,6 @@ private def program : Program :=
    ⟨.read (.var 2),.bind 6,none⟩,
    ⟨.app (.var 3) .nul,.effect 7,none⟩,
    ⟨.var 0,.ret,none⟩]
-private def claims : List (PointClaim Nat) :=
-  [⟨[],[1]⟩,⟨[[1]],[2]⟩,⟨[[2],[1]],[1]⟩,⟨[[1],[2],[1]],[1]⟩,
-   ⟨[[1],[1],[2],[1]],[0]⟩,⟨[[1],[1],[2],[1]],[1]⟩,
-   ⟨[[1],[1],[1],[2],[1]],[0]⟩,⟨[[1],[1],[1],[2],[1]],[9]⟩]
-private def request : Request RequestJson.Table Nat := ⟨types,program,claims,[9],0,[],CallableGraphTests.codes⟩
-#guard match (do
-    let response ← produceJson RequestJson.Table (Lean.toJson request) 10
-    verifyJson RequestJson.Table (Lean.toJson request) response) with
-  | .ok _ => true | .error _ => false
-
 /-- The precise return is the saved read value; invocation does not erase it. -/
 theorem returns_false : Execution program 23 [] (.at 0 (fun _ => .nul)) [.fls] (.done .fls) := by
   run_machine

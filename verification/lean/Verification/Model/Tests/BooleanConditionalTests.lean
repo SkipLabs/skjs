@@ -6,23 +6,7 @@ open Lean ProgramTyping ProgramCertificates ControlFlow RequestJson PositiveGrap
 
 private def types : List (List (PositiveNormalization.Clause (List Nat))) :=
   [[.bool],[.nul],[.refs [(valueField, [0])] [] []],[.arrs [⟨[4], [[1]], [0], .unrestricted⟩] []],[.top],[.undef]]
-private def ok (r : Except String α) : Bool := match r with | .ok _ => true | .error _ => false
-private def roundtrip (r : Request RequestJson.Table Nat) : Except String Unit := do
-  let input ← Json.parse (toJson r).compress
-  let evidence ← produceJson RequestJson.Table input 10
-  verifyJson RequestJson.Table input (← Json.parse evidence.compress)
 
-private def branch (c t e : Tm) : Request RequestJson.Table Nat :=
-  ⟨types,[⟨.ite c t e,.ret,none⟩],[⟨[[0]],[0]⟩],[0],0,[[0]], []⟩
-#guard ok (roundtrip (branch (.var 0) .tru .fls))
-#guard !ok (roundtrip (branch .nul .tru .fls))
-#guard !ok (roundtrip (branch (.var 0) (.read .nul) .fls))
-#guard !ok (roundtrip (branch (.var 0) .tru (.read .nul)))
-
--- Boolean singleton unions are accepted; adding null to the input is not.
-#guard ok (roundtrip ⟨RequestJson.rows [[.boolLit true],[.boolLit false]],
-  [⟨.ite (.var 0) .tru .fls,.ret,none⟩],[⟨[[0,1]],[0,1]⟩],[0,1],0,[[0,1]], []⟩)
-#guard !ok (roundtrip { branch (.var 0) .tru .fls with inputs := [[0,1]], claims := [⟨[[0,1]],[0]⟩] })
 
 -- The condition must be Boolean and both branch judgments must be present.
 private def G : NormalGraph Nat := .ofRows fun i => (types[i]?).getD []
@@ -51,8 +35,6 @@ private def refinedNo : Evidence Nat := .node ⟨[[1]],.tru,[0]⟩ .truLit []
 private def refinedProof : Evidence Nat :=
   .node ⟨[[0,1]],.ite (.var 0) (.var 0) .tru,[0]⟩ (.ifBoolVar [0] [1]) [refinedYes,refinedNo]
 #guard checkTree RG refinedProof
-#guard ok (roundtrip ⟨refinedTypes,[⟨.ite (.var 0) (.var 0) .tru,.ret,none⟩],
-  [⟨[[0,1]],[0]⟩],[0],0,[[0,1]], []⟩)
 #guard !checkTree RG (.node ⟨[[0,1]],.ite (.var 0) (.var 0) .tru,[0]⟩
   (.ifBoolVar [1] [0]) [refinedYes,refinedNo])
 #guard !checkTree RG (.node ⟨[[0,1]],.ite (.var 1) (.var 0) .tru,[0]⟩
@@ -75,7 +57,6 @@ private def knownTerm : Tm := .ite .tru .fls (.read .nul)
 private def knownProof : Evidence Nat :=
   .node ⟨[],knownTerm,[1]⟩ (.ifKnown true) [knownCond,knownArm]
 #guard checkTree RG knownProof
-#guard ok (roundtrip ⟨refinedTypes,[⟨knownTerm,.ret,none⟩],[⟨[],[1]⟩],[1],0,[], []⟩)
 #guard !checkTree RG (.node ⟨[],knownTerm,[1]⟩ (.ifKnown false) [knownCond,knownArm])
 #guard !checkTree RG (.node ⟨[],knownTerm,[1]⟩ (.ifKnown true) [knownArm])
 #guard !checkTree RG (.node ⟨[],.ite .tru (.read .nul) .fls,[1]⟩ (.ifKnown true) [knownCond,knownArm])
@@ -85,8 +66,6 @@ private def knownProof : Evidence Nat :=
 private def knownEffectProgram : Program :=
   [⟨.alloc .tru,.bind 1,none⟩,
    ⟨.ite (.letE (.write (.var 0) .fls) .tru) .fls (.read .nul),.ret,none⟩]
-#guard ok (roundtrip ⟨refinedTypes ++ RequestJson.rows [[.refs [(valueField, [0,1])] [] []]],knownEffectProgram,
-  [⟨[],[3]⟩,⟨[[3]],[1]⟩],[1],0,[], []⟩)
 
 /-- Selecting a known arm must not erase the condition's write. -/
 theorem known_condition_effects_preserved : Execution knownEffectProgram 8 []
@@ -112,8 +91,6 @@ private def nullProof : Evidence Nat :=
   (CertificateProducer.expression NG [[0],[1],[2],[1,2],[0,1,2]] 10 [[0,1,2],[2]] nullGuard [1,2]).getD
     (.node ⟨[],.nul,[]⟩ .nul [])
 #guard checkTree NG nullProof
-#guard ok (roundtrip ⟨nullTypes,[⟨nullGuard,.ret,none⟩],
-  [⟨[[0,1,2]],[1,2]⟩],[1,2],0,[[0,1,2]], []⟩)
 -- The evidence cannot omit a union member or alter an unrelated binding.
 #guard !(match nullProof with
   | .node j _ ps => checkTree NG (.node j (.unionVar 0) ps.tail))
@@ -125,29 +102,12 @@ private def nullProof : Evidence Nat :=
 #guard !checkTree NG (.node ⟨[],.nul,[0]⟩ (.unionVar 0) [])
 -- An empty union has no inhabitants; this is elimination from an impossible input.
 #guard checkTree NG (.node ⟨[[]],.read .nul,[1]⟩ (.unionVar 0) [])
--- Packing different shapes into a single graph label is not split by this search.
-#guard !ok (roundtrip ⟨RequestJson.rows [[.nul,.boolLit true],[.boolLit true]],
-  [⟨.ite (.test .isNul (.var 0)) .tru (.var 0),.ret,none⟩],
-  [⟨[[0]],[1]⟩],[1],0,[[0]], []⟩)
 
 -- A captured cell is read when the closure is called, after an alias write.
 -- Its code is a graph of one node, which reads the capture in its frame's
 -- slot 2, past the receiver and the parameter.
 private def readCell : Tm := .ite (.read (.var 2)) .tru .fls
 private def captureCode : CallCode := .graph 1 [readCell] [(.ret, none)] 0 [.var 0]
-private def captureEntry : CodeEntry Nat := ⟨1, [readCell], [(.ret, none)], 0, [[2]], ⟨[4], [[1]], [0], .unrestricted⟩, none⟩
-private def captureRequest (q : Bool) : Request RequestJson.Table Nat :=
-  ⟨types,
-   [⟨.alloc .tru,.bind 1,none⟩,
-    ⟨.make captureCode .nul,.bind 2,none⟩,
-    ⟨.write (.var 1) (if q then .tru else .fls),.effect 3,none⟩,
-    ⟨.app (.var 0) .nul,.ret,none⟩],
-   [⟨[],[2]⟩,⟨[[2]],[3]⟩,⟨[[3],[2]],[1]⟩,⟨[[3],[2]],[0]⟩],[0],0,[],
-   [⟨captureEntry, [⟨[[4],[1],[2]],[0]⟩]⟩]⟩
-#guard ok (roundtrip (captureRequest true))
-#guard ok (roundtrip (captureRequest false))
--- Without the code's entry in its table, the creation has no evidence.
-#guard !ok (roundtrip {captureRequest true with codes := []})
 
 /-- The same program, run by the machine. -/
 private def captureProgram (q : Bool) : Program :=
@@ -179,7 +139,6 @@ theorem captured_branch_reads_latest (q : Bool) : Execution (captureProgram q) 1
 private def effectfulProgram : Program :=
   [⟨.alloc .tru,.bind 1,none⟩,
    ⟨.ite (.letE (.write (.var 0) .fls) (.read (.var 1))) .tru .fls,.ret,none⟩]
-#guard ok (roundtrip ⟨types,effectfulProgram,[⟨[],[2]⟩,⟨[[2]],[0]⟩],[0],0,[], []⟩)
 
 theorem condition_effects_preserved : Execution effectfulProgram 9 []
     (.at 0 (fun _ => .nul)) [.fls] (.done .fls) := by

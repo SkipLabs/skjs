@@ -142,33 +142,12 @@ def cert (A B : List Nat) : PositiveCertificates.Proof Nat := (instProof G 64 A 
 #guard found [[10]] (.call (.var 0) [.tru]) [11]
 #guard !found [[10]] (.call (.var 0) [.tru]) [13]
 
--- On the wire: a table of rows, where scheme and parameter rows are rows of
--- their own kind. Its graph is the one above.
-open RequestJson in
-def table : List Row :=
-  (List.range types.length).map fun i =>
-    if i == 4 then .param 4 "T" .value else if i == 18 then .param 18 "U" .value
-    else if i == 5 then .scheme [4] [⟨[3], [[4]], [4], .unrestricted⟩] [] []
-    else if i == 10 then .scheme [4] [⟨[3], [[4]], [9], .unrestricted⟩] [] []
-    else if i == 17 then .scheme [18] [⟨[3], [[18]], [18], .unrestricted⟩] [] []
-    else if i == 20 then .scheme [4] [⟨[3], [[4]], [4], .unrestricted⟩] [(4, [1, 2])] []
-    else .clauses (types[i]?.getD [])
-def wire : NormalGraph Nat := RequestJson.tableGraph table
-#guard (List.range types.length).all fun i =>
-  wire.params i == G.params i && wire.plain i == G.plain i && wire i == G i &&
-  (wire.schemes i).isSome == (G.schemes i).isSome
-#guard (subtype wire pool [5] [7]).isSome && (subtype wire pool [10] [12]).isSome &&
-  (subtype wire pool [10] [14]).isNone && (subtype wire pool [5] [17]).isSome
-#guard RequestJson.validRows table
--- A parameter row names its own label, a scheme's binders are parameter rows,
--- and a scheme's labels index the table.
-#guard !RequestJson.validRows (table.set 4 (.param 5 "T" .value))
-#guard !RequestJson.validRows (table.set 5 (.scheme [3] [⟨[3], [[3]], [3], .unrestricted⟩] [] []))
-#guard !RequestJson.validRows (table.set 5 (.scheme [4] [⟨[3], [[4]], [25], .unrestricted⟩] [] []))
 -- A pack binder and a value binder cannot exchange their instantiation types.
-private def sortedKinds : NormalGraph Nat := RequestJson.tableGraph [
+private def sortedKindRows : List (GraphRow Nat) := [
   .param 0 "P" .arguments, .param 1 "T" .value,
   .clauses [.pack ⟨[[3]], [], none, false, .dense⟩ []], .clauses [.num]]
+private def sortedKinds : NormalGraph Nat :=
+  NormalGraph.ofRowMap (fun i => sortedKindRows[i]?.getD (.clauses [])) none
 #guard PositiveRules.instKinds sortedKinds [0,1] [[2],[3]]
 #guard !PositiveRules.instKinds sortedKinds [0] [[3]]
 #guard !PositiveRules.instKinds sortedKinds [1] [[2]]
@@ -176,14 +155,16 @@ private def sortedKinds : NormalGraph Nat := RequestJson.tableGraph [
 -- A table certificate must not bypass the same check.
 #guard PositiveRules.entryOk sortedKinds [] [] (0, [(0,[2])], [2])
 #guard !PositiveRules.entryOk sortedKinds [] [] (0, [(0,[3])], [3])
--- The wire must state a kind; there is no implicit legacy/value default.
+-- A parameter row's JSON states its kind: a row without one is refused.
 #guard (Lean.fromJson? (Lean.Json.mkObj [("param", Lean.toJson (0 : Nat)),
-  ("name", Lean.toJson "P")]) : Except String RequestJson.Row).toOption.isNone
-#guard (Lean.fromJson? (Lean.toJson (GraphRow.param 0 "P" .arguments : RequestJson.Row)) :
-  Except String RequestJson.Row).toOption == some (.param 0 "P" .arguments)
--- A clause row is spelled as before; the other kinds read back as themselves.
-#guard Lean.toJson (GraphRow.clauses [.nul] : RequestJson.Row) == Lean.toJson [Clause.nul (α := List Nat)]
-#guard (Lean.fromJson? (Lean.toJson table) : Except String (List RequestJson.Row)).toOption == some table
+  ("name", Lean.toJson "P")]) : Except String (GraphRow Nat)).toOption.isNone
+#guard (Lean.fromJson? (Lean.toJson (GraphRow.param 0 "P" .arguments : GraphRow Nat)) :
+  Except String (GraphRow Nat)).toOption == some (.param 0 "P" .arguments)
+-- A clause row is spelled as its array of clauses; the other kinds read back
+-- as themselves.
+#guard Lean.toJson (GraphRow.clauses [.nul] : GraphRow Nat) == Lean.toJson [Clause.nul (α := List Nat)]
+#guard (Lean.fromJson? (Lean.toJson sortedKindRows) : Except String (List (GraphRow Nat))).toOption ==
+  some sortedKindRows
 
 -- A generic method of a generic type, with coloured binders:
 -- `Box<T> { readonly value: T; readonly map<U>(f: (x: T) => U): Box<U> }`.

@@ -1,7 +1,7 @@
 # Producer-independent source sidecars
 
 The sidecar supplies ground types as calculus labels into a type table the
-document carries, and type parameters as function-scoped references. It contains no SKJS type atoms, inferred bounds or stored
+document carries, and type parameters as function-scoped references. It contains no inferred bounds or stored
 proof results. A human or another producer can write it. This is a bounded
 interface for the existing source fragment, not support for arbitrary graphs,
 TypeScript types, shadowing or recursive source aliases.
@@ -15,12 +15,10 @@ verification/lean/.lake/build/bin/verifier --check-source-claims \
 ```
 
 The consumer reconstructs the calculus requests and required claim obligations
-from the AST and sidecar. It checks evidence using the same `checkRequests`
-function and soundness theorems as SKJS-backed source checking.
+from the AST and sidecar. It checks evidence using `checkRequests` and its soundness theorems.
 `SourceClaimJson.checkJson_safe` states that every accepted plan first becomes
 a `CertifiedPlan` and that every such function has the calculus safety
-guarantee, at every assignment of its parameter rows. No SKJS invocation
-or `--keep-going` is needed.
+guarantee, at every assignment of its parameter rows.
 
 Generic functions use the same sidecar: any `type` or `result` may be
 `{"param":"T"}`, referring to that function's source type parameter, which
@@ -89,11 +87,7 @@ Nested generic closures, generic closures in generic bodies, rests, defaults
 and receivers over a binder are all graph code the same way.
 
 Both producers feed this format into [SourceClaimJson.lean](lean/Verification/Model/Source/SourceClaimJson.lean), its strict decoder and checked consumer.
-The native SKJS CLI entry points first run `SourceClaimExport`; they do not have another verifier.
-The viewer collects and edits this format for both producers. Original native
-claims are retained only as import provenance or accepted by legacy import tools.
-When source parsing is outside the fragment, import still permits inspection in
-this format, but verification requires the real source parser and stays unavailable.
+The viewer collects and edits this format for both producers.
 
 ## Encoding
 
@@ -225,9 +219,9 @@ first time it is translated and the same label afterwards, so equal types share
 a label and no row exists that nothing uses. Labels are names, not meanings:
 `[4]` is `Ref<boolean>` in a document whose row 4 says so, and the checker's
 theorems hold for every table (`HasTy.sound` is graph-generic). Any table that
-starts with the primitives and refers only to its own labels is accepted;
-`SourceTypes.label_meaning` proves that a labelled clause means exactly that
-clause. The exporter writes the table it built, and `--produce` may grow a
+starts with the primitives and refers only to its own labels is accepted, and
+Lean reads its rows as heads of the equations the checked requests are over
+([lowering](RECURSIVE-EQUATIONS.md#5-from-source)). The exporter writes the table it built, and `--produce` may grow a
 request's table further with annotations the claims did not mention.
 
 ## Conjunction
@@ -305,7 +299,7 @@ is an object and its contract is on the store: aliases share it, a write
 keeps it. A readonly store contract uses an upper bound at each element location, so element types are covariant; the store-field view grants no replacement permission. Presence of a position
 is kept apart from a present `undefined`: an optional or rest position reads
 at its type or `undefined`, a required one at its type alone. Optional tuple
-positions are not produced by SKJS; the atom carries them for tsc.
+positions are carried for tsc.
 The required `dense` flag excludes holes below the length when true; when
 false, required positions remain present but optional/rest entries may be
 holes. Source arrays currently request density; native `map` results do not.
@@ -353,10 +347,8 @@ ordinary arrows do not acquire creation-time heap assumptions or postconditions.
 Numbers, nested predicates, and correlated unions of differently refined
 references remain outside this profile.
 
-`Fragment.translatePoint` preserves a supported standalone record refinement
-as its write-invariant reference plus its read-content predicate. Conversion does
-not manufacture stronger producer claims. Both raw SKJS and sidecar consumers
-bind current predicates to statement-entry or expression-result graph checkpoints.
+A supported standalone record refinement is its write-invariant reference plus
+its read-content predicate. The sidecar consumer binds current predicates to statement-entry or expression-result graph checkpoints.
 Every statement entry resets to exactly its supplied types and current predicates;
 extra derived facts and links cannot cross it. All incoming edges must justify
 that interface, including loop backedges. Expression claims are local obligations
@@ -386,8 +378,7 @@ C(R_1,W) \lor C(R_2,W) \equiv C(R_2,W).
 
 The equality uses the premise on the left. `covers_sound` and `normalize_exact`
 prove the implication and union preservation for the capability schema. This is
-an input-normalization law, not a new declarative program-typing rule or a proved
-correspondence to SKJS. All surviving ordinary arms must have equal read/write
+an input-normalization law, not a new declarative program-typing rule. All surviving ordinary arms must have equal read/write
 meanings; malformed or unsupported arms are never dropped.
 
 Different write invariants must not be absorbed: a Boolean-world cell currently
@@ -406,9 +397,9 @@ identities, not a theorem that the JSON AST describes those source bytes.
 Editing source requires regenerating the AST and updating claim positions and
 fingerprint. Supplying evidence from a previous judgment cannot bypass checking.
 
-## Reports and repairs
+## Reports
 
-The existing report and comparison command accepts this format:
+The report command accepts this format:
 
 ```sh
 node verification/tools/annotate-source.mts input.ts \
@@ -416,82 +407,8 @@ node verification/tools/annotate-source.mts input.ts \
   --verify verification/lean/.lake/build/bin/verifier --out input.annotated.ts
 ```
 
-After editing a copy of the sidecar, add
-`--baseline input.annotated.ts.json` and choose a fresh `--out` path. The report
-shows edits and freshly checked results. Producer names are display provenance;
+Producer names are display provenance;
 they are not sidecar proof assumptions. Claims-only reports are displays, not
 schema certification: `--verify` invokes the authoritative strict Lean decoder.
 
-The generic `--format report` remains a separate display-only format. The new
-sidecar is also distinct from SKJS export JSON. The converter below reuses the
-existing type decoder; comment editing remains a future step. The regression
-suite supplies handwritten
-claims for primitive parameters and for a mutable cell captured by a closure,
-and checks malformed inputs, missing claims, false refinements and old evidence.
-
-## Converting an existing SKJS export
-
-```sh
-node verification/tools/export-source-claims.mts input.ts --claims skjs-claims.json \
-  --diagnostics diagnostics.txt --out source-claims.json
-```
-
-The command uses the current source parser and Lean's existing SKJS type decoder,
-through [SourceClaimExport.lean](lean/Verification/Model/Source/SourceClaimExport.lean), the untrusted candidate conversion.
-It never invokes SKJS or enables recovery. `--diagnostics` is optional; use
-`--file-key` if the raw export identifies the file differently from the input
-path. `--verifier` selects the executable implementing conversion.
-
-Two files are written, without modifying inputs or overwriting existing outputs:
-
-- `source-claims.json`: editable calculus-label candidates.
-- `source-claims.json.conversion.json`: original raw claims, function collection
-  metadata, exact optional diagnostics, input/tool fingerprints and all omissions.
-
-An unavailable type is represented as `{"unavailable":"decoder reason"}` at its
-original signature, binding or expression site. It never denotes a type, and
-using it in an obligation rejects. The native payload and reason also remain in
-the import metadata. Entries and expressions absent from the lowered source are
-recorded as omissions. These include raw export
-sites not used by the source adapter; they do not necessarily indicate errors.
-Malformed inputs and duplicate identities are rejected instead of merged.
-
-Conversion can succeed on an aborted first-error snapshot. It preserves the
-available candidates and does not fill missing obligations. Independent checking
-still rejects missing required claims. The optional `--keep-going` mode belongs
-to the original SKJS invocation: recovery metadata survives in the conversion
-manifest and never becomes a proof assumption.
-
-Review that manifest alongside the sidecar, particularly for recovered exports.
-Attach it explicitly when making the initial report:
-
-```sh
-node verification/tools/annotate-source.mts input.ts --format source-claims \
-  --claims source-claims.json --conversion source-claims.json.conversion.json \
-  --verify verification/lean/.lake/build/bin/verifier --out initial.annotated.ts
-```
-
-The report shows **original SKJS collection** status and recovery labels,
-retains diagnostics and omissions, and uses the original snapshot to distinguish
-unfinished expressions from unavailable claims and native sites omitted by conversion. The conversion
-manifest must match both the source identity and the exact sidecar bytes. Its
-fingerprint participates in report freshness checks. These are provenance
-checks, not authentication or proof of the producer's descriptions.
-
-Keep this initial report as the baseline before editing a copy of the sidecar.
-For edited claims, omit `--conversion` and use
-`--baseline initial.annotated.ts.json` with fresh verification. An old conversion
-manifest is rejected for changed sidecar bytes, even whitespace changes: original
-collection labels must not silently describe edited candidates. The baseline
-retains the original history while the new report describes current claims.
-The initial SKJS export has no source digest, so matching it to the chosen source
-snapshot still requires care: conversion checks function/site identities but
-cannot detect every stale raw export whose offsets happen to remain valid. The
-resulting sidecar is bound to the source snapshot used for conversion.
-
-The exporter is a candidate producer, outside the acceptance foundation. For the
-real closure corpus, regression tests check evidence in both directions: evidence
-produced from SKJS claims is accepted against converted claims, and evidence from
-the converted claims is accepted against the original SKJS input. Other tests
-cover normal failure snapshots, explicit recovery, preserved diagnostics and
-unsupported types remaining missing obligations.
+The generic `--format report` is a separate display-only format.

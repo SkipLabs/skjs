@@ -7,8 +7,10 @@ No current-content fact is assumed at the function's external entry. -/
 set_option maxRecDepth 65536
 namespace Verification.Model.HeapGuardTests
 open ProgramTyping ProgramCertificates ControlFlow HeapKnowledge HeapExpressionRules
-private def T : SourceTypes.Table := SourceTypes.initial ++ RequestJson.rows [[.refs [(valueField, [1,2])] [] []]]
-private def G := SourceTypes.graph T
+/-- 0 null, 1 true, 2 false, 3 undefined, 4 a cell holding a Boolean. -/
+private def types : List (List (PositiveNormalization.Clause (List Nat))) :=
+  [[.nul], [.boolLit true], [.boolLit false], [.undef], [.refs [(valueField, [1,2])] [] []]]
+private def G : PositiveGraphs.NormalGraph Nat := .ofRows fun i => types[i]?.getD []
 private def R : List HeapFacts.Atom := [.tru,.fls]
 private def empty : Knowledge := ⟨[],[],[]⟩
 private def leaf (Γ : List (List Nat)) (t : Tm) (A : List Nat) (r : Rule Nat) : Evidence Nat :=

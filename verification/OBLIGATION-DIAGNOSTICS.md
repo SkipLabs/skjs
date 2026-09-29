@@ -270,11 +270,6 @@ There are no retained mutable-heap observations. Generics added their own
 obligation roles this way; overloads must do the same, rather than be forced
 into an `in / claim / out` triple or have their roles inferred in the viewer.
 
-`tests/obligation-diagnostics.mts` exercises the three partial repairs and full
-repair of the return example, identical spans with different obligations,
-selected maps on shared-destination branches, input fingerprints, and records
-the reader must refuse. It runs under `make verify-test`.
-
 ## Source-extraction failures
 
 Some attempts stop before a calculus obligation can be constructed. Their report
@@ -294,62 +289,7 @@ locations use `pos`. A signature failure may have neither. Attach only to the
 reported site. These failures carry no calculus `obligation`: do not synthesize
 a sequent or infer a culpable expression from a known runtime counterexample.
 
-### Reason vocabulary
-
-Reasons explain source-extraction limits; they are not evidence and do not change
-the classification above. Exporter reasons are optional metadata in
-`functions[i].unavailableTypes`. The report copies a reason to `location.reason`
-only for an unambiguous required entry binding or expression, and excludes that
-metadata from verifier input. Missing, malformed, stale, ambiguous, or unfamiliar
-reasons must not affect verification; readers use a generic explanation when
-necessary.
-
-Besides `parameter`, `result`, `entry`, and `expression`, `unavailableTypes[i].kind`
-also carries `lvalue` (a spot in `functions[i].lvalues`, same shape as `exprs`)
-and `declared` (a binding's declared type, in `envs[i].vars[j].declared`). A
-function's claims object also carries, additively, a top-level `lvalues` array —
-one `{pos, type}` entry per expression span SKJS typed as an assignment target or
-a binding pattern rather than as a value (`exprTypes`'s `isLValue` key) — and each
-`envs[i].vars[j]` binding object carries `mutable` (`true` for `let`/`var`/a
-parameter/a catch variable, `false` for `const` and for `this`) and, only when it
-differs from the narrowed `type`, `declared` (the binding's declared type).
-`Fragment.decodeClaims` and `annotate-source.mts`'s `fromSkjs` read this
-export by field name, so the additions reach both as soon as the field is
-declared in the type they share.
-
-For `unavailable-type-claim`, [SkjsTypeClaims.sk](../src/SkjsTypeClaims.sk) emits:
-
-| Reason | Emitted when |
-| --- | --- |
-| `unsupported-primitive` | A `bigint` or `symbol`, outside the export format. |
-| `unsupported-type` | A clause has no representable types. |
-| `nested-object-type` | An object occurs as a field, parameter or result type; objects are exported at the top of a claim only. |
-| `cell-is-array`, `cell-symbol-field`, `cell-index-signature`, `cell-callable`, `cell-constructible` | A branch read as a cell has an array brand, a symbol field, a real index signature, or positive callability or constructibility. |
-| `cell-field-name`, `cell-field-access`, `cell-field-count` | A branch read as a cell has a field not named `value`, a non-public field, or a number of fields other than one. |
-| `function-has-fields`, `function-index-signature`, `function-is-array`, `function-constructible` | A branch read as a function carries unsupported symbol fields, an index signature, an array brand, or a construct signature. A supported required `value` field uses a combined callable contract; unsupported property shapes use the cell refusal reasons. |
-| `function-generic`, `function-this-parameter`, `function-optional-parameter`, `function-rest-parameter` | A signature has type parameters, a `this` parameter, optional or rest parameters. |
-| `function-without-signature`, `not-callable` | A branch is provably callable with no signature, or has no call at all. |
-| `no-object-branch` | The object has no branches. |
-| `unexpanded-type` | A single unexpanded type of another kind, an array literal. |
-| `unexpanded-named-type`, `unexpanded-intersection`, `several-unexpanded-types` | The type is an unexpanded alias or class instantiation, an unexpanded intersection, or more than one unexpanded type. |
-| `type-parameter` | A clause carries a universally quantified type parameter. |
-| `union-of-clauses` | The type has more than one clause, outside the bounded encoding. |
-| `unbound-inference-variable` | An isolated unconstrained inference variable has no binding in the function's substitution snapshot. |
-| `constrained-inference-variable` | An isolated inference variable carries constraints. |
-| `fuel-exhausted` | Bounded type export exhausts its recursion fuel, independently of proof-search fuel. |
-
-A branch that fits neither reading reports the reason of the reading its
-shape asks for: a callable branch is a function that failed, anything else a
-cell that failed. A field, parameter or result type that cannot be exported
-gives the branch its own reason, so the innermost cause is the one reported.
-
-Representable object branches are exported as separate union atoms. Multiple
-branches alone are not a refusal reason. An unsupported branch causes refusal
-of the whole type rather than a partial export. A class instance exports its
-branches like any other object; the class name it carries is display
-information.
-
-Current-content assertions in the supported cell profile now reach checked
+Current-content assertions in the supported cell profile reach checked
 obligations. Graph failures use `edge-coverage`, with destination `sourceMap` role
 `heap-observation`; `requiredKnowledge` at the destination identifies the actual
 cell facts. Ordinary closure/compositional proofs use `expression-claim` with the
@@ -357,16 +297,10 @@ same role for uniform invariant justification. These are proof failures,
 not exporter refusals. [Program typing](PROGRAM-TYPING.md#source-observation-checkpoints)
 owns their interpretation.
 
-`non-invariant-cell-contract` remains the one `source-limitation` reason the
-report reader classifies. An unequal-contract error can still arise in an
+`non-invariant-cell-contract` is the one `source-limitation` reason the report
+reader classifies. An unequal-contract error can still arise in an
 ordinary type/signature or unsupported record union; standalone point
 observations take the assertion path.
-
-[Annotated-source tests](tests/annotated-source.mts) check reason transport and
-classification; [viewer tests](tests/report-viewer.mts) cover known, unknown, and
-absent reasons. [Source-claim export tests](tests/source-claim-export.mts) check
-that observations survive conversion and become proof obligations rather than
-being silently erased.
 
 ## Report presentation
 

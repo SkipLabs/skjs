@@ -8,21 +8,21 @@ never overwritten.
 
 ```sh
 node verification/tools/annotate-source.mts input.ts \
-  --claims claims.json --producer skjs \
+  --claims source-claims.json --producer ocaml \
   --verify verification/lean/.lake/build/bin/verifier
 ```
 
 The default outputs are `input.annotated.ts` and `input.annotated.ts.json`.
-`--out /path/report.ts` chooses another destination. The claims file is an
-existing SKJS `--emit-skjs-type-claims` export. `--file-key` selects its file key
-if that differs from the input path. The command does not rerun SKJS or alter
-its claims. Omit `--verify` to generate a claims-only report; use `--depth N` to
+`--out /path/report.ts` chooses another destination. The claims file is a
+[source-claims](SOURCE-CLAIMS.md) document (`--format source-claims`, the
+default). `--file-key` selects its file key if that differs from the input
+path. The command does not rerun the producer or alter its claims. Omit `--verify` to generate a claims-only report; use `--depth N` to
 set proof-search depth (default 10).
 
 A typical excerpt looks like:
 
 ```ts
-/* @verify-report kind=function; id=f0; function copyTrue; producer=skjs; claimed () => boolean; verification=verified */
+/* @verify-report kind=function; id=f0; function copyTrue; producer=ocaml; claimed () => boolean; verification=verified */
 function copyTrue(): boolean {
   /* @verify-report kind=entry; id=f0e0; entry { x: true } @57:77 */
   const y: boolean = /* @verify-report kind=expression; id=f0x0; expr true @76:77 */ x;
@@ -45,7 +45,7 @@ prose as text that may be reworded.
 | --- | --- | --- |
 | `kind` | every annotation | `function`, `entry`, `expression` or `gap`. |
 | `id` | every annotation | Joins this mark to its record in the manifest: `f0`, `f0e3`, `f0x7`, `g2`. |
-| `reason` | gaps | Why nothing is claimed here, as a stable slug: `statement-not-visited`, `expression-without-type`, `claims-unavailable`, `claim-edit`. |
+| `reason` | gaps | Why nothing is claimed here, as a stable slug: `statement-not-visited`, `expression-without-type`, `claims-unavailable`. |
 | `unsupported` | entries | Bindings in that environment whose exported payload could not be decoded, joined by `+`. |
 
 Manifest records carry the same `id`, so a tool can display a mark and look up
@@ -55,16 +55,10 @@ Types use the self-contained [viewer language](VIEWER-LANGUAGE.md): primitive
 names, literals, unions, records with optional fields, function signatures, and
 callable objects. `{ value: boolean = (true) }` states both a storage invariant
 and current contents. Nondefault object modes appear explicitly after `@`.
-`tools/claim-text.mts` parses and prints this language for both reports and the
-editor; `tools/claim.mts` declares and validates its types.
-
-Objects and functions can be entered from scratch, including missing or
-unavailable expression claims and unavailable environment bindings. Editing
-never takes hidden requirements from an earlier type. The binding set of an
-existing environment is still fixed by its source site. A claim outside the
-language remains in the raw JSON editor; it is never approximated into a
-supported shape. Entering a claim does not establish it: the independent
-consumer still checks it, and unsupported source constructs remain unsupported.
+`tools/claim-text.mts` prints this language for reports and the reader;
+`tools/claim.mts` declares and validates its types. A claim outside the
+language is shown as its exact JSON; it is never approximated into a supported
+shape.
 
 **The manifest keeps the producer's exact payloads** in `raw`, whatever the
 comment shows. Claim identity, certificates and verification results depend on
@@ -81,7 +75,7 @@ the warning at function level; graph labels are not source expression indexes.
 Other location kinds are `edge-obligation` (the destination expression span),
 `environment-obligation` (a statement-entry `start` offset), and
 `source-limitation` (an unsupported source expression span). The last indicates
-source conversion stopped before proof checking; it is not a failed claim.
+source extraction stopped before proof checking; it is not a failed claim.
 
 A proof-search failure can additionally include `obligation`, a structured
 record described in [OBLIGATION-DIAGNOSTICS](OBLIGATION-DIAGNOSTICS.md). It identifies
@@ -99,17 +93,16 @@ absent from a supplied environment). A report usually already marks these places
 as gaps; the location says which gap verification stopped at. Supplying the
 claim is what makes checking possible, and establishes nothing by itself.
 
-The manifest also exposes `missingFunctions`: source declarations without a
-function candidate, with `name`, `namePos`, full `pos`, parameter names in source
-order, and `missingSites`. These are parser-derived repair hints, not inferred
-types or verified facts. The reader validates their spans before presenting them;
-adding a contract still requires fresh source-based checking.
+The manifest also exposes `missingFunctions`: source declarations the claims say
+nothing about, with `name`, `namePos`, full `pos` and `missingSites`. These are
+parser-derived, not inferred types or verified facts. The reader validates their
+spans before presenting them.
 
 Manifest functions also expose `missingSites`: parser-identified expression and
-statement-entry spans without a candidate claim, each with a `kind` (`expression`
-or `environment`) and `syntax` label. These are possible attachment locations,
-not a declaration that verification needs a claim at every one. A reader may use
-them for manual repair; the source adapter and verifier still validate the input.
+statement-entry spans without a claim, each with a `kind` (`expression` or
+`environment`) and `syntax` label. These are possible attachment locations, not
+a declaration that verification needs a claim at every one; the source adapter
+and verifier decide which claims are required.
 
 Manifest functions include a `pos: [start, end]` range for the full source function,
 using original UTF-16 offsets. A reader can therefore focus a function without
@@ -215,110 +208,9 @@ to the end of one of its parts. Expression annotations introduce no new line bre
 other automatic-semicolon behavior. This is a display transformation, not a
 proof of the separate source-to-calculus lowering.
 
-`make verify` runs the report regressions against a real SKJS closure export:
-attachment, Unicode, stale snapshots, comment injection, source preservation,
-independent verification, and false claims reported as not established.
-
-## Rejected programs and partial collection
-
-Ordinary `skjs check --emit-skjs-type-claims` retains the claims collected before
-an error aborts a function body. It rethrows the same error: export does not
-change the checker’s stopping policy, diagnostics or exit status. Other
-independent definitions can still have complete snapshots.
-
-Each exported function includes `collection` metadata:
-
-- `completion`: `complete` or `aborted` describes collection, not verification.
-- `mode`: `normal`, `keep-going` or `backtrace` records the checker mode.
-- `quality`: `unverified` normally; `recovery` if checking continued through a
-  reported error in that function. Recovery labels apply to the whole snapshot,
-  since later inference can affect types collected earlier.
-- `visitedExpressions`: original spans entered by expression checking, including
-  expressions that failed before a result could be recorded.
-
-Reports show entered expressions without a result and, for aborted snapshots,
-unvisited supported statements. A function without a snapshot is labeled
-“claims unavailable”: failures during signature setup or before body checking
-can leave no snapshot. Parser failures may leave no usable file export at all.
-Older exports without collection metadata do not imply any visitation history.
-
-Keep the ordinary first-error mode for normal use. `--keep-going` remains an
-explicit option for debugging and exploratory onboarding; the reporting and
-verification paths do not depend on it. Fatal errors can still abort that mode.
-A `keep-going` snapshot with no recovered errors retains quality `unverified`.
-Neither quality label means that a claim has been proved.
-
-Capture stdout and stderr separately, retaining the nonzero exit status:
-
-```sh
-skjs check --emit-skjs-type-claims input.ts > claims.json 2> diagnostics.txt
-# A nonzero status is expected for a rejected program; inspect it before proceeding.
-node verification/tools/annotate-source.mts input.ts --claims claims.json \
-  --diagnostics diagnostics.txt --out partial.annotated.ts \
-  --verify verification/lean/.lake/build/bin/verifier
-```
-
-`--diagnostics` preserves the exact producer diagnostic text in the manifest,
-with its path and fingerprint. Diagnostics and collection metadata never become
-proof assumptions. The manifest’s `gaps` array makes missing information visible
-alongside the available claims. A partial snapshot may fail verification while
-an independently complete function in the same supported file verifies.
-
-To experiment with repair, edit a **copy of the raw claims JSON** and rerun
-verification against the unchanged source. Missing or incorrect required claims
-still fail the independent checker. An actual source type error cannot be made
-sound by changing its claims. Report comments are display-only; editing those
-comments does not supply evidence. Source edits require fresh spans and claims.
-
-## Reviewing a repair against a baseline
-
-Keep the original report and edit a separate copy of its **input claims**, then
-pass the original report's JSON manifest as `--baseline`:
-
-```sh
-node verification/tools/annotate-source.mts input.ts --claims repaired-claims.json \
-  --producer manual-repair --baseline partial.annotated.ts.json \
-  --verify verification/lean/.lake/build/bin/verifier --out repaired.annotated.ts
-```
-
-The new annotated copy marks added, changed and removed claim sites. Its manifest
-contains `comparison.changes`, with the before/after candidate values, function
-identity and original source span. This compares signatures, entry environments
-and expression types; collection metadata and saved verification results do not
-count as claim changes. Entry binding order and JSON object property order are
-immaterial. Raw type payloads are compared when available, otherwise display
-strings are compared. This is a structural comparison, not semantic type equality.
-
-Both reports must attach to the same source identity and exact source bytes.
-The baseline manifest's digest is retained and checked by `--check-fresh`.
-Producer names remain descriptive provenance. Neither that digest nor the
-comparison authenticates the baseline or turns its stored results into evidence.
-`--verify` freshly produces and independently checks the current claims;
-omitting it still produces a claims-only comparison. An empty comparison never
-implies that the function is verified.
-
-The regression suite removes a required entry claim from a valid function,
-checks failure, restores the original claim, then checks success. It also inserts
-a fake saved success into the baseline and confirms that a still-incomplete
-candidate continues to fail. This exercises repair of missing information,
-without claiming that erroneous source can be repaired by false annotations.
-
 ## Calculus-label claim inputs
 
 `--format source-claims` accepts the strict bounded
-[producer-independent sidecar](SOURCE-CLAIMS.md), including fresh verification and
-baseline comparison. Unlike `--format report`, this is an input to the Lean
+[producer-independent sidecar](SOURCE-CLAIMS.md), including fresh verification.
+Unlike `--format report`, this is an input to the Lean
 consumer, with its own schema and source fingerprint.
-
-
-For converted SKJS sidecars, `--conversion claims.json.conversion.json` attaches
-original collection and recovery labels, diagnostic text and conversion omissions
-to the report manifest. It is restricted to `--format source-claims` and to the
-exact original sidecar and source snapshot. The renderer bases visitation gaps
-on the original export, so a type omitted by conversion is not called an
-unfinished expression. All verification results are still obtained freshly
-from the current sidecar, never from the conversion manifest.
-
-After editing claims, use the initial report as `--baseline` instead of attaching
-the old conversion manifest. `--check-fresh` detects changes to an attached
-conversion manifest as well as the report's other inputs.

@@ -1,10 +1,8 @@
 #!/usr/bin/env node
 /*
- * A second claims producer for `stateful-source-v3`. Where SKJS's own export
- * (`skjs.sh --emit-skjs-type-claims`) states what SKJS's checker believes at
- * every site of a source fragment file, this states what the TypeScript
- * compiler's own checker believes at the same sites, so the two can be run
- * through the same independent verifier and compared.
+ * A claims producer over the TypeScript compiler's own checker: it states
+ * what that checker believes at every site of a source fragment file, as a
+ * source-claims document the independent verifier checks.
  *
  * Sites come from the trusted parser's own AST (fragment-parse.mts), walked with
  * the same rule the verifier uses to decide what is an entry and what is an

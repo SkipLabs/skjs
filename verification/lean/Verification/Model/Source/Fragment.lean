@@ -301,30 +301,6 @@ def translate (j : Json) : SourceTypes.Lowering σ (Ty ι) := do
     | _ => SourceTypes.translate (← CellClaims.primitive single)
   return (records ++ optionals ++ dictionaries ++ conjunctions ++ arms).flatten.mergeSort Labels.le |>.eraseDups
 
-/-- A point assertion separates the persistent reference type from a current
-contents predicate. It is never accepted by erasing `current`. Ordinary function
-signatures and nested function operands continue to use `translate`. -/
-structure PointType (ι : Type) where
-  type : Ty ι
-  /-- What the point's record currently holds, field by field, for the fields
-  whose read and write contracts differ. A point naming no record has none. -/
-  current : Option (List (PropKey × Ty ι)) := none
-
-def translatePoint (j : Json) : SourceTypes.Lowering σ (PointType ι) := do
-  -- Preserve the existing exact union translation when it succeeds.
-  match ← SourceTypes.attempt (translate j) with
-  | .ok A => return ⟨A,none⟩
-  | .error original =>
-    -- The persistent contract is what a field may be written; what it holds
-    -- now is the read side, stated separately and field by field. Numbers are
-    -- interned on both sides, so a numeric field can carry an assertion.
-    let .ok fs := CellClaims.decode j | throw original
-    let write ← fs.mapM fun f => do return (f.name, ← SourceTypes.translateArm f.write)
-    let read ← fs.mapM fun f => do return (f.name, ← SourceTypes.translateArm f.read)
-    let current := (read.zip write).filterMap fun (r,w) => if r.2 == w.2 then none else some r
-    if current.isEmpty then throw original
-    return ⟨[← CellClaims.reference write],some current⟩
-
 end
 
 /-- Whether the model reserves a key for itself: an array's store, an
@@ -891,13 +867,6 @@ structure Fn where
   params : List Param
   ret : Json
   body : List Stmt
-structure Claims where
-  name : String
-  namePos : Span
-  params : List (String × Json)
-  ret : Json
-  envs : List (Nat × List (String × Json))
-  exprs : List (Span × Json)
 
 private def decodeArith (j : Json) : Except String Arith := do
   match ← jStr j with
@@ -1398,25 +1367,5 @@ def decodeAstWithParams (j : Json) : Except String (List (Fn × List TypeParam))
 /-- The module's top-level code, in source order. -/
 def decodeInit (j : Json) : Except String (List Stmt) := do
   (← jArr j "init").mapM decodeStmt
-
-def decodeAst (j : Json) : Except String (List Fn) := do
-  (← decodeAstWithParams j).mapM fun (f, tps) => do
-    if !tps.isEmpty then throw "generic functions are checked through source extraction"
-    return f
-
-def decodeClaims (j : Json) : Except String Claims := do
-  let vars := fun j => do
-    (← jArr j "vars").mapM fun v => do return (← jStr (← jField v "name"), ← jField v "type")
-  return ⟨← jStr (← jField j "name"), ← jSpan j "namePos",
-    ← (← jArr j "params").mapM (fun p => do return (← jStr (← jField p "name"), ← jField p "type")),
-    ← jField j "retType",
-    ← (← jArr j "envs").mapM (fun e => do return ((← jSpan e "pos").1, ← vars e)),
-    ← (← jArr j "exprs").mapM (fun e => do return (← jSpan e "pos", ← jField e "type"))⟩
-
-def decodeTypeClaims (j : Json) (fileKey : String) : Except String (List Claims) := do
-  for f in (← j.getArr?).toList do
-    if (← jStr (← jField f "file")) == fileKey then
-      return ← (← jArr f "functions").mapM decodeClaims
-  throw "missing claim file"
 
 end Verification.Model.Fragment

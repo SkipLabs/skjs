@@ -1,7 +1,7 @@
 # Callables
 
-Source examples for callable contracts, checked through the existing parser,
-SKJS claim exporter, certificate producer, independent consumer, and reports.
+Source examples for callable contracts, checked through the parser, a claim
+producer, the certificate producer, the independent consumer, and reports.
 They have their own **Callables** group in the corpus and report viewer.
 
 Add coverage for a distinct semantic obligation or an interaction that could
@@ -49,8 +49,7 @@ unions with null and with each other, are selected by
 invocation through one. A fresh arrow takes one initialized `value` field through
 explicitly typed `Object.assign`. `.call` applies to local arrows and their
 immutable aliases, with the receiver evaluated and then discarded. `.bind` saves
-an argument prefix on the same arrows through tsc's claims; SKJS rejects it
-([finding](../skjs-incomplete/bound-arguments.ts)). One closure may advertise several signatures — an intersection of arrows —
+an argument prefix on the same arrows. One closure may advertise several signatures — an intersection of arrows —
 and is then checked once per signature, each a separate obligation on the same
 body; its producer states what that body claims under each. TypeScript rejects
 the implementations this accepts, so those witnesses are the OCaml producer's
@@ -64,25 +63,21 @@ Not supported, with the refusal each one meets:
 | Form                                                                                         | Where it stops                                                                                                                                                                                                                           |
 | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `arguments`, argument-count introspection                                                    | the protocol excludes argument-count introspection                                                                                                                                                                                       |
-| A spread of an array that may have holes into a rest whose element type lacks `undefined`    | named refusal: a hole spreads `undefined`, which the rest would hold; TypeScript accepts the call ([witness](variadic-holes.ts))                                                                                                         |
+| A spread of an array that may have holes into a rest whose element type lacks `undefined`    | named refusal: a hole spreads `undefined`, which the rest would hold; TypeScript accepts the call ([witness](../../ocaml-producer/examples/spread-holes.ts))                                                                                                         |
 | A spread into fixed parameters other than a last tuple spread                                | named refusal                                                                                                                                                                                                                            |
-| `this` parameters through SKJS                                                               | `function-this-parameter`; SKJS also does not parse the `"use strict"` directive the receiver witnesses need ([methods.ts](methods.ts), [receiver plan](#receiver-implementation-plan))                                                   |
 | Construct signatures, `new`, classes, accessors                                              | `function-constructible`; accessor execution is a separate semantic obligation                                                                                                                                                           |
 | Index signatures and array brands on functions                                               | `function-index-signature`, `function-is-array`                                                                                                                                                                                          |
 | Async functions, generators, function identity comparison, loops inside closures             | outside the fragment                                                                                                                                                                                                                     |
-| Generic signatures through SKJS                                                              | `function-generic`: SKJS types quantified closures but exports them as unavailable, so the OCaml witnesses carry these rows                                                                                                              |
-| Optional and defaulted parameters through SKJS                                               | `function-optional-parameter`: SKJS types them and exports every claim mentioning the signature as unavailable                                                                                                                           |
-| Overloads through SKJS and tsc                                                               | both reject the implementation of an intersection-typed closure, and neither states per-signature interior claims; SKJS also collapses incomparable arrow intersections to `never` ([finding](../skjs-incomplete/arrow-intersection.ts)) |
+| Overloads through tsc | TypeScript rejects the implementation of an intersection-typed closure and states no per-signature interior claims; the OCaml producer states them |
 
 Refusal reasons are defined in
 [obligation diagnostics](../../OBLIGATION-DIAGNOSTICS.md); the encoding and its
 restrictions belong to the
 [protocol](../../REQUEST-PROTOCOL.md#expression-closures-and-calls).
 
-The hole-spread witness writes index 2 of a one-element Boolean array, leaving
-index 1 absent. Spreading it materializes `undefined` at that index in the
-returned `boolean[]`. TypeScript accepts this actual contract violation; the
-runtime test executes the same source that the verifier rejects.
+The hole-spread witness writes past the end of a Boolean array, leaving a
+hole. Spreading it would materialize `undefined` in a `boolean[]`. TypeScript
+accepts this contract violation; the pipeline refuses the write.
 
 ### Closure status for milestones 1–4
 
@@ -286,7 +281,7 @@ Generic introduction quantifies over the receiver type along with the other
 types, while retaining captured receiver identities and fixed location contracts.
 
 Update the single shared callable signature in Lean, Fragment, SourceClaims,
-SKJS conversion, TS export, OCaml semantic types, inference, claim editing and
+TS export, OCaml semantic types, inference and
 printing. Receiver constraints are input constraints, including variance reversal
 when traversing callback types. No producer-specific receiver encoding or missing
 field fallback is permitted. A forged `top` receiver must fail source/signature
@@ -299,7 +294,7 @@ with its source span, environment, actual type and required receiver type.
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | R1: core invocation      | Migrate call syntax, ready frames and binder layout in `Calculus`, `Bindings`, `CallArguments`, `Types`, `Safety`, and coherence traversals. Prove order, determinism, receiver/argument binding and invocation safety. Existing arrows acquire the explicit ignored slot.                                                                            |
 | R2: certificates         | Thread receiver families and premises through positive graphs, creation/elimination rules, `ProgramCertificates` and scheme introduction/elimination. Extend exhaustive certification and rebuild `SourceClaimJson.checkJson_safe` with its exact CLI-success premise unchanged. No source method is accepted before this gate. |
-| R3: source and producers | Add method/function expressions, strictness facts, lexical `this` resolution and reference-preserving call targets. Update all typed mirrors and display/editor syntax together. OCaml and TS witnesses must independently verify; SKJS export refusals remain separately reported, with no checker change hidden in this extension.                  |
+| R3: source and producers | Add method/function expressions, strictness facts, lexical `this` resolution and reference-preserving call targets. Update all typed mirrors and display/editor syntax together. OCaml and TS witnesses must independently verify.                  |
 | R4: binding              | Add the forwarding descriptor and prove receiver/prefix preservation and its residual signature. Integrate `.bind` and the existing intrinsic guards.                                                                                                                                                                                                 |
 | R5: apply                | Add checked array-like preparation, retaining its effects and order, then reuse the proved invocation rule.                                                                                                                                                                                                                                           |
 
@@ -307,9 +302,7 @@ with its source span, environment, actual type and required receiver type.
 
 Strictness is checked at every source `this` read, including declaration entry
 points. Arrow-body directive prologues affect nested code, but an arrow's
-captured receiver retains its binding function's mode. `methods.mts` checks
-both distinctions against JavaScript execution and independent certification;
-forged sloppy closure modes are rejected by both evidence entry points.
+captured receiver retains its binding function's mode.
 
 - **R1.** `Tm.invoke f r args` replaced the receiverless call; `call` and `app`
   abbreviate it with `undefined`. Ready frames carry the receiver, evaluated
@@ -328,8 +321,7 @@ forged sloppy closure modes are rejected by both evidence entry points.
   function's receiver slot, an arrow's `this` being a capture; `o.m(a)` and
   `(o.m)(a)` lower to `invoke` on the saved object and method; every call's
   receiver is a located `method-receiver` obligation. Lean, Fragment,
-  SourceClaims, the SKJS conversion (`this: unknown`, and its unchanged
-  `function-this-parameter` refusal), the TypeScript producer, the OCaml
+  SourceClaims, the TypeScript producer, the OCaml
   producer's signatures and inference, claim text, the diagnostic view and the
   term codec all carry the receiver.
 - **R4.** `CallCode.bound` with `Step.callBound`; `callsT_bound` and
@@ -369,12 +361,10 @@ retyping captured storage. For `.apply`, add ordered indexed reads and a control
 that distinguishes them from iterator consumption. Each negative must reach its
 intended check, not pass because the parser refused it.
 
-Promote `call-objects.ts` from boundary to verified coverage only after adding
-strict-mode evidence to that fixture and independently certifying both its
-ordinary method and lexical arrow behavior. Keep
-sloppy functions, `super`/home objects, construction/`new.target`, and reflective
-bound-function properties as explicit later obligations. The receiver interface
-is shared with those future extensions; their semantics are not implied by it.
+Sloppy functions, `super`/home objects, construction/`new.target`, and
+reflective bound-function properties stay explicit later obligations. The
+receiver interface is shared with those future extensions; their semantics are
+not implied by it.
 
 ## Examples
 
@@ -389,93 +379,43 @@ is shared with those future extensions; their semantics are not implied by it.
 | `sharedCallableDomain`            | A call must fit the shared argument domain of Boolean-accepting and true-only alternatives, while retaining both possible results.                                                                                             |
 | `branchLocalCallableDomains`      | Branch-refined Boolean arguments satisfy different callable domains; neither branch facts nor singleton results can be transferred to the other branch.                                                                        |
 | `callableArgumentWrite`           | An assignment used as a call argument checks both storage and parameter contracts; its false RHS admits an explicitly refined false-only callable view.                                                                        |
-| `selectedCallableAfterMutation`   | A selected callable remains fixed while a shared-cell write changes its live capture. A JavaScript witness distinguishes live from snapshot behavior, and a same-typed callee substitution needs fresh evidence.               |
+| `selectedCallableAfterMutation`   | A selected callable remains fixed while a shared-cell write changes its live capture. A same-typed callee substitution needs fresh evidence.               |
 | `callbackProbeDoesNotNarrow`      | A Boolean-returning probe has no type-predicate contract: its true result cannot narrow the captured callback in the caller, whose own null guard remains required.                                                            |
-| `ambiguousCaptureGuard`           | A successful disjunction may be justified by a separate Boolean flag; the returned closure must retain the nullable capture and guard it itself. The tsc suite checks both alternatives survive.                               |
-| `compoundAbsenceCapture`          | A returning null-or-undefined guard must exclude both tags before closure creation. Both producers verify it, and the tsc suite checks both exclusions.                                                                        |
-| `twoAbsenceCapture`               | Eliminating undefined must retain null in a returned closure capture; its inner null guard is still needed. Both producers verify it; the tsc suite checks that undefined is removed while null remains.                       |
-| `laterGuardedCallback`            | A guard after closure creation cannot refine its earlier capture; the closure needs its own guard. The tsc suite checks the pre-guard nullable claim, and a reversed inner guard fails independently of the later outer guard. |
-| `escapedLocalCallback`            | A returned closure captures a guarded nullable const whose declaration is wider than its initializer. Both producers verify it; the tsc suite checks that its callee claim retains the creation-time guard.                    |
-| `distinctNullableCallbacks`       | Same-typed local callbacks require independent null guards; the tsc suite checks that guarding the first leaves the second nullable, then each own guard permits its call.                                                     |
+| `ambiguousCaptureGuard`           | A successful disjunction may be justified by a separate Boolean flag; the returned closure must retain the nullable capture and guard it itself.                               |
+| `compoundAbsenceCapture`          | A returning null-or-undefined guard must exclude both tags before closure creation. Both producers verify it.                                                                        |
+| `twoAbsenceCapture`               | Eliminating undefined must retain null in a returned closure capture; its inner null guard is still needed. Both producers verify it.                       |
+| `laterGuardedCallback`            | A guard after closure creation cannot refine its earlier capture; the closure needs its own guard. |
+| `escapedLocalCallback`            | A returned closure captures a guarded nullable const whose declaration is wider than its initializer. Both producers verify it.                    |
+| `distinctNullableCallbacks`       | Same-typed local callbacks require independent null guards.                                                     |
 | `nullableFactoryResult`           | A factory result can mix a callable with null; both alternatives survive the factory contract and invocation, and the caller must guard the returned value before calling it.                                                  |
 | `returnedCallableDomain`          | Factory branches with Boolean and true-only callable domains both implement a true-only result contract; neither the nested result claim nor a later call can widen that shared domain.                                        |
 | `branchReturnedCapture`           | A factory returns different closures from a null-test branch; the escaping closure retains its own factory argument's refinement, which cannot transfer to the nullable caller capture.                                        |
 | `nestedCallableArgumentWrite`     | A write inside a closure's call argument preserves the captured receiver and named RHS through temporary bindings; a same-typed capture cannot replace the parameter in the evidence.                                          |
 
-[callables.mts](../callables.mts) checks original SKJS claims, forged claims,
-reused evidence and report round trips. [tsc-claims.mts](../tsc-claims.mts) checks
-the TypeScript producer, including the capture refinements identified above.
-Both producers use the same extraction and independent consumer.
-
-For `callableArgumentWrite`, SKJS exports Boolean for the assignment. A separate
-false-result refinement verifies with fresh evidence; it is an explicit candidate,
-not an original producer claim. Under `nullableFactoryResult`'s nullable context,
-the tsc producer uses the lambda's own expression type, then checks that arrow
-against the full return contract.
+The corpus checks each file's TypeScript claims through the same extraction
+and independent consumer; the OCaml producer's own cases cover the same
+features end to end ([`cases.mts`](../../ocaml-producer/cases.mts)).
 
 [factories.ts](factories.ts) contrasts factories allocating a private cell per
 invocation with a control sharing a cell outside the factory.
-[callable-factories.mts](../callable-factories.mts) rejects a narrowed returned
-closure result with both fresh and reused evidence. Its JavaScript witness checks
-that `first(true)`, `second(false)`, `first(false)` return false/false/true with
-private cells and false/true/false with the shared cell. A passive observer records
-the intermediate results; the unmodified function's result is checked too.
-
 [arguments.ts](arguments.ts) covers a stateful callback passed to an invoker and
 `escapedCallbackArgument`, where that callback enters a wrapper factory, escapes
-as a captured parameter, and returns through another invoker. An intervening cell
-write distinguishes execution-time reads from creation-time snapshots.
-[callable-arguments.mts](../callable-arguments.mts) rejects incompatible callback
-domains and results, and checks the escaping wrapper's JavaScript result for both
-seeds. Both producers' certificates for factories and arguments are independently
-checked.
-
-JavaScript witnesses establish observations separate from the Boolean typing
-certificates. They do not prove that extracted Lean programs execute equivalently;
-those execution checks remain deferred unless a concrete discrepancy warrants
-investigation. The [protocol](../../REQUEST-PROTOCOL.md#expression-closures-and-calls)
-owns callable signature restrictions.
-
-Core semantic regressions remain in `lean/Verification/Model/`.
-`SourceCallableUnionTests.lean` isolates union decoding, operand-slot lowering
-and overloaded union calls with explicit claims. Null and Boolean arguments
-select different signatures in each alternative; narrowing the joined result or
-omitting an alternative's compatible signature fails. These are not verified SKJS
-exports: SKJS collapses incomparable arrow intersections to `never`, as recorded
-in the [intersection finding](../skjs-incomplete/arrow-intersection.ts).
-Guard polarity and guarded results are covered by the source suites; recursive
-callable bags and recursive invocation remain distinct model obligations.
-
-Run `make verify-test` for suites or `make verify-examples` for the corpus;
-`make verify` runs both. The [test index](../README.md) describes suite ownership.
-
-[cells.ts](cells.ts) and [callable-cells.mts](../callable-cells.mts) cover mutable
-callback storage. `replacedCallback` distinguishes a saved function value from a
-later cell read after replacement. `recursiveCallback` installs a callback that
-reads and invokes itself through the cell, then reaches a base case. Both producers
-verify the original claims with independent consumption. Forged read/write domains
-and replacement result contracts fail; JavaScript witnesses check both seeds.
-These examples require no new calculus constructor or typing rule.
-
-[thunks.ts](thunks.ts) and [callable-thunks.mts](../callable-thunks.mts) cover
-zero-argument creation and invocation: a returned thunk reads a cell after a
-write, and a saved thunk remains distinct from its replacement. Both producers'
-claims are independently checked. Forged domains/results fail, and the callable
-argument suite checks that omission does not satisfy a required callback parameter.
-JavaScript witnesses check delayed reads and replacement for both seeds.
-
-[arity.ts](arity.ts) checks native argument lists through both producers and the
-independent consumer. Its order-sensitive example requires callee evaluation
-first, actuals left to right, then the body. The existing JavaScript controls
-distinguish reversed argument order and delayed callee evaluation; reused
-evidence rejects swapped actuals. The same file checks a returned closure that
-captures its second parameter and a multi-argument union callee.
-
-[arguments.ts](arguments.ts)'s `exchangeMultiArgument` transports a two-argument
-function through a mutable cell and narrows its first domain on return. Both
-producers verify it; the argument suite rejects a widened second domain and a
-dropped second parameter. Required function **types** can now carry multiple
-parameters through the source pipeline, with native call and lambda lowering.
+as a captured parameter, and returns through another invoker; an intervening
+cell write distinguishes execution-time reads from creation-time snapshots. Its
+`exchangeMultiArgument` transports a two-argument function through a mutable
+cell and narrows its first domain on return.
+[cells.ts](cells.ts) covers mutable callback storage: `replacedCallback`
+distinguishes a saved function value from a later cell read after replacement,
+and `recursiveCallback` installs a callback that reads and invokes itself
+through the cell, then reaches a base case.
+[thunks.ts](thunks.ts) covers zero-argument creation and invocation: a
+returned thunk reads a cell after a write, and a saved thunk remains distinct
+from its replacement.
+[arity.ts](arity.ts) requires callee evaluation first, actuals left to right,
+then the body; it also checks a returned closure capturing its second
+parameter and a multi-argument union callee.
+[guards.ts](guards.ts) selects callable signatures with strict
+`typeof ... === "function"` and `!==` guards.
 
 Overloaded closures are the OCaml producer's
 [`overloads.ts`](../../ocaml-producer/examples/overloads.ts), with
@@ -486,90 +426,41 @@ rather than at its one enclosing annotation.
 
 [rest-arguments.ts](rest-arguments.ts) collects a tuple rest, reads it by
 index, and spreads one in place of the last arguments, with and without fixed
-arguments before it. Both producers verify all four functions.
-[rest-arguments.mts](../rest-arguments.mts) runs the JavaScript witnesses —
-each call collects its own array, and a spread reads its elements after the
-arguments written before it — and forges the tuple contract those positions
-come from, dropping and retyping a position, which both verifier entry points
-must reject. The ordering witness stays a runtime one: no certified example
-observes it yet. A spread
-relies on the array's positions being what it yields, which holds because this
-fragment cannot install an iterator of its own.
-
-[variadic-arguments.ts](variadic-arguments.ts) collects an array rest in a
+arguments before it. A spread relies on the array's positions being what it
+yields, which holds because this fragment cannot install an iterator of its
+own. [variadic-arguments.ts](variadic-arguments.ts) collects an array rest in a
 declaration and in closures, calls them with any number of actuals and with
 several spreads among them, spreads a tuple into an array rest, passes a
 variadic closure to a function that calls it, calls one through a fixed
 signature, omits an optional parameter before the rest, gives one value fixed
-and variadic signatures, and makes a variadic callable object with a field;
-[variadic-order.ts](variadic-order.ts) spreads an array and then writes it in a
-later actual. The TypeScript and OCaml producers verify every function; SKJS reads a rest parameter as a readonly
-array, rejects them, and names the signatures it cannot export
-(`function-rest-parameter`). [variadic-arguments.mts](../variadic-arguments.mts)
-runs the JavaScript witnesses — each call collects its own array, a hole
-spreads `undefined`, a spread is read where it is written — forges a narrower
-element type and a fixed arrow in place of a variadic one, which both verifier
-entry points reject, verifies the ordering witness, and checks the actual-hole
-refusal. [variadic-copy-element.ts](variadic-copy-element.ts) additionally
-copies a dense Boolean tuple before a later argument changes its first element.
-The copy keeps the old values and its required-position contract, so it can
-feed a Boolean rest without introducing `undefined`. Both verifier entry points
-accept the unchanged TypeScript claims, and the runtime test checks the same source.
+and variadic signatures, and makes a variadic callable object with a field.
 
 [optional-arguments.ts](optional-arguments.ts) omits an optional trailing
-argument, writes it, and writes `undefined` for it. The three agree at run time,
-and the JavaScript witness in [optional-arguments.mts](../optional-arguments.mts)
-establishes what omission means before any claim is read. Forging the optional
-position's contract to drop `undefined` makes the same call fail, in the
-consumer and in production: the licence to omit is the contract, and no actual
-is invented to repair it. The tsc producer verifies all three functions; SKJS
-types them and exports every claim mentioning the closure as unavailable
-(`function-optional-parameter`), which the corpus records as its outcome.
+argument, writes it, and writes `undefined` for it; the three agree at run
+time. [default-arguments.ts](default-arguments.ts) gives a parameter a
+default, writes the argument anyway, and reads an earlier parameter in a
+default. The lowering binds the parameter's own slot anonymously and binds its
+name to the value that replaces an omitted argument, so no name is invented
+and nothing shadows.
 
-[default-arguments.ts](default-arguments.ts) gives a parameter a default,
-writes the argument anyway, and reads an earlier parameter in a default. The
-lowering binds the parameter's own slot anonymously and binds its name to the
-value that replaces an omitted argument, so no name is invented and nothing
-shadows. The suite forges the default out of its parameter's contract and
-removes `undefined` from the position it fills; both must fail.
-
-[guards.ts](guards.ts) selects existing callable signatures with strict
-`typeof ... === "function"` and `!==` guards. It covers a mixed runtime-shape
-union, a returned thunk retaining a negative guard's refinement, and a call used
-as the tested value. Both producers verify the examples; the guard suite rejects
-opposite polarity, refinement of another variable, and an invented narrower
-callable result. General string/typeof expressions remain outside the fragment.
-
-[call-objects.ts](call-objects.ts) demonstrates an object containing an ordinary
-method and an arrow, extracting the method, and using `.call` with a different
-object as receiver. The method reads the supplied receiver; the arrow retains
-its lexical capture. Both outcomes matter: changing either behavior flips the
-example's result. SKJS and strict TypeScript accept it, and JavaScript controls
-check both seeds.
-
-It carries a `"use strict"` directive, the strict-mode evidence the receiver
-rule needs, and is source-verifiable: the TypeScript and the OCaml producers'
-claims both verify, with the method in sloppy code refused
-([call-objects.mts](../call-objects.mts)). [methods.ts](methods.ts),
-[apply.ts](apply.ts) and [generic-receivers.ts](generic-receivers.ts) carry the
-receiver plan's required witnesses, each run by its own suite.
+[call-objects.ts](call-objects.ts) holds an object with an ordinary method and
+an arrow, extracts the method, and uses `.call` with a different object as
+receiver: the method reads the supplied receiver, the arrow retains its
+lexical capture, and changing either behavior flips the example's result. It
+carries a `"use strict"` directive, the strict-mode evidence the receiver rule
+needs. [methods.ts](methods.ts), [apply.ts](apply.ts) and
+[generic-receivers.ts](generic-receivers.ts) carry the receiver plan's
+required witnesses.
 
 [function-field.ts](function-field.ts) initializes one mutable field on a fresh
-arrow, writes through the original reference and reads/calls through an alias.
-Both producers verify it. Explicit `Object.assign` type arguments are required:
-SKJS currently infers `never` without them. [function-field.mts](../function-field.mts)
-checks independent rejection of corrupted field/signature contracts and source
-annotations, report editing, and the intrinsic syntax restrictions. This does
-not yet cover general field addition, multiple fields, or receiver behavior.
-
+arrow, writes through the original reference and reads/calls through an alias;
+explicit `Object.assign` type arguments are required.
 [receiver-call.ts](receiver-call.ts) brings `.call` on local arrows into the
 pipeline, including an alias of a function with a field and a captured nullary
-arrow. The receiver expression is evaluated before actuals even though its value
-is ignored. [receiver-call.mts](../receiver-call.mts) distinguishes dropping that
-effect, checks exact arity and receiver claims, and rejects targets whose inherited
-intrinsic is not established by their source construction. Both producers verify
-these examples; ordinary receiver-dependent methods are the receiver witnesses above.
+arrow. The receiver expression is evaluated before actuals even though its
+value is ignored.
 
-Partial `.bind` is covered by the [incompleteness example](../skjs-incomplete/bound-arguments.ts):
-SKJS rejects it, while tsc's claims independently verify. Its fixture notes live
-with the [other incompleteness findings](../skjs-incomplete/README.md).
+Run `make verify-test` for suites or `make verify-examples` for the corpus;
+`make verify` runs both. The [test index](../README.md) describes suite ownership.
+The [protocol](../../REQUEST-PROTOCOL.md#expression-closures-and-calls) owns
+callable signature restrictions.

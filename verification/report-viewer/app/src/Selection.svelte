@@ -8,39 +8,21 @@
    *
    * Four kinds of site can be selected: the result the function must
    * establish, an expression claim, an environment, and a place with nothing
-   * claimed — which, where the lowering attaches a claim there, is where one
-   * can be added.
+   * claimed.
    */
-  import ClaimEditor from "./ClaimEditor.svelte";
-  import FunctionContract from "./FunctionContract.svelte";
   import { proofLabel } from "../../marks.mts";
   import { rigidAt } from "../../model.mts";
-  import { editable, type ClaimSite } from "../../candidate.mts";
   import type { Report, ShownFunction, Site } from "../../model.mts";
-  import type { Candidate } from "../../types.ts";
 
   let {
     report,
     fn,
     site: at,
-    candidate,
-    busy,
-    onapply,
-    onadd,
-    oncontract,
   }: {
     report: Report;
     fn: ShownFunction;
     /** The selected site's index, in source order. */
     site: number | null;
-    candidate: Candidate | null;
-    busy: boolean;
-    onapply: (site: ClaimSite, value: unknown) => void;
-    onadd: (site: ClaimSite, value: unknown) => void;
-    oncontract: (contract: {
-      params: { name: string; type: unknown }[];
-      result: unknown;
-    }) => void;
   } = $props();
 
   const picked = $derived<Site | null>(at === null ? null : (fn.sites[at] ?? null));
@@ -56,42 +38,18 @@
    */
   const rigid = $derived(picked ? rigidAt(picked) : []);
 
-  /** Where the selected claim sits, in the terms a candidate is addressed by. */
-  const site = $derived.by((): ClaimSite | null => {
-    if (!picked || picked.kind === "result") return null;
-    if (picked.kind === "unclaimed")
-      // A place with nothing claimed names the kind of claim that belongs there,
-      // where the lowering says one does.
-      return picked.claims ? { kind: picked.claims, pos: picked.pos } : null;
-    return { kind: picked.kind, pos: picked.pos };
-  });
-
-  /** The candidate's value at the site, as the editor reads and writes it. */
-  const current = $derived.by(() => {
-    if (!candidate || !site || picked?.kind === "unclaimed") return undefined;
-    try {
-      return editable(candidate, fn, site);
-    } catch {
-      return undefined;
-    }
-  });
-
   const text = $derived(picked ? report.source.slice(picked.pos[0], picked.pos[1]) : "");
   /** The function's failure, where it attached to the selected site. */
   const failure = $derived(fn.failure && fn.failure.at === at ? fn.failure : null);
 </script>
 
 <section class="selection">
-  {#if fn.candidateMissing}
-    <!-- No claims at all for this function: its contract comes first, since
-         every point claim is checked against it. -->
+  {#if fn.claimsMissing}
+    <!-- No claims at all for this function. -->
     <header>
-      <span class="what">no candidate</span>
+      <span class="what">no claims</span>
       <span class="status">{fn.detail ?? ""}</span>
     </header>
-    {#if candidate}
-      <FunctionContract {fn} {busy} onsubmit={oncontract} />
-    {/if}
   {:else if !picked && !fn.sites.length && fn.detail}
     <!-- Nothing here is claimed, and the unit says why. -->
     <p class="empty">{fn.detail}</p>
@@ -134,8 +92,8 @@
       </dl>
     {:else if picked.claims}
       <p class="gap">
-        The producer visited this place and claimed nothing here. A claim can be
-        added; an attachment site is not necessarily a required obligation.
+        The producer visited this place and claimed nothing here. An attachment
+        site is not necessarily a required obligation.
       </p>
     {:else}
       <p class="gap">{picked.detail}</p>
@@ -165,16 +123,6 @@
       <!-- Search found no derivation. That is never a statement that the claim
            is false, so it is reported as what happened, not as a verdict. -->
       <p class="failure">{failure.detail}</p>
-    {/if}
-
-    {#if candidate && site}
-      <ClaimEditor
-        kind={site.kind}
-        {current}
-        {busy}
-        onapply={(value) =>
-          picked.kind === "unclaimed" ? onadd(site, value) : onapply(site, value)}
-      />
     {/if}
 
     {#if picked.kind === "expression" && picked.raw}

@@ -43,13 +43,9 @@ generated build files, not sources. Then run the ordinary commands:
 ```sh
 make build-in-docker
 make test-in-docker
-make verify-census
 ```
 
-Make exports the selected image and Skip path to its verification recipes too.
-Direct commands such as `verification/run.sh` or `node verification/examples.mts`
-do not read `Makefile.local`; provide `DOCKER_IMAGE` and `SKIP_DIR` in their
-environment when invoking them directly. CI retains its own toolchain settings.
+CI retains its own toolchain settings.
 
 `Makefile.local` is not committed. For a new checkout, recreate the setting above
 or supply `DOCKER_IMAGE=...` on the command line. Verify a different compiler and

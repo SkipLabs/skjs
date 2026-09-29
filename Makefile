@@ -93,16 +93,13 @@ check-file-in-docker:
 
 # Verification (verification/DESIGN.md, verification/README.md).
 # Use VERBOSE=1 for detailed diagnostics and build output.
-.PHONY: verify verify-test verify-examples verify-census
-# Both halves check the same sources, so they share one container rather than
-# starting one each. Whoever starts it removes it; the halves only borrow it.
+.PHONY: verify verify-test verify-examples
 verify:
-	@bash -c 'source verification/skjs.sh; skjs_start || true; trap skjs_shutdown EXIT; \
-	  ./verification/run.sh --build --suite all $(if $(filter 1,$(VERBOSE)),--verbose) && \
-	  node verification/examples.mts $(if $(filter 1,$(VERBOSE)),--verbose)' 
+	@./verification/run.sh --build $(if $(filter 1,$(VERBOSE)),--verbose) && \
+	  node verification/examples.mts $(if $(filter 1,$(VERBOSE)),--verbose)
 
 verify-test:
-	@./verification/run.sh --build --suite all $(if $(filter 1,$(VERBOSE)),--verbose)
+	@./verification/run.sh --build $(if $(filter 1,$(VERBOSE)),--verbose)
 
 verify-examples:
 	@node verification/examples.mts --build $(if $(filter 1,$(VERBOSE)),--verbose)
@@ -114,23 +111,6 @@ viewer:
 	@npm --prefix verification/report-viewer/app install --silent --legacy-peer-deps
 	@npm --prefix verification/report-viewer/app run build --silent
 	@node verification/report-viewer/serve.mts --open
-
-# One producer's column at a time. Both together is the default above; either
-# alone runs only that producer, which is also how one is measured.
-verify-examples-skjs:
-	@node verification/examples.mts --only skjs $(if $(filter 1,$(VERBOSE)),--verbose)
-
-verify-examples-tsc:
-	@node verification/examples.mts --only tsc $(if $(filter 1,$(VERBOSE)),--verbose)
-
-# How much of a corpus the pipeline verifies, one row per function, diffed
-# against a recorded baseline. Unlike the targets above this asserts nothing
-# about the corpus: a refusal is a reported outcome with its reason, not a
-# failure, so the reasons can be counted and the largest one chosen as the next
-# thing to widen. CORPUS= picks the set, from verification/corpus/; UPDATE=1
-# accepts a baseline that moved.
-verify-census:
-	@./verification/census.sh $(if $(CORPUS),$(CORPUS),verification/corpus/repair-work.json) $(if $(filter 1,$(UPDATE)),--update)
 
 # install the repo pre-commit hook locally
 .git/hooks/pre-commit: bin/git_hooks/check_format.sh
