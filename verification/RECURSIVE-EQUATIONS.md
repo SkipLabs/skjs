@@ -156,6 +156,15 @@ simulation of the unfoldings, which encodes inclusion of simple languages
 ([Friedman 1976](REFERENCES.md#friedman-1976)); non-inclusion is
 semi-decidable, level by level. The argument is on paper, not mechanized.
 
+**A decidable fragment.** On readonly records, inclusion is decidable when
+one side is regular, its unfolding reaching finitely many types. Every
+subtyping question in the examples either has this form or relates two
+applications of one definition, decided by $`\textsf{Var}`$. The argument
+abstracts each argument of the other side by the set of the regular side's
+types it is below, which leaves finitely many states for a greatest
+fixpoint; it rests on inclusion being simulation. It is on paper, and its
+extension to functions and writable fields is open.
+
 ### 4.1 Quantified signatures
 
 Two quantified signatures are compared up to renaming of bound variables,
