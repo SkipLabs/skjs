@@ -1308,6 +1308,35 @@ partial def rowBody (n : Nat) : M (GraphRow Tree (List Tree)) := do
     | none => .local 0
   return row.map binder fun A => (lowered.lookup A).getD []
 
+/-- The canonical order of source-claims labels, on their spelling: rows by
+index, then declarations, intersections, arrays and binders, each by its
+fields in order, lists lexicographically. -/
+partial def claimCmp (a b : Json) : Ordering :=
+  let rank (j : Json) : Nat := match j with
+    | .num _ => 0
+    | _ => if (j.getObjVal? "decl").isOk then 1 else if (j.getObjVal? "meet").isOk then 2
+      else if (j.getObjVal? "array").isOk then 3 else 4
+  let lex : Ordering → Ordering → Ordering := fun | .eq, o => o | o, _ => o
+  let list (f : Json → Json → Ordering) : List Json → List Json → Ordering := fun as bs =>
+    let rec go : List Json → List Json → Ordering
+      | [], [] => .eq
+      | [], _ :: _ => .lt
+      | _ :: _, [] => .gt
+      | a :: as, b :: bs => lex (f a b) (go as bs)
+    go as bs
+  let arr (j : Json) : List Json := ((j.getArr?).toOption.getD #[]).toList
+  let labels (x y : Json) : Ordering := list claimCmp (arr x) (arr y)
+  let field (j : Json) (k : String) : Json := (j.getObjVal? k).toOption.getD (.arr #[])
+  match rank a, rank b with
+  | 0, 0 => compare ((a.getNat?).toOption.getD 0) ((b.getNat?).toOption.getD 0)
+  | 1, 1 => lex (compare ((field a "decl").getNat?.toOption.getD 0) ((field b "decl").getNat?.toOption.getD 0))
+      (list labels (arr (field a "args")) (arr (field b "args")))
+  | 2, 2 => list labels (arr (field a "meet")) (arr (field b "meet"))
+  | 3, 3 => lex (labels (field a "array") (field b "array"))
+      (compare ((field a "readonly").getBool?.toOption.getD false) ((field b "readonly").getBool?.toOption.getD false))
+  | 4, 4 => compare ((field a "binder").getStr?.toOption.getD "") ((field b "binder").getStr?.toOption.getD "")
+  | r, s => compare r s
+
 /-- A source-claims label: a `decl` application (arity full), a `meet`, an
 `array` of its store, or a `binder`: the binder `scope` gives the name, else
 its name placeholder. A `types` row index is the producer's row, which the
@@ -1321,10 +1350,16 @@ partial def claimLabel (scope : List (String × Binding)) (j : Json) : M Union :
       CellClaims.fieldsExactly j (if (j.getObjVal? "args").isOk then ["decl", "args"] else ["decl"])
       let i ← k.getNat?
       let ds := (← get).doc
-      if i ≥ ds.size then throw s!"source claims: declaration {i} is not in the document"
-      let args ← ((j.getObjValAs? (Array Json) "args").toOption.getD #[]).toList.mapM (claimUnion scope)
+      if i ≥ ds.size then throw s!"source claims: a declaration's label names no declaration: {i}"
+      let spelled ← match j.getObjVal? "args" with
+        | .ok a => do
+          let a ← a.getArr?
+          if a.isEmpty then throw "source claims: a nullary declaration's label leaves its arguments out"
+          pure a.toList
+        | .error _ => pure []
+      let args ← spelled.mapM (claimUnion scope)
       if args.length != ds[i]!.parameters.size then
-        throw s!"source claims: {ds[i]!.name} applied to {args.length} arguments, not its {ds[i]!.parameters.size}"
+        throw s!"source claims: a declaration's label has one argument per parameter: {ds[i]!.name} has {ds[i]!.parameters.size}, given {args.length}"
       let ctx : Ctx := { binders := scope, site := "source claims", checkBounds := false }
       let values ← application ctx i args
       instantiateDecl ctx i values
@@ -1340,6 +1375,7 @@ partial def claimLabel (scope : List (String × Binding)) (j : Json) : M Union :
     else if let some n := get? "binder" then
       CellClaims.fieldsExactly j ["binder"]
       let n ← n.getStr?
+      if n.isEmpty then throw "source claims: a binder's label names it"
       match scope.lookup n with
       | some ⟨false, v⟩ => return v
       | some ⟨true, _⟩ => throw s!"source claims: the argument pack {n} used as a value type"
@@ -1349,7 +1385,10 @@ partial def claimLabel (scope : List (String × Binding)) (j : Json) : M Union :
 
 /-- A union of source-claims labels. -/
 partial def claimUnion (scope : List (String × Binding)) (j : Json) : M Union := do
-  return normUnion ((← (← j.getArr?).toList.mapM (claimLabel scope)).flatten)
+  let ls := (← j.getArr?).toList
+  unless (ls.zip ls.tail).all (fun (a, b) => claimCmp a b == .lt) do
+    throw "source claims: a label list is in canonical order, each label once"
+  return normUnion ((← ls.mapM (claimLabel scope)).flatten)
 /-- Lower one pending row. -/
 partial def runJob (job : Job) : M Unit := do
   let h := job.head

@@ -73,7 +73,7 @@ claims until the compositional checker can certify their stronger effect.
 
 Lean reads each such scheme as a scheme head of its own, whose binders are
 its application's owned parameters
-([RECURSIVE-EQUATIONS §8.1](RECURSIVE-EQUATIONS.md#81-heads)): every claim
+([RECURSIVE-EQUATIONS §5](RECURSIVE-EQUATIONS.md#5-from-source)): every claim
 and annotation inside the closure reads the closure's binders, spelled by
 their names, as those parameters, a bounded one as the meet of its parameter
 and its bound, one bounded by another of the closure's binders as the meet of
@@ -195,7 +195,7 @@ equation, an array's shape, an intersection's row or a binder's row: its
 `types` are the four primitives, then its own clause rows and the scheme rows
 of classes' generic methods, whose binders are binder labels. The verifier
 lowers the claims with the source's declarations to recursive equations
-([RECURSIVE-EQUATIONS §8](RECURSIVE-EQUATIONS.md#8-lowering-from-source)):
+([RECURSIVE-EQUATIONS §5](RECURSIVE-EQUATIONS.md#5-from-source)):
 a row is a head of its own, lifted over the binder names it mentions, and a
 binder label is its name, read as the unit or closure that binds it gives
 it. The

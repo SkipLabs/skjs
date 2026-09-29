@@ -442,6 +442,91 @@ field, recursively, so a document either has the current shape or is refused.
 When a shape changes, regenerate what carries it. The JSON parser and codecs still form part of the input-meaning
 boundary; round-trip tests are not a proof of fidelity to external source text.
 
+## Equations and tree labels
+
+A type can also be read from recursive equations
+([RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md#2-equations)), whose labels
+are trees over the equations' heads. The source path (source mode below)
+already checks every request over them. The standalone request still reads
+`types`; the `equations` field below is specified, not implemented.
+
+**Source path.** `--check-source-claims` and `--produce-source-claims` never
+read equations from the wire. Lean lowers the declarations and the claims to
+heads, grows them while it extracts every unit of the file, and validates
+them with `Equations.ofRaw` once extraction is done
+(`EquationStore.freeze`). Each request is then checked over the equations'
+`Equations.graph`. The evidence bundle spells every label as a tree over
+those heads and names them by index, so evidence is valid only for the
+claims and the declarations it was produced for. Over other ones it fails to
+decode (for example `head 65 takes 1 arguments, given 0`) or fails its
+check. A tree is decoded through the validator (`Label.ofTree?`), and no
+checked request holds a name placeholder.
+
+**Tree spelling.** Each tree form has exactly one spelling
+(`Tree.toJson`, `Tree.fromJson` in `Types/EquationJson.lean`):
+
+| Tree | Spelling |
+| --- | --- |
+| nullary application of head `h` | `h` |
+| application with arguments | `{"app": h, "args": [[…], …]}`, `args` non-empty |
+| owned parameter | `{"bound": h, "args": [[…], …], "slot": j}`, `args` left out when empty |
+| meet | `{"meet": [L, …]}`: flat, at least two parts, canonical order |
+| template placeholder (bodies only) | `{"arg": i}`, `{"local": j}` |
+| family variable (inside its entry only) | `{"var": k, "owner": o, "kind": "value" \| "arguments"}` |
+
+Decoding refuses an unknown or missing field and a second spelling of one
+tree, such as `{"app": h, "args": []}` for `h`. Heads become equations only
+through the validator. It checks scope, arity and lexicality,
+constructor-headed templates binding exactly their locals, meet normal form,
+and a kind and variance per parameter. A refusal names the head and the
+position (`Equations.ofRaw`, `Types/EquationValidator.lean`).
+
+**Instances.** An `inst` step still carries its finite `domain`, `table` and
+`free`. The source path accepts the step when either proved image check
+holds: the finite table check, or the substitution check
+`E.instanceImageCheck`, which requires every claimed image to be the
+structural substitution image (`EquationStore.eitherImages`). Search
+proposes the substitution images first (`CertificateProducer.Instantiates`).
+
+**Specified, not implemented.** The standalone request (`verifyJson`) is to
+decode its graph, with `equations` replacing `types`:
+
+```json
+{
+  "equations": [
+    {
+      "name": "Promise",
+      "parameters": [{ "name": "T", "kind": "value" }],
+      "body": [{ "refs": { "views": [["then", [{ "app": 7, "args": [[{ "arg": 0 }]] }]]] } }]
+    }
+  ]
+}
+```
+
+Each entry has a `name` (diagnostic only), `parameters`, `binders` (left out
+when none) and a `body` in the row format of [request fields](#request-fields).
+A body's operands are lists of trees. The evidence, in both paths, is to
+carry these fields:
+
+- the variance of every parameter of every head (`"co"`, `"contra"`,
+  `"inv"`, `"none"`, no default) and the tables $`\Delta_h`$, as
+  `[[h, [[A, B], …]], …]`, left out when empty;
+- `inst` instances that name only their images, with the finite `table`,
+  `domain` and `free` fields removed;
+- `core` certificates with `families`, each
+  `{"source": L, "target": L, "variables": [kind, …], "hypotheses": [[x, y], …], "table": [[A, B], …]}`,
+  left out when none, with the present table as the variable-free entry;
+- the `var` proof form, relating two applications of one head with one
+  proof per non-`none` position (two for `inv`), citing the head's checked
+  declaration.
+
+The source path reads variance declarations from the source instead. A head
+with parameters whose declared variance is refused refuses the source before
+extraction, located at the unit that requires the declarations.
+
+Diagnostics show labels through a projection onto a finite table, bounded by
+depth, with names for applications (`Promise<number | R>`).
+
 ## Proved boundary and validation
 
 `verifyJson_checked` proves that JSON acceptance yields the two decoded objects

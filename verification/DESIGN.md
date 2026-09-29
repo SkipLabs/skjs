@@ -606,7 +606,7 @@ generic method's binders are owned by its application
 ([generic methods](PROGRAM-TYPING.md#generic-methods)), so two instances of a
 declaration, and members of two declarations, bind different parameters:
 relating them needs the covering rule up to renaming the target's binders
-([quantified-α](RECURSIVE-EQUATIONS.md#6-quantified-coverage-modulo-binder-renaming)).
+([quantified-α](RECURSIVE-EQUATIONS.md#41-renaming-binders)).
 A class's generic method is such a member of its instance type, which its
 prototype's closure, a scheme received by the instance, covers bound to the
 instance ([classes](PROGRAM-TYPING.md#classes)).
@@ -787,7 +787,7 @@ of applications, however it grows, is finitely many heads
 [RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md)). A generic method is a
 [member with quantified signatures](#method-members-are-host-relative), a
 scheme whose binders its application owns; a binder intersected with ground
-types is a meet label ([RECURSIVE-EQUATIONS §3.3](RECURSIVE-EQUATIONS.md#33-meet-labels)).
+types is a meet label ([RECURSIVE-EQUATIONS §2.2](RECURSIVE-EQUATIONS.md#22-meaning)).
 
 ### Graphs
 
@@ -1156,10 +1156,10 @@ unchanged ([design](#recursive-quantified-contracts)).
 | S2. Diagnostics show labels through a finite projection | done | identical diagnostics on every case |
 | S3. Kernel: meet labels, equation validator, tree codec and hashing | done | proved; no pipeline change |
 | S4. Source layer generic in its label type, still over the finite table | done | bit-identical evidence on the corpus |
-| S5. Equation lowering module ([§5](RECURSIVE-EQUATIONS.md#5-from-source)), not yet wired | done | lowers `Promise`, `PromiseLike`, `Pair` and the upstream declarations with no budget |
-| K2. Kernel: family hypotheses reach meet parts, so `meet(x,B) ≤ meet(y,B)` holds under `x ≤ y` (the framework's `T & DepSafe` heads, [§4.3](RECURSIVE-EQUATIONS.md#43-variance)) | done | proved; the `sum-collections` heads' variances check |
+| S5. Equation lowering module ([§5](RECURSIVE-EQUATIONS.md#5-from-source)), not yet wired | done; upstream `T & B` heads' variances refused ([§4.3](RECURSIVE-EQUATIONS.md#43-variance)) | lowers `Promise`, `PromiseLike`, `Pair` and the upstream declarations with no budget |
+| K2. Kernel: family hypotheses reach meet parts, so `meet(x,B) ≤ meet(y,B)` holds under `x ≤ y` (the framework's `T & DepSafe` heads, [§4.3](RECURSIVE-EQUATIONS.md#43-variance)) | open | proved; the `sum-collections` heads' variances check |
 | K3. Lowering: a unit bound naming another binder of the unit (`U extends T`) | open | lowered as a meet of owned binders; its lowering test passes |
-| S6. Cutover: lowering wired, `DeclarationGraph`, its budgets and the adapter deleted, `checkJson_safe` over `Equations.graph` | open: wired, finite path deleted, gaps reclassified; lost until quantified-α reaches request certificates: `class-generic-method`, `generic-method-instances`; until calls are claimed at their structural images: `class-value-generic-method`, `library-object-values-dictionary`; the standalone protocol is still finite | `generic-growing-application` verifies; every recursive-generic gap reclassified by its new blocker |
+| S6. Cutover: lowering wired, `DeclarationGraph`, its budgets and the adapter deleted, `checkJson_safe` over `Equations.graph` | open: wired, finite path deleted, gaps reclassified; lost until quantified-α reaches request certificates: `class-generic-method`, `generic-method-instances`; until calls are claimed at their structural images: `class-value-generic-method`, `library-object-values-dictionary`; until K2 is merged into this branch, the cases whose declarations only K2 checks the variances of (`sum-*`, `framework-binding-*`, `equality-intersection-element`, `generic-dependent-bounds`, `generic-graph-bounds`); the standalone protocol is still finite | `generic-growing-application` verifies; every recursive-generic gap reclassified by its new blocker |
 | S7. Variance proposals, `Var` and family entries in the certificate producer; `checkEquations` | open | `promise-covariance`, `-push` verify; `invalid-promise-covariance` rejected at its own obligation |
 | S8. Census and performance | open | census remeasured; evidence size and decode time recorded |
 

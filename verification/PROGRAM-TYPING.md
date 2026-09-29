@@ -3542,7 +3542,7 @@ where $\textsf{env}$ feeds $\textsf{global}$.
 ### One equation per declaration
 
 A declaration is one equation, and a type a unit names is a finite term over
-the equations ([RECURSIVE-EQUATIONS §8](RECURSIVE-EQUATIONS.md#8-lowering-from-source)).
+the equations ([RECURSIVE-EQUATIONS §5](RECURSIVE-EQUATIONS.md#5-from-source)).
 Lowering (`EquationLowering.source`) makes a head per declaration whose
 equation is an object type or has bases, per generic method of such a head,
 per source type literal and per generic unit, never per instance: a
@@ -3572,7 +3572,7 @@ is what meets the scheme, [records](POSITIVE-TYPES.md#records)). Its binders
 are owned by its application, $`\mathsf{bound}(D.m,\vec A,j)`$, so two
 applications of `D` at different arguments bind different labels, and two
 members of different declarations do too: relating them needs quantified
-coverage up to renaming ([RECURSIVE-EQUATIONS §6](RECURSIVE-EQUATIONS.md#6-quantified-coverage-modulo-binder-renaming)),
+coverage up to renaming ([RECURSIVE-EQUATIONS §4.1](RECURSIVE-EQUATIONS.md#41-renaming-binders)),
 which the request path does not yet reach (DESIGN, "Status"). A generic
 member of a library prototype (`ArrayProto`'s `forEach`, whose receiver is an
 array of its element binder) stays a readonly view of its scheme. A rest
@@ -3595,7 +3595,7 @@ reads the name as that parameter (`Store.rebind`).
 #### Binders met with ground types
 
 An intersection of a value binder with ground types, `V & DepSafe`, is a
-meet label ([RECURSIVE-EQUATIONS §3.3](RECURSIVE-EQUATIONS.md#33-meet-labels)),
+meet label ([RECURSIVE-EQUATIONS §2.2](RECURSIVE-EQUATIONS.md#22-meaning)),
 whose row is the [meet row](POSITIVE-TYPES.md#parameter-and-scheme-rows)
 $p\sqcap\vec c$. Lowering an intersection (`meetOf`) distributes it over its
 operands' unions, one meet label per choice; on ground operands:

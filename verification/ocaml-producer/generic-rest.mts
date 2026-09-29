@@ -71,11 +71,13 @@ export function checkGenericRest(verifier: string, artifacts: string): void {
   const numeric = calls[1]?.instantiate?.[0];
   assert(numeric);
   numeric.type = [1, 2];
+  // Fresh search fails at the obligation; reused evidence names heads of the
+  // unmutated claims' equations, so it no longer decodes over the new ones.
   reject(
     "wrong-rest-instance",
     wrongCall,
     ast,
-    /evidence search failed|does not justify/,
+    /evidence search failed|does not justify|head \d+ takes \d+ arguments, given \d+/,
   );
 
   const fixed = structuredClone(ast);

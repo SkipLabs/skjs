@@ -257,7 +257,7 @@ for (const [file, expected] of [
       `TypeScript should accept ${file}, which the model refuses`);
   const recordCollection = check(join(here, "examples/invalid-sum-record-collection.ts"), upstreamConfig);
   assert.equal(recordCollection.status, "unverified", JSON.stringify(recordCollection));
-  assert.match(recordCollection.detail, /type argument does not establish its declared bound for V/);
+  assert.match(recordCollection.detail, /the type argument for EagerCollection's "V" .* does not establish its declared bound/);
   const cli = spawnSync(process.execPath, [join(here, "check.mts"), jsonPath,
     "--project", join(here, "upstream")], { encoding: "utf8", timeout: 30_000 });
   assert.ifError(cli.error);
@@ -565,7 +565,7 @@ for (const [file, expected] of [
     'export function invalidBound(value: BoundedBox<number>): number { return value.value; }\n');
   const invalidBound = check(invalidBoundClient, pairConfig);
   assert.equal(invalidBound.status, "unverified", JSON.stringify(invalidBound));
-  assert.match(invalidBound.detail, /type argument does not establish its declared bound/);
+  assert.match(invalidBound.detail, /the type argument for BoundedBox's "T" .* does not establish its declared bound/);
   const defaultClient = join(pairDir, "default-client.ts");
   writeFileSync(defaultClient,
     'import type { DefaultBox, DependentDefault, DependentBound, BoundedDefault } from "@fixture/box";\n' +
@@ -585,7 +585,7 @@ for (const [file, expected] of [
   const invalidDependent = check(invalidDependentClient, pairConfig);
   assert.equal(invalidDependent.status, "unverified", JSON.stringify(invalidDependent));
   assert.match(invalidDependent.detail,
-    /type argument does not establish its declared bound/);
+    /type argument .*does not establish its declared bound/);
   // A global declaration file of the project supplies an unimported name.
   const boxAst = parseFile(boxClient, false, pairConfig);
   assert.equal(boxAst.declarations.definitions.find(d => d.declaration.name === "GlobalBox")?.
