@@ -1,9 +1,9 @@
 import Verification.Model.Types.EquationGraphs
 
-/-! The equation validator (RECURSIVE-EQUATIONS §3.1, §3.3, §7.5): raw heads,
+/-! The equation validator (RECURSIVE-EQUATIONS §2, §5): raw heads,
 as a decoder or a lowering produces them, become `Equations` only when every
 template is scoped, lexical and constructor-headed, every meet is in normal
-form, and every parameter declares its kind and variance. A refusal names the
+form, and every parameter declares its kind. A refusal names the
 head and the position. The checks decide the very predicates the kernel types
 carry (`Tree.scoped`, `Tree.lexical`, `RowTemplate.wellBound`); the located
 diagnosis only explains a refusal. -/
@@ -165,13 +165,13 @@ def templateOf? (sig : Signature) (head : Fin sig.length) (raw : GraphRow Tree (
     else if hw : row.wellBound head = true then .ok ⟨row, hw⟩
     else .error "the row does not bind exactly its locals"
 
-/-- A head's variance declarations: one per parameter. -/
-def varianceProblem (h : Header) : Option String :=
-  if h.variance.length == h.parameters then none
-  else some s!"{h.variance.length} variance declarations for {h.parameters} parameters"
+/-- A head's parameter kinds: one per parameter. -/
+def kindProblem (h : Header) : Option String :=
+  if h.kinds.length == h.parameters then none
+  else some s!"{h.kinds.length} parameter kinds for {h.parameters} parameters"
 
 /-- **The equation validator.** Raw heads become equations only when every
-head declares a kind and variance per parameter and every body is a template
+head declares a kind per parameter and every body is a template
 of its header (`templateOf?`). A refusal names the head. -/
 def Equations.ofRaw (heads : List RawHead) : Except String Equations :=
   let sig : Signature := heads.map (·.header)
@@ -179,7 +179,7 @@ def Equations.ofRaw (heads : List RawHead) : Except String Equations :=
     (heads[i.val]'(by simpa [sig] using i.isLt)).body
   let located := (List.finRange sig.length).findSome? fun i =>
     let hd := heads[i.val]'(by simpa [sig] using i.isLt)
-    ((varianceProblem hd.header) <|>
+    ((kindProblem hd.header) <|>
       (match templateOf? sig i (raw i) with
        | .error e => some e
        | .ok _ => none)).map (s!"head {i.val} ({hd.name}): " ++ ·)

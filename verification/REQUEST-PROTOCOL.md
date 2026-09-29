@@ -478,8 +478,11 @@ Decoding refuses an unknown or missing field and a second spelling of one
 tree, such as `{"app": h, "args": []}` for `h`. Heads become equations only
 through the validator. It checks scope, arity and lexicality,
 constructor-headed templates binding exactly their locals, meet normal form,
-and a kind and variance per parameter. A refusal names the head and the
-position (`Equations.ofRaw`, `Types/EquationValidator.lean`).
+and a kind per parameter. A refusal names the head and the position
+(`Equations.ofRaw`, `Types/EquationValidator.lean`). Variances are not on the
+wire: the checker computes them from the equations when a check compares two
+applications of one head (`Equations.variances`,
+[RECURSIVE-EQUATIONS §4.3](RECURSIVE-EQUATIONS.md#43-variance)).
 
 **Instances.** An `inst` step still carries its finite `domain`, `table` and
 `free`. The source path accepts the step when either proved image check
@@ -508,21 +511,14 @@ when none) and a `body` in the row format of [request fields](#request-fields).
 A body's operands are lists of trees. The evidence, in both paths, is to
 carry these fields:
 
-- the variance of every parameter of every head (`"co"`, `"contra"`,
-  `"inv"`, `"none"`, no default) and the tables $`\Delta_h`$, as
-  `[[h, [[A, B], …]], …]`, left out when empty;
 - `inst` instances that name only their images, with the finite `table`,
   `domain` and `free` fields removed;
 - `core` certificates with `families`, each
   `{"source": L, "target": L, "variables": [kind, …], "hypotheses": [[x, y], …], "table": [[A, B], …]}`,
   left out when none, with the present table as the variable-free entry;
 - the `var` proof form, relating two applications of one head with one
-  proof per non-`none` position (two for `inv`), citing the head's checked
-  declaration.
-
-The source path reads variance declarations from the source instead. A head
-with parameters whose declared variance is refused refuses the source before
-extraction, located at the unit that requires the declarations.
+  proof per non-`none` position (two for `inv`), citing the head's computed
+  variance.
 
 Diagnostics show labels through a projection onto a finite table, bounded by
 depth, with names for applications (`Promise<number | R>`).

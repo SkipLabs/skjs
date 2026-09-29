@@ -13,9 +13,9 @@ structure Binder where
   kind : ParameterKind
   deriving Repr, DecidableEq
 
-/-- How an application may vary in one parameter (RECURSIVE-EQUATIONS §7.5):
+/-- How an application may vary in one parameter (RECURSIVE-EQUATIONS §4.3):
 covariantly, contravariantly, invariantly, or not at all because the body
-does not read it. A declaration is checked, never assumed. -/
+does not read it. Computed and checked by the checker, never assumed. -/
 inductive Variance where
   | co
   | contra
@@ -24,12 +24,12 @@ inductive Variance where
   deriving Repr, DecidableEq
 
 /-- The finite signature fixes both application arity and local binder kinds.
-Binder names are only diagnostic metadata. `variance` declares each
-parameter's kind and variance; `Variances` checks the declarations once. -/
+Binder names are only diagnostic metadata. `kinds` gives each parameter's
+kind; variances are computed by the checker (`Variances`). -/
 structure Header where
   parameters : Nat
   binders : List Binder
-  variance : List (ParameterKind × Variance) := []
+  kinds : List ParameterKind := []
   deriving Repr, DecidableEq
 
 abbrev Signature := List Header

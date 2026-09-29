@@ -379,19 +379,15 @@ def _root_.Verification.Model.EquationGraphs.Equations.memo (E : Equations) : Eq
       | none => E.body h }
 
 /-- **Freezing.** The heads become equations only through the validator
-(`Equations.ofRaw`, §9.2): scope, arity and lexicality, constructor-headed
-templates binding exactly their locals, meet normal form, a kind and variance
-per parameter. A head lowered from the declarations declares its proposed
-variance, a later one `inv`; no rule reads a variance at this stage. -/
+(`Equations.ofRaw`): scope, arity and lexicality, constructor-headed
+templates binding exactly their locals, meet normal form, a kind per
+parameter. Variances are the checker's, computed when a check asks
+(`Equations.variances`). -/
 def freeze (s : State) : Except String Frozen := do
   let bodies ← s.heads.mapM fun d => match d.body with
     | some b => pure b
     | none => throw s!"{d.name}: its row was never lowered"
-  let v := (Array.range s.heads.size).map fun h =>
-    match s.variances[h]? with
-    | some v => if v.size == s.heads[h]!.kinds.length then v else s.heads[h]!.kinds.toArray.map fun _ => .inv
-    | none => s.heads[h]!.kinds.toArray.map fun _ => .inv
-  let E ← Equations.ofRaw (rawHeads s.heads bodies v)
+  let E ← Equations.ofRaw (rawHeads s.heads bodies)
   let E := { E with realm := if s.arrays then realmOf E s.proto s.excluded else none }
   let E := E.memo
   let ⟨p⟩ ← primitive E

@@ -16,8 +16,8 @@ finitely many heads. There is no budget, colour, depth limit or truncation:
 an alias cycle not guarded by a constructor is refused, and everything else
 terminates because heads are keyed by source occurrence.
 
-Lowering is untrusted in what it proposes (the variance declarations, the
-hash-consing of literal heads) and trusted in what it states: the equations
+Lowering is untrusted in what it proposes (the hash-consing of literal
+heads) and trusted in what it states: the equations
 are the meaning of the source. The source path reads it through
 `EquationLowering.source` (`SourceClaimJson.equationFront`), and the store
 extraction grows is its state (`EquationStore`). -/
@@ -136,101 +136,6 @@ def meetUnions : List Union → Union
 /-- Rows over trees, mapped operand by operand. -/
 def mapRow (f : Union → Union) (row : GraphRow Tree (List Tree)) : GraphRow Tree (List Tree) :=
   row.map id f
-
-/-! ### Variance proposal (§7.5)
-
-A least fixpoint over the head graph on `none < co, contra < inv`. A
-writable position is `inv`, a readonly one or a result `co`, a parameter or
-receiver `contra`; a nested application composes with its head's current
-variance, and a scheme bound is `inv`. Untrusted: the declarations must pass
-`Equations.checkVariance`. -/
-
-/-- The variance at a position of polarity `p` of a head of variance `q`. -/
-def compose : Variance → Variance → Variance
-  | _, .none => .none
-  | .none, _ => .none
-  | .co, q => q
-  | .contra, .co => .contra
-  | .contra, .contra => .co
-  | .contra, .inv => .inv
-  | .inv, _ => .inv
-
-def join : Variance → Variance → Variance
-  | .none, v => v
-  | v, .none => v
-  | .co, .co => .co
-  | .contra, .contra => .contra
-  | _, _ => .inv
-
-private def arrowPolar (a : Arrow α) : List (Variance × α) :=
-  (.contra, a.receiver) :: a.arguments.map (.contra, ·) ++ [(.co, a.result)]
-
-private def restPolar (a : RestArrow α) : List (Variance × α) :=
-  (.contra, a.receiver) :: a.arguments.1.map (.contra, ·) ++
-    [(.contra, a.arguments.2), (.co, a.result)]
-
-private def sigPolar (s : MethodMembers.Sig α) : List (Variance × α) :=
-  s.calls.flatMap (fun m => m.arguments.map (.contra, ·) ++ [(.co, m.result)]) ++
-    s.rests.flatMap (fun m => m.arguments.1.map (.contra, ·) ++
-      [(.contra, m.arguments.2), (.co, m.result)]) ++
-    s.schemes.map (.co, ·)
-
-/-- Each operand of a clause with the polarity of its position. -/
-def clausePolar : Clause α → List (Variance × α)
-  | .list a bs => (a :: bs).flatMap fun t => t.operands.map ((if t.readonly then .co else .inv), ·)
-  | .pack a bs => (a :: bs).flatMap fun t => t.operands.map (.co, ·)
-  | .refs a bs vs os ms _ =>
-    (a ++ bs.flatten).map (fun f => (.inv, f.2)) ++ vs.map (fun f => (.co, f.2)) ++
-      os.map (fun o => ((if o.readonly then .co else .inv), o.type)) ++ ms.flatMap sigPolar
-  | .dict a bs vs ds os ms _ cs =>
-    (a ++ bs.flatten).map (fun f => (.inv, f.2)) ++ vs.map (fun f => (.co, f.2)) ++
-      ds.map (fun f => (.co, f.2)) ++
-      os.map (fun o => ((if o.readonly then .co else .inv), o.type)) ++ ms.flatMap sigPolar ++
-      cs.map (fun f => (.inv, f.2))
-  | .arrs L S => L.flatMap arrowPolar ++ S.flatMap restPolar
-  | .callable a bs L S =>
-    (a ++ bs.flatten).map (fun f => (.inv, f.2)) ++ L.flatMap arrowPolar ++ S.flatMap restPolar
-  | .ctors L S => L.flatMap (fun q => q.1.map (.contra, ·) ++ [(.co, q.2)]) ++
-      S.flatMap fun q => q.1.map (.contra, ·) ++ [(.contra, q.2.1), (.co, q.2.2)]
-  | _ => []
-
-def rowPolar : GraphRow Tree (List Tree) → List (Variance × List Tree)
-  | .clauses cs => cs.flatMap clausePolar
-  | .scheme _ sigs bounds rests =>
-    sigs.flatMap arrowPolar ++ bounds.map (fun b => (.inv, b.2)) ++ rests.flatMap restPolar
-  | _ => []
-
-/-- The parameters a tree reads at polarity `p`, under the current
-variances `v`. -/
-partial def treePolar (v : Array (Array Variance)) (p : Variance) : Tree → List (Nat × Variance)
-  | .argument i => [(i, p)]
-  | .app g args =>
-    (args.toList.zipIdx).flatMap fun (ts, k) =>
-      let q := compose p ((v[g]?.bind (·[k]?)).getD .inv)
-      if q == .none then [] else ts.toList.flatMap (treePolar v q)
-  | .meet ps => ps.toList.flatMap (treePolar v p)
-  | _ => []
-
-/-- One round: every head's variance from its template and the others'. -/
-def varianceRound (bodies : Array (GraphRow Tree (List Tree))) (arity : Array Nat)
-    (v : Array (Array Variance)) : Array (Array Variance) :=
-  (bodies.zip arity).map fun (body, n) =>
-    let reads := (rowPolar body).flatMap fun (p, U) => U.flatMap (treePolar v p)
-    (Array.range n).map fun i => reads.foldl (fun acc (j, q) => if j == i then join acc q else acc) .none
-
-/-- The least fixpoint. Each round that changes something raises at least
-one of the finitely many entries one step in a lattice of height two, so
-`2 × entries + 1` rounds reach it; the result is checked stable. -/
-def proposeVariance (bodies : Array (GraphRow Tree (List Tree))) (arity : Array Nat) :
-    Except String (Array (Array Variance)) := do
-  let entries := arity.foldl (· + ·) 0
-  let mut v : Array (Array Variance) := arity.map fun n => Array.replicate n .none
-  for _ in [0:2 * entries + 1] do
-    let next := varianceRound bodies arity v
-    if next == v then return v
-    v := next
-  if varianceRound bodies arity v != v then throw "variance proposal: no fixpoint"
-  return v
 
 /-! ### The declaration document -/
 
@@ -544,9 +449,6 @@ structure State where
   arrayAnnotations : List (String × ArrayParts) := []
   /-- The producer's rows the claims name (§9.1). -/
   rows : ProducerRows := default
-  /-- The proposed variance of each head lowered from declarations; a head
-  added after them declares `inv` in every parameter (§7.5). -/
-  variances : Array (Array Variance) := #[]
 
 abbrev M := StateT State (Except String)
 
@@ -1555,7 +1457,7 @@ def classScope (init : Json) : M (List (String × Binding)) := do
 
 /-! ### Source-claims labels (§9.1) -/
 
-/-! ### Finishing: hash-consing, validation, variance, checks -/
+/-! ### Finishing: hash-consing, validation, checks -/
 
 /-- Merge literal and scheme heads with equal templates (§8.1), until no two
 more are equal: each round only merges, so there are at most as many rounds
@@ -1587,68 +1489,6 @@ def closedLabel (E : Equations) (site : String) (t : Tree) : Except String (Labe
 
 def closedUnion (E : Equations) (site : String) (U : Union) : Except String (List (Label E.signature)) :=
   U.mapM (closedLabel E site)
-
-/-- Arrow evidence proposed for a family's pairs: every source signature for
-every target signature, the target's renamed to the source's binders. The
-checker accepts only the evidence it checks (`EquationFamilyTests`). -/
-def arrowCandidates (E : Equations) (pairs : List (List (Label E.signature) × List (Label E.signature))) :
-    Evidence (Label E.signature) :=
-  pairs.flatMap fun (A, B) =>
-    ((sourceClauses E.graph A).flatMap fun a => (clausesOf E.graph B).flatMap fun b =>
-      match a, b with
-      | .arrs L _, .arrs M _ => M.flatMap fun q => L.map fun p => (L, (q, ArrowCert.source p))
-      | _, _ => []) ++
-    (A.flatMap fun i => B.flatMap fun j => match E.graph.schemes i, E.graph.schemes j with
-      | some s, some s' =>
-        let σ := s'.binders.zip (s.binders.map fun p => [p])
-        (s'.signatures.map (Arrow.map (E.renaming.substitute σ)) ++ s'.signatures).flatMap fun q =>
-          s.signatures.map fun p => (s.signatures, (q, ArrowCert.source p))
-      | _, _ => [])
-
-/-- The pairs a head's declaration entry reads that no hypothesis, subset or
-`Var` instance discharges by itself (§7.2, case 2 is not recursive): each
-argument of a nested application at a position it varies in, and each meet
-over the parameters, on the entry's two sides and oriented by the position's
-polarity (both ways where invariant). The entry's variables stand for the
-parameters, and the head's own binders are the source side's on both, as
-quantified-α renames them. -/
-partial def entryPairs (v : Array (Array Variance)) (h : Nat) (kinds : List ParameterKind)
-    (body : GraphRow Tree (List Tree)) : List (Union × Union) :=
-  let xs := kinds.zipIdx.map fun (k, i) => [Tree.var h (2 * i) k]
-  let ys := kinds.zipIdx.map fun (k, i) => [Tree.var h (2 * i + 1) k]
-  let loc (j : Nat) : Union := [mkBound h xs j]
-  let sx (U : Union) : Union := normUnion (U.flatMap (treeSubst (fun i => xs.getD i []) loc))
-  let sy (U : Union) : Union := normUnion (U.flatMap (treeSubst (fun i => ys.getD i []) loc))
-  let oriented (p : Variance) (U : Union) : List (Union × Union) :=
-    let a := sx U
-    let b := sy U
-    if a == b then [] else match p with
-      | .co => [(a, b)]
-      | .contra => [(b, a)]
-      | .inv => [(a, b), (b, a)]
-      | .none => []
-  let rec walk (p : Variance) : Tree → List (Union × Union)
-    | .app g args => (args.toList.zipIdx).flatMap fun (ts, k) =>
-        let q := compose p ((v[g]?.bind (·[k]?)).getD .inv)
-        if q == .none then [] else oriented q ts.toList ++ ts.toList.flatMap (walk q)
-    | t@(.meet ps) => oriented p [t] ++ ps.toList.flatMap (walk p)
-    | _ => []
-  ((rowPolar body).flatMap fun (p, U) => U.flatMap (walk p)).eraseDups
-
-/-- The variance evidence proposed for the declarations: each head's table
-(`entryPairs`), and arrow candidates for every entry's pairs. -/
-def varianceEvidence (E : Equations) (bodies : Array (GraphRow Tree (List Tree)))
-    (v : Array (Array Variance)) : VarianceEvidence E.signature :=
-  let label (U : Union) : Option (List (Label E.signature)) := U.mapM Label.ofTree?
-  let tables := (List.range bodies.size).filterMap fun h =>
-    let kinds := (E.signature[h]?.map fun hd => hd.variance.map (·.1)).getD []
-    let pairs := (entryPairs v h kinds bodies[h]!).filterMap fun (A, B) =>
-      match label A, label B with
-      | some a, some b => some (a, b)
-      | _, _ => none
-    if pairs.isEmpty then none else some (h, pairs)
-  let entries := varianceEntries (sig := E.signature) { tables }
-  { tables, arrows := arrowCandidates E (entries.flatMap (·.pairs)) }
 
 /-! ### Instances by substitution (§4.3, §9.2)
 
@@ -1735,15 +1575,12 @@ def proposeLabels {sig : Signature} (s : SchemeRow (Label sig)) (L : PositiveRul
 
 instance {sig : Signature} : CertificateProducer.Instantiates (Label sig) := ⟨proposeLabels⟩
 
-/-- The heads' raw rows at variances `v`. -/
-def rawHeads (drafts : Array Draft) (bodies : Array (GraphRow Tree (List Tree)))
-    (v : Array (Array Variance)) : List RawHead :=
+/-- The heads' raw rows. -/
+def rawHeads (drafts : Array Draft) (bodies : Array (GraphRow Tree (List Tree))) : List RawHead :=
   (List.range drafts.size).map fun h =>
     let d := drafts[h]!
     { name := d.name
-      header :=
-        { parameters := d.kinds.length, binders := d.binders,
-          variance := d.kinds.zip (v[h]!.toList) }
+      header := { parameters := d.kinds.length, binders := d.binders, kinds := d.kinds }
       body := bodies[h]! }
 
 def realmOf (E : Equations) (proto : Option Nat) (excluded : List PropKey) :
@@ -1885,8 +1722,6 @@ structure SourceLowering where
   initBinders : List (String × Tree × Option Union)
   /-- The claims document, its label lists spelled as trees (§9.2). -/
   claims : Json
-  /-- The heads whose variance declaration is refused even as invariant. -/
-  refused : List String
 
 /-- A generic value's type term: a function or construct signature by its
 parts, so that several instances conjoin as one callable; any other type
@@ -2071,41 +1906,18 @@ def compact (s : State) : Except String Built := do
     | none => throw s!"{d.name}: its row was never lowered"
   return { state := s, rename := f, drafts, bodies }
 
-/-- Validated equations at variances `v`, with the realm. -/
-def Built.equations (b : Built) (v : Array (Array Variance)) : Except String Equations := do
-  let E ← Equations.ofRaw (rawHeads b.drafts b.bodies v)
+/-- Validated equations, with the realm. -/
+def Built.equations (b : Built) : Except String Equations := do
+  let E ← Equations.ofRaw (rawHeads b.drafts b.bodies)
   let proto := b.state.proto.map b.rename
   return { E with realm := if b.state.arrays then realmOf E proto b.state.excluded else none }
 
-/-- The checks lowering owes the source (§7.5, §8.2): the variance proposal,
-weakened to invariance at a refused head until the declarations check or a
-refused head is invariant already; every closed meet with a value; every
-declared bound where an application is written. Returns the equations, the
-variances and the heads refused. -/
-def Built.finish (b : Built) : Except String ((E : Equations) × Array (Array Variance) ×
-    Except (List String) (Variances E)) := do
+/-- The checks lowering owes the source (§5): every closed meet with a value;
+every declared bound where an application is written. Variances are not
+lowering's: the checker computes them (RECURSIVE-EQUATIONS §4.3). -/
+def Built.finish (b : Built) : Except String Equations := do
   let (s, f, rn, drafts, bodies) := (b.state, b.rename, b.rn, b.drafts, b.bodies)
-  let arity := drafts.map (·.kinds.length)
-  let mut v ← proposeVariance bodies arity
-  for _ in [0:drafts.size + 1] do
-    let E ← b.equations v
-    if (Variances.check? E (varianceEvidence E bodies v)).isSome then break
-    let refused := E.varianceRefused (varianceEvidence E bodies v)
-    let mut changed := false
-    for h in refused do
-      let weakened := v[h]!.map fun x => if x == .none then .none else .inv
-      if weakened != v[h]! then changed := true
-      v := v.set! h weakened
-    if !changed then break
-  let E ← b.equations v
-  let checked : Except (List String) (Variances E) :=
-    match Variances.check? E (varianceEvidence E bodies v) with
-    | some checked => .ok checked
-    -- A head with no parameter declares no variance: its entry relates it
-    -- to itself, which no use reads (§7.5), so only a parameter's
-    -- declaration refuses.
-    | none => .error (((E.varianceRefused (varianceEvidence E bodies v)).filter
-        fun h => arity[h]! > 0).map (drafts[·]!.name))
+  let E ← b.equations
   -- Closed meets: an empty one is refused where it is lowered.
   let base (t : Tree) : Option (List (Clause (List Tree))) := match t with
     | .app g args => match bodies[g]? with
@@ -2133,12 +1945,12 @@ def Built.finish (b : Built) : Except String ((E : Equations) × Array (Array Va
     | none => pure ()
     let names (h : Nat) : String := (drafts[h]?.map (·.name)).getD s!"{h}"
     throw s!"{o.site} does not establish its declared bound: {showUnion names (A.map (·.1))} ≤ {showUnion names (B.map (·.1))}"
-  return ⟨E, v, checked⟩
+  return E
 
 /-- The store the units grow, from the compacted heads: their rows, their
 keys (a key that spells a head index spelled again with the new one), the
-generic units' binders, the placeholders, the realm and the variances. -/
-def Built.store (b : Built) (v : Array (Array Variance)) : State :=
+generic units' binders, the placeholders and the realm. -/
+def Built.store (b : Built) : State :=
   let (s, f) := (b.state, b.rename)
   let drafts := (b.drafts.zip b.bodies).map fun (d, body) => { d with body := some body }
   -- Keys that spell a head index or a tree are made again from the new rows.
@@ -2163,7 +1975,7 @@ def Built.store (b : Built) (v : Array (Array Variance)) : State :=
   { s with heads := drafts.map owned, keys := keys, jobs := [], processing := [], obligations := [],
            meetChecks := [], unitBinders := [],
            scopes := s.scopes.map (fun (p, bs) => (p, bs.map fun (n, x) => (n, rnB x))),
-           proto := s.proto.map f, variances := v }
+           proto := s.proto.map f }
 
 /-- **The source path's lowering.** `ast` is the parser's function tree with
 its declaration document (`tools/declaration-types.mts`), `claims` the
@@ -2176,13 +1988,13 @@ def source (ast claims : Json) : Except String SourceLowering := do
   let ((annotations, values, generics, units, initBinders, claims), s) ←
     (lowerSource ast claims).run { doc := ds }
   let b ← compact s
-  let ⟨_, v, checked⟩ ← b.finish
+  let _ ← b.finish
   let rn := b.rn
   let rename (j : Json) : Except String Json := do
     let ts ← (← j.getArr?).toList.mapM Tree.fromJson
     return unionJson (rn ts)
   return {
-    store := b.store v
+    store := b.store
     annotations := annotations.map fun (p, U) => (p, rn U)
     arrays := s.arrayAnnotations.map fun (p, a) => (p, a.map rn)
     values := values.map fun (n, sp, U) => (n, sp, rn U)
@@ -2190,10 +2002,7 @@ def source (ast claims : Json) : Except String SourceLowering := do
       { g with type := g.type.map (·.map rn), bounds := g.bounds.map fun (n, B) => (n, B.map rn) }
     units := units.map fun (p, bs) => (p, bs.map fun (n, t, B) => (n, treeRename b.rename t, B.map rn))
     initBinders := initBinders.map fun (n, t, B) => (n, treeRename b.rename t, B.map rn)
-    claims := ← documentForm rename claims
-    refused := match checked with
-      | .ok _ => []
-      | .error hs => hs }
+    claims := ← documentForm rename claims }
 
 /-! ### The label store over equation labels
 
@@ -2211,8 +2020,8 @@ scheme head; `arrayProto` the `ArrayProto` head (`protoLabel`). `graph` and
 `row` need the validated equations: `Equations.ofRaw` of the state's heads,
 their rows read by `Equations.row` and carried from `Label E.signature` to
 `Tree` (an empty clause row off the signature). A head added after the
-declarations is nullary, so it changes no older head's row and carries no
-variance obligation; that is the signature-extension lemma §7.5 names. It
+declarations is nullary, so it changes no older head's row and has no
+variance to compute. It
 must also give the state a JSON spelling (`ToJson σ`, `FromJson σ`). -/
 
 /-- The meet of unions is the exact meet labels over their product (§3.3);

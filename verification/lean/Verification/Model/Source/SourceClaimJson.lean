@@ -1443,9 +1443,6 @@ def equationFront : Front EquationStore.State Tree := fun ast claims fileKey onl
       s!"the declarations required by this unit cannot be interpreted: {reason}"
   let d ← decodeDocument L.store L.claims
   checkIdentity d ast fileKey
-  if !L.refused.isEmpty then
-    throw (sourceRefusal L.store contractSite .bindingAnnotation
-      s!"the variance declarations of {", ".intercalate L.refused} do not check (RECURSIVE-EQUATIONS §7.5)")
   let functions := (ast.getObjValAs? (Array Json) "functions").toOption.getD #[]
   let ast := L.annotations.foldl (fun j (path, U) =>
     setPath j ((path.splitOn "/").drop 1) (match L.arrays.lookup path with

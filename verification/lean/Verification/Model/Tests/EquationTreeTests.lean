@@ -42,7 +42,7 @@ private def refused (s : String) : Bool :=
 
 /-! A head `Box<T>` whose body is a record with a field of type `T & Box<T>`,
 next to `Unit`, a nullary head. -/
-private def boxHeader : Header := { parameters := 1, binders := [], variance := [(.value, .co)] }
+private def boxHeader : Header := { parameters := 1, binders := [], kinds := [.value] }
 private def unitHeader : Header := { parameters := 0, binders := [] }
 private def field (T : List Tree) : Clause (List Tree) := .refs [(.str "v", T)] [] []
 
@@ -71,9 +71,9 @@ private def reason (heads : List RawHead) : String :=
 #guard !accepted [box [.bound 0 (args [[.argument 0]]) 0], unit]
 #guard !accepted [box [.var 0 0 .value], unit]
 #guard !accepted [box [.local 0], unit]
--- Variance declared per parameter.
-#guard reason [{ (box [.argument 0]) with header := { boxHeader with variance := [] } }, unit] ==
-  "head 0 (Box): 0 variance declarations for 1 parameters"
+-- A kind per parameter.
+#guard reason [{ (box [.argument 0]) with header := { boxHeader with kinds := [] } }, unit] ==
+  "head 0 (Box): 0 parameter kinds for 1 parameters"
 -- Constructor-headed templates; a scheme binds exactly its locals.
 #guard !accepted [{ name := "P", header := unitHeader, body := .param (.local 0) "T" .value }]
 private def idHeader : Header := { parameters := 0, binders := [⟨"U", .value⟩] }

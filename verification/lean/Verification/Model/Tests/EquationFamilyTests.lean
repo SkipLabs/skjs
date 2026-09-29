@@ -1,11 +1,11 @@
 import Verification.Model.Types.EquationFamilies
 
 /-! Family subtyping on recursive equations: the examples and required
-controls of RECURSIVE-EQUATIONS §7.6–§7.7, as concrete checks. `Promise`
-is covariant by a checked declaration, and a use relates two of its
-applications by `Var` without unfolding `Promise`. The source pipeline
-cannot reach these checks until equations are lowered from source, so they
-are tests of the kernel checker. -/
+controls of RECURSIVE-EQUATIONS §4, as concrete checks. `Promise` is
+covariant by the variance the checker computes, and a use relates two of its
+applications by `Var` without unfolding `Promise`. What a pipeline case
+cannot show is kept here: premises no source reaches alone, and the
+controls of the variance computation's steps. -/
 namespace Verification.Model.EquationFamilyTests
 open PositiveNormalization PositiveGraphs PositiveRules PositiveCertificates EquationGraphs
   CallEffects
@@ -58,12 +58,8 @@ def arg (i : Nat) : Tree := .argument i
 def loc (i : Nat) : Tree := .local i
 def fv (o s : Nat) : Tree := .var o s .value
 
-def plain (params : Nat) (variance : List (ParameterKind × Variance) := []) : Header :=
-  ⟨params, [], variance⟩
-def generic (params : Nat) (variance : List (ParameterKind × Variance) := []) : Header :=
-  ⟨params, [⟨"R", .value⟩], variance⟩
-
-def co : ParameterKind × Variance := (.value, .co)
+def plain (params : Nat) : Header := ⟨params, [], List.replicate params .value⟩
+def generic (params : Nat) : Header := ⟨params, [⟨"R", .value⟩], List.replicate params .value⟩
 
 /-- Heads: 0 `number`, 1 `string`, 2 `unknown`, 3 `(x: A) => R`,
 4 `then<R>(f: (x: T) => R): Promise<R>`, 5 `catch<R>(f: (e: unknown) => R): Promise<T | R>`,
@@ -75,11 +71,11 @@ def co : ParameterKind × Variance := (.value, .co)
 19 `{p: Promise<number>}`, 20 `<R>() => R` again, 21 `ReadonlyArray<T>`,
 22 `readonly [A, B]`, 23 `InputDefinition<K, V>` with the view
 `initial: ReadonlyArray<readonly [K, V]>`. -/
-def signature (fnV cellV boxV : List (ParameterKind × Variance)) : Signature :=
-  [plain 0, plain 0, plain 0, plain 2 fnV, generic 1 [co], generic 1 [co], plain 1 [co],
-   plain 1 [co], plain 1 cellV, plain 1 boxV, plain 0, plain 0, generic 0, generic 1 [co],
-   plain 0, plain 0, plain 0, plain 0, plain 0, plain 0, generic 0, plain 1 [co], plain 2 [co, co],
-   plain 2 [co, co]]
+def signature : Signature :=
+  [plain 0, plain 0, plain 0, plain 2, generic 1, generic 1, plain 1,
+   plain 1, plain 1, plain 1, plain 0, plain 0, generic 0, generic 1,
+   plain 0, plain 0, plain 0, plain 0, plain 0, plain 0, generic 0, plain 1, plain 2,
+   plain 2]
 
 def num : Tree := app 0 []
 def str : Tree := app 1 []
@@ -109,11 +105,7 @@ def rows : List Raw :=
    .clauses [.list ⟨[[arg 0], [arg 1]], [], none, true, .dense⟩ []],
    .clauses [.refs [] [] [("initial", [app 21 [[app 22 [[arg 0], [arg 1]]]]])]]]
 
-def contraCo : List (ParameterKind × Variance) := [(.value, .contra), co]
-def inv : List (ParameterKind × Variance) := [(.value, .inv)]
-
-/-- The equations as the producer should declare them. -/
-def good? : Option Equations := build (signature contraCo inv [co]) rows
+def good? : Option Equations := build signature rows
 
 /-! ### Certificates -/
 
@@ -125,42 +117,14 @@ def lbl (t : Tree) : Label E.signature :=
 
 def lbls (ts : List Tree) : List (Label E.signature) := ts.map (lbl E)
 
-/-- Arrow evidence proposed for a family's pairs: every source signature for
-every target signature, the target's renamed to the source's binders. The
-checker accepts only the evidence it checks. -/
-def arrowCandidates (pairs : List (List (Label E.signature) × List (Label E.signature))) :
-    Evidence (Label E.signature) :=
-  pairs.flatMap fun (A, B) =>
-    ((sourceClauses E.graph A).flatMap fun a => (clausesOf E.graph B).flatMap fun b =>
-      match a, b with
-      | .arrs L _, .arrs M _ => M.flatMap fun q => L.map fun p => (L, (q, ArrowCert.source p))
-      | _, _ => []) ++
-    (A.flatMap fun i => B.flatMap fun j => match E.graph.schemes i, E.graph.schemes j with
-      | some s, some s' =>
-        let σ := s'.binders.zip (s.binders.map fun p => [p])
-        (s'.signatures.map (Arrow.map (E.renaming.substitute σ)) ++ s'.signatures).flatMap fun q =>
-          s.signatures.map fun p => (s.signatures, (q, ArrowCert.source p))
-      | _, _ => [])
-
-def varianceEvidence (tables : List (Nat × Table (Label E.signature)) := []) :
-    VarianceEvidence E.signature :=
-  let entries := varianceEntries (sig := E.signature) { tables }
-  { tables, arrows := arrowCandidates E (entries.flatMap (·.pairs)) }
-
-def variances? : Option (Variances E) := Variances.check? E (varianceEvidence E)
-
 /-- `Var` on two labels with one subset proof per hypothesis. -/
 def var (S T : List Tree) (hyps : Nat) : Bool :=
-  match variances? E with
-  | some v => E.checkVar v (lbls E S) (lbls E T) (List.replicate hyps .subset)
-  | none => false
+  E.checkVar E.variances (lbls E S) (lbls E T) (List.replicate hyps .subset)
 
 /-- A family certificate: its arrow evidence proposed for its pairs. -/
 def family (entries : List (Entry (Label E.signature))) (S T : List Tree) : Bool :=
-  match variances? E with
-  | some v => E.checkFamily v (lbls E S) (lbls E T)
-      { entries, arrows := arrowCandidates E (entries.flatMap (·.pairs)) }
-  | none => false
+  E.checkFamily E.variances (lbls E S) (lbls E T)
+    { entries, arrows := E.arrowCandidates (entries.flatMap (·.pairs)) }
 
 /-- A claim checked as the goal of one variable-free entry. -/
 def claim (S T : List Tree) (pairs : List (List Tree × List Tree) := [])
@@ -175,7 +139,7 @@ def claim (S T : List Tree) (pairs : List (List Tree × List Tree) := [])
 
 end
 
-/-- The index of a certificate's first entry: the heads' declarations come
+/-- The index of a certificate's first entry: the heads' variances come
 first. -/
 def first (E : Equations) : Nat := E.signature.length
 
@@ -183,18 +147,35 @@ def run (f : Equations → Bool) : Bool := match good? with
   | some E => f E
   | none => false
 
-/-! ### The equations and their declarations -/
+/-! ### The equations and their variances -/
 
 -- Every row is kept as written, and every test label is closed.
 #guard good?.isSome
 #guard [num, str, app 6 [[num]], app 6 [[num, str]], app 6 [[]], app 8 [[num]],
   app 8 [[num, str]], app 10 [], app 11 [], app 12 [], app 20 []].all
-  fun t => t.scoped (signature contraCo inv [co]) 0 0
+  fun t => t.scoped signature 0 0
 
--- The declarations check once, together: `Promise` and `then` rely on each
--- other and on `(x: A) => R` through `Var`, with no table.
-#guard run fun E => (variances? E).isSome
-#guard run fun E => E.varianceRefused (varianceEvidence E) = []
+-- The computed variances (§4.3): the callback `(x: A) => R` contravariant
+-- in its parameter and covariant in its result; `Promise`, `PromiseLike`,
+-- `then` and `catch` covariant, `Promise` and its methods one component
+-- checked together with no table; `Cell`'s writable field invariant, `Box`'s
+-- readonly view covariant; `InputDefinition` covariant in both through
+-- `ReadonlyArray<readonly [K, V]>`, by nested instances (`Inst`).
+#guard run fun E =>
+  let v := E.variances
+  v.of 3 == some [.contra, .co] && v.of 4 == some [.co] && v.of 5 == some [.co] &&
+  v.of 6 == some [.co] && v.of 7 == some [.co] && v.of 8 == some [.inv] && v.of 9 == some [.co] &&
+  v.of 21 == some [.co] && v.of 22 == some [.co, .co] && v.of 23 == some [.co, .co]
+-- `Promise` and its methods are one component, dependencies first.
+#guard run fun E =>
+  let cs := E.components
+  let pos (h : Nat) := (cs.findIdx? (·.contains h)).getD cs.size
+  pos 4 == pos 6 && pos 5 == pos 6 && decide (pos 3 < pos 6) && decide (pos 0 < pos 3)
+-- Step 4: a candidate that fails `Valid` becomes `inv` at every parameter.
+-- `Cell` covariant, or the callback covariant in its parameter, fails.
+#guard run fun E => E.settle (fun _ => none) 3 [(8, [.co])] == [(8, [.inv])]
+#guard run fun E => E.settle (fun _ => none) 3 [(3, [.co, .co])] == [(3, [.inv, .inv])]
+#guard run fun E => E.settle (fun _ => none) 3 [(8, [.inv])] == [(8, [.inv])]
 
 /-! ### §7.6 examples -/
 
@@ -236,11 +217,8 @@ def promiseLike (E : Equations) : Entry (Label E.signature) :=
 
 -- Recursive instance discharge (§4.2 `Inst`): `InputDefinition<K, V>` is
 -- covariant in both through `ReadonlyArray<readonly [K, V]>`, with no table:
--- the view's premise is an instance of `ReadonlyArray`'s declaration whose
+-- the view's premise is an instance of `ReadonlyArray`'s variance whose
 -- hypothesis is an instance of the tuple's, whose hypotheses are hypotheses.
-#guard match build (signature contraCo inv [co]) rows with
-  | some E => (variances? E).isSome && E.varianceRefused (varianceEvidence E) = []
-  | none => false
 #guard run fun E => var E [app 23 [[num], [num]]] [app 23 [[num], [num, str]]] 2
 -- A nested hypothesis that is false is refused at its instance: the tuple's
 -- `number ≤ string`, inside `ReadonlyArray`'s.
@@ -256,20 +234,6 @@ def loopy (E : Equations) : Entry (Label E.signature) :=
 #guard run fun E => !claim E [app 9 [[num]]] [app 9 [[str]]] [] [] [loopy E]
 
 /-! ### §7.7 controls -/
-
--- A declaration the body contradicts is refused, located at its head:
--- `Cell` declared covariant (its field is writable), a callback parameter
--- declared covariant (`then` relies on it, and fails with it), `Box`'s
--- read parameter declared unused.
-#guard match build (signature contraCo [co] [co]) rows with
-  | some E => (variances? E).isNone && E.varianceRefused (varianceEvidence E) = [8]
-  | none => false
-#guard match build (signature [co, co] inv [co]) rows with
-  | some E => (variances? E).isNone && E.varianceRefused (varianceEvidence E) = [3, 4]
-  | none => false
-#guard match build (signature contraCo inv [(.value, .none)]) rows with
-  | some E => (variances? E).isNone && E.varianceRefused (varianceEvidence E) = [9]
-  | none => false
 
 -- A `Var` use whose premise fails is the negative control above.
 

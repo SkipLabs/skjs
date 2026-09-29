@@ -1,14 +1,15 @@
 import Verification.Model.Types.EquationCertificates
 
-/-! Family subtyping on recursive equations (RECURSIVE-EQUATIONS §6–§7). The
+/-! Family subtyping on recursive equations (RECURSIVE-EQUATIONS §4). The
 equation graph supplies what the generic rules need (`Renaming`): structural
-substitution and free support with their proved laws, and family variables,
-which are labels of their own (`Tree.var`), so no scheme binds one. Each
-head's variance declaration is a family entry; the declarations are checked
-together, once (`Variances`), and the `Var` rule relates two applications of
-one head by an instance of its entry, without unfolding it. -/
+substitution and free support with their proved laws, family variables,
+which are labels of their own (`Tree.var`), so no scheme binds one, label
+sizes and a matcher for renamed bound rows. Each head's variance is a
+family entry the checker computes from the equations (`Variances`), and the
+`Var` rule relates two applications of one head by an instance of its
+entry, without unfolding it. -/
 namespace Verification.Model.EquationGraphs
-open PositiveGraphs PositiveRules PositiveCertificates PositiveNormalization
+open PositiveGraphs PositiveRules PositiveCertificates PositiveNormalization CallEffects
 
 /-! ## The renaming of equation graphs -/
 
@@ -169,67 +170,66 @@ def Equations.renaming (equations : Equations) : Renaming equations.graph where
   size l := l.1.size
   rename := renameBound
 
-/-! ## Variance declarations -/
+/-! ## Variance, computed by the checker (RECURSIVE-EQUATIONS §4.3)
 
-/-- The arguments of head `h`'s declaration entry on one side: for parameter
-`i`, the variable owned by `h` at slot `2i + side`, of the declared kind. -/
+A variance assigns each parameter of a head one of `co`, `contra`, `inv`,
+`none`, and stands for the entry `h(x⃗) ≤ h(y⃗)` whose hypotheses it states
+(`varianceEntry`). The checker computes the variances of the heads a check
+compares from the equations alone: the reference graph's strongly connected
+components, dependencies first; each component's candidates the least
+fixpoint of the polarity equations; each member checked by `Valid`
+(`checkEntries`) with the component's candidates as the guarded assumption;
+a failing member made `inv` at every parameter, and the check repeated.
+What the loop keeps is checked, so the result is valid whatever the loop
+does (`Variances.sound`, by Theorem 1); nothing is proposed from outside.
+Each component is computed once, when a check first asks for one of its
+heads. -/
+
+/-- The variables of `h`'s entry: for parameter `i`, the family variable owned
+by `h` at slot `2i + side`, of the parameter's kind. -/
 def varianceArgs (h : Fin sig.length) (side : Nat) : List (List (Label sig)) :=
-  sig[h].variance.mapIdx fun i d => [Label.familyVar h.val (2 * i + side) d.1]
+  sig[h].kinds.mapIdx fun i k => [Label.familyVar h.val (2 * i + side) k]
 
-/-- One side of head `h`'s declaration entry: `h` applied to its variables. A
-declaration of the wrong length has none. -/
+/-- One side of `h`'s entry: `h` applied to its variables. A header whose
+kinds are not one per parameter has none. -/
 def varianceSide (h : Fin sig.length) (side : Nat) : List (Label sig) :=
-  if hl : sig[h].variance.length = sig[h].parameters then
+  if hl : sig[h].kinds.length = sig[h].parameters then
     [(Scope.mk h (varianceArgs h side) (by simp only [varianceArgs, List.length_mapIdx]; exact hl)).label]
   else []
 
-/-- The hypotheses a declaration reads off its variances: `x ≤ y` for `co`,
-`y ≤ x` for `contra`, both for `inv`, none for `none`. -/
-def varianceHypotheses (h : Fin sig.length) : List (Label sig × Label sig) :=
-  (sig[h].variance.mapIdx fun i d =>
-    let x := Label.familyVar h.val (2 * i) d.1
-    let y := Label.familyVar h.val (2 * i + 1) d.1
-    match d.2 with
+/-- The hypotheses a variance states: `x ≤ y` for `co`, `y ≤ x` for
+`contra`, both for `inv`, none for `none` (`Π_D^V`). -/
+def varianceHypotheses (h : Fin sig.length) (vs : List Variance) : List (Label sig × Label sig) :=
+  ((sig[h].kinds.zip vs).mapIdx fun i (k, v) =>
+    let x := Label.familyVar h.val (2 * i) k
+    let y := Label.familyVar h.val (2 * i + 1) k
+    match v with
     | .co => [(x, y)]
     | .contra => [(y, x)]
     | .inv => [(x, y), (y, x)]
     | .none => []).flatten
 
-/-- The variables of `h`'s declaration, in the order `Var` instantiates them:
+/-- The variables of `h`'s entry, in the order `Var` instantiates them:
 `x₀, y₀, x₁, y₁, …`. -/
 def varianceVariables (h : Fin sig.length) : List (Label sig) :=
-  (sig[h].variance.mapIdx fun i d =>
-    [Label.familyVar h.val (2 * i) d.1, Label.familyVar h.val (2 * i + 1) d.1]).flatten
+  (sig[h].kinds.mapIdx fun i k =>
+    [Label.familyVar h.val (2 * i) k, Label.familyVar h.val (2 * i + 1) k]).flatten
 
-/-- The producer's evidence for the declarations: per head, a table and the
-instances its premises name, and arrow evidence for all of them. -/
-structure VarianceEvidence (sig : Signature) where
-  tables : List (Nat × Table (Label sig)) := []
-  instances : List (Nat × List (Nat × List (List (Label sig)))) := []
-  arrows : Evidence (Label sig) := []
-
-/-- Head `h`'s declaration as a family entry: `h(x⃗) ≤ h(y⃗)` with the
-hypotheses its variances state (§7.5). -/
-def varianceEntry (ev : VarianceEvidence sig) (h : Fin sig.length) : Entry (Label sig) where
+/-- The assumption `a_h^V`: `h(x⃗) ≤ h(y⃗)` under the hypotheses `vs`
+states, with an empty table. -/
+def varianceEntry (h : Fin sig.length) (vs : List Variance) : Entry (Label sig) where
   source := varianceSide h 0
   target := varianceSide h 1
   variables := varianceVariables h
-  hypotheses := varianceHypotheses h
-  table := (ev.tables.lookup h.val).getD []
-  instances := (ev.instances.lookup h.val).getD []
-
-/-- Every head's entry, at its head's index. -/
-def varianceEntries (ev : VarianceEvidence sig) : List (Entry (Label sig)) :=
-  (List.finRange sig.length).map (varianceEntry ev)
+  hypotheses := varianceHypotheses h vs
 
 def interleave : List α → List α → List α
   | a :: as, b :: bs => a :: b :: interleave as bs
   | _, _ => []
 
 /-- **`Var` as a premise.** A label `h(A⃗)` and a label `h(B⃗)` of the target
-propose the instance of `h`'s declaration at `x⃗ := A⃗`, `y⃗ := B⃗`. Only a
-proposal: the premise holds when it is checked like any instance, each
-hypothesis discharged by a table pair, a subset or a hypothesis. -/
+propose the instance of `h`'s entry at `x⃗ := A⃗`, `y⃗ := B⃗`. Only a
+proposal: the premise holds when it is checked like any instance. -/
 def varGen (l : Label sig) (B : List (Label sig)) : List (Nat × List (List (Label sig))) :=
   match l.view with
   | .application a => B.filterMap fun b => match b.view with
@@ -238,60 +238,354 @@ def varGen (l : Label sig) (B : List (Label sig)) : List (Nat × List (List (Lab
     | _ => none
   | _ => []
 
-/-- Each head declares one kind and variance per parameter. -/
-def declarationsOk (sig : Signature) : Bool :=
-  (List.finRange sig.length).all fun h => sig[h].variance.length == sig[h].parameters
+/-! ### Candidates: the polarity equations -/
 
-/-- The declarations cite each other by head index. -/
-def varianceLook (ev : VarianceEvidence sig) : Lookup (Label sig) := fun k => (varianceEntries ev)[k]?
+/-- The variance at a position of polarity `p` under a head of variance `q`
+at that argument. -/
+def compose : Variance → Variance → Variance
+  | _, .none => .none
+  | .none, _ => .none
+  | .co, q => q
+  | .contra, .co => .contra
+  | .contra, .contra => .co
+  | .contra, .inv => .inv
+  | .inv, _ => .inv
 
-/-- **The declarations, checked once**: every head's entry valid, together,
-their premises drawing on each other through `Var`. -/
-def Equations.checkVariance (equations : Equations) (ev : VarianceEvidence equations.signature) : Bool :=
-  declarationsOk equations.signature &&
-    variablesOk (some equations.renaming) (varianceEntries ev) &&
-    checkEntries equations.graph (some equations.renaming) [] varGen (varianceLook ev)
-      (varianceEntries ev) ev.arrows
+/-- The join of the lattice `none < co, contra < inv`. -/
+def join : Variance → Variance → Variance
+  | .none, v => v
+  | v, .none => v
+  | .co, .co => .co
+  | .contra, .contra => .contra
+  | _, _ => .inv
 
-/-- The heads whose declaration fails, each checked against all the others:
-the located refusal. -/
-def Equations.varianceRefused (equations : Equations) (ev : VarianceEvidence equations.signature) :
-    List Nat :=
-  (List.finRange equations.signature.length).filterMap fun h =>
-    if equations.signature[h].variance.length == equations.signature[h].parameters &&
-        checkEntries equations.graph (some equations.renaming) [] varGen (varianceLook ev)
-          [varianceEntry ev h] ev.arrows then none
-    else some h.val
+private def arrowPolar (a : Arrow α) : List (Variance × α) :=
+  (.contra, a.receiver) :: a.arguments.map (.contra, ·) ++ [(.co, a.result)]
 
-/-- Equations whose variance declarations have been checked. -/
+private def restPolar (a : RestArrow α) : List (Variance × α) :=
+  (.contra, a.receiver) :: a.arguments.1.map (.contra, ·) ++
+    [(.contra, a.arguments.2), (.co, a.result)]
+
+private def sigPolar (s : MethodMembers.Sig α) : List (Variance × α) :=
+  s.calls.flatMap (fun m => m.arguments.map (.contra, ·) ++ [(.co, m.result)]) ++
+    s.rests.flatMap (fun m => m.arguments.1.map (.contra, ·) ++
+      [(.contra, m.arguments.2), (.co, m.result)]) ++
+    s.schemes.map (.co, ·)
+
+/-- Each operand of a clause with the polarity of its position: `co` under
+results and readonly positions, `contra` under parameters and receivers,
+`inv` under writable fields, cells and mutable elements. -/
+def clausePolar : Clause α → List (Variance × α)
+  | .list a bs => (a :: bs).flatMap fun t => t.operands.map ((if t.readonly then .co else .inv), ·)
+  | .pack a bs => (a :: bs).flatMap fun t => t.operands.map (.co, ·)
+  | .refs a bs vs os ms _ =>
+    (a ++ bs.flatten).map (fun f => (.inv, f.2)) ++ vs.map (fun f => (.co, f.2)) ++
+      os.map (fun o => ((if o.readonly then .co else .inv), o.type)) ++ ms.flatMap sigPolar
+  | .dict a bs vs ds os ms _ cs =>
+    (a ++ bs.flatten).map (fun f => (.inv, f.2)) ++ vs.map (fun f => (.co, f.2)) ++
+      ds.map (fun f => (.co, f.2)) ++
+      os.map (fun o => ((if o.readonly then .co else .inv), o.type)) ++ ms.flatMap sigPolar ++
+      cs.map (fun f => (.inv, f.2))
+  | .arrs L S => L.flatMap arrowPolar ++ S.flatMap restPolar
+  | .callable a bs L S =>
+    (a ++ bs.flatten).map (fun f => (.inv, f.2)) ++ L.flatMap arrowPolar ++ S.flatMap restPolar
+  | .ctors L S => L.flatMap (fun q => q.1.map (.contra, ·) ++ [(.co, q.2)]) ++
+      S.flatMap fun q => q.1.map (.contra, ·) ++ [(.contra, q.2.1), (.co, q.2.2)]
+  | _ => []
+
+/-- A template's operands with their polarities; a scheme's bounds are `inv`. -/
+def rowPolar : GraphRow Tree (List Tree) → List (Variance × List Tree)
+  | .clauses cs => cs.flatMap clausePolar
+  | .scheme _ sigs bounds rests =>
+    sigs.flatMap arrowPolar ++ bounds.map (fun b => (.inv, b.2)) ++ rests.flatMap restPolar
+  | _ => []
+
+/-- The parameters a tree reads at polarity `p`, an application's argument
+composed with its head's variance there (`vOf`). -/
+partial def treePolar (vOf : Nat → Nat → Variance) (p : Variance) : Tree → List (Nat × Variance)
+  | .argument i => [(i, p)]
+  | .app g args =>
+    (args.toList.zipIdx).flatMap fun (ts, k) =>
+      let q := compose p (vOf g k)
+      if q == .none then [] else ts.toList.flatMap (treePolar vOf q)
+  | .meet ps => ps.toList.flatMap (treePolar vOf p)
+  | _ => []
+
+/-- A head's template as trees. -/
+def Equations.rawBody (equations : Equations) (h : Fin equations.signature.length) :
+    GraphRow Tree (List Tree) :=
+  (equations.body h).1.map (fun r => r.1.1) (·.map (·.1))
+
+/-- The heads a tree applies. -/
+partial def Tree.heads : Tree → List Nat
+  | .app g args => g :: args.toList.flatMap fun ts => ts.toList.flatMap Tree.heads
+  | .meet ps => ps.toList.flatMap Tree.heads
+  | _ => []
+
+/-- The heads a head's template applies: its edges in the reference graph. -/
+def Equations.references (equations : Equations) (h : Fin equations.signature.length) : List Nat :=
+  (((equations.rawBody h).operands).flatten.flatMap Tree.heads).eraseDups
+
+/-- One round of the polarity equations for a component's members, the
+other heads at their variances. -/
+def Equations.polarityRound (equations : Equations) (vOf : Nat → Nat → Variance)
+    (members : List (Fin equations.signature.length)) (v : List (Nat × List Variance)) :
+    List (Nat × List Variance) :=
+  let current (g k : Nat) : Variance := match v.lookup g with
+    | some vs => vs.getD k .inv
+    | none => vOf g k
+  members.map fun h =>
+    let reads := (rowPolar (equations.rawBody h)).flatMap fun (p, U) => U.flatMap (treePolar current p)
+    (h.val, (List.range equations.signature[h].parameters).map fun i =>
+      reads.foldl (fun acc (j, q) => if j == i then join acc q else acc) .none)
+
+/-- The least fixpoint from `none`. Each round that changes something raises
+an entry of a lattice of height two, so `2 × entries + 1` rounds reach it;
+without a fixpoint the candidates are `inv`, which the check then decides. -/
+def Equations.polarity (equations : Equations) (vOf : Nat → Nat → Variance)
+    (members : List (Fin equations.signature.length)) : List (Nat × List Variance) :=
+  let start := members.map fun h =>
+    (h.val, (List.range equations.signature[h].parameters).map fun _ => Variance.none)
+  let rounds := 2 * (start.map (·.2.length)).sum + 1
+  let rec go : Nat → List (Nat × List Variance) → List (Nat × List Variance)
+    | 0, v => v.map fun (h, vs) => (h, vs.map fun _ => .inv)
+    | n + 1, v =>
+      let next := equations.polarityRound vOf members v
+      if next == v then v else go n next
+  go rounds start
+
+/-! ### The check -/
+
+/-- Arrow evidence for a family's pairs: every source signature for every
+target signature, the target's renamed to the source's binders. Only
+proposed: `checkEntries` accepts the evidence it checks. -/
+def Equations.arrowCandidates (equations : Equations)
+    (pairs : List (List (Label equations.signature) × List (Label equations.signature))) :
+    Evidence (Label equations.signature) :=
+  pairs.flatMap fun (A, B) =>
+    ((sourceClauses equations.graph A).flatMap fun a => (clausesOf equations.graph B).flatMap fun b =>
+      match a, b with
+      | .arrs L _, .arrs M _ => M.flatMap fun q => L.map fun p => (L, (q, ArrowCert.source p))
+      | _, _ => []) ++
+    (A.flatMap fun i => B.flatMap fun j => match equations.graph.schemes i, equations.graph.schemes j with
+      | some s, some s' =>
+        let σ := s'.binders.zip (s.binders.map fun p => [p])
+        (s'.signatures.map (Arrow.map (equations.renaming.substitute σ)) ++ s'.signatures).flatMap fun q =>
+          s.signatures.map fun p => (s.signatures, (q, ArrowCert.source p))
+      | _, _ => [])
+
+/-- Variance entries already checked, each sound, by head. -/
+structure CheckedVariances (equations : Equations) where
+  entries : List (Nat × List Variance × Entry (Label equations.signature)) := []
+  sound : ∀ p ∈ entries, EntrySound equations.graph p.2.2 ∧ HypParams equations.graph p.2.2 := by
+    intro _ h; cases h
+
+def CheckedVariances.entry {equations : Equations} (c : CheckedVariances equations) (k : Nat) :
+    Option (Entry (Label equations.signature)) :=
+  (c.entries.lookup k).map (·.2)
+
+theorem CheckedVariances.entry_sound {equations : Equations} (c : CheckedVariances equations)
+    {k : Nat} {e : Entry (Label equations.signature)} (h : c.entry k = some e) :
+    EntrySound equations.graph e ∧ HypParams equations.graph e := by
+  unfold CheckedVariances.entry at h
+  cases hl : c.entries.lookup k with
+  | none => simp [hl] at h
+  | some p =>
+    simp only [hl, Option.map_some, Option.some.injEq] at h
+    subst h
+    exact c.sound (k, p) (mem_of_lookup hl)
+
+/-- The entries of candidates, by head. -/
+def candidateEntries (equations : Equations) (cands : List (Nat × List Variance)) :
+    List (Nat × List Variance × Entry (Label equations.signature)) :=
+  cands.filterMap fun (h, vs) =>
+    if hh : h < equations.signature.length then some (h, vs, varianceEntry ⟨h, hh⟩ vs) else none
+
+/-- The entries a component's check cites: its members' candidates, then the
+components checked before it. -/
+def componentLook (equations : Equations)
+    (F : List (Nat × List Variance × Entry (Label equations.signature)))
+    (dep : Nat → Option (Entry (Label equations.signature))) : Lookup (Label equations.signature) :=
+  fun k => match F.lookup k with
+    | some p => some p.2
+    | none => dep k
+
+/-- `Valid` for the entries `F`, citing `F` and the earlier components. -/
+def Equations.validVariances (equations : Equations)
+    (F : List (Nat × List Variance × Entry (Label equations.signature)))
+    (dep : Nat → Option (Entry (Label equations.signature))) (checked : List (Entry (Label equations.signature))) :
+    Bool :=
+  checkEntries equations.graph (some equations.renaming) [] varGen (componentLook equations F dep)
+    checked (equations.arrowCandidates (checked.flatMap (·.pairs)))
+
+/-- Steps 3 and 4: check each member against the candidates; a failing
+member becomes `inv` at every parameter, and one failing at `inv` is dropped
+(it has no variance, and `Var` does not apply to it). -/
+def Equations.settle (equations : Equations) (dep : Nat → Option (Entry (Label equations.signature))) :
+    Nat → List (Nat × List Variance) → List (Nat × List Variance)
+  | 0, _ => []
+  | n + 1, cands =>
+    let F := candidateEntries equations cands
+    let failing := F.filter fun p => !equations.validVariances F dep [p.2.2]
+    if failing.isEmpty then cands else
+    equations.settle dep n (cands.filterMap fun (h, vs) =>
+      if failing.any (·.1 == h) then
+        if vs.all (· == .inv) then none else some (h, vs.map fun _ => .inv)
+      else some (h, vs))
+
+theorem componentLook_cases (equations : Equations)
+    (F : List (Nat × List Variance × Entry (Label equations.signature)))
+    (dep : Nat → Option (Entry (Label equations.signature)))
+    (hdep : ∀ k e, dep k = some e → EntrySound equations.graph e ∧ HypParams equations.graph e)
+    (k : Nat) (e : Entry (Label equations.signature)) (h : componentLook equations F dep k = some e) :
+    e ∈ F.map (·.2.2) ∨ (EntrySound equations.graph e ∧ HypParams equations.graph e) := by
+  unfold componentLook at h
+  cases hl : F.lookup k with
+  | none => simp only [hl] at h; exact .inr (hdep k e h)
+  | some p =>
+    simp only [hl, Option.some.injEq] at h
+    subst h
+    exact .inl (List.mem_map.mpr ⟨(k, p), mem_of_lookup hl, rfl⟩)
+
+/-- **One component's variances.** Candidates from the polarity equations,
+settled, and the result checked as a whole; what fails that check keeps no
+variance. A head of another component is read through `earlier`, the
+checked variances of its own component (empty for one not checked before). -/
+def Equations.componentVariances (equations : Equations) (members : List (Fin equations.signature.length))
+    (earlier : Nat → CheckedVariances equations) : CheckedVariances equations :=
+  let dep (g : Nat) : Option (Entry (Label equations.signature)) := (earlier g).entry g
+  let vOf (g k : Nat) : Variance := match ((earlier g).entries.lookup g) with
+    | some p => p.1.getD k .inv
+    | none => .inv
+  let generic := members.filter fun h => equations.signature[h].parameters > 0
+  let cands := equations.settle dep (2 * generic.length + 1) (equations.polarity vOf generic)
+  let F := candidateEntries equations cands
+  if hv : variablesOk (some equations.renaming) (F.map (·.2.2)) = true ∧
+      equations.validVariances F dep (F.map (·.2.2)) = true then
+    { entries := F
+      sound := by
+        intro p hp
+        have hall := checkEntries_entries_sound hv.2 hv.1
+          (componentLook_cases equations F dep fun k e h => (earlier k).entry_sound h)
+        exact ⟨hall p.2.2 (List.mem_map.mpr ⟨p, hp, rfl⟩),
+          (variablesOk_sound hv.1).params (List.mem_map.mpr ⟨p, hp, rfl⟩)⟩ }
+  else {}
+
+/-! ### Strongly connected components -/
+
+structure Tarjan where
+  index : Array (Option Nat)
+  low : Array Nat
+  onStack : Array Bool
+  stack : List Nat := []
+  next : Nat := 0
+  /-- Components as found: each after every component it reaches. -/
+  components : Array (List Nat) := #[]
+
+/-- Tarjan's algorithm from `v`. Untrusted: a component list that is wrong
+only leaves a dependency unchecked when its dependents are checked, so they
+fail the check and become invariant or keep no variance. -/
+partial def Tarjan.visit (succ : Nat → List Nat) (v : Nat) : StateM Tarjan Unit := do
+  let s ← get
+  set { s with index := s.index.set! v (some s.next), low := s.low.set! v s.next,
+               onStack := s.onStack.set! v true, stack := v :: s.stack, next := s.next + 1 }
+  for w in succ v do
+    let s ← get
+    match s.index[w]? with
+    | some none =>
+      Tarjan.visit succ w
+      let s ← get
+      set { s with low := s.low.set! v (min s.low[v]! s.low[w]!) }
+    | some (some iw) =>
+      if s.onStack[w]! then set { s with low := s.low.set! v (min s.low[v]! iw) }
+    | none => pure ()
+  let s ← get
+  if some s.low[v]! == s.index[v]! then
+    let (comp, rest) := s.stack.span (· != v)
+    let comp := v :: comp
+    let rest := rest.drop 1
+    set { s with stack := rest, onStack := comp.foldl (fun a w => a.set! w false) s.onStack,
+                 components := s.components.push comp }
+
+/-- The strongly connected components of the reference graph, dependencies
+first. -/
+def Equations.components (equations : Equations) : Array (List Nat) :=
+  let n := equations.signature.length
+  let succ (h : Nat) : List Nat :=
+    if hh : h < n then (equations.references ⟨h, hh⟩).filter (· < n) else []
+  let init : Tarjan := { index := Array.replicate n none, low := Array.replicate n 0,
+                         onStack := Array.replicate n false }
+  let run : StateM Tarjan Unit := (List.range n).forM fun v => do
+    if (← get).index[v]!.isNone then Tarjan.visit succ v
+  (run.run init).2.components
+
+/-! ### Variances, on demand -/
+
+/-- **The heads' variances**, one lazily computed value per component. A
+component's value is computed the first time a check reads one of its heads
+(or of a component depending on it), and then reused. -/
 structure Variances (equations : Equations) where
-  evidence : VarianceEvidence equations.signature
-  checked : equations.checkVariance evidence = true
+  /-- The component of each head. -/
+  component : Array Nat
+  /-- Per component, its checked variances. -/
+  results : Array (Thunk (CheckedVariances equations))
 
-/-- Check the declarations once, keeping the result. -/
-def Variances.check? (equations : Equations) (ev : VarianceEvidence equations.signature) :
-    Option (Variances equations) :=
-  if h : equations.checkVariance ev = true then some ⟨ev, h⟩ else none
+/-- Compute the components; their variances wait until read. -/
+def Equations.variances (equations : Equations) : Variances equations :=
+  let comps := equations.components
+  let component := comps.size.fold (init := Array.replicate equations.signature.length 0)
+    fun c _ acc => (comps[c]!).foldl (fun a h => a.set! h c) acc
+  let members (c : Nat) : List (Fin equations.signature.length) :=
+    (comps[c]!).filterMap fun h =>
+      if hh : h < equations.signature.length then some ⟨h, hh⟩ else none
+  let results := comps.size.fold (init := (#[] : Array (Thunk (CheckedVariances equations))))
+    fun c _ acc =>
+      -- Components are found dependencies first: a head read by this one
+      -- belongs to an earlier component or to this one.
+      let earlier (g : Nat) : CheckedVariances equations := match component[g]? with
+        | some c' => if c' < c then (match acc[c']? with
+          | some t => t.get
+          | none => {}) else {}
+        | none => {}
+      acc.push (Thunk.mk fun _ => equations.componentVariances (members c) earlier)
+  { component, results }
 
-/-- **Checked declarations are sound**: each head's entry holds wherever its
-hypotheses do (§7.4). -/
-theorem Variances.sound {equations : Equations} (v : Variances equations) :
-    ∀ e ∈ varianceEntries v.evidence, EntrySound equations.graph e ∧ HypParams equations.graph e := by
-  have h := v.checked
-  simp only [Equations.checkVariance, Bool.and_eq_true] at h
-  intro e he
-  exact ⟨checkEntries_entries_sound h.2 h.1.2
-      (fun k e hk => .inl (List.mem_of_getElem? hk)) e he,
-    (variablesOk_sound h.1.2).params he⟩
+/-- The checked variances of the component holding `k`. -/
+def Variances.checkedAt {equations : Equations} (v : Variances equations) (k : Nat) :
+    CheckedVariances equations :=
+  match v.component[k]? with
+  | some c => match v.results[c]? with
+    | some t => t.get
+    | none => {}
+  | none => {}
 
-/-- The checked declarations as the entries instances cite, by head index. -/
+/-- Head `k`'s entry, if its variance checked. -/
+def Variances.entry {equations : Equations} (v : Variances equations) (k : Nat) :
+    Option (Entry (Label equations.signature)) :=
+  (v.checkedAt k).entry k
+
+/-- Head `k`'s computed variance: one per parameter, `none` when no variance
+of it checked. -/
+def Variances.of {equations : Equations} (v : Variances equations) (k : Nat) :
+    Option (List Variance) :=
+  ((v.checkedAt k).entries.lookup k).map (·.1)
+
+/-- **Computed variances are valid** (Theorem 1, RECURSIVE-EQUATIONS §4.3):
+each entry the computation keeps holds wherever its hypotheses do. -/
+theorem Variances.sound {equations : Equations} (v : Variances equations) {k : Nat}
+    {e : Entry (Label equations.signature)} (h : v.entry k = some e) :
+    EntrySound equations.graph e ∧ HypParams equations.graph e :=
+  (v.checkedAt k).entry_sound h
+
+/-- The computed variances as the entries instances cite, by head index. -/
 def Variances.base {equations : Equations} (v : Variances equations) : Base equations.graph where
   size := equations.signature.length
-  entry k := (varianceEntries v.evidence)[k]?
-  sound k e hk := v.sound e (List.mem_of_getElem? hk)
+  entry := v.entry
+  sound _ _ h := v.sound h
 
-/-- **Family subtyping on equations.** A certificate's entries may use `Var`
-on every declared head; the claim is a pair of a variable-free entry. -/
+/-- **Family subtyping on equations.** A certificate's premises may use `Var`
+on every head whose variance the checker computes; the claim is a pair of a
+variable-free entry. -/
 def Equations.checkFamily (equations : Equations) (v : Variances equations)
     (S T : List (Label equations.signature)) (c : FamilyCertificate (Label equations.signature)) :
     Bool :=
@@ -305,8 +599,9 @@ theorem Equations.checkFamily_sound (equations : Equations) (v : Variances equat
   checkFamilyUsing_sound h
 
 /-- **The structural `Var` rule.** `h(A⃗) ≤ h(B⃗)` by one derivation per
-hypothesis of `h`'s declaration, in order: `Aᵢ ≤ Bᵢ` for `co`, `Bᵢ ≤ Aᵢ` for
-`contra`, both for `inv`, none for `none`. `h` is not unfolded. -/
+hypothesis of `h`'s computed variance, in order: `Aᵢ ≤ Bᵢ` for `co`,
+`Bᵢ ≤ Aᵢ` for `contra`, both for `inv`, none for `none`. `h` is not
+unfolded. -/
 def Equations.checkVar (equations : Equations) (v : Variances equations)
     (S T : List (Label equations.signature)) (proofs : List (Proof (Label equations.signature))) :
     Bool :=

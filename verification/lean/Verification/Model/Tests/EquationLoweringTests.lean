@@ -5,8 +5,8 @@ import Verification.Model.Source.EquationStore
 `Pair`, the recursive alias `Box`, a class's generic methods and an upstream
 Skip runtime document. The fixtures are the parser's documents for pipeline
 cases, spans zeroed. What a pipeline case cannot show is kept here: the
-number of heads (no family is enumerated), the proposed variances, and the
-refusals no source reaches alone. -/
+number of heads (no family is enumerated), the variances the checker
+computes for them, and the refusals no source reaches alone. -/
 namespace Verification.Model.EquationLoweringTests
 open Lean EquationGraphs EquationLowering
 
@@ -30,13 +30,14 @@ def claimsDoc (labels : List Json) : Json :=
 def head? (L : SourceLowering) (name : String) : Option Nat :=
   (L.store.heads.toList.map (·.name)).idxOf? name
 
+/-- The variance the checker computes for a head of the frozen equations. -/
 def variance? (L : SourceLowering) (name : String) : Option (List Variance) :=
-  (head? L name).bind fun h => (L.store.variances[h]?).map (·.toList)
+  match EquationStore.freeze L.store with
+  | .ok F => (head? L name).bind fun h => F.equations.variances.of h
+  | .error _ => none
 
 def binders? (L : SourceLowering) (name : String) : Option (List String) :=
   (head? L name).bind fun h => (L.store.heads[h]?).map (·.binders.map (·.name))
-
-def checked (L : SourceLowering) : Bool := L.refused.isEmpty
 
 def annotation? (L : SourceLowering) (path : String) : Option (List Tree) := L.annotations.lookup path
 
@@ -67,9 +68,9 @@ def refusal (doc : Json) : String := match source doc (claimsDoc []) with
   (head? L "PromiseLike.\"then\"").isSome &&
   binders? L "Promise.\"then\"" == some ["TResult1", "TResult2"]
 
--- The proposed variances check, `Promise` and `PromiseLike` covariant.
+-- The computed variances: `Promise` and `PromiseLike` covariant.
 #guard run promiseDoc [] fun L =>
-  checked L && variance? L "Promise" == some [.co] && variance? L "PromiseLike" == some [.co] &&
+  variance? L "Promise" == some [.co] && variance? L "PromiseLike" == some [.co] &&
   variance? L "Promise.\"catch\"" == some [.co]
 
 -- The primitive values' heads come first, as `LabelStore.Labels` requires.
@@ -102,9 +103,9 @@ def promiseLikeNever : Json := Json.mkObj [("decl", 1), ("args", Json.arr #[Json
 -- `push<U>(u: U): Pair<[T, U]>` is `Pair.push(arg 0)` binding `U`, whose
 -- result applies `Pair` to the tuple head lifted over `T` and `U`: the family
 -- grows by application, and the heads stay finitely many. `Pair` is
--- invariant through the mutable tuple, as its declaration checks.
+-- invariant through the mutable tuple.
 #guard run pairDoc [] fun L =>
-  L.store.heads.size == 51 && checked L &&
+  L.store.heads.size == 51 &&
   variance? L "Pair" == some [.inv] &&
   (head? L "Pair.\"push\"").bind (fun h => L.store.heads[h]?.map fun d =>
     (d.kinds.length, d.binders.map (·.name))) == some (1, ["U"])
@@ -118,7 +119,7 @@ def boxIndex : Nat := 2
 def boxNever : Json := Json.mkObj [("decl", boxIndex), ("args", Json.arr #[Json.arr #[]])]
 #guard run boxDoc [.arr #[Json.mkObj [("decl", boxIndex), ("args", Json.arr #[.arr #[boxNever]])]]] fun L =>
   match head? L "Box" with
-  | some b => checked L && variance? L "Box" == some [.inv] && claimed L == [[mkApp b [[mkApp b [[]]]]]]
+  | some b => variance? L "Box" == some [.inv] && claimed L == [[mkApp b [[mkApp b [[]]]]]]
   | none => false
 
 /-! ### Unguarded aliases -/
@@ -155,7 +156,7 @@ def unguardedDoc : Json := parse r#"{
 -- closure's scheme binds when the unit is extracted.
 #guard run classDoc [] fun L =>
   match head? L "Helper.\"pick\"" with
-  | some _ => checked L && binders? L "Helper.\"pick\"" == some ["V"] &&
+  | some _ => binders? L "Helper.\"pick\"" == some ["V"] &&
     (match annotation? L "/init/0/bindings/0/init/params/0/type" with
       | some [t] => isPlaceholder t && annotation? L "/init/0/bindings/0/init/result" == some [t]
       | _ => false)
@@ -163,13 +164,15 @@ def unguardedDoc : Json := parse r#"{
 
 /-! ### An upstream Skip runtime document -/
 
--- `sum-collections`' declarations lower, their declared bounds checked. The
--- variance check refuses the heads whose templates meet a parameter with a
--- type (`T & DepSafe`): a family entry relates `meet(x, B) ≤ meet(y, B)`
--- only through a table pair, and a meet target is read part by part without
--- the entry's hypotheses (`MeetTarget`), so none is valid even as
--- invariant. This is a kernel gap, not a lowering one.
+-- `sum-collections`' declarations lower, their declared bounds checked, and
+-- their variances are computed. The heads whose templates meet a parameter
+-- with a type (`T & DepSafe`) relate `x & B` to `y & B` through the entry's
+-- hypotheses: a meet reads its parameter parts through them (`meetBelow`,
+-- `PartCovers`), in a pair and in a premise (`MeetHyp`).
 #guard run sumDoc [] fun L =>
-  !checked L && L.refused.contains "Values" && L.refused.contains "Reducer"
+  variance? L "Values" == some [.inv] &&
+  variance? L "Reducer" == some [.contra, .inv] &&
+  variance? L "EagerCollection" == some [.inv, .inv] &&
+  variance? L "LazyCollection" == some [.contra, .inv]
 
 end Verification.Model.EquationLoweringTests
