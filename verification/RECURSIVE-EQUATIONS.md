@@ -459,15 +459,21 @@ to parameters and quantified variables by position.
 
 | Concept | Lean |
 | --- | --- |
-| Definitions, types, unfolding, intersection (2) | `Types/EquationGraphs.lean`, `Types/EquationMeets.lean` |
-| Lemma 1 | `Types/EquationSupport.lean` |
-| Lemma 2 | `Types/EquationCongruence.lean` |
-| Lemma 3; instantiation by substitution | `Types/EquationSubstitution.lean`, `Types/EquationCertificates.lean` |
+| Definitions, types and unfolding (2) | [Types/EquationGraphs.lean](lean/Verification/Model/Types/EquationGraphs.lean) |
+| Intersection, meet labels (2, 3.3) | [Types/EquationMeets.lean](lean/Verification/Model/Types/EquationMeets.lean) |
+| Lemma 1, support | [Types/EquationSupport.lean](lean/Verification/Model/Types/EquationSupport.lean) |
+| Lemma 2, congruence of applications | [Types/EquationCongruence.lean](lean/Verification/Model/Types/EquationCongruence.lean) |
+| Lemma 3, substitution | [Types/EquationSubstitution.lean](lean/Verification/Model/Types/EquationSubstitution.lean) |
+| Instantiation by substitution in the subtyping checker | [Types/EquationCertificates.lean](lean/Verification/Model/Types/EquationCertificates.lean) |
 | Quantified signatures (4.1), assumptions and Theorem 1 (4.2) | `Types/PositiveRules.lean`, `Types/PositiveCertificates.lean` |
-| Variance and `Var` (4.3) | `Types/EquationFamilies.lean` |
-| Well-formedness, term spelling | `Types/EquationValidator.lean`, `Types/EquationJson.lean` |
-| Lowering (5) | `Source/EquationLowering.lean` |
-| Tests, controls | `Tests/EquationFamilyTests.lean`, `Tests/EquationTreeTests.lean`, `Tests/EquationLoweringTests.lean` |
+| Variance and `Var` (4.3) | [Types/EquationFamilies.lean](lean/Verification/Model/Types/EquationFamilies.lean) |
+| Well-formedness of equations | [Types/EquationValidator.lean](lean/Verification/Model/Types/EquationValidator.lean) |
+| Term spelling of trees | [Types/EquationJson.lean](lean/Verification/Model/Types/EquationJson.lean) |
+| Lowering source declarations (5) | [Source/EquationLowering.lean](lean/Verification/Model/Source/EquationLowering.lean) |
+| Examples and controls of family subtyping (4) | [Tests/EquationFamilyTests.lean](lean/Verification/Model/Tests/EquationFamilyTests.lean) |
+| Validator refusals and tree round trips | [Tests/EquationTreeTests.lean](lean/Verification/Model/Tests/EquationTreeTests.lean) |
+| Lowering on parser output, with its controls (5) | [Tests/EquationLoweringTests.lean](lean/Verification/Model/Tests/EquationLoweringTests.lean) |
+| Binder roles in lowering (5) | [Tests/DeclarationBinderTests.lean](lean/Verification/Model/Tests/DeclarationBinderTests.lean) |
 
 The wire spellings are in [SOURCE-CLAIMS](SOURCE-CLAIMS.md#encoding) and
 [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md). Progress is recorded in
