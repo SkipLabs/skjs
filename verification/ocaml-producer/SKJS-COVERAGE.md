@@ -4,13 +4,16 @@ How much of what SKJS accepts in its own test suite the pipeline
 (`check.mts`: parser → OCaml producer → Lean search and check) verifies, what
 stops the rest, and where the two disagree because SKJS is wrong.
 
-Measurement checkpoint: September 27, 2026 (full census with SKJS
+Measurement checkpoint: September 29, 2026 (full census with SKJS
 confirmation).
 
-**2,407 of 2,674 SKJS-accepted units verify (90.0%); 1,784 of 2,026
-accepted functions (88.1%).** 286 of the 377 files with an accepted unit
-verify entirely. There are 73 principled refusals, 10 registered SKJS-unsound
-units, 184 gaps and no refusals unexplained by the automatic classifier.
+**2,430 of 2,674 SKJS-accepted units verify (90.9%); 1,811 of 2,026
+accepted functions (89.4%).** 287 of the 377 files with an accepted unit
+verify entirely. There are 78 principled refusals, 10 registered SKJS-unsound
+units, 155 gaps (14 of them under 5 reasons no class entry matches,
+`summary.unmatchedReasons`) and 1 refusal unexplained by the automatic
+classifier (`eagercollection-deep-value-no-oom.ts#build`: evidence search
+found no derivation of a node-typing claim).
 
 `mapArr` and `testMapCallback` fail at the native call: an arbitrary
 one-argument callback supplies no contract for the three actuals `map` passes.
@@ -53,14 +56,14 @@ is not part of `verification/run.sh`.
 
 | Suite | Harness verdict | Files | Units | Accepted | Verified | Accepted functions | Verified functions |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,458 | 2,194 | 1,863 | 1,624 |
-| `tests/callgraph` | no error allowed | 25 | 59 | 59 | 56 | 51 | 48 |
+| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,458 | 2,216 | 1,863 | 1,650 |
+| `tests/callgraph` | no error allowed | 25 | 59 | 59 | 57 | 51 | 49 |
 | `tests/constprop` | no error allowed | 14 | 66 | 66 | 66 | 49 | 49 |
 | `tests/deadcode` | no error allowed | 7 | 27 | 27 | 27 | 16 | 16 |
 | `tests/cfg` | no error allowed | 7 | 22 | 22 | 22 | 21 | 21 |
 | `tests/projects` | expect-error markers, under the project's tsconfig | 24 of 68 | 44 | 34 | 34 | 23 | 23 |
 | `tests/ts-conformance/cases` | lines listed in `reference/*.errors.txt` | 4 | 9 | 8 | 8 | 3 | 3 |
-| **total** | | **480** | **4,110** | **2,674** | **2,407** | **2,026** | **1,784** |
+| **total** | | **480** | **4,110** | **2,674** | **2,430** | **2,026** | **1,811** |
 
 Excluded (79 files, listed in the JSON with reasons): `ts-conformance/not-supported`
 (31) and `callgraph-unsupported` (4) assert only that SKJS reports errors;
@@ -117,10 +120,10 @@ is.
 
 | Phase of first blocker | Units |
 | --- | ---: |
-| verified | 2,407 |
+| verified | 2,430 |
 | source (gate) | 85 |
 | proposal (producer) | 32 |
-| search (Lean) | 150 |
+| search (Lean) | 127 |
 
 **Refusal classes.** The project's goal is that every accepted unit either
 verifies or is refused for a specific, principled reason. Each accepted unit
@@ -188,7 +191,7 @@ unsoundness was reached and refused for its original reason.
 - A derived file is written beside the others, not beside its source, so a
   relative import of a sibling test file (`symbols.ts` importing
   `./symbols-export.js`) does not resolve: 1 unit.
-- `where` is `unknown` for 13 refusals, 12 of them the producer's, which
+- `where` is `unknown` for 14 refusals, 12 of them the producer's, which
   name no location.
 
 ## Refusals by class
@@ -200,11 +203,11 @@ blocker's key is given (`summary.byReason` and `summary.byClass` of
 
 | Class | Units |
 | --- | ---: |
-| verified | 2,407 |
-| principled (P) | 73 |
+| verified | 2,430 |
+| principled (P) | 78 |
 | SKJS unsound (S) | 10 |
-| gap (G) | 184 |
-| unexplained (U) | 0 |
+| gap (G) | 155 |
+| unexplained (U) | 1 |
 | **accepted** | **2,674** |
 
 Reason definitions and justifications live in `CLASSES` in
@@ -218,42 +221,91 @@ First blocker, not every missing feature of a unit:
 
 | Group | Units | Self | Dependency | Files |
 | --- | ---: | ---: | ---: | ---: |
-| generic contracts requiring an unsupported exact representation | 46 | 43 | 3 | 12 |
-| TypeScript refuses the code too (the pipeline follows TypeScript's types) | 38 | 30 | 8 | 24 |
+| TypeScript refuses the code too (the pipeline follows TypeScript's types) | 38 | 30 | 8 | 23 |
 | destructuring and rest/default parameters | 14 | 9 | 5 | 5 |
 | in / instanceof / typeof tests | 14 | 7 | 0 | 6 |
 | classes: modifiers, inheritance, fields, parameter properties, receivers | 14 | 7 | 7 | 6 |
 | implicit index signatures: a record at an index signature (`Closed<T>` read as `T` among them) | 14 | 14 | 0 | 3 |
 | type forms: literal types, keyof, indexed access, mapped, object, index signatures, intersections, method signatures | 11 | 10 | 1 | 7 |
-| generics: constraints, explicit type arguments, rigid types, generic function types | 11 | 7 | 3 | 8 |
 | object growth: a key-adding write on an object another reference may hold, a dynamic index write | 11 | 11 | 0 | 5 |
 | object literal members (methods, accessors, spreads) | 10 | 9 | 0 | 5 |
+| generics: constraints, explicit type arguments, rigid types, generic function types | 10 | 7 | 2 | 7 |
 | calls: overloads, .call, spread arguments, Object.assign, arrow callee | 10 | 6 | 3 | 6 |
 | a named function at a signature binding more parameters, or indifferent to the receiver it requires (its type is its annotated signature) | 9 | 8 | 1 | 5 |
 | arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's | 8 | 8 | 0 | 5 |
+| unclassified: search: reject: source refusal at _: construct signature claim is outside the source annotation | 8 | 3 | 5 | 2 |
 | a non-null assertion on a read at a for...in key (that the object owns the key relates two values) | 8 | 8 | 0 | 1 |
 | cells read at their contract (contents known only as primitives or as no `undefined`, and forgotten across a step that may write them) | 7 | 5 | 0 | 5 |
 | tests on a value of a type parameter or `unknown` (no rule narrows a parameter row to its meet `T & number`; no object identity) | 7 | 7 | 0 | 4 |
 | enums | 6 | 0 | 6 | 1 |
+| equality: objects without a field (no identity), loose equality | 6 | 6 | 0 | 2 |
 | sloppy (non-strict) code | 6 | 4 | 2 | 3 |
 | iterables the program defines: an iterator whose type states no `return`, a spread or a pattern the protocol's lowering does not place, a well-known symbol key other than `Symbol.iterator` | 5 | 4 | 1 | 4 |
-| equality: objects without a field (no identity), loose equality | 4 | 4 | 0 | 2 |
+| await of non-promises and unions (the await bound) | 5 | 5 | 0 | 4 |
+| unclassified: search: reject: source refusal at _: closure signature claim is outside the source annotation | 3 | 1 | 2 | 1 |
+| generic methods: two declarations' instances related, a binder inferred beside an application of it or accumulated in one (Promise) | 3 | 3 | 0 | 1 |
 | relational operators (< <= > >=) and ** | 2 | 1 | 1 | 1 |
+| search: no derivation found (evidence search failed) | 2 | 2 | 0 | 2 |
 | dictionaries: a spread of one, a key `in` found in one | 2 | 2 | 0 | 2 |
 | reads on unions/primitives (field/index read on non-object, string keys) | 2 | 1 | 0 | 2 |
 | invariance: a writable element or field at a wider one (TypeScript relates them covariantly) | 2 | 2 | 0 | 1 |
-| search: no derivation found (evidence search failed) | 1 | 1 | 0 | 1 |
 | compound and update assignments (x++, \|\|=, ??=, a[i] op=) | 1 | 1 | 0 | 1 |
 | an optional key found `undefined` (the key may be absent) | 1 | 1 | 0 | 1 |
+| unclassified: search: reject | 1 | 0 | 0 | 1 |
 | other source forms | 1 | 1 | 0 | 1 |
+| unclassified: search: reject: source refusal at _: the declarations required by this unit cannot be interpreted: GraphCollections: the type argument for EagerCollection's "_" at [117 | 1 | 0 | 1 | 1 |
 | type aliases and names the declaration reader cannot resolve | 1 | 0 | 1 | 1 |
 | library globals as values (Array, Symbol, Error, Promise, Set, Map, Date, JSON, …) | 1 | 1 | 0 | 1 |
-| **total** | **267** | | | |
+| **total** | **244** | | | |
+
+## Performance on the pipeline cases
+
+Measured September 29, 2026 over the 791 cases of [cases.mts](cases.mts),
+on a machine shared with other jobs (load average 12 to 58 during the runs).
+
+**Evidence and check time.** 311 cases reach the check step. For each, the
+bytes of its `evidence.json`, and the wall-clock time of the check step
+(`verifier --check-source-claims`, decoding and checking, one process run
+alone, best of three, process start included):
+
+| | min | median | p90 | p99 | max |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `evidence.json` (bytes) | 1,950 | 43,516 | 183,842 | 445,036 | 1,190,824 |
+| check step (ms) | 23 | 32 | 73 | 285 | 519 |
+
+The largest evidence is `sum-values-tuple`'s (1.19 MB, 519 ms), then
+`for-of-program-iterable`'s (1.00 MB, 147 ms); the evidence of all 311 cases
+totals 24.7 MB. Check time does not follow size: `sum-tuple-value` checks
+2,436 bytes in 357 ms.
+
+**Subtyping work** ([RECURSIVE-EQUATIONS §4](../RECURSIVE-EQUATIONS.md#4-subtyping)),
+from `node verification/tools/subtyping-trace.mts` over all cases. Scope: the
+questions are those the check step asks (the checker's `subset` premise
+judgments and `core` family tables); the variance components and fallback
+searches are counted in both verifier runs. The producer's proof search
+(`CertificateProducer`) writes no line besides its fallback searches: its
+strategies, where a coercion no strategy derives costs most (DESIGN row P),
+are not measured.
+
+- 169 questions (146 `subset`, 23 `core`), 28 of them holding. Work (`Inst`
+  steps tried + 1) over size (source + target): median 0.33, p90 0.50, p99
+  5.4, max 8.2.
+- 164 questions take at most twice their size. Five take 19 to 48 `Inst`
+  steps on types of total size 5 to 8 (`library-promise-statics`, a `core`
+  table of sizes 3+3 with 48 steps, all by `Var`; four `subset` questions
+  with 19, 25, 25 and 42 steps). Each of the five computes variances while it
+  is answered, over components of 8 to 36 members. The largest types
+  compared (size 39) take 1 step.
+- `Var`: 177 steps, maximum nesting depth 5.
+- Variance components: 206 computed, 1,813 members, at most 4 polarity
+  rounds, 685 member checks, none weakened to invariant.
+- Fallback searches: 4,009, 20 proved, none refused at growth or at the
+  limit; at most 11 rows and 12 candidate pairs visited.
 
 ## Suspected SKJS unsoundnesses
 
 Divergences: SKJS-accepted units the pipeline parses and proposes, and Lean
-then refuses (150 units in `search`, `summary.reachedButRefused`). The
+then refuses (127 units in `search`, `summary.reachedButRefused`). The
 source-form refusals Lean states explicitly are fragment boundaries. The rest
 were read obligation by obligation: all read are pipeline incompleteness
 except four families below; the fifth is refused by the producer.
