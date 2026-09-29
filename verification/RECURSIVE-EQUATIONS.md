@@ -171,19 +171,16 @@ and simulation between pushdown and finite-state processes
 ([Kučera and Mayr 2010](REFERENCES.md#kučera-and-mayr-2010)) reduces to it.
 The checker therefore decides these questions by $`\textsf{Var}`$ and the
 coinductive fallback, which close every question the examples pose.
-The conjecture that this work is linear per question in the size of the
-types compared ($`\textsf{Var}`$ recursing once per argument, variances
-computed once per definition, the fallback visiting a constant number of
-pairs) is refuted on the examples: work per question does not follow the
-size of the types compared
-([measurement](ocaml-producer/SKJS-COVERAGE.md#performance-on-the-pipeline-cases)).
-Of the 169 questions the check step asks, 164 take at most twice their size
-in $`\textsf{Inst}`$ steps, but five take 19 to 48 steps on types of size 5
-to 8 while variances of components of 8 to 36 members are computed, and the
-largest types compared (size 39) take one. The fallback searches, 4,009 of
-them, visit at most 12 pairs each. The measurement covers the checker's
-questions and the fallback searches; the rest of the producer's proof search
-is not instrumented, and the conjecture says nothing of it.
+We further conjecture that on the examples this work is linear per question
+in the size of the types compared. On the pipeline cases the ratio of
+$`\textsf{Inst}`$ steps to size is at most 8.2 over the 169 questions the
+check step asks
+([measurement](ocaml-producer/SKJS-COVERAGE.md#performance-on-the-pipeline-cases)),
+which is consistent with a linear bound but does not establish one. The
+steps are not one per argument: five questions of size 5 to 8 take 19 to 48
+steps, all by $`\textsf{Var}`$, while variances of components of 8 to 36
+members are computed. The measurement covers the checker's questions and
+the fallback searches, not the producer's proof search.
 
 ### 4.1 Quantified signatures
 
