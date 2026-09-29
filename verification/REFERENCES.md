@@ -211,7 +211,7 @@ It placed the removed equality-completeness result (`semantic_eq_iff`).
 still finite graphs checked coinductively over a table of assumed pairs
 ([POSITIVE-TYPES: subtyping](POSITIVE-TYPES.md#subtyping)), and family entries
 lift those pairs to pairs with parameters
-([RECURSIVE-EQUATIONS: related work](RECURSIVE-EQUATIONS.md#2-what-is-delayed-and-related-work)).
+([RECURSIVE-EQUATIONS: related work](RECURSIVE-EQUATIONS.md#7-related-work)).
 
 ### Brandt and Henglein 1998
 
@@ -236,8 +236,8 @@ type definitions, and of the non-regular ones (such as `Promise`, whose
 `catch` returns `Promise<T | R>`) as those that unfold to infinitely many
 distinct subtrees. No finite table presents a non-regular definition, which
 is why each declaration becomes one equation with symbolic applications.
-**Discussed in** [RECURSIVE-EQUATIONS: the problem](RECURSIVE-EQUATIONS.md#1-the-problem-non-regular-families),
-[related work](RECURSIVE-EQUATIONS.md#2-what-is-delayed-and-related-work).
+**Discussed in** [RECURSIVE-EQUATIONS: the problem](RECURSIVE-EQUATIONS.md#1-the-problem),
+[related work](RECURSIVE-EQUATIONS.md#7-related-work).
 
 ### Kennedy and Pierce 2007
 
@@ -249,8 +249,8 @@ Developments of Object-Oriented Languages (FOOL/WOOD), 2007.
 subtyping with variance over expanding (non-regular) definitions is
 undecidable in general, so the producer proposes the hypotheses of a family
 entry and the checker only checks them.
-**Discussed in** [RECURSIVE-EQUATIONS: related work](RECURSIVE-EQUATIONS.md#2-what-is-delayed-and-related-work),
-[family subtyping](RECURSIVE-EQUATIONS.md#7-family-subtyping).
+**Discussed in** [RECURSIVE-EQUATIONS: related work](RECURSIVE-EQUATIONS.md#7-related-work),
+[family subtyping](RECURSIVE-EQUATIONS.md#4-subtyping).
 
 ### Abadi, Cardelli, Curien and Lévy 1991
 
@@ -264,7 +264,7 @@ suspended substitution is, but what it delays is unfolding a definition, not
 substitution: instantiation substitutes into the whole finite template at
 once. The type level has no β-redexes, so only the substitution lemma
 relating syntactic and semantic substitution carries over.
-**Discussed in** [RECURSIVE-EQUATIONS: related work](RECURSIVE-EQUATIONS.md#2-what-is-delayed-and-related-work).
+**Discussed in** [RECURSIVE-EQUATIONS: related work](RECURSIVE-EQUATIONS.md#7-related-work).
 
 ### Milner 1984
 

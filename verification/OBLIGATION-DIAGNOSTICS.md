@@ -131,7 +131,7 @@ named row by its name and never expands it.
 - **The finite table.** Its labels are row positions already, so the
   projection is the identity: every row, in order, positions unchanged, and no
   `names`. A sub-table would renumber rows.
-- **Equation labels** ([RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md#92-request-protocol-and-evidence)).
+- **Equation labels** ([RECURSIVE-EQUATIONS](REQUEST-PROTOCOL.md)).
   A label is a tree over infinitely many applications, so the projection
   chooses positions for $`M`$ and for the rows below them up to $`d`$, and
   names each application.

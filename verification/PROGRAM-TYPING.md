@@ -53,7 +53,7 @@ such a view of its graph labels.
 
 The judgment $\Gamma\vdash_G t:A$ is `HasTyUsing G images`. Its rules are
 stated once, for every proved image checker `images` (an
-[`InstanceImageCheck`](RECURSIVE-EQUATIONS.md#5-instance-images)): the checker
+[`InstanceImageCheck`](RECURSIVE-EQUATIONS.md#3-metatheory)): the checker
 decides only whether an instance table's named images are substitution images,
 and it carries the proof
 
