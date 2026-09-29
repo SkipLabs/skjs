@@ -4,7 +4,6 @@ defaultTargets = ["verifier", "Verification", "cell_claim_tests"]
 [[lean_lib]]
 name = "Verification"
 globs = [
-  "Verification",
   "Verification.Model.Semantics.+",
   "Verification.Model.Types.+",
   "Verification.Model.Programs.+",

@@ -28,8 +28,7 @@ import {
 } from "./edits.mts";
 import path from "node:path";
 // Classify the two producer witnesses independently of verifier acceptance.
-// The complete safe body also has a Lean proof in WriteRefinedRead.lean; the
-// source checker also consumes the generated heap-aware graph certificate.
+// The source checker consumes the generated heap-aware graph certificate.
 
 
 

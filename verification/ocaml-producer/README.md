@@ -1114,11 +1114,8 @@ parameter rows and the assignment `env`, and `meaning G` is the denotation at
 `G.env`. No check reads `env`, so a theorem proved for every graph holds at
 every reassignment `{G with env := η}` (`meaning_reassign`): a derivation that
 types a generic body once, with its binders opaque, is sound at each instance.
-This is what the introduction rule will use, so the soundness proofs are not
-redone for it. `Types/QuantifiedGraphs.lean` proves elimination
-(`scheme_elim`), the introduction principle (`scheme_intro`), and that
-without scheme rows the denotation is the parametric semantics
-(`qDenote_no_schemes`). Parameter and scheme rows are opaque to every check:
+This is what the introduction rule uses, so the soundness proofs are not
+redone for it. Parameter and scheme rows are opaque to every check:
 they have no clauses (`expand` of a type holding one is empty, so
 `Represents` and `Answers` fail), a parameter is below itself, a union holding
 it, and `unknown` (`Opaque` in `Valid`), and test refinement keeps it

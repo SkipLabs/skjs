@@ -1,5 +1,4 @@
 import Verification.Model.Source.RequestJson
-import Verification.Model.Types.QuantifiedGraphs
 
 /-! Parameter and scheme rows are opaque to every check: they have no clauses,
 so no rule reads a clause off them. A parameter is below itself and below

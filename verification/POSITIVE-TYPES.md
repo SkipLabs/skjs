@@ -481,10 +481,9 @@ reassignment; for the whole graph checker this is a theorem,
 `Parametricity.accept_reassign`, and a generic body checked with its binders
 as parameter rows is safe at every assignment of them
 ([Reynolds 1983](REFERENCES.md#reynolds-1983))
-([PROGRAM-TYPING.md](PROGRAM-TYPING.md#overloads-polymorphism-and-binding)). A member of a scheme row meets each instance's signatures
-(`scheme_elim`), and a function meeting them at every instantiation is a
-member (`scheme_intro`). Without scheme rows, meet rows and pack binders this
-is the parametric semantics `denoteP` (`qDenote_no_schemes`).
+([PROGRAM-TYPING.md](PROGRAM-TYPING.md#overloads-polymorphism-and-binding)). A member of a scheme row meets each instance's signatures,
+and a function meeting them at every instantiation is a member: both unfold
+the definition of scheme membership.
 
 Only clause rows have clauses. A type holding a parameter, scheme or meet row
 has no expansion, so no rule that reads a clause (`Represents`, `Answers`, the
@@ -494,8 +493,8 @@ below its clauses; a core table reads it through its clauses
 an instance of which it is a clause row.
 
 Lean: `qDenoteWithArgs G (mixedParameters G)`, `Bounded`, `instanceTWithArgs`,
-`instanceRestsWithArgs`, `NormalGraph.meets`, `NormalGraph.plain_iff` (`Types/PositiveGraphs.lean`,
-`Types/QuantifiedGraphs.lean`); `mixedValues`, `mixedArgs`, `meaning`,
+`instanceRestsWithArgs`, `NormalGraph.meets`, `NormalGraph.plain_iff`
+(`Types/PositiveGraphs.lean`); `mixedValues`, `mixedArgs`, `meaning`,
 `argMeaning` (`Types/PositiveRules.lean`).
 
 ### Finite presentations of application-indexed graphs
@@ -1456,8 +1455,7 @@ alone:
 a bound read at $\eta_0$, outside the binders. The quantifier is inside
 membership of one $v$ at one $n,W$, so it cannot be witnessed by a different
 closure per call, and every row outside the binders, those the captures' types
-use included, means the same at every instance. `QuantifiedGraphs.scheme_intro`
-and `scheme_elim` state introduction and elimination on this meaning. A
+use included, means the same at every instance. A
 generic closure is graph code at a scheme row (`funScheme`): its code is
 checked once at the row's signatures, over the binders' parameter rows, and a
 code table entry holds at every assignment of them (`CodesSound`), so at every
@@ -1466,8 +1464,7 @@ since it reads a binder: the binder is read as the meet of the two parameter
 rows (`dependentMeet`), which an instance maps to the meet of their type
 arguments (`meetOk`).
 
-Lean: `Types/PositiveGraphs.lean` (`schemeSemWithArgs`),
-`Types/QuantifiedGraphs.lean`, `Source/GenericAlias.lean`.
+Lean: `Types/PositiveGraphs.lean` (`schemeSemWithArgs`), `Source/GenericAlias.lean`.
 
 ## Limits
 
@@ -1489,7 +1486,6 @@ Lean: `Types/PositiveGraphs.lean` (`schemeSemWithArgs`),
 - [Types/CallableConjunctions.lean](lean/Verification/Model/Types/CallableConjunctions.lean): bag conjunctions and overloads on one callable value
 - [Types/PositiveNormalization.lean](lean/Verification/Model/Types/PositiveNormalization.lean): the clause language and its finite normalization
 - [Types/PositiveGraphs.lean](lean/Verification/Model/Types/PositiveGraphs.lean): normalization of recursive graphs and the rows' denotation
-- `Types/QuantifiedGraphs.lean`
 - [Types/PositiveRules.lean](lean/Verification/Model/Types/PositiveRules.lean): the declarative subtyping rules and their soundness
 - [Types/PositiveCertificates.lean](lean/Verification/Model/Types/PositiveCertificates.lean): the certificate checker, sound and complete for those rules
 - [Types/GraphRows.lean](lean/Verification/Model/Types/GraphRows.lean): the label-independent row representation

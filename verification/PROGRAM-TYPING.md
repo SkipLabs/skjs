@@ -2377,14 +2377,10 @@ observation is discarded. Read links are invalidated by writes and calls, while
 slot equalities survive. Together these let source lowering discard a receiver
 temporary without losing a write to its original cell.
 
-[WriteRefinedRead.lean](lean/Verification/Model/Programs/WriteRefinedRead.lean)
-assembles allocation, postcondition-aware composition and `write_then_read` to
-prove an allocate-false/write-true/read body safe at true in every admissible
-initial heap. A separate five-step execution establishes its returned value.
-Its null-argument wrapper inhabits `null → true`; the source fixture itself has
-no parameters. [The fixture notes](tests/skjs-incomplete/README.md) distinguish
-this model proof from source verification, which needs an explicit current-true
-claim at the return entry. The original broad entry claim is insufficient.
+The pipeline verifies the allocate-false/write-true/read fixture
+`write-refined-read.ts` with an explicit current-true claim at the return entry;
+[the fixture notes](tests/skjs-incomplete/README.md) explain why the original
+broad entry claim is insufficient.
 
 #### Source observation checkpoints
 
@@ -5594,8 +5590,8 @@ outside its binders, and $\mathsf{Instance}_{G,P}(\eta_0,S,\eta)$ the
 reassignments of its binders within their bounds, $\eta_0$ unchanged outside
 them (`Bounded`), as
 [POSITIVE-TYPES.md](POSITIVE-TYPES.md#quantified-scheme-layer) defines. The exact
-introduction rule **Call-Scheme-I**, implemented by
-`QuantifiedGraphs.scheme_intro`, is
+introduction rule **Call-Scheme-I**, which unfolds the definition of scheme
+membership (`schemeSemWithArgs`), is
 
 ```math
 \frac{
@@ -5614,8 +5610,7 @@ introduction rule **Call-Scheme-I**, implemented by
 The value $v$, step index $n$, world $W$, and outer assignment $\eta_0$ are
 outside the quantifier. The proof is therefore uniform in the binders, and
 captured mutable cells retain the same invariant at every instantiation.
-Fixed-signature elimination **Call-Scheme-E**, implemented by
-`QuantifiedGraphs.scheme_elim`, is
+Fixed-signature elimination **Call-Scheme-E**, by the same unfolding, is
 
 ```math
 \frac{
@@ -5627,7 +5622,7 @@ Fixed-signature elimination **Call-Scheme-E**, implemented by
 }.
 ```
 
-The same `scheme_elim` gives the corresponding conclusion for the rest
+The same premises give the corresponding conclusion for the rest
 signatures, $\mathsf{Rests}(\mathsf{RestSig}_{G,P,\eta}(S),n,W,v)$, from the
 same premises: an instance's contract is both (`instanceTWithArgs`).
 
