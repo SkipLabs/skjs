@@ -58,6 +58,28 @@ that covers what changed, and the wider tier once before committing:
 `run-cases.mts` with no pattern runs every case (~15 s) and is the first part
 of `test.mts`, through the same check.
 
+### Working in a separate git worktree
+
+A new worktree has an empty `verification/lean/.lake`, and its first
+`lake build` compiles all 180 modules from scratch: 3.5–5 minutes on 12
+cores. Clone the main checkout's cache into it instead, before the first
+build:
+
+```sh
+cp -c -R <main checkout>/verification/lean/.lake verification/lean/.lake
+```
+
+On APFS `cp -c` copies on write: it takes a fraction of a second and no disk
+until files change. Lake decides what to rebuild from file contents, not
+timestamps or paths, so the clone stays valid in the new directory. A build
+at the same commit then rebuilds nothing, and an edit rebuilds only the
+changed module and its dependents. The saving is complete when the main
+checkout's cache is built at or near the worktree's commit; otherwise Lake
+rebuilds just the modules that differ. Each worktree keeps its own `.lake`,
+so builds in different worktrees may run in parallel. Nothing else needs
+seeding: Dune restores OCaml builds from its shared cache, and
+`node_modules` can be symlinked from the main checkout (never committed).
+
 `make verify-test` includes the OCaml producer's Dune unit tests and its
 end-to-end source cases, including imports from the pinned upstream source
 tree. Install OCaml and Dune as described in
