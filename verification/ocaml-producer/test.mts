@@ -852,6 +852,20 @@ for (const [file, call] of [
     const result = xs.map(x => x);
     JSON.stringify([result.length, 0 in result, 1 in result]);`, {}, { timeout: 1000 }), "[2,false,false]");
 }
+// A subclass of Array is its instances' `constructor`, so `map` constructs
+// its result through the subclass (ArraySpeciesCreate): the construction the
+// ordinary array construction assumption excludes, and why the pipeline
+// refuses the class (`invalid-array-subclass`).
+{
+  const source = stripTypes(readFileSync(join(here, "examples", "invalid-array-subclass.ts"), "utf8"))
+    .replace(/^export /gm, "");
+  assert.equal(vm.runInNewContext(`${source}\nlet built = 0;
+    class Loud extends Counted { constructor(...args) { super(...args); built++; } }
+    const xs = Loud.from([1, 2]); built = 0;
+    const result = doubled(xs);
+    JSON.stringify([result instanceof Loud, built, Array.from(result)]);`, {}, { timeout: 1000 }),
+    "[true,1,[2,4]]");
+}
 let erasedContract = "";
 let good = "";
 let generic = "";

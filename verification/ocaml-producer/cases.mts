@@ -55,6 +55,8 @@ export const cases: Case[] = [
   negative("invalid-array-own-constructor", "An array intersected with an own constructor field is an empty input contract", /intersection is empty/),
   negative("invalid-array-constructor-write", "An array cannot replace the constructor used by native result construction", /write of 'constructor'/),
   negative("invalid-array-constructor-alias", "A structural alias cannot grant a writable constructor on an array", /binding-annotation/),
+  { file: "invalid-array-subclass", area: "A class extending Array constructs `map`'s result through the subclass: refused on principle under ordinary array construction",
+    kind: "negative", status: "unsupported", phase: "source", diagnostic: /extending the standard library's Array is outside the fragment/ },
   gap("invalid-array-constructor-assign", "Object.assign onto an array is refused before its constructor-write obligation",
     "unsupported", "proposal", /a spread copies.*an array/),
   positive("ordinary-array-construction", "map, filter and slice use standard construction under the realm invariant"),

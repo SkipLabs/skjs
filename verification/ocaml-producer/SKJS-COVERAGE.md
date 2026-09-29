@@ -9,8 +9,8 @@ confirmation).
 
 **2,452 of 2,674 SKJS-accepted units verify (91.7%); 1,822 of 2,026
 accepted functions (89.9%).** 293 of the 377 files with an accepted unit
-verify entirely. There are 85 principled refusals, 10 registered SKJS-unsound
-units and 127 gaps (3 of them under reasons no class entry matches,
+verify entirely. There are 89 principled refusals, 10 registered SKJS-unsound
+units and 123 gaps (3 of them under reasons no class entry matches,
 `summary.unmatchedReasons`); no refusal is unexplained by the automatic
 classifier.
 
@@ -203,9 +203,9 @@ blocker's key is given (`summary.byReason` and `summary.byClass` of
 | Class | Units |
 | --- | ---: |
 | verified | 2,452 |
-| principled (P) | 85 |
+| principled (P) | 89 |
 | SKJS unsound (S) | 10 |
-| gap (G) | 127 |
+| gap (G) | 123 |
 | unexplained (U) | 0 |
 | **accepted** | **2,674** |
 

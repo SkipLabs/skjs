@@ -434,7 +434,8 @@ function reason(text: string): string {
     .replace(/(TypeScript reports an error in a declaration of the source): .*/, "$1")
     .replace(/(TypeScript refuses this code too) .*/, "$1")
     .replace(/(cannot establish) .*/, "$1 …")
-    .replace(/'[^']*'/g, "'_'")
+    // A quoted identifier, never a possessive's apostrophe (`library's`).
+    .replace(/(^|[^\w])'[^']*'/g, "$1'_'")
     .replace(/"[^"]*"/g, '"_"')
     .replace(/\s+/g, " ")
     .trim()
@@ -566,7 +567,7 @@ const CLASSES: ClassEntry[] = [
   { cls: "unexplained", label: "run error or unattributed verification", re: /^\w+: attribution:/,
     why: "no refusal was stated (a crash or timeout is classed here by its status)" },
   // ------------------------------------------------ key-adding write gaps
-  { cls: "gap", label: "a key-adding write on an object another reference may hold", re: /may add the key to an object another reference holds|a key-adding write is typed only on a local's own fresh object/,
+  { cls: "gap", label: "a key-adding write on an object another reference may hold", re: /may add (it|the key) to an object another reference holds|a key-adding write is typed only on a local's own fresh object/,
     why: "typed only on an unaliased local; alias tracking beyond that is open (DESIGN, Next steps)" },
   { cls: "gap", label: "a key-adding write at a runtime string key", re: /the key may spell one the model keeps for itself/,
     why: "the model reserves `[]` and `[[proto]]`; a representation choice, not unsoundness" },
@@ -634,8 +635,10 @@ const CLASSES: ClassEntry[] = [
     why: "a model limit: the model's comparison is of two numbers or two strings; `undefined` or a Boolean converts without running code (to NaN, to 0 or 1), which no rule states (an object's conversion runs code and stays refused, but the refusal does not tell them apart)" },
   { cls: "gap", label: "`this` in sloppy code", re: /a function that reads `this` must be strict code|sloppy code replaces/,
     why: "a model limit: the receiver rule is strict code's; sloppy code's replacement of an undefined or primitive receiver by the global object or a wrapper has no term" },
+  { cls: "principled", label: "`extends Array`", re: /extending the standard library's Array/,
+    why: "a subclass is its instances' `constructor`, so `map`, `filter` and `slice` construct through it (`ArraySpeciesCreate`): the construction the ordinary array construction assumption excludes (DESIGN, Arrays; Refused on principle)" },
   { cls: "gap", label: "`extends` a library constructor", re: /extending the standard library/,
-    why: "a model limit: construction allocates an ordinary object at the class's fields; a library constructor's instance (an array holding the subclass's prototype) has no construction rule, and its members are read at the library type's meaning" },
+    why: "a model limit: construction allocates an ordinary object at the class's fields; a library constructor's instance has no construction rule, and its members are read at the library type's meaning" },
   { cls: "gap", label: "an array pattern over a value that may not be an array", re: /an array pattern over a value that may not be an array/,
     why: "a lowering limit: the pattern reads an array's positions; over a host non-array iterable it needs the reads as steps of `%Iterate:K%` (DESIGN, Next steps, Iteration left open)" },
   { cls: "gap", label: "module storage: `declare let`/`var`, a module-level `let`", re: /`declare let` or `declare var`|module-level `let`/,
