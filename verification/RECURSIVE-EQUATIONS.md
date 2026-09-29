@@ -149,21 +149,12 @@ pair with one more bound variable, without end. The pairs differ only in
 their arguments, so the assumptions are made parametric.
 
 **Soundness, not completeness.** The rules below are sound for the semantic
-inclusion. They are not complete for it, and whether that inclusion is
-decidable is open. Two results about related systems show where complete
-rules become undecidable, and the rules avoid both.
-- Subtyping in F<: is undecidable with its full rule for bounded quantifiers
-  ([Pierce 1994](REFERENCES.md#pierce-1994)). Comparing quantifiers on one
-  fixed pairing, as 4.1 does, is the standard decidable restriction.
-- Nominal subtyping with variance is undecidable once inheritance is
-  expansive ([Kennedy and Pierce 2007](REFERENCES.md#kennedy-and-pierce-2007)).
-  The types here are structural, with no declared inheritance, so the result
-  does not transfer directly. It is the nearest known result to relating
-  expanding definitions such as `Promise`, which 4.3 does through
-  per-position variance only.
-
-Neither result is a theorem about this model's inclusion. They explain the
-choice of restrictions; the price is completeness.
+inclusion, and no sound checker can be complete for it: inclusion is
+undecidable, and not recursively enumerable, already for definitions with
+readonly fields whose arguments grow. On readonly records, inclusion is
+simulation of the unfoldings, which encodes inclusion of simple languages
+([Friedman 1976](REFERENCES.md#friedman-1976)); non-inclusion is
+semi-decidable, level by level. The argument is on paper, not mechanized.
 
 ### 4.1 Quantified signatures
 

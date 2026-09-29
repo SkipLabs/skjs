@@ -247,10 +247,9 @@ Developments of Object-Oriented Languages (FOOL/WOOD), 2007.
 
 **Used for** the nearest known limit on relating expanding definitions:
 nominal subtyping with variance is undecidable once inheritance is
-expansive. The result concerns nominal inheritance, not the structural
-definitions here, so it motivates restricting such relations to
-per-position variance without proving that complete rules would be
-undecidable in this model.
+expansive. The result concerns nominal inheritance; the structural
+inclusion here is undecidable by a separate argument
+([Friedman 1976](#friedman-1976)).
 **Discussed in** [RECURSIVE-EQUATIONS: related work](RECURSIVE-EQUATIONS.md#7-related-work),
 [family subtyping](RECURSIVE-EQUATIONS.md#4-subtyping).
 
@@ -267,6 +266,19 @@ substitution: instantiation substitutes into the whole finite template at
 once. The type level has no β-redexes, so only the substitution lemma
 relating syntactic and semantic substitution carries over.
 **Discussed in** [RECURSIVE-EQUATIONS: related work](RECURSIVE-EQUATIONS.md#7-related-work).
+
+### Friedman 1976
+
+E. P. Friedman. *The inclusion problem for simple languages.* Theoretical
+Computer Science 1(4):297–316, 1976.
+[doi:10.1016/0304-3975(76)90074-8](https://doi.org/10.1016/0304-3975%2876%2990074-8).
+
+**Used for** the undecidability of subtyping: inclusion of simple languages,
+those of one-state real-time deterministic pushdown automata accepting by
+empty stack, is undecidable. Readonly-record definitions with growing
+arguments encode it, since on readonly records inclusion is simulation of
+the unfoldings.
+**Discussed in** [RECURSIVE-EQUATIONS: subtyping](RECURSIVE-EQUATIONS.md#4-subtyping).
 
 ### Milner 1984
 
