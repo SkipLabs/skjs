@@ -199,11 +199,15 @@ covering step needs $`A\le B`$ for operands, it may use:
 - a hypothesis of $`\Pi`$, for a variable of $`A`$;
 - an **instance** of an assumption: $`D\langle\vec\tau\rangle\le D'\langle\vec\sigma\rangle`$
   for a member of $`A`$ and a member of $`B`$, provided every hypothesis of
-  that assumption, instantiated at $`\vec\tau,\vec\sigma`$, is a pair of the
-  table, a subset, or a hypothesis.
+  that assumption, instantiated at $`\vec\tau,\vec\sigma`$, is again a
+  premise: a pair of the table, a subset, a hypothesis, or itself an
+  instance.
 
-Instances are not derived recursively: their hypotheses must already be in
-the table. An assumption is **valid** when its conclusion and its table's
+Instances may discharge their hypotheses by further instances. The
+recursion is on the arguments: an instance's hypotheses compare
+$`\vec\tau`$ and $`\vec\sigma`$, strict subterms of the pair it discharges,
+so it ends. A derivation built this way holds at every step where its
+leaves hold, and its leaves are table pairs, subsets and hypotheses. An assumption is **valid** when its conclusion and its table's
 pairs are covered under these premises. Within it, an intersection
 $`\gamma\land\rho`$ is below $`\delta\land\rho`$ when $`\gamma\le\delta`$ is
 a hypothesis.
@@ -220,8 +224,9 @@ argument lists.
   induction, and hypotheses hold by assumption.
 - **An instance** is the conclusion of its assumption under
   $`\eta'=\eta[\vec\alpha\mapsto⟦\vec\tau⟧^\eta,\vec\beta\mapsto⟦\vec\sigma⟧^\eta]`$.
-  Its hypotheses hold there because they mean the discharging pairs, so
-  induction applies, and Lemma 3 turns the conclusion at $`\eta'`$ into
+  Its hypotheses hold there because they mean their discharging premises,
+  which hold by induction on the step, or, for nested instances, by an inner
+  induction on the arguments; so the outer induction applies, and Lemma 3 turns the conclusion at $`\eta'`$ into
   $`D\langle\vec\tau\rangle\le D'\langle\vec\sigma\rangle`$ at $`\eta`$.
   An assumption may be used at its own variables (`catch` does this):
   substitution is simultaneous.
@@ -238,29 +243,50 @@ tables.
 ### 4.3 Variance
 
 That `Promise` is covariant is a fact about its definition, not about any
-use, so it is established once. Each definition declares a variance for
-each parameter, $`v_i\in\{\mathsf{co},\mathsf{contra},\mathsf{inv},\mathsf{none}\}`$,
-which stands for the assumption
-$`\forall\vec\alpha\vec\beta.\ \Pi_D\Rightarrow D\langle\vec\alpha\rangle\le D\langle\vec\beta\rangle`$
+use, so it is established once. A **variance** assigns each parameter of a
+definition one of $`\mathsf{co},\mathsf{contra},\mathsf{inv},\mathsf{none}`$.
+It stands for the assumption
+$`\forall\vec\alpha\vec\beta.\ \Pi_D\Rightarrow D\langle\vec\alpha\rangle\le D\langle\vec\beta\rangle`$,
 with $`\alpha_i\le\beta_i`$ in $`\Pi_D`$ when $`v_i`$ is co or inv, and
-$`\beta_i\le\alpha_i`$ when it is contra or inv. The declarations of all
-definitions are checked together, once, and may rely on one another. A use
-then compares arguments only:
+$`\beta_i\le\alpha_i`$ when it is contra or inv, and no table. A use then
+compares arguments only:
 
 ```math
 \frac{\forall i.\ \ \tau_i\le\sigma_i\ \ (v_i\in\{\mathsf{co},\mathsf{inv}\})\qquad \sigma_i\le\tau_i\ \ (v_i\in\{\mathsf{contra},\mathsf{inv}\})}
 {D\langle\vec\tau\rangle\le D\langle\vec\sigma\rangle}\ \textsf{Var}
 ```
 
-`Var` is sound as an instance of a valid declaration, by Theorem 1 and
-Lemma 3. Variance is never read from TypeScript, whose method parameters
-are bivariant. A writable field needs both directions, so a definition with
-one is valid only when invariant there. An invariant position is stated
+`Var` is sound as an instance of a valid variance, by Theorem 1 and Lemma 3.
+
+**Computing variances.** The checker computes each definition's variance
+from the definitions alone. Nothing is proposed, and nothing is read from
+TypeScript, whose method parameters are bivariant. Definitions are taken
+in dependency order, one strongly connected component of the reference
+graph at a time.
+- *A definition on no cycle* is checked by one traversal of its body: an
+  application of a definition below it is compared by that definition's
+  variance, recursively on the arguments (4.2).
+- *A cycle*, such as `Promise`, whose `catch` returns $`\mathit{Promise}\langle\alpha\lor\gamma\rangle`$,
+  is checked with its members' candidate variances as assumptions. The
+  assumption is guarded, since every self-reference sits under a
+  constructor.
+
+Candidates start permissive and are weakened where the check fails, on the
+finite lattice $`\mathsf{none}<\mathsf{co},\mathsf{contra}<\mathsf{inv}`$.
+$`\mathsf{inv}`$ is always valid, so the iteration ends in a valid variance.
+A writable field forces $`\mathsf{inv}`$. An invariant position is stated
 with two variables related both ways. A single shared variable would need
 Lemma 2 inside the induction of Theorem 1, at the step being proved.
-Relations between different definitions, such as
-`Promise<T> ≤ PromiseLike<T>`, remain parametric assumptions of the
-certificate, checked by the same rule.
+
+Variances are computed on demand, once per definition, for the definitions
+a check actually compares.
+
+**Other pairs.** When `Var` does not decide a pair, the pair is unfolded
+into the coinductive check of assumed pairs, compared up to renaming of
+bound variables. `Promise⟨number⟩ ≤ PromiseLike⟨number⟩` closes this way:
+its `then` members lead to `Promise⟨ρ⟩ ≤ PromiseLike⟨ρ⟩` for a bound
+$`\rho`$, which recurs only renamed. A pair that recurs with growing
+arguments is refused.
 
 ### 4.4 Example
 
@@ -313,25 +339,21 @@ application, never by new definitions.
 TypeScript reads a record met with a function as one callable object, which
 the model's exact intersection would make empty. Lowering applies that
 reading only to ground intersections, producing a literal definition, never
-an intersection a substitution could later reach. Lowering also proposes
-the variances: the least fixpoint over the definitions on
-$`\mathsf{none}<\mathsf{co},\mathsf{contra}<\mathsf{inv}`$. Writable
-positions give inv, results give co, parameters give contra, and nested
-applications compose. It proposes the tables the declarations need along
-with them. A declaration that fails its check is weakened to inv, which is
-always valid.
+an intersection a substitution could later reach. Lowering proposes no
+variances: the checker computes them (4.3).
 
 ## 6. Trust and acceptance
 
 Untrusted code proposes and a small checker decides, as everywhere in the
 verifier.
 
-- **Proposed:** the definitions, variances, assumptions and their tables,
-  instances, and every certificate.
+- **Proposed:** the definitions, the assumptions a certificate relates
+  different definitions by, and their tables, instances, and every
+  certificate.
 - **Checked:** the definitions' well-formedness (scoping, arity,
   contractiveness), every instantiation by substitution, every assumption
-  by the conditions of Theorem 1, and every variance declaration, once per
-  document.
+  by the conditions of Theorem 1. Variances are computed by the checker,
+  not checked against a proposal.
 
 No rule takes a semantic premise from a certificate: each is discharged by
 Lemmas 1–3 and Theorem 1 from the definitions themselves.
