@@ -1,6 +1,6 @@
 /** A source type term in the structural claim form, for tools that display a
  * source annotation or offer it as a template for a claim. The verifier reads
- * annotations itself (DeclarationGraph.lean); this rendering decides nothing. */
+ * annotations itself (EquationLowering.lean); this rendering decides nothing. */
 import type { Atom, ClaimType } from "./claim.mts";
 import type { TypeTerm } from "./declaration-types.mts";
 
@@ -12,7 +12,7 @@ export function claimOfTerm(term: TypeTerm): ClaimType {
     case "atom":
       if (term.name === "unknown") return { top: true, atoms: [] };
       if (term.name === "never") return never;
-      // Every object is several graph clauses (DeclarationGraph.lean), as
+      // Every object is several graph clauses (EquationLowering.lean), as
       // `callable` is.
       if (term.name === "object") throw Error("the object type has no claim form");
       return one({ a: term.name });
