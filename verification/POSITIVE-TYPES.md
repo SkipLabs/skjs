@@ -1484,13 +1484,19 @@ Lean: `Types/PositiveGraphs.lean` (`schemeSemWithArgs`),
 
 ## Lean files and validation
 
-- `Types/ReferenceConjunctions.lean`, `Types/MethodMembers.lean`
-- `Types/PositiveNormalization.lean`, `Types/PositiveGraphs.lean`,
-  `Types/QuantifiedGraphs.lean`
-- `Types/PositiveRules.lean`, `Types/PositiveCertificates.lean`
-- `Types/GraphRows.lean`, `Types/EquationGraphs.lean`, `Types/EquationSupport.lean`
-- `Types/EquationCongruence.lean`
-- `Tests/PositiveNormalizationTests.lean`
+- [Types/ReferenceConjunctions.lean](lean/Verification/Model/Types/ReferenceConjunctions.lean): nonempty conjunctions of record contracts
+- [Types/MethodMembers.lean](lean/Verification/Model/Types/MethodMembers.lean): host-relative method members
+- [Types/CallableConjunctions.lean](lean/Verification/Model/Types/CallableConjunctions.lean): bag conjunctions and overloads on one callable value
+- [Types/PositiveNormalization.lean](lean/Verification/Model/Types/PositiveNormalization.lean): the clause language and its finite normalization
+- [Types/PositiveGraphs.lean](lean/Verification/Model/Types/PositiveGraphs.lean): normalization of recursive graphs and the rows' denotation
+- `Types/QuantifiedGraphs.lean`
+- [Types/PositiveRules.lean](lean/Verification/Model/Types/PositiveRules.lean): the declarative subtyping rules and their soundness
+- [Types/PositiveCertificates.lean](lean/Verification/Model/Types/PositiveCertificates.lean): the certificate checker, sound and complete for those rules
+- [Types/GraphRows.lean](lean/Verification/Model/Types/GraphRows.lean): the label-independent row representation
+- `Types/EquationGraphs.lean`, `Types/EquationSupport.lean`, `Types/EquationCongruence.lean`
+- [Tests/PositiveNormalizationTests.lean](lean/Verification/Model/Tests/PositiveNormalizationTests.lean): the normalization and checking cases below
+- [Tests/PackTests.lean](lean/Verification/Model/Tests/PackTests.lean): argument packs covering one another ([argument packs](#argument-packs))
+- [Tests/QuantifiedRowTests.lean](lean/Verification/Model/Tests/QuantifiedRowTests.lean): parameter and scheme rows opaque to every check ([parameter and scheme rows](#parameter-and-scheme-rows))
 
 All under `lean/Verification/Model/`. Tests cover distribution, cross-shape
 elimination, retained incompatible contracts, nested constraints, cyclic
