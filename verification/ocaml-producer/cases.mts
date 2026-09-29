@@ -190,6 +190,8 @@ export const cases: Case[] = [
   negative("invalid-method-receiver-widened", "a member whose host must meet a type is not one callable on any host", /binding-annotation claim/),
   gap("generic-method-receiver-refused", "a generic class method declaring `this: T`: its member is a scheme, which states no type the host must meet",
     "unsupported", "source", /a generic method with a `this` parameter is outside the fragment/),
+  gap("optional-method-receiver-refused", "an optional method declaring `this: T`: an optional field, whose function takes its declaration as receiver",
+    "unsupported", "source", /an optional method with a `this` parameter is outside the fragment/),
   negative("invalid-method-bivariance", "Method parameters are contravariant, not bivariant"),
   negative("invalid-method-result", "A method result does not narrow"),
   positive("array-reduce", "Array.prototype.reduce read through the array's prototype and called on the array"),
