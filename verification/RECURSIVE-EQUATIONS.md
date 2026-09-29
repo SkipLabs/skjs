@@ -151,19 +151,21 @@ pair with one more bound variable, without end. The pairs differ only in
 their arguments, so the assumptions are made parametric.
 
 **Soundness, not completeness.** The rules below are sound for the semantic
-inclusion. They are not complete for it, and nothing in this section aims
-at completeness. Complete rules are out of reach for the features involved.
-Subtyping with bounded quantification is undecidable
-([Pierce 1994](REFERENCES.md#pierce-1994)), and so is subtyping with
-variance once definitions are expansive, their arguments growing under
-unfolding as `Promise`'s do
-([Kennedy and Pierce 2007](REFERENCES.md#kennedy-and-pierce-2007)). Those
-results concern declarative rule systems close to this one, not this
-model's inclusion itself, whose decidability is open here. The rules are
-restricted accordingly: quantifiers are compared on one fixed pairing
-(4.1), and a definition relates to itself through per-position variance
-(4.3). Each restriction keeps checking decidable at a known cost in
-completeness.
+inclusion. They are not complete for it, and whether that inclusion is
+decidable is open. Two results about related systems show where complete
+rules become undecidable, and the rules avoid both.
+- Subtyping in F<: is undecidable with its full rule for bounded quantifiers
+  ([Pierce 1994](REFERENCES.md#pierce-1994)). Comparing quantifiers on one
+  fixed pairing, as 4.1 does, is the standard decidable restriction.
+- Nominal subtyping with variance is undecidable once inheritance is
+  expansive ([Kennedy and Pierce 2007](REFERENCES.md#kennedy-and-pierce-2007)).
+  The types here are structural, with no declared inheritance, so the result
+  does not transfer directly. It is the nearest known result to relating
+  expanding definitions such as `Promise`, which 4.3 does through
+  per-position variance only.
+
+Neither result is a theorem about this model's inclusion. They explain the
+choice of restrictions; the price is completeness.
 
 ### 4.1 Quantified signatures
 
@@ -352,10 +354,11 @@ Coinductive subtyping over assumed pairs
 ([Amadio and Cardelli 1993](REFERENCES.md#amadio-and-cardelli-1993),
 [Brandt and Henglein 1998](REFERENCES.md#brandt-and-henglein-1998)) handles
 regular types. Parametric assumptions extend it with variables and
-hypotheses, so that one assumption covers a non-regular family. Subtyping
-with variance over expanding definitions is undecidable in general
-([Kennedy and Pierce 2007](REFERENCES.md#kennedy-and-pierce-2007)). This is
-why variance is proposed and checked here, not inferred by the checker.
+hypotheses, so that one assumption covers a non-regular family. Kennedy
+and Pierce prove nominal subtyping with variance undecidable under expansive
+inheritance ([Kennedy and Pierce 2007](REFERENCES.md#kennedy-and-pierce-2007));
+the definitions here are structural, and section 4 relates an expanding
+definition to itself only through per-position variance.
 
 An application is a closure, a definition with its arguments, like a
 suspended substitution in calculi of explicit substitutions

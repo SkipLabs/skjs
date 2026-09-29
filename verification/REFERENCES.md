@@ -245,10 +245,12 @@ Andrew J. Kennedy and Benjamin C. Pierce. *On decidability of nominal
 subtyping with variance.* International Workshop on Foundations and
 Developments of Object-Oriented Languages (FOOL/WOOD), 2007.
 
-**Used for** the reason the family subtyping rule is checked, not decided:
-subtyping with variance over expanding (non-regular) definitions is
-undecidable in general, so the producer proposes the hypotheses of a family
-entry and the checker only checks them.
+**Used for** the nearest known limit on relating expanding definitions:
+nominal subtyping with variance is undecidable once inheritance is
+expansive. The result concerns nominal inheritance, not the structural
+definitions here, so it motivates restricting such relations to
+per-position variance without proving that complete rules would be
+undecidable in this model.
 **Discussed in** [RECURSIVE-EQUATIONS: related work](RECURSIVE-EQUATIONS.md#7-related-work),
 [family subtyping](RECURSIVE-EQUATIONS.md#4-subtyping).
 
