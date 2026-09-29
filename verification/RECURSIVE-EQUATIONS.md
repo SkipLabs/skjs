@@ -1,17 +1,18 @@
 # Recursive generic types as equations
 
 Generic declarations such as TypeScript's `Promise` define infinite families
-of types that no finite type graph can present. This section describes how
-the verifier handles them. Each declaration is a parameterized type
-definition. A type is a finite term that may apply a definition to
-arguments, and a check unfolds an application one step, only when it reads
-it. The meaning of types is unchanged: it is the step-indexed semantics of
-[SEMANTICS](SEMANTICS.md) and [POSITIVE-TYPES](POSITIVE-TYPES.md). What is
-new is a finite syntax for the checks that relate members of a family:
-substitution for instantiation, and parametric assumptions for subtyping.
+of types that no finite type graph can present. Here each declaration is a
+parameterized type definition, a type is a finite term that may apply a
+definition to arguments, and a check unfolds an application one step when
+it reads it. Types mean what the step-indexed semantics of
+[SEMANTICS](SEMANTICS.md) and [POSITIVE-TYPES](POSITIVE-TYPES.md) says.
+Members of a family are related by substitution, for instantiation, and by
+parametric assumptions, for subtyping.
 
-Sections 2 to 4 are mechanized in Lean (section 8). The lowering of section
-5 is untrusted: the checker validates everything it proposes.
+The Lean mechanization (section 8) covers sections 2, 3 and 4.1, and 4.2
+with instance hypotheses discharged by table pairs, subsets and hypotheses.
+The lowering of section 5 is untrusted: the checker validates everything it
+proposes.
 
 ## 1. The problem
 
@@ -36,8 +37,7 @@ instances must stop somewhere. Past a budget it can only refuse the
 declaration, since reading the tail as `unknown` would be unsound.
 
 The semantics admits infinitely many nodes: a type's meaning is a guarded
-fixed point.
-What must be finite is what a check inspects. So each member is named by a
+fixed point. What must be finite is what a check inspects. So each member is named by a
 finite term, its structure is computed on demand, and members are related
 by rules that inspect finitely many unfoldings.
 
@@ -85,8 +85,8 @@ An application unfolds to its definition's body at its arguments:
 with capture-avoiding substitution, and $`\eta`$ assigning meanings to free
 variables. Contractiveness makes this a guarded definition: an application
 in the body sits under a constructor, whose operands are read at a lower
-step. So the step-indexed fixed point exists, and it is the meaning the rest
-of the verifier already uses. One unfolding substitutes into a finite body
+step. So the step-indexed fixed point exists, and it is the verifier's
+semantics. One unfolding substitutes into a finite body
 and leaves the applications in it unexpanded, so a check pays only for the
 unfoldings it performs. The family `Promise` has infinitely many members,
 but every member a check reaches is a finite term.
@@ -126,14 +126,12 @@ application is handled by Lemma 2, and intersection distributes over the
 unions substituted into it. Substitution traverses only the finite term.
 $`\square`$
 
-Lemma 3 is what makes instantiation checkable. A call instantiates a
-generic signature by substituting into its finite syntax, and the checker
-recomputes that substitution rather than trusting a table of instances.
-Before, a finite presentation had to close the table of instances. The
-checker and its soundness proofs, expression typing and control flow
-included, are stated once over an interface: an image check with a proof
-that it computes correct images. The old closure check and substitution are
-two instances of that interface.
+Lemma 3 makes instantiation checkable: a call instantiates a generic
+signature by substituting into its finite syntax, and the checker recomputes
+that substitution. The checker and its soundness proofs, expression typing
+and control flow included, are stated over an interface: an image check with
+a proof that it computes correct images. Substitution is one instance of it,
+and the closure check of a finite table another.
 
 ## 4. Subtyping
 
@@ -178,7 +176,7 @@ with the target's quantifiers rigid and bounds compared contravariantly:
 ```
 
 This is the kernel rule of F<: restricted to one fixed pairing of
-quantifiers, which keeps it a check
+quantifiers, which is decidable
 ([Pierce 1994](REFERENCES.md#pierce-1994)). Soundness is Lemma 3: an instance
 of the source at $`\vec X`$ within $`\vec{\rho}'`$ is an instance of the
 target at the same $`\vec X`$.
@@ -194,8 +192,9 @@ a\;=\;\forall\vec\alpha\vec\beta.\ \Pi_a\Rightarrow D\langle\vec\alpha\rangle\le
 
 where $`\Pi_a`$ is a finite set of hypotheses $`\gamma\le\delta`$ between
 its variables. A plain pair is an assumption without variables. Fix a set
-$`\mathcal A`$ of assumptions. Types are unions of labels; $`l`$ ranges over
-labels, $`A,B`$ over unions.
+$`\mathcal A`$ of assumptions. Types are taken as unions of atoms
+(variables, applications, constructors, intersections); $`l`$ ranges over
+atoms and $`A,B`$ over unions.
 
 **Premises.** An operand comparison is read by the judgment
 $`\Pi;T\vdash A\sqsubseteq B`$:
@@ -223,11 +222,11 @@ $`\Pi;T\vdash A\sqsubseteq B`$:
 {\Pi;T\vdash D\langle\vec\tau\rangle\sqsubseteq B}\ \textsf{Inst}
 ```
 
-where $`\theta=[\vec\tau/\vec\alpha,\vec\sigma/\vec\beta]`$. $`\textsf{TabRen}`$ reuses a pair at
-renamed bound variables; hypotheses mention no bound variable, and Lemma 3
-turns the renaming into an instance. The premises of
-$`\textsf{Inst}`$ compare $`\vec\tau`$ and $`\vec\sigma`$, strict subterms of
-its conclusion, so derivations are finite and the judgment is decidable.
+where $`\theta=[\vec\tau/\vec\alpha,\vec\sigma/\vec\beta]`$. The premises of $`\textsf{Inst}`$
+compare $`\vec\tau`$ and $`\vec\sigma`$, strict subterms of its conclusion,
+so derivations are finite and the judgment is decidable. $`\textsf{TabRen}`$
+reuses a pair at renamed bound variables: hypotheses mention no bound
+variable, and Lemma 3 makes the renamed pair an instance.
 
 **Covering.** A pair is covered, $`\Pi;T\vdash A\le B`$, when every clause
 of $`A`$'s one-step unfolding is covered by a clause of $`B`$'s, under the
@@ -252,8 +251,9 @@ hold at $`\eta`$ at step $`n`$.
 *Proof sketch.* By strong induction on $`n`$, values before argument lists,
 with an inner induction on the derivation of each premise.
 - A premise is read below $`n`$. $`\textsf{Tab}`$ holds there by the outer
-  induction, $`\textsf{Mem}`$ outright, and $`\textsf{Hyp}`$ and
-  $`\textsf{MeetHyp}`$ by $`\eta\models_n\Pi`$.
+  induction, $`\textsf{TabRen}`$ by it and Lemma 3, $`\textsf{Mem}`$ and
+  $`\textsf{Union}`$ outright, and $`\textsf{Hyp}`$ and $`\textsf{MeetHyp}`$
+  by $`\eta\models_n\Pi`$.
 - $`\textsf{Inst}`$ is the conclusion of its assumption at
   $`\eta'=\eta[\vec\alpha\mapsto⟦\vec\tau⟧^\eta,\vec\beta\mapsto⟦\vec\sigma⟧^\eta]`$.
   Its hypotheses hold there because their instances are premises, which
@@ -290,8 +290,7 @@ a_{D}^{V}\;=\;\forall\vec\alpha\vec\beta.\ \Pi_D^V\Rightarrow D\langle\vec\alpha
 \Pi_D^V=\{\alpha_i\le\beta_i\mid V_D(i)\in\{\mathsf{co},\mathsf{inv}\}\}\cup\{\beta_i\le\alpha_i\mid V_D(i)\in\{\mathsf{contra},\mathsf{inv}\}\}.
 ```
 
-An invariant position has two variables related both ways; a single shared
-variable would need Lemma 2 inside Theorem 1's induction. With
+An invariant position has two variables related both ways. With
 $`\mathcal A_V=\{a_D^V\}_D`$:
 
 ```math
@@ -323,10 +322,14 @@ compares, once per definition:
 4. Set a member that fails to $`\mathsf{inv}`$ at every parameter, and
    repeat from 3.
 
-$`\mathsf{inv}`$ at every parameter is valid for any definition: each
-comparison in its body relates a variable to its counterpart, both ways.
-So the loop ends, after at most one step per member, with a valid
-$`V`$. A definition on no cycle takes one traversal of its body.
+**Lemma 4.** For any definition, $`\mathsf{inv}`$ at every parameter is
+valid.
+
+*Proof sketch.* Each comparison in the body relates a variable to its
+counterpart, and both directions are hypotheses. $`\square`$
+
+So the loop ends, after at most one step per member, with a valid $`V`$. A
+definition on no cycle takes one traversal of its body.
 
 **Other pairs.** A pair $`D\langle\vec\tau\rangle\le E\langle\vec\sigma\rangle`$
 that $`\textsf{Var}`$ does not derive is covered by unfolding, with the pair
@@ -395,22 +398,21 @@ of reach of substitution.
 Untrusted code proposes and a small checker decides, as everywhere in the
 verifier.
 
-- **Proposed:** the definitions, the assumptions a certificate relates
-  different definitions by, and their tables, instances, and every
-  certificate.
+- **Proposed:** the definitions, and every certificate with its
+  assumptions between different definitions, tables and instances.
 - **Checked:** the definitions' well-formedness (scoping, arity,
-  contractiveness), every instantiation by substitution, every assumption
-  by the conditions of Theorem 1. Variances are computed by the checker.
+  contractiveness), every instantiation by substitution, and every
+  assumption by the conditions of Theorem 1.
+- **Computed by the checker:** variances (4.3).
 
 Every semantic premise of a rule is discharged by Lemmas 1–3 and Theorem 1
 from the definitions themselves.
 
-The acceptance theorem keeps its premise: the exact success condition of
-the command-line checker. Its conclusion, safety of every accepted unit, is
+The acceptance theorem's premise is the exact success condition of the
+command-line checker. Its conclusion, safety of every accepted unit, is
 stated over the unit's definitions. A finite type graph is the case where
-every definition has no parameters, so the theorem for finite graphs is an
-instance. The trust surface is unchanged: the parser and the reading of
-declared types remain the trusted boundary.
+no definition has parameters. The trusted boundary is the parser and the
+reading of declared types.
 
 ## 7. Related work
 
@@ -433,8 +435,8 @@ An application is a closure, a definition with its arguments, like a
 suspended substitution in calculi of explicit substitutions
 ([Abadi et al. 1991](REFERENCES.md#abadi-cardelli-curien-and-lévy-1991)).
 What it delays is the unfolding of a definition; substitution is carried
-out in full. The type level
-has no β-redexes, so only the substitution lemma carries over.
+out in full. The type level has no β-redexes, so only the substitution
+lemma carries over.
 
 ## 8. Mechanization
 
