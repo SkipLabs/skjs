@@ -209,6 +209,10 @@ $`\Pi;T\vdash A\sqsubseteq B`$:
 ```
 
 ```math
+\frac{(A',B')\in T\qquad (A,B)=(A',B')\rho\ \ \text{for a renaming}\ \rho\ \text{of bound variables}}{\Pi;T\vdash A\sqsubseteq B}\ \textsf{TabRen}
+```
+
+```math
 \frac{(\gamma\le\delta)\in\Pi\qquad \delta\in B}{\Pi;T\vdash\gamma\sqsubseteq B}\ \textsf{Hyp}
 \qquad
 \frac{(\gamma\le\delta)\in\Pi\qquad \delta\land\rho\in B}{\Pi;T\vdash\gamma\land\rho\sqsubseteq B}\ \textsf{MeetHyp}
@@ -219,7 +223,9 @@ $`\Pi;T\vdash A\sqsubseteq B`$:
 {\Pi;T\vdash D\langle\vec\tau\rangle\sqsubseteq B}\ \textsf{Inst}
 ```
 
-where $`\theta=[\vec\tau/\vec\alpha,\vec\sigma/\vec\beta]`$. The premises of
+where $`\theta=[\vec\tau/\vec\alpha,\vec\sigma/\vec\beta]`$. $`\textsf{TabRen}`$ reuses a pair at
+renamed bound variables; hypotheses mention no bound variable, and Lemma 3
+turns the renaming into an instance. The premises of
 $`\textsf{Inst}`$ compare $`\vec\tau`$ and $`\vec\sigma`$, strict subterms of
 its conclusion, so derivations are finite and the judgment is decidable.
 
@@ -268,69 +274,87 @@ tables.
 
 ### 4.3 Variance
 
-That `Promise` is covariant is a fact about its definition, so it is
-established once. A **variance** assigns each parameter of a
-definition one of $`\mathsf{co},\mathsf{contra},\mathsf{inv},\mathsf{none}`$.
-It stands for the assumption
-$`\forall\vec\alpha\vec\beta.\ \Pi_D\Rightarrow D\langle\vec\alpha\rangle\le D\langle\vec\beta\rangle`$,
-with $`\alpha_i\le\beta_i`$ in $`\Pi_D`$ when $`v_i`$ is co or inv, and
-$`\beta_i\le\alpha_i`$ when it is contra or inv. A use then
-compares arguments only:
+A **variance assignment** $`V`$ gives each parameter $`i`$ of each
+definition $`D`$ a variance $`V_D(i)`$ in the lattice
 
 ```math
-\frac{\forall i.\ \ \tau_i\le\sigma_i\ \ (v_i\in\{\mathsf{co},\mathsf{inv}\})\qquad \sigma_i\le\tau_i\ \ (v_i\in\{\mathsf{contra},\mathsf{inv}\})}
+\mathsf{none}\ <\ \mathsf{co},\ \mathsf{contra}\ <\ \mathsf{inv} ,
+```
+
+where lower is the stronger claim. It stands for the assumptions, with
+empty tables,
+
+```math
+a_{D}^{V}\;=\;\forall\vec\alpha\vec\beta.\ \Pi_D^V\Rightarrow D\langle\vec\alpha\rangle\le D\langle\vec\beta\rangle,
+\qquad
+\Pi_D^V=\{\alpha_i\le\beta_i\mid V_D(i)\in\{\mathsf{co},\mathsf{inv}\}\}\cup\{\beta_i\le\alpha_i\mid V_D(i)\in\{\mathsf{contra},\mathsf{inv}\}\}.
+```
+
+An invariant position has two variables related both ways; a single shared
+variable would need Lemma 2 inside Theorem 1's induction. With
+$`\mathcal A_V=\{a_D^V\}_D`$:
+
+```math
+\frac{\forall D.\ \ \mathcal A_V\vdash a_D^V\ \mathsf{valid}}{V\ \mathsf{valid}}\ \textsf{VarValid}
+\qquad
+\frac{V\ \mathsf{valid}\qquad \forall i.\ \ \tau_i\le\sigma_i\ \ (V_D(i)\in\{\mathsf{co},\mathsf{inv}\})\qquad \sigma_i\le\tau_i\ \ (V_D(i)\in\{\mathsf{contra},\mathsf{inv}\})}
 {D\langle\vec\tau\rangle\le D\langle\vec\sigma\rangle}\ \textsf{Var}
 ```
 
-`Var` is sound as an instance of a valid variance, by Theorem 1 and Lemma 3.
+$`\textsf{Var}`$ is sound by Theorem 1 and Lemma 3: its conclusion is an
+instance of $`a_D^V`$.
 
-**Computing variances.** The checker computes each definition's variance
-from the definitions alone. Definitions are taken
-in dependency order, one strongly connected component of the reference
-graph at a time.
-- *A definition on no cycle* is checked by one traversal of its body: an
-  application of a definition below it is compared by that definition's
-  variance, recursively on the arguments (4.2).
-- *A cycle*, such as `Promise`, whose `catch` returns $`\mathit{Promise}\langle\alpha\lor\gamma\rangle`$,
-  is checked with its members' candidate variances as assumptions. The
-  assumption is guarded, since every self-reference sits under a
-  constructor.
+**Computation.** The checker computes $`V`$ for the definitions a check
+compares, once per definition:
+1. Order the definitions by the strongly connected components of the
+   reference graph ($`D\to E`$ when $`E`$ occurs in $`\tau_D`$), dependencies
+   first.
+2. For a component, set each member's candidate to the least fixpoint of
+   the polarity equations
+   $`V_D(i)=\bigsqcup\{\mathrm{pol}(o)\mid o\ \text{an occurrence of}\ \alpha_i\ \text{in}\ \tau_D\}`$,
+   with $`\mathsf{none}`$ for no occurrence. $`\mathrm{pol}(o)`$ is
+   $`\mathsf{co}`$ under results and readonly positions, $`\mathsf{contra}`$
+   under parameters, and $`\mathsf{inv}`$ under writable fields, cells,
+   mutable elements and bounds. Under an application
+   $`E\langle\ldots\rangle`$ it composes with $`V_E`$ at that argument.
+3. Check each member by $`\textsf{Valid}`$ against $`\mathcal A_V`$, which
+   includes the component's own candidates. The assumption is guarded,
+   because every reference sits under a constructor.
+4. Set a member that fails to $`\mathsf{inv}`$ at every parameter, and
+   repeat from 3.
 
-Candidates start permissive and are weakened where the check fails, on the
-finite lattice $`\mathsf{none}<\mathsf{co},\mathsf{contra}<\mathsf{inv}`$.
-$`\mathsf{inv}`$ is always valid, so the iteration ends in a valid variance.
-A writable field forces $`\mathsf{inv}`$. An invariant position is stated
-with two variables related both ways. A single shared variable would need
-Lemma 2 inside the induction of Theorem 1, at the step being proved.
+$`\mathsf{inv}`$ at every parameter is valid for any definition: each
+comparison in its body relates a variable to its counterpart, both ways.
+So the loop ends, after at most one step per member, with a valid
+$`V`$. A definition on no cycle takes one traversal of its body.
 
-Variances are computed on demand, once per definition, for the definitions
-a check actually compares.
-
-**Other pairs.** When `Var` does not decide a pair, the pair is unfolded
-into the coinductive check of assumed pairs, compared up to renaming of
-bound variables. `Promise⟨number⟩ ≤ PromiseLike⟨number⟩` closes this way:
-its `then` members lead to `Promise⟨ρ⟩ ≤ PromiseLike⟨ρ⟩` for a bound
-$`\rho`$, which recurs only renamed. A pair that recurs with growing
-arguments is refused.
+**Other pairs.** A pair $`D\langle\vec\tau\rangle\le E\langle\vec\sigma\rangle`$
+that $`\textsf{Var}`$ does not derive is covered by unfolding, with the pair
+added to the table and reused by $`\textsf{TabRen}`$. A pair that recurs with
+growing arguments is refused. `Promise<number> ≤ PromiseLike<number>` closes
+with two pairs: itself, and $`\mathit{Promise}\langle\rho\rangle\le\mathit{PromiseLike}\langle\rho\rangle`$
+for the bound $`\rho`$ of `then`, which recurs renamed.
 
 ### 4.4 Example
 
-`Promise` is declared covariant. Its assumption
+The polarity equations give `Promise` the candidate $`\mathsf{co}`$: its
+parameter occurs in `then`'s callback parameter, a parameter of a parameter,
+and in `catch`'s result. Its assumption
 $`\forall\alpha\beta.\ \alpha\le\beta\Rightarrow\mathit{Promise}\langle\alpha\rangle\le\mathit{Promise}\langle\beta\rangle`$
-checks member by member:
+is valid, member by member:
 - **`then`:** after renaming the quantifiers, the callback
   $`\beta\to\gamma`$ must be within $`\alpha\to\gamma`$, which is the
   hypothesis. Both results are $`\mathit{Promise}\langle\gamma\rangle`$.
 - **`catch`:** the results $`\mathit{Promise}\langle\alpha\lor\gamma\rangle`$
-  and $`\mathit{Promise}\langle\beta\lor\gamma\rangle`$ are an instance of
-  the assumption itself. Its hypothesis $`\alpha\lor\gamma\le\beta\lor\gamma`$
-  is a table pair, covered by the hypothesis and by $`\gamma`$ on both
-  sides.
+  and $`\mathit{Promise}\langle\beta\lor\gamma\rangle`$ are related by
+  $`\textsf{Inst}`$ of the assumption itself. Its hypothesis
+  $`\alpha\lor\gamma\sqsubseteq\beta\lor\gamma`$ follows by
+  $`\textsf{Union}`$, from $`\textsf{Hyp}`$ and $`\textsf{Mem}`$.
 
 `Promise<number> ≤ Promise<number | string>` is then `Var` with the premise
 `number ≤ number | string`. The converse fails at its premise, and so does
 the definition's unfolding, at `then`'s callback. For
-`interface Cell<T> { v: T }` the covariant declaration is invalid, and
+`interface Cell<T> { v: T }` the writable field gives $`\mathsf{inv}`$, and
 `Cell<A> ≤ Cell<B>` requires `A` and `B` equivalent.
 
 ## 5. From source
