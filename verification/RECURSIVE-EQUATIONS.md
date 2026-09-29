@@ -170,6 +170,10 @@ and simulation between pushdown and finite-state processes
 ([Kučera and Mayr 2010](REFERENCES.md#kučera-and-mayr-2010)) reduces to it.
 The checker therefore decides these questions by $`\textsf{Var}`$ and the
 coinductive fallback, which close every question the examples pose.
+We further conjecture that on the examples this work is linear per question
+in the size of the types compared: $`\textsf{Var}`$ recurses once per
+argument, variances are computed once per definition, and the fallback
+visits a constant number of pairs.
 
 ### 4.1 Quantified signatures
 
