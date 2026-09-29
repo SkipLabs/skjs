@@ -1440,16 +1440,6 @@ partial def drain : M Unit := do
 def annotationFields : List String :=
   ["annot", "functionType", "bagType", "type", "result", "bound", "retType"]
 
-/-- A class generic method's binder, as the parser spells it:
-`"key"#k:null^0` (§8.1). The member key's JSON spelling and the position. -/
-def methodBinder? (name : String) : Option (String × Nat) :=
-  match name.splitOn "#" with
-  | [key, rest] =>
-    match rest.splitOn ":" with
-    | [k, "null^0"] => k.toNat?.map (key, ·)
-    | _ => none
-  | _ => none
-
 /-- The terms a unit's scheme reads: its parameters' and result's types and
 its binders' bounds. -/
 def unitTerms (node : Json) : Json :=
@@ -1458,29 +1448,13 @@ def unitTerms (node : Json) : Json :=
   .arr (tps.map (·.getObjValD "bound") ++ params.map (·.getObjValD "type") ++
     #[node.getObjValD "retType", node.getObjValD "result", node.getObjValD "type"])
 
-/-- Enter a node's binders. A class's generic method closure binds the owned
-binders of its class's method head; any other generic unit is a head of its
-own, lifted over the enclosing binders its scheme names, whose binders are
-`bound(f, A⃗, j)`, met with its bound when it has one (§8.1). -/
+/-- Enter a generic unit's binders: the unit is a head of its own, lifted over
+the enclosing binders its scheme names, whose binders are `bound(f, A⃗, j)`,
+met with its bound when it has one (§8.1). -/
 def enterUnit (path : String) (scope : List (String × Binding)) (node : Json) (tps : Array Json) :
     M (List (String × Binding)) := do
   let names ← tps.toList.mapM fun p => (str p "name" : Except String String)
   let ctx : Ctx := { binders := scope, site := path }
-  let spelled := names.map methodBinder?
-  if spelled.all Option.isSome && !names.isEmpty then
-    let recv ← field (← field node "receiver") "type"
-    match ← lowerType ctx recv with
-    | [.app d args] =>
-      let _ ← tryEnsure d
-      let bindings ← (spelled.filterMap id).zip names |>.mapM fun ((key, k), n) => do
-        match (← get).keys.get? s!"method|{d}|{key}" with
-        | some m =>
-          let dr ← draft m
-          if k ≥ dr.binders.length then throw s!"{path}: {n} names no binder of the generic method {dr.name}"
-          return (n, (⟨false, [mkBound m (args.toList.map Types.toList) k]⟩ : Binding))
-        | none => throw s!"{path}: {n} names no generic method of its class"
-      return bindings ++ scope
-    | _ => throw s!"{path}: a class generic method's receiver is not its class's instance type"
   let items := (mentions names (unitTerms node)).filter fun it => match it with
     | .binder n => (scope.lookup n).isSome
     | _ => false

@@ -151,7 +151,7 @@ def unguardedDoc : Json := parse r#"{
 
 -- `pick<V>` and `run<U>` are heads `Helper.pick` and `Helper.run` binding
 -- their own `V` and `U`; the prototype closure's binder, spelled
--- `"pick"#0:null^0` by the parser, is its name's placeholder, which the
+-- `"pick"#0` by the parser, is its name's placeholder, which the
 -- closure's scheme binds when the unit is extracted.
 #guard run classDoc [] fun L =>
   match head? L "Helper.\"pick\"" with

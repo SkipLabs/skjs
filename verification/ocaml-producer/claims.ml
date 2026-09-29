@@ -124,10 +124,9 @@ let encode (proposal : Proposal.t) =
         "bounds",Array [Object ["among",Bool true;
           "keys",Array (List.map (fun (f:Semantic.field) -> key_json f.name) fs)]]]]]))]
     (* A class's generic method, held by its prototype: a scheme row. Its
-       binders are the parser's names for the member's rows (`…#k:null^0`),
-       which Lean's lowering of the class's instance type binds too, so the
-       prototype's closure and the instance's member quantify over the same
-       rows. A binder the source spells is scoped, and no row states it. *)
+       binders are the parser's names for the closure's binders (`"key"#k`),
+       which the row binds. A binder the source spells is scoped, and no row
+       states it. *)
     | Shape {fields=[];indexes=[];elements=None;calls=[s]}
         when s.quantified <> [] && List.for_all (fun (q:Semantic.quantifier) ->
           String.contains q.identity.spelling '#' && q.bound = None) s.quantified ->

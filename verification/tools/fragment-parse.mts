@@ -2787,16 +2787,14 @@ class Gate {
       this.receiverMode = this.strict ? "strict" : "sloppy";
     }
     // A class's generic method is the instance's member with quantified
-    // signatures: its binders are the member's rows, which the declaration's
-    // lowering names by the member's key, the binder's position and its
-    // bound, at the first colour (DeclarationGraph, `Visit.member`). Its
-    // closure binds them under those names, so the prototype's closure and
-    // the instance's member quantify over the same rows.
+    // signatures. Its closure's binders are named by the member's key and
+    // the binder's position, so the producer's claims and the closure's
+    // annotations name them alike; the closure's scheme binds them.
     const typeParams = this.enterTypeParams(node.typeParameters, member === undefined ? undefined :
       (tp, index) => {
         if (tp.constraint)
           this.fail(tp, "a bounded type parameter of a generic class method is outside the fragment: its binder row is named by its bound");
-        return `${JSON.stringify(member)}#${index}:null^0`;
+        return `${JSON.stringify(member)}#${index}`;
       });
     try {
       this.asyncBody = isAsync;
