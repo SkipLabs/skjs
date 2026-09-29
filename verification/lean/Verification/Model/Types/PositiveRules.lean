@@ -762,24 +762,30 @@ signature is covered by a fixed source one taking as many parameters, each at
 least as wide, with a result at most as wide; each variadic target signature
 by a variadic source one, its further fixed parameters taken into the source's
 rest, its rest within the source's and results covariant. The receiver is the
-host on both sides, so receivers are not compared. -/
+host on both sides, so receivers are not compared; each type the source's
+host must meet is met by the target's host, being within one the target's
+must meet. -/
 @[nospecialize] def CoversSig (elem : List ι → Option (List ι)) (R : List ι → List ι → Prop)
     (p q : MethodMembers.Sig (List ι)) : Prop :=
   (∀ t ∈ q.calls, ∃ s ∈ p.calls, Domains R t.arguments s.arguments ∧ R s.result t.result ∧ s.effect.covers t.effect = true) ∧
   (∀ t ∈ q.rests, ∃ s ∈ p.rests, Domains R (t.arguments.1.take s.arguments.1.length) s.arguments.1 ∧
     IntoRest elem R (t.arguments.1.drop s.arguments.1.length) s.arguments.2 ∧ R t.arguments.2 s.arguments.2 ∧ R s.result t.result ∧ s.effect.covers t.effect = true) ∧
-  ∀ t ∈ q.schemes, ∃ s ∈ p.schemes, R s t
+  (∀ t ∈ q.schemes, ∃ s ∈ p.schemes, R s t) ∧
+  ∀ T ∈ p.receivers, ∃ T' ∈ q.receivers, R T' T
 
 /-- A method signature is covered by a function the source object holds in a
 field or view: each target signature by one of the function's taking at least
 as wide parameters and giving an at most as wide result, whose receiver the
-object's own type `self` is within. Invoked on the object, such a function
-behaves as typed, so it meets the host-relative member. -/
+object's own type `self`, or a type the target's host must meet, is within.
+Invoked on the object, such a function behaves as typed, so it meets the
+host-relative member. -/
 @[nospecialize] def CoversArrows (G : NormalGraph ι) (R : List ι → List ι → Prop) (self : List ι)
     (L : Ops ι) (S : List (RestArrow (List ι)))
     (q : MethodMembers.Sig (List ι)) : Prop :=
-  q.schemes = [] ∧ (∀ t ∈ q.calls, ∃ s ∈ L, R self s.receiver ∧ Domains R t.arguments s.arguments ∧ R s.result t.result ∧ s.effect.covers t.effect = true) ∧
-  (∀ t ∈ q.rests, ∃ s ∈ S, R self s.receiver ∧ Domains R (t.arguments.1.take s.arguments.1.length) s.arguments.1 ∧
+  q.schemes = [] ∧ (∀ t ∈ q.calls, ∃ s ∈ L, (R self s.receiver ∨ ∃ T ∈ q.receivers, R T s.receiver) ∧
+    Domains R t.arguments s.arguments ∧ R s.result t.result ∧ s.effect.covers t.effect = true) ∧
+  (∀ t ∈ q.rests, ∃ s ∈ S, (R self s.receiver ∨ ∃ T ∈ q.receivers, R T s.receiver) ∧
+    Domains R (t.arguments.1.take s.arguments.1.length) s.arguments.1 ∧
     IntoRest (restElem G) R (t.arguments.1.drop s.arguments.1.length) s.arguments.2 ∧ R t.arguments.2 s.arguments.2 ∧ R s.result t.result ∧ s.effect.covers t.effect = true)
 
 /-- The receivers of a scheme's signatures. -/
@@ -1483,8 +1489,18 @@ theorem covers_sig_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : Lis
     (W : WorldT n) (v u : Val)
     (h : MethodMembers.onHost v (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η) p) n W u) :
     MethodMembers.onHost v (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η) q) n W u := by
-  obtain ⟨hcalls, hrests, hschemes⟩ := hc
+  obtain ⟨hcalls, hrests, hschemes, hrecv⟩ := hc
   obtain ⟨⟨hinv, hL⟩, ⟨_, hS⟩, hB⟩ := h
+  -- The host, in each type the target's host must meet, is in each the
+  -- source's must.
+  have host : ∀ j, j < n → ∀ (U : WorldT j) r,
+      MethodMembers.hostIn v (q.receivers.map (mixedValues G η)) j U r →
+      MethodMembers.hostIn v (p.receivers.map (mixedValues G η)) j U r := by
+    intro j hj U r ⟨hrv, hq⟩
+    refine ⟨hrv, fun T hT => ?_⟩
+    obtain ⟨t, ht, rfl⟩ := List.mem_map.mp hT
+    obtain ⟨t', ht', hR⟩ := hrecv t ht
+    exact hr j hj _ _ hR U r (hq _ (List.mem_map_of_mem ht'))
   refine ⟨⟨hinv, fun x hx => ?_⟩, ⟨hinv, fun x hx => ?_⟩, fun F hF => ?_⟩
   rotate_left 2
   · -- A quantified signature: the member bound to the host meets a source
@@ -1495,13 +1511,13 @@ theorem covers_sig_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : Lis
   · obtain ⟨t', ht', rfl⟩ := List.mem_map.mp hx
     obtain ⟨t, ht, rfl⟩ := List.mem_map.mp ht'
     obtain ⟨s, hs, hd, hres, heff⟩ := hcalls t ht
-    exact (hL _ (List.mem_map_of_mem (List.mem_map_of_mem hs))).weaken (Effect.covers_sound heff) (fun _ _ _ r h => h)
+    exact (hL _ (List.mem_map_of_mem (List.mem_map_of_mem hs))).weaken (Effect.covers_sound heff) host
       (fun j hj U args ha => by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using Domains.short (hr j hj) hd (by simpa [Contract.withReceiver, MethodArrow.map, MethodRestArrow.mapWith, Contract.map] using ha))
       (fun m hm U w hw => hr m hm _ _ hres U w hw)
   · obtain ⟨t', ht', rfl⟩ := List.mem_map.mp hx
     obtain ⟨t, ht, rfl⟩ := List.mem_map.mp ht'
     obtain ⟨s, hs, hd, hin, he, hres, heff⟩ := hrests t ht
-    exact (hS _ (List.mem_map_of_mem (List.mem_map_of_mem hs))).weaken (Effect.covers_sound heff) (fun _ _ _ r h => h)
+    exact (hS _ (List.mem_map_of_mem (List.mem_map_of_mem hs))).weaken (Effect.covers_sound heff) host
       (fun j hj U args ha => by
         simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using rest_rest (hr j hj) (hpa j hj _ _ he) (by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hd) (by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hin)
           (by simpa [Contract.withReceiver, MethodArrow.map, MethodRestArrow.mapWith, Contract.map] using ha))
@@ -2043,17 +2059,21 @@ theorem covers_arrows_sound {G : NormalGraph ι} {η : MixedAssignment ι}
     (hsem : mixedSem G η (.arrs L S) j U u) :
     MethodMembers.onHost v (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η) q) j U u := by
   obtain ⟨hnone, hcalls, hrests⟩ := hby
-  -- The host is in `self`, hence in the function's receiver, below `j`.
-  have host : ∀ (s : List ι), R self s → ∀ j' (hj' : j' < j) (U' : WorldT j'),
-      WExt (trunc j' (Nat.le_of_lt hj') U) U' → ∀ r, MethodMembers.hostT v j' U' r →
+  -- The host is in `self`, and in each type the target's host must meet;
+  -- so in the function's receiver, below `j`.
+  have host : ∀ (s : List ι), (R self s ∨ ∃ T ∈ q.receivers, R T s) → ∀ j' (hj' : j' < j) (U' : WorldT j'),
+      WExt (trunc j' (Nat.le_of_lt hj') U) U' → ∀ r,
+      MethodMembers.hostIn v (q.receivers.map (mixedValues G η)) j' U' r →
       mixedValues G η s j' U' r := by
-    intro s hs j' hj' U' hU' r hr'
-    cases hr'
-    have hx : WExt (trunc j' (Nat.le_of_lt (Nat.lt_trans hj' hj)) W) U' := by
-      have := WExt_trunc (Nat.le_of_lt hj') hU
-      rw [trunc_trunc] at this
-      exact WExt_trans this hU'
-    exact hr j' (by omega) _ _ hs U' _ (hself j' (by omega) U' hx)
+    intro s hs j' hj' U' hU' r ⟨hrv, hq⟩
+    rcases hs with hs | ⟨T, hT, hs⟩
+    · cases hrv
+      have hx : WExt (trunc j' (Nat.le_of_lt (Nat.lt_trans hj' hj)) W) U' := by
+        have := WExt_trunc (Nat.le_of_lt hj') hU
+        rw [trunc_trunc] at this
+        exact WExt_trans this hU'
+      exact hr j' (by omega) _ _ hs U' _ (hself j' (by omega) U' hx)
+    · exact hr j' (by omega) _ _ hs U' r (hq _ (List.mem_map_of_mem hT))
   obtain ⟨hsem, -⟩ := hsem
   refine ⟨⟨hsem.1.1, fun x hx => ?_⟩, ⟨hsem.1.1, fun x hx => ?_⟩, fun F hF => ?_⟩
   rotate_left 2

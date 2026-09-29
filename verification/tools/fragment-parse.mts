@@ -39,7 +39,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { Atom } from "./claim.mts";
 import type { DeclarationIdentity, PropertyKey, TypeTerm } from "./declaration-types.mts";
-import { bigintText, CLASS_ACCESS, numericLexeme, METHOD_RECEIVER, classMemberRefusal, computedAlias, computedForm, numericKey, optionalTerm, restPositions, restRefusal, restTerm, signature, substitute, typeTerm,
+import { bigintText, CLASS_ACCESS, numericLexeme, GENERIC_METHOD_RECEIVER, classMemberRefusal, computedAlias, computedForm, numericKey, optionalTerm, restPositions, restRefusal, restTerm, signature, substitute, typeTerm,
   type TermScope } from "./type-term.mts";
 import type {
   Ast,
@@ -2768,12 +2768,14 @@ class Gate {
         );
     }
     // An ordinary function's leading `this: T` states its receiver; without
-    // one, any receiver is accepted. An arrow cannot declare one.
+    // one, any receiver is accepted. An arrow cannot declare one. A class
+    // method's states a type its host, the instance it is read from, must
+    // meet, which a generic method's scheme does not state.
     const head = node.parameters[0];
     const stated =
       !!head && ts.isIdentifier(head.name) && head.name.text === "this";
-    if (stated && instance)
-      this.fail(head, METHOD_RECEIVER);
+    if (stated && instance && node.typeParameters?.length)
+      this.fail(head, GENERIC_METHOD_RECEIVER);
     if (stated && !ordinary)
       this.fail(head, "an arrow cannot declare a receiver");
     if (
@@ -2819,10 +2821,11 @@ class Gate {
       const receiver = !ordinary
         ? null
         : {
-            // A class method's receiver is its instance.
-            type: instance ? instance : stated
+            // A class method's receiver is its instance, or the type its
+            // `this` parameter states.
+            type: stated
               ? this.typeOf(head.type, head)
-              : ({ k: "atom", name: "unknown", span: this.span(node) } as TypeTerm),
+              : instance ? instance : ({ k: "atom", name: "unknown", span: this.span(node) } as TypeTerm),
             strict: this.strict,
           };
       // Each name is taken where its parameter has just been checked: a

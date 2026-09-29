@@ -273,7 +273,7 @@ private def sigPolar (s : MethodMembers.Sig α) : List (Variance × α) :=
   s.calls.flatMap (fun m => m.arguments.map (.contra, ·) ++ [(.co, m.result)]) ++
     s.rests.flatMap (fun m => m.arguments.1.map (.contra, ·) ++
       [(.contra, m.arguments.2), (.co, m.result)]) ++
-    s.schemes.map (.co, ·)
+    s.schemes.map (.co, ·) ++ s.receivers.map (.contra, ·)
 
 /-- Each operand of a clause with the polarity of its position: `co` under
 results and readonly positions, `contra` under parameters and receivers,

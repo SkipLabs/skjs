@@ -40,12 +40,14 @@ export type OptionalField<L = number> = { key: PropertyKey; readonly: boolean; t
 export type KeyBound = { among: boolean; keys: PropertyKey[] };
 /** A host-relative method member: its key, its fixed signatures
  * `[params, result]`, its variadic ones `[params, [rest, result]]`, and its
- * quantified ones, each a scheme row the member bound to its host meets. */
+ * quantified ones, each a scheme row the member bound to its host meets, and
+ * the types its host must meet for the fixed and variadic ones to hold. */
 export type MethodSig<L = number> = {
   key: PropertyKey;
   calls: MethodArrow<L>[];
   rests: MethodRestArrow<L>[];
   schemes: Labels<L>[];
+  receivers: Labels<L>[];
 };
 export type Tuple<L = number> = {
   required: Labels<L>[];
@@ -288,9 +290,10 @@ export function decodeGraph(value: unknown): TypeGraph {
   };
   const methods = (v: unknown) =>
     array(v).forEach((m) => {
-      const r = obj(m, ["key", "calls", "rests", "schemes"]);
+      const r = obj(m, ["key", "calls", "rests", "schemes", "receivers"]);
       key(r.key, "a method key");
       array(r.schemes).forEach(labels);
+      array(r.receivers).forEach(labels);
       array(r.calls).forEach((c) => contract(c, true, false));
       array(r.rests).forEach((c) => contract(c, true, true));
     });

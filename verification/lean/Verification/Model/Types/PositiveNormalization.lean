@@ -912,14 +912,14 @@ private theorem tuple_self {t : Tuple α} {f : α → α} (h : ∀ a ∈ t.opera
 
 private theorem sig_self {m : Sig α} {f : α → α} (h : ∀ a ∈ m.operands, f a = a) :
     m.map f = m := by
-  obtain ⟨k, cs, rs, ss⟩ := m
+  obtain ⟨k, cs, rs, ss, os⟩ := m
   simp only [Sig.operands, List.mem_append, List.mem_flatMap] at h
   simp only [Sig.map, Sig.mk.injEq, true_and]
-  refine ⟨?_, ?_, map_self fun a ha => h a (.inr ha)⟩
+  refine ⟨?_, ?_, map_self fun a ha => h a (.inl (.inr ha)), map_self fun a ha => h a (.inr ha)⟩
   · exact map_self fun p hp => MethodArrow.map_of_operands fun x hx =>
-      h x (.inl (.inl ⟨p, hp, hx⟩))
+      h x (.inl (.inl (.inl ⟨p, hp, hx⟩)))
   · exact map_self fun p hp => MethodRestArrow.map_of_operands fun x hx =>
-      h x (.inl (.inr ⟨p, hp, hx⟩))
+      h x (.inl (.inl (.inr ⟨p, hp, hx⟩)))
 
 /-- A renaming fixing every operand fixes the clause. -/
 theorem map_of_operands {c : Clause α} {f : α → α} (h : ∀ a ∈ c.operands, f a = a) :

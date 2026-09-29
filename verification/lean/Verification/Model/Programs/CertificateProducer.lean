@@ -395,10 +395,11 @@ for each variadic one, a member's of as many fixed parameters, likewise, the
 claimed rest within the member's too. -/
 @[nospecialize] def memberProofsUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (O : Ty ι) (k : PropKey)
     (F : Ty ι) : Option (List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι) ×
-      List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι × PositiveCertificates.Proof ι)) := do
+      List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι × PositiveCertificates.Proof ι) ×
+      List (PositiveCertificates.Proof ι)) := do
   let m ← ProgramTyping.memberOf G O k
   -- At a quantified signature, the member bound to its host is the scheme.
-  if expand G F = [] && m.schemes.contains F then return ([], [])
+  if expand G F = [] && m.schemes.contains F then return ([], [], [])
   let [.arrs L S] := expand G F | none
   let calls ← L.mapM fun q => m.calls.findSome? fun c => do
     if q.arguments.length != c.arguments.length || !c.effect.covers q.effect then none
@@ -411,7 +412,9 @@ claimed rest within the member's too. -/
     let pe ← subtypeUsing G images s.arguments.2 c.arguments.2
     let pr ← subtypeUsing G images c.result s.result
     pure (ps, pe, pr)
-  pure (calls, rests)
+  -- The object's type within each type the member's host must meet.
+  let receivers ← m.receivers.mapM fun T => subtypeUsing G images O T
+  pure (calls, rests, receivers)
 
 @[nospecialize] def coerce [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (e : ProgramCertificates.Evidence ι) (A : Ty ι) : Option (ProgramCertificates.Evidence ι) := do
@@ -538,8 +541,8 @@ came from a different context. No execution budget is inspected. -/
         | some O => ProgramTyping.memberSchemes G O k
         | none => []
       return (A :: schemes ++ pool).findSome? fun F => do
-        let (ps, rs) ← memberProofsUsing G images (← Γ[i]?) k F
-        if checkTreeUsing G images (leaf F (.bindMember ps rs)) then coerce G images (leaf F (.bindMember ps rs)) A
+        let (ps, rs, vs) ← memberProofsUsing G images (← Γ[i]?) k F
+        if checkTreeUsing G images (leaf F (.bindMember ps rs vs)) then coerce G images (leaf F (.bindMember ps rs vs)) A
         else none
     | .letE a b =>
       let exactTypes := suggestions.reverse.filterMap fun j =>

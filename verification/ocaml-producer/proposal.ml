@@ -288,7 +288,7 @@ let added_contract declarations t name (rhs:Source.expr) value =
 let grown declarations t name c =
   match plain_arms declarations t with
   | Some atoms ->
-    let field = {name;optional=false;read=c;write=Some c;host=false} in
+    let field = {name;optional=false;read=c;write=Some c;host=false;receivers=[]} in
     let add fs = List.filter (fun (f:Semantic.field) -> f.name<>name) fs @ [field] in
     Atoms (List.map (function
       | Shape s -> Shape {s with fields=add s.fields}
@@ -1149,7 +1149,7 @@ let merge_alternative (a:alternative) (b:alternative) : alternative =
   let find fs k = List.find_opt (fun (f:Semantic.field) -> f.name = k) fs in
   let names = List.fold_left (fun ns (f:Semantic.field) ->
     if List.mem f.name ns then ns else ns @ [f.name]) [] (a.afields @ b.afields) in
-  let field name optional t = ({name;optional;read=t;write=Some t;host=false} : Semantic.field) in
+  let field name optional t = ({name;optional;read=t;write=Some t;host=false;receivers=[]} : Semantic.field) in
   let fields = List.filter_map (fun k ->
     match find b.afields k with
     | Some f when not f.optional -> Some (field k false f.read)
@@ -1483,7 +1483,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let fields = List.map (fun (name,e) -> name,const_type ~nested:true env e) fs in
       if List.exists (fun (_,t) -> t = None) fields then None
       else Some (record (List.map (fun (name,t) ->
-        {name;optional=false;read=Option.get t;write=None;host=false}) fields))
+        {name;optional=false;read=Option.get t;write=None;host=false;receivers=[]}) fields))
     | _ when nested -> quietly (fun () -> expr env e)
     | _ -> None
   (* `await e` and an async body's `return e` (the intrinsics `%Await%` and
@@ -1834,7 +1834,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         let fresh = match e.node with Id _ | Read _ -> false | _ -> true in
         let t=if widened || (expected = None && not fresh) then inferred
           else Option.value expected ~default:(widen inferred) in
-        {name;optional=false;read=t;write=Some t;host=false}) fs in
+        {name;optional=false;read=t;write=Some t;host=false;receivers=[]}) fs in
       (* Where the contract is a dictionary, or has optional fields, the
          literal is claimed with its exact keys: that own-key bound is what
          lets it meet an index, or an optional field it leaves out. A class
@@ -1878,7 +1878,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         let expected = Option.map (fun (f:Semantic.field) -> f.read) hint in
         let inferred = expr ?expected env e in
         let t = Option.value expected ~default:(widen inferred) in
-        ({name=Name name;optional=false;read=t;write=Some t;host=false} : Semantic.field) in
+        ({name=Name name;optional=false;read=t;write=Some t;host=false;receivers=[]} : Semantic.field) in
       let group fs = {afields=fs;exact=true;index=None} in
       let merge alts b = List.concat_map (fun a -> List.map (merge_alternative a) b) alts in
       let alts,fields = List.fold_left (fun (alts,fields) (name,e) -> match name with

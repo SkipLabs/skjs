@@ -72,7 +72,10 @@ Each type-graph node is a union of clauses:
 The arrow example contains two signatures, each with one argument and the
 receiver label 5. Every signature carries `effect: "unrestricted"` or
 `effect: "preservesInputHeap"`; omission is refused. Host-relative method
-signatures use the same record with `receiver: {}`. Effectful contracts use
+signatures use the same record with `receiver: {}`. A record clause's
+`methods` lists its members as `{"key","calls","rests","schemes","receivers"}`:
+the fixed and variadic signatures, the quantified ones as scheme types, and
+the types the member's host must meet (a `this` parameter's), `[]` for none. Effectful contracts use
 these records in graph rows, scheme rows, code entries and subtype certificates.
 A code entry must discharge both safety and its effect, as described in
 [the definition rules](PROGRAM-TYPING.md#certifying-inferred-call-effects).
@@ -388,7 +391,9 @@ same object. The object's type must have one object clause with a method of
 key `k`; each fixed signature of the result must be covered by one of the
 method's, at any receiver, by the subtyping proofs the rule carries, one per
 parameter, then the result; each variadic one likewise, one per fixed
-parameter, then the rest, then the result. With no proofs, the result may
+parameter, then the rest, then the result; and the object's type must be
+within each type the method's host must meet, by one more proof each, in the
+method's order. With no proofs, the result may
 instead be one of the method's quantified signatures, a scheme row
 (`HasTyUsing.bindScheme`), which a call instantiates by `sub`.
 `callRest` carries the
@@ -911,12 +916,14 @@ instances).
 A declaration's generic method `m<U>(...): R` is a readonly member whose type
 is the source term `{"k":"scheme","binders":[{"name","bound","default","span"},
 ...],"signatures":[function terms],"span":span}`. Each signature's receiver is
-`{"k":"self"}`, and the method's own type parameters are `{"k":"binder","name"}`
+`{"k":"self"}` (a non-generic method's is too, or, with a `this: T`
+parameter, `{"k":"intersection","parts":[{"k":"self"},T]}`: the host, which
+must meet `T`), and the method's own type parameters are `{"k":"binder","name"}`
 terms, which shadow the declaration's. A rest typed by one of them,
 `...params: P`, is the rest term `{"k":"pack","of":binder}`: a **pack
 parameter**, whose actuals past the fixed ones are, as one argument list, at
 `P`; every other rest term is its element. Lean lowers it to a host-relative
-member with quantified signatures, `{"key","calls":[],"rests":[],"schemes":[[row]]}`
+member with quantified signatures, `{"key","calls":[],"rests":[],"schemes":[[row]],"receivers":[]}`
 in the clause's `methods`: a scheme row whose binders are its application's
 owned parameters (see [generic methods](PROGRAM-TYPING.md#generic-methods)), whose receivers admit every value, and whose bounds are the binders' bounds, lowered where the
 method is declared, a pack parameter's array or tuple bound as the argument

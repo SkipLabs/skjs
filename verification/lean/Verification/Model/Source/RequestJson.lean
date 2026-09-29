@@ -311,9 +311,10 @@ meaning for an invalid serialized type reference. -/
     (j.type :: j.context).all (validTy ok) &&
     (match r with
       | .sub p => (proofTypes p).all (validTy ok)
-      | .bindMember ps rs => (ps.all fun p =>
-          (p.1.flatMap proofTypes ++ proofTypes p.2).all (validTy ok)) && rs.all fun p =>
-          (p.1.flatMap proofTypes ++ proofTypes p.2.1 ++ proofTypes p.2.2).all (validTy ok)
+      | .bindMember ps rs vs => (ps.all fun p =>
+          (p.1.flatMap proofTypes ++ proofTypes p.2).all (validTy ok)) && (rs.all fun p =>
+          (p.1.flatMap proofTypes ++ proofTypes p.2.1 ++ proofTypes p.2.2).all (validTy ok)) &&
+          vs.all fun p => (proofTypes p).all (validTy ok)
       | .ifBoolVar T F => validTy ok T && validTy ok F
       | .funGraph As | .callableGraph As => As.all (validTy ok)
       | .ctorGraph U => validTy ok U

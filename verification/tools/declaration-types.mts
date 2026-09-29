@@ -80,7 +80,9 @@ export type TypeTerm =
    * the meaning of the standard library's `Function` (PROGRAM-TYPING.md,
    * "Library types"). Nothing may be called or constructed through it. */
   | { k: "callable"; span: Span }
-  /** The containing declaration is the implicit receiver of a method signature. */
+  /** The containing declaration is the implicit receiver of a method
+   * signature; a method's `this: T` makes the receiver its intersection with
+   * `T`, a type the host must meet. */
   | { k: "self"; span: Span }
   | { k: "parameter"; index: number; span: Span }
   /** A type parameter by its spelling: an enclosing function's, in an

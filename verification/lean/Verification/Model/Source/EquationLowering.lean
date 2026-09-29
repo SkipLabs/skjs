@@ -214,13 +214,26 @@ partial def binderUse (name : String) : Json → BinderUse
   | .arr terms => terms.foldl (fun acc term => acc.merge (binderUse name term)) {}
   | _ => {}
 
+/-- The types a method form's host must meet: none for the declaration as
+receiver (`self`), the other parts for its intersection with the type a
+`this` parameter states. -/
+private def statedReceivers (f : Json) : Option (Array Json) :=
+  let r := (f.getObjVal? "receiver").toOption
+  match r.bind kindOf with
+  | some "self" => some #[]
+  | some "intersection" =>
+    let parts := (r.bind fun r => (r.getObjValAs? (Array Json) "parts").toOption).getD #[]
+    let stated := parts.filter (kindOf · != some "self")
+    if parts.size - stated.size == 1 && !stated.isEmpty then some stated else none
+  | _ => none
+
 /-- A field's method forms: one signature or an intersection of several, each
-with the declaration as receiver. -/
+with the declaration as receiver, or its intersection with stated types. -/
 private def methodForms (t : Json) : Option (Array Json) :=
   let forms := if kindOf t == some "intersection"
     then (t.getObjValAs? (Array Json) "parts").toOption.getD #[] else #[t]
   if !forms.isEmpty && forms.all (fun f => kindOf f == some "function" &&
-      ((f.getObjVal? "receiver").toOption.bind kindOf) == some "self")
+      (statedReceivers f).isSome)
   then some forms else none
 
 /-- A generic method: a scheme whose signatures take the declaration as
@@ -274,6 +287,7 @@ partial def mentionsAux (shadow : List String) (acc : Array Item) : Json → Arr
           let optional := (f.getObjValAs? Bool "optional").toOption.getD false
           match (if optional then none else methodForms ty), (if optional then none else schemeMethod ty) with
           | some forms, _ => forms.foldl (fun acc form =>
+              let acc := ((statedReceivers form).getD #[]).foldl (mentionsAux shadow) acc
               ["params", "rest", "result"].foldl (fun acc k => mentionsAux shadow acc (form.getObjValD k)) acc) acc
           | none, some t => mentionsAux shadow acc t
           | none, none => mentionsAux shadow acc ty) acc) acc
@@ -1002,15 +1016,23 @@ partial def objectClause (ctx : Ctx) (term : Json) : M (Clause (List Tree)) := d
     | some forms =>
       let mut calls : List (MethodArrow (List Tree)) := []
       let mut rests : List (MethodRestArrow (List Tree)) := []
+      -- The types the host must meet, which every form states alike: the
+      -- member states them once, for all its signatures.
+      let mut receivers : Option (List (List Tree)) := none
       for form in forms do
         CellClaims.fieldsExactly form ["k", "receiver", "params", "rest", "result", "effect", "span"]
+        let stated ← ((statedReceivers form).getD #[]).mapM (lowerType ctx)
+        match receivers with
+        | none => receivers := some stated.toList
+        | some rs => if rs != stated.toList then
+            throw s!"{ctx.site}: a method's signatures state its receiver unalike"
         let domains ← (← arr form "params").mapM (lowerType ctx)
         let rest ← field form "rest"
         let result ← lowerType ctx (← field form "result")
         let effect : CallEffects.Effect ← fromJson? (← field form "effect")
         if rest == .null then calls := calls ++ [⟨(), domains.toList, result, effect⟩]
         else rests := rests ++ [⟨(), (domains.toList, ← lowerRest ctx rest), result, effect⟩]
-      methods := methods ++ [⟨name, calls, rests, []⟩]
+      methods := methods ++ [⟨name, calls, rests, [], receivers.getD []⟩]
     | none =>
       match (if optional then none else schemeMethod ty) with
       | some t =>
@@ -1022,7 +1044,7 @@ partial def objectClause (ctx : Ctx) (term : Json) : M (Clause (List Tree)) := d
           { name := s!"{owner.name}.{key}", kind := .method o key, kinds := owner.kinds,
             binders := unitBinders names packs } fun m => some (.scheme m ctx t)
         let args := (List.range owner.kinds.length).map fun k => [Tree.argument k]
-        methods := methods ++ [⟨name, [], [], [[mkApp m args]]⟩]
+        methods := methods ++ [⟨name, [], [], [[mkApp m args]], []⟩]
       | none =>
         let value ← lowerType ctx ty
         all := all.push (name, value, ← bool f "readonly", optional)

@@ -549,6 +549,10 @@ forced by soundness:
 - A class method taking fewer parameters than an interface's member is
   claimed at the longer signature as well, the extra actuals discarded at
   binding (`CodeOffers`); no subtyping widens an arrow's parameters.
+- A method declaring `this: T` is a member whose host must meet `T`: it
+  promises its signatures on a host that is a `T`, and a call proves its
+  host one. The types a member's host must meet are contravariant, so a
+  member stating one is no member stating none.
 
 A generic method is a member with **quantified signatures**: a scheme the
 member bound to its host meets, whatever receiver the bound function is
@@ -974,7 +978,7 @@ representation cannot state it yet; the paths are in
 | A rest parameter of a definition typed by a type parameter; one typed by a tuple with optional or rest elements | A definition has no allocation rule for an array only an instance fixes (a function type's is a pack); several lengths are several signatures. |
 | A written `let` pattern in a `for` head; a test of a written `let` holding a union of objects; a `let` captured by a closure in a `for` loop | Its bindings are cells, which only a statement of a block lowers them to; a cell's known contents are primitive or merely no `undefined`; JavaScript copies the binding per iteration, which the lowering does not. |
 | An array pattern over a value that may not be an array | The pattern reads an array's positions; over a host non-array iterable it would step `%Iterate:K%`, which the lowering does not place. |
-| A class method declaring `this: T`; a generic class method with a bounded binder; a constructor's rest parameter; a constructor parameter default, or a statement, reading `this` before the instance is complete | A method member is host-relative, its contract states no other receiver; a generic class method's bounded binder, whose row its bound names; no rule constructs at a variadic construct signature; the instance is allocated at the end of the constructor. |
+| A generic method declaring `this: T`; a generic class method with a bounded binder; a constructor's rest parameter; a constructor parameter default, or a statement, reading `this` before the instance is complete | A generic method's member is a scheme its member bound to the host meets at every receiver, which states no type the host must meet; a generic class method's bounded binder, whose row its bound names; no rule constructs at a variadic construct signature; the instance is allocated at the end of the constructor. |
 | A class member with a computed key other than a method's `unique symbol` constant or a static `[Symbol.hasInstance]`; an index signature in a class; a static block reading `this`; a class extending a generic class other than at the base's own binders | A method is a binding and a prototype key named by its plain name or its symbol; instances are what construction allocates; the block's receiver is the class value, whose statics are bindings of their own; a generic base's construction is at its binders' rows ([classes](PROGRAM-TYPING.md#classes)). |
 | A class with a private name in inheritance; `#x in o` | A derived instance's base part is a copy, and a copy holds no private slot; the test asks for an own slot, where the model's key test walks the prototype chain. |
 | An instance member or constructor reading a static of its own class; a static method that reads `this`; `super` in a static member; a mutable static field | Statics are bindings the class defines after its methods and constructor, whose closures cannot hold them, exact only when immutable; a static method's receiver is whatever its call passes, and its `super` the base's constructor. |

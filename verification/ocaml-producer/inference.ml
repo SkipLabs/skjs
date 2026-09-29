@@ -29,7 +29,8 @@ and substitute_atom ?meet solution = function
   | Shape shape -> Shape (substitute_shape ?meet solution shape)
   | Exact fields -> Exact (List.map (fun (field:Semantic.field) -> {field with
       read=substitute ?meet solution field.read;
-      write=Option.map (substitute ?meet solution) field.write}) fields)
+      write=Option.map (substitute ?meet solution) field.write;
+      receivers=List.map (substitute ?meet solution) field.receivers}) fields)
   | Named (id,args) -> Named (id,List.map (substitute ?meet solution) args)
   | Ctors signatures -> Ctors (List.map (substitute_signature ?meet solution) signatures)
   | (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Top
@@ -52,7 +53,8 @@ and substitute_argument ?meet solution = function
 and substitute_shape ?meet solution shape = {
   fields=List.map (fun field -> {field with
     read=substitute ?meet solution field.read;
-    write=Option.map (substitute ?meet solution) field.write}) shape.fields;
+    write=Option.map (substitute ?meet solution) field.write;
+    receivers=List.map (substitute ?meet solution) field.receivers}) shape.fields;
   indexes=List.map (fun (index:Semantic.index_signature) -> {index with
     value=substitute ?meet solution index.value;
     writable=Option.map (substitute ?meet solution) index.writable}) shape.indexes;

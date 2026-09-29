@@ -47,8 +47,9 @@ and atom = Nul | Undef | True | False | Num | Str | NumLit of int64 | StrLit of 
 and key = Name of string | Key of int
 (* A host-relative method (`host`) is read off its object and invoked on it:
    a member, not a field holding a function value, as Lean reads method
-   syntax. *)
-and field = { name: key; optional: bool; read: ty; write: ty option; host: bool }
+   syntax. `receivers` are the types its host must meet, which a `this`
+   parameter states; none for any other field. *)
+and field = { name: key; optional: bool; read: ty; write: ty option; host: bool; receivers: ty list }
 (* An index signature constrains the keys its class admits: every string key
    (`[k: string]`), the canonical numeric ones (`[k: number]`), or every symbol
    key (`[k: symbol]`); an index over a union of key types is one per member. *)
@@ -98,7 +99,8 @@ let rec mentions_rigid = function
       | Named (_,args) -> List.exists mentions_rigid args
       | Shape s ->
         List.exists (fun (f:field) -> mentions_rigid f.read
-          || Option.fold ~none:false ~some:mentions_rigid f.write) s.fields
+          || Option.fold ~none:false ~some:mentions_rigid f.write
+          || List.exists mentions_rigid f.receivers) s.fields
         || List.exists (fun (i:index_signature) -> mentions_rigid i.value
           || Option.fold ~none:false ~some:mentions_rigid i.writable) s.indexes
         || List.exists signature_mentions_rigid s.calls

@@ -2872,10 +2872,10 @@ slots are introduced only after the operand supplying their type is checked. -/
         let K := r.type :: Γ
         let ds := held ⟨"",some o.span⟩ :: scope
         let M ← exprType fc f
-        let method := DirectProof.node K (memberHead G r.type fld (.var 0)) M (.bindMember [] []) []
+        let method := DirectProof.node K (memberHead G r.type fld (.var 0)) M (.bindMember [] [] []) []
         obligation f.span method.goal (some method) "expression-claim" ds
         return DirectProof.letE Γ r
-          (DirectProof.node K (memberHead G r.type fld (.var 0)) A (.bindMember [] []) [])
+          (DirectProof.node K (memberHead G r.type fld (.var 0)) A (.bindMember [] [] []) [])
     -- The target, the receiver and the prefix, each evaluated once and saved,
     -- then a forwarding descriptor holding the saved values: invoking it
     -- ignores its own receiver and calls the target with the saved one and the
@@ -3005,8 +3005,8 @@ slots are introduced only after the operand supplying their type is checked. -/
         -- call's claimed instance is below it.
         match ProgramTyping.memberSchemes G r.type fld with
         | S :: _ => pure (DirectProof.cast K M
-            (DirectProof.node K (memberHead G r.type fld (.var ri)) S (.bindMember [] []) []))
-        | [] => pure (DirectProof.node K (memberHead G r.type fld (.var ri)) M (.bindMember [] []) [])
+            (DirectProof.node K (memberHead G r.type fld (.var ri)) S (.bindMember [] [] []) []))
+        | [] => pure (DirectProof.node K (memberHead G r.type fld (.var ri)) M (.bindMember [] [] []) [])
       else if !arms.isEmpty then memberReadPlan G K ri fld M arms
       else DirectProof.cast K M <$> readCell G K fld (DirectProof.var K ri r.type)
     obligation callee.span method.goal (some method) "expression-claim" ds

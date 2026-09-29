@@ -137,12 +137,15 @@ $c_j\equiv T_j$ when $r=\mathsf{w}$ and $c_j\subseteq T_j$ when $r=\mathsf{ro}$
   it, they behave as typed
   ([DESIGN.md](DESIGN.md#method-members-are-host-relative)). A member $m$ has
   fixed signatures $(\vec P\to B)$ and variadic ones $(\vec P,\ldots Q)\to B$,
-  none with a receiver, and **quantified signatures**: types $S$, a generic
-  method's scheme rows, that the member bound to its host meets. With
+  none with a receiver, **quantified signatures**: types $S$, a generic
+  method's scheme rows, that the member bound to its host meets, and the
+  types $m.\mathsf{this}$ its host must meet (a `this` parameter's). With
   $\mathsf{bound}(u,v)$ the forwarding function `.bind` makes of $u$ and $v$,
   which invokes $u$ with $v$ whatever receiver it is given, and
   $\mathsf{on}_v(m)$ the invocable values meeting the member's signatures,
-  each with $v$ as the one receiver it admits, and bound to $v$ its schemes,
+  each with receivers $\{v\}\cap\bigcap_{T\in m.\mathsf{this}}⟦T⟧_n(W)$
+  (`hostIn`): $v$ as the one receiver it admits, where $v$ is in each type
+  its host must meet, and no receiver otherwise; and bound to $v$ its schemes,
 
   $`u\in\mathsf{on}_v(m)_n(W)\iff u\in\mathsf{Calls}(m.\mathsf{calls}^{v})\cap \mathsf{Rests}(m.\mathsf{rests}^{v})\land \forall S\in m.\mathsf{schemes}.\;\mathsf{bound}(u,v)\in⟦S⟧_n(W),`$
 
@@ -749,23 +752,29 @@ array, whose bound only excludes keys.
 
 **Methods.** A target method $m$ is covered by a source method of the same
 key, by a function the source holds under that key whose receiver the source
-type $S$ is within, or, when a key bound of the source excludes the key, by
-such a function along its prototype chain. A quantified signature is covered
-by one of the source member's, the two related as types: both are met by the
-same bound function, so the coverage of two schemes is subtyping between them
-(below, [quantified signatures](#covered-pairs)):
+type $S$ is within, or a type $m$'s host must meet, or, when a key bound of
+the source excludes the key, by such a function along its prototype chain.
+With $\Delta(S\mid m,Q_0)$ for $\Delta(S,Q_0)\lor\exists T\in m.\mathsf{this}.\;\Delta(T,Q_0)$,
+the host, which is in $S$ and in each of $m.\mathsf{this}$, is in $Q_0$. A
+quantified signature is covered by one of the source member's, the two
+related as types: both are met by the same bound function, so the coverage of
+two schemes is subtyping between them (below,
+[quantified signatures](#covered-pairs)). Each type the source member's host
+must meet is within one the target's must, so a host of the target member is
+one of the source's:
 
 ```math
-\frac{m'\in\mu\quad m'.\mathsf{key}=m.\mathsf{key}\quad
-      \forall(\vec Q\to D)\in m.\;\exists(\vec P\to B)\in m'.\;\Delta(\vec Q,\vec P)\land\Delta(B,D)\quad
-      \forall S'\in m.\mathsf{schemes}.\;\exists S\in m'.\mathsf{schemes}.\;\Delta(S,S')}
+\frac{\begin{array}{c}m'\in\mu\quad m'.\mathsf{key}=m.\mathsf{key}\quad
+      \forall(\vec Q\to D)\in m.\;\exists(\vec P\to B)\in m'.\;\Delta(\vec Q,\vec P)\land\Delta(B,D)\\
+      \forall S'\in m.\mathsf{schemes}.\;\exists S\in m'.\mathsf{schemes}.\;\Delta(S,S')\quad
+      \forall T\in m'.\mathsf{this}.\;\exists T'\in m.\mathsf{this}.\;\Delta(T',T)\end{array}}
      {\Delta;S\vdash(\Phi\,\psi;\mu)\sqsubseteq_{\mathsf{meth}}m}
 ```
 
 ```math
 \frac{(m.\mathsf{key}{:}F)\in\Phi\,\psi\quad F\equiv\mathsf{arrs}(L;\ldots)\quad
       \forall(\vec Q\to D)\in m.\;\exists(Q_0;\vec P)\to B\in L.\;
-      \Delta(S,Q_0)\land\Delta(\vec Q,\vec P)\land\Delta(B,D)}
+      \Delta(S\mid m,Q_0)\land\Delta(\vec Q,\vec P)\land\Delta(B,D)}
      {\Delta;S\vdash(\Phi\,\psi;\mu)\sqsubseteq_{\mathsf{meth}}m}
 ```
 
@@ -831,17 +840,19 @@ proved outside the table. For an array, $F$ is a generic member of
 as receiver: `Array.prototype[Symbol.iterator]` at `number` covers
 `Iterable<number>`'s member. Or it is an arrow type, as for the second rule:
 a class instance's methods are its prototype chain's closures, whose
-receiver is the class's instance type ([classes](PROGRAM-TYPING.md#classes)). Each premise that names $\kappa$ passes it on unchanged:
+receiver is the class's instance type, or the type a `this` parameter states,
+which the instance type's member states its host must meet
+([classes](PROGRAM-TYPING.md#classes)). Each premise that names $\kappa$ passes it on unchanged:
 
 ```math
 \frac{(F,L,M)\in\kappa\quad
       \forall(\vec Q\to D)\in m.\;\exists(Q_0;\vec P)\to B\in L.\;
-      \Delta(S,Q_0)\land\Delta(\vec Q,\vec P)\land\Delta(B,D)}
+      \Delta(S\mid m,Q_0)\land\Delta(\vec Q,\vec P)\land\Delta(B,D)}
      {\Delta;\kappa;S\vdash F\ni_{\mathsf{fn}}m}
 \qquad
 \frac{F\equiv\mathsf{arrs}(L;\ldots)\quad
       \forall(\vec Q\to D)\in m.\;\exists(Q_0;\vec P)\to B\in L.\;
-      \Delta(S,Q_0)\land\Delta(\vec Q,\vec P)\land\Delta(B,D)}
+      \Delta(S\mid m,Q_0)\land\Delta(\vec Q,\vec P)\land\Delta(B,D)}
      {\Delta;\kappa;S\vdash F\ni_{\mathsf{fn}}m}
 ```
 
@@ -852,8 +863,9 @@ of the source, one prototype location at a time (`protoHolds_sound`).
 
 Here $\Delta(\vec Q,\vec P)$ pairs the lists position by position and needs
 equal lengths (`Domains`). Receivers of two members are not compared: both
-are the host. Variadic member signatures are covered likewise, the target's
-extra fixed parameters taken into the source's rest.
+are the host; the types their hosts must meet are contravariant, as above.
+Variadic member signatures are covered likewise, the target's extra fixed
+parameters taken into the source's rest.
 
 **Arrays and packs.** A writable `list` target contract is covered by a
 writable source contract with as many required and optional positions, each

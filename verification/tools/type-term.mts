@@ -44,12 +44,19 @@ export function numericKey(literal: string): string {
   return String(Number(literal.replace(/_/g, "")));
 }
 
-/** A method declaring `this: T`. A method member's contract is relative to
- * its host, the object it is read from (DESIGN.md, "Method members are
- * host-relative"): its signatures carry no receiver, so one stated apart from
- * the host has nothing to be. */
-export const METHOD_RECEIVER =
-  "a method with a `this` parameter is outside the fragment: a method member's contract is relative to its host, the object it is read from, and states no receiver apart from it";
+/** A generic method declaring `this: T`. A generic method's member is a
+ * scheme its member bound to the host meets whatever receiver the bound
+ * function is given (DESIGN.md, "Method members are host-relative"), which
+ * states no type the host must meet. */
+export const GENERIC_METHOD_RECEIVER =
+  "a generic method with a `this` parameter is outside the fragment: its member is a scheme the member bound to its host meets, which states no type the host must meet";
+
+/** A method form's receiver: the declaration it is a member of, its host,
+ * met with the type a `this` parameter states, which the host must meet. */
+export function hostReceiver(form: FunctionTerm, span: Span): TypeTerm {
+  const self: TypeTerm = { k: "self", span };
+  return form.receiver ? { k: "intersection", parts: [self, form.receiver], span } : self;
+}
 
 /** Why a class member of a kind the fragment has no lowering for is
  * refused. */
@@ -699,7 +706,7 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
           span: spanOf(scope, p),
         }));
         const forms = signatures(inner, member.parameters, member.type, member, memberSpan);
-        if (forms.some(m => m.receiver)) scope.fail(member, "unsupported method signature");
+        if (forms.some(m => m.receiver)) scope.fail(member, GENERIC_METHOD_RECEIVER);
         fields.push({ name, optional: false, readonly: true,
           type: { k: "scheme", binders,
             signatures: forms.map(m => ({ ...m, receiver: { k: "self", span: memberSpan } })),
@@ -716,10 +723,13 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
         scope.fail(member, "an optional method of a nested type literal has no declaration as its receiver");
       const name = named(member, "unsupported method signature");
       const forms = signatures(scope, member.parameters, member.type, member, memberSpan);
-      if (forms.some(m => m.receiver)) scope.fail(member, METHOD_RECEIVER);
-      // An optional method, `return?(...)`, is an optional field.
-      fields.push({ name, optional: member.postfixToken?.kind === ts.SyntaxKind.QuestionToken, readonly: false,
-        type: oneTerm(forms.map(m => ({ ...m, receiver: { k: "self", span: memberSpan } })), memberSpan),
+      // An optional method, `return?(...)`, is an optional field, whose
+      // function takes the declaration as receiver, never another.
+      const optional = member.postfixToken?.kind === ts.SyntaxKind.QuestionToken;
+      if (optional && forms.some(m => m.receiver))
+        scope.fail(member, "an optional method with a `this` parameter is outside the fragment: an optional method is an optional field, whose function takes its declaration as receiver");
+      fields.push({ name, optional, readonly: false,
+        type: oneTerm(forms.map(m => ({ ...m, receiver: hostReceiver(m, memberSpan) })), memberSpan),
         span: memberSpan });
     } else if (ts.isCallSignatureDeclaration(member)) {
       if (member.typeParameters?.length || !member.type)
@@ -863,16 +873,15 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
           span: spanOf(scope, p),
         }));
         const method = signature(inner, member.parameters, member.type, member, memberSpan);
-        if (method.receiver) scope.fail(member, METHOD_RECEIVER);
+        if (method.receiver) scope.fail(member, GENERIC_METHOD_RECEIVER);
         fields.push({ name, optional: false, readonly: true,
           type: { k: "scheme", binders, signatures: [{ ...method, receiver: { k: "self", span: memberSpan } }],
             span: memberSpan }, span: memberSpan });
         continue;
       }
       const method = signature(scope, member.parameters, member.type, member, memberSpan);
-      if (method.receiver) scope.fail(member, METHOD_RECEIVER);
       fields.push({ name, optional: false, readonly: true,
-        type: { ...method, receiver: { k: "self", span: memberSpan } }, span: memberSpan });
+        type: { ...method, receiver: hostReceiver(method, memberSpan) }, span: memberSpan });
     } else if (ts.isConstructorDeclaration(member)) {
       // A parameter property is a field the constructor assigns from its
       // parameter. Its visibility is TypeScript's alone; `readonly` is the

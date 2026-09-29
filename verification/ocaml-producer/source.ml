@@ -182,25 +182,48 @@ let rec source_type ctx j =
   | "object" ->
     let recur = source_type {ctx with own=false;self_owner=ctx.own} in
     (* Method syntax: one signature or several, each received by the object,
-       on a required member (as Lean's `methodForms`). *)
-    let received f = match f with
-      | Object fs -> List.assoc_opt "k" fs = Some (String "function") &&
-        (match List.assoc_opt "receiver" fs with
-         | Some (Object r) -> List.assoc_opt "k" r = Some (String "self")
-         | _ -> false)
+       or by its meet with the types a `this` parameter states, which the
+       host must meet, on a required member (as Lean's `methodForms`). *)
+    let is_self = function
+      | Object r -> List.assoc_opt "k" r = Some (String "self")
       | _ -> false in
-    let method_syntax t = received t || (match t with
+    let stated f = match f with
+      | Object fs when List.assoc_opt "k" fs = Some (String "function") ->
+        (match List.assoc_opt "receiver" fs with
+         | Some r when is_self r -> Some []
+         | Some (Object r as receiver) when List.assoc_opt "k" r = Some (String "intersection") ->
+           let parts = items "parts" receiver in
+           let others = List.filter (fun p -> not (is_self p)) parts in
+           if List.length parts - List.length others = 1 && others <> [] then Some others else None
+         | _ -> None)
+      | _ -> None in
+    let forms t = match t with
       | Object fs when List.assoc_opt "k" fs = Some (String "intersection") ->
         (match List.assoc_opt "parts" fs with
-         | Some (Array (_::_ as parts)) -> List.for_all received parts
-         | _ -> false)
-      | _ -> false) in
+         | Some (Array (_::_ as parts)) -> parts
+         | _ -> [])
+      | t -> [t] in
+    let method_syntax t = forms t <> [] && List.for_all (fun f -> stated f <> None) (forms t) in
     let fields = List.map (fun f ->
-      let t = recur (field "type" f) in
       let optional = boolean (field "optional" f) in
+      let host = not optional && method_syntax (field "type" f) in
+      (* The stated receivers are read apart; the forms keep the host alone. *)
+      let receivers,ty = if not host then [],field "type" f else
+        let unstated form = match form with
+          | Object fs -> Object (List.map (fun (k,v) -> if k = "receiver" && not (is_self v)
+              then (k,List.find is_self (items "parts" v)) else (k,v)) fs)
+          | form -> form in
+        let receivers = match forms (field "type" f) with
+          | form :: _ -> List.map recur (Option.get (stated form))
+          | [] -> [] in
+        receivers,(match field "type" f with
+          | Object fs when List.assoc_opt "k" fs = Some (String "intersection") ->
+            Object (List.map (fun (k,v) -> if k = "parts" then (k,Array (List.map unstated (list v))) else (k,v)) fs)
+          | form -> unstated form) in
+      let t = recur ty in
       {name=property_key (field "name" f);optional;
        read=t;write=(if boolean (field "readonly" f) then None else Some t);
-       host=not optional && method_syntax (field "type" f)})
+       host;receivers})
       (items "fields" j) in
     (* The string index, and the number and symbol indexes a term states only
        when it has them. *)
@@ -216,7 +239,7 @@ let rec source_type ctx j =
     (* Members held as own properties that are not enumerable, on the
        prototype the model gives the object (the library overlay's). *)
     let fields = match List.assoc_opt "prototype" (obj j) with
-      | Some p -> fields @ [{name=Name "[[proto]]";optional=false;read=recur p;write=None;host=false}]
+      | Some p -> fields @ [{name=Name "[[proto]]";optional=false;read=recur p;write=None;host=false;receivers=[]}]
       | None -> fields in
     Atoms [Shape {fields;indexes;calls;elements=None}]
   | "reference" ->
@@ -777,7 +800,7 @@ let decode ast =
     | [parameter],[None],[],(Atoms [Shape shape] as body) ->
       (match shape.fields,shape.indexes,shape.calls,shape.elements with
       | [{name=Name "value";optional=false;read=Rigid identity;
-          write=Some (Rigid written);host=false}],[],[],None
+          write=Some (Rigid written);host=false;receivers=[]}],[],[],None
           when identity=parameter && written=parameter ->
         Some (d.id,(parameter,body))
       | _ -> None)

@@ -2175,8 +2175,9 @@ inductive HasTyUsing (G : NormalGraph ι) (images : PositiveCertificates.Instanc
   /-- **A member bound to its host.** The member is read from the object in a
   slot, before anything else runs, and bound to that same object: the bound
   function meets the member's signatures whatever receiver it is later given,
-  and each fixed or variadic signature one of them covers. This is how a
-  method call `o.m(args)` keeps JavaScript's order, reading the member before
+  and each fixed or variadic signature one of them covers. The host's type is
+  within each type the member's host must meet, by checked proofs. This is how
+  a method call `o.m(args)` keeps JavaScript's order, reading the member before
   the actuals, while the member's contract stays host-relative. -/
   | bindMember {Γ : List (Ty ι)} {F O : Ty ι} {i : Nat} {k : PropKey}
       {m : MethodMembers.Sig (Ty ι)} {L : List (Arrow (Ty ι))}
@@ -2184,6 +2185,7 @@ inductive HasTyUsing (G : NormalGraph ι) (images : PositiveCertificates.Instanc
       Γ[i]? = some O → memberOf G O k = some m → Represents G F (.arrs L S) →
       (∀ q ∈ L, ∃ c ∈ m.calls, CoveredCallUsing G images q c) →
       (∀ s ∈ S, ∃ c ∈ m.rests, CoveredRestUsing G images s c) →
+      (∀ T ∈ m.receivers, ∃ p, PositiveCertificates.checkUsing G images O T p = true) →
       HasTyUsing G images Γ (.letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])) F
   /-- **A member bound to its host, at its quantified signatures.** As
   `bindMember`, the member is read from the object in a slot and bound to that
@@ -3279,7 +3281,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           (c := .bound (ρ t) (ρ r) (saved.map ρ)) (by simp) rfl)
       · refine (represents_back hF m _ _) ⟨⟨hdown.1, by simp⟩, ?_⟩
         simpa [RestArrow.mapWith, Contract.map, List.map_drop, hlen] using hdown
-  | @bindMember Γ F O i k m L S hi hmo hF hL hS =>
+  | @bindMember Γ F O i k m L S hi hmo hF hL hS hR =>
     intro n W h ρ he hw hh
     obtain ⟨hkey, hmem⟩ := memberOf_at hmo (he.2 i O hi)
     have hscope : Scoped 0 (ρ i) := he.1 i
@@ -3307,6 +3309,17 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       cases p with
       | zero => trivial
       | succ q =>
+        -- The host is in each type the member's host must meet.
+        have hO : meaning G O (q + 2) U (ρ i) :=
+          (meaning_adm G O).mono _ _ _ hx _ ((meaning_adm G O).down_le n (q + 2) hj W _ (he.2 i O hi))
+        have hhost : MethodMembers.hostIn (ρ i) (m.receivers.map (meaning G)) (q + 2) U (ρ i) := by
+          refine ⟨rfl, fun T hT => ?_⟩
+          obtain ⟨t, ht, rfl⟩ := List.mem_map.mp hT
+          obtain ⟨pr, hpr⟩ := hR t ht
+          exact PositiveCertificates.acceptedUsing hpr _ U _ hO
+        have hRadm : Adm (MethodMembers.hostIn (ρ i) (m.receivers.map (meaning G))) :=
+          MethodMembers.hostIn_adm _ fun A hA => by
+            obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G b
         have hinv : Invocable (.objAt [] (.bound u (ρ i) [])) :=
           ⟨[], _, rfl, rfl, by simp only [Scoped, scopedArgs_iff]; exact ⟨hon.1.1.scoped, hscope, by simp⟩⟩
         have hcalls : CallEffects.callsT (L.map (Arrow.map (meaning G)))
@@ -3316,23 +3329,23 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           obtain ⟨c, hc, hlen, hps, ⟨pr, hpr⟩, heff⟩ := hL y hy
           have hc' := CallEffects.callsT_select hon.1 (List.mem_map_of_mem (List.mem_map_of_mem hc))
           have hle := CoveredCallUsing.params hlen hps
-          have ht : CallEffects.callsT [⟨MethodMembers.hostT (ρ i), y.arguments.map (meaning G), meaning G y.result, y.effect⟩]
+          have ht : CallEffects.callsT [⟨MethodMembers.hostIn (ρ i) (m.receivers.map (meaning G)), y.arguments.map (meaning G), meaning G y.result, y.effect⟩]
               (q + 2) U u :=
             ⟨hc'.1, fun p hp => by
               cases List.mem_singleton.mp hp
               exact (hc'.2 _ (List.mem_singleton_self _)).weaken (Effect.covers_sound heff) (fun _ _ _ r h => h)
                 (fun _ _ _ args ha => ArgsShort_mono hle ha)
                 (fun m _ V w hw => PositiveCertificates.acceptedUsing hpr m V w hw)⟩
-          exact CallEffects.callsT_bound (Ps := []) (MethodMembers.hostT_adm _) (by simp)
+          exact CallEffects.callsT_bound (Ps := []) hRadm (by simp)
             (fun A hA => by obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G b)
-            ht hvalρ hscope rfl trivial (by simp [CallArguments.Values]) (by simp)
+            ht hvalρ hscope hhost trivial (by simp [CallArguments.Values]) (by simp)
         have hrests : CallEffects.restsT (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) (q + 2) U (.objAt [] (.bound u (ρ i) [])) := by
           refine CallEffects.restsT_of_signatures hinv fun x hx => ?_
           obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx
           obtain ⟨c, hc, hlen, hps, ⟨pe, hpe⟩, ⟨pr, hpr⟩, heff⟩ := hS y hy
           have hc' := CallEffects.restsT_select hon.2.1 (List.mem_map_of_mem (List.mem_map_of_mem hc))
           have hle := CoveredCallUsing.params hlen hps
-          have ht : CallEffects.restsT [⟨MethodMembers.hostT (ρ i), (y.arguments.1.map (meaning G), argMeaning G y.arguments.2),
+          have ht : CallEffects.restsT [⟨MethodMembers.hostIn (ρ i) (m.receivers.map (meaning G)), (y.arguments.1.map (meaning G), argMeaning G y.arguments.2),
               meaning G y.result, y.effect⟩] (q + 2) U u :=
             ⟨hc'.1, fun p hp => by
               cases List.mem_singleton.mp hp
@@ -3340,12 +3353,12 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
                 (fun _ _ _ args ha => ArgsRest_mono hle (fun vs hv => argsAcceptedUsing hpe _ _ vs hv) ha)
                 (fun m _ V w hw => PositiveCertificates.acceptedUsing hpr m V w hw)⟩
           have hb := CallEffects.restsT_bound (Rc := meaning G y.receiver) (pre := []) (fs := [])
-            (MethodMembers.hostT_adm _)
+            hRadm
             (fun A hA => by obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G b)
             (argMeaning_adm G _)
-            (show CallEffects.restsT [⟨MethodMembers.hostT (ρ i), (y.arguments.1.map (meaning G), argMeaning G y.arguments.2),
+            (show CallEffects.restsT [⟨MethodMembers.hostIn (ρ i) (m.receivers.map (meaning G)), (y.arguments.1.map (meaning G), argMeaning G y.arguments.2),
               meaning G y.result, y.effect⟩] (q + 2) U u from ht)
-            hvalρ hscope rfl (by simp only [List.take_nil, List.take_zero, List.length_nil]; exact trivial)
+            hvalρ hscope hhost (by simp only [List.take_nil, List.take_zero, List.length_nil]; exact trivial)
             (fun _ _ _ _ ys hys => by simpa using hys)
             (by simp [CallArguments.Values]) (by simp)
           simpa [RestArrow.mapWith, Contract.map] using hb

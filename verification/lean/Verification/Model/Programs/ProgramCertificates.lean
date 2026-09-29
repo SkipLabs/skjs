@@ -78,10 +78,13 @@ inductive Rule (ι : Type) where
   /-- A member read from a slot's object and bound to that same object: for
   each fixed signature of the result, proofs that a member signature covers it,
   one per parameter, then the result; for each variadic signature, likewise,
-  one per fixed parameter, then the rest, then the result; or, with no proofs,
-  the result one of the member's quantified signatures, a scheme. -/
+  one per fixed parameter, then the rest, then the result; and one proof per
+  type the member's host must meet, that the object's type is within it; or,
+  with no proofs, the result one of the member's quantified signatures, a
+  scheme. -/
   | bindMember (proofs : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι))
       (rests : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι × PositiveCertificates.Proof ι))
+      (receivers : List (PositiveCertificates.Proof ι))
   /-- `new`: the constructor, then the actuals in order. -/
   | construct
   | sub (proof : PositiveCertificates.Proof ι)
@@ -525,14 +528,16 @@ theorem CoveredRestUsing.proofs [DecidableEq ι] {G : NormalGraph ι}
     | _, _, _, _ => False
   -- A member read from a slot's object and bound to that same object, with no
   -- premises: the result's signatures are the member's, at any receiver.
-  | .bindMember proofs rests, .letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var r) pre) ns inits),
+  | .bindMember proofs rests receivers, .letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var r) pre) ns inits),
       [] =>
     r = i + 1 ∧ pre = [] ∧ ns = [] ∧ inits = [] ∧
     match j.context[i]?, expand G j.type with
     | some O, [.arrs L S] => ∃ m ∈ (memberOf G O k).toList,
         proofs.length = L.length ∧ (∀ qp ∈ L.zip proofs, ∃ c ∈ m.calls, CallProofsUsing G images qp.1 c qp.2) ∧
-        rests.length = S.length ∧ (∀ sp ∈ S.zip rests, ∃ c ∈ m.rests, RestProofsUsing G images sp.1 c sp.2)
-    | some O, _ => proofs = [] ∧ rests = [] ∧ expand G j.type = [] ∧
+        rests.length = S.length ∧ (∀ sp ∈ S.zip rests, ∃ c ∈ m.rests, RestProofsUsing G images sp.1 c sp.2) ∧
+        receivers.length = m.receivers.length ∧
+        (∀ tp ∈ m.receivers.zip receivers, PositiveCertificates.checkUsing G images O tp.1 tp.2 = true)
+    | some O, _ => proofs = [] ∧ rests = [] ∧ receivers = [] ∧ expand G j.type = [] ∧
         ∃ m ∈ (memberOf G O k).toList, j.type ∈ m.schemes
     | none, _ => False
   -- The constructor, the actual premises in order, then one premise per
@@ -1261,16 +1266,18 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
   · obtain ⟨rfl, rfl, rfl, rfl, hl⟩ := hl
     split at hl
     · rename_i O L S hO hF
-      obtain ⟨m, hm, hlen, hL, hrlen, hS⟩ := hl
+      obtain ⟨m, hm, hlen, hL, hrlen, hS, hvlen, hV⟩ := hl
       exact HasTyUsing.bindMember hO (by simpa using hm) hF (fun q hq => by
         obtain ⟨pp, hpp⟩ := PositiveCertificates.exists_mem_zip hlen q hq
         obtain ⟨c, hc, hcp⟩ := hL _ hpp
         exact ⟨c, hc, hcp.covered⟩) (fun s hs => by
         obtain ⟨pp, hpp⟩ := PositiveCertificates.exists_mem_zip hrlen s hs
         obtain ⟨c, hc, hcp⟩ := hS _ hpp
-        exact ⟨c, hc, hcp.covered⟩)
+        exact ⟨c, hc, hcp.covered⟩) (fun T hT => by
+        obtain ⟨pp, hpp⟩ := PositiveCertificates.exists_mem_zip hvlen T hT
+        exact ⟨pp, hV _ hpp⟩)
     · rename_i O hO _
-      obtain ⟨-, -, hE, m, hm, hF⟩ := hl
+      obtain ⟨-, -, -, hE, m, hm, hF⟩ := hl
       exact HasTyUsing.bindScheme hO (by simpa using hm) hF hE
     · contradiction
   · rename_i f args jf jas
@@ -1900,7 +1907,7 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
       rw [filterMap_of_map hmap]
       exact ⟨hmap, hsig⟩
     · simp
-  | @bindMember Γ F O i k m L S hi hmo hF hL hS =>
+  | @bindMember Γ F O i k m L S hi hmo hF hL hS hR =>
     obtain ⟨proofs, hlen, hps⟩ := choose_list
       (P := fun q ps => ∃ c ∈ m.calls, CallProofsUsing G images q c ps) L (fun q hq => by
         obtain ⟨c, hc, hcov⟩ := hL q hq
@@ -1911,19 +1918,24 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
         obtain ⟨c, hc, hcov⟩ := hS s hs
         obtain ⟨ps, hps⟩ := CoveredRestUsing.proofs hcov
         exact ⟨ps, c, hc, hps⟩)
-    apply node_complete (r := .bindMember proofs rests) (js := [])
+    obtain ⟨receivers, hvlen, hvs⟩ := choose_list
+      (P := fun T p => PositiveCertificates.checkUsing G images O T p = true) m.receivers hR
+    apply node_complete (r := .bindMember proofs rests receivers) (js := [])
     · refine ⟨rfl, rfl, rfl, rfl, ?_⟩
       show (match Γ[i]?, expand G F with
         | some O, [.arrs L S] => ∃ m ∈ (memberOf G O k).toList,
             proofs.length = L.length ∧ (∀ qp ∈ L.zip proofs, ∃ c ∈ m.calls, CallProofsUsing G images qp.1 c qp.2) ∧
-            rests.length = S.length ∧ (∀ sp ∈ S.zip rests, ∃ c ∈ m.rests, RestProofsUsing G images sp.1 c sp.2)
-        | some O, _ => proofs = [] ∧ rests = [] ∧ expand G F = [] ∧ ∃ m ∈ (memberOf G O k).toList, F ∈ m.schemes
+            rests.length = S.length ∧ (∀ sp ∈ S.zip rests, ∃ c ∈ m.rests, RestProofsUsing G images sp.1 c sp.2) ∧
+            receivers.length = m.receivers.length ∧
+            (∀ tp ∈ m.receivers.zip receivers, PositiveCertificates.checkUsing G images O tp.1 tp.2 = true)
+        | some O, _ => proofs = [] ∧ rests = [] ∧ receivers = [] ∧ expand G F = [] ∧
+            ∃ m ∈ (memberOf G O k).toList, F ∈ m.schemes
         | none, _ => False)
       rw [hi, show expand G F = [.arrs L S] from hF]
-      exact ⟨m, by simp [hmo], hlen, hps, hrlen, hrs⟩
+      exact ⟨m, by simp [hmo], hlen, hps, hrlen, hrs, hvlen, hvs⟩
     · simp
   | @bindScheme Γ F O i k m hi hmo hF hE =>
-    apply node_complete (r := .bindMember [] []) (js := [])
+    apply node_complete (r := .bindMember [] [] []) (js := [])
     · refine ⟨rfl, rfl, rfl, rfl, ?_⟩
       show (match Γ[i]?, expand G F with
         | some O, [.arrs L S] => ∃ m ∈ (memberOf G O k).toList,
@@ -1934,14 +1946,18 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
             ([] : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι ×
               PositiveCertificates.Proof ι)).length = S.length ∧
             (∀ sp ∈ S.zip ([] : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι ×
-              PositiveCertificates.Proof ι)), ∃ c ∈ m.rests, RestProofsUsing G images sp.1 c sp.2)
+              PositiveCertificates.Proof ι)), ∃ c ∈ m.rests, RestProofsUsing G images sp.1 c sp.2) ∧
+            ([] : List (PositiveCertificates.Proof ι)).length = m.receivers.length ∧
+            (∀ tp ∈ m.receivers.zip ([] : List (PositiveCertificates.Proof ι)),
+              PositiveCertificates.checkUsing G images O tp.1 tp.2 = true)
         | some O, _ => ([] : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι)) = [] ∧
             ([] : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι ×
               PositiveCertificates.Proof ι)) = [] ∧
+            ([] : List (PositiveCertificates.Proof ι)) = [] ∧
             expand G F = [] ∧ ∃ m ∈ (memberOf G O k).toList, F ∈ m.schemes
         | none, _ => False)
       rw [hi, hE]
-      exact ⟨rfl, rfl, rfl, m, by simp [hmo], hF⟩
+      exact ⟨rfl, rfl, rfl, rfl, m, by simp [hmo], hF⟩
     · simp
   | @bindRestE effect Γ F T Rt E El R Rc t r saved Ps Qs ht hsig hel hr hmap hQs hF =>
     apply node_complete (r := .bindRestE) (js := [])

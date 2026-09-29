@@ -6,7 +6,9 @@ import Verification.Model.Semantics.CallEffects
 A method member's contract is relative to its host: reading the member from
 an object and invoking it **with that object as receiver** behaves as typed.
 It promises nothing for another receiver, so a member's signatures carry no
-receiver. This is self-application, as in Abadi and Cardelli's object
+receiver. A member may state types its host must meet (TypeScript's
+`this: T` on a method): then it promises its signatures only when the host
+is in each of them. This is self-application, as in Abadi and Cardelli's object
 calculus, and exactly the shape method-call syntax lowers to: read the member
 from the saved object, then invoke it with that object.
 
@@ -27,19 +29,23 @@ namespace Verification.Model.MethodMembers
 open CallEffects
 
 /-- One member: its key, its fixed signatures `(parameters, result)` and its
-variadic ones `(parameters, rest, result)`, none with a receiver, and its
-quantified signatures: families the member bound to its host meets. -/
+variadic ones `(parameters, rest, result)`, none with a receiver, its
+quantified signatures: families the member bound to its host meets, and the
+families its host must be in for its fixed and variadic signatures to hold. -/
 structure Member where
   key : PropKey
   calls : List (MethodArrow Fam)
   rests : List (Contract Unit (List Fam × ArgFam) Fam)
   schemes : List Fam := []
+  receivers : List Fam := []
 
-/-- The host as the one receiver a member admits. -/
-def hostT (v : Val) : Fam := fun _ _ r => r = v
+/-- The host as the one receiver a member admits, when it is in each of
+`Rs`. -/
+def hostIn (v : Val) (Rs : List Fam) : Fam := fun k W r => r = v ∧ ∀ R ∈ Rs, R k W r
 
-theorem hostT_adm (v : Val) : Adm (hostT v) :=
-  ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
+theorem hostIn_adm (v : Val) {Rs : List Fam} (h : ∀ R ∈ Rs, Adm R) : Adm (hostIn v Rs) :=
+  ⟨fun n W r hr => ⟨hr.1, fun R hR => (h R hR).down n W r (hr.2 R hR)⟩,
+    fun n W W' hx r hr => ⟨hr.1, fun R hR => (h R hR).mono n W W' hx r (hr.2 R hR)⟩⟩
 
 /-- The forwarding function `.bind` makes of a value and a host: invoked
 with any receiver, it invokes the value with the host. -/
@@ -53,10 +59,12 @@ theorem boundOn_adm (v : Val) {Fs : List Fam} (h : ∀ F ∈ Fs, Adm F) : Adm (b
     fun n W W' hx u hu F hF => (h F hF).mono n W W' hx _ (hu F hF)⟩
 
 /-- What a member promises of a value read from host `v`: its signatures, each
-with receiver `v`, and its quantified ones, met bound to `v`. -/
+with receiver `v` when `v` is in each of the member's receivers, and its
+quantified ones, met bound to `v`. -/
 def onHost (v : Val) (m : Member) : Fam :=
-  interT (CallEffects.callsT (m.calls.map (Contract.withReceiver (hostT v))))
-    (interT (CallEffects.restsT (m.rests.map (Contract.withReceiver (hostT v)))) (boundOn v m.schemes))
+  interT (CallEffects.callsT (m.calls.map (Contract.withReceiver (hostIn v m.receivers))))
+    (interT (CallEffects.restsT (m.rests.map (Contract.withReceiver (hostIn v m.receivers))))
+      (boundOn v m.schemes))
 
 theorem onHost_adm (v : Val) (m : Member) (h : ∀ F ∈ m.schemes, Adm F) : Adm (onHost v m) :=
   interT_adm _ _ (CallEffects.callsT_adm _) (interT_adm _ _ (CallEffects.restsT_adm _) (boundOn_adm v h))
@@ -161,19 +169,21 @@ theorem methodT_at {ms : List Member} {m : Member} (hm : m ∈ ms) {k} {W : Worl
   h m hm
 
 /-- A member's syntax: its key, fixed signatures `(parameters, result)` and
-variadic ones `(parameters, rest, result)`, and its quantified signatures, each
-an operand naming a scheme; operands of any sort. -/
+variadic ones `(parameters, rest, result)`, its quantified signatures, each
+an operand naming a scheme, and the types its host must meet; operands of any
+sort. -/
 structure Sig (α : Type) where
   key : PropKey
   calls : List (MethodArrow α)
   rests : List (MethodRestArrow α) := []
   schemes : List α := []
+  receivers : List α := []
   deriving Repr, DecidableEq
 
 /-- The member a signature denotes, operands read by `X` and rests by `P`. -/
 def Member.of {α : Type} (X : α → Fam) (P : α → ArgFam) (m : Sig α) : Member :=
   ⟨m.key, m.calls.map (MethodArrow.map X), m.rests.map (MethodRestArrow.mapWith X P),
-    m.schemes.map X⟩
+    m.schemes.map X, m.receivers.map X⟩
 
 private theorem argsAgree_map {α : Type} {X Y : α → Fam} {n : Nat}
     (h : ∀ a, Agree (X a) (Y a) n) : ∀ As : List α, ArgsAgree n (As.map X) (As.map Y)
@@ -189,16 +199,20 @@ theorem onHost_congr {α : Type} (X Y : α → Fam) (P Q : α → ArgFam) (n : N
   have hX : ∀ a, Agree (X a) (Y a) j := fun a k hk W v => h a k (by omega) W v
   have hQ : ∀ a, Agree (P a) (Q a) j := fun a k hk W v => hP a k (by omega) W v
   simp only [onHost, Member.of, List.map_map, interT, Function.comp_def]
+  have hR : Agree (hostIn v (m.receivers.map X)) (hostIn v (m.receivers.map Y)) j := by
+    intro k hk W r
+    simp only [hostIn, List.mem_map, forall_exists_index, and_imp, forall_apply_eq_imp_iff₂]
+    exact and_congr_right fun _ => forall_congr' fun a => imp_congr_right fun _ => hX a k hk W r
   exact and_congr
     (CallEffects.callsT_congr m.calls
-      (fun p => Contract.withReceiver (hostT v) (MethodArrow.map X p))
-      (fun p => Contract.withReceiver (hostT v) (MethodArrow.map Y p)) (fun _ _ => rfl)
-      (fun p _ => ⟨fun _ _ _ _ => Iff.rfl, argsAgree_map hX p.arguments, hX p.result⟩) W u)
+      (fun p => Contract.withReceiver (hostIn v (m.receivers.map X)) (MethodArrow.map X p))
+      (fun p => Contract.withReceiver (hostIn v (m.receivers.map Y)) (MethodArrow.map Y p)) (fun _ _ => rfl)
+      (fun p _ => ⟨hR, argsAgree_map hX p.arguments, hX p.result⟩) W u)
     (and_congr
       (CallEffects.restsT_congr m.rests
-        (fun p => Contract.withReceiver (hostT v) (MethodRestArrow.mapWith X P p))
-        (fun p => Contract.withReceiver (hostT v) (MethodRestArrow.mapWith Y Q p)) (fun _ _ => rfl)
-        (fun s _ => ⟨fun _ _ _ _ => Iff.rfl, argsAgree_map hX s.arguments.1,
+        (fun p => Contract.withReceiver (hostIn v (m.receivers.map X)) (MethodRestArrow.mapWith X P p))
+        (fun p => Contract.withReceiver (hostIn v (m.receivers.map Y)) (MethodRestArrow.mapWith Y Q p)) (fun _ _ => rfl)
+        (fun s _ => ⟨hR, argsAgree_map hX s.arguments.1,
           hQ s.arguments.2, hX s.result⟩) W u)
       (by simp only [boundOn, List.mem_map, forall_exists_index, and_imp,
             forall_apply_eq_imp_iff₂]
@@ -224,12 +238,13 @@ theorem methodT_congr {α : Type} (X Y : α → Fam) (P Q : α → ArgFam) (n : 
 
 /-- Rename a member signature's operands. -/
 def Sig.map {α β : Type} (f : α → β) (m : Sig α) : Sig β :=
-  ⟨m.key, m.calls.map (MethodArrow.map f), m.rests.map (MethodRestArrow.map f), m.schemes.map f⟩
+  ⟨m.key, m.calls.map (MethodArrow.map f), m.rests.map (MethodRestArrow.map f), m.schemes.map f,
+    m.receivers.map f⟩
 
 /-- Every operand of a member signature. -/
 def Sig.operands {α : Type} (m : Sig α) : List α :=
   m.calls.flatMap MethodArrow.operands ++ m.rests.flatMap MethodRestArrow.operands ++
-    m.schemes
+    m.schemes ++ m.receivers
 
 /-- Renaming a signature's operands is reading them through the renaming. -/
 theorem Member.of_map {α β : Type} (X : β → Fam) (P : β → ArgFam) (f : α → β) (m : Sig α) :

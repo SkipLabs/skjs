@@ -454,7 +454,9 @@ claimed parameter within the member's, for a variadic signature of as many
 fixed parameters the claimed rest within the member's too, and the member's
 result within the claimed one, by checked subtyping proofs the certificate
 carries (`CoveredCall`, `CallProofs`, `CoveredRestUsing`, `RestProofsUsing`).
-A claim may so name another label for the same type, as a producer's own row
+The host's type is within each type the member's host must meet, a `this`
+parameter's ($m.\mathsf{this}$), by checked proofs the certificate carries
+too. A claim may so name another label for the same type, as a producer's own row
 for a declared `[number, number]`, or for a declared rest
 `EagerCollection<K, V>[]` at its instance, which the declaration's literal
 head applied to the instance's arguments names too. With
@@ -466,7 +468,8 @@ clause (`memberOf`):
       \quad\forall(Q,\vec D,B)\in L.\;\exists(\vec C,B')\in m.\mathsf{calls}.\;
         G\vdash\vec D\le\vec C\land G\vdash B'\le B
       \quad\forall(Q,\vec D,P,B)\in S.\;\exists(\vec C,P',B')\in m.\mathsf{rests}.\;
-        G\vdash\vec D\le\vec C\land G\vdash P\le P'\land G\vdash B'\le B}
+        G\vdash\vec D\le\vec C\land G\vdash P\le P'\land G\vdash B'\le B
+      \quad\forall T\in m.\mathsf{this}.\;G\vdash O\le T}
      {\Gamma\vdash_G\mathsf{let}\ f=i.k\ \mathsf{in}\ \mathsf{bound}(f,i,[]):\mathsf{arrs}(L;S)}
 ```
 
@@ -493,7 +496,8 @@ ignores them, so a member's scheme admits every receiver; an instance may
 state a narrower one, the call's object (`instSig`).
 
 The member read from $v=\rho(i)$ meets $m$'s signatures with receiver $\{v\}$
-(`memberOf_at`, `MethodMembers.onHost`). The read finds the key on $v$, or, one
+where $v$ is in each of $m.\mathsf{this}$ (`memberOf_at`,
+`MethodMembers.onHost`), which $v\in O$ and the proofs of $O\le T$ give. The read finds the key on $v$, or, one
 step later, on the object $v$'s prototype holds (`Step.readProto`,
 `member_read_safe`), as the member's meaning says. The bound descriptor, which has
 no fields and allocates nothing, forwards any call to it with receiver $v$
@@ -2696,10 +2700,19 @@ none of its binders and hold the instance, and its signatures cover the
 member's renamed ones at every instance. A bounded binder is refused, since the row's
 name spells its bound.
 
+A method declaring `this: T` is the instance's member whose host must meet
+`T` ([records](POSITIVE-TYPES.md#records)), and its closure `D.m` takes `T`
+as its receiver, so its body reads `this` at `T`. The prototype's closure
+covers the member through the member's `T`, whose values the closure's
+receiver admits, whatever the instance type is
+([method coverage](POSITIVE-TYPES.md#clause-coverage)); a call on the
+instance, `this.m()` among them, proves its host within `T` (`bindMember`).
+
 What a class declaration may not hold, each for its reason:
 
-- a method declaring `this: T`: a method member is host-relative, its
-  signatures carrying no receiver ([DESIGN](DESIGN.md#method-members-are-host-relative));
+- a generic method declaring `this: T`: its member is a scheme the member
+  bound to its host meets, whatever receiver it is given, which states no
+  type the host must meet ([DESIGN](DESIGN.md#method-members-are-host-relative));
 - a generic method with a bounded binder: the member's binder row is named by
   its bound, which the closure's binder, named by the parser, is not;
 - a constructor parameter with a default: construct code is a term over

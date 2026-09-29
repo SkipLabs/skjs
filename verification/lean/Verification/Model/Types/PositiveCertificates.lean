@@ -1016,9 +1016,9 @@ positions against the source's parameters, and results. -/
 
 /-- The pairs a record's coverage of another compares, key by key: fields
 both ways, views and optional fields, methods signature by signature and
-scheme by scheme, and a method the source's prototype holds under the key
-(its receiver against the source, its signatures against the target's
-schemes'). -/
+scheme by scheme, the target's receivers against the source's, and a method
+the source's prototype holds under the key (its receiver against the source
+and the target's receivers, its signatures against the target's schemes'). -/
 @[nospecialize] def protoChain (G : NormalGraph ι) : Nat → List ι → List (List ι)
   | 0, P => [P]
   | d + 1, P => P :: ((PositiveRules.viewOf G P CallArguments.protoField).toList.flatMap (protoChain G d))
@@ -1040,12 +1040,14 @@ schemes'). -/
     let targetSchemes := q.schemes.flatMap schemeSigs
     (own.flatMap fun p =>
       signaturePairs (p.calls.map (·.withReceiver [])) (q.calls.map (·.withReceiver [])) ++
-      (q.schemes.flatMap fun S' => p.schemes.map fun S => (S, S'))) ++
+      (q.schemes.flatMap fun S' => p.schemes.map fun S => (S, S')) ++
+      (p.receivers.flatMap fun T => q.receivers.map fun T' => (T', T))) ++
     ((keyed q.key ++ (proto.flatMap (protoChain G PositiveRules.protoChainDepth)).flatMap fun P =>
         (PositiveRules.viewOf G P q.key).toList).flatMap fun F =>
       (match expand G F with
         | [.arrs L S] =>
           (L.map fun s => (self, s.receiver)) ++ (S.map fun s => (self, s.receiver)) ++
+          (q.receivers.flatMap fun T => L.map (fun s => (T, s.receiver)) ++ S.map (fun s => (T, s.receiver))) ++
           signaturePairs (L.map (·.withReceiver [])) (q.calls.map (·.withReceiver [])) ++
           restPairs (S.map (·.withReceiver [])) (q.rests.map (·.withReceiver []))
         | _ => []) ++
