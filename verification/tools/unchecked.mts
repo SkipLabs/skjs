@@ -18,15 +18,22 @@
  * assertions: nothing checks them, and a decoder that establishes the fact is
  * what they stand in for.
  *
- * `as const` is not one of them and is not counted: it asserts nothing about a
- * value, it only asks for the literal type of what is already written there.
+ * `as const` and `as unknown` are not counted: they assert nothing about a
+ * value, the first only asking for the literal type of what is written there,
+ * the second widening to the type every value has.
+ *
+ * Each one written must carry its reason, a comment `// asserted: REASON` at
+ * the end of its line or alone on the line above: a decoder's last line, where
+ * the checks it just ran become the type it returns, or an assertion whose
+ * check would cost more than it guards. One without a reason is an error, and
+ * the command fails.
  */
 import fs from "node:fs";
 import path from "node:path";
 import * as ts from "typescript/unstable/ast";
 import { openText } from "./fragment-parse.mts";
 
-/** What was written, and which of the three it is. */
+/** What was written, which of the three it is, and the reason written with it. */
 export type Kind = "any" | "as" | "!";
 export interface Written {
   file: string;
@@ -34,15 +41,15 @@ export interface Written {
   column: number;
   kind: Kind;
   text: string;
+  reason: string | null;
 }
 
-/** `x as const`, which the parser writes as an `as` with a type reference to
- * the reserved name `const`. */
-function isConstAssertion(node: ts.Node): boolean {
+/** `x as const` or `x as unknown`: an `as` asserting nothing. */
+function assertsNothing(node: ts.Node): boolean {
   if (!ts.isAsExpression(node)) return false;
   const type = node.type;
-  return ts.isTypeReferenceNode(type) && ts.isIdentifier(type.typeName) &&
-    type.typeName.text === "const";
+  return type.kind === ts.SyntaxKind.UnknownKeyword ||
+    (ts.isTypeReferenceNode(type) && ts.isIdentifier(type.typeName) && type.typeName.text === "const");
 }
 
 const KINDS: [number, Kind][] = [
@@ -51,21 +58,35 @@ const KINDS: [number, Kind][] = [
   [ts.SyntaxKind.NonNullExpression, "!"],
 ];
 
+const REASON = /\/\/ asserted: (\S.*)$/;
+
+/** The reason given for what is written on `line` (0-based) of `lines`: at
+ * the end of that line, or as the whole of the line above. */
+function reasonAt(lines: string[], line: number): string | null {
+  const own = REASON.exec(lines[line] ?? "");
+  if (own?.[1]) return own[1];
+  const above = (lines[line - 1] ?? "").trim();
+  const alone = above.startsWith("//") ? REASON.exec(above) : null;
+  return alone?.[1] ?? null;
+}
+
 /** Each one written in a file, in source order. */
 export function writtenAny(file: string): Written[] {
   const text = fs.readFileSync(file, "utf8");
+  const lines = text.split("\n");
   const source = openText(path.resolve(file), text);
   const found: Written[] = [];
   const walk = (node: ts.Node): void => {
     const kind = KINDS.find(([syntax]) => syntax === node.kind)?.[1];
-    if (kind !== undefined && !isConstAssertion(node)) {
+    if (kind !== undefined && !assertsNothing(node)) {
       const at = source.getLineAndCharacterOfPosition(node.getStart(source));
       found.push({
         file,
         line: at.line + 1,
         column: at.character + 1,
         kind,
-        text: text.split("\n")[at.line]?.trim() ?? "",
+        text: lines[at.line]?.trim() ?? "",
+        reason: reasonAt(lines, at.line),
       });
     }
     node.forEachChild(walk);
@@ -82,19 +103,13 @@ const files = roots.flatMap((dir) =>
     .filter((name) => name.endsWith(".mts") || name.endsWith(".ts"))
     .map((name) => `${dir}/${name}`),
 );
-const wanted = KINDS.map(([, kind]) => kind).filter(
-  (kind) => !process.argv.some((a) => a.startsWith("--kind=")) ||
-    process.argv.includes(`--kind=${kind}`),
-);
-const found = files.flatMap(writtenAny).filter((w) => wanted.includes(w.kind));
+const found = files.flatMap(writtenAny);
+const unreasoned = found.filter((w) => w.reason === null);
+const show = (w: Written) => `${w.file}:${w.line}:${w.column}  [${w.kind}]  ${w.text}`;
 if (process.argv.includes("--list"))
-  for (const w of found)
-    console.log(`${w.file}:${w.line}:${w.column}  [${w.kind}]  ${w.text}`);
-const byFile = new Map<string, number>();
-for (const w of found) byFile.set(w.file, (byFile.get(w.file) ?? 0) + 1);
-for (const [file, n] of [...byFile].sort((a, b) => b[1] - a[1]))
-  console.log(`${String(n).padStart(4)}  ${file}`);
-const counts = wanted.map(
-  (kind) => `${found.filter((w) => w.kind === kind).length} \`${kind}\``,
-);
-console.log(`\n${counts.join(", ")} in ${byFile.size} of ${files.length} files`);
+  for (const w of found) console.log(`${show(w)}${w.reason === null ? "" : `\n    asserted: ${w.reason}`}`);
+else for (const w of unreasoned) console.log(`no reason: ${show(w)}`);
+const counts = KINDS.map(([, kind]) => `${found.filter((w) => w.kind === kind).length} \`${kind}\``);
+console.log(`\n${counts.join(", ")} in ${new Set(found.map((w) => w.file)).size} of ${files.length} files;` +
+  ` ${found.length - unreasoned.length} with a reason, ${unreasoned.length} without`);
+process.exitCode = unreasoned.length ? 1 : 0;

@@ -275,7 +275,7 @@ export function decodeTerm(value: unknown): Term {
       v.forEach(decodeTerm);
     } else decodeTerm(v);
   }
-  // Checked field by field above: this is where that becomes a type.
+  // asserted: the decoder's result, checked field by field above
   return value as Term;
 }
 export const printTerm = (term: Term): string =>

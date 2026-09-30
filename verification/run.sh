@@ -117,6 +117,8 @@ typecheck() {
 
 run_test "Front-end types" typecheck
 run_test "JSON field names agree (TS, Lean, OCaml)" node verification/tests/json-field-names.mts
+# tools/unchecked.mts enforces the decoder convention: every written `any`, `as` and `!` in the node side carries its reason.
+run_test "Assertions carry their reasons" node verification/tools/unchecked.mts
 # tests/docs.mts checks every document's links, anchors and math.
 run_test "Documents: links, math" node verification/tests/docs.mts
 # ocaml-producer/test.mts runs every case, then the controls no case can: pinned imports, tampering and the reader.

@@ -274,8 +274,7 @@ const isInitStatement=(n: ts.Statement)=>ts.isExpressionStatement(n)||
 // else.
 const initStatements=(sf: ts.SourceFile)=>{
   let i=0;
-  while(i<sf.statements.length){
-    const s=sf.statements[i]!;
+  for(const s of sf.statements){
     if(!ts.isExpressionStatement(s)||!ts.isStringLiteral(s.expression))break;
     const raw=s.expression.getText(sf);
     if(raw!=='"use strict"'&&raw!=="'use strict'")break;
@@ -440,7 +439,7 @@ function fromSourceClaims(
   const initCode=initStatements(sf);
   const first=initCode[0], last=initCode[initCode.length-1];
   if(!!input.init!==!!first)throw Error("module initialization claims do not match the source");
-  const units=[...input.functions,...(input.init&&first&&last?[{name:"",namePos:[first.getStart(sf),last.end] as Span,
+  const units=[...input.functions,...(input.init&&first&&last?[{name:"",namePos:[first.getStart(sf),last.end] satisfies Span,
     params:[],result:[3],entries:input.init.entries,expressions:input.init.expressions}]:[])];
   return {source:{file,sha256:input.sourceSha256},producer,
     functions:units.map(f=>{
@@ -555,14 +554,16 @@ function render(
   // The module initialization unit has no declaration of its own: it is the
   // file's top-level code, from its first statement to its last.
   const initCode=initStatements(sf);
-  const initSpan=initCode.length ? [initCode[0]!.getStart(sf),initCode[initCode.length-1]!.end] : null;
+  const firstInit=initCode[0], lastInit=initCode[initCode.length-1];
+  const initSpan=firstInit && lastInit ? [firstInit.getStart(sf),lastInit.end] : null;
   for(const [index,f] of report.functions.entries()) {
     checkSpan(f.namePos);
     const key=f.namePos.join(":"), declared=functions.get(key);
     const isInit=f.name==="" && !!initSpan && initSpan.join(":")===key;
-    if((!isInit && (!declared || declared.name?.text!==f.name)) || seen.has(`fn:${key}`))
+    const span=isInit ? f.namePos : declared && declared.name?.text===f.name ? [declared.getStart(sf),declared.end] : null;
+    if(!span || seen.has(`fn:${key}`))
       throw Error("missing or duplicate function identity");
-    const start=isInit ? f.namePos[0] : declared!.getStart(sf), end=isInit ? f.namePos[1] : declared!.end;
+    const [start,end]=span;
     seen.add(`fn:${key}`);
     if(!Array.isArray(f.entries)||!Array.isArray(f.expressions))throw Error("invalid function claims");
     add(start,{kind:"function",id:idOf("function",index),name:f.name,producer:report.producer,
@@ -876,9 +877,9 @@ const isDeclaredName = (n: ts.Node) => {
 };
 const isExpressionNode = (n: ts.Node) => ts.isExpression(n) && !isDeclaredName(n);
 
-/** The claim sites a unit's claims leave out: a function's body, or the
- * module's top-level code. */
-function missingClaimSites(unit: ts.FunctionDeclaration | readonly ts.Statement[], f: { entries: { pos: number[] }[]; expressions: { pos: number[] }[] }) {
+/** The claim sites a unit's claims leave out: in a function's body, or in the
+ * module's top-level code, the nodes `roots`. */
+function missingClaimSites(roots: readonly ts.Node[], f: { entries: { pos: number[] }[]; expressions: { pos: number[] }[] }) {
   const sites: { kind: string; pos: number[]; syntax: string }[]=[];
   const walk=(n: ts.Node)=> {
     if(ts.isFunctionDeclaration(n)||ts.isTypeNode(n))return;
@@ -889,11 +890,7 @@ function missingClaimSites(unit: ts.FunctionDeclaration | readonly ts.Statement[
       sites.push({kind:"expression",pos,syntax:ts.SyntaxKind[n.kind]});
     n.forEachChild(walk);
   };
-  if(Array.isArray(unit)) for(const st of unit as readonly ts.Statement[]) walk(st);
-  else {
-    const node=unit as ts.FunctionDeclaration;
-    if(node.body) walk(node.body);
-  }
+  for(const root of roots) walk(root);
   return sites.sort((a,b)=>a.pos[0]-b.pos[0]||a.pos[1]-b.pos[1]);
 }
 
@@ -967,7 +964,7 @@ export function main(args: string[]) {
       const name=n.name;
       if(!name||!n.body||report.functions.some(f=>f.namePos[0]===name.getStart()))return [];
       return [{name:name.text,namePos:[name.getStart(),name.end],pos:[n.getStart(),n.end],
-        missingSites:missingClaimSites(n,{entries:[],expressions:[]})}];
+        missingSites:missingClaimSites([n.body],{entries:[],expressions:[]})}];
     }),
     gaps:coverage(source,report),
     functions:report.functions.map((f,i)=>({id:`f${i}`,...f,
@@ -977,7 +974,7 @@ export function main(args: string[]) {
       // declared result.
       ...(f.name==="" ? {pos:f.namePos,resultPos:null,
           missingSites:missingClaimSites(sourceFile.statements.filter(isInitStatement),f)} :
-        ((node: ts.FunctionDeclaration)=>({pos:[node.getStart(),node.end],resultPos:node.type ? [node.type.getStart(),node.type.end] : null,missingSites:missingClaimSites(node,f)}))(
+        ((node: ts.FunctionDeclaration)=>({pos:[node.getStart(),node.end],resultPos:node.type ? [node.type.getStart(),node.type.end] : null,missingSites:missingClaimSites(node.body ? [node.body] : [],f)}))(
         declaring(functionNodes,f.namePos[0]))),
       entries:f.entries.map((e,j)=>({id:`f${i}e${j}`,...e})),
       expressions:f.expressions.map((e,j)=>({id:`f${i}x${j}`,...e}))})),

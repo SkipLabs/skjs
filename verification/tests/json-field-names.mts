@@ -13,35 +13,37 @@ import { join } from "node:path";
 
 const root = join(import.meta.dirname, "..");
 const read = (file: string) => readFileSync(join(root, file), "utf8");
+/** A match's first group, the name each pattern below captures. */
+const captured = (m: RegExpMatchArray): string[] => (m[1] === undefined ? [] : [m[1]]);
 
 /** Property names a TypeScript file declares. */
 const declared = (files: string[]) => new Set(files.flatMap((file) =>
   [...read(file).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*/g, "")
-    .matchAll(/(?<![\w.])([A-Za-z_]\w*)\??\s*:(?!:)/g)].map((m) => m[1] as string)));
+    .matchAll(/(?<![\w.])([A-Za-z_]\w*)\??\s*:(?!:)/g)].flatMap(captured)));
 
 /** Field names a Lean file reads or states: explicit field reads, exact field
  * lists and, where a file decodes structures with `FromJson`, their fields. */
 const lean = (files: string[], structures = false) => new Set(files.flatMap((file) => {
   const s = read(file).replace(/\/-[\s\S]*?-\//g, "").replace(/--.*/g, "");
   const exact = [...s.matchAll(/fieldsExactly\s+\S+\s+\[([^\]]*)\]/g)]
-    .flatMap((m) => [...(m[1] ?? "").matchAll(/"(\w+)"/g)].map((n) => n[1] as string));
+    .flatMap((m) => [...(m[1] ?? "").matchAll(/"(\w+)"/g)].flatMap(captured));
   // Plain and parenthesized arguments separately, since one read can nest in
   // another's argument.
   const reads = [...s.matchAll(/\b(?:jField|field|str|arr|bool|jArr|jStr|jNat|jBool)\s+[^\s()]+\s+"(\w+)"/g),
     ...s.matchAll(/\b(?:jField|field|str|arr|bool|jArr|jStr|jNat|jBool)\s+\([^()]*\)\s+"(\w+)"/g),
     ...s.matchAll(/getObjVal\?\s+"(\w+)"/g),
-    ...s.matchAll(/getObjValAs\?\s+\S+\s+"(\w+)"/g)].map((m) => m[1] as string);
+    ...s.matchAll(/getObjValAs\?\s+\S+\s+"(\w+)"/g)].flatMap(captured);
   const fields = !structures ? [] : [...s.matchAll(/^structure\s+\w+[^\n]*?\s+where\n((?:[ \t]+.*\n|\n)+?)(?=\S)/gm)]
-    .flatMap((m) => [...(m[1] ?? "").matchAll(/^[ \t]+(\w+)\s*:/gm)].map((n) => n[1] as string));
+    .flatMap((m) => [...(m[1] ?? "").matchAll(/^[ \t]+(\w+)\s*:/gm)].flatMap(captured));
   return [...exact, ...reads, ...fields];
 }));
 
 /** Field names the OCaml producer reads from a document. */
 const ocamlReads = (file: string) => new Set([...read(file)
-  .matchAll(/\b(?:field|text|items|List\.mem_assoc|List\.assoc_opt)\s+"(\w+)"/g)].map((m) => m[1] as string));
+  .matchAll(/\b(?:field|text|items|List\.mem_assoc|List\.assoc_opt)\s+"(\w+)"/g)].flatMap(captured));
 
 /** Field names the OCaml producer writes into an object. */
-const ocamlWrites = (file: string) => new Set([...read(file).matchAll(/"(\w+)",/g)].map((m) => m[1] as string));
+const ocamlWrites = (file: string) => new Set([...read(file).matchAll(/"(\w+)",/g)].flatMap(captured));
 
 const missing = (names: Set<string>, from: Set<string>, allowed: Record<string, string>) =>
   [...names].filter((n) => !from.has(n) && !(n in allowed)).sort();

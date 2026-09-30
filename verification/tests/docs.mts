@@ -9,9 +9,16 @@ import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
-const katex = createRequire(join(root, "tools", "package.json"))("katex") as {
+/** KaTeX's renderer, the one member this check calls: the module is plain
+ * JavaScript, so it is tested to have it. */
+interface Katex {
   renderToString(tex: string, options: { displayMode: boolean; throwOnError: boolean; strict: string }): string;
-};
+}
+const isKatex = (module: unknown): module is Katex =>
+  !!module && typeof module === "object" && "renderToString" in module && typeof module.renderToString === "function";
+const loaded: unknown = createRequire(join(root, "tools", "package.json"))("katex");
+if (!isKatex(loaded)) throw Error("katex has no renderToString");
+const katex = loaded;
 
 /** Directories holding no maintained documents: dependencies, build output and
  * the vendored upstream sources the producer's cases import. */

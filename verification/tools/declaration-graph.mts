@@ -16,6 +16,7 @@ import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration
 // intrinsics.mts declares the intrinsics this reader lists among the client's values: the trusted steps async functions, loops, spreads and patterns lower to.
 // library-globals.mts is the reviewed overlay of the standard library's globals, the only global values this reader admits, at the signatures it states.
 import type { Span } from "./span.mts";
+import { nameOf } from "./syntax.mts";
 import { classInstance, computedAlias, computedForm, expandMapped, mapped, members, oneTerm, optionalTerm, signature, signatures, substitute,
   typeTerm, type Mapped, type TermScope } from "./type-term.mts";
 import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePrototype, primitivePrototypeName, type OverlayEntry,
@@ -456,17 +457,21 @@ export function collectDeclarations(file: string, options: {
     const resolveDeclarations = (identifier: Identifier, what: string): Node[] => {
       const target = targetOf(checker, identifier);
       if (!target) throw Error(`unresolved type reference ${what}`);
-      const nodes = target.declarations.map(d => d.resolve());
-      if (nodes.some(node => !node)) throw Error(`unresolved type reference ${what}`);
+      const nodes = target.declarations.map((d): Node => {
+        const node = d.resolve();
+        if (!node) throw Error(`unresolved type reference ${what}`);
+        return node;
+      });
       for (const statement of statementsOnPath(checker, identifier))
         clean(statement, `${idOf(statement.getSourceFile())} on the path to ${what}`);
-      return nodes as Node[];
+      return nodes;
     };
     const resolveDeclaration = (identifier: Identifier, what: string): Node => {
       const nodes = resolveDeclarations(identifier, what);
-      if (nodes.length !== 1)
+      const [node] = nodes;
+      if (nodes.length !== 1 || !node)
         throw Error(`TypeScript found ${nodes.length} declarations for ${what}`);
-      return nodes[0] as Node;
+      return node;
     };
     // An interface declared several times is one interface with every
     // declaration's members, as TypeScript merges it; the first declaration is
@@ -630,7 +635,7 @@ export function collectDeclarations(file: string, options: {
     // identified by the member declaring it; the class must be a top-level
     // declaration, evaluated once, so one member is one key.
     const privateOf = (member: Node): number => {
-      const name = (member as { name?: Node }).name;
+      const name = nameOf(member);
       const cls = member.parent;
       if (!name || !ts.isPrivateIdentifier(name) || !cls || !ts.isClassDeclaration(cls) || !cls.name ||
           !ts.isSourceFile(cls.parent))
@@ -688,7 +693,8 @@ export function collectDeclarations(file: string, options: {
         keys: keyTypeOf,
         fail: (_node, message) => { throw Error(`${message} in ${what}`); },
         named: (part, pos, read) => {
-          const name = part.typeName as Identifier;
+          const name = part.typeName;
+          if (!ts.isIdentifier(name)) throw Error(`a qualified type reference in ${what}`);
           if (binders.includes(name.text)) {
             if (part.typeArguments?.length) throw Error(`type parameter applied as constructor: ${name.text}`);
             return { k: "binder", name: name.text, span: pos };
@@ -706,7 +712,7 @@ export function collectDeclarations(file: string, options: {
             throw Error(`type argument arity: ${identityOf(targetNode).module}#${name.text}`);
           valueStarts.push(targetNode);
           return { k: "reference", reference: { name: name.text, span: pos,
-            arguments: args.map(arg => [arg.getStart(source), arg.end] as Span), target: identityOf(targetNode) },
+            arguments: args.map((arg): Span => [arg.getStart(source), arg.end]), target: identityOf(targetNode) },
             args: args.map(read), span: pos };
         },
       };
@@ -920,7 +926,7 @@ export function collectDeclarations(file: string, options: {
       const node = libraryInterface(name);
       valueStarts.push(node);
       const target = identityOf(node);
-      return { k: "reference", reference: { name, span: [0, 0], arguments: args.map(() => [0, 0] as Span), target },
+      return { k: "reference", reference: { name, span: [0, 0], arguments: args.map((): Span => [0, 0]), target },
         args, span: [0, 0] };
     };
     const overlayLibrary: OverlayLibrary = {
@@ -1022,7 +1028,7 @@ export function collectDeclarations(file: string, options: {
           // its declaration's computed name spells: it joins the symbols.
           for (const declaration of method.declarations) {
             const node = declaration.resolve();
-            const name = node && (node as { name?: Node }).name;
+            const name = node && nameOf(node);
             if (name && ts.isComputedPropertyName(name) && (ts.isIdentifier(name.expression) ||
                 ts.isPropertyAccessExpression(name.expression))) {
               iteratorSymbol = symbolOf(name.expression);
@@ -1276,7 +1282,7 @@ export function collectDeclarations(file: string, options: {
         ? checker.getShorthandAssignmentValueSymbol(parent) : checker.getSymbolAtLocation(name);
       const declarations = symbol?.declarations.map(d => d.resolve()) ?? [];
       const [declaration] = declarations;
-      const declared = declaration && (declaration as Node & { name?: Node }).name;
+      const declared = declaration && nameOf(declaration);
       if (declarations.length === 1 && declaration && declared && ts.isIdentifier(declared) &&
           declaration.getSourceFile().fileName === client.fileName)
         options.bindingRead?.(span, [declared.getStart(client), declared.end]);
@@ -1299,8 +1305,8 @@ export function collectDeclarations(file: string, options: {
         const name = type.getSymbol()?.name;
         if (name) return { k: "binder", name, span };
       }
-      if (checker.isArrayType(type)) {
-        const [element] = checker.getTypeArguments(type as Parameters<Checker["getTypeArguments"]>[0]);
+      if (checker.isArrayType(type) && isTypeReference(type)) {
+        const [element] = checker.getTypeArguments(type);
         if (element) return { k: "array", presence: "readable", readonly: type.getSymbol()?.name === "ReadonlyArray",
           element: contextualTerm(element, span), span };
       }
@@ -1601,7 +1607,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
     !!d && ts.isVariableDeclaration(d) && !!d.type && ts.isIdentifier(d.name));
   const [declaration] = variables;
   if (!declaration || declarations.some(d => !d ||
-      (!ts.isInterfaceDeclaration(d) && !variables.includes(d as ts.VariableDeclaration))))
+      (!ts.isInterfaceDeclaration(d) && !variables.some(v => v === d))))
     throw Error(`the global ${name} is not an annotated variable`);
   const where = (node: Node, key: string) => `${context.identityOf(node.getSourceFile())}#${key}`;
   for (const variable of variables) context.clean(variable, where(variable, name));
@@ -1830,7 +1836,8 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
     return signatures(scopeOf(signature, whatNew), signature.parameters, signature.type, signature, span, false)
       .map(form => {
         if (form.receiver) throw Error(`${whatNew} states its receiver`);
-        return { binders: [] as string[],
+        const binders: string[] = [];
+        return { binders,
           type: { k: "constructor", params: form.params, rest: form.rest, result: form.result, span } satisfies TypeTerm };
       });
   });
@@ -2089,7 +2096,8 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       computed,
       fail: (_node, message) => { throw Error(`${message} in ${identity.module}#${identity.name}`); },
       named: (part, pos, read) => {
-        const name = part.typeName as Identifier;
+        const name = part.typeName;
+        if (!ts.isIdentifier(name)) throw Error(`a qualified type reference in ${identity.module}#${identity.name}`);
         const index = parameterNames.indexOf(name.text);
         if (index < 0) return reference(source, name, part.typeArguments ?? [], pos, read, false, part);
         if (part.typeArguments?.length)
@@ -2132,7 +2140,8 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         ? classInstance(scope, node, [node.getStart(source), node.end])
         : mergeMembers(parts.map(part => {
             const file = part.getSourceFile();
-            return members(scopeOf(file), (part as ts.InterfaceDeclaration).members, part,
+            if (!ts.isInterfaceDeclaration(part)) return scope.fail(part, "a declaration merged with an interface is not one");
+            return members(scopeOf(file), part.members, part,
               [part.getStart(file), part.end], true);
           }), (at, message) => scope.fail(at, message), node);
     // A class's `implements` clauses are obligations on the class, not part of

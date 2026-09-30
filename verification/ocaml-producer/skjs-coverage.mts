@@ -64,6 +64,7 @@ import os from "node:os";
 import { spawnSync } from "node:child_process";
 import * as ts from "../tools/node_modules/typescript/dist/ast/index.js";
 import { openText, close } from "../tools/fragment-parse.mts";
+import { childrenOf, nameOf } from "../tools/syntax.mts";
 import { checkApart, type Outcome } from "./check.mts";
 import { pooled } from "./run-cases.mts";
 
@@ -217,7 +218,7 @@ type Unit = {
 };
 
 const hasModifier = (n: ts.Node, kind: ts.SyntaxKind) =>
-  !!(n as { modifiers?: ts.NodeArray<ts.ModifierLike> }).modifiers?.some((m) => m.kind === kind);
+  childrenOf(n, "modifiers").some((m) => m.kind === kind);
 
 function bindingNames(n: ts.Node, out: string[]): void {
   if (ts.isIdentifier(n)) out.push(n.text);
@@ -227,11 +228,11 @@ function bindingNames(n: ts.Node, out: string[]): void {
 
 function declaredNames(s: ts.Statement): string[] {
   const out: string[] = [];
-  const named = s as { name?: ts.Node };
+  const name = nameOf(s);
   if ((ts.isFunctionDeclaration(s) || ts.isClassDeclaration(s) || ts.isInterfaceDeclaration(s) ||
        ts.isTypeAliasDeclaration(s) || ts.isEnumDeclaration(s) || ts.isModuleDeclaration(s) ||
-       ts.isImportEqualsDeclaration(s)) && named.name && ts.isIdentifier(named.name))
-    out.push(named.name.text);
+       ts.isImportEqualsDeclaration(s)) && name && ts.isIdentifier(name))
+    out.push(name.text);
   else if (ts.isVariableStatement(s))
     for (const d of s.declarationList.declarations) bindingNames(d.name, out);
   else if (ts.isImportDeclaration(s) && s.importClause) {
@@ -252,11 +253,11 @@ function references(s: ts.Node): Set<string> {
     if (ts.isIdentifier(n)) { out.add(n.text); return; }
     if (ts.isPropertyAccessExpression(n)) { visit(n.expression); return; }
     if (ts.isQualifiedName(n)) { visit(n.left); return; }
-    if ((ts.isPropertyAssignment(n) || ts.isMethodDeclaration(n) || ts.isPropertyDeclaration(n) ||
-         ts.isGetAccessorDeclaration(n) || ts.isSetAccessorDeclaration(n) ||
-         n.kind === ts.SyntaxKind.PropertySignature || n.kind === ts.SyntaxKind.MethodSignature ||
-         ts.isEnumMember(n)) && (n as { name?: ts.Node }).name) {
-      const name = (n as unknown as { name: ts.Node }).name;
+    const name = ts.isPropertyAssignment(n) || ts.isMethodDeclaration(n) || ts.isPropertyDeclaration(n) ||
+      ts.isGetAccessorDeclaration(n) || ts.isSetAccessorDeclaration(n) ||
+      n.kind === ts.SyntaxKind.PropertySignature || n.kind === ts.SyntaxKind.MethodSignature ||
+      ts.isEnumMember(n) ? nameOf(n) : undefined;
+    if (name) {
       n.forEachChild((c) => { if (c !== name || !ts.isIdentifier(c)) visit(c); });
       return;
     }
@@ -317,8 +318,7 @@ function unitsOf(src: Source): { units: Unit[]; stmts: Stmt[]; isModule: boolean
     // A function's overload signatures, and a merged declaration, go with it.
     const seed = new Set<number>([s.index, ...s.names.flatMap((n) => byName.get(n) ?? [])]);
     const todo = [...seed];
-    while (todo.length) {
-      const i = todo.pop()!;
+    for (let i = todo.pop(); i !== undefined; i = todo.pop()) {
       for (const r of stmts[i].refs)
         for (const j of byName.get(r) ?? []) if (!seed.has(j)) { seed.add(j); todo.push(j); }
     }
@@ -770,11 +770,15 @@ async function main() {
     }
   }
   close();
-  const candidates = units.filter((u) => u.derived);
+  // An accepted unit with the file derived for it, which the pipeline runs.
+  const candidates = units.flatMap((u): (Unit & { derived: string })[] => {
+    const derived = u.derived;
+    return derived === undefined ? [] : [{ ...u, derived }];
+  });
   process.stderr.write(`corpus: ${sources.length} files, ${units.length} units, ${candidates.length} SKJS-accepted by the markers\n`);
 
   let skjs: Set<string> | undefined;
-  if (flag("--skjs")) skjs = skjsVerdicts(candidates.map((u) => u.derived!));
+  if (flag("--skjs")) skjs = skjsVerdicts(candidates.map((u) => u.derived));
 
   // The pipeline runs the producer's built executable: build it from this
   // checkout's sources, so the census measures them.
@@ -783,9 +787,9 @@ async function main() {
 
   const started = Date.now();
   let done = 0;
-  const attempt = async (u: Unit) => {
+  const attempt = async (u: Unit & { derived: string }) => {
     const t0 = Date.now();
-    const o = await checkApart(u.derived!, projectOf(u.derived!), true);
+    const o = await checkApart(u.derived, projectOf(u.derived), true);
     if (!flag("--keep")) fs.rmSync(o.artifacts, { recursive: true, force: true });
     return { o, ms: Date.now() - t0 };
   };
@@ -806,8 +810,9 @@ async function main() {
   });
   const byId = new Map(rows.map((r) => [r.id, r]));
   candidates.forEach((u, i) => {
-    const row = byId.get(u.id)!;
-    row.skjs = skjs === undefined ? "not-run" : skjs.has(u.derived!) ? "rejected" : "accepted";
+    const row = byId.get(u.id);
+    if (!row) throw new Error(`no row for the unit ${u.id}`);
+    row.skjs = skjs === undefined ? "not-run" : skjs.has(u.derived) ? "rejected" : "accepted";
     const settled = outcomes[i];
     let full = "";
     if (settled.status === "rejected") {
@@ -817,7 +822,7 @@ async function main() {
       row.status = o.status; row.phase = o.phase;
       // In its project a derived file is named by its own path: name it as
       // `check.mts` names a lone file's snapshot, so a refusal reads the same.
-      if (o.status !== "verified") full = o.detail.replaceAll(u.derived!, "/ocaml-producer-unit/source.ts");
+      if (o.status !== "verified") full = o.detail.replaceAll(u.derived, "/ocaml-producer-unit/source.ts");
       else if (!checkedCode(o, u)) {
         row.status = "unverified";
         full = "attribution: the verified run checked none of this unit's own code";
@@ -849,9 +854,11 @@ async function main() {
       reasonOf.set(row.id, `SKJS unsoundness: ${SKJS_UNSOUND[row.id]}`);
       continue;
     }
+    const key = row.key;
+    if (key === undefined) throw new Error(`${row.id}: not verified, with no reason recorded`);
     const entry = row.status === "error" ? CLASSES.find((c) => c.label === "run error or unattributed verification")
-      : classOf(row.key!);
-    if (!entry) unmatched.add(row.key!);
+      : classOf(key);
+    if (!entry) unmatched.add(key);
     row.class = entry?.cls ?? "gap";
     reasonOf.set(row.id, entry?.label ?? `unmatched: ${row.key}`);
   }
@@ -871,7 +878,7 @@ async function main() {
     unreadableFiles: failed.length,
     units: rows.length,
     unitsByMarker: count(rows, (r) => r.skjsMarker),
-    skjsConfirmation: count(rows.filter((r) => r.skjs), (r) => r.skjs!),
+    skjsConfirmation: count(rows.flatMap((r) => r.skjs ? [r.skjs] : []), (confirmed) => confirmed),
     accepted: accepted.length,
     verified: accepted.filter((r) => r.status === "verified").length,
     byStatus: count(accepted, (r) => `${r.status} (${r.phase})`),
@@ -886,7 +893,7 @@ async function main() {
     },
     /* Units whose first blocker is in the group; `self` of them blocked in
      * their own statement, `dependency` in one their closure brought. */
-    byGroup: Object.fromEntries(Object.keys(count(blocked, (r) => r.group!)).map((g) => {
+    byGroup: Object.fromEntries(Object.keys(count(blocked.flatMap((r) => r.group ?? []), (g) => g)).map((g) => {
       const rs = blocked.filter((r) => r.group === g);
       return [g, { units: rs.length, self: rs.filter((r) => r.where === "self").length,
         dependency: rs.filter((r) => r.where === "dependency").length,
@@ -908,13 +915,14 @@ async function main() {
      * `obligation:` line (what was not established, not why). */
     unexplainedWithObligation: accepted.filter((r) => r.class === "unexplained" && / — /.test(r.detail ?? "")).length,
     /* Units by classified reason: [class, label] → units, files. */
-    byReason: Object.fromEntries(Object.keys(count(blocked, (r) => reasonOf.get(r.id)!)).map((label) => {
+    byReason: Object.fromEntries(Object.keys(count(blocked.flatMap((r) => reasonOf.get(r.id) ?? []),
+      (label) => label)).map((label) => {
       const rs = blocked.filter((r) => reasonOf.get(r.id) === label);
       return [label, { class: rs[0].class, units: rs.length, files: new Set(rs.map((r) => r.source)).size }];
     })),
     unmatchedReasons: [...unmatched].sort(),
     skjsUnsoundVerified: unsoundVerified,
-    byKey: count(accepted.filter((r) => r.status !== "verified"), (r) => r.key!),
+    byKey: count(accepted.flatMap((r) => r.status !== "verified" ? r.key ?? [] : []), (key) => key),
   };
   // One row per line, so a rerun's movement reads as a line diff.
   const slim = ({ id, suite, valueDeps, closureSize, ...r }: Row) => r;

@@ -208,6 +208,6 @@ export function decodeClaimType(v: unknown): ClaimType {
   list(o.atoms).forEach(atom);
   if (o.top && list(o.atoms).length)
     throw Error("unknown cannot also carry atoms");
-  // Checked field by field above: this is where that becomes a type.
+  // asserted: the decoder's result, checked field by field above
   return v as ClaimType;
 }

@@ -211,7 +211,7 @@ export function decodeLabels(v: unknown, size: number): Labels {
     )
   )
     throw Error("type graph reference out of bounds");
-  // Checked field by field above: this is where that becomes a type.
+  // asserted: the decoder's result, checked field by field above
   return v as Labels;
 }
 /** The keys an index signature constrains: every string key, the canonical
@@ -457,7 +457,7 @@ export function decodeGraph(value: unknown): TypeGraph {
     }
     clauses(row);
   });
-  // Checked field by field above: this is where that becomes a type.
+  // asserted: the decoder's result, checked field by field above
   return value as TypeGraph;
 }
 export const printLabels = (labels: Labels): string =>

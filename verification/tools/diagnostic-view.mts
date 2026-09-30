@@ -178,7 +178,8 @@ const recordType = (table: Table, labels: unknown) => typeText(table.types, labe
 
 function directView(ob: Table, judgment: DirectJudgment) {
   const conclusion = `${recordType(ob,judgment.actual)} ≤ ${recordType(ob,judgment.expected)}`;
-  return {title:"Generic instance obligation", assumptions:[] as string[], conclusion,
+  const assumptions: string[] = [];
+  return {title:"Generic instance obligation", assumptions, conclusion,
     summary:`The call's type argument is not shown within its bound: ${conclusion}.`};
 }
 

@@ -5,6 +5,7 @@
 import * as ts from "typescript/unstable/ast";
 import type { Identifier, Node, SourceFile, TypeAliasDeclaration, TypeElement, TypeNode, TypeReferenceNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
+import { childrenOf } from "./syntax.mts";
 import type { PropertyKey, TypeTerm } from "./declaration-types.mts";
 
 // Numeric literals in the fragment are plain decimals; every other spelling
@@ -815,8 +816,8 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
     return key;
   };
   const only = (member: ts.ClassElement, allowed: ts.SyntaxKind[]) => {
-    const modifiers = (member as { modifiers?: readonly Node[] }).modifiers;
-    if (modifiers?.some(m => !allowed.includes(m.kind) && !CLASS_ACCESS.includes(m.kind)))
+    const modifiers = childrenOf(member, "modifiers");
+    if (modifiers.some(m => !allowed.includes(m.kind) && !CLASS_ACCESS.includes(m.kind)))
       scope.fail(member, "a class member modifier outside the fragment");
   };
   for (const member of node.members) {

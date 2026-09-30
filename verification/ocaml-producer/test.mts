@@ -1484,18 +1484,22 @@ for (const [artifacts, arity, refusal] of [
 // unchanged, so each call's instance fits its actuals but is not the one the
 // call states.
 const forgeTypeArgument = (artifacts: string, kind: "invoke" | "apply"): string => {
-  const ast: { k?: string; typeArgs?: { k: string; parts: unknown[]; span: unknown }[] } =
-    JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
-  const calls: typeof ast[] = [];
+  type TypeArgument = { parts: unknown[]; span: unknown };
+  const isTypeArgument = (a: unknown): a is TypeArgument =>
+    !!a && typeof a === "object" && "parts" in a && Array.isArray(a.parts) && "span" in a;
+  const ast: unknown = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
+  // Each call's type arguments, as the Fragment holds them: the forgery edits them there.
+  const calls: TypeArgument[][] = [];
   const visit = (j: unknown): void => {
     if (Array.isArray(j)) j.forEach(visit);
     else if (j && typeof j === "object") {
-      if ((j as typeof ast).k === kind && (j as typeof ast).typeArgs) calls.push(j as typeof ast);
+      if ("k" in j && j.k === kind && "typeArgs" in j && Array.isArray(j.typeArgs) && j.typeArgs.every(isTypeArgument))
+        calls.push(j.typeArgs);
       Object.values(j).forEach(visit);
     }
   };
   visit(ast);
-  const [typeArg] = must(calls[0]?.typeArgs, "the call's type arguments");
+  const [typeArg] = must(calls[0], "the call's type arguments");
   must(typeArg, "the type argument").parts.push({ k: "atom", name: "string", span: typeArg.span });
   const forgedAst = join(artifacts, "forged-type-argument.json");
   writeFileSync(forgedAst, JSON.stringify(ast));

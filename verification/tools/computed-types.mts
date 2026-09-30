@@ -8,6 +8,7 @@
  * declared. What is read from the checker's types is only what has no
  * syntax: a union of literals and primitives, and the record an object
  * literal's inferred type is. */
+import { childOf, childrenOf, isStatic } from "./syntax.mts";
 import { SignatureKind, SymbolFlags, TypeFlags, type Checker, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { Node, TypeAliasDeclaration, TypeNode, TypeReferenceNode } from "typescript/unstable/ast";
@@ -96,8 +97,8 @@ export function literalUnion(type: Type, span: Span): TypeTerm | null {
 export function enclosingBinders(node: Node): string[] {
   const names: string[] = [];
   for (let at: Node | undefined = node.parent; at; at = at.parent) {
-    const parameters = (at as { typeParameters?: readonly ts.TypeParameterDeclaration[] }).typeParameters;
-    for (const p of parameters ?? []) names.push(p.name.text);
+    for (const p of childrenOf(at, "typeParameters"))
+      if (ts.isTypeParameterDeclaration(p)) names.push(p.name.text);
   }
   return names;
 }
@@ -194,10 +195,10 @@ function generic(type: Type): boolean {
 type Declared = { node: Node; annotation: TypeNode | undefined; optional: boolean };
 
 function declared(node: Node): Declared {
-  const typed = node as { type?: TypeNode; questionToken?: Node; postfixToken?: Node };
   const annotation = ts.isVariableDeclaration(node) || ts.isParameterDeclaration(node) ||
-    ts.isPropertySignatureDeclaration(node) || ts.isPropertyDeclaration(node) ? typed.type : undefined;
-  const optional = !!typed.questionToken || typed.postfixToken?.kind === ts.SyntaxKind.QuestionToken;
+    ts.isPropertySignatureDeclaration(node) || ts.isPropertyDeclaration(node) ? node.type : undefined;
+  const optional = !!childOf(node, "questionToken") ||
+    childOf(node, "postfixToken")?.kind === ts.SyntaxKind.QuestionToken;
   return { node, annotation, optional };
 }
 
@@ -224,8 +225,7 @@ function typeQuery(context: ComputedContext, node: ts.TypeQueryNode, type: Type,
   if (ts.isEnumDeclaration(first))
     throw Error(`${what} is an enum's object type, which only an annotation of the enum's module states`);
   if (nodes.every(n => ts.isFunctionDeclaration(n)) || (nodes.length === 1 && ts.isClassDeclaration(first))) {
-    if (ts.isClassDeclaration(first) && first.members.some(m =>
-        (m as { modifiers?: readonly Node[] }).modifiers?.some(k => k.kind === ts.SyntaxKind.StaticKeyword)))
+    if (ts.isClassDeclaration(first) && first.members.some(isStatic))
       throw Error(`${what} is a class with static members: its statics are bindings of their own, not ` +
         "members of the class value's type");
     const value = context.value(nodes, what);

@@ -1966,14 +1966,18 @@ function closureSchemes(fnNode: FunctionDeclaration, checker: Checker, types: Ro
     if (sigs.length !== 1) return null;
     const sig = sigs[0];
     const tps = sig.getTypeParameters();
-    if (!tps.length || tps.some((tp) => !binderOf(tp))) return null;
+    const named = tps.flatMap((tp) => {
+      const name = binderOf(tp);
+      return name ? [{ tp, name }] : [];
+    });
+    if (!tps.length || named.length !== tps.length) return null;
     const thisParameter = sig.getThisParameter();
     return {
       scheme: {
         effect: "unrestricted",
-        typeParams: tps.map((tp) => {
+        typeParams: named.map(({ tp, name }) => {
           const bound = checker.getConstraintOfTypeParameter(tp);
-          return { name: binderOf(tp) as string, bound: bound ? claimOf(bound) : null };
+          return { name, bound: bound ? claimOf(bound) : null };
         }),
         this: thisParameter
           ? claimOf(must(checker.getTypeOfSymbol(thisParameter), "receiver-type"))
@@ -2016,13 +2020,17 @@ function closureSchemes(fnNode: FunctionDeclaration, checker: Checker, types: Ro
       const a = actuals[i];
       if (a) bind(formal, must(checker.getTypeAtLocation(a), "argument-type"));
     });
-    if (typeParams.some((tp) => !sigma.has(tp.name)))
-      throw new Refusal("uninferred-instantiation", checker.typeToString(must(checker.getTypeAtLocation(node), "call-type")));
+    const instantiate = typeParams.map((tp) => {
+      const type = sigma.get(tp.name);
+      if (!type)
+        throw new Refusal("uninferred-instantiation", checker.typeToString(must(checker.getTypeAtLocation(node), "call-type")));
+      return { name: tp.name, type };
+    });
     const substitute = (c: ClaimType): ClaimType =>
       !Array.isArray(c) && "param" in c ? (sigma.get(c.param) ?? c) : c;
     return {
       type: substitute(result),
-      instantiate: typeParams.map((tp) => ({ name: tp.name, type: sigma.get(tp.name) as number[] })),
+      instantiate,
     };
   };
   return { claimOf, call };

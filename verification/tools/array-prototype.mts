@@ -27,7 +27,7 @@
 import { SymbolFlags, type Checker } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { ArrayPresence } from "./type-graph.mts";
-import type { Node, SourceFile } from "typescript/unstable/ast";
+import type { Node } from "typescript/unstable/ast";
 import { optionalTerm, signatures, typeTerm, type TermScope } from "./type-term.mts";
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 
@@ -443,7 +443,7 @@ function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: P
     // prototype's binders follow, fixed by the receiver.
     const binders = [...own, ...proto.binders];
     const scope: TermScope = {
-      source: source as SourceFile,
+      source,
       annotation: false,
       fail: (_node, message) => { throw Error(`${message} in ${entry.from}.${entry.name}`); },
       named: (node, pos) => {
@@ -464,12 +464,13 @@ function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: P
           params: f.params, rest: null, result: f.result,
           span } satisfies Extract<TypeTerm, { k: "function" }>))
       : signatures(scope, parameters, entry.resultAs ? undefined : member.type, member, span, false, stated);
-    if (!forms.length || (!binders.length && forms.length !== 1))
+    const [first] = forms;
+    if (!first || (!binders.length && forms.length !== 1))
       throw Error(`${entry.from}.${entry.name} requires a nonempty supported signature family`);
     const type: TypeTerm = binders.length
       ? { k: "scheme", binders: binders.map(name => ({ name, bound: entry.bounds?.[name] ?? null, default: null, span })),
           signatures: forms.map(f => ({ ...f, receiver: f.receiver ?? receiver })), span }
-      : { ...forms[0]!, receiver: forms[0]!.receiver ?? receiver };
+      : { ...first, receiver: first.receiver ?? receiver };
     const key = ts.isComputedPropertyName(member.name) &&
         (ts.isPropertyAccessExpression(member.name.expression) || ts.isIdentifier(member.name.expression))
       ? { symbol: library.symbol(member.name.expression) } : entry.name;

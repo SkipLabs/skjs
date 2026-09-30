@@ -265,9 +265,12 @@ fragment; do not restore acceptance by increasing trust silently.
 - A decoder is the only place that asserts a shape. Everything else narrows:
   a type predicate, a `typeof` before a comparison, a case table keyed by the
   language's own union. `node verification/tools/unchecked.mts` ([source](tools/unchecked.mts)) reports every written `any`, `as`
-  and `!` in the node side; what it should show is one `as` at the last line of
-  each decoder, where the checks it just ran become the type it returns. An
-  assertion anywhere else is standing in for a check that is missing.
+  and `!` in the node side, and fails on one without a reason, a comment
+  `// asserted: REASON` at the end of its line or alone on the line above; `run.sh`
+  runs it as a suite. The assertion that has its reason is an `as` at the last
+  line of a decoder, where the checks it just ran become the type it returns.
+  An assertion anywhere else is standing in for a check that is missing; where
+  that check would cost more than it guards, the reason says so.
 - Wire formats carry no version, profile or schema tag, and none is to be
   added. What a version would be for is consistency, and consistency here is a
   typing property: each format is one declared type, every producer and

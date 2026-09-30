@@ -66,6 +66,8 @@ const FORGED_PROMISE = "an object the source builds with a `then` member could p
 import type { Span } from "./span.mts";
 // thrown.mts reads what the TypeScript API throws into the message the gate reports, without asserting its type.
 import { messageOf } from "./thrown.mts";
+// syntax.mts reads the name, modifiers and other children a member or declaration of unasked kind carries, checking each is a node.
+import { childOf, childrenOf, isStatic, nameOf } from "./syntax.mts";
 import { enclosingBinders } from "./computed-types.mts";
 // declaration-graph.mts collects the declarations the source reaches: the declaration document the Fragment carries for Lean to lower.
 import { collectDeclarations, DeclarationError, libraryArguments, libraryTerm, tsconfigOf, type LibraryType,
@@ -221,7 +223,7 @@ const parameterName = (index: number): string => `parameter ${index}`;
 /** Why a class member not named by a plain identifier is refused: each form
  * of name, by what it would mean. */
 function unnamedMember(member: ts.ClassElement, isStatic: boolean): string {
-  const name = (member as { name?: Node }).name;
+  const name = nameOf(member);
   if (name && ts.isPrivateIdentifier(name))
     return "a `#private` member is outside the fragment: it is a private slot of the instance, not a property, and the heap model has no such slot";
   if (name && ts.isComputedPropertyName(name)) {
@@ -719,9 +721,10 @@ class Gate {
       const own = (node.typeParameters ?? []).map((tp) => tp.name.text);
       const args = t.typeArguments ?? [];
       if (base.binders.length || args.length) {
-        const atOwn = args.length === base.binders.length && args.every((a, i) =>
+        const binders = base.binders;
+        const atOwn = args.length === binders.length && args.every((a, i) =>
           ts.isTypeReferenceNode(a) && ts.isIdentifier(a.typeName) && !a.typeArguments?.length &&
-          a.typeName.text === base!.binders[i] && own.includes(a.typeName.text));
+          a.typeName.text === binders[i] && own.includes(a.typeName.text));
         if (!atOwn)
           this.fail(heritage, "a class extending a generic class other than at the base's own binders, which the derived class declares, is outside the fragment: the base's construction is at those binders' rows");
       }
@@ -766,7 +769,7 @@ class Gate {
     try {
       const methods: BindingAst[] = [];
       if ((base || extended) && node.members.some((m) => {
-        const memberName = (m as { name?: Node }).name;
+        const memberName = nameOf(m);
         return !!memberName && ts.isPrivateIdentifier(memberName);
       }))
         this.fail(node, PRIVATE_INHERITANCE);
@@ -807,13 +810,15 @@ class Gate {
       // base's constructor, which binds exactly its own. Each forwarded
       // read is claimed at one character of the `extends` keyword, a site
       // nothing else claims.
-      const implicitParams = (base: ClassRecord) => {
+      type ConstructorParam = { name: string; local: string; field: string; pos: Span; property: boolean;
+        at: Span; type: TypeTerm; fieldType: TypeTerm; binding: Stmt | null };
+      const implicitParams = (base: ClassRecord): ConstructorParam[] => {
         const keyword = heritage ? heritage.getStart(this.file) : 0;
         if (base.params.length > "extends".length)
           this.fail(node, "an implicit derived constructor forwarding more parameters than its `extends` keyword has characters has no source site for each");
         return base.params.map((p, i) => ({ name: parameterName(i), local: parameterName(i), field: parameterName(i),
-          pos: [keyword + i, keyword + i + 1] as Span, property: false, at: this.span(name), type: p.type,
-          fieldType: p.type, binding: null as Stmt | null }));
+          pos: [keyword + i, keyword + i + 1], property: false, at: this.span(name), type: p.type,
+          fieldType: p.type, binding: null }));
       };
       // An optional parameter, `x?: T`, binds `T | undefined`, as a closure's.
       // A parameter with a default binds a hidden name, which the caller's
@@ -875,10 +880,10 @@ class Gate {
             init: { k: "apply", pos: this.span(member), callee: block, args: [] } });
           continue;
         }
-        const memberName = (member as { name?: Node }).name;
+        const memberName = nameOf(member);
         if (memberName && (ts.isIdentifier(memberName) || ts.isStringLiteral(memberName)) && memberName.text === "then")
           this.fail(member, FORGED_PROMISE);
-        const modifiers = (member as { modifiers?: readonly Node[] }).modifiers ?? [];
+        const modifiers = childrenOf(member, "modifiers");
         if (modifiers.some((m) => m.kind !== ts.SyntaxKind.ReadonlyKeyword && m.kind !== ts.SyntaxKind.AsyncKeyword &&
             m.kind !== ts.SyntaxKind.StaticKeyword && !CLASS_ACCESS.includes(m.kind)))
           this.fail(member, "a class member modifier outside the fragment");
@@ -972,8 +977,9 @@ class Gate {
       const prototypeBinding: BindingAst[] = [];
       let proto: Expr | null = null;
       let protoBinding: string | null = null;
-      const baseProto: Expr | null = base?.proto && heritage
-        ? { k: "id", pos: this.span(heritage.types[0]!.expression), name: base.proto } : null;
+      const baseType = heritage?.types[0];
+      const baseProto: Expr | null = base?.proto && baseType
+        ? { k: "id", pos: this.span(baseType.expression), name: base.proto } : null;
       const tested = [...this.classTests.values()].includes(name.text);
       if (!prototype.length && !tested && base?.proto) protoBinding = base.proto;
       if (prototype.length || tested) {
@@ -1109,7 +1115,10 @@ class Gate {
             if (readsThis(st))
               this.fail(st, "`this` before `super(...)` throws in JavaScript; the instance is allocated at the end of the constructor, so a read or write of it there is refused");
           prelude = body.slice(0, index).map((st) => this.stmt(st));
-          const call = (body[index] as ts.ExpressionStatement).expression as ts.CallExpression;
+          const superCall = body[index];
+          const call = superCall && ts.isExpressionStatement(superCall) && ts.isCallExpression(superCall.expression)
+            ? superCall.expression
+            : this.fail(constructor, "a derived constructor calls `super(...)` once, as a statement of its own body");
           for (const a of call.arguments)
             if (ts.isSpreadElement(a) || readsThis(a)) this.fail(a, "a `super(...)` argument is an ordinary expression not reading `this`");
           actuals = call.arguments.map((a) => this.expr(a));
@@ -1197,11 +1206,10 @@ class Gate {
     const declaration = cls === undefined ? undefined : this.file.statements.find((st): st is ClassDeclaration =>
       ts.isClassDeclaration(st) && st.name?.text === cls);
     const member = declaration?.members.find((m) => {
-      const memberName = (m as { name?: Node }).name;
+      const memberName = nameOf(m);
       return !!memberName && ts.isPrivateIdentifier(memberName) && memberName.text === name.text;
     });
-    if (!cls || !member || !(member as { modifiers?: readonly Node[] }).modifiers?.some((m) =>
-        m.kind === ts.SyntaxKind.StaticKeyword))
+    if (!cls || !member || !isStatic(member))
       return null;
     if (!ts.isIdentifier(node.expression) || this.classReads.get(this.span(node.expression).join(":")) !== cls)
       this.fail(node, "a static private member read other than through its class's name: statics are bindings of their own");
@@ -1339,7 +1347,8 @@ class Gate {
         return result;
       },
       named: (node, span, read) => {
-        const name = (node.typeName as Identifier).text;
+        const name = ts.isIdentifier(node.typeName) ? node.typeName.text
+          : this.fail(node, "type reference outside the fragment");
         // An application of an alias TypeScript computes from its parameters
         // is a computed type, evaluated where it is written.
         const computed = this.hasTypeParam(name) ? undefined : this.computedTypes.get(`${span[0]}:${span[1]}`);
@@ -2827,7 +2836,7 @@ class Gate {
             // `this` parameter states.
             type: stated
               ? this.typeOf(head.type, head)
-              : instance ? instance : ({ k: "atom", name: "unknown", span: this.span(node) } as TypeTerm),
+              : instance ? instance : ({ k: "atom", name: "unknown", span: this.span(node) } satisfies TypeTerm),
             strict: this.strict,
           };
       // Each name is taken where its parameter has just been checked: a
@@ -2868,6 +2877,9 @@ class Gate {
       const arrow = ts.isArrowFunction(node) ? this.span(node.equalsGreaterThanToken) : null;
       const keyword = modifiers[0];
       const rest = (p: ts.ParameterDeclaration) => p.dotDotDotToken ? { rest: true as const } : {};
+      // A parameter a pattern did not read is named by an identifier.
+      const identifierOf = (p: ts.ParameterDeclaration): Identifier =>
+        ts.isIdentifier(p.name) ? p.name : this.fail(p, "a parameter pattern makes the body a block");
       // A block body, or a parameter written as a pattern, makes the body
       // statements, lowered as a function's are: a parameter written as a
       // pattern or with a default binds a hidden name, which the caller's
@@ -2888,7 +2900,7 @@ class Gate {
           bindings.push({
             k: "destructure",
             pos: this.span(p),
-            target: patterns[i] ?? { k: "name", name: this.local(p.name as ts.Identifier), pos: at },
+            target: patterns[i] ?? { k: "name", name: this.local(identifierOf(p)), pos: at },
             default_: p.initializer ? this.expr(p.initializer) : null,
             init: { k: "id", pos: at, name: hidden },
           });
@@ -2937,14 +2949,14 @@ class Gate {
       const defaults = parameters.map((p) => p.initializer ? this.expr(p.initializer) : null);
       // A parameter default's own schedule is Lean's (`parameterOrder`).
       this.initializedBefore(node, parameters.map((p): [PatternAst, Expr | null] =>
-        [{ k: "name", name: this.local(p.name as ts.Identifier), pos: this.span(p.name) }, null]));
+        [{ k: "name", name: this.local(identifierOf(p)), pos: this.span(p.name) }, null]));
       return {
         k: "lambda",
         pos: this.span(node),
         typeParams,
         receiver,
         params: parameters.map((p, i) => ({
-          name: this.local(p.name as ts.Identifier),
+          name: this.local(identifierOf(p)),
           // A defaulted parameter's type is what the body reads; the default
           // itself is the expression that replaces an omitted argument. A rest
           // parameter's type is the tuple its arguments are collected into.
@@ -4425,7 +4437,7 @@ function shadowingLocals(source: SourceFile): Map<string, Identifier> {
   const declared: { id: Identifier; scope: Node; own: boolean }[] = [];
   const visit = (node: Node): void => {
     if (ts.isTypeNode(node) || ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node)) return;
-    const name = (node as Node & { name?: Node }).name;
+    const name = nameOf(node);
     if ((ts.isParameterDeclaration(node) || ts.isVariableDeclaration(node) || ts.isBindingElement(node) ||
          ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node) || ts.isEnumDeclaration(node) ||
          ts.isFunctionExpression(node) || ts.isClassExpression(node) || ts.isImportSpecifier(node) ||
@@ -4574,9 +4586,10 @@ export function parseFile(file: string, carriesContext = false,
   ]);
   const globalNodes: Identifier[] = [];
   const findGlobals = (node: Node): void => {
-    if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) &&
-        !rooted.has(node.typeName.text) && !globalNodes.some(g => g.text === (node.typeName as Identifier).text))
-      globalNodes.push(node.typeName);
+    const typeName = ts.isTypeReferenceNode(node) ? node.typeName : null;
+    if (typeName && ts.isIdentifier(typeName) &&
+        !rooted.has(typeName.text) && !globalNodes.some(g => g.text === typeName.text))
+      globalNodes.push(typeName);
     node.forEachChild(findGlobals);
   };
   if (!carriesContext) findGlobals(source);
@@ -4591,7 +4604,7 @@ export function parseFile(file: string, carriesContext = false,
   // TypeScript; a shadowed global stays unbound.
   const bound = new Set<string>(rooted);
   const findBound = (node: Node): void => {
-    const name = (node as Node & { name?: Node }).name;
+    const name = nameOf(node);
     if ((ts.isParameterDeclaration(node) || ts.isVariableDeclaration(node) || ts.isFunctionDeclaration(node) ||
          ts.isFunctionExpression(node) || ts.isClassDeclaration(node) || ts.isClassExpression(node) ||
          ts.isBindingElement(node) || ts.isEnumDeclaration(node)) && name && ts.isIdentifier(name))
@@ -4631,10 +4644,11 @@ export function parseFile(file: string, carriesContext = false,
         ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node) || ts.isHeritageClause(node))
       return;
     if (ts.isIdentifier(node) && !bound.has(node.text) && node.text !== "undefined") {
-      const parent = node.parent as Node & { name?: Node; propertyName?: Node; label?: Node };
+      const parent = node.parent;
       const intrinsic = node.text === "Object" && ts.isPropertyAccessExpression(parent) &&
         parent.expression === node && parent.name.text === "assign";
-      if (parent.name !== node && parent.propertyName !== node && parent.label !== node && !intrinsic)
+      if (childOf(parent, "name") !== node && childOf(parent, "propertyName") !== node &&
+          childOf(parent, "label") !== node && !intrinsic)
         globalValueNodes.push(node);
     }
     node.forEachChild(findGlobalValues);
@@ -4774,8 +4788,7 @@ export function parseFile(file: string, carriesContext = false,
   if (!carriesContext) findRests(source);
   // A read `C.x` of a class with static members may be one of them:
   // TypeScript decides.
-  const withStatics = new Set(classNodes.filter(c => c.members.some(m =>
-    (m as { modifiers?: readonly Node[] }).modifiers?.some(k => k.kind === ts.SyntaxKind.StaticKeyword)))
+  const withStatics = new Set(classNodes.filter(c => c.members.some(isStatic))
     .flatMap(c => c.name ? [c.name.text] : []));
   const staticNodes: Identifier[] = [];
   const findStatics = (node: Node): void => {
@@ -4851,9 +4864,10 @@ export function parseFile(file: string, carriesContext = false,
   const keyTypeNodes: Node[] = [];
   // The file's aliases TypeScript computes from their parameters
   // (`computedAlias`): an application of one is a computed type too.
-  const localAlias = (reference: ts.TypeReferenceNode): TypeAliasDeclaration | null =>
-    ts.isIdentifier(reference.typeName)
-      ? aliasNodes.find(a => a.name.text === (reference.typeName as Identifier).text) ?? null : null;
+  const localAlias = (reference: ts.TypeReferenceNode): TypeAliasDeclaration | null => {
+    const typeName = reference.typeName;
+    return ts.isIdentifier(typeName) ? aliasNodes.find(a => a.name.text === typeName.text) ?? null : null;
+  };
   const computedAliases = new Set(aliasNodes.filter(a => computedAlias(a, localAlias)).map(a => a.name.text));
   const findComputed = (node: Node): void => {
     if (ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node)) return;
@@ -5096,9 +5110,11 @@ export function typeOf(node: TypeNode): TypeTerm {
 if (process.argv[1] && import.meta.filename === resolve(process.argv[1])) {
   const [file, ...rest] = process.argv.slice(2);
   const options = new Map<string, string>();
-  while (rest.length >= 2 && ["--project", "--typescript-diagnostics"].includes(rest[0]) &&
-      !options.has(rest[0]))
-    options.set(rest.shift()!, rest.shift()!);
+  for (let [flag, value] = rest; flag !== undefined && value !== undefined &&
+      ["--project", "--typescript-diagnostics"].includes(flag) && !options.has(flag); [flag, value] = rest) {
+    options.set(flag, value);
+    rest.splice(0, 2);
+  }
   if (!file || rest.length) {
     process.stderr.write("usage: fragment-parse.mts <file.ts> [--project tsconfig-or-directory]" +
       " [--typescript-diagnostics out.json]\n");

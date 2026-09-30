@@ -19,16 +19,13 @@ export function decodeTarget(value: unknown): Target {
     if (!Array.isArray(t.mapping)) throw Error("invalid slot mapping");
     t.mapping.forEach(nat);
   }
-  // Checked field by field above: this is where that becomes a type.
+  // asserted: the decoder's result, checked field by field above
   return value as Target;
 }
-export function decodeNode(value: unknown): ProgramNode {
-  const n = fields(value,["expression","continuation","handler"]); decodeTerm(n.expression);
-  if (n.handler !== null) decodeTarget(n.handler);
-  // Checked above: a returning node has nothing else to check.
-  if (n.continuation === "ret") return value as ProgramNode;
-  if (!n.continuation || typeof n.continuation !== "object") throw Error("invalid continuation");
-  const k = Object.keys(n.continuation)[0], outer = fields(n.continuation,[k]);
+/** A continuation other than `ret`, checked field by field. */
+function checkContinuation(continuation: unknown): void {
+  if (!continuation || typeof continuation !== "object") throw Error("invalid continuation");
+  const k = Object.keys(continuation)[0], outer = fields(continuation,[k]);
   switch (k) {
     case "bind": case "effect": decodeTarget(fields(outer[k],["next"]).next); break;
     case "branch": case "branchBind": case "tagBind": {
@@ -39,6 +36,12 @@ export function decodeNode(value: unknown): ProgramNode {
     }
     default: throw Error("unknown continuation");
   }
-  // Checked field by field above: this is where that becomes a type.
+}
+export function decodeNode(value: unknown): ProgramNode {
+  const n = fields(value,["expression","continuation","handler"]); decodeTerm(n.expression);
+  if (n.handler !== null) decodeTarget(n.handler);
+  // A returning node has nothing else to check.
+  if (n.continuation !== "ret") checkContinuation(n.continuation);
+  // asserted: the decoder's result, checked field by field above
   return value as ProgramNode;
 }

@@ -47,7 +47,7 @@ type Line = Question | Variances | Fallback;
 
 const isNat = (x: unknown): x is number => typeof x === "number" && Number.isInteger(x) && x >= 0;
 const record = (x: unknown): Record<string, unknown> | undefined =>
-  typeof x === "object" && x !== null && !Array.isArray(x) ? (x as Record<string, unknown>) : undefined;
+  typeof x === "object" && x !== null && !Array.isArray(x) ? Object.fromEntries(Object.entries(x)) : undefined;
 const exactly = (o: Record<string, unknown>, keys: string[]) =>
   Object.keys(o).length === keys.length && keys.every((k) => k in o);
 
@@ -55,20 +55,26 @@ const exactly = (o: Record<string, unknown>, keys: string[]) =>
 function decode(text: string): Line {
   const o = record(JSON.parse(text));
   if (o === undefined) throw new Error(`not an object: ${text}`);
-  if ((o.question === "subset" || o.question === "family") &&
+  const nat = (key: string): number => {
+    const value = o[key];
+    if (!isNat(value)) throw new Error(`${key} is not a count: ${text}`);
+    return value;
+  };
+  const { question, holds, events, variances, search, refused, proved } = o;
+  if ((question === "subset" || question === "family") &&
       exactly(o, ["question", "source", "target", "holds", "instances", "varSteps", "varDepth", "events"]) &&
-      [o.source, o.target, o.instances, o.varSteps, o.varDepth].every(isNat) &&
-      typeof o.holds === "boolean" && Array.isArray(o.events))
-    return o as unknown as Question;
+      typeof holds === "boolean" && Array.isArray(events))
+    return { question, source: nat("source"), target: nat("target"), holds, instances: nat("instances"),
+      varSteps: nat("varSteps"), varDepth: nat("varDepth"), events };
   if (exactly(o, ["variances", "generic", "polarityRounds", "checkRounds", "memberChecks", "weakened", "kept"]) &&
-      Array.isArray(o.variances) && o.variances.every(isNat) &&
-      [o.generic, o.polarityRounds, o.checkRounds, o.memberChecks, o.weakened, o.kept].every(isNat))
-    return o as unknown as Variances;
-  if (o.search === "fallback" &&
+      Array.isArray(variances) && variances.every(isNat))
+    return { variances, generic: nat("generic"), polarityRounds: nat("polarityRounds"), checkRounds: nat("checkRounds"),
+      memberChecks: nat("memberChecks"), weakened: nat("weakened"), kept: nat("kept") };
+  if (search === "fallback" &&
       exactly(o, ["search", "source", "target", "rows", "rounds", "visited", "refused", "proved"]) &&
-      [o.source, o.target, o.rows, o.rounds, o.visited].every(isNat) &&
-      (o.refused === null || o.refused === "growth" || o.refused === "limit") && typeof o.proved === "boolean")
-    return o as unknown as Fallback;
+      (refused === null || refused === "growth" || refused === "limit") && typeof proved === "boolean")
+    return { search, source: nat("source"), target: nat("target"), rows: nat("rows"), rounds: nat("rounds"),
+      visited: nat("visited"), refused, proved };
   throw new Error(`unknown trace line: ${text}`);
 }
 
