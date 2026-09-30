@@ -125,8 +125,6 @@ run_test "Documents: links, math" node verification/tests/docs.mts
 run_test "OCaml producer" bash -c 'dune build --root verification/ocaml-producer && node verification/ocaml-producer/test.mts'
 # tests/rule-inventory.mts checks that the rules REQUEST-PROTOCOL documents are the rules Lean declares.
 run_test "Rule inventory" node verification/tests/rule-inventory.mts
-# tests/unsupported.mts runs each explicit source boundary and checks the pipeline refuses it for its stated limitation.
-run_test "Source boundaries" node verification/tests/unsupported.mts
 
 report_tests
 

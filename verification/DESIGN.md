@@ -189,8 +189,8 @@ project the file belongs to, whose `tsconfig.json` must be strict.
 (`tools/tsc-claims.mts`) in place of the OCaml producer, over the Fragment
 the parser read in the file's own project; the search and the check are the
 same. `run-cases.mts`, `test.mts`, the coverage run (`skjs-coverage.mts`), the
-corpus (`examples.mts`), the reader (`serve.mts`, either producer) and the
-source-boundary suite (`tests/unsupported.mts`) go through it. Where a run does
+corpus (`examples.mts`) and the reader (`serve.mts`, either producer) go
+through it. Where a run does
 not verify, the corpus and the reader attribute the failure to its functions
 by the report writer's per-function checks over that run's Fragment and
 claims (`annotate-source.mts`).
@@ -1019,6 +1019,8 @@ representation cannot state it yet; the paths are in
 | A constructor writing a field that has an initializer, or writing one field twice | The instance is allocated at the constructor's end, from one value per field. |
 | A generic class's instance member or constructor reading its own class | The class value is quantified over its declaring unit's binders, which the unit reads as parameter rows, and a module value is read only at ground instances. |
 | An unannotated `let` of `null`, `undefined` or `[]` whose writes grow with it (`r = { tail: r }`) | Its contract is the union of what is written into it, which has no fixed point there. |
+| A `let` with neither an initializer nor an annotation (`let y;`) | TypeScript types it as an evolving `any`; the pipeline reads a local's contract from its annotation or its initializer, and infers none from its later writes. |
+| An imported interface its module declares more than once | The declaration reader resolves an import to one declaration; the merge of an interface declared twice is read for the checked file's own declarations ([interface merging](PROGRAM-TYPING.md)). |
 | A closure parameter without an annotation that TypeScript types by an object type written nowhere by name | The parameter's annotation is TypeScript's contextual type, which the parser writes only through primitives, literals, arrays, type parameters and declarations by name. |
 | A read through a field holding an object beside `null`, after a guard found the object (`x.child !== null`, then `x.child.b`) | What a location is known to hold is a union of primitives or its contract less `undefined` ([current contents](#current-content-assertions)): the guard states nothing of the object. |
 | `unknown` used as an array after `Array.isArray` or `instanceof Array` | The array invariant is stated of record and dictionary members; `unknown`, which a handler binds a thrown value at, carries none ([next steps](#next-steps)). |

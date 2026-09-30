@@ -133,3 +133,12 @@ export function either(x: string): string;
 export function either(x: number | string): number | string {
   return x;
 }
+
+/** An interface declared twice in this module, which TypeScript merges; the
+ * case interface-merge-value-import-refused imports it. */
+export interface Merge {
+  readonly flag: boolean;
+}
+export interface Merge {
+  readonly label: string;
+}

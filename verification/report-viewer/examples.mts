@@ -223,15 +223,6 @@ const corpusGroups: ExampleGroup[] = [
     note: "type parameters under the source generic rules",
     files: generics,
   },
-  {
-    label: "Unsupported examples · expected limitations",
-    note: "outside the fragment on purpose; listing one never implies it verifies",
-    files: examples("verification/tests/unsupported", [
-      ["instanceof_narrow", "Narrow a union through an instanceof test of a constructor."],
-      ["in_inherited", "Test for a key every object inherits from Object.prototype."],
-      ["mutable_binding", "Declare a mutable local without an initializer."],
-    ]),
-  },
 ];
 
 const viewerGroups: ExampleGroup[] = [

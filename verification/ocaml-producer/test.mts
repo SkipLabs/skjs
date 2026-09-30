@@ -523,27 +523,6 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
 }
 
 {
-  const project = fixtureProject({
-    "forms.ts": "export type NamedPair = [flag: boolean, count: number];\n" +
-      "export interface GenericCall { <T>(value: T): T; }\n" +
-      "export type Conditional<T> = T extends boolean ? number : string;\n",
-    "merged.ts": "export interface Merge { readonly flag: boolean; }\n" +
-      "export interface Merge { readonly label: string; }\n",
-  });
-  for (const [name, refusal] of [
-    ["NamedPair", /named tuple members are outside the fragment in forms.ts#NamedPair/],
-    ["GenericCall", /generic or incomplete call signature in forms.ts#GenericCall/],
-    ["Conditional", /type outside the fragment \(ConditionalType\) in forms.ts#Conditional/],
-  ] as const)
-    assert.throws(() => project.graphOf(`import type { ${name} } from "@fixture/forms";`), refusal);
-  assert.throws(() => project.parse('import type { Merge } from "@fixture/merged";\n' +
-    "export function readMerged(value: Merge): boolean { return value.flag; }\n"),
-    /TypeScript found 2 declarations for Merge/);
-  closeParser();
-  process.stdout.write("declaration forms the reader cannot lower: refused by name\n");
-}
-
-{
   const arrays = join(here, "examples", "values.ts");
   const doc = collectDeclarations(arrays, { arrays: [0, 0] });
   const proto = doc.definitions.find(d => d.declaration.module === "skjs/array-prototype");

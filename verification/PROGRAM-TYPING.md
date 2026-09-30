@@ -3666,8 +3666,8 @@ heads, and there is no budget, colour or depth: an alias reached again before
 a constructor is refused as unguarded, and everything else terminates
 because heads are keyed by source occurrence.
 
-An interface declared more than once, as TypeScript merges it, is one
-declaration: its first declaration is its identity, and its body holds every
+An interface the checked file declares more than once, as TypeScript merges
+it, is one declaration: its first declaration is its identity, and its body holds every
 declaration's members, each at its own type. The declarations bind the same
 type parameters, name no member twice and state at most one index signature
 of each key kind, or the interface is refused:

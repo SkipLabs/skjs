@@ -12,7 +12,6 @@ suites that check the repository around the pipeline and the example corpus.
 | [`docs.mts`](docs.mts) | Documents: links, anchors and math GitHub renders. |
 | [`json-field-names.mts`](json-field-names.mts) | TypeScript, Lean and OCaml use the same JSON field names. |
 | [`rule-inventory.mts`](rule-inventory.mts) / `rule-inventory.snap` | The rules REQUEST-PROTOCOL documents are the rules Lean declares. |
-| [`unsupported.mts`](unsupported.mts) / [`unsupported/`](unsupported/README.md) | Explicit source boundaries, each refused by the pipeline for its stated limitation. |
 
 ## The corpus
 
@@ -26,7 +25,6 @@ reported result.
   operations of the fragment, one phenomenon per file.
 - [`callables/`](callables/README.md): call signatures, callable objects,
   arity, receivers and argument lists.
-- [`unsupported/`](unsupported/README.md): source boundary cases.
 
 `tsconfig.json` is the regime the corpus is claimed and checked under.
 
