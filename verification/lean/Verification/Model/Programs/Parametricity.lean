@@ -80,20 +80,6 @@ theorem compareStructural_reassign (images : InstanceImageCheck G) (S T : List �
 the same function at every reassignment (`InstanceImageCheck.reassign`). -/
 variable (images : InstanceImageCheck G)
 
-theorem compareInstArrsWith_reassign (compare : List ι → List ι → ComparisonResult α) (empty : α)
-    (S : List ι) (L : Ops ι) (M : List (CallEffects.RestArrow (List ι))) (c : Instance ι) :
-    compareInstArrsWith (reassign G η) (images.reassign η) compare empty S L M c =
-      compareInstArrsWith G images compare empty S L M c := rfl
-
-theorem instanceTarget_reassign (T : List ι) :
-    instanceTarget (reassign G η) T = instanceTarget G T := rfl
-
-theorem compareInstWith_reassign (compare : List ι → List ι → ComparisonResult α) (empty : α)
-    (S T : List ι) (c : Instance ι) :
-    compareInstWith (reassign G η) (images.reassign η) compare empty S T c =
-      compareInstWith G images compare empty S T c := by
-  simp only [compareInstWith, instanceTarget_reassign, compareInstArrsWith_reassign]
-
 theorem sub_reassign : (images.reassign η).sub = images.sub.map (·.reassign η) := rfl
 
 /-- The premise judgment and family certificates are checked at a fixed
@@ -114,37 +100,14 @@ theorem dependencies_reassign (S T : List ι) (p : SubtypeChoices ι) :
 theorem proposal_reassign (S T : List ι) (p : SubtypeChoices ι) :
     p.proposal (reassign G η) S T = p.proposal G S T := rfl
 
-theorem compareStep_reassign (compare : List ι → List ι → ComparisonResult (List (KnownInstance ι)))
-    (S T : List ι) (instantiation : List ι → List ι → List (Instance ι))
-    (members : Table ι → List (KnownInstance ι)) :
-    compareStep (reassign G η) (images.reassign η) compare S T instantiation members =
-      compareStep G images compare S T instantiation members := by
-  simp only [compareStep, compareInstancesWith, subsetUsing_reassign, compareInstWith_reassign, compareInstArrsWith_reassign,
-    images_reassign_fixed, comparePrepared_reassign, budget_reassign]
-  rfl
-
 theorem compareUsingCore_reassign (instantiation : List ι → List ι → List (Instance ι))
     (members : Table ι → List (KnownInstance ι)) (depth : Nat) (path : Table ι) (S T : List ι) :
     compareUsingCore (reassign G η) (images.reassign η) instantiation members depth path S T =
       compareUsingCore G images instantiation members depth path S T := by
-  induction depth generalizing path S T with
-  | zero =>
-    unfold compareUsingCore
-    dsimp only
-    rw [compareStep_reassign]
-    congr 1
-    funext A B
-    split <;> simp only [compareStructural_reassign, budget_reassign]
-  | succ remaining ih =>
-    unfold compareUsingCore
-    dsimp only
-    rw [compareStep_reassign]
-    congr 1
-    funext A B
-    split
-    · rw [compareStructural_reassign]
-    · rw [ih]
-      rfl
+  unfold compareUsingCore
+  dsimp only
+  rw [images_reassign_fixed]
+  rfl
 
 theorem compareUsing_reassign (S T : List ι) (instantiation : List ι → List ι → List (Instance ι))
     (members : Table ι → List (KnownInstance ι)) :

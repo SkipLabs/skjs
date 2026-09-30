@@ -120,7 +120,7 @@ to `T` (recorded as its instance), a row free of the context to itself, a
 clause row to a clause row matched operand by operand, a meet row to the meet
 row or clause row its binder's image makes it, and a scheme row to a
 scheme row, its binders standing for the other's. Untrusted:
-`compareInstancesWith` validates the candidate's images and bounds. -/
+`compareInstancesState` validates the candidate's images and bounds. -/
 @[nospecialize] def matchRow [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap ι) :
     Nat → InstState ι → Ctx ι → List ι → List ι → Option (InstState ι)
   | 0, _, _, _, _ => none

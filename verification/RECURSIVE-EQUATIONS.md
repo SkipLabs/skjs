@@ -387,7 +387,7 @@ The executable comparison operation discharges bound premises with the same
 rules as its enclosing comparison, including quantified instantiation. The
 structural kernel uses the equation representation's validated variance entries
 and binder renaming. `instanceTarget_value` proves intersection introduction
-for an instantiated arrow and its opaque parts. `compareInstArrsWith_sound`
+for an instantiated arrow and its opaque parts. `compareInstArrsState_sound`
 proves the instance rule from sound bound comparisons; `compareUsingCore_sound` proves those comparisons at
 every parameter assignment. Instantiated prototype members are validated before
 structural coverage uses them. A bound query repeated on the current instance
@@ -396,11 +396,23 @@ instance. Its structural recurrence requires the guarded family rule.
 
 Instance inference supplies alternatives from syntactic substitution,
 equivalent spellings and structural matching. Its constructor receives the
-substitution operation and constructs choices. `compareInstancesWith` validates
+substitution operation and constructs choices. `compareInstancesState` validates
 those choices, selecting a successful one and retaining exhaustion when no
 alternative succeeds. This selection serves ordinary subtype comparisons and
-explicit method type arguments. `compareInstancesWith_sound` reduces its
-acceptance to a checked instance at every parameter assignment.
+explicit method type arguments through `selectInstancesUsing`.
+`compareInstancesState_sound` reduces acceptance to a checked instance at every
+parameter assignment.
+
+Within a comparison, successful bound and component judgments are shared
+between sibling premises and alternative instance candidates. A
+`CheckedComparison` contains the selected choices and a proof of the exact
+inclusion at every parameter assignment. The cache uses exact source and target
+equation labels within one fixed equation environment and image checker. Labels
+identify their lexical binders; hypotheses require the guarded structural rule.
+Only completed successful checks publish entries. An unsuccessful enclosing
+alternative retains successful child entries. Each operation starts with an
+empty cache, including comparisons over a growing equation store. Semantic
+equality checks inclusion in each direction, each with its own comparison state.
 
 Dependency and arrow-evidence discovery read quantified rows directly and
 through their opaque intersection components. Dependency discovery has an
@@ -553,7 +565,7 @@ to parameters and quantified variables by position.
 | Lemma 3, substitution | [Types/EquationSubstitution.lean](lean/Verification/Model/Types/EquationSubstitution.lean) |
 | Instantiation by substitution in the subtyping checker | [Types/EquationCertificates.lean](lean/Verification/Model/Types/EquationCertificates.lean) |
 | Quantified signatures (4.1), assumptions and Theorem 1 (4.2) | `Types/PositiveRules.lean`, `Types/PositiveCertificates.lean` |
-| Comparison and instance bounds over the equations (4.2–4.4) | `Types/PositiveCertificates.lean` (`compareUsingCore_sound`, `compareInstArrsWith_sound`, `compareStructural_sound`) |
+| Comparison and instance bounds over the equations (4.2–4.4) | `Types/PositiveCertificates.lean` (`compareUsingCore_sound`, `compareInstArrsState_sound`, `compareStructural_sound`) |
 | Soundness of the computed variances and of `Var` (4.3) | [Types/EquationFamilies.lean](lean/Verification/Model/Types/EquationFamilies.lean) |
 | Well-formedness of equations | [Types/EquationValidator.lean](lean/Verification/Model/Types/EquationValidator.lean) |
 | Term spelling of trees | [Types/EquationJson.lean](lean/Verification/Model/Types/EquationJson.lean) |

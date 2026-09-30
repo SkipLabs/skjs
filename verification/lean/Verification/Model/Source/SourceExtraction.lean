@@ -1445,7 +1445,7 @@ field or view, or, for a key an own-key bound does not admit, its prototype's, a
 /-- A method call's explicit type arguments, `o.m<A₁,…,Aₖ>(…)`, are a
 requirement on the instance the call uses: the member read from `O` is a scheme
 row, the claimed method type `M` is an instance of it by a checked instance map
-(`compareInstArrsWith`), and that map sends the scheme's first `k` binders to types
+(`compareInstancesState`), and that map sends the scheme's first `k` binders to types
 of the same meaning as `A₁,…,Aₖ`. The binders past them are the ones the
 call's receiver and actuals fix, as for a call without type arguments. The
 check only refuses: acceptance still rests on the read's own `inst` proof and
@@ -1467,9 +1467,9 @@ the call's typing. -/
     | throw (refuse "the call's claimed method is not an instance of its member")
   let images := StoreView.images T
   let candidates := CertificateProducer.instanceCandidates G images.sub 64 s L Ms
-  let compare := fun U V => (CertificateProducer.comparisonUsing G images U V).map
-    (PositiveCertificates.SubtypeChoices.dependencies G U V)
-  let c ← match PositiveCertificates.compareInstancesWith G images compare [] S M candidates with
+  let c ← match PositiveCertificates.selectInstancesUsing G images S M candidates
+      (CertificateProducer.instantiationUsing G images CertificateProducer.instanceFuel)
+      (CertificateProducer.rowInstances G images CertificateProducer.instanceFuel) with
     | .established (c, _) => pure c
     | .notEstablished => throw (refuse "the call's claimed method is not an instance of its member")
     | .exhausted rounds visited => throw (subtypeFailure T pos .schemeElimination S M
