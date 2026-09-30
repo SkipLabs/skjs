@@ -106,16 +106,11 @@ Rule  (Programs/ProgramCertificates.lean)
   callRest (effect : Effect) (fixed omitted : Nat) (spreads : List Bool) (rest : Ty ι)
   bindE
   bindRestE
-  bindMember (proofs : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι)) (rests : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι × PositiveCertificates.Proof ι)) (receivers : List (PositiveCertificates.Proof ι))
+  bindMember (proofs : List (List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι)) (rests : List (List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι × PositiveCertificates.SubtypeChoices ι)) (receivers : List (PositiveCertificates.SubtypeChoices ι))
   construct
-  sub (proof : PositiveCertificates.Proof ι)
+  sub (proof : PositiveCertificates.SubtypeChoices ι)
   throw
   merge
-
-Proof  (Types/PositiveCertificates.lean)
-  subset
-  inst (inst : Instance ι)
-  fallback (instances : List (KnownInstance ι))
 
 ArrowCert  (Types/PositiveCertificates.lean)
   empty
@@ -132,7 +127,7 @@ StepEvidence  (Programs/HeapExpressionRules.lean)
   created (proof : ProgramCertificates.Evidence ι)
   typedRead (slot : Nat) (proof : ProgramCertificates.Evidence ι)
   observedRead (slot : Nat) (contents : List Atom)
-  slicedRead (slot : Nat) (proof : ProgramCertificates.Evidence ι) (sub : PositiveCertificates.Proof ι)
+  slicedRead (slot : Nat) (proof : ProgramCertificates.Evidence ι) (sub : PositiveCertificates.SubtypeChoices ι)
   knownValue (slot : Nat) (contents : List Atom)
   allocated (proof : ProgramCertificates.Evidence ι)
   written (receiver value : Nat) (contents : Option (List Atom)) (proof : ProgramCertificates.Evidence ι)

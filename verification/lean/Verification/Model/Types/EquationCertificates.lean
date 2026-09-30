@@ -18,11 +18,11 @@ def Equations.instanceImageCheck (equations : Equations) : InstanceImageCheck eq
 /-- The same proof language and traversal, using complete recursive equations
 for instance images. Equation lowering checks supplied subtype proofs with it. -/
 def Equations.checkSubtype (equations : Equations)
-    (S T : List (Label equations.signature)) (proof : Proof (Label equations.signature)) : Bool :=
+    (S T : List (Label equations.signature)) (proof : SubtypeChoices (Label equations.signature)) : Bool :=
   checkUsing equations.graph equations.instanceImageCheck S T proof
 
 theorem Equations.checkSubtype_sound (equations : Equations)
-    {S T : List (Label equations.signature)} {proof : Proof (Label equations.signature)}
+    {S T : List (Label equations.signature)} {proof : SubtypeChoices (Label equations.signature)}
     (checked : equations.checkSubtype S T proof = true) :
     ∀ η, FamLe (mixedMeaning equations.graph η S) (mixedMeaning equations.graph η T) :=
   checkUsing_sound checked

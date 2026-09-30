@@ -338,12 +338,12 @@ giving each binder its instance. Untrusted: `checkInstArrs` validates it. -/
 def instanceFuel : Nat := 64
 
 /-- A scheme row below an arrow type. -/
-@[nospecialize] def instProofUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (fuel : Nat) (A B : Ty ι) :
-    Option (PositiveCertificates.Proof ι) :=
+@[nospecialize] def instantiationUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (fuel : Nat) (A B : Ty ι) :
+    Option (PositiveCertificates.Instance ι) :=
   match A, expand G B with
   | [i], [.arrs L M] =>
     match G.schemes i with
-    | some s => (instanceForUsing G images fuel s L M).map .inst
+    | some s => instanceForUsing G images fuel s L M
     | none => none
   | _, _ => none
 
@@ -365,28 +365,33 @@ the instance whose signatures are the method's with the source as receiver. -/
               | some s =>
                 let L := q.calls.map (·.withReceiver A)
                 let M := q.rests.map (·.withReceiver A)
-                (instanceForUsing G images fuel s L M).bind fun c =>
-                  if PositiveCertificates.checkInstArrsUsing G images [i] L M c then some ([i], L, M, c) else none
+                (instanceForUsing G images fuel s L M).map fun c => ([i], L, M, c)
               | none => none
             | _ => none
         | none => []
       | _ => [])
 
-/-- A proof of `A ≤ B` by the algorithm of RECURSIVE-EQUATIONS §4: the
-premise judgment on the pair (label inclusion, `Var`), an instance of a
-quantified signature, or the fallback, which the checker decides from the
-pair given the prototype-member instances its reachable pairs ask for. Every
-proposal is checked. -/
+/-- The common subtype operation with candidate instances found by matching. -/
+@[nospecialize] def comparisonUsing [DecidableEq ι] [Hashable ι] [Instantiates ι]
+    (G : NormalGraph ι) (images : InstanceImageCheck G) (A B : Ty ι)
+    (budget : PositiveCertificates.SearchBudget := {}) :
+    PositiveCertificates.ComparisonResult (PositiveCertificates.SubtypeChoices ι) :=
+  PositiveCertificates.compareUsing G images A B
+    (fun _ => instantiationUsing G images instanceFuel A B)
+    (rowInstances G images instanceFuel) budget
+
+theorem comparisonUsing_sound [DecidableEq ι] [Hashable ι] [Instantiates ι]
+    {G : NormalGraph ι} {images : InstanceImageCheck G} {A B budget}
+    (h : (comparisonUsing G images A B budget).accepted = true) :
+    ∀ η, FamLe (mixedMeaning G η A) (mixedMeaning G η B) :=
+  PositiveCertificates.compareUsing_sound h
+
+/-- Instantiation choices found through the common checked subtype operation. -/
 @[nospecialize] def subtypeUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (A B : Ty ι) : Option (PositiveCertificates.Proof ι) :=
-  let ok p := PositiveCertificates.checkUsing G images A B p
-  (if ok .subset then some .subset else none) <|>
-    ((instProofUsing G images instanceFuel A B).filter ok) <|>
-    (let fb := PositiveCertificates.growTable G images ({} : PositiveCertificates.SearchBudget).rounds
-        { table := [(A, B)] } [(A, B)]
-     if fb.refused.isSome then none else
-     let p := .fallback (rowInstances G images instanceFuel fb.table)
-     if ok p then some p else none)
+    (A B : Ty ι) : Option (PositiveCertificates.SubtypeChoices ι) :=
+  match comparisonUsing G images A B with
+  | .established choices => some choices
+  | .notEstablished | .exhausted _ _ => none
 
 /-- Proofs that the member of key `k` on `O` covers each signature of `F`:
 for each fixed one, a member signature of as many parameters, each claimed
@@ -394,9 +399,9 @@ parameter within the member's and the member's result within the claimed;
 for each variadic one, a member's of as many fixed parameters, likewise, the
 claimed rest within the member's too. -/
 @[nospecialize] def memberProofsUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (O : Ty ι) (k : PropKey)
-    (F : Ty ι) : Option (List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι) ×
-      List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι × PositiveCertificates.Proof ι) ×
-      List (PositiveCertificates.Proof ι)) := do
+    (F : Ty ι) : Option (List (List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι) ×
+      List (List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι × PositiveCertificates.SubtypeChoices ι) ×
+      List (PositiveCertificates.SubtypeChoices ι)) := do
   let m ← ProgramTyping.memberOf G O k
   -- At a quantified signature, the member bound to its host is the scheme.
   if expand G F = [] && m.schemes.contains F then return ([], [], [])
@@ -890,7 +895,7 @@ observation comes from graph dispatch, never from supplied point annotations. -/
     if Γ[tested]?.isNone then failure
     -- An observation the tested type rules out: the edge is never taken.
     if (Γ[tested]?).any (BranchRefinement.impossible G · o) then
-      return List.replicate c.context.length .subset
+      return List.replicate c.context.length {}
   if let some slots := target.mapping then
     if slots.length != c.context.length then failure
   (List.range c.context.length).mapM fun i => do
@@ -901,15 +906,15 @@ observation comes from graph dispatch, never from supplied point annotations. -/
       if slot target.mapping i == tested then
         match o with
         | .boolean q =>
-          if BranchRefinement.booleanMember G B q then pure .subset else failure
+          if BranchRefinement.booleanMember G B q then pure {} else failure
         | .tag t q =>
-          if BranchRefinement.tagMember G B t q then pure .subset
+          if BranchRefinement.tagMember G B t q then pure {}
           else (subtypeUsing G images (BranchRefinement.tagSlice G A t q) B).orElse fun _ =>
             -- A passed `in` test: the key is present from then on.
             if BranchRefinement.presentKey t q (BranchRefinement.promotes G (BranchRefinement.tagSlice G A t q) B)
-            then some .subset
+            then some {}
             -- A passed `Array.isArray`: a record's member is an array of the realm.
-            else if t == .isArray && q && BranchRefinement.arraySlice G A B then some .subset
+            else if t == .isArray && q && BranchRefinement.arraySlice G A B then some {}
             else none
       else (subtypeUsing G images A B).orElse (fun _ => match o with
         -- An object the tested value was read from keeps the labels whose
@@ -922,7 +927,7 @@ observation comes from graph dispatch, never from supplied point annotations. -/
         -- the `undefined` an absent key reads: the key is present.
         if BranchRefinement.excludesUndef o && optionals.any (fun (k, f) =>
             k == slot target.mapping i && BranchRefinement.promotes G A B f)
-        then some .subset else none
+        then some {} else none
     | none => subtypeUsing G images A B
 
 
@@ -1135,7 +1140,6 @@ theorem produce_checked [DecidableEq ι] [Hashable ι] [Instantiates ι] {G : No
 checker. The finite one is the default of the existing entry points. -/
 abbrev accept [DecidableEq ι] (G : NormalGraph ι) := @acceptUsing _ _ G (finiteInstanceImages G)
 abbrev instanceFor [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) := @instanceForUsing _ _ _ _ G (finiteInstanceImages G)
-abbrev instProof [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) := @instProofUsing _ _ _ _ G (finiteInstanceImages G)
 abbrev subtype [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) := @subtypeUsing _ _ _ _ G (finiteInstanceImages G)
 abbrev memberProofs [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) := @memberProofsUsing _ _ _ _ G (finiteInstanceImages G)
 abbrev expressionWith [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) :=
@@ -1147,6 +1151,7 @@ abbrev expressionEffect [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : No
 abbrev produceRaw [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) := @produceRawUsing _ _ _ _ G (finiteInstanceImages G)
 abbrev produce [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) := @produceUsing _ _ _ _ G (finiteInstanceImages G)
 
+#print axioms comparisonUsing_sound
 #print axioms accepted_from_inputs
 #print axioms accepted_safe
 #print axioms produce_checked

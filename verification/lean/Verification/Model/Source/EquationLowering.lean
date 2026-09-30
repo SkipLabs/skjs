@@ -2003,9 +2003,8 @@ def Built.finish (b : Built) : Except String Equations := do
     let (A, B) := closeObligation o
     let A ← closedUnion E o.site A
     let B ← closedUnion E o.site B
-    match CertificateProducer.subtypeUsing E.graph E.instanceImageCheck A B with
-    | some proof => if E.checkSubtype A B proof then continue
-    | none => pure ()
+    if (CertificateProducer.comparisonUsing E.graph E.instanceImageCheck A B).accepted then
+      continue
     let names (h : Nat) : String := (drafts[h]?.map (·.name)).getD s!"{h}"
     throw s!"{o.site} does not establish its declared bound: {showUnion names (A.map (·.1))} ≤ {showUnion names (B.map (·.1))}"
   return E

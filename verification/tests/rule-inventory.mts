@@ -35,7 +35,6 @@ const DOCS = "verification";
 const DECLARATIONS: readonly { type: string; file: string; what: string }[] = [
   { type: "HasTyUsing", file: "Programs/ProgramTyping.lean", what: "typing rules" },
   { type: "Rule", file: "Programs/ProgramCertificates.lean", what: "evidence rules" },
-  { type: "Proof", file: "Types/PositiveCertificates.lean", what: "subtype proofs" },
   {
     type: "ArrowCert",
     file: "Types/PositiveCertificates.lean",

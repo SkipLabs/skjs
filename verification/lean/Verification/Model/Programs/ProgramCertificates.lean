@@ -82,12 +82,12 @@ inductive Rule (ι : Type) where
   type the member's host must meet, that the object's type is within it; or,
   with no proofs, the result one of the member's quantified signatures, a
   scheme. -/
-  | bindMember (proofs : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι))
-      (rests : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι × PositiveCertificates.Proof ι))
-      (receivers : List (PositiveCertificates.Proof ι))
+  | bindMember (proofs : List (List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι))
+      (rests : List (List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι × PositiveCertificates.SubtypeChoices ι))
+      (receivers : List (PositiveCertificates.SubtypeChoices ι))
   /-- `new`: the constructor, then the actuals in order. -/
   | construct
-  | sub (proof : PositiveCertificates.Proof ι)
+  | sub (proof : PositiveCertificates.SubtypeChoices ι)
   /-- `throw`: its operand at a type of its own. -/
   | throw
   /-- An allocation from parts: the accumulator, then the source. -/
@@ -203,7 +203,7 @@ instance [DecidableEq ι] (G : NormalGraph ι) (P : Ty ι) (f : PropKey) (A : Ty
 parameter within the member's, then the member's result within the claimed. -/
 @[nospecialize] def CallProofsUsing [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G) (q : Arrow (Ty ι))
     (c : MethodArrow (Ty ι))
-    (ps : List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι) : Prop :=
+    (ps : List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι) : Prop :=
   q.arguments.length = c.arguments.length ∧ ps.1.length = c.arguments.length ∧
     (∀ x ∈ (q.arguments.zip c.arguments).zip ps.1, PositiveCertificates.checkUsing G images x.1.1 x.1.2 x.2 = true) ∧
     PositiveCertificates.checkUsing G images c.result q.result ps.2 = true ∧ c.effect.covers q.effect = true
@@ -247,7 +247,7 @@ each claimed fixed parameter within the member's, the claimed rest within the
 member's, then the member's result within the claimed. -/
 @[nospecialize] def RestProofsUsing [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G)
     (q : RestArrow (Ty ι)) (c : CallEffects.MethodRestArrow (Ty ι))
-    (ps : List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι × PositiveCertificates.Proof ι) : Prop :=
+    (ps : List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι × PositiveCertificates.SubtypeChoices ι) : Prop :=
   q.arguments.1.length = c.arguments.1.length ∧ ps.1.length = c.arguments.1.length ∧
     (∀ x ∈ (q.arguments.1.zip c.arguments.1).zip ps.1, PositiveCertificates.checkUsing G images x.1.1 x.1.2 x.2 = true) ∧
     PositiveCertificates.checkUsing G images q.arguments.2 c.arguments.2 ps.2.1 = true ∧
@@ -1939,21 +1939,21 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
     · refine ⟨rfl, rfl, rfl, rfl, ?_⟩
       show (match Γ[i]?, expand G F with
         | some O, [.arrs L S] => ∃ m ∈ (memberOf G O k).toList,
-            ([] : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι)).length =
+            ([] : List (List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι)).length =
               L.length ∧
-            (∀ qp ∈ L.zip ([] : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι)),
+            (∀ qp ∈ L.zip ([] : List (List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι)),
               ∃ c ∈ m.calls, CallProofsUsing G images qp.1 c qp.2) ∧
-            ([] : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι ×
-              PositiveCertificates.Proof ι)).length = S.length ∧
-            (∀ sp ∈ S.zip ([] : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι ×
-              PositiveCertificates.Proof ι)), ∃ c ∈ m.rests, RestProofsUsing G images sp.1 c sp.2) ∧
-            ([] : List (PositiveCertificates.Proof ι)).length = m.receivers.length ∧
-            (∀ tp ∈ m.receivers.zip ([] : List (PositiveCertificates.Proof ι)),
+            ([] : List (List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι ×
+              PositiveCertificates.SubtypeChoices ι)).length = S.length ∧
+            (∀ sp ∈ S.zip ([] : List (List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι ×
+              PositiveCertificates.SubtypeChoices ι)), ∃ c ∈ m.rests, RestProofsUsing G images sp.1 c sp.2) ∧
+            ([] : List (PositiveCertificates.SubtypeChoices ι)).length = m.receivers.length ∧
+            (∀ tp ∈ m.receivers.zip ([] : List (PositiveCertificates.SubtypeChoices ι)),
               PositiveCertificates.checkUsing G images O tp.1 tp.2 = true)
-        | some O, _ => ([] : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι)) = [] ∧
-            ([] : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι ×
-              PositiveCertificates.Proof ι)) = [] ∧
-            ([] : List (PositiveCertificates.Proof ι)) = [] ∧
+        | some O, _ => ([] : List (List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι)) = [] ∧
+            ([] : List (List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι ×
+              PositiveCertificates.SubtypeChoices ι)) = [] ∧
+            ([] : List (PositiveCertificates.SubtypeChoices ι)) = [] ∧
             expand G F = [] ∧ ∃ m ∈ (memberOf G O k).toList, F ∈ m.schemes
         | none, _ => False)
       rw [hi, hE]

@@ -10,7 +10,7 @@ namespace Verification.Model.PointClaims
 open ProgramTyping PositiveGraphs PositiveRules
 open PositiveCertificates (InstanceImageCheck finiteInstanceImages)
 
-abbrev EdgeEvidence (ι : Type) := List (PositiveCertificates.Proof ι)
+abbrev EdgeEvidence (ι : Type) := List (PositiveCertificates.SubtypeChoices ι)
 
 def checkEdgeUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) :
     List (Ty ι) → List (Ty ι) → EdgeEvidence ι → Bool

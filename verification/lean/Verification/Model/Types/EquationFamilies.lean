@@ -603,21 +603,6 @@ def Variances.base {equations : Equations} (v : Variances equations) : Base equa
   entry := v.entry
   sound _ _ h := v.sound h
 
-/-- **Family subtyping on equations.** A certificate's premises may use `Var`
-on every head whose variance the checker computes; the claim is a pair of a
-variable-free entry. -/
-def Equations.checkFamily (equations : Equations) (v : Variances equations)
-    (S T : List (Label equations.signature)) (c : FamilyCertificate (Label equations.signature)) :
-    Bool :=
-  checkFamilyUsing equations.graph equations.instanceImageCheck (some equations.renaming) varGen
-    v.base S T c
-
-theorem Equations.checkFamily_sound (equations : Equations) (v : Variances equations)
-    {S T : List (Label equations.signature)} {c : FamilyCertificate (Label equations.signature)}
-    (h : equations.checkFamily v S T c = true) :
-    ∀ η, FamLe (mixedMeaning equations.graph η S) (mixedMeaning equations.graph η T) :=
-  checkFamilyUsing_sound h
-
 /-- The equations' checks with their variances: substitution images, the
 renaming, the computed variances as the entries `Var` cites, and `Var`'s
 proposal. Every request certificate over the equations reads these. -/
@@ -625,25 +610,8 @@ def Equations.images (equations : Equations) (v : Variances equations) :
     InstanceImageCheck equations.graph :=
   { equations.instanceImageCheck with sub := some equations.renaming, base := v.base, gen := varGen }
 
-/-- **The structural `Var` rule**, as the checker applies it: `h(A⃗) ≤ h(B⃗)`
-by the premise judgment on the pair, which relates two applications of one
-head by `Var` with its computed variance, each per-position premise
-(`Aᵢ ≤ Bᵢ` for `co`, `Bᵢ ≤ Aᵢ` for `contra`, both for `inv`, none for
-`none`) discharged the same way. `h` is not unfolded, and no certificate
-names the step. -/
-def Equations.checkVar (equations : Equations) (v : Variances equations)
-    (S T : List (Label equations.signature)) : Bool :=
-  checkUsing equations.graph (equations.images v) S T .subset
-
-theorem Equations.checkVar_sound (equations : Equations) (v : Variances equations)
-    {S T : List (Label equations.signature)} (h : equations.checkVar v S T = true) :
-    ∀ η, FamLe (mixedMeaning equations.graph η S) (mixedMeaning equations.graph η T) :=
-  checkUsing_sound h
-
 #print axioms Equations.substituteAll_meaning
 #print axioms Equations.scheme_binders
 #print axioms Variances.sound
-#print axioms Equations.checkFamily_sound
-#print axioms Equations.checkVar_sound
 
 end Verification.Model.EquationGraphs

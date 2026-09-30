@@ -42,7 +42,7 @@ def ifE [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (A : Ty ι) (c
 its image checker and the pool are fixed for one cache's life, so the two
 types are the key. -/
 abbrev SubtypeCache (ι : Type) [BEq ι] [Hashable ι] :=
-  Std.HashMap (Ty ι × Ty ι) (Option (PositiveCertificates.Proof ι))
+  Std.HashMap (Ty ι × Ty ι) (Option (PositiveCertificates.SubtypeChoices ι))
 
 section
 variable [DecidableEq ι] [Hashable ι] [CertificateProducer.Instantiates ι]

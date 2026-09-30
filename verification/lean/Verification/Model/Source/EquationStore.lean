@@ -355,29 +355,22 @@ def eitherImages {ι : Type} [DecidableEq ι] {G : NormalGraph ι} (a b : Instan
   base := b.base
   gen := b.gen
 
-/-- Two types proved to mean the same: each below the other by a proof the
-checker accepts, with the equations' checks and variances. The proofs are
-searched here, and checked. -/
+/-- Semantic equality by the common subtype operation in both directions,
+with the equations' validated variances and image checker. -/
 def equivalent (E : Equations) (v : Variances E) (X Y : List (Label E.signature)) : Bool :=
   let I := E.images v
-  match CertificateProducer.subtypeUsing E.graph I X Y,
-      CertificateProducer.subtypeUsing E.graph I Y X with
-  | some p, some q => checkUsing E.graph I X Y p && checkUsing E.graph I Y X q
-  | _, _ => false
+  (CertificateProducer.comparisonUsing E.graph I X Y).accepted &&
+    (CertificateProducer.comparisonUsing E.graph I Y X).accepted
 
 theorem equivalent_sound {E : Equations} {v : Variances E} {X Y : List (Label E.signature)}
     (h : equivalent E v X Y = true) :
     ∀ η, mixedMeaning E.graph η X = mixedMeaning E.graph η Y := by
-  unfold equivalent at h
-  simp only at h
-  split at h
-  · simp only [Bool.and_eq_true] at h
-    have l := checkUsing_sound h.1
-    have r := checkUsing_sound h.2
-    intro η
-    funext n W x
-    exact propext ⟨l η n W x, r η n W x⟩
-  · cases h
+  simp only [equivalent, Bool.and_eq_true] at h
+  have l := CertificateProducer.comparisonUsing_sound h.1
+  have r := CertificateProducer.comparisonUsing_sound h.2
+  intro η
+  funext n W x
+  exact propext ⟨l η n W x, r η n W x⟩
 
 /-- The equations' checks, an instance's images accepted up to proved
 equivalence: a scheme's result at an instance may be named by an equal type

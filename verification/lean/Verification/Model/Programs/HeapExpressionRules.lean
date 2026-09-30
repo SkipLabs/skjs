@@ -827,7 +827,7 @@ inductive StepEvidence (ι : Type) where
   /-- A read of a location a fact says holds no `undefined`: the ordinary read
   at the location's contract (`proof`), whose slice without `undefined` is
   below the claim (`sub`). -/
-  | slicedRead (slot : Nat) (proof : ProgramCertificates.Evidence ι) (sub : PositiveCertificates.Proof ι)
+  | slicedRead (slot : Nat) (proof : ProgramCertificates.Evidence ι) (sub : PositiveCertificates.SubtypeChoices ι)
   | knownValue (slot : Nat) (contents : List Atom)
   /-- The fields, their slots and their contents are read off the term and the
   state, so this carries only the ordinary derivation it stands beside. -/

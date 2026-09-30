@@ -131,8 +131,9 @@ with the meaning given in [Parameter and scheme rows](POSITIVE-TYPES.md#paramete
 Validation (`validRows`) requires every label a row names to index `types`, a
 parameter row to name its own label and explicitly state its kind, a scheme's binders to be parameter
 rows, and a meet row's parameters to be value parameter rows. A parameter row is therefore never the same row as another, so two
-distinct binders are never identified by content. The subtype proof `inst`
-reads these rows; on a table without scheme rows it is refused.
+distinct binders are never identified by content. A subtype instantiation
+choice names a scheme row and its image types. A table with no scheme rows
+has no quantified signature to instantiate.
 
 Current-content assertions use a finite list of primitive predicates, including
 `num` for any numeric value and `numLit` for an exact bit pattern, `str` for
@@ -473,8 +474,15 @@ wire: the checker computes them from the equations when a check compares two
 applications of one head (`Equations.variances`,
 [RECURSIVE-EQUATIONS §4.3](RECURSIVE-EQUATIONS.md#43-variance)).
 
-**Instances.** An `inst` step still carries its finite `domain`, `table` and
-`free`. The source path accepts the step when either proved image check
+**Subtype choices.** A subtype evidence object has exactly two fields:
+`instantiation`, an instance object or `null`, and `members`, a list of
+prototype-member instance tuples. An instance carries its finite `domain`,
+`table`, `instances` and `free`. Member tuples retain the source type, fixed
+and variadic signatures, and the instance object. The checker selects the rule
+and discovers the comparison dependencies. Candidate instances are validated
+before use.
+
+The source path accepts an instance image when either proved image check
 holds: the finite table check, or the substitution check
 `EquationStore.imagesUpTo`, which requires every claimed image to be the
 structural substitution image or a type proved equal to it, each below the
@@ -483,13 +491,11 @@ other by a subtype proof the checker searches for and checks
 first (`CertificateProducer.Instantiates`), and, for a scheme's result the
 target spells otherwise, the target's result as its image.
 
-**`Var`.** Two applications of one head are related by the checker itself,
-with no proof form of their own. Over the equations, a `subset` step holds
-when every source label is a target label or below one by `Var` with the
-head's computed variance, each per-position premise discharged the same way
-(a label, `Var` again, or an instance), and a `fallback` step's premises may
-also be `Var` and its pairs reused at renamed bound rows
-(`subsetUsing`, `fallbackAt`,
+**`Var`.** Two applications of one head are related by the checker using the
+head's validated variance. Each argument premise is discharged by label
+inclusion or another checked variance instance. Structural coverage also uses
+these premises and shares recursive dependencies up to binder renaming
+(`compareUsing`,
 [RECURSIVE-EQUATIONS §4.2–4.3](RECURSIVE-EQUATIONS.md#42-parametric-assumptions)).
 
 Diagnostics show labels through a projection onto a finite table, bounded by

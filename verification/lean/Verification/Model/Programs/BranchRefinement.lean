@@ -326,10 +326,6 @@ representation, join, or inferred invariant is required by this contract. -/
 def ObservedSub (G : NormalGraph ι) (A B : Ty ι) (o : Observation) : Prop :=
   ∀ n W v, meaning G A n W v → o.holds v → meaning G B n W v
 
-def isSubset : PositiveCertificates.Proof ι → Bool
-  | .subset => true
-  | _ => false
-
 /-- Whether one clause of `B` holds every value a passed tag test admits:
 `string` after `typeof x === "string"`, whatever `x` was before, `unknown`
 included. Only the tests that name one primitive family do. -/
@@ -538,26 +534,26 @@ theorem arraySlice_sound [DecidableEq ι] {G : NormalGraph ι} {A B : Ty ι}
 /-- Sufficient implementations of ObservedSub. Whole-label filtering is only
 an algorithm for the tag case, not the meaning of refinement. -/
 def checkObservedSubUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (A B : Ty ι) (o : Observation) (p : PositiveCertificates.Proof ι) : Bool :=
+    (A B : Ty ι) (o : Observation) (p : PositiveCertificates.SubtypeChoices ι) : Bool :=
   match o with
-  | .boolean q => isSubset p && booleanMember G B q
-  | .tag t q => PositiveCertificates.checkUsing G images (tagSlice G A t q) B p || (isSubset p && tagMember G B t q) ||
-      (isSubset p && presentKey t q (promotes G (tagSlice G A t q) B)) ||
-      (isSubset p && t == .isArray && q && arraySlice G A B)
+  | .boolean q => booleanMember G B q
+  | .tag t q => PositiveCertificates.checkUsing G images (tagSlice G A t q) B p || tagMember G B t q ||
+      presentKey t q (promotes G (tagSlice G A t q) B) ||
+      (t == .isArray && q && arraySlice G A B)
 
 theorem checkObservedSub_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {A B o p} (hc : checkObservedSubUsing G images A B o p = true) : ObservedSub G A B o := by
   intro n W v hv ho
   cases o with
   | boolean q =>
-    simp only [checkObservedSubUsing, Bool.and_eq_true] at hc
-    have hb := hc.2
+    simp only [checkObservedSubUsing] at hc
+    have hb := hc
     change v = (if q then .tru else .fls) at ho
     rw [ho]
     exact booleanMember_sound hb n W
   | tag t q =>
     simp only [checkObservedSubUsing, Bool.or_eq_true, Bool.and_eq_true] at hc
-    rcases hc with ((hc | ⟨_, hm⟩) | ⟨_, hk⟩) | ⟨⟨⟨_, ht⟩, hq⟩, hs⟩
+    rcases hc with ((hc | hm) | hk) | ⟨⟨ht, hq⟩, hs⟩
     · exact PositiveCertificates.acceptedUsing hc n W v (tagSlice_sound hv ho)
     · exact tagMember_sound hm (meaning_value hv).1 (ho.resolve_right (by
         cases t <;> simp [tagMember] at hm <;> simp [protoFree]))
@@ -575,7 +571,7 @@ abbrev checkObservedSub [DecidableEq ι] (G : NormalGraph ι) :=
 object a current read link says the tested value was read from, and the
 field it was read through. -/
 def fieldRefinements [DecidableEq ι] (o : Observation) (fields : List (Nat × PropKey)) (A B : Ty ι)
-    (j : Nat) (G : NormalGraph ι) (images : InstanceImageCheck G) (p : PositiveCertificates.Proof ι) :
+    (j : Nat) (G : NormalGraph ι) (images : InstanceImageCheck G) (p : PositiveCertificates.SubtypeChoices ι) :
     Bool :=
   match o with
   | .tag t q => fields.any fun (k, f) => k == j &&
@@ -604,8 +600,8 @@ tested value was read from through an optional key (`optionals`), where the
 observation rules out `undefined`, which is what a read of the key gives where
 the object lacks it. The object then has the key, from then on. -/
 def optionalRefinements [DecidableEq ι] (o : Observation) (optionals : List (Nat × PropKey)) (A B : Ty ι)
-    (j : Nat) (G : NormalGraph ι) (p : PositiveCertificates.Proof ι) : Bool :=
-  isSubset p && excludesUndef o && optionals.any fun (k, f) => k == j && promotes G A B f
+    (j : Nat) (G : NormalGraph ι) : Bool :=
+  excludesUndef o && optionals.any fun (k, f) => k == j && promotes G A B f
 
 /-- An observation no value of the tested type makes: a tag answer every
 label contradicts, or a Boolean the type does not hold. The edge is then
@@ -649,7 +645,7 @@ def checkObservedUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceI
       if slot mapping j == tested then checkObservedSubUsing G images A B o p
       else PositiveCertificates.checkUsing G images A B p ||
         fieldRefinements o (fields ++ optionals) A B (slot mapping j) G images p ||
-        optionalRefinements o optionals A B (slot mapping j) G p
+        optionalRefinements o optionals A B (slot mapping j) G
     | _, _, _ => false))
 
 /-- The finite image checker, the default. -/
@@ -708,7 +704,7 @@ theorem checkObserved_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
             exact ⟨t, q, f, rfl, hk, PositiveCertificates.acceptedUsing hck⟩
         · right; right
           simp only [optionalRefinements, List.any_eq_true, Bool.and_eq_true, beq_iff_eq] at hc
-          obtain ⟨⟨_, hx⟩, ⟨k, f⟩, hk, rfl, hp⟩ := hc
+          obtain ⟨hx, ⟨k, f⟩, hk, rfl, hp⟩ := hc
           exact ⟨f, hk, hx, hp⟩
 
 /-- A branch edge's environment, one level above the one it is used at: a

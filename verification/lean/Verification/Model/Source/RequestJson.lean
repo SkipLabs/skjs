@@ -211,7 +211,7 @@ and methods', the reserved keys aside. -/
 
 deriving instance ToJson, FromJson for Node
 deriving instance ToJson, FromJson for PositiveCertificates.Instance
-deriving instance ToJson, FromJson for PositiveCertificates.Proof
+deriving instance ToJson, FromJson for PositiveCertificates.SubtypeChoices
 deriving instance ToJson, FromJson for Sequent
 deriving instance ToJson, FromJson for Rule
 deriving instance ToJson, FromJson for ProgramCertificates.Evidence
@@ -309,22 +309,20 @@ meaning for an invalid serialized type reference. -/
   c.domain :: c.instances ++ c.free.flatMap (fun p => [[p.1], p.2]) ++
     c.table.flatMap (fun e => [e.1] :: e.2.2 :: e.2.1.flatMap (fun p => [[p.1], p.2]))
 
-@[nospecialize] def proofTypes : PositiveCertificates.Proof ι → List (Ty ι)
-  | .subset => []
-  | .inst c => instanceTypes c
-  | .fallback ks => ks.flatMap (fun k => k.1 ::
-        k.2.1.flatMap Arrow.operands ++
-        k.2.2.1.flatMap RestArrow.operands ++ instanceTypes k.2.2.2)
+@[nospecialize] def subtypeChoiceTypes (p : PositiveCertificates.SubtypeChoices ι) : List (Ty ι) :=
+  p.instantiation.toList.flatMap instanceTypes ++ p.members.flatMap (fun k => k.1 ::
+    k.2.1.flatMap Arrow.operands ++
+    k.2.2.1.flatMap RestArrow.operands ++ instanceTypes k.2.2.2)
 
 @[nospecialize] def validEvidence (ok : ι → Bool) : ProgramCertificates.Evidence ι → Bool
   | .node j r ps =>
     (j.type :: j.context).all (validTy ok) &&
     (match r with
-      | .sub p => (proofTypes p).all (validTy ok)
+      | .sub p => (subtypeChoiceTypes p).all (validTy ok)
       | .bindMember ps rs vs => (ps.all fun p =>
-          (p.1.flatMap proofTypes ++ proofTypes p.2).all (validTy ok)) && (rs.all fun p =>
-          (p.1.flatMap proofTypes ++ proofTypes p.2.1 ++ proofTypes p.2.2).all (validTy ok)) &&
-          vs.all fun p => (proofTypes p).all (validTy ok)
+          (p.1.flatMap subtypeChoiceTypes ++ subtypeChoiceTypes p.2).all (validTy ok)) && (rs.all fun p =>
+          (p.1.flatMap subtypeChoiceTypes ++ subtypeChoiceTypes p.2.1 ++ subtypeChoiceTypes p.2.2).all (validTy ok)) &&
+          vs.all fun p => (subtypeChoiceTypes p).all (validTy ok)
       | .ifBoolVar T F => validTy ok T && validTy ok F
       | .funGraph As | .callableGraph As => As.all (validTy ok)
       | .ctorGraph U => validTy ok U
@@ -344,14 +342,14 @@ decreasing_by
 @[nospecialize] def validEffect (ok : ι → Bool) : HeapExpressionRules.StepEvidence ι → Bool
   | .ordinary e | .pure e | .created e | .allocated e | .typedRead _ e | .written _ _ _ e =>
     validEvidence ok e
-  | .slicedRead _ e p => validEvidence ok e && (proofTypes p).all (validTy ok)
+  | .slicedRead _ e p => validEvidence ok e && (subtypeChoiceTypes p).all (validTy ok)
   | .observedRead _ _ | .knownValue _ _ => true
 
 @[nospecialize] def validCertificate (ok : ι → Bool) (C : ControlFlow.Certificate ι) : Bool :=
   C.all (fun n =>
     validEvidence ok n.expression &&
     (n.effect.map (validEffect ok)).getD true &&
-    (n.edges.flatMap id |>.flatMap proofTypes).all (validTy ok))
+    (n.edges.flatMap id |>.flatMap subtypeChoiceTypes).all (validTy ok))
 
 @[nospecialize] def validResponse (r : Request σ ι) (c : Response ι) : Bool :=
   validCertificate (StoreView.valid r.types) c.certificate &&

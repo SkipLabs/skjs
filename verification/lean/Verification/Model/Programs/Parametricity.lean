@@ -57,12 +57,19 @@ theorem checkStructural_reassign (images : InstanceImageCheck G)
   simp only [checkStructural, images_reassign_fixed]
   rfl
 
+theorem comparePrepared_reassign (images : InstanceImageCheck G)
+    (S T : List ι) (known : Known ι) (fb : Fallback ι) :
+    comparePrepared (reassign G η) (images.reassign η) S T known fb =
+      comparePrepared G images S T known fb := by
+  simp only [comparePrepared, images_reassign_fixed, checkStructural_reassign]
+  rfl
+
 /-- Structural comparison uses one fixed parameter assignment. -/
 theorem compareStructural_reassign (images : InstanceImageCheck G) (S T : List ι)
     (known : Known ι) (budget : SearchBudget) :
     compareStructural (reassign G η) (images.reassign η) S T known budget =
       compareStructural G images S T known budget := by
-  simp only [compareStructural, images_reassign_fixed, checkStructural_reassign]
+  simp only [compareStructural, images_reassign_fixed, comparePrepared_reassign]
   rfl
 
 /-- A bound is decided at the graph with its assignment fixed. -/
@@ -94,25 +101,6 @@ assignment, the same for the graph and its reassignments. -/
 theorem premAt_reassign (r : Renaming G) (S T : List ι) :
     premAt (reassign G η) (images.reassign η) (r.reassign η) S T = premAt G images r S T := rfl
 
-theorem checkFamilyWith_reassign (sub : Option (Renaming G)) (S T : List ι) (c : FamilyCertificate ι) :
-    checkFamilyWith (reassign G η) (images.reassign η) (sub.map (·.reassign η)) S T c =
-      checkFamilyWith G images sub S T c := by
-  cases sub <;> simp only [checkFamilyWith, checkFamilyUsing, checkInstArrs_reassign] <;> rfl
-
-/-- The fallback searches and checks at the graph with its assignment fixed. -/
-theorem fallbackWith_reassign (sub : Option (Renaming G)) (S T : List ι)
-    (ks : List (KnownInstance ι)) :
-    fallbackWith (reassign G η) (images.reassign η) (sub.map (·.reassign η)) S T ks =
-      fallbackWith G images sub S T ks := by
-  simp only [fallbackWith, checkInstArrs_reassign]
-  have h := compareStructural_reassign (G := G) (η := η) { images with sub } S T (knownOf ks) {}
-  exact congrArg (fun x => (ks.all (fun k => checkInstArrsUsing G images k.1 k.2.1 k.2.2.1 k.2.2.2)) && x.accepted) h
-
-theorem fallbackAt_reassign (S T : List ι) (ks : List (KnownInstance ι)) :
-    fallbackAt (reassign G η) (images.reassign η) S T ks = fallbackAt G images S T ks := by
-  unfold fallbackAt
-  rw [sub_reassign, fallbackWith_reassign]
-
 theorem subsetUsing_reassign (S T : List ι) :
     subsetUsing (reassign G η) (images.reassign η) S T = subsetUsing G images S T := by
   unfold subsetUsing
@@ -120,12 +108,20 @@ theorem subsetUsing_reassign (S T : List ι) :
   | none => simp only [sub_reassign, hr, Option.map_none]
   | some r => simp only [sub_reassign, hr, Option.map_some, premAt_reassign]
 
-theorem check_reassign (S T : List ι) (p : Proof ι) :
+theorem compareUsing_reassign (S T : List ι) (instantiation : Unit → Option (Instance ι))
+    (members : Table ι → List (KnownInstance ι)) (budget : SearchBudget) :
+    compareUsing (reassign G η) (images.reassign η) S T instantiation members budget =
+      compareUsing G images S T instantiation members budget := by
+  have hi : checkInstUsing (reassign G η) (images.reassign η) S T =
+      checkInstUsing G images S T := funext fun c => checkInst_reassign G η images S T c
+  simp only [compareUsing, subsetUsing_reassign, hi, checkInstArrs_reassign,
+    images_reassign_fixed, comparePrepared_reassign]
+  rfl
+
+theorem check_reassign (S T : List ι) (p : SubtypeChoices ι) :
     PositiveCertificates.checkUsing (reassign G η) (images.reassign η) S T p =
       PositiveCertificates.checkUsing G images S T p := by
-  cases p <;>
-    simp only [PositiveCertificates.checkUsing, subsetUsing_reassign, checkInst_reassign,
-      fallbackAt_reassign]
+  simp only [PositiveCertificates.checkUsing, compareUsing_reassign]
 
 /-- The subtype checker as a function of its graph. -/
 theorem check_fun_reassign :
@@ -168,20 +164,20 @@ theorem arraySlice_reassign (A B : List ι) :
   simp only [realmArrayLabel_reassign]
   rfl
 
-theorem checkObservedSub_reassign (A B : List ι) (o : Observation) (p : Proof ι) :
+theorem checkObservedSub_reassign (A B : List ι) (o : Observation) (p : SubtypeChoices ι) :
     checkObservedSubUsing (reassign G η) (images.reassign η) A B o p =
       checkObservedSubUsing G images A B o p := by
   cases o <;> simp only [checkObservedSubUsing, check_reassign, arraySlice_reassign] <;> rfl
 
 theorem fieldRefinements_reassign (o : Observation) (fields : List (Nat × PropKey)) (A B : List ι)
-    (j : Nat) (p : Proof ι) :
+    (j : Nat) (p : SubtypeChoices ι) :
     fieldRefinements o fields A B j (reassign G η) (images.reassign η) p =
       fieldRefinements o fields A B j G images p := by
   cases o <;> simp only [fieldRefinements, check_fun_reassign] <;> rfl
 
 theorem optionalRefinements_reassign (o : Observation) (optionals : List (Nat × PropKey)) (A B : List ι)
-    (j : Nat) (p : Proof ι) :
-    optionalRefinements o optionals A B j (reassign G η) p = optionalRefinements o optionals A B j G p := rfl
+    (j : Nat) :
+    optionalRefinements o optionals A B j (reassign G η) = optionalRefinements o optionals A B j G := rfl
 
 theorem checkObserved_reassign (Γ Δ : List (List ι)) (tested : Nat) (o : Observation)
     (m : Mapping) (ps : EdgeEvidence ι) (fields optionals : List (Nat × PropKey)) :
@@ -192,12 +188,12 @@ theorem checkObserved_reassign (Γ Δ : List (List ι)) (tested : Nat) (o : Obse
   rfl
 
 theorem CallProofs_reassign (q : CallEffects.Arrow (List ι)) (c : CallEffects.MethodArrow (List ι))
-    (ps : List (Proof ι) × Proof ι) :
+    (ps : List (SubtypeChoices ι) × SubtypeChoices ι) :
     CallProofsUsing (reassign G η) (images.reassign η) q c ps = CallProofsUsing G images q c ps := by
   simp only [CallProofsUsing, check_reassign]
 
 theorem RestProofs_reassign (q : CallEffects.RestArrow (List ι)) (c : CallEffects.MethodRestArrow (List ι))
-    (ps : List (Proof ι) × Proof ι × Proof ι) :
+    (ps : List (SubtypeChoices ι) × SubtypeChoices ι × SubtypeChoices ι) :
     RestProofsUsing (reassign G η) (images.reassign η) q c ps = RestProofsUsing G images q c ps := by
   simp only [RestProofsUsing, check_reassign]
 
