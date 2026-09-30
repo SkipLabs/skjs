@@ -47,9 +47,6 @@ end
     ScopedArgs d args ↔ ∀ a ∈ args, Scoped d a := by
   induction args <;> simp_all [ScopedArgs]
 
-@[simp] theorem scoped_app (d : Nat) (f a : Tm) :
-    Scoped d (.app f a) ↔ Scoped d f ∧ Scoped d a := by simp [Scoped]
-
 theorem Scoped.mono {t : Tm} {d e : Nat} (h : Scoped d t) (hde : d ≤ e) :
     Scoped e t := by
   induction t using Tm.induct generalizing d e <;> simp only [Scoped, scopedArgs_iff] at *
@@ -391,31 +388,6 @@ theorem instantiate_beta (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (a t : Tm) (d
 Slot zero is the first parameter, not the last argument evaluated. -/
 def prependArgs (args : List Tm) (ρ : Env) : Env := args.foldr push ρ
 
-theorem prependArgs_scoped (hargs : ∀ a ∈ args, Scoped 0 a)
-    (hρ : ∀ i, Scoped 0 (ρ i)) : ∀ i, Scoped 0 (prependArgs args ρ i) := by
-  induction args with
-  | nil => exact hρ
-  | cons a args ih =>
-    intro i
-    cases i with
-    | zero => exact hargs a (by simp)
-    | succ i => exact ih (fun a ha => hargs a (by simp [ha])) i
-
-/-- Closing captures and then binding any number of parameters agrees with a
-single simultaneous substitution. The theorem includes nested closure bodies. -/
-theorem instantiate_args (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i))
-    (hargs : ∀ a ∈ args, Scoped 0 a) (t : Tm) (d : Nat) :
-    bindArgs d args (instantiate (d + args.length) ρ t) =
-      instantiate d (prependArgs args ρ) t := by
-  induction args generalizing d with
-  | nil => simp [bindArgs, prependArgs]
-  | cons a args ih =>
-    have hrest : ∀ a ∈ args, Scoped 0 a := fun a ha => hargs a (by simp [ha])
-    have level : d + (a::args).length = (d + 1) + args.length := by simp; omega
-    simp only [bindArgs, level]
-    rw [ih hrest (d + 1)]
-    exact instantiate_beta _ (prependArgs_scoped hrest hρ) a t d
-
 theorem instantiate_above {t : Tm} {d : Nat} (ht : Scoped d t) (ρ : Env) :
     instantiate d ρ t = t := by
   induction t using Tm.induct generalizing d <;> simp only [Scoped, scopedArgs_iff, instantiate, instantiateArgs_eq_map] at *
@@ -478,17 +450,5 @@ theorem instantiate_above {t : Tm} {d : Nat} (ht : Scoped d t) (ρ : Env) :
       simpa using (List.map_congr_left (g := id) (fun y hy => ihL y hy (ht.2.1 y hy)))
     rw [iht ht.1, hL, ihx ht.2.2]
   all_goals rfl
-
-/-- Binding closed arguments closes exactly their parameter slots, leaving the
-specified enclosing binders. Captures were already closed by the descriptor. -/
-theorem bindArgs_scoped (ht : Scoped (d + args.length) t)
-    (hargs : ∀ a ∈ args, Scoped 0 a) : Scoped d (bindArgs d args t) := by
-  let ρ : Env := fun _ => .nul
-  have hρ : ∀ i, Scoped 0 (ρ i) := fun _ => trivial
-  rw [← instantiate_above ht ρ, instantiate_args ρ hρ hargs]
-  exact instantiate_scoped _ (prependArgs_scoped hargs hρ) t d
-
-#print axioms instantiate_args
-#print axioms bindArgs_scoped
 
 end Verification.Model

@@ -25,10 +25,6 @@ theorem bagT_adm (P : Fields) : Adm (bagT P) := by
   · rintro n W W' hx v ⟨l, code, hv, hval, hr⟩
     exact ⟨l, code, hv, hval, (recT_adm P).mono n W W' hx _ hr⟩
 
-theorem bagT_valOnly (P : Fields) : ValOnly (bagT P) := by
-  rintro n W v ⟨l, code, hv, hval, hr⟩
-  exact hval
-
 theorem bagT_contractive {ι : Type} (X Y : ι → Fam) (fs : List (PropKey × ι)) (n : Nat)
     (hag : ∀ i, Agree (X i) (Y i) n) (W : WorldT n) (v : Val) :
     bagT (ReferenceConjunctions.famsOf X fs) n W v ↔

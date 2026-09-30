@@ -173,20 +173,5 @@ theorem emptyHeapOk (j : Nat) : HeapOk j (ofList ([] : List (Ctr j))) [] := by
   intro l c hl
   simp [lookup] at hl
 
-/-- Heap satisfaction survives truncation to any lower level, not just one. -/
-theorem heap_down {n : Nat} {U : WorldT n} {h : Heap} (hh : HeapOk n U h)
-    (j : Nat) (hj : j ≤ n) : HeapOk j (trunc j hj U) h := by
-  induction n generalizing j with
-  | zero =>
-    have : j = 0 := by omega
-    subst j
-    simpa [trunc_id] using hh
-  | succ n ih =>
-    by_cases he : j = n + 1
-    · subst j; simpa [trunc_id] using hh
-    · have hh' := HeapOk_trunc n U h hh
-      have := ih hh' j (by omega)
-      simpa [trunc_trunc] using this
-
 end Model
 end Verification

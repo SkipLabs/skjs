@@ -239,9 +239,9 @@ of a type covering a writable index says a key of its class is absent
 ($b\ \mathsf{keeps}\ \theta$ below). Index contracts are guarded through the world, so a
 recursive graph can contain `JsonObject = { readonly [key: string]: Json | null }`.
 
-Lean: `refsT`, `viewT`, `OptionalField`, `optT`, `SlotContract`, `NumericKey`, `IndexKeys`, `dictViewT`, `dictCellT`, `KeyBound`, `ownKeysT` (`Types/Types.lean`), `methodT`,
-`memberT`, `along`, `holdsAt`, `onHost`, `boundTo`, `boundOn` (`Types/MethodMembers.lean`). The heap facts behind invariant
-operands (`adm`, `congr_below`, `operands_agree`, `read_all`, `write_first`,
+Lean: `viewT`, `OptionalField`, `optT`, `SlotContract`, `NumericKey`, `IndexKeys`, `dictViewT`, `dictCellT`, `KeyBound`, `ownKeysT` (`Types/Types.lean`), `methodT`,
+`memberT`, `along`, `holdsAt`, `onHost`, `boundTo`, `boundOn` (`Types/MethodMembers.lean`). The operands'
+meaning `refsT` and the heap facts behind invariant operands (`adm`, `congr_below`, `operands_agree`, `read_all`, `write_first`,
 `cyclic_inhabited`) are in `Types/ReferenceConjunctions.lean`: a read meets
 every operand, and writing a value at the first operand preserves every
 alias's contract.

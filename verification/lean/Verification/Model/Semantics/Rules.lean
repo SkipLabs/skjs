@@ -5,27 +5,9 @@ import Verification.Model.Semantics.ArgumentContracts
 The rules a program's safety proof should be assembled from, rather than traced
 by hand. A call spends its dispatch step and uses the callee's contract one
 level below the current budget.
-
-`Safe_bind_appR` is the bind: run a subterm, then continue with whatever value it
-produces, in whatever world and heap it produced them. It is what lets composite
-programs be built compositionally.
 -/
 namespace Verification
 namespace Model
-
-/-- Ready native list calls consume one step, then satisfy the chosen result
-contract. The receiver's contract and the domains transfer the saved receiver
-and actuals to that smaller budget. -/
-theorem call_elim {L : List (Fam × List Fam × Fam)} {p : Fam × List Fam × Fam}
-    (hR : Adm p.1) (hA : ∀ A ∈ p.2.1, Adm A) (hAv : ∀ A ∈ p.2.1, ValOnly A)
-    {n : Nat} {W : WorldT n} {f r : Tm} {args : List Tm} {heap : Heap}
-    (hrv : isVal r = true) (hf : callsT L n W f) (hp : p ∈ L) (hr : p.1 n W r)
-    (ha : ArgsT p.2.1 n W args)
-    (hw : WorldAdm W) (hh : HeapOk n W heap) : Safe p.2.2 n W heap (.invoke f r args) := by
-  exact ArgumentContracts.call_safe
-    (P := ArgsShort p.2.1)
-    (Adm.of_transfer (fun ha j hj U hx => ArgsShort_transfer hA ha j hj U hx)) hR
-    ⟨hf.1, hf.2 p hp⟩ hr hrv (ArgsT_values hAv ha) (ArgsShort_of_exact ha) hw hh
 
 /-- A ready call that omits trailing actuals. Every omitted position's contract
 admits `undefined`, which is the value the machine binds there, so the selected
@@ -50,34 +32,6 @@ theorem let_rule {B : Fam} (b a : Tm) (hval : isVal a = true) (p : Nat) (W : Wor
     Safe B (p + 1) W h (.letE a b) :=
   Or.inr ⟨_, h, _, WExt_refl _, WorldAdm_trunc _ hadm, .letV hval,
     HeapOk_trunc p W h hok, hb⟩
-
-/-- **Evaluation inside the argument of an application.** The bind rule the
-composite programs need: run the argument, then continue with whatever value it
-produces, in whatever world and heap it produced them. -/
-theorem Safe_bind_appR {A B : Fam} (f : Tm) (hfv : isVal f = true) :
-    ∀ (n : Nat) (W : WorldT n) (h : Heap) (a : Tm),
-      WorldAdm W → HeapOk n W h → Safe A n W h a →
-      (∀ (j : Nat) (hj : j ≤ n) (W' : WorldT j), WExt (trunc j hj W) W' → WorldAdm W' →
-        ∀ (h' : Heap) (v : Tm), HeapOk j W' h' → A j W' v → Safe B j W' h' (.app f v)) →
-      Safe B n W h (.app f a) := by
-  intro n
-  induction n with
-  | zero => intro _ _ _ _ _ _ _; trivial
-  | succ p ih =>
-    intro W h a hadm hok hsafe hcont
-    rcases hsafe with (⟨hv, hA⟩ | hr) | ⟨W', h', a', hx, hadm', hstep, hok', hsafe'⟩
-    · exact hcont (p + 1) (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hadm h a hok hA
-    · exact Or.inl (Or.inr (hr.lift (C := (.app f ·))
-        fun hr => .callArg (i := 0) hfv rfl rfl (by intro j hj; omega) hr))
-    · refine Or.inr ⟨W', h', .app f a', hx, hadm', .appR hfv hstep, hok', ?_⟩
-      refine ih W' h' a' hadm' hok' hsafe' ?_
-      intro j hj W'' hW hadm'' h'' v hok'' hAv
-      refine hcont j (by omega) W'' ?_ hadm'' h'' v hok'' hAv
-      refine WExt_trans ?_ hW
-      have : trunc j hj W' = trunc j hj W' := rfl
-      have hx' : WExt (trunc j hj (trunc p (Nat.le_succ p) W)) (trunc j hj W') :=
-        WExt_trunc hj hx
-      rwa [trunc_trunc] at hx'
 
 /-! ## Storage -/
 
@@ -585,22 +539,6 @@ theorem alloc_rule {A : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (v
 #print axioms make_rule
 #print axioms alloc_rule
 
-theorem refT_transfer {A : Fam} {k : Nat} {W : WorldT k} {flds : List (PropKey × Nat)}
-    (hr : refT A k W (.objAt flds .absent)) (j : Nat) (hj : j ≤ k) (W' : WorldT j)
-    (hW : WExt (trunc j hj W) W') : refT A j W' (.objAt flds .absent) :=
-  (refT_adm A).mono j _ _ hW _ ((refT_adm A).down_le k j hj W _ hr)
-
-/-- Being stuck is exactly what `Safe` forbids. -/
-theorem stuck_not_safe (B : Fam) (k : Nat) (W : WorldT (k + 1)) (h : Heap) :
-    ¬ Safe B (k + 1) W h (.app .nul .nul) := by
-  rintro ((⟨hv, -⟩ | ⟨v, hr, -⟩) | ⟨_, _, _, _, _, hs, _, _⟩)
-  · simp [isVal] at hv
-  · cases hr with
-    | callL h => cases h
-    | callRecv _ h => cases h
-    | callArg _ _ hg _ h => obtain ⟨rfl, rfl⟩ := singleton_get hg; cases h
-  · exact stuck_no_step hs
-
 /-! ## Testing a value's shape, and branching on the answer
 
 The two constructs a narrowing source language needs. A test of a value answers
@@ -671,7 +609,6 @@ theorem ite_test_rule {B : Fam} (k : Tag) (a : Val) (hv : isVal a = true) (u e :
     exact helse hb
 
 
-#print axioms call_elim
 #print axioms let_rule
 
 end Model

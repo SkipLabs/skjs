@@ -5,9 +5,9 @@ import Verification.Model.Semantics.Safety
 
 A recursive type is interpreted as the limit of finite approximations. The
 construction is independent of the node syntax: the operator must consult its
-recursive arguments only strictly below the current budget (`LayerCongr`) and
-preserve admissibility (`LayerAdm`). Positive graph interpretations supply
-these two properties.
+recursive arguments only strictly below the current budget (`LayerCongr`), and
+preserve admissibility among the families an invariant of every approximation
+describes (`denote_adm_inv`). Positive graph interpretations supply both.
 -/
 
 namespace Verification
@@ -36,10 +36,6 @@ def LayerCongr {ι : Type} (F : (ι → Fam) → ι → Fam) : Prop :=
   ∀ (X Y : ι → Fam) (n : Nat), (∀ i, Agree (X i) (Y i) n) →
     ∀ (i : ι) (W : WorldT n) (v : Val), F X i n W v ↔ F Y i n W v
 
-/-- Admissibility is preserved by one step. -/
-def LayerAdm {ι : Type} (F : (ι → Fam) → ι → Fam) : Prop :=
-  ∀ (X : ι → Fam), (∀ i, Adm (X i)) → ∀ i, Adm (F X i)
-
 def approx {ι : Type} (F : (ι → Fam) → ι → Fam) : Nat → ι → Fam
   | 0 => fun _ => topF
   | k + 1 => F (approx F k)
@@ -66,20 +62,6 @@ theorem denote_unfold {ι : Type} {F : (ι → Fam) → ι → Fam} (hF : LayerC
     (i : ι) (n : Nat) (W : WorldT n) (v : Val) :
     denote F i n W v ↔ F (denote F) i n W v :=
   hF _ _ n (fun a m hm U u => approx_stable hF m n (m + 1) hm (by omega) a U u) i W v
-
-theorem approx_adm {ι : Type} {F : (ι → Fam) → ι → Fam} (hA : LayerAdm F) :
-    ∀ k i, Adm (approx F k i)
-  | 0, _ => topF_adm
-  | k + 1, i => hA _ (approx_adm hA k) i
-
-theorem denote_adm {ι : Type} {F : (ι → Fam) → ι → Fam} (hF : LayerCongr F) (hA : LayerAdm F)
-    (i : ι) : Adm (denote F i) := by
-  constructor
-  · intro n W v hv
-    have h1 := (approx_adm hA (n + 2) i).down n W v hv
-    exact (approx_stable hF n (n + 2) (n + 1) (by omega) (by omega) i _ v).mp h1
-  · intro n W W' hx v hv
-    exact (approx_adm hA (n + 1) i).mono n W W' hx v hv
 
 /-- Every approximation keeps an invariant the first holds and each step
 preserves. -/

@@ -531,7 +531,7 @@ All the callable uses build on this equation:
   assignment satisfies the bounds. `T[]` denotes invariant array storage under
   the same assignment, and each invocation allocates its rest store with that
   contract.
-- Contract weakening follows `Promise.weaken`: admit fewer argument lists
+- Contract weakening follows `PromiseWith.weaken`: admit fewer argument lists
   and weaken the result. Fixed-to-variadic coverage is not generally valid
   from a fixed contract alone, since it promises nothing about longer lists.
   Concrete code of fixed arity can nevertheless have stronger behavior
@@ -620,10 +620,11 @@ left to right.
 `Step.callArg` requires earlier arguments to be values. A `spread` is not a
 value: `Step.callSpread` consumes its ready store before any later argument
 can step, replacing holes with `undefined`. Splicing can change list length;
-`ArgStep.length_preserved` applies to an individual operand reduction, not to
+`CallArguments.length_preserved` applies to an individual operand reduction, not to
 all preparation. `prepare_deterministic` and `call_step_iff` connect preparation
-and invocation to the deterministic term machine. A ready frame has value
-operands; readiness alone does not establish callability or typing.
+and invocation to the deterministic term machine. A frame whose operands are
+values dispatches exactly when its callee has invocation code (`invoke_iff`);
+dispatch does not establish typing.
 
 Code uses `parameters n args` to pad missing positions with `undefined` and
 discard extra positions after their effects have occurred; entering graph
@@ -641,10 +642,10 @@ turns `invoke (bound f r₀ p⃗) r a⃗` into `invoke f r₀ (p⃗ ++ a⃗)`, d
 receiver `r` it was given. `bound_ignores_receiver` states that the yielded term
 is the same whatever `r` is, and `rebind_keeps_receiver` that binding a bound
 function forwards to it, which forwards with the first saved receiver.
-`callsT_bound` proves the residual contract: a target meeting
+`CallEffects.callsT_bound` proves the residual contract: a target meeting
 $(R_t, \vec P \mathbin{+\!\!+} \vec D, R)$ with a saved receiver in $R_t$ and a
 saved prefix in $\vec P$ gives an object meeting $(R_c, \vec D, R)$ for any
-$R_c$, and `restsT_bound` the same for a variadic target, whose residual keeps
+$R_c$, and `CallEffects.restsT_bound` the same for a variadic target, whose residual keeps
 its rest, when the rest admits the prefix's values past the fixed positions in
 front of any pack it admits, as an element rest does. There is no forwarding wrapper closure: construction and
 `new.target` are not modelled, and a bound function has no own fields.
@@ -957,7 +958,7 @@ the operation and composition rules using this predicate;
 ## What the checked development establishes
 
 - [Rules.lean](lean/Verification/Model/Semantics/Rules.lean) proves the semantic typing rules for calls, heap operations, shape
-  testing and branching, including an application-context composition rule.
+  testing and branching.
 - `ProgramTyping.lean` proves safety by induction on syntactic typing derivations.
 - `ProgramCertificates.lean` checks finite program evidence and proves acceptance
   equivalent to closed-program derivability. The same example has executable

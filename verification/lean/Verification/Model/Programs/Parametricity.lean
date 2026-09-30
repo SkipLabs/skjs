@@ -21,11 +21,6 @@ open PositiveNormalization PositiveGraphs PositiveRules ProgramTyping ProgramCer
 
 variable {ι : Type} [DecidableEq ι] (G : NormalGraph ι) (η : MixedAssignment ι)
 
-theorem checkArrowWith_reassign (R : List ι → List ι → Prop) [DecidableRel R] (L : Ops ι)
-    (S : List (CallEffects.RestArrow (List ι))) (q : CallEffects.Arrow (List ι)) (cert : ArrowCert ι) :
-    checkArrowWith (reassign G η) R L S q cert = checkArrowWith G R L S q cert := by
-  induction cert generalizing q <;> simp only [checkArrowWith, *] <;> rfl
-
 theorem reads_reassign : reads (reassign G η) = reads G := rfl
 
 theorem readsFrom_go_reassign : ∀ fuel (seen frontier : List ι),
@@ -46,10 +41,6 @@ theorem freeMapOf_reassign (D : List ι) : ∀ fuel (V : FreeMap ι),
     rfl
 
 theorem expand_reassign (F : List ι) : expand (reassign G η) F = expand G F := rfl
-
-/-- The fallback's pairs of a bound are checked at a fixed assignment. -/
-theorem checkPairs_reassign (S T : List ι) (table : Table ι) (arrows : PositiveCertificates.Evidence ι) :
-    checkPairs (reassign G η) S T table arrows = checkPairs G S T table arrows := rfl
 
 /-- A bound is decided at the graph with its assignment fixed. -/
 theorem boundOk_reassign (binders : List ι) (θs : List (List ι)) (b : ι × List ι) :
@@ -77,11 +68,6 @@ theorem sub_reassign : (images.reassign η).sub = images.sub.map (·.reassign η
 assignment, the same for the graph and its reassignments. -/
 theorem premAt_reassign (r : Renaming G) (S T : List ι) :
     premAt (reassign G η) (images.reassign η) (r.reassign η) S T = premAt G images r S T := rfl
-
-theorem checkFamilyWith_reassign (sub : Option (Renaming G)) (S T : List ι) (c : FamilyCertificate ι) :
-    checkFamilyWith (reassign G η) (images.reassign η) (sub.map (·.reassign η)) S T c =
-      checkFamilyWith G images sub S T c := by
-  cases sub <;> rfl
 
 /-- The fallback searches and checks at the graph with its assignment fixed. -/
 theorem fallbackWith_reassign (sub : Option (Renaming G)) (S T : List ι)

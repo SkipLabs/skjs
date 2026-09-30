@@ -14,8 +14,8 @@ truncation of the one before, and must itself be admissible.
 A function type requires an object with closed invocation code whose substituted body is safe in
 every *future* world and every heap satisfying
 it, at every strictly smaller budget. Requiring admissibility here is what lets a
-function allocate: without it, a world carrying a contract like `badCtr` could be
-supplied, and no allocating function would be safe anywhere.
+function allocate: without it, a world carrying a contract that allocation can
+falsify could be supplied, and no allocating function would be safe anywhere.
 
 The level a call spends is the level at which the argument's own guarantees are
 available. That correspondence is what makes ordinary typing derivations go
@@ -110,28 +110,6 @@ def CrossCompatUpTo (n : Nat) (B C D : Fam) : Prop :=
   ∀ (j : Nat), j ≤ n → ∀ (W W' : WorldT j) (h : Heap), HeapOk j W h → HeapOk j W' h →
     ∀ (u : Val), B j W u → C j W' u → D j W u
 
-theorem safe_cross_upto {B C D : Fam} : ∀ (n : Nat), CrossCompatUpTo n B C D →
-    ∀ (W W' : WorldT n) (h : Heap) (t : Tm), HeapOk n W h → HeapOk n W' h →
-      Safe B n W h t → Safe C n W' h t → Safe D n W h t := by
-  intro n
-  induction n with
-  | zero => intro _ _ _ _ _ _ _ _ _; trivial
-  | succ p ih =>
-    intro hc W W' h t hok hok'
-    rintro ((⟨hv1, hBv⟩ | hr1) | ⟨Z, h1, t1, hz, huz, hst1, hok1, hcont1⟩)
-      ((⟨hv2, hCv⟩ | hr2) | ⟨Z', h2, t2, -, -, hst2, hok2, hcont2⟩)
-    · exact Or.inl (Or.inl ⟨hv1, hc (p + 1) (Nat.le_refl _) W W' h hok hok' t hBv hCv⟩)
-    · rw [hr2.not_val] at hv1; contradiction
-    · exact absurd hst2 (value_no_step hv1)
-    · rw [hr1.not_val] at hv2; contradiction
-    · exact Or.inl (Or.inr hr1)
-    · exact absurd hst2 hr1.no_step
-    · exact absurd hst1 (value_no_step hv2)
-    · exact absurd hst1 hr2.no_step
-    · obtain ⟨rfl, rfl⟩ := Step_det hst1 hst2
-      exact Or.inr ⟨Z, h1, t1, hz, huz, hst1, hok1,
-        ih (fun j hj => hc j (by omega)) Z Z' h1 t1 hok1 hok2 hcont1 hcont2⟩
-
 /-- Ordered actual-argument contracts. The signature fixes the actual count;
 the code's declared parameter count is independent. -/
 def ArgsT : List Fam → (k : Nat) → WorldT k → List Tm → Prop
@@ -162,13 +140,6 @@ theorem ArgsT_of_getElem? : ∀ {As : List Fam} {k : Nat} {W : WorldT k} {args :
   | _ :: _, _, _, [], hl, _ => by simp at hl
   | A :: As, _, _, a :: args, hl, h =>
     ⟨h 0 A a rfl rfl, ArgsT_of_getElem? (by simpa using hl) fun i B b hB hb => h (i + 1) B b hB hb⟩
-
-theorem ArgsT_singleton (A : Fam) (k : Nat) (W : WorldT k) (args : List Tm) :
-    ArgsT [A] k W args ↔ ∃ a, args = [a] ∧ A k W a := by
-  cases args with
-  | nil => simp [ArgsT]
-  | cons a args =>
-    cases args <;> simp [ArgsT]
 
 /-- Every position of an admitted list holds an actual: a list with an empty
 position admits no list. -/
@@ -381,45 +352,6 @@ theorem Promise.mono {Acc Rc R n W W' v} (hx : WExt W W') (h : Promise Acc Rc R 
   intro j hj U hy hu heap hh r hrv hr args hv ha
   exact h j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy) hu heap hh r hrv hr args hv ha
 
-/-- Fewer admitted receivers and lists and a weaker result is a weaker promise. -/
-theorem Promise.weaken {Acc Acc' : (j : Nat) → WorldT j → List Tm → Prop} {Rc Rc' R T : Fam}
-    {k W v}
-    (hrecv : ∀ j, j < k → ∀ U r, Rc' j U r → Rc j U r)
-    (hacc : ∀ j, j < k → ∀ U args, Acc' j U args → Acc j U args)
-    (hres : ∀ m, m < k → ∀ U u, R m U u → T m U u)
-    (h : Promise Acc Rc R k W v) : Promise Acc' Rc' T k W v := by
-  intro j hj U hx hu heap hh r hrv hr args hv ha
-  obtain ⟨result, hi, hs⟩ :=
-    h j hj U hx hu heap hh r hrv (hrecv j hj U r hr) args hv (hacc j hj U args ha)
-  exact ⟨result, hi, Safe_mono j (fun m hm V u hu => hres m (by omega) V u hu) U heap _ hs⟩
-
-/-- A promise holds for the receivers of a narrower family, which need only be
-within the wider one in worlds extending the current one: a promise is only
-ever used in those. -/
-theorem Promise.weaken_recv {Acc : (j : Nat) → WorldT j → List Tm → Prop} {Rc Rc' R : Fam}
-    {k W v}
-    (hrecv : ∀ j (hj : j < k) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
-      ∀ r, Rc' j U r → Rc j U r)
-    (h : Promise Acc Rc R k W v) : Promise Acc Rc' R k W v := by
-  intro j hj U hx hu heap hh r hrv hr args hv ha
-  exact h j hj U hx hu heap hh r hrv (hrecv j hj U hx r hr) args hv ha
-
-/-- Agreement of the receivers, the admitted lists and the result below the
-budget. -/
-theorem Promise.congr {Acc Acc' : (j : Nat) → WorldT j → List Tm → Prop} {Rc Rc' R T : Fam}
-    {n W v} (hrecv : Agree Rc Rc' n)
-    (hacc : ∀ j, j < n → ∀ U args, Acc j U args ↔ Acc' j U args) (hres : Agree R T n) :
-    Promise Acc Rc R n W v ↔ Promise Acc' Rc' T n W v := by
-  constructor <;> intro h j hj U hx hu heap hh r hrv hr args hv ha
-  · obtain ⟨result, hi, hs⟩ := h j hj U hx hu heap hh r hrv ((hrecv j hj U r).mpr hr) args hv
-      ((hacc j hj U args).mpr ha)
-    have hr' : Agree R T (j + 1) := fun k hk V a => hres k (by omega) V a
-    exact ⟨result, hi, (Safe_congr (j + 1) hr' j (by omega) U heap _).mp hs⟩
-  · obtain ⟨result, hi, hs⟩ := h j hj U hx hu heap hh r hrv ((hrecv j hj U r).mp hr) args hv
-      ((hacc j hj U args).mp ha)
-    have hr' : Agree R T (j + 1) := fun k hk V a => hres k (by omega) V a
-    exact ⟨result, hi, (Safe_congr (j + 1) hr' j (by omega) U heap _).mpr hs⟩
-
 /-- Values meeting every fixed signature `(receiver, parameters, result)`:
 each receiver at its contract with each admitted actual list, including one
 omitting trailing positions that admit `undefined`. -/
@@ -443,9 +375,6 @@ def Constructible (v : Val) : Prop :=
 def ConstructsTo (v : Val) (args : List Tm) (result : Tm) : Prop :=
   ∃ fs c enter, v = .objAt fs c ∧ CallArguments.construction c = some enter ∧ result = enter args
 
-theorem Constructible.val {v : Val} (h : Constructible v) : isVal v = true := by
-  obtain ⟨fs, c, rfl, -, -⟩ := h; rfl
-
 /-- The common constructor promise, independent of argument-list syntax. -/
 def ConstructPromise (P : ArgFam) (R : Fam) (k : Nat) (W : WorldT k) (v : Val) : Prop :=
   ∀ (j : Nat) (hj : j < k) (U : WorldT j),
@@ -468,10 +397,6 @@ theorem ctorsT_adm (L : List (List Fam × Fam)) : Adm (ctorsT L) :=
       h.2 p hp j (by omega) U (by rwa [trunc_trunc] at hx) hu heap hh args hv ha⟩,
    fun _ _ _ hx _ h => ⟨h.1, fun p hp j hj U hy hu heap hh args hv ha =>
       h.2 p hp j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy) hu heap hh args hv ha⟩⟩
-
-theorem ctorsT_valOnly (L : List (List Fam × Fam)) : ValOnly (ctorsT L) := by
-  intro _ _ _ h
-  exact h.1.val
 
 /-- The actual lists a variadic construct signature admits: its fixed
 parameters' actuals exactly, then, as one argument pack, the rest. -/
@@ -545,10 +470,6 @@ theorem TupleFits.congr {P Q : Fam → Val → Prop} {T T' : TupleF} {vs}
     | none => rw [(hpos i).1.mpr hB] at hA; cases hA
     | some B => exact ((hpos i).2 A B hA hB u).mpr (h i u B hu hB)
 
-theorem positionFam_elem (E : Fam) (i : Nat) :
-    positionFam ⟨[], [], some E, false, .dense⟩ i = some E := by
-  simp [positionFam]
-
 theorem callsT_adm (L : List (Fam × List Fam × Fam)) : Adm (callsT L) :=
   ⟨fun _ _ _ h => ⟨h.1, fun p hp => (h.2 p hp).down⟩,
    fun _ _ _ hx _ h => ⟨h.1, fun p hp => (h.2 p hp).mono hx⟩⟩
@@ -556,23 +477,6 @@ theorem callsT_adm (L : List (Fam × List Fam × Fam)) : Adm (callsT L) :=
 theorem restsT_adm (S : List (Fam × List Fam × ArgFam × Fam)) : Adm (restsT S) :=
   ⟨fun _ _ _ h => ⟨h.1, fun p hp => (h.2 p hp).down⟩,
    fun _ _ _ hx _ h => ⟨h.1, fun p hp => (h.2 p hp).mono hx⟩⟩
-
-theorem callsT_valOnly (L : List (Fam × List Fam × Fam)) : ValOnly (callsT L) :=
-  fun _ _ _ h => h.1.val
-
-theorem callsT_select {L n W v p} (hf : callsT L n W v) (hp : p ∈ L) : callsT [p] n W v :=
-  ⟨hf.1, fun q hq => by cases List.mem_singleton.mp hq; exact hf.2 p hp⟩
-
-theorem restsT_select {S n W v s} (hf : restsT S n W v) (hs : s ∈ S) : restsT [s] n W v :=
-  ⟨hf.1, fun q hq => by cases List.mem_singleton.mp hq; exact hf.2 s hs⟩
-
-theorem callsT_of_signatures {L n W v} (hc : Invocable v)
-    (hs : ∀ p ∈ L, callsT [p] n W v) : callsT L n W v :=
-  ⟨hc, fun p hp => (hs p hp).2 p (by simp)⟩
-
-theorem restsT_of_signatures {S n W v} (hc : Invocable v)
-    (hs : ∀ s ∈ S, restsT [s] n W v) : restsT S n W v :=
-  ⟨hc, fun s hsm => (hs s hsm).2 s (by simp)⟩
 
 /-! ### Admitted lists -/
 
@@ -702,13 +606,6 @@ theorem ArgsShort_congr {n : Nat} {As Bs : List Fam} (h : ArgsAgree n As Bs) {j 
   unfold ArgsShort
   rw [hlen, ArgsT_congr htk hj W args, ArgsAgree_all hdr hj]
 
-theorem ArgsRest_congr {n : Nat} {As Bs : List Fam} {E E' : ArgFam} (h : ArgsAgree n As Bs)
-    (he : Agree E E' n) {j : Nat} (hj : j < n) (W : WorldT j) (args : List Tm) :
-    ArgsRest As E j W args ↔ ArgsRest Bs E' j W args := by
-  unfold ArgsRest
-  rw [ArgsShort_congr h hj W _, ArgsAgree_length h]
-  exact and_congr Iff.rfl (he j hj W _)
-
 /-! ### Admitted lists, position by position -/
 
 theorem ArgsShort_nil_args {Ps : List Fam} {j W} :
@@ -744,32 +641,6 @@ theorem ArgsRest_of_exact_extra {Ps : List Fam} {E : ArgFam} {j W args extra}
   refine ⟨?_, ?_⟩
   · rw [← hl, List.take_left]; exact ArgsShort_of_exact ha
   · rw [← hl, List.drop_left]; exact he
-
-/-- A callable signature is contravariant in its receiver and ordered
-arguments and covariant in its result. -/
-theorem callsT_single_mono {Rc Qc : Fam} {Ps Qs : List Fam} {R T : Fam}
-    (hrecv : FamLe Qc Rc) (hdom : ArgsLe Qs Ps) (hresult : FamLe R T) :
-    FamLe (callsT [(Rc, Ps, R)]) (callsT [(Qc, Qs, T)]) := by
-  intro k W v hv
-  refine ⟨hv.1, fun q hq => ?_⟩
-  cases List.mem_singleton.mp hq
-  exact (hv.2 (Rc, Ps, R) (by simp)).weaken (fun _ _ U r hr => hrecv _ U r hr)
-    (fun _ _ _ _ ha => ArgsShort_mono hdom ha) (fun m _ U u hu => hresult m U u hu)
-
-/-- List signatures guard the receiver, every domain position and the result:
-the congruence recursive call types need. -/
-theorem callsT_congr {α : Type} (l : List α) (f g : α → Fam × List Fam × Fam) {n : Nat}
-    (h : ∀ x ∈ l, Agree (f x).1 (g x).1 n ∧ ArgsAgree n (f x).2.1 (g x).2.1 ∧
-      Agree (f x).2.2 (g x).2.2 n)
-    (W : WorldT n) (v : Val) : callsT (l.map f) n W v ↔ callsT (l.map g) n W v := by
-  unfold callsT
-  refine and_congr Iff.rfl ⟨fun hs p hp => ?_, fun hs p hp => ?_⟩
-  · obtain ⟨x, hm, rfl⟩ := List.mem_map.mp hp
-    exact (Promise.congr (h x hm).1 (fun j hj U args => ArgsShort_congr (h x hm).2.1 hj U args)
-      (h x hm).2.2).mp (hs (f x) (List.mem_map_of_mem hm))
-  · obtain ⟨x, hm, rfl⟩ := List.mem_map.mp hp
-    exact (Promise.congr (h x hm).1 (fun j hj U args => ArgsShort_congr (h x hm).2.1 hj U args)
-      (h x hm).2.2).mpr (hs (g x) (List.mem_map_of_mem hm))
 
 theorem ctorsT_congr {α : Type} (l : List α) (f g : α → List Fam × Fam) {n : Nat}
     (h : ∀ x ∈ l, ArgsAgree n (f x).1 (g x).1 ∧ Agree (f x).2 (g x).2 n)
@@ -810,21 +681,6 @@ theorem ctorRestsT_congr {α : Type} (l : List α) (f g : α → List Fam × Arg
         · rw [← hl]; exact ((h x hm).2.1 j hj U _).mp hpack)
     exact ⟨result, hc, (Safe_congr n (h x hm).2.2 j hj U heap _).mpr hsafe⟩
 
-theorem restsT_congr {α : Type} (l : List α) (f g : α → Fam × List Fam × ArgFam × Fam) {n : Nat}
-    (h : ∀ x ∈ l, Agree (f x).1 (g x).1 n ∧ ArgsAgree n (f x).2.1 (g x).2.1 ∧
-      Agree (f x).2.2.1 (g x).2.2.1 n ∧ Agree (f x).2.2.2 (g x).2.2.2 n)
-    (W : WorldT n) (v : Val) : restsT (l.map f) n W v ↔ restsT (l.map g) n W v := by
-  unfold restsT
-  refine and_congr Iff.rfl ⟨fun hs p hp => ?_, fun hs p hp => ?_⟩
-  · obtain ⟨x, hm, rfl⟩ := List.mem_map.mp hp
-    exact (Promise.congr (h x hm).1
-      (fun j hj U args => ArgsRest_congr (h x hm).2.1 (h x hm).2.2.1 hj U args)
-      (h x hm).2.2.2).mp (hs (f x) (List.mem_map_of_mem hm))
-  · obtain ⟨x, hm, rfl⟩ := List.mem_map.mp hp
-    exact (Promise.congr (h x hm).1
-      (fun j hj U args => ArgsRest_congr (h x hm).2.1 (h x hm).2.2.1 hj U args)
-      (h x hm).2.2.2).mpr (hs (g x) (List.mem_map_of_mem hm))
-
 /-! ### Bound functions
 
 `.bind` allocates a forwarding descriptor. Its promise is the target's, with
@@ -861,44 +717,6 @@ theorem ArgsShort_transfer {Ps : List Fam} (hA : ∀ A ∈ Ps, Adm A) {n W args}
   intro A hm
   have hadm := hA A (List.mem_of_mem_drop hm)
   exact hadm.mono j _ U hx _ (hadm.down_le n j hj W _ (hdrop A hm))
-
-/-- **A bound function meets the residual signature.** The target meets
-`(Rt, Ps ++ Ds, R)`, the saved receiver is at `Rt` and the saved prefix at
-`Ps`; the object then meets `(Rc, Ds, R)` for any receiver contract `Rc`. -/
-theorem callsT_bound {Rt R Rc : Fam} {Ps Ds : List Fam} {k : Nat} {W : WorldT k}
-    {fs : List (PropKey × Nat)} {tv rv : Val} {pvs : List Tm}
-    (hRt : Adm Rt) (hPs : ∀ A ∈ Ps, Adm A) (hDs : ∀ A ∈ Ds, Adm A)
-    (ht : callsT [(Rt, Ps ++ Ds, R)] k W tv) (hrv : isVal rv = true) (hsr : Scoped 0 rv)
-    (hr : Rt k W rv) (hpv : ArgsT Ps k W pvs) (hvs : CallArguments.Values pvs)
-    (hsp : ∀ a ∈ pvs, Scoped 0 a) :
-    callsT [(Rc, Ds, R)] k W (.objAt fs (.bound tv rv pvs)) := by
-  refine ⟨⟨fs, _, rfl, rfl, ?_⟩, ?_⟩
-  · simp only [Scoped, scopedArgs_iff]
-    exact ⟨ht.1.scoped, hsr, hsp⟩
-  · intro p hp
-    cases List.mem_singleton.mp hp
-    intro j hj U hx hu heap hh r hrv' _ args hargs hacc
-    refine ⟨_, .bound hrv' hargs, ?_⟩
-    cases j with
-    | zero => trivial
-    | succ i =>
-      have hi : i < k := by omega
-      have hxU : WExt (trunc i (Nat.le_of_lt hi) W) (trunc i (Nat.le_succ i) U) := by
-        have hx' := WExt_trunc (Nat.le_succ i) hx
-        rwa [trunc_trunc] at hx'
-      have hu' := WorldAdm_trunc (Nat.le_succ i) hu
-      have hh' := HeapOk_trunc i U heap hh
-      have hr' := hRt.mono i _ _ hxU rv (hRt.down_le k i (Nat.le_of_lt hi) W rv hr)
-      have hpre := ArgsT_transfer hPs hpv i (Nat.le_of_lt hi) _ hxU
-      have hrest := ArgsShort_transfer hDs hacc i (Nat.le_succ i) _ (WExt_refl _)
-      have hall : CallArguments.Values (pvs ++ args) := by
-        intro a hm
-        rcases List.mem_append.mp hm with hm | hm
-        · exact hvs a hm
-        · exact hargs a hm
-      obtain ⟨res, hinv, hsafe⟩ := ht.2 _ (List.mem_singleton_self _) i hi _ hxU hu' heap hh'
-        rv hrv hr' (pvs ++ args) hall (ArgsShort_prefix hpre hrest)
-      exact Or.inr ⟨_, heap, res, WExt_refl _, hu', hinv.step heap, hh', hsafe⟩
 
 /-- Every actual typed position by position at one element contract is in it. -/
 theorem ArgsT_replicate_all {E : Fam} {j W} : ∀ {m : Nat} {xs : List Tm},
@@ -950,55 +768,6 @@ theorem ArgsRest_transfer {Ps : List Fam} {E : ArgFam} (hA : ∀ A ∈ Ps, Adm A
     {n W args} (ha : ArgsRest Ps E n W args) (j : Nat) (hj : j ≤ n) (U : WorldT j)
     (hx : WExt (trunc j hj W) U) : ArgsRest Ps E j U args :=
   ⟨ArgsShort_transfer hA ha.1 j hj U hx, hE.mono j _ U hx _ (hE.down_le n j hj W _ ha.2)⟩
-
-/-- **A bound variadic function meets the residual variadic signature**: the
-positions the prefix did not take, then the rest contract, at any receiver,
-when that contract admits the prefix's values past the fixed positions in front
-of any pack it admits, as an element rest does. -/
-theorem restsT_bound {Rt R Rc : Fam} {E : ArgFam} {Ps : List Fam} {k : Nat} {W : WorldT k}
-    {fs : List (PropKey × Nat)} {tv rv : Val} {pvs : List Tm}
-    (hRt : Adm Rt) (hPs : ∀ A ∈ Ps, Adm A) (hE : Adm E)
-    (ht : restsT [(Rt, Ps, E, R)] k W tv) (hrv : isVal rv = true) (hsr : Scoped 0 rv)
-    (hr : Rt k W rv)
-    (hpv : ArgsT (Ps.take pvs.length) k W (pvs.take Ps.length))
-    (hext : ∀ j (hj : j ≤ k) (U : WorldT j), WExt (trunc j hj W) U →
-      ∀ ys, E j U ys → E j U (pvs.drop Ps.length ++ ys))
-    (hvs : CallArguments.Values pvs) (hsp : ∀ a ∈ pvs, Scoped 0 a) :
-    restsT [(Rc, Ps.drop pvs.length, E, R)] k W (.objAt fs (.bound tv rv pvs)) := by
-  refine ⟨⟨fs, _, rfl, rfl, ?_⟩, ?_⟩
-  · simp only [Scoped, scopedArgs_iff]
-    exact ⟨ht.1.scoped, hsr, hsp⟩
-  · intro p hp
-    cases List.mem_singleton.mp hp
-    intro j hj U hx hu heap hh r hrv' _ args hargs hacc
-    refine ⟨_, .bound hrv' hargs, ?_⟩
-    cases j with
-    | zero => trivial
-    | succ i =>
-      have hi : i < k := by omega
-      have hxU : WExt (trunc i (Nat.le_of_lt hi) W) (trunc i (Nat.le_succ i) U) := by
-        have hx' := WExt_trunc (Nat.le_succ i) hx
-        rwa [trunc_trunc] at hx'
-      have hu' := WorldAdm_trunc (Nat.le_succ i) hu
-      have hh' := HeapOk_trunc i U heap hh
-      have hr' := hRt.mono i _ _ hxU rv (hRt.down_le k i (Nat.le_of_lt hi) W rv hr)
-      have hpre := ArgsT_transfer (fun A hA => hPs A (List.mem_of_mem_take hA)) hpv i
-        (Nat.le_of_lt hi) _ hxU
-      have hrest := ArgsRest_transfer (fun A hA => hPs A (List.mem_of_mem_drop hA)) hE hacc i
-        (Nat.le_succ i) _ (WExt_refl _)
-      have hall : CallArguments.Values (pvs ++ args) := by
-        intro a hm
-        rcases List.mem_append.mp hm with hm | hm
-        · exact hvs a hm
-        · exact hargs a hm
-      obtain ⟨res, hinv, hsafe⟩ := ht.2 _ (List.mem_singleton_self _) i hi _ hxU hu' heap hh'
-        rv hrv hr' (pvs ++ args) hall (ArgsRest_prefix hpre (hext i (Nat.le_of_lt hi) _ hxU) hrest)
-      exact Or.inr ⟨_, heap, res, WExt_refl _, hu', hinv.step heap, hh', hsafe⟩
-
-#print axioms callsT_bound
-#print axioms restsT_bound
-#print axioms callsT_congr
-#print axioms restsT_congr
 
 end Model
 end Verification

@@ -22,8 +22,7 @@ higher-level observations, which is its purpose; what is cheap is the operation,
 not the approximation.
 
 Not every contract is a type. `CtrAdm` requires a contract to survive the world
-growing, and `WorldAdm` lifts that to a world. `badCtr_not_adm` shows why the
-restriction is not optional.
+growing, and `WorldAdm` lifts that to a world.
 -/
 namespace Verification
 namespace Model
@@ -70,15 +69,7 @@ theorem WExt_trans {k} {W V U : WorldT k} (h : WExt W V) (h' : WExt V U) : WExt 
 /-- Lookup. -/
 def lookup {k : Nat} (W : WorldT k) (l : Nat) : Option (Ctr k) := (toList W)[l]?
 
-/-- A world can actually be built: one location whose contract is "points at
-location 0", stated at every lower level. This is the cyclic case. -/
-def selfRef (k : Nat) : WorldT k :=
-  ofList [fun _ _ _ v => v = .obj 0 .absent]
-
-example (k : Nat) : lookup (selfRef k) 0 = some (fun _ _ _ v => v = .obj 0 .absent) := by
-  simp [lookup, selfRef]
-
-/-- And truncation commutes with lookup, which is what any proof will need. -/
+/-- Truncation commutes with lookup, which is what any proof will need. -/
 theorem lookup_trunc {k j : Nat} (h : j ≤ k) (W : WorldT k) (l : Nat) (c : Ctr k)
     (hl : lookup W l = some c) :
     lookup (trunc j h W) l = some (fun i hi w => c i (Nat.lt_of_lt_of_le hi h) w) := by
@@ -142,10 +133,6 @@ theorem trunc_appendW {k j : Nat} (h : j ≤ k) (W : WorldT k) (c : Ctr k) :
       appendW (trunc j h W) (fun i hi w => c i (Nat.lt_of_lt_of_le hi h) w) := by
   simp only [trunc, appendW, toList_ofList, List.map_append, List.map_cons, List.map_nil]
 
-theorem trunc_nil {k j : Nat} (h : j ≤ k) :
-    trunc j h (ofList ([] : List (Ctr k))) = ofList [] := by
-  simp [trunc]
-
 /-- One allocation appends one contract per named field, in order. -/
 def appendWs {k : Nat} (W : WorldT k) (cs : List (Ctr k)) : WorldT k :=
   ofList (toList W ++ cs)
@@ -160,22 +147,12 @@ theorem appendWs_cons {k : Nat} (W : WorldT k) (c : Ctr k) (cs : List (Ctr k)) :
 theorem WExt_appendWs {k : Nat} (W : WorldT k) (cs : List (Ctr k)) : WExt W (appendWs W cs) :=
   ⟨cs, by simp [appendWs]⟩
 
-theorem length_appendWs {k : Nat} (W : WorldT k) (cs : List (Ctr k)) :
-    (toList (appendWs W cs)).length = (toList W).length + cs.length := by
-  simp [appendWs]
-
 theorem lookup_appendWs {k : Nat} (W : WorldT k) (cs : List (Ctr k)) {i : Nat}
     (hi : i < cs.length) :
     lookup (appendWs W cs) ((toList W).length + i) = cs[i]? := by
   simp only [lookup, appendWs, toList_ofList]
   rw [List.getElem?_append_right (by omega)]
   simp
-
-theorem trunc_appendWs {k j : Nat} (h : j ≤ k) (W : WorldT k) (cs : List (Ctr k)) :
-    trunc j h (appendWs W cs) =
-      appendWs (trunc j h W)
-        (cs.map (fun c i hi w => c i (Nat.lt_of_lt_of_le hi h) w)) := by
-  simp only [trunc, appendWs, toList_ofList, List.map_append]
 
 /-! ## Which contracts are types -/
 
@@ -221,24 +198,6 @@ theorem WorldAdm_appendWs {k : Nat} {W : WorldT k} {cs : List (Ctr k)}
 
 theorem WorldAdm_nil {k : Nat} : WorldAdm (ofList ([] : List (Ctr k))) := by
   intro l c hl; simp [lookup] at hl
-
-/-! ### Why the restriction is needed
-
-`Ctr` is every predicate that inspects lower worlds, and some of those are not
-types. This one constrains the *size* of the world, so any allocation destroys
-it -- and a heap can satisfy it beforehand. Execution obligations must therefore
-be stated only over admissible worlds, or no function that allocates could ever
-be safe. -/
-
-
-def badCtr {k : Nat} : Ctr k := fun _ _ W _ => (toList W).length = 1
-
-theorem badCtr_not_adm : ¬ CtrAdm (badCtr (k := 2)) := by
-  intro h
-  let c : Ctr 1 := fun _ _ _ _ => True
-  have hbad := h 1 (by omega) (ofList [c]) (ofList [c, c]) ⟨[c], by simp⟩ .nul
-    (by simp [badCtr])
-  simp [badCtr] at hbad
 
 end Model
 end Verification

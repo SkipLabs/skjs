@@ -16,38 +16,6 @@ abbrev Fields := List (PropKey × Fam)
 def refsT (A : Fields) (Bs : List Fields) : Fam := fun n W v =>
   recT A n W v ∧ ∀ B ∈ Bs, recT B n W v
 
-theorem singleton (A : Fields) (n : Nat) (W : WorldT n) (v : Val) :
-    refsT A [] n W v ↔ recT A n W v := by simp [refsT]
-
-theorem cell (A : Fam) (n : Nat) (W : WorldT n) (v : Val) :
-    refsT [(valueField, A)] [] n W v ↔ refT A n W v := by simp [refsT, refT]
-
-/-- One operand naming the fields of two: a value has one own-field map, so
-the two operands' fields are fields of that one map, and one operand listing
-both says exactly what the two say. -/
-theorem recT_append (A C : Fields) (n : Nat) (W : WorldT n) (v : Val) :
-    recT (A ++ C) n W v ↔ interT (recT A) (recT C) n W v := by
-  constructor
-  · rintro ⟨flds, rfl, h⟩
-    exact ⟨⟨flds, rfl, fun f T hm => h f T (List.mem_append_left _ hm)⟩,
-      ⟨flds, rfl, fun f T hm => h f T (List.mem_append_right _ hm)⟩⟩
-  · rintro ⟨⟨flds, rfl, ha⟩, ⟨flds', he, hc⟩⟩
-    cases he
-    refine ⟨flds, rfl, fun f T hm => ?_⟩
-    rcases List.mem_append.mp hm with h | h
-    · exact ha f T h
-    · exact hc f T h
-
-/-- The conjunction of two conjunctions, with their first operands joined
-into one: the record the meet of two object contracts is, whose named fields
-the read rules find in its first operand. -/
-theorem flatten (A C : Fields) (Bs Ds : List Fields) (n : Nat) (W : WorldT n) (v : Val) :
-    refsT (A ++ C) (Bs ++ Ds) n W v ↔ interT (refsT A Bs) (refsT C Ds) n W v := by
-  simp only [refsT, recT_append, interT, List.mem_append, or_imp, forall_and]
-  constructor
-  · rintro ⟨⟨ha, hc⟩, hb, hd⟩; exact ⟨⟨ha, hb⟩, hc, hd⟩
-  · rintro ⟨⟨ha, hb⟩, hc, hd⟩; exact ⟨⟨ha, hc⟩, hb, hd⟩
-
 theorem adm (A : Fields) (Bs : List Fields) : Adm (refsT A Bs) := by
   constructor
   · intro n W v h
@@ -137,17 +105,6 @@ theorem operands_agree {A B : Fields} {Bs : List Fields} {n W v} {f : PropKey} {
   intro j hj U u
   exact (ha j hj U u).symm.trans (hc j hj U u)
 
-/-- Every operand constrains the same object, so a field any of them names is
-a field of that object, with the contract that operand gives it. -/
-theorem refsT_field {A : Fields} {Bs : List Fields} {n W v} {f : PropKey} {P : Fam}
-    (h : refsT A Bs n W v) (hm : (f, P) ∈ A ∨ ∃ B ∈ Bs, (f, P) ∈ B) :
-    ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr n),
-      v = .objAt flds .absent ∧ flds.lookup f = some l ∧ lookup W l = some c ∧
-      ∀ (j : Nat) (hj : j < n) (W' : WorldT j) (u : Val), c j hj W' u ↔ P j W' u := by
-  rcases hm with hm | ⟨B, hB, hm⟩
-  · exact recT_at hm h.1
-  · exact recT_at hm (h.2 B hB)
-
 /-- A read of a named field satisfies every operand constraining that field,
 at every available lower budget. -/
 theorem read_all {A : Fields} {Bs : List Fields} {n W heap}
@@ -189,6 +146,32 @@ theorem cyclic_inhabited (n : Nat) :
     refsT [(valueField, R)] [[(valueField, R)]] n (ofList [res R]) (.obj 0 .absent) :=
   ⟨cyclic_heap_ok n, (duplicate [(valueField, R)] n _ _).mpr
     ((R_unfold n _ _).mp (R_cyclic n))⟩
+
+/-- One operand naming the fields of two: a value has one own-field map, so
+the two operands' fields are fields of that one map, and one operand listing
+both says exactly what the two say. -/
+theorem recT_append (A C : Fields) (n : Nat) (W : WorldT n) (v : Val) :
+    recT (A ++ C) n W v ↔ interT (recT A) (recT C) n W v := by
+  constructor
+  · rintro ⟨flds, rfl, h⟩
+    exact ⟨⟨flds, rfl, fun f T hm => h f T (List.mem_append_left _ hm)⟩,
+      ⟨flds, rfl, fun f T hm => h f T (List.mem_append_right _ hm)⟩⟩
+  · rintro ⟨⟨flds, rfl, ha⟩, ⟨flds', he, hc⟩⟩
+    cases he
+    refine ⟨flds, rfl, fun f T hm => ?_⟩
+    rcases List.mem_append.mp hm with h | h
+    · exact ha f T h
+    · exact hc f T h
+
+/-- The conjunction of two conjunctions, with their first operands joined
+into one: the record the meet of two object contracts is, whose named fields
+the read rules find in its first operand. -/
+theorem flatten (A C : Fields) (Bs Ds : List Fields) (n : Nat) (W : WorldT n) (v : Val) :
+    refsT (A ++ C) (Bs ++ Ds) n W v ↔ interT (refsT A Bs) (refsT C Ds) n W v := by
+  simp only [refsT, recT_append, interT, List.mem_append, or_imp, forall_and]
+  constructor
+  · rintro ⟨⟨ha, hc⟩, hb, hd⟩; exact ⟨⟨ha, hb⟩, hc, hd⟩
+  · rintro ⟨⟨ha, hb⟩, hc, hd⟩; exact ⟨⟨ha, hc⟩, hb, hd⟩
 
 /-- Incompatible contracts must remain visible at zero; dropping the entire
 conjunction as bottom would not preserve the current indexed interpretation. -/

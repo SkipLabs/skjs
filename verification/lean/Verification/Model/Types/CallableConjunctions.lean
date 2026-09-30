@@ -21,42 +21,6 @@ theorem props_merge (A C : Fields) (Bs Ds : List Fields) (n W v) :
   · rintro ⟨ha,hb,hc,hd⟩; exact ⟨⟨ha,hb⟩,hc,hd⟩
   · rintro ⟨⟨ha,hb⟩,hc,hd⟩; exact ⟨ha,hb,hc,hd⟩
 
-/-- A callability-neutral bag needs no new clause: plain bags and callable
-bags with no invocation promises cover exactly the scoped bag values whose code,
-if any, has `[[Call]]`. A class constructor's has only `[[Construct]]`, so a
-class value is neither. -/
-theorem neutral_iff (A : Fields) (Bs : List Fields) (n W v) :
-    unionT (ReferenceConjunctions.refsT A Bs) (objectsT A Bs []) n W v ↔
-      propsT A Bs n W v ∧ Scoped 0 v ∧
-        ∀ fs c, v = .objAt fs c → c = .absent ∨ c.callable = true := by
-  constructor
-  · intro h
-    rcases h with h | h
-    · refine ⟨⟨recT_bag h.1, fun B hb => recT_bag (h.2 B hb)⟩, ?_, ?_⟩
-      · obtain ⟨flds,rfl,_⟩ := h.1
-        trivial
-      · obtain ⟨flds,rfl,_⟩ := h.1
-        intro fs c he
-        cases he
-        exact .inl rfl
-    · refine ⟨h.1,h.2.1.scoped, ?_⟩
-      obtain ⟨fs', code, he, hc, -⟩ := h.2.1
-      intro fs c hv
-      rw [hv] at he
-      cases he
-      exact .inr hc
-  · rintro ⟨h,hs,hnc⟩
-    obtain ⟨flds,code,rfl,_,hr⟩ := h.1
-    rcases hnc flds code rfl with rfl | hc
-    · left
-      refine ⟨hr,?_⟩
-      intro B hb
-      obtain ⟨flds',code,he,_,hr⟩ := h.2 B hb
-      cases he
-      exact hr
-    · right
-      exact ⟨h,⟨flds,_,rfl,hc,hs⟩,by simp⟩
-
 theorem merge (A C : Fields) (Bs Ds : List Fields) (L M : List (Arrow Fam)) (n W v) :
     objectsT A (Bs ++ C :: Ds) (L ++ M) n W v ↔
       interT (objectsT A Bs L) (objectsT C Ds M) n W v := by
@@ -96,6 +60,42 @@ theorem congr_below {α : Type} (X Y : α → Fam) (a : List (PropKey × α))
   constructor <;> intro hb b hm
   · exact (bagT_contractive X Y b n h W v).mp (hb b hm)
   · exact (bagT_contractive X Y b n h W v).mpr (hb b hm)
+
+/-- A callability-neutral bag needs no new clause: plain bags and callable
+bags with no invocation promises cover exactly the scoped bag values whose code,
+if any, has `[[Call]]`. A class constructor's has only `[[Construct]]`, so a
+class value is neither. -/
+theorem neutral_iff (A : Fields) (Bs : List Fields) (n W v) :
+    unionT (ReferenceConjunctions.refsT A Bs) (objectsT A Bs []) n W v ↔
+      propsT A Bs n W v ∧ Scoped 0 v ∧
+        ∀ fs c, v = .objAt fs c → c = .absent ∨ c.callable = true := by
+  constructor
+  · intro h
+    rcases h with h | h
+    · refine ⟨⟨recT_bag h.1, fun B hb => recT_bag (h.2 B hb)⟩, ?_, ?_⟩
+      · obtain ⟨flds,rfl,_⟩ := h.1
+        trivial
+      · obtain ⟨flds,rfl,_⟩ := h.1
+        intro fs c he
+        cases he
+        exact .inl rfl
+    · refine ⟨h.1,h.2.1.scoped, ?_⟩
+      obtain ⟨fs', code, he, hc, -⟩ := h.2.1
+      intro fs c hv
+      rw [hv] at he
+      cases he
+      exact .inr hc
+  · rintro ⟨h,hs,hnc⟩
+    obtain ⟨flds,code,rfl,_,hr⟩ := h.1
+    rcases hnc flds code rfl with rfl | hc
+    · left
+      refine ⟨hr,?_⟩
+      intro B hb
+      obtain ⟨flds',code,he,_,hr⟩ := h.2 B hb
+      cases he
+      exact hr
+    · right
+      exact ⟨h,⟨flds,_,rfl,hc,hs⟩,by simp⟩
 
 #print axioms neutral_iff
 #print axioms merge

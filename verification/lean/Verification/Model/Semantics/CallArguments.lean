@@ -65,12 +65,6 @@ theorem length_preserved (s : ArgStep h args h' args') : args'.length = args.len
   | head => rfl
   | tail _ _ ih => simpa using congrArg Nat.succ ih
 
-theorem values_no_step (hv : Values args) : ¬ ArgStep h args h' args' := by
-  intro s
-  induction s with
-  | head hs => exact value_no_step (hv _ (by simp)) hs
-  | tail _ _ ih => exact ih (fun a ha => hv a (by simp [ha]))
-
 theorem deterministic (s : ArgStep h args h1 args1) (t : ArgStep h args h2 args2) :
     h1 = h2 ∧ args1 = args2 := by
   induction s generalizing h2 args2 with
@@ -90,34 +84,6 @@ theorem keep_prefix (hv : Values vs) (s : ArgStep h args h' args') :
   | nil => exact s
   | cons v vs ih =>
     exact .tail (hv v (by simp)) (ih (fun a ha => hv a (by simp [ha])))
-
-/-- Inversion of preparation through completed operands: every possible step
-retains the entire prefix, not just the particular step constructed above. -/
-theorem prefix_iff (hv : Values vs) :
-    ArgStep h (vs ++ args) h' out ↔
-      ∃ rest, out = vs ++ rest ∧ ArgStep h args h' rest := by
-  constructor
-  · intro step
-    induction vs generalizing out with
-    | nil => exact ⟨out,rfl,step⟩
-    | cons v vs ih =>
-      cases step with
-      | head hs => exact False.elim (value_no_step (hv v (by simp)) hs)
-      | tail _ hs =>
-        obtain ⟨rest,rfl,hr⟩ := ih (fun a ha => hv a (by simp [ha])) hs
-        exact ⟨rest,rfl,hr⟩
-  · rintro ⟨rest,rfl,step⟩
-    exact keep_prefix hv step
-
-/-- A singleton argument list has exactly the existing argument-step behavior. -/
-theorem singleton : ArgStep h [a] h' args' ↔ ∃ a', args' = [a'] ∧ Step h a h' a' := by
-  constructor
-  · intro s
-    cases s with
-    | head hs => exact ⟨_,rfl,hs⟩
-    | tail _ hs => cases hs
-  · rintro ⟨a',rfl,hs⟩
-    exact .head hs
 
 /-- Argument preparation selects exactly one position after a completed
 prefix. This is the indexed form used by native call reduction. -/
@@ -171,9 +137,6 @@ inductive Prepare : Heap → Frame → Heap → Frame → Prop where
       isVal f = true → isVal r = true → args = pre ++ .spread (.arr ls) :: post → Values pre →
       readElems h ls = some vs → Prepare h ⟨f,r,args⟩ h ⟨f,r,pre ++ vs ++ post⟩
 
-def Frame.ready (f : Frame) : Prop :=
-  isVal f.callee = true ∧ isVal f.recv = true ∧ Values f.args
-
 theorem prepare_deterministic (s : Prepare h f h1 f1) (t : Prepare h f h2 f2) :
     h1 = h2 ∧ f1 = f2 := by
   cases s with
@@ -209,37 +172,6 @@ theorem prepare_deterministic (s : Prepare h f h1 f1) (t : Prepare h f h2 f2) :
       cases hx
       cases Option.some.inj (hre.symm.trans hre')
       exact ⟨rfl, rfl⟩
-
-theorem callee_preserved (hv : isVal f.callee = true) (s : Prepare h f h' f') :
-    f'.callee = f.callee := by
-  cases s with
-  | callee hs => exact False.elim (value_no_step hv hs)
-  | recv _ _ => rfl
-  | args _ _ _ => rfl
-  | splice _ _ _ _ _ => rfl
-
-theorem ready_no_prepare (hf : f.ready) : ¬ Prepare h f h' f' := by
-  intro s
-  cases s with
-  | callee hs => exact value_no_step hf.1 hs
-  | recv _ hs => exact value_no_step hf.2.1 hs
-  | args _ _ hs => exact values_no_step hf.2.2 hs
-  | splice _ _ he _ _ => exact spread_not_values he hf.2.2
-
-/-- Current unary evaluation embeds in this preparation interface before beta,
-unless the one actual is a spread, which may stand for any number. -/
-theorem unary_step (hn : ∀ x, a ≠ .spread x) (s : Prepare h ⟨f,.undef,[a]⟩ h' frame) :
-    ∃ f' a', frame = ⟨f',.undef,[a']⟩ ∧ Step h (.app f a) h' (.app f' a') := by
-  cases s with
-  | callee hs => exact ⟨_,_,rfl,.appL hs⟩
-  | recv _ hs => exact False.elim (value_no_step rfl hs)
-  | args hv _ hs =>
-    obtain ⟨a',rfl,ha⟩ := singleton.mp hs
-    exact ⟨_,_,rfl,.appR hv ha⟩
-  | @splice _ _ _ _ pre post ls vs _ _ he _ _ =>
-    cases pre with
-    | nil => cases he; exact False.elim (hn _ rfl)
-    | cons _ pre => cases pre <;> simp at he
 
 theorem parameters_length (n : Nat) (args : List Tm) :
     (parameters n args).length = n := by
@@ -313,10 +245,6 @@ theorem parameters_property {P : Tm → Prop} (hu : P .undef)
       · exact ih (fun a h => ha a (by simp [h])) a hm
 
 
-theorem prepared_parameters_values {frame : Frame} (hf : frame.ready) : Values (parameters arity frame.args) :=
-  parameters_property rfl hf.2.2
-
-
 /-- Initializers of an allocation reduce exactly as actual arguments do. -/
 theorem Step.makeArgs {c : CallCode} {ns : List PropKey} {h h' : Heap} {args args' : List Tm}
     (hs : ArgStep h args h' args') : Step h (.makeAt c ns args) h' (.makeAt c ns args') := by
@@ -384,20 +312,13 @@ theorem construction_step {fs : List (PropKey × Nat)} {c : CallCode} {enter : L
   split at h <;> cases h
   exact .constructGraph hv
 
-theorem invoke_ready (hi : Invoke frame body) : frame.ready := by
-  cases hi with
-  | bound hr hv => exact ⟨rfl, hr, hv⟩
-  | graph hr hv => exact ⟨rfl, hr, hv⟩
-
 theorem invoke_deterministic (hi : Invoke frame body) (hi' : Invoke frame body') :
     body = body' := by
   cases hi <;> cases hi' <;> rfl
 
-theorem invoke_no_prepare (hi : Invoke frame body) : ¬ Prepare h frame h' frame' :=
-  ready_no_prepare (invoke_ready hi)
-
-/-- Readiness is sufficient for dispatch precisely when the saved callee has
-invocation code. No scope or type test is added to the untyped machine. -/
+/-- A frame whose operands are values dispatches precisely when its saved
+callee has invocation code. No scope or type test is added to the untyped
+machine. -/
 theorem invoke_iff : Invoke frame result ↔
     ∃ fs code, frame.callee = .objAt fs code ∧ isVal frame.recv = true ∧ Values frame.args ∧
       dispatch code frame.recv frame.args = some result := by
@@ -414,56 +335,12 @@ theorem invoke_iff : Invoke frame result ↔
     | bound target r₀ pre => cases hd; exact .bound hr hv
     | graph arity E K start caps kind rest => cases kind <;> cases hd; exact .graph hr hv
 
-theorem invoke_closed (hi : Invoke frame result) (hf : Scoped 0 frame.callee)
-    (hr : Scoped 0 frame.recv) (ha : ∀ a ∈ frame.args, Scoped 0 a) : Scoped 0 result := by
-  cases hi with
-  | bound _ _ =>
-    simp only [Scoped, scopedArgs_iff] at hf ⊢
-    refine ⟨hf.1, hf.2.1, fun a hm => ?_⟩
-    rcases List.mem_append.mp hm with hm | hm
-    · exact hf.2.2 a hm
-    · exact ha a hm
-  | @graph r args fs arity E K start caps rest _ _ =>
-    simp only [Scoped, scopedArgs_iff] at hf
-    have hL : ∀ a ∈ r :: parameters arity args ++ caps, Scoped 0 a := by
-      intro a hm
-      rcases List.mem_cons.mp hm with rfl | hm
-      · exact hr
-      rcases List.mem_append.mp hm with hm | hm
-      · exact parameters_property (by trivial) ha a hm
-      · exact hf a hm
-    cases rest with
-    | false => simpa [graphEntry, Scoped] using hL
-    | true =>
-      simp only [graphEntry, Scoped, scopedArgs_iff]
-      refine ⟨fun a hm => ha a (List.mem_of_mem_drop hm), fun a hm => ?_, trivial⟩
-      rcases List.mem_cons.mp hm with rfl | hm
-      · simp [Scoped]
-      · exact (hL a hm).mono (Nat.zero_le _)
-
 /-- Prepared list dispatch is a step of the maintained term machine. -/
 theorem Invoke.step (hi : Invoke frame body) (h : Heap) :
     Step h (.invoke frame.callee frame.recv frame.args) h body := by
   cases hi with
   | bound hr hv => exact .callBound hr hv
   | graph hr hv => exact .callGraph hr hv
-
-/-- A ready native call can only dispatch its saved code, without a heap change. -/
-theorem ready_step_iff (hf : frame.ready) :
-    Step h (.invoke frame.callee frame.recv frame.args) h' body ↔ h' = h ∧ Invoke frame body := by
-  rcases frame with ⟨f, r, args⟩
-  constructor
-  · intro hs
-    cases hs with
-    | callL hs => exact False.elim (value_no_step hf.1 hs)
-    | callRecv _ hs => exact False.elim (value_no_step hf.2.1 hs)
-    | callArg _ _ hg _ hs =>
-      exact False.elim (value_no_step (hf.2.2 _ (List.mem_of_getElem? hg)) hs)
-    | callBound hr hv => exact ⟨rfl, .bound hr hv⟩
-    | callGraph hr hv => exact ⟨rfl, .graph hr hv⟩
-    | callSpread _ _ he _ _ => exact False.elim (spread_not_values he hf.2.2)
-  · rintro ⟨rfl, hi⟩
-    exact hi.step _
 
 /-- Preparation and native operand reduction are the same transition. -/
 theorem Prepare.step (hp : Prepare h frame h' frame') :
@@ -497,20 +374,6 @@ theorem call_step_iff : Step h (.invoke f r args) h' result ↔
     · exact hp.step
     · exact hi.step _
 
-/-- The source pipeline's singleton application view is preserved. -/
-theorem unary_step_iff (hn : ∀ x, a ≠ .spread x) : Step h (.app f a) h' result ↔
-    (∃ f' a', Prepare h ⟨f, .undef, [a]⟩ h' ⟨f', .undef, [a']⟩ ∧ result = .app f' a') ∨
-    (h' = h ∧ Invoke ⟨f, .undef, [a]⟩ result) := by
-  rw [call_step_iff]
-  constructor
-  · rintro (⟨frame, hp, he⟩ | hi)
-    · obtain ⟨f', a', rfl, _⟩ := unary_step hn hp
-      exact Or.inl ⟨f', a', hp, he⟩
-    · exact Or.inr hi
-  · rintro (⟨f', a', hp, he⟩ | hi)
-    · exact Or.inl ⟨_, hp, he⟩
-    · exact Or.inr hi
-
 /-- A forwarding descriptor yields the same term whatever receiver it is
 invoked with: the saved one replaces it. -/
 theorem bound_ignores_receiver {fs t r₀ pre r r' args result result'}
@@ -537,18 +400,12 @@ theorem rebind_keeps_receiver {h : Heap} {fs gs t r₀ r₁ p₀ p₁ r args}
 #print axioms bound_ignores_receiver
 #print axioms rebind_keeps_receiver
 #print axioms parameter_at
-#print axioms prefix_iff
 #print axioms deterministic
 #print axioms prepare_deterministic
-#print axioms unary_step
 #print axioms invoke_deterministic
-#print axioms invoke_no_prepare
 #print axioms invoke_iff
-#print axioms invoke_closed
 #print axioms focus_iff
 #print axioms Prepare.step
 #print axioms call_step_iff
 #print axioms Invoke.step
-#print axioms ready_step_iff
-#print axioms unary_step_iff
 end Verification.Model.CallArguments

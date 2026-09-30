@@ -8,9 +8,7 @@ world truncated to match, and stable under the world growing.
 
 A reference is built from a *semantic* element type and compares the stored
 contract with it at strictly lower budget. Nothing syntactic is involved, so a
-type parameter under a reference is interpreted rather than ignored --
-`ref_param_universal` -- which is the failure that motivated worlds in the first
-place.
+type parameter under a reference is interpreted rather than ignored.
 
 Because a reference reads its element type only below the current budget it is a
 **guard**, so `refT` is contractive and the guarded fixed point applies: the
@@ -19,10 +17,6 @@ coherent, and that diagonal is a fixed point. This is Banach's theorem on a
 space where distance is the first budget at which two families disagree, and it
 needs no monotonicity -- which is how it survives recursion through negative
 positions.
-
-The fixed point is also *unique*: any family satisfying the equation is it. So a
-recursive type is determined by its equation rather than merely solving it, and
-two spellings of one recursion are the same type.
 -/
 namespace Verification
 namespace Model
@@ -145,17 +139,6 @@ symbol, an opaque identity. -/
 def bigintT : Fam := fun _ _ v => ∃ i, v = .bigint i
 def symbolT : Fam := fun _ _ v => ∃ i, v = .sym i
 
-/-! ### A rigid parameter under a reference -/
-
-
-theorem ref_param_inhabited (F : Fam) (k : Nat) :
-    refT F k (ofList [res F]) (.obj 0 .absent) :=
-  refT_cell (c := res F) (by simp [lookup]) (fun _ _ _ _ => Iff.rfl)
-
-theorem ref_param_universal :
-    ∀ (F : Fam) (k : Nat), ∃ (W : WorldT k) (v : Val), refT F k W v :=
-  fun F k => ⟨ofList [res F], .obj 0 .absent, ref_param_inhabited F k⟩
-
 /-! ## The guarded fixed point -/
 
 
@@ -216,19 +199,6 @@ theorem refT_contractive : Contractive refT := by
   · exact (h j hj W' u).trans (hag j hj W' u)
   · exact (h j hj W' u).trans (hag j hj W' u).symm
 
-/-- **The fixed point is unique.** Any family satisfying the equation *is* it,
-so a recursive type is determined by its equation and not merely a solution of
-it. -/
-theorem fix_unique (F : Fam → Fam) (hF : Contractive F) (U : Fam)
-    (hU : ∀ (n : Nat) (W : WorldT n) (v : Val), U n W v ↔ F U n W v) :
-    ∀ (n : Nat) (W : WorldT n) (v : Val), U n W v ↔ fixF F n W v := by
-  intro n
-  induction n using Nat.strongRecOn with
-  | ind n ih =>
-    intro W v
-    rw [hU n W v, fix_unfold F hF n W v]
-    exact hF n U (fixF F) (fun m hm W' v' => ih m hm W' v') W v
-
 /-! ## `R = ref R` -/
 
 
@@ -242,32 +212,6 @@ itself, holding a reference to that same location. -/
 theorem R_cyclic (n : Nat) : R n (ofList [res R]) (.obj 0 .absent) :=
   (R_unfold n _ _).mpr (refT_cell (c := res R) (by simp [lookup]) (fun _ _ _ _ => Iff.rfl))
 
-/-- And `R` is not everything: a non-location is excluded at every level. -/
-theorem R_not_trivial (n : Nat) (W : WorldT n) : ¬ R n W .nul := by
-  intro h
-  obtain ⟨flds, l, c, hv, -, -, -⟩ := refT_iff.mp ((R_unfold n W _).mp h)
-  exact absurd hv (by simp)
-
-/-- A reference respects equality of its element type. -/
-theorem refT_congr {A B : Fam} (h : ∀ (n : Nat) (W : WorldT n) (v : Val), A n W v ↔ B n W v) :
-    ∀ (n : Nat) (W : WorldT n) (v : Val), refT A n W v ↔ refT B n W v :=
-  fun n => refT_contractive n A B (fun m _ W v => h m W v)
-
-theorem refT_refT_contractive : Contractive (fun X => refT (refT X)) := by
-  intro n T U hag W v
-  exact refT_contractive n (refT T) (refT U)
-    (fun m hm => refT_contractive m T U (fun m' hm' => hag m' (by omega))) W v
-
-/-- **`μX. ref X` and `μX. ref (ref X)` are the same type**: an instance of
-uniqueness, and the smallest case where two spellings of one recursive type
-must be identified. -/
-theorem R_eq_ref_ref :
-    ∀ (n : Nat) (W : WorldT n) (v : Val), R n W v ↔ fixF (fun X => refT (refT X)) n W v := by
-  refine fix_unique _ refT_refT_contractive R ?_
-  intro n W v
-  exact (R_unfold n W v).trans
-    (refT_contractive n R (refT R) (fun m _ W' v' => R_unfold m W' v') W v)
-
 /-- Allocation cannot invalidate a reference claim: a future world keeps every
 contract it already had. -/
 theorem recT_mono (fs : List (PropKey × Fam)) (k : Nat) (W W' : WorldT k) (h : WExt W W')
@@ -278,10 +222,6 @@ theorem recT_mono (fs : List (PropKey × Fam)) (k : Nat) (W W' : WorldT k) (h : 
   obtain ⟨l, c, hf, hl, hag⟩ := hfs f T hm
   exact ⟨l, c, hf, WExt_lookup h hl, hag⟩
 
-theorem refT_mono (T : Fam) (k : Nat) (W W' : WorldT k) (h : WExt W W') (v : Val)
-    (hv : refT T k W v) : refT T k W' v :=
-  recT_mono _ k W W' h v hv
-
 /-! ## Admissibility -/
 
 
@@ -291,8 +231,6 @@ structure Adm {α : Type} (T : WorldFamily α) : Prop where
   mono : ∀ (n : Nat) (W W' : WorldT n), WExt W W' → ∀ v, T n W v → T n W' v
 
 theorem nulT_adm : Adm nulT := ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
-theorem undefT_adm : Adm undefT := ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
-
 theorem boolT_adm : Adm boolT := ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
 
 theorem numT_adm : Adm numT := ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
@@ -680,12 +618,6 @@ theorem optT_nil {k} {W : WorldT k} {flds : List (PropKey × Nat)} :
     optT [] k W (.objAt flds .absent) :=
   ⟨flds, rfl, fun _ hm => by simp at hm, fun _ hm => by simp at hm⟩
 
-/-- A record's object is plain, so no optional field constrains it. -/
-theorem recT_optT_nil {fs : Fields} {k} {W : WorldT k} {v : Val} (h : recT fs k W v) :
-    optT [] k W v := by
-  obtain ⟨flds, rfl, -⟩ := h
-  exact optT_nil
-
 /-- What optional fields say of one present key: its location's contract is
 the field's type, or implies it for a readonly field. -/
 theorem optT_present {fs : List (OptionalField Fam)} {o : OptionalField Fam} (hm : o ∈ fs)
@@ -825,19 +757,6 @@ theorem empty_bool_dict_missing {k : Nat} {W : WorldT k} {h : Heap} {f : String}
   refine ⟨⟨[], rfl, rfl, ?_⟩, .readMissing (by simp) (by simp), ?_⟩
   · intro f' l hl; simp at hl
   · simp [boolT]
-
-/-- A key the object lacks is read from its prototype, one step per link. -/
-theorem proto_read_delegates {h : Heap} {p : Val} (hp : h[0]? = some p) :
-    Step h (.readAt "x" (.objAt [(CallArguments.protoField, 0)] .absent)) h (.readAt "x" p) :=
-  .readProto (by decide) (by decide) hp
-
-/-- An object with a prototype is no dictionary: a key it lacks is not
-`undefined` but whatever the prototype holds. -/
-theorem proto_object_not_dict {K : IndexKeys} {A : Fam} {k : Nat} {W : WorldT k} {l : Nat} :
-    ¬ dictViewT K A k W (.objAt [(CallArguments.protoField, l)] .absent) := by
-  rintro ⟨flds, he, hp, -⟩
-  cases he
-  simp [List.lookup] at hp
 
 theorem viewT_at {fs : Fields} {f : PropKey} {A : Fam} (hm : (f, A) ∈ fs)
     {k} {W : WorldT k} {v} (h : viewT fs k W v) :
@@ -1217,16 +1136,6 @@ theorem Adm.of_transfer {α : Type} {A : WorldFamily α}
 be stored. -/
 def ValOnly (A : Fam) : Prop := ∀ (j : Nat) (W : WorldT j) (a : Val), A j W a → isVal a = true
 
-theorem nulT_valOnly : ValOnly nulT := by rintro _ _ _ rfl; rfl
-theorem undefT_valOnly : ValOnly undefT := by rintro _ _ _ rfl; rfl
-
-theorem boolT_valOnly : ValOnly boolT := by rintro _ _ _ (rfl | rfl) <;> rfl
-
-theorem recT_valOnly (fs : List (PropKey × Fam)) : ValOnly (recT fs) := by
-  rintro _ _ _ ⟨flds, rfl, -⟩; rfl
-
-theorem refT_valOnly (A : Fam) : ValOnly (refT A) := recT_valOnly _
-
 /-- Restricting a semantic type to a contract is level-independent. -/
 theorem trunc_res {k j : Nat} (h : j ≤ k) (T : Fam) :
     trunc j h (ofList [res T]) = ofList [res T] := by
@@ -1243,15 +1152,6 @@ non-expansive, so a recursive node `μX. X ∨ null` is excluded the same way
 def unionT (A B : Fam) : Fam := fun n W v => A n W v ∨ B n W v
 
 def interT (A B : Fam) : Fam := fun n W v => A n W v ∧ B n W v
-
-theorem unionT_comm (A B : Fam) (n : Nat) (W : WorldT n) (v : Val) :
-    unionT A B n W v ↔ unionT B A n W v := or_comm
-
-theorem unionT_idemp (A : Fam) (n : Nat) (W : WorldT n) (v : Val) :
-    unionT A A n W v ↔ A n W v := ⟨fun h => h.elim id id, Or.inl⟩
-
-theorem unionT_assoc (A B C : Fam) (n : Nat) (W : WorldT n) (v : Val) :
-    unionT (unionT A B) C n W v ↔ unionT A (unionT B C) n W v := or_assoc
 
 theorem unionT_adm (A B : Fam) (hA : Adm A) (hB : Adm B) : Adm (unionT A B) := by
   constructor
@@ -1270,13 +1170,6 @@ theorem interT_adm (A B : Fam) (hA : Adm A) (hB : Adm B) : Adm (interT A B) := b
     exact ⟨hA.down n W v hv.1, hB.down n W v hv.2⟩
   · intro n W W' hx v hv
     exact ⟨hA.mono n W W' hx v hv.1, hB.mono n W W' hx v hv.2⟩
-
-theorem unionT_valOnly (A B : Fam) (hA : ValOnly A) (hB : ValOnly B) :
-    ValOnly (unionT A B) := by
-  intro j W a ha
-  rcases ha with h | h
-  · exact hA j W a h
-  · exact hB j W a h
 
 end Model
 end Verification
