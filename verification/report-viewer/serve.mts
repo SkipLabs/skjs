@@ -12,7 +12,7 @@ import { promisify } from "node:util";
 import type { Bundle, PipelineOutcome } from "./types.ts";
 import { fieldOf, messageOf, outputOf } from "../tools/thrown.mts";
 import { cases } from "../ocaml-producer/cases.mts";
-import { checkApart, searchDepth } from "../ocaml-producer/check.mts";
+import { checkApart, isProducer, searchDepth, type Producer } from "../ocaml-producer/check.mts";
 import type { SeenDiagnostic } from "../tools/declaration-graph.mts";
 
 /** What the child processes below are run with, decided once. */
@@ -93,13 +93,12 @@ async function repositoryPath(relative: string) {
 }
 
 /**
- * The producers the reader can ask for, each a collector below. A query string
- * arrives from a browser, so a name that is not one of these names nothing to
- * run and reads as the default rather than being passed on.
+ * The producers the reader can ask for, those the pipeline's one entry runs.
+ * A query string arrives from a browser, so a name that is not one of these
+ * names nothing to run and reads as the default rather than being passed on.
  */
-const PRODUCERS = new Set(["tsc", "ocaml"]);
-const producerAsked = (asked: string | null) =>
-  asked && PRODUCERS.has(asked) ? asked : "ocaml";
+const producerAsked = (asked: string | null): Producer =>
+  asked && isProducer(asked) ? asked : "ocaml";
 
 async function hasVerifier() {
   return fs.access(path.join(REPO, VERIFIER)).then(
@@ -108,82 +107,19 @@ async function hasVerifier() {
   );
 }
 
-// Verification is not an option the caller turns on: if a verifier is present it
-// runs, so what is displayed is always checked against the claims on screen.
-// One producer: what TypeScript's own checker claims at the source's sites,
-// through the same verifier, including primitive field assertions at direct
-// statement-entry reads. tests/tsc-claims/README.md records its limits.
-async function tscAnalyse(
-  relative: string,
-  source: string,
-  tmp: string,
-  options: RunOptions,
-): Promise<Bundle> {
-  const startedAt = Date.now();
-  try {
-    const claims = path.join(tmp, "tsc-claims.mtson");
-    await execFile(
-      process.execPath,
-      ["verification/tools/tsc-claims.mts", relative, "--out", claims],
-      options,
-    );
-    const args = [
-      "verification/tools/annotate-source.mts",
-      relative,
-      "--claims",
-      claims,
-      "--producer",
-      "tsc",
-      "--diagnostics",
-      claims + ".diagnostics.txt",
-      "--format",
-      "source-claims",
-      "--stdout",
-      "json",
-    ];
-    const verify = await hasVerifier();
-    if (verify) args.push("--verify", VERIFIER);
-    const result = await execFile(process.execPath, args, options);
-    const bundle = JSON.parse(String(result.stdout));
-    const outcomes = JSON.parse(await fs.readFile(claims + ".outcomes.json", "utf8"));
-    for (const fn of bundle.manifest.functions) {
-      if (typeof outcomes[fn.name] === "boolean") fn.collection = {
-        completion: outcomes[fn.name] ? "complete" : "aborted",
-        quality: "unverified", mode: "normal",
-      };
-    }
-    const digest = crypto
-      .createHash("sha256")
-      .update(source)
-      .digest("hex");
-    if (bundle.manifest.source.sha256 !== digest)
-      throw new Error("Report source identity mismatch");
-    return {
-      source,
-      ...bundle,
-      collection: {
-        producer: "tsc",
-        producerRun: true,
-        command: "tsc-claims.mts " + relative,
-        ranAt: new Date(startedAt).toISOString(),
-        durationMs: Date.now() - startedAt,
-        verified: Boolean(verify),
-      },
-    };
-  } finally {
-    await fs.rm(tmp, { recursive: true, force: true });
-  }
-}
-
 /*
- * The other producer: an independent OCaml implementation of claim inference.
- * What the reader shows for it is one run of the pipeline, `check.mts`, the
- * same run its own suites judge: its outcome, and the page built from what that
- * run left in its artifacts — the source snapshot, the Fragment the shared
+ * What the reader shows is one run of the pipeline, `check.mts`, the same run
+ * its suites and the corpus judge, with the producer asked for: the OCaml
+ * producer, an independent implementation of claim inference, or TypeScript's
+ * own checker, stating what it believes at the source's sites
+ * (tests/tsc-claims/README.md records its limits). The page is built from what
+ * that run left in its artifacts — the source snapshot, the Fragment the shared
  * parser wrote, the claims the producer proposed, the evidence the verifier
  * checked, and the TypeScript errors the parser's gate read. Nothing is parsed
  * or proposed again here, so a file the pipeline runs is a file the reader
  * shows, and what it shows as the outcome is the pipeline's.
+ * Verification is not an option the caller turns on: if a verifier is present
+ * it runs, so what is displayed is always checked against the claims on screen.
  */
 
 /**
@@ -215,20 +151,42 @@ async function typescriptDiagnostics(artifacts: string, relative: string) {
     .join("");
 }
 
-async function ocamlAnalyse(
+/**
+ * TypeScript's own verdict on each function it claimed, which the run's
+ * TypeScript producer left beside its claims: shown as how complete that
+ * producer's collection was, never as a result.
+ */
+async function typescriptVerdicts(artifacts: string): Promise<Map<string, boolean>> {
+  const text = await fs
+    .readFile(path.join(artifacts, "tsc-verdicts.json"), "utf8")
+    .catch(() => "{}");
+  const parsed: unknown = JSON.parse(text);
+  return new Map(
+    parsed && typeof parsed === "object"
+      ? Object.entries(parsed).flatMap(([name, accepted]): [string, boolean][] =>
+          typeof accepted === "boolean" ? [[name, accepted]] : [])
+      : [],
+  );
+}
+
+async function pipelineAnalyse(
   relative: string,
   source: string,
   tmp: string,
   options: RunOptions,
+  producer: Producer,
 ): Promise<Bundle> {
   const startedAt = Date.now();
-  // A fixture that names its project is run in it, as its case is.
-  const project = cases.find(
+  // A fixture that names its project is run in it, as its case is. The
+  // TypeScript producer reads every source in the project that claims it.
+  const project = producer === "ocaml" ? cases.find(
     (c) => relative === `verification/ocaml-producer/examples/${c.file}.ts`,
-  )?.project;
+  )?.project : undefined;
   const outcome = await checkApart(
-    path.join(REPO, relative),
+    relative,
     project && path.join(REPO, project),
+    false,
+    producer,
   );
   try {
     const at = (name: string) => path.join(outcome.artifacts, name);
@@ -240,16 +198,21 @@ async function ocamlAnalyse(
     )
       throw new Error("Source changed during collection; run again");
     const digest = crypto.createHash("sha256").update(source).digest("hex");
-    const diagnostics = await typescriptDiagnostics(outcome.artifacts, relative);
+    // The TypeScript producer's own messages name the source as it was asked
+    // for; the OCaml producer's are the TypeScript errors its gate read.
+    const diagnostics = producer === "tsc"
+      ? await fs.readFile(at("tsc-diagnostics.txt"), "utf8").catch(() => "")
+      : await typescriptDiagnostics(outcome.artifacts, relative);
     const shown: PipelineOutcome =
       outcome.status === "verified"
         ? { status: outcome.status, phase: outcome.phase, functions: outcome.functions }
         : { status: outcome.status, phase: outcome.phase, detail: outcome.detail };
     const collection = (verified: boolean) => ({
-      producer: "ocaml",
+      producer,
       producerRun: true,
       command:
-        "check.mts " + relative + (project ? " --project " + project : ""),
+        "check.mts " + relative + (project ? " --project " + project : "") +
+        (producer === "ocaml" ? "" : " --producer " + producer),
       ranAt: new Date(startedAt).toISOString(),
       durationMs: Date.now() - startedAt,
       verified,
@@ -264,7 +227,7 @@ async function ocamlAnalyse(
         source,
         manifest: {
           source: { file: relative, sha256: digest },
-          producer: "ocaml",
+          producer,
           functions: [],
           gaps: [],
           results: null,
@@ -295,7 +258,7 @@ async function ocamlAnalyse(
       "--fragment",
       fragmentPath,
       "--producer",
-      "ocaml",
+      producer,
       "--format",
       "source-claims",
       "--depth",
@@ -319,6 +282,14 @@ async function ocamlAnalyse(
     const bundle = JSON.parse(String(result.stdout));
     if (bundle.manifest.source.sha256 !== digest)
       throw new Error("Report source identity mismatch");
+    const verdicts = await typescriptVerdicts(outcome.artifacts);
+    for (const fn of bundle.manifest.functions) {
+      const accepted = verdicts.get(fn.name);
+      if (accepted !== undefined) fn.collection = {
+        completion: accepted ? "complete" : "aborted",
+        quality: "unverified", mode: "normal",
+      };
+    }
     return {
       source,
       ...bundle,
@@ -331,12 +302,11 @@ async function ocamlAnalyse(
   }
 }
 
-async function analyse(relative: string, producer = "ocaml"): Promise<Bundle> {
+async function analyse(relative: string, producer: Producer = "ocaml"): Promise<Bundle> {
   const source = await fs.readFile(await repositoryPath(relative), "utf8");
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "claim-report-"));
   const options = { cwd: REPO, timeout: 120000, maxBuffer: 32 * 1024 * 1024 };
-  if (producer === "tsc") return tscAnalyse(relative, source, tmp, options);
-  return ocamlAnalyse(relative, source, tmp, options);
+  return pipelineAnalyse(relative, source, tmp, options, producer);
 }
 
 // app/index.html is the page the bundle is built from, which loads the application.

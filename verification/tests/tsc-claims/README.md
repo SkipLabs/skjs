@@ -2,18 +2,19 @@
 
 `../../tools/tsc-claims.mts` states what the TypeScript compiler's own checker
 believes at every site of a corpus file, as a source-claims document, so that
-`tsc` is a claim producer the same verifier adjudicates. The corpus
-(`examples.mts`) runs it over every corpus file.
+`tsc` is a claim producer the same verifier adjudicates. It runs through the
+pipeline's one entry, which the corpus (`examples.mts`) calls on every corpus
+file and the reader on the file it opens:
 
 ```sh
-node verification/tools/tsc-claims.mts verification/tests/stateful-source/cells.ts --out claims.json
+node verification/ocaml-producer/check.mts verification/tests/stateful-source/cells.ts --producer tsc
 ```
 
 Sites come from the trusted parser's AST and mirror `SourceClaimJson`'s
 `functionSites`; a site's type is `checker.getTypeAtLocation`, and an entry's
 environment is each visible binding at `getTypeOfSymbolAtLocation`. A type the
 document cannot state is omitted with its reason and `tsc`'s own rendering, in
-`<out>.omissions.json`. Field reads state their compiler flow type, or retain the field invariant
+the run's `omissions.json`. Field reads state their compiler flow type, or retain the field invariant
 when the surrounding contextual contract already requests it. For a
 primitive field read at statement entry, the receiver binding also carries a
 `current` assertion when the flow type differs from the field invariant.
@@ -36,5 +37,6 @@ exporter limitations.
 The corpus configuration uses `moduleDetection: "force"`: separate examples are
 independent modules, so repeated function names do not create cross-file overloads
 or duplicate implementations. TS acceptance is recorded per function separately
-from claim-export availability and proof outcomes. The viewer reads the exported
-`.outcomes.json` metadata; it is not admitted as verification evidence.
+from claim-export availability and proof outcomes. The run writes it to
+`tsc-verdicts.json`, which the corpus and the viewer read; it is not admitted as
+verification evidence.

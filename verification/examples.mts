@@ -5,8 +5,11 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
-// tools/tsc-claims.mts is the producer the corpus runs: TypeScript's own checker, stating its claims.
-import * as tscClaims from "./tools/tsc-claims.mts";
+// tools/tsc-claims.mts is the producer the corpus runs, through the one entry: TypeScript's own checker, stating its claims.
+import { check, searchDepth, verifier } from "./ocaml-producer/check.mts";
+import { functionResults } from "./tools/annotate-source.mts";
+import type { SourceClaims } from "./tools/source-claims.mts";
+import { messageOf } from "./tools/thrown.mts";
 import { definedFunctions } from "./tools/fragment-parse.mts";
 // report-viewer/examples.mts is the corpus index, which the reader lists too: which files each group holds.
 import { groups } from "./report-viewer/examples.mts";
@@ -26,7 +29,6 @@ for (let i = 2; i < process.argv.length; i++) {
   else if (arg === "--shard" && process.argv[i + 1]) shard = process.argv[++i];
   else throw Error("usage: examples.mts [--build] [--verbose] [--shard i:n]");
 }
-const verifier = path.join(__dirname, "lean/.lake/build/bin/verifier");
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "examples-"));
 process.on("exit", () => fs.rmSync(work, { recursive: true, force: true }));
 function run(command: string, args: string[]) {
@@ -95,52 +97,29 @@ function examine(file: string) {
     // verdict about them, so it reads `·`.
     const fromTsc = new Map<string, boolean>();
     let accepted: Map<string, boolean> | null = null;
+    // One pipeline run answers the whole file: the entry's search and check.
+    // Only a file that fails is split, and only to say which function failed,
+    // by the report writer's per-function checks over that run's Fragment and
+    // claims; a file that verifies needs no second look.
+    const outcome = check(file, undefined, false, "tsc");
     try {
-      const produced = tscClaims.produce(file);
-      accepted = produced.accepted;
-      const { doc, ast } = produced;
-      // Producing evidence checks it, so one run answers the whole file.
-      // Only a file that fails is split, and only to say which function
-      // failed; a file that verifies needs no second look.
-      const claimed = doc.functions.map((g) => g.name);
-      const attempt = (document: unknown, name?: string) => {
-        const astFile = path.join(work, "tsc.ast.json");
-        const claimsFile = path.join(work, "tsc.claims.json");
-        fs.writeFileSync(
-          astFile,
-          JSON.stringify({
-            ...ast,
-            file,
-            functions:
-              name === undefined
-                ? ast.functions
-                : ast.functions.filter((f) => f.name === name),
-          }),
-        );
-        fs.writeFileSync(claimsFile, JSON.stringify(document));
-        return (
-          run(verifier, [
-            "--produce-source-claims",
-            astFile,
-            claimsFile,
-            file,
-            path.join(work, "tsc.evidence.json"),
-            "10",
-          ]).status === 0
-        );
-      };
-      if (attempt(doc)) for (const name of claimed) fromTsc.set(name, true);
-      else
-        for (const name of claimed)
-          fromTsc.set(
-            name,
-            attempt(
-              { ...doc, functions: doc.functions.filter((g) => g.name === name) },
-              name,
-            ),
-          );
-    } catch (error) {
-      if (verbose) say("    tsc could not state this file: " + (error as Error).message);
+      const at = (name: string) => path.join(outcome.artifacts, name);
+      const read = (name: string) => fs.readFileSync(at(name), "utf8");
+      if (fs.existsSync(at("tsc-verdicts.json")))
+        accepted = new Map(Object.entries(JSON.parse(read("tsc-verdicts.json"))));
+      if (outcome.status === "verified" || outcome.status === "unverified") {
+        // The run named its snapshot; these name the file it is a snapshot of.
+        const claims: SourceClaims = { ...JSON.parse(read("claims.json")), file };
+        const results = outcome.status === "verified" ? null
+          : functionResults(file, { ...JSON.parse(read("fragment.json")), file }, claims, verifier, searchDepth);
+        claims.functions.forEach((g, i) => {
+          const result = results?.[i];
+          if (result instanceof Error && verbose) say(`    ${g.name}: ${result.message}`);
+          fromTsc.set(g.name, !results || (!(result instanceof Error) && result?.status === "verified"));
+        });
+      } else if (verbose) say("    tsc could not state this file: " + outcome.detail);
+    } finally {
+      fs.rmSync(outcome.artifacts, { recursive: true, force: true });
     }
     const functions = definedFunctions(file);
     if (!functions.length) throw Error("example contains no function definitions");
@@ -157,7 +136,7 @@ function examine(file: string) {
     }
   } catch (error) {
     tally.errors++;
-    say(color(31, "    ✗ runner error: " + (error as Error).message));
+    say(color(31, "    ✗ runner error: " + messageOf(error)));
   }
   return { lines, tally };
 }
@@ -228,7 +207,7 @@ try {
   }
 } catch (error) {
   total.errors++;
-  console.error(color(31, "✗ Example runner: " + (error as Error).message, process.stderr));
+  console.error(color(31, "✗ Example runner: " + messageOf(error), process.stderr));
 }
 console.log(`\nExample results (${files} files):`);
 console.log(

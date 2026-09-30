@@ -833,6 +833,26 @@ function verifyClaims(
   } finally {fs.rmSync(temp,{recursive:true,force:true});}
 }
 
+/** Each claimed function of a pipeline run whose whole file did not verify,
+ * checked alone over the run's Fragment and claims at `depth`, as `--verify
+ * --fragment` checks it for the reader: where the run's search stopped, for
+ * the corpus. The Fragment and claims name `file`, the source they read. A
+ * function whose check this writer cannot report (a failure the verifier
+ * left unlocated) is its error, beside the others' results. */
+export function functionResults(file: string, fragment: Ast, claims: SourceClaims, verifier: string,
+    depth: number): (FunctionResult | Error)[] {
+  const source = fs.readFileSync(file, "utf8");
+  return claims.functions.map((f) => {
+    try {
+      const [result] = verifyClaims(file, source, claims, file, { functions: [f] }, path.resolve(verifier), depth,
+        undefined, { fragment }).results;
+      return result ?? Error(`no result for ${f.name}`);
+    } catch (error) {
+      return Error(messageOf(error));
+    }
+  });
+}
+
 function checkFresh(output: string) {
   const m=JSON.parse(fs.readFileSync(output+".json","utf8"));
   const checks=[[output,m.annotatedSha256],[m.sourcePath,m.source.sha256],[m.claimsPath,m.claimsSha256]];

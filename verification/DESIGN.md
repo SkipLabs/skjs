@@ -185,9 +185,15 @@ limit (`stepTimeoutMs`). The outcome is `verified` (the check accepted),
 (search or check found no derivation; never a disproof) or `error` (a step
 failed or timed out; never a verdict). `--project` names the TypeScript
 project the file belongs to, whose `tsconfig.json` must be strict.
-`run-cases.mts`, `test.mts`, the coverage run (`skjs-coverage.mts`), the reader's OCaml claims and the source-boundary suite (`tests/unsupported.mts`) go
-through it. The TypeScript producer runs outside it: the corpus (`examples.mts`)
-and the reader (`serve.mts`) each run it their own way.
+`--producer tsc` has TypeScript's own checker propose the claims
+(`tools/tsc-claims.mts`) in place of the OCaml producer, over the Fragment
+the parser read in the file's own project; the search and the check are the
+same. `run-cases.mts`, `test.mts`, the coverage run (`skjs-coverage.mts`), the
+corpus (`examples.mts`), the reader (`serve.mts`, either producer) and the
+source-boundary suite (`tests/unsupported.mts`) go through it. Where a run does
+not verify, the corpus and the reader attribute the failure to its functions
+by the report writer's per-function checks over that run's Fragment and
+claims (`annotate-source.mts`).
 
 ### What "verified" means
 
@@ -1154,7 +1160,7 @@ unchanged ([design](#recursive-quantified-contracts)).
 | Item | State | Closed when |
 | --- | --- | --- |
 | K3. Lowering: a unit bound naming another binder of the unit (`U extends T`). A function's or class's binder is its head's owned binder met with its lowered bound, which names the other owned binder (`EquationLowering.enterUnit`); a declared generic method's bound naming its own binders is refused ([request protocol](REQUEST-PROTOCOL.md)) | done | `generic-dependent-bounds` verifies (a function and a class); `invalid-generic-dependent-bound` and `invalid-generic-dependent-class-bound` are rejected at their own obligations |
-| O4. Duplication: the TypeScript producer runs end to end two ways. The corpus (`examples.mts`) spawns `verifier --produce-source-claims` per file, and per function when a file fails; the reader (`serve.mts`, `tscAnalyse`) runs `tsc-claims.mts`, then `annotate-source.mts --verify`. [The one entry](#the-one-entry) covers the OCaml pipeline only | open | one entry runs a source through the TypeScript producer, and the corpus and the reader both call it |
+| O4. One run of the TypeScript producer: [the one entry](#the-one-entry) takes the producer as a parameter (`check.mts --producer tsc`), and the corpus (`examples.mts`) and the reader (`serve.mts`) call it; a run that does not verify is attributed to its functions by the report writer's per-function checks over its Fragment and claims (`annotate-source.mts`). The corpus's own spawns of the verifier, the reader's `tscAnalyse` and `tsc-claims.mts`'s command line are deleted | done | `examples.mts` prints the same per-function outcomes (276 verified, 26 search failed, 4 not stated); the reader shows the same verdicts per function on the sources checked with either producer |
 | O5. Divergence: the decoder convention ([AGENTS](AGENTS.md#conventions): an assertion only as a decoder's last line) against the node side, where `node verification/tools/unchecked.mts` finds 81 `as` and 24 `!` in 20 of 50 files | open | each remaining assertion is a decoder's last line, or replaced by the check it stands in for |
 | T. Audit the tests: keep each one that guards something likely to break and important, and is not a restatement of the implementation; record what each guards | open | every test's reason recorded; the rest deleted |
 | C2. Write the source layer directly over its one store, `EquationStore.State`: `EquationLowering` and `EquationStore` precede the modules written over them in the import order, which call the store's operations and `equationFront` directly. `StoreView` and `Labels` stay classes, each with two instances: the growing store and the frozen equations | done | the three classes deleted; `lake build` green; every `cases.mts` outcome and diagnostic unchanged |

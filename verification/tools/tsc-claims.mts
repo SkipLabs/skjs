@@ -11,8 +11,10 @@
  * is matched to a real TypeScript node by exact [start,end) span, and its type
  * comes from the checker. A type this tool cannot state as a calculus label is
  * omitted, never guessed: the omission, with the reason and the checker's own
- * rendering, goes to `<out>.omissions.json`, and the whole function is left out
+ * rendering, is returned beside the claims, and the whole function is left out
  * of the claims document, since one missing site would fail extraction anyway.
+ * It runs through the pipeline's one entry, `ocaml-producer/check.mts
+ * --producer tsc`, which parses the source and passes its Fragment here.
  *
  * This producer is UNTRUSTED. The verifier checks what it claims.
  */
@@ -47,9 +49,8 @@ import type {
   Statement,
   VariableDeclaration,
 } from "typescript/unstable/ast";
-import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { close, parseFile, projectFor } from "./fragment-parse.mts";
+import { projectFor } from "./fragment-parse.mts";
 import type {
   ClaimType,
   FunctionClaims,
@@ -2176,7 +2177,6 @@ function processFunction(
 export interface Produced {
   doc: SourceClaims;
   omissions: Omission[];
-  ast: Ast;
   /** The checker's own verdict, per function: what `tsc --noEmit` would say. */
   accepted: Map<string, boolean>;
   /** The checker's messages, including locations and chained explanations. */
@@ -2203,10 +2203,9 @@ function formatProducerDiagnostic(
   return `File "${file}", line ${line}, character ${d.pos - start + 1}-${Math.max(d.pos + 1, d.end) - start + 1}:\n${message}`;
 }
 
-export { close };
-
-export function produce(file: string): Produced {
-  const ast = parseFile(file); // the trusted parse; also the syntactic gate
+/** The claims over `file`, whose Fragment `ast` the trusted parser (also the
+ * syntactic gate) read in the file's own project. */
+export function produce(file: string, ast: Ast): Produced {
   const absolute = resolve(file);
   // The same project, in the same compiler process, the gate just parsed
   // under: one `tsconfig.json` covering the corpus means the 2nd file
@@ -2279,54 +2278,9 @@ export function produce(file: string): Produced {
       functions,
     },
     omissions,
-    ast,
     accepted,
     diagnostics: diagnostics
       .map((d) => formatProducerDiagnostic(d, file, sf.text))
       .join("\n"),
   };
-}
-
-/* ---------------------------------------------------------------- main -- */
-
-if (process.argv[1] && import.meta.filename === resolve(process.argv[1])) {
-  const [file, ...rest] = process.argv.slice(2);
-  let out: string | null = null;
-  while (rest.length) {
-    const flag = rest.shift();
-    const next = rest[0];
-    if (flag === "--out" && next !== undefined) {
-      rest.shift();
-      out = next;
-    } else {
-      process.stderr.write(`invalid option ${flag}\n`);
-      process.exit(1);
-    }
-  }
-  if (!file || !out) {
-    process.stderr.write(
-      "usage: tsc-claims.mts <file.ts> --out <claims.json>\n",
-    );
-    process.exit(1);
-  }
-  try {
-    const { doc, omissions, accepted, diagnostics } = produce(file);
-    writeFileSync(out + ".diagnostics.txt", diagnostics);
-    writeFileSync(
-      out + ".outcomes.json",
-      JSON.stringify(Object.fromEntries(accepted)) + "\n",
-    );
-    writeFileSync(out, JSON.stringify(doc, null, 2) + "\n");
-    writeFileSync(
-      out + ".omissions.json",
-      JSON.stringify(omissions, null, 2) + "\n",
-    );
-    process.stderr.write(
-      `${doc.functions.length} function(s) claimed, ${omissions.length} omitted site(s)/reason(s).\n`,
-    );
-    close();
-  } catch (e) {
-    process.stderr.write(messageOf(e) + "\n");
-    process.exit(1);
-  }
 }

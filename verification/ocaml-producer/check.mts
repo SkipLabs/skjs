@@ -8,6 +8,10 @@ import { parseFile } from "../tools/fragment-parse.mts";
 import { clientErrors, tsconfigOf, type SeenDiagnostic } from "../tools/declaration-graph.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
 import { presentObligation } from "../tools/diagnostic-view.mts";
+// ../tools/tsc-claims.mts is the TypeScript producer this entry runs with `--producer tsc`: the checker's own claims, for the corpus and the reader.
+import { produce as produceFromTypeScript } from "../tools/tsc-claims.mts";
+import { fieldOf, messageOf } from "../tools/thrown.mts";
+import type { Ast } from "../tools/fragment.mts";
 
 const here = import.meta.dirname;
 // The producer runs from `_build/default/producer.exe` below this directory.
@@ -18,6 +22,12 @@ export const verifier =
   process.env.VERIFIER ??
   resolve(repo, "verification/lean/.lake/build/bin/verifier");
 export type Phase = "source" | "proposal" | "search" | "check";
+/** Who proposes the claims: the OCaml producer, or TypeScript's own checker
+ * (`tools/tsc-claims.mts`). Everything else in a run is the same. */
+export type Producer = "ocaml" | "tsc";
+export const producers: readonly Producer[] = ["ocaml", "tsc"];
+export const isProducer = (name: string): name is Producer =>
+  producers.some((p) => p === name);
 export type Outcome =
   | {
       status: "verified";
@@ -52,7 +62,7 @@ function run(command: string, args: string[]) {
     basename(command),
     ...args.filter((a) => a.startsWith("--")),
   ].join(" ");
-  if ((p.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT")
+  if (fieldOf(p.error, "code") === "ETIMEDOUT")
     throw Error(
       `timeout: ${step} did not finish within ${stepTimeoutMs / 1000} s`,
     );
@@ -150,12 +160,49 @@ function typeScriptErrors(file: string, tsconfigPath?: string): SeenDiagnostic[]
     return [];
   }
 }
-/** Acceptance is deliberately private to this module. An OCaml proposal alone
- * cannot construct the public verified outcome: both Lean phases must succeed. */
-export function check(source: string, tsconfigPath?: string, typescriptErrors = false): Outcome {
+/** The parser run in this process: its Fragment as text, or its refusal,
+ * with the TypeScript errors its gate read written to `diagnostics`. */
+function parsedHere(diagnostics: string, parse: (seen: (d: SeenDiagnostic) => void) => Ast) {
+  const seen: SeenDiagnostic[] = [];
+  try {
+    return { code: 0, out: JSON.stringify(parse((d) => seen.push(d))), detail: "" };
+  } catch (error) {
+    return { code: 1, out: "", detail: messageOf(error) };
+  } finally {
+    writeFileSync(diagnostics, JSON.stringify(seen, null, 1) + "\n");
+  }
+}
+/** TypeScript's own claims over the Fragment the gate just read, named by the
+ * snapshot as the OCaml producer's are. Beside them it leaves the checker's
+ * own verdict per function (`tsc-verdicts.json`), its messages
+ * (`tsc-diagnostics.txt`, naming the source as the caller named it) and the
+ * sites it could not state (`omissions.json`). */
+function proposedByTypeScript(source: string, fragment: Ast, snapshot: string, artifacts: string) {
+  try {
+    const { doc, omissions, accepted, diagnostics } = produceFromTypeScript(source, fragment);
+    writeFileSync(join(artifacts, "tsc-verdicts.json"), JSON.stringify(Object.fromEntries(accepted)) + "\n");
+    writeFileSync(join(artifacts, "tsc-diagnostics.txt"), diagnostics);
+    writeFileSync(join(artifacts, "omissions.json"), JSON.stringify(omissions, null, 2) + "\n");
+    return {
+      code: 0,
+      out: JSON.stringify({ ...doc, file: snapshot }),
+      detail: `${doc.functions.length} function(s) claimed, ${omissions.length} omitted site(s)/reason(s).`,
+    };
+  } catch (error) {
+    return { code: 1, out: "", detail: messageOf(error) };
+  }
+}
+/** Acceptance is deliberately private to this module. A proposal alone cannot
+ * construct the public verified outcome: both Lean phases must succeed.
+ * `producer` names who proposes the claims; the parse, the search and the
+ * check are the same for both. */
+export function check(source: string, tsconfigPath?: string, typescriptErrors = false,
+    producer: Producer = "ocaml"): Outcome {
   const artifacts = mkdtempSync(join(tmpdir(), "ocaml-producer-"));
   let phase: Phase = "source";
   try {
+    if (producer === "tsc" && tsconfigPath)
+      throw Error("the TypeScript producer reads a source in the project that claims it, and takes no project");
     // Parse a snapshot, not a path whose contents may change during verification.
     const snapshot = join(artifacts, "source.ts");
     const bytes = readFileSync(resolve(source));
@@ -172,21 +219,21 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors = 
     // file in that project; the parser requires both to have the same bytes.
     // The producer and verifier still decide whether they can interpret the
     // declarations reached.
+    // The TypeScript producer states the checker's types in the source's own
+    // project, the one the gate opened, so for it the source is parsed there
+    // and in this process: a process that runs several sources opens that
+    // project once. The fingerprint below ties its Fragment to the snapshot.
     // The TypeScript errors the parser's gate read are kept beside its log,
     // accepted or not: they are where a refusal over one of them points.
     const diagnostics = join(artifacts, "typescript-diagnostics.json");
-    const parsed = tsconfigPath
-      ? (() => {
-          const seen: SeenDiagnostic[] = [];
-          try {
-            return { code: 0, out: JSON.stringify(parseFile(snapshot, false, tsconfigPath, resolve(source),
-              (d) => seen.push(d))), detail: "" };
-          } catch (error) {
-            return { code: 1, out: "", detail: error instanceof Error ? error.message : String(error) };
-          } finally {
-            writeFileSync(diagnostics, JSON.stringify(seen, null, 1) + "\n");
-          }
-        })()
+    const read: { fragment?: Ast } = {};
+    const parsed = producer === "tsc"
+      ? parsedHere(diagnostics, (seen) => (read.fragment = {
+          ...parseFile(resolve(source), false, undefined, resolve(source), seen),
+          file: snapshot,
+        }))
+      : tsconfigPath
+      ? parsedHere(diagnostics, (seen) => parseFile(snapshot, false, tsconfigPath, resolve(source), seen))
       : run(process.execPath, [
           resolve(repo, "verification/tools/fragment-parse.mts"),
           snapshot,
@@ -195,7 +242,9 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors = 
         ]);
     writeFileSync(join(artifacts, "parse.log"), parsed.detail);
     const refusedErrors = () =>
-      typescriptErrors ? typeScriptErrors(tsconfigPath ? resolve(source) : snapshot, tsconfigPath) : [];
+      typescriptErrors
+        ? typeScriptErrors(tsconfigPath || producer === "tsc" ? resolve(source) : snapshot, tsconfigPath)
+        : [];
     if (parsed.code !== 0)
       return parsed.detail.startsWith("gate:")
         ? { status: "unsupported", artifacts, phase, detail: refusedByTypeScript(parsed.detail, refusedErrors) }
@@ -232,7 +281,11 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors = 
       return [s.pos[0], s.pos[1]];
     });
     phase = "proposal";
-    const proposed = run(join(here, "_build/default/producer.exe"), [ast]);
+    const proposed = producer === "ocaml"
+      ? run(join(here, "_build/default/producer.exe"), [ast])
+      : read.fragment
+      ? proposedByTypeScript(source, read.fragment, snapshot, artifacts)
+      : { code: 1, out: "", detail: "the parser kept no Fragment to state claims over" };
     writeFileSync(join(artifacts, "proposal.log"), proposed.detail);
     if (proposed.code !== 0)
       return proposed.detail.startsWith("unsupported:")
@@ -262,7 +315,8 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors = 
         artifacts,
         phase,
         detail: refusedByName(namingTheObligation(produced.detail, bytes.toString("utf8")),
-          () => readExplanations(run(join(here, "_build/default/producer.exe"), ["--explain", ast]).out),
+          () => producer === "tsc" ? []
+            : readExplanations(run(join(here, "_build/default/producer.exe"), ["--explain", ast]).out),
           refusedErrors),
       };
     phase = "check";
@@ -283,22 +337,44 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors = 
       status: "error",
       artifacts,
       phase,
-      detail: e instanceof Error ? e.message : String(e),
+      detail: messageOf(e),
     };
   }
+}
+const phases: readonly Phase[] = ["source", "proposal", "search", "check"];
+const isPhase = (value: unknown): value is Phase => phases.some((p) => p === value);
+const isSpan = (value: unknown): value is [number, number] =>
+  Array.isArray(value) && value.length === 2 && value.every((n) => typeof n === "number");
+/** The outcome a run in a process of its own printed, read field by field;
+ * anything else is refused. */
+function readOutcome(value: unknown): Outcome {
+  if (!value || typeof value !== "object" || !("status" in value) || !("artifacts" in value) ||
+      !("phase" in value) || typeof value.artifacts !== "string" || !isPhase(value.phase))
+    throw Error("not an outcome");
+  const { status, artifacts, phase } = value;
+  if (status === "verified" && phase === "check" && "functions" in value && Array.isArray(value.functions) &&
+      value.functions.every((f) => typeof f === "string") && "initialization" in value &&
+      Array.isArray(value.initialization) && value.initialization.every(isSpan))
+    return { status, artifacts, phase, functions: value.functions, initialization: value.initialization };
+  if ((status === "unsupported" || status === "unverified" || status === "error") &&
+      "detail" in value && typeof value.detail === "string")
+    return { status, artifacts, phase, detail: value.detail };
+  throw Error("not an outcome");
 }
 /** The same run in a process of its own, exactly as the command line below
  * runs it, for a caller that must stay responsive or runs several at once.
  * `project` is what `--project` takes; `typescriptErrors`, whether a failed
- * search is named by TypeScript's errors (`--typescript-errors`). */
-export function checkApart(source: string, project?: string, typescriptErrors = false): Promise<Outcome> {
+ * search is named by TypeScript's errors (`--typescript-errors`); `producer`,
+ * what `--producer` takes. */
+export function checkApart(source: string, project?: string, typescriptErrors = false,
+    producer: Producer = "ocaml"): Promise<Outcome> {
   const args = [import.meta.filename, source, ...(project ? ["--project", project] : []),
-    ...(typescriptErrors ? ["--typescript-errors"] : [])];
+    ...(typescriptErrors ? ["--typescript-errors"] : []), ...(producer === "ocaml" ? [] : ["--producer", producer])];
   return new Promise((done, fail) =>
     execFile(process.execPath, args, { cwd: repo, maxBuffer: 16 * 1024 * 1024 }, (_error, stdout, stderr) => {
       // A source that is not verified exits 1 and still prints its outcome.
       try {
-        done(JSON.parse(stdout) as Outcome);
+        done(readOutcome(JSON.parse(stdout)));
       } catch {
         fail(new Error(`no outcome: ${stderr.trim()}`));
       }
@@ -307,17 +383,20 @@ export function checkApart(source: string, project?: string, typescriptErrors = 
 if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
   const all = process.argv.slice(2);
   const typescriptErrors = all.includes("--typescript-errors");
-  const args = all.filter((a) => a !== "--typescript-errors");
-  if (!(args.length === 1 || (args.length === 3 && args[1] === "--project"))) {
-    process.stderr.write("usage: node check.mts file.ts [--project tsconfig-or-directory] [--typescript-errors]\n");
+  const at = all.indexOf("--producer");
+  const producer = at < 0 ? "ocaml" : all[at + 1] ?? "";
+  const args = all.filter((a, i) => a !== "--typescript-errors" && (at < 0 || (i !== at && i !== at + 1)));
+  if (!isProducer(producer) || !(args.length === 1 || (args.length === 3 && args[1] === "--project"))) {
+    process.stderr.write("usage: node check.mts file.ts [--project tsconfig-or-directory] [--typescript-errors]" +
+      " [--producer ocaml|tsc]\n");
     process.exitCode = 2;
   } else {
     try {
-      const result = check(args[0], args[2] ? tsconfigOf(args[2]) : undefined, typescriptErrors);
+      const result = check(args[0], args[2] ? tsconfigOf(args[2]) : undefined, typescriptErrors, producer);
       process.stdout.write(JSON.stringify(result, null, 2) + "\n");
       process.exitCode = result.status === "verified" ? 0 : 1;
     } catch (error) {
-      process.stderr.write((error instanceof Error ? error.message : String(error)) + "\n");
+      process.stderr.write(messageOf(error) + "\n");
       process.exitCode = 1;
     }
   }
