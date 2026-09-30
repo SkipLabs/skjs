@@ -6,7 +6,7 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
-    "check": "svelte-check --tsconfig ./tsconfig.json --tsgo --output human"
+    "check": "rm -rf .svelte-check && svelte-check --tsconfig ./tsconfig.json --tsgo --output human"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "7.3.0",
