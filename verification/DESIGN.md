@@ -1153,7 +1153,7 @@ unchanged ([design](#recursive-quantified-contracts)).
 
 | Item | State | Closed when |
 | --- | --- | --- |
-| K3. Lowering: a unit bound naming another binder of the unit (`U extends T`) | open | lowered as a meet of owned binders; its lowering test passes |
+| K3. Lowering: a unit bound naming another binder of the unit (`U extends T`). A function's or class's binder is its head's owned binder met with its lowered bound, which names the other owned binder (`EquationLowering.enterUnit`); a declared generic method's bound naming its own binders is refused ([request protocol](REQUEST-PROTOCOL.md)) | done | `generic-dependent-bounds` verifies (a function and a class); `invalid-generic-dependent-bound` and `invalid-generic-dependent-class-bound` are rejected at their own obligations |
 | T. Audit the tests: keep each one that guards something likely to break and important, and is not a restatement of the implementation; record what each guards | open | every test's reason recorded; the rest deleted |
 | C2. Write the source layer directly over its one store: `Store`, `Meets` and `Front` have one instance each; the modules written over them precede `EquationStore`/`EquationLowering` in the import order, which must be inverted first | open | the three classes deleted; `lake build` green |
 

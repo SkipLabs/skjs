@@ -399,6 +399,8 @@ export const cases: Case[] = [
   positive("generic-dependent-bounds", "a binder bounded by another is the meet of the two parameter rows, within the other's bound: below the other binder and below its bound; a generic class with a dependent bound constructed at an instance"),
   negative("invalid-generic-dependent-bound", "`U extends T` puts `U` below `T`, never `T` below `U`",
     /closure expression claim at \[212,218\): evidence search failed/),
+  negative("invalid-generic-dependent-class-bound", "a class's `U extends T` puts `U` below `T`: a `T` is not a `U`",
+    /closure expression claim at \[233,243\): evidence search failed/),
   positive("generic-graph-bounds", "a binder with a ground bound is the meet of its parameter row and the bound: reads through it at the bound"),
   negative("invalid-generic-graph-bound", "a value within the bound is not a `T`"),
   positive("generic-class", "generic classes `Box<T>` with methods and `Pair<A, B>`: the declaring unit certifies them at every assignment of their binders' rows; uses construct named instances"),
