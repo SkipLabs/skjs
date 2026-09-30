@@ -459,6 +459,19 @@ structure SourceMapEntry where
 has no source counterpart. -/
 abbrev SourceMap := List (Option SourceMapEntry)
 
+/-- A diagnostic distinguishes completed search from unfinished resource work. -/
+inductive DiagnosticOutcome where
+  | notEstablished
+  | exhausted (limit rounds visited : Nat)
+
+def DiagnosticOutcome.toJson : DiagnosticOutcome → Json
+  | .notEstablished => Json.mkObj [("kind",Lean.toJson "not-established")]
+  | .exhausted limit rounds visited => Json.mkObj [("kind",Lean.toJson "exhausted"),
+      ("resource",Json.mkObj [("kind",Lean.toJson "subtype-frontier"),("limit",Lean.toJson limit),
+        ("rounds",Lean.toJson rounds),("visited",Lean.toJson visited)])]
+
+instance : ToJson DiagnosticOutcome := ⟨DiagnosticOutcome.toJson⟩
+
 /-- One machine-readable record on stderr, following the human-readable error.
 This transport leaves successful evidence JSON and the proof protocol unchanged. -/
 def withDiagnostic (message : String) (fields : List (String × Json)) : String :=
@@ -477,14 +490,16 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 /-- A graph failure as a diagnostic: its types are the store's projection
 (`StoreView.project`) onto the labels the record mentions. -/
 @[nospecialize] def failureDiagnostic (r : Request σ ι) (fuel : Nat)
-    (sourceMap : SourceMap) (e : Failure)
+    (sourceMap : SourceMap) (e : Failure ι)
     (requirements : List (Nat × HeapKnowledge.Knowledge) := []) : List (String × Json) := Id.run do
   let claimAt := fun l => (r.claims[l]? : Option (PointClaim ι))
   let mentionedAt := fun l => ((claimAt l).map PointClaim.mentions).getD []
   let mentioned := match e with
     | .expression label => mentionedAt label
+    | .exhaustedExpression label stop => mentionedAt label ++ stop.source ++ stop.target
+    | .exhaustedEdge source destination _ stop => mentionedAt source ++ mentionedAt destination ++ stop.source ++ stop.target
     | .edge source destination _ => mentionedAt source ++ mentionedAt destination
-    | _ => []
+    | .claimCount | .rejected => []
   let p := StoreView.projection r.types (r.result ++ mentioned).eraseDups
   let atNode := fun l => Json.mkObj [
     ("label",toJson l), ("sourceMap",toJson ((sourceMap[l]?).bind id)),
@@ -493,8 +508,12 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
   let phase := match e with
     | .rejected => "certificate-check"
     | .claimCount => "request-validation"
-    | _ => "proof-search"
-  let common := [("phase",toJson phase),("outcome",toJson "not-established"),
+    | .expression .. | .edge .. | .exhaustedExpression .. | .exhaustedEdge .. => "proof-search"
+  let outcome := match e with
+    | .exhaustedExpression _ stop | .exhaustedEdge _ _ _ stop =>
+      DiagnosticOutcome.exhausted stop.limit stop.rounds stop.visited
+    | .expression .. | .edge .. | .rejected | .claimCount => .notEstablished
+  let common := [("phase",toJson phase),("outcome",toJson outcome),
     ("fuel",toJson fuel),("requiredResult",toJson (p.shown r.result))] ++ p.fields
   match e with
   | .expression label =>
@@ -523,7 +542,14 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
     return common ++ [("kind",toJson "edge-coverage"),("id",toJson s!"edge:{source}:{index}"),
       ("edgeIndex",toJson index),("source",atNode source),("destination",atNode destination),
       ("transfer",toJson transfer)]
-  | _ => return common ++ [("kind",toJson "production-failure"),("failure",toJson (reprStr e))]
+  | .exhaustedExpression label stop | .exhaustedEdge _ label _ stop =>
+    let origin := (sourceMap[label]?).bind id
+    let subject := origin.map (·.pos) |>.getD (0, 0)
+    return common ++ [("kind",toJson "direct-obligation"),("id",toJson s!"subtype:{label}"),
+      ("sourceMap",toJson { (origin.getD (SourceMapEntry.mk subject "node-typing" none [])) with context := [] }),
+      ("judgment",Json.mkObj [("kind",toJson "subtyping"),("subject",toJson subject),
+        ("actual",toJson (p.shown stop.source)),("expected",toJson (p.shown stop.target))])]
+  | .claimCount | .rejected => return common ++ [("kind",toJson "production-failure"),("failure",toJson (reprStr e))]
 
 /-- A code request as a request of its own: its graph, from the frame its
 signature describes, at the signature's result. What it may create is the
@@ -543,20 +569,20 @@ table checked before it, not part of this request. -/
   | .ok c => pure c
   | .error e =>
     let location := match e with
-      | .expression label => match (sourceMap[label]?).bind id with
+      | .expression label | .exhaustedExpression label _ => match (sourceMap[label]?).bind id with
         | some o => s!"source expression obligation at [{o.pos.1},{o.pos.2}): "
         | none => ""
-      | .edge _ destination _ => match (sourceMap[destination]?).bind id with
+      | .edge _ destination _ | .exhaustedEdge _ destination _ _ => match (sourceMap[destination]?).bind id with
         | some o => s!"source incoming edge obligation at [{o.pos.1},{o.pos.2}): "
         | none => ""
       | _ => ""
     -- Name what could not be established; the structured record below says
     -- with which claims, and the reader phrases it in source terms.
     let what := match e with
-      | .expression label => match (sourceMap[label]?).bind id with
+      | .expression label | .exhaustedExpression label _ => match (sourceMap[label]?).bind id with
         | some o => s!"no derivation of its {o.role} claim"
         | none => s!"no derivation of the claim of node {label}"
-      | .edge source _ _ => s!"the edge from node {source} does not establish the claims at this point"
+      | .edge source _ _ | .exhaustedEdge source _ _ _ => s!"the edge from node {source} does not establish the claims at this point"
       | _ => reprStr e
     throw (withDiagnostic s!"{location}evidence search failed: {what}"
       (failureDiagnostic r fuel sourceMap e requirements))

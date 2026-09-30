@@ -264,7 +264,7 @@ export interface CollectionRun {
 export type PipelineOutcome =
   | { status: "verified"; phase: string; functions: string[] }
   | {
-      status: "unsupported" | "unverified" | "error";
+      status: "unsupported" | "unverified" | "exhausted" | "error";
       phase: string;
       detail: string;
     };

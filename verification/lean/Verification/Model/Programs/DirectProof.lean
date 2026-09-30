@@ -41,8 +41,10 @@ def ifE [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (A : Ty ι) (c
 /-- Subtype search results already found, by source and target type. The graph,
 its image checker and the pool are fixed for one cache's life, so the two
 types are the key. -/
-abbrev SubtypeCache (ι : Type) [BEq ι] [Hashable ι] :=
-  Std.HashMap (Ty ι × Ty ι) (Option (PositiveCertificates.SubtypeChoices ι))
+structure SubtypeCache (ι : Type) [BEq ι] [Hashable ι] where
+  answers : Std.HashMap (Ty ι × Ty ι) (SearchResult ι (PositiveCertificates.SubtypeChoices ι)) := {}
+  /-- The first unfinished coercion in the current render only. -/
+  active : Option (Exhaustion ι) := none
 
 section
 variable [DecidableEq ι] [Hashable ι] [CertificateProducer.Instantiates ι]
@@ -56,13 +58,14 @@ def coerceM (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (T
     RenderM ι (Evidence ι) := do
   if (claim e).type = A then return e
   let key := ((claim e).type, A)
-  let found ← match (← get).get? key with
+  let found ← match (← get).answers.get? key with
     | some found => pure found
     | none =>
       let found := subtypeUsing G images (claim e).type A
-      modify (·.insert key found)
+      modify fun c => { c with answers := c.answers.insert key found }
       pure found
-  let some p := found | failure
+  modify fun c => { c with active := c.active <|> found.exhaustion }
+  let some p := found.value | failure
   return .node ⟨(claim e).context, (claim e).term, A⟩ (.sub p) [e]
 
 /-- Rebuild the recipe in the actual context. Variable leaves explicitly coerce
@@ -86,7 +89,9 @@ def renderAt (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (
     -- The member's covering proofs are searched in the actual context.
     | .bindMember _ _ _, .letE (.readAt k (.var i)) _, [] =>
       let some O := Γ[i]? | failure
-      let some (ps, rs, vs) := memberProofsUsing G images O k j.type | failure
+      let searched := memberProofsUsing G images O k j.type
+      modify fun c => { c with active := c.active <|> searched.exhaustion }
+      let some (ps, rs, vs) := searched.value | failure
       pure (.node ⟨Γ,j.term,j.type⟩ (.bindMember ps rs vs) [])
     | .ifBoolVar T F, .ite (.var i) _ _, [t,e] =>
       let pt ← renderAt G images pool depth (Γ.set i T) t
@@ -114,12 +119,13 @@ def Plan.depth : Plan ι → Nat
 
 /-- Render with the searches of earlier renders over the same graph and pool. -/
 def renderWith (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (Γ : List (Ty ι)) (p : Plan ι)
-    (cache : SubtypeCache ι) : Option (Evidence ι) × SubtypeCache ι :=
-  (renderAt G images pool p.depth Γ p).run.run cache
+    (cache : SubtypeCache ι) : SearchResult ι (Evidence ι) × SubtypeCache ι :=
+  let (answer, next) := (renderAt G images pool p.depth Γ p).run.run { cache with active := none }
+  (⟨answer, if answer.isSome then none else next.active⟩, next)
 
 def renderUsing (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (Γ : List (Ty ι)) (p : Plan ι) :
     Option (Evidence ι) :=
-  (renderWith G images pool Γ p {}).1
+  (renderWith G images pool Γ p {}).1.value
 
 /-- The finite image checker, the default. -/
 abbrev render (G : NormalGraph ι) := renderUsing G (finiteInstanceImages G)

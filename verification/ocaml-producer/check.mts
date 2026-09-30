@@ -21,6 +21,14 @@ const repo = resolve(here, "../..");
 export const verifier =
   process.env.VERIFIER ??
   resolve(repo, "verification/lean/.lake/build/bin/verifier");
+function refusalStatus(detail: string): "exhausted" | "unverified" {
+  const diagnostic = readDiagnostic(detail);
+  if (!diagnostic) return "unverified";
+  switch (diagnostic.outcome.kind) {
+    case "exhausted": return "exhausted";
+    case "not-established": return "unverified";
+  }
+}
 export type Phase = "source" | "proposal" | "search" | "check";
 /** Who proposes the claims: the OCaml producer, or TypeScript's own checker
  * (`tools/tsc-claims.mts`). Everything else in a run is the same. */
@@ -40,7 +48,7 @@ export type Outcome =
       phase: "check";
     }
   | {
-      status: "unsupported" | "unverified" | "error";
+      status: "unsupported" | "unverified" | "exhausted" | "error";
       artifacts: string;
       detail: string;
       phase: Phase;
@@ -197,10 +205,12 @@ function proposedByTypeScript(source: string, fragment: Ast, snapshot: string, a
  * `producer` names who proposes the claims; the parse, the search and the
  * check are the same for both. */
 export function check(source: string, tsconfigPath?: string, typescriptErrors = false,
-    producer: Producer = "ocaml"): Outcome {
+    producer: Producer = "ocaml", subtypeRounds?: number): Outcome {
   const artifacts = mkdtempSync(join(tmpdir(), "ocaml-producer-"));
   let phase: Phase = "source";
   try {
+    if (subtypeRounds !== undefined && (!Number.isSafeInteger(subtypeRounds) || subtypeRounds < 0))
+      throw Error("subtype rounds must be a natural number");
     if (producer === "tsc" && tsconfigPath)
       throw Error("the TypeScript producer reads a source in the project that claims it, and takes no project");
     // Parse a snapshot, not a path whose contents may change during verification.
@@ -299,8 +309,10 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors = 
     // beside the artifacts (`tools/subtyping-trace.mts` reads them).
     const trace = (name: string) =>
       process.env.SUBTYPING_TRACE ? ["--trace-subtyping", join(artifacts, name)] : [];
+    const budget = subtypeRounds === undefined ? [] : ["--subtype-rounds", String(subtypeRounds)];
     const produced = run(verifier, [
       ...trace("search-subtyping.jsonl"),
+      ...budget,
       "--produce-source-claims",
       ast,
       claims,
@@ -311,7 +323,7 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors = 
     writeFileSync(join(artifacts, "search.log"), produced.detail);
     if (produced.code !== 0)
       return {
-        status: "unverified",
+        status: refusalStatus(produced.detail),
         artifacts,
         phase,
         detail: refusedByName(namingTheObligation(produced.detail, bytes.toString("utf8")),
@@ -322,6 +334,7 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors = 
     phase = "check";
     const checked = run(verifier, [
       ...trace("check-subtyping.jsonl"),
+      ...budget,
       "--check-source-claims",
       ast,
       claims,
@@ -330,7 +343,7 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors = 
     ]);
     writeFileSync(join(artifacts, "check.log"), checked.detail);
     if (checked.code !== 0)
-      return { status: "unverified", artifacts, phase, detail: checked.detail };
+      return { status: refusalStatus(checked.detail), artifacts, phase, detail: checked.detail };
     return { status: "verified", artifacts, phase, functions, initialization };
   } catch (e) {
     return {
@@ -367,9 +380,10 @@ function readOutcome(value: unknown): Outcome {
  * search is named by TypeScript's errors (`--typescript-errors`); `producer`,
  * what `--producer` takes. */
 export function checkApart(source: string, project?: string, typescriptErrors = false,
-    producer: Producer = "ocaml"): Promise<Outcome> {
+    producer: Producer = "ocaml", subtypeRounds?: number): Promise<Outcome> {
   const args = [import.meta.filename, source, ...(project ? ["--project", project] : []),
-    ...(typescriptErrors ? ["--typescript-errors"] : []), ...(producer === "ocaml" ? [] : ["--producer", producer])];
+    ...(typescriptErrors ? ["--typescript-errors"] : []), ...(producer === "ocaml" ? [] : ["--producer", producer]),
+    ...(subtypeRounds === undefined ? [] : ["--subtype-rounds", String(subtypeRounds)])];
   return new Promise((done, fail) =>
     execFile(process.execPath, args, { cwd: repo, maxBuffer: 16 * 1024 * 1024 }, (_error, stdout, stderr) => {
       // A source that is not verified exits 1 and still prints its outcome.
@@ -382,17 +396,19 @@ export function checkApart(source: string, project?: string, typescriptErrors = 
 }
 if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
   const all = process.argv.slice(2);
+  const budgetAt = all.indexOf("--subtype-rounds");
+  const subtypeRounds = budgetAt < 0 ? undefined : Number(all.splice(budgetAt, 2)[1]);
   const typescriptErrors = all.includes("--typescript-errors");
   const at = all.indexOf("--producer");
   const producer = at < 0 ? "ocaml" : all[at + 1] ?? "";
   const args = all.filter((a, i) => a !== "--typescript-errors" && (at < 0 || (i !== at && i !== at + 1)));
   if (!isProducer(producer) || !(args.length === 1 || (args.length === 3 && args[1] === "--project"))) {
     process.stderr.write("usage: node check.mts file.ts [--project tsconfig-or-directory] [--typescript-errors]" +
-      " [--producer ocaml|tsc]\n");
+      " [--producer ocaml|tsc] [--subtype-rounds n]\n");
     process.exitCode = 2;
   } else {
     try {
-      const result = check(args[0], args[2] ? tsconfigOf(args[2]) : undefined, typescriptErrors, producer);
+      const result = check(args[0], args[2] ? tsconfigOf(args[2]) : undefined, typescriptErrors, producer, subtypeRounds);
       process.stdout.write(JSON.stringify(result, null, 2) + "\n");
       process.exitCode = result.status === "verified" ? 0 : 1;
     } catch (error) {

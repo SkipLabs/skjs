@@ -39,7 +39,7 @@
       </ul>
     {/if}
     {#if view.observation}<p>{view.observation}</p>{/if}
-    <p class="status">Not established from the supplied claims.</p>
+    <p class="status">{view.searchOutcome}</p>
 
     {#if view.rows.length}
       <details>
@@ -83,7 +83,6 @@
           {/each}</tbody>
         </table>
       </div>
-      <p class="meta">Search budget: {view.fuel}. No derivation was found; this does not prove the claim false.</p>
     </details>
 
     {#if view.endpoints.length}

@@ -854,6 +854,11 @@ async function main() {
       reasonOf.set(row.id, `SKJS unsoundness: ${SKJS_UNSOUND[row.id]}`);
       continue;
     }
+    if (row.status === "exhausted") {
+      row.class = "gap";
+      reasonOf.set(row.id, "subtype execution budget exhausted (inconclusive)");
+      continue;
+    }
     const key = row.key;
     if (key === undefined) throw new Error(`${row.id}: not verified, with no reason recorded`);
     const entry = row.status === "error" ? CLASSES.find((c) => c.label === "run error or unattributed verification")
@@ -901,6 +906,7 @@ async function main() {
     })),
     /* Reached Lean (parsed and proposed) and refused there: the candidates
      * for an SKJS unsoundness, or for a pipeline incompleteness. */
+    exhausted: blocked.filter((r) => r.status === "exhausted").length,
     reachedButRefused: blocked.filter((r) => r.phase === "search" || r.phase === "check").length,
     /* Every accepted unit by class (`CLASSES`): verified, refused on
      * principle, a gap, unexplained, or a confirmed SKJS unsoundness. */

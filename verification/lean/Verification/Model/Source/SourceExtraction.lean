@@ -130,7 +130,7 @@ private def locatedRefusal (T : EquationStore.State) (pos : Span)
     (role : DirectObligation.SourceRole) (reason : String) : String :=
   RequestJson.withDiagnostic s!"source refusal at [{pos.1},{pos.2}): {reason}"
     ([("kind",toJson "source-refusal"),("phase",toJson "request-validation"),
-     ("outcome",toJson "not-established"),("id",toJson s!"refusal:{pos.1}"),
+     ("outcome",toJson RequestJson.DiagnosticOutcome.notEstablished),("id",toJson s!"refusal:{pos.1}"),
      ("sourceMap",toJson (SourceMapEntry.mk pos role.wire none [])),
      ("reason",toJson reason),("fuel",toJson 0)] ++ (StoreView.projection T []).fields)
 

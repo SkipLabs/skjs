@@ -16,6 +16,7 @@ import { cases } from "./cases.mts";
 import { expectOutcome, pooled, runCase } from "./run-cases.mts";
 import type { Row, SourceClaims } from "../tools/source-claims.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
+import { presentObligation } from "../tools/diagnostic-view.mts";
 // Forged-claim controls on single cases, each in a file of its own:
 // generic-rest.mts, a universal rest claim past collection, substitution and binding;
 // overload-claims.mts, per-signature claims across the same independent boundary;
@@ -158,9 +159,24 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
       ["--subtype-rounds", String(rounds), ...args], { encoding: "utf8", timeout: 30_000 });
     const limited = runWith(0);
     assert.equal(limited.status, 1, `${mode}: zero frontier rounds cannot establish the record comparison`);
+    if (mode === "--produce-source-claims") {
+      const diagnostic = readDiagnostic(limited.stderr);
+      assert(diagnostic?.kind === "direct-obligation", limited.stderr);
+      assert.equal(diagnostic.judgment.kind, "subtyping");
+      assert.deepEqual(diagnostic.sourceMap.context, []);
+      assert(diagnostic.sourceMap.pos[0] > 0);
+      assert.deepEqual(diagnostic.outcome, {
+        kind: "exhausted",
+        resource: { kind: "subtype-frontier", limit: 0, rounds: 0, visited: 0 },
+      });
+      const view = presentObligation(diagnostic, source(false));
+      assert.match(view.searchOutcome, /exhausted.*limit 0.*inconclusive/);
+    }
     const sufficient = runWith(8);
     assert.equal(sufficient.status, 0, `${mode}: eight frontier rounds establish the finite graph: ${sufficient.stderr}`);
   }
+  assert.equal(check(positive, undefined, false, "ocaml", 0).status, "exhausted",
+    "the source runner distinguishes exhausted work from a completed refusal");
   assert.equal(check(negative).status, "unverified", "the last field's type is incompatible");
 }
 

@@ -265,7 +265,7 @@ private def directFailure (T : EquationStore.State) (failure : DirectObligation.
     s!"quantified call does not satisfy the closure's bound: cannot establish {failure.judgment.render T}"
   RequestJson.withDiagnostic s!"source direct obligation at [{failure.pos.1},{failure.pos.2}): {message}"
     ([("kind",toJson "direct-obligation"),("phase",toJson "request-validation"),
-     ("outcome",toJson "not-established"),("id",toJson s!"scheme:{failure.pos.1}"),
+     ("outcome",toJson RequestJson.DiagnosticOutcome.notEstablished),("id",toJson s!"scheme:{failure.pos.1}"),
      ("sourceMap",toJson (SourceMapEntry.mk failure.pos failure.role.wire none [])),
      ("judgment",shown.toJson),("fuel",toJson 0)] ++ p.fields)
 
@@ -273,7 +273,7 @@ private def sourceRefusal (T : EquationStore.State) (pos : Span)
     (role : DirectObligation.SourceRole) (reason : String) : String :=
   RequestJson.withDiagnostic s!"source refusal at [{pos.1},{pos.2}): {reason}"
     ([("kind",toJson "source-refusal"),("phase",toJson "request-validation"),
-     ("outcome",toJson "not-established"),("id",toJson s!"refusal:{pos.1}"),
+     ("outcome",toJson RequestJson.DiagnosticOutcome.notEstablished),("id",toJson s!"refusal:{pos.1}"),
      ("sourceMap",toJson (SourceMapEntry.mk pos role.wire none [])),
      ("reason",toJson reason),("fuel",toJson 0)] ++ (StoreView.projection T []).fields)
 

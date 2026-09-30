@@ -94,10 +94,32 @@ export interface DiagnosticTransfer {
   tagObservation: { test: Tag; answer: boolean; slot: number } | null;
 }
 
+export type DiagnosticOutcome =
+  | { kind: "not-established" }
+  | { kind: "exhausted"; resource: {
+      kind: "subtype-frontier"; limit: number; rounds: number; visited: number;
+    } };
+
+function diagnosticOutcome(value: unknown): void {
+  if (!isRecord(value)) throw Error("invalid diagnostic outcome");
+  switch (value.kind) {
+    case "not-established": record(value, ["kind"]); return;
+    case "exhausted": {
+      const outcome = record(value, ["kind", "resource"]);
+      const resource = record(outcome.resource, ["kind", "limit", "rounds", "visited"]);
+      if (resource.kind !== "subtype-frontier") throw Error("unknown search resource");
+      nat(resource.limit); nat(resource.rounds); nat(resource.visited);
+      if (Number(resource.rounds) > Number(resource.limit)) throw Error("resource counts exceed budget");
+      return;
+    }
+    default: throw Error("unknown diagnostic outcome");
+  }
+}
+
 /** What every record carries, whatever the failure was. */
 interface Common {
   phase: Phase;
-  outcome: "not-established";
+  outcome: DiagnosticOutcome;
   /** The proof budget the search was given. */
   fuel: number;
   /** The store's labels the record mentions, projected onto a finite table. */
@@ -294,6 +316,7 @@ export function readDiagnostic(
     };
     if (typeof d.kind !== "string" || !variants[d.kind]) return undefined;
     record(d,["phase","outcome","fuel","types","kind",...variants[d.kind]],["requiredResult","names"]);
+    diagnosticOutcome(d.outcome);
     // The graph decides how many labels there are, so it is decoded first and
     // everything after counts against what it returned.
     const types = decodeGraph(d.types);
@@ -353,7 +376,6 @@ export function readDiagnostic(
   }
   if (
     !PHASES.includes(d.phase) ||
-    d.outcome !== "not-established" ||
     !Array.isArray(d.types) ||
     typeof d.fuel !== "number" ||
     !Number.isSafeInteger(d.fuel) ||

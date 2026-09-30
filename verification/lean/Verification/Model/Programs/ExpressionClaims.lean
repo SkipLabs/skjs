@@ -60,7 +60,7 @@ diagnostic mentioning some of them shows of it (`StoreView.project`). -/
   let mut es := #[]
   for (r,index) in rs.zipIdx do
     let j := r.sequent
-    let candidate : Option (Evidence ι) ← match r.plan with
+    let candidate : CertificateProducer.SearchResult ι (Evidence ι) ← match r.plan with
       | some plan => do
         let (e, next) := DirectProof.renderWith G images pool j.context plan cache
         cache := next
@@ -71,13 +71,23 @@ diagnostic mentioning some of them shows of it (`StoreView.project`). -/
     -- The graph code a unit creates is checked after its obligations are
     -- rendered: here every code is admitted, and acceptance checks the
     -- obligation again against the table its certificate checked.
-    let some e := candidate.filter (fun e => checkUsing G images valid j e (fun _ => true))
-      | let p := project (j.type ++ j.context.flatten).eraseDups
+    let some e := candidate.value.filter (fun e => checkUsing G images valid j e (fun _ => true))
+      | if let some stop := candidate.exhaustion then
+          let p := project (stop.source ++ stop.target ++ j.context.flatten).eraseDups
+          throw (withDiagnostic s!"closure expression claim at [{r.pos.1},{r.pos.2}): subtype search exhausted"
+            ([("kind",toJson "direct-obligation"),("phase",toJson "proof-search"),
+              ("outcome",toJson (DiagnosticOutcome.exhausted stop.limit stop.rounds stop.visited)),
+              ("id",toJson s!"expression:{index}"),
+              ("sourceMap",toJson (SourceMapEntry.mk r.pos r.role none [])),
+              ("judgment",Json.mkObj [("kind",toJson "subtyping"),("subject",toJson r.pos),
+                ("actual",toJson (p.shown stop.source)),("expected",toJson (p.shown stop.target))]),
+              ("fuel",toJson fuel)] ++ p.fields))
+        let p := project (j.type ++ j.context.flatten).eraseDups
         -- This record's table shows each row's clauses alone: a parameter,
         -- scheme or meet row as no clauses.
         throw (withDiagnostic s!"closure expression claim at [{r.pos.1},{r.pos.2}): evidence search failed"
           ([("kind",toJson "expression-claim"),("phase",toJson "proof-search"),
-           ("outcome",toJson "not-established"),("id",toJson s!"expression:{index}"),
+           ("outcome",toJson RequestJson.DiagnosticOutcome.notEstablished),("id",toJson s!"expression:{index}"),
            ("sourceMap",toJson (SourceMapEntry.mk r.pos r.role none r.context)),
            ("sequent",toJson (Sequent.mk (j.context.map p.shown) j.term (p.shown j.type))),
            ("fuel",toJson fuel),("types",toJson (p.rows.map GraphRow.union))] ++
@@ -98,7 +108,7 @@ A plan that does not render is dropped; its node is searched as any other. -/
   for plan in plans do
     let (e, next) := DirectProof.renderWith G images pool plan.goal.context plan cache
     cache := next
-    if let some e := e.filter (fun e => checkUsing G images valid plan.goal e (fun _ => true)) then es := es.push e
+    if let some e := e.value.filter (fun e => checkUsing G images valid plan.goal e (fun _ => true)) then es := es.push e
   return es.toList
 
 /-- The finite image checker, the default of the source path. -/

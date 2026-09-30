@@ -10,7 +10,7 @@ On a structured failure, the verifier emits its existing human-readable error,
 then one line on stderr:
 
 ```text
-obligation-diagnostic: {"phase":"proof-search","outcome":"not-established",...}
+obligation-diagnostic: {"phase":"proof-search","outcome":{"kind":"not-established"},...}
 ```
 
 The human sentence of a failed graph search names the obligation: `source
@@ -98,12 +98,20 @@ is untrusted display data; it cannot establish verification status.
 |---|---|
 | `kind` | `node-typing`, `edge-coverage`, `expression-claim`, `direct-obligation`, `source-refusal`, or `production-failure`. |
 | `phase` | `proof-search`, `certificate-check`, or `request-validation`. |
-| `outcome` | `not-established`. |
+| `outcome` | `{ "kind": "not-established" }` or `{ "kind": "exhausted", "resource": { "kind": "subtype-frontier", "limit": N, "rounds": N, "visited": N } }`. |
 | `fuel` | Search depth used for this attempt, not a semantic bound or a diagnosis of exhaustion. |
 | `types` | Finite table of rows, the store's projection onto the labels the record mentions (below); type lists in the record index this table. |
 | `names` | `[[row, spelling], …]`: a source-like spelling of each row that stands for an application, such as `Promise<number \| R>`, in row order, each row once. Absent when no row is named. |
 | `requiredResult` | Whole-function result type on graph diagnostics; absent on standalone expression obligations. |
 | `id` | Local obligation identity, where available. |
+
+An exhausted subtype comparison is inconclusive. `limit` is the requested
+frontier-round budget, `rounds` is the number of rounds consumed, and `visited`
+is the number of comparison dependencies visited. The runner reports
+`exhausted`; the viewer displays these counts with the located subtype judgment.
+Coverage measurements count exhausted attempts separately. Proposal search
+retains this outcome through failed alternatives; an established alternative
+supplies the requested derivation.
 
 ### The label projection
 
@@ -149,8 +157,9 @@ exists, and each type argument must lie within its binder's bound. A failure is
 a `direct-obligation` record, with mandatory `sourceMap` and a closed,
 structured `judgment`. There is no prose field. The judgment is
 `{"kind": "subtyping", "subject": span, "actual": labels, "expected": labels}`:
-the call's span, the type argument and the bound, both ground types, under the
-role `scheme-elimination`. They must not be disguised as graph sequents. Lean
+the source span and the two compared types under the record's type equations.
+Generic call bounds use the role `scheme-elimination`; exhausted expression
+or edge comparisons use the source obligation's role. They must not be disguised as graph sequents. Lean
 diagnostics render ground types only through `SourceTypes.render`; numeric
 labels remain references inside the graph document and never become type names
 in user-facing judgments.

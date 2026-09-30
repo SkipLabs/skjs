@@ -9,7 +9,7 @@
 
 import surface from "./claim-text.mts";
 import { decodeGraph, numberOfBits, graphDefinitions, printLabels, type GraphDefinition, type Labels } from "./type-graph.mts";
-import type { DirectJudgment, HeapAtom, HeapKnowledge, ObligationDiagnostic, SourceMapEntry } from "./diagnostic.mts";
+import type { DiagnosticOutcome, DirectJudgment, HeapAtom, HeapKnowledge, ObligationDiagnostic, SourceMapEntry } from "./diagnostic.mts";
 import { printTerm, type Term } from "./calculus.mts";
 import type { Span } from "./span.mts";
 
@@ -79,6 +79,7 @@ export interface ObligationView {
   role: string;
   id: string;
   fuel: number;
+  searchOutcome: string;
   phase: string;
   pos: Span | null;
   /** Where the statement entry this obligation is about begins. */
@@ -158,6 +159,16 @@ const KIND_LABEL: Record<string, string> = {
   "source-refusal": "source refusal",
   "production-failure": "production failure",
 };
+
+/** Resource exhaustion is distinct from an unsuccessful completed search. */
+function searchOutcome(outcome: DiagnosticOutcome, fuel: number): string {
+  switch (outcome.kind) {
+    case "exhausted":
+      return `Subtype search exhausted after ${outcome.resource.rounds} frontier rounds (limit ${outcome.resource.limit}); ${outcome.resource.visited} comparisons visited. The judgment is inconclusive.`;
+    case "not-established":
+      return `Search depth: ${fuel}. No derivation was found; this does not prove the claim false.`;
+  }
+}
 
 /* ---------- types ---------- */
 // A type is a list of labels into the record's own table, read as their union
@@ -300,6 +311,7 @@ function obligationView(ob: ObligationDiagnostic, source = ""): ObligationView {
     what: role.what,
     id: ob.kind === "production-failure" ? "" : ob.id,
     fuel: ob.fuel,
+    searchOutcome: searchOutcome(ob.outcome, ob.fuel),
     phase: ob.phase,
     pos: sourceMap?.pos || null,
     environmentStart: sourceMap?.environmentStart ?? null,
