@@ -2564,6 +2564,13 @@ Signature alternatives retain exhaustion when none succeeds. These results
 concern expression evidence; the program acceptance and safety implications
 above remain the semantic boundary.
 
+`HeapExpressionRules.checkStepResult` combines expression validation with the
+step's heap-fact premises and returns its guaranteed postcondition together with
+any unfinished subtype comparison. `checkStepUsing` is its postcondition
+projection. `checkStepUsing_eq` proves that the projection has exactly the
+step premises and postconditions used by `checkStep_sound`. Effect-candidate
+search retains unfinished step validation when no candidate succeeds.
+
 Failure reports a claim-count mismatch, an expression label, an edge's source
 and destination, or final consumer rejection. Failure means unsupported or
 unjustified within this search, not a proof that the program is untypable.

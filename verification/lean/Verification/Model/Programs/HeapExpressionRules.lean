@@ -902,12 +902,105 @@ theorem writeSlots_eq {t f i v} (h : writeSlots t = some (f, i, v)) :
   unfold writeSlots at h
   split at h <;> simp_all
 
+/-- A typed expression establishes an output only when its metadata checks pass. -/
+@[nospecialize] def checkedOutput [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (e : ProgramCertificates.Evidence ι) (metadata : Bool) (out : Knowledge)
+    (codes : CodeEntry ι → Bool := fun _ => false) : ProgramCertificates.CheckResult ι Knowledge :=
+  (CheckResult.ofBool metadata).bind fun _ => (checkTreeResult G images e codes).map fun _ => out
+
+theorem checkedOutput_value [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (e : ProgramCertificates.Evidence ι) (metadata : Bool) (out : Knowledge) (codes : CodeEntry ι → Bool) :
+    (checkedOutput G images e metadata out codes).value =
+      if metadata && checkTreeUsing G images e codes then some out else none := by
+  rw [checkedOutput, CheckResult.value_bind_const, CheckResult.accepted_ofBool, CheckResult.value_map_const]
+  cases metadata <;> simp [checkTreeUsing]
+
 /-- The successful result is the guaranteed postcondition in the result-pushed
-frame. Edge checking must entail the destination's facts from this output;
-checking a node alone does not establish its supplied input knowledge. -/
-def checkStepUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Sequent ι)
+frame. Subtype comparisons retain unfinished work through the step validation. -/
+@[nospecialize] def checkStepResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Sequent ι)
     (k : Knowledge) (step : StepEvidence ι)
-    (codes : CodeEntry ι → Bool := fun _ => false) : Option Knowledge :=
+    (codes : CodeEntry ι → Bool := fun _ => false) : ProgramCertificates.CheckResult ι Knowledge :=
+  match step with
+  | .ordinary e =>
+    checkedOutput G images e (decide (claim e = j ∧ checkScope j.context.length j.term = true))
+      (ordinaryOutput k) codes
+  | .pure e =>
+    checkedOutput G images e (decide (claim e = j ∧ checkScope j.context.length j.term = true ∧
+      pureTerm j.term = true)) (pureOutput k j.term) codes
+  | .created e =>
+    (CheckResult.ofBool (decide (claim e = j ∧ checkScope j.context.length j.term = true))).bind fun _ =>
+    (checkTreeResult G images e codes).bind fun _ =>
+      CheckResult.fromOption (match j.term with
+        | .makeFn (.graph _ _ _ _ _ _ _) .nul => some (HeapKnowledge.shift k)
+        | _ => none)
+  | .typedRead i e =>
+    match readSlot j.term with
+    | some (fld, i') =>
+      (checkedOutput G images e (decide (claim e = j ∧ i' = i ∧
+        (j.context[i]?).any (fun Ref => fieldOperand (expand G Ref) fld))) (readFrame k i fld) codes).orElse fun _ =>
+        checkedOutput G images e (decide (claim e = j ∧ i' = i ∧
+          (j.context[i]?).any (fun Ref => optionalOperand (expand G Ref) fld))) (readFrame k i fld true)
+    | none => failure
+  | .observedRead i R =>
+    CheckResult.fromOption (match readSlot j.term with
+      | some (fld, i') =>
+        if i' = i ∧ i < j.context.length ∧ Fact.mk i R fld ∈ k.cells ∧ includes G j.type R = true
+        then some (readOutput k i fld R) else none
+      | none => none)
+  | .slicedRead i e p =>
+    match readSlot j.term with
+    | some (fld, i') =>
+      (CheckResult.ofBool (decide ((claim e).context = j.context ∧ (claim e).term = j.term ∧ i' = i ∧
+        (j.context[i]?).any (fun Ref => fieldOperand (expand G Ref) fld) ∧
+        (k.cells.any fun f => f.slot == i && f.field == fld && f.contents.all (· != .undef))))).bind fun _ =>
+      (checkTreeResult G images e codes).bind fun _ =>
+      (ProgramCertificates.checkSubtypeUsing G images
+        (BranchRefinement.tagSlice G (claim e).type .isUndef false) j.type p).map fun _ => readFrame k i fld
+    | none => failure
+  | .knownValue i R =>
+    CheckResult.fromOption (if j.term = .var i ∧ i < j.context.length ∧
+      valuesAt G j.context k i = some R ∧ includes G j.type R = true
+      then some (withResult (copy k i) R) else none)
+  | .allocated e =>
+    match allocationSlots j.term with
+    | some slots =>
+      checkedOutput G images e (decide (claim e = j ∧ checkScope j.context.length j.term = true ∧
+        (slots.map Prod.fst).Nodup ∧ ∀ p ∈ slots, p.2 < j.context.length))
+        (allocOutput k (allocationFacts G j.context k slots) (contractFields G j.context) (slots.map Prod.fst)) codes
+    | none =>
+      match mergeSlots j.term with
+      | some (_, a, b) =>
+        checkedOutput G images e (decide (claim e = j ∧ a < j.context.length ∧ b < j.context.length))
+          (allocOutput k [] (contractFields G j.context) (namedKeys G j.type)) codes
+      | none =>
+        match storeSlots j.term with
+        | some slots =>
+          checkedOutput G images e (decide (claim e = j ∧ ∀ i ∈ slots, i < j.context.length))
+            (HeapKnowledge.shift k) codes
+        | none => failure
+  | .written i v R e =>
+    match writeSlots j.term with
+    | some (fld, i', v') =>
+      checkedOutput G images e (decide (claim e = j ∧ i' = i ∧ v' = v ∧ i < j.context.length ∧
+        v < j.context.length ∧ valuesAt G j.context k v = R)) (writeOutput k i fld R) codes
+    | none => failure
+
+@[nospecialize] def checkStepUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Sequent ι)
+    (k : Knowledge) (step : StepEvidence ι) (codes : CodeEntry ι → Bool := fun _ => false) : Option Knowledge :=
+  (checkStepResult G images j k step codes).value
+
+private theorem guard_conjunction (p q : Prop) [Decidable p] [Decidable q] (r : Option α) :
+    (if p then if q then r else none else none) = if p ∧ q then r else none := by
+  by_cases hp : p <;> by_cases hq : q <;> simp [hp, hq]
+
+private theorem option_choice (p : Prop) [Decidable p] (a : α) (b : Unit → Option α) :
+    (if p then some a else none).orElse b = if p then some a else b () := by
+  by_cases hp : p <;> simp [hp, Option.orElse]
+
+/-- The postcondition projection has exactly the existing step premises. -/
+theorem checkStepUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Sequent ι)
+    (k : Knowledge) (step : StepEvidence ι) (codes : CodeEntry ι → Bool) :
+    checkStepUsing G images j k step codes =
   match step with
   | .ordinary e =>
     if claim e = j ∧ checkScope j.context.length j.term = true ∧ checkTreeUsing G images e codes = true
@@ -978,7 +1071,19 @@ def checkStepUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImage
           i < j.context.length ∧ v < j.context.length ∧
           valuesAt G j.context k v = R
       then some (writeOutput k i fld R) else none
-    | none => none
+    | none => none := by
+  cases step <;> simp only [checkStepUsing, checkStepResult, checkedOutput_value,
+    CheckResult.value_bind_const, CheckResult.value_map_const, CheckResult.value_orElse,
+    CheckResult.accepted_ofBool, ProgramCertificates.checkSubtypeUsing_accepted,
+    CheckResult.fromOption, checkTreeUsing, Bool.and_eq_true, decide_eq_true_eq]
+  all_goals repeat' first
+    | simp_all only [guard_conjunction, option_choice, CheckResult.value_failure,
+        checkedOutput_value, CheckResult.value_bind_const, CheckResult.value_map_const,
+        CheckResult.value_orElse, CheckResult.accepted_ofBool,
+        ProgramCertificates.checkSubtypeUsing_accepted, CheckResult.fromOption,
+        checkTreeUsing, Bool.and_eq_true, decide_eq_true_eq, and_assoc, and_left_comm, and_comm]
+    | split
+  all_goals simp_all
 
 /-- The finite image checker, the default. -/
 abbrev checkStep [DecidableEq ι] (G : NormalGraph ι) :=
@@ -995,7 +1100,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
       n W h (instantiate 0 ρ j.term) := by
   cases e with
   | ordinary e =>
-    simp only [checkStepUsing] at hc
+    simp only [checkStepUsing_eq] at hc
     split at hc
     · rename_i hp
       obtain ⟨hj,_,ht⟩ := hp
@@ -1005,7 +1110,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
       exact ordinary_sound typed he hk hw hh
     · contradiction
   | pure e =>
-    simp only [checkStepUsing] at hc
+    simp only [checkStepUsing_eq] at hc
     split at hc
     · rename_i hp
       obtain ⟨hj,scope,ht,hpure⟩ := hp
@@ -1015,7 +1120,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
       exact pure_sound typed hpure scope he hk hw hh
     · contradiction
   | created e =>
-    simp only [checkStepUsing] at hc
+    simp only [checkStepUsing_eq] at hc
     split at hc
     · rename_i hp
       obtain ⟨hj,_,ht⟩ := hp
@@ -1029,7 +1134,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
       · contradiction
     · contradiction
   | typedRead i e =>
-    simp only [checkStepUsing] at hc
+    simp only [checkStepUsing_eq] at hc
     split at hc
     · rename_i fld i' hslot
       split at hc
@@ -1061,7 +1166,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
         · contradiction
     · contradiction
   | observedRead i R =>
-    simp only [checkStepUsing] at hc
+    simp only [checkStepUsing_eq] at hc
     split at hc
     · rename_i fld i' hslot
       split at hc
@@ -1074,7 +1179,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
       · contradiction
     · contradiction
   | slicedRead i e p =>
-    simp only [checkStepUsing] at hc
+    simp only [checkStepUsing_eq] at hc
     split at hc
     · rename_i fld i' hslot
       split at hc
@@ -1103,7 +1208,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
       · contradiction
     · contradiction
   | knownValue i R =>
-    simp only [checkStepUsing] at hc
+    simp only [checkStepUsing_eq] at hc
     split at hc
     · rename_i hp
       obtain ⟨ht,_,hr,hi⟩ := hp
@@ -1112,7 +1217,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
       simpa [instantiate] using value_sound hr hi he hk
     · contradiction
   | allocated e =>
-    simp only [checkStepUsing] at hc
+    simp only [checkStepUsing_eq] at hc
     split at hc
     · rename_i slots hslots
       split at hc
@@ -1165,7 +1270,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
           · contradiction
         · contradiction
   | written i v R e =>
-    simp only [checkStepUsing] at hc
+    simp only [checkStepUsing_eq] at hc
     split at hc
     · rename_i fld i' v' hslots
       split at hc

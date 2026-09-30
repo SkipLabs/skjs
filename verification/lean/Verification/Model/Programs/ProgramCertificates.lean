@@ -120,6 +120,33 @@ theorem CheckResult.accepted_any (xs : List β) (f : β → CheckResult ι Unit)
     simp only [CheckResult.any, List.findCheck?, CheckResult.accepted_orElse, List.any_cons]
     exact congrArg ((f x).accepted || ·) ih
 
+theorem CheckResult.value_failure : (failure : CheckResult ι α).value = none := rfl
+
+theorem CheckResult.value_map_const (s : CheckResult ι α) (b : β) :
+    (s.map fun _ => b).value = if s.accepted then some b else none := by
+  cases s with
+  | mk v e => cases v <;> rfl
+
+theorem CheckResult.value_bind_const (s : CheckResult ι α) (t : CheckResult ι β) :
+    (s.bind fun _ => t).value = if s.accepted then t.value else none := by
+  cases s with
+  | mk v e =>
+    cases v with
+    | none => rfl
+    | some a =>
+      simp only [CheckResult.bind, CheckResult.accepted, Option.isSome_some, ite_true]
+      split <;> rfl
+
+theorem CheckResult.value_orElse (s : CheckResult ι α) (t : Unit → CheckResult ι α) :
+    (s.orElse t).value = s.value.orElse fun _ => (t ()).value := by
+  cases s with
+  | mk v e =>
+    cases v with
+    | none =>
+      simp only [CheckResult.orElse, Option.orElse]
+      split <;> rfl
+    | some a => rfl
+
 /-- Convert the common subtype outcome while retaining the requested pair. -/
 @[nospecialize] def CheckResult.fromComparison (limit : Nat) (A B : Ty ι)
     (r : PositiveCertificates.ComparisonResult α) : CheckResult ι α :=

@@ -976,7 +976,9 @@ read/value rule may succeed when ordinary derivation search cannot. -/
     | _ => pure ()
     choices := choices ++ [.created e,.pure e,.ordinary e]
   for effect in choices do
-    if let some out := HeapExpressionRules.checkStepUsing G images j k effect codes then
+    let checked := HeapExpressionRules.checkStepResult G images j k effect codes
+    incomplete := incomplete <|> checked.exhaustion
+    if let some out := checked.value then
       -- Effect evidence validates this header itself; an ordinary derivation
       -- is not required for the precise read/value alternatives.
       return some (ordinary.value.getD (.node j .var []),effect,out)
