@@ -1,11 +1,12 @@
 import Verification.Model.Source.RequestJson
 
-/-! What the execution model does where JavaScript's behaviour is the question
-and no proof compares the two: each witness runs the machine, or evaluates a
-trusted definition, on a hand-written program, and states the outcome
-JavaScript gives. The pipeline cases cannot show these: a verified claim holds
-of the model, whichever way the model runs, and no source reaches NaN, a
-stuck subterm or `new` on call-only code. -/
+/-! Where the execution model must agree with JavaScript and no proof states
+it (DESIGN.md, the trusted tools): each witness runs the machine, or evaluates
+a trusted definition, on a hand-written program and states the outcome
+JavaScript gives. A pipeline case does not show these: a verified claim holds
+of the model whichever way the model runs, and TypeScript admits no source
+comparing a NaN with a literal, calling `null` or applying `new` to an
+arrow. -/
 namespace Verification.Model.ExecutionModelTests
 open PositiveNormalization PositiveGraphs ProgramTyping ControlFlow
 

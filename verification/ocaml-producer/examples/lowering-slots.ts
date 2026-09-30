@@ -4,11 +4,6 @@
 // one tested, or started a parameter's cell with another argument would not
 // verify.
 
-/** An identity, whose claims SourceExtractionTests forges. */
-function identity(flag: boolean): boolean {
-  return flag;
-}
-
 /** A later binding leaves an earlier name at its own slot. */
 function olderSlot(): true {
   const x = true;
