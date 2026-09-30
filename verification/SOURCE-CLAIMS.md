@@ -385,7 +385,7 @@ Different write invariants must not be absorbed: a Boolean-world cell currently
 true need not be `Ref true`. Thus `C(true,boolean) | C(true,true)` cannot become
 `C(true,true)` under the point interpretation. `observed_union_absorb` separately
 proves observation absorption at a fixed invariant. The corresponding model
-counterexample and normalizer regression live in `HeapObservationTests.lean`.
+counterexample is `observation_does_not_narrow_invariant` in `ModelBoundaries.lean`.
 
 ## Source identity and trust
 

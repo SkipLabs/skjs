@@ -1,4 +1,4 @@
-import Verification.Model.Tests.CallableGraphTests
+import Verification.Model.Programs.CertificateProducer
 import Verification.Model.Tests.GraphCodeFixtures
 
 /-! Recursive callable bags exercise the existing recursive graph interpretation,

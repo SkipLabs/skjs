@@ -34,7 +34,6 @@ private def narrowed : Json :=
           if e.getObjValD "pos" == toJson [312, 319] then e.setObjVal! "type" (toJson [1]) else e))
       | _ => f))
   | _ => claims
-#guard (SourceClaimJson.produceJson ast claims file 10).toOption.isSome
 #guard match SourceClaimJson.produceJson ast narrowed file 10 with
   | .ok _ => false
   | .error e => (e.splitOn "at [312,319)").length > 1

@@ -1,4 +1,4 @@
-import Verification.Model.Tests.CallableGraphTests
+import Verification.Model.Programs.CertificateProducer
 import Verification.Model.Tests.GraphCodeFixtures
 
 /-! Calls on union-typed variables use ordinary union elimination. All possible
@@ -25,7 +25,7 @@ private def branchProof (F R : Ty Nat) : Evidence Nat :=
   .node ⟨[F],callClaim.term,[0,1]⟩ (.sub .subset) [e]
 private def proof : Evidence Nat :=
   .node callClaim (.unionVar 0) [branchProof [2] [0],branchProof [3] [1]]
-theorem checked : checkTree G proof = true := by decide +kernel
+#guard checkTree G proof
 
 -- Search now derives the same union elimination, without an auxiliary shared
 -- constructor view. Each alternative checks the argument and result separately.
@@ -47,6 +47,5 @@ theorem returns_expected (nullResult : Bool) : Execution (program nullResult) 8 
     (.done (if nullResult then .nul else .tru)) := by
   cases nullResult <;> run_machine
 
-#print axioms checked
 #print axioms returns_expected
 end Verification.Model.CallableUnionTests

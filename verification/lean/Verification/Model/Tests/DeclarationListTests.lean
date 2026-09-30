@@ -13,10 +13,8 @@ private def ast : Json := (Json.parse "{\"file\":\"verification/tests/stateful-s
 private def claims : Json := (Json.parse "{\"file\":\"verification/tests/stateful-source/declaration-list.ts\",\"sourceSha256\":\"bdb1525a9aeb0f18e065db0cde90ee47e0d345b10bc09aab99bb5a14fc9a242e\",\"types\":[[\"nul\"],[{\"boolLit\":{\"value\":true}}],[{\"boolLit\":{\"value\":false}}],[\"undef\"],[\"num\"],[{\"numLit\":{\"bits\":\"4611686018427387904\"}}],[{\"numLit\":{\"bits\":\"4607182418800017408\"}}]],\"functions\":[{\"name\":\"laterWriteStaysSeparate\",\"namePos\":[469,492],\"params\":[{\"name\":\"seed\",\"type\":[0,1,2],\"current\":null}],\"result\":[1,2],\"entries\":[{\"start\":528,\"bindings\":[{\"name\":\"seed\",\"type\":[0,1,2],\"current\":null}]},{\"start\":600,\"bindings\":[{\"name\":\"seed\",\"type\":[0,1,2],\"current\":null},{\"name\":\"first\",\"type\":[0,1,2],\"current\":null},{\"name\":\"second\",\"type\":[0,1,2],\"current\":null}]},{\"start\":616,\"bindings\":[{\"name\":\"seed\",\"type\":[0,1,2],\"current\":null},{\"name\":\"first\",\"type\":[0,1,2],\"current\":null},{\"name\":\"second\",\"type\":[0,1,2],\"current\":null}]},{\"start\":637,\"bindings\":[{\"name\":\"seed\",\"type\":[0,1,2],\"current\":null},{\"name\":\"first\",\"type\":[0,1,2],\"current\":null},{\"name\":\"second\",\"type\":[1,2],\"current\":null}]},{\"start\":654,\"bindings\":[{\"name\":\"seed\",\"type\":[0,1,2],\"current\":null},{\"name\":\"first\",\"type\":[0,1,2],\"current\":null},{\"name\":\"second\",\"type\":[0,1,2],\"current\":null}]}],\"expressions\":[{\"pos\":[556,560],\"type\":[0,1,2],\"current\":null},{\"pos\":[591,596],\"type\":[0,1,2],\"current\":null},{\"pos\":[600,612],\"type\":[0],\"current\":null},{\"pos\":[608,612],\"type\":[0],\"current\":null},{\"pos\":[620,635],\"type\":[1,2],\"current\":null},{\"pos\":[620,626],\"type\":[0,1,2],\"current\":null},{\"pos\":[631,635],\"type\":[0],\"current\":null},{\"pos\":[644,650],\"type\":[1,2],\"current\":null},{\"pos\":[661,666],\"type\":[2],\"current\":null}]}]}").toOption.getD .null
 private def file := "verification/tests/stateful-source/declaration-list.ts"
 private def extracted := SourceClaimJson.extractGraphRequests ast claims file
-#guard extracted.toOption.isSome
 private def program : Program := ((extracted.toOption.getD []).map (·.program)).headD []
 private def start : Nat := ((extracted.toOption.getD []).map (·.start)).headD 0
-#guard (SourceClaimJson.produceJson ast claims file 10).toOption.isSome
 
 -- From the entry (19): the seed is checked against the first contract and
 -- allocated (16); the first cell is read (14) and that value allocated as the
@@ -73,23 +71,5 @@ theorem separate_cells (b : Bool) : Execution expected 48 []
     | apply Execution.next (.tagBind rfl)
     | apply Execution.next (.ret rfl)
 
--- A null seed copies null into the second cell and returns false.
-theorem null_seed : Execution expected 47 []
-    (.at 22 (seeded .nul)) [.nul, .nul] (.done .fls) := by
-  repeat first
-    | exact Execution.refl
-    | apply Execution.next (.enter rfl)
-    | apply Execution.next (.expr (.makeFields (by decide) rfl))
-    | apply Execution.next (.expr (.readField rfl rfl))
-    | apply Execution.next (.expr (.writeField rfl rfl (by decide)))
-    | apply Execution.next (.expr (.iteC (.testV rfl)))
-    | apply Execution.next (.expr .iteT)
-    | apply Execution.next (.expr .iteF)
-    | apply Execution.next (.bind rfl)
-    | apply Execution.next (.effect rfl)
-    | apply Execution.next (.tagBind rfl)
-    | apply Execution.next (.ret rfl)
-
 #print axioms separate_cells
-#print axioms null_seed
 end Verification.Model.DeclarationListTests

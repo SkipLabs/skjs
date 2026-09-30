@@ -1200,7 +1200,7 @@ none of its constructor rules has a semantic safety premise.
 
 ### Integration example
 
-[ProgramCertificateTests.lean](lean/Verification/Model/Tests/ProgramCertificateTests.lean) checks evidence for a program equivalent to:
+The rules type a program equivalent to:
 
 ```text
 let r = alloc true;
@@ -1211,8 +1211,8 @@ f(true);
 f(null)
 ```
 
-One closure has both `Null → Bool` and `Bool → Null`. Before the final call, a
-checked certificate widens that overload to `(Null | Bool) → (Null | Bool)` by
+One closure has both `Null → Bool` and `Bool → Null`. Before the final call,
+subsumption widens that overload to `(Null | Bool) → (Null | Bool)` by
 splitting the union domain.
 
 ### Executable program evidence
@@ -1258,13 +1258,6 @@ The explicit sequents keep this initial in-memory format easy to inspect, at the
 cost of repeating terms and contexts. This is not a commitment to a serialized
 format. The in-memory producer below uses this interface; a decoder or compact
 representation can be developed against it.
-
-[ProgramCertificateTests.lean](lean/Verification/Model/Tests/ProgramCertificateTests.lean) supplies concrete executable evidence for the
-stateful overload program above. Tests reject altered programs/result types,
-missing overload premises, changed captured contexts, unjustified branch choices,
-incorrect writes, malformed subtype evidence, extra premises and unbound variables.
-Its safety theorem is obtained from the successful check, with no embedded typing
-proof in the certificate.
 
 ## Control flow
 
@@ -1350,9 +1343,6 @@ The conclusion assumes that $\rho$ meets $\Gamma$ at budget $n$ and world $W$,
 that $W$ is admissible, and that $h$ satisfies $W$. This is a semantic composition
 theorem with checked evidence at both ends; its proof accommodates heap changes
 and world extension.
-[PointClaimTests.lean](lean/Verification/Model/Tests/PointClaimTests.lean) covers two predecessors merging into `Null | Bool`,
-rejected narrowing and slot invention or reordering, and a checked write followed
-by a supplied claim and a read through the retained reference.
 
 These are local obligations. `checkIncoming` checks the edges it is given;
 it does not establish that they enumerate a graph's actual predecessors.
@@ -1622,15 +1612,6 @@ another step. `accepted_result` proves
 that any returned value meets the declared result type at every positive
 remaining budget, in an admissible world satisfied by the final heap. These
 are safety and partial-correctness theorems, not termination guarantees.
-
-[ControlFlowTests.lean](lean/Verification/Model/Tests/ControlFlowTests.lean) checks a cyclic program that creates an overloaded
-closure over a Boolean cell, calls it, writes through the original reference,
-traverses a back edge, calls the same closure again and returns `false`. Its
-operational trace traverses the back edge; its safety theorem does not depend
-on that trace. A separate diamond graph joins null and Boolean predecessors at
-one supplied union claim. A nonterminating self-loop is also proved safe.
-Negative tests reject invalid destinations, missing branch evidence, unjustified
-merge narrowing, missing or extra node evidence, changed code and invalid starts.
 
 The graph layer does not change the type-family or expression semantics. A
 closure body is a graph as a function body is, run by its own steps
@@ -1961,7 +1942,6 @@ pushes a result. The finite `read` rule preserves facts. `write` conservatively
 drops all old facts and establishes the written value's predicate. `alloc` preserves shifted
 old facts and adds the fresh cell at the result slot. These are semantic rules;
 source compilation must still supply and check their graph-level use.
-[HeapFactsTests.lean](lean/Verification/Model/Tests/HeapFactsTests.lean) guards this check: contents widen and never narrow, and aliases agree.
 
 #### Checked expression postconditions
 
@@ -2296,9 +2276,6 @@ so the read is of a location of the object whichever arm it has, and its link
 names that location.
 The same allocation proof frames old facts and records the fresh bag, and the
 read proof records links with the object's actual descriptor.
-[CallableEffectTests.lean](lean/Verification/Model/Tests/CallableEffectTests.lean) checks that code with a delayed write preserves old contents during creation,
-that descriptor changes and out-of-scope captures cannot reuse its evidence,
-and that a saved read value remains precise across a subsequent call.
 [CallableMutationTests.lean](lean/Verification/Model/Tests/CallableMutationTests.lean) adds an actual mutating invocation: a closure captures a neutral bag and writes
 `true` after a `false` read has been saved. The saved value still verifies as
 `false`; a fresh read verifies as Boolean and executes to `true`, while a
@@ -2346,9 +2323,7 @@ Primitive result predicates are finite lists of null/undefined/Boolean
 singletons, numeric singletons and the number family. `HeapKnowledge.check_sound` and `project_checked`
 justify transfer and alias-preserving projection along executable slot maps.
 
-[HeapExpressionTests.lean](lean/Verification/Model/Tests/HeapExpressionTests.lean) uses the actual source type graph to check allocation, write, mapped transfer,
-wide read and precise return, with negative tests for stale contents, invalid
-storage writes, fabricated facts and changed expressions. The maintained graph checker carries the same postconditions in its state
+The maintained graph checker carries the same postconditions in its state
 invariant and checks every incoming edge, including back edges. External entry
 requires empty knowledge; effect-only continuations drop result-slot facts.
 Source observations use the
@@ -2381,11 +2356,8 @@ the key is present (`linkFacts_holds`):
 \qquad
 \frac{y=\mathsf{string}\quad y\equiv s}{y=\{s\}}.
 ```
-[NumericEqualityTests.lean](lean/Verification/Model/Tests/NumericEqualityTests.lean) guards numeric equality: IEEE zeros and NaN, and the number family kept on both edges.
-[StringEqualityTests.lean](lean/Verification/Model/Tests/StringEqualityTests.lean) guards string equality: a string family found equal to a string is that string.
-[HeapGuardTests.lean](lean/Verification/Model/Tests/HeapGuardTests.lean) proves a complete two-branch graph safe
-and checks that discarding the link prevents this
-refinement. A slot equality $x=y$ permits a checked write through either alias to
+[NumericEqualityTests.lean](lean/Verification/Model/Tests/NumericEqualityTests.lean) compares `numberEqual` with IEEE equality on NaN, infinities and adjacent doubles.
+A slot equality $x=y$ permits a checked write through either alias to
 establish the new contents for both, as the
 [write rule](#the-reference-operations) above states; every other cell
 observation is discarded. Read links are invalidated by writes and calls, while
@@ -2555,24 +2527,10 @@ and destination, or final consumer rejection. Failure means unsupported or
 unjustified within this search, not a proof that the program is untypable.
 No evidence is returned as successful unless the consumer accepts it.
 
-[CertificateProducerTests.lean](lean/Verification/Model/Tests/CertificateProducerTests.lean) runs the full path without hand-built evidence:
-
-- The stateful loop and shared union merge from `ControlFlowTests.lean`.
-- A graph that duplicates a reference slot, inserts a local, reorders bindings,
-  drops the interior local, writes through an alias, and calls the captured
-  closure. A checked 16-step execution returns `false`; its safety follows from
-  the automatically produced certificate.
-- A diamond whose two branch edges use different slot maps.
-- The nested-let overloaded program, union-domain arrow subsumption, and a
-  generated cyclic subtype certificate for recursive references.
-- Rejections for corrupted claims, invalid or wrong-length maps, changed code,
-  missing or extra edge evidence, invalid starts and exhausted search fuel.
-
-This establishes an in-memory program-plus-annotations-to-checked-evidence path.
-The [serialized request protocol](REQUEST-PROTOCOL.md) now exposes this boundary
-through the existing verifier binary. Source extraction correctness, producer
-completeness and integration of extended source claims remain outside these
-results.
+The [serialized request protocol](REQUEST-PROTOCOL.md) exposes this path from a
+program and its annotations to checked evidence through the verifier binary.
+Source extraction correctness, producer completeness and integration of
+extended source claims are outside these results.
 
 ### Derived source forms
 

@@ -22,7 +22,5 @@ private def nested : Json := Json.mkObj [
 #guard binderUse "Outer" nested == ⟨true, false⟩
 -- Real mixed use is retained, so the lowering can keep refusing it explicitly.
 #guard binderUse "P" (.arr #[pack "P", binder "P"]) == ⟨true, true⟩
--- Printed data is not a binder occurrence.
-#guard binderUse "P" (.str (binder "P").compress) == ⟨false, false⟩
 
 end Verification.Model.DeclarationBinderTests

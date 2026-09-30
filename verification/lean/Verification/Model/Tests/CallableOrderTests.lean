@@ -1,4 +1,4 @@
-import Verification.Model.Tests.CallableGraphTests
+import Verification.Model.Source.RequestJson
 import Verification.Model.Tests.GraphCodeFixtures
 
 /-! Effectful initialization and invocation share the ordinary left-to-right
@@ -7,11 +7,6 @@ namespace Verification.Model.CallableOrderTests
 open PositiveNormalization PositiveGraphs PositiveRules ProgramTyping ProgramCertificates
 open CertificateProducer ControlFlow HeapExpressionRules GraphCodeFixtures
 
-private def types : List (List (Clause (List Nat))) :=
-  [[.nul],[.bool],[.refs [(valueField, [1])] [] []],[.callable [(valueField, [1])] [] [] []],
-   [.callable [(valueField, [1])] [] [⟨[5], [[0]], [1], .unrestricted⟩] []],[.top],[.undef]]
-private def G : NormalGraph Nat := .ofRows fun i => types[i]?.getD []
-private def labels := List.range types.length
 -- The initializer writes true, allocates an intermediate object, and returns
 -- false for the new function's bag. Its invocation body reads the captured bag,
 -- past its parameter and receiver.
@@ -21,21 +16,6 @@ private def argument : Tm := .letE (.write (.var 0) .fls) .nul
 private def program (callable : Bool) : Program :=
   [⟨if callable then .makeAt (oneNode 1 (.var 0) 0) [valueField] [.fls] else .alloc .fls,.bind 1,none⟩,
    ⟨.app callee argument,.ret,none⟩]
-private def claims : List (PointClaim Nat) := [⟨[],[2,3]⟩,⟨[[2,3]],[1]⟩]
--- An effectful initializer cannot use the allocation/creation shortcuts to
--- retain the pre-initialization false fact about the captured cell.
-private def pool := vocabulary G labels claims []
-private def creation : Sequent Nat := ⟨[[2,3]],callee,[4]⟩
-private def evidence : Evidence Nat :=
-  (expression G pool 12 creation.context creation.term creation.type).getD (.node creation .nul [])
-private def knowledge : HeapKnowledge.Knowledge := ⟨[⟨0,[.fls],valueField⟩],[],[]⟩
-#guard checkTree G evidence admitted
-#guard allocationSlot callee == none
-#guard checkStep G creation knowledge (.allocated evidence) admitted == none
-#guard checkStep G creation knowledge (.created evidence) admitted == none
-#guard checkStep G creation knowledge (.pure evidence) admitted == none
-#guard checkStep G creation knowledge (.ordinary evidence) admitted == some (ordinaryOutput knowledge)
-
 /-- Initializer write and intermediate allocation precede function allocation;
 argument write then precedes the call and the body read. The three cells are
 the captured bag, the initializer's object, and the newly allocated callable

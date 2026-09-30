@@ -1,4 +1,4 @@
-import Verification.Model.Tests.CallableGraphTests
+import Verification.Model.Programs.CertificateProducer
 import Verification.Model.Tests.GraphCodeFixtures
 
 set_option maxHeartbeats 3200000

@@ -270,8 +270,6 @@ environment, with all pre-existing descriptors unchanged. This theorem is
 separate from semantic type safety: arbitrary raw terms and the unrestricted
 semantic families do not themselves impose a global registry.
 
-[CoherenceTests.lean](lean/Verification/Model/Tests/CoherenceTests.lean) guards the registry and the consumer's refusal of embedded runtime identities.
-
 `Val` abbreviates `Tm`, so worlds, heaps and the step relation all speak
 about the same objects. `letE a b` is an explicit binding: it evaluates `a`,
 then substitutes the resulting value into `b` in one step without changing the
@@ -947,10 +945,10 @@ At budget zero it is true. The `postcondition` theorem proves `Q` for an actual
 terminating execution observed with one remaining level; divergence is permitted.
 `erase` yields ordinary safety, and `forget` embeds ordinary safety with `Q = True`.
 
-[HeapObservationTests.lean](lean/Verification/Model/Tests/HeapObservationTests.lean) proves the important counterexamples. `observation_not_a_value_type` excludes
+[ModelBoundaries.lean](lean/Verification/Model/Semantics/ModelBoundaries.lean) proves the important counterexamples. `observation_not_a_value_type` excludes
 representing current contents by a heap-independent value family.
 `observation_does_not_narrow_invariant` gives a Boolean cell currently true that
-is not `Ref true`. `callback_counterexample` supplies an inhabited heap and an
+is not `Ref true`. `callback_does_not_frame` supplies an inhabited heap and an
 ordinarily typed captured writer that destroys the true observation. Thus an
 ordinary arrow cannot promise preservation of captured current contents.
 

@@ -1,9 +1,11 @@
 import Verification.Model.Semantics.Rules
+import Verification.Model.Semantics.HeapObservations
 
 /-! Regression proofs constraining the current rules: allocation forbids
-unrestricted distribution over a signature's result, and finite observation
+unrestricted distribution over a signature's result, finite observation
 depth forbids collapsing all ultimately incompatible reference results to
-bottom. -/
+bottom, and a current heap observation is neither framed by an ordinary
+callback, nor a value type, nor a narrower invariant. -/
 namespace Verification.Model.ModelBoundaries
 
 /-! ## Code of one node
@@ -215,7 +217,111 @@ theorem deeper_reference_rule_fails : ¬ (∀ n W v,
   exact constant_not_bottom undefT rfl
     (hr 4 _ _ (constant_nested_calls undefT nulT) (constant_nested_calls undefT boolT))
 
+/-! ## Current heap observations
+
+A cell of the persistent Boolean world, observed to hold `true`
+(`HeapObservations.Observes`). -/
+section Observations
+open HeapObservations
+
+/-- A callback overwriting a cell it names: graph code of one node, taking one
+parameter. -/
+def writer (l : Nat) : Tm := .obj 1 (.graph 1 [.write (.obj l .absent) .fls] [(.ret, none)] 0 [])
+
+/-- The persistent Boolean world admits both heaps at every budget. -/
+def boolWorld (n : Nat) : WorldT n := ofList [res boolT]
+
+theorem boolWorld_adm (n : Nat) : WorldAdm (boolWorld n) := by
+  intro l c hl j hj U U' hx v hv
+  cases l with
+  | zero => simp [boolWorld,lookup] at hl; subst c; exact hv
+  | succ l => simp [boolWorld,lookup] at hl
+
+theorem boolWorld_heap (n : Nat) (v : Val) (hv : v = .tru ∨ v = .fls) :
+    HeapOk n (boolWorld n) [v] := by
+  constructor
+  · simp [boolWorld]
+  · intro l c hl
+    cases l with
+    | zero =>
+      simp [boolWorld,lookup] at hl; subst c
+      exact ⟨v,rfl,fun _ _ => hv⟩
+    | succ l => simp [boolWorld,lookup] at hl
+
+theorem boolWorld_ref (n : Nat) : refT boolT n (boolWorld n) (.obj 0 .absent) :=
+  refT_cell (c := res boolT) (by simp [boolWorld,lookup]) (fun _ _ _ _ => Iff.rfl)
+
+/-- A callback cannot be given a generic observation frame: one of type
+`(x: null) => null` may overwrite the observed cell. Five levels see the call
+enter the code, its node, the write, the run returning, and the returned
+value/postcondition. -/
+theorem callback_does_not_frame (W : WorldT 5) :
+    ¬ SafePost nulT (fun h _ => Observes h 0 .tru) 5 W [.tru]
+      (.app (writer 0) .nul) := by
+  intro hs
+  have s1 : Step [.tru] (.app (writer 0) .nul) [.tru] _ := .callGraph rfl (by decide)
+  rcases hs with (⟨hv,_,_⟩ | hr) | ⟨_,_,_,_,_,step,_,hs⟩
+  · cases hv
+  · exact hr.no_step s1
+  obtain ⟨rfl,rfl⟩ := Step_det s1 step
+  have s2 : Step [.tru] (CallArguments.graphEntry 1 [.write (.obj 0 .absent) .fls] [(.ret, none)]
+      0 [] false .undef [.nul]) [.tru] _ := .gotoEnter rfl rfl
+  rcases hs with (⟨hv,_,_⟩ | hr) | ⟨_,_,_,_,_,step,_,hs⟩
+  · cases hv
+  · exact hr.no_step s2
+  obtain ⟨rfl,rfl⟩ := Step_det s2 step
+  have s3 : Step [.tru] (.frame [.write (.obj 0 .absent) .fls] [(.ret, none)]
+      (.write (.obj 0 .absent) .fls) [.undef, .nul] .nul .ret none) [.fls] _ :=
+    .frameC (.writeV rfl (by decide))
+  rcases hs with (⟨hv,_,_⟩ | hr) | ⟨_,_,_,_,_,step,_,hs⟩
+  · cases hv
+  · exact hr.no_step s3
+  obtain ⟨rfl,rfl⟩ := Step_det s3 step
+  have s4 : Step [.fls] (.frame [.write (.obj 0 .absent) .fls] [(.ret, none)]
+      .nul [.undef, .nul] .nul .ret none) [.fls] .nul := .frameRet rfl
+  rcases hs with (⟨hv,_,_⟩ | hr) | ⟨_,_,_,_,_,step,_,hs⟩
+  · cases hv
+  · exact hr.no_step s4
+  obtain ⟨rfl,rfl⟩ := Step_det s4 step
+  rcases hs with (⟨_,_,ho⟩ | hr) | ⟨_,_,_,_,_,step,_,_⟩
+  · simp [Observes] at ho
+  · exact val_not_thrown rfl hr
+  · exact value_no_step rfl step
+
+/-- The very same world admits true and false contents. Consequently no
+heap-independent value family can characterize the current true observation. -/
+theorem observation_not_a_value_type (T : Fam) :
+    ¬ (∀ h, HeapOk 2 (boolWorld 2) h →
+      (T 2 (boolWorld 2) (.obj 0 .absent) ↔ Observes h 0 .tru)) := by
+  intro he
+  have ht := (he [.tru] (boolWorld_heap 2 .tru (Or.inl rfl))).mpr rfl
+  have hf := (he [.fls] (boolWorld_heap 2 .fls (Or.inr rfl))).mp ht
+  simp [Observes] at hf
+
+/-- A point observation does not narrow the invariant: a Boolean cell currently
+true is not a `Ref true`. The read/write capability preorder that schema
+absorption uses is therefore no exact normalization of a reference together
+with its current contents. -/
+theorem observation_does_not_narrow_invariant :
+    HeapOk 1 (boolWorld 1) [.tru] ∧ refT boolT 1 (boolWorld 1) (.obj 0 .absent) ∧
+    Observes [.tru] 0 .tru ∧ ¬ refT (exact .tru) 1 (boolWorld 1) (.obj 0 .absent) := by
+  refine ⟨boolWorld_heap 1 .tru (Or.inl rfl),boolWorld_ref 1,rfl,?_⟩
+  intro hr
+  obtain ⟨flds,l,c,he,hf,hl,hc⟩ := refT_iff.mp hr
+  cases he
+  simp at hf
+  subst l
+  simp [boolWorld,lookup] at hl
+  subst c
+  have hf := (hc 0 (by decide) (ofList []) .fls).mp (Or.inr rfl)
+  cases hf
+
+end Observations
+
 #print axioms frame_ret_safe
 #print axioms arrow_inter_codomain_fails
 #print axioms deeper_reference_rule_fails
+#print axioms callback_does_not_frame
+#print axioms observation_not_a_value_type
+#print axioms observation_does_not_narrow_invariant
 end Verification.Model.ModelBoundaries

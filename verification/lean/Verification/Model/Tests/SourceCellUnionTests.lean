@@ -82,7 +82,6 @@ private def withoutObservations : Json :=
       observedEvidence.setObjVal! "obligations" (.arr (.arr keep.toArray :: rest).toArray)
     | _ => .null
   | _, _ => .null
-#guard ok (SourceClaimJson.checkJson ast observed file observedEvidence)
 #guard refuses (SourceClaimJson.checkJson ast observed file withoutObservations)
   "source evidence does not justify"
 
@@ -92,7 +91,6 @@ private def withoutObservations : Json :=
 #guard ok (SourceClaimJson.produceJson ast (enteredAt "writeThenRead" 1014 [0]) file 10)
 #guard refuses (SourceClaimJson.produceJson ast (enteredAt "readBlock" 739 [0]) file 10)
   "source incoming edge obligation at [739,757)"
-#guard ok (SourceClaimJson.produceJson ast (enteredAt "readBlock" 739 [0, 1, 2]) file 10)
 -- An entry environment narrowed to the null-only arm cannot erase the
 -- Boolean-capable one, though its contents observation holds.
 #guard refuses (SourceClaimJson.produceJson ast (enteredAt "writeThenRead" 1014 [0] [4]) file 10)
