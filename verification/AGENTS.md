@@ -264,7 +264,7 @@ fragment; do not restore acceptance by increasing trust silently.
   that opens the compiler is affected, so this is not a per-suite choice.
 - A decoder is the only place that asserts a shape. Everything else narrows:
   a type predicate, a `typeof` before a comparison, a case table keyed by the
-  language's own union. `tools/unchecked.mts` reports every written `any`, `as`
+  language's own union. `node verification/tools/unchecked.mts` ([source](tools/unchecked.mts)) reports every written `any`, `as`
   and `!` in the node side; what it should show is one `as` at the last line of
   each decoder, where the checks it just ran become the type it returns. An
   assertion anywhere else is standing in for a check that is missing.

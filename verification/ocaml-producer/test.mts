@@ -15,10 +15,15 @@ import { cases } from "./cases.mts";
 import { expectOutcome, pooled, runCase } from "./run-cases.mts";
 import type { Row, SourceClaims } from "../tools/source-claims.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
+// Forged-claim controls on single cases, each in a file of its own:
+// generic-rest.mts, a universal rest claim past collection, substitution and binding;
+// overload-claims.mts, per-signature claims across the same independent boundary;
+// default-parameters.mts, forged claims about parameter defaults: their scope, a generic closure's default, a capture read before its initialization.
 import { checkGenericRest } from "./generic-rest.mts";
 import { checkOverloads } from "./overload-claims.mts";
 import { checkDefaults, checkSchemeDefaults, checkEarlyDefault } from "./default-parameters.mts";
 import vm from "node:vm";
+// ../tools/strip-types.mts erases the annotations of an example the suite runs as JavaScript.
 import { stripTypes } from "../tools/strip-types.mts";
 // The reader's collector, imported rather than served: `serve.mts` takes the
 // port only when it is run directly.

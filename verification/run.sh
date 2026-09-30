@@ -106,8 +106,10 @@ fi
 
 # The front end is TypeScript and is checked as such: `tsc` over the trusted
 # tools and over the reader's own types, under the same strictness the corpus
-# is claimed at. A silently-renamed compiler API reads as `undefined` at
-# runtime and as an error here.
+# is claimed at (report-viewer/tsconfig.json: the report types the page shares,
+# under the browser's library and without node's, with the tools' compiler).
+# A silently-renamed compiler API reads as `undefined` at runtime and as an
+# error here.
 typecheck() {
   (cd verification/tools && npx tsc -p tsconfig.json &&
    npx tsc -p ../report-viewer/tsconfig.json)

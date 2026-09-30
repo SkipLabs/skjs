@@ -4,6 +4,7 @@
  * One object, because the views are all views of the same thing: a file, read
  * through one producer, with one claim selected. Nothing here decides an
  * outcome — a report carries the verifier's verdicts and this only holds them.
+ * It fetches them through api.ts, the server's endpoints as functions.
  */
 import { analyse, files as fetchFiles, health, type Group } from "./api.ts";
 import { fromBundle, type Report, type ShownFunction } from "../../model.mts";

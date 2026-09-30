@@ -1,7 +1,6 @@
 {
   // The application. `svelte-check` is what actually checks the components;
-  // this covers the plain `.ts` beside them, and declares the boundary with
-  // the JavaScript model modules in `src/model.d.ts`.
+  // this covers the plain `.ts` beside them and the build configuration.
   "compilerOptions": {
     "target": "es2022",
     "module": "preserve",

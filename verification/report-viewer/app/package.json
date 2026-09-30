@@ -2,7 +2,7 @@
   "name": "skjs-claim-reader",
   "private": true,
   "type": "module",
-  "description": "The claim report reader. Its own package, so `type: module` does not reach the CommonJS server and helpers beside it.",
+  "description": "The claim report reader: its build and its checks, apart from the trusted tools' dependencies.",
   "scripts": {
     "build": "vite build",
     "dev": "vite",

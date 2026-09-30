@@ -5,20 +5,14 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
-import { createRequire } from "node:module";
+// tools/tsc-claims.mts is the producer the corpus runs: TypeScript's own checker, stating its claims.
 import * as tscClaims from "./tools/tsc-claims.mts";
 import { definedFunctions } from "./tools/fragment-parse.mts";
+// The corpus index, which the reader lists too: which files each group holds.
+import { groups } from "./report-viewer/examples.mts";
 
 const __filename = import.meta.filename;
 const __dirname = path.dirname(__filename);
-// The corpus index is a plain JavaScript module the reader also loads.
-const require = createRequire(import.meta.url);
-// The corpus index: which files each display group holds.
-const {
-  groups,
-}: {
-  groups: { label: string; files: string[] }[];
-} = require("./report-viewer/examples.mts");
 const root = path.resolve(__dirname, "..");
 process.chdir(root);
 let build = false,

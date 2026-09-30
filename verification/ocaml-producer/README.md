@@ -44,6 +44,17 @@ Skip toolchain or Docker. Install Dune with `opam install dune` if needed.
 `dune runtest` runs the OCaml unit tests; `node test.mts` (from this directory)
 runs the end-to-end verification tests.
 
+[dune](dune) declares the producer's library, its executable and its unit
+test; [dune-project](dune-project) makes this directory a dune root of its
+own, which `--root` builds into the `_build/` the reader and `check.mts` run.
+[`../dune`](../dune) limits the repository's dune workspace, which an editor's
+OCaml language server needs at the root, to this directory.
+[examples/tsconfig.json](examples/tsconfig.json) is the strict project an
+example is checked under when no `--project` names another, and
+[examples/package.json](examples/package.json) makes the examples ES modules,
+as the `upstream` project's Node16 resolution requires of the examples it
+includes.
+
 The checker prints `verified`, `unverified`, `unsupported`, or `error`, with an
 artifact directory containing the exact source snapshot, Fragment, claims,
 evidence (if produced), and diagnostic logs. The outcome identifies the failing
@@ -426,9 +437,11 @@ survive those extensions rather than being replaced by subset shortcuts.
 ## What works and what the tests establish
 
 [cases.mts](cases.mts) is the executable inventory, including expected phase
-and diagnostic for every negative control and known gap. `node test.mts` prints
-what the suite verifies, refuses and keeps visible, and how many tampering
-controls hold; the numbers live in its output, not here.
+and diagnostic for every negative control and known gap.
+[test.mts](test.mts) runs every case against it, then the checks no case can
+make: pinned imports, tampering controls and the reader's correspondence. It
+prints what the suite verifies, refuses and keeps visible, and how many
+tampering controls hold; the numbers live in its output, not here.
 
 | Architectural pressure                      | Small examples with full certificates                                                                                                         |
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |

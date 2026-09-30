@@ -1,6 +1,11 @@
 // Executable coverage inventory. Each control names its intended boundary.
 // A newly earlier refusal of an existing control is a gap, not evidence that
 // its original validation obligation was checked.
+//
+// The value-import cases name `imports-project` as their project:
+// imports-project/lib.ts is the library they import, assumed at its declared types;
+// imports-project/tsconfig.json resolves `@fixture/lib` to it through `paths`;
+// imports-project/package.json makes it an ES module, as that project's Node16 resolution requires.
 import type { Outcome, Phase } from "./check.mts";
 export interface Case {
   file: string;

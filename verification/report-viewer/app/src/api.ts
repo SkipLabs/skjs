@@ -1,7 +1,7 @@
 /*
  * What the server offers, as functions.
  *
- * The reader runs against `serve.js`, which collects a producer's claims for a
+ * The reader runs against `serve.mts`, which collects a producer's claims for a
  * repository source and has the verifier check them. Every call here is a read:
  * the reader asks for a report and displays it. It never decides an outcome —
  * an outcome in a bundle was reached by the verifier, and a bundle that carries

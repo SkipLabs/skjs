@@ -27,9 +27,9 @@ or at the producer's proposal — is shown whole under that outcome, and with
 under the spans TypeScript gives them. It needs
 `dune build --root verification/ocaml-producer` to have been run.
 
-Opening the reader without a file in the link shows the **catalogue** — every
+Opening the reader without a file in the link shows the **catalogue** ([Catalogue.svelte](app/src/Catalogue.svelte)) — every
 source it offers, laid out to be read — and **browse sources** returns to it.
-Or type any repository-relative path into **Open any repository path…**; it
+Or type any repository-relative path into **Open any repository path…** ([OpenPath.svelte](app/src/OpenPath.svelte)); it
 suggests matching `.ts` sources as you type, and a full path works whether or
 not it is listed. Paths outside the repository are refused. The producer runs
 on every open — nothing is cached — and the verifier checks what it produced,
@@ -43,14 +43,14 @@ quietly selecting something else.
 
 ## What is on screen
 
-**The functions**, down the left, each with the two outcomes that matter:
+**The functions** ([FunctionList.svelte](app/src/FunctionList.svelte)), down the left, each with the two outcomes that matter:
 `✓→✓` is the producer's own verdict on the program, then what proof search
 found over the claims it made. They are different questions. `✗` on the right
 means no derivation was found — never that a claim is false. `?` means checking
 could not properly be attempted: a claim it needed is missing, or the source is
 outside the fragment. A disagreement is amber.
 
-**The source**, with the function's claimed result drawn at its annotation as
+**The source** ([SourceView.svelte](app/src/SourceView.svelte)), with the function's claimed result drawn at its annotation as
 `returns T` — every return is checked against it, so it reads differently from
 a claim — and each claim bracketed under the span it is about — except
 an entry's environment, which is what holds before its statement runs and so
@@ -68,11 +68,11 @@ messages without a usable source span remain visible in the panel. TS checker
 messages travel with its claims. **Undecoded
 bindings** shows the bindings whose types it could not state.
 
-**The selected claim**, docked beneath the source rather than in a rail away
+**The selected claim** ([Selection.svelte](app/src/Selection.svelte)), docked beneath the source rather than in a rail away
 from it: its span, its type in surface syntax, the producer's own encoding, and
 — where one is there — the claim's failure.
 
-**Why verification stopped**, where the verifier emitted a structured
+**Why verification stopped** ([Obligation.svelte](app/src/Obligation.svelte)), where the verifier emitted a structured
 obligation diagnostic: what it had and what had to follow from it, the bindings
 that differ marked, and both ends of an edge selectable — hovering the `✗`
 lights the other claim of the edge and both spans, the origin underlined. A
@@ -83,7 +83,7 @@ expression's own claim share a span and are different obligations — and where
 the record names no specific role, the panel says nothing rather than inventing
 one. See [OBLIGATION-DIAGNOSTICS](../OBLIGATION-DIAGNOSTICS.md).
 
-**Provenance**, collapsed: the producer, the exact command, how long it took,
+**Provenance** ([Provenance.svelte](app/src/Provenance.svelte)), collapsed: the producer, the exact command, how long it took,
 whether the independent consumer ran, and the fingerprints of the inputs.
 
 Keyboard: <kbd>j</kbd>/<kbd>k</kbd> or the arrows step through the marks in
@@ -98,7 +98,14 @@ producer says nothing about is listed with no claims.
 
 ## How it is built
 
-`app/` is a Svelte 5 application in TypeScript, built by Vite:
+`app/` is a Svelte 5 application in TypeScript, built by Vite.
+[app/index.html](app/index.html) is the page, which loads the application;
+[app/vite.config.ts](app/vite.config.ts) builds it into the stable file names
+the server's asset table serves, and [app/svelte.config.js](app/svelte.config.js)
+puts the components' `lang="ts"` through Vite's type stripping.
+[app/package.json](app/package.json) holds the build's dependencies and its
+`check`, `build` and `dev` scripts, and [app/tsconfig.json](app/tsconfig.json)
+is the configuration `check` reads:
 
 ```sh
 npm --prefix verification/report-viewer/app run check   # types, templates included
@@ -117,16 +124,18 @@ module beside it, checked by `tools/tsconfig.json` like the rest of the front
 end and exercised by the reader section of `ocaml-producer/test.mts` without a
 browser:
 
-- `model.mts` — what a bundle means, as the reader displays it: for each
+- [`model.mts`](model.mts) — what a bundle means, as the reader displays it: for each
   function, its sites in source order — an expression claim, an environment, or
   a place with nothing claimed — and its one failure, with the site it attached
   to.
-- `marks.mts` — what the source view draws: which claims at what position, the
+- [`marks.mts`](marks.mts) — what the source view draws: which claims at what position, the
   outcome symbols, how marks pack onto rows without overlapping.
+- [`types.ts`](types.ts) — the report the reader displays and the catalogue's
+  groups: the report writer, the server and the page are typed against it.
 - `../tools/diagnostic-view.mts` — builds a typed obligation presentation when the report is generated; the panel renders it.
 - `../tools/claim-text.mts` — claim types in surface syntax, and the lift from
   the normalized encoding into the structural one the surface prints.
-- `serve.mts` — runs the producer and the report writer. A
+- [`serve.mts`](serve.mts) — the reader's server: runs the producer and the report writer. A
   producer is one collector here — a `check.mts` run or `tsc-claims.mts` —
   each ending at the same
   `annotate-source.mts --format source-claims --verify` (for a `check.mts`

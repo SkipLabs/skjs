@@ -17,6 +17,7 @@
 import type { ClaimType } from "./source-claims.mts";
 import type { Ast } from "./fragment.mts";
 import surface from "./claim-text.mts";
+// term-claim.mts prints a declared bound, a source type term, in the claim form.
 import { claimOfTerm } from "./term-claim.mts";
 
 /**

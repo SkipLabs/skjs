@@ -38,6 +38,13 @@ npm ci --prefix verification/ocaml-producer/upstream   # the fixture's @types/no
 make verify
 ```
 
+[tools/package.json](tools/package.json) pins what the node side installs: the
+TypeScript compiler the parser and `tsc-claims.mts` run on, and KaTeX, which
+checks the documents' math. [lean/lakefile.toml](lean/lakefile.toml) declares
+the Lean package Lake builds: the `Verification` library and the `verifier`
+executable. [.gitignore](.gitignore) keeps what these commands write, Lake's
+build and manifest and npm's lock, out of the repository.
+
 Tests favour end-to-end pipeline cases, source files through the parser, the
 OCaml producer and Lean, over unit tests of intermediate steps; tests written
 while researching a feature retire once a pipeline case covers it
@@ -45,13 +52,15 @@ while researching a feature retire once a pipeline case covers it
 
 The commands separate regression testing from inspecting example outcomes:
 
-- `make verify-test` builds Lean and runs the pipeline's suites: the OCaml
-  producer's cases, front-end types, JSON field names, documents, the rule
-  inventory and the source boundaries. Its summary counts test executables,
+- `make verify-test` builds Lean and runs the pipeline's suites
+  ([run.sh](run.sh) starts them together and reports them in order): the
+  OCaml producer's cases, front-end types, JSON field names, documents, the
+  rule inventory and the source boundaries. Its summary counts test executables,
   not functions or assertions, and marks an incomplete run after an early
   failure.
 - `make verify-examples` builds Lean and checks TypeScript's own claims for
-  the viewer's example corpus ([tsc claims](tests/tsc-claims/README.md)).
+  the viewer's example corpus ([examples.mts](examples.mts);
+  [tsc claims](tests/tsc-claims/README.md)).
   Each function shows TypeScript's verdict and whether the verifier derives
   its claims: proof `✓` means independently verified, `✗` means proof search
   failed (not a disproof), and `·` means no claim was stated.

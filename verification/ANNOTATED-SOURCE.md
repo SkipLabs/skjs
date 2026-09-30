@@ -1,6 +1,6 @@
 # Annotated source reports
 
-`tools/annotate-source.mts` writes a separate TypeScript copy showing producer
+[`tools/annotate-source.mts`](tools/annotate-source.mts) writes a separate TypeScript copy showing producer
 claims, optionally with freshly checked function results. It also writes a JSON
 manifest preserving the claims, diagnostics and content fingerprints. Producer
 names are reported provenance, not authenticated identities. The original source and claim files are not modified. Existing output files are

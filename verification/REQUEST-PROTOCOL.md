@@ -511,7 +511,7 @@ The hooks that write it are, as definitions, the identity on the result they
 observe (`SubtypingTrace.question`, `noteInstance`, `note`), and every
 theorem reads those definitions; only their compiled implementations write
 the file. So a traced run accepts exactly what an untraced one does.
-`node verification/tools/subtyping-trace.mts [pattern …]` runs the pipeline
+`node verification/tools/subtyping-trace.mts [pattern …]` ([source](tools/subtyping-trace.mts)) runs the pipeline
 cases with tracing (`SUBTYPING_TRACE=1` for `check.mts`) and reports the work
 per question against the size of the types compared.
 

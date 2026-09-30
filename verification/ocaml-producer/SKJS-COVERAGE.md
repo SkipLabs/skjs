@@ -32,7 +32,7 @@ Membership alone does not show that the pipeline reached the corresponding
 obligation: an earlier refusal can mask it. Verified, gated and rejected outcomes
 remain separate in the JSON; aggregate “done” totals are not a closure criterion.
 
-Rerun:
+[skjs-coverage.mts](skjs-coverage.mts) takes the census. Rerun:
 
 ```sh
 node verification/ocaml-producer/skjs-coverage.mts --skjs --width 3   # about 220 s
@@ -91,8 +91,8 @@ not counted. The remaining 2,674 are the accepted corpus.
 same one, a project of its own extending
 [`skjs-environment/tsconfig.json`](skjs-environment/tsconfig.json): a bare
 import specifier resolves in `import-stubs`, and
-[`skjs-environment.d.ts`](skjs-environment/skjs-environment.d.ts) restates the
-builtins stub's globals TypeScript's library lacks (`__SKJS_show`, `process`,
+[`skjs-environment.d.ts`](skjs-environment/skjs-environment.d.ts) restates the builtins
+stub's globals TypeScript's library lacks (`__SKJS_show`, `process`,
 `StringRecord<V>`, and `Closed<T>` read as `T`). These declarations are
 assumptions of the result, as an import's are
 ([trust surface](../DESIGN.md#trust-surface)).

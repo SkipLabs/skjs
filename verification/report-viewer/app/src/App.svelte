@@ -5,6 +5,7 @@
    * One line of status, the functions down the left, the source in the middle,
    * and the selected claim beneath it. Everything on screen is a view of one
    * file read through one producer; nothing here decides an outcome.
+   * What is on screen is one object, state.svelte.ts, which every view reads.
    */
   import { onMount } from "svelte";
   import Catalogue from "./Catalogue.svelte";

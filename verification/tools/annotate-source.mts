@@ -25,6 +25,7 @@ import type {
 import type { Span } from "./span.mts";
 import type { Failure, Result } from "../report-viewer/types.ts";
 import { messageOf } from "./thrown.mts";
+// rigid.mts: the type parameters a report shows with their declared bounds, worked out here.
 import { rigidOf, rigidScopes, scopeOf } from "./rigid.mts";
 import type { RigidParameter, RigidScopes } from "./rigid.mts";
 import type { Ast } from "./fragment.mts";

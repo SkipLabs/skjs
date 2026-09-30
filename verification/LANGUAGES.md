@@ -64,7 +64,9 @@ a qualified callback. Graph lowering retains the field; conversion to the older
 unqualified `Claim` arrow refuses a stronger effect rather than forgetting it.
 
 Defining no language, and saying so: [Decode.lean](lean/Verification/Model/Types/Decode.lean)
-(source spans and JSON accessors several decoders share) and [span.mts](tools/span.mts).
+(source spans and JSON accessors several decoders share),
+[span.mts](tools/span.mts) (the source span the fragment, the claims and the reports all carry)
+and [thrown.mts](tools/thrown.mts) (the one reading of a caught value, which every tool reports the same way).
 
 The [OCaml prototype](ocaml-producer/README.md) consumes the existing Fragment
 and writes the existing SourceClaims document. Its internal typed view and
@@ -92,9 +94,6 @@ drift currently causes a test failure/refusal, not an OCaml compilation error.
   of a language. A producer that fails to emit a new case degrades to a refusal,
   which is a worse outcome reported honestly rather than a wrong one, but it is
   not a compile error and no table forces it.
-- **`report-viewer/tsconfig.json` cannot run** on the `tsc` resolvable from that
-  directory: it sets `erasableSyntaxOnly`, which needs 5.8, and 5.7.3 resolves.
-  The files it covers are type-checked through `tools/tsconfig.json` regardless.
 
 ## Adding a language
 
