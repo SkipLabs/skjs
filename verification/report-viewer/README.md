@@ -101,8 +101,8 @@ producer says nothing about is listed with no claims.
 `app/` is a Svelte 5 application in TypeScript, built by Vite.
 [app/index.html](app/index.html) is the page, which loads the application;
 [app/vite.config.ts](app/vite.config.ts) builds it into the stable file names
-the server's asset table serves, and [app/svelte.config.js](app/svelte.config.js)
-puts the components' `lang="ts"` through Vite's type stripping.
+the server's asset table serves; Svelte compiles the components' `lang="ts"`
+itself.
 [app/package.json](app/package.json) holds the build's dependencies and its
 `check`, `build` and `dev` scripts, and [app/tsconfig.json](app/tsconfig.json)
 is the configuration `check` reads:
