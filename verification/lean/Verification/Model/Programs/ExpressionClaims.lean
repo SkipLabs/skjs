@@ -22,15 +22,26 @@ section
 variable [DecidableEq ι] [CertificateProducer.Instantiates ι]
 
 /-- `valid` says which labels the graph's store holds. -/
-@[nospecialize] def checkUsing (G : NormalGraph ι) (images : InstanceImageCheck G) (valid : ι → Bool) (j : Sequent ι) (e : Evidence ι)
-    (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
-  validEvidence valid e && decide (claim e = j) &&
-    checkScope j.context.length j.term && checkTreeUsing G images e codes
+@[nospecialize] def checkResult (G : NormalGraph ι) (images : InstanceImageCheck G) (valid : ι → Bool)
+    (j : Sequent ι) (e : Evidence ι) (codes : CodeEntry ι → Bool := fun _ => false) : CheckResult ι Unit :=
+  (CheckResult.ofBool (validEvidence valid e && decide (claim e = j) &&
+    checkScope j.context.length j.term)).bind fun _ => checkTreeResult G images e codes
+
+@[nospecialize] def checkUsing (G : NormalGraph ι) (images : InstanceImageCheck G) (valid : ι → Bool)
+    (j : Sequent ι) (e : Evidence ι) (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
+  (checkResult G images valid j e codes).accepted
+
+theorem checkUsing_eq (G : NormalGraph ι) (images : InstanceImageCheck G) (valid : ι → Bool)
+    (j : Sequent ι) (e : Evidence ι) (codes : CodeEntry ι → Bool) :
+    checkUsing G images valid j e codes = (validEvidence valid e && decide (claim e = j) &&
+      checkScope j.context.length j.term && checkTreeUsing G images e codes) := by
+  rw [checkUsing, checkResult, CheckResult.accepted_bind, CheckResult.accepted_ofBool]
+  rfl
 
 theorem check_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {valid j e} {codes : CodeEntry ι → Bool} (h : checkUsing G images valid j e codes = true)
     (hcodes : CodesSound G codes := by exact Verification.Model.ProgramCertificates.codesSound_none _) :
     HasTyUsing G images j.context j.term j.type := by
-  simp only [checkUsing, Bool.and_eq_true, decide_eq_true_eq] at h
+  simp only [checkUsing_eq, Bool.and_eq_true, decide_eq_true_eq] at h
   have ht := checkTreeUsing_sound e h.2 hcodes
   rw [h.1.1.2] at ht
   exact ht
@@ -60,7 +71,7 @@ diagnostic mentioning some of them shows of it (`StoreView.project`). -/
   let mut es := #[]
   for (r,index) in rs.zipIdx do
     let j := r.sequent
-    let candidate : CertificateProducer.SearchResult ι (Evidence ι) ← match r.plan with
+    let candidate : ProgramCertificates.CheckResult ι (Evidence ι) ← match r.plan with
       | some plan => do
         let (e, next) := DirectProof.renderWith G images pool j.context plan cache
         cache := next
@@ -71,8 +82,9 @@ diagnostic mentioning some of them shows of it (`StoreView.project`). -/
     -- The graph code a unit creates is checked after its obligations are
     -- rendered: here every code is admitted, and acceptance checks the
     -- obligation again against the table its certificate checked.
-    let some e := candidate.value.filter (fun e => checkUsing G images valid j e (fun _ => true))
-      | if let some stop := candidate.exhaustion then
+    let validated := candidate.bind fun e => (checkResult G images valid j e (fun _ => true)).map fun _ => e
+    let some e := validated.value
+      | if let some stop := validated.exhaustion then
           let p := project (stop.source ++ stop.target ++ j.context.flatten).eraseDups
           throw (withDiagnostic s!"closure expression claim at [{r.pos.1},{r.pos.2}): subtype search exhausted"
             ([("kind",toJson "direct-obligation"),("phase",toJson "proof-search"),

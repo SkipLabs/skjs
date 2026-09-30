@@ -247,7 +247,7 @@ theorem checkTree_reassign (e : ProgramCertificates.Evidence ι)
     checkTreeUsing (reassign G η) (images.reassign η) e codes = checkTreeUsing G images e codes := by
   match e with
   | .node j r ps =>
-    rw [checkTreeUsing, checkTreeUsing]
+    rw [checkTreeUsing_eq, checkTreeUsing_eq]
     simp only [Local_reassign]
     congr 1
     congr 1

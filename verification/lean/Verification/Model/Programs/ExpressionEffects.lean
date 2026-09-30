@@ -230,7 +230,7 @@ theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι}
   cases e with
   | node j r ps =>
     simp only [claim] at he ⊢
-    simp only [checkTreeUsing, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at ht
+    simp only [checkTreeUsing_eq, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at ht
     cases r <;> try simp only [selectedCallPreserves] at hp <;> try contradiction
     case app effect =>
       cases effect with

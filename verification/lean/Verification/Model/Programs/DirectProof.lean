@@ -42,7 +42,7 @@ def ifE [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (A : Ty ι) (c
 its image checker and the pool are fixed for one cache's life, so the two
 types are the key. -/
 structure SubtypeCache (ι : Type) [BEq ι] [Hashable ι] where
-  answers : Std.HashMap (Ty ι × Ty ι) (SearchResult ι (PositiveCertificates.SubtypeChoices ι)) := {}
+  answers : Std.HashMap (Ty ι × Ty ι) (CheckResult ι (PositiveCertificates.SubtypeChoices ι)) := {}
   /-- The first unfinished coercion in the current render only. -/
   active : Option (Exhaustion ι) := none
 
@@ -119,7 +119,7 @@ def Plan.depth : Plan ι → Nat
 
 /-- Render with the searches of earlier renders over the same graph and pool. -/
 def renderWith (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (Γ : List (Ty ι)) (p : Plan ι)
-    (cache : SubtypeCache ι) : SearchResult ι (Evidence ι) × SubtypeCache ι :=
+    (cache : SubtypeCache ι) : CheckResult ι (Evidence ι) × SubtypeCache ι :=
   let (answer, next) := (renderAt G images pool p.depth Γ p).run.run { cache with active := none }
   (⟨answer, if answer.isSome then none else next.active⟩, next)
 

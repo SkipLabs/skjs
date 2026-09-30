@@ -3,7 +3,8 @@ import Verification.Model.Programs.ProgramTyping
 /-! Finite program evidence checked against the declarative rules. Each node
 states its sequent explicitly. The external entry point also checks that the
 root is the requested closed program and type; evidence cannot change the task.
-No proof search or semantic observation budget is involved. -/
+The evidence fixes its rule and premise tree. Coercion choices are validated
+through the common engine, whose execution outcome is retained by `CheckResult`. -/
 namespace Verification.Model.ProgramCertificates
 open ProgramTyping PositiveNormalization PositiveGraphs PositiveRules
 open CallEffects (Arrow RestArrow MethodArrow Contract Effect)
@@ -13,6 +14,117 @@ structure Sequent (ι : Type) where
   term : Tm
   type : Ty ι
   deriving DecidableEq
+
+/-- An incomplete subtype comparison, including its requested judgment. -/
+structure Exhaustion (ι : Type) where
+  source : Ty ι
+  target : Ty ι
+  limit : Nat
+  rounds : Nat
+  visited : Nat
+  deriving Repr, DecidableEq
+
+/-- Compositional search and validation retain unfinished subtype work.
+Successful proposal values require independent certificate validation. -/
+structure CheckResult (ι α : Type) where
+  value : Option α
+  exhaustion : Option (Exhaustion ι) := none
+
+@[nospecialize] def CheckResult.fromOption (o : Option α) : CheckResult ι α := ⟨o, none⟩
+
+instance : Coe (Option α) (CheckResult ι α) := ⟨CheckResult.fromOption⟩
+
+@[nospecialize] def CheckResult.bind (s : CheckResult ι α) (f : α → CheckResult ι β) : CheckResult ι β :=
+  match s.value with
+  | none => ⟨none, s.exhaustion⟩
+  | some a =>
+    let t := f a
+    if t.value.isSome then t else { t with exhaustion := s.exhaustion <|> t.exhaustion }
+
+instance : Monad (CheckResult ι) where
+  pure a := ⟨some a, none⟩
+  bind := CheckResult.bind
+
+instance : MonadLift Option (CheckResult ι) where
+  monadLift := CheckResult.fromOption
+
+@[nospecialize] def CheckResult.orElse (s : CheckResult ι α) (next : Unit → CheckResult ι α) : CheckResult ι α :=
+  match s.value with
+  | some a => ⟨some a, none⟩
+  | none =>
+    let t := next ()
+    if t.value.isSome then { t with exhaustion := none }
+    else { t with exhaustion := s.exhaustion <|> t.exhaustion }
+
+instance : Alternative (CheckResult ι) where
+  failure := ⟨none, none⟩
+  orElse := CheckResult.orElse
+
+@[nospecialize] def CheckResult.map (f : α → β) (s : CheckResult ι α) : CheckResult ι β :=
+  ⟨s.value.map f, if s.value.isSome then none else s.exhaustion⟩
+
+/-- Try candidates in order, retaining exhaustion only when every candidate fails. -/
+@[nospecialize] def _root_.List.findCheck? (xs : List β) (f : β → CheckResult ι α) : CheckResult ι α :=
+  match xs with
+  | [] => failure
+  | x :: xs => (f x).orElse fun _ => xs.findCheck? f
+
+@[nospecialize] def CheckResult.accepted (s : CheckResult ι α) : Bool := s.value.isSome
+
+@[nospecialize] def CheckResult.ofBool (b : Bool) : CheckResult ι Unit :=
+  ⟨if b then some () else none, none⟩
+
+theorem CheckResult.accepted_ofBool (b : Bool) : (CheckResult.ofBool (ι := ι) b).accepted = b := by
+  cases b <;> rfl
+
+theorem CheckResult.accepted_bind (s : CheckResult ι α) (t : CheckResult ι β) :
+    (s.bind fun _ => t).accepted = (s.accepted && t.accepted) := by
+  cases s with
+  | mk v e =>
+    cases v with
+    | none => rfl
+    | some a =>
+      simp only [CheckResult.bind, CheckResult.accepted, Option.isSome_some, Bool.true_and]
+      split <;> rfl
+
+@[nospecialize] def CheckResult.all (xs : List β) (f : β → CheckResult ι Unit) : CheckResult ι Unit :=
+  match xs with
+  | [] => pure ()
+  | x :: xs => (f x).bind fun _ => CheckResult.all xs f
+
+theorem CheckResult.accepted_all (xs : List β) (f : β → CheckResult ι Unit) :
+    (CheckResult.all xs f).accepted = xs.all (fun x => (f x).accepted) := by
+  induction xs with
+  | nil => rfl
+  | cons x xs ih => simp only [CheckResult.all, CheckResult.accepted_bind, ih, List.all_cons]
+
+/-- Convert the common subtype outcome while retaining the requested pair. -/
+@[nospecialize] def CheckResult.fromComparison (limit : Nat) (A B : Ty ι)
+    (r : PositiveCertificates.ComparisonResult α) : CheckResult ι α :=
+  match r with
+  | .established x => ⟨some x, none⟩
+  | .notEstablished => ⟨none, none⟩
+  | .exhausted rounds visited => ⟨none, some ⟨A, B, limit, rounds, visited⟩⟩
+
+theorem CheckResult.accepted_fromComparison (limit : Nat) (A B : Ty ι)
+    (r : PositiveCertificates.ComparisonResult α) :
+    (CheckResult.fromComparison limit A B r).accepted = r.accepted := by
+  cases r <;> rfl
+
+/-- Validate supplied subtype choices through the common operation. -/
+@[nospecialize] def checkSubtypeUsing [DecidableEq ι] (G : NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) (A B : Ty ι)
+    (choices : PositiveCertificates.SubtypeChoices ι) : CheckResult ι Unit :=
+  CheckResult.fromComparison images.budget.rounds A B
+    ((PositiveCertificates.compareUsing G images A B (fun _ => choices.instantiation)
+      (fun _ => choices.members)).map fun _ => ())
+
+theorem checkSubtypeUsing_accepted [DecidableEq ι] (G : NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) (A B : Ty ι)
+    (choices : PositiveCertificates.SubtypeChoices ι) :
+    (checkSubtypeUsing G images A B choices).accepted = PositiveCertificates.checkUsing G images A B choices := by
+  unfold checkSubtypeUsing PositiveCertificates.checkUsing
+  rw [CheckResult.accepted_fromComparison, PositiveCertificates.ComparisonResult.accepted_map]
 
 /-- What a literal index names in a tuple contract, as the checker reads it: a
 required position's type; an optional or rest position's type with `undefined`;
@@ -567,18 +679,74 @@ instance [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.In
   all_goals try dsimp [Represents, Answers]
   all_goals first | infer_instance | (split <;> infer_instance)
 
-/-- Check evidence against the rules. `codes` answers which graph code the
-unit's certificate has checked (`Rule.funGraph`); by default, none. -/
-@[nospecialize] def checkTreeUsing [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G) (e : Evidence ι)
-    (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
+/-- Each evidence rule chooses its validator explicitly. Coercion checks
+retain the subtype outcome; other rule predicates are their declarative checks. -/
+@[nospecialize] def localCheckUsing [DecidableEq ι] (G : NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) (j : Sequent ι) (r : Rule ι)
+    (ps : List (Sequent ι)) (codes : CodeEntry ι → Bool := fun _ => false) : CheckResult ι Unit :=
+  match r with
+  | .sub choices => match ps with
+    | [jt] => if jt.context = j.context ∧ jt.term = j.term then
+        checkSubtypeUsing G images jt.type j.type choices else failure
+    | _ => failure
+  | .bindMember .. => CheckResult.ofBool (decide (LocalUsing G images j r ps codes))
+  | .var | .nul | .undef | .tru | .fls | .truLit | .flsLit | .numLit | .num | .strLit | .str
+    | .bigintLit | .bigint | .funGraph .. | .ctorGraph .. | .callableGraph .. | .app ..
+    | .letE | .alloc | .read | .readView | .write | .arith | .test | .readDict .. | .indexDict ..
+    | .readOptional .. | .readProto .. | .arrLit | .elem | .setElem | .len | .lenStr | .elemStr ..
+    | .elemOpt .. | .elemAny .. | .ifBool | .ifTrue | .ifFalse | .ifKnown .. | .ifBoolVar ..
+    | .unionVar .. | .callCallable .. | .readCallable | .writeCallable | .arrCopy ..
+    | .callRest .. | .bindE | .bindRestE | .construct | .throw | .merge =>
+      CheckResult.ofBool (decide (LocalUsing G images j r ps codes))
+
+theorem localCheckUsing_accepted [DecidableEq ι] (G : NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) (j : Sequent ι) (r : Rule ι)
+    (ps : List (Sequent ι)) (codes : CodeEntry ι → Bool) :
+    (localCheckUsing G images j r ps codes).accepted = decide (LocalUsing G images j r ps codes) := by
+  cases r <;> try exact CheckResult.accepted_ofBool _
+  case sub choices =>
+    cases ps with
+    | nil => rfl
+    | cons jt ps =>
+      cases ps with
+      | cons x xs => rfl
+      | nil =>
+        by_cases h : jt.context = j.context ∧ jt.term = j.term
+        · simp [localCheckUsing, h, h.1, h.2, checkSubtypeUsing_accepted, LocalUsing]
+        · have hf : ¬ LocalUsing G images j (.sub choices) [jt] codes := by
+            intro hp
+            exact h ⟨hp.1, hp.2.1⟩
+          simp only [localCheckUsing, if_neg h, decide_eq_false hf]
+          rfl
+
+/-- Check the evidence tree once, retaining unfinished subtype work. -/
+@[nospecialize] def checkTreeResult [DecidableEq ι] (G : NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) (e : Evidence ι)
+    (codes : CodeEntry ι → Bool := fun _ => false) : CheckResult ι Unit :=
   match e with
-  | .node j r ps => decide (LocalUsing G images j r (ps.map claim) codes) &&
-      ps.attach.all (fun e => checkTreeUsing G images e.val codes)
+  | .node j r ps => (localCheckUsing G images j r (ps.map claim) codes).bind fun _ =>
+      CheckResult.all ps.attach (fun e => checkTreeResult G images e.val codes)
 termination_by sizeOf e
 decreasing_by
   have := List.sizeOf_lt_of_mem e.property
   simp only [Evidence.node.sizeOf_spec]
   omega
+
+@[nospecialize] def checkTreeUsing [DecidableEq ι] (G : NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) (e : Evidence ι)
+    (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
+  (checkTreeResult G images e codes).accepted
+
+/-- The acceptance projection has exactly the declarative rule premises. -/
+theorem checkTreeUsing_eq [DecidableEq ι] (G : NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) (j : Sequent ι) (r : Rule ι)
+    (ps : List (Evidence ι)) (codes : CodeEntry ι → Bool) :
+    checkTreeUsing G images (.node j r ps) codes =
+      (decide (LocalUsing G images j r (ps.map claim) codes) &&
+        ps.attach.all (fun e => checkTreeUsing G images e.val codes)) := by
+  rw [checkTreeUsing, checkTreeResult, CheckResult.accepted_bind, CheckResult.accepted_all,
+    localCheckUsing_accepted]
+  rfl
 
 mutual
 def checkScope (d : Nat) : Tm → Bool
@@ -1333,7 +1501,7 @@ theorem checkTreeUsing_sound [DecidableEq ι] {G : NormalGraph ι}
     HasTyUsing G images (claim e).context (claim e).term (claim e).type := by
   cases e with
   | node j r ps =>
-    simp only [checkTreeUsing, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at he
+    simp only [checkTreeUsing_eq, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at he
     apply local_sound he.1 hcodes
     intro p hp
     obtain ⟨e, he', rfl⟩ := List.mem_map.mp hp
@@ -1408,7 +1576,7 @@ private theorem node_complete [DecidableEq ι] {G : NormalGraph ι}
     RepresentableUsing G images j := by
   obtain ⟨es, hes, hcs⟩ := gather js h
   refine ⟨.node j r es, rfl, ?_⟩
-  simp only [checkTreeUsing, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true]
+  simp only [checkTreeUsing_eq, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true]
   exact ⟨by simpa only [hes] using hl, fun e _ => hcs e.val e.property⟩
 
 /-- Every declarative derivation has finite accepted evidence. This is coverage
