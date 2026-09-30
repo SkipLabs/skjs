@@ -209,6 +209,39 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     assert.equal(diagnostic.judgment.kind, "subtyping");
   }
 }
+// A source annotation's application bound is checked during equation lowering.
+// This path retains the compacted type graph and the application's own span.
+{
+  const dir = mkdtempSync(join(tmpdir(), "skjs-annotation-budget-"));
+  const file = join(dir, "annotation.ts");
+  const text = [
+    "interface A { readonly n: number }",
+    "interface B { readonly n: number }",
+    "type Box<T extends B> = { readonly value: T };",
+    "export function unbox(value: Box<A>): A { return value.value; }",
+  ].join("\n");
+  writeFileSync(file, text);
+  const admitted = check(file, undefined, false, "ocaml", 8);
+  assert.equal(admitted.status, "verified", JSON.stringify(admitted));
+  const at = text.indexOf("Box<A>");
+  for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
+    const run: SpawnSyncReturns<string> = spawnSync(verifier, ["--subtype-rounds", "0", mode,
+      ...["fragment.json", "claims.json", "source.ts", "evidence.json"].map(f => join(admitted.artifacts, f)),
+      ...(mode === "--produce-source-claims" ? ["12"] : [])],
+      {encoding: "utf8", timeout: 30_000});
+    assert.equal(run.status, 1, run.stderr);
+    const diagnostic = readDiagnostic(run.stderr);
+    assert(diagnostic?.kind === "direct-obligation", run.stderr);
+    assert.equal(diagnostic.phase, "request-validation");
+    assert.equal(diagnostic.outcome.kind, "exhausted");
+    assert.equal(diagnostic.sourceMap.role, "binding-annotation");
+    assert.deepEqual(diagnostic.sourceMap.pos, [at, at + "Box<A>".length]);
+    assert.equal(diagnostic.judgment.kind, "subtyping");
+    const view = presentObligation(diagnostic, text);
+    assert.match(view.searchOutcome, /exhausted.*inconclusive/);
+    assert.doesNotMatch(view.summary ?? "", /call's type argument/);
+  }
+}
 
 {
   // The upstream `sum.ts`, byte for byte: the census row and the producer's
@@ -265,6 +298,11 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   const recordCollection = check(join(here, "examples/invalid-sum-record-collection.ts"), upstreamConfig);
   assert.equal(recordCollection.status, "unverified", JSON.stringify(recordCollection));
   assert.match(recordCollection.detail, /the type argument for EagerCollection's "V" .* does not establish its declared bound/);
+  const failedBound = readDiagnostic(recordCollection.detail);
+  assert(failedBound?.kind === "direct-obligation", recordCollection.detail);
+  assert.equal(failedBound.outcome.kind, "not-established");
+  assert.equal(failedBound.sourceMap.role, "binding-annotation");
+  assert.equal(failedBound.judgment.kind, "subtyping");
   process.stdout.write("an imported declaration applied outside its bound: refused\n");
 }
 

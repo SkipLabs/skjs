@@ -432,6 +432,12 @@ Lowering turns the parser's declarations into definitions:
   it mentions: $`L\langle\vec\gamma\rangle=\text{the literal}`$ with
   $`\vec\gamma`$ its free variables. This is λ-lifting of type literals.
 
+A written type application must satisfy each declaration's bound at its
+completed arguments. These subtype obligations are checked over the compacted
+equations with the same execution budget as later comparisons. Their
+[diagnostics](OBLIGATION-DIAGNOSTICS.md#direct-obligations) retain the compared
+types and distinguish exhausted work from an unsuccessful completed search.
+
 Every other declaration is an alias, inlined at its uses. Inlining
 terminates when every cycle through aliases passes through a definition:
 lifted literals are keyed by their occurrence. An alias

@@ -106,7 +106,11 @@ is untrusted display data; it cannot establish verification status.
 | `id` | Local obligation identity, where available. |
 
 An exhausted subtype comparison is inconclusive. Generic module-call bound
-checks report this outcome in `request-validation`, at the call's span. `limit` is the requested
+checks report this outcome in `request-validation`, at the call's span.
+Annotation application bounds use that phase and `binding-annotation`, with
+the two compared types under the compacted equations. A source-written
+application uses its span; a bound originating in an imported declaration is
+located at the requesting unit. `limit` is the requested
 frontier-round budget, `rounds` is the number of rounds consumed, and `visited`
 is the number of comparison dependencies visited. The runner reports
 `exhausted`; the viewer displays these counts with the located subtype judgment.

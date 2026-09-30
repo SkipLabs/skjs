@@ -256,17 +256,18 @@ diagnostic channel. The viewer consumes this record structurally and derives
 all prose from it. A type argument outside its binder's bound belongs to the
 scheme the call eliminates, and says so. -/
 private def directFailure (T : EquationStore.State) (failure : DirectObligation.Located Tree)
-    (outcome : DiagnosticOutcome := .notEstablished) : String :=
+    (outcome : DiagnosticOutcome := .notEstablished) (site : Option String := none) : String :=
   let judgment := failure.judgment
   let p := StoreView.projection T (match judgment with
     | .subtyping _ actual expected => (actual ++ expected).eraseDups)
   let shown : DirectObligation.Judgment Nat := match judgment with
     | .subtyping subject actual expected => .subtyping subject (p.shown actual) (p.shown expected)
   let message := match outcome with
-    | .notEstablished =>
-      s!"quantified call does not satisfy the closure's bound: cannot establish {failure.judgment.render T}"
+    | .notEstablished => match site with
+      | none => s!"quantified call does not satisfy the closure's bound: cannot establish {failure.judgment.render T}"
+      | some site => s!"{site} does not establish its declared bound: {failure.judgment.render T}"
     | .exhausted .. =>
-      s!"subtype search exhausted while checking the closure's bound: {failure.judgment.render T}"
+      s!"subtype search exhausted while checking the declared bound: {failure.judgment.render T}"
   RequestJson.withDiagnostic s!"source direct obligation at [{failure.pos.1},{failure.pos.2}): {message}"
     ([("kind",toJson "direct-obligation"),("phase",toJson "request-validation"),
      ("outcome",toJson outcome),("id",toJson s!"scheme:{failure.pos.1}"),
@@ -1219,12 +1220,16 @@ def equationFront (ast claims : Json) (fileKey : String) (only : Option (String 
     fun f => (f.getObjValAs? Span "namePos").toOption
   let contractSite := only.map Prod.snd |>.getD (firstClaimed.getD (0, 0))
   let empty : EquationStore.State := { doc := #[] }
-  let L ← (EquationLowering.source ast claims budget).mapError fun reason =>
-    if reason.startsWith "source claims" || reason.startsWith "invalid source claims" ||
-        reason.startsWith "a label" || reason.startsWith "a producer's row" then
-      s!"invalid source claims: {reason}"
-    else sourceRefusal empty contractSite .bindingAnnotation
-      s!"the declarations required by this unit cannot be interpreted: {reason}"
+  let L ← (EquationLowering.source ast claims budget).mapError fun failure => match failure with
+    | .refusal reason =>
+      if reason.startsWith "source claims" || reason.startsWith "invalid source claims" ||
+          reason.startsWith "a label" || reason.startsWith "a producer's row" then
+        s!"invalid source claims: {reason}"
+      else sourceRefusal empty contractSite .bindingAnnotation
+        s!"the declarations required by this unit cannot be interpreted: {reason}"
+    | .bound T pos site actual expected outcome =>
+      let pos := pos.getD contractSite
+      directFailure T ⟨pos, .bindingAnnotation, .subtyping pos actual expected⟩ outcome (some site)
   let d ← decodeDocument L.store L.claims
   checkIdentity d ast fileKey
   let functions := (ast.getObjValAs? (Array Json) "functions").toOption.getD #[]

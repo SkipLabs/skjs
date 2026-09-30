@@ -190,8 +190,8 @@ const recordType = (table: Table, labels: unknown) => typeText(table.types, labe
 function directView(ob: Table, judgment: DirectJudgment) {
   const conclusion = `${recordType(ob,judgment.actual)} ≤ ${recordType(ob,judgment.expected)}`;
   const assumptions: string[] = [];
-  return {title:"Generic instance obligation", assumptions, conclusion,
-    summary:`The call's type argument is not shown within its bound: ${conclusion}.`};
+  return {title:"Subtype obligation", assumptions, conclusion,
+    summary:`The required subtype relation was not established: ${conclusion}.`};
 }
 
 /** The only printer for a turnstile. Callers supply both structured sides. */
@@ -402,8 +402,7 @@ function obligationView(ob: ObligationDiagnostic, source = ""): ObligationView {
   }
   if (ob.kind === "direct-obligation") {
     const direct = directView(ob,ob.judgment);
-    view.title = direct.title;
-    view.what = "A generic value's instance could not be shown within its binder's bound.";
+    view.what = "The available type must be included in the required type under the recorded type equations.";
     view.summary = direct.summary;
     view.judgement = {assumptions:direct.assumptions,conclusion:direct.conclusion};
     return view;

@@ -11,9 +11,9 @@ the source-claims labels become one table of equations, validated by
 `Equations.ofRaw`, and unions of closed labels over it. Heads are made per
 source declaration, per unit and per type-literal occurrence, never per
 instance, so a growing family (`Pair<[T, U]>`, `Promise`'s `catch`) is
-finitely many heads. There is no budget, colour, depth limit or truncation:
-an alias cycle not guarded by a constructor is refused, and everything else
-terminates because heads are keyed by source occurrence.
+finitely many heads. Head allocation is keyed by source occurrence and has no
+instance-count cutoff. An alias cycle not guarded by a constructor is refused.
+The subtype execution budget governs the subsequent declared-bound checks.
 
 Lowering is untrusted in what it proposes (the hash-consing of literal
 heads) and trusted in what it states: the equations
@@ -315,6 +315,9 @@ structure Ctx where
   aliases : List Nat := []
   owner : Option Nat := none
   site : String := ""
+  /-- Whether the terms come from this client's function tree. Declaration
+  terms belong to their own module and are located at the requesting unit. -/
+  source : Bool := false
   /-- The declared bounds of the placeholders in scope (`arg i`, `local j`),
   read when a bound obligation inside the template is checked (§8.2). -/
   bounds : List (Tree × Union) := []
@@ -419,6 +422,7 @@ structure Obligation where
   /-- The bounds of the placeholders `actual` and `upper` may hold. -/
   bounds : List (Tree × Union)
   site : String
+  pos : Option Span
 
 /-- An array or tuple annotation by its parts: what a reader of the
 annotation's shape, a rest parameter's, needs (`Fragment.arrayElement`). -/
@@ -588,6 +592,7 @@ def liftedCtx (ctx : Ctx) (items : List Item) (h : Nat) : Ctx :=
       | _ => none
     owner := some h
     site := ctx.site
+    source := ctx.source
     checkBounds := ctx.checkBounds
     bounds := ctx.bounds.filterMap fun (p, U) => do
       let (_, j) ← indexed.find? fun (it, _) => (ctxValue ctx it).toOption == some [p]
@@ -891,12 +896,15 @@ applied to the declaration's head or inlined into its alias. -/
 partial def reference (ctx : Ctx) (term : Json) : M Union := do
   let i ← referenceIndex term
   let supplied ← (← arr term "args").mapM (lowerType ctx)
-  let values ← application ctx i supplied.toList
+  let span : Span ← fromJson? (← field term "span")
+  let pos := if ctx.source && ctx.decl.isNone then some span else none
+  let values ← application ctx i supplied.toList pos
   instantiateDecl ctx i values
 
 /-- Complete an application's arguments with its defaults, which may mention
 earlier parameters, and record its bound obligations. -/
-partial def application (ctx : Ctx) (i : Nat) (supplied : List Union) : M (List Union) := do
+partial def application (ctx : Ctx) (i : Nat) (supplied : List Union)
+    (pos : Option Span := none) : M (List Union) := do
   let d := (← get).doc[i]!
   if supplied.length > d.parameters.size then throw s!"{ctx.site}: {d.name} applied to too many type arguments"
   let mut values := supplied.toArray
@@ -911,7 +919,7 @@ partial def application (ctx : Ctx) (i : Nat) (supplied : List Union) : M (List 
     if bound != .null && ctx.checkBounds then
       let upper ← lowerType { ctx with decl := some i, params := values, self := none, binders := [] } bound
       modify fun s => { s with obligations := s.obligations ++ [⟨values[index]!, upper, ctx.bounds,
-        s!"{ctx.site}: the type argument for {d.name}'s {p.getObjValD "name" |>.compress} at {(p.getObjValD "span").compress}"⟩] }
+        s!"{ctx.site}: the type argument for {d.name}'s {p.getObjValD "name" |>.compress} at {(p.getObjValD "span").compress}", pos⟩] }
   return values.toList
 
 /-- A declaration at arguments: its head applied, or its alias inlined. An
@@ -1376,7 +1384,7 @@ met with its bound when it has one (§8.1). -/
 def enterUnit (path : String) (scope : List (String × Binding)) (node : Json) (tps : Array Json) :
     M (List (String × Binding)) := do
   let names ← tps.toList.mapM fun p => (str p "name" : Except String String)
-  let ctx : Ctx := { binders := scope, site := path }
+  let ctx : Ctx := { binders := scope, site := path, source := true }
   let items := (mentions names (unitTerms node)).filter fun it => match it with
     | .binder n => (scope.lookup n).isSome
     | _ => false
@@ -1417,7 +1425,7 @@ def bindNames (scope : List (String × Binding)) (bounds : List (Tree × Union))
   for (p, (n, b)) in tps.toList.zip bound do
     let t := p.getObjValD "bound"
     if t == .null || b.pack then continue
-    let B ← lowerType { binders := inner, bounds := bounds, site := s!"the bound of {n}" } t
+    let B ← lowerType { binders := inner, bounds := bounds, site := s!"the bound of {n}", source := true } t
     if let [q] := b.value then out := (q, B) :: out
   return (inner, out)
 
@@ -1444,7 +1452,7 @@ partial def walk (path : String) (scope : List (String × Binding)) (bounds : Li
   | .obj kvs =>
     let tps := (j.getObjValAs? (Array Json) "typeParams").toOption.getD #[]
     let (scope, bounds) ← if tps.isEmpty then pure (scope, bounds) else bindNames scope bounds j tps
-    let ctx : Ctx := { binders := scope, site := path, bounds }
+    let ctx : Ctx := { binders := scope, site := path, bounds, source := true }
     let mut out := []
     for (name, value) in kvs.toList do
       let here := s!"{path}/{name}"
@@ -1978,39 +1986,6 @@ def Built.equations (b : Built) : Except String Equations := do
   let proto := b.state.proto.map b.rename
   return { E with realm := if b.state.arrays then realmOf E proto b.state.excluded else none }
 
-/-- The checks lowering owes the source (§5): every closed meet with a value;
-every declared bound where an application is written. Variances are not
-lowering's: the checker computes them (RECURSIVE-EQUATIONS §4.3). -/
-def Built.finish (b : Built) : Except String Equations := do
-  let (s, f, rn, drafts, bodies) := (b.state, b.rename, b.rn, b.drafts, b.bodies)
-  let E ← b.equations
-  -- Closed meets: an empty one is refused where it is lowered.
-  let base (t : Tree) : Option (List (Clause (List Tree))) := match t with
-    | .app g args => match bodies[g]? with
-      | some (.clauses cs) => some (instantiateClauses cs (args.toList.map Types.toList))
-      | _ => none
-    | _ => none
-  -- An intersection distributes over its operands' unions: it is empty when
-  -- each of its meets is, a meet of clause rows whose meet has no value.
-  let empty (t : Tree) : Bool := match treeRename f t with
-    | .meet ps => match ps.toList.mapM base with
-      | some lists => ((meetAll lists).filter Clause.isValue).isEmpty
-      | none => false
-    | _ => false
-  for (U, site) in s.meetChecks do
-    if !U.isEmpty && !U.any treeOpen && U.all empty then throw s!"{site}: {emptyMeet}"
-  -- Declared bounds, where written.
-  for o in s.obligations do
-    let o : Obligation := { o with actual := rn o.actual, upper := rn o.upper, bounds := o.bounds.map fun (p, U) => (p, rn U) }
-    let (A, B) := closeObligation o
-    let A ← closedUnion E o.site A
-    let B ← closedUnion E o.site B
-    if (CertificateProducer.comparisonUsing E.graph { E.instanceImageCheck with budget := s.subtypeBudget } A B).accepted then
-      continue
-    let names (h : Nat) : String := (drafts[h]?.map (·.name)).getD s!"{h}"
-    throw s!"{o.site} does not establish its declared bound: {showUnion names (A.map (·.1))} ≤ {showUnion names (B.map (·.1))}"
-  return E
-
 /-- The store the units grow, from the compacted heads: their rows, their
 keys (a key that spells a head index spelled again with the new one), the
 generic units' binders, the placeholders and the realm. -/
@@ -2041,17 +2016,60 @@ def Built.store (b : Built) : State :=
            scopes := s.scopes.map (fun (p, bs) => (p, bs.map fun (n, x) => (n, rnB x))),
            proto := s.proto.map f }
 
+/-- Source lowering either refuses a form or reports the compared types
+under the compacted equations. The outcome retains unfinished subtype work. -/
+inductive Failure where
+  | refusal (reason : String)
+  | bound (store : State) (pos : Option Span) (site : String)
+      (actual expected : Union) (outcome : RequestJson.DiagnosticOutcome)
+
+/-- The checks lowering owes the source (§5): every closed meet with a value;
+every declared bound where an application is written. Variances are not
+lowering's: the checker computes them (RECURSIVE-EQUATIONS §4.3). -/
+def Built.finish (b : Built) : Except Failure Equations := do
+  let (s, f, rn, bodies) := (b.state, b.rename, b.rn, b.bodies)
+  let E ← b.equations.mapError Failure.refusal
+  -- Closed meets: an empty one is refused where it is lowered.
+  let base (t : Tree) : Option (List (Clause (List Tree))) := match t with
+    | .app g args => match bodies[g]? with
+      | some (.clauses cs) => some (instantiateClauses cs (args.toList.map Types.toList))
+      | _ => none
+    | _ => none
+  -- An intersection distributes over its operands' unions: it is empty when
+  -- each of its meets is, a meet of clause rows whose meet has no value.
+  let empty (t : Tree) : Bool := match treeRename f t with
+    | .meet ps => match ps.toList.mapM base with
+      | some lists => ((meetAll lists).filter Clause.isValue).isEmpty
+      | none => false
+    | _ => false
+  for (U, site) in s.meetChecks do
+    if !U.isEmpty && !U.any treeOpen && U.all empty then throw (.refusal s!"{site}: {emptyMeet}")
+  -- Declared bounds, where written.
+  for o in s.obligations do
+    let o : Obligation := { o with actual := rn o.actual, upper := rn o.upper, bounds := o.bounds.map fun (p, U) => (p, rn U) }
+    let (A, B) := closeObligation o
+    let A ← (closedUnion E o.site A).mapError Failure.refusal
+    let B ← (closedUnion E o.site B).mapError Failure.refusal
+    match CertificateProducer.comparisonUsing E.graph { E.instanceImageCheck with budget := s.subtypeBudget } A B with
+    | .established _ => pure ()
+    | .notEstablished =>
+      throw (.bound b.store o.pos o.site (A.map (·.1)) (B.map (·.1)) .notEstablished)
+    | .exhausted rounds visited =>
+      throw (.bound b.store o.pos o.site (A.map (·.1)) (B.map (·.1))
+        (.exhausted s.subtypeBudget.rounds rounds visited))
+  return E
+
 /-- **The source path's lowering.** `ast` is the parser's function tree with
 its declaration document (`tools/declaration-types.mts`), `claims` the
 source-claims document (§9.1). -/
-def source (ast claims : Json) (budget : PositiveCertificates.SearchBudget := {}) : Except String SourceLowering := do
-  let document ← field ast "declarations"
-  let ds ← definitions document
+def source (ast claims : Json) (budget : PositiveCertificates.SearchBudget := {}) : Except Failure SourceLowering := do
+  let document ← (field ast "declarations").mapError Failure.refusal
+  let ds ← (definitions document).mapError Failure.refusal
   if let some i := (List.range ds.size).find? (fun i => ds[i]!.identity == arrayProtoIdentity) then
-    if i != 0 || !ds[i]!.parameters.isEmpty then throw "ArrayProto must be the first declaration"
+    if i != 0 || !ds[i]!.parameters.isEmpty then throw (.refusal "ArrayProto must be the first declaration")
   let ((annotations, values, generics, units, initBinders, claims), s) ←
-    (lowerSource ast claims).run { doc := ds, subtypeBudget := budget }
-  let b ← compact s
+    ((lowerSource ast claims).run { doc := ds, subtypeBudget := budget }).mapError Failure.refusal
+  let b ← (compact s).mapError Failure.refusal
   let _ ← b.finish
   let rn := b.rn
   let rename (j : Json) : Except String Json := do
@@ -2066,7 +2084,7 @@ def source (ast claims : Json) (budget : PositiveCertificates.SearchBudget := {}
       { g with type := g.type.map (·.map rn), bounds := g.bounds.map fun (n, B) => (n, B.map rn) }
     units := units.map fun (p, bs) => (p, bs.map fun (n, t, B) => (n, treeRename b.rename t, B.map rn))
     initBinders := initBinders.map fun (n, t, B) => (n, treeRename b.rename t, B.map rn)
-    claims := ← documentForm rename claims }
+    claims := ← (documentForm rename claims).mapError Failure.refusal }
 
 /-! ### Equation labels
 
