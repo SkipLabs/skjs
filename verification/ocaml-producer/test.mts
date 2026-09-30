@@ -208,6 +208,67 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     "the source runner distinguishes exhausted work from a completed refusal");
   assert.equal(check(negative).status, "unverified", "the last field's type is incompatible");
 }
+// An instance bound cannot cite the comparison currently being established.
+// Forged declarations exercise this boundary independently of source parsing:
+// <T>(value: T) => T has a checked instance at Source; changing its bound to
+// Target makes validating that instance depend on the unfinished Source ≤ Target.
+{
+  const source = "type Source = (value: unknown) => never;\n" +
+    "type Target = (value: Source) => Source;\n" +
+    "export function convert(value: Source): Target { return value; }\n";
+  const file = join(mkdtempSync(join(tmpdir(), "skjs-circular-instance-")), "client.ts");
+  writeFileSync(file, source);
+  const ordinary = check(file);
+  assert.equal(ordinary.status, "verified");
+  const at = (name: string) => join(ordinary.artifacts, name);
+  const fragment: Ast = JSON.parse(readFileSync(at("fragment.json"), "utf8"));
+  const definition = fragment.declarations.definitions.find(d => d.declaration.name === "Source");
+  const target = fragment.declarations.definitions.find(d => d.declaration.name === "Target");
+  assert(definition && target);
+  const span = definition.expression.span;
+  const parameter: TypeTerm = { k: "binder", name: "T", span };
+  const quantified: Extract<TypeTerm, { k: "scheme" }> = {
+    k: "scheme", binders: [{ name: "T", bound: { k: "atom", name: "unknown", span }, default: null, span }],
+    signatures: [{ k: "function", effect: "unrestricted", receiver: { k: "atom", name: "unknown", span },
+      params: [parameter], rest: null, result: parameter, span }], span,
+  };
+  definition.expression = quantified;
+  writeFileSync(at("identity-ast.json"), JSON.stringify(fragment));
+  const evidence = at("identity-evidence.json");
+  const run = (mode: string, ast: string) => spawnSync(verifier,
+    [mode, at(ast), at("claims.json"), at("source.ts"), evidence,
+      ...(mode === "--produce-source-claims" ? ["12"] : [])],
+    { encoding: "utf8", timeout: 30_000 });
+  const produced = run("--produce-source-claims", "identity-ast.json");
+  assert.equal(produced.status, 0, produced.stderr);
+  const checked = run("--check-source-claims", "identity-ast.json");
+  assert.equal(checked.status, 0, checked.stderr);
+  function hasInstance(value: unknown): boolean {
+    if (value === null || typeof value !== "object") return false;
+    if ("instantiation" in value && value.instantiation !== null) return true;
+    return Object.values(value).some(hasInstance);
+  }
+  assert(hasInstance(JSON.parse(readFileSync(evidence, "utf8"))), "the positive evidence uses a checked instance");
+  const bound = quantified.binders[0];
+  assert(bound);
+  bound.bound = { k: "reference", reference: { name: "Target", span, arguments: [], target: target.declaration },
+    args: [], span };
+  writeFileSync(at("circular-ast.json"), JSON.stringify(fragment));
+  // Consumption comes first: production must not overwrite the valid evidence.
+  const circularCheck = run("--check-source-claims", "circular-ast.json");
+  assert.equal(circularCheck.status, 1);
+  assert.match(circularCheck.stdout + circularCheck.stderr, /source evidence does not justify the extracted program and exact claims/);
+  const circularSearch = run("--produce-source-claims", "circular-ast.json");
+  assert.equal(circularSearch.status, 1);
+  const diagnostic = readDiagnostic(circularSearch.stderr);
+  assert(diagnostic?.kind === "node-typing", circularSearch.stderr);
+  const location = diagnostic.source.sourceMap;
+  assert(location);
+  assert.equal(location.role, "return-contract");
+  assert.equal(source.slice(...location.pos), "value");
+  assert.equal(diagnostic.outcome.kind, "not-established");
+  process.stdout.write("an instance bound citing its unfinished comparison: refused in both modes\n");
+}
 // Extra valid coercions exercise exhaustion during consumption, after extraction.
 {
   const field = (v: unknown, key: string): unknown =>
