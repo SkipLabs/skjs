@@ -876,6 +876,12 @@ assignment and reads no `env`. -/
   entry := b.entry
   sound := b.sound
 
+/-- Execution resources for dependency discovery. Each round unfolds a frontier;
+its size is unrestricted. -/
+structure SearchBudget where
+  rounds : Nat := 4096
+  deriving Repr
+
 /-- The representation-specific checks, with their semantic obligations:
 the image check of instances, and, for a representation with one, the
 renaming, the sound entries instances may cite (a representation's computed
@@ -889,6 +895,8 @@ structure InstanceImageCheck [DecidableEq ι] (G : NormalGraph ι) where
   sub : Option (Renaming G) := none
   base : Base G := {}
   gen : ι → List ι → List (Nat × List (List ι)) := fun _ _ => []
+  /-- Execution policy shared by comparisons and their bound/image obligations. -/
+  budget : SearchBudget := {}
 
 /-- The original finite closed-table implementation. -/
 @[nospecialize] def finiteInstanceImages [DecidableEq ι] (G : NormalGraph ι) : InstanceImageCheck G where
@@ -905,6 +913,7 @@ serves every reassignment (`Parametricity`). -/
   sub := images.sub.map fun r => r.reassign η
   base := images.base.reassign η
   gen := images.gen
+  budget := images.budget
 
 /-! ### The fallback's search (RECURSIVE-EQUATIONS §4.2–4.3)
 
@@ -1118,12 +1127,6 @@ earlier occurrences, none of which it renames: growth. -/
     let same := table.filter fun p => heads p.1 p.2 == some hs
     same.length ≥ 2 && same.all fun p => size p.1 p.2 < size A B
   | none => false
-
-/-- Execution resources for dependency discovery. Each round unfolds a frontier;
-its size is unrestricted. -/
-structure SearchBudget where
-  rounds : Nat := 4096
-  deriving Repr
 
 /-- Why dependency discovery stops before its frontier closes. -/
 inductive SearchStop where
@@ -1374,18 +1377,17 @@ theorem comparePrepared_sound [DecidableEq ι] {G : NormalGraph ι}
 /-- Structural comparison over equations. Identity and validated variance
 share the guarded dependency kernel used by quantified instantiation. -/
 @[nospecialize] def compareStructural [DecidableEq ι] (G : NormalGraph ι)
-    (images : InstanceImageCheck G) (S T : List ι) (known : Known ι := [])
-    (budget : SearchBudget := {}) : ComparisonResult Unit :=
+    (images : InstanceImageCheck G) (S T : List ι) (known : Known ι := []) : ComparisonResult Unit :=
   let e := ParameterAssignment.empty .mixed
   let G' := PositiveRules.reassign G e
   let images' := images.reassign e
   if subsetUsing G' images' S T then .established () else
   comparePrepared G images S T known
-    (growTable G' images' budget.rounds { table := [(S, T)] } [(S, T)])
+    (growTable G' images' images.budget.rounds { table := [(S, T)] } [(S, T)])
 
 theorem compareStructural_sound [DecidableEq ι] {G : NormalGraph ι}
-    {images : InstanceImageCheck G} {S T known budget}
-    (h : (compareStructural G images S T known budget).accepted = true)
+    {images : InstanceImageCheck G} {S T known}
+    (h : (compareStructural G images S T known).accepted = true)
     (hk : ∀ η : MixedAssignment ι, ∀ k ∈ known,
       FamLe (mixedValues G η k.1) (mixedSem G η (.arrs k.2.1 k.2.2))) :
     ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
@@ -1529,22 +1531,22 @@ functions choose generic instances; discovery and validation of comparison
 dependencies run once inside this operation. -/
 @[nospecialize] def compareUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (S T : List ι) (instantiation : Unit → Option (Instance ι))
-    (members : Table ι → List (KnownInstance ι)) (budget : SearchBudget := {}) :
+    (members : Table ι → List (KnownInstance ι)) :
     ComparisonResult (SubtypeChoices ι) :=
   if subsetUsing G images S T then .established {} else
   let candidate := instantiation ()
   if candidate.any (checkInstUsing G images S T) then
     .established { instantiation := candidate } else
   let e := ParameterAssignment.empty .mixed
-  let fb := growTable (PositiveRules.reassign G e) (images.reassign e) budget.rounds
+  let fb := growTable (PositiveRules.reassign G e) (images.reassign e) images.budget.rounds
     { table := [(S, T)] } [(S, T)]
   let ks := (members fb.table).filter fun k =>
     checkInstArrsUsing G images k.1 k.2.1 k.2.2.1 k.2.2.2
   (comparePrepared G images S T (knownOf ks) fb).map fun _ => { members := ks }
 
 theorem compareUsing_sound [DecidableEq ι] {G : NormalGraph ι}
-    {images : InstanceImageCheck G} {S T instantiation members budget}
-    (h : (compareUsing G images S T instantiation members budget).accepted = true) :
+    {images : InstanceImageCheck G} {S T instantiation members}
+    (h : (compareUsing G images S T instantiation members).accepted = true) :
     ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
   unfold compareUsing at h
   split at h

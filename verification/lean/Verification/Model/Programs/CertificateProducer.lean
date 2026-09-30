@@ -373,16 +373,15 @@ the instance whose signatures are the method's with the source as receiver. -/
 
 /-- The common subtype operation with candidate instances found by matching. -/
 @[nospecialize] def comparisonUsing [DecidableEq ι] [Hashable ι] [Instantiates ι]
-    (G : NormalGraph ι) (images : InstanceImageCheck G) (A B : Ty ι)
-    (budget : PositiveCertificates.SearchBudget := {}) :
+    (G : NormalGraph ι) (images : InstanceImageCheck G) (A B : Ty ι) :
     PositiveCertificates.ComparisonResult (PositiveCertificates.SubtypeChoices ι) :=
   PositiveCertificates.compareUsing G images A B
     (fun _ => instantiationUsing G images instanceFuel A B)
-    (rowInstances G images instanceFuel) budget
+    (rowInstances G images instanceFuel)
 
 theorem comparisonUsing_sound [DecidableEq ι] [Hashable ι] [Instantiates ι]
-    {G : NormalGraph ι} {images : InstanceImageCheck G} {A B budget}
-    (h : (comparisonUsing G images A B budget).accepted = true) :
+    {G : NormalGraph ι} {images : InstanceImageCheck G} {A B}
+    (h : (comparisonUsing G images A B).accepted = true) :
     ∀ η, FamLe (mixedMeaning G η A) (mixedMeaning G η B) :=
   PositiveCertificates.compareUsing_sound h
 

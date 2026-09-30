@@ -426,10 +426,8 @@ def moduleInstances (T : EquationStore.State) (g : Instantiable)
         let (required, grown) ← ((Fragment.translate upper).run T).mapError (refuse pos)
         T := grown
         let G := SourceTypes.graph T
-        let proved := match CertificateProducer.subtype G actual required with
-          | some proof => PositiveCertificates.checkUsing G (PositiveCertificates.finiteInstanceImages G)
-              actual required proof
-          | none => false
+        let proved := (CertificateProducer.comparisonUsing G (StoreView.images T)
+          actual required).accepted
         unless proved do
           throw (.obligation ⟨pos, .schemeElimination,
             .subtyping pos actual required⟩, T)
@@ -1196,7 +1194,8 @@ at the instances a unit names; and the generic units' binders. A declaration
 the lowering refuses is refused at the unit requiring it, and a claim it
 cannot read is an invalid document. A variance declaration that does not
 check (§7.5) refuses the source at its heads. -/
-def equationFront (ast claims : Json) (fileKey : String) (only : Option (String × Span)) :
+def equationFront (ast claims : Json) (fileKey : String) (only : Option (String × Span))
+    (budget : PositiveCertificates.SearchBudget := {}) :
     Except String Prepared := do
   sourceGate (ast.getObjValD "functions")
   sourceGate (ast.getObjValD "init")
@@ -1214,7 +1213,7 @@ def equationFront (ast claims : Json) (fileKey : String) (only : Option (String 
     fun f => (f.getObjValAs? Span "namePos").toOption
   let contractSite := only.map Prod.snd |>.getD (firstClaimed.getD (0, 0))
   let empty : EquationStore.State := { doc := #[] }
-  let L ← (EquationLowering.source ast claims).mapError fun reason =>
+  let L ← (EquationLowering.source ast claims budget).mapError fun reason =>
     if reason.startsWith "source claims" || reason.startsWith "invalid source claims" ||
         reason.startsWith "a label" || reason.startsWith "a producer's row" then
       s!"invalid source claims: {reason}"
@@ -1252,7 +1251,8 @@ end
 /-- `only` selects one function of the file, named with its position: the
 others remain its module, reachable at their signatures, and need no claims. -/
 def extractPlans (ast claims : Json) (fileKey : String)
-    (only : Option (String × Span) := none) : Except String (EquationStore.State × List (FunctionPlan EquationStore.State Tree)) := do
+    (only : Option (String × Span) := none)
+    (budget : PositiveCertificates.SearchBudget := {}) : Except String (EquationStore.State × List (FunctionPlan EquationStore.State Tree)) := do
   -- A source with arrays lists `ArrayProto`: its units see `Array.prototype`.
   let arrays := match (ast.getObjVal? "declarations").toOption.bind
       (fun doc => (doc.getObjVal? "definitions").toOption) with
@@ -1260,7 +1260,7 @@ def extractPlans (ast claims : Json) (fileKey : String)
         ((d.getObjVal? "declaration").toOption.bind fun i => (i.getObjVal? "module").toOption) ==
           some (Json.str "skjs/array-prototype")
     | _ => false
-  let ⟨ast, d, imported, generics, unitBinders, initBinders⟩ ← equationFront ast claims fileKey only
+  let ⟨ast, d, imported, generics, unitBinders, initBinders⟩ ← equationFront ast claims fileKey only budget
   let functionJsons := ((ast.getObjVal? "functions").toOption.bind (·.getArr?.toOption)).getD #[]
   let all ← Fragment.decodeAstWithParams ast
   let fs := all.map Prod.fst
@@ -1495,8 +1495,9 @@ def extractGraphRequests (ast claims : Json) (fileKey : String) :
   return FunctionPlan.requests (← extractPlans ast claims fileKey).2
 
 def checkJson (ast claims : Json) (fileKey : String) (evidence : Json)
-    (only : Option (String × Span) := none) : Except String Unit := do
-  let (T, plans) ← extractPlans ast claims fileKey only
+    (only : Option (String × Span) := none)
+    (budget : PositiveCertificates.SearchBudget := {}) : Except String Unit := do
+  let (T, plans) ← extractPlans ast claims fileKey only budget
   let ⟨F, frozen⟩ ← freezePlans T plans
   let certified ← certifyPlans frozen
   let rs := CertifiedPlan.requests certified
@@ -1505,8 +1506,9 @@ def checkJson (ast claims : Json) (fileKey : String) (evidence : Json)
   throw "source evidence does not justify the extracted program and exact claims"
 
 def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat)
-    (only : Option (String × Span) := none) : Except String Json := do
-  let (T, plans) ← extractPlans ast claims fileKey only
+    (only : Option (String × Span) := none)
+    (budget : PositiveCertificates.SearchBudget := {}) : Except String Json := do
+  let (T, plans) ← extractPlans ast claims fileKey only budget
   let ⟨F, frozen⟩ ← freezePlans T plans
   let rs := FunctionPlan.requests frozen
   let es ← rs.mapM fun r => ExpressionClaims.produceUsing (RequestJson.graph r.toRequest)
@@ -1529,9 +1531,9 @@ parameter rows, so a generic unit or closure at every instantiation. The
 graph is `Equations.graph` of the equations the extracted store presents,
 validated by `Equations.ofRaw` (`freezePlans`). -/
 theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
-    {only : Option (String × Span)}
-    (h : checkJson ast claims fileKey evidence only = .ok ()) :
-    ∃ T plans, extractPlans ast claims fileKey only = .ok (T, plans) ∧
+    {only : Option (String × Span)} {budget : PositiveCertificates.SearchBudget}
+    (h : checkJson ast claims fileKey evidence only budget = .ok ()) :
+    ∃ T plans, extractPlans ast claims fileKey only budget = .ok (T, plans) ∧
       ∃ F : EquationStore.Frozen, ∃ frozen certified b,
       freezePlans T plans = .ok ⟨F, frozen⟩ ∧
       certifyPlans frozen = .ok certified ∧
@@ -1543,7 +1545,7 @@ theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
           SafeGraph r.program (meaning (reassign F.equations.graph η) r.result)
             n W heap (.at r.start ρ)) := by
   unfold checkJson at h
-  cases he : extractPlans ast claims fileKey only with
+  cases he : extractPlans ast claims fileKey only budget with
   | error e => rw [he] at h; contradiction
   | ok tp =>
     obtain ⟨T, plans⟩ := tp

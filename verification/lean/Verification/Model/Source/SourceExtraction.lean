@@ -152,10 +152,7 @@ a method annotation names alike, so the first rule relates them; the proof is
 for a claim narrower than its annotation. -/
 @[nospecialize] def within (T : EquationStore.State) (C A : List Tree) : Bool :=
   (SourceTypes.canonical T C).all (SourceTypes.canonical T A).contains ||
-    (let G := SourceTypes.graph T
-     match CertificateProducer.subtype G C A with
-       | some proof => PositiveCertificates.checkUsing G (PositiveCertificates.finiteInstanceImages G) C A proof
-       | none => false)
+    (CertificateProducer.comparisonUsing (SourceTypes.graph T) (StoreView.images T) C A).accepted
 
 /-- Whether two label lists denote the same type: each within the other. -/
 @[nospecialize] def sameMeaning (T : EquationStore.State) (A B : List Tree) : Bool :=
@@ -1415,7 +1412,7 @@ field or view, or, for a key an own-key bound does not admit, its prototype's, a
 /-- A method call's explicit type arguments, `o.m<A₁,…,Aₖ>(…)`, are a
 requirement on the instance the call uses: the member read from `O` is a scheme
 row, the claimed method type `M` is an instance of it by a checked instance map
-(`checkInstArrs`), and that map sends the scheme's first `k` binders to types
+(`checkInstArrsUsing`), and that map sends the scheme's first `k` binders to types
 of the same meaning as `A₁,…,Aₖ`. The binders past them are the ones the
 call's receiver and actuals fix, as for a call without type arguments. The
 check only refuses: acceptance still rests on the read's own `inst` proof and
@@ -1437,7 +1434,7 @@ the call's typing. -/
     | throw (refuse "the call's claimed method is not an instance of its member")
   let some c := CertificateProducer.instanceFor G 64 s L Ms
     | throw (refuse "the call's claimed method is not an instance of its member")
-  if !PositiveCertificates.checkInstArrs G S L Ms c then
+  if !PositiveCertificates.checkInstArrsUsing G (StoreView.images T) S L Ms c then
     throw (refuse "the call's claimed method is not an instance of its member")
   for (A, θ) in args.zip c.instances do
     if !sameMeaning T A θ then

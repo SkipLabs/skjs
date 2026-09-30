@@ -30,6 +30,16 @@ also takes `--function <name> <start> <end>`, checking one function with the
 others its module, and may be preceded by `--trace-subtyping <file>`
 ([subtyping traces](#subtyping-traces)).
 
+`--subtype-rounds <n>` precedes the mode and follows `--trace-subtyping` when
+both are present. It sets the frontier-unfolding budget of every subtype
+comparison, including declared bounds and instance-image equality during
+lowering and frozen checking. The default is 4096 rounds. A frontier may
+contain any finite number of comparisons. The budget is execution policy;
+it is absent from the equation and evidence documents. The acceptance
+soundness theorem quantifies over every budget. A smaller budget can prevent
+verification; it cannot authorize a typing step.
+
+
 ## Request fields
 
 All fields are explicit; object field order is immaterial.

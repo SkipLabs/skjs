@@ -282,7 +282,7 @@ instance : StoreView State Tree where
     | none => mkApp 0 []
   lookup := lookup
   project s mentioned depth := projectWith (rowOf s) (spell s) mentioned depth
-  images s := finiteInstanceImages (graph s)
+  images s := { finiteInstanceImages (graph s) with budget := s.subtypeBudget }
 
 /-! ### Checked requests: the equations, frozen -/
 
@@ -354,16 +354,18 @@ def eitherImages {ι : Type} [DecidableEq ι] {G : NormalGraph ι} (a b : Instan
   sub := b.sub
   base := b.base
   gen := b.gen
+  budget := b.budget
 
 /-- Semantic equality by the common subtype operation in both directions,
 with the equations' validated variances and image checker. -/
-def equivalent (E : Equations) (v : Variances E) (X Y : List (Label E.signature)) : Bool :=
-  let I := E.images v
+def equivalent (E : Equations) (v : Variances E) (X Y : List (Label E.signature))
+    (budget : SearchBudget := {}) : Bool :=
+  let I := { E.images v with budget := budget }
   (CertificateProducer.comparisonUsing E.graph I X Y).accepted &&
     (CertificateProducer.comparisonUsing E.graph I Y X).accepted
 
-theorem equivalent_sound {E : Equations} {v : Variances E} {X Y : List (Label E.signature)}
-    (h : equivalent E v X Y = true) :
+theorem equivalent_sound {E : Equations} {v : Variances E} {X Y : List (Label E.signature)} {budget : SearchBudget}
+    (h : equivalent E v X Y budget = true) :
     ∀ η, mixedMeaning E.graph η X = mixedMeaning E.graph η Y := by
   simp only [equivalent, Bool.and_eq_true] at h
   have l := CertificateProducer.comparisonUsing_sound h.1
@@ -376,11 +378,12 @@ theorem equivalent_sound {E : Equations} {v : Variances E} {X Y : List (Label E.
 equivalence: a scheme's result at an instance may be named by an equal type
 of another spelling (`Pair<[number, string]>` for the instance of
 `Pair<[T, U]>`). -/
-def imagesUpTo (E : Equations) (v : Variances E) : InstanceImageCheck E.graph :=
+def imagesUpTo (E : Equations) (v : Variances E) (budget : SearchBudget := {}) : InstanceImageCheck E.graph :=
   { E.images v with
-    check := fun _ c => substitutionTableOkUpTo (equivalent E v) c.table
+    budget := budget
+    check := fun _ c => substitutionTableOkUpTo (fun X Y => equivalent E v X Y budget) c.table
     sound := fun bs c hlen hkinds checked η =>
-      E.substitutionTableUpTo_instanceImages (equivalent E v) (fun _ _ h => equivalent_sound h)
+      E.substitutionTableUpTo_instanceImages (fun X Y => equivalent E v X Y budget) (fun _ _ h => equivalent_sound h)
         η bs c.instances c.table hlen hkinds checked }
 
 /-- The store of a checked request: the extracted heads, whose validated
@@ -415,7 +418,7 @@ instance : StoreView (Checked E p) (CheckedLabel E p) where
         | none => .clauses []) (spell c.heads)
       (mentioned.map CheckedLabel.tree) depth
     { rows := pr.rows, position := fun l => pr.position l.tree, names := pr.names }
-  images c := eitherImages (finiteInstanceImages E.graph) (imagesUpTo E c.variances)
+  images c := eitherImages (finiteInstanceImages E.graph) (imagesUpTo E c.variances c.heads.subtypeBudget)
 
 @[simp] theorem Checked.graph_eq (c : Checked E p) :
     (StoreView.graph c : NormalGraph (CheckedLabel E p)) = E.graph := rfl

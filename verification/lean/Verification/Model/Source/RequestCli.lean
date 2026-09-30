@@ -11,7 +11,8 @@ def readJson (path : String) : IO (Except String Json) := do
   catch e => return .error s!"cannot read {path}: {e}"
 
 def sourceFiles (astPath claimsPath fileKey evidencePath : String)
-    (fuel : Option Nat) (only : Option (String × Span) := none) : IO UInt32 := do
+    (fuel : Option Nat) (only : Option (String × Span) := none)
+    (budget : PositiveCertificates.SearchBudget := {}) : IO UInt32 := do
   if fuel.isSome && (evidencePath == astPath || evidencePath == claimsPath) then
     IO.eprintln "reject: evidence output must differ from the input files"
     return 1
@@ -21,13 +22,13 @@ def sourceFiles (astPath claimsPath fileKey evidencePath : String)
   | none =>
     let evidence ← readJson evidencePath
     let checked := do
-      SourceClaimJson.checkJson (← ast) (← claims) fileKey (← evidence) only
+      SourceClaimJson.checkJson (← ast) (← claims) fileKey (← evidence) only budget
     match checked with
     | .ok () => IO.println s!"accept: stateful source {fileKey}"; return 0
     | .error e => IO.eprintln s!"reject: {e}"; return 1
   | some depth =>
     let produced := do
-      SourceClaimJson.produceJson (← ast) (← claims) fileKey depth only
+      SourceClaimJson.produceJson (← ast) (← claims) fileKey depth only budget
     match produced with
     | .error e => IO.eprintln s!"reject: {e}"; return 1
     | .ok evidence =>

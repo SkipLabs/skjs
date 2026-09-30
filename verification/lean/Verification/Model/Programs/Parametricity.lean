@@ -64,19 +64,23 @@ theorem comparePrepared_reassign (images : InstanceImageCheck G)
   simp only [comparePrepared, images_reassign_fixed, checkStructural_reassign]
   rfl
 
+/-- Reassigning parameter meanings preserves execution policy. -/
+theorem budget_reassign (images : InstanceImageCheck G) :
+    (images.reassign η).budget = images.budget := rfl
+
 /-- Structural comparison uses one fixed parameter assignment. -/
 theorem compareStructural_reassign (images : InstanceImageCheck G) (S T : List ι)
-    (known : Known ι) (budget : SearchBudget) :
-    compareStructural (reassign G η) (images.reassign η) S T known budget =
-      compareStructural G images S T known budget := by
-  simp only [compareStructural, images_reassign_fixed, comparePrepared_reassign]
+    (known : Known ι) :
+    compareStructural (reassign G η) (images.reassign η) S T known =
+      compareStructural G images S T known := by
+  simp only [compareStructural, images_reassign_fixed, comparePrepared_reassign, budget_reassign]
   rfl
 
 /-- A bound is decided at the graph with its assignment fixed. -/
 theorem boundOk_reassign (images : InstanceImageCheck G) (binders : List ι)
     (θs : List (List ι)) (b : ι × List ι) :
     boundOk (reassign G η) (images.reassign η) binders θs b = boundOk G images binders θs b := by
-  simp only [boundOk, compareStructural_reassign]
+  simp only [boundOk, compareStructural_reassign, budget_reassign]
 
 /-! Every checker below takes a proved instance image checker. Its check is
 the same function at every reassignment (`InstanceImageCheck.reassign`). -/
@@ -109,19 +113,19 @@ theorem subsetUsing_reassign (S T : List ι) :
   | some r => simp only [sub_reassign, hr, Option.map_some, premAt_reassign]
 
 theorem compareUsing_reassign (S T : List ι) (instantiation : Unit → Option (Instance ι))
-    (members : Table ι → List (KnownInstance ι)) (budget : SearchBudget) :
-    compareUsing (reassign G η) (images.reassign η) S T instantiation members budget =
-      compareUsing G images S T instantiation members budget := by
+    (members : Table ι → List (KnownInstance ι)) :
+    compareUsing (reassign G η) (images.reassign η) S T instantiation members =
+      compareUsing G images S T instantiation members := by
   have hi : checkInstUsing (reassign G η) (images.reassign η) S T =
       checkInstUsing G images S T := funext fun c => checkInst_reassign G η images S T c
   simp only [compareUsing, subsetUsing_reassign, hi, checkInstArrs_reassign,
-    images_reassign_fixed, comparePrepared_reassign]
+    images_reassign_fixed, comparePrepared_reassign, budget_reassign]
   rfl
 
 theorem check_reassign (S T : List ι) (p : SubtypeChoices ι) :
     PositiveCertificates.checkUsing (reassign G η) (images.reassign η) S T p =
       PositiveCertificates.checkUsing G images S T p := by
-  simp only [PositiveCertificates.checkUsing, compareUsing_reassign]
+  simp only [PositiveCertificates.checkUsing, compareUsing_reassign, budget_reassign]
 
 /-- The subtype checker as a function of its graph. -/
 theorem check_fun_reassign :

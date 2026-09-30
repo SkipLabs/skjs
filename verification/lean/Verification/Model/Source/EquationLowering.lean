@@ -434,6 +434,8 @@ def ArrayParts.map (f : Union → Union) (a : ArrayParts) : ArrayParts :=
   { a with required := a.required.map f, optional := a.optional.map f, rest := a.rest.map f }
 
 structure State where
+  /-- Execution policy; the equation document records only the types. -/
+  subtypeBudget : PositiveCertificates.SearchBudget := {}
   doc : Array Definition
   heads : Array Draft := #[]
   keys : Std.HashMap String Nat := {}
@@ -2003,7 +2005,7 @@ def Built.finish (b : Built) : Except String Equations := do
     let (A, B) := closeObligation o
     let A ← closedUnion E o.site A
     let B ← closedUnion E o.site B
-    if (CertificateProducer.comparisonUsing E.graph E.instanceImageCheck A B).accepted then
+    if (CertificateProducer.comparisonUsing E.graph { E.instanceImageCheck with budget := s.subtypeBudget } A B).accepted then
       continue
     let names (h : Nat) : String := (drafts[h]?.map (·.name)).getD s!"{h}"
     throw s!"{o.site} does not establish its declared bound: {showUnion names (A.map (·.1))} ≤ {showUnion names (B.map (·.1))}"
@@ -2042,13 +2044,13 @@ def Built.store (b : Built) : State :=
 /-- **The source path's lowering.** `ast` is the parser's function tree with
 its declaration document (`tools/declaration-types.mts`), `claims` the
 source-claims document (§9.1). -/
-def source (ast claims : Json) : Except String SourceLowering := do
+def source (ast claims : Json) (budget : PositiveCertificates.SearchBudget := {}) : Except String SourceLowering := do
   let document ← field ast "declarations"
   let ds ← definitions document
   if let some i := (List.range ds.size).find? (fun i => ds[i]!.identity == arrayProtoIdentity) then
     if i != 0 || !ds[i]!.parameters.isEmpty then throw "ArrayProto must be the first declaration"
   let ((annotations, values, generics, units, initBinders, claims), s) ←
-    (lowerSource ast claims).run { doc := ds }
+    (lowerSource ast claims).run { doc := ds, subtypeBudget := budget }
   let b ← compact s
   let _ ← b.finish
   let rn := b.rn

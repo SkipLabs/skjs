@@ -143,7 +143,24 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   const negative = join(dir, "negative.ts");
   writeFileSync(positive, source(false));
   writeFileSync(negative, source(true));
-  assert.equal(check(positive).status, "verified", "205 finite readonly dependencies");
+  const wide = check(positive);
+  assert.equal(wide.status, "verified", "205 finite readonly dependencies");
+  // One submitted derivation crosses both modes under the requested budget.
+  // A low budget may refuse it; increasing resources preserves its meaning.
+  const wideAst = join(wide.artifacts, "fragment.json");
+  const wideClaims = join(wide.artifacts, "claims.json");
+  const wideSource = join(wide.artifacts, "source.ts");
+  const wideEvidence = join(wide.artifacts, "evidence.json");
+  for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
+    const args = [mode, wideAst, wideClaims, wideSource, wideEvidence,
+      ...(mode === "--produce-source-claims" ? ["12"] : [])];
+    const runWith = (rounds: number) => spawnSync(verifier,
+      ["--subtype-rounds", String(rounds), ...args], { encoding: "utf8", timeout: 30_000 });
+    const limited = runWith(0);
+    assert.equal(limited.status, 1, `${mode}: zero frontier rounds cannot establish the record comparison`);
+    const sufficient = runWith(8);
+    assert.equal(sufficient.status, 0, `${mode}: eight frontier rounds establish the finite graph: ${sufficient.stderr}`);
+  }
   assert.equal(check(negative).status, "unverified", "the last field's type is incompatible");
 }
 
