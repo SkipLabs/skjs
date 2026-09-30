@@ -948,6 +948,13 @@ plain call's `apply` node and a `new` node carry them the same way; there they
 are compared with the call's `instantiate` list, binder by binder in the
 callee's declaration order.
 
+A declaration's generic function type `<A>(x: A) => R` is the same scheme
+term, each signature's receiver `{"k":"atom","name":"unknown"}` or the type a
+`this: T` parameter states. A generic method or generic function type whose
+signature the parser cannot read, such as one of a nested type literal's
+methods binding its own parameters, refuses its declaration, located at the
+declaration.
+
 `e as const` is the cast node `{"k":"cast","cast":"const","annot":null,"e":…}`:
 it asserts no type, and its claim, the operand's literal types, is proved
 from the operand's like any other cast's.

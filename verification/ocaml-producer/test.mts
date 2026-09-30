@@ -136,8 +136,9 @@ for (const [file, expected] of [
   writeFileSync(join(probe, "package.json"), '{"type":"module"}');
   writeFileSync(join(probe, "tsconfig.json"),
     JSON.stringify({ extends: upstreamConfig, include: ["*.ts"] }));
-  // A generic method is an opaque member and a `unique symbol` key is a
-  // field keyed by that symbol, so `Resource`, `Context` and
+  // A generic method and a generic function type (`mapReduce`'s result) are
+  // schemes and a `unique symbol` key is a field keyed by that symbol, so
+  // `Resource`, `Context` and
   // `EagerCollection` (through `Managed`'s `[sk_managed]`) collect, and so do
   // `Mapper` and `Values`, through the library's `Iterable` and `Iterator`.
   for (const [use, imports, refusal] of [
@@ -1381,10 +1382,18 @@ for (const [file, expression, expected] of [
   ["assertion-snapshot", "assertedSnapshot({ value: 3 })", 3],
   // A closure reads a captured cell when it runs, and sees its own write.
   ["invalid-closure-graph-captured-cell", "counter()", null],
+  // A generic function type's result: a pair where it holds, the argument
+  // itself where another scheme was passed for it.
+  ["generic-function-type-member", "pass({ twice: () => (x) => [x, x] }).twice()(1).join()", "1,1"],
+  ["invalid-generic-function-type-member", "wrong({ twice: () => (x) => x }).twice()(1)", 1],
 ] as const)
   assert.equal(runExample(file, expression), expected, file);
 // A class has no plain call: calling it throws.
 assert.throws(() => runExample("invalid-class-as-function", "go()"), /cannot be invoked without 'new'/);
+// A generic method's contract read as `unknown` admits 42, which no call
+// can run.
+assert.throws(() => runExample("invalid-generic-method-nested-scheme", "wrong().run({ id: (x) => x })"),
+  /is not a function/);
 process.stdout.write("examples run as JavaScript: results as their outcomes say\n");
 
 // The dynamic-key rule is bound to the actual indexed term, not interchangeable

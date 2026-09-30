@@ -4,7 +4,7 @@ How much of what SKJS accepts in its own test suite the pipeline
 (`check.mts`: parser → OCaml producer → Lean search and check) verifies, what
 stops the rest, and where the two disagree because SKJS is wrong.
 
-Measurement checkpoint: September 29, 2026 (full census with SKJS
+Measurement checkpoint: September 30, 2026 (full census with SKJS
 confirmation).
 
 **2,466 of 2,674 SKJS-accepted units verify (92.2%); 1,836 of 2,026
@@ -120,9 +120,9 @@ is.
 | Phase of first blocker | Units |
 | --- | ---: |
 | verified | 2,466 |
-| source (gate) | 77 |
+| source (gate) | 76 |
 | proposal (producer) | 27 |
-| search (Lean) | 104 |
+| search (Lean) | 105 |
 
 **Refusal classes.** The project's goal is that every accepted unit either
 verifies or is refused for a specific, principled reason. Each accepted unit
@@ -226,7 +226,7 @@ First blocker, not every missing feature of a unit:
 | implicit index signatures: a record at an index signature (`Closed<T>` read as `T` among them) | 14 | 14 | 0 | 3 |
 | type forms: literal types, keyof, indexed access, mapped, object, index signatures, intersections, method signatures | 11 | 10 | 1 | 7 |
 | object growth: a key-adding write on an object another reference may hold, a dynamic index write | 11 | 11 | 0 | 5 |
-| generics: constraints, explicit type arguments, rigid types, generic function types | 10 | 7 | 2 | 7 |
+| generics: constraints, explicit type arguments, rigid types, generic function types | 10 | 9 | 0 | 7 |
 | calls: overloads, .call, spread arguments, Object.assign, arrow callee | 10 | 6 | 3 | 6 |
 | a named function at a signature binding more parameters, or indifferent to the receiver it requires (its type is its annotated signature) | 9 | 8 | 1 | 5 |
 | arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's | 8 | 8 | 0 | 5 |

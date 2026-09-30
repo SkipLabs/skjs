@@ -44,6 +44,11 @@ const gap = (
 export const cases: Case[] = [
   { file: "invalid-generic-contract-erasure", area: "An unsupported method contract is refused, never weakened to unknown", kind: "negative",
     status: "unsupported", phase: "proposal", diagnostic: /generic contract.*cannot be erased/ },
+  { file: "invalid-generic-method-nested-scheme", area: "A generic method whose parameter holds a generic method is refused with its declaration, never read as unknown", kind: "negative",
+    status: "unsupported", phase: "source", diagnostic: /unsupported method signature in .*#Runner/ },
+  positive("generic-method-nested-method", "a generic method whose parameter holds a plain method: the whole contract, passed through"),
+  positive("generic-function-type-member", "a method returning a generic function type: a scheme taking any receiver, met by a declaration stating the same"),
+  negative("invalid-generic-function-type-member", "a method returning a generic function type is not met by one of another result"),
   negative("invalid-native-find-mutation", "find visits missing positions after a callback shrinks the array", /closure signature claim is outside/),
   negative("invalid-native-map-mutation", "map's sparse result cannot be iterated as a dense array", /evidence search failed|no compatible call signature/),
   negative("invalid-native-join-coercion", "join cannot call a client conversion method with unchecked arguments"),

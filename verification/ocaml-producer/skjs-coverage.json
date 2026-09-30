@@ -17,8 +17,8 @@
  "verified": 2466,
  "byStatus": {
   "verified (check)": 2466,
-  "unverified (search)": 104,
-  "unsupported (source)": 77,
+  "unverified (search)": 105,
+  "unsupported (source)": 76,
   "unsupported (proposal)": 27
  },
  "bySuite": {
@@ -96,8 +96,8 @@
   },
   "generics: constraints, explicit type arguments, rigid types, generic function types": {
    "units": 10,
-   "self": 7,
-   "dependency": 2,
+   "self": 9,
+   "dependency": 0,
    "files": 7
   },
   "calls: overloads, .call, spread arguments, Object.assign, arrow callee": {
@@ -245,7 +245,7 @@
    "files": 1
   }
  },
- "reachedButRefused": 104,
+ "reachedButRefused": 105,
  "byClass": {
   "verified": 2466,
   "principled": 88,
@@ -550,6 +550,7 @@
   "source: a well-known symbol key other than `Symbol.iterator` is outside the fragment: it changes how the host treats the object, which the model does not state, and `Sy": 2,
   "source: keyof is number | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | ... 34 more ... | unique symbol, whose part unique s": 2,
   "search: reject: the result of an async function that may be an object other than a promise: JavaScript adopts a thenable, calling its `then`, instead of settling to it,": 2,
+  "source: generic function types are outside the fragment": 2,
   "proposal: field read on non-object": 2,
   "source: a rest parameter needs a tuple of required positions or an array: one typed by a declaration's type parameter is a pack only once the declaration is applied, an": 2,
   "proposal: a spread copies the own enumerable properties of a plain object; a class value's are its static fields, which its construct signatures do not state": 2,
@@ -565,7 +566,7 @@
   "proposal: a field read at its contract: a nested pattern's read of a through a field holding an object beside null or undefined, which a test does not narrow: what a fiel": 1,
   "source: an ambient enum is outside the fragment: its object is the environment's, whose members a declaration need not all value, and the declaration reader has no ambi": 1,
   "search: reject: an optional key found `undefined`, read at `undefined`: the key may be absent, and a read of an absent key is stated by no clause the model reads": 1,
-  "source: generic function types are outside the fragment in a declaration of the source": 1,
+  "search: reject: source refusal at _: a scheme claim has no quantified closure in its source": 1,
   "search: reject: a read of a key `in` found in a dictionary: presence promotes an optional field of a record, not the index of a dictionary, so the read is still at the ": 1,
   "search: reject: a spread of a dictionary: the copy owns the keys the dictionary holds when it runs, which no type states: the result is a dictionary only where every pa": 1,
   "search: reject": 1,
@@ -577,7 +578,6 @@
   "search: reject: source refusal at _: a key-adding write at a string known only at run time: the key may spell one the model keeps for itself (`[]`, `[[proto]]`), which ": 1,
   "search: reject: source refusal at _: a key-adding write at one of several literal keys is not lowered: it needs a dispatch on the key, one copy of the object per key": 1,
   "source: an object type with construct signatures and other members: a class value's statics are not members of its type": 1,
-  "source: generic function types are outside the fragment": 1,
   "proposal: a spread copies the own enumerable properties of a plain object; a string's are its characters at index keys, which no record states": 1,
   "proposal: quantified callable claim encoding": 1,
   "source: keyof is keyof Promise<number>, whose part unique symbol is a unique symbol, which no type of the fragment names": 1,
@@ -593,8 +593,7 @@
   "search: reject: the `length` of a mutable tuple read at its arity: the length of a mutable tuple is not fixed by its type, since `push` is allowed on it (an unsoundness": 1,
   "search: reject: a mutable array at one of a wider element: a writable element or field is invariant, as a write through the wider view would break the narrower one; Typ": 1,
   "search: reject: an instance at another whose writable field differs: a writable element or field is invariant, as a write through the wider view would break the narrowe": 1,
-  "source: typeof WithStatic is a class with static members: its statics are bindings of their own, not members of the class value's type": 1,
-  "source: generic function types are outside the fragment in identity": 1
+  "source: typeof WithStatic is a class with static members: its statics are bindings of their own, not members of the class value's type": 1
  }
 },
 "excluded": [
@@ -1840,7 +1839,7 @@
 {"source":"tests/expect-error/function-union.ts","name":"testIncompatibleWithAllBranches","kind":"function","line":354,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/function-union.ts","name":"f1Generic","kind":"function","line":360,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/function-union.ts","name":"f2Generic","kind":"function","line":364,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/function-union.ts","name":"testUnionWithGenerics","kind":"function","line":368,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: generic function types are outside the fragment in a declaration of the source","group":"generics: constraints, explicit type arguments, rigid types, generic function types","where":"dependency","at":"type UnionWithGenerics = (<T>(x: T) => T) | (<T>(x: T) => string);","detail":"gate: generic function types are outside the fragment in /ocaml-producer-unit/source.ts#UnionWithGenerics (line 1, col 1)","class":"gap"},
+{"source":"tests/expect-error/function-union.ts","name":"testUnionWithGenerics","kind":"function","line":368,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source refusal at _: a scheme claim has no quantified closure in its source","group":"generics: constraints, explicit type arguments, rigid types, generic function types","where":"self","at":"testUnionWithGenerics","detail":"reject: source refusal at [185,206): a scheme claim has no quantified closure in its source — a scheme claim has no quantified closure in its source","class":"gap"},
 {"source":"tests/expect-error/function-union.ts","name":"f1Nested","kind":"function","line":374,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/function-union.ts","name":"f2Nested","kind":"function","line":376,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/function-union.ts","name":"testNestedUnion","kind":"function","line":378,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -4482,7 +4481,7 @@
 {"source":"tests/expect-error/variadic-rest-corner-cases.ts","name":"testTupleSpreadFollowedByPositional","kind":"function","line":158,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/variadic-rest-corner-cases.ts","name":"testMotivatingAPI","kind":"function","line":164,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/variadic-rest-corner-cases.ts","name":"testTypeAliasTupleSpread","kind":"function","line":205,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/variadic-rest-corner-cases.ts","name":"testGenericTupleConstraint","kind":"function","line":217,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: generic function types are outside the fragment in identity","group":"generics: constraints, explicit type arguments, rigid types, generic function types","where":"dependency","at":"declare const identity: <U extends [string, number]>(a: string, b: number) => U;","detail":"gate: generic function types are outside the fragment in identity (line 1, col 1)","class":"gap"},
+{"source":"tests/expect-error/variadic-rest-corner-cases.ts","name":"testGenericTupleConstraint","kind":"function","line":217,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: generic function types are outside the fragment","group":"generics: constraints, explicit type arguments, rigid types, generic function types","where":"self","at":"const tgt: <T extends [string, number]>(...args: T) => T = identity;","detail":"gate: generic function types are outside the fragment (line 4, col 14)","class":"gap"},
 {"source":"tests/expect-error/variadic-rest-corner-cases.ts","name":"testTupleRestToPositional","kind":"function","line":227,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/variance.ts","name":"interWithTop","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its ope","group":"destructuring and rest/default parameters","where":"self","at":"function interWithTop<T>(...x: T[] & arrayBooleanOrArrayString): T {","detail":"gate: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its operands, which has no representation (line 3, col 26)","class":"principled"},
 {"source":"tests/expect-error/variance.ts","name":"checkIntersectionWithTopIsNotBottom","kind":"function","line":12,"skjsMarker":"rejected-self"},

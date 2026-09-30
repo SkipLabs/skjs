@@ -312,8 +312,14 @@ export function typeTerm(scope: TermScope, node: TypeNode | undefined, at: Node 
     return members(scope, node.members, node, span, node === scope.body ? true : "nested");
   if (ts.isMappedTypeNode(node)) return expandMapped(mapped(scope, node), span, message => scope.fail(node, message));
   if (ts.isFunctionTypeNode(node)) {
-    if (node.typeParameters?.length) scope.fail(node, "generic function types are outside the fragment");
-    return oneTerm(signatures(scope, node.parameters, node.type, node, span), span);
+    if (!node.typeParameters?.length) return oneTerm(signatures(scope, node.parameters, node.type, node, span), span);
+    // A declaration's generic function type, `<A>(x: A) => R`, is a scheme
+    // whose signatures take any receiver, or the one a `this` parameter
+    // states.
+    if (scope.annotation || !node.type) scope.fail(node, "generic function types are outside the fragment");
+    const { binders, forms } = quantified(scope, node.typeParameters, node.parameters, node.type, node, span);
+    return { k: "scheme", binders,
+      signatures: forms.map(m => ({ ...m, receiver: m.receiver ?? { k: "atom", name: "unknown", span } })), span };
   }
   // `new (params) => R`: a construct signature per accepted argument list. It
   // has no receiver; its rest, if any, is a function's.
@@ -517,6 +523,30 @@ export function signature(scope: TermScope, parameters: readonly ts.ParameterDec
   return only;
 }
 
+/** A generic signature's binders and forms: its own type parameters are
+ * binders, named by spelling, which shadow the enclosing ones. */
+function quantified(scope: TermScope, typeParameters: readonly ts.TypeParameterDeclaration[],
+    parameters: readonly ts.ParameterDeclaration[], result: TypeNode, at: Node, span: Span) {
+  const own = typeParameters.map(p => p.name.text);
+  const inner: TermScope = {
+    ...scope,
+    named(node, span, read) {
+      if (ts.isIdentifier(node.typeName) && own.includes(node.typeName.text)) {
+        if (node.typeArguments?.length) scope.fail(node, "a type parameter takes no type arguments");
+        return { k: "binder", name: node.typeName.text, span };
+      }
+      return scope.named(node, span, read);
+    },
+  };
+  const binders = typeParameters.map(p => ({
+    name: p.name.text,
+    bound: p.constraint ? typeTerm(inner, p.constraint, p) : null,
+    default: p.defaultType ? typeTerm(inner, p.defaultType, p) : null,
+    span: spanOf(scope, p),
+  }));
+  return { binders, forms: signatures(inner, parameters, result, at, span) };
+}
+
 /** A signature whose rest parameter is a union of tuples, `...[v]: [] | [T]`,
  * accepts each tuple's positions: it is one signature per tuple, all
  * returning its result, which a value meets by meeting every one. Such a
@@ -682,40 +712,18 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
         !member.postfixToken && !member.modifiers?.length) {
       // A generic method is a readonly member whose type is a scheme: its own
       // type parameters are binders, named by spelling, which shadow the
-      // declaration's. One whose signature is outside the fragment stays an
-      // opaque member, which any value is: nothing is assumed of it.
+      // declaration's. One whose signature is outside the fragment refuses
+      // the declaration: the member is both read and produced at its
+      // contract, and no weaker type is safe for both.
       const name = named(member, "unsupported method signature");
-      const opaque: TypeTerm = { k: "atom", name: "unknown", span: memberSpan };
-      try {
-        if (!member.type) scope.fail(member, "unsupported method signature");
-        const own = member.typeParameters.map(p => p.name.text);
-        const inner: TermScope = {
-          ...scope,
-          named(node, span, read) {
-            if (ts.isIdentifier(node.typeName) && own.includes(node.typeName.text)) {
-              if (node.typeArguments?.length) scope.fail(node, "a type parameter takes no type arguments");
-              return { k: "binder", name: node.typeName.text, span };
-            }
-            return scope.named(node, span, read);
-          },
-        };
-        const binders = member.typeParameters.map(p => ({
-          name: p.name.text,
-          bound: p.constraint ? typeTerm(inner, p.constraint, p) : null,
-          default: p.defaultType ? typeTerm(inner, p.defaultType, p) : null,
-          span: spanOf(scope, p),
-        }));
-        const forms = signatures(inner, member.parameters, member.type, member, memberSpan);
-        if (forms.some(m => m.receiver)) scope.fail(member, GENERIC_METHOD_RECEIVER);
-        fields.push({ name, optional: false, readonly: true,
-          type: { k: "scheme", binders,
-            signatures: forms.map(m => ({ ...m, receiver: { k: "self", span: memberSpan } })),
-            span: memberSpan }, span: memberSpan });
-      } catch (e) {
-        // `fail` throws a plain Error; anything else is a defect, not a form.
-        if (!(e instanceof Error) || e.constructor !== Error) throw e;
-        fields.push({ name, optional: false, readonly: true, type: opaque, span: memberSpan });
-      }
+      if (!member.type) scope.fail(member, "unsupported method signature");
+      const { binders, forms } = quantified(scope, member.typeParameters, member.parameters, member.type,
+        member, memberSpan);
+      if (forms.some(m => m.receiver)) scope.fail(member, GENERIC_METHOD_RECEIVER);
+      fields.push({ name, optional: false, readonly: true,
+        type: { k: "scheme", binders,
+          signatures: forms.map(m => ({ ...m, receiver: { k: "self", span: memberSpan } })),
+          span: memberSpan }, span: memberSpan });
     } else if (ts.isMethodSignatureDeclaration(member)) {
       if (!methods || !member.type || member.typeParameters?.length || member.modifiers?.length)
         scope.fail(member, "unsupported method signature");
