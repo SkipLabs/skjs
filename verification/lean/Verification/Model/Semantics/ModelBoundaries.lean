@@ -231,12 +231,6 @@ def writer (l : Nat) : Tm := .obj 1 (.graph 1 [.write (.obj l .absent) .fls] [(.
 /-- The persistent Boolean world admits both heaps at every budget. -/
 def boolWorld (n : Nat) : WorldT n := ofList [res boolT]
 
-theorem boolWorld_adm (n : Nat) : WorldAdm (boolWorld n) := by
-  intro l c hl j hj U U' hx v hv
-  cases l with
-  | zero => simp [boolWorld,lookup] at hl; subst c; exact hv
-  | succ l => simp [boolWorld,lookup] at hl
-
 theorem boolWorld_heap (n : Nat) (v : Val) (hv : v = .tru ∨ v = .fls) :
     HeapOk n (boolWorld n) [v] := by
   constructor
