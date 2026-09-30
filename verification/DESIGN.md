@@ -206,9 +206,8 @@ acceptance through one exhaustive conversion to `CertifiedPlan`; no variant
 can be dropped. The proofs use no `sorry` and no project axioms. What the
 definitions mean is reviewed, not proved; see
 [what the checked development establishes](SEMANTICS.md#what-the-checked-development-establishes).
-How the theorem relates to a JavaScript run, and what a connection to a
-mechanized ECMA-262 semantics would add, is sketched in
-[ECMA-CONNECTION](ECMA-CONNECTION.md).
+How the theorem relates to a JavaScript run, and what a mechanized ECMA-262
+semantics would add for the host, is in [TRUST-REDUCTION](TRUST-REDUCTION.md#the-host).
 
 ### Modules and code units
 
@@ -840,7 +839,7 @@ steps once per element and closes the iterator where no rest took it to its
 end. No calculus rule changes: a call's callee is an assumption at its
 declared type, or code the unit checks. An async function's
 promise settles only to a primitive, the values that are never thenables
-([nested promises](ECMA-CONNECTION.md#illustration-nested-promises)).
+([nested promises](TRUST-REDUCTION.md#illustration-nested-promises)).
 The model runs a body to its end; every point where other code can intervene
 is an `await` or a call, across which only contracts survive.
 
@@ -1165,10 +1164,10 @@ block the framework cases, not the cutover.
 
 ### Open work
 
-**A connection to ECMA-262.** Proving the calculus faithful to the
-specification and the host's stated types as lemmas would turn most of the
-trust surface into theorems; the expected results and their cost are in
-[ECMA-CONNECTION](ECMA-CONNECTION.md).
+**A connection to ECMA-262.** Proving the host's stated types as lemmas of a
+mechanized specification would turn the ECMA rows of the trust surface into
+theorems; the lemmas and their cost are in
+[TRUST-REDUCTION](TRUST-REDUCTION.md#the-host).
 
 **Constructor rests.** A constructor's rest parameter is refused. The code
 could collect it as a closure's does, but no rule constructs at a variadic

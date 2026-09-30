@@ -42,8 +42,7 @@ invariant because the world fixes its contract, heap satisfaction ties
 contracts to contents, and functions are safe in every future world. This is
 `WorldT`, `refT`, `HeapOk` and admissible world extension.
 **Discussed in** [DESIGN: heap and contracts](DESIGN.md#heap-and-contracts),
-[SEMANTICS: computations and recursive types](SEMANTICS.md#computations-and-recursive-types),
-[INTERSECTIONS: what the model fixes](INTERSECTIONS.md#what-the-model-fixes);
+[SEMANTICS: computations and recursive types](SEMANTICS.md#computations-and-recursive-types);
 named in the removed "Names" section of SEMANTICS (`50217bc1`, removed
 `d54ee142`).
 
@@ -193,9 +192,8 @@ holds in semantic subtyping and fails here: an allocating function meets both
 arrows by choosing different cell contracts. The development therefore keeps
 a clause-to-clause rule and refuses that law.
 **Discussed in** [SEMANTICS: two retained design constraints](SEMANTICS.md#two-retained-design-constraints),
-[DESIGN: lasting decisions](DESIGN.md#lasting-decisions),
-[INTERSECTIONS](INTERSECTIONS.md#what-the-model-fixes). Named in
-`85ce52c4` (INTERSECTIONS and its commit message) and in the positive-types
+[DESIGN: lasting decisions](DESIGN.md#lasting-decisions). Named in
+`85ce52c4` (the intersections analysis and its commit message) and in the positive-types
 completeness study (`50217bc1`, removed `d54ee142`).
 
 ### Amadio and Cardelli 1993
@@ -391,7 +389,7 @@ Language Specification* as of this writing). Sections relied on by name:
 
 **Used for** the meaning of every calculus step and every host row of the
 trust surface; checked by review and `#guard` tests against node, not proved.
-**Discussed in** [ECMA-CONNECTION](ECMA-CONNECTION.md),
+**Discussed in** [TRUST-REDUCTION: the host](TRUST-REDUCTION.md#the-host),
 [DESIGN: the model in brief](DESIGN.md#the-model-in-brief),
 [DESIGN: trust surface](DESIGN.md#trust-surface),
 [SEMANTICS: operational language](SEMANTICS.md#operational-language),
@@ -417,8 +415,7 @@ toolchain at [github.com/es-meta/esmeta](https://github.com/es-meta/esmeta).
 **Candidate** for the mechanized ECMA-262 semantics M of a connection: it
 extracts the semantics from the specification's own algorithm text and
 covers promises and async.
-**Discussed in** [ECMA-CONNECTION: the pieces of a connection](ECMA-CONNECTION.md#the-pieces-of-a-connection),
-[cost](ECMA-CONNECTION.md#cost-roughly) (`89be3129`).
+**Discussed in** [TRUST-REDUCTION: the host](TRUST-REDUCTION.md#the-host) (`89be3129`).
 
 ### Bodin et al. 2014 (JSCert)
 
@@ -430,7 +427,7 @@ pp. 87–100. [doi:10.1145/2535838.2535876](https://doi.org/10.1145/2535838.2535
 
 **Context.** A Coq specification of ECMAScript 5 with a certified reference
 interpreter; an alternative, hand-written route to M, which predates promises.
-**Discussed in** [ECMA-CONNECTION: the pieces of a connection](ECMA-CONNECTION.md#the-pieces-of-a-connection).
+**Discussed in** [TRUST-REDUCTION: the host](TRUST-REDUCTION.md#the-host).
 
 ## Promises and flattened types
 
@@ -438,7 +435,7 @@ The nested-promise case: resolution adopts a thenable, so no realm promise is
 fulfilled with one, and a generic signature is truthful at `Promise<T>` only
 for a non-thenable `T`. These issues discuss the same fact from the ReScript
 and TypeScript sides. It is used in
-[ECMA-CONNECTION: illustration](ECMA-CONNECTION.md#illustration-nested-promises),
+[TRUST-REDUCTION: illustration](TRUST-REDUCTION.md#illustration-nested-promises),
 [PROGRAM-TYPING: async functions and await](PROGRAM-TYPING.md#async-functions-and-await)
 and the promise row of [DESIGN: trust surface](DESIGN.md#trust-surface)
 (`6ed4c72c`, `395ccd5f`, `89be3129`).
@@ -449,7 +446,7 @@ Cristiano Calcagno (cristianoc). *Explore ideas about flattened types.*
 rescript-lang/rescript issue #5707, opened 2022-09-29.
 [github.com/rescript-lang/rescript/issues/5707](https://github.com/rescript-lang/rescript/issues/5707).
 
-Cited as ReScript #5707 in [ECMA-CONNECTION: illustration](ECMA-CONNECTION.md#illustration-nested-promises).
+Cited as ReScript #5707 in [TRUST-REDUCTION: illustration](TRUST-REDUCTION.md#illustration-nested-promises).
 
 **Used for** the notion of a flattening constructor, $c\langle
 c\langle t\rangle\rangle = c\langle t\rangle$ at run time (nullable values,
@@ -463,7 +460,7 @@ request #5709, opened 2022-10-01, merged.
 [github.com/rescript-lang/rescript/pull/5709](https://github.com/rescript-lang/rescript/pull/5709).
 
 **Context** for making promise types sound against thenable adoption.
-**Cited in** [ECMA-CONNECTION: illustration](ECMA-CONNECTION.md#illustration-nested-promises).
+**Cited in** [TRUST-REDUCTION: illustration](TRUST-REDUCTION.md#illustration-nested-promises).
 
 ### ReScript 6433
 
@@ -474,7 +471,7 @@ rescript-lang/rescript issue #6433, opened 2023-10-11.
 **Context** for `%Await%` refusing a non-promise object operand: `await`
 calls an object's callable `then`
 ([PROGRAM-TYPING: async functions and await](PROGRAM-TYPING.md#async-functions-and-await)).
-**Cited in** [ECMA-CONNECTION: illustration](ECMA-CONNECTION.md#illustration-nested-promises).
+**Cited in** [TRUST-REDUCTION: illustration](TRUST-REDUCTION.md#illustration-nested-promises).
 
 ### ReScript 2345
 
@@ -483,7 +480,7 @@ Hongbo Zhang (bobzhang). *sound js promise.* rescript-lang/rescript issue
 [github.com/rescript-lang/rescript/issues/2345](https://github.com/rescript-lang/rescript/issues/2345).
 
 **Context**: the early statement that JavaScript promises cannot be typed
-soundly at every type parameter. **Cited in** [ECMA-CONNECTION: illustration](ECMA-CONNECTION.md#illustration-nested-promises).
+soundly at every type parameter. **Cited in** [TRUST-REDUCTION: illustration](TRUST-REDUCTION.md#illustration-nested-promises).
 
 ### ReScript 5211
 
@@ -492,7 +489,7 @@ rescript-lang/rescript issue #5211, opened 2021-07-09.
 [github.com/rescript-lang/rescript/issues/5211](https://github.com/rescript-lang/rescript/issues/5211).
 
 **Context**: a run-time witness of two flattening constructors (option and
-promise) composed. **Cited in** [ECMA-CONNECTION: illustration](ECMA-CONNECTION.md#illustration-nested-promises).
+promise) composed. **Cited in** [TRUST-REDUCTION: illustration](TRUST-REDUCTION.md#illustration-nested-promises).
 
 ### TypeScript 27711
 
@@ -500,7 +497,7 @@ delautour. *Promise<Promise<T>> cannot exist in JS.* microsoft/TypeScript
 issue #27711, opened 2018-10-11.
 [github.com/microsoft/TypeScript/issues/27711](https://github.com/microsoft/TypeScript/issues/27711).
 
-**Context**: the nested type TypeScript admits and JavaScript never produces. **Cited in** [ECMA-CONNECTION: illustration](ECMA-CONNECTION.md#illustration-nested-promises).
+**Context**: the nested type TypeScript admits and JavaScript never produces. **Cited in** [TRUST-REDUCTION: illustration](TRUST-REDUCTION.md#illustration-nested-promises).
 
 ### TypeScript 59111
 
@@ -509,7 +506,7 @@ issue #59111, opened 2024-07-02.
 [github.com/microsoft/TypeScript/issues/59111](https://github.com/microsoft/TypeScript/issues/59111).
 
 **Context**: a generic instantiation producing the nested type. **Cited in**
-[ECMA-CONNECTION: illustration](ECMA-CONNECTION.md#illustration-nested-promises).
+[TRUST-REDUCTION: illustration](TRUST-REDUCTION.md#illustration-nested-promises).
 
 ### TypeScript 49946
 
@@ -519,7 +516,7 @@ does not extend Promise.* microsoft/TypeScript issue #49946, opened
 [github.com/microsoft/TypeScript/issues/49946](https://github.com/microsoft/TypeScript/issues/49946).
 
 **Context** for the non-thenable bound on promised type parameters
-(`promisedBinders`). **Cited in** [ECMA-CONNECTION: illustration](ECMA-CONNECTION.md#illustration-nested-promises).
+(`promisedBinders`). **Cited in** [TRUST-REDUCTION: illustration](TRUST-REDUCTION.md#illustration-nested-promises).
 
 ### TypeScript 55408
 
@@ -528,7 +525,7 @@ rotu. *Cannot await Thenable.* microsoft/TypeScript issue #55408, opened
 [github.com/microsoft/TypeScript/issues/55408](https://github.com/microsoft/TypeScript/issues/55408).
 
 **Context** for awaiting a thenable that is not a promise. **Cited in**
-[ECMA-CONNECTION: illustration](ECMA-CONNECTION.md#illustration-nested-promises).
+[TRUST-REDUCTION: illustration](TRUST-REDUCTION.md#illustration-nested-promises).
 
 ### TypeScript 35419
 
@@ -536,7 +533,7 @@ Yogu. *Strict await.* microsoft/TypeScript issue #35419, opened 2019-11-29.
 [github.com/microsoft/TypeScript/issues/35419](https://github.com/microsoft/TypeScript/issues/35419).
 
 **Context** for refusing `await` of a non-promise object. **Cited in**
-[ECMA-CONNECTION: illustration](ECMA-CONNECTION.md#illustration-nested-promises).
+[TRUST-REDUCTION: illustration](TRUST-REDUCTION.md#illustration-nested-promises).
 
 ### TypeScript 45350
 
@@ -565,7 +562,7 @@ under `docs/deep-dives/issues/` and `docs/ledger.yaml` at `bf20814b`, and the
 mathematical audit `docs/skjs-type-soundness.tex`) supplied the witnesses the
 calculus reproduces.
 **Discussed in** [SKJS-COVERAGE](ocaml-producer/SKJS-COVERAGE.md),
-[INTERSECTIONS](INTERSECTIONS.md), [skjs-improvement](../docs/skjs-improvement.md),
+[skjs-improvement](../docs/skjs-improvement.md),
 [TypeScript soundness holes](../docs/typescript-soundness-holes.md); the
 corpus table in DESIGN before `6ee739f8` (`355a9ecb`).
 

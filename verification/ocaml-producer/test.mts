@@ -1887,7 +1887,7 @@ for (const [file, phase, says] of [
 // reader shows that outcome, and TypeScript's own errors where it placed them,
 // from the same run: the gate names only the declaration holding one.
 {
-  const file = "verification/ocaml-producer/evidence/service-binding/crashing-service-sound-binding.ts";
+  const file = "verification/ocaml-producer/examples/crashing-service-sound-binding.ts";
   const shown = await analyse(file, "ocaml");
   assert.equal(shown.outcome?.status, "unsupported");
   assert.equal(shown.outcome?.phase, "source");

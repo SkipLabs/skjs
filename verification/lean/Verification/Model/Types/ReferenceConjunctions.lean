@@ -1,4 +1,5 @@
-import Verification.Model.Types.TypeAlgebra
+import Verification.Model.Semantics.Rules
+import Verification.Model.Semantics.Tower
 
 /-! A nonempty conjunction of record contracts. Keeping the first operand
 explicit prevents the empty conjunction from silently becoming top.

@@ -9,7 +9,6 @@ proof rules; it has no separate acceptance calculus.
 ## Documents
 
 - [SKJS-COVERAGE](SKJS-COVERAGE.md): the census of how much of SKJS's own test suite the pipeline verifies, and what stops the rest.
-- [Service-binding evidence](evidence/service-binding/README.md): Skip's service binding, unsound and sound, checked end to end.
 
 ## Try it
 

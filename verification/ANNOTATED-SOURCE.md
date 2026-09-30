@@ -177,9 +177,8 @@ node verification/tools/annotate-source.mts input.ts \
 
 Generic report inputs are claims-only. Their stored status fields are ignored;
 `--verify` is rejected until that producer has a verification adapter. This
-display format is distinct from the semantic source-claim interface
-proposed in [CLAIM-INTERFACE](CLAIM-INTERFACE.md). It is not a shortcut around
-normalizing and checking a new producer's types.
+display format is distinct from the [source-claim sidecar](SOURCE-CLAIMS.md).
+It is not a shortcut around normalizing and checking a new producer's types.
 
 ## Freshness and source preservation
 

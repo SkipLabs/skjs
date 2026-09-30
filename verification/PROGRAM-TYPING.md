@@ -4582,8 +4582,7 @@ this section states the broader design and the rules it would add, in the terms 
 design can be read as a user of the verifier would read it: what can be claimed
 about a value, what a claim commits to, and what the verifier will and will not
 check. Where a fact below is already proved, the theorem is named; where it is
-not, the sentence says so. [INTERSECTIONS.md](INTERSECTIONS.md) §4 points here
-for the design of callable objects.
+not, the sentence says so.
 
 ### What a function is, and what the calculus has
 
@@ -5025,8 +5024,9 @@ obligations:
 ```
 
 They are **not** assertions that a writable internal cell has two different
-invariant content types. This is the law `TypeAlgebra.calls_append` proves for
-`callsT`.
+invariant content types. This is the law
+[`CallEffects.callsT_append`](lean/Verification/Model/Semantics/CallEffects.lean)
+proves for `callsT`.
 
 Consequently, placing the implementation in the heap does not itself damage
 overloads. The difficulty with A — boxing every function as an ordinary
