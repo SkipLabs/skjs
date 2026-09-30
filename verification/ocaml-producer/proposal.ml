@@ -677,8 +677,9 @@ let for_in_key_reason =
    change the object read (a call, a construction, a write of a property or of the object's name), and \
    here something may have run, so the read may miss"
 let generic_instances_reason =
-  "the covering rule for quantified signatures relates schemes binding the same rows, which members of one \
-   key declared alike (as many binders, the same bounds) do: members declared otherwise need an instance \
+  "the covering rule for quantified signatures relates two members up to renaming the target's binders to \
+   the source's: as many binders, of the same kinds, each target bound within the source's, and the source's \
+   signatures covering the target's renamed; members binding different numbers of binders need an instance \
    table naming each source signature's image at the target's binders"
 (* SKJS's `Closed<T>`, which the SKJS environment declares as the identity
    alias `T` (skjs-environment.d.ts). *)

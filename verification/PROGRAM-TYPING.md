@@ -143,7 +143,18 @@ types it at the selected signature's receiver:
      {\Gamma\vdash_G \mathsf{invoke}(f,r,\vec a):B}
 ```
 
-with $S^\flat=\{(R,\vec A,B)\mid(R,\vec A,E,B)\in S\}$. A plain call $f(\vec a)$ is $\mathsf{invoke}(f,\mathsf{undefined},\vec a)$. In
+with $S^\flat=\{(R,\vec A,B)\mid(R,\vec A,E,B)\in S\}$. A plain call $f(\vec a)$ is $\mathsf{invoke}(f,\mathsf{undefined},\vec a)$,
+and `.call` and `.apply` of a function (the standard intrinsics) pass their
+first argument as the receiver, so it meets the selected signature's
+receiver, the function's `this` parameter:
+
+```math
+f.\mathtt{call}(r,\vec a)\;\equiv\;\mathsf{invoke}(f,r,\vec a)
+\qquad
+f.\mathtt{apply}(r,[\vec a])\;\equiv\;\mathsf{invoke}(f,r,\vec a)
+```
+
+In
 de Bruijn form the receiver's slot precedes the parameters, $\mathit{this}$
 then $\vec x$, before the captures; an arrow's code has that slot too and
 never reads it, and a source `this` in an arrow resolves to an enclosing
@@ -377,9 +388,10 @@ elements replacing it in order, `undefined` at a hole
 (h,\ f(\vec v,\ h(\ell_1),\ldots,h(\ell_m),\ \vec p))
 ```
 
-A spread followed by an actual that runs code is copied where it is written,
-`[...s]`, a fresh store the call then spreads, so the later actual cannot
-change what it passes (`Step.arrSpread`, `copy_safe`, `arrCopy`):
+Into a rest, a spread followed by an actual that runs code is copied where it
+is written, `[...s]`, a fresh store the call then spreads, so the later actual
+cannot change what it passes (`Step.arrSpread`, `copy_safe`, `arrCopy`); into
+fixed parameters the lowering admits no such actual (above):
 
 ```math
 \frac{\Gamma\vdash_G s:S\quad\mathrm{Spreads}_G(S,E)}
@@ -977,6 +989,25 @@ local cell, and the steps are the same: its read at the contract, the right
 side, the operation, the write back at the contract, and the old or the new
 value.
 
+A logical assignment evaluates its target's parts once and reads the target
+at its storage contract $C$; the right side runs, and is written back at $C$,
+only on the arm the operator writes on, and the other arm's value is the one
+read. With $r$ the target's reference, $\mathsf{read}(r)$ its read and
+$\mathsf{write}(r,e)$ the write of $e$'s value, which is the expression's
+value there:
+
+```math
+\begin{aligned}
+r\ \mathtt{??=}\ e&\equiv\mathsf{let}\ v=\mathsf{read}(r)\ \mathsf{in}\ \mathsf{if}\ (v\equiv\mathsf{null}\lor v\equiv\mathsf{undefined})\ \mathsf{then}\ \mathsf{write}(r,e)\ \mathsf{else}\ v\\
+r\ \mathtt{||=}\ e&\equiv\mathsf{let}\ v=\mathsf{read}(r)\ \mathsf{in}\ \mathsf{if}\ v\ \mathsf{then}\ v\ \mathsf{else}\ \mathsf{write}(r,e)\\
+r\ \mathtt{\&\&=}\ e&\equiv\mathsf{let}\ v=\mathsf{read}(r)\ \mathsf{in}\ \mathsf{if}\ v\ \mathsf{then}\ \mathsf{write}(r,e)\ \mathsf{else}\ v
+\end{aligned}
+```
+
+so $e$ is checked at $C$, as any write of $r$ is. `||=` and `&&=` are
+lowered on a Boolean target only ([model limits](DESIGN.md#model-limits)).
+The encoding is in [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md#receivers).
+
 A template literal is the concatenation of its parts, in order, starting from
 its first string part: `` `h${a}m${b}t` `` is $(((h+a)+m)+b)+t$, one `arith`
 node per `+`, so a substitution is converted by $\mathsf{str}$ exactly where
@@ -1500,8 +1531,8 @@ where a spread defines it: the two agree on a fresh plain object, but for
 `__proto__`, whose setter replaces the prototype. So each source's claimed
 type must give no `__proto__` (`ownsNoProto`: every clause owns no
 enumerable property, or a key bound excludes the key); a record type, which
-may own any key, is refused. As for a spread, a source's own symbol keys are
-not copied.
+may own any key, is refused. As for a spread, the model's copy takes string
+keys only ([DESIGN](DESIGN.md#object-literals)).
 
 ### Checked control-flow graphs
 
@@ -1711,9 +1742,12 @@ Four implementations discharge the tested-slot obligation:
   included (`tagMember`, with the marker `subset`): every value `typeof`
   answers `"string"` for is a string. So is equality with one number other
   than a zero, which holds of that number alone, or with one string:
-  $x\equiv 1$ with $x:\mathsf{number}$ gives $x:1$. A more precise algorithm
-  can implement the same contract without changing the edge or environment
-  rule.
+  $x\equiv 1$ with $x:\mathsf{number}$ gives $x:1$. A type parameter's
+  value is covered so too: where `typeof x === "number"` holds of `x: T`,
+  `x` is a `number`, which is what TypeScript's `T & number` holds, though
+  no longer read as a `T`; where the test fails, `x` keeps its row, whose
+  values the tag slice cannot divide. A more precise algorithm can implement
+  the same contract without changing the edge or environment rule.
 - **Array of the realm:** a passed `Array.isArray` finds an object owning
   the store key. A member of a record or dictionary clause meets the realm's
   [array invariant](SEMANTICS.md#the-array-invariant), so such a member is a
@@ -2600,6 +2634,14 @@ values, or that it holds no `undefined`, and a write between the test and the
 read may replace it); a read of a member only some arms state is refused
 with that reason.
 
+**Shorthand properties.** A shorthand property writes the value its name
+reads, as the field of that name, the name resolved as any read of it (a
+shadowing local's renaming, above, included):
+
+```math
+\{\ldots,\ x,\ \ldots\}\;\equiv\;\{\ldots,\ x\colon x,\ \ldots\}
+```
+
 **Older spellings.** `<T>e` is `e as T` and `<const>e` is `e as const`,
 the same assertion (an obligation on the operand, never a fact); a
 top-level `;`, as one in a body, is nothing.
@@ -2667,8 +2709,9 @@ What a class declaration may not hold, each for its reason:
   type the host must meet ([DESIGN](DESIGN.md#method-members-are-host-relative));
 - a generic method with a bounded binder: the member's binder row is named by
   its bound, which the closure's binder, named by the parser, is not;
-- a constructor parameter with a default: construct code is a term over
-  plain parameters, with no default schedule as a closure's `parameterOrder`;
+- a constructor parameter default reading `this`, or a constructor statement
+  reading it other than as a field assignment's target: the instance is
+  allocated at the constructor's end;
 - a member with a computed key (a method is a binding and a prototype key
   named by its plain name) other than a static `[Symbol.hasInstance]`,
   below;
@@ -2680,10 +2723,10 @@ What a class declaration may not hold, each for its reason:
   and a copy holds no private slot), and `#x in o` (it tests an own slot,
   where $\mathsf{hasKey}$ walks the prototype chain and would find an
   instance's slot from an object inheriting from it);
-- extending a generic class, or a generic class extending one (a generic
-  base's construction is quantified, and no record of it at arguments is
-  kept), and extending `Array` (its instances are what the library's
-  constructor allocates, not an ordinary object).
+- extending a generic class other than at the base's own binders (a generic
+  base's construction is at its binders' rows, [classes](#classes)), and
+  extending `Array` (its instances are what the library's constructor
+  allocates, not an ordinary object).
 
 `e instanceof C`, with `C` an identifier TypeScript binds to a class the
 file declares at its top level, evaluates $e$, then `C` (read as its
@@ -3181,14 +3224,27 @@ any expression's. A parameter written without a type has for $D_j$ the type
 TypeScript gives it from its context, which the parser writes
 (`closureParamType`): a proposal like any claim, since the body is checked at
 $A_j\sqsubseteq_G D_j$ and the closure at $\bigwedge L$ wherever it goes, the
-call offering it included. A named closure passed where a callback is offered more
-parameters, `xs.reduce(acc, null)`, is claimed where it is created at that
-signature beside its own; its code is checked at each (`CodeOffers`). So is
-one passed where a variadic callback is offered, `process.on(sig, shutdown)`
+call offering it included. A closure is **offered** each signature binding
+more parameters than it does that is expected where it flows: passed where
+a callback is offered more parameters (`xs.reduce(acc, null)`), bound under
+such an annotation directly or through another binding, returned at such a
+result. It is claimed where it is created at that signature beside its own,
+and its code is checked at each (`CodeOffers`), the premise over $L$ above
+keeping each claimed parameter within its annotation:
+
+```math
+\frac{\lambda(\vec x{:}\vec D).t\ \text{flows to a position expecting}\ (R;\vec A)\to B\quad |\vec x|<|\vec A|}
+     {(R,\vec A,B)\in L}\ \textsf{offer}
+```
+
+A closure is offered a variadic signature too, `process.on(sig, shutdown)`
 at `(...args: unknown[]) => void`, when its parameters are among the
 signature's fixed ones: $L$ then holds that signature's fixed row
 (`offerRows`), and each claimed parameter is within the annotation's as for
-any row. A `void` result is $\top$, so a closure returning a promise meets it.
+any row. A signature binding no more parameters than the closure does is no
+offer: a closure binding an optional second parameter, held at a
+one-parameter annotation, is not claimed at a two-parameter signature it
+later flows to, and its binding there is only that annotation. A `void` result is $\top$, so a closure returning a promise meets it.
 No subtyping widens an arrow's parameters: a value typed `() => undefined` is
 not a variadic callback, only a closure literal is created at one.
 
@@ -3543,6 +3599,21 @@ heads, and there is no budget, colour or depth: an alias reached again before
 a constructor is refused as unguarded, and everything else terminates
 because heads are keyed by source occurrence.
 
+An interface declared more than once, as TypeScript merges it, is one
+declaration: its first declaration is its identity, and its body holds every
+declaration's members, each at its own type. The declarations bind the same
+type parameters, name no member twice and state at most one index signature
+of each key kind, or the interface is refused:
+
+```math
+\frac{\mathtt{interface}\ I\langle\vec X\rangle\ \{\varphi_i;\ \vec\sigma_i\}\ \ (1\le i\le n)\quad
+      \mathrm{names}(\varphi_i)\ \text{pairwise disjoint}}
+     {⟦I\langle\vec X\rangle⟧=⟦\{\varphi_1\cdots\varphi_n;\ \vec\sigma_1\cdots\vec\sigma_n\}⟧}\ \textsf{interface-merge}
+```
+
+with $\varphi_i$ a declaration's fields, methods and index signatures and
+$\vec\sigma_i$ its call signatures.
+
 The store a unit is extracted over is the lowering's heads, and extraction
 grows it ([EquationStore.lean](lean/Verification/Model/Source/EquationStore.lean)): a union of clauses, a scheme over a closure's
 binders and a bounded binder's meet each become a head whose template lifts
@@ -3560,9 +3631,12 @@ signatures whose receivers admit every value (the member bound to its host
 is what meets the scheme, [records](POSITIVE-TYPES.md#records)). Its binders
 are owned by its application, $`\mathsf{bound}(D.m,\vec A,j)`$, so two
 applications of `D` at different arguments bind different labels, and two
-members of different declarations do too: relating them needs quantified
-coverage up to renaming ([RECURSIVE-EQUATIONS §4.1](RECURSIVE-EQUATIONS.md#41-quantified-signatures)),
-which the request path does not yet reach (DESIGN, "Status"). A generic
+members of different declarations do too. Such members relate by quantified
+coverage up to renaming the target's binders to the source's
+([RECURSIVE-EQUATIONS §4.1](RECURSIVE-EQUATIONS.md#41-quantified-signatures),
+`SchemeRenames`): as many binders, of the same kinds, each target bound
+within the source's, and the source's signatures covering the target's
+renamed. Members binding different numbers of binders are not related. A generic
 member of a library prototype (`ArrayProto`'s `forEach`, whose receiver is an
 array of its element binder) stays a readonly view of its scheme. A rest
 typed by one of the method's binders makes it a pack parameter, bounded by
@@ -3702,7 +3776,7 @@ private field is an own key of each instance, allocated with the others
 by the prototype under its key, as a method under its name; a static one is
 a static binding `static C.#x`. So `o.#x`, `o.#x = e` and `o.#m(ā)` are the
 named read, write and method call at $\sigma_{C.\#x}$, and a copy
-(`{...o}`) takes no private slot, as it takes no symbol key. JavaScript
+(`{...o}`) takes no private slot, in JavaScript as in the model. JavaScript
 throws where `o` holds no slot of its own; the model reads `o.#x` along the
 prototype chain as any key, where only an object inheriting from an instance
 differs, and there JavaScript throws, which safety admits.
@@ -3816,6 +3890,38 @@ refused):
 
 with each list sorted and deduplicated (`Fragment.cellConjunction`); it is
 exact by `recT_append`.
+
+**Signatures.** A type literal or an interface whose members are call
+signatures only is the function type they state, and one of construct
+signatures only the constructor type, several signatures being overloads of
+the one value; call signatures beside writable fields are the callable
+carrying them ([callable-meet](#intersections-of-functions-and-records)).
+With $⟦\sigma_1⟧,\ldots,⟦\sigma_n⟧$ the signatures' fixed ones $L$ and
+variadic ones $S$, each receiver `top` unless a `this` parameter states it,
+and $\varphi$ writable fields:
+
+```math
+\frac{⟦\sigma_1⟧,\ldots,⟦\sigma_n⟧=L;S}
+     {⟦\{\,\sigma_1;\ \ldots;\ \sigma_n\,\}⟧=\mathsf{arrs}(L;S)}\ \textsf{call-literal}
+\qquad
+\frac{⟦\sigma_1⟧,\ldots,⟦\sigma_n⟧=L;S}
+     {⟦\{\,\sigma_1;\ \ldots;\ \sigma_n;\ \varphi\,\}⟧=\mathsf{callable}(\varphi;L;S)}
+\qquad
+\frac{⟦\mathtt{new}\,\sigma_1⟧,\ldots,⟦\mathtt{new}\,\sigma_n⟧=L;S}
+     {⟦\{\,\mathtt{new}\,\sigma_1;\ \ldots;\ \mathtt{new}\,\sigma_n\,\}⟧=\mathsf{ctors}(L;S)}\ \textsf{construct-literal}
+```
+
+Construct signatures beside other members, which describe a class value's
+statics, are refused ([model limits](DESIGN.md#model-limits)). A rest
+parameter over a union of tuples of required positions is one signature per
+tuple, all at the signature's result, which a value meets by meeting every
+one; the library's `next(...[value]: [] | [TNext])` is `next()` and
+`next(value: TNext)`:
+
+```math
+\frac{⟦R⟧=[\vec A_1]\mid\cdots\mid[\vec A_n]}
+     {⟦(\vec P,\ \ldots r\colon R)\colon B⟧=(\vec P\,\vec A_1)\colon B;\ \ldots;\ (\vec P\,\vec A_n)\colon B}\ \textsf{rest-tuples}
+```
 
 #### Intersections of functions and records
 
@@ -4112,6 +4218,25 @@ a call of an [intrinsic](#async-functions-and-await) stating the same step
 `%AsyncComplete%()`, `Promise.all` is `%PromiseAll%`, `Promise.reject` is
 `%PromiseReject%` and `new Promise` is `%NewPromise%`.
 
+**Symbol keys.** A computed key `[k]`, in a type, a literal or a read,
+names a `const k: unique symbol` (or a readonly property so declared), and
+the symbol it names is what made the constant: `Symbol()` makes a fresh one,
+the declaration's own, and `Symbol.for(s)`, with $s$ a string literal, the
+registry's symbol for $s$, which every constant made so holds. A declared
+constant (`declare const`) holds its own. Any other initializer is refused,
+the symbol it holds not being known:
+
+```math
+\mathrm{sym}(k)=\begin{cases}
+\sigma_k & k=\mathtt{Symbol}(\ldots)\ \text{or}\ \mathtt{declare\ const}\ k\\
+\sigma_{\mathtt{for}\,s} & k=\mathtt{Symbol.for}(s)
+\end{cases}
+```
+
+So two constants made by `Symbol.for` of one string name one key, and a
+type naming both names that key twice, which is refused, though TypeScript
+types each constant a distinct `unique symbol`.
+
 ### Async functions and await
 
 The parser writes each async form as a call of an intrinsic, a value named
@@ -4174,7 +4299,20 @@ the types no thenable inhabits (`promisedBinders`); the client's own generic
 bodies are checked at every instantiation instead. The producer infers $T$ and $U$ as TypeScript infers a
 union with one bare binder: an object part of the operand goes to the
 `Promise` arm, a primitive to the bare binder, and an arm nothing reaches is
-inferred at `never`. Background: [promises and flattened types](REFERENCES.md#promises-and-flattened-types).
+inferred at `never`. A `Promise` method's binder written beside a
+`PromiseLike` of itself is inferred the same way: `then`'s callback returns
+`TResult1 | PromiseLike<TResult1>` and `catch`'s `TResult | PromiseLike<TResult>`,
+so a callback returning a promise of $U$, or a primitive $V$, instantiates
+the binder at $U$ or $V$:
+
+```math
+\frac{\Gamma\vdash f:(\vec A)\Rightarrow\mathsf{Promise}\langle U\rangle\mid V\quad V\le P}
+     {\mathit{TResult}:=U\mid V\ \ \text{at}\ \ (\vec A)\Rightarrow\mathit{TResult}\mid\mathsf{PromiseLike}\langle\mathit{TResult}\rangle}
+```
+
+The instance is the producer's proposal, checked as any instance of a
+scheme ([`InstArrs`](POSITIVE-TYPES.md#instances-of-a-scheme-row)).
+Background: [promises and flattened types](REFERENCES.md#promises-and-flattened-types).
 
 ### Loops and spreads over iterables
 
@@ -4277,6 +4415,16 @@ read's link, optional where `IteratorYieldResult` leaves `done` optional), so
 `r.value` is read at the not-done arm's type, `T`. An iterator whose type
 states no `return` is refused where the loop could close it: an open record
 may own any `return`.
+
+The library's declarations are read by the rules of
+[library types](#library-types): `Iterable<T>` is the record of its one
+method under the realm's `Symbol.iterator` key, returning an `Iterator`, and
+so no `Iterator`, whose `next` it lacks; `Iterator`'s
+`next(...[value]: [] | [TNext])` is the two signatures `next()` and
+`next(value: TNext)` (**rest-tuples**), and its `return?` and `throw?` are
+optional methods: optional fields whose functions take the iterator as
+receiver ([records](POSITIVE-TYPES.md#records)), which is what the close's
+test of `return` reads.
 
 The closing region is a `finally` that runs on some ways out of $S$ only,
 compiled by the machinery of `try` (`SourceExtraction.body`, `Finalizer`):
