@@ -14,17 +14,17 @@
   "rejected": 2
  },
  "accepted": 2674,
- "verified": 2466,
+ "verified": 2461,
  "byStatus": {
-  "verified (check)": 2466,
-  "unverified (search)": 105,
+  "verified (check)": 2461,
+  "unverified (search)": 110,
   "unsupported (source)": 76,
   "unsupported (proposal)": 27
  },
  "bySuite": {
   "expect-error": {
    "accepted": 2458,
-   "verified": 2252
+   "verified": 2247
   },
   "constprop": {
    "accepted": 66,
@@ -51,18 +51,18 @@
    "verified": 8
   }
  },
- "filesAllVerified": 295,
+ "filesAllVerified": 294,
  "filesWithAccepted": 377,
  "functions": {
   "accepted": 2026,
-  "verified": 1836
+  "verified": 1831
  },
  "byGroup": {
   "TypeScript refuses the code too (the pipeline follows TypeScript's types)": {
-   "units": 38,
-   "self": 30,
+   "units": 41,
+   "self": 33,
    "dependency": 8,
-   "files": 24
+   "files": 26
   },
   "destructuring and rest/default parameters": {
    "units": 14,
@@ -184,6 +184,12 @@
    "dependency": 0,
    "files": 2
   },
+  "an optional field's present `undefined`: a field of `T` alone as a writable `f?: T`, a spread's copy without it": {
+   "units": 2,
+   "self": 2,
+   "dependency": 0,
+   "files": 2
+  },
   "reads on unions/primitives (field/index read on non-object, string keys)": {
    "units": 2,
    "self": 1,
@@ -245,10 +251,10 @@
    "files": 1
   }
  },
- "reachedButRefused": 105,
+ "reachedButRefused": 110,
  "byClass": {
-  "verified": 2466,
-  "principled": 88,
+  "verified": 2461,
+  "principled": 93,
   "gap": 110,
   "unexplained": 0,
   "skjsUnsound": 10
@@ -257,8 +263,8 @@
  "byReason": {
   "TypeScript refuses the code": {
    "class": "principled",
-   "units": 37,
-   "files": 23
+   "units": 40,
+   "files": 25
   },
   "generics: generic closures, methods, function types, dependent bounds": {
    "class": "gap",
@@ -415,6 +421,11 @@
    "units": 2,
    "files": 1
   },
+  "an optional field's present `undefined`": {
+   "class": "principled",
+   "units": 2,
+   "files": 2
+  },
   "`.call`, `.apply`, `.bind` of a function value read from an object": {
    "class": "gap",
    "units": 2,
@@ -518,7 +529,7 @@
  ],
  "skjsUnsoundVerified": [],
  "byKey": {
-  "search: reject: TypeScript refuses this code too": 24,
+  "search: reject: TypeScript refuses this code too": 27,
   "search: reject: a record at an index signature: TypeScript admits a type literal whose named fields fit the index (an implicit index signature), but a value of it may c": 14,
   "source: reject: TypeScript refuses this code too": 10,
   "search: reject: a named function where a signature binding more parameters is expected: its slot is its annotated signature, checked by its own unit, and the arity of a": 8,
@@ -578,7 +589,9 @@
   "search: reject: source refusal at _: a key-adding write at a string known only at run time: the key may spell one the model keeps for itself (`[]`, `[[proto]]`), which ": 1,
   "search: reject: source refusal at _: a key-adding write at one of several literal keys is not lowered: it needs a dispatch on the key, one copy of the object per key": 1,
   "source: an object type with construct signatures and other members: a class value's statics are not members of its type": 1,
+  "search: reject: a field where a writable optional field is expected: `f?: T` holds `T | undefined` where the object has the key, which its holder may write, and a field": 1,
   "proposal: a spread copies the own enumerable properties of a plain object; a string's are its characters at index keys, which no record states": 1,
+  "search: reject: a spread of an optional field where its copy admits no `undefined`: `f?: T` may be present at `undefined`, which the copy takes over the field before it": 1,
   "proposal: quantified callable claim encoding": 1,
   "source: keyof is keyof Promise<number>, whose part unique symbol is a unique symbol, which no type of the fragment names": 1,
   "source: an index signature in a class is outside the fragment: a class's instances are the objects its construction allocates, with the keys it names in a declaration o": 1,
@@ -1178,7 +1191,7 @@
 {"source":"tests/expect-error/clauses-diff-subset.ts","name":"testInference","kind":"function","line":18,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"h.f(x, \"hello\")","detail":"reject: TypeScript refuses this code too (line 8, col 3: Type 'T & U' is not assignable to type 'string'.); the pipeline follows TypeScript's types","class":"principled"},
 {"source":"tests/expect-error/closed-type-in-narrowing.ts","name":"testInAbsentKeyAlwaysFalse","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"x","detail":"reject: TypeScript refuses this code too (line 5, col 11: Type '{ a: number; } & Record<\"b\", unknown>' is not assignable to type 'never'.); the pipeline follows TypeScript's types — The available claim for n is { a: number }. This obligation requires never.","class":"principled"},
 {"source":"tests/expect-error/closed-type-in-narrowing.ts","name":"testInPresentKeyAlwaysTrue","kind":"function","line":15,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/closed-type-in-narrowing.ts","name":"testInOptionalKeyNarrows","kind":"function","line":24,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/closed-type-in-narrowing.ts","name":"testInOptionalKeyNarrows","kind":"function","line":24,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"x.a","detail":"reject: TypeScript refuses this code too (line 3, col 11: Type 'number | undefined' is not assignable to type 'number'.); the pipeline follows TypeScript's types — The available claim for v is undefined | number. This obligation requires number.","class":"principled"},
 {"source":"tests/expect-error/closed-type-shadowed.ts","name":"testNonIdentityClosedStaysBuiltin","kind":"function","line":7,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/closed-type-undeclared.ts","name":"testStubResolvedClosedAnnotation","kind":"function","line":6,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/closed-type-undeclared.ts","name":"testStubResolvedClosedSecondUse","kind":"function","line":10,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -1949,7 +1962,7 @@
 {"source":"tests/expect-error/in.ts","name":"literalInRecordAlwaysTrue","kind":"function","line":1,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/in.ts","name":"refineLiteralInRecordAlwaysTrue","kind":"function","line":6,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/in.ts","name":"literalInRecordOpt","kind":"function","line":15,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/in.ts","name":"refineLiteralInRecordOpt","kind":"function","line":19,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/in.ts","name":"refineLiteralInRecordOpt","kind":"function","line":19,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"x.f","detail":"reject: TypeScript refuses this code too (line 3, col 5: Type 'number | undefined' is not assignable to type 'number'.); the pipeline follows TypeScript's types — The available claim for x.f is undefined | number. This return requires number.","class":"principled"},
 {"source":"tests/expect-error/in.ts","name":"refineLiteralInRecordOpt2","kind":"function","line":27,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/in.ts","name":"literalInRecordNotAlwaysFalse","kind":"function","line":35,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/in.ts","name":"refineLiteralInRecordNotAlwaysFalse","kind":"function","line":39,"skjsMarker":"rejected-self"},
@@ -2474,7 +2487,7 @@
 {"source":"tests/expect-error/obj-literal-indexes.ts","name":"testMissingFieldAccess","kind":"function","line":22,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/obj-literal-indexes.ts","name":"testMixedTypesIndex","kind":"function","line":29,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/obj-literal-indexes.ts","name":"testEmptyVsReadonlyOptionalNeverIndex","kind":"function","line":52,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/obj-literal-indexes.ts","name":"testProvidedOptionalNeverIndex","kind":"function","line":56,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"{ a: 1, }","detail":"reject: TypeScript refuses this code too (line 2, col 23: Property 'a' of type 'number | undefined' is not assignable to 'string' index type 'never'.); the pipeline follows TypeScript's types — No rule derives this makeAt at {\"dict\":{\"cells\":[[\"strings\",[]],[\"symbols\",[]]],\"first\":[[\"a\",[3]]],\"indexes\":[[\"strings\",[]],[\"symbols\",[]]],\"rest\":[],\"views\":[]}} from 1: 1.","class":"principled"},
+{"source":"tests/expect-error/obj-literal-indexes.ts","name":"testProvidedOptionalNeverIndex","kind":"function","line":56,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"{ a: 1, }","detail":"reject: TypeScript refuses this code too (line 2, col 23: Property 'a' of type 'number | undefined' is not assignable to 'string' index type 'never'.); the pipeline follows TypeScript's types — No rule derives this makeAt at {\"dict\":{\"cells\":[[\"strings\",[]],[\"symbols\",[]]],\"first\":[[\"a\",[3,4]]],\"indexes\":[[\"strings\",[]],[\"symbols\",[]]],\"rest\":[],\"views\":[]}} from 1: 1.","class":"principled"},
 {"source":"tests/expect-error/obj-literal-indexes.ts","name":"testExcessVsNeverIndex","kind":"function","line":62,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/obj-literal-indexes.ts","name":"testEmptyVsMutableOptionalNeverIndex","kind":"function","line":72,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/obj-literal-indexes.ts","name":"testEmptyVsReadonlyOptionalNumberIndex","kind":"function","line":78,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"{}","detail":"reject: TypeScript refuses this code too (line 2, col 23: Property 'a' of type 'string | undefined' is not assignable to 'string' index type 'number'.); the pipeline follows TypeScript's types — No rule derives this makeAt at { readonly [key: string]: number }.","class":"principled"},
@@ -2505,7 +2518,7 @@
 {"source":"tests/expect-error/obj-literal-var-field-growth.ts","name":"tparamGrows","kind":"function","line":36,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/obj-literal-var-field-growth.ts","name":"tparamInstantiationGuard","kind":"function","line":43,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/obj-literal-var-field-growth.ts","name":"unionSlotGrows","kind":"function","line":53,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/obj-literal-var-field-growth.ts","name":"requiredToOptionalGrows","kind":"function","line":65,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/obj-literal-var-field-growth.ts","name":"requiredToOptionalGrows","kind":"function","line":65,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a field where a writable optional field is expected: `f?: T` holds `T | undefined` where the object has the key, which its holder may write, and a field","group":"an optional field's present `undefined`: a field of `T` alone as a writable `f?: T`, a spread's copy without it","where":"self","at":"{ a: e }","detail":"reject: a field where a writable optional field is expected: `f?: T` holds `T | undefined` where the object has the key, which its holder may write, and a field holding only a `T` is invariant; TypeScript relates them, which is unsound — No rule derives this makeAt at { a: { x: number } } from e: { x: number, y: string }.","class":"principled"},
 {"source":"tests/expect-error/obj-literal-var-field-growth.ts","name":"storedObjectAlias","kind":"function","line":71,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/obj-literal-var-field-growth.ts","name":"computedObjectAlias","kind":"function","line":82,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/obj-literal-var-field-growth.ts","name":"copiedObjectField","kind":"function","line":92,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"box.f","detail":"reject: TypeScript refuses this code too (line 5, col 5: Type 'number | null' is not assignable to type 'number'.); the pipeline follows TypeScript's types — The available claim for box.f is null | number. This return requires number.","class":"principled"},
@@ -2572,7 +2585,7 @@
 {"source":"tests/expect-error/objects.ts","name":"spreadFieldsBeforeSpread","kind":"function","line":124,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/objects.ts","name":"spreadMultipleSpreads","kind":"function","line":131,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/objects.ts","name":"spreadFieldsBeforeTypedSpread","kind":"function","line":144,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/objects.ts","name":"spreadOptionalOverlap","kind":"function","line":155,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/objects.ts","name":"spreadOptionalOverlap","kind":"function","line":155,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a spread of an optional field where its copy admits no `undefined`: `f?: T` may be present at `undefined`, which the copy takes over the field before it","group":"an optional field's present `undefined`: a field of `T` alone as a writable `f?: T`, a spread's copy without it","where":"self","at":"{ a: \"\", ...obj }","detail":"reject: a spread of an optional field where its copy admits no `undefined`: `f?: T` may be present at `undefined`, which the copy takes over the field before it; TypeScript types the copy's field without it, which is unsound — The available claim for { a: \"\", ...obj } is { a: undefined | number | string }. This return requires { a: number | string }.","class":"principled"},
 {"source":"tests/expect-error/objects.ts","name":"spreadOptionalOverlapNarrow","kind":"function","line":161,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/objects.ts","name":"spreadIndexOverlap","kind":"function","line":168,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/objects.ts","name":"spreadIndexOverlapNarrow","kind":"function","line":174,"skjsMarker":"rejected-self"},
@@ -2647,7 +2660,7 @@
 {"source":"tests/expect-error/optional-fields-exact.ts","name":"requiredUndefinedSource","kind":"function","line":17,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/optional-fields-exact.ts","name":"optionalUndefinedSource","kind":"function","line":24,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/optional-fields-exact.ts","name":"presentUndefinedAllowed","kind":"function","line":32,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/optional-fields-exact.ts","name":"inNarrowsToBareT","kind":"function","line":38,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/optional-fields-exact.ts","name":"inNarrowsToBareT","kind":"function","line":38,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"v.f","detail":"reject: TypeScript refuses this code too (line 3, col 5: Type 'number | undefined' is not assignable to type 'number'.); the pipeline follows TypeScript's types — The available claim for v.f is undefined | number. This return requires number.","class":"principled"},
 {"source":"tests/expect-error/optional-fields-exact.ts","name":"readsIncludeAbsence","kind":"function","line":47,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/optional-fields-exact.ts","name":"writeUndefinedRejected","kind":"function","line":53,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/optional-fields-exact.ts","name":"mutableWideningRejected","kind":"function","line":60,"skjsMarker":"rejected-self"},

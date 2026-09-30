@@ -1,9 +1,9 @@
 // A key found present stays present: the object's records have it from then
-// on, as a field of the optional key's contract.
+// on, as a field of the optional key's contract, `T | undefined`.
 
-// A passed `in` test.
+// A passed `in` test, then a read other than `undefined`.
 function inTest(x: { f?: number }): number {
-  if ("f" in x) {
+  if ("f" in x && x.f !== undefined) {
     return x.f;
   }
   return 0;
@@ -33,13 +33,17 @@ function truthy(x: { f?: { a: number } }): number {
   return 0;
 }
 
-// Presence is fixed at allocation: a call after the test does not undo it.
-function afterCall(x: { f?: number }, g: () => void): number {
+// Presence is fixed at allocation: a call after the test does not undo it,
+// and the object meets a required field of the key's contract.
+function afterCall(
+  x: { f?: number },
+  g: () => void,
+): { f: number | undefined } {
   if ("f" in x) {
     g();
-    return x.f;
+    return x;
   }
-  return 0;
+  return { f: 0 };
 }
 
 // A read of an optional key keeps what is known of other fields.

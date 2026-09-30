@@ -273,11 +273,22 @@ theorem observeAtom_holds {tag : Tag} {q : Bool} {a : Atom} {v : Tm}
       simp [Atom.holds, hq]
     · exact ⟨a, by simp, hv⟩
 
+/-- Every value: `undefined`, or some other value. -/
+def anyValue : List Atom := [.defined, .undef]
+
+theorem anyValue_holds {v : Tm} (hv : isVal v = true) : ∃ a ∈ anyValue, a.holds v := by
+  by_cases hu : v = .undef
+  · exact ⟨.undef, by simp [anyValue], hu⟩
+  · exact ⟨.defined, by simp [anyValue], hv, hu⟩
+
 /-- A tag narrows a saved primitive predicate, and its still-live read links transfer
-that observation to the heap. No link means no assertion about a mutable cell. -/
+that observation to the heap. No link means no assertion about a mutable cell.
+With no saved predicate, the value is some value (`anyValue`), and what the tag
+leaves of that is transferred to the heap alone: a truthy value, or one found
+other than `undefined`, is some value other than `undefined` there. -/
 def observeTag (k : Knowledge) (slot : Nat) (tag : Tag) (q : Bool) : Knowledge :=
   match k.values.find? (fun f => f.slot == slot) with
-  | none => k
+  | none => ⟨linkFacts k slot (anyValue.flatMap (observeAtom tag q)) ++ k.cells,k.values,k.links⟩
   | some f =>
     let R := f.contents.flatMap (observeAtom tag q)
     ⟨linkFacts k slot R ++ k.cells,⟨slot,R,valueField⟩ :: k.values,k.links⟩
@@ -289,28 +300,39 @@ theorem atom_protoFree {a : Atom} {v : Tm} (h : a.holds v) (hd : a ≠ .defined)
   | objAt fs c => cases a <;> simp [Atom.holds] at h; exact absurd rfl hd
   | _ => cases t <;> rfl
 
-theorem observeTag_holds {k slot tag q ρ h} (hk : Holds k ρ h)
+/-- What a tag leaves of a predicate the value satisfies, it satisfies. -/
+theorem observeAtoms_holds {R : List Atom} {tag q} {v : Tm} (hR : ∃ a ∈ R, a.holds v)
+    (hq' : tagHolds tag v = q ∨ protoFree tag v = false) :
+    ∃ b ∈ R.flatMap (observeAtom tag q), b.holds v := by
+  obtain ⟨a,ha,hv⟩ := hR
+  -- A primitive reads no prototype; `undefined` is a test of no
+  -- prototype either.
+  have hq : tagHolds tag v = q ∨ (a = .defined ∧ tag ≠ .isUndef) := by
+    by_cases hd : a = .defined
+    · by_cases ht : tag = .isUndef
+      · subst ht; exact Or.inl (hq'.resolve_right (by simp [protoFree]))
+      · exact Or.inr ⟨hd, ht⟩
+    · exact Or.inl (hq'.resolve_right (by rw [atom_protoFree hv hd tag]; simp))
+  obtain ⟨a',ha',hv'⟩ := observeAtom_holds hv hq
+  exact ⟨a', List.mem_flatMap.mpr ⟨a,ha,ha'⟩, hv'⟩
+
+theorem observeTag_holds {k slot tag q ρ h} (hk : Holds k ρ h) (hval : isVal (ρ slot) = true)
     (hq' : tagHolds tag (ρ slot) = q ∨ protoFree tag (ρ slot) = false) :
     Holds (observeTag k slot tag q) ρ h := by
   unfold observeTag
   split
-  · exact hk
+  · have hR := observeAtoms_holds (anyValue_holds hval) hq'
+    refine ⟨?_,hk.2.1,hk.2.2⟩
+    intro f' hf'
+    rcases List.mem_append.mp hf' with hf' | hf'
+    · exact linkFacts_holds hk hR f' hf'
+    · exact hk.1 f' hf'
   · rename_i f hf
     have hm := List.mem_of_find?_eq_some hf
     have hs : f.slot = slot := by simpa using List.find?_some hf
     obtain ⟨a,ha,hv⟩ := hk.2.1 f hm
     have hv : a.holds (ρ slot) := by simpa [hs] using hv
-    -- A primitive reads no prototype; `undefined` is a test of no
-    -- prototype either.
-    have hq : tagHolds tag (ρ slot) = q ∨ (a = .defined ∧ tag ≠ .isUndef) := by
-      by_cases hd : a = .defined
-      · by_cases ht : tag = .isUndef
-        · subst ht; exact Or.inl (hq'.resolve_right (by simp [protoFree]))
-        · exact Or.inr ⟨hd, ht⟩
-      · exact Or.inl (hq'.resolve_right (by rw [atom_protoFree hv hd tag]; simp))
-    obtain ⟨a',ha',hv'⟩ := observeAtom_holds hv hq
-    have hR : ∃ b ∈ f.contents.flatMap (observeAtom tag q), b.holds (ρ slot) :=
-      ⟨a', List.mem_flatMap.mpr ⟨a,ha,ha'⟩, hv'⟩
+    have hR := observeAtoms_holds ⟨a,ha,hv⟩ hq'
     refine ⟨?_,?_,hk.2.2⟩
     · intro f' hf'
       rcases List.mem_append.mp hf' with hf' | hf'
@@ -325,11 +347,11 @@ def observe (k : Knowledge) (slot : Nat) : BranchRefinement.Observation → Know
   | .boolean q => observeBoolean k slot q
   | .tag t q => observeTag k slot t q
 
-theorem observe_holds {k slot o ρ h} (hk : Holds k ρ h)
+theorem observe_holds {k slot o ρ h} (hk : Holds k ρ h) (hval : isVal (ρ slot) = true)
     (ho : o.holds (ρ slot)) : Holds (observe k slot o) ρ h := by
   cases o with
   | boolean q => exact observeBoolean_holds hk ho
-  | tag t q => exact observeTag_holds hk ho
+  | tag t q => exact observeTag_holds hk hval ho
 
 /-- A finite predicate vocabulary exactly interprets supported primitive clauses. -/
 def primitive : List (Clause (Ty ι)) → Option (List Atom)

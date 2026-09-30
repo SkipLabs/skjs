@@ -331,8 +331,10 @@ Bindings and expressions have a required `current` field: `null` means no
 additional assertion; otherwise it is a nonempty list of distinct `[field, labels]` pairs. Each field
 must belong to the point's record contract; `type` must name exactly one
 single-contract plain reference row. Each label list is sorted and
-duplicate-free; extraction requires it to denote a finite primitive predicate
-(`0` null, `1` true, `2` false, `3` undefined). For example, in a
+duplicate-free; extraction reads it as a finite primitive predicate
+(`0` null, `1` true, `2` false, `3` undefined), or, for a field of an
+immutable binding's object, a type none of whose values is `undefined` as the
+predicate `defined`; any other label list the field's contract must imply. For example, in a
 document whose row 4 is `Ref<boolean>`:
 
 ```json

@@ -1080,7 +1080,15 @@ must follow from the stable storage contract; no claim is silently dropped. -/
             persistentObservation b.source (pos,pos+1) reference fld A
           else match HeapKnowledge.atoms (SourceTypes.graph T) A with
           | some atoms => facts := facts ++ [⟨i,atoms,fld⟩]
-          | none => persistentObservation b.source (pos,pos+1) reference fld A
+          | none =>
+            -- Contents no `undefined` is among, of any shape: the field
+            -- holds some other value, and a read of it is its contract less
+            -- `undefined` (`slicedRead`), as for a cell.
+            let G := SourceTypes.graph T
+            if G.plainTy A && (PositiveRules.expand G A).all
+                (fun c => ProgramTyping.tagClause .isUndef c == some false) then
+              facts := facts ++ [⟨i,[.defined],fld⟩]
+            else persistentObservation b.source (pos,pos+1) reference fld A
       return facts) []
 
 /-- A dot cannot occur in a source binding identifier, so these names designate

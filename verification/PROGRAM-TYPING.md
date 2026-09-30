@@ -2370,7 +2370,12 @@ what it leaves of $y$'s predicate (`observeTag_holds`): each atom whose clause
 answers the other way is dropped, and a family found equal to one of its
 values is that value (`observeAtom`: `number` equal to a number other than a
 zero is that number, `string` equal to a string is that string; equal to a
-zero it stays `number`, the zeros being two values). An optional read link
+zero it stays `number`, the zeros being two values). A value with no saved
+predicate is some value, $\{\mathsf{defined},\mathsf{undefined}\}$
+(`anyValue`), and what the tag leaves of that goes to the fields it was read
+from: a truthy value, or one found other than `undefined`, gives
+$x.f\mapsto\{\mathsf{defined}\}$, and the field is then read at its contract
+less `undefined` (`slicedRead`). An optional read link
 gives the fact only where what remains rules `undefined` out, which then says
 the key is present (`linkFacts_holds`):
 
@@ -3746,6 +3751,34 @@ refuse: acceptance rests on the call's typing, so safety does not depend on
 them; they make a stated instance honoured. The instance's bounds are checked
 as for any call. A declaration's defaults for method binders are not read.
 
+### Optional fields
+
+An optional member `f?: T` is TypeScript's `f?: T | undefined`, its meaning
+without `exactOptionalPropertyTypes`: an object may lack the key, and where it
+has it the key holds a `T` or `undefined`, which a caller may pass as
+`{ f: undefined }`. Whatever declares it (a type literal, an interface, a
+declaration the reader lists, a class, a mapped type's `?` modifier), it is
+the [optional field](POSITIVE-TYPES.md#records) $\kappa{:}^{r}A$ at
+$A=⟦T⟧\cup\mathsf{Undefined}$, writable or readonly as the member is; an
+optional method `m?(…): R` is the optional field at its function type and
+`undefined`:
+
+```math
+\frac{r=\mathsf{ro}\ \text{if the member is}\ \mathtt{readonly},\ \mathsf{w}\ \text{otherwise}}
+     {⟦\{f?\colon T\}⟧=\{f{:}^{r}(⟦T⟧\cup\mathsf{Undefined})\}}
+```
+
+A type stating `undefined` already, `f?: T | undefined`, lowers to the same
+field. The calculus's optional field is unchanged, so each rule reading one
+reads $⟦T⟧\cup\mathsf{Undefined}$: a read gives it (`readOptional`), a key
+found present by `in` is a field of it (`promote`), a fresh literal writes a
+value of it, `undefined` included, a copy (`{...o}`) holds what the operand
+holds there, and a writable optional field is met only by a location whose
+contract is equivalent to it, never by a field of $⟦T⟧$ alone, whose holder
+could then find `undefined` its contract excludes. A generic member
+`f?: X` is the field at $X\cup\mathsf{Undefined}$, which an instance
+substitutes into.
+
 ### Classes
 
 A class declares its instance type in the declaration graph, and its value is
@@ -3783,11 +3816,9 @@ differs, and there JavaScript throws, which safety admits.
 
 The instance type states each member as what it is at run time: a field
 `f: T`, `f!: T` or `readonly f: T` a required field or view, `f?: T` the
-optional field `f?: T | undefined`, a parameter property `p: T` a field and
-`p?: T` the optional field `p?: T | undefined`. An optional member is
-TypeScript's `T | undefined` there, not the exact `f?: T` (absent or a `T`)
-the pipeline reads elsewhere: a class field is defined on every instance, at
-`undefined` where nothing assigns it. With $\varphi_0$ the entries, in member order, of
+[optional field](#optional-fields) `f?: T | undefined`, a parameter property
+`p: T` a field and `p?: T` the optional field `p?: T | undefined`: a class
+field is defined on every instance, at `undefined` where nothing assigns it. With $\varphi_0$ the entries, in member order, of
 the prototype key ($\texttt{[[proto]]} \mapsto C.\texttt{[[prototype]]}$,
 for a class with methods), the initialized fields ($f\mapsto e_f$) and the
 parameter properties ($p\mapsto p$), $U$ the fields without an initializer

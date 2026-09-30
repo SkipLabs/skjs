@@ -267,12 +267,17 @@ let may_lack declarations t name =
       f.name=name && f.optional && f.write=None) (arm_fields a)) atoms)
   | None -> false
 (* The contract the new field is added at: an optional field's own where an
-   arm states one, else the value's type, a literal's widened as a fresh
-   literal's field is. *)
-let added_contract declarations t name (rhs:Source.expr) value =
+   arm states one, else the one where the local is used whole at a type
+   naming the key optional ([used], `T | undefined`) and the value meets it,
+   else the value's type, a literal's widened as a fresh literal's field is. *)
+let added_contract ?(used=[]) declarations t name (rhs:Source.expr) value =
   let declared = Option.bind (plain_arms declarations t) (List.find_map (fun a ->
     List.find_map (fun (f:Semantic.field) ->
       if f.name=name && f.optional then f.write else None) (arm_fields a))) in
+  let declared = match declared with
+    | Some c -> Some c
+    | None -> List.find_map (fun (k,c) ->
+        if k=name && plausible_subtype value c then Some c else None) used in
   (* A binding's or a read's type is the contract as it stands, without the
      exact keys a fresh literal has, as TypeScript's declared type is. *)
   let loosen = function
@@ -709,6 +714,12 @@ let closed_reason =
    SKJS's closed type"
 let receiver_reason =
   "that type admits a call passing any receiver, and the function requires its own"
+let optional_width_reason =
+  "`f?: T` holds `T | undefined` where the object has the key, which its holder may write, and a field \
+   holding only a `T` is invariant; TypeScript relates them, which is unsound"
+let optional_undefined_reason =
+  "`f?: T` may be present at `undefined`, which the copy takes over the field before it; TypeScript types \
+   the copy's field without it, which is unsound"
 let invariance_reason =
   "a writable element or field is invariant, as a write through the wider view would break the narrower \
    one; TypeScript relates them covariantly, which is unsound, and SKJS infers the narrower from a \
@@ -744,9 +755,6 @@ let relational_reason =
   "`<` converts such an operand to a number or a string first (`undefined` to NaN, an object through its \
    `valueOf` or `toString`), and the comparison the model states is of two numbers or two strings, the primitive \
    order; an index read past the end is `undefined`, where TypeScript types it as the element"
-let exact_optional_reason =
-  "the pipeline reads `f?: T` exactly, as absent or a `T` (as `exactOptionalPropertyTypes` does), \
-   where the default reading of TypeScript also admits a present `undefined`; `f?: T | undefined` states it"
 let thenable_reason =
   "JavaScript adopts a thenable, calling its `then`, instead of settling to it, and a record type does \
    not rule out a `then`, its own or one on its prototype (a `PromiseLike` is one), so the model admits only a \
@@ -936,13 +944,18 @@ let refine_field declarations env name field refine =
   match List.assoc_opt name env with
   | Some (Value t) when record_field declarations t field ->
     let key = field_key name field in
+    let contract = try Some (field_type declarations [] t (Name field)) with Json.Error _ -> None in
     let current = match List.assoc_opt key env with
       | Some (Value c) -> Some c
-      | _ -> (try Some (field_type declarations [] t (Name field)) with Json.Error _ -> None) in
-    (match current with Some c -> fact env key (refine c) | None -> env)
+      | _ -> contract in
+    (match current with Some c -> fact ?contract env key (refine c) | None -> env)
   | _ -> env
-let rec branch_with ?(modules = fun _ -> None) ?(claimed = fun _ -> None) declarations env cond truth =
-  let branch = branch_with ~modules ~claimed declarations in
+(* [keys]: whether a `k in o` test refines `o`. It does on a statement guard's
+   edges (Lean's `presentKey`); the right operand of `&&` or `||` as an
+   expression is typed by the derived conditional, whose split refines by
+   truthiness and nullishness alone. *)
+let rec branch_with ?(keys = true) ?(modules = fun _ -> None) ?(claimed = fun _ -> None) declarations env cond truth =
+  let branch = branch_with ~keys ~modules ~claimed declarations in
   let refine_field = refine_field declarations in
   match cond.node with
   | Not e -> branch env e (not truth)
@@ -983,7 +996,7 @@ let rec branch_with ?(modules = fun _ -> None) ?(claimed = fun _ -> None) declar
         open_array_tests := name :: !open_array_tests
       | _ -> ());
     env
-  | HasKey ({node=Literal (LString key);_},{node=Id name;_}) ->
+  | HasKey ({node=Literal (LString key);_},{node=Id name;_}) when keys ->
     (if truth then match List.assoc_opt name env with
       | Some b when List.exists (function
           | Shape {indexes=_::_;fields;_} -> not (List.exists (fun (f:Semantic.field) -> f.name = Name key) fields)
@@ -1221,10 +1234,17 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
   (* The immutable locals a statement added a key to, and those of them
      claimed with their exact keys while nothing else can reach the object. *)
   let grown_locals = ref [] and exact_locals = ref [] in
-  let branch = branch_with declarations ~modules:(fun n ->
+  (* For such a local, the optional fields' contracts of the types it is
+     used whole at: a key it adds is added at that contract. *)
+  let growth_uses = ref [] in
+  let used_optional (receiver:expr) = match receiver.node with
+    | Id n -> Option.value (List.assoc_opt n !growth_uses) ~default:[]
+    | _ -> [] in
+  let branch_keys keys = branch_with ~keys declarations ~modules:(fun n ->
     try Option.map Lazy.force (List.assoc_opt n module_functions) with Json.Error _ -> None)
     ~claimed:(fun pos -> List.find_map (fun (x:expression) ->
       if x.pos = pos then Some x.type_ else None) !expressions) in
+  let branch = branch_keys true and operand_branch = branch_keys false in
   (* A parameter the body assigns is a cell holding its argument, at its
      annotation. *)
   let env0 = List.map (fun (n,t) ->
@@ -1615,7 +1635,16 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
                  explain site ("an instance at another whose writable field differs: " ^ invariance_reason)
              | _ -> ()
              | exception Json.Error _ -> ())
-          | _ -> ())
+          | _ -> ());
+         (* A field of `T` alone where a writable optional field, at
+            `T | undefined`, is expected. *)
+         let fields_of = List.concat_map (function Shape {fields;_} | Exact fields -> fields | _ -> []) in
+         let actual_fields = try fields_of (flat_atoms declarations (resolve env n)) with Json.Error _ -> [] in
+         if List.exists (fun (g:Semantic.field) -> g.optional && g.write <> None && not g.host
+             && Semantic.admits_undefined g.read
+             && List.exists (fun (f:Semantic.field) -> f.name = g.name && not f.optional && f.write <> None
+                  && not (Semantic.admits_undefined f.read)) actual_fields) (fields_of wanted)
+         then explain site ("a field where a writable optional field is expected: " ^ optional_width_reason)
        | None -> ());
       (* A value a type test found of a shape, where its type is a type
          parameter or `unknown`. *)
@@ -1819,10 +1848,6 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
           | None,Some shape -> Option.map (fun (i:Semantic.index_signature) -> i.value)
               (index_for shape name)
           | None,_ -> None in
-        (match hint,e.node with
-         | Some f,Literal LUndefined when f.optional && not (Semantic.admits_undefined f.read) ->
-           explain site ("an optional field given `undefined`: " ^ exact_optional_reason)
-         | _ -> ());
         let inferred=expr ?expected env e in
         (* A method's closure offered further signatures is held at its own
            claim: a construct signature offering them reads them there. *)
@@ -1871,6 +1896,19 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
           explain site ("a spread of an object with a symbol-keyed property: " ^ symbol_copy_reason)
         | _ -> ()) parts;
       let contract = Option.bind expected (object_hint declarations []) in
+      (* A spread operand's optional field copied where the contract's field
+         admits no `undefined`. *)
+      Option.iter (fun (shape:shape) -> List.iter (fun (name,(e:expr)) -> if name = None then
+        match quietly (fun () -> expr env e) with
+        | Some t ->
+          let optional = List.concat_map (function
+            | Shape {fields;_} | Exact fields -> List.filter (fun (f:Semantic.field) -> f.optional) fields
+            | _ -> []) (try flat_atoms declarations t with Json.Error _ -> []) in
+          if List.exists (fun (f:Semantic.field) -> Semantic.admits_undefined f.read
+              && List.exists (fun (g:Semantic.field) -> g.name = f.name && not (Semantic.admits_undefined g.read))
+                   shape.fields) optional
+          then explain site ("a spread of an optional field where its copy admits no `undefined`: " ^ optional_undefined_reason)
+        | None -> ()) parts) contract;
       (* A field is built at the type the contract names for it, else at its
          own, widened, as a literal's field is. *)
       let field_of (name,e) =
@@ -1922,6 +1960,14 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
           then explain site ("a spread with a written field that the arms of the expected union type \
             differently: " ^ copy_field_reason);
           alts
+        (* Expected at a record, a field the copy holds where the record's
+           is optional is allocated at the record's contract, `T | undefined`,
+           where its own type is within it. *)
+        | Some _,Some shape ->
+          List.map (fun (a:alternative) -> {a with afields=List.map (fun (f:Semantic.field) ->
+            match List.find_opt (fun (g:Semantic.field) -> g.name = f.name && g.optional && not g.host) shape.fields with
+            | Some {write=Some c;_} when plausible_subtype f.read c -> {f with read=c; write=Some c}
+            | _ -> f) a.afields}) alts
         | _ -> alts in
       combine (List.map alternative_type alts)
     (* `Object.assign(t, ...sources)`: each source copied over what the
@@ -2059,13 +2105,15 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let name = match key_type with Atoms [StrLit k] -> Some (Name k) | _ -> None in
       let value = expr (effects (effects env receiver) key) rhs in
       (match name with
-       | Some name when adds env receiver t name -> added_contract declarations t name rhs value
+       | Some name when adds env receiver t name ->
+         added_contract ~used:(used_optional receiver) declarations t name rhs value
        | _ -> value)
     | Write (receiver,field,rhs) ->
       let t = expr env receiver in
       dictionary_growth site t field;
       let value = expr (effects env receiver) rhs in
-      if adds env receiver t field then added_contract declarations t field rhs value else value
+      if adds env receiver t field then added_contract ~used:(used_optional receiver) declarations t field rhs value
+      else value
     | Assign (n,rhs) ->
       if not (List.mem_assoc n env) && List.mem_assoc n module_functions then
         unsupported ("assignment to module function " ^ n);
@@ -2147,6 +2195,9 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
           | [] -> unsupported "no construct signature takes this many arguments")
        | _ -> unsupported "`new` needs a value with construct signatures")
     | Lambda (receiver,quantified,ps,defaults,rest,written,body) ->
+      (* A closure is no `undefined`: expected at `T | undefined` (an optional
+         method's field, an optional callback), it is expected at `T`. *)
+      let expected = Option.map (fun t -> restrict Undef false t) expected in
       (* An ordinary function binds its own `this`, replacing an enclosing
          one; an arrow keeps the enclosing binding, as a capture. *)
       (* The body runs later, when any cell it captures holds whatever its
@@ -2842,7 +2893,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     (* The left operand's value where it decides, the right's elsewhere; the
        right operand runs where the left answered the other way. *)
     | Logical (conjunction,a,b) -> let left=expr env a in
-      let right=expr ?expected (branch env a conjunction) b in
+      let right=expr ?expected (operand_branch env a conjunction) b in
       union (truthy_slice (not conjunction) left) right
     (* The operand is built at its const type, which is the cast's. *)
     | Cast ("const",None,e) ->
@@ -3181,7 +3232,14 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
        | false,None,Alloc fs when grows_later n (List.map fst fs)
              (Option.value (Hashtbl.find_opt following s.span) ~default:[]) ->
          exact_allocs := init.pos :: !exact_allocs;
-         exact_locals := n :: !exact_locals
+         exact_locals := n :: !exact_locals;
+         let used = uses env n (Option.value (Hashtbl.find_opt following s.span) ~default:[]) in
+         growth_uses := (n,List.concat_map (function
+           | Some (Some t) -> (match object_hint declarations [] t with
+             | Some {fields;_} -> List.filter_map (fun (f:Semantic.field) ->
+                 if f.optional && not f.host then Option.map (fun c -> f.name,c) f.write else None) fields
+             | None -> [])
+           | _ -> []) used) :: List.remove_assoc n !growth_uses
        (* A constant's object literal used whole where a type with an
           optional field it leaves out is expected is claimed with its exact
           keys, as a literal written there would be: the bound is what says
