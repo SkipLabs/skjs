@@ -5,7 +5,7 @@ import Verification.Model.Tests.GraphCodeFixtures
 then its callback mutates that bag and invokes the same function again. -/
 namespace Verification.Model.CallableReentryTests
 open PositiveNormalization PositiveGraphs PositiveRules ProgramTyping ControlFlow
-open CertificateProducer RequestJson GraphCodeFixtures
+open CertificateProducer GraphCodeFixtures
 
 -- At entry: receiver, callback, captured bag. The two lets save a read, then a
 -- callback result. Returning the saved read and rereading the bag are different

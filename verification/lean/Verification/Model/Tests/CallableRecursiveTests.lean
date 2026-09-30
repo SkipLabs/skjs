@@ -8,7 +8,7 @@ set_option maxHeartbeats 8000000
 set_option maxRecDepth 10000
 
 namespace Verification.Model.CallableRecursiveTests
-open Lean PositiveNormalization PositiveGraphs ProgramTyping ControlFlow CertificateProducer RequestJson
+open Lean PositiveNormalization PositiveGraphs ProgramTyping ControlFlow CertificateProducer
 open GraphCodeFixtures
 
 -- R = { bag: null | R; call: Boolean → Boolean }. A second label describes

@@ -1,4 +1,4 @@
-import Verification.Model.Programs.DirectProof
+import Verification.Model.Programs.CertificateProducer
 
 /-! Explicit binding is nonallocating, scopes only its body, and has its own
 certificate rule. These examples need no function label in the type graph. -/

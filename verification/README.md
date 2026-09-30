@@ -164,14 +164,14 @@ owner; other documents link to them and give only the context their readers need
 | [SEMANTICS](SEMANTICS.md) | The term and value grammar, execution, worlds, heap satisfaction, membership and safety predicates. |
 | [POSITIVE-TYPES](POSITIVE-TYPES.md) | Type and state-assertion grammars, normalization, declarative subtyping and subtype certificates. |
 | [RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md) | Generic declarations as parameterized equations: labels, unfolding, substitution, family subtyping, lowering, wire format and acceptance statement. |
-| [PROGRAM-TYPING](PROGRAM-TYPING.md) | The graph program syntax, program/graph rules and their mathematics, side conditions, soundness, derived forms and evidence construction. Semantic rules awaiting integration are marked separately. |
+| [PROGRAM-TYPING](PROGRAM-TYPING.md) | The graph program syntax, program/graph rules and their mathematics, side conditions, soundness, derived forms and evidence construction. |
 | [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md) | Request/evidence JSON, the verifier CLI, and the source AST encoding. |
-| [SOURCE-CLAIMS](SOURCE-CLAIMS.md) | Implemented independent sidecar schemas and source identity. |
+| [SOURCE-CLAIMS](SOURCE-CLAIMS.md) | The independent sidecar schemas and source identity. |
 | [LANGUAGES](LANGUAGES.md) | Every representation data crosses, which file owns each on both sides, the naming convention, and where it does not hold. |
 | [ANNOTATED-SOURCE](ANNOTATED-SOURCE.md) | Report output, manifest, annotations, provenance and freshness. |
 | [OBLIGATION-DIAGNOSTICS](OBLIGATION-DIAGNOSTICS.md) | Failure records, source maps, outcome classification and reason vocabulary. |
 | [VIEWER-LANGUAGE](VIEWER-LANGUAGE.md) | The viewer's claim language and its boundaries: what it displays and its two typed representations. |
-| [Viewer README](report-viewer/README.md) | Viewer/editor UX, local server, implementation structure and browser integration. |
+| [Viewer README](report-viewer/README.md) | The claim report reader, display-only: its use, local server, implementation structure and browser integration. |
 | [Test index](tests/README.md) and linked corpus READMEs | Regression coverage, the corpus and its runnable witnesses. |
 | [REFERENCES](REFERENCES.md) | Every cited paper, specification, tool and issue, with what the project uses from it and where. Other documents link to its anchors. |
 | [TRUST-REDUCTION](TRUST-REDUCTION.md) | The bridges between source and theorem that rest on review, the options for narrowing or proving each, and host lemmas against a mechanized ECMA-262. |

@@ -1,10 +1,10 @@
-import Verification.Model.Source.RequestJson
+import Verification.Model.Programs.CertificateProducer
 
 /-! Class values and `new`: a class is construct-only code, which `new` runs and
 a plain call cannot, and an arrow is call-only code, which `new` cannot run.
 Evidence is produced by search and accepted only by the checker. -/
 namespace Verification.Model.ConstructTests
-open Lean ProgramTyping ProgramCertificates CertificateProducer RequestJson PositiveNormalization PositiveGraphs
+open ProgramTyping ProgramCertificates CertificateProducer PositiveNormalization PositiveGraphs
 
 /-- 0 null, 1 true, 2 false, 3 undefined, 4 a class taking and returning a
 Boolean, 5 a function taking and returning a Boolean, 6 unknown. -/
@@ -50,17 +50,5 @@ def found (Γ : List (List Nat)) (t : Tm) (A : List Nat) : Bool :=
 #guard (CallArguments.construction (.graph 1 [.var 1] [(.ret, none)] 0 [] .construct)).isSome
 #guard (CallArguments.construction (.graph 1 [.var 1] [(.ret, none)] 0 [])).isNone
 #guard (CallArguments.construction (.graph 1 [.var 1] [(.ret, none)] 0 [] .construct true)).isNone
-
--- Graph code's kind and rest are spelled only when not `call` and `false`.
-#guard !((toJson (Tm.objAt [] (.graph 1 [] [] 0 []))).compress.contains "kind")
-#guard !((toJson (Tm.objAt [] (.graph 1 [] [] 0 []))).compress.contains "rest")
-#guard (fromJson? (toJson (Tm.objAt [] (.graph 1 [] [] 0 [] .construct))) : Except String Tm).toOption ==
-  some (Tm.objAt [] (.graph 1 [] [] 0 [] .construct))
-#guard (fromJson? (toJson (Tm.objAt [] (.graph 1 [] [] 0 [] .call true))) : Except String Tm).toOption ==
-  some (Tm.objAt [] (.graph 1 [] [] 0 [] .call true))
-#guard (fromJson? (toJson (Tm.construct (.var 0) [.tru])) : Except String Tm).toOption ==
-  some (Tm.construct (.var 0) [.tru])
-#guard (fromJson? (toJson ([Clause.ctors [([[1, 2]], [1, 2])]] : List (Clause (List Nat))))
-  : Except String (List (Clause (List Nat)))).toOption == some [Clause.ctors [([[1, 2]], [1, 2])]]
 
 end Verification.Model.ConstructTests

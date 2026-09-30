@@ -5,7 +5,7 @@ import Verification.Model.Tests.GraphCodeFixtures
 contents and read links while preserving immutable snapshots. -/
 namespace Verification.Model.CallableMutationTests
 open PositiveNormalization PositiveGraphs PositiveRules ProgramTyping ProgramCertificates
-open CertificateProducer ControlFlow RequestJson HeapExpressionRules GraphCodeFixtures
+open CertificateProducer ControlFlow HeapExpressionRules GraphCodeFixtures
 
 private def types : List (List (Clause (List Nat))) :=
   [[.nul],[.bool],[.refs [(valueField, [1])] [] []],[.callable [(valueField, [1])] [] [] []],
