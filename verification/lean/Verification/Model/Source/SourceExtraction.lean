@@ -4416,7 +4416,8 @@ what follows, under the environment the reads started from. -/
       (scope := storeScope)
     emitAt restPos store (.bind object) Γ Sr "pattern-rest" (some pos.1) (scope := scope)
   | scope, Γ, obj, q :: more => do
-    let R ← positionRead (SourceTypes.graph (← table)) A q.index
+    let R ← tryCatch (positionRead (SourceTypes.graph (← table)) A q.index) fun reason => do
+      throw (locatedRefusal (← table) q.namePos .bindingAnnotation reason)
     let bound := held ⟨"",some q.namePos⟩
     let term := Tm.elemAt (.readAt SourceTypes.storeField (.var obj)) (.num (bitsOfNat q.index))
     readWithDefault fc pos q.namePos term R q.default_ bound scope Γ fun T => do
@@ -4477,9 +4478,10 @@ follows, the value's slot still held below the new bindings. -/
   | .name .. => throw "internal: a name is bound, not destructured"
   | .object _ props rest =>
     elems scope Γ obj (fun obj (i, _, _) => do
-        let some (fld, _, _) := props[i]? | throw "internal pattern property"
+        let some (fld, t, _) := props[i]? | throw "internal pattern property"
         let G := SourceTypes.graph (← table)
-        noMethodRead G A fld
+        if let .error reason := noMethodRead G A fld then
+          throw (locatedRefusal (← table) t.span .bindingAnnotation reason)
         let plan ← readCell G Γ fld (DirectProof.var Γ obj A)
         pure (Tm.readAt fld (.var obj), plan.type))
       (fun scope Γ obj => match rest with
@@ -4495,8 +4497,9 @@ follows, the value's slot still held below the new bindings. -/
           bindTarget fc pos t (.merge drop (.makeAt .absent [] []) (.var obj)) C none scope Γ after)
       (props.zipIdx.map fun ((_, t, d), i) => (i, t, d))
   | .array _ positions rest =>
-    elems scope Γ obj (fun obj (i, _, _) => do
-        let R ← positionRead (SourceTypes.graph (← table)) A i
+    elems scope Γ obj (fun obj (i, t, _) => do
+        let R ← tryCatch (positionRead (SourceTypes.graph (← table)) A i) fun reason => do
+          throw (locatedRefusal (← table) t.span .bindingAnnotation reason)
         pure (Tm.elemAt (.readAt SourceTypes.storeField (.var obj)) (.num (bitsOfNat i)), R))
       (fun scope Γ obj => match rest with
         | none => after scope Γ

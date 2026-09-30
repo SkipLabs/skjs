@@ -408,6 +408,10 @@ partial def Pattern.names {Expr : Type} : Pattern Expr → List String
   | .array _ elems rest => elems.flatMap (fun (_, t, _) => t.names) ++
       ((rest.map fun (_, _, _, t) => t.names).getD [])
 
+/-- Where a pattern stands in the source: a name's span, or the whole pattern's. -/
+def Pattern.span {Expr : Type} : Pattern Expr → Span
+  | .name _ p | .object p _ _ | .array p _ _ => p
+
 /-- A pattern's defaults, in evaluation order. -/
 partial def Pattern.defaults {Expr : Type} : Pattern Expr → List Expr
   | .name .. => []
