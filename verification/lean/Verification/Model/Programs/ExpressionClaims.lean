@@ -31,6 +31,7 @@ variable [DecidableEq ι] [CertificateProducer.Instantiates ι]
     (j : Sequent ι) (e : Evidence ι) (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
   (checkResult G images valid j e codes).accepted
 
+omit [CertificateProducer.Instantiates ι] in
 theorem checkUsing_eq (G : NormalGraph ι) (images : InstanceImageCheck G) (valid : ι → Bool)
     (j : Sequent ι) (e : Evidence ι) (codes : CodeEntry ι → Bool) :
     checkUsing G images valid j e codes = (validEvidence valid e && decide (claim e = j) &&
@@ -38,6 +39,7 @@ theorem checkUsing_eq (G : NormalGraph ι) (images : InstanceImageCheck G) (vali
   rw [checkUsing, checkResult, CheckResult.accepted_bind, CheckResult.accepted_ofBool]
   rfl
 
+omit [CertificateProducer.Instantiates ι] in
 theorem check_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {valid j e} {codes : CodeEntry ι → Bool} (h : checkUsing G images valid j e codes = true)
     (hcodes : CodesSound G codes := by exact Verification.Model.ProgramCertificates.codesSound_none _) :
     HasTyUsing G images j.context j.term j.type := by
@@ -55,6 +57,7 @@ theorem check_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {valid 
     (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
   (checkAllResult G images valid rs es codes).accepted
 
+omit [CertificateProducer.Instantiates ι] in
 theorem checkAllUsing_eq (G : NormalGraph ι) (images : InstanceImageCheck G) (valid : ι → Bool)
     (rs : List (Required ι)) (es : List (Evidence ι)) (codes : CodeEntry ι → Bool) :
     checkAllUsing G images valid rs es codes =
@@ -63,6 +66,7 @@ theorem checkAllUsing_eq (G : NormalGraph ι) (images : InstanceImageCheck G) (v
     CheckResult.accepted_allLocated, checkUsing]
 
 
+omit [CertificateProducer.Instantiates ι] in
 theorem checkAll_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {valid rs es} {codes : CodeEntry ι → Bool}
     (h : checkAllUsing G images valid rs es codes = true)
     (hcodes : CodesSound G codes := by exact Verification.Model.ProgramCertificates.codesSound_none _)

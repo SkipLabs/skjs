@@ -3182,7 +3182,7 @@ slots are introduced only after the operand supplying their type is checked. -/
       conditionalPlan scope H A cond c
         (fun names types => closureExpr fc names types thn)
         (fun names types => closureExpr fc names types els)
-  | .withValue pos fn initial functionType bagType => do
+  | .withValue _pos fn initial functionType bagType => do
     -- The function's claim and its annotation are checked of the function
     -- the initializer is; the callable object is allocated with its code,
     -- checked at the annotation's signatures, one table entry per advertised
@@ -3283,7 +3283,7 @@ Mappings discard only the temporaries introduced by this expression. -/
       for (fld, R) in uniform do persistentObservation ⟨"",some e.span⟩ e.span A fld R
       let facts ← pointwise.mapM fun (fld, R) => do return (⟨0,← contents R,fld⟩ : HeapFacts.Fact)
       checkpoint e.span (A::Γ) facts next (scope := held ⟨"",some e.span⟩ :: scope)
-  match he : e with
+  match _he : e with
   | .equality .. => throw "internal unresolved equality"
   | .block .. => throw "internal extraction error: statements outside a closure body"
   | .var _ name =>
@@ -5199,6 +5199,7 @@ def checkGraphAssertions (cuts : List Nat) (assertions : List (Nat × HeapKnowle
   r.codeSources.length == c.codes.length &&
   (r.codeSources.zip c.codes).all fun (q, C) => checkGraphAssertions q.cuts q.assertions C
 
+omit [Labels ι] in
 /-- Accepted source evidence has exactly the supplied knowledge at every
 statement entry, even when that knowledge is empty. -/
 theorem checkAssertions_cut {r : (SourceRequest σ ι)} {c : (Response ι)}
@@ -5210,6 +5211,7 @@ theorem checkAssertions_cut {r : (SourceRequest σ ι)} {c : (Response ι)}
   have h := List.all_eq_true.mp hc.1 l hm
   simpa [hn] using h
 
+omit [Labels ι] in
 theorem checkAssertions_sound {r : (SourceRequest σ ι)} {c : (Response ι)}
     (hc : checkAssertions r c = true) {l k node ρ heap}
     (hm : (l,k) ∈ r.assertions) (hn : c.certificate[l]? = some node)

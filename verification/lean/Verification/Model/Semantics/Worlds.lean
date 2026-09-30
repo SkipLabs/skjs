@@ -148,7 +148,7 @@ theorem WExt_appendWs {k : Nat} (W : WorldT k) (cs : List (Ctr k)) : WExt W (app
   ⟨cs, by simp [appendWs]⟩
 
 theorem lookup_appendWs {k : Nat} (W : WorldT k) (cs : List (Ctr k)) {i : Nat}
-    (hi : i < cs.length) :
+    (_hi : i < cs.length) :
     lookup (appendWs W cs) ((toList W).length + i) = cs[i]? := by
   simp only [lookup, appendWs, toList_ofList]
   rw [List.getElem?_append_right (by omega)]

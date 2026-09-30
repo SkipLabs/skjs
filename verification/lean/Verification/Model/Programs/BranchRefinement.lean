@@ -393,7 +393,7 @@ theorem presentKey_sound {t : Tag} {q : Bool} {check : PropKey → Bool}
   subst he
   rcases hv with hv | hv
   · simp [tagHolds, hl] at hv
-  · simp only [protoFree, hl, Option.isSome_none, Bool.false_or, Option.isNone_iff_eq_none] at hv
+  · simp only [protoFree, hl, Option.isSome_none, Bool.false_or] at hv
     simpa [Option.isSome_iff_ne_none] using hv
 
 /-! ### An array of the realm

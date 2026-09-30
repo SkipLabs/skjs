@@ -1898,7 +1898,7 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
       if result == .null then throw s!"{path}: a generic module function's type needs its result's annotation"
       return .function none params rest (← lowerType ctx result)]
   let init := ast.getObjValD "init"
-  let classes ← classScope init
+  let _classes ← classScope init
   let initBinders := ((← get).unitBinders.reverse.filter (·.1.startsWith "/init/")).flatMap (·.2)
     |>.foldl (fun (acc : List (String × Tree × Option Union)) (n, t, B) =>
       if (acc.lookup n).isSome then acc else acc ++ [(n, t, B)]) []

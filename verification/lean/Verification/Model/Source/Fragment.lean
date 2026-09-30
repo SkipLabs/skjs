@@ -1028,9 +1028,9 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     let key ← jStr (← jField j "key")
     let proto ← decodeExpr (← jField j "proto")
     let .var _ binding := proto | throw "`instanceof` reads its class's prototype object"
-    unless (binding.dropRight ".[[prototype]]".length |> fun cls =>
+    unless ((binding.dropEnd ".[[prototype]]".length).toString |> fun cls =>
         prototypeBindingOf cls == binding && classKeyOf cls == key) ||
-        (binding.dropRight ".[[self]]".length |> fun cls =>
+        ((binding.dropEnd ".[[self]]".length).toString |> fun cls =>
           selfBindingOf cls == binding && classKeyOf cls == key) do
       throw s!"`instanceof` tests '{key}', not the key of the prototype '{binding}'"
     return .singletonTest p (.hasKey (.str key)) true true (← decodeExpr (← jField j "e")) proto

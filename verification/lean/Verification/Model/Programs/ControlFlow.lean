@@ -289,7 +289,7 @@ theorem checkNodeUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
   cases node.continuation <;> cases c.edges <;>
     (try (rename_i p ps; cases ps <;> (try (rename_i q qs; cases qs)))) <;>
     simp only [CheckResult.accepted_bind, CheckResult.accepted_ofBool,
-      checkTargetUsing, checkBranchTargetUsing, Bool.and_assoc] <;> rfl
+      checkTargetUsing, checkBranchTargetUsing] <;> rfl
 
 /-- Enumeration comes from the program, not a certificate-supplied edge list. -/
 @[nospecialize] def checkGraphResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (Rty : Ty ι)

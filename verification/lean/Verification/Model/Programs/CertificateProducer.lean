@@ -896,7 +896,7 @@ inductive Failure (ι : Type) where
 
 /-- Ordinary and observed edges share slot selection and coverage search. The
 observation comes from graph dispatch, never from supplied point annotations. -/
-@[nospecialize] def edgeUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
+@[nospecialize] def edgeUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (claims : List (PointClaim ι)) (Γ : List (Ty ι)) (target : Target)
     (observed : Option (Nat × BranchRefinement.Observation) := none)
     (fields : List (Nat × PropKey) := []) (optionals : List (Nat × PropKey) := []) :
@@ -1026,14 +1026,14 @@ def edgeKnowledge (k : HeapKnowledge.Knowledge) (cont : Continuation) (index : N
     | some stop => .exhaustedExpression l stop
     | none => .expression l)
   let target := fun Γ t index =>
-    let searched := edgeUsing G images pool claims Γ t
+    let searched := edgeUsing G images claims Γ t
     match searched.value with
     | some p => Except.ok p
     | none => Except.error (match searched.exhaustion with
       | some stop => Failure.exhaustedEdge l t.label index stop
       | none => Failure.edge l t.label index)
   let branchTarget := fun Γ o t index =>
-    let searched := edgeUsing G images pool claims Γ t (some (0, o)) (readFields out 0) (optionalFields out 0)
+    let searched := edgeUsing G images claims Γ t (some (0, o)) (readFields out 0) (optionalFields out 0)
     match searched.value with
     | some p => Except.ok p
     | none => Except.error (match searched.exhaustion with
@@ -1058,7 +1058,7 @@ def edgeKnowledge (k : HeapKnowledge.Knowledge) (cont : Continuation) (index : N
         (List.range tc.context.length).filterMap fun i =>
           if PointClaims.slot t.mapping i == 0 then tc.context[i]? else none)
       let searched := (landing ++ pool).findCheck? fun T =>
-        if ControlFlow.admitsAll G T then (edgeUsing G images pool claims (T :: c.context) t).map (T, ·) else none
+        if ControlFlow.admitsAll G T then (edgeUsing G images claims (T :: c.context) t).map (T, ·) else none
       match searched.value with
       | some x => pure (some x)
       | none => throw (match searched.exhaustion with

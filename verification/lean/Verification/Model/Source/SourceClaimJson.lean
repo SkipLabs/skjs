@@ -547,7 +547,7 @@ private partial def mentions (names : List String) : ClaimType Tree → Bool
   | .param n => names.contains n
   | .union ts => ts.any (mentions names)
   | .array e => mentions names e
-  | .scheme tps rc ps rest r effect =>
+  | .scheme tps rc ps rest r _effect =>
     let names := names.filter fun n => !(tps.map Prod.fst).contains n
     tps.any (fun q => q.2.any (mentions names)) || mentions names rc || ps.any (mentions names) ||
       rest.any (mentions names) || mentions names r
@@ -822,7 +822,7 @@ private partial def validType (T : EquationStore.State) : ClaimType Tree → Boo
   | .union ts => !ts.isEmpty && ts.all (validType T)
   | .array e => validType T e
   | .param name => !name.isEmpty
-  | .scheme typeParams receiver params rest result effect =>
+  | .scheme typeParams receiver params rest result _effect =>
       -- With no binders of its own this is a callable that mentions an
       -- enclosing rigid parameter, such as a returned `() => T`.
       (typeParams.map Prod.fst).eraseDups.length == typeParams.length &&

@@ -296,7 +296,7 @@ theorem listT_anyStore {T : TupleF}
   refine ⟨ls, rfl, (by simp [StorePresence]), by simp, by simp, by simp, by simp, ?_⟩
   intro i l _ hl
   refine ⟨topT, ?_⟩
-  simp only [Option.some.injEq, true_and]
+  simp only [true_and]
   by_cases hi : i < T.required.length
   · obtain ⟨l', c, hl', hw, hag⟩ := hreq i (T.required[i]) (List.getElem?_eq_getElem hi)
     rw [hl] at hl'

@@ -45,7 +45,7 @@ theorem copy_holds {k i ρ h} (hk : HeapKnowledge.Holds k ρ h) :
         split at hv
         · rename_i hj
           rcases List.mem_cons.mp hv with rfl | hv
-          · simpa [push,hj]
+          · simp [push,hj]
           · have hv := List.mem_singleton.mp hv; subst v; rfl
         · have hv := List.mem_singleton.mp hv; subst v; rfl)
       exact hp g hg
@@ -492,7 +492,7 @@ theorem allocationParts_eq : ∀ {ns inits parts}, allocationParts ns inits = so
       | none => rw [hr] at h; simp at h
       | some rest =>
         rw [hr] at h
-        simp only [Option.map_some, Option.some.injEq] at h
+        simp only [Option.some.injEq] at h
         obtain ⟨a, ha, rfl⟩ := h
         subst ha
         obtain ⟨h1,h2⟩ := ih hr
@@ -583,7 +583,7 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
 theorem slots_lookup_ge {base : Nat} {ns : List PropKey} {f : PropKey} {l : Nat}
     (h : (slots base ns).lookup f = some l) : base ≤ l := by
   induction ns generalizing base with
-  | nil => simp [slots, List.lookup] at h
+  | nil => simp [slots] at h
   | cons g ns ih =>
     simp only [slots, List.lookup] at h
     split at h
@@ -1073,14 +1073,14 @@ theorem checkStepUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
       then some (writeOutput k i fld R) else none
     | none => none := by
   cases step <;> simp only [checkStepUsing, checkStepResult, checkedOutput_value,
-    CheckResult.value_bind_const, CheckResult.value_map_const, CheckResult.value_orElse,
-    CheckResult.accepted_ofBool, ProgramCertificates.checkSubtypeUsing_accepted,
+    CheckResult.value_bind_const,
+    CheckResult.accepted_ofBool,
     CheckResult.fromOption, checkTreeUsing, Bool.and_eq_true, decide_eq_true_eq]
   all_goals repeat' first
     | simp_all only [guard_conjunction, option_choice, CheckResult.value_failure,
         checkedOutput_value, CheckResult.value_bind_const, CheckResult.value_map_const,
         CheckResult.value_orElse, CheckResult.accepted_ofBool,
-        ProgramCertificates.checkSubtypeUsing_accepted, CheckResult.fromOption,
+        ProgramCertificates.checkSubtypeUsing_accepted,
         checkTreeUsing, Bool.and_eq_true, decide_eq_true_eq, and_assoc, and_left_comm, and_comm]
     | split
   all_goals simp_all

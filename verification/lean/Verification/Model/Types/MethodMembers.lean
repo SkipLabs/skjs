@@ -55,8 +55,8 @@ def boundTo (u v : Val) : Val := .objAt [] (.bound u v [])
 def boundOn (v : Val) (Fs : List Fam) : Fam := fun k W u => ∀ F ∈ Fs, F k W (boundTo u v)
 
 theorem boundOn_adm (v : Val) {Fs : List Fam} (h : ∀ F ∈ Fs, Adm F) : Adm (boundOn v Fs) :=
-  ⟨fun n W u hu F hF => (h F hF).down n W _ (hu F hF),
-    fun n W W' hx u hu F hF => (h F hF).mono n W W' hx _ (hu F hF)⟩
+  ⟨fun n W _u hu F hF => (h F hF).down n W _ (hu F hF),
+    fun n W W' hx _u hu F hF => (h F hF).mono n W W' hx _ (hu F hF)⟩
 
 /-- What a member promises of a value read from host `v`: its signatures, each
 with receiver `v` when `v` is in each of the member's receivers, and its

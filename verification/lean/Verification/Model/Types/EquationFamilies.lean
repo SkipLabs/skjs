@@ -81,7 +81,7 @@ private theorem meaning_cons (G : NormalGraph ι) (η : MixedAssignment ι) (l :
     (n : Nat) (W : WorldT n) (x : ParameterSpace.mixed.Carrier) :
     mixedMeaning G η (l :: A) n W x ↔ mixedMeaning G η [l] n W x ∨ mixedMeaning G η A n W x := by
   rw [mixedMeaning_union G η (l :: A), mixedMeaning_union G η [l], mixedMeaning_union G η A]
-  simp only [List.mem_cons, List.mem_singleton, List.not_mem_nil, or_false, exists_eq_or_imp,
+  simp only [List.mem_cons, List.not_mem_nil, or_false, exists_eq_or_imp,
     exists_eq_left]
 
 private theorem meaning_append (G : NormalGraph ι) (η : MixedAssignment ι) (A B : List ι)

@@ -146,7 +146,7 @@ def Args.ofList : List Types → Args
   | t :: ts => .cons t (ofList ts)
 
 @[simp] theorem Types.toList_ofList (ts : List Tree) : (ofList ts).toList = ts := by
-  induction ts <;> simp_all [ofList, toList]
+  induction ts <;> simp_all [ofList]
 
 @[simp] theorem Args.toList_ofList (ts : List Types) : (ofList ts).toList = ts := by
   induction ts <;> simp_all [ofList, toList]

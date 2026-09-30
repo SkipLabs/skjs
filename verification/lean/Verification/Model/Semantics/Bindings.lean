@@ -157,7 +157,7 @@ theorem subst_scoped {t a : Tm} {d j : Nat} (ht : Scoped (d + 1) t)
     · exact ha.mono (Nat.zero_le d)
     · rename_i hn
       have hne : i ≠ j := by simpa using hn
-      split <;> simp only [Scoped, scopedArgs_iff] <;> omega
+      split <;> simp only [Scoped] <;> omega
   case invoke f r args ihf ihr iha =>
     refine ⟨ihf ht.1 hj, ihr ht.2.1 hj, ?_⟩
     intro v hv

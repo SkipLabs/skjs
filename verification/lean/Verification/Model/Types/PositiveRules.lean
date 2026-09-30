@@ -1744,7 +1744,7 @@ theorem freeOk_meet [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : Fre
     simpa [hp] using hq
   · intro hp
     simp only [hp, Bool.false_eq_true, ite_false, Bool.and_eq_true, List.contains_iff_mem,
-      decide_eq_true_eq, List.all_eq_true] at hq
+      List.all_eq_true] at hq
     exact ⟨hq.1, fun r hr => by simpa using hq.2 r hr⟩
 
 /-- A local closure condition for free-parameter support. The domain and
@@ -1921,7 +1921,7 @@ theorem partSem_support [DecidableEq ι] {G : NormalGraph ι} {D : ι → Prop} 
         simp only [List.mem_append, List.mem_flatten]
         exact .inl (.inl (.inr ⟨S, hS, hl⟩))) W v)
     | none =>
-      simp only [semList, setSem]
+      simp only [setSem]
       have hagi := hag
       have hag : ∀ l ∈ reads G i, ∀ p ∈ V l, I.parameter p (η.1 p) = I.parameter p (η'.1 p) := by
         intro l hl p hpv
@@ -2103,8 +2103,7 @@ theorem bindersFree_row [DecidableEq ι] {G : NormalGraph ι} {bs A : List ι}
     qDenoteWithArgs G (mixedParameters G) (assign η bs As, l) =
       qDenoteWithArgs G (mixedParameters G) (η, l) := by
   unfold bindersFree at h
-  simp only [Bool.and_eq_true, List.all_eq_true, List.contains_iff_mem, Bool.not_eq_true',
-    decide_eq_true_eq] at h
+  simp only [Bool.and_eq_true, List.all_eq_true, List.contains_iff_mem, Bool.not_eq_true'] at h
   obtain ⟨hF, hA⟩ := h
   exact agree_freeWith hF (mixedParameters G) (mixed_respectsFree hF) (assign η bs As) η l
     (hA l hl).1 (fun p hp => by
@@ -2784,7 +2783,7 @@ theorem covers_readonly_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R 
     obtain ⟨a, c, ha, hw, hag⟩ := src _ l hl
     obtain ⟨b, hb, hab⟩ := cov _ a ha
     have hy' : q.position (q.required.length + i) = some y := by
-      simp [Tuple.position, List.getElem?_eq_none (show q.required.length ≤ q.required.length + i by omega), hy]
+      simp [Tuple.position, hy]
     rw [hy'] at hb
     cases hb
     exact ⟨c, hw, slot hab hag⟩
@@ -4041,8 +4040,8 @@ theorem keep_cons [DecidableEq ι] (κ : Ctx ι) (src : List ι) (q : ι) (ps : 
       | none => keep κ src ps
       | some U => (q, U) :: keep κ src ps := by
   by_cases hq : q ∈ src
-  · simp [keep, List.filterMap_cons, hq]
-  · cases hk : κ.lookup q <;> simp [keep, List.filterMap_cons, hq, hk]
+  · simp [keep, hq]
+  · cases hk : κ.lookup q <;> simp [keep, hq, hk]
 
 theorem lookup_keep [DecidableEq ι] (κ : Ctx ι) {src : List ι} {p : ι} (hp : p ∉ src) :
     ∀ ps : List ι, (keep κ src ps).lookup p = if p ∈ ps then κ.lookup p else none
@@ -4058,7 +4057,7 @@ theorem lookup_keep [DecidableEq ι] (κ : Ctx ι) {src : List ι} {p : ι} (hp 
       · subst hpq
         cases hk : κ.lookup p with
         | none => simp only; rw [lookup_keep κ hp ps]; simp [hk]
-        | some U => simp [List.lookup_cons]
+        | some U => simp
       · cases hk : κ.lookup q with
         | none => simp only; rw [lookup_keep κ hp ps]; simp [hpq]
         | some U =>
@@ -4815,8 +4814,7 @@ theorem table_row_mixed [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable �
                   rw [assign_nmem ηR s2.binders As this]; exact hr
                 | some U =>
                   rw [hk] at hr
-                  simp only [hk, List.all_eq_true, Bool.not_eq_true', List.contains_iff_mem,
-                    decide_eq_false_iff_not] at hc
+                  simp only [hk, List.all_eq_true, Bool.not_eq_true'] at hc
                   rw [hr]
                   exact (mixed_respectsFree hF).bound _
                     (agree_freeWith hF (mixedParameters G) (mixed_respectsFree hF))

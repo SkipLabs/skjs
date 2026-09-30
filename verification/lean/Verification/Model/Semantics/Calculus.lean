@@ -956,7 +956,7 @@ theorem lookup_slots {ns : List PropKey} (hnd : ns.Nodup) {base i : Nat}
   | nil => simp at hi
   | cons a ns ih =>
     cases i with
-    | zero => simp [slots, List.lookup]
+    | zero => simp [slots]
     | succ i =>
       have hib : i < ns.length := by simpa using hi
       have hne : ns[i] ≠ a := by
@@ -1374,7 +1374,7 @@ theorem lookup_filter_ne {α : Type} (ps : List (PropKey × α)) {k j : PropKey}
     by_cases hg : g = k
     · subst hg
       have : (j == g) = false := by simpa using hne
-      simp [List.filter_cons, List.lookup, this, ih]
+      simp [List.lookup, this, ih]
     · have hgk : (g != k) = true := by simpa using hg
       rw [List.filter_cons, if_pos hgk]
       by_cases hj : j = g

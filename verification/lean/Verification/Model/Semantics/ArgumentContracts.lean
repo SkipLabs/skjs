@@ -14,7 +14,7 @@ def Fits (T : TupleF) : Family := fun n W vs =>
 theorem fits_adm {T : TupleF}
     (hT : ∀ i A, positionFam T i = some A → Adm A) : Adm (Fits T) :=
   Adm.of_transfer (fun h j hj U hx =>
-    h.map (fun i A hA v hv => (hT i A hA).transfer hv j hj U hx))
+    h.map (fun i A hA _v hv => (hT i A hA).transfer hv j hj U hx))
 
 /-- Exact tuples and fixed parameters have identical membership, for arbitrary
 families: objects, callbacks and recursive types need no stability premise.

@@ -54,7 +54,7 @@ abbrev RenderM (ι : Type) [DecidableEq ι] [Hashable ι] := OptionT (StateM (Su
 
 /-- `coerce`, each search done once per cache: the same search again returns
 what it did the first time. -/
-def coerceM (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (e : Evidence ι) (A : Ty ι) :
+def coerceM (G : NormalGraph ι) (images : InstanceImageCheck G) (e : Evidence ι) (A : Ty ι) :
     RenderM ι (Evidence ι) := do
   if (claim e).type = A then return e
   let key := ((claim e).type, A)
@@ -76,12 +76,12 @@ def renderAt (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (
   | 0, _, _ => failure
   | depth+1, Γ, p => do
    match p with
-   | .cast j child => coerceM G images pool (← renderAt G images pool depth Γ child) j.type
+   | .cast j child => coerceM G images (← renderAt G images pool depth Γ child) j.type
    | .rule j r children =>
     match r, j.term, children with
     | .var, .var i, [] =>
       let some A := Γ[i]? | failure
-      coerceM G images pool (.node ⟨Γ,.var i,A⟩ .var []) j.type
+      coerceM G images (.node ⟨Γ,.var i,A⟩ .var []) j.type
     | .letE, .letE _ _, [a,b] =>
       let ea ← renderAt G images pool depth Γ a
       let eb ← renderAt G images pool depth ((claim ea).type :: Γ) b

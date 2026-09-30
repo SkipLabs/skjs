@@ -117,7 +117,7 @@ theorem sound {G : NormalGraph ι} {Γ t A ρ n W h}
       cases code <;> simp only [instantiate, instantiateArgs_eq_map] at hs ⊢ <;>
         exact make_preserves hvalues hs
     · rename_i t xs
-      simp only [checkScope, checkScopes_iff, List.all_eq_true] at hscope
+      simp only [checkScope, checkScopes_iff] at hscope
       simp only [instantiate, instantiateArgs_eq_map] at hs ⊢
       apply array_preserves _ hs
       intro v hv

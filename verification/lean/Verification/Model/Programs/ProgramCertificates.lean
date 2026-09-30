@@ -358,7 +358,7 @@ theorem filterMap_of_map {α β : Type} {f : α → Option β} :
   | [], [], _ => rfl
   | x :: xs, y :: ys, h => by
     simp only [List.map_cons, List.cons.injEq] at h
-    simp [List.filterMap_cons, h.1, filterMap_of_map h.2]
+    simp [h.1, filterMap_of_map h.2]
   | [], _ :: _, h => by simp at h
   | _ :: _, [], h => by simp at h
 
@@ -955,7 +955,7 @@ theorem localCheckUsing_accepted [DecidableEq ι] (G : NormalGraph ι)
       | cons x xs => rfl
       | nil =>
         by_cases h : jt.context = j.context ∧ jt.term = j.term
-        · simp [localCheckUsing, h, h.1, h.2, checkSubtypeUsing_accepted, LocalUsing]
+        · simp [localCheckUsing, h, checkSubtypeUsing_accepted, LocalUsing]
         · have hf : ¬ LocalUsing G images j (.sub choices) [jt] codes := by
             intro hp
             exact h ⟨hp.1, hp.2.1⟩
@@ -1208,7 +1208,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
           ns.zip ((ps.take ns.length).map Sequent.type) := by
         simp only [parts, List.map_map, Function.comp_def]
         rw [List.zip_map_right]
-        simp [Function.comp_def]
+        simp []
       have hpart : ∀ p ∈ parts, HasTyUsing G images Γ p.2.2 p.2.1 := by
         intro p hm
         obtain ⟨r, hr, rfl⟩ := List.mem_map.mp hm

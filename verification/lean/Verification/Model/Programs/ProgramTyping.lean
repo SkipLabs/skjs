@@ -200,7 +200,7 @@ def allocRealm [DecidableEq ι] (G : NormalGraph ι) (parts : List (PropKey × T
       parts.any (fun p => p.1 == CallArguments.protoField && p.2 == r.proto)
 
 theorem allocRealm_sound [DecidableEq ι] {G : NormalGraph ι} {parts : List (PropKey × Ty ι)}
-    (hok : allocRealm G parts = true) (hnd : (parts.map Prod.fst).Nodup) (c : Clause (Ty ι))
+    (hok : allocRealm G parts = true) (_hnd : (parts.map Prod.fst).Nodup) (c : Clause (Ty ι))
     {k : Nat} {V : WorldT k} {base : Nat}
     (hrec : recT ((parts.map Prod.fst).zip (parts.map fun p => meaning G p.2)) k V
       (.objAt (slots base (parts.map Prod.fst)) .absent)) :
@@ -563,7 +563,7 @@ callee runs first, then the receiver, then the actuals. The omitted positions
 are exactly the ones whose contract admits `undefined`, which is the value the
 machine binds there; nothing is added to the source term. -/
 theorem call_safe_short {Rc B : Fam} (xs : List (Fam × Tm)) (Us : List Fam)
-    (hRc : Adm Rc) (hRcv : ValOnly Rc)
+    (hRc : Adm Rc) (_hRcv : ValOnly Rc)
     (hA : ∀ p ∈ xs, Adm p.1) (hAv : ∀ p ∈ xs, ValOnly p.1)
     (hUA : ∀ A ∈ Us, Adm A) (hUAv : ∀ A ∈ Us, ValOnly A)
     {n W heap f r} (hw : WorldAdm W) (hh : HeapOk n W heap)
@@ -757,7 +757,7 @@ theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
       rfl
     all_goals
       have hs := semWithArgs_shape (by simp) hv
-      cases v <;> simp_all [ht,valueShape,tagHolds,shape]
+      cases v <;> simp_all [valueShape,tagHolds,shape]
   | strEq s =>
     cases c <;> simp [ht, tagClause, tagShape, shape] at hq
     all_goals subst q
@@ -767,7 +767,7 @@ theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
       rfl
     all_goals
       have hs := semWithArgs_shape (by simp) hv
-      cases v <;> simp_all [ht,valueShape,tagHolds,shape]
+      cases v <;> simp_all [valueShape,tagHolds,shape]
   | boolEq b =>
     cases c <;> simp [ht, tagClause, tagShape, shape] at hq
     all_goals subst q
@@ -777,17 +777,17 @@ theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
       cases b <;> cases c <;> rfl
     all_goals
       have hs := semWithArgs_shape (by simp) hv
-      cases v <;> simp_all [ht,valueShape,tagHolds,shape]
+      cases v <;> simp_all [valueShape,tagHolds,shape]
   | bigintEq i =>
     cases c <;> simp [ht, tagClause, tagShape, shape] at hq
     all_goals subst q
     case bigintLit j =>
       change v = .bigint j at hv
       subst v
-      simp [tagHolds, eq_comm]
+      simp [tagHolds]
     all_goals
       have hs := semWithArgs_shape (by simp) hv
-      cases v <;> simp_all [ht,valueShape,tagHolds,shape]
+      cases v <;> simp_all [valueShape,tagHolds,shape]
   | truthy =>
     cases c <;> simp [ht, tagClause, tagShape, shape] at hq
     all_goals subst q
@@ -803,7 +803,7 @@ theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
         | exact truthy_of_shape.2 (by omega)
   | isArray =>
     by_cases hc : c = .top
-    · subst hc; simp [ht, tagClause] at hq
+    · subst hc; simp [tagClause] at hq
     subst ht
     cases c
     case top => exact absurd rfl hc
@@ -815,11 +815,11 @@ theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
       subst q
       cases v <;> simp_all [valueShape, tagHolds, shape]
       all_goals try (rename_i code; cases code with
-        | graph _ _ _ _ _ kind _ => cases kind <;> simp_all [valueShape]
-        | _ => simp_all [valueShape])
+        | graph _ _ _ _ _ kind _ => cases kind <;> simp_all []
+        | _ => simp_all [])
   | hasKey k =>
     by_cases hc : c = .top
-    · subst hc; simp [ht, tagClause] at hq
+    · subst hc; simp [tagClause] at hq
     subst ht
     cases c
     case top => exact absurd rfl hc
@@ -844,7 +844,7 @@ theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
   | isNul | isBool | isRef | isFun | isUndef | isNullish | isNum | isStr | isBigint | isSymbol
   | typeofObject =>
     by_cases hc : c = .top
-    · subst hc; simp [ht, tagClause] at hq
+    · subst hc; simp [tagClause] at hq
     have htag : some (tagHolds tag v) = tagShape tag (valueShape v) := by
       rw [ht]
       cases v <;> first | rfl | (rename_i fs code; cases code <;> first | rfl | (rename_i kind; cases kind <;> rfl) | (rename_i kind _; cases kind <;> rfl))
@@ -1521,7 +1521,7 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
     {s : RestArrow (Ty ι)}
     (hs : GraphCodeSpec G arity E K start Cs s.fixed (some A))
     (hk : s.arguments.1.length = arity) (harr : RestStore G A s.arguments.2)
-    (hvs : EnvOk G Cs (envOf vs .nul) n W) (hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs)
+    (hvs : EnvOk G Cs (envOf vs .nul) n W) (_hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs)
     {j : Nat} (hj : j < n) {U : WorldT j} (hx : WExt (trunc j (Nat.le_of_lt hj) W) U)
     (hu : WorldAdm U) {heap : Heap} (hh : HeapOk j U heap) {r : Tm} (hr : meaning G s.receiver j U r)
     {args : List Tm} (hvals : CallArguments.Values args)
@@ -1796,7 +1796,7 @@ theorem pack_call_safe {Rc : Fam} {Ps Us Qs : List Fam} {R : Fam} {P : ArgFam}
     have hrV := hRc.down k V rv (hRc.mono (k + 1) _ V hy rv (hRc.down_le j (k + 1) hk U rv hrm))
     have hargsX := ArgsT_transfer hA hargs k (Nat.le_succ k) X (WExt_refl _)
     have hsplit := ArgsT_take_drop Ps.length hargsX
-    simp only [List.take_left', List.drop_left', List.take_append_of_le_length (Nat.le_refl _),
+    simp only [List.take_append_of_le_length (Nat.le_refl _),
       List.take_length, List.drop_append_of_le_length (Nat.le_refl _), List.drop_length,
       List.nil_append] at hsplit
     have hacc : ArgsRest (Ps ++ Us) P k X args := by
@@ -2227,6 +2227,7 @@ theorem meaning_assign_free {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
     (fun p hp => by rw [assign_nmem G.env bs As ((hA l hl).2 p hp)])]
   exact hv
 
+omit [DecidableEq ι] in
 /-- **Captured values.** Slots of a context meeting it, each safe at the type
 its code was checked with, hold closed values meeting those types in every
 later world: what graph code captures when it is created. -/
@@ -2753,7 +2754,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     intro m hm V hy hv heap' iv hok' hival hi'
     have ha'' := (meaning_adm G L).mono m _ V hy av ((meaning_adm G L).down_le j m hm U av ha')
     obtain ⟨ls, rfl, -, -, -, hreq, -, -⟩ := ((represents_raw hr m V av) ha'').1
-    simp only [tupleFams, List.length_map, List.getElem?_map] at hreq
+    simp only [tupleFams, List.getElem?_map] at hreq
     have hb : iv = .num b := (represents_raw hI m V iv) hi'
     subst hb
     obtain ⟨l, c, hl, hw', hag⟩ := hreq k (meaning G A) (by simp [hA])
@@ -3032,7 +3033,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       n W h _ hw hh (ihc n W h ρ henv hw hh)
     intro j hj U hx hu heap v hok hv ha
     have hvalue := (represents_raw hq j U v) ha
-    cases q <;> simp only [clauseSem, semWithArgs] at hvalue <;> subst v
+    cases q <;> simp only [semWithArgs] at hvalue <;> subst v
     · cases j with
       | zero => trivial
       | succ k =>
@@ -3057,13 +3058,13 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     | zero => trivial
     | succ k =>
       rcases shape with hv | hv
-      · have refined := henv.refine hi (represents_back hT (k+1) W (ρ i) rfl (by simp [hv, semWithArgs, boolT]))
+      · have refined := henv.refine hi (represents_back hT (k+1) W (ρ i) rfl (by simp [hv, semWithArgs]))
         rw [hv]
         refine Or.inr ⟨trunc k (Nat.le_succ k) W,h,instantiate 0 ρ t,WExt_refl _,
           WorldAdm_trunc _ hw,.iteT,HeapOk_trunc k W h hh,?_⟩
         exact iht k _ h ρ (refined.transfer k (Nat.le_succ k) _ (WExt_refl _))
           (WorldAdm_trunc _ hw) (HeapOk_trunc k W h hh)
-      · have refined := henv.refine hi (represents_back hF (k+1) W (ρ i) rfl (by simp [hv, semWithArgs, boolT]))
+      · have refined := henv.refine hi (represents_back hF (k+1) W (ρ i) rfl (by simp [hv, semWithArgs]))
         rw [hv]
         refine Or.inr ⟨trunc k (Nat.le_succ k) W,h,instantiate 0 ρ e,WExt_refl _,
           WorldAdm_trunc _ hw,.iteF,HeapOk_trunc k W h hh,?_⟩
@@ -3228,7 +3229,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     | zero => trivial
     | succ m =>
       have hcall := callsT_of_callSigs hsig (he.2 t T ht)
-      simp only [Arrow.map, Contract.map, List.map_append, List.map_map, Function.comp_def] at hcall
+      simp only [Arrow.map, Contract.map, List.map_append] at hcall
       have hpv := ArgsT_slots he hpre
       have hbound := CallEffects.callsT_bound (Rc := meaning G Rc) (fs := [])
         (meaning_adm G Rt) (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q)

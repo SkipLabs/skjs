@@ -1462,8 +1462,8 @@ theorem checkStructural_sound [DecidableEq ι] {G : NormalGraph ι}
   let f : Entry ι := { source := S, target := T, table }
   exact family_closed_sound (G := PositiveRules.reassign G (ParameterAssignment.empty .mixed))
     (checkEntries_sound h)
-    ⟨fun g hg => by simp only [List.mem_singleton] at hg; subst hg; simp [f],
-      fun g hg => by simp only [List.mem_singleton] at hg; subst hg; simp [f]⟩
+    ⟨fun g hg => by simp only [List.mem_singleton] at hg; subst hg; simp [],
+      fun g hg => by simp only [List.mem_singleton] at hg; subst hg; simp []⟩
     ((images.reassign (ParameterAssignment.empty .mixed)).base.lookup_cases [f]) hk
     List.mem_cons_self rfl List.mem_cons_self
 

@@ -21,6 +21,7 @@ open PositiveNormalization PositiveGraphs PositiveRules ProgramTyping ProgramCer
 
 variable {ι : Type} [DecidableEq ι] (G : NormalGraph ι) (η : MixedAssignment ι)
 
+omit [DecidableEq ι] in
 theorem reads_reassign : reads (reassign G η) = reads G := rfl
 
 theorem readsFrom_go_reassign : ∀ fuel (seen frontier : List ι),
@@ -40,6 +41,7 @@ theorem freeMapOf_reassign (D : List ι) : ∀ fuel (V : FreeMap ι),
     simp only [freeMapOf, reads_reassign, freeMapOf_reassign D fuel]
     rfl
 
+omit [DecidableEq ι] in
 theorem expand_reassign (F : List ι) : expand (reassign G η) F = expand G F := rfl
 
 /-- Fixing the assignment erases an earlier reassignment of image metadata. -/
@@ -118,7 +120,7 @@ theorem compareUsing_reassign (S T : List ι) (instantiation : List ι → List 
 theorem check_reassign (S T : List ι) (p : SubtypeChoices ι) :
     PositiveCertificates.checkUsing (reassign G η) (images.reassign η) S T p =
       PositiveCertificates.checkUsing G images S T p := by
-  simp only [PositiveCertificates.checkUsing, proposal_reassign, compareUsing_reassign, budget_reassign]
+  simp only [PositiveCertificates.checkUsing, proposal_reassign, compareUsing_reassign]
 
 /-- The subtype checker as a function of its graph. -/
 theorem check_fun_reassign :

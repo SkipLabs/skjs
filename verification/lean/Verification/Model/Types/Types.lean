@@ -723,7 +723,7 @@ theorem dictCellT_of_recT {fs : Fields} {flds : List (PropKey × Nat)} {K : Inde
     (hown : ∀ f l, flds.lookup f = some l → ∃ T, (f, T) ∈ fs)
     (hproto : flds.lookup CallArguments.protoField = none)
     (hA : ∀ f T, (f, T) ∈ fs → K.Admits f →
-      ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), T j W' u ↔ A j W' u) :
+      ∀ (j : Nat) (_hj : j < k) (W' : WorldT j) (u : Val), T j W' u ↔ A j W' u) :
     dictCellT K A k W (.objAt flds .absent) := by
   refine ⟨flds, rfl, hproto, fun f l hl hk => ?_⟩
   obtain ⟨T, hT⟩ := hown f l hl
@@ -874,7 +874,7 @@ theorem placeAt_getElem? (ls : List (Option Nat)) (k m i : Nat) :
   by_cases hik : i = k
   · subst hik
     rw [List.getElem?_set_self]
-    simp only [hlen, if_true]
+    simp only [if_true]
     have : i < ls.length + (i + 1 - ls.length) := by omega
     simp [this]
   · rw [List.getElem?_set_ne (Ne.symm hik)]
