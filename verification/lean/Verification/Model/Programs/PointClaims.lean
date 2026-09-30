@@ -7,17 +7,33 @@ Explicit mappings additionally support selection, reordering and alias retention
 Every checker here takes a proved instance image checker (`InstanceImageCheck`);
 the finite one is the default. -/
 namespace Verification.Model.PointClaims
-open ProgramTyping PositiveGraphs PositiveRules
+open ProgramTyping PositiveGraphs PositiveRules ProgramCertificates
 open PositiveCertificates (InstanceImageCheck finiteInstanceImages)
 
 abbrev EdgeEvidence (ι : Type) := List (PositiveCertificates.SubtypeChoices ι)
 
-def checkEdgeUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) :
-    List (Ty ι) → List (Ty ι) → EdgeEvidence ι → Bool
-  | _, [], [] => true
+/-- Check incoming slots against outgoing contracts, retaining unfinished comparisons. -/
+@[nospecialize] def checkEdgeResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) :
+    List (Ty ι) → List (Ty ι) → EdgeEvidence ι → CheckResult ι Unit
+  | _, [], [] => pure ()
   | A :: Γ, B :: Δ, p :: ps =>
-    PositiveCertificates.checkUsing G images A B p && checkEdgeUsing G images Γ Δ ps
-  | _, _, _ => false
+    (ProgramCertificates.checkSubtypeUsing G images A B p).bind fun _ => checkEdgeResult G images Γ Δ ps
+  | _, _, _ => failure
+
+@[nospecialize] def checkEdgeUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (Γ Δ : List (Ty ι)) (ps : EdgeEvidence ι) : Bool :=
+  (checkEdgeResult G images Γ Δ ps).accepted
+
+theorem checkEdgeUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (Γ Δ : List (Ty ι)) (ps : EdgeEvidence ι) :
+    checkEdgeUsing G images Γ Δ ps = match Γ, Δ, ps with
+    | _, [], [] => true
+    | A :: Γ, B :: Δ, p :: ps =>
+        PositiveCertificates.checkUsing G images A B p && checkEdgeUsing G images Γ Δ ps
+    | _, _, _ => false := by
+  cases Γ <;> cases Δ <;> cases ps <;>
+    simp only [checkEdgeUsing, checkEdgeResult, CheckResult.accepted_bind,
+      ProgramCertificates.checkSubtypeUsing_accepted] <;> rfl
 
 /-- The finite image checker, the default. -/
 abbrev checkEdge [DecidableEq ι] (G : NormalGraph ι) :=
@@ -34,12 +50,13 @@ theorem checkEdge_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
   | nil => simp [Covers]
   | cons B Δ ih =>
     cases Γ with
-    | nil => cases ps <;> simp [checkEdgeUsing] at hc
+    | nil => cases ps <;> simp [checkEdgeUsing_eq] at hc
     | cons A Γ =>
       cases ps with
-      | nil => simp [checkEdgeUsing] at hc
+      | nil => simp [checkEdgeUsing_eq] at hc
       | cons p ps =>
-        simp only [checkEdgeUsing, Bool.and_eq_true] at hc
+        rw [checkEdgeUsing_eq] at hc
+        simp only [Bool.and_eq_true] at hc
         intro i C hi
         cases i with
         | zero =>
@@ -80,15 +97,47 @@ def MappedCovers (G : NormalGraph ι) (Γ Δ : List (Ty ι))
     (mapping : Mapping) : Prop :=
   ∀ i B, Δ[i]? = some B → ∃ A, Γ[slot mapping i]? = some A ∧ FamLe (meaning G A) (meaning G B)
 
-def checkMappedUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+/-- A mapped slot names existing source, target and evidence entries. -/
+@[nospecialize] def checkSlotResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (source target : Option (Ty ι)) (evidence : Option (PositiveCertificates.SubtypeChoices ι)) : CheckResult ι Unit :=
+  match source, target, evidence with
+  | some A, some B, some p => ProgramCertificates.checkSubtypeUsing G images A B p
+  | _, _, _ => failure
+
+theorem checkSlotResult_accepted [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (source target : Option (Ty ι)) (evidence : Option (PositiveCertificates.SubtypeChoices ι)) :
+    (checkSlotResult G images source target evidence).accepted = match source, target, evidence with
+    | some A, some B, some p => PositiveCertificates.checkUsing G images A B p
+    | _, _, _ => false := by
+  cases source <;> cases target <;> cases evidence <;>
+    simp only [checkSlotResult, ProgramCertificates.checkSubtypeUsing_accepted] <;> rfl
+
+@[nospecialize] def checkMappedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (Γ Δ : List (Ty ι)) (mapping : Mapping) (ps : EdgeEvidence ι) : CheckResult ι Unit :=
+  match mapping with
+  | none => checkEdgeResult G images Γ Δ ps
+  | some slots =>
+      (CheckResult.ofBool (decide (slots.length = Δ.length ∧ ps.length = Δ.length))).bind fun _ =>
+      CheckResult.all (List.range Δ.length) fun i =>
+        checkSlotResult G images Γ[slot mapping i]? Δ[i]? ps[i]?
+
+@[nospecialize] def checkMappedUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (Γ Δ : List (Ty ι)) (mapping : Mapping) (ps : EdgeEvidence ι) : Bool :=
+  (checkMappedResult G images Γ Δ mapping ps).accepted
+
+theorem checkMappedUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (Γ Δ : List (Ty ι)) (mapping : Mapping) (ps : EdgeEvidence ι) :
+    checkMappedUsing G images Γ Δ mapping ps =
   match mapping with
   | none => checkEdgeUsing G images Γ Δ ps
   | some slots => decide (slots.length = Δ.length ∧ ps.length = Δ.length) &&
       (List.range Δ.length).all (fun i =>
         match Γ[slot mapping i]?, Δ[i]?, ps[i]? with
         | some A, some B, some p => PositiveCertificates.checkUsing G images A B p
-        | _, _, _ => false)
+        | _, _, _ => false) := by
+  cases mapping <;> simp only [checkMappedUsing, checkMappedResult, CheckResult.accepted_bind,
+    CheckResult.accepted_ofBool, CheckResult.accepted_all, checkSlotResult_accepted]
+  rfl
 
 abbrev checkMapped [DecidableEq ι] (G : NormalGraph ι) :=
   @checkMappedUsing _ _ G (finiteInstanceImages G)
@@ -99,7 +148,7 @@ theorem checkMapped_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
   cases mapping with
   | none => exact checkEdge_sound hc
   | some slots =>
-    simp only [checkMappedUsing, Bool.and_eq_true, List.all_eq_true] at hc
+    simp only [checkMappedUsing_eq, Bool.and_eq_true, List.all_eq_true] at hc
     intro i B hi
     have h := hc.2 i (List.mem_range.mpr (List.getElem?_eq_some_iff.mp hi).1)
     rw [hi] at h
@@ -119,9 +168,20 @@ theorem MappedCovers.env {G : NormalGraph ι} {Γ Δ mapping ρ n W}
   exact hab n W (ρ (slot mapping i)) (he.2 _ A ha)
 
 /-- A supplied merge claim is checked separately against every incoming edge. -/
-def checkIncomingUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+@[nospecialize] def checkIncomingResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (target : List (Ty ι)) (incoming : List (List (Ty ι) × EdgeEvidence ι)) : CheckResult ι Unit :=
+  CheckResult.all incoming fun edge => checkEdgeResult G images edge.1 target edge.2
+
+@[nospecialize] def checkIncomingUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (target : List (Ty ι)) (incoming : List (List (Ty ι) × EdgeEvidence ι)) : Bool :=
-  incoming.all (fun edge => checkEdgeUsing G images edge.1 target edge.2)
+  (checkIncomingResult G images target incoming).accepted
+
+theorem checkIncomingUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (target : List (Ty ι)) (incoming : List (List (Ty ι) × EdgeEvidence ι)) :
+    checkIncomingUsing G images target incoming =
+      incoming.all (fun edge => checkEdgeUsing G images edge.1 target edge.2) := by
+  rw [checkIncomingUsing, checkIncomingResult, CheckResult.accepted_all]
+  rfl
 
 abbrev checkIncoming [DecidableEq ι] (G : NormalGraph ι) :=
   @checkIncomingUsing _ _ G (finiteInstanceImages G)
@@ -129,8 +189,9 @@ abbrev checkIncoming [DecidableEq ι] (G : NormalGraph ι) :=
 theorem incoming_env [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {target incoming Γ ps ρ n W}
     (hc : checkIncomingUsing G images target incoming = true) (hm : (Γ,ps) ∈ incoming)
-    (he : EnvOk G Γ ρ n W) : EnvOk G target ρ n W :=
-  checked_env ((List.all_eq_true.mp hc) (Γ,ps) hm) he
+    (he : EnvOk G Γ ρ n W) : EnvOk G target ρ n W := by
+  rw [checkIncomingUsing_eq] at hc
+  exact checked_env ((List.all_eq_true.mp hc) (Γ,ps) hm) he
 
 /-- A computation followed by a checked point claim and a typed continuation.
 The edge is checked after pushing the computation's result. Allocation and

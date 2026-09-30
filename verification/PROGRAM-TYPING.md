@@ -2571,6 +2571,14 @@ projection. `checkStepUsing_eq` proves that the projection has exactly the
 step premises and postconditions used by `checkStep_sound`. Effect-candidate
 search retains unfinished step validation when no candidate succeeds.
 
+`PointClaims` validates plain, mapped and incoming edges through `CheckResult`;
+each required slot comparison uses the common subtype operation.
+`BranchRefinement.checkObservedResult` additionally checks the observed slot and
+admits ordinary, field-slice and structural refinement alternatives. A successful
+alternative establishes the edge; otherwise unfinished comparisons are retained.
+The modules' `*_eq` theorems prove that their acceptance projections have the
+premises consumed by the environment-transport and refinement soundness proofs.
+
 Failure reports a claim-count mismatch, an expression label, an edge's source
 and destination, or final consumer rejection. Failure means unsupported or
 unjustified within this search, not a proof that the program is untypable.

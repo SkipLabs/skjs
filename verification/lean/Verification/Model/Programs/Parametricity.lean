@@ -155,12 +155,15 @@ theorem checkEdge_reassign (Γ Δ : List (List ι)) (ps : EdgeEvidence ι) :
     checkEdgeUsing (reassign G η) (images.reassign η) Γ Δ ps = checkEdgeUsing G images Γ Δ ps := by
   induction ps generalizing Γ Δ with
   | nil => cases Γ <;> cases Δ <;> rfl
-  | cons p ps ih => cases Γ <;> cases Δ <;> simp only [checkEdgeUsing, check_reassign, ih]
+  | cons p ps ih =>
+    cases Γ <;> cases Δ <;>
+      rw [checkEdgeUsing_eq (reassign G η) (images.reassign η), checkEdgeUsing_eq G images] <;>
+      simp only [check_reassign, ih]
 
 theorem checkMapped_reassign (Γ Δ : List (List ι)) (m : Mapping) (ps : EdgeEvidence ι) :
     checkMappedUsing (reassign G η) (images.reassign η) Γ Δ m ps =
       checkMappedUsing G images Γ Δ m ps := by
-  cases m <;> simp only [checkMappedUsing, checkEdge_reassign, check_fun_reassign]
+  cases m <;> simp only [checkMappedUsing_eq, checkEdge_reassign, check_fun_reassign]
 
 /-- The realm checks read the graph's rows only. -/
 theorem realmFree_reassign (P : List ι) : realmFree (reassign G η) P = realmFree G P := by
@@ -189,13 +192,13 @@ theorem arraySlice_reassign (A B : List ι) :
 theorem checkObservedSub_reassign (A B : List ι) (o : Observation) (p : SubtypeChoices ι) :
     checkObservedSubUsing (reassign G η) (images.reassign η) A B o p =
       checkObservedSubUsing G images A B o p := by
-  cases o <;> simp only [checkObservedSubUsing, check_reassign, arraySlice_reassign] <;> rfl
+  cases o <;> simp only [checkObservedSubUsing_eq, check_reassign, arraySlice_reassign] <;> rfl
 
 theorem fieldRefinements_reassign (o : Observation) (fields : List (Nat × PropKey)) (A B : List ι)
     (j : Nat) (p : SubtypeChoices ι) :
     fieldRefinements o fields A B j (reassign G η) (images.reassign η) p =
       fieldRefinements o fields A B j G images p := by
-  cases o <;> simp only [fieldRefinements, check_fun_reassign] <;> rfl
+  cases o <;> simp only [fieldRefinements_eq, check_fun_reassign] <;> rfl
 
 theorem optionalRefinements_reassign (o : Observation) (optionals : List (Nat × PropKey)) (A B : List ι)
     (j : Nat) :
@@ -205,7 +208,7 @@ theorem checkObserved_reassign (Γ Δ : List (List ι)) (tested : Nat) (o : Obse
     (m : Mapping) (ps : EdgeEvidence ι) (fields optionals : List (Nat × PropKey)) :
     checkObservedUsing (reassign G η) (images.reassign η) Γ Δ tested o m ps fields optionals =
       checkObservedUsing G images Γ Δ tested o m ps fields optionals := by
-  simp only [checkObservedUsing, checkObservedSub_reassign, check_fun_reassign,
+  simp only [checkObservedUsing_eq, checkObservedSub_reassign, check_fun_reassign,
     fieldRefinements_reassign, optionalRefinements_reassign]
   rfl
 
