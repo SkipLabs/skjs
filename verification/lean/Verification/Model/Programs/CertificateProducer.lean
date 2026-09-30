@@ -468,7 +468,7 @@ came from a different context. No execution budget is inspected. -/
       return (A :: pool).findCheck? fun B =>
         let r := if expand G B = [.boolLit true] && t == .tru then Rule.truLit
           else if expand G B = [.boolLit false] && t == .fls then Rule.flsLit else r
-        if checkTreeUsing G images (leaf B r) then coerce G images (leaf B r) A else none
+        (checkTreeResult G images (leaf B r)).bind fun _ => coerce G images (leaf B r) A
     -- A number has one rule: its own singleton. Reaching `number`, or any
     -- union above it, is the coercion's job, exactly as for a boolean literal.
     | .num _ =>
@@ -544,8 +544,8 @@ came from a different context. No execution budget is inspected. -/
         | none => []
       return (A :: schemes ++ pool).findCheck? fun F => do
         let (ps, rs, vs) ← memberProofsUsing G images (← Γ[i]?) k F
-        if checkTreeUsing G images (leaf F (.bindMember ps rs vs)) then coerce G images (leaf F (.bindMember ps rs vs)) A
-        else none
+        (checkTreeResult G images (leaf F (.bindMember ps rs vs))).bind fun _ =>
+          coerce G images (leaf F (.bindMember ps rs vs)) A
     | .letE a b =>
       let exactTypes := suggestions.reverse.filterMap fun j =>
         if j.context == Γ && j.term == a then some j.type else none
@@ -593,7 +593,7 @@ came from a different context. No execution budget is inspected. -/
               parts.zipIdx.mapM fun (a, i) => do recur Γ a (← positionTy T i)
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,B⟩
             (.callRest effect k omitted.length flags P) (ef :: er :: eas ++ eus ++ eps)
-          if checkTreeUsing G images e then coerce G images e A else none
+          (checkTreeResult G images e).bind fun _ => coerce G images e A
       let direct := fun (candidates : List (Ty ι)) => candidates.findCheck? fun F => do
         let (L,r) ← match expand G F with
           | [.arrs L _] => some (L,Rule.app)
@@ -691,7 +691,7 @@ came from a different context. No execution budget is inspected. -/
         let eb ← recur Γ b B
         (A :: pool).findCheck? fun N =>
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ r [ea,eb]
-          if checkTreeUsing G images e then coerce G images e A else none
+          (checkTreeResult G images e).bind fun _ => coerce G images e A
       return direct.orElse fun _ => splitReceiver a
     | .arith op a b =>
       -- Each operand at a pool type of the operand clauses the operator
@@ -708,7 +708,7 @@ came from a different context. No execution budget is inspected. -/
           let eb ← recur Γ b S
           (A :: pool).findCheck? fun N =>
             let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ .arith [ea,eb]
-            if checkTreeUsing G images e then coerce G images e A else none
+            (checkTreeResult G images e).bind fun _ => coerce G images e A
     -- A copy of a spread: a store type of any length at some element type,
     -- and a pool store type whose elements it admits.
     | .arrLit [.spread src] =>
@@ -729,7 +729,7 @@ came from a different context. No execution budget is inspected. -/
           let B ← positionTy T k
           recur Γ a B
         let e := ProgramCertificates.Evidence.node ⟨Γ,t,L⟩ .arrLit ps
-        if checkTreeUsing G images e then coerce G images e A else none
+        (checkTreeResult G images e).bind fun _ => coerce G images e A
     | .elemAt a i =>
       -- A store read through a union of array objects splits the receiver.
       let direct := pool.findCheck? fun L => do
@@ -746,13 +746,13 @@ came from a different context. No execution budget is inspected. -/
               let B ← positionTy T k
               (A :: pool).findCheck? fun U =>
                 let e := ProgramCertificates.Evidence.node ⟨Γ,t,B ++ U⟩ (.elemOpt U) [ea,ei]
-                if checkTreeUsing G images e then coerce G images e A else none
+                (checkTreeResult G images e).bind fun _ => coerce G images e A
           | _ =>
             match T with
             | ⟨[], [], some E, _, _⟩ =>
               (A :: pool).findCheck? fun U =>
                 let e := ProgramCertificates.Evidence.node ⟨Γ,t,E ++ U⟩ (.elemAny U) [ea,ei]
-                if checkTreeUsing G images e then coerce G images e A else none
+                (checkTreeResult G images e).bind fun _ => coerce G images e A
             | _ => none
       -- A string's code unit at a numeric key: a string or `undefined`.
       let string := (stringOperands a).findCheck? fun S => do
@@ -779,20 +779,20 @@ came from a different context. No execution budget is inspected. -/
           let B ← positionTy T k
           let ev ← recur Γ v B
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,L⟩ .setElem [ea,ei,ev]
-          if checkTreeUsing G images e then coerce G images e A else none
+          (checkTreeResult G images e).bind fun _ => coerce G images e A
     | .lenOf a =>
       let store := pool.findCheck? fun L => do
         let [.list _ []] := expand G L | none
         let ea ← recur Γ a L
         (A :: pool).findCheck? fun N =>
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ .len [ea]
-          if checkTreeUsing G images e then coerce G images e A else none
+          (checkTreeResult G images e).bind fun _ => coerce G images e A
       -- A string's own `length`.
       return store <|> (stringOperands a).findCheck? fun S => do
         let ea ← recur Γ a S
         (A :: pool).findCheck? fun N =>
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ .lenStr [ea]
-          if checkTreeUsing G images e then coerce G images e A else none
+          (checkTreeResult G images e).bind fun _ => coerce G images e A
     | .merge d a b =>
       -- The accumulator and the source at their slots' types, or a pool
       -- type; the result the requested type, when every pair of their

@@ -98,6 +98,28 @@ theorem CheckResult.accepted_all (xs : List β) (f : β → CheckResult ι Unit)
   | nil => rfl
   | cons x xs ih => simp only [CheckResult.all, CheckResult.accepted_bind, ih, List.all_cons]
 
+/-- Disjunctive validation retains unfinished work if no alternative succeeds. -/
+@[nospecialize] def CheckResult.any (xs : List β) (f : β → CheckResult ι Unit) : CheckResult ι Unit :=
+  xs.findCheck? f
+
+theorem CheckResult.accepted_orElse (s : CheckResult ι α) (t : Unit → CheckResult ι α) :
+    (s.orElse t).accepted = (s.accepted || (t ()).accepted) := by
+  cases s with
+  | mk v e =>
+    cases v with
+    | none =>
+      simp only [CheckResult.orElse, CheckResult.accepted, Option.isSome_none, Bool.false_or]
+      split <;> rfl
+    | some a => rfl
+
+theorem CheckResult.accepted_any (xs : List β) (f : β → CheckResult ι Unit) :
+    (CheckResult.any xs f).accepted = xs.any (fun x => (f x).accepted) := by
+  induction xs with
+  | nil => rfl
+  | cons x xs ih =>
+    simp only [CheckResult.any, List.findCheck?, CheckResult.accepted_orElse, List.any_cons]
+    exact congrArg ((f x).accepted || ·) ih
+
 /-- Convert the common subtype outcome while retaining the requested pair. -/
 @[nospecialize] def CheckResult.fromComparison (limit : Nat) (A B : Ty ι)
     (r : PositiveCertificates.ComparisonResult α) : CheckResult ι α :=
@@ -386,6 +408,118 @@ theorem CoveredRestUsing.proofs [DecidableEq ι] {G : NormalGraph ι}
     PositiveCertificates.checkUsing G images x.1 x.2 p = true) _ hall
   exact ⟨(ps, pe, pr), hl, by simpa [List.length_zip, hl] using hpl, hps, he, hr, heff⟩
 
+/-- Validate a fixed member signature, preserving each parameter/result comparison. -/
+@[nospecialize] def checkCallProofs [DecidableEq ι] (G : NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) (q : Arrow (Ty ι)) (c : MethodArrow (Ty ι))
+    (ps : List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι) : CheckResult ι Unit :=
+  (CheckResult.ofBool (decide (q.arguments.length = c.arguments.length ∧
+    ps.1.length = c.arguments.length) && c.effect.covers q.effect)).bind fun _ =>
+    (CheckResult.all ((q.arguments.zip c.arguments).zip ps.1) fun x =>
+      checkSubtypeUsing G images x.1.1 x.1.2 x.2).bind fun _ =>
+      checkSubtypeUsing G images c.result q.result ps.2
+
+theorem checkCallProofs_accepted [DecidableEq ι] (G : NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) (q : Arrow (Ty ι)) (c : MethodArrow (Ty ι))
+    (ps : List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι) :
+    (checkCallProofs G images q c ps).accepted = decide (CallProofsUsing G images q c ps) := by
+  simp only [checkCallProofs, CheckResult.accepted_bind, CheckResult.accepted_ofBool,
+    CheckResult.accepted_all, checkSubtypeUsing_accepted]
+  apply Bool.eq_iff_iff.mpr
+  simp only [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true]
+  unfold CallProofsUsing
+  simp only [and_assoc, and_left_comm, and_comm]
+
+/-- Validate a variadic member signature, including its rest and result. -/
+@[nospecialize] def checkRestProofs [DecidableEq ι] (G : NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) (q : RestArrow (Ty ι))
+    (c : CallEffects.MethodRestArrow (Ty ι))
+    (ps : List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι ×
+      PositiveCertificates.SubtypeChoices ι) : CheckResult ι Unit :=
+  (CheckResult.ofBool (decide (q.arguments.1.length = c.arguments.1.length ∧
+    ps.1.length = c.arguments.1.length) && c.effect.covers q.effect)).bind fun _ =>
+    (CheckResult.all ((q.arguments.1.zip c.arguments.1).zip ps.1) fun x =>
+      checkSubtypeUsing G images x.1.1 x.1.2 x.2).bind fun _ =>
+    (checkSubtypeUsing G images q.arguments.2 c.arguments.2 ps.2.1).bind fun _ =>
+      checkSubtypeUsing G images c.result q.result ps.2.2
+
+theorem checkRestProofs_accepted [DecidableEq ι] (G : NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) (q : RestArrow (Ty ι))
+    (c : CallEffects.MethodRestArrow (Ty ι))
+    (ps : List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι ×
+      PositiveCertificates.SubtypeChoices ι) :
+    (checkRestProofs G images q c ps).accepted = decide (RestProofsUsing G images q c ps) := by
+  simp only [checkRestProofs, CheckResult.accepted_bind, CheckResult.accepted_ofBool,
+    CheckResult.accepted_all, checkSubtypeUsing_accepted]
+  apply Bool.eq_iff_iff.mpr
+  simp only [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true]
+  unfold RestProofsUsing
+  simp only [and_assoc, and_left_comm, and_comm]
+
+/-- The bound member covers each claimed signature and accepts the host receiver. -/
+@[nospecialize] def MemberProofsUsing [DecidableEq ι] (G : NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) (host : Option (Ty ι)) (F : Ty ι) (k : PropKey)
+    (proofs : List (List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι))
+    (rests : List (List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι ×
+      PositiveCertificates.SubtypeChoices ι)) (receivers : List (PositiveCertificates.SubtypeChoices ι)) : Prop :=
+  match host, expand G F with
+  | some O, [.arrs L S] => ∃ m ∈ (memberOf G O k).toList,
+      proofs.length = L.length ∧ (∀ qp ∈ L.zip proofs, ∃ c ∈ m.calls, CallProofsUsing G images qp.1 c qp.2) ∧
+      rests.length = S.length ∧ (∀ sp ∈ S.zip rests, ∃ c ∈ m.rests, RestProofsUsing G images sp.1 c sp.2) ∧
+      receivers.length = m.receivers.length ∧
+      (∀ tp ∈ m.receivers.zip receivers, PositiveCertificates.checkUsing G images O tp.1 tp.2 = true)
+  | some O, _ => proofs = [] ∧ rests = [] ∧ receivers = [] ∧ expand G F = [] ∧
+      ∃ m ∈ (memberOf G O k).toList, F ∈ m.schemes
+  | none, _ => False
+
+instance [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G)
+    (host F k proofs rests receivers) : Decidable (MemberProofsUsing G images host F k proofs rests receivers) := by
+  unfold MemberProofsUsing
+  split <;> infer_instance
+
+/-- Check every signature using alternatives only among actual member signatures. -/
+@[nospecialize] def checkMemberProofs [DecidableEq ι] (G : NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) (host : Option (Ty ι)) (F : Ty ι) (k : PropKey)
+    (proofs : List (List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι))
+    (rests : List (List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι ×
+      PositiveCertificates.SubtypeChoices ι)) (receivers : List (PositiveCertificates.SubtypeChoices ι)) : CheckResult ι Unit :=
+  match host, expand G F with
+  | some O, [.arrs L S] => CheckResult.any (memberOf G O k).toList fun m =>
+      (CheckResult.ofBool (decide (proofs.length = L.length ∧ rests.length = S.length ∧
+        receivers.length = m.receivers.length))).bind fun _ =>
+      (CheckResult.all (L.zip proofs) fun qp =>
+        CheckResult.any m.calls fun c => checkCallProofs G images qp.1 c qp.2).bind fun _ =>
+      (CheckResult.all (S.zip rests) fun sp =>
+        CheckResult.any m.rests fun c => checkRestProofs G images sp.1 c sp.2).bind fun _ =>
+      CheckResult.all (m.receivers.zip receivers) fun tp => checkSubtypeUsing G images O tp.1 tp.2
+  | some O, _ => CheckResult.ofBool (decide (proofs = [] ∧ rests = [] ∧ receivers = [] ∧ expand G F = [] ∧
+      ∃ m ∈ (memberOf G O k).toList, F ∈ m.schemes))
+  | none, _ => failure
+
+theorem checkMemberProofs_accepted [DecidableEq ι] (G : NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) (host : Option (Ty ι)) (F : Ty ι) (k : PropKey)
+    (proofs : List (List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι))
+    (rests : List (List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι ×
+      PositiveCertificates.SubtypeChoices ι)) (receivers : List (PositiveCertificates.SubtypeChoices ι)) :
+    (checkMemberProofs G images host F k proofs rests receivers).accepted =
+      decide (MemberProofsUsing G images host F k proofs rests receivers) := by
+  apply Bool.eq_iff_iff.mpr
+  simp only [decide_eq_true_eq]
+  unfold checkMemberProofs MemberProofsUsing
+  unfold CheckResult.accepted
+  split
+  · change (CheckResult.any _ _).accepted = true ↔ _
+    simp only [CheckResult.accepted_any, CheckResult.accepted_bind, CheckResult.accepted_ofBool,
+      CheckResult.accepted_all, checkSubtypeUsing_accepted, checkCallProofs_accepted, checkRestProofs_accepted]
+    simp only [List.any_eq_true, List.all_eq_true, Bool.and_eq_true, decide_eq_true_eq]
+    constructor
+    · rintro ⟨m, hm, ⟨hp, hs, hr⟩, hcalls, hrests, hreceivers⟩
+      exact ⟨m, hm, hp, hcalls, hs, hrests, hr, hreceivers⟩
+    · rintro ⟨m, hm, hp, hcalls, hs, hrests, hr, hreceivers⟩
+      exact ⟨m, hm, ⟨hp, hs, hr⟩, hcalls, hrests, hreceivers⟩
+  · rw [← CheckResult.accepted, CheckResult.accepted_ofBool, decide_eq_true_eq]
+  · change (false = true) ↔ False
+    simp
+
 /-- Only finite, syntactic premises of one rule. -/
 @[nospecialize] def LocalUsing [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G) (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
     (codes : CodeEntry ι → Bool := fun _ => false) : Prop :=
@@ -643,15 +777,7 @@ theorem CoveredRestUsing.proofs [DecidableEq ι] {G : NormalGraph ι}
   | .bindMember proofs rests receivers, .letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var r) pre) ns inits),
       [] =>
     r = i + 1 ∧ pre = [] ∧ ns = [] ∧ inits = [] ∧
-    match j.context[i]?, expand G j.type with
-    | some O, [.arrs L S] => ∃ m ∈ (memberOf G O k).toList,
-        proofs.length = L.length ∧ (∀ qp ∈ L.zip proofs, ∃ c ∈ m.calls, CallProofsUsing G images qp.1 c qp.2) ∧
-        rests.length = S.length ∧ (∀ sp ∈ S.zip rests, ∃ c ∈ m.rests, RestProofsUsing G images sp.1 c sp.2) ∧
-        receivers.length = m.receivers.length ∧
-        (∀ tp ∈ m.receivers.zip receivers, PositiveCertificates.checkUsing G images O tp.1 tp.2 = true)
-    | some O, _ => proofs = [] ∧ rests = [] ∧ receivers = [] ∧ expand G j.type = [] ∧
-        ∃ m ∈ (memberOf G O k).toList, j.type ∈ m.schemes
-    | none, _ => False
+    MemberProofsUsing G images j.context[i]? j.type k proofs rests receivers
   -- The constructor, the actual premises in order, then one premise per
   -- position the signature declares and `new` omits, proving `undefined`
   -- there, as for `.app`.
@@ -689,7 +815,11 @@ retain the subtype outcome; other rule predicates are their declarative checks. 
     | [jt] => if jt.context = j.context ∧ jt.term = j.term then
         checkSubtypeUsing G images jt.type j.type choices else failure
     | _ => failure
-  | .bindMember .. => CheckResult.ofBool (decide (LocalUsing G images j r ps codes))
+  | .bindMember proofs rests receivers => match j.term, ps with
+    | .letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var r) pre) ns inits), [] =>
+        (CheckResult.ofBool (decide (r = i + 1 ∧ pre = [] ∧ ns = [] ∧ inits = []))).bind fun _ =>
+          checkMemberProofs G images j.context[i]? j.type k proofs rests receivers
+    | _, _ => failure
   | .var | .nul | .undef | .tru | .fls | .truLit | .flsLit | .numLit | .num | .strLit | .str
     | .bigintLit | .bigint | .funGraph .. | .ctorGraph .. | .callableGraph .. | .app ..
     | .letE | .alloc | .read | .readView | .write | .arith | .test | .readDict .. | .indexDict ..
@@ -704,6 +834,22 @@ theorem localCheckUsing_accepted [DecidableEq ι] (G : NormalGraph ι)
     (ps : List (Sequent ι)) (codes : CodeEntry ι → Bool) :
     (localCheckUsing G images j r ps codes).accepted = decide (LocalUsing G images j r ps codes) := by
   cases r <;> try exact CheckResult.accepted_ofBool _
+  case bindMember proofs rests receivers =>
+    apply Bool.eq_iff_iff.mpr
+    simp only [decide_eq_true_eq]
+    simp only [localCheckUsing, CheckResult.accepted]
+    split
+    · change ((CheckResult.ofBool _).bind _).accepted = true ↔ _
+      simp only [CheckResult.accepted_bind, CheckResult.accepted_ofBool,
+        checkMemberProofs_accepted, Bool.and_eq_true, decide_eq_true_eq]
+      simp_all [LocalUsing, and_assoc]
+    · change (false = true) ↔ LocalUsing G images j (.bindMember proofs rests receivers) _ codes
+      simp only [Bool.false_eq_true, false_iff]
+      intro h
+      unfold LocalUsing at h
+      split at h <;> simp_all
+      rename_i hnot
+      exact hnot _ _ _ [] [] [] rfl rfl rfl rfl rfl rfl
   case sub choices =>
     cases ps with
     | nil => rfl
@@ -1432,6 +1578,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
       exact HasTyUsing.bindRestE hT hmem (by simpa using hEl) hRt hmap h5 hF
     · contradiction
   · obtain ⟨rfl, rfl, rfl, rfl, hl⟩ := hl
+    unfold MemberProofsUsing at hl
     split at hl
     · rename_i O L S hO hF
       obtain ⟨m, hm, hlen, hL, hrlen, hS, hvlen, hV⟩ := hl

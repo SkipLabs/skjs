@@ -2550,14 +2550,19 @@ from the consumer alone. `accepted_safe` is its closed-entry counterpart.
 The producer can be replaced without changing the soundness argument.
 
 Expression evidence validation uses `ProgramCertificates.checkTreeResult` in a
-single traversal. Its coercion checks retain the requested subtype judgment and
-resource exhaustion in `CheckResult`, the result shared with proposal search.
+single traversal. Its coercion and member-coverage checks retain the requested
+subtype judgment and resource exhaustion in `CheckResult`, the result shared
+with proposal search.
 `checkTreeUsing_eq` proves that the acceptance projection has exactly the
 declarative rule premises. `ExpressionClaims.checkResult` additionally checks
 label validity, the requested root judgment and term scope; `checkUsing_eq`
-proves its acceptance condition. Member-binding coverage uses the Boolean
-subtype predicate. These results concern expression evidence; the program
-acceptance and safety implications above remain the semantic boundary.
+proves its acceptance condition. Member coverage checks parameter, rest, result
+and receiver comparisons through the common subtype operation and checks effects
+and arity directly. `checkCallProofs_accepted`, `checkRestProofs_accepted` and
+`checkMemberProofs_accepted` prove agreement with the declarative coverage premises.
+Signature alternatives retain exhaustion when none succeeds. These results
+concern expression evidence; the program acceptance and safety implications
+above remain the semantic boundary.
 
 Failure reports a claim-count mismatch, an expression label, an edge's source
 and destination, or final consumer rejection. Failure means unsupported or

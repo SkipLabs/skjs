@@ -237,7 +237,7 @@ theorem graphCodesChecked_reassign (A : List ι) (codes : CodeEntry ι → Bool)
 theorem Local_reassign (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
     (codes : CodeEntry ι → Bool := fun _ => false) :
     LocalUsing (reassign G η) (images.reassign η) j r ps codes = LocalUsing G images j r ps codes := by
-  unfold LocalUsing
+  unfold LocalUsing MemberProofsUsing
   simp only [check_fun_reassign, CallProofs_reassign, RestProofs_reassign, graphCodesChecked_reassign,
     allocRealm_reassign]
   rfl
