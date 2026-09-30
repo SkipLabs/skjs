@@ -457,26 +457,6 @@ theorem codeTable_sound {r : Request σ ι} {c : Response ι} {table : List (Cod
   · exact GraphCode.checkCodes_sound h
   · contradiction
 
-@[nospecialize] def verifyJson (σ : Type) [StoreView σ ι] (request evidence : Json) : Except String Unit :=
-  match decodeRequest σ request with
-  | .error e => .error e
-  | .ok r => match decodeResponse r evidence with
-    | .error e => .error e
-    | .ok c => if verify r c then .ok () else
-        .error "the certificate does not justify the actual program and supplied claims"
-
-/-- Acceptance of JSON binds the theorem to the two decoded input objects. -/
-theorem verifyJson_checked {request evidence : Json}
-    (h : verifyJson (ι := ι) σ request evidence = .ok ()) :
-    ∃ r c, decodeRequest σ request = .ok r ∧ decodeResponse r evidence = .ok c ∧ verify r c = true := by
-  unfold verifyJson at h
-  split at h
-  · contradiction
-  · split at h
-    · contradiction
-    · split at h
-      · exact ⟨_,_,by assumption,by assumption,by assumption⟩
-      · contradiction
 
 end
 
@@ -546,7 +526,8 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 (`StoreView.project`) onto the labels the record mentions. -/
 @[nospecialize] def failureDiagnostic (r : Request σ ι) (fuel : Nat)
     (sourceMap : SourceMap) (e : Failure ι)
-    (requirements : List (Nat × HeapKnowledge.Knowledge) := []) : List (String × Json) := Id.run do
+    (requirements : List (Nat × HeapKnowledge.Knowledge) := [])
+    (phaseOverride : Option String := none) : List (String × Json) := Id.run do
   let claimAt := fun l => (r.claims[l]? : Option (PointClaim ι))
   let mentionedAt := fun l => ((claimAt l).map PointClaim.mentions).getD []
   let mentioned := match e with
@@ -560,10 +541,10 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
     ("label",toJson l), ("sourceMap",toJson ((sourceMap[l]?).bind id)),
     ("node",toJson r.program[l]?), ("claim",toJson ((claimAt l).map (PointClaim.shown p))),
     ("requiredKnowledge",toJson (requirements.lookup l))]
-  let phase := match e with
+  let phase := phaseOverride.getD (match e with
     | .rejected => "certificate-check"
     | .claimCount => "request-validation"
-    | .expression .. | .edge .. | .exhaustedExpression .. | .exhaustedEdge .. => "proof-search"
+    | .expression .. | .edge .. | .exhaustedExpression .. | .exhaustedEdge .. => "proof-search")
   let outcome := match e with
     | .exhaustedExpression _ stop | .exhaustedEdge _ _ _ stop =>
       DiagnosticOutcome.exhausted stop.limit stop.rounds stop.visited
@@ -649,6 +630,45 @@ structure CodeHints where
   requirements : List (Nat × HeapKnowledge.Knowledge) := []
   cuts : List Nat := []
 
+/-- Render the retained validation outcome in the graph whose check exhausted. -/
+@[nospecialize] def validationFailure (r : Request σ ι) (fuel : Nat)
+    (sourceMap : SourceMap) (codeHints : List CodeHints) (stop : Exhaustion ι) : String := Id.run do
+  let (request, origins) := match stop.frames with
+    | .code index :: _ => match r.codes[index]? with
+      | some q => (q.asRequest r, ((codeHints[index]?).getD {}).sourceMap)
+      | none => (r, sourceMap)
+    | [] | .node _ :: _ | .obligation _ :: _ | .request _ :: _ => (r, sourceMap)
+  let label := stop.nodeLabel.getD request.start
+  return withDiagnostic "subtype search exhausted during certificate validation; result is inconclusive"
+    (failureDiagnostic request fuel origins (.exhaustedExpression label stop) [] (some "certificate-check"))
+
+@[nospecialize] def verifyJson (σ : Type) [StoreView σ ι] (request evidence : Json) : Except String Unit :=
+  match decodeRequest σ request with
+  | .error e => .error e
+  | .ok r => match decodeResponse r evidence with
+    | .error e => .error e
+    | .ok c =>
+      let checked := verifyResult r c
+      if checked.accepted then .ok () else
+        .error (match checked.exhaustion with
+          | some stop => validationFailure r 0 [] [] stop
+          | none => "the certificate does not justify the actual program and supplied claims")
+
+/-- Acceptance of JSON binds the theorem to the two decoded input objects. -/
+theorem verifyJson_checked {request evidence : Json}
+    (h : verifyJson (ι := ι) σ request evidence = .ok ()) :
+    ∃ r c, decodeRequest σ request = .ok r ∧ decodeResponse r evidence = .ok c ∧ verify r c = true := by
+  unfold verifyJson at h
+  split at h
+  · contradiction
+  · split at h
+    · contradiction
+    · dsimp only at h
+      split at h
+      · exact ⟨_,_,by assumption,by assumption,by assumption⟩
+      · contradiction
+
+
 /-- Search a request's evidence: each code's certificate, then the graph's,
 checked as the consumer checks them. Fuel bounds search only; it is not
 part of the certified request. -/
@@ -673,12 +693,19 @@ part of the certified request. -/
     -- its ordinary source obligation, rather than borrowing an unchecked code
     -- entry and failing only at the final generic certificate check.
     -- Retain every certificate: verifyJson still checks the entire code list.
-    if GraphCode.codeCheckedUsing (graph r) (StoreView.images r.types) table q.entry C then
-      table := table ++ [q.entry]
+    let checked := GraphCode.codeCheckedResult (graph r) (StoreView.images r.types) table q.entry C
+    if checked.accepted then table := table ++ [q.entry]
+    else if let some stop := checked.exhaustion then
+      let label := stop.nodeLabel.getD q.entry.start
+      throw (withDiagnostic "subtype search exhausted during code admission; result is inconclusive"
+        (failureDiagnostic (q.asRequest r) fuel hints.sourceMap (.exhaustedExpression label stop)))
   let C ← produceGraph r fuel labels suggestions known sourceMap requirements cuts table
   let response := Response.mk C certificates
-  if verify r response then return response
-  throw "the certificate does not justify the actual program and supplied claims"
+  let checked := verifyResult r response
+  if checked.accepted then return response
+  throw (match checked.exhaustion with
+    | some stop => validationFailure r fuel sourceMap codeHints stop
+    | none => "the certificate does not justify the actual program and supplied claims")
 
 /-- Produce and serialize, then pass through the same independent JSON consumer. -/
 @[nospecialize] def produceJson (σ : Type) [StoreView σ ι] (request : Json) (fuel : Nat)

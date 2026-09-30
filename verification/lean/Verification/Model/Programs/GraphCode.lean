@@ -249,7 +249,7 @@ could turn a throwing call into a normal return after untracked mutation, so
 this composition rule admits only graphs without handlers. Pure graphs retain
 the independent operational rule, which also covers their handlers. -/
 @[nospecialize] def compositionalCheckedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (P : Program) (C : Certificate ι) : ProgramCertificates.CheckResult ι Unit :=
-  ProgramCertificates.CheckResult.all (P.zip C) fun (node,c) =>
+  ProgramCertificates.CheckResult.allLocated (P.zip C) .node fun (node,c) =>
     (ProgramCertificates.CheckResult.ofBool (node.handler.isNone &&
       ProgramCertificates.checkScope (entry c).length node.expression)).bind fun _ =>
     (ProgramCertificates.CheckResult.ofBool (ExpressionEffects.check G (entry c) node.expression)).orElse fun _ =>
@@ -269,7 +269,7 @@ theorem compositionalChecked_eq [DecidableEq ι] (G : NormalGraph ι) (images : 
         ProgramCertificates.checkTreeUsing G images c.expression &&
         ExpressionEffects.selectedCallPreserves c.expression))
   ) := by
-  simp only [compositionalChecked, compositionalCheckedResult, ProgramCertificates.CheckResult.accepted_all,
+  simp only [compositionalChecked, compositionalCheckedResult, ProgramCertificates.CheckResult.accepted_allLocated,
     ProgramCertificates.CheckResult.accepted_bind, ProgramCertificates.CheckResult.accepted_orElse,
     ProgramCertificates.CheckResult.accepted_ofBool, ProgramCertificates.checkTreeUsing, Bool.and_assoc]
 
@@ -391,7 +391,7 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
       ProgramCertificates.CheckResult ι (List (CodeEntry ι))
   | table, [] => pure table
   | table, (c, C) :: rest =>
-      (codeCheckedResult G images table c C).bind fun _ => extendTableResult G images (table ++ [c]) rest
+      ((codeCheckedResult G images table c C).at (.code table.length)).bind fun _ => extendTableResult G images (table ++ [c]) rest
 
 @[nospecialize] def extendTable [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (table : List (CodeEntry ι)) (checks : List (CodeEntry ι × ControlFlow.Certificate ι)) :

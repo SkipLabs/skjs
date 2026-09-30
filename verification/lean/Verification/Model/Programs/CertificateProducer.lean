@@ -1150,8 +1150,12 @@ private def failedEdge (P : Program)
     (codes : CodeEntry ι → Bool := fun _ => false) : Except (Failure ι) (ControlFlow.Certificate ι) :=
   match produceRawUsing G images (vocabulary G labels claims (inputs ++ hints)) fuel P claims suggestions known start requirements cuts codes with
   | .error e => .error e
-  | .ok C => if acceptUsing G images R P claims C start inputs codes then .ok C
-    else .error ((failedEdge P C).getD .rejected)
+  | .ok C =>
+    let checked := acceptResult G images R P claims C start inputs codes
+    if checked.accepted then .ok C
+    else match checked.exhaustion with
+      | some stop => .error (.exhaustedExpression (stop.nodeLabel.getD start) stop)
+      | none => .error ((failedEdge P C).getD .rejected)
 
 theorem produce_checked [DecidableEq ι] [Hashable ι] [Instantiates ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {labels fuel R P claims start hints inputs suggestions known requirements cuts codes C}
     (h : produceUsing G images labels fuel R P claims start hints inputs suggestions known requirements cuts codes = .ok C) :
@@ -1159,9 +1163,10 @@ theorem produce_checked [DecidableEq ι] [Hashable ι] [Instantiates ι] {G : No
   unfold produceUsing at h
   split at h
   · contradiction
-  · split at h
+  · dsimp only at h
+    split at h
     · cases h; assumption
-    · contradiction
+    · split at h <;> contradiction
 
 /-! Search proposes, and acceptance decides, with one proved instance image
 checker. The finite one is the default of the existing entry points. -/

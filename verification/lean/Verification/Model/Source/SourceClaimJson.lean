@@ -1514,8 +1514,9 @@ def checkJson (ast claims : Json) (fileKey : String) (evidence : Json)
   let certified ← certifyPlans frozen
   let rs := CertifiedPlan.requests certified
   let b : Bundle (EquationStore.CheckedLabel F.equations F.primitive) ← decodeStrict evidence
-  if checkRequests rs b then return ()
-  throw "source evidence does not justify the extracted program and exact claims"
+  let checked := checkRequestsResult rs b
+  if checked.accepted then return ()
+  throw (validationFailure rs checked "source evidence does not justify the extracted program and exact claims")
 
 def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat)
     (only : Option (String × Span) := none)
@@ -1533,8 +1534,9 @@ def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat)
       r.cuts r.codeHints
   let evidence := toJson (Bundle.mk cs es)
   let b : Bundle (EquationStore.CheckedLabel F.equations F.primitive) ← decodeStrict evidence
-  if !checkRequests rs b then
-    throw "source evidence does not justify the extracted graph requests"
+  let checked := checkRequestsResult rs b
+  if !checked.accepted then
+    throw (validationFailure rs checked "source evidence does not justify the extracted graph requests")
   return evidence
 
 /-- Every extracted plan crosses the exhaustive certification boundary, and its
@@ -1582,7 +1584,8 @@ theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
           · refine ⟨T, plans, rfl, F, frozen, certified, b, hf, hc, hb, hx, ?_⟩
             intro r c hm η n W heap ρ he hw hh
             exact checkRequests_safe_at hx hm η n W heap ρ he hw hh
-          · simp [hx] at h
+          · simp only [checkRequests] at hx
+            simp [hx] at h
 
 #print axioms checkJson_safe
 end Verification.Model.SourceClaimJson

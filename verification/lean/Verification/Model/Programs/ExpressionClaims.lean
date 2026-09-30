@@ -49,7 +49,7 @@ theorem check_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {valid 
 @[nospecialize] def checkAllResult (G : NormalGraph ι) (images : InstanceImageCheck G) (valid : ι → Bool)
     (rs : List (Required ι)) (es : List (Evidence ι)) (codes : CodeEntry ι → Bool := fun _ => false) : CheckResult ι Unit :=
   (CheckResult.ofBool (rs.length == es.length)).bind fun _ =>
-  CheckResult.all (rs.zip es) fun (r,e) => checkResult G images valid r.sequent e codes
+  CheckResult.allLocated (rs.zip es) .obligation fun (r,e) => checkResult G images valid r.sequent e codes
 
 @[nospecialize] def checkAllUsing (G : NormalGraph ι) (images : InstanceImageCheck G) (valid : ι → Bool) (rs : List (Required ι)) (es : List (Evidence ι))
     (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
@@ -60,7 +60,7 @@ theorem checkAllUsing_eq (G : NormalGraph ι) (images : InstanceImageCheck G) (v
     checkAllUsing G images valid rs es codes =
       (rs.length == es.length && (rs.zip es).all (fun (r,e) => checkUsing G images valid r.sequent e codes)) := by
   simp only [checkAllUsing, checkAllResult, CheckResult.accepted_bind, CheckResult.accepted_ofBool,
-    CheckResult.accepted_all, checkUsing]
+    CheckResult.accepted_allLocated, checkUsing]
 
 
 theorem checkAll_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {valid rs es} {codes : CodeEntry ι → Bool}

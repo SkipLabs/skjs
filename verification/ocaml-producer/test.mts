@@ -179,6 +179,73 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     "the source runner distinguishes exhausted work from a completed refusal");
   assert.equal(check(negative).status, "unverified", "the last field's type is incompatible");
 }
+// Extra valid coercions exercise exhaustion during consumption, after extraction.
+{
+  const field = (v: unknown, key: string): unknown =>
+    v !== null && typeof v === "object" ? Reflect.get(v, key) : undefined;
+  function parameterTypes(v: unknown): unknown[] | undefined {
+    const node = field(v, "node"), context = field(field(node, "claim"), "context");
+    if (field(node, "rule") === "var" && Array.isArray(context) && context.length === 2) return context;
+    if (v !== null && typeof v === "object") for (const child of Object.values(v)) {
+      const found = parameterTypes(child);
+      if (found) return found;
+    }
+    return undefined;
+  }
+  function insertCoercions(v: unknown, types: unknown[]): number {
+    const node = field(v, "node"), claim = field(node, "claim"), type = field(claim, "type");
+    const current = types.findIndex(t => JSON.stringify(t) === JSON.stringify(type));
+    if (current >= 0 && field(node, "rule") === "var" && v !== null && typeof v === "object" &&
+        "node" in v && claim !== null && typeof claim === "object") {
+      const rule = { sub: { proof: { instantiation: null, members: [] } } };
+      const inner = { node: { claim: { ...claim, type: types[1 - current] }, rule, premises: [structuredClone(v)] } };
+      v.node = { claim, rule, premises: [inner] };
+      return 1;
+    }
+    return v !== null && typeof v === "object"
+      ? Object.values(v).reduce((n: number, child: unknown) => n + insertCoercions(child, types), 0) : 0;
+  }
+  const declarations = ["interface AChild { readonly n: number }", "interface BChild { readonly n: number }",
+    "interface A { readonly x: AChild }", "interface B { readonly x: BChild }"].join("\n");
+  for (const site of ["graph", "code", "obligation"]) {
+    const source = declarations + "\nexport function keep(value: A, other: B): A {\n" +
+      (site === "graph" ? "" : "  const read = (input: A): A => { const old = other; return input; };\n") + "  return value;\n}\n";
+    const file = join(mkdtempSync(join(tmpdir(), "skjs-consumer-budget-")), "client.ts");
+    writeFileSync(file, source);
+    const admitted = check(file);
+    assert.equal(admitted.status, "verified");
+    const at = (name: string) => join(admitted.artifacts, name);
+    const run = (evidence: string, rounds: number) => spawnSync(verifier,
+      ["--subtype-rounds", String(rounds), "--check-source-claims", at("fragment.json"), at("claims.json"),
+        at("source.ts"), evidence], { encoding: "utf8", timeout: 30_000 });
+    assert.equal(run(at("evidence.json"), 0).status, 0, `${site}: original evidence needs no frontier rounds`);
+    const evidence: unknown = JSON.parse(readFileSync(at("evidence.json"), "utf8"));
+    const types = parameterTypes(evidence);
+    assert(types && types.length === 2);
+    const functions = field(evidence, "functions");
+    assert(Array.isArray(functions) && functions.length === 1);
+    const target = site === "graph" ? field(functions[0], "certificate") :
+      site === "code" ? field(functions[0], "codes") : field(evidence, "obligations");
+    assert(insertCoercions(target, types) > 0, `${site}: a coercion was inserted`);
+    const extra = at("extra-coercions.json");
+    writeFileSync(extra, JSON.stringify(evidence));
+    const stopped = run(extra, 0);
+    assert.equal(stopped.status, 1);
+    const diagnostic = readDiagnostic(stopped.stderr);
+    assert(diagnostic?.kind === "direct-obligation", stopped.stderr);
+    assert.equal(diagnostic.phase, "certificate-check");
+    assert.equal(diagnostic.judgment.kind, "subtyping");
+    assert.equal(diagnostic.outcome.kind, "exhausted");
+    assert.deepEqual(diagnostic.sourceMap.context, []);
+    assert.deepEqual(diagnostic.judgment.subject, diagnostic.sourceMap.pos);
+    const located = source.slice(...diagnostic.sourceMap.pos);
+    if (site === "obligation") assert.match(located, /^\(input: A\): A =>/);
+    else assert.equal(located, site === "graph" ? "value" : "input");
+    assert.match(presentObligation(diagnostic, source).searchOutcome, /exhausted.*inconclusive/);
+    const enough = run(extra, 8);
+    assert.equal(enough.status, 0, `${site}: added coercions verify with enough resources: ${enough.stderr}`);
+  }
+}
 // Module-call bounds run before a graph request exists. Both CLI modes must
 // retain the unfinished comparison at the call, rather than claim a bad bound.
 {

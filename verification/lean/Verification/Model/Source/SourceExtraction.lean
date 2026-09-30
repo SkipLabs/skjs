@@ -5248,7 +5248,7 @@ theorem checkRequestResult_accepted_iff (r : SourceRequest σ ι) (c : Response 
     ProgramCertificates.CheckResult ι Unit :=
   (ProgramCertificates.CheckResult.ofBool (rs.length == b.functions.length &&
     rs.length == b.obligations.length)).bind fun _ =>
-  ProgramCertificates.CheckResult.all ((rs.zip b.functions).zip b.obligations)
+  ProgramCertificates.CheckResult.allLocated ((rs.zip b.functions).zip b.obligations) .request
     fun ((r,c),es) => checkRequestResult r c es
 
 @[nospecialize] def checkRequests (rs : List (SourceRequest σ ι)) (b : Bundle ι) : Bool :=
@@ -5258,7 +5258,7 @@ theorem checkRequests_eq (rs : List (SourceRequest σ ι)) (b : Bundle ι) :
     checkRequests rs b = (rs.length == b.functions.length && rs.length == b.obligations.length &&
       ((rs.zip b.functions).zip b.obligations).all (fun ((r,c),es) => (checkRequestResult r c es).accepted)) := by
   rw [checkRequests, checkRequestsResult, ProgramCertificates.CheckResult.accepted_bind,
-    ProgramCertificates.CheckResult.accepted_ofBool, ProgramCertificates.CheckResult.accepted_all]
+    ProgramCertificates.CheckResult.accepted_ofBool, ProgramCertificates.CheckResult.accepted_allLocated]
 
 theorem checkRequests_one {rs : List (SourceRequest σ ι)} {b : Bundle ι}
     (h : checkRequests rs b = true) {r c es}
@@ -5357,6 +5357,44 @@ theorem checkRequests_obligations {rs : List (SourceRequest σ ι)} {b : (Bundle
       q.sequent.type := by
   obtain ⟨_, _, table, ht, ho⟩ := (checkRequestResult_accepted_iff _ _ _).mp (checkRequests_one h hm)
   exact ExpressionClaims.checkAll_sound ho (codeTable_sound ht) hq
+
+/-- The source region represented by a graph, for checks on synthetic nodes. -/
+def sourceMapRegion (sourceMap : SourceMap) : Option SourceMapEntry :=
+  sourceMap.foldl (fun found next => match found, next with
+    | none, next => next
+    | found, none => found
+    | some a, some b => some (SourceMapEntry.mk
+        (min a.pos.1 b.pos.1, max a.pos.2 b.pos.2) "certificate-check" none [])) none
+
+/-- Diagnostic provenance selects an actual source point or its enclosing graph region. -/
+@[nospecialize] def validationOrigin (r : SourceRequest σ ι) (frames : List ProgramCertificates.CheckFrame) :
+    Option SourceMapEntry :=
+  match frames with
+  | [.node label] => ((r.sourceMap[label]?).bind id) <|> sourceMapRegion r.sourceMap
+  | [.code index, .node label] =>
+      ((r.codeSources[index]?).bind fun code =>
+        ((code.sourceMap[label]?).bind id) <|> sourceMapRegion code.sourceMap) <|> sourceMapRegion r.sourceMap
+  | [.code index] => ((r.codeSources[index]?).bind fun code => sourceMapRegion code.sourceMap) <|>
+      sourceMapRegion r.sourceMap
+  | [.obligation index] => (r.obligations[index]?).map fun q =>
+      SourceMapEntry.mk q.pos q.role none []
+  | [] | .node _ :: _ | .code _ :: _ | .obligation _ :: _ | .request _ :: _ => sourceMapRegion r.sourceMap
+
+/-- Report the retained comparison through the source map; validation is not rerun. -/
+@[nospecialize] def validationFailure (rs : List (SourceRequest σ ι))
+    (checked : ProgramCertificates.CheckResult ι Unit) (fallback : String) : String := Id.run do
+  let some stop := checked.exhaustion | return fallback
+  let .request index :: frames := stop.frames | return "exhausted certificate check has no enclosing source request"
+  let some r := rs[index]? | return "exhausted certificate check names no source request"
+  let some origin := validationOrigin r frames | return "exhausted certificate check has no source region"
+  let p := StoreView.projection r.types (stop.source ++ stop.target).eraseDups
+  return RequestJson.withDiagnostic "subtype search exhausted during certificate validation; result is inconclusive"
+    ([("kind",toJson "direct-obligation"),("phase",toJson "certificate-check"),
+      ("outcome",toJson (DiagnosticOutcome.exhausted stop.limit stop.rounds stop.visited)),
+      ("id",toJson s!"subtype:{origin.pos.1}:{origin.pos.2}"),
+      ("sourceMap",toJson { origin with context := [] }),
+      ("judgment",(DirectObligation.Judgment.subtyping origin.pos (p.shown stop.source) (p.shown stop.target)).toJson),
+      ("fuel",toJson (0 : Nat))] ++ p.fields)
 
 end
 

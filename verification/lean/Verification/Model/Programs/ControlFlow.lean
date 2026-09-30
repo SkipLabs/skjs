@@ -297,7 +297,7 @@ theorem checkNodeUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
   (CheckResult.ofBool (decide (P.length = C.length))).bind fun _ =>
   (CheckResult.all (List.range P.length) fun l =>
     match P[l]?, C[l]? with
-    | some node, some c => checkNodeResult G images Rty P C node c codes
+    | some node, some c => (checkNodeResult G images Rty P C node c codes).at (.node l)
     | _, _ => failure).bind fun _ =>
   CheckResult.ofBool (P.all (fun node => ObjectCoherence.sourceTerm node.expression))
 

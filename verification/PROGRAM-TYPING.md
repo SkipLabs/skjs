@@ -2601,6 +2601,21 @@ requires exact bundle lengths and checks every unit. `checkRequests_accepted_iff
 proves the graph, assertion and supplemental premises for all requested units;
 these premises justify the source safety and supplemental-typing theorems.
 
+An `Exhaustion` carries `CheckFrame` scopes for the node, code entry, supplemental
+obligation and source unit enclosing its comparison. `CheckResult.at` and
+`allLocated` add these scopes; `value_at`, `accepted_at` and `accepted_allLocated`
+prove that they preserve validation values and acceptance. Source reporting uses
+these scopes to select the corresponding source map or obligation span. A
+synthetic node is reported at its enclosing graph's source region.
+`SourceExtraction.validationFailure` reports the retained subtype judgment and
+resource outcome. Source evidence production and consumption use this reporting
+boundary. `RequestJson.validationFailure` selects the graph or code entry named
+by a request check's scopes. JSON checking and final response validation report
+its retained result at the certificate-check phase. Code admission also reports
+unfinished validation before a later expression can depend on that code.
+`CertificateProducer.produceUsing` consumes the same retained acceptance result;
+its failed-edge diagnostic inspects heap entailment after a completed refusal.
+
 Failure reports a claim-count mismatch, an expression label, an edge's source
 and destination, or final consumer rejection. Failure means unsupported or
 unjustified within this search, not a proof that the program is untypable.

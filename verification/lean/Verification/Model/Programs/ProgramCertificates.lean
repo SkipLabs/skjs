@@ -15,6 +15,14 @@ structure Sequent (ι : Type) where
   type : Ty ι
   deriving DecidableEq
 
+/-- Validation scopes enclosing an unfinished comparison, outermost first. -/
+inductive CheckFrame where
+  | node (label : Nat)
+  | code (index : Nat)
+  | obligation (index : Nat)
+  | request (index : Nat)
+  deriving Repr, DecidableEq
+
 /-- An incomplete subtype comparison, including its requested judgment. -/
 structure Exhaustion (ι : Type) where
   source : Ty ι
@@ -22,13 +30,26 @@ structure Exhaustion (ι : Type) where
   limit : Nat
   rounds : Nat
   visited : Nat
+  frames : List CheckFrame := []
   deriving Repr, DecidableEq
+
+/-- The first graph node named by an unfinished comparison's validation scopes. -/
+@[nospecialize] def Exhaustion.nodeLabel (stop : Exhaustion ι) : Option Nat :=
+  (stop.frames.filterMap fun frame => match frame with
+    | .node label => some label
+    | .code _ | .obligation _ | .request _ => none).head?
 
 /-- Compositional search and validation retain unfinished subtype work.
 Successful proposal values require independent certificate validation. -/
 structure CheckResult (ι α : Type) where
   value : Option α
   exhaustion : Option (Exhaustion ι) := none
+
+/-- Attach diagnostic provenance without changing a validation value. -/
+@[nospecialize] def CheckResult.at (s : CheckResult ι α) (frame : CheckFrame) : CheckResult ι α :=
+  { s with exhaustion := s.exhaustion.map fun stop => { stop with frames := frame :: stop.frames } }
+
+theorem CheckResult.value_at (s : CheckResult ι α) (frame : CheckFrame) : (s.at frame).value = s.value := rfl
 
 @[nospecialize] def CheckResult.fromOption (o : Option α) : CheckResult ι α := ⟨o, none⟩
 
@@ -70,6 +91,9 @@ instance : Alternative (CheckResult ι) where
   | x :: xs => (f x).orElse fun _ => xs.findCheck? f
 
 @[nospecialize] def CheckResult.accepted (s : CheckResult ι α) : Bool := s.value.isSome
+
+theorem CheckResult.accepted_at (s : CheckResult ι α) (frame : CheckFrame) :
+    (s.at frame).accepted = s.accepted := rfl
 
 @[nospecialize] def CheckResult.ofBool (b : Bool) : CheckResult ι Unit :=
   ⟨if b then some () else none, none⟩
@@ -132,6 +156,18 @@ theorem CheckResult.accepted_all (xs : List β) (f : β → CheckResult ι Unit)
   | nil => rfl
   | cons x xs ih => simp only [CheckResult.all, CheckResult.accepted_bind, ih, List.all_cons]
 
+/-- Enumerate checks with their enclosing diagnostic scopes. -/
+@[nospecialize] def CheckResult.allLocated (xs : List β) (frame : Nat → CheckFrame)
+    (f : β → CheckResult ι Unit) : CheckResult ι Unit :=
+  CheckResult.all xs.zipIdx fun (x, i) => (f x).at (frame i)
+
+theorem CheckResult.accepted_allLocated (xs : List β) (frame : Nat → CheckFrame)
+    (f : β → CheckResult ι Unit) :
+    (CheckResult.allLocated xs frame f).accepted = xs.all (fun x => (f x).accepted) := by
+  simp only [CheckResult.allLocated, CheckResult.accepted_all, CheckResult.accepted_at]
+  have h := congrArg (fun ys => ys.all (fun x => (f x).accepted)) (List.zipIdx_map_fst 0 xs)
+  simpa only [List.all_map, Function.comp_def] using h
+
 /-- Disjunctive validation retains unfinished work if no alternative succeeds. -/
 @[nospecialize] def CheckResult.any (xs : List β) (f : β → CheckResult ι Unit) : CheckResult ι Unit :=
   xs.findCheck? f
@@ -187,7 +223,7 @@ theorem CheckResult.value_orElse (s : CheckResult ι α) (t : Unit → CheckResu
   match r with
   | .established x => ⟨some x, none⟩
   | .notEstablished => ⟨none, none⟩
-  | .exhausted rounds visited => ⟨none, some ⟨A, B, limit, rounds, visited⟩⟩
+  | .exhausted rounds visited => ⟨none, some ⟨A, B, limit, rounds, visited, []⟩⟩
 
 theorem CheckResult.accepted_fromComparison (limit : Nat) (A B : Ty ι)
     (r : PositiveCertificates.ComparisonResult α) :
