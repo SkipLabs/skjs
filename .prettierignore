@@ -17,3 +17,6 @@ verification/lean/lake-manifest.json
 # annotated report copies are generated, and their exact bytes are fingerprinted
 # in the companion manifest: reformatting one makes it stale
 **/*.annotated.ts
+
+# the census writes this on every run; leave its formatting alone
+verification/ocaml-producer/skjs-coverage.json

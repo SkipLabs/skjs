@@ -9,4 +9,3 @@ export function literal(): readonly ["a", 1] {
 }
 
 // A top-level `;` runs nothing, as in a body.
-;

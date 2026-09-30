@@ -2,7 +2,10 @@
 import type { Values, Mapper } from "@skipruntime/core";
 class AddIndex implements Mapper<string, number, string, [number, number]> {
   constructor(private index: number) {}
-  mapEntry(key: string, values: Values<number>): Iterable<[string, [number, number]]> {
+  mapEntry(
+    key: string,
+    values: Values<number>,
+  ): Iterable<[string, [number, number]]> {
     return [[key, [this.index, values.getUnique()]]];
   }
 }

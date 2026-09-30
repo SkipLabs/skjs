@@ -1003,7 +1003,7 @@ export const cases: Case[] = [
   ),
   negative("invalid-rest-actual", "an actual outside a rest's element type"),
   positive("rest-generic-alias", "a rest parameter typed by a generic alias of an array or tuple, in a function type, a declared function and a definition"),
-  negative("invalid-rest-generic-alias", "the alias's tuple at its arguments keeps its positions", /source expression obligation at \[230,231\)/),
+  negative("invalid-rest-generic-alias", "the alias's tuple at its arguments keeps its positions", /source expression obligation at \[235,236\)/),
   positive(
     "default-parameters",
     "defaults replacing an omitted argument, including one reading an earlier parameter",

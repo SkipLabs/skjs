@@ -1,6 +1,12 @@
 // sum.ts, Add: an interface extending a runtime interface, and a class value
 // passed to a generic method.
-import type { Values, Mapper, EagerCollection, Resource, NamedEagerCollections } from "@skipruntime/core";
+import type {
+  Values,
+  Mapper,
+  EagerCollection,
+  Resource,
+  NamedEagerCollections,
+} from "@skipruntime/core";
 class Plus implements Mapper<string, number, string, number> {
   mapEntry(key: string, values: Values<number>): Iterable<[string, number]> {
     return [[key, values.getUnique()]];

@@ -4,11 +4,15 @@ type RestAlias<E> = readonly E[];
 type Pair<A, B> = readonly [A, B];
 declare function takesPair<A, B>(...args: Pair<A, B>): B;
 
-export function viaAlias<T>(f: (...args: RestAlias<T>) => T): (...args: readonly T[]) => T {
+export function viaAlias<T>(
+  f: (...args: RestAlias<T>) => T,
+): (...args: readonly T[]) => T {
   return f;
 }
 
-export function pairLayout(f: (...args: Pair<number, string>) => string): (a: number, b: string) => string {
+export function pairLayout(
+  f: (...args: Pair<number, string>) => string,
+): (a: number, b: string) => string {
   return f;
 }
 
