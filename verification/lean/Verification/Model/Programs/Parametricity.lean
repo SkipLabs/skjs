@@ -76,27 +76,45 @@ theorem compareStructural_reassign (images : InstanceImageCheck G) (S T : List �
   simp only [compareStructural, images_reassign_fixed, comparePrepared_reassign, budget_reassign]
   rfl
 
+theorem compareBound_reassign (images : InstanceImageCheck G) (binders : List ι)
+    (θs : List (List ι)) (b : ι × List ι) :
+    compareBound (reassign G η) (images.reassign η) binders θs b =
+      compareBound G images binders θs b := by
+  simp only [compareBound, compareStructural_reassign]
+
 /-- A bound is decided at the graph with its assignment fixed. -/
 theorem boundOk_reassign (images : InstanceImageCheck G) (binders : List ι)
     (θs : List (List ι)) (b : ι × List ι) :
     boundOk (reassign G η) (images.reassign η) binders θs b = boundOk G images binders θs b := by
-  simp only [boundOk, compareStructural_reassign, budget_reassign]
+  simp only [boundOk, compareBound_reassign]
 
 /-! Every checker below takes a proved instance image checker. Its check is
 the same function at every reassignment (`InstanceImageCheck.reassign`). -/
 variable (images : InstanceImageCheck G)
 
+theorem compareInstArrs_reassign (S : List ι) (L : Ops ι)
+    (M : List (CallEffects.RestArrow (List ι))) (c : Instance ι) :
+    compareInstArrsUsing (reassign G η) (images.reassign η) S L M c =
+      compareInstArrsUsing G images S L M c := by
+  have hb : compareBound (reassign G η) (images.reassign η) = compareBound G images :=
+    funext fun bs => funext fun θ => funext fun b => compareBound_reassign G η images bs θ b
+  simp only [compareInstArrsUsing, hb]
+  rfl
+
 theorem checkInstArrs_reassign (S : List ι) (L : Ops ι)
     (M : List (CallEffects.RestArrow (List ι))) (c : Instance ι) :
     checkInstArrsUsing (reassign G η) (images.reassign η) S L M c =
       checkInstArrsUsing G images S L M c := by
-  simp only [checkInstArrsUsing, boundOk_reassign]
+  simp only [checkInstArrsUsing, compareInstArrs_reassign]
+
+theorem compareInst_reassign (S T : List ι) (c : Instance ι) :
+    compareInstUsing (reassign G η) (images.reassign η) S T c = compareInstUsing G images S T c := by
+  simp only [compareInstUsing, compareInstArrs_reassign]
   rfl
 
 theorem checkInst_reassign (S T : List ι) (c : Instance ι) :
     checkInstUsing (reassign G η) (images.reassign η) S T c = checkInstUsing G images S T c := by
-  simp only [checkInstUsing, checkInstArrs_reassign]
-  rfl
+  simp only [checkInstUsing, compareInst_reassign]
 
 theorem sub_reassign : (images.reassign η).sub = images.sub.map (·.reassign η) := rfl
 
@@ -116,9 +134,9 @@ theorem compareUsing_reassign (S T : List ι) (instantiation : Unit → Option (
     (members : Table ι → List (KnownInstance ι)) :
     compareUsing (reassign G η) (images.reassign η) S T instantiation members =
       compareUsing G images S T instantiation members := by
-  have hi : checkInstUsing (reassign G η) (images.reassign η) S T =
-      checkInstUsing G images S T := funext fun c => checkInst_reassign G η images S T c
-  simp only [compareUsing, subsetUsing_reassign, hi, checkInstArrs_reassign,
+  have hi : compareInstUsing (reassign G η) (images.reassign η) S T =
+      compareInstUsing G images S T := funext fun c => compareInst_reassign G η images S T c
+  simp only [compareUsing, subsetUsing_reassign, hi, compareInstArrs_reassign,
     images_reassign_fixed, comparePrepared_reassign, budget_reassign]
   rfl
 

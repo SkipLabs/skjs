@@ -238,7 +238,7 @@ validates the table. -/
 
 /-- An instance of scheme row `s` whose signatures' images are the arrows
 `L`, `M`: find the binders' instances, then build the table under the context
-giving each binder its instance. Untrusted: `checkInstArrs` validates it. -/
+giving each binder its instance. Untrusted: `compareInstArrsUsing` validates it. -/
 @[nospecialize] def instanceForUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (fuel : Nat) (s : SchemeRow ι)
     (L : PositiveRules.Ops ι) (M : List (RestArrow (List ι))) :
     Option (PositiveCertificates.Instance ι) := do

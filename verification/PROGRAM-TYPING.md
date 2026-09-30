@@ -3720,7 +3720,7 @@ instantiate the member's binders in order, its own leading; binders past them
 (an `ArrayProto` member's element `T`, listed last) are fixed by the receiver
 and actuals. Lean reads the member's scheme row $S$ from the receiver's
 contract (a quantified member's scheme, or a view's), finds the instance map $\theta$ relating $S$ to the read's claimed
-arrows $M$, checks it (`checkInstArrs`, sound by `Inst.mixed_sound`) and
+arrows $M$, checks it (`checkInstArrsUsing`, sound by `checkInstArrsUsing_sound`) and
 requires each explicit argument to mean what $\theta$ gives its binder:
 
 ```math
