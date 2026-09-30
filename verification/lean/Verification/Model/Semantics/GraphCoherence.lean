@@ -32,7 +32,7 @@ def SourceGraph (P : Program) : Prop := ∀ node ∈ P, sourceTerm node.expressi
 theorem checked_source [DecidableEq ι] {G : PositiveGraphs.NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G} {R P C}
     (hc : checkGraphUsing G images R P C = true) : SourceGraph P := by
-  simp only [checkGraphUsing, Bool.and_eq_true] at hc
+  simp only [checkGraphUsing_eq, Bool.and_eq_true] at hc
   exact List.all_eq_true.mp hc.2
 
 /-- Graph transfers only copy coherent values; expression steps use the core
@@ -80,7 +80,7 @@ theorem accepted_inputs_coherent [DecidableEq ι] {G : PositiveGraphs.NormalGrap
     (hh : ObjectCoherence.HeapOk D h) (he : EnvCoherent D ρ)
     (run : Execution P k h (.at start ρ) h' s') :
     ∃ E, Extends D E ∧ ObjectCoherence.HeapOk E h' ∧ StateCoherent E s' := by
-  simp only [checkEntryUsing, Bool.and_eq_true] at hc
+  simp only [checkEntryUsing_eq, Bool.and_eq_true] at hc
   exact execution_preserves (checked_source hc.1) run hh he
 
 /-- No coherence assumption is needed for a closed invocation: the empty heap

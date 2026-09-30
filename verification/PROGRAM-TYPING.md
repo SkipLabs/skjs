@@ -2579,6 +2579,13 @@ alternative establishes the edge; otherwise unfinished comparisons are retained.
 The modules' `*_eq` theorems prove that their acceptance projections have the
 premises consumed by the environment-transport and refinement soundness proofs.
 
+`ControlFlow.checkNodeResult` composes handler, expression-postcondition and
+continuation checks. `checkGraphResult` enumerates the program's nodes and
+checks source coherence; `checkEntryResult` additionally checks the external
+input environment. Their results retain unfinished comparisons from expressions,
+heap steps and outgoing edges. Their `*_eq` theorems identify the acceptance
+conditions used by graph safety and parameter-reassignment proofs.
+
 Failure reports a claim-count mismatch, an expression label, an edge's source
 and destination, or final consumer rejection. Failure means unsupported or
 unjustified within this search, not a proof that the program is untypable.

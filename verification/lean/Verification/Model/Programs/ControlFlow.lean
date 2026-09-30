@@ -80,11 +80,27 @@ def SafeGraph (P : Program) (T : Fam) : (n : Nat) → WorldT n → Heap → Stat
       WorldAdm U ∧ Transition P h s h' s' ∧ HeapOk n U h' ∧ SafeGraph P T n U h' s'
 
 /-- Target existence is checked against both the actual graph and its claims. -/
-def checkTargetUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (P : Program) (C : Certificate ι)
+@[nospecialize] def checkTargetResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (P : Program) (C : Certificate ι)
+    (Γ : List (Ty ι)) (target : Target) (p : EdgeEvidence ι) (facts : HeapKnowledge.Knowledge := ⟨[],[],[]⟩) : CheckResult ι Unit :=
+  match P[target.label]?, C[target.label]? with
+  | some _, some c => (checkMappedResult G images Γ (entry c) target.mapping p).bind fun _ =>
+      CheckResult.ofBool (HeapKnowledge.check facts c.knowledge target.mapping)
+  | _, _ => failure
+
+@[nospecialize] def checkTargetUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (P : Program) (C : Certificate ι)
     (Γ : List (Ty ι)) (target : Target) (p : EdgeEvidence ι) (facts : HeapKnowledge.Knowledge := ⟨[],[],[]⟩) : Bool :=
+  (checkTargetResult G images P C Γ target p facts).accepted
+
+theorem checkTargetUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (P : Program) (C : Certificate ι)
+    (Γ : List (Ty ι)) (target : Target) (p : EdgeEvidence ι) (facts : HeapKnowledge.Knowledge) :
+    checkTargetUsing G images P C Γ target p facts = (
   match P[target.label]?, C[target.label]? with
   | some _, some c => checkMappedUsing G images Γ (entry c) target.mapping p && HeapKnowledge.check facts c.knowledge target.mapping
   | _, _ => false
+  ) := by
+  cases hp : P[target.label]? <;> cases hc : C[target.label]? <;>
+    simp only [checkTargetUsing, checkTargetResult, hp, hc, CheckResult.accepted_bind,
+      CheckResult.accepted_ofBool, checkMappedUsing] <;> rfl
 
 /-- The objects the value in `slot` was read from, with the field: the
 current read links ending at it. -/
@@ -136,12 +152,30 @@ theorem optionalFields_holds {facts : HeapKnowledge.Knowledge} {slot ρ h}
       simpa [hc.2] using hr
   · cases he
 
-def checkBranchTargetUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (P : Program) (C : Certificate ι)
+@[nospecialize] def checkBranchTargetResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (P : Program) (C : Certificate ι)
+    (Γ : List (Ty ι)) (o : Observation) (target : Target) (p : EdgeEvidence ι) (facts : HeapKnowledge.Knowledge := ⟨[],[],[]⟩) : CheckResult ι Unit :=
+  match P[target.label]?, C[target.label]? with
+  | some _, some c =>
+      (checkObservedResult G images Γ (entry c) 0 o target.mapping p
+        (readFields facts 0) (optionalFields facts 0)).bind fun _ =>
+      CheckResult.ofBool (HeapKnowledge.check (HeapKnowledge.observe facts 0 o) c.knowledge target.mapping)
+  | _, _ => failure
+
+@[nospecialize] def checkBranchTargetUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (P : Program) (C : Certificate ι)
     (Γ : List (Ty ι)) (o : Observation) (target : Target) (p : EdgeEvidence ι) (facts : HeapKnowledge.Knowledge := ⟨[],[],[]⟩) : Bool :=
+  (checkBranchTargetResult G images P C Γ o target p facts).accepted
+
+theorem checkBranchTargetUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (P : Program) (C : Certificate ι)
+    (Γ : List (Ty ι)) (o : Observation) (target : Target) (p : EdgeEvidence ι) (facts : HeapKnowledge.Knowledge) :
+    checkBranchTargetUsing G images P C Γ o target p facts = (
   match P[target.label]?, C[target.label]? with
   | some _, some c => checkObservedUsing G images Γ (entry c) 0 o target.mapping p (readFields facts 0)
       (optionalFields facts 0) && HeapKnowledge.check (HeapKnowledge.observe facts 0 o) c.knowledge target.mapping
   | _, _ => false
+  ) := by
+  cases hp : P[target.label]? <;> cases hc : C[target.label]? <;>
+    simp only [checkBranchTargetUsing, checkBranchTargetResult, hp, hc, CheckResult.accepted_bind,
+      CheckResult.accepted_ofBool, checkObservedUsing] <;> rfl
 
 
 /-- A type every closed value inhabits: one of its clauses is top. A thrown
@@ -169,17 +203,66 @@ theorem handlerFacts_holds {k ρ h} (hk : HeapKnowledge.Holds k ρ h) (v : Tm) (
 
 /-- A node's handler, when it has one, is a checked target for the thrown
 value at a type admitting every value, under the facts that survive a throw. -/
-def checkHandlerUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (P : Program) (C : Certificate ι)
+@[nospecialize] def checkHandlerResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (P : Program) (C : Certificate ι)
+    (node : Node) (c : NodeEvidence ι) : CheckResult ι Unit :=
+  match node.handler, c.handler with
+  | none, none => pure ()
+  | some l, some (T, p) =>
+      (CheckResult.ofBool (admitsAll G T)).bind fun _ =>
+      checkTargetResult G images P C (T :: entry c) l p (handlerFacts c.knowledge)
+  | _, _ => failure
+
+@[nospecialize] def checkHandlerUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (P : Program) (C : Certificate ι)
     (node : Node) (c : NodeEvidence ι) : Bool :=
+  (checkHandlerResult G images P C node c).accepted
+
+theorem checkHandlerUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (P : Program) (C : Certificate ι)
+    (node : Node) (c : NodeEvidence ι) :
+    checkHandlerUsing G images P C node c = (
   match node.handler, c.handler with
   | none, none => true
   | some l, some (T, p) =>
       admitsAll G T && checkTargetUsing G images P C (T :: entry c) l p (handlerFacts c.knowledge)
   | _, _ => false
+  ) := by
+  cases hn : node.handler <;> cases hc : c.handler <;>
+    simp only [checkHandlerUsing, checkHandlerResult, hn, hc, CheckResult.accepted_bind,
+      CheckResult.accepted_ofBool, checkTargetUsing] <;> rfl
 
-def checkNodeUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (Rty : Ty ι)
+@[nospecialize] def checkNodeResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (Rty : Ty ι)
+    (P : Program) (C : Certificate ι) (node : Node) (c : NodeEvidence ι)
+    (codes : CodeEntry ι → Bool := fun _ => false) : CheckResult ι Unit :=
+  (CheckResult.ofBool (decide ((claim c.expression).term = node.expression))).bind fun _ =>
+  (checkHandlerResult G images P C node c).bind fun _ =>
+  (CheckResult.ofBool (checkScope (entry c).length node.expression)).bind fun _ =>
+  ((HeapExpressionRules.checkStepResult G images (claim c.expression) c.knowledge
+    (c.effect.getD (.ordinary c.expression)) codes).expect c.output).bind fun _ =>
+  match node.continuation, c.edges with
+  | .ret, [] => CheckResult.ofBool (decide (result c = Rty))
+  | .bind l, [p] => checkTargetResult G images P C (result c :: entry c) l p c.output
+  | .effect l, [p] => checkTargetResult G images P C (entry c) l p (HeapKnowledge.dropResult c.output)
+  | .branch y n, [py,pn] =>
+      (CheckResult.ofBool (decide (expand G (result c) = [.bool]))).bind fun _ =>
+      (checkTargetResult G images P C (entry c) y py (HeapKnowledge.dropResult c.output)).bind fun _ =>
+      checkTargetResult G images P C (entry c) n pn (HeapKnowledge.dropResult c.output)
+  | .branchBind y n, [py,pn] =>
+      (CheckResult.ofBool (onlyBoolean G (result c))).bind fun _ =>
+      (checkBranchTargetResult G images P C (result c :: entry c) (.boolean true) y py c.output).bind fun _ =>
+      checkBranchTargetResult G images P C (result c :: entry c) (.boolean false) n pn c.output
+  | .tagBind t y n, [py,pn] =>
+      (checkBranchTargetResult G images P C (result c :: entry c) (.tag t true) y py c.output).bind fun _ =>
+      checkBranchTargetResult G images P C (result c :: entry c) (.tag t false) n pn c.output
+  | _, _ => failure
+
+@[nospecialize] def checkNodeUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (Rty : Ty ι)
     (P : Program) (C : Certificate ι) (node : Node) (c : NodeEvidence ι)
     (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
+  (checkNodeResult G images Rty P C node c codes).accepted
+
+theorem checkNodeUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (Rty : Ty ι)
+    (P : Program) (C : Certificate ι) (node : Node) (c : NodeEvidence ι)
+    (codes : CodeEntry ι → Bool) :
+    checkNodeUsing G images Rty P C node c codes = (
   decide ((claim c.expression).term = node.expression) &&
   checkHandlerUsing G images P C node c &&
   checkScope (entry c).length node.expression &&
@@ -198,14 +281,44 @@ def checkNodeUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImage
       checkBranchTargetUsing G images P C (result c :: entry c) (.tag t true) y py c.output &&
       checkBranchTargetUsing G images P C (result c :: entry c) (.tag t false) n pn c.output
   | _, _ => false
+  ) := by
+  simp only [checkNodeUsing, checkNodeResult, CheckResult.accepted_bind,
+    CheckResult.accepted_ofBool, CheckResult.accepted_expect, checkHandlerUsing,
+    HeapExpressionRules.checkStepUsing, Bool.and_assoc]
+  congr 1
+  cases node.continuation <;> cases c.edges <;>
+    (try (rename_i p ps; cases ps <;> (try (rename_i q qs; cases qs)))) <;>
+    simp only [CheckResult.accepted_bind, CheckResult.accepted_ofBool,
+      checkTargetUsing, checkBranchTargetUsing, Bool.and_assoc] <;> rfl
 
 /-- Enumeration comes from the program, not a certificate-supplied edge list. -/
-def checkGraphUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (Rty : Ty ι)
+@[nospecialize] def checkGraphResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (Rty : Ty ι)
+    (P : Program) (C : Certificate ι) (codes : CodeEntry ι → Bool := fun _ => false) : CheckResult ι Unit :=
+  (CheckResult.ofBool (decide (P.length = C.length))).bind fun _ =>
+  (CheckResult.all (List.range P.length) fun l =>
+    match P[l]?, C[l]? with
+    | some node, some c => checkNodeResult G images Rty P C node c codes
+    | _, _ => failure).bind fun _ =>
+  CheckResult.ofBool (P.all (fun node => ObjectCoherence.sourceTerm node.expression))
+
+@[nospecialize] def checkGraphUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (Rty : Ty ι)
     (P : Program) (C : Certificate ι) (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
+  (checkGraphResult G images Rty P C codes).accepted
+
+theorem checkGraphUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (Rty : Ty ι)
+    (P : Program) (C : Certificate ι) (codes : CodeEntry ι → Bool) :
+    checkGraphUsing G images Rty P C codes = (
   decide (P.length = C.length) && (List.range P.length).all (fun l =>
     match P[l]?, C[l]? with
     | some node, some c => checkNodeUsing G images Rty P C node c codes
     | _, _ => false) && P.all (fun node => ObjectCoherence.sourceTerm node.expression)
+  ) := by
+  simp only [checkGraphUsing, checkGraphResult, CheckResult.accepted_bind,
+    CheckResult.accepted_ofBool, CheckResult.accepted_all, Bool.and_assoc]
+  congr 2
+  apply congrArg
+  funext l
+  cases P[l]? <;> cases C[l]? <;> rfl
 
 def TargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι) (Γ : List (Ty ι)) (l : Target) (facts : HeapKnowledge.Knowledge) : Prop :=
   ∃ c, C[l.label]? = some c ∧ MappedCovers G Γ (entry c) l.mapping ∧ HeapKnowledge.check facts c.knowledge l.mapping = true
@@ -237,7 +350,7 @@ def ContinuationOk [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι) (C : Cert
 
 theorem target_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {P C Γ l p facts}
     (hc : checkTargetUsing G images P C Γ l p facts = true) : TargetOk G C Γ l facts := by
-  unfold checkTargetUsing at hc
+  rw [checkTargetUsing_eq] at hc
   split at hc
   · rename_i node c hn he
     simp only [Bool.and_eq_true] at hc
@@ -246,7 +359,7 @@ theorem target_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
 
 theorem branch_target_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {P C Γ q l p facts}
     (hc : checkBranchTargetUsing G images P C Γ q l p facts = true) : BranchTargetOk G C Γ q l facts := by
-  unfold checkBranchTargetUsing at hc
+  rw [checkBranchTargetUsing_eq] at hc
   split at hc
   · simp only [Bool.and_eq_true] at hc
     exact ⟨_, by assumption, checkObserved_sound hc.1, hc.2⟩
@@ -261,7 +374,7 @@ def ExpressionOk [DecidableEq ι] (G : NormalGraph ι) (c : NodeEvidence ι) (t 
 theorem handler_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {P C node c}
     (hc : checkHandlerUsing G images P C node c = true) {ρ h} (hk : HeapKnowledge.Holds c.knowledge ρ h) :
     HandlerOk G C (entry c) ρ node.handler := by
-  unfold checkHandlerUsing at hc
+  rw [checkHandlerUsing_eq] at hc
   split at hc
   · rename_i hn _; rw [hn]; trivial
   · rename_i l T p hn _
@@ -276,7 +389,7 @@ theorem node_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImage
     ExpressionOk G c node.expression ∧
     ContinuationOk G Rty C (entry c) (result c) c.output node.continuation ∧
     ∀ ρ h, HeapKnowledge.Holds c.knowledge ρ h → HandlerOk G C (entry c) ρ node.handler := by
-  simp only [checkNodeUsing, Bool.and_eq_true, decide_eq_true_eq] at hc
+  simp only [checkNodeUsing_eq, Bool.and_eq_true, decide_eq_true_eq] at hc
   refine ⟨?_, ?_, fun ρ h hk => handler_sound hc.1.1.1.2 hk⟩
   · intro n W h ρ he hf hw hh
     have ht := HeapExpressionRules.checkStep_sound hc.1.2 hcodes he hf hw hh
@@ -300,7 +413,7 @@ theorem graph_node [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImage
     ∃ node : Node, P[l]? = some node ∧ ExpressionOk G c node.expression ∧
       ContinuationOk G Rty C (entry c) (result c) c.output node.continuation ∧
       ∀ ρ h, HeapKnowledge.Holds c.knowledge ρ h → HandlerOk G C (entry c) ρ node.handler := by
-  simp only [checkGraphUsing, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at hg
+  simp only [checkGraphUsing_eq, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at hg
   have hg := hg.1
   have hl : l < P.length := by
     rw [hg.1]
@@ -437,19 +550,37 @@ theorem accepted_entry_safe [DecidableEq ι] {G : NormalGraph ι} {images : Inst
   state_safe hg hcodes n W h _ hw hh ⟨c,hc,he,hf⟩
 
 /-- The external input contract is independent of the supplied point claims. -/
-def checkEntryUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (Rty : Ty ι)
+@[nospecialize] def checkEntryResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (Rty : Ty ι)
+    (P : Program) (C : Certificate ι) (start : Nat) (inputs : List (Ty ι))
+    (codes : CodeEntry ι → Bool := fun _ => false) : CheckResult ι Unit :=
+  (checkGraphResult G images Rty P C codes).bind fun _ =>
+  match C[start]? with
+  | some c => CheckResult.ofBool (decide (entry c = inputs ∧ c.knowledge = ⟨[],[],[]⟩))
+  | none => failure
+
+@[nospecialize] def checkEntryUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (Rty : Ty ι)
     (P : Program) (C : Certificate ι) (start : Nat) (inputs : List (Ty ι))
     (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
+  (checkEntryResult G images Rty P C start inputs codes).accepted
+
+theorem checkEntryUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (Rty : Ty ι)
+    (P : Program) (C : Certificate ι) (start : Nat) (inputs : List (Ty ι))
+    (codes : CodeEntry ι → Bool) :
+    checkEntryUsing G images Rty P C start inputs codes = (
   checkGraphUsing G images Rty P C codes && match C[start]? with
     | some c => decide (entry c = inputs ∧ c.knowledge = ⟨[],[],[]⟩)
     | none => false
+  ) := by
+  simp only [checkEntryUsing, checkEntryResult, CheckResult.accepted_bind, checkGraphUsing]
+  congr 1
+  cases C[start]? <;> simp only [CheckResult.accepted_ofBool] <;> rfl
 
 theorem accepted_inputs_safe [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Rty P C start inputs}
     {codes : CodeEntry ι → Bool} (hc : checkEntryUsing G images Rty P C start inputs codes = true) (n W h ρ)
     (he : EnvOk G inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hcodes : CodesSound G codes := by exact Verification.Model.ProgramCertificates.codesSound_none _) :
     SafeGraph P (meaning G Rty) n W h (.at start ρ) := by
-  simp only [checkEntryUsing, Bool.and_eq_true] at hc
+  simp only [checkEntryUsing_eq, Bool.and_eq_true] at hc
   have hg := hc.1
   have hx := hc.2
   split at hx

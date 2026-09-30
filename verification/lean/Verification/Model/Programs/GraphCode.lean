@@ -220,7 +220,7 @@ theorem goto_preserving [DecidableEq ι] {G : NormalGraph ι} {images : Instance
     (hh : HeapOk n W h) :
     HeapObservations.SafePost (meaning G Rty)
       (CallEffects.Effect.preservesInputHeap.post h) n W h (.goto E K start L d) := by
-  simp only [checkEntryUsing, Bool.and_eq_true] at hc
+  simp only [checkEntryUsing_eq, Bool.and_eq_true] at hc
   have hx := hc.2
   split at hx
   · rename_i c hstart
@@ -321,7 +321,7 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
       have hgraph : checkGraphUsing (reassign G η) (images.reassign η) c.row.result
           (program c.exprs c.conts) C (admits table) = true := by
         have hchecked := hc
-        simp only [checkEntryUsing, Bool.and_eq_true] at hchecked
+        simp only [checkEntryUsing_eq, Bool.and_eq_true] at hchecked
         exact hchecked.1
       obtain ⟨actual,hactual,hterm,-⟩ := graph_node hgraph ht hpoint
       cases hn.symm.trans hactual

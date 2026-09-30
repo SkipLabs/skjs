@@ -271,25 +271,25 @@ theorem checkTarget_reassign (P : Program) (C : ControlFlow.Certificate ι) (Γ 
     (p : EdgeEvidence ι) (facts : HeapKnowledge.Knowledge) :
     checkTargetUsing (reassign G η) (images.reassign η) P C Γ t p facts =
       checkTargetUsing G images P C Γ t p facts := by
-  simp only [checkTargetUsing, checkMapped_reassign]
+  simp only [checkTargetUsing_eq, checkMapped_reassign]
 
 theorem checkBranchTarget_reassign (P : Program) (C : ControlFlow.Certificate ι) (Γ : List (List ι))
     (o : Observation) (t : Target) (p : EdgeEvidence ι) (facts : HeapKnowledge.Knowledge) :
     checkBranchTargetUsing (reassign G η) (images.reassign η) P C Γ o t p facts =
       checkBranchTargetUsing G images P C Γ o t p facts := by
-  simp only [checkBranchTargetUsing, checkObserved_reassign]
+  simp only [checkBranchTargetUsing_eq, checkObserved_reassign]
 
 theorem checkHandler_reassign (P : Program) (C : ControlFlow.Certificate ι) (node : Node) (c : NodeEvidence ι) :
     checkHandlerUsing (reassign G η) (images.reassign η) P C node c =
       checkHandlerUsing G images P C node c := by
-  simp only [checkHandlerUsing, checkTarget_reassign]
+  simp only [checkHandlerUsing_eq, checkTarget_reassign]
   rfl
 
 theorem checkNode_reassign (Rty : List ι) (P : Program) (C : ControlFlow.Certificate ι) (node : Node)
     (c : NodeEvidence ι) (codes : CodeEntry ι → Bool := fun _ => false) :
     checkNodeUsing (reassign G η) (images.reassign η) Rty P C node c codes =
       checkNodeUsing G images Rty P C node c codes := by
-  simp only [checkNodeUsing, checkHandler_reassign, checkStep_reassign, checkTarget_reassign,
+  simp only [checkNodeUsing_eq, checkHandler_reassign, checkStep_reassign, checkTarget_reassign,
     checkBranchTarget_reassign]
   rfl
 
@@ -297,13 +297,13 @@ theorem checkGraph_reassign (Rty : List ι) (P : Program) (C : ControlFlow.Certi
     (codes : CodeEntry ι → Bool := fun _ => false) :
     checkGraphUsing (reassign G η) (images.reassign η) Rty P C codes =
       checkGraphUsing G images Rty P C codes := by
-  simp only [checkGraphUsing, checkNode_reassign]
+  simp only [checkGraphUsing_eq, checkNode_reassign]
 
 theorem checkEntry_reassign (Rty : List ι) (P : Program) (C : ControlFlow.Certificate ι) (start : Nat)
     (inputs : List (List ι)) (codes : CodeEntry ι → Bool := fun _ => false) :
     checkEntryUsing (reassign G η) (images.reassign η) Rty P C start inputs codes =
       checkEntryUsing G images Rty P C start inputs codes := by
-  simp only [checkEntryUsing, checkGraph_reassign]
+  simp only [checkEntryUsing_eq, checkGraph_reassign]
 
 /-- **Acceptance reads no assignment.** A graph's evidence is accepted exactly
 when it is accepted for every reassignment of the graph's parameter rows, by
