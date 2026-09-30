@@ -1250,7 +1250,7 @@ construction:
 i\ \text{a scheme row}\ (\vec p;\Sigma;\beta;\Sigma_\ldots)\quad
 |\vec\theta|=|\vec p|\quad
 \forall p.\;\theta_p:\mathsf{kind}(p)\quad
-\forall(p,B)\in\beta.\;\theta_p\subseteq B\lor\Delta_p\vdash(\theta_p,B)\ \mathsf{covered}\\
+\forall(p,B)\in\beta.\;G\vdash\theta_p\le B\\
 \text{a checked table}\quad
 T\equiv_G\mathsf{arrs}(L;M)\quad
 \forall\tau\in L.\;\exists\sigma\in\Sigma.\;\tau\doteq\sigma[\kappa_0]\land\varepsilon_\sigma\succeq\varepsilon_\tau\quad
@@ -1267,9 +1267,9 @@ the scheme signature's receiver admits every value (`top`), as a quantified
 member's does, the instance's receiver is not compared: a callable safe at
 every receiver is safe at a narrower one, every receiver being a closed value
 (`instSig`, `instRest`, `top_row_mixed`). So a method call's instance states
-its object as the receiver. The
-premises other than $T\equiv_G\mathsf{arrs}(L;M)$ are $G\vdash\{i\}\le_{\mathsf{inst}}\mathsf{arrs}(L;M)$
-(`InstArrs`).
+its object as the receiver. The finite-table specialization of the premises other than
+$`T\equiv_G\mathsf{arrs}(L;M)`$ is
+$`G\vdash\{i\}\le_{\mathsf{inst}}\mathsf{arrs}(L;M)`$ (`InstArrs`).
 
 The order $`\varepsilon_\sigma\succeq\varepsilon_\tau`$ means that the
 source effect guarantees the target effect. Signature images retain their
@@ -1300,17 +1300,18 @@ fixed and rest arguments, effects and receiver weakening use this one proof.
 the finite-table checks; the equation checker discharges it by structural
 substitution ([RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md#3-metatheory)).
 
-The checker establishes the bound judgment $`\theta_p \le B`$ through
-`compareStructural`, using the graph representation's validated variance
-entries and binder renaming. Its justification is checked by the guarded
-family rule. Prototype-member instances are validated before structural
-coverage uses them; bound checking has no premise from the instance it checks.
+The checker establishes the bound judgment $`\theta_p \le B`$ through the
+common comparison operation, including quantified instantiation, validated
+variance and binder renaming. A bound query repeated on an unfinished instance
+requires a guarded structural derivation. Prototype-member instances are
+validated before structural coverage uses them. The state and its checked
+results are described in [RECURSIVE-EQUATIONS §4.4](RECURSIVE-EQUATIONS.md#44-instantiation).
 
 Lean: `entryOk`, `meetOk`, `TableOk`, `instKinds`, `substitutionKind`, `InstArrs`,
 `mixed_assignment_substitution`, `InstanceImages`, `table_instanceImages`,
 `inst_images_sound`, `inst_mixed_sound`, `meet_row_value`, `meet_noArguments`,
 `meetOk_noArguments`, `table_row_mixed`, `InstArrs.mixed_sound`, `checkStructural_sound`,
-`boundOk_sound`.
+`compareInstArrsState_sound`.
 
 ## Certificates
 

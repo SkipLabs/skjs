@@ -3786,13 +3786,16 @@ A method call may state its instance, `o.m<A₁,…,Aₖ>(…)`. The arguments
 instantiate the member's binders in order, its own leading; binders past them
 (an `ArrayProto` member's element `T`, listed last) are fixed by the receiver
 and actuals. Lean reads the member's scheme row $S$ from the receiver's
-contract (a quantified member's scheme, or a view's), finds the instance map $\theta$ relating $S$ to the read's claimed
-arrows $M$, checks it (`compareInstArrsWith`, sound by `compareInstArrsWith_sound`) and
-requires each explicit argument to mean what $\theta$ gives its binder:
+contract (a quantified member's scheme, or a view's), selects an instance map
+$`\theta`$ whose images and bounds establish the read's claimed arrows $`M`$
+(`selectInstancesUsing`, sound by `selectInstancesUsing_sound`), and requires
+each explicit argument to mean what $`\theta`$ gives its binder. With
+$`G\vdash S\le_{\mathrm{inst}(\theta)}M`$ for the checked instance rule
+([POSITIVE-TYPES](POSITIVE-TYPES.md#instances-of-a-scheme-row)):
 
 ```math
 \frac{o:O\quad \mathsf{field}_G(O,m)=S=[\forall\vec p.\Sigma]\quad
-      \mathsf{checkInstArrs}(G,S,M,\theta)=\mathsf{true}\quad
+      G\vdash S\le_{\mathrm{inst}(\theta)}M\quad
       \forall i\le k.\;\theta(p_i)\simeq_G A_i}
      {o.m\langle A_1,\ldots,A_k\rangle(\vec a)\ \text{is called at its stated instance }M}.
 ```
