@@ -6,6 +6,13 @@
    * and the selected claim beneath it. Everything on screen is a view of one
    * file read through one producer; nothing here decides an outcome.
    * What is on screen is one object, state.svelte.ts, which every view reads.
+   * Catalogue.svelte is what opens without a file in the link: every example group.
+   * FunctionList.svelte lists the file's functions, each with its two outcomes.
+   * SourceView.svelte draws the source with each claim under its span.
+   * Selection.svelte shows the selected claim beneath the source.
+   * Obligation.svelte explains why verification stopped, from the verifier's record.
+   * OpenPath.svelte opens any repository path the catalogue does not list.
+   * Provenance.svelte states the producer, the exact command and its time.
    */
   import { onMount } from "svelte";
   import Catalogue from "./Catalogue.svelte";

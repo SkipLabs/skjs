@@ -9,6 +9,12 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { API, DiagnosticCategory, ElementFlags, SignatureKind, SymbolFlags, TypeFlags, isTupleType, isTypeReference, isUnionType, type Checker, type Program, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, SourceFile, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
+// declaration-types.mts declares the declaration document this module writes, which the Fragment carries and Lean's EquationLowering reads.
+// type-term.mts is the one reading of TypeScript type syntax as a source type term, which every declaration body here is read with.
+// computed-types.mts states a type TypeScript computes (`typeof`, `keyof`, `T[K]`, template literals) as the equivalent source term, or refuses it.
+// array-prototype.mts holds the reviewed contracts of the realm's prototypes, the only members of `Array.prototype` and the primitive prototypes this reader admits.
+// intrinsics.mts declares the intrinsics this reader lists among the client's values: the trusted steps async functions, loops, spreads and patterns lower to.
+// library-globals.mts is the reviewed overlay of the standard library's globals, the only global values this reader admits, at the signatures it states.
 import type { Span } from "./span.mts";
 import { classInstance, computedAlias, computedForm, expandMapped, mapped, members, oneTerm, optionalTerm, signature, signatures, substitute,
   typeTerm, type Mapped, type TermScope } from "./type-term.mts";

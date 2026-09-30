@@ -143,6 +143,8 @@ Start the local viewer with:
 node verification/report-viewer/serve.mts
 ```
 
+[report-viewer/serve.mts](report-viewer/serve.mts) is the reader's server: it
+runs the chosen source through the pipeline and serves the built page.
 Open the printed URL. The groups hold the corpus examples, the OCaml
 producer's fixtures and explicitly unsupported examples. Arbitrary repository source can be selected with `?file=relative/path.ts`.
 See the [reader guide](report-viewer/README.md) and

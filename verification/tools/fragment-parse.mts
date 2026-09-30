@@ -64,8 +64,10 @@ import { CHAIN } from "./fragment.mts";
  * so the source builds no object with a `then`, which could pass for one. */
 const FORGED_PROMISE = "an object the source builds with a `then` member could pass for a promise, and a value typed `Promise` is assumed to be a realm promise";
 import type { Span } from "./span.mts";
+// thrown.mts reads what the TypeScript API throws into the message the gate reports, without asserting its type.
 import { messageOf } from "./thrown.mts";
 import { enclosingBinders } from "./computed-types.mts";
+// declaration-graph.mts collects the declarations the source reaches: the declaration document the Fragment carries for Lean to lower.
 import { collectDeclarations, DeclarationError, libraryArguments, libraryTerm, tsconfigOf, type LibraryType,
   type SeenDiagnostic }
   from "./declaration-graph.mts";

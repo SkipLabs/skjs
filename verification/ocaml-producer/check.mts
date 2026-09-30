@@ -3,12 +3,16 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, resolve, join } from "node:path";
 import { createHash } from "node:crypto";
+// ../tools/fragment-parse.mts is the trusted parser and syntactic gate: without it no source becomes the Fragment the producer and Lean read.
 import { parseFile } from "../tools/fragment-parse.mts";
 import { clientErrors, tsconfigOf, type SeenDiagnostic } from "../tools/declaration-graph.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
 import { presentObligation } from "../tools/diagnostic-view.mts";
 
 const here = import.meta.dirname;
+// The producer runs from `_build/default/producer.exe` below this directory.
+// Its dune file declares that executable and the library it links;
+// its dune-project makes this directory the root `dune build --root` builds into `_build/`.
 const repo = resolve(here, "../..");
 export const verifier =
   process.env.VERIFIER ??

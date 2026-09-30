@@ -6,6 +6,7 @@
  */
 import type { Atom } from "./claim.mts";
 import type { DeclarationDocument, PropertyKey, TypeTerm } from "./declaration-types.mts";
+// span.mts declares the source span every Fragment node carries, the one declaration the claims, the diagnostics and the reports share.
 import type { Span } from "./span.mts";
 
 /** The name an optional chain's body reads its saved receiver by; no source

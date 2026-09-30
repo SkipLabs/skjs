@@ -9,6 +9,7 @@
    * the marks pack onto rows without overlapping, is decided by `marks.mts`
    * without a DOM, which is why the suites can check it.
    */
+  // ../../marks.mts decides what is drawn and how the marks pack onto rows, without a DOM.
   import {
     bracket,
     groupLines,

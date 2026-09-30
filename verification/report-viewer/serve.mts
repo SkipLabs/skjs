@@ -339,6 +339,8 @@ async function analyse(relative: string, producer = "ocaml"): Promise<Bundle> {
   return ocamlAnalyse(relative, source, tmp, options);
 }
 
+// app/index.html is the page the bundle is built from, which loads the application.
+// app/vite.config.ts builds that page into `app/dist` under the stable names this table serves.
 // The reader is a built bundle in `app/dist`, which exists only after
 // `npm --prefix app run build`; `make viewer` builds before it serves.
 const assets = new Map([

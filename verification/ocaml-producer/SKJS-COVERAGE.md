@@ -274,7 +274,7 @@ totals 24.7 MB. Check time does not follow size: `sum-tuple-value` checks
 2,436 bytes in 357 ms.
 
 **Subtyping work** ([RECURSIVE-EQUATIONS §4](../RECURSIVE-EQUATIONS.md#4-subtyping)),
-from `node verification/tools/subtyping-trace.mts` over all cases. Scope: the
+measured over all cases by [`tools/subtyping-trace.mts`](../tools/subtyping-trace.mts). Scope: the
 questions are those the check step asks (the checker's `subset` premise
 judgments and `core` family tables); the variance components and fallback
 searches are counted in both verifier runs. The producer's proof search

@@ -1,4 +1,6 @@
 import { decodeGraph, decodeLabels, type TypeGraph, type Labels, type Clause } from "./type-graph.mts";
+// calculus.mts decodes the native terms a record's judgements and source map name.
+// control-flow.mts decodes the program-graph node a node or edge obligation names.
 import { decodeTerm, isTag, type Tag, type Term } from "./calculus.mts";
 import { decodeNode, type ProgramNode } from "./control-flow.mts";
 import type { Span } from "./span.mts";

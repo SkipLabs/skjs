@@ -371,6 +371,7 @@ function derive(unit: Unit, stmts: Stmt[], isModule: boolean): string {
  * environment: `paths` sends a bare specifier to the stubs, and
  * `skjs-environment.d.ts` restates the builtins the ECMAScript library lacks
  * (`__SKJS_show`, `process`, `Closed<T>`). */
+// skjs-environment/skjs-environment.d.ts restates the builtins SKJS's stub declares and the ECMAScript library lacks; each unit's project lists it.
 const environmentDir = path.join(here, "skjs-environment");
 const projectOf = (derived: string) => derived.replace(/\.ts$/, ".tsconfig.json");
 const environment = (derived: string) => ({

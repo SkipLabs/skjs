@@ -23,6 +23,7 @@ import type {
   SourceClaims,
 } from "./source-claims.mts";
 import type { Span } from "./span.mts";
+// ../report-viewer/types.ts declares the report this writer emits, which the server and the reader are typed against.
 import type { Failure, Result } from "../report-viewer/types.ts";
 import { messageOf } from "./thrown.mts";
 // rigid.mts: the type parameters a report shows with their declared bounds, worked out here.

@@ -117,9 +117,13 @@ typecheck() {
 
 run_test "Front-end types" typecheck
 run_test "JSON field names agree (TS, Lean, OCaml)" node verification/tests/json-field-names.mts
+# tests/docs.mts checks every document's links, anchors and math.
 run_test "Documents: links, math" node verification/tests/docs.mts
+# ocaml-producer/test.mts runs every case, then the controls no case can: pinned imports, tampering and the reader.
 run_test "OCaml producer" bash -c 'dune build --root verification/ocaml-producer && dune runtest --root verification/ocaml-producer && node verification/ocaml-producer/test.mts'
+# tests/rule-inventory.mts checks that the rules REQUEST-PROTOCOL documents are the rules Lean declares.
 run_test "Rule inventory" node verification/tests/rule-inventory.mts
+# tests/unsupported.mts runs each explicit source boundary and checks the pipeline refuses it for its stated limitation.
 run_test "Source boundaries" node verification/tests/unsupported.mts
 
 report_tests

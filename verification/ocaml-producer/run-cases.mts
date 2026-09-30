@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { availableParallelism } from "node:os";
 import { join, resolve } from "node:path";
 import { checkApart, type Outcome } from "./check.mts";
+// cases.mts is the inventory this runner judges: each case's source, project and expected status, phase and diagnostic.
 import { cases, type Case } from "./cases.mts";
 
 const here = import.meta.dirname;

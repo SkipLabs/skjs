@@ -8,7 +8,7 @@ import { spawnSync } from "node:child_process";
 // tools/tsc-claims.mts is the producer the corpus runs: TypeScript's own checker, stating its claims.
 import * as tscClaims from "./tools/tsc-claims.mts";
 import { definedFunctions } from "./tools/fragment-parse.mts";
-// The corpus index, which the reader lists too: which files each group holds.
+// report-viewer/examples.mts is the corpus index, which the reader lists too: which files each group holds.
 import { groups } from "./report-viewer/examples.mts";
 
 const __filename = import.meta.filename;

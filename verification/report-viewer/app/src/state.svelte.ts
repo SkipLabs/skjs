@@ -7,6 +7,7 @@
  * It fetches them through api.ts, the server's endpoints as functions.
  */
 import { analyse, files as fetchFiles, health, type Group } from "./api.ts";
+// ../../model.mts turns the bundle the server returns into the report every view shows.
 import { fromBundle, type Report, type ShownFunction } from "../../model.mts";
 import type { Bundle, CollectionRun, Producer } from "../../types.ts";
 
