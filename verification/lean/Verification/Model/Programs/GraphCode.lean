@@ -248,40 +248,89 @@ def admits [DecidableEq ι] (table : List (CodeEntry ι)) (c : CodeEntry ι) : B
 could turn a throwing call into a normal return after untracked mutation, so
 this composition rule admits only graphs without handlers. Pure graphs retain
 the independent operational rule, which also covers their handlers. -/
-def compositionalChecked [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (P : Program) (C : Certificate ι) : Bool :=
+@[nospecialize] def compositionalCheckedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (P : Program) (C : Certificate ι) : ProgramCertificates.CheckResult ι Unit :=
+  ProgramCertificates.CheckResult.all (P.zip C) fun (node,c) =>
+    (ProgramCertificates.CheckResult.ofBool (node.handler.isNone &&
+      ProgramCertificates.checkScope (entry c).length node.expression)).bind fun _ =>
+    (ProgramCertificates.CheckResult.ofBool (ExpressionEffects.check G (entry c) node.expression)).orElse fun _ =>
+    (ProgramCertificates.CheckResult.ofBool (decide ((ProgramCertificates.claim c.expression).term = node.expression))).bind fun _ =>
+    (ProgramCertificates.checkTreeResult G images c.expression).bind fun _ =>
+    ProgramCertificates.CheckResult.ofBool (ExpressionEffects.selectedCallPreserves c.expression)
+
+@[nospecialize] def compositionalChecked [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (P : Program) (C : Certificate ι) : Bool :=
+  (compositionalCheckedResult G images P C).accepted
+
+theorem compositionalChecked_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (P : Program) (C : Certificate ι) :
+    compositionalChecked G images P C = (
   (P.zip C).all fun (node,c) => node.handler.isNone &&
     ProgramCertificates.checkScope (entry c).length node.expression &&
     (ExpressionEffects.check G (entry c) node.expression ||
       (decide ((ProgramCertificates.claim c.expression).term = node.expression) &&
         ProgramCertificates.checkTreeUsing G images c.expression &&
         ExpressionEffects.selectedCallPreserves c.expression))
+  ) := by
+  simp only [compositionalChecked, compositionalCheckedResult, ProgramCertificates.CheckResult.accepted_all,
+    ProgramCertificates.CheckResult.accepted_bind, ProgramCertificates.CheckResult.accepted_orElse,
+    ProgramCertificates.CheckResult.accepted_ofBool, ProgramCertificates.checkTreeUsing, Bool.and_assoc]
 
 @[simp] theorem compositionalChecked_reassign [DecidableEq ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) (η : MixedAssignment ι) (P : Program) (C : Certificate ι) :
     compositionalChecked (reassign G η) (images.reassign η) P C = compositionalChecked G images P C := by
-  simp only [compositionalChecked, ExpressionEffects.check, ExpressionEffects.readable,
+  simp only [compositionalChecked_eq, ExpressionEffects.check, ExpressionEffects.readable,
     Parametricity.expand_reassign, Parametricity.checkTree_reassign]
 
 /-- Definition effects supplement, rather than replace, ordinary safety. -/
-def effectChecked [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+@[nospecialize] def effectCheckedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (c : CodeEntry ι) (C : Certificate ι) : ProgramCertificates.CheckResult ι Unit :=
+  match c.row.effect with
+  | .unrestricted => pure ()
+  | .preservesInputHeap =>
+      (ProgramCertificates.CheckResult.ofBool (c.exprs.all Purity.pureTerm)).orElse fun _ =>
+      compositionalCheckedResult G images (program c.exprs c.conts) C
+
+@[nospecialize] def effectChecked [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (c : CodeEntry ι) (C : Certificate ι) : Bool :=
+  (effectCheckedResult G images c C).accepted
+
+theorem effectChecked_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (c : CodeEntry ι) (C : Certificate ι) :
+    effectChecked G images c C = (
   match c.row.effect with
   | .unrestricted => true
   | .preservesInputHeap => c.exprs.all Purity.pureTerm ||
       compositionalChecked G images (program c.exprs c.conts) C
+  ) := by
+  cases h : c.row.effect <;>
+    simp only [effectChecked, effectCheckedResult, h, ProgramCertificates.CheckResult.accepted_orElse,
+      ProgramCertificates.CheckResult.accepted_ofBool, compositionalChecked] <;> rfl
 
 @[simp] theorem effectChecked_reassign [DecidableEq ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) (η : MixedAssignment ι) (c : CodeEntry ι) (C : Certificate ι) :
     effectChecked (reassign G η) (images.reassign η) c C = effectChecked G images c C := by
-  simp only [effectChecked, compositionalChecked_reassign]
+  simp only [effectChecked_eq, compositionalChecked_reassign]
 
 /-- One code entry, checked at its signature from the frame the signature
 describes, against an earlier table. -/
-def codeCheckedUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+@[nospecialize] def codeCheckedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (table : List (CodeEntry ι)) (c : CodeEntry ι) (C : ControlFlow.Certificate ι) : ProgramCertificates.CheckResult ι Unit :=
+  (ProgramCertificates.CheckResult.ofBool (decide (c.arity ≤ c.row.arguments.length))).bind fun _ =>
+  (effectCheckedResult G images c C).bind fun _ =>
+  checkEntryResult G images c.row.result (program c.exprs c.conts) C c.start
+    (codeFrame c.arity c.row c.captures c.store) (admits table)
+
+@[nospecialize] def codeCheckedUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (table : List (CodeEntry ι)) (c : CodeEntry ι) (C : ControlFlow.Certificate ι) : Bool :=
+  (codeCheckedResult G images table c C).accepted
+
+theorem codeCheckedUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (table : List (CodeEntry ι)) (c : CodeEntry ι) (C : ControlFlow.Certificate ι) :
+    codeCheckedUsing G images table c C = (
   decide (c.arity ≤ c.row.arguments.length) && effectChecked G images c C &&
     checkEntryUsing G images c.row.result (program c.exprs c.conts) C c.start
       (codeFrame c.arity c.row c.captures c.store) (admits table)
+  ) := by
+  simp only [codeCheckedUsing, codeCheckedResult, ProgramCertificates.CheckResult.accepted_bind,
+    ProgramCertificates.CheckResult.accepted_ofBool, effectChecked, checkEntryUsing, Bool.and_assoc]
 
 /-- A checked entry meets its signature in the graph reassigned at every
 assignment: the check reads none (`Parametricity.checkEntry_reassign`). -/
@@ -289,7 +338,7 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
     {table c C} (htable : ProgramCertificates.CodesSound G (admits table))
     (h : codeCheckedUsing G images table c C = true) : ∀ η, c.Spec (reassign G η) := by
   intro η
-  simp only [codeCheckedUsing, Bool.and_eq_true, decide_eq_true_eq] at h
+  simp only [codeCheckedUsing_eq, Bool.and_eq_true, decide_eq_true_eq] at h
   have hc : checkEntryUsing (reassign G η) (images.reassign η) c.row.result
       (program c.exprs c.conts) C c.start
       (codeFrame c.arity c.row c.captures c.store) (admits table) = true := by
@@ -305,11 +354,12 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
   | preservesInputHeap =>
     have hp : c.exprs.all Purity.pureTerm = true ∨
         compositionalChecked (reassign G η) (images.reassign η) (program c.exprs c.conts) C = true := by
-      simpa [effectChecked, heffect, Bool.or_eq_true] using h.1.2
+      simpa [effectChecked_eq, heffect, Bool.or_eq_true] using h.1.2
     rcases hp with hp | hp
     · have hp : ∀ e ∈ c.exprs, Purity.pureTerm e = true := List.all_eq_true.mp hp
       simpa [heffect] using CallEffects.pure_safe (.goto hp hvalues rfl) hs
-    · apply goto_preserving hc ht _ n W heap L .nul he hw hh
+    · rw [compositionalChecked_eq] at hp
+      apply goto_preserving hc ht _ n W heap L .nul he hw hh
       intro l node point hn hpoint
       have hzip : ((program c.exprs c.conts).zip C)[l]? = some (node,point) :=
         List.getElem?_zip_eq_some.mpr ⟨hn,hpoint⟩
@@ -336,20 +386,41 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
         simpa only [ControlFlow.result, hcall.1.1] using hs
 
 /-- Check codes in order, each against the table of those before it. -/
-def extendTable [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) :
-    List (CodeEntry ι) → List (CodeEntry ι × ControlFlow.Certificate ι) → Option (List (CodeEntry ι))
-  | table, [] => some table
+@[nospecialize] def extendTableResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) :
+    List (CodeEntry ι) → List (CodeEntry ι × ControlFlow.Certificate ι) →
+      ProgramCertificates.CheckResult ι (List (CodeEntry ι))
+  | table, [] => pure table
   | table, (c, C) :: rest =>
-    if codeCheckedUsing G images table c C then extendTable G images (table ++ [c]) rest else none
+      (codeCheckedResult G images table c C).bind fun _ => extendTableResult G images (table ++ [c]) rest
+
+@[nospecialize] def extendTable [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (table : List (CodeEntry ι)) (checks : List (CodeEntry ι × ControlFlow.Certificate ι)) :
+    Option (List (CodeEntry ι)) :=
+  (extendTableResult G images table checks).value
+
+theorem extendTable_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (table : List (CodeEntry ι)) (checks : List (CodeEntry ι × ControlFlow.Certificate ι)) :
+    extendTable G images table checks = match checks with
+    | [] => some table
+    | (c, C) :: rest =>
+        if codeCheckedUsing G images table c C then extendTable G images (table ++ [c]) rest else none := by
+  cases checks with
+  | nil => rfl
+  | cons pair rest =>
+    rcases pair with ⟨c, C⟩
+    rw [extendTable, extendTableResult, ProgramCertificates.CheckResult.value_bind_const]
+    rfl
 
 theorem extendTable_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} :
     ∀ {table checks result}, ProgramCertificates.CodesSound G (admits table) →
       extendTable G images table checks = some result →
       ProgramCertificates.CodesSound G (admits result)
   | table, [], result, ht, h => by
-    simp only [extendTable, Option.some.injEq] at h; subst h; exact ht
+    rw [extendTable_eq] at h
+    simp only [Option.some.injEq] at h; subst h; exact ht
   | table, (c, C) :: rest, result, ht, h => by
-    simp only [extendTable] at h
+    rw [extendTable_eq] at h
+    dsimp only at h
     split at h
     · rename_i hc
       apply extendTable_sound _ h
@@ -362,9 +433,14 @@ theorem extendTable_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
     · contradiction
 
 /-- A unit's codes, checked from the empty table. -/
-def checkCodesUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+@[nospecialize] def checkCodesResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (checks : List (CodeEntry ι × ControlFlow.Certificate ι)) :
+    ProgramCertificates.CheckResult ι (List (CodeEntry ι)) :=
+  extendTableResult G images [] checks
+
+@[nospecialize] def checkCodesUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (checks : List (CodeEntry ι × ControlFlow.Certificate ι)) : Option (List (CodeEntry ι)) :=
-  extendTable G images [] checks
+  (checkCodesResult G images checks).value
 
 /-- A checked table is sound at every reassignment of the graph's parameter
 rows, since `CodesSound` quantifies over all of them. -/

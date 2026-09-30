@@ -2586,6 +2586,13 @@ input environment. Their results retain unfinished comparisons from expressions,
 heap steps and outgoing edges. Their `*_eq` theorems identify the acceptance
 conditions used by graph safety and parameter-reassignment proofs.
 
+`GraphCode` composes definition-effect and graph-entry results. Code admission
+extends the checked table in declaration order through `extendTableResult`;
+`checkCodesResult` starts from the empty table. An unfinished comparison prevents
+admission and retains its resource outcome. `codeCheckedUsing_eq` and
+`extendTable_eq` prove the acceptance and table projections used by
+`codeChecked_sound` and `checkCodes_sound`.
+
 Failure reports a claim-count mismatch, an expression label, an edge's source
 and destination, or final consumer rejection. Failure means unsupported or
 unjustified within this search, not a proof that the program is untypable.
